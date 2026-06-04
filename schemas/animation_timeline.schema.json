@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AnimationTimeline",
+  "type": "object",
+  "required": ["slide_id", "duration_sec", "events"],
+  "properties": {
+    "slide_id": {"type": "string"},
+    "duration_sec": {"type": "number"},
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["at", "target", "action", "duration"],
+        "properties": {
+          "at": {"type": "number"},
+          "target": {"type": "string"},
+          "action": {"type": "string"},
+          "duration": {"type": "number"},
+          "easing": {"type": "string"},
+          "params": {"type": "object"}
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}
+

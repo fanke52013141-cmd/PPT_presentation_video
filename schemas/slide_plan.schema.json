@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SlidePlan",
+  "type": "object",
+  "required": ["video_title", "target_duration_sec", "slides"],
+  "properties": {
+    "video_title": {"type": "string"},
+    "target_duration_sec": {"type": "number", "minimum": 180, "maximum": 360},
+    "slides": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "slide_id",
+          "role",
+          "duration_sec",
+          "main_title",
+          "subtitle",
+          "core_message",
+          "screen_content",
+          "narration",
+          "visual_requirement",
+          "animation_intent"
+        ],
+        "properties": {
+          "slide_id": {"type": "string"},
+          "role": {"type": "string"},
+          "duration_sec": {"type": "number"},
+          "main_title": {"type": "string"},
+          "subtitle": {"type": "string"},
+          "core_message": {"type": "string"},
+          "screen_content": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "narration": {"type": "string"},
+          "visual_requirement": {"type": "string"},
+          "animation_intent": {"type": "string"},
+          "source_key_points": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}
+

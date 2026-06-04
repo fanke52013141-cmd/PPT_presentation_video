@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VisualReview",
+  "type": "object",
+  "required": ["slide_id", "status", "reviewer_notes", "requested_changes"],
+  "properties": {
+    "slide_id": {"type": "string"},
+    "status": {
+      "type": "string",
+      "enum": ["approved", "revise", "rejected"]
+    },
+    "reviewer_notes": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "requested_changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["target", "instruction"],
+        "properties": {
+          "target": {"type": "string"},
+          "instruction": {"type": "string"}
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}
+

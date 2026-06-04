@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VideoManifest",
+  "type": "object",
+  "required": ["run_id", "target_platforms", "primary_aspect_ratio", "resolution", "slides"],
+  "properties": {
+    "run_id": {"type": "string"},
+    "target_platforms": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "primary_aspect_ratio": {"type": "string"},
+    "resolution": {
+      "type": "object",
+      "required": ["width", "height"],
+      "properties": {
+        "width": {"type": "number"},
+        "height": {"type": "number"}
+      }
+    },
+    "fps": {"type": "number"},
+    "slides": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["slide_id", "scene", "audio", "animation_timeline"],
+        "properties": {
+          "slide_id": {"type": "string"},
+          "scene": {"type": "string"},
+          "audio": {"type": "string"},
+          "animation_timeline": {"type": "string"}
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}
+

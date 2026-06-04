@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Scene",
+  "type": "object",
+  "required": ["slide_id", "canvas", "elements"],
+  "properties": {
+    "slide_id": {"type": "string"},
+    "source_visual_draft": {"type": "string"},
+    "canvas": {
+      "type": "object",
+      "required": ["width", "height", "background"],
+      "properties": {
+        "width": {"type": "number"},
+        "height": {"type": "number"},
+        "background": {"type": "string"}
+      }
+    },
+    "elements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "box", "z_index"],
+        "properties": {
+          "id": {"type": "string"},
+          "type": {
+            "type": "string",
+            "enum": ["text", "image", "shape", "line", "group"]
+          },
+          "text": {"type": "string"},
+          "asset": {"type": "string"},
+          "style_token": {"type": "string"},
+          "animation_role": {"type": "string"},
+          "box": {
+            "type": "object",
+            "required": ["x", "y", "w", "h"],
+            "properties": {
+              "x": {"type": "number"},
+              "y": {"type": "number"},
+              "w": {"type": "number"},
+              "h": {"type": "number"}
+            }
+          },
+          "z_index": {"type": "number"}
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}
+

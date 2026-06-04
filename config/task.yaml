@@ -1,0 +1,66 @@
+defaults:
+  target_platforms:
+    - bilibili
+    - douyin
+    - wechat_channels
+  primary_aspect_ratio: "16:9"
+  resolution:
+    width: 1920
+    height: 1080
+  fps: 30
+  target_duration_sec:
+    min: 180
+    max: 360
+  presentation_mode: voiceover_plus_motion_graphics
+  language: zh-CN
+
+content:
+  domain: ai_science
+  audience: AI beginner
+  tone: clear_modern_trustworthy
+  narration_style: 旁白解释，短句，避免术语堆叠
+  slide_count:
+    min: 8
+    max: 14
+  words_per_slide:
+    min: 90
+    max: 180
+
+generation:
+  image_provider: codex_image_gen
+  tts_provider: minimax
+  video_renderer: remotion
+  media_processor: ffmpeg
+
+tts:
+  provider: minimax
+  endpoint_env: MINIMAX_TTS_ENDPOINT
+  api_key_env: MINIMAX_API_KEY
+  model_env: MINIMAX_TTS_MODEL
+  voice_id_env: MINIMAX_TTS_VOICE_ID
+  default_model: speech-2.8-hd
+  default_voice_id: Chinese_Upbeat_Woman
+  default_language_boost: Chinese
+  audio_format: mp3
+  sample_rate: 32000
+  bitrate: 128000
+  channel: 1
+  speed: 1.0
+  volume: 1.0
+  pitch: 0
+  subtitle_enable: true
+  subtitle_type: sentence
+  output_format: hex
+
+review:
+  static_visual_required: true
+  element_render_required: true
+  video_preview_required: true
+  approved_status: approved
+  revise_status: revise
+  rejected_status: rejected
+
+repository:
+  keep_redacted_examples: false
+  commit_runtime_outputs: false
+

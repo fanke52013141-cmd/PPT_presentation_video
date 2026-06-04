@@ -1,0 +1,9 @@
+[project]
+name = "ppt-image-visualization"
+description = "Article to AI science video production framework"
+
+[workflow]
+primary = "article_to_ai_video"
+runtime_dir = "runs"
+output_dir = "outputs"
+

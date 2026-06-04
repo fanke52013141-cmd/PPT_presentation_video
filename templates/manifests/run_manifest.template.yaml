@@ -1,0 +1,30 @@
+run_id: "<YYYY-MM-DD-topic>"
+source_article: "inputs/article.md"
+target_platforms:
+  - bilibili
+  - douyin
+  - wechat_channels
+primary_aspect_ratio: "16:9"
+resolution:
+  width: 1920
+  height: 1080
+fps: 30
+target_duration_sec:
+  min: 180
+  max: 360
+language: zh-CN
+presentation_mode: voiceover_plus_motion_graphics
+tts:
+  provider: minimax
+  model: speech-2.8-hd
+  voice_id: Chinese_Upbeat_Woman
+image_generation:
+  provider: codex_image_gen
+video_rendering:
+  primary_engine: remotion
+  media_engine: ffmpeg
+review_mode:
+  static_visual_required: true
+  element_render_required: true
+  video_preview_required: true
+

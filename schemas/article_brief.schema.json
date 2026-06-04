@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ArticleBrief",
+  "type": "object",
+  "required": ["article_id", "title", "core_thesis", "key_points", "terms", "risk_notes"],
+  "properties": {
+    "article_id": {"type": "string"},
+    "title": {"type": "string"},
+    "core_thesis": {"type": "string"},
+    "audience_fit": {"type": "string"},
+    "key_points": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "claim", "explain_for_beginner"],
+        "properties": {
+          "id": {"type": "string"},
+          "claim": {"type": "string"},
+          "evidence": {"type": "string"},
+          "explain_for_beginner": {"type": "string"}
+        }
+      }
+    },
+    "terms": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["term", "definition"],
+        "properties": {
+          "term": {"type": "string"},
+          "definition": {"type": "string"}
+        }
+      }
+    },
+    "source_quotes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "quote": {"type": "string"},
+          "source": {"type": "string"}
+        }
+      }
+    },
+    "risk_notes": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  },
+  "additionalProperties": true
+}
+

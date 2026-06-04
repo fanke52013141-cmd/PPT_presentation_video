@@ -1,0 +1,34 @@
+tracked:
+  - AGENTS.md
+  - README.md
+  - .codex/config.toml
+  - .agents/skills/**/SKILL.md
+  - config/**
+  - references/**
+  - schemas/**
+  - templates/**
+  - checks/**
+  - scripts/**
+  - bad_cases/bad_case_log.yaml
+  - .gitignore
+  - .env.example
+
+ignored:
+  - runs/**
+  - outputs/**
+  - "*.mp4"
+  - "*.mov"
+  - "*.wav"
+  - "*.mp3"
+  - "*.png"
+  - "*.jpg"
+  - "*.jpeg"
+  - "*.webp"
+  - .env
+
+rules:
+  keep_redacted_examples: false
+  do_not_commit_runtime_inputs: true
+  do_not_commit_generated_media: true
+  commit_bad_case_summary_only: true
+

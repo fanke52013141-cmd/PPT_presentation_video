@@ -1,0 +1,42 @@
+# Runtime projects
+runs/*
+!runs/.gitkeep
+
+# User-facing exports
+outputs/*
+!outputs/.gitkeep
+
+# Generated media and assets
+*.mp4
+*.mov
+*.m4v
+*.wav
+*.mp3
+*.aac
+*.flac
+*.srt
+*.vtt
+*.png
+*.jpg
+*.jpeg
+*.webp
+
+# Local caches and builds
+.cache/
+.tmp/
+node_modules/
+dist/
+build/
+.remotion/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Secrets
+.env
+.env.*
+!.env.example
+

@@ -1,0 +1,96 @@
+brand:
+  name: AI Science Explainer
+  style_keywords:
+    - 清晰
+    - 现代
+    - 可信
+    - 教育解释型
+    - 轻科技感
+
+canvas:
+  aspect_ratio: "16:9"
+  width: 1920
+  height: 1080
+  safe_margin:
+    x: 120
+    y: 80
+
+colors:
+  background: "#F7F8FA"
+  surface: "#FFFFFF"
+  ink: "#111827"
+  muted_ink: "#4B5563"
+  subtle_ink: "#6B7280"
+  primary: "#2563EB"
+  primary_soft: "#DBEAFE"
+  accent: "#14B8A6"
+  accent_soft: "#CCFBF1"
+  warning: "#F59E0B"
+  danger: "#EF4444"
+  line: "#D1D5DB"
+  dark_panel: "#111827"
+
+typography:
+  font_family_zh: "Microsoft YaHei"
+  font_family_latin: "Inter"
+  title_lg:
+    size: 64
+    weight: 700
+    line_height: 1.14
+    color: ink
+  title_md:
+    size: 48
+    weight: 700
+    line_height: 1.18
+    color: ink
+  subtitle:
+    size: 30
+    weight: 500
+    line_height: 1.35
+    color: muted_ink
+  body:
+    size: 28
+    weight: 400
+    line_height: 1.5
+    color: ink
+  caption:
+    size: 22
+    weight: 400
+    line_height: 1.4
+    color: subtle_ink
+
+layout:
+  border_radius: 8
+  card_padding: 32
+  grid_gap: 28
+  max_text_columns: 2
+  preferred_compositions:
+    - title_left_visual_right
+    - title_top_diagram_center
+    - contrast_two_columns
+    - step_flow
+    - concept_map
+
+visual_assets:
+  image_style: clean_educational_editorial
+  icon_style: outline_flat
+  diagram_style: simple_vector_like
+  avoid:
+    - 过度霓虹
+    - 赛博朋克堆砌
+    - 复杂背景干扰文字
+    - 图片内生成大段文字
+    - 单一蓝紫渐变铺满全片
+
+animation:
+  default_duration_sec: 0.6
+  default_easing: easeOutCubic
+  allowed_actions:
+    - fade_in
+    - fade_up
+    - soft_zoom_in
+    - slide_in_left
+    - line_draw
+    - highlight
+    - count_up
+

@@ -19,7 +19,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "type", "box", "z_index"],
+        "required": ["id", "type", "box", "z_index", "region", "semantic_role"],
         "properties": {
           "id": {"type": "string"},
           "type": {
@@ -30,6 +30,25 @@
           "asset": {"type": "string"},
           "style_token": {"type": "string"},
           "animation_role": {"type": "string"},
+          "region": {
+            "type": "string",
+            "enum": ["title_block", "content"]
+          },
+          "semantic_role": {
+            "type": "string",
+            "enum": [
+              "main_title",
+              "subtitle",
+              "content_point",
+              "content_text",
+              "content_visual",
+              "content_diagram",
+              "content_shape",
+              "content_line",
+              "content_highlight"
+            ]
+          },
+          "content_index": {"type": "number"},
           "box": {
             "type": "object",
             "required": ["x", "y", "w", "h"],

@@ -1,2 +1,38 @@
-cases: []
+cases:
+  - id: 2026-06-05-minimax-endpoint-invalid-key
+    stage: generate-audio-subtitles
+    tags: [external-api, tts, config]
+    symptom: "MiniMax t2a_v2 使用 api.minimax.io 返回 invalid api key。"
+    root_cause: "当前凭证对应可用 endpoint 为 https://api.minimaxi.com/v1/t2a_v2。"
+    resolution: "更新 .env.example、config/task.yaml、scripts/minimax_tts.py 和 generate-audio-subtitles skill。"
+  - id: 2026-06-05-remotion-file-url-blocked
+    stage: render-video
+    tags: [render-error, asset-path]
+    symptom: "Remotion/Chrome 渲染时无法加载 file:/// 本地图片。"
+    root_cause: "浏览器渲染环境不能可靠读取任意本地 file URL。"
+    resolution: "把运行期资源复制到 scripts/remotion/public/runtime/<run_id>/，组件内用 staticFile() 引用。"
+  - id: 2026-06-05-video-duration-under-target
+    stage: plan-slides
+    tags: [duration, planning]
+    symptom: "第 1 版约 125 秒、第 2 版约 147 秒，低于 3 分钟目标。"
+    root_cause: "分镜页数不足，把审题、关键词、身份和处理步骤压缩在少数页面中。"
+    resolution: "第 3 版扩展到 8 页，拆出审题层级和处理步骤，最终约 214 秒。"
+  - id: 2026-06-05-subtitle-vertical-misaligned
+    stage: render-video
+    tags: [subtitle, layout]
+    symptom: "字幕在底部虚线字幕框内视觉偏上。"
+    root_cause: "Remotion 字幕容器高度和 bottom 偏移没有匹配底图字幕框。"
+    resolution: "字幕容器改为 82px 高、bottom 8px，并抽帧检查单行/双行字幕居中。"
+  - id: 2026-06-05-repeated-slide-layouts
+    stage: reconstruct-scenes
+    tags: [layout, visual-review]
+    symptom: "所有页面看起来像同一版式套壳。"
+    root_cause: "生成脚本复用同一套卡片坐标和配图区坐标。"
+    resolution: "加入多种内容区 layout，并在场景中记录 scene.layout 供审核。"
+  - id: 2026-06-05-illustration-built-from-shapes
+    stage: reconstruct-scenes
+    tags: [imagegen, visual-asset]
+    symptom: "配图由 shape/text 拼装，不符合 Image Gen 位图资产规则。"
+    root_cause: "元素重建阶段把视觉主体当作可程序绘制图形处理。"
+    resolution: "用 Codex Image Gen 生成配图资产，scene 中 visual 元素统一使用 type=image 和 semantic_role=content_visual。"
 

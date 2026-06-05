@@ -49,7 +49,8 @@ description: Convert an article brief into a 3-6 minute slide-by-slide video pla
 3. 每页只放一个核心观点。
 4. 把旁白拆成短句，避免长句和术语堆叠。
 5. 为每页写清楚配图要求和动画意图。
-6. 输出总 `slide_plan.json`，并拆出每页 `slide_spec.json` 和 `narration.txt`。
+6. 对公考解析、案例拆解等多层级内容，优先把“审题/关键词/身份/步骤/总结”拆成独立页，避免 6 页以内导致最终时长低于 180 秒。
+7. 输出总 `slide_plan.json`，并拆出每页 `slide_spec.json` 和 `narration.txt`。
 
 # Validation
 
@@ -61,7 +62,7 @@ description: Convert an article brief into a 3-6 minute slide-by-slide video pla
 # Failure Handling
 
 - 如果内容过多，合并相近观点或建议增加分集。
-- 如果内容过少，增加类比、案例、误区澄清页。
+- 如果内容过少或最终 TTS 时长低于 180 秒，增加类比、案例、误区澄清页，或把已有层级拆成独立页。
 - 如果旁白和屏幕内容不匹配，优先修改旁白结构。
 
 # Bad Case Tags

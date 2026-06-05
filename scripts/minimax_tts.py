@@ -26,9 +26,9 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_ENDPOINT = "https://api.minimax.io/v1/t2a_v2"
+DEFAULT_ENDPOINT = "https://api.minimaxi.com/v1/t2a_v2"
 DEFAULT_MODEL = "speech-2.8-hd"
-DEFAULT_VOICE_ID = "Chinese_Upbeat_Woman"
+DEFAULT_VOICE_ID = "Chinese (Mandarin)_Soft_Girl"
 
 
 def load_dotenv(path: Path) -> None:

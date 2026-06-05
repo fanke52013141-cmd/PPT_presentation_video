@@ -91,6 +91,7 @@ runs/<run_id>/
 - 每页只承载一个核心观点。
 - 3 到 6 分钟视频通常建议 8 到 14 页 slide。
 - 每页必须包含主标题、副标题、核心信息、屏幕内容、旁白、配图要求和动画意图。
+- 同一条视频不能所有页面使用同一版式；至少轮换 3 种以上内容区布局，8 页以上主版本优先使用 6 到 8 种布局。
 
 ### Stage 3: define-style
 
@@ -129,6 +130,7 @@ runs/<run_id>/
 
 - 用 `.agents/skills/generate-visual-drafts/SKILL.md`。
 - 使用 Codex Image Gen 生成整页静态视觉稿。
+- 配图资产也必须来自 Codex Image Gen 位图；不得用 SVG、HTML、Canvas 或 shape/text 组合伪造配图。
 - 视觉稿用于第一轮人工审美判断。
 - 生成图尽量不含文字，或只保留抽象图形和背景。
 
@@ -168,7 +170,8 @@ runs/<run_id>/
 - 用 `.agents/skills/reconstruct-scenes/SKILL.md`。
 - 目标不是机械抠图，而是把已审核的视觉方向重建为可控元素。
 - 标题、正文、标签、图表文字必须是可编辑文本元素。
-- 背景、插图、图标、图表主体可以是图片元素。
+- 背景、插图、图标、图表主体可以是图片元素；凡承担“配图”功能的视觉主体必须是 Codex Image Gen 生成的位图 `image` 元素。
+- `shape` 只用于卡片底、强调点、辅助分隔等 UI 容器，不用于拼装文件、时钟、流程图等配图主体。
 
 ### Stage 6: render-element-previews
 
@@ -265,6 +268,10 @@ runs/<run_id>/
 - 用 `.agents/skills/render-video/SKILL.md`。
 - 主渲染使用 Remotion。
 - FFmpeg 只做媒体合并、转码和压缩。
+- Remotion 运行期资源必须复制到 `scripts/remotion/public/runtime/<run_id>/`，组件内用 `staticFile()` 引用，不直接使用 `file:///` 本地路径。
+- 先渲染结构版或短预览确认资源路径和画面非黑屏，再执行完整 TTS 视频渲染。
+- 若最终主版本低于 180 秒，优先回到 `plan-slides` 拆页或补足讲解层次，不用延长停顿凑时长。
+- 字幕叠加必须按底图字幕框垂直居中，抽帧检查单行和双行字幕是否都落在虚线框中心。
 
 ### Review Gate 3: 视频预览审核
 

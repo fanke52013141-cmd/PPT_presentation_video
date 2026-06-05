@@ -1,7 +1,8 @@
 param(
   [string]$RunId = "demo",
   [string]$Composition = "ArticleVideo",
-  [string]$OutFile = "runs/demo/video/final.mp4"
+  [string]$OutFile = "runs/demo/video/final.mp4",
+  [string]$PropsFile = "runs/demo/remotion_props.json"
 )
 
 $ErrorActionPreference = "Stop"
@@ -13,7 +14,9 @@ try {
   if (-not (Test-Path "node_modules")) {
     npm install
   }
-  npx remotion render src/index.tsx $Composition "../../$OutFile"
+  $OutPath = Join-Path "..\.." $OutFile
+  $PropsPath = Join-Path "..\.." $PropsFile
+  npx remotion render src/index.tsx $Composition $OutPath --props=$PropsPath
 }
 finally {
   Pop-Location

@@ -40,6 +40,7 @@ description: Generate MiniMax TTS audio, metadata, subtitles, and audio timeline
 3. 调用 `scripts/minimax_tts.py`。
 4. 保存语音、MiniMax 响应摘要、字幕和时间轴。
 5. 若没有官方字幕时间戳，则按句子和音频总长生成近似 `audio_timeline.json`，并标记 `timing_source: estimated`。
+6. 默认 endpoint 使用 `https://api.minimaxi.com/v1/t2a_v2`；如果出现 `invalid api key`，先检查是否误用了 `api.minimax.io` 旧域名，再判断密钥是否失效。
 
 # Command
 

@@ -33,7 +33,8 @@ description: Generate full-slide static visual drafts with Codex Image Gen for h
 2. 生成适合 Codex Image Gen 的整页视觉 prompt。
 3. prompt 中要求：16:9、1920x1080、教育解释型、可拆分前景/背景/主体。
 4. 图片中尽量不生成文字，真实标题和正文后续由渲染器排版。
-5. 保存 prompt 和生成图。
+5. 对需要后续独立入场的配图，生成独立 Image Gen 位图资产，并保存到 `references/generated_assets/` 或本次 `runs/<run_id>/slides/slide_xxx/assets/`。
+6. 保存 prompt 和生成图。
 
 # Validation
 
@@ -41,12 +42,14 @@ description: Generate full-slide static visual drafts with Codex Image Gen for h
 - 构图必须预留真实文字区域。
 - 主体、背景、图形关系要适合后续拆成元素。
 - 不允许出现乱码文字、假 UI、无法解释的复杂图表。
+- 配图资产必须是 Image Gen 位图，不得由 SVG、HTML、Canvas 或程序 shape/text 拼装替代。
 
 # Failure Handling
 
 - 如果文字乱码，重生成并明确 `no readable text in image`。
 - 如果太像科技海报，降低装饰，增强教育图解。
 - 如果无法动画化，要求更清晰的前景、背景、主体分层。
+- 如果配图看起来像代码绘制的占位图，重新调用 Image Gen 生成位图资产。
 
 # Bad Case Tags
 

@@ -35,11 +35,12 @@ generation:
 tts:
   provider: minimax
   endpoint_env: MINIMAX_TTS_ENDPOINT
+  default_endpoint: https://api.minimaxi.com/v1/t2a_v2
   api_key_env: MINIMAX_API_KEY
   model_env: MINIMAX_TTS_MODEL
   voice_id_env: MINIMAX_TTS_VOICE_ID
   default_model: speech-2.8-hd
-  default_voice_id: Chinese_Upbeat_Woman
+  default_voice_id: Chinese (Mandarin)_Soft_Girl
   default_language_boost: Chinese
   audio_format: mp3
   sample_rate: 32000

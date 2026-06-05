@@ -2,10 +2,11 @@ brand:
   name: AI Science Explainer
   style_keywords:
     - 清晰
-    - 现代
+    - 纸感米色
     - 可信
     - 教育解释型
-    - 轻科技感
+    - 温和专业
+    - 拼贴插画感
 
 canvas:
   aspect_ratio: "16:9"
@@ -14,42 +15,64 @@ canvas:
   safe_margin:
     x: 120
     y: 80
+  subtitle_reserved:
+    height: 120
+    y: 960
 
 colors:
-  background: "#F7F8FA"
-  surface: "#FFFFFF"
-  ink: "#111827"
-  muted_ink: "#4B5563"
-  subtle_ink: "#6B7280"
-  primary: "#2563EB"
-  primary_soft: "#DBEAFE"
-  accent: "#14B8A6"
-  accent_soft: "#CCFBF1"
-  warning: "#F59E0B"
-  danger: "#EF4444"
-  line: "#D1D5DB"
-  dark_panel: "#111827"
+  background: "#F6F2EC"
+  paper: "#F6F2EC"
+  paper_edge: "#E7DECF"
+  surface: "#EEE7DB"
+  warm_gray: "#DCD6CB"
+  warm_gray_deep: "#8D8678"
+  ink: "#151515"
+  muted_ink: "#5C574F"
+  subtle_ink: "#7B7468"
+  primary: "#1E3A5F"
+  primary_soft: "#D9E1E6"
+  accent: "#2FA39A"
+  accent_soft: "#D6ECE7"
+  orange: "#E67E43"
+  orange_soft: "#F1C7A8"
+  line: "#B8AFA0"
+  dark_panel: "#1E3A5F"
+  subtitle_band: "#8D8678"
+  subtitle_text: "#FFFFFF"
 
 typography:
-  font_family_zh: "Microsoft YaHei"
-  font_family_latin: "Inter"
+  font_family_title_zh: "Source Han Serif SC, Noto Serif CJK SC, SimSun"
+  font_family_zh: "Microsoft YaHei, Source Han Sans SC, Noto Sans CJK SC"
+  font_family_latin: "Georgia, Inter"
   title_lg:
-    size: 64
+    size: 68
     weight: 700
-    line_height: 1.14
-    color: ink
+    line_height: 1.08
+    color: primary
   title_md:
-    size: 48
+    size: 54
     weight: 700
-    line_height: 1.18
-    color: ink
+    line_height: 1.12
+    color: primary
+  main_title:
+    size: 58
+    fixed_size: true
+    max_lines: 1
+    weight: 700
+    line_height: 1.1
+    color: primary
+    font_family: title
   subtitle:
-    size: 30
+    size: 24
+    fixed_size: true
+    max_lines: 1
     weight: 500
-    line_height: 1.35
+    line_height: 1.25
     color: muted_ink
   body:
     size: 28
+    min_size: 24
+    max_size: 32
     weight: 400
     line_height: 1.5
     color: ink
@@ -58,18 +81,76 @@ typography:
     weight: 400
     line_height: 1.4
     color: subtle_ink
+  subtitle_overlay:
+    size: 30
+    weight: 500
+    line_height: 1.2
+    color: subtitle_text
 
 layout:
   border_radius: 8
   card_padding: 32
   grid_gap: 28
   max_text_columns: 2
+  dashed_region_style:
+    stroke_width: 2
+    dash: "8 8"
+    label_size: 28
+  regions:
+    title_block:
+      x: 120
+      y: 72
+      w: 1680
+      h: 128
+      main_title:
+        x: 0
+        y: 0
+        w: 1680
+        h: 66
+      subtitle:
+        x: 0
+        y: 78
+        w: 1680
+        h: 34
+    content:
+      x: 120
+      y: 224
+      w: 1680
+      h: 704
+    subtitle_area:
+      x: 0
+      y: 960
+      w: 1920
+      h: 120
   preferred_compositions:
+    - fixed_title_free_content
     - title_left_visual_right
     - title_top_diagram_center
     - contrast_two_columns
     - step_flow
     - concept_map
+
+element_generation:
+  allowed_regions:
+    - title_block
+    - content
+  forbidden_regions:
+    - subtitle_area
+  allowed_semantic_roles:
+    - main_title
+    - subtitle
+    - content_point
+    - content_text
+    - content_visual
+    - content_diagram
+    - content_shape
+    - content_line
+    - content_highlight
+  rules:
+    - 只生成主标题、副标题和内容区元素。
+    - 多条内容必须拆成多个独立文本元素，不合并成一整段大文本。
+    - 配图、图解、线条、重点块都必须属于内容区。
+    - 字幕区不生成任何内容元素；字幕只在视频合成阶段由字幕文件叠加。
 
 visual_assets:
   image_style: clean_educational_editorial

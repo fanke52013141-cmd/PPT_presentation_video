@@ -20,6 +20,11 @@ outputs/*
 *.jpg
 *.jpeg
 *.webp
+!references/style_reference/
+!references/style_reference/*.png
+!references/style_reference/*.jpg
+!references/style_reference/*.jpeg
+!references/style_reference/*.webp
 
 # Local caches and builds
 .cache/
@@ -28,6 +33,7 @@ node_modules/
 dist/
 build/
 .remotion/
+scripts/remotion/public/runtime/
 
 # Python
 __pycache__/

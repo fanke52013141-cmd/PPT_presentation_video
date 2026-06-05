@@ -12,6 +12,9 @@ tracked:
   - bad_cases/bad_case_log.yaml
   - .gitignore
   - .env.example
+  - references/style_reference/README.md
+  - references/style_reference/fixed_title_free_content_reference.png
+  - references/style_reference/paper_subtitle_background.png
 
 ignored:
   - runs/**
@@ -24,11 +27,14 @@ ignored:
   - "*.jpg"
   - "*.jpeg"
   - "*.webp"
+  - references/generated_assets/**
   - .env
 
 rules:
   keep_redacted_examples: false
   do_not_commit_runtime_inputs: true
   do_not_commit_generated_media: true
+  commit_only_reusable_style_reference_images: true
+  do_not_commit_topic_specific_imagegen_assets: true
   commit_bad_case_summary_only: true
 

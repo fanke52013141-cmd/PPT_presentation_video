@@ -1,134 +1,162 @@
 brand:
   name: AI Science Explainer
   style_keywords:
-    - 清晰
-    - 纸感米色
-    - 可信
-    - 教育解释型
-    - 温和专业
-    - 拼贴插画感
+    - 温暖极简
+    - 手绘线稿
+    - 清爽
+    - 亲和
+    - 低门槛
+    - 解释型
+    - 轻科普
+    - 普通人友好
 
 canvas:
   aspect_ratio: "16:9"
   width: 1920
   height: 1080
+  background: "#FFFDF7"
   safe_margin:
-    x: 120
-    y: 80
+    x: 60
+    y: 55
   subtitle_reserved:
-    height: 120
-    y: 960
+    height: 150
+    y: 930
 
 colors:
-  background: "#F6F2EC"
-  paper: "#F6F2EC"
-  paper_edge: "#E7DECF"
-  surface: "#EEE7DB"
-  warm_gray: "#DCD6CB"
-  warm_gray_deep: "#8D8678"
-  ink: "#151515"
-  muted_ink: "#5C574F"
-  subtle_ink: "#7B7468"
-  primary: "#1E3A5F"
-  primary_soft: "#D9E1E6"
-  accent: "#2FA39A"
-  accent_soft: "#D6ECE7"
-  orange: "#E67E43"
-  orange_soft: "#F1C7A8"
-  line: "#B8AFA0"
-  dark_panel: "#1E3A5F"
-  subtitle_band: "#8D8678"
-  subtitle_text: "#FFFFFF"
+  background: "#FFFDF7"
+  surface: "#FFFDF7"
+  ink: "#111111"
+  muted_ink: "#1A1A1A"
+  subtle_ink: "#4A4A4A"
+  line: "#111111"
+  yellow: "#F9D65C"
+  yellow_deep: "#F4C542"
+  yellow_soft: "#FFF3BF"
+  green_soft: "#D9F0A3"
+  blue_soft: "#BDE0FE"
+  subtitle_text: "#111111"
+  subtitle_background: "warm_white_82"
+  paper: "#FFFDF7"
+  paper_edge: "#111111"
+  warm_gray: "#D9F0A3"
+  warm_gray_deep: "#1A1A1A"
+  primary: "#111111"
+  primary_soft: "#FFF3BF"
+  accent: "#F9D65C"
+  accent_soft: "#D9F0A3"
+  orange: "#F9D65C"
+  orange_soft: "#FFF3BF"
+  dark_panel: "#111111"
+  subtitle_band: "warm_white_82"
 
 typography:
-  font_family_title_zh: "Source Han Serif SC, Noto Serif CJK SC, SimSun"
-  font_family_zh: "Microsoft YaHei, Source Han Sans SC, Noto Sans CJK SC"
-  font_family_latin: "Georgia, Inter"
-  title_lg:
-    size: 68
-    weight: 700
-    line_height: 1.08
-    color: primary
-  title_md:
-    size: 54
-    weight: 700
-    line_height: 1.12
-    color: primary
+  font_family_handdrawn_zh: "LXGW WenKai, Ma Shan Zheng, KaiTi, STKaiti, Microsoft YaHei, sans-serif"
+  font_family_zh: "LXGW WenKai, KaiTi, Microsoft YaHei, sans-serif"
+  font_family_latin: "Comic Sans MS, Chalkboard SE, Inter, sans-serif"
   main_title:
-    size: 58
+    size: 72
     fixed_size: true
     max_lines: 1
     weight: 700
     line_height: 1.1
-    color: primary
-    font_family: title
+    color: ink
+    font_family: handdrawn
   subtitle:
-    size: 24
+    size: 38
     fixed_size: true
     max_lines: 1
     weight: 500
     line_height: 1.25
-    color: muted_ink
-  body:
-    size: 28
-    min_size: 24
-    max_size: 32
-    weight: 400
-    line_height: 1.5
     color: ink
-  caption:
-    size: 22
+    font_family: handdrawn
+  content_title:
+    size: 46
+    weight: 700
+    line_height: 1.2
+    color: ink
+  body:
+    size: 34
+    min_size: 30
+    max_size: 36
     weight: 400
     line_height: 1.4
+    color: ink
+  emphasis:
+    size: 40
+    weight: 600
+    line_height: 1.3
+    color: ink
+  caption:
+    size: 24
+    weight: 400
+    line_height: 1.35
     color: subtle_ink
   subtitle_overlay:
-    size: 30
+    size: 38
     weight: 500
-    line_height: 1.2
+    line_height: 1.15
     color: subtitle_text
+    max_lines: 1
+    max_cjk_chars: 28
 
 layout:
-  border_radius: 8
-  card_padding: 32
+  border_radius: 42
+  card_padding: 28
   grid_gap: 28
-  max_text_columns: 2
-  dashed_region_style:
-    stroke_width: 2
-    dash: "8 8"
-    label_size: 28
+  title_marker:
+    x: 60
+    y: 65
+    w: 10
+    h: 75
+    radius: 5
+    fill: yellow
   regions:
     title_block:
-      x: 120
-      y: 72
-      w: 1680
-      h: 128
+      x: 110
+      y: 55
+      w: 1600
+      h: 165
       main_title:
         x: 0
         y: 0
-        w: 1680
-        h: 66
+        w: 1600
+        h: 86
       subtitle:
         x: 0
-        y: 78
-        w: 1680
-        h: 34
+        y: 95
+        w: 1600
+        h: 52
+      subtitle_underline:
+        x: 0
+        y: 150
+        w: 210
+        h: 6
+        fill: yellow
+    content_frame:
+      x: 60
+      y: 250
+      w: 1800
+      h: 650
+      radius: 42
+      stroke: ink
+      stroke_width: 4
+      fill: transparent
     content:
-      x: 120
-      y: 224
-      w: 1680
-      h: 704
+      x: 100
+      y: 285
+      w: 1720
+      h: 580
     subtitle_area:
       x: 0
-      y: 960
+      y: 930
       w: 1920
-      h: 120
+      h: 150
   preferred_compositions:
-    - fixed_title_free_content
-    - title_left_visual_right
-    - title_top_diagram_center
-    - contrast_two_columns
-    - step_flow
-    - concept_map
+    - warm_handdrawn_framed_content
+    - concept_explanation_left_text_right_visual
+    - handdrawn_flow_steps
+    - gentle_comparison_two_columns
+    - summary_with_icon_bar
 
 element_generation:
   allowed_regions:
@@ -139,29 +167,59 @@ element_generation:
   allowed_semantic_roles:
     - main_title
     - subtitle
+    - brand_marker
+    - subtitle_underline
+    - content_frame
     - content_point
     - content_text
     - content_visual
     - content_diagram
     - content_shape
     - content_line
+    - content_arrow
+    - content_token_block
+    - content_icon
     - content_highlight
+    - keyword_underline
+    - keyword_circle
+    - summary_bar
+    - summary_icon
+    - capsule_label
   rules:
-    - 只生成主标题、副标题和内容区元素。
+    - 只生成主标题、副标题、品牌竖线、标题下划线、内容框和内容区元素。
     - 多条内容必须拆成多个独立文本元素，不合并成一整段大文本。
-    - 配图、图解、线条、重点块都必须属于内容区。
+    - 手绘框、手绘箭头、关键词下划线、关键词圈注、Token 小块、总结条优先使用 renderer 可控元素。
+    - 复杂插图和图标组可以使用 Codex Image Gen 位图，但真实文字必须由渲染器排版。
     - 字幕区不生成任何内容元素；字幕只在视频合成阶段由字幕文件叠加。
 
 visual_assets:
-  image_style: clean_educational_editorial
-  icon_style: outline_flat
-  diagram_style: simple_vector_like
+  image_style: warm_minimal_handdrawn_line_art
+  icon_style: black_handdrawn_line_icon
+  diagram_style: handdrawn_explainer_diagram
   avoid:
-    - 过度霓虹
-    - 赛博朋克堆砌
-    - 复杂背景干扰文字
-    - 图片内生成大段文字
-    - 单一蓝紫渐变铺满全片
+    - 科技蓝黑风
+    - 赛博朋克
+    - 复杂 3D 背景
+    - 大面积渐变
+    - 金属质感
+    - 强阴影
+    - 儿童卡通大插画
+    - AI 生成图里的乱码文字
+    - 大面积装饰图形
+
+subtitle:
+  reserved_area:
+    y: 930
+    height: 150
+  overlay:
+    font_size: 38
+    color: "#111111"
+    background: warm_white_82
+    border_radius: 24
+    max_lines: 1
+    max_cjk_chars: 28
+    horizontal_margin: 180
+    bottom: 28
 
 animation:
   default_duration_sec: 0.6
@@ -174,4 +232,3 @@ animation:
     - line_draw
     - highlight
     - count_up
-

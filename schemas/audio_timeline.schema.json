@@ -7,10 +7,7 @@
     "slide_id": {"type": "string"},
     "audio_file": {"type": "string"},
     "duration_sec": {"type": "number"},
-    "timing_source": {
-      "type": "string",
-      "enum": ["minimax", "estimated", "manual"]
-    },
+    "timing_source": {"type": "string", "enum": ["minimax", "estimated", "manual"]},
     "segments": {
       "type": "array",
       "items": {
@@ -20,11 +17,12 @@
           "id": {"type": "string"},
           "start": {"type": "number"},
           "end": {"type": "number"},
-          "text": {"type": "string"}
+          "text": {"type": "string"},
+          "max_cjk_chars": {"type": "number"},
+          "max_lines": {"type": "number"}
         }
       }
     }
   },
   "additionalProperties": true
 }
-

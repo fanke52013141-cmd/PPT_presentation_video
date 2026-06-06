@@ -22,18 +22,12 @@
         "required": ["id", "type", "box", "z_index", "region", "semantic_role"],
         "properties": {
           "id": {"type": "string"},
-          "type": {
-            "type": "string",
-            "enum": ["text", "image", "shape", "line", "group"]
-          },
+          "type": {"type": "string", "enum": ["text", "image", "shape", "line", "group"]},
           "text": {"type": "string"},
           "asset": {"type": "string"},
           "style_token": {"type": "string"},
           "animation_role": {"type": "string"},
-          "region": {
-            "type": "string",
-            "enum": ["title_block", "content"]
-          },
+          "region": {"type": "string", "enum": ["title_block", "content"]},
           "semantic_role": {
             "type": "string",
             "enum": [
@@ -45,20 +39,22 @@
               "content_diagram",
               "content_shape",
               "content_line",
-              "content_highlight"
+              "content_highlight",
+              "brand_marker",
+              "subtitle_underline",
+              "content_frame",
+              "content_arrow",
+              "content_token_block",
+              "content_icon",
+              "keyword_underline",
+              "keyword_circle",
+              "summary_bar",
+              "summary_icon",
+              "capsule_label"
             ]
           },
           "content_index": {"type": "number"},
-          "box": {
-            "type": "object",
-            "required": ["x", "y", "w", "h"],
-            "properties": {
-              "x": {"type": "number"},
-              "y": {"type": "number"},
-              "w": {"type": "number"},
-              "h": {"type": "number"}
-            }
-          },
+          "box": {"type": "object","required": ["x","y","w","h"],"properties": {"x": {"type": "number"},"y": {"type": "number"},"w": {"type": "number"},"h": {"type": "number"}}},
           "z_index": {"type": "number"}
         }
       }
@@ -66,4 +62,3 @@
   },
   "additionalProperties": true
 }
-

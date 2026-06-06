@@ -2,9 +2,6 @@
 """
 MiniMax TTS helper for the article-to-video workflow.
 
-Official API reference:
-https://platform.minimax.io/docs/api-reference/speech-t2a-http
-
 The script uses the synchronous T2A HTTP endpoint and writes:
 - audio file
 - response metadata
@@ -29,6 +26,7 @@ from typing import Any
 DEFAULT_ENDPOINT = "https://api.minimaxi.com/v1/t2a_v2"
 DEFAULT_MODEL = "speech-2.8-hd"
 DEFAULT_VOICE_ID = "Chinese (Mandarin)_Soft_Girl"
+DEFAULT_MAX_SUBTITLE_CHARS = 28
 
 
 def load_dotenv(path: Path) -> None:
@@ -108,7 +106,11 @@ def write_audio(response_json: dict[str, Any], out_audio: Path) -> None:
 
 
 def split_sentences(text: str) -> list[str]:
-    normalized = re.sub(r"\s+", " ", text.replace("<#0.4#>", " ").replace("<#0.5#>", " ").replace("<#0.8#>", " ")).strip()
+    normalized = re.sub(
+        r"\s+",
+        " ",
+        text.replace("<#0.4#>", " ").replace("<#0.5#>", " ").replace("<#0.8#>", " "),
+    ).strip()
     parts = re.split(r"(?<=[。！？!?；;])\s*", normalized)
     sentences = [part.strip() for part in parts if part.strip()]
     if sentences:
@@ -116,35 +118,72 @@ def split_sentences(text: str) -> list[str]:
     return [normalized] if normalized else []
 
 
+def split_subtitle_chunks(sentence: str, max_chars: int = DEFAULT_MAX_SUBTITLE_CHARS) -> list[str]:
+    """Split one narration sentence into display-safe single-line subtitle chunks."""
+    sentence = sentence.strip()
+    if not sentence:
+        return []
+    if len(sentence) <= max_chars:
+        return [sentence]
+
+    soft_marks = ["，", "、", "：", "；", ",", ":"]
+    chunks: list[str] = []
+    current = ""
+
+    for char in sentence:
+        current += char
+        if len(current) >= max_chars:
+            cut_index = max([current.rfind(mark) for mark in soft_marks] + [-1])
+            if cut_index > 8:
+                chunks.append(current[: cut_index + 1].strip())
+                current = current[cut_index + 1 :].strip()
+            else:
+                chunks.append(current.strip())
+                current = ""
+
+    if current:
+        chunks.append(current.strip())
+
+    return [chunk for chunk in chunks if chunk]
+
+
+def split_subtitles(text: str, max_chars: int) -> list[str]:
+    chunks: list[str] = []
+    for sentence in split_sentences(text):
+        chunks.extend(split_subtitle_chunks(sentence, max_chars=max_chars))
+    return chunks
+
+
 def duration_from_response(response_json: dict[str, Any], text: str) -> float:
     extra = response_json.get("extra_info") or {}
     raw = extra.get("audio_length")
     if isinstance(raw, (int, float)) and raw > 0:
         return float(raw) / 1000.0 if raw > 1000 else float(raw)
-    # Fallback estimate for Mandarin narration.
     chinese_chars = len(re.findall(r"[\u4e00-\u9fff]", text))
     latin_words = len(re.findall(r"[A-Za-z0-9]+", text))
     return max(1.0, chinese_chars / 4.2 + latin_words / 2.8)
 
 
-def build_segments(text: str, duration_sec: float, slide_id: str, timing_source: str) -> list[dict[str, Any]]:
-    sentences = split_sentences(text)
-    if not sentences:
+def build_segments(text: str, duration_sec: float, slide_id: str, timing_source: str, max_subtitle_chars: int) -> list[dict[str, Any]]:
+    chunks = split_subtitles(text, max_subtitle_chars)
+    if not chunks:
         return []
-    weights = [max(1, len(sentence)) for sentence in sentences]
+    weights = [max(1, len(chunk)) for chunk in chunks]
     total_weight = sum(weights)
     cursor = 0.0
     segments: list[dict[str, Any]] = []
-    for index, (sentence, weight) in enumerate(zip(sentences, weights), start=1):
+    for index, (chunk, weight) in enumerate(zip(chunks, weights), start=1):
         segment_duration = duration_sec * weight / total_weight
-        end = duration_sec if index == len(sentences) else cursor + segment_duration
+        end = duration_sec if index == len(chunks) else cursor + segment_duration
         segments.append(
             {
                 "id": f"{slide_id}_seg_{index:03d}",
                 "start": round(cursor, 3),
                 "end": round(end, 3),
-                "text": sentence,
+                "text": chunk,
                 "timing_source": timing_source,
+                "max_cjk_chars": max_subtitle_chars,
+                "max_lines": 1,
             }
         )
         cursor = end
@@ -214,6 +253,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out-srt", help="Output SRT subtitle path.")
     parser.add_argument("--out-timeline", help="Output audio_timeline.json path.")
     parser.add_argument("--slide-id", default="slide_001", help="Slide id for timeline segment ids.")
+    parser.add_argument("--max-subtitle-chars", type=int, default=DEFAULT_MAX_SUBTITLE_CHARS, help="Maximum CJK characters per subtitle segment.")
     parser.add_argument("--endpoint", default=os.getenv("MINIMAX_TTS_ENDPOINT", DEFAULT_ENDPOINT))
     parser.add_argument("--api-key", default=os.getenv("MINIMAX_API_KEY"))
     parser.add_argument("--model", default=os.getenv("MINIMAX_TTS_MODEL", DEFAULT_MODEL))
@@ -257,12 +297,13 @@ def main() -> int:
     write_audio(response_json, out_audio)
 
     duration_sec = duration_from_response(response_json, text)
-    segments = build_segments(text, duration_sec, args.slide_id, "estimated")
+    segments = build_segments(text, duration_sec, args.slide_id, "estimated", args.max_subtitle_chars)
     timeline = {
         "slide_id": args.slide_id,
         "audio_file": str(out_audio).replace("\\", "/"),
         "duration_sec": round(duration_sec, 3),
         "timing_source": "estimated",
+        "subtitle_display": {"max_lines": 1, "max_cjk_chars": args.max_subtitle_chars},
         "segments": segments,
     }
 
@@ -280,6 +321,7 @@ def main() -> int:
                 "sample_rate": args.sample_rate,
                 "bitrate": args.bitrate,
                 "channel": args.channel,
+                "max_subtitle_chars": args.max_subtitle_chars,
             },
         }
         write_json(Path(args.out_meta), meta)
@@ -296,4 +338,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

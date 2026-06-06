@@ -1,20 +1,30 @@
 canvas:
   width: 1920
   height: 1080
-  subtitle_reserved_height: 120
+  background: "#FFFDF7"
+  subtitle_reserved_height: 150
 
 templates:
-  fixed_title_free_content:
-    description: 固定标题组合区，中部内容自由编排，底部固定字幕区。适合作为默认通用内容页。
-    background: paper_texture_with_subtitle_band
+  warm_handdrawn_framed_content:
+    description: 温暖极简手绘线稿风，左上标题区，中间大圆角内容框，底部字幕留白。
+    background: solid_warm_white
     regions:
+      title_marker:
+        label: 品牌竖线
+        role: brand_marker
+        x: 60
+        y: 65
+        w: 10
+        h: 75
+        fixed: true
+        style_token: title_marker
       title_block:
         label: 标题区
         role: title_block
-        x: 120
-        y: 72
-        w: 1680
-        h: 128
+        x: 110
+        y: 55
+        w: 1600
+        h: 165
         fixed: true
         slots:
           main_title:
@@ -22,43 +32,108 @@ templates:
             role: main_title
             x: 0
             y: 0
-            w: 1680
-            h: 66
+            w: 1600
+            h: 86
             style_token: main_title
           subtitle:
             label: 副标题
             role: subtitle
             x: 0
-            y: 78
-            w: 1680
-            h: 34
+            y: 95
+            w: 1600
+            h: 52
             style_token: subtitle
+          subtitle_underline:
+            label: 副标题横线
+            role: subtitle_underline
+            x: 0
+            y: 150
+            w: 210
+            h: 6
+            style_token: handdrawn_yellow_underline
+      content_frame:
+        label: 内容框
+        role: content_frame
+        x: 60
+        y: 250
+        w: 1800
+        h: 650
+        fixed: true
+        style_token: handdrawn_content_frame
       content:
         label: 内容区
         role: content
-        x: 120
-        y: 224
-        w: 1680
-        h: 704
+        x: 100
+        y: 285
+        w: 1720
+        h: 580
         flexible: true
         includes:
-          - body_points
-          - diagrams
-          - illustrations
-          - charts
-          - highlight_blocks
+          - explanation_text
+          - handdrawn_diagrams
+          - token_blocks
+          - arrows
+          - summary_bar
+          - icons
       subtitle_area:
         label: 字幕区
         role: subtitle_overlay
         x: 0
-        y: 960
+        y: 930
         w: 1920
-        h: 120
+        h: 150
+        fixed: true
         style_token: subtitle_overlay
     constraints:
-      - 标题区固定，不随页面内容改变位置、字号或颜色。
-      - 主标题固定 58px 深蓝色，副标题固定 24px 暖灰深色。
-      - 主标题和副标题在同一个标题区内上下排列，默认横向占满安全区宽度。
-      - 内容区是一个整体容器，正文、配图、流程图、概念图、重点块都可以在区域内自由编排。
-      - 内容区信息点数量由内容决定，正文建议 24 到 32px；信息过密时优先拆页或减少装饰。
-      - 内容区不得侵入标题区和底部字幕区。
+      - 背景固定为 #FFFDF7。
+      - 主标题和副标题必须左上对齐。
+      - 左侧竖线和副标题横线必须固定存在。
+      - 内容必须放在大圆角内容框内。
+      - 底部字幕区不生成 PPT 内容。
+      - 一页最多使用 3 种强调色。
+      - 每页只讲一个核心概念或一个核心问题。
+
+  fixed_title_free_content:
+    description: 兼容旧名称，实际使用 warm_handdrawn_framed_content 的布局约束。
+    background: solid_warm_white
+    regions:
+      title_marker:
+        label: 品牌竖线
+        role: brand_marker
+        x: 60
+        y: 65
+        w: 10
+        h: 75
+        fixed: true
+      title_block:
+        label: 标题区
+        role: title_block
+        x: 110
+        y: 55
+        w: 1600
+        h: 165
+        fixed: true
+      content_frame:
+        label: 内容框
+        role: content_frame
+        x: 60
+        y: 250
+        w: 1800
+        h: 650
+        fixed: true
+      content:
+        label: 内容区
+        role: content
+        x: 100
+        y: 285
+        w: 1720
+        h: 580
+        flexible: true
+      subtitle_area:
+        label: 字幕区
+        role: subtitle_overlay
+        x: 0
+        y: 930
+        w: 1920
+        h: 150
+        fixed: true

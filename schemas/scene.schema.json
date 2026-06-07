@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Scene",
   "type": "object",
-  "required": ["slide_id", "canvas", "elements"],
+  "required": ["slide_id", "canvas", "layers"],
   "properties": {
     "slide_id": {"type": "string"},
     "source_visual_draft": {"type": "string"},
@@ -12,52 +12,53 @@
       "properties": {
         "width": {"type": "number"},
         "height": {"type": "number"},
-        "background": {"type": "string"}
+        "background": {"type": "string"},
+        "background_asset": {"type": "string"}
+      }
+    },
+    "layers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "asset", "box", "z_index", "role"],
+        "properties": {
+          "id": {"type": "string"},
+          "type": {"type": "string", "enum": ["png"]},
+          "asset": {"type": "string"},
+          "role": {
+            "type": "string",
+            "enum": [
+              "background",
+              "title",
+              "subtitle",
+              "content_body",
+              "diagram",
+              "annotation",
+              "summary",
+              "decoration",
+              "full_slide"
+            ]
+          },
+          "box": {
+            "type": "object",
+            "required": ["x", "y", "w", "h"],
+            "properties": {
+              "x": {"type": "number"},
+              "y": {"type": "number"},
+              "w": {"type": "number"},
+              "h": {"type": "number"}
+            }
+          },
+          "z_index": {"type": "number"},
+          "animation_role": {"type": "string"},
+          "content_index": {"type": "number"}
+        }
       }
     },
     "elements": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["id", "type", "box", "z_index", "region", "semantic_role"],
-        "properties": {
-          "id": {"type": "string"},
-          "type": {"type": "string", "enum": ["text", "image", "shape", "line", "group"]},
-          "text": {"type": "string"},
-          "asset": {"type": "string"},
-          "style_token": {"type": "string"},
-          "animation_role": {"type": "string"},
-          "region": {"type": "string", "enum": ["title_block", "content"]},
-          "semantic_role": {
-            "type": "string",
-            "enum": [
-              "main_title",
-              "subtitle",
-              "content_point",
-              "content_text",
-              "content_visual",
-              "content_diagram",
-              "content_shape",
-              "content_line",
-              "content_highlight",
-              "brand_marker",
-              "subtitle_underline",
-              "content_frame",
-              "content_arrow",
-              "content_token_block",
-              "content_icon",
-              "keyword_underline",
-              "keyword_circle",
-              "summary_bar",
-              "summary_icon",
-              "capsule_label"
-            ]
-          },
-          "content_index": {"type": "number"},
-          "box": {"type": "object","required": ["x","y","w","h"],"properties": {"x": {"type": "number"},"y": {"type": "number"},"w": {"type": "number"},"h": {"type": "number"}}},
-          "z_index": {"type": "number"}
-        }
-      }
+      "description": "Deprecated compatibility field. Remotion uses layers[] only."
     }
   },
   "additionalProperties": true

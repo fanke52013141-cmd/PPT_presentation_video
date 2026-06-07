@@ -1,0 +1,60 @@
+# Preflight Check 清单
+
+检查对象：生产开始前的仓库资源、运行目录和本地环境。
+
+## 必查项
+
+- `runs/<run_id>/inputs/article.md` 存在且非空。
+- `config/task.yaml` 存在。
+- `config/style_tokens.yaml` 存在。
+- `references/style_reference/PPT_template.png` 存在。
+- `references/style_reference/PPT_example.png` 存在。
+- `schemas/slide_plan.schema.json` 存在且为合法 JSON。
+- `schemas/scene.schema.json` 存在且为合法 JSON。
+- `schemas/animation_timeline.schema.json` 存在且为合法 JSON。
+- `schemas/video_manifest.schema.json` 存在且为合法 JSON。
+- 主流程 Skill 均存在：
+  - `preflight-check`
+  - `plan-slides`
+  - `generate-visual-drafts`
+  - `reconstruct-scenes`
+  - `render-element-previews`
+  - `generate-audio-subtitles`
+  - `bind-animation-timeline`
+  - `render-video`
+- `templates/prompts/visual_draft.prompt.md` 存在。
+- `scripts/minimax_tts.py` 存在。
+- `scripts/remotion` 存在。
+- `MINIMAX_API_KEY` 可从环境变量或 `.env` 读取，但不得写入日志。
+- `ffmpeg` 可用。
+- `ffprobe` 可用。
+
+## 输出
+
+生成：
+
+```text
+runs/<run_id>/logs/preflight_report.md
+```
+
+## 通过条件
+
+- 无 blocking issue。
+- 报告状态为 `pass`。
+
+## 阻断条件
+
+以下任一问题必须阻止进入 Stage 1：
+
+- 输入文章缺失或为空。
+- 固定风格资源缺失。
+- 必需 schema 缺失或非法。
+- 主流程 Skill 缺失。
+- 需要执行 TTS 时缺少 MiniMax API Key。
+- 需要渲染视频时缺少 FFmpeg / FFprobe。
+
+## 安全规则
+
+- 不得输出 API key 原文。
+- 不得输出 `.env` 内容。
+- 只记录环境变量是否存在，不记录具体值。

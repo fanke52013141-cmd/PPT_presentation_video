@@ -7,8 +7,8 @@
 - `runs/<run_id>/inputs/article.md` 存在且非空。
 - `config/task.yaml` 存在。
 - `config/style_tokens.yaml` 存在。
-- `references/style_reference/PPT_template.png` 存在。
-- `references/style_reference/PPT_example.png` 存在。
+- `references/style_reference/fixed_title_free_content_reference.png` 存在。
+- `references/style_reference/paper_subtitle_background.png` 存在。
 - `schemas/slide_plan.schema.json` 存在且为合法 JSON。
 - `schemas/scene.schema.json` 存在且为合法 JSON。
 - `schemas/animation_timeline.schema.json` 存在且为合法 JSON。

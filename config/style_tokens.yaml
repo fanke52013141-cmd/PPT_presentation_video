@@ -37,164 +37,82 @@ colors:
   subtitle_text: "#111111"
   subtitle_background: "warm_white_82"
   paper: "#FFFDF7"
-  paper_edge: "#111111"
-  warm_gray: "#D9F0A3"
-  warm_gray_deep: "#1A1A1A"
-  primary: "#111111"
-  primary_soft: "#FFF3BF"
-  accent: "#F9D65C"
-  accent_soft: "#D9F0A3"
-  orange: "#F9D65C"
-  orange_soft: "#FFF3BF"
-  dark_panel: "#111111"
-  subtitle_band: "warm_white_82"
-
-typography:
-  font_family_handdrawn_zh: "LXGW WenKai, Ma Shan Zheng, KaiTi, STKaiti, Microsoft YaHei, sans-serif"
-  font_family_zh: "LXGW WenKai, KaiTi, Microsoft YaHei, sans-serif"
-  font_family_latin: "Comic Sans MS, Chalkboard SE, Inter, sans-serif"
-  main_title:
-    size: 72
-    fixed_size: true
-    max_lines: 1
-    weight: 700
-    line_height: 1.1
-    color: ink
-    font_family: handdrawn
-  subtitle:
-    size: 38
-    fixed_size: true
-    max_lines: 1
-    weight: 500
-    line_height: 1.25
-    color: ink
-    font_family: handdrawn
-  content_title:
-    size: 46
-    weight: 700
-    line_height: 1.2
-    color: ink
-  body:
-    size: 34
-    min_size: 30
-    max_size: 36
-    weight: 400
-    line_height: 1.4
-    color: ink
-  emphasis:
-    size: 40
-    weight: 600
-    line_height: 1.3
-    color: ink
-  caption:
-    size: 24
-    weight: 400
-    line_height: 1.35
-    color: subtle_ink
-  subtitle_overlay:
-    size: 38
-    weight: 500
-    line_height: 1.15
-    color: subtitle_text
-    max_lines: 1
-    max_cjk_chars: 28
 
 layout:
-  border_radius: 42
-  card_padding: 28
-  grid_gap: 28
   title_marker:
     x: 60
     y: 65
     w: 10
     h: 75
-    radius: 5
-    fill: yellow
-  regions:
-    title_block:
+  title_block:
+    main_title:
       x: 110
       y: 55
       w: 1600
-      h: 165
-      main_title:
-        x: 0
-        y: 0
-        w: 1600
-        h: 86
-      subtitle:
-        x: 0
-        y: 95
-        w: 1600
-        h: 52
-      subtitle_underline:
-        x: 0
-        y: 150
-        w: 210
-        h: 6
-        fill: yellow
-    content_frame:
-      x: 60
-      y: 250
-      w: 1800
-      h: 650
-      radius: 42
-      stroke: ink
-      stroke_width: 4
-      fill: transparent
-    content:
-      x: 100
-      y: 285
-      w: 1720
-      h: 580
-    subtitle_area:
-      x: 0
-      y: 930
-      w: 1920
-      h: 150
-  preferred_compositions:
-    - warm_handdrawn_framed_content
-    - concept_explanation_left_text_right_visual
-    - handdrawn_flow_steps
-    - gentle_comparison_two_columns
-    - summary_with_icon_bar
+      h: 86
+    subtitle:
+      x: 110
+      y: 150
+      w: 1600
+      h: 52
+    subtitle_underline:
+      x: 110
+      y: 205
+      w: 210
+      h: 6
+  content_frame:
+    x: 60
+    y: 250
+    w: 1800
+    h: 650
+  content:
+    x: 100
+    y: 285
+    w: 1720
+    h: 580
+  subtitle_area:
+    x: 0
+    y: 930
+    w: 1920
+    h: 150
 
-element_generation:
-  allowed_regions:
-    - title_block
-    - content
-  forbidden_regions:
-    - subtitle_area
-  allowed_semantic_roles:
-    - main_title
+scene_layers:
+  model: png_layers_only
+  description: Remotion 只显示 PNG 图层，不绘制 text、shape、line 或 group。
+  required_output_field: layers
+  deprecated_output_field: elements
+  allowed_roles:
+    - background
+    - title
     - subtitle
-    - brand_marker
-    - subtitle_underline
-    - content_frame
-    - content_point
-    - content_text
-    - content_visual
-    - content_diagram
-    - content_shape
-    - content_line
-    - content_arrow
-    - content_token_block
-    - content_icon
-    - content_highlight
-    - keyword_underline
-    - keyword_circle
-    - summary_bar
-    - summary_icon
-    - capsule_label
+    - content_body
+    - diagram
+    - annotation
+    - summary
+    - decoration
+    - full_slide
+  recommended_layers:
+    - background
+    - title
+    - subtitle
+    - content_body
+    - diagram
+    - annotation
+    - summary
+  fallback_layer:
+    role: full_slide
+    note: 图层拆分失败时允许使用整页 PNG 兜底，但动画能力有限。
   rules:
-    - 只生成主标题、副标题、品牌竖线、标题下划线、内容框和内容区元素。
-    - 多条内容必须拆成多个独立文本元素，不合并成一整段大文本。
-    - 手绘框、手绘箭头、关键词下划线、关键词圈注、Token 小块、总结条优先使用 renderer 可控元素。
-    - 复杂插图和图标组可以使用 Codex Image Gen 位图，但真实文字必须由渲染器排版。
-    - 字幕区不生成任何内容元素；字幕只在视频合成阶段由字幕文件叠加。
+    - scene.json 使用 layers[]，每个 layer 必须是 type: png。
+    - animation_timeline.events[].target 必须指向 scene.layers[].id。
+    - 主标题和副标题推荐拆成 title 与 subtitle 两个独立 PNG 图层。
+    - 底部字幕区不属于 PNG 主体内容，视频字幕由 Remotion 单独叠加。
+    - 不再要求 Remotion 渲染文字、线条、形状或分组元素。
 
 visual_assets:
+  main_reference_image: references/style_reference/fixed_title_free_content_reference.png
+  subtitle_reference_image: references/style_reference/paper_subtitle_background.png
   image_style: warm_minimal_handdrawn_line_art
-  icon_style: black_handdrawn_line_icon
   diagram_style: handdrawn_explainer_diagram
   avoid:
     - 科技蓝黑风
@@ -224,11 +142,10 @@ subtitle:
 animation:
   default_duration_sec: 0.6
   default_easing: easeOutCubic
+  target_model: scene.layers[].id
   allowed_actions:
     - fade_in
     - fade_up
     - soft_zoom_in
     - slide_in_left
-    - line_draw
     - highlight
-    - count_up

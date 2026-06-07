@@ -1,10 +1,10 @@
 # AGENTS.md
 
-本仓库是“文章转 AI 科普视频”的 Codex 执行框架。Codex 的目标不是一次性写文案，而是按固定业务流把文章转成可审核、可修改、可合成的视频工程。
+本仓库是“文章转 AI 科普视频”的 Codex 执行框架。Codex 的目标不是把文章拆成过多中间文件，而是直接把文章切分成可审核、可修改、可合成的视频化 PPT 结构。
 
 ## 1. 总体原则
 
-- 主版本按 16:9、1920x1080、3 到 6 分钟生产。
+- 主版本按 16:9、1920x1080 生产。
 - 目标平台是 B 站、抖音、视频号。抖音和视频号先使用横屏主版本，若用户明确要求再做 9:16 适配。
 - 表现形式是旁白 + 动效，不做真人口播。
 - 图片生成使用 Codex Image Gen。
@@ -13,6 +13,7 @@
 - 人工审核对象必须是图片或视频预览，不把 JSON 作为主要审核对象。
 - 文字尽量由渲染器排版，不直接写进 AI 生成图里，避免乱码和后续不可编辑。
 - 可复用框架文件进 Git，生产运行产物不进 Git。
+- 不限制 slide 数量。slide 数量由文章内容决定，以“讲清楚整篇文章”为准，不用为凑时长或控制页数强行合并。
 
 ## 2. 标准运行目录
 
@@ -24,13 +25,10 @@ runs/<run_id>/
   inputs/
     article.md
   planning/
-    article_brief.json
-    video_outline.json
     slide_plan.json
     style_guide.md
   slides/
     slide_001/
-      slide_spec.json
       visual_prompt.md
       visual_draft.png
       visual_review.yaml
@@ -53,52 +51,34 @@ runs/<run_id>/
 
 ## 3. 业务流程与 Skill 调用
 
-### Stage 1: ingest-article
+### Stage 1: plan-slides
 
 输入：
 
 - `runs/<run_id>/inputs/article.md`
-- 可选来源链接、用户补充背景、事实核查资料
 
 输出：
 
-- `runs/<run_id>/planning/article_brief.json`
-
-调用规则：
-
-- 用 `.agents/skills/ingest-article/SKILL.md`。
-- 保留原文核心观点、论据、术语和风险点。
-- 如果事实不确定，写入 `risk_notes`，不要自行编造。
-
-### Stage 2: plan-slides
-
-输入：
-
-- `article_brief.json`
-- `config/task.yaml`
-- `references/narration_rules.md`
-
-输出：
-
-- `runs/<run_id>/planning/video_outline.json`
 - `runs/<run_id>/planning/slide_plan.json`
-- 每页 `runs/<run_id>/slides/slide_xxx/slide_spec.json`
-- 每页 `runs/<run_id>/slides/slide_xxx/narration.txt`
+- 可选：每页 `runs/<run_id>/slides/slide_xxx/narration.txt`，内容来自 `slide_plan.json` 中对应 slide 的 `narration`
 
 调用规则：
 
 - 用 `.agents/skills/plan-slides/SKILL.md`。
-- 每页只承载一个核心观点。
-- 3 到 6 分钟视频通常建议 8 到 14 页 slide。
-- 每页必须包含主标题、副标题、核心信息、屏幕内容、旁白、配图要求和动画意图。
-- 同一条视频不能所有页面使用同一版式；至少轮换 3 种以上内容区布局，8 页以上主版本优先使用 6 到 8 种布局。
+- 直接把整篇文章切分成 PPT 视频结构，不再先生成 `article_brief.json`。
+- 输出必须符合 `schemas/slide_plan.schema.json`。
+- 每页只承载一个核心观点、一个问题或一个解释单元。
+- 每页必须包含 `slide_id`、`slide_purpose`、`main_title`、`subtitle`、`core_message`、`content`、`narration`。
+- `content.content_type` 必须使用 schema 中定义的内容结构，例如概念解释、流程、对比、时间轴、循环、卡片、示例拆解、误区纠正、因果链、框架图、层级结构、矩阵、清单或总结。
+- `narration` 是后续 TTS 的直接输入，必须是可直接朗读的中文演讲稿，不写舞台说明。
+- 不输出 `target_duration_sec`、`duration_sec`、`language` 这类估算或固定值。
 
-### Stage 3: define-style
+### Stage 2: define-style
 
 输入：
 
-- `config/task.yaml`
 - `config/style_tokens.yaml`
+- `references/visual_rules.md`
 - 可选用户提供的样式参考
 
 输出：
@@ -109,38 +89,41 @@ runs/<run_id>/
 调用规则：
 
 - 用 `.agents/skills/define-style/SKILL.md`。
-- 默认使用“清晰、现代、可信、教育解释型”的 AI 科普风格。
+- 默认使用“温暖极简手绘线稿风”。
+- 背景固定为 `#FFFDF7`。
+- 主视觉为黑色手绘线稿、黄色重点标注、大圆角内容框、底部干净字幕区。
 - 用户给样式图后，先提取风格差异，不直接覆盖仓库默认配置。
 
-### Stage 4: generate-visual-drafts
+### Stage 3: generate-visual-drafts
 
 输入：
 
-- `slide_spec.json`
+- `runs/<run_id>/planning/slide_plan.json`
+- 当前 `slide_id`
 - `style_guide.md`
 - `config/style_tokens.yaml`
 - `templates/prompts/visual_draft.prompt.md`
 
 输出：
 
-- `visual_prompt.md`
-- `visual_draft.png`
+- `runs/<run_id>/slides/slide_xxx/visual_prompt.md`
+- `runs/<run_id>/slides/slide_xxx/visual_draft.png`
 
 调用规则：
 
 - 用 `.agents/skills/generate-visual-drafts/SKILL.md`。
-- 使用 Codex Image Gen 生成整页静态视觉稿。
-- 配图资产也必须来自 Codex Image Gen 位图；不得用 SVG、HTML、Canvas 或 shape/text 组合伪造配图。
+- 根据 `slide_plan.json` 中对应 slide 的标题、副标题、核心信息、内容结构和旁白生成整页静态视觉稿。
 - 视觉稿用于第一轮人工审美判断。
-- 生成图尽量不含文字，或只保留抽象图形和背景。
+- 生成图尽量不含真实正文；真实标题、正文、标签和图表文字后续由渲染器排版。
+- 视觉稿必须遵循温暖极简手绘线稿风，底部字幕区保持为空。
 
 ### Review Gate 1: 静态视觉审核
 
 输入：
 
 - `visual_draft.png`
-- `slide_spec.json`
-- `narration.txt`
+- `slide_plan.json` 中对应 slide
+- `narration`
 
 输出：
 
@@ -150,14 +133,14 @@ runs/<run_id>/
 
 - `approved`: 进入 `reconstruct-scenes`
 - `revise`: 根据修改意见重新生成视觉稿
-- `rejected`: 回退到 `slide_spec` 或风格阶段
+- `rejected`: 回退到 `plan-slides` 或 `define-style`
 
-### Stage 5: reconstruct-scenes
+### Stage 4: reconstruct-scenes
 
 输入：
 
 - 已通过的 `visual_draft.png`
-- `slide_spec.json`
+- `slide_plan.json` 中对应 slide
 - `style_tokens.yaml`
 
 输出：
@@ -170,10 +153,12 @@ runs/<run_id>/
 - 用 `.agents/skills/reconstruct-scenes/SKILL.md`。
 - 目标不是机械抠图，而是把已审核的视觉方向重建为可控元素。
 - 标题、正文、标签、图表文字必须是可编辑文本元素。
-- 背景、插图、图标、图表主体可以是图片元素；凡承担“配图”功能的视觉主体必须是 Codex Image Gen 生成的位图 `image` 元素。
-- `shape` 只用于卡片底、强调点、辅助分隔等 UI 容器，不用于拼装文件、时钟、流程图等配图主体。
+- 手绘框、手绘箭头、关键词下划线、关键词圈注、Token 小块、总结条优先使用 renderer 可控元素。
+- 复杂插图、图标组、概念插画可以使用 Codex Image Gen 位图。
+- 所有真实文字必须由渲染器排版。
+- 简单线稿元素允许使用 `shape`、`line`、`text` 组合生成，但必须符合手绘线稿风。
 
-### Stage 6: render-element-previews
+### Stage 5: render-element-previews
 
 输入：
 
@@ -208,11 +193,11 @@ runs/<run_id>/
 - `revise`: 修改 `scene.json`
 - `rejected`: 回到视觉稿阶段
 
-### Stage 7: generate-audio-subtitles
+### Stage 6: generate-audio-subtitles
 
 输入：
 
-- `narration.txt`
+- `slide_plan.json` 中对应 slide 的 `narration`，或由其导出的 `narration.txt`
 - `config/task.yaml` 中的 MiniMax 配置
 - `.env` 中的 MiniMax 凭证
 
@@ -227,16 +212,16 @@ runs/<run_id>/
 
 - 用 `.agents/skills/generate-audio-subtitles/SKILL.md`。
 - 调用 `scripts/minimax_tts.py`。
-- 每页旁白建议 120 到 180 字以内。
+- 字幕必须切成单行，默认每条不超过 28 个中文字符。
 - 如果单页旁白过长，先拆分句段，再生成音频。
 
-### Stage 8: bind-animation-timeline
+### Stage 7: bind-animation-timeline
 
 输入：
 
 - `scene.json`
 - `audio_timeline.json`
-- `slide_spec.json`
+- `slide_plan.json` 中对应 slide
 
 输出：
 
@@ -248,7 +233,7 @@ runs/<run_id>/
 - 元素出现时间必须服务旁白，不做无意义动画。
 - 默认动画包括 `fade_up`、`fade_in`、`soft_zoom_in`、`highlight`、`line_draw`。
 
-### Stage 9: render-video
+### Stage 8: render-video
 
 输入：
 
@@ -270,8 +255,7 @@ runs/<run_id>/
 - FFmpeg 只做媒体合并、转码和压缩。
 - Remotion 运行期资源必须复制到 `scripts/remotion/public/runtime/<run_id>/`，组件内用 `staticFile()` 引用，不直接使用 `file:///` 本地路径。
 - 先渲染结构版或短预览确认资源路径和画面非黑屏，再执行完整 TTS 视频渲染。
-- 若最终主版本低于 180 秒，优先回到 `plan-slides` 拆页或补足讲解层次，不用延长停顿凑时长。
-- 字幕叠加必须按底图字幕框垂直居中，抽帧检查单行和双行字幕是否都落在虚线框中心。
+- 字幕叠加必须单行显示，居中靠下，不遮挡内容框主体信息。
 
 ### Review Gate 3: 视频预览审核
 
@@ -296,7 +280,8 @@ runs/<run_id>/
 
 ## 4. 输入输出守恒规则
 
-- 下游需要的字段必须由上游产生，或明确标记为用户提供。
+- 主流程的第一个业务产物是 `slide_plan.json`，不再使用 `article_brief.json`。
+- 下游需要的字段必须由 `slide_plan.json` 或上游固定配置产生。
 - 每个 Skill 输出必须写到固定路径，不只在对话中说明。
 - 审核文件必须记录 `status`、`reviewer_notes`、`requested_changes`。
 - 任何失败都要能定位到具体 stage，并可写入 `bad_cases/bad_case_log.yaml`。
@@ -326,7 +311,7 @@ runs/<run_id>/
 
 ## 6. 样式规则
 
-默认风格见 `config/style_tokens.yaml` 和 `references/visual_rules.md`。如果用户提供参考样式，先生成“样式差异说明”，再更新 `style_guide.md`。只有用户明确确认后，才更新仓库级 `config/style_tokens.yaml`。
+默认风格见 `config/style_tokens.yaml` 和 `references/visual_rules.md`。默认使用暖白背景、黑色手绘线稿、黄色重点标注、大圆角内容框和单行字幕。只有用户明确确认后，才更新仓库级 `config/style_tokens.yaml`。
 
 ## 7. MiniMax TTS 规则
 
@@ -335,15 +320,16 @@ runs/<run_id>/
 - 默认请求输出 `hex`，脚本负责解码为音频文件。
 - 若 MiniMax 返回错误，保存 `trace_id`、状态码、错误信息到日志。
 - 旁白脚本可以使用 MiniMax 支持的停顿标记 `<#0.5#>`，但不要滥用。
+- 字幕必须单行显示，默认每条不超过 28 个中文字符。
 
 ## 8. Bad Case 规则
 
 出现以下情况时记录到 `bad_cases/bad_case_log.yaml`：
 
+- slide_plan.json 对文章切分不完整，遗漏关键内容。
 - 静态视觉稿好看但无法拆成可动画元素。
 - 元素预览与视觉稿差距过大。
 - TTS 语速、音色、停顿明显不符合科普表达。
 - 动画与旁白不同步。
-- 字幕错字、漏字、时间轴错位。
+- 字幕错字、漏字、时间轴错位或超过单行限制。
 - 同类问题出现两次时，必须更新 Skill、模板、schema 或审核清单。
-

@@ -14,6 +14,7 @@
 - 文字尽量由渲染器排版，不直接写进 AI 生成图里，避免乱码和后续不可编辑。
 - 可复用框架文件进 Git，生产运行产物不进 Git。
 - 不限制 slide 数量。slide 数量由文章内容决定，以“讲清楚整篇文章”为准，不用为凑时长或控制页数强行合并。
+- 视觉风格固定为温暖极简手绘线稿风，不接受运行期用户自定义风格。后续需要改风格时，直接修改仓库级 `config/style_tokens.yaml` 和固定参考图。
 
 ## 2. 标准运行目录
 
@@ -26,7 +27,6 @@ runs/<run_id>/
     article.md
   planning/
     slide_plan.json
-    style_guide.md
   slides/
     slide_001/
       visual_prompt.md
@@ -49,7 +49,22 @@ runs/<run_id>/
     qa_log.md
 ```
 
-## 3. 业务流程与 Skill 调用
+## 3. 固定风格资源
+
+风格不是运行时输入，而是仓库固定资源：
+
+```text
+config/style_tokens.yaml
+references/style_reference/PPT_template.png
+references/style_reference/PPT_example.png
+```
+
+- `config/style_tokens.yaml`：机器可读风格参数，定义背景、字号、颜色、布局、字幕、元素语义角色。
+- `references/style_reference/PPT_template.png`：固定空白母版参考图，定义标题区、内容框、背景、字幕留白。
+- `references/style_reference/PPT_example.png`：固定成品示例参考图，定义内容密度、图文结构和手绘元素风格。
+- `references/visual_rules.md` 可作为人类说明文档保留，但不作为主流程运行输入。
+
+## 4. 业务流程与 Skill 调用
 
 ### Stage 1: plan-slides
 
@@ -73,35 +88,15 @@ runs/<run_id>/
 - `narration` 是后续 TTS 的直接输入，必须是可直接朗读的中文演讲稿，不写舞台说明。
 - 不输出 `target_duration_sec`、`duration_sec`、`language` 这类估算或固定值。
 
-### Stage 2: define-style
-
-输入：
-
-- `config/style_tokens.yaml`
-- `references/visual_rules.md`
-- 可选用户提供的样式参考
-
-输出：
-
-- `runs/<run_id>/planning/style_guide.md`
-- 更新后的 `style_tokens.yaml` 草案，若用户确认后再沉淀进 `config/style_tokens.yaml`
-
-调用规则：
-
-- 用 `.agents/skills/define-style/SKILL.md`。
-- 默认使用“温暖极简手绘线稿风”。
-- 背景固定为 `#FFFDF7`。
-- 主视觉为黑色手绘线稿、黄色重点标注、大圆角内容框、底部干净字幕区。
-- 用户给样式图后，先提取风格差异，不直接覆盖仓库默认配置。
-
-### Stage 3: generate-visual-drafts
+### Stage 2: generate-visual-drafts
 
 输入：
 
 - `runs/<run_id>/planning/slide_plan.json`
 - 当前 `slide_id`
-- `style_guide.md`
 - `config/style_tokens.yaml`
+- `references/style_reference/PPT_template.png`
+- `references/style_reference/PPT_example.png`
 - `templates/prompts/visual_draft.prompt.md`
 
 输出：
@@ -113,6 +108,7 @@ runs/<run_id>/
 
 - 用 `.agents/skills/generate-visual-drafts/SKILL.md`。
 - 根据 `slide_plan.json` 中对应 slide 的标题、副标题、核心信息、内容结构和旁白生成整页静态视觉稿。
+- 必须读取固定风格资源，不允许用户运行时改变风格。
 - 视觉稿用于第一轮人工审美判断。
 - 生成图尽量不含真实正文；真实标题、正文、标签和图表文字后续由渲染器排版。
 - 视觉稿必须遵循温暖极简手绘线稿风，底部字幕区保持为空。
@@ -133,15 +129,15 @@ runs/<run_id>/
 
 - `approved`: 进入 `reconstruct-scenes`
 - `revise`: 根据修改意见重新生成视觉稿
-- `rejected`: 回退到 `plan-slides` 或 `define-style`
+- `rejected`: 回退到 `plan-slides`
 
-### Stage 4: reconstruct-scenes
+### Stage 3: reconstruct-scenes
 
 输入：
 
 - 已通过的 `visual_draft.png`
 - `slide_plan.json` 中对应 slide
-- `style_tokens.yaml`
+- `config/style_tokens.yaml`
 
 输出：
 
@@ -158,7 +154,7 @@ runs/<run_id>/
 - 所有真实文字必须由渲染器排版。
 - 简单线稿元素允许使用 `shape`、`line`、`text` 组合生成，但必须符合手绘线稿风。
 
-### Stage 5: render-element-previews
+### Stage 4: render-element-previews
 
 输入：
 
@@ -193,7 +189,7 @@ runs/<run_id>/
 - `revise`: 修改 `scene.json`
 - `rejected`: 回到视觉稿阶段
 
-### Stage 6: generate-audio-subtitles
+### Stage 5: generate-audio-subtitles
 
 输入：
 
@@ -215,7 +211,7 @@ runs/<run_id>/
 - 字幕必须切成单行，默认每条不超过 28 个中文字符。
 - 如果单页旁白过长，先拆分句段，再生成音频。
 
-### Stage 7: bind-animation-timeline
+### Stage 6: bind-animation-timeline
 
 输入：
 
@@ -233,7 +229,7 @@ runs/<run_id>/
 - 元素出现时间必须服务旁白，不做无意义动画。
 - 默认动画包括 `fade_up`、`fade_in`、`soft_zoom_in`、`highlight`、`line_draw`。
 
-### Stage 8: render-video
+### Stage 7: render-video
 
 输入：
 
@@ -278,15 +274,16 @@ runs/<run_id>/
 - `revise_scene`: 回到元素重建
 - `revise_slide`: 回到 slide 规划
 
-## 4. 输入输出守恒规则
+## 5. 输入输出守恒规则
 
 - 主流程的第一个业务产物是 `slide_plan.json`，不再使用 `article_brief.json`。
-- 下游需要的字段必须由 `slide_plan.json` 或上游固定配置产生。
+- 主流程不再包含 `define-style` 环节，也不再生成 `style_guide.md`。
+- 下游需要的字段必须由 `slide_plan.json` 或仓库固定风格资源产生。
 - 每个 Skill 输出必须写到固定路径，不只在对话中说明。
 - 审核文件必须记录 `status`、`reviewer_notes`、`requested_changes`。
 - 任何失败都要能定位到具体 stage，并可写入 `bad_cases/bad_case_log.yaml`。
 
-## 5. Git 规则
+## 6. Git 规则
 
 提交：
 
@@ -308,10 +305,6 @@ runs/<run_id>/
 - `outputs/**`
 - `*.mp4`、`*.wav`、`*.mp3`、`*.png`、`*.jpg`、`*.webp`
 - `.env`
-
-## 6. 样式规则
-
-默认风格见 `config/style_tokens.yaml` 和 `references/visual_rules.md`。默认使用暖白背景、黑色手绘线稿、黄色重点标注、大圆角内容框和单行字幕。只有用户明确确认后，才更新仓库级 `config/style_tokens.yaml`。
 
 ## 7. MiniMax TTS 规则
 

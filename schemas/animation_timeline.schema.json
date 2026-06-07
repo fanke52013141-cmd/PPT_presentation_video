@@ -13,7 +13,7 @@
         "required": ["id", "target", "action", "at", "duration"],
         "properties": {
           "id": {"type": "string"},
-          "target": {"type": "string"},
+          "target": {"type": "string", "description": "Must exist in scene.layers[].id"},
           "action": {
             "type": "string",
             "enum": [
@@ -21,9 +21,7 @@
               "fade_up",
               "soft_zoom_in",
               "slide_in_left",
-              "line_draw",
-              "highlight",
-              "count_up"
+              "highlight"
             ]
           },
           "at": {"type": "number", "minimum": 0},

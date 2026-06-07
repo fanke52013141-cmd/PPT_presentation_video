@@ -1,14 +1,31 @@
 # Visual Draft Prompt Template
 
-为以下 slide 生成一张 16:9、1920x1080 的整页静态视觉稿。
+为 `slide_plan.json` 中指定的 slide 生成一张 16:9、1920x1080 的整页静态视觉稿。
+
+本阶段不重新定义风格。风格固定来自：
+
+- `config/style_tokens.yaml`
+- `references/style_reference/PPT_template.png`
+- `references/style_reference/PPT_example.png`
 
 ## Slide 信息
 
+- Slide ID：`{{slide_id}}`
+- 页面作用：`{{slide_purpose}}`
 - 主标题：`{{main_title}}`
 - 副标题：`{{subtitle}}`
 - 核心信息：`{{core_message}}`
-- 配图要求：`{{visual_requirement}}`
-- 动画意图：`{{animation_intent}}`
+- 内容结构类型：`{{content_type}}`
+- 内容版式意图：`{{layout_intent}}`
+- 页面内容项：`{{content_items}}`
+- 本页演讲稿：`{{narration}}`
+
+## 固定参考图
+
+生成时必须参考：
+
+- `PPT_template.png`：用于锁定空白母版、标题位置、黄色竖线、副标题横线、大圆角内容框、底部字幕留白。
+- `PPT_example.png`：用于锁定内容密度、手绘图解风格、浅色胶囊标签、Token 小方块、手绘箭头、总结条样式。
 
 ## 固定风格
 
@@ -33,14 +50,26 @@
 - 内容框位置：`X=60, Y=250, W=1800, H=650`。
 - 字幕区范围：`Y=930` 到 `Y=1080`，必须留空。
 
-## 内容区结构
+## 内容结构处理
 
-优先使用以下结构之一：
+根据 `content_type` 选择表达方式：
 
-- 概念解释：左侧一句话解释，右侧手绘示意图，底部总结条。
-- 流程拆解：输入文本 → 拆成 Token → 进入模型 → 生成回答。
-- 对比解释：容易误解 vs 更准确说法。
-- 总结提醒：星星、灯泡或便签图标 + 一句话结论。
+- `concept_explanation`：左侧短句解释，右侧手绘示意图，底部总结条。
+- `bullet_list`：3 到 5 个手绘要点卡片或项目符号。
+- `process_flow`：横向或分段流程，用手绘箭头连接步骤。
+- `comparison`：左右对比，左侧容易误解，右侧更准确说法。
+- `timeline`：横向时间轴，展示先后顺序。
+- `cycle`：循环箭头，展示反复优化或闭环过程。
+- `cards`：多张卡片展示并列概念。
+- `example_breakdown`：上方原句，下方拆成小方块或片段。
+- `misconception_correction`：温和展示误区和修正，不使用强烈红叉。
+- `cause_effect`：用箭头串联原因、影响和结果。
+- `framework_map`：中心概念 + 周边分支。
+- `hierarchy`：上下层级或从大到小关系。
+- `matrix`：二维矩阵或四象限。
+- `checklist`：操作清单，适合建议页。
+- `summary_takeaway`：核心结论 + 底部总结条。
+- `custom`：保持模板风格，并让结构尽量简单清楚。
 
 ## 强约束
 

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-本仓库是“文章转 AI 科普视频”的 Codex 执行框架。主流程应尽量减少中间环节：文章先直接切分为 PPT 视频结构，再生成视觉稿、PNG 图层、语音字幕、动画时间轴和最终视频。
+本仓库是“文章转 AI 科普视频”的 Codex 执行框架。主流程应尽量减少中间环节：文章先直接切分为 PPT 视频结构，再用 Codex Image Gen 生成整页位图视觉，再生成语音字幕、动画时间轴和最终视频。
 
 ## 1. 总体原则
 
@@ -11,6 +11,7 @@
 - TTS 使用 MiniMax。
 - 视频合成使用 Remotion，FFmpeg 仅用于编码、转码、抽帧、音视频合并和压缩。
 - Remotion 最终只负责 PNG 图层显示、PNG 图层动画、音频播放和字幕叠加；不负责绘制 text、shape、line、group 或复杂图表。
+- 正式生产默认每页使用一张 Codex Image Gen 生成的 `full_slide` PNG；模板、示例、标题、内容、图解、线条和标注都必须在位图内完成。
 - 人工审核对象必须是图片或视频预览，不把 JSON 作为主要审核对象。
 - 可复用框架文件进 Git，生产运行产物不进 Git。
 - 不限制 slide 数量。slide 数量由文章内容决定，以“讲清楚整篇文章”为准。
@@ -66,13 +67,13 @@ runs/<run_id>/
 
 ```text
 config/style_tokens.yaml
-references/style_reference/fixed_title_free_content_reference.png
-references/style_reference/paper_subtitle_background.png
+references/style_reference/PPT模板.png
+references/style_reference/PPT示例.png
 ```
 
 - `config/style_tokens.yaml`：机器可读风格参数，定义画布、字幕区、PNG 图层模型、参考图和动画动作。
-- `fixed_title_free_content_reference.png`：主参考图，用于约束固定标题区、内容区自由编排、页面密度和知识类页面气质。
-- `paper_subtitle_background.png`：字幕背景和底部区域参考图，用于约束字幕背景、留白和底部视觉处理。
+- `PPT模板.png`：空白模板参考图，用于约束标题区、黄色竖线、副标题下划线、主体大圆角手绘边框和整体留白。
+- `PPT示例.png`：完整页面示例图，用于约束内容组织、手写感文字、图标、分栏、标注、总结条和视觉密度。
 - `references/visual_rules.md` 可作为人类说明文档保留，但不作为主流程运行输入。
 
 ## 4. 业务流程与 Skill 调用
@@ -84,8 +85,8 @@ references/style_reference/paper_subtitle_background.png
 - `runs/<run_id>/inputs/article.md`
 - `config/task.yaml`
 - `config/style_tokens.yaml`
-- `references/style_reference/fixed_title_free_content_reference.png`
-- `references/style_reference/paper_subtitle_background.png`
+- `references/style_reference/PPT模板.png`
+- `references/style_reference/PPT示例.png`
 - 必需 schemas
 - 主流程 skills
 - `.env` 或系统环境变量
@@ -131,8 +132,8 @@ references/style_reference/paper_subtitle_background.png
 - `runs/<run_id>/planning/slide_plan.json`
 - 当前 `slide_id`
 - `config/style_tokens.yaml`
-- `references/style_reference/fixed_title_free_content_reference.png`
-- `references/style_reference/paper_subtitle_background.png`
+- `references/style_reference/PPT模板.png`
+- `references/style_reference/PPT示例.png`
 - `templates/prompts/visual_draft.prompt.md`
 
 输出：
@@ -146,7 +147,8 @@ references/style_reference/paper_subtitle_background.png
 - 根据 `slide_plan.json` 中对应 slide 的标题、副标题、核心信息、内容结构和旁白生成整页静态视觉稿。
 - 必须读取固定参考图，不允许用户运行时改变风格。
 - 视觉稿用于第一轮人工审美判断。
-- 视觉稿应适合后续拆成 PNG 图层，底部字幕区保持为空。
+- 视觉稿必须是完整整页位图，底部字幕区保持为空。
+- 不允许把标题、正文、框线、箭头或图表留给 SVG、React、HTML/CSS、Canvas 或 Remotion 代码绘制。
 
 ### Review Gate 1: 静态视觉审核
 
@@ -183,11 +185,11 @@ references/style_reference/paper_subtitle_background.png
 调用规则：
 
 - 用 `.agents/skills/reconstruct-scenes/SKILL.md`。
-- 把已审核视觉稿拆分或重建为 PNG 图层，不再把 text、shape、line、group 作为 Remotion 主输入。
+- 默认把已审核视觉稿登记为一个整页 `full_slide` PNG 图层，不再把 text、shape、line、group 作为 Remotion 主输入。
 - `scene.json` 必须使用 `layers[]`，每个 layer 必须是 `type: png`。
 - 推荐图层角色：`background`、`title`、`subtitle`、`content_body`、`diagram`、`annotation`、`summary`。
-- 主标题和副标题推荐拆成两个独立 PNG 图层：`role: title` 和 `role: subtitle`。
-- 图层拆分失败时允许使用 `full_slide` 整页 PNG 兜底，但动画能力有限。
+- 主标题和副标题只有在拆出的素材同样来自图像模型 PNG 时才允许拆成独立图层。
+- `full_slide` 整页 PNG 是生产默认路径；拆层只是可选增强。
 - 所有 PNG 图层素材必须保存到当前 slide 的 `assets/` 目录。
 
 ### Stage 4: render-element-previews

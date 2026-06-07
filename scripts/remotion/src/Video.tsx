@@ -191,6 +191,7 @@ const SlideView: React.FC<{slide: Slide}> = ({slide}) => {
             left: 180,
             right: 180,
             bottom: 28,
+            zIndex: 10000,
             height: 82,
             display: 'flex',
             alignItems: 'center',

@@ -17,8 +17,8 @@ description: Validate run inputs, repository resources, environment variables, s
   "article_path": "runs/<run_id>/inputs/article.md",
   "task_config_path": "config/task.yaml",
   "style_tokens_path": "config/style_tokens.yaml",
-  "template_reference_image": "references/style_reference/PPT_template.png",
-  "example_reference_image": "references/style_reference/PPT_example.png",
+  "template_reference_image": "references/style_reference/PPT模板.png",
+  "example_reference_image": "references/style_reference/PPT示例.png",
   "schemas": [
     "schemas/slide_plan.schema.json",
     "schemas/scene.schema.json",
@@ -46,16 +46,17 @@ description: Validate run inputs, repository resources, environment variables, s
 2. 检查 `article.md` 是否存在、非空、可读。
 3. 检查 `config/task.yaml` 是否存在。
 4. 检查 `config/style_tokens.yaml` 是否存在，并包含画布、颜色、字幕区和 PNG 图层模型等关键配置。
-5. 检查固定新风格参考图是否存在：`PPT_template.png` 和 `PPT_example.png`。
+5. 检查固定新风格参考图是否存在：`PPT模板.png` 和 `PPT示例.png`。
 6. 检查必要 schema 是否存在并为合法 JSON。
 7. 检查 `.agents/skills/**/SKILL.md` 中主流程需要的 Skill 是否存在。
 8. 检查 `templates/prompts/visual_draft.prompt.md` 是否存在。
-9. 检查 `scripts/minimax_tts.py` 是否存在。
-10. 检查 `scripts/remotion` 是否存在。
-11. 检查本地环境变量 `MINIMAX_API_KEY` 是否可读取，但不得把真实值写入日志。
-12. 检查 `ffmpeg` 和 `ffprobe` 是否可用。
-13. 输出 `preflight_report.md`。
-14. 若存在 blocking issue，停止主流程，不进入 Stage 1。
+9. 检查 `scripts/write_visual_prompts.py`、`scripts/prepare_full_slide_scenes.py`、`scripts/validate_run_assets.py` 是否存在。
+10. 检查 `scripts/minimax_tts.py` 是否存在。
+11. 检查 `scripts/remotion` 是否存在。
+12. 检查本地环境变量 `MINIMAX_API_KEY` 是否可读取，但不得把真实值写入日志。
+13. 检查 `ffmpeg` 和 `ffprobe` 是否可用。
+14. 输出 `preflight_report.md`。
+15. 若存在 blocking issue，停止主流程，不进入 Stage 1。
 
 # Report Structure
 

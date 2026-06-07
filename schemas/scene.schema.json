@@ -6,6 +6,10 @@
   "properties": {
     "slide_id": {"type": "string"},
     "source_visual_draft": {"type": "string"},
+    "visual_source": {
+      "type": "string",
+      "enum": ["codex_image_gen_full_slide_bitmap", "codex_image_gen_png_layers"]
+    },
     "canvas": {
       "type": "object",
       "required": ["width", "height", "background"],

@@ -35,4 +35,28 @@ cases:
     symptom: "配图由 shape/text 拼装，不符合 Image Gen 位图资产规则。"
     root_cause: "元素重建阶段把视觉主体当作可程序绘制图形处理。"
     resolution: "用 Codex Image Gen 生成配图资产，scene 中 visual 元素统一使用 type=image 和 semantic_role=content_visual。"
+  - id: 2026-06-07-style-reference-not-bound
+    stage: generate-visual-drafts
+    tags: [style-reference, prompt, imagegen]
+    symptom: "用户指定的 PPT 模板和 PPT 示例没有稳定进入视觉生成流程。"
+    root_cause: "参考图只散落在文档和配置中，没有形成每页可追溯的视觉提示词。"
+    resolution: "统一替换为 PPT模板.png 和 PPT示例.png，并新增 scripts/write_visual_prompts.py 为每页写出绑定参考图的 Codex Image Gen prompt。"
+  - id: 2026-06-07-visual-content-not-imagegen
+    stage: reconstruct-scenes
+    tags: [imagegen, scene, remotion]
+    symptom: "PPT 主体内容可能由 SVG、前端代码或本地绘图生成，而不是 Codex Image Gen 位图。"
+    root_cause: "旧流程没有把 full_slide PNG 设为生产默认，也没有拒绝旧 scene.elements[]。"
+    resolution: "新增 prepare_full_slide_scenes.py 与 validate_run_assets.py；build_remotion_props.py 拒绝 elements[]；生产 scene 默认 codex_image_gen_full_slide_bitmap。"
+  - id: 2026-06-07-powershell-utf8-json-false-negative
+    stage: preflight-check
+    tags: [windows, encoding, json]
+    symptom: "PowerShell ConvertFrom-Json 对 UTF-8 中文 JSON 显示乱码并误报解析失败。"
+    root_cause: "Windows PowerShell 默认编码与无 BOM UTF-8 运行产物不一致。"
+    resolution: "核心 JSON 读写和校验改用 Python utf-8-sig；人工调试时避免未指定编码的 PowerShell JSON 管道。"
+  - id: 2026-06-07-png-optimization-slow
+    stage: reconstruct-scenes
+    tags: [performance, png, pillow]
+    symptom: "12 张整页 PNG 标准化耗时约 69 秒。"
+    root_cause: "Pillow PNG optimize=True 对大图压缩过慢。"
+    resolution: "prepare_full_slide_scenes.py 默认关闭 optimize，仅在传 --optimize-png 时启用，耗时降到约 6.4 秒。"
 

@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -40,10 +41,48 @@ from urllib.request import url2pathname
 DEFAULT_FPS = 30
 DEFAULT_WIDTH = 1920
 DEFAULT_HEIGHT = 1080
+DEFAULT_REMOTION_PUBLIC_DIR = Path("scripts/remotion/public")
 
 
 class BuildError(RuntimeError):
     pass
+
+
+class RuntimeAssetStore:
+    def __init__(self, public_dir: Path, run_id: str) -> None:
+        self.public_dir = public_dir.resolve()
+        self.run_id = run_id
+
+    def copy(
+        self,
+        value: str,
+        slide_dir: Path,
+        repo_root: Path,
+        subdir: str,
+        required_suffix: str | None = None,
+    ) -> str:
+        if is_url(value):
+            return value
+
+        local_asset = resolve_local_path(value, slide_dir, repo_root)
+        if not local_asset.exists():
+            raise BuildError(f"Missing local file: {local_asset}")
+
+        if required_suffix and local_asset.suffix.lower() != required_suffix:
+            raise BuildError(f"Asset must be a {required_suffix} file: {local_asset}")
+
+        destination = (
+            self.public_dir
+            / "runtime"
+            / self.run_id
+            / slide_dir.name
+            / subdir
+            / local_asset.name
+        )
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(local_asset, destination)
+
+        return destination.relative_to(self.public_dir).as_posix()
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -59,13 +98,6 @@ def read_json(path: Path) -> dict[str, Any]:
         raise BuildError(f"JSON file must contain an object: {path}")
 
     return value
-
-
-def file_uri(path: Path) -> str:
-    if not path.exists():
-        raise BuildError(f"Missing local file: {path}")
-
-    return path.resolve().as_uri()
 
 
 def is_url(value: str) -> bool:
@@ -154,31 +186,21 @@ def validate_layer(layer: dict[str, Any], slide_dir: Path) -> None:
         raise BuildError(f"Layer missing z_index in {slide_dir}: {layer.get('id')}")
 
 
-def resolve_asset_uri(
-    value: str,
-    slide_dir: Path,
-    repo_root: Path,
-    required_suffix: str | None = None,
-) -> str:
-    if is_url(value):
-        return value
-
-    local_asset = resolve_local_path(value, slide_dir, repo_root)
-
-    if required_suffix and local_asset.suffix.lower() != required_suffix:
-        raise BuildError(f"Asset must be a {required_suffix} file: {local_asset}")
-
-    return file_uri(local_asset)
-
-
 def convert_scene_assets(
     scene: dict[str, Any],
     slide_dir: Path,
     repo_root: Path,
+    asset_store: RuntimeAssetStore,
 ) -> dict[str, Any]:
     """
-    Convert scene.layers[].asset into absolute file:// URIs.
+    Copy scene assets into Remotion public/runtime and convert to staticFile paths.
     """
+    if "elements" in scene:
+        raise BuildError(
+            f"scene.json contains deprecated elements[] in {slide_dir}. "
+            "Use layers[] with PNG assets only."
+        )
+
     layers = scene.get("layers")
 
     if not isinstance(layers, list) or not layers:
@@ -193,10 +215,11 @@ def convert_scene_assets(
         validate_layer(layer, slide_dir)
 
         converted = dict(layer)
-        converted["asset"] = resolve_asset_uri(
+        converted["asset"] = asset_store.copy(
             str(layer["asset"]),
             slide_dir,
             repo_root,
+            subdir="assets",
             required_suffix=".png",
         )
         converted_layers.append(converted)
@@ -211,10 +234,11 @@ def convert_scene_assets(
     background_asset = canvas.get("background_asset")
     if isinstance(background_asset, str) and background_asset:
         converted_canvas = dict(canvas)
-        converted_canvas["background_asset"] = resolve_asset_uri(
+        converted_canvas["background_asset"] = asset_store.copy(
             background_asset,
             slide_dir,
             repo_root,
+            subdir="assets",
         )
         converted_scene["canvas"] = converted_canvas
 
@@ -325,8 +349,13 @@ def slide_duration(audio_timeline: dict[str, Any], animation_timeline: dict[str,
     return round(duration, 3)
 
 
-def build_slide(slide_dir: Path, repo_root: Path, start_sec: float) -> dict[str, Any]:
-    scene = convert_scene_assets(read_json(slide_dir / "scene.json"), slide_dir, repo_root)
+def build_slide(
+    slide_dir: Path,
+    repo_root: Path,
+    asset_store: RuntimeAssetStore,
+    start_sec: float,
+) -> dict[str, Any]:
+    scene = convert_scene_assets(read_json(slide_dir / "scene.json"), slide_dir, repo_root, asset_store)
     audio_timeline = read_json(slide_dir / "audio_timeline.json")
     animation_timeline = read_json(slide_dir / "animation_timeline.json")
 
@@ -335,6 +364,9 @@ def build_slide(slide_dir: Path, repo_root: Path, start_sec: float) -> dict[str,
     validate_animation_timeline(animation_timeline, layer_ids, slide_dir)
 
     voice_path = slide_dir / "voice.mp3"
+    audio_file = asset_store.copy(str(voice_path), slide_dir, repo_root, subdir="audio", required_suffix=".mp3")
+    converted_audio_timeline = dict(audio_timeline)
+    converted_audio_timeline["audio_file"] = audio_file
     slide_id = require_slide_id(
         slide_dir,
         scene.get("slide_id"),
@@ -348,8 +380,8 @@ def build_slide(slide_dir: Path, repo_root: Path, start_sec: float) -> dict[str,
         "start_sec": round(start_sec, 3),
         "duration_sec": duration_sec,
         "scene": scene,
-        "audio_file": file_uri(voice_path),
-        "audio_timeline": audio_timeline,
+        "audio_file": audio_file,
+        "audio_timeline": converted_audio_timeline,
         "animation_timeline": animation_timeline,
     }
 
@@ -357,9 +389,11 @@ def build_slide(slide_dir: Path, repo_root: Path, start_sec: float) -> dict[str,
 def build_props(
     run_dir: Path,
     repo_root: Path,
+    asset_store: RuntimeAssetStore,
     fps: int,
     width: int,
     height: int,
+    slide_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     slides_dir = run_dir / "slides"
     if not slides_dir.exists():
@@ -369,14 +403,16 @@ def build_props(
         [path for path in slides_dir.iterdir() if path.is_dir()],
         key=slide_sort_key,
     )
+    if slide_ids:
+        slide_dirs = [path for path in slide_dirs if path.name in slide_ids]
     if not slide_dirs:
-        raise BuildError(f"No slide directories found in: {slides_dir}")
+        raise BuildError(f"No matching slide directories found in: {slides_dir}")
 
     slides: list[dict[str, Any]] = []
     start_sec = 0.0
 
     for slide_dir in slide_dirs:
-        slide = build_slide(slide_dir, repo_root, start_sec)
+        slide = build_slide(slide_dir, repo_root, asset_store, start_sec)
         slides.append(slide)
         start_sec += float(slide["duration_sec"])
 
@@ -400,6 +436,18 @@ def parse_args() -> argparse.Namespace:
         help="Output props JSON path. Defaults to <run-dir>/remotion_props.json",
     )
     parser.add_argument("--repo-root", default=Path("."), type=Path, help="Repository root for resolving assets")
+    parser.add_argument(
+        "--remotion-public-dir",
+        default=DEFAULT_REMOTION_PUBLIC_DIR,
+        type=Path,
+        help="Remotion public directory. Assets are copied to public/runtime/<run_id>/...",
+    )
+    parser.add_argument(
+        "--slide-id",
+        dest="slide_ids",
+        action="append",
+        help="Only include one slide id. Can be repeated for multiple slides.",
+    )
     parser.add_argument("--fps", default=DEFAULT_FPS, type=int)
     parser.add_argument("--width", default=DEFAULT_WIDTH, type=int)
     parser.add_argument("--height", default=DEFAULT_HEIGHT, type=int)
@@ -410,15 +458,21 @@ def main() -> int:
     args = parse_args()
     run_dir = args.run_dir.resolve()
     repo_root = args.repo_root.resolve()
+    public_dir = args.remotion_public_dir
+    if not public_dir.is_absolute():
+        public_dir = repo_root / public_dir
     out_path = (args.out or run_dir / "remotion_props.json").resolve()
+    asset_store = RuntimeAssetStore(public_dir=public_dir, run_id=run_dir.name)
 
     try:
         props = build_props(
             run_dir=run_dir,
             repo_root=repo_root,
+            asset_store=asset_store,
             fps=args.fps,
             width=args.width,
             height=args.height,
+            slide_ids=set(args.slide_ids) if args.slide_ids else None,
         )
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(

@@ -3,7 +3,7 @@
 这个仓库用于把文章生产成 AI 科普类视频。当前主流程是：
 
 ```text
-文章 -> Preflight -> slide_plan.json -> 静态视觉稿 -> 人工审核 -> PNG 图层 scene.json -> 页面预览 -> 人工审核 -> MiniMax 语音/字幕 -> PNG 图层动画时间轴 -> Remotion 渲染 -> 视频审核 -> 成片
+文章 -> Preflight -> slide_plan.json -> Codex Image Gen 整页视觉稿 -> 人工审核 -> full_slide PNG scene.json -> 页面预览 -> 人工审核 -> MiniMax 语音/字幕 -> PNG 动画时间轴 -> Remotion 渲染 -> 视频审核 -> 成片
 ```
 
 ## 当前决策
@@ -18,6 +18,7 @@
 - TTS：MiniMax T2A HTTP。
 - 视频合成：Remotion 作为主渲染引擎，FFmpeg 作为媒体处理工具。
 - Remotion 只负责 PNG 图层显示、PNG 图层动画、音频播放和字幕叠加；不绘制 text、shape、line、group 或复杂图表。
+- 生产默认使用 Codex Image Gen 生成整页位图视觉，模板、示例、标题、内容、图解、线条和标注都必须进入这张位图；Remotion 不得用前端代码补画 PPT 主体内容。
 - 默认视觉风格固定，不接受运行期用户自定义风格。
 - Git 策略：框架文件进仓库，运行过程和成片不进仓库。
 
@@ -59,11 +60,11 @@ runs/<run_id>/planning/slide_plan.json
 当前固定参考图为：
 
 ```text
-references/style_reference/fixed_title_free_content_reference.png
-references/style_reference/paper_subtitle_background.png
+references/style_reference/PPT模板.png
+references/style_reference/PPT示例.png
 ```
 
-不要在运行期引入新的风格图。后续如需换风格，直接更新固定参考图和 `config/style_tokens.yaml`。
+不要在运行期引入新的风格图。后续如需换风格，直接更新这两张固定参考图和 `config/style_tokens.yaml`。
 
 ## Slide Plan
 
@@ -84,9 +85,67 @@ slides[].narration
 
 `content.content_type` 支持概念解释、分点说明、流程结构、对比结构、时间轴、循环结构、卡片组、示例拆解、误区纠正、因果链、框架图、层级结构、矩阵、操作清单和总结页。
 
+## Codex Image Gen 全页视觉
+
+正式生产时，每页先写出绑定固定参考图的视觉提示词：
+
+```powershell
+python scripts/write_visual_prompts.py `
+  --run-dir runs/<run_id> `
+  --overwrite
+```
+
+每个提示词都会引用：
+
+```text
+references/style_reference/PPT模板.png
+references/style_reference/PPT示例.png
+```
+
+用 Codex Image Gen 生成的每页最终位图必须保存为：
+
+```text
+runs/<run_id>/slides/slide_xxx/visual_draft.png
+```
+
+然后把整页位图标准化为 Remotion 输入：
+
+```powershell
+python scripts/prepare_full_slide_scenes.py `
+  --run-dir runs/<run_id> `
+  --overwrite
+```
+
+这一步只会复制和缩放 PNG，不会绘制页面内容。它会生成 `assets/full_slide.png`、`scene.json` 和 `animation_timeline.json`。
+
 ## PNG 图层 scene
 
-Stage 3 输出的 `scene.json` 使用 PNG 图层模型：
+Stage 3 输出的 `scene.json` 使用 PNG 图层模型。生产默认是一个整页 `full_slide` PNG：
+
+```json
+{
+  "slide_id": "slide_001",
+  "source_visual_draft": "runs/demo/slides/slide_001/visual_draft.png",
+  "visual_source": "codex_image_gen_full_slide_bitmap",
+  "canvas": {
+    "width": 1920,
+    "height": 1080,
+    "background": "#FFFDF7"
+  },
+  "layers": [
+    {
+      "id": "full_slide_layer",
+      "type": "png",
+      "asset": "assets/full_slide.png",
+      "role": "full_slide",
+      "box": {"x": 0, "y": 0, "w": 1920, "h": 1080},
+      "z_index": 10
+    }
+  ]
+}
+```
+
+如果后续确实要拆层，也只能拆成由图像模型产出的 PNG 层：
 
 ```json
 {
@@ -154,6 +213,14 @@ runs/<run_id>/remotion_props.json
 ```
 
 该文件汇总所有 slide 的 `scene.json`、`voice.mp3`、`audio_timeline.json` 和 `animation_timeline.json`，并作为 Remotion 的 `--props` 输入。
+
+渲染前先做运行目录完整性校验：
+
+```powershell
+python scripts/validate_run_assets.py `
+  --run-dir runs/<run_id> `
+  --require-full-slide
+```
 
 最低结构：
 

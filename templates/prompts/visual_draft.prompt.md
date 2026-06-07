@@ -2,11 +2,13 @@
 
 为 `slide_plan.json` 中指定的 slide 生成一张 16:9、1920x1080 的整页静态视觉稿。
 
+正式生产必须使用 Codex Image Gen 生成整页位图。标题、副标题、内容区、图标、线条、箭头、标注、总结条和所有 PPT 主体视觉内容都必须进入生成图片本身；后续 Remotion 只允许展示这张 PNG、叠加字幕和播放音频，不得用 SVG、HTML、CSS、Canvas 或 React 代码补画页面主体内容。
+
 本阶段不重新定义风格。风格固定来自：
 
 - `config/style_tokens.yaml`
-- `references/style_reference/fixed_title_free_content_reference.png`
-- `references/style_reference/paper_subtitle_background.png`
+- `references/style_reference/PPT模板.png`
+- `references/style_reference/PPT示例.png`
 
 ## Slide 信息
 
@@ -24,8 +26,8 @@
 
 生成时必须参考：
 
-- `fixed_title_free_content_reference.png`：用于锁定固定标题区、内容区自由编排、整体页面密度和知识类页面气质。
-- `paper_subtitle_background.png`：用于锁定底部字幕区域、字幕背景视觉和页面底部留白。
+- `PPT模板.png`：用于锁定标题区、黄色竖线、副标题下划线、主体大圆角手绘边框和整体留白。
+- `PPT示例.png`：用于锁定内容区的信息组织方式、手写感文字、图标、分栏、标注、总结条和视觉密度。
 
 ## 固定风格
 
@@ -37,7 +39,7 @@
 - 标题区、内容区和底部字幕区必须稳定。
 - 内容区只表达当前 slide 的一个核心信息。
 - 底部保留干净字幕区，不放 PPT 内容。
-- 画面应适合后续拆成若干 PNG 图片层并在 Remotion 中做轻量动画。
+- 画面应作为完整整页 PNG 直接进入 Remotion。只有当拆出的素材本身也是图像模型生成的 PNG 时，才允许作为可选增强拆层。
 
 ## 内容结构处理
 
@@ -66,4 +68,4 @@
 - 不要让内容进入底部字幕区。
 - 不要生成乱码、假文字、假 UI、假数据标签。
 - 不要塞满页面，一页只表达一个核心点。
-- 后续 Remotion 只负责 PNG 图片层动画，因此视觉稿应适合拆分为独立 PNG 图层。
+- 后续 Remotion 只负责 PNG 图片层显示、轻量动画、音频和字幕；不得绘制 PPT 主体文字、线条、形状或图表。

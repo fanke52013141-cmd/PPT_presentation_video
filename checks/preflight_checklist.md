@@ -7,8 +7,8 @@
 - `runs/<run_id>/inputs/article.md` 存在且非空。
 - `config/task.yaml` 存在。
 - `config/style_tokens.yaml` 存在。
-- `references/style_reference/PPT_template.png` 存在。
-- `references/style_reference/PPT_example.png` 存在。
+- `references/style_reference/PPT模板.png` 存在。
+- `references/style_reference/PPT示例.png` 存在。
 - `schemas/slide_plan.schema.json` 存在且为合法 JSON。
 - `schemas/scene.schema.json` 存在且为合法 JSON。
 - `schemas/animation_timeline.schema.json` 存在且为合法 JSON。
@@ -23,6 +23,9 @@
   - `bind-animation-timeline`
   - `render-video`
 - `templates/prompts/visual_draft.prompt.md` 存在。
+- `scripts/write_visual_prompts.py` 存在。
+- `scripts/prepare_full_slide_scenes.py` 存在。
+- `scripts/validate_run_assets.py` 存在。
 - `scripts/minimax_tts.py` 存在。
 - `scripts/remotion` 存在。
 - `MINIMAX_API_KEY` 可从环境变量或 `.env` 读取，但不得写入日志。
@@ -50,6 +53,7 @@ runs/<run_id>/logs/preflight_report.md
 - 固定风格资源缺失。
 - 必需 schema 缺失或非法。
 - 主流程 Skill 缺失。
+- 整页位图生产脚本缺失。
 - 需要执行 TTS 时缺少 MiniMax API Key。
 - 需要渲染视频时缺少 FFmpeg / FFprobe。
 

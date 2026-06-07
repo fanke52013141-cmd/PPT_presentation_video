@@ -13,8 +13,8 @@ tracked:
   - .gitignore
   - .env.example
   - references/style_reference/README.md
-  - references/style_reference/fixed_title_free_content_reference.png
-  - references/style_reference/paper_subtitle_background.png
+  - references/style_reference/PPT模板.png
+  - references/style_reference/PPT示例.png
 
 ignored:
   - runs/**

@@ -50,3 +50,30 @@
 - 现象：配图不是 Image Gen 生成，而是由 shape 和文字拼出。
 - 原因：`build_scene()` 中用 `visual_panel`、`visual_doc`、`visual_secret`、`visual_deadline`、`visual_check` 等元素模拟配图。
 - 优化：使用 Codex Image Gen 生成 8 格纸感拼贴资产表，裁切为每页独立 PNG；v4 的 `animation_role: visual` 元素全部为 `type: image`，`semantic_role: content_visual`，不再使用非图片 visual 元素。
+
+## 2026-06-07 Token 经济学端到端运行
+
+### 发现的问题
+
+- 现象：用户指定的 PPT 模板和 PPT 示例没有被稳定用上。
+- 原因：旧参考图路径仍分散在配置、prompt、skill 和检查文档里；流程没有生成每页可追溯的视觉提示词，也没有把固定参考图作为强制输入记录下来。
+- 修复：替换 `references/style_reference/` 下旧图，统一配置为 `PPT模板.png` 和 `PPT示例.png`；新增 `scripts/write_visual_prompts.py`，每页生成绑定两张参考图的 Codex Image Gen prompt。
+
+- 现象：视觉主体可能被 SVG、前端代码或本地绘图脚本拼出来，不符合“整页内容都由 Codex Image Gen 生成”的要求。
+- 原因：旧流程默认“视觉稿 -> 拆 PNG 图层”，但没有明确禁止 code-native text/shape/line，也没有校验 production scene 是否仍带旧 `elements[]`。
+- 修复：把生产默认路径改为 `codex_image_gen_full_slide_bitmap`；新增 `scripts/prepare_full_slide_scenes.py` 和 `scripts/validate_run_assets.py`；`scripts/build_remotion_props.py` 现在拒绝 `elements[]`；`checks/validate_scene.md` 改为 full-slide PNG 检查规则。
+
+- 现象：PowerShell `Get-Content | ConvertFrom-Json` 在无 BOM UTF-8 JSON 上会显示乱码甚至报 JSON 错误，容易误判流程失败。
+- 原因：Windows PowerShell 默认编码和 UTF-8 运行产物不一致。
+- 修复：核心 JSON 读写统一交给 Python 脚本使用 `encoding="utf-8-sig"`；人工调试时不要用未指定编码的 PowerShell JSON 管道判断中文 JSON 是否损坏。
+
+- 现象：整页 PNG 标准化阶段耗时 69 秒，影响迭代速度。
+- 原因：Pillow `optimize=True` 对 12 张 1920x1080 PNG 压缩过慢。
+- 修复：`scripts/prepare_full_slide_scenes.py` 默认关闭 PNG optimize，仅在显式传 `--optimize-png` 时启用；同一批资产准备耗时降到约 6.4 秒。
+
+### 验证结果
+
+- 本次运行生成 12 页 Codex Image Gen 整页位图。
+- `scripts/validate_run_assets.py --require-full-slide` 通过 12 页。
+- Remotion 渲染输出 `1920x1080`、`30fps`、约 `357.99s`，含 H.264 视频轨和 AAC 音频轨。
+- 抽取 12 页视频帧均非黑屏，风格一致，字幕为正确中文，Remotion 仅负责整页 PNG、音频和字幕合成。

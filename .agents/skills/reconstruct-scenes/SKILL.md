@@ -70,22 +70,29 @@ description: Reconstruct an approved static visual draft into editable scene ele
 4. 读取 `style_tokens.yaml`，锁定画布、背景、标题区、内容框、字幕安全区、字号、颜色和允许的 semantic_role。
 5. 识别视觉稿中的背景、主体、图标、图表、装饰和文字区域。
 6. 文字一律重建为真实 `text` 元素，不从图片中抠文字。
-7. 固定输出 `brand_marker`、`subtitle_underline` 和 `content_frame`，并使用 `style_tokens.yaml` 中的固定坐标。
-8. 手绘框、手绘箭头、关键词下划线、关键词圈注、Token 小块、总结条、胶囊标签，优先重建为 `shape`、`line`、`text` 等 renderer 可控元素。
-9. 复杂插图、复杂图标组、人物/机器人插图或无法稳定程序化重建的视觉主体，可以作为 `type: image` 元素引用 `assets/` 下的位图素材。
-10. 为每个元素设置稳定 `id`、`box`、`z_index`、`region`、`semantic_role` 和可选 `animation_role`。
-11. 输出符合 `schemas/scene.schema.json` 的 `scene.json`。
-12. 使用 JSON Schema 校验 `scene.json`。校验不通过时，修正结构后再继续。
+7. 固定输出 `brand_marker`、`main_title`、`subtitle`、`subtitle_underline` 和 `content_frame`，并使用 `style_tokens.yaml` 中的固定坐标。
+8. 主标题和副标题必须拆成两个独立的 `text` 元素，不能合并为同一个文本框、group 或图片。
+9. 手绘框、手绘箭头、关键词下划线、关键词圈注、Token 小块、总结条、胶囊标签，优先重建为 `shape`、`line`、`text` 等 renderer 可控元素。
+10. 复杂插图、复杂图标组、人物/机器人插图或无法稳定程序化重建的视觉主体，可以作为 `type: image` 元素引用 `assets/` 下的位图素材。
+11. 为每个元素设置稳定 `id`、`box`、`z_index`、`region`、`semantic_role` 和可选 `animation_role`。
+12. 输出符合 `schemas/scene.schema.json` 的 `scene.json`。
+13. 使用 JSON Schema 校验 `scene.json`。校验不通过时，修正结构后再继续。
 
 # Required Fixed Elements
 
 每页必须包含以下固定元素：
 
 - `brand_marker`: 左侧黄色竖线。
-- `main_title`: 主标题真实文本。
-- `subtitle`: 副标题真实文本。
+- `main_title`: 主标题真实文本，必须是独立 `text` 元素，`semantic_role: main_title`。
+- `subtitle`: 副标题真实文本，必须是独立 `text` 元素，`semantic_role: subtitle`。
 - `subtitle_underline`: 副标题下方黄色横线。
 - `content_frame`: 中间大圆角内容框。
+
+禁止：
+
+- 把 `main_title` 和 `subtitle` 合并成同一个 `text` 元素。
+- 把主标题和副标题做成图片。
+- 把标题区做成不可编辑的大背景图。
 
 # Region Rules
 
@@ -115,6 +122,7 @@ description: Reconstruct an approved static visual draft into editable scene ele
 
 - `visual_review.yaml` 必须是 `status: approved`。
 - 所有屏幕文字都必须可编辑。
+- `main_title` 和 `subtitle` 必须是两个独立 `text` 元素。
 - 所有重要元素都有稳定 `id`。
 - 元素不能互相遮挡主要阅读区域。
 - `box` 坐标必须在 1920x1080 内。
@@ -139,3 +147,4 @@ description: Reconstruct an approved static visual draft into editable scene ele
 - `validation-weak`
 - `scene-schema-failed`
 - `asset-overuse`
+- `title-subtitle-merged`

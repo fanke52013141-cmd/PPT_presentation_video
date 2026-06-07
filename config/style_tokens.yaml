@@ -78,8 +78,8 @@ scene_layers:
   description: Remotion 只显示 PNG 图层，不绘制 text、shape、line 或 group。
   required_output_field: layers
   deprecated_output_field: elements
-  production_default_role: full_slide
-  production_visual_source: codex_image_gen_full_slide_bitmap
+  production_default_role: content_body
+  production_visual_source: codex_image_gen_png_layers
   allowed_roles:
     - background
     - title
@@ -100,14 +100,16 @@ scene_layers:
     - summary
   fallback_layer:
     role: full_slide
-    note: 正式生产默认使用 Codex Image Gen 整页 PNG；拆层只是可选增强。
+    note: full_slide 只作为拆层来源和诊断兜底，不能作为合格生产动画的唯一图层。
   rules:
     - scene.json 使用 layers[]，每个 layer 必须是 type: png。
     - animation_timeline.events[].target 必须指向 scene.layers[].id。
-    - 主标题和副标题默认包含在 full_slide 位图中，只有图像模型产出的 PNG 素材才允许拆成独立图层。
+    - 正式生产必须从 Codex Image Gen 整页位图裁切出多个 PNG 图层。
+    - 主标题和副标题应从 Image Gen 位图裁切为独立 PNG 图层，不得由 Remotion 绘制。
+    - 只有拆层失败诊断时才允许临时使用 full_slide 预览，不能视为生产完成。
     - 页面中间是开放内容区，不绘制大圆角外框或任何 enclosing content frame。
     - 底部字幕区不属于 PNG 主体内容，视频字幕由 Remotion 单独叠加。
-    - 不再要求 Remotion 渲染文字、线条、形状或分组元素。
+    - Remotion 不渲染文字、线条、形状或分组元素。
 
 visual_assets:
   template_reference_image: references/style_reference/PPT模板.png

@@ -48,10 +48,13 @@ export type TimelineSegment = {
 };
 
 export type AnimationEvent = {
+  id?: string;
   at: number;
   target: string;
   action: 'fade_in' | 'fade_up' | 'soft_zoom_in' | 'slide_in_left' | 'highlight';
   duration: number;
+  easing?: string;
+  params?: Record<string, unknown>;
 };
 
 export type Slide = {
@@ -90,53 +93,66 @@ const toAssetSrc = (value?: string): string | undefined => {
   return staticFile(normalized);
 };
 
-const getEvent = (events: AnimationEvent[] | undefined, id: string): AnimationEvent | undefined => {
-  return events?.find((event) => event.target === id);
+const getEvents = (events: AnimationEvent[] | undefined, id: string): AnimationEvent[] => {
+  return (events ?? []).filter((event) => event.target === id).sort((a, b) => a.at - b.at);
 };
 
 const animatedStyle = (
   frame: number,
   fps: number,
-  event: AnimationEvent | undefined,
+  events: AnimationEvent[],
   base: React.CSSProperties
 ): React.CSSProperties => {
-  if (!event) {
+  if (events.length === 0) {
     return base;
   }
 
-  const start = event.at * fps;
-  const duration = Math.max(1, event.duration * fps);
-  const progress = interpolate(frame, [start, start + duration], [0, 1], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
-  });
-  const springProgress = spring({
-    frame: Math.max(0, frame - start),
-    fps,
-    config: {damping: 18, stiffness: 110, mass: 0.8},
-  });
+  const entryEvent = events.find((event) => event.action !== 'highlight');
+  let style: React.CSSProperties = {...base};
 
-  if (event.action === 'fade_up') {
-    return {...base, opacity: progress, transform: `translateY(${(1 - springProgress) * 28}px)`};
-  }
-  if (event.action === 'slide_in_left') {
-    return {...base, opacity: progress, transform: `translateX(${(1 - springProgress) * -34}px)`};
-  }
-  if (event.action === 'soft_zoom_in') {
-    return {...base, opacity: progress, transform: `scale(${0.96 + springProgress * 0.04})`};
-  }
-  if (event.action === 'highlight') {
-    const glow = interpolate(frame, [start, start + duration * 0.5, start + duration], [0, 1, 0], {
+  if (entryEvent) {
+    const start = entryEvent.at * fps;
+    const duration = Math.max(1, entryEvent.duration * fps);
+    const progress = interpolate(frame, [start, start + duration], [0, 1], {
       extrapolateLeft: 'clamp',
       extrapolateRight: 'clamp',
     });
-    return {
-      ...base,
-      opacity: 1,
-      filter: `drop-shadow(0 0 ${18 * glow}px rgba(249,214,92,${0.38 * glow}))`,
-    };
+    const springProgress = spring({
+      frame: Math.max(0, frame - start),
+      fps,
+      config: {damping: 18, stiffness: 110, mass: 0.8},
+    });
+
+    if (entryEvent.action === 'fade_up') {
+      style = {...style, opacity: progress, transform: `translateY(${(1 - springProgress) * 28}px)`};
+    } else if (entryEvent.action === 'slide_in_left') {
+      style = {...style, opacity: progress, transform: `translateX(${(1 - springProgress) * -34}px)`};
+    } else if (entryEvent.action === 'soft_zoom_in') {
+      style = {...style, opacity: progress, transform: `scale(${0.96 + springProgress * 0.04})`};
+    } else {
+      style = {...style, opacity: progress};
+    }
   }
-  return {...base, opacity: progress};
+
+  const highlightEvents = events.filter((event) => event.action === 'highlight');
+  if (highlightEvents.length === 0) {
+    return style;
+  }
+
+  const glow = Math.max(
+    ...highlightEvents.map((event) => {
+      const start = event.at * fps;
+      const duration = Math.max(1, event.duration * fps);
+      return interpolate(frame, [start, start + duration * 0.5, start + duration], [0, 1, 0], {
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+      });
+    })
+  );
+  return {
+    ...style,
+    filter: `drop-shadow(0 0 ${18 * glow}px rgba(249,214,92,${0.38 * glow}))`,
+  };
 };
 
 const LayerView: React.FC<{layer: SceneLayer; events?: AnimationEvent[]}> = ({layer, events}) => {
@@ -151,7 +167,7 @@ const LayerView: React.FC<{layer: SceneLayer; events?: AnimationEvent[]}> = ({la
     zIndex: layer.z_index,
     overflow: 'visible',
   };
-  const style = animatedStyle(frame, fps, getEvent(events, layer.id), base);
+  const style = animatedStyle(frame, fps, getEvents(events, layer.id), base);
 
   return (
     <Img

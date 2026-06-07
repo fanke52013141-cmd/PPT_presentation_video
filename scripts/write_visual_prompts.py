@@ -99,6 +99,7 @@ Input images:
 
 Primary request:
 Generate a complete full-slide PNG-like bitmap in the same warm hand-drawn Chinese explainer style as the references. The slide body, title, subtitle, lines, arrows, icons, labels, and diagram content must all be part of the generated bitmap image. Do not create SVG, vector layers, HTML, CSS, or frontend-drawn elements.
+After this bitmap is approved, the production pipeline will crop it into PNG layers for animation. Compose the slide as separable visual islands: title, subtitle, each diagram block, each label group, arrows, annotations, and summary bar should have clear whitespace around them.
 
 Canvas and layout:
 - 16:9 landscape, suitable for 1920x1080 video.
@@ -109,6 +110,8 @@ Canvas and layout:
 - The middle of the slide is an open content canvas. Do not draw a large enclosing rounded black content frame.
 - Keep the main content inside the open area from roughly x=80,y=235 to x=1840,y=915.
 - Leave the bottom 150px visually calm so Remotion subtitles can overlay without covering critical content.
+- Keep at least 24-40px of clean background between independent animatable objects.
+- Arrows may connect ideas, but arrow tips must not touch or overlap text strokes, icon strokes, labels, or summary text.
 
 Text to render exactly where possible:
 Main title: "{title}"
@@ -125,6 +128,8 @@ Style constraints:
 - Match the two reference images: black hand-drawn ink, yellow accent, soft green and blue highlight pills, simple doodle icons, clean spacing.
 - Preserve the fixed title/subtitle positions and fixed subtitle-safe area from the reference images.
 - Do not add an outer content border around the middle content.
+- Avoid overlapping objects. Do not place text on top of icons, arrows, borders, or colored label backgrounds unless that text belongs to the same label group.
+- Prefer 3-7 large separable content groups over many tiny scattered marks, so each group can be cropped into a PNG layer and animated.
 - Keep text large and readable; avoid dense paragraphs and avoid tiny labels.
 - Prefer short Chinese labels and diagrammatic blocks over long body text.
 - No photorealistic scene, no 3D, no neon technology style, no dark background, no watermark.

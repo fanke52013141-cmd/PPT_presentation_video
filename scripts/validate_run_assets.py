@@ -94,6 +94,8 @@ def validate_scene(
     width: int,
     height: int,
     require_full_slide: bool,
+    require_layered: bool,
+    fail_on_decomposition_warnings: bool,
 ) -> set[str]:
     scene = read_json(scene_path)
     if "elements" in scene:
@@ -103,6 +105,27 @@ def validate_scene(
         raise ValidationError(f"scene.json must contain non-empty layers[]: {scene_path}")
     if require_full_slide and len(layers) != 1:
         raise ValidationError(f"Full-slide mode requires exactly one PNG layer: {scene_path}")
+    if require_layered:
+        if scene.get("visual_source") != "codex_image_gen_png_layers":
+            raise ValidationError(f"Layered mode requires visual_source=codex_image_gen_png_layers: {scene_path}")
+        if len(layers) < 2:
+            raise ValidationError(f"Layered mode requires multiple PNG layers: {scene_path}")
+        if any(layer.get("role") == "full_slide" for layer in layers if isinstance(layer, dict)):
+            raise ValidationError(f"Layered mode must not use role=full_slide as the animation layer: {scene_path}")
+
+    decomposition = scene.get("decomposition")
+    if fail_on_decomposition_warnings and isinstance(decomposition, dict):
+        warnings = decomposition.get("warnings")
+        if isinstance(warnings, list) and warnings:
+            warning_types = [
+                str(warning.get("type", "unknown"))
+                for warning in warnings
+                if isinstance(warning, dict)
+            ]
+            raise ValidationError(
+                f"Decomposition warnings must be resolved before render: {scene_path}: "
+                f"{', '.join(warning_types) or 'unknown'}"
+            )
 
     layer_ids: set[str] = set()
     for layer in layers:
@@ -120,13 +143,21 @@ def validate_scene(
         if asset.lower().endswith(".svg"):
             raise ValidationError(f"SVG assets are not allowed in production scene: {scene_path}")
         asset_path = resolve_asset(asset, slide_dir, repo_root)
-        expected_size = (width, height) if require_full_slide else (None, None)
-        validate_png(asset_path, width=expected_size[0], height=expected_size[1])
+        box = layer.get("box")
+        if not isinstance(box, dict):
+            raise ValidationError(f"Layer missing box: {scene_path}: {layer_id}")
+        for key in ["x", "y", "w", "h"]:
+            if not isinstance(box.get(key), (int, float)):
+                raise ValidationError(f"Layer box missing numeric {key}: {scene_path}: {layer_id}")
+        if box["w"] <= 0 or box["h"] <= 0:
+            raise ValidationError(f"Layer box must have positive size: {scene_path}: {layer_id}")
+        if box["x"] < 0 or box["y"] < 0 or box["x"] + box["w"] > width or box["y"] + box["h"] > height:
+            raise ValidationError(f"Layer box is outside the canvas: {scene_path}: {layer_id}")
+        expected_w = int(round(float(box["w"])))
+        expected_h = int(round(float(box["h"])))
+        validate_png(asset_path, width=expected_w, height=expected_h)
 
         if require_full_slide:
-            box = layer.get("box")
-            if not isinstance(box, dict):
-                raise ValidationError(f"Full-slide layer missing box: {scene_path}")
             expected_box = {"x": 0, "y": 0, "w": width, "h": height}
             if any(box.get(key) != value for key, value in expected_box.items()):
                 raise ValidationError(f"Full-slide layer box must be {expected_box}: {scene_path}")
@@ -162,6 +193,8 @@ def validate_slide(
     width: int,
     height: int,
     require_full_slide: bool,
+    require_layered: bool,
+    fail_on_decomposition_warnings: bool,
 ) -> None:
     validate_png(slide_dir / "visual_draft.png")
     validate_png(slide_dir / "assets" / "full_slide.png", width=width, height=height)
@@ -178,6 +211,8 @@ def validate_slide(
         width=width,
         height=height,
         require_full_slide=require_full_slide,
+        require_layered=require_layered,
+        fail_on_decomposition_warnings=fail_on_decomposition_warnings,
     )
     validate_animation_timeline(slide_dir / "animation_timeline.json", layer_ids, audio_duration_sec)
 
@@ -188,6 +223,8 @@ def validate_run(
     width: int,
     height: int,
     require_full_slide: bool,
+    require_layered: bool,
+    fail_on_decomposition_warnings: bool,
 ) -> int:
     slide_plan = read_json(run_dir / "planning" / "slide_plan.json")
     slides = slide_plan.get("slides")
@@ -208,6 +245,8 @@ def validate_run(
             width=width,
             height=height,
             require_full_slide=require_full_slide,
+            require_layered=require_layered,
+            fail_on_decomposition_warnings=fail_on_decomposition_warnings,
         )
 
     return len(slide_ids)
@@ -220,6 +259,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--width", default=DEFAULT_WIDTH, type=int)
     parser.add_argument("--height", default=DEFAULT_HEIGHT, type=int)
     parser.add_argument("--require-full-slide", action="store_true")
+    parser.add_argument("--require-layered", action="store_true")
+    parser.add_argument(
+        "--fail-on-decomposition-warnings",
+        action="store_true",
+        help="Fail when scene.decomposition.warnings is non-empty.",
+    )
     return parser.parse_args()
 
 
@@ -232,6 +277,8 @@ def main() -> int:
             width=args.width,
             height=args.height,
             require_full_slide=args.require_full_slide,
+            require_layered=args.require_layered,
+            fail_on_decomposition_warnings=args.fail_on_decomposition_warnings,
         )
     except ValidationError as exc:
         print(f"Error: {exc}", file=sys.stderr)

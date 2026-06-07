@@ -3,60 +3,82 @@ cases:
     stage: generate-audio-subtitles
     tags: [external-api, tts, config]
     symptom: "MiniMax t2a_v2 使用 api.minimax.io 返回 invalid api key。"
-    root_cause: "当前凭证对应可用 endpoint 为 https://api.minimaxi.com/v1/t2a_v2。"
+    root_cause: "当前凭证对应可用 endpoint 是 https://api.minimaxi.com/v1/t2a_v2。"
     resolution: "更新 .env.example、config/task.yaml、scripts/minimax_tts.py 和 generate-audio-subtitles skill。"
+
   - id: 2026-06-05-remotion-file-url-blocked
     stage: render-video
     tags: [render-error, asset-path]
     symptom: "Remotion/Chrome 渲染时无法加载 file:/// 本地图片。"
     root_cause: "浏览器渲染环境不能可靠读取任意本地 file URL。"
     resolution: "把运行期资源复制到 scripts/remotion/public/runtime/<run_id>/，组件内用 staticFile() 引用。"
+
   - id: 2026-06-05-video-duration-under-target
     stage: plan-slides
     tags: [duration, planning]
-    symptom: "第 1 版约 125 秒、第 2 版约 147 秒，低于 3 分钟目标。"
-    root_cause: "分镜页数不足，把审题、关键词、身份和处理步骤压缩在少数页面中。"
-    resolution: "第 3 版扩展到 8 页，拆出审题层级和处理步骤，最终约 214 秒。"
+    symptom: "早期版本视频低于目标时长。"
+    root_cause: "分镜页数不足，把多个讲解层级压缩在少数页面中。"
+    resolution: "扩展 slide 数量，拆出审题、关键词、身份和处理步骤等层级。"
+
   - id: 2026-06-05-subtitle-vertical-misaligned
     stage: render-video
     tags: [subtitle, layout]
-    symptom: "字幕在底部虚线字幕框内视觉偏上。"
+    symptom: "字幕在底部字幕框内视觉偏上。"
     root_cause: "Remotion 字幕容器高度和 bottom 偏移没有匹配底图字幕框。"
-    resolution: "字幕容器改为 82px 高、bottom 8px，并抽帧检查单行/双行字幕居中。"
+    resolution: "字幕容器改为 82px 高，并按固定字幕安全区居中。"
+
   - id: 2026-06-05-repeated-slide-layouts
     stage: reconstruct-scenes
     tags: [layout, visual-review]
     symptom: "所有页面看起来像同一版式套壳。"
     root_cause: "生成脚本复用同一套卡片坐标和配图区坐标。"
     resolution: "加入多种内容区 layout，并在场景中记录 scene.layout 供审核。"
+
   - id: 2026-06-05-illustration-built-from-shapes
     stage: reconstruct-scenes
     tags: [imagegen, visual-asset]
     symptom: "配图由 shape/text 拼装，不符合 Image Gen 位图资产规则。"
     root_cause: "元素重建阶段把视觉主体当作可程序绘制图形处理。"
-    resolution: "用 Codex Image Gen 生成配图资产，scene 中 visual 元素统一使用 type=image 和 semantic_role=content_visual。"
+    resolution: "视觉主体统一使用 Image Gen 产出的 PNG，Remotion 不绘制主体内容。"
+
   - id: 2026-06-07-style-reference-not-bound
     stage: generate-visual-drafts
     tags: [style-reference, prompt, imagegen]
     symptom: "用户指定的 PPT 模板和 PPT 示例没有稳定进入视觉生成流程。"
-    root_cause: "参考图只散落在文档和配置中，没有形成每页可追溯的视觉提示词。"
-    resolution: "统一替换为 PPT模板.png 和 PPT示例.png，并新增 scripts/write_visual_prompts.py 为每页写出绑定参考图的 Codex Image Gen prompt。"
+    root_cause: "参考图路径分散在文档和配置中，没有形成每页可追溯的视觉提示词。"
+    resolution: "统一为 PPT模板.png 和 PPT示例.png，并新增 scripts/write_visual_prompts.py。"
+
   - id: 2026-06-07-visual-content-not-imagegen
     stage: reconstruct-scenes
     tags: [imagegen, scene, remotion]
-    symptom: "PPT 主体内容可能由 SVG、前端代码或本地绘图生成，而不是 Codex Image Gen 位图。"
-    root_cause: "旧流程没有把 full_slide PNG 设为生产默认，也没有拒绝旧 scene.elements[]。"
-    resolution: "新增 prepare_full_slide_scenes.py 与 validate_run_assets.py；build_remotion_props.py 拒绝 elements[]；生产 scene 默认 codex_image_gen_full_slide_bitmap。"
+    symptom: "PPT 主体内容可能由 SVG、前端代码或本地绘图生成。"
+    root_cause: "旧流程没有拒绝 scene.elements[] 和 code-native text/shape/line。"
+    resolution: "build_remotion_props.py 拒绝 elements[]；Remotion 主路径只接受 PNG layers。"
+
   - id: 2026-06-07-powershell-utf8-json-false-negative
     stage: preflight-check
     tags: [windows, encoding, json]
-    symptom: "PowerShell ConvertFrom-Json 对 UTF-8 中文 JSON 显示乱码并误报解析失败。"
-    root_cause: "Windows PowerShell 默认编码与无 BOM UTF-8 运行产物不一致。"
-    resolution: "核心 JSON 读写和校验改用 Python utf-8-sig；人工调试时避免未指定编码的 PowerShell JSON 管道。"
+    symptom: "PowerShell ConvertFrom-Json 对 UTF-8 中文 JSON 出现乱码或误报。"
+    root_cause: "Windows PowerShell 默认编码与 UTF-8 运行产物不一致。"
+    resolution: "核心 JSON 读写和校验改用 Python utf-8-sig。"
+
   - id: 2026-06-07-png-optimization-slow
     stage: reconstruct-scenes
     tags: [performance, png, pillow]
-    symptom: "12 张整页 PNG 标准化耗时约 69 秒。"
+    symptom: "大尺寸 PNG 标准化耗时过长。"
     root_cause: "Pillow PNG optimize=True 对大图压缩过慢。"
-    resolution: "prepare_full_slide_scenes.py 默认关闭 optimize，仅在传 --optimize-png 时启用，耗时降到约 6.4 秒。"
+    resolution: "PNG optimize 默认关闭，仅在传 --optimize-png 时启用。"
 
+  - id: 2026-06-08-slide-not-decomposed
+    stage: reconstruct-scenes
+    tags: [decomposition, animation, scene]
+    symptom: "生成每页 slide 图片后没有拆成元素，动画只能整页淡入。"
+    root_cause: "Stage 3 默认走单个 full_slide 图层；校验器没有阻断单图层生产路径。"
+    resolution: "新增 scripts/decompose_slide_layers.py；validate_run_assets.py 增加 --require-layered；AGENTS、README、skills 和 checks 改为 PNG 图层拆解主路径。"
+
+  - id: 2026-06-08-visual-overlap-blocks-decomposition
+    stage: generate-visual-drafts
+    tags: [visual-overlap, not-animation-friendly, imagegen]
+    symptom: "视觉稿中元素重叠、箭头压字或标签粘连，导致 PNG 裁切层不干净。"
+    root_cause: "视觉生成提示词没有要求后续拆层所需的留白和对象分离。"
+    resolution: "write_visual_prompts.py 和 visual_draft.prompt.md 增加可拆解构图要求：对象之间留 24-40px，禁止压线/压字/重叠，优先 3-7 个可裁切 group。"

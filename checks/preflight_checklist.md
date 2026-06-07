@@ -23,9 +23,11 @@
   - `bind-animation-timeline`
   - `render-video`
 - `templates/prompts/visual_draft.prompt.md` 存在。
+- `templates/prompts/scene_reconstruction.prompt.md` 存在。
 - `scripts/write_visual_prompts.py` 存在。
-- `scripts/prepare_full_slide_scenes.py` 存在。
+- `scripts/decompose_slide_layers.py` 存在。
 - `scripts/validate_run_assets.py` 存在。
+- `scripts/build_remotion_props.py` 存在。
 - `scripts/minimax_tts.py` 存在。
 - `scripts/remotion` 存在。
 - `MINIMAX_API_KEY` 可从环境变量或 `.env` 读取，但不得写入日志。
@@ -34,26 +36,17 @@
 
 ## 输出
 
-生成：
-
 ```text
 runs/<run_id>/logs/preflight_report.md
 ```
 
-## 通过条件
-
-- 无 blocking issue。
-- 报告状态为 `pass`。
-
 ## 阻断条件
-
-以下任一问题必须阻止进入 Stage 1：
 
 - 输入文章缺失或为空。
 - 固定风格资源缺失。
 - 必需 schema 缺失或非法。
 - 主流程 Skill 缺失。
-- 整页位图生产脚本缺失。
+- 拆层脚本或渲染脚本缺失。
 - 需要执行 TTS 时缺少 MiniMax API Key。
 - 需要渲染视频时缺少 FFmpeg / FFprobe。
 

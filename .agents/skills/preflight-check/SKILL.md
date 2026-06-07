@@ -1,13 +1,13 @@
 ---
 name: preflight-check
-description: Validate run inputs, repository resources, environment variables, schemas, and local render dependencies before starting production.
+description: Validate run inputs, repository resources, environment variables, schemas, and local render dependencies before production.
 ---
 
 # Purpose
 
-在正式进入 `plan-slides` 前做一次前置检查，尽早发现缺文件、配置缺失、环境变量未设置、参考图未放入仓库、schema 不存在、Remotion/FFmpeg 依赖不可用等问题。
+在进入 `plan-slides` 前做前置检查，尽早发现缺文件、配置缺失、环境变量未设置、参考图缺失、schema 缺失、Remotion/FFmpeg 依赖不可用等问题。
 
-本阶段不生成内容，不调用图片生成、TTS 或视频渲染。它只做准备状态检查。
+本阶段不生成内容，不调用图片生成、TTS 或视频渲染。
 
 # Inputs
 
@@ -44,23 +44,26 @@ description: Validate run inputs, repository resources, environment variables, s
 
 1. 检查 `runs/<run_id>/` 目录是否存在，不存在则创建标准子目录。
 2. 检查 `article.md` 是否存在、非空、可读。
-3. 检查 `config/task.yaml` 是否存在。
-4. 检查 `config/style_tokens.yaml` 是否存在，并包含画布、颜色、字幕区和 PNG 图层模型等关键配置。
-5. 检查固定新风格参考图是否存在：`PPT模板.png` 和 `PPT示例.png`。
-6. 检查必要 schema 是否存在并为合法 JSON。
-7. 检查 `.agents/skills/**/SKILL.md` 中主流程需要的 Skill 是否存在。
-8. 检查 `templates/prompts/visual_draft.prompt.md` 是否存在。
-9. 检查 `scripts/write_visual_prompts.py`、`scripts/prepare_full_slide_scenes.py`、`scripts/validate_run_assets.py` 是否存在。
-10. 检查 `scripts/minimax_tts.py` 是否存在。
-11. 检查 `scripts/remotion` 是否存在。
-12. 检查本地环境变量 `MINIMAX_API_KEY` 是否可读取，但不得把真实值写入日志。
-13. 检查 `ffmpeg` 和 `ffprobe` 是否可用。
-14. 输出 `preflight_report.md`。
-15. 若存在 blocking issue，停止主流程，不进入 Stage 1。
+3. 检查 `config/task.yaml` 和 `config/style_tokens.yaml` 是否存在。
+4. 检查固定参考图 `PPT模板.png` 和 `PPT示例.png` 是否存在。
+5. 检查必需 schema 是否存在并为合法 JSON。
+6. 检查 `.agents/skills/**/SKILL.md` 中主流程需要的 skill 是否存在。
+7. 检查 prompt 模板：
+   - `templates/prompts/visual_draft.prompt.md`
+   - `templates/prompts/scene_reconstruction.prompt.md`
+8. 检查主流程脚本：
+   - `scripts/write_visual_prompts.py`
+   - `scripts/decompose_slide_layers.py`
+   - `scripts/validate_run_assets.py`
+   - `scripts/build_remotion_props.py`
+   - `scripts/minimax_tts.py`
+9. 检查 `scripts/remotion` 是否存在。
+10. 检查环境变量 `MINIMAX_API_KEY` 是否可读，但不得把真实值写入日志。
+11. 检查 `ffmpeg` 和 `ffprobe` 是否可用。
+12. 输出 `preflight_report.md`。
+13. 若存在 blocking issue，停止主流程，不进入 Stage 1。
 
 # Report Structure
-
-`preflight_report.md` 必须包含：
 
 ```md
 # Preflight Report
@@ -87,6 +90,7 @@ description: Validate run inputs, repository resources, environment variables, s
 - schemas_valid: pass | fail
 - skills_exist: pass | fail
 - prompt_templates_exist: pass | fail
+- decomposition_script_exists: pass | fail
 - minimax_api_key_present: pass | fail
 - ffmpeg_available: pass | fail
 - ffprobe_available: pass | fail
@@ -95,34 +99,19 @@ description: Validate run inputs, repository resources, environment variables, s
 
 # Blocking Issues
 
-以下问题必须阻止后续流程：
-
 - `article.md` 缺失或为空。
-- `config/style_tokens.yaml` 缺失。
-- 固定新风格参考图缺失。
+- 固定风格资源缺失。
 - 必需 schema 缺失或不是合法 JSON。
-- 主流程 Skill 缺失。
-- `MINIMAX_API_KEY` 缺失，且本次流程需要执行 TTS。
-- `ffmpeg` 或 `ffprobe` 不可用，且本次流程需要渲染视频。
-
-# Warnings
-
-以下问题可以写入警告，但不一定阻止 Stage 1：
-
-- `.env` 文件不存在，但环境变量已从系统环境提供。
-- `references/visual_rules.md` 不存在。该文件不作为主流程输入，仅供人工参考。
-- Remotion 依赖未安装，但当前只进行 Stage 1 到 Stage 3 的文本/结构流程。
+- 主流程 skill 缺失。
+- `scripts/decompose_slide_layers.py` 或渲染脚本缺失。
+- 本次流程需要 TTS 时缺少 `MINIMAX_API_KEY`。
+- 本次流程需要渲染视频时缺少 `ffmpeg` 或 `ffprobe`。
 
 # Security Rules
 
 - 不得把 API key、token、cookie、Authorization header 写入报告。
 - 检查环境变量时只能记录是否存在，不能记录值。
 - 不得把 `.env` 内容写入日志。
-
-# Failure Handling
-
-- 如果 status 为 `fail`，停止主流程，先修复 Blocking Issues。
-- 如果只有 warnings，可以进入 Stage 1，但需要在 `generation_log.md` 记录。
 
 # Bad Case Tags
 

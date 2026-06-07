@@ -27,6 +27,7 @@ Remotion 不负责重新绘制文本、shape、line、group 或复杂图表。FF
 {
   "run_manifest_path": "runs/<run_id>/run_manifest.yaml",
   "slides_dir": "runs/<run_id>/slides",
+  "remotion_props_path": "runs/<run_id>/remotion_props.json",
   "remotion_project_dir": "scripts/remotion",
   "ffmpeg": "system path"
 }
@@ -43,6 +44,38 @@ Remotion 不负责重新绘制文本、shape、line、group 或复杂图表。FF
 - `subtitles.srt`
 
 缺少任何一个文件，都不能进入该页视频渲染。
+
+# Required Remotion Props
+
+渲染前必须生成：
+
+```text
+runs/<run_id>/remotion_props.json
+```
+
+该文件是 Remotion 的唯一业务输入，结构必须包含：
+
+```json
+{
+  "fps": 30,
+  "width": 1920,
+  "height": 1080,
+  "total_duration_sec": 120.0,
+  "slides": [
+    {
+      "slide_id": "slide_001",
+      "start_sec": 0,
+      "duration_sec": 18.5,
+      "scene": {"layers": []},
+      "audio_file": "runs/<run_id>/slides/slide_001/voice.mp3",
+      "audio_timeline": {"segments": []},
+      "animation_timeline": {"events": []}
+    }
+  ]
+}
+```
+
+`remotion_props.json` 可以由脚本或 Agent 生成，但生成后必须落盘。它负责把每页 slide 的 scene、音频、字幕时间轴和动画时间轴汇总给 Remotion。
 
 # Outputs
 
@@ -68,17 +101,21 @@ Remotion 不负责重新绘制文本、shape、line、group 或复杂图表。FF
 2. 检查每页必需文件：`scene.json`、`animation_timeline.json`、`voice.mp3`、`audio_timeline.json`、`subtitles.srt`。
 3. 校验每页 `scene.json` 使用 `layers[]`，并且每个 layer 是 PNG 资源。
 4. 校验每页 `animation_timeline.events[].target` 都存在于 `scene.layers[].id`。
-5. 把运行期 PNG 图层、音频和字幕复制到 `scripts/remotion/public/runtime/<run_id>/`。
-6. Remotion 组件内只使用 `staticFile()` 引用运行期资源，不直接使用 `file:///` 本地路径。
-7. 先渲染短预览，确认资源路径、画面非黑屏、字幕区不被 PPT 内容占用。
-8. 逐页渲染 `preview.mp4`。
-9. 对每页 `preview.mp4` 抽帧检查画面、字幕、音画同步和黑屏问题。
-10. 所有单页预览可用后，渲染整片 `rough_cut.mp4`。
-11. Review Gate 3 通过后，再导出或转码为 `final.mp4`。
-12. 用 FFmpeg 做必要的媒体合并、转码、压缩和抽帧检查。
+5. 生成或检查 `runs/<run_id>/remotion_props.json`。
+6. 确认 `remotion_props.json.slides[]` 已包含每页 scene、audio_file、audio_timeline 和 animation_timeline。
+7. 使用 `scripts/render_remotion.ps1` 调用 Remotion，并通过 `--props` 读取 `remotion_props.json`。
+8. 先渲染短预览，确认资源路径、画面非黑屏、字幕区不被 PPT 内容占用。
+9. 逐页渲染 `preview.mp4`。
+10. 对每页 `preview.mp4` 抽帧检查画面、字幕、音画同步和黑屏问题。
+11. 所有单页预览可用后，渲染整片 `rough_cut.mp4`。
+12. Review Gate 3 通过后，再导出或转码为 `final.mp4`。
+13. 用 FFmpeg 做必要的媒体合并、转码、压缩和抽帧检查。
 
 # Validation
 
+- `remotion_props.json` 必须存在且为合法 JSON。
+- `remotion_props.json.slides[]` 不能为空。
+- 每个 props slide 必须包含 `scene.layers[]`、`audio_file`、`audio_timeline.segments[]` 和 `animation_timeline.events[]`。
 - 视频分辨率为 1920x1080。
 - 帧率符合 `config/task.yaml`。
 - 不设置固定总时长要求。视频时长由文章内容、slide 数量和真实 TTS 音频决定。
@@ -94,8 +131,8 @@ Remotion 不负责重新绘制文本、shape、line、group 或复杂图表。FF
 
 # Failure Handling
 
+- 如果缺少 `remotion_props.json`，先生成该文件，不直接调用 Remotion。
 - Remotion 失败时，记录 composition、frame、资源路径和错误信息。
-- 如果 Remotion 无法加载 `file:///` 资源，改用 `public/runtime/<run_id>/` 加 `staticFile()`。
 - FFmpeg 失败时，记录命令和 stderr。
 - 如果某页预览失败，只回退该页，不重做全片。
 - 如果 PNG 图层错位，回到 `reconstruct-scenes` 或 `render-element-previews`。
@@ -108,6 +145,7 @@ Remotion 不负责重新绘制文本、shape、line、group 或复杂图表。FF
 - `data-break`
 - `validation-weak`
 - `missing-render-input`
+- `missing-remotion-props`
 - `black-frame`
 - `subtitle-not-single-line`
 - `audio-video-desync`

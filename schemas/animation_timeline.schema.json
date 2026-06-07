@@ -10,18 +10,31 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["at", "target", "action", "duration"],
+        "required": ["id", "target", "action", "at", "duration"],
         "properties": {
-          "at": {"type": "number"},
+          "id": {"type": "string"},
           "target": {"type": "string"},
-          "action": {"type": "string"},
-          "duration": {"type": "number"},
+          "action": {
+            "type": "string",
+            "enum": [
+              "fade_in",
+              "fade_up",
+              "soft_zoom_in",
+              "slide_in_left",
+              "line_draw",
+              "highlight",
+              "count_up"
+            ]
+          },
+          "at": {"type": "number", "minimum": 0},
+          "duration": {"type": "number", "minimum": 0},
+          "linked_segment_id": {"type": "string"},
           "easing": {"type": "string"},
           "params": {"type": "object"}
-        }
+        },
+        "additionalProperties": true
       }
     }
   },
   "additionalProperties": true
 }
-

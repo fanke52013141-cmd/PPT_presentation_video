@@ -36,6 +36,7 @@ runs/<run_id>/
       render_preview.png
       element_review.yaml
       narration.txt
+      tts_text.txt
       voice.mp3
       subtitles.srt
       audio_timeline.json
@@ -136,8 +137,10 @@ references/style_reference/PPT_example.png
 输入：
 
 - 已通过的 `visual_draft.png`
+- `visual_review.yaml`
 - `slide_plan.json` 中对应 slide
 - `config/style_tokens.yaml`
+- `schemas/scene.schema.json`
 
 输出：
 
@@ -148,6 +151,7 @@ references/style_reference/PPT_example.png
 
 - 用 `.agents/skills/reconstruct-scenes/SKILL.md`。
 - 目标不是机械抠图，而是把已审核的视觉方向重建为可控元素。
+- 主标题 `main_title` 和副标题 `subtitle` 必须拆成两个独立 text 元素，不能合并、不能做成图片。
 - 标题、正文、标签、图表文字必须是可编辑文本元素。
 - 手绘框、手绘箭头、关键词下划线、关键词圈注、Token 小块、总结条优先使用 renderer 可控元素。
 - 复杂插图、图标组、概念插画可以使用 Codex Image Gen 位图。
@@ -159,16 +163,20 @@ references/style_reference/PPT_example.png
 输入：
 
 - `scene.json`
+- `config/style_tokens.yaml`
+- `visual_draft.png`
+- `schemas/scene.schema.json`
 
 输出：
 
 - `render_preview.png`
-- 可选渲染日志
+- 单页 `render_log.md`
 
 调用规则：
 
 - 用 `.agents/skills/render-element-previews/SKILL.md`。
 - 预览图必须接近已审核的 `visual_draft.png`。
+- 必须检查 schema、资源路径、主标题副标题拆分、字幕安全区。
 - 若差异过大，回到 `reconstruct-scenes`。
 
 ### Review Gate 2: 元素渲染审核
@@ -193,12 +201,15 @@ references/style_reference/PPT_example.png
 
 输入：
 
-- `slide_plan.json` 中对应 slide 的 `narration`，或由其导出的 `narration.txt`
+- `runs/<run_id>/planning/slide_plan.json`
+- 当前 `slide_id`
 - `config/task.yaml` 中的 MiniMax 配置
 - `.env` 中的 MiniMax 凭证
 
 输出：
 
+- `narration.txt`
+- `tts_text.txt`
 - `voice.mp3`
 - `audio_meta.json`
 - `subtitles.srt`
@@ -208,7 +219,8 @@ references/style_reference/PPT_example.png
 
 - 用 `.agents/skills/generate-audio-subtitles/SKILL.md`。
 - 调用 `scripts/minimax_tts.py`。
-- 字幕必须切成单行，默认每条不超过 28 个中文字符。
+- `tts_text.txt` 可包含少量必要停顿和少量自然语气标签，但不能在文本开头或结尾使用。
+- 字幕必须清洗掉 TTS 控制标签，切成单行，默认每条不超过 28 个中文字符。
 - 如果单页旁白过长，先拆分句段，再生成音频。
 
 ### Stage 6: bind-animation-timeline
@@ -218,6 +230,8 @@ references/style_reference/PPT_example.png
 - `scene.json`
 - `audio_timeline.json`
 - `slide_plan.json` 中对应 slide
+- 当前 `slide_id`
+- `config/style_tokens.yaml`
 
 输出：
 
@@ -226,8 +240,13 @@ references/style_reference/PPT_example.png
 调用规则：
 
 - 用 `.agents/skills/bind-animation-timeline/SKILL.md`。
+- 使用 `slide_plan_path + slide_id`，不再使用旧的 `slide_spec.json`。
 - 元素出现时间必须服务旁白，不做无意义动画。
 - 默认动画包括 `fade_up`、`fade_in`、`soft_zoom_in`、`highlight`、`line_draw`。
+- `animation_timeline.events[].target` 必须存在于 `scene.elements[].id`。
+- `linked_segment_id` 如存在，必须对应 `audio_timeline.segments[].id`。
+- 主标题和副标题必须作为两个独立 target 处理。
+- 如果精确绑定困难，降级为“标题区和内容框 → 主体内容 → 总结条/重点标注”的三段式动画。
 
 ### Stage 7: render-video
 
@@ -312,7 +331,8 @@ references/style_reference/PPT_example.png
 - 默认使用 HTTP 非流式 T2A。
 - 默认请求输出 `hex`，脚本负责解码为音频文件。
 - 若 MiniMax 返回错误，保存 `trace_id`、状态码、错误信息到日志。
-- 旁白脚本可以使用 MiniMax 支持的停顿标记 `<#0.5#>`，但不要滥用。
+- 旁白脚本可以使用 MiniMax 支持的停顿标记，但不要滥用。
+- 停顿和语气标签不能出现在字幕中。
 - 字幕必须单行显示，默认每条不超过 28 个中文字符。
 
 ## 8. Bad Case 规则

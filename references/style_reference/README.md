@@ -1,29 +1,38 @@
-# 固定标题 + 自由内容参考图
+# 固定视觉参考图
 
-此目录存放长期复用的视觉参考图，用于约束 AI 科普/知识类页面的整体风格，避免每次生成时风格漂移。
+此目录存放长期复用的视觉参考图，用于约束 AI 科普页面的整体风格，避免每次生成时风格漂移。
 
-参考图必须是 Codex Image Gen 生成的位图资产。不要用 SVG、HTML、CSS、Canvas 或脚本绘制的图片替代正式参考图。
+当前仓库实际固定参考图为：
+
+```text
+references/style_reference/fixed_title_free_content_reference.png
+references/style_reference/paper_subtitle_background.png
+```
+
+## 文件用途
+
+- `fixed_title_free_content_reference.png`：主参考图，用于约束固定标题区、内容区自由排版、整体页面密度和知识类页面气质。
+- `paper_subtitle_background.png`：字幕背景和底部区域参考图，用于约束视频字幕背景、留白和底部视觉处理。
 
 ## 使用规则
 
-- `fixed_title_free_content_reference.png` 是默认参考图。
-- 此图由 Codex Image Gen 生成，作为后续视觉稿生成的风格参考。
-- 标题区固定：主标题 58px 深蓝，副标题 24px 暖灰深色，左对齐。
-- 内容区自由：正文、配图、图解、重点块可以按内容自由编排。
-- 多条正文要点在 `scene.json` 中必须拆成多个独立文本元素。
-- 字幕区只预留空间，不在视觉稿或 `scene.json` 中生成任何内容。
+- 参考图是仓库固定资源，运行期不改风格。
+- 后续要更换视觉风格时，直接更新本目录中的固定参考图，并同步修改 `config/style_tokens.yaml`。
+- Preflight 只检查上述两个实际文件，不再检查 `PPT_template.png` 或 `PPT_example.png`。
+- 视觉稿生成必须使用这些固定参考图。
 
-## 元素生成范围
+## Remotion 约束
 
-允许生成：
+最终 Remotion 阶段只负责 PNG 图片层的显示、动画和音视频合成，不负责解释或绘制文本、shape、line、group 等复杂元素。
 
-- 主标题
-- 副标题
-- 内容区正文要点
-- 内容区配图、图解、线条、重点块
+因此，后续 `scene.json` 中的页面元素应尽量是 PNG 图片层：
 
-禁止生成：
+- 整页背景 PNG
+- 主标题 PNG
+- 副标题 PNG
+- 内容区主体 PNG
+- 图解 PNG
+- 重点标注 PNG
+- 总结条 PNG
 
-- 字幕区文本
-- 字幕区装饰元素
-- 任何侵入底部 120px 字幕区的正文或配图
+字幕由 Remotion 独立叠加，不属于 PPT 页面 PNG 层。

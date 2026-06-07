@@ -2,10 +2,17 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "SlidePlan",
   "type": "object",
-  "required": ["video_title", "target_duration_sec", "slides"],
+  "required": ["topic", "slides"],
   "properties": {
-    "video_title": {"type": "string"},
-    "target_duration_sec": {"type": "number", "minimum": 180, "maximum": 360},
+    "topic": {
+      "type": "object",
+      "required": ["topic_id", "topic_name", "topic_summary"],
+      "properties": {
+        "topic_id": {"type": "string"},
+        "topic_name": {"type": "string"},
+        "topic_summary": {"type": "string"}
+      }
+    },
     "slides": {
       "type": "array",
       "minItems": 1,
@@ -13,38 +20,44 @@
         "type": "object",
         "required": [
           "slide_id",
-          "role",
-          "duration_sec",
+          "slide_purpose",
           "main_title",
           "subtitle",
           "core_message",
-          "screen_content",
-          "narration",
-          "visual_requirement",
-          "animation_intent"
+          "content",
+          "narration"
         ],
         "properties": {
           "slide_id": {"type": "string"},
-          "role": {"type": "string"},
-          "duration_sec": {"type": "number"},
+          "slide_purpose": {"type": "string"},
           "main_title": {"type": "string"},
           "subtitle": {"type": "string"},
           "core_message": {"type": "string"},
-          "screen_content": {
-            "type": "array",
-            "items": {"type": "string"}
+          "content": {
+            "type": "object",
+            "required": ["content_type", "layout_intent", "items"],
+            "properties": {
+              "content_type": {"type": "string"},
+              "layout_intent": {"type": "string"},
+              "items": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "type": {"type": "string"},
+                    "label": {"type": "string"},
+                    "side": {"type": "string"},
+                    "text": {"type": "string"}
+                  }
+                }
+              }
+            }
           },
-          "narration": {"type": "string"},
-          "visual_requirement": {"type": "string"},
-          "animation_intent": {"type": "string"},
-          "source_key_points": {
-            "type": "array",
-            "items": {"type": "string"}
-          }
+          "narration": {"type": "string"}
         }
       }
     }
   },
   "additionalProperties": true
 }
-

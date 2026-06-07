@@ -1,11 +1,20 @@
 ---
 name: render-video
-description: Render slide previews and final video with Remotion, using FFmpeg for media processing.
+description: Render slide previews and final video with Remotion using PNG layers, audio, subtitles, and FFmpeg media processing.
 ---
 
 # Purpose
 
-把每页的 `scene.json`、`animation_timeline.json`、`voice.mp3`、`audio_timeline.json` 和 `subtitles.srt` 合成为可播放视频。Remotion 是主渲染层，FFmpeg 是媒体处理层。
+把每页的 PNG 图层版 `scene.json`、`animation_timeline.json`、`voice.mp3`、`audio_timeline.json` 和 `subtitles.srt` 合成为可播放视频。
+
+Remotion 的职责只包括：
+
+- 显示 PNG 图层。
+- 对 PNG 图层执行轻量动画。
+- 播放音频。
+- 叠加单行字幕。
+
+Remotion 不负责重新绘制文本、shape、line、group 或复杂图表。FFmpeg 只做媒体合并、转码、压缩和抽帧检查。
 
 本阶段包含两层：
 
@@ -27,8 +36,8 @@ description: Render slide previews and final video with Remotion, using FFmpeg f
 
 每页必须包含：
 
-- `scene.json`
-- `animation_timeline.json`
+- `scene.json`，且使用 `layers[]` PNG 图层结构。
+- `animation_timeline.json`，且 `events[].target` 指向 `scene.layers[].id`。
 - `voice.mp3`
 - `audio_timeline.json`
 - `subtitles.srt`
@@ -57,14 +66,16 @@ description: Render slide previews and final video with Remotion, using FFmpeg f
 
 1. 读取 `run_manifest.yaml`，确认 run_id、分辨率、fps 和 slide 顺序。
 2. 检查每页必需文件：`scene.json`、`animation_timeline.json`、`voice.mp3`、`audio_timeline.json`、`subtitles.srt`。
-3. 把运行期图片、手绘素材、音频和字幕复制到 `scripts/remotion/public/runtime/<run_id>/`。
-4. Remotion 组件内只使用 `staticFile()` 引用运行期资源，不直接使用 `file:///` 本地路径。
-5. 先渲染结构版或短预览，确认资源路径、画面非黑屏、字幕区不被内容占用。
-6. 逐页渲染 `preview.mp4`。
-7. 对每页 `preview.mp4` 抽帧检查画面、字幕、音画同步和黑屏问题。
-8. 所有单页预览可用后，渲染整片 `rough_cut.mp4`。
-9. Review Gate 3 通过后，再导出或转码为 `final.mp4`。
-10. 用 FFmpeg 做必要的媒体合并、转码、压缩和抽帧检查。
+3. 校验每页 `scene.json` 使用 `layers[]`，并且每个 layer 是 PNG 资源。
+4. 校验每页 `animation_timeline.events[].target` 都存在于 `scene.layers[].id`。
+5. 把运行期 PNG 图层、音频和字幕复制到 `scripts/remotion/public/runtime/<run_id>/`。
+6. Remotion 组件内只使用 `staticFile()` 引用运行期资源，不直接使用 `file:///` 本地路径。
+7. 先渲染短预览，确认资源路径、画面非黑屏、字幕区不被 PPT 内容占用。
+8. 逐页渲染 `preview.mp4`。
+9. 对每页 `preview.mp4` 抽帧检查画面、字幕、音画同步和黑屏问题。
+10. 所有单页预览可用后，渲染整片 `rough_cut.mp4`。
+11. Review Gate 3 通过后，再导出或转码为 `final.mp4`。
+12. 用 FFmpeg 做必要的媒体合并、转码、压缩和抽帧检查。
 
 # Validation
 
@@ -73,8 +84,8 @@ description: Render slide previews and final video with Remotion, using FFmpeg f
 - 不设置固定总时长要求。视频时长由文章内容、slide 数量和真实 TTS 音频决定。
 - 每页 `preview.mp4` 必须有视频轨和音频轨。
 - `rough_cut.mp4` 必须在 `final.mp4` 之前生成。
-- 音频、字幕和动画应与 `audio_timeline.json`、`animation_timeline.json` 对齐。
-- 无黑屏、无资源缺失、无文字溢出。
+- 音频、字幕和 PNG 图层动画应与 `audio_timeline.json`、`animation_timeline.json` 对齐。
+- 无黑屏、无资源缺失。
 - 用 `ffprobe` 校验视频轨和音频轨。
 - 用 `ffmpeg` 抽取至少开头、中段、后段三帧做视觉检查。
 - 字幕必须单行显示，居中靠下，不遮挡内容框主体信息。
@@ -87,7 +98,7 @@ description: Render slide previews and final video with Remotion, using FFmpeg f
 - 如果 Remotion 无法加载 `file:///` 资源，改用 `public/runtime/<run_id>/` 加 `staticFile()`。
 - FFmpeg 失败时，记录命令和 stderr。
 - 如果某页预览失败，只回退该页，不重做全片。
-- 如果页面结构错位，回到 `reconstruct-scenes` 或 `render-element-previews`。
+- 如果 PNG 图层错位，回到 `reconstruct-scenes` 或 `render-element-previews`。
 - 如果动画不同步，回到 `bind-animation-timeline`。
 - 如果语音或字幕异常，回到 `generate-audio-subtitles`。
 
@@ -100,3 +111,4 @@ description: Render slide previews and final video with Remotion, using FFmpeg f
 - `black-frame`
 - `subtitle-not-single-line`
 - `audio-video-desync`
+- `non-png-scene-input`

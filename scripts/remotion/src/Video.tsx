@@ -11,25 +11,22 @@ import {
   useVideoConfig,
 } from 'remotion';
 
-type ElementBox = {
+type LayerBox = {
   x: number;
   y: number;
   w: number;
   h: number;
 };
 
-export type SceneElement = {
+export type SceneLayer = {
   id: string;
-  type: 'text' | 'image' | 'shape' | 'line' | 'group';
-  text?: string;
-  asset?: string;
-  style_token?: string;
+  type: 'png';
+  asset: string;
+  role?: 'background' | 'title' | 'subtitle' | 'content_body' | 'diagram' | 'annotation' | 'summary' | 'decoration' | 'full_slide';
   animation_role?: string;
-  semantic_role?: string;
   content_index?: number;
-  box: ElementBox;
+  box: LayerBox;
   z_index: number;
-  style?: Record<string, unknown>;
 };
 
 export type Scene = {
@@ -40,7 +37,7 @@ export type Scene = {
     background: string;
     background_asset?: string;
   };
-  elements: SceneElement[];
+  layers: SceneLayer[];
 };
 
 export type TimelineSegment = {
@@ -53,7 +50,7 @@ export type TimelineSegment = {
 export type AnimationEvent = {
   at: number;
   target: string;
-  action: 'fade_in' | 'fade_up' | 'soft_zoom_in' | 'slide_in_left' | 'highlight' | 'line_draw';
+  action: 'fade_in' | 'fade_up' | 'soft_zoom_in' | 'slide_in_left' | 'highlight';
   duration: number;
 };
 
@@ -93,53 +90,6 @@ const toAssetSrc = (value?: string): string | undefined => {
   return staticFile(normalized);
 };
 
-const textStyle = (element: SceneElement): React.CSSProperties => {
-  const token = element.style_token;
-  if (token === 'main_title') {
-    return {
-      fontSize: 58,
-      fontWeight: 700,
-      lineHeight: 1.1,
-      color: '#1E3A5F',
-      fontFamily: 'Microsoft YaHei, Source Han Sans SC, Noto Sans CJK SC, sans-serif',
-    };
-  }
-  if (token === 'subtitle') {
-    return {
-      fontSize: 24,
-      fontWeight: 500,
-      lineHeight: 1.25,
-      color: '#5C574F',
-      fontFamily: 'Microsoft YaHei, Source Han Sans SC, Noto Sans CJK SC, sans-serif',
-    };
-  }
-  if (token === 'content_point_title') {
-    return {
-      fontSize: 31,
-      fontWeight: 700,
-      lineHeight: 1.18,
-      color: '#151515',
-      fontFamily: 'Microsoft YaHei, Source Han Sans SC, Noto Sans CJK SC, sans-serif',
-    };
-  }
-  if (token === 'content_point_body') {
-    return {
-      fontSize: 24,
-      fontWeight: 400,
-      lineHeight: 1.35,
-      color: '#5C574F',
-      fontFamily: 'Microsoft YaHei, Source Han Sans SC, Noto Sans CJK SC, sans-serif',
-    };
-  }
-  return {
-    fontSize: 28,
-    fontWeight: 400,
-    lineHeight: 1.45,
-    color: '#151515',
-    fontFamily: 'Microsoft YaHei, Source Han Sans SC, Noto Sans CJK SC, sans-serif',
-  };
-};
-
 const getEvent = (events: AnimationEvent[] | undefined, id: string): AnimationEvent | undefined => {
   return events?.find((event) => event.target === id);
 };
@@ -153,6 +103,7 @@ const animatedStyle = (
   if (!event) {
     return base;
   }
+
   const start = event.at * fps;
   const duration = Math.max(1, event.duration * fps);
   const progress = interpolate(frame, [start, start + duration], [0, 1], {
@@ -164,6 +115,7 @@ const animatedStyle = (
     fps,
     config: {damping: 18, stiffness: 110, mass: 0.8},
   });
+
   if (event.action === 'fade_up') {
     return {...base, opacity: progress, transform: `translateY(${(1 - springProgress) * 28}px)`};
   }
@@ -178,81 +130,40 @@ const animatedStyle = (
       extrapolateLeft: 'clamp',
       extrapolateRight: 'clamp',
     });
-    return {...base, opacity: 1, boxShadow: `0 0 ${20 * glow}px rgba(230,126,67,${0.28 * glow})`};
+    return {
+      ...base,
+      opacity: 1,
+      filter: `drop-shadow(0 0 ${18 * glow}px rgba(249,214,92,${0.38 * glow}))`,
+    };
   }
   return {...base, opacity: progress};
 };
 
-const ShapeView: React.FC<{element: SceneElement; style: React.CSSProperties}> = ({element, style}) => {
-  const role = element.semantic_role;
-  if (role === 'content_highlight') {
-    return (
-      <div
-        style={{
-          ...style,
-          borderRadius: 8,
-          background: '#EEE7DB',
-          border: '1px solid rgba(184,175,160,0.38)',
-          boxShadow: '0 8px 18px rgba(92,87,79,0.08)',
-        }}
-      />
-    );
-  }
-  if (role === 'content_shape') {
-    return (
-      <div
-        style={{
-          ...style,
-          borderRadius: '50%',
-          background: String(element.style?.fill ?? '#2FA39A'),
-        }}
-      />
-    );
-  }
-  return <div style={{...style, borderRadius: 8, background: '#EEE7DB'}} />;
-};
-
-const ElementView: React.FC<{element: SceneElement; events?: AnimationEvent[]}> = ({element, events}) => {
+const LayerView: React.FC<{layer: SceneLayer; events?: AnimationEvent[]}> = ({layer, events}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const base: React.CSSProperties = {
     position: 'absolute',
-    left: element.box.x,
-    top: element.box.y,
-    width: element.box.w,
-    height: element.box.h,
-    zIndex: element.z_index,
-    overflow: 'hidden',
+    left: layer.box.x,
+    top: layer.box.y,
+    width: layer.box.w,
+    height: layer.box.h,
+    zIndex: layer.z_index,
+    overflow: 'visible',
   };
-  const style = animatedStyle(frame, fps, getEvent(events, element.id), base);
+  const style = animatedStyle(frame, fps, getEvent(events, layer.id), base);
 
-  if (element.type === 'text') {
-    return (
-      <div style={{...style, ...textStyle(element), overflow: 'visible', whiteSpace: 'pre-wrap'}}>
-        {element.text}
-      </div>
-    );
-  }
-
-  if (element.type === 'image' && element.asset) {
-    return (
-      <Img
-        src={toAssetSrc(element.asset) ?? ''}
-        style={{
-          ...style,
-          width: element.box.w,
-          height: element.box.h,
-          objectFit: 'contain',
-        }}
-      />
-    );
-  }
-
-  if (element.type === 'shape') {
-    return <ShapeView element={element} style={style} />;
-  }
-
-  return null;
+  return (
+    <Img
+      src={toAssetSrc(layer.asset) ?? ''}
+      style={{
+        ...style,
+        width: layer.box.w,
+        height: layer.box.h,
+        objectFit: 'contain',
+      }}
+    />
+  );
 };
 
 const SlideView: React.FC<{slide: Slide}> = ({slide}) => {
@@ -262,36 +173,40 @@ const SlideView: React.FC<{slide: Slide}> = ({slide}) => {
   const seconds = frame / fps;
   const activeSubtitle = segments.find((segment) => seconds >= segment.start && seconds < segment.end);
   const background = toAssetSrc(slide.scene.canvas.background_asset);
+  const layers = slide.scene.layers ?? [];
 
   return (
-    <AbsoluteFill style={{background: slide.scene.canvas.background}}>
+    <AbsoluteFill style={{background: slide.scene.canvas.background || '#FFFDF7'}}>
       {background ? <Img src={background} style={{position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover'}} /> : null}
-      {slide.scene.elements
+      {layers
         .slice()
         .sort((a, b) => a.z_index - b.z_index)
-        .map((element) => (
-          <ElementView key={element.id} element={element} events={slide.animation_timeline?.events} />
+        .map((layer) => (
+          <LayerView key={layer.id} layer={layer} events={slide.animation_timeline?.events} />
         ))}
       {activeSubtitle ? (
         <div
           style={{
             position: 'absolute',
-            left: 72,
-            right: 72,
-            bottom: 8,
+            left: 180,
+            right: 180,
+            bottom: 28,
             height: 82,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             boxSizing: 'border-box',
-            padding: '0 20px',
-            color: '#FFFFFF',
-            fontSize: 30,
+            padding: '0 36px',
+            color: '#111111',
+            background: 'rgba(255, 253, 247, 0.82)',
+            borderRadius: 24,
+            fontSize: 38,
             fontWeight: 500,
-            lineHeight: 1.18,
+            lineHeight: 1.15,
             textAlign: 'center',
-            fontFamily: 'Microsoft YaHei, Source Han Sans SC, Noto Sans CJK SC, sans-serif',
-            textShadow: '0 2px 8px rgba(0,0,0,0.22)',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            fontFamily: 'LXGW WenKai, KaiTi, Microsoft YaHei, sans-serif',
           }}
         >
           {activeSubtitle.text}
@@ -305,7 +220,7 @@ const SlideView: React.FC<{slide: Slide}> = ({slide}) => {
 export const ArticleVideo: React.FC<ArticleVideoProps> = ({slides}) => {
   const {fps} = useVideoConfig();
   return (
-    <AbsoluteFill style={{background: '#F6F2EC'}}>
+    <AbsoluteFill style={{background: '#FFFDF7'}}>
       {slides.map((slide) => (
         <Sequence
           key={slide.slide_id}

@@ -98,7 +98,7 @@ Input images:
 - Reference image 2 ({example_ref}): use as the filled-slide visual style reference.
 
 Primary request:
-Generate a complete full-slide PNG-like bitmap in the same warm hand-drawn Chinese explainer style as the references. The slide body, title, subtitle, lines, boxes, arrows, icons, labels, and diagram content must all be part of the generated bitmap image. Do not create SVG, vector layers, HTML, CSS, or frontend-drawn elements.
+Generate a complete full-slide PNG-like bitmap in the same warm hand-drawn Chinese explainer style as the references. The slide body, title, subtitle, lines, arrows, icons, labels, and diagram content must all be part of the generated bitmap image. Do not create SVG, vector layers, HTML, CSS, or frontend-drawn elements.
 
 Canvas and layout:
 - 16:9 landscape, suitable for 1920x1080 video.
@@ -106,7 +106,8 @@ Canvas and layout:
 - Yellow vertical marker at top left.
 - Large handwritten Chinese main title at top left.
 - Smaller handwritten Chinese subtitle below the title with a short yellow underline.
-- Large rounded black hand-drawn content frame below the title area.
+- The middle of the slide is an open content canvas. Do not draw a large enclosing rounded black content frame.
+- Keep the main content inside the open area from roughly x=80,y=235 to x=1840,y=915.
 - Leave the bottom 150px visually calm so Remotion subtitles can overlay without covering critical content.
 
 Text to render exactly where possible:
@@ -122,6 +123,8 @@ Key content:
 
 Style constraints:
 - Match the two reference images: black hand-drawn ink, yellow accent, soft green and blue highlight pills, simple doodle icons, clean spacing.
+- Preserve the fixed title/subtitle positions and fixed subtitle-safe area from the reference images.
+- Do not add an outer content border around the middle content.
 - Keep text large and readable; avoid dense paragraphs and avoid tiny labels.
 - Prefer short Chinese labels and diagrammatic blocks over long body text.
 - No photorealistic scene, no 3D, no neon technology style, no dark background, no watermark.

@@ -60,7 +60,7 @@ description: Reconstruct an approved static visual draft into PNG layers for Rem
 1. 读取 `visual_review.yaml`，确认 `status: approved`。如果不是 approved，停止执行。
 2. 读取 `slide_plan.json`，定位当前 `slide_id`。
 3. 读取已审核的 `visual_draft.png`。
-4. 将视觉稿拆分或重建为若干 PNG 图层。
+4. 默认将视觉稿登记为一张整页 `full_slide` PNG 图层。
 5. 输出 `scene.json`，只使用 `layers[]` 描述图层，不把 text、shape、line、group 作为 Remotion 主输入。
 6. 所有图层资源必须保存到 `runs/<run_id>/slides/slide_xxx/assets/`。
 7. 使用 JSON Schema 校验 `scene.json`。校验不通过时，修正结构后再继续。
@@ -71,7 +71,7 @@ description: Reconstruct an approved static visual draft into PNG layers for Rem
 
 - `full_slide`: 一张整页 PNG，覆盖 1920x1080。适合快速生成视频，但动画空间有限。
 
-推荐方案：
+可选增强方案：
 
 - `background`: 背景和固定版式 PNG。
 - `title`: 主标题 PNG。
@@ -81,12 +81,12 @@ description: Reconstruct an approved static visual draft into PNG layers for Rem
 - `annotation`: 重点标注、箭头、下划线 PNG。
 - `summary`: 总结条 PNG。
 
-主标题和副标题仍然必须拆成两个独立 PNG 图层：
+主标题和副标题默认包含在 `full_slide` 中。只有在拆出的素材同样来自图像模型 PNG 或图像裁切时，才允许拆成两个独立 PNG 图层：
 
 - `role: title`
 - `role: subtitle`
 
-禁止把主标题和副标题合成同一个 PNG 图层，除非使用 `full_slide` 兜底方案；兜底方案只允许在快速预览或图层拆分失败时使用。
+禁止用 Remotion、React、HTML/CSS 或 SVG 重新绘制主标题和副标题。
 
 # Subtitle Safe Area
 
@@ -101,7 +101,7 @@ description: Reconstruct an approved static visual draft into PNG layers for Rem
 - `layers[]` 至少 1 个。
 - 每个 layer 的 `asset` 必须指向存在的 PNG 文件。
 - 每个 layer 的 `box` 坐标必须在 1920x1080 内。
-- 推荐拆出独立 `title` 和 `subtitle` layer。
+- 生产默认可以只使用一个 `full_slide` layer。
 - 不允许把 Remotion 主路径建立在 text、shape、line、group 渲染上。
 - 预览渲染后，页面必须接近已审核的 `visual_draft.png`。
 

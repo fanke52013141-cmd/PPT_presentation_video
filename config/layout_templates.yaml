@@ -5,8 +5,8 @@ canvas:
   subtitle_reserved_height: 150
 
 templates:
-  warm_handdrawn_framed_content:
-    description: 温暖极简手绘线稿风，左上标题区，中间大圆角内容框，底部字幕留白。
+  warm_handdrawn_open_content:
+    description: 温暖极简手绘线稿风，左上标题区固定，中间开放内容区无大外框，底部字幕区固定留白。
     background: solid_warm_white
     regions:
       title_marker:
@@ -51,23 +51,15 @@ templates:
             w: 210
             h: 6
             style_token: handdrawn_yellow_underline
-      content_frame:
-        label: 内容框
-        role: content_frame
-        x: 60
-        y: 250
-        w: 1800
-        h: 650
-        fixed: true
-        style_token: handdrawn_content_frame
       content:
-        label: 内容区
+        label: 开放内容区
         role: content
-        x: 100
-        y: 285
-        w: 1720
-        h: 580
+        x: 80
+        y: 235
+        w: 1760
+        h: 680
         flexible: true
+        frame: none
         includes:
           - explanation_text
           - handdrawn_diagrams
@@ -88,13 +80,14 @@ templates:
       - 背景固定为 #FFFDF7。
       - 主标题和副标题必须左上对齐。
       - 左侧竖线和副标题横线必须固定存在。
-      - 内容必须放在大圆角内容框内。
+      - 中间内容区不生成大圆角外框，不画 enclosing content frame。
+      - 内容可在开放区域内自由排布，但不得进入底部字幕区。
       - 底部字幕区不生成 PPT 内容。
       - 一页最多使用 3 种强调色。
       - 每页只讲一个核心概念或一个核心问题。
 
   fixed_title_free_content:
-    description: 兼容旧名称，实际使用 warm_handdrawn_framed_content 的布局约束。
+    description: 兼容旧名称，实际使用 warm_handdrawn_open_content 的布局约束。
     background: solid_warm_white
     regions:
       title_marker:
@@ -113,22 +106,15 @@ templates:
         w: 1600
         h: 165
         fixed: true
-      content_frame:
-        label: 内容框
-        role: content_frame
-        x: 60
-        y: 250
-        w: 1800
-        h: 650
-        fixed: true
       content:
-        label: 内容区
+        label: 开放内容区
         role: content
-        x: 100
-        y: 285
-        w: 1720
-        h: 580
+        x: 80
+        y: 235
+        w: 1760
+        h: 680
         flexible: true
+        frame: none
       subtitle_area:
         label: 字幕区
         role: subtitle_overlay

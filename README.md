@@ -66,6 +66,13 @@ references/style_reference/PPT示例.png
 
 不要在运行期引入新的风格图。后续如需换风格，直接更新这两张固定参考图和 `config/style_tokens.yaml`。
 
+当前模板规则：
+
+- 主标题、副标题、黄色竖线和副标题下划线位置固定。
+- 底部 `Y=930` 到 `Y=1080` 是固定字幕安全区，PPT 主体内容不得进入。
+- 中间是无框开放内容区，不生成大圆角黑色内容框。
+- 页面主体仍必须由 Codex Image Gen 生成在整页位图中，Remotion 不补画主体内容。
+
 ## Slide Plan
 
 `slide_plan.json` 是文章进入视频化流程后的第一个主业务产物。它包含：

@@ -60,21 +60,18 @@ layout:
       y: 205
       w: 210
       h: 6
-  content_frame:
-    x: 60
-    y: 250
-    w: 1800
-    h: 650
   content:
-    x: 100
-    y: 285
-    w: 1720
-    h: 580
+    x: 80
+    y: 235
+    w: 1760
+    h: 680
+    frame: none
   subtitle_area:
     x: 0
     y: 930
     w: 1920
     h: 150
+    fixed: true
 
 scene_layers:
   model: png_layers_only
@@ -108,6 +105,7 @@ scene_layers:
     - scene.json 使用 layers[]，每个 layer 必须是 type: png。
     - animation_timeline.events[].target 必须指向 scene.layers[].id。
     - 主标题和副标题默认包含在 full_slide 位图中，只有图像模型产出的 PNG 素材才允许拆成独立图层。
+    - 页面中间是开放内容区，不绘制大圆角外框或任何 enclosing content frame。
     - 底部字幕区不属于 PNG 主体内容，视频字幕由 Remotion 单独叠加。
     - 不再要求 Remotion 渲染文字、线条、形状或分组元素。
 

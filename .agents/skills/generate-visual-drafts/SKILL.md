@@ -39,8 +39,8 @@ description: Generate full-slide static visual drafts from slide_plan.json using
 
 1. 读取 `slide_plan.json`，定位当前 `slide_id`。
 2. 提取该页的 `main_title`、`subtitle`、`core_message`、`content.content_type`、`content.layout_intent`、`content.items[]` 和 `narration`。
-3. 读取 `config/style_tokens.yaml`，锁定背景、字号、颜色、标题区、内容框和字幕区规则。
-4. 使用 `PPT模板.png` 作为空白模板参考图，保持标题区、黄色竖线、副标题下划线、主体大圆角手绘边框和整体留白。
+3. 读取 `config/style_tokens.yaml`，锁定背景、字号、颜色、标题区、开放内容区和字幕区规则。
+4. 使用 `PPT模板.png` 作为空白模板参考图，保持标题区、黄色竖线、副标题下划线、开放内容区和底部字幕安全区。
 5. 使用 `PPT示例.png` 作为完整页面示例图，控制内容区的信息组织方式、手写感文字、图标、分栏、标注、总结条和视觉密度。
 6. 生成适合 Codex Image Gen 的整页视觉 prompt。
 7. prompt 中要求：16:9、1920x1080、固定参考图风格、整页位图成稿。
@@ -51,7 +51,8 @@ description: Generate full-slide static visual drafts from slide_plan.json using
 # Validation
 
 - 视觉稿必须符合固定参考图风格。
-- 背景、标题区、内容区和底部字幕留白必须稳定。
+- 背景、标题区、开放内容区和底部字幕留白必须稳定。
+- 中间内容区不得出现大圆角外框或 enclosing content frame。
 - 内容区必须能一眼看出本页核心概念。
 - 构图必须适合作为整页 `full_slide` PNG 直接进入 Remotion。
 - 主体、背景、图形关系要适合后续动画化。

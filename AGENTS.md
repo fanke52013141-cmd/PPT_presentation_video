@@ -72,8 +72,8 @@ references/style_reference/PPT示例.png
 ```
 
 - `config/style_tokens.yaml`：机器可读风格参数，定义画布、字幕区、PNG 图层模型、参考图和动画动作。
-- `PPT模板.png`：空白模板参考图，用于约束标题区、黄色竖线、副标题下划线、主体大圆角手绘边框和整体留白。
-- `PPT示例.png`：完整页面示例图，用于约束内容组织、手写感文字、图标、分栏、标注、总结条和视觉密度。
+- `PPT模板.png`：空白模板参考图，用于约束标题区、黄色竖线、副标题下划线、开放内容区和底部字幕安全区。
+- `PPT示例.png`：完整页面示例图，用于约束内容组织、手写感文字、图标、分栏、标注、总结条和视觉密度；不使用中间大外框。
 - `references/visual_rules.md` 可作为人类说明文档保留，但不作为主流程运行输入。
 
 ## 4. 业务流程与 Skill 调用
@@ -149,6 +149,7 @@ references/style_reference/PPT示例.png
 - 视觉稿用于第一轮人工审美判断。
 - 视觉稿必须是完整整页位图，底部字幕区保持为空。
 - 不允许把标题、正文、框线、箭头或图表留给 SVG、React、HTML/CSS、Canvas 或 Remotion 代码绘制。
+- 中间内容区为开放区域，不生成大圆角内容框或 enclosing content frame。
 
 ### Review Gate 1: 静态视觉审核
 

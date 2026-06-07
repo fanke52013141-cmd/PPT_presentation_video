@@ -17,8 +17,8 @@ description: Validate run inputs, repository resources, environment variables, s
   "article_path": "runs/<run_id>/inputs/article.md",
   "task_config_path": "config/task.yaml",
   "style_tokens_path": "config/style_tokens.yaml",
-  "template_reference_image": "references/style_reference/PPT_template.png",
-  "example_reference_image": "references/style_reference/PPT_example.png",
+  "main_reference_image": "references/style_reference/fixed_title_free_content_reference.png",
+  "subtitle_reference_image": "references/style_reference/paper_subtitle_background.png",
   "schemas": [
     "schemas/slide_plan.schema.json",
     "schemas/scene.schema.json",
@@ -46,7 +46,7 @@ description: Validate run inputs, repository resources, environment variables, s
 2. 检查 `article.md` 是否存在、非空、可读。
 3. 检查 `config/task.yaml` 是否存在。
 4. 检查 `config/style_tokens.yaml` 是否存在，并包含画布、颜色、字号、字幕区等关键配置。
-5. 检查固定参考图是否存在：`PPT_template.png` 和 `PPT_example.png`。
+5. 检查固定参考图是否存在：`fixed_title_free_content_reference.png` 和 `paper_subtitle_background.png`。
 6. 检查必要 schema 是否存在并为合法 JSON。
 7. 检查 `.agents/skills/**/SKILL.md` 中主流程需要的 Skill 是否存在。
 8. 检查 `templates/prompts/visual_draft.prompt.md` 是否存在。
@@ -81,8 +81,8 @@ description: Validate run inputs, repository resources, environment variables, s
 - article_non_empty: pass | fail
 - task_config_exists: pass | fail
 - style_tokens_exists: pass | fail
-- template_reference_exists: pass | fail
-- example_reference_exists: pass | fail
+- main_reference_exists: pass | fail
+- subtitle_reference_exists: pass | fail
 - schemas_valid: pass | fail
 - skills_exist: pass | fail
 - prompt_templates_exist: pass | fail

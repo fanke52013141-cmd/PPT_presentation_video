@@ -1,20 +1,22 @@
 # 文章转 AI 科普视频生产框架
 
-这个仓库用于把文章生产成 3 到 6 分钟的 AI 科普类视频。核心流程是：
+这个仓库用于把文章生产成 AI 科普类视频。核心流程是：
 
 ```text
-文章 -> Slide 脚本 -> 静态视觉稿 -> 人工审核 -> 元素重建 -> 页面预览 -> 人工审核 -> MiniMax 语音 -> Remotion 动画视频 -> 人工审核 -> 成片
+文章 -> Slide 结构脚本 -> 静态视觉稿 -> 人工审核 -> 元素重建 -> 页面预览 -> 人工审核 -> MiniMax 语音 -> Remotion 动画视频 -> 人工审核 -> 成片
 ```
 
 ## 当前决策
 
 - 平台：B 站、抖音、视频号。
 - 主比例：16:9，1920x1080。
-- 时长：3 到 6 分钟。
 - 形式：旁白 + 动效，无真人口播。
+- 文章进来后，第一步直接切分成 `slide_plan.json`，不再先生成 `article_brief.json`。
+- slide 数量不设固定上下限，以讲清楚整篇文章为准。
 - 图片生成：Codex Image Gen。
 - TTS：MiniMax T2A HTTP。
 - 视频合成：Remotion 作为主渲染引擎，FFmpeg 作为媒体处理工具。
+- 默认视觉风格：温暖极简手绘线稿风。
 - Git 策略：框架文件进仓库，运行过程和成片不进仓库。
 
 ## 目录说明
@@ -41,8 +43,33 @@ bad_cases/            可沉淀进仓库的坏案例记录
 runs/<run_id>/inputs/article.md
 ```
 
-3. 让 Codex 按 `AGENTS.md` 的流程执行，从 `ingest-article` 开始。
-4. 每个审核门只审核图片或视频预览，不直接审核 JSON。
+3. 让 Codex 按 `AGENTS.md` 的流程执行，从 `plan-slides` 开始。
+4. 第一阶段输出：
+
+```text
+runs/<run_id>/planning/slide_plan.json
+```
+
+5. 每个审核门只审核图片或视频预览，不直接审核 JSON。
+
+## Slide Plan
+
+`slide_plan.json` 是文章进入视频化流程后的第一个主业务产物。它包含：
+
+```text
+topic.topic_id
+topic.topic_name
+topic.topic_summary
+slides[].slide_id
+slides[].slide_purpose
+slides[].main_title
+slides[].subtitle
+slides[].core_message
+slides[].content
+slides[].narration
+```
+
+`content.content_type` 支持概念解释、分点说明、流程结构、对比结构、时间轴、循环结构、卡片组、示例拆解、误区纠正、因果链、框架图、层级结构、矩阵、操作清单和总结页。
 
 ## MiniMax TTS
 
@@ -73,4 +100,3 @@ MINIMAX_TTS_VOICE_ID
 ## 运行产物
 
 `runs/` 和 `outputs/` 默认被 `.gitignore` 忽略。需要长期复用的内容应沉淀到 `templates/`、`references/`、`schemas/`、`.agents/skills/` 或 `bad_cases/`。
-

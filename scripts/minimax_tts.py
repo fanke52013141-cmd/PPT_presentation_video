@@ -7,6 +7,9 @@ The script uses the synchronous T2A HTTP endpoint and writes:
 - response metadata
 - SRT subtitles
 - audio_timeline.json
+
+The TTS input may contain MiniMax pause/expression markup. Subtitle output is
+built from clean text so control markup never appears on screen.
 """
 
 from __future__ import annotations
@@ -27,6 +30,9 @@ DEFAULT_ENDPOINT = "https://api.minimaxi.com/v1/t2a_v2"
 DEFAULT_MODEL = "speech-2.8-hd"
 DEFAULT_VOICE_ID = "Chinese (Mandarin)_Soft_Girl"
 DEFAULT_MAX_SUBTITLE_CHARS = 28
+ALLOWED_EXPRESSION_TAGS = {"(breath)", "(emm)", "(chuckle)", "(laughs)", "(sighs)"}
+PAUSE_RE = re.compile(r"<#\d+(?:\.\d{1,2})?#>")
+EXPRESSION_RE = re.compile(r"\([A-Za-z-]+\)")
 
 
 def load_dotenv(path: Path) -> None:
@@ -63,6 +69,37 @@ def read_text(args: argparse.Namespace) -> str:
     if args.text_file:
         return Path(args.text_file).read_text(encoding="utf-8").strip()
     raise SystemExit("Either --text or --text-file is required.")
+
+
+def read_subtitle_text(args: argparse.Namespace, tts_text: str) -> str:
+    if args.subtitle_text_file:
+        return Path(args.subtitle_text_file).read_text(encoding="utf-8").strip()
+    if args.subtitle_text:
+        return args.subtitle_text.strip()
+    return strip_tts_markup(tts_text)
+
+
+def strip_tts_markup(text: str) -> str:
+    text = PAUSE_RE.sub(" ", text)
+    text = EXPRESSION_RE.sub(" ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def normalize_tts_markup(text: str) -> str:
+    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"(<#\d+(?:\.\d{1,2})?#>\s*){2,}", lambda m: PAUSE_RE.search(m.group(0)).group(0) + " ", text)
+
+    # Remove boundary pause/expression tags. They sound unnatural in this workflow.
+    text = re.sub(r"^(?:\s*(?:<#\d+(?:\.\d{1,2})?#>|\([A-Za-z-]+\))\s*)+", "", text).strip()
+    text = re.sub(r"(?:\s*(?:<#\d+(?:\.\d{1,2})?#>|\([A-Za-z-]+\))\s*)+$", "", text).strip()
+
+    # Keep only expression tags allowed by this project; remove other supported-but-unsuitable tags.
+    def keep_or_remove(match: re.Match[str]) -> str:
+        tag = match.group(0)
+        return tag if tag in ALLOWED_EXPRESSION_TAGS else " "
+
+    text = EXPRESSION_RE.sub(keep_or_remove, text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def call_minimax_tts(payload: dict[str, Any], endpoint: str, api_key: str, timeout: int) -> dict[str, Any]:
@@ -106,11 +143,7 @@ def write_audio(response_json: dict[str, Any], out_audio: Path) -> None:
 
 
 def split_sentences(text: str) -> list[str]:
-    normalized = re.sub(
-        r"\s+",
-        " ",
-        text.replace("<#0.4#>", " ").replace("<#0.5#>", " ").replace("<#0.8#>", " "),
-    ).strip()
+    normalized = re.sub(r"\s+", " ", strip_tts_markup(text)).strip()
     parts = re.split(r"(?<=[。！？!?；;])\s*", normalized)
     sentences = [part.strip() for part in parts if part.strip()]
     if sentences:
@@ -119,7 +152,6 @@ def split_sentences(text: str) -> list[str]:
 
 
 def split_subtitle_chunks(sentence: str, max_chars: int = DEFAULT_MAX_SUBTITLE_CHARS) -> list[str]:
-    """Split one narration sentence into display-safe single-line subtitle chunks."""
     sentence = sentence.strip()
     if not sentence:
         return []
@@ -159,8 +191,9 @@ def duration_from_response(response_json: dict[str, Any], text: str) -> float:
     raw = extra.get("audio_length")
     if isinstance(raw, (int, float)) and raw > 0:
         return float(raw) / 1000.0 if raw > 1000 else float(raw)
-    chinese_chars = len(re.findall(r"[\u4e00-\u9fff]", text))
-    latin_words = len(re.findall(r"[A-Za-z0-9]+", text))
+    clean = strip_tts_markup(text)
+    chinese_chars = len(re.findall(r"[\u4e00-\u9fff]", clean))
+    latin_words = len(re.findall(r"[A-Za-z0-9]+", clean))
     return max(1.0, chinese_chars / 4.2 + latin_words / 2.8)
 
 
@@ -220,6 +253,15 @@ def write_json(path: Path, data: dict[str, Any]) -> None:
 
 
 def build_payload(args: argparse.Namespace, text: str) -> dict[str, Any]:
+    voice_setting: dict[str, Any] = {
+        "voice_id": args.voice_id,
+        "speed": args.speed,
+        "vol": args.volume,
+        "pitch": args.pitch,
+    }
+    if args.emotion:
+        voice_setting["emotion"] = args.emotion
+
     return {
         "model": args.model,
         "text": text,
@@ -228,12 +270,7 @@ def build_payload(args: argparse.Namespace, text: str) -> dict[str, Any]:
         "output_format": "hex",
         "subtitle_enable": args.subtitle_enable,
         "subtitle_type": args.subtitle_type,
-        "voice_setting": {
-            "voice_id": args.voice_id,
-            "speed": args.speed,
-            "vol": args.volume,
-            "pitch": args.pitch,
-        },
+        "voice_setting": voice_setting,
         "audio_setting": {
             "sample_rate": args.sample_rate,
             "bitrate": args.bitrate,
@@ -246,8 +283,11 @@ def build_payload(args: argparse.Namespace, text: str) -> dict[str, Any]:
 def parse_args() -> argparse.Namespace:
     load_dotenv(Path(".env"))
     parser = argparse.ArgumentParser(description="Generate TTS audio with MiniMax.")
-    parser.add_argument("--text", help="Narration text.")
-    parser.add_argument("--text-file", help="Path to narration text file.")
+    parser.add_argument("--text", help="Narration text, optionally with MiniMax markup.")
+    parser.add_argument("--text-file", help="Path to TTS text file, optionally with MiniMax markup.")
+    parser.add_argument("--subtitle-text", help="Clean narration text for subtitles.")
+    parser.add_argument("--subtitle-text-file", help="Path to clean narration text for subtitles.")
+    parser.add_argument("--out-tts-text", help="Output normalized TTS input text path.")
     parser.add_argument("--out-audio", required=True, help="Output audio path, usually voice.mp3.")
     parser.add_argument("--out-meta", help="Output MiniMax response metadata JSON path.")
     parser.add_argument("--out-srt", help="Output SRT subtitle path.")
@@ -258,6 +298,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--api-key", default=os.getenv("MINIMAX_API_KEY"))
     parser.add_argument("--model", default=os.getenv("MINIMAX_TTS_MODEL", DEFAULT_MODEL))
     parser.add_argument("--voice-id", default=os.getenv("MINIMAX_TTS_VOICE_ID", DEFAULT_VOICE_ID))
+    parser.add_argument("--emotion", default=os.getenv("MINIMAX_TTS_EMOTION", "calm"))
     parser.add_argument("--language-boost", default=os.getenv("MINIMAX_TTS_LANGUAGE_BOOST", "Chinese"))
     parser.add_argument("--speed", type=float, default=env_float("MINIMAX_TTS_SPEED", 1.0))
     parser.add_argument("--volume", type=float, default=env_float("MINIMAX_TTS_VOLUME", 1.0))
@@ -278,15 +319,20 @@ def main() -> int:
         print("MINIMAX_API_KEY is required. Set it in .env or environment variables.", file=sys.stderr)
         return 2
 
-    text = read_text(args)
-    if not text:
+    tts_text = normalize_tts_markup(read_text(args))
+    subtitle_text = strip_tts_markup(read_subtitle_text(args, tts_text))
+    if not tts_text:
         print("Input text is empty.", file=sys.stderr)
         return 2
-    if len(text) >= 10000:
+    if len(tts_text) >= 10000:
         print("Input text must be less than 10,000 characters for MiniMax HTTP T2A.", file=sys.stderr)
         return 2
 
-    payload = build_payload(args, text)
+    if args.out_tts_text:
+        Path(args.out_tts_text).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.out_tts_text).write_text(tts_text + "\n", encoding="utf-8")
+
+    payload = build_payload(args, tts_text)
     response_json = call_minimax_tts(payload, args.endpoint, args.api_key, args.timeout)
 
     base_resp = response_json.get("base_resp") or {}
@@ -296,8 +342,8 @@ def main() -> int:
     out_audio = Path(args.out_audio)
     write_audio(response_json, out_audio)
 
-    duration_sec = duration_from_response(response_json, text)
-    segments = build_segments(text, duration_sec, args.slide_id, "estimated", args.max_subtitle_chars)
+    duration_sec = duration_from_response(response_json, subtitle_text)
+    segments = build_segments(subtitle_text, duration_sec, args.slide_id, "estimated", args.max_subtitle_chars)
     timeline = {
         "slide_id": args.slide_id,
         "audio_file": str(out_audio).replace("\\", "/"),
@@ -316,6 +362,7 @@ def main() -> int:
                 "endpoint": args.endpoint,
                 "model": args.model,
                 "voice_id": args.voice_id,
+                "emotion": args.emotion,
                 "language_boost": args.language_boost,
                 "audio_format": args.audio_format,
                 "sample_rate": args.sample_rate,
@@ -323,6 +370,7 @@ def main() -> int:
                 "channel": args.channel,
                 "max_subtitle_chars": args.max_subtitle_chars,
             },
+            "tts_text_has_markup": tts_text != subtitle_text,
         }
         write_json(Path(args.out_meta), meta)
 

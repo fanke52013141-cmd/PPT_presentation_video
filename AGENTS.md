@@ -15,6 +15,7 @@
 - 可复用框架文件进 Git，生产运行产物不进 Git。
 - 不限制 slide 数量。slide 数量由文章内容决定，以“讲清楚整篇文章”为准，不用为凑时长或控制页数强行合并。
 - 视觉风格固定为温暖极简手绘线稿风，不接受运行期用户自定义风格。后续需要改风格时，直接修改仓库级 `config/style_tokens.yaml` 和固定参考图。
+- 正式生成前必须先跑 Preflight Check，避免缺文件、缺配置、缺环境变量导致中途失败。
 
 ## 2. 标准运行目录
 
@@ -46,6 +47,7 @@ runs/<run_id>/
     rough_cut.mp4
     final.mp4
   logs/
+    preflight_report.md
     generation_log.md
     qa_log.md
 ```
@@ -66,6 +68,34 @@ references/style_reference/PPT_example.png
 - `references/visual_rules.md` 可作为人类说明文档保留，但不作为主流程运行输入。
 
 ## 4. 业务流程与 Skill 调用
+
+### Stage 0: preflight-check
+
+输入：
+
+- `runs/<run_id>/inputs/article.md`
+- `config/task.yaml`
+- `config/style_tokens.yaml`
+- `references/style_reference/PPT_template.png`
+- `references/style_reference/PPT_example.png`
+- 必需 schemas
+- 主流程 skills
+- `.env` 或系统环境变量
+- 本地 `ffmpeg` / `ffprobe`
+- `scripts/remotion`
+
+输出：
+
+- `runs/<run_id>/logs/preflight_report.md`
+- `preflight_status: pass | fail`
+
+调用规则：
+
+- 用 `.agents/skills/preflight-check/SKILL.md`。
+- 只做检查，不生成内容，不调用图片生成、TTS 或 Remotion。
+- 不得把 API key、token、cookie、Authorization header 或 `.env` 内容写入日志。
+- 如果存在 blocking issue，停止主流程，不进入 Stage 1。
+- 如果只有 warnings，可以进入 Stage 1，但需要写入 `generation_log.md`。
 
 ### Stage 1: plan-slides
 
@@ -255,6 +285,8 @@ references/style_reference/PPT_example.png
 - 每页 `scene.json`
 - 每页 `animation_timeline.json`
 - 每页 `voice.mp3`
+- 每页 `audio_timeline.json`
+- 每页 `subtitles.srt`
 - `run_manifest.yaml`
 
 输出：
@@ -295,6 +327,7 @@ references/style_reference/PPT_example.png
 
 ## 5. 输入输出守恒规则
 
+- 主流程必须从 `preflight-check` 开始。
 - 主流程的第一个业务产物是 `slide_plan.json`，不再使用 `article_brief.json`。
 - 主流程不再包含 `define-style` 环节，也不再生成 `style_guide.md`。
 - 下游需要的字段必须由 `slide_plan.json` 或仓库固定风格资源产生。
@@ -339,6 +372,7 @@ references/style_reference/PPT_example.png
 
 出现以下情况时记录到 `bad_cases/bad_case_log.yaml`：
 
+- preflight-check 未通过，且是可沉淀的配置、资源或依赖问题。
 - slide_plan.json 对文章切分不完整，遗漏关键内容。
 - 静态视觉稿好看但无法拆成可动画元素。
 - 元素预览与视觉稿差距过大。

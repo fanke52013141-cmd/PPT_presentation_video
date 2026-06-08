@@ -76,12 +76,21 @@ python scripts/validate_run_assets.py `
 - 如果对象之间发生实际重叠或粘连，不要硬拆成会穿帮的碎片，应保留为一个 PNG group。
 - 如果只能拆出一个主体 group，在 `decomposition_report.json` 记录 `single_content_group`，并建议回到 `generate-visual-drafts` 重新生成更可拆的画面。
 - 如果文字压住箭头、图标、边框或总结条进入字幕区，标记为视觉稿问题，回到 `generate-visual-drafts`。
+- `projection_split_used` 是投影切分兜底提示，默认 `severity=advisory`，不应单独阻塞渲染；但复盘时要确认拆出来的 layer 没有截断文字或图标。
+- `layer_bbox_overlap` 只有明显主体重叠才视为阻塞；轻微标题/副标题 box 相交不应中断流程。
+
+# Timing Rules
+
+- 如果 `audio_timeline.json` 已存在，`animation_timeline.duration_sec` 必须读取真实音频时长。
+- 如果先做了视觉拆层诊断，TTS 完成后必须重跑拆层或重新绑定动画时间轴。
+- 动画视觉时长可以长于音频时长，用于保证所有 PNG 图层入场和高亮事件完整播放；但不能短于音频时长。
 
 # Validation
 
 - `scene.json` 必须通过 `schemas/scene.schema.json`。
 - `layers[]` 至少包含 `background` 加一个主体图层。
 - 生产校验使用 `--require-layered`，不再使用 `--require-full-slide`。
+- 自动流程优先使用 `--fail-on-blocking-decomposition-warnings`，只让 `severity=blocking` 中断渲染。
 - 每个 layer 的 `asset` 必须存在，必须是 PNG，尺寸必须与 `box.w`、`box.h` 一致。
 - 每个 layer 的 `box` 必须位于 1920x1080 画布内。
 - 不允许 `elements[]`、`type: text`、`type: shape`、`type: line` 或 SVG。

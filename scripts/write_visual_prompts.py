@@ -130,6 +130,7 @@ Style constraints:
 - Do not add an outer content border around the middle content.
 - Avoid overlapping objects. Do not place text on top of icons, arrows, borders, or colored label backgrounds unless that text belongs to the same label group.
 - Prefer 3-7 large separable content groups over many tiny scattered marks, so each group can be cropped into a PNG layer and animated.
+- Keep arrows short and detached from object borders; avoid vertical ribbons, full-width pale strips, or connector lines that merge multiple cards into one connected bitmap group.
 - Keep text large and readable; avoid dense paragraphs and avoid tiny labels.
 - Prefer short Chinese labels and diagrammatic blocks over long body text.
 - No photorealistic scene, no 3D, no neon technology style, no dark background, no watermark.

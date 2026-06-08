@@ -103,6 +103,12 @@ MiniMax 支持在文本中插入停顿标记 `<#x#>`。`speech-2.8-hd` 和 `spee
 9. 若没有官方字幕时间戳，则按字幕分段和音频总长生成近似 `audio_timeline.json`，并标记 `timing_source: estimated`。
 10. 默认 endpoint 使用 `https://api.minimaxi.com/v1/t2a_v2`，备用接口为 `https://api-bj.minimaxi.com/v1/t2a_v2`。
 
+# Encoding Rules
+
+- 中文 `slide_plan.json`、`narration.txt`、`tts_text.txt` 必须以 UTF-8 写入。
+- Windows/PowerShell 下不要用 here-string 管道把中文脚本传给 Python 再写文件；这会把中文降级成 `?`。如需批量写中文文件，使用 PowerShell/.NET `UTF8Encoding($false)` 或已有结构化脚本。
+- 调用 TTS 前必须抽查 `narration.txt` 和 `tts_text.txt`，不得包含连续 `??`，也不得把大段中文变成 `?`。
+
 # Command
 
 ```powershell
@@ -125,6 +131,7 @@ python scripts/minimax_tts.py `
 - `tts_text.txt` 不得以停顿标记或语气标签开头/结尾。
 - `tts_text.txt` 不得连续使用停顿标记。
 - 字幕文本不得包含 `<#x#>` 或语气标签。
+- 字幕文本不得出现编码损坏：禁止只有 `?` 的字幕段，禁止连续 `??`。
 - `voice.mp3` 必须存在且非空。
 - `audio_timeline.json` 必须包含 `segments[]`。
 - 每条字幕默认不超过 28 个中文字符，且最大 1 行。
@@ -145,3 +152,4 @@ python scripts/minimax_tts.py `
 - `tts-markup-overused`
 - `pause-at-boundary`
 - `subtitle-has-tts-markup`
+- `subtitle-encoding-damaged`

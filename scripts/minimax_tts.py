@@ -33,6 +33,8 @@ DEFAULT_MAX_SUBTITLE_CHARS = 28
 ALLOWED_EXPRESSION_TAGS = {"(breath)", "(emm)", "(chuckle)", "(laughs)", "(sighs)"}
 PAUSE_RE = re.compile(r"<#\d+(?:\.\d{1,2})?#>")
 EXPRESSION_RE = re.compile(r"\([A-Za-z-]+\)")
+SENTENCE_END_RE = re.compile(r"(?<=[\u3002\uff01\uff1f!?；;])\s*")
+SOFT_SUBTITLE_MARKS = ["\uff0c", "\u3001", "\uff1a", "\uff1b", ",", ":"]
 
 
 def load_dotenv(path: Path) -> None:
@@ -144,7 +146,7 @@ def write_audio(response_json: dict[str, Any], out_audio: Path) -> None:
 
 def split_sentences(text: str) -> list[str]:
     normalized = re.sub(r"\s+", " ", strip_tts_markup(text)).strip()
-    parts = re.split(r"(?<=[。！？!?；;])\s*", normalized)
+    parts = SENTENCE_END_RE.split(normalized)
     sentences = [part.strip() for part in parts if part.strip()]
     if sentences:
         return sentences
@@ -158,14 +160,13 @@ def split_subtitle_chunks(sentence: str, max_chars: int = DEFAULT_MAX_SUBTITLE_C
     if len(sentence) <= max_chars:
         return [sentence]
 
-    soft_marks = ["，", "、", "：", "；", ",", ":"]
     chunks: list[str] = []
     current = ""
 
     for char in sentence:
         current += char
         if len(current) >= max_chars:
-            cut_index = max([current.rfind(mark) for mark in soft_marks] + [-1])
+            cut_index = max([current.rfind(mark) for mark in SOFT_SUBTITLE_MARKS] + [-1])
             if cut_index > 8:
                 chunks.append(current[: cut_index + 1].strip())
                 current = current[cut_index + 1 :].strip()

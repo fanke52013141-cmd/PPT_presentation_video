@@ -74,7 +74,28 @@ python scripts/write_visual_prompts.py `
 runs/<run_id>/slides/slide_xxx/visual_draft.png
 ```
 
-5. 视觉审核通过后，拆解 PNG 图层：
+5. 视觉审核通过后，逐页生成 MiniMax 语音和字幕：
+
+```powershell
+$run = "runs/<run_id>"
+Get-ChildItem "$run/slides" -Directory | Sort-Object Name | ForEach-Object {
+  $slide = $_.Name
+  $dir = $_.FullName
+  python scripts/minimax_tts.py `
+    --text-file "$dir/tts_text.txt" `
+    --subtitle-text-file "$dir/narration.txt" `
+    --slide-id "$slide" `
+    --out-tts-text "$dir/tts_text.normalized.txt" `
+    --out-audio "$dir/voice.mp3" `
+    --out-meta "$dir/audio_meta.json" `
+    --out-srt "$dir/subtitles.srt" `
+    --out-timeline "$dir/audio_timeline.json"
+}
+```
+
+不要用 PowerShell here-string 管道把中文文案传给 Python 写文件；实测会把中文降级成 `?`。中文 `slide_plan.json`、`narration.txt`、`tts_text.txt` 必须用 UTF-8 文件写入，并抽查字幕里不能出现 `?` 或 `??`。
+
+6. 拆解 PNG 图层，并绑定真实音频时长生成动画时间轴：
 
 ```powershell
 python scripts/decompose_slide_layers.py `
@@ -95,12 +116,15 @@ runs/<run_id>/slides/slide_xxx/animation_timeline.json
 runs/<run_id>/slides/slide_xxx/decomposition_report.json
 ```
 
-6. 校验运行资产：
+如果先于 TTS 做过一次拆层诊断，TTS 完成后仍必须重跑本步骤，否则 `animation_timeline.json` 会沿用默认时长。
+
+7. 校验运行资产：
 
 ```powershell
 python scripts/validate_run_assets.py `
   --run-dir runs/<run_id> `
-  --require-layered
+  --require-layered `
+  --fail-on-blocking-decomposition-warnings
 ```
 
 如果要把拆层 warning 也作为阻塞：
@@ -112,7 +136,7 @@ python scripts/validate_run_assets.py `
   --fail-on-decomposition-warnings
 ```
 
-7. 生成 Remotion props：
+8. 生成 Remotion props：
 
 ```powershell
 python scripts/build_remotion_props.py `
@@ -120,7 +144,7 @@ python scripts/build_remotion_props.py `
   --repo-root .
 ```
 
-8. 渲染视频：
+9. 渲染视频：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/render_remotion.ps1 `
@@ -174,10 +198,17 @@ powershell -ExecutionPolicy Bypass -File scripts/render_remotion.ps1 `
 
 ## 拆层失败处理
 
-如果 `decomposition_report.json` 出现以下 warning，需要针对性处理：
+`decomposition_report.json` 的 warning 带有 `severity`：
+
+- `blocking`：必须回到视觉稿或拆层阶段修复，自动流程应停止。
+- `warning`：可继续渲染，但复盘时要确认是否有可见重叠。
+- `advisory`：算法兜底提示，不等同于失败。
+
+常见 warning 处理：
 
 - `single_content_group`：画面主体粘成一个大组，回到视觉生成阶段增加留白。
 - `layer_bbox_overlap`：图层 box 重叠，检查是否需要合并成一个 group 或重新生成视觉稿。
 - `no_content_components`：未检测到可拆主体，检查图片是否为空、过浅或生成失败。
+- `projection_split_used`：投影切分兜底已启用；如果画面正常可继续，否则回到视觉生成阶段增加对象间距。
 
 对象重叠、文字压线、箭头压字、总结条进入字幕区，都是视觉稿问题，不应靠 Remotion 修补。

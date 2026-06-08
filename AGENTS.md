@@ -153,6 +153,7 @@ python scripts/validate_run_assets.py `
 
 - 如果只有 `full_slide`，不能视为生产完成。
 - 如果拆层 warning 指向画面重叠或只能拆出单一主体，应回到 Stage 2 重新生成更可拆的视觉稿。
+- 拆层 warning 必须看 `severity`：`blocking` 才中断自动流程，`projection_split_used` 默认是 `advisory`，用于复盘而不是直接失败。
 
 ### Stage 4: render-element-previews
 
@@ -171,6 +172,11 @@ python scripts/validate_run_assets.py `
 - `voice.mp3`
 - `subtitles.srt`
 - `audio_timeline.json`
+
+规则：
+
+- 中文文案必须以 UTF-8 文件形式写入。Windows/PowerShell 下不要用 here-string 管道把中文传给 Python 再写文件。
+- TTS 前抽查 `narration.txt`、`tts_text.txt`、`audio_timeline.json`，不得出现只有 `?` 的字幕段或连续 `??`。
 
 ### Stage 6: bind-animation-timeline
 
@@ -193,6 +199,8 @@ python scripts/validate_run_assets.py `
 - 只使用 PNG 图层动画：`fade_in`、`fade_up`、`soft_zoom_in`、`slide_in_left`、`highlight`。
 - 不使用 `line_draw` 或 `count_up`。
 - 如果只有 `full_slide`，回到 Stage 3，不做生产级内部动画。
+- `animation_timeline.duration_sec` 可以长于音频，用来保证所有图层入场和高亮事件完整播放；但不能短于 `audio_timeline.duration_sec`。
+- 如果 Stage 3 在 TTS 前已经运行过，Stage 5 后必须重跑拆层或重新绑定动画时间轴。
 
 ### Stage 7: render-video
 

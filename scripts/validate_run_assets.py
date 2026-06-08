@@ -75,6 +75,9 @@ def validate_audio_timeline(path: Path) -> float:
         for key in ["id", "start", "end", "text"]:
             if key not in segment:
                 raise ValidationError(f"Audio segment missing {key}: {path}")
+        text = str(segment["text"]).strip()
+        if text == "?" or "??" in text:
+            raise ValidationError(f"Audio segment text appears encoding-damaged: {path}: {segment.get('id')}")
         start = segment["start"]
         end = segment["end"]
         if not isinstance(start, (int, float)) or not isinstance(end, (int, float)) or end <= start:
@@ -96,6 +99,7 @@ def validate_scene(
     require_full_slide: bool,
     require_layered: bool,
     fail_on_decomposition_warnings: bool,
+    fail_on_blocking_decomposition_warnings: bool,
 ) -> set[str]:
     scene = read_json(scene_path)
     if "elements" in scene:
@@ -126,6 +130,19 @@ def validate_scene(
                 f"Decomposition warnings must be resolved before render: {scene_path}: "
                 f"{', '.join(warning_types) or 'unknown'}"
             )
+    if fail_on_blocking_decomposition_warnings and isinstance(decomposition, dict):
+        warnings = decomposition.get("warnings")
+        if isinstance(warnings, list):
+            blocking_types = [
+                str(warning.get("type", "unknown"))
+                for warning in warnings
+                if isinstance(warning, dict) and str(warning.get("severity", "warning")) == "blocking"
+            ]
+            if blocking_types:
+                raise ValidationError(
+                    f"Blocking decomposition warnings must be resolved before render: {scene_path}: "
+                    f"{', '.join(blocking_types)}"
+                )
 
     layer_ids: set[str] = set()
     for layer in layers:
@@ -175,8 +192,9 @@ def validate_animation_timeline(path: Path, layer_ids: set[str], audio_duration_
     duration = timeline.get("duration_sec")
     if not isinstance(duration, (int, float)) or duration <= 0:
         raise ValidationError(f"animation_timeline.json missing positive duration_sec: {path}")
-    if abs(float(duration) - audio_duration_sec) > 0.2:
-        raise ValidationError(f"animation duration does not match audio duration: {path}")
+    duration_sec = float(duration)
+    if duration_sec + 0.2 < audio_duration_sec:
+        raise ValidationError(f"animation duration is shorter than audio duration: {path}")
     for event in events:
         if not isinstance(event, dict):
             raise ValidationError(f"Invalid animation event object: {path}")
@@ -185,6 +203,8 @@ def validate_animation_timeline(path: Path, layer_ids: set[str], audio_duration_
             raise ValidationError(f"Animation target does not exist in scene layers: {path}: {target}")
         if not isinstance(event.get("at"), (int, float)) or not isinstance(event.get("duration"), (int, float)):
             raise ValidationError(f"Animation event has invalid timing: {path}: {event.get('id')}")
+        if float(event["at"]) + float(event["duration"]) > duration_sec + 0.2:
+            raise ValidationError(f"Animation event exceeds animation duration: {path}: {event.get('id')}")
 
 
 def validate_slide(
@@ -195,6 +215,7 @@ def validate_slide(
     require_full_slide: bool,
     require_layered: bool,
     fail_on_decomposition_warnings: bool,
+    fail_on_blocking_decomposition_warnings: bool,
 ) -> None:
     validate_png(slide_dir / "visual_draft.png")
     validate_png(slide_dir / "assets" / "full_slide.png", width=width, height=height)
@@ -213,6 +234,7 @@ def validate_slide(
         require_full_slide=require_full_slide,
         require_layered=require_layered,
         fail_on_decomposition_warnings=fail_on_decomposition_warnings,
+        fail_on_blocking_decomposition_warnings=fail_on_blocking_decomposition_warnings,
     )
     validate_animation_timeline(slide_dir / "animation_timeline.json", layer_ids, audio_duration_sec)
 
@@ -225,6 +247,7 @@ def validate_run(
     require_full_slide: bool,
     require_layered: bool,
     fail_on_decomposition_warnings: bool,
+    fail_on_blocking_decomposition_warnings: bool,
 ) -> int:
     slide_plan = read_json(run_dir / "planning" / "slide_plan.json")
     slides = slide_plan.get("slides")
@@ -247,6 +270,7 @@ def validate_run(
             require_full_slide=require_full_slide,
             require_layered=require_layered,
             fail_on_decomposition_warnings=fail_on_decomposition_warnings,
+            fail_on_blocking_decomposition_warnings=fail_on_blocking_decomposition_warnings,
         )
 
     return len(slide_ids)
@@ -265,6 +289,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Fail when scene.decomposition.warnings is non-empty.",
     )
+    parser.add_argument(
+        "--fail-on-blocking-decomposition-warnings",
+        action="store_true",
+        help="Fail only when scene.decomposition.warnings contains severity=blocking.",
+    )
     return parser.parse_args()
 
 
@@ -279,6 +308,7 @@ def main() -> int:
             require_full_slide=args.require_full_slide,
             require_layered=args.require_layered,
             fail_on_decomposition_warnings=args.fail_on_decomposition_warnings,
+            fail_on_blocking_decomposition_warnings=args.fail_on_blocking_decomposition_warnings,
         )
     except ValidationError as exc:
         print(f"Error: {exc}", file=sys.stderr)

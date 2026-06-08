@@ -296,7 +296,9 @@ def best_projection_cut(crop: np.ndarray, box: Box) -> tuple[str, int, int] | No
         candidates.append((end - start, "x", box.x1 + cut))
 
     row_counts = crop.sum(axis=1)
-    row_threshold = max(18, int(crop.shape[1] * 0.18))
+    foreground_density = float(crop.sum()) / max(1, crop.size)
+    row_ratio = 0.64 if foreground_density > 0.32 and crop.shape[1] >= 650 and crop.shape[0] >= 330 else 0.18
+    row_threshold = max(18, int(crop.shape[1] * row_ratio))
     for start, end in low_runs(row_counts, threshold=row_threshold, min_run=min_run):
         cut = (start + end) // 2
         if cut < min_piece_h or crop.shape[0] - cut < min_piece_h:
@@ -364,28 +366,34 @@ def split_large_connected_components(
     width: int,
     height: int,
 ) -> tuple[list[Component], bool]:
-    if len(components) != 1:
-        return components, False
+    split_components: list[Component] = []
+    used_split = False
 
-    component = components[0]
-    if component.box.w < 900 and component.box.h < 380:
-        return components, False
+    for component in components:
+        is_large = component.box.w >= 780 or component.box.h >= 380
+        if not is_large:
+            split_components.append(component)
+            continue
 
-    boxes = projection_split_box(
-        mask=mask,
-        box=component.box.padded(8, width, height),
-        max_depth=4,
-        max_pieces=8,
-        width=width,
-        height=height,
-    )
-    if len(boxes) <= 1:
-        return components, False
+        boxes = projection_split_box(
+            mask=mask,
+            box=component.box.padded(8, width, height),
+            max_depth=4,
+            max_pieces=8,
+            width=width,
+            height=height,
+        )
+        if len(boxes) <= 1:
+            split_components.append(component)
+            continue
 
-    return [
-        Component(box=box, pixels=foreground_pixels_in_box(mask, box))
-        for box in boxes
-    ], True
+        used_split = True
+        split_components.extend(
+            Component(box=box, pixels=foreground_pixels_in_box(mask, box))
+            for box in boxes
+        )
+
+    return sorted(split_components, key=lambda item: (item.box.y1, item.box.x1)), used_split
 
 
 def is_outer_frame(component: Component, content_region: tuple[int, int, int, int]) -> bool:
@@ -451,6 +459,10 @@ def build_animation(slide_id: str, layers: list[dict[str, Any]], duration_sec: f
     ]
     title_layers = [layer for layer in content_layers if layer["role"] in {"title", "subtitle"}]
     body_layers = [layer for layer in content_layers if layer["role"] not in {"title", "subtitle"}]
+    min_duration_sec = 2.4
+    if body_layers:
+        min_duration_sec = 0.55 + (len(body_layers) - 1) * 0.45 + 0.58 + 0.65
+    timeline_duration_sec = round(max(duration_sec, min_duration_sec), 3)
 
     for index, layer in enumerate(title_layers):
         events.append(
@@ -465,7 +477,7 @@ def build_animation(slide_id: str, layers: list[dict[str, Any]], duration_sec: f
         )
 
     start = 0.55
-    usable = max(1.0, duration_sec - 2.4)
+    usable = max(1.0, timeline_duration_sec - 2.4)
     interval = min(0.95, max(0.38, usable / max(1, len(body_layers) + 1)))
     for index, layer in enumerate(body_layers):
         role = layer["role"]
@@ -488,13 +500,23 @@ def build_animation(slide_id: str, layers: list[dict[str, Any]], duration_sec: f
                     "id": f"{slide_id}_{layer['id']}_highlight",
                     "target": layer["id"],
                     "action": "highlight",
-                    "at": round(max(start + index * interval + 0.75, duration_sec - 2.0), 3),
+                    "at": round(max(start + index * interval + 0.75, timeline_duration_sec - 2.0), 3),
                     "duration": 1.1,
                     "easing": "easeOutCubic",
                 }
             )
 
-    return {"slide_id": slide_id, "duration_sec": duration_sec, "events": events}
+    event_end = max(
+        [
+            float(event["at"]) + float(event["duration"])
+            for event in events
+            if isinstance(event.get("at"), (int, float)) and isinstance(event.get("duration"), (int, float))
+        ],
+        default=0.0,
+    )
+    timeline_duration_sec = round(max(timeline_duration_sec, event_end + 0.25), 3)
+
+    return {"slide_id": slide_id, "duration_sec": timeline_duration_sec, "events": events}
 
 
 def overlap_ratio(a: Box, b: Box) -> float:
@@ -506,26 +528,41 @@ def overlap_ratio(a: Box, b: Box) -> float:
     return overlap / max(1, min(a.area, b.area))
 
 
+def warning_entry(warning_type: str, severity: str, message: str, **extra: Any) -> dict[str, Any]:
+    return {"type": warning_type, "severity": severity, "message": message, **extra}
+
+
 def build_overlap_warnings(layers: list[dict[str, Any]], max_ratio: float) -> list[dict[str, Any]]:
     warnings: list[dict[str, Any]] = []
-    boxes: list[tuple[str, Box]] = []
+    boxes: list[tuple[str, str, Box]] = []
     for layer in layers:
         if layer.get("role") in {"background", "decoration"}:
             continue
         box = layer["box"]
-        boxes.append((str(layer["id"]), Box(int(box["x"]), int(box["y"]), int(box["x"] + box["w"]), int(box["y"] + box["h"]))))
-    for index, (left_id, left_box) in enumerate(boxes):
-        for right_id, right_box in boxes[index + 1 :]:
+        boxes.append(
+            (
+                str(layer["id"]),
+                str(layer.get("role", "")),
+                Box(int(box["x"]), int(box["y"]), int(box["x"] + box["w"]), int(box["y"] + box["h"])),
+            )
+        )
+    for index, (left_id, left_role, left_box) in enumerate(boxes):
+        for right_id, right_role, right_box in boxes[index + 1 :]:
             ratio = overlap_ratio(left_box, right_box)
+            involves_header = left_role in {"title", "subtitle"} or right_role in {"title", "subtitle"}
+            if involves_header and ratio < 0.36:
+                continue
             if ratio > max_ratio:
+                severity = "blocking" if ratio >= 0.45 else "warning"
                 warnings.append(
-                    {
-                        "type": "layer_bbox_overlap",
-                        "left": left_id,
-                        "right": right_id,
-                        "ratio": round(ratio, 4),
-                        "message": "Layer bounding boxes overlap; visual draft may need more spacing or this pair should remain one grouped layer.",
-                    }
+                    warning_entry(
+                        "layer_bbox_overlap",
+                        severity,
+                        "Layer bounding boxes overlap; visual draft may need more spacing or this pair should remain one grouped layer.",
+                        left=left_id,
+                        right=right_id,
+                        ratio=round(ratio, 4),
+                    )
                 )
     return warnings
 
@@ -707,24 +744,27 @@ def decompose_slide(
     warnings: list[dict[str, Any]] = []
     if not merged_components:
         warnings.append(
-            {
-                "type": "no_content_components",
-                "message": "No separable content components were detected. Regenerate the visual draft with more whitespace between elements.",
-            }
+            warning_entry(
+                "no_content_components",
+                "blocking",
+                "No separable content components were detected. Regenerate the visual draft with more whitespace between elements.",
+            )
         )
     if len(merged_components) == 1:
         warnings.append(
-            {
-                "type": "single_content_group",
-                "message": "Only one content group was detected. Animation will be limited; regenerate with clearer separation if per-element motion is needed.",
-            }
+            warning_entry(
+                "single_content_group",
+                "blocking",
+                "Only one content group was detected. Animation will be limited; regenerate with clearer separation if per-element motion is needed.",
+            )
         )
     if projection_split_used:
         warnings.append(
-            {
-                "type": "projection_split_used",
-                "message": "A large connected content group was split by whitespace projection. Regenerate with cleaner separation if line breaks look awkward.",
-            }
+            warning_entry(
+                "projection_split_used",
+                "advisory",
+                "A large connected content group was split by whitespace projection. Regenerate with cleaner separation if line breaks look awkward.",
+            )
         )
     warnings.extend(build_overlap_warnings(layers, max_ratio=max_overlap_ratio))
 

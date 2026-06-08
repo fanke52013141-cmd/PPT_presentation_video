@@ -82,3 +82,10 @@ cases:
     symptom: "视觉稿中元素重叠、箭头压字或标签粘连，导致 PNG 裁切层不干净。"
     root_cause: "视觉生成提示词没有要求后续拆层所需的留白和对象分离。"
     resolution: "write_visual_prompts.py 和 visual_draft.prompt.md 增加可拆解构图要求：对象之间留 24-40px，禁止压线/压字/重叠，优先 3-7 个可裁切 group。"
+
+  - id: 2026-06-08-imagegen-provenance-bypassed
+    stage: generate-visual-drafts
+    tags: [imagegen-provenance, invalid-fallback, pipeline-validity, agent-autonomy]
+    symptom: "端到端试跑产出了可播放视频，但 visual_draft.png 由本地 PIL 绘图脚本生成，不是 Codex Image Gen 整页位图。"
+    root_cause: "流程只校验 PNG 是否存在、是否可拆层和能否渲染，没有校验视觉稿来源；同时没有区分 TTS provider fallback 这类软替代和 Image Gen 阶段替代这类硬违规。"
+    resolution: "将本次产物标记为无效生产链路样本；要求每页新增 visual_provenance.json，并在 validate_run_assets.py 增加 --require-imagegen-provenance 后才能进入拆层。"

@@ -10,6 +10,9 @@
 - 字幕区不属于 scene 元素生成范围，只能在视频合成阶段由字幕文件叠加。
 - 页面主体必须来自 Codex Image Gen 位图，不得用前端代码补画。
 - 当前生产默认路径是 `codex_image_gen_png_layers`：整页位图生成后必须拆成 PNG layers，再按 layer 动画。
+- `visual_draft.png` 的“文件存在”和“可拆层”不等于来源合格；必须能追溯到 Codex Image Gen 生成记录。
+- Image Gen 失败、无法落盘、无法确认来源时，属于硬阻塞；不得用 PIL、SVG、HTML、CSS、Canvas、React 或截图兜底生成整页视觉稿。
+- 允许替代的是同类能力，例如 TTS provider fallback；不允许替代的是会改变生产范式的核心阶段，例如把 AI 图片阶段替换成本地绘图阶段。
 
 ## 2026-06-07 Token 经济学端到端运行
 
@@ -60,3 +63,48 @@
 
 - `full_slide` 只能作为拆层来源和对照备份，不是合格生产动画的唯一图层。
 - 只有一个主体 group、图层 box 重叠严重、或未检测到内容时，应回到视觉稿生成阶段，不能靠 Remotion 修补。
+
+## 2026-06-08 Image Gen 来源门禁失败复盘
+
+### 事件
+
+- 用户要求验证的主流程是：`文章 -> Codex Image Gen 整页图片 -> PNG 图层拆解 -> 语音合成 -> Remotion 视频`。
+- 实际试跑中，`visual_draft.png` 被本地 PIL 脚本绘制出来，再进入拆层、TTS 和 Remotion。
+- Remotion 没有绘制页面主体，且最终 scene 也是 PNG layers，但这仍然不合格，因为最上游整页视觉稿不是 Image Gen 产物。
+- 因此该结果只能作为拆层、TTS、渲染计时样本，不能作为端到端生产链路验证样本。
+
+### 系统原因
+
+- 验收目标被错换：为了尽快交付可播放视频，优化方向从“验证图片优先生产链路”偏成了“跑通视频产物”。
+- 来源约束没有机器化：脚本只校验 `visual_draft.png` 是否存在、PNG 尺寸是否正确、是否可拆层，没有校验它是否来自 Codex Image Gen。
+- 硬阻塞和软阻塞未分类：MiniMax 缺 key 时可以记录并使用同类 TTS fallback；Image Gen 不可用时不能使用代码绘图 fallback。
+- Image Gen 到 run 目录缺少标准交付协议：生成图默认在 `.codex/generated_images/...`，但项目需要 `runs/<run_id>/slides/<slide_id>/visual_draft.png`，中间缺少复制、记录和校验步骤。
+- 复盘和最终报告没有先声明产物有效性边界，导致“能播放的视频”容易被误认为“合格生产流程输出”。
+
+### 必须新增的流程规则
+
+- 每页 `visual_draft.png` 必须配套 `visual_provenance.json`，至少记录：
+  - `provider`: 必须是 `codex_image_gen`
+  - `prompt_path`: 对应 `visual_prompt.md`
+  - `source_generated_image_path`: `.codex/generated_images/...` 中的原始生成图路径
+  - `copied_to`: 当前 slide 的 `visual_draft.png`
+  - `created_at`
+  - `operator_note`: 可选，说明是否重试、是否人工选择变体
+- `validate_run_assets.py` 应新增 `--require-imagegen-provenance`：
+  - 缺少 `visual_provenance.json` 时 fail。
+  - `provider != codex_image_gen` 时 fail。
+  - `source_generated_image_path` 不存在或不是图片时 fail。
+  - `copied_to` 不等于当前 slide 的 `visual_draft.png` 时 fail。
+- `generate-visual-drafts` skill 必须声明：
+  - Image Gen 失败时停止并报告阻塞。
+  - 不允许用 PIL、本地绘图脚本、SVG、HTML、CSS、Canvas、React、浏览器截图或 PPT 导出图替代整页视觉稿。
+  - 只有成功复制 Image Gen 输出并写入 provenance 后，才能进入拆层。
+- 最终报告必须先判断产物有效性：
+  - `valid_pipeline: true | false`
+  - 如果为 false，必须写清楚是哪一个生产阶段被替代或跳过。
+
+### 后续优化
+
+- 增加一键 runner，把 Image Gen 生成后的默认目录扫描、人工/自动选择、复制到 slide 目录、写 provenance、再调用拆层串起来。
+- 在 `checks/preflight_checklist.md` 中区分“缺依赖可自愈”和“核心生产阶段不可替代”。
+- 在坏案例库中记录本次事故，标签包含 `imagegen-provenance`、`invalid-fallback`、`pipeline-validity`。

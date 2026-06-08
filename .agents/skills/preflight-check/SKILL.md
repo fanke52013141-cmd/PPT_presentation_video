@@ -5,6 +5,19 @@ description: Validate run inputs, repository resources, environment variables, s
 
 # Purpose
 
+## Production Override: Required Macro Layer Tooling
+
+Preflight must treat the Image Gen macro-layer path as the default production
+path. Required local files now include:
+
+- `scripts/compose_manifest_layers.py`
+- `schemas/layer_manifest.schema.json`
+- `scripts/validate_run_assets.py`
+- `scripts/build_remotion_props.py`
+
+`scripts/decompose_slide_layers.py` may still exist, but it is a diagnostic
+fallback and must not be the only checked reconstruction tool.
+
 在进入 `plan-slides` 前做前置检查，尽早发现缺文件、配置缺失、环境变量未设置、参考图缺失、schema 缺失、Remotion/FFmpeg 依赖不可用等问题。
 
 本阶段不生成内容，不调用图片生成、TTS 或视频渲染。
@@ -52,6 +65,7 @@ description: Validate run inputs, repository resources, environment variables, s
    - `templates/prompts/visual_draft.prompt.md`
    - `templates/prompts/scene_reconstruction.prompt.md`
 8. 检查主流程脚本：
+   - `scripts/compose_manifest_layers.py`
    - `scripts/write_visual_prompts.py`
    - `scripts/decompose_slide_layers.py`
    - `scripts/validate_run_assets.py`

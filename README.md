@@ -1,3 +1,39 @@
+# Production Override: Image Gen Macro Layers
+
+Effective 2026-06-09, the production visual path is:
+
+```text
+article -> slide_plan.json -> full-slide reference prompt + macro-layer split plan
+-> Image Gen/Web Image Gen creates separate macro-layer PNGs
+-> layer_manifest.json -> scripts/compose_manifest_layers.py
+-> scene.json + animation_timeline.json -> preview -> TTS/subtitles -> Remotion video
+```
+
+The default production path must not use code to semantically decompose a
+full-slide bitmap. `scripts/decompose_slide_layers.py` is now a diagnostic or
+fallback tool only. Production should prefer `scripts/compose_manifest_layers.py`
+with manifest-declared Image Gen macro layers.
+
+Macro layer rules:
+
+- Generate 3-7 large visual groups per slide: `title_group`, `subtitle_group`,
+  1-4 content/diagram groups, and optional `summary_group`.
+- Do not split text strokes, icons, arrows, or labels into tiny pieces. Keep
+  related visual content in one group.
+- Keep 40-60px clean background between macro layer boxes. Avoid visual overlap.
+- For a flat background, use a manifest color or generated solid PNG; do not
+  waste a decomposition step on a pure-color background.
+- Leave the subtitle safe zone empty. For 1920x1080, do not place PPT body
+  layers below `y=930`; scale this limit proportionally for other canvas sizes.
+- Narration must be generated from the actual macro layers on the slide. Do not
+  reuse narration/audio/subtitles from another slide just because the topic is
+  similar.
+- The animation timeline must follow narration cues. Body/diagram/summary
+  layers should appear when the voice reaches their `narration_cue`, not all at
+  the beginning.
+- `summary_group` should enter near the end and then highlight; it must not be
+  visible from frame 0.
+
 # 文章转 AI 科普视频生产框架
 
 这个仓库用于把文章生产成 AI 科普类 PPT 视频。当前主流程：

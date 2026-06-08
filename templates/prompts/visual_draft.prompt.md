@@ -1,5 +1,29 @@
 # Visual Draft Prompt Template
 
+## Production Override: Macro Layer Package
+
+Use this template to request both:
+
+- a complete full-slide reference image for visual approval;
+- separate Image Gen/Web Image Gen macro-layer PNGs plus a layer split plan for
+  `layer_manifest.json`.
+
+Do not rely on code to semantically crop `visual_draft.png` into production
+layers. The split must be requested at image-generation time as large coherent
+groups: `title_group`, `subtitle_group`, 1-4 `content_group` / `diagram_group`
+assets, and optional `summary_group`.
+
+Flat backgrounds should be represented by a manifest color or a generated solid
+PNG, not by decomposing a full-slide bitmap.
+
+Keep macro groups separated by 40-60px clean background and keep the subtitle
+safe zone empty. For 1920x1080, PPT body layers should end at or above `y=930`.
+
+For each macro layer, provide `text_summary` and `narration_cue` values for the
+future `layer_manifest.json`. The narration must describe or expand the actual
+visible content in those layers. The animation timeline should reveal layers
+when the voice reaches their cue; do not reveal all content at the beginning.
+
 为 `slide_plan.json` 中指定的 slide 生成一张 16:9、1920x1080 的整页静态视觉稿。
 
 正式生产必须使用 Codex Image Gen 生成整页位图。标题、副标题、内容区、图标、线条、箭头、标注、总结条和所有 PPT 主体视觉内容都必须进入生成图片本身；后续 Remotion 只允许显示从这张 PNG 裁切出来的 PNG 图层、叠加字幕和播放音频，不得用 SVG、HTML、CSS、Canvas 或 React 代码补画页面主体内容。

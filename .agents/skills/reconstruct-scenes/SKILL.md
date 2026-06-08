@@ -1,9 +1,38 @@
 ---
 name: reconstruct-scenes
-description: Decompose an approved full-slide bitmap into PNG layers for Remotion animation.
+description: Compose manifest-declared Image Gen macro-layer PNGs into Remotion scene.json and animation timelines.
 ---
 
 # Purpose
+
+## Production Override: Compose, Do Not Decompose
+
+Default production input is `runs/<run_id>/layer_manifest.json`, whose layers
+come from Image Gen/Web Image Gen macro-layer PNGs. This stage composes those
+declared layers into `scene.json`; it must not semantically infer layers from a
+full-slide bitmap.
+
+Default production command:
+
+```powershell
+python scripts/compose_manifest_layers.py `
+  --manifest runs/<run_id>/layer_manifest.json `
+  --repo-root .
+```
+
+Legacy `scripts/decompose_slide_layers.py` is now diagnostic/fallback only. Use
+it only when the user explicitly approves a fallback or when auditing why a
+full-slide split failed.
+
+Expected `scene.visual_source`: `image_gen_macro_layers_manifest`.
+
+Each production manifest layer should carry `text_summary` and
+`narration_cue`. Preserve these fields into `scene.layers[]` so later stages can
+verify that narration and animation timing are bound to visible content.
+
+If a layer uses `animation: highlight`, the composer must still create a normal
+entry event for that layer. A summary or highlight layer must not be visible
+from frame 0 unless it is explicitly `entry_animation: static`.
 
 把通过审核的 `visual_draft.png` 拆解为 Remotion 可显示、可逐层动画的 PNG 图层结构 `scene.json`。
 
@@ -37,17 +66,17 @@ description: Decompose an approved full-slide bitmap into PNG layers for Remotio
 1. 读取 `visual_review.yaml`，确认 `status: approved`。如果没有审核通过，停止。
 2. 读取 `slide_plan.json`，定位当前 `slide_id`。
 3. 读取已审核的 `visual_draft.png`。
-4. 默认调用拆层脚本：
+4. 默认调用宏观图层组合脚本：
 
 ```powershell
-python scripts/decompose_slide_layers.py `
-  --run-dir runs/<run_id> `
-  --overwrite
+python scripts/compose_manifest_layers.py `
+  --manifest runs/<run_id>/layer_manifest.json `
+  --repo-root .
 ```
 
 5. 单页调试时可以只保留对应 slide 目录运行脚本，或先复制 run 作为 smoke run。
 6. 输出 `scene.json` 必须使用 `layers[]`，每个 layer 必须是 `type: png`。
-7. 输出 `visual_source` 必须是 `codex_image_gen_png_layers`。
+7. 输出 `visual_source` 优先是 `image_gen_macro_layers_manifest`；旧的 `codex_image_gen_png_layers` 仅用于历史拆图产物。
 8. 所有 PNG 图层素材必须保存到当前 slide 的 `assets/` 目录。
 9. 运行校验：
 

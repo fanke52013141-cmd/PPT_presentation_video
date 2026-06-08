@@ -5,6 +5,25 @@ description: Bind decomposed PNG scene layers to narration timing and produce an
 
 # Purpose
 
+## Production Override: Bind To Actual Narration Cues
+
+The animation timeline must be derived from the current slide's actual
+`scene.layers[]`, `text_summary`, `narration_cue`, and `audio_timeline.segments`.
+Do not use a generic stagger that reveals every content layer in the first two
+seconds.
+
+Required behavior:
+
+- `title` and `subtitle` may appear at the beginning.
+- `content_body`, `diagram`, and `annotation` layers appear only when the
+  narration reaches the matching cue.
+- `summary` layers enter near the closing sentence and may then receive a
+  `highlight` event.
+- Every non-background production layer should have at least one entry event
+  unless it is explicitly marked static.
+- A `highlight` event is not an entry event. If a layer is highlighted, it still
+  needs a prior `fade_in`, `fade_up`, `slide_in_left`, or `soft_zoom_in`.
+
 把单页 `scene.json` 中的 PNG 图层，与 `audio_timeline.json` 中的旁白分句时间对齐，生成 Remotion 执行的 `animation_timeline.json`。
 
 本阶段不重新设计页面，不修改旁白，只决定哪个 PNG 图层在什么时间出现、轻微移动或被强调。

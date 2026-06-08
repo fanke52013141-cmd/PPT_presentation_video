@@ -1,3 +1,15 @@
+# Macro Layer Timeline Checks
+
+- Important body, diagram, annotation, and summary layers should not all appear
+  in the first two seconds.
+- Each non-background production layer should have an entry event unless it is
+  explicitly static.
+- `highlight` alone is not an entry event. A highlighted layer needs an earlier
+  reveal event.
+- If `scene.layers[]` contains `narration_cue`, check that the corresponding
+  animation event starts near the matching `audio_timeline.segments[]` text.
+- `summary` should enter near the closing narration, then optionally highlight.
+
 # Timeline 检查
 
 检查对象：

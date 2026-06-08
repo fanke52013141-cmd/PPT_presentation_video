@@ -5,6 +5,28 @@ description: Render PNG-layer scene.json into a static per-slide preview for rev
 
 # Purpose
 
+## Production Override: Macro Layer Preview
+
+Preview must accept `scene.visual_source: image_gen_macro_layers_manifest`.
+The preview source of truth is `render_preview.png` produced by
+`scripts/compose_manifest_layers.py`, not an algorithmically cropped full-slide
+decomposition.
+
+Review requirements:
+
+- Compare the composed preview against the full-slide reference for layout
+  intent, but do not require pixel-perfect equality.
+- Check that macro groups are large and coherent, not many tiny fragments.
+- Check that layer boxes do not visually overlap.
+- Check subtitle safe zone before video render. For 1920x1080, no PPT body
+  layer should extend below `y=930`; for other canvas sizes use
+  `safe_y = round(height * 930 / 1080)`.
+- If subtitles are enabled, extract or inspect a video frame with active
+  subtitles and confirm captions do not cover summary/content layers.
+- Read `narration.txt` or `subtitles.srt` and verify that the spoken content
+  matches the visible macro layers. A good composition preview is not enough if
+  the script describes a different slide.
+
 把单页 PNG 图层版 `scene.json` 渲染成 `render_preview.png`，作为第二轮审核对象。该阶段验证 Stage 3 拆出的 PNG 图层是否真实可渲染、可阅读、接近已审核的 `visual_draft.png`。
 
 # Inputs
@@ -33,7 +55,7 @@ description: Render PNG-layer scene.json into a static per-slide preview for rev
 2. 使用 `schemas/scene.schema.json` 校验结构。
 3. 检查 `scene.layers[]` 中所有 `asset` 是否存在，且均为 PNG。
 4. 检查是否至少有 `background` 加一个主体图层；如果只有 `full_slide`，回到 Stage 3。
-5. 检查 `title` 和 `subtitle` 是否是独立 PNG layer。
+5. 检查 `title` 和 `subtitle` 是否是独立 PNG layer 或清晰的 `title_group` / `subtitle_group` 宏观图层。
 6. 检查主体 layer 是否侵入底部字幕区 `Y=930` 到 `Y=1080`。
 7. 使用 Remotion 或等价渲染器把 PNG 图层渲染为一帧静态页面。
 8. 导出 `render_preview.png`。

@@ -1,3 +1,16 @@
+# Visual-Narration Binding
+
+- Narration must be written after the slide's macro layers are known.
+- Every major visible macro layer should be introduced, explained, or extended
+  by narration.
+- Do not reuse narration, subtitles, or audio from another slide or earlier run.
+- The broad narration order should match visual reveal order: title/subtitle,
+  main content groups, diagram/example, summary.
+- `layer_manifest.json` should include `text_summary` and `narration_cue` for
+  every non-background production layer.
+- If the current narration cannot be matched to the visible layer summaries,
+  rewrite narration before TTS.
+
 # 旁白规则
 
 ## 句式

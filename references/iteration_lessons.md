@@ -1,3 +1,19 @@
+# 2026-06-09 Macro Layer Composition Lessons
+
+- Image Gen macro layers can be recomposed reliably when each layer is a large
+  coherent group and the background is handled as a manifest color or a simple
+  generated background image.
+- A successful visual recomposition is not enough. Narration, subtitles, and
+  TTS must be regenerated from the actual macro layers on the current slide.
+  Reusing old narration from a similar topic creates a mismatched video.
+- The timeline must be semantic, not just a mechanical stagger. Title/subtitle
+  can appear early; body, diagram, and summary layers should reveal when the
+  voice reaches their narration cues.
+- `animation: highlight` is not an entry animation. Summary/highlight layers
+  need a separate entry event, otherwise they may be visible from frame 0.
+- QA must inspect at least one video frame with active subtitles, because a
+  clean static preview can still fail when captions cover the summary area.
+
 # 迭代经验沉淀
 
 本文档记录端到端生成视频时发现的问题、修复方式和后续规则。出现同类问题时，应优先更新这里、相关 skill、模板或 schema。

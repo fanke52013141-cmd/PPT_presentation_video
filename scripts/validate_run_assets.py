@@ -16,6 +16,10 @@ from PIL import Image
 
 DEFAULT_WIDTH = 1920
 DEFAULT_HEIGHT = 1080
+LAYERED_VISUAL_SOURCES = {
+    "codex_image_gen_png_layers",
+    "image_gen_macro_layers_manifest",
+}
 
 
 class ValidationError(RuntimeError):
@@ -110,8 +114,9 @@ def validate_scene(
     if require_full_slide and len(layers) != 1:
         raise ValidationError(f"Full-slide mode requires exactly one PNG layer: {scene_path}")
     if require_layered:
-        if scene.get("visual_source") != "codex_image_gen_png_layers":
-            raise ValidationError(f"Layered mode requires visual_source=codex_image_gen_png_layers: {scene_path}")
+        if scene.get("visual_source") not in LAYERED_VISUAL_SOURCES:
+            allowed = ", ".join(sorted(LAYERED_VISUAL_SOURCES))
+            raise ValidationError(f"Layered mode requires visual_source in [{allowed}]: {scene_path}")
         if len(layers) < 2:
             raise ValidationError(f"Layered mode requires multiple PNG layers: {scene_path}")
         if any(layer.get("role") == "full_slide" for layer in layers if isinstance(layer, dict)):

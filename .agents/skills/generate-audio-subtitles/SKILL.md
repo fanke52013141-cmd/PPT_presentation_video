@@ -5,6 +5,24 @@ description: Generate MiniMax TTS audio, metadata, subtitles, and audio timeline
 
 # Purpose
 
+## Production Override: Narration Must Match The Slide
+
+Generate `narration.txt`, `tts_text.txt`, `subtitles.srt`, and
+`audio_timeline.json` from the current slide's actual visual content. Do not
+copy narration/audio/subtitles from another slide or an earlier run.
+
+Before TTS, compare the current `scene.layers[]` or `layer_manifest.json`
+against the narration:
+
+- Every major visible macro layer should be introduced, explained, or extended
+  by the narration.
+- The narration should follow the same broad order as the visual reveal:
+  title/subtitle, main content groups, diagram/example, summary.
+- If the visual layer has `text_summary` or `narration_cue`, the narration must
+  contain a matching sentence or paragraph.
+- If the narration cannot be matched to the current image, stop and rewrite the
+  narration before calling TTS.
+
 用 MiniMax TTS 为每页旁白生成语音，并产出字幕和时间轴，供动画绑定使用。
 
 本阶段逐页执行。每次从 `slide_plan.json` 中读取当前 `slide_id` 的 `narration`，生成一版适合语音合成的 `tts_text.txt`，再调用 MiniMax。

@@ -1,9 +1,37 @@
 ---
 name: generate-visual-drafts
-description: Generate full-slide Image Gen visual drafts that are animation-friendly and decomposable into PNG layers.
+description: Generate Image Gen visual prompts for full-slide references plus separate macro-layer PNG packages.
 ---
 
 # Purpose
+
+## Production Override: Macro Layer Package
+
+Default output is no longer only one `visual_draft.png`. For production, this
+stage must deliver a prompt package that lets Image Gen/Web Image Gen create:
+
+- one full-slide reference image for visual approval;
+- separate macro-layer PNGs for title, subtitle, 1-4 large content/diagram
+  groups, and optional summary;
+- a layer split plan that can become `runs/<run_id>/layer_manifest.json`.
+
+Do not ask the next stage to semantically crop a full-slide bitmap. The split
+must happen at generation time by requesting separate large layer images.
+
+When the background is flat, specify a manifest color such as `#FFFDF7` or a
+generated solid PNG. Do not request background decomposition for pure color.
+
+Macro layer constraints:
+
+- 3-7 large groups per slide; do not split into tiny text/icon fragments.
+- Keep related text, icons, arrows, borders, labels, and callouts together.
+- Keep 40-60px clean background between independent macro layer boxes.
+- Avoid overlaps between groups.
+- Keep the subtitle safe zone empty. For 1920x1080, PPT body layers must not
+  extend below `y=930`; scale proportionally for other canvas sizes.
+- Each macro layer must have a short `text_summary` and `narration_cue` in the
+  layer split plan. These fields are used later to write matching narration and
+  bind reveal timing.
 
 根据 `slide_plan.json` 的单页内容，生成整页静态视觉稿 `visual_draft.png`。视觉稿仍然必须是 Codex Image Gen 生成的完整位图，但它必须适合后续裁切为 PNG 图层并逐层动画。
 

@@ -1,5 +1,44 @@
 # AGENTS.md
 
+## Production Override: Image Gen Macro Layers
+
+Effective 2026-06-09, this override supersedes any older text below that says
+production should crop semantic layers from `visual_draft.png`.
+
+Default production path:
+
+```text
+slide_plan.json -> visual_prompt.md with full-slide reference + macro-layer plan
+-> Image Gen/Web Image Gen separate PNG macro layers
+-> layer_manifest.json -> scripts/compose_manifest_layers.py
+-> scene.json + animation_timeline.json -> preview -> Remotion
+```
+
+Rules:
+
+- Do not use code to semantically decompose a full-slide bitmap for production.
+- Use `scripts/compose_manifest_layers.py` as the normal Stage 3 path.
+- Keep `scripts/decompose_slide_layers.py` only for diagnostics, audits, or an
+  explicit fallback run when macro layers are unavailable.
+- `scene.visual_source` may be `image_gen_macro_layers_manifest` or
+  `codex_image_gen_png_layers`; the former is preferred.
+- A valid Image Gen macro package is 3-7 large groups: title, subtitle, 1-4
+  body/diagram groups, and optional summary. Do not request many tiny fragments.
+- Flat backgrounds should be a manifest color or generated solid PNG. Do not
+  split a pure-color background from a full-slide image.
+- Macro layer boxes must avoid overlap and keep 40-60px whitespace between
+  independent groups.
+- Subtitle safe zone must stay empty. For 1920x1080, PPT body layers must end
+  at or above `y=930`; scale this proportionally for other canvases.
+- Narration, subtitles, and TTS must be regenerated from the actual macro
+  layers for the slide. Never reuse another slide's narration/audio/subtitles
+  as a production shortcut.
+- Each manifest layer should include `text_summary` and `narration_cue` so the
+  script and reviewer can verify that the spoken script matches the visible
+  content.
+- Animation timing must be bound to narration cues. Do not reveal all content
+  layers at the start. `summary_group` enters near the end and then highlights.
+
 本仓库是“文章转 AI 科普视频”的 Codex 执行框架。主流程要保证：页面主体由 Codex Image Gen 生成，再从生成图中拆出 PNG 图层，最后由 Remotion 按 PNG 图层做动画。
 
 ## 1. 总体原则
@@ -133,7 +172,15 @@ references/style_reference/PPT示例.png
 规则：
 
 - 使用 `.agents/skills/reconstruct-scenes/SKILL.md`。
-- 默认运行：
+- 默认生产运行：
+
+```powershell
+python scripts/compose_manifest_layers.py `
+  --manifest runs/<run_id>/layer_manifest.json `
+  --repo-root .
+```
+
+- 旧算法拆图脚本只用于诊断、审计或显式 fallback，不作为默认生产路径：
 
 ```powershell
 python scripts/decompose_slide_layers.py `

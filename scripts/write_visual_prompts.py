@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Write per-slide prompts for Codex Image Gen full-slide visuals.
+Write per-slide prompts for Image Gen macro-layer visual packages.
 
 The image model is intentionally outside this script. This script records the
-exact production prompt that should be pasted or issued to Codex Image Gen, and
-it binds each slide to the configured style reference images.
+exact production prompt that should be pasted or issued to Image Gen/Web Image
+Gen, and it binds each slide to the configured style reference images.
 """
 
 from __future__ import annotations
@@ -91,15 +91,23 @@ def build_prompt(slide: dict[str, Any], template_ref: str, example_ref: str) -> 
     bullets = "\n".join(item_lines(slide))
 
     return f"""Use case: scientific-educational
-Asset type: one complete 16:9 bitmap slide for an article-to-video workflow
+Asset type: 16:9 bitmap slide reference plus separate macro-layer PNG package
 Slide id: {slide_id}
 Input images:
 - Reference image 1 ({template_ref}): use as the page template and composition reference.
 - Reference image 2 ({example_ref}): use as the filled-slide visual style reference.
 
 Primary request:
-Generate a complete full-slide PNG-like bitmap in the same warm hand-drawn Chinese explainer style as the references. The slide body, title, subtitle, lines, arrows, icons, labels, and diagram content must all be part of the generated bitmap image. Do not create SVG, vector layers, HTML, CSS, or frontend-drawn elements.
-After this bitmap is approved, the production pipeline will crop it into PNG layers for animation. Compose the slide as separable visual islands: title, subtitle, each diagram block, each label group, arrows, annotations, and summary bar should have clear whitespace around them.
+Generate one complete full-slide reference image in the same warm hand-drawn Chinese explainer style as the references, then generate the separate macro-layer PNG images needed to rebuild that slide. The production pipeline will not use code to semantically crop a full-slide bitmap. It will only compose the macro-layer images declared in layer_manifest.json.
+The slide body, title, subtitle, lines, arrows, icons, labels, and diagram content must all be Image Gen bitmap content. Do not create SVG, vector layers, HTML, CSS, Canvas, React, or Remotion-drawn PPT body elements.
+
+Required macro-layer package:
+- background: use a plain generated color image or manifest color when the background is flat; only generate a background layer if there is intentional paper texture or a non-flat backdrop.
+- title_group: main title plus its yellow left marker if they visually belong together.
+- subtitle_group: subtitle plus yellow underline.
+- content_group_01..content_group_04: large content blocks only. Keep related text, icons, arrows, and labels together; do not split into tiny pieces.
+- summary_group: bottom takeaway strip if used.
+- layer_manifest.json plan: for each layer, provide id, role, source filename, x, y, w, h, z_index, text_summary, narration_cue, reveal_at if known, and animation hint.
 
 Canvas and layout:
 - 16:9 landscape, suitable for 1920x1080 video.
@@ -109,8 +117,8 @@ Canvas and layout:
 - Smaller handwritten Chinese subtitle below the title with a short yellow underline.
 - The middle of the slide is an open content canvas. Do not draw a large enclosing rounded black content frame.
 - Keep the main content inside the open area from roughly x=80,y=235 to x=1840,y=915.
-- Leave the bottom 150px visually calm so Remotion subtitles can overlay without covering critical content.
-- Keep at least 24-40px of clean background between independent animatable objects.
+- Leave the bottom 150px visually calm so Remotion subtitles can overlay without covering critical content. For 1920x1080, no PPT body layer may extend below y=930 unless subtitles are disabled.
+- Keep at least 40-60px of clean background between independent macro layers. Avoid overlaps between boxes.
 - Arrows may connect ideas, but arrow tips must not touch or overlap text strokes, icon strokes, labels, or summary text.
 
 Text to render exactly where possible:
@@ -129,11 +137,18 @@ Style constraints:
 - Preserve the fixed title/subtitle positions and fixed subtitle-safe area from the reference images.
 - Do not add an outer content border around the middle content.
 - Avoid overlapping objects. Do not place text on top of icons, arrows, borders, or colored label backgrounds unless that text belongs to the same label group.
-- Prefer 3-7 large separable content groups over many tiny scattered marks, so each group can be cropped into a PNG layer and animated.
+- Prefer 3-7 large macro groups over many tiny scattered marks, so Image Gen can produce stable separate layer images and Codex can compose them without semantic cropping.
 - Keep arrows short and detached from object borders; avoid vertical ribbons, full-width pale strips, or connector lines that merge multiple cards into one connected bitmap group.
 - Keep text large and readable; avoid dense paragraphs and avoid tiny labels.
 - Prefer short Chinese labels and diagrammatic blocks over long body text.
 - No photorealistic scene, no 3D, no neon technology style, no dark background, no watermark.
+
+Narration and timing binding:
+- The narration must explain the visible macro layers in order. Do not reuse unrelated narration from another slide.
+- Each layer's text_summary should name what is visibly inside that layer.
+- Each layer's narration_cue should state which sentence or paragraph introduces it.
+- The animation timeline must reveal a layer only when the narration reaches its cue. Do not reveal every body layer at the beginning.
+- Summary_group should appear near the end and may then receive a highlight.
 """
 
 

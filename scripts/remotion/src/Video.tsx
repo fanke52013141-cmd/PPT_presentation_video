@@ -22,7 +22,21 @@ export type SceneLayer = {
   id: string;
   type: 'png';
   asset: string;
-  role?: 'background' | 'title' | 'subtitle' | 'content_body' | 'diagram' | 'annotation' | 'summary' | 'decoration' | 'full_slide';
+  role?:
+    | 'background'
+    | 'title'
+    | 'subtitle'
+    | 'content_body'
+    | 'diagram'
+    | 'annotation'
+    | 'summary'
+    | 'decoration'
+    | 'full_slide'
+    | 'cover_layer'
+    | 'fog_layer'
+    | 'reveal_crop';
+  target_group_id?: string;
+  visible_text?: string;
   animation_role?: string;
   content_index?: number;
   box: LayerBox;
@@ -47,11 +61,26 @@ export type TimelineSegment = {
   text: string;
 };
 
+export type AnimationAction =
+  | 'fade_in'
+  | 'fade_up'
+  | 'soft_zoom_in'
+  | 'slide_in_left'
+  | 'highlight'
+  | 'cover_fade_out'
+  | 'cover_wipe_left_to_right'
+  | 'cover_wipe_top_to_bottom'
+  | 'fog_diagonal_erase'
+  | 'crop_fade_up'
+  | 'crop_slide_in_left'
+  | 'crop_soft_zoom_in';
+
 export type AnimationEvent = {
   id?: string;
   at: number;
   target: string;
-  action: 'fade_in' | 'fade_up' | 'soft_zoom_in' | 'slide_in_left' | 'highlight';
+  target_group_id?: string;
+  action: AnimationAction;
   duration: number;
   easing?: string;
   params?: Record<string, unknown>;
@@ -97,6 +126,63 @@ const getEvents = (events: AnimationEvent[] | undefined, id: string): AnimationE
   return (events ?? []).filter((event) => event.target === id).sort((a, b) => a.at - b.at);
 };
 
+const eventProgress = (frame: number, fps: number, event: AnimationEvent): number => {
+  const start = event.at * fps;
+  const duration = Math.max(1, event.duration * fps);
+  return interpolate(frame, [start, start + duration], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
+};
+
+const numericParam = (event: AnimationEvent, key: string, fallback: number): number => {
+  const value = event.params?.[key];
+  return typeof value === 'number' ? value : fallback;
+};
+
+const revealStyle = (
+  frame: number,
+  fps: number,
+  events: AnimationEvent[],
+  base: React.CSSProperties
+): React.CSSProperties => {
+  const revealEvent = events.find((event) =>
+    ['cover_fade_out', 'cover_wipe_left_to_right', 'cover_wipe_top_to_bottom', 'fog_diagonal_erase'].includes(event.action)
+  );
+  if (!revealEvent) {
+    return base;
+  }
+
+  const progress = eventProgress(frame, fps, revealEvent);
+  if (revealEvent.action === 'cover_fade_out') {
+    return {...base, opacity: 1 - progress};
+  }
+
+  if (revealEvent.action === 'cover_wipe_left_to_right') {
+    return {
+      ...base,
+      clipPath: `inset(0 0 0 ${progress * 100}%)`,
+    };
+  }
+
+  if (revealEvent.action === 'cover_wipe_top_to_bottom') {
+    return {
+      ...base,
+      clipPath: `inset(${progress * 100}% 0 0 0)`,
+    };
+  }
+
+  const feather = numericParam(revealEvent, 'feather', 16);
+  const angle = numericParam(revealEvent, 'angle', 135);
+  const sweep = -35 + progress * 170;
+  const maskImage = `linear-gradient(${angle}deg, transparent ${sweep - feather}%, transparent ${sweep}%, black ${sweep + feather}%)`;
+  return {
+    ...base,
+    WebkitMaskImage: maskImage,
+    maskImage,
+  } as React.CSSProperties;
+};
+
 const animatedStyle = (
   frame: number,
   fps: number,
@@ -107,28 +193,26 @@ const animatedStyle = (
     return base;
   }
 
-  const entryEvent = events.find((event) => event.action !== 'highlight');
-  let style: React.CSSProperties = {...base};
+  let style: React.CSSProperties = revealStyle(frame, fps, events, base);
+  const entryEvent = events.find((event) =>
+    ['fade_in', 'fade_up', 'soft_zoom_in', 'slide_in_left', 'crop_fade_up', 'crop_slide_in_left', 'crop_soft_zoom_in'].includes(event.action)
+  );
 
   if (entryEvent) {
     const start = entryEvent.at * fps;
-    const duration = Math.max(1, entryEvent.duration * fps);
-    const progress = interpolate(frame, [start, start + duration], [0, 1], {
-      extrapolateLeft: 'clamp',
-      extrapolateRight: 'clamp',
-    });
+    const progress = eventProgress(frame, fps, entryEvent);
     const springProgress = spring({
       frame: Math.max(0, frame - start),
       fps,
       config: {damping: 18, stiffness: 110, mass: 0.8},
     });
 
-    if (entryEvent.action === 'fade_up') {
-      style = {...style, opacity: progress, transform: `translateY(${(1 - springProgress) * 28}px)`};
-    } else if (entryEvent.action === 'slide_in_left') {
-      style = {...style, opacity: progress, transform: `translateX(${(1 - springProgress) * -34}px)`};
-    } else if (entryEvent.action === 'soft_zoom_in') {
-      style = {...style, opacity: progress, transform: `scale(${0.96 + springProgress * 0.04})`};
+    if (entryEvent.action === 'fade_up' || entryEvent.action === 'crop_fade_up') {
+      style = {...style, opacity: progress, transform: `translateY(${(1 - springProgress) * 24}px)`};
+    } else if (entryEvent.action === 'slide_in_left' || entryEvent.action === 'crop_slide_in_left') {
+      style = {...style, opacity: progress, transform: `translateX(${(1 - springProgress) * -28}px)`};
+    } else if (entryEvent.action === 'soft_zoom_in' || entryEvent.action === 'crop_soft_zoom_in') {
+      style = {...style, opacity: progress, transform: `scale(${0.97 + springProgress * 0.03})`};
     } else {
       style = {...style, opacity: progress};
     }
@@ -165,7 +249,7 @@ const LayerView: React.FC<{layer: SceneLayer; events?: AnimationEvent[]}> = ({la
     width: layer.box.w,
     height: layer.box.h,
     zIndex: layer.z_index,
-    overflow: 'visible',
+    overflow: 'hidden',
   };
   const style = animatedStyle(frame, fps, getEvents(events, layer.id), base);
 

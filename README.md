@@ -16,7 +16,9 @@ article.md
 -> Image Gen full-slide master image: visual_draft.png
 -> scripts/write_reveal_manifest_template.py
 -> reveal_manifest.json coordinate draft
--> manual box review against visual_draft.png
+-> scripts/auto_fit_reveal_boxes.py
+-> scripts/draw_reveal_manifest_preview.py
+-> manual box review against preview images and visual_draft.png
 -> scripts/validate_reveal_manifest.py
 -> scripts/build_reveal_scene.py
 -> full_slide.png + cover/fog/crop reveal layers + reveal_report.json
@@ -53,10 +55,11 @@ that the page does not show.
 3. Give every group a `visible_text`, `visual_anchor`, and `narration_function`.
 4. Write `narration_beats` that bind each spoken point to a `group_id`.
 5. Generate a full-slide master image that follows those groups.
-6. Generate a draft `reveal_manifest.json` and manually review boxes against `visual_draft.png`.
-7. Build reveal layers.
-8. Generate narration files from the visual contract.
-9. After TTS timing exists, bind reveal events to audio segments.
+6. Generate a draft `reveal_manifest.json`.
+7. Auto-fit boxes against `visual_draft.png`, then inspect preview images.
+8. Build reveal layers.
+9. Generate narration files from the visual contract.
+10. After TTS timing exists, bind reveal events to audio segments.
 
 ## Master Slide Layout Rules
 
@@ -115,10 +118,24 @@ python scripts/write_reveal_manifest_template.py `
   --overwrite
 ```
 
-After Image Gen creates each `visual_draft.png`, review and adjust boxes in:
+After Image Gen creates each `visual_draft.png`, auto-fit boxes and draw review previews:
+
+```powershell
+python scripts/auto_fit_reveal_boxes.py `
+  --manifest runs/<run_id>/reveal_manifest.json `
+  --repo-root .
+
+python scripts/draw_reveal_manifest_preview.py `
+  --manifest runs/<run_id>/reveal_manifest.json `
+  --repo-root . `
+  --out-dir runs/<run_id>/review
+```
+
+Review the preview images and adjust boxes in:
 
 ```text
 runs/<run_id>/reveal_manifest.json
+runs/<run_id>/review/*_reveal_manifest_preview.png
 ```
 
 Validate the reveal manifest:
@@ -200,6 +217,8 @@ runs/<run_id>/
   inputs/article.md
   planning/visual_contract.json
   reveal_manifest.json
+  reveal_manifest.auto_fit_report.json
+  review/*_reveal_manifest_preview.png
   slides/slide_001/
     visual_prompt.md
     visual_draft.png

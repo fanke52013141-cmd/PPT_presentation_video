@@ -14,7 +14,10 @@ article.md
 -> scripts/write_visual_prompts.py
 -> visual_prompt.md
 -> Image Gen full-slide master image: visual_draft.png
--> reveal_manifest.json
+-> scripts/write_reveal_manifest_template.py
+-> reveal_manifest.json coordinate draft
+-> manual box review against visual_draft.png
+-> scripts/validate_reveal_manifest.py
 -> scripts/build_reveal_scene.py
 -> full_slide.png + cover/fog/crop reveal layers + reveal_report.json
 -> scripts/write_narration_from_visual_contract.py
@@ -50,7 +53,7 @@ that the page does not show.
 3. Give every group a `visible_text`, `visual_anchor`, and `narration_function`.
 4. Write `narration_beats` that bind each spoken point to a `group_id`.
 5. Generate a full-slide master image that follows those groups.
-6. Mark each group's rectangle in `reveal_manifest.json`.
+6. Generate a draft `reveal_manifest.json` and manually review boxes against `visual_draft.png`.
 7. Build reveal layers.
 8. Generate narration files from the visual contract.
 9. After TTS timing exists, bind reveal events to audio segments.
@@ -72,6 +75,14 @@ that the page does not show.
   content. Remotion only displays PNG layers, reveal effects, subtitles, and audio.
 
 ## Main Commands
+
+For the pre-visual and post-visual checks in one command:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/run_reveal_preflight.ps1 `
+  -RunId <run_id> `
+  -Overwrite
+```
 
 Generate a first-pass visual contract from the article:
 
@@ -96,10 +107,26 @@ python scripts/write_visual_prompts.py `
   --overwrite
 ```
 
-After Image Gen creates each `visual_draft.png`, declare reveal rectangles in:
+Generate a reveal manifest coordinate template:
+
+```powershell
+python scripts/write_reveal_manifest_template.py `
+  --run-dir runs/<run_id> `
+  --overwrite
+```
+
+After Image Gen creates each `visual_draft.png`, review and adjust boxes in:
 
 ```text
 runs/<run_id>/reveal_manifest.json
+```
+
+Validate the reveal manifest:
+
+```powershell
+python scripts/validate_reveal_manifest.py `
+  --manifest runs/<run_id>/reveal_manifest.json `
+  --contract runs/<run_id>/planning/visual_contract.json
 ```
 
 Then build reveal scene assets:

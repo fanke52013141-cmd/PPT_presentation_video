@@ -12,7 +12,8 @@
         "codex_image_gen_full_slide_bitmap",
         "codex_image_gen_png_layers",
         "image_gen_macro_layers_manifest",
-        "master_split_image_layers"
+        "master_split_image_layers",
+        "master_reveal_layers"
       ]
     },
     "canvas": {
@@ -46,9 +47,14 @@
               "annotation",
               "summary",
               "decoration",
-              "full_slide"
+              "full_slide",
+              "cover_layer",
+              "fog_layer",
+              "reveal_crop"
             ]
           },
+          "target_group_id": {"type": "string"},
+          "visible_text": {"type": "string"},
           "box": {
             "type": "object",
             "required": ["x", "y", "w", "h"],
@@ -66,7 +72,8 @@
           "linked_segment_id": {"type": "string"},
           "text_summary": {"type": "string"},
           "narration_cue": {"type": "string"}
-        }
+        },
+        "additionalProperties": true
       }
     },
     "elements": {

@@ -6,14 +6,19 @@ Effective immediately, the default production path is:
 
 ```text
 article.md
+-> scripts/write_visual_contract.py
 -> visual_contract.json with visual_groups and narration_beats
+-> scripts/write_visual_prompts.py
 -> visual_prompt.md
 -> Image Gen full-slide master image: visual_draft.png
 -> reveal_manifest.json
 -> scripts/build_reveal_scene.py
 -> scene.json + full_slide.png + cover/fog/crop reveal layers + reveal_report.json
--> narration/TTS/subtitles
--> animation_timeline.json bound to visual groups and narration beats
+-> scripts/write_narration_from_visual_contract.py
+-> narration.txt + tts_text.txt + narration_beats.json
+-> TTS/subtitles/audio_timeline.json
+-> scripts/bind_reveal_timeline.py
+-> animation_timeline.json bound to audio segments
 -> Remotion video
 ```
 
@@ -38,7 +43,7 @@ using stable rectangular cover, fog, and crop layers.
 
 ## Visual-Contract Planning
 
-The visual contract must be planned before visual generation and before final narration.
+The visual contract must exist before visual generation and before final narration.
 
 For each slide:
 
@@ -49,7 +54,8 @@ For each slide:
    unsupported concepts.
 5. Generate the master image from those groups.
 6. Mark each group rectangle in `reveal_manifest.json`.
-7. After TTS creates timings, bind reveal events to the same beats.
+7. Generate narration files from the same visual contract.
+8. After TTS creates timings, bind reveal events to audio timeline segments.
 
 Narration is an expansion of the visible page. It must not introduce unrelated
 ideas that the page does not support.
@@ -96,6 +102,7 @@ runs/<run_id>/
     scene.json
     animation_timeline.json
     reveal_report.json
+    narration_beats.json
     narration.txt
     tts_text.txt
     voice.mp3
@@ -111,6 +118,10 @@ Image Gen, including the prompt path and copied output path.
 Before visual generation:
 
 ```powershell
+python scripts/write_visual_contract.py `
+  --run-dir runs/<run_id> `
+  --overwrite
+
 python scripts/validate_visual_contract.py `
   --contract runs/<run_id>/planning/visual_contract.json
 ```
@@ -127,9 +138,23 @@ python scripts/validate_reveal_scene.py `
   --repo-root .
 ```
 
-Before rendering after TTS/subtitles:
+Before TTS:
 
 ```powershell
+python scripts/write_narration_from_visual_contract.py `
+  --run-dir runs/<run_id> `
+  --overwrite
+
+python scripts/validate_narration_grounding.py `
+  --run-dir runs/<run_id>
+```
+
+After TTS/subtitles:
+
+```powershell
+python scripts/bind_reveal_timeline.py `
+  --run-dir runs/<run_id>
+
 python scripts/validate_run_assets.py `
   --run-dir runs/<run_id> `
   --require-layered
@@ -146,7 +171,7 @@ The run is blocked if:
 
 ## Animation Rules
 
-- Animation timing follows narration beats.
+- Animation timing follows narration beats and audio timeline segments.
 - Title and subtitle may appear early.
 - Body and diagram groups appear when the voice reaches their beat.
 - Summary enters near the end and may then highlight.

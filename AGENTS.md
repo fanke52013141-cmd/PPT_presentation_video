@@ -1,75 +1,80 @@
 # AGENTS.md
 
-## Production Override: Master-Split Image Gen Layers
+## Production Override: Visual-Contract Reveal Layers
 
 Effective immediately, the default production path is:
 
 ```text
 article.md
--> slide_plan.json with narration_beats
+-> visual_contract.json with visual_groups and narration_beats
 -> visual_prompt.md
 -> Image Gen full-slide master image: visual_draft.png
--> master_split_manifest.json
--> scripts/split_master_layers.py
--> scene.json + same-source PNG macro layers + render_preview.png + split_report.json
+-> reveal_manifest.json
+-> scripts/build_reveal_scene.py
+-> scene.json + full_slide.png + cover/fog/crop reveal layers + reveal_report.json
 -> narration/TTS/subtitles
--> animation_timeline.json bound to narration beats
+-> animation_timeline.json bound to visual groups and narration beats
 -> Remotion video
 ```
 
-The page must be generated as one coherent Image Gen master image first. Then
-Codex splits large macro layers from that same master image. Do not make the
-production page by recomposing many independently generated small assets.
+The page must be generated as one coherent Image Gen master image first. Do not
+alpha-split foreground layers by default. Reveal the approved full-slide image by
+using stable rectangular cover, fog, and crop layers.
 
 ## Non-Negotiable Rules
 
 - The PPT body must come from Image Gen bitmap output.
-- Remotion may only display PNG layers, play audio, animate PNG layers, and
-  overlay subtitles.
-- Do not draw PPT body text, shapes, lines, formulas, diagrams, arrows, or
-  cards with SVG, HTML, CSS, Canvas, React, or Remotion code.
-- `assets/full_slide.png` is a source/audit image, not a production animation
-  layer.
-- `scripts/decompose_slide_layers.py` is diagnostic/fallback only.
-- `scripts/compose_manifest_layers.py` is an advanced external-layer path only.
-- Default production uses `scripts/split_master_layers.py`.
+- Remotion may display PNG layers, play audio, animate PNG layers, apply reveal
+  effects, and overlay subtitles.
+- Remotion must not draw PPT body text, shapes, lines, formulas, diagrams,
+  arrows, or cards with SVG, HTML, CSS, Canvas, React, or native drawing code.
+- `assets/full_slide.png` is the final source image and the visual truth for the
+  slide.
+- `cover_layer`, `fog_layer`, and `reveal_crop` layers are reveal mechanics only;
+  they must not introduce new semantic content.
+- `scripts/split_master_layers.py`, `scripts/decompose_slide_layers.py`, and
+  `scripts/compose_manifest_layers.py` are fallback/diagnostic paths only.
+- Default production uses `scripts/build_reveal_scene.py`.
 
-## Narration-First Planning
+## Visual-Contract Planning
 
-Narration must be planned before visual generation.
+The visual contract must be planned before visual generation and before final narration.
 
 For each slide:
 
-1. Convert the article point into a short voiceover paragraph.
-2. Split that paragraph into `narration_beats`.
-3. Map each beat to one visible macro group.
-4. Use those beats to decide page hierarchy and animation order.
-5. After TTS creates exact timings, bind animation events to the same beats.
+1. Define 5-8 `visual_groups`.
+2. Give each group a `visible_text`, `visual_anchor`, and `narration_function`.
+3. Write `narration_beats` that bind each spoken point to a `group_id`.
+4. Ensure every spoken point expands a visible group instead of introducing
+   unsupported concepts.
+5. Generate the master image from those groups.
+6. Mark each group rectangle in `reveal_manifest.json`.
+7. After TTS creates timings, bind reveal events to the same beats.
 
-Narration expands the visible page content. It must not introduce unrelated
+Narration is an expansion of the visible page. It must not introduce unrelated
 ideas that the page does not support.
 
 ## Master Image Layout Rules
 
-The master slide must be easy to split later:
+The master slide must be reveal-friendly:
 
 - Use 1920x1080, 16:9.
+- Use a flat uniform `#FFFDF7` background. Do not use paper grain, noise,
+  gradients, shadows, or vignette effects.
 - Keep the subtitle safe zone clear. At 1080p, no PPT body layer should extend
   below `y=930`.
-- Prefer 5-8 macro groups per slide:
-  `title_group`, `subtitle_group`, 2-4 content/diagram groups, and optional
-  `summary_group`.
-- Keep independent macro groups separated by at least 48-80px of clean
-  background.
+- Prefer 5-8 visual groups per slide: `title_group`, `subtitle_group`, 2-4
+  content/diagram groups, and optional `summary_group`.
+- Keep independent groups separated by 80-120px of clean background.
+- Each group must contain a short visible Chinese label the narration can cite.
 - Avoid object overlaps and near-contact. Text, icons, arrows, card borders,
   labels, formulas, and diagram strokes should not touch unless they belong to
-  the same macro group.
-- Keep short arrows inside their related group when possible. Do not run thin
-  connector lines across many independent groups.
+  the same visual group.
+- Do not run long connector lines across multiple independent groups.
 - Use open middle content space. Do not add a large enclosing content frame.
 
 If a draft has crowded central content, overlapping labels, text on arrows, or
-groups that touch each other, return to visual generation before splitting.
+groups that touch each other, return to visual generation before building reveal layers.
 
 ## Required Artifacts
 
@@ -78,19 +83,19 @@ Each production run should contain:
 ```text
 runs/<run_id>/
   inputs/article.md
-  planning/slide_plan.json
-  master_split_manifest.json
+  planning/visual_contract.json
+  reveal_manifest.json
   slides/slide_001/
     visual_prompt.md
     visual_draft.png
     visual_provenance.json
     assets/full_slide.png
-    assets/background.png
-    assets/<macro_layer>.png
+    assets/covers/<group_id>_cover.png
+    assets/fog/<group_id>_fog.png
+    assets/crops/<group_id>.png
     scene.json
     animation_timeline.json
-    render_preview.png
-    split_report.json
+    reveal_report.json
     narration.txt
     tts_text.txt
     voice.mp3
@@ -103,28 +108,41 @@ Image Gen, including the prompt path and copied output path.
 
 ## Validation Gates
 
-Before rendering:
+Before visual generation:
 
 ```powershell
-python scripts/validate_layer_recomposition.py `
-  --run-dir runs/<run_id> `
-  --require-narration-beats
+python scripts/validate_visual_contract.py `
+  --contract runs/<run_id>/planning/visual_contract.json
+```
 
+After `visual_draft.png` exists and `reveal_manifest.json` is written:
+
+```powershell
+python scripts/build_reveal_scene.py `
+  --manifest runs/<run_id>/reveal_manifest.json `
+  --repo-root .
+
+python scripts/validate_reveal_scene.py `
+  --run-dir runs/<run_id> `
+  --repo-root .
+```
+
+Before rendering after TTS/subtitles:
+
+```powershell
 python scripts/validate_run_assets.py `
   --run-dir runs/<run_id> `
-  --require-layered `
-  --require-master-split-report
+  --require-layered
 ```
 
 The run is blocked if:
 
-- `scene.visual_source` is not a layered source.
-- the only visible layer is a full-slide image.
-- `split_report.json` is missing.
-- split warnings contain `severity=blocking`.
-- recomposition metrics are missing or too poor.
-- layer boxes overlap or enter the subtitle safe zone.
-- macro layers are not linked to narration beats in production review.
+- `visual_contract.json` has narration beats without valid `group_id`.
+- A content visual group is not referenced by any narration beat.
+- A group rectangle enters the subtitle safe zone.
+- `reveal_report.json` contains blocking warnings.
+- A reveal event targets a missing scene layer.
+- Narration introduces concepts not supported by any visual group.
 
 ## Animation Rules
 
@@ -132,16 +150,19 @@ The run is blocked if:
 - Title and subtitle may appear early.
 - Body and diagram groups appear when the voice reaches their beat.
 - Summary enters near the end and may then highlight.
-- Do not reveal every body layer at frame 0.
+- Do not reveal every body group at frame 0.
 - Do not use `line_draw` or code-native chart animation for PPT body content.
 
 Allowed actions:
 
 ```text
-fade_in
-fade_up
-soft_zoom_in
-slide_in_left
+cover_fade_out
+cover_wipe_left_to_right
+cover_wipe_top_to_bottom
+fog_diagonal_erase
+crop_fade_up
+crop_slide_in_left
+crop_soft_zoom_in
 highlight
 ```
 

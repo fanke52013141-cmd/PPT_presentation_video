@@ -11,7 +11,10 @@ article.md
 -> scripts/write_visual_prompts.py
 -> visual_prompt.md
 -> Image Gen full-slide master image: visual_draft.png
--> reveal_manifest.json
+-> scripts/write_reveal_manifest_template.py
+-> reveal_manifest.json coordinate draft
+-> manual box review against visual_draft.png
+-> scripts/validate_reveal_manifest.py
 -> scripts/build_reveal_scene.py
 -> scene.json + full_slide.png + cover/fog/crop reveal layers + reveal_report.json
 -> scripts/write_narration_from_visual_contract.py
@@ -50,12 +53,12 @@ For each slide:
 1. Define 5-8 `visual_groups`.
 2. Give each group a `visible_text`, `visual_anchor`, and `narration_function`.
 3. Write `narration_beats` that bind each spoken point to a `group_id`.
-4. Ensure every spoken point expands a visible group instead of introducing
-   unsupported concepts.
+4. Ensure every spoken point expands a visible group instead of introducing unsupported concepts.
 5. Generate the master image from those groups.
-6. Mark each group rectangle in `reveal_manifest.json`.
-7. Generate narration files from the same visual contract.
-8. After TTS creates timings, bind reveal events to audio timeline segments.
+6. Generate a draft `reveal_manifest.json` from the visual contract.
+7. Review and adjust every group box against `visual_draft.png`.
+8. Generate narration files from the same visual contract.
+9. After TTS creates timings, bind reveal events to audio timeline segments.
 
 Narration is an expansion of the visible page. It must not introduce unrelated
 ideas that the page does not support.
@@ -115,6 +118,14 @@ Image Gen, including the prompt path and copied output path.
 
 ## Validation Gates
 
+A preflight helper is available:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/run_reveal_preflight.ps1 `
+  -RunId <run_id> `
+  -Overwrite
+```
+
 Before visual generation:
 
 ```powershell
@@ -124,11 +135,23 @@ python scripts/write_visual_contract.py `
 
 python scripts/validate_visual_contract.py `
   --contract runs/<run_id>/planning/visual_contract.json
+
+python scripts/write_visual_prompts.py `
+  --run-dir runs/<run_id> `
+  --overwrite
+
+python scripts/write_reveal_manifest_template.py `
+  --run-dir runs/<run_id> `
+  --overwrite
 ```
 
-After `visual_draft.png` exists and `reveal_manifest.json` is written:
+After `visual_draft.png` exists and `reveal_manifest.json` is reviewed:
 
 ```powershell
+python scripts/validate_reveal_manifest.py `
+  --manifest runs/<run_id>/reveal_manifest.json `
+  --contract runs/<run_id>/planning/visual_contract.json
+
 python scripts/build_reveal_scene.py `
   --manifest runs/<run_id>/reveal_manifest.json `
   --repo-root .
@@ -164,7 +187,9 @@ The run is blocked if:
 
 - `visual_contract.json` has narration beats without valid `group_id`.
 - A content visual group is not referenced by any narration beat.
+- A reveal group references an unknown contract group or beat.
 - A group rectangle enters the subtitle safe zone.
+- Group boxes overlap beyond the configured tolerance.
 - `reveal_report.json` contains blocking warnings.
 - A reveal event targets a missing scene layer.
 - Narration introduces concepts not supported by any visual group.

@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RevealManifest",
+  "type": "object",
+  "required": ["version", "slides"],
+  "properties": {
+    "version": {"type": "string", "const": "reveal_v1"},
+    "canvas": {
+      "type": "object",
+      "properties": {
+        "width": {"type": "number", "exclusiveMinimum": 0},
+        "height": {"type": "number", "exclusiveMinimum": 0},
+        "background": {"type": "string"},
+        "subtitle_safe_y": {"type": "number", "minimum": 0}
+      },
+      "additionalProperties": true
+    },
+    "slides": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["slide_id", "slide_dir", "master", "groups"],
+        "properties": {
+          "slide_id": {"type": "string", "minLength": 1},
+          "slide_dir": {"type": "string", "minLength": 1},
+          "master": {"type": "string", "minLength": 1},
+          "default_duration_sec": {"type": "number", "exclusiveMinimum": 0},
+          "canvas": {"type": "object", "additionalProperties": true},
+          "layout_constraints": {"type": "object", "additionalProperties": true},
+          "groups": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "items": {
+              "type": "object",
+              "required": ["id", "role", "box", "visible_text", "reveal"],
+              "properties": {
+                "id": {"type": "string", "minLength": 1},
+                "role": {"type": "string"},
+                "visible_text": {"type": "string"},
+                "visual_anchor": {"type": "string"},
+                "narration_beat_id": {"type": "string"},
+                "linked_segment_id": {"type": "string"},
+                "padding_px": {"type": "number", "minimum": 0},
+                "z_index": {"type": "number"},
+                "box": {
+                  "type": "object",
+                  "required": ["x", "y", "w", "h"],
+                  "properties": {
+                    "x": {"type": "number", "minimum": 0},
+                    "y": {"type": "number", "minimum": 0},
+                    "w": {"type": "number", "exclusiveMinimum": 0},
+                    "h": {"type": "number", "exclusiveMinimum": 0}
+                  },
+                  "additionalProperties": false
+                },
+                "reveal": {
+                  "type": "object",
+                  "required": ["type"],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "cover_fade_out",
+                        "cover_wipe_left_to_right",
+                        "cover_wipe_top_to_bottom",
+                        "fog_diagonal_erase",
+                        "crop_fade_up",
+                        "crop_slide_in_left",
+                        "crop_soft_zoom_in",
+                        "highlight"
+                      ]
+                    },
+                    "at": {"type": "number", "minimum": 0},
+                    "duration": {"type": "number", "exclusiveMinimum": 0},
+                    "angle": {"type": "number"},
+                    "feather": {"type": "number", "minimum": 0},
+                    "fog_strength": {"type": "number", "minimum": 0, "maximum": 1},
+                    "blur_px": {"type": "number", "minimum": 0}
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "additionalProperties": true
+            }
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

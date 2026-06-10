@@ -9,14 +9,19 @@ The default visual pipeline is now **visual-contract-driven full-slide reveal la
 
 ```text
 article.md
+-> scripts/write_visual_contract.py
 -> visual_contract.json with visual_groups and narration_beats
+-> scripts/write_visual_prompts.py
 -> visual_prompt.md
 -> Image Gen full-slide master image: visual_draft.png
 -> reveal_manifest.json
 -> scripts/build_reveal_scene.py
 -> full_slide.png + cover/fog/crop reveal layers + reveal_report.json
--> narration / TTS / subtitles
--> animation_timeline.json bound to visual groups and narration beats
+-> scripts/write_narration_from_visual_contract.py
+-> narration.txt / tts_text.txt / narration_beats.json
+-> TTS / subtitles / audio_timeline.json
+-> scripts/bind_reveal_timeline.py
+-> animation_timeline.json bound to audio segments
 -> Remotion video
 ```
 
@@ -40,13 +45,15 @@ that the page does not show.
 
 ## Required Planning Order
 
-1. Write `visual_contract.json` first.
+1. Generate or write `visual_contract.json` first.
 2. Define 5-8 `visual_groups` for each slide.
 3. Give every group a `visible_text`, `visual_anchor`, and `narration_function`.
 4. Write `narration_beats` that bind each spoken point to a `group_id`.
 5. Generate a full-slide master image that follows those groups.
 6. Mark each group's rectangle in `reveal_manifest.json`.
-7. Build reveal layers and bind animation events to narration beats after TTS timing is known.
+7. Build reveal layers.
+8. Generate narration files from the visual contract.
+9. After TTS timing exists, bind reveal events to audio segments.
 
 ## Master Slide Layout Rules
 
@@ -65,6 +72,14 @@ that the page does not show.
   content. Remotion only displays PNG layers, reveal effects, subtitles, and audio.
 
 ## Main Commands
+
+Generate a first-pass visual contract from the article:
+
+```powershell
+python scripts/write_visual_contract.py `
+  --run-dir runs/<run_id> `
+  --overwrite
+```
 
 Validate the visual contract:
 
@@ -101,6 +116,28 @@ Validate reveal scene assets:
 python scripts/validate_reveal_scene.py `
   --run-dir runs/<run_id> `
   --repo-root .
+```
+
+Generate narration from the visual contract:
+
+```powershell
+python scripts/write_narration_from_visual_contract.py `
+  --run-dir runs/<run_id> `
+  --overwrite
+```
+
+Validate narration grounding:
+
+```powershell
+python scripts/validate_narration_grounding.py `
+  --run-dir runs/<run_id>
+```
+
+After TTS creates `audio_timeline.json`, bind reveal events to audio timing:
+
+```powershell
+python scripts/bind_reveal_timeline.py `
+  --run-dir runs/<run_id>
 ```
 
 Validate complete render assets after TTS/subtitles exist:
@@ -148,6 +185,7 @@ runs/<run_id>/
     scene.json
     animation_timeline.json
     reveal_report.json
+    narration_beats.json
     narration.txt
     tts_text.txt
     voice.mp3

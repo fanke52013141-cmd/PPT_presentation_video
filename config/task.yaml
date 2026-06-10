@@ -18,7 +18,7 @@ content:
   domain: ai_science
   audience: AI beginner
   tone: clear_modern_trustworthy
-  narration_style: 旁白解释，短句，避免术语堆叠
+  narration_style: 旁白解释，短句，必须基于画面 visual_groups 扩展
   slide_count:
     min: 8
     max: 14
@@ -31,12 +31,24 @@ generation:
   tts_provider: minimax
   video_renderer: remotion
   media_processor: ffmpeg
-  visual_pipeline: master_split_image_layers
-  macro_layer_count:
+  visual_pipeline: master_reveal_layers
+  planning_contract: visual_contract_v1
+  reveal_manifest: reveal_v1
+  visual_group_count:
     min: 5
     max: 8
-  min_macro_layer_gap_px: 48
+  min_visual_group_gap_px: 80
+  recommended_visual_group_gap_px: 120
+  default_cover_padding_px: 32
+  large_cover_padding_px: 48
   subtitle_safe_y_1080p: 930
+  default_reveal_actions:
+    title: cover_wipe_left_to_right
+    subtitle: cover_fade_out
+    content_body: fog_diagonal_erase
+    diagram: fog_diagonal_erase
+    annotation: cover_wipe_left_to_right
+    summary: crop_soft_zoom_in
 
 tts:
   provider: minimax
@@ -61,7 +73,7 @@ tts:
 
 review:
   static_visual_required: true
-  element_render_required: true
+  reveal_scene_required: true
   video_preview_required: true
   approved_status: approved
   revise_status: revise
@@ -70,4 +82,3 @@ review:
 repository:
   keep_redacted_examples: false
   commit_runtime_outputs: false
-

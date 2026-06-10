@@ -1,41 +1,51 @@
-# 视频 QA 检查清单
+# Video QA Checklist
 
-## 内容
+## Content
 
-- 文章核心观点是否被准确表达。
-- 是否有事实错误或过度推断。
-- 是否适合 AI 初学者理解。
+- The slide explains the article's core point accurately.
+- The narration expands the visible content instead of drifting to unrelated
+  ideas.
+- Every important narration beat has a visible macro group.
+- The page is understandable for AI beginners.
 
-## 画面
+## Master Image
 
-- 风格是否统一。
-- 文字是否清晰、无遮挡、无溢出。
-- 图解是否服务理解。
-- 是否存在乱码文字或奇怪图片细节。
+- The master slide is an Image Gen bitmap, not a local code drawing.
+- The middle content area is not crowded.
+- Independent macro groups have at least 48-80px of clean spacing.
+- Text, arrows, labels, icons, cards, formulas, and diagram strokes do not
+  overlap or nearly touch.
+- The subtitle safe zone is empty.
+- Text is readable and not fake or garbled.
 
-## 语音
+## Layer Recomposition
 
-- MiniMax 语音是否自然。
-- 语速是否适合科普。
-- 停顿是否自然。
-- 是否有读错术语。
+- `render_preview.png` visually matches the approved `visual_draft.png`.
+- `split_report.json` exists.
+- There are no `severity=blocking` split warnings.
+- The scene has multiple PNG layers and no animated `full_slide` layer.
+- Macro layers are large coherent groups, not tiny fragments.
+- Layer edges do not show obvious white boxes, paper-noise blocks, or dirty
+  alpha halos.
 
-## 字幕
+## Animation
 
-- 字幕是否和语音一致。
-- 字幕是否遮挡画面重点。
-- 时间轴是否准确。
+- Animation follows narration beats.
+- Body and diagram layers reveal when the voice reaches their cue.
+- Summary appears near the end and can highlight.
+- All content is not visible at frame 0.
+- Motion is subtle enough that split edges do not feel like stickers.
 
-## 动画
+## Audio And Subtitles
 
-- 动画是否和旁白同步。
-- 是否有无意义动画。
-- 是否过快或过慢。
+- TTS is natural and matches the narration.
+- Subtitles match the voiceover.
+- Subtitles do not cover key visual content.
+- Chinese text is not encoding-damaged.
 
-## 导出
+## Export
 
-- 视频比例为 16:9。
-- 分辨率为 1920x1080。
-- 总时长 3 到 6 分钟。
-- MP4 可正常播放。
-
+- MP4 plays normally.
+- Resolution is 1920x1080.
+- Aspect ratio is 16:9.
+- Audio and video durations match.

@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """
-Write per-slide prompts for Image Gen macro-layer visual packages.
+Write per-slide prompts for Image Gen master slides.
 
 The image model is intentionally outside this script. This script records the
 exact production prompt that should be pasted or issued to Image Gen/Web Image
 Gen, and it binds each slide to the configured style reference images.
+
+The production path is master-first: generate one coherent slide image, then
+split same-source macro layers from that approved master image.
 """
 
 from __future__ import annotations
@@ -80,6 +83,29 @@ def item_lines(slide: dict[str, Any]) -> list[str]:
     return lines
 
 
+def beat_lines(slide: dict[str, Any]) -> list[str]:
+    beats = slide.get("narration_beats")
+    if not isinstance(beats, list):
+        return []
+
+    lines: list[str] = []
+    for beat in beats:
+        if not isinstance(beat, dict):
+            continue
+        beat_id = str(beat.get("id", "")).strip()
+        spoken = str(beat.get("spoken_point", beat.get("text", ""))).strip()
+        visual_group = str(beat.get("visual_group", "")).strip()
+        animation = str(beat.get("animation", "")).strip()
+        time_hint = str(beat.get("time_hint", "")).strip()
+        parts = [part for part in [beat_id, time_hint, visual_group, animation] if part]
+        prefix = " / ".join(parts)
+        if prefix and spoken:
+            lines.append(f"- {prefix}: {spoken}")
+        elif spoken:
+            lines.append(f"- {spoken}")
+    return lines
+
+
 def build_prompt(slide: dict[str, Any], template_ref: str, example_ref: str) -> str:
     slide_id = str(slide.get("slide_id", "")).strip()
     title = str(slide.get("main_title", "")).strip()
@@ -89,25 +115,19 @@ def build_prompt(slide: dict[str, Any], template_ref: str, example_ref: str) -> 
     layout_intent = str(content.get("layout_intent", "")).strip() if isinstance(content, dict) else ""
     content_type = str(content.get("content_type", "")).strip() if isinstance(content, dict) else ""
     bullets = "\n".join(item_lines(slide))
+    beats = "\n".join(beat_lines(slide)) or "- No explicit narration_beats provided. Derive 4-7 visual beats from the narration in order."
+    narration = str(slide.get("narration", "")).strip()
 
     return f"""Use case: scientific-educational
-Asset type: 16:9 bitmap slide reference plus separate macro-layer PNG package
+Asset type: 16:9 Image Gen master slide for later same-source macro-layer splitting
 Slide id: {slide_id}
 Input images:
 - Reference image 1 ({template_ref}): use as the page template and composition reference.
 - Reference image 2 ({example_ref}): use as the filled-slide visual style reference.
 
 Primary request:
-Generate one complete full-slide reference image in the same warm hand-drawn Chinese explainer style as the references, then generate the separate macro-layer PNG images needed to rebuild that slide. The production pipeline will not use code to semantically crop a full-slide bitmap. It will only compose the macro-layer images declared in layer_manifest.json.
+Generate one complete full-slide master image in the same warm hand-drawn Chinese explainer style as the references. This master image will later be split into same-source macro PNG layers by Codex using master_split_manifest.json. Do not generate separate isolated element images for production unless explicitly requested later.
 The slide body, title, subtitle, lines, arrows, icons, labels, and diagram content must all be Image Gen bitmap content. Do not create SVG, vector layers, HTML, CSS, Canvas, React, or Remotion-drawn PPT body elements.
-
-Required macro-layer package:
-- background: use a plain generated color image or manifest color when the background is flat; only generate a background layer if there is intentional paper texture or a non-flat backdrop.
-- title_group: main title plus its yellow left marker if they visually belong together.
-- subtitle_group: subtitle plus yellow underline.
-- content_group_01..content_group_04: large content blocks only. Keep related text, icons, arrows, and labels together; do not split into tiny pieces.
-- summary_group: bottom takeaway strip if used.
-- layer_manifest.json plan: for each layer, provide id, role, source filename, x, y, w, h, z_index, text_summary, narration_cue, reveal_at if known, and animation hint.
 
 Canvas and layout:
 - 16:9 landscape, suitable for 1920x1080 video.
@@ -118,8 +138,11 @@ Canvas and layout:
 - The middle of the slide is an open content canvas. Do not draw a large enclosing rounded black content frame.
 - Keep the main content inside the open area from roughly x=80,y=235 to x=1840,y=915.
 - Leave the bottom 150px visually calm so Remotion subtitles can overlay without covering critical content. For 1920x1080, no PPT body layer may extend below y=930 unless subtitles are disabled.
-- Keep at least 40-60px of clean background between independent macro layers. Avoid overlaps between boxes.
-- Arrows may connect ideas, but arrow tips must not touch or overlap text strokes, icon strokes, labels, or summary text.
+- Design for later macro-layer splitting: keep at least 48-80px of clean background between independent macro groups.
+- Avoid overlaps, touching edges, dense clusters, or near-contact between cards, formulas, arrows, labels, icons, and diagram strokes.
+- Arrows may connect ideas, but arrow tips must not touch or overlap text strokes, icon strokes, labels, card borders, or summary text.
+- If an arrow and label are semantically inseparable, keep them visually in the same macro group. Do not make thin connectors run across several independent groups.
+- Prefer 5-8 large macro groups in the composition: title_group, subtitle_group, 2-4 content or diagram groups, and optional summary_group.
 
 Text to render exactly where possible:
 Main title: "{title}"
@@ -132,23 +155,28 @@ Layout intent: {layout_intent}
 Key content:
 {bullets}
 
+Narration that the visual must support:
+{narration}
+
+Narration beats that should drive the visible groups and future animation:
+{beats}
+
 Style constraints:
 - Match the two reference images: black hand-drawn ink, yellow accent, soft green and blue highlight pills, simple doodle icons, clean spacing.
 - Preserve the fixed title/subtitle positions and fixed subtitle-safe area from the reference images.
 - Do not add an outer content border around the middle content.
 - Avoid overlapping objects. Do not place text on top of icons, arrows, borders, or colored label backgrounds unless that text belongs to the same label group.
-- Prefer 3-7 large macro groups over many tiny scattered marks, so Image Gen can produce stable separate layer images and Codex can compose them without semantic cropping.
+- Prefer clear, separated macro groups over many tiny scattered marks, so Codex can split same-source layers cleanly after the master image is approved.
 - Keep arrows short and detached from object borders; avoid vertical ribbons, full-width pale strips, or connector lines that merge multiple cards into one connected bitmap group.
 - Keep text large and readable; avoid dense paragraphs and avoid tiny labels.
 - Prefer short Chinese labels and diagrammatic blocks over long body text.
 - No photorealistic scene, no 3D, no neon technology style, no dark background, no watermark.
 
 Narration and timing binding:
-- The narration must explain the visible macro layers in order. Do not reuse unrelated narration from another slide.
-- Each layer's text_summary should name what is visibly inside that layer.
-- Each layer's narration_cue should state which sentence or paragraph introduces it.
-- The animation timeline must reveal a layer only when the narration reaches its cue. Do not reveal every body layer at the beginning.
-- Summary_group should appear near the end and may then receive a highlight.
+- The visual must follow the narration beats. Each major visible group should correspond to one beat or a clear part of one beat.
+- The narration expands the visible content; it must not introduce unrelated content that the page does not show.
+- Do not show all concepts as equally important. Use the visual hierarchy implied by the narration order.
+- Put late narration takeaways in a summary_group that can appear or highlight near the end.
 """
 
 

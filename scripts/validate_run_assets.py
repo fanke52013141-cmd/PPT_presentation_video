@@ -19,6 +19,7 @@ DEFAULT_HEIGHT = 1080
 LAYERED_VISUAL_SOURCES = {
     "codex_image_gen_png_layers",
     "image_gen_macro_layers_manifest",
+    "master_split_image_layers",
 }
 
 
@@ -104,6 +105,7 @@ def validate_scene(
     require_layered: bool,
     fail_on_decomposition_warnings: bool,
     fail_on_blocking_decomposition_warnings: bool,
+    require_master_split_report: bool,
 ) -> set[str]:
     scene = read_json(scene_path)
     if "elements" in scene:
@@ -148,6 +150,27 @@ def validate_scene(
                     f"Blocking decomposition warnings must be resolved before render: {scene_path}: "
                     f"{', '.join(blocking_types)}"
                 )
+
+    if require_master_split_report or scene.get("visual_source") == "master_split_image_layers":
+        split_report_path = slide_dir / "split_report.json"
+        if not split_report_path.exists():
+            raise ValidationError(f"Missing split_report.json for master-split scene: {slide_dir}")
+        split_report = read_json(split_report_path)
+        warnings = split_report.get("warnings")
+        if isinstance(warnings, list):
+            blocking_types = [
+                str(warning.get("type", "unknown"))
+                for warning in warnings
+                if isinstance(warning, dict) and str(warning.get("severity", "warning")) == "blocking"
+            ]
+            if blocking_types:
+                raise ValidationError(
+                    f"Blocking master-split warnings must be resolved before render: {slide_dir}: "
+                    f"{', '.join(blocking_types)}"
+                )
+        metrics = split_report.get("metrics")
+        if not isinstance(metrics, dict) or not isinstance(metrics.get("content_mean_abs_diff"), (int, float)):
+            raise ValidationError(f"split_report.json missing recomposition metrics: {split_report_path}")
 
     layer_ids: set[str] = set()
     for layer in layers:
@@ -221,6 +244,7 @@ def validate_slide(
     require_layered: bool,
     fail_on_decomposition_warnings: bool,
     fail_on_blocking_decomposition_warnings: bool,
+    require_master_split_report: bool,
 ) -> None:
     validate_png(slide_dir / "visual_draft.png")
     validate_png(slide_dir / "assets" / "full_slide.png", width=width, height=height)
@@ -240,6 +264,7 @@ def validate_slide(
         require_layered=require_layered,
         fail_on_decomposition_warnings=fail_on_decomposition_warnings,
         fail_on_blocking_decomposition_warnings=fail_on_blocking_decomposition_warnings,
+        require_master_split_report=require_master_split_report,
     )
     validate_animation_timeline(slide_dir / "animation_timeline.json", layer_ids, audio_duration_sec)
 
@@ -253,6 +278,7 @@ def validate_run(
     require_layered: bool,
     fail_on_decomposition_warnings: bool,
     fail_on_blocking_decomposition_warnings: bool,
+    require_master_split_report: bool,
 ) -> int:
     slide_plan = read_json(run_dir / "planning" / "slide_plan.json")
     slides = slide_plan.get("slides")
@@ -276,6 +302,7 @@ def validate_run(
             require_layered=require_layered,
             fail_on_decomposition_warnings=fail_on_decomposition_warnings,
             fail_on_blocking_decomposition_warnings=fail_on_blocking_decomposition_warnings,
+            require_master_split_report=require_master_split_report,
         )
 
     return len(slide_ids)
@@ -299,6 +326,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Fail only when scene.decomposition.warnings contains severity=blocking.",
     )
+    parser.add_argument(
+        "--require-master-split-report",
+        action="store_true",
+        help="Require split_report.json and blocking-warning-free recomposition metrics.",
+    )
     return parser.parse_args()
 
 
@@ -314,6 +346,7 @@ def main() -> int:
             require_layered=args.require_layered,
             fail_on_decomposition_warnings=args.fail_on_decomposition_warnings,
             fail_on_blocking_decomposition_warnings=args.fail_on_blocking_decomposition_warnings,
+            require_master_split_report=args.require_master_split_report,
         )
     except ValidationError as exc:
         print(f"Error: {exc}", file=sys.stderr)

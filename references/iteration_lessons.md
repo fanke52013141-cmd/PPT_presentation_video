@@ -1,5 +1,14 @@
 # 2026-06-09 Macro Layer Composition Lessons
 
+- 2026-06-10 update: default production should be master-split, not
+  independent element recomposition. Generate one coherent Image Gen master
+  slide, keep 48-80px spacing between macro groups, then split same-source PNG
+  layers from that master.
+- Narration must be planned before visual generation. `narration_beats` decide
+  which visual groups exist and when they animate.
+- A master slide that looks acceptable can still be rejected if macro groups
+  overlap, touch, or cannot be split without dirty alpha edges. The fix is to
+  regenerate a more splittable master image, not to patch the video with code.
 - Image Gen macro layers can be recomposed reliably when each layer is a large
   coherent group and the background is handled as a manifest color or a simple
   generated background image.

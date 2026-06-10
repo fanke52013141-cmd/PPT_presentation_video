@@ -1,36 +1,48 @@
-# Scene 检查
+# Scene Checks
 
-检查对象：`runs/<run_id>/slides/slide_xxx/scene.json`
+Target: `runs/<run_id>/slides/<slide_id>/scene.json`
 
-## 必查项
+## Required
 
-- `canvas.width = 1920`，`canvas.height = 1080`。
-- `scene.json` 必须使用 `layers[]`，不得使用旧的 `elements[]`。
-- `visual_source` 必须是 `codex_image_gen_png_layers`。
-- 生产场景必须是多 PNG layer，不得只有一个 `full_slide` layer。
-- 每个 layer 必须有唯一 `id`。
-- 每个 layer 必须有合法 `type`、`asset`、`role`、`box`、`z_index`。
-- 每个 layer 的 `type` 必须是 `png`。
-- 每个 layer 的 PNG 文件尺寸必须等于 `box.w`、`box.h`。
-- 每个 layer 的 `box` 必须位于 1920x1080 画布内。
-- 所有 PPT 主体文字、线条、箭头、图标、图表和标注都必须来自 PNG 位图裁切。
-- 不允许出现 SVG、HTML、CSS、Canvas、React 绘制元素，或 `type: text`、`type: shape`、`type: line`。
-- 字幕区 `Y=930` 到 `Y=1080` 不属于 PPT 主体内容，只能由视频合成阶段叠加字幕。
-- 如果 `decomposition_report.json` 有 warning，需要判断是否阻塞：重叠、单主体 group、无法检测内容通常应回到视觉稿生成。
+- `canvas.width = 1920`
+- `canvas.height = 1080`
+- `layers[]` exists and is non-empty.
+- `elements[]` is not present.
+- `visual_source` is `master_split_image_layers` for the default production
+  path.
+- The scene has multiple PNG layers.
+- No production animation layer uses `role: full_slide`.
+- Each layer has a unique `id`.
+- Each layer has `type`, `asset`, `role`, `box`, and `z_index`.
+- Each layer `type` is `png`.
+- Each PNG file size matches `box.w` and `box.h`.
+- Every box is inside the canvas.
 
-## 推荐命令
+## Master-Split Requirements
+
+- `split_report.json` exists.
+- `split_report.json` has recomposition metrics.
+- There are no `severity=blocking` split warnings.
+- Non-background production layers should include `narration_beat_id`,
+  `text_summary`, and `narration_cue`.
+- Macro layers are large coherent groups, not tiny fragments.
+
+## Forbidden
+
+- SVG assets in production scenes.
+- `type: text`, `type: shape`, or `type: line`.
+- React/Remotion-drawn PPT body content.
+- Subtitle-safe zone content below `y=930` at 1080p.
+
+## Recommended Commands
 
 ```powershell
-python scripts/validate_run_assets.py `
+python scripts/validate_layer_recomposition.py `
   --run-dir runs/<run_id> `
-  --require-layered
-```
+  --require-narration-beats
 
-严格模式：
-
-```powershell
 python scripts/validate_run_assets.py `
   --run-dir runs/<run_id> `
   --require-layered `
-  --fail-on-decomposition-warnings
+  --require-master-split-report
 ```

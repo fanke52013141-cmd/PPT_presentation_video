@@ -31,6 +31,12 @@ generation:
   tts_provider: minimax
   video_renderer: remotion
   media_processor: ffmpeg
+  visual_pipeline: master_split_image_layers
+  macro_layer_count:
+    min: 5
+    max: 8
+  min_macro_layer_gap_px: 48
+  subtitle_safe_y_1080p: 930
 
 tts:
   provider: minimax

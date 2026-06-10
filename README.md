@@ -1,102 +1,70 @@
-# Production Override: Image Gen Macro Layers
+# PPT Visualization
 
-Effective 2026-06-09, the production visual path is:
+This repository turns long-form educational articles into AI-generated PPT-style
+explainer videos.
 
-```text
-article -> slide_plan.json -> full-slide reference prompt + macro-layer split plan
--> Image Gen/Web Image Gen creates separate macro-layer PNGs
--> layer_manifest.json -> scripts/compose_manifest_layers.py
--> scene.json + animation_timeline.json -> preview -> TTS/subtitles -> Remotion video
-```
+## Production Path
 
-The default production path must not use code to semantically decompose a
-full-slide bitmap. `scripts/decompose_slide_layers.py` is now a diagnostic or
-fallback tool only. Production should prefer `scripts/compose_manifest_layers.py`
-with manifest-declared Image Gen macro layers.
-
-Macro layer rules:
-
-- Generate 3-7 large visual groups per slide: `title_group`, `subtitle_group`,
-  1-4 content/diagram groups, and optional `summary_group`.
-- Do not split text strokes, icons, arrows, or labels into tiny pieces. Keep
-  related visual content in one group.
-- Keep 40-60px clean background between macro layer boxes. Avoid visual overlap.
-- For a flat background, use a manifest color or generated solid PNG; do not
-  waste a decomposition step on a pure-color background.
-- Leave the subtitle safe zone empty. For 1920x1080, do not place PPT body
-  layers below `y=930`; scale this limit proportionally for other canvas sizes.
-- Narration must be generated from the actual macro layers on the slide. Do not
-  reuse narration/audio/subtitles from another slide just because the topic is
-  similar.
-- The animation timeline must follow narration cues. Body/diagram/summary
-  layers should appear when the voice reaches their `narration_cue`, not all at
-  the beginning.
-- `summary_group` should enter near the end and then highlight; it must not be
-  visible from frame 0.
-
-# 文章转 AI 科普视频生产框架
-
-这个仓库用于把文章生产成 AI 科普类 PPT 视频。当前主流程：
+The default visual pipeline is now **master-split Image Gen layers**:
 
 ```text
-文章 -> Preflight -> slide_plan.json -> Codex Image Gen 整页视觉稿 -> 静态视觉审核
--> PNG 图层拆解 scene.json -> 元素预览审核 -> MiniMax 语音/字幕
--> PNG 图层动画时间轴 -> Remotion 渲染 -> 视频审核 -> 成片
+article.md
+-> slide_plan.json with narration_beats
+-> visual_prompt.md
+-> Image Gen full-slide master image: visual_draft.png
+-> master_split_manifest.json
+-> scripts/split_master_layers.py
+-> same-source PNG macro layers + render_preview.png + split_report.json
+-> narration / TTS / subtitles
+-> animation_timeline.json bound to narration beats
+-> Remotion video
 ```
 
-## 当前决策
+The key rule is:
 
-- 主比例：16:9，1920x1080。
-- 图片生成：Codex Image Gen。
-- TTS：MiniMax T2A HTTP。
-- 视频合成：Remotion；FFmpeg 只做媒体处理。
-- 页面主体必须来自 Codex Image Gen 位图，不允许用 SVG、HTML、CSS、Canvas、React 或 Remotion 代码补画 PPT 主体内容。
-- 生产默认不是单张 `full_slide` 淡入，而是从 `visual_draft.png` 裁切多个 PNG layer，再按 layer 做动画。
-- `assets/full_slide.png` 只作为原始视觉稿备份和拆层来源；不能作为生产动画的唯一图层。
-- 视觉稿生成阶段必须保证可拆解：对象之间留白，避免文字压箭头、图标重叠、总结条进入字幕区。
+> Generate one coherent master slide first, then split large same-source macro
+> layers from that master. Do not build the page by pasting independently
+> generated small elements together.
 
-## 固定视觉资源
+## Why This Changed
 
-固定参考图：
+Independent Image Gen elements often look bad when recomposed because each
+asset can drift in style, scale, handwriting, lighting, and texture. The
+master-split path keeps every animated layer from the same approved page, so
+the final composition preserves the original visual coherence.
 
-```text
-references/style_reference/PPT模板.png
-references/style_reference/PPT示例.png
-```
+## Required Planning Order
 
-当前模板规则：
+1. Write the slide narration first.
+2. Break the narration into `narration_beats`.
+3. Map each beat to a visible macro group.
+4. Generate a master slide that supports those beats.
+5. Keep macro groups visually separated so the master can be split cleanly.
+6. Bind animation events to the same beats after TTS timing is known.
 
-- 主标题、副标题、黄色竖线和副标题下划线位置固定。
-- 中间是无框开放内容区，不生成大圆角黑色内容框。
-- 底部 `Y=930` 到 `Y=1080` 是字幕安全区，PPT 主体内容不得进入。
-- 图层拆解只能裁切 Image Gen 位图中的内容，不得改用前端绘制。
+Narration is not a later subtitle patch. It determines the page's key visual
+points and the animation timeline.
 
-## 目录说明
+## Master Slide Layout Rules
 
-```text
-.agents/skills/       Codex 可复用阶段能力
-config/               默认业务配置、风格 token、Git 策略
-references/           固定视觉参考图和规则说明
-schemas/              中间产物 JSON Schema
-templates/            Prompt、审核清单、manifest 模板
-checks/               人工和半自动质检规则
-scripts/              拆层、TTS、Remotion、FFmpeg 脚本
-runs/                 单次视频生产工作区，默认不进 Git
-outputs/              最终导出区，默认不进 Git
-bad_cases/            可沉淀进仓库的坏案例记录
-```
+- Use 1920x1080, 16:9.
+- Keep the bottom subtitle-safe area clear. For 1080p, PPT body content should
+  stay above `y=930`.
+- Use 5-8 large macro groups per slide:
+  `title_group`, `subtitle_group`, 2-4 body or diagram groups, and optional
+  `summary_group`.
+- Keep independent macro groups separated by at least 48-80px of clean
+  background.
+- Avoid overlapping or near-touching text, arrows, cards, labels, icons, and
+  diagram strokes.
+- If an arrow, label, or icon is semantically inseparable from nearby text,
+  keep them in the same macro group instead of forcing a tiny split.
+- Do not use React, SVG, HTML, CSS, Canvas, or Remotion to draw PPT body
+  content. Remotion only displays PNG layers, subtitles, and audio.
 
-## 运行主线
+## Main Commands
 
-1. 新建运行目录：
-
-```text
-runs/<run_id>/inputs/article.md
-```
-
-2. 按 `AGENTS.md` 从 `preflight-check` 开始执行。
-
-3. 生成视觉提示词：
+Generate visual prompts:
 
 ```powershell
 python scripts/write_visual_prompts.py `
@@ -104,75 +72,38 @@ python scripts/write_visual_prompts.py `
   --overwrite
 ```
 
-4. 用 Codex Image Gen 生成每页：
+After Image Gen creates each `visual_draft.png`, declare the split boxes in:
 
 ```text
-runs/<run_id>/slides/slide_xxx/visual_draft.png
+runs/<run_id>/slides/<slide_id>/master_split_manifest.json
 ```
 
-5. 视觉审核通过后，逐页生成 MiniMax 语音和字幕：
+Then split the master images:
 
 ```powershell
-$run = "runs/<run_id>"
-Get-ChildItem "$run/slides" -Directory | Sort-Object Name | ForEach-Object {
-  $slide = $_.Name
-  $dir = $_.FullName
-  python scripts/minimax_tts.py `
-    --text-file "$dir/tts_text.txt" `
-    --subtitle-text-file "$dir/narration.txt" `
-    --slide-id "$slide" `
-    --out-tts-text "$dir/tts_text.normalized.txt" `
-    --out-audio "$dir/voice.mp3" `
-    --out-meta "$dir/audio_meta.json" `
-    --out-srt "$dir/subtitles.srt" `
-    --out-timeline "$dir/audio_timeline.json"
-}
+python scripts/split_master_layers.py `
+  --manifest runs/<run_id>/master_split_manifest.json `
+  --repo-root .
 ```
 
-不要用 PowerShell here-string 管道把中文文案传给 Python 写文件；实测会把中文降级成 `?`。中文 `slide_plan.json`、`narration.txt`、`tts_text.txt` 必须用 UTF-8 文件写入，并抽查字幕里不能出现 `?` 或 `??`。
-
-6. 拆解 PNG 图层，并绑定真实音频时长生成动画时间轴：
+Validate recomposition quality:
 
 ```powershell
-python scripts/decompose_slide_layers.py `
+python scripts/validate_layer_recomposition.py `
   --run-dir runs/<run_id> `
-  --overwrite
+  --require-narration-beats
 ```
 
-这一步会生成：
-
-```text
-runs/<run_id>/slides/slide_xxx/assets/full_slide.png
-runs/<run_id>/slides/slide_xxx/assets/background.png
-runs/<run_id>/slides/slide_xxx/assets/title.png
-runs/<run_id>/slides/slide_xxx/assets/subtitle.png
-runs/<run_id>/slides/slide_xxx/assets/content_*.png
-runs/<run_id>/slides/slide_xxx/scene.json
-runs/<run_id>/slides/slide_xxx/animation_timeline.json
-runs/<run_id>/slides/slide_xxx/decomposition_report.json
-```
-
-如果先于 TTS 做过一次拆层诊断，TTS 完成后仍必须重跑本步骤，否则 `animation_timeline.json` 会沿用默认时长。
-
-7. 校验运行资产：
+Validate render assets:
 
 ```powershell
 python scripts/validate_run_assets.py `
   --run-dir runs/<run_id> `
   --require-layered `
-  --fail-on-blocking-decomposition-warnings
+  --require-master-split-report
 ```
 
-如果要把拆层 warning 也作为阻塞：
-
-```powershell
-python scripts/validate_run_assets.py `
-  --run-dir runs/<run_id> `
-  --require-layered `
-  --fail-on-decomposition-warnings
-```
-
-8. 生成 Remotion props：
+Build Remotion props:
 
 ```powershell
 python scripts/build_remotion_props.py `
@@ -180,7 +111,7 @@ python scripts/build_remotion_props.py `
   --repo-root .
 ```
 
-9. 渲染视频：
+Render video:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/render_remotion.ps1 `
@@ -190,61 +121,67 @@ powershell -ExecutionPolicy Bypass -File scripts/render_remotion.ps1 `
   -PropsFile runs/<run_id>/remotion_props.json
 ```
 
-## Scene 模型
+## Run Directory
 
-`scene.json` 必须使用 PNG layer：
-
-```json
-{
-  "slide_id": "slide_001",
-  "visual_source": "codex_image_gen_png_layers",
-  "canvas": {
-    "width": 1920,
-    "height": 1080,
-    "background": "#FFFDF7"
-  },
-  "layers": [
-    {
-      "id": "background_layer",
-      "type": "png",
-      "asset": "assets/background.png",
-      "role": "background",
-      "box": {"x": 0, "y": 0, "w": 1920, "h": 1080},
-      "z_index": 0
-    },
-    {
-      "id": "content_01_layer",
-      "type": "png",
-      "asset": "assets/content_01.png",
-      "role": "diagram",
-      "box": {"x": 360, "y": 280, "w": 420, "h": 240},
-      "z_index": 31
-    }
-  ]
-}
+```text
+runs/<run_id>/
+  inputs/article.md
+  planning/slide_plan.json
+  master_split_manifest.json
+  slides/slide_001/
+    visual_prompt.md
+    visual_draft.png
+    visual_provenance.json
+    assets/
+      full_slide.png
+      background.png
+      title_group.png
+      subtitle_group.png
+      diagram_group.png
+      summary_group.png
+    scene.json
+    animation_timeline.json
+    render_preview.png
+    split_report.json
+    narration.txt
+    tts_text.txt
+    voice.mp3
+    subtitles.srt
+    audio_timeline.json
+  video/final.mp4
 ```
 
-禁止：
+## Alternative Paths
 
-- `scene.elements[]`
-- `type: text`
-- `type: shape`
-- `type: line`
-- SVG / HTML / CSS / Canvas / React 绘制 PPT 主体
+- `scripts/compose_manifest_layers.py` remains available for advanced runs
+  where Image Gen can produce consistent full-canvas macro layers.
+- `scripts/decompose_slide_layers.py` is diagnostic or fallback only. It is not
+  the default production path.
 
-## 拆层失败处理
+## Git Policy
 
-`decomposition_report.json` 的 warning 带有 `severity`：
+Commit reusable framework files:
 
-- `blocking`：必须回到视觉稿或拆层阶段修复，自动流程应停止。
-- `warning`：可继续渲染，但复盘时要确认是否有可见重叠。
-- `advisory`：算法兜底提示，不等同于失败。
+```text
+AGENTS.md
+config/**
+references/**
+schemas/**
+templates/**
+checks/**
+scripts/**
+README.md
+bad_cases/**
+```
 
-常见 warning 处理：
+Do not commit runtime outputs:
 
-- `single_content_group`：画面主体粘成一个大组，回到视觉生成阶段增加留白。
-- `layer_bbox_overlap`：图层 box 重叠，检查是否需要合并成一个 group 或重新生成视觉稿。
-- `no_content_components`：未检测到可拆主体，检查图片是否为空、过浅或生成失败。
-- `projection_split_used`：投影切分兜底已启用；如果画面正常可继续，否则回到视觉生成阶段增加对象间距。
-
-对象重叠、文字压线、箭头压字、总结条进入字幕区，都是视觉稿问题，不应靠 Remotion 修补。
+```text
+runs/**
+outputs/**
+*.mp4
+*.mp3
+*.wav
+*.srt
+.env
+```

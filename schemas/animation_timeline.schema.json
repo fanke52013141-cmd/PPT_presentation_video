@@ -27,6 +27,7 @@
           "at": {"type": "number", "minimum": 0},
           "duration": {"type": "number", "minimum": 0},
           "linked_segment_id": {"type": "string"},
+          "narration_beat_id": {"type": "string"},
           "easing": {"type": "string"},
           "params": {"type": "object"}
         },

@@ -8,7 +8,12 @@
     "source_visual_draft": {"type": "string"},
     "visual_source": {
       "type": "string",
-      "enum": ["codex_image_gen_full_slide_bitmap", "codex_image_gen_png_layers", "image_gen_macro_layers_manifest"]
+      "enum": [
+        "codex_image_gen_full_slide_bitmap",
+        "codex_image_gen_png_layers",
+        "image_gen_macro_layers_manifest",
+        "master_split_image_layers"
+      ]
     },
     "canvas": {
       "type": "object",
@@ -56,7 +61,11 @@
           },
           "z_index": {"type": "number"},
           "animation_role": {"type": "string"},
-          "content_index": {"type": "number"}
+          "content_index": {"type": "number"},
+          "narration_beat_id": {"type": "string"},
+          "linked_segment_id": {"type": "string"},
+          "text_summary": {"type": "string"},
+          "narration_cue": {"type": "string"}
         }
       }
     },

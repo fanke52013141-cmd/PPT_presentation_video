@@ -54,7 +54,28 @@
               }
             }
           },
-          "narration": {"type": "string"}
+          "narration": {"type": "string"},
+          "narration_beats": {
+            "type": "array",
+            "description": "Voiceover-driven beats. Each beat should expand an article point and map to one visible macro layer or visual group.",
+            "items": {
+              "type": "object",
+              "required": ["id", "spoken_point", "visual_group", "animation"],
+              "properties": {
+                "id": {"type": "string"},
+                "spoken_point": {"type": "string"},
+                "visual_group": {"type": "string"},
+                "animation": {
+                  "type": "string",
+                  "enum": ["fade_in", "fade_up", "soft_zoom_in", "slide_in_left", "highlight"]
+                },
+                "time_hint": {"type": "string"},
+                "source_article_point": {"type": "string"},
+                "text_summary": {"type": "string"}
+              },
+              "additionalProperties": true
+            }
+          }
         }
       }
     }

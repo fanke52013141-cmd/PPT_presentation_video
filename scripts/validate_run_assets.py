@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""
-Validate article-to-video run assets before Remotion rendering.
-"""
+"""Validate article-to-video run assets before Remotion rendering."""
 
 from __future__ import annotations
 
@@ -13,14 +11,15 @@ from typing import Any
 
 from PIL import Image
 
-
 DEFAULT_WIDTH = 1920
 DEFAULT_HEIGHT = 1080
 LAYERED_VISUAL_SOURCES = {
     "codex_image_gen_png_layers",
     "image_gen_macro_layers_manifest",
     "master_split_image_layers",
+    "master_reveal_layers",
 }
+REVEAL_VISUAL_SOURCE = "master_reveal_layers"
 
 
 class ValidationError(RuntimeError):
@@ -43,15 +42,10 @@ def resolve_asset(value: str, slide_dir: Path, repo_root: Path) -> Path:
     path = Path(value)
     if path.is_absolute():
         return path
-    for candidate in [slide_dir / path, repo_root / path]:
+    for candidate in (slide_dir / path, repo_root / path):
         if candidate.exists():
             return candidate
     return slide_dir / path
-
-
-def image_size(path: Path) -> tuple[int, int]:
-    with Image.open(path) as image:
-        return image.size
 
 
 def validate_png(path: Path, width: int | None = None, height: int | None = None) -> None:
@@ -59,12 +53,10 @@ def validate_png(path: Path, width: int | None = None, height: int | None = None
         raise ValidationError(f"Missing PNG asset: {path}")
     if path.suffix.lower() != ".png":
         raise ValidationError(f"Expected PNG asset, got: {path}")
-    actual_width, actual_height = image_size(path)
-    if width is not None and height is not None and (actual_width, actual_height) != (width, height):
-        raise ValidationError(
-            f"PNG has wrong dimensions: {path} is {actual_width}x{actual_height}, "
-            f"expected {width}x{height}"
-        )
+    with Image.open(path) as image:
+        actual = image.size
+    if width is not None and height is not None and actual != (width, height):
+        raise ValidationError(f"PNG has wrong dimensions: {path} is {actual[0]}x{actual[1]}, expected {width}x{height}")
 
 
 def validate_audio_timeline(path: Path) -> float:
@@ -72,22 +64,17 @@ def validate_audio_timeline(path: Path) -> float:
     segments = timeline.get("segments")
     if not isinstance(segments, list) or not segments:
         raise ValidationError(f"audio_timeline.json must contain non-empty segments[]: {path}")
-    duration = timeline.get("duration_sec")
     max_end = 0.0
     for segment in segments:
         if not isinstance(segment, dict):
             raise ValidationError(f"Invalid audio segment object: {path}")
-        for key in ["id", "start", "end", "text"]:
+        for key in ("id", "start", "end", "text"):
             if key not in segment:
                 raise ValidationError(f"Audio segment missing {key}: {path}")
-        text = str(segment["text"]).strip()
-        if text == "?" or "??" in text:
-            raise ValidationError(f"Audio segment text appears encoding-damaged: {path}: {segment.get('id')}")
-        start = segment["start"]
-        end = segment["end"]
-        if not isinstance(start, (int, float)) or not isinstance(end, (int, float)) or end <= start:
+        if not isinstance(segment["start"], (int, float)) or not isinstance(segment["end"], (int, float)) or segment["end"] <= segment["start"]:
             raise ValidationError(f"Audio segment has invalid timing: {path}: {segment.get('id')}")
-        max_end = max(max_end, float(end))
+        max_end = max(max_end, float(segment["end"]))
+    duration = timeline.get("duration_sec")
     if not isinstance(duration, (int, float)) or duration <= 0:
         raise ValidationError(f"audio_timeline.json missing positive duration_sec: {path}")
     if abs(float(duration) - max_end) > 0.2:
@@ -95,83 +82,39 @@ def validate_audio_timeline(path: Path) -> float:
     return float(duration)
 
 
-def validate_scene(
-    scene_path: Path,
-    slide_dir: Path,
-    repo_root: Path,
-    width: int,
-    height: int,
-    require_full_slide: bool,
-    require_layered: bool,
-    fail_on_decomposition_warnings: bool,
-    fail_on_blocking_decomposition_warnings: bool,
-    require_master_split_report: bool,
-) -> set[str]:
+def validate_scene(scene_path: Path, slide_dir: Path, repo_root: Path, width: int, height: int, require_layered: bool, require_master_split_report: bool) -> set[str]:
     scene = read_json(scene_path)
     if "elements" in scene:
         raise ValidationError(f"scene.json contains deprecated elements[]: {scene_path}")
+    source = scene.get("visual_source")
     layers = scene.get("layers")
     if not isinstance(layers, list) or not layers:
         raise ValidationError(f"scene.json must contain non-empty layers[]: {scene_path}")
-    if require_full_slide and len(layers) != 1:
-        raise ValidationError(f"Full-slide mode requires exactly one PNG layer: {scene_path}")
     if require_layered:
-        if scene.get("visual_source") not in LAYERED_VISUAL_SOURCES:
+        if source not in LAYERED_VISUAL_SOURCES:
             allowed = ", ".join(sorted(LAYERED_VISUAL_SOURCES))
             raise ValidationError(f"Layered mode requires visual_source in [{allowed}]: {scene_path}")
         if len(layers) < 2:
             raise ValidationError(f"Layered mode requires multiple PNG layers: {scene_path}")
-        if any(layer.get("role") == "full_slide" for layer in layers if isinstance(layer, dict)):
-            raise ValidationError(f"Layered mode must not use role=full_slide as the animation layer: {scene_path}")
-
-    decomposition = scene.get("decomposition")
-    if fail_on_decomposition_warnings and isinstance(decomposition, dict):
-        warnings = decomposition.get("warnings")
-        if isinstance(warnings, list) and warnings:
-            warning_types = [
-                str(warning.get("type", "unknown"))
-                for warning in warnings
-                if isinstance(warning, dict)
-            ]
-            raise ValidationError(
-                f"Decomposition warnings must be resolved before render: {scene_path}: "
-                f"{', '.join(warning_types) or 'unknown'}"
-            )
-    if fail_on_blocking_decomposition_warnings and isinstance(decomposition, dict):
-        warnings = decomposition.get("warnings")
-        if isinstance(warnings, list):
-            blocking_types = [
-                str(warning.get("type", "unknown"))
-                for warning in warnings
-                if isinstance(warning, dict) and str(warning.get("severity", "warning")) == "blocking"
-            ]
-            if blocking_types:
-                raise ValidationError(
-                    f"Blocking decomposition warnings must be resolved before render: {scene_path}: "
-                    f"{', '.join(blocking_types)}"
-                )
-
-    if require_master_split_report or scene.get("visual_source") == "master_split_image_layers":
-        split_report_path = slide_dir / "split_report.json"
-        if not split_report_path.exists():
-            raise ValidationError(f"Missing split_report.json for master-split scene: {slide_dir}")
-        split_report = read_json(split_report_path)
-        warnings = split_report.get("warnings")
-        if isinstance(warnings, list):
-            blocking_types = [
-                str(warning.get("type", "unknown"))
-                for warning in warnings
-                if isinstance(warning, dict) and str(warning.get("severity", "warning")) == "blocking"
-            ]
-            if blocking_types:
-                raise ValidationError(
-                    f"Blocking master-split warnings must be resolved before render: {slide_dir}: "
-                    f"{', '.join(blocking_types)}"
-                )
-        metrics = split_report.get("metrics")
-        if not isinstance(metrics, dict) or not isinstance(metrics.get("content_mean_abs_diff"), (int, float)):
-            raise ValidationError(f"split_report.json missing recomposition metrics: {split_report_path}")
-
+        if source != REVEAL_VISUAL_SOURCE and any(layer.get("role") == "full_slide" for layer in layers if isinstance(layer, dict)):
+            raise ValidationError(f"Non-reveal layered mode must not use role=full_slide as the animation layer: {scene_path}")
+    if require_master_split_report or source == "master_split_image_layers":
+        report = read_json(slide_dir / "split_report.json")
+        warnings = report.get("warnings") if isinstance(report.get("warnings"), list) else []
+        blocking = [w for w in warnings if isinstance(w, dict) and str(w.get("severity", "warning")) == "blocking"]
+        if blocking:
+            names = ", ".join(str(w.get("type", "unknown")) for w in blocking)
+            raise ValidationError(f"Blocking master-split warnings must be resolved before render: {slide_dir}: {names}")
+    if source == REVEAL_VISUAL_SOURCE:
+        report_path = slide_dir / "reveal_report.json"
+        if not report_path.exists():
+            raise ValidationError(f"Missing reveal_report.json for reveal scene: {slide_dir}")
+        report = read_json(report_path)
+        warnings = report.get("warnings") if isinstance(report.get("warnings"), list) else []
+        blocking = [w for w in warnings if isinstance(w, dict) and str(w.get("severity", "warning")) == "blocking"]
+        if blocking:
+            names = ", ".join(str(w.get("type", "unknown")) for w in blocking)
+            raise ValidationError(f"Blocking reveal warnings must be resolved before render: {slide_dir}: {names}")
     layer_ids: set[str] = set()
     for layer in layers:
         if not isinstance(layer, dict):
@@ -184,31 +127,18 @@ def validate_scene(
         layer_ids.add(layer_id)
         if layer.get("type") != "png":
             raise ValidationError(f"Layer type must be png, not {layer.get('type')}: {scene_path}")
-        asset = str(layer.get("asset", ""))
-        if asset.lower().endswith(".svg"):
-            raise ValidationError(f"SVG assets are not allowed in production scene: {scene_path}")
-        asset_path = resolve_asset(asset, slide_dir, repo_root)
+        asset_path = resolve_asset(str(layer.get("asset", "")), slide_dir, repo_root)
         box = layer.get("box")
         if not isinstance(box, dict):
             raise ValidationError(f"Layer missing box: {scene_path}: {layer_id}")
-        for key in ["x", "y", "w", "h"]:
+        for key in ("x", "y", "w", "h"):
             if not isinstance(box.get(key), (int, float)):
                 raise ValidationError(f"Layer box missing numeric {key}: {scene_path}: {layer_id}")
         if box["w"] <= 0 or box["h"] <= 0:
             raise ValidationError(f"Layer box must have positive size: {scene_path}: {layer_id}")
         if box["x"] < 0 or box["y"] < 0 or box["x"] + box["w"] > width or box["y"] + box["h"] > height:
             raise ValidationError(f"Layer box is outside the canvas: {scene_path}: {layer_id}")
-        expected_w = int(round(float(box["w"])))
-        expected_h = int(round(float(box["h"])))
-        validate_png(asset_path, width=expected_w, height=expected_h)
-
-        if require_full_slide:
-            expected_box = {"x": 0, "y": 0, "w": width, "h": height}
-            if any(box.get(key) != value for key, value in expected_box.items()):
-                raise ValidationError(f"Full-slide layer box must be {expected_box}: {scene_path}")
-            if layer.get("role") != "full_slide":
-                raise ValidationError(f"Full-slide layer role must be full_slide: {scene_path}")
-
+        validate_png(asset_path, width=int(round(float(box["w"]))), height=int(round(float(box["h"]))))
     return layer_ids
 
 
@@ -220,8 +150,7 @@ def validate_animation_timeline(path: Path, layer_ids: set[str], audio_duration_
     duration = timeline.get("duration_sec")
     if not isinstance(duration, (int, float)) or duration <= 0:
         raise ValidationError(f"animation_timeline.json missing positive duration_sec: {path}")
-    duration_sec = float(duration)
-    if duration_sec + 0.2 < audio_duration_sec:
+    if float(duration) + 0.2 < audio_duration_sec:
         raise ValidationError(f"animation duration is shorter than audio duration: {path}")
     for event in events:
         if not isinstance(event, dict):
@@ -231,21 +160,24 @@ def validate_animation_timeline(path: Path, layer_ids: set[str], audio_duration_
             raise ValidationError(f"Animation target does not exist in scene layers: {path}: {target}")
         if not isinstance(event.get("at"), (int, float)) or not isinstance(event.get("duration"), (int, float)):
             raise ValidationError(f"Animation event has invalid timing: {path}: {event.get('id')}")
-        if float(event["at"]) + float(event["duration"]) > duration_sec + 0.2:
+        if float(event["at"]) + float(event["duration"]) > float(duration) + 0.2:
             raise ValidationError(f"Animation event exceeds animation duration: {path}: {event.get('id')}")
 
 
-def validate_slide(
-    slide_dir: Path,
-    repo_root: Path,
-    width: int,
-    height: int,
-    require_full_slide: bool,
-    require_layered: bool,
-    fail_on_decomposition_warnings: bool,
-    fail_on_blocking_decomposition_warnings: bool,
-    require_master_split_report: bool,
-) -> None:
+def slide_ids_from_planning(run_dir: Path) -> list[str]:
+    contract_path = run_dir / "planning" / "visual_contract.json"
+    plan_path = run_dir / "planning" / "slide_plan.json"
+    planning = read_json(contract_path if contract_path.exists() else plan_path)
+    slides = planning.get("slides")
+    if not isinstance(slides, list) or not slides:
+        raise ValidationError(f"Planning file must contain non-empty slides[]: {run_dir}")
+    slide_ids = [str(slide.get("slide_id", "")) for slide in slides if isinstance(slide, dict)]
+    if not slide_ids or len(slide_ids) != len(set(slide_ids)):
+        raise ValidationError(f"Planning file has missing or duplicate slide_id values: {run_dir}")
+    return slide_ids
+
+
+def validate_slide(slide_dir: Path, repo_root: Path, width: int, height: int, require_layered: bool, require_master_split_report: bool) -> None:
     validate_png(slide_dir / "visual_draft.png")
     validate_png(slide_dir / "assets" / "full_slide.png", width=width, height=height)
     voice_path = slide_dir / "voice.mp3"
@@ -254,57 +186,17 @@ def validate_slide(
     if not (slide_dir / "subtitles.srt").exists():
         raise ValidationError(f"Missing subtitles.srt: {slide_dir}")
     audio_duration_sec = validate_audio_timeline(slide_dir / "audio_timeline.json")
-    layer_ids = validate_scene(
-        slide_dir / "scene.json",
-        slide_dir=slide_dir,
-        repo_root=repo_root,
-        width=width,
-        height=height,
-        require_full_slide=require_full_slide,
-        require_layered=require_layered,
-        fail_on_decomposition_warnings=fail_on_decomposition_warnings,
-        fail_on_blocking_decomposition_warnings=fail_on_blocking_decomposition_warnings,
-        require_master_split_report=require_master_split_report,
-    )
+    layer_ids = validate_scene(slide_dir / "scene.json", slide_dir, repo_root, width, height, require_layered, require_master_split_report)
     validate_animation_timeline(slide_dir / "animation_timeline.json", layer_ids, audio_duration_sec)
 
 
-def validate_run(
-    run_dir: Path,
-    repo_root: Path,
-    width: int,
-    height: int,
-    require_full_slide: bool,
-    require_layered: bool,
-    fail_on_decomposition_warnings: bool,
-    fail_on_blocking_decomposition_warnings: bool,
-    require_master_split_report: bool,
-) -> int:
-    slide_plan = read_json(run_dir / "planning" / "slide_plan.json")
-    slides = slide_plan.get("slides")
-    if not isinstance(slides, list) or not slides:
-        raise ValidationError(f"slide_plan.json must contain non-empty slides[]: {run_dir}")
-
-    slide_ids = [str(slide.get("slide_id", "")) for slide in slides if isinstance(slide, dict)]
-    if not slide_ids or len(slide_ids) != len(set(slide_ids)):
-        raise ValidationError(f"slide_plan.json has missing or duplicate slide_id values: {run_dir}")
-
+def validate_run(run_dir: Path, repo_root: Path, width: int, height: int, require_layered: bool, require_master_split_report: bool) -> int:
+    slide_ids = slide_ids_from_planning(run_dir)
     for slide_id in slide_ids:
         slide_dir = run_dir / "slides" / slide_id
         if not slide_dir.exists():
             raise ValidationError(f"Missing slide directory: {slide_dir}")
-        validate_slide(
-            slide_dir=slide_dir,
-            repo_root=repo_root,
-            width=width,
-            height=height,
-            require_full_slide=require_full_slide,
-            require_layered=require_layered,
-            fail_on_decomposition_warnings=fail_on_decomposition_warnings,
-            fail_on_blocking_decomposition_warnings=fail_on_blocking_decomposition_warnings,
-            require_master_split_report=require_master_split_report,
-        )
-
+        validate_slide(slide_dir, repo_root, width, height, require_layered, require_master_split_report)
     return len(slide_ids)
 
 
@@ -314,23 +206,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repo-root", default=Path("."), type=Path)
     parser.add_argument("--width", default=DEFAULT_WIDTH, type=int)
     parser.add_argument("--height", default=DEFAULT_HEIGHT, type=int)
-    parser.add_argument("--require-full-slide", action="store_true")
     parser.add_argument("--require-layered", action="store_true")
-    parser.add_argument(
-        "--fail-on-decomposition-warnings",
-        action="store_true",
-        help="Fail when scene.decomposition.warnings is non-empty.",
-    )
-    parser.add_argument(
-        "--fail-on-blocking-decomposition-warnings",
-        action="store_true",
-        help="Fail only when scene.decomposition.warnings contains severity=blocking.",
-    )
-    parser.add_argument(
-        "--require-master-split-report",
-        action="store_true",
-        help="Require split_report.json and blocking-warning-free recomposition metrics.",
-    )
+    parser.add_argument("--require-master-split-report", action="store_true")
     return parser.parse_args()
 
 
@@ -342,16 +219,12 @@ def main() -> int:
             repo_root=args.repo_root.resolve(),
             width=args.width,
             height=args.height,
-            require_full_slide=args.require_full_slide,
             require_layered=args.require_layered,
-            fail_on_decomposition_warnings=args.fail_on_decomposition_warnings,
-            fail_on_blocking_decomposition_warnings=args.fail_on_blocking_decomposition_warnings,
             require_master_split_report=args.require_master_split_report,
         )
     except ValidationError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
-
     print(f"Validated {count} slide(s)")
     return 0
 

@@ -23,6 +23,7 @@ class FitError(RuntimeError):
 
 
 DEFAULT_BACKGROUND = "#FFFDF7"
+LOCKED_REVIEW_STATUSES = {"reviewed", "approved", "manual_reviewed", "manual_adjusted", "locked"}
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -86,7 +87,6 @@ def fit_box(image: Image.Image, box: dict[str, int], background: str, threshold:
     bg = hex_to_rgb(background)
     dist = np.linalg.norm(region - bg, axis=2)
     mask = dist > threshold
-    # Avoid single-pixel noise by requiring enough marked pixels.
     marked = int(mask.sum())
     min_pixels = max(24, int(search["w"] * search["h"] * 0.001))
     if marked < min_pixels:
@@ -122,7 +122,7 @@ def fit_manifest(manifest: dict[str, Any], manifest_path: Path, repo_root: Path,
     slides = manifest.get("slides")
     if not isinstance(slides, list) or not slides:
         raise FitError("Manifest must contain non-empty slides[]")
-    report: dict[str, Any] = {"version": "auto_fit_report_v1", "slides": []}
+    report: dict[str, Any] = {"version": "auto_fit_report_v1", "locked_statuses": sorted(LOCKED_REVIEW_STATUSES), "slides": []}
     manifest_dir = manifest_path.parent
     for slide in slides:
         if not isinstance(slide, dict):
@@ -142,8 +142,10 @@ def fit_manifest(manifest: dict[str, Any], manifest_path: Path, repo_root: Path,
         for group in groups:
             if not isinstance(group, dict) or not isinstance(group.get("box"), dict):
                 continue
-            status = str(group.get("review_status", ""))
-            if status == "reviewed" and not overwrite_reviewed:
+            group_id = str(group.get("id", ""))
+            status = str(group.get("review_status", "")).strip()
+            if status in LOCKED_REVIEW_STATUSES and not overwrite_reviewed:
+                slide_report["groups"].append({"id": group_id, "fit_status": "skipped_locked_review_status", "review_status": status})
                 continue
             role = str(group.get("role", "content_body"))
             base_box = clamp_box(group["box"], width, height)
@@ -161,7 +163,7 @@ def fit_manifest(manifest: dict[str, Any], manifest_path: Path, repo_root: Path,
             group["box"] = fitted
             group["review_status"] = "auto_fitted_needs_review"
             group["auto_fit"] = meta
-            slide_report["groups"].append({"id": group.get("id"), **meta, "box": fitted})
+            slide_report["groups"].append({"id": group_id, **meta, "box": fitted})
         report["slides"].append(slide_report)
     return report
 

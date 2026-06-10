@@ -26,6 +26,8 @@ Run this before a production job starts.
 - `scripts/write_visual_contract.py`
 - `scripts/write_visual_prompts.py`
 - `scripts/write_reveal_manifest_template.py`
+- `scripts/auto_fit_reveal_boxes.py`
+- `scripts/draw_reveal_manifest_preview.py`
 - `scripts/validate_visual_contract.py`
 - `scripts/validate_reveal_manifest.py`
 - `scripts/build_reveal_scene.py`
@@ -53,14 +55,14 @@ Fallback/diagnostic only:
 - The slide plan is grounded by `visual_contract.json`.
 - Every content visual group has `visible_text`, `visual_anchor`, and `narration_function`.
 - Every narration beat references a valid `group_id`.
-- `reveal_manifest.json` is generated as a template, then manually reviewed against `visual_draft.png`.
+- `reveal_manifest.json` is generated as a template, auto-fitted if `visual_draft.png` exists, then manually reviewed against preview images.
 - `narration.txt` and `tts_text.txt` are generated from the visual contract, not written independently.
 - `animation_timeline.json` is rebound from `audio_timeline.json` after TTS.
 - The master image prompt requires a flat uniform `#FFFDF7` background.
 - The master image prompt requires 80-120px spacing between independent visual groups.
 - The master image prompt keeps the subtitle safe zone clear above `y=930`.
 - The reveal stage will produce `scene.json`, `animation_timeline.json`, and `reveal_report.json`.
-- Final QA will inspect `visual_draft.png`, manifest boxes, narration grounding, and reveal timing, not only JSON.
+- Final QA will inspect `visual_draft.png`, manifest boxes, preview images, narration grounding, and reveal timing, not only JSON.
 
 ## Canonical Command Order
 
@@ -88,7 +90,17 @@ python scripts/write_reveal_manifest_template.py `
   --run-dir runs/<run_id> `
   --overwrite
 
-# After Image Gen output and manual reveal_manifest.json box review:
+# After Image Gen output:
+python scripts/auto_fit_reveal_boxes.py `
+  --manifest runs/<run_id>/reveal_manifest.json `
+  --repo-root .
+
+python scripts/draw_reveal_manifest_preview.py `
+  --manifest runs/<run_id>/reveal_manifest.json `
+  --repo-root . `
+  --out-dir runs/<run_id>/review
+
+# After preview review and manual box adjustment:
 python scripts/validate_reveal_manifest.py `
   --manifest runs/<run_id>/reveal_manifest.json `
   --contract runs/<run_id>/planning/visual_contract.json
@@ -139,6 +151,8 @@ python scripts/validate_run_assets.py `
 - Master image is crowded, textured, or not reveal-friendly.
 - A reveal rectangle enters the subtitle safe zone.
 - Reveal group boxes overlap beyond tolerance.
+- Auto-fit cannot detect meaningful content inside a group search area.
+- Missing reveal preview images after visual draft exists.
 - Missing `reveal_report.json` after building reveal scene.
 - Blocking reveal warnings.
 - Animation events are not bound to valid audio segments after TTS.

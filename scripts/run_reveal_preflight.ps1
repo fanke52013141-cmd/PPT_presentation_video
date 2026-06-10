@@ -7,6 +7,8 @@ param(
   [switch]$SkipContractGeneration,
   [switch]$SkipPromptGeneration,
   [switch]$SkipNarrationGeneration,
+  [switch]$SkipAutoFit,
+  [switch]$SkipPreview,
   [switch]$RequireReviewedManifest
 )
 
@@ -27,6 +29,7 @@ function Run-Step {
 $RunDir = Join-Path $RepoRoot "runs/$RunId"
 $Contract = Join-Path $RunDir "planning/visual_contract.json"
 $Manifest = Join-Path $RunDir "reveal_manifest.json"
+$PreviewDir = Join-Path $RunDir "review"
 
 if (-not (Test-Path $RunDir)) {
   throw "Run directory does not exist: $RunDir"
@@ -62,6 +65,19 @@ if (-not (Test-Path $Manifest)) {
   exit 0
 }
 
+$anyVisualDraft = Get-ChildItem -Path (Join-Path $RunDir "slides") -Filter "visual_draft.png" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+if (($null -ne $anyVisualDraft) -and (-not $SkipAutoFit)) {
+  Run-Step "Auto-fit reveal boxes" {
+    python (Join-Path $RepoRoot "scripts/auto_fit_reveal_boxes.py") --manifest $Manifest --repo-root $RepoRoot
+  }
+}
+
+if (($null -ne $anyVisualDraft) -and (-not $SkipPreview)) {
+  Run-Step "Draw reveal manifest preview" {
+    python (Join-Path $RepoRoot "scripts/draw_reveal_manifest_preview.py") --manifest $Manifest --repo-root $RepoRoot --out-dir $PreviewDir
+  }
+}
+
 $manifestReviewFlag = @()
 if ($RequireReviewedManifest) {
   $manifestReviewFlag = @("--require-reviewed")
@@ -71,7 +87,6 @@ Run-Step "Validate reveal manifest" {
   python (Join-Path $RepoRoot "scripts/validate_reveal_manifest.py") --manifest $Manifest --contract $Contract @manifestReviewFlag
 }
 
-$anyVisualDraft = Get-ChildItem -Path (Join-Path $RunDir "slides") -Filter "visual_draft.png" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($null -ne $anyVisualDraft) {
   Run-Step "Build reveal scene" {
     python (Join-Path $RepoRoot "scripts/build_reveal_scene.py") --manifest $Manifest --repo-root $RepoRoot
@@ -95,3 +110,6 @@ Run-Step "Validate narration grounding" {
 }
 
 Write-Host "`nReveal preflight completed." -ForegroundColor Green
+if (Test-Path $PreviewDir) {
+  Write-Host "Preview images: $PreviewDir" -ForegroundColor Green
+}

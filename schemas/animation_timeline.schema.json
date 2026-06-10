@@ -14,6 +14,7 @@
         "properties": {
           "id": {"type": "string"},
           "target": {"type": "string", "description": "Must exist in scene.layers[].id"},
+          "target_group_id": {"type": "string"},
           "action": {
             "type": "string",
             "enum": [
@@ -21,7 +22,14 @@
               "fade_up",
               "soft_zoom_in",
               "slide_in_left",
-              "highlight"
+              "highlight",
+              "cover_fade_out",
+              "cover_wipe_left_to_right",
+              "cover_wipe_top_to_bottom",
+              "fog_diagonal_erase",
+              "crop_fade_up",
+              "crop_slide_in_left",
+              "crop_soft_zoom_in"
             ]
           },
           "at": {"type": "number", "minimum": 0},

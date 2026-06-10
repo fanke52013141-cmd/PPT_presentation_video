@@ -13,7 +13,9 @@ article.md
 -> Image Gen full-slide master image: visual_draft.png
 -> scripts/write_reveal_manifest_template.py
 -> reveal_manifest.json coordinate draft
--> manual box review against visual_draft.png
+-> scripts/auto_fit_reveal_boxes.py
+-> scripts/draw_reveal_manifest_preview.py
+-> manual box review against preview images and visual_draft.png
 -> scripts/validate_reveal_manifest.py
 -> scripts/build_reveal_scene.py
 -> scene.json + full_slide.png + cover/fog/crop reveal layers + reveal_report.json
@@ -40,6 +42,7 @@ using stable rectangular cover, fog, and crop layers.
   slide.
 - `cover_layer`, `fog_layer`, and `reveal_crop` layers are reveal mechanics only;
   they must not introduce new semantic content.
+- `scripts/auto_fit_reveal_boxes.py` is an assistant only; preview review is still required.
 - `scripts/split_master_layers.py`, `scripts/decompose_slide_layers.py`, and
   `scripts/compose_manifest_layers.py` are fallback/diagnostic paths only.
 - Default production uses `scripts/build_reveal_scene.py`.
@@ -56,9 +59,10 @@ For each slide:
 4. Ensure every spoken point expands a visible group instead of introducing unsupported concepts.
 5. Generate the master image from those groups.
 6. Generate a draft `reveal_manifest.json` from the visual contract.
-7. Review and adjust every group box against `visual_draft.png`.
-8. Generate narration files from the same visual contract.
-9. After TTS creates timings, bind reveal events to audio timeline segments.
+7. Auto-fit group boxes against `visual_draft.png` when possible.
+8. Inspect `runs/<run_id>/review/*_reveal_manifest_preview.png` and adjust boxes.
+9. Generate narration files from the same visual contract.
+10. After TTS creates timings, bind reveal events to audio timeline segments.
 
 Narration is an expansion of the visible page. It must not introduce unrelated
 ideas that the page does not support.
@@ -94,6 +98,8 @@ runs/<run_id>/
   inputs/article.md
   planning/visual_contract.json
   reveal_manifest.json
+  reveal_manifest.auto_fit_report.json
+  review/*_reveal_manifest_preview.png
   slides/slide_001/
     visual_prompt.md
     visual_draft.png
@@ -145,7 +151,20 @@ python scripts/write_reveal_manifest_template.py `
   --overwrite
 ```
 
-After `visual_draft.png` exists and `reveal_manifest.json` is reviewed:
+After `visual_draft.png` exists:
+
+```powershell
+python scripts/auto_fit_reveal_boxes.py `
+  --manifest runs/<run_id>/reveal_manifest.json `
+  --repo-root .
+
+python scripts/draw_reveal_manifest_preview.py `
+  --manifest runs/<run_id>/reveal_manifest.json `
+  --repo-root . `
+  --out-dir runs/<run_id>/review
+```
+
+After preview review and box adjustment:
 
 ```powershell
 python scripts/validate_reveal_manifest.py `
@@ -190,6 +209,7 @@ The run is blocked if:
 - A reveal group references an unknown contract group or beat.
 - A group rectangle enters the subtitle safe zone.
 - Group boxes overlap beyond the configured tolerance.
+- Auto-fit cannot detect meaningful content inside a group search area.
 - `reveal_report.json` contains blocking warnings.
 - A reveal event targets a missing scene layer.
 - Narration introduces concepts not supported by any visual group.

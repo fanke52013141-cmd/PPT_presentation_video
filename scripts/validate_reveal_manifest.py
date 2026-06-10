@@ -24,6 +24,8 @@ ALLOWED_ACTIONS = {
     "crop_soft_zoom_in",
     "highlight",
 }
+APPROVED_REVIEW_STATUSES = {"reviewed", "approved", "manual_reviewed", "manual_adjusted", "locked"}
+DEFAULT_PADDING_PX = 32
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -58,7 +60,19 @@ def visual_contract_maps(contract: dict[str, Any]) -> dict[str, dict[str, set[st
     return maps
 
 
-def validate_box(box: Any, width: int, height: int, subtitle_safe_y: int, role: str, group_id: str) -> None:
+def effective_box(raw_box: dict[str, Any], width: int, height: int, padding: int) -> dict[str, float]:
+    x = float(raw_box["x"])
+    y = float(raw_box["y"])
+    w = float(raw_box["w"])
+    h = float(raw_box["h"])
+    x1 = max(0.0, x - padding)
+    y1 = max(0.0, y - padding)
+    x2 = min(float(width), x + w + padding)
+    y2 = min(float(height), y + h + padding)
+    return {"x": x1, "y": y1, "w": x2 - x1, "h": y2 - y1}
+
+
+def validate_box(box: Any, width: int, height: int, subtitle_safe_y: int, role: str, group_id: str, padding: int) -> dict[str, float]:
     if not isinstance(box, dict):
         raise ManifestError(f"Group missing box: {group_id}")
     for key in ("x", "y", "w", "h"):
@@ -67,9 +81,14 @@ def validate_box(box: Any, width: int, height: int, subtitle_safe_y: int, role: 
     if box["w"] <= 0 or box["h"] <= 0:
         raise ManifestError(f"Group box has non-positive size: {group_id}")
     if box["x"] < 0 or box["y"] < 0 or box["x"] + box["w"] > width or box["y"] + box["h"] > height:
-        raise ManifestError(f"Group box outside canvas: {group_id}")
-    if role != "decoration" and box["y"] + box["h"] > subtitle_safe_y:
-        raise ManifestError(f"Group enters subtitle safe zone: {group_id}")
+        raise ManifestError(f"Group raw box outside canvas: {group_id}")
+    padded = effective_box(box, width=width, height=height, padding=padding)
+    if role != "decoration" and padded["y"] + padded["h"] > subtitle_safe_y:
+        raise ManifestError(
+            f"Group effective box enters subtitle safe zone after padding: {group_id} "
+            f"raw_y2={box['y'] + box['h']} effective_y2={padded['y'] + padded['h']} safe_y={subtitle_safe_y}"
+        )
+    return padded
 
 
 def overlap_ratio(a: dict[str, Any], b: dict[str, Any]) -> float:
@@ -115,17 +134,19 @@ def validate_slide(slide: dict[str, Any], contract_maps: dict[str, dict[str, set
         action = str(reveal.get("type", ""))
         if action not in ALLOWED_ACTIONS:
             raise ManifestError(f"Unsupported reveal action: {slide_id}/{group_id}/{action}")
-        validate_box(group.get("box"), width, height, subtitle_safe_y, role, group_id)
-        if require_reviewed and str(group.get("review_status", "")).startswith("needs_"):
-            raise ManifestError(f"Group still needs manual review: {slide_id}/{group_id}")
-        boxes.append((group_id, role, group["box"]))
+        status = str(group.get("review_status", "")).strip()
+        if require_reviewed and status not in APPROVED_REVIEW_STATUSES:
+            raise ManifestError(f"Group is not explicitly reviewed: {slide_id}/{group_id} review_status={status or '<empty>'}")
+        padding = int(group.get("padding_px", DEFAULT_PADDING_PX))
+        padded_box = validate_box(group.get("box"), width, height, subtitle_safe_y, role, group_id, padding=padding)
+        boxes.append((group_id, role, padded_box))
     for index, (left_id, left_role, left_box) in enumerate(boxes):
         for right_id, right_role, right_box in boxes[index + 1 :]:
             if left_role == "decoration" or right_role == "decoration":
                 continue
             ratio = overlap_ratio(left_box, right_box)
             if ratio > max_overlap:
-                raise ManifestError(f"Group boxes overlap too much in {slide_id}: {left_id}/{right_id} ratio={ratio:.3f}")
+                raise ManifestError(f"Effective group boxes overlap too much in {slide_id}: {left_id}/{right_id} ratio={ratio:.3f}")
 
 
 def validate_manifest(manifest: dict[str, Any], contract: dict[str, Any] | None, require_reviewed: bool, max_overlap: float) -> int:

@@ -46,3 +46,6 @@ venv/
 .env.*
 !.env.example
 
+*.log
+scratch/
+data/

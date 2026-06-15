@@ -1,0 +1,685 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+
+/* 全局简约线稿风格定义 (Flat Outline UI) */
+:root {
+  --bg-color: #FFFDF7;        /* 温暖偏白底色 */
+  --ink-color: #111111;      /* 纯黑精准线条 */
+  --primary-color: #FFF9DB;   /* 淡雅鹅黄 */
+  --secondary-color: #E0E7FF; /* 雅致淡蓝紫 */
+  --success-color: #E2F3D5;   /* 清爽淡绿 (即记录按钮色) */
+  --danger-color: #FFEBEB;    /* 温和淡粉红 */
+  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans SC", sans-serif;
+}
+
+/* 矢量线稿 SVG 图标规范 */
+.icon {
+  display: inline-block;
+  vertical-align: middle;
+  width: 1.15em;
+  height: 1.15em;
+  stroke: currentColor;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-color);
+  color: var(--ink-color);
+  font-family: var(--font-family);
+  font-size: 15px;
+  line-height: 1.6;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+/* 规范几何圆角边框 */
+.sketch-border {
+  border: 2px solid var(--ink-color);
+  border-radius: 12px;
+}
+
+.sketch-border-sm {
+  border: 2px solid var(--ink-color);
+  border-radius: 8px;
+}
+
+/* 虚线圆角边框 */
+.sketch-dashed {
+  border: 2px dashed var(--ink-color);
+  border-radius: 12px;
+}
+
+/* 扁平纯色硬投影 */
+.sketch-shadow {
+  box-shadow: 2px 2px 0px 0px var(--ink-color);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sketch-shadow:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0px 0px var(--ink-color);
+}
+
+.sketch-shadow:active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0px 0px var(--ink-color);
+}
+
+/* 标题样式 */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  letter-spacing: -0.01em;
+  display: inline-block;
+  position: relative;
+}
+
+/* 简约标题修饰底色 */
+.highlight-title::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 2px;
+  height: 6px;
+  background-color: #FFF3B0;
+  z-index: -1;
+  border-radius: 3px;
+}
+
+/* 极简线稿风圆角按钮 */
+button, .btn {
+  font-family: var(--font-family);
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--ink-color);
+  background-color: var(--bg-color);
+  padding: 0.45rem 1.1rem;
+  border: 2px solid var(--ink-color);
+  border-radius: 8px;
+  box-shadow: 2px 2px 0px 0px var(--ink-color);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  outline: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+button:hover, .btn:hover {
+  background-color: var(--primary-color);
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0px 0px var(--ink-color);
+}
+
+button:active, .btn:active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0px 0px var(--ink-color);
+}
+
+button.secondary {
+  background-color: var(--secondary-color);
+}
+
+button.secondary:hover {
+  background-color: #C7D2FE;
+}
+
+button.success {
+  background-color: var(--success-color);
+}
+
+button.success:hover {
+  background-color: #D2EABF;
+}
+
+button.danger {
+  background-color: var(--danger-color);
+}
+
+button.danger:hover {
+  background-color: #FFD6D6;
+}
+
+button:disabled {
+  background-color: #f3f4f6;
+  color: #9ca3af;
+  border-color: #d1d5db;
+  box-shadow: none;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* 工整输入框与选择器 */
+input[type="text"], input[type="password"], textarea, select {
+  font-family: var(--font-family);
+  font-size: 0.95rem;
+  padding: 0.5rem 0.75rem;
+  background-color: var(--bg-color);
+  color: var(--ink-color);
+  border: 2px solid var(--ink-color);
+  border-radius: 8px;
+  outline: none;
+  width: 100%;
+  transition: all 0.15s ease;
+}
+
+input[type="text"]:focus, textarea:focus, select:focus {
+  border-color: #111111;
+  background-color: #fffffb;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
+}
+
+/* 简约卡片 */
+.card {
+  background-color: var(--bg-color);
+  border: 2px solid var(--ink-color);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 2px 2px 0px 0px var(--ink-color);
+}
+
+/* 顶栏 */
+header {
+  border-bottom: 2px solid var(--ink-color);
+  padding: 0.8rem 2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: var(--bg-color);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.logo {
+  font-size: 1.5rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.logo-icon {
+  width: 32px;
+  height: 32px;
+  border: 2px solid var(--ink-color);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #ffffff;
+  font-size: 1.1rem;
+}
+
+/* 整体布局结构 */
+.app-container {
+  display: flex;
+  height: calc(100vh - 59px);
+  width: 100vw;
+  overflow: hidden;
+}
+
+/* 左侧步骤条 */
+.sidebar {
+  width: 250px;
+  border-right: 2px solid var(--ink-color);
+  background-color: var(--bg-color);
+  padding: 1.2rem 0.8rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow-y: auto;
+}
+
+.stepper {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.step-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.step-item.active {
+  background-color: var(--primary-color);
+  border-color: var(--ink-color);
+  border-radius: 8px;
+  box-shadow: 2px 2px 0px 0px var(--ink-color);
+}
+
+.step-item.completed .step-num {
+  background-color: var(--success-color);
+}
+
+.step-item.pending_reconfirmation {
+  border: 2px dashed var(--ink-color);
+  background-color: #fffdec;
+}
+
+.step-item.pending_reconfirmation .step-num {
+  background-color: #ffe8a8;
+  border-style: dashed;
+}
+
+.step-num {
+  width: 26px;
+  height: 26px;
+  border: 2px solid var(--ink-color);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.85rem;
+  background-color: var(--bg-color);
+  flex-shrink: 0;
+}
+
+.step-label {
+  font-size: 0.95rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.step-status-tag {
+  font-size: 0.7rem;
+  padding: 1px 4px;
+  border: 1px solid var(--ink-color);
+  border-radius: 4px;
+  margin-left: auto;
+  background-color: var(--bg-color);
+}
+
+/* 右侧主工作区 */
+.main-content {
+  flex: 1;
+  background-color: var(--bg-color);
+  overflow-y: auto;
+  padding: 1rem 2rem 2rem 2rem;
+  position: relative;
+}
+
+/* 项目列表卡片布局 */
+.project-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 2rem;
+  margin-top: 1.5rem;
+}
+
+.project-card {
+  background-color: var(--bg-color);
+  border: 2px solid var(--ink-color);
+  border-radius: 12px;
+  padding: 1.2rem;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: 3px 3px 0px 0px var(--ink-color);
+  transition: all 0.2s ease;
+}
+
+.project-card:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0px 0px var(--ink-color);
+}
+
+.project-card-header {
+  border-bottom: 2px dashed var(--ink-color);
+  padding-bottom: 0.4rem;
+  margin-bottom: 0.8rem;
+}
+
+.project-progress-bar {
+  height: 10px;
+  border: 2px solid var(--ink-color);
+  border-radius: 6px;
+  background-color: #fff;
+  margin-top: 1rem;
+  overflow: hidden;
+  position: relative;
+}
+
+.project-progress-fill {
+  height: 100%;
+  background-color: var(--success-color);
+  border-right: 2px solid var(--ink-color);
+}
+
+.slides-thumbnail-container {
+  display: flex;
+  gap: 0.8rem;
+  overflow-x: auto;
+  padding: 0.4rem;
+  margin-bottom: 1.2rem;
+}
+
+.slide-thumbnail-card {
+  width: 140px;
+  flex-shrink: 0;
+  border: 2px solid var(--ink-color);
+  border-radius: 8px;
+  background-color: var(--bg-color);
+  padding: 0.4rem;
+  cursor: pointer;
+  position: relative;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+
+.slide-thumbnail-card.active {
+  border-color: var(--ink-color);
+  background-color: var(--primary-color);
+  box-shadow: 2px 2px 0px 0px var(--ink-color);
+}
+
+.slide-thumbnail-card .img-preview {
+  width: 100%;
+  height: 64px;
+  border: 1px solid var(--ink-color);
+  border-radius: 4px;
+  background-color: #eee;
+  margin-bottom: 0.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  overflow: hidden;
+}
+
+.slide-thumbnail-card .img-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.slide-thumbnail-card .slide-num {
+  font-size: 0.8rem;
+  font-weight: bold;
+}
+
+/* Mask 标注可视化 Canvas 容器 */
+.canvas-wrapper {
+  position: relative;
+  border: 2px solid var(--ink-color);
+  border-radius: 12px;
+  box-shadow: 3px 3px 0px 0px var(--ink-color);
+  background-color: #fff;
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  aspect-ratio: 16/9;
+  overflow: hidden;
+}
+
+.canvas-wrapper canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  cursor: crosshair;
+}
+
+.canvas-wrapper img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  z-index: 1;
+}
+
+/* 标注编辑器左右分栏布局 */
+.workspace-split {
+  display: flex;
+  gap: 1.5rem;
+  height: calc(100vh - 230px);
+}
+
+.workspace-left {
+  flex: 7;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.workspace-right {
+  flex: 3;
+  border: 2px solid var(--ink-color);
+  border-radius: 12px;
+  background-color: var(--bg-color);
+  padding: 1rem;
+  overflow-y: auto;
+  box-shadow: 2px 2px 0px 0px var(--ink-color);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+/* 对话框/遮罩层 */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background-color: var(--bg-color);
+  border: 2px solid var(--ink-color);
+  border-radius: 12px;
+  box-shadow: 4px 4px 0px 0px var(--ink-color);
+  padding: 1.8rem;
+  max-width: 500px;
+  width: 90%;
+  position: relative;
+  animation: popIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes popIn {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+/* 设置面板分栏标签 */
+.tabs {
+  display: flex;
+  gap: 0.4rem;
+  border-bottom: 2px solid var(--ink-color);
+  margin-bottom: 1.2rem;
+}
+
+.tab-item {
+  padding: 0.4rem 0.8rem;
+  border: 2px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+.tab-item.active {
+  border-color: var(--ink-color);
+  background-color: var(--primary-color);
+  margin-bottom: -2px;
+}
+
+/* 音视频预览 */
+.video-preview-box {
+  width: 100%;
+  max-width: 800px;
+  aspect-ratio: 16/9;
+  border: 2px solid var(--ink-color);
+  border-radius: 12px;
+  box-shadow: 4px 4px 0px 0px var(--ink-color);
+  background-color: #000;
+  overflow: hidden;
+  margin: 1.2rem auto;
+}
+
+.video-preview-box video {
+  width: 100%;
+  height: 100%;
+}
+
+.toast {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  background-color: var(--primary-color);
+  color: var(--ink-color);
+  border: 2px solid var(--ink-color);
+  border-radius: 8px;
+  padding: 0.7rem 1.2rem;
+  font-weight: 500;
+  box-shadow: 2px 2px 0px 0px var(--ink-color);
+  z-index: 2000;
+  animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideUp {
+  from { transform: translateY(50px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* 去除可能显乱的网格背景 */
+.canvas-wrapper::before {
+  display: none;
+}
+
+/* 正圆形匀速现代 Loading 指示器 */
+.sketch-loader {
+  display: inline-block;
+  width: 36px;
+  height: 36px;
+  border: 3.5px solid #f1f1f1;
+  border-top: 3.5px solid var(--ink-color);
+  border-radius: 50%;
+  animation: modern-spin 0.75s linear infinite;
+  margin: 10px auto;
+}
+
+@keyframes modern-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* 双向绑定卡片荧光高亮呼吸动画 */
+.highlight-glow {
+  animation: marker-glow 1.5s ease-in-out infinite alternate;
+}
+
+@keyframes marker-glow {
+  0% {
+    box-shadow: 0 0 4px rgba(249, 214, 92, 0.1), inset 0 0 4px rgba(249, 214, 92, 0.1);
+    border-color: var(--ink-color);
+  }
+  100% {
+    box-shadow: 0 0 10px rgba(249, 214, 92, 0.7), inset 0 0 6px rgba(249, 214, 92, 0.4);
+    border-color: #e5b922;
+  }
+}
+
+/* 图片生成 3列网格排布 */
+.step3-grid-four {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.2rem;
+  margin-top: 1rem;
+}
+
+@media (max-width: 1080px) {
+  .step3-grid-four {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .step3-grid-four {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 优化拖拽卡片 */
+.slide-card-draggable {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.slide-card-draggable:hover {
+  transform: translateY(-2px);
+  box-shadow: 4px 4px 0px 0px var(--ink-color) !important;
+}
+
+/* Mask 标注步骤 Slide 简易平铺切换按钮网格 */
+.step5-slides-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 1.2rem;
+  padding: 0.2rem 0;
+}
+
+.step5-slide-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 95px;
+  height: 55px;
+  border: 2px solid var(--ink-color);
+  border-radius: 8px;
+  background-color: #ffffff;
+  cursor: pointer;
+  box-shadow: 2px 2px 0px 0px var(--ink-color);
+  transition: all 0.15s ease;
+  user-select: none;
+  padding: 0.3rem 0.6rem;
+}
+
+.step5-slide-btn:hover {
+  background-color: var(--primary-color);
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0px 0px var(--ink-color);
+}
+
+.step5-slide-btn.active {
+  background-color: var(--primary-color);
+  border-color: var(--ink-color);
+  box-shadow: 1px 1px 0px 0px var(--ink-color);
+  transform: translate(1px, 1px);
+}
+
+.step5-slide-btn.completed {
+  background-color: var(--success-color);
+}

@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PPT Visualization Studio - 手绘线稿风格</title>
+  <link rel="stylesheet" href="style.css?v=2.0.0">
+</head>
+<body>
+
+  <!-- 顶部导航栏 -->
+  <header class="sketch-border-sm">
+    <div class="logo">
+      <div class="logo-icon">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width: 1.3rem; height: 1.3rem;">
+          <path d="M4 3h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"></path>
+          <path d="M12 17v4M8 21h8M8 8l5 3-5 3V8z"></path>
+        </svg>
+      </div>
+      <span>PPT Studio</span>
+    </div>
+    <div id="project-info-header" style="display: none; font-weight: bold; font-size: 1.15rem;">
+      当前项目: <span id="current-project-name" style="color: var(--ink-color);">--</span>
+    </div>
+    <div style="display: flex; gap: 1rem;">
+      <button id="btn-back-home" class="secondary" style="display: none;">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><circle cx="18" cy="14" r="2.5" fill="var(--success-color)" stroke="currentColor" stroke-width="1.5"></circle></svg>
+        返回项目列表
+      </button>
+      <button id="btn-open-settings">
+        <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        系统设置
+      </button>
+    </div>
+  </header>
+
+  <!-- 全局 Container -->
+  <main id="app-viewport">
+    
+    <!-- 首页: 项目管理 -->
+    <div id="page-home" class="main-content" style="padding: 2rem 4rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+        <h1 class="highlight-title">我的 PPT 视频项目</h1>
+        <button id="btn-create-project" class="success">
+          <svg class="icon" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          新建项目
+        </button>
+      </div>
+
+      <div id="project-list" class="project-grid">
+        <!-- 项目卡片动态插入 -->
+        <div class="card sketch-dashed" style="text-align: center; padding: 4rem 2rem;">
+          <p style="font-size: 1.2rem; margin-bottom: 1rem;">还没有项目，快去新建一个吧！</p>
+          <button onclick="document.getElementById('btn-create-project').click()">立即新建</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 工作区: 步骤条向导 + 主工作区 -->
+    <div id="page-workspace" class="app-container" style="display: none;">
+      
+      <!-- 左侧步骤条 -->
+      <aside class="sidebar">
+        <ul class="stepper">
+          <li class="step-item active" data-step="1">
+            <div class="step-num">1</div>
+            <div class="step-label">导入文章</div>
+          </li>
+          <li class="step-item" data-step="2">
+            <div class="step-num">2</div>
+            <div class="step-label">分镜规划</div>
+          </li>
+          <li class="step-item" data-step="3">
+            <div class="step-num">3</div>
+            <div class="step-label">图片生成</div>
+          </li>
+          <li class="step-item" data-step="5">
+            <div class="step-num">4</div>
+            <div class="step-label">Mask标注</div>
+          </li>
+          <li class="step-item" data-step="6">
+            <div class="step-num">5</div>
+            <div class="step-label">演讲稿编辑</div>
+          </li>
+          <li class="step-item" data-step="7">
+            <div class="step-num">6</div>
+            <div class="step-label">语音合成</div>
+          </li>
+          <li class="step-item" data-step="8">
+            <div class="step-num">7</div>
+            <div class="step-label">视频合成</div>
+          </li>
+        </ul>
+      </aside>
+
+      <!-- 右侧主展示区 -->
+      <section class="main-content" id="workspace-main">
+        
+        <!-- ==================== 步骤 1: 导入文章 ==================== -->
+        <div id="step-panel-1" class="step-panel" style="display: none;">
+          <h2 class="highlight-title">第一步：导入文章</h2>
+          <div class="card" style="margin-top: 1.5rem;">
+            <p style="margin-bottom: 1rem; color: #555;">请在下方粘贴您的 Markdown 格式文章，系统将自动提炼核心标题，并解锁后续分镜规划步骤。</p>
+            <textarea id="step1-article-input" rows="14" placeholder="# 在这里粘贴您的文章..."></textarea>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem;">
+              <span id="step1-status-hint" style="color: #888; font-size: 0.9rem;"></span>
+              <div style="display: flex; gap: 1rem;">
+                <button id="step1-btn-save-edit" class="secondary" style="display:none;">
+                  <svg class="icon" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                  保存修改
+                </button>
+                <button id="step1-btn-submit" class="success">
+                  <svg class="icon" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"></path></svg>
+                  保存并提炼标题
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 提炼结果展示区（隐藏不展示，保留 DOM 兼容 JS 逻辑） -->
+          <div id="step1-result-box" style="display: none !important;">
+            <input type="hidden" id="step1-res-title">
+            <input type="hidden" id="step1-res-summary">
+          </div>
+        </div>
+
+        <!-- ==================== 步骤 2: 分镜规划 ==================== -->
+        <div id="step-panel-2" class="step-panel" style="display: none;">
+          
+          <!-- 粘性吸顶栏容器：合并按钮与缩略图，使用不透明背景挡住滚上来的正文 -->
+          <div class="step2-sticky-header" style="position: sticky; top: -1rem; margin-top: -1rem; padding-top: 1rem; padding-bottom: 0.8rem; background-color: var(--bg-color); z-index: 100; border-bottom: 2px solid var(--ink-color); margin-bottom: 1rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.8rem;">
+              <div style="display: flex; align-items: center; gap: 0.8rem;">
+                <h2 class="highlight-title" style="margin: 0; font-size: 1.25rem;">分镜规划</h2>
+                <button id="step2-btn-generate" class="success" style="font-size: 0.85rem; padding: 0.35rem 0.9rem;">
+                  <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                  智能规划分镜
+                </button>
+                <button id="step2-btn-save" class="secondary" style="display: none; font-size: 0.85rem; padding: 0.35rem 0.9rem;">
+                  <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                  保存修改
+                </button>
+              </div>
+              <button class="btn-next-step success" id="step2-btn-next" style="display: none; font-size: 0.85rem; padding: 0.35rem 0.9rem;">
+                进入图片生成
+                <svg class="icon" viewBox="0 0 24 24" style="width:14px; height:14px; stroke-width:2.5;"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+              </button>
+            </div>
+            
+            <!-- 缩略图横排展示 -->
+            <div id="step2-thumbs" class="slides-thumbnail-container" style="margin: 0; padding-bottom: 0; display: none;"></div>
+          </div>
+
+          <div id="step2-loading" class="card" style="display: none; text-align: center; padding: 3rem;">
+            <div class="sketch-loader"></div>
+            <p style="font-size: 1.2rem; margin-top: 1rem;">大模型正在拼命拆解分镜中，请稍候... (大约需要15~30秒)</p>
+          </div>
+
+          <!-- 分镜列表编辑区 -->
+          <div id="step2-editor-area" style="display: none;">
+            <!-- 缩略图移至上面 -->
+            
+            <!-- 当前编辑的分镜内容（只展示视觉分组）-->
+            <div id="step2-slide-card" class="card" style="margin-top: 1rem;">
+              <h3 style="margin-bottom: 1rem; border-bottom: 2px solid #111; padding-bottom: 0.5rem; font-size: 1rem;">
+                正在编辑：<span id="step2-current-slide-id" style="color: var(--accent-color);">--</span>
+                <span id="step2-current-slide-title" style="font-weight: normal; color: #555; margin-left: 0.5rem; font-size: 0.9rem;"></span>
+              </h3>
+              
+              <div style="margin-bottom: 0.8rem;">
+                <label style="font-weight: bold; display: block; margin-bottom: 0.4rem; font-size: 0.9rem;">本页旁白核心点：</label>
+                <textarea id="step2-core-message" rows="2" placeholder="描述本页 slide 要表达的核心内容，作为后续旁白撰写的依据"></textarea>
+              </div>
+
+              <h4 style="margin-bottom: 0.5rem; border-bottom: 1px dashed #ccc; padding-bottom: 0.3rem; font-size: 0.95rem; color: #333;">视觉分组</h4>
+              <div id="step2-groups-list" style="display: flex; flex-direction: column; gap: 0.5rem;">
+                <!-- 分组项目 -->
+              </div>
+            </div>
+          </div>
+          <!-- 隐藏字段保留兼容 -->
+          <input type="hidden" id="step2-main-title">
+          <input type="hidden" id="step2-subtitle">
+        </div>
+
+        <!-- ==================== 步骤 3: 图片生成与上传 ==================== -->
+        <div id="step-panel-3" class="step-panel" style="display: none;">
+          <!-- 顶部控制栏 -->
+          <div style="display: flex; align-items: center; gap: 0.8rem; padding: 1rem 0; border-bottom: 2px solid #111; margin-bottom: 1rem;">
+            <h2 class="highlight-title" style="margin: 0; font-size: 1.2rem;">图片生成与管理</h2>
+            <label class="btn secondary" style="cursor: pointer; font-size: 0.85rem; padding: 0.35rem 0.9rem; display: inline-flex; align-items: center; gap: 0.4rem;">
+              <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path></svg>
+              批量上传本地图片
+              <input type="file" id="step3-batch-upload" accept="image/*" multiple style="display: none;">
+            </label>
+            <button id="step3-btn-copy-prompts" class="secondary" style="font-size: 0.85rem; padding: 0.35rem 0.9rem;">
+              <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              复制生图提示词
+            </button>
+            <button id="step3-btn-confirm" class="success" style="display: none; margin-left: auto; font-size: 0.85rem; padding: 0.35rem 0.9rem;">
+              确认所有图片，进入标注步骤
+              <svg class="icon" viewBox="0 0 24 24" style="width:14px; height:14px; stroke-width:2.5;"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+            </button>
+          </div>
+
+          <!-- 全局图片管理网格 -->
+          <div id="step3-images-grid" class="step3-grid-four"></div>
+
+          <!-- 单张 Slide AI 生成区（点击缩略图展开）-->
+          <div id="step3-editor" class="card" style="display: none; margin-top: 1.5rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+              <h3 style="margin: 0;">AI 生成图片：<span id="step3-slide-id-label" style="color: var(--accent-color);">--</span></h3>
+              <button onclick="document.getElementById('step3-editor').style.display='none'" class="secondary" style="font-size: 0.8rem; padding: 0.2rem 0.6rem;">✕ 关闭</button>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+              <div>
+                <label style="font-weight: bold; display: block; margin-bottom: 0.4rem; font-size: 0.9rem;">生图提示词 (Prompt):</label>
+                <textarea id="step3-prompt-input" rows="6"></textarea>
+                <button id="step3-btn-generate" class="success" style="width: 100%; justify-content: center; margin-top: 0.8rem;">
+                  <svg class="icon" viewBox="0 0 24 24"><path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 14.7255 3.09032 17.1962 4.85857 19C5.01445 19.1559 5.09238 19.3789 5.06456 19.5977C5.01915 19.9549 5 20.3197 5 20.69C5 21.4135 5.58654 22 6.31 22H12Z"></path><circle cx="7.5" cy="10.5" r="1.5" fill="currentColor"></circle><circle cx="11.5" cy="7.5" r="1.5" fill="currentColor"></circle><circle cx="16.5" cy="9.5" r="1.5" fill="currentColor"></circle><circle cx="15.5" cy="14.5" r="1.5" fill="currentColor"></circle></svg>
+                  立即 AI 生成
+                </button>
+                <div id="step3-loading" style="display: none; margin-top: 1rem; text-align: center;">
+                  <div class="sketch-loader" style="margin: 0 auto 10px auto;"></div>
+                  <p>图片正在渲染，大约需要 10-15 秒...</p>
+                </div>
+              </div>
+              <div>
+                <label style="font-weight: bold; display: block; margin-bottom: 0.4rem; font-size: 0.9rem;">当前图片预览：</label>
+                <div id="step3-preview-box" class="sketch-dashed" style="height: 180px; display: flex; align-items: center; justify-content: center; background-color: #fcfcfc; overflow: hidden; margin-bottom: 0.8rem;">
+                  <span style="color: #888;">暂无图片</span>
+                </div>
+                <label class="btn secondary" style="width: 100%; justify-content: center; cursor: pointer; font-size: 0.85rem;">
+                  <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path></svg>
+                  上传替换此张图片
+                  <input type="file" id="step3-file-upload" accept="image/*" style="display: none;">
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==================== 步骤 4: 图片审核确认 ==================== -->
+        <div id="step-panel-4" class="step-panel" style="display: none;">
+          <h2 class="highlight-title">第四步：全景图片审核确认</h2>
+          <p style="margin: 1rem 0;">请在此页面纵览并审核所有 Slide 的图片。如果确定，请点击下方锁定键，生成坐标文件进入标注阶段。</p>
+          
+          <div id="step4-grid" class="project-grid">
+            <!-- 所有卡片预览平铺 -->
+          </div>
+
+          <div style="display: flex; justify-content: flex-end; margin-top: 2rem;">
+            <button id="step4-btn-confirm" class="success">
+              一键锁定所有图片，进入标注步骤
+              <svg class="icon" viewBox="0 0 24 24" style="width:14px; height:14px; stroke-width:2.5;"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- ==================== 步骤 5: Mask 可视化标注 ==================== -->
+        <div id="step-panel-5" class="step-panel" style="display: none;">
+          <h2 class="highlight-title">第五步：智能 Mask 区域标注</h2>
+          
+          <div id="step5-thumbs" class="slides-thumbnail-container" style="margin-top: 1.5rem;"></div>
+
+          <div class="workspace-split">
+            <!-- 左栏: Canvas 画布编辑 -->
+            <div class="workspace-left">
+              <div style="display: flex; gap: 1rem; align-items: center;">
+                <button id="step5-btn-automask" class="success">
+                  <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="10" rx="2"></rect><circle cx="12" cy="5" r="2"></circle><path d="M12 7v4M8 16h.01M16 16h.01"></path></svg>
+                  AI 视觉自动框选 (OpenAI Vision)
+                </button>
+                <span style="color: #666; font-size: 0.9rem;">提示：拖拽矩形框可调整位置，拖动右下角可调整大小。双击空白新建。</span>
+              </div>
+              
+              <div class="canvas-wrapper" id="canvas-container">
+                <img id="step5-bg-img" src="" alt="Slide Background">
+                <canvas id="step5-canvas" width="1920" height="1080"></canvas>
+              </div>
+            </div>
+
+            <!-- 右栏: 标注块列表属性 -->
+            <div class="workspace-right">
+              <h3>当前页标注块列表</h3>
+              <div id="step5-boxes-list" style="display: flex; flex-direction: column; gap: 0.5rem;">
+                <!-- 标注盒子表单 -->
+              </div>
+              <div style="margin-top: auto; display: flex; flex-direction: column; gap: 0.5rem; padding-top: 1rem; border-top: 2px dashed #111;">
+                <button id="step5-btn-save" class="secondary" style="width: 100%;">
+                  <svg class="icon" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                  保存标注数据
+                </button>
+                <button class="btn-next-step success" style="width: 100%;">
+                  确认标注，进入下一步
+                  <svg class="icon" viewBox="0 0 24 24" style="width:14px; height:14px; stroke-width:2.5;"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==================== 步骤 6: 演讲稿编辑 ==================== -->
+        <div id="step-panel-6" class="step-panel" style="display: none;">
+          <h2 class="highlight-title">第六步：演讲旁白稿细化绑定</h2>
+          <div style="margin-top: 1.5rem; display: flex; gap: 1rem; margin-bottom: 1rem;">
+            <button id="step6-btn-init" class="secondary">
+              <svg class="icon" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+              重新同步演讲稿模板
+            </button>
+            <button id="step6-btn-save" class="success">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+              保存旁白修改
+            </button>
+            <button class="btn-next-step success" style="margin-left: auto;">
+              保存并前往语音合成
+              <svg class="icon" viewBox="0 0 24 24" style="width:14px; height:14px; stroke-width:2.5;"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+            </button>
+          </div>
+
+          <div class="workspace-split">
+            <!-- 左侧: 框线参考图 -->
+            <div class="workspace-left">
+              <div id="step6-thumbs" class="slides-thumbnail-container" style="margin-top: 0;"></div>
+              <div class="canvas-wrapper">
+                <img id="step6-bg-img" src="" alt="Slide Background">
+                <!-- 我们在这个 Canvas 上仅做只读标注高亮显示 -->
+                <canvas id="step6-canvas" width="1920" height="1080"></canvas>
+              </div>
+            </div>
+
+            <!-- 右侧: 演讲段落编辑表单 -->
+            <div class="workspace-right" style="flex: 4;">
+              <h3>旁白断句编辑列表</h3>
+              <div id="step6-beats-list" style="display: flex; flex-direction: column; gap: 0.8rem; overflow-y: auto;">
+                <!-- 演讲节奏输入 -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==================== 步骤 7: 语音合成 ==================== -->
+        <div id="step-panel-7" class="step-panel" style="display: none;">
+          <h2 class="highlight-title">第七步：MiniMax TTS 语音合成</h2>
+          
+          <div class="card" style="margin-top: 1.5rem;">
+            <p style="margin-bottom: 1rem;">系统将调用 MiniMax 音频合成接口，将您的每一页演讲旁白段落转化为高清音频，并自动绑定对应的 reveal 动画时间轴。</p>
+            <button id="step7-btn-synthesize" class="success" style="font-size: 1.2rem; padding: 0.8rem 2rem;">
+              <svg class="icon" viewBox="0 0 24 24" style="width:1.3rem; height:1.3rem;"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+              开始生成全部旁白音频
+            </button>
+            
+            <div id="step7-loading" class="card sketch-dashed" style="display: none; margin-top: 1.5rem; text-align: center;">
+              <div class="sketch-loader"></div>
+              <p style="margin-top: 1rem;">合成中，请稍后... 正在与 MiniMax 服务器建立会话并运行切句合成脚本。</p>
+            </div>
+          </div>
+
+          <!-- 合成音频试听区 -->
+          <div id="step7-result-box" class="card" style="display: none; margin-top: 1.5rem;">
+            <h3 style="margin-bottom: 1rem;">音频试听列表</h3>
+            <div id="step7-audio-list" style="display: flex; flex-direction: column; gap: 0.8rem;">
+              <!-- 试听行 -->
+            </div>
+            <div style="display: flex; justify-content: flex-end; margin-top: 1.5rem; border-top: 2px dashed #111; padding-top: 1rem;">
+              <button class="btn-next-step success">
+                音频确认无误，前往视频合成
+                <svg class="icon" viewBox="0 0 24 24" style="width:14px; height:14px; stroke-width:2.5;"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==================== 步骤 8: 视频合成与渲染 ==================== -->
+        <div id="step-panel-8" class="step-panel" style="display: none;">
+          <h2 class="highlight-title">第八步：视频渲染与预览下载</h2>
+          
+          <div class="card" style="margin-top: 1.5rem;">
+            <p style="margin-bottom: 1rem;">点击下方按钮拉起本地 Remotion (Node.js) 渲染器进程，合成音频、转场切片与最终 MP4。由于在本地渲染，可能会占用一定的 CPU / 显卡资源。</p>
+            <button id="step8-btn-render" class="success" style="font-size: 1.2rem; padding: 0.8rem 2rem;">
+              <svg class="icon" viewBox="0 0 24 24" style="width:1.3rem; height:1.3rem;"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2"></rect></svg>
+              开始渲染最终视频
+            </button>
+            
+            <div id="step8-loading" class="card sketch-dashed" style="display: none; margin-top: 1.5rem; text-align: center;">
+              <div class="sketch-loader"></div>
+              <p style="font-size: 1.1rem; font-weight: bold; margin-bottom: 0.5rem; margin-top: 1rem;">视频正在渲染中...</p>
+              <p>我们将自动拉起 Node.js 进行并行渲染，请耐心等待 1~3 分钟。</p>
+            </div>
+          </div>
+
+          <div id="step8-result-box" class="card" style="display: none; margin-top: 1.5rem; text-align: center;">
+            <h3 style="margin-bottom: 1.5rem;">🎉 视频渲染成功！</h3>
+            <div class="video-preview-box">
+              <video id="step8-video-player" controls src=""></video>
+            </div>
+            <div style="display: flex; justify-content: center; gap: 1rem; margin-top: 1rem;">
+              <a id="step8-btn-download" href="" download class="btn success" style="text-decoration: none;">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 3v12"></path></svg>
+                下载高清视频 (MP4)
+              </a>
+              <button id="step8-btn-finish" class="secondary">完成并退出项目</button>
+            </div>
+          </div>
+        </div>
+
+      </section>
+    </div>
+
+  </main>
+
+  <!-- ==================== MODALS ==================== -->
+
+  <!-- Modal: 新建项目 -->
+  <div id="modal-create" class="modal-overlay" style="display: none;">
+    <div class="modal-content">
+      <h3 class="highlight-title" style="margin-bottom: 1.2rem;">新建视频项目</h3>
+      <div style="margin-bottom: 1rem;">
+        <label style="font-weight: bold; display: block; margin-bottom: 0.4rem;">项目名称:</label>
+        <input type="text" id="input-project-name" placeholder="请输入项目名称，如：AI大模型原理解析">
+      </div>
+      <div style="margin-bottom: 1.5rem;">
+        <label style="font-weight: bold; display: block; margin-bottom: 0.4rem;">项目描述:</label>
+        <textarea id="input-project-desc" rows="3" placeholder="请输入可选的项目描述"></textarea>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 1rem;">
+        <button id="btn-create-cancel" class="secondary">取消</button>
+        <button id="btn-create-submit" class="success">确认新建</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: 系统设置 -->
+  <div id="modal-settings" class="modal-overlay" style="display: none;">
+    <div class="modal-content" style="max-width: 650px;">
+      <h3 class="highlight-title" style="margin-bottom: 1.2rem;">
+        <svg class="icon" viewBox="0 0 24 24" style="margin-right: 0.2rem;"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        系统全局设置
+      </h3>
+      
+      <div class="tabs">
+        <div class="tab-item active" data-tab="tab-llm">
+          <svg class="icon" viewBox="0 0 24 24" style="margin-right: 0.2rem;"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+          文本与视觉 (LLM)
+        </div>
+        <div class="tab-item" data-tab="tab-image">
+          <svg class="icon" viewBox="0 0 24 24" style="margin-right: 0.2rem;"><path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 14.7255 3.09032 17.1962 4.85857 19C5.01445 19.1559 5.09238 19.3789 5.06456 19.5977C5.01915 19.9549 5 20.3197 5 20.69C5 21.4135 5.58654 22 6.31 22H12Z"></path><circle cx="7.5" cy="10.5" r="1.5" fill="currentColor"></circle><circle cx="11.5" cy="7.5" r="1.5" fill="currentColor"></circle><circle cx="16.5" cy="9.5" r="1.5" fill="currentColor"></circle><circle cx="15.5" cy="14.5" r="1.5" fill="currentColor"></circle></svg>
+          图片生成
+        </div>
+        <div class="tab-item" data-tab="tab-tts">
+          <svg class="icon" viewBox="0 0 24 24" style="margin-right: 0.2rem;"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+          语音合成
+        </div>
+      </div>
+
+      <div class="tab-contents">
+        <!-- LLM + Vision Tab -->
+        <div id="tab-llm" class="tab-pane">
+          <p style="font-size: 0.82rem; color: #666; background: #f0f4ff; border: 1.5px dashed #aac; border-radius: 8px; padding: 0.6rem 0.9rem; margin-bottom: 1rem; line-height: 1.7;">
+            💡 <strong>newapi / 中转站用户</strong>：文本模型与视觉模型通常部署在同一个中转站中。配置中转地址时，请填写完整的 <code>/v1</code> 路径（如 <code>https://你的域名/v1</code>）。为保证第五步自动框选正常，请确保“视觉模型”选择兼容 Vision 的模型（如 <code>gpt-4o</code>、<code>claude-3-5-sonnet</code>），系统已内置自动降级和 JSON 块清洗逻辑。
+          </p>
+          <div style="margin-bottom: 0.8rem;">
+            <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">接口地址 (Base URL):</label>
+            <input type="text" id="setting-llm-base-url" placeholder="https://api.openai.com/v1">
+          </div>
+          <div style="margin-bottom: 0.8rem;">
+            <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">接口密钥 (API Key):</label>
+            <input type="password" id="setting-llm-api-key" placeholder="sk-...">
+          </div>
+          <div style="margin-bottom: 0.8rem; display: flex; gap: 1rem;">
+            <div style="flex: 1;">
+              <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">文本模型 (LLM Model):</label>
+              <input type="text" id="setting-llm-model" placeholder="gpt-4o-mini">
+            </div>
+            <div style="flex: 1;">
+              <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">视觉模型 (Vision Model):</label>
+              <input type="text" id="setting-vision-model" placeholder="gpt-4o">
+            </div>
+          </div>
+          <div>
+            <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">采样温度 (Temperature):</label>
+            <input type="text" id="setting-llm-temp" placeholder="0.7">
+          </div>
+          <div style="margin-top: 1.2rem; display: flex; justify-content: flex-start;">
+            <button type="button" class="secondary" id="btn-test-llm" style="padding: 0.4rem 1rem; font-size: 0.85rem; display: flex; align-items: center; gap: 0.4rem;">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
+              测试连接
+            </button>
+          </div>
+        </div>
+
+        <!-- Image Tab -->
+        <div id="tab-image" class="tab-pane" style="display: none;">
+          <p style="font-size: 0.82rem; color: #666; background: #f0f4ff; border: 1.5px dashed #aac; border-radius: 8px; padding: 0.6rem 0.9rem; margin-bottom: 1rem; line-height: 1.7;">
+            💡 <strong>newapi / 中转站用户</strong>：将接口地址填写为中转站的 <code>/v1</code> 路径（如 <code>https://你的域名/v1</code>），密钥填写中转密钥即可。如果与文本模型使用同一个中转站，可点击下方「同步」按钮快速填入。支持 DALL·E、Flux、CogView 等各类生图模型。
+          </p>
+          <div style="margin-bottom: 0.8rem;">
+            <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">接口地址 (Base URL):</label>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+              <input type="text" id="setting-image-base-url" placeholder="https://api.openai.com/v1" style="flex: 1;">
+              <button class="secondary" onclick="copyLlmUrlToImage()" style="white-space: nowrap; font-size: 0.82rem; padding: 0.4rem 0.7rem; display: flex; align-items: center; gap: 0.3rem;">
+                <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                同步文本 URL
+              </button>
+            </div>
+          </div>
+          <div style="margin-bottom: 0.8rem;">
+            <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">接口密钥 (API Key):</label>
+            <input type="password" id="setting-image-api-key" placeholder="sk-...">
+          </div>
+          <div style="display: flex; gap: 1rem; margin-bottom: 0.8rem;">
+            <div style="flex: 1;">
+              <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">生图模型 (Model):</label>
+              <input type="text" id="setting-image-model" placeholder="gpt-image-1 / dall-e-3 / cogview-3">
+            </div>
+            <div style="flex: 1;">
+              <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">图片尺寸 (Size):</label>
+              <input type="text" id="setting-image-size" placeholder="1024x1024">
+            </div>
+          </div>
+          <p style="font-size: 0.78rem; color: #888; margin-top: 0.2rem;">
+            常用尺寸：<code>1024x1024</code>（通用）、<code>1536x1024</code>（gpt-image-1 宽屏）、<code>1792x1024</code>（DALL·E 3）。若中转模型不支持尺寸参数，系统将自动去除重试。
+          </p>
+          <div style="margin-top: 1.2rem; display: flex; justify-content: flex-start;">
+            <button type="button" class="secondary" id="btn-test-image" style="padding: 0.4rem 1rem; font-size: 0.85rem; display: flex; align-items: center; gap: 0.4rem;">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
+              测试连接
+            </button>
+          </div>
+        </div>
+
+        <!-- TTS Tab -->
+        <div id="tab-tts" class="tab-pane" style="display: none;">
+          <p style="font-size: 0.82rem; color: #666; background: #f0f4ff; border: 1.5px dashed #aac; border-radius: 8px; padding: 0.6rem 0.9rem; margin-bottom: 1rem; line-height: 1.7;">
+            💡 <strong>语音合成说明</strong>：默认使用 MiniMax TTS v2 接口。如果此处留空，系统将自动读取系统环境变量中的 <code>MINIMAX_API_KEY</code> 进行语音合成。若使用中转站接口，需确保中转站完全兼容 MiniMax 音频合成接口格式。
+          </p>
+          <div style="margin-bottom: 0.8rem;">
+            <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">语音接口地址 (Endpoint):</label>
+            <input type="text" id="setting-tts-endpoint" placeholder="https://api.minimaxi.com/v1/t2a_v2">
+          </div>
+          <div style="margin-bottom: 0.8rem;">
+            <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">语音接口密钥 (API Key):</label>
+            <input type="password" id="setting-tts-api-key" placeholder="API Key">
+          </div>
+          <div style="margin-bottom: 0.8rem; display: flex; gap: 1rem;">
+            <div style="flex: 1;">
+              <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">语音模型 (Model):</label>
+              <input type="text" id="setting-tts-model" placeholder="speech-2.8-hd">
+            </div>
+            <div style="flex: 1;">
+              <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">音色标识 (Voice ID):</label>
+              <input type="text" id="setting-tts-voice-id" placeholder="Chinese (Mandarin)_Soft_Girl">
+            </div>
+          </div>
+          <div style="display: flex; gap: 1rem;">
+            <div style="flex: 1;">
+              <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">语速 (0.5 - 2.0):</label>
+              <input type="text" id="setting-tts-speed" placeholder="1.0">
+            </div>
+            <div style="flex: 1;">
+              <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">音量 (0.5 - 2.0):</label>
+              <input type="text" id="setting-tts-volume" placeholder="1.0">
+            </div>
+            <div style="flex: 1;">
+              <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">音调 (-12 - 12):</label>
+              <input type="text" id="setting-tts-pitch" placeholder="0">
+            </div>
+          </div>
+          <div style="margin-top: 1.2rem; display: flex; justify-content: flex-start;">
+            <button type="button" class="secondary" id="btn-test-tts" style="padding: 0.4rem 1rem; font-size: 0.85rem; display: flex; align-items: center; gap: 0.4rem;">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
+              测试连接
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1.5rem; border-top: 2px dashed #111; padding-top: 1rem;">
+        <button id="btn-settings-cancel" class="secondary">取消</button>
+        <button id="btn-settings-save" class="success">保存设置</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: 手绘风确认对话框 -->
+  <div id="modal-confirm" class="modal-overlay" style="display: none;">
+    <div class="modal-content" style="max-width: 420px; text-align: center;">
+      <h3 class="highlight-title" id="confirm-title" style="margin-bottom: 1.2rem;">操作确认</h3>
+      <p id="confirm-message" style="margin-bottom: 1.5rem; font-size: 1.1rem; color: #333; line-height: 1.5;"></p>
+      <div style="display: flex; justify-content: center; gap: 1.5rem;">
+        <button id="btn-confirm-no" class="secondary">取消</button>
+        <button id="btn-confirm-yes" class="danger">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-container"></div>
+
+  <!-- 主业务 JavaScript 脚本 -->
+  <script src="app.js?v=2.0.0"></script>
+</body>
+</html>

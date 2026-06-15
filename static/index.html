@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PPT Visualization Studio - 手绘线稿风格</title>
-  <link rel="stylesheet" href="style.css?v=2.0.0">
+  <link rel="stylesheet" href="style.css?v=2.1.0">
 </head>
 <body>
 
@@ -269,7 +269,7 @@
               <div style="display: flex; gap: 1rem; align-items: center;">
                 <button id="step5-btn-automask" class="success">
                   <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="10" rx="2"></rect><circle cx="12" cy="5" r="2"></circle><path d="M12 7v4M8 16h.01M16 16h.01"></path></svg>
-                  AI 视觉自动框选 (OpenAI Vision)
+                  本地批量 Mask 标注
                 </button>
                 <span style="color: #666; font-size: 0.9rem;">提示：拖拽矩形框可调整位置，拖动右下角可调整大小。双击空白新建。</span>
               </div>
@@ -387,10 +387,19 @@
               <p style="font-size: 1.1rem; font-weight: bold; margin-bottom: 0.5rem; margin-top: 1rem;">视频正在渲染中...</p>
               <p>我们将自动拉起 Node.js 进行并行渲染，请耐心等待 1~3 分钟。</p>
             </div>
+
+            <div id="step8-error-box" class="card sketch-dashed" style="display: none; margin-top: 1.5rem; border-color: #d73333; background: #fff4f4;">
+              <h3 style="margin-bottom: 0.6rem;">渲染失败</h3>
+              <p id="step8-error-message" style="white-space: pre-wrap; word-break: break-word;"></p>
+              <p style="margin-top: 0.8rem; font-size: 0.9rem;">详细阶段日志见项目目录下的 logs/pipeline.log。</p>
+            </div>
           </div>
 
           <div id="step8-result-box" class="card" style="display: none; margin-top: 1.5rem; text-align: center;">
             <h3 style="margin-bottom: 1.5rem;">🎉 视频渲染成功！</h3>
+            <div id="step8-stale-warning" class="sketch-dashed" style="display: none; margin-bottom: 1rem; padding: 0.8rem; background: #fff7df; border-color: #d49b1f; text-align: left;">
+              当前视频不是最新版本：Mask、旁白或音频资产在视频生成后又发生了变化。请点击“重新渲染最终视频”生成最新成品。
+            </div>
             <div class="video-preview-box">
               <video id="step8-video-player" controls src=""></video>
             </div>
@@ -399,6 +408,7 @@
                 <svg class="icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 3v12"></path></svg>
                 下载高清视频 (MP4)
               </a>
+              <button id="step8-btn-rerender" class="secondary">重新渲染最终视频</button>
               <button id="step8-btn-finish" class="secondary">完成并退出项目</button>
             </div>
           </div>
@@ -597,6 +607,6 @@
   <div id="toast-container"></div>
 
   <!-- 主业务 JavaScript 脚本 -->
-  <script src="app.js?v=2.0.0"></script>
+  <script src="app.js?v=2.1.0"></script>
 </body>
 </html>

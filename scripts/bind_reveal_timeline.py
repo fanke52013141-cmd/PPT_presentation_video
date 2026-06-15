@@ -91,6 +91,8 @@ def bind_slide(slide_dir: Path, lead_sec: float, preserve_existing_at: bool) -> 
     for index, event in enumerate(events):
         if not isinstance(event, dict):
             raise BindError(f"Invalid event object: {animation_path}")
+        if event.get("link_to_narration") is False:
+            continue
         if preserve_existing_at and isinstance(event.get("at"), (int, float)) and event.get("linked_segment_id"):
             continue
         linked_segment_id = str(event.get("linked_segment_id", "")).strip()
@@ -109,7 +111,10 @@ def bind_slide(slide_dir: Path, lead_sec: float, preserve_existing_at: bool) -> 
     duration = audio_timeline.get("duration_sec")
     if isinstance(duration, (int, float)):
         event_end = max((float(event.get("at", 0)) + float(event.get("duration", 0)) for event in events if isinstance(event, dict)), default=0.0)
-        timeline["duration_sec"] = round(max(float(duration), event_end + 0.25), 3)
+        next_duration = round(max(float(duration), event_end + 0.25), 3)
+        if timeline.get("duration_sec") != next_duration:
+            timeline["duration_sec"] = next_duration
+            changed = True
     if changed:
         write_json(animation_path, timeline)
     return changed

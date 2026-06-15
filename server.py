@@ -6,6 +6,7 @@ import json
 import shutil
 import logging
 import subprocess
+import time
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
@@ -18,7 +19,7 @@ from PIL import Image
 import httpx
 from openai import OpenAI
 
-def get_openai_client(api_key: str, base_url: str = None) -> OpenAI:
+def get_openai_client(api_key: str, base_url: str = None, timeout: float = 120.0, max_retries: int = 1) -> OpenAI:
     # 强制不使用环境变量中的代理，防止某些局域网代理的 SSL 拦截规则冲突
     # 并强制定义 User-Agent 为 Chrome 浏览器以绕过 Cloudflare WAF/JA3 爬虫过滤指纹
     headers = {
@@ -28,9 +29,16 @@ def get_openai_client(api_key: str, base_url: str = None) -> OpenAI:
     http_client = httpx.Client(
         limits=limits,
         trust_env=False,
-        headers=headers
+        headers=headers,
+        timeout=timeout
     )
-    return OpenAI(api_key=api_key, base_url=base_url, http_client=http_client)
+    return OpenAI(
+        api_key=api_key,
+        base_url=base_url,
+        http_client=http_client,
+        timeout=timeout,
+        max_retries=max_retries,
+    )
 
 from database import init_db, get_db, Project, Setting
 from config_store import get_all_settings, update_settings, get_setting
@@ -53,6 +61,51 @@ app.add_middleware(
 
 RUNS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "runs"))
 os.makedirs(RUNS_DIR, exist_ok=True)
+
+STEP1_LLM_TIMEOUT_SEC = 60.0
+STEP2_LLM_TIMEOUT_SEC = 120.0
+STEP7_TTS_TIMEOUT_SEC = 180
+STEP7_BIND_TIMEOUT_SEC = 60
+
+def _redact_log_value(key: str, value: Any) -> Any:
+    lowered = key.lower()
+    if any(token in lowered for token in ("api_key", "apikey", "authorization", "token", "secret")):
+        return "***REDACTED***" if value else value
+    if isinstance(value, str) and len(value) > 4000:
+        return value[:4000] + f"\n... [truncated {len(value) - 4000} chars]"
+    return value
+
+def write_project_log(project: Project, event: str, **fields: Any) -> None:
+    try:
+        log_dir = os.path.join(project.run_dir, "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        record = {
+            "ts": datetime.now().isoformat(timespec="seconds"),
+            "project_id": project.id,
+            "event": event,
+        }
+        record.update({key: _redact_log_value(key, value) for key, value in fields.items()})
+        line = json.dumps(record, ensure_ascii=False, default=str)
+        with open(os.path.join(log_dir, "pipeline.log"), "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+        logger.info("project=%s event=%s %s", project.id, event, line)
+    except Exception as exc:
+        logger.warning("Failed to write project log for %s: %s", getattr(project, "id", "<unknown>"), exc)
+
+def should_retry_without_response_format(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(
+        marker in msg
+        for marker in (
+            "response_format",
+            "json_object",
+            "unsupported",
+            "unrecognized",
+            "invalid parameter",
+            "not support",
+            "400",
+        )
+    )
 
 # Pydantic 响应模型
 class ProjectCreate(BaseModel):
@@ -333,9 +386,16 @@ def handle_step_navigation(project: Project, target_step: int, db: Session):
         s_str = str(s_idx)
         if current_status.get(s_str) in ["completed", "in_progress", "pending_reconfirmation"]:
             current_status[s_str] = "pending_reconfirmation"
-            
+
+    # If a later step completes, any earlier "needs reconfirmation" step has
+    # effectively been reconfirmed by that later successful run.
+    for s_idx in range(1, target_step):
+        s_str = str(s_idx)
+        if current_status.get(s_str) == "pending_reconfirmation":
+            current_status[s_str] = "completed"
+
     current_status[str(target_step)] = "completed"
-    project.current_step = target_step
+    project.current_step = max(project.current_step or target_step, target_step)
     project.set_step_status(current_status)
     db.commit()
 
@@ -377,25 +437,48 @@ def import_article(project_id: str, content: Optional[str] = Form(None), db: Ses
     
     if not llm_api_key:
         raise HTTPException(status_code=400, detail="未配置大模型 API 密钥，请在系统设置中配置后再试。")
-    
-    client = get_openai_client(api_key=llm_api_key, base_url=llm_base_url)
+
+    write_project_log(
+        project,
+        "step1_import_start",
+        article_chars=len(content),
+        model=llm_model,
+        base_url=llm_base_url,
+        timeout_sec=STEP1_LLM_TIMEOUT_SEC,
+    )
+    client = get_openai_client(
+        api_key=llm_api_key,
+        base_url=llm_base_url,
+        timeout=STEP1_LLM_TIMEOUT_SEC,
+        max_retries=0,
+    )
     system_prompt = "你是一个专业的内容提炼助手。请阅读用户输入的 Markdown 文章，提炼出它的核心标题以及一份易于视频分镜表达的摘要提纲（150字以内）。请直接返回 JSON 格式结果，格式为: {\"title\": \"标题\", \"summary\": \"提炼好的摘要提纲\", \"content\": \"原文\"}"
     
     try:
+        started_at = time.monotonic()
         response = client.chat.completions.create(
             model=llm_model,
             temperature=llm_temp,
             response_format={"type": "json_object"},
+            timeout=STEP1_LLM_TIMEOUT_SEC,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": content}
             ]
         )
+        elapsed = round(time.monotonic() - started_at, 3)
         content_str = response.choices[0].message.content.strip()
+        write_project_log(
+            project,
+            "step1_llm_success",
+            elapsed_sec=elapsed,
+            response_chars=len(content_str),
+        )
         cleaned_content = clean_json_markdown(content_str)
         brief = json.loads(cleaned_content)
         brief["content"] = content
     except Exception as e:
+        write_project_log(project, "step1_llm_error", error_type=type(e).__name__, error=str(e))
         logger.error(f"LLM ingest article error: {e}")
         raise HTTPException(status_code=500, detail=f"文章提炼失败: {str(e)}")
             
@@ -404,6 +487,7 @@ def import_article(project_id: str, content: Optional[str] = Form(None), db: Ses
         json.dump(brief, f, ensure_ascii=False, indent=2)
         
     handle_step_navigation(project, 1, db)
+    write_project_log(project, "step1_import_completed", brief_path=brief_path)
     return {"success": True, "brief": brief}
 
 @app.get("/api/projects/{project_id}/steps/1/result")
@@ -452,88 +536,95 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
         
     with open(brief_path, "r", encoding="utf-8") as f:
         brief = json.load(f)
-        
-    llm_api_key = get_setting("llm_api_key")
-    llm_base_url = get_setting("llm_base_url")
-    llm_model = get_setting("llm_model")
-    llm_temp = float(get_setting("llm_temperature", "0.7"))
-    
-    if not llm_api_key:
-        raise HTTPException(status_code=400, detail="未配置大模型 API 密钥，请在系统设置中配置后再试。")
-        
-    # 加载已有的 visual_contract 架构 schema 做指导
-    schema_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "schemas", "visual_contract.schema.json"))
-    schema_hint = ""
-    if os.path.exists(schema_path):
-        with open(schema_path, "r", encoding="utf-8") as f:
-            schema_hint = f.read()
-            
-    system_prompt = f"""你是一个顶级的 PPT 视频分镜策划师。
-请阅读用户输入的内容摘要和全文，设计出一份符合 PPT 动画视频制作标准的视觉合约(Visual Contract)。
-视频的画面风格为“温暖极简手绘线稿风”。
-要求：
-1. 必须要将整篇文章合理划分，分成 8 到 14 页 Slide（每页的 slide_id 为 slide_001, slide_002 格式）。
-2. 每页 Slide 必须定义 5-8 个视觉分组(visual_groups)，包含：
-   - 1个 title 主标题（role 为 'title'）
-   - 1个 subtitle 副标题（role 为 'subtitle'）
-   - 2-4个 body/diagram 主体/图表区（role 只能是 'content_body', 'diagram', 'annotation', 'summary', 'decoration' 之一）
-   - 1个 summary 总结区（role 为 'summary'）
-3. 每个视觉分组（visual_groups）必须有：
-   - id: 比如 title_group, subtitle_group, body_group_01 等
-   - visible_text: 页面上会显式画出来的中文字符标签（非常重要，通常为 2-8 个字，绝对不能空）
-   - visual_anchor: 手绘线稿元素的视觉描述（比如“顶部主标题”、“左边带圆圈数字1的方框”、“中间一个简笔画小脑”）
-   - narration_function: 解释该分组在画面中所起的视觉/解释作用
-   - reveal_order: 页面渲染时层淡入淡出显示的顺序，从 1 开始依次增加
-4. 必须规划 narration_beats (旁白语段)，使说话声音与相应视觉分组绑定：
-   - group_id: 指向前面定义的 visual_groups 中的 id
-   - visible_anchor: 该分组对应的 visible_text 文本（不可写错，必须一致）
-   - spoken_intent: 这一句话想达到的意图
-   - spoken_text: 这一句话具体要朗读的中文旁白（需自然连贯，解释 visible_text）
-5. 请确保生成的 JSON 数据严格符合以下的 JSON Schema 格式要求：
-{schema_hint}
 
-请直接返回合法的 JSON 对象，不要包含 markdown 标记的 ```json 外壳。"""
+    trace_id = uuid.uuid4().hex[:8]
+    article_path = os.path.join(project.run_dir, "inputs", "article.md")
+    write_project_log(
+        project,
+        "step2_execute_start",
+        trace_id=trace_id,
+        mode="local_scaffold",
+        brief_title=brief.get("title"),
+        summary_chars=len(str(brief.get("summary", ""))),
+        content_chars=len(str(brief.get("content", ""))),
+    )
 
     try:
-        client = get_openai_client(api_key=llm_api_key, base_url=llm_base_url)
-        try:
-            response = client.chat.completions.create(
-                model=llm_model,
-                temperature=llm_temp,
-                response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"项目主题：{brief['title']}\n摘要提纲：{brief['summary']}\n正文全文：\n{brief['content']}"}
-                ]
-            )
-        except Exception as inner_e:
-            logger.warning(f"Failed LLM call with response_format in step 2, retrying without it: {inner_e}")
-            response = client.chat.completions.create(
-                model=llm_model,
-                temperature=llm_temp,
-                messages=[
-                    {"role": "system", "content": system_prompt + " 请只输出纯 JSON，不要包含 Markdown 代码块标记（如 ```json ）。"},
-                    {"role": "user", "content": f"项目主题：{brief['title']}\n摘要提纲：{brief['summary']}\n正文全文：\n{brief['content']}"}
-                ]
-            )
-            
-        content_str = response.choices[0].message.content.strip()
-        cleaned_content = clean_json_markdown(content_str)
-        contract = json.loads(cleaned_content)
-        
-        # 强制补充一些固定版本信息
-        contract["version"] = "visual_contract_v1"
-        if "topic" not in contract:
-            contract["topic"] = {
-                "topic_id": "topic_" + project_id,
-                "topic_name": brief["title"],
-                "topic_summary": brief["summary"]
-            }
-            
-        # 写入 JSON
+        if not os.path.exists(article_path):
+            content = str(brief.get("content", "")).strip()
+            if not content:
+                raise RuntimeError("article.md 不存在，且 article_brief.json 中没有 content 字段，无法生成分镜骨架")
+            os.makedirs(os.path.dirname(article_path), exist_ok=True)
+            with open(article_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            write_project_log(project, "step2_article_restored", trace_id=trace_id, article_path=article_path)
+
         contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
+        scaffold_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "write_visual_contract.py"))
+        scaffold_args = [
+            sys.executable,
+            scaffold_script,
+            "--run-dir",
+            project.run_dir,
+            "--topic-name",
+            str(brief.get("title") or project.name),
+            "--overwrite",
+        ]
+        started_at = time.monotonic()
+        write_project_log(
+            project,
+            "step2_scaffold_start",
+            trace_id=trace_id,
+            script=scaffold_script,
+            article_path=article_path,
+            contract_path=contract_path,
+        )
+        scaffold_res = subprocess.run(
+            scaffold_args,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        elapsed = round(time.monotonic() - started_at, 3)
+        if scaffold_res.returncode != 0:
+            write_project_log(
+                project,
+                "step2_scaffold_error",
+                trace_id=trace_id,
+                elapsed_sec=elapsed,
+                returncode=scaffold_res.returncode,
+                stdout=scaffold_res.stdout.strip(),
+                stderr=scaffold_res.stderr.strip(),
+            )
+            raise RuntimeError(f"本地分镜骨架生成失败: {scaffold_res.stderr.strip() or scaffold_res.stdout.strip()}")
+
+        write_project_log(
+            project,
+            "step2_scaffold_success",
+            trace_id=trace_id,
+            elapsed_sec=elapsed,
+            stdout=scaffold_res.stdout.strip(),
+        )
+
+        with open(contract_path, "r", encoding="utf-8-sig") as f:
+            contract = json.load(f)
+
+        # 用第一步提炼结果覆盖 topic 元信息，避免脚本从文件名推导出不友好的标题。
+        contract["version"] = "visual_contract_v1"
+        contract["topic"] = {
+            "topic_id": "topic_" + project_id,
+            "topic_name": brief.get("title") or project.name,
+            "topic_summary": brief.get("summary", ""),
+        }
         with open(contract_path, "w", encoding="utf-8") as f:
             json.dump(contract, f, ensure_ascii=False, indent=2)
+        write_project_log(
+            project,
+            "step2_contract_written",
+            trace_id=trace_id,
+            contract_path=contract_path,
+            slide_count=len(contract.get("slides", [])) if isinstance(contract.get("slides"), list) else 0,
+        )
             
         # 调用原项目的验证脚本进行 contract 校验
         validate_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "validate_visual_contract.py"))
@@ -543,13 +634,29 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
         
         if val_res.returncode != 0:
             logger.warning(f"Visual contract validation warning:\n{val_res.stderr}")
+            write_project_log(
+                project,
+                "step2_contract_validation_warning",
+                trace_id=trace_id,
+                returncode=val_res.returncode,
+                stderr=val_res.stderr.strip(),
+            )
             # 虽然校验可能报错，但如果不严重，仍然保存以方便用户在前台手动修改
+        else:
+            write_project_log(
+                project,
+                "step2_contract_validation_success",
+                trace_id=trace_id,
+                stdout=val_res.stdout.strip(),
+            )
             
         handle_step_navigation(project, 2, db)
+        write_project_log(project, "step2_execute_completed", trace_id=trace_id)
         return {"success": True, "contract": contract}
     except Exception as e:
-        logger.error(f"LLM write visual contract error: {e}")
-        raise HTTPException(status_code=500, detail=f"LLM 规划分镜失败: {str(e)}")
+        write_project_log(project, "step2_execute_error", trace_id=trace_id, error_type=type(e).__name__, error=str(e))
+        logger.error(f"Write visual contract error: {e}")
+        raise HTTPException(status_code=500, detail=f"本地分镜规划失败: {str(e)}")
 
 @app.get("/api/projects/{project_id}/steps/2/result")
 def get_step2_result(project_id: str, db: Session = Depends(get_db)):
@@ -753,6 +860,170 @@ def get_all_images(project_id: str, db: Session = Depends(get_db)):
                 })
     return {"success": True, "images": results}
 
+LOCKED_MASK_REVIEW_STATUSES = {"reviewed", "approved", "manual_reviewed", "manual_adjusted", "locked"}
+
+def refresh_unlocked_step5_boxes_from_template(project: Project, manifest_path: str) -> None:
+    if not os.path.exists(manifest_path):
+        return
+    repo_root = os.path.abspath(os.path.dirname(__file__))
+    template_script = os.path.join(repo_root, "scripts", "write_reveal_manifest_template.py")
+    template_path = os.path.join(project.run_dir, "planning", "reveal_manifest.template_refresh.json")
+    os.makedirs(os.path.dirname(template_path), exist_ok=True)
+    res = subprocess.run([
+        sys.executable,
+        template_script,
+        "--run-dir",
+        project.run_dir,
+        "--out",
+        template_path,
+        "--overwrite",
+    ], capture_output=True, text=True, encoding="utf-8", timeout=90)
+    if res.returncode != 0:
+        write_project_log(
+            project,
+            "step5_template_refresh_error",
+            returncode=res.returncode,
+            stdout=res.stdout.strip(),
+            stderr=res.stderr.strip(),
+        )
+        return
+
+    with open(manifest_path, "r", encoding="utf-8-sig") as f:
+        current = json.load(f)
+    with open(template_path, "r", encoding="utf-8-sig") as f:
+        template = json.load(f)
+
+    current_by_slide = {
+        str(slide.get("slide_id")): slide
+        for slide in current.get("slides", [])
+        if isinstance(slide, dict)
+    }
+    merged_slides = []
+    for template_slide in template.get("slides", []):
+        if not isinstance(template_slide, dict):
+            continue
+        slide_id = str(template_slide.get("slide_id", ""))
+        current_slide = current_by_slide.get(slide_id, {})
+        current_groups = {
+            str(group.get("id")): group
+            for group in current_slide.get("groups", [])
+            if isinstance(group, dict)
+        }
+        template_group_ids = set()
+        merged_groups = []
+        for template_group in template_slide.get("groups", []):
+            if not isinstance(template_group, dict):
+                continue
+            group_id = str(template_group.get("id", ""))
+            template_group_ids.add(group_id)
+            current_group = current_groups.get(group_id)
+            if current_group and str(current_group.get("review_status", "")).strip() in LOCKED_MASK_REVIEW_STATUSES:
+                merged_groups.append(current_group)
+                continue
+            merged_group = dict(template_group)
+            if current_group:
+                # Keep the user's current reveal style and narration binding, but reset the search box.
+                for key in ("reveal", "narration_beat_id", "linked_segment_id", "link_to_narration"):
+                    if key in current_group:
+                        merged_group[key] = current_group[key]
+                if current_group.get("visible_text"):
+                    merged_group["visible_text"] = current_group["visible_text"]
+                if current_group.get("visual_anchor"):
+                    merged_group["visual_anchor"] = current_group["visual_anchor"]
+            merged_groups.append(merged_group)
+        for group_id, current_group in current_groups.items():
+            if group_id not in template_group_ids:
+                merged_groups.append(current_group)
+        merged_slide = {**template_slide, **{key: value for key, value in current_slide.items() if key not in {"groups", "reveal_boxes"}}}
+        merged_slide["groups"] = merged_groups
+        merged_slides.append(merged_slide)
+
+    current["slides"] = merged_slides
+    current.pop("reveal_boxes", None)
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(current, f, ensure_ascii=False, indent=2)
+    write_project_log(project, "step5_template_refresh_success", stdout=res.stdout.strip())
+
+def run_step5_local_masking(project: Project, manifest_path: str, source: str) -> Dict[str, Any]:
+    repo_root = os.path.abspath(os.path.dirname(__file__))
+    autofit_script = os.path.join(repo_root, "scripts", "auto_fit_reveal_boxes.py")
+    preview_script = os.path.join(repo_root, "scripts", "draw_reveal_manifest_preview.py")
+    out_dir = os.path.join(project.run_dir, "review")
+
+    write_project_log(project, "step5_local_mask_start", source=source, manifest_path=manifest_path)
+    refresh_unlocked_step5_boxes_from_template(project, manifest_path)
+    try:
+        fit_res = subprocess.run([
+            sys.executable,
+            autofit_script,
+            "--manifest",
+            manifest_path,
+            "--repo-root",
+            repo_root,
+            "--search-margin",
+            "24",
+            "--max-area-ratio",
+            "1.8",
+        ], capture_output=True, text=True, encoding="utf-8", timeout=90)
+    except subprocess.TimeoutExpired as exc:
+        write_project_log(project, "step5_auto_fit_timeout", source=source, timeout_sec=90)
+        raise HTTPException(status_code=504, detail="本地 Mask 自动标注超时，请检查上传图片是否过大或文件是否损坏") from exc
+
+    if fit_res.returncode != 0:
+        logger.error(f"Auto-fit reveal boxes failed: {fit_res.stderr}")
+        write_project_log(
+            project,
+            "step5_auto_fit_error",
+            source=source,
+            returncode=fit_res.returncode,
+            stdout=fit_res.stdout.strip(),
+            stderr=fit_res.stderr.strip(),
+        )
+        raise HTTPException(status_code=500, detail="墨水框线自适应调整失败，请检查图片是否含有墨水或分镜配置是否正常")
+
+    write_project_log(
+        project,
+        "step5_auto_fit_success",
+        source=source,
+        stdout=fit_res.stdout.strip(),
+        stderr=fit_res.stderr.strip(),
+    )
+
+    try:
+        prev_res = subprocess.run([
+            sys.executable,
+            preview_script,
+            "--manifest",
+            manifest_path,
+            "--repo-root",
+            repo_root,
+            "--out-dir",
+            out_dir,
+        ], capture_output=True, text=True, encoding="utf-8", timeout=90)
+    except subprocess.TimeoutExpired:
+        write_project_log(project, "step5_preview_timeout", source=source, timeout_sec=90)
+        return {"out_dir": out_dir, "preview_warning": "preview_timeout"}
+
+    if prev_res.returncode != 0:
+        logger.warning(f"Draw reveal manifest preview warned: {prev_res.stderr}")
+        write_project_log(
+            project,
+            "step5_preview_warning",
+            source=source,
+            returncode=prev_res.returncode,
+            stdout=prev_res.stdout.strip(),
+            stderr=prev_res.stderr.strip(),
+        )
+    else:
+        write_project_log(
+            project,
+            "step5_preview_success",
+            source=source,
+            stdout=prev_res.stdout.strip(),
+        )
+
+    return {"out_dir": out_dir, "fit_stdout": fit_res.stdout.strip(), "preview_stdout": prev_res.stdout.strip()}
+
 @app.post("/api/projects/{project_id}/steps/3/confirm")
 def confirm_images(project_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -766,18 +1037,21 @@ def confirm_images(project_id: str, db: Session = Depends(get_db)):
         template_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "write_reveal_manifest_template.py"))
         res = subprocess.run([
             sys.executable, template_script, "--run-dir", project.run_dir
-        ], capture_output=True, text=True, encoding="utf-8")
+        ], capture_output=True, text=True, encoding="utf-8", timeout=90)
         if res.returncode != 0:
             logger.error(f"Failed to write reveal manifest template: {res.stderr}")
+            write_project_log(
+                project,
+                "step5_manifest_template_error",
+                returncode=res.returncode,
+                stdout=res.stdout.strip(),
+                stderr=res.stderr.strip(),
+            )
             raise HTTPException(status_code=500, detail="自动创建 Mask 标注文件失败，请确认分镜规划正常")
-            
-        # 预先执行 auto_fit_reveal_boxes.py 进行算法自适应黑墨水对齐
-        autofit_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "auto_fit_reveal_boxes.py"))
-        fit_res = subprocess.run([
-            sys.executable, autofit_script, "--manifest", manifest_path
-        ], capture_output=True, text=True, encoding="utf-8")
-        if fit_res.returncode != 0:
-            logger.warning(f"Initial auto-fit reveal boxes warning: {fit_res.stderr}")
+        write_project_log(project, "step5_manifest_template_created", stdout=res.stdout.strip())
+
+    # 每次确认图片后都跑本地 Mask 自动标注，覆盖尚未手工确认的 auto-fit 框。
+    run_step5_local_masking(project, manifest_path, source="confirm_images")
             
     handle_step_navigation(project, 4, db)
     return {"success": True}
@@ -793,153 +1067,12 @@ def auto_mask_project(project_id: str, db: Session = Depends(get_db)):
     manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
     if not os.path.exists(manifest_path):
         raise HTTPException(status_code=400, detail="Mask 配置文件尚未生成，请返回确认图片状态")
-        
-    llm_api_key = get_setting("llm_api_key")
-    llm_base_url = get_setting("llm_base_url")
-    vision_model = get_setting("vision_model", "gpt-4o")
-    
-    # 获取每一页的图片和 visual groups 以调用 Vision API 进行自动标注
-    vision_used = False
-    if not llm_api_key:
-        logger.warning("No LLM API Key configured, skipping vision-assisted auto masking. Running auto-fit fallback.")
-    else:
-        try:
-            with open(manifest_path, "r", encoding="utf-8") as f:
-                manifest = json.load(f)
-                
-            client = get_openai_client(api_key=llm_api_key, base_url=llm_base_url)
-            import base64
-            
-            for slide in manifest.get("slides", []):
-                slide_id = slide["slide_id"]
-                img_path = os.path.join(project.run_dir, "slides", slide_id, "visual_draft.png")
-                if not os.path.exists(img_path):
-                    continue
-                    
-                # 优化：将生图大分辨率在后端等比缩放到 960 宽，规避 Vision API 发送 Base64 消息体过大（Payload 413）或接口超时问题
-                with open(img_path, "rb") as image_file:
-                    try:
-                        from PIL import Image
-                        img = Image.open(image_file)
-                        if img.width > 960:
-                            ratio = 960 / img.width
-                            new_h = int(img.height * ratio)
-                            img = img.resize((960, new_h), Image.Resampling.LANCZOS)
-                        buf = io.BytesIO()
-                        img.save(buf, format="PNG")
-                        base64_image = base64.b64encode(buf.getvalue()).decode('utf-8')
-                    except Exception as resize_err:
-                        logger.warning(f"Resize image failed for auto-mask {slide_id}: {resize_err}")
-                        image_file.seek(0)
-                        base64_image = base64.b64encode(image_file.read()).decode('utf-8')
-                    
-                # 拼接分组信息
-                groups_info = []
-                for box in slide.get("reveal_boxes", []):
-                    groups_info.append(f"Group ID: {box['group_id']}, text label: '{box.get('text_label', '')}'")
-                groups_info_str = "\n".join(groups_info)
-                
-                system_prompt = (
-                    "You are a Vision AI coordinator. Analyze the provided image which is a 1920x1080 whiteboard slide. "
-                    "Locate the bounding box coordinates [x_min, y_min, x_max, y_max] for each visual text label list. "
-                    "The coordinates must be on the absolute scale of 0 to 1920 for X, and 0 to 1080 for Y. "
-                    "Return a JSON object in this format: "
-                    "{\"boxes\": [{\"group_id\": \"group_id\", \"box\": [x_min, y_min, x_max, y_max]}]}"
-                )
-                
-                user_msg = (
-                    f"Please find the coordinates of the bounding boxes containing these specific text labels or graphics in the 1920x1080 image:\n"
-                    f"{groups_info_str}"
-                )
-                
-                try:
-                    response = client.chat.completions.create(
-                        model=vision_model,
-                        response_format={"type": "json_object"},
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {
-                                "role": "user",
-                                "content": [
-                                    {"type": "text", "text": user_msg},
-                                    {
-                                        "type": "image_url",
-                                        "image_url": {
-                                            "url": f"data:image/png;base64,{base64_image}"
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    )
-                except Exception as inner_e:
-                    logger.warning(f"Failed Vision call with response_format, retrying without it: {inner_e}")
-                    response = client.chat.completions.create(
-                        model=vision_model,
-                        messages=[
-                            {"role": "system", "content": system_prompt + " Please return ONLY raw JSON without any markdown block wrappers like ```json."},
-                            {
-                                "role": "user",
-                                "content": [
-                                    {"type": "text", "text": user_msg},
-                                    {
-                                        "type": "image_url",
-                                        "image_url": {
-                                            "url": f"data:image/png;base64,{base64_image}"
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    )
-                try:
-                    resp_content = response.choices[0].message.content.strip()
-                    cleaned_content = clean_json_markdown(resp_content)
-                    vision_data = json.loads(cleaned_content)
-                    boxes_dict = {b["group_id"]: b["box"] for b in vision_data.get("boxes", [])}
-                    
-                    for box in slide.get("reveal_boxes", []):
-                        g_id = box["group_id"]
-                        if g_id in boxes_dict:
-                            box["box"] = [int(v) for v in boxes_dict[g_id]]
-                except Exception as ex:
-                    logger.error(f"Failed to parse vision response for slide {slide_id}: {ex}. Content: {response.choices[0].message.content}")
-                    
-            # 保存更新后的 manifest
-            with open(manifest_path, "w", encoding="utf-8") as f:
-                json.dump(manifest, f, ensure_ascii=False, indent=2)
-            vision_used = True
-                
-        except Exception as e:
-            logger.error(f"Vision assisted auto-masking failed: {e}. Will fallback to deterministic scripts.")
-            vision_used = False
-            
-    # 接着运行 auto_fit_reveal_boxes.py 做黑墨水自适应边界修剪
-    autofit_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "auto_fit_reveal_boxes.py"))
-    fit_res = subprocess.run([
-        sys.executable, autofit_script, "--manifest", manifest_path
-    ], capture_output=True, text=True, encoding="utf-8")
-    
-    if fit_res.returncode != 0:
-        logger.error(f"Auto-fit reveal boxes failed: {fit_res.stderr}")
-        raise HTTPException(status_code=500, detail="墨水框线自适应调整失败，请检查图片是否含有墨水")
-        
-    # 生成预览图片
-    preview_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "draw_reveal_manifest_preview.py"))
-    out_dir = os.path.join(project.run_dir, "review")
-    prev_res = subprocess.run([
-        sys.executable, preview_script, "--manifest", manifest_path, "--out-dir", out_dir
-    ], capture_output=True, text=True, encoding="utf-8")
-    
-    if prev_res.returncode != 0:
-        logger.warning(f"Draw reveal manifest preview warned: {prev_res.stderr}")
-        
-    if vision_used:
-        msg = f"视觉识别（{vision_model}）成功完成，已精确定位所有分组包围框。"
-    else:
-        msg = "未启用视觉识别（未配置 API Key 或识别失败），已使用墨水自适应算法自动对齐包围框。"
-        
-    return {"success": True, "vision_used": vision_used, "message": msg}
+    run_step5_local_masking(project, manifest_path, source="manual_auto_mask")
+    return {
+        "success": True,
+        "vision_used": False,
+        "message": "已使用本地墨水自适应算法完成批量 Mask 标注，无需等待大模型 Vision 接口。",
+    }
 
 @app.get("/api/projects/{project_id}/steps/5/result")
 def get_step5_result(project_id: str, db: Session = Depends(get_db)):
@@ -956,7 +1089,7 @@ def get_step5_result(project_id: str, db: Session = Depends(get_db)):
     return {"success": True, "manifest": manifest}
 
 @app.put("/api/projects/{project_id}/steps/5/result")
-def update_step5_result(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
+def update_step5_result(project_id: str, payload: Dict[str, Any], build_assets: bool = Query(True), db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
@@ -965,19 +1098,42 @@ def update_step5_result(project_id: str, payload: Dict[str, Any], db: Session = 
     manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
-        
+
+    slide_count = len(payload.get("slides", [])) if isinstance(payload.get("slides"), list) else 0
+    group_count = sum(
+        len(slide.get("groups", []))
+        for slide in payload.get("slides", [])
+        if isinstance(slide, dict) and isinstance(slide.get("groups"), list)
+    )
+    write_project_log(project, "step5_save_manifest", slide_count=slide_count, group_count=group_count, build_assets=build_assets)
+
+    if not build_assets:
+        return {"success": True, "built_assets": False}
+
     # 人工保存后，校验并构建切层 assets，运行 build_reveal_scene.py
     build_scene_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "build_reveal_scene.py"))
-    build_res = subprocess.run([
-        sys.executable, build_scene_script, "--manifest", manifest_path
-    ], capture_output=True, text=True, encoding="utf-8")
+    try:
+        build_res = subprocess.run([
+            sys.executable, build_scene_script, "--manifest", manifest_path
+        ], capture_output=True, text=True, encoding="utf-8", timeout=120)
+    except subprocess.TimeoutExpired as exc:
+        write_project_log(project, "step5_build_scene_timeout", timeout_sec=120)
+        raise HTTPException(status_code=504, detail="构建切层素材超时，请检查图片尺寸或标注框数量") from exc
     
     if build_res.returncode != 0:
         logger.error(f"Build reveal scene failed: {build_res.stderr}")
+        write_project_log(
+            project,
+            "step5_build_scene_error",
+            returncode=build_res.returncode,
+            stdout=build_res.stdout.strip(),
+            stderr=build_res.stderr.strip(),
+        )
         raise HTTPException(status_code=500, detail=f"构建切层素材失败: {build_res.stderr}")
-        
+
+    write_project_log(project, "step5_build_scene_success", stdout=build_res.stdout.strip())
     handle_step_navigation(project, 5, db)
-    return {"success": True}
+    return {"success": True, "built_assets": True}
 
 # ==================== 步骤 6: 演讲稿编辑 ====================
 
@@ -1132,14 +1288,21 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
         
     slide_ids = [slide["slide_id"] for slide in contract.get("slides", [])]
     
-    # 动态将 setting 中的 TTS 参数写入环境变量，以便 minimax_tts.py 读取
-    os.environ["MINIMAX_API_KEY"] = tts_api_key
-    os.environ["MINIMAX_API_URL"] = get_setting("tts_endpoint", "https://api.minimaxi.com/v1/t2a_v2")
-    os.environ["MINIMAX_MODEL"] = get_setting("tts_model", "speech-2.8-hd")
-    os.environ["MINIMAX_VOICE_ID"] = get_setting("tts_voice_id", "Chinese (Mandarin)_Soft_Girl")
-    os.environ["MINIMAX_SPEED"] = get_setting("tts_speed", "1.0")
-    os.environ["MINIMAX_VOLUME"] = get_setting("tts_volume", "1.0")
-    os.environ["MINIMAX_PITCH"] = get_setting("tts_pitch", "0")
+    tts_endpoint = get_setting("tts_endpoint", "https://api.minimaxi.com/v1/t2a_v2") or "https://api.minimaxi.com/v1/t2a_v2"
+    tts_model = get_setting("tts_model", "speech-2.8-hd") or "speech-2.8-hd"
+    tts_voice_id = get_setting("tts_voice_id", "Chinese (Mandarin)_Soft_Girl") or "Chinese (Mandarin)_Soft_Girl"
+    tts_speed = get_setting("tts_speed", "1.0") or "1.0"
+    tts_volume = get_setting("tts_volume", "1.0") or "1.0"
+    tts_pitch = get_setting("tts_pitch", "0") or "0"
+    write_project_log(
+        project,
+        "step7_tts_start",
+        slide_count=len(slide_ids),
+        endpoint=tts_endpoint,
+        model=tts_model,
+        voice_id=tts_voice_id,
+        timeout_sec=STEP7_TTS_TIMEOUT_SEC,
+    )
         
     tts_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "minimax_tts.py"))
     
@@ -1148,7 +1311,7 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
         text_file = os.path.join(project.run_dir, "slides", slide_id, "tts_text.txt")
         out_audio = os.path.join(project.run_dir, "slides", slide_id, "voice.mp3")
         out_meta = os.path.join(project.run_dir, "slides", slide_id, "tts_metadata.json")
-        out_srt = os.path.join(project.run_dir, "slides", slide_id, "tts_narration.srt")
+        out_srt = os.path.join(project.run_dir, "slides", slide_id, "subtitles.srt")
         out_timeline = os.path.join(project.run_dir, "slides", slide_id, "audio_timeline.json")
         
         # 确保 text_file 存在，如果不存在，则从 contract 导出的 narration 中提取
@@ -1164,13 +1327,19 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
             with open(text_file, "w", encoding="utf-8") as f:
                 f.write(slide_narration + "\n")
                 
-        with open(text_file, "r", encoding="utf-8") as f:
-            tts_text = f.read().strip()
-            
         logger.info(f"Synthesizing TTS audio for slide: {slide_id}")
+        write_project_log(project, "step7_slide_tts_start", slide_id=slide_id, text_file=text_file)
         tts_args = [
             sys.executable, tts_script,
             "--text-file", text_file,
+            "--endpoint", tts_endpoint,
+            "--api-key", tts_api_key,
+            "--model", tts_model,
+            "--voice-id", tts_voice_id,
+            "--speed", tts_speed,
+            "--volume", tts_volume,
+            "--pitch", tts_pitch,
+            "--timeout", str(STEP7_TTS_TIMEOUT_SEC),
             "--out-audio", out_audio,
             "--out-meta", out_meta,
             "--out-srt", out_srt,
@@ -1178,21 +1347,48 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
             "--slide-id", slide_id
         ]
         
-        tts_res = subprocess.run(tts_args, capture_output=True, text=True, encoding="utf-8")
+        try:
+            started_at = time.monotonic()
+            tts_res = subprocess.run(tts_args, capture_output=True, text=True, encoding="utf-8", timeout=STEP7_TTS_TIMEOUT_SEC + 15)
+            elapsed = round(time.monotonic() - started_at, 3)
+        except subprocess.TimeoutExpired as exc:
+            write_project_log(project, "step7_slide_tts_timeout", slide_id=slide_id, timeout_sec=STEP7_TTS_TIMEOUT_SEC)
+            raise HTTPException(status_code=504, detail=f"{slide_id} 语音合成超时，请检查 TTS 服务或稍后重试") from exc
         if tts_res.returncode != 0:
             logger.error(f"TTS Synthesis failed for {slide_id}: {tts_res.stderr}")
+            write_project_log(
+                project,
+                "step7_slide_tts_error",
+                slide_id=slide_id,
+                returncode=tts_res.returncode,
+                stdout=tts_res.stdout.strip(),
+                stderr=tts_res.stderr.strip(),
+            )
             raise HTTPException(status_code=500, detail=f"语音合成失败: {tts_res.stderr}")
+        write_project_log(project, "step7_slide_tts_success", slide_id=slide_id, elapsed_sec=elapsed, stdout=tts_res.stdout.strip())
             
     # 合成完毕后，运行 bind_reveal_timeline.py 绑定时间轴
     bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))
-    bind_res = subprocess.run([
-        sys.executable, bind_script, "--run-dir", project.run_dir
-    ], capture_output=True, text=True, encoding="utf-8")
+    try:
+        bind_res = subprocess.run([
+            sys.executable, bind_script, "--run-dir", project.run_dir
+        ], capture_output=True, text=True, encoding="utf-8", timeout=STEP7_BIND_TIMEOUT_SEC)
+    except subprocess.TimeoutExpired as exc:
+        write_project_log(project, "step7_timeline_bind_timeout", timeout_sec=STEP7_BIND_TIMEOUT_SEC)
+        raise HTTPException(status_code=504, detail="时间轴绑定超时") from exc
     
     if bind_res.returncode != 0:
         logger.error(f"Timeline binding failed: {bind_res.stderr}")
+        write_project_log(
+            project,
+            "step7_timeline_bind_error",
+            returncode=bind_res.returncode,
+            stdout=bind_res.stdout.strip(),
+            stderr=bind_res.stderr.strip(),
+        )
         raise HTTPException(status_code=500, detail=f"时间轴绑定失败: {bind_res.stderr}")
-        
+
+    write_project_log(project, "step7_timeline_bind_success", stdout=bind_res.stdout.strip())
     handle_step_navigation(project, 7, db)
     return {"success": True}
 
@@ -1217,16 +1413,92 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-        
+
+    render_started = time.time()
+    write_project_log(project, "step8_render_start", run_dir=project.run_dir)
+
+    bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))
+    bind_started = time.time()
+    write_project_log(project, "step8_timeline_bind_start", script=bind_script)
+    try:
+        bind_res = subprocess.run([
+            sys.executable, bind_script, "--run-dir", project.run_dir
+        ], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+    except subprocess.TimeoutExpired:
+        write_project_log(project, "step8_timeline_bind_timeout", timeout_sec=60)
+        raise HTTPException(status_code=504, detail="渲染前绑定音频动画时间轴超时")
+
+    if bind_res.returncode != 0:
+        write_project_log(
+            project,
+            "step8_timeline_bind_error",
+            returncode=bind_res.returncode,
+            stderr=bind_res.stderr or "",
+        )
+        raise HTTPException(status_code=500, detail=f"渲染前绑定音频动画时间轴失败: {bind_res.stderr or ''}")
+
+    write_project_log(
+        project,
+        "step8_timeline_bind_success",
+        elapsed_sec=round(time.time() - bind_started, 3),
+        stdout=(bind_res.stdout or "").strip(),
+    )
+
+    validate_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "validate_run_assets.py"))
+    validate_started = time.time()
+    write_project_log(project, "step8_validate_assets_start", script=validate_script)
+    try:
+        validate_res = subprocess.run([
+            sys.executable, validate_script, "--run-dir", project.run_dir
+        ], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+    except subprocess.TimeoutExpired:
+        write_project_log(project, "step8_validate_assets_timeout", timeout_sec=60)
+        raise HTTPException(status_code=504, detail="渲染前资产校验超时")
+
+    if validate_res.returncode != 0:
+        write_project_log(
+            project,
+            "step8_validate_assets_error",
+            returncode=validate_res.returncode,
+            stderr=validate_res.stderr or "",
+        )
+        raise HTTPException(status_code=500, detail=f"渲染前资产校验失败: {validate_res.stderr or ''}")
+
+    write_project_log(
+        project,
+        "step8_validate_assets_success",
+        elapsed_sec=round(time.time() - validate_started, 3),
+        stdout=(validate_res.stdout or "").strip(),
+    )
+
     # 首先调用 build_remotion_props.py 生成渲染配置属性
     build_props_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "build_remotion_props.py"))
-    props_res = subprocess.run([
-        sys.executable, build_props_script, "--run-dir", project.run_dir
-    ], capture_output=True, text=True, encoding="utf-8")
+    props_started = time.time()
+    write_project_log(project, "step8_build_props_start", script=build_props_script)
+    try:
+        props_res = subprocess.run([
+            sys.executable, build_props_script, "--run-dir", project.run_dir
+        ], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+    except subprocess.TimeoutExpired:
+        write_project_log(project, "step8_build_props_timeout", timeout_sec=60)
+        raise HTTPException(status_code=504, detail="构建 Remotion 配置超时")
     
     if props_res.returncode != 0:
         logger.error(f"Build remotion props failed: {props_res.stderr}")
-        raise HTTPException(status_code=500, detail=f"构建 Remotion 配置失败: {props_res.stderr}")
+        write_project_log(
+            project,
+            "step8_build_props_error",
+            returncode=props_res.returncode,
+            stderr=props_res.stderr or "",
+        )
+        raise HTTPException(status_code=500, detail=f"构建 Remotion 配置失败: {props_res.stderr or ''}")
+
+    write_project_log(
+        project,
+        "step8_build_props_success",
+        elapsed_sec=round(time.time() - props_started, 3),
+        stdout=(props_res.stdout or "").strip(),
+    )
         
     # 接着，执行 Remotion 渲染
     # 检测 Node.js 模块依赖，执行 npm install (如果 node_modules 不存在)
@@ -1235,14 +1507,41 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
     
     if not os.path.exists(node_modules_dir):
         logger.info("Initializing Remotion node_modules, running npm install...")
+        npm_started = time.time()
+        write_project_log(project, "step8_npm_install_start", cwd=remotion_dir)
         # Windows 环境下运行 npm.cmd
         npm_cmd = "npm.cmd" if sys.platform == "win32" else "npm"
-        npm_install = subprocess.run(
-            [npm_cmd, "install"], cwd=remotion_dir, capture_output=True, text=True
-        )
+        try:
+            npm_install = subprocess.run(
+                [npm_cmd, "install"],
+                cwd=remotion_dir,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=300,
+            )
+        except subprocess.TimeoutExpired:
+            logger.error("npm install for Remotion timed out")
+            write_project_log(project, "step8_npm_install_timeout", timeout_sec=300)
+            raise HTTPException(status_code=504, detail="初始化 Remotion Node 依赖超时")
         if npm_install.returncode != 0:
             logger.error(f"npm install failed:\n{npm_install.stderr}")
-            raise HTTPException(status_code=500, detail=f"初始化 Remotion Node 依赖失败: {npm_install.stderr}")
+            write_project_log(
+                project,
+                "step8_npm_install_error",
+                returncode=npm_install.returncode,
+                stderr=npm_install.stderr or "",
+            )
+            raise HTTPException(status_code=500, detail=f"初始化 Remotion Node 依赖失败: {npm_install.stderr or ''}")
+        write_project_log(
+            project,
+            "step8_npm_install_success",
+            elapsed_sec=round(time.time() - npm_started, 3),
+            stdout=(npm_install.stdout or "").strip(),
+        )
+    else:
+        write_project_log(project, "step8_npm_install_skipped", node_modules_dir=node_modules_dir)
             
     # 调用 PowerShell 执行 render_remotion.ps1
     # 或者是直接用 npx remotion render
@@ -1260,22 +1559,106 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
     
     logger.info(f"Starting Remotion render for {project_id}...")
     render_args = [
-        npx_cmd, "remotion", "render", "ArticleVideo", output_mp4_path,
-        f"--props={props_json_path}"
+        npx_cmd, "remotion", "render", "src/index.tsx", "ArticleVideo",
+        output_mp4_path, f"--props={props_json_path}"
     ]
-    
-    render_res = subprocess.run(
-        render_args, cwd=remotion_dir, capture_output=True, text=True
+    remotion_started = time.time()
+    write_project_log(
+        project,
+        "step8_remotion_render_start",
+        cwd=remotion_dir,
+        output_path=output_mp4_path,
+        props_path=props_json_path,
+        args=render_args,
     )
     
+    try:
+        render_res = subprocess.run(
+            render_args,
+            cwd=remotion_dir,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=900,
+        )
+    except subprocess.TimeoutExpired:
+        logger.error("Remotion render timed out")
+        write_project_log(project, "step8_remotion_render_timeout", timeout_sec=900)
+        raise HTTPException(status_code=504, detail="视频渲染超时")
+
     if render_res.returncode != 0:
         logger.error(f"Remotion render failed: {render_res.stderr}")
-        raise HTTPException(status_code=500, detail=f"视频渲染失败: {render_res.stderr}")
+        write_project_log(
+            project,
+            "step8_remotion_render_error",
+            returncode=render_res.returncode,
+            stderr=render_res.stderr or "",
+        )
+        raise HTTPException(status_code=500, detail=f"视频渲染失败: {render_res.stderr or ''}")
+
+    output_size = os.path.getsize(output_mp4_path) if os.path.exists(output_mp4_path) else 0
+    write_project_log(
+        project,
+        "step8_remotion_render_success",
+        elapsed_sec=round(time.time() - remotion_started, 3),
+        output_path=output_mp4_path,
+        output_size=output_size,
+        stdout=(render_res.stdout or "").strip(),
+    )
         
     handle_step_navigation(project, 8, db)
+    write_project_log(
+        project,
+        "step8_render_completed",
+        elapsed_sec=round(time.time() - render_started, 3),
+        video_url=f"/api/projects/{project_id}/video",
+    )
     return {"success": True, "video_url": f"/api/projects/{project_id}/video"}
 
 # 获取最终生成的 MP4 视频
+@app.get("/api/projects/{project_id}/video/status")
+def get_final_video_status(project_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    video_path = os.path.join(project.run_dir, "out.mp4")
+    exists = os.path.exists(video_path)
+    video_mtime = os.path.getmtime(video_path) if exists else 0
+    latest_input_mtime = 0
+    latest_input_path = None
+
+    input_candidates = [
+        os.path.join(project.run_dir, "reveal_manifest.json"),
+        os.path.join(project.run_dir, "planning", "visual_contract.json"),
+    ]
+    slides_dir = os.path.join(project.run_dir, "slides")
+    if os.path.isdir(slides_dir):
+        for root, _, files in os.walk(slides_dir):
+            for filename in files:
+                if filename.lower().endswith((".json", ".mp3", ".srt", ".png", ".jpg", ".jpeg")):
+                    input_candidates.append(os.path.join(root, filename))
+
+    for path in input_candidates:
+        if not os.path.exists(path):
+            continue
+        mtime = os.path.getmtime(path)
+        if mtime > latest_input_mtime:
+            latest_input_mtime = mtime
+            latest_input_path = path
+
+    stale = bool(exists and latest_input_mtime > video_mtime + 1)
+    return {
+        "exists": exists,
+        "video_url": f"/api/projects/{project_id}/video" if exists else None,
+        "size": os.path.getsize(video_path) if exists else 0,
+        "updated_at": datetime.fromtimestamp(video_mtime).isoformat(timespec="seconds") if exists else None,
+        "stale": stale,
+        "latest_input_updated_at": datetime.fromtimestamp(latest_input_mtime).isoformat(timespec="seconds") if latest_input_mtime else None,
+        "latest_input_path": latest_input_path,
+    }
+
 @app.get("/api/projects/{project_id}/video")
 def get_final_video(project_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()

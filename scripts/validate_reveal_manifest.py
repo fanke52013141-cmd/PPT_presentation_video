@@ -125,7 +125,8 @@ def validate_slide(slide: dict[str, Any], contract_maps: dict[str, dict[str, set
         seen.add(group_id)
         if known_groups and group_id not in known_groups:
             raise ManifestError(f"Reveal group not found in visual contract: {slide_id}/{group_id}")
-        beat_id = str(group.get("narration_beat_id", "")).strip()
+        raw_beat_id = group.get("narration_beat_id")
+        beat_id = str(raw_beat_id).strip() if raw_beat_id is not None else ""
         if beat_id and known_beats and beat_id not in known_beats:
             raise ManifestError(f"Reveal group references unknown beat: {slide_id}/{group_id}/{beat_id}")
         reveal = group.get("reveal")

@@ -80,8 +80,10 @@ def expand_box(box: dict[str, int], width: int, height: int, margin: int) -> dic
     return {"x": x1, "y": y1, "w": x2 - x1, "h": y2 - y1}
 
 
-def fit_box(image: Image.Image, box: dict[str, int], background: str, threshold: float, search_margin: int, padding: int, subtitle_safe_y: int, role: str) -> tuple[dict[str, int], dict[str, Any]]:
+def fit_box(image: Image.Image, box: dict[str, int], background: str, threshold: float, search_margin: int, padding: int, subtitle_safe_y: int, role: str, max_area_ratio: float) -> tuple[dict[str, int], dict[str, Any]]:
     width, height = image.size
+    if role in {"title", "subtitle"}:
+        return box, {"fit_status": "skipped_static_header", "search_box": box}
     search = expand_box(box, width, height, search_margin)
     region = np.asarray(image.crop((search["x"], search["y"], search["x"] + search["w"], search["y"] + search["h"])).convert("RGB"), dtype=np.float32)
     bg = hex_to_rgb(background)
@@ -97,10 +99,24 @@ def fit_box(image: Image.Image, box: dict[str, int], background: str, threshold:
     x2 = min(width, int(xs.max()) + search["x"] + padding + 1)
     y2 = min(height, int(ys.max()) + search["y"] + padding + 1)
     if role != "decoration":
-        y2 = min(y2, subtitle_safe_y)
+        safe_bottom = max(1, subtitle_safe_y - padding)
+        y2 = min(y2, safe_bottom)
+        if y2 <= y1:
+            y1 = max(0, safe_bottom - 1)
+            y2 = safe_bottom
     fitted = {"x": x1, "y": y1, "w": max(1, x2 - x1), "h": max(1, y2 - y1)}
     area_before = box["w"] * box["h"]
     area_after = fitted["w"] * fitted["h"]
+    if area_after > area_before * max_area_ratio:
+        return box, {
+            "fit_status": "unchanged_expansion_too_large",
+            "marked_pixels": marked,
+            "search_box": search,
+            "area_before": area_before,
+            "area_after": area_after,
+            "area_ratio": round(area_after / max(1, area_before), 3),
+            "max_area_ratio": max_area_ratio,
+        }
     return fitted, {
         "fit_status": "auto_fitted",
         "marked_pixels": marked,
@@ -111,7 +127,7 @@ def fit_box(image: Image.Image, box: dict[str, int], background: str, threshold:
     }
 
 
-def fit_manifest(manifest: dict[str, Any], manifest_path: Path, repo_root: Path, threshold: float, search_margin: int, padding: int, overwrite_reviewed: bool) -> dict[str, Any]:
+def fit_manifest(manifest: dict[str, Any], manifest_path: Path, repo_root: Path, threshold: float, search_margin: int, padding: int, max_area_ratio: float, overwrite_reviewed: bool) -> dict[str, Any]:
     if manifest.get("version") != "reveal_v1":
         raise FitError("Manifest version must be reveal_v1")
     canvas = manifest.get("canvas") if isinstance(manifest.get("canvas"), dict) else {}
@@ -156,9 +172,12 @@ def fit_manifest(manifest: dict[str, Any], manifest_path: Path, repo_root: Path,
                 background=background,
                 threshold=threshold,
                 search_margin=search_margin,
-                padding=max(padding, group_padding),
+                # The build step applies group padding again, so auto-fit only
+                # keeps a small content margin here to avoid double expansion.
+                padding=padding,
                 subtitle_safe_y=subtitle_safe_y,
                 role=role,
+                max_area_ratio=max_area_ratio,
             )
             group["box"] = fitted
             group["review_status"] = "auto_fitted_needs_review"
@@ -175,6 +194,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--threshold", type=float, default=18.0)
     parser.add_argument("--search-margin", type=int, default=80)
     parser.add_argument("--padding", type=int, default=32)
+    parser.add_argument("--max-area-ratio", type=float, default=1.8)
     parser.add_argument("--overwrite-reviewed", action="store_true")
     parser.add_argument("--out", type=Path, help="Defaults to overwriting --manifest")
     parser.add_argument("--report", type=Path, help="Defaults to <manifest>.auto_fit_report.json")
@@ -193,6 +213,7 @@ def main() -> int:
             threshold=args.threshold,
             search_margin=args.search_margin,
             padding=args.padding,
+            max_area_ratio=args.max_area_ratio,
             overwrite_reviewed=args.overwrite_reviewed,
         )
         out_path = args.out.resolve() if args.out else manifest_path

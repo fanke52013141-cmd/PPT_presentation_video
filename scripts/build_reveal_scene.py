@@ -119,8 +119,9 @@ def build_event(slide_id: str, group: dict[str, Any], layer_id: str, fallback_at
             "feather": float(reveal.get("feather", DEFAULTS["feather"])),
         },
     }
+    event["link_to_narration"] = bool(group.get("link_to_narration", bool(group.get("narration_beat_id"))))
     for key in ("narration_beat_id", "linked_segment_id"):
-        if group.get(key):
+        if event["link_to_narration"] and group.get(key):
             event[key] = group[key]
     return event
 

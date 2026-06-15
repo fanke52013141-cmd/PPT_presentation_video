@@ -87,11 +87,11 @@ def box_for_group(group: dict[str, Any], slot: dict[str, int] | None) -> dict[st
     role = str(group.get("role", "content_body"))
     group_id = str(group.get("id", ""))
     if role == "title" or group_id == "title_group":
-        return {"x": 80, "y": 45, "w": 1640, "h": 110}
+        return {"x": 80, "y": 45, "w": 1640, "h": 80}
     if role == "subtitle" or group_id == "subtitle_group":
-        return {"x": 90, "y": 140, "w": 1600, "h": 85}
+        return {"x": 90, "y": 170, "w": 1600, "h": 60}
     if role == "summary" or group_id == "summary_group":
-        return {"x": 420, "y": 790, "w": 1080, "h": 120}
+        return {"x": 420, "y": 805, "w": 1080, "h": 70}
     if slot:
         return slot
     return {"x": 160, "y": 300, "w": 720, "h": 260}
@@ -129,6 +129,7 @@ def build_slide(slide: dict[str, Any], run_dir: Path) -> dict[str, Any]:
         role = str(group.get("role", "content_body"))
         if not group_id:
             continue
+        narration_beat_id = group_beat_id(group_id, beats)
         manifest_groups.append(
             {
                 "id": group_id,
@@ -136,7 +137,8 @@ def build_slide(slide: dict[str, Any], run_dir: Path) -> dict[str, Any]:
                 "box": box_for_group(group, slot_by_id.get(group_id)),
                 "visible_text": str(group.get("visible_text", "")),
                 "visual_anchor": str(group.get("visual_anchor", "")),
-                "narration_beat_id": group_beat_id(group_id, beats),
+                "narration_beat_id": narration_beat_id,
+                "link_to_narration": bool(narration_beat_id),
                 "padding_px": 32 if role not in {"diagram", "summary"} else 48,
                 "z_index": 20 + index,
                 "reveal": default_reveal(role),

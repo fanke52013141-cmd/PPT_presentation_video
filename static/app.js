@@ -165,9 +165,15 @@ function initGlobalEvents() {
 
   // 流水线中所有的“下一步”按钮
   document.querySelectorAll('.btn-next-step').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       if (state.currentStep === 3) {
         navigateToStep(5);
+      } else if (state.currentStep === 5) {
+        const saved = await saveStep5Masks({ completeAll: true });
+        if (saved) navigateToStep(6);
+      } else if (state.currentStep === 6) {
+        const saved = await saveStep6Narration();
+        if (saved) navigateToStep(7);
       } else if (state.currentStep < 8) {
         navigateToStep(state.currentStep + 1);
       }
@@ -205,6 +211,7 @@ function initGlobalEvents() {
 
   // ================= 步骤 8 事件 =================
   document.getElementById('step8-btn-render').addEventListener('click', () => runStep8Render());
+  document.getElementById('step8-btn-rerender').addEventListener('click', () => runStep8Render());
   document.getElementById('step8-btn-finish').addEventListener('click', () => exitWorkspace());
 }
 
@@ -711,7 +718,8 @@ async function generateStep2Contract() {
 function renderStep2Workspace() {
   document.getElementById('step2-editor-area').style.display = 'block';
   document.getElementById('step2-btn-generate').innerHTML = `<svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg> 重新规划分镜`;
-  document.getElementById('step2-btn-copy-prompts').style.display = 'inline-flex';
+  const copyPromptsBtn = document.getElementById('step2-btn-copy-prompts');
+  if (copyPromptsBtn) copyPromptsBtn.style.display = 'inline-flex';
   document.getElementById('step2-btn-save').style.display = 'inline-flex';
   document.getElementById('step2-btn-next').style.display = 'inline-flex';
   
@@ -1196,6 +1204,116 @@ let manifestData = null;
 
 let step2Contract = null; // 用于缓存步骤 2 分镜规划数据
 
+function manifestGroupToMaskBox(group) {
+  if (!group || typeof group !== 'object') return null;
+  const rawBox = group.box || {};
+  let box;
+  if (Array.isArray(rawBox)) {
+    box = rawBox.slice(0, 4).map(Number);
+  } else {
+    const x = Number(rawBox.x || 0);
+    const y = Number(rawBox.y || 0);
+    const w = Number(rawBox.w || 0);
+    const h = Number(rawBox.h || 0);
+    box = [x, y, x + w, y + h];
+  }
+  if (box.length !== 4 || box.some(v => !Number.isFinite(v))) return null;
+  return {
+    ...group,
+    group_id: group.group_id || group.id,
+    text_label: group.text_label || group.visible_text || '',
+    box
+  };
+}
+
+function maskBoxToManifestGroup(maskBox, existingGroup = {}) {
+  const coords = Array.isArray(maskBox.box) ? maskBox.box.map(Number) : [100, 100, 300, 300];
+  let [x1, y1, x2, y2] = coords;
+  x1 = Math.max(0, Math.min(1920, Number.isFinite(x1) ? x1 : 0));
+  y1 = Math.max(0, Math.min(1080, Number.isFinite(y1) ? y1 : 0));
+  x2 = Math.max(0, Math.min(1920, Number.isFinite(x2) ? x2 : x1 + 1));
+  y2 = Math.max(0, Math.min(1080, Number.isFinite(y2) ? y2 : y1 + 1));
+  if (x2 <= x1) x2 = Math.min(1920, x1 + 1);
+  if (y2 <= y1) y2 = Math.min(1080, y1 + 1);
+
+  const groupId = maskBox.group_id || existingGroup.id || `custom_group_${Date.now()}`;
+  const hasBeatField = Object.prototype.hasOwnProperty.call(maskBox, 'narration_beat_id');
+  const narrationBeatId = hasBeatField ? (maskBox.narration_beat_id || null) : (existingGroup.narration_beat_id || null);
+  const hasLinkField = Object.prototype.hasOwnProperty.call(maskBox, 'link_to_narration');
+  const linkToNarration = hasLinkField ? Boolean(maskBox.link_to_narration) : Boolean(narrationBeatId);
+  return {
+    ...existingGroup,
+    id: groupId,
+    role: maskBox.role || existingGroup.role || 'content_body',
+    visible_text: maskBox.text_label || existingGroup.visible_text || '',
+    visual_anchor: maskBox.visual_anchor || existingGroup.visual_anchor || '',
+    narration_beat_id: linkToNarration ? narrationBeatId : null,
+    linked_segment_id: linkToNarration ? (maskBox.linked_segment_id || existingGroup.linked_segment_id || null) : null,
+    link_to_narration: linkToNarration,
+    padding_px: Number(existingGroup.padding_px || maskBox.padding_px || 32),
+    z_index: Number(existingGroup.z_index || maskBox.z_index || 30),
+    reveal: existingGroup.reveal || maskBox.reveal || { type: 'cover_fade_out', duration: 0.45 },
+    review_status: existingGroup.review_status || maskBox.review_status || 'manual_adjusted',
+    box: {
+      x: Math.round(x1),
+      y: Math.round(y1),
+      w: Math.round(x2 - x1),
+      h: Math.round(y2 - y1)
+    }
+  };
+}
+
+function getSlideMaskBoxes(slide) {
+  const groups = Array.isArray(slide?.groups) ? slide.groups : [];
+  const legacyBoxes = Array.isArray(slide?.reveal_boxes) ? slide.reveal_boxes : [];
+  return (groups.length ? groups : legacyBoxes)
+    .map(manifestGroupToMaskBox)
+    .filter(Boolean);
+}
+
+function setSlideMaskBoxes(slide, boxes) {
+  const existingGroups = Array.isArray(slide.groups) ? slide.groups : [];
+  const existingById = new Map(existingGroups.map(group => [group.id, group]));
+  slide.groups = boxes.map(box => maskBoxToManifestGroup(box, existingById.get(box.group_id)));
+  delete slide.reveal_boxes;
+}
+
+function truncateText(text, maxLen = 48) {
+  const value = String(text || '').trim();
+  return value.length > maxLen ? `${value.slice(0, maxLen)}...` : value;
+}
+
+function getStep2SlideById(slideId) {
+  return step2Contract?.slides?.find(s => s.slide_id === slideId) || null;
+}
+
+function getStep5BeatsForSlide(slideId) {
+  const step2Slide = getStep2SlideById(slideId);
+  return Array.isArray(step2Slide?.narration_beats) ? step2Slide.narration_beats : [];
+}
+
+function getStep5GroupsForSlide(slideId) {
+  const step2Slide = getStep2SlideById(slideId);
+  return Array.isArray(step2Slide?.visual_groups) ? step2Slide.visual_groups : [];
+}
+
+function getLinkedBeatForBox(box, beats) {
+  if (!box || !Array.isArray(beats)) return null;
+  if (box.link_to_narration === false) return null;
+  if (box.narration_beat_id) {
+    const byId = beats.find(beat => beat.id === box.narration_beat_id);
+    if (byId) return byId;
+  }
+  return beats.find(beat => beat.group_id === box.group_id) || null;
+}
+
+function findMaskBoxIndexForBeat(maskBoxes, beat) {
+  if (!beat || !Array.isArray(maskBoxes)) return -1;
+  let index = maskBoxes.findIndex(box => box.link_to_narration !== false && box.narration_beat_id === beat.id);
+  if (index !== -1) return index;
+  return maskBoxes.findIndex(box => box.group_id === beat.group_id);
+}
+
 async function loadStep5Data() {
   try {
     const contractRes = await API.get(`/api/projects/${state.currentProject.id}/steps/2/result`);
@@ -1238,7 +1356,7 @@ function renderStep5Workspace() {
     
     if (isCurrent) {
       statusClass = 'active';
-      statusText = '标注中';
+      statusText = '当前页';
       statusColor = '#d29a00';
     } else if (isCompleted) {
       statusClass = 'completed';
@@ -1250,7 +1368,7 @@ function renderStep5Workspace() {
     btn.innerHTML = `
       <div style="font-size: 0.85rem; font-weight: bold; color: var(--ink-color);">${slide.slide_id}</div>
       <div style="font-size: 0.65rem; margin-top: 0.15rem; color: ${statusColor}; font-weight: 500;">
-        ${statusText === '已标注' ? '✓ 已标注' : statusText === '标注中' ? '✍ 标注中' : '待标注'}
+        ${statusText === '已标注' ? '✓ 已标注' : statusText === '当前页' ? '📍 当前页' : '待标注'}
       </div>
     `;
     
@@ -1270,7 +1388,7 @@ function renderStep5Workspace() {
     document.getElementById('step5-bg-img').src = imgUrl;
     
     // 初始化 canvas 标注框数据并重绘
-    state.canvasState.boxes = JSON.parse(JSON.stringify(slide.reveal_boxes || []));
+    state.canvasState.boxes = JSON.parse(JSON.stringify(getSlideMaskBoxes(slide)));
     state.canvasState.selectedBoxIndex = -1;
     initCanvasEvents();
     redrawCanvas();
@@ -1303,28 +1421,30 @@ function renderStep5BoxesForm() {
     const height = Math.round(coords[3] - coords[1]);
     
     // 关联查询画面中文、线稿描述和演讲稿旁白
+    const currentSlideId = manifestData.slides[state.activeSlideIndex].slide_id;
+    const step5Groups = getStep5GroupsForSlide(currentSlideId);
+    const step5Beats = getStep5BeatsForSlide(currentSlideId);
     let visibleText = box.text_label || '';
-    let spokenText = '';
     let visualAnchor = '';
-    
-    if (step2Contract && step2Contract.slides) {
-      const currentSlideId = manifestData.slides[state.activeSlideIndex].slide_id;
-      const step2Slide = step2Contract.slides.find(s => s.slide_id === currentSlideId);
-      if (step2Slide) {
-        // 从 visual_groups 提取 visible_text 和 visual_anchor
-        const vGroup = (step2Slide.visual_groups || []).find(g => g.id === box.group_id);
-        if (vGroup) {
-          if (!visibleText) visibleText = vGroup.visible_text || '';
-          visualAnchor = vGroup.visual_anchor || '';
-        }
-        // 从 narration_beats 提取 spoken_text (旁白文字)
-        const beat = (step2Slide.narration_beats || []).find(b => b.group_id === box.group_id);
-        if (beat) {
-          spokenText = beat.spoken_text || '';
-        }
-      }
+    const vGroup = step5Groups.find(g => g.id === box.group_id);
+    if (vGroup) {
+      if (!visibleText) visibleText = vGroup.visible_text || '';
+      visualAnchor = vGroup.visual_anchor || '';
     }
-    
+    const linkedBeat = getLinkedBeatForBox(box, step5Beats);
+    const selectedBeatId = linkedBeat?.id || '';
+    const spokenText = linkedBeat?.spoken_text || '';
+    const beatOptions = [
+      `<option value="">不关联旁白，按默认顺序显示</option>`,
+      ...step5Beats.map(beat => {
+        const label = `${beat.id || 'beat'} / ${beat.visible_anchor || beat.group_id || '未命名'}：${truncateText(beat.spoken_text, 38)}`;
+        return `<option value="${escHtml(beat.id || '')}" ${selectedBeatId === beat.id ? 'selected' : ''}>${escHtml(label)}</option>`;
+      })
+    ].join('');
+    const linkBadge = selectedBeatId
+      ? `<span class="relation-badge linked">已关联 ${escHtml(selectedBeatId)}</span>`
+      : `<span class="relation-badge unlinked">未关联旁白</span>`;
+
     item.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
         <span style="font-weight:bold; color:var(--ink-color); font-size:0.9rem;">标注块 ${idx+1} [${box.group_id}]</span>
@@ -1333,6 +1453,14 @@ function renderStep5BoxesForm() {
       <div style="margin-bottom:0.4rem;">
         <label style="font-size:0.75rem; font-weight:bold; color:#666; display:block; margin-bottom:0.15rem;">画面标签文字：</label>
         <input type="text" value="${escHtml(visibleText)}" placeholder="标签文本" style="font-size:0.85rem; padding:4px 6px;" onchange="updateMaskBoxField(${idx}, 'text_label', this.value)">
+      </div>
+      <div style="margin-bottom:0.4rem;">
+        <label style="font-size:0.75rem; font-weight:bold; color:#666; display:flex; justify-content:space-between; gap:0.5rem; margin-bottom:0.15rem;">
+          <span>关联旁白句段：</span>${linkBadge}
+        </label>
+        <select style="font-size:0.82rem; padding:4px 6px;" onchange="updateMaskBoxBeatLink(${idx}, this.value)">
+          ${beatOptions}
+        </select>
       </div>
       ${visualAnchor ? `
       <div style="margin-bottom:0.4rem; font-size:0.8rem; color:#555; background:#f9f9f9; padding:4px 8px; border-radius:4px; border:1px dashed #ddd;">
@@ -1387,6 +1515,25 @@ window.updateMaskBoxField = function(idx, field, val) {
   if (state.canvasState.boxes[idx]) {
     state.canvasState.boxes[idx][field] = val;
   }
+};
+
+window.updateMaskBoxBeatLink = function(idx, beatId) {
+  const box = state.canvasState.boxes[idx];
+  if (!box) return;
+  const currentSlideId = manifestData.slides[state.activeSlideIndex].slide_id;
+  const beats = getStep5BeatsForSlide(currentSlideId);
+  const beat = beats.find(item => item.id === beatId);
+  if (beat) {
+    box.narration_beat_id = beat.id;
+    box.link_to_narration = true;
+    box.linked_segment_id = null;
+  } else {
+    box.narration_beat_id = null;
+    box.link_to_narration = false;
+    box.linked_segment_id = null;
+  }
+  renderStep5BoxesForm();
+  redrawCanvas();
 };
 
 // Canvas 的拖拽与大小缩放事件实现
@@ -1656,41 +1803,63 @@ function redrawCanvas() {
 function saveStep5CurrentState() {
   const slide = manifestData.slides[state.activeSlideIndex];
   if (slide) {
-    slide.reveal_boxes = JSON.parse(JSON.stringify(state.canvasState.boxes));
+    setSlideMaskBoxes(slide, JSON.parse(JSON.stringify(state.canvasState.boxes)));
   }
 }
 
 async function runStep5AutoMask() {
   saveStep5CurrentState();
-  showToast('🤖 正在调用 Vision API 进行自动框选与自适应对齐修剪，这可能需要大约 10 秒...');
+  const btn = document.getElementById('step5-btn-automask');
+  btn.disabled = true;
+  btn.dataset.originalText = btn.dataset.originalText || btn.innerHTML;
+  btn.innerHTML = `<span class="mini-loader"></span> 正在批量标注...`;
+  showToast('✏️ 正在使用本地算法批量标注 Mask 并生成预览...', 5000);
   
-  // 将当前的临时 manifest 存盘
-  await API.put(`/api/projects/${state.currentProject.id}/steps/5/result`, manifestData);
-  
-  // 发起自动标注
-  const res = await API.post(`/api/projects/${state.currentProject.id}/steps/5/auto-mask`);
-  if (res.success) {
-    const icon = res.vision_used ? '🔍' : '✏️';
-    showToast(`${icon} ${res.message || '智能标注完成！已加载最新的目标包围框。'}`);
-    loadStep5Data();
+  try {
+    // 只保存草稿，不构建切层；构建切层留到“保存标注数据”时执行。
+    await API.put(`/api/projects/${state.currentProject.id}/steps/5/result?build_assets=false`, manifestData);
+
+    const res = await API.post(`/api/projects/${state.currentProject.id}/steps/5/auto-mask`);
+    if (res.success) {
+      const icon = res.vision_used ? '🔍' : '✏️';
+      showToast(`${icon} ${res.message || '智能标注完成！已加载最新的目标包围框。'}`, 6000);
+      await loadStep5Data();
+    }
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = btn.dataset.originalText;
   }
 }
 
-async function saveStep5Masks() {
+async function saveStep5Masks(options = {}) {
+  const { completeAll = false } = options;
   saveStep5CurrentState();
   
-  // 标记当前 Slide 状态为已完成
-  const currentSlide = manifestData.slides[state.activeSlideIndex];
-  if (currentSlide) {
+  // 标记当前页或所有页状态为已完成
+  const slidesToComplete = completeAll ? manifestData.slides : [manifestData.slides[state.activeSlideIndex]].filter(Boolean);
+  slidesToComplete.forEach(currentSlide => {
+    if (Array.isArray(currentSlide.groups)) {
+      currentSlide.groups.forEach(group => {
+        if (!['reviewed', 'approved', 'manual_reviewed', 'manual_adjusted', 'locked'].includes(group.review_status)) {
+          group.review_status = 'manual_adjusted';
+        }
+      });
+    }
     currentSlide.status = "completed";
-  }
+  });
   
-  showToast('💾 正在保存当前标注坐标并为您自动裁剪图层...');
-  const res = await API.put(`/api/projects/${state.currentProject.id}/steps/5/result`, manifestData);
-  if (res.success) {
-    showToast('🎉 标注图层保存并重建成功！');
-    renderStep5Workspace(); // 重新绘制切换栏以更新已标注绿色状态
+  showToast(completeAll ? '💾 正在确认全部标注并构建切层素材...' : '💾 正在保存当前标注坐标并自动裁剪图层...', 5000);
+  try {
+    const res = await API.put(`/api/projects/${state.currentProject.id}/steps/5/result`, manifestData);
+    if (res.success) {
+      showToast('🎉 标注图层保存并重建成功！');
+      renderStep5Workspace(); // 重新绘制切换栏以更新已标注绿色状态
+      return true;
+    }
+  } catch (e) {
+    return false;
   }
+  return false;
 }
 
 // ==================== 步骤 6: 演讲稿编辑 ====================
@@ -1776,7 +1945,8 @@ function renderStep6Workspace() {
         // 查找对应 group_id 的坐标索引
         const mSlide = manifestData.slides.find(s => s.slide_id === slide.slide_id);
         if (mSlide) {
-          const boxIdx = mSlide.reveal_boxes.findIndex(b => b.group_id === beat.group_id);
+          const maskBoxes = getSlideMaskBoxes(mSlide);
+          const boxIdx = findMaskBoxIndexForBeat(maskBoxes, beat);
           drawStep6StaticCanvas(boxIdx);
         }
       });
@@ -1800,11 +1970,12 @@ function renderStep6Workspace() {
       const currentSlideId = narrationData.slides[state.activeSlideIndex].slide_id;
       const mSlide = manifestData.slides.find(s => s.slide_id === currentSlideId);
       if (!mSlide) return;
+      const maskBoxes = getSlideMaskBoxes(mSlide);
       
       let foundBoxIdx = -1;
       // 倒序检查碰撞
-      for (let i = mSlide.reveal_boxes.length - 1; i >= 0; i--) {
-        const box = mSlide.reveal_boxes[i].box;
+      for (let i = maskBoxes.length - 1; i >= 0; i--) {
+        const box = maskBoxes[i].box;
         if (x >= box[0] && x <= box[2] && y >= box[1] && y <= box[3]) {
           foundBoxIdx = i;
           break;
@@ -1819,7 +1990,7 @@ function renderStep6Workspace() {
         const el = document.getElementById(`step6-beat-card-${bIdx}`);
         if (!el) return;
         
-        if (foundBoxIdx !== -1 && beat.group_id === mSlide.reveal_boxes[foundBoxIdx].group_id) {
+        if (foundBoxIdx !== -1 && findMaskBoxIndexForBeat(maskBoxes, beat) === foundBoxIdx) {
           el.classList.add('highlight-glow');
           el.style.backgroundColor = '#fffde0';
           el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -1859,7 +2030,7 @@ function drawStep6StaticCanvas(highlightIdx) {
   const mSlide = manifestData.slides.find(s => s.slide_id === currentSlideId);
   if (!mSlide) return;
   
-  mSlide.reveal_boxes.forEach((item, idx) => {
+  getSlideMaskBoxes(mSlide).forEach((item, idx) => {
     const [x1, y1, x2, y2] = item.box;
     const isHighlighted = idx === highlightIdx;
     
@@ -1917,10 +2088,16 @@ function saveStep6CurrentState() {
 async function saveStep6Narration() {
   saveStep6CurrentState();
   showToast('💾 正在保存并校验旁白信息...');
-  const res = await API.put(`/api/projects/${state.currentProject.id}/steps/6/result`, narrationData);
-  if (res.success) {
-    showToast('🎉 演讲旁白修改保存成功！');
+  try {
+    const res = await API.put(`/api/projects/${state.currentProject.id}/steps/6/result`, narrationData);
+    if (res.success) {
+      showToast('🎉 演讲旁白修改保存成功！');
+      return true;
+    }
+  } catch (e) {
+    return false;
   }
+  return false;
 }
 
 // ==================== 步骤 7: 语音合成 ====================
@@ -1977,23 +2154,34 @@ async function runStep7TTS() {
 
 async function loadStep8Data() {
   // 检查是否有渲染出的 MP4
-  const videoUrl = `/api/projects/${state.currentProject.id}/video`;
+  document.getElementById('step8-error-box').style.display = 'none';
   try {
-    const response = await fetch(videoUrl, { method: 'HEAD' });
-    if (response.ok) {
-      showStep8VideoResult(videoUrl);
+    const status = await API.get(`/api/projects/${state.currentProject.id}/video/status`);
+    if (status.exists && status.video_url) {
+      showStep8VideoResult(status.video_url, {
+        stale: status.stale,
+        latestInputUpdatedAt: status.latest_input_updated_at,
+        videoUpdatedAt: status.updated_at
+      });
     } else {
       document.getElementById('step8-result-box').style.display = 'none';
       document.getElementById('step8-btn-render').style.display = 'inline-flex';
     }
   } catch (e) {
     document.getElementById('step8-result-box').style.display = 'none';
+    document.getElementById('step8-btn-render').style.display = 'inline-flex';
   }
 }
 
 async function runStep8Render() {
+  const renderBtn = document.getElementById('step8-btn-render');
+  const rerenderBtn = document.getElementById('step8-btn-rerender');
   document.getElementById('step8-loading').style.display = 'block';
-  document.getElementById('step8-btn-render').disabled = true;
+  document.getElementById('step8-error-box').style.display = 'none';
+  document.getElementById('step8-result-box').style.display = 'none';
+  renderBtn.style.display = 'inline-flex';
+  renderBtn.disabled = true;
+  rerenderBtn.disabled = true;
   showToast('🎬 Remotion 渲染进程已启动，请稍候片刻...');
   
   try {
@@ -2004,14 +2192,31 @@ async function runStep8Render() {
       showStep8VideoResult(videoUrl);
     }
   } catch(e) {
+    console.error('Step 8 render failed:', e);
+    const message = e?.message || '视频渲染失败，请查看项目 logs/pipeline.log。';
+    document.getElementById('step8-error-message').innerText = message;
+    document.getElementById('step8-error-box').style.display = 'block';
+    showToast(`❌ 渲染失败: ${message}`, 7000);
   } finally {
     document.getElementById('step8-loading').style.display = 'none';
-    document.getElementById('step8-btn-render').disabled = false;
+    renderBtn.disabled = false;
+    rerenderBtn.disabled = false;
   }
 }
 
-function showStep8VideoResult(videoUrl) {
+function showStep8VideoResult(videoUrl, options = {}) {
   document.getElementById('step8-btn-render').style.display = 'none';
+  document.getElementById('step8-error-box').style.display = 'none';
+  const staleWarning = document.getElementById('step8-stale-warning');
+  if (options.stale) {
+    const details = options.latestInputUpdatedAt && options.videoUpdatedAt
+      ? `\n资产更新时间：${options.latestInputUpdatedAt}\n视频更新时间：${options.videoUpdatedAt}`
+      : '';
+    staleWarning.innerText = `当前视频不是最新版本：Mask、旁白或音频资产在视频生成后又发生了变化。请点击“重新渲染最终视频”生成最新成品。${details}`;
+    staleWarning.style.display = 'block';
+  } else {
+    staleWarning.style.display = 'none';
+  }
   const player = document.getElementById('step8-video-player');
   player.src = videoUrl + `?t=${Date.now()}`;
   

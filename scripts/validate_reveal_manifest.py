@@ -40,22 +40,47 @@ def read_json(path: Path) -> dict[str, Any]:
     return value
 
 
-def visual_contract_maps(contract: dict[str, Any]) -> dict[str, dict[str, set[str]]]:
+def visual_contract_maps(contract: dict[str, Any]) -> dict[str, dict[str, Any]]:
     if contract.get("version") != "visual_contract_v1":
         raise ManifestError("Contract version must be visual_contract_v1")
     slides = contract.get("slides")
     if not isinstance(slides, list) or not slides:
         raise ManifestError("Contract must contain non-empty slides[]")
-    maps: dict[str, dict[str, set[str]]] = {}
+    maps: dict[str, dict[str, Any]] = {}
     for slide in slides:
         if not isinstance(slide, dict):
             continue
         slide_id = str(slide.get("slide_id", "")).strip()
         groups = slide.get("visual_groups") if isinstance(slide.get("visual_groups"), list) else []
         beats = slide.get("narration_beats") if isinstance(slide.get("narration_beats"), list) else []
+        group_ids: set[str] = set()
+        beat_ids: set[str] = set()
+        group_content_units: dict[str, str] = {}
+        beat_content_units: dict[str, str] = {}
+        group_speak_policies: dict[str, str] = {}
+        for group in groups:
+            if not isinstance(group, dict):
+                continue
+            group_id = str(group.get("id", "")).strip()
+            if not group_id:
+                continue
+            group_ids.add(group_id)
+            group_content_units[group_id] = str(group.get("content_unit_id", "")).strip()
+            group_speak_policies[group_id] = str(group.get("speak_policy", "")).strip()
+        for beat in beats:
+            if not isinstance(beat, dict):
+                continue
+            beat_id = str(beat.get("id", "")).strip()
+            if not beat_id:
+                continue
+            beat_ids.add(beat_id)
+            beat_content_units[beat_id] = str(beat.get("content_unit_id", "")).strip()
         maps[slide_id] = {
-            "groups": {str(group.get("id", "")) for group in groups if isinstance(group, dict) and str(group.get("id", ""))},
-            "beats": {str(beat.get("id", "")) for beat in beats if isinstance(beat, dict) and str(beat.get("id", ""))},
+            "groups": group_ids,
+            "beats": beat_ids,
+            "group_content_units": group_content_units,
+            "beat_content_units": beat_content_units,
+            "group_speak_policies": group_speak_policies,
         }
     return maps
 
@@ -102,15 +127,41 @@ def overlap_ratio(a: dict[str, Any], b: dict[str, Any]) -> float:
     return float(overlap) / max(1.0, min(float(a["w"] * a["h"]), float(b["w"] * b["h"])))
 
 
-def validate_slide(slide: dict[str, Any], contract_maps: dict[str, dict[str, set[str]]] | None, width: int, height: int, subtitle_safe_y: int, max_overlap: float, require_reviewed: bool) -> None:
+def validate_semantic_fields(group: dict[str, Any], slide_maps: dict[str, Any], slide_id: str, group_id: str, role: str, beat_id: str) -> None:
+    contract_content_units: dict[str, str] = slide_maps.get("group_content_units", {}) if slide_maps else {}
+    beat_content_units: dict[str, str] = slide_maps.get("beat_content_units", {}) if slide_maps else {}
+    speak_policies: dict[str, str] = slide_maps.get("group_speak_policies", {}) if slide_maps else {}
+    manifest_content_unit = str(group.get("content_unit_id", "")).strip()
+    contract_content_unit = str(contract_content_units.get(group_id, "")).strip()
+    if contract_content_unit:
+        if not manifest_content_unit:
+            raise ManifestError(f"Reveal group missing content_unit_id copied from contract: {slide_id}/{group_id}")
+        if manifest_content_unit != contract_content_unit:
+            raise ManifestError(
+                f"Reveal group content_unit_id does not match contract: {slide_id}/{group_id} "
+                f"{manifest_content_unit} != {contract_content_unit}"
+            )
+    if role != "decoration" and not str(group.get("mask_target", "")).strip():
+        raise ManifestError(f"Reveal group missing mask_target: {slide_id}/{group_id}")
+    if speak_policies.get(group_id) == "display_only" and beat_id:
+        raise ManifestError(f"Display-only reveal group must not reference narration beat: {slide_id}/{group_id}/{beat_id}")
+    if beat_id and beat_content_units.get(beat_id) and manifest_content_unit and beat_content_units[beat_id] != manifest_content_unit:
+        raise ManifestError(
+            f"Reveal beat content_unit_id does not match group: {slide_id}/{group_id}/{beat_id} "
+            f"{beat_content_units[beat_id]} != {manifest_content_unit}"
+        )
+
+
+def validate_slide(slide: dict[str, Any], contract_maps: dict[str, dict[str, Any]] | None, width: int, height: int, subtitle_safe_y: int, max_overlap: float, require_reviewed: bool) -> None:
     slide_id = str(slide.get("slide_id", "")).strip()
     if not slide_id:
         raise ManifestError("Slide missing slide_id")
     groups = slide.get("groups")
     if not isinstance(groups, list) or not groups:
         raise ManifestError(f"Slide missing groups[]: {slide_id}")
-    known_groups = contract_maps.get(slide_id, {}).get("groups", set()) if contract_maps else set()
-    known_beats = contract_maps.get(slide_id, {}).get("beats", set()) if contract_maps else set()
+    slide_maps = contract_maps.get(slide_id, {}) if contract_maps else {}
+    known_groups = slide_maps.get("groups", set()) if contract_maps else set()
+    known_beats = slide_maps.get("beats", set()) if contract_maps else set()
     seen: set[str] = set()
     boxes: list[tuple[str, str, dict[str, Any]]] = []
     for group in groups:
@@ -125,9 +176,12 @@ def validate_slide(slide: dict[str, Any], contract_maps: dict[str, dict[str, set
         seen.add(group_id)
         if known_groups and group_id not in known_groups:
             raise ManifestError(f"Reveal group not found in visual contract: {slide_id}/{group_id}")
-        beat_id = str(group.get("narration_beat_id", "")).strip()
+        raw_beat_id = group.get("narration_beat_id")
+        beat_id = str(raw_beat_id or "").strip()
         if beat_id and known_beats and beat_id not in known_beats:
             raise ManifestError(f"Reveal group references unknown beat: {slide_id}/{group_id}/{beat_id}")
+        if contract_maps:
+            validate_semantic_fields(group, slide_maps, slide_id, group_id, role, beat_id)
         reveal = group.get("reveal")
         if not isinstance(reveal, dict):
             raise ManifestError(f"Group missing reveal object: {slide_id}/{group_id}")

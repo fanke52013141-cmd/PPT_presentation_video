@@ -64,13 +64,41 @@ def font(size: int) -> ImageFont.ImageFont:
     return ImageFont.load_default()
 
 
-def draw_label(draw: ImageDraw.ImageDraw, xy: tuple[int, int], text: str, color: tuple[int, int, int]) -> None:
-    label_font = font(26)
+def shorten(text: str, max_chars: int) -> str:
+    text = " ".join(str(text or "").split())
+    if len(text) <= max_chars:
+        return text
+    return text[: max_chars - 1] + "…"
+
+
+def draw_label(draw: ImageDraw.ImageDraw, xy: tuple[int, int], lines: list[str], color: tuple[int, int, int]) -> None:
+    label_font = font(22)
     x, y = xy
-    bbox = draw.textbbox((x, y), text, font=label_font)
+    non_empty = [line for line in lines if line]
+    if not non_empty:
+        return
+    line_boxes = [draw.textbbox((x, y), line, font=label_font) for line in non_empty]
+    line_height = max((bbox[3] - bbox[1] for bbox in line_boxes), default=24) + 4
+    width = max((bbox[2] - bbox[0] for bbox in line_boxes), default=120)
+    height = line_height * len(non_empty)
     pad = 6
-    draw.rectangle((bbox[0] - pad, bbox[1] - pad, bbox[2] + pad, bbox[3] + pad), fill=(255, 253, 247), outline=color, width=2)
-    draw.text((x, y), text, fill=color, font=label_font)
+    draw.rectangle((x - pad, y - pad, x + width + pad, y + height + pad), fill=(255, 253, 247), outline=color, width=2)
+    for offset, line in enumerate(non_empty):
+        draw.text((x, y + offset * line_height), line, fill=color, font=label_font)
+
+
+def label_lines(index: int, group: dict[str, Any]) -> list[str]:
+    group_id = str(group.get("id", f"group_{index}"))
+    action = str((group.get("reveal") or {}).get("type", "")) if isinstance(group.get("reveal"), dict) else ""
+    content_unit_id = str(group.get("content_unit_id", "")).strip()
+    beat_id = str(group.get("narration_beat_id", "")).strip() or "display_only"
+    mask_target = shorten(str(group.get("mask_target", "")), 34)
+    lines = [f"{index}. {group_id} | {action}"]
+    if content_unit_id or beat_id:
+        lines.append(f"unit: {content_unit_id or '-'} | beat: {beat_id}")
+    if mask_target:
+        lines.append(f"mask: {mask_target}")
+    return lines
 
 
 def preview_slide(slide: dict[str, Any], manifest_dir: Path, repo_root: Path, out_root: Path | None) -> Path:
@@ -99,10 +127,8 @@ def preview_slide(slide: dict[str, Any], manifest_dir: Path, repo_root: Path, ou
         fill = (*color, 34)
         outline = (*color, 255)
         draw.rectangle((x, y, x + w, y + h), fill=fill, outline=outline, width=5)
-        group_id = str(group.get("id", f"group_{index}"))
-        action = str((group.get("reveal") or {}).get("type", "")) if isinstance(group.get("reveal"), dict) else ""
-        label = f"{index}. {group_id} | {action}"
-        draw_label(draw, (x + 8, max(0, y - 36)), label, color)
+        label_y = y - 88 if y >= 96 else y + 8
+        draw_label(draw, (x + 8, max(0, label_y)), label_lines(index, group), color)
     composed = Image.alpha_composite(image, overlay).convert("RGB")
     out_dir = out_root or slide_dir
     out_dir.mkdir(parents=True, exist_ok=True)

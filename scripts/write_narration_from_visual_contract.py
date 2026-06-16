@@ -2,7 +2,9 @@
 """Write narration files from visual_contract.json.
 
 The narration is deliberately grounded in visual groups: every spoken beat maps to
-one group_id and expands its visible_text / visual_anchor / narration_function.
+one group_id and content_unit_id, then expands that unit's visible text, source
+text, visual anchor, and narration function. Groups with speak_policy=display_only
+are never narrated.
 """
 
 from __future__ import annotations
@@ -43,6 +45,14 @@ def normalize(text: str) -> str:
     return PAUSE_RE.sub(" ", text).strip()
 
 
+def speak_policy(group: dict[str, Any]) -> str:
+    explicit = str(group.get("speak_policy", "")).strip()
+    if explicit:
+        return explicit
+    role = str(group.get("role", ""))
+    return "display_only" if role in {"subtitle", "decoration"} else "speak"
+
+
 def group_lookup(slide: dict[str, Any]) -> dict[str, dict[str, Any]]:
     groups = slide.get("visual_groups")
     if not isinstance(groups, list):
@@ -63,13 +73,17 @@ def spoken_text_for_beat(beat: dict[str, Any], group: dict[str, Any], max_chars:
         return existing[:max_chars]
     visible = normalize(str(group.get("visible_text", beat.get("visible_anchor", "这个点"))))
     anchor = normalize(str(group.get("visual_anchor", beat.get("visible_anchor", visible))))
+    source = normalize(str(group.get("source_text", "")))
     function = normalize(str(group.get("narration_function", beat.get("spoken_intent", ""))))
     intent = normalize(str(beat.get("spoken_intent", function)))
-    if function and intent and function != intent:
-        body = f"{intent}。也就是说，{function}。"
-    else:
-        body = intent or function or f"解释画面中的“{visible}”。"
-    text = f"看画面里的“{visible}”，它对应的是{anchor}。{body}"
+    parts = [f"看画面里的“{visible}”。", f"它对应的是{anchor}。"]
+    if intent:
+        parts.append(f"这一句要讲的是：{intent}。")
+    if source and source != intent:
+        parts.append(f"具体来说，{source}。")
+    elif function and function != intent:
+        parts.append(f"也就是说，{function}。")
+    text = "".join(parts)
     return text[:max_chars]
 
 
@@ -90,10 +104,20 @@ def build_slide_narration(slide: dict[str, Any], max_beat_chars: int) -> dict[st
         if group_id not in groups:
             raise NarrationBuildError(f"Beat {beat_id} references unknown group_id in {slide_id}: {group_id}")
         group = groups[group_id]
+        if speak_policy(group) == "display_only":
+            raise NarrationBuildError(f"Beat {beat_id} references display_only group in {slide_id}: {group_id}")
+        group_content_unit_id = str(group.get("content_unit_id", group_id)).strip()
+        beat_content_unit_id = str(beat.get("content_unit_id", group_content_unit_id)).strip()
+        if group_content_unit_id and beat_content_unit_id and beat_content_unit_id != group_content_unit_id:
+            raise NarrationBuildError(
+                f"Beat {beat_id} content_unit_id does not match group in {slide_id}: "
+                f"{beat_content_unit_id} != {group_content_unit_id}"
+            )
         spoken_text = spoken_text_for_beat(beat, group, max_chars=max_beat_chars)
         beats.append(
             {
                 "id": beat_id,
+                "content_unit_id": group_content_unit_id or beat_content_unit_id,
                 "group_id": group_id,
                 "visible_anchor": normalize(str(beat.get("visible_anchor", group.get("visible_text", "")))),
                 "spoken_intent": normalize(str(beat.get("spoken_intent", group.get("narration_function", "")))),
@@ -140,7 +164,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Write narration files from visual_contract.json.")
     parser.add_argument("--run-dir", required=True, type=Path)
     parser.add_argument("--contract", type=Path, help="Defaults to <run-dir>/planning/visual_contract.json")
-    parser.add_argument("--max-beat-chars", type=int, default=110)
+    parser.add_argument("--max-beat-chars", type=int, default=220)
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
 

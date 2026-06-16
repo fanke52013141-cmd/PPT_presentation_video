@@ -95,11 +95,11 @@ def box_for_group(group: dict[str, Any], slot: dict[str, int] | None) -> dict[st
     role = str(group.get("role", "content_body"))
     group_id = str(group.get("id", ""))
     if role == "title" or group_id == "title_group":
-        return {"x": 80, "y": 45, "w": 1640, "h": 110}
+        return {"x": 80, "y": 45, "w": 1640, "h": 70}
     if role == "subtitle" or group_id == "subtitle_group":
-        return {"x": 90, "y": 140, "w": 1600, "h": 85}
+        return {"x": 90, "y": 175, "w": 1600, "h": 50}
     if role == "summary" or group_id == "summary_group":
-        return {"x": 420, "y": 790, "w": 1080, "h": 120}
+        return {"x": 420, "y": 760, "w": 1080, "h": 110}
     if slot:
         return slot
     return {"x": 160, "y": 300, "w": 720, "h": 260}

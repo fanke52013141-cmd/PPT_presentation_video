@@ -41,6 +41,12 @@ def extract_style_refs(style_tokens_path: Path) -> tuple[str, str]:
     return template, example
 
 
+def compact_list(value: Any) -> str:
+    if isinstance(value, list):
+        return ", ".join(str(item).strip() for item in value if str(item).strip())
+    return str(value or "").strip()
+
+
 def visual_group_lines(slide: dict[str, Any]) -> list[str]:
     groups = slide.get("visual_groups")
     if not isinstance(groups, list):
@@ -51,11 +57,22 @@ def visual_group_lines(slide: dict[str, Any]) -> list[str]:
             continue
         group_id = str(group.get("id", "")).strip()
         role = str(group.get("role", "")).strip()
+        content_unit_id = str(group.get("content_unit_id", group_id)).strip()
+        speak_policy = str(group.get("speak_policy", "speak")).strip()
         visible_text = str(group.get("visible_text", "")).strip()
         anchor = str(group.get("visual_anchor", "")).strip()
         function = str(group.get("narration_function", "")).strip()
+        source_text = str(group.get("source_text", "")).strip()
+        mask_target = str(group.get("mask_target", "")).strip()
+        must_include = compact_list(group.get("must_include"))
+        must_not_include = compact_list(group.get("must_not_include"))
         order = str(group.get("reveal_order", "")).strip()
-        lines.append(f"- {group_id} / {role} / order {order}: visible text=\"{visible_text}\"; anchor={anchor}; narration function={function}")
+        lines.append(
+            f"- {group_id} / unit {content_unit_id} / {role} / order {order} / speak {speak_policy}: "
+            f"visible text=\"{visible_text}\"; source={source_text}; anchor={anchor}; "
+            f"narration function={function}; mask target={mask_target}; "
+            f"include=[{must_include}]; exclude=[{must_not_include}]"
+        )
     return lines
 
 
@@ -68,11 +85,12 @@ def beat_lines(slide: dict[str, Any]) -> list[str]:
         if not isinstance(beat, dict):
             continue
         beat_id = str(beat.get("id", "")).strip()
+        content_unit_id = str(beat.get("content_unit_id", "")).strip()
         group_id = str(beat.get("group_id", beat.get("visual_group", ""))).strip()
         anchor = str(beat.get("visible_anchor", "")).strip()
         intent = str(beat.get("spoken_intent", beat.get("spoken_point", beat.get("text", "")))).strip()
         spoken = str(beat.get("spoken_text", "")).strip()
-        lines.append(f"- {beat_id} -> {group_id}: visible anchor=\"{anchor}\"; intent={intent}; draft spoken text={spoken}")
+        lines.append(f"- {beat_id} -> unit {content_unit_id or '-'} -> {group_id}: anchor=\"{anchor}\"; intent={intent}; spoken={spoken}")
     return lines
 
 
@@ -118,15 +136,14 @@ Input images:
 
 Primary request:
 Generate one complete full-slide master image in the same warm hand-drawn Chinese explainer style as the references. The final video will reveal parts of this full-slide image by using cover/fog/crop reveal layers. Do not generate separate isolated element images for production.
-The slide body, title, subtitle, lines, arrows, icons, labels, and diagram content must all be Image Gen bitmap content. Do not create SVG, vector layers, HTML, CSS, Canvas, React, or Remotion-drawn PPT body elements.
+The slide body, title, subtitle, lines, arrows, icons, labels, and diagram content must all be Image Gen bitmap content.
 
 Canvas and layout:
 - 16:9 landscape, 1920x1080.
-- Use a flat uniform #FFFDF7 background. No paper texture, no grain, no background noise, no shadow, no gradient, no vignette.
+- Use a flat uniform #FFFDF7 background.
 - Yellow vertical marker at top left.
 - Large handwritten Chinese main title at top left.
 - Smaller handwritten Chinese subtitle below the title with a short yellow underline.
-- The middle of the slide is an open content canvas. Do not draw a large enclosing rounded black content frame.
 - Keep the main content inside x=80,y=235 to x=1840,y=915.
 - Keep y=930 to y=1080 visually calm for Remotion subtitles.
 
@@ -145,29 +162,24 @@ Narration beats that the visual must support:
 Fallback content items, if any:
 {fallback_items}
 
-Reveal-friendly layout constraints:
-- Design 5-8 large independent visual groups.
-- Each group must contain a short visible Chinese label that narration can reference.
-- Each group must fit inside a clean rectangular bounding area for later reveal.
-- Leave 80-120px of clean #FFFDF7 background between independent groups.
-- Leave at least 32px blank #FFFDF7 padding around strokes inside each group.
-- Do not use long connector lines crossing between independent groups.
+Semantic mapping and mask rules:
+- Treat each visual group as one content unit. Preserve the content_unit_id relationship in the layout.
+- The subtitle group is display_only unless explicitly stated otherwise; it may be visible but should not carry a spoken explanation.
+- For every group, follow mask target, include, and exclude fields. These determine the later reveal box or mask review.
+- A later box must be able to cover all included elements without covering excluded elements.
 - Keep arrows, labels, icons, formulas, and cards inside the same reveal group when semantically connected.
-- Do not scatter one concept across multiple distant positions.
+- Leave 80-120px of clean #FFFDF7 background between independent groups.
 - Do not place critical content below y=930.
 
 Narration alignment rules:
-- Every major visual group must support one narration beat.
+- Every speakable visual group must support one narration beat.
 - The narration should expand what is visible on the page; it must not introduce unrelated concepts that the page does not show.
-- Do not show all concepts as equally important. Use the hierarchy implied by reveal_order and narration order.
-- Put late narration takeaways in a summary_group that can appear or highlight near the end.
+- Use the hierarchy implied by reveal_order and narration order.
 
 Style constraints:
 - Match the two reference images: black hand-drawn ink, yellow accent, soft green and blue highlight pills, simple doodle icons, clean spacing.
-- Avoid overlapping objects. Do not place text on top of icons, arrows, borders, or colored label backgrounds unless that text belongs to the same label group.
+- Avoid overlapping objects.
 - Keep text large and readable; avoid dense paragraphs and tiny labels.
-- Prefer short Chinese labels and diagrammatic blocks over long body text.
-- No photorealistic scene, no 3D, no neon technology style, no dark background, no watermark.
 """
 
 

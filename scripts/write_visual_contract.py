@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Generate a first-pass visual_contract.json from article.md.
 
-This is a deterministic scaffold generator. It does not replace editorial review,
-but it makes the pipeline runnable before a model or human refines each visual
-anchor and narration beat.
+The contract is the minimal semantic mapping source for the pipeline: slide content
+units, visual groups, narration beats, and mask targets live in one file. It is a
+runnable scaffold and still benefits from model or editorial refinement.
 """
 
 from __future__ import annotations
@@ -62,6 +62,71 @@ def compact_summary(sentences: list[str], max_chars: int = 46) -> str:
     if not joined:
         return "本页解释一个关键观点。"
     return joined[:max_chars]
+
+
+def numbered_body_label(index: int) -> str:
+    return f"第{index}点"
+
+
+def detailed_spoken_text(label: str, point: str, index: int, max_chars: int = 180) -> str:
+    point = clean_line(point)
+    if not point:
+        return f"{numbered_body_label(index)}是“{label}”。这里需要结合画面中的这一块来理解。"
+    return (
+        f"{numbered_body_label(index)}是“{label}”。"
+        f"这里的意思是，{point}"
+        f"请对应看画面中标注为“{label}”的这一块，它就是这句话的视觉说明。"
+    )[:max_chars]
+
+
+def semantic_group(
+    *,
+    group_id: str,
+    content_unit_id: str,
+    role: str,
+    visible_text: str,
+    source_text: str,
+    visual_anchor: str,
+    narration_function: str,
+    speak_policy: str,
+    mask_target: str,
+    must_include: list[str],
+    must_not_include: list[str],
+    reveal_order: int,
+) -> dict[str, Any]:
+    return {
+        "id": group_id,
+        "content_unit_id": content_unit_id,
+        "role": role,
+        "visible_text": visible_text,
+        "source_text": source_text,
+        "visual_anchor": visual_anchor,
+        "narration_function": narration_function,
+        "speak_policy": speak_policy,
+        "mask_target": mask_target,
+        "must_include": must_include,
+        "must_not_include": must_not_include,
+        "reveal_order": reveal_order,
+    }
+
+
+def narration_beat(
+    *,
+    beat_id: str,
+    content_unit_id: str,
+    group_id: str,
+    visible_anchor: str,
+    spoken_intent: str,
+    spoken_text: str,
+) -> dict[str, Any]:
+    return {
+        "id": beat_id,
+        "content_unit_id": content_unit_id,
+        "group_id": group_id,
+        "visible_anchor": visible_anchor,
+        "spoken_intent": spoken_intent,
+        "spoken_text": spoken_text,
+    }
 
 
 def parse_article(path: Path) -> tuple[str, list[dict[str, Any]]]:
@@ -124,73 +189,114 @@ def key_points(text: str, count: int = 3) -> list[str]:
 def build_slide(slide_index: int, section: dict[str, Any]) -> dict[str, Any]:
     slide_id = f"slide_{slide_index:03d}"
     title_text = clean_line(str(section.get("title") or f"第{slide_index}页"))[:24]
-    sentences = split_sentences(str(section.get("text", "")))
-    points = key_points(str(section.get("text", "")), count=3)
+    section_text = str(section.get("text", ""))
+    sentences = split_sentences(section_text)
+    points = key_points(section_text, count=3)
     core = compact_summary(sentences)
     subtitle_text = short_label(core, 16)
 
     visual_groups: list[dict[str, Any]] = [
-        {
-            "id": "title_group",
-            "role": "title",
-            "visible_text": title_text,
-            "visual_anchor": "顶部主标题",
-            "narration_function": "引出本页主题",
-            "reveal_order": 1,
-        },
-        {
-            "id": "subtitle_group",
-            "role": "subtitle",
-            "visible_text": subtitle_text,
-            "visual_anchor": "标题下方副标题",
-            "narration_function": "给出本页理解角度",
-            "reveal_order": 2,
-        },
+        semantic_group(
+            group_id="title_group",
+            content_unit_id="title_main",
+            role="title",
+            visible_text=title_text,
+            source_text=title_text,
+            visual_anchor="顶部主标题",
+            narration_function="引出本页主题，只讲主标题，不单独讲副标题。",
+            speak_policy="speak",
+            mask_target="覆盖完整主标题、标题左侧黄色标记和标题附近的强调装饰。",
+            must_include=["主标题文字", "标题左侧黄色标记", "标题强调装饰"],
+            must_not_include=["subtitle_group", "body_group_01", "summary_group"],
+            reveal_order=1,
+        ),
+        semantic_group(
+            group_id="subtitle_group",
+            content_unit_id="title_sub",
+            role="subtitle",
+            visible_text=subtitle_text,
+            source_text=core,
+            visual_anchor="标题下方副标题",
+            narration_function="辅助展示本页理解角度，默认只展示不朗读。",
+            speak_policy="display_only",
+            mask_target="覆盖完整副标题和副标题下方装饰线。",
+            must_include=["副标题文字", "副标题装饰线"],
+            must_not_include=["title_group", "body_group_01"],
+            reveal_order=2,
+        ),
     ]
 
-    narration_beats: list[dict[str, Any]] = []
+    narration_beats: list[dict[str, Any]] = [
+        narration_beat(
+            beat_id="beat_title",
+            content_unit_id="title_main",
+            group_id="title_group",
+            visible_anchor=title_text,
+            spoken_intent="引出本页主题",
+            spoken_text=f"这一页我们看“{title_text}”。接下来我会按画面中的几个内容块，把这个主题拆开讲清楚。",
+        )
+    ]
+
+    body_group_ids: list[str] = []
     for point_index, point in enumerate(points, start=1):
         group_id = f"body_group_{point_index:02d}"
+        content_unit_id = f"body_{point_index:02d}"
         label = short_label(point)
+        body_group_ids.append(group_id)
+        role = "content_body" if point_index != 2 else "diagram"
         visual_groups.append(
-            {
-                "id": group_id,
-                "role": "content_body" if point_index != 2 else "diagram",
-                "visible_text": label,
-                "visual_anchor": f"第{point_index}个内容区：{label}",
-                "narration_function": point[:80],
-                "reveal_order": point_index + 2,
-            }
+            semantic_group(
+                group_id=group_id,
+                content_unit_id=content_unit_id,
+                role=role,
+                visible_text=label,
+                source_text=point,
+                visual_anchor=f"第{point_index}个内容区：{label}",
+                narration_function=point[:100],
+                speak_policy="speak",
+                mask_target=f"覆盖第{point_index}个内容区的完整视觉表达，包括标签、卡片/图标、局部箭头和说明文字。",
+                must_include=["内容区边界或卡片", "可见标签", "相关图标", "局部箭头或连接符", "局部说明文字"],
+                must_not_include=[gid for gid in ["title_group", "subtitle_group", "summary_group", *body_group_ids] if gid != group_id],
+                reveal_order=point_index + 2,
+            )
         )
         narration_beats.append(
-            {
-                "id": f"beat_{point_index:02d}",
-                "group_id": group_id,
-                "visible_anchor": label,
-                "spoken_intent": point[:90],
-                "spoken_text": f"看这一块“{label}”：{point[:90]}",
-            }
+            narration_beat(
+                beat_id=f"beat_{point_index:02d}",
+                content_unit_id=content_unit_id,
+                group_id=group_id,
+                visible_anchor=label,
+                spoken_intent=point[:110],
+                spoken_text=detailed_spoken_text(label, point, point_index),
+            )
         )
 
     summary_label = short_label(core, 12)
     visual_groups.append(
-        {
-            "id": "summary_group",
-            "role": "summary",
-            "visible_text": summary_label,
-            "visual_anchor": "底部总结区",
-            "narration_function": "收束本页观点",
-            "reveal_order": len(visual_groups) + 1,
-        }
+        semantic_group(
+            group_id="summary_group",
+            content_unit_id="summary",
+            role="summary",
+            visible_text=summary_label,
+            source_text=core,
+            visual_anchor="底部总结区",
+            narration_function="收束本页观点",
+            speak_policy="speak",
+            mask_target="覆盖底部总结区的完整总结标签、强调符号和总结卡片。",
+            must_include=["总结标签", "总结卡片或强调区", "总结强调符号"],
+            must_not_include=["title_group", "subtitle_group", *body_group_ids],
+            reveal_order=len(visual_groups) + 1,
+        )
     )
     narration_beats.append(
-        {
-            "id": f"beat_{len(narration_beats) + 1:02d}",
-            "group_id": "summary_group",
-            "visible_anchor": summary_label,
-            "spoken_intent": "总结本页核心观点",
-            "spoken_text": f"最后记住“{summary_label}”：{core}",
-        }
+        narration_beat(
+            beat_id="beat_summary",
+            content_unit_id="summary",
+            group_id="summary_group",
+            visible_anchor=summary_label,
+            spoken_intent="总结本页核心观点",
+            spoken_text=f"最后回到“{summary_label}”。这一页的核心结论是：{core}",
+        )
     )
 
     return {
@@ -211,6 +317,11 @@ def build_contract(article_path: Path, min_slides: int, max_slides: int, topic_n
     slides = [build_slide(index, section) for index, section in enumerate(chunks, start=1)]
     return {
         "version": "visual_contract_v1",
+        "mapping_policy": {
+            "semantic_unit": "visual_group",
+            "id_chain": "narration_beat.id -> content_unit_id -> visual_group.id -> reveal_manifest.group.id -> box/mask",
+            "subtitle_policy": "subtitle_group uses speak_policy=display_only by default",
+        },
         "topic": {
             "topic_id": re.sub(r"[^A-Za-z0-9_\-]+", "_", article_path.stem).strip("_") or "topic",
             "topic_name": title,

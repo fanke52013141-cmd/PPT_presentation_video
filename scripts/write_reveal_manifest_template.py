@@ -19,6 +19,14 @@ class TemplateError(RuntimeError):
 
 
 CANVAS = {"width": 1920, "height": 1080, "background": "#FFFDF7", "subtitle_safe_y": 930}
+SEMANTIC_FIELDS = [
+    "content_unit_id",
+    "source_text",
+    "speak_policy",
+    "mask_target",
+    "must_include",
+    "must_not_include",
+]
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -97,11 +105,19 @@ def box_for_group(group: dict[str, Any], slot: dict[str, int] | None) -> dict[st
     return {"x": 160, "y": 300, "w": 720, "h": 260}
 
 
-def group_beat_id(group_id: str, beats: list[dict[str, Any]]) -> str | None:
+def group_beat(group_id: str, beats: list[dict[str, Any]]) -> dict[str, Any] | None:
     for beat in beats:
         if isinstance(beat, dict) and str(beat.get("group_id", "")) == group_id:
-            return str(beat.get("id", "")) or None
+            return beat
     return None
+
+
+def copy_semantic_fields(group: dict[str, Any]) -> dict[str, Any]:
+    copied: dict[str, Any] = {}
+    for field in SEMANTIC_FIELDS:
+        if field in group:
+            copied[field] = group[field]
+    return copied
 
 
 def build_slide(slide: dict[str, Any], run_dir: Path) -> dict[str, Any]:
@@ -129,20 +145,23 @@ def build_slide(slide: dict[str, Any], run_dir: Path) -> dict[str, Any]:
         role = str(group.get("role", "content_body"))
         if not group_id:
             continue
-        manifest_groups.append(
-            {
-                "id": group_id,
-                "role": role,
-                "box": box_for_group(group, slot_by_id.get(group_id)),
-                "visible_text": str(group.get("visible_text", "")),
-                "visual_anchor": str(group.get("visual_anchor", "")),
-                "narration_beat_id": group_beat_id(group_id, beats),
-                "padding_px": 32 if role not in {"diagram", "summary"} else 48,
-                "z_index": 20 + index,
-                "reveal": default_reveal(role),
-                "review_status": "needs_manual_adjustment_after_image_gen",
-            }
-        )
+        beat = group_beat(group_id, beats)
+        manifest_group = {
+            "id": group_id,
+            "role": role,
+            "box": box_for_group(group, slot_by_id.get(group_id)),
+            "visible_text": str(group.get("visible_text", "")),
+            "visual_anchor": str(group.get("visual_anchor", "")),
+            "narration_beat_id": str(beat.get("id", "")) if beat else None,
+            "padding_px": 32 if role not in {"diagram", "summary"} else 48,
+            "z_index": 20 + index,
+            "reveal": default_reveal(role),
+            "review_status": "needs_manual_adjustment_after_image_gen",
+        }
+        manifest_group.update(copy_semantic_fields(group))
+        if beat and beat.get("content_unit_id"):
+            manifest_group["narration_content_unit_id"] = str(beat.get("content_unit_id", ""))
+        manifest_groups.append(manifest_group)
     return {
         "slide_id": slide_id,
         "slide_dir": str((run_dir / "slides" / slide_id).as_posix()),
@@ -162,7 +181,7 @@ def build_manifest(contract: dict[str, Any], run_dir: Path) -> dict[str, Any]:
         "version": "reveal_v1",
         "canvas": CANVAS,
         "slides": [build_slide(slide, run_dir) for slide in slides if isinstance(slide, dict)],
-        "template_note": "Auto-generated coordinate draft. Adjust boxes after reviewing visual_draft.png.",
+        "template_note": "Auto-generated coordinate draft. Semantic fields are copied from visual_contract.json; adjust boxes after reviewing visual_draft.png.",
     }
 
 

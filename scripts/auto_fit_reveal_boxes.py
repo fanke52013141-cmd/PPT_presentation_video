@@ -24,6 +24,7 @@ class FitError(RuntimeError):
 
 DEFAULT_BACKGROUND = "#FFFDF7"
 LOCKED_REVIEW_STATUSES = {"reviewed", "approved", "manual_reviewed", "manual_adjusted", "locked"}
+MIN_BOX_SIZE = 36
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -78,6 +79,93 @@ def expand_box(box: dict[str, int], width: int, height: int, margin: int) -> dic
     x2 = min(width, box["x"] + box["w"] + margin)
     y2 = min(height, box["y"] + box["h"] + margin)
     return {"x": x1, "y": y1, "w": x2 - x1, "h": y2 - y1}
+
+
+def box_area(box: dict[str, int]) -> int:
+    return max(0, int(box["w"])) * max(0, int(box["h"]))
+
+
+def overlap_rect(a: dict[str, int], b: dict[str, int]) -> tuple[int, int, int, int] | None:
+    x1 = max(a["x"], b["x"])
+    y1 = max(a["y"], b["y"])
+    x2 = min(a["x"] + a["w"], b["x"] + b["w"])
+    y2 = min(a["y"] + a["h"], b["y"] + b["h"])
+    if x2 <= x1 or y2 <= y1:
+        return None
+    return x1, y1, x2, y2
+
+
+def resolve_pair_overlap(a: dict[str, int], b: dict[str, int], gap: int) -> bool:
+    overlap = overlap_rect(a, b)
+    if not overlap:
+        return False
+    ox1, oy1, ox2, oy2 = overlap
+    overlap_w = ox2 - ox1
+    overlap_h = oy2 - oy1
+    ax = a["x"] + a["w"] / 2
+    ay = a["y"] + a["h"] / 2
+    bx = b["x"] + b["w"] / 2
+    by = b["y"] + b["h"] / 2
+
+    if overlap_h <= overlap_w:
+        top, bottom = (a, b) if ay <= by else (b, a)
+        boundary = int(round((ay + by) / 2))
+        old_top_bottom = top["y"] + top["h"]
+        old_bottom_top = bottom["y"]
+        old_bottom_y2 = bottom["y"] + bottom["h"]
+        top_bottom = min(old_top_bottom, max(top["y"] + MIN_BOX_SIZE, boundary - gap // 2))
+        bottom_top = max(old_bottom_top, min(old_bottom_y2 - MIN_BOX_SIZE, boundary + gap // 2))
+        if top_bottom < bottom_top:
+            top["h"] = max(MIN_BOX_SIZE, top_bottom - top["y"])
+            bottom["y"] = bottom_top
+            bottom["h"] = max(MIN_BOX_SIZE, old_bottom_y2 - bottom_top)
+            return True
+    else:
+        left, right = (a, b) if ax <= bx else (b, a)
+        boundary = int(round((ax + bx) / 2))
+        old_left_right = left["x"] + left["w"]
+        old_right_left = right["x"]
+        old_right_x2 = right["x"] + right["w"]
+        left_right = min(old_left_right, max(left["x"] + MIN_BOX_SIZE, boundary - gap // 2))
+        right_left = max(old_right_left, min(old_right_x2 - MIN_BOX_SIZE, boundary + gap // 2))
+        if left_right < right_left:
+            left["w"] = max(MIN_BOX_SIZE, left_right - left["x"])
+            right["x"] = right_left
+            right["w"] = max(MIN_BOX_SIZE, old_right_x2 - right_left)
+            return True
+    return False
+
+
+def resolve_group_overlaps(groups: list[dict[str, Any]], gap: int = 18, passes: int = 4) -> list[dict[str, Any]]:
+    changed_pairs: list[dict[str, Any]] = []
+    editable = [
+        group for group in groups
+        if isinstance(group, dict)
+        and isinstance(group.get("box"), dict)
+    ]
+    for _ in range(passes):
+        changed = False
+        for i in range(len(editable)):
+            for j in range(i + 1, len(editable)):
+                a = editable[i]["box"]
+                b = editable[j]["box"]
+                overlap = overlap_rect(a, b)
+                if not overlap:
+                    continue
+                overlap_area = (overlap[2] - overlap[0]) * (overlap[3] - overlap[1])
+                min_area = max(1, min(box_area(a), box_area(b)))
+                if overlap_area / min_area < 0.03:
+                    continue
+                if resolve_pair_overlap(a, b, gap):
+                    changed = True
+                    changed_pairs.append({
+                        "a": editable[i].get("id", ""),
+                        "b": editable[j].get("id", ""),
+                        "overlap_ratio": round(overlap_area / min_area, 3),
+                    })
+        if not changed:
+            break
+    return changed_pairs
 
 
 def fit_box(image: Image.Image, box: dict[str, int], background: str, threshold: float, search_margin: int, padding: int, subtitle_safe_y: int, role: str) -> tuple[dict[str, int], dict[str, Any]]:
@@ -150,13 +238,25 @@ def fit_manifest(manifest: dict[str, Any], manifest_path: Path, repo_root: Path,
             role = str(group.get("role", "content_body"))
             base_box = clamp_box(group["box"], width, height)
             group_padding = int(group.get("padding_px", padding))
+            if role in {"title", "subtitle"}:
+                fit_padding = min(padding, group_padding, 12)
+                fit_search_margin = min(search_margin, 24)
+            elif role == "summary":
+                fit_padding = min(padding, group_padding, 16)
+                fit_search_margin = min(search_margin, 48)
+            elif role == "decoration":
+                fit_padding = 8
+                fit_search_margin = min(search_margin, 40)
+            else:
+                fit_padding = min(padding, group_padding, 24)
+                fit_search_margin = search_margin
             fitted, meta = fit_box(
                 image=image,
                 box=base_box,
                 background=background,
                 threshold=threshold,
-                search_margin=search_margin,
-                padding=max(padding, group_padding),
+                search_margin=fit_search_margin,
+                padding=fit_padding,
                 subtitle_safe_y=subtitle_safe_y,
                 role=role,
             )
@@ -164,6 +264,9 @@ def fit_manifest(manifest: dict[str, Any], manifest_path: Path, repo_root: Path,
             group["review_status"] = "auto_fitted_needs_review"
             group["auto_fit"] = meta
             slide_report["groups"].append({"id": group_id, **meta, "box": fitted})
+        overlap_changes = resolve_group_overlaps(groups)
+        if overlap_changes:
+            slide_report["overlap_resolution"] = overlap_changes
         report["slides"].append(slide_report)
     return report
 
@@ -174,7 +277,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repo-root", default=Path("."), type=Path)
     parser.add_argument("--threshold", type=float, default=18.0)
     parser.add_argument("--search-margin", type=int, default=80)
-    parser.add_argument("--padding", type=int, default=32)
+    parser.add_argument("--padding", type=int, default=18)
     parser.add_argument("--overwrite-reviewed", action="store_true")
     parser.add_argument("--out", type=Path, help="Defaults to overwriting --manifest")
     parser.add_argument("--report", type=Path, help="Defaults to <manifest>.auto_fit_report.json")

@@ -582,6 +582,31 @@ def update_step2_result(project_id: str, payload: Dict[str, Any], db: Session = 
 # 辅助生成某一页 PPT 生图的 Prompt。
 # 在这里，我们需要配合手绘风格的规则，将 visual_anchor 及 visible_text 与预定义的线稿艺术做融合。
 def generate_prompt_for_slide(slide: Dict[str, Any], topic_name: str) -> str:
+    group_lines = []
+    for idx, g in enumerate(slide.get("visual_groups", []), start=1):
+        group_lines.append(
+            f"{idx}. group_id={g.get('id')}; role={g.get('role')}; "
+            f"exact visible Chinese label='{g.get('visible_text', '')}'; "
+            f"visual anchor='{g.get('visual_anchor', '')}'."
+        )
+    groups_str = "\n".join(group_lines)
+    main_title = slide.get("main_title", "")
+    subtitle = slide.get("subtitle", "")
+    subtitle_part = f"Subtitle: '{subtitle}'. " if subtitle else ""
+    return (
+        f"Create one 16:9 PPT-style whiteboard slide for topic '{topic_name}'. "
+        f"Title: '{main_title}'. {subtitle_part}\n"
+        "CRITICAL composition rules:\n"
+        "1. Render every visual group below as a separate visual island with clean whitespace between groups.\n"
+        "2. The exact visible Chinese label for each group must appear legibly in the image. Do not replace, paraphrase, or omit labels.\n"
+        "3. Do not merge two groups into one drawing. Do not let group drawings overlap. Keep at least 80 px of clean background between independent body groups.\n"
+        "4. Title stays at the top, subtitle directly below it, body groups in the middle, summary above the subtitle-safe area.\n"
+        "5. Reserve the bottom 150 px of the 1920x1080 canvas for subtitles: keep y=930..1080 clean, with no important text, labels, faces, or key drawings.\n"
+        "6. Use short labels and simple hand-drawn shapes; avoid decorative marks that connect separate groups.\n\n"
+        f"Visual groups to draw:\n{groups_str}\n\n"
+        "Style: warm minimalist hand-drawn vector line art, uniform #FFFDF7 background, black ink #111111, "
+        "single yellow highlight #F9D65C, clean whiteboard sketch, no shadows, no gradients, no paper texture."
+    )
     # 提取所有视觉分组的描述
     anchors = []
     for g in slide.get("visual_groups", []):
@@ -817,6 +842,8 @@ def auto_mask_project(project_id: str, db: Session = Depends(get_db)):
                     continue
                     
                 # 优化：将生图大分辨率在后端等比缩放到 960 宽，规避 Vision API 发送 Base64 消息体过大（Payload 413）或接口超时问题
+                vision_width = 1920
+                vision_height = 1080
                 with open(img_path, "rb") as image_file:
                     try:
                         from PIL import Image
@@ -825,6 +852,7 @@ def auto_mask_project(project_id: str, db: Session = Depends(get_db)):
                             ratio = 960 / img.width
                             new_h = int(img.height * ratio)
                             img = img.resize((960, new_h), Image.Resampling.LANCZOS)
+                        vision_width, vision_height = img.width, img.height
                         buf = io.BytesIO()
                         img.save(buf, format="PNG")
                         base64_image = base64.b64encode(buf.getvalue()).decode('utf-8')
@@ -833,16 +861,40 @@ def auto_mask_project(project_id: str, db: Session = Depends(get_db)):
                         image_file.seek(0)
                         base64_image = base64.b64encode(image_file.read()).decode('utf-8')
                     
-                # 拼接分组信息
+                # 拼接分组信息。当前 reveal manifest 使用 groups[]，
+                # 旧版 reveal_boxes[] 仅作为兼容兜底。
                 groups_info = []
-                for box in slide.get("reveal_boxes", []):
-                    groups_info.append(f"Group ID: {box['group_id']}, text label: '{box.get('text_label', '')}'")
+                slide_groups = slide.get("groups") if isinstance(slide.get("groups"), list) else []
+                if slide_groups:
+                    for group in slide_groups:
+                        box = group.get("box", {}) if isinstance(group.get("box"), dict) else {}
+                        scaled_box = [
+                            round(float(box.get("x", 0)) * vision_width / 1920),
+                            round(float(box.get("y", 0)) * vision_height / 1080),
+                            round((float(box.get("x", 0)) + float(box.get("w", 0))) * vision_width / 1920),
+                            round((float(box.get("y", 0)) + float(box.get("h", 0))) * vision_height / 1080),
+                        ]
+                        groups_info.append(
+                            f"Group ID: {group['id']}\n"
+                            f"- exact visible label: {group.get('visible_text', '')}\n"
+                            f"- visual anchor: {group.get('visual_anchor', '')}\n"
+                            f"- prior box on the provided image: {scaled_box}"
+                        )
+                else:
+                    for box in slide.get("reveal_boxes", []):
+                        groups_info.append(f"Group ID: {box['group_id']}, text label: '{box.get('text_label', '')}'")
                 groups_info_str = "\n".join(groups_info)
+                if not groups_info_str:
+                    continue
                 
                 system_prompt = (
-                    "You are a Vision AI coordinator. Analyze the provided image which is a 1920x1080 whiteboard slide. "
-                    "Locate the bounding box coordinates [x_min, y_min, x_max, y_max] for each visual text label list. "
-                    "The coordinates must be on the absolute scale of 0 to 1920 for X, and 0 to 1080 for Y. "
+                    "You are a precise visual segmentation annotator for a PPT-style whiteboard slide. "
+                    f"The provided image is {vision_width}x{vision_height}. "
+                    "For each group, locate ONLY the visual island that semantically belongs to that group. "
+                    "Use the exact visible label and visual anchor to identify the correct island. "
+                    "Return tight, minimal bounding boxes; do not include unrelated neighboring drawings, arrows, subtitles, or summary text. "
+                    "Boxes should not overlap except for a tiny unavoidable edge touch. If two groups are close, split them at the whitespace boundary. "
+                    f"The coordinates must be in the provided image coordinate system: X 0..{vision_width}, Y 0..{vision_height}. "
                     "Return a JSON object in this format: "
                     "{\"boxes\": [{\"group_id\": \"group_id\", \"box\": [x_min, y_min, x_max, y_max]}]}"
                 )
@@ -856,6 +908,7 @@ def auto_mask_project(project_id: str, db: Session = Depends(get_db)):
                     response = client.chat.completions.create(
                         model=vision_model,
                         response_format={"type": "json_object"},
+                        timeout=60,
                         messages=[
                             {"role": "system", "content": system_prompt},
                             {
@@ -876,6 +929,7 @@ def auto_mask_project(project_id: str, db: Session = Depends(get_db)):
                     logger.warning(f"Failed Vision call with response_format, retrying without it: {inner_e}")
                     response = client.chat.completions.create(
                         model=vision_model,
+                        timeout=60,
                         messages=[
                             {"role": "system", "content": system_prompt + " Please return ONLY raw JSON without any markdown block wrappers like ```json."},
                             {
@@ -898,10 +952,26 @@ def auto_mask_project(project_id: str, db: Session = Depends(get_db)):
                     vision_data = json.loads(cleaned_content)
                     boxes_dict = {b["group_id"]: b["box"] for b in vision_data.get("boxes", [])}
                     
-                    for box in slide.get("reveal_boxes", []):
-                        g_id = box["group_id"]
-                        if g_id in boxes_dict:
-                            box["box"] = [int(v) for v in boxes_dict[g_id]]
+                    if slide_groups:
+                        for group in slide_groups:
+                            g_id = group["id"]
+                            if g_id in boxes_dict:
+                                raw_x1, raw_y1, raw_x2, raw_y2 = [float(v) for v in boxes_dict[g_id]]
+                                x1 = int(round(raw_x1 * 1920 / vision_width))
+                                y1 = int(round(raw_y1 * 1080 / vision_height))
+                                x2 = int(round(raw_x2 * 1920 / vision_width))
+                                y2 = int(round(raw_y2 * 1080 / vision_height))
+                                group["box"] = {
+                                    "x": max(0, x1),
+                                    "y": max(0, y1),
+                                    "w": max(1, x2 - x1),
+                                    "h": max(1, y2 - y1)
+                                }
+                    else:
+                        for box in slide.get("reveal_boxes", []):
+                            g_id = box["group_id"]
+                            if g_id in boxes_dict:
+                                box["box"] = [int(v) for v in boxes_dict[g_id]]
                 except Exception as ex:
                     logger.error(f"Failed to parse vision response for slide {slide_id}: {ex}. Content: {response.choices[0].message.content}")
                     

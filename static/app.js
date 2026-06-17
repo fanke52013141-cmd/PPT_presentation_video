@@ -10,6 +10,17 @@ let state = {
     selectedBoxIndex: -1,
     draggedBoxIndex: -1,
     draggedHandle: null, // 'nw', 'ne', 'se', 'sw', 'move'
+    paintMode: false,
+    paintingBoxIndex: -1,
+    eraserMode: false,
+    isPainting: false,
+    currentStroke: null,
+    brushSize: 80,
+    brushCursorClientX: null,
+    brushCursorClientY: null,
+    autoMaskLoading: false,
+    narrationPickerBoxIndex: -1,
+    narrationPickerSelection: [],
     startX: 0,
     startY: 0
   }
@@ -194,7 +205,12 @@ function initGlobalEvents() {
 
   // ================= 步骤 5 事件 =================
   document.getElementById('step5-btn-automask').addEventListener('click', () => runStep5AutoMask());
+  document.getElementById('step5-btn-new-block')?.addEventListener('click', () => createCurrentSlideBlock());
+  document.getElementById('step5-btn-clear-current')?.addEventListener('click', () => clearAllMaskAnnotations());
   document.getElementById('step5-btn-save').addEventListener('click', () => saveStep5Masks());
+  document.getElementById('step5-brush-size')?.addEventListener('input', (e) => updateBrushSize(e.target.value));
+  document.getElementById('btn-narration-picker-cancel')?.addEventListener('click', () => closeNarrationPicker());
+  document.getElementById('btn-narration-picker-confirm')?.addEventListener('click', () => confirmNarrationPicker());
 
   // ================= 步骤 6 事件 =================
   document.getElementById('step6-btn-init').addEventListener('click', () => initStep6Narration());
@@ -711,7 +727,6 @@ async function generateStep2Contract() {
 function renderStep2Workspace() {
   document.getElementById('step2-editor-area').style.display = 'block';
   document.getElementById('step2-btn-generate').innerHTML = `<svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg> 重新规划分镜`;
-  document.getElementById('step2-btn-copy-prompts').style.display = 'inline-flex';
   document.getElementById('step2-btn-save').style.display = 'inline-flex';
   document.getElementById('step2-btn-next').style.display = 'inline-flex';
   
@@ -826,7 +841,7 @@ function copyStep2Prompts() {
       `Title: '${mainTitle}'. ` +
       (subtitle ? `Subtitle: '${subtitle}'. ` : '') +
       `The slide contains the following visual elements and concepts: ${anchorsStr}. ` +
-      `Uniform pure beige background #FFFDF7, clean empty bottom subtitle area. ` +
+      `Uniform pure beige background #FFFDF7. Reserve the bottom 150 px subtitle-safe zone on a 1920x1080 canvas (y=930..1080): keep it clean with no important text, labels, faces, or key drawings. ` +
       `Ink black lines (#111111), fine rough hand-drawn strokes. ` +
       `Subtle single accent yellow highlight (#F9D65C) on key concepts. ` +
       `Minimalist whiteboard drawing, korean line art webtoon style, cute hand sketch, no shadows, no gradients.`;
@@ -1196,6 +1211,260 @@ let manifestData = null;
 
 let step2Contract = null; // 用于缓存步骤 2 分镜规划数据
 
+const MASK_COLORS = [
+  '#E84A5F',
+  '#1B998B',
+  '#F6AE2D',
+  '#3D5A80',
+  '#7B2CBF',
+  '#2F80ED',
+  '#D45113',
+  '#4C956C',
+  '#C9184A',
+  '#0077B6'
+];
+
+function getMaskColor(idx) {
+  return MASK_COLORS[idx % MASK_COLORS.length];
+}
+
+function getBoxColor(maskBox, idx) {
+  return getMaskColor(idx);
+}
+
+function hexToRgba(hex, alpha) {
+  const clean = String(hex || '#111111').replace('#', '');
+  const full = clean.length === 3 ? clean.split('').map(ch => ch + ch).join('') : clean;
+  const num = parseInt(full, 16);
+  if (Number.isNaN(num)) return `rgba(17, 17, 17, ${alpha})`;
+  const r = (num >> 16) & 255;
+  const g = (num >> 8) & 255;
+  const b = num & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function cloneManualMask(mask) {
+  if (!mask || typeof mask !== 'object') return { strokes: [] };
+  return {
+    color: mask.color || '',
+    bounds: mask.bounds ? { ...mask.bounds } : null,
+    strokes: Array.isArray(mask.strokes)
+      ? mask.strokes.map(stroke => ({
+          color: stroke.color || '',
+          size: Number(stroke.size || 42),
+          mode: stroke.mode || (stroke.eraser ? 'erase' : 'paint'),
+          eraser: !!stroke.eraser,
+          points: Array.isArray(stroke.points)
+            ? stroke.points.map(point => ({
+                x: Number(point.x || 0),
+                y: Number(point.y || 0)
+              }))
+            : []
+        }))
+      : []
+  };
+}
+
+function ensureManualMask(maskBox, idx = 0) {
+  if (!maskBox.manual_mask || typeof maskBox.manual_mask !== 'object') {
+    maskBox.manual_mask = { color: getMaskColor(idx), strokes: [] };
+  }
+  if (!Array.isArray(maskBox.manual_mask.strokes)) {
+    maskBox.manual_mask.strokes = [];
+  }
+  maskBox.manual_mask.color = getMaskColor(idx);
+  return maskBox.manual_mask;
+}
+
+function getCurrentManifestSlide() {
+  return manifestData?.slides?.[state.activeSlideIndex] || null;
+}
+
+function getStep2SlideForManifestSlide(manifestSlide = getCurrentManifestSlide()) {
+  if (!manifestSlide || !step2Contract?.slides) return null;
+  return step2Contract.slides.find(s => s.slide_id === manifestSlide.slide_id) || null;
+}
+
+function splitNarrationText(text) {
+  const value = String(text || '').trim();
+  if (!value) return [];
+  const parts = value.match(/[^，,。！？!?；;：:\n]+[，,。！？!?；;：:]?/g) || [value];
+  return parts.map(part => part.trim()).filter(Boolean);
+}
+
+function getNarrationFragments(step2Slide = getStep2SlideForManifestSlide()) {
+  const beats = step2Slide?.narration_beats || [];
+  const fragments = [];
+  beats.forEach((beat, beatIdx) => {
+    splitNarrationText(beat.spoken_text || '').forEach((text, fragIdx) => {
+      fragments.push({
+        id: `${beat.id || `beat_${beatIdx + 1}`}::${fragIdx + 1}`,
+        beat_id: beat.id || '',
+        group_id: beat.group_id || '',
+        beat_index: beatIdx,
+        fragment_index: fragIdx,
+        order: fragments.length + 1,
+        text
+      });
+    });
+  });
+  return fragments;
+}
+
+function getSelectedFragmentIds(maskBox) {
+  if (!maskBox) return [];
+  if (Array.isArray(maskBox.narration_fragments) && maskBox.narration_fragments.length > 0) {
+    return maskBox.narration_fragments.map(fragment => fragment.id).filter(Boolean);
+  }
+  return [];
+}
+
+function getSelectedFragmentText(maskBox, step2Slide = getStep2SlideForManifestSlide()) {
+  if (!maskBox) return '';
+  if (Array.isArray(maskBox.narration_fragments) && maskBox.narration_fragments.length > 0) {
+    return maskBox.narration_fragments.map(fragment => fragment.text).filter(Boolean).join('');
+  }
+  const beat = getNarrationBeatForBox(maskBox, step2Slide);
+  return maskBox.spoken_text || beat?.spoken_text || '';
+}
+
+function getNarrationBeatForBox(maskBox, step2Slide = getStep2SlideForManifestSlide()) {
+  const beats = step2Slide?.narration_beats || [];
+  if (!beats.length || !maskBox) return null;
+  if (Array.isArray(maskBox.narration_beat_ids) && maskBox.narration_beat_ids.length > 0) {
+    const byFirstId = beats.find(beat => beat.id === maskBox.narration_beat_ids[0]);
+    if (byFirstId) return byFirstId;
+  }
+  if (maskBox.narration_beat_id) {
+    const byId = beats.find(beat => beat.id === maskBox.narration_beat_id);
+    if (byId) return byId;
+  }
+  if (maskBox.narration_group_id) {
+    const byLinkedGroup = beats.find(beat => beat.group_id === maskBox.narration_group_id);
+    if (byLinkedGroup) return byLinkedGroup;
+  }
+  return beats.find(beat => beat.group_id === maskBox.group_id) || null;
+}
+
+function isBeatLinkedToMaskBox(beat, maskBox) {
+  if (!beat || !maskBox) return false;
+  if (Array.isArray(maskBox.narration_beat_ids) && maskBox.narration_beat_ids.includes(beat.id)) return true;
+  if (maskBox.narration_beat_id && beat.id === maskBox.narration_beat_id) return true;
+  if (maskBox.narration_group_id && beat.group_id === maskBox.narration_group_id) return true;
+  return beat.group_id === maskBox.group_id;
+}
+
+function isEraseStroke(stroke) {
+  return !!stroke?.eraser || String(stroke?.mode || '').toLowerCase() === 'erase';
+}
+
+function hasPaintStroke(maskBox) {
+  return (maskBox?.manual_mask?.strokes || []).some(stroke => !isEraseStroke(stroke) && (stroke.points || []).length > 0);
+}
+
+function isManualEmptyBox(maskBox) {
+  return String(maskBox?.group_id || '').startsWith('manual_group_') && !hasPaintStroke(maskBox);
+}
+
+function groupToMaskBox(group) {
+  const box = group.box || {};
+  const x = Number(box.x || 0);
+  const y = Number(box.y || 0);
+  const w = Number(box.w || 1);
+  const h = Number(box.h || 1);
+  return {
+    group_id: group.id || group.group_id || '',
+    role: group.role || 'content_body',
+    text_label: group.visible_text || group.text_label || '',
+    visual_anchor: group.visual_anchor || '',
+    narration_beat_id: group.narration_beat_id || group.linked_segment_id || '',
+    narration_beat_ids: Array.isArray(group.narration_beat_ids) ? [...group.narration_beat_ids] : [],
+    narration_group_id: group.narration_group_id || '',
+    narration_fragments: Array.isArray(group.narration_fragments) ? JSON.parse(JSON.stringify(group.narration_fragments)) : [],
+    spoken_text: group.spoken_text || '',
+    manual_mask: cloneManualMask(group.manual_mask),
+    box: [x, y, x + w, y + h]
+  };
+}
+
+function getSlideMaskBoxes(slide) {
+  if (!slide) return [];
+  if (Array.isArray(slide.groups) && slide.groups.length > 0) {
+    return slide.groups.map(groupToMaskBox);
+  }
+  if (Array.isArray(slide.reveal_boxes) && slide.reveal_boxes.length > 0) {
+    return JSON.parse(JSON.stringify(slide.reveal_boxes)).map((box, idx) => ({
+      ...box,
+      visual_anchor: box.visual_anchor || '',
+      narration_beat_id: box.narration_beat_id || '',
+      narration_beat_ids: Array.isArray(box.narration_beat_ids) ? [...box.narration_beat_ids] : [],
+      narration_group_id: box.narration_group_id || '',
+      narration_fragments: Array.isArray(box.narration_fragments) ? JSON.parse(JSON.stringify(box.narration_fragments)) : [],
+      manual_mask: cloneManualMask(box.manual_mask || { color: getMaskColor(idx), strokes: [] })
+    }));
+  }
+  return [];
+}
+
+function syncMaskBoxesToSlide(slide, boxes) {
+  if (!slide) return;
+  if (Array.isArray(slide.groups)) {
+    const visibleGroupIds = new Set(boxes.filter(maskBox => !isManualEmptyBox(maskBox)).map(maskBox => maskBox.group_id).filter(Boolean));
+    slide.groups = slide.groups.filter(group => visibleGroupIds.has(group.id || group.group_id));
+    boxes.forEach((maskBox, idx) => {
+      if (isManualEmptyBox(maskBox)) return;
+      ensureManualMask(maskBox, idx);
+      const [rawX1, rawY1, rawX2, rawY2] = maskBox.box || [0, 0, 1, 1];
+      const x1 = Math.max(0, Math.round(Math.min(rawX1, rawX2)));
+      const y1 = Math.max(0, Math.round(Math.min(rawY1, rawY2)));
+      const x2 = Math.min(1920, Math.round(Math.max(rawX1, rawX2)));
+      const y2 = Math.min(1080, Math.round(Math.max(rawY1, rawY2)));
+      let group = slide.groups.find(g => g.id === maskBox.group_id);
+      if (!group) {
+        group = {
+          id: maskBox.group_id || `custom_group_${idx + 1}`,
+          role: maskBox.role || 'content_body',
+          visible_text: maskBox.text_label || '',
+          reveal: { type: 'cover_fade_out', duration: 0.45 },
+          padding_px: 32,
+          z_index: 40 + idx
+        };
+        slide.groups.push(group);
+      }
+      group.role = maskBox.role || group.role || 'content_body';
+      if (maskBox.text_label) group.visible_text = maskBox.text_label;
+      if (maskBox.visual_anchor) group.visual_anchor = maskBox.visual_anchor;
+      if (maskBox.narration_beat_id) group.narration_beat_id = maskBox.narration_beat_id;
+      group.narration_beat_ids = Array.isArray(maskBox.narration_beat_ids) ? [...maskBox.narration_beat_ids] : [];
+      if (maskBox.narration_group_id) group.narration_group_id = maskBox.narration_group_id;
+      group.narration_fragments = Array.isArray(maskBox.narration_fragments) ? JSON.parse(JSON.stringify(maskBox.narration_fragments)) : [];
+      if (maskBox.spoken_text) group.spoken_text = maskBox.spoken_text;
+      group.manual_mask = cloneManualMask(maskBox.manual_mask || { strokes: [] });
+      group.manual_mask.color = getMaskColor(idx);
+      if (group.manual_mask.strokes.length > 0) {
+        group.review_status = "manual_painted";
+      }
+      group.box = {
+        x: x1,
+        y: y1,
+        w: Math.max(1, x2 - x1),
+        h: Math.max(1, y2 - y1)
+      };
+    });
+  }
+  slide.reveal_boxes = JSON.parse(JSON.stringify(
+    boxes
+      .filter(maskBox => !isManualEmptyBox(maskBox))
+      .map((maskBox, idx) => ({
+        ...maskBox,
+        manual_mask: {
+          ...cloneManualMask(maskBox.manual_mask || { strokes: [] }),
+          color: getMaskColor(idx)
+        }
+      }))
+  ));
+}
+
 async function loadStep5Data() {
   try {
     const contractRes = await API.get(`/api/projects/${state.currentProject.id}/steps/2/result`);
@@ -1223,6 +1492,7 @@ async function loadStep5Data() {
 }
 
 function renderStep5Workspace() {
+  updateStep5AutoMaskButton();
   const thumbsContainer = document.getElementById('step5-thumbs');
   thumbsContainer.className = 'step5-slides-grid'; // 改用平铺换行类名
   thumbsContainer.innerHTML = '';
@@ -1230,13 +1500,18 @@ function renderStep5Workspace() {
   manifestData.slides.forEach((slide, idx) => {
     const btn = document.createElement('div');
     const isCurrent = idx === state.activeSlideIndex;
+    const isRunning = state.canvasState.autoMaskLoading && isCurrent;
     const isCompleted = slide.status === 'completed';
     
     let statusClass = '';
     let statusText = '待标注';
     let statusColor = '#888';
     
-    if (isCurrent) {
+    if (isRunning) {
+      statusClass = 'active';
+      statusText = '框选中';
+      statusColor = '#2f80ed';
+    } else if (isCurrent) {
       statusClass = 'active';
       statusText = '标注中';
       statusColor = '#d29a00';
@@ -1250,7 +1525,7 @@ function renderStep5Workspace() {
     btn.innerHTML = `
       <div style="font-size: 0.85rem; font-weight: bold; color: var(--ink-color);">${slide.slide_id}</div>
       <div style="font-size: 0.65rem; margin-top: 0.15rem; color: ${statusColor}; font-weight: 500;">
-        ${statusText === '已标注' ? '✓ 已标注' : statusText === '标注中' ? '✍ 标注中' : '待标注'}
+        ${statusText === '已标注' ? '✓ 已标注' : statusText === '框选中' ? '… 框选中' : statusText === '标注中' ? '✍ 标注中' : '待标注'}
       </div>
     `;
     
@@ -1270,13 +1545,22 @@ function renderStep5Workspace() {
     document.getElementById('step5-bg-img').src = imgUrl;
     
     // 初始化 canvas 标注框数据并重绘
-    state.canvasState.boxes = JSON.parse(JSON.stringify(slide.reveal_boxes || []));
+    state.canvasState.boxes = getSlideMaskBoxes(slide);
     state.canvasState.selectedBoxIndex = -1;
+    state.canvasState.draggedBoxIndex = -1;
+    state.canvasState.draggedHandle = null;
+    state.canvasState.paintMode = false;
+    state.canvasState.eraserMode = false;
+    state.canvasState.paintingBoxIndex = -1;
+    state.canvasState.isPainting = false;
+    state.canvasState.currentStroke = null;
+    updateBrushSize(state.canvasState.brushSize, false);
     initCanvasEvents();
     redrawCanvas();
     
     // 渲染右侧属性列表
     renderStep5BoxesForm();
+    renderStep5NarrationPanel();
   }
 }
 
@@ -1288,82 +1572,72 @@ function uuid() {
 function renderStep5BoxesForm() {
   const container = document.getElementById('step5-boxes-list');
   container.innerHTML = '';
+  const currentSlide = getCurrentManifestSlide();
+  const step2Slide = getStep2SlideForManifestSlide(currentSlide);
   
+  if (!state.canvasState.boxes.length) {
+    container.innerHTML = `
+      <div class="sketch-dashed mask-empty-state">
+        当前页没有语义块。保存后将按整页展示处理；如果需要逐一呈现，请新建语块、选择旁白片段，再用同色画笔涂抹区域。
+      </div>
+    `;
+    return;
+  }
+
   state.canvasState.boxes.forEach((box, idx) => {
     const isSelected = idx === state.canvasState.selectedBoxIndex;
+    const isPaintTarget = state.canvasState.paintMode && !state.canvasState.eraserMode && idx === state.canvasState.paintingBoxIndex;
+    const isEraseTarget = state.canvasState.paintMode && state.canvasState.eraserMode && idx === state.canvasState.paintingBoxIndex;
     const item = document.createElement('div');
-    item.className = 'sketch-dashed' + (isSelected ? ' highlight-glow' : '');
-    item.style.padding = '0.5rem';
-    item.style.backgroundColor = isSelected ? '#fffde0' : '#fff';
-    item.style.borderWidth = isSelected ? '3px' : '2px';
-    
-    // 绑定坐标：box 包含 [x1, y1, x2, y2]
-    const coords = box.box || [100, 100, 300, 300];
-    const width = Math.round(coords[2] - coords[0]);
-    const height = Math.round(coords[3] - coords[1]);
-    
-    // 关联查询画面中文、线稿描述和演讲稿旁白
-    let visibleText = box.text_label || '';
-    let spokenText = '';
-    let visualAnchor = '';
-    
-    if (step2Contract && step2Contract.slides) {
-      const currentSlideId = manifestData.slides[state.activeSlideIndex].slide_id;
-      const step2Slide = step2Contract.slides.find(s => s.slide_id === currentSlideId);
-      if (step2Slide) {
-        // 从 visual_groups 提取 visible_text 和 visual_anchor
-        const vGroup = (step2Slide.visual_groups || []).find(g => g.id === box.group_id);
-        if (vGroup) {
-          if (!visibleText) visibleText = vGroup.visible_text || '';
-          visualAnchor = vGroup.visual_anchor || '';
-        }
-        // 从 narration_beats 提取 spoken_text (旁白文字)
-        const beat = (step2Slide.narration_beats || []).find(b => b.group_id === box.group_id);
-        if (beat) {
-          spokenText = beat.spoken_text || '';
-        }
-      }
-    }
+    item.className = `mask-block-card sketch-dashed${isSelected ? ' highlight-glow' : ''}${isPaintTarget ? ' paint-active' : ''}${isEraseTarget ? ' erase-active' : ''}`;
+    const maskColor = getBoxColor(box, idx);
+    item.style.setProperty('--mask-color', maskColor);
+
+    const spokenText = getSelectedFragmentText(box, step2Slide);
+    const strokes = box.manual_mask?.strokes || [];
+    const paintCount = strokes.filter(stroke => !isEraseStroke(stroke)).length;
+    const eraseCount = strokes.filter(stroke => isEraseStroke(stroke)).length;
+    const strokeSummary = paintCount || eraseCount ? `画笔 ${paintCount} 笔 · 橡皮 ${eraseCount} 笔` : '可用画笔补正区域';
     
     item.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
-        <span style="font-weight:bold; color:var(--ink-color); font-size:0.9rem;">标注块 ${idx+1} [${box.group_id}]</span>
-        <button class="danger" style="font-size:0.75rem; padding:1px 5px;" onclick="deleteMaskBox(${idx})">删除</button>
+      <div class="mask-block-head">
+        <span class="mask-block-number">${idx + 1}</span>
+        <button class="mask-icon-btn${isPaintTarget ? ' active' : ''}" type="button" data-action="paint" title="涂抹这个语块的 Mask 区域" aria-label="涂抹区域">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
+        </button>
+        <button class="mask-icon-btn${isEraseTarget ? ' active' : ''}" type="button" data-action="erase" title="擦除这个语块的涂抹区域" aria-label="擦除区域">
+          <svg class="icon" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"></path><path d="M22 21H7"></path><path d="m5 11 9 9"></path></svg>
+        </button>
+        <button class="danger mask-icon-btn mask-delete-btn" type="button" data-action="delete" title="删除语块" aria-label="删除语块">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path></svg>
+        </button>
       </div>
-      <div style="margin-bottom:0.4rem;">
-        <label style="font-size:0.75rem; font-weight:bold; color:#666; display:block; margin-bottom:0.15rem;">画面标签文字：</label>
-        <input type="text" value="${escHtml(visibleText)}" placeholder="标签文本" style="font-size:0.85rem; padding:4px 6px;" onchange="updateMaskBoxField(${idx}, 'text_label', this.value)">
+      <div class="mask-narration-card">
+        <span class="mask-narration-label">演讲旁白</span>
+        <span class="mask-narration-text">${spokenText ? escHtml(spokenText) : '在下方演讲稿中点选片段'}</span>
       </div>
-      ${visualAnchor ? `
-      <div style="margin-bottom:0.4rem; font-size:0.8rem; color:#555; background:#f9f9f9; padding:4px 8px; border-radius:4px; border:1px dashed #ddd;">
-        <strong>视觉描述：</strong>${escHtml(visualAnchor)}
-      </div>` : ''}
-      ${spokenText ? `
-      <div style="margin-bottom:0.4rem; font-size:0.8rem; color:#444; background:#f5faff; padding:4px 8px; border-radius:4px; border:1px dashed #c0d5ec; line-height:1.4;">
-        <strong>🎙️ 演讲旁白：</strong>${escHtml(spokenText)}
-      </div>` : ''}
-      <div style="display:flex; gap:0.6rem; font-size:0.75rem; color:#666; margin-top:0.2rem;">
-        <span>X: ${Math.round(coords[0])}</span>
-        <span>Y: ${Math.round(coords[1])}</span>
-        <span>宽: ${width}</span>
-        <span>高: ${height}</span>
+      <div class="mask-block-foot">
+        <span>${strokeSummary}</span>
       </div>
     `;
     
     item.addEventListener('click', () => {
-      state.canvasState.selectedBoxIndex = idx;
-      redrawCanvas();
-      // 避免重复渲染导致输入框失焦，但要把高亮表现出来
-      document.querySelectorAll('#step5-boxes-list > div').forEach((el, elIdx) => {
-        el.style.borderWidth = elIdx === idx ? '3px' : '2px';
-        el.style.backgroundColor = elIdx === idx ? '#fffde0' : '#fff';
-        if (elIdx === idx) {
-          el.classList.add('highlight-glow');
-          el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        } else {
-          el.classList.remove('highlight-glow');
-        }
-      });
+      selectStep5MaskBox(idx);
+    });
+
+    item.querySelector('[data-action="paint"]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      startMaskPaint(idx);
+    });
+
+    item.querySelector('[data-action="erase"]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      startMaskErase(idx);
+    });
+
+    item.querySelector('[data-action="delete"]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteMaskBox(idx);
     });
     
     container.appendChild(item);
@@ -1376,11 +1650,347 @@ function renderStep5BoxesForm() {
   });
 }
 
+function renderStep5NarrationPanel() {
+  const panel = document.getElementById('step5-narration-panel');
+  if (!panel) return;
+  const fragments = getNarrationFragments();
+  if (!fragments.length) {
+    panel.innerHTML = '<div class="step5-narration-empty">当前页暂无演讲旁白。</div>';
+    return;
+  }
+  const selectedByFragment = new Map();
+  state.canvasState.boxes.forEach((box, idx) => {
+    getSelectedFragmentIds(box).forEach(fragmentId => {
+      selectedByFragment.set(fragmentId, idx);
+    });
+  });
+  panel.innerHTML = `
+    <div class="step5-narration-title">演讲稿</div>
+    <div class="step5-narration-fragments">
+      ${fragments.map(fragment => {
+        const ownerIdx = selectedByFragment.get(fragment.id);
+        const owned = ownerIdx !== undefined;
+        const current = owned && ownerIdx === state.canvasState.selectedBoxIndex;
+        const color = owned ? getBoxColor(state.canvasState.boxes[ownerIdx], ownerIdx) : '#777777';
+        return `
+          <button class="step5-narration-fragment${owned ? ' linked' : ''}${current ? ' current' : ''}" type="button" data-fragment-id="${escHtml(fragment.id)}" style="--fragment-color:${color};">
+            <span class="step5-narration-fragment-index">${fragment.order}</span>
+            ${escHtml(fragment.text)}
+          </button>
+        `;
+      }).join('')}
+    </div>
+  `;
+  panel.querySelectorAll('.step5-narration-fragment').forEach(btn => {
+    btn.addEventListener('click', () => toggleNarrationFragmentForSelectedBox(btn.dataset.fragmentId));
+  });
+}
+
+function toggleNarrationFragmentForSelectedBox(fragmentId) {
+  const idx = state.canvasState.selectedBoxIndex;
+  const maskBox = state.canvasState.boxes[idx];
+  if (!maskBox) {
+    showToast('请先在右侧选中一个语块。');
+    return;
+  }
+  const fragments = getNarrationFragments();
+  const fragment = fragments.find(item => item.id === fragmentId);
+  if (!fragment) return;
+  if (!Array.isArray(maskBox.narration_fragments)) {
+    maskBox.narration_fragments = [];
+  }
+
+  state.canvasState.boxes.forEach((box, boxIdx) => {
+    if (boxIdx === idx || !Array.isArray(box.narration_fragments)) return;
+    box.narration_fragments = box.narration_fragments.filter(item => item.id !== fragmentId);
+    const beatIds = [...new Set(box.narration_fragments.map(item => item.beat_id).filter(Boolean))];
+    const groupIds = [...new Set(box.narration_fragments.map(item => item.group_id).filter(Boolean))];
+    box.narration_beat_ids = beatIds;
+    box.narration_beat_id = beatIds[0] || '';
+    box.narration_group_id = groupIds[0] || '';
+    box.spoken_text = box.narration_fragments.map(item => item.text).join('');
+  });
+
+  const existingIndex = maskBox.narration_fragments.findIndex(item => item.id === fragmentId);
+  if (existingIndex >= 0) {
+    maskBox.narration_fragments.splice(existingIndex, 1);
+  } else {
+    maskBox.narration_fragments.push({
+      id: fragment.id,
+      beat_id: fragment.beat_id,
+      group_id: fragment.group_id,
+      text: fragment.text
+    });
+  }
+  const beatIds = [...new Set(maskBox.narration_fragments.map(item => item.beat_id).filter(Boolean))];
+  const groupIds = [...new Set(maskBox.narration_fragments.map(item => item.group_id).filter(Boolean))];
+  maskBox.narration_beat_ids = beatIds;
+  maskBox.narration_beat_id = beatIds[0] || '';
+  maskBox.narration_group_id = groupIds[0] || '';
+  maskBox.spoken_text = maskBox.narration_fragments.map(item => item.text).join('');
+  renderStep5BoxesForm();
+  renderStep5NarrationPanel();
+}
+
+function updateStep5AutoMaskButton() {
+  const btn = document.getElementById('step5-btn-automask');
+  if (!btn) return;
+  btn.disabled = !!state.canvasState.autoMaskLoading;
+  btn.classList.toggle('loading', !!state.canvasState.autoMaskLoading);
+  btn.innerHTML = state.canvasState.autoMaskLoading
+    ? `<span class="button-spinner"></span><span class="btn-label">AI 框选中...</span>`
+    : `<svg class="icon" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="10" rx="2"></rect><circle cx="12" cy="5" r="2"></circle><path d="M12 7v4M8 16h.01M16 16h.01"></path></svg><span class="btn-label">AI 视觉自动框选</span>`;
+}
+
+function selectStep5MaskBox(idx, shouldScroll = true) {
+  state.canvasState.selectedBoxIndex = idx;
+  redrawCanvas();
+  renderStep5NarrationPanel();
+  document.querySelectorAll('#step5-boxes-list > div').forEach((el, elIdx) => {
+    const isSelected = elIdx === idx;
+    el.classList.toggle('highlight-glow', isSelected);
+    if (isSelected && shouldScroll) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  });
+}
+
+function updateBrushSize(value, shouldRedraw = true) {
+  const size = Math.max(12, Math.min(140, Number(value) || 80));
+  state.canvasState.brushSize = size;
+  const input = document.getElementById('step5-brush-size');
+  const label = document.getElementById('step5-brush-size-value');
+  if (input) input.value = String(size);
+  if (label) label.innerText = String(size);
+  refreshBrushCursor();
+  if (shouldRedraw) redrawCanvas();
+}
+
+function startMaskPaint(idx) {
+  const maskBox = state.canvasState.boxes[idx];
+  if (!maskBox) return;
+  ensureManualMask(maskBox, idx);
+  state.canvasState.paintMode = true;
+  state.canvasState.eraserMode = false;
+  state.canvasState.paintingBoxIndex = idx;
+  state.canvasState.selectedBoxIndex = idx;
+  redrawCanvas();
+  renderStep5BoxesForm();
+  renderStep5NarrationPanel();
+  showToast(`已进入第 ${idx + 1} 个语块的涂抹模式，拖动画布即可补正区域。`);
+}
+
+function startMaskErase(idx) {
+  const maskBox = state.canvasState.boxes[idx];
+  if (!maskBox) return;
+  ensureManualMask(maskBox, idx);
+  state.canvasState.paintMode = true;
+  state.canvasState.eraserMode = true;
+  state.canvasState.paintingBoxIndex = idx;
+  state.canvasState.selectedBoxIndex = idx;
+  redrawCanvas();
+  renderStep5BoxesForm();
+  renderStep5NarrationPanel();
+  showToast(`已进入第 ${idx + 1} 个语块的橡皮模式，拖动画布即可擦除涂抹痕迹。`);
+}
+
+function createCurrentSlideBlock() {
+  const nextIdx = state.canvasState.boxes.length;
+  const blockId = `manual_group_${Date.now().toString(36)}_${nextIdx + 1}`;
+  const newBox = {
+    group_id: blockId,
+    role: "content_body",
+    text_label: `语块 ${nextIdx + 1}`,
+    visual_anchor: "",
+    narration_beat_id: "",
+    narration_beat_ids: [],
+    narration_group_id: "",
+    narration_fragments: [],
+    spoken_text: "",
+    manual_mask: { color: getMaskColor(nextIdx), strokes: [] },
+    box: [860, 460, 1060, 620]
+  };
+  state.canvasState.boxes.push(newBox);
+  state.canvasState.selectedBoxIndex = nextIdx;
+  state.canvasState.paintMode = false;
+  state.canvasState.eraserMode = false;
+  state.canvasState.paintingBoxIndex = -1;
+  redrawCanvas();
+  renderStep5BoxesForm();
+  renderStep5NarrationPanel();
+  showToast(`已添加第 ${nextIdx + 1} 个语块。请在下方演讲稿点选片段，再用画笔涂抹区域。`);
+}
+
+function stopMaskPaint() {
+  state.canvasState.paintMode = false;
+  state.canvasState.eraserMode = false;
+  state.canvasState.paintingBoxIndex = -1;
+  state.canvasState.isPainting = false;
+  state.canvasState.currentStroke = null;
+  hideBrushCursor();
+  redrawCanvas();
+  renderStep5BoxesForm();
+}
+
+function clearAllMaskAnnotations() {
+  if (!manifestData?.slides?.length) {
+    showToast('当前没有可清除的标注数据。');
+    return;
+  }
+  showCustomConfirm(
+    '清除全部标注',
+    '将清除所有 Slide 的 AI 框选、语块和手动画笔痕迹。未重新创建语块的页面会按整页展示处理。',
+    () => {
+      manifestData.slides.forEach(slide => {
+        slide.groups = [];
+        slide.reveal_boxes = [];
+        slide.status = "pending";
+      });
+      state.canvasState.boxes = [];
+      state.canvasState.selectedBoxIndex = -1;
+      stopMaskPaint();
+      renderStep5Workspace();
+      showToast('正在保存清空后的整页展示兜底状态...');
+      API.put(`/api/projects/${state.currentProject.id}/steps/5/result`, manifestData)
+        .then(() => showToast('已清除所有 Slide 的标注，未重建语块的页面将整页展示。'));
+    }
+  );
+}
+
+function collectManualMaskPoints(manualMask) {
+  const points = [];
+  const strokes = manualMask?.strokes || [];
+  strokes.forEach(stroke => {
+    if (isEraseStroke(stroke)) return;
+    const radius = Math.max(1, Number(stroke.size || 42) / 2);
+    (stroke.points || []).forEach(point => {
+      points.push({ x: point.x - radius, y: point.y - radius });
+      points.push({ x: point.x + radius, y: point.y + radius });
+    });
+  });
+  return points;
+}
+
+function updateMaskBoxFromManualMask(idx) {
+  const maskBox = state.canvasState.boxes[idx];
+  if (!maskBox) return;
+  const manualMask = ensureManualMask(maskBox, idx);
+  const points = collectManualMaskPoints(manualMask);
+  if (!points.length) return;
+  const x1 = Math.max(0, Math.min(...points.map(p => p.x)));
+  const y1 = Math.max(0, Math.min(...points.map(p => p.y)));
+  const x2 = Math.min(1920, Math.max(...points.map(p => p.x)));
+  const y2 = Math.min(1080, Math.max(...points.map(p => p.y)));
+  if (x2 - x1 < 4 || y2 - y1 < 4) return;
+  maskBox.box = [x1, y1, x2, y2];
+  manualMask.bounds = {
+    x: Math.round(x1),
+    y: Math.round(y1),
+    w: Math.round(x2 - x1),
+    h: Math.round(y2 - y1)
+  };
+}
+
+function openNarrationPicker(idx) {
+  const maskBox = state.canvasState.boxes[idx];
+  const step2Slide = getStep2SlideForManifestSlide();
+  const fragments = getNarrationFragments(step2Slide);
+  const modal = document.getElementById('modal-narration-picker');
+  const list = document.getElementById('narration-picker-list');
+  const preview = document.getElementById('narration-picker-preview-img');
+  if (!modal || !list || !maskBox) return;
+
+  state.canvasState.narrationPickerBoxIndex = idx;
+  state.canvasState.narrationPickerSelection = getSelectedFragmentIds(maskBox);
+  if (preview) {
+    const slide = getCurrentManifestSlide();
+    preview.src = slide ? `/api/projects/${state.currentProject.id}/slides/${slide.slide_id}/image?t=${uuid()}` : '';
+  }
+
+  if (!fragments.length) {
+    list.innerHTML = '<div class="sketch-dashed mask-empty-state">当前页还没有可绑定的演讲旁白。</div>';
+  } else {
+    list.innerHTML = fragments.map((fragment) => {
+      const isSelected = state.canvasState.narrationPickerSelection.includes(fragment.id);
+      return `
+        <button class="narration-option${isSelected ? ' selected' : ''}" type="button" data-fragment-id="${escHtml(fragment.id)}" style="--mask-color:${getBoxColor(maskBox, idx)};">
+          <span class="narration-option-index">${fragment.order}</span>
+          <span class="narration-option-text">${escHtml(fragment.text)}</span>
+        </button>
+      `;
+    }).join('');
+    list.querySelectorAll('.narration-option').forEach(option => {
+      option.addEventListener('click', () => {
+        const fragmentId = option.dataset.fragmentId;
+        const selected = state.canvasState.narrationPickerSelection;
+        const existingIndex = selected.indexOf(fragmentId);
+        if (existingIndex >= 0) {
+          selected.splice(existingIndex, 1);
+          option.classList.remove('selected');
+        } else {
+          selected.push(fragmentId);
+          option.classList.add('selected');
+        }
+      });
+    });
+  }
+
+  modal.style.display = 'flex';
+}
+
+function closeNarrationPicker() {
+  const modal = document.getElementById('modal-narration-picker');
+  if (modal) modal.style.display = 'none';
+  state.canvasState.narrationPickerBoxIndex = -1;
+  state.canvasState.narrationPickerSelection = [];
+}
+
+function confirmNarrationPicker() {
+  const boxIdx = state.canvasState.narrationPickerBoxIndex;
+  const maskBox = state.canvasState.boxes[boxIdx];
+  const step2Slide = getStep2SlideForManifestSlide();
+  const fragments = getNarrationFragments(step2Slide);
+  const selectedIds = state.canvasState.narrationPickerSelection;
+  const selectedFragments = fragments.filter(fragment => selectedIds.includes(fragment.id));
+  if (!maskBox || selectedFragments.length === 0) {
+    closeNarrationPicker();
+    return;
+  }
+  const beatIds = [...new Set(selectedFragments.map(fragment => fragment.beat_id).filter(Boolean))];
+  const groupIds = [...new Set(selectedFragments.map(fragment => fragment.group_id).filter(Boolean))];
+  maskBox.narration_beat_ids = beatIds;
+  maskBox.narration_beat_id = beatIds[0] || '';
+  maskBox.narration_group_id = groupIds[0] || '';
+  maskBox.narration_fragments = selectedFragments.map(fragment => ({
+    id: fragment.id,
+    beat_id: fragment.beat_id,
+    group_id: fragment.group_id,
+    text: fragment.text
+  }));
+  maskBox.spoken_text = selectedFragments.map(fragment => fragment.text).join('');
+  if (!maskBox.text_label || /^语块\s+\d+$/.test(maskBox.text_label)) {
+    maskBox.text_label = maskBox.spoken_text.slice(0, 12) || maskBox.text_label;
+  }
+  closeNarrationPicker();
+  redrawCanvas();
+  renderStep5BoxesForm();
+  renderStep5NarrationPanel();
+  showToast(`第 ${boxIdx + 1} 个语块已绑定 ${selectedFragments.length} 个旁白片段。`);
+}
+
 window.deleteMaskBox = function(idx) {
   state.canvasState.boxes.splice(idx, 1);
   state.canvasState.selectedBoxIndex = -1;
+  if (state.canvasState.paintingBoxIndex === idx) {
+    state.canvasState.paintMode = false;
+    state.canvasState.eraserMode = false;
+    state.canvasState.paintingBoxIndex = -1;
+  } else if (state.canvasState.paintingBoxIndex > idx) {
+    state.canvasState.paintingBoxIndex -= 1;
+  }
   redrawCanvas();
   renderStep5BoxesForm();
+  renderStep5NarrationPanel();
 };
 
 window.updateMaskBoxField = function(idx, field, val) {
@@ -1400,9 +2010,10 @@ function initCanvasEvents() {
   newCanvas.addEventListener('mousedown', (e) => handleCanvasMouseDown(e, newCanvas));
   newCanvas.addEventListener('mousemove', (e) => handleCanvasMouseMove(e, newCanvas));
   newCanvas.addEventListener('mouseup', handleCanvasMouseUp);
-  
-  // 双击空白处新增标注框
-  newCanvas.addEventListener('dblclick', (e) => handleCanvasDblClick(e, newCanvas));
+  newCanvas.addEventListener('mouseleave', (e) => {
+    hideBrushCursor();
+    handleCanvasMouseUp(e);
+  });
 }
 
 function getCanvasCoords(e, canvas) {
@@ -1412,144 +2023,112 @@ function getCanvasCoords(e, canvas) {
   return { x, y };
 }
 
-function handleCanvasMouseDown(e, canvas) {
-  const { x, y } = getCanvasCoords(e, canvas);
-  const handleSize = 15; // 触发手柄的绝对大小范围
-  
-  // 倒序检查是否有点击了边角拉手
-  for (let i = state.canvasState.boxes.length - 1; i >= 0; i--) {
-    const box = state.canvasState.boxes[i].box;
-    const [x1, y1, x2, y2] = box;
-    
-    // 四角坐标
-    const corners = {
-      nw: { x: x1, y: y1 },
-      ne: { x: x2, y: y1 },
-      se: { x: x2, y: y2 },
-      sw: { x: x1, y: y2 }
-    };
-    
-    // 检查是否在四角手柄上
-    for (let handle in corners) {
-      const p = corners[handle];
-      if (Math.abs(x - p.x) < handleSize && Math.abs(y - p.y) < handleSize) {
-        state.canvasState.draggedBoxIndex = i;
-        state.canvasState.draggedHandle = handle;
-        state.canvasState.selectedBoxIndex = i;
-        state.canvasState.startX = x;
-        state.canvasState.startY = y;
-        renderStep5BoxesForm();
-        redrawCanvas();
-        return;
-      }
-    }
-    
-    // 检查是否在矩形框内（移动整体）
-    if (x >= x1 && x <= x2 && y >= y1 && y <= y2) {
-      state.canvasState.draggedBoxIndex = i;
-      state.canvasState.draggedHandle = 'move';
-      state.canvasState.selectedBoxIndex = i;
-      state.canvasState.startX = x;
-      state.canvasState.startY = y;
-      renderStep5BoxesForm();
-      redrawCanvas();
-      return;
-    }
-  }
-  
-  // 点击空白：启动十字针拉框绘制模式 (Drawing Mode)
-  state.canvasState.isDrawing = true;
-  state.canvasState.startX = x;
-  state.canvasState.startY = y;
-  state.canvasState.drawingBox = [x, y, x, y];
-  
-  state.canvasState.selectedBoxIndex = -1;
-  redrawCanvas();
-  renderStep5BoxesForm();
+function getBrushCursor() {
+  return document.getElementById('step5-brush-cursor');
 }
 
-function handleCanvasMouseMove(e, canvas) {
-  const { x, y } = getCanvasCoords(e, canvas);
+function hideBrushCursor() {
+  const cursor = getBrushCursor();
+  if (!cursor) return;
+  cursor.classList.remove('visible', 'eraser');
+  state.canvasState.brushCursorClientX = null;
+  state.canvasState.brushCursorClientY = null;
+}
 
-  // 1. 绘图模式
-  if (state.canvasState.isDrawing) {
-    const startX = state.canvasState.startX;
-    const startY = state.canvasState.startY;
-    state.canvasState.drawingBox = [
-      Math.min(startX, x),
-      Math.min(startY, y),
-      Math.max(startX, x),
-      Math.max(startY, y)
-    ];
+function refreshBrushCursor(canvas = document.getElementById('step5-canvas')) {
+  const { brushCursorClientX, brushCursorClientY } = state.canvasState;
+  if (brushCursorClientX === null || brushCursorClientY === null || !canvas) return;
+  positionBrushCursor(canvas, brushCursorClientX, brushCursorClientY);
+}
+
+function updateBrushCursor(e, canvas) {
+  state.canvasState.brushCursorClientX = e.clientX;
+  state.canvasState.brushCursorClientY = e.clientY;
+  positionBrushCursor(canvas, e.clientX, e.clientY);
+}
+
+function positionBrushCursor(canvas, clientX, clientY) {
+  const cursor = getBrushCursor();
+  if (!cursor || !canvas) return;
+  if (!state.canvasState.paintMode || state.canvasState.paintingBoxIndex < 0) {
+    hideBrushCursor();
+    return;
+  }
+  const canvasRect = canvas.getBoundingClientRect();
+  if (clientX < canvasRect.left || clientX > canvasRect.right || clientY < canvasRect.top || clientY > canvasRect.bottom) {
+    hideBrushCursor();
+    return;
+  }
+  const wrapperRect = cursor.parentElement.getBoundingClientRect();
+  const size = Math.max(8, state.canvasState.brushSize * (canvasRect.width / 1920));
+  const color = getBoxColor(state.canvasState.boxes[state.canvasState.paintingBoxIndex], state.canvasState.paintingBoxIndex);
+  cursor.style.left = `${clientX - wrapperRect.left}px`;
+  cursor.style.top = `${clientY - wrapperRect.top}px`;
+  cursor.style.setProperty('--cursor-size', `${size}px`);
+  cursor.style.setProperty('--cursor-color', color);
+  cursor.classList.toggle('eraser', !!state.canvasState.eraserMode);
+  cursor.classList.add('visible');
+}
+
+function handleCanvasMouseDown(e, canvas) {
+  updateBrushCursor(e, canvas);
+  const { x, y } = getCanvasCoords(e, canvas);
+  if (state.canvasState.paintMode && state.canvasState.paintingBoxIndex >= 0) {
+    const idx = state.canvasState.paintingBoxIndex;
+    const maskBox = state.canvasState.boxes[idx];
+    if (!maskBox) return;
+    const manualMask = ensureManualMask(maskBox, idx);
+    const color = getBoxColor(maskBox, idx);
+    const stroke = {
+      color,
+      size: state.canvasState.brushSize,
+      mode: state.canvasState.eraserMode ? 'erase' : 'paint',
+      eraser: !!state.canvasState.eraserMode,
+      points: [{ x: Math.round(x), y: Math.round(y) }]
+    };
+    manualMask.color = color;
+    manualMask.strokes.push(stroke);
+    state.canvasState.isPainting = true;
+    state.canvasState.currentStroke = stroke;
+    state.canvasState.selectedBoxIndex = idx;
+    updateMaskBoxFromManualMask(idx);
     redrawCanvas();
     return;
   }
 
-  // 2. 拖动或调整大小
-  if (state.canvasState.draggedBoxIndex === -1) return;
-  
-  const idx = state.canvasState.draggedBoxIndex;
-  const box = state.canvasState.boxes[idx].box;
-  const dx = x - state.canvasState.startX;
-  const dy = y - state.canvasState.startY;
-  
-  let [x1, y1, x2, y2] = box;
-  
-  if (state.canvasState.draggedHandle === 'move') {
-    x1 += dx;
-    x2 += dx;
-    y1 += dy;
-    y2 += dy;
-  } else if (state.canvasState.draggedHandle === 'nw') {
-    x1 += dx;
-    y1 += dy;
-  } else if (state.canvasState.draggedHandle === 'ne') {
-    x2 += dx;
-    y1 += dy;
-  } else if (state.canvasState.draggedHandle === 'se') {
-    x2 += dx;
-    y2 += dy;
-  } else if (state.canvasState.draggedHandle === 'sw') {
-    x1 += dx;
-    y2 += dy;
+  // 点击空白只取消选择；新建语块使用右侧按钮，区域用画笔涂抹完成。
+  state.canvasState.selectedBoxIndex = -1;
+  redrawCanvas();
+  renderStep5BoxesForm();
+  renderStep5NarrationPanel();
+}
+
+function handleCanvasMouseMove(e, canvas) {
+  updateBrushCursor(e, canvas);
+  const { x, y } = getCanvasCoords(e, canvas);
+
+  if (state.canvasState.isPainting && state.canvasState.currentStroke) {
+    const stroke = state.canvasState.currentStroke;
+    const last = stroke.points[stroke.points.length - 1];
+    if (!last || Math.hypot(x - last.x, y - last.y) > 5) {
+      stroke.points.push({ x: Math.round(x), y: Math.round(y) });
+      updateMaskBoxFromManualMask(state.canvasState.paintingBoxIndex);
+      redrawCanvas();
+    }
+    return;
   }
-  
-  // 边界保护与排序纠错
-  if (x1 < 0) x1 = 0;
-  if (y1 < 0) y1 = 0;
-  if (x2 > 1920) x2 = 1920;
-  if (y2 > 1080) y2 = 1080;
-  
-  // 只有当坐标合法时才真正修改
-  if (x2 > x1 && y2 > y1) {
-    state.canvasState.boxes[idx].box = [x1, y1, x2, y2];
-    state.canvasState.startX = x;
-    state.canvasState.startY = y;
-    redrawCanvas();
-  }
+
+  return;
 }
 
 function handleCanvasMouseUp() {
-  if (state.canvasState.isDrawing) {
-    state.canvasState.isDrawing = false;
-    const dBox = state.canvasState.drawingBox;
-    if (dBox) {
-      const w = dBox[2] - dBox[0];
-      const h = dBox[3] - dBox[1];
-      if (w > 15 && h > 15) {
-        const newBox = {
-          group_id: `custom_group_${state.canvasState.boxes.length + 1}`,
-          role: "content_body",
-          text_label: "未命名标注",
-          box: [dBox[0], dBox[1], dBox[2], dBox[3]]
-        };
-        state.canvasState.boxes.push(newBox);
-        state.canvasState.selectedBoxIndex = state.canvasState.boxes.length - 1;
-      }
-    }
-    state.canvasState.drawingBox = null;
+  if (state.canvasState.isPainting) {
+    state.canvasState.isPainting = false;
+    state.canvasState.currentStroke = null;
+    updateMaskBoxFromManualMask(state.canvasState.paintingBoxIndex);
     redrawCanvas();
     renderStep5BoxesForm();
+    renderStep5NarrationPanel();
     return;
   }
 
@@ -1558,121 +2137,102 @@ function handleCanvasMouseUp() {
   renderStep5BoxesForm();
 }
 
-function handleCanvasDblClick(e, canvas) {
-  const { x, y } = getCanvasCoords(e, canvas);
-  // 新建默认 200x120 像素的框
-  const newBox = {
-    group_id: `custom_group_${state.canvasState.boxes.length + 1}`,
-    role: "content_body",
-    text_label: "未命名标注",
-    box: [x - 100, y - 60, x + 100, y + 60]
-  };
-  state.canvasState.boxes.push(newBox);
-  state.canvasState.selectedBoxIndex = state.canvasState.boxes.length - 1;
-  redrawCanvas();
-  renderStep5BoxesForm();
+function drawManualMaskStrokes(ctx, item, idx) {
+  const strokes = item.manual_mask?.strokes || [];
+  if (!strokes.length) return;
+  const isSelected = idx === state.canvasState.selectedBoxIndex;
+  const color = getBoxColor(item, idx);
+  const maskLayer = document.createElement('canvas');
+  maskLayer.width = 1920;
+  maskLayer.height = 1080;
+  const maskCtx = maskLayer.getContext('2d');
+  maskCtx.lineCap = 'round';
+  maskCtx.lineJoin = 'round';
+
+  strokes.forEach(stroke => {
+    const points = stroke.points || [];
+    if (!points.length) return;
+    const erase = isEraseStroke(stroke);
+    const width = Number(stroke.size || state.canvasState.brushSize);
+    const radius = Math.max(1, width / 2);
+
+    maskCtx.save();
+    maskCtx.globalCompositeOperation = erase ? 'destination-out' : 'source-over';
+    maskCtx.strokeStyle = 'rgba(0,0,0,1)';
+    maskCtx.fillStyle = 'rgba(0,0,0,1)';
+    maskCtx.lineWidth = width;
+    maskCtx.beginPath();
+    maskCtx.moveTo(points[0].x, points[0].y);
+    points.slice(1).forEach(point => maskCtx.lineTo(point.x, point.y));
+    if (points.length === 1) {
+      const point = points[0];
+      maskCtx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+      maskCtx.fill();
+      maskCtx.restore();
+      return;
+    }
+    maskCtx.stroke();
+    points.forEach(point => {
+      maskCtx.beginPath();
+      maskCtx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+      maskCtx.fill();
+    });
+    maskCtx.restore();
+  });
+
+  const colorLayer = document.createElement('canvas');
+  colorLayer.width = 1920;
+  colorLayer.height = 1080;
+  const colorCtx = colorLayer.getContext('2d');
+  colorCtx.fillStyle = hexToRgba(color, isSelected ? 0.24 : 0.18);
+  colorCtx.fillRect(0, 0, 1920, 1080);
+  colorCtx.globalCompositeOperation = 'destination-in';
+  colorCtx.drawImage(maskLayer, 0, 0);
+  ctx.drawImage(colorLayer, 0, 0);
 }
 
-// 在 Canvas 上绘制简约线稿框图层
+// 在 Canvas 上绘制手动涂抹的 Mask 图层
 function redrawCanvas() {
   const canvas = document.getElementById('step5-canvas');
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, 1920, 1080);
-  
-  state.canvasState.boxes.forEach((item, idx) => {
-    const [x1, y1, x2, y2] = item.box;
-    const isSelected = idx === state.canvasState.selectedBoxIndex;
-    
-    // 描边与线条设置：工整线稿风格
-    ctx.lineWidth = isSelected ? 3 : 2;
-    ctx.strokeStyle = isSelected ? '#111111' : '#666666';
-    ctx.lineJoin = 'miter';
-    
-    // 用虚线表示动画未锁定，选中时为实线
-    ctx.setLineDash(isSelected ? [] : [8, 4]);
-    
-    // 绘制工整圆角矩形
-    ctx.beginPath();
-    ctx.roundRect(x1, y1, x2 - x1, y2 - y1, 8);
-    ctx.stroke();
-    
-    // 填充轻微半透明底色，强化区域感
-    ctx.fillStyle = isSelected ? 'rgba(249, 214, 92, 0.06)' : 'rgba(17, 17, 17, 0.01)';
-    ctx.fill();
-    
-    // 在左上角画规范的序号气泡：黄色实心圆形
-    ctx.setLineDash([]);
-    ctx.beginPath();
-    ctx.arc(x1, y1, 16, 0, Math.PI * 2);
-    ctx.fillStyle = '#FFF9DB';
-    ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = '#111111';
-    ctx.stroke();
-    
-    // 气泡内文字：序列号
-    ctx.fillStyle = '#111111';
-    ctx.font = '500 18px Inter, Noto Sans SC';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(idx + 1, x1, y1);
-    
-    // 绘制标签名字
-    ctx.fillStyle = '#111111';
-    ctx.font = '500 16px Inter, Noto Sans SC';
-    ctx.textAlign = 'left';
-    ctx.fillText(item.text_label || item.group_id, x1 + 22, y1 + 5);
-    
-    // 若当前被选中，绘制四个角的小圆形极简拉手
-    if (isSelected) {
-      ctx.fillStyle = '#FFFDF7';
-      ctx.strokeStyle = '#111111';
-      ctx.lineWidth = 2;
-      const handles = [
-        [x1, y1], [x2, y1], [x2, y2], [x1, y2]
-      ];
-      handles.forEach(h => {
-        ctx.beginPath();
-        ctx.arc(h[0], h[1], 7, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-      });
-    }
-  });
+  canvas.classList.toggle('painting', state.canvasState.paintMode);
+  canvas.classList.toggle('erasing', state.canvasState.paintMode && state.canvasState.eraserMode);
 
-  // 如果正在绘制，画出临时的虚线框
-  if (state.canvasState.isDrawing && state.canvasState.drawingBox) {
-    const [x1, y1, x2, y2] = state.canvasState.drawingBox;
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = '#111111';
-    ctx.setLineDash([6, 3]);
-    ctx.beginPath();
-    ctx.roundRect(x1, y1, x2 - x1, y2 - y1, 6);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
+  state.canvasState.boxes.forEach((item, idx) => {
+    drawManualMaskStrokes(ctx, item, idx);
+  });
+  refreshBrushCursor(canvas);
 }
 
 function saveStep5CurrentState() {
   const slide = manifestData.slides[state.activeSlideIndex];
-  if (slide) {
-    slide.reveal_boxes = JSON.parse(JSON.stringify(state.canvasState.boxes));
-  }
+  syncMaskBoxesToSlide(slide, state.canvasState.boxes);
 }
 
 async function runStep5AutoMask() {
+  if (state.canvasState.autoMaskLoading) return;
   saveStep5CurrentState();
+  state.canvasState.autoMaskLoading = true;
+  updateStep5AutoMaskButton();
+  renderStep5Workspace();
   showToast('🤖 正在调用 Vision API 进行自动框选与自适应对齐修剪，这可能需要大约 10 秒...');
-  
-  // 将当前的临时 manifest 存盘
-  await API.put(`/api/projects/${state.currentProject.id}/steps/5/result`, manifestData);
-  
-  // 发起自动标注
-  const res = await API.post(`/api/projects/${state.currentProject.id}/steps/5/auto-mask`);
-  if (res.success) {
-    const icon = res.vision_used ? '🔍' : '✏️';
-    showToast(`${icon} ${res.message || '智能标注完成！已加载最新的目标包围框。'}`);
-    loadStep5Data();
+
+  try {
+    // 将当前的临时 manifest 存盘
+    await API.put(`/api/projects/${state.currentProject.id}/steps/5/result`, manifestData);
+
+    // 发起自动标注
+    const res = await API.post(`/api/projects/${state.currentProject.id}/steps/5/auto-mask`);
+    if (res.success) {
+      const icon = res.vision_used ? '🔍' : '✏️';
+      showToast(`${icon} ${res.message || '智能标注完成！已加载最新的目标包围框。'}`);
+      await loadStep5Data();
+    }
+  } finally {
+    state.canvasState.autoMaskLoading = false;
+    updateStep5AutoMaskButton();
+    renderStep5Workspace();
   }
 }
 
@@ -1776,7 +2336,8 @@ function renderStep6Workspace() {
         // 查找对应 group_id 的坐标索引
         const mSlide = manifestData.slides.find(s => s.slide_id === slide.slide_id);
         if (mSlide) {
-          const boxIdx = mSlide.reveal_boxes.findIndex(b => b.group_id === beat.group_id);
+          const maskBoxes = getSlideMaskBoxes(mSlide);
+          const boxIdx = maskBoxes.findIndex(b => isBeatLinkedToMaskBox(beat, b));
           drawStep6StaticCanvas(boxIdx);
         }
       });
@@ -1800,11 +2361,12 @@ function renderStep6Workspace() {
       const currentSlideId = narrationData.slides[state.activeSlideIndex].slide_id;
       const mSlide = manifestData.slides.find(s => s.slide_id === currentSlideId);
       if (!mSlide) return;
+      const maskBoxes = getSlideMaskBoxes(mSlide);
       
       let foundBoxIdx = -1;
       // 倒序检查碰撞
-      for (let i = mSlide.reveal_boxes.length - 1; i >= 0; i--) {
-        const box = mSlide.reveal_boxes[i].box;
+      for (let i = maskBoxes.length - 1; i >= 0; i--) {
+        const box = maskBoxes[i].box;
         if (x >= box[0] && x <= box[2] && y >= box[1] && y <= box[3]) {
           foundBoxIdx = i;
           break;
@@ -1819,7 +2381,7 @@ function renderStep6Workspace() {
         const el = document.getElementById(`step6-beat-card-${bIdx}`);
         if (!el) return;
         
-        if (foundBoxIdx !== -1 && beat.group_id === mSlide.reveal_boxes[foundBoxIdx].group_id) {
+        if (foundBoxIdx !== -1 && isBeatLinkedToMaskBox(beat, maskBoxes[foundBoxIdx])) {
           el.classList.add('highlight-glow');
           el.style.backgroundColor = '#fffde0';
           el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -1859,7 +2421,7 @@ function drawStep6StaticCanvas(highlightIdx) {
   const mSlide = manifestData.slides.find(s => s.slide_id === currentSlideId);
   if (!mSlide) return;
   
-  mSlide.reveal_boxes.forEach((item, idx) => {
+  getSlideMaskBoxes(mSlide).forEach((item, idx) => {
     const [x1, y1, x2, y2] = item.box;
     const isHighlighted = idx === highlightIdx;
     

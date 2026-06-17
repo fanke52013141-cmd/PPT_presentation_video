@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PPT Visualization Studio - 手绘线稿风格</title>
-  <link rel="stylesheet" href="style.css?v=2.0.0">
+  <link rel="stylesheet" href="style.css?v=2.0.1">
 </head>
 <body>
 
@@ -259,30 +259,47 @@
 
         <!-- ==================== 步骤 5: Mask 可视化标注 ==================== -->
         <div id="step-panel-5" class="step-panel" style="display: none;">
-          <h2 class="highlight-title">第五步：智能 Mask 区域标注</h2>
+          <div class="step5-mask-header">
+            <h2 class="highlight-title">第五步：智能 Mask 区域标注</h2>
+            <div class="step5-toolbar">
+              <button id="step5-btn-automask" class="success">
+                <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="10" rx="2"></rect><circle cx="12" cy="5" r="2"></circle><path d="M12 7v4M8 16h.01M16 16h.01"></path></svg>
+                <span class="btn-label">AI 视觉自动框选</span>
+              </button>
+              <button id="step5-btn-clear-current" class="secondary">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v5M14 11v5"></path></svg>
+                清除全部标注
+              </button>
+              <label class="step5-brush-control" title="调整手动涂抹区域的画笔大小">
+                <span>画笔</span>
+                <input id="step5-brush-size" type="range" min="12" max="140" value="80">
+                <span id="step5-brush-size-value">80</span>
+              </label>
+            </div>
+          </div>
           
-          <div id="step5-thumbs" class="slides-thumbnail-container" style="margin-top: 1.5rem;"></div>
+          <div id="step5-thumbs" class="slides-thumbnail-container"></div>
 
           <div class="workspace-split">
             <!-- 左栏: Canvas 画布编辑 -->
             <div class="workspace-left">
-              <div style="display: flex; gap: 1rem; align-items: center;">
-                <button id="step5-btn-automask" class="success">
-                  <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="10" rx="2"></rect><circle cx="12" cy="5" r="2"></circle><path d="M12 7v4M8 16h.01M16 16h.01"></path></svg>
-                  AI 视觉自动框选 (OpenAI Vision)
-                </button>
-                <span style="color: #666; font-size: 0.9rem;">提示：拖拽矩形框可调整位置，拖动右下角可调整大小。双击空白新建。</span>
-              </div>
-              
               <div class="canvas-wrapper" id="canvas-container">
                 <img id="step5-bg-img" src="" alt="Slide Background">
                 <canvas id="step5-canvas" width="1920" height="1080"></canvas>
+                <div id="step5-brush-cursor" class="step5-brush-cursor" aria-hidden="true"></div>
               </div>
+              <div id="step5-narration-panel" class="step5-narration-panel"></div>
             </div>
 
             <!-- 右栏: 标注块列表属性 -->
             <div class="workspace-right">
-              <h3>当前页标注块列表</h3>
+              <div class="step5-side-header">
+                <h3>当前页语块</h3>
+                <button id="step5-btn-new-block" class="secondary step5-add-block-btn">
+                  <svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>
+                  添加
+                </button>
+              </div>
               <div id="step5-boxes-list" style="display: flex; flex-direction: column; gap: 0.5rem;">
                 <!-- 标注盒子表单 -->
               </div>
@@ -594,9 +611,28 @@
     </div>
   </div>
 
+  <!-- Modal: 旁白重选 -->
+  <div id="modal-narration-picker" class="modal-overlay" style="display: none;">
+    <div class="modal-content narration-picker-modal">
+      <h3 class="highlight-title" style="margin-bottom: 1rem;">选择演讲旁白片段</h3>
+      <div class="narration-picker-layout">
+        <div class="narration-picker-preview">
+          <img id="narration-picker-preview-img" src="" alt="当前页预览">
+        </div>
+        <div>
+          <div id="narration-picker-list" class="narration-picker-list"></div>
+        </div>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1.2rem; border-top: 2px dashed #111; padding-top: 1rem;">
+        <button id="btn-narration-picker-cancel" class="secondary">取消</button>
+        <button id="btn-narration-picker-confirm" class="success">确定绑定</button>
+      </div>
+    </div>
+  </div>
+
   <div id="toast-container"></div>
 
   <!-- 主业务 JavaScript 脚本 -->
-  <script src="app.js?v=2.0.0"></script>
+  <script src="app.js?v=2.0.4"></script>
 </body>
 </html>

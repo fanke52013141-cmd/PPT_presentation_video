@@ -9,8 +9,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-from PIL import Image, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter
 
 DEFAULT_CANVAS = {"width": 1920, "height": 1080, "background": "#FFFDF7", "subtitle_safe_y": 930}
 DEFAULTS = {"padding_px": 32, "duration": 0.65, "angle": 135, "feather": 16, "fog_strength": 0.68, "blur_px": 16}
@@ -78,16 +77,70 @@ def crop_image(image: Image.Image, box: dict[str, int]) -> Image.Image:
     return image.crop((box["x"], box["y"], box["x"] + box["w"], box["y"] + box["h"]))
 
 
-def write_cover(path: Path, box: dict[str, int], color: str) -> None:
+def manual_mask_alpha(manual_mask: Any, box: dict[str, int]) -> Image.Image | None:
+    if not isinstance(manual_mask, dict):
+        return None
+    strokes = manual_mask.get("strokes")
+    if not isinstance(strokes, list) or not strokes:
+        return None
+    alpha = Image.new("L", (box["w"], box["h"]), 0)
+    draw = ImageDraw.Draw(alpha)
+    for stroke in strokes:
+        if not isinstance(stroke, dict):
+            continue
+        points = stroke.get("points")
+        if not isinstance(points, list) or not points:
+            continue
+        size = max(1, int(round(float(stroke.get("size", 42)))))
+        mode = str(stroke.get("mode", "")).lower()
+        is_erase = bool(stroke.get("eraser")) or mode == "erase"
+        fill = 0 if is_erase else 255
+        local_points: list[tuple[int, int]] = []
+        for point in points:
+            if not isinstance(point, dict):
+                continue
+            local_points.append((
+                int(round(float(point.get("x", 0)) - box["x"])),
+                int(round(float(point.get("y", 0)) - box["y"])),
+            ))
+        if not local_points:
+            continue
+        radius = max(1, size // 2)
+        if len(local_points) == 1:
+            x, y = local_points[0]
+            draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=fill)
+            continue
+        draw.line(local_points, fill=fill, width=size, joint="curve")
+        for x, y in local_points:
+            draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=fill)
+    return alpha
+
+
+def apply_alpha(image: Image.Image, alpha: Image.Image | None) -> Image.Image:
+    if alpha is None:
+        return image
+    rgba = image.convert("RGBA")
+    if alpha.size != rgba.size:
+        alpha = alpha.resize(rgba.size, Image.Resampling.LANCZOS)
+    rgba.putalpha(alpha)
+    return rgba
+
+
+def write_cover(path: Path, box: dict[str, int], color: str, alpha: Image.Image | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    Image.new("RGB", (box["w"], box["h"]), hex_to_rgb(color)).save(path, format="PNG")
+    mode = "RGBA" if alpha is not None else "RGB"
+    cover = Image.new(mode, (box["w"], box["h"]), hex_to_rgb(color) + ((255,) if alpha is not None else ()))
+    if alpha is not None:
+        cover.putalpha(alpha)
+    cover.save(path, format="PNG")
 
 
-def write_fog(path: Path, master: Image.Image, box: dict[str, int], color: str, strength: float, blur_px: float) -> None:
+def write_fog(path: Path, master: Image.Image, box: dict[str, int], color: str, strength: float, blur_px: float, alpha: Image.Image | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     base = crop_image(master, box).convert("RGB").filter(ImageFilter.GaussianBlur(float(blur_px)))
     overlay = Image.new("RGB", base.size, hex_to_rgb(color))
     fog = Image.blend(base, overlay, max(0.0, min(1.0, float(strength))))
+    fog = apply_alpha(fog, alpha)
     fog.save(path, format="PNG")
 
 
@@ -122,6 +175,8 @@ def build_event(slide_id: str, group: dict[str, Any], layer_id: str, fallback_at
     for key in ("narration_beat_id", "linked_segment_id"):
         if group.get(key):
             event[key] = group[key]
+    if isinstance(group.get("narration_beat_ids"), list) and group["narration_beat_ids"]:
+        event["narration_beat_ids"] = group["narration_beat_ids"]
     return event
 
 
@@ -151,8 +206,8 @@ def compose_slide(slide: dict[str, Any], manifest_dir: Path, repo_root: Path, de
     warnings: list[dict[str, Any]] = []
     placed: list[dict[str, Any]] = []
     groups = slide.get("groups")
-    if not isinstance(groups, list) or not groups:
-        raise RevealBuildError(f"Slide has no groups: {slide_id}")
+    if not isinstance(groups, list):
+        raise RevealBuildError(f"Slide groups must be a list: {slide_id}")
     for index, group in enumerate(groups, start=1):
         if not isinstance(group, dict):
             raise RevealBuildError(f"Invalid group in {slide_id}")
@@ -165,6 +220,7 @@ def compose_slide(slide: dict[str, Any], manifest_dir: Path, repo_root: Path, de
             raise RevealBuildError(f"Group missing box in {slide_id}: {group_id}")
         padding = int(group.get("padding_px", DEFAULTS["padding_px"]))
         box = padded_box(raw_box, width, height, padding)
+        alpha = manual_mask_alpha(group.get("manual_mask"), box)
         if role != "decoration" and box["y"] + box["h"] > subtitle_safe_y:
             warnings.append({"severity": "blocking", "type": "subtitle_safe_zone_violation", "group_id": group_id})
         for existing in placed:
@@ -177,21 +233,21 @@ def compose_slide(slide: dict[str, Any], manifest_dir: Path, repo_root: Path, de
         layer_role = "cover_layer"
         if action in FOG_ACTIONS:
             rel = f"assets/fog/{group_id}_fog.png"
-            write_fog(slide_dir / rel, master, box, background, float(reveal.get("fog_strength", DEFAULTS["fog_strength"])), float(reveal.get("blur_px", DEFAULTS["blur_px"])))
+            write_fog(slide_dir / rel, master, box, background, float(reveal.get("fog_strength", DEFAULTS["fog_strength"])), float(reveal.get("blur_px", DEFAULTS["blur_px"])), alpha)
             layer_asset = rel
             layer_role = "fog_layer"
         elif action in CROP_ACTIONS:
             rel_cover = f"assets/covers/{group_id}_cover.png"
-            write_cover(slide_dir / rel_cover, box, background)
+            write_cover(slide_dir / rel_cover, box, background, alpha)
             layers.append({"id": f"cover_{group_id}", "type": "png", "asset": rel_cover, "role": "cover_layer", "target_group_id": group_id, "box": box, "z_index": int(group.get("z_index", 30 + index))})
             rel = f"assets/crops/{group_id}.png"
             (slide_dir / rel).parent.mkdir(parents=True, exist_ok=True)
-            crop_image(master, box).save(slide_dir / rel, format="PNG")
+            apply_alpha(crop_image(master, box), alpha).save(slide_dir / rel, format="PNG")
             layer_asset = rel
             layer_role = "reveal_crop"
         else:
             rel = f"assets/covers/{group_id}_cover.png"
-            write_cover(slide_dir / rel, box, background)
+            write_cover(slide_dir / rel, box, background, alpha)
             layer_asset = rel
             layer_role = "cover_layer"
         layer_id = f"{layer_role}_{group_id}"
@@ -202,7 +258,7 @@ def compose_slide(slide: dict[str, Any], manifest_dir: Path, repo_root: Path, de
     duration = max(float(slide.get("default_duration_sec", 12.0)), max((float(e["at"]) + float(e["duration"]) for e in events), default=0.0) + 0.5)
     write_json(slide_dir / "scene.json", scene)
     write_json(slide_dir / "animation_timeline.json", {"slide_id": slide_id, "duration_sec": round(duration, 3), "events": events})
-    write_json(slide_dir / "reveal_report.json", {"slide_id": slide_id, "method": "full_slide_reveal_layers", "warnings": warnings, "group_count": len(groups), "layer_count": len(layers)})
+    write_json(slide_dir / "reveal_report.json", {"slide_id": slide_id, "method": "full_slide_reveal_layers", "warnings": warnings, "group_count": len(groups), "layer_count": len(layers), "fallback_full_slide": len(groups) == 0})
 
 
 def build_manifest(manifest: dict[str, Any], manifest_path: Path, repo_root: Path) -> int:

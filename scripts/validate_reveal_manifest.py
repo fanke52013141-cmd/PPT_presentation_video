@@ -157,8 +157,10 @@ def validate_slide(slide: dict[str, Any], contract_maps: dict[str, dict[str, Any
     if not slide_id:
         raise ManifestError("Slide missing slide_id")
     groups = slide.get("groups")
-    if not isinstance(groups, list) or not groups:
-        raise ManifestError(f"Slide missing groups[]: {slide_id}")
+    if not isinstance(groups, list):
+        raise ManifestError(f"Slide groups[] must be a list: {slide_id}")
+    if not groups:
+        return
     slide_maps = contract_maps.get(slide_id, {}) if contract_maps else {}
     known_groups = slide_maps.get("groups", set()) if contract_maps else set()
     known_beats = slide_maps.get("beats", set()) if contract_maps else set()

@@ -22,6 +22,7 @@ export type SceneLayer = {
   id: string;
   type: 'png';
   asset: string;
+  cutout_asset?: string;
   role?:
     | 'background'
     | 'title'

@@ -12,7 +12,7 @@ from typing import Any
 from PIL import Image, ImageDraw, ImageFilter
 
 DEFAULT_CANVAS = {"width": 1920, "height": 1080, "background": "#FFFDF7", "subtitle_safe_y": 930}
-DEFAULTS = {"padding_px": 32, "duration": 0.65, "angle": 135, "feather": 16, "fog_strength": 0.68, "blur_px": 16}
+DEFAULTS = {"padding_px": 32, "duration": 1.0, "angle": 135, "feather": 16, "fog_strength": 0.68, "blur_px": 16}
 COVER_ACTIONS = {"cover_fade_out", "cover_wipe_left_to_right", "cover_wipe_top_to_bottom"}
 FOG_ACTIONS = {"fog_diagonal_erase"}
 CROP_ACTIONS = {"crop_fade_up", "crop_slide_in_left", "crop_soft_zoom_in"}
@@ -187,7 +187,7 @@ def build_event(slide_id: str, group: dict[str, Any], layer_id: str, fallback_at
         "target_group_id": group["id"],
         "action": action,
         "at": round(max(0.0, at), 3),
-        "duration": round(max(0.05, duration), 3),
+        "duration": round(max(1.0, duration), 3),
         "easing": "easeOutCubic",
         "params": {
             "angle": float(reveal.get("angle", DEFAULTS["angle"])),

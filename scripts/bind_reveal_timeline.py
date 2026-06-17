@@ -132,9 +132,13 @@ def bind_slide(slide_dir: Path, lead_sec: float, preserve_existing_at: bool) -> 
         if preserve_existing_at and isinstance(event.get("at"), (int, float)) and event.get("linked_segment_id"):
             continue
         linked_segment_id = linked_segment_for_event(event, index, beat_map, beat_order, segments)
+        if linked_segment_id and linked_segment_id not in segment_by_id:
+            event.pop("linked_segment_id", None)
+            linked_segment_id = linked_segment_for_event(event, index, beat_map, beat_order, segments)
         if linked_segment_id in segment_by_id:
             event["linked_segment_id"] = linked_segment_id
-            duration = max(0.05, float(event.get("duration", 0.05)))
+            duration = max(1.0, float(event.get("duration", 0.05)))
+            event["duration"] = round(duration, 3)
             reveal_lead = duration + max(0.0, lead_sec)
             audio_delay = float(audio_timeline.get("audio_start_sec", 0.0) or 0.0)
             desired_at = audio_delay + segment_by_id[linked_segment_id] - reveal_lead

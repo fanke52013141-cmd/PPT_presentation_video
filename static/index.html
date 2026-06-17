@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PPT Visualization Studio - 手绘线稿风格</title>
-  <link rel="stylesheet" href="style.css?v=2.0.4">
+  <link rel="stylesheet" href="style.css?v=2.0.5">
 </head>
 <body>
 
@@ -295,6 +295,7 @@
                 <img id="step5-bg-img" src="" alt="Slide Background">
                 <canvas id="step5-canvas" width="1920" height="1080"></canvas>
                 <div id="step5-brush-cursor" class="step5-brush-cursor" aria-hidden="true"></div>
+                <div id="step5-zoom-indicator" class="step5-zoom-indicator" aria-hidden="true">100%</div>
               </div>
               <div id="step5-narration-panel" class="step5-narration-panel"></div>
             </div>
@@ -327,39 +328,30 @@
 
         <!-- ==================== 步骤 6: 演讲稿编辑 ==================== -->
         <div id="step-panel-6" class="step-panel" style="display: none;">
-          <h2 class="highlight-title">第六步：演讲旁白稿细化绑定</h2>
-          <div style="margin-top: 1.5rem; display: flex; gap: 1rem; margin-bottom: 1rem;">
+          <h2 class="highlight-title">第六步：演讲稿编辑</h2>
+          <div class="step6-toolbar">
             <button id="step6-btn-init" class="secondary">
               <svg class="icon" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
               重新同步演讲稿模板
             </button>
-            <button id="step6-btn-save" class="success">
-              <svg class="icon" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-              保存旁白修改
-            </button>
-            <button class="btn-next-step success" style="margin-left: auto;">
-              保存并前往语音合成
+            <span id="step6-autosave-status" class="step6-autosave-status"></span>
+            <button class="btn-next-step success step6-next-btn">
+              确认台词，前往语音合成
               <svg class="icon" viewBox="0 0 24 24" style="width:14px; height:14px; stroke-width:2.5;"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
             </button>
           </div>
 
-          <div class="workspace-split">
-            <!-- 左侧: 框线参考图 -->
-            <div class="workspace-left">
-              <div id="step6-thumbs" class="slides-thumbnail-container" style="margin-top: 0;"></div>
-              <div class="canvas-wrapper">
-                <img id="step6-bg-img" src="" alt="Slide Background">
-                <!-- 我们在这个 Canvas 上仅做只读标注高亮显示 -->
-                <canvas id="step6-canvas" width="1920" height="1080"></canvas>
-              </div>
+          <div class="step6-script-layout">
+            <div class="step6-slide-list-panel">
+              <h3>Slide</h3>
+              <div id="step6-thumbs" class="step6-slide-list"></div>
             </div>
 
-            <!-- 右侧: 演讲段落编辑表单 -->
-            <div class="workspace-right" style="flex: 4;">
-              <h3>旁白断句编辑列表</h3>
-              <div id="step6-beats-list" style="display: flex; flex-direction: column; gap: 0.8rem; overflow-y: auto;">
-                <!-- 演讲节奏输入 -->
+            <div class="step6-script-panel">
+              <div class="step6-script-panel-head">
+                <h3 id="step6-current-slide-title">台词审稿</h3>
               </div>
+              <div id="step6-beats-list" class="step6-beats-list"></div>
             </div>
           </div>
         </div>
@@ -414,16 +406,10 @@
             </div>
           </div>
 
-          <div id="step8-result-box" class="card" style="display: none; margin-top: 1.5rem; text-align: center;">
-            <h3 style="margin-bottom: 1.5rem;">🎉 视频渲染成功！</h3>
-            <div class="video-preview-box">
-              <video id="step8-video-player" controls src=""></video>
-            </div>
+          <div id="step8-result-box" class="card" style="display: none; margin-top: 1.5rem;">
+            <h3 style="margin-bottom: 1.5rem;">视频渲染记录</h3>
+            <div id="step8-video-list" class="step8-video-list"></div>
             <div style="display: flex; justify-content: center; gap: 1rem; margin-top: 1rem;">
-              <a id="step8-btn-download" href="" download class="btn success" style="text-decoration: none;">
-                <svg class="icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 3v12"></path></svg>
-                下载高清视频 (MP4)
-              </a>
               <button id="step8-btn-finish" class="secondary">完成并退出项目</button>
             </div>
           </div>
@@ -641,6 +627,6 @@
   <div id="toast-container"></div>
 
   <!-- 主业务 JavaScript 脚本 -->
-  <script src="app.js?v=2.0.8"></script>
+  <script src="app.js?v=2.0.9"></script>
 </body>
 </html>

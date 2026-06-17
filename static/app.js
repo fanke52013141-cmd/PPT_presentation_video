@@ -11,6 +11,8 @@ let state = {
   step2BatchOriginalActiveIndex: 0,
   step2AutoSaveTimer: null,
   step2AutoSaveInFlight: false,
+  step6AutoSaveTimer: null,
+  step6AutoSavePromise: null,
   canvasState: {
     boxes: [], // 当前 slide 的标注框列表 [{group_id: '', box: [x1,y1,x2,y2], text_label: '', role: ''}]
     selectedBoxIndex: -1,
@@ -186,9 +188,18 @@ function initGlobalEvents() {
 
   // 流水线中所有的“下一步”按钮
   document.querySelectorAll('.btn-next-step').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       if (state.currentStep === 3) {
         navigateToStep(5);
+      } else if (state.currentStep === 5) {
+        const saved = await saveStep5Masks();
+        if (saved) navigateToStep(6);
+      } else if (state.currentStep === 6) {
+        const saved = await flushStep6Autosave();
+        if (saved) navigateToStep(7);
+      } else if (state.currentStep === 7) {
+        const confirmed = await confirmStep7Audio();
+        if (confirmed) navigateToStep(8);
       } else if (state.currentStep < 8) {
         navigateToStep(state.currentStep + 1);
       }
@@ -227,7 +238,7 @@ function initGlobalEvents() {
 
   // ================= 步骤 6 事件 =================
   document.getElementById('step6-btn-init').addEventListener('click', () => initStep6Narration());
-  document.getElementById('step6-btn-save').addEventListener('click', () => saveStep6Narration());
+  document.getElementById('step6-btn-save')?.addEventListener('click', () => saveStep6Narration());
 
   // ================= 步骤 7 事件 =================
   document.getElementById('step7-btn-synthesize').addEventListener('click', () => runStep7TTS());
@@ -235,6 +246,7 @@ function initGlobalEvents() {
   // ================= 步骤 8 事件 =================
   document.getElementById('step8-btn-render').addEventListener('click', () => runStep8Render());
   document.getElementById('step8-btn-finish').addEventListener('click', () => exitWorkspace());
+  document.addEventListener('wheel', handleGlobalMaskWheel, { passive: false, capture: true });
 }
 
 // ==================== 项目管理与系统设置逻辑 ====================
@@ -582,6 +594,13 @@ function updateStepperUI(currentStep, stepStatus) {
       if (badge) badge.remove();
     }
   });
+}
+
+async function refreshCurrentProjectStatus(activeStep = state.currentStep) {
+  if (!state.currentProject?.id) return;
+  const project = await API.get(`/api/projects/${state.currentProject.id}`);
+  state.currentProject = project;
+  updateStepperUI(activeStep, project.step_status);
 }
 
 // 步骤面板切换
@@ -1105,6 +1124,9 @@ async function refreshStep3Images() {
   }
   step3ImageOrder = images;
   renderStep3Grid();
+  if (step3ImageOrder.length > 0 && step3ImageOrder.every(img => img.exists)) {
+    refreshCurrentProjectStatus(3).catch(() => {});
+  }
 }
 
 function renderStep3Grid() {
@@ -1690,12 +1712,16 @@ function syncMaskBoxesToSlide(slide, boxes) {
         id: maskBox.group_id || `custom_group_${idx + 1}`,
         role: maskBox.role || 'content_body',
         visible_text: maskBox.text_label || '',
-        reveal: { type: 'cover_fade_out', duration: 0.45 },
+        reveal: { type: 'cover_fade_out', duration: 1.0 },
         padding_px: 32,
         z_index: 40 + idx
       };
       slide.groups.push(group);
     }
+    if (!group.reveal || typeof group.reveal !== 'object') {
+      group.reveal = { type: 'cover_fade_out', duration: 1.0 };
+    }
+    group.reveal.duration = Math.max(1.0, Number(group.reveal.duration || 1.0));
     group.role = maskBox.role || group.role || 'content_body';
     group.source = maskBox.source || group.source || '';
     if (maskBox.text_label) group.visible_text = maskBox.text_label;
@@ -2301,6 +2327,7 @@ window.updateMaskBoxField = function(idx, field, val) {
 // Canvas 的拖拽与大小缩放事件实现
 function initCanvasEvents() {
   const canvas = document.getElementById('step5-canvas');
+  const wrapper = document.getElementById('canvas-container');
   
   // 移除旧事件（利用 cloneNode）
   const newCanvas = canvas.cloneNode(true);
@@ -2314,6 +2341,9 @@ function initCanvasEvents() {
     hideBrushCursor();
     handleCanvasMouseUp(e);
   });
+  if (wrapper) {
+    wrapper.onwheel = (e) => handleMaskCanvasWheel(e, newCanvas);
+  }
   applyMaskCanvasZoom(newCanvas);
 }
 
@@ -2384,12 +2414,15 @@ function applyMaskCanvasZoom(canvas = document.getElementById('step5-canvas')) {
     el.style.transform = transform;
     el.style.transformOrigin = origin;
   });
+  const indicator = document.getElementById('step5-zoom-indicator');
+  if (indicator) indicator.innerText = `${Math.round(zoom * 100)}%`;
   refreshBrushCursor(canvas);
 }
 
 function handleMaskCanvasWheel(e, canvas) {
   if (!e.ctrlKey) return;
   e.preventDefault();
+  e.stopPropagation();
   const rect = canvas.getBoundingClientRect();
   if (!rect.width || !rect.height) return;
   state.canvasState.maskZoomOriginX = ((e.clientX - rect.left) / rect.width) * 100;
@@ -2398,6 +2431,18 @@ function handleMaskCanvasWheel(e, canvas) {
   const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
   state.canvasState.maskZoom = Math.max(1, Math.min(4, current * factor));
   applyMaskCanvasZoom(canvas);
+}
+
+function handleGlobalMaskWheel(e) {
+  if (state.currentStep !== 5 || !e.ctrlKey) return;
+  const wrapper = document.getElementById('canvas-container');
+  const canvas = document.getElementById('step5-canvas');
+  if (!wrapper || !canvas) return;
+  const rect = wrapper.getBoundingClientRect();
+  if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
+    return;
+  }
+  handleMaskCanvasWheel(e, canvas);
 }
 
 function handleCanvasMouseDown(e, canvas) {
@@ -2600,11 +2645,16 @@ async function saveStep5Masks() {
   }
   
   showToast('💾 正在保存当前标注坐标并为您自动裁剪图层...');
-  const res = await API.put(`/api/projects/${state.currentProject.id}/steps/5/result`, manifestData);
-  if (res.success) {
-    showToast('🎉 标注图层保存并重建成功！');
-    renderStep5Workspace(); // 重新绘制切换栏以更新已标注绿色状态
-  }
+  try {
+    const res = await API.put(`/api/projects/${state.currentProject.id}/steps/5/result`, manifestData);
+    if (res.success) {
+      showToast('🎉 标注图层保存并重建成功！');
+      renderStep5Workspace(); // 重新绘制切换栏以更新已标注绿色状态
+      refreshCurrentProjectStatus(5).catch(() => {});
+      return true;
+    }
+  } catch (e) {}
+  return false;
 }
 
 // ==================== 步骤 6: 演讲稿编辑 ====================
@@ -2612,15 +2662,10 @@ async function saveStep5Masks() {
 let narrationData = null;
 
 async function loadStep6Data() {
-  // 获取标注的 manifest 以供左侧 Canvas 框线显示参考
-  const manifestRes = await API.get(`/api/projects/${state.currentProject.id}/steps/5/result`);
-  if (manifestRes.success) {
-    manifestData = manifestRes.manifest;
-  }
-
   const res = await API.get(`/api/projects/${state.currentProject.id}/steps/6/result`);
   if (res.success && res.beats) {
     narrationData = res.beats;
+    normalizeStep6Data();
     renderStep6Workspace();
   } else {
     // 首次进入没有演讲稿，提示同步初始化
@@ -2633,210 +2678,164 @@ async function initStep6Narration() {
   const res = await API.post(`/api/projects/${state.currentProject.id}/steps/6/init`);
   if (res.success) {
     narrationData = res.beats;
+    normalizeStep6Data();
+    updateStep6AutosaveStatus('已同步模板');
     renderStep6Workspace();
+  }
+}
+
+function normalizeStep6Beat(beat, idx) {
+  if (!beat || typeof beat !== 'object') return null;
+  const sourceText = String(beat.source_text || beat.spoken_text || '').trim();
+  beat.source_text = sourceText;
+  beat.spoken_text = String(beat.spoken_text || sourceText).trim();
+  beat.tts_text = String(beat.tts_text || beat.spoken_text || sourceText).trim();
+  beat.id = beat.id || `sentence_${idx + 1}`;
+  return beat;
+}
+
+function normalizeStep6Data() {
+  if (!narrationData || !Array.isArray(narrationData.slides)) {
+    narrationData = { slides: [] };
+  }
+  narrationData.slides.forEach(slide => {
+    if (!Array.isArray(slide.beats)) slide.beats = [];
+    slide.beats = slide.beats.map(normalizeStep6Beat).filter(Boolean);
+  });
+  if (state.activeSlideIndex >= narrationData.slides.length) {
+    state.activeSlideIndex = Math.max(0, narrationData.slides.length - 1);
   }
 }
 
 function renderStep6Workspace() {
   const thumbsContainer = document.getElementById('step6-thumbs');
+  const container = document.getElementById('step6-beats-list');
+  const title = document.getElementById('step6-current-slide-title');
+  if (!thumbsContainer || !container || !title) return;
+
   thumbsContainer.innerHTML = '';
-  
+  container.innerHTML = '';
+
+  if (!narrationData?.slides?.length) {
+    title.innerText = '台词审稿';
+    container.innerHTML = '<div class="sketch-dashed step6-empty-state">暂无演讲稿，请先同步演讲稿模板。</div>';
+    return;
+  }
+
   narrationData.slides.forEach((slide, idx) => {
-    const thumb = document.createElement('div');
-    thumb.className = `slide-thumbnail-card ${idx === state.activeSlideIndex ? 'active' : ''}`;
-    const url = `/api/projects/${state.currentProject.id}/slides/${slide.slide_id}/image?t=${uuid()}`;
-    thumb.innerHTML = `
-      <div class="img-preview"><img src="${url}"></div>
-      <div class="slide-num">${slide.slide_id}</div>
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `step6-slide-pill${idx === state.activeSlideIndex ? ' active' : ''}`;
+    btn.innerHTML = `
+      <span>${escHtml(slide.slide_id)}</span>
+      <small>${(slide.beats || []).length} 句段</small>
     `;
-    thumb.addEventListener('click', () => {
+    btn.addEventListener('click', () => {
       saveStep6CurrentState();
       state.activeSlideIndex = idx;
       renderStep6Workspace();
     });
-    thumbsContainer.appendChild(thumb);
+    thumbsContainer.appendChild(btn);
   });
-  
+
   const slide = narrationData.slides[state.activeSlideIndex];
-  if (slide) {
-    const imgUrl = `/api/projects/${state.currentProject.id}/slides/${slide.slide_id}/image?t=${uuid()}`;
-    document.getElementById('step6-bg-img').src = imgUrl;
-    
-    // 初始化只读 Canvas 用来在鼠标划过右侧旁白段落时高亮显示对应的 Mask 区域
-    drawStep6StaticCanvas(-1);
-    
-    // 渲染右侧的段落列表
-    const container = document.getElementById('step6-beats-list');
-    container.innerHTML = '';
-    
-    slide.beats.forEach((beat, idx) => {
-      const row = document.createElement('div');
-      row.className = 'sketch-dashed';
-      row.id = `step6-beat-card-${idx}`;
-      row.style.padding = '0.5rem';
-      row.style.backgroundColor = '#fff';
-      row.innerHTML = `
-        <div style="display:flex; justify-content:space-between; margin-bottom:0.2rem; font-size:0.85rem; font-weight:bold;">
-          <span>句段 ${idx + 1} (${beat.group_id} - ${beat.visible_anchor})</span>
-          <span style="color:#888;">意图: ${beat.spoken_intent}</span>
-        </div>
-        <textarea rows="2" style="font-size:0.95rem; width:100%;" onchange="updateNarrationBeatText(${idx}, this.value)">${beat.spoken_text}</textarea>
-      `;
-      
-      // 鼠标划入该旁白，高亮左图对应的 Mask
-      row.addEventListener('mouseenter', () => {
-        row.classList.add('highlight-glow');
-        row.style.backgroundColor = '#fffde0';
-        // 查找对应 group_id 的坐标索引
-        const mSlide = manifestData.slides.find(s => s.slide_id === slide.slide_id);
-        if (mSlide) {
-          const maskBoxes = getSlideMaskBoxes(mSlide);
-          const boxIdx = maskBoxes.findIndex(b => isBeatLinkedToMaskBox(beat, b));
-          drawStep6StaticCanvas(boxIdx);
-        }
-      });
-      
-      row.addEventListener('mouseleave', () => {
-        row.classList.remove('highlight-glow');
-        row.style.backgroundColor = '#fff';
-        drawStep6StaticCanvas(-1);
-      });
-      
-      container.appendChild(row);
-    });
-    
-    // 给步骤 6 的 canvas 绑定鼠标移动事件，实现反向高亮与平滑滚动
-    const canvas = document.getElementById('step6-canvas');
-    const newCanvas = canvas.cloneNode(true);
-    canvas.parentNode.replaceChild(newCanvas, canvas);
-    
-    newCanvas.addEventListener('mousemove', (e) => {
-      const { x, y } = getCanvasCoords(e, newCanvas);
-      const currentSlideId = narrationData.slides[state.activeSlideIndex].slide_id;
-      const mSlide = manifestData.slides.find(s => s.slide_id === currentSlideId);
-      if (!mSlide) return;
-      const maskBoxes = getSlideMaskBoxes(mSlide);
-      
-      let foundBoxIdx = -1;
-      // 倒序检查碰撞
-      for (let i = maskBoxes.length - 1; i >= 0; i--) {
-        const box = maskBoxes[i].box;
-        if (x >= box[0] && x <= box[2] && y >= box[1] && y <= box[3]) {
-          foundBoxIdx = i;
-          break;
-        }
-      }
-      
-      // 高亮 Canvas
-      drawStep6StaticCanvas(foundBoxIdx);
-      
-      // 反向高亮右侧列表卡片并滚动到可视区域
-      slide.beats.forEach((beat, bIdx) => {
-        const el = document.getElementById(`step6-beat-card-${bIdx}`);
-        if (!el) return;
-        
-        if (foundBoxIdx !== -1 && isBeatLinkedToMaskBox(beat, maskBoxes[foundBoxIdx])) {
-          el.classList.add('highlight-glow');
-          el.style.backgroundColor = '#fffde0';
-          el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        } else {
-          el.classList.remove('highlight-glow');
-          el.style.backgroundColor = '#fff';
-        }
-      });
-    });
-    
-    newCanvas.addEventListener('mouseleave', () => {
-      drawStep6StaticCanvas(-1);
-      slide.beats.forEach((beat, bIdx) => {
-        const el = document.getElementById(`step6-beat-card-${bIdx}`);
-        if (el) {
-          el.classList.remove('highlight-glow');
-          el.style.backgroundColor = '#fff';
-        }
-      });
-    });
+  if (!slide) return;
+  title.innerText = `${slide.slide_id} 台词审稿`;
+
+  if (!slide.beats.length) {
+    container.innerHTML = '<div class="sketch-dashed step6-empty-state">当前 Slide 暂无句段。可返回 Mask 标注页建立语块，或重新同步演讲稿模板。</div>';
+    return;
   }
+
+  slide.beats.forEach((beat, idx) => {
+    normalizeStep6Beat(beat, idx);
+    const row = document.createElement('div');
+    row.className = 'step6-beat-card sketch-dashed';
+    row.innerHTML = `
+      <div class="step6-beat-head">
+        <span>句段 ${idx + 1}</span>
+        <small>${escHtml(beat.visible_anchor || beat.group_id || '')}</small>
+      </div>
+      <div class="step6-script-label">原始旁白</div>
+      <div class="step6-source-text">${escHtml(beat.source_text || beat.spoken_text || '')}</div>
+      <div class="step6-script-label">语音合成稿</div>
+      <textarea class="step6-tts-input" rows="3" data-slide-index="${state.activeSlideIndex}" data-beat-index="${idx}" placeholder="可加入 <#0.5#> 这类停顿标记，或调整口语化表达。">${escHtml(beat.tts_text || beat.spoken_text || '')}</textarea>
+    `;
+    row.querySelector('textarea').addEventListener('input', (event) => {
+      updateNarrationBeatText(idx, event.target.value);
+    });
+    container.appendChild(row);
+  });
 }
 
 function updateNarrationBeatText(idx, val) {
   const slide = narrationData.slides[state.activeSlideIndex];
   if (slide && slide.beats[idx]) {
-    slide.beats[idx].spoken_text = val;
-  }
-}
-
-function drawStep6StaticCanvas(highlightIdx) {
-  const canvas = document.getElementById('step6-canvas');
-  const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, 1920, 1080);
-  
-  const currentSlideId = narrationData.slides[state.activeSlideIndex].slide_id;
-  const mSlide = manifestData.slides.find(s => s.slide_id === currentSlideId);
-  if (!mSlide) return;
-  
-  getSlideMaskBoxes(mSlide).forEach((item, idx) => {
-    const [x1, y1, x2, y2] = item.box;
-    const isHighlighted = idx === highlightIdx;
-    
-    ctx.lineWidth = isHighlighted ? 3 : 2;
-    ctx.strokeStyle = isHighlighted ? '#e5b922' : '#777777';
-    ctx.lineJoin = 'miter';
-    
-    // 绘制工整圆角框
-    ctx.beginPath();
-    ctx.roundRect(x1, y1, x2 - x1, y2 - y1, 8);
-    ctx.stroke();
-    
-    if (isHighlighted) {
-      // 绘制雅致浅黄色半透明高亮遮罩
-      ctx.fillStyle = 'rgba(249, 214, 92, 0.08)';
-      ctx.fill();
-    } else {
-      ctx.fillStyle = 'rgba(17, 17, 17, 0.01)';
-      ctx.fill();
+    slide.beats[idx].tts_text = val;
+    if (!slide.beats[idx].source_text) {
+      slide.beats[idx].source_text = slide.beats[idx].spoken_text || val;
     }
-    
-    // 气泡：正圆
-    ctx.beginPath();
-    ctx.arc(x1, y1, 14, 0, Math.PI * 2);
-    ctx.fillStyle = isHighlighted ? '#FFF9DB' : '#f3f4f6';
-    ctx.fill();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = '#111111';
-    ctx.stroke();
-    
-    ctx.fillStyle = '#111111';
-    ctx.font = '500 15px Inter, Noto Sans SC';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(idx + 1, x1, y1);
-  });
+    scheduleStep6Autosave();
+  }
 }
 
 function saveStep6CurrentState() {
-  // 辅助防错
-  const slide = narrationData.slides[state.activeSlideIndex];
-  if (slide) {
-    const list = document.getElementById('step6-beats-list');
-    if (list) {
-      const textareas = list.querySelectorAll('textarea');
-      textareas.forEach((ta, idx) => {
-        if (slide.beats[idx]) {
-          slide.beats[idx].spoken_text = ta.value;
-        }
-      });
+  const list = document.getElementById('step6-beats-list');
+  if (!list || !narrationData?.slides) return;
+  list.querySelectorAll('.step6-tts-input').forEach(ta => {
+    const slideIdx = Number(ta.dataset.slideIndex);
+    const beatIdx = Number(ta.dataset.beatIndex);
+    const beat = narrationData.slides?.[slideIdx]?.beats?.[beatIdx];
+    if (beat) {
+      beat.tts_text = ta.value;
+      if (!beat.source_text) beat.source_text = beat.spoken_text || ta.value;
     }
-  }
+  });
 }
 
-async function saveStep6Narration() {
-  saveStep6CurrentState();
-  showToast('💾 正在保存并校验旁白信息...');
-  const res = await API.put(`/api/projects/${state.currentProject.id}/steps/6/result`, narrationData);
-  if (res.success) {
-    showToast('🎉 演讲旁白修改保存成功！');
+function updateStep6AutosaveStatus(text) {
+  const el = document.getElementById('step6-autosave-status');
+  if (el) el.innerText = text || '';
+}
+
+function scheduleStep6Autosave() {
+  if (state.step6AutoSaveTimer) clearTimeout(state.step6AutoSaveTimer);
+  updateStep6AutosaveStatus('自动保存中...');
+  state.step6AutoSaveTimer = setTimeout(() => {
+    saveStep6Narration({ silent: true });
+  }, 700);
+}
+
+async function flushStep6Autosave() {
+  if (state.step6AutoSaveTimer) {
+    clearTimeout(state.step6AutoSaveTimer);
+    state.step6AutoSaveTimer = null;
   }
+  return saveStep6Narration({ silent: true });
+}
+
+async function saveStep6Narration(options = {}) {
+  const silent = !!options.silent;
+  if (!narrationData) return true;
+  saveStep6CurrentState();
+  normalizeStep6Data();
+  if (!silent) showToast('💾 正在保存并校验台词信息...');
+  try {
+    state.step6AutoSavePromise = API.put(`/api/projects/${state.currentProject.id}/steps/6/result`, narrationData);
+    const res = await state.step6AutoSavePromise;
+    if (res.success) {
+      updateStep6AutosaveStatus('已自动保存');
+      if (!silent) showToast('🎉 演讲稿修改保存成功！');
+      refreshCurrentProjectStatus(6).catch(() => {});
+      return true;
+    }
+  } catch (e) {
+    updateStep6AutosaveStatus('保存失败');
+    return false;
+  } finally {
+    state.step6AutoSavePromise = null;
+  }
+  return false;
 }
 
 // ==================== 步骤 7: 语音合成 ====================
@@ -2878,7 +2877,7 @@ function getStep7NarrationText(slideId, narrationSlides) {
   const slide = narrationSlides.find(item => item.slide_id === slideId);
   if (!slide || !Array.isArray(slide.beats)) return '';
   return slide.beats
-    .map(beat => String(beat?.spoken_text || '').trim())
+    .map(beat => String(beat?.tts_text || beat?.spoken_text || '').trim())
     .filter(Boolean)
     .join('\n');
 }
@@ -2893,6 +2892,7 @@ async function runStep7TTS() {
     if (res.success) {
       showToast('🎉 合成并绑定时间轴完成！');
       loadStep7Data();
+      refreshCurrentProjectStatus(7).catch(() => {});
     }
   } catch(e) {
   } finally {
@@ -2901,15 +2901,25 @@ async function runStep7TTS() {
   }
 }
 
+async function confirmStep7Audio() {
+  try {
+    const res = await API.post(`/api/projects/${state.currentProject.id}/steps/7/confirm`, {});
+    if (res.success) {
+      showToast('✅ 音频已确认，准备进入视频合成。');
+      refreshCurrentProjectStatus(7).catch(() => {});
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
 // ==================== 步骤 8: 视频合成与渲染 ====================
 
 async function loadStep8Data() {
-  // 检查是否有渲染出的 MP4
-  const videoUrl = `/api/projects/${state.currentProject.id}/video`;
   try {
-    const response = await fetch(videoUrl, { method: 'HEAD' });
-    if (response.ok) {
-      showStep8VideoResult(videoUrl);
+    const res = await API.get(`/api/projects/${state.currentProject.id}/videos`);
+    if (res.success && Array.isArray(res.videos) && res.videos.length > 0) {
+      showStep8VideoResult(res.videos);
     } else {
       document.getElementById('step8-result-box').style.display = 'none';
       document.getElementById('step8-btn-render').style.display = 'inline-flex';
@@ -2928,8 +2938,8 @@ async function runStep8Render() {
     const res = await API.post(`/api/projects/${state.currentProject.id}/steps/8/render`);
     if (res.success) {
       showToast('🎉 视频渲染成功！');
-      const videoUrl = `/api/projects/${state.currentProject.id}/video`;
-      showStep8VideoResult(videoUrl);
+      showStep8VideoResult(res.videos || (res.video ? [res.video] : []));
+      refreshCurrentProjectStatus(8).catch(() => {});
     }
   } catch(e) {
   } finally {
@@ -2938,13 +2948,35 @@ async function runStep8Render() {
   }
 }
 
-function showStep8VideoResult(videoUrl) {
-  document.getElementById('step8-btn-render').style.display = 'none';
-  const player = document.getElementById('step8-video-player');
-  player.src = videoUrl + `?t=${Date.now()}`;
-  
-  const dlBtn = document.getElementById('step8-btn-download');
-  dlBtn.href = videoUrl;
-  
+function showStep8VideoResult(videos) {
+  document.getElementById('step8-btn-render').style.display = 'inline-flex';
+  const list = document.getElementById('step8-video-list');
+  if (!list) return;
+  const items = Array.isArray(videos) ? videos : [];
+  if (!items.length) {
+    list.innerHTML = '<div class="sketch-dashed step6-empty-state">暂无渲染记录。</div>';
+  } else {
+    list.innerHTML = items.map((item, idx) => {
+      const url = `${item.url}?t=${Date.now()}`;
+      const created = item.created_at ? new Date(item.created_at).toLocaleString() : '';
+      return `
+        <div class="step8-video-card sketch-dashed">
+          <div class="step8-video-card-head">
+            <strong>${idx === 0 ? '最新渲染' : `历史版本 ${idx + 1}`}</strong>
+            <span>${escHtml(created || item.filename || '')}</span>
+          </div>
+          <div class="video-preview-box">
+            <video controls src="${url}"></video>
+          </div>
+          <div class="step8-video-actions">
+            <a href="${item.url}" download class="btn success" style="text-decoration: none;">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 3v12"></path></svg>
+              下载 MP4
+            </a>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
   document.getElementById('step8-result-box').style.display = 'block';
 }

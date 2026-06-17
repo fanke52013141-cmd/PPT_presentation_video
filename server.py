@@ -13,6 +13,7 @@ from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from PIL import Image
@@ -182,6 +183,23 @@ def read_contract_slide_ids(run_dir: str) -> List[str]:
     return contract_slide_ids_from_payload(contract)
 
 
+def all_current_slide_images_exist(project: Project) -> bool:
+    slide_ids = read_contract_slide_ids(project.run_dir)
+    if not slide_ids:
+        return False
+    return all(
+        os.path.exists(os.path.join(project.run_dir, "slides", slide_id, "visual_draft.png"))
+        for slide_id in slide_ids
+    )
+
+
+def read_current_slide_ids_or_404(project: Project) -> List[str]:
+    slide_ids = read_contract_slide_ids(project.run_dir)
+    if not slide_ids:
+        raise HTTPException(status_code=400, detail="分镜规划尚未生成，请先完成第二步")
+    return slide_ids
+
+
 def sync_reveal_manifest_to_contract(project: Project, slide_ids: Optional[List[str]] = None) -> bool:
     """Keep mask annotations aligned with the slides that still exist in Step 2."""
     current_slide_ids = slide_ids if slide_ids is not None else read_contract_slide_ids(project.run_dir)
@@ -261,6 +279,60 @@ def sync_narration_beats_to_contract(project: Project, slide_ids: Optional[List[
         len(slides),
     )
     return True
+
+
+TTS_MARKUP_RE = re.compile(r"<#\d+(?:\.\d{1,2})?#>|\([A-Za-z-]+\)")
+
+
+def clean_tts_text(text: str) -> str:
+    value = TTS_MARKUP_RE.sub(" ", str(text or ""))
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def beat_tts_text(beat: Dict[str, Any]) -> str:
+    return str(beat.get("tts_text") or beat.get("spoken_text") or beat.get("source_text") or "").strip()
+
+
+def rewrite_audio_timeline_by_beats(timeline_path: str, slide_id: str, beats: List[Dict[str, Any]]) -> None:
+    if not os.path.exists(timeline_path):
+        return
+    with open(timeline_path, "r", encoding="utf-8") as f:
+        timeline = json.load(f)
+    duration = float(timeline.get("audio_content_duration_sec") or timeline.get("duration_sec") or 0)
+    if duration <= 0:
+        return
+    clean_beats = [
+        {
+            "id": str(beat.get("id") or f"{slide_id}_beat_{idx + 1:03d}"),
+            "text": clean_tts_text(beat_tts_text(beat)),
+        }
+        for idx, beat in enumerate(beats)
+        if clean_tts_text(beat_tts_text(beat))
+    ]
+    if not clean_beats:
+        return
+    weights = [max(1, len(item["text"])) for item in clean_beats]
+    total_weight = sum(weights)
+    cursor = 0.0
+    segments = []
+    for idx, (item, weight) in enumerate(zip(clean_beats, weights), start=1):
+        end = duration if idx == len(clean_beats) else cursor + duration * weight / total_weight
+        segments.append({
+            "id": item["id"],
+            "start": round(cursor, 3),
+            "end": round(end, 3),
+            "text": item["text"],
+            "timing_source": "beat_estimated",
+            "max_cjk_chars": 28,
+            "max_lines": 1,
+        })
+        cursor = end
+    timeline["segments"] = segments
+    timeline["timing_source"] = "beat_estimated"
+    timeline["audio_content_duration_sec"] = round(duration, 3)
+    timeline["duration_sec"] = round(duration + float(timeline.get("audio_start_sec", 0.0) or 0.0), 3)
+    with open(timeline_path, "w", encoding="utf-8") as f:
+        json.dump(timeline, f, ensure_ascii=False, indent=2)
 
 # ==================== 项目管理接口 ====================
 
@@ -861,6 +933,8 @@ def generate_slide_image(project_id: str, slide_id: str = Form(...), prompt: str
 
         process_and_save_image(img_bytes, save_path)
         logger.info(f"Image saved for {slide_id}: {save_path}")
+        if all_current_slide_images_exist(project):
+            handle_step_navigation(project, 3, db)
         
         return {"success": True, "image_url": f"/api/projects/{project_id}/slides/{slide_id}/image?t={uuid.uuid4().hex[:6]}"}
     except Exception as e:
@@ -877,6 +951,8 @@ def upload_slide_image(project_id: str, slide_id: str = Form(...), file: UploadF
         content = file.file.read()
         save_path = os.path.join(project.run_dir, "slides", slide_id, "visual_draft.png")
         process_and_save_image(content, save_path)
+        if all_current_slide_images_exist(project):
+            handle_step_navigation(project, 3, db)
         return {"success": True, "image_url": f"/api/projects/{project_id}/slides/{slide_id}/image?t={uuid.uuid4().hex[:6]}"}
     except Exception as e:
         logger.error(f"Upload image error for {slide_id}: {e}")
@@ -946,6 +1022,13 @@ def confirm_images(project_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
+    slide_ids = read_current_slide_ids_or_404(project)
+    missing_images = [
+        slide_id for slide_id in slide_ids
+        if not os.path.exists(os.path.join(project.run_dir, "slides", slide_id, "visual_draft.png"))
+    ]
+    if missing_images:
+        raise HTTPException(status_code=400, detail=f"以下页面还没有图片: {', '.join(missing_images)}")
         
     # 步骤4：确认图片。将步骤 3 与 4 状态标记为已完成
     # 自动调用 write_reveal_manifest_template.py 生成 manifest 模板
@@ -1659,9 +1742,14 @@ def init_step6_narration(project_id: str, db: Session = Depends(get_db)):
         if os.path.exists(slide_beat_path):
             with open(slide_beat_path, "r", encoding="utf-8") as sf:
                 s_data = json.load(sf)
+                beats = s_data.get("beats", [])
+                for beat in beats:
+                    if isinstance(beat, dict):
+                        beat.setdefault("source_text", beat.get("spoken_text", ""))
+                        beat.setdefault("tts_text", beat.get("spoken_text", ""))
                 global_slides.append({
                     "slide_id": slide_id,
-                    "beats": s_data.get("beats", [])
+                    "beats": beats
                 })
         else:
             global_slides.append({
@@ -1725,22 +1813,27 @@ def update_step6_result(project_id: str, payload: Dict[str, Any], db: Session = 
         os.makedirs(slide_dir, exist_ok=True)
         
         slide_beats = slide_data.get("beats", [])
-        slide_narration = "\n".join(beat["spoken_text"] for beat in slide_beats)
+        for beat in slide_beats:
+            if isinstance(beat, dict):
+                beat.setdefault("source_text", beat.get("spoken_text", ""))
+                beat.setdefault("tts_text", beat.get("spoken_text", ""))
+        slide_narration = "\n".join(clean_tts_text(beat_tts_text(beat)) for beat in slide_beats)
+        slide_tts_text = "\n".join(beat_tts_text(beat) for beat in slide_beats)
         
         with open(os.path.join(slide_dir, "narration.txt"), "w", encoding="utf-8") as f:
             f.write(slide_narration + "\n")
         with open(os.path.join(slide_dir, "tts_text.txt"), "w", encoding="utf-8") as f:
-            f.write(slide_narration + "\n")
+            f.write(slide_tts_text + "\n")
         with open(os.path.join(slide_dir, "narration_beats.json"), "w", encoding="utf-8") as f:
             json.dump({"slide_id": slide_id, "beats": slide_beats}, f, ensure_ascii=False, indent=2)
             
         narration_lines.append(f"=== {slide_id} ===")
         tts_text_lines.append(f"=== {slide_id} ===")
         for beat in slide_beats:
-            g_id = beat["group_id"]
-            text = beat["spoken_text"]
+            g_id = beat.get("group_id") or beat.get("id") or "sentence"
+            text = clean_tts_text(beat_tts_text(beat))
             narration_lines.append(f"[{g_id}] {text}")
-            tts_text_lines.append(text)
+            tts_text_lines.append(beat_tts_text(beat))
             
     narration_txt_path = os.path.join(project.run_dir, "planning", "narration.txt")
     tts_txt_path = os.path.join(project.run_dir, "planning", "tts_text.txt")
@@ -1788,6 +1881,18 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
         contract = json.load(f)
         
     slide_ids = [slide["slide_id"] for slide in contract.get("slides", [])]
+    beats_by_slide: Dict[str, List[Dict[str, Any]]] = {}
+    beats_path = os.path.join(project.run_dir, "planning", "narration_beats.json")
+    if os.path.exists(beats_path):
+        try:
+            sync_narration_beats_to_contract(project, slide_ids)
+            with open(beats_path, "r", encoding="utf-8") as f:
+                beats_payload = json.load(f)
+            for slide_data in beats_payload.get("slides", []) or []:
+                if isinstance(slide_data, dict):
+                    beats_by_slide[str(slide_data.get("slide_id", ""))] = slide_data.get("beats", []) or []
+        except Exception as exc:
+            logger.warning(f"Failed to load edited narration beats for TTS: {exc}")
     
     # 动态将 setting 中的 TTS 参数写入环境变量，以便 minimax_tts.py 读取
     os.environ["MINIMAX_API_KEY"] = tts_api_key
@@ -1839,6 +1944,7 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
         if tts_res.returncode != 0:
             logger.error(f"TTS Synthesis failed for {slide_id}: {tts_res.stderr}")
             raise HTTPException(status_code=500, detail=f"语音合成失败: {tts_res.stderr}")
+        rewrite_audio_timeline_by_beats(out_timeline, slide_id, beats_by_slide.get(slide_id, []))
             
     # 合成完毕后，运行 bind_reveal_timeline.py 绑定时间轴
     bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))
@@ -1864,10 +1970,83 @@ def get_slide_audio_file(project_id: str, slide_id: str, db: Session = Depends(g
     if not os.path.exists(audio_path):
         raise HTTPException(status_code=404, detail="该页面音频尚未生成")
         
-    from fastapi.responses import FileResponse
     return FileResponse(audio_path, media_type="audio/mp3")
 
+@app.post("/api/projects/{project_id}/steps/7/confirm")
+def confirm_tts_audio(project_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    slide_ids = read_current_slide_ids_or_404(project)
+    missing = [
+        slide_id for slide_id in slide_ids
+        if not os.path.exists(os.path.join(project.run_dir, "slides", slide_id, "voice.mp3"))
+    ]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"以下页面尚未生成音频: {', '.join(missing)}")
+    beats_by_slide: Dict[str, List[Dict[str, Any]]] = {}
+    beats_path = os.path.join(project.run_dir, "planning", "narration_beats.json")
+    if os.path.exists(beats_path):
+        try:
+            sync_narration_beats_to_contract(project, slide_ids)
+            with open(beats_path, "r", encoding="utf-8") as f:
+                beats_payload = json.load(f)
+            for slide_data in beats_payload.get("slides", []) or []:
+                if isinstance(slide_data, dict):
+                    beats_by_slide[str(slide_data.get("slide_id", ""))] = slide_data.get("beats", []) or []
+        except Exception as exc:
+            logger.warning(f"Failed to load edited narration beats while confirming TTS: {exc}")
+    for slide_id in slide_ids:
+        rewrite_audio_timeline_by_beats(
+            os.path.join(project.run_dir, "slides", slide_id, "audio_timeline.json"),
+            slide_id,
+            beats_by_slide.get(slide_id, []),
+        )
+    bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))
+    bind_res = subprocess.run([
+        sys.executable, bind_script, "--run-dir", project.run_dir
+    ], capture_output=True, text=True, encoding="utf-8")
+    if bind_res.returncode != 0:
+        logger.error(f"Timeline binding failed during audio confirm: {bind_res.stderr}")
+        raise HTTPException(status_code=500, detail=f"时间轴绑定失败: {bind_res.stderr}")
+    handle_step_navigation(project, 7, db)
+    return {"success": True}
+
 # ==================== 步骤 8: 视频合成与渲染 ====================
+
+def project_video_dir(project: Project) -> str:
+    videos_dir = os.path.join(project.run_dir, "videos")
+    os.makedirs(videos_dir, exist_ok=True)
+    return videos_dir
+
+
+def video_item(project_id: str, path: str, label: Optional[str] = None) -> Dict[str, Any]:
+    stat = os.stat(path)
+    filename = os.path.basename(path)
+    return {
+        "filename": filename,
+        "label": label or filename,
+        "size": stat.st_size,
+        "created_at": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
+        "url": f"/api/projects/{project_id}/videos/{filename}",
+    }
+
+
+def list_video_items(project: Project, project_id: str) -> List[Dict[str, Any]]:
+    videos_dir = os.path.join(project.run_dir, "videos")
+    items: List[Dict[str, Any]] = []
+    if os.path.isdir(videos_dir):
+        for name in os.listdir(videos_dir):
+            path = os.path.join(videos_dir, name)
+            if os.path.isfile(path) and name.lower().endswith(".mp4"):
+                items.append(video_item(project_id, path))
+    legacy_path = os.path.join(project.run_dir, "out.mp4")
+    if os.path.exists(legacy_path) and not items:
+        legacy = video_item(project_id, legacy_path, "out.mp4")
+        legacy["url"] = f"/api/projects/{project_id}/video"
+        items.append(legacy)
+    items.sort(key=lambda item: item["created_at"], reverse=True)
+    return items
 
 @app.post("/api/projects/{project_id}/steps/8/render")
 def render_video(project_id: str, db: Session = Depends(get_db)):
@@ -1913,7 +2092,10 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
     # 我们直接用 subprocess.run 调用 npx
     npx_cmd = "npx.cmd" if sys.platform == "win32" else "npx"
     props_json_path = os.path.join(project.run_dir, "remotion_props.json")
-    output_mp4_path = os.path.join(project.run_dir, "out.mp4")
+    videos_dir = project_video_dir(project)
+    output_filename = f"render_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.mp4"
+    output_mp4_path = os.path.join(videos_dir, output_filename)
+    legacy_output_path = os.path.join(project.run_dir, "out.mp4")
     
     logger.info(f"Starting Remotion render for {project_id}...")
     render_args = [
@@ -1928,9 +2110,31 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
     if render_res.returncode != 0:
         logger.error(f"Remotion render failed: {render_res.stderr}")
         raise HTTPException(status_code=500, detail=f"视频渲染失败: {render_res.stderr}")
-        
+    shutil.copy2(output_mp4_path, legacy_output_path)
+
     handle_step_navigation(project, 8, db)
-    return {"success": True, "video_url": f"/api/projects/{project_id}/video"}
+    item = video_item(project_id, output_mp4_path)
+    return {"success": True, "video_url": item["url"], "video": item, "videos": list_video_items(project, project_id)}
+
+@app.get("/api/projects/{project_id}/videos")
+def list_project_videos(project_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    return {"success": True, "videos": list_video_items(project, project_id)}
+
+@app.get("/api/projects/{project_id}/videos/{filename}")
+def get_project_video(project_id: str, filename: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    safe_name = os.path.basename(filename)
+    if safe_name != filename or not safe_name.lower().endswith(".mp4"):
+        raise HTTPException(status_code=400, detail="视频文件名无效")
+    video_path = os.path.join(project.run_dir, "videos", safe_name)
+    if not os.path.exists(video_path):
+        raise HTTPException(status_code=404, detail="视频文件不存在")
+    return FileResponse(video_path, media_type="video/mp4", filename=safe_name)
 
 # 获取最终生成的 MP4 视频
 @app.get("/api/projects/{project_id}/video")
@@ -1941,9 +2145,11 @@ def get_final_video(project_id: str, db: Session = Depends(get_db)):
         
     video_path = os.path.join(project.run_dir, "out.mp4")
     if not os.path.exists(video_path):
+        items = list_video_items(project, project_id)
+        if items:
+            video_path = os.path.join(project.run_dir, "videos", items[0]["filename"])
+    if not os.path.exists(video_path):
         raise HTTPException(status_code=404, detail="最终视频尚未渲染生成")
-        
-    from fastapi.responses import FileResponse
     return FileResponse(video_path, media_type="video/mp4")
 
 # ==================== 前端托管 ====================

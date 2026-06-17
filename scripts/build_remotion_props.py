@@ -222,6 +222,15 @@ def convert_scene_assets(
             subdir="assets",
             required_suffix=".png",
         )
+        cutout_asset = layer.get("cutout_asset")
+        if isinstance(cutout_asset, str) and cutout_asset:
+            converted["cutout_asset"] = asset_store.copy(
+                cutout_asset,
+                slide_dir,
+                repo_root,
+                subdir="assets",
+                required_suffix=".png",
+            )
         converted_layers.append(converted)
 
     converted_scene = dict(scene)

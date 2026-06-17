@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Bind reveal animation events to TTS audio_timeline segments.
 
-This script rewrites each slide's animation_timeline.json so reveal events start
-when their mapped narration beat or linked audio segment starts.
+This script rewrites each slide's animation_timeline.json so reveal events finish
+just before their mapped narration beat or linked audio segment starts.
 """
 
 from __future__ import annotations
@@ -75,6 +75,43 @@ def infer_segment_for_beat(beat_index: int, segments: list[dict[str, Any]]) -> s
     return segment_id or None
 
 
+def event_beat_ids(event: dict[str, Any]) -> list[str]:
+    ids: list[str] = []
+    raw_ids = event.get("narration_beat_ids")
+    if isinstance(raw_ids, list):
+        ids.extend(str(value).strip() for value in raw_ids if str(value).strip())
+    single = str(event.get("narration_beat_id", "")).strip()
+    if single:
+        ids.append(single)
+    result: list[str] = []
+    for beat_id in ids:
+        if beat_id not in result:
+            result.append(beat_id)
+    return result
+
+
+def linked_segment_for_event(
+    event: dict[str, Any],
+    event_index: int,
+    beat_map: dict[str, dict[str, Any]],
+    beat_order: list[str],
+    segments: list[dict[str, Any]],
+) -> str:
+    linked_segment_id = str(event.get("linked_segment_id", "")).strip()
+    if linked_segment_id:
+        return linked_segment_id
+    for beat_id in event_beat_ids(event):
+        beat = beat_map.get(beat_id, {})
+        linked_segment_id = str(beat.get("linked_segment_id", "")).strip()
+        if linked_segment_id:
+            return linked_segment_id
+        if beat_id in beat_order:
+            inferred = infer_segment_for_beat(beat_order.index(beat_id), segments)
+            if inferred:
+                return inferred
+    return infer_segment_for_beat(event_index, segments) or ""
+
+
 def bind_slide(slide_dir: Path, lead_sec: float, preserve_existing_at: bool) -> bool:
     animation_path = slide_dir / "animation_timeline.json"
     audio_path = slide_dir / "audio_timeline.json"
@@ -87,31 +124,48 @@ def bind_slide(slide_dir: Path, lead_sec: float, preserve_existing_at: bool) -> 
         raise BindError(f"animation_timeline.json must contain events[]: {animation_path}")
 
     beat_order = list(beat_map.keys())
+    initial_audio_delay = float(audio_timeline.get("audio_start_sec", 0.0) or 0.0)
     changed = False
     for index, event in enumerate(events):
         if not isinstance(event, dict):
             raise BindError(f"Invalid event object: {animation_path}")
         if preserve_existing_at and isinstance(event.get("at"), (int, float)) and event.get("linked_segment_id"):
             continue
-        linked_segment_id = str(event.get("linked_segment_id", "")).strip()
-        beat_id = str(event.get("narration_beat_id", "")).strip()
-        if not linked_segment_id and beat_id:
-            beat = beat_map.get(beat_id, {})
-            linked_segment_id = str(beat.get("linked_segment_id", "")).strip()
-        if not linked_segment_id and beat_id in beat_order:
-            linked_segment_id = infer_segment_for_beat(beat_order.index(beat_id), segments) or ""
-        if not linked_segment_id:
-            linked_segment_id = infer_segment_for_beat(index, segments) or ""
+        linked_segment_id = linked_segment_for_event(event, index, beat_map, beat_order, segments)
         if linked_segment_id in segment_by_id:
             event["linked_segment_id"] = linked_segment_id
-            event["at"] = round(max(0.0, segment_by_id[linked_segment_id] - lead_sec), 3)
+            duration = max(0.05, float(event.get("duration", 0.05)))
+            reveal_lead = duration + max(0.0, lead_sec)
+            audio_delay = float(audio_timeline.get("audio_start_sec", 0.0) or 0.0)
+            desired_at = audio_delay + segment_by_id[linked_segment_id] - reveal_lead
+            if desired_at < 0:
+                audio_delay = max(audio_delay, reveal_lead - segment_by_id[linked_segment_id])
+                audio_timeline["audio_start_sec"] = round(audio_delay, 3)
+                desired_at = 0.0
+            event["at"] = round(max(0.0, desired_at), 3)
+            event["narration_start_at"] = round(segment_by_id[linked_segment_id] + audio_delay, 3)
             changed = True
+    final_audio_delay = float(audio_timeline.get("audio_start_sec", 0.0) or 0.0)
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        linked_segment_id = str(event.get("linked_segment_id", "")).strip()
+        if linked_segment_id in segment_by_id:
+            event["narration_start_at"] = round(segment_by_id[linked_segment_id] + final_audio_delay, 3)
     duration = audio_timeline.get("duration_sec")
     if isinstance(duration, (int, float)):
+        base_duration = audio_timeline.get("audio_content_duration_sec")
+        if isinstance(base_duration, (int, float)):
+            audio_content_duration = float(base_duration)
+        else:
+            audio_content_duration = max(0.0, float(duration) - initial_audio_delay)
+        audio_timeline["audio_content_duration_sec"] = round(audio_content_duration, 3)
         event_end = max((float(event.get("at", 0)) + float(event.get("duration", 0)) for event in events if isinstance(event, dict)), default=0.0)
-        timeline["duration_sec"] = round(max(float(duration), event_end + 0.25), 3)
+        audio_timeline["duration_sec"] = round(audio_content_duration + final_audio_delay, 3)
+        timeline["duration_sec"] = round(max(audio_content_duration + final_audio_delay, event_end + 0.25), 3)
     if changed:
         write_json(animation_path, timeline)
+        write_json(audio_path, audio_timeline)
     return changed
 
 
@@ -131,7 +185,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Bind reveal animation timing to audio timeline segments.")
     parser.add_argument("--run-dir", required=True, type=Path)
     parser.add_argument("--slide-id")
-    parser.add_argument("--lead-sec", type=float, default=0.05, help="Start reveal slightly before the audio segment.")
+    parser.add_argument("--lead-sec", type=float, default=0.05, help="Extra silent gap after reveal before the audio segment.")
     parser.add_argument("--preserve-existing-at", action="store_true")
     return parser.parse_args()
 

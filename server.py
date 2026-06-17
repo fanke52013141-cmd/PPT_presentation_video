@@ -6,6 +6,7 @@ import json
 import shutil
 import logging
 import subprocess
+import re
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
@@ -809,6 +810,251 @@ def confirm_images(project_id: str, db: Session = Depends(get_db)):
 
 # ==================== 步骤 5: Mask 自动标注与编辑 ====================
 
+NARRATION_SPLIT_RE = re.compile(r"[^，,。！？!?；;：:\n]+[，,。！？!?；;：:]?")
+
+ROLE_LABELS = {
+    "title": "主标题",
+    "subtitle": "副标题",
+    "summary": "总结区",
+    "diagram": "图示",
+    "annotation": "注释",
+    "decoration": "装饰元素",
+    "content_body": "正文内容",
+}
+
+
+def role_label(role: str) -> str:
+    return ROLE_LABELS.get(str(role or "").strip(), "正文内容")
+
+
+def split_narration_text(text: str) -> List[str]:
+    value = str(text or "").strip()
+    if not value:
+        return []
+    parts = NARRATION_SPLIT_RE.findall(value) or [value]
+    return [part.strip() for part in parts if part.strip()]
+
+
+def build_narration_fragments(contract_slide: Dict[str, Any]) -> List[Dict[str, Any]]:
+    fragments: List[Dict[str, Any]] = []
+    for beat_idx, beat in enumerate(contract_slide.get("narration_beats", []) or []):
+        if not isinstance(beat, dict):
+            continue
+        beat_id = str(beat.get("id") or f"beat_{beat_idx + 1}").strip()
+        group_id = str(beat.get("group_id") or "").strip()
+        for frag_idx, text in enumerate(split_narration_text(str(beat.get("spoken_text", ""))), start=1):
+            fragments.append({
+                "id": f"{beat_id}::{frag_idx}",
+                "beat_id": beat_id,
+                "group_id": group_id,
+                "beat_index": beat_idx,
+                "fragment_index": frag_idx - 1,
+                "order": len(fragments) + 1,
+                "text": text,
+            })
+    return fragments
+
+
+def box_to_xyxy(box: Any) -> List[int]:
+    if isinstance(box, dict):
+        x = int(round(float(box.get("x", 860))))
+        y = int(round(float(box.get("y", 460))))
+        w = int(round(float(box.get("w", 200))))
+        h = int(round(float(box.get("h", 160))))
+        return [x, y, max(x + 1, x + w), max(y + 1, y + h)]
+    if isinstance(box, list) and len(box) >= 4:
+        return [int(round(float(v))) for v in box[:4]]
+    return [860, 460, 1060, 620]
+
+
+def group_has_paint(group: Dict[str, Any]) -> bool:
+    manual_mask = group.get("manual_mask")
+    if not isinstance(manual_mask, dict):
+        return False
+    strokes = manual_mask.get("strokes")
+    if not isinstance(strokes, list):
+        return False
+    for stroke in strokes:
+        if not isinstance(stroke, dict):
+            continue
+        mode = str(stroke.get("mode", "")).lower()
+        if not stroke.get("eraser") and mode != "erase" and stroke.get("points"):
+            return True
+    return False
+
+
+def semantic_block_payload(
+    slide_id: str,
+    index: int,
+    fragment_ids: List[str],
+    visual_group_id: str,
+    group: Optional[Dict[str, Any]],
+    fragments_by_id: Dict[str, Dict[str, Any]],
+    existing_box: Any = None,
+    ai_block: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    ai_block = ai_block or {}
+    selected_fragments = [fragments_by_id[fid] for fid in fragment_ids if fid in fragments_by_id]
+    beat_ids = []
+    narration_group_ids = []
+    for fragment in selected_fragments:
+        if fragment.get("beat_id") and fragment["beat_id"] not in beat_ids:
+            beat_ids.append(fragment["beat_id"])
+        if fragment.get("group_id") and fragment["group_id"] not in narration_group_ids:
+            narration_group_ids.append(fragment["group_id"])
+    role = str((group or {}).get("role") or "content_body")
+    visible_text = str((group or {}).get("visible_text") or ai_block.get("text_label") or f"语块 {index}").strip()
+    visual_anchor = str((group or {}).get("visual_anchor") or "").strip()
+    semantic_type = str(ai_block.get("semantic_element_type") or role_label(role)).strip()
+    visual_description = str(ai_block.get("visual_description") or "").strip()
+    if not visual_description:
+        if visual_anchor and visible_text:
+            visual_description = f"{semantic_type}：画面中可见文字“{visible_text}”，位置/形态为{visual_anchor}。"
+        elif visual_anchor:
+            visual_description = f"{semantic_type}：{visual_anchor}。"
+        else:
+            visual_description = f"{semantic_type}：请结合当前页画面中与旁白含义最接近的可见元素。"
+    semantic_note = str(ai_block.get("semantic_note") or "").strip()
+    if not semantic_note:
+        semantic_note = "建议只涂抹该语块对应的可见元素本体，避开相邻箭头、装饰线和底部字幕安全区。"
+    return {
+        "group_id": f"semantic_{slide_id}_{index:02d}",
+        "source": "ai_semantic",
+        "visual_group_id": visual_group_id,
+        "role": role,
+        "text_label": visible_text or f"语块 {index}",
+        "visual_anchor": visual_anchor,
+        "semantic_element_type": semantic_type,
+        "visual_description": visual_description,
+        "semantic_note": semantic_note,
+        "semantic_confidence": ai_block.get("confidence"),
+        "narration_beat_id": beat_ids[0] if beat_ids else "",
+        "narration_beat_ids": beat_ids,
+        "narration_group_id": narration_group_ids[0] if narration_group_ids else visual_group_id,
+        "narration_fragments": [
+            {
+                "id": fragment["id"],
+                "beat_id": fragment.get("beat_id", ""),
+                "group_id": fragment.get("group_id", ""),
+                "text": fragment.get("text", ""),
+            }
+            for fragment in selected_fragments
+        ],
+        "spoken_text": "".join(fragment.get("text", "") for fragment in selected_fragments),
+        "manual_mask": {"color": "", "strokes": []},
+        "box": box_to_xyxy(existing_box),
+    }
+
+
+def deterministic_semantic_blocks(
+    slide_id: str,
+    contract_slide: Dict[str, Any],
+    manifest_slide: Optional[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    groups = {
+        str(group.get("id", "")).strip(): group
+        for group in (contract_slide.get("visual_groups") or [])
+        if isinstance(group, dict) and str(group.get("id", "")).strip()
+    }
+    existing_boxes = {}
+    if manifest_slide:
+        for group in manifest_slide.get("groups", []) or []:
+            if isinstance(group, dict):
+                existing_boxes[str(group.get("id") or group.get("group_id") or "")] = group.get("box")
+    fragments = build_narration_fragments(contract_slide)
+    fragments_by_id = {fragment["id"]: fragment for fragment in fragments}
+    beat_to_fragments: Dict[str, List[str]] = {}
+    for fragment in fragments:
+        beat_to_fragments.setdefault(fragment["beat_id"], []).append(fragment["id"])
+    blocks: List[Dict[str, Any]] = []
+    for beat in contract_slide.get("narration_beats", []) or []:
+        if not isinstance(beat, dict):
+            continue
+        beat_id = str(beat.get("id") or "").strip()
+        group_id = str(beat.get("group_id") or "").strip()
+        fragment_ids = beat_to_fragments.get(beat_id) or []
+        if not fragment_ids:
+            continue
+        group = groups.get(group_id)
+        blocks.append(semantic_block_payload(
+            slide_id,
+            len(blocks) + 1,
+            fragment_ids,
+            group_id,
+            group,
+            fragments_by_id,
+            existing_boxes.get(group_id),
+        ))
+    return blocks
+
+
+def semantic_blocks_from_ai(
+    slide_id: str,
+    ai_data: Dict[str, Any],
+    contract_slide: Dict[str, Any],
+    manifest_slide: Optional[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    groups = {
+        str(group.get("id", "")).strip(): group
+        for group in (contract_slide.get("visual_groups") or [])
+        if isinstance(group, dict) and str(group.get("id", "")).strip()
+    }
+    existing_boxes = {}
+    if manifest_slide:
+        for group in manifest_slide.get("groups", []) or []:
+            if isinstance(group, dict):
+                existing_boxes[str(group.get("id") or group.get("group_id") or "")] = group.get("box")
+    fragments = build_narration_fragments(contract_slide)
+    fragments_by_id = {fragment["id"]: fragment for fragment in fragments}
+    by_beat_id: Dict[str, List[str]] = {}
+    by_group_id: Dict[str, List[str]] = {}
+    for fragment in fragments:
+        by_beat_id.setdefault(fragment.get("beat_id", ""), []).append(fragment["id"])
+        by_group_id.setdefault(fragment.get("group_id", ""), []).append(fragment["id"])
+    blocks: List[Dict[str, Any]] = []
+    used_fragment_ids = set()
+    for raw_block in ai_data.get("blocks", []) if isinstance(ai_data.get("blocks"), list) else []:
+        if not isinstance(raw_block, dict):
+            continue
+        fragment_ids = [
+            str(value).strip()
+            for value in raw_block.get("fragment_ids", [])
+            if str(value).strip() in fragments_by_id and str(value).strip() not in used_fragment_ids
+        ] if isinstance(raw_block.get("fragment_ids"), list) else []
+        beat_id = str(raw_block.get("narration_beat_id") or raw_block.get("beat_id") or "").strip()
+        if not fragment_ids and beat_id:
+            fragment_ids = [fid for fid in by_beat_id.get(beat_id, []) if fid not in used_fragment_ids]
+        visual_group_id = str(raw_block.get("visual_group_id") or raw_block.get("group_id") or "").strip()
+        if not fragment_ids and visual_group_id:
+            fragment_ids = [fid for fid in by_group_id.get(visual_group_id, []) if fid not in used_fragment_ids]
+        if not fragment_ids:
+            continue
+        if not visual_group_id:
+            visual_group_id = fragments_by_id[fragment_ids[0]].get("group_id", "")
+        group = groups.get(visual_group_id)
+        blocks.append(semantic_block_payload(
+            slide_id,
+            len(blocks) + 1,
+            fragment_ids,
+            visual_group_id,
+            group,
+            fragments_by_id,
+            existing_boxes.get(visual_group_id),
+            raw_block,
+        ))
+        used_fragment_ids.update(fragment_ids)
+    if len(used_fragment_ids) < len(fragments):
+        fallback = deterministic_semantic_blocks(slide_id, contract_slide, manifest_slide)
+        for block in fallback:
+            fragment_ids = [fragment["id"] for fragment in block.get("narration_fragments", [])]
+            if any(fid not in used_fragment_ids for fid in fragment_ids):
+                blocks.append({
+                    **block,
+                    "group_id": f"semantic_{slide_id}_{len(blocks) + 1:02d}",
+                })
+                used_fragment_ids.update(fragment_ids)
+    return blocks
+
 @app.post("/api/projects/{project_id}/steps/5/auto-mask")
 def auto_mask_project(project_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -1010,6 +1256,164 @@ def auto_mask_project(project_id: str, db: Session = Depends(get_db)):
         msg = "未启用视觉识别（未配置 API Key 或识别失败），已使用墨水自适应算法自动对齐包围框。"
         
     return {"success": True, "vision_used": vision_used, "message": msg}
+
+@app.post("/api/projects/{project_id}/steps/5/semantic-blocks")
+def semantic_blocks_project(project_id: str, payload: Optional[Dict[str, Any]] = None, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
+    contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
+    if not os.path.exists(manifest_path):
+        raise HTTPException(status_code=400, detail="Mask 配置文件尚未生成，请先确认图片")
+    if not os.path.exists(contract_path):
+        raise HTTPException(status_code=400, detail="分镜规划不存在，请先生成分镜")
+
+    payload = payload or {}
+    requested_slide_id = str(payload.get("slide_id") or "").strip()
+
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        manifest = json.load(f)
+    with open(contract_path, "r", encoding="utf-8") as f:
+        contract = json.load(f)
+
+    contract_slides = {
+        str(slide.get("slide_id", "")).strip(): slide
+        for slide in contract.get("slides", [])
+        if isinstance(slide, dict) and str(slide.get("slide_id", "")).strip()
+    }
+    target_slides = []
+    for slide in manifest.get("slides", []):
+        if not isinstance(slide, dict):
+            continue
+        slide_id = str(slide.get("slide_id", "")).strip()
+        if requested_slide_id and slide_id != requested_slide_id:
+            continue
+        if slide_id in contract_slides:
+            target_slides.append(slide)
+    if requested_slide_id and not target_slides:
+        raise HTTPException(status_code=404, detail=f"找不到当前页分镜：{requested_slide_id}")
+
+    llm_api_key = get_setting("llm_api_key")
+    llm_base_url = get_setting("llm_base_url")
+    vision_model = get_setting("vision_model", "gpt-4o")
+    client = get_openai_client(api_key=llm_api_key, base_url=llm_base_url) if llm_api_key else None
+    vision_used = False
+    processed_count = 0
+
+    for manifest_slide in target_slides:
+        slide_id = str(manifest_slide.get("slide_id", "")).strip()
+        contract_slide = contract_slides[slide_id]
+        semantic_blocks = []
+        img_path = os.path.join(project.run_dir, "slides", slide_id, "visual_draft.png")
+
+        if client and os.path.exists(img_path):
+            try:
+                import base64
+
+                with Image.open(img_path) as img:
+                    if img.width > 960:
+                        ratio = 960 / img.width
+                        img = img.resize((960, int(img.height * ratio)), Image.Resampling.LANCZOS)
+                    vision_width, vision_height = img.width, img.height
+                    buf = io.BytesIO()
+                    img.save(buf, format="PNG")
+                    base64_image = base64.b64encode(buf.getvalue()).decode("utf-8")
+
+                fragments = build_narration_fragments(contract_slide)
+                fragment_lines = "\n".join(
+                    f"- {fragment['id']} / 序号{fragment['order']} / group={fragment['group_id']}: {fragment['text']}"
+                    for fragment in fragments
+                )
+                group_lines = "\n".join(
+                    f"- {group.get('id')}: role={role_label(str(group.get('role', 'content_body')))}, "
+                    f"visible_text={group.get('visible_text', '')}, visual_anchor={group.get('visual_anchor', '')}, "
+                    f"function={group.get('narration_function', '')}"
+                    for group in contract_slide.get("visual_groups", []) or []
+                    if isinstance(group, dict)
+                )
+                system_prompt = (
+                    "你是 PPT 视频 Mask 标注前的语义分块助手。"
+                    "你只做预识别：把演讲旁白片段和当前画面中实际可见的元素对应起来，帮助用户后续手动画 Mask。"
+                    "不要输出坐标，不要生成矩形框，不要声称已经完成 Mask。"
+                    "每个语块必须对应一个或多个连续旁白片段，并描述画面中可见的元素是什么，"
+                    "需要说明它是主标题、副标题、正文、图示、总结区或其他可见元素。"
+                    "画面内容描述要具体到用户知道应该涂抹哪里。"
+                    "返回严格 JSON："
+                    "{\"blocks\":[{\"fragment_ids\":[\"beat_01::1\"],\"visual_group_id\":\"body_group_01\","
+                    "\"semantic_element_type\":\"正文内容\",\"visual_description\":\"画面中央...\","
+                    "\"semantic_note\":\"建议涂抹...\",\"confidence\":0.8}]}"
+                )
+                user_text = (
+                    f"当前图片尺寸：{vision_width}x{vision_height}\n"
+                    f"Slide ID：{slide_id}\n\n"
+                    f"演讲旁白片段：\n{fragment_lines}\n\n"
+                    f"分镜里的可见元素候选：\n{group_lines}\n\n"
+                    "请根据图片和分镜，生成适合人工涂抹的语义块清单。"
+                )
+                try:
+                    response = client.chat.completions.create(
+                        model=vision_model,
+                        response_format={"type": "json_object"},
+                        timeout=60,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": user_text},
+                                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}},
+                                ],
+                            },
+                        ],
+                    )
+                except Exception as inner_e:
+                    logger.warning(f"Semantic block Vision call with response_format failed, retrying raw JSON: {inner_e}")
+                    response = client.chat.completions.create(
+                        model=vision_model,
+                        timeout=60,
+                        messages=[
+                            {"role": "system", "content": system_prompt + " 请只输出纯 JSON，不要包含 Markdown 代码块。"},
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": user_text},
+                                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}},
+                                ],
+                            },
+                        ],
+                    )
+                raw_content = response.choices[0].message.content.strip()
+                ai_data = json.loads(clean_json_markdown(raw_content))
+                semantic_blocks = semantic_blocks_from_ai(slide_id, ai_data, contract_slide, manifest_slide)
+                vision_used = True
+            except Exception as exc:
+                logger.warning(f"AI semantic split failed for {slide_id}, using deterministic fallback: {exc}")
+
+        if not semantic_blocks:
+            semantic_blocks = deterministic_semantic_blocks(slide_id, contract_slide, manifest_slide)
+
+        painted_groups = [
+            group for group in manifest_slide.get("groups", []) or []
+            if isinstance(group, dict) and group_has_paint(group)
+        ]
+        manifest_slide["semantic_blocks"] = semantic_blocks
+        manifest_slide["groups"] = painted_groups
+        manifest_slide["reveal_boxes"] = [
+            box for box in manifest_slide.get("reveal_boxes", []) or []
+            if isinstance(box, dict) and group_has_paint(box)
+        ]
+        manifest_slide["status"] = "pending"
+        processed_count += 1
+
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, ensure_ascii=False, indent=2)
+
+    msg = "AI 语义分块完成：已生成旁白与画面内容清单，请按清单手动涂抹 Mask。"
+    if not vision_used:
+        msg = "已根据分镜合约生成语义分块草稿；配置视觉模型后可结合当前画面做更细识别。"
+    return {"success": True, "vision_used": vision_used, "processed": processed_count, "manifest": manifest, "message": msg}
 
 @app.get("/api/projects/{project_id}/steps/5/result")
 def get_step5_result(project_id: str, db: Session = Depends(get_db)):

@@ -831,6 +831,13 @@ header {
   font-size: 0.86rem;
 }
 
+.mask-block-caption {
+  margin-right: auto;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--ink-color);
+}
+
 .mask-icon-btn {
   display: inline-flex;
   align-items: center;
@@ -883,6 +890,40 @@ header {
   transform: none;
   box-shadow: none;
   background: #eef6ff;
+}
+
+.mask-visual-card {
+  width: 100%;
+  margin-top: 0.45rem;
+  padding: 0.48rem 0.55rem;
+  border: 1.5px dashed color-mix(in srgb, var(--mask-color) 36%, #c9c9c9);
+  border-radius: 6px;
+  background: #fffdf6;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.mask-visual-label {
+  display: inline-flex;
+  margin-bottom: 0.18rem;
+  color: color-mix(in srgb, var(--mask-color) 72%, #111);
+  font-weight: 800;
+  font-size: 0.72rem;
+}
+
+.mask-visual-title {
+  font-weight: 800;
+  color: #222;
+}
+
+.mask-visual-desc {
+  margin-top: 0.15rem;
+  color: #333;
+}
+
+.mask-visual-note {
+  margin-top: 0.22rem;
+  color: #666;
 }
 
 .mask-narration-label {

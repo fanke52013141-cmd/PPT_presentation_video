@@ -93,6 +93,7 @@ export type Slide = {
   scene: Scene;
   audio_file?: string;
   audio_timeline?: {
+    audio_start_sec?: number;
     segments: TimelineSegment[];
   };
   animation_timeline?: {
@@ -271,7 +272,11 @@ const SlideView: React.FC<{slide: Slide}> = ({slide}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const seconds = frame / fps;
-  const activeSubtitle = segments.find((segment) => seconds >= segment.start && seconds < segment.end);
+  const audioStartSec = slide.audio_timeline?.audio_start_sec ?? 0;
+  const audioSeconds = seconds - audioStartSec;
+  const activeSubtitle = audioSeconds >= 0
+    ? segments.find((segment) => audioSeconds >= segment.start && audioSeconds < segment.end)
+    : undefined;
   const background = toAssetSrc(slide.scene.canvas.background_asset);
   const layers = slide.scene.layers ?? [];
 
@@ -313,7 +318,11 @@ const SlideView: React.FC<{slide: Slide}> = ({slide}) => {
           {activeSubtitle.text}
         </div>
       ) : null}
-      {slide.audio_file ? <Audio src={toAssetSrc(slide.audio_file) ?? ''} /> : null}
+      {slide.audio_file ? (
+        <Sequence from={Math.max(0, Math.round(audioStartSec * fps))}>
+          <Audio src={toAssetSrc(slide.audio_file) ?? ''} />
+        </Sequence>
+      ) : null}
     </AbsoluteFill>
   );
 };

@@ -19,6 +19,7 @@ let state = {
     brushCursorClientX: null,
     brushCursorClientY: null,
     autoMaskLoading: false,
+    semanticLoading: false,
     narrationPickerBoxIndex: -1,
     narrationPickerSelection: [],
     startX: 0,
@@ -204,6 +205,7 @@ function initGlobalEvents() {
   document.getElementById('step4-btn-confirm').addEventListener('click', () => confirmStep4Images());
 
   // ================= 步骤 5 事件 =================
+  document.getElementById('step5-btn-semantic-blocks')?.addEventListener('click', () => runStep5SemanticBlocks());
   document.getElementById('step5-btn-automask').addEventListener('click', () => runStep5AutoMask());
   document.getElementById('step5-btn-new-block')?.addEventListener('click', () => createCurrentSlideBlock());
   document.getElementById('step5-btn-clear-current')?.addEventListener('click', () => clearAllMaskAnnotations());
@@ -1232,6 +1234,17 @@ function getBoxColor(maskBox, idx) {
   return getMaskColor(idx);
 }
 
+function roleToSemanticLabel(role) {
+  const roleName = String(role || '').toLowerCase();
+  if (roleName === 'title') return '主标题';
+  if (roleName === 'subtitle') return '副标题';
+  if (roleName === 'summary') return '总结区';
+  if (roleName === 'diagram') return '图示';
+  if (roleName === 'annotation') return '注释';
+  if (roleName === 'decoration') return '装饰元素';
+  return '正文内容';
+}
+
 function hexToRgba(hex, alpha) {
   const clean = String(hex || '#111111').replace('#', '');
   const full = clean.length === 3 ? clean.split('').map(ch => ch + ch).join('') : clean;
@@ -1366,13 +1379,38 @@ function isManualEmptyBox(maskBox) {
   return String(maskBox?.group_id || '').startsWith('manual_group_') && !hasPaintStroke(maskBox);
 }
 
+function isSemanticDraftBox(maskBox) {
+  return String(maskBox?.source || '') === 'ai_semantic' && !hasPaintStroke(maskBox);
+}
+
+function isDraftMaskBox(maskBox) {
+  return isManualEmptyBox(maskBox) || isSemanticDraftBox(maskBox);
+}
+
+function copySemanticFields(target, source) {
+  if (!target || !source) return target;
+  [
+    'source',
+    'visual_group_id',
+    'semantic_element_type',
+    'visual_description',
+    'semantic_note',
+    'semantic_confidence'
+  ].forEach(field => {
+    if (source[field] !== undefined && source[field] !== null && source[field] !== '') {
+      target[field] = source[field];
+    }
+  });
+  return target;
+}
+
 function groupToMaskBox(group) {
   const box = group.box || {};
   const x = Number(box.x || 0);
   const y = Number(box.y || 0);
   const w = Number(box.w || 1);
   const h = Number(box.h || 1);
-  return {
+  return copySemanticFields({
     group_id: group.id || group.group_id || '',
     role: group.role || 'content_body',
     text_label: group.visible_text || group.text_label || '',
@@ -1384,77 +1422,142 @@ function groupToMaskBox(group) {
     spoken_text: group.spoken_text || '',
     manual_mask: cloneManualMask(group.manual_mask),
     box: [x, y, x + w, y + h]
-  };
+  }, group);
+}
+
+function normalizeRevealBox(box, idx) {
+  return copySemanticFields({
+    ...box,
+    visual_anchor: box.visual_anchor || '',
+    narration_beat_id: box.narration_beat_id || '',
+    narration_beat_ids: Array.isArray(box.narration_beat_ids) ? [...box.narration_beat_ids] : [],
+    narration_group_id: box.narration_group_id || '',
+    narration_fragments: Array.isArray(box.narration_fragments) ? JSON.parse(JSON.stringify(box.narration_fragments)) : [],
+    manual_mask: cloneManualMask(box.manual_mask || { color: getMaskColor(idx), strokes: [] })
+  }, box);
+}
+
+function semanticBlockToMaskBox(box, idx) {
+  return normalizeRevealBox({
+    role: "content_body",
+    text_label: `语块 ${idx + 1}`,
+    visual_anchor: "",
+    spoken_text: "",
+    box: [860, 460, 1060, 620],
+    ...box,
+    source: "ai_semantic",
+    manual_mask: cloneManualMask(box.manual_mask || { color: getMaskColor(idx), strokes: [] })
+  }, idx);
 }
 
 function getSlideMaskBoxes(slide) {
   if (!slide) return [];
+  const semanticBoxes = Array.isArray(slide.semantic_blocks)
+    ? slide.semantic_blocks.map(semanticBlockToMaskBox)
+    : [];
+  const semanticIds = new Set(semanticBoxes.map(box => box.group_id).filter(Boolean));
+
+  let baseBoxes = [];
   if (Array.isArray(slide.groups) && slide.groups.length > 0) {
-    return slide.groups.map(groupToMaskBox);
+    baseBoxes = slide.groups.map(groupToMaskBox);
+  } else if (Array.isArray(slide.reveal_boxes) && slide.reveal_boxes.length > 0) {
+    baseBoxes = JSON.parse(JSON.stringify(slide.reveal_boxes)).map(normalizeRevealBox);
   }
-  if (Array.isArray(slide.reveal_boxes) && slide.reveal_boxes.length > 0) {
-    return JSON.parse(JSON.stringify(slide.reveal_boxes)).map((box, idx) => ({
-      ...box,
-      visual_anchor: box.visual_anchor || '',
-      narration_beat_id: box.narration_beat_id || '',
-      narration_beat_ids: Array.isArray(box.narration_beat_ids) ? [...box.narration_beat_ids] : [],
-      narration_group_id: box.narration_group_id || '',
-      narration_fragments: Array.isArray(box.narration_fragments) ? JSON.parse(JSON.stringify(box.narration_fragments)) : [],
-      manual_mask: cloneManualMask(box.manual_mask || { color: getMaskColor(idx), strokes: [] })
-    }));
-  }
-  return [];
+
+  const baseById = new Map(baseBoxes.map(box => [box.group_id, box]));
+  const merged = semanticBoxes.map((semanticBox, idx) => {
+    const existing = baseById.get(semanticBox.group_id);
+    if (!existing) return semanticBlockToMaskBox(semanticBox, idx);
+    return {
+      ...semanticBox,
+      ...existing,
+      source: existing.source || semanticBox.source,
+      visual_group_id: existing.visual_group_id || semanticBox.visual_group_id,
+      semantic_element_type: existing.semantic_element_type || semanticBox.semantic_element_type,
+      visual_description: existing.visual_description || semanticBox.visual_description,
+      semantic_note: existing.semantic_note || semanticBox.semantic_note,
+      semantic_confidence: existing.semantic_confidence || semanticBox.semantic_confidence,
+      manual_mask: cloneManualMask(existing.manual_mask || semanticBox.manual_mask)
+    };
+  });
+  baseBoxes.forEach(box => {
+    if (!semanticIds.has(box.group_id)) merged.push(box);
+  });
+  return merged.map((box, idx) => ({
+    ...box,
+    manual_mask: {
+      ...cloneManualMask(box.manual_mask || { strokes: [] }),
+      color: getMaskColor(idx)
+    }
+  }));
 }
 
 function syncMaskBoxesToSlide(slide, boxes) {
   if (!slide) return;
-  if (Array.isArray(slide.groups)) {
-    const visibleGroupIds = new Set(boxes.filter(maskBox => !isManualEmptyBox(maskBox)).map(maskBox => maskBox.group_id).filter(Boolean));
-    slide.groups = slide.groups.filter(group => visibleGroupIds.has(group.id || group.group_id));
-    boxes.forEach((maskBox, idx) => {
-      if (isManualEmptyBox(maskBox)) return;
-      ensureManualMask(maskBox, idx);
-      const [rawX1, rawY1, rawX2, rawY2] = maskBox.box || [0, 0, 1, 1];
-      const x1 = Math.max(0, Math.round(Math.min(rawX1, rawX2)));
-      const y1 = Math.max(0, Math.round(Math.min(rawY1, rawY2)));
-      const x2 = Math.min(1920, Math.round(Math.max(rawX1, rawX2)));
-      const y2 = Math.min(1080, Math.round(Math.max(rawY1, rawY2)));
-      let group = slide.groups.find(g => g.id === maskBox.group_id);
-      if (!group) {
-        group = {
-          id: maskBox.group_id || `custom_group_${idx + 1}`,
-          role: maskBox.role || 'content_body',
-          visible_text: maskBox.text_label || '',
-          reveal: { type: 'cover_fade_out', duration: 0.45 },
-          padding_px: 32,
-          z_index: 40 + idx
-        };
-        slide.groups.push(group);
+  const readyBoxes = boxes.filter(maskBox => !isDraftMaskBox(maskBox));
+  const semanticBoxes = boxes
+    .filter(maskBox => String(maskBox?.source || '') === 'ai_semantic')
+    .map((maskBox, idx) => ({
+      ...maskBox,
+      manual_mask: {
+        ...cloneManualMask(maskBox.manual_mask || { strokes: [] }),
+        color: getMaskColor(idx)
       }
-      group.role = maskBox.role || group.role || 'content_body';
-      if (maskBox.text_label) group.visible_text = maskBox.text_label;
-      if (maskBox.visual_anchor) group.visual_anchor = maskBox.visual_anchor;
-      if (maskBox.narration_beat_id) group.narration_beat_id = maskBox.narration_beat_id;
-      group.narration_beat_ids = Array.isArray(maskBox.narration_beat_ids) ? [...maskBox.narration_beat_ids] : [];
-      if (maskBox.narration_group_id) group.narration_group_id = maskBox.narration_group_id;
-      group.narration_fragments = Array.isArray(maskBox.narration_fragments) ? JSON.parse(JSON.stringify(maskBox.narration_fragments)) : [];
-      if (maskBox.spoken_text) group.spoken_text = maskBox.spoken_text;
-      group.manual_mask = cloneManualMask(maskBox.manual_mask || { strokes: [] });
-      group.manual_mask.color = getMaskColor(idx);
-      if (group.manual_mask.strokes.length > 0) {
-        group.review_status = "manual_painted";
-      }
-      group.box = {
-        x: x1,
-        y: y1,
-        w: Math.max(1, x2 - x1),
-        h: Math.max(1, y2 - y1)
-      };
-    });
+    }));
+  slide.semantic_blocks = JSON.parse(JSON.stringify(semanticBoxes));
+
+  if (!Array.isArray(slide.groups)) {
+    slide.groups = [];
   }
+  const visibleGroupIds = new Set(readyBoxes.map(maskBox => maskBox.group_id).filter(Boolean));
+  slide.groups = slide.groups.filter(group => visibleGroupIds.has(group.id || group.group_id));
+  readyBoxes.forEach((maskBox, idx) => {
+    ensureManualMask(maskBox, idx);
+    const [rawX1, rawY1, rawX2, rawY2] = maskBox.box || [0, 0, 1, 1];
+    const x1 = Math.max(0, Math.round(Math.min(rawX1, rawX2)));
+    const y1 = Math.max(0, Math.round(Math.min(rawY1, rawY2)));
+    const x2 = Math.min(1920, Math.round(Math.max(rawX1, rawX2)));
+    const y2 = Math.min(1080, Math.round(Math.max(rawY1, rawY2)));
+    let group = slide.groups.find(g => g.id === maskBox.group_id);
+    if (!group) {
+      group = {
+        id: maskBox.group_id || `custom_group_${idx + 1}`,
+        role: maskBox.role || 'content_body',
+        visible_text: maskBox.text_label || '',
+        reveal: { type: 'cover_fade_out', duration: 0.45 },
+        padding_px: 32,
+        z_index: 40 + idx
+      };
+      slide.groups.push(group);
+    }
+    group.role = maskBox.role || group.role || 'content_body';
+    group.source = maskBox.source || group.source || '';
+    if (maskBox.text_label) group.visible_text = maskBox.text_label;
+    if (maskBox.visual_anchor) group.visual_anchor = maskBox.visual_anchor;
+    if (maskBox.visual_group_id) group.visual_group_id = maskBox.visual_group_id;
+    if (maskBox.semantic_element_type) group.semantic_element_type = maskBox.semantic_element_type;
+    if (maskBox.visual_description) group.visual_description = maskBox.visual_description;
+    if (maskBox.semantic_note) group.semantic_note = maskBox.semantic_note;
+    if (maskBox.semantic_confidence) group.semantic_confidence = maskBox.semantic_confidence;
+    if (maskBox.narration_beat_id) group.narration_beat_id = maskBox.narration_beat_id;
+    group.narration_beat_ids = Array.isArray(maskBox.narration_beat_ids) ? [...maskBox.narration_beat_ids] : [];
+    if (maskBox.narration_group_id) group.narration_group_id = maskBox.narration_group_id;
+    group.narration_fragments = Array.isArray(maskBox.narration_fragments) ? JSON.parse(JSON.stringify(maskBox.narration_fragments)) : [];
+    if (maskBox.spoken_text) group.spoken_text = maskBox.spoken_text;
+    group.manual_mask = cloneManualMask(maskBox.manual_mask || { strokes: [] });
+    group.manual_mask.color = getMaskColor(idx);
+    if (group.manual_mask.strokes.length > 0) {
+      group.review_status = "manual_painted";
+    }
+    group.box = {
+      x: x1,
+      y: y1,
+      w: Math.max(1, x2 - x1),
+      h: Math.max(1, y2 - y1)
+    };
+  });
   slide.reveal_boxes = JSON.parse(JSON.stringify(
-    boxes
-      .filter(maskBox => !isManualEmptyBox(maskBox))
+    readyBoxes
       .map((maskBox, idx) => ({
         ...maskBox,
         manual_mask: {
@@ -1493,6 +1596,7 @@ async function loadStep5Data() {
 
 function renderStep5Workspace() {
   updateStep5AutoMaskButton();
+  updateStep5SemanticButton();
   const thumbsContainer = document.getElementById('step5-thumbs');
   thumbsContainer.className = 'step5-slides-grid'; // 改用平铺换行类名
   thumbsContainer.innerHTML = '';
@@ -1501,13 +1605,18 @@ function renderStep5Workspace() {
     const btn = document.createElement('div');
     const isCurrent = idx === state.activeSlideIndex;
     const isRunning = state.canvasState.autoMaskLoading && isCurrent;
+    const isSemanticRunning = state.canvasState.semanticLoading && isCurrent;
     const isCompleted = slide.status === 'completed';
     
     let statusClass = '';
     let statusText = '待标注';
     let statusColor = '#888';
     
-    if (isRunning) {
+    if (isSemanticRunning) {
+      statusClass = 'active';
+      statusText = '分块中';
+      statusColor = '#7b2cbf';
+    } else if (isRunning) {
       statusClass = 'active';
       statusText = '框选中';
       statusColor = '#2f80ed';
@@ -1525,7 +1634,7 @@ function renderStep5Workspace() {
     btn.innerHTML = `
       <div style="font-size: 0.85rem; font-weight: bold; color: var(--ink-color);">${slide.slide_id}</div>
       <div style="font-size: 0.65rem; margin-top: 0.15rem; color: ${statusColor}; font-weight: 500;">
-        ${statusText === '已标注' ? '✓ 已标注' : statusText === '框选中' ? '… 框选中' : statusText === '标注中' ? '✍ 标注中' : '待标注'}
+        ${statusText === '已标注' ? '✓ 已标注' : statusText === '分块中' ? '… 分块中' : statusText === '框选中' ? '… 框选中' : statusText === '标注中' ? '✍ 标注中' : '待标注'}
       </div>
     `;
     
@@ -1598,10 +1707,22 @@ function renderStep5BoxesForm() {
     const paintCount = strokes.filter(stroke => !isEraseStroke(stroke)).length;
     const eraseCount = strokes.filter(stroke => isEraseStroke(stroke)).length;
     const strokeSummary = paintCount || eraseCount ? `画笔 ${paintCount} 笔 · 橡皮 ${eraseCount} 笔` : '可用画笔补正区域';
+    const semanticType = box.semantic_element_type || roleToSemanticLabel(box.role);
+    const visualDescription = box.visual_description || box.visual_anchor || '';
+    const semanticNote = box.semantic_note || '';
+    const visualCard = visualDescription || semanticNote ? `
+      <div class="mask-visual-card">
+        <span class="mask-visual-label">画面内容</span>
+        <div class="mask-visual-title">${escHtml(semanticType || '可见元素')}</div>
+        ${visualDescription ? `<div class="mask-visual-desc">${escHtml(visualDescription)}</div>` : ''}
+        ${semanticNote ? `<div class="mask-visual-note">${escHtml(semanticNote)}</div>` : ''}
+      </div>
+    ` : '';
     
     item.innerHTML = `
       <div class="mask-block-head">
         <span class="mask-block-number">${idx + 1}</span>
+        <span class="mask-block-caption">语块 ${idx + 1}</span>
         <button class="mask-icon-btn${isPaintTarget ? ' active' : ''}" type="button" data-action="paint" title="涂抹这个语块的 Mask 区域" aria-label="涂抹区域">
           <svg class="icon" viewBox="0 0 24 24"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
         </button>
@@ -1616,6 +1737,7 @@ function renderStep5BoxesForm() {
         <span class="mask-narration-label">演讲旁白</span>
         <span class="mask-narration-text">${spokenText ? escHtml(spokenText) : '在下方演讲稿中点选片段'}</span>
       </div>
+      ${visualCard}
       <div class="mask-block-foot">
         <span>${strokeSummary}</span>
       </div>
@@ -1735,11 +1857,21 @@ function toggleNarrationFragmentForSelectedBox(fragmentId) {
 function updateStep5AutoMaskButton() {
   const btn = document.getElementById('step5-btn-automask');
   if (!btn) return;
-  btn.disabled = !!state.canvasState.autoMaskLoading;
+  btn.disabled = !!state.canvasState.autoMaskLoading || !!state.canvasState.semanticLoading;
   btn.classList.toggle('loading', !!state.canvasState.autoMaskLoading);
   btn.innerHTML = state.canvasState.autoMaskLoading
     ? `<span class="button-spinner"></span><span class="btn-label">AI 框选中...</span>`
     : `<svg class="icon" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="10" rx="2"></rect><circle cx="12" cy="5" r="2"></circle><path d="M12 7v4M8 16h.01M16 16h.01"></path></svg><span class="btn-label">AI 视觉自动框选</span>`;
+}
+
+function updateStep5SemanticButton() {
+  const btn = document.getElementById('step5-btn-semantic-blocks');
+  if (!btn) return;
+  btn.disabled = !!state.canvasState.semanticLoading || !!state.canvasState.autoMaskLoading;
+  btn.classList.toggle('loading', !!state.canvasState.semanticLoading);
+  btn.innerHTML = state.canvasState.semanticLoading
+    ? `<span class="button-spinner"></span><span class="btn-label">AI 分块中...</span>`
+    : `<svg class="icon" viewBox="0 0 24 24"><path d="M4 5h16"></path><path d="M4 12h10"></path><path d="M4 19h16"></path><circle cx="18" cy="12" r="2"></circle></svg><span class="btn-label">AI 语义分块</span>`;
 }
 
 function selectStep5MaskBox(idx, shouldScroll = true) {
@@ -1844,6 +1976,7 @@ function clearAllMaskAnnotations() {
       manifestData.slides.forEach(slide => {
         slide.groups = [];
         slide.reveal_boxes = [];
+        slide.semantic_blocks = [];
         slide.status = "pending";
       });
       state.canvasState.boxes = [];
@@ -2211,7 +2344,7 @@ function saveStep5CurrentState() {
 }
 
 async function runStep5AutoMask() {
-  if (state.canvasState.autoMaskLoading) return;
+  if (state.canvasState.autoMaskLoading || state.canvasState.semanticLoading) return;
   saveStep5CurrentState();
   state.canvasState.autoMaskLoading = true;
   updateStep5AutoMaskButton();
@@ -2232,6 +2365,33 @@ async function runStep5AutoMask() {
   } finally {
     state.canvasState.autoMaskLoading = false;
     updateStep5AutoMaskButton();
+    renderStep5Workspace();
+  }
+}
+
+async function runStep5SemanticBlocks() {
+  if (state.canvasState.semanticLoading || state.canvasState.autoMaskLoading) return;
+  const slide = getCurrentManifestSlide();
+  if (!slide) return;
+  saveStep5CurrentState();
+  state.canvasState.semanticLoading = true;
+  updateStep5SemanticButton();
+  renderStep5Workspace();
+  showToast('🤖 正在让 AI 预识别当前页的语义块、旁白和画面内容，不会自动绘制 Mask...');
+
+  try {
+    await API.put(`/api/projects/${state.currentProject.id}/steps/5/result`, manifestData);
+    const res = await API.post(`/api/projects/${state.currentProject.id}/steps/5/semantic-blocks`, {
+      slide_id: slide.slide_id
+    });
+    if (res.success) {
+      const source = res.vision_used ? 'AI 已结合画面完成语义分块' : '已用分镜合约生成语义分块草稿';
+      showToast(`✅ ${res.message || source}`);
+      await loadStep5Data();
+    }
+  } finally {
+    state.canvasState.semanticLoading = false;
+    updateStep5SemanticButton();
     renderStep5Workspace();
   }
 }

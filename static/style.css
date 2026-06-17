@@ -527,8 +527,8 @@ header > div:last-child {
   height: var(--cursor-size);
   border: 2px solid var(--cursor-color);
   border-radius: 50%;
-  background: color-mix(in srgb, var(--cursor-color) 14%, transparent);
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.72), 0 8px 18px rgba(17, 17, 17, 0.22);
+  background: transparent;
+  box-shadow: 0 8px 18px rgba(17, 17, 17, 0.22);
   opacity: 0;
   pointer-events: none;
   transform: translate(-50%, -50%);
@@ -543,8 +543,8 @@ header > div:last-child {
 .step5-brush-cursor.eraser {
   --cursor-color: #777777;
   border-color: #777777;
-  background: rgba(255, 255, 255, 0.28);
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.78), 0 8px 18px rgba(17, 17, 17, 0.24);
+  background: transparent;
+  box-shadow: 0 8px 18px rgba(17, 17, 17, 0.24);
 }
 
 .step5-zoom-indicator {
@@ -922,22 +922,42 @@ header > div:last-child {
   color: var(--ink-color);
 }
 
+.mask-block-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 1.08rem;
+  margin-left: auto;
+}
+
 .mask-icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 38px;
-  height: 34px;
+  width: 26px;
+  height: 26px;
   font-size: 0.84rem;
   padding: 0;
-  background: #fff;
-  border-color: var(--mask-color);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  box-shadow: none;
+  color: var(--ink-color);
+}
+
+.mask-icon-btn:hover {
+  background: color-mix(in srgb, var(--mask-color) 12%, transparent);
+  box-shadow: none;
+  transform: none;
 }
 
 .mask-icon-btn.active {
-  background: color-mix(in srgb, var(--mask-color) 24%, white);
-  border-color: var(--mask-color);
+  background: color-mix(in srgb, var(--mask-color) 18%, transparent);
   color: var(--ink-color);
+}
+
+.mask-delete-btn:hover {
+  background: rgba(232, 74, 95, 0.12);
+  color: #c9184a;
 }
 
 .mask-delete-btn {
@@ -1020,7 +1040,7 @@ header > div:last-child {
   border: 2px solid var(--ink-color);
   border-radius: 8px;
   background: #fff;
-  padding: 0.65rem 0.8rem;
+  padding: 0.55rem 0.7rem;
   box-shadow: 2px 2px 0px 0px var(--ink-color);
   max-width: 960px;
   width: 100%;
@@ -1028,9 +1048,7 @@ header > div:last-child {
 }
 
 .step5-narration-title {
-  font-weight: 800;
-  font-size: 0.86rem;
-  margin-bottom: 0.45rem;
+  display: none;
 }
 
 .step5-narration-fragments {
@@ -1236,6 +1254,47 @@ header > div:last-child {
   background: #fff;
 }
 
+.step-plain-section {
+  margin-top: 1.2rem;
+}
+
+.step-bottom-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.8rem;
+  margin-top: 1rem;
+  padding-top: 0.8rem;
+}
+
+.compact-action-btn {
+  min-height: 32px;
+  padding: 0.32rem 0.72rem;
+  font-size: 0.86rem;
+  border-radius: 6px;
+  box-shadow: 1.5px 1.5px 0px 0px var(--ink-color);
+}
+
+.compact-action-btn .icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.step-inline-loading {
+  margin-top: 1rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #444;
+  font-weight: 700;
+}
+
+.step-inline-loading .sketch-loader {
+  width: 28px;
+  height: 28px;
+  margin: 0;
+}
+
 .step7-audio-title {
   font-weight: 800;
   margin-bottom: 0.35rem;
@@ -1262,7 +1321,8 @@ header > div:last-child {
 
 .step8-video-card {
   background: #fff;
-  padding: 1rem;
+  padding: 0.9rem 0;
+  border-bottom: 1.5px dashed #c9c9c9;
 }
 
 .step8-video-card-head,

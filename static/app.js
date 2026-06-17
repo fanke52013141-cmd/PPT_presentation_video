@@ -1899,37 +1899,27 @@ function renderStep5BoxesForm() {
     const paintCount = strokes.filter(stroke => !isEraseStroke(stroke)).length;
     const eraseCount = strokes.filter(stroke => isEraseStroke(stroke)).length;
     const strokeSummary = paintCount || eraseCount ? `画笔 ${paintCount} 笔 · 橡皮 ${eraseCount} 笔` : '可用画笔补正区域';
-    const semanticType = box.semantic_element_type || roleToSemanticLabel(box.role);
-    const visualDescription = box.visual_description || box.visual_anchor || '';
-    const semanticNote = box.semantic_note || '';
-    const visualCard = visualDescription || semanticNote ? `
-      <div class="mask-visual-card">
-        <span class="mask-visual-label">画面内容</span>
-        <div class="mask-visual-title">${escHtml(semanticType || '可见元素')}</div>
-        ${visualDescription ? `<div class="mask-visual-desc">${escHtml(visualDescription)}</div>` : ''}
-        ${semanticNote ? `<div class="mask-visual-note">${escHtml(semanticNote)}</div>` : ''}
-      </div>
-    ` : '';
-    
+
     item.innerHTML = `
       <div class="mask-block-head">
         <span class="mask-block-number">${idx + 1}</span>
         <span class="mask-block-caption">语块 ${idx + 1}</span>
-        <button class="mask-icon-btn${isPaintTarget ? ' active' : ''}" type="button" data-action="paint" title="涂抹这个语块的 Mask 区域" aria-label="涂抹区域">
-          <svg class="icon" viewBox="0 0 24 24"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
-        </button>
-        <button class="mask-icon-btn${isEraseTarget ? ' active' : ''}" type="button" data-action="erase" title="擦除这个语块的涂抹区域" aria-label="擦除区域">
-          <svg class="icon" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"></path><path d="M22 21H7"></path><path d="m5 11 9 9"></path></svg>
-        </button>
-        <button class="danger mask-icon-btn mask-delete-btn" type="button" data-action="delete" title="删除语块" aria-label="删除语块">
-          <svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path></svg>
-        </button>
+        <div class="mask-block-actions">
+          <button class="mask-icon-btn${isPaintTarget ? ' active' : ''}" type="button" data-action="paint" title="涂抹这个语块的 Mask 区域" aria-label="涂抹区域">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
+          </button>
+          <button class="mask-icon-btn${isEraseTarget ? ' active' : ''}" type="button" data-action="erase" title="擦除这个语块的涂抹区域" aria-label="擦除区域">
+            <svg class="icon" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"></path><path d="M22 21H7"></path><path d="m5 11 9 9"></path></svg>
+          </button>
+          <button class="mask-icon-btn mask-delete-btn" type="button" data-action="delete" title="删除语块" aria-label="删除语块">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path></svg>
+          </button>
+        </div>
       </div>
       <div class="mask-narration-card">
         <span class="mask-narration-label">演讲旁白</span>
         <span class="mask-narration-text">${spokenText ? escHtml(spokenText) : '在下方演讲稿中点选片段'}</span>
       </div>
-      ${visualCard}
       <div class="mask-block-foot">
         <span>${strokeSummary}</span>
       </div>
@@ -1979,7 +1969,6 @@ function renderStep5NarrationPanel() {
     });
   });
   panel.innerHTML = `
-    <div class="step5-narration-title">演讲稿</div>
     <div class="step5-narration-fragments">
       ${fragments.map(fragment => {
         const ownerIdx = selectedByFragment.get(fragment.id);
@@ -2162,8 +2151,8 @@ function clearAllMaskAnnotations() {
     return;
   }
   showCustomConfirm(
-    '清除全部标注',
-    '将清除所有 Slide 的 AI 框选、语块和手动画笔痕迹。未重新创建语块的页面会按整页展示处理。',
+    '再次确认清除全部标注',
+    '确认后会清除所有 Slide 的 AI 框选、语块和手动画笔痕迹。未重新创建语块的页面会按整页展示处理。',
     () => {
       manifestData.slides.forEach(slide => {
         slide.groups = [];
@@ -2883,7 +2872,7 @@ function getStep7NarrationText(slideId, narrationSlides) {
 }
 
 async function runStep7TTS() {
-  document.getElementById('step7-loading').style.display = 'block';
+  document.getElementById('step7-loading').style.display = 'inline-flex';
   document.getElementById('step7-btn-synthesize').disabled = true;
   showToast('🔊 正在调用 MiniMax TTS 服务并绑定 Reveal 关键帧时间轴...');
   
@@ -2930,7 +2919,7 @@ async function loadStep8Data() {
 }
 
 async function runStep8Render() {
-  document.getElementById('step8-loading').style.display = 'block';
+  document.getElementById('step8-loading').style.display = 'inline-flex';
   document.getElementById('step8-btn-render').disabled = true;
   showToast('🎬 Remotion 渲染进程已启动，请稍候片刻...');
   
@@ -2960,7 +2949,7 @@ function showStep8VideoResult(videos) {
       const url = `${item.url}?t=${Date.now()}`;
       const created = item.created_at ? new Date(item.created_at).toLocaleString() : '';
       return `
-        <div class="step8-video-card sketch-dashed">
+        <div class="step8-video-card">
           <div class="step8-video-card-head">
             <strong>${idx === 0 ? '最新渲染' : `历史版本 ${idx + 1}`}</strong>
             <span>${escHtml(created || item.filename || '')}</span>

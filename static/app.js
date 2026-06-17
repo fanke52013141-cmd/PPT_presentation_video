@@ -7,6 +7,8 @@ let state = {
   settings: {},
   step2BatchDeleteMode: false,
   step2DeleteSelection: new Set(),
+  step2BatchOriginalSlides: null,
+  step2BatchOriginalActiveIndex: 0,
   step2AutoSaveTimer: null,
   step2AutoSaveInFlight: false,
   canvasState: {
@@ -197,6 +199,7 @@ function initGlobalEvents() {
   // ================= 步骤 2 事件 =================
   document.getElementById('step2-btn-generate').addEventListener('click', () => generateStep2Contract());
   document.getElementById('step2-btn-save').addEventListener('click', () => handleStep2BatchDeleteButton());
+  document.getElementById('step2-btn-cancel-delete')?.addEventListener('click', () => cancelStep2BatchDelete());
   document.getElementById('step2-core-message')?.addEventListener('input', (e) => updateCurrentSlideField('core_message', e.target.value));
 
   // ================= 步骤 3 事件 =================
@@ -703,11 +706,13 @@ async function loadStep2Data() {
     state.slides = res.contract.slides || [];
     state.step2BatchDeleteMode = false;
     state.step2DeleteSelection = new Set();
+    state.step2BatchOriginalSlides = null;
     renderStep2Workspace();
   } else {
     state.slides = [];
     state.step2BatchDeleteMode = false;
     state.step2DeleteSelection = new Set();
+    state.step2BatchOriginalSlides = null;
     document.getElementById('step2-editor-area').style.display = 'none';
     document.getElementById('step2-btn-generate').style.display = 'inline-flex';
     document.getElementById('step2-btn-generate').innerHTML = `<svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> 智能规划分镜`;
@@ -737,13 +742,6 @@ async function generateStep2Contract() {
 }
 
 function renderStep2Workspace() {
-  if (!state.step2DeleteSelection || !(state.step2DeleteSelection instanceof Set)) {
-    state.step2DeleteSelection = new Set();
-  }
-  const slideIds = new Set((state.slides || []).map(slide => slide.slide_id));
-  [...state.step2DeleteSelection].forEach(slideId => {
-    if (!slideIds.has(slideId)) state.step2DeleteSelection.delete(slideId);
-  });
   if (state.activeSlideIndex >= state.slides.length) {
     state.activeSlideIndex = Math.max(0, state.slides.length - 1);
   }
@@ -760,13 +758,12 @@ function renderStep2Workspace() {
   thumbsContainer.innerHTML = '';
   
   state.slides.forEach((slide, idx) => {
-    const selectedForDelete = state.step2DeleteSelection.has(slide.slide_id);
     const thumb = document.createElement('div');
-    thumb.className = `slide-thumbnail-card step2-slide-thumb ${idx === state.activeSlideIndex ? 'active' : ''}${selectedForDelete ? ' delete-selected' : ''}`;
+    thumb.className = `slide-thumbnail-card step2-slide-thumb ${idx === state.activeSlideIndex ? 'active' : ''}`;
     thumb.style.cssText = 'min-width: 90px; max-width: 110px; padding: 0.4rem 0.5rem; cursor: pointer;';
     thumb.innerHTML = `
       ${state.step2BatchDeleteMode ? `
-        <button class="step2-thumb-delete" type="button" title="${selectedForDelete ? '取消删除' : '标记删除'}" aria-label="${selectedForDelete ? '取消删除' : '标记删除'}">
+        <button class="step2-thumb-delete" type="button" title="删除此分镜" aria-label="删除此分镜">
           <svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
         </button>
       ` : ''}
@@ -775,7 +772,6 @@ function renderStep2Workspace() {
     `;
     thumb.addEventListener('click', () => {
       if (state.step2BatchDeleteMode) {
-        toggleStep2DeleteSelection(slide.slide_id);
         return;
       }
       saveCurrentSlideInputToState();
@@ -786,7 +782,7 @@ function renderStep2Workspace() {
     if (deleteBtn) {
       deleteBtn.addEventListener('click', (event) => {
         event.stopPropagation();
-        toggleStep2DeleteSelection(slide.slide_id);
+        removeStep2DraftSlide(slide.slide_id);
       });
     }
     thumbsContainer.appendChild(thumb);
@@ -909,45 +905,55 @@ function escHtml(str) {
 
 function updateStep2BatchDeleteButton() {
   const btn = document.getElementById('step2-btn-save');
+  const cancelBtn = document.getElementById('step2-btn-cancel-delete');
   if (!btn) return;
   if (state.step2BatchDeleteMode) {
-    const count = state.step2DeleteSelection?.size || 0;
     btn.className = 'success';
     btn.innerHTML = `
       <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-      保存${count ? ` (${count})` : ''}
+      保存
     `;
+    if (cancelBtn) cancelBtn.style.display = 'inline-flex';
   } else {
     btn.className = 'secondary';
     btn.innerHTML = `
       <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path></svg>
       批量删除
     `;
+    if (cancelBtn) cancelBtn.style.display = 'none';
   }
 }
 
-function handleStep2BatchDeleteButton() {
+async function handleStep2BatchDeleteButton() {
   if (!state.slides || state.slides.length === 0) return;
   if (!state.step2BatchDeleteMode) {
     saveCurrentSlideInputToState();
     clearTimeout(state.step2AutoSaveTimer);
+    await saveStep2Contract({ silent: true });
+    state.step2BatchOriginalSlides = JSON.parse(JSON.stringify(state.slides));
+    state.step2BatchOriginalActiveIndex = state.activeSlideIndex;
     state.step2BatchDeleteMode = true;
     state.step2DeleteSelection = new Set();
     renderStep2Workspace();
-    showToast('已进入批量删除模式，可多选要删除的分镜。');
+    showToast('已进入批量删除模式。点卡片右上角删除，此处只临时移除，点击保存后生效。');
     return;
   }
   saveStep2BatchDelete();
 }
 
-function toggleStep2DeleteSelection(slideId) {
-  if (!state.step2DeleteSelection || !(state.step2DeleteSelection instanceof Set)) {
-    state.step2DeleteSelection = new Set();
+function removeStep2DraftSlide(slideId) {
+  if (!state.step2BatchDeleteMode) return;
+  if (state.slides.length <= 1) {
+    showToast('至少需要保留 1 个分镜。');
+    return;
   }
-  if (state.step2DeleteSelection.has(slideId)) {
-    state.step2DeleteSelection.delete(slideId);
-  } else {
-    state.step2DeleteSelection.add(slideId);
+  const removedIndex = state.slides.findIndex(slide => slide.slide_id === slideId);
+  if (removedIndex < 0) return;
+  state.slides.splice(removedIndex, 1);
+  if (state.activeSlideIndex >= state.slides.length) {
+    state.activeSlideIndex = state.slides.length - 1;
+  } else if (removedIndex < state.activeSlideIndex) {
+    state.activeSlideIndex -= 1;
   }
   renderStep2Workspace();
 }
@@ -955,26 +961,34 @@ function toggleStep2DeleteSelection(slideId) {
 async function saveStep2BatchDelete() {
   saveCurrentSlideInputToState();
   clearTimeout(state.step2AutoSaveTimer);
-  const selectedIds = new Set(state.step2DeleteSelection || []);
-  if (selectedIds.size === 0) {
+  const originalCount = state.step2BatchOriginalSlides?.length || state.slides.length;
+  const removedCount = Math.max(0, originalCount - state.slides.length);
+  if (removedCount === 0) {
     state.step2BatchDeleteMode = false;
+    state.step2BatchOriginalSlides = null;
     renderStep2Workspace();
     showToast('已退出批量删除模式。');
     return;
   }
-  if (selectedIds.size >= state.slides.length) {
-    showToast('至少需要保留 1 个分镜。');
-    return;
-  }
-  const activeSlideId = state.slides[state.activeSlideIndex]?.slide_id;
-  state.slides = state.slides.filter(slide => !selectedIds.has(slide.slide_id));
-  const nextActiveIndex = state.slides.findIndex(slide => slide.slide_id === activeSlideId);
-  state.activeSlideIndex = nextActiveIndex >= 0 ? nextActiveIndex : Math.min(state.activeSlideIndex, state.slides.length - 1);
   state.step2BatchDeleteMode = false;
   state.step2DeleteSelection = new Set();
+  state.step2BatchOriginalSlides = null;
   await saveStep2Contract({ silent: true });
   renderStep2Workspace();
-  showToast(`已删除 ${selectedIds.size} 个分镜，并保存当前规划。`);
+  showToast(`已删除 ${removedCount} 个分镜，并保存当前规划。`);
+}
+
+function cancelStep2BatchDelete() {
+  if (!state.step2BatchDeleteMode) return;
+  if (Array.isArray(state.step2BatchOriginalSlides)) {
+    state.slides = JSON.parse(JSON.stringify(state.step2BatchOriginalSlides));
+    state.activeSlideIndex = Math.min(state.step2BatchOriginalActiveIndex || 0, Math.max(0, state.slides.length - 1));
+  }
+  state.step2BatchDeleteMode = false;
+  state.step2DeleteSelection = new Set();
+  state.step2BatchOriginalSlides = null;
+  renderStep2Workspace();
+  showToast('已取消批量删除，分镜列表已恢复。');
 }
 
 function updateStep2AutosaveStatus(text) {
@@ -2520,19 +2534,16 @@ async function runStep5AutoMask() {
 
 async function runStep5SemanticBlocks() {
   if (state.canvasState.semanticLoading || state.canvasState.autoMaskLoading) return;
-  const slide = getCurrentManifestSlide();
-  if (!slide) return;
+  if (!manifestData?.slides?.length) return;
   saveStep5CurrentState();
   state.canvasState.semanticLoading = true;
   updateStep5SemanticButton();
   renderStep5Workspace();
-  showToast('🤖 正在让 AI 预识别当前页的语义块、旁白和画面内容，不会自动绘制 Mask...');
+  showToast('🤖 正在让 AI 为所有 Slide 预识别语义块、旁白和画面内容，不会自动绘制 Mask...');
 
   try {
     await API.put(`/api/projects/${state.currentProject.id}/steps/5/result`, manifestData);
-    const res = await API.post(`/api/projects/${state.currentProject.id}/steps/5/semantic-blocks`, {
-      slide_id: slide.slide_id
-    });
+    const res = await API.post(`/api/projects/${state.currentProject.id}/steps/5/semantic-blocks`, {});
     if (res.success) {
       const source = res.vision_used ? 'AI 已结合画面完成语义分块' : '已用分镜合约生成语义分块草稿';
       showToast(`✅ ${res.message || source}`);

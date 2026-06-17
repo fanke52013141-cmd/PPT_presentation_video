@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PPT Visualization Studio - 手绘线稿风格</title>
-  <link rel="stylesheet" href="style.css?v=2.0.2">
+  <link rel="stylesheet" href="style.css?v=2.0.3">
 </head>
 <body>
 
@@ -140,6 +140,9 @@
                   <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path></svg>
                   批量删除
                 </button>
+                <button id="step2-btn-cancel-delete" class="secondary" style="display: none; font-size: 0.85rem; padding: 0.35rem 0.9rem;">
+                  取消
+                </button>
                 <span id="step2-autosave-status" class="step2-autosave-status"></span>
               </div>
               <button class="btn-next-step success" id="step2-btn-next" style="display: none; font-size: 0.85rem; padding: 0.35rem 0.9rem;">
@@ -187,7 +190,7 @@
         <!-- ==================== 步骤 3: 图片生成与上传 ==================== -->
         <div id="step-panel-3" class="step-panel" style="display: none;">
           <!-- 顶部控制栏 -->
-          <div style="display: flex; align-items: center; gap: 0.8rem; padding: 1rem 0; border-bottom: 2px solid #111; margin-bottom: 1rem;">
+          <div class="step3-toolbar-row" style="display: flex; align-items: center; gap: 0.8rem; padding: 0.55rem 0; border-bottom: 2px solid #111; margin-bottom: 0.65rem;">
             <h2 class="highlight-title" style="margin: 0; font-size: 1.2rem;">图片生成与管理</h2>
             <label class="btn secondary" style="cursor: pointer; font-size: 0.85rem; padding: 0.35rem 0.9rem; display: inline-flex; align-items: center; gap: 0.4rem;">
               <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path></svg>
@@ -263,13 +266,13 @@
           <div class="step5-mask-header">
             <h2 class="highlight-title">第五步：智能 Mask 区域标注</h2>
             <div class="step5-toolbar">
-              <button id="step5-btn-semantic-blocks" class="secondary">
-                <svg class="icon" viewBox="0 0 24 24"><path d="M4 5h16"></path><path d="M4 12h10"></path><path d="M4 19h16"></path><circle cx="18" cy="12" r="2"></circle></svg>
-                <span class="btn-label">AI 语义分块</span>
-              </button>
               <button id="step5-btn-automask" class="success">
                 <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="10" rx="2"></rect><circle cx="12" cy="5" r="2"></circle><path d="M12 7v4M8 16h.01M16 16h.01"></path></svg>
                 <span class="btn-label">AI 视觉自动框选</span>
+              </button>
+              <button id="step5-btn-semantic-blocks" class="secondary">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M4 5h16"></path><path d="M4 12h10"></path><path d="M4 19h16"></path><circle cx="18" cy="12" r="2"></circle></svg>
+                <span class="btn-label">AI 语义分块</span>
               </button>
               <button id="step5-btn-clear-current" class="secondary">
                 <svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v5M14 11v5"></path></svg>
@@ -638,6 +641,6 @@
   <div id="toast-container"></div>
 
   <!-- 主业务 JavaScript 脚本 -->
-  <script src="app.js?v=2.0.5"></script>
+  <script src="app.js?v=2.0.6"></script>
 </body>
 </html>

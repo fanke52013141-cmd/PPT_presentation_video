@@ -763,9 +763,31 @@ def get_all_images(project_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="项目不存在")
         
     slides_dir = os.path.join(project.run_dir, "slides")
+    contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
+    contract_slide_ids: List[str] = []
+    if os.path.exists(contract_path):
+        try:
+            with open(contract_path, "r", encoding="utf-8") as f:
+                contract = json.load(f)
+            contract_slide_ids = [
+                str(slide.get("slide_id", "")).strip()
+                for slide in contract.get("slides", [])
+                if isinstance(slide, dict) and str(slide.get("slide_id", "")).strip()
+            ]
+        except Exception as exc:
+            logger.warning(f"Failed to read visual contract for image list filtering: {exc}")
     results = []
-    
-    if os.path.exists(slides_dir):
+
+    if contract_slide_ids:
+        for slide_id in contract_slide_ids:
+            img_file = os.path.join(slides_dir, slide_id, "visual_draft.png")
+            exists = os.path.exists(img_file)
+            results.append({
+                "slide_id": slide_id,
+                "exists": exists,
+                "url": f"/api/projects/{project_id}/slides/{slide_id}/image?t={uuid.uuid4().hex[:4]}" if exists else None
+            })
+    elif os.path.exists(slides_dir):
         # 扫描 slides 目录下的子目录，按名称字母排序
         for slide_dir_name in sorted(os.listdir(slides_dir)):
             slide_path = os.path.join(slides_dir, slide_dir_name)

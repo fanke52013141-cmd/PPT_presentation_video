@@ -5,6 +5,10 @@ let state = {
   slides: [], // 第二步及后续的分镜/图片/Mask数据
   activeSlideIndex: 0, // 步骤2/3/5/6中当前激活的 slide 索引
   settings: {},
+  step2BatchDeleteMode: false,
+  step2DeleteSelection: new Set(),
+  step2AutoSaveTimer: null,
+  step2AutoSaveInFlight: false,
   canvasState: {
     boxes: [], // 当前 slide 的标注框列表 [{group_id: '', box: [x1,y1,x2,y2], text_label: '', role: ''}]
     selectedBoxIndex: -1,
@@ -192,7 +196,8 @@ function initGlobalEvents() {
 
   // ================= 步骤 2 事件 =================
   document.getElementById('step2-btn-generate').addEventListener('click', () => generateStep2Contract());
-  document.getElementById('step2-btn-save').addEventListener('click', () => saveStep2Contract());
+  document.getElementById('step2-btn-save').addEventListener('click', () => handleStep2BatchDeleteButton());
+  document.getElementById('step2-core-message')?.addEventListener('input', (e) => updateCurrentSlideField('core_message', e.target.value));
 
   // ================= 步骤 3 事件 =================
   document.getElementById('step3-btn-generate').addEventListener('click', () => generateStep3Image());
@@ -696,14 +701,19 @@ async function loadStep2Data() {
   const res = await API.get(`/api/projects/${state.currentProject.id}/steps/2/result`);
   if (res.success && res.contract) {
     state.slides = res.contract.slides || [];
+    state.step2BatchDeleteMode = false;
+    state.step2DeleteSelection = new Set();
     renderStep2Workspace();
   } else {
     state.slides = [];
+    state.step2BatchDeleteMode = false;
+    state.step2DeleteSelection = new Set();
     document.getElementById('step2-editor-area').style.display = 'none';
     document.getElementById('step2-btn-generate').style.display = 'inline-flex';
     document.getElementById('step2-btn-generate').innerHTML = `<svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> 智能规划分镜`;
     document.getElementById('step2-btn-save').style.display = 'none';
     document.getElementById('step2-btn-next').style.display = 'none';
+    updateStep2AutosaveStatus('');
   }
 }
 
@@ -727,29 +737,58 @@ async function generateStep2Contract() {
 }
 
 function renderStep2Workspace() {
+  if (!state.step2DeleteSelection || !(state.step2DeleteSelection instanceof Set)) {
+    state.step2DeleteSelection = new Set();
+  }
+  const slideIds = new Set((state.slides || []).map(slide => slide.slide_id));
+  [...state.step2DeleteSelection].forEach(slideId => {
+    if (!slideIds.has(slideId)) state.step2DeleteSelection.delete(slideId);
+  });
+  if (state.activeSlideIndex >= state.slides.length) {
+    state.activeSlideIndex = Math.max(0, state.slides.length - 1);
+  }
   document.getElementById('step2-editor-area').style.display = 'block';
   document.getElementById('step2-btn-generate').innerHTML = `<svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg> 重新规划分镜`;
   document.getElementById('step2-btn-save').style.display = 'inline-flex';
   document.getElementById('step2-btn-next').style.display = 'inline-flex';
+  updateStep2BatchDeleteButton();
   
   // 渲染精简版横向缩略图（只显示 Slide 编号+主标题）
   const thumbsContainer = document.getElementById('step2-thumbs');
   thumbsContainer.style.display = 'flex'; // 显式呈现
+  thumbsContainer.classList.toggle('step2-batch-delete-mode', state.step2BatchDeleteMode);
   thumbsContainer.innerHTML = '';
   
   state.slides.forEach((slide, idx) => {
+    const selectedForDelete = state.step2DeleteSelection.has(slide.slide_id);
     const thumb = document.createElement('div');
-    thumb.className = `slide-thumbnail-card ${idx === state.activeSlideIndex ? 'active' : ''}`;
+    thumb.className = `slide-thumbnail-card step2-slide-thumb ${idx === state.activeSlideIndex ? 'active' : ''}${selectedForDelete ? ' delete-selected' : ''}`;
     thumb.style.cssText = 'min-width: 90px; max-width: 110px; padding: 0.4rem 0.5rem; cursor: pointer;';
     thumb.innerHTML = `
+      ${state.step2BatchDeleteMode ? `
+        <button class="step2-thumb-delete" type="button" title="${selectedForDelete ? '取消删除' : '标记删除'}" aria-label="${selectedForDelete ? '取消删除' : '标记删除'}">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+        </button>
+      ` : ''}
       <div style="font-size: 0.7rem; font-weight: bold; color: #888; margin-bottom: 2px;">${slide.slide_id}</div>
       <div style="font-size: 0.8rem; font-weight: bold; color: #111; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${slide.main_title || '无标题'}</div>
     `;
     thumb.addEventListener('click', () => {
+      if (state.step2BatchDeleteMode) {
+        toggleStep2DeleteSelection(slide.slide_id);
+        return;
+      }
       saveCurrentSlideInputToState();
       state.activeSlideIndex = idx;
       renderStep2Workspace();
     });
+    const deleteBtn = thumb.querySelector('.step2-thumb-delete');
+    if (deleteBtn) {
+      deleteBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        toggleStep2DeleteSelection(slide.slide_id);
+      });
+    }
     thumbsContainer.appendChild(thumb);
   });
   
@@ -868,10 +907,104 @@ function escHtml(str) {
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function updateStep2BatchDeleteButton() {
+  const btn = document.getElementById('step2-btn-save');
+  if (!btn) return;
+  if (state.step2BatchDeleteMode) {
+    const count = state.step2DeleteSelection?.size || 0;
+    btn.className = 'success';
+    btn.innerHTML = `
+      <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+      保存${count ? ` (${count})` : ''}
+    `;
+  } else {
+    btn.className = 'secondary';
+    btn.innerHTML = `
+      <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path></svg>
+      批量删除
+    `;
+  }
+}
+
+function handleStep2BatchDeleteButton() {
+  if (!state.slides || state.slides.length === 0) return;
+  if (!state.step2BatchDeleteMode) {
+    saveCurrentSlideInputToState();
+    clearTimeout(state.step2AutoSaveTimer);
+    state.step2BatchDeleteMode = true;
+    state.step2DeleteSelection = new Set();
+    renderStep2Workspace();
+    showToast('已进入批量删除模式，可多选要删除的分镜。');
+    return;
+  }
+  saveStep2BatchDelete();
+}
+
+function toggleStep2DeleteSelection(slideId) {
+  if (!state.step2DeleteSelection || !(state.step2DeleteSelection instanceof Set)) {
+    state.step2DeleteSelection = new Set();
+  }
+  if (state.step2DeleteSelection.has(slideId)) {
+    state.step2DeleteSelection.delete(slideId);
+  } else {
+    state.step2DeleteSelection.add(slideId);
+  }
+  renderStep2Workspace();
+}
+
+async function saveStep2BatchDelete() {
+  saveCurrentSlideInputToState();
+  clearTimeout(state.step2AutoSaveTimer);
+  const selectedIds = new Set(state.step2DeleteSelection || []);
+  if (selectedIds.size === 0) {
+    state.step2BatchDeleteMode = false;
+    renderStep2Workspace();
+    showToast('已退出批量删除模式。');
+    return;
+  }
+  if (selectedIds.size >= state.slides.length) {
+    showToast('至少需要保留 1 个分镜。');
+    return;
+  }
+  const activeSlideId = state.slides[state.activeSlideIndex]?.slide_id;
+  state.slides = state.slides.filter(slide => !selectedIds.has(slide.slide_id));
+  const nextActiveIndex = state.slides.findIndex(slide => slide.slide_id === activeSlideId);
+  state.activeSlideIndex = nextActiveIndex >= 0 ? nextActiveIndex : Math.min(state.activeSlideIndex, state.slides.length - 1);
+  state.step2BatchDeleteMode = false;
+  state.step2DeleteSelection = new Set();
+  await saveStep2Contract({ silent: true });
+  renderStep2Workspace();
+  showToast(`已删除 ${selectedIds.size} 个分镜，并保存当前规划。`);
+}
+
+function updateStep2AutosaveStatus(text) {
+  const el = document.getElementById('step2-autosave-status');
+  if (el) el.innerText = text || '';
+}
+
+function scheduleStep2AutoSave() {
+  if (state.currentStep !== 2 || !state.currentProject || !state.slides?.length) return;
+  if (state.step2BatchDeleteMode) return;
+  updateStep2AutosaveStatus('自动保存中...');
+  clearTimeout(state.step2AutoSaveTimer);
+  state.step2AutoSaveTimer = setTimeout(() => {
+    saveStep2Contract({ silent: true, autosave: true });
+  }, 700);
+}
+
+function updateCurrentSlideField(field, val) {
+  const slide = state.slides[state.activeSlideIndex];
+  if (slide) {
+    slide[field] = val;
+    scheduleStep2AutoSave();
+  }
+}
+
 function updateGroupField(gIdx, field, val) {
   const slide = state.slides[state.activeSlideIndex];
   if (slide && slide.visual_groups[gIdx]) {
     slide.visual_groups[gIdx][field] = val;
+    scheduleStep2AutoSave();
   }
 }
 
@@ -884,7 +1017,7 @@ function saveCurrentSlideInputToState() {
   }
 }
 
-async function saveStep2Contract() {
+async function saveStep2Contract(options = {}) {
   saveCurrentSlideInputToState();
   const payload = {
     version: "visual_contract_v1",
@@ -895,9 +1028,25 @@ async function saveStep2Contract() {
     slides: state.slides
   };
   
-  const res = await API.put(`/api/projects/${state.currentProject.id}/steps/2/result`, payload);
-  if (res.success) {
-    showToast('💾 分镜规划已成功保存！');
+  if (state.step2AutoSaveInFlight && options.autosave) {
+    scheduleStep2AutoSave();
+    return { success: false };
+  }
+  state.step2AutoSaveInFlight = true;
+  try {
+    const res = await API.put(`/api/projects/${state.currentProject.id}/steps/2/result`, payload);
+    if (res.success) {
+      updateStep2AutosaveStatus(options.autosave ? '已自动保存' : '');
+      if (!options.silent) {
+        showToast('💾 分镜规划已成功保存！');
+      }
+    }
+    return res;
+  } finally {
+    state.step2AutoSaveInFlight = false;
+    if (options.autosave) {
+      setTimeout(() => updateStep2AutosaveStatus(''), 1400);
+    }
   }
 }
 

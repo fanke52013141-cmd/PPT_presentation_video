@@ -53,7 +53,7 @@ generation:
 tts:
   provider: minimax
   endpoint_env: MINIMAX_TTS_ENDPOINT
-  default_endpoint: https://api.minimaxi.com/v1/t2a_v2
+  default_endpoint: https://api.minimaxi.com/v1/t2a_async_v2
   api_key_env: MINIMAX_API_KEY
   model_env: MINIMAX_TTS_MODEL
   voice_id_env: MINIMAX_TTS_VOICE_ID

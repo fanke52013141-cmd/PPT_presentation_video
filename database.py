@@ -55,6 +55,7 @@ def init_db():
             "llm_api_key": "",
             "llm_model": "gpt-4o-mini",
             "llm_temperature": "0.7",
+            "llm_max_tokens": "16000",
             "vision_model": "gpt-4o",
             # Image Gen (独立)
             "image_base_url": "https://api.openai.com/v1",
@@ -62,7 +63,7 @@ def init_db():
             "image_model": "gpt-image-1",
             "image_size": "1024x1024",
             # MiniMax TTS
-            "tts_endpoint": "https://api.minimaxi.com/v1/t2a_v2",
+            "tts_endpoint": "https://api.minimaxi.com/v1/t2a_async_v2",
             "tts_api_key": "",
             "tts_model": "speech-2.8-hd",
             "tts_voice_id": "Chinese (Mandarin)_Soft_Girl",

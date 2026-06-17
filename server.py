@@ -147,6 +147,226 @@ def clean_json_markdown(text: str) -> str:
     return text
 
 
+def json_decode_context(text: str, exc: json.JSONDecodeError, radius: int = 300) -> str:
+    start = max(0, exc.pos - radius)
+    end = min(len(text), exc.pos + radius)
+    return text[start:end]
+
+
+def write_debug_text(run_dir: str, filename: str, content: str) -> str:
+    planning_dir = os.path.join(run_dir, "planning")
+    os.makedirs(planning_dir, exist_ok=True)
+    path = os.path.join(planning_dir, filename)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+    return path
+
+
+def parse_int_setting(value: str, default: int, min_value: int, max_value: int) -> int:
+    try:
+        parsed = int(float(str(value).strip()))
+    except Exception:
+        parsed = default
+    return max(min_value, min(max_value, parsed))
+
+
+def parse_json_or_repair_with_llm(
+    *,
+    cleaned_content: str,
+    raw_content: str,
+    client: OpenAI,
+    model: str,
+    run_dir: str,
+    artifact_prefix: str,
+    schema_hint: str = "",
+    max_tokens: int = 16000,
+) -> Dict[str, Any]:
+    try:
+        value = json.loads(cleaned_content)
+    except json.JSONDecodeError as first_error:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        raw_path = write_debug_text(run_dir, f"{artifact_prefix}_{timestamp}.raw_failed.txt", raw_content)
+        cleaned_path = write_debug_text(run_dir, f"{artifact_prefix}_{timestamp}.cleaned_failed.json", cleaned_content)
+        context = json_decode_context(cleaned_content, first_error)
+        logger.warning(
+            "Invalid JSON from LLM for %s: %s. Raw saved to %s, cleaned saved to %s. Context near error: %r",
+            artifact_prefix,
+            first_error,
+            raw_path,
+            cleaned_path,
+            context,
+        )
+
+        repair_prompt = (
+            "You repair invalid JSON emitted by another model. "
+            "Return only one valid JSON object. No markdown, no comments, no explanation. "
+            "Fix syntax issues such as missing commas, unescaped quotes, trailing text, "
+            "or incomplete brackets while preserving the original Chinese content and structure."
+        )
+        repair_user = (
+            f"JSON parser error: {first_error}\n\n"
+            f"Schema hint:\n{schema_hint[:12000]}\n\n"
+            f"Invalid JSON to repair:\n{cleaned_content[:120000]}"
+        )
+
+        try:
+            try:
+                repair_response = client.chat.completions.create(
+                    model=model,
+                    temperature=0,
+                    max_tokens=max_tokens,
+                    response_format={"type": "json_object"},
+                    messages=[
+                        {"role": "system", "content": repair_prompt},
+                        {"role": "user", "content": repair_user},
+                    ],
+                )
+            except Exception as repair_format_error:
+                logger.warning(
+                    "LLM JSON repair with response_format failed for %s, retrying without it: %s",
+                    artifact_prefix,
+                    repair_format_error,
+                )
+                repair_response = client.chat.completions.create(
+                    model=model,
+                    temperature=0,
+                    max_tokens=max_tokens,
+                    messages=[
+                        {"role": "system", "content": repair_prompt},
+                        {"role": "user", "content": repair_user},
+                    ],
+                )
+        except Exception as repair_error:
+            logger.error("LLM JSON repair request failed for %s: %s", artifact_prefix, repair_error)
+            raise first_error from repair_error
+
+        repaired_raw = repair_response.choices[0].message.content.strip()
+        repaired_cleaned = clean_json_markdown(repaired_raw)
+        write_debug_text(run_dir, f"{artifact_prefix}_{timestamp}.repaired_raw.txt", repaired_raw)
+        try:
+            value = json.loads(repaired_cleaned)
+        except json.JSONDecodeError as repair_parse_error:
+            repaired_path = write_debug_text(
+                run_dir,
+                f"{artifact_prefix}_{timestamp}.repaired_failed.json",
+                repaired_cleaned,
+            )
+            logger.error(
+                "LLM JSON repair still invalid for %s: %s. Repaired content saved to %s. Context near error: %r",
+                artifact_prefix,
+                repair_parse_error,
+                repaired_path,
+                json_decode_context(repaired_cleaned, repair_parse_error),
+            )
+            raise first_error from repair_parse_error
+
+    if not isinstance(value, dict):
+        raise ValueError("LLM response must be a JSON object")
+    return value
+
+
+def strip_anchor_lead_in(spoken_text: str, anchor: str) -> str:
+    text = str(spoken_text or "").strip()
+    anchor = str(anchor or "").strip()
+    if not text or not anchor:
+        return text
+    patterns = [
+        rf"^围绕“{re.escape(anchor)}”[，,]\s*",
+        rf"^围绕\"{re.escape(anchor)}\"[，,]\s*",
+        rf"^围绕「{re.escape(anchor)}」[，,]\s*",
+        rf"^围绕『{re.escape(anchor)}』[，,]\s*",
+    ]
+    for pattern in patterns:
+        cleaned = re.sub(pattern, "", text)
+        if cleaned != text:
+            return cleaned.strip()
+    return text
+
+
+def normalize_visual_contract(contract: Dict[str, Any]) -> Dict[str, Any]:
+    slides = contract.get("slides")
+    if not isinstance(slides, list):
+        return contract
+
+    for slide in slides:
+        if not isinstance(slide, dict):
+            continue
+        groups = slide.get("visual_groups")
+        if not isinstance(groups, list):
+            continue
+
+        group_by_id: Dict[str, Dict[str, Any]] = {}
+        for index, group in enumerate(groups, start=1):
+            if not isinstance(group, dict):
+                continue
+            group_id = str(group.get("id") or f"group_{index:02d}").strip()
+            group["id"] = group_id
+            role = str(group.get("role") or "content_body").strip()
+            group["role"] = role
+            if not str(group.get("content_unit_id") or "").strip():
+                group["content_unit_id"] = f"{group_id}_unit"
+            if not str(group.get("speak_policy") or "").strip():
+                group["speak_policy"] = "display_only" if role in {"subtitle", "decoration"} else "speak"
+            if role != "decoration" and not str(group.get("mask_target") or "").strip():
+                group["mask_target"] = str(
+                    group.get("visual_anchor") or group.get("visible_text") or group_id
+                ).strip()
+            if not group.get("reveal_order"):
+                group["reveal_order"] = index
+            group_by_id[group_id] = group
+
+        beats = slide.get("narration_beats")
+        if not isinstance(beats, list):
+            continue
+        normalized_beats = []
+        referenced_group_ids = set()
+        for index, beat in enumerate(beats, start=1):
+            if not isinstance(beat, dict):
+                continue
+            if not str(beat.get("id") or "").strip():
+                beat["id"] = f"beat_{index:02d}"
+            group_id = str(beat.get("group_id") or "").strip()
+            group = group_by_id.get(group_id)
+            if not group:
+                continue
+            if group.get("speak_policy") == "display_only":
+                continue
+            if not str(beat.get("content_unit_id") or "").strip():
+                beat["content_unit_id"] = group.get("content_unit_id")
+            if not str(beat.get("visible_anchor") or "").strip():
+                beat["visible_anchor"] = group.get("visible_text")
+            anchor = str(beat.get("visible_anchor") or group.get("visible_text") or "").strip()
+            spoken_text = str(beat.get("spoken_text") or "").strip()
+            spoken_text = strip_anchor_lead_in(spoken_text, anchor)
+            if not spoken_text:
+                intent = str(beat.get("spoken_intent") or "").strip()
+                beat["spoken_text"] = intent or f"请看画面中的{anchor}。"
+            else:
+                beat["spoken_text"] = spoken_text
+            referenced_group_ids.add(group_id)
+            normalized_beats.append(beat)
+
+        for group_id, group in group_by_id.items():
+            if group.get("speak_policy") == "display_only" or group.get("role") == "decoration":
+                continue
+            if group_id in referenced_group_ids:
+                continue
+            anchor = str(group.get("visible_text") or group_id).strip()
+            normalized_beats.append(
+                {
+                    "id": f"beat_auto_{len(normalized_beats) + 1:02d}",
+                    "content_unit_id": group.get("content_unit_id"),
+                    "group_id": group_id,
+                    "visible_anchor": anchor,
+                    "spoken_intent": str(group.get("narration_function") or f"解释{anchor}").strip(),
+                    "spoken_text": f"请看画面中的{anchor}，这里说明的是{str(group.get('narration_function') or anchor).strip()}。",
+                }
+            )
+        slide["narration_beats"] = normalized_beats
+
+    return contract
+
+
 def build_article_summary(content: str, max_chars: int = 180) -> str:
     """Create a lightweight planning summary without calling an LLM."""
     text = re.sub(r"```.*?```", " ", content, flags=re.S)
@@ -282,6 +502,15 @@ def sync_narration_beats_to_contract(project: Project, slide_ids: Optional[List[
 
 
 TTS_MARKUP_RE = re.compile(r"<#\d+(?:\.\d{1,2})?#>|\([A-Za-z-]+\)")
+MINIMAX_PAUSE_RE = re.compile(r"<#(\d+(?:\.\d{1,2})?)#>")
+MINIMAX_EXPRESSION_RE = re.compile(r"\([A-Za-z-]+\)")
+MINIMAX_ALLOWED_EXPRESSION_TAGS = {
+    "(breath)",
+    "(chuckle)",
+    "(emm)",
+    "(laughs)",
+    "(sighs)",
+}
 
 
 def clean_tts_text(text: str) -> str:
@@ -291,6 +520,110 @@ def clean_tts_text(text: str) -> str:
 
 def beat_tts_text(beat: Dict[str, Any]) -> str:
     return str(beat.get("tts_text") or beat.get("spoken_text") or beat.get("source_text") or "").strip()
+
+
+def normalize_minimax_tts_markup(text: str, fallback: str = "") -> str:
+    value = re.sub(r"\s+", " ", str(text or fallback or "")).strip()
+
+    def normalize_pause(match: re.Match[str]) -> str:
+        seconds = max(0.01, min(99.99, float(match.group(1))))
+        formatted = f"{seconds:.2f}".rstrip("0").rstrip(".")
+        return f"<#{formatted}#>"
+
+    value = MINIMAX_PAUSE_RE.sub(normalize_pause, value)
+    value = re.sub(r"<#[^>]*#>", " ", value)
+
+    def keep_expression(match: re.Match[str]) -> str:
+        tag = match.group(0)
+        return tag if tag in MINIMAX_ALLOWED_EXPRESSION_TAGS else " "
+
+    value = MINIMAX_EXPRESSION_RE.sub(keep_expression, value)
+    value = re.sub(
+        r"(<#\d+(?:\.\d{1,2})?#>\s*){2,}",
+        lambda m: (MINIMAX_PAUSE_RE.search(m.group(0)).group(0) + " ") if MINIMAX_PAUSE_RE.search(m.group(0)) else " ",
+        value,
+    )
+    value = re.sub(r"^(?:\s*(?:<#\d+(?:\.\d{1,2})?#>|\([A-Za-z-]+\))\s*)+", "", value).strip()
+    value = re.sub(r"(?:\s*(?:<#\d+(?:\.\d{1,2})?#>|\([A-Za-z-]+\))\s*)+$", "", value).strip()
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def prepare_narration_payload(project: Project, payload: Dict[str, Any]) -> Dict[str, Any]:
+    payload = dict(payload or {})
+    slides = payload.get("slides") if isinstance(payload.get("slides"), list) else []
+    current_slide_ids = read_contract_slide_ids(project.run_dir)
+    if current_slide_ids:
+        by_id = {
+            str(slide.get("slide_id") or "").strip(): slide
+            for slide in slides
+            if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()
+        }
+        slides = [by_id[slide_id] for slide_id in current_slide_ids if slide_id in by_id]
+
+    for slide_data in slides:
+        if not isinstance(slide_data, dict):
+            continue
+        slide_beats = slide_data.get("beats", [])
+        if not isinstance(slide_beats, list):
+            slide_beats = []
+            slide_data["beats"] = slide_beats
+        for idx, beat in enumerate(slide_beats, start=1):
+            if not isinstance(beat, dict):
+                continue
+            beat.setdefault("id", f"{slide_data.get('slide_id', 'slide')}_beat_{idx:03d}")
+            source = str(beat.get("source_text") or beat.get("spoken_text") or "").strip()
+            spoken = str(beat.get("spoken_text") or source).strip()
+            beat["source_text"] = source or spoken
+            beat["spoken_text"] = spoken or source
+            beat["tts_text"] = normalize_minimax_tts_markup(beat.get("tts_text"), beat["spoken_text"])
+    payload["slides"] = slides
+    return payload
+
+
+def persist_narration_beats(project: Project, payload: Dict[str, Any]) -> Dict[str, Any]:
+    payload = prepare_narration_payload(project, payload)
+    beats_path = os.path.join(project.run_dir, "planning", "narration_beats.json")
+    os.makedirs(os.path.dirname(beats_path), exist_ok=True)
+    with open(beats_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+    narration_lines = []
+    tts_text_lines = []
+
+    for slide_data in payload.get("slides", []):
+        if not isinstance(slide_data, dict):
+            continue
+        slide_id = str(slide_data.get("slide_id") or "").strip()
+        if not slide_id:
+            continue
+        slide_dir = os.path.join(project.run_dir, "slides", slide_id)
+        os.makedirs(slide_dir, exist_ok=True)
+        slide_beats = slide_data.get("beats", []) if isinstance(slide_data.get("beats"), list) else []
+        slide_narration = "\n".join(clean_tts_text(beat_tts_text(beat)) for beat in slide_beats)
+        slide_tts_text = "\n".join(beat_tts_text(beat) for beat in slide_beats)
+
+        with open(os.path.join(slide_dir, "narration.txt"), "w", encoding="utf-8") as f:
+            f.write(slide_narration + "\n")
+        with open(os.path.join(slide_dir, "tts_text.txt"), "w", encoding="utf-8") as f:
+            f.write(slide_tts_text + "\n")
+        with open(os.path.join(slide_dir, "narration_beats.json"), "w", encoding="utf-8") as f:
+            json.dump({"slide_id": slide_id, "beats": slide_beats}, f, ensure_ascii=False, indent=2)
+
+        narration_lines.append(f"=== {slide_id} ===")
+        tts_text_lines.append(f"=== {slide_id} ===")
+        for beat in slide_beats:
+            if not isinstance(beat, dict):
+                continue
+            g_id = beat.get("group_id") or beat.get("id") or "sentence"
+            text = clean_tts_text(beat_tts_text(beat))
+            narration_lines.append(f"[{g_id}] {text}")
+            tts_text_lines.append(beat_tts_text(beat))
+
+    with open(os.path.join(project.run_dir, "planning", "narration.txt"), "w", encoding="utf-8") as f:
+        f.write("\n".join(narration_lines) + "\n")
+    with open(os.path.join(project.run_dir, "planning", "tts_text.txt"), "w", encoding="utf-8") as f:
+        f.write("\n".join(tts_text_lines) + "\n")
+    return payload
 
 
 def rewrite_audio_timeline_by_beats(timeline_path: str, slide_id: str, beats: List[Dict[str, Any]]) -> None:
@@ -518,11 +851,14 @@ def test_tts_connection(payload: TestTtsPayload):
 def handle_step_navigation(project: Project, target_step: int, db: Session):
     current_status = project.get_step_status()
     
-    # 规则：对于大于 target_step 且原本状态不为 "pending" 的步骤，将其标记为 "pending_reconfirmation"
+    # Downstream completed artifacts become stale when an upstream step changes.
+    # Steps that were merely unlocked or waiting should go back to plain pending.
     for s_idx in range(target_step + 1, 9):
         s_str = str(s_idx)
-        if current_status.get(s_str) in ["completed", "in_progress", "pending_reconfirmation"]:
+        if current_status.get(s_str) == "completed":
             current_status[s_str] = "pending_reconfirmation"
+        elif current_status.get(s_str) in ["in_progress", "pending_reconfirmation"]:
+            current_status[s_str] = "pending"
             
     current_status[str(target_step)] = "completed"
     project.current_step = target_step
@@ -662,11 +998,23 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
     project_title = (project.name or "").strip() or brief.get("title") or "未命名项目"
     article_content = str(brief.get("content") or "")
     article_summary = brief.get("summary") or build_article_summary(article_content)
+    article_chars = len(re.sub(r"\s+", "", article_content))
+    if article_chars <= 1200:
+        slide_count_requirement = "4 到 6 页"
+        group_count_requirement = "5-6 个"
+    elif article_chars <= 3000:
+        slide_count_requirement = "6 到 8 页"
+        group_count_requirement = "5-7 个"
+    else:
+        slide_count_requirement = "8 到 12 页"
+        group_count_requirement = "5-8 个"
         
     llm_api_key = get_setting("llm_api_key")
     llm_base_url = get_setting("llm_base_url")
     llm_model = get_setting("llm_model")
     llm_temp = float(get_setting("llm_temperature", "0.7"))
+    planning_temp = min(llm_temp, 0.2)
+    planning_max_tokens = parse_int_setting(get_setting("llm_max_tokens", "16000"), 16000, 1024, 64000)
     
     if not llm_api_key:
         raise HTTPException(status_code=400, detail="未配置大模型 API 密钥，请在系统设置中配置后再试。")
@@ -682,8 +1030,8 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
 请阅读用户输入的内容摘要和全文，设计出一份符合 PPT 动画视频制作标准的视觉合约(Visual Contract)。
 视频的画面风格为“温暖极简手绘线稿风”。
 要求：
-1. 必须要将整篇文章合理划分，分成 8 到 14 页 Slide（每页的 slide_id 为 slide_001, slide_002 格式）。
-2. 每页 Slide 必须定义 5-8 个视觉分组(visual_groups)，包含：
+1. 必须要将整篇文章合理划分，分成 {slide_count_requirement} Slide（每页的 slide_id 为 slide_001, slide_002 格式）。
+2. 每页 Slide 必须定义 {group_count_requirement}视觉分组(visual_groups)，包含：
    - 1个 title 主标题（role 为 'title'）
    - 1个 subtitle 副标题（role 为 'subtitle'）
    - 2-4个 body/diagram 主体/图表区（role 只能是 'content_body', 'diagram', 'annotation', 'summary', 'decoration' 之一）
@@ -709,7 +1057,8 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
         try:
             response = client.chat.completions.create(
                 model=llm_model,
-                temperature=llm_temp,
+                temperature=planning_temp,
+                max_tokens=planning_max_tokens,
                 response_format={"type": "json_object"},
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -720,16 +1069,28 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
             logger.warning(f"Failed LLM call with response_format in step 2, retrying without it: {inner_e}")
             response = client.chat.completions.create(
                 model=llm_model,
-                temperature=llm_temp,
+                temperature=planning_temp,
+                max_tokens=planning_max_tokens,
                 messages=[
                     {"role": "system", "content": system_prompt + " 请只输出纯 JSON，不要包含 Markdown 代码块标记（如 ```json ）。"},
                     {"role": "user", "content": f"项目主题：{project_title}\n摘要提纲：{article_summary}\n正文全文：\n{article_content}"}
                 ]
             )
             
-        content_str = response.choices[0].message.content.strip()
+        choice = response.choices[0]
+        logger.info("Step 2 LLM finish_reason=%s usage=%s", getattr(choice, "finish_reason", None), getattr(response, "usage", None))
+        content_str = choice.message.content.strip()
         cleaned_content = clean_json_markdown(content_str)
-        contract = json.loads(cleaned_content)
+        contract = parse_json_or_repair_with_llm(
+            cleaned_content=cleaned_content,
+            raw_content=content_str,
+            client=client,
+            model=llm_model,
+            run_dir=project.run_dir,
+            artifact_prefix="visual_contract_llm",
+            schema_hint=schema_hint,
+            max_tokens=planning_max_tokens,
+        )
         
         # 强制补充一些固定版本信息
         contract["version"] = "visual_contract_v1"
@@ -739,6 +1100,7 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
                 "topic_name": project_title,
                 "topic_summary": article_summary
             }
+        contract = normalize_visual_contract(contract)
             
         # 写入 JSON
         contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
@@ -1056,7 +1418,20 @@ def confirm_images(project_id: str, db: Session = Depends(get_db)):
 
 # ==================== 步骤 5: Mask 自动标注与编辑 ====================
 
-NARRATION_SPLIT_RE = re.compile(r"[^，,。！？!?；;：:\n]+[，,。！？!?；;：:]?")
+NARRATION_SPLIT_DELIMITERS = set("，,。.!！；;？?")
+QUOTE_PAIRS = {
+    "“": "”",
+    "‘": "’",
+    "「": "」",
+    "『": "』",
+    "《": "》",
+    "（": "）",
+    "(": ")",
+    "[": "]",
+    "【": "】",
+    "{": "}",
+}
+INLINE_QUOTE_MARKS = {"`", "\""}
 
 ROLE_LABELS = {
     "title": "主标题",
@@ -1077,7 +1452,37 @@ def split_narration_text(text: str) -> List[str]:
     value = str(text or "").strip()
     if not value:
         return []
-    parts = NARRATION_SPLIT_RE.findall(value) or [value]
+    parts: List[str] = []
+    stack: List[str] = []
+    start = 0
+    i = 0
+    while i < len(value):
+        ch = value[i]
+        if ch in INLINE_QUOTE_MARKS:
+            if stack and stack[-1] == ch:
+                stack.pop()
+            else:
+                stack.append(ch)
+        elif ch in QUOTE_PAIRS:
+            stack.append(QUOTE_PAIRS[ch])
+        elif stack and ch == stack[-1]:
+            stack.pop()
+
+        is_decimal_point = (
+            ch == "."
+            and i > 0
+            and i + 1 < len(value)
+            and value[i - 1].isdigit()
+            and value[i + 1].isdigit()
+        )
+        should_split = (ch == "\n") or (ch in NARRATION_SPLIT_DELIMITERS and not stack and not is_decimal_point)
+        if should_split:
+            end = i + 1
+            parts.append(value[start:end].strip())
+            start = end
+        i += 1
+    if start < len(value):
+        parts.append(value[start:].strip())
     return [part.strip() for part in parts if part.strip()]
 
 
@@ -1676,6 +2081,26 @@ def get_step5_result(project_id: str, db: Session = Depends(get_db)):
         manifest = json.load(f)
     return {"success": True, "manifest": manifest}
 
+@app.put("/api/projects/{project_id}/steps/5/draft")
+def update_step5_draft(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    current_slide_ids = read_contract_slide_ids(project.run_dir)
+    if current_slide_ids and isinstance(payload.get("slides"), list):
+        by_id = {
+            str(slide.get("slide_id") or "").strip(): slide
+            for slide in payload.get("slides", [])
+            if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()
+        }
+        payload["slides"] = [by_id[slide_id] for slide_id in current_slide_ids if slide_id in by_id]
+
+    manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    return {"success": True}
+
 @app.put("/api/projects/{project_id}/steps/5/result")
 def update_step5_result(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -1782,6 +2207,134 @@ def get_step6_result(project_id: str, db: Session = Depends(get_db)):
     with open(beats_path, "r", encoding="utf-8") as f:
         beats = json.load(f)
     return {"success": True, "beats": beats}
+
+@app.post("/api/projects/{project_id}/steps/6/annotate")
+def annotate_step6_narration(project_id: str, payload: Optional[Dict[str, Any]] = None, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    llm_api_key = get_setting("llm_api_key")
+    if not llm_api_key:
+        raise HTTPException(status_code=400, detail="Please configure the LLM API key before AI narration annotation.")
+
+    incoming = payload if isinstance(payload, dict) and isinstance(payload.get("slides"), list) else None
+    if incoming is None:
+        beats_path = os.path.join(project.run_dir, "planning", "narration_beats.json")
+        if not os.path.exists(beats_path):
+            raise HTTPException(status_code=400, detail="Narration beats do not exist. Initialize step 6 first.")
+        sync_narration_beats_to_contract(project)
+        with open(beats_path, "r", encoding="utf-8") as f:
+            incoming = json.load(f)
+
+    incoming = prepare_narration_payload(project, incoming)
+    if not incoming.get("slides"):
+        raise HTTPException(status_code=400, detail="No narration beats available for annotation.")
+
+    llm_base_url = get_setting("llm_base_url")
+    llm_model = get_setting("llm_model", "gpt-4o-mini")
+    llm_max_tokens = parse_int_setting(get_setting("llm_max_tokens", "16000"), 16000, 1024, 64000)
+    client = get_openai_client(api_key=llm_api_key, base_url=llm_base_url)
+    compact_slides = []
+    for slide in incoming.get("slides", []):
+        compact_beats = []
+        for idx, beat in enumerate(slide.get("beats", []) or [], start=1):
+            if not isinstance(beat, dict):
+                continue
+            compact_beats.append({
+                "id": str(beat.get("id") or f"beat_{idx:03d}"),
+                "index": idx,
+                "source_text": clean_tts_text(beat.get("source_text") or beat.get("spoken_text") or beat_tts_text(beat)),
+                "current_tts_text": beat_tts_text(beat),
+                "anchor": str(beat.get("visible_anchor") or beat.get("group_id") or ""),
+            })
+        compact_slides.append({"slide_id": slide.get("slide_id"), "beats": compact_beats})
+
+    system_prompt = (
+        "You are a Chinese voiceover director preparing MiniMax TTS text. "
+        "Add only light delivery markup to the existing narration. "
+        "Return strict JSON only, with shape {\"slides\":[{\"slide_id\":\"...\",\"beats\":[{\"id\":\"...\",\"tts_text\":\"...\"}]}]}. "
+        "Preserve the original meaning and words. Do not rewrite technical terms. "
+        "Use MiniMax pause tags like <#0.2#>, <#0.4#>, <#0.6#> between speakable text. "
+        "Never put pause tags at the beginning or end, never use consecutive pause tags, and keep pause values between 0.01 and 99.99 seconds. "
+        "Use expression tags sparingly, at most one tag every two or three beats, and only from this set: "
+        "(breath), (sighs), (chuckle), (emm), (laughs). "
+        "Avoid expression tags inside numbers, English identifiers, code terms, Token, API, LLM, or backtick content."
+    )
+    user_prompt = json.dumps({"slides": compact_slides}, ensure_ascii=False)
+
+    try:
+        try:
+            response = client.chat.completions.create(
+                model=llm_model,
+                temperature=0.2,
+                max_tokens=llm_max_tokens,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
+        except Exception as format_error:
+            logger.warning(f"Narration annotation response_format failed, retrying raw JSON: {format_error}")
+            response = client.chat.completions.create(
+                model=llm_model,
+                temperature=0.2,
+                max_tokens=llm_max_tokens,
+                messages=[
+                    {"role": "system", "content": system_prompt + " Return JSON only. No markdown."},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"AI narration annotation failed: {exc}")
+
+    raw_content = response.choices[0].message.content.strip()
+    ai_data = parse_json_or_repair_with_llm(
+        cleaned_content=clean_json_markdown(raw_content),
+        raw_content=raw_content,
+        client=client,
+        model=llm_model,
+        run_dir=project.run_dir,
+        artifact_prefix="step6_tts_annotation",
+        schema_hint='{"slides":[{"slide_id":"slide_001","beats":[{"id":"beat_001","tts_text":"..."}]}]}',
+        max_tokens=llm_max_tokens,
+    )
+
+    annotated_by_slide: Dict[str, Dict[str, str]] = {}
+    for slide in ai_data.get("slides", []) or []:
+        if not isinstance(slide, dict):
+            continue
+        slide_id = str(slide.get("slide_id") or "").strip()
+        if not slide_id:
+            continue
+        annotated_by_slide[slide_id] = {}
+        for beat in slide.get("beats", []) or []:
+            if not isinstance(beat, dict):
+                continue
+            beat_id = str(beat.get("id") or "").strip()
+            tts_text = str(beat.get("tts_text") or "").strip()
+            if beat_id and tts_text:
+                annotated_by_slide[slide_id][beat_id] = tts_text
+
+    changed = 0
+    for slide in incoming.get("slides", []):
+        slide_id = str(slide.get("slide_id") or "").strip()
+        by_id = annotated_by_slide.get(slide_id, {})
+        for beat in slide.get("beats", []) or []:
+            if not isinstance(beat, dict):
+                continue
+            beat_id = str(beat.get("id") or "").strip()
+            original = beat.get("spoken_text") or beat.get("source_text") or beat_tts_text(beat)
+            if beat_id in by_id:
+                beat["tts_text"] = normalize_minimax_tts_markup(by_id[beat_id], original)
+                changed += 1
+
+    if changed == 0:
+        raise HTTPException(status_code=500, detail="AI returned no usable narration annotations.")
+
+    incoming = persist_narration_beats(project, incoming)
+    return {"success": True, "beats": incoming, "annotated_count": changed}
 
 @app.put("/api/projects/{project_id}/steps/6/result")
 def update_step6_result(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
@@ -1895,13 +2448,20 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
             logger.warning(f"Failed to load edited narration beats for TTS: {exc}")
     
     # 动态将 setting 中的 TTS 参数写入环境变量，以便 minimax_tts.py 读取
+    tts_endpoint = get_setting("tts_endpoint", "https://api.minimaxi.com/v1/t2a_async_v2")
+    tts_model = get_setting("tts_model", "speech-2.8-hd")
+    tts_voice_id = get_setting("tts_voice_id", "Chinese (Mandarin)_Soft_Girl")
+    tts_speed = get_setting("tts_speed", "1.0")
+    tts_volume = get_setting("tts_volume", "1.0")
+    tts_pitch = get_setting("tts_pitch", "0")
     os.environ["MINIMAX_API_KEY"] = tts_api_key
-    os.environ["MINIMAX_API_URL"] = get_setting("tts_endpoint", "https://api.minimaxi.com/v1/t2a_v2")
-    os.environ["MINIMAX_MODEL"] = get_setting("tts_model", "speech-2.8-hd")
-    os.environ["MINIMAX_VOICE_ID"] = get_setting("tts_voice_id", "Chinese (Mandarin)_Soft_Girl")
-    os.environ["MINIMAX_SPEED"] = get_setting("tts_speed", "1.0")
-    os.environ["MINIMAX_VOLUME"] = get_setting("tts_volume", "1.0")
-    os.environ["MINIMAX_PITCH"] = get_setting("tts_pitch", "0")
+    os.environ["MINIMAX_TTS_ENDPOINT"] = tts_endpoint
+    os.environ["MINIMAX_TTS_MODEL"] = tts_model
+    os.environ["MINIMAX_TTS_VOICE_ID"] = tts_voice_id
+    os.environ["MINIMAX_TTS_SPEED"] = tts_speed
+    os.environ["MINIMAX_TTS_VOLUME"] = tts_volume
+    os.environ["MINIMAX_TTS_PITCH"] = tts_pitch
+    os.environ["MINIMAX_API_URL"] = tts_endpoint
         
     tts_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "minimax_tts.py"))
     
@@ -1937,7 +2497,13 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
             "--out-meta", out_meta,
             "--out-srt", out_srt,
             "--out-timeline", out_timeline,
-            "--slide-id", slide_id
+            "--slide-id", slide_id,
+            "--endpoint", tts_endpoint,
+            "--model", tts_model,
+            "--voice-id", tts_voice_id,
+            "--speed", tts_speed,
+            "--volume", tts_volume,
+            "--pitch", tts_pitch
         ]
         
         tts_res = subprocess.run(tts_args, capture_output=True, text=True, encoding="utf-8")
@@ -1949,7 +2515,7 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
     # 合成完毕后，运行 bind_reveal_timeline.py 绑定时间轴
     bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))
     bind_res = subprocess.run([
-        sys.executable, bind_script, "--run-dir", project.run_dir
+        sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", "0"
     ], capture_output=True, text=True, encoding="utf-8")
     
     if bind_res.returncode != 0:
@@ -2004,7 +2570,7 @@ def confirm_tts_audio(project_id: str, db: Session = Depends(get_db)):
         )
     bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))
     bind_res = subprocess.run([
-        sys.executable, bind_script, "--run-dir", project.run_dir
+        sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", "0"
     ], capture_output=True, text=True, encoding="utf-8")
     if bind_res.returncode != 0:
         logger.error(f"Timeline binding failed during audio confirm: {bind_res.stderr}")
@@ -2055,6 +2621,14 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="项目不存在")
         
     # 首先调用 build_remotion_props.py 生成渲染配置属性
+    bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))
+    bind_res = subprocess.run([
+        sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", "0"
+    ], capture_output=True, text=True, encoding="utf-8")
+    if bind_res.returncode != 0:
+        logger.error(f"Timeline binding before render failed: {bind_res.stderr}")
+        raise HTTPException(status_code=500, detail=f"渲染前绑定语音时间轴失败: {bind_res.stderr}")
+
     build_props_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "build_remotion_props.py"))
     props_res = subprocess.run([
         sys.executable, build_props_script, "--run-dir", project.run_dir

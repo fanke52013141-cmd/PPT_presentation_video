@@ -278,6 +278,7 @@
                 <svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v5M14 11v5"></path></svg>
                 清除全部标注
               </button>
+              <span id="step5-draft-status" class="step2-autosave-status"></span>
               <label class="step5-brush-control" title="调整手动涂抹区域的画笔大小">
                 <span>画笔</span>
                 <input id="step5-brush-size" type="range" min="12" max="140" value="80">
@@ -315,7 +316,7 @@
               <div style="margin-top: auto; display: flex; flex-direction: column; gap: 0.5rem; padding-top: 1rem; border-top: 2px dashed #111;">
                 <button id="step5-btn-save" class="secondary" style="width: 100%;">
                   <svg class="icon" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-                  保存标注数据
+                  确认标注并生成切层
                 </button>
                 <button class="btn-next-step success" style="width: 100%;">
                   确认标注，进入下一步
@@ -334,6 +335,7 @@
               <svg class="icon" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
               重新同步演讲稿模板
             </button>
+            <button id="step6-btn-ai-annotate" class="success compact-action-btn">AI 标注停顿/语气</button>
             <span id="step6-autosave-status" class="step6-autosave-status"></span>
             <button class="btn-next-step success step6-next-btn">
               确认台词，前往语音合成
@@ -479,9 +481,15 @@
               <input type="text" id="setting-vision-model" placeholder="gpt-4o">
             </div>
           </div>
-          <div>
-            <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">采样温度 (Temperature):</label>
-            <input type="text" id="setting-llm-temp" placeholder="0.7">
+          <div style="display: flex; gap: 1rem;">
+            <div style="flex: 1;">
+              <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">采样温度 (Temperature):</label>
+              <input type="text" id="setting-llm-temp" placeholder="0.7">
+            </div>
+            <div style="flex: 1;">
+              <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">最大输出 (Max token):</label>
+              <input type="number" id="setting-llm-max-tokens" min="1024" max="64000" step="512" placeholder="16000">
+            </div>
           </div>
           <div style="margin-top: 1.2rem; display: flex; justify-content: flex-start;">
             <button type="button" class="secondary" id="btn-test-llm" style="padding: 0.4rem 1rem; font-size: 0.85rem; display: flex; align-items: center; gap: 0.4rem;">
@@ -538,7 +546,7 @@
           </p>
           <div style="margin-bottom: 0.8rem;">
             <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">语音接口地址 (Endpoint):</label>
-            <input type="text" id="setting-tts-endpoint" placeholder="https://api.minimaxi.com/v1/t2a_v2">
+            <input type="text" id="setting-tts-endpoint" placeholder="https://api.minimaxi.com/v1/t2a_async_v2">
           </div>
           <div style="margin-bottom: 0.8rem;">
             <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">语音接口密钥 (API Key):</label>
@@ -618,6 +626,6 @@
   <div id="toast-container"></div>
 
   <!-- 主业务 JavaScript 脚本 -->
-  <script src="app.js?v=2.0.10"></script>
+  <script src="app.js?v=2.0.11"></script>
 </body>
 </html>

@@ -11,6 +11,8 @@ let state = {
   step2BatchOriginalActiveIndex: 0,
   step2AutoSaveTimer: null,
   step2AutoSaveInFlight: false,
+  step5AutoSaveTimer: null,
+  step5AutoSaveInFlight: false,
   step6AutoSaveTimer: null,
   step6AutoSavePromise: null,
   canvasState: {
@@ -238,6 +240,7 @@ function initGlobalEvents() {
 
   // ================= 步骤 6 事件 =================
   document.getElementById('step6-btn-init').addEventListener('click', () => initStep6Narration());
+  document.getElementById('step6-btn-ai-annotate')?.addEventListener('click', () => annotateStep6Narration());
   document.getElementById('step6-btn-save')?.addEventListener('click', () => saveStep6Narration());
 
   // ================= 步骤 7 事件 =================
@@ -293,7 +296,7 @@ async function loadProjects() {
         <p style="color: #666; font-size: 0.95rem; min-height: 40px; margin-bottom: 0.5rem;">${p.description || '无项目描述'}</p>
         <div style="font-size: 0.9rem; margin-top: 0.5rem;">
           <div>当前步骤: <strong>第 ${p.current_step} 步</strong></div>
-          ${hasPendingReconfirm ? '<div style="color: #c9a002; font-weight: bold;">⚠️ 有步骤待重新确认</div>' : ''}
+          ${hasPendingReconfirm ? '<div style="color: #c9a002; font-weight: bold;">⚠️ 有步骤需重做</div>' : ''}
         </div>
       </div>
       <div>
@@ -353,6 +356,7 @@ async function loadSettings() {
   document.getElementById('setting-llm-model').value = state.settings.llm_model || '';
   document.getElementById('setting-vision-model').value = state.settings.vision_model || '';
   document.getElementById('setting-llm-temp').value = state.settings.llm_temperature || '0.7';
+  document.getElementById('setting-llm-max-tokens').value = state.settings.llm_max_tokens || '16000';
   
   document.getElementById('setting-image-base-url').value = state.settings.image_base_url || '';
   document.getElementById('setting-image-api-key').value = state.settings.image_api_key || '';
@@ -383,6 +387,7 @@ async function saveSettings() {
     llm_model: document.getElementById('setting-llm-model').value.trim(),
     vision_model: document.getElementById('setting-vision-model').value.trim(),
     llm_temperature: document.getElementById('setting-llm-temp').value.trim(),
+    llm_max_tokens: document.getElementById('setting-llm-max-tokens').value.trim(),
     
     image_base_url: document.getElementById('setting-image-base-url').value.trim(),
     image_api_key: document.getElementById('setting-image-api-key').value.trim(),
@@ -588,7 +593,7 @@ function updateStepperUI(currentStep, stepStatus) {
         badge.className = 'step-status-tag';
         item.appendChild(badge);
       }
-      badge.innerText = '待确认';
+      badge.innerText = '需重做';
     } else {
       const badge = item.querySelector('.step-status-tag');
       if (badge) badge.remove();
@@ -773,7 +778,7 @@ function renderStep2Workspace() {
   document.getElementById('step2-btn-next').style.display = 'inline-flex';
   updateStep2BatchDeleteButton();
   
-  // 渲染精简版横向缩略图（只显示 Slide 编号+主标题）
+  // 渲染精简版横向缩略图（只显示 Slide 序号）
   const thumbsContainer = document.getElementById('step2-thumbs');
   thumbsContainer.style.display = 'flex'; // 显式呈现
   thumbsContainer.classList.toggle('step2-batch-delete-mode', state.step2BatchDeleteMode);
@@ -782,15 +787,14 @@ function renderStep2Workspace() {
   state.slides.forEach((slide, idx) => {
     const thumb = document.createElement('div');
     thumb.className = `slide-thumbnail-card step2-slide-thumb ${idx === state.activeSlideIndex ? 'active' : ''}`;
-    thumb.style.cssText = 'min-width: 90px; max-width: 110px; padding: 0.4rem 0.5rem; cursor: pointer;';
+    thumb.style.cssText = 'min-width: 92px; max-width: 92px; min-height: 42px; padding: 0.55rem 0.5rem; cursor: pointer; display: flex; align-items: center; justify-content: center;';
     thumb.innerHTML = `
       ${state.step2BatchDeleteMode ? `
         <button class="step2-thumb-delete" type="button" title="删除此分镜" aria-label="删除此分镜">
           <svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
         </button>
       ` : ''}
-      <div style="font-size: 0.7rem; font-weight: bold; color: #888; margin-bottom: 2px;">${slide.slide_id}</div>
-      <div style="font-size: 0.8rem; font-weight: bold; color: #111; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${slide.main_title || '无标题'}</div>
+      <div style="font-size: 0.9rem; font-weight: 800; color: #111;">Slide ${idx + 1}</div>
     `;
     thumb.addEventListener('click', () => {
       if (state.step2BatchDeleteMode) {
@@ -1489,8 +1493,50 @@ function getStep2SlideForManifestSlide(manifestSlide = getCurrentManifestSlide()
 function splitNarrationText(text) {
   const value = String(text || '').trim();
   if (!value) return [];
-  const parts = value.match(/[^，,。！？!?；;：:\n]+[，,。！？!?；;：:]?/g) || [value];
-  return parts.map(part => part.trim()).filter(Boolean);
+  const delimiters = new Set(['，', ',', '。', '.', '!', '！', '；', ';', '？', '?']);
+  const quotePairs = {
+    '“': '”',
+    '‘': '’',
+    '「': '」',
+    '『': '』',
+    '《': '》',
+    '（': '）',
+    '(': ')',
+    '[': ']',
+    '【': '】',
+    '{': '}'
+  };
+  const inlineQuoteMarks = new Set(['`', '"']);
+  const parts = [];
+  const stack = [];
+  let start = 0;
+
+  for (let i = 0; i < value.length; i += 1) {
+    const ch = value[i];
+    if (inlineQuoteMarks.has(ch)) {
+      if (stack.length && stack[stack.length - 1] === ch) {
+        stack.pop();
+      } else {
+        stack.push(ch);
+      }
+    } else if (quotePairs[ch]) {
+      stack.push(quotePairs[ch]);
+    } else if (stack.length && ch === stack[stack.length - 1]) {
+      stack.pop();
+    }
+
+    const isDecimalPoint = ch === '.' && /\d/.test(value[i - 1] || '') && /\d/.test(value[i + 1] || '');
+    const shouldSplit = ch === '\n' || (delimiters.has(ch) && stack.length === 0 && !isDecimalPoint);
+    if (shouldSplit) {
+      parts.push(value.slice(start, i + 1).trim());
+      start = i + 1;
+    }
+  }
+
+  if (start < value.length) {
+    parts.push(value.slice(start).trim());
+  }
+  return parts.filter(Boolean);
 }
 
 function getNarrationFragments(step2Slide = getStep2SlideForManifestSlide()) {
@@ -1527,6 +1573,54 @@ function getSelectedFragmentText(maskBox, step2Slide = getStep2SlideForManifestS
   }
   const beat = getNarrationBeatForBox(maskBox, step2Slide);
   return maskBox.spoken_text || beat?.spoken_text || '';
+}
+
+function normalizeMaskBoxNarrationFragments(maskBox, step2Slide) {
+  if (!maskBox || !step2Slide) return;
+  const fragments = getNarrationFragments(step2Slide);
+  if (!fragments.length) return;
+
+  const beatIds = Array.isArray(maskBox.narration_beat_ids)
+    ? maskBox.narration_beat_ids.filter(Boolean)
+    : [];
+  if (maskBox.narration_beat_id && !beatIds.includes(maskBox.narration_beat_id)) {
+    beatIds.push(maskBox.narration_beat_id);
+  }
+
+  let selected = [];
+  if (beatIds.length) {
+    selected = fragments.filter(fragment => beatIds.includes(fragment.beat_id));
+  } else if (maskBox.narration_group_id) {
+    selected = fragments.filter(fragment => fragment.group_id === maskBox.narration_group_id);
+  } else if (maskBox.visual_group_id) {
+    selected = fragments.filter(fragment => fragment.group_id === maskBox.visual_group_id);
+  }
+
+  if (!selected.length) return;
+  const normalized = selected.map(fragment => ({
+    id: fragment.id,
+    beat_id: fragment.beat_id,
+    group_id: fragment.group_id,
+    text: fragment.text
+  }));
+  maskBox.narration_fragments = normalized;
+  maskBox.narration_beat_ids = [...new Set(normalized.map(item => item.beat_id).filter(Boolean))];
+  maskBox.narration_beat_id = maskBox.narration_beat_ids[0] || '';
+  const groupIds = [...new Set(normalized.map(item => item.group_id).filter(Boolean))];
+  maskBox.narration_group_id = groupIds[0] || maskBox.narration_group_id || maskBox.visual_group_id || '';
+  maskBox.spoken_text = normalized.map(item => item.text).join('');
+}
+
+function normalizeManifestNarrationFragments() {
+  if (!manifestData?.slides || !step2Contract?.slides) return;
+  manifestData.slides.forEach(slide => {
+    const step2Slide = getStep2SlideForManifestSlide(slide);
+    if (!step2Slide) return;
+    ['semantic_blocks', 'groups', 'reveal_boxes'].forEach(field => {
+      if (!Array.isArray(slide[field])) return;
+      slide[field].forEach(box => normalizeMaskBoxNarrationFragments(box, step2Slide));
+    });
+  });
 }
 
 function getNarrationBeatForBox(maskBox, step2Slide = getStep2SlideForManifestSlide()) {
@@ -1782,6 +1876,7 @@ async function loadStep5Data() {
         s.status = needsAdjustment ? "pending" : "completed";
       }
     });
+    normalizeManifestNarrationFragments();
     renderStep5Workspace();
   }
 }
@@ -2033,6 +2128,7 @@ function toggleNarrationFragmentForSelectedBox(fragmentId) {
   maskBox.spoken_text = maskBox.narration_fragments.map(item => item.text).join('');
   renderStep5BoxesForm();
   renderStep5NarrationPanel();
+  scheduleStep5Autosave();
 }
 
 function updateStep5AutoMaskButton() {
@@ -2131,6 +2227,7 @@ function createCurrentSlideBlock() {
   redrawCanvas();
   renderStep5BoxesForm();
   renderStep5NarrationPanel();
+  scheduleStep5Autosave();
   showToast(`已添加第 ${nextIdx + 1} 个语块。请在下方演讲稿点选片段，再用画笔涂抹区域。`);
 }
 
@@ -2164,9 +2261,8 @@ function clearAllMaskAnnotations() {
       state.canvasState.selectedBoxIndex = -1;
       stopMaskPaint();
       renderStep5Workspace();
-      showToast('正在保存清空后的整页展示兜底状态...');
-      API.put(`/api/projects/${state.currentProject.id}/steps/5/result`, manifestData)
-        .then(() => showToast('已清除所有 Slide 的标注，未重建语块的页面将整页展示。'));
+      showToast('已清除所有 Slide 的标注，正在实时保存...');
+      saveStep5Draft().then(() => showToast('已清除所有 Slide 的标注，未重建语块的页面将整页展示。'));
     }
   );
 }
@@ -2289,6 +2385,7 @@ function confirmNarrationPicker() {
   redrawCanvas();
   renderStep5BoxesForm();
   renderStep5NarrationPanel();
+  scheduleStep5Autosave();
   showToast(`第 ${boxIdx + 1} 个语块已绑定 ${selectedFragments.length} 个旁白片段。`);
 }
 
@@ -2305,6 +2402,7 @@ window.deleteMaskBox = function(idx) {
   redrawCanvas();
   renderStep5BoxesForm();
   renderStep5NarrationPanel();
+  scheduleStep5Autosave();
 };
 
 window.updateMaskBoxField = function(idx, field, val) {
@@ -2493,6 +2591,7 @@ function handleCanvasMouseUp() {
     redrawCanvas();
     renderStep5BoxesForm();
     renderStep5NarrationPanel();
+    scheduleStep5Autosave();
     return;
   }
 
@@ -2574,6 +2673,40 @@ function saveStep5CurrentState() {
   syncMaskBoxesToSlide(slide, state.canvasState.boxes);
 }
 
+function updateStep5DraftStatus(text) {
+  const el = document.getElementById('step5-draft-status');
+  if (el) el.innerText = text || '';
+}
+
+function scheduleStep5Autosave() {
+  if (!manifestData?.slides?.length || state.canvasState.autoMaskLoading || state.canvasState.semanticLoading) return;
+  updateStep5DraftStatus('自动保存中...');
+  clearTimeout(state.step5AutoSaveTimer);
+  state.step5AutoSaveTimer = setTimeout(() => {
+    saveStep5Draft();
+  }, 700);
+}
+
+async function saveStep5Draft() {
+  if (!manifestData?.slides?.length) return { success: false };
+  if (state.step5AutoSaveInFlight) {
+    scheduleStep5Autosave();
+    return { success: false };
+  }
+  saveStep5CurrentState();
+  state.step5AutoSaveInFlight = true;
+  try {
+    const res = await API.put(`/api/projects/${state.currentProject.id}/steps/5/draft`, manifestData);
+    if (res.success) {
+      updateStep5DraftStatus('已自动保存');
+      setTimeout(() => updateStep5DraftStatus(''), 1200);
+    }
+    return res;
+  } finally {
+    state.step5AutoSaveInFlight = false;
+  }
+}
+
 async function runStep5AutoMask() {
   if (state.canvasState.autoMaskLoading || state.canvasState.semanticLoading) return;
   saveStep5CurrentState();
@@ -2604,14 +2737,16 @@ async function runStep5SemanticBlocks() {
   if (state.canvasState.semanticLoading || state.canvasState.autoMaskLoading) return;
   if (!manifestData?.slides?.length) return;
   saveStep5CurrentState();
+  const currentSlide = getCurrentManifestSlide();
+  if (!currentSlide?.slide_id) return;
   state.canvasState.semanticLoading = true;
   updateStep5SemanticButton();
   renderStep5Workspace();
-  showToast('🤖 正在让 AI 为所有 Slide 预识别语义块、旁白和画面内容，不会自动绘制 Mask...');
+  showToast(`🤖 正在为 ${currentSlide.slide_id} 预识别语义块、旁白和画面内容，不会自动绘制 Mask...`);
 
   try {
     await API.put(`/api/projects/${state.currentProject.id}/steps/5/result`, manifestData);
-    const res = await API.post(`/api/projects/${state.currentProject.id}/steps/5/semantic-blocks`, {});
+    const res = await API.post(`/api/projects/${state.currentProject.id}/steps/5/semantic-blocks`, { slide_id: currentSlide.slide_id });
     if (res.success) {
       const source = res.vision_used ? 'AI 已结合画面完成语义分块' : '已用分镜合约生成语义分块草稿';
       showToast(`✅ ${res.message || source}`);
@@ -2625,6 +2760,11 @@ async function runStep5SemanticBlocks() {
 }
 
 async function saveStep5Masks() {
+  if (state.step5AutoSaveTimer) {
+    clearTimeout(state.step5AutoSaveTimer);
+    state.step5AutoSaveTimer = null;
+  }
+  await saveStep5Draft();
   saveStep5CurrentState();
   
   // 标记当前 Slide 状态为已完成
@@ -2670,6 +2810,35 @@ async function initStep6Narration() {
     normalizeStep6Data();
     updateStep6AutosaveStatus('已同步模板');
     renderStep6Workspace();
+  }
+}
+
+async function annotateStep6Narration() {
+  if (!state.currentProject) return;
+  if (!narrationData) {
+    await initStep6Narration();
+  }
+  if (!narrationData) return;
+  saveStep6CurrentState();
+  normalizeStep6Data();
+  const btn = document.getElementById('step6-btn-ai-annotate');
+  try {
+    if (btn) btn.disabled = true;
+    updateStep6AutosaveStatus('AI 标注中...');
+    showToast('AI 正在标注停顿和语气...');
+    const res = await API.post(`/api/projects/${state.currentProject.id}/steps/6/annotate`, narrationData);
+    if (res.success && res.beats) {
+      narrationData = res.beats;
+      normalizeStep6Data();
+      renderStep6Workspace();
+      updateStep6AutosaveStatus('AI 标注已保存');
+      showToast(`AI 标注完成：${res.annotated_count || 0} 个句段`);
+      refreshCurrentProjectStatus(6).catch(() => {});
+    }
+  } catch (e) {
+    updateStep6AutosaveStatus('AI 标注失败');
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 

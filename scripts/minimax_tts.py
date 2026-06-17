@@ -2,7 +2,7 @@
 """
 MiniMax TTS helper for the article-to-video workflow.
 
-The script uses the synchronous T2A HTTP endpoint and writes:
+The script supports synchronous T2A HTTP and asynchronous T2A endpoints, and writes:
 - audio file
 - response metadata
 - SRT subtitles
@@ -20,17 +20,39 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
 
 
-DEFAULT_ENDPOINT = "https://api.minimaxi.com/v1/t2a_v2"
+DEFAULT_ENDPOINT = "https://api.minimaxi.com/v1/t2a_async_v2"
 DEFAULT_MODEL = "speech-2.8-hd"
 DEFAULT_VOICE_ID = "Chinese (Mandarin)_Soft_Girl"
 DEFAULT_MAX_SUBTITLE_CHARS = 28
-ALLOWED_EXPRESSION_TAGS = {"(breath)", "(emm)", "(chuckle)", "(laughs)", "(sighs)"}
+ALLOWED_EXPRESSION_TAGS = {
+    "(breath)",
+    "(burps)",
+    "(chuckle)",
+    "(clear-throat)",
+    "(coughs)",
+    "(emm)",
+    "(exhale)",
+    "(gasps)",
+    "(groans)",
+    "(hissing)",
+    "(humming)",
+    "(inhale)",
+    "(laughs)",
+    "(lip-smacking)",
+    "(pant)",
+    "(sighs)",
+    "(sneezes)",
+    "(sniffs)",
+    "(snorts)",
+}
 PAUSE_RE = re.compile(r"<#\d+(?:\.\d{1,2})?#>")
 EXPRESSION_RE = re.compile(r"\([A-Za-z-]+\)")
 SENTENCE_END_RE = re.compile(r"(?<=[\u3002\uff01\uff1f!?；;])\s*")
@@ -123,6 +145,155 @@ def call_minimax_tts(payload: dict[str, Any], endpoint: str, api_key: str, timeo
         raise RuntimeError(f"MiniMax HTTP {exc.code}: {body}") from exc
     except urllib.error.URLError as exc:
         raise RuntimeError(f"MiniMax request failed: {exc}") from exc
+
+
+def is_async_endpoint(endpoint: str) -> bool:
+    return "t2a_async_v2" in urllib.parse.urlparse(endpoint).path
+
+
+def check_base_resp(response_json: dict[str, Any], context: str) -> None:
+    base_resp = response_json.get("base_resp") or response_json.get("baseResponse") or {}
+    status_code = base_resp.get("status_code", base_resp.get("statusCode", 0))
+    if status_code not in (0, "0", None):
+        raise RuntimeError(f"MiniMax {context} error: {json.dumps(base_resp, ensure_ascii=False)}")
+
+
+def append_query(url: str, params: dict[str, Any]) -> str:
+    parsed = urllib.parse.urlparse(url)
+    query = dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
+    for key, value in params.items():
+        if value is not None and value != "":
+            query[key] = str(value)
+    return urllib.parse.urlunparse(parsed._replace(query=urllib.parse.urlencode(query)))
+
+
+def async_query_endpoint(endpoint: str, task_id: str) -> str:
+    parsed = urllib.parse.urlparse(endpoint)
+    path = parsed.path.replace("/v1/t2a_async_v2", "/v1/query/t2a_async_query_v2")
+    if path == parsed.path:
+        path = "/v1/query/t2a_async_query_v2"
+    return append_query(urllib.parse.urlunparse(parsed._replace(path=path)), {"task_id": task_id})
+
+
+def file_retrieve_endpoint(endpoint: str, file_id: str) -> str:
+    parsed = urllib.parse.urlparse(endpoint)
+    base = urllib.parse.urlunparse(parsed._replace(path="/v1/files/retrieve_content", query=""))
+    return append_query(base, {"file_id": file_id})
+
+
+def get_nested(data: dict[str, Any], *keys: str) -> Any:
+    current: Any = data
+    for key in keys:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
+
+
+def response_task_id(response_json: dict[str, Any]) -> str:
+    return str(
+        response_json.get("task_id")
+        or get_nested(response_json, "data", "task_id")
+        or get_nested(response_json, "data", "taskId")
+        or ""
+    ).strip()
+
+
+def response_file_id(response_json: dict[str, Any]) -> str:
+    return str(
+        response_json.get("file_id")
+        or get_nested(response_json, "data", "file_id")
+        or get_nested(response_json, "data", "fileId")
+        or get_nested(response_json, "file", "file_id")
+        or ""
+    ).strip()
+
+
+def response_status(response_json: dict[str, Any]) -> str:
+    return str(
+        response_json.get("status")
+        or get_nested(response_json, "data", "status")
+        or get_nested(response_json, "task", "status")
+        or ""
+    ).strip()
+
+
+def download_url(url: str, api_key: str | None = None, timeout: int = 120) -> bytes:
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    request = urllib.request.Request(url, headers=headers, method="GET")
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return response.read()
+
+
+def audio_bytes_from_string(value: str, api_key: str, timeout: int) -> bytes:
+    text = value.strip()
+    if text.startswith(("http://", "https://")):
+        return download_url(text, api_key=None, timeout=timeout)
+    try:
+        return binascii.unhexlify(text)
+    except (binascii.Error, ValueError):
+        import base64
+
+        return base64.b64decode(text)
+
+
+def download_minimax_file(endpoint: str, file_id: str, api_key: str, out_audio: Path, timeout: int) -> None:
+    url = file_retrieve_endpoint(endpoint, file_id)
+    body = download_url(url, api_key=api_key, timeout=timeout)
+    content = body.lstrip()
+    if content.startswith(b"{"):
+        data = json.loads(body.decode("utf-8"))
+        for key in ("download_url", "url", "file_url", "audio", "content"):
+            value = data.get(key) or get_nested(data, "data", key)
+            if isinstance(value, str) and value.strip():
+                body = audio_bytes_from_string(value, api_key, timeout)
+                break
+        else:
+            raise RuntimeError(f"MiniMax file response did not include audio content: {json.dumps(data, ensure_ascii=False)[:800]}")
+    out_audio.parent.mkdir(parents=True, exist_ok=True)
+    out_audio.write_bytes(body)
+
+
+def call_minimax_async_tts(payload: dict[str, Any], endpoint: str, api_key: str, timeout: int, out_audio: Path) -> dict[str, Any]:
+    async_payload = dict(payload)
+    async_payload.pop("stream", None)
+    response_json = call_minimax_tts(async_payload, endpoint, api_key, timeout)
+    check_base_resp(response_json, "async submit")
+    task_id = response_task_id(response_json)
+    file_id = response_file_id(response_json)
+    deadline = time.monotonic() + max(30, timeout)
+    poll_response = response_json
+
+    if task_id:
+        while time.monotonic() < deadline:
+            query_url = async_query_endpoint(endpoint, task_id)
+            request = urllib.request.Request(
+                query_url,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                method="GET",
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=min(30, timeout)) as response:
+                    poll_response = json.loads(response.read().decode("utf-8"))
+            except urllib.error.HTTPError as exc:
+                body = exc.read().decode("utf-8", errors="replace")
+                raise RuntimeError(f"MiniMax async query HTTP {exc.code}: {body}") from exc
+            check_base_resp(poll_response, "async query")
+
+            file_id = response_file_id(poll_response) or file_id
+            status = response_status(poll_response).lower()
+            if status in {"success", "completed", "done"} or file_id:
+                break
+            if status in {"failed", "fail", "error", "expired"}:
+                raise RuntimeError(f"MiniMax async task failed: {json.dumps(poll_response, ensure_ascii=False)[:800]}")
+            time.sleep(2)
+
+    if not file_id:
+        raise RuntimeError(f"MiniMax async response did not include file_id: {json.dumps(poll_response, ensure_ascii=False)[:800]}")
+    download_minimax_file(endpoint, file_id, api_key, out_audio, timeout)
+    poll_response.setdefault("async_submit", response_json)
+    poll_response.setdefault("file_id", file_id)
+    return poll_response
 
 
 def write_audio(response_json: dict[str, Any], out_audio: Path) -> None:
@@ -310,7 +481,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--channel", type=int, default=1)
     parser.add_argument("--subtitle-enable", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--subtitle-type", default="sentence", choices=["sentence", "word"])
-    parser.add_argument("--timeout", type=int, default=120)
+    parser.add_argument("--timeout", type=int, default=300)
     return parser.parse_args()
 
 
@@ -325,8 +496,9 @@ def main() -> int:
     if not tts_text:
         print("Input text is empty.", file=sys.stderr)
         return 2
-    if len(tts_text) >= 10000:
-        print("Input text must be less than 10,000 characters for MiniMax HTTP T2A.", file=sys.stderr)
+    max_chars = 50000 if is_async_endpoint(args.endpoint) else 10000
+    if len(tts_text) >= max_chars:
+        print(f"Input text must be less than {max_chars:,} characters for the configured MiniMax TTS endpoint.", file=sys.stderr)
         return 2
 
     if args.out_tts_text:
@@ -334,14 +506,13 @@ def main() -> int:
         Path(args.out_tts_text).write_text(tts_text + "\n", encoding="utf-8")
 
     payload = build_payload(args, tts_text)
-    response_json = call_minimax_tts(payload, args.endpoint, args.api_key, args.timeout)
-
-    base_resp = response_json.get("base_resp") or {}
-    if base_resp.get("status_code", 0) not in (0, "0", None):
-        raise RuntimeError(f"MiniMax error: {json.dumps(base_resp, ensure_ascii=False)}")
-
     out_audio = Path(args.out_audio)
-    write_audio(response_json, out_audio)
+    if is_async_endpoint(args.endpoint):
+        response_json = call_minimax_async_tts(payload, args.endpoint, args.api_key, args.timeout, out_audio)
+    else:
+        response_json = call_minimax_tts(payload, args.endpoint, args.api_key, args.timeout)
+        check_base_resp(response_json, "sync")
+        write_audio(response_json, out_audio)
 
     duration_sec = duration_from_response(response_json, subtitle_text)
     segments = build_segments(subtitle_text, duration_sec, args.slide_id, "estimated", args.max_subtitle_chars)

@@ -213,7 +213,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Bind reveal animation timing to audio timeline segments.")
     parser.add_argument("--run-dir", required=True, type=Path)
     parser.add_argument("--slide-id")
-    parser.add_argument("--lead-sec", type=float, default=0.05, help="Extra silent gap after reveal before the audio segment.")
+    parser.add_argument("--lead-sec", type=float, default=0.0, help="Extra silent gap after reveal before the audio segment.")
     parser.add_argument("--preserve-existing-at", action="store_true")
     return parser.parse_args()
 

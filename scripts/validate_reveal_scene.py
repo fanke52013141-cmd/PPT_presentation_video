@@ -62,7 +62,7 @@ def validate_scene(slide_dir: Path, repo_root: Path, width: int, height: int, re
     if not isinstance(layers, list) or not layers:
         raise RevealValidationError(f"scene.json must contain layers[]: {slide_dir}")
     layer_ids: set[str] = set()
-    has_full_slide = False
+    has_reveal_layer = False
     for layer in layers:
         if not isinstance(layer, dict):
             raise RevealValidationError(f"Invalid layer object in {slide_dir}")
@@ -87,10 +87,10 @@ def validate_scene(slide_dir: Path, repo_root: Path, width: int, height: int, re
         expected = (int(round(float(box["w"]))), int(round(float(box["h"]))))
         if actual != expected:
             raise RevealValidationError(f"PNG dimension mismatch for {layer_id}: {actual} != {expected}")
-        if layer.get("role") == "full_slide":
-            has_full_slide = True
-    if not has_full_slide:
-        raise RevealValidationError(f"Reveal scene must include a full_slide layer: {slide_dir}")
+        if layer.get("role") == "reveal_crop":
+            has_reveal_layer = True
+    if not has_reveal_layer:
+        raise RevealValidationError(f"Reveal scene must include a reveal_crop layer: {slide_dir}")
     timeline = read_json(slide_dir / "animation_timeline.json")
     events = timeline.get("events")
     if not isinstance(events, list):

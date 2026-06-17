@@ -6,9 +6,11 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections import deque
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
 DEFAULT_CANVAS = {"width": 1920, "height": 1080, "background": "#FFFDF7", "subtitle_safe_y": 930}
@@ -144,7 +146,17 @@ def erase_later_groups_from_crop(
             erase_box_from_crop(rgba, crop_box, later_box)
 
 
-def manual_mask_alpha(manual_mask: Any, box: dict[str, int]) -> Image.Image | None:
+def is_erase_stroke(stroke: dict[str, Any]) -> bool:
+    mode = str(stroke.get("mode", "")).lower()
+    return bool(stroke.get("eraser")) or mode == "erase"
+
+
+def manual_mask_alpha(
+    manual_mask: Any,
+    box: dict[str, int],
+    paint_expand: int = 24,
+    erase_expand: int = 8,
+) -> Image.Image | None:
     if not isinstance(manual_mask, dict):
         return None
     strokes = manual_mask.get("strokes")
@@ -158,9 +170,9 @@ def manual_mask_alpha(manual_mask: Any, box: dict[str, int]) -> Image.Image | No
         points = stroke.get("points")
         if not isinstance(points, list) or not points:
             continue
-        size = max(1, int(round(float(stroke.get("size", 42)))))
-        mode = str(stroke.get("mode", "")).lower()
-        is_erase = bool(stroke.get("eraser")) or mode == "erase"
+        is_erase = is_erase_stroke(stroke)
+        expand = erase_expand if is_erase else paint_expand
+        size = max(1, int(round(float(stroke.get("size", 42)) + expand * 2)))
         fill = 0 if is_erase else 255
         local_points: list[tuple[int, int]] = []
         for point in points:
@@ -183,6 +195,38 @@ def manual_mask_alpha(manual_mask: Any, box: dict[str, int]) -> Image.Image | No
     return alpha
 
 
+def manual_erase_alpha(manual_mask: Any, width: int, height: int, expand: int = 8) -> Image.Image | None:
+    if not isinstance(manual_mask, dict):
+        return None
+    strokes = manual_mask.get("strokes")
+    if not isinstance(strokes, list) or not strokes:
+        return None
+    alpha = Image.new("L", (width, height), 0)
+    draw = ImageDraw.Draw(alpha)
+    found = False
+    for stroke in strokes:
+        if not isinstance(stroke, dict) or not is_erase_stroke(stroke):
+            continue
+        points = stroke.get("points")
+        if not isinstance(points, list) or not points:
+            continue
+        found = True
+        size = max(1, int(round(float(stroke.get("size", 42)) + expand * 2)))
+        radius = max(1, size // 2)
+        coords = [
+            (int(round(float(point.get("x", 0)))), int(round(float(point.get("y", 0)))))
+            for point in points
+            if isinstance(point, dict)
+        ]
+        if not coords:
+            continue
+        if len(coords) > 1:
+            draw.line(coords, fill=255, width=size, joint="curve")
+        for x, y in coords:
+            draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=255)
+    return alpha if found else None
+
+
 def manual_mask_box(manual_mask: Any, width: int, height: int, padding: int = 32) -> dict[str, int] | None:
     if not isinstance(manual_mask, dict):
         return None
@@ -193,6 +237,8 @@ def manual_mask_box(manual_mask: Any, width: int, height: int, padding: int = 32
     ys: list[float] = []
     for stroke in strokes:
         if not isinstance(stroke, dict):
+            continue
+        if is_erase_stroke(stroke):
             continue
         points = stroke.get("points")
         if not isinstance(points, list) or not points:
@@ -213,6 +259,101 @@ def manual_mask_box(manual_mask: Any, width: int, height: int, padding: int = 32
     y2 = min(height, int(round(max(ys) + padding)))
     if x2 <= x1 or y2 <= y1:
         return None
+    return {"x": x1, "y": y1, "w": x2 - x1, "h": y2 - y1}
+
+
+def sample_background(image: Image.Image, fallback: str, sample_size: int = 24) -> tuple[int, int, int]:
+    rgb = np.asarray(image.convert("RGB"), dtype=np.uint8)
+    h, w, _ = rgb.shape
+    samples = np.concatenate([
+        rgb[:sample_size, :sample_size].reshape(-1, 3),
+        rgb[:sample_size, max(0, w - sample_size):].reshape(-1, 3),
+        rgb[max(0, h - sample_size):, :sample_size].reshape(-1, 3),
+        rgb[max(0, h - sample_size):, max(0, w - sample_size):].reshape(-1, 3),
+    ])
+    if samples.size == 0:
+        return hex_to_rgb(fallback)
+    return tuple(int(value) for value in np.median(samples, axis=0))
+
+
+def foreground_alpha(image: Image.Image, background: str, low: int = 8, high: int = 32) -> Image.Image:
+    rgb = np.asarray(image.convert("RGB"), dtype=np.int16)
+    bg = np.asarray(sample_background(image, background), dtype=np.int16)
+    distance = np.max(np.abs(rgb - bg), axis=2)
+    scaled = np.clip((distance - low) * (255.0 / max(1, high - low)), 0, 255).astype(np.uint8)
+    return Image.fromarray(scaled, mode="L")
+
+
+def seed_mask_for_group(group: dict[str, Any], width: int, height: int) -> Image.Image:
+    full_box = {"x": 0, "y": 0, "w": width, "h": height}
+    seed = manual_mask_alpha(group.get("manual_mask"), full_box, paint_expand=0, erase_expand=0)
+    if seed is not None and seed.getbbox():
+        return seed
+    raw_box = group.get("box")
+    if not isinstance(raw_box, dict):
+        return Image.new("L", (width, height), 0)
+    box = padded_box(raw_box, width, height, int(group.get("padding_px", DEFAULTS["padding_px"])))
+    seed = Image.new("L", (width, height), 0)
+    ImageDraw.Draw(seed).rectangle(
+        (box["x"], box["y"], box["x"] + box["w"] - 1, box["y"] + box["h"] - 1),
+        fill=255,
+    )
+    return seed
+
+
+def nearest_seed_labels(seed_masks: list[Image.Image], width: int, height: int, scale: int = 4) -> np.ndarray:
+    small_width = max(1, (width + scale - 1) // scale)
+    small_height = max(1, (height + scale - 1) // scale)
+    labels = np.full((small_height, small_width), -1, dtype=np.int16)
+    queue: deque[tuple[int, int]] = deque()
+    for index, seed in enumerate(seed_masks):
+        small = np.asarray(seed.resize((small_width, small_height), Image.Resampling.NEAREST), dtype=np.uint8)
+        ys, xs = np.where((small > 0) & (labels < 0))
+        labels[ys, xs] = index
+        queue.extend(zip(ys.tolist(), xs.tolist()))
+    if not queue:
+        return np.zeros((height, width), dtype=np.int16)
+    while queue:
+        y, x = queue.popleft()
+        label = labels[y, x]
+        for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
+            if 0 <= ny < small_height and 0 <= nx < small_width and labels[ny, nx] < 0:
+                labels[ny, nx] = label
+                queue.append((ny, nx))
+    full = Image.fromarray(labels.astype(np.int32), mode="I").resize((width, height), Image.Resampling.NEAREST)
+    return np.asarray(full, dtype=np.int16)
+
+
+def build_group_alphas(
+    master: Image.Image,
+    groups: list[Any],
+    background: str,
+    width: int,
+    height: int,
+) -> dict[str, Image.Image]:
+    valid_groups = [group for group in groups if isinstance(group, dict)]
+    seeds = [seed_mask_for_group(group, width, height) for group in valid_groups]
+    owners = nearest_seed_labels(seeds, width, height)
+    content = np.asarray(foreground_alpha(master, background), dtype=np.uint8)
+    result: dict[str, Image.Image] = {}
+    for index, group in enumerate(valid_groups):
+        group_id = str(group.get("id", "")).strip()
+        alpha = np.where(owners == index, content, 0).astype(np.uint8)
+        erase = manual_erase_alpha(group.get("manual_mask"), width, height)
+        if erase is not None:
+            alpha[np.asarray(erase, dtype=np.uint8) > 0] = 0
+        result[group_id] = Image.fromarray(alpha, mode="L")
+    return result
+
+
+def alpha_box(alpha: Image.Image, fallback: dict[str, int], width: int, height: int, padding: int = 4) -> dict[str, int]:
+    bbox = alpha.getbbox()
+    if not bbox:
+        return fallback
+    x1 = max(0, bbox[0] - padding)
+    y1 = max(0, bbox[1] - padding)
+    x2 = min(width, bbox[2] + padding)
+    y2 = min(height, bbox[3] + padding)
     return {"x": x1, "y": y1, "w": x2 - x1, "h": y2 - y1}
 
 
@@ -376,6 +517,7 @@ def compose_slide(slide: dict[str, Any], manifest_dir: Path, repo_root: Path, de
     groups = slide.get("groups")
     if not isinstance(groups, list):
         raise RevealBuildError(f"Slide groups must be a list: {slide_id}")
+    group_alphas = build_group_alphas(master, groups, background, width, height)
     group_boxes: dict[str, dict[str, int]] = {}
     for group in groups:
         if not isinstance(group, dict):
@@ -387,7 +529,8 @@ def compose_slide(slide: dict[str, Any], manifest_dir: Path, repo_root: Path, de
         if not isinstance(raw_box, dict):
             raise RevealBuildError(f"Group missing box in {slide_id}: {group_id}")
         padding = int(group.get("padding_px", DEFAULTS["padding_px"]))
-        group_boxes[group_id] = manual_mask_box(group.get("manual_mask"), width, height) or padded_box(raw_box, width, height, padding)
+        fallback_box = manual_mask_box(group.get("manual_mask"), width, height) or padded_box(raw_box, width, height, padding)
+        group_boxes[group_id] = alpha_box(group_alphas[group_id], fallback_box, width, height)
     for index, group in enumerate(groups, start=1):
         if not isinstance(group, dict):
             raise RevealBuildError(f"Invalid group in {slide_id}")
@@ -414,7 +557,7 @@ def compose_slide(slide: dict[str, Any], manifest_dir: Path, repo_root: Path, de
         rel = f"assets/crops/{group_id}.png"
         (slide_dir / rel).parent.mkdir(parents=True, exist_ok=True)
         crop = crop_image(master, box).convert("RGBA")
-        erase_later_groups_from_crop(crop, box, index, groups, group_boxes)
+        crop.putalpha(crop_image(group_alphas[group_id], box))
         crop.save(slide_dir / rel, format="PNG")
         layer_asset = rel
         layer_id = f"{layer_role}_{group_id}"
@@ -423,11 +566,11 @@ def compose_slide(slide: dict[str, Any], manifest_dir: Path, repo_root: Path, de
         group = {**group, "reveal": {**reveal, "type": action}}
         events.append(build_event(slide_id, group, layer_id, 0.2 + (index - 1) * 0.7))
         placed.append({"id": group_id, "role": role, "box": box})
-    scene = {"slide_id": slide_id, "source_visual_draft": str(master_path), "visual_source": "master_reveal_layers", "canvas": {"width": width, "height": height, "background": background}, "layers": layers, "composition": {"method": "timed_rectangular_crop_reveal", "algorithmic_full_slide_decomposition": False}}
+    scene = {"slide_id": slide_id, "source_visual_draft": str(master_path), "visual_source": "master_reveal_layers", "canvas": {"width": width, "height": height, "background": background}, "layers": layers, "composition": {"method": "timed_manual_mask_reveal", "algorithmic_full_slide_decomposition": False}}
     duration = max(float(slide.get("default_duration_sec", 12.0)), max((float(e["at"]) + float(e["duration"]) for e in events), default=0.0) + 0.5)
     write_json(slide_dir / "scene.json", scene)
     write_json(slide_dir / "animation_timeline.json", {"slide_id": slide_id, "duration_sec": round(duration, 3), "events": events})
-    write_json(slide_dir / "reveal_report.json", {"slide_id": slide_id, "method": "timed_rectangular_crop_reveal", "warnings": warnings, "group_count": len(groups), "layer_count": len(layers), "fallback_full_slide": False})
+    write_json(slide_dir / "reveal_report.json", {"slide_id": slide_id, "method": "timed_manual_mask_reveal", "warnings": warnings, "group_count": len(groups), "layer_count": len(layers), "fallback_full_slide": False})
 
 
 def build_manifest(manifest: dict[str, Any], manifest_path: Path, repo_root: Path) -> int:

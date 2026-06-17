@@ -51,6 +51,7 @@ def init_db():
     try:
         default_settings = {
             # LLM + Vision (共享)
+            "llm_provider": "openai",
             "llm_base_url": "https://api.openai.com/v1",
             "llm_api_key": "",
             "llm_model": "gpt-4o-mini",

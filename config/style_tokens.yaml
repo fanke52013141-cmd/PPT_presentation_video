@@ -166,8 +166,8 @@ subtitle:
     color: "#111111"
     background: warm_white_82
     border_radius: 24
-    max_lines: 1
-    max_cjk_chars: 28
+    max_lines: 2
+    max_cjk_chars: 26
     horizontal_margin: 180
     bottom: 28
 

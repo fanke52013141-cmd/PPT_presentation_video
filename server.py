@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from PIL import Image
 import httpx
+import yaml
 from openai import OpenAI
 
 def get_openai_client(api_key: str, base_url: str = None) -> OpenAI:
@@ -55,6 +56,13 @@ app.add_middleware(
 
 RUNS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "runs"))
 os.makedirs(RUNS_DIR, exist_ok=True)
+REPO_ROOT = os.path.abspath(os.path.dirname(__file__))
+STYLE_TOKENS_PATH = os.path.join(REPO_ROOT, "config", "style_tokens.yaml")
+STYLE_REFERENCE_DIR = os.path.join(REPO_ROOT, "references", "style_reference")
+STYLE_REFERENCE_FILES = {
+    "template": "PPT模板.png",
+    "example": "PPT示例.png",
+}
 
 # Pydantic 响应模型
 class ProjectCreate(BaseModel):
@@ -505,12 +513,31 @@ TTS_MARKUP_RE = re.compile(r"<#\d+(?:\.\d{1,2})?#>|\([A-Za-z-]+\)")
 MINIMAX_PAUSE_RE = re.compile(r"<#(\d+(?:\.\d{1,2})?)#>")
 MINIMAX_EXPRESSION_RE = re.compile(r"\([A-Za-z-]+\)")
 MINIMAX_ALLOWED_EXPRESSION_TAGS = {
+    "(applause)",
     "(breath)",
+    "(burps)",
     "(chuckle)",
+    "(clear-throat)",
+    "(coughs)",
+    "(crying)",
     "(emm)",
+    "(exhale)",
+    "(gasps)",
+    "(groans)",
+    "(hissing)",
+    "(humming)",
+    "(inhale)",
     "(laughs)",
+    "(lip-smacking)",
+    "(pant)",
+    "(sneezes)",
+    "(sniffs)",
+    "(snorts)",
     "(sighs)",
+    "(whistles)",
 }
+SUBTITLE_MAX_CHARS = 26
+SUBTITLE_SPLIT_MARKS = "，。！？；：、,.!?;:"
 
 
 def clean_tts_text(text: str) -> str:
@@ -531,7 +558,11 @@ def normalize_minimax_tts_markup(text: str, fallback: str = "") -> str:
         return f"<#{formatted}#>"
 
     value = MINIMAX_PAUSE_RE.sub(normalize_pause, value)
-    value = re.sub(r"<#[^>]*#>", " ", value)
+    value = re.sub(
+        r"<#[^>]*#>",
+        lambda match: match.group(0) if MINIMAX_PAUSE_RE.fullmatch(match.group(0)) else " ",
+        value,
+    )
 
     def keep_expression(match: re.Match[str]) -> str:
         tag = match.group(0)
@@ -546,6 +577,51 @@ def normalize_minimax_tts_markup(text: str, fallback: str = "") -> str:
     value = re.sub(r"^(?:\s*(?:<#\d+(?:\.\d{1,2})?#>|\([A-Za-z-]+\))\s*)+", "", value).strip()
     value = re.sub(r"(?:\s*(?:<#\d+(?:\.\d{1,2})?#>|\([A-Za-z-]+\))\s*)+$", "", value).strip()
     return re.sub(r"\s+", " ", value).strip()
+
+
+def ensure_minimax_delivery_markup(text: str) -> str:
+    value = normalize_minimax_tts_markup(text)
+    if not value or MINIMAX_PAUSE_RE.search(value) or len(clean_tts_text(value)) < 12:
+        return value
+
+    punctuation_matches = [
+        match
+        for match in re.finditer(r"[，。！？；：、,.!?;:]", value)
+        if match.end() < len(value)
+    ]
+    if punctuation_matches:
+        midpoint = len(value) / 2
+        match = min(punctuation_matches, key=lambda item: abs(item.end() - midpoint))
+        insert_at = match.end()
+    else:
+        insert_at = max(1, min(len(value) - 1, len(value) // 2))
+
+    pause = "<#0.35#>"
+    annotated = f"{value[:insert_at].rstrip()}{pause}{value[insert_at:].lstrip()}"
+    return normalize_minimax_tts_markup(annotated, value)
+
+
+def split_subtitle_text(text: str, max_chars: int = SUBTITLE_MAX_CHARS) -> List[str]:
+    value = re.sub(r"\s+", " ", str(text or "")).strip()
+    if not value:
+        return []
+    if len(value) <= max_chars:
+        return [value]
+
+    chunks: List[str] = []
+    remaining = value
+    while len(remaining) > max_chars:
+        window = remaining[: max_chars + 1]
+        cut_at = max((window.rfind(mark) for mark in SUBTITLE_SPLIT_MARKS), default=-1)
+        if cut_at < max(8, max_chars // 2) or cut_at >= max_chars:
+            cut_at = max_chars - 1
+        chunk = remaining[: cut_at + 1].strip()
+        if chunk:
+            chunks.append(chunk)
+        remaining = remaining[cut_at + 1 :].strip()
+    if remaining:
+        chunks.append(remaining)
+    return chunks
 
 
 def prepare_narration_payload(project: Project, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -648,20 +724,36 @@ def rewrite_audio_timeline_by_beats(timeline_path: str, slide_id: str, beats: Li
     total_weight = sum(weights)
     cursor = 0.0
     segments = []
-    for idx, (item, weight) in enumerate(zip(clean_beats, weights), start=1):
-        end = duration if idx == len(clean_beats) else cursor + duration * weight / total_weight
-        segments.append({
-            "id": item["id"],
-            "start": round(cursor, 3),
-            "end": round(end, 3),
-            "text": item["text"],
-            "timing_source": "beat_estimated",
-            "max_cjk_chars": 28,
-            "max_lines": 1,
-        })
-        cursor = end
+    for beat_index, (item, weight) in enumerate(zip(clean_beats, weights), start=1):
+        beat_end = duration if beat_index == len(clean_beats) else cursor + duration * weight / total_weight
+        chunks = split_subtitle_text(item["text"])
+        chunk_weights = [max(1, len(chunk)) for chunk in chunks]
+        chunk_total = sum(chunk_weights)
+        chunk_cursor = cursor
+        for chunk_index, (chunk, chunk_weight) in enumerate(zip(chunks, chunk_weights), start=1):
+            chunk_end = (
+                beat_end
+                if chunk_index == len(chunks)
+                else chunk_cursor + (beat_end - cursor) * chunk_weight / chunk_total
+            )
+            segments.append({
+                "id": item["id"] if chunk_index == 1 else f"{item['id']}__part_{chunk_index:02d}",
+                "beat_id": item["id"],
+                "start": round(chunk_cursor, 3),
+                "end": round(chunk_end, 3),
+                "text": chunk,
+                "timing_source": "beat_estimated_split",
+                "max_cjk_chars": SUBTITLE_MAX_CHARS,
+                "max_lines": 1,
+            })
+            chunk_cursor = chunk_end
+        cursor = beat_end
     timeline["segments"] = segments
-    timeline["timing_source"] = "beat_estimated"
+    timeline["timing_source"] = "beat_estimated_split"
+    timeline["subtitle_display"] = {
+        "max_lines": 1,
+        "max_cjk_chars": SUBTITLE_MAX_CHARS,
+    }
     timeline["audio_content_duration_sec"] = round(duration, 3)
     timeline["duration_sec"] = round(duration + float(timeline.get("audio_start_sec", 0.0) or 0.0), 3)
     with open(timeline_path, "w", encoding="utf-8") as f:
@@ -817,13 +909,14 @@ def test_tts_connection(payload: TestTtsPayload):
             "voice_setting": {
                 "voice_id": payload.voice_id,
                 "speed": 1.0,
-                "volume": 1.0,
+                "vol": 1.0,
                 "pitch": 0
             },
             "audio_setting": {
-                "sample_rate": 16000,
+                "audio_sample_rate": 32000,
                 "bitrate": 128000,
-                "format": "mp3"
+                "format": "mp3",
+                "channel": 1
             }
         }
         res = httpx.post(url, headers=headers, json=body, timeout=15)
@@ -983,6 +1076,47 @@ def update_step1_result(project_id: str, payload: Dict[str, Any], db: Session = 
 
 # ==================== 步骤 2: 智能分镜规划 ====================
 
+def storyboard_rules_path(project: Project) -> str:
+    return os.path.join(project.run_dir, "planning", "storyboard_rules.txt")
+
+
+def default_storyboard_rules() -> str:
+    default_path = os.path.join(REPO_ROOT, "templates", "prompts", "storyboard_rules.zh.md")
+    if os.path.exists(default_path):
+        with open(default_path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    return "旁白自然口语化；每个旁白语段只绑定一个清晰的视觉分组；画面先于对应语音约 1 秒出现。"
+
+
+@app.get("/api/projects/{project_id}/steps/2/rules")
+def get_step2_rules(project_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    path = storyboard_rules_path(project)
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            rules = f.read()
+    else:
+        rules = default_storyboard_rules()
+    return {"success": True, "rules": rules}
+
+
+@app.put("/api/projects/{project_id}/steps/2/rules")
+def update_step2_rules(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    rules = str(payload.get("rules") or "").strip()
+    if not rules:
+        rules = default_storyboard_rules()
+    path = storyboard_rules_path(project)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(rules + "\n")
+    return {"success": True, "rules": rules}
+
+
 @app.post("/api/projects/{project_id}/steps/2/execute")
 def execute_step2(project_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -1025,6 +1159,12 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
     if os.path.exists(schema_path):
         with open(schema_path, "r", encoding="utf-8") as f:
             schema_hint = f.read()
+    rules_path = storyboard_rules_path(project)
+    if os.path.exists(rules_path):
+        with open(rules_path, "r", encoding="utf-8") as f:
+            storyboard_rules = f.read().strip()
+    else:
+        storyboard_rules = default_storyboard_rules()
             
     system_prompt = f"""你是一个顶级的 PPT 视频分镜策划师。
 请阅读用户输入的内容摘要和全文，设计出一份符合 PPT 动画视频制作标准的视觉合约(Visual Contract)。
@@ -1047,7 +1187,11 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
    - visible_anchor: 该分组对应的 visible_text 文本（不可写错，必须一致）
    - spoken_intent: 这一句话想达到的意图
    - spoken_text: 这一句话具体要朗读的中文旁白（需自然连贯，解释 visible_text）
-5. 请确保生成的 JSON 数据严格符合以下的 JSON Schema 格式要求：
+5. 用户自定义的分镜与演讲稿规则如下。请遵守这些内容，但不得修改输出字段、层级、ID 规则或 JSON 结构：
+--- 用户分镜规则开始 ---
+{storyboard_rules}
+--- 用户分镜规则结束 ---
+6. 请确保生成的 JSON 数据严格符合以下的 JSON Schema 格式要求：
 {schema_hint}
 
 请直接返回合法的 JSON 对象，不要包含 markdown 标记的 ```json 外壳。"""
@@ -1154,56 +1298,94 @@ def update_step2_result(project_id: str, payload: Dict[str, Any], db: Session = 
 
 # ==================== 步骤 3-4: 图片生成与管理 ====================
 
+def read_style_tokens_text() -> str:
+    with open(STYLE_TOKENS_PATH, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+@app.get("/api/image-style")
+def get_image_style():
+    references = {}
+    for kind, filename in STYLE_REFERENCE_FILES.items():
+        path = os.path.join(STYLE_REFERENCE_DIR, filename)
+        references[kind] = {
+            "exists": os.path.exists(path),
+            "url": f"/api/image-style/reference/{kind}?t={int(os.path.getmtime(path))}" if os.path.exists(path) else "",
+        }
+    return {"success": True, "style_text": read_style_tokens_text(), "references": references}
+
+
+@app.put("/api/image-style")
+def update_image_style(payload: Dict[str, Any]):
+    style_text = str(payload.get("style_text") or "").strip()
+    if not style_text:
+        raise HTTPException(status_code=400, detail="图片风格规范不能为空")
+    try:
+        parsed = yaml.safe_load(style_text)
+    except yaml.YAMLError as exc:
+        raise HTTPException(status_code=400, detail=f"YAML 格式错误: {exc}")
+    if not isinstance(parsed, dict):
+        raise HTTPException(status_code=400, detail="图片风格规范必须是 YAML 对象")
+    with open(STYLE_TOKENS_PATH, "w", encoding="utf-8") as f:
+        f.write(style_text + "\n")
+    return {"success": True}
+
+
+@app.get("/api/image-style/reference/{kind}")
+def get_image_style_reference(kind: str):
+    filename = STYLE_REFERENCE_FILES.get(kind)
+    if not filename:
+        raise HTTPException(status_code=404, detail="参考图类型不存在")
+    path = os.path.join(STYLE_REFERENCE_DIR, filename)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="参考图不存在")
+    return FileResponse(path, media_type="image/png")
+
+
+@app.post("/api/image-style/reference/{kind}")
+def update_image_style_reference(kind: str, file: UploadFile = File(...)):
+    filename = STYLE_REFERENCE_FILES.get(kind)
+    if not filename:
+        raise HTTPException(status_code=404, detail="参考图类型不存在")
+    content = file.file.read()
+    try:
+        image = Image.open(io.BytesIO(content)).convert("RGB")
+        os.makedirs(STYLE_REFERENCE_DIR, exist_ok=True)
+        image.save(os.path.join(STYLE_REFERENCE_DIR, filename), "PNG")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"参考图不是有效图片: {exc}")
+    return {"success": True, "url": f"/api/image-style/reference/{kind}?t={uuid.uuid4().hex[:8]}"}
+
+
 # 辅助生成某一页 PPT 生图的 Prompt。
 # 在这里，我们需要配合手绘风格的规则，将 visual_anchor 及 visible_text 与预定义的线稿艺术做融合。
 def generate_prompt_for_slide(slide: Dict[str, Any], topic_name: str) -> str:
     group_lines = []
     for idx, g in enumerate(slide.get("visual_groups", []), start=1):
         group_lines.append(
-            f"{idx}. group_id={g.get('id')}; role={g.get('role')}; "
-            f"exact visible Chinese label='{g.get('visible_text', '')}'; "
-            f"visual anchor='{g.get('visual_anchor', '')}'."
+            f"{idx}. 分组 ID：{g.get('id')}；角色：{g.get('role')}；"
+            f"必须显示的中文：{g.get('visible_text', '')}；"
+            f"视觉描述：{g.get('visual_anchor', '')}。"
         )
     groups_str = "\n".join(group_lines)
     main_title = slide.get("main_title", "")
     subtitle = slide.get("subtitle", "")
-    subtitle_part = f"Subtitle: '{subtitle}'. " if subtitle else ""
+    subtitle_part = f"\n副标题：{subtitle}" if subtitle else ""
+    style_text = read_style_tokens_text()
     return (
-        f"Create one 16:9 PPT-style whiteboard slide for topic '{topic_name}'. "
-        f"Title: '{main_title}'. {subtitle_part}\n"
-        "CRITICAL composition rules:\n"
-        "1. Render every visual group below as a separate visual island with clean whitespace between groups.\n"
-        "2. The exact visible Chinese label for each group must appear legibly in the image. Do not replace, paraphrase, or omit labels.\n"
-        "3. Do not merge two groups into one drawing. Do not let group drawings overlap. Keep at least 80 px of clean background between independent body groups.\n"
-        "4. Title stays at the top, subtitle directly below it, body groups in the middle, summary above the subtitle-safe area.\n"
-        "5. Reserve the bottom 150 px of the 1920x1080 canvas for subtitles: keep y=930..1080 clean, with no important text, labels, faces, or key drawings.\n"
-        "6. Use short labels and simple hand-drawn shapes; avoid decorative marks that connect separate groups.\n\n"
-        f"Visual groups to draw:\n{groups_str}\n\n"
-        "Style: warm minimalist hand-drawn vector line art, uniform #FFFDF7 background, black ink #111111, "
-        "single yellow highlight #F9D65C, clean whiteboard sketch, no shadows, no gradients, no paper texture."
+        f"请生成一张 16:9 的 PPT 手绘讲解页。\n"
+        f"项目主题：{topic_name}\n主标题：{main_title}{subtitle_part}\n\n"
+        "构图硬性要求：\n"
+        "1. 每个视觉分组必须是独立的视觉岛，分组之间保留清晰空白。\n"
+        "2. 每个分组指定的中文必须清晰、完整、原样出现，不得改写、遗漏或产生乱码。\n"
+        "3. 不要合并不同分组，不要让相邻分组的文字、线条、箭头和装饰相互粘连。\n"
+        "4. 主标题位于顶部，主体内容位于中部，总结区位于底部字幕安全区上方。\n"
+        "5. 画布按 1920x1080 设计，底部 y=930..1080 必须留空，不放重要文字、人物或图形。\n"
+        "6. 不要绘制包围整页内容的大外框。\n\n"
+        f"本页视觉分组：\n{groups_str}\n\n"
+        "以下 YAML 是必须遵守的图片风格与版式规范：\n"
+        f"{style_text}"
     )
-    # 提取所有视觉分组的描述
-    anchors = []
-    for g in slide.get("visual_groups", []):
-        if g.get("role") not in ["title", "subtitle"]:
-            anchors.append(f"{g.get('visible_text')}({g.get('visual_anchor')})")
-            
-    anchors_str = "，".join(anchors)
-    main_title = slide.get("main_title", "")
-    subtitle = slide.get("subtitle", "")
-    subtitle_part = f"Subtitle: '{subtitle}'. " if subtitle else ""
-    
-    # 结合风格 tokens 与布局规则，生成契合“温暖极简手绘线稿”的 Prompt
-    prompt = (
-        f"A warm, minimalist, hand-drawn vector line art style presentation slide for topic '{topic_name}'. "
-        f"Title: '{main_title}'. {subtitle_part}"
-        f"The slide contains the following visual elements and concepts: {anchors_str}. "
-        f"Uniform pure beige background #FFFDF7, clean empty bottom subtitle area. "
-        f"Ink black lines (#111111), fine rough hand-drawn strokes. "
-        f"Subtle single accent yellow highlight (#F9D65C) on key concepts. "
-        f"Minimalist whiteboard drawing, korean line art webtoon style, cute hand sketch, no shadows, no gradients."
-    )
-    return prompt
 
 @app.get("/api/projects/{project_id}/steps/3/prompts")
 def get_slide_prompts(project_id: str, db: Session = Depends(get_db)):
@@ -1253,26 +1435,49 @@ def generate_slide_image(project_id: str, slide_id: str = Form(...), prompt: str
         image_size = get_setting("image_size", "1024x1024")
         logger.info(f"Generating image for {slide_id} using {model}, size={image_size}, prompt: {prompt[:80]}")
 
-        # ── 第一次尝试：带完整参数（size + quality）──
-        try:
-            response = client.images.generate(
-                model=model,
-                prompt=prompt,
-                size=image_size,
-                quality="standard",
-                n=1
-            )
-        except Exception as full_params_err:
-            logger.warning(
-                f"Image gen with full params failed ({full_params_err}). "
-                "Retrying with minimal params (no size/quality) for newapi compatibility..."
-            )
-            # ── 第二次尝试：仅保留 model + prompt，兼容不支持 size/quality 的中转模型 ──
-            response = client.images.generate(
-                model=model,
-                prompt=prompt,
-                n=1
-            )
+        response = None
+        reference_paths = [
+            os.path.join(STYLE_REFERENCE_DIR, filename)
+            for filename in STYLE_REFERENCE_FILES.values()
+            if os.path.exists(os.path.join(STYLE_REFERENCE_DIR, filename))
+        ]
+        if reference_paths and str(model).startswith("gpt-image"):
+            reference_files = []
+            try:
+                reference_files = [open(path, "rb") for path in reference_paths]
+                response = client.images.edit(
+                    model=model,
+                    image=reference_files,
+                    prompt=prompt,
+                    size=image_size,
+                    n=1,
+                )
+                logger.info("Image generation used %s style reference images.", len(reference_files))
+            except Exception as reference_error:
+                logger.warning("Reference image generation is unavailable, falling back to images.generate: %s", reference_error)
+            finally:
+                for reference_file in reference_files:
+                    reference_file.close()
+
+        if response is None:
+            try:
+                response = client.images.generate(
+                    model=model,
+                    prompt=prompt,
+                    size=image_size,
+                    quality="standard",
+                    n=1
+                )
+            except Exception as full_params_err:
+                logger.warning(
+                    f"Image gen with full params failed ({full_params_err}). "
+                    "Retrying with minimal params (no size/quality) for newapi compatibility..."
+                )
+                response = client.images.generate(
+                    model=model,
+                    prompt=prompt,
+                    n=1
+                )
 
         # ── 兼容两种响应格式：URL 和 base64 (b64_json) ──
         img_bytes: bytes | None = None
@@ -1946,104 +2151,12 @@ def semantic_blocks_project(project_id: str, payload: Optional[Dict[str, Any]] =
     if requested_slide_id and not target_slides:
         raise HTTPException(status_code=404, detail=f"找不到当前页分镜：{requested_slide_id}")
 
-    llm_api_key = get_setting("llm_api_key")
-    llm_base_url = get_setting("llm_base_url")
-    vision_model = get_setting("vision_model", "gpt-4o")
-    client = get_openai_client(api_key=llm_api_key, base_url=llm_base_url) if llm_api_key else None
-    vision_used = False
     processed_count = 0
 
     for manifest_slide in target_slides:
         slide_id = str(manifest_slide.get("slide_id", "")).strip()
         contract_slide = contract_slides[slide_id]
-        semantic_blocks = []
-        img_path = os.path.join(project.run_dir, "slides", slide_id, "visual_draft.png")
-
-        if client and os.path.exists(img_path):
-            try:
-                import base64
-
-                with Image.open(img_path) as img:
-                    if img.width > 960:
-                        ratio = 960 / img.width
-                        img = img.resize((960, int(img.height * ratio)), Image.Resampling.LANCZOS)
-                    vision_width, vision_height = img.width, img.height
-                    buf = io.BytesIO()
-                    img.save(buf, format="PNG")
-                    base64_image = base64.b64encode(buf.getvalue()).decode("utf-8")
-
-                fragments = build_narration_fragments(contract_slide)
-                fragment_lines = "\n".join(
-                    f"- {fragment['id']} / 序号{fragment['order']} / group={fragment['group_id']}: {fragment['text']}"
-                    for fragment in fragments
-                )
-                group_lines = "\n".join(
-                    f"- {group.get('id')}: role={role_label(str(group.get('role', 'content_body')))}, "
-                    f"visible_text={group.get('visible_text', '')}, visual_anchor={group.get('visual_anchor', '')}, "
-                    f"function={group.get('narration_function', '')}"
-                    for group in contract_slide.get("visual_groups", []) or []
-                    if isinstance(group, dict)
-                )
-                system_prompt = (
-                    "你是 PPT 视频 Mask 标注前的语义分块助手。"
-                    "你只做预识别：把演讲旁白片段和当前画面中实际可见的元素对应起来，帮助用户后续手动画 Mask。"
-                    "不要输出坐标，不要生成矩形框，不要声称已经完成 Mask。"
-                    "每个语块必须对应一个或多个连续旁白片段，并描述画面中可见的元素是什么，"
-                    "需要说明它是主标题、副标题、正文、图示、总结区或其他可见元素。"
-                    "画面内容描述要具体到用户知道应该涂抹哪里。"
-                    "返回严格 JSON："
-                    "{\"blocks\":[{\"fragment_ids\":[\"beat_01::1\"],\"visual_group_id\":\"body_group_01\","
-                    "\"semantic_element_type\":\"正文内容\",\"visual_description\":\"画面中央...\","
-                    "\"semantic_note\":\"建议涂抹...\",\"confidence\":0.8}]}"
-                )
-                user_text = (
-                    f"当前图片尺寸：{vision_width}x{vision_height}\n"
-                    f"Slide ID：{slide_id}\n\n"
-                    f"演讲旁白片段：\n{fragment_lines}\n\n"
-                    f"分镜里的可见元素候选：\n{group_lines}\n\n"
-                    "请根据图片和分镜，生成适合人工涂抹的语义块清单。"
-                )
-                try:
-                    response = client.chat.completions.create(
-                        model=vision_model,
-                        response_format={"type": "json_object"},
-                        timeout=60,
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {
-                                "role": "user",
-                                "content": [
-                                    {"type": "text", "text": user_text},
-                                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}},
-                                ],
-                            },
-                        ],
-                    )
-                except Exception as inner_e:
-                    logger.warning(f"Semantic block Vision call with response_format failed, retrying raw JSON: {inner_e}")
-                    response = client.chat.completions.create(
-                        model=vision_model,
-                        timeout=60,
-                        messages=[
-                            {"role": "system", "content": system_prompt + " 请只输出纯 JSON，不要包含 Markdown 代码块。"},
-                            {
-                                "role": "user",
-                                "content": [
-                                    {"type": "text", "text": user_text},
-                                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}},
-                                ],
-                            },
-                        ],
-                    )
-                raw_content = response.choices[0].message.content.strip()
-                ai_data = json.loads(clean_json_markdown(raw_content))
-                semantic_blocks = semantic_blocks_from_ai(slide_id, ai_data, contract_slide, manifest_slide)
-                vision_used = True
-            except Exception as exc:
-                logger.warning(f"AI semantic split failed for {slide_id}, using deterministic fallback: {exc}")
-
-        if not semantic_blocks:
-            semantic_blocks = deterministic_semantic_blocks(slide_id, contract_slide, manifest_slide)
+        semantic_blocks = deterministic_semantic_blocks(slide_id, contract_slide, manifest_slide)
 
         painted_groups = [
             group for group in manifest_slide.get("groups", []) or []
@@ -2061,10 +2174,8 @@ def semantic_blocks_project(project_id: str, payload: Optional[Dict[str, Any]] =
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)
 
-    msg = "AI 语义分块完成：已生成旁白与画面内容清单，请按清单手动涂抹 Mask。"
-    if not vision_used:
-        msg = "已根据分镜合约生成语义分块草稿；配置视觉模型后可结合当前画面做更细识别。"
-    return {"success": True, "vision_used": vision_used, "processed": processed_count, "manifest": manifest, "message": msg}
+    msg = "已根据分镜合约生成语义分块，请按清单手动涂抹 Mask。"
+    return {"success": True, "vision_used": False, "processed": processed_count, "manifest": manifest, "message": msg}
 
 @app.get("/api/projects/{project_id}/steps/5/result")
 def get_step5_result(project_id: str, db: Session = Depends(get_db)):
@@ -2255,10 +2366,11 @@ def annotate_step6_narration(project_id: str, payload: Optional[Dict[str, Any]] 
         "Add only light delivery markup to the existing narration. "
         "Return strict JSON only, with shape {\"slides\":[{\"slide_id\":\"...\",\"beats\":[{\"id\":\"...\",\"tts_text\":\"...\"}]}]}. "
         "Preserve the original meaning and words. Do not rewrite technical terms. "
-        "Use MiniMax pause tags like <#0.2#>, <#0.4#>, <#0.6#> between speakable text. "
+        "Every beat longer than 12 Chinese characters must contain at least one MiniMax pause tag. "
+        "Normally add one to three pause tags such as <#0.2#>, <#0.35#>, <#0.5#> at natural clause boundaries. "
         "Never put pause tags at the beginning or end, never use consecutive pause tags, and keep pause values between 0.01 and 99.99 seconds. "
-        "Use expression tags sparingly, at most one tag every two or three beats, and only from this set: "
-        "(breath), (sighs), (chuckle), (emm), (laughs). "
+        "Expression tags are optional and must use only MiniMax speech-2.8 tags such as "
+        "(breath), (sighs), (chuckle), (emm), (laughs), (inhale), (exhale), (gasps), (whistles), or (applause). "
         "Avoid expression tags inside numbers, English identifiers, code terms, Token, API, LLM, or backtick content."
     )
     user_prompt = json.dumps({"slides": compact_slides}, ensure_ascii=False)
@@ -2327,7 +2439,9 @@ def annotate_step6_narration(project_id: str, payload: Optional[Dict[str, Any]] 
             beat_id = str(beat.get("id") or "").strip()
             original = beat.get("spoken_text") or beat.get("source_text") or beat_tts_text(beat)
             if beat_id in by_id:
-                beat["tts_text"] = normalize_minimax_tts_markup(by_id[beat_id], original)
+                beat["tts_text"] = ensure_minimax_delivery_markup(
+                    normalize_minimax_tts_markup(by_id[beat_id], original)
+                )
                 changed += 1
 
     if changed == 0:
@@ -2619,7 +2733,18 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-        
+
+    # Draft autosave updates the manifest only. Always rebuild reveal assets here
+    # so rendering cannot use stale crops from an earlier mask revision.
+    manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
+    build_scene_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "build_reveal_scene.py"))
+    build_scene_res = subprocess.run([
+        sys.executable, build_scene_script, "--manifest", manifest_path
+    ], capture_output=True, text=True, encoding="utf-8")
+    if build_scene_res.returncode != 0:
+        logger.error(f"Reveal scene rebuild before render failed: {build_scene_res.stderr}")
+        raise HTTPException(status_code=500, detail=f"渲染前重建 Mask 素材失败: {build_scene_res.stderr}")
+
     # 首先调用 build_remotion_props.py 生成渲染配置属性
     bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))
     bind_res = subprocess.run([

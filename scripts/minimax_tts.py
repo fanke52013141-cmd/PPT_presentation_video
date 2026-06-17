@@ -27,17 +27,21 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 
 DEFAULT_ENDPOINT = "https://api.minimaxi.com/v1/t2a_async_v2"
 DEFAULT_MODEL = "speech-2.8-hd"
 DEFAULT_VOICE_ID = "Chinese (Mandarin)_Soft_Girl"
-DEFAULT_MAX_SUBTITLE_CHARS = 28
+DEFAULT_MAX_SUBTITLE_CHARS = 26
 ALLOWED_EXPRESSION_TAGS = {
+    "(applause)",
     "(breath)",
     "(burps)",
     "(chuckle)",
     "(clear-throat)",
     "(coughs)",
+    "(crying)",
     "(emm)",
     "(exhale)",
     "(gasps)",
@@ -52,6 +56,7 @@ ALLOWED_EXPRESSION_TAGS = {
     "(sneezes)",
     "(sniffs)",
     "(snorts)",
+    "(whistles)",
 }
 PAUSE_RE = re.compile(r"<#\d+(?:\.\d{1,2})?#>")
 EXPRESSION_RE = re.compile(r"\([A-Za-z-]+\)")
@@ -149,6 +154,26 @@ def call_minimax_tts(payload: dict[str, Any], endpoint: str, api_key: str, timeo
 
 def is_async_endpoint(endpoint: str) -> bool:
     return "t2a_async_v2" in urllib.parse.urlparse(endpoint).path
+
+
+def upload_minimax_text_file(text: str, endpoint: str, api_key: str, timeout: int) -> str:
+    parsed = urllib.parse.urlparse(endpoint)
+    upload_url = urllib.parse.urlunparse(parsed._replace(path="/v1/files/upload", query=""))
+    with httpx.Client(timeout=timeout, trust_env=False) as client:
+        response = client.post(
+            upload_url,
+            headers={"Authorization": f"Bearer {api_key}"},
+            data={"purpose": "t2a_async_input"},
+            files={"file": ("tts_input.txt", text.encode("utf-8"), "text/plain")},
+        )
+    if response.status_code != 200:
+        raise RuntimeError(f"MiniMax text upload HTTP {response.status_code}: {response.text[:800]}")
+    payload = response.json()
+    check_base_resp(payload, "text upload")
+    file_id = str(get_nested(payload, "file", "file_id") or "").strip()
+    if not file_id:
+        raise RuntimeError(f"MiniMax text upload did not return file_id: {json.dumps(payload, ensure_ascii=False)[:800]}")
+    return file_id
 
 
 def check_base_resp(response_json: dict[str, Any], context: str) -> None:
@@ -263,6 +288,7 @@ def call_minimax_async_tts(payload: dict[str, Any], endpoint: str, api_key: str,
     file_id = response_file_id(response_json)
     deadline = time.monotonic() + max(30, timeout)
     poll_response = response_json
+    completed = not task_id
 
     if task_id:
         while time.monotonic() < deadline:
@@ -282,12 +308,15 @@ def call_minimax_async_tts(payload: dict[str, Any], endpoint: str, api_key: str,
 
             file_id = response_file_id(poll_response) or file_id
             status = response_status(poll_response).lower()
-            if status in {"success", "completed", "done"} or file_id:
+            if status in {"success", "completed", "done"}:
+                completed = True
                 break
             if status in {"failed", "fail", "error", "expired"}:
                 raise RuntimeError(f"MiniMax async task failed: {json.dumps(poll_response, ensure_ascii=False)[:800]}")
             time.sleep(2)
 
+    if task_id and not completed:
+        raise RuntimeError(f"MiniMax async task timed out: {json.dumps(poll_response, ensure_ascii=False)[:800]}")
     if not file_id:
         raise RuntimeError(f"MiniMax async response did not include file_id: {json.dumps(poll_response, ensure_ascii=False)[:800]}")
     download_minimax_file(endpoint, file_id, api_key, out_audio, timeout)
@@ -434,22 +463,26 @@ def build_payload(args: argparse.Namespace, text: str) -> dict[str, Any]:
     if args.emotion:
         voice_setting["emotion"] = args.emotion
 
-    return {
+    payload = {
         "model": args.model,
         "text": text,
-        "stream": False,
         "language_boost": args.language_boost,
-        "output_format": "hex",
-        "subtitle_enable": args.subtitle_enable,
-        "subtitle_type": args.subtitle_type,
         "voice_setting": voice_setting,
         "audio_setting": {
-            "sample_rate": args.sample_rate,
             "bitrate": args.bitrate,
             "format": args.audio_format,
             "channel": args.channel,
         },
     }
+    if is_async_endpoint(args.endpoint):
+        payload["audio_setting"]["audio_sample_rate"] = args.sample_rate
+    else:
+        payload["stream"] = False
+        payload["output_format"] = "hex"
+        payload["subtitle_enable"] = args.subtitle_enable
+        payload["subtitle_type"] = args.subtitle_type
+        payload["audio_setting"]["sample_rate"] = args.sample_rate
+    return payload
 
 
 def parse_args() -> argparse.Namespace:
@@ -508,6 +541,9 @@ def main() -> int:
     payload = build_payload(args, tts_text)
     out_audio = Path(args.out_audio)
     if is_async_endpoint(args.endpoint):
+        text_file_id = upload_minimax_text_file(tts_text, args.endpoint, args.api_key, args.timeout)
+        payload.pop("text", None)
+        payload["text_file_id"] = int(text_file_id) if text_file_id.isdigit() else text_file_id
         response_json = call_minimax_async_tts(payload, args.endpoint, args.api_key, args.timeout, out_audio)
     else:
         response_json = call_minimax_tts(payload, args.endpoint, args.api_key, args.timeout)

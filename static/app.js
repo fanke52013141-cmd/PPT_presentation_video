@@ -25,7 +25,7 @@ let state = {
     eraserMode: false,
     isPainting: false,
     currentStroke: null,
-    brushSize: 80,
+    brushSize: 140,
     brushCursorClientX: null,
     brushCursorClientY: null,
     maskZoom: 1,
@@ -214,6 +214,7 @@ function initGlobalEvents() {
 
   // ================= 步骤 2 事件 =================
   document.getElementById('step2-btn-generate').addEventListener('click', () => generateStep2Contract());
+  document.getElementById('step2-btn-rules')?.addEventListener('click', () => openStoryboardRulesModal());
   document.getElementById('step2-btn-save').addEventListener('click', () => handleStep2BatchDeleteButton());
   document.getElementById('step2-btn-cancel-delete')?.addEventListener('click', () => cancelStep2BatchDelete());
   document.getElementById('step2-core-message')?.addEventListener('input', (e) => updateCurrentSlideField('core_message', e.target.value));
@@ -223,6 +224,7 @@ function initGlobalEvents() {
   document.getElementById('step3-file-upload').addEventListener('change', (e) => uploadStep3Image(e));
   document.getElementById('step3-batch-upload').addEventListener('change', (e) => handleStep3BatchUpload(e));
   document.getElementById('step3-btn-copy-prompts').addEventListener('click', () => copyStep2Prompts());
+  document.getElementById('step3-btn-style')?.addEventListener('click', () => openImageStyleModal());
   document.getElementById('step3-btn-confirm').addEventListener('click', () => confirmStep3Images());
 
   // ================= 步骤 4 事件 =================
@@ -230,10 +232,8 @@ function initGlobalEvents() {
 
   // ================= 步骤 5 事件 =================
   document.getElementById('step5-btn-semantic-blocks')?.addEventListener('click', () => runStep5SemanticBlocks());
-  document.getElementById('step5-btn-automask').addEventListener('click', () => runStep5AutoMask());
   document.getElementById('step5-btn-new-block')?.addEventListener('click', () => createCurrentSlideBlock());
   document.getElementById('step5-btn-clear-current')?.addEventListener('click', () => clearAllMaskAnnotations());
-  document.getElementById('step5-btn-save').addEventListener('click', () => saveStep5Masks());
   document.getElementById('step5-brush-size')?.addEventListener('input', (e) => updateBrushSize(e.target.value));
   document.getElementById('btn-narration-picker-cancel')?.addEventListener('click', () => closeNarrationPicker());
   document.getElementById('btn-narration-picker-confirm')?.addEventListener('click', () => confirmNarrationPicker());
@@ -249,6 +249,11 @@ function initGlobalEvents() {
   // ================= 步骤 8 事件 =================
   document.getElementById('step8-btn-render').addEventListener('click', () => runStep8Render());
   document.getElementById('step8-btn-finish').addEventListener('click', () => exitWorkspace());
+  document.getElementById('btn-storyboard-rules-cancel')?.addEventListener('click', () => closeStoryboardRulesModal());
+  document.getElementById('btn-storyboard-rules-save')?.addEventListener('click', () => saveStoryboardRules());
+  document.getElementById('btn-image-style-cancel')?.addEventListener('click', () => closeImageStyleModal());
+  document.getElementById('btn-image-style-save')?.addEventListener('click', () => saveImageStyle());
+  document.getElementById('setting-llm-provider')?.addEventListener('change', (event) => applyLlmProviderPreset(event.target.value));
   document.addEventListener('wheel', handleGlobalMaskWheel, { passive: false, capture: true });
 }
 
@@ -351,10 +356,13 @@ async function loadSettings() {
   state.settings = await API.get('/api/settings');
   
   // 填充设置输入框
+  document.getElementById('setting-llm-provider').value = detectLlmProvider(
+    state.settings.llm_provider,
+    state.settings.llm_base_url
+  );
   document.getElementById('setting-llm-base-url').value = state.settings.llm_base_url || '';
   document.getElementById('setting-llm-api-key').value = state.settings.llm_api_key || '';
   document.getElementById('setting-llm-model').value = state.settings.llm_model || '';
-  document.getElementById('setting-vision-model').value = state.settings.vision_model || '';
   document.getElementById('setting-llm-temp').value = state.settings.llm_temperature || '0.7';
   document.getElementById('setting-llm-max-tokens').value = state.settings.llm_max_tokens || '16000';
   
@@ -382,10 +390,10 @@ function closeSettingsModal() {
 
 async function saveSettings() {
   const settings = {
+    llm_provider: document.getElementById('setting-llm-provider').value,
     llm_base_url: document.getElementById('setting-llm-base-url').value.trim(),
     llm_api_key: document.getElementById('setting-llm-api-key').value.trim(),
     llm_model: document.getElementById('setting-llm-model').value.trim(),
-    vision_model: document.getElementById('setting-vision-model').value.trim(),
     llm_temperature: document.getElementById('setting-llm-temp').value.trim(),
     llm_max_tokens: document.getElementById('setting-llm-max-tokens').value.trim(),
     
@@ -814,7 +822,7 @@ function renderStep2Workspace() {
     thumbsContainer.appendChild(thumb);
   });
   
-  // 加载当前 Slide 详情（只展示 core_message + visual_groups）
+  // 加载当前 Slide 详情
   const slide = state.slides[state.activeSlideIndex];
   if (slide) {
     const slideIdEl = document.getElementById('step2-current-slide-id');
@@ -835,8 +843,7 @@ function renderStep2Workspace() {
       if (group.id === 'body_group_02') return;
 
       const groupEl = document.createElement('div');
-      groupEl.className = 'sketch-dashed';
-      groupEl.style.cssText = 'padding: 0.8rem; background: #fff; margin-bottom: 0.6rem; border-radius: 8px;';
+      groupEl.className = 'step2-group-row';
       
       const roleMap = {
         'title': '标题',
@@ -850,16 +857,16 @@ function renderStep2Workspace() {
       const chineseRole = roleMap[group.role] || group.role || '元素';
 
       groupEl.innerHTML = `
-        <div style="display: flex; align-items: center; margin-bottom: 0.6rem;">
-          <span style="font-size: 0.8rem; font-weight: bold; color: var(--ink-color); background: var(--primary-color); border: 2px solid var(--ink-color); border-radius: 4px; padding: 2px 8px; box-shadow: 1px 1px 0px 0px var(--ink-color);">${chineseRole}</span>
-        </div>
-        <div style="margin-bottom: 0.5rem;">
-          <label style="font-size: 0.8rem; font-weight: bold; display: block; margin-bottom: 0.2rem; color: #555;">画面显示中文：</label>
-          <input type="text" value="${escHtml(group.visible_text)}" placeholder="请输入页面上显示的中文文字" style="font-size: 0.85rem; padding: 4px 8px;" oninput="updateGroupField(${gIdx}, 'visible_text', this.value)">
-        </div>
-        <div>
-          <label style="font-size: 0.8rem; font-weight: bold; display: block; margin-bottom: 0.2rem; color: #555;">线稿视觉描述：</label>
-          <input type="text" value="${escHtml(group.visual_anchor)}" placeholder="请输入线稿画面的视觉描述元素" style="font-size: 0.85rem; padding: 4px 8px; color: #444;" oninput="updateGroupField(${gIdx}, 'visual_anchor', this.value)">
+        <div class="step2-group-role">${chineseRole}</div>
+        <div class="step2-group-fields">
+          <div>
+            <label>画面文字</label>
+            <input class="step2-soft-input" type="text" value="${escHtml(group.visible_text)}" placeholder="页面上显示的中文" oninput="updateGroupField(${gIdx}, 'visible_text', this.value)">
+          </div>
+          <div>
+            <label>视觉描述</label>
+            <input class="step2-soft-input" type="text" value="${escHtml(group.visual_anchor)}" placeholder="位置、形态和手绘元素" oninput="updateGroupField(${gIdx}, 'visual_anchor', this.value)">
+          </div>
         </div>
       `;
       groupsList.appendChild(groupEl);
@@ -876,38 +883,22 @@ function copyStep2Prompts() {
     return;
   }
   
-  const topicName = state.currentProject.name;
   let textParts = [];
   
   state.slides.forEach((slide) => {
-    const mainTitle = slide.main_title || '';
-    const subtitle = slide.subtitle || '';
-    const anchors = [];
-    
-    (slide.visual_groups || []).forEach(g => {
-      // 过滤掉 title / subtitle 角色和不希望展示的 body_group_02，防止打乱提示词
-      if (g.role !== 'title' && g.role !== 'subtitle' && g.id !== 'body_group_02') {
-        if (g.visible_text && g.visual_anchor) {
-          anchors.push(`${g.visible_text}(${g.visual_anchor})`);
-        } else if (g.visible_text) {
-          anchors.push(g.visible_text);
-        } else if (g.visual_anchor) {
-          anchors.push(g.visual_anchor);
-        }
-      }
-    });
-    
-    const anchorsStr = anchors.join('，');
-    
-    // 结合项目风格与线稿风预设拼接 Prompt 
-    const prompt = `A warm, minimalist, hand-drawn vector line art style presentation slide for topic '${topicName}'. ` +
-      `Title: '${mainTitle}'. ` +
-      (subtitle ? `Subtitle: '${subtitle}'. ` : '') +
-      `The slide contains the following visual elements and concepts: ${anchorsStr}. ` +
-      `Uniform pure beige background #FFFDF7. Reserve the bottom 150 px subtitle-safe zone on a 1920x1080 canvas (y=930..1080): keep it clean with no important text, labels, faces, or key drawings. ` +
-      `Ink black lines (#111111), fine rough hand-drawn strokes. ` +
-      `Subtle single accent yellow highlight (#F9D65C) on key concepts. ` +
-      `Minimalist whiteboard drawing, korean line art webtoon style, cute hand sketch, no shadows, no gradients.`;
+    const promptInfo = slidePrompts.find(item => item.slide_id === slide.slide_id);
+    const groups = (slide.visual_groups || [])
+      .filter(group => group.id !== 'body_group_02')
+      .map((group, index) => `${index + 1}. ${group.visible_text || '未命名'}：${group.visual_anchor || '未填写视觉描述'}`)
+      .join('\n');
+    const prompt = promptInfo?.prompt || [
+      '请生成一张 16:9 PPT 手绘讲解页。',
+      `项目主题：${state.currentProject.name}`,
+      `主标题：${slide.main_title || ''}`,
+      slide.subtitle ? `副标题：${slide.subtitle}` : '',
+      `视觉分组：\n${groups}`,
+      '使用温暖极简手绘线稿风，纯色 #FFFDF7 背景，黑色线稿，黄色重点标记；底部 150px 留作字幕安全区。'
+    ].filter(Boolean).join('\n');
       
     textParts.push(`--- Slide ${slide.slide_id} ---`);
     textParts.push(prompt);
@@ -1881,6 +1872,94 @@ async function loadStep5Data() {
   }
 }
 
+const LLM_PROVIDER_PRESETS = {
+  openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+  newapi: { baseUrl: '', model: '' },
+  openrouter: { baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' },
+  litellm: { baseUrl: 'http://localhost:4000/v1', model: '' },
+  deepseek: { baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat' },
+  volcengine: { baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: '' },
+  siliconflow: { baseUrl: 'https://api.siliconflow.cn/v1', model: 'deepseek-ai/DeepSeek-V3' },
+  dashscope: { baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
+  zhipu: { baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash' },
+  custom: { baseUrl: '', model: '' }
+};
+
+function detectLlmProvider(savedProvider, baseUrl) {
+  const normalized = String(baseUrl || '').replace(/\/+$/, '').toLowerCase();
+  const known = Object.entries(LLM_PROVIDER_PRESETS).find(([, preset]) =>
+    preset.baseUrl && preset.baseUrl.replace(/\/+$/, '').toLowerCase() === normalized
+  );
+  if (known) return known[0];
+  if (savedProvider === 'newapi' || savedProvider === 'litellm' || savedProvider === 'custom') {
+    return savedProvider;
+  }
+  return normalized ? 'custom' : (savedProvider || 'openai');
+}
+
+function applyLlmProviderPreset(provider) {
+  const preset = LLM_PROVIDER_PRESETS[provider];
+  if (!preset) return;
+  if (preset.baseUrl) document.getElementById('setting-llm-base-url').value = preset.baseUrl;
+  if (preset.model) document.getElementById('setting-llm-model').value = preset.model;
+}
+
+async function openStoryboardRulesModal() {
+  if (!state.currentProject) return;
+  const res = await API.get(`/api/projects/${state.currentProject.id}/steps/2/rules`);
+  document.getElementById('storyboard-rules-input').value = res.rules || '';
+  document.getElementById('modal-storyboard-rules').style.display = 'flex';
+}
+
+function closeStoryboardRulesModal() {
+  document.getElementById('modal-storyboard-rules').style.display = 'none';
+}
+
+async function saveStoryboardRules() {
+  const rules = document.getElementById('storyboard-rules-input').value.trim();
+  const res = await API.put(`/api/projects/${state.currentProject.id}/steps/2/rules`, { rules });
+  if (res.success) {
+    closeStoryboardRulesModal();
+    showToast('分镜规则已保存');
+  }
+}
+
+async function openImageStyleModal() {
+  const res = await API.get('/api/image-style');
+  document.getElementById('image-style-input').value = res.style_text || '';
+  ['template', 'example'].forEach(kind => {
+    const preview = document.getElementById(`image-style-${kind}-preview`);
+    const reference = res.references?.[kind];
+    preview.src = reference?.exists ? reference.url : '';
+    preview.style.display = reference?.exists ? 'block' : 'none';
+  });
+  document.getElementById('modal-image-style').style.display = 'flex';
+}
+
+function closeImageStyleModal() {
+  document.getElementById('modal-image-style').style.display = 'none';
+}
+
+async function uploadImageStyleReference(kind) {
+  const input = document.getElementById(`image-style-${kind}-file`);
+  const file = input?.files?.[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append('file', file);
+  await API.post(`/api/image-style/reference/${kind}`, formData);
+}
+
+async function saveImageStyle() {
+  const styleText = document.getElementById('image-style-input').value.trim();
+  const res = await API.put('/api/image-style', { style_text: styleText });
+  if (!res.success) return;
+  await uploadImageStyleReference('template');
+  await uploadImageStyleReference('example');
+  closeImageStyleModal();
+  slidePrompts = [];
+  showToast('图片风格与参考图已保存');
+}
+
 function renderStep5Workspace() {
   updateStep5AutoMaskButton();
   updateStep5SemanticButton();
@@ -1990,11 +2069,6 @@ function renderStep5BoxesForm() {
     item.style.setProperty('--mask-color', maskColor);
 
     const spokenText = getSelectedFragmentText(box, step2Slide);
-    const strokes = box.manual_mask?.strokes || [];
-    const paintCount = strokes.filter(stroke => !isEraseStroke(stroke)).length;
-    const eraseCount = strokes.filter(stroke => isEraseStroke(stroke)).length;
-    const strokeSummary = paintCount || eraseCount ? `画笔 ${paintCount} 笔 · 橡皮 ${eraseCount} 笔` : '可用画笔补正区域';
-
     item.innerHTML = `
       <div class="mask-block-head">
         <span class="mask-block-number">${idx + 1}</span>
@@ -2014,9 +2088,6 @@ function renderStep5BoxesForm() {
       <div class="mask-narration-card">
         <span class="mask-narration-label">演讲旁白</span>
         <span class="mask-narration-text">${spokenText ? escHtml(spokenText) : '在下方演讲稿中点选片段'}</span>
-      </div>
-      <div class="mask-block-foot">
-        <span>${strokeSummary}</span>
       </div>
     `;
     
@@ -2165,7 +2236,7 @@ function selectStep5MaskBox(idx, shouldScroll = true) {
 }
 
 function updateBrushSize(value, shouldRedraw = true) {
-  const size = Math.max(12, Math.min(140, Number(value) || 80));
+  const size = Math.max(140, Math.min(300, Number(value) || 140));
   state.canvasState.brushSize = size;
   const input = document.getElementById('step5-brush-size');
   const label = document.getElementById('step5-brush-size-value');
@@ -2745,11 +2816,10 @@ async function runStep5SemanticBlocks() {
   showToast(`🤖 正在为 ${currentSlide.slide_id} 预识别语义块、旁白和画面内容，不会自动绘制 Mask...`);
 
   try {
-    await API.put(`/api/projects/${state.currentProject.id}/steps/5/result`, manifestData);
+    await API.put(`/api/projects/${state.currentProject.id}/steps/5/draft`, manifestData);
     const res = await API.post(`/api/projects/${state.currentProject.id}/steps/5/semantic-blocks`, { slide_id: currentSlide.slide_id });
     if (res.success) {
-      const source = res.vision_used ? 'AI 已结合画面完成语义分块' : '已用分镜合约生成语义分块草稿';
-      showToast(`✅ ${res.message || source}`);
+      showToast(`✅ ${res.message || '已用分镜合约生成语义分块'}`);
       await loadStep5Data();
     }
   } finally {
@@ -2767,17 +2837,16 @@ async function saveStep5Masks() {
   await saveStep5Draft();
   saveStep5CurrentState();
   
-  // 标记当前 Slide 状态为已完成
-  const currentSlide = manifestData.slides[state.activeSlideIndex];
-  if (currentSlide) {
-    currentSlide.status = "completed";
-  }
+  // 点击下一步时统一确认全部 Slide，并一次性构建所有切层。
+  manifestData.slides.forEach(slide => {
+    slide.status = "completed";
+  });
   
-  showToast('💾 正在保存当前标注坐标并为您自动裁剪图层...');
+  showToast('正在确认全部标注并构建切层...');
   try {
     const res = await API.put(`/api/projects/${state.currentProject.id}/steps/5/result`, manifestData);
     if (res.success) {
-      showToast('🎉 标注图层保存并重建成功！');
+      showToast('全部标注已确认，切层构建完成');
       renderStep5Workspace(); // 重新绘制切换栏以更新已标注绿色状态
       refreshCurrentProjectStatus(5).catch(() => {});
       return true;
@@ -2914,10 +2983,8 @@ function renderStep6Workspace() {
         <span>句段 ${idx + 1}</span>
         <small>${escHtml(beat.visible_anchor || beat.group_id || '')}</small>
       </div>
-      <div class="step6-script-label">原始旁白</div>
-      <div class="step6-source-text">${escHtml(beat.source_text || beat.spoken_text || '')}</div>
-      <div class="step6-script-label">语音合成稿</div>
-      <textarea class="step6-tts-input" rows="3" data-slide-index="${state.activeSlideIndex}" data-beat-index="${idx}" placeholder="可加入 <#0.5#> 这类停顿标记，或调整口语化表达。">${escHtml(beat.tts_text || beat.spoken_text || '')}</textarea>
+      <div class="step6-script-label">最终语音合成稿</div>
+      <textarea class="step6-tts-input" rows="4" data-slide-index="${state.activeSlideIndex}" data-beat-index="${idx}" placeholder="AI 会加入 <#0.35#> 停顿及 MiniMax 语气标记，人工审核后可直接修改。">${escHtml(beat.tts_text || beat.spoken_text || '')}</textarea>
     `;
     row.querySelector('textarea').addEventListener('input', (event) => {
       updateNarrationBeatText(idx, event.target.value);

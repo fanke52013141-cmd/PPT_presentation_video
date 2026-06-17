@@ -298,7 +298,7 @@ const SlideView: React.FC<{slide: Slide}> = ({slide}) => {
             right: 180,
             bottom: 28,
             zIndex: 10000,
-            height: 82,
+            minHeight: 82,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -311,8 +311,9 @@ const SlideView: React.FC<{slide: Slide}> = ({slide}) => {
             fontWeight: 500,
             lineHeight: 1.15,
             textAlign: 'center',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
+            whiteSpace: 'normal',
+            overflow: 'visible',
+            overflowWrap: 'anywhere',
             fontFamily: 'LXGW WenKai, KaiTi, Microsoft YaHei, sans-serif',
           }}
         >

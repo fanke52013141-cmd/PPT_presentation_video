@@ -455,6 +455,55 @@ header > div:last-child {
   font-weight: 700;
 }
 
+.step2-slide-editor {
+  margin-top: 0.8rem;
+  padding: 0.2rem 0;
+}
+
+.step2-group-row {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  gap: 0.9rem;
+  align-items: start;
+  padding: 0.8rem 0;
+  border-bottom: 1px solid #dedbd1;
+}
+
+.step2-group-role {
+  padding-top: 1.45rem;
+  color: #555;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.step2-group-fields {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(280px, 1.3fr);
+  gap: 0.8rem;
+}
+
+.step2-group-fields label {
+  display: block;
+  margin-bottom: 0.22rem;
+  color: #666;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+input.step2-soft-input {
+  border: 0;
+  border-radius: 6px;
+  background: #f4f2eb;
+  box-shadow: none;
+  font-size: 0.88rem;
+}
+
+input.step2-soft-input:focus {
+  border: 0;
+  background: #fff;
+  box-shadow: 0 0 0 2px #d8d5ca;
+}
+
 .step2-slide-thumb {
   position: relative;
 }
@@ -626,6 +675,65 @@ header > div:last-child {
   width: 90%;
   position: relative;
   animation: popIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.config-editor-modal {
+  width: min(980px, 94vw);
+  max-width: 980px;
+  max-height: 92vh;
+  overflow-y: auto;
+}
+
+.config-editor-note {
+  margin: 0.4rem 0 0.8rem;
+  color: #555;
+  font-size: 0.86rem;
+}
+
+.config-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.8rem;
+  margin-top: 1rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid #d8d5ca;
+}
+
+.reference-image-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.reference-image-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  color: #444;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.reference-image-item img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+  border: 1px solid #d8d5ca;
+  border-radius: 6px;
+  background: #fff;
+}
+
+@media (max-width: 760px) {
+  .step2-group-row,
+  .step2-group-fields,
+  .reference-image-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .step2-group-role {
+    padding-top: 0;
+  }
 }
 
 @keyframes popIn {

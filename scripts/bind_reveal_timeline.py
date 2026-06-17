@@ -105,6 +105,8 @@ def linked_segment_for_event(
         linked_segment_id = str(beat.get("linked_segment_id", "")).strip()
         if linked_segment_id:
             return linked_segment_id
+        if any(str(segment.get("id", "")).strip() == beat_id for segment in segments):
+            return beat_id
         if beat_id in beat_order:
             inferred = infer_segment_for_beat(beat_order.index(beat_id), segments)
             if inferred:

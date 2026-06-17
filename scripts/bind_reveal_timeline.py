@@ -175,10 +175,34 @@ def slide_dirs(run_dir: Path, slide_id: str | None) -> list[Path]:
         return [root / slide_id]
     if not root.exists():
         raise BindError(f"Missing slides directory: {root}")
+    contract_ids = contract_slide_ids(run_dir)
+    if contract_ids:
+        return [root / current_slide_id for current_slide_id in contract_ids]
     slides = sorted(path for path in root.iterdir() if path.is_dir())
     if not slides:
         raise BindError(f"No slide directories found: {root}")
     return slides
+
+
+def contract_slide_ids(run_dir: Path) -> list[str]:
+    contract_path = run_dir / "planning" / "visual_contract.json"
+    if not contract_path.exists():
+        return []
+    try:
+        contract = read_json(contract_path)
+    except BindError:
+        return []
+    slides = contract.get("slides")
+    if not isinstance(slides, list):
+        return []
+    slide_ids: list[str] = []
+    for slide in slides:
+        if not isinstance(slide, dict):
+            continue
+        slide_id = str(slide.get("slide_id", "")).strip()
+        if slide_id:
+            slide_ids.append(slide_id)
+    return slide_ids
 
 
 def parse_args() -> argparse.Namespace:

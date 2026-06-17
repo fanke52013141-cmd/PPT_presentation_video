@@ -104,8 +104,6 @@ def build_slide_narration(slide: dict[str, Any], max_beat_chars: int) -> dict[st
         if group_id not in groups:
             raise NarrationBuildError(f"Beat {beat_id} references unknown group_id in {slide_id}: {group_id}")
         group = groups[group_id]
-        if speak_policy(group) == "display_only":
-            raise NarrationBuildError(f"Beat {beat_id} references display_only group in {slide_id}: {group_id}")
         group_content_unit_id = str(group.get("content_unit_id", group_id)).strip()
         beat_content_unit_id = str(beat.get("content_unit_id", group_content_unit_id)).strip()
         if group_content_unit_id and beat_content_unit_id and beat_content_unit_id != group_content_unit_id:

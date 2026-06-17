@@ -222,6 +222,46 @@ def sync_reveal_manifest_to_contract(project: Project, slide_ids: Optional[List[
     )
     return True
 
+
+def sync_narration_beats_to_contract(project: Project, slide_ids: Optional[List[str]] = None) -> bool:
+    current_slide_ids = slide_ids if slide_ids is not None else read_contract_slide_ids(project.run_dir)
+    if not current_slide_ids:
+        return False
+
+    beats_path = os.path.join(project.run_dir, "planning", "narration_beats.json")
+    if not os.path.exists(beats_path):
+        return False
+
+    try:
+        with open(beats_path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+    except Exception as e:
+        logger.warning(f"Failed to read narration beats for slide sync: {e}")
+        return False
+
+    slides = payload.get("slides", [])
+    if not isinstance(slides, list):
+        return False
+
+    by_id = {
+        str(slide.get("slide_id") or "").strip(): slide
+        for slide in slides
+        if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()
+    }
+    synced_slides = [by_id[slide_id] for slide_id in current_slide_ids if slide_id in by_id]
+    if synced_slides == slides:
+        return False
+
+    payload["slides"] = synced_slides
+    with open(beats_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    logger.info(
+        "Synced narration beats to visual contract: kept %s of %s slides",
+        len(synced_slides),
+        len(slides),
+    )
+    return True
+
 # ==================== 项目管理接口 ====================
 
 @app.post("/api/projects")
@@ -672,7 +712,9 @@ def update_step2_result(project_id: str, payload: Dict[str, Any], db: Session = 
     contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
     with open(contract_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
-    sync_reveal_manifest_to_contract(project, contract_slide_ids_from_payload(payload))
+    current_slide_ids = contract_slide_ids_from_payload(payload)
+    sync_reveal_manifest_to_contract(project, current_slide_ids)
+    sync_narration_beats_to_contract(project, current_slide_ids)
         
     return {"success": True, "contract": payload}
 
@@ -1647,7 +1689,8 @@ def get_step6_result(project_id: str, db: Session = Depends(get_db)):
     beats_path = os.path.join(project.run_dir, "planning", "narration_beats.json")
     if not os.path.exists(beats_path):
         return {"success": False, "message": "演讲稿尚未生成"}
-        
+    sync_narration_beats_to_contract(project)
+
     with open(beats_path, "r", encoding="utf-8") as f:
         beats = json.load(f)
     return {"success": True, "beats": beats}
@@ -1658,6 +1701,15 @@ def update_step6_result(project_id: str, payload: Dict[str, Any], db: Session = 
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
         
+    current_slide_ids = read_contract_slide_ids(project.run_dir)
+    if current_slide_ids and isinstance(payload.get("slides"), list):
+        by_id = {
+            str(slide.get("slide_id") or "").strip(): slide
+            for slide in payload.get("slides", [])
+            if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()
+        }
+        payload["slides"] = [by_id[slide_id] for slide_id in current_slide_ids if slide_id in by_id]
+
     # 保存全局规划下的 narration_beats.json
     beats_path = os.path.join(project.run_dir, "planning", "narration_beats.json")
     with open(beats_path, "w", encoding="utf-8") as f:

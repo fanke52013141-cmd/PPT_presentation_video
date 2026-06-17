@@ -349,6 +349,27 @@ def slide_duration(audio_timeline: dict[str, Any], animation_timeline: dict[str,
     return round(duration, 3)
 
 
+def contract_slide_ids(run_dir: Path) -> list[str]:
+    contract_path = run_dir / "planning" / "visual_contract.json"
+    if not contract_path.exists():
+        return []
+    try:
+        contract = read_json(contract_path)
+    except BuildError:
+        return []
+    slides = contract.get("slides")
+    if not isinstance(slides, list):
+        return []
+    slide_ids: list[str] = []
+    for slide in slides:
+        if not isinstance(slide, dict):
+            continue
+        slide_id = str(slide.get("slide_id", "")).strip()
+        if slide_id:
+            slide_ids.append(slide_id)
+    return slide_ids
+
+
 def build_slide(
     slide_dir: Path,
     repo_root: Path,
@@ -405,6 +426,14 @@ def build_props(
     )
     if slide_ids:
         slide_dirs = [path for path in slide_dirs if path.name in slide_ids]
+    else:
+        ordered_slide_ids = contract_slide_ids(run_dir)
+        if ordered_slide_ids:
+            by_name = {path.name: path for path in slide_dirs}
+            missing = [slide_id for slide_id in ordered_slide_ids if slide_id not in by_name]
+            if missing:
+                raise BuildError(f"Missing current slide directories: {', '.join(missing)}")
+            slide_dirs = [by_name[slide_id] for slide_id in ordered_slide_ids if slide_id in by_name]
     if not slide_dirs:
         raise BuildError(f"No matching slide directories found in: {slides_dir}")
 

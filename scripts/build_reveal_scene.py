@@ -126,6 +126,28 @@ def apply_alpha(image: Image.Image, alpha: Image.Image | None) -> Image.Image:
     return rgba
 
 
+def remove_background_from_masked_crop(
+    image: Image.Image,
+    alpha: Image.Image | None,
+    background: str,
+    tolerance: int = 28,
+) -> Image.Image:
+    rgba = apply_alpha(image, alpha).convert("RGBA")
+    if alpha is None:
+        return rgba
+    bg = hex_to_rgb(background)
+    pixels = rgba.load()
+    for y in range(rgba.height):
+        for x in range(rgba.width):
+            r, g, b, a = pixels[x, y]
+            if a == 0:
+                continue
+            distance = max(abs(r - bg[0]), abs(g - bg[1]), abs(b - bg[2]))
+            if distance <= tolerance:
+                pixels[x, y] = (r, g, b, 0)
+    return rgba
+
+
 def write_cover(path: Path, box: dict[str, int], color: str, alpha: Image.Image | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     mode = "RGBA" if alpha is not None else "RGB"
@@ -231,6 +253,11 @@ def compose_slide(slide: dict[str, Any], manifest_dir: Path, repo_root: Path, de
         action = str(reveal.get("type", "cover_fade_out"))
         layer_asset = ""
         layer_role = "cover_layer"
+        cutout_asset = ""
+        if alpha is not None:
+            cutout_asset = f"assets/crops/{group_id}_cutout.png"
+            (slide_dir / cutout_asset).parent.mkdir(parents=True, exist_ok=True)
+            remove_background_from_masked_crop(crop_image(master, box), alpha, background).save(slide_dir / cutout_asset, format="PNG")
         if action in FOG_ACTIONS:
             rel = f"assets/fog/{group_id}_fog.png"
             write_fog(slide_dir / rel, master, box, background, float(reveal.get("fog_strength", DEFAULTS["fog_strength"])), float(reveal.get("blur_px", DEFAULTS["blur_px"])), alpha)
@@ -242,7 +269,7 @@ def compose_slide(slide: dict[str, Any], manifest_dir: Path, repo_root: Path, de
             layers.append({"id": f"cover_{group_id}", "type": "png", "asset": rel_cover, "role": "cover_layer", "target_group_id": group_id, "box": box, "z_index": int(group.get("z_index", 30 + index))})
             rel = f"assets/crops/{group_id}.png"
             (slide_dir / rel).parent.mkdir(parents=True, exist_ok=True)
-            apply_alpha(crop_image(master, box), alpha).save(slide_dir / rel, format="PNG")
+            remove_background_from_masked_crop(crop_image(master, box), alpha, background).save(slide_dir / rel, format="PNG")
             layer_asset = rel
             layer_role = "reveal_crop"
         else:
@@ -251,7 +278,10 @@ def compose_slide(slide: dict[str, Any], manifest_dir: Path, repo_root: Path, de
             layer_asset = rel
             layer_role = "cover_layer"
         layer_id = f"{layer_role}_{group_id}"
-        layers.append({"id": layer_id, "type": "png", "asset": layer_asset, "role": layer_role, "target_group_id": group_id, "visible_text": group.get("visible_text", ""), "box": box, "z_index": int(group.get("z_index", 40 + index))})
+        layer = {"id": layer_id, "type": "png", "asset": layer_asset, "role": layer_role, "target_group_id": group_id, "visible_text": group.get("visible_text", ""), "box": box, "z_index": int(group.get("z_index", 40 + index))}
+        if cutout_asset:
+            layer["cutout_asset"] = cutout_asset
+        layers.append(layer)
         events.append(build_event(slide_id, group, layer_id, 0.2 + (index - 1) * 0.7))
         placed.append({"id": group_id, "role": role, "box": box})
     scene = {"slide_id": slide_id, "source_visual_draft": str(master_path), "visual_source": "master_reveal_layers", "canvas": {"width": width, "height": height, "background": background}, "layers": layers, "composition": {"method": "full_slide_reveal_layers", "algorithmic_full_slide_decomposition": False}}

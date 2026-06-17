@@ -24,6 +24,9 @@ let state = {
     brushSize: 80,
     brushCursorClientX: null,
     brushCursorClientY: null,
+    maskZoom: 1,
+    maskZoomOriginX: 50,
+    maskZoomOriginY: 50,
     autoMaskLoading: false,
     semanticLoading: false,
     narrationPickerBoxIndex: -1,
@@ -2306,10 +2309,12 @@ function initCanvasEvents() {
   newCanvas.addEventListener('mousedown', (e) => handleCanvasMouseDown(e, newCanvas));
   newCanvas.addEventListener('mousemove', (e) => handleCanvasMouseMove(e, newCanvas));
   newCanvas.addEventListener('mouseup', handleCanvasMouseUp);
+  newCanvas.addEventListener('wheel', (e) => handleMaskCanvasWheel(e, newCanvas), { passive: false });
   newCanvas.addEventListener('mouseleave', (e) => {
     hideBrushCursor();
     handleCanvasMouseUp(e);
   });
+  applyMaskCanvasZoom(newCanvas);
 }
 
 function getCanvasCoords(e, canvas) {
@@ -2364,6 +2369,35 @@ function positionBrushCursor(canvas, clientX, clientY) {
   cursor.style.setProperty('--cursor-color', color);
   cursor.classList.toggle('eraser', !!state.canvasState.eraserMode);
   cursor.classList.add('visible');
+}
+
+function applyMaskCanvasZoom(canvas = document.getElementById('step5-canvas')) {
+  const bg = document.getElementById('step5-bg-img');
+  if (!canvas || !bg) return;
+  const zoom = Math.max(1, Math.min(4, Number(state.canvasState.maskZoom || 1)));
+  state.canvasState.maskZoom = zoom;
+  const originX = Math.max(0, Math.min(100, Number(state.canvasState.maskZoomOriginX || 50)));
+  const originY = Math.max(0, Math.min(100, Number(state.canvasState.maskZoomOriginY || 50)));
+  const transform = `scale(${zoom})`;
+  const origin = `${originX}% ${originY}%`;
+  [bg, canvas].forEach(el => {
+    el.style.transform = transform;
+    el.style.transformOrigin = origin;
+  });
+  refreshBrushCursor(canvas);
+}
+
+function handleMaskCanvasWheel(e, canvas) {
+  if (!e.ctrlKey) return;
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  state.canvasState.maskZoomOriginX = ((e.clientX - rect.left) / rect.width) * 100;
+  state.canvasState.maskZoomOriginY = ((e.clientY - rect.top) / rect.height) * 100;
+  const current = Number(state.canvasState.maskZoom || 1);
+  const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+  state.canvasState.maskZoom = Math.max(1, Math.min(4, current * factor));
+  applyMaskCanvasZoom(canvas);
 }
 
 function handleCanvasMouseDown(e, canvas) {
@@ -2809,25 +2843,28 @@ async function saveStep6Narration() {
 
 async function loadStep7Data() {
   // 检查是否已经合成过音频
-  const res = await API.get(`/api/projects/${state.currentProject.id}/steps/3/images`);
+  const [res, narrationRes] = await Promise.all([
+    API.get(`/api/projects/${state.currentProject.id}/steps/3/images`),
+    API.get(`/api/projects/${state.currentProject.id}/steps/6/result`).catch(() => ({ success: false }))
+  ]);
+  const narrationSlides = narrationRes.success ? (narrationRes.beats?.slides || []) : [];
   if (res.success) {
     const container = document.getElementById('step7-audio-list');
     container.innerHTML = '';
     
     res.images.forEach(img => {
       const row = document.createElement('div');
-      row.className = 'sketch-dashed';
-      row.style.padding = '0.8rem';
-      row.style.display = 'flex';
-      row.style.alignItems = 'center';
-      row.style.justifyContent = 'space-between';
-      row.style.backgroundColor = '#fff';
+      row.className = 'sketch-dashed step7-audio-card';
       
       const audioUrl = `/api/projects/${state.currentProject.id}/slides/${img.slide_id}/audio`;
+      const script = getStep7NarrationText(img.slide_id, narrationSlides);
       
       row.innerHTML = `
-        <span style="font-weight:bold;">${img.slide_id}</span>
-        <audio controls src="${audioUrl}" style="height:35px;"></audio>
+        <div class="step7-audio-main">
+          <div class="step7-audio-title">${escHtml(img.slide_id)}</div>
+          <div class="step7-audio-script">${script ? escHtml(script) : '暂无演讲稿，请先在上一步保存演讲稿。'}</div>
+        </div>
+        <audio controls src="${audioUrl}" class="step7-audio-player"></audio>
       `;
       container.appendChild(row);
     });
@@ -2835,6 +2872,15 @@ async function loadStep7Data() {
     // 如果有图片状态，展示列表，默认隐藏 loading 状态
     document.getElementById('step7-result-box').style.display = 'block';
   }
+}
+
+function getStep7NarrationText(slideId, narrationSlides) {
+  const slide = narrationSlides.find(item => item.slide_id === slideId);
+  if (!slide || !Array.isArray(slide.beats)) return '';
+  return slide.beats
+    .map(beat => String(beat?.spoken_text || '').trim())
+    .filter(Boolean)
+    .join('\n');
 }
 
 async function runStep7TTS() {

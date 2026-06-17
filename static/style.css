@@ -506,6 +506,7 @@ header > div:last-child {
   height: 100%;
   z-index: 2;
   cursor: default;
+  transform-origin: 50% 50%;
 }
 
 .canvas-wrapper canvas.painting {
@@ -554,6 +555,7 @@ header > div:last-child {
   height: 100%;
   object-fit: contain;
   z-index: 1;
+  transform-origin: 50% 50%;
 }
 
 /* 标注编辑器左右分栏布局 */
@@ -1072,6 +1074,33 @@ header > div:last-child {
 .step5-narration-empty {
   color: #777;
   font-size: 0.82rem;
+}
+
+.step7-audio-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+  gap: 1rem;
+  align-items: center;
+  padding: 0.85rem 1rem;
+  background: #fff;
+}
+
+.step7-audio-title {
+  font-weight: 800;
+  margin-bottom: 0.35rem;
+}
+
+.step7-audio-script {
+  white-space: pre-line;
+  line-height: 1.55;
+  color: #222;
+  font-size: 0.95rem;
+}
+
+.step7-audio-player {
+  width: 100%;
+  min-width: 260px;
+  height: 35px;
 }
 
 .mask-narration-text {

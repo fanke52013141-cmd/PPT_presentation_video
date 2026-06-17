@@ -661,20 +661,20 @@ async function submitStep1() {
   const submitBtn = document.getElementById('step1-btn-submit');
   const origHtml = submitBtn.innerHTML;
   submitBtn.disabled = true;
-  submitBtn.innerHTML = '提炼中...';
-  showToast('🚀 正在提炼标题，请稍候...');
+  submitBtn.innerHTML = '保存中...';
+  showToast('🚀 正在保存文章，请稍候...');
   const formData = new FormData();
   formData.append('content', content);
   
   try {
     const res = await API.post(`/api/projects/${state.currentProject.id}/steps/1/import`, formData);
     if (res.success) {
-      showToast('✨ 提炼成功，正在进入分镜规划...');
+      showToast('✨ 文章已保存，正在进入分镜规划...');
       document.getElementById('step1-res-title').value = res.brief.title;
       document.getElementById('step1-res-summary').value = res.brief.summary || '';
       document.getElementById('step1-result-box').style.display = 'none';
       const hint = document.getElementById('step1-status-hint');
-      if (hint) hint.innerText = '✅ 标题已提炼，已自动进入分镜规划';
+      if (hint) hint.innerText = '✅ 文章已保存，已自动进入分镜规划';
       document.getElementById('step1-btn-save-edit').style.display = 'inline-flex';
       state.currentProject.current_step = Math.max(state.currentProject.current_step, 2);
       state.currentProject.step_status['1'] = 'completed';
@@ -693,7 +693,7 @@ async function saveStep1Edit() {
   const title = document.getElementById('step1-res-title').value.trim();
   const summary = document.getElementById('step1-res-summary').value.trim();
   const content = document.getElementById('step1-article-input').value.trim();
-  const payload = { title, summary, content };
+  const payload = { title: state.currentProject?.name || title, summary, content };
   const res = await API.put(`/api/projects/${state.currentProject.id}/steps/1/result`, payload);
   if (res.success) {
     showToast('💾 修改已保存');

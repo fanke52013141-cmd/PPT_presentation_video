@@ -145,6 +145,83 @@ def clean_json_markdown(text: str) -> str:
         
     return text
 
+
+def build_article_summary(content: str, max_chars: int = 180) -> str:
+    """Create a lightweight planning summary without calling an LLM."""
+    text = re.sub(r"```.*?```", " ", content, flags=re.S)
+    text = re.sub(r"!\[[^\]]*\]\([^)]+\)", " ", text)
+    text = re.sub(r"\[[^\]]+\]\([^)]+\)", " ", text)
+    text = re.sub(r"[#>*_`~\-]+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars].rstrip() + "..."
+
+
+def contract_slide_ids_from_payload(payload: Dict[str, Any]) -> List[str]:
+    slide_ids: List[str] = []
+    for slide in payload.get("slides", []) or []:
+        if not isinstance(slide, dict):
+            continue
+        slide_id = str(slide.get("slide_id") or "").strip()
+        if slide_id:
+            slide_ids.append(slide_id)
+    return slide_ids
+
+
+def read_contract_slide_ids(run_dir: str) -> List[str]:
+    contract_path = os.path.join(run_dir, "planning", "visual_contract.json")
+    if not os.path.exists(contract_path):
+        return []
+    try:
+        with open(contract_path, "r", encoding="utf-8") as f:
+            contract = json.load(f)
+    except Exception as e:
+        logger.warning(f"Failed to read visual contract for slide sync: {e}")
+        return []
+    return contract_slide_ids_from_payload(contract)
+
+
+def sync_reveal_manifest_to_contract(project: Project, slide_ids: Optional[List[str]] = None) -> bool:
+    """Keep mask annotations aligned with the slides that still exist in Step 2."""
+    current_slide_ids = slide_ids if slide_ids is not None else read_contract_slide_ids(project.run_dir)
+    if not current_slide_ids:
+        return False
+
+    manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
+    if not os.path.exists(manifest_path):
+        return False
+
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            manifest = json.load(f)
+    except Exception as e:
+        logger.warning(f"Failed to read reveal manifest for slide sync: {e}")
+        return False
+
+    slides = manifest.get("slides", [])
+    if not isinstance(slides, list):
+        return False
+
+    by_id = {
+        str(slide.get("slide_id") or "").strip(): slide
+        for slide in slides
+        if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()
+    }
+    synced_slides = [by_id[slide_id] for slide_id in current_slide_ids if slide_id in by_id]
+    if synced_slides == slides:
+        return False
+
+    manifest["slides"] = synced_slides
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, ensure_ascii=False, indent=2)
+    logger.info(
+        "Synced reveal manifest to visual contract: kept %s of %s slides",
+        len(synced_slides),
+        len(slides),
+    )
+    return True
+
 # ==================== 项目管理接口 ====================
 
 @app.post("/api/projects")
@@ -369,6 +446,20 @@ def import_article(project_id: str, content: Optional[str] = Form(None), db: Ses
     article_path = os.path.join(project.run_dir, "inputs", "article.md")
     with open(article_path, "w", encoding="utf-8") as f:
         f.write(content)
+
+    project_title = (project.name or "").strip() or "未命名项目"
+    brief = {
+        "title": project_title,
+        "summary": build_article_summary(content),
+        "content": content,
+    }
+
+    brief_path = os.path.join(project.run_dir, "planning", "article_brief.json")
+    with open(brief_path, "w", encoding="utf-8") as f:
+        json.dump(brief, f, ensure_ascii=False, indent=2)
+
+    handle_step_navigation(project, 1, db)
+    return {"success": True, "brief": brief}
         
     # 调用 LLM 做文章提炼
     llm_api_key = get_setting("llm_api_key")
@@ -419,6 +510,7 @@ def get_step1_result(project_id: str, db: Session = Depends(get_db)):
         
     with open(brief_path, "r", encoding="utf-8") as f:
         brief = json.load(f)
+    brief["title"] = (project.name or "").strip() or brief.get("title") or "未命名项目"
     return {"success": True, "brief": brief}
 
 @app.put("/api/projects/{project_id}/steps/1/result")
@@ -428,6 +520,8 @@ def update_step1_result(project_id: str, payload: Dict[str, Any], db: Session = 
         raise HTTPException(status_code=404, detail="项目不存在")
         
     brief_path = os.path.join(project.run_dir, "planning", "article_brief.json")
+    payload["title"] = (project.name or "").strip() or payload.get("title") or "未命名项目"
+    payload["summary"] = payload.get("summary") or build_article_summary(str(payload.get("content") or ""))
     with open(brief_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
         
@@ -453,6 +547,9 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
         
     with open(brief_path, "r", encoding="utf-8") as f:
         brief = json.load(f)
+    project_title = (project.name or "").strip() or brief.get("title") or "未命名项目"
+    article_content = str(brief.get("content") or "")
+    article_summary = brief.get("summary") or build_article_summary(article_content)
         
     llm_api_key = get_setting("llm_api_key")
     llm_base_url = get_setting("llm_base_url")
@@ -504,7 +601,7 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
                 response_format={"type": "json_object"},
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"项目主题：{brief['title']}\n摘要提纲：{brief['summary']}\n正文全文：\n{brief['content']}"}
+                    {"role": "user", "content": f"项目主题：{project_title}\n摘要提纲：{article_summary}\n正文全文：\n{article_content}"}
                 ]
             )
         except Exception as inner_e:
@@ -514,7 +611,7 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
                 temperature=llm_temp,
                 messages=[
                     {"role": "system", "content": system_prompt + " 请只输出纯 JSON，不要包含 Markdown 代码块标记（如 ```json ）。"},
-                    {"role": "user", "content": f"项目主题：{brief['title']}\n摘要提纲：{brief['summary']}\n正文全文：\n{brief['content']}"}
+                    {"role": "user", "content": f"项目主题：{project_title}\n摘要提纲：{article_summary}\n正文全文：\n{article_content}"}
                 ]
             )
             
@@ -527,8 +624,8 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
         if "topic" not in contract:
             contract["topic"] = {
                 "topic_id": "topic_" + project_id,
-                "topic_name": brief["title"],
-                "topic_summary": brief["summary"]
+                "topic_name": project_title,
+                "topic_summary": article_summary
             }
             
         # 写入 JSON
@@ -575,6 +672,7 @@ def update_step2_result(project_id: str, payload: Dict[str, Any], db: Session = 
     contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
     with open(contract_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
+    sync_reveal_manifest_to_contract(project, contract_slide_ids_from_payload(payload))
         
     return {"success": True, "contract": payload}
 
@@ -826,7 +924,8 @@ def confirm_images(project_id: str, db: Session = Depends(get_db)):
         ], capture_output=True, text=True, encoding="utf-8")
         if fit_res.returncode != 0:
             logger.warning(f"Initial auto-fit reveal boxes warning: {fit_res.stderr}")
-            
+    sync_reveal_manifest_to_contract(project)
+
     handle_step_navigation(project, 4, db)
     return {"success": True}
 
@@ -1446,7 +1545,8 @@ def get_step5_result(project_id: str, db: Session = Depends(get_db)):
     manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
     if not os.path.exists(manifest_path):
         return {"success": False, "message": "尚未确认图片"}
-        
+    sync_reveal_manifest_to_contract(project)
+
     with open(manifest_path, "r", encoding="utf-8") as f:
         manifest = json.load(f)
     return {"success": True, "manifest": manifest}
@@ -1458,6 +1558,15 @@ def update_step5_result(project_id: str, payload: Dict[str, Any], db: Session = 
         raise HTTPException(status_code=404, detail="项目不存在")
         
     # 保存手动编辑修改的 reveal_manifest
+    current_slide_ids = read_contract_slide_ids(project.run_dir)
+    if current_slide_ids and isinstance(payload.get("slides"), list):
+        by_id = {
+            str(slide.get("slide_id") or "").strip(): slide
+            for slide in payload.get("slides", [])
+            if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()
+        }
+        payload["slides"] = [by_id[slide_id] for slide_id in current_slide_ids if slide_id in by_id]
+
     manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)

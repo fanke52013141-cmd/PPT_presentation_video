@@ -41,6 +41,8 @@ let state = {
 };
 
 // API 请求工具方法
+const SYNC_REVEAL_DURATION_SEC = 0.12;
+
 const API = {
   async fetch(url, options = {}) {
     try {
@@ -1908,16 +1910,17 @@ function syncMaskBoxesToSlide(slide, boxes) {
         id: maskBox.group_id || `custom_group_${idx + 1}`,
         role: maskBox.role || 'content_body',
         visible_text: maskBox.text_label || '',
-        reveal: { type: 'cover_fade_out', duration: 1.0 },
+        reveal: { type: 'crop_fade_up', duration: SYNC_REVEAL_DURATION_SEC },
         padding_px: 32,
         z_index: 40 + idx
       };
       slide.groups.push(group);
     }
     if (!group.reveal || typeof group.reveal !== 'object') {
-      group.reveal = { type: 'cover_fade_out', duration: 1.0 };
+      group.reveal = { type: 'crop_fade_up', duration: SYNC_REVEAL_DURATION_SEC };
     }
-    group.reveal.duration = Math.max(1.0, Number(group.reveal.duration || 1.0));
+    group.reveal.type = 'crop_fade_up';
+    group.reveal.duration = SYNC_REVEAL_DURATION_SEC;
     group.role = maskBox.role || group.role || 'content_body';
     group.source = maskBox.source || group.source || '';
     if (maskBox.text_label) group.visible_text = maskBox.text_label;

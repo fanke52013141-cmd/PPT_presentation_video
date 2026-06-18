@@ -14,11 +14,13 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
 DEFAULT_CANVAS = {"width": 1920, "height": 1080, "background": "#FFFDF7", "subtitle_safe_y": 930}
-DEFAULTS = {"padding_px": 32, "duration": 1.0, "angle": 135, "feather": 16, "fog_strength": 0.68, "blur_px": 16}
+DEFAULTS = {"padding_px": 32, "duration": 0.12, "angle": 135, "feather": 16, "fog_strength": 0.68, "blur_px": 16}
+MIN_REVEAL_DURATION_SEC = 0.05
 COVER_ACTIONS = {"cover_fade_out", "cover_wipe_left_to_right", "cover_wipe_top_to_bottom"}
 FOG_ACTIONS = {"fog_diagonal_erase"}
 CROP_ACTIONS = {"crop_fade_up", "crop_slide_in_left", "crop_soft_zoom_in"}
 ALLOWED_ACTIONS = COVER_ACTIONS | FOG_ACTIONS | CROP_ACTIONS | {"highlight"}
+TAIL_TRIM_ROLES = {"content_body", "diagram", "annotation"}
 
 
 class RevealBuildError(RuntimeError):
@@ -334,15 +336,19 @@ def build_group_alphas(
     valid_groups = [group for group in groups if isinstance(group, dict)]
     seeds = [seed_mask_for_group(group, width, height) for group in valid_groups]
     owners = nearest_seed_labels(seeds, width, height)
-    content = np.asarray(foreground_alpha(master, background), dtype=np.uint8)
+    content_alpha = np.asarray(foreground_alpha(master, background), dtype=np.uint8)
     result: dict[str, Image.Image] = {}
+
     for index, group in enumerate(valid_groups):
         group_id = str(group.get("id", "")).strip()
-        alpha = np.where(owners == index, content, 0).astype(np.uint8)
+        alpha = np.where(owners == index, content_alpha, 0).astype(np.uint8)
         erase = manual_erase_alpha(group.get("manual_mask"), width, height)
         if erase is not None:
             alpha[np.asarray(erase, dtype=np.uint8) > 0] = 0
-        result[group_id] = Image.fromarray(alpha, mode="L")
+        image_alpha = Image.fromarray(alpha, mode="L")
+        if str(group.get("role", "content_body")) in TAIL_TRIM_ROLES:
+            image_alpha = trim_isolated_horizontal_tails(image_alpha, content_alpha)
+        result[group_id] = image_alpha
     return result
 
 
@@ -355,6 +361,60 @@ def alpha_box(alpha: Image.Image, fallback: dict[str, int], width: int, height: 
     x2 = min(width, bbox[2] + padding)
     y2 = min(height, bbox[3] + padding)
     return {"x": x1, "y": y1, "w": x2 - x1, "h": y2 - y1}
+
+
+def true_runs(values: np.ndarray) -> list[tuple[int, int]]:
+    runs: list[tuple[int, int]] = []
+    start: int | None = None
+    for index, value in enumerate(values.tolist()):
+        if value and start is None:
+            start = index
+        elif not value and start is not None:
+            runs.append((start, index))
+            start = None
+    if start is not None:
+        runs.append((start, len(values)))
+    return runs
+
+
+def merge_close_runs(runs: list[tuple[int, int]], max_gap: int = 12) -> list[tuple[int, int]]:
+    if not runs:
+        return []
+    merged = [runs[0]]
+    for start, end in runs[1:]:
+        prev_start, prev_end = merged[-1]
+        if start - prev_end <= max_gap:
+            merged[-1] = (prev_start, end)
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def trim_isolated_horizontal_tails(
+    alpha: Image.Image,
+    content_alpha: np.ndarray,
+    min_area_ratio: float = 0.18,
+) -> Image.Image:
+    alpha_array = np.asarray(alpha, dtype=np.uint8).copy()
+    support = (alpha_array > 0) & (content_alpha > 8)
+    runs = merge_close_runs(true_runs(support.any(axis=0)))
+    if len(runs) <= 1:
+        return alpha
+
+    areas = [int(support[:, start:end].sum()) for start, end in runs]
+    largest = max(areas, default=0)
+    if largest <= 0:
+        return alpha
+    keep = [area >= largest * min_area_ratio for area in areas]
+    if all(keep):
+        return alpha
+
+    column_keep = np.zeros(alpha_array.shape[1], dtype=bool)
+    for should_keep, (start, end) in zip(keep, runs):
+        if should_keep:
+            column_keep[start:end] = True
+    alpha_array[:, ~column_keep] = 0
+    return Image.fromarray(alpha_array, mode="L")
 
 
 def expand_alpha(alpha: Image.Image | None, pixels: int = 18) -> Image.Image | None:
@@ -470,13 +530,14 @@ def build_event(slide_id: str, group: dict[str, Any], layer_id: str, fallback_at
         raise RevealBuildError(f"Unsupported reveal action: {action}")
     at = float(reveal.get("at", fallback_at))
     duration = float(reveal.get("duration", DEFAULTS["duration"]))
+    duration = min(duration, DEFAULTS["duration"])
     event: dict[str, Any] = {
         "id": f"{slide_id}_{group['id']}_{action}",
         "target": layer_id,
         "target_group_id": group["id"],
         "action": action,
         "at": round(max(0.0, at), 3),
-        "duration": round(max(1.0, duration), 3),
+        "duration": round(max(MIN_REVEAL_DURATION_SEC, duration), 3),
         "easing": "easeOutCubic",
         "params": {
             "angle": float(reveal.get("angle", DEFAULTS["angle"])),

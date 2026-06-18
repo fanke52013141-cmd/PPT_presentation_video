@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Bind reveal animation events to TTS audio_timeline segments.
 
-This script rewrites each slide's animation_timeline.json so reveal events finish
-just before their mapped narration beat or linked audio segment starts.
+This script rewrites each slide's animation_timeline.json so reveal events start
+when their mapped narration beat or linked audio segment starts.
 """
 
 from __future__ import annotations
@@ -16,6 +16,10 @@ from typing import Any
 
 class BindError(RuntimeError):
     pass
+
+
+DEFAULT_SYNC_REVEAL_DURATION_SEC = 0.12
+MIN_REVEAL_DURATION_SEC = 0.05
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -139,13 +143,14 @@ def bind_slide(slide_dir: Path, lead_sec: float, preserve_existing_at: bool) -> 
             linked_segment_id = linked_segment_for_event(event, index, beat_map, beat_order, segments)
         if linked_segment_id in segment_by_id:
             event["linked_segment_id"] = linked_segment_id
-            duration = max(1.0, float(event.get("duration", 0.05)))
+            duration = float(event.get("duration", DEFAULT_SYNC_REVEAL_DURATION_SEC))
+            duration = min(duration, DEFAULT_SYNC_REVEAL_DURATION_SEC)
+            duration = max(MIN_REVEAL_DURATION_SEC, duration)
             event["duration"] = round(duration, 3)
-            reveal_lead = duration + max(0.0, lead_sec)
             audio_delay = float(audio_timeline.get("audio_start_sec", 0.0) or 0.0)
-            desired_at = audio_delay + segment_by_id[linked_segment_id] - reveal_lead
+            desired_at = audio_delay + segment_by_id[linked_segment_id] + max(0.0, lead_sec)
             if desired_at < 0:
-                audio_delay = max(audio_delay, reveal_lead - segment_by_id[linked_segment_id])
+                audio_delay = max(audio_delay, 0.0 - segment_by_id[linked_segment_id])
                 audio_timeline["audio_start_sec"] = round(audio_delay, 3)
                 desired_at = 0.0
             event["at"] = round(max(0.0, desired_at), 3)
@@ -215,7 +220,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Bind reveal animation timing to audio timeline segments.")
     parser.add_argument("--run-dir", required=True, type=Path)
     parser.add_argument("--slide-id")
-    parser.add_argument("--lead-sec", type=float, default=0.0, help="Extra silent gap after reveal before the audio segment.")
+    parser.add_argument("--lead-sec", type=float, default=0.0, help="Optional delay after the audio segment starts before revealing.")
     parser.add_argument("--preserve-existing-at", action="store_true")
     return parser.parse_args()
 

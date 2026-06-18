@@ -55,38 +55,6 @@
     }
   };
 
-  window.generateStep3Image = async function generateStep3ImagePatched() {
-    const slideId = document.getElementById('step3-slide-id-label').innerText;
-    const prompt = document.getElementById('step3-prompt-input').value.trim();
-
-    if (!prompt) {
-      showToast('⚠️ 提示词不能为空');
-      return;
-    }
-
-    document.getElementById('step3-loading').style.display = 'block';
-    document.getElementById('step3-btn-generate').disabled = true;
-    const imageModel = state.settings?.image_model || 'gpt-image-1';
-    const imageSize = state.settings?.image_size || '1024x1024';
-    showToast(`🎨 正在调用 ${imageModel} 合成 ${imageSize} 中...`);
-
-    try {
-      const formData = new FormData();
-      formData.append('slide_id', slideId);
-      formData.append('prompt', prompt);
-      const res = await API.post(`/api/projects/${state.currentProject.id}/steps/3/generate`, formData);
-      if (res.success) {
-        showToast('🎉 图片生成并已缩放裁剪至 1920x1080！');
-        refreshStep3Images();
-      }
-    } catch (error) {
-      // API.fetch already displays a toast.
-    } finally {
-      document.getElementById('step3-loading').style.display = 'none';
-      document.getElementById('step3-btn-generate').disabled = false;
-    }
-  };
-
   window.saveImageStyle = async function saveImageStylePatched() {
     const styleText = document.getElementById('image-style-input').value.trim();
     const res = await API.put('/api/image-style', { style_text: styleText });

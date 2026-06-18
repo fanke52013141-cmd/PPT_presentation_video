@@ -684,6 +684,125 @@ input.step2-soft-input:focus {
   overflow-y: auto;
 }
 
+.step3-ai-modal {
+  width: min(1180px, 94vw);
+  max-width: 1180px;
+  max-height: 92vh;
+  overflow-y: auto;
+}
+
+.step3-ai-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.2rem;
+}
+
+.step3-ai-header h3 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+#step3-slide-id-label {
+  color: var(--accent-color);
+}
+
+.step3-ai-close {
+  flex: 0 0 auto;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.82rem;
+}
+
+.step3-ai-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1.25rem;
+}
+
+.step3-ai-pane {
+  min-width: 0;
+  position: relative;
+}
+
+.step3-ai-label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--ink-color);
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+#step3-prompt-input {
+  width: 100%;
+  min-height: 330px;
+  resize: vertical;
+}
+
+.step3-ai-generate {
+  width: 100%;
+  justify-content: center;
+  margin-top: 0.8rem;
+}
+
+.step3-ai-loading {
+  position: absolute;
+  inset: 2rem 0 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg-color) 88%, transparent);
+  text-align: center;
+}
+
+.step3-ai-loading .sketch-loader {
+  margin: 0 auto 0.7rem;
+}
+
+.step3-ai-preview-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.step3-candidate-status {
+  align-items: center;
+  min-height: 24px;
+  padding: 0.1rem 0.45rem;
+  border: 1.5px solid var(--ink-color);
+  border-radius: 4px;
+  background: var(--secondary-color);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.step3-ai-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: #fff;
+  color: #888;
+}
+
+.step3-ai-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.step3-ai-actions {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 44px;
+  margin-top: 0.9rem;
+}
+
 .config-editor-note {
   margin: 0.4rem 0 0.8rem;
   color: #555;
@@ -731,12 +850,30 @@ input.step2-soft-input:focus {
 @media (max-width: 760px) {
   .step2-group-row,
   .step2-group-fields,
-  .reference-image-grid {
+  .reference-image-grid,
+  .step3-ai-layout {
     grid-template-columns: 1fr;
   }
 
   .step2-group-role {
     padding-top: 0;
+  }
+
+  .step3-ai-modal {
+    width: 94vw;
+    padding: 1.1rem;
+  }
+
+  .step3-ai-header {
+    align-items: flex-start;
+  }
+
+  .step3-ai-header h3 {
+    font-size: 1.05rem;
+  }
+
+  #step3-prompt-input {
+    min-height: 220px;
   }
 }
 

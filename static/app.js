@@ -221,7 +221,16 @@ function initGlobalEvents() {
 
   // ================= 步骤 3 事件 =================
   document.getElementById('step3-btn-generate').addEventListener('click', () => generateStep3Image());
-  document.getElementById('step3-file-upload').addEventListener('change', (e) => uploadStep3Image(e));
+  document.getElementById('step3-btn-close-editor').addEventListener('click', () => closeStep3AIModal());
+  document.getElementById('step3-btn-apply-candidate').addEventListener('click', () => applyStep3Candidate());
+  document.getElementById('modal-step3-ai').addEventListener('click', (event) => {
+    if (event.target.id === 'modal-step3-ai') closeStep3AIModal();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && document.getElementById('modal-step3-ai').style.display === 'flex') {
+      closeStep3AIModal();
+    }
+  });
   document.getElementById('step3-batch-upload').addEventListener('change', (e) => handleStep3BatchUpload(e));
   document.getElementById('step3-btn-copy-prompts').addEventListener('click', () => copyStep2Prompts());
   document.getElementById('step3-btn-style')?.addEventListener('click', () => openImageStyleModal());
@@ -1088,6 +1097,8 @@ let slidePrompts = [];
 // 全局图片顺序（用于拖拽排序）
 let step3ImageOrder = []; // [{slide_id, exists, url}]
 let step3DraggedIndex = -1;
+let step3CandidateReady = false;
+let step3CandidateSlideId = '';
 
 async function loadStep3Data() {
   // 优先加载分镜数据，保证即使无图片也能渲染占位卡
@@ -1165,7 +1176,7 @@ function renderStep3Grid() {
     const slideInfo = state.slides.find(item => item.slide_id === img.slide_id);
     const slideTitle = promptInfo?.title || slideInfo?.main_title || '未命名 Slide';
     const previewHtml = img.exists
-      ? `<img src="${img.url}" style="width: 100%; height: 100%; object-fit: cover;" title="点击预览并编辑此张 Slide">`
+      ? `<img src="${img.url}" style="width: 100%; height: 100%; object-fit: cover;" alt="${escHtml(slideTitle)}">`
       : `<div style="width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.3rem; color: #888; background: #fffdf5;">
            <svg class="icon" viewBox="0 0 24 24" style="width: 20px; height: 20px; color: #aaa;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path></svg>
            <span style="font-size: 0.75rem; font-weight: 500;">暂无图片，点击上传/生成</span>
@@ -1199,7 +1210,7 @@ function renderStep3Grid() {
       </div>
       <div class="step3-card-title" title="${escHtml(slideTitle)}">${escHtml(slideTitle)}</div>
 
-      <div class="img-preview-container" style="width: 100%; aspect-ratio: 16/9; position: relative; border: 2px solid var(--ink-color); border-radius: 6px; overflow: hidden; background: #fffdf5; cursor: pointer;" onclick="openStep3AI('${img.slide_id}')">
+      <div class="img-preview-container" style="width: 100%; aspect-ratio: 16/9; position: relative; border: 2px solid var(--ink-color); border-radius: 6px; overflow: hidden; background: #fffdf5;">
         ${previewHtml}
       </div>
     `;
@@ -1271,24 +1282,35 @@ async function moveStep3Image(idx, direction) {
 window.moveStep3Image = moveStep3Image;
 
 function openStep3AI(slideId) {
-  // 刷新当前激活的 slide并展开 AI 生成展板
   state.activeSlideIndex = step3ImageOrder.findIndex(img => img.slide_id === slideId);
-  const editor = document.getElementById('step3-editor');
-  editor.style.display = 'block';
+  step3CandidateReady = false;
+  step3CandidateSlideId = '';
   document.getElementById('step3-slide-id-label').innerText = slideId;
   const pInfo = slidePrompts.find(p => p.slide_id === slideId);
   document.getElementById('step3-prompt-input').value = pInfo ? pInfo.prompt : '';
   const imgInfo = step3ImageOrder.find(img => img.slide_id === slideId);
   const prevEl = document.getElementById('step3-preview-box');
+  document.getElementById('step3-preview-label').innerText = '当前图片预览';
+  document.getElementById('step3-candidate-status').style.display = 'none';
+  document.getElementById('step3-btn-apply-candidate').style.display = 'none';
   if (imgInfo && imgInfo.exists) {
-    prevEl.innerHTML = `<img src="${imgInfo.url}" style="width:100%; height:100%; object-fit:contain;">`;
+    prevEl.innerHTML = `<img src="${imgInfo.url}" alt="${slideId} 当前图片">`;
   } else {
-    prevEl.innerHTML = '<span style="color: #888;">暂无图片</span>';
+    prevEl.innerHTML = '<span>暂无图片</span>';
   }
-  editor.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  document.getElementById('modal-step3-ai').style.display = 'flex';
+  document.getElementById('step3-prompt-input').focus();
 }
 
 window.openStep3AI = openStep3AI;
+
+function closeStep3AIModal() {
+  document.getElementById('modal-step3-ai').style.display = 'none';
+  step3CandidateReady = false;
+  step3CandidateSlideId = '';
+}
+
+window.closeStep3AIModal = closeStep3AIModal;
 
 async function uploadStep3ImageById(slideId, input) {
   const file = input.files[0];
@@ -1334,7 +1356,7 @@ async function handleStep3BatchUpload(e) {
 }
 
 
-// AI 生成单张图片（来自 AI 展板的提交）
+// AI 生成单张候选图片，确认后才替换当前图片。
 async function generateStep3Image() {
   const slideId = document.getElementById('step3-slide-id-label').innerText;
   const prompt = document.getElementById('step3-prompt-input').value.trim();
@@ -1344,18 +1366,30 @@ async function generateStep3Image() {
     return;
   }
   
-  document.getElementById('step3-loading').style.display = 'block';
+  document.getElementById('step3-loading').style.display = 'flex';
   document.getElementById('step3-btn-generate').disabled = true;
-  showToast(`🎨 正在调用 ${state.settings?.image_model || 'gpt-image-1'} 合成 1536x1024 中...`);
+  const imageModel = state.settings?.image_model || 'gpt-image-1';
+  const imageSize = state.settings?.image_size || '1024x1024';
+  showToast(`🎨 正在调用 ${imageModel} 合成 ${imageSize} 候选图...`);
   
   try {
     const formData = new FormData();
     formData.append('slide_id', slideId);
     formData.append('prompt', prompt);
+    formData.append('preview', 'true');
     const res = await API.post(`/api/projects/${state.currentProject.id}/steps/3/generate`, formData);
     if (res.success) {
-      showToast('🎉 图片生成并已缩放裁剪至 1920x1080！');
-      refreshStep3Images();
+      const activeSlideId = document.getElementById('step3-slide-id-label').innerText;
+      const modalOpen = document.getElementById('modal-step3-ai').style.display === 'flex';
+      if (!modalOpen || activeSlideId !== slideId) return;
+      step3CandidateReady = true;
+      step3CandidateSlideId = slideId;
+      document.getElementById('step3-preview-label').innerText = 'AI 候选图片预览';
+      document.getElementById('step3-candidate-status').style.display = 'inline-flex';
+      document.getElementById('step3-preview-box').innerHTML =
+        `<img src="${res.candidate_url}" alt="${slideId} AI 候选图片">`;
+      document.getElementById('step3-btn-apply-candidate').style.display = 'inline-flex';
+      showToast('候选图片已生成。确认画面后点击“替换原图”。');
     }
   } catch(e) {
   } finally {
@@ -1364,29 +1398,30 @@ async function generateStep3Image() {
   }
 }
 
-// 单张上传（来自 AI 展板的上传按钮，绑定了 id=step3-file-upload 的 input change）
-async function uploadStep3Image(e) {
+async function applyStep3Candidate() {
   const slideId = document.getElementById('step3-slide-id-label').innerText;
-  if (!slideId || slideId === '--') {
-    showToast('⚠️ 请先点击某张 Slide 的 AI 生成面板再上传');
+  if (!step3CandidateReady || step3CandidateSlideId !== slideId) {
+    showToast('请先生成一张候选图片。');
     return;
   }
-  const file = e.target.files[0];
-  if (!file) return;
-  const formData = new FormData();
-  formData.append('slide_id', slideId);
-  formData.append('file', file);
-  showToast('📤 正在上传并裁剪为标准格式...');
-  const res = await API.post(`/api/projects/${state.currentProject.id}/steps/3/upload`, formData);
-  if (res.success) {
-    showToast('🎉 图片上传成功！');
-    refreshStep3Images();
-    // 同步更新 AI 展板预览
-    document.getElementById('step3-preview-box').innerHTML =
-      `<img src="${res.url || ''}" style="width:100%; height:100%; object-fit:contain;">`;
+  const applyButton = document.getElementById('step3-btn-apply-candidate');
+  applyButton.disabled = true;
+  try {
+    const res = await API.post(
+      `/api/projects/${state.currentProject.id}/steps/3/apply-candidate`,
+      { slide_id: slideId }
+    );
+    if (res.success) {
+      await refreshStep3Images();
+      closeStep3AIModal();
+      showToast('候选图片已替换原图。');
+    }
+  } finally {
+    applyButton.disabled = false;
   }
-  e.target.value = '';
 }
+
+window.applyStep3Candidate = applyStep3Candidate;
 
 async function confirmStep3Images() {
   const res = await API.post(`/api/projects/${state.currentProject.id}/steps/3/confirm`);

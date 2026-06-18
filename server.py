@@ -1617,15 +1617,25 @@ def get_slide_prompts(project_id: str, db: Session = Depends(get_db)):
     return {"success": True, "prompts": slide_prompts}
 
 @app.post("/api/projects/{project_id}/steps/3/generate")
-def generate_slide_image(project_id: str, slide_id: str = Form(...), prompt: str = Form(...), db: Session = Depends(get_db)):
+def generate_slide_image(
+    project_id: str,
+    slide_id: str = Form(...),
+    prompt: str = Form(...),
+    preview: bool = Form(False),
+    db: Session = Depends(get_db),
+):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-        
+
+    if slide_id not in read_current_slide_ids_or_404(project):
+        raise HTTPException(status_code=404, detail="Slide 不存在")
+
     api_key = get_setting("image_api_key")
     base_url = get_setting("image_base_url")
     model = get_setting("image_model", "gpt-image-1")
-    save_path = os.path.join(project.run_dir, "slides", slide_id, "visual_draft.png")
+    image_filename = "visual_candidate.png" if preview else "visual_draft.png"
+    save_path = os.path.join(project.run_dir, "slides", slide_id, image_filename)
     
     if not api_key:
         raise HTTPException(status_code=400, detail="未配置生图 API 密钥，请在系统设置中配置，或使用下方本地上传图片功能。")
@@ -1701,6 +1711,11 @@ def generate_slide_image(project_id: str, slide_id: str = Form(...), prompt: str
 
         process_and_save_image(img_bytes, save_path)
         logger.info(f"Image saved for {slide_id}: {save_path}")
+        if preview:
+            return {
+                "success": True,
+                "candidate_url": f"/api/projects/{project_id}/slides/{slide_id}/candidate?t={uuid.uuid4().hex[:6]}",
+            }
         if all_current_slide_images_exist(project):
             handle_step_navigation(project, 3, db)
         
@@ -1739,6 +1754,45 @@ def get_slide_image_file(project_id: str, slide_id: str, db: Session = Depends(g
         
     from fastapi.responses import FileResponse
     return FileResponse(img_path, media_type="image/png")
+
+
+@app.get("/api/projects/{project_id}/slides/{slide_id}/candidate")
+def get_slide_candidate_file(project_id: str, slide_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    if slide_id not in read_current_slide_ids_or_404(project):
+        raise HTTPException(status_code=404, detail="Slide 不存在")
+
+    candidate_path = os.path.join(project.run_dir, "slides", slide_id, "visual_candidate.png")
+    if not os.path.exists(candidate_path):
+        raise HTTPException(status_code=404, detail="候选图片不存在")
+    return FileResponse(candidate_path, media_type="image/png")
+
+
+@app.post("/api/projects/{project_id}/steps/3/apply-candidate")
+def apply_slide_candidate(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    slide_id = str(payload.get("slide_id") or "").strip()
+    if slide_id not in read_current_slide_ids_or_404(project):
+        raise HTTPException(status_code=404, detail="Slide 不存在")
+
+    slide_dir = os.path.join(project.run_dir, "slides", slide_id)
+    candidate_path = os.path.join(slide_dir, "visual_candidate.png")
+    image_path = os.path.join(slide_dir, "visual_draft.png")
+    if not os.path.exists(candidate_path):
+        raise HTTPException(status_code=404, detail="候选图片不存在，请先生成")
+
+    os.replace(candidate_path, image_path)
+    if all_current_slide_images_exist(project):
+        handle_step_navigation(project, 3, db)
+    return {
+        "success": True,
+        "image_url": f"/api/projects/{project_id}/slides/{slide_id}/image?t={uuid.uuid4().hex[:6]}",
+    }
 
 @app.get("/api/projects/{project_id}/steps/3/images")
 def get_all_images(project_id: str, db: Session = Depends(get_db)):

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PPT Visualization Studio - 手绘线稿风格</title>
-  <link rel="stylesheet" href="style.css?v=2.0.7">
+  <link rel="stylesheet" href="style.css?v=2.0.8">
 </head>
 <body>
 
@@ -210,38 +210,6 @@
           <!-- 全局图片管理网格 -->
           <div id="step3-images-grid" class="step3-grid-four"></div>
 
-          <!-- 单张 Slide AI 生成区（点击缩略图展开）-->
-          <div id="step3-editor" class="card" style="display: none; margin-top: 1.5rem;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-              <h3 style="margin: 0;">AI 生成图片：<span id="step3-slide-id-label" style="color: var(--accent-color);">--</span></h3>
-              <button onclick="document.getElementById('step3-editor').style.display='none'" class="secondary" style="font-size: 0.8rem; padding: 0.2rem 0.6rem;">✕ 关闭</button>
-            </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-              <div>
-                <label style="font-weight: bold; display: block; margin-bottom: 0.4rem; font-size: 0.9rem;">生图提示词 (Prompt):</label>
-                <textarea id="step3-prompt-input" rows="6"></textarea>
-                <button id="step3-btn-generate" class="success" style="width: 100%; justify-content: center; margin-top: 0.8rem;">
-                  <svg class="icon" viewBox="0 0 24 24"><path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 14.7255 3.09032 17.1962 4.85857 19C5.01445 19.1559 5.09238 19.3789 5.06456 19.5977C5.01915 19.9549 5 20.3197 5 20.69C5 21.4135 5.58654 22 6.31 22H12Z"></path><circle cx="7.5" cy="10.5" r="1.5" fill="currentColor"></circle><circle cx="11.5" cy="7.5" r="1.5" fill="currentColor"></circle><circle cx="16.5" cy="9.5" r="1.5" fill="currentColor"></circle><circle cx="15.5" cy="14.5" r="1.5" fill="currentColor"></circle></svg>
-                  立即 AI 生成
-                </button>
-                <div id="step3-loading" style="display: none; margin-top: 1rem; text-align: center;">
-                  <div class="sketch-loader" style="margin: 0 auto 10px auto;"></div>
-                  <p>图片正在渲染，大约需要 10-15 秒...</p>
-                </div>
-              </div>
-              <div>
-                <label style="font-weight: bold; display: block; margin-bottom: 0.4rem; font-size: 0.9rem;">当前图片预览：</label>
-                <div id="step3-preview-box" class="sketch-dashed" style="height: 180px; display: flex; align-items: center; justify-content: center; background-color: #fcfcfc; overflow: hidden; margin-bottom: 0.8rem;">
-                  <span style="color: #888;">暂无图片</span>
-                </div>
-                <label class="btn secondary" style="width: 100%; justify-content: center; cursor: pointer; font-size: 0.85rem;">
-                  <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path></svg>
-                  上传替换此张图片
-                  <input type="file" id="step3-file-upload" accept="image/*" style="display: none;">
-                </label>
-              </div>
-            </div>
-          </div>
         </div>
 
         <!-- ==================== 步骤 4: 图片审核确认 ==================== -->
@@ -624,6 +592,47 @@
     </div>
   </div>
 
+  <div id="modal-step3-ai" class="modal-overlay" style="display: none;">
+    <div id="step3-editor" class="modal-content step3-ai-modal" role="dialog" aria-modal="true" aria-labelledby="step3-ai-title">
+      <div class="step3-ai-header">
+        <h3 id="step3-ai-title">AI 生成图片：<span id="step3-slide-id-label">--</span></h3>
+        <button id="step3-btn-close-editor" class="secondary step3-ai-close" type="button">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+          关闭
+        </button>
+      </div>
+      <div class="step3-ai-layout">
+        <section class="step3-ai-pane">
+          <label class="step3-ai-label" for="step3-prompt-input">生图提示词 (Prompt)</label>
+          <textarea id="step3-prompt-input" rows="14"></textarea>
+          <button id="step3-btn-generate" class="success step3-ai-generate" type="button">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 14.7255 3.09032 17.1962 4.85857 19C5.01445 19.1559 5.09238 19.3789 5.06456 19.5977C5.01915 19.9549 5 20.3197 5 20.69C5 21.4135 5.58654 22 6.31 22H12Z"></path><circle cx="7.5" cy="10.5" r="1.5" fill="currentColor"></circle><circle cx="11.5" cy="7.5" r="1.5" fill="currentColor"></circle><circle cx="16.5" cy="9.5" r="1.5" fill="currentColor"></circle><circle cx="15.5" cy="14.5" r="1.5" fill="currentColor"></circle></svg>
+            立即 AI 生成
+          </button>
+          <div id="step3-loading" class="step3-ai-loading" style="display: none;">
+            <div class="sketch-loader"></div>
+            <p>图片正在生成，请稍候...</p>
+          </div>
+        </section>
+        <section class="step3-ai-pane">
+          <div class="step3-ai-preview-heading">
+            <span id="step3-preview-label" class="step3-ai-label">当前图片预览</span>
+            <span id="step3-candidate-status" class="step3-candidate-status" style="display: none;">待确认</span>
+          </div>
+          <div id="step3-preview-box" class="sketch-dashed step3-ai-preview">
+            <span>暂无图片</span>
+          </div>
+          <div class="step3-ai-actions">
+            <button id="step3-btn-apply-candidate" class="success" type="button" style="display: none;">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>
+              替换原图
+            </button>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
   <div id="modal-storyboard-rules" class="modal-overlay" style="display: none;">
     <div class="modal-content config-editor-modal">
       <h3 class="highlight-title">分镜生成规则</h3>
@@ -664,7 +673,7 @@
   <div id="toast-container"></div>
 
   <!-- 主业务 JavaScript 脚本 -->
-  <script src="app.js?v=2.0.15"></script>
-  <script src="config_effectiveness.js?v=1.0.0"></script>
+  <script src="app.js?v=2.0.16"></script>
+  <script src="config_effectiveness.js?v=1.0.1"></script>
 </body>
 </html>

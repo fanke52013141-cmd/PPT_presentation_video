@@ -15,11 +15,11 @@ import sys
 from pathlib import Path
 from typing import Any, Sequence
 
-from PIL import Image
-
 DEFAULT_WIDTH = 1920
 DEFAULT_HEIGHT = 1080
 STAGE_CHOICES = ("contract", "image", "reveal", "render_ready", "all")
+DEFAULT_ALLOWED_IMAGE_PROVIDERS = ("codex_image_gen", "manual_upload")
+PRODUCTION_ALLOWED_IMAGE_PROVIDERS = ("codex_image_gen",)
 
 
 class StageError(RuntimeError):
@@ -86,6 +86,9 @@ def slide_ids_from_contract(run_dir: Path) -> list[str]:
 
 
 def validate_png(path: Path, width: int | None = None, height: int | None = None) -> None:
+    # Import Pillow lazily so contract-only validation does not require image deps.
+    from PIL import Image
+
     if not path.exists():
         raise StageError(f"Missing PNG file: {path}")
     if path.suffix.lower() != ".png":
@@ -96,24 +99,33 @@ def validate_png(path: Path, width: int | None = None, height: int | None = None
         raise StageError(f"PNG has wrong dimensions: {path} is {actual[0]}x{actual[1]}, expected {width}x{height}")
 
 
-def validate_image_provenance(slide_dir: Path) -> None:
+def validate_image_provenance(slide_dir: Path, allowed_providers: set[str]) -> None:
     path = slide_dir / "visual_provenance.json"
     provenance = read_json(path)
     provider = str(provenance.get("provider", "")).strip()
     if not provider:
         raise StageError(f"visual_provenance.json missing provider: {path}")
+    if provider not in allowed_providers:
+        allowed = ", ".join(sorted(allowed_providers))
+        raise StageError(f"visual_provenance.json has unsupported provider: {path}: {provider} not in [{allowed}]")
     copied_to = str(provenance.get("copied_to", "")).replace("\\", "/")
     if copied_to and not copied_to.endswith("visual_draft.png"):
         raise StageError(f"visual_provenance.json copied_to does not point to visual_draft.png: {path}")
 
 
-def validate_image_stage(run_dir: Path, width: int, height: int, require_image_provenance: bool) -> None:
+def validate_image_stage(
+    run_dir: Path,
+    width: int,
+    height: int,
+    require_image_provenance: bool,
+    allowed_image_providers: set[str],
+) -> None:
     slide_ids = slide_ids_from_contract(run_dir)
     for slide_id in slide_ids:
         slide_dir = run_dir / "slides" / slide_id
         validate_png(slide_dir / "visual_draft.png", width=width, height=height)
         if require_image_provenance:
-            validate_image_provenance(slide_dir)
+            validate_image_provenance(slide_dir, allowed_providers=allowed_image_providers)
     print(f"Validated image assets for {len(slide_ids)} slide(s)")
 
 
@@ -189,7 +201,8 @@ def validate_render_ready_stage(run_dir: Path, repo_root: Path, require_layered:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run staged validation checks for an article-to-video run.")
     parser.add_argument("--run-dir", required=True, type=Path)
-    parser.add_argument("--stage", choices=STAGE_CHOICES, default="all")
+    parser.add_argument("--stage", choices=STAGE_CHOICES, default=None, help="Defaults to all; --production also defaults to all.")
+    parser.add_argument("--production", action="store_true", help="Production preset: stage all plus layered, provenance, and review gates.")
     parser.add_argument("--repo-root", type=Path, default=None, help="Defaults to the repository root inferred from this script.")
     parser.add_argument("--width", type=int, default=DEFAULT_WIDTH)
     parser.add_argument("--height", type=int, default=DEFAULT_HEIGHT)
@@ -199,6 +212,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--require-reviewed", action="store_true", help="Require reveal groups to have an approved review_status.")
     parser.add_argument("--require-layered", action="store_true", help="Pass --require-layered to validate_run_assets.py.")
     parser.add_argument("--require-image-provenance", action="store_true", help="Require slides/<slide_id>/visual_provenance.json.")
+    parser.add_argument(
+        "--allowed-image-provider",
+        action="append",
+        default=None,
+        help="Allowed visual_provenance provider. May be repeated. Defaults to codex_image_gen and manual_upload; --production defaults to codex_image_gen only.",
+    )
     parser.add_argument("--allow-blocking-warnings", action="store_true", help="Pass through to validate_reveal_scene.py.")
     parser.add_argument("--strict-literal", action="store_true", help="Pass through to validate_narration_grounding.py.")
     return parser.parse_args()
@@ -209,26 +228,46 @@ def main() -> int:
     repo_root = (args.repo_root or repo_root_from_script()).resolve()
     run_dir = args.run_dir.resolve()
 
+    stage = args.stage or "all"
+    require_layered = bool(args.require_layered)
+    require_image_provenance = bool(args.require_image_provenance)
+    require_reviewed = bool(args.require_reviewed)
+
+    if args.production:
+        stage = args.stage or "all"
+        require_layered = True
+        require_image_provenance = True
+        require_reviewed = True
+
+    default_providers = PRODUCTION_ALLOWED_IMAGE_PROVIDERS if args.production else DEFAULT_ALLOWED_IMAGE_PROVIDERS
+    allowed_image_providers = set(args.allowed_image_provider or default_providers)
+
     try:
-        stages = ["contract", "image", "reveal", "render_ready"] if args.stage == "all" else [args.stage]
-        for stage in stages:
-            print(f"\n# Stage: {stage}")
-            if stage == "contract":
+        stages = ["contract", "image", "reveal", "render_ready"] if stage == "all" else [stage]
+        for current_stage in stages:
+            print(f"\n# Stage: {current_stage}")
+            if current_stage == "contract":
                 validate_contract_stage(run_dir, repo_root, min_groups=args.min_groups, max_groups=args.max_groups)
-            elif stage == "image":
-                validate_image_stage(run_dir, width=args.width, height=args.height, require_image_provenance=args.require_image_provenance)
-            elif stage == "reveal":
+            elif current_stage == "image":
+                validate_image_stage(
+                    run_dir,
+                    width=args.width,
+                    height=args.height,
+                    require_image_provenance=require_image_provenance,
+                    allowed_image_providers=allowed_image_providers,
+                )
+            elif current_stage == "reveal":
                 validate_reveal_stage(
                     run_dir,
                     repo_root,
-                    require_reviewed=args.require_reviewed,
+                    require_reviewed=require_reviewed,
                     max_overlap=args.max_overlap,
                     allow_blocking_warnings=args.allow_blocking_warnings,
                 )
-            elif stage == "render_ready":
-                validate_render_ready_stage(run_dir, repo_root, require_layered=args.require_layered, strict_literal=args.strict_literal)
+            elif current_stage == "render_ready":
+                validate_render_ready_stage(run_dir, repo_root, require_layered=require_layered, strict_literal=args.strict_literal)
             else:
-                raise StageError(f"Unsupported stage: {stage}")
+                raise StageError(f"Unsupported stage: {current_stage}")
     except StageError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1

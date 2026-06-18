@@ -699,6 +699,10 @@ input.step2-soft-input:focus {
   border-top: 1px solid #d8d5ca;
 }
 
+#btn-storyboard-rules-copy-full {
+  margin-right: auto;
+}
+
 .reference-image-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -859,6 +863,55 @@ input.step2-soft-input:focus {
   .step3-grid-four {
     grid-template-columns: 1fr;
   }
+
+  .app-container {
+    flex-direction: column;
+    height: calc(100vh - 46px);
+  }
+
+  .sidebar {
+    width: 100%;
+    flex: 0 0 auto;
+    padding: 0.55rem 0.7rem;
+    border-right: 0;
+    border-bottom: 2px solid var(--ink-color);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .stepper {
+    flex-direction: row;
+    gap: 0.45rem;
+    width: max-content;
+  }
+
+  .step-item {
+    flex: 0 0 auto;
+    padding: 0.35rem 0.55rem;
+  }
+
+  #workspace-main {
+    width: 100%;
+    min-width: 0;
+    padding: 0.35rem 0.75rem 1.2rem;
+  }
+
+  .step3-toolbar-row {
+    flex-wrap: wrap;
+  }
+
+  #step3-btn-confirm {
+    margin-left: 0 !important;
+  }
+
+  .step3-card-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .step3-card-header > div:last-child {
+    margin-left: 2.4rem;
+  }
 }
 
 /* 优化拖拽卡片 */
@@ -869,6 +922,94 @@ input.step2-soft-input:focus {
 .slide-card-draggable:hover {
   transform: translateY(-2px);
   box-shadow: 4px 4px 0px 0px var(--ink-color) !important;
+}
+
+.slide-card-draggable.is-dragging {
+  opacity: 0.45;
+  transform: scale(0.98);
+}
+
+.slide-card-draggable.drag-over {
+  border-color: #d6aa14;
+  box-shadow: 0 0 0 3px rgba(249, 214, 92, 0.55), 4px 4px 0 0 var(--ink-color) !important;
+}
+
+.step3-card-header {
+  min-height: 32px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 0.35rem;
+}
+
+.step3-card-identity {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.slide-drag-handle {
+  width: 28px;
+  height: 30px;
+  flex: 0 0 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  color: #555;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  box-shadow: none;
+  cursor: grab;
+}
+
+.slide-drag-handle:hover,
+.slide-drag-handle:focus-visible {
+  color: var(--ink-color);
+  background: var(--primary-color);
+  outline: 2px solid var(--ink-color);
+  transform: none;
+  box-shadow: none;
+}
+
+.slide-drag-handle:active {
+  cursor: grabbing;
+}
+
+.slide-drag-handle svg {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+  stroke: none;
+}
+
+.step3-card-position {
+  flex: 0 0 auto;
+  color: #666;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.step3-card-slide-id {
+  min-width: 0;
+  color: var(--ink-color);
+  font-size: 0.95rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.step3-card-title {
+  min-height: 38px;
+  margin: 0 0 0.55rem 2.4rem;
+  color: var(--ink-color);
+  font-size: 0.9rem;
+  font-weight: 800;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 /* Mask 标注步骤 Slide 简易平铺切换按钮网格 */

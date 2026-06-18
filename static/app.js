@@ -251,6 +251,7 @@ function initGlobalEvents() {
   document.getElementById('step8-btn-finish').addEventListener('click', () => exitWorkspace());
   document.getElementById('btn-storyboard-rules-cancel')?.addEventListener('click', () => closeStoryboardRulesModal());
   document.getElementById('btn-storyboard-rules-save')?.addEventListener('click', () => saveStoryboardRules());
+  document.getElementById('btn-storyboard-rules-copy-full')?.addEventListener('click', () => copyFullStoryboardRequest());
   document.getElementById('btn-image-style-cancel')?.addEventListener('click', () => closeImageStyleModal());
   document.getElementById('btn-image-style-save')?.addEventListener('click', () => saveImageStyle());
   document.getElementById('setting-llm-provider')?.addEventListener('change', (event) => applyLlmProviderPreset(event.target.value));
@@ -1086,6 +1087,7 @@ async function saveStep2Contract(options = {}) {
 let slidePrompts = [];
 // 全局图片顺序（用于拖拽排序）
 let step3ImageOrder = []; // [{slide_id, exists, url}]
+let step3DraggedIndex = -1;
 
 async function loadStep3Data() {
   // 优先加载分镜数据，保证即使无图片也能渲染占位卡
@@ -1136,38 +1138,32 @@ function renderStep3Grid() {
   step3ImageOrder.forEach((img, idx) => {
     const card = document.createElement('div');
     card.className = 'card sketch-shadow slide-card-draggable';
-    card.setAttribute('draggable', 'true');
-    card.style.cssText = 'padding: 0.8rem; position: relative; cursor: grab; background: var(--bg-color); margin-bottom: 0;';
-
-    // 拖拽事件注册
-    card.addEventListener('dragstart', (e) => {
-      e.dataTransfer.setData('text/plain', idx);
-      card.style.opacity = '0.4';
-      card.style.border = '2px dashed var(--ink-color)';
-    });
+    card.style.cssText = 'padding: 0.8rem; position: relative; background: var(--bg-color); margin-bottom: 0;';
 
     card.addEventListener('dragover', (e) => {
-      e.preventDefault(); // 允许放置
+      if (step3DraggedIndex < 0 || step3DraggedIndex === idx) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      card.classList.add('drag-over');
     });
 
-    card.addEventListener('drop', (e) => {
+    card.addEventListener('dragleave', (e) => {
+      if (!card.contains(e.relatedTarget)) card.classList.remove('drag-over');
+    });
+
+    card.addEventListener('drop', async (e) => {
       e.preventDefault();
-      const draggedIdx = parseInt(e.dataTransfer.getData('text/plain'));
-      const targetIdx = idx;
-      if (draggedIdx !== targetIdx && !isNaN(draggedIdx)) {
-        const temp = step3ImageOrder[draggedIdx];
-        step3ImageOrder.splice(draggedIdx, 1);
-        step3ImageOrder.splice(targetIdx, 0, temp);
-        renderStep3Grid();
-        showToast('🔀 顺序已调整，请点击“确认所有图片”自动重新命名绑定');
+      card.classList.remove('drag-over');
+      const draggedIdx = Number.parseInt(e.dataTransfer.getData('text/plain'), 10);
+      step3DraggedIndex = -1;
+      if (!Number.isNaN(draggedIdx)) {
+        await reorderStep3Images(draggedIdx, idx);
       }
     });
 
-    card.addEventListener('dragend', () => {
-      card.style.opacity = '1';
-      card.style.border = '2px solid var(--ink-color)';
-    });
-
+    const promptInfo = slidePrompts.find(item => item.slide_id === img.slide_id);
+    const slideInfo = state.slides.find(item => item.slide_id === img.slide_id);
+    const slideTitle = promptInfo?.title || slideInfo?.main_title || '未命名 Slide';
     const previewHtml = img.exists
       ? `<img src="${img.url}" style="width: 100%; height: 100%; object-fit: cover;" title="点击预览并编辑此张 Slide">`
       : `<div style="width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.3rem; color: #888; background: #fffdf5;">
@@ -1176,10 +1172,17 @@ function renderStep3Grid() {
          </div>`;
 
     card.innerHTML = `
-      <!-- 头部： slide 编号与控制按钮 -->
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem;">
-        <div style="display: flex; align-items: center; gap: 0.3rem;">
-          <span style="font-weight: bold; font-size: 0.95rem; color: var(--ink-color);">${img.slide_id}</span>
+      <div class="step3-card-header">
+        <div class="step3-card-identity">
+          <button class="slide-drag-handle" type="button" draggable="true" title="按住拖动调整页面顺序" aria-label="拖动 ${img.slide_id} 调整顺序">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="9" cy="5" r="1.4"></circle><circle cx="15" cy="5" r="1.4"></circle>
+              <circle cx="9" cy="12" r="1.4"></circle><circle cx="15" cy="12" r="1.4"></circle>
+              <circle cx="9" cy="19" r="1.4"></circle><circle cx="15" cy="19" r="1.4"></circle>
+            </svg>
+          </button>
+          <span class="step3-card-position">第 ${idx + 1} 页</span>
+          <span class="step3-card-slide-id">${img.slide_id}</span>
           <span style="font-size: 0.72rem; font-weight: bold; color: ${img.exists ? 'var(--ink-color)' : '#888'}; background: ${img.exists ? 'var(--success-color)' : '#f3f4f6'}; border: 1.5px solid var(--ink-color); border-radius: 4px; padding: 1px 4px;">
             ${img.exists ? '已就绪' : '待生成'}
           </span>
@@ -1194,24 +1197,75 @@ function renderStep3Grid() {
           </label>
         </div>
       </div>
+      <div class="step3-card-title" title="${escHtml(slideTitle)}">${escHtml(slideTitle)}</div>
 
-      <!-- 预览区 -->
       <div class="img-preview-container" style="width: 100%; aspect-ratio: 16/9; position: relative; border: 2px solid var(--ink-color); border-radius: 6px; overflow: hidden; background: #fffdf5; cursor: pointer;" onclick="openStep3AI('${img.slide_id}')">
         ${previewHtml}
       </div>
     `;
+    const dragHandle = card.querySelector('.slide-drag-handle');
+    dragHandle.addEventListener('click', (e) => e.stopPropagation());
+    dragHandle.addEventListener('dragstart', (e) => {
+      step3DraggedIndex = idx;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', String(idx));
+      card.classList.add('is-dragging');
+    });
+    dragHandle.addEventListener('dragend', () => {
+      step3DraggedIndex = -1;
+      document.querySelectorAll('.slide-card-draggable').forEach(item => {
+        item.classList.remove('is-dragging', 'drag-over');
+      });
+    });
+    dragHandle.addEventListener('keydown', async (e) => {
+      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
+      e.preventDefault();
+      const direction = ['ArrowLeft', 'ArrowUp'].includes(e.key) ? -1 : 1;
+      await reorderStep3Images(idx, idx + direction);
+    });
     grid.appendChild(card);
   });
 }
 
-function moveStep3Image(idx, direction) {
-  const newIdx = idx + direction;
-  if (newIdx < 0 || newIdx >= step3ImageOrder.length) return;
-  const tmp = step3ImageOrder[idx];
-  step3ImageOrder[idx] = step3ImageOrder[newIdx];
-  step3ImageOrder[newIdx] = tmp;
+function syncStep3OrderState() {
+  const order = new Map(step3ImageOrder.map((item, index) => [item.slide_id, index]));
+  state.slides.sort((a, b) => (order.get(a.slide_id) ?? 9999) - (order.get(b.slide_id) ?? 9999));
+  slidePrompts.sort((a, b) => (order.get(a.slide_id) ?? 9999) - (order.get(b.slide_id) ?? 9999));
+  const openSlideId = document.getElementById('step3-slide-id-label')?.innerText;
+  if (openSlideId && openSlideId !== '--') {
+    state.activeSlideIndex = state.slides.findIndex(slide => slide.slide_id === openSlideId);
+  }
+}
+
+async function reorderStep3Images(draggedIdx, targetIdx) {
+  if (
+    draggedIdx < 0 ||
+    targetIdx < 0 ||
+    draggedIdx >= step3ImageOrder.length ||
+    targetIdx >= step3ImageOrder.length ||
+    draggedIdx === targetIdx
+  ) return;
+
+  const previousOrder = [...step3ImageOrder];
+  const [moved] = step3ImageOrder.splice(draggedIdx, 1);
+  step3ImageOrder.splice(targetIdx, 0, moved);
   renderStep3Grid();
-  showToast('🔀 顺序已调整，请点击“确认所有图片”自动重新命名绑定');
+
+  try {
+    await API.put(`/api/projects/${state.currentProject.id}/steps/3/order`, {
+      slide_ids: step3ImageOrder.map(item => item.slide_id)
+    });
+    syncStep3OrderState();
+    renderStep3Grid();
+    showToast('页面顺序已保存');
+  } catch (error) {
+    step3ImageOrder = previousOrder;
+    renderStep3Grid();
+  }
+}
+
+async function moveStep3Image(idx, direction) {
+  await reorderStep3Images(idx, idx + direction);
 }
 
 window.moveStep3Image = moveStep3Image;
@@ -1909,6 +1963,21 @@ async function openStoryboardRulesModal() {
   const res = await API.get(`/api/projects/${state.currentProject.id}/steps/2/rules`);
   document.getElementById('storyboard-rules-input').value = res.rules || '';
   document.getElementById('modal-storyboard-rules').style.display = 'flex';
+}
+
+async function copyFullStoryboardRequest() {
+  if (!state.currentProject?.id) return;
+  const rules = document.getElementById('storyboard-rules-input').value.trim();
+  const res = await API.post(`/api/projects/${state.currentProject.id}/steps/2/prompt-preview`, { rules });
+  const text = [
+    '=== SYSTEM CONTENT ===',
+    res.system_content || '',
+    '',
+    '=== USER CONTENT ===',
+    res.user_content || ''
+  ].join('\n');
+  await navigator.clipboard.writeText(text);
+  showToast('完整分镜请求已复制，包含 System Content 和 User Content');
 }
 
 function closeStoryboardRulesModal() {

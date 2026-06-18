@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PPT Visualization Studio - 手绘线稿风格</title>
-  <link rel="stylesheet" href="style.css?v=2.0.6">
+  <link rel="stylesheet" href="style.css?v=2.0.7">
 </head>
 <body>
 
@@ -627,9 +627,10 @@
   <div id="modal-storyboard-rules" class="modal-overlay" style="display: none;">
     <div class="modal-content config-editor-modal">
       <h3 class="highlight-title">分镜生成规则</h3>
-      <p class="config-editor-note">这里控制分镜逻辑、演讲稿风格和旁白与画面的对应关系。输出 JSON 结构由系统锁定。</p>
+      <p class="config-editor-note">这里编辑的是插入 System Content 的自定义规则。完整系统约束、JSON Schema 和 User Content 文章由后台自动拼接。</p>
       <textarea id="storyboard-rules-input" rows="16"></textarea>
       <div class="config-editor-actions">
+        <button id="btn-storyboard-rules-copy-full" class="secondary">复制完整请求</button>
         <button id="btn-storyboard-rules-cancel" class="secondary">取消</button>
         <button id="btn-storyboard-rules-save" class="success">保存规则</button>
       </div>
@@ -639,7 +640,7 @@
   <div id="modal-image-style" class="modal-overlay" style="display: none;">
     <div class="modal-content config-editor-modal">
       <h3 class="highlight-title">图片风格与参考图</h3>
-      <p class="config-editor-note">编辑 `config/style_tokens.yaml`。生成图片时会携带这份规范，并在接口支持时使用两张参考图。</p>
+      <p class="config-editor-note">这里只编辑静态生图直接使用的画风、配色和版式。动画、图层、字幕渲染等后续视频配置不会进入生图提示词。</p>
       <textarea id="image-style-input" rows="18" spellcheck="false"></textarea>
       <div class="reference-image-grid">
         <label class="reference-image-item">
@@ -663,7 +664,7 @@
   <div id="toast-container"></div>
 
   <!-- 主业务 JavaScript 脚本 -->
-  <script src="app.js?v=2.0.14"></script>
+  <script src="app.js?v=2.0.15"></script>
   <script src="config_effectiveness.js?v=1.0.0"></script>
 </body>
 </html>

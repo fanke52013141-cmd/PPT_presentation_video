@@ -3,6 +3,7 @@ import io
 import sys
 import uuid
 import json
+import copy
 import shutil
 import logging
 import subprocess
@@ -1088,6 +1089,66 @@ def default_storyboard_rules() -> str:
     return "旁白自然口语化；每个旁白语段只绑定一个清晰的视觉分组；画面先于对应语音约 1 秒出现。"
 
 
+def build_storyboard_request(
+    project_title: str,
+    article_summary: str,
+    article_content: str,
+    storyboard_rules: str,
+) -> tuple[str, str]:
+    article_chars = len(re.sub(r"\s+", "", article_content))
+    if article_chars <= 1200:
+        slide_count_requirement = "4 到 6 页"
+        group_count_requirement = "5-6 个"
+    elif article_chars <= 3000:
+        slide_count_requirement = "6 到 8 页"
+        group_count_requirement = "5-7 个"
+    else:
+        slide_count_requirement = "8 到 12 页"
+        group_count_requirement = "5-8 个"
+
+    schema_path = os.path.join(REPO_ROOT, "schemas", "visual_contract.schema.json")
+    schema_hint = ""
+    if os.path.exists(schema_path):
+        with open(schema_path, "r", encoding="utf-8") as f:
+            schema_hint = f.read()
+
+    system_prompt = f"""你是一个顶级的 PPT 视频分镜策划师。
+请阅读用户输入的内容摘要和全文，设计出一份符合 PPT 动画视频制作标准的视觉合约(Visual Contract)。
+视频的画面风格为“温暖极简手绘线稿风”。
+要求：
+1. 必须要将整篇文章合理划分，分成 {slide_count_requirement} Slide（每页的 slide_id 为 slide_001, slide_002 格式）。
+2. 每页 Slide 必须定义 {group_count_requirement}视觉分组(visual_groups)，包含：
+   - 1个 title 主标题（role 为 'title'）
+   - 1个 subtitle 副标题（role 为 'subtitle'）
+   - 2-4个 body/diagram 主体/图表区（role 只能是 'content_body', 'diagram', 'annotation', 'summary', 'decoration' 之一）
+   - 1个 summary 总结区（role 为 'summary'）
+3. 每个视觉分组（visual_groups）必须有：
+   - id: 比如 title_group, subtitle_group, body_group_01 等
+   - visible_text: 页面上会显式画出来的中文字符标签（非常重要，通常为 2-8 个字，绝对不能为空）
+   - visual_anchor: 手绘线稿元素的视觉描述（比如“顶部主标题”、“左边带圆圈数字1的方框”、“中间一个简笔画小脑”）
+   - narration_function: 解释该分组在画面中所起的视觉/解释作用
+   - reveal_order: 页面渲染时层淡入淡出显示的顺序，从 1 开始依次增加
+4. 必须规划 narration_beats (旁白语段)，使说话声音与相应视觉分组绑定：
+   - group_id: 指向前面定义的 visual_groups 中的 id
+   - visible_anchor: 该分组对应的 visible_text 文本（不可写错，必须一致）
+   - spoken_intent: 这一句话想达到的意图
+   - spoken_text: 这一句话具体要朗读的中文旁白（需自然连贯，解释 visible_text）
+5. 用户自定义的分镜与演讲稿规则如下。请遵守这些内容，但不得修改输出字段、层级、ID 规则或 JSON 结构：
+--- 用户分镜规则开始 ---
+{storyboard_rules}
+--- 用户分镜规则结束 ---
+6. 请确保生成的 JSON 数据严格符合以下的 JSON Schema 格式要求：
+{schema_hint}
+
+请直接返回合法的 JSON 对象，不要包含 markdown 标记的 ```json 外壳。"""
+    user_prompt = (
+        f"项目主题：{project_title}\n"
+        f"摘要提纲：{article_summary}\n"
+        f"正文全文：\n{article_content}"
+    )
+    return system_prompt, user_prompt
+
+
 @app.get("/api/projects/{project_id}/steps/2/rules")
 def get_step2_rules(project_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -1117,6 +1178,47 @@ def update_step2_rules(project_id: str, payload: Dict[str, Any], db: Session = D
     return {"success": True, "rules": rules}
 
 
+@app.post("/api/projects/{project_id}/steps/2/prompt-preview")
+def get_step2_prompt_preview(
+    project_id: str,
+    payload: Optional[Dict[str, Any]] = None,
+    db: Session = Depends(get_db),
+):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    brief_path = os.path.join(project.run_dir, "planning", "article_brief.json")
+    if not os.path.exists(brief_path):
+        raise HTTPException(status_code=400, detail="请先导入文章再查看完整分镜请求")
+    with open(brief_path, "r", encoding="utf-8") as f:
+        brief = json.load(f)
+
+    storyboard_rules = str((payload or {}).get("rules") or "").strip()
+    if not storyboard_rules:
+        rules_path = storyboard_rules_path(project)
+        if os.path.exists(rules_path):
+            with open(rules_path, "r", encoding="utf-8") as f:
+                storyboard_rules = f.read().strip()
+        else:
+            storyboard_rules = default_storyboard_rules()
+
+    project_title = (project.name or "").strip() or brief.get("title") or "未命名项目"
+    article_content = str(brief.get("content") or "")
+    article_summary = brief.get("summary") or build_article_summary(article_content)
+    system_prompt, user_prompt = build_storyboard_request(
+        project_title,
+        article_summary,
+        article_content,
+        storyboard_rules,
+    )
+    return {
+        "success": True,
+        "system_content": system_prompt,
+        "user_content": user_prompt,
+    }
+
+
 @app.post("/api/projects/{project_id}/steps/2/execute")
 def execute_step2(project_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -1132,16 +1234,6 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
     project_title = (project.name or "").strip() or brief.get("title") or "未命名项目"
     article_content = str(brief.get("content") or "")
     article_summary = brief.get("summary") or build_article_summary(article_content)
-    article_chars = len(re.sub(r"\s+", "", article_content))
-    if article_chars <= 1200:
-        slide_count_requirement = "4 到 6 页"
-        group_count_requirement = "5-6 个"
-    elif article_chars <= 3000:
-        slide_count_requirement = "6 到 8 页"
-        group_count_requirement = "5-7 个"
-    else:
-        slide_count_requirement = "8 到 12 页"
-        group_count_requirement = "5-8 个"
         
     llm_api_key = get_setting("llm_api_key")
     llm_base_url = get_setting("llm_base_url")
@@ -1153,8 +1245,7 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
     if not llm_api_key:
         raise HTTPException(status_code=400, detail="未配置大模型 API 密钥，请在系统设置中配置后再试。")
         
-    # 加载已有的 visual_contract 架构 schema 做指导
-    schema_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "schemas", "visual_contract.schema.json"))
+    schema_path = os.path.join(REPO_ROOT, "schemas", "visual_contract.schema.json")
     schema_hint = ""
     if os.path.exists(schema_path):
         with open(schema_path, "r", encoding="utf-8") as f:
@@ -1165,36 +1256,12 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
             storyboard_rules = f.read().strip()
     else:
         storyboard_rules = default_storyboard_rules()
-            
-    system_prompt = f"""你是一个顶级的 PPT 视频分镜策划师。
-请阅读用户输入的内容摘要和全文，设计出一份符合 PPT 动画视频制作标准的视觉合约(Visual Contract)。
-视频的画面风格为“温暖极简手绘线稿风”。
-要求：
-1. 必须要将整篇文章合理划分，分成 {slide_count_requirement} Slide（每页的 slide_id 为 slide_001, slide_002 格式）。
-2. 每页 Slide 必须定义 {group_count_requirement}视觉分组(visual_groups)，包含：
-   - 1个 title 主标题（role 为 'title'）
-   - 1个 subtitle 副标题（role 为 'subtitle'）
-   - 2-4个 body/diagram 主体/图表区（role 只能是 'content_body', 'diagram', 'annotation', 'summary', 'decoration' 之一）
-   - 1个 summary 总结区（role 为 'summary'）
-3. 每个视觉分组（visual_groups）必须有：
-   - id: 比如 title_group, subtitle_group, body_group_01 等
-   - visible_text: 页面上会显式画出来的中文字符标签（非常重要，通常为 2-8 个字，绝对不能空）
-   - visual_anchor: 手绘线稿元素的视觉描述（比如“顶部主标题”、“左边带圆圈数字1的方框”、“中间一个简笔画小脑”）
-   - narration_function: 解释该分组在画面中所起的视觉/解释作用
-   - reveal_order: 页面渲染时层淡入淡出显示的顺序，从 1 开始依次增加
-4. 必须规划 narration_beats (旁白语段)，使说话声音与相应视觉分组绑定：
-   - group_id: 指向前面定义的 visual_groups 中的 id
-   - visible_anchor: 该分组对应的 visible_text 文本（不可写错，必须一致）
-   - spoken_intent: 这一句话想达到的意图
-   - spoken_text: 这一句话具体要朗读的中文旁白（需自然连贯，解释 visible_text）
-5. 用户自定义的分镜与演讲稿规则如下。请遵守这些内容，但不得修改输出字段、层级、ID 规则或 JSON 结构：
---- 用户分镜规则开始 ---
-{storyboard_rules}
---- 用户分镜规则结束 ---
-6. 请确保生成的 JSON 数据严格符合以下的 JSON Schema 格式要求：
-{schema_hint}
-
-请直接返回合法的 JSON 对象，不要包含 markdown 标记的 ```json 外壳。"""
+    system_prompt, user_prompt = build_storyboard_request(
+        project_title,
+        article_summary,
+        article_content,
+        storyboard_rules,
+    )
 
     try:
         client = get_openai_client(api_key=llm_api_key, base_url=llm_base_url)
@@ -1206,7 +1273,7 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
                 response_format={"type": "json_object"},
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"项目主题：{project_title}\n摘要提纲：{article_summary}\n正文全文：\n{article_content}"}
+                    {"role": "user", "content": user_prompt}
                 ]
             )
         except Exception as inner_e:
@@ -1217,7 +1284,7 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
                 max_tokens=planning_max_tokens,
                 messages=[
                     {"role": "system", "content": system_prompt + " 请只输出纯 JSON，不要包含 Markdown 代码块标记（如 ```json ）。"},
-                    {"role": "user", "content": f"项目主题：{project_title}\n摘要提纲：{article_summary}\n正文全文：\n{article_content}"}
+                    {"role": "user", "content": user_prompt}
                 ]
             )
             
@@ -1298,9 +1365,131 @@ def update_step2_result(project_id: str, payload: Dict[str, Any], db: Session = 
 
 # ==================== 步骤 3-4: 图片生成与管理 ====================
 
-def read_style_tokens_text() -> str:
+IMAGE_STYLE_TOP_LEVEL_KEYS = ("brand", "canvas", "colors", "layout", "visual_assets")
+IMAGE_STYLE_VISUAL_ASSET_FIELDS = {
+    "image_style": "image_style",
+    "diagram_style": "diagram_style",
+    "required_background": "required_background",
+    "layout_rules": "reveal_friendly_layout",
+    "avoid": "avoid",
+}
+
+
+def read_style_tokens_data() -> Dict[str, Any]:
     with open(STYLE_TOKENS_PATH, "r", encoding="utf-8") as f:
-        return f.read()
+        payload = yaml.safe_load(f) or {}
+    if not isinstance(payload, dict):
+        raise ValueError("config/style_tokens.yaml must contain a YAML object")
+    return payload
+
+
+def editable_image_style_data(style_tokens: Dict[str, Any]) -> Dict[str, Any]:
+    editable: Dict[str, Any] = {}
+    for key in IMAGE_STYLE_TOP_LEVEL_KEYS:
+        if key not in style_tokens:
+            continue
+        value = copy.deepcopy(style_tokens[key])
+        if key == "visual_assets" and isinstance(value, dict):
+            value = {
+                editor_key: value[source_key]
+                for editor_key, source_key in IMAGE_STYLE_VISUAL_ASSET_FIELDS.items()
+                if source_key in value
+            }
+        editable[key] = value
+    return editable
+
+
+def dump_image_style_editor_text(style_tokens: Dict[str, Any]) -> str:
+    return yaml.safe_dump(
+        editable_image_style_data(style_tokens),
+        allow_unicode=True,
+        sort_keys=False,
+        width=1000,
+    ).strip()
+
+
+def merge_image_style_update(
+    style_tokens: Dict[str, Any],
+    update: Dict[str, Any],
+) -> Dict[str, Any]:
+    unknown_keys = sorted(set(update) - set(IMAGE_STYLE_TOP_LEVEL_KEYS))
+    if unknown_keys:
+        raise HTTPException(
+            status_code=400,
+            detail=f"这些字段不属于生图配置: {', '.join(unknown_keys)}",
+        )
+
+    merged = copy.deepcopy(style_tokens)
+    for key, value in update.items():
+        if key != "visual_assets":
+            merged[key] = value
+            continue
+        if not isinstance(value, dict):
+            raise HTTPException(status_code=400, detail="visual_assets 必须是 YAML 对象")
+        unknown_asset_keys = sorted(set(value) - set(IMAGE_STYLE_VISUAL_ASSET_FIELDS))
+        if unknown_asset_keys:
+            raise HTTPException(
+                status_code=400,
+                detail=f"这些 visual_assets 字段不用于生图: {', '.join(unknown_asset_keys)}",
+            )
+        existing_assets = merged.get("visual_assets")
+        if not isinstance(existing_assets, dict):
+            existing_assets = {}
+        for editor_key, editor_value in value.items():
+            existing_assets[IMAGE_STYLE_VISUAL_ASSET_FIELDS[editor_key]] = copy.deepcopy(editor_value)
+        merged["visual_assets"] = existing_assets
+    return merged
+
+
+def build_image_style_prompt(style_tokens: Dict[str, Any]) -> str:
+    brand = style_tokens.get("brand") if isinstance(style_tokens.get("brand"), dict) else {}
+    canvas = style_tokens.get("canvas") if isinstance(style_tokens.get("canvas"), dict) else {}
+    colors = style_tokens.get("colors") if isinstance(style_tokens.get("colors"), dict) else {}
+    layout = style_tokens.get("layout") if isinstance(style_tokens.get("layout"), dict) else {}
+    assets = style_tokens.get("visual_assets") if isinstance(style_tokens.get("visual_assets"), dict) else {}
+
+    lines = ["图片风格与版式："]
+    keywords = brand.get("style_keywords") if isinstance(brand.get("style_keywords"), list) else []
+    if keywords:
+        lines.append(f"- 整体风格：{'、'.join(str(item) for item in keywords if item)}。")
+
+    aspect_ratio = canvas.get("aspect_ratio", "16:9")
+    width = canvas.get("width", 1920)
+    height = canvas.get("height", 1080)
+    background = canvas.get("background") or colors.get("background") or "#FFFDF7"
+    lines.append(f"- 画布：{aspect_ratio}，按 {width}x{height} 构图，纯色背景 {background}。")
+
+    palette_keys = ("ink", "yellow", "yellow_soft", "green_soft", "blue_soft")
+    palette = [str(colors[key]) for key in palette_keys if colors.get(key)]
+    if palette:
+        lines.append(f"- 配色：主线条与强调色使用 {'、'.join(palette)}，保持克制和清晰。")
+
+    title_block = layout.get("title_block") if isinstance(layout.get("title_block"), dict) else {}
+    content = layout.get("content") if isinstance(layout.get("content"), dict) else {}
+    subtitle_area = layout.get("subtitle_area") if isinstance(layout.get("subtitle_area"), dict) else {}
+    subtitle_reserved = canvas.get("subtitle_reserved") if isinstance(canvas.get("subtitle_reserved"), dict) else {}
+    if title_block:
+        lines.append("- 标题与副标题位于页面上方，沿用模板参考图的字号层级和左侧标题标记。")
+    if content:
+        lines.append("- 主体内容放在页面中部开放区域，不绘制包围整页内容的大外框。")
+    subtitle_y = subtitle_area.get("y") or subtitle_reserved.get("y")
+    if subtitle_y is not None:
+        lines.append(f"- y={subtitle_y} 以下留作视频字幕安全区，不放关键文字、人物或图形。")
+
+    layout_rules = assets.get("reveal_friendly_layout")
+    if isinstance(layout_rules, list):
+        for rule in layout_rules:
+            text = str(rule).strip()
+            if "纯净平面" in text:
+                lines.append(f"- {text}")
+
+    avoid = assets.get("avoid")
+    if isinstance(avoid, list) and avoid:
+        lines.append(f"- 避免：{'、'.join(str(item) for item in avoid if item)}。")
+
+    lines.append("- 参考图优先：字体感觉、线条粗细、配色、留白和视觉层级以附带的模板图与示例图为准。")
+    lines.append("- 只生成最终静态整页图片，不要加入图层名称、制作说明或播放器界面。")
+    return "\n".join(lines)
 
 
 @app.get("/api/image-style")
@@ -1312,7 +1501,12 @@ def get_image_style():
             "exists": os.path.exists(path),
             "url": f"/api/image-style/reference/{kind}?t={int(os.path.getmtime(path))}" if os.path.exists(path) else "",
         }
-    return {"success": True, "style_text": read_style_tokens_text(), "references": references}
+    style_tokens = read_style_tokens_data()
+    return {
+        "success": True,
+        "style_text": dump_image_style_editor_text(style_tokens),
+        "references": references,
+    }
 
 
 @app.put("/api/image-style")
@@ -1326,8 +1520,16 @@ def update_image_style(payload: Dict[str, Any]):
         raise HTTPException(status_code=400, detail=f"YAML 格式错误: {exc}")
     if not isinstance(parsed, dict):
         raise HTTPException(status_code=400, detail="图片风格规范必须是 YAML 对象")
+    current = read_style_tokens_data()
+    merged = merge_image_style_update(current, parsed)
     with open(STYLE_TOKENS_PATH, "w", encoding="utf-8") as f:
-        f.write(style_text + "\n")
+        yaml.safe_dump(
+            merged,
+            f,
+            allow_unicode=True,
+            sort_keys=False,
+            width=1000,
+        )
     return {"success": True}
 
 
@@ -1362,16 +1564,16 @@ def update_image_style_reference(kind: str, file: UploadFile = File(...)):
 def generate_prompt_for_slide(slide: Dict[str, Any], topic_name: str) -> str:
     group_lines = []
     for idx, g in enumerate(slide.get("visual_groups", []), start=1):
+        visible_text = str(g.get("visible_text") or "").strip()
+        visual_anchor = str(g.get("visual_anchor") or "").strip()
         group_lines.append(
-            f"{idx}. 分组 ID：{g.get('id')}；角色：{g.get('role')}；"
-            f"必须显示的中文：{g.get('visible_text', '')}；"
-            f"视觉描述：{g.get('visual_anchor', '')}。"
+            f"{idx}. 文字“{visible_text}”；画面：{visual_anchor}。"
         )
     groups_str = "\n".join(group_lines)
     main_title = slide.get("main_title", "")
     subtitle = slide.get("subtitle", "")
     subtitle_part = f"\n副标题：{subtitle}" if subtitle else ""
-    style_text = read_style_tokens_text()
+    style_prompt = build_image_style_prompt(read_style_tokens_data())
     return (
         f"请生成一张 16:9 的 PPT 手绘讲解页。\n"
         f"项目主题：{topic_name}\n主标题：{main_title}{subtitle_part}\n\n"
@@ -1382,9 +1584,8 @@ def generate_prompt_for_slide(slide: Dict[str, Any], topic_name: str) -> str:
         "4. 主标题位于顶部，主体内容位于中部，总结区位于底部字幕安全区上方。\n"
         "5. 画布按 1920x1080 设计，底部 y=930..1080 必须留空，不放重要文字、人物或图形。\n"
         "6. 不要绘制包围整页内容的大外框。\n\n"
-        f"本页视觉分组：\n{groups_str}\n\n"
-        "以下 YAML 是必须遵守的图片风格与版式规范：\n"
-        f"{style_text}"
+        f"本页必须呈现的画面内容：\n{groups_str}\n\n"
+        f"{style_prompt}"
     )
 
 @app.get("/api/projects/{project_id}/steps/3/prompts")
@@ -1583,6 +1784,49 @@ def get_all_images(project_id: str, db: Session = Depends(get_db)):
                     "url": f"/api/projects/{project_id}/slides/{slide_dir_name}/image?t={uuid.uuid4().hex[:4]}" if exists else None
                 })
     return {"success": True, "images": results}
+
+
+@app.put("/api/projects/{project_id}/steps/3/order")
+def update_step3_order(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    raw_slide_ids = payload.get("slide_ids", [])
+    if not isinstance(raw_slide_ids, list):
+        raise HTTPException(status_code=400, detail="slide_ids 必须是数组")
+    requested_ids = [
+        str(slide_id).strip()
+        for slide_id in raw_slide_ids
+        if str(slide_id).strip()
+    ]
+    if not requested_ids:
+        raise HTTPException(status_code=400, detail="排序列表不能为空")
+    if len(requested_ids) != len(set(requested_ids)):
+        raise HTTPException(status_code=400, detail="排序列表包含重复的 slide_id")
+
+    contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
+    if not os.path.exists(contract_path):
+        raise HTTPException(status_code=400, detail="分镜规划尚未生成")
+    with open(contract_path, "r", encoding="utf-8") as f:
+        contract = json.load(f)
+
+    slides = contract.get("slides", [])
+    by_id = {
+        str(slide.get("slide_id") or "").strip(): slide
+        for slide in slides
+        if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()
+    }
+    if set(requested_ids) != set(by_id):
+        raise HTTPException(status_code=400, detail="排序列表与当前分镜不一致，请刷新页面后重试")
+
+    contract["slides"] = [by_id[slide_id] for slide_id in requested_ids]
+    with open(contract_path, "w", encoding="utf-8") as f:
+        json.dump(contract, f, ensure_ascii=False, indent=2)
+    sync_reveal_manifest_to_contract(project, requested_ids)
+    sync_narration_beats_to_contract(project, requested_ids)
+    return {"success": True, "slide_ids": requested_ids}
+
 
 @app.post("/api/projects/{project_id}/steps/3/confirm")
 def confirm_images(project_id: str, db: Session = Depends(get_db)):

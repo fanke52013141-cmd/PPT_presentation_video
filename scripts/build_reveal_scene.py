@@ -345,10 +345,7 @@ def build_group_alphas(
         erase = manual_erase_alpha(group.get("manual_mask"), width, height)
         if erase is not None:
             alpha[np.asarray(erase, dtype=np.uint8) > 0] = 0
-        image_alpha = Image.fromarray(alpha, mode="L")
-        if str(group.get("role", "content_body")) in TAIL_TRIM_ROLES:
-            image_alpha = trim_isolated_horizontal_tails(image_alpha, content_alpha)
-        result[group_id] = image_alpha
+        result[group_id] = Image.fromarray(alpha, mode="L")
     return result
 
 
@@ -361,6 +358,46 @@ def alpha_box(alpha: Image.Image, fallback: dict[str, int], width: int, height: 
     x2 = min(width, bbox[2] + padding)
     y2 = min(height, bbox[3] + padding)
     return {"x": x1, "y": y1, "w": x2 - x1, "h": y2 - y1}
+
+
+def box_right(box: dict[str, int]) -> int:
+    return box["x"] + box["w"]
+
+
+def box_bottom(box: dict[str, int]) -> int:
+    return box["y"] + box["h"]
+
+
+def box_mostly_inside(inner: dict[str, int], outer: dict[str, int], tolerance: int = 24) -> bool:
+    return (
+        inner["x"] >= outer["x"] - tolerance
+        and inner["y"] >= outer["y"] - tolerance
+        and box_right(inner) <= box_right(outer) + tolerance
+        and box_bottom(inner) <= box_bottom(outer) + tolerance
+    )
+
+
+def expand_box_horizontally(box: dict[str, int], fallback: dict[str, int], width: int) -> dict[str, int]:
+    x1 = max(0, fallback["x"])
+    x2 = min(width, box_right(fallback))
+    return {**box, "x": x1, "w": max(1, x2 - x1)}
+
+
+def reveal_box_for_group(
+    alpha: Image.Image,
+    fallback: dict[str, int],
+    content_alpha: np.ndarray,
+    width: int,
+    height: int,
+    role: str,
+) -> tuple[dict[str, int], Image.Image]:
+    tight = alpha_box(alpha, fallback, width, height)
+    if box_mostly_inside(tight, fallback):
+        return expand_box_horizontally(tight, fallback, width), alpha
+    if role in TAIL_TRIM_ROLES:
+        trimmed = trim_isolated_tails(alpha, content_alpha)
+        return alpha_box(trimmed, fallback, width, height), trimmed
+    return tight, alpha
 
 
 def true_runs(values: np.ndarray) -> list[tuple[int, int]]:
@@ -390,18 +427,29 @@ def merge_close_runs(runs: list[tuple[int, int]], max_gap: int = 12) -> list[tup
     return merged
 
 
-def trim_isolated_horizontal_tails(
+def trim_isolated_projection_tails(
     alpha: Image.Image,
     content_alpha: np.ndarray,
+    axis: str,
     min_area_ratio: float = 0.18,
 ) -> Image.Image:
     alpha_array = np.asarray(alpha, dtype=np.uint8).copy()
     support = (alpha_array > 0) & (content_alpha > 8)
-    runs = merge_close_runs(true_runs(support.any(axis=0)))
+    if axis == "x":
+        projection = support.any(axis=0)
+    elif axis == "y":
+        projection = support.any(axis=1)
+    else:
+        return alpha
+
+    runs = merge_close_runs(true_runs(projection))
     if len(runs) <= 1:
         return alpha
 
-    areas = [int(support[:, start:end].sum()) for start, end in runs]
+    if axis == "x":
+        areas = [int(support[:, start:end].sum()) for start, end in runs]
+    else:
+        areas = [int(support[start:end, :].sum()) for start, end in runs]
     largest = max(areas, default=0)
     if largest <= 0:
         return alpha
@@ -409,12 +457,21 @@ def trim_isolated_horizontal_tails(
     if all(keep):
         return alpha
 
-    column_keep = np.zeros(alpha_array.shape[1], dtype=bool)
+    keep_mask_size = alpha_array.shape[1] if axis == "x" else alpha_array.shape[0]
+    keep_mask = np.zeros(keep_mask_size, dtype=bool)
     for should_keep, (start, end) in zip(keep, runs):
         if should_keep:
-            column_keep[start:end] = True
-    alpha_array[:, ~column_keep] = 0
+            keep_mask[start:end] = True
+    if axis == "x":
+        alpha_array[:, ~keep_mask] = 0
+    else:
+        alpha_array[~keep_mask, :] = 0
     return Image.fromarray(alpha_array, mode="L")
+
+
+def trim_isolated_tails(alpha: Image.Image, content_alpha: np.ndarray) -> Image.Image:
+    trimmed = trim_isolated_projection_tails(alpha, content_alpha, "x")
+    return trim_isolated_projection_tails(trimmed, content_alpha, "y")
 
 
 def expand_alpha(alpha: Image.Image | None, pixels: int = 18) -> Image.Image | None:
@@ -579,6 +636,7 @@ def compose_slide(slide: dict[str, Any], manifest_dir: Path, repo_root: Path, de
     if not isinstance(groups, list):
         raise RevealBuildError(f"Slide groups must be a list: {slide_id}")
     group_alphas = build_group_alphas(master, groups, background, width, height)
+    content_alpha = np.asarray(foreground_alpha(master, background), dtype=np.uint8)
     group_boxes: dict[str, dict[str, int]] = {}
     for group in groups:
         if not isinstance(group, dict):
@@ -591,7 +649,15 @@ def compose_slide(slide: dict[str, Any], manifest_dir: Path, repo_root: Path, de
             raise RevealBuildError(f"Group missing box in {slide_id}: {group_id}")
         padding = int(group.get("padding_px", DEFAULTS["padding_px"]))
         fallback_box = manual_mask_box(group.get("manual_mask"), width, height) or padded_box(raw_box, width, height, padding)
-        group_boxes[group_id] = alpha_box(group_alphas[group_id], fallback_box, width, height)
+        role = str(group.get("role", "content_body"))
+        group_boxes[group_id], group_alphas[group_id] = reveal_box_for_group(
+            group_alphas[group_id],
+            fallback_box,
+            content_alpha,
+            width,
+            height,
+            role,
+        )
     for index, group in enumerate(groups, start=1):
         if not isinstance(group, dict):
             raise RevealBuildError(f"Invalid group in {slide_id}")
@@ -618,7 +684,7 @@ def compose_slide(slide: dict[str, Any], manifest_dir: Path, repo_root: Path, de
         rel = f"assets/crops/{group_id}.png"
         (slide_dir / rel).parent.mkdir(parents=True, exist_ok=True)
         crop = crop_image(master, box).convert("RGBA")
-        crop.putalpha(crop_image(group_alphas[group_id], box))
+        crop.putalpha(Image.new("L", crop.size, 255))
         crop.save(slide_dir / rel, format="PNG")
         layer_asset = rel
         layer_id = f"{layer_role}_{group_id}"

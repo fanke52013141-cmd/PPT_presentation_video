@@ -1749,6 +1749,24 @@ function isDraftMaskBox(maskBox) {
   return isManualEmptyBox(maskBox) || isSemanticDraftBox(maskBox);
 }
 
+function hasMaskNarrationBinding(maskBox, step2Slide = getStep2SlideForManifestSlide()) {
+  if (!maskBox) return false;
+  if (Array.isArray(maskBox.narration_fragments) && maskBox.narration_fragments.some(fragment => fragment?.id || fragment?.text)) {
+    return true;
+  }
+  if (maskBox.narration_beat_id) return true;
+  if (Array.isArray(maskBox.narration_beat_ids) && maskBox.narration_beat_ids.some(Boolean)) return true;
+  if (String(maskBox.spoken_text || '').trim()) return true;
+
+  const linkedGroupIds = new Set([
+    maskBox.narration_group_id,
+    maskBox.visual_group_id,
+    maskBox.group_id,
+    maskBox.id
+  ].map(value => String(value || '').trim()).filter(Boolean));
+  return (step2Slide?.narration_beats || []).some(beat => linkedGroupIds.has(String(beat?.group_id || '').trim()));
+}
+
 function copySemanticFields(target, source) {
   if (!target || !source) return target;
   [
@@ -1814,6 +1832,7 @@ function semanticBlockToMaskBox(box, idx) {
 
 function getSlideMaskBoxes(slide) {
   if (!slide) return [];
+  const step2Slide = getStep2SlideForManifestSlide(slide);
   const semanticBoxes = Array.isArray(slide.semantic_blocks)
     ? slide.semantic_blocks.map(semanticBlockToMaskBox)
     : [];
@@ -1845,18 +1864,21 @@ function getSlideMaskBoxes(slide) {
   baseBoxes.forEach(box => {
     if (!semanticIds.has(box.group_id)) merged.push(box);
   });
-  return merged.map((box, idx) => ({
-    ...box,
-    manual_mask: {
-      ...cloneManualMask(box.manual_mask || { strokes: [] }),
-      color: getMaskColor(idx)
-    }
-  }));
+  return merged
+    .filter(box => hasMaskNarrationBinding(box, step2Slide))
+    .map((box, idx) => ({
+      ...box,
+      manual_mask: {
+        ...cloneManualMask(box.manual_mask || { strokes: [] }),
+        color: getMaskColor(idx)
+      }
+    }));
 }
 
 function syncMaskBoxesToSlide(slide, boxes) {
   if (!slide) return;
-  const readyBoxes = boxes.filter(maskBox => !isDraftMaskBox(maskBox));
+  const step2Slide = getStep2SlideForManifestSlide(slide);
+  const readyBoxes = boxes.filter(maskBox => !isDraftMaskBox(maskBox) && hasMaskNarrationBinding(maskBox, step2Slide));
   const semanticBoxes = boxes
     .filter(maskBox => String(maskBox?.source || '') === 'ai_semantic')
     .map((maskBox, idx) => ({
@@ -2992,6 +3014,17 @@ async function annotateStep6Narration() {
     await initStep6Narration();
   }
   if (!narrationData) return;
+  if (state.step6AutoSaveTimer) {
+    clearTimeout(state.step6AutoSaveTimer);
+    state.step6AutoSaveTimer = null;
+  }
+  if (state.step6AutoSavePromise) {
+    try {
+      await state.step6AutoSavePromise;
+    } catch (error) {
+      // The annotation request below contains the latest editor state.
+    }
+  }
   saveStep6CurrentState();
   normalizeStep6Data();
   const btn = document.getElementById('step6-btn-ai-annotate');
@@ -3143,15 +3176,49 @@ async function flushStep6Autosave() {
   return saveStep6Narration({ silent: true });
 }
 
+async function putStep6NarrationWithRetry(payload) {
+  let lastError = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const response = await fetch(`/api/projects/${state.currentProject.id}/steps/6/result`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const error = new Error(data.detail || '保存演讲稿失败');
+        error.isHttpError = true;
+        throw error;
+      }
+      return data;
+    } catch (error) {
+      lastError = error;
+      if (error.isHttpError || attempt === 1) break;
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  }
+  throw lastError || new Error('保存演讲稿失败');
+}
+
 async function saveStep6Narration(options = {}) {
   const silent = !!options.silent;
   if (!narrationData) return true;
+  if (state.step6AutoSavePromise) {
+    try {
+      await state.step6AutoSavePromise;
+    } catch (error) {
+      // Retry below with the newest editor snapshot.
+    }
+  }
   saveStep6CurrentState();
   normalizeStep6Data();
+  const payload = JSON.parse(JSON.stringify(narrationData));
   if (!silent) showToast('💾 正在保存并校验台词信息...');
+  const savePromise = putStep6NarrationWithRetry(payload);
+  state.step6AutoSavePromise = savePromise;
   try {
-    state.step6AutoSavePromise = API.put(`/api/projects/${state.currentProject.id}/steps/6/result`, narrationData);
-    const res = await state.step6AutoSavePromise;
+    const res = await savePromise;
     if (res.success) {
       updateStep6AutosaveStatus('已自动保存');
       if (!silent) showToast('🎉 演讲稿修改保存成功！');
@@ -3159,10 +3226,13 @@ async function saveStep6Narration(options = {}) {
       return true;
     }
   } catch (e) {
-    updateStep6AutosaveStatus('保存失败');
+    updateStep6AutosaveStatus('保存失败，请重试');
+    showToast(`❌ 演讲稿保存失败：${e.message || '网络连接中断'}`);
     return false;
   } finally {
-    state.step6AutoSavePromise = null;
+    if (state.step6AutoSavePromise === savePromise) {
+      state.step6AutoSavePromise = null;
+    }
   }
   return false;
 }

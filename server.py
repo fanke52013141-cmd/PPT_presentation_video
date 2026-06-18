@@ -422,6 +422,66 @@ def all_current_slide_images_exist(project: Project) -> bool:
     )
 
 
+def prune_unlinked_mask_groups(project: Project, payload: Dict[str, Any]) -> Dict[str, Any]:
+    contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
+    if not os.path.exists(contract_path) or not isinstance(payload.get("slides"), list):
+        return payload
+
+    try:
+        with open(contract_path, "r", encoding="utf-8") as f:
+            contract = json.load(f)
+    except Exception as exc:
+        logger.warning("Failed to load visual contract while pruning Mask groups: %s", exc)
+        return payload
+
+    narrated_groups_by_slide = {}
+    for slide in contract.get("slides", []) or []:
+        if not isinstance(slide, dict):
+            continue
+        slide_id = str(slide.get("slide_id") or "").strip()
+        narrated_groups_by_slide[slide_id] = {
+            str(beat.get("group_id") or "").strip()
+            for beat in slide.get("narration_beats", []) or []
+            if isinstance(beat, dict) and str(beat.get("group_id") or "").strip()
+        }
+
+    def is_linked(group: Dict[str, Any], narrated_group_ids: set[str]) -> bool:
+        fragments = group.get("narration_fragments")
+        if isinstance(fragments, list) and any(
+            isinstance(fragment, dict) and (fragment.get("id") or fragment.get("text"))
+            for fragment in fragments
+        ):
+            return True
+        if str(group.get("narration_beat_id") or "").strip():
+            return True
+        beat_ids = group.get("narration_beat_ids")
+        if isinstance(beat_ids, list) and any(str(value or "").strip() for value in beat_ids):
+            return True
+        if str(group.get("spoken_text") or "").strip():
+            return True
+        linked_ids = {
+            str(group.get(key) or "").strip()
+            for key in ("narration_group_id", "visual_group_id", "group_id", "id")
+            if str(group.get(key) or "").strip()
+        }
+        return bool(linked_ids & narrated_group_ids)
+
+    for slide in payload.get("slides", []):
+        if not isinstance(slide, dict):
+            continue
+        slide_id = str(slide.get("slide_id") or "").strip()
+        narrated_group_ids = narrated_groups_by_slide.get(slide_id, set())
+        for field in ("semantic_blocks", "groups", "reveal_boxes"):
+            groups = slide.get(field)
+            if not isinstance(groups, list):
+                continue
+            slide[field] = [
+                group for group in groups
+                if isinstance(group, dict) and is_linked(group, narrated_group_ids)
+            ]
+    return payload
+
+
 def read_current_slide_ids_or_404(project: Project) -> List[str]:
     slide_ids = read_contract_slide_ids(project.run_dir)
     if not slide_ids:
@@ -2505,6 +2565,7 @@ def update_step5_draft(project_id: str, payload: Dict[str, Any], db: Session = D
         }
         payload["slides"] = [by_id[slide_id] for slide_id in current_slide_ids if slide_id in by_id]
 
+    payload = prune_unlinked_mask_groups(project, payload)
     manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
@@ -2526,6 +2587,7 @@ def update_step5_result(project_id: str, payload: Dict[str, Any], db: Session = 
         }
         payload["slides"] = [by_id[slide_id] for slide_id in current_slide_ids if slide_id in by_id]
 
+    payload = prune_unlinked_mask_groups(project, payload)
     manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
@@ -3159,5 +3221,5 @@ app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 
 if __name__ == "__main__":
     import uvicorn
-    # 本地局域网启动，默认端口 8000
-    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
+    # 本地交互流程包含长耗时 AI 请求，默认关闭热重载，避免保存过程中连接被重启打断。
+    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=False)

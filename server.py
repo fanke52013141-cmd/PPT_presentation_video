@@ -685,6 +685,46 @@ def split_subtitle_text(text: str, max_chars: int = SUBTITLE_MAX_CHARS) -> List[
     return chunks
 
 
+SUBTITLE_SPEECH_RE = re.compile(r"[\w\u4e00-\u9fff]")
+
+
+def subtitle_text_weight(text: str) -> int:
+    compact = re.sub(r"\s+", "", str(text or ""))
+    return max(1, len(compact))
+
+
+def subtitle_chunks_for_timing(text: str) -> List[str]:
+    chunks: List[str] = []
+    for chunk in split_subtitle_text(clean_tts_text(text)):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        if not SUBTITLE_SPEECH_RE.search(chunk):
+            if chunks:
+                chunks[-1] = f"{chunks[-1]}{chunk}".strip()
+            continue
+        chunks.append(chunk)
+    return chunks
+
+
+def tts_text_parts_with_pauses(text: str) -> List[Dict[str, Any]]:
+    value = str(text or "")
+    parts: List[Dict[str, Any]] = []
+    cursor = 0
+    for match in MINIMAX_PAUSE_RE.finditer(value):
+        before = clean_tts_text(value[cursor:match.start()])
+        if before:
+            parts.append({"type": "text", "text": before})
+        seconds = max(0.0, float(match.group(1)))
+        if seconds > 0:
+            parts.append({"type": "pause", "duration": seconds})
+        cursor = match.end()
+    after = clean_tts_text(value[cursor:])
+    if after:
+        parts.append({"type": "text", "text": after})
+    return parts
+
+
 def prepare_narration_payload(project: Project, payload: Dict[str, Any]) -> Dict[str, Any]:
     payload = dict(payload or {})
     slides = payload.get("slides") if isinstance(payload.get("slides"), list) else []
@@ -771,46 +811,98 @@ def rewrite_audio_timeline_by_beats(timeline_path: str, slide_id: str, beats: Li
     duration = float(timeline.get("audio_content_duration_sec") or timeline.get("duration_sec") or 0)
     if duration <= 0:
         return
-    clean_beats = [
-        {
+    clean_beats: List[Dict[str, Any]] = []
+    for idx, beat in enumerate(beats):
+        raw_text = beat_tts_text(beat)
+        if not clean_tts_text(raw_text):
+            continue
+        parts = tts_text_parts_with_pauses(raw_text)
+        if not any(part.get("type") == "text" for part in parts):
+            continue
+        clean_beats.append({
             "id": str(beat.get("id") or f"{slide_id}_beat_{idx + 1:03d}"),
-            "text": clean_tts_text(beat_tts_text(beat)),
-        }
-        for idx, beat in enumerate(beats)
-        if clean_tts_text(beat_tts_text(beat))
-    ]
+            "parts": parts,
+        })
     if not clean_beats:
         return
-    weights = [max(1, len(item["text"])) for item in clean_beats]
-    total_weight = sum(weights)
+
+    total_pause = sum(
+        float(part.get("duration", 0.0) or 0.0)
+        for item in clean_beats
+        for part in item["parts"]
+        if part.get("type") == "pause"
+    )
+    pause_budget = min(total_pause, duration * 0.45)
+    pause_scale = pause_budget / total_pause if total_pause > 0 else 0.0
+    speech_duration = max(0.001, duration - pause_budget)
+    total_weight = 0
+    chunked_parts: List[Dict[str, Any]] = []
+    for item in clean_beats:
+        beat_parts: List[Dict[str, Any]] = []
+        for part in item["parts"]:
+            if part.get("type") == "pause":
+                beat_parts.append(part)
+                continue
+            chunks = subtitle_chunks_for_timing(str(part.get("text") or ""))
+            chunk_weights = [subtitle_text_weight(chunk) for chunk in chunks]
+            total_weight += sum(chunk_weights)
+            beat_parts.append({"type": "text", "chunks": chunks, "weights": chunk_weights})
+        chunked_parts.append({"id": item["id"], "parts": beat_parts})
+    if total_weight <= 0:
+        return
+
     cursor = 0.0
-    segments = []
-    for beat_index, (item, weight) in enumerate(zip(clean_beats, weights), start=1):
-        beat_end = duration if beat_index == len(clean_beats) else cursor + duration * weight / total_weight
-        chunks = split_subtitle_text(item["text"])
-        chunk_weights = [max(1, len(chunk)) for chunk in chunks]
-        chunk_total = sum(chunk_weights)
-        chunk_cursor = cursor
-        for chunk_index, (chunk, chunk_weight) in enumerate(zip(chunks, chunk_weights), start=1):
-            chunk_end = (
-                beat_end
-                if chunk_index == len(chunks)
-                else chunk_cursor + (beat_end - cursor) * chunk_weight / chunk_total
-            )
-            segments.append({
-                "id": item["id"] if chunk_index == 1 else f"{item['id']}__part_{chunk_index:02d}",
-                "beat_id": item["id"],
-                "start": round(chunk_cursor, 3),
-                "end": round(chunk_end, 3),
-                "text": chunk,
-                "timing_source": "beat_estimated_split",
-                "max_cjk_chars": SUBTITLE_MAX_CHARS,
-                "max_lines": 1,
-            })
-            chunk_cursor = chunk_end
-        cursor = beat_end
-    timeline["segments"] = segments
-    timeline["timing_source"] = "beat_estimated_split"
+    segments: List[Dict[str, Any]] = []
+    for item in chunked_parts:
+        chunk_index = 0
+        for part in item["parts"]:
+            if part.get("type") == "pause":
+                pause_duration = float(part.get("duration", 0.0) or 0.0) * pause_scale
+                if pause_duration > 0:
+                    if segments:
+                        segments[-1]["_end"] = segments[-1]["_end"] + pause_duration
+                    cursor += pause_duration
+                continue
+            chunks = part.get("chunks", [])
+            weights = part.get("weights", [])
+            for chunk, weight in zip(chunks, weights):
+                chunk_index += 1
+                chunk_start = cursor
+                chunk_end = cursor + speech_duration * float(weight) / float(total_weight)
+                segment_id = item["id"] if chunk_index == 1 else f"{item['id']}__part_{chunk_index:02d}"
+                segments.append({
+                    "id": segment_id,
+                    "beat_id": item["id"],
+                    "_start": chunk_start,
+                    "_end": chunk_end,
+                    "text": chunk,
+                    "timing_source": "beat_pause_aware_estimated_split",
+                    "max_cjk_chars": SUBTITLE_MAX_CHARS,
+                    "max_lines": 1,
+                })
+                cursor = chunk_end
+    if not segments:
+        return
+    if cursor < duration:
+        segments[-1]["_end"] = segments[-1]["_end"] + (duration - cursor)
+    normalized_segments: List[Dict[str, Any]] = []
+    previous_end = 0.0
+    for segment in segments:
+        start = max(previous_end, min(duration, float(segment.pop("_start"))))
+        end = max(start, min(duration, float(segment.pop("_end"))))
+        if end <= start and start < duration:
+            end = min(duration, start + 0.05)
+        if end <= start:
+            continue
+        segment["start"] = round(start, 3)
+        segment["end"] = round(end, 3)
+        normalized_segments.append(segment)
+        previous_end = end
+    if not normalized_segments:
+        return
+    timeline["segments"] = normalized_segments
+    timeline["timing_source"] = "beat_pause_aware_estimated_split"
+    timeline["explicit_pause_sec"] = round(pause_budget, 3)
     timeline["subtitle_display"] = {
         "max_lines": 1,
         "max_cjk_chars": SUBTITLE_MAX_CHARS,

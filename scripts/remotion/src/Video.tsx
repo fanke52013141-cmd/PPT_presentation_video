@@ -209,7 +209,9 @@ const animatedStyle = (
       config: {damping: 18, stiffness: 110, mass: 0.8},
     });
 
-    if (entryEvent.action === 'fade_up' || entryEvent.action === 'crop_fade_up') {
+    if (entryEvent.action === 'crop_fade_up') {
+      style = {...style, opacity: progress};
+    } else if (entryEvent.action === 'fade_up') {
       style = {...style, opacity: progress, transform: `translateY(${(1 - springProgress) * 24}px)`};
     } else if (entryEvent.action === 'slide_in_left' || entryEvent.action === 'crop_slide_in_left') {
       style = {...style, opacity: progress, transform: `translateX(${(1 - springProgress) * -28}px)`};

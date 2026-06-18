@@ -77,6 +77,47 @@ def padded_box(raw: dict[str, Any], width: int, height: int, padding: int) -> di
     return {"x": x1, "y": y1, "w": x2 - x1, "h": y2 - y1}
 
 
+def clamp_box(raw: dict[str, Any], width: int, height: int) -> dict[str, int]:
+    x = int(round(float(raw["x"])))
+    y = int(round(float(raw["y"])))
+    w = int(round(float(raw["w"])))
+    h = int(round(float(raw["h"])))
+    if w <= 0 or h <= 0:
+        raise RevealBuildError(f"Invalid box size: {raw}")
+    x1 = max(0, min(width, x))
+    y1 = max(0, min(height, y))
+    x2 = max(0, min(width, x + w))
+    y2 = max(0, min(height, y + h))
+    if x2 <= x1 or y2 <= y1:
+        raise RevealBuildError(f"Box outside canvas: {raw}")
+    return {"x": x1, "y": y1, "w": x2 - x1, "h": y2 - y1}
+
+
+def manual_mask_bounds(manual_mask: Any, width: int, height: int) -> dict[str, int] | None:
+    if not isinstance(manual_mask, dict):
+        return None
+    bounds = manual_mask.get("bounds")
+    if not isinstance(bounds, dict):
+        return None
+    try:
+        return clamp_box(bounds, width, height)
+    except (KeyError, TypeError, ValueError, RevealBuildError):
+        return None
+
+
+def mask_region_base_box(group: dict[str, Any], width: int, height: int) -> dict[str, int]:
+    raw_box = group.get("box")
+    if not isinstance(raw_box, dict):
+        raise RevealBuildError(f"Group missing box: {group.get('id')}")
+    return manual_mask_bounds(group.get("manual_mask"), width, height) or clamp_box(raw_box, width, height)
+
+
+def mask_region_box(group: dict[str, Any], width: int, height: int) -> dict[str, int]:
+    base_box = mask_region_base_box(group, width, height)
+    padding = max(int(group.get("padding_px", DEFAULTS["padding_px"])), int(group.get("reveal_padding_px", 160)))
+    return padded_box(base_box, width, height, padding)
+
+
 def crop_image(image: Image.Image, box: dict[str, int]) -> Image.Image:
     return image.crop((box["x"], box["y"], box["x"] + box["w"], box["y"] + box["h"]))
 
@@ -143,7 +184,7 @@ def erase_later_groups_from_crop(
         later_box = group_boxes.get(later_id)
         if not later_box:
             continue
-        later_alpha = manual_mask_alpha(later_group.get("manual_mask"), later_box)
+        later_alpha = manual_mask_alpha(later_group.get("manual_mask"), later_box, paint_expand=0, erase_expand=0)
         if not erase_mask_from_crop(rgba, crop_box, later_box, later_alpha):
             erase_box_from_crop(rgba, crop_box, later_box)
 
@@ -635,29 +676,16 @@ def compose_slide(slide: dict[str, Any], manifest_dir: Path, repo_root: Path, de
     groups = slide.get("groups")
     if not isinstance(groups, list):
         raise RevealBuildError(f"Slide groups must be a list: {slide_id}")
-    group_alphas = build_group_alphas(master, groups, background, width, height)
-    content_alpha = np.asarray(foreground_alpha(master, background), dtype=np.uint8)
     group_boxes: dict[str, dict[str, int]] = {}
+    group_erase_boxes: dict[str, dict[str, int]] = {}
     for group in groups:
         if not isinstance(group, dict):
             raise RevealBuildError(f"Invalid group in {slide_id}")
         group_id = str(group.get("id", "")).strip()
         if not group_id:
             raise RevealBuildError(f"Group missing id in {slide_id}")
-        raw_box = group.get("box")
-        if not isinstance(raw_box, dict):
-            raise RevealBuildError(f"Group missing box in {slide_id}: {group_id}")
-        padding = int(group.get("padding_px", DEFAULTS["padding_px"]))
-        fallback_box = manual_mask_box(group.get("manual_mask"), width, height) or padded_box(raw_box, width, height, padding)
-        role = str(group.get("role", "content_body"))
-        group_boxes[group_id], group_alphas[group_id] = reveal_box_for_group(
-            group_alphas[group_id],
-            fallback_box,
-            content_alpha,
-            width,
-            height,
-            role,
-        )
+        group_erase_boxes[group_id] = mask_region_base_box(group, width, height)
+        group_boxes[group_id] = mask_region_box(group, width, height)
     for index, group in enumerate(groups, start=1):
         if not isinstance(group, dict):
             raise RevealBuildError(f"Invalid group in {slide_id}")
@@ -668,11 +696,11 @@ def compose_slide(slide: dict[str, Any], manifest_dir: Path, repo_root: Path, de
         raw_box = group.get("box")
         if not isinstance(raw_box, dict):
             raise RevealBuildError(f"Group missing box in {slide_id}: {group_id}")
-        box = group_boxes[group_id]
-        if role != "decoration" and box["y"] + box["h"] > subtitle_safe_y:
+        source_box = group_boxes[group_id]
+        if role != "decoration" and source_box["y"] + source_box["h"] > subtitle_safe_y:
             warnings.append({"severity": "blocking", "type": "subtitle_safe_zone_violation", "group_id": group_id})
         for existing in placed:
-            gap = rect_distance(box, existing["box"])
+            gap = rect_distance(source_box, existing["box"])
             if gap < 48 and role != "decoration" and existing["role"] != "decoration":
                 warnings.append({"severity": "warning", "type": "group_gap_small", "group_id": group_id, "other_group_id": existing["id"], "gap_px": round(gap, 2)})
         reveal = group.get("reveal") if isinstance(group.get("reveal"), dict) else {}
@@ -683,21 +711,46 @@ def compose_slide(slide: dict[str, Any], manifest_dir: Path, repo_root: Path, de
             action = "crop_fade_up"
         rel = f"assets/crops/{group_id}.png"
         (slide_dir / rel).parent.mkdir(parents=True, exist_ok=True)
-        crop = crop_image(master, box).convert("RGBA")
-        crop.putalpha(Image.new("L", crop.size, 255))
-        crop.save(slide_dir / rel, format="PNG")
+        layer_image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        crop = crop_image(master, source_box).convert("RGBA")
+        mask_alpha = manual_mask_alpha(
+            group.get("manual_mask"),
+            source_box,
+            paint_expand=int(group.get("mask_alpha_expand_px", 160)),
+            erase_expand=8,
+        )
+        crop.putalpha(mask_alpha if mask_alpha is not None and mask_alpha.getbbox() else Image.new("L", crop.size, 255))
+        erase_later_groups_from_crop(crop, source_box, index, groups, group_erase_boxes)
+        layer_image.alpha_composite(crop, dest=(source_box["x"], source_box["y"]))
+        erase = manual_erase_alpha(group.get("manual_mask"), width, height)
+        if erase is not None:
+            clear_mask = erase.point(lambda value: 255 if value > 0 else 0)
+            alpha = layer_image.getchannel("A")
+            alpha = Image.composite(Image.new("L", (width, height), 0), alpha, clear_mask)
+            layer_image.putalpha(alpha)
+        layer_image.save(slide_dir / rel, format="PNG")
         layer_asset = rel
         layer_id = f"{layer_role}_{group_id}"
-        layer = {"id": layer_id, "type": "png", "asset": layer_asset, "role": layer_role, "target_group_id": group_id, "visible_text": group.get("visible_text", ""), "box": box, "z_index": int(group.get("z_index", 40 + index))}
+        layer = {
+            "id": layer_id,
+            "type": "png",
+            "asset": layer_asset,
+            "role": layer_role,
+            "target_group_id": group_id,
+            "visible_text": group.get("visible_text", ""),
+            "box": {"x": 0, "y": 0, "w": width, "h": height},
+            "source_box": source_box,
+            "z_index": int(group.get("z_index", 40 + index)),
+        }
         layers.append(layer)
         group = {**group, "reveal": {**reveal, "type": action}}
         events.append(build_event(slide_id, group, layer_id, 0.2 + (index - 1) * 0.7))
-        placed.append({"id": group_id, "role": role, "box": box})
-    scene = {"slide_id": slide_id, "source_visual_draft": str(master_path), "visual_source": "master_reveal_layers", "canvas": {"width": width, "height": height, "background": background}, "layers": layers, "composition": {"method": "timed_manual_mask_reveal", "algorithmic_full_slide_decomposition": False}}
+        placed.append({"id": group_id, "role": role, "box": source_box})
+    scene = {"slide_id": slide_id, "source_visual_draft": str(master_path), "visual_source": "master_reveal_layers", "canvas": {"width": width, "height": height, "background": background}, "layers": layers, "composition": {"method": "solid_background_mask_region_reveal", "algorithmic_full_slide_decomposition": False}}
     duration = max(float(slide.get("default_duration_sec", 12.0)), max((float(e["at"]) + float(e["duration"]) for e in events), default=0.0) + 0.5)
     write_json(slide_dir / "scene.json", scene)
     write_json(slide_dir / "animation_timeline.json", {"slide_id": slide_id, "duration_sec": round(duration, 3), "events": events})
-    write_json(slide_dir / "reveal_report.json", {"slide_id": slide_id, "method": "timed_manual_mask_reveal", "warnings": warnings, "group_count": len(groups), "layer_count": len(layers), "fallback_full_slide": False})
+    write_json(slide_dir / "reveal_report.json", {"slide_id": slide_id, "method": "solid_background_mask_region_reveal", "warnings": warnings, "group_count": len(groups), "layer_count": len(layers), "fallback_full_slide": False})
 
 
 def build_manifest(manifest: dict[str, Any], manifest_path: Path, repo_root: Path) -> int:

@@ -1,277 +1,127 @@
-# PPT Visualization
+# PPT Presentation Video
 
-This repository turns long-form educational articles into AI-generated PPT-style
-explainer videos.
+本项目把文章转换为手绘 PPT 风格讲解视频，提供本地 Web 界面完成分镜、图片、Mask、旁白、音频和视频渲染。
 
-## Production Path
+## 本地启动
 
-The default visual pipeline is now **visual-contract-driven full-slide reveal layers**:
+Windows PowerShell：
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe server.py
+```
+
+打开 [http://127.0.0.1:8000](http://127.0.0.1:8000)。
+
+也可以使用：
+
+```powershell
+.\run_local.ps1
+```
+
+## 用户流程
+
+1. 导入文章。
+2. 生成并编辑分镜规划。
+3. 为每页生成或上传完整图片。
+4. 可选地为页面内容涂抹 Mask。
+5. 编辑旁白、生成音频并试听确认。
+6. 渲染、下载和删除视频。
+
+## 当前 Mask 渲染规则
+
+生产管线固定为 `manual_mask_exact_v2`：
+
+- 没有 Mask：直接显示完整图片。
+- 有 Mask：使用固定纯色背景，只复制手动画笔 Mask 内的源图像素。
+- 不使用原图作为背景。
+- 不执行自动扩边、连通区域扩张、最近区域分配或跨组擦除。
+- Mask 页面可以打开“最终抠除预览”，直接查看视频将使用的结果和未覆盖内容。
+- 每次渲染前都会清理并重建 Reveal 与 Remotion 运行时素材。
+
+生产构建顺序：
 
 ```text
-article.md
--> scripts/write_visual_contract.py
--> visual_contract.json with visual_groups and narration_beats
--> scripts/write_visual_prompts.py
--> visual_prompt.md
--> Image Gen full-slide master image: visual_draft.png
--> scripts/write_reveal_manifest_template.py
--> reveal_manifest.json coordinate draft
--> scripts/auto_fit_reveal_boxes.py
--> scripts/draw_reveal_manifest_preview.py
--> manual box review against preview images and visual_draft.png
--> scripts/validate_reveal_manifest.py
+visual_draft.png
+-> reveal_manifest.json（可选手动 Mask）
 -> scripts/build_reveal_scene.py
--> full_slide.png + cover/fog/crop reveal layers + reveal_report.json
--> scripts/write_narration_from_visual_contract.py
--> narration.txt / tts_text.txt / narration_beats.json
--> TTS / subtitles / audio_timeline.json
 -> scripts/bind_reveal_timeline.py
--> animation_timeline.json bound to audio segments
--> Remotion video
+-> scripts/build_remotion_props.py
+-> Remotion ArticleVideo
 ```
 
-The key rule is:
+以下脚本仅保留作历史诊断，不进入 Web 生产流程：
 
-> Generate one coherent final slide first. Do not split foreground alpha layers by
-> default. Reveal the approved full-slide image with stable cover, fog, and
-> rectangular crop layers whose group ids are grounded in the visual contract.
+- `scripts/auto_fit_reveal_boxes.py`
+- `scripts/split_master_layers.py`
+- `scripts/decompose_slide_layers.py`
+- `scripts/compose_manifest_layers.py`
+- `scripts/prepare_full_slide_scenes.py`
 
-## Why This Changed
-
-Image segmentation and alpha splitting are unstable for hand-drawn PPT-style
-slides. Text strokes, arrows, icons, and background texture can merge or split in
-unexpected ways. The reveal-layer path keeps the final page as one Image Gen
-bitmap and uses simple rectangular reveal assets, so the final frame stays
-visually identical to the approved master slide.
-
-The second change is planning: narration is now grounded in the visual contract.
-The voiceover expands visible groups; it must not introduce unsupported concepts
-that the page does not show.
-
-## Required Planning Order
-
-1. Generate or write `visual_contract.json` first.
-2. Define 5-8 `visual_groups` for each slide.
-3. Give every group a `visible_text`, `visual_anchor`, and `narration_function`.
-4. Write `narration_beats` that bind each spoken point to a `group_id`.
-5. Generate a full-slide master image that follows those groups.
-6. Generate a draft `reveal_manifest.json`.
-7. Auto-fit boxes against `visual_draft.png`, then inspect preview images.
-8. Build reveal layers.
-9. Generate narration files from the visual contract.
-10. After TTS timing exists, bind reveal events to audio segments.
-
-## Master Slide Layout Rules
-
-- Use 1920x1080, 16:9.
-- Use a flat uniform `#FFFDF7` background. Avoid paper grain, noise, shadows,
-  gradients, and vignette effects.
-- Keep the bottom subtitle-safe area clear. For 1080p, PPT body content should
-  stay above `y=930`.
-- Use 5-8 large visual groups per slide: `title_group`, `subtitle_group`, 2-4
-  body or diagram groups, and optional `summary_group`.
-- Keep independent visual groups separated by 80-120px of clean background.
-- Each group must contain a short visible Chinese label that narration can reference.
-- Avoid cross-group connector lines. If an arrow, label, or icon is semantically
-  inseparable from nearby text, keep them in the same group.
-- Do not use React, SVG, HTML, CSS, Canvas, or Remotion to draw PPT body
-  content. Remotion only displays PNG layers, reveal effects, subtitles, and audio.
-
-## Main Commands
-
-For the pre-visual and post-visual checks in one command:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/run_reveal_preflight.ps1 `
-  -RunId <run_id> `
-  -Overwrite
-```
-
-Generate a first-pass visual contract from the article:
-
-```powershell
-python scripts/write_visual_contract.py `
-  --run-dir runs/<run_id> `
-  --overwrite
-```
-
-Validate the visual contract:
-
-```powershell
-python scripts/validate_visual_contract.py `
-  --contract runs/<run_id>/planning/visual_contract.json
-```
-
-Generate visual prompts:
-
-```powershell
-python scripts/write_visual_prompts.py `
-  --run-dir runs/<run_id> `
-  --overwrite
-```
-
-Generate a reveal manifest coordinate template:
-
-```powershell
-python scripts/write_reveal_manifest_template.py `
-  --run-dir runs/<run_id> `
-  --overwrite
-```
-
-After Image Gen creates each `visual_draft.png`, auto-fit boxes and draw review previews:
-
-```powershell
-python scripts/auto_fit_reveal_boxes.py `
-  --manifest runs/<run_id>/reveal_manifest.json `
-  --repo-root .
-
-python scripts/draw_reveal_manifest_preview.py `
-  --manifest runs/<run_id>/reveal_manifest.json `
-  --repo-root . `
-  --out-dir runs/<run_id>/review
-```
-
-Review the preview images and adjust boxes in:
+## 主要目录
 
 ```text
-runs/<run_id>/reveal_manifest.json
-runs/<run_id>/review/*_reveal_manifest_preview.png
+server.py                  FastAPI 后端
+static/                    本地 Web 前端
+scripts/build_reveal_scene.py
+                           精确手动 Mask 构建器
+scripts/bind_reveal_timeline.py
+                           将 Reveal 事件绑定到音频时间
+scripts/build_remotion_props.py
+                           生成 Remotion 配置并复制运行时素材
+scripts/remotion/          Remotion 视频工程
+checks/                    回归检查
+runs/                      本地项目运行数据，不提交
+outputs/                   本地交付文件，不提交
 ```
 
-Validate the reveal manifest:
+## 系统设置
+
+界面支持配置：
+
+- 文本模型 Base URL、API Key、模型、温度和最大 Token。
+- 生图 Base URL、API Key、模型和图片尺寸。
+- MiniMax TTS 地址、API Key、模型、音色、语速、音量和音调。
+
+设置保存在本机数据库中。不要把真实凭据写入 Git。
+
+## 验证
+
+基础检查：
 
 ```powershell
-python scripts/validate_reveal_manifest.py `
-  --manifest runs/<run_id>/reveal_manifest.json `
-  --contract runs/<run_id>/planning/visual_contract.json
+.\.venv\Scripts\python.exe -m compileall -q server.py scripts checks
+node --check static\app.js
+node --check static\flow.js
+node checks\test_visible_flow.js
+.\.venv\Scripts\python.exe checks\test_reveal_mask_integrity.py
+.\.venv\Scripts\python.exe checks\test_reveal_pipeline_isolation.py
+.\.venv\Scripts\python.exe checks\test_slide_visual_invalidation.py
+.\.venv\Scripts\python.exe checks\test_audio_confirmation.py
+.\.venv\Scripts\python.exe checks\test_audio_tail_padding.py
+npx tsc --noEmit -p scripts\remotion\tsconfig.json
 ```
 
-Then build reveal scene assets:
+验证已有运行项目：
 
 ```powershell
-python scripts/build_reveal_scene.py `
-  --manifest runs/<run_id>/reveal_manifest.json `
+.\.venv\Scripts\python.exe scripts\validate_reveal_scene.py `
+  --run-dir runs\<run_id> `
   --repo-root .
-```
 
-Validate reveal scene assets:
-
-```powershell
-python scripts/validate_reveal_scene.py `
-  --run-dir runs/<run_id> `
-  --repo-root .
-```
-
-Generate narration from the visual contract:
-
-```powershell
-python scripts/write_narration_from_visual_contract.py `
-  --run-dir runs/<run_id> `
-  --overwrite
-```
-
-Validate narration grounding:
-
-```powershell
-python scripts/validate_narration_grounding.py `
-  --run-dir runs/<run_id>
-```
-
-After TTS creates `audio_timeline.json`, bind reveal events to audio timing:
-
-```powershell
-python scripts/bind_reveal_timeline.py `
-  --run-dir runs/<run_id>
-```
-
-Validate complete render assets after TTS/subtitles exist:
-
-```powershell
-python scripts/validate_run_assets.py `
-  --run-dir runs/<run_id> `
+.\.venv\Scripts\python.exe scripts\validate_run_assets.py `
+  --run-dir runs\<run_id> `
+  --repo-root . `
   --require-layered
 ```
 
-Build Remotion props:
+## Git 范围
 
-```powershell
-python scripts/build_remotion_props.py `
-  --run-dir runs/<run_id> `
-  --repo-root .
-```
+提交应用和可复用代码；不要提交：
 
-Render video:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/render_remotion.ps1 `
-  -RunId <run_id> `
-  -Composition ArticleVideo `
-  -OutFile runs/<run_id>/video/final.mp4 `
-  -PropsFile runs/<run_id>/remotion_props.json
-```
-
-## Run Directory
-
-```text
-runs/<run_id>/
-  inputs/article.md
-  planning/visual_contract.json
-  reveal_manifest.json
-  reveal_manifest.auto_fit_report.json
-  review/*_reveal_manifest_preview.png
-  slides/slide_001/
-    visual_prompt.md
-    visual_draft.png
-    visual_provenance.json
-    assets/
-      full_slide.png
-      covers/<group_id>_cover.png
-      fog/<group_id>_fog.png
-      crops/<group_id>.png
-    scene.json
-    animation_timeline.json
-    reveal_report.json
-    narration_beats.json
-    narration.txt
-    tts_text.txt
-    voice.mp3
-    subtitles.srt
-    audio_timeline.json
-  video/final.mp4
-```
-
-## Alternative Paths
-
-- `scripts/split_master_layers.py` remains available for fallback or diagnostics,
-  but it is not the default production path.
-- `scripts/compose_manifest_layers.py` remains available for advanced runs where
-  Image Gen can produce consistent full-canvas macro layers.
-- `scripts/decompose_slide_layers.py` is diagnostic only.
-
-## Git Policy
-
-Commit reusable framework files:
-
-```text
-AGENTS.md
-config/**
-references/**
-schemas/**
-templates/**
-checks/**
-scripts/**
-README.md
-bad_cases/**
-```
-
-Do not commit runtime outputs:
-
-```text
-runs/**
-outputs/**
-*.mp4
-*.mp3
-*.wav
-*.srt
-.env
-```
+- `runs/**`
+- `outputs/**`
+- `logs/**`
+- `data/**`
+- 音视频、字幕、API Key 或 `.env`

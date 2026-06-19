@@ -1,6 +1,10 @@
 tracked:
   - AGENTS.md
   - README.md
+  - server.py
+  - database.py
+  - config_store.py
+  - static/**
   - .codex/config.toml
   - .agents/skills/**/SKILL.md
   - config/**
@@ -19,6 +23,9 @@ tracked:
 ignored:
   - runs/**
   - outputs/**
+  - logs/**
+  - data/**
+  - scripts/remotion/public/runtime/**
   - "*.mp4"
   - "*.mov"
   - "*.wav"

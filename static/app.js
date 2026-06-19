@@ -1,3 +1,14 @@
+const {
+  VISIBLE_FLOW,
+  normalizeVisibleStep,
+  resolveProjectVisibleStep,
+  visibleStepNumber,
+  visibleStepLabel,
+  getVisibleStepState,
+  calculateVisibleProgress,
+  isVisibleStepUnlocked
+} = PPTFlow;
+
 // 全局状态管理
 let state = {
   currentProject: null,
@@ -13,6 +24,7 @@ let state = {
   step2AutoSaveInFlight: false,
   step5AutoSaveTimer: null,
   step5AutoSaveInFlight: false,
+  step5AutoSavePromise: null,
   step6AutoSaveTimer: null,
   step6AutoSavePromise: null,
   canvasState: {
@@ -25,7 +37,7 @@ let state = {
     eraserMode: false,
     isPainting: false,
     currentStroke: null,
-    brushSize: 140,
+    brushSize: 170,
     brushCursorClientX: null,
     brushCursorClientY: null,
     maskZoom: 1,
@@ -39,6 +51,10 @@ let state = {
     startY: 0
   }
 };
+
+function projectFlowContext(project = state.currentProject) {
+  return { audioConfirmed: project?.audio_confirmed === true };
+}
 
 // API 请求工具方法
 const SYNC_REVEAL_DURATION_SEC = 0.12;
@@ -87,6 +103,9 @@ const API = {
 // Toast 提示
 function showToast(message, duration = 3000) {
   const container = document.getElementById('toast-container');
+  while (container.children.length >= 4) {
+    container.firstElementChild?.remove();
+  }
   const toast = document.createElement('div');
   toast.className = 'toast';
   toast.innerText = message;
@@ -174,18 +193,16 @@ function initGlobalEvents() {
       const step = parseInt(item.dataset.step);
       const stepStatus = state.currentProject.step_status;
       const currentStep = state.currentProject.current_step;
-      // 解锁逻辑：
-      // 1. 目标步骤小于等于当前进行中的步骤 (step <= currentStep)
-      // 2. 目标步骤已经被标记完成 (completed) 或待重新确认 (pending_reconfirmation)
-      // 3. 目标步骤的前一步已经完成或待确认 (说明下一步已解锁，支持点击)
-      const isUnlocked = step <= currentStep
-        || stepStatus[step.toString()] === 'completed'
-        || stepStatus[step.toString()] === 'pending_reconfirmation'
-        || (step > 1 && (stepStatus[(step - 1).toString()] === 'completed' || stepStatus[(step - 1).toString()] === 'pending_reconfirmation'));
+      const isUnlocked = isVisibleStepUnlocked(
+        step,
+        stepStatus,
+        currentStep,
+        projectFlowContext()
+      );
       if (isUnlocked) {
         navigateToStep(step);
       } else {
-        showToast(`⚠️ 请先完成前序步骤再进行第 ${step} 步操作`);
+        showToast(`⚠️ 请先完成前序步骤再进入“${visibleStepLabel(step)}”`);
       }
     });
   });
@@ -198,12 +215,6 @@ function initGlobalEvents() {
       } else if (state.currentStep === 5) {
         const saved = await saveStep5Masks();
         if (saved) navigateToStep(6);
-      } else if (state.currentStep === 6) {
-        const saved = await flushStep6Autosave();
-        if (saved) navigateToStep(7);
-      } else if (state.currentStep === 7) {
-        const confirmed = await confirmStep7Audio();
-        if (confirmed) navigateToStep(8);
       } else if (state.currentStep < 8) {
         navigateToStep(state.currentStep + 1);
       }
@@ -238,23 +249,30 @@ function initGlobalEvents() {
   document.getElementById('step3-btn-style')?.addEventListener('click', () => openImageStyleModal());
   document.getElementById('step3-btn-confirm').addEventListener('click', () => confirmStep3Images());
 
-  // ================= 步骤 4 事件 =================
-  document.getElementById('step4-btn-confirm').addEventListener('click', () => confirmStep4Images());
-
   // ================= 步骤 5 事件 =================
   document.getElementById('step5-btn-semantic-blocks')?.addEventListener('click', () => runStep5SemanticBlocks());
   document.getElementById('step5-btn-new-block')?.addEventListener('click', () => createCurrentSlideBlock());
   document.getElementById('step5-btn-clear-current')?.addEventListener('click', () => clearAllMaskAnnotations());
+  document.getElementById('step5-btn-preview')?.addEventListener('click', () => openStep5MaskPreview());
   document.getElementById('step5-brush-size')?.addEventListener('input', (e) => updateBrushSize(e.target.value));
   document.getElementById('btn-narration-picker-cancel')?.addEventListener('click', () => closeNarrationPicker());
   document.getElementById('btn-narration-picker-confirm')?.addEventListener('click', () => confirmNarrationPicker());
+  document.getElementById('btn-mask-preview-close')?.addEventListener('click', () => closeStep5MaskPreview());
+  document.getElementById('modal-mask-preview')?.addEventListener('click', (event) => {
+    if (event.target.id === 'modal-mask-preview') closeStep5MaskPreview();
+  });
 
   // ================= 步骤 6 事件 =================
   document.getElementById('step6-btn-init').addEventListener('click', () => initStep6Narration());
   document.getElementById('step6-btn-ai-annotate')?.addEventListener('click', () => annotateStep6Narration());
   document.getElementById('step6-btn-save')?.addEventListener('click', () => saveStep6Narration());
+  document.getElementById('step6-btn-save-and-tts').addEventListener('click', () => saveNarrationAndRunTTS());
+  document.getElementById('step6-btn-audio-confirm-next').addEventListener('click', async () => {
+    const confirmed = await confirmStep7Audio();
+    if (confirmed) navigateToStep(8);
+  });
 
-  // ================= 步骤 7 事件 =================
+  // 步骤 7 后端能力已合并到可见步骤 6
   document.getElementById('step7-btn-synthesize').addEventListener('click', () => runStep7TTS());
 
   // ================= 步骤 8 事件 =================
@@ -262,6 +280,7 @@ function initGlobalEvents() {
   document.getElementById('step8-btn-finish').addEventListener('click', () => exitWorkspace());
   document.getElementById('btn-storyboard-rules-cancel')?.addEventListener('click', () => closeStoryboardRulesModal());
   document.getElementById('btn-storyboard-rules-save')?.addEventListener('click', () => saveStoryboardRules());
+  document.getElementById('btn-storyboard-rules-save-regenerate')?.addEventListener('click', () => saveStoryboardRulesWithOptions({ regenerate: true }));
   document.getElementById('btn-storyboard-rules-copy-full')?.addEventListener('click', () => copyFullStoryboardRequest());
   document.getElementById('btn-image-style-cancel')?.addEventListener('click', () => closeImageStyleModal());
   document.getElementById('btn-image-style-save')?.addEventListener('click', () => saveImageStyle());
@@ -286,22 +305,13 @@ async function loadProjects() {
   }
   
   data.forEach(p => {
-    // 计算已完成步骤百分比
     const status = p.step_status || {};
-    let completedCount = 0;
-    for (let i = 1; i <= 8; i++) {
-      if (status[i.toString()] === 'completed') completedCount++;
-    }
-    const percent = Math.round((completedCount / 8) * 100);
-    
-    // 检查是否有后续步骤标记为待重新确认
-    let hasPendingReconfirm = false;
-    for (let key in status) {
-      if (status[key] === 'pending_reconfirmation') {
-        hasPendingReconfirm = true;
-        break;
-      }
-    }
+    const context = projectFlowContext(p);
+    const percent = calculateVisibleProgress(status, context);
+    const hasPendingReconfirm = VISIBLE_FLOW.some(
+      item => getVisibleStepState(item.step, status, context) === 'pending_reconfirmation'
+    );
+    const currentVisibleStep = resolveProjectVisibleStep(p);
     
     const card = document.createElement('div');
     card.className = 'project-card sketch-shadow';
@@ -312,7 +322,7 @@ async function loadProjects() {
         </div>
         <p style="color: #666; font-size: 0.95rem; min-height: 40px; margin-bottom: 0.5rem;">${p.description || '无项目描述'}</p>
         <div style="font-size: 0.9rem; margin-top: 0.5rem;">
-          <div>当前步骤: <strong>第 ${p.current_step} 步</strong></div>
+          <div>当前阶段: <strong>第 ${visibleStepNumber(currentVisibleStep)} 步 · ${visibleStepLabel(currentVisibleStep)}</strong></div>
           ${hasPendingReconfirm ? '<div style="color: #c9a002; font-weight: bold;">⚠️ 有步骤需重做</div>' : ''}
         </div>
       </div>
@@ -425,9 +435,9 @@ async function saveSettings() {
   
   const res = await API.put('/api/settings', { settings });
   if (res.success) {
-    state.settings = settings;
+    await loadSettings();
     closeSettingsModal();
-    showToast('💾 系统全局设置保存成功');
+    showToast('💾 系统全局设置保存成功，当前配置已重新加载');
   }
 }
 
@@ -566,6 +576,7 @@ function copyLlmUrlToImage() {
 async function enterWorkspace(projectId) {
   const project = await API.get(`/api/projects/${projectId}`);
   state.currentProject = project;
+  const visibleStep = resolveProjectVisibleStep(project);
   
   // 顶栏切换
   document.getElementById('project-info-header').style.display = 'block';
@@ -577,8 +588,8 @@ async function enterWorkspace(projectId) {
   document.getElementById('page-workspace').style.display = 'flex';
   
   // 加载步骤状态并导航至当前步骤
-  updateStepperUI(project.current_step, project.step_status);
-  navigateToStep(project.current_step);
+  updateStepperUI(visibleStep, project.step_status);
+  navigateToStep(visibleStep);
 }
 
 function exitWorkspace() {
@@ -592,16 +603,18 @@ function exitWorkspace() {
 }
 
 function updateStepperUI(currentStep, stepStatus) {
+  const activeStep = normalizeVisibleStep(currentStep);
+  const context = projectFlowContext();
   const stepItems = document.querySelectorAll('.step-item');
   stepItems.forEach(item => {
     const step = parseInt(item.dataset.step);
     item.className = 'step-item'; // 重置
     
-    if (step === currentStep) {
+    if (step === activeStep) {
       item.classList.add('active');
     }
     
-    const status = stepStatus[step.toString()];
+    const status = getVisibleStepState(step, stepStatus, context);
     if (status === 'completed') {
       item.classList.add('completed');
     } else if (status === 'pending_reconfirmation') {
@@ -625,11 +638,12 @@ async function refreshCurrentProjectStatus(activeStep = state.currentStep) {
   if (!state.currentProject?.id) return;
   const project = await API.get(`/api/projects/${state.currentProject.id}`);
   state.currentProject = project;
-  updateStepperUI(activeStep, project.step_status);
+  updateStepperUI(normalizeVisibleStep(activeStep), project.step_status);
 }
 
 // 步骤面板切换
 async function navigateToStep(step) {
+  step = normalizeVisibleStep(step);
   state.currentStep = step;
   
   // 隐藏所有面板
@@ -648,34 +662,29 @@ async function navigateToStep(step) {
   updateStepperUI(step, state.currentProject.step_status);
   
   // 针对特定步骤加载结果数据
-  loadStepData(step);
+  await loadStepData(step);
 }
 
-function loadStepData(step) {
+async function loadStepData(step) {
   switch (step) {
     case 1:
-      loadStep1Data();
+      await loadStep1Data();
       break;
     case 2:
-      loadStep2Data();
+      await loadStep2Data();
       break;
     case 3:
-      loadStep3Data();
-      break;
-    case 4:
-      loadStep4Data();
+      await loadStep3Data();
       break;
     case 5:
-      loadStep5Data();
+      await loadStep5Data();
       break;
     case 6:
-      loadStep6Data();
-      break;
-    case 7:
-      loadStep7Data();
+      await loadStep6Data();
+      await loadStep7Data();
       break;
     case 8:
-      loadStep8Data();
+      await loadStep8Data();
       break;
   }
 }
@@ -1118,7 +1127,7 @@ async function loadStep3Data() {
   } catch(e) {}
   
   // 获取生成的图片文件状态
-  refreshStep3Images();
+  await refreshStep3Images();
 }
 
 async function refreshStep3Images() {
@@ -1144,9 +1153,15 @@ function renderStep3Grid() {
   if (!grid) return;
   grid.innerHTML = '';
 
-  const hasAnyImage = step3ImageOrder.some(img => img.exists);
+  const hasSlides = step3ImageOrder.length > 0;
+  const missingCount = step3ImageOrder.filter(img => !img.exists).length;
+  const allImagesReady = hasSlides && missingCount === 0;
   const confirmBtn = document.getElementById('step3-btn-confirm');
-  if (confirmBtn) confirmBtn.style.display = hasAnyImage ? 'inline-flex' : 'none';
+  if (confirmBtn) {
+    confirmBtn.style.display = hasSlides ? 'inline-flex' : 'none';
+    confirmBtn.disabled = !allImagesReady;
+    confirmBtn.title = allImagesReady ? '' : `还缺少 ${missingCount} 张图片`;
+  }
 
   step3ImageOrder.forEach((img, idx) => {
     const card = document.createElement('div');
@@ -1201,13 +1216,18 @@ function renderStep3Grid() {
           </span>
         </div>
         <div style="display: flex; gap: 0.3rem; align-items: center;">
-          <button class="success" style="font-size: 0.72rem; padding: 0.2rem 0.4rem; box-shadow: 1px 1px 0px 0px var(--ink-color); margin: 0;" onclick="event.stopPropagation(); openStep3AI('${img.slide_id}')">
+          <button class="success step3-ai-action" data-slide-id="${escHtml(img.slide_id)}" style="font-size: 0.72rem; padding: 0.2rem 0.4rem; box-shadow: 1px 1px 0px 0px var(--ink-color); margin: 0;">
             AI生成
           </button>
           <label class="btn secondary" style="font-size: 0.72rem; padding: 0.2rem 0.4rem; cursor: pointer; box-shadow: 1px 1px 0px 0px var(--ink-color); display: inline-flex; align-items: center; gap: 0.1rem; margin: 0;">
             上传
-            <input type="file" accept="image/*" style="display: none;" onchange="uploadStep3ImageById('${img.slide_id}', this)">
+            <input class="step3-upload-input" data-slide-id="${escHtml(img.slide_id)}" type="file" accept="image/*" style="display: none;">
           </label>
+          ${img.exists ? `
+            <button class="danger step3-delete-action" data-slide-id="${escHtml(img.slide_id)}" style="font-size: 0.72rem; padding: 0.2rem 0.4rem; box-shadow: 1px 1px 0px 0px var(--ink-color); margin: 0;">
+              删除
+            </button>
+          ` : ''}
         </div>
       </div>
       <div class="step3-card-title" title="${escHtml(slideTitle)}">${escHtml(slideTitle)}</div>
@@ -1217,6 +1237,17 @@ function renderStep3Grid() {
       </div>
     `;
     const dragHandle = card.querySelector('.slide-drag-handle');
+    card.querySelector('.step3-ai-action')?.addEventListener('click', (event) => {
+      event.stopPropagation();
+      openStep3AI(img.slide_id);
+    });
+    card.querySelector('.step3-upload-input')?.addEventListener('change', (event) => {
+      uploadStep3ImageById(img.slide_id, event.currentTarget);
+    });
+    card.querySelector('.step3-delete-action')?.addEventListener('click', (event) => {
+      event.stopPropagation();
+      deleteStep3Image(img.slide_id);
+    });
     dragHandle.addEventListener('click', (e) => e.stopPropagation());
     dragHandle.addEventListener('dragstart', (e) => {
       step3DraggedIndex = idx;
@@ -1324,12 +1355,30 @@ async function uploadStep3ImageById(slideId, input) {
   const res = await API.post(`/api/projects/${state.currentProject.id}/steps/3/upload`, formData);
   if (res.success) {
     showToast('🎉 图片上传成功！');
-    refreshStep3Images();
+    await refreshStep3Images();
+    await refreshCurrentProjectStatus(3);
   }
   input.value = '';
 }
 
 window.uploadStep3ImageById = uploadStep3ImageById;
+
+function deleteStep3Image(slideId) {
+  showCustomConfirm(
+    '删除图片',
+    `确定删除 ${slideId} 的本地图片吗？该页已有的全部 Mask 和切层素材也会一起清除。`,
+    async () => {
+      const res = await API.delete(`/api/projects/${state.currentProject.id}/steps/3/images/${encodeURIComponent(slideId)}`);
+      if (res.success) {
+        await refreshStep3Images();
+        await refreshCurrentProjectStatus(3);
+        showToast('图片及该页 Mask 已删除。');
+      }
+    }
+  );
+}
+
+window.deleteStep3Image = deleteStep3Image;
 
 // 批量上传处理
 async function handleStep3BatchUpload(e) {
@@ -1353,7 +1402,8 @@ async function handleStep3BatchUpload(e) {
     }
   }
   showToast('✅ 批量上传完成！');
-  refreshStep3Images();
+  await refreshStep3Images();
+  await refreshCurrentProjectStatus(3);
   e.target.value = '';
 }
 
@@ -1415,8 +1465,9 @@ async function applyStep3Candidate() {
     );
     if (res.success) {
       await refreshStep3Images();
+      await refreshCurrentProjectStatus(3);
       closeStep3AIModal();
-      showToast('候选图片已替换原图。');
+      showToast('候选图片已替换原图，该页旧 Mask 已清除。');
     }
   } finally {
     applyButton.disabled = false;
@@ -1428,55 +1479,8 @@ window.applyStep3Candidate = applyStep3Candidate;
 async function confirmStep3Images() {
   const res = await API.post(`/api/projects/${state.currentProject.id}/steps/3/confirm`);
   if (res.success) {
-    const formData = new FormData();
-    formData.append('target_step', '5');
-    const navRes = await API.post(`/api/projects/${state.currentProject.id}/navigate`, formData);
-    if (navRes.success) {
-      showToast('🔒 所有图片已确认并锁定！进入标注阶段。');
-      navigateToStep(5);
-    }
-  }
-}
-
-// ==================== 步骤 4: 图片审核确认 ====================
-
-async function loadStep4Data() {
-  const res = await API.get(`/api/projects/${state.currentProject.id}/steps/3/images`);
-  const grid = document.getElementById('step4-grid');
-  grid.innerHTML = '';
-  
-  if (res.success) {
-    res.images.forEach(img => {
-      const card = document.createElement('div');
-      card.className = 'card';
-      card.style.padding = '0.5rem';
-      card.innerHTML = `
-        <div style="height: 140px; border: 1px solid #111; border-radius: 5px; background-color: #eee; overflow: hidden; margin-bottom: 0.5rem;">
-          ${img.exists ? `<img src="${img.url}" style="width:100%; height:100%; object-fit:cover;">` : '<span style="color:#aaa; display:flex; align-items:center; justify-content:center; height:100%;">无图片</span>'}
-        </div>
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <span style="font-weight:bold;">${img.slide_id}</span>
-          <button class="secondary" style="font-size:0.8rem; padding: 2px 6px;" onclick="goToSlideStep3('${img.slide_id}')">🔄 重构</button>
-        </div>
-      `;
-      grid.appendChild(card);
-    });
-  }
-}
-
-window.goToSlideStep3 = function(slideId) {
-  // 查找 slideIndex 并在第3步渲染激活它
-  const idx = state.slides.findIndex(s => s.slide_id === slideId);
-  if (idx !== -1) {
-    state.activeSlideIndex = idx;
-    navigateToStep(3);
-  }
-};
-
-async function confirmStep4Images() {
-  const res = await API.post(`/api/projects/${state.currentProject.id}/steps/3/confirm`);
-  if (res.success) {
-    showToast('🔒 图片已锁定！坐标文件自动生成。接下来进入标注阶段。');
+    await refreshCurrentProjectStatus(5);
+    showToast('🔒 所有图片已确认并锁定！进入标注阶段。');
     navigateToStep(5);
   }
 }
@@ -2045,11 +2049,20 @@ function closeStoryboardRulesModal() {
 }
 
 async function saveStoryboardRules() {
+  return saveStoryboardRulesWithOptions();
+}
+
+async function saveStoryboardRulesWithOptions(options = {}) {
   const rules = document.getElementById('storyboard-rules-input').value.trim();
   const res = await API.put(`/api/projects/${state.currentProject.id}/steps/2/rules`, { rules });
   if (res.success) {
     closeStoryboardRulesModal();
-    showToast('分镜规则已保存');
+    if (options.regenerate) {
+      showToast('分镜规则已保存，正在按新规则重新规划分镜...');
+      await generateStep2Contract();
+      return;
+    }
+    showToast('分镜规则已保存，将在下次重新规划分镜时生效。');
   }
 }
 
@@ -2085,8 +2098,25 @@ async function saveImageStyle() {
   await uploadImageStyleReference('template');
   await uploadImageStyleReference('example');
   closeImageStyleModal();
-  slidePrompts = [];
-  showToast('图片风格与参考图已保存');
+  await refreshStep3Prompts({ updateOpenEditor: state.currentStep === 3 });
+  showToast('图片风格与参考图已保存，生图提示词已刷新');
+}
+
+async function refreshStep3Prompts(options = {}) {
+  if (!state.currentProject?.id) return [];
+  const promptRes = await API.get(`/api/projects/${state.currentProject.id}/steps/3/prompts`);
+  if (promptRes.success) {
+    slidePrompts = promptRes.prompts || [];
+  }
+  if (options.updateOpenEditor) {
+    const currentSlideId = document.getElementById('step3-slide-id-label')?.innerText;
+    const promptInput = document.getElementById('step3-prompt-input');
+    const promptInfo = slidePrompts.find(item => item.slide_id === currentSlideId);
+    if (promptInput && promptInfo && currentSlideId && currentSlideId !== '--') {
+      promptInput.value = promptInfo.prompt || '';
+    }
+  }
+  return slidePrompts;
 }
 
 function renderStep5Workspace() {
@@ -2365,7 +2395,7 @@ function selectStep5MaskBox(idx, shouldScroll = true) {
 }
 
 function updateBrushSize(value, shouldRedraw = true) {
-  const size = Math.max(140, Math.min(300, Number(value) || 140));
+  const size = Math.max(140, Math.min(300, Number(value) || 170));
   state.canvasState.brushSize = size;
   const input = document.getElementById('step5-brush-size');
   const label = document.getElementById('step5-brush-size-value');
@@ -2889,14 +2919,21 @@ function scheduleStep5Autosave() {
 
 async function saveStep5Draft() {
   if (!manifestData?.slides?.length) return { success: false };
-  if (state.step5AutoSaveInFlight) {
-    scheduleStep5Autosave();
-    return { success: false };
-  }
   saveStep5CurrentState();
+  if (state.step5AutoSavePromise) {
+    try {
+      await state.step5AutoSavePromise;
+    } catch (error) {
+      // The save below retries with the latest manifest state.
+    }
+    saveStep5CurrentState();
+  }
+  const payload = JSON.parse(JSON.stringify(manifestData));
   state.step5AutoSaveInFlight = true;
+  const savePromise = API.put(`/api/projects/${state.currentProject.id}/steps/5/draft`, payload);
+  state.step5AutoSavePromise = savePromise;
   try {
-    const res = await API.put(`/api/projects/${state.currentProject.id}/steps/5/draft`, manifestData);
+    const res = await savePromise;
     if (res.success) {
       updateStep5DraftStatus('已自动保存');
       setTimeout(() => updateStep5DraftStatus(''), 1200);
@@ -2904,6 +2941,48 @@ async function saveStep5Draft() {
     return res;
   } finally {
     state.step5AutoSaveInFlight = false;
+    if (state.step5AutoSavePromise === savePromise) {
+      state.step5AutoSavePromise = null;
+    }
+  }
+}
+
+function closeStep5MaskPreview() {
+  const modal = document.getElementById('modal-mask-preview');
+  if (modal) modal.style.display = 'none';
+}
+
+async function openStep5MaskPreview() {
+  const slide = getCurrentManifestSlide();
+  if (!slide?.slide_id || !state.currentProject) return;
+  const button = document.getElementById('step5-btn-preview');
+  if (button) button.disabled = true;
+  showToast('正在按精确 Mask 规则生成最终抠除预览...');
+  try {
+    await saveStep5Draft();
+    const result = await API.post(
+      `/api/projects/${state.currentProject.id}/steps/5/preview`,
+      { slide_id: slide.slide_id }
+    );
+    const diagnostics = result.diagnostics || {};
+    const ratio = Number(diagnostics.coverage_ratio);
+    const summary = document.getElementById('mask-preview-summary');
+    if (summary) {
+      summary.innerText = result.fallback_full_slide
+        ? `${slide.slide_id} 没有 Mask，将直接显示完整图片。`
+        : `${slide.slide_id} · 精确 Mask v2 · 源图前景覆盖率 ${Number.isFinite(ratio) ? (ratio * 100).toFixed(1) : '--'}%`;
+    }
+    document.getElementById('mask-preview-image').src = result.preview_url;
+    const uncoveredSection = document.getElementById('mask-uncovered-section');
+    if (result.uncovered_url) {
+      uncoveredSection.style.display = '';
+      document.getElementById('mask-uncovered-image').src = result.uncovered_url;
+    } else {
+      uncoveredSection.style.display = 'none';
+    }
+    document.getElementById('modal-mask-preview').style.display = 'flex';
+  } finally {
+    if (button) button.disabled = false;
   }
 }
 
@@ -2996,7 +3075,7 @@ async function loadStep6Data() {
     renderStep6Workspace();
   } else {
     // 首次进入没有演讲稿，提示同步初始化
-    initStep6Narration();
+    await initStep6Narration();
   }
 }
 
@@ -3075,70 +3154,63 @@ function normalizeStep6Data() {
 }
 
 function renderStep6Workspace() {
-  const thumbsContainer = document.getElementById('step6-thumbs');
   const container = document.getElementById('step6-beats-list');
-  const title = document.getElementById('step6-current-slide-title');
-  if (!thumbsContainer || !container || !title) return;
-
-  thumbsContainer.innerHTML = '';
+  if (!container) return;
   container.innerHTML = '';
 
   if (!narrationData?.slides?.length) {
-    title.innerText = '台词审稿';
     container.innerHTML = '<div class="sketch-dashed step6-empty-state">暂无演讲稿，请先同步演讲稿模板。</div>';
     return;
   }
 
-  narrationData.slides.forEach((slide, idx) => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = `step6-slide-pill${idx === state.activeSlideIndex ? ' active' : ''}`;
-    btn.innerHTML = `
-      <span>${escHtml(slide.slide_id)}</span>
-      <small>${(slide.beats || []).length} 句段</small>
-    `;
-    btn.addEventListener('click', () => {
-      saveStep6CurrentState();
-      state.activeSlideIndex = idx;
-      renderStep6Workspace();
-    });
-    thumbsContainer.appendChild(btn);
-  });
-
-  const slide = narrationData.slides[state.activeSlideIndex];
-  if (!slide) return;
-  title.innerText = `${slide.slide_id} 台词审稿`;
-
-  if (!slide.beats.length) {
-    container.innerHTML = '<div class="sketch-dashed step6-empty-state">当前 Slide 暂无句段。可返回 Mask 标注页建立语块，或重新同步演讲稿模板。</div>';
-    return;
-  }
-
-  slide.beats.forEach((beat, idx) => {
-    normalizeStep6Beat(beat, idx);
-    const row = document.createElement('div');
-    row.className = 'step6-beat-card sketch-dashed';
-    row.innerHTML = `
-      <div class="step6-beat-head">
-        <span>句段 ${idx + 1}</span>
-        <small>${escHtml(beat.visible_anchor || beat.group_id || '')}</small>
+  narrationData.slides.forEach((slide, slideIndex) => {
+    const slideRow = document.createElement('section');
+    slideRow.className = 'step6-slide-row';
+    slideRow.dataset.slideId = slide.slide_id;
+    slideRow.innerHTML = `
+      <div class="step6-slide-row-head">
+        <h3>${escHtml(slide.slide_id)}</h3>
+        <span class="step6-slide-status">${slide.beats.length ? `${slide.beats.length} 条旁白` : '暂无旁白'}</span>
       </div>
-      <div class="step6-script-label">最终语音合成稿</div>
-      <textarea class="step6-tts-input" rows="4" data-slide-index="${state.activeSlideIndex}" data-beat-index="${idx}" placeholder="AI 会加入 <#0.35#> 停顿及 MiniMax 语气标记，人工审核后可直接修改。">${escHtml(beat.tts_text || beat.spoken_text || '')}</textarea>
+      <div class="step6-slide-beats"></div>
+      <div class="step6-slide-audio" data-audio-slide-id="${escHtml(slide.slide_id)}"></div>
     `;
-    row.querySelector('textarea').addEventListener('input', (event) => {
-      updateNarrationBeatText(idx, event.target.value);
+    const beatsContainer = slideRow.querySelector('.step6-slide-beats');
+    if (!slide.beats.length) {
+      beatsContainer.innerHTML = '<div class="step6-empty-state">当前 Slide 暂无旁白。可返回 Mask 标注页建立语块，或重新同步旁白。</div>';
+    }
+    slide.beats.forEach((beat, beatIndex) => {
+      normalizeStep6Beat(beat, beatIndex);
+      const row = document.createElement('div');
+      row.className = 'step6-beat-row';
+      row.innerHTML = `
+        <span class="step6-beat-number">${beatIndex + 1}</span>
+        <textarea class="step6-tts-input" rows="1" data-slide-index="${slideIndex}" data-beat-index="${beatIndex}" aria-label="${escHtml(slide.slide_id)} 第 ${beatIndex + 1} 条旁白" placeholder="输入旁白文本，可保留停顿和语气标记">${escHtml(beat.tts_text || beat.spoken_text || '')}</textarea>
+      `;
+      const textarea = row.querySelector('textarea');
+      textarea.addEventListener('input', (event) => {
+        autoResizeNarrationTextarea(event.target);
+        updateNarrationBeatText(slideIndex, beatIndex, event.target.value);
+      });
+      beatsContainer.appendChild(row);
+      autoResizeNarrationTextarea(textarea);
     });
-    container.appendChild(row);
+    container.appendChild(slideRow);
   });
 }
 
-function updateNarrationBeatText(idx, val) {
-  const slide = narrationData.slides[state.activeSlideIndex];
-  if (slide && slide.beats[idx]) {
-    slide.beats[idx].tts_text = val;
-    if (!slide.beats[idx].source_text) {
-      slide.beats[idx].source_text = slide.beats[idx].spoken_text || val;
+function autoResizeNarrationTextarea(textarea) {
+  if (!textarea) return;
+  textarea.style.height = 'auto';
+  textarea.style.height = `${Math.max(28, textarea.scrollHeight)}px`;
+}
+
+function updateNarrationBeatText(slideIndex, beatIndex, val) {
+  const slide = narrationData.slides[slideIndex];
+  if (slide && slide.beats[beatIndex]) {
+    slide.beats[beatIndex].tts_text = val;
+    if (!slide.beats[beatIndex].source_text) {
+      slide.beats[beatIndex].source_text = slide.beats[beatIndex].spoken_text || val;
     }
     scheduleStep6Autosave();
   }
@@ -3240,78 +3312,104 @@ async function saveStep6Narration(options = {}) {
   return false;
 }
 
-// ==================== 步骤 7: 语音合成 ====================
+// ==================== 可见步骤 6 的音频阶段（内部步骤 7） ====================
 
 async function loadStep7Data() {
-  // 检查是否已经合成过音频
-  const [res, narrationRes] = await Promise.all([
-    API.get(`/api/projects/${state.currentProject.id}/steps/3/images`),
-    API.get(`/api/projects/${state.currentProject.id}/steps/6/result`).catch(() => ({ success: false }))
-  ]);
-  const narrationSlides = narrationRes.success ? (narrationRes.beats?.slides || []) : [];
+  const emptyState = document.getElementById('step7-empty-state');
+  const confirmButton = document.getElementById('step6-btn-audio-confirm-next');
+  const synthButton = document.getElementById('step7-btn-synthesize');
+  const step7Status = state.currentProject?.step_status?.['7'] || 'pending';
+  const canLoadAudio = ['in_progress', 'completed', 'pending_reconfirmation'].includes(step7Status);
+
+  confirmButton.disabled = true;
+  synthButton.style.display = canLoadAudio ? 'inline-flex' : 'none';
+  emptyState.style.display = 'block';
+  document.querySelectorAll('.step6-slide-audio').forEach(slot => {
+    slot.innerHTML = '';
+    slot.classList.remove('has-audio');
+  });
+
+  if (!canLoadAudio) {
+    emptyState.innerText = '尚未生成音频。确认旁白后，点击“生成音频”。';
+    return;
+  }
+
+  const res = await API.get(`/api/projects/${state.currentProject.id}/steps/3/images`);
   if (res.success) {
-    const container = document.getElementById('step7-audio-list');
-    container.innerHTML = '';
-    
     res.images.forEach(img => {
-      const row = document.createElement('div');
-      row.className = 'sketch-dashed step7-audio-card';
-      
-      const audioUrl = `/api/projects/${state.currentProject.id}/slides/${img.slide_id}/audio`;
-      const script = getStep7NarrationText(img.slide_id, narrationSlides);
-      
-      row.innerHTML = `
-        <div class="step7-audio-main">
-          <div class="step7-audio-title">${escHtml(img.slide_id)}</div>
-          <div class="step7-audio-script">${script ? escHtml(script) : '暂无演讲稿，请先在上一步保存演讲稿。'}</div>
-        </div>
-        <audio controls src="${audioUrl}" class="step7-audio-player"></audio>
-      `;
-      container.appendChild(row);
+      const slot = Array.from(document.querySelectorAll('.step6-slide-audio'))
+        .find(item => item.dataset.audioSlideId === img.slide_id);
+      if (!slot) return;
+      const audioUrl = `/api/projects/${state.currentProject.id}/slides/${img.slide_id}/audio?t=${Date.now()}`;
+      slot.classList.add('has-audio');
+      slot.innerHTML = `<audio controls preload="metadata" src="${audioUrl}" class="step7-audio-player" aria-label="${escHtml(img.slide_id)} 音频"></audio>`;
     });
-    
-    // 如果有图片状态，展示列表，默认隐藏 loading 状态
-    document.getElementById('step7-result-box').style.display = 'block';
+
+    if (step7Status === 'pending_reconfirmation') {
+      emptyState.style.display = 'block';
+      emptyState.innerText = '旁白或上游内容已变更，请重新生成音频后再确认。';
+      confirmButton.disabled = true;
+    } else {
+      emptyState.style.display = 'none';
+      confirmButton.disabled = false;
+      document.getElementById('step6-audio-confirm-label').innerText = state.currentProject.audio_confirmed
+        ? '进入视频合成'
+        : '确认并进入视频合成';
+    }
   }
 }
 
-function getStep7NarrationText(slideId, narrationSlides) {
-  const slide = narrationSlides.find(item => item.slide_id === slideId);
-  if (!slide || !Array.isArray(slide.beats)) return '';
-  return slide.beats
-    .map(beat => String(beat?.tts_text || beat?.spoken_text || '').trim())
-    .filter(Boolean)
-    .join('\n');
-}
-
 async function runStep7TTS() {
-  document.getElementById('step7-loading').style.display = 'inline-flex';
-  document.getElementById('step7-btn-synthesize').disabled = true;
+  const loading = document.getElementById('step7-loading');
+  const synthButton = document.getElementById('step7-btn-synthesize');
+  const saveAndTtsButton = document.getElementById('step6-btn-save-and-tts');
+  const confirmButton = document.getElementById('step6-btn-audio-confirm-next');
+  loading.style.display = 'inline-flex';
+  synthButton.disabled = true;
+  saveAndTtsButton.disabled = true;
+  confirmButton.disabled = true;
   showToast('🔊 正在调用 MiniMax TTS 服务并绑定 Reveal 关键帧时间轴...');
   
   try {
     const res = await API.post(`/api/projects/${state.currentProject.id}/steps/7/synthesize`);
     if (res.success) {
-      showToast('🎉 合成并绑定时间轴完成！');
-      loadStep7Data();
-      refreshCurrentProjectStatus(7).catch(() => {});
+      showToast('🎉 音频生成完成，请逐页试听并确认。');
+      await refreshCurrentProjectStatus(6);
+      await loadStep7Data();
+      return true;
     }
-  } catch(e) {
+  } catch (e) {
+    return false;
   } finally {
-    document.getElementById('step7-loading').style.display = 'none';
-    document.getElementById('step7-btn-synthesize').disabled = false;
+    loading.style.display = 'none';
+    synthButton.disabled = false;
+    saveAndTtsButton.disabled = false;
   }
+  return false;
+}
+
+async function saveNarrationAndRunTTS() {
+  const saved = await flushStep6Autosave();
+  if (!saved) return false;
+  showToast('旁白已保存，开始生成音频...');
+  return runStep7TTS();
 }
 
 async function confirmStep7Audio() {
+  const confirmButton = document.getElementById('step6-btn-audio-confirm-next');
+  confirmButton.disabled = true;
   try {
     const res = await API.post(`/api/projects/${state.currentProject.id}/steps/7/confirm`, {});
     if (res.success) {
       showToast('✅ 音频已确认，准备进入视频合成。');
-      refreshCurrentProjectStatus(7).catch(() => {});
+      await refreshCurrentProjectStatus(6);
       return true;
     }
-  } catch (e) {}
+  } catch (e) {
+    return false;
+  } finally {
+    confirmButton.disabled = false;
+  }
   return false;
 }
 
@@ -3364,7 +3462,10 @@ function showStep8VideoResult(videos) {
       return `
         <div class="step8-video-card">
           <div class="step8-video-card-head">
-            <strong>${idx === 0 ? '最新渲染' : `历史版本 ${idx + 1}`}</strong>
+            <strong>
+              ${idx === 0 ? '最新渲染' : `历史版本 ${idx + 1}`}
+              ${item.is_legacy ? '<span class="step8-legacy-badge">旧算法/未知版本</span>' : '<span class="step8-current-badge">精确 Mask v2</span>'}
+            </strong>
             <span>${escHtml(created || item.filename || '')}</span>
           </div>
           <div class="video-preview-box">
@@ -3375,6 +3476,9 @@ function showStep8VideoResult(videos) {
               <svg class="icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 3v12"></path></svg>
               下载 MP4
             </a>
+            <button class="danger compact-action-btn" type="button" onclick="deleteStep8Video('${escHtml(item.filename || '')}')">
+              删除视频
+            </button>
           </div>
         </div>
       `;
@@ -3382,3 +3486,20 @@ function showStep8VideoResult(videos) {
   }
   document.getElementById('step8-result-box').style.display = 'block';
 }
+
+function deleteStep8Video(filename) {
+  if (!filename) return;
+  showCustomConfirm(
+    '删除渲染视频',
+    `确定删除本地视频 ${filename} 吗？删除后无法恢复。`,
+    async () => {
+      const res = await API.delete(`/api/projects/${state.currentProject.id}/videos/${encodeURIComponent(filename)}`);
+      if (res.success) {
+        showStep8VideoResult(res.videos || []);
+        showToast('本地视频已删除。');
+      }
+    }
+  );
+}
+
+window.deleteStep8Video = deleteStep8Video;

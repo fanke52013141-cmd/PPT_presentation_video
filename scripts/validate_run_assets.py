@@ -88,13 +88,15 @@ def validate_scene(scene_path: Path, slide_dir: Path, repo_root: Path, width: in
         raise ValidationError(f"scene.json contains deprecated elements[]: {scene_path}")
     source = scene.get("visual_source")
     layers = scene.get("layers")
+    reveal_report = read_json(slide_dir / "reveal_report.json") if source == REVEAL_VISUAL_SOURCE else {}
+    fallback_full_slide = bool(reveal_report.get("fallback_full_slide"))
     if not isinstance(layers, list) or not layers:
         raise ValidationError(f"scene.json must contain non-empty layers[]: {scene_path}")
     if require_layered:
         if source not in LAYERED_VISUAL_SOURCES:
             allowed = ", ".join(sorted(LAYERED_VISUAL_SOURCES))
             raise ValidationError(f"Layered mode requires visual_source in [{allowed}]: {scene_path}")
-        if len(layers) < 2:
+        if len(layers) < 2 and not fallback_full_slide:
             raise ValidationError(f"Layered mode requires multiple PNG layers: {scene_path}")
         if source != REVEAL_VISUAL_SOURCE and any(layer.get("role") == "full_slide" for layer in layers if isinstance(layer, dict)):
             raise ValidationError(f"Non-reveal layered mode must not use role=full_slide as the animation layer: {scene_path}")
@@ -109,7 +111,7 @@ def validate_scene(scene_path: Path, slide_dir: Path, repo_root: Path, width: in
         report_path = slide_dir / "reveal_report.json"
         if not report_path.exists():
             raise ValidationError(f"Missing reveal_report.json for reveal scene: {slide_dir}")
-        report = read_json(report_path)
+        report = reveal_report
         warnings = report.get("warnings") if isinstance(report.get("warnings"), list) else []
         blocking = [w for w in warnings if isinstance(w, dict) and str(w.get("severity", "warning")) == "blocking"]
         if blocking:
@@ -150,7 +152,9 @@ def validate_animation_timeline(path: Path, layer_ids: set[str], audio_duration_
     duration = timeline.get("duration_sec")
     if not isinstance(duration, (int, float)) or duration <= 0:
         raise ValidationError(f"animation_timeline.json missing positive duration_sec: {path}")
-    if float(duration) + 0.2 < audio_duration_sec:
+    # A static no-Mask slide has no animation events; its rendered duration is
+    # derived from audio_timeline.json by build_remotion_props.py.
+    if events and float(duration) + 0.2 < audio_duration_sec:
         raise ValidationError(f"animation duration is shorter than audio duration: {path}")
     for event in events:
         if not isinstance(event, dict):
@@ -183,8 +187,8 @@ def validate_slide(slide_dir: Path, repo_root: Path, width: int, height: int, re
     voice_path = slide_dir / "voice.mp3"
     if not voice_path.exists() or voice_path.stat().st_size < 1024:
         raise ValidationError(f"Missing or empty voice.mp3: {voice_path}")
-    if not (slide_dir / "subtitles.srt").exists():
-        raise ValidationError(f"Missing subtitles.srt: {slide_dir}")
+    # Current Remotion subtitles are driven by audio_timeline.json. Historical
+    # subtitles.srt files are optional and must not block the exact-mask path.
     audio_duration_sec = validate_audio_timeline(slide_dir / "audio_timeline.json")
     layer_ids = validate_scene(slide_dir / "scene.json", slide_dir, repo_root, width, height, require_layered, require_master_split_report)
     validate_animation_timeline(slide_dir / "animation_timeline.json", layer_ids, audio_duration_sec)

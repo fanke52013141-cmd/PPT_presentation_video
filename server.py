@@ -64,6 +64,7 @@ STYLE_REFERENCE_FILES = {
     "template": "PPT模板.png",
     "example": "PPT示例.png",
 }
+REVEAL_PIPELINE_VERSION = "manual_mask_exact_v2"
 
 # Pydantic 响应模型
 class ProjectCreate(BaseModel):
@@ -948,7 +949,8 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db)):
             "name": db_project.name,
             "description": db_project.description,
             "current_step": db_project.current_step,
-            "step_status": db_project.get_step_status()
+            "step_status": db_project.get_step_status(),
+            "audio_confirmed": False
         }
     }
 
@@ -962,6 +964,7 @@ def list_projects(db: Session = Depends(get_db)):
         "current_step": p.current_step,
         "status": p.status,
         "step_status": p.get_step_status(),
+        "audio_confirmed": project_audio_confirmed(p),
         "created_at": p.created_at.isoformat()
     } for p in projects]
 
@@ -977,6 +980,7 @@ def get_project(project_id: str, db: Session = Depends(get_db)):
         "current_step": project.current_step,
         "status": project.status,
         "step_status": project.get_step_status(),
+        "audio_confirmed": project_audio_confirmed(project),
         "run_dir": project.run_dir
     }
 
@@ -1093,9 +1097,39 @@ def test_tts_connection(payload: TestTtsPayload):
 
 # ==================== 流水线状态管理 ====================
 
+def audio_confirmation_path(project: Project) -> str:
+    return os.path.join(project.run_dir, "planning", "audio_confirmed.json")
+
+
+def project_audio_confirmed(project: Project) -> bool:
+    return os.path.exists(audio_confirmation_path(project))
+
+
+def clear_audio_confirmation(project: Project):
+    path = audio_confirmation_path(project)
+    if os.path.exists(path):
+        os.remove(path)
+
+
+def mark_step_in_progress(project: Project, target_step: int, db: Session):
+    current_status = project.get_step_status()
+    for s_idx in range(target_step + 1, 9):
+        s_str = str(s_idx)
+        if current_status.get(s_str) == "completed":
+            current_status[s_str] = "pending_reconfirmation"
+        elif current_status.get(s_str) == "in_progress":
+            current_status[s_str] = "pending"
+    current_status[str(target_step)] = "in_progress"
+    project.current_step = target_step
+    project.set_step_status(current_status)
+    db.commit()
+
+
 # 回退某一步后，后续步骤状态被标记为 pending_reconfirmation
 def handle_step_navigation(project: Project, target_step: int, db: Session):
     current_status = project.get_step_status()
+    if target_step < 7:
+        clear_audio_confirmation(project)
     
     # Downstream completed artifacts become stale when an upstream step changes.
     # Steps that were merely unlocked or waiting should go back to plain pending.
@@ -1108,6 +1142,103 @@ def handle_step_navigation(project: Project, target_step: int, db: Session):
             
     current_status[str(target_step)] = "completed"
     project.current_step = target_step
+    project.set_step_status(current_status)
+    db.commit()
+
+
+def clear_slide_visual_derivatives(project: Project, slide_id: str) -> None:
+    """Remove masks and rendered assets that belong to an older slide image."""
+    manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
+    if os.path.exists(manifest_path):
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+            changed = False
+            for slide in manifest.get("slides", []) or []:
+                if not isinstance(slide, dict) or str(slide.get("slide_id") or "").strip() != slide_id:
+                    continue
+                for field in ("groups", "semantic_blocks", "reveal_boxes"):
+                    if slide.get(field):
+                        changed = True
+                    slide[field] = []
+                slide["status"] = "pending"
+                changed = True
+            if changed:
+                with open(manifest_path, "w", encoding="utf-8") as f:
+                    json.dump(manifest, f, ensure_ascii=False, indent=2)
+        except Exception as exc:
+            logger.warning("Failed to clear Mask data for %s: %s", slide_id, exc)
+
+    slide_dir = os.path.join(project.run_dir, "slides", slide_id)
+    for filename in ("scene.json", "animation_timeline.json", "reveal_report.json"):
+        path = os.path.join(slide_dir, filename)
+        if os.path.exists(path):
+            os.remove(path)
+    assets_dir = os.path.join(slide_dir, "assets")
+    if os.path.isdir(assets_dir):
+        shutil.rmtree(assets_dir)
+    props_path = os.path.join(project.run_dir, "remotion_props.json")
+    if os.path.exists(props_path):
+        os.remove(props_path)
+
+
+def validate_current_reveal_assets(project: Project) -> None:
+    validator = os.path.join(REPO_ROOT, "scripts", "validate_reveal_scene.py")
+    result = subprocess.run(
+        [
+            sys.executable,
+            validator,
+            "--run-dir",
+            project.run_dir,
+            "--repo-root",
+            REPO_ROOT,
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    if result.returncode != 0:
+        logger.error("Reveal asset validation failed: %s", result.stderr)
+        raise HTTPException(status_code=500, detail=f"Mask 产物版本或内容校验失败: {result.stderr}")
+
+
+def build_current_reveal_assets(project: Project) -> None:
+    manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
+    if not os.path.exists(manifest_path):
+        raise HTTPException(status_code=400, detail="Mask 配置文件不存在")
+    build_scene_script = os.path.join(REPO_ROOT, "scripts", "build_reveal_scene.py")
+    result = subprocess.run(
+        [
+            sys.executable,
+            build_scene_script,
+            "--manifest",
+            manifest_path,
+            "--repo-root",
+            REPO_ROOT,
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    if result.returncode != 0:
+        logger.error("Build reveal assets failed: %s", result.stderr)
+        raise HTTPException(status_code=500, detail=f"构建精确 Mask 素材失败: {result.stderr}")
+    validate_current_reveal_assets(project)
+
+
+def mark_slide_image_changed(project: Project, slide_id: str, db: Session) -> None:
+    clear_slide_visual_derivatives(project, slide_id)
+    clear_audio_confirmation(project)
+    current_status = project.get_step_status()
+    current_status["3"] = "completed" if all_current_slide_images_exist(project) else "in_progress"
+    for step in range(4, 9):
+        step_key = str(step)
+        current_status[step_key] = (
+            "pending_reconfirmation"
+            if current_status.get(step_key) == "completed"
+            else "pending"
+        )
+    project.current_step = 3
     project.set_step_status(current_status)
     db.commit()
 
@@ -1868,8 +1999,7 @@ def generate_slide_image(
                 "success": True,
                 "candidate_url": f"/api/projects/{project_id}/slides/{slide_id}/candidate?t={uuid.uuid4().hex[:6]}",
             }
-        if all_current_slide_images_exist(project):
-            handle_step_navigation(project, 3, db)
+        mark_slide_image_changed(project, slide_id, db)
         
         return {"success": True, "image_url": f"/api/projects/{project_id}/slides/{slide_id}/image?t={uuid.uuid4().hex[:6]}"}
     except Exception as e:
@@ -1881,13 +2011,14 @@ def upload_slide_image(project_id: str, slide_id: str = Form(...), file: UploadF
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
+    if slide_id not in read_current_slide_ids_or_404(project):
+        raise HTTPException(status_code=404, detail="Slide 不存在")
         
     try:
         content = file.file.read()
         save_path = os.path.join(project.run_dir, "slides", slide_id, "visual_draft.png")
         process_and_save_image(content, save_path)
-        if all_current_slide_images_exist(project):
-            handle_step_navigation(project, 3, db)
+        mark_slide_image_changed(project, slide_id, db)
         return {"success": True, "image_url": f"/api/projects/{project_id}/slides/{slide_id}/image?t={uuid.uuid4().hex[:6]}"}
     except Exception as e:
         logger.error(f"Upload image error for {slide_id}: {e}")
@@ -1922,6 +2053,36 @@ def get_slide_candidate_file(project_id: str, slide_id: str, db: Session = Depen
     return FileResponse(candidate_path, media_type="image/png")
 
 
+@app.get("/api/projects/{project_id}/slides/{slide_id}/mask-preview")
+def get_slide_mask_preview_file(project_id: str, slide_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    if slide_id not in read_current_slide_ids_or_404(project):
+        raise HTTPException(status_code=404, detail="Slide 不存在")
+    preview_path = os.path.join(
+        project.run_dir, "slides", slide_id, "assets", "manual_mask_composite.png"
+    )
+    if not os.path.exists(preview_path):
+        raise HTTPException(status_code=404, detail="请先生成最终抠除预览")
+    return FileResponse(preview_path, media_type="image/png")
+
+
+@app.get("/api/projects/{project_id}/slides/{slide_id}/mask-uncovered")
+def get_slide_mask_uncovered_file(project_id: str, slide_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    if slide_id not in read_current_slide_ids_or_404(project):
+        raise HTTPException(status_code=404, detail="Slide 不存在")
+    path = os.path.join(
+        project.run_dir, "slides", slide_id, "assets", "manual_mask_uncovered.png"
+    )
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="当前页面没有未覆盖诊断图")
+    return FileResponse(path, media_type="image/png")
+
+
 @app.post("/api/projects/{project_id}/steps/3/apply-candidate")
 def apply_slide_candidate(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -1939,12 +2100,31 @@ def apply_slide_candidate(project_id: str, payload: Dict[str, Any], db: Session 
         raise HTTPException(status_code=404, detail="候选图片不存在，请先生成")
 
     os.replace(candidate_path, image_path)
-    if all_current_slide_images_exist(project):
-        handle_step_navigation(project, 3, db)
+    mark_slide_image_changed(project, slide_id, db)
     return {
         "success": True,
         "image_url": f"/api/projects/{project_id}/slides/{slide_id}/image?t={uuid.uuid4().hex[:6]}",
     }
+
+
+@app.delete("/api/projects/{project_id}/steps/3/images/{slide_id}")
+def delete_slide_image(project_id: str, slide_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    if slide_id not in read_current_slide_ids_or_404(project):
+        raise HTTPException(status_code=404, detail="Slide 不存在")
+
+    slide_dir = os.path.join(project.run_dir, "slides", slide_id)
+    image_path = os.path.join(slide_dir, "visual_draft.png")
+    candidate_path = os.path.join(slide_dir, "visual_candidate.png")
+    if not os.path.exists(image_path):
+        raise HTTPException(status_code=404, detail="图片不存在")
+    os.remove(image_path)
+    if os.path.exists(candidate_path):
+        os.remove(candidate_path)
+    mark_slide_image_changed(project, slide_id, db)
+    return {"success": True, "slide_id": slide_id}
 
 @app.get("/api/projects/{project_id}/steps/3/images")
 def get_all_images(project_id: str, db: Session = Depends(get_db)):
@@ -2059,13 +2239,8 @@ def confirm_images(project_id: str, db: Session = Depends(get_db)):
             logger.error(f"Failed to write reveal manifest template: {res.stderr}")
             raise HTTPException(status_code=500, detail="自动创建 Mask 标注文件失败，请确认分镜规划正常")
             
-        # 预先执行 auto_fit_reveal_boxes.py 进行算法自适应黑墨水对齐
-        autofit_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "auto_fit_reveal_boxes.py"))
-        fit_res = subprocess.run([
-            sys.executable, autofit_script, "--manifest", manifest_path
-        ], capture_output=True, text=True, encoding="utf-8")
-        if fit_res.returncode != 0:
-            logger.warning(f"Initial auto-fit reveal boxes warning: {fit_res.stderr}")
+        # Final rendering is manual-mask-only. Do not run historical box-fitting
+        # algorithms during normal project initialization.
     sync_reveal_manifest_to_contract(project)
 
     handle_step_navigation(project, 4, db)
@@ -2536,16 +2711,6 @@ def auto_mask_project(project_id: str, db: Session = Depends(get_db)):
             logger.error(f"Vision assisted auto-masking failed: {e}. Will fallback to deterministic scripts.")
             vision_used = False
             
-    # 接着运行 auto_fit_reveal_boxes.py 做黑墨水自适应边界修剪
-    autofit_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "auto_fit_reveal_boxes.py"))
-    fit_res = subprocess.run([
-        sys.executable, autofit_script, "--manifest", manifest_path
-    ], capture_output=True, text=True, encoding="utf-8")
-    
-    if fit_res.returncode != 0:
-        logger.error(f"Auto-fit reveal boxes failed: {fit_res.stderr}")
-        raise HTTPException(status_code=500, detail="墨水框线自适应调整失败，请检查图片是否含有墨水")
-        
     # 生成预览图片
     preview_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "draw_reveal_manifest_preview.py"))
     out_dir = os.path.join(project.run_dir, "review")
@@ -2557,9 +2722,9 @@ def auto_mask_project(project_id: str, db: Session = Depends(get_db)):
         logger.warning(f"Draw reveal manifest preview warned: {prev_res.stderr}")
         
     if vision_used:
-        msg = f"视觉识别（{vision_model}）成功完成，已精确定位所有分组包围框。"
+        msg = f"视觉识别（{vision_model}）已更新辅助框；最终视频仍只使用手动画笔 Mask。"
     else:
-        msg = "未启用视觉识别（未配置 API Key 或识别失败），已使用墨水自适应算法自动对齐包围框。"
+        msg = "未启用视觉识别；最终视频只使用手动画笔 Mask，不再运行旧的墨水自适应算法。"
         
     return {"success": True, "vision_used": vision_used, "message": msg}
 
@@ -2663,6 +2828,42 @@ def update_step5_draft(project_id: str, payload: Dict[str, Any], db: Session = D
         json.dump(payload, f, ensure_ascii=False, indent=2)
     return {"success": True}
 
+@app.post("/api/projects/{project_id}/steps/5/preview")
+def build_step5_preview(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    slide_id = str(payload.get("slide_id") or "").strip()
+    if slide_id not in read_current_slide_ids_or_404(project):
+        raise HTTPException(status_code=404, detail="Slide 不存在")
+    build_current_reveal_assets(project)
+    report_path = os.path.join(project.run_dir, "slides", slide_id, "reveal_report.json")
+    with open(report_path, "r", encoding="utf-8") as file:
+        report = json.load(file)
+    diagnostics = report.get("foreground_diagnostics") or {}
+    cache_key = uuid.uuid4().hex[:8]
+    fallback_full_slide = bool(report.get("fallback_full_slide"))
+    return {
+        "success": True,
+        "slide_id": slide_id,
+        "pipeline_version": report.get("pipeline_version"),
+        "method": report.get("method"),
+        "fallback_full_slide": fallback_full_slide,
+        "diagnostics": diagnostics,
+        "warnings": report.get("warnings") or [],
+        "preview_url": (
+            f"/api/projects/{project_id}/slides/{slide_id}/image?t={cache_key}"
+            if fallback_full_slide
+            else f"/api/projects/{project_id}/slides/{slide_id}/mask-preview?t={cache_key}"
+        ),
+        "uncovered_url": (
+            None
+            if fallback_full_slide
+            else f"/api/projects/{project_id}/slides/{slide_id}/mask-uncovered?t={cache_key}"
+        ),
+    }
+
+
 @app.put("/api/projects/{project_id}/steps/5/result")
 def update_step5_result(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -2685,14 +2886,7 @@ def update_step5_result(project_id: str, payload: Dict[str, Any], db: Session = 
         json.dump(payload, f, ensure_ascii=False, indent=2)
         
     # 人工保存后，校验并构建切层 assets，运行 build_reveal_scene.py
-    build_scene_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "build_reveal_scene.py"))
-    build_res = subprocess.run([
-        sys.executable, build_scene_script, "--manifest", manifest_path
-    ], capture_output=True, text=True, encoding="utf-8")
-    
-    if build_res.returncode != 0:
-        logger.error(f"Build reveal scene failed: {build_res.stderr}")
-        raise HTTPException(status_code=500, detail=f"构建切层素材失败: {build_res.stderr}")
+    build_current_reveal_assets(project)
         
     handle_step_navigation(project, 5, db)
     return {"success": True}
@@ -3028,6 +3222,9 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
     os.environ["MINIMAX_TTS_VOLUME"] = tts_volume
     os.environ["MINIMAX_TTS_PITCH"] = tts_pitch
     os.environ["MINIMAX_API_URL"] = tts_endpoint
+
+    clear_audio_confirmation(project)
+    mark_step_in_progress(project, 7, db)
         
     tts_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "minimax_tts.py"))
     
@@ -3088,8 +3285,7 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
         logger.error(f"Timeline binding failed: {bind_res.stderr}")
         raise HTTPException(status_code=500, detail=f"时间轴绑定失败: {bind_res.stderr}")
         
-    handle_step_navigation(project, 7, db)
-    return {"success": True}
+    return {"success": True, "audio_confirmed": False}
 
 # 获取音频文件接口（供前端试听）
 @app.get("/api/projects/{project_id}/slides/{slide_id}/audio")
@@ -3141,8 +3337,17 @@ def confirm_tts_audio(project_id: str, db: Session = Depends(get_db)):
     if bind_res.returncode != 0:
         logger.error(f"Timeline binding failed during audio confirm: {bind_res.stderr}")
         raise HTTPException(status_code=500, detail=f"时间轴绑定失败: {bind_res.stderr}")
+    confirmation_path = audio_confirmation_path(project)
+    os.makedirs(os.path.dirname(confirmation_path), exist_ok=True)
+    with open(confirmation_path, "w", encoding="utf-8") as f:
+        json.dump(
+            {"confirmed_at": datetime.now().isoformat(), "slide_ids": slide_ids},
+            f,
+            ensure_ascii=False,
+            indent=2,
+        )
     handle_step_navigation(project, 7, db)
-    return {"success": True}
+    return {"success": True, "audio_confirmed": True}
 
 # ==================== 步骤 8: 视频合成与渲染 ====================
 
@@ -3152,15 +3357,36 @@ def project_video_dir(project: Project) -> str:
     return videos_dir
 
 
+def video_metadata_path(path: str) -> str:
+    return f"{path}.render.json"
+
+
+def read_video_metadata(path: str) -> Dict[str, Any]:
+    metadata_path = video_metadata_path(path)
+    if not os.path.exists(metadata_path):
+        return {}
+    try:
+        with open(metadata_path, "r", encoding="utf-8") as file:
+            value = json.load(file)
+        return value if isinstance(value, dict) else {}
+    except Exception as exc:
+        logger.warning("Failed to read video metadata %s: %s", metadata_path, exc)
+        return {}
+
+
 def video_item(project_id: str, path: str, label: Optional[str] = None) -> Dict[str, Any]:
     stat = os.stat(path)
     filename = os.path.basename(path)
+    metadata = read_video_metadata(path)
+    pipeline_version = str(metadata.get("reveal_pipeline_version") or "")
     return {
         "filename": filename,
         "label": label or filename,
         "size": stat.st_size,
         "created_at": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
         "url": f"/api/projects/{project_id}/videos/{filename}",
+        "reveal_pipeline_version": pipeline_version or None,
+        "is_legacy": pipeline_version != REVEAL_PIPELINE_VERSION,
     }
 
 
@@ -3185,17 +3411,12 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
+    if not project_audio_confirmed(project):
+        raise HTTPException(status_code=400, detail="请先在“旁白与音频”步骤试听并确认音频，再开始视频渲染。")
 
     # Draft autosave updates the manifest only. Always rebuild reveal assets here
     # so rendering cannot use stale crops from an earlier mask revision.
-    manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
-    build_scene_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "build_reveal_scene.py"))
-    build_scene_res = subprocess.run([
-        sys.executable, build_scene_script, "--manifest", manifest_path
-    ], capture_output=True, text=True, encoding="utf-8")
-    if build_scene_res.returncode != 0:
-        logger.error(f"Reveal scene rebuild before render failed: {build_scene_res.stderr}")
-        raise HTTPException(status_code=500, detail=f"渲染前重建 Mask 素材失败: {build_scene_res.stderr}")
+    build_current_reveal_assets(project)
 
     # 首先调用 build_remotion_props.py 生成渲染配置属性
     bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))
@@ -3261,6 +3482,17 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
     if render_res.returncode != 0:
         logger.error(f"Remotion render failed: {render_res.stderr}")
         raise HTTPException(status_code=500, detail=f"视频渲染失败: {render_res.stderr}")
+    with open(video_metadata_path(output_mp4_path), "w", encoding="utf-8") as file:
+        json.dump(
+            {
+                "rendered_at": datetime.now().isoformat(timespec="seconds"),
+                "reveal_pipeline_version": REVEAL_PIPELINE_VERSION,
+                "manifest": "reveal_manifest.json",
+            },
+            file,
+            ensure_ascii=False,
+            indent=2,
+        )
     shutil.copy2(output_mp4_path, legacy_output_path)
 
     handle_step_navigation(project, 8, db)
@@ -3286,6 +3518,41 @@ def get_project_video(project_id: str, filename: str, db: Session = Depends(get_
     if not os.path.exists(video_path):
         raise HTTPException(status_code=404, detail="视频文件不存在")
     return FileResponse(video_path, media_type="video/mp4", filename=safe_name)
+
+
+@app.delete("/api/projects/{project_id}/videos/{filename}")
+def delete_project_video(project_id: str, filename: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    safe_name = os.path.basename(filename)
+    if safe_name != filename or not safe_name.lower().endswith(".mp4"):
+        raise HTTPException(status_code=400, detail="视频文件名无效")
+    if safe_name == "out.mp4":
+        video_path = os.path.join(project.run_dir, "out.mp4")
+    else:
+        video_path = os.path.join(project.run_dir, "videos", safe_name)
+    if not os.path.exists(video_path):
+        raise HTTPException(status_code=404, detail="视频文件不存在")
+    os.remove(video_path)
+    metadata_path = video_metadata_path(video_path)
+    if os.path.exists(metadata_path):
+        os.remove(metadata_path)
+
+    remaining = list_video_items(project, project_id)
+    legacy_path = os.path.join(project.run_dir, "out.mp4")
+    regular_remaining = [
+        item for item in remaining
+        if item.get("filename") != "out.mp4"
+        and os.path.exists(os.path.join(project.run_dir, "videos", item["filename"]))
+    ]
+    if regular_remaining:
+        newest_path = os.path.join(project.run_dir, "videos", regular_remaining[0]["filename"])
+        shutil.copy2(newest_path, legacy_path)
+    elif os.path.exists(legacy_path):
+        os.remove(legacy_path)
+    return {"success": True, "videos": list_video_items(project, project_id)}
 
 # 获取最终生成的 MP4 视频
 @app.get("/api/projects/{project_id}/video")

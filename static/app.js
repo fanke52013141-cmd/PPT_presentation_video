@@ -3247,9 +3247,9 @@ function updateStep5LiveCoverageStatus(options = {}) {
   state.canvasState.coverageReady = ready;
   status.classList.add(ready ? 'ready' : 'warning');
   if (ready) {
-    status.innerText = `真实抠除预览 · 覆盖率 ${(ratio * 100).toFixed(1)}% · 可确认`;
+    status.innerText = `编辑视图：原图完整显示 · 覆盖率 ${(ratio * 100).toFixed(1)}% · 可确认`;
   } else if (!currentReady) {
-    status.innerText = `红色内容不会进入视频 · 覆盖率 ${(ratio * 100).toFixed(1)}% · 请继续补涂`;
+    status.innerText = `浅红斜纹为漏标提示 · 覆盖率 ${(ratio * 100).toFixed(1)}% · 请继续补涂`;
   } else {
     status.innerText = `当前页覆盖率 ${(ratio * 100).toFixed(1)}%；另有 ${options.failureSlides || '其他页面'} 覆盖不足`;
   }
@@ -3267,14 +3267,30 @@ function drawManualMaskStrokes(ctx, item, idx) {
   colorLayer.width = 1920;
   colorLayer.height = 1080;
   const colorCtx = colorLayer.getContext('2d');
-  colorCtx.fillStyle = hexToRgba(color, isSelected ? 0.24 : 0.18);
+  colorCtx.fillStyle = hexToRgba(color, isSelected ? 0.16 : 0.09);
   colorCtx.fillRect(0, 0, 1920, 1080);
   colorCtx.globalCompositeOperation = 'destination-in';
   colorCtx.drawImage(maskLayer, 0, 0);
   ctx.drawImage(colorLayer, 0, 0);
 }
 
-// 所见即所得：白色底图 + 精确 Mask 内原图 + 红色未覆盖原图内容。
+function createStep5UncoveredPattern(ctx) {
+  const tile = document.createElement('canvas');
+  tile.width = 44;
+  tile.height = 44;
+  const tileCtx = tile.getContext('2d');
+  tileCtx.strokeStyle = 'rgba(239, 68, 68, 0.36)';
+  tileCtx.lineWidth = 2;
+  tileCtx.beginPath();
+  tileCtx.moveTo(-11, 44);
+  tileCtx.lineTo(44, -11);
+  tileCtx.moveTo(11, 55);
+  tileCtx.lineTo(55, 11);
+  tileCtx.stroke();
+  return ctx.createPattern(tile, 'repeat');
+}
+
+// 编辑视图：完整原图始终清晰可见，已覆盖区域淡色显示，漏标区域仅叠加浅红斜纹。
 function redrawCanvas() {
   const canvas = document.getElementById('step5-canvas');
   const ctx = canvas.getContext('2d');
@@ -3289,22 +3305,18 @@ function redrawCanvas() {
     return;
   }
 
+  ctx.drawImage(step5SourceCanvas, 0, 0);
   const unionMask = buildStep5UnionMask();
   const hasPaint = state.canvasState.boxes.some(hasPaintStroke);
   if (!hasPaint) {
-    ctx.drawImage(step5SourceCanvas, 0, 0);
     updateStep5LiveCoverageStatus({ fallback: true });
     refreshBrushCursor(canvas);
     return;
   }
 
-  const exactResult = createStep5OffscreenCanvas();
-  const exactResultCtx = exactResult.getContext('2d');
-  exactResultCtx.drawImage(step5SourceCanvas, 0, 0);
-  exactResultCtx.globalCompositeOperation = 'destination-in';
-  exactResultCtx.drawImage(unionMask, 0, 0);
-  exactResultCtx.globalCompositeOperation = 'source-over';
-  ctx.drawImage(exactResult, 0, 0);
+  state.canvasState.boxes.forEach((item, idx) => {
+    drawManualMaskStrokes(ctx, item, idx);
+  });
 
   const uncovered = createStep5OffscreenCanvas();
   const uncoveredCtx = uncovered.getContext('2d');
@@ -3314,11 +3326,19 @@ function redrawCanvas() {
 
   const redWarning = createStep5OffscreenCanvas();
   const redWarningCtx = redWarning.getContext('2d');
-  redWarningCtx.fillStyle = 'rgba(255, 32, 32, 0.88)';
+  redWarningCtx.fillStyle = 'rgba(255, 59, 48, 0.04)';
   redWarningCtx.fillRect(0, 0, 1920, 1080);
   redWarningCtx.globalCompositeOperation = 'destination-in';
   redWarningCtx.drawImage(uncovered, 0, 0);
   ctx.drawImage(redWarning, 0, 0);
+
+  const hatchWarning = createStep5OffscreenCanvas();
+  const hatchWarningCtx = hatchWarning.getContext('2d');
+  hatchWarningCtx.fillStyle = createStep5UncoveredPattern(hatchWarningCtx);
+  hatchWarningCtx.fillRect(0, 0, 1920, 1080);
+  hatchWarningCtx.globalCompositeOperation = 'destination-in';
+  hatchWarningCtx.drawImage(uncovered, 0, 0);
+  ctx.drawImage(hatchWarning, 0, 0);
 
   refreshBrushCursor(canvas);
 }

@@ -42,8 +42,14 @@ if (!app.includes('pointerWithinMaskToolReach')) {
 if (!html.includes('step5-live-coverage')) throw new Error('live mask coverage status missing');
 if (!app.includes('rebuildStep5SourceCache')) throw new Error('source foreground cache missing');
 if (!app.includes('buildStep5UnionMask')) throw new Error('exact live mask union missing');
-if (!app.includes("redWarningCtx.fillStyle = 'rgba(255, 32, 32, 0.88)'")) {
-  throw new Error('uncovered foreground is not highlighted red');
+if (!app.includes("redWarningCtx.fillStyle = 'rgba(255, 59, 48, 0.04)'")) {
+  throw new Error('uncovered foreground does not use a readable light tint');
+}
+if (!app.includes('createStep5UncoveredPattern')) {
+  throw new Error('uncovered foreground hatch pattern missing');
+}
+if (!app.includes('ctx.drawImage(step5SourceCanvas, 0, 0)')) {
+  throw new Error('mask editor does not keep the full source visible');
 }
 if (!app.includes('红色内容不会进入视频')) throw new Error('mask omission guidance missing');
 if (!app.includes('if (!state.canvasState.coverageReady)')) {

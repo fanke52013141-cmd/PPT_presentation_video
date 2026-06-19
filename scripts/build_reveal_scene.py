@@ -25,6 +25,7 @@ from PIL import Image, ImageChops, ImageDraw
 
 PIPELINE_VERSION = "manual_mask_exact_v2"
 MASKED_COMPOSITION_METHOD = "solid_background_manual_mask_exact"
+MIN_FOREGROUND_COVERAGE_RATIO = 0.985
 STATIC_COMPOSITION_METHOD = "full_slide_static"
 DEFAULT_CANVAS = {
     "width": 1920,
@@ -391,16 +392,18 @@ def compose_slide(
         if source_foreground_count
         else 1.0
     )
-    uncovered_layer = master.convert("RGBA")
-    uncovered_layer.putalpha(uncovered_foreground)
-    uncovered_preview = Image.new("RGBA", (width, height), (255, 232, 232, 255))
-    uncovered_preview.alpha_composite(uncovered_layer)
+    uncovered_preview = union_composite.copy()
+    red_alpha = uncovered_foreground.point(lambda value: round(value * 0.88))
+    red_layer = Image.new("RGBA", (width, height), (255, 32, 32, 0))
+    red_layer.putalpha(red_alpha)
+    uncovered_preview.alpha_composite(red_layer)
     uncovered_preview.convert("RGB").save(assets_dir / "manual_mask_uncovered.png", format="PNG")
-    if foreground_coverage_ratio < 0.985:
+    if foreground_coverage_ratio < MIN_FOREGROUND_COVERAGE_RATIO:
         warnings.append({
             "severity": "warning",
             "type": "manual_mask_does_not_cover_source_foreground",
             "foreground_coverage_ratio": round(foreground_coverage_ratio, 4),
+            "required_coverage_ratio": MIN_FOREGROUND_COVERAGE_RATIO,
             "uncovered_foreground_pixel_count": uncovered_foreground_count,
         })
 
@@ -440,6 +443,7 @@ def compose_slide(
         "mask_union_sha256": sha256_bytes(union_alpha.tobytes()),
         "foreground_diagnostics": {
             "threshold": 12,
+            "required_coverage_ratio": MIN_FOREGROUND_COVERAGE_RATIO,
             "source_foreground_pixel_count": source_foreground_count,
             "covered_foreground_pixel_count": covered_foreground_count,
             "uncovered_foreground_pixel_count": uncovered_foreground_count,

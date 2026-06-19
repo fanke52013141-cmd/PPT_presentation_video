@@ -38,6 +38,10 @@ let state = {
     isPainting: false,
     currentStroke: null,
     brushSize: 170,
+    eraserSize: 120,
+    activePointerId: null,
+    coverageRatio: 1,
+    coverageReady: true,
     brushCursorClientX: null,
     brushCursorClientY: null,
     maskZoom: 1,
@@ -245,6 +249,7 @@ function initGlobalEvents() {
     }
   });
   document.getElementById('step3-batch-upload').addEventListener('change', (e) => handleStep3BatchUpload(e));
+  document.getElementById('step3-btn-batch-generate')?.addEventListener('click', () => generateAllStep3Images());
   document.getElementById('step3-btn-copy-prompts').addEventListener('click', () => copyStep2Prompts());
   document.getElementById('step3-btn-style')?.addEventListener('click', () => openImageStyleModal());
   document.getElementById('step3-btn-confirm').addEventListener('click', () => confirmStep3Images());
@@ -255,6 +260,7 @@ function initGlobalEvents() {
   document.getElementById('step5-btn-clear-current')?.addEventListener('click', () => clearAllMaskAnnotations());
   document.getElementById('step5-btn-preview')?.addEventListener('click', () => openStep5MaskPreview());
   document.getElementById('step5-brush-size')?.addEventListener('input', (e) => updateBrushSize(e.target.value));
+  document.getElementById('step5-eraser-size')?.addEventListener('input', (e) => updateEraserSize(e.target.value));
   document.getElementById('btn-narration-picker-cancel')?.addEventListener('click', () => closeNarrationPicker());
   document.getElementById('btn-narration-picker-confirm')?.addEventListener('click', () => confirmNarrationPicker());
   document.getElementById('btn-mask-preview-close')?.addEventListener('click', () => closeStep5MaskPreview());
@@ -1110,6 +1116,50 @@ let step3ImageOrder = []; // [{slide_id, exists, url}]
 let step3DraggedIndex = -1;
 let step3CandidateReady = false;
 let step3CandidateSlideId = '';
+const step3GeneratingSlides = new Set();
+let step3BatchGenerating = false;
+let step3BatchCompleted = 0;
+let step3BatchTotal = 0;
+
+function step3GeneratingPreviewHtml(message = '生成中') {
+  return `
+    <div class="step3-generating-preview" role="status" aria-live="polite">
+      <span class="sketch-loader" aria-hidden="true"></span>
+      <strong>${escHtml(message)}</strong>
+      <small>AI 正在绘制图片，请稍候...</small>
+    </div>
+  `;
+}
+
+function updateStep3BatchButton() {
+  const button = document.getElementById('step3-btn-batch-generate');
+  if (!button) return;
+  const hasSlides = step3ImageOrder.length > 0;
+  const generationInProgress = step3GeneratingSlides.size > 0;
+  button.disabled = !hasSlides || step3BatchGenerating || generationInProgress;
+  button.classList.toggle('is-loading', step3BatchGenerating);
+  const uploadLabel = document.getElementById('step3-batch-upload-label');
+  const uploadInput = document.getElementById('step3-batch-upload');
+  uploadLabel?.classList.toggle('is-disabled', generationInProgress);
+  if (uploadInput) uploadInput.disabled = generationInProgress;
+  button.innerHTML = step3BatchGenerating
+    ? `<span class="step3-button-spinner" aria-hidden="true"></span> 批量生成中 ${step3BatchCompleted}/${step3BatchTotal}`
+    : `<svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;">
+         <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+         <circle cx="8.5" cy="9" r="1.5"></circle>
+         <path d="m5 17 4.5-4 3.2 2.8 2.3-2.1 4 3.3"></path>
+         <path d="M18 2v4M16 4h4"></path>
+       </svg> 一键批量生成图片`;
+}
+
+function setStep3SlideGenerating(slideId, generating) {
+  if (generating) {
+    step3GeneratingSlides.add(slideId);
+  } else {
+    step3GeneratingSlides.delete(slideId);
+  }
+  renderStep3Grid();
+}
 
 async function loadStep3Data() {
   // 优先加载分镜数据，保证即使无图片也能渲染占位卡
@@ -1155,12 +1205,15 @@ function renderStep3Grid() {
 
   const hasSlides = step3ImageOrder.length > 0;
   const missingCount = step3ImageOrder.filter(img => !img.exists).length;
-  const allImagesReady = hasSlides && missingCount === 0;
+  const allImagesReady = hasSlides && missingCount === 0 && step3GeneratingSlides.size === 0;
+  updateStep3BatchButton();
   const confirmBtn = document.getElementById('step3-btn-confirm');
   if (confirmBtn) {
     confirmBtn.style.display = hasSlides ? 'inline-flex' : 'none';
     confirmBtn.disabled = !allImagesReady;
-    confirmBtn.title = allImagesReady ? '' : `还缺少 ${missingCount} 张图片`;
+    confirmBtn.title = allImagesReady
+      ? ''
+      : (step3GeneratingSlides.size > 0 ? '图片正在生成中' : `还缺少 ${missingCount} 张图片`);
   }
 
   step3ImageOrder.forEach((img, idx) => {
@@ -1192,7 +1245,10 @@ function renderStep3Grid() {
     const promptInfo = slidePrompts.find(item => item.slide_id === img.slide_id);
     const slideInfo = state.slides.find(item => item.slide_id === img.slide_id);
     const slideTitle = promptInfo?.title || slideInfo?.main_title || '未命名 Slide';
-    const previewHtml = img.exists
+    const isGenerating = step3GeneratingSlides.has(img.slide_id);
+    const previewHtml = isGenerating
+      ? step3GeneratingPreviewHtml()
+      : img.exists
       ? `<img src="${img.url}" style="width: 100%; height: 100%; object-fit: cover;" alt="${escHtml(slideTitle)}">`
       : `<div style="width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.3rem; color: #888; background: #fffdf5;">
            <svg class="icon" viewBox="0 0 24 24" style="width: 20px; height: 20px; color: #aaa;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path></svg>
@@ -1202,7 +1258,7 @@ function renderStep3Grid() {
     card.innerHTML = `
       <div class="step3-card-header">
         <div class="step3-card-identity">
-          <button class="slide-drag-handle" type="button" draggable="true" title="按住拖动调整页面顺序" aria-label="拖动 ${img.slide_id} 调整顺序">
+          <button class="slide-drag-handle" type="button" draggable="${isGenerating ? 'false' : 'true'}" ${isGenerating ? 'disabled' : ''} title="按住拖动调整页面顺序" aria-label="拖动 ${img.slide_id} 调整顺序">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <circle cx="9" cy="5" r="1.4"></circle><circle cx="15" cy="5" r="1.4"></circle>
               <circle cx="9" cy="12" r="1.4"></circle><circle cx="15" cy="12" r="1.4"></circle>
@@ -1211,20 +1267,20 @@ function renderStep3Grid() {
           </button>
           <span class="step3-card-position">第 ${idx + 1} 页</span>
           <span class="step3-card-slide-id">${img.slide_id}</span>
-          <span style="font-size: 0.72rem; font-weight: bold; color: ${img.exists ? 'var(--ink-color)' : '#888'}; background: ${img.exists ? 'var(--success-color)' : '#f3f4f6'}; border: 1.5px solid var(--ink-color); border-radius: 4px; padding: 1px 4px;">
-            ${img.exists ? '已就绪' : '待生成'}
+          <span class="step3-card-status ${isGenerating ? 'is-generating' : ''}" style="color: ${img.exists || isGenerating ? 'var(--ink-color)' : '#888'}; background: ${isGenerating ? 'var(--secondary-color)' : (img.exists ? 'var(--success-color)' : '#f3f4f6')};">
+            ${isGenerating ? '生成中' : (img.exists ? '已就绪' : '待生成')}
           </span>
         </div>
         <div style="display: flex; gap: 0.3rem; align-items: center;">
-          <button class="success step3-ai-action" data-slide-id="${escHtml(img.slide_id)}" style="font-size: 0.72rem; padding: 0.2rem 0.4rem; box-shadow: 1px 1px 0px 0px var(--ink-color); margin: 0;">
-            AI生成
+          <button class="success step3-ai-action" data-slide-id="${escHtml(img.slide_id)}" ${isGenerating ? 'disabled' : ''} style="font-size: 0.72rem; padding: 0.2rem 0.4rem; box-shadow: 1px 1px 0px 0px var(--ink-color); margin: 0;">
+            ${isGenerating ? '生成中' : 'AI生成'}
           </button>
-          <label class="btn secondary" style="font-size: 0.72rem; padding: 0.2rem 0.4rem; cursor: pointer; box-shadow: 1px 1px 0px 0px var(--ink-color); display: inline-flex; align-items: center; gap: 0.1rem; margin: 0;">
+          <label class="btn secondary ${isGenerating ? 'is-disabled' : ''}" style="font-size: 0.72rem; padding: 0.2rem 0.4rem; cursor: pointer; box-shadow: 1px 1px 0px 0px var(--ink-color); display: inline-flex; align-items: center; gap: 0.1rem; margin: 0;">
             上传
-            <input class="step3-upload-input" data-slide-id="${escHtml(img.slide_id)}" type="file" accept="image/*" style="display: none;">
+            <input class="step3-upload-input" data-slide-id="${escHtml(img.slide_id)}" type="file" accept="image/*" ${isGenerating ? 'disabled' : ''} style="display: none;">
           </label>
           ${img.exists ? `
-            <button class="danger step3-delete-action" data-slide-id="${escHtml(img.slide_id)}" style="font-size: 0.72rem; padding: 0.2rem 0.4rem; box-shadow: 1px 1px 0px 0px var(--ink-color); margin: 0;">
+            <button class="danger step3-delete-action" data-slide-id="${escHtml(img.slide_id)}" ${isGenerating ? 'disabled' : ''} style="font-size: 0.72rem; padding: 0.2rem 0.4rem; box-shadow: 1px 1px 0px 0px var(--ink-color); margin: 0;">
               删除
             </button>
           ` : ''}
@@ -1407,6 +1463,74 @@ async function handleStep3BatchUpload(e) {
   e.target.value = '';
 }
 
+async function generateAllStep3Images() {
+  if (step3BatchGenerating || step3ImageOrder.length === 0) return;
+
+  const tasks = step3ImageOrder.map(image => {
+    const promptInfo = slidePrompts.find(item => item.slide_id === image.slide_id);
+    return {
+      slideId: image.slide_id,
+      prompt: String(promptInfo?.prompt || '').trim()
+    };
+  });
+  const missingPrompt = tasks.find(task => !task.prompt);
+  if (missingPrompt) {
+    showToast(`❌ ${missingPrompt.slideId} 缺少生图提示词，请先重新进入本步骤。`);
+    return;
+  }
+
+  step3BatchGenerating = true;
+  step3BatchCompleted = 0;
+  step3BatchTotal = tasks.length;
+  tasks.forEach(task => step3GeneratingSlides.add(task.slideId));
+  renderStep3Grid();
+  showToast(`🎨 已开始批量生成 ${tasks.length} 张图片。`);
+
+  let successCount = 0;
+  const failedSlides = [];
+  try {
+    for (const task of tasks) {
+      try {
+        const formData = new FormData();
+        formData.append('slide_id', task.slideId);
+        formData.append('prompt', task.prompt);
+        formData.append('preview', 'false');
+        const res = await API.post(
+          `/api/projects/${state.currentProject.id}/steps/3/generate`,
+          formData
+        );
+        if (res.success) {
+          successCount += 1;
+          const image = step3ImageOrder.find(item => item.slide_id === task.slideId);
+          if (image) {
+            image.exists = true;
+            image.url = res.image_url;
+          }
+        }
+      } catch (error) {
+        failedSlides.push(task.slideId);
+      } finally {
+        step3GeneratingSlides.delete(task.slideId);
+        step3BatchCompleted += 1;
+        renderStep3Grid();
+      }
+    }
+  } finally {
+    step3BatchGenerating = false;
+    step3BatchCompleted = 0;
+    step3BatchTotal = 0;
+    step3GeneratingSlides.clear();
+    await refreshStep3Images();
+    await refreshCurrentProjectStatus(3);
+  }
+
+  if (failedSlides.length > 0) {
+    showToast(`⚠️ 已生成 ${successCount} 张，失败：${failedSlides.join('、')}`, 5000);
+  } else {
+    showToast(`✅ ${successCount} 张图片已全部生成完成！`);
+  }
+}
+
 
 // AI 生成单张候选图片，确认后才替换当前图片。
 async function generateStep3Image() {
@@ -1417,13 +1541,21 @@ async function generateStep3Image() {
     showToast('⚠️ 提示词不能为空');
     return;
   }
-  
-  document.getElementById('step3-loading').style.display = 'flex';
+
+  step3CandidateReady = false;
+  step3CandidateSlideId = '';
+  setStep3SlideGenerating(slideId, true);
+  document.getElementById('step3-loading').style.display = 'none';
   document.getElementById('step3-btn-generate').disabled = true;
+  document.getElementById('step3-preview-label').innerText = 'AI 图片生成中';
+  document.getElementById('step3-candidate-status').style.display = 'none';
+  document.getElementById('step3-btn-apply-candidate').style.display = 'none';
+  document.getElementById('step3-preview-box').innerHTML = step3GeneratingPreviewHtml();
   const imageModel = state.settings?.image_model || 'gpt-image-1';
   const imageSize = state.settings?.image_size || '1024x1024';
   showToast(`🎨 正在调用 ${imageModel} 合成 ${imageSize} 候选图...`);
-  
+
+  let generated = false;
   try {
     const formData = new FormData();
     formData.append('slide_id', slideId);
@@ -1436,6 +1568,7 @@ async function generateStep3Image() {
       if (!modalOpen || activeSlideId !== slideId) return;
       step3CandidateReady = true;
       step3CandidateSlideId = slideId;
+      generated = true;
       document.getElementById('step3-preview-label').innerText = 'AI 候选图片预览';
       document.getElementById('step3-candidate-status').style.display = 'inline-flex';
       document.getElementById('step3-preview-box').innerHTML =
@@ -1447,6 +1580,16 @@ async function generateStep3Image() {
   } finally {
     document.getElementById('step3-loading').style.display = 'none';
     document.getElementById('step3-btn-generate').disabled = false;
+    setStep3SlideGenerating(slideId, false);
+    const activeSlideId = document.getElementById('step3-slide-id-label').innerText;
+    const modalOpen = document.getElementById('modal-step3-ai').style.display === 'flex';
+    if (!generated && modalOpen && activeSlideId === slideId) {
+      const image = step3ImageOrder.find(item => item.slide_id === slideId);
+      document.getElementById('step3-preview-label').innerText = '当前图片预览';
+      document.getElementById('step3-preview-box').innerHTML = image?.exists
+        ? `<img src="${image.url}" alt="${slideId} 当前图片">`
+        : '<span>暂无图片</span>';
+    }
   }
 }
 
@@ -1488,6 +1631,10 @@ async function confirmStep3Images() {
 // ==================== 步骤 5: Mask 可视化标注 ====================
 
 let manifestData = null;
+let step5GlobalPointerEventsBound = false;
+let step5SourceCanvas = null;
+let step5SourceForegroundCanvas = null;
+let step5CoverageTimer = null;
 
 let step2Contract = null; // 用于缓存步骤 2 分镜规划数据
 
@@ -1503,6 +1650,7 @@ const MASK_COLORS = [
   '#C9184A',
   '#0077B6'
 ];
+const MASK_MIN_COVERAGE_RATIO = 0.985;
 
 function getMaskColor(idx) {
   return MASK_COLORS[idx % MASK_COLORS.length];
@@ -2176,7 +2324,25 @@ function renderStep5Workspace() {
   if (slide) {
     // 设置 Canvas 背景图
     const imgUrl = `/api/projects/${state.currentProject.id}/slides/${slide.slide_id}/image?t=${uuid()}`;
-    document.getElementById('step5-bg-img').src = imgUrl;
+    const backgroundImage = document.getElementById('step5-bg-img');
+    const foregroundImage = document.getElementById('step5-foreground-mask-img');
+    const canvasWrapper = document.getElementById('canvas-container');
+    step5SourceCanvas = null;
+    step5SourceForegroundCanvas = null;
+    state.canvasState.coverageRatio = 1;
+    state.canvasState.coverageReady = true;
+    canvasWrapper?.classList.remove('mask-preview-ready');
+    updateStep5LiveCoverageStatus({ loading: true });
+    backgroundImage.onload = () => tryInitializeStep5SourceCache(slide.slide_id);
+    foregroundImage.onload = () => tryInitializeStep5SourceCache(slide.slide_id);
+    backgroundImage.onerror = () => {
+      updateStep5LiveCoverageStatus({ error: true });
+    };
+    foregroundImage.onerror = () => {
+      updateStep5LiveCoverageStatus({ error: true });
+    };
+    backgroundImage.src = imgUrl;
+    foregroundImage.src = `/api/projects/${state.currentProject.id}/slides/${slide.slide_id}/foreground-mask?t=${uuid()}`;
     
     // 初始化 canvas 标注框数据并重绘
     state.canvasState.boxes = getSlideMaskBoxes(slide);
@@ -2188,7 +2354,9 @@ function renderStep5Workspace() {
     state.canvasState.paintingBoxIndex = -1;
     state.canvasState.isPainting = false;
     state.canvasState.currentStroke = null;
+    state.canvasState.activePointerId = null;
     updateBrushSize(state.canvasState.brushSize, false);
+    updateEraserSize(state.canvasState.eraserSize, false);
     initCanvasEvents();
     redrawCanvas();
     
@@ -2395,7 +2563,7 @@ function selectStep5MaskBox(idx, shouldScroll = true) {
 }
 
 function updateBrushSize(value, shouldRedraw = true) {
-  const size = Math.max(140, Math.min(300, Number(value) || 170));
+  const size = Math.max(40, Math.min(300, Number(value) || 170));
   state.canvasState.brushSize = size;
   const input = document.getElementById('step5-brush-size');
   const label = document.getElementById('step5-brush-size-value');
@@ -2403,6 +2571,23 @@ function updateBrushSize(value, shouldRedraw = true) {
   if (label) label.innerText = String(size);
   refreshBrushCursor();
   if (shouldRedraw) redrawCanvas();
+}
+
+function updateEraserSize(value, shouldRedraw = true) {
+  const size = Math.max(40, Math.min(300, Number(value) || 120));
+  state.canvasState.eraserSize = size;
+  const input = document.getElementById('step5-eraser-size');
+  const label = document.getElementById('step5-eraser-size-value');
+  if (input) input.value = String(size);
+  if (label) label.innerText = String(size);
+  refreshBrushCursor();
+  if (shouldRedraw) redrawCanvas();
+}
+
+function getActiveMaskToolSize() {
+  return state.canvasState.eraserMode
+    ? state.canvasState.eraserSize
+    : state.canvasState.brushSize;
 }
 
 function startMaskPaint(idx) {
@@ -2413,6 +2598,7 @@ function startMaskPaint(idx) {
   state.canvasState.eraserMode = false;
   state.canvasState.paintingBoxIndex = idx;
   state.canvasState.selectedBoxIndex = idx;
+  refreshBrushCursor();
   redrawCanvas();
   renderStep5BoxesForm();
   renderStep5NarrationPanel();
@@ -2427,6 +2613,7 @@ function startMaskErase(idx) {
   state.canvasState.eraserMode = true;
   state.canvasState.paintingBoxIndex = idx;
   state.canvasState.selectedBoxIndex = idx;
+  refreshBrushCursor();
   redrawCanvas();
   renderStep5BoxesForm();
   renderStep5NarrationPanel();
@@ -2467,6 +2654,7 @@ function stopMaskPaint() {
   state.canvasState.paintingBoxIndex = -1;
   state.canvasState.isPainting = false;
   state.canvasState.currentStroke = null;
+  state.canvasState.activePointerId = null;
   hideBrushCursor();
   redrawCanvas();
   renderStep5BoxesForm();
@@ -2633,6 +2821,7 @@ window.deleteMaskBox = function(idx) {
   renderStep5BoxesForm();
   renderStep5NarrationPanel();
   scheduleStep5Autosave();
+  scheduleStep5CoverageCheck();
 };
 
 window.updateMaskBoxField = function(idx, field, val) {
@@ -2650,18 +2839,81 @@ function initCanvasEvents() {
   const newCanvas = canvas.cloneNode(true);
   canvas.parentNode.replaceChild(newCanvas, canvas);
   
-  newCanvas.addEventListener('mousedown', (e) => handleCanvasMouseDown(e, newCanvas));
-  newCanvas.addEventListener('mousemove', (e) => handleCanvasMouseMove(e, newCanvas));
-  newCanvas.addEventListener('mouseup', handleCanvasMouseUp);
+  newCanvas.addEventListener('pointerdown', (e) => handleCanvasPointerDown(e, newCanvas));
+  newCanvas.addEventListener('pointermove', (e) => handleCanvasPointerMove(e, newCanvas));
+  newCanvas.addEventListener('pointerup', (e) => handleCanvasPointerUp(e, newCanvas));
+  newCanvas.addEventListener('pointercancel', (e) => handleCanvasPointerUp(e, newCanvas));
   newCanvas.addEventListener('wheel', (e) => handleMaskCanvasWheel(e, newCanvas), { passive: false });
-  newCanvas.addEventListener('mouseleave', (e) => {
-    hideBrushCursor();
-    handleCanvasMouseUp(e);
+  newCanvas.addEventListener('pointerleave', () => {
+    if (!state.canvasState.isPainting) hideBrushCursor();
   });
   if (wrapper) {
     wrapper.onwheel = (e) => handleMaskCanvasWheel(e, newCanvas);
   }
+  bindStep5GlobalPointerEvents();
   applyMaskCanvasZoom(newCanvas);
+}
+
+function pointerWithinMaskToolReach(e, canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const radius = Math.max(4, getActiveMaskToolSize() * (rect.width / 1920) / 2);
+  return (
+    e.clientX >= rect.left - radius &&
+    e.clientX <= rect.right + radius &&
+    e.clientY >= rect.top - radius &&
+    e.clientY <= rect.bottom + radius
+  );
+}
+
+function bindStep5GlobalPointerEvents() {
+  if (step5GlobalPointerEventsBound) return;
+  step5GlobalPointerEventsBound = true;
+
+  document.addEventListener('pointerdown', (e) => {
+    const canvas = document.getElementById('step5-canvas');
+    const workspace = canvas?.closest('.workspace-left');
+    const blockedTarget = e.target?.closest?.(
+      'button, input, label, textarea, select, a, .step5-narration-panel, .workspace-right'
+    );
+    if (
+      state.currentStep !== 5 ||
+      !state.canvasState.paintMode ||
+      !canvas ||
+      e.target === canvas ||
+      blockedTarget ||
+      !workspace?.contains(e.target) ||
+      !pointerWithinMaskToolReach(e, canvas)
+    ) return;
+    e.stopPropagation();
+    handleCanvasPointerDown(e, canvas);
+  }, true);
+
+  document.addEventListener('pointermove', (e) => {
+    const canvas = document.getElementById('step5-canvas');
+    if (
+      state.currentStep !== 5 ||
+      !state.canvasState.paintMode ||
+      !canvas ||
+      e.target === canvas
+    ) return;
+    if (state.canvasState.isPainting || pointerWithinMaskToolReach(e, canvas)) {
+      handleCanvasPointerMove(e, canvas);
+    } else {
+      hideBrushCursor();
+    }
+  }, true);
+
+  document.addEventListener('pointerup', (e) => {
+    const canvas = document.getElementById('step5-canvas');
+    if (!state.canvasState.isPainting || !canvas || e.target === canvas) return;
+    handleCanvasPointerUp(e, canvas);
+  }, true);
+
+  document.addEventListener('pointercancel', (e) => {
+    const canvas = document.getElementById('step5-canvas');
+    if (!state.canvasState.isPainting || !canvas || e.target === canvas) return;
+    handleCanvasPointerUp(e, canvas);
+  }, true);
 }
 
 function getCanvasCoords(e, canvas) {
@@ -2703,12 +2955,19 @@ function positionBrushCursor(canvas, clientX, clientY) {
     return;
   }
   const canvasRect = canvas.getBoundingClientRect();
-  if (clientX < canvasRect.left || clientX > canvasRect.right || clientY < canvasRect.top || clientY > canvasRect.bottom) {
+  const toolSize = getActiveMaskToolSize();
+  const size = Math.max(8, toolSize * (canvasRect.width / 1920));
+  const radius = size / 2;
+  if (
+    clientX < canvasRect.left - radius ||
+    clientX > canvasRect.right + radius ||
+    clientY < canvasRect.top - radius ||
+    clientY > canvasRect.bottom + radius
+  ) {
     hideBrushCursor();
     return;
   }
   const wrapperRect = cursor.parentElement.getBoundingClientRect();
-  const size = Math.max(8, state.canvasState.brushSize * (canvasRect.width / 1920));
   const color = getBoxColor(state.canvasState.boxes[state.canvasState.paintingBoxIndex], state.canvasState.paintingBoxIndex);
   cursor.style.left = `${clientX - wrapperRect.left}px`;
   cursor.style.top = `${clientY - wrapperRect.top}px`;
@@ -2762,7 +3021,9 @@ function handleGlobalMaskWheel(e) {
   handleMaskCanvasWheel(e, canvas);
 }
 
-function handleCanvasMouseDown(e, canvas) {
+function handleCanvasPointerDown(e, canvas) {
+  if (e.button !== undefined && e.button !== 0) return;
+  e.preventDefault();
   updateBrushCursor(e, canvas);
   const { x, y } = getCanvasCoords(e, canvas);
   if (state.canvasState.paintMode && state.canvasState.paintingBoxIndex >= 0) {
@@ -2771,9 +3032,10 @@ function handleCanvasMouseDown(e, canvas) {
     if (!maskBox) return;
     const manualMask = ensureManualMask(maskBox, idx);
     const color = getBoxColor(maskBox, idx);
+    const toolSize = getActiveMaskToolSize();
     const stroke = {
       color,
-      size: state.canvasState.brushSize,
+      size: toolSize,
       mode: state.canvasState.eraserMode ? 'erase' : 'paint',
       eraser: !!state.canvasState.eraserMode,
       points: [{ x: Math.round(x), y: Math.round(y) }]
@@ -2782,9 +3044,15 @@ function handleCanvasMouseDown(e, canvas) {
     manualMask.strokes.push(stroke);
     state.canvasState.isPainting = true;
     state.canvasState.currentStroke = stroke;
+    state.canvasState.activePointerId = e.pointerId;
+    try {
+      canvas.setPointerCapture?.(e.pointerId);
+    } catch (_) {
+      // 从画布外半径区域起笔时，由 document 级监听继续接收该指针。
+    }
     state.canvasState.selectedBoxIndex = idx;
     updateMaskBoxFromManualMask(idx);
-    redrawCanvas();
+    redrawCanvas({ updateDiagnostics: false });
     return;
   }
 
@@ -2795,7 +3063,12 @@ function handleCanvasMouseDown(e, canvas) {
   renderStep5NarrationPanel();
 }
 
-function handleCanvasMouseMove(e, canvas) {
+function handleCanvasPointerMove(e, canvas) {
+  if (
+    state.canvasState.isPainting &&
+    state.canvasState.activePointerId !== null &&
+    e.pointerId !== state.canvasState.activePointerId
+  ) return;
   updateBrushCursor(e, canvas);
   const { x, y } = getCanvasCoords(e, canvas);
 
@@ -2805,7 +3078,7 @@ function handleCanvasMouseMove(e, canvas) {
     if (!last || Math.hypot(x - last.x, y - last.y) > 5) {
       stroke.points.push({ x: Math.round(x), y: Math.round(y) });
       updateMaskBoxFromManualMask(state.canvasState.paintingBoxIndex);
-      redrawCanvas();
+      redrawCanvas({ updateDiagnostics: false });
     }
     return;
   }
@@ -2813,32 +3086,50 @@ function handleCanvasMouseMove(e, canvas) {
   return;
 }
 
-function handleCanvasMouseUp() {
+function handleCanvasPointerUp(e, canvas) {
+  if (
+    state.canvasState.activePointerId !== null &&
+    e?.pointerId !== undefined &&
+    e.pointerId !== state.canvasState.activePointerId
+  ) return;
+  if (canvas && e?.pointerId !== undefined && canvas.hasPointerCapture?.(e.pointerId)) {
+    try {
+      canvas.releasePointerCapture(e.pointerId);
+    } catch (_) {
+      // 指针可能从画布外缘开始，未被 Canvas 捕获。
+    }
+  }
   if (state.canvasState.isPainting) {
     state.canvasState.isPainting = false;
     state.canvasState.currentStroke = null;
+    state.canvasState.activePointerId = null;
     updateMaskBoxFromManualMask(state.canvasState.paintingBoxIndex);
     redrawCanvas();
     renderStep5BoxesForm();
     renderStep5NarrationPanel();
     scheduleStep5Autosave();
+    scheduleStep5CoverageCheck();
     return;
   }
 
   state.canvasState.draggedBoxIndex = -1;
   state.canvasState.draggedHandle = null;
+  state.canvasState.activePointerId = null;
   renderStep5BoxesForm();
 }
 
-function drawManualMaskStrokes(ctx, item, idx) {
-  const strokes = item.manual_mask?.strokes || [];
-  if (!strokes.length) return;
-  const isSelected = idx === state.canvasState.selectedBoxIndex;
-  const color = getBoxColor(item, idx);
-  const maskLayer = document.createElement('canvas');
-  maskLayer.width = 1920;
-  maskLayer.height = 1080;
+function createStep5OffscreenCanvas() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1920;
+  canvas.height = 1080;
+  return canvas;
+}
+
+function rasterizeManualMask(item) {
+  const maskLayer = createStep5OffscreenCanvas();
   const maskCtx = maskLayer.getContext('2d');
+  const strokes = item.manual_mask?.strokes || [];
+  if (!strokes.length) return maskLayer;
   maskCtx.lineCap = 'round';
   maskCtx.lineJoin = 'round';
 
@@ -2846,7 +3137,7 @@ function drawManualMaskStrokes(ctx, item, idx) {
     const points = stroke.points || [];
     if (!points.length) return;
     const erase = isEraseStroke(stroke);
-    const width = Number(stroke.size || state.canvasState.brushSize);
+    const width = Number(stroke.size || (erase ? state.canvasState.eraserSize : state.canvasState.brushSize));
     const radius = Math.max(1, width / 2);
 
     maskCtx.save();
@@ -2872,6 +3163,105 @@ function drawManualMaskStrokes(ctx, item, idx) {
     });
     maskCtx.restore();
   });
+  return maskLayer;
+}
+
+function buildStep5UnionMask() {
+  const union = createStep5OffscreenCanvas();
+  const unionCtx = union.getContext('2d');
+  state.canvasState.boxes.forEach(item => {
+    unionCtx.drawImage(rasterizeManualMask(item), 0, 0);
+  });
+  return union;
+}
+
+function tryInitializeStep5SourceCache(slideId) {
+  const sourceImage = document.getElementById('step5-bg-img');
+  const foregroundImage = document.getElementById('step5-foreground-mask-img');
+  if (
+    !sourceImage?.complete ||
+    !sourceImage.naturalWidth ||
+    !foregroundImage?.complete ||
+    !foregroundImage.naturalWidth
+  ) return;
+  rebuildStep5SourceCache(sourceImage, foregroundImage);
+  document.getElementById('canvas-container')?.classList.add('mask-preview-ready');
+  try {
+    redrawCanvas();
+  } catch (error) {
+    console.error('Mask live preview render failed:', error);
+    updateStep5LiveCoverageStatus({ error: true });
+    return;
+  }
+  updateStep5LiveCoverageStatus({ loading: true });
+  refreshStep5CoverageFromServer(slideId).catch(() => {
+    if (getCurrentManifestSlide()?.slide_id === slideId) {
+      updateStep5LiveCoverageStatus({ error: true });
+    }
+  });
+}
+
+function rebuildStep5SourceCache(image, foregroundImage) {
+  const source = createStep5OffscreenCanvas();
+  const sourceCtx = source.getContext('2d');
+  sourceCtx.drawImage(image, 0, 0, 1920, 1080);
+  const foreground = createStep5OffscreenCanvas();
+  const foregroundCtx = foreground.getContext('2d');
+  foregroundCtx.drawImage(foregroundImage, 0, 0, 1920, 1080);
+  step5SourceCanvas = source;
+  step5SourceForegroundCanvas = foreground;
+}
+
+function updateStep5LiveCoverageStatus(options = {}) {
+  const status = document.getElementById('step5-live-coverage');
+  const confirmButton = document.getElementById('step5-btn-confirm-next');
+  if (!status) return;
+  status.classList.remove('ready', 'warning', 'loading', 'error');
+  if (options.loading) {
+    status.classList.add('loading');
+    status.innerText = '正在加载真实抠除预览...';
+    if (confirmButton) confirmButton.disabled = true;
+    return;
+  }
+  if (options.error) {
+    status.classList.add('error');
+    status.innerText = '原图加载失败，暂时不能确认';
+    if (confirmButton) confirmButton.disabled = true;
+    return;
+  }
+  if (options.fallback) {
+    const allReady = options.allReady !== false;
+    state.canvasState.coverageRatio = 1;
+    state.canvasState.coverageReady = allReady;
+    status.classList.add(allReady ? 'ready' : 'warning');
+    status.innerText = allReady
+      ? '当前页无 Mask：视频将完整显示整页图片'
+      : `当前页无 Mask，将完整显示；另有 ${options.failureSlides || '其他页面'} 覆盖不足`;
+    if (confirmButton) confirmButton.disabled = !allReady;
+    return;
+  }
+  const ratio = Number(options.ratio || 0);
+  const currentReady = ratio >= MASK_MIN_COVERAGE_RATIO;
+  const ready = currentReady && options.allReady !== false;
+  state.canvasState.coverageRatio = ratio;
+  state.canvasState.coverageReady = ready;
+  status.classList.add(ready ? 'ready' : 'warning');
+  if (ready) {
+    status.innerText = `真实抠除预览 · 覆盖率 ${(ratio * 100).toFixed(1)}% · 可确认`;
+  } else if (!currentReady) {
+    status.innerText = `红色内容不会进入视频 · 覆盖率 ${(ratio * 100).toFixed(1)}% · 请继续补涂`;
+  } else {
+    status.innerText = `当前页覆盖率 ${(ratio * 100).toFixed(1)}%；另有 ${options.failureSlides || '其他页面'} 覆盖不足`;
+  }
+  if (confirmButton) confirmButton.disabled = !ready;
+}
+
+function drawManualMaskStrokes(ctx, item, idx) {
+  const strokes = item.manual_mask?.strokes || [];
+  if (!strokes.length) return;
+  const isSelected = idx === state.canvasState.selectedBoxIndex;
+  const color = getBoxColor(item, idx);
+  const maskLayer = rasterizeManualMask(item);
 
   const colorLayer = document.createElement('canvas');
   colorLayer.width = 1920;
@@ -2884,18 +3274,93 @@ function drawManualMaskStrokes(ctx, item, idx) {
   ctx.drawImage(colorLayer, 0, 0);
 }
 
-// 在 Canvas 上绘制手动涂抹的 Mask 图层
+// 所见即所得：白色底图 + 精确 Mask 内原图 + 红色未覆盖原图内容。
 function redrawCanvas() {
   const canvas = document.getElementById('step5-canvas');
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, 1920, 1080);
+  ctx.fillStyle = '#FFFDF7';
+  ctx.fillRect(0, 0, 1920, 1080);
   canvas.classList.toggle('painting', state.canvasState.paintMode);
   canvas.classList.toggle('erasing', state.canvasState.paintMode && state.canvasState.eraserMode);
 
-  state.canvasState.boxes.forEach((item, idx) => {
-    drawManualMaskStrokes(ctx, item, idx);
-  });
+  if (!step5SourceCanvas || !step5SourceForegroundCanvas) {
+    refreshBrushCursor(canvas);
+    return;
+  }
+
+  const unionMask = buildStep5UnionMask();
+  const hasPaint = state.canvasState.boxes.some(hasPaintStroke);
+  if (!hasPaint) {
+    ctx.drawImage(step5SourceCanvas, 0, 0);
+    updateStep5LiveCoverageStatus({ fallback: true });
+    refreshBrushCursor(canvas);
+    return;
+  }
+
+  const exactResult = createStep5OffscreenCanvas();
+  const exactResultCtx = exactResult.getContext('2d');
+  exactResultCtx.drawImage(step5SourceCanvas, 0, 0);
+  exactResultCtx.globalCompositeOperation = 'destination-in';
+  exactResultCtx.drawImage(unionMask, 0, 0);
+  exactResultCtx.globalCompositeOperation = 'source-over';
+  ctx.drawImage(exactResult, 0, 0);
+
+  const uncovered = createStep5OffscreenCanvas();
+  const uncoveredCtx = uncovered.getContext('2d');
+  uncoveredCtx.drawImage(step5SourceForegroundCanvas, 0, 0);
+  uncoveredCtx.globalCompositeOperation = 'destination-out';
+  uncoveredCtx.drawImage(unionMask, 0, 0);
+
+  const redWarning = createStep5OffscreenCanvas();
+  const redWarningCtx = redWarning.getContext('2d');
+  redWarningCtx.fillStyle = 'rgba(255, 32, 32, 0.88)';
+  redWarningCtx.fillRect(0, 0, 1920, 1080);
+  redWarningCtx.globalCompositeOperation = 'destination-in';
+  redWarningCtx.drawImage(uncovered, 0, 0);
+  ctx.drawImage(redWarning, 0, 0);
+
   refreshBrushCursor(canvas);
+}
+
+function scheduleStep5CoverageCheck() {
+  clearTimeout(step5CoverageTimer);
+  updateStep5LiveCoverageStatus({ loading: true });
+  step5CoverageTimer = setTimeout(async () => {
+    const slide = getCurrentManifestSlide();
+    if (!slide?.slide_id) return;
+    try {
+      await saveStep5Draft();
+      await refreshStep5CoverageFromServer(slide.slide_id);
+    } catch (_) {
+      updateStep5LiveCoverageStatus({ error: true });
+    }
+  }, 850);
+}
+
+async function refreshStep5CoverageFromServer(slideId) {
+  const result = await API.post(
+    `/api/projects/${state.currentProject.id}/steps/5/preview`,
+    { slide_id: slideId }
+  );
+  if (getCurrentManifestSlide()?.slide_id !== slideId) return result;
+  const diagnostics = result.diagnostics || {};
+  const ratio = Number(diagnostics.coverage_ratio);
+  const failureSlides = (result.coverage_failures || [])
+    .map(item => item.slide_id)
+    .join('、');
+  const coverageOptions = {
+    allReady: result.all_can_confirm !== false,
+    failureSlides,
+  };
+  if (result.fallback_full_slide) {
+    updateStep5LiveCoverageStatus({ fallback: true, ...coverageOptions });
+  } else if (Number.isFinite(ratio)) {
+    updateStep5LiveCoverageStatus({ ratio, ...coverageOptions });
+  } else {
+    updateStep5LiveCoverageStatus({ error: true });
+  }
+  return result;
 }
 
 function saveStep5CurrentState() {
@@ -2960,17 +3425,14 @@ async function openStep5MaskPreview() {
   showToast('正在按精确 Mask 规则生成最终抠除预览...');
   try {
     await saveStep5Draft();
-    const result = await API.post(
-      `/api/projects/${state.currentProject.id}/steps/5/preview`,
-      { slide_id: slide.slide_id }
-    );
+    const result = await refreshStep5CoverageFromServer(slide.slide_id);
     const diagnostics = result.diagnostics || {};
     const ratio = Number(diagnostics.coverage_ratio);
     const summary = document.getElementById('mask-preview-summary');
     if (summary) {
       summary.innerText = result.fallback_full_slide
         ? `${slide.slide_id} 没有 Mask，将直接显示完整图片。`
-        : `${slide.slide_id} · 精确 Mask v2 · 源图前景覆盖率 ${Number.isFinite(ratio) ? (ratio * 100).toFixed(1) : '--'}%`;
+        : `${slide.slide_id} · 精确 Mask v2 · 源图前景覆盖率 ${Number.isFinite(ratio) ? (ratio * 100).toFixed(1) : '--'}% · 红色内容不会进入视频`;
     }
     document.getElementById('mask-preview-image').src = result.preview_url;
     const uncoveredSection = document.getElementById('mask-uncovered-section');
@@ -3038,6 +3500,10 @@ async function runStep5SemanticBlocks() {
 }
 
 async function saveStep5Masks() {
+  if (!state.canvasState.coverageReady) {
+    showToast('当前页仍有红色内容不会进入视频，请先补涂完整。', 5000);
+    return false;
+  }
   if (state.step5AutoSaveTimer) {
     clearTimeout(state.step5AutoSaveTimer);
     state.step5AutoSaveTimer = null;
@@ -3046,6 +3512,7 @@ async function saveStep5Masks() {
   saveStep5CurrentState();
   
   // 点击下一步时统一确认全部 Slide，并一次性构建所有切层。
+  const previousStatuses = manifestData.slides.map(slide => slide.status);
   manifestData.slides.forEach(slide => {
     slide.status = "completed";
   });
@@ -3059,7 +3526,12 @@ async function saveStep5Masks() {
       refreshCurrentProjectStatus(5).catch(() => {});
       return true;
     }
-  } catch (e) {}
+  } catch (e) {
+    manifestData.slides.forEach((slide, index) => {
+      slide.status = previousStatuses[index] || 'pending';
+    });
+    renderStep5Workspace();
+  }
   return false;
 }
 

@@ -14,10 +14,10 @@ from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from PIL import Image
+from PIL import Image, ImageChops
 import httpx
 import yaml
 from openai import OpenAI
@@ -65,6 +65,7 @@ STYLE_REFERENCE_FILES = {
     "example": "PPT示例.png",
 }
 REVEAL_PIPELINE_VERSION = "manual_mask_exact_v2"
+MASK_MIN_COVERAGE_RATIO = 0.985
 
 # Pydantic 响应模型
 class ProjectCreate(BaseModel):
@@ -1226,6 +1227,54 @@ def build_current_reveal_assets(project: Project) -> None:
     validate_current_reveal_assets(project)
 
 
+def mask_coverage_failures(project: Project) -> List[Dict[str, Any]]:
+    failures: List[Dict[str, Any]] = []
+    for slide_id in read_contract_slide_ids(project.run_dir):
+        report_path = os.path.join(project.run_dir, "slides", slide_id, "reveal_report.json")
+        if not os.path.exists(report_path):
+            continue
+        with open(report_path, "r", encoding="utf-8") as file:
+            report = json.load(file)
+        if report.get("fallback_full_slide"):
+            continue
+        diagnostics = report.get("foreground_diagnostics")
+        if not isinstance(diagnostics, dict):
+            continue
+        ratio = float(diagnostics.get("coverage_ratio", 0.0) or 0.0)
+        required = float(
+            diagnostics.get("required_coverage_ratio", MASK_MIN_COVERAGE_RATIO)
+            or MASK_MIN_COVERAGE_RATIO
+        )
+        if ratio + 1e-9 < required:
+            failures.append({
+                "slide_id": slide_id,
+                "coverage_ratio": ratio,
+                "required_coverage_ratio": required,
+                "uncovered_foreground_pixel_count": int(
+                    diagnostics.get("uncovered_foreground_pixel_count", 0) or 0
+                ),
+            })
+    return failures
+
+
+def ensure_mask_coverage_ready(project: Project) -> None:
+    failures = mask_coverage_failures(project)
+    if not failures:
+        return
+    summary = "、".join(
+        f"{item['slide_id']}（{item['coverage_ratio'] * 100:.1f}%）"
+        for item in failures
+    )
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            f"以下页面仍有红色未覆盖内容：{summary}。"
+            f"请返回 Mask 标注补涂，达到 {MASK_MIN_COVERAGE_RATIO * 100:.1f}% 后再确认。"
+            "系统不会自动扩大或修补你的 Mask。"
+        ),
+    )
+
+
 def mark_slide_image_changed(project: Project, slide_id: str, db: Session) -> None:
     clear_slide_visual_derivatives(project, slide_id)
     clear_audio_confirmation(project)
@@ -2035,8 +2084,59 @@ def get_slide_image_file(project_id: str, slide_id: str, db: Session = Depends(g
     if not os.path.exists(img_path):
         raise HTTPException(status_code=404, detail="图片不存在")
         
-    from fastapi.responses import FileResponse
     return FileResponse(img_path, media_type="image/png")
+
+
+@app.get("/api/projects/{project_id}/slides/{slide_id}/foreground-mask")
+def get_slide_foreground_mask_file(project_id: str, slide_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    if slide_id not in read_current_slide_ids_or_404(project):
+        raise HTTPException(status_code=404, detail="Slide 不存在")
+
+    img_path = os.path.join(project.run_dir, "slides", slide_id, "visual_draft.png")
+    if not os.path.exists(img_path):
+        raise HTTPException(status_code=404, detail="图片不存在")
+
+    canvas = {"width": 1920, "height": 1080, "background": "#FFFDF7"}
+    manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
+    if os.path.exists(manifest_path):
+        with open(manifest_path, "r", encoding="utf-8") as file:
+            manifest = json.load(file)
+        canvas.update(manifest.get("canvas") or {})
+        for slide in manifest.get("slides") or []:
+            if isinstance(slide, dict) and slide.get("slide_id") == slide_id:
+                canvas.update(slide.get("canvas") or {})
+                break
+
+    width = int(canvas.get("width") or 1920)
+    height = int(canvas.get("height") or 1080)
+    background_hex = str(canvas.get("background") or "#FFFDF7").lstrip("#")
+    if len(background_hex) == 3:
+        background_hex = "".join(value * 2 for value in background_hex)
+    try:
+        background_rgb = tuple(int(background_hex[offset:offset + 2], 16) for offset in (0, 2, 4))
+    except (TypeError, ValueError):
+        background_rgb = (255, 253, 247)
+
+    with Image.open(img_path) as source_image:
+        source = source_image.convert("RGB")
+    if source.size != (width, height):
+        source = source.resize((width, height), Image.Resampling.LANCZOS)
+    background = Image.new("RGB", source.size, background_rgb)
+    red, green, blue = ImageChops.difference(source, background).split()
+    maximum = ImageChops.lighter(ImageChops.lighter(red, green), blue)
+    foreground = maximum.point(lambda value: 255 if value > 12 else 0)
+    foreground_rgba = Image.new("RGBA", source.size, (255, 255, 255, 0))
+    foreground_rgba.putalpha(foreground)
+    output = io.BytesIO()
+    foreground_rgba.save(output, format="PNG")
+    return Response(
+        content=output.getvalue(),
+        media_type="image/png",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/api/projects/{project_id}/slides/{slide_id}/candidate")
@@ -2841,6 +2941,12 @@ def build_step5_preview(project_id: str, payload: Dict[str, Any], db: Session = 
     with open(report_path, "r", encoding="utf-8") as file:
         report = json.load(file)
     diagnostics = report.get("foreground_diagnostics") or {}
+    coverage_ratio = float(diagnostics.get("coverage_ratio", 1.0) or 0.0)
+    required_coverage_ratio = float(
+        diagnostics.get("required_coverage_ratio", MASK_MIN_COVERAGE_RATIO)
+        or MASK_MIN_COVERAGE_RATIO
+    )
+    coverage_failures = mask_coverage_failures(project)
     cache_key = uuid.uuid4().hex[:8]
     fallback_full_slide = bool(report.get("fallback_full_slide"))
     return {
@@ -2850,6 +2956,9 @@ def build_step5_preview(project_id: str, payload: Dict[str, Any], db: Session = 
         "method": report.get("method"),
         "fallback_full_slide": fallback_full_slide,
         "diagnostics": diagnostics,
+        "can_confirm": fallback_full_slide or coverage_ratio >= required_coverage_ratio,
+        "all_can_confirm": not coverage_failures,
+        "coverage_failures": coverage_failures,
         "warnings": report.get("warnings") or [],
         "preview_url": (
             f"/api/projects/{project_id}/slides/{slide_id}/image?t={cache_key}"
@@ -2887,6 +2996,16 @@ def update_step5_result(project_id: str, payload: Dict[str, Any], db: Session = 
         
     # 人工保存后，校验并构建切层 assets，运行 build_reveal_scene.py
     build_current_reveal_assets(project)
+    failed_slide_ids = {
+        item["slide_id"] for item in mask_coverage_failures(project)
+    }
+    if failed_slide_ids:
+        for slide in payload.get("slides", []):
+            if isinstance(slide, dict) and slide.get("slide_id") in failed_slide_ids:
+                slide["status"] = "in_progress"
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+    ensure_mask_coverage_ready(project)
         
     handle_step_navigation(project, 5, db)
     return {"success": True}
@@ -3417,6 +3536,7 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
     # Draft autosave updates the manifest only. Always rebuild reveal assets here
     # so rendering cannot use stale crops from an earlier mask revision.
     build_current_reveal_assets(project)
+    ensure_mask_coverage_ready(project)
 
     # 首先调用 build_remotion_props.py 生成渲染配置属性
     bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))

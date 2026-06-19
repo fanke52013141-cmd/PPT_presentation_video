@@ -560,10 +560,12 @@ input.step2-soft-input:focus {
 
 .canvas-wrapper canvas.painting {
   cursor: none;
+  touch-action: none;
 }
 
 .canvas-wrapper canvas.erasing {
   cursor: none;
+  touch-action: none;
 }
 
 .step5-brush-cursor {
@@ -621,6 +623,48 @@ input.step2-soft-input:focus {
   object-fit: contain;
   z-index: 1;
   transform-origin: 50% 50%;
+}
+
+.canvas-wrapper.mask-preview-ready img {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#step5-foreground-mask-img {
+  opacity: 0 !important;
+  pointer-events: none;
+}
+
+.step5-live-coverage {
+  max-width: 360px;
+  padding: 0.28rem 0.55rem;
+  border: 1.5px solid var(--ink-color);
+  border-radius: 999px;
+  background: #f3f4f6;
+  color: #555;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.step5-live-coverage.ready {
+  background: #dff4d8;
+  color: #215c20;
+}
+
+.step5-live-coverage.warning {
+  background: #ffd9d9;
+  color: #9b1c1c;
+  animation: step3-status-pulse 1.1s ease-in-out infinite alternate;
+}
+
+.step5-live-coverage.loading {
+  background: var(--secondary-color);
+}
+
+.step5-live-coverage.error {
+  background: var(--danger-color);
+  color: #7f1d1d;
 }
 
 /* 标注编辑器左右分栏布局 */
@@ -1233,6 +1277,75 @@ input.step2-soft-input:focus {
   font-weight: 800;
   line-height: 1.25;
   overflow-wrap: anywhere;
+}
+
+.step3-card-status {
+  padding: 1px 4px;
+  border: 1.5px solid var(--ink-color);
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.step3-card-status.is-generating {
+  animation: step3-status-pulse 1.1s ease-in-out infinite alternate;
+}
+
+.step3-generating-preview {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.18rem;
+  color: var(--ink-color);
+  background:
+    linear-gradient(110deg, #fffdf5 25%, #f2f5ff 42%, #fffdf5 59%);
+  background-size: 220% 100%;
+  animation: step3-loading-sheen 1.5s linear infinite;
+}
+
+.step3-generating-preview .sketch-loader {
+  width: 30px;
+  height: 30px;
+  margin: 0 0 0.3rem;
+  border-color: rgba(34, 34, 34, 0.16);
+  border-top-color: var(--ink-color);
+}
+
+.step3-generating-preview strong {
+  font-size: 0.86rem;
+}
+
+.step3-generating-preview small {
+  color: #666;
+  font-size: 0.7rem;
+}
+
+.step3-button-spinner {
+  width: 14px;
+  height: 14px;
+  display: inline-block;
+  border: 2px solid rgba(34, 34, 34, 0.2);
+  border-top-color: var(--ink-color);
+  border-radius: 50%;
+  animation: modern-spin 0.75s linear infinite;
+}
+
+.btn.is-disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+@keyframes step3-loading-sheen {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+@keyframes step3-status-pulse {
+  from { opacity: 0.62; }
+  to { opacity: 1; }
 }
 
 @media (max-width: 760px) {

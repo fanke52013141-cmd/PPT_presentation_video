@@ -118,6 +118,35 @@ with tempfile.TemporaryDirectory() as temp_dir_value:
         union = ImageChops.lighter(union, exact_mask)
     expected = Image.composite(master, Image.new("RGB", master.size, "#fffdf7"), union)
     assert reconstructed.convert("RGB").tobytes() == expected.tobytes()
+    exact_preview = Image.open(painted_dir / "assets" / "manual_mask_composite.png").convert("RGB")
+    assert exact_preview.tobytes() == expected.tobytes()
     assert reconstructed.convert("RGB").getpixel((290, 90)) == (255, 253, 247)
+    uncovered_preview = Image.open(painted_dir / "assets" / "manual_mask_uncovered.png").convert("RGB")
+    red_pixel = uncovered_preview.getpixel((290, 90))
+    assert red_pixel[0] > 240 and red_pixel[1] < 100 and red_pixel[2] < 100
+    assert painted_report["foreground_diagnostics"]["required_coverage_ratio"] == 0.985
+
+    edge_mask = manual_mask_alpha(
+        {
+            "strokes": [
+                {
+                    "mode": "paint",
+                    "size": 80,
+                    "points": [{"x": -20, "y": 90}],
+                },
+                {
+                    "mode": "erase",
+                    "eraser": True,
+                    "size": 30,
+                    "points": [{"x": -10, "y": 90}],
+                },
+            ]
+        },
+        master.width,
+        master.height,
+    )
+    assert edge_mask is not None
+    assert edge_mask.getpixel((0, 90)) == 0
+    assert edge_mask.getpixel((10, 90)) == 255
 
 print("reveal mask integrity checks passed")

@@ -252,6 +252,26 @@ function initGlobalEvents() {
   document.getElementById('step3-btn-batch-generate')?.addEventListener('click', () => generateAllStep3Images());
   document.getElementById('step3-btn-copy-prompts').addEventListener('click', () => copyStep2Prompts());
   document.getElementById('step3-btn-style')?.addEventListener('click', () => openImageStyleModal());
+  document.getElementById('step3-video-background-color')?.addEventListener('change', (event) => {
+    saveStep3VideoBackground(event.target.value);
+  });
+  document.getElementById('step3-video-background-text')?.addEventListener('change', (event) => {
+    saveStep3VideoBackground(event.target.value);
+  });
+  document.getElementById('step3-video-background-text')?.addEventListener('input', (event) => {
+    const normalized = normalizeStep3BackgroundColor(event.target.value);
+    const colorInput = document.getElementById('step3-video-background-color');
+    if (normalized && colorInput) colorInput.value = normalized;
+  });
+  document.getElementById('step3-video-background-text')?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      saveStep3VideoBackground(event.target.value);
+    }
+  });
+  document.getElementById('step3-video-background-apply')?.addEventListener('click', () => {
+    saveStep3VideoBackground(document.getElementById('step3-video-background-text')?.value);
+  });
   document.getElementById('step3-btn-confirm').addEventListener('click', () => confirmStep3Images());
 
   // ================= 步骤 5 事件 =================
@@ -924,7 +944,7 @@ function copyStep2Prompts() {
       `主标题：${slide.main_title || ''}`,
       slide.subtitle ? `副标题：${slide.subtitle}` : '',
       `视觉分组：\n${groups}`,
-      '使用温暖极简手绘线稿风，纯色 #FFFDF7 背景，黑色线稿，黄色重点标记；底部 150px 留作字幕安全区。'
+      '使用温暖极简手绘线稿风，生图背景必须为纯白 #FFFFFF，四条边和四个角连续纯白；黑色线稿，黄色重点标记；底部 150px 留作字幕安全区。'
     ].filter(Boolean).join('\n');
       
     textParts.push(`--- Slide ${slide.slide_id} ---`);
@@ -1120,6 +1140,7 @@ const step3GeneratingSlides = new Set();
 let step3BatchGenerating = false;
 let step3BatchCompleted = 0;
 let step3BatchTotal = 0;
+let step3VideoBackground = '#FEFDF9';
 
 function step3GeneratingPreviewHtml(message = '生成中') {
   return `
@@ -1170,6 +1191,8 @@ async function loadStep3Data() {
     }
   }
 
+  await loadStep3VisualSettings();
+
   // 获取每个 slide 拼接的 Prompt
   try {
     const promptRes = await API.get(`/api/projects/${state.currentProject.id}/steps/3/prompts`);
@@ -1178,6 +1201,48 @@ async function loadStep3Data() {
   
   // 获取生成的图片文件状态
   await refreshStep3Images();
+}
+
+function normalizeStep3BackgroundColor(value) {
+  const color = String(value || '').trim().toUpperCase();
+  return /^#[0-9A-F]{6}$/.test(color) ? color : '';
+}
+
+function renderStep3VisualSettings() {
+  const colorInput = document.getElementById('step3-video-background-color');
+  const textInput = document.getElementById('step3-video-background-text');
+  if (colorInput) colorInput.value = step3VideoBackground;
+  if (textInput) textInput.value = step3VideoBackground;
+}
+
+async function loadStep3VisualSettings() {
+  const res = await API.get(`/api/projects/${state.currentProject.id}/steps/3/visual-settings`);
+  step3VideoBackground = normalizeStep3BackgroundColor(res.video_background) || '#FEFDF9';
+  renderStep3VisualSettings();
+}
+
+async function saveStep3VideoBackground(value) {
+  const normalized = normalizeStep3BackgroundColor(value);
+  const status = document.getElementById('step3-video-background-status');
+  if (!normalized) {
+    renderStep3VisualSettings();
+    showToast('视频背景色必须是 #RRGGBB 格式');
+    return false;
+  }
+  if (status) status.innerText = '保存中...';
+  const res = await API.put(
+    `/api/projects/${state.currentProject.id}/steps/3/visual-settings`,
+    { video_background: normalized }
+  );
+  step3VideoBackground = res.video_background || normalized;
+  renderStep3VisualSettings();
+  if (status) status.innerText = '已保存';
+  setTimeout(() => {
+    if (status) status.innerText = '';
+  }, 1400);
+  showToast(`视频背景色已更新为 ${step3VideoBackground}`);
+  refreshCurrentProjectStatus(3).catch(() => {});
+  return true;
 }
 
 async function refreshStep3Images() {
@@ -1650,7 +1715,7 @@ const MASK_COLORS = [
   '#C9184A',
   '#0077B6'
 ];
-const MASK_MIN_COVERAGE_RATIO = 0.985;
+const MASK_MIN_COVERAGE_RATIO = 0.999;
 
 function getMaskColor(idx) {
   return MASK_COLORS[idx % MASK_COLORS.length];
@@ -2112,6 +2177,7 @@ function syncMaskBoxesToSlide(slide, boxes) {
 }
 
 async function loadStep5Data() {
+  await loadStep3VisualSettings();
   try {
     const contractRes = await API.get(`/api/projects/${state.currentProject.id}/steps/2/result`);
     if (contractRes.success && contractRes.contract) {
@@ -3295,7 +3361,7 @@ function redrawCanvas() {
   const canvas = document.getElementById('step5-canvas');
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, 1920, 1080);
-  ctx.fillStyle = '#FFFDF7';
+  ctx.fillStyle = step3VideoBackground;
   ctx.fillRect(0, 0, 1920, 1080);
   canvas.classList.toggle('painting', state.canvasState.paintMode);
   canvas.classList.toggle('erasing', state.canvasState.paintMode && state.canvasState.eraserMode);
@@ -3452,7 +3518,7 @@ async function openStep5MaskPreview() {
     if (summary) {
       summary.innerText = result.fallback_full_slide
         ? `${slide.slide_id} 没有 Mask，将直接显示完整图片。`
-        : `${slide.slide_id} · 精确 Mask v2 · 源图前景覆盖率 ${Number.isFinite(ratio) ? (ratio * 100).toFixed(1) : '--'}% · 红色内容不会进入视频`;
+        : `${slide.slide_id} · 外围白底透明 v3 · 内容覆盖率 ${Number.isFinite(ratio) ? (ratio * 100).toFixed(1) : '--'}% · 红色内容不会进入视频`;
     }
     document.getElementById('mask-preview-image').src = result.preview_url;
     const uncoveredSection = document.getElementById('mask-uncovered-section');
@@ -3956,7 +4022,7 @@ function showStep8VideoResult(videos) {
           <div class="step8-video-card-head">
             <strong>
               ${idx === 0 ? '最新渲染' : `历史版本 ${idx + 1}`}
-              ${item.is_legacy ? '<span class="step8-legacy-badge">旧算法/未知版本</span>' : '<span class="step8-current-badge">精确 Mask v2</span>'}
+              ${item.is_legacy ? '<span class="step8-legacy-badge">旧设置/旧算法</span>' : '<span class="step8-current-badge">外围白底透明 v3</span>'}
             </strong>
             <span>${escHtml(created || item.filename || '')}</span>
           </div>

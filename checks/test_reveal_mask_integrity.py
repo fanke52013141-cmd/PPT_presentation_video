@@ -10,7 +10,9 @@ from scripts.build_reveal_scene import (
     MASKED_COMPOSITION_METHOD,
     PIPELINE_VERSION,
     compose_slide,
+    fill_enclosed_mask_holes,
     manual_mask_alpha,
+    manual_mask_has_eraser,
 )
 from scripts.validate_reveal_scene import validate_scene as validate_reveal_output
 
@@ -27,6 +29,17 @@ def make_master(path: Path) -> Image.Image:
     draw.rectangle((225, 50, 295, 130), fill="#a7c8ef")
     image.save(path)
     return image
+
+
+hole_mask = Image.new("L", (40, 30), 0)
+hole_draw = ImageDraw.Draw(hole_mask)
+hole_draw.rectangle((5, 5, 34, 24), fill=255)
+hole_draw.rectangle((15, 10, 24, 19), fill=0)
+filled_mask, filled_count = fill_enclosed_mask_holes(hole_mask)
+assert filled_count == 100
+assert filled_mask.getpixel((20, 15)) == 255
+assert manual_mask_has_eraser({"strokes": [{"mode": "erase", "points": []}]})
+assert not manual_mask_has_eraser({"strokes": [{"mode": "paint", "points": []}]})
 
 
 def painted_group(group_id: str, x: int, y: int, width: int = 46) -> dict:
@@ -99,7 +112,7 @@ with tempfile.TemporaryDirectory() as temp_dir_value:
     assert painted_scene["composition"]["pipeline_version"] == PIPELINE_VERSION
     assert painted_scene["composition"]["source_image_used_for_background"] is False
     assert painted_report["pipeline_version"] == PIPELINE_VERSION
-    assert painted_report["background_normalization"]["method"] == "corner_connected_pixels_only"
+    assert painted_report["background_normalization"]["method"] == "outer_connected_near_white_only"
     assert not (painted_dir / "assets" / "stale-old-algorithm.png").exists()
     validate_reveal_output(painted_dir, root, 320, 180, require_no_blocking=False)
 
@@ -125,7 +138,7 @@ with tempfile.TemporaryDirectory() as temp_dir_value:
     uncovered_preview = Image.open(painted_dir / "assets" / "manual_mask_uncovered.png").convert("RGB")
     red_pixel = uncovered_preview.getpixel((290, 90))
     assert red_pixel[0] > 240 and red_pixel[1] < 100 and red_pixel[2] < 100
-    assert painted_report["foreground_diagnostics"]["required_coverage_ratio"] == 0.985
+    assert painted_report["foreground_diagnostics"]["required_coverage_ratio"] == 0.999
 
     edge_mask = manual_mask_alpha(
         {

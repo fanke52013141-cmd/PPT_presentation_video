@@ -206,6 +206,13 @@
             <button id="step3-btn-style" class="secondary" style="font-size: 0.85rem; padding: 0.35rem 0.9rem;">
               图片风格设置
             </button>
+            <div class="step3-video-background-control" title="透明图层最终合成时使用的纯色背景">
+              <span>视频背景</span>
+              <input id="step3-video-background-color" type="color" value="#FEFDF9" aria-label="选择最终视频背景色">
+              <input id="step3-video-background-text" type="text" value="#FEFDF9" maxlength="7" spellcheck="false" aria-label="最终视频背景色十六进制">
+              <button id="step3-video-background-apply" type="button">应用</button>
+              <span id="step3-video-background-status" class="step2-autosave-status"></span>
+            </div>
             <button id="step3-btn-confirm" class="success" style="display: none; margin-left: auto; font-size: 0.85rem; padding: 0.35rem 0.9rem;">
               确认所有图片，进入标注步骤
               <svg class="icon" viewBox="0 0 24 24" style="width:14px; height:14px; stroke-width:2.5;"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
@@ -678,6 +685,6 @@
 
   <!-- 主业务 JavaScript 脚本 -->
   <script src="flow.js?v=1.0.0"></script>
-  <script src="app.js?v=2.6.1"></script>
+  <script src="app.js?v=2.7.0"></script>
 </body>
 </html>

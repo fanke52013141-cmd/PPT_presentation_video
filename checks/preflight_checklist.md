@@ -10,7 +10,7 @@
 
 ## Exact Mask Invariants
 
-- Pipeline version is `manual_mask_exact_v2`.
+- Pipeline version is `manual_mask_outer_white_v3`.
 - A page without painted Masks uses `full_slide_static`.
 - A page with Masks uses `solid_background_manual_mask_exact`.
 - Masked pages declare `source_image_used_for_background=false`.
@@ -62,6 +62,7 @@ These scripts are not part of production:
 - Audio has not been confirmed.
 - Blocking reveal warning.
 - Runtime assets are missing or stale.
+- Mask foreground coverage is below 99.9%.
 
 ## Safety
 

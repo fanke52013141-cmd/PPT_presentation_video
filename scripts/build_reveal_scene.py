@@ -23,19 +23,19 @@ from typing import Any
 from PIL import Image, ImageChops, ImageDraw
 
 try:
-    from scripts.background_color import normalize_connected_background
+    from scripts.background_color import connected_content_alpha, normalize_connected_background
 except ModuleNotFoundError:
-    from background_color import normalize_connected_background
+    from background_color import connected_content_alpha, normalize_connected_background
 
 
-PIPELINE_VERSION = "manual_mask_exact_v2"
+PIPELINE_VERSION = "manual_mask_outer_white_v3"
 MASKED_COMPOSITION_METHOD = "solid_background_manual_mask_exact"
-MIN_FOREGROUND_COVERAGE_RATIO = 0.985
+MIN_FOREGROUND_COVERAGE_RATIO = 0.999
 STATIC_COMPOSITION_METHOD = "full_slide_static"
 DEFAULT_CANVAS = {
     "width": 1920,
     "height": 1080,
-    "background": "#FFFDF7",
+    "background": "#FEFDF9",
     "subtitle_safe_y": 930,
 }
 DEFAULT_REVEAL_DURATION_SEC = 0.12
@@ -192,12 +192,34 @@ def reset_assets_dir(assets_dir: Path) -> None:
     assets_dir.mkdir(parents=True, exist_ok=True)
 
 
-def foreground_alpha(master: Image.Image, background_rgb: tuple[int, int, int], threshold: int = 12) -> Image.Image:
-    """Build a diagnostics-only map of source pixels that differ from the fixed background."""
-    background = Image.new("RGB", master.size, background_rgb)
-    red, green, blue = ImageChops.difference(master, background).split()
-    maximum = ImageChops.lighter(ImageChops.lighter(red, green), blue)
-    return maximum.point(lambda value: 255 if value > threshold else 0)
+def manual_mask_has_eraser(manual_mask: Any) -> bool:
+    if not isinstance(manual_mask, dict):
+        return False
+    strokes = manual_mask.get("strokes")
+    if not isinstance(strokes, list):
+        return False
+    return any(
+        isinstance(stroke, dict)
+        and (
+            bool(stroke.get("eraser"))
+            or str(stroke.get("mode", "")).lower() == "erase"
+            or str(stroke.get("tool", "")).lower() == "erase"
+        )
+        for stroke in strokes
+    )
+
+
+def fill_enclosed_mask_holes(alpha: Image.Image) -> tuple[Image.Image, int]:
+    """Fill only fully enclosed holes; the user's painted outer boundary is unchanged."""
+    binary = alpha.point(lambda value: 255 if value > 0 else 0)
+    background = ImageChops.invert(binary)
+    padded = Image.new("L", (alpha.width + 2, alpha.height + 2), 255)
+    padded.paste(background, (1, 1))
+    ImageDraw.floodfill(padded, (0, 0), 128, thresh=0)
+    exterior = padded.crop((1, 1, alpha.width + 1, alpha.height + 1))
+    holes = exterior.point(lambda value: 255 if value == 255 else 0)
+    hole_pixel_count = holes.histogram()[255]
+    return ImageChops.lighter(alpha, holes), int(hole_pixel_count)
 
 
 def count_mask_pixels(alpha: Image.Image) -> int:
@@ -215,6 +237,7 @@ def static_slide_outputs(
     default_duration_sec: float,
     input_group_count: int,
     source_sha256: str,
+    normalized_background_pixel_count: int,
 ) -> None:
     assets_dir = slide_dir / "assets"
     master.save(assets_dir / "full_slide.png", format="PNG")
@@ -249,6 +272,11 @@ def static_slide_outputs(
         "method": STATIC_COMPOSITION_METHOD,
         "pipeline_version": PIPELINE_VERSION,
         "manual_mask_only": True,
+        "background": background,
+        "background_normalization": {
+            "method": "outer_connected_near_white_only",
+            "normalized_pixel_count": normalized_background_pixel_count,
+        },
         "source_sha256": source_sha256,
         "warnings": [],
         "input_group_count": input_group_count,
@@ -306,6 +334,11 @@ def compose_slide(
         if alpha is not None:
             painted_groups.append((group, alpha))
 
+    source_content_alpha = connected_content_alpha(master)
+    master, normalized_background_pixel_count = normalize_connected_background(
+        master,
+        background_rgb,
+    )
     default_duration_sec = float(slide.get("default_duration_sec", 12.0))
     if not painted_groups:
         static_slide_outputs(
@@ -319,13 +352,10 @@ def compose_slide(
             default_duration_sec=default_duration_sec,
             input_group_count=len(groups),
             source_sha256=source_sha256,
+            normalized_background_pixel_count=normalized_background_pixel_count,
         )
         return
 
-    master, normalized_background_pixel_count = normalize_connected_background(
-        master,
-        background_rgb,
-    )
     base_image = Image.new("RGB", (width, height), background_rgb)
     base_image.save(assets_dir / "base_slide.png", format="PNG")
     master.save(assets_dir / "full_slide.png", format="PNG")
@@ -344,8 +374,20 @@ def compose_slide(
     warnings: list[dict[str, Any]] = []
     group_reports: list[dict[str, Any]] = []
 
-    for index, (group, alpha) in enumerate(painted_groups, start=1):
+    for index, (group, manual_alpha) in enumerate(painted_groups, start=1):
         group_id = str(group["id"])
+        has_explicit_eraser = manual_mask_has_eraser(group.get("manual_mask"))
+        filled_hole_pixel_count = 0
+        if not has_explicit_eraser:
+            manual_alpha, filled_hole_pixel_count = fill_enclosed_mask_holes(manual_alpha)
+        alpha = ImageChops.multiply(manual_alpha, source_content_alpha)
+        if not alpha.getbbox():
+            warnings.append({
+                "severity": "warning",
+                "type": "manual_mask_contains_only_outer_background",
+                "group_id": group_id,
+            })
+            continue
         source_box = alpha_box(alpha, width, height)
         if source_box["y"] + source_box["h"] > subtitle_safe_y and str(group.get("role", "")) != "decoration":
             warnings.append({
@@ -386,11 +428,13 @@ def compose_slide(
             "mask_pixel_count": int(sum(1 for value in alpha.tobytes() if value > 0)),
             "mask_sha256": sha256_bytes(alpha.tobytes()),
             "manual_mask_sha256": json_fingerprint(group.get("manual_mask")),
+            "explicit_eraser": has_explicit_eraser,
+            "filled_enclosed_hole_pixel_count": filled_hole_pixel_count,
         })
 
     union_alpha.save(assets_dir / "manual_mask_union.png", format="PNG")
     union_composite.convert("RGB").save(assets_dir / "manual_mask_composite.png", format="PNG")
-    source_foreground = foreground_alpha(master, background_rgb)
+    source_foreground = source_content_alpha
     covered_foreground = ImageChops.multiply(source_foreground, union_alpha)
     uncovered_foreground = ImageChops.subtract(source_foreground, covered_foreground)
     source_foreground_count = count_mask_pixels(source_foreground)
@@ -428,7 +472,7 @@ def compose_slide(
             "manual_mask_only": True,
             "background_source": "canvas.background",
             "source_image_used_for_background": False,
-            "background_normalization": "corner_connected_pixels_only",
+            "background_normalization": "outer_connected_near_white_only",
         },
     }
     duration = max(
@@ -450,13 +494,13 @@ def compose_slide(
         "background_source": "canvas.background",
         "source_image_used_for_background": False,
         "background_normalization": {
-            "method": "corner_connected_pixels_only",
+            "method": "outer_connected_near_white_only",
             "normalized_pixel_count": normalized_background_pixel_count,
         },
         "source_sha256": source_sha256,
         "mask_union_sha256": sha256_bytes(union_alpha.tobytes()),
         "foreground_diagnostics": {
-            "threshold": 12,
+            "background_rule": "outer-connected pixels with RGB channels >=245 and chroma <=12",
             "required_coverage_ratio": MIN_FOREGROUND_COVERAGE_RATIO,
             "source_foreground_pixel_count": source_foreground_count,
             "covered_foreground_pixel_count": covered_foreground_count,
@@ -467,7 +511,7 @@ def compose_slide(
         },
         "warnings": warnings,
         "input_group_count": len(groups),
-        "group_count": len(painted_groups),
+        "group_count": len(group_reports),
         "layer_count": len(layers),
         "fallback_full_slide": False,
         "groups": group_reports,

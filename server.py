@@ -9,7 +9,6 @@ import logging
 import subprocess
 import re
 from datetime import datetime
-from pathlib import Path
 from typing import Optional, List, Dict, Any
 
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Query
@@ -18,11 +17,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from PIL import Image, ImageChops
+from PIL import Image
 import httpx
 import yaml
 from openai import OpenAI
-from scripts.background_color import detect_project_background, normalize_connected_background, rgb_to_hex
+from scripts.background_color import connected_content_alpha, normalize_connected_background
 
 def get_openai_client(api_key: str, base_url: str = None) -> OpenAI:
     # 强制不使用环境变量中的代理，防止某些局域网代理的 SSL 拦截规则冲突
@@ -66,8 +65,11 @@ STYLE_REFERENCE_FILES = {
     "template": "PPT模板.png",
     "example": "PPT示例.png",
 }
-REVEAL_PIPELINE_VERSION = "manual_mask_exact_v2"
-MASK_MIN_COVERAGE_RATIO = 0.985
+REVEAL_PIPELINE_VERSION = "manual_mask_outer_white_v3"
+MASK_MIN_COVERAGE_RATIO = 0.999
+IMAGE_GENERATION_BACKGROUND = "#FFFFFF"
+DEFAULT_VIDEO_BACKGROUND = "#FEFDF9"
+PROJECT_VISUAL_SETTINGS_FILE = "visual_settings.json"
 
 # Pydantic 响应模型
 class ProjectCreate(BaseModel):
@@ -96,13 +98,18 @@ class TestTtsPayload(BaseModel):
     model: str
     voice_id: str
 
-# 图片后处理：将任意尺寸等比例缩放，并居中贴在 #FFFDF7 暖白背景的 1920x1080 画布上
+# 图片后处理：将任意尺寸等比例缩放，并居中贴在纯白 1920x1080 生图画布上
 def process_and_save_image(image_bytes: bytes, save_path: str):
-    bg_color = (255, 253, 247)  # #FFFDF7
+    bg_color = (255, 255, 255)
     target_width, target_height = 1920, 1080
     
     img = Image.open(io.BytesIO(image_bytes))
-    if img.mode != "RGB":
+    if img.mode in ("RGBA", "LA") or "transparency" in img.info:
+        rgba = img.convert("RGBA")
+        white = Image.new("RGBA", rgba.size, (*bg_color, 255))
+        white.alpha_composite(rgba)
+        img = white.convert("RGB")
+    elif img.mode != "RGB":
         img = img.convert("RGB")
         
     img_ratio = img.width / img.height
@@ -122,6 +129,7 @@ def process_and_save_image(image_bytes: bytes, save_path: str):
     paste_x = (target_width - new_width) // 2
     paste_y = (target_height - new_height) // 2
     final_img.paste(resized_img, (paste_x, paste_y))
+    final_img, _ = normalize_connected_background(final_img, bg_color)
     
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     final_img.save(save_path, "PNG")
@@ -534,30 +542,88 @@ def sync_reveal_manifest_to_contract(project: Project, slide_ids: Optional[List[
     return True
 
 
+def normalize_hex_color(value: Any, fallback: str = DEFAULT_VIDEO_BACKGROUND) -> str:
+    text = str(value or "").strip().upper()
+    if re.fullmatch(r"#[0-9A-F]{6}", text):
+        return text
+    return fallback
+
+
+def project_visual_settings_path(project: Project) -> str:
+    return os.path.join(project.run_dir, PROJECT_VISUAL_SETTINGS_FILE)
+
+
+def read_project_visual_settings(project: Project) -> Dict[str, str]:
+    path = project_visual_settings_path(project)
+    payload: Dict[str, Any] = {}
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as file:
+                value = json.load(file)
+            if isinstance(value, dict):
+                payload = value
+        except Exception as exc:
+            logger.warning("Failed to read project visual settings: %s", exc)
+    return {
+        "generation_background": IMAGE_GENERATION_BACKGROUND,
+        "video_background": normalize_hex_color(payload.get("video_background")),
+    }
+
+
+def write_project_visual_settings(project: Project, video_background: str) -> Dict[str, str]:
+    settings = {
+        "generation_background": IMAGE_GENERATION_BACKGROUND,
+        "video_background": normalize_hex_color(video_background),
+    }
+    with open(project_visual_settings_path(project), "w", encoding="utf-8") as file:
+        json.dump(settings, file, ensure_ascii=False, indent=2)
+    return settings
+
+
 def sync_project_background_color(project: Project) -> Optional[str]:
-    """Detect one canonical background color from all current slide borders."""
+    """Apply the user-selected final video background to the reveal manifest."""
     manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
     if not os.path.exists(manifest_path):
         return None
-    slide_ids = read_contract_slide_ids(project.run_dir)
-    image_paths = [
-        Path(project.run_dir) / "slides" / slide_id / "visual_draft.png"
-        for slide_id in slide_ids
-    ]
-    background_rgb, detected = detect_project_background(image_paths)
-    background_hex = rgb_to_hex(background_rgb)
+    settings = read_project_visual_settings(project)
+    background_hex = settings["video_background"]
     with open(manifest_path, "r", encoding="utf-8") as file:
         manifest = json.load(file)
     canvas = manifest.setdefault("canvas", {})
     canvas["background"] = background_hex
-    manifest["background_detection"] = {
-        "method": "median_of_slide_border_medians",
-        "color": background_hex,
-        "slides": detected,
+    manifest.pop("background_detection", None)
+    manifest["background_settings"] = {
+        "generation_background": IMAGE_GENERATION_BACKGROUND,
+        "video_background": background_hex,
+        "outer_background_removal": "outer_connected_near_white_only",
     }
     with open(manifest_path, "w", encoding="utf-8") as file:
         json.dump(manifest, file, ensure_ascii=False, indent=2)
     return background_hex
+
+
+def invalidate_video_background_derivatives(project: Project, db: Session) -> None:
+    for slide_id in read_contract_slide_ids(project.run_dir):
+        slide_dir = os.path.join(project.run_dir, "slides", slide_id)
+        for filename in ("scene.json", "animation_timeline.json", "reveal_report.json"):
+            path = os.path.join(slide_dir, filename)
+            if os.path.exists(path):
+                os.remove(path)
+        assets_dir = os.path.join(slide_dir, "assets")
+        if os.path.isdir(assets_dir):
+            shutil.rmtree(assets_dir)
+    props_path = os.path.join(project.run_dir, "remotion_props.json")
+    if os.path.exists(props_path):
+        os.remove(props_path)
+    current_status = project.get_step_status()
+    for step_key in ("5", "8"):
+        if current_status.get(step_key) == "completed":
+            current_status[step_key] = "pending_reconfirmation"
+        elif current_status.get(step_key) != "pending":
+            current_status[step_key] = "pending"
+    project.current_step = 3
+    project.set_step_status(current_status)
+    db.commit()
 
 
 def sync_narration_beats_to_contract(project: Project, slide_ids: Optional[List[str]] = None) -> bool:
@@ -1736,6 +1802,30 @@ IMAGE_STYLE_VISUAL_ASSET_FIELDS = {
 }
 
 
+@app.get("/api/projects/{project_id}/steps/3/visual-settings")
+def get_step3_visual_settings(project_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    return {"success": True, **read_project_visual_settings(project)}
+
+
+@app.put("/api/projects/{project_id}/steps/3/visual-settings")
+def update_step3_visual_settings(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    raw_color = str(payload.get("video_background") or "").strip().upper()
+    if not re.fullmatch(r"#[0-9A-F]{6}", raw_color):
+        raise HTTPException(status_code=400, detail="视频背景色必须是 #RRGGBB 格式")
+    previous = read_project_visual_settings(project)
+    settings = write_project_visual_settings(project, raw_color)
+    sync_project_background_color(project)
+    if previous["video_background"] != settings["video_background"]:
+        invalidate_video_background_derivatives(project, db)
+    return {"success": True, **settings}
+
+
 def read_style_tokens_data() -> Dict[str, Any]:
     with open(STYLE_TOKENS_PATH, "r", encoding="utf-8") as f:
         payload = yaml.safe_load(f) or {}
@@ -1799,6 +1889,16 @@ def merge_image_style_update(
         for editor_key, editor_value in value.items():
             existing_assets[IMAGE_STYLE_VISUAL_ASSET_FIELDS[editor_key]] = copy.deepcopy(editor_value)
         merged["visual_assets"] = existing_assets
+    canvas = merged.setdefault("canvas", {})
+    if isinstance(canvas, dict):
+        canvas["background"] = IMAGE_GENERATION_BACKGROUND
+    colors = merged.setdefault("colors", {})
+    if isinstance(colors, dict):
+        for key in ("background", "surface", "paper"):
+            colors[key] = IMAGE_GENERATION_BACKGROUND
+    assets = merged.setdefault("visual_assets", {})
+    if isinstance(assets, dict):
+        assets["required_background"] = "flat_uniform_pure_white"
     return merged
 
 
@@ -1817,8 +1917,10 @@ def build_image_style_prompt(style_tokens: Dict[str, Any]) -> str:
     aspect_ratio = canvas.get("aspect_ratio", "16:9")
     width = canvas.get("width", 1920)
     height = canvas.get("height", 1080)
-    background = canvas.get("background") or colors.get("background") or "#FFFDF7"
-    lines.append(f"- 画布：{aspect_ratio}，按 {width}x{height} 构图，纯色背景 {background}。")
+    lines.append(
+        f"- 画布：{aspect_ratio}，按 {width}x{height} 构图。"
+        f"生图工作背景必须是纯白 {IMAGE_GENERATION_BACKGROUND}。"
+    )
 
     palette_keys = ("ink", "yellow", "yellow_soft", "green_soft", "blue_soft")
     palette = [str(colors[key]) for key in palette_keys if colors.get(key)]
@@ -1849,6 +1951,8 @@ def build_image_style_prompt(style_tokens: Dict[str, Any]) -> str:
         lines.append(f"- 避免：{'、'.join(str(item) for item in avoid if item)}。")
 
     lines.append("- 参考图优先：字体感觉、线条粗细、配色、留白和视觉层级以附带的模板图与示例图为准。")
+    lines.append("- 四条边和四个角必须保持连续纯白，不要纸纹、阴影、噪声、渐变或暗角。")
+    lines.append("- 卡片、文字和图标内部允许使用白色；系统只会移除与画面外围连通的白色。")
     lines.append("- 只生成最终静态整页图片，不要加入图层名称、制作说明或播放器界面。")
     return "\n".join(lines)
 
@@ -1949,6 +2053,16 @@ def generate_prompt_for_slide(slide: Dict[str, Any], topic_name: str) -> str:
         f"{style_prompt}"
     )
 
+
+def enforce_white_generation_background(prompt: str) -> str:
+    return (
+        f"{prompt.strip()}\n\n"
+        "不可覆盖的背景要求：整张图片的工作背景必须是纯白 #FFFFFF。"
+        "四条边和四个角必须连续纯白；不要米白、暖白、纸纹、噪声、阴影、渐变或暗角。"
+        "不要把纯白背景画进卡片或内容轮廓之外的装饰区域。"
+    )
+
+
 @app.get("/api/projects/{project_id}/steps/3/prompts")
 def get_slide_prompts(project_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -2005,7 +2119,8 @@ def generate_slide_image(
         import base64 as b64lib
         client = get_openai_client(api_key=api_key, base_url=base_url)
         image_size = get_setting("image_size", "1024x1024")
-        logger.info(f"Generating image for {slide_id} using {model}, size={image_size}, prompt: {prompt[:80]}")
+        effective_prompt = enforce_white_generation_background(prompt)
+        logger.info(f"Generating image for {slide_id} using {model}, size={image_size}, prompt: {effective_prompt[:80]}")
 
         response = None
         reference_paths = [
@@ -2020,7 +2135,7 @@ def generate_slide_image(
                 response = client.images.edit(
                     model=model,
                     image=reference_files,
-                    prompt=prompt,
+                    prompt=effective_prompt,
                     size=image_size,
                     n=1,
                 )
@@ -2035,7 +2150,7 @@ def generate_slide_image(
             try:
                 response = client.images.generate(
                     model=model,
-                    prompt=prompt,
+                    prompt=effective_prompt,
                     size=image_size,
                     quality="standard",
                     n=1
@@ -2047,7 +2162,7 @@ def generate_slide_image(
                 )
                 response = client.images.generate(
                     model=model,
-                    prompt=prompt,
+                    prompt=effective_prompt,
                     n=1
                 )
 
@@ -2128,8 +2243,7 @@ def get_slide_foreground_mask_file(project_id: str, slide_id: str, db: Session =
     if not os.path.exists(img_path):
         raise HTTPException(status_code=404, detail="图片不存在")
 
-    sync_project_background_color(project)
-    canvas = {"width": 1920, "height": 1080, "background": "#FFFDF7"}
+    canvas = {"width": 1920, "height": 1080}
     manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
     if os.path.exists(manifest_path):
         with open(manifest_path, "r", encoding="utf-8") as file:
@@ -2142,23 +2256,12 @@ def get_slide_foreground_mask_file(project_id: str, slide_id: str, db: Session =
 
     width = int(canvas.get("width") or 1920)
     height = int(canvas.get("height") or 1080)
-    background_hex = str(canvas.get("background") or "#FFFDF7").lstrip("#")
-    if len(background_hex) == 3:
-        background_hex = "".join(value * 2 for value in background_hex)
-    try:
-        background_rgb = tuple(int(background_hex[offset:offset + 2], 16) for offset in (0, 2, 4))
-    except (TypeError, ValueError):
-        background_rgb = (255, 253, 247)
 
     with Image.open(img_path) as source_image:
         source = source_image.convert("RGB")
     if source.size != (width, height):
         source = source.resize((width, height), Image.Resampling.LANCZOS)
-    source, _ = normalize_connected_background(source, background_rgb)
-    background = Image.new("RGB", source.size, background_rgb)
-    red, green, blue = ImageChops.difference(source, background).split()
-    maximum = ImageChops.lighter(ImageChops.lighter(red, green), blue)
-    foreground = maximum.point(lambda value: 255 if value > 12 else 0)
+    foreground = connected_content_alpha(source)
     foreground_rgba = Image.new("RGBA", source.size, (255, 255, 255, 0))
     foreground_rgba.putalpha(foreground)
     output = io.BytesIO()
@@ -3524,19 +3627,25 @@ def read_video_metadata(path: str) -> Dict[str, Any]:
         return {}
 
 
-def video_item(project_id: str, path: str, label: Optional[str] = None) -> Dict[str, Any]:
+def video_item(project: Project, path: str, label: Optional[str] = None) -> Dict[str, Any]:
     stat = os.stat(path)
     filename = os.path.basename(path)
     metadata = read_video_metadata(path)
     pipeline_version = str(metadata.get("reveal_pipeline_version") or "")
+    video_background = normalize_hex_color(metadata.get("video_background"), fallback="")
+    current_background = read_project_visual_settings(project)["video_background"]
     return {
         "filename": filename,
         "label": label or filename,
         "size": stat.st_size,
         "created_at": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
-        "url": f"/api/projects/{project_id}/videos/{filename}",
+        "url": f"/api/projects/{project.id}/videos/{filename}",
         "reveal_pipeline_version": pipeline_version or None,
-        "is_legacy": pipeline_version != REVEAL_PIPELINE_VERSION,
+        "video_background": video_background or None,
+        "is_legacy": (
+            pipeline_version != REVEAL_PIPELINE_VERSION
+            or video_background != current_background
+        ),
     }
 
 
@@ -3547,10 +3656,10 @@ def list_video_items(project: Project, project_id: str) -> List[Dict[str, Any]]:
         for name in os.listdir(videos_dir):
             path = os.path.join(videos_dir, name)
             if os.path.isfile(path) and name.lower().endswith(".mp4"):
-                items.append(video_item(project_id, path))
+                items.append(video_item(project, path))
     legacy_path = os.path.join(project.run_dir, "out.mp4")
     if os.path.exists(legacy_path) and not items:
-        legacy = video_item(project_id, legacy_path, "out.mp4")
+        legacy = video_item(project, legacy_path, "out.mp4")
         legacy["url"] = f"/api/projects/{project_id}/video"
         items.append(legacy)
     items.sort(key=lambda item: item["created_at"], reverse=True)
@@ -3664,6 +3773,7 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
             {
                 "rendered_at": datetime.now().isoformat(timespec="seconds"),
                 "reveal_pipeline_version": REVEAL_PIPELINE_VERSION,
+                "video_background": read_project_visual_settings(project)["video_background"],
                 "manifest": "reveal_manifest.json",
                 "color_standard": "bt709_tv_yuv420p",
                 "color_validation": json.loads(color_result.stdout),
@@ -3675,7 +3785,7 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
     shutil.copy2(output_mp4_path, legacy_output_path)
 
     handle_step_navigation(project, 8, db)
-    item = video_item(project_id, output_mp4_path)
+    item = video_item(project, output_mp4_path)
     return {"success": True, "video_url": item["url"], "video": item, "videos": list_video_items(project, project_id)}
 
 @app.get("/api/projects/{project_id}/videos")

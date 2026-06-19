@@ -14,7 +14,7 @@ canvas:
   aspect_ratio: "16:9"
   width: 1920
   height: 1080
-  background: "#FFFDF7"
+  background: "#FFFFFF"
   safe_margin:
     x: 60
     y: 55
@@ -23,8 +23,8 @@ canvas:
     y: 930
 
 colors:
-  background: "#FFFDF7"
-  surface: "#FFFDF7"
+  background: "#FFFFFF"
+  surface: "#FFFFFF"
   ink: "#111111"
   muted_ink: "#1A1A1A"
   subtle_ink: "#4A4A4A"
@@ -36,7 +36,7 @@ colors:
   blue_soft: "#BDE0FE"
   subtitle_text: "#111111"
   subtitle_background: warm_white_82
-  paper: "#FFFDF7"
+  paper: "#FFFFFF"
 
 layout:
   title_marker:
@@ -113,9 +113,9 @@ visual_assets:
   example_reference_image: references/style_reference/PPT示例.png
   image_style: warm_minimal_handdrawn_line_art
   diagram_style: handdrawn_explainer_diagram
-  required_background: flat_uniform_warm_white
+  required_background: flat_uniform_pure_white
   reveal_friendly_layout:
-    - "使用纯净平面 #FFFDF7 背景，不要纸纹、噪声、阴影、渐变或暗角。"
+    - "使用纯净平面 #FFFFFF 背景；四条边和四个角必须连续纯白，不要纸纹、噪声、阴影、渐变或暗角。"
     - 每页 5-8 个大 visual group，每个 group 有短中文 visible_text。
     - 每个 group 必须能被一个矩形区域完整覆盖。
     - 独立 group 之间保留 80-120px 干净背景。
@@ -143,7 +143,7 @@ reveal:
   recommended_group_gap_px: 120
   fog:
     blur_px: 16
-    overlay_color: "#FFFDF7"
+    overlay_color: "#FEFDF9"
     overlay_opacity: 0.68
     diagonal_angle: 135
     feather_px: 16

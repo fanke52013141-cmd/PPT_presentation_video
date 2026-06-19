@@ -12,7 +12,7 @@ def main() -> None:
     builder = (ROOT / "scripts" / "build_reveal_scene.py").read_text(encoding="utf-8")
     preflight = (ROOT / "scripts" / "run_reveal_preflight.ps1").read_text(encoding="utf-8")
 
-    assert 'REVEAL_PIPELINE_VERSION = "manual_mask_exact_v2"' in server
+    assert 'REVEAL_PIPELINE_VERSION = "manual_mask_outer_white_v3"' in server
     assert "build_current_reveal_assets(project)" in server
     assert '"--image-format=png"' in server
     assert '"--pixel-format=yuv420p"' in server
@@ -33,7 +33,7 @@ def main() -> None:
     for symbol in forbidden_builder_symbols:
         assert symbol not in builder, symbol
 
-    assert 'PIPELINE_VERSION = "manual_mask_exact_v2"' in builder
+    assert 'PIPELINE_VERSION = "manual_mask_outer_white_v3"' in builder
     assert '"source_image_used_for_background": False' in builder
     print("reveal pipeline isolation checks passed")
 

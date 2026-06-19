@@ -284,7 +284,7 @@ const SlideView: React.FC<{slide: Slide}> = ({slide}) => {
   const layers = slide.scene.layers ?? [];
 
   return (
-    <AbsoluteFill style={{background: slide.scene.canvas.background || '#FFFDF7'}}>
+    <AbsoluteFill style={{background: slide.scene.canvas.background || '#FEFDF9'}}>
       {background ? <Img src={background} style={{position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover'}} /> : null}
       {layers
         .slice()
@@ -334,7 +334,7 @@ const SlideView: React.FC<{slide: Slide}> = ({slide}) => {
 export const ArticleVideo: React.FC<ArticleVideoProps> = ({slides}) => {
   const {fps} = useVideoConfig();
   return (
-    <AbsoluteFill style={{background: '#FFFDF7'}}>
+    <AbsoluteFill style={{background: '#FEFDF9'}}>
       {slides.map((slide) => (
         <Sequence
           key={slide.slide_id}

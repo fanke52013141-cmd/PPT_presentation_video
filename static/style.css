@@ -1279,6 +1279,49 @@ input.step2-soft-input:focus {
   overflow-wrap: anywhere;
 }
 
+.step3-video-background-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  min-height: 34px;
+  padding: 0.22rem 0.48rem;
+  border: 1.5px solid var(--ink-color);
+  border-radius: 8px;
+  background: #fff;
+  font-size: 0.76rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+#step3-video-background-color {
+  width: 30px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid #aaa;
+  border-radius: 5px;
+  background: transparent;
+  cursor: pointer;
+}
+
+#step3-video-background-text {
+  width: 78px;
+  padding: 0.22rem 0.35rem;
+  border: 1px solid #aaa;
+  border-radius: 5px;
+  font-family: Consolas, monospace;
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+#step3-video-background-apply {
+  min-height: 26px;
+  padding: 0.18rem 0.48rem;
+  border-width: 1px;
+  border-radius: 5px;
+  font-size: 0.72rem;
+}
+
 .step3-card-status {
   padding: 1px 4px;
   border: 1.5px solid var(--ink-color);

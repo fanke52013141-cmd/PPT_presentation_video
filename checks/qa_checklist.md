@@ -15,7 +15,9 @@
 
 - Source images are 1920×1080.
 - Masked pages start from the fixed background, not the full source image.
-- Each reveal contains only its painted Mask pixels.
+- Each reveal contains only its painted Mask pixels after outer-white removal.
+- Fully enclosed Mask holes are filled only when no eraser stroke exists; explicit erasing is preserved.
+- Mask foreground coverage must be at least 99.9%.
 - No-Mask pages display the complete image from the first frame.
 - No clipped text, missing card edges, floating fragments, or stale layers.
 - Subtitles do not obscure important content.
@@ -30,7 +32,7 @@
 ## Export
 
 - MP4 plays normally at 1920×1080.
-- New videos carry `manual_mask_exact_v2` metadata.
+- New videos carry `manual_mask_outer_white_v3` metadata.
 - Historical videos are visibly marked as legacy.
 
 ## Regression

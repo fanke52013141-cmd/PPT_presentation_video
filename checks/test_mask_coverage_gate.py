@@ -20,7 +20,7 @@ def write_report(root: Path, slide_id: str, ratio: float, fallback: bool = False
                 "fallback_full_slide": fallback,
                 "foreground_diagnostics": {
                     "coverage_ratio": ratio,
-                    "required_coverage_ratio": 0.985,
+                    "required_coverage_ratio": 0.999,
                     "uncovered_foreground_pixel_count": 120,
                 },
             }
@@ -51,17 +51,19 @@ with tempfile.TemporaryDirectory() as temp_dir_value:
     project = SimpleNamespace(run_dir=str(root))
 
     failures = mask_coverage_failures(project)
-    assert [item["slide_id"] for item in failures] == ["slide_001"]
+    assert [item["slide_id"] for item in failures] == ["slide_001", "slide_002"]
     try:
         ensure_mask_coverage_ready(project)
     except HTTPException as exc:
         assert exc.status_code == 400
         assert "slide_001" in str(exc.detail)
+        assert "slide_002" in str(exc.detail)
         assert "不会自动扩大或修补" in str(exc.detail)
     else:
         raise AssertionError("incomplete mask coverage was not blocked")
 
-    write_report(root, "slide_001", 0.99)
+    write_report(root, "slide_001", 0.9995)
+    write_report(root, "slide_002", 0.9995)
     ensure_mask_coverage_ready(project)
 
 print("mask coverage gate checks passed")

@@ -12,7 +12,7 @@ from build_reveal_scene import RevealBuildError, build_manifest, read_json
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Deprecated alias for build_reveal_scene.py using manual_mask_exact_v2."
+        description="Deprecated alias for build_reveal_scene.py using manual_mask_outer_white_v3."
     )
     parser.add_argument("--run-dir", required=True, type=Path)
     parser.add_argument("--repo-root", default=Path("."), type=Path)
@@ -34,7 +34,7 @@ def main() -> int:
         return 1
     print(
         "prepare_full_slide_scenes.py is deprecated; "
-        f"built manual_mask_exact_v2 assets for {count} slide(s)."
+        f"built manual_mask_outer_white_v3 assets for {count} slide(s)."
     )
     return 0
 

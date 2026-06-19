@@ -14,6 +14,11 @@ if (!/\.step3-card-title\s*\{[^}]*min-height:\s*0/s.test(css)) throw new Error('
 if (html.includes('config_effectiveness.js')) throw new Error('runtime patch script is still loaded');
 if (!html.includes('btn-storyboard-rules-save-regenerate')) throw new Error('storyboard regenerate action missing');
 if (!html.includes('step3-btn-batch-generate')) throw new Error('step 3 batch image generation action missing');
+if (!html.includes('step3-video-background-color') || !html.includes('step3-video-background-text')) {
+  throw new Error('project video background color controls missing');
+}
+if (!html.includes('step3-video-background-apply')) throw new Error('video background apply button missing');
+if (!app.includes('saveStep3VideoBackground')) throw new Error('video background color save handler missing');
 if (!app.includes('generateAllStep3Images')) throw new Error('step 3 batch generation handler missing');
 if (!app.includes('step3GeneratingSlides')) throw new Error('step 3 per-slide generation state missing');
 if (!app.includes('tasks.forEach(task => step3GeneratingSlides.add(task.slideId))')) {

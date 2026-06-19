@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PPT Visualization Studio - 手绘线稿风格</title>
-  <link rel="stylesheet" href="style.css?v=2.0.6">
+  <link rel="stylesheet" href="style.css?v=2.1.0">
 </head>
 <body>
 
@@ -80,14 +80,10 @@
           </li>
           <li class="step-item" data-step="6">
             <div class="step-num">5</div>
-            <div class="step-label">演讲稿编辑</div>
-          </li>
-          <li class="step-item" data-step="7">
-            <div class="step-num">6</div>
-            <div class="step-label">语音合成</div>
+            <div class="step-label">旁白与音频</div>
           </li>
           <li class="step-item" data-step="8">
-            <div class="step-num">7</div>
+            <div class="step-num">6</div>
             <div class="step-label">视频合成</div>
           </li>
         </ul>
@@ -98,7 +94,7 @@
         
         <!-- ==================== 步骤 1: 导入文章 ==================== -->
         <div id="step-panel-1" class="step-panel" style="display: none;">
-          <h2 class="highlight-title">第一步：导入文章</h2>
+          <h2 class="highlight-title">导入文章</h2>
           <div class="card" style="margin-top: 1.5rem;">
             <p style="margin-bottom: 1rem; color: #555;">请在下方粘贴您的 Markdown 格式文章，系统将使用项目名称作为主题，并解锁后续分镜规划步骤。</p>
             <textarea id="step1-article-input" rows="14" placeholder="# 在这里粘贴您的文章..."></textarea>
@@ -210,61 +206,12 @@
           <!-- 全局图片管理网格 -->
           <div id="step3-images-grid" class="step3-grid-four"></div>
 
-          <!-- 单张 Slide AI 生成区（点击缩略图展开）-->
-          <div id="step3-editor" class="card" style="display: none; margin-top: 1.5rem;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-              <h3 style="margin: 0;">AI 生成图片：<span id="step3-slide-id-label" style="color: var(--accent-color);">--</span></h3>
-              <button onclick="document.getElementById('step3-editor').style.display='none'" class="secondary" style="font-size: 0.8rem; padding: 0.2rem 0.6rem;">✕ 关闭</button>
-            </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-              <div>
-                <label style="font-weight: bold; display: block; margin-bottom: 0.4rem; font-size: 0.9rem;">生图提示词 (Prompt):</label>
-                <textarea id="step3-prompt-input" rows="6"></textarea>
-                <button id="step3-btn-generate" class="success" style="width: 100%; justify-content: center; margin-top: 0.8rem;">
-                  <svg class="icon" viewBox="0 0 24 24"><path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 14.7255 3.09032 17.1962 4.85857 19C5.01445 19.1559 5.09238 19.3789 5.06456 19.5977C5.01915 19.9549 5 20.3197 5 20.69C5 21.4135 5.58654 22 6.31 22H12Z"></path><circle cx="7.5" cy="10.5" r="1.5" fill="currentColor"></circle><circle cx="11.5" cy="7.5" r="1.5" fill="currentColor"></circle><circle cx="16.5" cy="9.5" r="1.5" fill="currentColor"></circle><circle cx="15.5" cy="14.5" r="1.5" fill="currentColor"></circle></svg>
-                  立即 AI 生成
-                </button>
-                <div id="step3-loading" style="display: none; margin-top: 1rem; text-align: center;">
-                  <div class="sketch-loader" style="margin: 0 auto 10px auto;"></div>
-                  <p>图片正在渲染，大约需要 10-15 秒...</p>
-                </div>
-              </div>
-              <div>
-                <label style="font-weight: bold; display: block; margin-bottom: 0.4rem; font-size: 0.9rem;">当前图片预览：</label>
-                <div id="step3-preview-box" class="sketch-dashed" style="height: 180px; display: flex; align-items: center; justify-content: center; background-color: #fcfcfc; overflow: hidden; margin-bottom: 0.8rem;">
-                  <span style="color: #888;">暂无图片</span>
-                </div>
-                <label class="btn secondary" style="width: 100%; justify-content: center; cursor: pointer; font-size: 0.85rem;">
-                  <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path></svg>
-                  上传替换此张图片
-                  <input type="file" id="step3-file-upload" accept="image/*" style="display: none;">
-                </label>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ==================== 步骤 4: 图片审核确认 ==================== -->
-        <div id="step-panel-4" class="step-panel" style="display: none;">
-          <h2 class="highlight-title">第四步：全景图片审核确认</h2>
-          <p style="margin: 1rem 0;">请在此页面纵览并审核所有 Slide 的图片。如果确定，请点击下方锁定键，生成坐标文件进入标注阶段。</p>
-          
-          <div id="step4-grid" class="project-grid">
-            <!-- 所有卡片预览平铺 -->
-          </div>
-
-          <div style="display: flex; justify-content: flex-end; margin-top: 2rem;">
-            <button id="step4-btn-confirm" class="success">
-              一键锁定所有图片，进入标注步骤
-              <svg class="icon" viewBox="0 0 24 24" style="width:14px; height:14px; stroke-width:2.5;"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
-            </button>
-          </div>
         </div>
 
         <!-- ==================== 步骤 5: Mask 可视化标注 ==================== -->
         <div id="step-panel-5" class="step-panel" style="display: none;">
           <div class="step5-mask-header">
-            <h2 class="highlight-title">第五步：智能 Mask 区域标注</h2>
+            <h2 class="highlight-title">智能 Mask 区域标注</h2>
             <div class="step5-toolbar">
               <button id="step5-btn-semantic-blocks" class="secondary">
                 <svg class="icon" viewBox="0 0 24 24"><path d="M4 5h16"></path><path d="M4 12h10"></path><path d="M4 19h16"></path><circle cx="18" cy="12" r="2"></circle></svg>
@@ -274,11 +221,12 @@
                 <svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v5M14 11v5"></path></svg>
                 清除全部标注
               </button>
+              <button id="step5-btn-preview" class="success" type="button">最终抠除预览</button>
               <span id="step5-draft-status" class="step2-autosave-status"></span>
               <label class="step5-brush-control" title="调整手动涂抹区域的画笔大小">
                 <span>画笔</span>
-                <input id="step5-brush-size" type="range" min="140" max="300" value="140">
-                <span id="step5-brush-size-value">140</span>
+                <input id="step5-brush-size" type="range" min="140" max="300" value="170">
+                <span id="step5-brush-size-value">170</span>
               </label>
             </div>
           </div>
@@ -319,68 +267,57 @@
           </div>
         </div>
 
-        <!-- ==================== 步骤 6: 演讲稿编辑 ==================== -->
+        <!-- ==================== 步骤 6 + 7: 旁白与音频 ==================== -->
         <div id="step-panel-6" class="step-panel" style="display: none;">
-          <h2 class="highlight-title">第六步：演讲稿编辑</h2>
-          <div class="step6-toolbar">
-            <button id="step6-btn-init" class="secondary">
-              <svg class="icon" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-              重新同步演讲稿模板
-            </button>
-            <button id="step6-btn-ai-annotate" class="success compact-action-btn">AI 标注停顿/语气</button>
-            <span id="step6-autosave-status" class="step6-autosave-status"></span>
-            <button class="btn-next-step success step6-next-btn">
-              确认台词，前往语音合成
-              <svg class="icon" viewBox="0 0 24 24" style="width:14px; height:14px; stroke-width:2.5;"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
-            </button>
-          </div>
-
-          <div class="step6-script-layout">
-            <div class="step6-slide-list-panel">
-              <h3>Slide</h3>
-              <div id="step6-thumbs" class="step6-slide-list"></div>
-            </div>
-
-            <div class="step6-script-panel">
-              <div class="step6-script-panel-head">
-                <h3 id="step6-current-slide-title">台词审稿</h3>
+          <div class="step6-compact-header">
+            <h2 class="highlight-title">旁白与音频</h2>
+            <div class="step6-header-actions">
+              <div id="step7-loading" class="step-inline-loading" style="display: none;">
+                <div class="sketch-loader"></div>
+                <span>音频合成中...</span>
               </div>
-              <div id="step6-beats-list" class="step6-beats-list"></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ==================== 步骤 7: 语音合成 ==================== -->
-        <div id="step-panel-7" class="step-panel" style="display: none;">
-          <h2 class="highlight-title">第七步：MiniMax TTS 语音合成</h2>
-
-          <div id="step7-loading" class="step-inline-loading" style="display: none;">
-            <div class="sketch-loader"></div>
-            <span>音频合成中...</span>
-          </div>
-
-          <!-- 合成音频试听区 -->
-          <div id="step7-result-box" class="step-plain-section" style="display: none;">
-            <h3 style="margin-bottom: 1rem;">音频试听列表</h3>
-            <div id="step7-audio-list" style="display: flex; flex-direction: column; gap: 0.8rem;">
-              <!-- 试听行 -->
-            </div>
-            <div class="step-bottom-actions">
-              <button id="step7-btn-synthesize" class="success compact-action-btn">
-                <svg class="icon" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
-                生成旁白音频
+              <button id="step6-btn-init" class="secondary">
+                <svg class="icon" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                同步
               </button>
-              <button class="btn-next-step success">
-                音频确认无误，前往视频合成
+              <button id="step6-btn-ai-annotate" class="success compact-action-btn">AI 标注</button>
+              <span id="step6-autosave-status" class="step6-autosave-status"></span>
+            </div>
+            <div class="step6-toolbar">
+              <button id="step6-btn-save-and-tts" class="success step6-next-btn">
+                生成音频
+                <svg class="icon" viewBox="0 0 24 24" style="width:14px; height:14px; stroke-width:2.5;"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+              </button>
+              <button id="step7-btn-synthesize" class="secondary compact-action-btn">
+                <svg class="icon" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+                重生成
+              </button>
+              <button id="step6-btn-audio-confirm-next" class="success" disabled>
+                <span id="step6-audio-confirm-label">确认并进入视频合成</span>
                 <svg class="icon" viewBox="0 0 24 24" style="width:14px; height:14px; stroke-width:2.5;"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
               </button>
             </div>
           </div>
+
+          <div id="step7-empty-state" class="step-audio-empty">
+            尚未生成音频。编辑旁白后，点击“生成音频”。
+          </div>
+
+          <div id="step6-beats-list" class="step6-slides-stack"></div>
         </div>
 
         <!-- ==================== 步骤 8: 视频合成与渲染 ==================== -->
         <div id="step-panel-8" class="step-panel" style="display: none;">
-          <h2 class="highlight-title">第八步：视频渲染与预览下载</h2>
+          <div class="step8-header">
+            <h2 class="highlight-title">视频渲染与预览下载</h2>
+            <div class="step8-header-actions">
+              <button id="step8-btn-render" class="success compact-action-btn">
+                <svg class="icon" viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2"></rect></svg>
+                渲染最终视频
+              </button>
+              <button id="step8-btn-finish" class="secondary compact-action-btn">完成并退出项目</button>
+            </div>
+          </div>
 
           <div id="step8-loading" class="step-inline-loading" style="display: none;">
             <div class="sketch-loader"></div>
@@ -390,13 +327,6 @@
           <div id="step8-result-box" class="step-plain-section" style="display: none;">
             <h3 style="margin-bottom: 1.5rem;">视频渲染记录</h3>
             <div id="step8-video-list" class="step8-video-list"></div>
-          </div>
-          <div class="step-bottom-actions">
-            <button id="step8-btn-render" class="success compact-action-btn">
-              <svg class="icon" viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2"></rect></svg>
-              渲染最终视频
-            </button>
-            <button id="step8-btn-finish" class="secondary compact-action-btn">完成并退出项目</button>
           </div>
         </div>
 
@@ -624,14 +554,82 @@
     </div>
   </div>
 
+  <div id="modal-mask-preview" class="modal-overlay" style="display: none;">
+    <div class="modal-content mask-preview-modal" role="dialog" aria-modal="true" aria-labelledby="mask-preview-title">
+      <div class="mask-preview-header">
+        <div>
+          <h3 id="mask-preview-title" class="highlight-title">最终抠除预览</h3>
+          <p id="mask-preview-summary" class="mask-preview-summary"></p>
+        </div>
+        <button id="btn-mask-preview-close" class="secondary" type="button">关闭</button>
+      </div>
+      <div class="mask-preview-grid">
+        <section>
+          <h4>视频最终会显示的内容</h4>
+          <img id="mask-preview-image" alt="最终抠除结果">
+        </section>
+        <section id="mask-uncovered-section">
+          <h4>Mask 外仍存在的源图内容</h4>
+          <div class="mask-preview-checker">
+            <img id="mask-uncovered-image" alt="Mask 未覆盖内容">
+          </div>
+        </section>
+      </div>
+      <p class="mask-preview-note">右图出现的内容不会进入视频。请返回画布补涂，直到右图只剩你明确想舍弃的内容。</p>
+    </div>
+  </div>
+
+  <div id="modal-step3-ai" class="modal-overlay" style="display: none;">
+    <div id="step3-editor" class="modal-content step3-ai-modal" role="dialog" aria-modal="true" aria-labelledby="step3-ai-title">
+      <div class="step3-ai-header">
+        <h3 id="step3-ai-title">AI 生成图片：<span id="step3-slide-id-label">--</span></h3>
+        <button id="step3-btn-close-editor" class="secondary step3-ai-close" type="button">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+          关闭
+        </button>
+      </div>
+      <div class="step3-ai-layout">
+        <section class="step3-ai-pane">
+          <label class="step3-ai-label" for="step3-prompt-input">生图提示词 (Prompt)</label>
+          <textarea id="step3-prompt-input" rows="14"></textarea>
+          <button id="step3-btn-generate" class="success step3-ai-generate" type="button">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 14.7255 3.09032 17.1962 4.85857 19C5.01445 19.1559 5.09238 19.3789 5.06456 19.5977C5.01915 19.9549 5 20.3197 5 20.69C5 21.4135 5.58654 22 6.31 22H12Z"></path><circle cx="7.5" cy="10.5" r="1.5" fill="currentColor"></circle><circle cx="11.5" cy="7.5" r="1.5" fill="currentColor"></circle><circle cx="16.5" cy="9.5" r="1.5" fill="currentColor"></circle><circle cx="15.5" cy="14.5" r="1.5" fill="currentColor"></circle></svg>
+            立即 AI 生成
+          </button>
+          <div id="step3-loading" class="step3-ai-loading" style="display: none;">
+            <div class="sketch-loader"></div>
+            <p>图片正在生成，请稍候...</p>
+          </div>
+        </section>
+        <section class="step3-ai-pane">
+          <div class="step3-ai-preview-heading">
+            <span id="step3-preview-label" class="step3-ai-label">当前图片预览</span>
+            <span id="step3-candidate-status" class="step3-candidate-status" style="display: none;">待确认</span>
+          </div>
+          <div id="step3-preview-box" class="sketch-dashed step3-ai-preview">
+            <span>暂无图片</span>
+          </div>
+          <div class="step3-ai-actions">
+            <button id="step3-btn-apply-candidate" class="success" type="button" style="display: none;">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>
+              替换原图
+            </button>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
   <div id="modal-storyboard-rules" class="modal-overlay" style="display: none;">
     <div class="modal-content config-editor-modal">
       <h3 class="highlight-title">分镜生成规则</h3>
-      <p class="config-editor-note">这里控制分镜逻辑、演讲稿风格和旁白与画面的对应关系。输出 JSON 结构由系统锁定。</p>
+      <p class="config-editor-note">这里编辑的是插入 System Content 的自定义规则。完整系统约束、JSON Schema 和 User Content 文章由后台自动拼接。</p>
       <textarea id="storyboard-rules-input" rows="16"></textarea>
       <div class="config-editor-actions">
+        <button id="btn-storyboard-rules-copy-full" class="secondary">复制完整请求</button>
         <button id="btn-storyboard-rules-cancel" class="secondary">取消</button>
         <button id="btn-storyboard-rules-save" class="success">保存规则</button>
+        <button id="btn-storyboard-rules-save-regenerate" class="success">保存并重新规划</button>
       </div>
     </div>
   </div>
@@ -639,7 +637,7 @@
   <div id="modal-image-style" class="modal-overlay" style="display: none;">
     <div class="modal-content config-editor-modal">
       <h3 class="highlight-title">图片风格与参考图</h3>
-      <p class="config-editor-note">编辑 `config/style_tokens.yaml`。生成图片时会携带这份规范，并在接口支持时使用两张参考图。</p>
+      <p class="config-editor-note">这里只编辑静态生图直接使用的画风、配色和版式。动画、图层、字幕渲染等后续视频配置不会进入生图提示词。</p>
       <textarea id="image-style-input" rows="18" spellcheck="false"></textarea>
       <div class="reference-image-grid">
         <label class="reference-image-item">
@@ -660,9 +658,10 @@
     </div>
   </div>
 
-  <div id="toast-container"></div>
+  <div id="toast-container" aria-live="polite" aria-atomic="false"></div>
 
   <!-- 主业务 JavaScript 脚本 -->
-  <script src="app.js?v=2.0.14"></script>
+  <script src="flow.js?v=1.0.0"></script>
+  <script src="app.js?v=2.2.0"></script>
 </body>
 </html>

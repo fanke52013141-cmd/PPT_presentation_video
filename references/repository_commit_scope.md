@@ -1,6 +1,6 @@
 # 仓库提交范围说明
 
-本仓库只提交可复用的流程、方法论、配置、模板、schema、skill、渲染代码和长期风格参考资产。
+本仓库只提交可复用的应用代码、流程、配置、模板、schema、检查脚本和长期风格参考资产。
 
 ## 可以提交
 
@@ -9,12 +9,13 @@
 - `config/**` 中的任务、风格、布局、Git 策略配置。
 - `schemas/**`、`templates/**`、`checks/**` 中的结构约束、prompt 和审核规则。
 - `scripts/**` 中不绑定具体选题的可复用工具和渲染能力。
+- `server.py`、`database.py`、`config_store.py` 与 `static/**` 中的本地应用代码。
 - `references/style_reference/**` 中长期复用的 Image Gen 风格参考图和背景图。
 - `references/iteration_lessons.md` 与 `bad_cases/bad_case_log.yaml` 中经过抽象后的问题、原因、修复方式。
 
 ## 不提交
 
-- `runs/**`、`outputs/**`。
+- `runs/**`、`outputs/**`、`logs/**`、`data/**`。
 - 具体视频、音频、字幕、抽帧截图。
 - 某个选题专属的 Image Gen 配图资产，例如 `references/generated_assets/**`。
 - `.env`、API key、token 或任何真实凭证。

@@ -115,7 +115,7 @@ visual_assets:
   diagram_style: handdrawn_explainer_diagram
   required_background: flat_uniform_warm_white
   reveal_friendly_layout:
-    - 使用纯净平面 #FFFDF7 背景，不要纸纹、噪声、阴影、渐变或暗角。
+    - "使用纯净平面 #FFFDF7 背景，不要纸纹、噪声、阴影、渐变或暗角。"
     - 每页 5-8 个大 visual group，每个 group 有短中文 visible_text。
     - 每个 group 必须能被一个矩形区域完整覆盖。
     - 独立 group 之间保留 80-120px 干净背景。

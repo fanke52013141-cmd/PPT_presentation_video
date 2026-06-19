@@ -1,110 +1,27 @@
-# Preflight Checklist
-
-Run this before a production job starts.
+# Production Preflight Checklist
 
 ## Required Inputs
 
-- `runs/<run_id>/inputs/article.md` exists and is not empty.
-- `runs/<run_id>/planning/visual_contract.json` exists before visual prompt generation.
-- `runs/<run_id>/reveal_manifest.json` exists after `visual_draft.png` is approved.
-- `config/task.yaml` exists.
-- `config/style_tokens.yaml` exists.
-- `references/style_reference/PPT模板.png` exists.
-- `references/style_reference/PPT示例.png` exists.
+- Article input exists.
+- `planning/visual_contract.json` contains the current slide order.
+- Every current slide has `visual_draft.png`.
+- `reveal_manifest.json` contains the same current slide ids.
+- Narration and audio files exist before final rendering.
 
-## Required Schemas
+## Exact Mask Invariants
 
-- `schemas/visual_contract.schema.json`
-- `schemas/reveal_manifest.schema.json`
-- `schemas/scene.schema.json`
-- `schemas/animation_timeline.schema.json`
-- `schemas/audio_timeline.schema.json`
-- `schemas/video_manifest.schema.json`
+- Pipeline version is `manual_mask_exact_v2`.
+- A page without painted Masks uses `full_slide_static`.
+- A page with Masks uses `solid_background_manual_mask_exact`.
+- Masked pages declare `source_image_used_for_background=false`.
+- Every reveal PNG is full-canvas and uses only its saved brush alpha.
+- `assets/` is rebuilt before render.
+- Remotion `public/runtime/<run_id>` is rebuilt before render.
+- Blocking reveal warnings stop the build.
 
-## Required Scripts
-
-- `scripts/write_visual_contract.py`
-- `scripts/write_visual_prompts.py`
-- `scripts/write_reveal_manifest_template.py`
-- `scripts/auto_fit_reveal_boxes.py`
-- `scripts/draw_reveal_manifest_preview.py`
-- `scripts/validate_visual_contract.py`
-- `scripts/validate_reveal_manifest.py`
-- `scripts/build_reveal_scene.py`
-- `scripts/validate_reveal_scene.py`
-- `scripts/write_narration_from_visual_contract.py`
-- `scripts/validate_narration_grounding.py`
-- `scripts/bind_reveal_timeline.py`
-- `scripts/run_reveal_preflight.ps1`
-- `scripts/validate_run_assets.py`
-- `scripts/build_remotion_props.py`
-- `scripts/minimax_tts.py`
-- `scripts/render_remotion.ps1`
-- `scripts/remotion`
-
-Fallback/diagnostic only:
-
-- `scripts/split_master_layers.py`
-- `scripts/validate_layer_recomposition.py`
-- `scripts/decompose_slide_layers.py`
-- `scripts/compose_manifest_layers.py`
-
-## Required Production Decisions
-
-- The visual path is `master_reveal_layers`.
-- The slide plan is grounded by `visual_contract.json`.
-- Every content visual group has `visible_text`, `visual_anchor`, and `narration_function`.
-- Every narration beat references a valid `group_id`.
-- `reveal_manifest.json` is generated as a template, auto-fitted if `visual_draft.png` exists, then manually reviewed against preview images.
-- `narration.txt` and `tts_text.txt` are generated from the visual contract, not written independently.
-- `animation_timeline.json` is rebound from `audio_timeline.json` after TTS.
-- The master image prompt requires a flat uniform `#FFFDF7` background.
-- The master image prompt requires 80-120px spacing between independent visual groups.
-- The master image prompt keeps the subtitle safe zone clear above `y=930`.
-- The reveal stage will produce `scene.json`, `animation_timeline.json`, and `reveal_report.json`.
-- Final QA will inspect `visual_draft.png`, manifest boxes, preview images, narration grounding, and reveal timing, not only JSON.
-
-## Canonical Command Order
+## Commands
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/run_reveal_preflight.ps1 `
-  -RunId <run_id> `
-  -Overwrite
-```
-
-Manual command sequence:
-
-```powershell
-python scripts/write_visual_contract.py `
-  --run-dir runs/<run_id> `
-  --overwrite
-
-python scripts/validate_visual_contract.py `
-  --contract runs/<run_id>/planning/visual_contract.json
-
-python scripts/write_visual_prompts.py `
-  --run-dir runs/<run_id> `
-  --overwrite
-
-python scripts/write_reveal_manifest_template.py `
-  --run-dir runs/<run_id> `
-  --overwrite
-
-# After Image Gen output:
-python scripts/auto_fit_reveal_boxes.py `
-  --manifest runs/<run_id>/reveal_manifest.json `
-  --repo-root .
-
-python scripts/draw_reveal_manifest_preview.py `
-  --manifest runs/<run_id>/reveal_manifest.json `
-  --repo-root . `
-  --out-dir runs/<run_id>/review
-
-# After preview review and manual box adjustment:
-python scripts/validate_reveal_manifest.py `
-  --manifest runs/<run_id>/reveal_manifest.json `
-  --contract runs/<run_id>/planning/visual_contract.json
-
 python scripts/build_reveal_scene.py `
   --manifest runs/<run_id>/reveal_manifest.json `
   --repo-root .
@@ -113,53 +30,40 @@ python scripts/validate_reveal_scene.py `
   --run-dir runs/<run_id> `
   --repo-root .
 
-python scripts/write_narration_from_visual_contract.py `
-  --run-dir runs/<run_id> `
-  --overwrite
-
-python scripts/validate_narration_grounding.py `
-  --run-dir runs/<run_id>
-
-# After TTS creates audio_timeline.json:
 python scripts/bind_reveal_timeline.py `
-  --run-dir runs/<run_id>
+  --run-dir runs/<run_id> `
+  --lead-sec 0
+
+python scripts/build_remotion_props.py `
+  --run-dir runs/<run_id> `
+  --repo-root .
 
 python scripts/validate_run_assets.py `
   --run-dir runs/<run_id> `
+  --repo-root . `
   --require-layered
 ```
 
-## Environment
+## Legacy Diagnostics
 
-- MiniMax credentials are available if TTS will run.
-- Remotion dependencies are installed under `scripts/remotion`.
-- FFmpeg/FFprobe are available if media inspection or final muxing is needed.
+These scripts are not part of production:
+
+- `auto_fit_reveal_boxes.py`
+- `split_master_layers.py`
+- `decompose_slide_layers.py`
+- `compose_manifest_layers.py`
 
 ## Blocking Conditions
 
-- Missing article input.
-- Missing style reference images.
-- Missing required schema or production script.
-- `visual_draft.png` is not from Image Gen.
-- Missing or invalid `visual_contract.json`.
-- Missing or invalid `reveal_manifest.json` after manifest template/review.
-- A reveal group references an unknown visual group or narration beat.
-- A narration beat references a missing visual group.
-- A content visual group is not referenced by any narration beat.
-- `narration_beats.json` is missing after narration generation.
-- Narration is not grounded in the visual contract.
-- Master image is crowded, textured, or not reveal-friendly.
-- A reveal rectangle enters the subtitle safe zone.
-- Reveal group boxes overlap beyond tolerance.
-- Auto-fit cannot detect meaningful content inside a group search area.
-- Missing reveal preview images after visual draft exists.
-- Missing `reveal_report.json` after building reveal scene.
-- Blocking reveal warnings.
-- Animation events are not bound to valid audio segments after TTS.
-- Missing TTS credentials when real audio is required.
+- Missing current slide image, narration, or audio.
+- Unknown or stale reveal pipeline version.
+- Source image reused as a masked slide background.
+- Animation event targets a missing layer.
+- Audio has not been confirmed.
+- Blocking reveal warning.
+- Runtime assets are missing or stale.
 
 ## Safety
 
-- Do not log API keys.
-- Do not commit `.env`.
-- Runtime folders under `runs/` and `outputs/` are not committed.
+- Do not log or commit API keys.
+- Do not commit `runs/`, `outputs/`, `logs/`, `data/`, or generated media.

@@ -1,51 +1,41 @@
 # Video QA Checklist
 
-## Content
+## Six-Step UI
 
-- The slide explains the article's core point accurately.
-- The narration expands the visible content instead of drifting to unrelated
-  ideas.
-- Every important narration beat has a visible macro group.
-- The page is understandable for AI beginners.
+- Notifications appear in the unused lower-left navigation area.
+- Storyboard edits autosave without overwriting newer changes.
+- Image cards keep titles close to previews.
+- Image confirmation is disabled until every current slide has an image.
+- Replacing or deleting an image clears that slide's old Masks and downstream state.
+- Mask preview matches the exact rendered composite.
+- Audio must be generated and confirmed before video rendering.
+- Rendered videos can be downloaded and deleted locally.
 
-## Master Image
+## Visuals
 
-- The master slide is an Image Gen bitmap, not a local code drawing.
-- The middle content area is not crowded.
-- Independent macro groups have at least 48-80px of clean spacing.
-- Text, arrows, labels, icons, cards, formulas, and diagram strokes do not
-  overlap or nearly touch.
-- The subtitle safe zone is empty.
-- Text is readable and not fake or garbled.
+- Source images are 1920×1080.
+- Masked pages start from the fixed background, not the full source image.
+- Each reveal contains only its painted Mask pixels.
+- No-Mask pages display the complete image from the first frame.
+- No clipped text, missing card edges, floating fragments, or stale layers.
+- Subtitles do not obscure important content.
 
-## Layer Recomposition
+## Timing and Audio
 
-- `render_preview.png` visually matches the approved `visual_draft.png`.
-- `split_report.json` exists.
-- There are no `severity=blocking` split warnings.
-- The scene has multiple PNG layers and no animated `full_slide` layer.
-- Macro layers are large coherent groups, not tiny fragments.
-- Layer edges do not show obvious white boxes, paper-noise blocks, or dirty
-  alpha halos.
-
-## Animation
-
-- Animation follows narration beats.
-- Body and diagram layers reveal when the voice reaches their cue.
-- Summary appears near the end and can highlight.
-- All content is not visible at frame 0.
-- Motion is subtle enough that split edges do not feel like stickers.
-
-## Audio And Subtitles
-
-- TTS is natural and matches the narration.
-- Subtitles match the voiceover.
-- Subtitles do not cover key visual content.
-- Chinese text is not encoding-damaged.
+- Reveal events begin with their linked narration beat.
+- Slide duration covers audio plus tail padding.
+- Speech is not cut at slide boundaries.
+- Audio and video durations are consistent.
 
 ## Export
 
-- MP4 plays normally.
-- Resolution is 1920x1080.
-- Aspect ratio is 16:9.
-- Audio and video durations match.
+- MP4 plays normally at 1920×1080.
+- New videos carry `manual_mask_exact_v2` metadata.
+- Historical videos are visibly marked as legacy.
+
+## Regression
+
+- Python and JavaScript syntax checks pass.
+- Remotion TypeScript check passes.
+- All checks under `checks/test_*.py` and `checks/test_*.js` pass.
+- Browser console has no new errors during the six visible steps.

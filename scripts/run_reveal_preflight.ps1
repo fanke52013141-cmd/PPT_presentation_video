@@ -7,7 +7,6 @@ param(
   [switch]$SkipContractGeneration,
   [switch]$SkipPromptGeneration,
   [switch]$SkipNarrationGeneration,
-  [switch]$SkipAutoFit,
   [switch]$SkipPreview,
   [switch]$RequireReviewedManifest
 )
@@ -61,17 +60,11 @@ if (-not (Test-Path $Manifest)) {
     python (Join-Path $RepoRoot "scripts/write_reveal_manifest_template.py") --run-dir $RunDir @overwriteFlag
   }
   Write-Host "`nReveal manifest template created: $Manifest" -ForegroundColor Yellow
-  Write-Host "Review and adjust group boxes after checking each visual_draft.png, then re-run this script." -ForegroundColor Yellow
+  Write-Host "Paint optional Masks in the web editor, then re-run this script." -ForegroundColor Yellow
   exit 0
 }
 
 $anyVisualDraft = Get-ChildItem -Path (Join-Path $RunDir "slides") -Filter "visual_draft.png" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-if (($null -ne $anyVisualDraft) -and (-not $SkipAutoFit)) {
-  Run-Step "Auto-fit reveal boxes" {
-    python (Join-Path $RepoRoot "scripts/auto_fit_reveal_boxes.py") --manifest $Manifest --repo-root $RepoRoot
-  }
-}
-
 if (($null -ne $anyVisualDraft) -and (-not $SkipPreview)) {
   Run-Step "Draw reveal manifest preview" {
     python (Join-Path $RepoRoot "scripts/draw_reveal_manifest_preview.py") --manifest $Manifest --repo-root $RepoRoot --out-dir $PreviewDir

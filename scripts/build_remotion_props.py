@@ -42,6 +42,7 @@ DEFAULT_FPS = 30
 DEFAULT_WIDTH = 1920
 DEFAULT_HEIGHT = 1080
 DEFAULT_REMOTION_PUBLIC_DIR = Path("scripts/remotion/public")
+DEFAULT_AUDIO_TAIL_PADDING_SEC = 0.4
 
 
 class BuildError(RuntimeError):
@@ -345,11 +346,17 @@ def optional_duration(value: Any) -> float:
 
 
 def slide_duration(audio_timeline: dict[str, Any], animation_timeline: dict[str, Any], slide_dir: Path) -> float:
-    duration = max(
+    audio_end = max(
         optional_duration(audio_timeline.get("duration_sec")),
-        optional_duration(animation_timeline.get("duration_sec")),
         max_segment_end(audio_timeline),
+    )
+    animation_end = max(
+        optional_duration(animation_timeline.get("duration_sec")),
         max_event_end(animation_timeline),
+    )
+    duration = max(
+        animation_end,
+        audio_end + DEFAULT_AUDIO_TAIL_PADDING_SEC if audio_end > 0 else 0.0,
     )
 
     if duration <= 0:
@@ -409,6 +416,7 @@ def build_slide(
         "slide_id": slide_id,
         "start_sec": round(start_sec, 3),
         "duration_sec": duration_sec,
+        "audio_tail_padding_sec": DEFAULT_AUDIO_TAIL_PADDING_SEC,
         "scene": scene,
         "audio_file": audio_file,
         "audio_timeline": converted_audio_timeline,
@@ -501,6 +509,9 @@ def main() -> int:
         public_dir = repo_root / public_dir
     out_path = (args.out or run_dir / "remotion_props.json").resolve()
     asset_store = RuntimeAssetStore(public_dir=public_dir, run_id=run_dir.name)
+    runtime_run_dir = public_dir.resolve() / "runtime" / run_dir.name
+    if runtime_run_dir.exists():
+        shutil.rmtree(runtime_run_dir)
 
     try:
         props = build_props(

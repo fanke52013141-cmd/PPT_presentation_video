@@ -3,6 +3,7 @@ import io
 import sys
 import uuid
 import json
+import copy
 import shutil
 import logging
 import subprocess
@@ -63,6 +64,7 @@ STYLE_REFERENCE_FILES = {
     "template": "PPT模板.png",
     "example": "PPT示例.png",
 }
+REVEAL_PIPELINE_VERSION = "manual_mask_exact_v2"
 
 # Pydantic 响应模型
 class ProjectCreate(BaseModel):
@@ -421,6 +423,66 @@ def all_current_slide_images_exist(project: Project) -> bool:
     )
 
 
+def prune_unlinked_mask_groups(project: Project, payload: Dict[str, Any]) -> Dict[str, Any]:
+    contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
+    if not os.path.exists(contract_path) or not isinstance(payload.get("slides"), list):
+        return payload
+
+    try:
+        with open(contract_path, "r", encoding="utf-8") as f:
+            contract = json.load(f)
+    except Exception as exc:
+        logger.warning("Failed to load visual contract while pruning Mask groups: %s", exc)
+        return payload
+
+    narrated_groups_by_slide = {}
+    for slide in contract.get("slides", []) or []:
+        if not isinstance(slide, dict):
+            continue
+        slide_id = str(slide.get("slide_id") or "").strip()
+        narrated_groups_by_slide[slide_id] = {
+            str(beat.get("group_id") or "").strip()
+            for beat in slide.get("narration_beats", []) or []
+            if isinstance(beat, dict) and str(beat.get("group_id") or "").strip()
+        }
+
+    def is_linked(group: Dict[str, Any], narrated_group_ids: set[str]) -> bool:
+        fragments = group.get("narration_fragments")
+        if isinstance(fragments, list) and any(
+            isinstance(fragment, dict) and (fragment.get("id") or fragment.get("text"))
+            for fragment in fragments
+        ):
+            return True
+        if str(group.get("narration_beat_id") or "").strip():
+            return True
+        beat_ids = group.get("narration_beat_ids")
+        if isinstance(beat_ids, list) and any(str(value or "").strip() for value in beat_ids):
+            return True
+        if str(group.get("spoken_text") or "").strip():
+            return True
+        linked_ids = {
+            str(group.get(key) or "").strip()
+            for key in ("narration_group_id", "visual_group_id", "group_id", "id")
+            if str(group.get(key) or "").strip()
+        }
+        return bool(linked_ids & narrated_group_ids)
+
+    for slide in payload.get("slides", []):
+        if not isinstance(slide, dict):
+            continue
+        slide_id = str(slide.get("slide_id") or "").strip()
+        narrated_group_ids = narrated_groups_by_slide.get(slide_id, set())
+        for field in ("semantic_blocks", "groups", "reveal_boxes"):
+            groups = slide.get(field)
+            if not isinstance(groups, list):
+                continue
+            slide[field] = [
+                group for group in groups
+                if isinstance(group, dict) and is_linked(group, narrated_group_ids)
+            ]
+    return payload
+
+
 def read_current_slide_ids_or_404(project: Project) -> List[str]:
     slide_ids = read_contract_slide_ids(project.run_dir)
     if not slide_ids:
@@ -624,6 +686,46 @@ def split_subtitle_text(text: str, max_chars: int = SUBTITLE_MAX_CHARS) -> List[
     return chunks
 
 
+SUBTITLE_SPEECH_RE = re.compile(r"[\w\u4e00-\u9fff]")
+
+
+def subtitle_text_weight(text: str) -> int:
+    compact = re.sub(r"\s+", "", str(text or ""))
+    return max(1, len(compact))
+
+
+def subtitle_chunks_for_timing(text: str) -> List[str]:
+    chunks: List[str] = []
+    for chunk in split_subtitle_text(clean_tts_text(text)):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        if not SUBTITLE_SPEECH_RE.search(chunk):
+            if chunks:
+                chunks[-1] = f"{chunks[-1]}{chunk}".strip()
+            continue
+        chunks.append(chunk)
+    return chunks
+
+
+def tts_text_parts_with_pauses(text: str) -> List[Dict[str, Any]]:
+    value = str(text or "")
+    parts: List[Dict[str, Any]] = []
+    cursor = 0
+    for match in MINIMAX_PAUSE_RE.finditer(value):
+        before = clean_tts_text(value[cursor:match.start()])
+        if before:
+            parts.append({"type": "text", "text": before})
+        seconds = max(0.0, float(match.group(1)))
+        if seconds > 0:
+            parts.append({"type": "pause", "duration": seconds})
+        cursor = match.end()
+    after = clean_tts_text(value[cursor:])
+    if after:
+        parts.append({"type": "text", "text": after})
+    return parts
+
+
 def prepare_narration_payload(project: Project, payload: Dict[str, Any]) -> Dict[str, Any]:
     payload = dict(payload or {})
     slides = payload.get("slides") if isinstance(payload.get("slides"), list) else []
@@ -710,46 +812,98 @@ def rewrite_audio_timeline_by_beats(timeline_path: str, slide_id: str, beats: Li
     duration = float(timeline.get("audio_content_duration_sec") or timeline.get("duration_sec") or 0)
     if duration <= 0:
         return
-    clean_beats = [
-        {
+    clean_beats: List[Dict[str, Any]] = []
+    for idx, beat in enumerate(beats):
+        raw_text = beat_tts_text(beat)
+        if not clean_tts_text(raw_text):
+            continue
+        parts = tts_text_parts_with_pauses(raw_text)
+        if not any(part.get("type") == "text" for part in parts):
+            continue
+        clean_beats.append({
             "id": str(beat.get("id") or f"{slide_id}_beat_{idx + 1:03d}"),
-            "text": clean_tts_text(beat_tts_text(beat)),
-        }
-        for idx, beat in enumerate(beats)
-        if clean_tts_text(beat_tts_text(beat))
-    ]
+            "parts": parts,
+        })
     if not clean_beats:
         return
-    weights = [max(1, len(item["text"])) for item in clean_beats]
-    total_weight = sum(weights)
+
+    total_pause = sum(
+        float(part.get("duration", 0.0) or 0.0)
+        for item in clean_beats
+        for part in item["parts"]
+        if part.get("type") == "pause"
+    )
+    pause_budget = min(total_pause, duration * 0.45)
+    pause_scale = pause_budget / total_pause if total_pause > 0 else 0.0
+    speech_duration = max(0.001, duration - pause_budget)
+    total_weight = 0
+    chunked_parts: List[Dict[str, Any]] = []
+    for item in clean_beats:
+        beat_parts: List[Dict[str, Any]] = []
+        for part in item["parts"]:
+            if part.get("type") == "pause":
+                beat_parts.append(part)
+                continue
+            chunks = subtitle_chunks_for_timing(str(part.get("text") or ""))
+            chunk_weights = [subtitle_text_weight(chunk) for chunk in chunks]
+            total_weight += sum(chunk_weights)
+            beat_parts.append({"type": "text", "chunks": chunks, "weights": chunk_weights})
+        chunked_parts.append({"id": item["id"], "parts": beat_parts})
+    if total_weight <= 0:
+        return
+
     cursor = 0.0
-    segments = []
-    for beat_index, (item, weight) in enumerate(zip(clean_beats, weights), start=1):
-        beat_end = duration if beat_index == len(clean_beats) else cursor + duration * weight / total_weight
-        chunks = split_subtitle_text(item["text"])
-        chunk_weights = [max(1, len(chunk)) for chunk in chunks]
-        chunk_total = sum(chunk_weights)
-        chunk_cursor = cursor
-        for chunk_index, (chunk, chunk_weight) in enumerate(zip(chunks, chunk_weights), start=1):
-            chunk_end = (
-                beat_end
-                if chunk_index == len(chunks)
-                else chunk_cursor + (beat_end - cursor) * chunk_weight / chunk_total
-            )
-            segments.append({
-                "id": item["id"] if chunk_index == 1 else f"{item['id']}__part_{chunk_index:02d}",
-                "beat_id": item["id"],
-                "start": round(chunk_cursor, 3),
-                "end": round(chunk_end, 3),
-                "text": chunk,
-                "timing_source": "beat_estimated_split",
-                "max_cjk_chars": SUBTITLE_MAX_CHARS,
-                "max_lines": 1,
-            })
-            chunk_cursor = chunk_end
-        cursor = beat_end
-    timeline["segments"] = segments
-    timeline["timing_source"] = "beat_estimated_split"
+    segments: List[Dict[str, Any]] = []
+    for item in chunked_parts:
+        chunk_index = 0
+        for part in item["parts"]:
+            if part.get("type") == "pause":
+                pause_duration = float(part.get("duration", 0.0) or 0.0) * pause_scale
+                if pause_duration > 0:
+                    if segments:
+                        segments[-1]["_end"] = segments[-1]["_end"] + pause_duration
+                    cursor += pause_duration
+                continue
+            chunks = part.get("chunks", [])
+            weights = part.get("weights", [])
+            for chunk, weight in zip(chunks, weights):
+                chunk_index += 1
+                chunk_start = cursor
+                chunk_end = cursor + speech_duration * float(weight) / float(total_weight)
+                segment_id = item["id"] if chunk_index == 1 else f"{item['id']}__part_{chunk_index:02d}"
+                segments.append({
+                    "id": segment_id,
+                    "beat_id": item["id"],
+                    "_start": chunk_start,
+                    "_end": chunk_end,
+                    "text": chunk,
+                    "timing_source": "beat_pause_aware_estimated_split",
+                    "max_cjk_chars": SUBTITLE_MAX_CHARS,
+                    "max_lines": 1,
+                })
+                cursor = chunk_end
+    if not segments:
+        return
+    if cursor < duration:
+        segments[-1]["_end"] = segments[-1]["_end"] + (duration - cursor)
+    normalized_segments: List[Dict[str, Any]] = []
+    previous_end = 0.0
+    for segment in segments:
+        start = max(previous_end, min(duration, float(segment.pop("_start"))))
+        end = max(start, min(duration, float(segment.pop("_end"))))
+        if end <= start and start < duration:
+            end = min(duration, start + 0.05)
+        if end <= start:
+            continue
+        segment["start"] = round(start, 3)
+        segment["end"] = round(end, 3)
+        normalized_segments.append(segment)
+        previous_end = end
+    if not normalized_segments:
+        return
+    timeline["segments"] = normalized_segments
+    timeline["timing_source"] = "beat_pause_aware_estimated_split"
+    timeline["explicit_pause_sec"] = round(pause_budget, 3)
     timeline["subtitle_display"] = {
         "max_lines": 1,
         "max_cjk_chars": SUBTITLE_MAX_CHARS,
@@ -795,7 +949,8 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db)):
             "name": db_project.name,
             "description": db_project.description,
             "current_step": db_project.current_step,
-            "step_status": db_project.get_step_status()
+            "step_status": db_project.get_step_status(),
+            "audio_confirmed": False
         }
     }
 
@@ -809,6 +964,7 @@ def list_projects(db: Session = Depends(get_db)):
         "current_step": p.current_step,
         "status": p.status,
         "step_status": p.get_step_status(),
+        "audio_confirmed": project_audio_confirmed(p),
         "created_at": p.created_at.isoformat()
     } for p in projects]
 
@@ -824,6 +980,7 @@ def get_project(project_id: str, db: Session = Depends(get_db)):
         "current_step": project.current_step,
         "status": project.status,
         "step_status": project.get_step_status(),
+        "audio_confirmed": project_audio_confirmed(project),
         "run_dir": project.run_dir
     }
 
@@ -940,9 +1097,39 @@ def test_tts_connection(payload: TestTtsPayload):
 
 # ==================== 流水线状态管理 ====================
 
+def audio_confirmation_path(project: Project) -> str:
+    return os.path.join(project.run_dir, "planning", "audio_confirmed.json")
+
+
+def project_audio_confirmed(project: Project) -> bool:
+    return os.path.exists(audio_confirmation_path(project))
+
+
+def clear_audio_confirmation(project: Project):
+    path = audio_confirmation_path(project)
+    if os.path.exists(path):
+        os.remove(path)
+
+
+def mark_step_in_progress(project: Project, target_step: int, db: Session):
+    current_status = project.get_step_status()
+    for s_idx in range(target_step + 1, 9):
+        s_str = str(s_idx)
+        if current_status.get(s_str) == "completed":
+            current_status[s_str] = "pending_reconfirmation"
+        elif current_status.get(s_str) == "in_progress":
+            current_status[s_str] = "pending"
+    current_status[str(target_step)] = "in_progress"
+    project.current_step = target_step
+    project.set_step_status(current_status)
+    db.commit()
+
+
 # 回退某一步后，后续步骤状态被标记为 pending_reconfirmation
 def handle_step_navigation(project: Project, target_step: int, db: Session):
     current_status = project.get_step_status()
+    if target_step < 7:
+        clear_audio_confirmation(project)
     
     # Downstream completed artifacts become stale when an upstream step changes.
     # Steps that were merely unlocked or waiting should go back to plain pending.
@@ -955,6 +1142,103 @@ def handle_step_navigation(project: Project, target_step: int, db: Session):
             
     current_status[str(target_step)] = "completed"
     project.current_step = target_step
+    project.set_step_status(current_status)
+    db.commit()
+
+
+def clear_slide_visual_derivatives(project: Project, slide_id: str) -> None:
+    """Remove masks and rendered assets that belong to an older slide image."""
+    manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
+    if os.path.exists(manifest_path):
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+            changed = False
+            for slide in manifest.get("slides", []) or []:
+                if not isinstance(slide, dict) or str(slide.get("slide_id") or "").strip() != slide_id:
+                    continue
+                for field in ("groups", "semantic_blocks", "reveal_boxes"):
+                    if slide.get(field):
+                        changed = True
+                    slide[field] = []
+                slide["status"] = "pending"
+                changed = True
+            if changed:
+                with open(manifest_path, "w", encoding="utf-8") as f:
+                    json.dump(manifest, f, ensure_ascii=False, indent=2)
+        except Exception as exc:
+            logger.warning("Failed to clear Mask data for %s: %s", slide_id, exc)
+
+    slide_dir = os.path.join(project.run_dir, "slides", slide_id)
+    for filename in ("scene.json", "animation_timeline.json", "reveal_report.json"):
+        path = os.path.join(slide_dir, filename)
+        if os.path.exists(path):
+            os.remove(path)
+    assets_dir = os.path.join(slide_dir, "assets")
+    if os.path.isdir(assets_dir):
+        shutil.rmtree(assets_dir)
+    props_path = os.path.join(project.run_dir, "remotion_props.json")
+    if os.path.exists(props_path):
+        os.remove(props_path)
+
+
+def validate_current_reveal_assets(project: Project) -> None:
+    validator = os.path.join(REPO_ROOT, "scripts", "validate_reveal_scene.py")
+    result = subprocess.run(
+        [
+            sys.executable,
+            validator,
+            "--run-dir",
+            project.run_dir,
+            "--repo-root",
+            REPO_ROOT,
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    if result.returncode != 0:
+        logger.error("Reveal asset validation failed: %s", result.stderr)
+        raise HTTPException(status_code=500, detail=f"Mask 产物版本或内容校验失败: {result.stderr}")
+
+
+def build_current_reveal_assets(project: Project) -> None:
+    manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
+    if not os.path.exists(manifest_path):
+        raise HTTPException(status_code=400, detail="Mask 配置文件不存在")
+    build_scene_script = os.path.join(REPO_ROOT, "scripts", "build_reveal_scene.py")
+    result = subprocess.run(
+        [
+            sys.executable,
+            build_scene_script,
+            "--manifest",
+            manifest_path,
+            "--repo-root",
+            REPO_ROOT,
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    if result.returncode != 0:
+        logger.error("Build reveal assets failed: %s", result.stderr)
+        raise HTTPException(status_code=500, detail=f"构建精确 Mask 素材失败: {result.stderr}")
+    validate_current_reveal_assets(project)
+
+
+def mark_slide_image_changed(project: Project, slide_id: str, db: Session) -> None:
+    clear_slide_visual_derivatives(project, slide_id)
+    clear_audio_confirmation(project)
+    current_status = project.get_step_status()
+    current_status["3"] = "completed" if all_current_slide_images_exist(project) else "in_progress"
+    for step in range(4, 9):
+        step_key = str(step)
+        current_status[step_key] = (
+            "pending_reconfirmation"
+            if current_status.get(step_key) == "completed"
+            else "pending"
+        )
+    project.current_step = 3
     project.set_step_status(current_status)
     db.commit()
 
@@ -1088,6 +1372,66 @@ def default_storyboard_rules() -> str:
     return "旁白自然口语化；每个旁白语段只绑定一个清晰的视觉分组；画面先于对应语音约 1 秒出现。"
 
 
+def build_storyboard_request(
+    project_title: str,
+    article_summary: str,
+    article_content: str,
+    storyboard_rules: str,
+) -> tuple[str, str]:
+    article_chars = len(re.sub(r"\s+", "", article_content))
+    if article_chars <= 1200:
+        slide_count_requirement = "4 到 6 页"
+        group_count_requirement = "5-6 个"
+    elif article_chars <= 3000:
+        slide_count_requirement = "6 到 8 页"
+        group_count_requirement = "5-7 个"
+    else:
+        slide_count_requirement = "8 到 12 页"
+        group_count_requirement = "5-8 个"
+
+    schema_path = os.path.join(REPO_ROOT, "schemas", "visual_contract.schema.json")
+    schema_hint = ""
+    if os.path.exists(schema_path):
+        with open(schema_path, "r", encoding="utf-8") as f:
+            schema_hint = f.read()
+
+    system_prompt = f"""你是一个顶级的 PPT 视频分镜策划师。
+请阅读用户输入的内容摘要和全文，设计出一份符合 PPT 动画视频制作标准的视觉合约(Visual Contract)。
+视频的画面风格为“温暖极简手绘线稿风”。
+要求：
+1. 必须要将整篇文章合理划分，分成 {slide_count_requirement} Slide（每页的 slide_id 为 slide_001, slide_002 格式）。
+2. 每页 Slide 必须定义 {group_count_requirement}视觉分组(visual_groups)，包含：
+   - 1个 title 主标题（role 为 'title'）
+   - 1个 subtitle 副标题（role 为 'subtitle'）
+   - 2-4个 body/diagram 主体/图表区（role 只能是 'content_body', 'diagram', 'annotation', 'summary', 'decoration' 之一）
+   - 1个 summary 总结区（role 为 'summary'）
+3. 每个视觉分组（visual_groups）必须有：
+   - id: 比如 title_group, subtitle_group, body_group_01 等
+   - visible_text: 页面上会显式画出来的中文字符标签（非常重要，通常为 2-8 个字，绝对不能为空）
+   - visual_anchor: 手绘线稿元素的视觉描述（比如“顶部主标题”、“左边带圆圈数字1的方框”、“中间一个简笔画小脑”）
+   - narration_function: 解释该分组在画面中所起的视觉/解释作用
+   - reveal_order: 页面渲染时层淡入淡出显示的顺序，从 1 开始依次增加
+4. 必须规划 narration_beats (旁白语段)，使说话声音与相应视觉分组绑定：
+   - group_id: 指向前面定义的 visual_groups 中的 id
+   - visible_anchor: 该分组对应的 visible_text 文本（不可写错，必须一致）
+   - spoken_intent: 这一句话想达到的意图
+   - spoken_text: 这一句话具体要朗读的中文旁白（需自然连贯，解释 visible_text）
+5. 用户自定义的分镜与演讲稿规则如下。请遵守这些内容，但不得修改输出字段、层级、ID 规则或 JSON 结构：
+--- 用户分镜规则开始 ---
+{storyboard_rules}
+--- 用户分镜规则结束 ---
+6. 请确保生成的 JSON 数据严格符合以下的 JSON Schema 格式要求：
+{schema_hint}
+
+请直接返回合法的 JSON 对象，不要包含 markdown 标记的 ```json 外壳。"""
+    user_prompt = (
+        f"项目主题：{project_title}\n"
+        f"摘要提纲：{article_summary}\n"
+        f"正文全文：\n{article_content}"
+    )
+    return system_prompt, user_prompt
+
+
 @app.get("/api/projects/{project_id}/steps/2/rules")
 def get_step2_rules(project_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -1117,6 +1461,47 @@ def update_step2_rules(project_id: str, payload: Dict[str, Any], db: Session = D
     return {"success": True, "rules": rules}
 
 
+@app.post("/api/projects/{project_id}/steps/2/prompt-preview")
+def get_step2_prompt_preview(
+    project_id: str,
+    payload: Optional[Dict[str, Any]] = None,
+    db: Session = Depends(get_db),
+):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    brief_path = os.path.join(project.run_dir, "planning", "article_brief.json")
+    if not os.path.exists(brief_path):
+        raise HTTPException(status_code=400, detail="请先导入文章再查看完整分镜请求")
+    with open(brief_path, "r", encoding="utf-8") as f:
+        brief = json.load(f)
+
+    storyboard_rules = str((payload or {}).get("rules") or "").strip()
+    if not storyboard_rules:
+        rules_path = storyboard_rules_path(project)
+        if os.path.exists(rules_path):
+            with open(rules_path, "r", encoding="utf-8") as f:
+                storyboard_rules = f.read().strip()
+        else:
+            storyboard_rules = default_storyboard_rules()
+
+    project_title = (project.name or "").strip() or brief.get("title") or "未命名项目"
+    article_content = str(brief.get("content") or "")
+    article_summary = brief.get("summary") or build_article_summary(article_content)
+    system_prompt, user_prompt = build_storyboard_request(
+        project_title,
+        article_summary,
+        article_content,
+        storyboard_rules,
+    )
+    return {
+        "success": True,
+        "system_content": system_prompt,
+        "user_content": user_prompt,
+    }
+
+
 @app.post("/api/projects/{project_id}/steps/2/execute")
 def execute_step2(project_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -1132,16 +1517,6 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
     project_title = (project.name or "").strip() or brief.get("title") or "未命名项目"
     article_content = str(brief.get("content") or "")
     article_summary = brief.get("summary") or build_article_summary(article_content)
-    article_chars = len(re.sub(r"\s+", "", article_content))
-    if article_chars <= 1200:
-        slide_count_requirement = "4 到 6 页"
-        group_count_requirement = "5-6 个"
-    elif article_chars <= 3000:
-        slide_count_requirement = "6 到 8 页"
-        group_count_requirement = "5-7 个"
-    else:
-        slide_count_requirement = "8 到 12 页"
-        group_count_requirement = "5-8 个"
         
     llm_api_key = get_setting("llm_api_key")
     llm_base_url = get_setting("llm_base_url")
@@ -1153,8 +1528,7 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
     if not llm_api_key:
         raise HTTPException(status_code=400, detail="未配置大模型 API 密钥，请在系统设置中配置后再试。")
         
-    # 加载已有的 visual_contract 架构 schema 做指导
-    schema_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "schemas", "visual_contract.schema.json"))
+    schema_path = os.path.join(REPO_ROOT, "schemas", "visual_contract.schema.json")
     schema_hint = ""
     if os.path.exists(schema_path):
         with open(schema_path, "r", encoding="utf-8") as f:
@@ -1165,36 +1539,12 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
             storyboard_rules = f.read().strip()
     else:
         storyboard_rules = default_storyboard_rules()
-            
-    system_prompt = f"""你是一个顶级的 PPT 视频分镜策划师。
-请阅读用户输入的内容摘要和全文，设计出一份符合 PPT 动画视频制作标准的视觉合约(Visual Contract)。
-视频的画面风格为“温暖极简手绘线稿风”。
-要求：
-1. 必须要将整篇文章合理划分，分成 {slide_count_requirement} Slide（每页的 slide_id 为 slide_001, slide_002 格式）。
-2. 每页 Slide 必须定义 {group_count_requirement}视觉分组(visual_groups)，包含：
-   - 1个 title 主标题（role 为 'title'）
-   - 1个 subtitle 副标题（role 为 'subtitle'）
-   - 2-4个 body/diagram 主体/图表区（role 只能是 'content_body', 'diagram', 'annotation', 'summary', 'decoration' 之一）
-   - 1个 summary 总结区（role 为 'summary'）
-3. 每个视觉分组（visual_groups）必须有：
-   - id: 比如 title_group, subtitle_group, body_group_01 等
-   - visible_text: 页面上会显式画出来的中文字符标签（非常重要，通常为 2-8 个字，绝对不能空）
-   - visual_anchor: 手绘线稿元素的视觉描述（比如“顶部主标题”、“左边带圆圈数字1的方框”、“中间一个简笔画小脑”）
-   - narration_function: 解释该分组在画面中所起的视觉/解释作用
-   - reveal_order: 页面渲染时层淡入淡出显示的顺序，从 1 开始依次增加
-4. 必须规划 narration_beats (旁白语段)，使说话声音与相应视觉分组绑定：
-   - group_id: 指向前面定义的 visual_groups 中的 id
-   - visible_anchor: 该分组对应的 visible_text 文本（不可写错，必须一致）
-   - spoken_intent: 这一句话想达到的意图
-   - spoken_text: 这一句话具体要朗读的中文旁白（需自然连贯，解释 visible_text）
-5. 用户自定义的分镜与演讲稿规则如下。请遵守这些内容，但不得修改输出字段、层级、ID 规则或 JSON 结构：
---- 用户分镜规则开始 ---
-{storyboard_rules}
---- 用户分镜规则结束 ---
-6. 请确保生成的 JSON 数据严格符合以下的 JSON Schema 格式要求：
-{schema_hint}
-
-请直接返回合法的 JSON 对象，不要包含 markdown 标记的 ```json 外壳。"""
+    system_prompt, user_prompt = build_storyboard_request(
+        project_title,
+        article_summary,
+        article_content,
+        storyboard_rules,
+    )
 
     try:
         client = get_openai_client(api_key=llm_api_key, base_url=llm_base_url)
@@ -1206,7 +1556,7 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
                 response_format={"type": "json_object"},
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"项目主题：{project_title}\n摘要提纲：{article_summary}\n正文全文：\n{article_content}"}
+                    {"role": "user", "content": user_prompt}
                 ]
             )
         except Exception as inner_e:
@@ -1217,7 +1567,7 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
                 max_tokens=planning_max_tokens,
                 messages=[
                     {"role": "system", "content": system_prompt + " 请只输出纯 JSON，不要包含 Markdown 代码块标记（如 ```json ）。"},
-                    {"role": "user", "content": f"项目主题：{project_title}\n摘要提纲：{article_summary}\n正文全文：\n{article_content}"}
+                    {"role": "user", "content": user_prompt}
                 ]
             )
             
@@ -1298,9 +1648,131 @@ def update_step2_result(project_id: str, payload: Dict[str, Any], db: Session = 
 
 # ==================== 步骤 3-4: 图片生成与管理 ====================
 
-def read_style_tokens_text() -> str:
+IMAGE_STYLE_TOP_LEVEL_KEYS = ("brand", "canvas", "colors", "layout", "visual_assets")
+IMAGE_STYLE_VISUAL_ASSET_FIELDS = {
+    "image_style": "image_style",
+    "diagram_style": "diagram_style",
+    "required_background": "required_background",
+    "layout_rules": "reveal_friendly_layout",
+    "avoid": "avoid",
+}
+
+
+def read_style_tokens_data() -> Dict[str, Any]:
     with open(STYLE_TOKENS_PATH, "r", encoding="utf-8") as f:
-        return f.read()
+        payload = yaml.safe_load(f) or {}
+    if not isinstance(payload, dict):
+        raise ValueError("config/style_tokens.yaml must contain a YAML object")
+    return payload
+
+
+def editable_image_style_data(style_tokens: Dict[str, Any]) -> Dict[str, Any]:
+    editable: Dict[str, Any] = {}
+    for key in IMAGE_STYLE_TOP_LEVEL_KEYS:
+        if key not in style_tokens:
+            continue
+        value = copy.deepcopy(style_tokens[key])
+        if key == "visual_assets" and isinstance(value, dict):
+            value = {
+                editor_key: value[source_key]
+                for editor_key, source_key in IMAGE_STYLE_VISUAL_ASSET_FIELDS.items()
+                if source_key in value
+            }
+        editable[key] = value
+    return editable
+
+
+def dump_image_style_editor_text(style_tokens: Dict[str, Any]) -> str:
+    return yaml.safe_dump(
+        editable_image_style_data(style_tokens),
+        allow_unicode=True,
+        sort_keys=False,
+        width=1000,
+    ).strip()
+
+
+def merge_image_style_update(
+    style_tokens: Dict[str, Any],
+    update: Dict[str, Any],
+) -> Dict[str, Any]:
+    unknown_keys = sorted(set(update) - set(IMAGE_STYLE_TOP_LEVEL_KEYS))
+    if unknown_keys:
+        raise HTTPException(
+            status_code=400,
+            detail=f"这些字段不属于生图配置: {', '.join(unknown_keys)}",
+        )
+
+    merged = copy.deepcopy(style_tokens)
+    for key, value in update.items():
+        if key != "visual_assets":
+            merged[key] = value
+            continue
+        if not isinstance(value, dict):
+            raise HTTPException(status_code=400, detail="visual_assets 必须是 YAML 对象")
+        unknown_asset_keys = sorted(set(value) - set(IMAGE_STYLE_VISUAL_ASSET_FIELDS))
+        if unknown_asset_keys:
+            raise HTTPException(
+                status_code=400,
+                detail=f"这些 visual_assets 字段不用于生图: {', '.join(unknown_asset_keys)}",
+            )
+        existing_assets = merged.get("visual_assets")
+        if not isinstance(existing_assets, dict):
+            existing_assets = {}
+        for editor_key, editor_value in value.items():
+            existing_assets[IMAGE_STYLE_VISUAL_ASSET_FIELDS[editor_key]] = copy.deepcopy(editor_value)
+        merged["visual_assets"] = existing_assets
+    return merged
+
+
+def build_image_style_prompt(style_tokens: Dict[str, Any]) -> str:
+    brand = style_tokens.get("brand") if isinstance(style_tokens.get("brand"), dict) else {}
+    canvas = style_tokens.get("canvas") if isinstance(style_tokens.get("canvas"), dict) else {}
+    colors = style_tokens.get("colors") if isinstance(style_tokens.get("colors"), dict) else {}
+    layout = style_tokens.get("layout") if isinstance(style_tokens.get("layout"), dict) else {}
+    assets = style_tokens.get("visual_assets") if isinstance(style_tokens.get("visual_assets"), dict) else {}
+
+    lines = ["图片风格与版式："]
+    keywords = brand.get("style_keywords") if isinstance(brand.get("style_keywords"), list) else []
+    if keywords:
+        lines.append(f"- 整体风格：{'、'.join(str(item) for item in keywords if item)}。")
+
+    aspect_ratio = canvas.get("aspect_ratio", "16:9")
+    width = canvas.get("width", 1920)
+    height = canvas.get("height", 1080)
+    background = canvas.get("background") or colors.get("background") or "#FFFDF7"
+    lines.append(f"- 画布：{aspect_ratio}，按 {width}x{height} 构图，纯色背景 {background}。")
+
+    palette_keys = ("ink", "yellow", "yellow_soft", "green_soft", "blue_soft")
+    palette = [str(colors[key]) for key in palette_keys if colors.get(key)]
+    if palette:
+        lines.append(f"- 配色：主线条与强调色使用 {'、'.join(palette)}，保持克制和清晰。")
+
+    title_block = layout.get("title_block") if isinstance(layout.get("title_block"), dict) else {}
+    content = layout.get("content") if isinstance(layout.get("content"), dict) else {}
+    subtitle_area = layout.get("subtitle_area") if isinstance(layout.get("subtitle_area"), dict) else {}
+    subtitle_reserved = canvas.get("subtitle_reserved") if isinstance(canvas.get("subtitle_reserved"), dict) else {}
+    if title_block:
+        lines.append("- 标题与副标题位于页面上方，沿用模板参考图的字号层级和左侧标题标记。")
+    if content:
+        lines.append("- 主体内容放在页面中部开放区域，不绘制包围整页内容的大外框。")
+    subtitle_y = subtitle_area.get("y") or subtitle_reserved.get("y")
+    if subtitle_y is not None:
+        lines.append(f"- y={subtitle_y} 以下留作视频字幕安全区，不放关键文字、人物或图形。")
+
+    layout_rules = assets.get("reveal_friendly_layout")
+    if isinstance(layout_rules, list):
+        for rule in layout_rules:
+            text = str(rule).strip()
+            if "纯净平面" in text:
+                lines.append(f"- {text}")
+
+    avoid = assets.get("avoid")
+    if isinstance(avoid, list) and avoid:
+        lines.append(f"- 避免：{'、'.join(str(item) for item in avoid if item)}。")
+
+    lines.append("- 参考图优先：字体感觉、线条粗细、配色、留白和视觉层级以附带的模板图与示例图为准。")
+    lines.append("- 只生成最终静态整页图片，不要加入图层名称、制作说明或播放器界面。")
+    return "\n".join(lines)
 
 
 @app.get("/api/image-style")
@@ -1312,7 +1784,12 @@ def get_image_style():
             "exists": os.path.exists(path),
             "url": f"/api/image-style/reference/{kind}?t={int(os.path.getmtime(path))}" if os.path.exists(path) else "",
         }
-    return {"success": True, "style_text": read_style_tokens_text(), "references": references}
+    style_tokens = read_style_tokens_data()
+    return {
+        "success": True,
+        "style_text": dump_image_style_editor_text(style_tokens),
+        "references": references,
+    }
 
 
 @app.put("/api/image-style")
@@ -1326,8 +1803,16 @@ def update_image_style(payload: Dict[str, Any]):
         raise HTTPException(status_code=400, detail=f"YAML 格式错误: {exc}")
     if not isinstance(parsed, dict):
         raise HTTPException(status_code=400, detail="图片风格规范必须是 YAML 对象")
+    current = read_style_tokens_data()
+    merged = merge_image_style_update(current, parsed)
     with open(STYLE_TOKENS_PATH, "w", encoding="utf-8") as f:
-        f.write(style_text + "\n")
+        yaml.safe_dump(
+            merged,
+            f,
+            allow_unicode=True,
+            sort_keys=False,
+            width=1000,
+        )
     return {"success": True}
 
 
@@ -1362,16 +1847,16 @@ def update_image_style_reference(kind: str, file: UploadFile = File(...)):
 def generate_prompt_for_slide(slide: Dict[str, Any], topic_name: str) -> str:
     group_lines = []
     for idx, g in enumerate(slide.get("visual_groups", []), start=1):
+        visible_text = str(g.get("visible_text") or "").strip()
+        visual_anchor = str(g.get("visual_anchor") or "").strip()
         group_lines.append(
-            f"{idx}. 分组 ID：{g.get('id')}；角色：{g.get('role')}；"
-            f"必须显示的中文：{g.get('visible_text', '')}；"
-            f"视觉描述：{g.get('visual_anchor', '')}。"
+            f"{idx}. 文字“{visible_text}”；画面：{visual_anchor}。"
         )
     groups_str = "\n".join(group_lines)
     main_title = slide.get("main_title", "")
     subtitle = slide.get("subtitle", "")
     subtitle_part = f"\n副标题：{subtitle}" if subtitle else ""
-    style_text = read_style_tokens_text()
+    style_prompt = build_image_style_prompt(read_style_tokens_data())
     return (
         f"请生成一张 16:9 的 PPT 手绘讲解页。\n"
         f"项目主题：{topic_name}\n主标题：{main_title}{subtitle_part}\n\n"
@@ -1382,9 +1867,8 @@ def generate_prompt_for_slide(slide: Dict[str, Any], topic_name: str) -> str:
         "4. 主标题位于顶部，主体内容位于中部，总结区位于底部字幕安全区上方。\n"
         "5. 画布按 1920x1080 设计，底部 y=930..1080 必须留空，不放重要文字、人物或图形。\n"
         "6. 不要绘制包围整页内容的大外框。\n\n"
-        f"本页视觉分组：\n{groups_str}\n\n"
-        "以下 YAML 是必须遵守的图片风格与版式规范：\n"
-        f"{style_text}"
+        f"本页必须呈现的画面内容：\n{groups_str}\n\n"
+        f"{style_prompt}"
     )
 
 @app.get("/api/projects/{project_id}/steps/3/prompts")
@@ -1416,15 +1900,25 @@ def get_slide_prompts(project_id: str, db: Session = Depends(get_db)):
     return {"success": True, "prompts": slide_prompts}
 
 @app.post("/api/projects/{project_id}/steps/3/generate")
-def generate_slide_image(project_id: str, slide_id: str = Form(...), prompt: str = Form(...), db: Session = Depends(get_db)):
+def generate_slide_image(
+    project_id: str,
+    slide_id: str = Form(...),
+    prompt: str = Form(...),
+    preview: bool = Form(False),
+    db: Session = Depends(get_db),
+):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-        
+
+    if slide_id not in read_current_slide_ids_or_404(project):
+        raise HTTPException(status_code=404, detail="Slide 不存在")
+
     api_key = get_setting("image_api_key")
     base_url = get_setting("image_base_url")
     model = get_setting("image_model", "gpt-image-1")
-    save_path = os.path.join(project.run_dir, "slides", slide_id, "visual_draft.png")
+    image_filename = "visual_candidate.png" if preview else "visual_draft.png"
+    save_path = os.path.join(project.run_dir, "slides", slide_id, image_filename)
     
     if not api_key:
         raise HTTPException(status_code=400, detail="未配置生图 API 密钥，请在系统设置中配置，或使用下方本地上传图片功能。")
@@ -1500,8 +1994,12 @@ def generate_slide_image(project_id: str, slide_id: str = Form(...), prompt: str
 
         process_and_save_image(img_bytes, save_path)
         logger.info(f"Image saved for {slide_id}: {save_path}")
-        if all_current_slide_images_exist(project):
-            handle_step_navigation(project, 3, db)
+        if preview:
+            return {
+                "success": True,
+                "candidate_url": f"/api/projects/{project_id}/slides/{slide_id}/candidate?t={uuid.uuid4().hex[:6]}",
+            }
+        mark_slide_image_changed(project, slide_id, db)
         
         return {"success": True, "image_url": f"/api/projects/{project_id}/slides/{slide_id}/image?t={uuid.uuid4().hex[:6]}"}
     except Exception as e:
@@ -1513,13 +2011,14 @@ def upload_slide_image(project_id: str, slide_id: str = Form(...), file: UploadF
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
+    if slide_id not in read_current_slide_ids_or_404(project):
+        raise HTTPException(status_code=404, detail="Slide 不存在")
         
     try:
         content = file.file.read()
         save_path = os.path.join(project.run_dir, "slides", slide_id, "visual_draft.png")
         process_and_save_image(content, save_path)
-        if all_current_slide_images_exist(project):
-            handle_step_navigation(project, 3, db)
+        mark_slide_image_changed(project, slide_id, db)
         return {"success": True, "image_url": f"/api/projects/{project_id}/slides/{slide_id}/image?t={uuid.uuid4().hex[:6]}"}
     except Exception as e:
         logger.error(f"Upload image error for {slide_id}: {e}")
@@ -1538,6 +2037,94 @@ def get_slide_image_file(project_id: str, slide_id: str, db: Session = Depends(g
         
     from fastapi.responses import FileResponse
     return FileResponse(img_path, media_type="image/png")
+
+
+@app.get("/api/projects/{project_id}/slides/{slide_id}/candidate")
+def get_slide_candidate_file(project_id: str, slide_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    if slide_id not in read_current_slide_ids_or_404(project):
+        raise HTTPException(status_code=404, detail="Slide 不存在")
+
+    candidate_path = os.path.join(project.run_dir, "slides", slide_id, "visual_candidate.png")
+    if not os.path.exists(candidate_path):
+        raise HTTPException(status_code=404, detail="候选图片不存在")
+    return FileResponse(candidate_path, media_type="image/png")
+
+
+@app.get("/api/projects/{project_id}/slides/{slide_id}/mask-preview")
+def get_slide_mask_preview_file(project_id: str, slide_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    if slide_id not in read_current_slide_ids_or_404(project):
+        raise HTTPException(status_code=404, detail="Slide 不存在")
+    preview_path = os.path.join(
+        project.run_dir, "slides", slide_id, "assets", "manual_mask_composite.png"
+    )
+    if not os.path.exists(preview_path):
+        raise HTTPException(status_code=404, detail="请先生成最终抠除预览")
+    return FileResponse(preview_path, media_type="image/png")
+
+
+@app.get("/api/projects/{project_id}/slides/{slide_id}/mask-uncovered")
+def get_slide_mask_uncovered_file(project_id: str, slide_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    if slide_id not in read_current_slide_ids_or_404(project):
+        raise HTTPException(status_code=404, detail="Slide 不存在")
+    path = os.path.join(
+        project.run_dir, "slides", slide_id, "assets", "manual_mask_uncovered.png"
+    )
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="当前页面没有未覆盖诊断图")
+    return FileResponse(path, media_type="image/png")
+
+
+@app.post("/api/projects/{project_id}/steps/3/apply-candidate")
+def apply_slide_candidate(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    slide_id = str(payload.get("slide_id") or "").strip()
+    if slide_id not in read_current_slide_ids_or_404(project):
+        raise HTTPException(status_code=404, detail="Slide 不存在")
+
+    slide_dir = os.path.join(project.run_dir, "slides", slide_id)
+    candidate_path = os.path.join(slide_dir, "visual_candidate.png")
+    image_path = os.path.join(slide_dir, "visual_draft.png")
+    if not os.path.exists(candidate_path):
+        raise HTTPException(status_code=404, detail="候选图片不存在，请先生成")
+
+    os.replace(candidate_path, image_path)
+    mark_slide_image_changed(project, slide_id, db)
+    return {
+        "success": True,
+        "image_url": f"/api/projects/{project_id}/slides/{slide_id}/image?t={uuid.uuid4().hex[:6]}",
+    }
+
+
+@app.delete("/api/projects/{project_id}/steps/3/images/{slide_id}")
+def delete_slide_image(project_id: str, slide_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    if slide_id not in read_current_slide_ids_or_404(project):
+        raise HTTPException(status_code=404, detail="Slide 不存在")
+
+    slide_dir = os.path.join(project.run_dir, "slides", slide_id)
+    image_path = os.path.join(slide_dir, "visual_draft.png")
+    candidate_path = os.path.join(slide_dir, "visual_candidate.png")
+    if not os.path.exists(image_path):
+        raise HTTPException(status_code=404, detail="图片不存在")
+    os.remove(image_path)
+    if os.path.exists(candidate_path):
+        os.remove(candidate_path)
+    mark_slide_image_changed(project, slide_id, db)
+    return {"success": True, "slide_id": slide_id}
 
 @app.get("/api/projects/{project_id}/steps/3/images")
 def get_all_images(project_id: str, db: Session = Depends(get_db)):
@@ -1584,6 +2171,49 @@ def get_all_images(project_id: str, db: Session = Depends(get_db)):
                 })
     return {"success": True, "images": results}
 
+
+@app.put("/api/projects/{project_id}/steps/3/order")
+def update_step3_order(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    raw_slide_ids = payload.get("slide_ids", [])
+    if not isinstance(raw_slide_ids, list):
+        raise HTTPException(status_code=400, detail="slide_ids 必须是数组")
+    requested_ids = [
+        str(slide_id).strip()
+        for slide_id in raw_slide_ids
+        if str(slide_id).strip()
+    ]
+    if not requested_ids:
+        raise HTTPException(status_code=400, detail="排序列表不能为空")
+    if len(requested_ids) != len(set(requested_ids)):
+        raise HTTPException(status_code=400, detail="排序列表包含重复的 slide_id")
+
+    contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
+    if not os.path.exists(contract_path):
+        raise HTTPException(status_code=400, detail="分镜规划尚未生成")
+    with open(contract_path, "r", encoding="utf-8") as f:
+        contract = json.load(f)
+
+    slides = contract.get("slides", [])
+    by_id = {
+        str(slide.get("slide_id") or "").strip(): slide
+        for slide in slides
+        if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()
+    }
+    if set(requested_ids) != set(by_id):
+        raise HTTPException(status_code=400, detail="排序列表与当前分镜不一致，请刷新页面后重试")
+
+    contract["slides"] = [by_id[slide_id] for slide_id in requested_ids]
+    with open(contract_path, "w", encoding="utf-8") as f:
+        json.dump(contract, f, ensure_ascii=False, indent=2)
+    sync_reveal_manifest_to_contract(project, requested_ids)
+    sync_narration_beats_to_contract(project, requested_ids)
+    return {"success": True, "slide_ids": requested_ids}
+
+
 @app.post("/api/projects/{project_id}/steps/3/confirm")
 def confirm_images(project_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -1609,13 +2239,8 @@ def confirm_images(project_id: str, db: Session = Depends(get_db)):
             logger.error(f"Failed to write reveal manifest template: {res.stderr}")
             raise HTTPException(status_code=500, detail="自动创建 Mask 标注文件失败，请确认分镜规划正常")
             
-        # 预先执行 auto_fit_reveal_boxes.py 进行算法自适应黑墨水对齐
-        autofit_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "auto_fit_reveal_boxes.py"))
-        fit_res = subprocess.run([
-            sys.executable, autofit_script, "--manifest", manifest_path
-        ], capture_output=True, text=True, encoding="utf-8")
-        if fit_res.returncode != 0:
-            logger.warning(f"Initial auto-fit reveal boxes warning: {fit_res.stderr}")
+        # Final rendering is manual-mask-only. Do not run historical box-fitting
+        # algorithms during normal project initialization.
     sync_reveal_manifest_to_contract(project)
 
     handle_step_navigation(project, 4, db)
@@ -2086,16 +2711,6 @@ def auto_mask_project(project_id: str, db: Session = Depends(get_db)):
             logger.error(f"Vision assisted auto-masking failed: {e}. Will fallback to deterministic scripts.")
             vision_used = False
             
-    # 接着运行 auto_fit_reveal_boxes.py 做黑墨水自适应边界修剪
-    autofit_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "auto_fit_reveal_boxes.py"))
-    fit_res = subprocess.run([
-        sys.executable, autofit_script, "--manifest", manifest_path
-    ], capture_output=True, text=True, encoding="utf-8")
-    
-    if fit_res.returncode != 0:
-        logger.error(f"Auto-fit reveal boxes failed: {fit_res.stderr}")
-        raise HTTPException(status_code=500, detail="墨水框线自适应调整失败，请检查图片是否含有墨水")
-        
     # 生成预览图片
     preview_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "draw_reveal_manifest_preview.py"))
     out_dir = os.path.join(project.run_dir, "review")
@@ -2107,9 +2722,9 @@ def auto_mask_project(project_id: str, db: Session = Depends(get_db)):
         logger.warning(f"Draw reveal manifest preview warned: {prev_res.stderr}")
         
     if vision_used:
-        msg = f"视觉识别（{vision_model}）成功完成，已精确定位所有分组包围框。"
+        msg = f"视觉识别（{vision_model}）已更新辅助框；最终视频仍只使用手动画笔 Mask。"
     else:
-        msg = "未启用视觉识别（未配置 API Key 或识别失败），已使用墨水自适应算法自动对齐包围框。"
+        msg = "未启用视觉识别；最终视频只使用手动画笔 Mask，不再运行旧的墨水自适应算法。"
         
     return {"success": True, "vision_used": vision_used, "message": msg}
 
@@ -2207,10 +2822,47 @@ def update_step5_draft(project_id: str, payload: Dict[str, Any], db: Session = D
         }
         payload["slides"] = [by_id[slide_id] for slide_id in current_slide_ids if slide_id in by_id]
 
+    payload = prune_unlinked_mask_groups(project, payload)
     manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     return {"success": True}
+
+@app.post("/api/projects/{project_id}/steps/5/preview")
+def build_step5_preview(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    slide_id = str(payload.get("slide_id") or "").strip()
+    if slide_id not in read_current_slide_ids_or_404(project):
+        raise HTTPException(status_code=404, detail="Slide 不存在")
+    build_current_reveal_assets(project)
+    report_path = os.path.join(project.run_dir, "slides", slide_id, "reveal_report.json")
+    with open(report_path, "r", encoding="utf-8") as file:
+        report = json.load(file)
+    diagnostics = report.get("foreground_diagnostics") or {}
+    cache_key = uuid.uuid4().hex[:8]
+    fallback_full_slide = bool(report.get("fallback_full_slide"))
+    return {
+        "success": True,
+        "slide_id": slide_id,
+        "pipeline_version": report.get("pipeline_version"),
+        "method": report.get("method"),
+        "fallback_full_slide": fallback_full_slide,
+        "diagnostics": diagnostics,
+        "warnings": report.get("warnings") or [],
+        "preview_url": (
+            f"/api/projects/{project_id}/slides/{slide_id}/image?t={cache_key}"
+            if fallback_full_slide
+            else f"/api/projects/{project_id}/slides/{slide_id}/mask-preview?t={cache_key}"
+        ),
+        "uncovered_url": (
+            None
+            if fallback_full_slide
+            else f"/api/projects/{project_id}/slides/{slide_id}/mask-uncovered?t={cache_key}"
+        ),
+    }
+
 
 @app.put("/api/projects/{project_id}/steps/5/result")
 def update_step5_result(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
@@ -2228,19 +2880,13 @@ def update_step5_result(project_id: str, payload: Dict[str, Any], db: Session = 
         }
         payload["slides"] = [by_id[slide_id] for slide_id in current_slide_ids if slide_id in by_id]
 
+    payload = prune_unlinked_mask_groups(project, payload)
     manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
         
     # 人工保存后，校验并构建切层 assets，运行 build_reveal_scene.py
-    build_scene_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "build_reveal_scene.py"))
-    build_res = subprocess.run([
-        sys.executable, build_scene_script, "--manifest", manifest_path
-    ], capture_output=True, text=True, encoding="utf-8")
-    
-    if build_res.returncode != 0:
-        logger.error(f"Build reveal scene failed: {build_res.stderr}")
-        raise HTTPException(status_code=500, detail=f"构建切层素材失败: {build_res.stderr}")
+    build_current_reveal_assets(project)
         
     handle_step_navigation(project, 5, db)
     return {"success": True}
@@ -2576,6 +3222,9 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
     os.environ["MINIMAX_TTS_VOLUME"] = tts_volume
     os.environ["MINIMAX_TTS_PITCH"] = tts_pitch
     os.environ["MINIMAX_API_URL"] = tts_endpoint
+
+    clear_audio_confirmation(project)
+    mark_step_in_progress(project, 7, db)
         
     tts_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "minimax_tts.py"))
     
@@ -2636,8 +3285,7 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
         logger.error(f"Timeline binding failed: {bind_res.stderr}")
         raise HTTPException(status_code=500, detail=f"时间轴绑定失败: {bind_res.stderr}")
         
-    handle_step_navigation(project, 7, db)
-    return {"success": True}
+    return {"success": True, "audio_confirmed": False}
 
 # 获取音频文件接口（供前端试听）
 @app.get("/api/projects/{project_id}/slides/{slide_id}/audio")
@@ -2689,8 +3337,17 @@ def confirm_tts_audio(project_id: str, db: Session = Depends(get_db)):
     if bind_res.returncode != 0:
         logger.error(f"Timeline binding failed during audio confirm: {bind_res.stderr}")
         raise HTTPException(status_code=500, detail=f"时间轴绑定失败: {bind_res.stderr}")
+    confirmation_path = audio_confirmation_path(project)
+    os.makedirs(os.path.dirname(confirmation_path), exist_ok=True)
+    with open(confirmation_path, "w", encoding="utf-8") as f:
+        json.dump(
+            {"confirmed_at": datetime.now().isoformat(), "slide_ids": slide_ids},
+            f,
+            ensure_ascii=False,
+            indent=2,
+        )
     handle_step_navigation(project, 7, db)
-    return {"success": True}
+    return {"success": True, "audio_confirmed": True}
 
 # ==================== 步骤 8: 视频合成与渲染 ====================
 
@@ -2700,15 +3357,36 @@ def project_video_dir(project: Project) -> str:
     return videos_dir
 
 
+def video_metadata_path(path: str) -> str:
+    return f"{path}.render.json"
+
+
+def read_video_metadata(path: str) -> Dict[str, Any]:
+    metadata_path = video_metadata_path(path)
+    if not os.path.exists(metadata_path):
+        return {}
+    try:
+        with open(metadata_path, "r", encoding="utf-8") as file:
+            value = json.load(file)
+        return value if isinstance(value, dict) else {}
+    except Exception as exc:
+        logger.warning("Failed to read video metadata %s: %s", metadata_path, exc)
+        return {}
+
+
 def video_item(project_id: str, path: str, label: Optional[str] = None) -> Dict[str, Any]:
     stat = os.stat(path)
     filename = os.path.basename(path)
+    metadata = read_video_metadata(path)
+    pipeline_version = str(metadata.get("reveal_pipeline_version") or "")
     return {
         "filename": filename,
         "label": label or filename,
         "size": stat.st_size,
         "created_at": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
         "url": f"/api/projects/{project_id}/videos/{filename}",
+        "reveal_pipeline_version": pipeline_version or None,
+        "is_legacy": pipeline_version != REVEAL_PIPELINE_VERSION,
     }
 
 
@@ -2733,17 +3411,12 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
+    if not project_audio_confirmed(project):
+        raise HTTPException(status_code=400, detail="请先在“旁白与音频”步骤试听并确认音频，再开始视频渲染。")
 
     # Draft autosave updates the manifest only. Always rebuild reveal assets here
     # so rendering cannot use stale crops from an earlier mask revision.
-    manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
-    build_scene_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "build_reveal_scene.py"))
-    build_scene_res = subprocess.run([
-        sys.executable, build_scene_script, "--manifest", manifest_path
-    ], capture_output=True, text=True, encoding="utf-8")
-    if build_scene_res.returncode != 0:
-        logger.error(f"Reveal scene rebuild before render failed: {build_scene_res.stderr}")
-        raise HTTPException(status_code=500, detail=f"渲染前重建 Mask 素材失败: {build_scene_res.stderr}")
+    build_current_reveal_assets(project)
 
     # 首先调用 build_remotion_props.py 生成渲染配置属性
     bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))
@@ -2809,6 +3482,17 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
     if render_res.returncode != 0:
         logger.error(f"Remotion render failed: {render_res.stderr}")
         raise HTTPException(status_code=500, detail=f"视频渲染失败: {render_res.stderr}")
+    with open(video_metadata_path(output_mp4_path), "w", encoding="utf-8") as file:
+        json.dump(
+            {
+                "rendered_at": datetime.now().isoformat(timespec="seconds"),
+                "reveal_pipeline_version": REVEAL_PIPELINE_VERSION,
+                "manifest": "reveal_manifest.json",
+            },
+            file,
+            ensure_ascii=False,
+            indent=2,
+        )
     shutil.copy2(output_mp4_path, legacy_output_path)
 
     handle_step_navigation(project, 8, db)
@@ -2834,6 +3518,41 @@ def get_project_video(project_id: str, filename: str, db: Session = Depends(get_
     if not os.path.exists(video_path):
         raise HTTPException(status_code=404, detail="视频文件不存在")
     return FileResponse(video_path, media_type="video/mp4", filename=safe_name)
+
+
+@app.delete("/api/projects/{project_id}/videos/{filename}")
+def delete_project_video(project_id: str, filename: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    safe_name = os.path.basename(filename)
+    if safe_name != filename or not safe_name.lower().endswith(".mp4"):
+        raise HTTPException(status_code=400, detail="视频文件名无效")
+    if safe_name == "out.mp4":
+        video_path = os.path.join(project.run_dir, "out.mp4")
+    else:
+        video_path = os.path.join(project.run_dir, "videos", safe_name)
+    if not os.path.exists(video_path):
+        raise HTTPException(status_code=404, detail="视频文件不存在")
+    os.remove(video_path)
+    metadata_path = video_metadata_path(video_path)
+    if os.path.exists(metadata_path):
+        os.remove(metadata_path)
+
+    remaining = list_video_items(project, project_id)
+    legacy_path = os.path.join(project.run_dir, "out.mp4")
+    regular_remaining = [
+        item for item in remaining
+        if item.get("filename") != "out.mp4"
+        and os.path.exists(os.path.join(project.run_dir, "videos", item["filename"]))
+    ]
+    if regular_remaining:
+        newest_path = os.path.join(project.run_dir, "videos", regular_remaining[0]["filename"])
+        shutil.copy2(newest_path, legacy_path)
+    elif os.path.exists(legacy_path):
+        os.remove(legacy_path)
+    return {"success": True, "videos": list_video_items(project, project_id)}
 
 # 获取最终生成的 MP4 视频
 @app.get("/api/projects/{project_id}/video")
@@ -2861,5 +3580,5 @@ app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 
 if __name__ == "__main__":
     import uvicorn
-    # 本地局域网启动，默认端口 8000
-    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
+    # 本地交互流程包含长耗时 AI 请求，默认关闭热重载，避免保存过程中连接被重启打断。
+    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=False)

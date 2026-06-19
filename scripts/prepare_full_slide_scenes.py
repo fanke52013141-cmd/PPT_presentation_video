@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""
-Compatibility wrapper for the former full-slide scene preparation command.
-
-Production now requires decomposed PNG layers. This wrapper preserves the old
-CLI entrypoint but delegates to scripts/decompose_slide_layers.py so accidental
-use of the old command cannot recreate a single full_slide-only scene.
-"""
+"""Compatibility entrypoint for the current exact manual-Mask scene builder."""
 
 from __future__ import annotations
 
@@ -13,49 +7,34 @@ import argparse
 import sys
 from pathlib import Path
 
-from decompose_slide_layers import (
-    DEFAULT_HEIGHT,
-    DEFAULT_WIDTH,
-    DecomposeError,
-    decompose_run,
-)
+from build_reveal_scene import RevealBuildError, build_manifest, read_json
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Deprecated wrapper: decompose full-slide PNG drafts into Remotion PNG layers."
+        description="Deprecated alias for build_reveal_scene.py using manual_mask_exact_v2."
     )
     parser.add_argument("--run-dir", required=True, type=Path)
-    parser.add_argument("--visual-filename", default="visual_draft.png")
-    parser.add_argument("--width", default=DEFAULT_WIDTH, type=int)
-    parser.add_argument("--height", default=DEFAULT_HEIGHT, type=int)
-    parser.add_argument("--default-duration-sec", default=12.0, type=float)
-    parser.add_argument("--max-overlap-ratio", default=0.18, type=float)
-    parser.add_argument("--optimize-png", action="store_true", help="Enable slower PNG compression optimization.")
-    parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--repo-root", default=Path("."), type=Path)
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    run_dir = args.run_dir.resolve()
+    manifest_path = run_dir / "reveal_manifest.json"
     try:
-        count = decompose_run(
-            run_dir=args.run_dir.resolve(),
-            visual_filename=args.visual_filename,
-            width=args.width,
-            height=args.height,
-            default_duration_sec=args.default_duration_sec,
-            optimize_png=args.optimize_png,
-            overwrite=args.overwrite,
-            max_overlap_ratio=args.max_overlap_ratio,
+        count = build_manifest(
+            read_json(manifest_path),
+            manifest_path,
+            args.repo_root.resolve(),
         )
-    except DecomposeError as exc:
+    except RevealBuildError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
-
     print(
         "prepare_full_slide_scenes.py is deprecated; "
-        f"decomposed {count} slide visual(s) into PNG layers instead."
+        f"built manual_mask_exact_v2 assets for {count} slide(s)."
     )
     return 0
 

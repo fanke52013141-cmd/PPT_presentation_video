@@ -11,6 +11,10 @@ from typing import Any
 
 from PIL import Image
 
+PIPELINE_VERSION = "manual_mask_exact_v2"
+MASKED_COMPOSITION_METHOD = "solid_background_manual_mask_exact"
+STATIC_COMPOSITION_METHOD = "full_slide_static"
+
 
 class RevealValidationError(RuntimeError):
     pass
@@ -52,6 +56,22 @@ def validate_scene(slide_dir: Path, repo_root: Path, width: int, height: int, re
     if scene.get("visual_source") != "master_reveal_layers":
         raise RevealValidationError(f"Scene is not a master reveal scene: {slide_dir / 'scene.json'}")
     report = read_json(slide_dir / "reveal_report.json")
+    fallback_full_slide = bool(report.get("fallback_full_slide"))
+    composition = scene.get("composition") if isinstance(scene.get("composition"), dict) else {}
+    expected_method = STATIC_COMPOSITION_METHOD if fallback_full_slide else MASKED_COMPOSITION_METHOD
+    if composition.get("pipeline_version") != PIPELINE_VERSION:
+        raise RevealValidationError(f"Scene uses stale reveal pipeline in {slide_dir}")
+    if report.get("pipeline_version") != PIPELINE_VERSION:
+        raise RevealValidationError(f"Reveal report uses stale pipeline in {slide_dir}")
+    if composition.get("method") != expected_method or report.get("method") != expected_method:
+        raise RevealValidationError(f"Unexpected reveal composition method in {slide_dir}: {composition.get('method')}")
+    if composition.get("manual_mask_only") is not True or report.get("manual_mask_only") is not True:
+        raise RevealValidationError(f"Reveal scene is not manual-mask-only: {slide_dir}")
+    if not fallback_full_slide:
+        if composition.get("source_image_used_for_background") is not False:
+            raise RevealValidationError(f"Masked scene background must not reuse the source image: {slide_dir}")
+        if report.get("source_image_used_for_background") is not False:
+            raise RevealValidationError(f"Masked reveal report must declare a solid-only background: {slide_dir}")
     if require_no_blocking:
         warnings = report.get("warnings") if isinstance(report.get("warnings"), list) else []
         blocking = [w for w in warnings if isinstance(w, dict) and str(w.get("severity")) == "blocking"]
@@ -89,8 +109,13 @@ def validate_scene(slide_dir: Path, repo_root: Path, width: int, height: int, re
             raise RevealValidationError(f"PNG dimension mismatch for {layer_id}: {actual} != {expected}")
         if layer.get("role") == "reveal_crop":
             has_reveal_layer = True
-    if not has_reveal_layer:
+    if fallback_full_slide:
+        if not any(layer.get("role") == "full_slide" for layer in layers if isinstance(layer, dict)):
+            raise RevealValidationError(f"Fallback reveal scene must include a full_slide layer: {slide_dir}")
+    elif not has_reveal_layer:
         raise RevealValidationError(f"Reveal scene must include a reveal_crop layer: {slide_dir}")
+    elif not any(layer.get("id") == "base_slide" and layer.get("role") == "background" for layer in layers if isinstance(layer, dict)):
+        raise RevealValidationError(f"Masked reveal scene must include a solid base_slide layer: {slide_dir}")
     timeline = read_json(slide_dir / "animation_timeline.json")
     events = timeline.get("events")
     if not isinstance(events, list):

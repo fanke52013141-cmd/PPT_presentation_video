@@ -99,6 +99,7 @@ with tempfile.TemporaryDirectory() as temp_dir_value:
     assert painted_scene["composition"]["pipeline_version"] == PIPELINE_VERSION
     assert painted_scene["composition"]["source_image_used_for_background"] is False
     assert painted_report["pipeline_version"] == PIPELINE_VERSION
+    assert painted_report["background_normalization"]["method"] == "corner_connected_pixels_only"
     assert not (painted_dir / "assets" / "stale-old-algorithm.png").exists()
     validate_reveal_output(painted_dir, root, 320, 180, require_no_blocking=False)
 

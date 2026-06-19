@@ -9,6 +9,7 @@ import logging
 import subprocess
 import re
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, List, Dict, Any
 
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Query
@@ -21,6 +22,7 @@ from PIL import Image, ImageChops
 import httpx
 import yaml
 from openai import OpenAI
+from scripts.background_color import detect_project_background, normalize_connected_background, rgb_to_hex
 
 def get_openai_client(api_key: str, base_url: str = None) -> OpenAI:
     # 强制不使用环境变量中的代理，防止某些局域网代理的 SSL 拦截规则冲突
@@ -530,6 +532,32 @@ def sync_reveal_manifest_to_contract(project: Project, slide_ids: Optional[List[
         len(slides),
     )
     return True
+
+
+def sync_project_background_color(project: Project) -> Optional[str]:
+    """Detect one canonical background color from all current slide borders."""
+    manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
+    if not os.path.exists(manifest_path):
+        return None
+    slide_ids = read_contract_slide_ids(project.run_dir)
+    image_paths = [
+        Path(project.run_dir) / "slides" / slide_id / "visual_draft.png"
+        for slide_id in slide_ids
+    ]
+    background_rgb, detected = detect_project_background(image_paths)
+    background_hex = rgb_to_hex(background_rgb)
+    with open(manifest_path, "r", encoding="utf-8") as file:
+        manifest = json.load(file)
+    canvas = manifest.setdefault("canvas", {})
+    canvas["background"] = background_hex
+    manifest["background_detection"] = {
+        "method": "median_of_slide_border_medians",
+        "color": background_hex,
+        "slides": detected,
+    }
+    with open(manifest_path, "w", encoding="utf-8") as file:
+        json.dump(manifest, file, ensure_ascii=False, indent=2)
+    return background_hex
 
 
 def sync_narration_beats_to_contract(project: Project, slide_ids: Optional[List[str]] = None) -> bool:
@@ -1207,6 +1235,7 @@ def build_current_reveal_assets(project: Project) -> None:
     manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
     if not os.path.exists(manifest_path):
         raise HTTPException(status_code=400, detail="Mask 配置文件不存在")
+    sync_project_background_color(project)
     build_scene_script = os.path.join(REPO_ROOT, "scripts", "build_reveal_scene.py")
     result = subprocess.run(
         [
@@ -2099,6 +2128,7 @@ def get_slide_foreground_mask_file(project_id: str, slide_id: str, db: Session =
     if not os.path.exists(img_path):
         raise HTTPException(status_code=404, detail="图片不存在")
 
+    sync_project_background_color(project)
     canvas = {"width": 1920, "height": 1080, "background": "#FFFDF7"}
     manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
     if os.path.exists(manifest_path):
@@ -2124,6 +2154,7 @@ def get_slide_foreground_mask_file(project_id: str, slide_id: str, db: Session =
         source = source_image.convert("RGB")
     if source.size != (width, height):
         source = source.resize((width, height), Image.Resampling.LANCZOS)
+    source, _ = normalize_connected_background(source, background_rgb)
     background = Image.new("RGB", source.size, background_rgb)
     red, green, blue = ImageChops.difference(source, background).split()
     maximum = ImageChops.lighter(ImageChops.lighter(red, green), blue)
@@ -3592,7 +3623,11 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
     logger.info(f"Starting Remotion render for {project_id}...")
     render_args = [
         npx_cmd, "remotion", "render", "ArticleVideo", output_mp4_path,
-        f"--props={props_json_path}"
+        f"--props={props_json_path}",
+        "--codec=h264",
+        "--image-format=png",
+        "--pixel-format=yuv420p",
+        "--color-space=bt709",
     ]
     
     render_res = subprocess.run(
@@ -3602,12 +3637,36 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
     if render_res.returncode != 0:
         logger.error(f"Remotion render failed: {render_res.stderr}")
         raise HTTPException(status_code=500, detail=f"视频渲染失败: {render_res.stderr}")
+    color_validator = os.path.join(REPO_ROOT, "scripts", "validate_render_color.py")
+    color_result = subprocess.run(
+        [
+            sys.executable,
+            color_validator,
+            "--video",
+            output_mp4_path,
+            "--run-dir",
+            project.run_dir,
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    if color_result.returncode != 0:
+        if os.path.exists(output_mp4_path):
+            os.remove(output_mp4_path)
+        logger.error("Rendered video color validation failed: %s", color_result.stderr)
+        raise HTTPException(
+            status_code=500,
+            detail=f"视频颜色校验失败，已阻止输出: {color_result.stderr}",
+        )
     with open(video_metadata_path(output_mp4_path), "w", encoding="utf-8") as file:
         json.dump(
             {
                 "rendered_at": datetime.now().isoformat(timespec="seconds"),
                 "reveal_pipeline_version": REVEAL_PIPELINE_VERSION,
                 "manifest": "reveal_manifest.json",
+                "color_standard": "bt709_tv_yuv420p",
+                "color_validation": json.loads(color_result.stdout),
             },
             file,
             ensure_ascii=False,

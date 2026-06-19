@@ -22,6 +22,11 @@ from typing import Any
 
 from PIL import Image, ImageChops, ImageDraw
 
+try:
+    from scripts.background_color import normalize_connected_background
+except ModuleNotFoundError:
+    from background_color import normalize_connected_background
+
 
 PIPELINE_VERSION = "manual_mask_exact_v2"
 MASKED_COMPOSITION_METHOD = "solid_background_manual_mask_exact"
@@ -317,6 +322,10 @@ def compose_slide(
         )
         return
 
+    master, normalized_background_pixel_count = normalize_connected_background(
+        master,
+        background_rgb,
+    )
     base_image = Image.new("RGB", (width, height), background_rgb)
     base_image.save(assets_dir / "base_slide.png", format="PNG")
     master.save(assets_dir / "full_slide.png", format="PNG")
@@ -419,6 +428,7 @@ def compose_slide(
             "manual_mask_only": True,
             "background_source": "canvas.background",
             "source_image_used_for_background": False,
+            "background_normalization": "corner_connected_pixels_only",
         },
     }
     duration = max(
@@ -439,6 +449,10 @@ def compose_slide(
         "background": background,
         "background_source": "canvas.background",
         "source_image_used_for_background": False,
+        "background_normalization": {
+            "method": "corner_connected_pixels_only",
+            "normalized_pixel_count": normalized_background_pixel_count,
+        },
         "source_sha256": source_sha256,
         "mask_union_sha256": sha256_bytes(union_alpha.tobytes()),
         "foreground_diagnostics": {

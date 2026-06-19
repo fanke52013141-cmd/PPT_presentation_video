@@ -14,6 +14,10 @@ def main() -> None:
 
     assert 'REVEAL_PIPELINE_VERSION = "manual_mask_exact_v2"' in server
     assert "build_current_reveal_assets(project)" in server
+    assert '"--image-format=png"' in server
+    assert '"--pixel-format=yuv420p"' in server
+    assert '"--color-space=bt709"' in server
+    assert "validate_render_color.py" in server
     assert "auto_fit_reveal_boxes.py" not in server
     assert "decompose_slide_layers.py" not in server
     assert "split_master_layers.py" not in server

@@ -19,6 +19,9 @@ if (!html.includes('step3-video-background-color') || !html.includes('step3-vide
 }
 if (!html.includes('step3-video-background-apply')) throw new Error('video background apply button missing');
 if (!app.includes('saveStep3VideoBackground')) throw new Error('video background color save handler missing');
+if (!app.includes('hexToRgba(color, isSelected ? 0.24 : 0.18)')) {
+  throw new Error('mask overlay colors are too faint');
+}
 if (!app.includes('generateAllStep3Images')) throw new Error('step 3 batch generation handler missing');
 if (!app.includes('step3GeneratingSlides')) throw new Error('step 3 per-slide generation state missing');
 if (!app.includes('tasks.forEach(task => step3GeneratingSlides.add(task.slideId))')) {

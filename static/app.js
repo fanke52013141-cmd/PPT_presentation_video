@@ -3333,7 +3333,7 @@ function drawManualMaskStrokes(ctx, item, idx) {
   colorLayer.width = 1920;
   colorLayer.height = 1080;
   const colorCtx = colorLayer.getContext('2d');
-  colorCtx.fillStyle = hexToRgba(color, isSelected ? 0.16 : 0.09);
+  colorCtx.fillStyle = hexToRgba(color, isSelected ? 0.24 : 0.18);
   colorCtx.fillRect(0, 0, 1920, 1080);
   colorCtx.globalCompositeOperation = 'destination-in';
   colorCtx.drawImage(maskLayer, 0, 0);

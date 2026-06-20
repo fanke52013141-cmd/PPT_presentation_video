@@ -1,5 +1,7 @@
 # 2026-06-09 Macro Layer Composition Lessons
 
+> Historical archive. The macro-layer workflow below has been removed from production. Current production uses `manual_mask_outer_white_v3`.
+
 - 2026-06-10 update: default production should be master-split, not
   independent element recomposition. Generate one coherent Image Gen master
   slide, keep 48-80px spacing between macro groups, then split same-source PNG

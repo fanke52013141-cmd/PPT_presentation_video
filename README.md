@@ -31,12 +31,15 @@ python -m venv .venv
 
 ## 当前 Mask 渲染规则
 
-生产管线固定为 `manual_mask_exact_v2`：
+生产管线固定为 `manual_mask_outer_white_v3`：
 
 - 没有 Mask：直接显示完整图片。
-- 有 Mask：使用固定纯色背景，只复制手动画笔 Mask 内的源图像素。
+- 图片生成提示词强制要求外围背景为纯白色。
+- 有 Mask：只把与画布边缘连通的近白色识别为外围背景，并放到用户设置的视频背景色上。
+- 图像内部被内容包围的白色不会被抠除。
+- Mask 只约束保留范围，不做边缘腐蚀或膨胀；未使用橡皮时填平完全封闭的内部空洞，使用橡皮时保留擦除结果。
 - 不使用原图作为背景。
-- 不执行自动扩边、连通区域扩张、最近区域分配或跨组擦除。
+- 不执行自动扩边、前景缩边、最近区域分配、语义分割或跨组擦除。
 - Mask 页面可以打开“最终抠除预览”，直接查看视频将使用的结果和未覆盖内容。
 - 每次渲染前都会清理并重建 Reveal 与 Remotion 运行时素材。
 
@@ -51,21 +54,13 @@ visual_draft.png
 -> Remotion ArticleVideo
 ```
 
-以下脚本仅保留作历史诊断，不进入 Web 生产流程：
-
-- `scripts/auto_fit_reveal_boxes.py`
-- `scripts/split_master_layers.py`
-- `scripts/decompose_slide_layers.py`
-- `scripts/compose_manifest_layers.py`
-- `scripts/prepare_full_slide_scenes.py`
-
 ## 主要目录
 
 ```text
 server.py                  FastAPI 后端
 static/                    本地 Web 前端
 scripts/build_reveal_scene.py
-                           精确手动 Mask 构建器
+                           外围白底与手动 Mask 构建器
 scripts/bind_reveal_timeline.py
                            将 Reveal 事件绑定到音频时间
 scripts/build_remotion_props.py
@@ -83,6 +78,7 @@ outputs/                   本地交付文件，不提交
 - 文本模型 Base URL、API Key、模型、温度和最大 Token。
 - 生图 Base URL、API Key、模型和图片尺寸。
 - MiniMax TTS 地址、API Key、模型、音色、语速、音量和音调。
+- 图片生成页可设置最终视频背景色，默认 `#FEFDF9`。
 
 设置保存在本机数据库中。不要把真实凭据写入 Git。
 

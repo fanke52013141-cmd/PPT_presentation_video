@@ -1365,7 +1365,8 @@ def ensure_mask_coverage_ready(project: Project) -> None:
         detail=(
             f"以下页面仍有红色未覆盖内容：{summary}。"
             f"请返回 Mask 标注补涂，达到 {MASK_MIN_COVERAGE_RATIO * 100:.1f}% 后再确认。"
-            "系统不会自动扩大或修补你的 Mask。"
+            "系统不会向外扩大 Mask；未使用橡皮时只填平完全封闭的内部空洞，"
+            "使用橡皮时保留你的擦除结果。"
         ),
     )
 
@@ -3712,16 +3713,7 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
             logger.error(f"npm install failed:\n{npm_install.stderr}")
             raise HTTPException(status_code=500, detail=f"初始化 Remotion Node 依赖失败: {npm_install.stderr}")
             
-    # 调用 PowerShell 执行 render_remotion.ps1
-    # 或者是直接用 npx remotion render
-    # 原项目有 render_remotion.ps1 渲染脚本：
-    # param($RunId, $RepoRoot = ".")
-    # 我们直接使用 python 子进程调用 powershell 跑渲染脚本，或者将其核心命令直接通过 Node 跑：
-    # npx remotion render RevealVideo out.mp4 --props="<path_to_props>"
-    # 我们来看一下 scripts/render_remotion.ps1
-    # 它实际上执行了：
-    # npx remotion render RevealVideo "runs/$RunId/out.mp4" --props="runs/$RunId/remotion_props.json"
-    # 我们直接用 subprocess.run 调用 npx
+    # 直接调用 Remotion CLI，避免维护第二套渲染入口。
     npx_cmd = "npx.cmd" if sys.platform == "win32" else "npx"
     props_json_path = os.path.join(project.run_dir, "remotion_props.json")
     videos_dir = project_video_dir(project)

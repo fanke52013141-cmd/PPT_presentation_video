@@ -58,7 +58,8 @@ with tempfile.TemporaryDirectory() as temp_dir_value:
         assert exc.status_code == 400
         assert "slide_001" in str(exc.detail)
         assert "slide_002" in str(exc.detail)
-        assert "不会自动扩大或修补" in str(exc.detail)
+        assert "不会向外扩大 Mask" in str(exc.detail)
+        assert "完全封闭的内部空洞" in str(exc.detail)
     else:
         raise AssertionError("incomplete mask coverage was not blocked")
 

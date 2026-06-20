@@ -22,6 +22,37 @@ def main() -> None:
     assert "decompose_slide_layers.py" not in server
     assert "split_master_layers.py" not in server
     assert "auto_fit_reveal_boxes.py" not in preflight
+    assert 'MASKED_COMPOSITION_METHOD = "solid_background_outer_white_manual_mask"' in builder
+
+    removed_paths = (
+        "scripts/auto_fit_reveal_boxes.py",
+        "scripts/split_master_layers.py",
+        "scripts/decompose_slide_layers.py",
+        "scripts/compose_manifest_layers.py",
+        "scripts/prepare_full_slide_scenes.py",
+        "scripts/validate_layer_recomposition.py",
+        "scripts/render_remotion.ps1",
+        "scripts/ffmpeg_finalize.ps1",
+        "schemas/master_split_manifest.schema.json",
+        "schemas/layer_manifest.schema.json",
+        "templates/manifests/master_split_manifest.template.json",
+        "references/master_split_workflow.md",
+    )
+    for relative_path in removed_paths:
+        assert not (ROOT / relative_path).exists(), relative_path
+
+    operational_docs = (
+        ROOT / "README.md",
+        ROOT / "AGENTS.md",
+        ROOT / "checks" / "preflight_checklist.md",
+        ROOT / "checks" / "validate_scene.md",
+        ROOT / "templates" / "prompts" / "scene_reconstruction.prompt.md",
+    )
+    for path in operational_docs:
+        text = path.read_text(encoding="utf-8")
+        assert "manual_mask_exact_v2" not in text, path
+        assert "solid_background_manual_mask_exact" not in text, path
+        assert "compose_manifest_layers.py" not in text, path
 
     forbidden_builder_symbols = (
         "erase_later_groups_from_crop",

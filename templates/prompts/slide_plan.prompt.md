@@ -38,7 +38,7 @@ Each `narration_beats[]` item should include:
 - `id`: stable beat id, for example `beat_01`
 - `spoken_point`: the sentence or idea spoken in this beat
 - `source_article_point`: the source concept from the article
-- `visual_group`: the macro layer that should support this beat
+- `visual_group`: the visible group that should support this beat
 - `animation`: suggested action, such as `fade_up`, `soft_zoom_in`, or `highlight`
 - `time_hint`: rough order hint, such as `early`, `middle`, `late`, or `0-3s`
 
@@ -49,8 +49,8 @@ unrelated to what the page will show.
 
 - Each slide explains one core idea.
 - Use 4-7 narration beats per slide.
-- Map every important beat to one visible macro group.
-- Keep page content sparse enough for later splitting: usually 5-8 macro groups.
+- Map every important beat to one visible group.
+- Keep page content sparse enough for manual Mask painting: usually 5-8 visible groups.
 - Avoid planning a slide that requires many tiny labels or dense text.
 - If a concept needs many steps, split it into multiple slides.
 - Keep the subtitle safe zone clear in the visual plan.

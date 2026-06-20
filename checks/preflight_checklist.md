@@ -12,9 +12,13 @@
 
 - Pipeline version is `manual_mask_outer_white_v3`.
 - A page without painted Masks uses `full_slide_static`.
-- A page with Masks uses `solid_background_manual_mask_exact`.
+- A page with Masks uses `solid_background_outer_white_manual_mask`.
 - Masked pages declare `source_image_used_for_background=false`.
-- Every reveal PNG is full-canvas and uses only its saved brush alpha.
+- Generated images use a pure-white outer background.
+- Only near-white pixels connected to an outer edge are removed.
+- Enclosed white content is preserved.
+- Every reveal PNG is full-canvas and uses the saved brush Mask as its
+  retention boundary.
 - `assets/` is rebuilt before render.
 - Remotion `public/runtime/<run_id>` is rebuilt before render.
 - Blocking reveal warnings stop the build.
@@ -43,15 +47,6 @@ python scripts/validate_run_assets.py `
   --repo-root . `
   --require-layered
 ```
-
-## Legacy Diagnostics
-
-These scripts are not part of production:
-
-- `auto_fit_reveal_boxes.py`
-- `split_master_layers.py`
-- `decompose_slide_layers.py`
-- `compose_manifest_layers.py`
 
 ## Blocking Conditions
 

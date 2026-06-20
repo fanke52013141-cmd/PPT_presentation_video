@@ -1,3 +1,5 @@
+# Historical incident log. Entries describe the implementation that existed at
+# incident time and must not be treated as current production instructions.
 cases:
   - id: 2026-06-05-minimax-endpoint-invalid-key
     stage: generate-audio-subtitles

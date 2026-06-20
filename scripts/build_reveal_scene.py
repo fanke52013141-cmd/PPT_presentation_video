@@ -29,7 +29,7 @@ except ModuleNotFoundError:
 
 
 PIPELINE_VERSION = "manual_mask_outer_white_v3"
-MASKED_COMPOSITION_METHOD = "solid_background_manual_mask_exact"
+MASKED_COMPOSITION_METHOD = "solid_background_outer_white_manual_mask"
 MIN_FOREGROUND_COVERAGE_RATIO = 0.999
 STATIC_COMPOSITION_METHOD = "full_slide_static"
 DEFAULT_CANVAS = {

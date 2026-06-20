@@ -29,36 +29,32 @@ article.md
 
 `scripts/build_reveal_scene.py` is the only production reveal builder.
 
-- Pipeline version: `manual_mask_exact_v2`.
+- Pipeline version: `manual_mask_outer_white_v3`.
 - A slide without a painted Mask is a static full-slide image.
-- A slide with painted Masks starts from the fixed canvas background.
-- A reveal layer contains only source-image pixels inside that group's saved
-  brush Mask.
+- A slide with painted Masks starts from the user-configured video background.
+- Generated images must use a pure-white outer background.
+- Only near-white pixels connected to the outer image edge are removed.
+- White areas enclosed by content are preserved.
+- A reveal layer contains source-image content inside that group's saved brush
+  Mask. If no eraser was used, fully enclosed holes in the painted Mask are
+  filled; explicit eraser results are preserved.
 - The source image must never be reused as the background of a masked slide.
-- Do not run box expansion, connected-component growth, nearest-owner
-  assignment, foreground segmentation, or cross-group erasing in production.
+- Do not run box expansion, foreground erosion/dilation, nearest-owner
+  assignment, semantic segmentation, or cross-group erasing in production.
 - Rebuild slide assets and Remotion runtime assets before every render.
 - Validate the pipeline version before rendering.
-
-The following scripts are legacy diagnostics only and must not be called by the
-web production path:
-
-- `scripts/auto_fit_reveal_boxes.py`
-- `scripts/split_master_layers.py`
-- `scripts/decompose_slide_layers.py`
-- `scripts/compose_manifest_layers.py`
-- `scripts/prepare_full_slide_scenes.py`
 
 ## Image Rules
 
 - The PPT body comes from an approved bitmap image.
 - Use 1920×1080, 16:9.
-- Use a flat `#FFFDF7` background.
+- Generate a pure-white (`#FFFFFF`) outer background.
+- The final video canvas color is configurable; the default is `#FEFDF9`.
 - Keep independent visual groups separated.
 - Keep important body content above the subtitle area.
 - Remotion may display PNGs, animate reveal PNGs, play audio, and draw
-  subtitles. It must not redraw PPT body content with HTML, SVG, Canvas, or
-  React shapes.
+  transparent-background subtitles. It must not redraw PPT body content with
+  HTML, SVG, Canvas, or React shapes.
 
 ## State and File Lifecycle
 

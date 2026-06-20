@@ -12,7 +12,7 @@ from typing import Any
 from PIL import Image
 
 PIPELINE_VERSION = "manual_mask_outer_white_v3"
-MASKED_COMPOSITION_METHOD = "solid_background_manual_mask_exact"
+MASKED_COMPOSITION_METHOD = "solid_background_outer_white_manual_mask"
 STATIC_COMPOSITION_METHOD = "full_slide_static"
 
 

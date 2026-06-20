@@ -13,12 +13,6 @@ from PIL import Image
 
 DEFAULT_WIDTH = 1920
 DEFAULT_HEIGHT = 1080
-LAYERED_VISUAL_SOURCES = {
-    "codex_image_gen_png_layers",
-    "image_gen_macro_layers_manifest",
-    "master_split_image_layers",
-    "master_reveal_layers",
-}
 REVEAL_VISUAL_SOURCE = "master_reveal_layers"
 
 
@@ -82,7 +76,7 @@ def validate_audio_timeline(path: Path) -> float:
     return float(duration)
 
 
-def validate_scene(scene_path: Path, slide_dir: Path, repo_root: Path, width: int, height: int, require_layered: bool, require_master_split_report: bool) -> set[str]:
+def validate_scene(scene_path: Path, slide_dir: Path, repo_root: Path, width: int, height: int, require_layered: bool) -> set[str]:
     scene = read_json(scene_path)
     if "elements" in scene:
         raise ValidationError(f"scene.json contains deprecated elements[]: {scene_path}")
@@ -93,20 +87,10 @@ def validate_scene(scene_path: Path, slide_dir: Path, repo_root: Path, width: in
     if not isinstance(layers, list) or not layers:
         raise ValidationError(f"scene.json must contain non-empty layers[]: {scene_path}")
     if require_layered:
-        if source not in LAYERED_VISUAL_SOURCES:
-            allowed = ", ".join(sorted(LAYERED_VISUAL_SOURCES))
-            raise ValidationError(f"Layered mode requires visual_source in [{allowed}]: {scene_path}")
+        if source != REVEAL_VISUAL_SOURCE:
+            raise ValidationError(f"Layered mode requires visual_source={REVEAL_VISUAL_SOURCE}: {scene_path}")
         if len(layers) < 2 and not fallback_full_slide:
             raise ValidationError(f"Layered mode requires multiple PNG layers: {scene_path}")
-        if source != REVEAL_VISUAL_SOURCE and any(layer.get("role") == "full_slide" for layer in layers if isinstance(layer, dict)):
-            raise ValidationError(f"Non-reveal layered mode must not use role=full_slide as the animation layer: {scene_path}")
-    if require_master_split_report or source == "master_split_image_layers":
-        report = read_json(slide_dir / "split_report.json")
-        warnings = report.get("warnings") if isinstance(report.get("warnings"), list) else []
-        blocking = [w for w in warnings if isinstance(w, dict) and str(w.get("severity", "warning")) == "blocking"]
-        if blocking:
-            names = ", ".join(str(w.get("type", "unknown")) for w in blocking)
-            raise ValidationError(f"Blocking master-split warnings must be resolved before render: {slide_dir}: {names}")
     if source == REVEAL_VISUAL_SOURCE:
         report_path = slide_dir / "reveal_report.json"
         if not report_path.exists():
@@ -181,7 +165,7 @@ def slide_ids_from_planning(run_dir: Path) -> list[str]:
     return slide_ids
 
 
-def validate_slide(slide_dir: Path, repo_root: Path, width: int, height: int, require_layered: bool, require_master_split_report: bool) -> None:
+def validate_slide(slide_dir: Path, repo_root: Path, width: int, height: int, require_layered: bool) -> None:
     validate_png(slide_dir / "visual_draft.png")
     validate_png(slide_dir / "assets" / "full_slide.png", width=width, height=height)
     voice_path = slide_dir / "voice.mp3"
@@ -190,17 +174,17 @@ def validate_slide(slide_dir: Path, repo_root: Path, width: int, height: int, re
     # Current Remotion subtitles are driven by audio_timeline.json. Historical
     # subtitles.srt files are optional and must not block the exact-mask path.
     audio_duration_sec = validate_audio_timeline(slide_dir / "audio_timeline.json")
-    layer_ids = validate_scene(slide_dir / "scene.json", slide_dir, repo_root, width, height, require_layered, require_master_split_report)
+    layer_ids = validate_scene(slide_dir / "scene.json", slide_dir, repo_root, width, height, require_layered)
     validate_animation_timeline(slide_dir / "animation_timeline.json", layer_ids, audio_duration_sec)
 
 
-def validate_run(run_dir: Path, repo_root: Path, width: int, height: int, require_layered: bool, require_master_split_report: bool) -> int:
+def validate_run(run_dir: Path, repo_root: Path, width: int, height: int, require_layered: bool) -> int:
     slide_ids = slide_ids_from_planning(run_dir)
     for slide_id in slide_ids:
         slide_dir = run_dir / "slides" / slide_id
         if not slide_dir.exists():
             raise ValidationError(f"Missing slide directory: {slide_dir}")
-        validate_slide(slide_dir, repo_root, width, height, require_layered, require_master_split_report)
+        validate_slide(slide_dir, repo_root, width, height, require_layered)
     return len(slide_ids)
 
 
@@ -211,7 +195,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--width", default=DEFAULT_WIDTH, type=int)
     parser.add_argument("--height", default=DEFAULT_HEIGHT, type=int)
     parser.add_argument("--require-layered", action="store_true")
-    parser.add_argument("--require-master-split-report", action="store_true")
     return parser.parse_args()
 
 
@@ -224,7 +207,6 @@ def main() -> int:
             width=args.width,
             height=args.height,
             require_layered=args.require_layered,
-            require_master_split_report=args.require_master_split_report,
         )
     except ValidationError as exc:
         print(f"Error: {exc}", file=sys.stderr)

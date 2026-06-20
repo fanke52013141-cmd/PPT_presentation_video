@@ -4,7 +4,7 @@ Target: `runs/<run_id>/slides/<slide_id>/scene.json`
 
 ## Required
 
-- Pipeline version is `manual_mask_outer_white_v3`.
+- Pipeline version is `manual_mask_boundary_white_v4`.
 - Canvas is 1920×1080.
 - `layers[]` exists and every asset is a PNG inside the canvas.
 - No production PPT body uses HTML, SVG, text, shape, line, or React drawing.
@@ -17,12 +17,12 @@ Target: `runs/<run_id>/slides/<slide_id>/scene.json`
 
 ## Masked Slides
 
-- `composition_method=solid_background_outer_white_manual_mask`.
+- `composition_method=solid_background_mask_boundary_white_cutout`.
 - `source_image_used_for_background=false`.
-- Outer-connected near-white background is removed.
+- White connected inward from each painted Mask boundary is removed.
 - Enclosed white content remains visible.
 - Reveal assets follow the saved manual Masks.
-- Foreground coverage is at least 99.9%.
+- No unreferenced legacy PNG remains in `assets/`.
 
 ## Commands
 

@@ -8,12 +8,16 @@ server = (ROOT / "server.py").read_text(encoding="utf-8")
 app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
 html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
 visual_prompts = (ROOT / "scripts" / "write_visual_prompts.py").read_text(encoding="utf-8")
+reveal_builder = (ROOT / "scripts" / "build_reveal_scene.py").read_text(encoding="utf-8")
+background_color = (ROOT / "scripts" / "background_color.py").read_text(encoding="utf-8")
 style_tokens = yaml.safe_load((ROOT / "config" / "style_tokens.yaml").read_text(encoding="utf-8"))
 
 assert 'IMAGE_GENERATION_BACKGROUND = "#FFFFFF"' in server
 assert 'DEFAULT_VIDEO_BACKGROUND = "#FEFDF9"' in server
 assert "/steps/3/visual-settings" in server
-assert "connected_content_alpha" in server
+assert "connected_content_alpha" not in server
+assert "masked_outer_white_cutout" in reveal_builder
+assert "masked_outer_white_cutout" in background_color
 assert style_tokens["canvas"]["background"] == "#FFFFFF"
 assert style_tokens["visual_assets"]["required_background"] == "flat_uniform_pure_white"
 assert "pure-white #FFFFFF background" in visual_prompts

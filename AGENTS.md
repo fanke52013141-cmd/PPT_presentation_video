@@ -29,20 +29,20 @@ article.md
 
 `scripts/build_reveal_scene.py` is the only production reveal builder.
 
-- Pipeline version: `manual_mask_outer_white_v3`.
+- Pipeline version: `manual_mask_boundary_white_v4`.
 - A slide without a painted Mask is a static full-slide image.
 - A slide with painted Masks starts from the user-configured video background.
 - Generated images must use a pure-white outer background.
-- Only near-white pixels connected to the outer image edge are removed.
+- Each painted Mask is a processing boundary; only near-white pixels connected
+  inward from that boundary are removed.
 - White areas enclosed by content are preserved.
-- A reveal layer contains source-image content inside that group's saved brush
-  Mask. If no eraser was used, fully enclosed holes in the painted Mask are
-  filled; explicit eraser results are preserved.
+- A reveal layer retains non-white source content inside that group's saved
+  brush Mask, with soft antialias alpha and white-edge decontamination.
 - The source image must never be reused as the background of a masked slide.
 - Do not run box expansion, foreground erosion/dilation, nearest-owner
   assignment, semantic segmentation, or cross-group erasing in production.
 - Rebuild slide assets and Remotion runtime assets before every render.
-- Validate the pipeline version before rendering.
+- Validate the pipeline version and reject unreferenced legacy assets before rendering.
 
 ## Image Rules
 

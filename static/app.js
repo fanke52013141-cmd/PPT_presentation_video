@@ -25,9 +25,6 @@ let state = {
   step5AutoSaveTimer: null,
   step5AutoSaveInFlight: false,
   step5AutoSavePromise: null,
-  step5PreviewPromise: null,
-  step5PreviewRequestedSlideId: null,
-  step5PreviewResults: {},
   step6AutoSaveTimer: null,
   step6AutoSavePromise: null,
   canvasState: {
@@ -43,8 +40,6 @@ let state = {
     brushSize: 170,
     eraserSize: 120,
     activePointerId: null,
-    coverageRatio: 1,
-    maskPreviewReady: true,
     brushCursorClientX: null,
     brushCursorClientY: null,
     maskZoom: 1,
@@ -281,15 +276,10 @@ function initGlobalEvents() {
   document.getElementById('step5-btn-semantic-blocks')?.addEventListener('click', () => runStep5SemanticBlocks());
   document.getElementById('step5-btn-new-block')?.addEventListener('click', () => createCurrentSlideBlock());
   document.getElementById('step5-btn-clear-current')?.addEventListener('click', () => clearAllMaskAnnotations());
-  document.getElementById('step5-btn-preview')?.addEventListener('click', () => openStep5MaskPreview());
   document.getElementById('step5-brush-size')?.addEventListener('input', (e) => updateBrushSize(e.target.value));
   document.getElementById('step5-eraser-size')?.addEventListener('input', (e) => updateEraserSize(e.target.value));
   document.getElementById('btn-narration-picker-cancel')?.addEventListener('click', () => closeNarrationPicker());
   document.getElementById('btn-narration-picker-confirm')?.addEventListener('click', () => confirmNarrationPicker());
-  document.getElementById('btn-mask-preview-close')?.addEventListener('click', () => closeStep5MaskPreview());
-  document.getElementById('modal-mask-preview')?.addEventListener('click', (event) => {
-    if (event.target.id === 'modal-mask-preview') closeStep5MaskPreview();
-  });
 
   // ================= 步骤 6 事件 =================
   document.getElementById('step6-btn-init').addEventListener('click', () => initStep6Narration());
@@ -1701,8 +1691,6 @@ async function confirmStep3Images() {
 let manifestData = null;
 let step5GlobalPointerEventsBound = false;
 let step5SourceCanvas = null;
-let step5SourceForegroundCanvas = null;
-let step5CoverageTimer = null;
 
 let step2Contract = null; // 用于缓存步骤 2 分镜规划数据
 
@@ -2392,24 +2380,15 @@ function renderStep5Workspace() {
     // 设置 Canvas 背景图
     const imgUrl = `/api/projects/${state.currentProject.id}/slides/${slide.slide_id}/image?t=${uuid()}`;
     const backgroundImage = document.getElementById('step5-bg-img');
-    const foregroundImage = document.getElementById('step5-foreground-mask-img');
-    const canvasWrapper = document.getElementById('canvas-container');
     step5SourceCanvas = null;
-    step5SourceForegroundCanvas = null;
-    state.canvasState.coverageRatio = 1;
-    state.canvasState.maskPreviewReady = true;
-    canvasWrapper?.classList.remove('mask-preview-ready');
-    updateStep5LiveCoverageStatus({ loading: true });
-    backgroundImage.onload = () => tryInitializeStep5SourceCache(slide.slide_id);
-    foregroundImage.onload = () => tryInitializeStep5SourceCache(slide.slide_id);
-    backgroundImage.onerror = () => {
-      updateStep5LiveCoverageStatus({ error: true });
+    backgroundImage.onload = () => {
+      rebuildStep5SourceCache(backgroundImage);
+      redrawCanvas();
     };
-    foregroundImage.onerror = () => {
-      updateStep5LiveCoverageStatus({ error: true });
+    backgroundImage.onerror = () => {
+      showToast('当前页原图加载失败，请刷新页面后重试。', 5000);
     };
     backgroundImage.src = imgUrl;
-    foregroundImage.src = `/api/projects/${state.currentProject.id}/slides/${slide.slide_id}/foreground-mask?t=${uuid()}`;
     
     // 初始化 canvas 标注框数据并重绘
     state.canvasState.boxes = getSlideMaskBoxes(slide);
@@ -2888,7 +2867,6 @@ window.deleteMaskBox = function(idx) {
   renderStep5BoxesForm();
   renderStep5NarrationPanel();
   scheduleStep5Autosave();
-  scheduleStep5CoverageCheck();
 };
 
 window.updateMaskBoxField = function(idx, field, val) {
@@ -3175,7 +3153,6 @@ function handleCanvasPointerUp(e, canvas) {
     renderStep5BoxesForm();
     renderStep5NarrationPanel();
     scheduleStep5Autosave();
-    scheduleStep5CoverageCheck();
     return;
   }
 
@@ -3233,83 +3210,11 @@ function rasterizeManualMask(item) {
   return maskLayer;
 }
 
-function buildStep5UnionMask() {
-  const union = createStep5OffscreenCanvas();
-  const unionCtx = union.getContext('2d');
-  state.canvasState.boxes.forEach(item => {
-    unionCtx.drawImage(rasterizeManualMask(item), 0, 0);
-  });
-  return union;
-}
-
-function tryInitializeStep5SourceCache(slideId) {
-  const sourceImage = document.getElementById('step5-bg-img');
-  const foregroundImage = document.getElementById('step5-foreground-mask-img');
-  if (
-    !sourceImage?.complete ||
-    !sourceImage.naturalWidth ||
-    !foregroundImage?.complete ||
-    !foregroundImage.naturalWidth
-  ) return;
-  rebuildStep5SourceCache(sourceImage, foregroundImage);
-  document.getElementById('canvas-container')?.classList.add('mask-preview-ready');
-  try {
-    redrawCanvas();
-  } catch (error) {
-    console.error('Mask live preview render failed:', error);
-    updateStep5LiveCoverageStatus({ error: true });
-    return;
-  }
-  updateStep5LiveCoverageStatus({ loading: true });
-  refreshStep5CoverageFromServer(slideId).catch(() => {
-    if (getCurrentManifestSlide()?.slide_id === slideId) {
-      updateStep5LiveCoverageStatus({ error: true });
-    }
-  });
-}
-
-function rebuildStep5SourceCache(image, foregroundImage) {
+function rebuildStep5SourceCache(image) {
   const source = createStep5OffscreenCanvas();
   const sourceCtx = source.getContext('2d');
   sourceCtx.drawImage(image, 0, 0, 1920, 1080);
-  const foreground = createStep5OffscreenCanvas();
-  const foregroundCtx = foreground.getContext('2d');
-  foregroundCtx.drawImage(foregroundImage, 0, 0, 1920, 1080);
   step5SourceCanvas = source;
-  step5SourceForegroundCanvas = foreground;
-}
-
-function updateStep5LiveCoverageStatus(options = {}) {
-  const status = document.getElementById('step5-live-coverage');
-  const confirmButton = document.getElementById('step5-btn-confirm-next');
-  if (!status) return;
-  status.classList.remove('ready', 'warning', 'loading', 'error');
-  if (options.loading) {
-    status.classList.add('loading');
-    status.innerText = '正在加载真实抠除预览...';
-    if (confirmButton) confirmButton.disabled = true;
-    return;
-  }
-  if (options.error) {
-    status.classList.add('error');
-    status.innerText = '原图加载失败，暂时不能确认';
-    if (confirmButton) confirmButton.disabled = true;
-    return;
-  }
-  if (options.fallback) {
-    state.canvasState.coverageRatio = 1;
-    state.canvasState.maskPreviewReady = true;
-    status.classList.add('ready');
-    status.innerText = '当前页无 Mask：视频将完整显示整页图片';
-    if (confirmButton) confirmButton.disabled = false;
-    return;
-  }
-  const ratio = Number(options.ratio || 0);
-  state.canvasState.coverageRatio = ratio;
-  state.canvasState.maskPreviewReady = true;
-  status.classList.add('ready');
-  status.innerText = '编辑视图：原图完整显示 · 浅红斜纹仅表示未选择内容 · 可确认';
-  if (confirmButton) confirmButton.disabled = false;
 }
 
 function drawManualMaskStrokes(ctx, item, idx) {
@@ -3323,30 +3228,13 @@ function drawManualMaskStrokes(ctx, item, idx) {
   colorLayer.width = 1920;
   colorLayer.height = 1080;
   const colorCtx = colorLayer.getContext('2d');
-  colorCtx.fillStyle = hexToRgba(color, isSelected ? 0.24 : 0.18);
+  colorCtx.fillStyle = hexToRgba(color, isSelected ? 0.46 : 0.34);
   colorCtx.fillRect(0, 0, 1920, 1080);
   colorCtx.globalCompositeOperation = 'destination-in';
   colorCtx.drawImage(maskLayer, 0, 0);
   ctx.drawImage(colorLayer, 0, 0);
 }
 
-function createStep5UncoveredPattern(ctx) {
-  const tile = document.createElement('canvas');
-  tile.width = 44;
-  tile.height = 44;
-  const tileCtx = tile.getContext('2d');
-  tileCtx.strokeStyle = 'rgba(239, 68, 68, 0.36)';
-  tileCtx.lineWidth = 2;
-  tileCtx.beginPath();
-  tileCtx.moveTo(-11, 44);
-  tileCtx.lineTo(44, -11);
-  tileCtx.moveTo(11, 55);
-  tileCtx.lineTo(55, 11);
-  tileCtx.stroke();
-  return ctx.createPattern(tile, 'repeat');
-}
-
-// 编辑视图：完整原图始终清晰可见，已覆盖区域淡色显示，漏标区域仅叠加浅红斜纹。
 function redrawCanvas() {
   const canvas = document.getElementById('step5-canvas');
   const ctx = canvas.getContext('2d');
@@ -3356,113 +3244,17 @@ function redrawCanvas() {
   canvas.classList.toggle('painting', state.canvasState.paintMode);
   canvas.classList.toggle('erasing', state.canvasState.paintMode && state.canvasState.eraserMode);
 
-  if (!step5SourceCanvas || !step5SourceForegroundCanvas) {
+  if (!step5SourceCanvas) {
     refreshBrushCursor(canvas);
     return;
   }
 
   ctx.drawImage(step5SourceCanvas, 0, 0);
-  const unionMask = buildStep5UnionMask();
-  const hasPaint = state.canvasState.boxes.some(hasPaintStroke);
-  if (!hasPaint) {
-    updateStep5LiveCoverageStatus({ fallback: true });
-    refreshBrushCursor(canvas);
-    return;
-  }
-
   state.canvasState.boxes.forEach((item, idx) => {
     drawManualMaskStrokes(ctx, item, idx);
   });
 
-  const uncovered = createStep5OffscreenCanvas();
-  const uncoveredCtx = uncovered.getContext('2d');
-  uncoveredCtx.drawImage(step5SourceForegroundCanvas, 0, 0);
-  uncoveredCtx.globalCompositeOperation = 'destination-out';
-  uncoveredCtx.drawImage(unionMask, 0, 0);
-
-  const redWarning = createStep5OffscreenCanvas();
-  const redWarningCtx = redWarning.getContext('2d');
-  redWarningCtx.fillStyle = 'rgba(255, 59, 48, 0.04)';
-  redWarningCtx.fillRect(0, 0, 1920, 1080);
-  redWarningCtx.globalCompositeOperation = 'destination-in';
-  redWarningCtx.drawImage(uncovered, 0, 0);
-  ctx.drawImage(redWarning, 0, 0);
-
-  const hatchWarning = createStep5OffscreenCanvas();
-  const hatchWarningCtx = hatchWarning.getContext('2d');
-  hatchWarningCtx.fillStyle = createStep5UncoveredPattern(hatchWarningCtx);
-  hatchWarningCtx.fillRect(0, 0, 1920, 1080);
-  hatchWarningCtx.globalCompositeOperation = 'destination-in';
-  hatchWarningCtx.drawImage(uncovered, 0, 0);
-  ctx.drawImage(hatchWarning, 0, 0);
-
   refreshBrushCursor(canvas);
-}
-
-function scheduleStep5CoverageCheck() {
-  clearTimeout(step5CoverageTimer);
-  updateStep5LiveCoverageStatus({ loading: true });
-  step5CoverageTimer = setTimeout(async () => {
-    const slide = getCurrentManifestSlide();
-    if (!slide?.slide_id) return;
-    try {
-      await saveStep5Draft();
-      await refreshStep5CoverageFromServer(slide.slide_id);
-    } catch (_) {
-      updateStep5LiveCoverageStatus({ error: true });
-    }
-  }, 850);
-}
-
-async function refreshStep5CoverageFromServer(slideId) {
-  state.step5PreviewRequestedSlideId = slideId;
-  if (!state.step5PreviewPromise) {
-    const projectId = state.currentProject.id;
-    const runner = async () => {
-      while (state.step5PreviewRequestedSlideId) {
-        const requestedSlideId = state.step5PreviewRequestedSlideId;
-        state.step5PreviewRequestedSlideId = null;
-        const preview = await API.post(
-          `/api/projects/${projectId}/steps/5/preview`,
-          { slide_id: requestedSlideId }
-        );
-        state.step5PreviewResults[requestedSlideId] = preview;
-      }
-    };
-    const previewPromise = runner();
-    state.step5PreviewPromise = previewPromise;
-    try {
-      await previewPromise;
-    } finally {
-      if (state.step5PreviewPromise === previewPromise) {
-        state.step5PreviewPromise = null;
-      }
-    }
-  } else {
-    await state.step5PreviewPromise;
-    if (state.step5PreviewRequestedSlideId) {
-      return refreshStep5CoverageFromServer(slideId);
-    }
-  }
-  const result = state.step5PreviewResults[slideId];
-  if (!result) {
-    return refreshStep5CoverageFromServer(slideId);
-  }
-  if (getCurrentManifestSlide()?.slide_id !== slideId) return result;
-  const diagnostics = result.diagnostics || {};
-  const ratio = Number(
-    result.selection_ratio
-    ?? diagnostics.selection_ratio
-    ?? diagnostics.coverage_ratio
-  );
-  if (result.fallback_full_slide) {
-    updateStep5LiveCoverageStatus({ fallback: true });
-  } else if (Number.isFinite(ratio)) {
-    updateStep5LiveCoverageStatus({ ratio });
-  } else {
-    updateStep5LiveCoverageStatus({ error: true });
-  }
-  return result;
 }
 
 function saveStep5CurrentState() {
@@ -3511,40 +3303,6 @@ async function saveStep5Draft() {
     if (state.step5AutoSavePromise === savePromise) {
       state.step5AutoSavePromise = null;
     }
-  }
-}
-
-function closeStep5MaskPreview() {
-  const modal = document.getElementById('modal-mask-preview');
-  if (modal) modal.style.display = 'none';
-}
-
-async function openStep5MaskPreview() {
-  const slide = getCurrentManifestSlide();
-  if (!slide?.slide_id || !state.currentProject) return;
-  const button = document.getElementById('step5-btn-preview');
-  if (button) button.disabled = true;
-  showToast('正在按精确 Mask 规则生成最终抠除预览...');
-  try {
-    await saveStep5Draft();
-    const result = await refreshStep5CoverageFromServer(slide.slide_id);
-    const summary = document.getElementById('mask-preview-summary');
-    if (summary) {
-      summary.innerText = result.fallback_full_slide
-        ? `${slide.slide_id} 没有 Mask，将直接显示完整图片。`
-        : `${slide.slide_id} · 外围白底透明 v3 · 请按左侧最终画面确认选择结果`;
-    }
-    document.getElementById('mask-preview-image').src = result.preview_url;
-    const uncoveredSection = document.getElementById('mask-uncovered-section');
-    if (result.uncovered_url) {
-      uncoveredSection.style.display = '';
-      document.getElementById('mask-uncovered-image').src = result.uncovered_url;
-    } else {
-      uncoveredSection.style.display = 'none';
-    }
-    document.getElementById('modal-mask-preview').style.display = 'flex';
-  } finally {
-    if (button) button.disabled = false;
   }
 }
 
@@ -4032,7 +3790,7 @@ function showStep8VideoResult(videos) {
           <div class="step8-video-card-head">
             <strong>
               ${idx === 0 ? '最新渲染' : `历史版本 ${idx + 1}`}
-              ${item.is_legacy ? '<span class="step8-legacy-badge">旧设置/旧算法</span>' : '<span class="step8-current-badge">外围白底透明 v3</span>'}
+              ${item.is_legacy ? '<span class="step8-legacy-badge">旧设置/旧算法</span>' : '<span class="step8-current-badge">Mask 边界抠除 v4</span>'}
             </strong>
             <span>${escHtml(created || item.filename || '')}</span>
           </div>

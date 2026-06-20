@@ -167,7 +167,6 @@ def slide_ids_from_planning(run_dir: Path) -> list[str]:
 
 def validate_slide(slide_dir: Path, repo_root: Path, width: int, height: int, require_layered: bool) -> None:
     validate_png(slide_dir / "visual_draft.png")
-    validate_png(slide_dir / "assets" / "full_slide.png", width=width, height=height)
     voice_path = slide_dir / "voice.mp3"
     if not voice_path.exists() or voice_path.stat().st_size < 1024:
         raise ValidationError(f"Missing or empty voice.mp3: {voice_path}")

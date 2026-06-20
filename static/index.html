@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PPT Visualization Studio - 手绘线稿风格</title>
-  <link rel="stylesheet" href="style.css?v=2.5.0">
+  <link rel="stylesheet" href="style.css?v=2.6.0">
 </head>
 <body>
 
@@ -237,9 +237,7 @@
                 <svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v5M14 11v5"></path></svg>
                 清除全部标注
               </button>
-              <button id="step5-btn-preview" class="success" type="button">最终抠除预览</button>
               <span id="step5-draft-status" class="step2-autosave-status"></span>
-              <span id="step5-live-coverage" class="step5-live-coverage">正在加载真实抠除预览...</span>
               <label class="step5-brush-control" title="调整手动涂抹区域的画笔大小">
                 <span>画笔</span>
                 <input id="step5-brush-size" type="range" min="40" max="300" value="170">
@@ -260,7 +258,6 @@
             <div class="workspace-left">
               <div class="canvas-wrapper" id="canvas-container">
                 <img id="step5-bg-img" src="" alt="Slide Background">
-                <img id="step5-foreground-mask-img" src="" alt="" aria-hidden="true">
                 <canvas id="step5-canvas" width="1920" height="1080"></canvas>
                 <div id="step5-brush-cursor" class="step5-brush-cursor" aria-hidden="true"></div>
                 <div id="step5-zoom-indicator" class="step5-zoom-indicator" aria-hidden="true">100%</div>
@@ -577,31 +574,6 @@
     </div>
   </div>
 
-  <div id="modal-mask-preview" class="modal-overlay" style="display: none;">
-    <div class="modal-content mask-preview-modal" role="dialog" aria-modal="true" aria-labelledby="mask-preview-title">
-      <div class="mask-preview-header">
-        <div>
-          <h3 id="mask-preview-title" class="highlight-title">最终抠除预览</h3>
-          <p id="mask-preview-summary" class="mask-preview-summary"></p>
-        </div>
-        <button id="btn-mask-preview-close" class="secondary" type="button">关闭</button>
-      </div>
-      <div class="mask-preview-grid">
-        <section>
-          <h4>视频最终会显示的内容</h4>
-          <img id="mask-preview-image" alt="最终抠除结果">
-        </section>
-        <section id="mask-uncovered-section">
-          <h4>当前未选择的源图内容（仅供参考）</h4>
-          <div class="mask-preview-checker">
-            <img id="mask-uncovered-image" alt="当前未选择的源图内容">
-          </div>
-        </section>
-      </div>
-      <p class="mask-preview-note">右侧红色区域表示你没有选择进入视频的源图内容，可能是有意省略的装饰，不作为确认门槛。请以左侧“视频最终会显示的内容”为准；如果左侧缺少你想保留的内容，再返回画布补涂。</p>
-    </div>
-  </div>
-
   <div id="modal-step3-ai" class="modal-overlay" style="display: none;">
     <div id="step3-editor" class="modal-content step3-ai-modal" role="dialog" aria-modal="true" aria-labelledby="step3-ai-title">
       <div class="step3-ai-header">
@@ -685,6 +657,6 @@
 
   <!-- 主业务 JavaScript 脚本 -->
   <script src="flow.js?v=1.0.0"></script>
-  <script src="app.js?v=2.8.1"></script>
+  <script src="app.js?v=2.9.0"></script>
 </body>
 </html>

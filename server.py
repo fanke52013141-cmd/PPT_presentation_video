@@ -15,14 +15,14 @@ from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from PIL import Image
 import httpx
 import yaml
 from openai import OpenAI
-from scripts.background_color import connected_content_alpha, normalize_connected_background
+from scripts.background_color import normalize_connected_background
 
 def get_openai_client(api_key: str, base_url: str = None) -> OpenAI:
     # 强制不使用环境变量中的代理，防止某些局域网代理的 SSL 拦截规则冲突
@@ -66,7 +66,7 @@ STYLE_REFERENCE_FILES = {
     "template": "PPT模板.png",
     "example": "PPT示例.png",
 }
-REVEAL_PIPELINE_VERSION = "manual_mask_outer_white_v3"
+REVEAL_PIPELINE_VERSION = "manual_mask_boundary_white_v4"
 IMAGE_GENERATION_BACKGROUND = "#FFFFFF"
 DEFAULT_VIDEO_BACKGROUND = "#FEFDF9"
 PROJECT_VISUAL_SETTINGS_FILE = "visual_settings.json"
@@ -1311,18 +1311,17 @@ def clear_slide_visual_derivatives(project: Project, slide_id: str) -> None:
             os.remove(props_path)
 
 
-def validate_current_reveal_assets(project: Project, slide_id: Optional[str] = None) -> None:
+def validate_current_reveal_assets(project: Project) -> None:
     with reveal_lock_for(project):
         validator = os.path.join(REPO_ROOT, "scripts", "validate_reveal_scene.py")
-        command = [sys.executable, validator]
-        if slide_id:
-            command.extend([
-                "--slide-dir",
-                os.path.join(project.run_dir, "slides", slide_id),
-            ])
-        else:
-            command.extend(["--run-dir", project.run_dir])
-        command.extend(["--repo-root", REPO_ROOT])
+        command = [
+            sys.executable,
+            validator,
+            "--run-dir",
+            project.run_dir,
+            "--repo-root",
+            REPO_ROOT,
+        ]
         result = subprocess.run(
             command,
             capture_output=True,
@@ -1338,7 +1337,7 @@ def validate_current_reveal_assets(project: Project, slide_id: Optional[str] = N
             )
 
 
-def build_current_reveal_assets(project: Project, slide_id: Optional[str] = None) -> None:
+def build_current_reveal_assets(project: Project) -> None:
     with reveal_lock_for(project):
         manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
         if not os.path.exists(manifest_path):
@@ -1353,8 +1352,6 @@ def build_current_reveal_assets(project: Project, slide_id: Optional[str] = None
             "--repo-root",
             REPO_ROOT,
         ]
-        if slide_id:
-            command.extend(["--slide-id", slide_id])
         result = subprocess.run(
             command,
             capture_output=True,
@@ -1368,39 +1365,7 @@ def build_current_reveal_assets(project: Project, slide_id: Optional[str] = None
                 status_code=500,
                 detail=f"构建精确 Mask 素材失败: {result.stderr}",
             )
-        validate_current_reveal_assets(project, slide_id=slide_id)
-
-
-def mask_selection_diagnostics(project: Project) -> List[Dict[str, Any]]:
-    diagnostics_by_slide: List[Dict[str, Any]] = []
-    with reveal_lock_for(project):
-        for slide_id in read_contract_slide_ids(project.run_dir):
-            report_path = os.path.join(project.run_dir, "slides", slide_id, "reveal_report.json")
-            if not os.path.exists(report_path):
-                continue
-            with open(report_path, "r", encoding="utf-8") as file:
-                report = json.load(file)
-            if report.get("fallback_full_slide"):
-                continue
-            diagnostics = report.get("foreground_diagnostics")
-            if not isinstance(diagnostics, dict):
-                continue
-            ratio = float(
-                diagnostics.get("selection_ratio", diagnostics.get("coverage_ratio", 0.0))
-                or 0.0
-            )
-            diagnostics_by_slide.append({
-                "slide_id": slide_id,
-                "selection_ratio": ratio,
-                "unselected_foreground_pixel_count": int(
-                    diagnostics.get(
-                        "uncovered_foreground_pixel_count",
-                        diagnostics.get("unselected_foreground_pixel_count", 0),
-                    )
-                    or 0
-                ),
-            })
-    return diagnostics_by_slide
+        validate_current_reveal_assets(project)
 
 
 def mark_slide_image_changed(project: Project, slide_id: str, db: Session) -> None:
@@ -2264,49 +2229,6 @@ def get_slide_image_file(project_id: str, slide_id: str, db: Session = Depends(g
     return FileResponse(img_path, media_type="image/png")
 
 
-@app.get("/api/projects/{project_id}/slides/{slide_id}/foreground-mask")
-def get_slide_foreground_mask_file(project_id: str, slide_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    if slide_id not in read_current_slide_ids_or_404(project):
-        raise HTTPException(status_code=404, detail="Slide 不存在")
-
-    img_path = os.path.join(project.run_dir, "slides", slide_id, "visual_draft.png")
-    if not os.path.exists(img_path):
-        raise HTTPException(status_code=404, detail="图片不存在")
-
-    with reveal_lock_for(project):
-        canvas = {"width": 1920, "height": 1080}
-        manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
-        if os.path.exists(manifest_path):
-            with open(manifest_path, "r", encoding="utf-8") as file:
-                manifest = json.load(file)
-            canvas.update(manifest.get("canvas") or {})
-            for slide in manifest.get("slides") or []:
-                if isinstance(slide, dict) and slide.get("slide_id") == slide_id:
-                    canvas.update(slide.get("canvas") or {})
-                    break
-
-        width = int(canvas.get("width") or 1920)
-        height = int(canvas.get("height") or 1080)
-
-        with Image.open(img_path) as source_image:
-            source = source_image.convert("RGB")
-        if source.size != (width, height):
-            source = source.resize((width, height), Image.Resampling.LANCZOS)
-        foreground = connected_content_alpha(source)
-        foreground_rgba = Image.new("RGBA", source.size, (255, 255, 255, 0))
-        foreground_rgba.putalpha(foreground)
-        output = io.BytesIO()
-        foreground_rgba.save(output, format="PNG")
-    return Response(
-        content=output.getvalue(),
-        media_type="image/png",
-        headers={"Cache-Control": "no-store"},
-    )
-
-
 @app.get("/api/projects/{project_id}/slides/{slide_id}/candidate")
 def get_slide_candidate_file(project_id: str, slide_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -2319,42 +2241,6 @@ def get_slide_candidate_file(project_id: str, slide_id: str, db: Session = Depen
     if not os.path.exists(candidate_path):
         raise HTTPException(status_code=404, detail="候选图片不存在")
     return FileResponse(candidate_path, media_type="image/png")
-
-
-@app.get("/api/projects/{project_id}/slides/{slide_id}/mask-preview")
-def get_slide_mask_preview_file(project_id: str, slide_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    if slide_id not in read_current_slide_ids_or_404(project):
-        raise HTTPException(status_code=404, detail="Slide 不存在")
-    preview_path = os.path.join(
-        project.run_dir, "slides", slide_id, "assets", "manual_mask_composite.png"
-    )
-    with reveal_lock_for(project):
-        if not os.path.exists(preview_path):
-            raise HTTPException(status_code=404, detail="请先生成最终抠除预览")
-        with open(preview_path, "rb") as file:
-            content = file.read()
-    return Response(content=content, media_type="image/png", headers={"Cache-Control": "no-store"})
-
-
-@app.get("/api/projects/{project_id}/slides/{slide_id}/mask-uncovered")
-def get_slide_mask_uncovered_file(project_id: str, slide_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    if slide_id not in read_current_slide_ids_or_404(project):
-        raise HTTPException(status_code=404, detail="Slide 不存在")
-    path = os.path.join(
-        project.run_dir, "slides", slide_id, "assets", "manual_mask_uncovered.png"
-    )
-    with reveal_lock_for(project):
-        if not os.path.exists(path):
-            raise HTTPException(status_code=404, detail="当前页面没有未覆盖诊断图")
-        with open(path, "rb") as file:
-            content = file.read()
-    return Response(content=content, media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
 @app.post("/api/projects/{project_id}/steps/3/apply-candidate")
@@ -3101,51 +2987,6 @@ def update_step5_draft(project_id: str, payload: Dict[str, Any], db: Session = D
         manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
         write_json_atomic(manifest_path, payload)
     return {"success": True}
-
-@app.post("/api/projects/{project_id}/steps/5/preview")
-def build_step5_preview(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    slide_id = str(payload.get("slide_id") or "").strip()
-    if slide_id not in read_current_slide_ids_or_404(project):
-        raise HTTPException(status_code=404, detail="Slide 不存在")
-    with reveal_lock_for(project):
-        build_current_reveal_assets(project, slide_id=slide_id)
-        report_path = os.path.join(project.run_dir, "slides", slide_id, "reveal_report.json")
-        with open(report_path, "r", encoding="utf-8") as file:
-            report = json.load(file)
-        diagnostics = report.get("foreground_diagnostics") or {}
-        selection_ratio = float(
-            diagnostics.get("selection_ratio", diagnostics.get("coverage_ratio", 1.0))
-            or 0.0
-        )
-        selection_diagnostics = mask_selection_diagnostics(project)
-    cache_key = uuid.uuid4().hex[:8]
-    fallback_full_slide = bool(report.get("fallback_full_slide"))
-    return {
-        "success": True,
-        "slide_id": slide_id,
-        "pipeline_version": report.get("pipeline_version"),
-        "method": report.get("method"),
-        "fallback_full_slide": fallback_full_slide,
-        "diagnostics": diagnostics,
-        "selection_ratio": selection_ratio,
-        "can_confirm": True,
-        "selection_diagnostics": selection_diagnostics,
-        "warnings": report.get("warnings") or [],
-        "preview_url": (
-            f"/api/projects/{project_id}/slides/{slide_id}/image?t={cache_key}"
-            if fallback_full_slide
-            else f"/api/projects/{project_id}/slides/{slide_id}/mask-preview?t={cache_key}"
-        ),
-        "uncovered_url": (
-            None
-            if fallback_full_slide
-            else f"/api/projects/{project_id}/slides/{slide_id}/mask-uncovered?t={cache_key}"
-        ),
-    }
-
 
 @app.put("/api/projects/{project_id}/steps/5/result")
 def update_step5_result(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):

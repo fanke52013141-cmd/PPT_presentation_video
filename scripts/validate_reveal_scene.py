@@ -11,9 +11,10 @@ from typing import Any
 
 from PIL import Image
 
-PIPELINE_VERSION = "manual_mask_outer_white_v3"
-MASKED_COMPOSITION_METHOD = "solid_background_outer_white_manual_mask"
+PIPELINE_VERSION = "manual_mask_boundary_white_v4"
+MASKED_COMPOSITION_METHOD = "solid_background_mask_boundary_white_cutout"
 STATIC_COMPOSITION_METHOD = "full_slide_static"
+CUTOUT_METHOD = "mask_boundary_connected_white_soft_alpha"
 
 
 class RevealValidationError(RuntimeError):
@@ -72,6 +73,11 @@ def validate_scene(slide_dir: Path, repo_root: Path, width: int, height: int, re
             raise RevealValidationError(f"Masked scene background must not reuse the source image: {slide_dir}")
         if report.get("source_image_used_for_background") is not False:
             raise RevealValidationError(f"Masked reveal report must declare a solid-only background: {slide_dir}")
+        if composition.get("cutout_method") != CUTOUT_METHOD:
+            raise RevealValidationError(f"Masked scene uses an unexpected cutout method: {slide_dir}")
+        cutout = report.get("cutout") if isinstance(report.get("cutout"), dict) else {}
+        if cutout.get("method") != CUTOUT_METHOD:
+            raise RevealValidationError(f"Masked reveal report uses an unexpected cutout method: {slide_dir}")
     if require_no_blocking:
         warnings = report.get("warnings") if isinstance(report.get("warnings"), list) else []
         blocking = [w for w in warnings if isinstance(w, dict) and str(w.get("severity")) == "blocking"]
@@ -82,6 +88,7 @@ def validate_scene(slide_dir: Path, repo_root: Path, width: int, height: int, re
     if not isinstance(layers, list) or not layers:
         raise RevealValidationError(f"scene.json must contain layers[]: {slide_dir}")
     layer_ids: set[str] = set()
+    referenced_assets: set[Path] = set()
     has_reveal_layer = False
     for layer in layers:
         if not isinstance(layer, dict):
@@ -103,6 +110,7 @@ def validate_scene(slide_dir: Path, repo_root: Path, width: int, height: int, re
         if box["x"] < 0 or box["y"] < 0 or box["x"] + box["w"] > width or box["y"] + box["h"] > height:
             raise RevealValidationError(f"Layer box outside canvas in {slide_dir}: {layer_id}")
         asset_path = resolve_asset(str(layer.get("asset", "")), slide_dir, repo_root)
+        referenced_assets.add(asset_path.resolve())
         actual = image_size(asset_path)
         expected = (int(round(float(box["w"]))), int(round(float(box["h"]))))
         if actual != expected:
@@ -116,6 +124,17 @@ def validate_scene(slide_dir: Path, repo_root: Path, width: int, height: int, re
         raise RevealValidationError(f"Reveal scene must include a reveal_crop layer: {slide_dir}")
     elif not any(layer.get("id") == "base_slide" and layer.get("role") == "background" for layer in layers if isinstance(layer, dict)):
         raise RevealValidationError(f"Masked reveal scene must include a solid base_slide layer: {slide_dir}")
+    assets_dir = slide_dir / "assets"
+    actual_assets = {
+        path.resolve()
+        for path in assets_dir.rglob("*")
+        if path.is_file()
+    }
+    orphan_assets = sorted(str(path) for path in actual_assets - referenced_assets)
+    if orphan_assets:
+        raise RevealValidationError(
+            f"Reveal assets contain unreferenced legacy files in {slide_dir}: {orphan_assets}"
+        )
     timeline = read_json(slide_dir / "animation_timeline.json")
     events = timeline.get("events")
     if not isinstance(events, list):

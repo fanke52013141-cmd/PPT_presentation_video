@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from PIL import Image, ImageChops, ImageDraw
+import numpy as np
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 
 def connected_background_mask(
@@ -36,10 +37,6 @@ def connected_background_mask(
     return connected.point(lambda value: 255 if value == 128 else 0)
 
 
-def connected_content_alpha(image: Image.Image) -> Image.Image:
-    return ImageChops.invert(connected_background_mask(image))
-
-
 def normalize_connected_background(
     image: Image.Image,
     background_rgb: tuple[int, int, int],
@@ -54,3 +51,108 @@ def normalize_connected_background(
     )
     changed_pixel_count = changed.histogram()[255]
     return normalized, int(changed_pixel_count)
+
+
+def masked_outer_white_cutout(
+    image: Image.Image,
+    manual_alpha: Image.Image,
+    hard_min_channel: int = 245,
+    hard_max_chroma: int = 12,
+    soft_min_channel: int = 190,
+    soft_max_chroma: int = 32,
+    feather_px: int = 3,
+) -> tuple[Image.Image, Image.Image, dict[str, int]]:
+    """Cut out outer-connected white inside one user-painted Mask.
+
+    The painted Mask is the processing boundary. Pure/near-white pixels that
+    can be reached from that boundary become transparent. Enclosed white
+    details remain opaque. A short soft-white expansion recovers antialiased
+    edges and removes white halos without running semantic segmentation.
+    """
+    source = image.convert("RGB")
+    alpha = manual_alpha.convert("L")
+    if source.size != alpha.size:
+        raise ValueError("image and manual_alpha must have the same size")
+
+    rgb = np.asarray(source, dtype=np.uint8)
+    manual = np.asarray(alpha, dtype=np.uint8)
+    domain = manual > 0
+    maximum = rgb.max(axis=2)
+    minimum = rgb.min(axis=2)
+    chroma = maximum - minimum
+
+    hard_white = (
+        domain
+        & (minimum >= hard_min_channel)
+        & (chroma <= hard_max_chroma)
+    )
+    outside_mask = ~domain
+    passable = Image.fromarray(
+        np.where(outside_mask | hard_white, 255, 0).astype(np.uint8),
+        mode="L",
+    )
+    padded = Image.new("L", (source.width + 2, source.height + 2), 255)
+    padded.paste(passable, (1, 1))
+    ImageDraw.floodfill(padded, (0, 0), 128, thresh=0)
+    flooded = np.asarray(
+        padded.crop((1, 1, source.width + 1, source.height + 1)),
+        dtype=np.uint8,
+    )
+    hard_background = (flooded == 128) & domain
+
+    soft_white = (
+        domain
+        & (minimum >= soft_min_channel)
+        & (chroma <= soft_max_chroma)
+    )
+    expanded = Image.fromarray(
+        np.where(hard_background, 255, 0).astype(np.uint8),
+        mode="L",
+    )
+    for _ in range(max(0, int(feather_px))):
+        grown = expanded.filter(ImageFilter.MaxFilter(3))
+        expanded = Image.fromarray(
+            np.where(
+                (np.asarray(grown, dtype=np.uint8) > 0) & soft_white,
+                255,
+                0,
+            ).astype(np.uint8),
+            mode="L",
+        )
+    soft_region = (np.asarray(expanded, dtype=np.uint8) > 0) & ~hard_background
+
+    output_alpha = manual.copy()
+    output_alpha[hard_background] = 0
+    white_edge_alpha = (255 - minimum).astype(np.uint8)
+    output_alpha[soft_region] = np.minimum(
+        output_alpha[soft_region],
+        white_edge_alpha[soft_region],
+    )
+
+    output_rgb = rgb.copy()
+    edge_pixels = soft_region & (output_alpha > 0)
+    if np.any(edge_pixels):
+        edge_alpha = output_alpha[edge_pixels].astype(np.float32) / 255.0
+        original = rgb[edge_pixels].astype(np.float32)
+        recovered = (
+            original - (1.0 - edge_alpha[:, None]) * 255.0
+        ) / edge_alpha[:, None]
+        output_rgb[edge_pixels] = np.clip(
+            np.rint(recovered),
+            0,
+            255,
+        ).astype(np.uint8)
+    output_rgb[output_alpha == 0] = 0
+
+    rgba = np.dstack((output_rgb, output_alpha))
+    final_alpha = Image.fromarray(output_alpha, mode="L")
+    return (
+        Image.fromarray(rgba, mode="RGBA"),
+        final_alpha,
+        {
+            "manual_mask_pixel_count": int(np.count_nonzero(domain)),
+            "removed_outer_white_pixel_count": int(np.count_nonzero(hard_background)),
+            "soft_edge_pixel_count": int(np.count_nonzero(soft_region)),
+            "retained_pixel_count": int(np.count_nonzero(output_alpha)),
+        },
+    )

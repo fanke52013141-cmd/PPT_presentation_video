@@ -4,15 +4,15 @@ Build the production reveal scene from one approved full-slide bitmap and its op
 
 ## Production Contract
 
-- Pipeline: `manual_mask_outer_white_v3`.
+- Pipeline: `manual_mask_boundary_white_v4`.
 - No mask: use the complete slide as `full_slide_static`.
-- With masks: use `solid_background_outer_white_manual_mask`.
-- Remove only near-white pixels connected to an outer image edge.
+- With masks: use `solid_background_mask_boundary_white_cutout`.
+- Treat each saved brush Mask as a processing boundary.
+- Remove only near-white pixels connected inward from that Mask boundary.
 - Preserve white pixels enclosed by visible content.
-- Use the saved manual mask as the retention boundary.
+- Retain all non-white source content inside the saved manual Mask.
 - Do not erode, dilate, auto-expand, segment, crop, or reassign foreground.
-- If no eraser was used, fill only fully enclosed holes in the painted mask.
-- If the eraser was used, preserve the explicit erased areas.
+- Apply only soft antialias alpha and white-edge decontamination.
 - Never reuse the complete source image as the background of a masked slide.
 
 ## Commands
@@ -27,4 +27,4 @@ python scripts/validate_reveal_scene.py `
   --repo-root .
 ```
 
-Stop when validation reports missing assets, stale pipeline data, source-image background reuse, or insufficient foreground coverage.
+Stop when validation reports missing assets, stale pipeline data, source-image background reuse, or unreferenced legacy assets.

@@ -10,12 +10,12 @@
 
 ## Exact Mask Invariants
 
-- Pipeline version is `manual_mask_outer_white_v3`.
+- Pipeline version is `manual_mask_boundary_white_v4`.
 - A page without painted Masks uses `full_slide_static`.
-- A page with Masks uses `solid_background_outer_white_manual_mask`.
+- A page with Masks uses `solid_background_mask_boundary_white_cutout`.
 - Masked pages declare `source_image_used_for_background=false`.
 - Generated images use a pure-white outer background.
-- Only near-white pixels connected to an outer edge are removed.
+- Only near-white pixels connected inward from each painted Mask boundary are removed.
 - Enclosed white content is preserved.
 - Every reveal PNG is full-canvas and uses the saved brush Mask as its
   retention boundary.
@@ -57,7 +57,7 @@ python scripts/validate_run_assets.py `
 - Audio has not been confirmed.
 - Blocking reveal warning.
 - Runtime assets are missing or stale.
-- Mask foreground coverage is below 99.9%.
+- Reveal assets contain unreferenced legacy files.
 
 ## Safety
 

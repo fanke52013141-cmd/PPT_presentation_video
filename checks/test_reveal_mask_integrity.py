@@ -3,16 +3,14 @@ import sys
 import tempfile
 from pathlib import Path
 
-from PIL import Image, ImageChops, ImageDraw
+from PIL import Image, ImageDraw
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.build_reveal_scene import (
     MASKED_COMPOSITION_METHOD,
     PIPELINE_VERSION,
     compose_slide,
-    fill_enclosed_mask_holes,
     manual_mask_alpha,
-    manual_mask_has_eraser,
 )
 from scripts.validate_reveal_scene import validate_scene as validate_reveal_output
 
@@ -22,36 +20,24 @@ def read_json(path: Path) -> dict:
 
 
 def make_master(path: Path) -> Image.Image:
-    image = Image.new("RGB", (320, 180), "#fffdf7")
+    image = Image.new("RGB", (320, 180), "#ffffff")
     draw = ImageDraw.Draw(image)
-    draw.rectangle((30, 45, 120, 125), fill="#8fd3c7")
-    draw.rectangle((105, 35, 220, 135), fill="#f3cf76")
-    draw.rectangle((225, 50, 295, 130), fill="#a7c8ef")
+    draw.rectangle((35, 40, 135, 135), fill="#ffffff", outline="#111111", width=5)
+    draw.ellipse((72, 70, 98, 96), fill="#f3cf76", outline="#111111", width=3)
+    draw.rectangle((185, 50, 290, 130), fill="#a7c8ef", outline="#111111", width=5)
     image.save(path)
     return image
 
 
-hole_mask = Image.new("L", (40, 30), 0)
-hole_draw = ImageDraw.Draw(hole_mask)
-hole_draw.rectangle((5, 5, 34, 24), fill=255)
-hole_draw.rectangle((15, 10, 24, 19), fill=0)
-filled_mask, filled_count = fill_enclosed_mask_holes(hole_mask)
-assert filled_count == 100
-assert filled_mask.getpixel((20, 15)) == 255
-assert manual_mask_has_eraser({"strokes": [{"mode": "erase", "points": []}]})
-assert not manual_mask_has_eraser({"strokes": [{"mode": "paint", "points": []}]})
-
-
-def painted_group(group_id: str, x: int, y: int, width: int = 46) -> dict:
+def painted_group(group_id: str, points: list[tuple[int, int]], width: int) -> dict:
     return {
         "id": group_id,
         "role": "content_body",
-        "box": {"x": max(0, x - 30), "y": max(0, y - 30), "w": 100, "h": 100},
         "manual_mask": {
             "strokes": [{
                 "mode": "paint",
                 "size": width,
-                "points": [{"x": x, "y": y}, {"x": x + 55, "y": y + 10}],
+                "points": [{"x": x, "y": y} for x, y in points],
             }]
         },
         "reveal": {"type": "crop_fade_up"},
@@ -61,7 +47,13 @@ def painted_group(group_id: str, x: int, y: int, width: int = 46) -> dict:
 with tempfile.TemporaryDirectory() as temp_dir_value:
     root = Path(temp_dir_value)
     master_path = root / "master.png"
-    master = make_master(master_path)
+    make_master(master_path)
+    canvas = {
+        "width": 320,
+        "height": 180,
+        "background": "#fefdf9",
+        "subtitle_safe_y": 180,
+    }
 
     no_mask_dir = root / "slides" / "slide_001"
     no_mask_dir.mkdir(parents=True)
@@ -70,76 +62,80 @@ with tempfile.TemporaryDirectory() as temp_dir_value:
             "slide_id": "slide_001",
             "slide_dir": str(no_mask_dir),
             "master": str(master_path),
-            "canvas": {"width": 320, "height": 180, "background": "#fffdf7", "subtitle_safe_y": 180},
-            "groups": [{"id": "unpainted", "role": "content_body", "box": {"x": 20, "y": 20, "w": 100, "h": 100}}],
+            "canvas": canvas,
+            "groups": [{"id": "unpainted", "role": "content_body"}],
         },
         root,
         root,
-        {"width": 320, "height": 180, "background": "#fffdf7", "subtitle_safe_y": 180},
+        canvas,
     )
     no_mask_scene = read_json(no_mask_dir / "scene.json")
-    no_mask_timeline = read_json(no_mask_dir / "animation_timeline.json")
     no_mask_report = read_json(no_mask_dir / "reveal_report.json")
-    assert len(no_mask_scene["layers"]) == 1
-    assert no_mask_scene["layers"][0]["role"] == "full_slide"
-    assert no_mask_timeline["events"] == []
+    assert [layer["role"] for layer in no_mask_scene["layers"]] == ["full_slide"]
     assert no_mask_report["fallback_full_slide"] is True
+    assert set(path.name for path in (no_mask_dir / "assets").iterdir()) == {"full_slide.png"}
     validate_reveal_output(no_mask_dir, root, 320, 180, require_no_blocking=False)
 
     painted_dir = root / "slides" / "slide_002"
     (painted_dir / "assets").mkdir(parents=True)
-    (painted_dir / "assets" / "stale-old-algorithm.png").write_bytes(b"stale")
-    painted_groups = [
-        painted_group("left", 60, 75),
-        painted_group("overlap", 115, 75),
+    (painted_dir / "assets" / "manual_mask_composite.png").write_bytes(b"legacy")
+    (painted_dir / "assets" / "manual_mask_uncovered.png").write_bytes(b"legacy")
+    groups = [
+        painted_group("left", [(40, 88), (130, 88)], 100),
+        painted_group("right", [(185, 90), (290, 90)], 100),
     ]
     compose_slide(
         {
             "slide_id": "slide_002",
             "slide_dir": str(painted_dir),
             "master": str(master_path),
-            "canvas": {"width": 320, "height": 180, "background": "#fffdf7", "subtitle_safe_y": 180},
-            "groups": painted_groups,
+            "canvas": canvas,
+            "groups": groups,
         },
         root,
         root,
-        {"width": 320, "height": 180, "background": "#fffdf7", "subtitle_safe_y": 180},
+        canvas,
     )
-    painted_scene = read_json(painted_dir / "scene.json")
-    painted_report = read_json(painted_dir / "reveal_report.json")
-    assert [layer["role"] for layer in painted_scene["layers"]] == ["background", "reveal_crop", "reveal_crop"]
-    assert painted_scene["composition"]["method"] == MASKED_COMPOSITION_METHOD
-    assert painted_scene["composition"]["pipeline_version"] == PIPELINE_VERSION
-    assert painted_scene["composition"]["source_image_used_for_background"] is False
-    assert painted_report["pipeline_version"] == PIPELINE_VERSION
-    assert painted_report["background_normalization"]["method"] == "outer_connected_near_white_only"
-    assert not (painted_dir / "assets" / "stale-old-algorithm.png").exists()
+
+    scene = read_json(painted_dir / "scene.json")
+    report = read_json(painted_dir / "reveal_report.json")
+    assert [layer["role"] for layer in scene["layers"]] == [
+        "background",
+        "reveal_crop",
+        "reveal_crop",
+    ]
+    assert scene["composition"]["method"] == MASKED_COMPOSITION_METHOD
+    assert scene["composition"]["pipeline_version"] == PIPELINE_VERSION
+    assert scene["composition"]["cutout_method"] == "mask_boundary_connected_white_soft_alpha"
+    assert scene["composition"]["source_image_used_for_background"] is False
+    assert report["cutout"]["enclosed_white_preserved"] is True
+    assert report["cutout"]["white_decontamination"] is True
+    assert not (painted_dir / "assets" / "manual_mask_composite.png").exists()
+    assert not (painted_dir / "assets" / "manual_mask_uncovered.png").exists()
+    assert not (painted_dir / "assets" / "full_slide.png").exists()
+    assert {
+        path.relative_to(painted_dir / "assets").as_posix()
+        for path in (painted_dir / "assets").rglob("*")
+        if path.is_file()
+    } == {
+        "base_slide.png",
+        "crops/left.png",
+        "crops/right.png",
+    }
     validate_reveal_output(painted_dir, root, 320, 180, require_no_blocking=False)
 
-    reconstructed = Image.open(painted_dir / painted_scene["layers"][0]["asset"]).convert("RGBA")
-    base_rgb = reconstructed.convert("RGB")
-    assert base_rgb.getpixel((60, 75)) == (255, 253, 247)
-    assert base_rgb.getpixel((145, 85)) == (255, 253, 247)
-    for layer in painted_scene["layers"][1:]:
+    reconstructed = Image.open(painted_dir / "assets" / "base_slide.png").convert("RGBA")
+    for layer in sorted(scene["layers"][1:], key=lambda item: item["z_index"]):
         reconstructed.alpha_composite(Image.open(painted_dir / layer["asset"]).convert("RGBA"))
 
-    union = Image.new("L", master.size, 0)
-    for group in painted_groups:
-        exact_mask = manual_mask_alpha(group["manual_mask"], master.width, master.height)
-        assert exact_mask is not None
-        saved_mask = Image.open(painted_dir / "assets" / "masks" / f"{group['id']}.png").convert("L")
-        assert saved_mask.tobytes() == exact_mask.tobytes()
-        union = ImageChops.lighter(union, exact_mask)
-    expected = Image.composite(master, Image.new("RGB", master.size, "#fffdf7"), union)
-    assert reconstructed.convert("RGB").tobytes() == expected.tobytes()
-    exact_preview = Image.open(painted_dir / "assets" / "manual_mask_composite.png").convert("RGB")
-    assert exact_preview.tobytes() == expected.tobytes()
-    assert reconstructed.convert("RGB").getpixel((290, 90)) == (255, 253, 247)
-    uncovered_preview = Image.open(painted_dir / "assets" / "manual_mask_uncovered.png").convert("RGB")
-    red_pixel = uncovered_preview.getpixel((290, 90))
-    assert red_pixel[0] > 240 and red_pixel[1] < 100 and red_pixel[2] < 100
-    assert painted_report["foreground_diagnostics"]["metric"] == "whole_slide_nonwhite_selection_ratio"
-    assert "required_coverage_ratio" not in painted_report["foreground_diagnostics"]
+    # Mask-covered white outside the objects is removed to the configured video background.
+    assert reconstructed.convert("RGB").getpixel((20, 20)) == (254, 253, 249)
+    assert reconstructed.convert("RGB").getpixel((155, 90)) == (254, 253, 249)
+    # Non-white content is retained.
+    assert reconstructed.convert("RGB").getpixel((35, 80)) == (17, 17, 17)
+    assert reconstructed.convert("RGB").getpixel((220, 90)) == (167, 200, 239)
+    # White enclosed by the black border remains white instead of being hollowed out.
+    assert reconstructed.convert("RGB").getpixel((60, 80)) == (255, 255, 255)
 
     edge_mask = manual_mask_alpha(
         {
@@ -157,8 +153,8 @@ with tempfile.TemporaryDirectory() as temp_dir_value:
                 },
             ]
         },
-        master.width,
-        master.height,
+        320,
+        180,
     )
     assert edge_mask is not None
     assert edge_mask.getpixel((0, 90)) == 0

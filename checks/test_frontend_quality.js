@@ -19,7 +19,7 @@ if (!html.includes('step3-video-background-color') || !html.includes('step3-vide
 }
 if (!html.includes('step3-video-background-apply')) throw new Error('video background apply button missing');
 if (!app.includes('saveStep3VideoBackground')) throw new Error('video background color save handler missing');
-if (!app.includes('hexToRgba(color, isSelected ? 0.24 : 0.18)')) {
+if (!app.includes('hexToRgba(color, isSelected ? 0.46 : 0.34)')) {
   throw new Error('mask overlay colors are too faint');
 }
 if (!app.includes('generateAllStep3Images')) throw new Error('step 3 batch generation handler missing');
@@ -47,27 +47,23 @@ if (!app.includes("newCanvas.addEventListener('pointerdown'")) {
 if (!app.includes('pointerWithinMaskToolReach')) {
   throw new Error('mask editor has no outside-edge interaction allowance');
 }
-if (!html.includes('step5-live-coverage')) throw new Error('live mask coverage status missing');
-if (!app.includes('rebuildStep5SourceCache')) throw new Error('source foreground cache missing');
-if (!app.includes('buildStep5UnionMask')) throw new Error('exact live mask union missing');
-if (!app.includes("redWarningCtx.fillStyle = 'rgba(255, 59, 48, 0.04)'")) {
-  throw new Error('uncovered foreground does not use a readable light tint');
-}
-if (!app.includes('createStep5UncoveredPattern')) {
-  throw new Error('uncovered foreground hatch pattern missing');
-}
+if (!app.includes('rebuildStep5SourceCache')) throw new Error('source image cache missing');
 if (!app.includes('ctx.drawImage(step5SourceCanvas, 0, 0)')) {
   throw new Error('mask editor does not keep the full source visible');
 }
-if (!app.includes('浅红斜纹仅表示未选择内容')) throw new Error('mask selection guidance missing');
-if (app.includes('if (!state.canvasState.coverageReady)')) {
-  throw new Error('whole-slide selection ratio still blocks confirmation');
-}
-if (!html.includes('不作为确认门槛')) {
-  throw new Error('mask preview does not explain advisory-only diagnostics');
-}
-if (!html.includes('step5-foreground-mask-img')) {
-  throw new Error('server-generated foreground mask image missing');
+for (const removedToken of [
+  'step5-live-coverage',
+  'step5-btn-preview',
+  'modal-mask-preview',
+  'step5-foreground-mask-img',
+  'createStep5UncoveredPattern',
+  'scheduleStep5CoverageCheck',
+  '/steps/5/preview',
+  'selection_ratio',
+]) {
+  if (html.includes(removedToken) || app.includes(removedToken) || css.includes(removedToken)) {
+    throw new Error(`legacy Mask diagnostics still present: ${removedToken}`);
+  }
 }
 if (!app.includes('refreshStep3Prompts({ updateOpenEditor: state.currentStep === 3 })')) {
   throw new Error('image style changes do not refresh prompts');

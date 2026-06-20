@@ -6,7 +6,7 @@ from PIL import Image, ImageDraw
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.background_color import (
     connected_background_mask,
-    connected_content_alpha,
+    masked_outer_white_cutout,
     normalize_connected_background,
 )
 
@@ -29,14 +29,28 @@ assert normalized.getpixel((0, 0)) == background
 assert normalized.getpixel((120, 70)) == source.getpixel((120, 70))
 
 background_mask = connected_background_mask(source)
-content_alpha = connected_content_alpha(source)
 assert background_mask.getpixel((0, 0)) == 255
-assert content_alpha.getpixel((0, 0)) == 0
-assert content_alpha.getpixel((120, 70)) == 255
+assert background_mask.getpixel((120, 70)) == 0
 
 # A colored edge is content, not removable background.
 colored_corner = Image.new("RGB", (40, 30), (220, 235, 250))
 assert connected_background_mask(colored_corner).getpixel((0, 0)) == 0
-assert connected_content_alpha(colored_corner).getpixel((0, 0)) == 255
+
+# The manual Mask is a processing boundary. White connected to that boundary
+# is removed, while white enclosed by content remains visible.
+cutout_source = Image.new("RGB", (80, 60), (255, 255, 255))
+cutout_draw = ImageDraw.Draw(cutout_source)
+cutout_draw.rectangle((20, 14, 60, 46), fill=(255, 255, 255), outline=(0, 0, 0), width=4)
+cutout_source.putpixel((19, 30), (220, 220, 220))
+manual_alpha = Image.new("L", cutout_source.size, 0)
+ImageDraw.Draw(manual_alpha).rectangle((8, 6, 72, 54), fill=255)
+cutout, output_alpha, stats = masked_outer_white_cutout(cutout_source, manual_alpha)
+assert output_alpha.getpixel((8, 6)) == 0
+assert output_alpha.getpixel((20, 30)) == 255
+assert output_alpha.getpixel((40, 30)) == 255
+assert output_alpha.getpixel((19, 30)) == 35
+assert cutout.getpixel((19, 30))[:3] == (0, 0, 0)
+assert stats["removed_outer_white_pixel_count"] > 0
+assert stats["soft_edge_pixel_count"] > 0
 
 print("background color checks passed")

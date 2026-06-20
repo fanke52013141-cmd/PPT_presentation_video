@@ -7,7 +7,7 @@
 - Image cards keep titles close to previews.
 - Image confirmation is disabled until every current slide has an image.
 - Replacing or deleting an image clears that slide's old Masks and downstream state.
-- Mask preview matches the exact rendered composite.
+- Mask editing shows the original image with a clear colored paint overlay.
 - Audio must be generated and confirmed before video rendering.
 - Rendered videos can be downloaded and deleted locally.
 
@@ -15,9 +15,9 @@
 
 - Source images are 1920×1080.
 - Masked pages start from the fixed background, not the full source image.
-- Each reveal contains only its painted Mask pixels after outer-white removal.
-- Fully enclosed Mask holes are filled only when no eraser stroke exists; explicit erasing is preserved.
-- Mask foreground coverage must be at least 99.9%.
+- Each reveal removes only boundary-connected white inside its painted Mask.
+- White enclosed by non-white content remains visible.
+- No coverage score, red diagnostic overlay, or legacy preview asset remains.
 - No-Mask pages display the complete image from the first frame.
 - No clipped text, missing card edges, floating fragments, or stale layers.
 - Subtitles do not obscure important content.
@@ -32,7 +32,7 @@
 ## Export
 
 - MP4 plays normally at 1920×1080.
-- New videos carry `manual_mask_outer_white_v3` metadata.
+- New videos carry `manual_mask_boundary_white_v4` metadata.
 - Historical videos are visibly marked as legacy.
 
 ## Regression

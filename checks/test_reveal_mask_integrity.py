@@ -138,7 +138,8 @@ with tempfile.TemporaryDirectory() as temp_dir_value:
     uncovered_preview = Image.open(painted_dir / "assets" / "manual_mask_uncovered.png").convert("RGB")
     red_pixel = uncovered_preview.getpixel((290, 90))
     assert red_pixel[0] > 240 and red_pixel[1] < 100 and red_pixel[2] < 100
-    assert painted_report["foreground_diagnostics"]["required_coverage_ratio"] == 0.999
+    assert painted_report["foreground_diagnostics"]["metric"] == "whole_slide_nonwhite_selection_ratio"
+    assert "required_coverage_ratio" not in painted_report["foreground_diagnostics"]
 
     edge_mask = manual_mask_alpha(
         {

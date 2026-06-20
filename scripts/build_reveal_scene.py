@@ -15,8 +15,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import sys
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -30,7 +32,6 @@ except ModuleNotFoundError:
 
 PIPELINE_VERSION = "manual_mask_outer_white_v3"
 MASKED_COMPOSITION_METHOD = "solid_background_outer_white_manual_mask"
-MIN_FOREGROUND_COVERAGE_RATIO = 0.999
 STATIC_COMPOSITION_METHOD = "full_slide_static"
 DEFAULT_CANVAS = {
     "width": 1920,
@@ -192,6 +193,44 @@ def reset_assets_dir(assets_dir: Path) -> None:
     assets_dir.mkdir(parents=True, exist_ok=True)
 
 
+def publish_slide_outputs(staging_dir: Path, slide_dir: Path) -> None:
+    """Publish a complete build without exposing deleted or half-written assets."""
+    staged_assets = staging_dir / "assets"
+    production_assets = slide_dir / "assets"
+    production_assets.mkdir(parents=True, exist_ok=True)
+
+    published_assets: set[Path] = set()
+    for staged_path in sorted(path for path in staged_assets.rglob("*") if path.is_file()):
+        relative = staged_path.relative_to(staged_assets)
+        published_assets.add(relative)
+        destination = production_assets / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(staged_path, destination)
+
+    # Publish metadata last. Until these replacements happen, readers continue
+    # to see the previous complete scene, whose assets were never deleted.
+    for filename in ("animation_timeline.json", "reveal_report.json", "scene.json"):
+        os.replace(staging_dir / filename, slide_dir / filename)
+
+    # Metadata now points only to the newly published set, so old unreferenced
+    # files can be removed without creating a missing-asset window.
+    for old_path in sorted(
+        (path for path in production_assets.rglob("*") if path.is_file()),
+        reverse=True,
+    ):
+        if old_path.relative_to(production_assets) not in published_assets:
+            old_path.unlink()
+    for old_dir in sorted(
+        (path for path in production_assets.rglob("*") if path.is_dir()),
+        reverse=True,
+    ):
+        try:
+            old_dir.rmdir()
+        except OSError:
+            pass
+    shutil.rmtree(staging_dir, ignore_errors=True)
+
+
 def manual_mask_has_eraser(manual_mask: Any) -> bool:
     if not isinstance(manual_mask, dict):
         return False
@@ -296,14 +335,25 @@ def compose_slide(
     if not slide_id:
         raise RevealBuildError("Slide missing slide_id")
 
-    slide_dir = resolve_path(str(slide["slide_dir"]), manifest_dir, manifest_dir, repo_root)
-    slide_dir.mkdir(parents=True, exist_ok=True)
-    assets_dir = slide_dir / "assets"
-    reset_assets_dir(assets_dir)
-
-    master_path = resolve_path(str(slide["master"]), manifest_dir, slide_dir, repo_root)
+    production_slide_dir = resolve_path(
+        str(slide["slide_dir"]),
+        manifest_dir,
+        manifest_dir,
+        repo_root,
+    )
+    production_slide_dir.mkdir(parents=True, exist_ok=True)
+    master_path = resolve_path(
+        str(slide["master"]),
+        manifest_dir,
+        production_slide_dir,
+        repo_root,
+    )
     if not master_path.exists():
         raise RevealBuildError(f"Missing master image: {master_path}")
+
+    slide_dir = production_slide_dir / f".reveal-build-{uuid.uuid4().hex}"
+    assets_dir = slide_dir / "assets"
+    reset_assets_dir(assets_dir)
     master = Image.open(master_path).convert("RGB")
 
     canvas = {
@@ -354,6 +404,7 @@ def compose_slide(
             source_sha256=source_sha256,
             normalized_background_pixel_count=normalized_background_pixel_count,
         )
+        publish_slide_outputs(slide_dir, production_slide_dir)
         return
 
     base_image = Image.new("RGB", (width, height), background_rgb)
@@ -440,7 +491,7 @@ def compose_slide(
     source_foreground_count = count_mask_pixels(source_foreground)
     covered_foreground_count = count_mask_pixels(covered_foreground)
     uncovered_foreground_count = count_mask_pixels(uncovered_foreground)
-    foreground_coverage_ratio = (
+    whole_slide_selection_ratio = (
         covered_foreground_count / source_foreground_count
         if source_foreground_count
         else 1.0
@@ -451,15 +502,6 @@ def compose_slide(
     red_layer.putalpha(red_alpha)
     uncovered_preview.alpha_composite(red_layer)
     uncovered_preview.convert("RGB").save(assets_dir / "manual_mask_uncovered.png", format="PNG")
-    if foreground_coverage_ratio < MIN_FOREGROUND_COVERAGE_RATIO:
-        warnings.append({
-            "severity": "warning",
-            "type": "manual_mask_does_not_cover_source_foreground",
-            "foreground_coverage_ratio": round(foreground_coverage_ratio, 4),
-            "required_coverage_ratio": MIN_FOREGROUND_COVERAGE_RATIO,
-            "uncovered_foreground_pixel_count": uncovered_foreground_count,
-        })
-
     scene = {
         "slide_id": slide_id,
         "source_visual_draft": str(master_path),
@@ -500,12 +542,12 @@ def compose_slide(
         "source_sha256": source_sha256,
         "mask_union_sha256": sha256_bytes(union_alpha.tobytes()),
         "foreground_diagnostics": {
+            "metric": "whole_slide_nonwhite_selection_ratio",
             "background_rule": "outer-connected pixels with RGB channels >=245 and chroma <=12",
-            "required_coverage_ratio": MIN_FOREGROUND_COVERAGE_RATIO,
             "source_foreground_pixel_count": source_foreground_count,
             "covered_foreground_pixel_count": covered_foreground_count,
             "uncovered_foreground_pixel_count": uncovered_foreground_count,
-            "coverage_ratio": round(foreground_coverage_ratio, 6),
+            "selection_ratio": round(whole_slide_selection_ratio, 6),
             "uncovered_asset": "assets/manual_mask_uncovered.png",
             "composite_asset": "assets/manual_mask_composite.png",
         },
@@ -516,9 +558,15 @@ def compose_slide(
         "fallback_full_slide": False,
         "groups": group_reports,
     })
+    publish_slide_outputs(slide_dir, production_slide_dir)
 
 
-def build_manifest(manifest: dict[str, Any], manifest_path: Path, repo_root: Path) -> int:
+def build_manifest(
+    manifest: dict[str, Any],
+    manifest_path: Path,
+    repo_root: Path,
+    slide_id: str | None = None,
+) -> int:
     if manifest.get("version") != "reveal_v1":
         raise RevealBuildError("Manifest version must be reveal_v1")
     canvas = {
@@ -528,17 +576,25 @@ def build_manifest(manifest: dict[str, Any], manifest_path: Path, repo_root: Pat
     slides = manifest.get("slides")
     if not isinstance(slides, list) or not slides:
         raise RevealBuildError("Manifest must contain non-empty slides[]")
-    for slide in slides:
+    selected_slides = [
+        slide
+        for slide in slides
+        if slide_id is None or str(slide.get("slide_id", "")).strip() == slide_id
+    ]
+    if slide_id is not None and not selected_slides:
+        raise RevealBuildError(f"Slide not found in manifest: {slide_id}")
+    for slide in selected_slides:
         if not isinstance(slide, dict):
             raise RevealBuildError("Each slide must be an object")
         compose_slide(slide, manifest_path.parent, repo_root, canvas)
-    return len(slides)
+    return len(selected_slides)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build exact manual-mask reveal assets.")
     parser.add_argument("--manifest", required=True, type=Path)
     parser.add_argument("--repo-root", default=Path("."), type=Path)
+    parser.add_argument("--slide-id")
     return parser.parse_args()
 
 
@@ -549,6 +605,7 @@ def main() -> int:
             read_json(args.manifest.resolve()),
             args.manifest.resolve(),
             args.repo_root.resolve(),
+            slide_id=args.slide_id,
         )
     except RevealBuildError as exc:
         print(f"Error: {exc}", file=sys.stderr)

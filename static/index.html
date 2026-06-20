@@ -592,13 +592,13 @@
           <img id="mask-preview-image" alt="最终抠除结果">
         </section>
         <section id="mask-uncovered-section">
-          <h4>Mask 外仍存在的源图内容</h4>
+          <h4>当前未选择的源图内容（仅供参考）</h4>
           <div class="mask-preview-checker">
-            <img id="mask-uncovered-image" alt="Mask 未覆盖内容">
+            <img id="mask-uncovered-image" alt="当前未选择的源图内容">
           </div>
         </section>
       </div>
-      <p class="mask-preview-note">红色内容不会进入视频。请返回画布补涂，直到红色提示消失并达到确认标准。系统不会向外扩大 Mask；未使用橡皮时只填平完全封闭的内部空洞，使用橡皮时保留擦除结果。</p>
+      <p class="mask-preview-note">右侧红色区域表示你没有选择进入视频的源图内容，可能是有意省略的装饰，不作为确认门槛。请以左侧“视频最终会显示的内容”为准；如果左侧缺少你想保留的内容，再返回画布补涂。</p>
     </div>
   </div>
 
@@ -685,6 +685,6 @@
 
   <!-- 主业务 JavaScript 脚本 -->
   <script src="flow.js?v=1.0.0"></script>
-  <script src="app.js?v=2.8.0"></script>
+  <script src="app.js?v=2.8.1"></script>
 </body>
 </html>

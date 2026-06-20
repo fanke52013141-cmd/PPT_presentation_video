@@ -25,6 +25,9 @@ let state = {
   step5AutoSaveTimer: null,
   step5AutoSaveInFlight: false,
   step5AutoSavePromise: null,
+  step5PreviewPromise: null,
+  step5PreviewRequestedSlideId: null,
+  step5PreviewResults: {},
   step6AutoSaveTimer: null,
   step6AutoSavePromise: null,
   canvasState: {
@@ -41,7 +44,7 @@ let state = {
     eraserSize: 120,
     activePointerId: null,
     coverageRatio: 1,
-    coverageReady: true,
+    maskPreviewReady: true,
     brushCursorClientX: null,
     brushCursorClientY: null,
     maskZoom: 1,
@@ -1715,8 +1718,6 @@ const MASK_COLORS = [
   '#C9184A',
   '#0077B6'
 ];
-const MASK_MIN_COVERAGE_RATIO = 0.999;
-
 function getMaskColor(idx) {
   return MASK_COLORS[idx % MASK_COLORS.length];
 }
@@ -2396,7 +2397,7 @@ function renderStep5Workspace() {
     step5SourceCanvas = null;
     step5SourceForegroundCanvas = null;
     state.canvasState.coverageRatio = 1;
-    state.canvasState.coverageReady = true;
+    state.canvasState.maskPreviewReady = true;
     canvasWrapper?.classList.remove('mask-preview-ready');
     updateStep5LiveCoverageStatus({ loading: true });
     backgroundImage.onload = () => tryInitializeStep5SourceCache(slide.slide_id);
@@ -3296,30 +3297,19 @@ function updateStep5LiveCoverageStatus(options = {}) {
     return;
   }
   if (options.fallback) {
-    const allReady = options.allReady !== false;
     state.canvasState.coverageRatio = 1;
-    state.canvasState.coverageReady = allReady;
-    status.classList.add(allReady ? 'ready' : 'warning');
-    status.innerText = allReady
-      ? '当前页无 Mask：视频将完整显示整页图片'
-      : `当前页无 Mask，将完整显示；另有 ${options.failureSlides || '其他页面'} 覆盖不足`;
-    if (confirmButton) confirmButton.disabled = !allReady;
+    state.canvasState.maskPreviewReady = true;
+    status.classList.add('ready');
+    status.innerText = '当前页无 Mask：视频将完整显示整页图片';
+    if (confirmButton) confirmButton.disabled = false;
     return;
   }
   const ratio = Number(options.ratio || 0);
-  const currentReady = ratio >= MASK_MIN_COVERAGE_RATIO;
-  const ready = currentReady && options.allReady !== false;
   state.canvasState.coverageRatio = ratio;
-  state.canvasState.coverageReady = ready;
-  status.classList.add(ready ? 'ready' : 'warning');
-  if (ready) {
-    status.innerText = `编辑视图：原图完整显示 · 覆盖率 ${(ratio * 100).toFixed(1)}% · 可确认`;
-  } else if (!currentReady) {
-    status.innerText = `浅红斜纹为漏标提示 · 覆盖率 ${(ratio * 100).toFixed(1)}% · 请继续补涂`;
-  } else {
-    status.innerText = `当前页覆盖率 ${(ratio * 100).toFixed(1)}%；另有 ${options.failureSlides || '其他页面'} 覆盖不足`;
-  }
-  if (confirmButton) confirmButton.disabled = !ready;
+  state.canvasState.maskPreviewReady = true;
+  status.classList.add('ready');
+  status.innerText = '编辑视图：原图完整显示 · 浅红斜纹仅表示未选择内容 · 可确认';
+  if (confirmButton) confirmButton.disabled = false;
 }
 
 function drawManualMaskStrokes(ctx, item, idx) {
@@ -3425,24 +3415,50 @@ function scheduleStep5CoverageCheck() {
 }
 
 async function refreshStep5CoverageFromServer(slideId) {
-  const result = await API.post(
-    `/api/projects/${state.currentProject.id}/steps/5/preview`,
-    { slide_id: slideId }
-  );
+  state.step5PreviewRequestedSlideId = slideId;
+  if (!state.step5PreviewPromise) {
+    const projectId = state.currentProject.id;
+    const runner = async () => {
+      while (state.step5PreviewRequestedSlideId) {
+        const requestedSlideId = state.step5PreviewRequestedSlideId;
+        state.step5PreviewRequestedSlideId = null;
+        const preview = await API.post(
+          `/api/projects/${projectId}/steps/5/preview`,
+          { slide_id: requestedSlideId }
+        );
+        state.step5PreviewResults[requestedSlideId] = preview;
+      }
+    };
+    const previewPromise = runner();
+    state.step5PreviewPromise = previewPromise;
+    try {
+      await previewPromise;
+    } finally {
+      if (state.step5PreviewPromise === previewPromise) {
+        state.step5PreviewPromise = null;
+      }
+    }
+  } else {
+    await state.step5PreviewPromise;
+    if (state.step5PreviewRequestedSlideId) {
+      return refreshStep5CoverageFromServer(slideId);
+    }
+  }
+  const result = state.step5PreviewResults[slideId];
+  if (!result) {
+    return refreshStep5CoverageFromServer(slideId);
+  }
   if (getCurrentManifestSlide()?.slide_id !== slideId) return result;
   const diagnostics = result.diagnostics || {};
-  const ratio = Number(diagnostics.coverage_ratio);
-  const failureSlides = (result.coverage_failures || [])
-    .map(item => item.slide_id)
-    .join('、');
-  const coverageOptions = {
-    allReady: result.all_can_confirm !== false,
-    failureSlides,
-  };
+  const ratio = Number(
+    result.selection_ratio
+    ?? diagnostics.selection_ratio
+    ?? diagnostics.coverage_ratio
+  );
   if (result.fallback_full_slide) {
-    updateStep5LiveCoverageStatus({ fallback: true, ...coverageOptions });
+    updateStep5LiveCoverageStatus({ fallback: true });
   } else if (Number.isFinite(ratio)) {
-    updateStep5LiveCoverageStatus({ ratio, ...coverageOptions });
+    updateStep5LiveCoverageStatus({ ratio });
   } else {
     updateStep5LiveCoverageStatus({ error: true });
   }
@@ -3512,13 +3528,11 @@ async function openStep5MaskPreview() {
   try {
     await saveStep5Draft();
     const result = await refreshStep5CoverageFromServer(slide.slide_id);
-    const diagnostics = result.diagnostics || {};
-    const ratio = Number(diagnostics.coverage_ratio);
     const summary = document.getElementById('mask-preview-summary');
     if (summary) {
       summary.innerText = result.fallback_full_slide
         ? `${slide.slide_id} 没有 Mask，将直接显示完整图片。`
-        : `${slide.slide_id} · 外围白底透明 v3 · 内容覆盖率 ${Number.isFinite(ratio) ? (ratio * 100).toFixed(1) : '--'}% · 红色内容不会进入视频`;
+        : `${slide.slide_id} · 外围白底透明 v3 · 请按左侧最终画面确认选择结果`;
     }
     document.getElementById('mask-preview-image').src = result.preview_url;
     const uncoveredSection = document.getElementById('mask-uncovered-section');
@@ -3586,10 +3600,6 @@ async function runStep5SemanticBlocks() {
 }
 
 async function saveStep5Masks() {
-  if (!state.canvasState.coverageReady) {
-    showToast('当前页仍有红色内容不会进入视频，请先补涂完整。', 5000);
-    return false;
-  }
   if (state.step5AutoSaveTimer) {
     clearTimeout(state.step5AutoSaveTimer);
     state.step5AutoSaveTimer = null;

@@ -59,12 +59,12 @@ if (!app.includes('createStep5UncoveredPattern')) {
 if (!app.includes('ctx.drawImage(step5SourceCanvas, 0, 0)')) {
   throw new Error('mask editor does not keep the full source visible');
 }
-if (!app.includes('红色内容不会进入视频')) throw new Error('mask omission guidance missing');
-if (!app.includes('if (!state.canvasState.coverageReady)')) {
-  throw new Error('frontend mask coverage confirmation gate missing');
+if (!app.includes('浅红斜纹仅表示未选择内容')) throw new Error('mask selection guidance missing');
+if (app.includes('if (!state.canvasState.coverageReady)')) {
+  throw new Error('whole-slide selection ratio still blocks confirmation');
 }
-if (!app.includes('result.all_can_confirm !== false')) {
-  throw new Error('frontend confirmation is not gated by every slide');
+if (!html.includes('不作为确认门槛')) {
+  throw new Error('mask preview does not explain advisory-only diagnostics');
 }
 if (!html.includes('step5-foreground-mask-img')) {
   throw new Error('server-generated foreground mask image missing');

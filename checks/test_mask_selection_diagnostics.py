@@ -4,10 +4,8 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
-from fastapi import HTTPException
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from server import ensure_mask_coverage_ready, mask_coverage_failures
+from server import mask_selection_diagnostics
 
 
 def write_report(root: Path, slide_id: str, ratio: float, fallback: bool = False) -> None:
@@ -19,8 +17,8 @@ def write_report(root: Path, slide_id: str, ratio: float, fallback: bool = False
                 "slide_id": slide_id,
                 "fallback_full_slide": fallback,
                 "foreground_diagnostics": {
-                    "coverage_ratio": ratio,
-                    "required_coverage_ratio": 0.999,
+                    "metric": "whole_slide_nonwhite_selection_ratio",
+                    "selection_ratio": ratio,
                     "uncovered_foreground_pixel_count": 120,
                 },
             }
@@ -50,21 +48,10 @@ with tempfile.TemporaryDirectory() as temp_dir_value:
     write_report(root, "slide_003", 0.0, fallback=True)
     project = SimpleNamespace(run_dir=str(root))
 
-    failures = mask_coverage_failures(project)
-    assert [item["slide_id"] for item in failures] == ["slide_001", "slide_002"]
-    try:
-        ensure_mask_coverage_ready(project)
-    except HTTPException as exc:
-        assert exc.status_code == 400
-        assert "slide_001" in str(exc.detail)
-        assert "slide_002" in str(exc.detail)
-        assert "不会向外扩大 Mask" in str(exc.detail)
-        assert "完全封闭的内部空洞" in str(exc.detail)
-    else:
-        raise AssertionError("incomplete mask coverage was not blocked")
+    diagnostics = mask_selection_diagnostics(project)
+    assert [item["slide_id"] for item in diagnostics] == ["slide_001", "slide_002"]
+    assert diagnostics[0]["selection_ratio"] == 0.956
+    assert diagnostics[1]["selection_ratio"] == 0.992
+    assert diagnostics[0]["unselected_foreground_pixel_count"] == 120
 
-    write_report(root, "slide_001", 0.9995)
-    write_report(root, "slide_002", 0.9995)
-    ensure_mask_coverage_ready(project)
-
-print("mask coverage gate checks passed")
+print("mask selection diagnostics checks passed")

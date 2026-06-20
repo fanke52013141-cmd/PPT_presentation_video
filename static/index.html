@@ -489,15 +489,30 @@
         <!-- TTS Tab -->
         <div id="tab-tts" class="tab-pane" style="display: none;">
           <p style="font-size: 0.82rem; color: #666; background: #f0f4ff; border: 1.5px dashed #aac; border-radius: 8px; padding: 0.6rem 0.9rem; margin-bottom: 1rem; line-height: 1.7;">
-            💡 <strong>语音合成说明</strong>：默认使用 MiniMax TTS v2 接口。如果此处留空，系统将自动读取系统环境变量中的 <code>MINIMAX_API_KEY</code> 进行语音合成。若使用中转站接口，需确保中转站完全兼容 MiniMax 音频合成接口格式。
+            💡 <strong>语音合成说明</strong>：支持 MiniMax、阿里 CosyVoice、腾讯云 TTS 和火山/豆包语音合成。克隆音色可填写 Clone Voice ID；厂商专属参数可放入 Provider Extra JSON。
           </p>
+          <div style="margin-bottom: 0.8rem;">
+            <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">语音厂商 (Provider):</label>
+            <select id="setting-tts-provider">
+              <option value="minimax">MiniMax</option>
+              <option value="aliyun_cosyvoice">阿里 CosyVoice / DashScope</option>
+              <option value="tencent_tts">腾讯云 TTS</option>
+              <option value="volcengine_seed">火山/豆包 Seed Speech</option>
+            </select>
+          </div>
           <div style="margin-bottom: 0.8rem;">
             <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">语音接口地址 (Endpoint):</label>
             <input type="text" id="setting-tts-endpoint" placeholder="https://api.minimaxi.com/v1/t2a_async_v2">
           </div>
-          <div style="margin-bottom: 0.8rem;">
-            <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">语音接口密钥 (API Key):</label>
-            <input type="password" id="setting-tts-api-key" placeholder="API Key">
+          <div style="margin-bottom: 0.8rem; display: flex; gap: 1rem;">
+            <div style="flex: 1;">
+              <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">API Key / SecretId:</label>
+              <input type="password" id="setting-tts-api-key" placeholder="API Key / Tencent SecretId">
+            </div>
+            <div style="flex: 1;">
+              <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">SecretKey（腾讯云）:</label>
+              <input type="password" id="setting-tts-secret-key" placeholder="Tencent SecretKey">
+            </div>
           </div>
           <div style="margin-bottom: 0.8rem; display: flex; gap: 1rem;">
             <div style="flex: 1;">
@@ -507,6 +522,16 @@
             <div style="flex: 1;">
               <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">音色标识 (Voice ID):</label>
               <input type="text" id="setting-tts-voice-id" placeholder="Chinese (Mandarin)_Soft_Girl">
+            </div>
+          </div>
+          <div style="margin-bottom: 0.8rem; display: flex; gap: 1rem;">
+            <div style="flex: 1;">
+              <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">Clone Voice ID（可选）:</label>
+              <input type="text" id="setting-tts-clone-voice-id" placeholder="克隆/复刻后的音色 ID">
+            </div>
+            <div style="flex: 1;">
+              <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">Region（可选）:</label>
+              <input type="text" id="setting-tts-region" placeholder="ap-guangzhou / cn-beijing">
             </div>
           </div>
           <div style="display: flex; gap: 1rem;">
@@ -522,6 +547,10 @@
               <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">音调 (-12 - 12):</label>
               <input type="text" id="setting-tts-pitch" placeholder="0">
             </div>
+          </div>
+          <div style="margin-top: 0.8rem;">
+            <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">Provider Extra JSON（可选）:</label>
+            <textarea id="setting-tts-provider-extra" rows="4" spellcheck="false" placeholder='{"appid":"火山 AppID","cluster":"volcano_tts","resource_id":"seed-tts-2.0"}'></textarea>
           </div>
           <div style="margin-top: 1.2rem; display: flex; justify-content: flex-start;">
             <button type="button" class="secondary" id="btn-test-tts" style="padding: 0.4rem 1rem; font-size: 0.85rem; display: flex; align-items: center; gap: 0.4rem;">

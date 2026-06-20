@@ -18,7 +18,7 @@ class BindError(RuntimeError):
     pass
 
 
-DEFAULT_SYNC_REVEAL_DURATION_SEC = 0.12
+DEFAULT_SYNC_REVEAL_DURATION_SEC = 0.75
 MIN_REVEAL_DURATION_SEC = 0.05
 
 
@@ -144,7 +144,6 @@ def bind_slide(slide_dir: Path, lead_sec: float, preserve_existing_at: bool) -> 
         if linked_segment_id in segment_by_id:
             event["linked_segment_id"] = linked_segment_id
             duration = float(event.get("duration", DEFAULT_SYNC_REVEAL_DURATION_SEC))
-            duration = min(duration, DEFAULT_SYNC_REVEAL_DURATION_SEC)
             duration = max(MIN_REVEAL_DURATION_SEC, duration)
             event["duration"] = round(duration, 3)
             audio_delay = float(audio_timeline.get("audio_start_sec", 0.0) or 0.0)

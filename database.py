@@ -63,11 +63,16 @@ def init_db():
             "image_api_key": "",
             "image_model": "gpt-image-1",
             "image_size": "1024x1024",
-            # MiniMax TTS
+            # TTS
+            "tts_provider": "minimax",
             "tts_endpoint": "https://api.minimaxi.com/v1/t2a_async_v2",
             "tts_api_key": "",
+            "tts_secret_key": "",
+            "tts_region": "",
             "tts_model": "speech-2.8-hd",
             "tts_voice_id": "Chinese (Mandarin)_Soft_Girl",
+            "tts_clone_voice_id": "",
+            "tts_provider_extra": "",
             "tts_speed": "1.0",
             "tts_volume": "1.0",
             "tts_pitch": "0"

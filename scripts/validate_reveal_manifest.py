@@ -9,21 +9,17 @@ import sys
 from pathlib import Path
 from typing import Any
 
+try:
+    from scripts.pipeline_profiles import allowed_reveal_actions, read_pipeline_profile
+except ModuleNotFoundError:
+    from pipeline_profiles import allowed_reveal_actions, read_pipeline_profile
+
 
 class ManifestError(RuntimeError):
     pass
 
 
-ALLOWED_ACTIONS = {
-    "cover_fade_out",
-    "cover_wipe_left_to_right",
-    "cover_wipe_top_to_bottom",
-    "fog_diagonal_erase",
-    "crop_fade_up",
-    "crop_slide_in_left",
-    "crop_soft_zoom_in",
-    "highlight",
-}
+ALLOWED_ACTIONS = allowed_reveal_actions(read_pipeline_profile())
 APPROVED_REVIEW_STATUSES = {"reviewed", "approved", "manual_reviewed", "manual_adjusted", "locked"}
 DEFAULT_PADDING_PX = 32
 

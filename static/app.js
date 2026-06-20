@@ -61,7 +61,7 @@ function projectFlowContext(project = state.currentProject) {
 }
 
 // API 请求工具方法
-const SYNC_REVEAL_DURATION_SEC = 0.12;
+const DEFAULT_REVEAL_DURATION_SEC = 0.75;
 
 const API = {
   async fetch(url, options = {}) {
@@ -399,10 +399,15 @@ async function loadSettings() {
   document.getElementById('setting-image-model').value = state.settings.image_model || 'gpt-image-1';
   document.getElementById('setting-image-size').value = state.settings.image_size || '1024x1024';
   
+  document.getElementById('setting-tts-provider').value = state.settings.tts_provider || 'minimax';
   document.getElementById('setting-tts-endpoint').value = state.settings.tts_endpoint || '';
   document.getElementById('setting-tts-api-key').value = state.settings.tts_api_key || '';
+  document.getElementById('setting-tts-secret-key').value = state.settings.tts_secret_key || '';
+  document.getElementById('setting-tts-region').value = state.settings.tts_region || '';
   document.getElementById('setting-tts-model').value = state.settings.tts_model || '';
   document.getElementById('setting-tts-voice-id').value = state.settings.tts_voice_id || '';
+  document.getElementById('setting-tts-clone-voice-id').value = state.settings.tts_clone_voice_id || '';
+  document.getElementById('setting-tts-provider-extra').value = state.settings.tts_provider_extra || '';
   document.getElementById('setting-tts-speed').value = state.settings.tts_speed || '1.0';
   document.getElementById('setting-tts-volume').value = state.settings.tts_volume || '1.0';
   document.getElementById('setting-tts-pitch').value = state.settings.tts_pitch || '0';
@@ -430,10 +435,15 @@ async function saveSettings() {
     image_model: document.getElementById('setting-image-model').value.trim(),
     image_size: document.getElementById('setting-image-size').value.trim(),
     
+    tts_provider: document.getElementById('setting-tts-provider').value,
     tts_endpoint: document.getElementById('setting-tts-endpoint').value.trim(),
     tts_api_key: document.getElementById('setting-tts-api-key').value.trim(),
+    tts_secret_key: document.getElementById('setting-tts-secret-key').value.trim(),
+    tts_region: document.getElementById('setting-tts-region').value.trim(),
     tts_model: document.getElementById('setting-tts-model').value.trim(),
     tts_voice_id: document.getElementById('setting-tts-voice-id').value.trim(),
+    tts_clone_voice_id: document.getElementById('setting-tts-clone-voice-id').value.trim(),
+    tts_provider_extra: document.getElementById('setting-tts-provider-extra').value.trim(),
     tts_speed: document.getElementById('setting-tts-speed').value.trim(),
     tts_volume: document.getElementById('setting-tts-volume').value.trim(),
     tts_pitch: document.getElementById('setting-tts-pitch').value.trim()
@@ -526,41 +536,38 @@ async function testTtsConnection() {
   const originalHtml = btn.innerHTML;
   
   const payload = {
+    provider: document.getElementById('setting-tts-provider').value,
     endpoint: document.getElementById('setting-tts-endpoint').value.trim(),
     api_key: document.getElementById('setting-tts-api-key').value.trim(),
+    secret_key: document.getElementById('setting-tts-secret-key').value.trim(),
+    region: document.getElementById('setting-tts-region').value.trim(),
     model: document.getElementById('setting-tts-model').value.trim(),
-    voice_id: document.getElementById('setting-tts-voice-id').value.trim()
+    voice_id: document.getElementById('setting-tts-voice-id').value.trim(),
+    clone_voice_id: document.getElementById('setting-tts-clone-voice-id').value.trim(),
+    provider_extra: document.getElementById('setting-tts-provider-extra').value.trim()
   };
   
-  if (!payload.endpoint) {
-    showToast('⚠️ 请填写语音接口地址 (Endpoint)');
-    return;
-  }
-  if (!payload.api_key) {
-    showToast('⚠️ 请填写语音接口密钥 (API Key)');
-    return;
-  }
   if (!payload.model) {
-    showToast('⚠️ 请填写语音模型');
+    showToast('?? ???????');
     return;
   }
   if (!payload.voice_id) {
-    showToast('⚠️ 请填写音色标识');
+    showToast('?? ???????');
     return;
   }
   
   btn.disabled = true;
-  btn.innerHTML = '测试中...';
+  btn.innerHTML = '???...';
   
   try {
     const res = await API.post('/api/settings/test-tts', payload);
     if (res.success) {
-      showToast('✅ ' + res.message);
+      showToast('? ' + res.message);
     } else {
-      showToast('❌ ' + res.message);
+      showToast('? ' + res.message);
     }
   } catch (err) {
-    showToast('❌ 测试请求发送失败: ' + err.message);
+    showToast('? ????????: ' + err.message);
   } finally {
     btn.disabled = false;
     btn.innerHTML = originalHtml;
@@ -2062,17 +2069,17 @@ function syncMaskBoxesToSlide(slide, boxes) {
         id: maskBox.group_id || `custom_group_${idx + 1}`,
         role: maskBox.role || 'content_body',
         visible_text: maskBox.text_label || '',
-        reveal: { type: 'crop_fade_up', duration: SYNC_REVEAL_DURATION_SEC },
+        reveal: { type: 'scratch_reveal', duration: DEFAULT_REVEAL_DURATION_SEC, angle: 100, feather: 18 },
         padding_px: 32,
         z_index: 40 + idx
       };
       slide.groups.push(group);
     }
     if (!group.reveal || typeof group.reveal !== 'object') {
-      group.reveal = { type: 'crop_fade_up', duration: SYNC_REVEAL_DURATION_SEC };
+      group.reveal = { type: 'scratch_reveal', duration: DEFAULT_REVEAL_DURATION_SEC, angle: 100, feather: 18 };
     }
-    group.reveal.type = 'crop_fade_up';
-    group.reveal.duration = SYNC_REVEAL_DURATION_SEC;
+    group.reveal.type = group.reveal.type || 'scratch_reveal';
+    group.reveal.duration = Number(group.reveal.duration || DEFAULT_REVEAL_DURATION_SEC);
     group.role = maskBox.role || group.role || 'content_body';
     group.source = maskBox.source || group.source || '';
     if (maskBox.text_label) group.visible_text = maskBox.text_label;

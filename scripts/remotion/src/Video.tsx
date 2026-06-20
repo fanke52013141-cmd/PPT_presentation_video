@@ -70,8 +70,16 @@ export type AnimationAction =
   | 'highlight'
   | 'cover_fade_out'
   | 'cover_wipe_left_to_right'
+  | 'cover_wipe_right_to_left'
   | 'cover_wipe_top_to_bottom'
+  | 'cover_wipe_bottom_to_top'
   | 'fog_diagonal_erase'
+  | 'wipe_left_to_right'
+  | 'wipe_right_to_left'
+  | 'wipe_top_to_bottom'
+  | 'wipe_bottom_to_top'
+  | 'scratch_reveal'
+  | 'brush_wipe_left_to_right'
   | 'crop_fade_up'
   | 'crop_slide_in_left'
   | 'crop_soft_zoom_in';
@@ -142,6 +150,11 @@ const numericParam = (event: AnimationEvent, key: string, fallback: number): num
   return typeof value === 'number' ? value : fallback;
 };
 
+const maskGradient = (angle: number, progress: number, feather: number): string => {
+  const sweep = -35 + progress * 170;
+  return `linear-gradient(${angle}deg, transparent ${sweep - feather}%, transparent ${sweep}%, black ${sweep + feather}%)`;
+};
+
 const revealStyle = (
   frame: number,
   fps: number,
@@ -149,7 +162,20 @@ const revealStyle = (
   base: React.CSSProperties
 ): React.CSSProperties => {
   const revealEvent = events.find((event) =>
-    ['cover_fade_out', 'cover_wipe_left_to_right', 'cover_wipe_top_to_bottom', 'fog_diagonal_erase'].includes(event.action)
+    [
+      'cover_fade_out',
+      'cover_wipe_left_to_right',
+      'cover_wipe_right_to_left',
+      'cover_wipe_top_to_bottom',
+      'cover_wipe_bottom_to_top',
+      'fog_diagonal_erase',
+      'wipe_left_to_right',
+      'wipe_right_to_left',
+      'wipe_top_to_bottom',
+      'wipe_bottom_to_top',
+      'scratch_reveal',
+      'brush_wipe_left_to_right',
+    ].includes(event.action)
   );
   if (!revealEvent) {
     return base;
@@ -167,6 +193,13 @@ const revealStyle = (
     };
   }
 
+  if (revealEvent.action === 'cover_wipe_right_to_left') {
+    return {
+      ...base,
+      clipPath: `inset(0 ${progress * 100}% 0 0)`,
+    };
+  }
+
   if (revealEvent.action === 'cover_wipe_top_to_bottom') {
     return {
       ...base,
@@ -174,10 +207,46 @@ const revealStyle = (
     };
   }
 
+  if (revealEvent.action === 'cover_wipe_bottom_to_top') {
+    return {
+      ...base,
+      clipPath: `inset(0 0 ${progress * 100}% 0)`,
+    };
+  }
+
+  if (revealEvent.action === 'wipe_left_to_right') {
+    return {
+      ...base,
+      clipPath: `inset(0 ${100 - progress * 100}% 0 0)`,
+    };
+  }
+
+  if (revealEvent.action === 'wipe_right_to_left') {
+    return {
+      ...base,
+      clipPath: `inset(0 0 0 ${100 - progress * 100}%)`,
+    };
+  }
+
+  if (revealEvent.action === 'wipe_top_to_bottom') {
+    return {
+      ...base,
+      clipPath: `inset(0 0 ${100 - progress * 100}% 0)`,
+    };
+  }
+
+  if (revealEvent.action === 'wipe_bottom_to_top') {
+    return {
+      ...base,
+      clipPath: `inset(${100 - progress * 100}% 0 0 0)`,
+    };
+  }
+
   const feather = numericParam(revealEvent, 'feather', 16);
-  const angle = numericParam(revealEvent, 'angle', 135);
-  const sweep = -35 + progress * 170;
-  const maskImage = `linear-gradient(${angle}deg, transparent ${sweep - feather}%, transparent ${sweep}%, black ${sweep + feather}%)`;
+  const angle = revealEvent.action === 'brush_wipe_left_to_right'
+    ? 90
+    : numericParam(revealEvent, 'angle', revealEvent.action === 'scratch_reveal' ? 100 : 135);
+  const maskImage = maskGradient(angle, progress, feather);
   return {
     ...base,
     WebkitMaskImage: maskImage,

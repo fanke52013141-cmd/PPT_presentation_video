@@ -9,14 +9,17 @@ import sys
 from pathlib import Path
 from typing import Any
 
+try:
+    from scripts.pipeline_profiles import display_only_roles, read_pipeline_profile, speak_policy_for_role
+except ModuleNotFoundError:
+    from pipeline_profiles import display_only_roles, read_pipeline_profile, speak_policy_for_role
+
 
 class ContractError(RuntimeError):
     pass
 
 
 ALLOWED_SPEAK_POLICIES = {"speak", "display_only"}
-DISPLAY_ONLY_ROLES = {"subtitle", "decoration"}
-SPOKEN_ROLES = {"title", "content_body", "diagram", "annotation", "summary"}
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -36,7 +39,7 @@ def speak_policy_for(group: dict[str, Any]) -> str:
     if explicit:
         return explicit
     role = str(group.get("role", ""))
-    return "display_only" if role in DISPLAY_ONLY_ROLES else "speak"
+    return speak_policy_for_role(role)
 
 
 def require_non_empty(value: Any, message: str) -> str:
@@ -47,6 +50,8 @@ def require_non_empty(value: Any, message: str) -> str:
 
 
 def validate_group_semantics(slide_id: str, group: dict[str, Any], group_id: str, role: str) -> tuple[str, str]:
+    profile = read_pipeline_profile()
+    configured_display_only_roles = display_only_roles(profile)
     content_unit_id = require_non_empty(
         group.get("content_unit_id"),
         f"Visual group {group_id} missing content_unit_id in {slide_id}",
@@ -54,12 +59,10 @@ def validate_group_semantics(slide_id: str, group: dict[str, Any], group_id: str
     policy = speak_policy_for(group)
     if policy not in ALLOWED_SPEAK_POLICIES:
         raise ContractError(f"Visual group {group_id} has invalid speak_policy in {slide_id}: {policy}")
-    if role == "subtitle" and policy != "display_only":
-        raise ContractError(f"Subtitle group must use speak_policy=display_only in {slide_id}: {group_id}")
+    if role in configured_display_only_roles and policy != "display_only":
+        raise ContractError(f"Display-only role must use speak_policy=display_only in {slide_id}: {group_id}/{role}")
     if role != "decoration":
         require_non_empty(group.get("mask_target"), f"Visual group {group_id} missing mask_target in {slide_id}")
-    if policy == "speak" and role not in SPOKEN_ROLES:
-        raise ContractError(f"Visual group {group_id} cannot be narrated with role={role} in {slide_id}")
     return content_unit_id, policy
 
 

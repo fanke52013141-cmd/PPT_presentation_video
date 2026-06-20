@@ -100,7 +100,10 @@ node checks\test_visible_flow.js
 .\.venv\Scripts\python.exe checks\test_slide_visual_invalidation.py
 .\.venv\Scripts\python.exe checks\test_audio_confirmation.py
 .\.venv\Scripts\python.exe checks\test_audio_tail_padding.py
-npx tsc --noEmit -p scripts\remotion\tsconfig.json
+Push-Location scripts\remotion
+npm install
+npx tsc --noEmit -p tsconfig.json
+Pop-Location
 ```
 
 验证已有运行项目：

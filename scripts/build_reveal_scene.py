@@ -24,8 +24,10 @@ from PIL import Image, ImageChops, ImageDraw
 
 try:
     from scripts.background_color import normalize_connected_background
+    from scripts.pipeline_profiles import allowed_reveal_actions, normalize_reveal_action, read_pipeline_profile
 except ModuleNotFoundError:
     from background_color import normalize_connected_background
+    from pipeline_profiles import allowed_reveal_actions, normalize_reveal_action, read_pipeline_profile
 
 
 PIPELINE_VERSION = "manual_mask_exact_v2"
@@ -38,9 +40,24 @@ DEFAULT_CANVAS = {
     "background": "#FFFDF7",
     "subtitle_safe_y": 930,
 }
-DEFAULT_REVEAL_DURATION_SEC = 0.12
+DEFAULT_REVEAL_DURATION_SEC = 0.75
 MIN_REVEAL_DURATION_SEC = 0.05
-CROP_ACTIONS = {"crop_fade_up", "crop_slide_in_left", "crop_soft_zoom_in"}
+RENDERER_ACTIONS = {
+    "fade_in",
+    "fade_up",
+    "soft_zoom_in",
+    "slide_in_left",
+    "highlight",
+    "cover_fade_out",
+    "cover_wipe_left_to_right",
+    "cover_wipe_right_to_left",
+    "cover_wipe_top_to_bottom",
+    "cover_wipe_bottom_to_top",
+    "fog_diagonal_erase",
+    "crop_fade_up",
+    "crop_slide_in_left",
+    "crop_soft_zoom_in",
+}
 
 
 class RevealBuildError(RuntimeError):
@@ -160,12 +177,13 @@ def crop_image(image: Image.Image, box: dict[str, int]) -> Image.Image:
 
 def build_event(slide_id: str, group: dict[str, Any], layer_id: str, fallback_at: float) -> dict[str, Any]:
     reveal = group.get("reveal") if isinstance(group.get("reveal"), dict) else {}
-    action = str(reveal.get("type", "crop_fade_up"))
-    if action not in CROP_ACTIONS:
+    profile = read_pipeline_profile()
+    action = normalize_reveal_action(str(reveal.get("type", "crop_fade_up")), profile, for_renderer=True)
+    if action not in RENDERER_ACTIONS and action not in allowed_reveal_actions(profile):
         action = "crop_fade_up"
     duration = max(
         MIN_REVEAL_DURATION_SEC,
-        min(DEFAULT_REVEAL_DURATION_SEC, float(reveal.get("duration", DEFAULT_REVEAL_DURATION_SEC))),
+        float(reveal.get("duration", DEFAULT_REVEAL_DURATION_SEC)),
     )
     event: dict[str, Any] = {
         "id": f"{slide_id}_{group['id']}_{action}",
@@ -175,7 +193,11 @@ def build_event(slide_id: str, group: dict[str, Any], layer_id: str, fallback_at
         "at": round(max(0.0, float(reveal.get("at", fallback_at))), 3),
         "duration": round(duration, 3),
         "easing": "easeOutCubic",
-        "params": {},
+        "params": {
+            key: reveal[key]
+            for key in ("angle", "feather", "fog_strength", "blur_px", "direction", "stagger")
+            if key in reveal
+        },
     }
     for key in ("narration_beat_id", "linked_segment_id"):
         if group.get(key):

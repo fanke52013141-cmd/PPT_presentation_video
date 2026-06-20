@@ -86,7 +86,10 @@ python checks/test_reveal_pipeline_isolation.py
 python checks/test_slide_visual_invalidation.py
 python checks/test_audio_confirmation.py
 python checks/test_audio_tail_padding.py
-npx tsc --noEmit -p scripts/remotion/tsconfig.json
+Push-Location scripts/remotion
+npm install
+npx tsc --noEmit -p tsconfig.json
+Pop-Location
 ```
 
 For a populated run:

@@ -64,12 +64,24 @@
                       "enum": [
                         "cover_fade_out",
                         "cover_wipe_left_to_right",
+                        "cover_wipe_right_to_left",
                         "cover_wipe_top_to_bottom",
+                        "cover_wipe_bottom_to_top",
                         "fog_diagonal_erase",
                         "crop_fade_up",
                         "crop_slide_in_left",
                         "crop_soft_zoom_in",
-                        "highlight"
+                        "highlight",
+                        "wipe_left_to_right",
+                        "wipe_right_to_left",
+                        "wipe_top_to_bottom",
+                        "wipe_bottom_to_top",
+                        "scratch_reveal",
+                        "brush_wipe_left_to_right",
+                        "fade_in",
+                        "fade_up",
+                        "soft_zoom_in",
+                        "slide_in_left"
                       ]
                     },
                     "at": {"type": "number", "minimum": 0},

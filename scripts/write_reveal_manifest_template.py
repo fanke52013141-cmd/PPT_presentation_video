@@ -13,6 +13,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
+try:
+    from scripts.pipeline_profiles import default_reveal_for_role
+except ModuleNotFoundError:
+    from pipeline_profiles import default_reveal_for_role
+
 
 class TemplateError(RuntimeError):
     pass
@@ -80,15 +85,7 @@ def content_slots(count: int) -> list[dict[str, int]]:
 
 
 def default_reveal(role: str) -> dict[str, Any]:
-    if role == "title":
-        return {"type": "cover_wipe_left_to_right", "duration": 0.55}
-    if role == "subtitle":
-        return {"type": "cover_fade_out", "duration": 0.45}
-    if role == "summary":
-        return {"type": "crop_soft_zoom_in", "duration": 0.75, "fog_strength": 0.72}
-    if role == "diagram":
-        return {"type": "fog_diagonal_erase", "duration": 0.9, "angle": 135, "feather": 16, "fog_strength": 0.68}
-    return {"type": "fog_diagonal_erase", "duration": 0.75, "angle": 135, "feather": 16, "fog_strength": 0.66}
+    return default_reveal_for_role(role)
 
 
 def box_for_group(group: dict[str, Any], slot: dict[str, int] | None) -> dict[str, int]:
@@ -132,7 +129,7 @@ def build_slide(slide: dict[str, Any], run_dir: Path) -> dict[str, Any]:
         beats = []
     content_groups = [
         group for group in groups
-        if isinstance(group, dict) and str(group.get("role", "")) not in {"title", "subtitle", "summary", "decoration"}
+        if isinstance(group, dict) and str(group.get("role", "")) not in {"title", "subtitle", "decoration"}
         and str(group.get("id", "")) not in {"title_group", "subtitle_group", "summary_group"}
     ]
     slots = content_slots(len(content_groups))

@@ -8,6 +8,7 @@ import shutil
 import logging
 import subprocess
 import re
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any
@@ -23,6 +24,14 @@ import httpx
 import yaml
 from openai import OpenAI
 from scripts.background_color import detect_project_background, normalize_connected_background, rgb_to_hex
+from scripts.pipeline_profiles import (
+    display_only_roles,
+    image_prompt_profile_text,
+    read_pipeline_profile,
+    speak_policy_for_role,
+    storyboard_profile_prompt,
+    storyboard_requirements,
+)
 
 def get_openai_client(api_key: str, base_url: str = None) -> OpenAI:
     # 强制不使用环境变量中的代理，防止某些局域网代理的 SSL 拦截规则冲突
@@ -37,6 +46,106 @@ def get_openai_client(api_key: str, base_url: str = None) -> OpenAI:
         headers=headers
     )
     return OpenAI(api_key=api_key, base_url=base_url, http_client=http_client)
+
+
+def normalize_tts_provider(provider: Optional[str]) -> str:
+    value = str(provider or "minimax").strip().lower()
+    return TTS_PROVIDER_ALIASES.get(value, value or "minimax")
+
+
+def tts_provider_defaults(provider: str) -> Dict[str, str]:
+    return TTS_PROVIDER_DEFAULTS.get(provider, TTS_PROVIDER_DEFAULTS["minimax"])
+
+
+def first_non_empty(*values: Optional[str]) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def configured_tts_api_key(provider: str, explicit: Optional[str] = None) -> str:
+    defaults = tts_provider_defaults(provider)
+    return first_non_empty(
+        explicit,
+        get_setting("tts_api_key"),
+        os.environ.get(str(defaults.get("api_key_env") or "")),
+        os.environ.get("MINIMAX_API_KEY") if provider == "minimax" else "",
+    )
+
+
+def configured_tts_secret_key(provider: str, explicit: Optional[str] = None) -> str:
+    defaults = tts_provider_defaults(provider)
+    return first_non_empty(
+        explicit,
+        get_setting("tts_secret_key"),
+        os.environ.get(str(defaults.get("secret_key_env") or "")),
+    )
+
+
+def provider_tts_command(
+    *,
+    provider: str,
+    text_file: str,
+    out_audio: str,
+    out_meta: str,
+    out_srt: str,
+    out_timeline: str,
+    slide_id: str,
+    endpoint: str,
+    api_key: str,
+    secret_key: str,
+    region: str,
+    model: str,
+    voice_id: str,
+    clone_voice_id: str,
+    provider_extra: str,
+    speed: str,
+    volume: str,
+    pitch: str,
+) -> List[str]:
+    script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "generic_tts.py"))
+    return [
+        sys.executable,
+        script,
+        "--provider",
+        provider,
+        "--text-file",
+        text_file,
+        "--out-audio",
+        out_audio,
+        "--out-meta",
+        out_meta,
+        "--out-srt",
+        out_srt,
+        "--out-timeline",
+        out_timeline,
+        "--slide-id",
+        slide_id,
+        "--endpoint",
+        endpoint,
+        "--api-key",
+        api_key,
+        "--secret-key",
+        secret_key,
+        "--region",
+        region,
+        "--model",
+        model,
+        "--voice-id",
+        voice_id,
+        "--clone-voice-id",
+        clone_voice_id,
+        "--provider-extra",
+        provider_extra,
+        "--speed",
+        speed,
+        "--volume",
+        volume,
+        "--pitch",
+        pitch,
+    ]
 
 from database import init_db, get_db, Project, Setting
 from config_store import get_all_settings, update_settings, get_setting
@@ -68,6 +177,42 @@ STYLE_REFERENCE_FILES = {
 }
 REVEAL_PIPELINE_VERSION = "manual_mask_exact_v2"
 MASK_MIN_COVERAGE_RATIO = 0.985
+TTS_PROVIDER_ALIASES = {
+    "doubao": "volcengine_seed",
+    "volcengine": "volcengine_seed",
+    "aliyun": "aliyun_cosyvoice",
+    "dashscope": "aliyun_cosyvoice",
+    "cosyvoice": "aliyun_cosyvoice",
+    "tencent": "tencent_tts",
+}
+TTS_PROVIDER_DEFAULTS = {
+    "minimax": {
+        "endpoint": "https://api.minimaxi.com/v1/t2a_async_v2",
+        "model": "speech-2.8-hd",
+        "voice_id": "Chinese (Mandarin)_Soft_Girl",
+        "api_key_env": "MINIMAX_API_KEY",
+    },
+    "aliyun_cosyvoice": {
+        "endpoint": "https://dashscope.aliyuncs.com/api/v1",
+        "model": "cosyvoice-v3-flash",
+        "voice_id": "longxiaochun",
+        "api_key_env": "DASHSCOPE_API_KEY",
+    },
+    "tencent_tts": {
+        "endpoint": "https://tts.tencentcloudapi.com",
+        "model": "1",
+        "voice_id": "101001",
+        "api_key_env": "TENCENTCLOUD_SECRET_ID",
+        "secret_key_env": "TENCENTCLOUD_SECRET_KEY",
+        "region": "ap-guangzhou",
+    },
+    "volcengine_seed": {
+        "endpoint": "https://openspeech.bytedance.com/api/v1/tts",
+        "model": "seed-tts-1.1",
+        "voice_id": "zh_female_qingxinnvsheng_mars_bigtts",
+        "api_key_env": "VOLCENGINE_TTS_TOKEN",
+    },
+}
 
 # Pydantic 响应模型
 class ProjectCreate(BaseModel):
@@ -91,10 +236,15 @@ class TestImagePayload(BaseModel):
     model: str
 
 class TestTtsPayload(BaseModel):
-    endpoint: str
-    api_key: str
-    model: str
-    voice_id: str
+    provider: Optional[str] = "minimax"
+    endpoint: Optional[str] = None
+    api_key: Optional[str] = None
+    secret_key: Optional[str] = None
+    region: Optional[str] = None
+    model: Optional[str] = None
+    voice_id: Optional[str] = None
+    clone_voice_id: Optional[str] = None
+    provider_extra: Optional[str] = None
 
 # 图片后处理：将任意尺寸等比例缩放，并居中贴在 #FFFDF7 暖白背景的 1920x1080 画布上
 def process_and_save_image(image_bytes: bytes, save_path: str):
@@ -300,6 +450,7 @@ def normalize_visual_contract(contract: Dict[str, Any]) -> Dict[str, Any]:
     slides = contract.get("slides")
     if not isinstance(slides, list):
         return contract
+    profile = read_pipeline_profile()
 
     for slide in slides:
         if not isinstance(slide, dict):
@@ -319,7 +470,7 @@ def normalize_visual_contract(contract: Dict[str, Any]) -> Dict[str, Any]:
             if not str(group.get("content_unit_id") or "").strip():
                 group["content_unit_id"] = f"{group_id}_unit"
             if not str(group.get("speak_policy") or "").strip():
-                group["speak_policy"] = "display_only" if role in {"subtitle", "decoration"} else "speak"
+                group["speak_policy"] = speak_policy_for_role(role, profile)
             if role != "decoration" and not str(group.get("mask_target") or "").strip():
                 group["mask_target"] = str(
                     group.get("visual_anchor") or group.get("visible_text") or group_id
@@ -1083,44 +1234,63 @@ def test_image_connection(payload: TestImagePayload):
 
 @app.post("/api/settings/test-tts")
 def test_tts_connection(payload: TestTtsPayload):
+    provider = normalize_tts_provider(payload.provider)
+    defaults = tts_provider_defaults(provider)
+    endpoint = first_non_empty(payload.endpoint, get_setting("tts_endpoint"), defaults.get("endpoint"))
+    api_key = configured_tts_api_key(provider, payload.api_key)
+    secret_key = configured_tts_secret_key(provider, payload.secret_key)
+    model = first_non_empty(payload.model, get_setting("tts_model"), defaults.get("model"))
+    voice_id = first_non_empty(payload.voice_id, get_setting("tts_voice_id"), defaults.get("voice_id"))
+    clone_voice_id = first_non_empty(payload.clone_voice_id, get_setting("tts_clone_voice_id"))
+    region = first_non_empty(payload.region, get_setting("tts_region"), defaults.get("region"))
+    provider_extra = first_non_empty(payload.provider_extra, get_setting("tts_provider_extra"))
+
+    if provider not in TTS_PROVIDER_DEFAULTS:
+        return {"success": False, "message": f"不支持的 TTS Provider: {payload.provider}"}
+    if not api_key:
+        return {"success": False, "message": f"缺少 {provider} API Key / SecretId。"}
+    if provider == "tencent_tts" and not secret_key:
+        return {"success": False, "message": "腾讯云 TTS 还需要 SecretKey。"}
+    if not model or not voice_id:
+        return {"success": False, "message": "请填写语音模型和音色 ID。"}
+
     try:
-        url = payload.endpoint
-        headers = {
-            "Authorization": f"Bearer {payload.api_key}",
-            "Content-Type": "application/json"
-        }
-        body = {
-            "model": payload.model,
-            "text": "测试",
-            "voice_setting": {
-                "voice_id": payload.voice_id,
-                "speed": 1.0,
-                "vol": 1.0,
-                "pitch": 0
-            },
-            "audio_setting": {
-                "audio_sample_rate": 32000,
-                "bitrate": 128000,
-                "format": "mp3",
-                "channel": 1
-            }
-        }
-        res = httpx.post(url, headers=headers, json=body, timeout=15)
-        if res.status_code != 200:
-            return {"success": False, "message": f"接口请求失败: HTTP {res.status_code}, 内容: {res.text[:100]}"}
-        
-        content_type = res.headers.get("content-type", "")
-        if "audio" in content_type or len(res.content) > 100:
-            if b"{" in res.content[:50]:
-                try:
-                    err_json = res.json()
-                    status_msg = err_json.get("base_resp", {}).get("status_msg", "")
-                    if status_msg and status_msg != "success":
-                        return {"success": False, "message": f"连接失败: {status_msg}"}
-                except Exception:
-                    pass
-            return {"success": True, "message": "连接成功！TTS 合成接口可以正常响应。"}
-        return {"success": False, "message": f"未返回音频数据。响应内容: {res.text[:100]}"}
+        with tempfile.TemporaryDirectory() as temp_dir:
+            text_file = os.path.join(temp_dir, "tts_test.txt")
+            out_audio = os.path.join(temp_dir, "voice.mp3")
+            out_meta = os.path.join(temp_dir, "tts_metadata.json")
+            out_srt = os.path.join(temp_dir, "tts_narration.srt")
+            out_timeline = os.path.join(temp_dir, "audio_timeline.json")
+            with open(text_file, "w", encoding="utf-8") as f:
+                f.write("测试语音。\n")
+            cmd = provider_tts_command(
+                provider=provider,
+                text_file=text_file,
+                out_audio=out_audio,
+                out_meta=out_meta,
+                out_srt=out_srt,
+                out_timeline=out_timeline,
+                slide_id="tts_test",
+                endpoint=endpoint,
+                api_key=api_key,
+                secret_key=secret_key,
+                region=region,
+                model=model,
+                voice_id=voice_id,
+                clone_voice_id=clone_voice_id,
+                provider_extra=provider_extra,
+                speed="1.0",
+                volume="1.0",
+                pitch="0" if provider == "minimax" else "1.0",
+            )
+            res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=90)
+            if res.returncode != 0:
+                return {"success": False, "message": f"TTS 测试失败: {(res.stderr or res.stdout)[:600]}"}
+            if not os.path.exists(out_audio) or os.path.getsize(out_audio) <= 0:
+                return {"success": False, "message": "TTS 测试未生成有效音频文件。"}
+        return {"success": True, "message": f"连接成功，{provider} TTS 可以正常合成音频。"}
+    except subprocess.TimeoutExpired:
+        return {"success": False, "message": "TTS 测试超时，请检查 endpoint、鉴权和网络。"}
     except Exception as e:
         return {"success": False, "message": f"连接失败: {str(e)}"}
 
@@ -1456,16 +1626,9 @@ def build_storyboard_request(
     article_content: str,
     storyboard_rules: str,
 ) -> tuple[str, str]:
-    article_chars = len(re.sub(r"\s+", "", article_content))
-    if article_chars <= 1200:
-        slide_count_requirement = "4 到 6 页"
-        group_count_requirement = "5-6 个"
-    elif article_chars <= 3000:
-        slide_count_requirement = "6 到 8 页"
-        group_count_requirement = "5-7 个"
-    else:
-        slide_count_requirement = "8 到 12 页"
-        group_count_requirement = "5-8 个"
+    profile = read_pipeline_profile()
+    slide_count_requirement, group_count_requirement = storyboard_requirements(article_content, profile)
+    profile_prompt = storyboard_profile_prompt(article_content, profile)
 
     schema_path = os.path.join(REPO_ROOT, "schemas", "visual_contract.schema.json")
     schema_hint = ""
@@ -1475,30 +1638,32 @@ def build_storyboard_request(
 
     system_prompt = f"""你是一个顶级的 PPT 视频分镜策划师。
 请阅读用户输入的内容摘要和全文，设计出一份符合 PPT 动画视频制作标准的视觉合约(Visual Contract)。
-视频的画面风格为“温暖极简手绘线稿风”。
+视频的画面风格可由后续图片风格配置决定；这里重点规划“内容结构、视觉分组、旁白绑定、Mask 友好性”。
 要求：
 1. 必须要将整篇文章合理划分，分成 {slide_count_requirement} Slide（每页的 slide_id 为 slide_001, slide_002 格式）。
-2. 每页 Slide 必须定义 {group_count_requirement}视觉分组(visual_groups)，包含：
-   - 1个 title 主标题（role 为 'title'）
-   - 1个 subtitle 副标题（role 为 'subtitle'）
-   - 2-4个 body/diagram 主体/图表区（role 只能是 'content_body', 'diagram', 'annotation', 'summary', 'decoration' 之一）
-   - 1个 summary 总结区（role 为 'summary'）
+2. 每页 Slide 建议定义 {group_count_requirement}视觉分组(visual_groups)。不要固定套用“主标题/副标题/正文/总结”模板；副标题、总结、引用、数据点、流程步骤、强调提示等结构都应按内容需要决定。
 3. 每个视觉分组（visual_groups）必须有：
    - id: 比如 title_group, subtitle_group, body_group_01 等
    - visible_text: 页面上会显式画出来的中文字符标签（非常重要，通常为 2-8 个字，绝对不能为空）
    - visual_anchor: 手绘线稿元素的视觉描述（比如“顶部主标题”、“左边带圆圈数字1的方框”、“中间一个简笔画小脑”）
    - narration_function: 解释该分组在画面中所起的视觉/解释作用
    - reveal_order: 页面渲染时层淡入淡出显示的顺序，从 1 开始依次增加
+   - content_unit_id: 稳定内容单元 ID，必须和 narration_beats[].content_unit_id 对齐
+   - speak_policy: speak 或 display_only；装饰、副标题等可设 display_only
+   - mask_target: 后续人工 Mask 要覆盖的画面目标描述
 4. 必须规划 narration_beats (旁白语段)，使说话声音与相应视觉分组绑定：
    - group_id: 指向前面定义的 visual_groups 中的 id
    - visible_anchor: 该分组对应的 visible_text 文本（不可写错，必须一致）
    - spoken_intent: 这一句话想达到的意图
    - spoken_text: 这一句话具体要朗读的中文旁白（需自然连贯，解释 visible_text）
-5. 用户自定义的分镜与演讲稿规则如下。请遵守这些内容，但不得修改输出字段、层级、ID 规则或 JSON 结构：
+   - content_unit_id: 必须与绑定 visual_group 的 content_unit_id 一致
+5. 当前项目的可配置分镜结构如下。请优先遵守：
+{profile_prompt}
+6. 用户自定义的分镜与演讲稿规则如下。请遵守这些内容，但不得修改输出字段、层级、ID 规则或 JSON 结构：
 --- 用户分镜规则开始 ---
 {storyboard_rules}
 --- 用户分镜规则结束 ---
-6. 请确保生成的 JSON 数据严格符合以下的 JSON Schema 格式要求：
+7. 请确保生成的 JSON 数据严格符合以下的 JSON Schema 格式要求：
 {schema_hint}
 
 请直接返回合法的 JSON 对象，不要包含 markdown 标记的 ```json 外壳。"""
@@ -1927,24 +2092,19 @@ def generate_prompt_for_slide(slide: Dict[str, Any], topic_name: str) -> str:
     for idx, g in enumerate(slide.get("visual_groups", []), start=1):
         visible_text = str(g.get("visible_text") or "").strip()
         visual_anchor = str(g.get("visual_anchor") or "").strip()
+        role = str(g.get("role") or "content_body").strip()
         group_lines.append(
-            f"{idx}. 文字“{visible_text}”；画面：{visual_anchor}。"
+            f"{idx}. role={role}；文字“{visible_text}”；画面：{visual_anchor}。"
         )
     groups_str = "\n".join(group_lines)
     main_title = slide.get("main_title", "")
     subtitle = slide.get("subtitle", "")
     subtitle_part = f"\n副标题：{subtitle}" if subtitle else ""
+    profile_prompt = image_prompt_profile_text(read_pipeline_profile())
     style_prompt = build_image_style_prompt(read_style_tokens_data())
     return (
-        f"请生成一张 16:9 的 PPT 手绘讲解页。\n"
+        f"{profile_prompt}\n"
         f"项目主题：{topic_name}\n主标题：{main_title}{subtitle_part}\n\n"
-        "构图硬性要求：\n"
-        "1. 每个视觉分组必须是独立的视觉岛，分组之间保留清晰空白。\n"
-        "2. 每个分组指定的中文必须清晰、完整、原样出现，不得改写、遗漏或产生乱码。\n"
-        "3. 不要合并不同分组，不要让相邻分组的文字、线条、箭头和装饰相互粘连。\n"
-        "4. 主标题位于顶部，主体内容位于中部，总结区位于底部字幕安全区上方。\n"
-        "5. 画布按 1920x1080 设计，底部 y=930..1080 必须留空，不放重要文字、人物或图形。\n"
-        "6. 不要绘制包围整页内容的大外框。\n\n"
         f"本页必须呈现的画面内容：\n{groups_str}\n\n"
         f"{style_prompt}"
     )
@@ -3325,15 +3485,18 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-        
-    tts_api_key = get_setting("tts_api_key")
+
+    provider = normalize_tts_provider(get_setting("tts_provider", "minimax"))
+    defaults = tts_provider_defaults(provider)
+    if provider not in TTS_PROVIDER_DEFAULTS:
+        raise HTTPException(status_code=400, detail=f"不支持的 TTS Provider: {provider}")
+    tts_api_key = configured_tts_api_key(provider)
+    tts_secret_key = configured_tts_secret_key(provider)
     if not tts_api_key:
-        tts_api_key = os.environ.get("MINIMAX_API_KEY")
-        if tts_api_key:
-            logger.info("已从系统环境变量中读取到 MINIMAX_API_KEY，将进行真实 TTS 合成")
-            
-    if not tts_api_key:
-        raise HTTPException(status_code=400, detail="未配置 TTS 语音合成 API 密钥，且系统环境变量 MINIMAX_API_KEY 为空。")
+        env_name = defaults.get("api_key_env") or "TTS_API_KEY"
+        raise HTTPException(status_code=400, detail=f"未配置 {provider} 语音合成密钥，也没有读取到环境变量 {env_name}。")
+    if provider == "tencent_tts" and not tts_secret_key:
+        raise HTTPException(status_code=400, detail="腾讯云 TTS 需要同时配置 SecretId 与 SecretKey。")
         
     # 从 visual_contract 加载所有 slide_id
     contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
@@ -3357,26 +3520,18 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
         except Exception as exc:
             logger.warning(f"Failed to load edited narration beats for TTS: {exc}")
     
-    # 动态将 setting 中的 TTS 参数写入环境变量，以便 minimax_tts.py 读取
-    tts_endpoint = get_setting("tts_endpoint", "https://api.minimaxi.com/v1/t2a_async_v2")
-    tts_model = get_setting("tts_model", "speech-2.8-hd")
-    tts_voice_id = get_setting("tts_voice_id", "Chinese (Mandarin)_Soft_Girl")
+    tts_endpoint = first_non_empty(get_setting("tts_endpoint"), defaults.get("endpoint"))
+    tts_model = first_non_empty(get_setting("tts_model"), defaults.get("model"))
+    tts_voice_id = first_non_empty(get_setting("tts_voice_id"), defaults.get("voice_id"))
+    tts_clone_voice_id = get_setting("tts_clone_voice_id", "")
+    tts_region = first_non_empty(get_setting("tts_region"), defaults.get("region"))
+    tts_provider_extra = get_setting("tts_provider_extra", "")
     tts_speed = get_setting("tts_speed", "1.0")
     tts_volume = get_setting("tts_volume", "1.0")
-    tts_pitch = get_setting("tts_pitch", "0")
-    os.environ["MINIMAX_API_KEY"] = tts_api_key
-    os.environ["MINIMAX_TTS_ENDPOINT"] = tts_endpoint
-    os.environ["MINIMAX_TTS_MODEL"] = tts_model
-    os.environ["MINIMAX_TTS_VOICE_ID"] = tts_voice_id
-    os.environ["MINIMAX_TTS_SPEED"] = tts_speed
-    os.environ["MINIMAX_TTS_VOLUME"] = tts_volume
-    os.environ["MINIMAX_TTS_PITCH"] = tts_pitch
-    os.environ["MINIMAX_API_URL"] = tts_endpoint
+    tts_pitch = get_setting("tts_pitch", "0" if provider == "minimax" else "1.0")
 
     clear_audio_confirmation(project)
     mark_step_in_progress(project, 7, db)
-        
-    tts_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "minimax_tts.py"))
     
     # 循环对每一页 slide 分别生成音频
     for slide_id in slide_ids:
@@ -3399,25 +3554,27 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
             with open(text_file, "w", encoding="utf-8") as f:
                 f.write(slide_narration + "\n")
                 
-        with open(text_file, "r", encoding="utf-8") as f:
-            tts_text = f.read().strip()
-            
-        logger.info(f"Synthesizing TTS audio for slide: {slide_id}")
-        tts_args = [
-            sys.executable, tts_script,
-            "--text-file", text_file,
-            "--out-audio", out_audio,
-            "--out-meta", out_meta,
-            "--out-srt", out_srt,
-            "--out-timeline", out_timeline,
-            "--slide-id", slide_id,
-            "--endpoint", tts_endpoint,
-            "--model", tts_model,
-            "--voice-id", tts_voice_id,
-            "--speed", tts_speed,
-            "--volume", tts_volume,
-            "--pitch", tts_pitch
-        ]
+        logger.info("Synthesizing TTS audio for slide %s via %s", slide_id, provider)
+        tts_args = provider_tts_command(
+            provider=provider,
+            text_file=text_file,
+            out_audio=out_audio,
+            out_meta=out_meta,
+            out_srt=out_srt,
+            out_timeline=out_timeline,
+            slide_id=slide_id,
+            endpoint=tts_endpoint,
+            api_key=tts_api_key,
+            secret_key=tts_secret_key,
+            region=tts_region,
+            model=tts_model,
+            voice_id=tts_voice_id,
+            clone_voice_id=tts_clone_voice_id,
+            provider_extra=tts_provider_extra,
+            speed=tts_speed,
+            volume=tts_volume,
+            pitch=tts_pitch,
+        )
         
         tts_res = subprocess.run(tts_args, capture_output=True, text=True, encoding="utf-8")
         if tts_res.returncode != 0:

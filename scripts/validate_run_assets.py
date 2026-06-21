@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -59,6 +61,34 @@ def validate_png(path: Path, width: int | None = None, height: int | None = None
         raise ValidationError(f"PNG has wrong dimensions: {path} is {actual[0]}x{actual[1]}, expected {width}x{height}")
 
 
+def probe_audio_duration_sec(audio_path: Path) -> float | None:
+    if not audio_path.exists() or audio_path.stat().st_size <= 0:
+        return None
+    if not shutil.which("ffprobe"):
+        return None
+    result = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=nw=1:nk=1",
+            str(audio_path),
+        ],
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        duration = float(result.stdout.strip())
+    except ValueError:
+        return None
+    return duration if duration > 0 else None
+
+
 def validate_audio_timeline(path: Path) -> float:
     timeline = read_json(path)
     segments = timeline.get("segments")
@@ -80,6 +110,17 @@ def validate_audio_timeline(path: Path) -> float:
     if abs(float(duration) - max_end) > 0.2:
         raise ValidationError(f"audio_timeline duration_sec does not match segment ends: {path}")
     return float(duration)
+
+
+def validate_voice_duration_matches_timeline(voice_path: Path, timeline_duration_sec: float) -> None:
+    actual_duration = probe_audio_duration_sec(voice_path)
+    if actual_duration is None:
+        return
+    if actual_duration > timeline_duration_sec + 0.35:
+        raise ValidationError(
+            "voice.mp3 is longer than audio_timeline.json and would be cut off: "
+            f"{voice_path} actual={actual_duration:.3f}s timeline={timeline_duration_sec:.3f}s"
+        )
 
 
 def validate_scene(scene_path: Path, slide_dir: Path, repo_root: Path, width: int, height: int, require_layered: bool, require_master_split_report: bool) -> set[str]:
@@ -190,6 +231,7 @@ def validate_slide(slide_dir: Path, repo_root: Path, width: int, height: int, re
     # Current Remotion subtitles are driven by audio_timeline.json. Historical
     # subtitles.srt files are optional and must not block the exact-mask path.
     audio_duration_sec = validate_audio_timeline(slide_dir / "audio_timeline.json")
+    validate_voice_duration_matches_timeline(voice_path, audio_duration_sec)
     layer_ids = validate_scene(slide_dir / "scene.json", slide_dir, repo_root, width, height, require_layered, require_master_split_report)
     validate_animation_timeline(slide_dir / "animation_timeline.json", layer_ids, audio_duration_sec)
 

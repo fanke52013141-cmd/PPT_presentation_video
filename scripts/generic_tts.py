@@ -36,10 +36,11 @@ try:
         build_segments,
         format_srt_time,
         normalize_tts_markup,
+        probe_audio_duration_sec,
         strip_tts_markup,
     )
 except ModuleNotFoundError:
-    from minimax_tts import build_segments, format_srt_time, normalize_tts_markup, strip_tts_markup
+    from minimax_tts import build_segments, format_srt_time, normalize_tts_markup, probe_audio_duration_sec, strip_tts_markup
 
 
 DEFAULT_MAX_SUBTITLE_CHARS = 26
@@ -121,6 +122,15 @@ def estimate_duration_sec(text: str) -> float:
     return max(1.0, chinese_chars / 4.2 + latin_words / 2.8)
 
 
+def choose_audio_duration(audio_path: Path, subtitle_text: str, provider_duration_sec: float | None = None) -> tuple[float, str]:
+    local_duration = probe_audio_duration_sec(audio_path)
+    if local_duration:
+        return local_duration, "local_audio_ffprobe"
+    if provider_duration_sec and provider_duration_sec > 0:
+        return float(provider_duration_sec), "provider_response"
+    return estimate_duration_sec(subtitle_text), "text_estimate"
+
+
 def write_json(path: Path | None, payload: dict[str, Any]) -> None:
     if not path:
         return
@@ -159,19 +169,23 @@ def write_common_outputs(
     out_audio.parent.mkdir(parents=True, exist_ok=True)
     out_audio.write_bytes(audio_bytes)
 
-    duration = float(duration_sec or 0) if duration_sec else estimate_duration_sec(subtitle_text)
+    duration, duration_source = choose_audio_duration(out_audio, subtitle_text, duration_sec)
+    timing_source = f"estimated_{duration_source}"
     segments = build_segments(
         subtitle_text,
         duration,
         args.slide_id,
-        "estimated",
+        timing_source,
         args.max_subtitle_chars,
     )
     timeline = {
         "slide_id": args.slide_id,
         "audio_file": str(out_audio).replace("\\", "/"),
         "duration_sec": round(duration, 3),
-        "timing_source": "estimated",
+        "audio_content_duration_sec": round(duration, 3),
+        "duration_source": duration_source,
+        "provider_duration_sec": round(float(duration_sec), 3) if duration_sec else None,
+        "timing_source": timing_source,
         "subtitle_display": {"max_lines": 1, "max_cjk_chars": args.max_subtitle_chars},
         "segments": segments,
     }
@@ -194,9 +208,14 @@ def write_common_outputs(
             },
             "response": response_json,
             "tts_text_has_markup": args._tts_text != subtitle_text,
+            "duration": {
+                "source": duration_source,
+                "sec": round(duration, 3),
+                "provider_sec": round(float(duration_sec), 3) if duration_sec else None,
+            },
         },
     )
-    print(json.dumps({"audio": str(out_audio), "duration_sec": round(duration, 3), "provider": provider}, ensure_ascii=False))
+    print(json.dumps({"audio": str(out_audio), "duration_sec": round(duration, 3), "duration_source": duration_source, "provider": provider}, ensure_ascii=False))
 
 
 def run_minimax(args: argparse.Namespace) -> int:

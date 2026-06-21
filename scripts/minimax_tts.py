@@ -19,6 +19,8 @@ import binascii
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import time
 import urllib.error
@@ -387,15 +389,57 @@ def split_subtitles(text: str, max_chars: int) -> list[str]:
     return chunks
 
 
-def duration_from_response(response_json: dict[str, Any], text: str) -> float:
+def duration_from_response(response_json: dict[str, Any]) -> float | None:
     extra = response_json.get("extra_info") or {}
     raw = extra.get("audio_length")
     if isinstance(raw, (int, float)) and raw > 0:
         return float(raw) / 1000.0 if raw > 1000 else float(raw)
+    return None
+
+
+def estimate_duration_sec(text: str) -> float:
     clean = strip_tts_markup(text)
     chinese_chars = len(re.findall(r"[\u4e00-\u9fff]", clean))
     latin_words = len(re.findall(r"[A-Za-z0-9]+", clean))
     return max(1.0, chinese_chars / 4.2 + latin_words / 2.8)
+
+
+def probe_audio_duration_sec(audio_path: Path) -> float | None:
+    if not audio_path.exists() or audio_path.stat().st_size <= 0:
+        return None
+    if not shutil.which("ffprobe"):
+        return None
+    result = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=nw=1:nk=1",
+            str(audio_path),
+        ],
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        duration = float(result.stdout.strip())
+    except ValueError:
+        return None
+    return duration if duration > 0 else None
+
+
+def choose_audio_duration(response_json: dict[str, Any], subtitle_text: str, audio_path: Path) -> tuple[float, str, float | None]:
+    local_duration = probe_audio_duration_sec(audio_path)
+    provider_duration = duration_from_response(response_json)
+    if local_duration:
+        return local_duration, "local_audio_ffprobe", provider_duration
+    if provider_duration:
+        return provider_duration, "provider_response", provider_duration
+    return estimate_duration_sec(subtitle_text), "text_estimate", None
 
 
 def build_segments(text: str, duration_sec: float, slide_id: str, timing_source: str, max_subtitle_chars: int) -> list[dict[str, Any]]:
@@ -550,13 +594,17 @@ def main() -> int:
         check_base_resp(response_json, "sync")
         write_audio(response_json, out_audio)
 
-    duration_sec = duration_from_response(response_json, subtitle_text)
-    segments = build_segments(subtitle_text, duration_sec, args.slide_id, "estimated", args.max_subtitle_chars)
+    duration_sec, duration_source, provider_duration_sec = choose_audio_duration(response_json, subtitle_text, out_audio)
+    timing_source = f"estimated_{duration_source}"
+    segments = build_segments(subtitle_text, duration_sec, args.slide_id, timing_source, args.max_subtitle_chars)
     timeline = {
         "slide_id": args.slide_id,
         "audio_file": str(out_audio).replace("\\", "/"),
         "duration_sec": round(duration_sec, 3),
-        "timing_source": "estimated",
+        "audio_content_duration_sec": round(duration_sec, 3),
+        "duration_source": duration_source,
+        "provider_duration_sec": round(provider_duration_sec, 3) if provider_duration_sec else None,
+        "timing_source": timing_source,
         "subtitle_display": {"max_lines": 1, "max_cjk_chars": args.max_subtitle_chars},
         "segments": segments,
     }
@@ -579,6 +627,11 @@ def main() -> int:
                 "max_subtitle_chars": args.max_subtitle_chars,
             },
             "tts_text_has_markup": tts_text != subtitle_text,
+            "duration": {
+                "source": duration_source,
+                "sec": round(duration_sec, 3),
+                "provider_sec": round(provider_duration_sec, 3) if provider_duration_sec else None,
+            },
         }
         write_json(Path(args.out_meta), meta)
 
@@ -588,7 +641,7 @@ def main() -> int:
     if args.out_timeline:
         write_json(Path(args.out_timeline), timeline)
 
-    print(json.dumps({"audio": str(out_audio), "duration_sec": round(duration_sec, 3)}, ensure_ascii=False))
+    print(json.dumps({"audio": str(out_audio), "duration_sec": round(duration_sec, 3), "duration_source": duration_source}, ensure_ascii=False))
     return 0
 
 

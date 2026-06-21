@@ -245,6 +245,15 @@ function initGlobalEvents() {
   document.getElementById('btn-open-settings')?.addEventListener('click', () => openSettingsModal());
   document.getElementById('btn-settings-cancel')?.addEventListener('click', () => closeSettingsModal());
   document.getElementById('btn-settings-save')?.addEventListener('click', () => saveSettings());
+  document.getElementById('btn-settings-export')?.addEventListener('click', () => exportGlobalSettings());
+  document.getElementById('btn-settings-import')?.addEventListener('click', () => {
+    document.getElementById('settings-import-file')?.click();
+  });
+  document.getElementById('settings-import-file')?.addEventListener('change', (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (file) importGlobalSettings(file);
+  });
   document.getElementById('btn-back-home')?.addEventListener('click', () => exitWorkspace());
   
   // 绑定设置测试连通性按钮
@@ -556,14 +565,41 @@ function closeSettingsModal() {
   document.getElementById('modal-settings').style.display = 'none';
 }
 
-async function saveSettings() {
-  const settings = {
+const GLOBAL_SETTINGS_EXPORT_KEYS = [
+  'llm_provider',
+  'llm_base_url',
+  'llm_api_key',
+  'llm_model',
+  'llm_temperature',
+  'llm_max_tokens',
+  'vision_model',
+  'image_base_url',
+  'image_api_key',
+  'image_model',
+  'image_size',
+  'tts_provider',
+  'tts_endpoint',
+  'tts_api_key',
+  'tts_secret_key',
+  'tts_region',
+  'tts_model',
+  'tts_voice_id',
+  'tts_clone_voice_id',
+  'tts_provider_extra',
+  'tts_speed',
+  'tts_volume',
+  'tts_pitch',
+];
+
+function readSettingsForm() {
+  return {
     llm_provider: document.getElementById('setting-llm-provider').value,
     llm_base_url: document.getElementById('setting-llm-base-url').value.trim(),
     llm_api_key: document.getElementById('setting-llm-api-key').value.trim(),
     llm_model: document.getElementById('setting-llm-model').value.trim(),
     llm_temperature: document.getElementById('setting-llm-temp').value.trim(),
     llm_max_tokens: document.getElementById('setting-llm-max-tokens').value.trim(),
+    vision_model: state.settings?.vision_model || document.getElementById('setting-llm-model').value.trim(),
     
     image_base_url: document.getElementById('setting-image-base-url').value.trim(),
     image_api_key: document.getElementById('setting-image-api-key').value.trim(),
@@ -583,6 +619,10 @@ async function saveSettings() {
     tts_volume: document.getElementById('setting-tts-volume').value.trim(),
     tts_pitch: document.getElementById('setting-tts-pitch').value.trim()
   };
+}
+
+async function saveSettings() {
+  const settings = readSettingsForm();
   
   const res = await API.put('/api/settings', { settings });
   if (res.success) {
@@ -590,6 +630,93 @@ async function saveSettings() {
     closeSettingsModal();
     showToast('💾 系统全局设置保存成功，当前配置已重新加载');
   }
+}
+
+function settingsExportFileName() {
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
+  return `ppt-studio-global-settings-sensitive-${stamp}.json`;
+}
+
+function exportGlobalSettings() {
+  const currentFormSettings = readSettingsForm();
+  const settings = {};
+  GLOBAL_SETTINGS_EXPORT_KEYS.forEach(key => {
+    if (Object.prototype.hasOwnProperty.call(currentFormSettings, key)) {
+      settings[key] = currentFormSettings[key];
+    } else if (Object.prototype.hasOwnProperty.call(state.settings || {}, key)) {
+      settings[key] = String(state.settings[key] ?? '');
+    }
+  });
+  const payload = {
+    app: 'PPT Visualization Studio',
+    type: 'global_settings',
+    version: 1,
+    exported_at: new Date().toISOString(),
+    warning: 'This file may contain API keys and other secrets. Keep it private.',
+    settings,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = settingsExportFileName();
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  showToast('✅ 全局配置已导出。注意：文件包含 API Key，请妥善保存。', 5000);
+}
+
+function extractImportableSettings(payload) {
+  const source = payload?.settings && typeof payload.settings === 'object'
+    ? payload.settings
+    : payload;
+  if (!source || typeof source !== 'object' || Array.isArray(source)) {
+    throw new Error('配置文件格式不正确');
+  }
+  const settings = {};
+  GLOBAL_SETTINGS_EXPORT_KEYS.forEach(key => {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      settings[key] = String(source[key] ?? '');
+    }
+  });
+  if (!Object.keys(settings).length) {
+    throw new Error('没有找到可导入的全局配置字段');
+  }
+  return settings;
+}
+
+async function applyImportedGlobalSettings(settings) {
+  const merged = {
+    ...(state.settings || {}),
+    ...settings,
+  };
+  const res = await API.put('/api/settings', { settings: merged });
+  if (res.success) {
+    await loadSettings();
+    showToast('✅ 全局配置已导入并重新加载。', 5000);
+  }
+}
+
+async function importGlobalSettings(file) {
+  let settings;
+  try {
+    const text = await file.text();
+    settings = extractImportableSettings(JSON.parse(text));
+  } catch (error) {
+    showToast(`❌ 导入失败：${error.message}`, 6000);
+    return;
+  }
+
+  showCustomConfirm(
+    '导入全局配置？',
+    '将覆盖当前文本模型、生图模型、语音合成和 API Key 等全局配置。项目内容不会被修改。',
+    () => {
+      applyImportedGlobalSettings(settings).catch(error => {
+        showToast(`❌ 导入失败：${error.message}`, 6000);
+      });
+    }
+  );
 }
 
 async function testLlmConnection() {

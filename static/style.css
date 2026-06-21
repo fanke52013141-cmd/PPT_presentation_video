@@ -761,6 +761,37 @@ input.step2-soft-input:focus {
   min-height: 92px;
 }
 
+.settings-portability-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1.1rem;
+  padding: 0.8rem;
+  border: 2px dashed var(--ink-color);
+  border-radius: 10px;
+  background: #fff7d6;
+}
+
+.settings-portability-panel strong {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.settings-portability-panel p {
+  margin: 0;
+  color: #5f5630;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.settings-portability-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.6rem;
+  white-space: nowrap;
+}
+
 .config-editor-modal {
   width: min(980px, 94vw);
   max-width: 980px;

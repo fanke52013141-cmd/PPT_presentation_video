@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=2.12.0">
+  <link rel="stylesheet" href="style.css?v=2.12.3">
 </head>
 <body>
 
@@ -575,19 +575,12 @@
         </div>
       </div>
 
-      <div class="settings-portability-panel">
-        <div>
-          <strong>全局配置迁移</strong>
-          <p>导出的 JSON 会包含文本模型、生图模型、语音合成以及 API Key 等敏感信息。只在你自己的电脑之间传递，不要发给别人。</p>
-        </div>
+      <div class="settings-footer-actions">
         <div class="settings-portability-actions">
           <button id="btn-settings-export" class="secondary" type="button">导出全局配置</button>
           <button id="btn-settings-import" class="secondary" type="button">导入全局配置</button>
           <input id="settings-import-file" type="file" accept="application/json,.json" style="display: none;">
         </div>
-      </div>
-
-      <div style="display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1.5rem; border-top: 2px dashed #111; padding-top: 1rem;">
         <button id="btn-settings-cancel" class="secondary">取消</button>
         <button id="btn-settings-save" class="success">保存设置</button>
       </div>
@@ -901,6 +894,6 @@
 
   <!-- 主业务 JavaScript 脚本 -->
   <script src="flow.js?v=1.0.0"></script>
-  <script src="app.js?v=2.12.2"></script>
+  <script src="app.js?v=2.12.3"></script>
 </body>
 </html>

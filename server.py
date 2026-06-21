@@ -11,6 +11,7 @@ import subprocess
 import re
 import tempfile
 import threading
+import time
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
@@ -2584,6 +2585,15 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
         storyboard_rules,
         read_project_pipeline_profile(project),
     )
+    trace_id = uuid.uuid4().hex[:8]
+    write_project_log(
+        project,
+        "step2_execute_start",
+        trace_id=trace_id,
+        model=llm_model,
+        base_url=llm_base_url,
+        max_tokens=planning_max_tokens,
+    )
 
     try:
         client = get_openai_client(api_key=llm_api_key, base_url=llm_base_url)
@@ -2637,61 +2647,12 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
             
         # 写入 JSON
         contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
-        scaffold_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "write_visual_contract.py"))
-        scaffold_args = [
-            sys.executable,
-            scaffold_script,
-            "--run-dir",
-            project.run_dir,
-            "--topic-name",
-            str(brief.get("title") or project.name),
-            "--overwrite",
-        ]
-        started_at = time.monotonic()
-        write_project_log(
-            project,
-            "step2_scaffold_start",
-            trace_id=trace_id,
-            script=scaffold_script,
-            article_path=article_path,
-            contract_path=contract_path,
-        )
-        scaffold_res = subprocess.run(
-            scaffold_args,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-        )
-        elapsed = round(time.monotonic() - started_at, 3)
-        if scaffold_res.returncode != 0:
-            write_project_log(
-                project,
-                "step2_scaffold_error",
-                trace_id=trace_id,
-                elapsed_sec=elapsed,
-                returncode=scaffold_res.returncode,
-                stdout=scaffold_res.stdout.strip(),
-                stderr=scaffold_res.stderr.strip(),
-            )
-            raise RuntimeError(f"本地分镜骨架生成失败: {scaffold_res.stderr.strip() or scaffold_res.stdout.strip()}")
-
-        write_project_log(
-            project,
-            "step2_scaffold_success",
-            trace_id=trace_id,
-            elapsed_sec=elapsed,
-            stdout=scaffold_res.stdout.strip(),
-        )
-
-        with open(contract_path, "r", encoding="utf-8-sig") as f:
-            contract = json.load(f)
-
-        # 用第一步提炼结果覆盖 topic 元信息，避免脚本从文件名推导出不友好的标题。
+        os.makedirs(os.path.dirname(contract_path), exist_ok=True)
         contract["version"] = "visual_contract_v1"
         contract["topic"] = {
             "topic_id": "topic_" + project_id,
-            "topic_name": brief.get("title") or project.name,
-            "topic_summary": brief.get("summary", ""),
+            "topic_name": project_title,
+            "topic_summary": article_summary,
         }
         with open(contract_path, "w", encoding="utf-8") as f:
             json.dump(contract, f, ensure_ascii=False, indent=2)

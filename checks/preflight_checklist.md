@@ -10,11 +10,15 @@
 
 ## Exact Mask Invariants
 
-- Pipeline version is `manual_mask_exact_v2`.
+- Pipeline version is `manual_mask_boundary_white_v4`.
 - A page without painted Masks uses `full_slide_static`.
-- A page with Masks uses `solid_background_manual_mask_exact`.
+- A page with Masks uses `solid_background_mask_boundary_white_cutout`.
 - Masked pages declare `source_image_used_for_background=false`.
-- Every reveal PNG is full-canvas and uses only its saved brush alpha.
+- Generated images use a pure-white outer background.
+- Only near-white pixels connected inward from each painted Mask boundary are removed.
+- Enclosed white content is preserved.
+- Every reveal PNG is full-canvas and uses the saved brush Mask as its
+  retention boundary.
 - `assets/` is rebuilt before render.
 - Remotion `public/runtime/<run_id>` is rebuilt before render.
 - Blocking reveal warnings stop the build.
@@ -44,15 +48,6 @@ python scripts/validate_run_assets.py `
   --require-layered
 ```
 
-## Legacy Diagnostics
-
-These scripts are not part of production:
-
-- `auto_fit_reveal_boxes.py`
-- `split_master_layers.py`
-- `decompose_slide_layers.py`
-- `compose_manifest_layers.py`
-
 ## Blocking Conditions
 
 - Missing current slide image, narration, or audio.
@@ -62,6 +57,7 @@ These scripts are not part of production:
 - Audio has not been confirmed.
 - Blocking reveal warning.
 - Runtime assets are missing or stale.
+- Reveal assets contain unreferenced legacy files.
 
 ## Safety
 

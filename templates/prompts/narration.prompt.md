@@ -2,8 +2,9 @@
 
 ## Visual Binding Requirement
 
-Write narration from the current slide's actual macro layers. Use the layer
-summaries and narration cues from `layer_manifest.json` / `scene.layers[]`.
+Write narration from the current slide's actual visible groups. Use the group
+summaries and narration cues from `visual_contract.json` and
+`reveal_manifest.json`.
 Do not reuse narration from another slide.
 
 The narration order should match the intended visual reveal:
@@ -13,7 +14,7 @@ The narration order should match the intended visual reveal:
 3. diagram/example group
 4. closing summary group
 
-If a visible layer has no matching sentence, add one. If a sentence describes
+If a visible group has no matching sentence, add one. If a sentence describes
 content not visible on the slide, remove or rewrite it.
 
 请把 slide 的核心信息改写成适合 MiniMax TTS 的旁白。

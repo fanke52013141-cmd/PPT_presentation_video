@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
-"""Build deterministic reveal assets directly from manually painted masks.
+"""Build deterministic reveal assets from manually painted processing regions.
 
-The manual mask is the only source of truth:
-
-- A slide with no painted mask is rendered as one static full-slide image.
-- A slide with painted masks starts from a solid canvas background.
-- Each reveal layer copies only source-image pixels covered by that group's mask.
-- No box segmentation, foreground detection, connected-component expansion,
-  nearest-owner assignment, or cross-group erasing is performed.
+- A slide with no painted Mask is rendered as one static full-slide image.
+- A painted Mask defines the exact processing boundary for one reveal layer.
+- Only white pixels connected to that Mask boundary are removed.
+- Enclosed white details and all non-white content inside the Mask are retained.
+- No semantic segmentation, coverage scoring, or automatic Mask expansion runs.
 """
 
 from __future__ import annotations
@@ -15,29 +13,30 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import sys
+import uuid
 from pathlib import Path
 from typing import Any
 
-from PIL import Image, ImageChops, ImageDraw
+from PIL import Image, ImageDraw
 
 try:
-    from scripts.background_color import normalize_connected_background
+    from scripts.background_color import masked_outer_white_cutout, normalize_connected_background
     from scripts.pipeline_profiles import allowed_reveal_actions, normalize_reveal_action, read_pipeline_profile
 except ModuleNotFoundError:
-    from background_color import normalize_connected_background
+    from background_color import masked_outer_white_cutout, normalize_connected_background
     from pipeline_profiles import allowed_reveal_actions, normalize_reveal_action, read_pipeline_profile
 
 
-PIPELINE_VERSION = "manual_mask_exact_v2"
-MASKED_COMPOSITION_METHOD = "solid_background_manual_mask_exact"
-MIN_FOREGROUND_COVERAGE_RATIO = 0.985
+PIPELINE_VERSION = "manual_mask_boundary_white_v4"
+MASKED_COMPOSITION_METHOD = "solid_background_mask_boundary_white_cutout"
 STATIC_COMPOSITION_METHOD = "full_slide_static"
 DEFAULT_CANVAS = {
     "width": 1920,
     "height": 1080,
-    "background": "#FFFDF7",
+    "background": "#FEFDF9",
     "subtitle_safe_y": 930,
 }
 DEFAULT_REVEAL_DURATION_SEC = 0.75
@@ -57,6 +56,15 @@ RENDERER_ACTIONS = {
     "crop_fade_up",
     "crop_slide_in_left",
     "crop_soft_zoom_in",
+    "wipe_left_to_right",
+    "wipe_right_to_left",
+    "wipe_top_to_bottom",
+    "wipe_bottom_to_top",
+    "scratch_reveal",
+    "brush_wipe_left_to_right",
+    "sticker_pop",
+    "stamp_in",
+    "paper_drop",
 }
 
 
@@ -195,7 +203,7 @@ def build_event(slide_id: str, group: dict[str, Any], layer_id: str, fallback_at
         "easing": "easeOutCubic",
         "params": {
             key: reveal[key]
-            for key in ("angle", "feather", "fog_strength", "blur_px", "direction", "stagger")
+            for key in ("angle", "feather", "fog_strength", "blur_px", "direction", "stagger", "rotation")
             if key in reveal
         },
     }
@@ -214,16 +222,42 @@ def reset_assets_dir(assets_dir: Path) -> None:
     assets_dir.mkdir(parents=True, exist_ok=True)
 
 
-def foreground_alpha(master: Image.Image, background_rgb: tuple[int, int, int], threshold: int = 12) -> Image.Image:
-    """Build a diagnostics-only map of source pixels that differ from the fixed background."""
-    background = Image.new("RGB", master.size, background_rgb)
-    red, green, blue = ImageChops.difference(master, background).split()
-    maximum = ImageChops.lighter(ImageChops.lighter(red, green), blue)
-    return maximum.point(lambda value: 255 if value > threshold else 0)
+def publish_slide_outputs(staging_dir: Path, slide_dir: Path) -> None:
+    """Publish a complete build without exposing deleted or half-written assets."""
+    staged_assets = staging_dir / "assets"
+    production_assets = slide_dir / "assets"
+    production_assets.mkdir(parents=True, exist_ok=True)
 
+    published_assets: set[Path] = set()
+    for staged_path in sorted(path for path in staged_assets.rglob("*") if path.is_file()):
+        relative = staged_path.relative_to(staged_assets)
+        published_assets.add(relative)
+        destination = production_assets / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(staged_path, destination)
 
-def count_mask_pixels(alpha: Image.Image) -> int:
-    return int(sum(alpha.histogram()[1:]))
+    # Publish metadata last. Until these replacements happen, readers continue
+    # to see the previous complete scene, whose assets were never deleted.
+    for filename in ("animation_timeline.json", "reveal_report.json", "scene.json"):
+        os.replace(staging_dir / filename, slide_dir / filename)
+
+    # Metadata now points only to the newly published set, so old unreferenced
+    # files can be removed without creating a missing-asset window.
+    for old_path in sorted(
+        (path for path in production_assets.rglob("*") if path.is_file()),
+        reverse=True,
+    ):
+        if old_path.relative_to(production_assets) not in published_assets:
+            old_path.unlink()
+    for old_dir in sorted(
+        (path for path in production_assets.rglob("*") if path.is_dir()),
+        reverse=True,
+    ):
+        try:
+            old_dir.rmdir()
+        except OSError:
+            pass
+    shutil.rmtree(staging_dir, ignore_errors=True)
 
 
 def static_slide_outputs(
@@ -237,6 +271,7 @@ def static_slide_outputs(
     default_duration_sec: float,
     input_group_count: int,
     source_sha256: str,
+    normalized_background_pixel_count: int,
 ) -> None:
     assets_dir = slide_dir / "assets"
     master.save(assets_dir / "full_slide.png", format="PNG")
@@ -271,6 +306,11 @@ def static_slide_outputs(
         "method": STATIC_COMPOSITION_METHOD,
         "pipeline_version": PIPELINE_VERSION,
         "manual_mask_only": True,
+        "background": background,
+        "background_normalization": {
+            "method": "outer_connected_near_white_only",
+            "normalized_pixel_count": normalized_background_pixel_count,
+        },
         "source_sha256": source_sha256,
         "warnings": [],
         "input_group_count": input_group_count,
@@ -290,14 +330,25 @@ def compose_slide(
     if not slide_id:
         raise RevealBuildError("Slide missing slide_id")
 
-    slide_dir = resolve_path(str(slide["slide_dir"]), manifest_dir, manifest_dir, repo_root)
-    slide_dir.mkdir(parents=True, exist_ok=True)
-    assets_dir = slide_dir / "assets"
-    reset_assets_dir(assets_dir)
-
-    master_path = resolve_path(str(slide["master"]), manifest_dir, slide_dir, repo_root)
+    production_slide_dir = resolve_path(
+        str(slide["slide_dir"]),
+        manifest_dir,
+        manifest_dir,
+        repo_root,
+    )
+    production_slide_dir.mkdir(parents=True, exist_ok=True)
+    master_path = resolve_path(
+        str(slide["master"]),
+        manifest_dir,
+        production_slide_dir,
+        repo_root,
+    )
     if not master_path.exists():
         raise RevealBuildError(f"Missing master image: {master_path}")
+
+    slide_dir = production_slide_dir / f".reveal-build-{uuid.uuid4().hex}"
+    assets_dir = slide_dir / "assets"
+    reset_assets_dir(assets_dir)
     master = Image.open(master_path).convert("RGB")
 
     canvas = {
@@ -328,32 +379,31 @@ def compose_slide(
         if alpha is not None:
             painted_groups.append((group, alpha))
 
+    source_master = master
     default_duration_sec = float(slide.get("default_duration_sec", 12.0))
     if not painted_groups:
+        normalized_master, normalized_background_pixel_count = normalize_connected_background(
+            master,
+            background_rgb,
+        )
         static_slide_outputs(
             slide_id=slide_id,
             slide_dir=slide_dir,
             master_path=master_path,
-            master=master,
+            master=normalized_master,
             width=width,
             height=height,
             background=background,
             default_duration_sec=default_duration_sec,
             input_group_count=len(groups),
             source_sha256=source_sha256,
+            normalized_background_pixel_count=normalized_background_pixel_count,
         )
+        publish_slide_outputs(slide_dir, production_slide_dir)
         return
 
-    master, normalized_background_pixel_count = normalize_connected_background(
-        master,
-        background_rgb,
-    )
     base_image = Image.new("RGB", (width, height), background_rgb)
     base_image.save(assets_dir / "base_slide.png", format="PNG")
-    master.save(assets_dir / "full_slide.png", format="PNG")
-
-    union_alpha = Image.new("L", (width, height), 0)
-    union_composite = base_image.convert("RGBA")
     layers: list[dict[str, Any]] = [{
         "id": "base_slide",
         "type": "png",
@@ -366,8 +416,19 @@ def compose_slide(
     warnings: list[dict[str, Any]] = []
     group_reports: list[dict[str, Any]] = []
 
-    for index, (group, alpha) in enumerate(painted_groups, start=1):
+    for index, (group, manual_alpha) in enumerate(painted_groups, start=1):
         group_id = str(group["id"])
+        layer_image, alpha, cutout_stats = masked_outer_white_cutout(
+            source_master,
+            manual_alpha,
+        )
+        if not alpha.getbbox():
+            warnings.append({
+                "severity": "warning",
+                "type": "manual_mask_contains_only_white_background",
+                "group_id": group_id,
+            })
+            continue
         source_box = alpha_box(alpha, width, height)
         if source_box["y"] + source_box["h"] > subtitle_safe_y and str(group.get("role", "")) != "decoration":
             warnings.append({
@@ -376,18 +437,11 @@ def compose_slide(
                 "group_id": group_id,
             })
 
-        masks_dir = assets_dir / "masks"
         crops_dir = assets_dir / "crops"
-        masks_dir.mkdir(parents=True, exist_ok=True)
         crops_dir.mkdir(parents=True, exist_ok=True)
-        alpha.save(masks_dir / f"{group_id}.png", format="PNG")
 
-        layer_image = master.convert("RGBA")
-        layer_image.putalpha(alpha)
         layer_rel = f"assets/crops/{group_id}.png"
         layer_image.save(slide_dir / layer_rel, format="PNG")
-        union_alpha = ImageChops.lighter(union_alpha, alpha)
-        union_composite.alpha_composite(layer_image)
 
         layer_id = f"reveal_crop_{group_id}"
         layers.append({
@@ -405,39 +459,13 @@ def compose_slide(
         group_reports.append({
             "group_id": group_id,
             "mask_bbox": source_box,
-            "mask_pixel_count": int(sum(1 for value in alpha.tobytes() if value > 0)),
-            "mask_sha256": sha256_bytes(alpha.tobytes()),
+            "output_alpha_sha256": sha256_bytes(alpha.tobytes()),
             "manual_mask_sha256": json_fingerprint(group.get("manual_mask")),
+            "cutout": {
+                "method": "mask_boundary_connected_white_soft_alpha",
+                **cutout_stats,
+            },
         })
-
-    union_alpha.save(assets_dir / "manual_mask_union.png", format="PNG")
-    union_composite.convert("RGB").save(assets_dir / "manual_mask_composite.png", format="PNG")
-    source_foreground = foreground_alpha(master, background_rgb)
-    covered_foreground = ImageChops.multiply(source_foreground, union_alpha)
-    uncovered_foreground = ImageChops.subtract(source_foreground, covered_foreground)
-    source_foreground_count = count_mask_pixels(source_foreground)
-    covered_foreground_count = count_mask_pixels(covered_foreground)
-    uncovered_foreground_count = count_mask_pixels(uncovered_foreground)
-    foreground_coverage_ratio = (
-        covered_foreground_count / source_foreground_count
-        if source_foreground_count
-        else 1.0
-    )
-    uncovered_preview = union_composite.copy()
-    red_alpha = uncovered_foreground.point(lambda value: round(value * 0.88))
-    red_layer = Image.new("RGBA", (width, height), (255, 32, 32, 0))
-    red_layer.putalpha(red_alpha)
-    uncovered_preview.alpha_composite(red_layer)
-    uncovered_preview.convert("RGB").save(assets_dir / "manual_mask_uncovered.png", format="PNG")
-    if foreground_coverage_ratio < MIN_FOREGROUND_COVERAGE_RATIO:
-        warnings.append({
-            "severity": "warning",
-            "type": "manual_mask_does_not_cover_source_foreground",
-            "foreground_coverage_ratio": round(foreground_coverage_ratio, 4),
-            "required_coverage_ratio": MIN_FOREGROUND_COVERAGE_RATIO,
-            "uncovered_foreground_pixel_count": uncovered_foreground_count,
-        })
-
     scene = {
         "slide_id": slide_id,
         "source_visual_draft": str(master_path),
@@ -450,7 +478,7 @@ def compose_slide(
             "manual_mask_only": True,
             "background_source": "canvas.background",
             "source_image_used_for_background": False,
-            "background_normalization": "corner_connected_pixels_only",
+            "cutout_method": "mask_boundary_connected_white_soft_alpha",
         },
     }
     duration = max(
@@ -471,32 +499,29 @@ def compose_slide(
         "background": background,
         "background_source": "canvas.background",
         "source_image_used_for_background": False,
-        "background_normalization": {
-            "method": "corner_connected_pixels_only",
-            "normalized_pixel_count": normalized_background_pixel_count,
+        "cutout": {
+            "method": "mask_boundary_connected_white_soft_alpha",
+            "hard_white": "RGB channels >=245 and chroma <=12",
+            "soft_edge": "up to 3px through neutral pixels with RGB channels >=190",
+            "enclosed_white_preserved": True,
+            "white_decontamination": True,
         },
         "source_sha256": source_sha256,
-        "mask_union_sha256": sha256_bytes(union_alpha.tobytes()),
-        "foreground_diagnostics": {
-            "threshold": 12,
-            "required_coverage_ratio": MIN_FOREGROUND_COVERAGE_RATIO,
-            "source_foreground_pixel_count": source_foreground_count,
-            "covered_foreground_pixel_count": covered_foreground_count,
-            "uncovered_foreground_pixel_count": uncovered_foreground_count,
-            "coverage_ratio": round(foreground_coverage_ratio, 6),
-            "uncovered_asset": "assets/manual_mask_uncovered.png",
-            "composite_asset": "assets/manual_mask_composite.png",
-        },
         "warnings": warnings,
         "input_group_count": len(groups),
-        "group_count": len(painted_groups),
+        "group_count": len(group_reports),
         "layer_count": len(layers),
         "fallback_full_slide": False,
         "groups": group_reports,
     })
+    publish_slide_outputs(slide_dir, production_slide_dir)
 
 
-def build_manifest(manifest: dict[str, Any], manifest_path: Path, repo_root: Path) -> int:
+def build_manifest(
+    manifest: dict[str, Any],
+    manifest_path: Path,
+    repo_root: Path,
+) -> int:
     if manifest.get("version") != "reveal_v1":
         raise RevealBuildError("Manifest version must be reveal_v1")
     canvas = {

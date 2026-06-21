@@ -9,10 +9,6 @@
     "visual_source": {
       "type": "string",
       "enum": [
-        "codex_image_gen_full_slide_bitmap",
-        "codex_image_gen_png_layers",
-        "image_gen_macro_layers_manifest",
-        "master_split_image_layers",
         "master_reveal_layers"
       ]
     },
@@ -75,10 +71,6 @@
         },
         "additionalProperties": true
       }
-    },
-    "elements": {
-      "type": "array",
-      "description": "Deprecated compatibility field. Remotion uses layers[] only."
     }
   },
   "additionalProperties": true

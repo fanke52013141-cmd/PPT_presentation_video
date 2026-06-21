@@ -34,12 +34,12 @@ def read_json(path: Path) -> dict[str, Any]:
     return value
 
 
-def speak_policy_for(group: dict[str, Any]) -> str:
+def speak_policy_for(group: dict[str, Any], profile: dict[str, Any]) -> str:
     explicit = str(group.get("speak_policy", "")).strip()
     if explicit:
         return explicit
     role = str(group.get("role", ""))
-    return speak_policy_for_role(role)
+    return speak_policy_for_role(role, profile)
 
 
 def require_non_empty(value: Any, message: str) -> str:
@@ -49,14 +49,19 @@ def require_non_empty(value: Any, message: str) -> str:
     return text
 
 
-def validate_group_semantics(slide_id: str, group: dict[str, Any], group_id: str, role: str) -> tuple[str, str]:
-    profile = read_pipeline_profile()
+def validate_group_semantics(
+    slide_id: str,
+    group: dict[str, Any],
+    group_id: str,
+    role: str,
+    profile: dict[str, Any],
+) -> tuple[str, str]:
     configured_display_only_roles = display_only_roles(profile)
     content_unit_id = require_non_empty(
         group.get("content_unit_id"),
         f"Visual group {group_id} missing content_unit_id in {slide_id}",
     )
-    policy = speak_policy_for(group)
+    policy = speak_policy_for(group, profile)
     if policy not in ALLOWED_SPEAK_POLICIES:
         raise ContractError(f"Visual group {group_id} has invalid speak_policy in {slide_id}: {policy}")
     if role in configured_display_only_roles and policy != "display_only":
@@ -66,7 +71,12 @@ def validate_group_semantics(slide_id: str, group: dict[str, Any], group_id: str
     return content_unit_id, policy
 
 
-def validate_slide(slide: dict[str, Any], min_groups: int, max_groups: int) -> None:
+def validate_slide(
+    slide: dict[str, Any],
+    min_groups: int,
+    max_groups: int,
+    profile: dict[str, Any],
+) -> None:
     slide_id = str(slide.get("slide_id", "")).strip()
     if not slide_id:
         raise ContractError("Slide missing slide_id")
@@ -95,7 +105,7 @@ def validate_slide(slide: dict[str, Any], min_groups: int, max_groups: int) -> N
         for key in ["visible_text", "visual_anchor", "narration_function"]:
             if not str(group.get(key, "")).strip():
                 raise ContractError(f"Visual group {group_id} missing {key} in {slide_id}")
-        content_unit_id, policy = validate_group_semantics(slide_id, group, group_id, role)
+        content_unit_id, policy = validate_group_semantics(slide_id, group, group_id, role, profile)
         if content_unit_id in content_unit_ids:
             raise ContractError(f"Duplicate content_unit_id in {slide_id}: {content_unit_id}")
         content_unit_ids.add(content_unit_id)
@@ -162,7 +172,12 @@ def validate_slide(slide: dict[str, Any], min_groups: int, max_groups: int) -> N
         raise ContractError(f"Speakable content units are not referenced by narration in {slide_id}: {', '.join(missing_content_units)}")
 
 
-def validate_contract(contract: dict[str, Any], min_groups: int, max_groups: int) -> int:
+def validate_contract(
+    contract: dict[str, Any],
+    min_groups: int,
+    max_groups: int,
+    profile: dict[str, Any],
+) -> int:
     if contract.get("version") != "visual_contract_v1":
         raise ContractError("Contract version must be visual_contract_v1")
     slides = contract.get("slides")
@@ -171,7 +186,7 @@ def validate_contract(contract: dict[str, Any], min_groups: int, max_groups: int
     for slide in slides:
         if not isinstance(slide, dict):
             raise ContractError("Each slide must be an object")
-        validate_slide(slide, min_groups=min_groups, max_groups=max_groups)
+        validate_slide(slide, min_groups=min_groups, max_groups=max_groups, profile=profile)
     return len(slides)
 
 
@@ -180,13 +195,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contract", required=True, type=Path)
     parser.add_argument("--min-groups", type=int, default=3)
     parser.add_argument("--max-groups", type=int, default=8)
+    parser.add_argument("--profile", type=Path)
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     try:
-        count = validate_contract(read_json(args.contract), min_groups=args.min_groups, max_groups=args.max_groups)
+        profile = read_pipeline_profile(args.profile.resolve()) if args.profile else read_pipeline_profile()
+        count = validate_contract(
+            read_json(args.contract),
+            min_groups=args.min_groups,
+            max_groups=args.max_groups,
+            profile=profile,
+        )
     except ContractError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1

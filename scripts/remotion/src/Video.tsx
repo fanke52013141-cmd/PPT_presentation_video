@@ -82,7 +82,10 @@ export type AnimationAction =
   | 'brush_wipe_left_to_right'
   | 'crop_fade_up'
   | 'crop_slide_in_left'
-  | 'crop_soft_zoom_in';
+  | 'crop_soft_zoom_in'
+  | 'sticker_pop'
+  | 'stamp_in'
+  | 'paper_drop';
 
 export type AnimationEvent = {
   id?: string;
@@ -266,7 +269,18 @@ const animatedStyle = (
 
   let style: React.CSSProperties = revealStyle(frame, fps, events, base);
   const entryEvent = events.find((event) =>
-    ['fade_in', 'fade_up', 'soft_zoom_in', 'slide_in_left', 'crop_fade_up', 'crop_slide_in_left', 'crop_soft_zoom_in'].includes(event.action)
+    [
+      'fade_in',
+      'fade_up',
+      'soft_zoom_in',
+      'slide_in_left',
+      'crop_fade_up',
+      'crop_slide_in_left',
+      'crop_soft_zoom_in',
+      'sticker_pop',
+      'stamp_in',
+      'paper_drop',
+    ].includes(event.action)
   );
 
   if (entryEvent) {
@@ -286,6 +300,32 @@ const animatedStyle = (
       style = {...style, opacity: progress, transform: `translateX(${(1 - springProgress) * -28}px)`};
     } else if (entryEvent.action === 'soft_zoom_in' || entryEvent.action === 'crop_soft_zoom_in') {
       style = {...style, opacity: progress, transform: `scale(${0.97 + springProgress * 0.03})`};
+    } else if (entryEvent.action === 'sticker_pop') {
+      const rotation = numericParam(entryEvent, 'rotation', -4);
+      style = {
+        ...style,
+        opacity: progress,
+        transformOrigin: '50% 50%',
+        transform: `scale(${0.72 + springProgress * 0.28}) rotate(${rotation * (1 - springProgress)}deg)`,
+        filter: `drop-shadow(0 ${10 * (1 - springProgress)}px ${14 * (1 - springProgress)}px rgba(0,0,0,0.22))`,
+      };
+    } else if (entryEvent.action === 'stamp_in') {
+      const rotation = numericParam(entryEvent, 'rotation', 2);
+      style = {
+        ...style,
+        opacity: progress,
+        transformOrigin: '50% 50%',
+        transform: `scale(${1.55 - springProgress * 0.55}) rotate(${rotation * (1 - springProgress)}deg)`,
+      };
+    } else if (entryEvent.action === 'paper_drop') {
+      const rotation = numericParam(entryEvent, 'rotation', -3);
+      style = {
+        ...style,
+        opacity: progress,
+        transformOrigin: '50% 20%',
+        transform: `translateY(${(1 - springProgress) * -48}px) rotate(${rotation * (1 - springProgress)}deg)`,
+        filter: `drop-shadow(0 ${8 * (1 - springProgress)}px ${12 * (1 - springProgress)}px rgba(0,0,0,0.18))`,
+      };
     } else {
       style = {...style, opacity: progress};
     }
@@ -353,7 +393,7 @@ const SlideView: React.FC<{slide: Slide}> = ({slide}) => {
   const layers = slide.scene.layers ?? [];
 
   return (
-    <AbsoluteFill style={{background: slide.scene.canvas.background || '#FFFDF7'}}>
+    <AbsoluteFill style={{background: slide.scene.canvas.background || '#FEFDF9'}}>
       {background ? <Img src={background} style={{position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover'}} /> : null}
       {layers
         .slice()
@@ -367,17 +407,16 @@ const SlideView: React.FC<{slide: Slide}> = ({slide}) => {
             position: 'absolute',
             left: 180,
             right: 180,
-            bottom: 28,
+            bottom: 18,
             zIndex: 10000,
-            minHeight: 82,
+            minHeight: 54,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             boxSizing: 'border-box',
-            padding: '0 36px',
+            padding: '0 24px',
             color: '#111111',
-            background: 'rgba(255, 253, 247, 0.82)',
-            borderRadius: 24,
+            background: 'transparent',
             fontSize: 38,
             fontWeight: 500,
             lineHeight: 1.15,
@@ -403,7 +442,7 @@ const SlideView: React.FC<{slide: Slide}> = ({slide}) => {
 export const ArticleVideo: React.FC<ArticleVideoProps> = ({slides}) => {
   const {fps} = useVideoConfig();
   return (
-    <AbsoluteFill style={{background: '#FFFDF7'}}>
+    <AbsoluteFill style={{background: '#FEFDF9'}}>
       {slides.map((slide) => (
         <Sequence
           key={slide.slide_id}

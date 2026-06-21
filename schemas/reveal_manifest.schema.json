@@ -81,7 +81,10 @@
                         "fade_in",
                         "fade_up",
                         "soft_zoom_in",
-                        "slide_in_left"
+                        "slide_in_left",
+                        "sticker_pop",
+                        "stamp_in",
+                        "paper_drop"
                       ]
                     },
                     "at": {"type": "number", "minimum": 0},
@@ -89,7 +92,8 @@
                     "angle": {"type": "number"},
                     "feather": {"type": "number", "minimum": 0},
                     "fog_strength": {"type": "number", "minimum": 0, "maximum": 1},
-                    "blur_px": {"type": "number", "minimum": 0}
+                    "blur_px": {"type": "number", "minimum": 0},
+                    "rotation": {"type": "number"}
                   },
                   "additionalProperties": true
                 }

@@ -23,7 +23,7 @@ class TemplateError(RuntimeError):
     pass
 
 
-CANVAS = {"width": 1920, "height": 1080, "background": "#FFFDF7", "subtitle_safe_y": 930}
+CANVAS = {"width": 1920, "height": 1080, "background": "#FEFDF9", "subtitle_safe_y": 930}
 SEMANTIC_FIELDS = [
     "content_unit_id",
     "source_text",

@@ -163,6 +163,9 @@ reveal:
     - wipe_bottom_to_top
     - scratch_reveal
     - brush_wipe_left_to_right
+    - sticker_pop
+    - stamp_in
+    - paper_drop
 
 tts:
   default_provider: minimax

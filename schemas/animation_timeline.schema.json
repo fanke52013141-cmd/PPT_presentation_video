@@ -37,7 +37,10 @@
               "wipe_top_to_bottom",
               "wipe_bottom_to_top",
               "scratch_reveal",
-              "brush_wipe_left_to_right"
+              "brush_wipe_left_to_right",
+              "sticker_pop",
+              "stamp_in",
+              "paper_drop"
             ]
           },
           "at": {"type": "number", "minimum": 0},

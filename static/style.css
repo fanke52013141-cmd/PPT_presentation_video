@@ -462,7 +462,7 @@ header > div:last-child {
 
 .step2-group-row {
   display: grid;
-  grid-template-columns: 78px minmax(0, 1fr);
+  grid-template-columns: 150px minmax(0, 1fr) 34px;
   gap: 0.9rem;
   align-items: start;
   padding: 0.8rem 0;
@@ -470,7 +470,7 @@ header > div:last-child {
 }
 
 .step2-group-role {
-  padding-top: 1.45rem;
+  padding-top: 1.22rem;
   color: #555;
   font-size: 0.82rem;
   font-weight: 800;
@@ -480,6 +480,30 @@ header > div:last-child {
   display: grid;
   grid-template-columns: minmax(180px, 0.7fr) minmax(280px, 1.3fr);
   gap: 0.8rem;
+}
+
+.step2-role-select {
+  width: 100%;
+  padding: 0.48rem 0.55rem;
+  border: 1.5px solid #111;
+  border-radius: 7px;
+  background: #fff;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.step2-group-delete {
+  align-self: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.step2-add-group {
+  float: right;
+  padding: 0.28rem 0.65rem;
+  font-size: 0.78rem;
 }
 
 .step2-group-fields label {
@@ -625,48 +649,6 @@ input.step2-soft-input:focus {
   transform-origin: 50% 50%;
 }
 
-.canvas-wrapper.mask-preview-ready img {
-  opacity: 0;
-  pointer-events: none;
-}
-
-#step5-foreground-mask-img {
-  opacity: 0 !important;
-  pointer-events: none;
-}
-
-.step5-live-coverage {
-  max-width: 360px;
-  padding: 0.28rem 0.55rem;
-  border: 1.5px solid var(--ink-color);
-  border-radius: 999px;
-  background: #f3f4f6;
-  color: #555;
-  font-size: 0.72rem;
-  font-weight: 800;
-  line-height: 1.25;
-}
-
-.step5-live-coverage.ready {
-  background: #dff4d8;
-  color: #215c20;
-}
-
-.step5-live-coverage.warning {
-  background: #ffd9d9;
-  color: #9b1c1c;
-  animation: step3-status-pulse 1.1s ease-in-out infinite alternate;
-}
-
-.step5-live-coverage.loading {
-  background: var(--secondary-color);
-}
-
-.step5-live-coverage.error {
-  background: var(--danger-color);
-  color: #7f1d1d;
-}
-
 /* 标注编辑器左右分栏布局 */
 .workspace-split {
   display: flex;
@@ -752,83 +734,54 @@ input.step2-soft-input:focus {
   overflow-y: auto;
 }
 
+.storyboard-config-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 1rem;
+}
+
+.storyboard-config-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.4rem;
+  color: #333;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.storyboard-config-field textarea,
+.storyboard-schema-panel textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: Consolas, "SFMono-Regular", monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.storyboard-schema-panel {
+  margin-top: 0.8rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #d8d5ca;
+  border-radius: 8px;
+  background: #faf9f4;
+}
+
+.storyboard-schema-panel summary {
+  cursor: pointer;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.storyboard-schema-panel textarea {
+  margin-top: 0.65rem;
+}
+
 .step3-ai-modal {
   width: min(1180px, 94vw);
   max-width: 1180px;
   max-height: 92vh;
   overflow-y: auto;
-}
-
-.mask-preview-modal {
-  width: min(1480px, 96vw);
-  max-width: 1480px;
-  max-height: 94vh;
-  overflow-y: auto;
-}
-
-.mask-preview-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 0.9rem;
-}
-
-.mask-preview-summary {
-  margin: 0.35rem 0 0;
-  color: #444;
-  font-weight: 700;
-}
-
-.mask-preview-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-}
-
-.mask-preview-grid section {
-  min-width: 0;
-}
-
-.mask-preview-grid h4 {
-  margin: 0 0 0.45rem;
-}
-
-.mask-preview-grid img {
-  display: block;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  object-fit: contain;
-  border: 2px solid var(--ink-color);
-  border-radius: 8px;
-  background: #fffdf7;
-}
-
-.mask-preview-checker {
-  background-color: #ececec;
-  background-image:
-    linear-gradient(45deg, #cfcfcf 25%, transparent 25%),
-    linear-gradient(-45deg, #cfcfcf 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #cfcfcf 75%),
-    linear-gradient(-45deg, transparent 75%, #cfcfcf 75%);
-  background-size: 24px 24px;
-  background-position: 0 0, 0 12px, 12px -12px, -12px 0;
-  border-radius: 8px;
-}
-
-.mask-preview-note {
-  margin: 0.9rem 0 0;
-  padding: 0.65rem 0.8rem;
-  border: 2px solid var(--ink-color);
-  border-radius: 8px;
-  background: #fff3bf;
-  font-weight: 700;
-}
-
-@media (max-width: 980px) {
-  .mask-preview-grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 .step3-ai-header {
@@ -990,6 +943,7 @@ input.step2-soft-input:focus {
 @media (max-width: 760px) {
   .step2-group-row,
   .step2-group-fields,
+  .storyboard-config-grid,
   .reference-image-grid,
   .step3-ai-layout {
     grid-template-columns: 1fr;
@@ -1301,6 +1255,49 @@ input.step2-soft-input:focus {
   font-weight: 800;
   line-height: 1.25;
   overflow-wrap: anywhere;
+}
+
+.step3-video-background-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  min-height: 34px;
+  padding: 0.22rem 0.48rem;
+  border: 1.5px solid var(--ink-color);
+  border-radius: 8px;
+  background: #fff;
+  font-size: 0.76rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+#step3-video-background-color {
+  width: 30px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid #aaa;
+  border-radius: 5px;
+  background: transparent;
+  cursor: pointer;
+}
+
+#step3-video-background-text {
+  width: 78px;
+  padding: 0.22rem 0.35rem;
+  border: 1px solid #aaa;
+  border-radius: 5px;
+  font-family: Consolas, monospace;
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+#step3-video-background-apply {
+  min-height: 26px;
+  padding: 0.18rem 0.48rem;
+  border-width: 1px;
+  border-radius: 5px;
+  font-size: 0.72rem;
 }
 
 .step3-card-status {
@@ -1641,6 +1638,40 @@ input.step2-soft-input:focus {
   transform: none;
   box-shadow: none;
   background: #eef6ff;
+}
+
+.mask-animation-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px;
+  gap: 0.65rem;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 0.65rem;
+  padding: 0.65rem;
+  border: 1.5px solid color-mix(in srgb, var(--mask-color) 34%, #d5d5d5);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--mask-color) 7%, white);
+}
+
+.mask-animation-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.mask-animation-card select,
+.mask-animation-card input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 0.42rem 0.5rem;
+  border: 1.5px solid #111;
+  border-radius: 7px;
+  background: #fff;
+  font: inherit;
 }
 
 .mask-visual-card {

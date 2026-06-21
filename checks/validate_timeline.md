@@ -43,6 +43,5 @@ Targets:
 ```powershell
 python scripts/validate_run_assets.py `
   --run-dir runs/<run_id> `
-  --require-layered `
-  --require-master-split-report
+  --require-layered
 ```

@@ -140,7 +140,8 @@ The slide body, title, subtitle, lines, arrows, icons, labels, and diagram conte
 
 Canvas and layout:
 - 16:9 landscape, 1920x1080.
-- Use a flat uniform #FFFDF7 background.
+- Use a flat uniform pure-white #FFFFFF background.
+- All four edges and all four corners must remain continuously pure white, without paper texture, shadows, noise, gradients, or vignettes.
 - Yellow vertical marker at top left.
 - Large handwritten Chinese main title at top left.
 - Smaller handwritten Chinese subtitle below the title with a short yellow underline.
@@ -168,7 +169,7 @@ Semantic mapping and mask rules:
 - For every group, follow mask target, include, and exclude fields. These determine the later reveal box or mask review.
 - A later box must be able to cover all included elements without covering excluded elements.
 - Keep arrows, labels, icons, formulas, and cards inside the same reveal group when semantically connected.
-- Leave 80-120px of clean #FFFDF7 background between independent groups.
+- Leave 80-120px of clean #FFFFFF background between independent groups.
 - Do not place critical content below y=930.
 
 Narration alignment rules:

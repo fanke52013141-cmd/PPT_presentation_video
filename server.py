@@ -2427,6 +2427,47 @@ def get_step2_prompt_preview(
     }
 
 
+@app.post("/api/projects/{project_id}/steps/2/prompt-preview")
+def get_step2_prompt_preview(
+    project_id: str,
+    payload: Optional[Dict[str, Any]] = None,
+    db: Session = Depends(get_db),
+):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    brief_path = os.path.join(project.run_dir, "planning", "article_brief.json")
+    if not os.path.exists(brief_path):
+        raise HTTPException(status_code=400, detail="请先导入文章再查看完整分镜请求")
+    with open(brief_path, "r", encoding="utf-8") as f:
+        brief = json.load(f)
+
+    storyboard_rules = str((payload or {}).get("rules") or "").strip()
+    if not storyboard_rules:
+        rules_path = storyboard_rules_path(project)
+        if os.path.exists(rules_path):
+            with open(rules_path, "r", encoding="utf-8") as f:
+                storyboard_rules = f.read().strip()
+        else:
+            storyboard_rules = default_storyboard_rules()
+
+    project_title = (project.name or "").strip() or brief.get("title") or "未命名项目"
+    article_content = str(brief.get("content") or "")
+    article_summary = brief.get("summary") or build_article_summary(article_content)
+    system_prompt, user_prompt = build_storyboard_request(
+        project_title,
+        article_summary,
+        article_content,
+        storyboard_rules,
+    )
+    return {
+        "success": True,
+        "system_content": system_prompt,
+        "user_content": user_prompt,
+    }
+
+
 @app.post("/api/projects/{project_id}/steps/2/execute")
 def execute_step2(project_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()

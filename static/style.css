@@ -795,7 +795,7 @@ input.step2-soft-input:focus {
 
 .template-manager-bar {
   display: grid;
-  grid-template-columns: minmax(190px, 0.8fr) auto minmax(230px, 1fr) auto auto;
+  grid-template-columns: minmax(190px, 0.8fr) auto minmax(230px, 1fr) auto;
   gap: 0.65rem;
   align-items: end;
   margin-bottom: 0.85rem;
@@ -836,9 +836,58 @@ input.step2-soft-input:focus {
   background: #e9f7ff;
 }
 
+.ai-generation-modal {
+  width: min(680px, 92vw);
+  max-width: 680px;
+}
+
+.ai-request-panel,
+.ai-draft-preview {
+  margin-bottom: 1rem;
+  padding: 0.85rem;
+  border: 1.5px solid var(--ink-color);
+  border-radius: 9px;
+  background: #f5f8ff;
+}
+
+.ai-requirement-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  color: #222;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.ai-requirement-field textarea,
+.ai-draft-preview textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.ai-request-actions,
+.ai-draft-preview-actions,
+.ai-draft-preview-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.ai-request-actions {
+  justify-content: space-between;
+  margin-top: 0.7rem;
+}
+
+.ai-request-actions .ai-draft-button {
+  flex: 0 0 auto;
+  background: #e9f7ff;
+}
+
 .ai-draft-status {
+  flex: 1;
   min-height: 1.15rem;
-  margin: -0.45rem 0 0.85rem;
+  margin: 0;
   color: #33606c;
   font-size: 0.82rem;
   font-weight: 700;
@@ -846,6 +895,38 @@ input.step2-soft-input:focus {
 
 .ai-draft-status.error {
   color: var(--danger-color);
+}
+
+.ai-draft-preview {
+  background: #fff8cc;
+}
+
+.ai-draft-preview-header {
+  justify-content: space-between;
+  margin-bottom: 0.6rem;
+}
+
+.ai-draft-preview-header h4 {
+  margin: 0;
+}
+
+.ai-draft-preview-header span {
+  color: #6c5a1b;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.ai-draft-preview textarea {
+  min-height: 210px;
+  background: #fff;
+  font-family: Consolas, "Microsoft YaHei", monospace;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.ai-draft-preview-actions {
+  justify-content: flex-end;
+  margin-top: 0.7rem;
 }
 
 .storyboard-config-grid {
@@ -1532,6 +1613,16 @@ input.step2-soft-input:focus {
     margin-bottom: -1.1rem;
     padding-left: 1.1rem;
     padding-right: 1.1rem;
+  }
+
+  .ai-request-actions,
+  .ai-draft-preview-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ai-request-actions .ai-draft-button {
+    width: 100%;
   }
 
   .step3-ai-header {

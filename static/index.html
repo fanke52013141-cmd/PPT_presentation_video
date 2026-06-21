@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=2.12.4">
+  <link rel="stylesheet" href="style.css?v=2.12.5">
 </head>
 <body>
 
@@ -133,7 +133,7 @@
                 <h2 class="highlight-title" style="margin: 0; font-size: 1.25rem;">分镜规划</h2>
                 <button id="step2-btn-generate" class="success" style="font-size: 0.85rem; padding: 0.35rem 0.9rem;">
                   <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-                  智能规划分镜
+                  AI 生成分镜
                 </button>
                 <button id="step2-btn-rules" class="secondary" style="font-size: 0.85rem; padding: 0.35rem 0.9rem;">
                   设置分镜规则
@@ -659,10 +659,46 @@
     </div>
   </div>
 
+  <div id="modal-step2-generate" class="modal-overlay" style="display: none;">
+    <div class="modal-content ai-generation-modal">
+      <h3 class="highlight-title">AI 生成分镜</h3>
+      <p class="config-editor-note">描述本次想要的拆页方式、叙事节奏、重点内容、页数或视觉组织。该需求只用于本次生成，不会自动覆盖已保存的分镜规则模板。</p>
+      <label class="ai-requirement-field">
+        <span>本次分镜需求</span>
+        <textarea id="step2-generation-requirement" rows="8" placeholder="例如：控制在 6 页以内；先解释概念，再讲工作机制和实际应用；每页只讲一个重点，多用流程图和对比结构；旁白简洁，避免重复。"></textarea>
+      </label>
+      <div class="config-editor-actions">
+        <button id="btn-step2-generation-cancel" class="secondary" type="button">取消</button>
+        <button id="btn-step2-generation-confirm" class="success" type="button">按需求生成分镜</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modal-storyboard-rules" class="modal-overlay" style="display: none;">
     <div class="modal-content config-editor-modal">
       <div class="config-editor-scroll">
         <h3 class="highlight-title">分镜结构、Prompt 与 Schema</h3>
+        <section class="ai-request-panel">
+          <label class="ai-requirement-field">
+            <span>告诉 AI 你想要什么分镜结构</span>
+            <textarea id="storyboard-ai-requirement" rows="5" placeholder="例如：生成适合知识科普视频的结构；短文章 4-5 页，长文章 8-10 页；优先使用流程、对比和数据结构；标题只展示不朗读。"></textarea>
+          </label>
+          <div class="ai-request-actions">
+            <span id="storyboard-ai-draft-status" class="ai-draft-status"></span>
+            <button id="btn-storyboard-rules-ai-draft" class="secondary ai-draft-button" type="button">AI 生成分镜结构</button>
+          </div>
+        </section>
+        <section id="storyboard-ai-draft-preview" class="ai-draft-preview" style="display: none;">
+          <div class="ai-draft-preview-header">
+            <h4>AI 草案预览</h4>
+            <span>当前配置尚未修改、尚未保存</span>
+          </div>
+          <textarea id="storyboard-ai-draft-preview-text" rows="14" readonly></textarea>
+          <div class="ai-draft-preview-actions">
+            <button id="btn-storyboard-ai-draft-discard" class="secondary" type="button">放弃草案</button>
+            <button id="btn-storyboard-ai-draft-apply" class="success" type="button">采用到编辑器</button>
+          </div>
+        </section>
         <div class="template-manager-bar">
           <label>
             <span>选择模板</span>
@@ -674,9 +710,7 @@
             <input id="storyboard-template-name" type="text" maxlength="60" placeholder="例如：知识科普分镜">
           </label>
           <button id="btn-storyboard-template-save" class="secondary" type="button">另存为模板</button>
-          <button id="btn-storyboard-rules-ai-draft" class="secondary ai-draft-button" type="button">AI 生成规则</button>
         </div>
-        <div id="storyboard-ai-draft-status" class="ai-draft-status"></div>
         <div class="config-boundary-note">
           <strong>可以直接修改：</strong>页数范围、每页语块数、启用的结构类型、是否必选、是否朗读、自定义分镜规则。
           <br><strong>系统保护：</strong>JSON 层级、Slide/语块 ID、visual_groups 与 narration_beats 的绑定字段不能删除。
@@ -733,6 +767,27 @@
     <div class="modal-content config-editor-modal">
       <div class="config-editor-scroll">
         <h3 class="highlight-title">图片风格与参考图</h3>
+        <section class="ai-request-panel">
+          <label class="ai-requirement-field">
+            <span>告诉 AI 你想要什么图片风格</span>
+            <textarea id="image-style-ai-requirement" rows="5" placeholder="例如：现代中国水墨科普风格，黑白线稿配少量朱红色点缀；构图留白充足，流程图清晰；不要 3D、渐变、摄影质感和复杂背景。"></textarea>
+          </label>
+          <div class="ai-request-actions">
+            <span id="image-style-ai-draft-status" class="ai-draft-status"></span>
+            <button id="btn-image-style-ai-draft" class="secondary ai-draft-button" type="button">AI 生成图片风格</button>
+          </div>
+        </section>
+        <section id="image-style-ai-draft-preview" class="ai-draft-preview" style="display: none;">
+          <div class="ai-draft-preview-header">
+            <h4>AI 草案预览</h4>
+            <span>当前风格尚未修改、尚未保存</span>
+          </div>
+          <textarea id="image-style-ai-draft-preview-text" rows="14" readonly></textarea>
+          <div class="ai-draft-preview-actions">
+            <button id="btn-image-style-ai-draft-discard" class="secondary" type="button">放弃草案</button>
+            <button id="btn-image-style-ai-draft-apply" class="success" type="button">采用到编辑器</button>
+          </div>
+        </section>
         <div class="template-manager-bar">
           <label>
             <span>选择模板</span>
@@ -744,9 +799,7 @@
             <input id="image-style-template-name" type="text" maxlength="60" placeholder="例如：水墨科普风格">
           </label>
           <button id="btn-image-style-template-save" class="secondary" type="button">另存为模板</button>
-          <button id="btn-image-style-ai-draft" class="secondary ai-draft-button" type="button">AI 生成风格</button>
         </div>
-        <div id="image-style-ai-draft-status" class="ai-draft-status"></div>
         <div class="config-boundary-note">
           直接填写下面的风格词即可，不需要遵守 YAML 格式。系统固定 1920×1080、16:9、纯白背景，并保留底部字幕安全区；这些约束用于保证后续 Mask 稳定。
         </div>
@@ -898,6 +951,6 @@
 
   <!-- 主业务 JavaScript 脚本 -->
   <script src="flow.js?v=1.0.0"></script>
-  <script src="app.js?v=2.12.4"></script>
+  <script src="app.js?v=2.12.5"></script>
 </body>
 </html>

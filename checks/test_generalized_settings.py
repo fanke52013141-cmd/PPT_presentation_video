@@ -84,15 +84,28 @@ def main() -> None:
     assert 'id="image-style-template-select"' in html
     assert 'id="btn-storyboard-rules-ai-draft"' in html
     assert 'id="btn-image-style-ai-draft"' in html
+    assert 'id="modal-step2-generate"' in html
+    assert 'id="step2-generation-requirement"' in html
+    assert 'id="storyboard-ai-requirement"' in html
+    assert 'id="storyboard-ai-draft-preview"' in html
+    assert 'id="image-style-ai-requirement"' in html
+    assert 'id="image-style-ai-draft-preview"' in html
     assert 'id="subtitle-safe-width-guide"' in html
     assert "mask-animation-card" not in app_js
     assert "generateStoryboardRulesAiDraft" in app_js
     assert "generateImageStyleAiDraft" in app_js
+    assert "applyStoryboardAiDraft" in app_js
+    assert "discardStoryboardAiDraft" in app_js
+    assert "applyImageStyleAiDraft" in app_js
+    assert "discardImageStyleAiDraft" in app_js
+    assert "AI 生成分镜" in app_js
     assert "rules/ai-draft" in app_js
     assert "image-style/ai-draft" in app_js
     assert "previewGlobalAnimationSettings" in app_js
     assert ".config-editor-scroll" in css
     assert ".ai-draft-status" in css
+    assert ".ai-request-panel" in css
+    assert ".ai-draft-preview" in css
     route_paths = [getattr(route, "path", "") for route in server_module.app.routes]
     assert route_paths.count("/api/projects/{project_id}/steps/2/prompt-preview") == 1
     assert "/api/projects/{project_id}/steps/2/rules/ai-draft" in route_paths

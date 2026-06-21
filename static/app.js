@@ -21,6 +21,11 @@ let state = {
   storyboardTemplates: [],
   imageStyleTemplates: [],
   selectedImageStyleTemplateId: '',
+  step2GenerationRequirement: '',
+  storyboardAiRequirement: '',
+  imageStyleAiRequirement: '',
+  pendingStoryboardAiDraft: null,
+  pendingImageStyleAiDraft: null,
   storyboardRoles: {
     title: { label: '主标题' },
     subtitle: { label: '副标题' },
@@ -323,7 +328,9 @@ function initGlobalEvents() {
   document.getElementById('step1-btn-save-edit')?.addEventListener('click', () => saveStep1Edit());
 
   // ================= 步骤 2 事件 =================
-  document.getElementById('step2-btn-generate')?.addEventListener('click', () => generateStep2Contract());
+  document.getElementById('step2-btn-generate')?.addEventListener('click', () => openStep2GenerationModal());
+  document.getElementById('btn-step2-generation-cancel')?.addEventListener('click', () => closeStep2GenerationModal());
+  document.getElementById('btn-step2-generation-confirm')?.addEventListener('click', () => confirmStep2Generation());
   document.getElementById('step2-btn-rules')?.addEventListener('click', () => openStoryboardRulesModal());
   document.getElementById('step2-btn-save')?.addEventListener('click', () => handleStep2BatchDeleteButton());
   document.getElementById('step2-btn-cancel-delete')?.addEventListener('click', () => cancelStep2BatchDelete());
@@ -403,6 +410,8 @@ function initGlobalEvents() {
   document.getElementById('btn-storyboard-template-load')?.addEventListener('click', () => loadSelectedStoryboardTemplate());
   document.getElementById('btn-storyboard-template-save')?.addEventListener('click', () => saveStoryboardTemplate());
   document.getElementById('btn-storyboard-rules-ai-draft')?.addEventListener('click', () => generateStoryboardRulesAiDraft());
+  document.getElementById('btn-storyboard-ai-draft-discard')?.addEventListener('click', () => discardStoryboardAiDraft());
+  document.getElementById('btn-storyboard-ai-draft-apply')?.addEventListener('click', () => applyStoryboardAiDraft());
   document.getElementById('storyboard-template-select')?.addEventListener('change', event => {
     if (event.target.value) loadSelectedStoryboardTemplate();
   });
@@ -412,6 +421,8 @@ function initGlobalEvents() {
   document.getElementById('btn-image-style-template-load')?.addEventListener('click', () => loadSelectedImageStyleTemplate());
   document.getElementById('btn-image-style-template-save')?.addEventListener('click', () => saveImageStyleTemplate());
   document.getElementById('btn-image-style-ai-draft')?.addEventListener('click', () => generateImageStyleAiDraft());
+  document.getElementById('btn-image-style-ai-draft-discard')?.addEventListener('click', () => discardImageStyleAiDraft());
+  document.getElementById('btn-image-style-ai-draft-apply')?.addEventListener('click', () => applyImageStyleAiDraft());
   document.getElementById('image-style-template-select')?.addEventListener('change', event => {
     if (event.target.value) loadSelectedImageStyleTemplate();
   });
@@ -1053,19 +1064,49 @@ async function loadStep2Data() {
     state.step2BatchOriginalSlides = null;
     document.getElementById('step2-editor-area').style.display = 'none';
     document.getElementById('step2-btn-generate').style.display = 'inline-flex';
-    document.getElementById('step2-btn-generate').innerHTML = `<svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> 智能规划分镜`;
+    document.getElementById('step2-btn-generate').innerHTML = `<svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> AI 生成分镜`;
     document.getElementById('step2-btn-save').style.display = 'none';
     document.getElementById('step2-btn-next').style.display = 'none';
     updateStep2AutosaveStatus('');
   }
 }
 
-async function generateStep2Contract() {
+function openStep2GenerationModal() {
+  const input = document.getElementById('step2-generation-requirement');
+  input.value = state.step2GenerationRequirement || '';
+  document.getElementById('modal-step2-generate').style.display = 'flex';
+  input.focus();
+}
+
+function closeStep2GenerationModal() {
+  document.getElementById('modal-step2-generate').style.display = 'none';
+}
+
+async function confirmStep2Generation() {
+  const requirement = document.getElementById('step2-generation-requirement').value.trim();
+  if (!requirement) {
+    showToast('请先填写本次 AI 分镜生成需求。');
+    return;
+  }
+  state.step2GenerationRequirement = requirement;
+  closeStep2GenerationModal();
+  await generateStep2Contract(requirement);
+}
+
+async function generateStep2Contract(requirement = '') {
+  const normalizedRequirement = String(requirement || '').trim();
+  if (!normalizedRequirement) {
+    openStep2GenerationModal();
+    return;
+  }
   document.getElementById('step2-loading').style.display = 'block';
   document.getElementById('step2-btn-generate').disabled = true;
   
   try {
-    const res = await API.post(`/api/projects/${state.currentProject.id}/steps/2/execute`);
+    const res = await API.post(
+      `/api/projects/${state.currentProject.id}/steps/2/execute`,
+      { requirement: normalizedRequirement },
+    );
     if (res.success) {
       showToast('🎉 分镜规划已生成！');
       state.slides = res.contract.slides || [];
@@ -1084,7 +1125,8 @@ function renderStep2Workspace() {
     state.activeSlideIndex = Math.max(0, state.slides.length - 1);
   }
   document.getElementById('step2-editor-area').style.display = 'block';
-  document.getElementById('step2-btn-generate').innerHTML = `<svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg> 重新规划分镜`;
+  document.getElementById('step2-btn-generate').style.display = 'inline-flex';
+  document.getElementById('step2-btn-generate').innerHTML = `<svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> AI 生成分镜`;
   document.getElementById('step2-btn-save').style.display = 'inline-flex';
   document.getElementById('step2-btn-next').style.display = 'inline-flex';
   updateStep2BatchDeleteButton();
@@ -2703,35 +2745,82 @@ async function saveStoryboardTemplate() {
   showToast(`分镜模板“${res.template?.name || name}”已保存。`);
 }
 
+function storyboardAiDraftPreviewText(draft) {
+  const editor = draft?.editor || {};
+  return JSON.stringify({
+    template_name: draft?.suggested_name || '',
+    rules: draft?.rules || '',
+    slide_count: editor.slide_count || {},
+    visual_group_count: editor.visual_group_count || {},
+    roles: editor.roles || {},
+  }, null, 2);
+}
+
+function renderStoryboardAiDraftPreview() {
+  const draft = state.pendingStoryboardAiDraft;
+  const preview = document.getElementById('storyboard-ai-draft-preview');
+  if (!draft) {
+    preview.style.display = 'none';
+    document.getElementById('storyboard-ai-draft-preview-text').value = '';
+    return;
+  }
+  document.getElementById('storyboard-ai-draft-preview-text').value = storyboardAiDraftPreviewText(draft);
+  preview.style.display = 'block';
+}
+
+function discardStoryboardAiDraft() {
+  state.pendingStoryboardAiDraft = null;
+  renderStoryboardAiDraftPreview();
+  setAiDraftStatus('storyboard-ai-draft-status', '草案已放弃，当前配置没有变化。');
+}
+
+function applyStoryboardAiDraft() {
+  const draft = state.pendingStoryboardAiDraft;
+  if (!draft) return;
+  document.getElementById('storyboard-rules-input').value = draft.rules || '';
+  document.getElementById('storyboard-profile-input').value = draft.profile_yaml || '';
+  if (draft.editor) {
+    setStoryboardRangeValues(draft.editor);
+    renderStoryboardRoleEditor(draft.editor);
+  }
+  if (draft.roles) {
+    state.storyboardRoles = draft.roles;
+  }
+  document.getElementById('storyboard-template-name').value = draft.suggested_name || '';
+  document.getElementById('storyboard-template-select').value = '';
+  state.pendingStoryboardAiDraft = null;
+  renderStoryboardAiDraftPreview();
+  setAiDraftStatus('storyboard-ai-draft-status', '草案已采用到编辑器，但尚未保存。你可以继续修改，再选择保存规则或另存为模板。');
+  showToast('AI 分镜结构草案已采用，尚未保存。');
+}
+
 async function generateStoryboardRulesAiDraft() {
   if (!state.currentProject?.id) {
     showToast('请先进入一个项目。');
     return;
   }
+  const requirement = document.getElementById('storyboard-ai-requirement').value.trim();
+  if (!requirement) {
+    showToast('请先填写希望 AI 生成的分镜结构需求。');
+    return;
+  }
+  state.storyboardAiRequirement = requirement;
   setButtonBusy('btn-storyboard-rules-ai-draft', true, 'AI 生成中...');
-  setAiDraftStatus('storyboard-ai-draft-status', 'AI 正在根据当前文章和规则生成可保存的分镜模板草案...');
+  setAiDraftStatus('storyboard-ai-draft-status', 'AI 正在根据你的需求生成结构化分镜草案...');
   try {
     const res = await API.post(
       `/api/projects/${state.currentProject.id}/steps/2/rules/ai-draft`,
       {
+        requirement,
         rules: document.getElementById('storyboard-rules-input').value.trim(),
         profile_yaml: document.getElementById('storyboard-profile-input').value.trim(),
         profile_patch: readStoryboardProfilePatch(),
       },
     );
-    document.getElementById('storyboard-rules-input').value = res.rules || '';
-    document.getElementById('storyboard-profile-input').value = res.profile_yaml || '';
-    if (res.editor) {
-      setStoryboardRangeValues(res.editor);
-      renderStoryboardRoleEditor(res.editor);
-    }
-    if (res.roles) {
-      state.storyboardRoles = res.roles;
-    }
-    document.getElementById('storyboard-template-name').value = res.suggested_name || '';
-    document.getElementById('storyboard-template-select').value = '';
-    setAiDraftStatus('storyboard-ai-draft-status', 'AI 分镜规则草案已生成。你可以先检查内容，再点“另存为模板”保存。');
-    showToast('AI 分镜规则草案已生成，可另存为模板。');
+    state.pendingStoryboardAiDraft = res;
+    renderStoryboardAiDraftPreview();
+    setAiDraftStatus('storyboard-ai-draft-status', '草案已生成。请先预览，再选择采用或放弃。');
+    showToast('AI 分镜结构草案已生成，当前配置尚未改变。');
   } catch (error) {
     setAiDraftStatus('storyboard-ai-draft-status', error.message || 'AI 生成分镜规则失败', true);
   } finally {
@@ -2754,7 +2843,9 @@ async function openStoryboardRulesModal() {
   renderStoryboardRoleEditor(res.editor);
   renderStoryboardTemplateOptions(templateRes.templates || []);
   document.getElementById('storyboard-template-name').value = '';
+  document.getElementById('storyboard-ai-requirement').value = state.storyboardAiRequirement || '';
   setAiDraftStatus('storyboard-ai-draft-status', '');
+  renderStoryboardAiDraftPreview();
   document.getElementById('modal-storyboard-rules').style.display = 'flex';
 }
 
@@ -2805,8 +2896,8 @@ async function saveStoryboardRulesWithOptions(options = {}) {
     closeStoryboardRulesModal();
     if (state.slides?.length) renderStep2Workspace();
     if (options.regenerate) {
-      showToast('分镜规则已保存，正在按新规则重新规划分镜...');
-      await generateStep2Contract();
+      showToast('分镜规则已保存。请填写本次生成需求后重新生成分镜。');
+      openStep2GenerationModal();
       return;
     }
     showToast('分镜规则已保存，将在下次重新规划分镜时生效。');
@@ -2826,7 +2917,9 @@ async function openImageStyleModal() {
   renderImageStyleTemplateOptions(templateRes.templates || []);
   state.selectedImageStyleTemplateId = '';
   document.getElementById('image-style-template-name').value = '';
+  document.getElementById('image-style-ai-requirement').value = state.imageStyleAiRequirement || '';
   setAiDraftStatus('image-style-ai-draft-status', '');
+  renderImageStyleAiDraftPreview();
   ['template', 'example'].forEach(kind => {
     document.getElementById(`image-style-${kind}-file`).value = '';
   });
@@ -2917,26 +3010,61 @@ function currentImageStylePayload() {
   return { style_data: readImageStyleGuidedForm() };
 }
 
+function renderImageStyleAiDraftPreview() {
+  const draft = state.pendingImageStyleAiDraft;
+  const preview = document.getElementById('image-style-ai-draft-preview');
+  if (!draft) {
+    preview.style.display = 'none';
+    document.getElementById('image-style-ai-draft-preview-text').value = '';
+    return;
+  }
+  document.getElementById('image-style-ai-draft-preview-text').value = draft.style_text || '';
+  preview.style.display = 'block';
+}
+
+function discardImageStyleAiDraft() {
+  state.pendingImageStyleAiDraft = null;
+  renderImageStyleAiDraftPreview();
+  setAiDraftStatus('image-style-ai-draft-status', '草案已放弃，当前图片风格没有变化。');
+}
+
+function applyImageStyleAiDraft() {
+  const draft = state.pendingImageStyleAiDraft;
+  if (!draft) return;
+  document.getElementById('image-style-input').value = draft.style_text || '';
+  populateImageStyleGuidedForm(draft.style_data || {});
+  document.getElementById('image-style-use-advanced').checked = false;
+  document.getElementById('image-style-template-name').value = draft.suggested_name || '';
+  document.getElementById('image-style-template-select').value = '';
+  state.selectedImageStyleTemplateId = '';
+  state.pendingImageStyleAiDraft = null;
+  renderImageStyleAiDraftPreview();
+  setAiDraftStatus('image-style-ai-draft-status', '草案已采用到编辑器，但尚未保存。你可以继续修改，再选择保存风格或另存为模板。');
+  showToast('AI 图片风格草案已采用，尚未保存。');
+}
+
 async function generateImageStyleAiDraft() {
   if (!state.currentProject?.id) {
     showToast('请先进入一个项目。');
     return;
   }
+  const requirement = document.getElementById('image-style-ai-requirement').value.trim();
+  if (!requirement) {
+    showToast('请先填写希望 AI 生成的图片风格需求。');
+    return;
+  }
+  state.imageStyleAiRequirement = requirement;
   setButtonBusy('btn-image-style-ai-draft', true, 'AI 生成中...');
-  setAiDraftStatus('image-style-ai-draft-status', 'AI 正在根据项目主题、文章和已有分镜生成可保存的图片风格模板草案...');
+  setAiDraftStatus('image-style-ai-draft-status', 'AI 正在根据你的需求生成结构化图片风格草案...');
   try {
     const res = await API.post(
       `/api/projects/${state.currentProject.id}/steps/3/image-style/ai-draft`,
-      currentImageStylePayload(),
+      { ...currentImageStylePayload(), requirement },
     );
-    document.getElementById('image-style-input').value = res.style_text || '';
-    populateImageStyleGuidedForm(res.style_data || {});
-    document.getElementById('image-style-use-advanced').checked = false;
-    document.getElementById('image-style-template-name').value = res.suggested_name || '';
-    document.getElementById('image-style-template-select').value = '';
-    state.selectedImageStyleTemplateId = '';
-    setAiDraftStatus('image-style-ai-draft-status', 'AI 图片风格草案已生成。你可以先检查内容，再点“另存为模板”保存。');
-    showToast('AI 图片风格草案已生成，可另存为模板。');
+    state.pendingImageStyleAiDraft = res;
+    renderImageStyleAiDraftPreview();
+    setAiDraftStatus('image-style-ai-draft-status', '草案已生成。请先预览，再选择采用或放弃。');
+    showToast('AI 图片风格草案已生成，当前风格尚未改变。');
   } catch (error) {
     setAiDraftStatus('image-style-ai-draft-status', error.message || 'AI 生成图片风格失败', true);
   } finally {

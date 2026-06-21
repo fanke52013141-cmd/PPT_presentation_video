@@ -2434,6 +2434,9 @@ def generate_storyboard_rules_ai_draft(
         brief = json.load(f)
 
     incoming = payload or {}
+    requirement = str(incoming.get("requirement") or "").strip()
+    if not requirement:
+        raise HTTPException(status_code=400, detail="请先填写希望 AI 生成的分镜结构需求。")
     base_rules = str(incoming.get("rules") or "").strip()
     if not base_rules:
         rules_path = storyboard_rules_path(project)
@@ -2481,6 +2484,7 @@ def generate_storyboard_rules_ai_draft(
         "必须输出严格 JSON，不要 Markdown，不要解释。"
         "profile_patch.roles 只能使用用户给定的 allowed_roles；不要创造新 role。"
         "speak_policy 只能是 speak 或 display_only。"
+        "user_requirement 是用户本次明确输入的需求，必须优先满足，并将其转化为具体、结构化、可复用的配置。"
         "规则要服务于后续图片生成、Mask 标注、旁白绑定和视频动画，强调结构清晰、分组可遮罩、旁白自然。"
     )
     user_prompt = json.dumps(
@@ -2489,6 +2493,7 @@ def generate_storyboard_rules_ai_draft(
             "article_summary": article_summary,
             "article_excerpt": article_content[:8000],
             "allowed_roles": allowed_roles,
+            "user_requirement": requirement,
             "current_rules": base_rules,
             "current_editor_config": editor,
             "output_schema": json.loads(schema_hint),
@@ -2696,7 +2701,11 @@ def get_step2_prompt_preview(
 
 
 @app.post("/api/projects/{project_id}/steps/2/execute")
-def execute_step2(project_id: str, db: Session = Depends(get_db)):
+def execute_step2(
+    project_id: str,
+    payload: Optional[Dict[str, Any]] = None,
+    db: Session = Depends(get_db),
+):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
@@ -2728,11 +2737,19 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
             storyboard_rules = f.read().strip()
     else:
         storyboard_rules = default_storyboard_rules()
+    generation_requirement = str((payload or {}).get("requirement") or "").strip()
+    if not generation_requirement:
+        raise HTTPException(status_code=400, detail="请先填写本次 AI 分镜生成需求。")
+    effective_storyboard_rules = (
+        f"{storyboard_rules}\n\n"
+        "本次生成的用户专项需求如下；只对本次生成生效，并在不破坏固定 JSON 结构和字段约束的前提下优先满足：\n"
+        f"{generation_requirement}"
+    )
     system_prompt, user_prompt = build_storyboard_request(
         project_title,
         article_summary,
         article_content,
-        storyboard_rules,
+        effective_storyboard_rules,
         read_project_pipeline_profile(project),
     )
     trace_id = uuid.uuid4().hex[:8]
@@ -2743,6 +2760,7 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
         model=llm_model,
         base_url=llm_base_url,
         max_tokens=planning_max_tokens,
+        generation_requirement=generation_requirement,
     )
 
     try:
@@ -3181,6 +3199,9 @@ def generate_image_style_ai_draft(
         raise HTTPException(status_code=404, detail="项目不存在")
 
     incoming = payload or {}
+    requirement = str(incoming.get("requirement") or "").strip()
+    if not requirement:
+        raise HTTPException(status_code=400, detail="请先填写希望 AI 生成的图片风格需求。")
     try:
         _, base_style = parse_image_style_payload(incoming)
     except HTTPException:
@@ -3238,6 +3259,7 @@ def generate_image_style_ai_draft(
         "请根据项目主题、文章摘要、分镜标题和当前风格，生成一套可复用的生图风格模板草案。"
         "必须输出严格 JSON，不要 Markdown，不要解释。"
         "只能返回 brand.style_keywords 与 visual_assets.image_style、diagram_style、layout_rules、avoid。"
+        "user_requirement 是用户本次明确输入的需求，必须优先满足，并转化为具体可执行的结构化风格字段。"
         "必须保持 1920x1080、16:9、纯白 #FFFFFF 背景、底部字幕安全区、Mask 友好留白这些约束。"
         "风格要具体可执行，适合 AI 生图提示词使用，避免泛泛而谈。"
     )
@@ -3247,6 +3269,7 @@ def generate_image_style_ai_draft(
             "article_summary": article_summary,
             "article_excerpt": article_content[:8000],
             "slide_titles": slide_titles[:20],
+            "user_requirement": requirement,
             "current_style_data": current_editable,
             "output_schema": json.loads(schema_hint),
         },

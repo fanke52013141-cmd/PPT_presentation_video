@@ -43,10 +43,22 @@ if (!css.includes('.step3-generating-preview')) throw new Error('step 3 loading 
 if (!app.includes('await refreshStep3Images();')) throw new Error('step 3 does not wait for image state');
 if (!app.includes('confirmBtn.disabled = !allImagesReady')) throw new Error('step 3 confirmation is not gated');
 if (!app.includes('step5AutoSavePromise')) throw new Error('step 5 save serialization missing');
+if (!app.includes("raw.type || raw.value || 'wipe_left_to_right'")) {
+  throw new Error('mask animation preset values are not normalized correctly');
+}
+if (!app.includes('applyGlobalMaskReveal') || !app.includes('previewMaskAnimation')) {
+  throw new Error('global Mask animation sync or instant preview is missing');
+}
 for (const animation of ['wipe_left_to_right', 'scratch_reveal', 'sticker_pop', 'stamp_in', 'paper_drop']) {
   if (!app.includes(`value: '${animation}'`)) {
     throw new Error(`mask animation preset missing: ${animation}`);
   }
+}
+if (!html.includes('step5-btn-subtitle-settings') || !html.includes('modal-subtitle-settings')) {
+  throw new Error('subtitle settings entry or modal is missing');
+}
+if (!app.includes('updateGroupSpeakPolicy')) {
+  throw new Error('per-group narration policy control is missing');
 }
 if (!html.includes('id="step5-brush-size"') || !html.includes('value="170"')) {
   throw new Error('brush size control or 170 default missing');

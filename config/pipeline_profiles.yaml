@@ -31,19 +31,19 @@ storyboard:
       required: false
       speak_policy: display_only
       description: 可选副标题；如果页面不需要，就不要生成。
-      default_reveal: fade_in
+      default_reveal: wipe_left_to_right
     content_body:
       label: 正文内容
       required: false
       speak_policy: speak
       description: 普通概念、要点、卡片、列表或解释性文字。
-      default_reveal: scratch_reveal
+      default_reveal: wipe_left_to_right
     diagram:
       label: 图示/流程图
       required: false
       speak_policy: speak
       description: 图形、流程、关系图、对比图、时间线等。
-      default_reveal: scratch_reveal
+      default_reveal: wipe_left_to_right
     quote:
       label: 引用/金句
       required: false
@@ -55,7 +55,7 @@ storyboard:
       required: false
       speak_policy: speak
       description: 数字、指标、公式或表格单元。
-      default_reveal: wipe_top_to_bottom
+      default_reveal: wipe_left_to_right
     process_step:
       label: 步骤
       required: false
@@ -67,7 +67,7 @@ storyboard:
       required: false
       speak_policy: speak
       description: 需要突出强调的提示、风险或反直觉点。
-      default_reveal: soft_zoom_in
+      default_reveal: wipe_left_to_right
     annotation:
       label: 注释
       required: false
@@ -79,13 +79,13 @@ storyboard:
       required: false
       speak_policy: speak
       description: 可选总结区；不是每页都必须出现。
-      default_reveal: soft_zoom_in
+      default_reveal: wipe_left_to_right
     decoration:
       label: 装饰
       required: false
       speak_policy: display_only
       description: 不承载语义、不绑定旁白的装饰元素。
-      default_reveal: fade_in
+      default_reveal: wipe_left_to_right
   structure_rules:
     - 每页只强制需要 main_title；subtitle、summary 都是可选结构。
     - visual_groups 可以使用 roles 中的任意角色，也可以使用自定义 role；自定义 role 默认可被旁白讲解。
@@ -111,39 +111,35 @@ reveal:
       type: wipe_left_to_right
       duration: 0.55
     subtitle:
-      type: fade_in
-      duration: 0.35
+      type: wipe_left_to_right
+      duration: 0.75
     content_body:
-      type: scratch_reveal
-      duration: 0.8
-      angle: 92
-      feather: 18
+      type: wipe_left_to_right
+      duration: 0.75
     diagram:
-      type: scratch_reveal
-      duration: 0.9
-      angle: 135
-      feather: 18
+      type: wipe_left_to_right
+      duration: 0.75
     quote:
       type: wipe_left_to_right
       duration: 0.65
     data_point:
-      type: wipe_top_to_bottom
-      duration: 0.65
+      type: wipe_left_to_right
+      duration: 0.75
     process_step:
       type: wipe_left_to_right
       duration: 0.65
     callout:
-      type: soft_zoom_in
-      duration: 0.7
+      type: wipe_left_to_right
+      duration: 0.75
     annotation:
       type: wipe_left_to_right
       duration: 0.55
     summary:
-      type: soft_zoom_in
+      type: wipe_left_to_right
       duration: 0.75
     decoration:
-      type: fade_in
-      duration: 0.4
+      type: wipe_left_to_right
+      duration: 0.75
   allowed_actions:
     - fade_in
     - fade_up

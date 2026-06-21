@@ -181,6 +181,66 @@ REVEAL_PIPELINE_VERSION = "manual_mask_boundary_white_v4"
 IMAGE_GENERATION_BACKGROUND = "#FFFFFF"
 DEFAULT_VIDEO_BACKGROUND = "#FEFDF9"
 PROJECT_VISUAL_SETTINGS_FILE = "visual_settings.json"
+DEFAULT_SUBTITLE_STYLE = {
+    "font_key": "noto_sans_sc",
+    "font_family": "Noto Sans SC",
+    "font_size": 38,
+    "font_weight": 500,
+    "bottom": 18,
+    "horizontal_margin": 180,
+    "color": "#111111",
+}
+OPEN_SOURCE_CHINESE_FONTS = [
+    {
+        "key": "noto_sans_sc",
+        "label": "Noto Sans SC（现代黑体）",
+        "family": "Noto Sans SC",
+        "license": "SIL OFL 1.1",
+        "source": "Google Fonts",
+    },
+    {
+        "key": "noto_serif_sc",
+        "label": "Noto Serif SC（现代宋体）",
+        "family": "Noto Serif SC",
+        "license": "SIL OFL 1.1",
+        "source": "Google Fonts",
+    },
+    {
+        "key": "ma_shan_zheng",
+        "label": "马善政毛笔体（书写感）",
+        "family": "Ma Shan Zheng",
+        "license": "SIL OFL 1.1",
+        "source": "Google Fonts",
+    },
+    {
+        "key": "zcool_xiaowei",
+        "label": "站酷小薇体（标题宋体）",
+        "family": "ZCOOL XiaoWei",
+        "license": "SIL OFL 1.1",
+        "source": "Google Fonts",
+    },
+    {
+        "key": "zcool_qingke",
+        "label": "站酷庆科黄油体（醒目展示）",
+        "family": "ZCOOL QingKe HuangYou",
+        "license": "SIL OFL 1.1",
+        "source": "Google Fonts",
+    },
+    {
+        "key": "zcool_kuaile",
+        "label": "站酷快乐体（活泼手写）",
+        "family": "ZCOOL KuaiLe",
+        "license": "SIL OFL 1.1",
+        "source": "Google Fonts",
+    },
+    {
+        "key": "lxgw_wenkai",
+        "label": "霞鹜文楷（本机字体优先）",
+        "family": "LXGW WenKai",
+        "license": "SIL OFL 1.1",
+        "source": "LXGW WenKai",
+    },
+]
 _REVEAL_LOCKS: Dict[str, threading.RLock] = {}
 _REVEAL_LOCKS_GUARD = threading.Lock()
 _JSON_WRITE_LOCKS: Dict[str, threading.Lock] = {}
@@ -866,7 +926,37 @@ def project_visual_settings_path(project: Project) -> str:
     return os.path.join(project.run_dir, PROJECT_VISUAL_SETTINGS_FILE)
 
 
-def read_project_visual_settings(project: Project) -> Dict[str, str]:
+def normalize_subtitle_style(value: Any) -> Dict[str, Any]:
+    payload = value if isinstance(value, dict) else {}
+    def clamp_int(raw: Any, fallback: int, minimum: int, maximum: int) -> int:
+        try:
+            parsed = int(float(raw))
+        except (TypeError, ValueError):
+            parsed = fallback
+        return max(minimum, min(maximum, parsed))
+
+    font_by_key = {font["key"]: font for font in OPEN_SOURCE_CHINESE_FONTS}
+    font_key = str(payload.get("font_key") or DEFAULT_SUBTITLE_STYLE["font_key"]).strip()
+    if font_key not in font_by_key:
+        font_key = DEFAULT_SUBTITLE_STYLE["font_key"]
+    font = font_by_key[font_key]
+    return {
+        "font_key": font_key,
+        "font_family": font["family"],
+        "font_size": clamp_int(payload.get("font_size"), DEFAULT_SUBTITLE_STYLE["font_size"], 22, 72),
+        "font_weight": clamp_int(payload.get("font_weight"), DEFAULT_SUBTITLE_STYLE["font_weight"], 300, 800),
+        "bottom": clamp_int(payload.get("bottom"), DEFAULT_SUBTITLE_STYLE["bottom"], 0, 220),
+        "horizontal_margin": clamp_int(
+            payload.get("horizontal_margin"),
+            DEFAULT_SUBTITLE_STYLE["horizontal_margin"],
+            40,
+            420,
+        ),
+        "color": normalize_hex_color(payload.get("color"), DEFAULT_SUBTITLE_STYLE["color"]),
+    }
+
+
+def read_project_visual_settings(project: Project) -> Dict[str, Any]:
     path = project_visual_settings_path(project)
     payload: Dict[str, Any] = {}
     if os.path.exists(path):
@@ -880,16 +970,45 @@ def read_project_visual_settings(project: Project) -> Dict[str, str]:
     return {
         "generation_background": IMAGE_GENERATION_BACKGROUND,
         "video_background": normalize_hex_color(payload.get("video_background")),
+        "subtitle_style": normalize_subtitle_style(payload.get("subtitle_style")),
     }
 
 
-def write_project_visual_settings(project: Project, video_background: str) -> Dict[str, str]:
+def write_project_visual_settings(
+    project: Project,
+    video_background: Optional[str] = None,
+    subtitle_style: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    current = read_project_visual_settings(project)
     settings = {
         "generation_background": IMAGE_GENERATION_BACKGROUND,
-        "video_background": normalize_hex_color(video_background),
+        "video_background": normalize_hex_color(video_background, current["video_background"]),
+        "subtitle_style": normalize_subtitle_style(subtitle_style or current["subtitle_style"]),
     }
     write_json_atomic(project_visual_settings_path(project), settings)
     return settings
+
+
+def subtitle_preview_background_url(project: Project) -> str:
+    for slide_id in read_contract_slide_ids(project.run_dir):
+        path = os.path.join(project.run_dir, "slides", slide_id, "visual_draft.png")
+        if os.path.exists(path):
+            return f"/api/projects/{project.id}/slides/{slide_id}/image?t={int(os.path.getmtime(path))}"
+    example_path = os.path.join(STYLE_REFERENCE_DIR, STYLE_REFERENCE_FILES["example"])
+    if os.path.exists(example_path):
+        return f"/api/image-style/reference/example?t={int(os.path.getmtime(example_path))}"
+    return ""
+
+
+def invalidate_subtitle_derivatives(project: Project, db: Session) -> None:
+    props_path = os.path.join(project.run_dir, "remotion_props.json")
+    if os.path.exists(props_path):
+        os.remove(props_path)
+    current_status = project.get_step_status()
+    if current_status.get("8") == "completed":
+        current_status["8"] = "pending_reconfirmation"
+    project.set_step_status(current_status)
+    db.commit()
 
 
 def sync_project_background_color(project: Project) -> Optional[str]:
@@ -2189,6 +2308,44 @@ def update_step3_visual_settings(project_id: str, payload: Dict[str, Any], db: S
     if previous["video_background"] != settings["video_background"]:
         invalidate_video_background_derivatives(project, db)
     return {"success": True, **settings}
+
+
+@app.get("/api/projects/{project_id}/subtitle-settings")
+def get_project_subtitle_settings(project_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    settings = read_project_visual_settings(project)
+    return {
+        "success": True,
+        "subtitle_style": settings["subtitle_style"],
+        "fonts": OPEN_SOURCE_CHINESE_FONTS,
+        "preview_url": subtitle_preview_background_url(project),
+    }
+
+
+@app.put("/api/projects/{project_id}/subtitle-settings")
+def update_project_subtitle_settings(
+    project_id: str,
+    payload: Dict[str, Any],
+    db: Session = Depends(get_db),
+):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    previous = read_project_visual_settings(project)
+    settings = write_project_visual_settings(
+        project,
+        subtitle_style=payload.get("subtitle_style") if isinstance(payload, dict) else None,
+    )
+    if previous["subtitle_style"] != settings["subtitle_style"]:
+        invalidate_subtitle_derivatives(project, db)
+    return {
+        "success": True,
+        "subtitle_style": settings["subtitle_style"],
+        "fonts": OPEN_SOURCE_CHINESE_FONTS,
+        "preview_url": subtitle_preview_background_url(project),
+    }
 
 
 def read_style_tokens_data() -> Dict[str, Any]:
@@ -3847,7 +4004,11 @@ def video_item(project: Project, path: str, label: Optional[str] = None) -> Dict
     metadata = read_video_metadata(path)
     pipeline_version = str(metadata.get("reveal_pipeline_version") or "")
     video_background = normalize_hex_color(metadata.get("video_background"), fallback="")
-    current_background = read_project_visual_settings(project)["video_background"]
+    current_visual_settings = read_project_visual_settings(project)
+    current_background = current_visual_settings["video_background"]
+    has_subtitle_style_metadata = isinstance(metadata.get("subtitle_style"), dict)
+    subtitle_style = normalize_subtitle_style(metadata.get("subtitle_style"))
+    current_subtitle_style = current_visual_settings["subtitle_style"]
     return {
         "filename": filename,
         "label": label or filename,
@@ -3856,9 +4017,12 @@ def video_item(project: Project, path: str, label: Optional[str] = None) -> Dict
         "url": f"/api/projects/{project.id}/videos/{filename}",
         "reveal_pipeline_version": pipeline_version or None,
         "video_background": video_background or None,
+        "subtitle_style": subtitle_style,
         "is_legacy": (
             pipeline_version != REVEAL_PIPELINE_VERSION
             or video_background != current_background
+            or not has_subtitle_style_metadata
+            or subtitle_style != current_subtitle_style
         ),
     }
 
@@ -3989,6 +4153,7 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
                 "rendered_at": datetime.now().isoformat(timespec="seconds"),
                 "reveal_pipeline_version": REVEAL_PIPELINE_VERSION,
                 "video_background": read_project_visual_settings(project)["video_background"],
+                "subtitle_style": read_project_visual_settings(project)["subtitle_style"],
                 "manifest": "reveal_manifest.json",
                 "color_standard": "bt709_tv_yuv420p",
                 "color_validation": json.loads(color_result.stdout),

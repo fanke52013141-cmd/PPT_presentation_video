@@ -44,6 +44,15 @@ DEFAULT_WIDTH = 1920
 DEFAULT_HEIGHT = 1080
 DEFAULT_REMOTION_PUBLIC_DIR = Path("scripts/remotion/public")
 DEFAULT_AUDIO_TAIL_PADDING_SEC = 0.4
+DEFAULT_SUBTITLE_STYLE = {
+    "font_key": "noto_sans_sc",
+    "font_family": "Noto Sans SC",
+    "font_size": 38,
+    "font_weight": 500,
+    "bottom": 18,
+    "horizontal_margin": 180,
+    "color": "#111111",
+}
 
 
 class BuildError(RuntimeError):
@@ -100,6 +109,22 @@ def read_json(path: Path) -> dict[str, Any]:
         raise BuildError(f"JSON file must contain an object: {path}")
 
     return value
+
+
+def read_subtitle_style(run_dir: Path) -> dict[str, Any]:
+    settings_path = run_dir / "visual_settings.json"
+    if not settings_path.exists():
+        return dict(DEFAULT_SUBTITLE_STYLE)
+    try:
+        payload = read_json(settings_path)
+    except BuildError:
+        return dict(DEFAULT_SUBTITLE_STYLE)
+    style = payload.get("subtitle_style")
+    if not isinstance(style, dict):
+        return dict(DEFAULT_SUBTITLE_STYLE)
+    result = dict(DEFAULT_SUBTITLE_STYLE)
+    result.update({key: style[key] for key in result if key in style})
+    return result
 
 
 def is_url(value: str) -> bool:
@@ -553,6 +578,7 @@ def build_props(
         "width": width,
         "height": height,
         "total_duration_sec": round(start_sec, 3),
+        "subtitle_style": read_subtitle_style(run_dir),
         "slides": slides,
     }
 

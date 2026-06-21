@@ -8,7 +8,10 @@ video = (ROOT / "scripts" / "remotion" / "src" / "Video.tsx").read_text(encoding
 style_tokens = yaml.safe_load((ROOT / "config" / "style_tokens.yaml").read_text(encoding="utf-8"))
 overlay = style_tokens["subtitle"]["overlay"]
 
-assert "bottom: 18" in video
+assert "bottom: subtitleStyle?.bottom ?? 18" in video
+assert "fontSize: subtitleStyle?.font_size ?? 38" in video
+assert "subtitleFontFamily" in video
+assert "@remotion/google-fonts/NotoSansSC" in video
 assert "minHeight: 54" in video
 assert "background: 'transparent'" in video
 assert "rgba(255, 253, 247, 0.82)" not in video

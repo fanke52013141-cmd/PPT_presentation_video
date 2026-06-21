@@ -4,7 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PPT Visualization Studio - 手绘线稿风格</title>
-  <link rel="stylesheet" href="style.css?v=2.6.0">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@400;500;700&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=2.10.0">
 </head>
 <body>
 
@@ -237,6 +240,10 @@
               <button id="step5-btn-clear-current" class="secondary">
                 <svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v5M14 11v5"></path></svg>
                 清除全部标注
+              </button>
+              <button id="step5-btn-subtitle-settings" class="secondary">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M4 6h16"></path><path d="M7 10h10"></path><path d="M6 15h12"></path><path d="M9 19h6"></path></svg>
+                字幕设置
               </button>
               <span id="step5-draft-status" class="step2-autosave-status"></span>
               <label class="step5-brush-control" title="调整手动涂抹区域的画笔大小">
@@ -693,10 +700,55 @@
     </div>
   </div>
 
+  <div id="modal-subtitle-settings" class="modal-overlay" style="display: none;">
+    <div class="modal-content subtitle-settings-modal">
+      <div class="subtitle-settings-header">
+        <div>
+          <h3 class="highlight-title">字幕样式与位置</h3>
+          <p class="config-editor-note">优先使用当前项目第一张 Slide；没有 Slide 时使用图片风格中的示例参考图。预览样式会直接进入最终视频。</p>
+        </div>
+        <button id="btn-subtitle-settings-close" class="secondary" type="button">关闭</button>
+      </div>
+      <div class="subtitle-settings-layout">
+        <div class="subtitle-preview-stage">
+          <img id="subtitle-preview-image" alt="字幕背景预览">
+          <div id="subtitle-preview-text">这是一段视频字幕效果预览</div>
+        </div>
+        <div class="subtitle-settings-controls">
+          <label>
+            <span>预览字幕文字</span>
+            <input id="subtitle-sample-text" type="text" value="这是一段视频字幕效果预览">
+          </label>
+          <label>
+            <span>中文字体</span>
+            <select id="subtitle-font-key"></select>
+          </label>
+          <label>
+            <span>字号：<strong id="subtitle-font-size-value">38</strong> px</span>
+            <input id="subtitle-font-size" type="range" min="22" max="72" step="1" value="38">
+          </label>
+          <label>
+            <span>上下位置（距底部）：<strong id="subtitle-bottom-value">18</strong> px</span>
+            <input id="subtitle-bottom" type="range" min="0" max="220" step="2" value="18">
+          </label>
+          <label>
+            <span>左右留白：<strong id="subtitle-margin-value">180</strong> px</span>
+            <input id="subtitle-horizontal-margin" type="range" min="40" max="420" step="10" value="180">
+          </label>
+          <div class="subtitle-font-note">字体列表优先选择 SIL Open Font License 的开源中文字体；霞鹜文楷使用本机字体，未安装时自动回退。</div>
+        </div>
+      </div>
+      <div class="config-editor-actions">
+        <button id="btn-subtitle-settings-reset" class="secondary" type="button">恢复默认</button>
+        <button id="btn-subtitle-settings-save" class="success" type="button">保存字幕设置</button>
+      </div>
+    </div>
+  </div>
+
   <div id="toast-container" aria-live="polite" aria-atomic="false"></div>
 
   <!-- 主业务 JavaScript 脚本 -->
   <script src="flow.js?v=1.0.0"></script>
-  <script src="app.js?v=2.9.0"></script>
+  <script src="app.js?v=2.10.0"></script>
 </body>
 </html>

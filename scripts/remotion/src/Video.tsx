@@ -10,6 +10,12 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from 'remotion';
+import {loadFont as loadMaShanZheng} from '@remotion/google-fonts/MaShanZheng';
+import {loadFont as loadNotoSansSC} from '@remotion/google-fonts/NotoSansSC';
+import {loadFont as loadNotoSerifSC} from '@remotion/google-fonts/NotoSerifSC';
+import {loadFont as loadZCOOLKuaiLe} from '@remotion/google-fonts/ZCOOLKuaiLe';
+import {loadFont as loadZCOOLQingKeHuangYou} from '@remotion/google-fonts/ZCOOLQingKeHuangYou';
+import {loadFont as loadZCOOLXiaoWei} from '@remotion/google-fonts/ZCOOLXiaoWei';
 
 type LayerBox = {
   x: number;
@@ -118,7 +124,49 @@ export type ArticleVideoProps = {
   width?: number;
   height?: number;
   total_duration_sec: number;
+  subtitle_style?: SubtitleStyle;
   slides: Slide[];
+};
+
+export type SubtitleStyle = {
+  font_key?: string;
+  font_family?: string;
+  font_size?: number;
+  font_weight?: number;
+  bottom?: number;
+  horizontal_margin?: number;
+  color?: string;
+};
+
+const loadedSubtitleFonts = new Map<string, string>();
+
+const subtitleFontFamily = (fontKey?: string, configuredFamily?: string, fontWeight?: number): string => {
+  const key = fontKey || 'noto_sans_sc';
+  const notoWeight = fontWeight && fontWeight >= 650 ? '700' : fontWeight && fontWeight <= 450 ? '400' : '500';
+  const cacheKey = `${key}:${notoWeight}`;
+  const cached = loadedSubtitleFonts.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  let family = configuredFamily || 'Noto Sans SC';
+  if (key === 'noto_sans_sc') {
+    family = loadNotoSansSC('normal', {weights: [notoWeight], subsets: ['chinese-simplified']}).fontFamily;
+  } else if (key === 'noto_serif_sc') {
+    family = loadNotoSerifSC('normal', {weights: [notoWeight], subsets: ['chinese-simplified']}).fontFamily;
+  } else if (key === 'ma_shan_zheng') {
+    family = loadMaShanZheng('normal', {weights: ['400'], subsets: ['chinese-simplified']}).fontFamily;
+  } else if (key === 'zcool_xiaowei') {
+    family = loadZCOOLXiaoWei('normal', {weights: ['400'], subsets: ['chinese-simplified']}).fontFamily;
+  } else if (key === 'zcool_qingke') {
+    family = loadZCOOLQingKeHuangYou('normal', {weights: ['400'], subsets: ['chinese-simplified']}).fontFamily;
+  } else if (key === 'zcool_kuaile') {
+    family = loadZCOOLKuaiLe('normal', {weights: ['400'], subsets: ['chinese-simplified']}).fontFamily;
+  } else if (key === 'lxgw_wenkai') {
+    family = 'LXGW WenKai, KaiTi, Microsoft YaHei, sans-serif';
+  }
+  loadedSubtitleFonts.set(cacheKey, family);
+  return family;
 };
 
 const toAssetSrc = (value?: string): string | undefined => {
@@ -379,7 +427,7 @@ const LayerView: React.FC<{layer: SceneLayer; events?: AnimationEvent[]}> = ({la
   );
 };
 
-const SlideView: React.FC<{slide: Slide}> = ({slide}) => {
+const SlideView: React.FC<{slide: Slide; subtitleStyle?: SubtitleStyle}> = ({slide, subtitleStyle}) => {
   const segments = slide.audio_timeline?.segments ?? [];
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
@@ -391,6 +439,12 @@ const SlideView: React.FC<{slide: Slide}> = ({slide}) => {
     : undefined;
   const background = toAssetSrc(slide.scene.canvas.background_asset);
   const layers = slide.scene.layers ?? [];
+  const subtitleFont = subtitleFontFamily(
+    subtitleStyle?.font_key,
+    subtitleStyle?.font_family,
+    subtitleStyle?.font_weight,
+  );
+  const horizontalMargin = subtitleStyle?.horizontal_margin ?? 180;
 
   return (
     <AbsoluteFill style={{background: slide.scene.canvas.background || '#FEFDF9'}}>
@@ -405,9 +459,9 @@ const SlideView: React.FC<{slide: Slide}> = ({slide}) => {
         <div
           style={{
             position: 'absolute',
-            left: 180,
-            right: 180,
-            bottom: 18,
+            left: horizontalMargin,
+            right: horizontalMargin,
+            bottom: subtitleStyle?.bottom ?? 18,
             zIndex: 10000,
             minHeight: 54,
             display: 'flex',
@@ -415,16 +469,16 @@ const SlideView: React.FC<{slide: Slide}> = ({slide}) => {
             justifyContent: 'center',
             boxSizing: 'border-box',
             padding: '0 24px',
-            color: '#111111',
+            color: subtitleStyle?.color ?? '#111111',
             background: 'transparent',
-            fontSize: 38,
-            fontWeight: 500,
+            fontSize: subtitleStyle?.font_size ?? 38,
+            fontWeight: subtitleStyle?.font_weight ?? 500,
             lineHeight: 1.15,
             textAlign: 'center',
             whiteSpace: 'normal',
             overflow: 'visible',
             overflowWrap: 'anywhere',
-            fontFamily: 'LXGW WenKai, KaiTi, Microsoft YaHei, sans-serif',
+            fontFamily: subtitleFont,
           }}
         >
           {activeSubtitle.text}
@@ -439,7 +493,7 @@ const SlideView: React.FC<{slide: Slide}> = ({slide}) => {
   );
 };
 
-export const ArticleVideo: React.FC<ArticleVideoProps> = ({slides}) => {
+export const ArticleVideo: React.FC<ArticleVideoProps> = ({slides, subtitle_style}) => {
   const {fps} = useVideoConfig();
   return (
     <AbsoluteFill style={{background: '#FEFDF9'}}>
@@ -449,7 +503,7 @@ export const ArticleVideo: React.FC<ArticleVideoProps> = ({slides}) => {
           from={Math.round(slide.start_sec * fps)}
           durationInFrames={Math.max(1, Math.round(slide.duration_sec * fps))}
         >
-          <SlideView slide={slide} />
+          <SlideView slide={slide} subtitleStyle={subtitle_style} />
         </Sequence>
       ))}
     </AbsoluteFill>

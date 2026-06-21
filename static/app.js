@@ -16,6 +16,8 @@ let state = {
   slides: [], // 第二步及后续的分镜/图片/Mask数据
   activeSlideIndex: 0, // 步骤2/3/5/6中当前激活的 slide 索引
   settings: {},
+  subtitleSettings: null,
+  subtitleFonts: [],
   storyboardRoles: {
     title: { label: '主标题' },
     subtitle: { label: '副标题' },
@@ -61,6 +63,7 @@ let state = {
     autoMaskLoading: false,
     semanticLoading: false,
     confirmingMasks: false,
+    animationPreview: null,
     narrationPickerBoxIndex: -1,
     narrationPickerSelection: [],
     startX: 0,
@@ -75,15 +78,15 @@ function projectFlowContext(project = state.currentProject) {
 // API 请求工具方法
 const DEFAULT_REVEAL_DURATION_SEC = 0.75;
 const MASK_ANIMATION_PRESETS = [
-  { value: 'wipe_left_to_right', label: '从左到右擦出', duration: 0.8 },
-  { value: 'scratch_reveal', label: '划痕逐步显现', duration: 0.9, angle: 100, feather: 18 },
-  { value: 'brush_wipe_left_to_right', label: '笔刷横向擦出', duration: 0.85, angle: 90, feather: 24 },
-  { value: 'crop_fade_up', label: '淡入出现', duration: 0.55 },
-  { value: 'crop_slide_in_left', label: '从左侧滑入', duration: 0.65 },
-  { value: 'crop_soft_zoom_in', label: '轻微缩放出现', duration: 0.7 },
-  { value: 'sticker_pop', label: '贴纸粘贴', duration: 0.7, rotation: -4 },
-  { value: 'stamp_in', label: '盖章弹入', duration: 0.6, rotation: 2 },
-  { value: 'paper_drop', label: '纸片落下', duration: 0.75, rotation: -3 },
+  { value: 'wipe_left_to_right', label: '从左到右显现', duration: 0.75 },
+  { value: 'scratch_reveal', label: '手绘线条显现', duration: 0.9, angle: 100, feather: 18 },
+  { value: 'brush_wipe_left_to_right', label: '笔刷横向显现', duration: 0.85, angle: 90, feather: 24 },
+  { value: 'crop_fade_up', label: '柔和淡入', duration: 0.55 },
+  { value: 'crop_slide_in_left', label: '从左侧滑入显现', duration: 0.65 },
+  { value: 'crop_soft_zoom_in', label: '轻微放大显现', duration: 0.7 },
+  { value: 'sticker_pop', label: '贴纸粘贴出现', duration: 0.7, rotation: -4 },
+  { value: 'stamp_in', label: '盖章弹出出现', duration: 0.6, rotation: 2 },
+  { value: 'paper_drop', label: '纸片落下出现', duration: 0.75, rotation: -3 },
 ];
 
 function revealPreset(action) {
@@ -92,13 +95,52 @@ function revealPreset(action) {
 
 function normalizeMaskReveal(reveal) {
   const raw = reveal && typeof reveal === 'object' ? reveal : {};
-  const preset = revealPreset(raw.type || 'wipe_left_to_right');
-  return {
+  const preset = revealPreset(raw.type || raw.value || 'wipe_left_to_right');
+  const normalized = {
     ...preset,
     ...raw,
     type: preset.value,
     duration: Number(raw.duration || preset.duration || DEFAULT_REVEAL_DURATION_SEC),
   };
+  delete normalized.value;
+  delete normalized.label;
+  return normalized;
+}
+
+function applyRevealToSlideCollections(slide, reveal) {
+  if (!slide) return;
+  ['groups', 'reveal_boxes', 'semantic_blocks'].forEach(field => {
+    if (!Array.isArray(slide[field])) return;
+    slide[field].forEach(item => {
+      if (item && typeof item === 'object') {
+        item.reveal = normalizeMaskReveal(reveal);
+      }
+    });
+  });
+}
+
+function applyGlobalMaskReveal(reveal, options = {}) {
+  const normalized = normalizeMaskReveal(reveal);
+  if (!manifestData?.slides) return normalized;
+  manifestData.animation_defaults = {
+    ...(manifestData.animation_defaults || {}),
+    reveal: normalized,
+  };
+  manifestData.slides.forEach(slide => applyRevealToSlideCollections(slide, normalized));
+  state.canvasState.boxes.forEach(box => {
+    box.reveal = normalizeMaskReveal(normalized);
+  });
+  if (options.save !== false) scheduleStep5Autosave();
+  return normalized;
+}
+
+function ensureGlobalMaskRevealDefault() {
+  if (!manifestData?.slides) return;
+  const configured = manifestData.animation_defaults?.reveal;
+  const normalized = configured
+    ? normalizeMaskReveal(configured)
+    : normalizeMaskReveal({ type: 'wipe_left_to_right', duration: DEFAULT_REVEAL_DURATION_SEC });
+  applyGlobalMaskReveal(normalized, { save: false });
 }
 
 const API = {
@@ -316,6 +358,7 @@ function initGlobalEvents() {
   document.getElementById('step5-btn-semantic-blocks')?.addEventListener('click', () => runStep5SemanticBlocks());
   document.getElementById('step5-btn-new-block')?.addEventListener('click', () => createCurrentSlideBlock());
   document.getElementById('step5-btn-clear-current')?.addEventListener('click', () => clearAllMaskAnnotations());
+  document.getElementById('step5-btn-subtitle-settings')?.addEventListener('click', () => openSubtitleSettingsModal());
   document.getElementById('step5-brush-size')?.addEventListener('input', (e) => updateBrushSize(e.target.value));
   document.getElementById('step5-eraser-size')?.addEventListener('input', (e) => updateEraserSize(e.target.value));
   document.getElementById('btn-narration-picker-cancel')?.addEventListener('click', () => closeNarrationPicker());
@@ -344,6 +387,11 @@ function initGlobalEvents() {
   document.getElementById('btn-storyboard-schema-copy')?.addEventListener('click', () => copyStoryboardSchema());
   document.getElementById('btn-image-style-cancel')?.addEventListener('click', () => closeImageStyleModal());
   document.getElementById('btn-image-style-save')?.addEventListener('click', () => saveImageStyle());
+  document.getElementById('btn-subtitle-settings-close')?.addEventListener('click', () => closeSubtitleSettingsModal());
+  document.getElementById('btn-subtitle-settings-save')?.addEventListener('click', () => saveSubtitleSettings());
+  document.getElementById('btn-subtitle-settings-reset')?.addEventListener('click', () => resetSubtitleSettings());
+  ['subtitle-sample-text', 'subtitle-font-key', 'subtitle-font-size', 'subtitle-bottom', 'subtitle-horizontal-margin']
+    .forEach(id => document.getElementById(id)?.addEventListener('input', () => updateSubtitlePreview()));
   document.getElementById('setting-llm-provider')?.addEventListener('change', (event) => applyLlmProviderPreset(event.target.value));
   document.addEventListener('wheel', handleGlobalMaskWheel, { passive: false, capture: true });
 }
@@ -940,6 +988,10 @@ function renderStep2Workspace() {
           <select class="step2-role-select" onchange="updateGroupField(${gIdx}, 'role', this.value)">
             ${storyboardRoleOptions(group.role)}
           </select>
+          <select class="step2-speak-policy-select" onchange="updateGroupSpeakPolicy(${gIdx}, this.value)">
+            <option value="speak"${groupSpeakPolicy(group) === 'speak' ? ' selected' : ''}>需要朗读</option>
+            <option value="display_only"${groupSpeakPolicy(group) === 'display_only' ? ' selected' : ''}>仅画面展示</option>
+          </select>
         </div>
         <div class="step2-group-fields">
           <div>
@@ -951,7 +1003,9 @@ function renderStep2Workspace() {
             <input class="step2-soft-input" type="text" value="${escHtml(group.visual_anchor)}" placeholder="位置、形态和手绘元素" oninput="updateGroupField(${gIdx}, 'visual_anchor', this.value)">
           </div>
         </div>
-        <button class="secondary step2-group-delete" type="button" title="删除此结构块" onclick="removeVisualGroup(${gIdx})">×</button>
+        <button class="step2-group-delete" type="button" title="删除此结构块" aria-label="删除此结构块" onclick="removeVisualGroup(${gIdx})">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path></svg>
+        </button>
       `;
       groupsList.appendChild(groupEl);
     });
@@ -1123,21 +1177,51 @@ function storyboardRoleOptions(selectedRole) {
   return Object.entries(roles).map(([role, config]) => {
     const label = config?.label || role;
     const required = config?.required ? ' · 必选' : '';
-    const policy = config?.speak_policy === 'display_only' ? ' · 不朗读' : '';
-    return `<option value="${escHtml(role)}"${role === selected ? ' selected' : ''}>${escHtml(label)}${required}${policy}</option>`;
+    return `<option value="${escHtml(role)}"${role === selected ? ' selected' : ''}>${escHtml(label)}${required}</option>`;
   }).join('');
+}
+
+function groupSpeakPolicy(group) {
+  const explicit = String(group?.speak_policy || '').trim();
+  if (explicit === 'speak' || explicit === 'display_only') return explicit;
+  return state.storyboardRoles?.[group?.role]?.speak_policy === 'display_only'
+    ? 'display_only'
+    : 'speak';
 }
 
 function updateGroupField(gIdx, field, val) {
   const slide = state.slides[state.activeSlideIndex];
   if (slide && slide.visual_groups[gIdx]) {
     slide.visual_groups[gIdx][field] = val;
-    if (field === 'role') {
+    if (field === 'role' && !slide.visual_groups[gIdx].speak_policy) {
       const config = state.storyboardRoles?.[val] || {};
       slide.visual_groups[gIdx].speak_policy = config.speak_policy || 'speak';
     }
     scheduleStep2AutoSave();
   }
+}
+
+function updateGroupSpeakPolicy(gIdx, policy) {
+  const slide = state.slides[state.activeSlideIndex];
+  const group = slide?.visual_groups?.[gIdx];
+  if (!slide || !group) return;
+  group.speak_policy = policy === 'display_only' ? 'display_only' : 'speak';
+  slide.narration_beats = Array.isArray(slide.narration_beats) ? slide.narration_beats : [];
+  const existingBeat = slide.narration_beats.find(beat => beat.group_id === group.id);
+  if (group.speak_policy === 'display_only') {
+    slide.narration_beats = slide.narration_beats.filter(beat => beat.group_id !== group.id);
+  } else if (!existingBeat) {
+    const beatIndex = slide.narration_beats.length + 1;
+    slide.narration_beats.push({
+      id: `${group.id || `group_${gIdx + 1}`}_beat_${beatIndex}`,
+      group_id: group.id,
+      content_unit_id: group.content_unit_id || `${group.id}_unit`,
+      visible_anchor: group.visible_text || '当前画面',
+      spoken_intent: group.narration_function || '解释当前画面内容',
+      spoken_text: group.visible_text || '请看当前画面。',
+    });
+  }
+  scheduleStep2AutoSave();
 }
 
 function addVisualGroup() {
@@ -2286,6 +2370,7 @@ async function loadStep5Data() {
         s.status = needsAdjustment ? "pending" : "completed";
       }
     });
+    ensureGlobalMaskRevealDefault();
     normalizeManifestNarrationFragments();
     renderStep5Workspace();
   }
@@ -2424,6 +2509,106 @@ async function saveImageStyle() {
   showToast('图片风格与参考图已保存，生图提示词已刷新');
 }
 
+const DEFAULT_SUBTITLE_SETTINGS = {
+  font_key: 'noto_sans_sc',
+  font_family: 'Noto Sans SC',
+  font_size: 38,
+  font_weight: 500,
+  bottom: 18,
+  horizontal_margin: 180,
+  color: '#111111',
+};
+
+function subtitleFontByKey(key) {
+  return state.subtitleFonts.find(font => font.key === key) || {
+    key: DEFAULT_SUBTITLE_SETTINGS.font_key,
+    family: DEFAULT_SUBTITLE_SETTINGS.font_family,
+  };
+}
+
+function readSubtitleSettingsForm() {
+  const fontKey = document.getElementById('subtitle-font-key').value || DEFAULT_SUBTITLE_SETTINGS.font_key;
+  const font = subtitleFontByKey(fontKey);
+  return {
+    font_key: fontKey,
+    font_family: font.family,
+    font_size: Number(document.getElementById('subtitle-font-size').value || 38),
+    font_weight: 500,
+    bottom: Number(document.getElementById('subtitle-bottom').value || 18),
+    horizontal_margin: Number(document.getElementById('subtitle-horizontal-margin').value || 180),
+    color: '#111111',
+  };
+}
+
+function populateSubtitleSettingsForm(settings) {
+  const value = { ...DEFAULT_SUBTITLE_SETTINGS, ...(settings || {}) };
+  document.getElementById('subtitle-font-key').value = value.font_key;
+  document.getElementById('subtitle-font-size').value = String(value.font_size);
+  document.getElementById('subtitle-bottom').value = String(value.bottom);
+  document.getElementById('subtitle-horizontal-margin').value = String(value.horizontal_margin);
+  updateSubtitlePreview();
+}
+
+function updateSubtitlePreview() {
+  const stage = document.querySelector('.subtitle-preview-stage');
+  const text = document.getElementById('subtitle-preview-text');
+  if (!stage || !text) return;
+  const settings = readSubtitleSettingsForm();
+  const font = subtitleFontByKey(settings.font_key);
+  const scale = Math.max(0.2, stage.clientWidth / 1920);
+  const sample = document.getElementById('subtitle-sample-text').value.trim();
+  text.textContent = sample || '这是一段视频字幕效果预览';
+  text.style.fontFamily = `${font.family}, "Microsoft YaHei", sans-serif`;
+  text.style.fontSize = `${settings.font_size * scale}px`;
+  text.style.fontWeight = String(settings.font_weight);
+  text.style.bottom = `${settings.bottom * scale}px`;
+  text.style.left = `${settings.horizontal_margin * scale}px`;
+  text.style.right = `${settings.horizontal_margin * scale}px`;
+  text.style.color = settings.color;
+  document.getElementById('subtitle-font-size-value').textContent = String(settings.font_size);
+  document.getElementById('subtitle-bottom-value').textContent = String(settings.bottom);
+  document.getElementById('subtitle-margin-value').textContent = String(settings.horizontal_margin);
+}
+
+async function openSubtitleSettingsModal() {
+  if (!state.currentProject?.id) return;
+  const res = await API.get(`/api/projects/${state.currentProject.id}/subtitle-settings`);
+  state.subtitleSettings = res.subtitle_style || { ...DEFAULT_SUBTITLE_SETTINGS };
+  state.subtitleFonts = res.fonts || [];
+  const fontSelect = document.getElementById('subtitle-font-key');
+  fontSelect.innerHTML = state.subtitleFonts.map(font =>
+    `<option value="${escHtml(font.key)}">${escHtml(font.label)}</option>`
+  ).join('');
+  const preview = document.getElementById('subtitle-preview-image');
+  preview.src = res.preview_url || '';
+  preview.style.display = res.preview_url ? 'block' : 'none';
+  populateSubtitleSettingsForm(state.subtitleSettings);
+  document.getElementById('modal-subtitle-settings').style.display = 'flex';
+  requestAnimationFrame(updateSubtitlePreview);
+}
+
+function closeSubtitleSettingsModal() {
+  document.getElementById('modal-subtitle-settings').style.display = 'none';
+}
+
+function resetSubtitleSettings() {
+  populateSubtitleSettingsForm(DEFAULT_SUBTITLE_SETTINGS);
+  showToast('字幕样式已恢复为默认值，点击保存后生效。');
+}
+
+async function saveSubtitleSettings() {
+  const subtitle_style = readSubtitleSettingsForm();
+  const res = await API.put(
+    `/api/projects/${state.currentProject.id}/subtitle-settings`,
+    { subtitle_style },
+  );
+  state.subtitleSettings = res.subtitle_style;
+  populateSubtitleSettingsForm(state.subtitleSettings);
+  closeSubtitleSettingsModal();
+  showToast('字幕样式已保存，下一次视频渲染将使用当前字体、字号和位置。');
+  refreshCurrentProjectStatus().catch(() => {});
+}
+
 async function refreshStep3Prompts(options = {}) {
   if (!state.currentProject?.id) return [];
   const promptRes = await API.get(`/api/projects/${state.currentProject.id}/steps/3/prompts`);
@@ -2487,6 +2672,7 @@ function renderStep5Workspace() {
     `;
     
     btn.addEventListener('click', () => {
+      stopMaskAnimationPreview();
       saveStep5CurrentState();
       state.activeSlideIndex = idx;
       renderStep5Workspace();
@@ -2588,13 +2774,17 @@ function renderStep5BoxesForm() {
       </div>
       <div class="mask-animation-card">
         <label>
-          <span>出现动画</span>
+          <span>出现动画（修改后同步全部 Slide）</span>
           <select class="mask-animation-select">${animationOptions}</select>
         </label>
         <label>
           <span>时长（秒）</span>
           <input class="mask-animation-duration" type="number" min="0.2" max="3" step="0.05" value="${box.reveal.duration}">
         </label>
+        <button class="secondary mask-animation-preview" type="button">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+          预览效果
+        </button>
       </div>
     `;
     
@@ -2620,20 +2810,26 @@ function renderStep5BoxesForm() {
     item.querySelector('.mask-animation-select').addEventListener('change', (e) => {
       e.stopPropagation();
       const preset = revealPreset(e.target.value);
-      box.reveal = normalizeMaskReveal(preset);
+      box.reveal = applyGlobalMaskReveal(preset);
       const durationInput = item.querySelector('.mask-animation-duration');
       if (durationInput) durationInput.value = String(box.reveal.duration);
-      scheduleStep5Autosave();
+      renderStep5BoxesForm();
+      previewMaskAnimation(idx);
     });
 
     item.querySelector('.mask-animation-duration').addEventListener('change', (e) => {
       e.stopPropagation();
-      box.reveal = normalizeMaskReveal({
+      box.reveal = applyGlobalMaskReveal({
         ...box.reveal,
         duration: Math.max(0.2, Math.min(3, Number(e.target.value) || DEFAULT_REVEAL_DURATION_SEC)),
       });
       e.target.value = String(box.reveal.duration);
-      scheduleStep5Autosave();
+      renderStep5BoxesForm();
+    });
+
+    item.querySelector('.mask-animation-preview').addEventListener('click', (e) => {
+      e.stopPropagation();
+      previewMaskAnimation(idx);
     });
     
     container.appendChild(item);
@@ -3399,6 +3595,150 @@ function rasterizeManualMask(item) {
   return maskLayer;
 }
 
+function maskBoxBounds(item) {
+  const values = Array.isArray(item?.box) ? item.box.map(Number) : [0, 0, 1920, 1080];
+  const x1 = Math.max(0, Math.min(values[0] || 0, values[2] || 0));
+  const y1 = Math.max(0, Math.min(values[1] || 0, values[3] || 0));
+  const x2 = Math.min(1920, Math.max(values[0] || 0, values[2] || 0));
+  const y2 = Math.min(1080, Math.max(values[1] || 0, values[3] || 0));
+  return { x: x1, y: y1, w: Math.max(1, x2 - x1), h: Math.max(1, y2 - y1) };
+}
+
+function buildMaskAnimationLayers(item) {
+  const maskLayer = rasterizeManualMask(item);
+  const contentLayer = createStep5OffscreenCanvas();
+  const contentCtx = contentLayer.getContext('2d');
+  contentCtx.drawImage(step5SourceCanvas, 0, 0);
+  contentCtx.globalCompositeOperation = 'destination-in';
+  contentCtx.drawImage(maskLayer, 0, 0);
+
+  const coverLayer = createStep5OffscreenCanvas();
+  const coverCtx = coverLayer.getContext('2d');
+  coverCtx.fillStyle = step3VideoBackground || '#FEFDF9';
+  coverCtx.fillRect(0, 0, 1920, 1080);
+  coverCtx.globalCompositeOperation = 'destination-in';
+  coverCtx.drawImage(maskLayer, 0, 0);
+  return { contentLayer, coverLayer };
+}
+
+function easeOutBack(progress) {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  const value = Math.max(0, Math.min(1, progress)) - 1;
+  return 1 + c3 * value * value * value + c1 * value * value;
+}
+
+function drawMaskAnimationPreview(ctx, preview) {
+  const { item, reveal, progress, contentLayer, coverLayer } = preview;
+  const box = maskBoxBounds(item);
+  const action = reveal.type;
+  const eased = Math.max(0, Math.min(1, progress));
+
+  ctx.drawImage(coverLayer, 0, 0);
+  ctx.save();
+
+  if (action === 'wipe_left_to_right') {
+    ctx.beginPath();
+    ctx.rect(box.x, box.y, box.w * eased, box.h);
+    ctx.clip();
+    ctx.drawImage(contentLayer, 0, 0);
+  } else if (action === 'scratch_reveal' || action === 'brush_wipe_left_to_right') {
+    const edgeX = box.x + box.w * eased;
+    const roughness = action === 'scratch_reveal' ? 24 : 12;
+    ctx.beginPath();
+    ctx.moveTo(box.x, box.y);
+    for (let y = box.y; y <= box.y + box.h; y += 18) {
+      const wave = Math.sin(y * 0.075) * roughness + Math.sin(y * 0.19) * roughness * 0.35;
+      ctx.lineTo(Math.min(box.x + box.w, edgeX + wave), y);
+    }
+    ctx.lineTo(box.x, box.y + box.h);
+    ctx.closePath();
+    ctx.clip();
+    ctx.drawImage(contentLayer, 0, 0);
+  } else if (action === 'crop_fade_up') {
+    ctx.globalAlpha = eased;
+    ctx.drawImage(contentLayer, 0, 0);
+  } else {
+    const cx = box.x + box.w / 2;
+    const cy = box.y + box.h / 2;
+    let scale = 1;
+    let translateX = 0;
+    let translateY = 0;
+    let rotation = 0;
+    let alpha = eased;
+    if (action === 'crop_slide_in_left') {
+      translateX = -(1 - eased) * Math.min(90, box.w * 0.25);
+    } else if (action === 'crop_soft_zoom_in') {
+      scale = 0.82 + eased * 0.18;
+    } else if (action === 'sticker_pop') {
+      const springProgress = easeOutBack(eased);
+      scale = 0.65 + springProgress * 0.35;
+      rotation = Number(reveal.rotation ?? -4) * (1 - eased);
+    } else if (action === 'stamp_in') {
+      const springProgress = easeOutBack(eased);
+      scale = 1.55 - springProgress * 0.55;
+      rotation = Number(reveal.rotation ?? 2) * (1 - eased);
+    } else if (action === 'paper_drop') {
+      translateY = -(1 - easeOutBack(eased)) * 80;
+      rotation = Number(reveal.rotation ?? -3) * (1 - eased);
+    }
+    ctx.globalAlpha = alpha;
+    ctx.translate(cx + translateX, cy + translateY);
+    ctx.rotate(rotation * Math.PI / 180);
+    ctx.scale(scale, scale);
+    ctx.translate(-cx, -cy);
+    ctx.drawImage(contentLayer, 0, 0);
+  }
+  ctx.restore();
+}
+
+function stopMaskAnimationPreview() {
+  const preview = state.canvasState.animationPreview;
+  if (preview?.rafId) {
+    cancelAnimationFrame(preview.rafId);
+    clearTimeout(preview.rafId);
+  }
+  state.canvasState.animationPreview = null;
+}
+
+function previewMaskAnimation(idx) {
+  const item = state.canvasState.boxes[idx];
+  if (!item || !step5SourceCanvas || !hasPaintStroke(item)) {
+    showToast('请先为这个语块涂抹 Mask，再预览出现动画。');
+    return;
+  }
+  stopMaskAnimationPreview();
+  selectStep5MaskBox(idx, false);
+  const reveal = normalizeMaskReveal(item.reveal);
+  const layers = buildMaskAnimationLayers(item);
+  const preview = {
+    item,
+    reveal,
+    ...layers,
+    startedAt: performance.now(),
+    durationMs: Math.max(400, reveal.duration * 1000),
+    progress: 0,
+    rafId: null,
+  };
+  state.canvasState.animationPreview = preview;
+  const tick = now => {
+    if (state.canvasState.animationPreview !== preview) return;
+    preview.progress = Math.max(0, Math.min(1, (now - preview.startedAt) / preview.durationMs));
+    redrawCanvas({ animationPreview: preview });
+    if (preview.progress < 1) {
+      preview.rafId = requestAnimationFrame(tick);
+    } else {
+      preview.rafId = setTimeout(() => {
+        if (state.canvasState.animationPreview === preview) {
+          state.canvasState.animationPreview = null;
+          redrawCanvas();
+        }
+      }, 500);
+    }
+  };
+  preview.rafId = requestAnimationFrame(tick);
+}
+
 function rebuildStep5SourceCache(image) {
   const source = createStep5OffscreenCanvas();
   const sourceCtx = source.getContext('2d');
@@ -3425,7 +3765,7 @@ function drawManualMaskStrokes(ctx, item, idx) {
   ctx.drawImage(colorLayer, 0, 0);
 }
 
-function redrawCanvas() {
+function redrawCanvas(options = {}) {
   const canvas = document.getElementById('step5-canvas');
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, 1920, 1080);
@@ -3440,9 +3780,14 @@ function redrawCanvas() {
   }
 
   ctx.drawImage(step5SourceCanvas, 0, 0);
-  state.canvasState.boxes.forEach((item, idx) => {
-    drawManualMaskStrokes(ctx, item, idx);
-  });
+  const preview = options.animationPreview || state.canvasState.animationPreview;
+  if (preview) {
+    drawMaskAnimationPreview(ctx, preview);
+  } else {
+    state.canvasState.boxes.forEach((item, idx) => {
+      drawManualMaskStrokes(ctx, item, idx);
+    });
+  }
 
   refreshBrushCursor(canvas);
 }

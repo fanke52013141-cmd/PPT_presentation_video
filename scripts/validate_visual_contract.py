@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from scripts.pipeline_profiles import display_only_roles, read_pipeline_profile, speak_policy_for_role
+    from scripts.pipeline_profiles import read_pipeline_profile, speak_policy_for_role
 except ModuleNotFoundError:
-    from pipeline_profiles import display_only_roles, read_pipeline_profile, speak_policy_for_role
+    from pipeline_profiles import read_pipeline_profile, speak_policy_for_role
 
 
 class ContractError(RuntimeError):
@@ -56,7 +56,6 @@ def validate_group_semantics(
     role: str,
     profile: dict[str, Any],
 ) -> tuple[str, str]:
-    configured_display_only_roles = display_only_roles(profile)
     content_unit_id = require_non_empty(
         group.get("content_unit_id"),
         f"Visual group {group_id} missing content_unit_id in {slide_id}",
@@ -64,8 +63,6 @@ def validate_group_semantics(
     policy = speak_policy_for(group, profile)
     if policy not in ALLOWED_SPEAK_POLICIES:
         raise ContractError(f"Visual group {group_id} has invalid speak_policy in {slide_id}: {policy}")
-    if role in configured_display_only_roles and policy != "display_only":
-        raise ContractError(f"Display-only role must use speak_policy=display_only in {slide_id}: {group_id}/{role}")
     if role != "decoration":
         require_non_empty(group.get("mask_target"), f"Visual group {group_id} missing mask_target in {slide_id}")
     return content_unit_id, policy

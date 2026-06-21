@@ -160,7 +160,10 @@ subtitle:
     y: 930
     height: 150
   overlay:
+    font_key: noto_sans_sc
+    font_family: Noto Sans SC
     font_size: 38
+    font_weight: 500
     color: "#111111"
     background: transparent
     border_radius: 0

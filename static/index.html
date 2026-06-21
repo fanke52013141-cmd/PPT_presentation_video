@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=2.12.3">
+  <link rel="stylesheet" href="style.css?v=2.12.4">
 </head>
 <body>
 
@@ -674,7 +674,9 @@
             <input id="storyboard-template-name" type="text" maxlength="60" placeholder="例如：知识科普分镜">
           </label>
           <button id="btn-storyboard-template-save" class="secondary" type="button">另存为模板</button>
+          <button id="btn-storyboard-rules-ai-draft" class="secondary ai-draft-button" type="button">AI 生成规则</button>
         </div>
+        <div id="storyboard-ai-draft-status" class="ai-draft-status"></div>
         <div class="config-boundary-note">
           <strong>可以直接修改：</strong>页数范围、每页语块数、启用的结构类型、是否必选、是否朗读、自定义分镜规则。
           <br><strong>系统保护：</strong>JSON 层级、Slide/语块 ID、visual_groups 与 narration_beats 的绑定字段不能删除。
@@ -742,7 +744,9 @@
             <input id="image-style-template-name" type="text" maxlength="60" placeholder="例如：水墨科普风格">
           </label>
           <button id="btn-image-style-template-save" class="secondary" type="button">另存为模板</button>
+          <button id="btn-image-style-ai-draft" class="secondary ai-draft-button" type="button">AI 生成风格</button>
         </div>
+        <div id="image-style-ai-draft-status" class="ai-draft-status"></div>
         <div class="config-boundary-note">
           直接填写下面的风格词即可，不需要遵守 YAML 格式。系统固定 1920×1080、16:9、纯白背景，并保留底部字幕安全区；这些约束用于保证后续 Mask 稳定。
         </div>
@@ -894,6 +898,6 @@
 
   <!-- 主业务 JavaScript 脚本 -->
   <script src="flow.js?v=1.0.0"></script>
-  <script src="app.js?v=2.12.3"></script>
+  <script src="app.js?v=2.12.4"></script>
 </body>
 </html>

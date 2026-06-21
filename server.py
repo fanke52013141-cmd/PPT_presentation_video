@@ -414,6 +414,13 @@ def template_timestamp() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
+def safe_suggested_template_name(value: Any, fallback: str) -> str:
+    try:
+        return normalized_template_name(value)
+    except HTTPException:
+        return fallback[:60]
+
+
 ensure_active_image_style_storage()
 
 
@@ -802,6 +809,75 @@ def parse_json_or_repair_with_llm(
     if not isinstance(value, dict):
         raise ValueError("LLM response must be a JSON object")
     return value
+
+
+def generate_json_with_configured_llm(
+    *,
+    system_prompt: str,
+    user_prompt: str,
+    run_dir: str,
+    artifact_prefix: str,
+    schema_hint: str,
+    temperature: float = 0.35,
+    max_tokens_default: int = 12000,
+) -> Dict[str, Any]:
+    llm_api_key = get_setting("llm_api_key")
+    llm_base_url = get_setting("llm_base_url")
+    llm_model = get_setting("llm_model")
+    if not llm_api_key:
+        raise HTTPException(status_code=400, detail="未配置大模型 API 密钥，请在系统设置中配置后再试。")
+    if not llm_model:
+        raise HTTPException(status_code=400, detail="未配置大模型名称，请在系统设置中配置后再试。")
+    max_tokens = parse_int_setting(
+        get_setting("llm_max_tokens", str(max_tokens_default)),
+        max_tokens_default,
+        1024,
+        64000,
+    )
+    client = get_openai_client(api_key=llm_api_key, base_url=llm_base_url)
+    try:
+        try:
+            response = client.chat.completions.create(
+                model=llm_model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
+        except Exception as format_error:
+            logger.warning(
+                "AI JSON generation with response_format failed for %s, retrying without it: %s",
+                artifact_prefix,
+                format_error,
+            )
+            response = client.chat.completions.create(
+                model=llm_model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                messages=[
+                    {"role": "system", "content": system_prompt + "\n只输出纯 JSON，不要 Markdown，不要解释。"},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"AI 生成失败: {exc}") from exc
+
+    raw_content = response.choices[0].message.content.strip()
+    return parse_json_or_repair_with_llm(
+        cleaned_content=clean_json_markdown(raw_content),
+        raw_content=raw_content,
+        client=client,
+        model=llm_model,
+        run_dir=run_dir,
+        artifact_prefix=artifact_prefix,
+        schema_hint=schema_hint,
+        max_tokens=max_tokens,
+    )
 
 
 def strip_anchor_lead_in(spoken_text: str, anchor: str) -> str:
@@ -2341,6 +2417,121 @@ def save_storyboard_template(payload: Dict[str, Any]):
     }
 
 
+@app.post("/api/projects/{project_id}/steps/2/rules/ai-draft")
+def generate_storyboard_rules_ai_draft(
+    project_id: str,
+    payload: Optional[Dict[str, Any]] = None,
+    db: Session = Depends(get_db),
+):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    brief_path = os.path.join(project.run_dir, "planning", "article_brief.json")
+    if not os.path.exists(brief_path):
+        raise HTTPException(status_code=400, detail="请先导入文章，再让 AI 生成分镜规则模板。")
+    with open(brief_path, "r", encoding="utf-8") as f:
+        brief = json.load(f)
+
+    incoming = payload or {}
+    base_rules = str(incoming.get("rules") or "").strip()
+    if not base_rules:
+        rules_path = storyboard_rules_path(project)
+        if os.path.exists(rules_path):
+            with open(rules_path, "r", encoding="utf-8") as f:
+                base_rules = f.read().strip()
+    if not base_rules:
+        base_rules = default_storyboard_rules()
+
+    profile_text = str(incoming.get("profile_yaml") or "").strip()
+    profile = parse_storyboard_profile_text(profile_text) if profile_text else read_project_pipeline_profile(project)
+    profile = apply_storyboard_profile_patch(profile, incoming.get("profile_patch"))
+    editor = storyboard_profile_editor_data(profile)
+
+    article_content = str(brief.get("content") or "")
+    article_summary = str(brief.get("summary") or build_article_summary(article_content))
+    project_title = (project.name or "").strip() or str(brief.get("title") or "未命名项目")
+    allowed_roles = sorted(editor.get("roles", {}).keys())
+    schema_hint = json.dumps(
+        {
+            "template_name": "适合保存的模板名称，不超过 60 个字符",
+            "rules": "一段中文分镜规则，面向之后反复复用",
+            "profile_patch": {
+                "slide_count": {
+                    "short_article": "3-5",
+                    "medium_article": "5-8",
+                    "long_article": "8-12",
+                },
+                "visual_group_count": {
+                    "short_article": "3-5",
+                    "medium_article": "4-7",
+                    "long_article": "5-8",
+                },
+                "roles": {
+                    "title": {"enabled": True, "required": True, "speak_policy": "display_only"},
+                    "content_body": {"enabled": True, "required": True, "speak_policy": "speak"},
+                },
+            },
+        },
+        ensure_ascii=False,
+    )
+    system_prompt = (
+        "你是一个中文 PPT 视频的 AI 分镜规则模板设计师。"
+        "你的任务不是生成具体 visual_contract，而是根据文章内容和当前规则，生成一套可复用的分镜规则模板草案。"
+        "必须输出严格 JSON，不要 Markdown，不要解释。"
+        "profile_patch.roles 只能使用用户给定的 allowed_roles；不要创造新 role。"
+        "speak_policy 只能是 speak 或 display_only。"
+        "规则要服务于后续图片生成、Mask 标注、旁白绑定和视频动画，强调结构清晰、分组可遮罩、旁白自然。"
+    )
+    user_prompt = json.dumps(
+        {
+            "project_title": project_title,
+            "article_summary": article_summary,
+            "article_excerpt": article_content[:8000],
+            "allowed_roles": allowed_roles,
+            "current_rules": base_rules,
+            "current_editor_config": editor,
+            "output_schema": json.loads(schema_hint),
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+    ai_data = generate_json_with_configured_llm(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        run_dir=project.run_dir,
+        artifact_prefix="storyboard_rules_ai_draft",
+        schema_hint=schema_hint,
+        temperature=0.35,
+        max_tokens_default=12000,
+    )
+
+    rules = str(ai_data.get("rules") or "").strip()
+    if not rules:
+        raise HTTPException(status_code=500, detail="AI 没有返回可用的分镜规则。")
+    profile_patch = ai_data.get("profile_patch") if isinstance(ai_data.get("profile_patch"), dict) else {}
+    patched_profile = apply_storyboard_profile_patch(profile, profile_patch)
+    patched_profile_text = yaml.safe_dump(
+        patched_profile,
+        allow_unicode=True,
+        sort_keys=False,
+        width=1000,
+    ).strip()
+    suggested_name = safe_suggested_template_name(
+        ai_data.get("template_name"),
+        f"{project_title} 分镜规则",
+    )
+    write_project_log(project, "storyboard_rules_ai_draft_generated", template_name=suggested_name)
+    return {
+        "success": True,
+        "suggested_name": suggested_name,
+        "rules": rules,
+        "profile_yaml": patched_profile_text,
+        "roles": role_catalog(patched_profile),
+        "editor": storyboard_profile_editor_data(patched_profile),
+    }
+
+
 def build_storyboard_request(
     project_title: str,
     article_summary: str,
@@ -2496,47 +2687,6 @@ def get_step2_prompt_preview(
         article_content,
         storyboard_rules,
         profile,
-    )
-    return {
-        "success": True,
-        "system_content": system_prompt,
-        "user_content": user_prompt,
-    }
-
-
-@app.post("/api/projects/{project_id}/steps/2/prompt-preview")
-def get_step2_prompt_preview(
-    project_id: str,
-    payload: Optional[Dict[str, Any]] = None,
-    db: Session = Depends(get_db),
-):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-
-    brief_path = os.path.join(project.run_dir, "planning", "article_brief.json")
-    if not os.path.exists(brief_path):
-        raise HTTPException(status_code=400, detail="请先导入文章再查看完整分镜请求")
-    with open(brief_path, "r", encoding="utf-8") as f:
-        brief = json.load(f)
-
-    storyboard_rules = str((payload or {}).get("rules") or "").strip()
-    if not storyboard_rules:
-        rules_path = storyboard_rules_path(project)
-        if os.path.exists(rules_path):
-            with open(rules_path, "r", encoding="utf-8") as f:
-                storyboard_rules = f.read().strip()
-        else:
-            storyboard_rules = default_storyboard_rules()
-
-    project_title = (project.name or "").strip() or brief.get("title") or "未命名项目"
-    article_content = str(brief.get("content") or "")
-    article_summary = brief.get("summary") or build_article_summary(article_content)
-    system_prompt, user_prompt = build_storyboard_request(
-        project_title,
-        article_summary,
-        article_content,
-        storyboard_rules,
     )
     return {
         "success": True,
@@ -3014,6 +3164,116 @@ def validate_image_style(payload: Dict[str, Any]):
     _, merged = parse_image_style_payload(payload)
     return {
         "success": True,
+        "style_text": dump_image_style_editor_text(merged),
+        "style_data": editable_image_style_data(merged),
+        "prompt_preview": build_image_style_prompt(merged),
+    }
+
+
+@app.post("/api/projects/{project_id}/steps/3/image-style/ai-draft")
+def generate_image_style_ai_draft(
+    project_id: str,
+    payload: Optional[Dict[str, Any]] = None,
+    db: Session = Depends(get_db),
+):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    incoming = payload or {}
+    try:
+        _, base_style = parse_image_style_payload(incoming)
+    except HTTPException:
+        base_style = read_style_tokens_data()
+
+    brief: Dict[str, Any] = {}
+    brief_path = os.path.join(project.run_dir, "planning", "article_brief.json")
+    if os.path.exists(brief_path):
+        with open(brief_path, "r", encoding="utf-8") as f:
+            loaded = json.load(f)
+            if isinstance(loaded, dict):
+                brief = loaded
+
+    slide_titles: List[str] = []
+    contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
+    if os.path.exists(contract_path):
+        try:
+            with open(contract_path, "r", encoding="utf-8") as f:
+                contract = json.load(f)
+            for slide in contract.get("slides", []) if isinstance(contract, dict) else []:
+                if not isinstance(slide, dict):
+                    continue
+                title = str(slide.get("main_title") or slide.get("title") or "").strip()
+                if title:
+                    slide_titles.append(title)
+        except Exception as exc:
+            logger.warning("Failed to read visual contract for image style draft: %s", exc)
+
+    article_content = str(brief.get("content") or "")
+    article_summary = str(brief.get("summary") or build_article_summary(article_content))
+    project_title = (project.name or "").strip() or str(brief.get("title") or "未命名项目")
+    current_editable = editable_image_style_data(base_style)
+    schema_hint = json.dumps(
+        {
+            "template_name": "适合保存的图片风格模板名称，不超过 60 个字符",
+            "style_data": {
+                "brand": {
+                    "style_keywords": ["温暖极简", "知识科普", "留白"],
+                },
+                "visual_assets": {
+                    "image_style": "warm_minimal_handdrawn_line_art",
+                    "diagram_style": "clean_explainer_diagram",
+                    "layout_rules": [
+                        "使用纯净平面 #FFFFFF 背景，四边和四角保持连续纯白。",
+                        "每个语义 group 保持独立留白，方便后续矩形 Mask。",
+                    ],
+                    "avoid": ["复杂 3D 背景", "大面积渐变", "乱码文字"],
+                },
+            },
+        },
+        ensure_ascii=False,
+    )
+    system_prompt = (
+        "你是一个中文 PPT 视频的图片风格模板设计师。"
+        "请根据项目主题、文章摘要、分镜标题和当前风格，生成一套可复用的生图风格模板草案。"
+        "必须输出严格 JSON，不要 Markdown，不要解释。"
+        "只能返回 brand.style_keywords 与 visual_assets.image_style、diagram_style、layout_rules、avoid。"
+        "必须保持 1920x1080、16:9、纯白 #FFFFFF 背景、底部字幕安全区、Mask 友好留白这些约束。"
+        "风格要具体可执行，适合 AI 生图提示词使用，避免泛泛而谈。"
+    )
+    user_prompt = json.dumps(
+        {
+            "project_title": project_title,
+            "article_summary": article_summary,
+            "article_excerpt": article_content[:8000],
+            "slide_titles": slide_titles[:20],
+            "current_style_data": current_editable,
+            "output_schema": json.loads(schema_hint),
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+    ai_data = generate_json_with_configured_llm(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        run_dir=project.run_dir,
+        artifact_prefix="image_style_ai_draft",
+        schema_hint=schema_hint,
+        temperature=0.45,
+        max_tokens_default=9000,
+    )
+    style_data = ai_data.get("style_data")
+    if not isinstance(style_data, dict):
+        raise HTTPException(status_code=500, detail="AI 没有返回可用的图片风格配置。")
+    merged = merge_image_style_update(base_style, style_data)
+    suggested_name = safe_suggested_template_name(
+        ai_data.get("template_name"),
+        f"{project_title} 图片风格",
+    )
+    write_project_log(project, "image_style_ai_draft_generated", template_name=suggested_name)
+    return {
+        "success": True,
+        "suggested_name": suggested_name,
         "style_text": dump_image_style_editor_text(merged),
         "style_data": editable_image_style_data(merged),
         "prompt_preview": build_image_style_prompt(merged),

@@ -82,10 +82,21 @@ def main() -> None:
     assert 'id="subtitle-font-weight"' in html
     assert 'id="storyboard-template-select"' in html
     assert 'id="image-style-template-select"' in html
+    assert 'id="btn-storyboard-rules-ai-draft"' in html
+    assert 'id="btn-image-style-ai-draft"' in html
     assert 'id="subtitle-safe-width-guide"' in html
     assert "mask-animation-card" not in app_js
+    assert "generateStoryboardRulesAiDraft" in app_js
+    assert "generateImageStyleAiDraft" in app_js
+    assert "rules/ai-draft" in app_js
+    assert "image-style/ai-draft" in app_js
     assert "previewGlobalAnimationSettings" in app_js
     assert ".config-editor-scroll" in css
+    assert ".ai-draft-status" in css
+    route_paths = [getattr(route, "path", "") for route in server_module.app.routes]
+    assert route_paths.count("/api/projects/{project_id}/steps/2/prompt-preview") == 1
+    assert "/api/projects/{project_id}/steps/2/rules/ai-draft" in route_paths
+    assert "/api/projects/{project_id}/steps/3/image-style/ai-draft" in route_paths
     assert list_storyboard_templates()[0]["id"] == "default"
     assert image_style_template_detail("default")["references"]["template"]["exists"]
     font_keys = {font["key"] for font in OPEN_SOURCE_CHINESE_FONTS}

@@ -402,6 +402,7 @@ function initGlobalEvents() {
   document.getElementById('btn-storyboard-schema-copy')?.addEventListener('click', () => copyStoryboardSchema());
   document.getElementById('btn-storyboard-template-load')?.addEventListener('click', () => loadSelectedStoryboardTemplate());
   document.getElementById('btn-storyboard-template-save')?.addEventListener('click', () => saveStoryboardTemplate());
+  document.getElementById('btn-storyboard-rules-ai-draft')?.addEventListener('click', () => generateStoryboardRulesAiDraft());
   document.getElementById('storyboard-template-select')?.addEventListener('change', event => {
     if (event.target.value) loadSelectedStoryboardTemplate();
   });
@@ -410,6 +411,7 @@ function initGlobalEvents() {
   document.getElementById('btn-image-style-validate')?.addEventListener('click', () => validateImageStyleYaml());
   document.getElementById('btn-image-style-template-load')?.addEventListener('click', () => loadSelectedImageStyleTemplate());
   document.getElementById('btn-image-style-template-save')?.addEventListener('click', () => saveImageStyleTemplate());
+  document.getElementById('btn-image-style-ai-draft')?.addEventListener('click', () => generateImageStyleAiDraft());
   document.getElementById('image-style-template-select')?.addEventListener('change', event => {
     if (event.target.value) loadSelectedImageStyleTemplate();
   });
@@ -2653,6 +2655,24 @@ function applyStoryboardTemplateToForm(template) {
   renderStoryboardRoleEditor(template.editor);
 }
 
+function setAiDraftStatus(id, message = '', isError = false) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = message;
+  el.classList.toggle('error', !!isError);
+}
+
+function setButtonBusy(buttonId, busy, busyText = '生成中...') {
+  const button = document.getElementById(buttonId);
+  if (!button) return;
+  if (!button.dataset.originalText) {
+    button.dataset.originalText = button.textContent.trim();
+  }
+  button.disabled = !!busy;
+  button.classList.toggle('is-loading', !!busy);
+  button.textContent = busy ? busyText : button.dataset.originalText;
+}
+
 async function loadSelectedStoryboardTemplate() {
   const templateId = document.getElementById('storyboard-template-select').value;
   if (!templateId) {
@@ -2683,6 +2703,42 @@ async function saveStoryboardTemplate() {
   showToast(`分镜模板“${res.template?.name || name}”已保存。`);
 }
 
+async function generateStoryboardRulesAiDraft() {
+  if (!state.currentProject?.id) {
+    showToast('请先进入一个项目。');
+    return;
+  }
+  setButtonBusy('btn-storyboard-rules-ai-draft', true, 'AI 生成中...');
+  setAiDraftStatus('storyboard-ai-draft-status', 'AI 正在根据当前文章和规则生成可保存的分镜模板草案...');
+  try {
+    const res = await API.post(
+      `/api/projects/${state.currentProject.id}/steps/2/rules/ai-draft`,
+      {
+        rules: document.getElementById('storyboard-rules-input').value.trim(),
+        profile_yaml: document.getElementById('storyboard-profile-input').value.trim(),
+        profile_patch: readStoryboardProfilePatch(),
+      },
+    );
+    document.getElementById('storyboard-rules-input').value = res.rules || '';
+    document.getElementById('storyboard-profile-input').value = res.profile_yaml || '';
+    if (res.editor) {
+      setStoryboardRangeValues(res.editor);
+      renderStoryboardRoleEditor(res.editor);
+    }
+    if (res.roles) {
+      state.storyboardRoles = res.roles;
+    }
+    document.getElementById('storyboard-template-name').value = res.suggested_name || '';
+    document.getElementById('storyboard-template-select').value = '';
+    setAiDraftStatus('storyboard-ai-draft-status', 'AI 分镜规则草案已生成。你可以先检查内容，再点“另存为模板”保存。');
+    showToast('AI 分镜规则草案已生成，可另存为模板。');
+  } catch (error) {
+    setAiDraftStatus('storyboard-ai-draft-status', error.message || 'AI 生成分镜规则失败', true);
+  } finally {
+    setButtonBusy('btn-storyboard-rules-ai-draft', false);
+  }
+}
+
 async function openStoryboardRulesModal() {
   if (!state.currentProject) return;
   const [res, templateRes] = await Promise.all([
@@ -2698,6 +2754,7 @@ async function openStoryboardRulesModal() {
   renderStoryboardRoleEditor(res.editor);
   renderStoryboardTemplateOptions(templateRes.templates || []);
   document.getElementById('storyboard-template-name').value = '';
+  setAiDraftStatus('storyboard-ai-draft-status', '');
   document.getElementById('modal-storyboard-rules').style.display = 'flex';
 }
 
@@ -2769,6 +2826,7 @@ async function openImageStyleModal() {
   renderImageStyleTemplateOptions(templateRes.templates || []);
   state.selectedImageStyleTemplateId = '';
   document.getElementById('image-style-template-name').value = '';
+  setAiDraftStatus('image-style-ai-draft-status', '');
   ['template', 'example'].forEach(kind => {
     document.getElementById(`image-style-${kind}-file`).value = '';
   });
@@ -2857,6 +2915,33 @@ function currentImageStylePayload() {
     return { style_text: document.getElementById('image-style-input').value.trim() };
   }
   return { style_data: readImageStyleGuidedForm() };
+}
+
+async function generateImageStyleAiDraft() {
+  if (!state.currentProject?.id) {
+    showToast('请先进入一个项目。');
+    return;
+  }
+  setButtonBusy('btn-image-style-ai-draft', true, 'AI 生成中...');
+  setAiDraftStatus('image-style-ai-draft-status', 'AI 正在根据项目主题、文章和已有分镜生成可保存的图片风格模板草案...');
+  try {
+    const res = await API.post(
+      `/api/projects/${state.currentProject.id}/steps/3/image-style/ai-draft`,
+      currentImageStylePayload(),
+    );
+    document.getElementById('image-style-input').value = res.style_text || '';
+    populateImageStyleGuidedForm(res.style_data || {});
+    document.getElementById('image-style-use-advanced').checked = false;
+    document.getElementById('image-style-template-name').value = res.suggested_name || '';
+    document.getElementById('image-style-template-select').value = '';
+    state.selectedImageStyleTemplateId = '';
+    setAiDraftStatus('image-style-ai-draft-status', 'AI 图片风格草案已生成。你可以先检查内容，再点“另存为模板”保存。');
+    showToast('AI 图片风格草案已生成，可另存为模板。');
+  } catch (error) {
+    setAiDraftStatus('image-style-ai-draft-status', error.message || 'AI 生成图片风格失败', true);
+  } finally {
+    setButtonBusy('btn-image-style-ai-draft', false);
+  }
 }
 
 async function validateImageStyleYaml() {

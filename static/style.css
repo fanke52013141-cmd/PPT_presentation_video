@@ -795,7 +795,7 @@ input.step2-soft-input:focus {
 
 .template-manager-bar {
   display: grid;
-  grid-template-columns: minmax(190px, 0.8fr) auto minmax(230px, 1fr) auto;
+  grid-template-columns: minmax(190px, 0.8fr) auto minmax(230px, 1fr) auto auto;
   gap: 0.65rem;
   align-items: end;
   margin-bottom: 0.85rem;
@@ -830,6 +830,22 @@ input.step2-soft-input:focus {
 .template-manager-bar button {
   min-height: 36px;
   white-space: nowrap;
+}
+
+.template-manager-bar .ai-draft-button {
+  background: #e9f7ff;
+}
+
+.ai-draft-status {
+  min-height: 1.15rem;
+  margin: -0.45rem 0 0.85rem;
+  color: #33606c;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.ai-draft-status.error {
+  color: var(--danger-color);
 }
 
 .storyboard-config-grid {

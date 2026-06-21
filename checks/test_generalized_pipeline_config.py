@@ -40,7 +40,7 @@ def test_profile_exposes_generalized_structure() -> None:
     assert speak_policy_for_role("subtitle", profile) == "display_only"
     assert speak_policy_for_role("quote", profile) == "speak"
     assert "scratch_reveal" in allowed_reveal_actions(profile)
-    assert default_reveal_for_role("diagram", profile)["type"] == "scratch_reveal"
+    assert default_reveal_for_role("diagram", profile)["type"] == "wipe_left_to_right"
     assert "完整 PPT/讲解页静态主图" in image_prompt_profile_text(profile)
 
 

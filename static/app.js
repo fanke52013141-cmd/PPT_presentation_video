@@ -368,10 +368,6 @@ function initGlobalEvents() {
   document.getElementById('step5-eraser-size')?.addEventListener('input', (e) => updateEraserSize(e.target.value));
   document.getElementById('btn-narration-picker-cancel')?.addEventListener('click', () => closeNarrationPicker());
   document.getElementById('btn-narration-picker-confirm')?.addEventListener('click', () => confirmNarrationPicker());
-  document.getElementById('btn-mask-preview-close')?.addEventListener('click', () => closeStep5MaskPreview());
-  document.getElementById('modal-mask-preview')?.addEventListener('click', (event) => {
-    if (event.target.id === 'modal-mask-preview') closeStep5MaskPreview();
-  });
 
   // ================= 步骤 6 事件 =================
   document.getElementById('step6-btn-init').addEventListener('click', () => initStep6Narration());

@@ -242,26 +242,26 @@ document.addEventListener('DOMContentLoaded', () => {
 // 初始化全局页面级事件监听
 function initGlobalEvents() {
   // 顶栏按钮
-  document.getElementById('btn-open-settings').addEventListener('click', () => openSettingsModal());
-  document.getElementById('btn-settings-cancel').addEventListener('click', () => closeSettingsModal());
-  document.getElementById('btn-settings-save').addEventListener('click', () => saveSettings());
-  document.getElementById('btn-back-home').addEventListener('click', () => exitWorkspace());
+  document.getElementById('btn-open-settings')?.addEventListener('click', () => openSettingsModal());
+  document.getElementById('btn-settings-cancel')?.addEventListener('click', () => closeSettingsModal());
+  document.getElementById('btn-settings-save')?.addEventListener('click', () => saveSettings());
+  document.getElementById('btn-back-home')?.addEventListener('click', () => exitWorkspace());
   
   // 绑定设置测试连通性按钮
-  document.getElementById('btn-test-llm').addEventListener('click', () => testLlmConnection());
-  document.getElementById('btn-test-image').addEventListener('click', () => testImageConnection());
-  document.getElementById('btn-test-tts').addEventListener('click', () => testTtsConnection());
+  document.getElementById('btn-test-llm')?.addEventListener('click', () => testLlmConnection());
+  document.getElementById('btn-test-image')?.addEventListener('click', () => testImageConnection());
+  document.getElementById('btn-test-tts')?.addEventListener('click', () => testTtsConnection());
   
   // 新建项目 Modal
-  document.getElementById('btn-create-project').addEventListener('click', () => {
+  document.getElementById('btn-create-project')?.addEventListener('click', () => {
     document.getElementById('input-project-name').value = '';
     document.getElementById('input-project-desc').value = '';
     document.getElementById('modal-create').style.display = 'flex';
   });
-  document.getElementById('btn-create-cancel').addEventListener('click', () => {
+  document.getElementById('btn-create-cancel')?.addEventListener('click', () => {
     document.getElementById('modal-create').style.display = 'none';
   });
-  document.getElementById('btn-create-submit').addEventListener('click', () => createProject());
+  document.getElementById('btn-create-submit')?.addEventListener('click', () => createProject());
 
   // 设置面板 Tab 切换
   const tabs = document.querySelectorAll('#modal-settings .tab-item');
@@ -310,21 +310,21 @@ function initGlobalEvents() {
   });
 
   // ================= 步骤 1 事件 =================
-  document.getElementById('step1-btn-submit').addEventListener('click', () => submitStep1());
-  document.getElementById('step1-btn-save-edit').addEventListener('click', () => saveStep1Edit());
+  document.getElementById('step1-btn-submit')?.addEventListener('click', () => submitStep1());
+  document.getElementById('step1-btn-save-edit')?.addEventListener('click', () => saveStep1Edit());
 
   // ================= 步骤 2 事件 =================
-  document.getElementById('step2-btn-generate').addEventListener('click', () => generateStep2Contract());
+  document.getElementById('step2-btn-generate')?.addEventListener('click', () => generateStep2Contract());
   document.getElementById('step2-btn-rules')?.addEventListener('click', () => openStoryboardRulesModal());
-  document.getElementById('step2-btn-save').addEventListener('click', () => handleStep2BatchDeleteButton());
+  document.getElementById('step2-btn-save')?.addEventListener('click', () => handleStep2BatchDeleteButton());
   document.getElementById('step2-btn-cancel-delete')?.addEventListener('click', () => cancelStep2BatchDelete());
   document.getElementById('step2-core-message')?.addEventListener('input', (e) => updateCurrentSlideField('core_message', e.target.value));
 
   // ================= 步骤 3 事件 =================
-  document.getElementById('step3-btn-generate').addEventListener('click', () => generateStep3Image());
-  document.getElementById('step3-btn-close-editor').addEventListener('click', () => closeStep3AIModal());
-  document.getElementById('step3-btn-apply-candidate').addEventListener('click', () => applyStep3Candidate());
-  document.getElementById('modal-step3-ai').addEventListener('click', (event) => {
+  document.getElementById('step3-btn-generate')?.addEventListener('click', () => generateStep3Image());
+  document.getElementById('step3-btn-close-editor')?.addEventListener('click', () => closeStep3AIModal());
+  document.getElementById('step3-btn-apply-candidate')?.addEventListener('click', () => applyStep3Candidate());
+  document.getElementById('modal-step3-ai')?.addEventListener('click', (event) => {
     if (event.target.id === 'modal-step3-ai') closeStep3AIModal();
   });
   document.addEventListener('keydown', (event) => {
@@ -332,9 +332,9 @@ function initGlobalEvents() {
       closeStep3AIModal();
     }
   });
-  document.getElementById('step3-batch-upload').addEventListener('change', (e) => handleStep3BatchUpload(e));
+  document.getElementById('step3-batch-upload')?.addEventListener('change', (e) => handleStep3BatchUpload(e));
   document.getElementById('step3-btn-batch-generate')?.addEventListener('click', () => generateAllStep3Images());
-  document.getElementById('step3-btn-copy-prompts').addEventListener('click', () => copyStep2Prompts());
+  document.getElementById('step3-btn-copy-prompts')?.addEventListener('click', () => copyStep2Prompts());
   document.getElementById('step3-btn-style')?.addEventListener('click', () => openImageStyleModal());
   document.getElementById('step3-video-background-color')?.addEventListener('change', (event) => {
     saveStep3VideoBackground(event.target.value);
@@ -356,7 +356,7 @@ function initGlobalEvents() {
   document.getElementById('step3-video-background-apply')?.addEventListener('click', () => {
     saveStep3VideoBackground(document.getElementById('step3-video-background-text')?.value);
   });
-  document.getElementById('step3-btn-confirm').addEventListener('click', () => confirmStep3Images());
+  document.getElementById('step3-btn-confirm')?.addEventListener('click', () => confirmStep3Images());
 
   // ================= 步骤 5 事件 =================
   document.getElementById('step5-btn-semantic-blocks')?.addEventListener('click', () => runStep5SemanticBlocks());
@@ -370,22 +370,22 @@ function initGlobalEvents() {
   document.getElementById('btn-narration-picker-confirm')?.addEventListener('click', () => confirmNarrationPicker());
 
   // ================= 步骤 6 事件 =================
-  document.getElementById('step6-btn-init').addEventListener('click', () => initStep6Narration());
+  document.getElementById('step6-btn-init')?.addEventListener('click', () => initStep6Narration());
   document.getElementById('step6-btn-ai-annotate')?.addEventListener('click', () => annotateStep6Narration());
   document.getElementById('step6-btn-save')?.addEventListener('click', () => saveStep6Narration());
-  document.getElementById('step6-btn-save-and-tts').addEventListener('click', () => saveNarrationAndRunTTS());
-  document.getElementById('step6-btn-audio-confirm-next').addEventListener('click', async () => {
+  document.getElementById('step6-btn-save-and-tts')?.addEventListener('click', () => saveNarrationAndRunTTS());
+  document.getElementById('step6-btn-audio-confirm-next')?.addEventListener('click', async () => {
     const confirmed = await confirmStep7Audio();
     if (confirmed) navigateToStep(8);
   });
 
   // 步骤 7 后端能力已合并到可见步骤 6
-  document.getElementById('step7-btn-synthesize').addEventListener('click', () => runStep7TTS());
+  document.getElementById('step7-btn-synthesize')?.addEventListener('click', () => runStep7TTS());
 
   // ================= 步骤 8 事件 =================
-  document.getElementById('step8-btn-render').addEventListener('click', () => runStep8Render());
-  document.getElementById('step8-btn-rerender').addEventListener('click', () => runStep8Render());
-  document.getElementById('step8-btn-finish').addEventListener('click', () => exitWorkspace());
+  document.getElementById('step8-btn-render')?.addEventListener('click', () => runStep8Render());
+  document.getElementById('step8-btn-rerender')?.addEventListener('click', () => runStep8Render());
+  document.getElementById('step8-btn-finish')?.addEventListener('click', () => exitWorkspace());
   document.getElementById('btn-storyboard-rules-cancel')?.addEventListener('click', () => closeStoryboardRulesModal());
   document.getElementById('btn-storyboard-rules-save')?.addEventListener('click', () => saveStoryboardRules());
   document.getElementById('btn-storyboard-rules-save-regenerate')?.addEventListener('click', () => saveStoryboardRulesWithOptions({ regenerate: true }));

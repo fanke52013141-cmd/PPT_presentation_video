@@ -607,6 +607,31 @@
     </div>
   </div>
 
+  <div id="modal-mask-preview" class="modal-overlay" style="display: none;">
+    <div class="modal-content mask-preview-modal" role="dialog" aria-modal="true" aria-labelledby="mask-preview-title">
+      <div class="mask-preview-header">
+        <div>
+          <h3 id="mask-preview-title" class="highlight-title">最终抠除预览</h3>
+          <p id="mask-preview-summary" class="mask-preview-summary"></p>
+        </div>
+        <button id="btn-mask-preview-close" class="secondary" type="button">关闭</button>
+      </div>
+      <div class="mask-preview-grid">
+        <section>
+          <h4>视频最终会显示的内容</h4>
+          <img id="mask-preview-image" alt="最终抠除结果">
+        </section>
+        <section id="mask-uncovered-section">
+          <h4>Mask 外仍存在的源图内容</h4>
+          <div class="mask-preview-checker">
+            <img id="mask-uncovered-image" alt="Mask 未覆盖内容">
+          </div>
+        </section>
+      </div>
+      <p class="mask-preview-note">右图出现的内容不会进入视频。请返回画布补涂，直到右图只剩你明确想舍弃的内容。</p>
+    </div>
+  </div>
+
   <div id="modal-step3-ai" class="modal-overlay" style="display: none;">
     <div id="step3-editor" class="modal-content step3-ai-modal" role="dialog" aria-modal="true" aria-labelledby="step3-ai-title">
       <div class="step3-ai-header">

@@ -3299,6 +3299,36 @@ def get_slide_candidate_file(project_id: str, slide_id: str, db: Session = Depen
     return FileResponse(candidate_path, media_type="image/png")
 
 
+@app.get("/api/projects/{project_id}/slides/{slide_id}/mask-preview")
+def get_slide_mask_preview_file(project_id: str, slide_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    if slide_id not in read_current_slide_ids_or_404(project):
+        raise HTTPException(status_code=404, detail="Slide 不存在")
+    preview_path = os.path.join(
+        project.run_dir, "slides", slide_id, "assets", "manual_mask_composite.png"
+    )
+    if not os.path.exists(preview_path):
+        raise HTTPException(status_code=404, detail="请先生成最终抠除预览")
+    return FileResponse(preview_path, media_type="image/png")
+
+
+@app.get("/api/projects/{project_id}/slides/{slide_id}/mask-uncovered")
+def get_slide_mask_uncovered_file(project_id: str, slide_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    if slide_id not in read_current_slide_ids_or_404(project):
+        raise HTTPException(status_code=404, detail="Slide 不存在")
+    path = os.path.join(
+        project.run_dir, "slides", slide_id, "assets", "manual_mask_uncovered.png"
+    )
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="当前页面没有未覆盖诊断图")
+    return FileResponse(path, media_type="image/png")
+
+
 @app.post("/api/projects/{project_id}/steps/3/apply-candidate")
 def apply_slide_candidate(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -4043,6 +4073,42 @@ def update_step5_draft(project_id: str, payload: Dict[str, Any], db: Session = D
         manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
         write_json_atomic(manifest_path, payload)
     return {"success": True}
+
+@app.post("/api/projects/{project_id}/steps/5/preview")
+def build_step5_preview(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    slide_id = str(payload.get("slide_id") or "").strip()
+    if slide_id not in read_current_slide_ids_or_404(project):
+        raise HTTPException(status_code=404, detail="Slide 不存在")
+    build_current_reveal_assets(project)
+    report_path = os.path.join(project.run_dir, "slides", slide_id, "reveal_report.json")
+    with open(report_path, "r", encoding="utf-8") as file:
+        report = json.load(file)
+    diagnostics = report.get("foreground_diagnostics") or {}
+    cache_key = uuid.uuid4().hex[:8]
+    fallback_full_slide = bool(report.get("fallback_full_slide"))
+    return {
+        "success": True,
+        "slide_id": slide_id,
+        "pipeline_version": report.get("pipeline_version"),
+        "method": report.get("method"),
+        "fallback_full_slide": fallback_full_slide,
+        "diagnostics": diagnostics,
+        "warnings": report.get("warnings") or [],
+        "preview_url": (
+            f"/api/projects/{project_id}/slides/{slide_id}/image?t={cache_key}"
+            if fallback_full_slide
+            else f"/api/projects/{project_id}/slides/{slide_id}/mask-preview?t={cache_key}"
+        ),
+        "uncovered_url": (
+            None
+            if fallback_full_slide
+            else f"/api/projects/{project_id}/slides/{slide_id}/mask-uncovered?t={cache_key}"
+        ),
+    }
+
 
 @app.put("/api/projects/{project_id}/steps/5/result")
 def update_step5_result(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):

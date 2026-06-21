@@ -171,12 +171,19 @@ app.add_middleware(
 RUNS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "runs"))
 os.makedirs(RUNS_DIR, exist_ok=True)
 REPO_ROOT = os.path.abspath(os.path.dirname(__file__))
-STYLE_TOKENS_PATH = os.path.join(REPO_ROOT, "config", "style_tokens.yaml")
-STYLE_REFERENCE_DIR = os.path.join(REPO_ROOT, "references", "style_reference")
+DATA_DIR = os.path.join(REPO_ROOT, "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+DEFAULT_STYLE_TOKENS_PATH = os.path.join(REPO_ROOT, "config", "style_tokens.yaml")
+STYLE_TOKENS_PATH = os.path.join(DATA_DIR, "style_tokens.yaml")
+DEFAULT_STYLE_REFERENCE_DIR = os.path.join(REPO_ROOT, "references", "style_reference")
+STYLE_REFERENCE_DIR = os.path.join(DATA_DIR, "style_reference_active")
 STYLE_REFERENCE_FILES = {
     "template": "PPT模板.png",
     "example": "PPT示例.png",
 }
+STORYBOARD_TEMPLATES_PATH = os.path.join(DATA_DIR, "storyboard_templates.json")
+IMAGE_STYLE_TEMPLATES_DIR = os.path.join(DATA_DIR, "image_style_templates")
+IMAGE_STYLE_TEMPLATES_INDEX = os.path.join(IMAGE_STYLE_TEMPLATES_DIR, "index.json")
 REVEAL_PIPELINE_VERSION = "manual_mask_boundary_white_v4"
 IMAGE_GENERATION_BACKGROUND = "#FFFFFF"
 DEFAULT_VIDEO_BACKGROUND = "#FEFDF9"
@@ -251,6 +258,34 @@ OPEN_SOURCE_CHINESE_FONTS = [
         "key": "zhi_mang_xing",
         "label": "志莽行书（自然行书）",
         "family": "Zhi Mang Xing",
+        "license": "SIL OFL 1.1",
+        "source": "Google Fonts",
+    },
+    {
+        "key": "lxgw_marker_gothic",
+        "label": "霞鹜标楷黑（马克笔展示）",
+        "family": "LXGW Marker Gothic",
+        "license": "SIL OFL 1.1",
+        "source": "Google Fonts",
+    },
+    {
+        "key": "lxgw_wenkai_tc",
+        "label": "霞鹜文楷 TC（清晰楷体）",
+        "family": "LXGW WenKai TC",
+        "license": "SIL OFL 1.1",
+        "source": "Google Fonts",
+    },
+    {
+        "key": "noto_sans_tc",
+        "label": "Noto Sans TC（繁简兼容黑体）",
+        "family": "Noto Sans TC",
+        "license": "SIL OFL 1.1",
+        "source": "Google Fonts",
+    },
+    {
+        "key": "noto_serif_tc",
+        "label": "Noto Serif TC（繁简兼容宋体）",
+        "family": "Noto Serif TC",
         "license": "SIL OFL 1.1",
         "source": "Google Fonts",
     },
@@ -333,6 +368,46 @@ def write_json_atomic(path: str, payload: Any) -> None:
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
+
+
+def read_json_file(path: str, fallback: Any) -> Any:
+    if not os.path.exists(path):
+        return copy.deepcopy(fallback)
+    try:
+        with open(path, "r", encoding="utf-8-sig") as file:
+            return json.load(file)
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Failed to read JSON file %s: %s", path, exc)
+        return copy.deepcopy(fallback)
+
+
+def ensure_active_image_style_storage() -> None:
+    os.makedirs(STYLE_REFERENCE_DIR, exist_ok=True)
+    os.makedirs(IMAGE_STYLE_TEMPLATES_DIR, exist_ok=True)
+    if not os.path.exists(STYLE_TOKENS_PATH):
+        shutil.copy2(DEFAULT_STYLE_TOKENS_PATH, STYLE_TOKENS_PATH)
+    for filename in STYLE_REFERENCE_FILES.values():
+        active_path = os.path.join(STYLE_REFERENCE_DIR, filename)
+        default_path = os.path.join(DEFAULT_STYLE_REFERENCE_DIR, filename)
+        if not os.path.exists(active_path) and os.path.exists(default_path):
+            shutil.copy2(default_path, active_path)
+
+
+def normalized_template_name(value: Any) -> str:
+    name = re.sub(r"\s+", " ", str(value or "").strip())
+    if not name:
+        raise HTTPException(status_code=400, detail="模板名称不能为空")
+    if len(name) > 60:
+        raise HTTPException(status_code=400, detail="模板名称不能超过 60 个字符")
+    return name
+
+
+def template_timestamp() -> str:
+    return datetime.now().isoformat(timespec="seconds")
+
+
+ensure_active_image_style_storage()
+
 
 # Pydantic 响应模型
 class ProjectCreate(BaseModel):
@@ -2083,6 +2158,112 @@ def default_storyboard_rules() -> str:
     return "旁白自然口语化；每个旁白语段只绑定一个清晰的视觉分组；画面先于对应语音约 1 秒出现。"
 
 
+def storyboard_template_payload(
+    template_id: str,
+    name: str,
+    rules: str,
+    profile_text: str,
+    built_in: bool = False,
+    updated_at: str = "",
+) -> Dict[str, Any]:
+    profile = parse_storyboard_profile_text(profile_text)
+    return {
+        "id": template_id,
+        "name": name,
+        "built_in": built_in,
+        "updated_at": updated_at,
+        "rules": rules,
+        "profile_yaml": profile_text,
+        "roles": role_catalog(profile),
+        "editor": storyboard_profile_editor_data(profile),
+    }
+
+
+def list_storyboard_templates() -> List[Dict[str, Any]]:
+    templates = [
+        storyboard_template_payload(
+            "default",
+            "默认分镜模板",
+            default_storyboard_rules(),
+            default_storyboard_profile_text(),
+            built_in=True,
+        )
+    ]
+    stored = read_json_file(STORYBOARD_TEMPLATES_PATH, [])
+    if not isinstance(stored, list):
+        return templates
+    for item in stored:
+        if not isinstance(item, dict):
+            continue
+        try:
+            templates.append(
+                storyboard_template_payload(
+                    str(item.get("id") or ""),
+                    str(item.get("name") or ""),
+                    str(item.get("rules") or ""),
+                    str(item.get("profile_yaml") or ""),
+                    updated_at=str(item.get("updated_at") or ""),
+                )
+            )
+        except HTTPException as exc:
+            logger.warning("Skipping invalid storyboard template %s: %s", item.get("id"), exc.detail)
+    return templates
+
+
+@app.get("/api/storyboard-templates")
+def get_storyboard_templates():
+    return {"success": True, "templates": list_storyboard_templates()}
+
+
+@app.post("/api/storyboard-templates")
+def save_storyboard_template(payload: Dict[str, Any]):
+    name = normalized_template_name(payload.get("name"))
+    if name.casefold() == "默认分镜模板".casefold():
+        raise HTTPException(status_code=400, detail="默认分镜模板名称不可覆盖")
+    rules = str(payload.get("rules") or "").strip() or default_storyboard_rules()
+    profile_text = str(payload.get("profile_yaml") or "").strip() or default_storyboard_profile_text()
+    profile = parse_storyboard_profile_text(profile_text)
+    profile = apply_storyboard_profile_patch(profile, payload.get("profile_patch"))
+    profile_text = yaml.safe_dump(profile, allow_unicode=True, sort_keys=False, width=1000).strip()
+
+    stored = read_json_file(STORYBOARD_TEMPLATES_PATH, [])
+    if not isinstance(stored, list):
+        stored = []
+    existing = next(
+        (
+            item
+            for item in stored
+            if isinstance(item, dict)
+            and str(item.get("name") or "").strip().casefold() == name.casefold()
+        ),
+        None,
+    )
+    now = template_timestamp()
+    if existing is None:
+        existing = {"id": uuid.uuid4().hex[:12], "created_at": now}
+        stored.append(existing)
+    existing.update(
+        {
+            "name": name,
+            "rules": rules,
+            "profile_yaml": profile_text,
+            "updated_at": now,
+        }
+    )
+    write_json_atomic(STORYBOARD_TEMPLATES_PATH, stored)
+    return {
+        "success": True,
+        "template": storyboard_template_payload(
+            str(existing["id"]),
+            name,
+            rules,
+            profile_text,
+            updated_at=now,
+        ),
+        "templates": list_storyboard_templates(),
+    }
+
+
 def build_storyboard_request(
     project_title: str,
     article_summary: str,
@@ -2470,6 +2651,7 @@ def update_project_subtitle_settings(
 
 
 def read_style_tokens_data() -> Dict[str, Any]:
+    ensure_active_image_style_storage()
     with open(STYLE_TOKENS_PATH, "r", encoding="utf-8") as f:
         payload = yaml.safe_load(f) or {}
     if not isinstance(payload, dict):
@@ -2628,6 +2810,7 @@ def build_image_style_prompt(style_tokens: Dict[str, Any]) -> str:
 
 @app.get("/api/image-style")
 def get_image_style():
+    ensure_active_image_style_storage()
     references = {}
     for kind, filename in STYLE_REFERENCE_FILES.items():
         path = os.path.join(STYLE_REFERENCE_DIR, filename)
@@ -2680,8 +2863,182 @@ def validate_image_style(payload: Dict[str, Any]):
     }
 
 
+def read_image_style_template_index() -> List[Dict[str, Any]]:
+    payload = read_json_file(IMAGE_STYLE_TEMPLATES_INDEX, [])
+    return [item for item in payload if isinstance(item, dict)] if isinstance(payload, list) else []
+
+
+def image_style_template_source(template_id: str) -> tuple[str, str]:
+    if template_id == "default":
+        return DEFAULT_STYLE_TOKENS_PATH, DEFAULT_STYLE_REFERENCE_DIR
+    if not re.fullmatch(r"[0-9a-f]{12}", template_id):
+        raise HTTPException(status_code=404, detail="图片风格模板不存在")
+    item = next(
+        (
+            entry
+            for entry in read_image_style_template_index()
+            if str(entry.get("id") or "") == template_id
+        ),
+        None,
+    )
+    if item is None:
+        raise HTTPException(status_code=404, detail="图片风格模板不存在")
+    template_dir = os.path.join(IMAGE_STYLE_TEMPLATES_DIR, template_id)
+    return os.path.join(template_dir, "style_tokens.yaml"), os.path.join(template_dir, "references")
+
+
+def image_style_template_detail(template_id: str) -> Dict[str, Any]:
+    if template_id == "default":
+        item = {
+            "id": "default",
+            "name": "默认图片风格模板",
+            "built_in": True,
+            "updated_at": "",
+        }
+    else:
+        item = next(
+            (
+                copy.deepcopy(entry)
+                for entry in read_image_style_template_index()
+                if str(entry.get("id") or "") == template_id
+            ),
+            None,
+        )
+        if item is None:
+            raise HTTPException(status_code=404, detail="图片风格模板不存在")
+        item["built_in"] = False
+    style_path, reference_dir = image_style_template_source(template_id)
+    if not os.path.exists(style_path):
+        raise HTTPException(status_code=404, detail="图片风格模板配置缺失")
+    with open(style_path, "r", encoding="utf-8-sig") as file:
+        style_tokens = yaml.safe_load(file) or {}
+    if not isinstance(style_tokens, dict):
+        raise HTTPException(status_code=400, detail="图片风格模板配置损坏")
+    references = {}
+    for kind, filename in STYLE_REFERENCE_FILES.items():
+        path = os.path.join(reference_dir, filename)
+        references[kind] = {
+            "exists": os.path.exists(path),
+            "url": (
+                f"/api/image-style/templates/{template_id}/reference/{kind}"
+                f"?t={int(os.path.getmtime(path))}"
+                if os.path.exists(path)
+                else ""
+            ),
+        }
+    return {
+        **item,
+        "style_text": dump_image_style_editor_text(style_tokens),
+        "style_data": editable_image_style_data(style_tokens),
+        "references": references,
+    }
+
+
+def list_image_style_templates() -> List[Dict[str, Any]]:
+    result = [image_style_template_detail("default")]
+    for item in read_image_style_template_index():
+        template_id = str(item.get("id") or "")
+        if not template_id:
+            continue
+        try:
+            result.append(image_style_template_detail(template_id))
+        except HTTPException as exc:
+            logger.warning("Skipping invalid image style template %s: %s", template_id, exc.detail)
+    return result
+
+
+@app.get("/api/image-style/templates")
+def get_image_style_templates():
+    return {"success": True, "templates": list_image_style_templates()}
+
+
+@app.get("/api/image-style/templates/{template_id}")
+def get_image_style_template(template_id: str):
+    return {"success": True, "template": image_style_template_detail(template_id)}
+
+
+@app.post("/api/image-style/templates")
+def save_image_style_template(payload: Dict[str, Any]):
+    ensure_active_image_style_storage()
+    name = normalized_template_name(payload.get("name"))
+    if name.casefold() == "默认图片风格模板".casefold():
+        raise HTTPException(status_code=400, detail="默认图片风格模板名称不可覆盖")
+    index = read_image_style_template_index()
+    existing = next(
+        (
+            item
+            for item in index
+            if str(item.get("name") or "").strip().casefold() == name.casefold()
+        ),
+        None,
+    )
+    now = template_timestamp()
+    if existing is None:
+        existing = {"id": uuid.uuid4().hex[:12], "created_at": now}
+        index.append(existing)
+    template_id = str(existing["id"])
+    existing.update({"name": name, "updated_at": now})
+    template_dir = os.path.join(IMAGE_STYLE_TEMPLATES_DIR, template_id)
+    reference_dir = os.path.join(template_dir, "references")
+    os.makedirs(reference_dir, exist_ok=True)
+    shutil.copy2(STYLE_TOKENS_PATH, os.path.join(template_dir, "style_tokens.yaml"))
+    for filename in STYLE_REFERENCE_FILES.values():
+        source = os.path.join(STYLE_REFERENCE_DIR, filename)
+        target = os.path.join(reference_dir, filename)
+        if os.path.exists(source):
+            shutil.copy2(source, target)
+        elif os.path.exists(target):
+            os.remove(target)
+    write_json_atomic(IMAGE_STYLE_TEMPLATES_INDEX, index)
+    return {
+        "success": True,
+        "template": image_style_template_detail(template_id),
+        "templates": list_image_style_templates(),
+    }
+
+
+@app.post("/api/image-style/templates/{template_id}/apply-references")
+def apply_image_style_template_references(template_id: str):
+    ensure_active_image_style_storage()
+    _, source_dir = image_style_template_source(template_id)
+    for filename in STYLE_REFERENCE_FILES.values():
+        source = os.path.join(source_dir, filename)
+        target = os.path.join(STYLE_REFERENCE_DIR, filename)
+        if os.path.exists(source):
+            shutil.copy2(source, target)
+        elif os.path.exists(target):
+            os.remove(target)
+    return {
+        "success": True,
+        "references": {
+            kind: {
+                "exists": os.path.exists(os.path.join(STYLE_REFERENCE_DIR, filename)),
+                "url": (
+                    f"/api/image-style/reference/{kind}?t={uuid.uuid4().hex[:8]}"
+                    if os.path.exists(os.path.join(STYLE_REFERENCE_DIR, filename))
+                    else ""
+                ),
+            }
+            for kind, filename in STYLE_REFERENCE_FILES.items()
+        },
+    }
+
+
+@app.get("/api/image-style/templates/{template_id}/reference/{kind}")
+def get_image_style_template_reference(template_id: str, kind: str):
+    filename = STYLE_REFERENCE_FILES.get(kind)
+    if not filename:
+        raise HTTPException(status_code=404, detail="参考图类型不存在")
+    _, reference_dir = image_style_template_source(template_id)
+    path = os.path.join(reference_dir, filename)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="模板参考图不存在")
+    return FileResponse(path, media_type="image/png")
+
+
 @app.get("/api/image-style/reference/{kind}")
 def get_image_style_reference(kind: str):
+    ensure_active_image_style_storage()
     filename = STYLE_REFERENCE_FILES.get(kind)
     if not filename:
         raise HTTPException(status_code=404, detail="参考图类型不存在")
@@ -2693,6 +3050,7 @@ def get_image_style_reference(kind: str):
 
 @app.post("/api/image-style/reference/{kind}")
 def update_image_style_reference(kind: str, file: UploadFile = File(...)):
+    ensure_active_image_style_storage()
     filename = STYLE_REFERENCE_FILES.get(kind)
     if not filename:
         raise HTTPException(status_code=404, detail="参考图类型不存在")

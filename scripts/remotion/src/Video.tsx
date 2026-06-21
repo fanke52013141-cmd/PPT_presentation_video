@@ -13,8 +13,12 @@ import {
 import {loadFont as loadMaShanZheng} from '@remotion/google-fonts/MaShanZheng';
 import {loadFont as loadLongCang} from '@remotion/google-fonts/LongCang';
 import {loadFont as loadLiuJianMaoCao} from '@remotion/google-fonts/LiuJianMaoCao';
+import {loadFont as loadLXGWMarkerGothic} from '@remotion/google-fonts/LXGWMarkerGothic';
+import {loadFont as loadLXGWWenKaiTC} from '@remotion/google-fonts/LXGWWenKaiTC';
 import {loadFont as loadNotoSansSC} from '@remotion/google-fonts/NotoSansSC';
+import {loadFont as loadNotoSansTC} from '@remotion/google-fonts/NotoSansTC';
 import {loadFont as loadNotoSerifSC} from '@remotion/google-fonts/NotoSerifSC';
+import {loadFont as loadNotoSerifTC} from '@remotion/google-fonts/NotoSerifTC';
 import {loadFont as loadZCOOLKuaiLe} from '@remotion/google-fonts/ZCOOLKuaiLe';
 import {loadFont as loadZCOOLQingKeHuangYou} from '@remotion/google-fonts/ZCOOLQingKeHuangYou';
 import {loadFont as loadZCOOLXiaoWei} from '@remotion/google-fonts/ZCOOLXiaoWei';
@@ -172,6 +176,18 @@ const subtitleFontFamily = (fontKey?: string, configuredFamily?: string, fontWei
     family = loadLiuJianMaoCao('normal', {weights: ['400'], subsets: ['chinese-simplified']}).fontFamily;
   } else if (key === 'zhi_mang_xing') {
     family = loadZhiMangXing('normal', {weights: ['400'], subsets: ['chinese-simplified']}).fontFamily;
+  } else if (key === 'lxgw_marker_gothic') {
+    family = loadLXGWMarkerGothic('normal', {weights: ['400'], subsets: ['chinese-traditional']}).fontFamily;
+  } else if (key === 'lxgw_wenkai_tc') {
+    const wenKaiWeight = normalizedWeight <= 300 ? '300' : normalizedWeight >= 600 ? '700' : '400';
+    family = loadLXGWWenKaiTC('normal', {
+      weights: [wenKaiWeight],
+      subsets: ['chinese-traditional'],
+    }).fontFamily;
+  } else if (key === 'noto_sans_tc') {
+    family = loadNotoSansTC('normal', {weights: [notoWeight], subsets: ['chinese-traditional']}).fontFamily;
+  } else if (key === 'noto_serif_tc') {
+    family = loadNotoSerifTC('normal', {weights: [notoWeight], subsets: ['chinese-traditional']}).fontFamily;
   } else if (key === 'lxgw_wenkai') {
     family = 'LXGW WenKai, KaiTi, Microsoft YaHei, sans-serif';
   }

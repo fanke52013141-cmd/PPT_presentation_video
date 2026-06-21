@@ -765,7 +765,54 @@ input.step2-soft-input:focus {
   width: min(980px, 94vw);
   max-width: 980px;
   max-height: 92vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.config-editor-scroll {
+  min-height: 0;
   overflow-y: auto;
+  padding-right: 0.4rem;
+}
+
+.template-manager-bar {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.8fr) auto minmax(230px, 1fr) auto;
+  gap: 0.65rem;
+  align-items: end;
+  margin-bottom: 0.85rem;
+  padding: 0.72rem;
+  border: 1.5px solid #111;
+  border-radius: 9px;
+  background: #f5f8ff;
+}
+
+.template-manager-bar label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+  color: #333;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.template-manager-bar select,
+.template-manager-bar input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 36px;
+  padding: 0.45rem 0.55rem;
+  border: 1.5px solid #111;
+  border-radius: 7px;
+  background: #fff;
+  font: inherit;
+}
+
+.template-manager-bar button {
+  min-height: 36px;
+  white-space: nowrap;
 }
 
 .storyboard-config-grid {
@@ -1003,7 +1050,7 @@ input.step2-soft-input:focus {
 
 #subtitle-preview-text {
   position: absolute;
-  z-index: 2;
+  z-index: 4;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1012,6 +1059,52 @@ input.step2-soft-input:focus {
   line-height: 1.15;
   overflow-wrap: anywhere;
   pointer-events: none;
+}
+
+.subtitle-margin-shade {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  background: rgba(232, 74, 95, 0.14);
+  pointer-events: none;
+}
+
+.subtitle-margin-shade.left {
+  left: 0;
+  border-right: 2px dashed rgba(201, 24, 74, 0.82);
+}
+
+.subtitle-margin-shade.right {
+  right: 0;
+  border-left: 2px dashed rgba(201, 24, 74, 0.82);
+}
+
+#subtitle-safe-width-guide {
+  position: absolute;
+  z-index: 3;
+  top: 10px;
+  bottom: 10px;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed rgba(42, 122, 77, 0.72);
+  border-bottom: 1px dashed rgba(42, 122, 77, 0.72);
+  pointer-events: none;
+}
+
+#subtitle-safe-width-guide span {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #287a4d;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .subtitle-settings-controls {
@@ -1215,6 +1308,14 @@ input.step2-soft-input:focus {
   border-top: 1px solid #d8d5ca;
 }
 
+.config-editor-modal > .config-editor-actions {
+  flex: 0 0 auto;
+  margin: 0.8rem -1.8rem -1.8rem;
+  padding: 0.8rem 1.8rem;
+  background: var(--bg-color);
+  box-shadow: 0 -6px 14px rgba(17, 17, 17, 0.06);
+}
+
 #btn-storyboard-rules-copy-full {
   margin-right: auto;
 }
@@ -1250,6 +1351,7 @@ input.step2-soft-input:focus {
   .storyboard-config-grid,
   .storyboard-guided-grid,
   .image-style-guided-grid,
+  .template-manager-bar,
   .subtitle-settings-layout,
   .reference-image-grid,
   .step3-ai-layout {
@@ -1269,6 +1371,15 @@ input.step2-soft-input:focus {
   .storyboard-role-head,
   .storyboard-role-row {
     grid-template-columns: 1fr;
+  }
+
+  .config-editor-modal > .config-editor-actions {
+    flex-wrap: wrap;
+    margin-left: -1.1rem;
+    margin-right: -1.1rem;
+    margin-bottom: -1.1rem;
+    padding-left: 1.1rem;
+    padding-right: 1.1rem;
   }
 
   .step3-ai-header {

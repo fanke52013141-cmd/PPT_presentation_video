@@ -18,6 +18,9 @@ let state = {
   settings: {},
   subtitleSettings: null,
   subtitleFonts: [],
+  storyboardTemplates: [],
+  imageStyleTemplates: [],
+  selectedImageStyleTemplateId: '',
   storyboardRoles: {
     title: { label: '主标题' },
     subtitle: { label: '副标题' },
@@ -387,9 +390,28 @@ function initGlobalEvents() {
   document.getElementById('btn-storyboard-rules-save-regenerate')?.addEventListener('click', () => saveStoryboardRulesWithOptions({ regenerate: true }));
   document.getElementById('btn-storyboard-rules-copy-full')?.addEventListener('click', () => copyFullStoryboardRequest());
   document.getElementById('btn-storyboard-schema-copy')?.addEventListener('click', () => copyStoryboardSchema());
+  document.getElementById('btn-storyboard-template-load')?.addEventListener('click', () => loadSelectedStoryboardTemplate());
+  document.getElementById('btn-storyboard-template-save')?.addEventListener('click', () => saveStoryboardTemplate());
+  document.getElementById('storyboard-template-select')?.addEventListener('change', event => {
+    if (event.target.value) loadSelectedStoryboardTemplate();
+  });
   document.getElementById('btn-image-style-cancel')?.addEventListener('click', () => closeImageStyleModal());
   document.getElementById('btn-image-style-save')?.addEventListener('click', () => saveImageStyle());
   document.getElementById('btn-image-style-validate')?.addEventListener('click', () => validateImageStyleYaml());
+  document.getElementById('btn-image-style-template-load')?.addEventListener('click', () => loadSelectedImageStyleTemplate());
+  document.getElementById('btn-image-style-template-save')?.addEventListener('click', () => saveImageStyleTemplate());
+  document.getElementById('image-style-template-select')?.addEventListener('change', event => {
+    if (event.target.value) loadSelectedImageStyleTemplate();
+  });
+  ['template', 'example'].forEach(kind => {
+    document.getElementById(`image-style-${kind}-file`)?.addEventListener('change', event => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      const preview = document.getElementById(`image-style-${kind}-preview`);
+      preview.src = URL.createObjectURL(file);
+      preview.style.display = 'block';
+    });
+  });
   document.getElementById('btn-subtitle-settings-close')?.addEventListener('click', () => closeSubtitleSettingsModal());
   document.getElementById('btn-subtitle-settings-save')?.addEventListener('click', () => saveSubtitleSettings());
   document.getElementById('btn-subtitle-settings-reset')?.addEventListener('click', () => resetSubtitleSettings());
@@ -2483,9 +2505,62 @@ function readStoryboardProfilePatch() {
   };
 }
 
+function renderStoryboardTemplateOptions(templates, selectedId = '') {
+  state.storyboardTemplates = Array.isArray(templates) ? templates : [];
+  const select = document.getElementById('storyboard-template-select');
+  select.innerHTML = [
+    '<option value="">当前项目配置</option>',
+    ...state.storyboardTemplates.map(template =>
+      `<option value="${escHtml(template.id)}">${escHtml(template.name)}${template.built_in ? ' · 内置' : ''}</option>`
+    ),
+  ].join('');
+  select.value = selectedId;
+}
+
+function applyStoryboardTemplateToForm(template) {
+  if (!template) return;
+  document.getElementById('storyboard-rules-input').value = template.rules || '';
+  document.getElementById('storyboard-profile-input').value = template.profile_yaml || '';
+  setStoryboardRangeValues(template.editor);
+  renderStoryboardRoleEditor(template.editor);
+}
+
+async function loadSelectedStoryboardTemplate() {
+  const templateId = document.getElementById('storyboard-template-select').value;
+  if (!templateId) {
+    showToast('请选择一个分镜模板。');
+    return;
+  }
+  const template = state.storyboardTemplates.find(item => item.id === templateId);
+  if (!template) return;
+  applyStoryboardTemplateToForm(template);
+  document.getElementById('storyboard-template-name').value = template.built_in ? '' : template.name;
+  showToast(`已载入分镜模板“${template.name}”，点击底部保存后应用到当前项目。`);
+}
+
+async function saveStoryboardTemplate() {
+  const name = document.getElementById('storyboard-template-name').value.trim();
+  if (!name) {
+    showToast('请先填写新模板名称。');
+    return;
+  }
+  const res = await API.post('/api/storyboard-templates', {
+    name,
+    rules: document.getElementById('storyboard-rules-input').value.trim(),
+    profile_yaml: document.getElementById('storyboard-profile-input').value.trim(),
+    profile_patch: readStoryboardProfilePatch(),
+  });
+  renderStoryboardTemplateOptions(res.templates || [], res.template?.id || '');
+  document.getElementById('storyboard-template-name').value = res.template?.name || name;
+  showToast(`分镜模板“${res.template?.name || name}”已保存。`);
+}
+
 async function openStoryboardRulesModal() {
   if (!state.currentProject) return;
-  const res = await API.get(`/api/projects/${state.currentProject.id}/steps/2/rules`);
+  const [res, templateRes] = await Promise.all([
+    API.get(`/api/projects/${state.currentProject.id}/steps/2/rules`),
+    API.get('/api/storyboard-templates'),
+  ]);
   document.getElementById('storyboard-rules-input').value = res.rules || '';
   document.getElementById('storyboard-profile-input').value = res.profile_yaml || '';
   document.getElementById('storyboard-schema-input').value = res.schema_text || '';
@@ -2493,6 +2568,8 @@ async function openStoryboardRulesModal() {
   state.storyboardRoles = res.roles || state.storyboardRoles;
   setStoryboardRangeValues(res.editor);
   renderStoryboardRoleEditor(res.editor);
+  renderStoryboardTemplateOptions(templateRes.templates || []);
+  document.getElementById('storyboard-template-name').value = '';
   document.getElementById('modal-storyboard-rules').style.display = 'flex';
 }
 
@@ -2552,22 +2629,67 @@ async function saveStoryboardRulesWithOptions(options = {}) {
 }
 
 async function openImageStyleModal() {
-  const res = await API.get('/api/image-style');
+  const [res, templateRes] = await Promise.all([
+    API.get('/api/image-style'),
+    API.get('/api/image-style/templates'),
+  ]);
   document.getElementById('image-style-input').value = res.style_text || '';
   populateImageStyleGuidedForm(res.style_data || {});
   document.getElementById('image-style-use-advanced').checked = false;
   document.getElementById('image-style-validation-status').textContent = '';
+  setImageStyleReferencePreviews(res.references || {});
+  renderImageStyleTemplateOptions(templateRes.templates || []);
+  state.selectedImageStyleTemplateId = '';
+  document.getElementById('image-style-template-name').value = '';
   ['template', 'example'].forEach(kind => {
-    const preview = document.getElementById(`image-style-${kind}-preview`);
-    const reference = res.references?.[kind];
-    preview.src = reference?.exists ? reference.url : '';
-    preview.style.display = reference?.exists ? 'block' : 'none';
+    document.getElementById(`image-style-${kind}-file`).value = '';
   });
   document.getElementById('modal-image-style').style.display = 'flex';
 }
 
 function closeImageStyleModal() {
+  state.selectedImageStyleTemplateId = '';
   document.getElementById('modal-image-style').style.display = 'none';
+}
+
+function renderImageStyleTemplateOptions(templates, selectedId = '') {
+  state.imageStyleTemplates = Array.isArray(templates) ? templates : [];
+  const select = document.getElementById('image-style-template-select');
+  select.innerHTML = [
+    '<option value="">当前风格配置</option>',
+    ...state.imageStyleTemplates.map(template =>
+      `<option value="${escHtml(template.id)}">${escHtml(template.name)}${template.built_in ? ' · 内置' : ''}</option>`
+    ),
+  ].join('');
+  select.value = selectedId;
+}
+
+function setImageStyleReferencePreviews(references = {}) {
+  ['template', 'example'].forEach(kind => {
+    const preview = document.getElementById(`image-style-${kind}-preview`);
+    const reference = references?.[kind];
+    preview.src = reference?.exists ? reference.url : '';
+    preview.style.display = reference?.exists ? 'block' : 'none';
+  });
+}
+
+async function loadSelectedImageStyleTemplate() {
+  const templateId = document.getElementById('image-style-template-select').value;
+  if (!templateId) {
+    showToast('请选择一个图片风格模板。');
+    return;
+  }
+  const res = await API.get(`/api/image-style/templates/${encodeURIComponent(templateId)}`);
+  const template = res.template;
+  document.getElementById('image-style-input').value = template.style_text || '';
+  populateImageStyleGuidedForm(template.style_data || {});
+  setImageStyleReferencePreviews(template.references || {});
+  ['template', 'example'].forEach(kind => {
+    document.getElementById(`image-style-${kind}-file`).value = '';
+  });
+  state.selectedImageStyleTemplateId = template.id;
+  document.getElementById('image-style-template-name').value = template.built_in ? '' : template.name;
+  showToast(`已载入图片风格模板“${template.name}”，点击底部保存后应用。`);
 }
 
 function imageStyleLines(value) {
@@ -2624,22 +2746,59 @@ async function validateImageStyleYaml() {
 async function uploadImageStyleReference(kind) {
   const input = document.getElementById(`image-style-${kind}-file`);
   const file = input?.files?.[0];
-  if (!file) return;
+  if (!file) return null;
   const formData = new FormData();
   formData.append('file', file);
-  await API.post(`/api/image-style/reference/${kind}`, formData);
+  return API.post(`/api/image-style/reference/${kind}`, formData);
 }
 
-async function saveImageStyle() {
+async function persistImageStyle(options = {}) {
   const res = await API.put('/api/image-style', currentImageStylePayload());
   if (!res.success) return;
   document.getElementById('image-style-input').value = res.style_text || '';
   populateImageStyleGuidedForm(res.style_data || {});
-  await uploadImageStyleReference('template');
-  await uploadImageStyleReference('example');
-  closeImageStyleModal();
+  if (state.selectedImageStyleTemplateId) {
+    await API.post(
+      `/api/image-style/templates/${encodeURIComponent(state.selectedImageStyleTemplateId)}/apply-references`,
+      {},
+    );
+  }
+  await Promise.all([
+    uploadImageStyleReference('template'),
+    uploadImageStyleReference('example'),
+  ]);
+  ['template', 'example'].forEach(kind => {
+    document.getElementById(`image-style-${kind}-file`).value = '';
+  });
   await refreshStep3Prompts({ updateOpenEditor: state.currentStep === 3 });
-  showToast('图片风格与参考图已保存，生图提示词已刷新');
+  if (options.close !== false) {
+    closeImageStyleModal();
+  } else {
+    const current = await API.get('/api/image-style');
+    setImageStyleReferencePreviews(current.references || {});
+  }
+  return res;
+}
+
+async function saveImageStyle() {
+  const res = await persistImageStyle();
+  if (res) showToast('图片风格与参考图已保存，生图提示词已刷新');
+}
+
+async function saveImageStyleTemplate() {
+  const name = document.getElementById('image-style-template-name').value.trim();
+  if (!name) {
+    showToast('请先填写新模板名称。');
+    return;
+  }
+  const persisted = await persistImageStyle({ close: false });
+  if (!persisted) return;
+  const res = await API.post('/api/image-style/templates', { name });
+  renderImageStyleTemplateOptions(res.templates || [], res.template?.id || '');
+  state.selectedImageStyleTemplateId = res.template?.id || '';
+  document.getElementById('image-style-template-name').value = res.template?.name || name;
+  setImageStyleReferencePreviews(res.template?.references || {});
+  showToast(`图片风格模板“${res.template?.name || name}”已保存，包含两张参考图。`);
 }
 
 const DEFAULT_SUBTITLE_SETTINGS = {
@@ -2699,6 +2858,18 @@ function updateSubtitlePreview() {
   text.style.left = `${settings.horizontal_margin * scale}px`;
   text.style.right = `${settings.horizontal_margin * scale}px`;
   text.style.color = settings.color;
+  const marginWidth = settings.horizontal_margin * scale;
+  const leftShade = document.getElementById('subtitle-margin-left-shade');
+  const rightShade = document.getElementById('subtitle-margin-right-shade');
+  const safeGuide = document.getElementById('subtitle-safe-width-guide');
+  if (leftShade) leftShade.style.width = `${marginWidth}px`;
+  if (rightShade) rightShade.style.width = `${marginWidth}px`;
+  if (safeGuide) {
+    safeGuide.style.left = `${marginWidth}px`;
+    safeGuide.style.right = `${marginWidth}px`;
+    const label = safeGuide.querySelector('span');
+    if (label) label.textContent = `字幕可用宽度 ${Math.max(0, 1920 - settings.horizontal_margin * 2)} px`;
+  }
   document.getElementById('subtitle-font-size-value').textContent = String(settings.font_size);
   document.getElementById('subtitle-font-weight-value').textContent = String(settings.font_weight);
   document.getElementById('subtitle-bottom-value').textContent = String(settings.bottom);

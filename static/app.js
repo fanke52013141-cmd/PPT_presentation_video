@@ -49,6 +49,9 @@ let state = {
     maskZoomOriginY: 50,
     autoMaskLoading: false,
     semanticLoading: false,
+    confirmingMasks: false,
+    coverageChecking: false,
+    coverageError: false,
     narrationPickerBoxIndex: -1,
     narrationPickerSelection: [],
     startX: 0,
@@ -2277,6 +2280,7 @@ async function refreshStep3Prompts(options = {}) {
 function renderStep5Workspace() {
   updateStep5AutoMaskButton();
   updateStep5SemanticButton();
+  updateStep5ConfirmButton();
   const thumbsContainer = document.getElementById('step5-thumbs');
   thumbsContainer.className = 'step5-slides-grid'; // 改用平铺换行类名
   thumbsContainer.innerHTML = '';
@@ -2539,7 +2543,7 @@ function toggleNarrationFragmentForSelectedBox(fragmentId) {
 function updateStep5AutoMaskButton() {
   const btn = document.getElementById('step5-btn-automask');
   if (!btn) return;
-  btn.disabled = !!state.canvasState.autoMaskLoading || !!state.canvasState.semanticLoading;
+  btn.disabled = !!state.canvasState.autoMaskLoading || !!state.canvasState.semanticLoading || !!state.canvasState.confirmingMasks;
   btn.classList.toggle('loading', !!state.canvasState.autoMaskLoading);
   btn.innerHTML = state.canvasState.autoMaskLoading
     ? `<span class="button-spinner"></span><span class="btn-label">AI 框选中...</span>`
@@ -2549,11 +2553,55 @@ function updateStep5AutoMaskButton() {
 function updateStep5SemanticButton() {
   const btn = document.getElementById('step5-btn-semantic-blocks');
   if (!btn) return;
-  btn.disabled = !!state.canvasState.semanticLoading || !!state.canvasState.autoMaskLoading;
+  btn.disabled = !!state.canvasState.semanticLoading || !!state.canvasState.autoMaskLoading || !!state.canvasState.confirmingMasks;
   btn.classList.toggle('loading', !!state.canvasState.semanticLoading);
   btn.innerHTML = state.canvasState.semanticLoading
     ? `<span class="button-spinner"></span><span class="btn-label">AI 分块中...</span>`
     : `<svg class="icon" viewBox="0 0 24 24"><path d="M4 5h16"></path><path d="M4 12h10"></path><path d="M4 19h16"></path><circle cx="18" cy="12" r="2"></circle></svg><span class="btn-label">AI 语义分块</span>`;
+}
+
+function updateStep5ConfirmButton(message = '') {
+  const btn = document.getElementById('step5-btn-confirm-next');
+  const status = document.getElementById('step5-confirm-status');
+  if (!btn) return;
+
+  const confirming = !!state.canvasState.confirmingMasks;
+  const coverageChecking = !!state.canvasState.coverageChecking;
+  const coverageError = !!state.canvasState.coverageError;
+  const aiBusy = !!state.canvasState.autoMaskLoading || !!state.canvasState.semanticLoading;
+  const canConfirm = !!state.canvasState.coverageReady && !coverageChecking && !coverageError;
+
+  btn.classList.toggle('loading', confirming);
+  btn.disabled = confirming || aiBusy || !canConfirm;
+
+  if (confirming) {
+    btn.innerHTML = `<span class="button-spinner"></span><span class="btn-label">正在确认并构建切层...</span>`;
+    btn.title = '正在保存标注并构建后续视频所需的 Mask 切层，请稍候';
+    if (status) {
+      status.style.display = 'flex';
+      status.classList.remove('error');
+      status.innerHTML = `<span class="button-spinner"></span><span>${message || '处理中：正在保存标注并构建切层，请不要重复点击。'}</span>`;
+    }
+    return;
+  }
+
+  btn.innerHTML = `确认标注，进入下一步 <svg class="icon" viewBox="0 0 24 24" style="width:14px; height:14px; stroke-width:2.5;"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>`;
+  btn.title = aiBusy
+    ? 'AI 标注相关任务正在处理中，请稍候'
+    : canConfirm
+      ? '确认全部 Mask 标注并构建切层'
+      : coverageChecking
+      ? '正在检查 Mask 覆盖率，请稍候'
+      : coverageError
+        ? '原图或预览加载失败，暂时不能确认'
+        : '仍有内容未被 Mask 覆盖，请补涂完整后再确认';
+
+  if (status) {
+    const isMessageError = !!message && /失败|不能确认|漏标/.test(message);
+    status.style.display = message ? 'flex' : 'none';
+    status.classList.toggle('error', isMessageError);
+    status.textContent = message || '';
+  }
 }
 
 function selectStep5MaskBox(idx, shouldScroll = true) {
@@ -3221,35 +3269,44 @@ function rebuildStep5SourceCache(image, foregroundImage) {
 
 function updateStep5LiveCoverageStatus(options = {}) {
   const status = document.getElementById('step5-live-coverage');
-  const confirmButton = document.getElementById('step5-btn-confirm-next');
   if (!status) return;
   status.classList.remove('ready', 'warning', 'loading', 'error');
   if (options.loading) {
+    state.canvasState.coverageChecking = true;
+    state.canvasState.coverageError = false;
+    state.canvasState.coverageReady = false;
     status.classList.add('loading');
     status.innerText = '正在加载真实抠除预览...';
-    if (confirmButton) confirmButton.disabled = true;
+    updateStep5ConfirmButton();
     return;
   }
   if (options.error) {
+    state.canvasState.coverageChecking = false;
+    state.canvasState.coverageError = true;
+    state.canvasState.coverageReady = false;
     status.classList.add('error');
     status.innerText = '原图加载失败，暂时不能确认';
-    if (confirmButton) confirmButton.disabled = true;
+    updateStep5ConfirmButton();
     return;
   }
   if (options.fallback) {
     const allReady = options.allReady !== false;
+    state.canvasState.coverageChecking = false;
+    state.canvasState.coverageError = false;
     state.canvasState.coverageRatio = 1;
     state.canvasState.coverageReady = allReady;
     status.classList.add(allReady ? 'ready' : 'warning');
     status.innerText = allReady
       ? '当前页无 Mask：视频将完整显示整页图片'
       : `当前页无 Mask，将完整显示；另有 ${options.failureSlides || '其他页面'} 覆盖不足`;
-    if (confirmButton) confirmButton.disabled = !allReady;
+    updateStep5ConfirmButton();
     return;
   }
   const ratio = Number(options.ratio || 0);
   const currentReady = ratio >= MASK_MIN_COVERAGE_RATIO;
   const ready = currentReady && options.allReady !== false;
+  state.canvasState.coverageChecking = false;
+  state.canvasState.coverageError = false;
   state.canvasState.coverageRatio = ratio;
   state.canvasState.coverageReady = ready;
   status.classList.add(ready ? 'ready' : 'warning');
@@ -3260,7 +3317,7 @@ function updateStep5LiveCoverageStatus(options = {}) {
   } else {
     status.innerText = `当前页覆盖率 ${(ratio * 100).toFixed(1)}%；另有 ${options.failureSlides || '其他页面'} 覆盖不足`;
   }
-  if (confirmButton) confirmButton.disabled = !ready;
+  updateStep5ConfirmButton();
 }
 
 function drawManualMaskStrokes(ctx, item, idx) {
@@ -3527,25 +3584,51 @@ async function runStep5SemanticBlocks() {
 }
 
 async function saveStep5Masks() {
-  if (!state.canvasState.coverageReady) {
-    showToast('当前页仍有红色内容不会进入视频，请先补涂完整。', 5000);
+  if (state.canvasState.confirmingMasks) {
     return false;
   }
+  if (state.canvasState.autoMaskLoading || state.canvasState.semanticLoading) {
+    showToast('AI 标注相关任务仍在处理中，请稍候再确认。', 3000);
+    updateStep5ConfirmButton('AI 标注相关任务仍在处理中，请稍候。');
+    return false;
+  }
+  if (state.canvasState.coverageChecking) {
+    showToast('正在检查 Mask 覆盖率，请稍候再确认。', 3000);
+    updateStep5ConfirmButton('正在检查 Mask 覆盖率，请稍候。');
+    return false;
+  }
+  if (state.canvasState.coverageError) {
+    showToast('原图或 Mask 预览加载失败，暂时不能确认。', 4000);
+    updateStep5ConfirmButton('原图或 Mask 预览加载失败，暂时不能确认。');
+    return false;
+  }
+  if (!state.canvasState.coverageReady) {
+    showToast('当前页仍有红色内容不会进入视频，请先补涂完整。', 5000);
+    updateStep5ConfirmButton('当前页仍有漏标内容，请补涂完整后再确认。');
+    return false;
+  }
+  state.canvasState.confirmingMasks = true;
+  updateStep5ConfirmButton('处理中：正在保存当前标注草稿...');
+  updateStep5AutoMaskButton();
+  updateStep5SemanticButton();
+
+  const previousStatuses = (manifestData?.slides || []).map(slide => slide.status);
+  let failureMessage = '';
   if (state.step5AutoSaveTimer) {
     clearTimeout(state.step5AutoSaveTimer);
     state.step5AutoSaveTimer = null;
   }
-  await saveStep5Draft();
-  saveStep5CurrentState();
-  
-  // 点击下一步时统一确认全部 Slide，并一次性构建所有切层。
-  const previousStatuses = manifestData.slides.map(slide => slide.status);
-  manifestData.slides.forEach(slide => {
-    slide.status = "completed";
-  });
-  
-  showToast('正在确认全部标注并构建切层...');
   try {
+    await saveStep5Draft();
+    saveStep5CurrentState();
+
+    // 点击下一步时统一确认全部 Slide，并一次性构建所有切层。
+    manifestData.slides.forEach(slide => {
+      slide.status = "completed";
+    });
+
+    updateStep5ConfirmButton('处理中：正在确认全部标注并构建切层...');
+    showToast('正在确认全部标注并构建切层...');
     const res = await API.put(`/api/projects/${state.currentProject.id}/steps/5/result`, manifestData);
     if (res.success) {
       showToast('全部标注已确认，切层构建完成');
@@ -3557,7 +3640,13 @@ async function saveStep5Masks() {
     manifestData.slides.forEach((slide, index) => {
       slide.status = previousStatuses[index] || 'pending';
     });
+    failureMessage = '确认失败，已恢复按钮，可检查错误后重试。';
     renderStep5Workspace();
+  } finally {
+    state.canvasState.confirmingMasks = false;
+    updateStep5AutoMaskButton();
+    updateStep5SemanticButton();
+    updateStep5ConfirmButton(failureMessage);
   }
   return false;
 }

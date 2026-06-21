@@ -1441,6 +1441,35 @@ input.step2-soft-input:focus {
   animation: modern-spin 0.75s linear infinite;
 }
 
+.step5-confirm-status {
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.6rem;
+  border: 2px dashed var(--ink-color);
+  border-radius: 8px;
+  background: #fff8cc;
+  color: var(--ink-color);
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.step5-confirm-status .button-spinner {
+  flex: 0 0 auto;
+}
+
+.step5-confirm-status.error {
+  background: #ffe1e1;
+  color: #9b1c1c;
+}
+
+#step5-btn-confirm-next.loading {
+  background: var(--secondary-color);
+  cursor: wait;
+}
+
 .step5-brush-control {
   display: inline-flex;
   align-items: center;

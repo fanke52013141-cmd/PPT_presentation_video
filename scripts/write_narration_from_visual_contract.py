@@ -3,8 +3,8 @@
 
 The narration is deliberately grounded in visual groups: every spoken beat maps to
 one group_id and content_unit_id, then expands that unit's visible text, source
-text, visual anchor, and narration function. Groups with speak_policy=display_only
-are never narrated.
+text, visual anchor, and narration function. The narration_beats list is the sole
+source of truth for deciding which visual groups are spoken.
 """
 
 from __future__ import annotations
@@ -43,14 +43,6 @@ def write_json(path: Path, value: dict[str, Any]) -> None:
 
 def normalize(text: str) -> str:
     return PAUSE_RE.sub(" ", text).strip()
-
-
-def speak_policy(group: dict[str, Any]) -> str:
-    explicit = str(group.get("speak_policy", "")).strip()
-    if explicit:
-        return explicit
-    role = str(group.get("role", ""))
-    return "display_only" if role in {"subtitle", "decoration"} else "speak"
 
 
 def group_lookup(slide: dict[str, Any]) -> dict[str, dict[str, Any]]:

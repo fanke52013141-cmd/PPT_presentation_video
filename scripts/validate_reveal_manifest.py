@@ -53,7 +53,6 @@ def visual_contract_maps(contract: dict[str, Any]) -> dict[str, dict[str, Any]]:
         beat_ids: set[str] = set()
         group_content_units: dict[str, str] = {}
         beat_content_units: dict[str, str] = {}
-        group_speak_policies: dict[str, str] = {}
         for group in groups:
             if not isinstance(group, dict):
                 continue
@@ -62,7 +61,6 @@ def visual_contract_maps(contract: dict[str, Any]) -> dict[str, dict[str, Any]]:
                 continue
             group_ids.add(group_id)
             group_content_units[group_id] = str(group.get("content_unit_id", "")).strip()
-            group_speak_policies[group_id] = str(group.get("speak_policy", "")).strip()
         for beat in beats:
             if not isinstance(beat, dict):
                 continue
@@ -76,7 +74,6 @@ def visual_contract_maps(contract: dict[str, Any]) -> dict[str, dict[str, Any]]:
             "beats": beat_ids,
             "group_content_units": group_content_units,
             "beat_content_units": beat_content_units,
-            "group_speak_policies": group_speak_policies,
         }
     return maps
 
@@ -126,7 +123,6 @@ def overlap_ratio(a: dict[str, Any], b: dict[str, Any]) -> float:
 def validate_semantic_fields(group: dict[str, Any], slide_maps: dict[str, Any], slide_id: str, group_id: str, role: str, beat_id: str) -> None:
     contract_content_units: dict[str, str] = slide_maps.get("group_content_units", {}) if slide_maps else {}
     beat_content_units: dict[str, str] = slide_maps.get("beat_content_units", {}) if slide_maps else {}
-    speak_policies: dict[str, str] = slide_maps.get("group_speak_policies", {}) if slide_maps else {}
     manifest_content_unit = str(group.get("content_unit_id", "")).strip()
     contract_content_unit = str(contract_content_units.get(group_id, "")).strip()
     if contract_content_unit:
@@ -139,8 +135,6 @@ def validate_semantic_fields(group: dict[str, Any], slide_maps: dict[str, Any], 
             )
     if role != "decoration" and not str(group.get("mask_target", "")).strip():
         raise ManifestError(f"Reveal group missing mask_target: {slide_id}/{group_id}")
-    if speak_policies.get(group_id) == "display_only" and beat_id:
-        raise ManifestError(f"Display-only reveal group must not reference narration beat: {slide_id}/{group_id}/{beat_id}")
     if beat_id and beat_content_units.get(beat_id) and manifest_content_unit and beat_content_units[beat_id] != manifest_content_unit:
         raise ManifestError(
             f"Reveal beat content_unit_id does not match group: {slide_id}/{group_id}/{beat_id} "

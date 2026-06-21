@@ -22,75 +22,53 @@ storyboard:
   roles:
     title:
       label: 主标题
-      required: true
-      speak_policy: speak
       description: 页面主标题，可短，可不承担完整解释。
       default_reveal: wipe_left_to_right
     subtitle:
       label: 副标题
-      required: false
-      speak_policy: display_only
-      description: 可选副标题；如果页面不需要，就不要生成。
+      description: 辅助说明页面主题；是否生成由内容需要决定。
       default_reveal: wipe_left_to_right
     content_body:
       label: 正文内容
-      required: false
-      speak_policy: speak
       description: 普通概念、要点、卡片、列表或解释性文字。
       default_reveal: wipe_left_to_right
     diagram:
       label: 图示/流程图
-      required: false
-      speak_policy: speak
       description: 图形、流程、关系图、对比图、时间线等。
       default_reveal: wipe_left_to_right
     quote:
       label: 引用/金句
-      required: false
-      speak_policy: speak
       description: 原文摘录、关键判断或一句话结论。
       default_reveal: wipe_left_to_right
     data_point:
       label: 数据/数字
-      required: false
-      speak_policy: speak
       description: 数字、指标、公式或表格单元。
       default_reveal: wipe_left_to_right
     process_step:
       label: 步骤
-      required: false
-      speak_policy: speak
       description: 流程中的单步节点。
       default_reveal: wipe_left_to_right
     callout:
       label: 强调提示
-      required: false
-      speak_policy: speak
       description: 需要突出强调的提示、风险或反直觉点。
       default_reveal: wipe_left_to_right
     annotation:
       label: 注释
-      required: false
-      speak_policy: speak
       description: 箭头标注、旁注、补充说明。
       default_reveal: wipe_left_to_right
     summary:
       label: 总结
-      required: false
-      speak_policy: speak
-      description: 可选总结区；不是每页都必须出现。
+      description: 用于收束页面观点；是否生成由内容需要决定。
       default_reveal: wipe_left_to_right
     decoration:
       label: 装饰
-      required: false
-      speak_policy: display_only
-      description: 不承载语义、不绑定旁白的装饰元素。
+      description: 不承载核心语义的装饰元素。
       default_reveal: wipe_left_to_right
   structure_rules:
-    - 每页只强制需要 main_title；subtitle、summary 都是可选结构。
-    - visual_groups 可以使用 roles 中的任意角色，也可以使用自定义 role；自定义 role 默认可被旁白讲解。
+    - visual_groups 可以使用 roles 中的任意角色，也可以使用自定义 role；具体结构完全由页面内容决定。
     - 如果某页适合表格、流程、对比、时间线、引用、数据卡片或 FAQ，可以直接用对应结构组织，不要固定套用“主标题/副标题/正文/总结”模板。
-    - 每个可讲解的 visual_group 必须至少有一个 narration_beat 绑定；display_only 组不要绑定旁白。
+    - narration_beats 是是否朗读的唯一依据；有对应 beat 的 visual_group 才进入演讲稿，没有 beat 的 visual_group 只用于画面展示。
+    - 不要为了覆盖全部 visual_groups 强行生成 narration_beat；演讲稿只讲真正需要讲解的内容。
     - 每个 visual_group 仍然要能被一个人工 Mask 或矩形区域完整覆盖，避免过密小字和跨组长连线。
 
 image_prompt:

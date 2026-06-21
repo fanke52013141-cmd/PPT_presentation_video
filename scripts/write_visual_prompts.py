@@ -58,7 +58,6 @@ def visual_group_lines(slide: dict[str, Any]) -> list[str]:
         group_id = str(group.get("id", "")).strip()
         role = str(group.get("role", "")).strip()
         content_unit_id = str(group.get("content_unit_id", group_id)).strip()
-        speak_policy = str(group.get("speak_policy", "speak")).strip()
         visible_text = str(group.get("visible_text", "")).strip()
         anchor = str(group.get("visual_anchor", "")).strip()
         function = str(group.get("narration_function", "")).strip()
@@ -68,7 +67,7 @@ def visual_group_lines(slide: dict[str, Any]) -> list[str]:
         must_not_include = compact_list(group.get("must_not_include"))
         order = str(group.get("reveal_order", "")).strip()
         lines.append(
-            f"- {group_id} / unit {content_unit_id} / {role} / order {order} / speak {speak_policy}: "
+            f"- {group_id} / unit {content_unit_id} / {role} / order {order}: "
             f"visible text=\"{visible_text}\"; source={source_text}; anchor={anchor}; "
             f"narration function={function}; mask target={mask_target}; "
             f"include=[{must_include}]; exclude=[{must_not_include}]"
@@ -123,7 +122,7 @@ def build_prompt(slide: dict[str, Any], template_ref: str, example_ref: str) -> 
     subtitle = str(slide.get("subtitle", "")).strip()
     core_message = str(slide.get("core_message", "")).strip()
     groups = "\n".join(visual_group_lines(slide)) or "- No visual_groups provided; create 5-8 large reveal groups."
-    beats = "\n".join(beat_lines(slide)) or "- No narration_beats provided; derive one beat per visual group."
+    beats = "\n".join(beat_lines(slide)) or "- No narration_beats provided."
     fallback_items = "\n".join(item_lines(slide))
     slide_purpose = str(slide.get("slide_purpose", "")).strip()
 
@@ -165,7 +164,6 @@ Fallback content items, if any:
 
 Semantic mapping and mask rules:
 - Treat each visual group as one content unit. Preserve the content_unit_id relationship in the layout.
-- The subtitle group is display_only unless explicitly stated otherwise; it may be visible but should not carry a spoken explanation.
 - For every group, follow mask target, include, and exclude fields. These determine the later reveal box or mask review.
 - A later box must be able to cover all included elements without covering excluded elements.
 - Keep arrows, labels, icons, formulas, and cards inside the same reveal group when semantically connected.
@@ -173,7 +171,8 @@ Semantic mapping and mask rules:
 - Do not place critical content below y=930.
 
 Narration alignment rules:
-- Every speakable visual group must support one narration beat.
+- Narration beats are authoritative: a visual group is discussed only when a beat references it.
+- Visual groups without a narration beat remain visual-only; do not invent narration merely to cover every group.
 - The narration should expand what is visible on the page; it must not introduce unrelated concepts that the page does not show.
 - Use the hierarchy implied by reveal_order and narration order.
 

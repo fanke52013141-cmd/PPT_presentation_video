@@ -91,7 +91,7 @@ def label_lines(index: int, group: dict[str, Any]) -> list[str]:
     group_id = str(group.get("id", f"group_{index}"))
     action = str((group.get("reveal") or {}).get("type", "")) if isinstance(group.get("reveal"), dict) else ""
     content_unit_id = str(group.get("content_unit_id", "")).strip()
-    beat_id = str(group.get("narration_beat_id", "")).strip() or "display_only"
+    beat_id = str(group.get("narration_beat_id", "")).strip() or "unbound"
     mask_target = shorten(str(group.get("mask_target", "")), 34)
     lines = [f"{index}. {group_id} | {action}"]
     if content_unit_id or beat_id:

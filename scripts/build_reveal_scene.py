@@ -179,10 +179,6 @@ def alpha_box(alpha: Image.Image, width: int, height: int, padding: int = 2) -> 
     return {"x": x1, "y": y1, "w": x2 - x1, "h": y2 - y1}
 
 
-def crop_image(image: Image.Image, box: dict[str, int]) -> Image.Image:
-    return image.crop((box["x"], box["y"], box["x"] + box["w"], box["y"] + box["h"]))
-
-
 def build_event(slide_id: str, group: dict[str, Any], layer_id: str, fallback_at: float) -> dict[str, Any]:
     reveal = group.get("reveal") if isinstance(group.get("reveal"), dict) else {}
     profile = read_pipeline_profile()

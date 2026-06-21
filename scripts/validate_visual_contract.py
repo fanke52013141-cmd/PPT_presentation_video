@@ -10,16 +10,13 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from scripts.pipeline_profiles import read_pipeline_profile, speak_policy_for_role
+    from scripts.pipeline_profiles import read_pipeline_profile
 except ModuleNotFoundError:
-    from pipeline_profiles import read_pipeline_profile, speak_policy_for_role
+    from pipeline_profiles import read_pipeline_profile
 
 
 class ContractError(RuntimeError):
     pass
-
-
-ALLOWED_SPEAK_POLICIES = {"speak", "display_only"}
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -34,14 +31,6 @@ def read_json(path: Path) -> dict[str, Any]:
     return value
 
 
-def speak_policy_for(group: dict[str, Any], profile: dict[str, Any]) -> str:
-    explicit = str(group.get("speak_policy", "")).strip()
-    if explicit:
-        return explicit
-    role = str(group.get("role", ""))
-    return speak_policy_for_role(role, profile)
-
-
 def require_non_empty(value: Any, message: str) -> str:
     text = str(value or "").strip()
     if not text:
@@ -54,18 +43,14 @@ def validate_group_semantics(
     group: dict[str, Any],
     group_id: str,
     role: str,
-    profile: dict[str, Any],
-) -> tuple[str, str]:
+) -> str:
     content_unit_id = require_non_empty(
         group.get("content_unit_id"),
         f"Visual group {group_id} missing content_unit_id in {slide_id}",
     )
-    policy = speak_policy_for(group, profile)
-    if policy not in ALLOWED_SPEAK_POLICIES:
-        raise ContractError(f"Visual group {group_id} has invalid speak_policy in {slide_id}: {policy}")
     if role != "decoration":
         require_non_empty(group.get("mask_target"), f"Visual group {group_id} missing mask_target in {slide_id}")
-    return content_unit_id, policy
+    return content_unit_id
 
 
 def validate_slide(
@@ -86,8 +71,6 @@ def validate_slide(
     content_unit_ids: set[str] = set()
     visible_text_by_id: dict[str, str] = {}
     content_unit_by_group_id: dict[str, str] = {}
-    speak_policy_by_group_id: dict[str, str] = {}
-    role_by_group_id: dict[str, str] = {}
     for group in groups:
         if not isinstance(group, dict):
             raise ContractError(f"Invalid visual group in {slide_id}")
@@ -98,22 +81,18 @@ def validate_slide(
             raise ContractError(f"Duplicate visual group id in {slide_id}: {group_id}")
         group_ids.add(group_id)
         role = str(group.get("role", "content_body")).strip()
-        role_by_group_id[group_id] = role
         for key in ["visible_text", "visual_anchor", "narration_function"]:
             if not str(group.get(key, "")).strip():
                 raise ContractError(f"Visual group {group_id} missing {key} in {slide_id}")
-        content_unit_id, policy = validate_group_semantics(slide_id, group, group_id, role, profile)
+        content_unit_id = validate_group_semantics(slide_id, group, group_id, role)
         if content_unit_id in content_unit_ids:
             raise ContractError(f"Duplicate content_unit_id in {slide_id}: {content_unit_id}")
         content_unit_ids.add(content_unit_id)
         content_unit_by_group_id[group_id] = content_unit_id
-        speak_policy_by_group_id[group_id] = policy
         visible_text_by_id[group_id] = str(group.get("visible_text", "")).strip()
     beats = slide.get("narration_beats")
     if not isinstance(beats, list) or not beats:
         raise ContractError(f"Slide missing narration_beats[]: {slide_id}")
-    referenced_groups: set[str] = set()
-    referenced_content_units: set[str] = set()
     beat_ids: set[str] = set()
     for beat in beats:
         if not isinstance(beat, dict):
@@ -136,10 +115,6 @@ def validate_slide(
                 f"Beat {beat_id} content_unit_id does not match group in {slide_id}: "
                 f"{content_unit_id} != {expected_content_unit_id}"
             )
-        if speak_policy_by_group_id[group_id] == "display_only":
-            raise ContractError(f"Beat {beat_id} references display_only group in {slide_id}: {group_id}")
-        referenced_groups.add(group_id)
-        referenced_content_units.add(content_unit_id)
         for key in ["visible_anchor", "spoken_intent"]:
             if not str(beat.get(key, "")).strip():
                 raise ContractError(f"Beat {beat_id} missing {key} in {slide_id}")
@@ -151,22 +126,6 @@ def validate_slide(
                 f"Warning: beat {beat_id} in {slide_id} does not literally mention its visible anchor/text.",
                 file=sys.stderr,
             )
-    unreferenced = []
-    for group_id, role in role_by_group_id.items():
-        policy = speak_policy_by_group_id[group_id]
-        if policy == "display_only" or role == "decoration":
-            continue
-        if group_id not in referenced_groups:
-            unreferenced.append(group_id)
-    if unreferenced:
-        raise ContractError(f"Speakable visual groups are not referenced by narration in {slide_id}: {', '.join(unreferenced)}")
-    missing_content_units = [
-        content_unit_by_group_id[group_id]
-        for group_id, policy in speak_policy_by_group_id.items()
-        if policy == "speak" and content_unit_by_group_id[group_id] not in referenced_content_units
-    ]
-    if missing_content_units:
-        raise ContractError(f"Speakable content units are not referenced by narration in {slide_id}: {', '.join(missing_content_units)}")
 
 
 def validate_contract(

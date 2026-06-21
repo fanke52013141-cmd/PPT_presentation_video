@@ -16,7 +16,6 @@ from scripts.pipeline_profiles import (
     default_reveal_for_role,
     image_prompt_profile_text,
     read_pipeline_profile,
-    speak_policy_for_role,
     storyboard_profile_prompt,
 )
 
@@ -37,8 +36,9 @@ def test_profile_exposes_generalized_structure() -> None:
     prompt = storyboard_profile_prompt("短文章", profile)
     assert "不要固定套用" in prompt
     assert "subtitle" in prompt
-    assert speak_policy_for_role("subtitle", profile) == "display_only"
-    assert speak_policy_for_role("quote", profile) == "speak"
+    assert "speak_policy" not in prompt
+    assert "必选" not in prompt
+    assert "可选" not in prompt
     assert "scratch_reveal" in allowed_reveal_actions(profile)
     assert default_reveal_for_role("diagram", profile)["type"] == "wipe_left_to_right"
     assert "完整 PPT/讲解页静态主图" in image_prompt_profile_text(profile)

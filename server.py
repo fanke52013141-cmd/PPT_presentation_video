@@ -27,11 +27,9 @@ import yaml
 from openai import OpenAI
 from scripts.background_color import normalize_connected_background
 from scripts.pipeline_profiles import (
-    display_only_roles,
     image_prompt_profile_text,
     read_pipeline_profile,
     role_catalog,
-    speak_policy_for_role,
     storyboard_profile_prompt,
     storyboard_requirements,
 )
@@ -453,21 +451,6 @@ def write_project_log(project: Project, event: str, **fields: Any) -> None:
         logger.info("project=%s event=%s %s", project.id, event, line)
     except Exception as exc:
         logger.warning("Failed to write project log for %s: %s", getattr(project, "id", "<unknown>"), exc)
-
-def should_retry_without_response_format(exc: Exception) -> bool:
-    msg = str(exc).lower()
-    return any(
-        marker in msg
-        for marker in (
-            "response_format",
-            "json_object",
-            "unsupported",
-            "unrecognized",
-            "invalid parameter",
-            "not support",
-            "400",
-        )
-    )
 
 # Pydantic 响应模型
 class ProjectCreate(BaseModel):
@@ -905,8 +888,6 @@ def normalize_visual_contract(
     slides = contract.get("slides")
     if not isinstance(slides, list):
         return contract
-    profile = profile or read_pipeline_profile()
-
     for slide in slides:
         if not isinstance(slide, dict):
             continue
@@ -924,8 +905,7 @@ def normalize_visual_contract(
             group["role"] = role
             if not str(group.get("content_unit_id") or "").strip():
                 group["content_unit_id"] = f"{group_id}_unit"
-            if not str(group.get("speak_policy") or "").strip():
-                group["speak_policy"] = speak_policy_for_role(role, profile)
+            group.pop("speak_policy", None)
             if role != "decoration" and not str(group.get("mask_target") or "").strip():
                 group["mask_target"] = str(
                     group.get("visual_anchor") or group.get("visible_text") or group_id
@@ -938,7 +918,6 @@ def normalize_visual_contract(
         if not isinstance(beats, list):
             continue
         normalized_beats = []
-        referenced_group_ids = set()
         for index, beat in enumerate(beats, start=1):
             if not isinstance(beat, dict):
                 continue
@@ -947,8 +926,6 @@ def normalize_visual_contract(
             group_id = str(beat.get("group_id") or "").strip()
             group = group_by_id.get(group_id)
             if not group:
-                continue
-            if group.get("speak_policy") == "display_only":
                 continue
             if not str(beat.get("content_unit_id") or "").strip():
                 beat["content_unit_id"] = group.get("content_unit_id")
@@ -962,25 +939,7 @@ def normalize_visual_contract(
                 beat["spoken_text"] = intent or f"请看画面中的{anchor}。"
             else:
                 beat["spoken_text"] = spoken_text
-            referenced_group_ids.add(group_id)
             normalized_beats.append(beat)
-
-        for group_id, group in group_by_id.items():
-            if group.get("speak_policy") == "display_only" or group.get("role") == "decoration":
-                continue
-            if group_id in referenced_group_ids:
-                continue
-            anchor = str(group.get("visible_text") or group_id).strip()
-            normalized_beats.append(
-                {
-                    "id": f"beat_auto_{len(normalized_beats) + 1:02d}",
-                    "content_unit_id": group.get("content_unit_id"),
-                    "group_id": group_id,
-                    "visible_anchor": anchor,
-                    "spoken_intent": str(group.get("narration_function") or f"解释{anchor}").strip(),
-                    "spoken_text": f"请看画面中的{anchor}，这里说明的是{str(group.get('narration_function') or anchor).strip()}。",
-                }
-            )
         slide["narration_beats"] = normalized_beats
 
     return contract
@@ -1032,7 +991,7 @@ def all_current_slide_images_exist(project: Project) -> bool:
     )
 
 
-def prune_unlinked_mask_groups(project: Project, payload: Dict[str, Any]) -> Dict[str, Any]:
+def prune_stale_mask_groups(project: Project, payload: Dict[str, Any]) -> Dict[str, Any]:
     contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
     if not os.path.exists(contract_path) or not isinstance(payload.get("slides"), list):
         return payload
@@ -1044,50 +1003,38 @@ def prune_unlinked_mask_groups(project: Project, payload: Dict[str, Any]) -> Dic
         logger.warning("Failed to load visual contract while pruning Mask groups: %s", exc)
         return payload
 
-    narrated_groups_by_slide = {}
+    visual_groups_by_slide = {}
     for slide in contract.get("slides", []) or []:
         if not isinstance(slide, dict):
             continue
         slide_id = str(slide.get("slide_id") or "").strip()
-        narrated_groups_by_slide[slide_id] = {
-            str(beat.get("group_id") or "").strip()
-            for beat in slide.get("narration_beats", []) or []
-            if isinstance(beat, dict) and str(beat.get("group_id") or "").strip()
+        visual_groups_by_slide[slide_id] = {
+            str(group.get("id") or "").strip()
+            for group in slide.get("visual_groups", []) or []
+            if isinstance(group, dict) and str(group.get("id") or "").strip()
         }
 
-    def is_linked(group: Dict[str, Any], narrated_group_ids: set[str]) -> bool:
-        fragments = group.get("narration_fragments")
-        if isinstance(fragments, list) and any(
-            isinstance(fragment, dict) and (fragment.get("id") or fragment.get("text"))
-            for fragment in fragments
-        ):
+    def is_current(group: Dict[str, Any], visual_group_ids: set[str]) -> bool:
+        group_id = str(group.get("id") or group.get("group_id") or "").strip()
+        visual_group_id = str(group.get("visual_group_id") or "").strip()
+        if group_id.startswith("manual_group_"):
             return True
-        if str(group.get("narration_beat_id") or "").strip():
+        if visual_group_id and visual_group_id in visual_group_ids:
             return True
-        beat_ids = group.get("narration_beat_ids")
-        if isinstance(beat_ids, list) and any(str(value or "").strip() for value in beat_ids):
-            return True
-        if str(group.get("spoken_text") or "").strip():
-            return True
-        linked_ids = {
-            str(group.get(key) or "").strip()
-            for key in ("narration_group_id", "visual_group_id", "group_id", "id")
-            if str(group.get(key) or "").strip()
-        }
-        return bool(linked_ids & narrated_group_ids)
+        return group_id in visual_group_ids
 
     for slide in payload.get("slides", []):
         if not isinstance(slide, dict):
             continue
         slide_id = str(slide.get("slide_id") or "").strip()
-        narrated_group_ids = narrated_groups_by_slide.get(slide_id, set())
-        for field in ("semantic_blocks", "groups", "reveal_boxes"):
+        visual_group_ids = visual_groups_by_slide.get(slide_id, set())
+        for field in ("semantic_blocks", "groups"):
             groups = slide.get(field)
             if not isinstance(groups, list):
                 continue
             slide[field] = [
                 group for group in groups
-                if isinstance(group, dict) and is_linked(group, narrated_group_ids)
+                if isinstance(group, dict) and is_current(group, visual_group_ids)
             ]
     return payload
 
@@ -1928,7 +1875,7 @@ def clear_slide_visual_derivatives(project: Project, slide_id: str) -> None:
                 for slide in manifest.get("slides", []) or []:
                     if not isinstance(slide, dict) or str(slide.get("slide_id") or "").strip() != slide_id:
                         continue
-                    for field in ("groups", "semantic_blocks", "reveal_boxes"):
+                    for field in ("groups", "semantic_blocks"):
                         if slide.get(field):
                             changed = True
                         slide[field] = []
@@ -2189,6 +2136,47 @@ def default_storyboard_profile_text() -> str:
         return f.read()
 
 
+def sanitize_storyboard_profile(profile: Dict[str, Any]) -> Dict[str, Any]:
+    sanitized = copy.deepcopy(profile)
+    storyboard = sanitized.get("storyboard")
+    if not isinstance(storyboard, dict):
+        return sanitized
+    default_storyboard = read_pipeline_profile().get("storyboard", {})
+    default_roles = default_storyboard.get("roles", {}) if isinstance(default_storyboard, dict) else {}
+    roles = storyboard.get("roles")
+    if isinstance(roles, dict):
+        for role, config in roles.items():
+            if not isinstance(config, dict):
+                continue
+            config.pop("required", None)
+            config.pop("speak_policy", None)
+            description = str(config.get("description") or "")
+            if any(marker in description for marker in ("只展示不朗读", "不绑定旁白", "可选副标题", "可选总结区")):
+                default_config = default_roles.get(role, {}) if isinstance(default_roles, dict) else {}
+                config["description"] = str(default_config.get("description") or description)
+
+    structure_rules = storyboard.get("structure_rules")
+    if isinstance(structure_rules, list):
+        legacy_markers = (
+            "speak_policy",
+            "display_only",
+            "可讲解的 visual_group",
+            "旁白讲解",
+            "必选结构",
+            "可选结构",
+        )
+        retained_rules = [
+            rule for rule in structure_rules
+            if not any(marker in str(rule) for marker in legacy_markers)
+        ]
+        default_rules = default_storyboard.get("structure_rules", []) if isinstance(default_storyboard, dict) else []
+        for rule in default_rules if isinstance(default_rules, list) else []:
+            if rule not in retained_rules:
+                retained_rules.append(rule)
+        storyboard["structure_rules"] = retained_rules
+    return sanitized
+
+
 def parse_storyboard_profile_text(profile_text: str) -> Dict[str, Any]:
     try:
         profile = yaml.safe_load(profile_text) or {}
@@ -2202,10 +2190,11 @@ def parse_storyboard_profile_text(profile_text: str) -> Dict[str, Any]:
     roles = storyboard.get("roles")
     if not isinstance(roles, dict) or not roles:
         raise HTTPException(status_code=400, detail="分镜结构配置至少需要一个 storyboard.roles 角色")
-    return profile
+    return sanitize_storyboard_profile(profile)
 
 
 def storyboard_profile_editor_data(profile: Dict[str, Any]) -> Dict[str, Any]:
+    profile = sanitize_storyboard_profile(profile)
     storyboard = profile.get("storyboard") if isinstance(profile.get("storyboard"), dict) else {}
     roles = storyboard.get("roles") if isinstance(storyboard.get("roles"), dict) else {}
     return {
@@ -2216,12 +2205,6 @@ def storyboard_profile_editor_data(profile: Dict[str, Any]) -> Dict[str, Any]:
                 "label": str(config.get("label") or role),
                 "description": str(config.get("description") or ""),
                 "enabled": config.get("enabled") is not False,
-                "required": bool(config.get("required")),
-                "speak_policy": (
-                    "display_only"
-                    if str(config.get("speak_policy") or "").strip() == "display_only"
-                    else "speak"
-                ),
             }
             for role, config in roles.items()
             if isinstance(config, dict)
@@ -2243,7 +2226,7 @@ def apply_storyboard_profile_patch(
     patch: Any,
 ) -> Dict[str, Any]:
     if not isinstance(patch, dict):
-        return profile
+        return sanitize_storyboard_profile(profile)
     merged = copy.deepcopy(profile)
     storyboard = merged.setdefault("storyboard", {})
     if not isinstance(storyboard, dict):
@@ -2277,15 +2260,14 @@ def apply_storyboard_profile_patch(
         for role, current_config in current_roles.items():
             if not isinstance(current_config, dict):
                 continue
+            next_config = copy.deepcopy(current_config)
+            next_config.pop("required", None)
+            next_config.pop("speak_policy", None)
             next_patch = role_patch.get(role)
             if not isinstance(next_patch, dict):
-                updated_roles[role] = copy.deepcopy(current_config)
+                updated_roles[role] = next_config
                 continue
-            next_config = copy.deepcopy(current_config)
             next_config["enabled"] = next_patch.get("enabled") is not False
-            next_config["required"] = bool(next_patch.get("required"))
-            policy = str(next_patch.get("speak_policy") or "speak").strip()
-            next_config["speak_policy"] = "display_only" if policy == "display_only" else "speak"
             updated_roles[role] = next_config
         if not any(config.get("enabled") is not False for config in updated_roles.values()):
             raise HTTPException(status_code=400, detail="至少需要启用一个分镜结构类型")
@@ -2471,8 +2453,8 @@ def generate_storyboard_rules_ai_draft(
                     "long_article": "5-8",
                 },
                 "roles": {
-                    "title": {"enabled": True, "required": True, "speak_policy": "display_only"},
-                    "content_body": {"enabled": True, "required": True, "speak_policy": "speak"},
+                    "title": {"enabled": True},
+                    "content_body": {"enabled": True},
                 },
             },
         },
@@ -2483,7 +2465,6 @@ def generate_storyboard_rules_ai_draft(
         "你的任务不是生成具体 visual_contract，而是根据文章内容和当前规则，生成一套可复用的分镜规则模板草案。"
         "必须输出严格 JSON，不要 Markdown，不要解释。"
         "profile_patch.roles 只能使用用户给定的 allowed_roles；不要创造新 role。"
-        "speak_policy 只能是 speak 或 display_only。"
         "user_requirement 是用户本次明确输入的需求，必须优先满足，并将其转化为具体、结构化、可复用的配置。"
         "规则要服务于后续图片生成、Mask 标注、旁白绑定和视频动画，强调结构清晰、分组可遮罩、旁白自然。"
     )
@@ -2563,7 +2544,6 @@ def build_storyboard_request(
    - narration_function: 解释该分组在画面中所起的视觉/解释作用
    - reveal_order: 页面渲染时层淡入淡出显示的顺序，从 1 开始依次增加
    - content_unit_id: 稳定内容单元 ID，必须和 narration_beats[].content_unit_id 对齐
-   - speak_policy: speak 或 display_only；装饰、副标题等可设 display_only
    - mask_target: 后续人工 Mask 要覆盖的画面目标描述
 4. 必须规划 narration_beats (旁白语段)，使说话声音与相应视觉分组绑定：
    - group_id: 指向前面定义的 visual_groups 中的 id
@@ -2571,6 +2551,8 @@ def build_storyboard_request(
    - spoken_intent: 这一句话想达到的意图
    - spoken_text: 这一句话具体要朗读的中文旁白（需自然连贯，解释 visible_text）
    - content_unit_id: 必须与绑定 visual_group 的 content_unit_id 一致
+   - narration_beats 是是否朗读的唯一依据：某个 visual_group 有对应 beat 才会在演讲稿中讲解，没有 beat 就只作为画面内容展示。
+   - 不要为了覆盖所有 visual_groups 而强行补旁白；只为演讲稿实际需要讲解的内容创建 beat。
 5. 当前项目的可配置分镜结构如下。请优先遵守：
 {profile_prompt}
 6. 用户自定义的分镜与演讲稿规则如下。请遵守这些内容，但不得修改输出字段、层级、ID 规则或 JSON 结构：
@@ -4016,7 +3998,7 @@ def semantic_block_payload(
         elif visual_anchor:
             visual_description = f"{semantic_type}：{visual_anchor}。"
         else:
-            visual_description = f"{semantic_type}：请结合当前页画面中与旁白含义最接近的可见元素。"
+            visual_description = f"{semantic_type}：请结合 visible_text 和当前页画面定位对应的可见元素。"
     semantic_note = str(ai_block.get("semantic_note") or "").strip()
     if not semantic_note:
         semantic_note = "建议只涂抹该语块对应的可见元素本体，避开相邻箭头、装饰线和底部字幕安全区。"
@@ -4066,19 +4048,14 @@ def deterministic_semantic_blocks(
                 existing_boxes[str(group.get("id") or group.get("group_id") or "")] = group.get("box")
     fragments = build_narration_fragments(contract_slide)
     fragments_by_id = {fragment["id"]: fragment for fragment in fragments}
-    beat_to_fragments: Dict[str, List[str]] = {}
+    group_to_fragments: Dict[str, List[str]] = {}
     for fragment in fragments:
-        beat_to_fragments.setdefault(fragment["beat_id"], []).append(fragment["id"])
+        group_to_fragments.setdefault(fragment["group_id"], []).append(fragment["id"])
     blocks: List[Dict[str, Any]] = []
-    for beat in contract_slide.get("narration_beats", []) or []:
-        if not isinstance(beat, dict):
+    for group_id, group in groups.items():
+        if not isinstance(group, dict):
             continue
-        beat_id = str(beat.get("id") or "").strip()
-        group_id = str(beat.get("group_id") or "").strip()
-        fragment_ids = beat_to_fragments.get(beat_id) or []
-        if not fragment_ids:
-            continue
-        group = groups.get(group_id)
+        fragment_ids = group_to_fragments.get(group_id) or []
         blocks.append(semantic_block_payload(
             slide_id,
             len(blocks) + 1,
@@ -4090,73 +4067,6 @@ def deterministic_semantic_blocks(
         ))
     return blocks
 
-
-def semantic_blocks_from_ai(
-    slide_id: str,
-    ai_data: Dict[str, Any],
-    contract_slide: Dict[str, Any],
-    manifest_slide: Optional[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
-    groups = {
-        str(group.get("id", "")).strip(): group
-        for group in (contract_slide.get("visual_groups") or [])
-        if isinstance(group, dict) and str(group.get("id", "")).strip()
-    }
-    existing_boxes = {}
-    if manifest_slide:
-        for group in manifest_slide.get("groups", []) or []:
-            if isinstance(group, dict):
-                existing_boxes[str(group.get("id") or group.get("group_id") or "")] = group.get("box")
-    fragments = build_narration_fragments(contract_slide)
-    fragments_by_id = {fragment["id"]: fragment for fragment in fragments}
-    by_beat_id: Dict[str, List[str]] = {}
-    by_group_id: Dict[str, List[str]] = {}
-    for fragment in fragments:
-        by_beat_id.setdefault(fragment.get("beat_id", ""), []).append(fragment["id"])
-        by_group_id.setdefault(fragment.get("group_id", ""), []).append(fragment["id"])
-    blocks: List[Dict[str, Any]] = []
-    used_fragment_ids = set()
-    for raw_block in ai_data.get("blocks", []) if isinstance(ai_data.get("blocks"), list) else []:
-        if not isinstance(raw_block, dict):
-            continue
-        fragment_ids = [
-            str(value).strip()
-            for value in raw_block.get("fragment_ids", [])
-            if str(value).strip() in fragments_by_id and str(value).strip() not in used_fragment_ids
-        ] if isinstance(raw_block.get("fragment_ids"), list) else []
-        beat_id = str(raw_block.get("narration_beat_id") or raw_block.get("beat_id") or "").strip()
-        if not fragment_ids and beat_id:
-            fragment_ids = [fid for fid in by_beat_id.get(beat_id, []) if fid not in used_fragment_ids]
-        visual_group_id = str(raw_block.get("visual_group_id") or raw_block.get("group_id") or "").strip()
-        if not fragment_ids and visual_group_id:
-            fragment_ids = [fid for fid in by_group_id.get(visual_group_id, []) if fid not in used_fragment_ids]
-        if not fragment_ids:
-            continue
-        if not visual_group_id:
-            visual_group_id = fragments_by_id[fragment_ids[0]].get("group_id", "")
-        group = groups.get(visual_group_id)
-        blocks.append(semantic_block_payload(
-            slide_id,
-            len(blocks) + 1,
-            fragment_ids,
-            visual_group_id,
-            group,
-            fragments_by_id,
-            existing_boxes.get(visual_group_id),
-            raw_block,
-        ))
-        used_fragment_ids.update(fragment_ids)
-    if len(used_fragment_ids) < len(fragments):
-        fallback = deterministic_semantic_blocks(slide_id, contract_slide, manifest_slide)
-        for block in fallback:
-            fragment_ids = [fragment["id"] for fragment in block.get("narration_fragments", [])]
-            if any(fid not in used_fragment_ids for fid in fragment_ids):
-                blocks.append({
-                    **block,
-                    "group_id": f"semantic_{slide_id}_{len(blocks) + 1:02d}",
-                })
-                used_fragment_ids.update(fragment_ids)
-    return blocks
 
 @app.post("/api/projects/{project_id}/steps/5/auto-mask")
 def auto_mask_project(project_id: str, db: Session = Depends(get_db)):
@@ -4210,28 +4120,22 @@ def auto_mask_project(project_id: str, db: Session = Depends(get_db)):
                         image_file.seek(0)
                         base64_image = base64.b64encode(image_file.read()).decode('utf-8')
                     
-                # 拼接分组信息。当前 reveal manifest 使用 groups[]，
-                # 旧版 reveal_boxes[] 仅作为兼容兜底。
                 groups_info = []
                 slide_groups = slide.get("groups") if isinstance(slide.get("groups"), list) else []
-                if slide_groups:
-                    for group in slide_groups:
-                        box = group.get("box", {}) if isinstance(group.get("box"), dict) else {}
-                        scaled_box = [
-                            round(float(box.get("x", 0)) * vision_width / 1920),
-                            round(float(box.get("y", 0)) * vision_height / 1080),
-                            round((float(box.get("x", 0)) + float(box.get("w", 0))) * vision_width / 1920),
-                            round((float(box.get("y", 0)) + float(box.get("h", 0))) * vision_height / 1080),
-                        ]
-                        groups_info.append(
-                            f"Group ID: {group['id']}\n"
-                            f"- exact visible label: {group.get('visible_text', '')}\n"
-                            f"- visual anchor: {group.get('visual_anchor', '')}\n"
-                            f"- prior box on the provided image: {scaled_box}"
-                        )
-                else:
-                    for box in slide.get("reveal_boxes", []):
-                        groups_info.append(f"Group ID: {box['group_id']}, text label: '{box.get('text_label', '')}'")
+                for group in slide_groups:
+                    box = group.get("box", {}) if isinstance(group.get("box"), dict) else {}
+                    scaled_box = [
+                        round(float(box.get("x", 0)) * vision_width / 1920),
+                        round(float(box.get("y", 0)) * vision_height / 1080),
+                        round((float(box.get("x", 0)) + float(box.get("w", 0))) * vision_width / 1920),
+                        round((float(box.get("y", 0)) + float(box.get("h", 0))) * vision_height / 1080),
+                    ]
+                    groups_info.append(
+                        f"Group ID: {group['id']}\n"
+                        f"- exact visible label: {group.get('visible_text', '')}\n"
+                        f"- visual anchor: {group.get('visual_anchor', '')}\n"
+                        f"- prior box on the provided image: {scaled_box}"
+                    )
                 groups_info_str = "\n".join(groups_info)
                 if not groups_info_str:
                     continue
@@ -4301,26 +4205,20 @@ def auto_mask_project(project_id: str, db: Session = Depends(get_db)):
                     vision_data = json.loads(cleaned_content)
                     boxes_dict = {b["group_id"]: b["box"] for b in vision_data.get("boxes", [])}
                     
-                    if slide_groups:
-                        for group in slide_groups:
-                            g_id = group["id"]
-                            if g_id in boxes_dict:
-                                raw_x1, raw_y1, raw_x2, raw_y2 = [float(v) for v in boxes_dict[g_id]]
-                                x1 = int(round(raw_x1 * 1920 / vision_width))
-                                y1 = int(round(raw_y1 * 1080 / vision_height))
-                                x2 = int(round(raw_x2 * 1920 / vision_width))
-                                y2 = int(round(raw_y2 * 1080 / vision_height))
-                                group["box"] = {
-                                    "x": max(0, x1),
-                                    "y": max(0, y1),
-                                    "w": max(1, x2 - x1),
-                                    "h": max(1, y2 - y1)
-                                }
-                    else:
-                        for box in slide.get("reveal_boxes", []):
-                            g_id = box["group_id"]
-                            if g_id in boxes_dict:
-                                box["box"] = [int(v) for v in boxes_dict[g_id]]
+                    for group in slide_groups:
+                        g_id = group["id"]
+                        if g_id in boxes_dict:
+                            raw_x1, raw_y1, raw_x2, raw_y2 = [float(v) for v in boxes_dict[g_id]]
+                            x1 = int(round(raw_x1 * 1920 / vision_width))
+                            y1 = int(round(raw_y1 * 1080 / vision_height))
+                            x2 = int(round(raw_x2 * 1920 / vision_width))
+                            y2 = int(round(raw_y2 * 1080 / vision_height))
+                            group["box"] = {
+                                "x": max(0, x1),
+                                "y": max(0, y1),
+                                "w": max(1, x2 - x1),
+                                "h": max(1, y2 - y1)
+                            }
                 except Exception as ex:
                     logger.error(f"Failed to parse vision response for slide {slide_id}: {ex}. Content: {response.choices[0].message.content}")
                     
@@ -4401,10 +4299,6 @@ def semantic_blocks_project(project_id: str, payload: Optional[Dict[str, Any]] =
         ]
         manifest_slide["semantic_blocks"] = semantic_blocks
         manifest_slide["groups"] = painted_groups
-        manifest_slide["reveal_boxes"] = [
-            box for box in manifest_slide.get("reveal_boxes", []) or []
-            if isinstance(box, dict) and group_has_paint(box)
-        ]
         manifest_slide["status"] = "pending"
         processed_count += 1
 
@@ -4445,7 +4339,7 @@ def update_step5_draft(project_id: str, payload: Dict[str, Any], db: Session = D
             }
             payload["slides"] = [by_id[slide_id] for slide_id in current_slide_ids if slide_id in by_id]
 
-        payload = prune_unlinked_mask_groups(project, payload)
+        payload = prune_stale_mask_groups(project, payload)
         manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
         write_json_atomic(manifest_path, payload)
     return {"success": True}
@@ -4467,7 +4361,7 @@ def update_step5_result(project_id: str, payload: Dict[str, Any], build_assets: 
             }
             payload["slides"] = [by_id[slide_id] for slide_id in current_slide_ids if slide_id in by_id]
 
-        payload = prune_unlinked_mask_groups(project, payload)
+        payload = prune_stale_mask_groups(project, payload)
         manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
         write_json_atomic(manifest_path, payload)
 

@@ -27,7 +27,6 @@ CANVAS = {"width": 1920, "height": 1080, "background": "#FEFDF9", "subtitle_safe
 SEMANTIC_FIELDS = [
     "content_unit_id",
     "source_text",
-    "speak_policy",
     "mask_target",
     "must_include",
     "must_not_include",

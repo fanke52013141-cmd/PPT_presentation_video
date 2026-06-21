@@ -68,13 +68,10 @@ let state = {
     maskZoom: 1,
     maskZoomOriginX: 50,
     maskZoomOriginY: 50,
-    autoMaskLoading: false,
     semanticLoading: false,
     confirmingMasks: false,
     animationPreview: null,
     animationModalPreviewRaf: null,
-    narrationPickerBoxIndex: -1,
-    narrationPickerSelection: [],
     startX: 0,
     startY: 0
   }
@@ -118,7 +115,7 @@ function normalizeMaskReveal(reveal) {
 
 function applyRevealToSlideCollections(slide, reveal) {
   if (!slide) return;
-  ['groups', 'reveal_boxes', 'semantic_blocks'].forEach(field => {
+  ['groups', 'semantic_blocks'].forEach(field => {
     if (!Array.isArray(slide[field])) return;
     slide[field].forEach(item => {
       if (item && typeof item === 'object') {
@@ -382,8 +379,6 @@ function initGlobalEvents() {
   document.getElementById('step5-btn-animation-settings')?.addEventListener('click', () => openAnimationSettingsModal());
   document.getElementById('step5-brush-size')?.addEventListener('input', (e) => updateBrushSize(e.target.value));
   document.getElementById('step5-eraser-size')?.addEventListener('input', (e) => updateEraserSize(e.target.value));
-  document.getElementById('btn-narration-picker-cancel')?.addEventListener('click', () => closeNarrationPicker());
-  document.getElementById('btn-narration-picker-confirm')?.addEventListener('click', () => confirmNarrationPicker());
 
   // ================= 步骤 6 事件 =================
   document.getElementById('step6-btn-init')?.addEventListener('click', () => initStep6Narration());
@@ -1192,10 +1187,6 @@ function renderStep2Workspace() {
           <select class="step2-role-select" onchange="updateGroupField(${gIdx}, 'role', this.value)">
             ${storyboardRoleOptions(group.role)}
           </select>
-          <select class="step2-speak-policy-select" onchange="updateGroupSpeakPolicy(${gIdx}, this.value)">
-            <option value="speak"${groupSpeakPolicy(group) === 'speak' ? ' selected' : ''}>需要朗读</option>
-            <option value="display_only"${groupSpeakPolicy(group) === 'display_only' ? ' selected' : ''}>仅画面展示</option>
-          </select>
         </div>
         <div class="step2-group-fields">
           <div>
@@ -1380,52 +1371,16 @@ function storyboardRoleOptions(selectedRole) {
   }
   return Object.entries(roles).map(([role, config]) => {
     const label = config?.label || role;
-    const required = config?.required ? ' · 必选' : '';
-    return `<option value="${escHtml(role)}"${role === selected ? ' selected' : ''}>${escHtml(label)}${required}</option>`;
+    return `<option value="${escHtml(role)}"${role === selected ? ' selected' : ''}>${escHtml(label)}</option>`;
   }).join('');
-}
-
-function groupSpeakPolicy(group) {
-  const explicit = String(group?.speak_policy || '').trim();
-  if (explicit === 'speak' || explicit === 'display_only') return explicit;
-  return state.storyboardRoles?.[group?.role]?.speak_policy === 'display_only'
-    ? 'display_only'
-    : 'speak';
 }
 
 function updateGroupField(gIdx, field, val) {
   const slide = state.slides[state.activeSlideIndex];
   if (slide && slide.visual_groups[gIdx]) {
     slide.visual_groups[gIdx][field] = val;
-    if (field === 'role' && !slide.visual_groups[gIdx].speak_policy) {
-      const config = state.storyboardRoles?.[val] || {};
-      slide.visual_groups[gIdx].speak_policy = config.speak_policy || 'speak';
-    }
     scheduleStep2AutoSave();
   }
-}
-
-function updateGroupSpeakPolicy(gIdx, policy) {
-  const slide = state.slides[state.activeSlideIndex];
-  const group = slide?.visual_groups?.[gIdx];
-  if (!slide || !group) return;
-  group.speak_policy = policy === 'display_only' ? 'display_only' : 'speak';
-  slide.narration_beats = Array.isArray(slide.narration_beats) ? slide.narration_beats : [];
-  const existingBeat = slide.narration_beats.find(beat => beat.group_id === group.id);
-  if (group.speak_policy === 'display_only') {
-    slide.narration_beats = slide.narration_beats.filter(beat => beat.group_id !== group.id);
-  } else if (!existingBeat) {
-    const beatIndex = slide.narration_beats.length + 1;
-    slide.narration_beats.push({
-      id: `${group.id || `group_${gIdx + 1}`}_beat_${beatIndex}`,
-      group_id: group.id,
-      content_unit_id: group.content_unit_id || `${group.id}_unit`,
-      visible_anchor: group.visible_text || '当前画面',
-      spoken_intent: group.narration_function || '解释当前画面内容',
-      spoken_text: group.visible_text || '请看当前画面。',
-    });
-  }
-  scheduleStep2AutoSave();
 }
 
 function addVisualGroup() {
@@ -1441,7 +1396,6 @@ function addVisualGroup() {
     visual_anchor: '请描述该内容块在画面中的位置和形式',
     narration_function: '解释该内容块',
     content_unit_id: `${groupId}_unit`,
-    speak_policy: 'speak',
     mask_target: '新内容块整体区域',
     reveal_order: index,
   });
@@ -2101,17 +2055,6 @@ function getBoxColor(maskBox, idx) {
   return getMaskColor(idx);
 }
 
-function roleToSemanticLabel(role) {
-  const roleName = String(role || '').toLowerCase();
-  if (roleName === 'title') return '主标题';
-  if (roleName === 'subtitle') return '副标题';
-  if (roleName === 'summary') return '总结区';
-  if (roleName === 'diagram') return '图示';
-  if (roleName === 'annotation') return '注释';
-  if (roleName === 'decoration') return '装饰元素';
-  return '正文内容';
-}
-
 function hexToRgba(hex, alpha) {
   const clean = String(hex || '#111111').replace('#', '');
   const full = clean.length === 3 ? clean.split('').map(ch => ch + ch).join('') : clean;
@@ -2291,7 +2234,7 @@ function normalizeManifestNarrationFragments() {
   manifestData.slides.forEach(slide => {
     const step2Slide = getStep2SlideForManifestSlide(slide);
     if (!step2Slide) return;
-    ['semantic_blocks', 'groups', 'reveal_boxes'].forEach(field => {
+    ['semantic_blocks', 'groups'].forEach(field => {
       if (!Array.isArray(slide[field])) return;
       slide[field].forEach(box => normalizeMaskBoxNarrationFragments(box, step2Slide));
     });
@@ -2316,14 +2259,6 @@ function getNarrationBeatForBox(maskBox, step2Slide = getStep2SlideForManifestSl
   return beats.find(beat => beat.group_id === maskBox.group_id) || null;
 }
 
-function isBeatLinkedToMaskBox(beat, maskBox) {
-  if (!beat || !maskBox) return false;
-  if (Array.isArray(maskBox.narration_beat_ids) && maskBox.narration_beat_ids.includes(beat.id)) return true;
-  if (maskBox.narration_beat_id && beat.id === maskBox.narration_beat_id) return true;
-  if (maskBox.narration_group_id && beat.group_id === maskBox.narration_group_id) return true;
-  return beat.group_id === maskBox.group_id;
-}
-
 function isEraseStroke(stroke) {
   return !!stroke?.eraser || String(stroke?.mode || '').toLowerCase() === 'erase';
 }
@@ -2342,24 +2277,6 @@ function isSemanticDraftBox(maskBox) {
 
 function isDraftMaskBox(maskBox) {
   return isManualEmptyBox(maskBox) || isSemanticDraftBox(maskBox);
-}
-
-function hasMaskNarrationBinding(maskBox, step2Slide = getStep2SlideForManifestSlide()) {
-  if (!maskBox) return false;
-  if (Array.isArray(maskBox.narration_fragments) && maskBox.narration_fragments.some(fragment => fragment?.id || fragment?.text)) {
-    return true;
-  }
-  if (maskBox.narration_beat_id) return true;
-  if (Array.isArray(maskBox.narration_beat_ids) && maskBox.narration_beat_ids.some(Boolean)) return true;
-  if (String(maskBox.spoken_text || '').trim()) return true;
-
-  const linkedGroupIds = new Set([
-    maskBox.narration_group_id,
-    maskBox.visual_group_id,
-    maskBox.group_id,
-    maskBox.id
-  ].map(value => String(value || '').trim()).filter(Boolean));
-  return (step2Slide?.narration_beats || []).some(beat => linkedGroupIds.has(String(beat?.group_id || '').trim()));
 }
 
 function copySemanticFields(target, source) {
@@ -2430,7 +2347,6 @@ function semanticBlockToMaskBox(box, idx) {
 
 function getSlideMaskBoxes(slide) {
   if (!slide) return [];
-  const step2Slide = getStep2SlideForManifestSlide(slide);
   const semanticBoxes = Array.isArray(slide.semantic_blocks)
     ? slide.semantic_blocks.map(semanticBlockToMaskBox)
     : [];
@@ -2439,8 +2355,6 @@ function getSlideMaskBoxes(slide) {
   let baseBoxes = [];
   if (Array.isArray(slide.groups) && slide.groups.length > 0) {
     baseBoxes = slide.groups.map(groupToMaskBox);
-  } else if (Array.isArray(slide.reveal_boxes) && slide.reveal_boxes.length > 0) {
-    baseBoxes = JSON.parse(JSON.stringify(slide.reveal_boxes)).map(normalizeRevealBox);
   }
 
   const baseById = new Map(baseBoxes.map(box => [box.group_id, box]));
@@ -2463,7 +2377,6 @@ function getSlideMaskBoxes(slide) {
     if (!semanticIds.has(box.group_id)) merged.push(box);
   });
   return merged
-    .filter(box => hasMaskNarrationBinding(box, step2Slide))
     .map((box, idx) => ({
       ...box,
       manual_mask: {
@@ -2475,8 +2388,7 @@ function getSlideMaskBoxes(slide) {
 
 function syncMaskBoxesToSlide(slide, boxes) {
   if (!slide) return;
-  const step2Slide = getStep2SlideForManifestSlide(slide);
-  const readyBoxes = boxes.filter(maskBox => !isDraftMaskBox(maskBox) && hasMaskNarrationBinding(maskBox, step2Slide));
+  const readyBoxes = boxes.filter(maskBox => !isDraftMaskBox(maskBox));
   const semanticBoxes = boxes
     .filter(maskBox => String(maskBox?.source || '') === 'ai_semantic')
     .map((maskBox, idx) => ({
@@ -2539,16 +2451,6 @@ function syncMaskBoxesToSlide(slide, boxes) {
       h: Math.max(1, y2 - y1)
     };
   });
-  slide.reveal_boxes = JSON.parse(JSON.stringify(
-    readyBoxes
-      .map((maskBox, idx) => ({
-        ...maskBox,
-        manual_mask: {
-          ...cloneManualMask(maskBox.manual_mask || { strokes: [] }),
-          color: getMaskColor(idx)
-        }
-      }))
-  ));
 }
 
 async function loadStep5Data() {
@@ -2642,11 +2544,6 @@ function renderStoryboardRoleEditor(editor = {}) {
           <small>${escHtml(config.description || role)}</small>
         </span>
       </label>
-      <input class="storyboard-role-required" type="checkbox"${config.required ? ' checked' : ''} title="每页是否必须出现">
-      <select class="storyboard-role-speak-policy">
-        <option value="speak"${config.speak_policy === 'speak' ? ' selected' : ''}>朗读</option>
-        <option value="display_only"${config.speak_policy === 'display_only' ? ' selected' : ''}>只展示</option>
-      </select>
     </div>
   `).join('');
 }
@@ -2658,8 +2555,6 @@ function readStoryboardProfilePatch() {
     if (!role) return;
     roles[role] = {
       enabled: row.querySelector('.storyboard-role-enabled')?.checked !== false,
-      required: !!row.querySelector('.storyboard-role-required')?.checked,
-      speak_policy: row.querySelector('.storyboard-role-speak-policy')?.value || 'speak',
     };
   });
   return {
@@ -3274,7 +3169,6 @@ async function refreshStep3Prompts(options = {}) {
 }
 
 function renderStep5Workspace() {
-  updateStep5AutoMaskButton();
   updateStep5SemanticButton();
   updateStep5ConfirmButton();
   const thumbsContainer = document.getElementById('step5-thumbs');
@@ -3284,7 +3178,6 @@ function renderStep5Workspace() {
   manifestData.slides.forEach((slide, idx) => {
     const btn = document.createElement('div');
     const isCurrent = idx === state.activeSlideIndex;
-    const isRunning = state.canvasState.autoMaskLoading && isCurrent;
     const isSemanticRunning = state.canvasState.semanticLoading && isCurrent;
     const isCompleted = slide.status === 'completed';
     
@@ -3296,10 +3189,6 @@ function renderStep5Workspace() {
       statusClass = 'active';
       statusText = '分块中';
       statusColor = '#7b2cbf';
-    } else if (isRunning) {
-      statusClass = 'active';
-      statusText = '框选中';
-      statusColor = '#2f80ed';
     } else if (isCurrent) {
       statusClass = 'active';
       statusText = '当前页';
@@ -3314,7 +3203,7 @@ function renderStep5Workspace() {
     btn.innerHTML = `
       <div style="font-size: 0.85rem; font-weight: bold; color: var(--ink-color);">${slide.slide_id}</div>
       <div style="font-size: 0.65rem; margin-top: 0.15rem; color: ${statusColor}; font-weight: 500;">
-        ${statusText === '已标注' ? '✓ 已标注' : statusText === '分块中' ? '… 分块中' : statusText === '框选中' ? '… 框选中' : statusText === '标注中' ? '✍ 标注中' : '待标注'}
+        ${statusText === '已标注' ? '✓ 已标注' : statusText === '分块中' ? '… 分块中' : statusText === '标注中' ? '✍ 标注中' : '待标注'}
       </div>
     `;
     
@@ -3529,20 +3418,10 @@ function toggleNarrationFragmentForSelectedBox(fragmentId) {
   scheduleStep5Autosave();
 }
 
-function updateStep5AutoMaskButton() {
-  const btn = document.getElementById('step5-btn-automask');
-  if (!btn) return;
-  btn.disabled = !!state.canvasState.autoMaskLoading || !!state.canvasState.semanticLoading || !!state.canvasState.confirmingMasks;
-  btn.classList.toggle('loading', !!state.canvasState.autoMaskLoading);
-  btn.innerHTML = state.canvasState.autoMaskLoading
-    ? `<span class="button-spinner"></span><span class="btn-label">AI 框选中...</span>`
-    : `<svg class="icon" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="10" rx="2"></rect><circle cx="12" cy="5" r="2"></circle><path d="M12 7v4M8 16h.01M16 16h.01"></path></svg><span class="btn-label">AI 视觉自动框选</span>`;
-}
-
 function updateStep5SemanticButton() {
   const btn = document.getElementById('step5-btn-semantic-blocks');
   if (!btn) return;
-  btn.disabled = !!state.canvasState.semanticLoading || !!state.canvasState.autoMaskLoading || !!state.canvasState.confirmingMasks;
+  btn.disabled = !!state.canvasState.semanticLoading || !!state.canvasState.confirmingMasks;
   btn.classList.toggle('loading', !!state.canvasState.semanticLoading);
   btn.innerHTML = state.canvasState.semanticLoading
     ? `<span class="button-spinner"></span><span class="btn-label">AI 分块中...</span>`
@@ -3555,7 +3434,7 @@ function updateStep5ConfirmButton(message = '') {
   if (!btn) return;
 
   const confirming = !!state.canvasState.confirmingMasks;
-  const aiBusy = !!state.canvasState.autoMaskLoading || !!state.canvasState.semanticLoading;
+  const aiBusy = !!state.canvasState.semanticLoading;
 
   btn.classList.toggle('loading', confirming);
   btn.disabled = confirming || aiBusy;
@@ -3707,7 +3586,6 @@ function clearAllMaskAnnotations() {
     () => {
       manifestData.slides.forEach(slide => {
         slide.groups = [];
-        slide.reveal_boxes = [];
         slide.semantic_blocks = [];
         slide.status = "pending";
       });
@@ -3753,94 +3631,6 @@ function updateMaskBoxFromManualMask(idx) {
     w: Math.round(x2 - x1),
     h: Math.round(y2 - y1)
   };
-}
-
-function openNarrationPicker(idx) {
-  const maskBox = state.canvasState.boxes[idx];
-  const step2Slide = getStep2SlideForManifestSlide();
-  const fragments = getNarrationFragments(step2Slide);
-  const modal = document.getElementById('modal-narration-picker');
-  const list = document.getElementById('narration-picker-list');
-  const preview = document.getElementById('narration-picker-preview-img');
-  if (!modal || !list || !maskBox) return;
-
-  state.canvasState.narrationPickerBoxIndex = idx;
-  state.canvasState.narrationPickerSelection = getSelectedFragmentIds(maskBox);
-  if (preview) {
-    const slide = getCurrentManifestSlide();
-    preview.src = slide ? `/api/projects/${state.currentProject.id}/slides/${slide.slide_id}/image?t=${uuid()}` : '';
-  }
-
-  if (!fragments.length) {
-    list.innerHTML = '<div class="sketch-dashed mask-empty-state">当前页还没有可绑定的演讲旁白。</div>';
-  } else {
-    list.innerHTML = fragments.map((fragment) => {
-      const isSelected = state.canvasState.narrationPickerSelection.includes(fragment.id);
-      return `
-        <button class="narration-option${isSelected ? ' selected' : ''}" type="button" data-fragment-id="${escHtml(fragment.id)}" style="--mask-color:${getBoxColor(maskBox, idx)};">
-          <span class="narration-option-index">${fragment.order}</span>
-          <span class="narration-option-text">${escHtml(fragment.text)}</span>
-        </button>
-      `;
-    }).join('');
-    list.querySelectorAll('.narration-option').forEach(option => {
-      option.addEventListener('click', () => {
-        const fragmentId = option.dataset.fragmentId;
-        const selected = state.canvasState.narrationPickerSelection;
-        const existingIndex = selected.indexOf(fragmentId);
-        if (existingIndex >= 0) {
-          selected.splice(existingIndex, 1);
-          option.classList.remove('selected');
-        } else {
-          selected.push(fragmentId);
-          option.classList.add('selected');
-        }
-      });
-    });
-  }
-
-  modal.style.display = 'flex';
-}
-
-function closeNarrationPicker() {
-  const modal = document.getElementById('modal-narration-picker');
-  if (modal) modal.style.display = 'none';
-  state.canvasState.narrationPickerBoxIndex = -1;
-  state.canvasState.narrationPickerSelection = [];
-}
-
-function confirmNarrationPicker() {
-  const boxIdx = state.canvasState.narrationPickerBoxIndex;
-  const maskBox = state.canvasState.boxes[boxIdx];
-  const step2Slide = getStep2SlideForManifestSlide();
-  const fragments = getNarrationFragments(step2Slide);
-  const selectedIds = state.canvasState.narrationPickerSelection;
-  const selectedFragments = fragments.filter(fragment => selectedIds.includes(fragment.id));
-  if (!maskBox || selectedFragments.length === 0) {
-    closeNarrationPicker();
-    return;
-  }
-  const beatIds = [...new Set(selectedFragments.map(fragment => fragment.beat_id).filter(Boolean))];
-  const groupIds = [...new Set(selectedFragments.map(fragment => fragment.group_id).filter(Boolean))];
-  maskBox.narration_beat_ids = beatIds;
-  maskBox.narration_beat_id = beatIds[0] || '';
-  maskBox.narration_group_id = groupIds[0] || '';
-  maskBox.narration_fragments = selectedFragments.map(fragment => ({
-    id: fragment.id,
-    beat_id: fragment.beat_id,
-    group_id: fragment.group_id,
-    text: fragment.text
-  }));
-  maskBox.spoken_text = selectedFragments.map(fragment => fragment.text).join('');
-  if (!maskBox.text_label || /^语块\s+\d+$/.test(maskBox.text_label)) {
-    maskBox.text_label = maskBox.spoken_text.slice(0, 12) || maskBox.text_label;
-  }
-  closeNarrationPicker();
-  redrawCanvas();
-  renderStep5BoxesForm();
-  renderStep5NarrationPanel();
-  scheduleStep5Autosave();
-  showToast(`第 ${boxIdx + 1} 个语块已绑定 ${selectedFragments.length} 个旁白片段。`);
 }
 
 window.deleteMaskBox = function(idx) {
@@ -4021,10 +3811,13 @@ function positionBrushCursor(canvas, clientX, clientY) {
     hideBrushCursor();
     return;
   }
-  const wrapperRect = cursor.parentElement.getBoundingClientRect();
+  const wrapper = cursor.offsetParent || cursor.parentElement;
+  const wrapperRect = wrapper.getBoundingClientRect();
+  const borderLeft = Number(wrapper.clientLeft || 0);
+  const borderTop = Number(wrapper.clientTop || 0);
   const color = getBoxColor(state.canvasState.boxes[state.canvasState.paintingBoxIndex], state.canvasState.paintingBoxIndex);
-  cursor.style.left = `${clientX - wrapperRect.left}px`;
-  cursor.style.top = `${clientY - wrapperRect.top}px`;
+  cursor.style.left = `${clientX - wrapperRect.left - borderLeft}px`;
+  cursor.style.top = `${clientY - wrapperRect.top - borderTop}px`;
   cursor.style.setProperty('--cursor-size', `${size}px`);
   cursor.style.setProperty('--cursor-color', color);
   cursor.classList.toggle('eraser', !!state.canvasState.eraserMode);
@@ -4325,44 +4118,6 @@ function stopMaskAnimationPreview() {
   state.canvasState.animationPreview = null;
 }
 
-function previewMaskAnimation(idx) {
-  const item = state.canvasState.boxes[idx];
-  if (!item || !step5SourceCanvas || !hasPaintStroke(item)) {
-    showToast('请先为这个语块涂抹 Mask，再预览出现动画。');
-    return;
-  }
-  stopMaskAnimationPreview();
-  selectStep5MaskBox(idx, false);
-  const reveal = normalizeMaskReveal(item.reveal);
-  const layers = buildMaskAnimationLayers(item);
-  const preview = {
-    item,
-    reveal,
-    ...layers,
-    startedAt: performance.now(),
-    durationMs: Math.max(400, reveal.duration * 1000),
-    progress: 0,
-    rafId: null,
-  };
-  state.canvasState.animationPreview = preview;
-  const tick = now => {
-    if (state.canvasState.animationPreview !== preview) return;
-    preview.progress = Math.max(0, Math.min(1, (now - preview.startedAt) / preview.durationMs));
-    redrawCanvas({ animationPreview: preview });
-    if (preview.progress < 1) {
-      preview.rafId = requestAnimationFrame(tick);
-    } else {
-      preview.rafId = setTimeout(() => {
-        if (state.canvasState.animationPreview === preview) {
-          state.canvasState.animationPreview = null;
-          redrawCanvas();
-        }
-      }, 500);
-    }
-  };
-  preview.rafId = requestAnimationFrame(tick);
-}
-
 function readGlobalAnimationSettingsForm() {
   const type = document.getElementById('animation-setting-type').value || 'wipe_left_to_right';
   return normalizeMaskReveal({
@@ -4541,7 +4296,7 @@ function updateStep5DraftStatus(text) {
 }
 
 function scheduleStep5Autosave() {
-  if (!manifestData?.slides?.length || state.canvasState.autoMaskLoading || state.canvasState.semanticLoading) return;
+  if (!manifestData?.slides?.length || state.canvasState.semanticLoading) return;
   updateStep5DraftStatus('自动保存中...');
   clearTimeout(state.step5AutoSaveTimer);
   state.step5AutoSaveTimer = setTimeout(() => {
@@ -4579,34 +4334,8 @@ async function saveStep5Draft() {
   }
 }
 
-async function runStep5AutoMask() {
-  if (state.canvasState.autoMaskLoading || state.canvasState.semanticLoading) return;
-  saveStep5CurrentState();
-  state.canvasState.autoMaskLoading = true;
-  updateStep5AutoMaskButton();
-  renderStep5Workspace();
-  showToast('🤖 正在调用 Vision API 进行自动框选与自适应对齐修剪，这可能需要大约 10 秒...');
-
-  try {
-    // 将当前的临时 manifest 存盘
-    await API.put(`/api/projects/${state.currentProject.id}/steps/5/result`, manifestData);
-
-    // 发起自动标注
-    const res = await API.post(`/api/projects/${state.currentProject.id}/steps/5/auto-mask`);
-    if (res.success) {
-      const icon = res.vision_used ? '🔍' : '✏️';
-      showToast(`${icon} ${res.message || '智能标注完成！已加载最新的目标包围框。'}`);
-      await loadStep5Data();
-    }
-  } finally {
-    state.canvasState.autoMaskLoading = false;
-    updateStep5AutoMaskButton();
-    renderStep5Workspace();
-  }
-}
-
 async function runStep5SemanticBlocks() {
-  if (state.canvasState.semanticLoading || state.canvasState.autoMaskLoading) return;
+  if (state.canvasState.semanticLoading) return;
   if (!manifestData?.slides?.length) return;
   saveStep5CurrentState();
   const currentSlide = getCurrentManifestSlide();
@@ -4634,14 +4363,13 @@ async function saveStep5Masks() {
   if (state.canvasState.confirmingMasks) {
     return false;
   }
-  if (state.canvasState.autoMaskLoading || state.canvasState.semanticLoading) {
+  if (state.canvasState.semanticLoading) {
     showToast('AI 标注相关任务仍在处理中，请稍候再确认。', 3000);
     updateStep5ConfirmButton('AI 标注相关任务仍在处理中，请稍候。');
     return false;
   }
   state.canvasState.confirmingMasks = true;
   updateStep5ConfirmButton('处理中：正在保存当前标注草稿...');
-  updateStep5AutoMaskButton();
   updateStep5SemanticButton();
 
   const previousStatuses = (manifestData?.slides || []).map(slide => slide.status);
@@ -4677,7 +4405,6 @@ async function saveStep5Masks() {
     renderStep5Workspace();
   } finally {
     state.canvasState.confirmingMasks = false;
-    updateStep5AutoMaskButton();
     updateStep5SemanticButton();
     updateStep5ConfirmButton(failureMessage);
   }

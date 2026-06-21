@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=2.12.5">
+  <link rel="stylesheet" href="style.css?v=2.12.7">
 </head>
 <body>
 
@@ -599,25 +599,6 @@
     </div>
   </div>
 
-  <!-- Modal: 旁白重选 -->
-  <div id="modal-narration-picker" class="modal-overlay" style="display: none;">
-    <div class="modal-content narration-picker-modal">
-      <h3 class="highlight-title" style="margin-bottom: 1rem;">选择演讲旁白片段</h3>
-      <div class="narration-picker-layout">
-        <div class="narration-picker-preview">
-          <img id="narration-picker-preview-img" src="" alt="当前页预览">
-        </div>
-        <div>
-          <div id="narration-picker-list" class="narration-picker-list"></div>
-        </div>
-      </div>
-      <div style="display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1.2rem; border-top: 2px dashed #111; padding-top: 1rem;">
-        <button id="btn-narration-picker-cancel" class="secondary">取消</button>
-        <button id="btn-narration-picker-confirm" class="success">确定绑定</button>
-      </div>
-    </div>
-  </div>
-
   <div id="modal-step3-ai" class="modal-overlay" style="display: none;">
     <div id="step3-editor" class="modal-content step3-ai-modal" role="dialog" aria-modal="true" aria-labelledby="step3-ai-title">
       <div class="step3-ai-header">
@@ -681,7 +662,7 @@
         <section class="ai-request-panel">
           <label class="ai-requirement-field">
             <span>告诉 AI 你想要什么分镜结构</span>
-            <textarea id="storyboard-ai-requirement" rows="5" placeholder="例如：生成适合知识科普视频的结构；短文章 4-5 页，长文章 8-10 页；优先使用流程、对比和数据结构；标题只展示不朗读。"></textarea>
+            <textarea id="storyboard-ai-requirement" rows="5" placeholder="例如：生成适合知识科普视频的结构；短文章 4-5 页，长文章 8-10 页；优先使用流程、对比和数据结构；旁白重点解释核心结论。"></textarea>
           </label>
           <div class="ai-request-actions">
             <span id="storyboard-ai-draft-status" class="ai-draft-status"></span>
@@ -712,7 +693,7 @@
           <button id="btn-storyboard-template-save" class="secondary" type="button">另存为模板</button>
         </div>
         <div class="config-boundary-note">
-          <strong>可以直接修改：</strong>页数范围、每页语块数、启用的结构类型、是否必选、是否朗读、自定义分镜规则。
+          <strong>可以直接修改：</strong>页数范围、每页语块数、启用的结构类型、自定义分镜规则。
           <br><strong>系统保护：</strong>JSON 层级、Slide/语块 ID、visual_groups 与 narration_beats 的绑定字段不能删除。
         </div>
         <div class="storyboard-guided-grid">
@@ -730,7 +711,7 @@
           <section class="config-section-card">
             <h4>可用结构类型</h4>
             <div class="storyboard-role-head">
-              <span>启用 / 类型</span><span>必选</span><span>旁白策略</span>
+              <span>启用 / 类型</span>
             </div>
             <div id="storyboard-role-editor" class="storyboard-role-editor"></div>
           </section>
@@ -951,6 +932,6 @@
 
   <!-- 主业务 JavaScript 脚本 -->
   <script src="flow.js?v=1.0.0"></script>
-  <script src="app.js?v=2.12.5"></script>
+  <script src="app.js?v=2.12.7"></script>
 </body>
 </html>

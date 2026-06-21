@@ -46,8 +46,8 @@ if (!app.includes('step5AutoSavePromise')) throw new Error('step 5 save serializ
 if (!app.includes("raw.type || raw.value || 'wipe_left_to_right'")) {
   throw new Error('mask animation preset values are not normalized correctly');
 }
-if (!app.includes('applyGlobalMaskReveal') || !app.includes('previewMaskAnimation')) {
-  throw new Error('global Mask animation sync or instant preview is missing');
+if (!app.includes('applyGlobalMaskReveal') || !app.includes('previewGlobalAnimationSettings')) {
+  throw new Error('global Mask animation sync or preview is missing');
 }
 for (const animation of ['wipe_left_to_right', 'scratch_reveal', 'sticker_pop', 'stamp_in', 'paper_drop']) {
   if (!app.includes(`value: '${animation}'`)) {
@@ -57,8 +57,18 @@ for (const animation of ['wipe_left_to_right', 'scratch_reveal', 'sticker_pop', 
 if (!html.includes('step5-btn-subtitle-settings') || !html.includes('modal-subtitle-settings')) {
   throw new Error('subtitle settings entry or modal is missing');
 }
-if (!app.includes('updateGroupSpeakPolicy')) {
-  throw new Error('per-group narration policy control is missing');
+for (const removedNarrationPolicyToken of [
+  'updateGroupSpeakPolicy',
+  'groupSpeakPolicy',
+  'step2-speak-policy-select',
+  'storyboard-role-required',
+  'storyboard-role-speak-policy',
+  '仅画面展示',
+  '旁白策略',
+]) {
+  if (app.includes(removedNarrationPolicyToken) || html.includes(removedNarrationPolicyToken)) {
+    throw new Error(`legacy narration policy UI still present: ${removedNarrationPolicyToken}`);
+  }
 }
 if (!html.includes('id="step5-brush-size"') || !html.includes('value="170"')) {
   throw new Error('brush size control or 170 default missing');
@@ -67,6 +77,12 @@ if (!html.includes('id="step5-eraser-size"') || !html.includes('value="120"')) {
   throw new Error('separate eraser size control or 120 default missing');
 }
 if (!app.includes('getActiveMaskToolSize')) throw new Error('brush and eraser sizes are not selected by tool');
+if (!css.includes('box-sizing: border-box') || !css.includes('.step5-brush-cursor')) {
+  throw new Error('mask cursor outer diameter is not aligned to the stroke diameter');
+}
+if (!app.includes('clientX - wrapperRect.left - borderLeft')) {
+  throw new Error('mask cursor position does not compensate for the canvas wrapper border');
+}
 if (!app.includes("newCanvas.addEventListener('pointerdown'")) {
   throw new Error('mask editor does not use pointer capture capable input events');
 }
@@ -86,6 +102,10 @@ for (const removedToken of [
   'scheduleStep5CoverageCheck',
   '/steps/5/preview',
   'selection_ratio',
+  'reveal_boxes',
+  'modal-narration-picker',
+  'autoMaskLoading',
+  'runStep5AutoMask',
 ]) {
   if (html.includes(removedToken) || app.includes(removedToken) || css.includes(removedToken)) {
     throw new Error(`legacy Mask diagnostics still present: ${removedToken}`);

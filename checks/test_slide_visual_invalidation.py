@@ -47,7 +47,6 @@ with tempfile.TemporaryDirectory() as temp_value:
                     "status": "completed",
                     "groups": [{"id": "g1", "manual_mask": {"strokes": [{"points": [{"x": 1, "y": 1}]}]}}],
                     "semantic_blocks": [{"id": "g1"}],
-                    "reveal_boxes": [{"id": "g1"}],
                 },
                 {"slide_id": "slide_002", "groups": []},
             ]
@@ -64,7 +63,6 @@ with tempfile.TemporaryDirectory() as temp_value:
     slide = manifest["slides"][0]
     assert slide["groups"] == []
     assert slide["semantic_blocks"] == []
-    assert slide["reveal_boxes"] == []
     assert slide["status"] == "pending"
     assert not (slides_root / "slide_001" / "scene.json").exists()
     assert not (slides_root / "slide_001" / "assets").exists()

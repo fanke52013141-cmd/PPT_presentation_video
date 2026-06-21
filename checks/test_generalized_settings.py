@@ -28,7 +28,7 @@ def main() -> None:
     profile_text = (ROOT / "config" / "pipeline_profiles.yaml").read_text(encoding="utf-8-sig")
     profile = parse_storyboard_profile_text(profile_text)
     editor = storyboard_profile_editor_data(profile)
-    assert editor["roles"]["subtitle"]["speak_policy"] == "display_only"
+    assert set(editor["roles"]["subtitle"]) == {"label", "description", "enabled"}
     assert "visual_groups[].content_unit_id" in editor["protected_fields"]
 
     patched = apply_storyboard_profile_patch(
@@ -38,15 +38,90 @@ def main() -> None:
             "roles": {
                 "subtitle": {
                     "enabled": False,
-                    "required": False,
-                    "speak_policy": "speak",
                 }
             },
         },
     )
     assert patched["storyboard"]["slide_count"]["short_article"] == "5-7"
     assert "subtitle" not in role_catalog(patched)
+    assert "required" not in patched["storyboard"]["roles"]["subtitle"]
+    assert "speak_policy" not in patched["storyboard"]["roles"]["subtitle"]
     assert storyboard_profile_editor_data(patched)["roles"]["subtitle"]["enabled"] is False
+
+    migrated = server_module.sanitize_storyboard_profile(
+        {
+            "storyboard": {
+                "roles": {
+                    "subtitle": {
+                        "label": "副标题",
+                        "required": False,
+                        "speak_policy": "display_only",
+                        "description": "可选副标题；如果页面不需要，就不要生成。",
+                    },
+                    "decoration": {
+                        "label": "装饰",
+                        "description": "不承载语义、不绑定旁白的装饰元素。",
+                    },
+                },
+                "structure_rules": [
+                    "每个可讲解的 visual_group 必须至少有一个 narration_beat 绑定；display_only 组不要绑定旁白。"
+                ],
+            }
+        }
+    )
+    assert "required" not in migrated["storyboard"]["roles"]["subtitle"]
+    assert "speak_policy" not in migrated["storyboard"]["roles"]["subtitle"]
+    assert "可选副标题" not in migrated["storyboard"]["roles"]["subtitle"]["description"]
+    assert "不绑定旁白" not in migrated["storyboard"]["roles"]["decoration"]["description"]
+    assert all("display_only" not in rule for rule in migrated["storyboard"]["structure_rules"])
+
+    contract = server_module.normalize_visual_contract(
+        {
+            "version": "visual_contract_v1",
+            "slides": [
+                {
+                    "slide_id": "slide_001",
+                    "visual_groups": [
+                        {
+                            "id": "spoken_group",
+                            "role": "content_body",
+                            "visible_text": "讲解内容",
+                            "visual_anchor": "左侧内容区",
+                            "narration_function": "讲解主要内容",
+                            "content_unit_id": "spoken_unit",
+                            "speak_policy": "speak",
+                        },
+                        {
+                            "id": "visual_only_group",
+                            "role": "callout",
+                            "visible_text": "画面提示",
+                            "visual_anchor": "右侧提示区",
+                            "narration_function": "提供视觉提示",
+                            "content_unit_id": "visual_only_unit",
+                            "speak_policy": "display_only",
+                        },
+                    ],
+                    "narration_beats": [
+                        {
+                            "id": "beat_01",
+                            "group_id": "spoken_group",
+                            "content_unit_id": "spoken_unit",
+                            "visible_anchor": "讲解内容",
+                            "spoken_intent": "讲解",
+                            "spoken_text": "讲解内容。",
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+    slide = contract["slides"][0]
+    assert len(slide["narration_beats"]) == 1
+    assert all("speak_policy" not in group for group in slide["visual_groups"])
+    semantic_blocks = server_module.deterministic_semantic_blocks("slide_001", slide, None)
+    assert {block["visual_group_id"] for block in semantic_blocks} == {"spoken_group", "visual_only_group"}
+    visual_only_block = next(block for block in semantic_blocks if block["visual_group_id"] == "visual_only_group")
+    assert visual_only_block["narration_fragments"] == []
     assert normalize_reveal_action("scratch_reveal", profile, for_renderer=True) == "scratch_reveal"
     assert normalize_reveal_action("brush_wipe_left_to_right", profile, for_renderer=True) == "brush_wipe_left_to_right"
     scratch_event = build_event(

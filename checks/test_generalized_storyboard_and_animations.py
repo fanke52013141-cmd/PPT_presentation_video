@@ -20,9 +20,8 @@ from scripts.validate_visual_contract import validate_contract
 def main() -> None:
     profile = read_pipeline_profile()
     roles = role_catalog(profile)
-    assert roles["title"]["required"] is True
-    assert roles["subtitle"]["required"] is False
-    assert roles["summary"]["required"] is False
+    assert all("required" not in config for config in roles.values())
+    assert all("speak_policy" not in config for config in roles.values())
     assert {"quote", "data_point", "process_step", "callout"} <= set(roles)
 
     required_actions = {
@@ -54,7 +53,7 @@ def main() -> None:
     assert event["duration"] == 0.7
     assert event["params"]["rotation"] == -4
 
-    subtitle_contract = {
+    narration_authority_contract = {
         "version": "visual_contract_v1",
         "slides": [
             {
@@ -64,12 +63,20 @@ def main() -> None:
                     {
                         "id": "subtitle_group",
                         "role": "subtitle",
-                        "visible_text": "需要朗读的副标题",
+                        "visible_text": "需要讲解的副标题",
                         "visual_anchor": "副标题位置",
                         "narration_function": "补充解释",
                         "content_unit_id": "subtitle_unit",
-                        "speak_policy": "speak",
                         "mask_target": "副标题整体",
+                    },
+                    {
+                        "id": "visual_only_group",
+                        "role": "callout",
+                        "visible_text": "画面提示",
+                        "visual_anchor": "右侧提示区",
+                        "narration_function": "仅提供视觉提示",
+                        "content_unit_id": "visual_only_unit",
+                        "mask_target": "右侧提示区整体",
                     }
                 ],
                 "narration_beats": [
@@ -77,15 +84,15 @@ def main() -> None:
                         "id": "subtitle_beat",
                         "group_id": "subtitle_group",
                         "content_unit_id": "subtitle_unit",
-                        "visible_anchor": "需要朗读的副标题",
-                        "spoken_intent": "朗读副标题",
-                        "spoken_text": "需要朗读的副标题。",
+                        "visible_anchor": "需要讲解的副标题",
+                        "spoken_intent": "讲解副标题",
+                        "spoken_text": "需要讲解的副标题。",
                     }
                 ],
             }
         ],
     }
-    assert validate_contract(subtitle_contract, min_groups=1, max_groups=8, profile=profile) == 1
+    assert validate_contract(narration_authority_contract, min_groups=1, max_groups=8, profile=profile) == 1
 
     with tempfile.TemporaryDirectory() as temp_dir:
         run_dir = Path(temp_dir)

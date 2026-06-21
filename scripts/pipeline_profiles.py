@@ -80,44 +80,14 @@ def role_catalog(profile: dict[str, Any]) -> dict[str, dict[str, Any]]:
     }
 
 
-def display_only_roles(profile: dict[str, Any]) -> set[str]:
-    result = {"subtitle", "decoration"}
-    for role, cfg in role_catalog(profile).items():
-        if str(cfg.get("speak_policy", "")).strip() == "display_only":
-            result.add(role)
-    return result
-
-
-def speakable_roles(profile: dict[str, Any]) -> set[str]:
-    roles = {
-        role
-        for role, cfg in role_catalog(profile).items()
-        if str(cfg.get("speak_policy", "speak")).strip() != "display_only"
-    }
-    roles.update({"title", "content_body", "diagram", "annotation", "summary"})
-    return roles
-
-
-def speak_policy_for_role(role: str, profile: dict[str, Any] | None = None) -> str:
-    if profile is None:
-        profile = read_pipeline_profile()
-    cfg = role_catalog(profile).get(str(role or "").strip(), {})
-    explicit = str(cfg.get("speak_policy", "")).strip()
-    if explicit:
-        return explicit
-    return "display_only" if str(role or "").strip() in display_only_roles(profile) else "speak"
-
-
 def storyboard_profile_prompt(article_content: str, profile: dict[str, Any]) -> str:
     slide_count, group_count = storyboard_requirements(article_content, profile)
     roles = role_catalog(profile)
     role_lines: list[str] = []
     for role, cfg in roles.items():
         label = str(cfg.get("label") or role)
-        required = "必选" if cfg.get("required") else "可选"
-        policy = str(cfg.get("speak_policy") or speak_policy_for_role(role, profile))
         description = str(cfg.get("description") or "").strip()
-        role_lines.append(f"- {role}（{label}，{required}，speak_policy={policy}）：{description}")
+        role_lines.append(f"- {role}（{label}）：{description}")
     structure_rules = [
         f"- {str(item).strip()}"
         for item in _nested_list(profile, "storyboard", "structure_rules")
@@ -130,8 +100,8 @@ def storyboard_profile_prompt(article_content: str, profile: dict[str, Any]) -> 
             "可配置分镜结构要求：",
             f"- 根据文章长度，本次建议生成 {slide_count} 页 Slide。",
             f"- 每页建议定义 {group_count} 个 visual_groups；不要为了凑数强行生成 subtitle 或 summary。",
-            f"- Slide 必填字段：{required_fields or 'slide_id, main_title, visual_groups, narration_beats'}。",
-            f"- Slide 可选字段：{optional_fields or 'subtitle, core_message, layout_type, structure_notes'}。",
+            f"- Slide 固定结构字段：{required_fields or 'slide_id, main_title, visual_groups, narration_beats'}。",
+            f"- Slide 扩展结构字段：{optional_fields or 'subtitle, core_message, layout_type, structure_notes'}。",
             "- 可用/建议 role：",
             *role_lines,
             "- 结构规则：",

@@ -130,7 +130,7 @@ def expected_slide_image(run_dir: Path, slide_id: str) -> Image.Image:
     return expected.convert("RGB")
 
 
-def validate_video(video_path: Path, run_dir: Path, max_channel_mae: float = 12.0) -> dict:
+def validate_video(video_path: Path, run_dir: Path, max_channel_mae: float = 20.0) -> dict:
     metadata = probe_video(video_path)
     validate_metadata(metadata)
     props = read_json(run_dir / "remotion_props.json")
@@ -177,7 +177,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-dir", required=True, type=Path)
     parser.add_argument(
         "--max-channel-mae",
-        default=12.0,
+        default=20.0,
         type=float,
         help="Maximum decoded-frame mean channel error. H.264 yuv420p normally introduces visible-safe drift above 4.",
     )

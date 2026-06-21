@@ -13,6 +13,15 @@ if (!/\.step3-card-title\s*\{[^}]*min-height:\s*0/s.test(css)) throw new Error('
 
 if (html.includes('config_effectiveness.js')) throw new Error('runtime patch script is still loaded');
 if (!html.includes('btn-storyboard-rules-save-regenerate')) throw new Error('storyboard regenerate action missing');
+if (!html.includes('storyboard-profile-input') || !html.includes('storyboard-schema-input')) {
+  throw new Error('storyboard role profile or JSON Schema editor is missing');
+}
+if (!app.includes('storyboardRoleOptions') || !app.includes('addVisualGroup')) {
+  throw new Error('storyboard visual role editing is missing');
+}
+if (app.includes("group.id === 'body_group_02'")) {
+  throw new Error('legacy hard-coded visual group filtering is still present');
+}
 if (!html.includes('step3-btn-batch-generate')) throw new Error('step 3 batch image generation action missing');
 if (!html.includes('step3-video-background-color') || !html.includes('step3-video-background-text')) {
   throw new Error('project video background color controls missing');
@@ -34,6 +43,11 @@ if (!css.includes('.step3-generating-preview')) throw new Error('step 3 loading 
 if (!app.includes('await refreshStep3Images();')) throw new Error('step 3 does not wait for image state');
 if (!app.includes('confirmBtn.disabled = !allImagesReady')) throw new Error('step 3 confirmation is not gated');
 if (!app.includes('step5AutoSavePromise')) throw new Error('step 5 save serialization missing');
+for (const animation of ['wipe_left_to_right', 'scratch_reveal', 'sticker_pop', 'stamp_in', 'paper_drop']) {
+  if (!app.includes(`value: '${animation}'`)) {
+    throw new Error(`mask animation preset missing: ${animation}`);
+  }
+}
 if (!html.includes('id="step5-brush-size"') || !html.includes('value="170"')) {
   throw new Error('brush size control or 170 default missing');
 }

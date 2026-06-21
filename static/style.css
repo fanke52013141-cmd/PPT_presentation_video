@@ -774,6 +774,153 @@ input.step2-soft-input:focus {
   gap: 1rem;
 }
 
+.config-boundary-note {
+  margin-bottom: 1rem;
+  padding: 0.75rem 0.85rem;
+  border: 1.5px solid #111;
+  border-radius: 8px;
+  background: #fff8cc;
+  color: #333;
+  font-size: 0.83rem;
+  line-height: 1.6;
+}
+
+.storyboard-guided-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.72fr) minmax(440px, 1.28fr);
+  gap: 1rem;
+}
+
+.config-section-card {
+  padding: 0.8rem;
+  border: 1.5px solid #111;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.config-section-card h4 {
+  margin: 0 0 0.7rem;
+}
+
+.storyboard-range-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.storyboard-range-grid label,
+.image-style-guided-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.32rem;
+  min-width: 0;
+  color: #333;
+  font-size: 0.79rem;
+  font-weight: 800;
+}
+
+.storyboard-range-grid input,
+.image-style-guided-grid input,
+.image-style-guided-grid textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.5rem 0.58rem;
+  border: 1.5px solid #111;
+  border-radius: 7px;
+  background: #fff;
+  font: inherit;
+}
+
+.storyboard-role-head,
+.storyboard-role-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px 130px;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.storyboard-role-head {
+  padding: 0 0.45rem 0.35rem;
+  color: #777;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.storyboard-role-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.42rem;
+  max-height: 330px;
+  overflow-y: auto;
+}
+
+.storyboard-role-row {
+  padding: 0.48rem;
+  border: 1px solid #d8d5ca;
+  border-radius: 7px;
+  background: #faf9f4;
+}
+
+.storyboard-role-identity {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.storyboard-role-identity strong,
+.storyboard-role-identity small {
+  display: block;
+}
+
+.storyboard-role-identity small {
+  margin-top: 0.12rem;
+  color: #777;
+  line-height: 1.35;
+}
+
+.storyboard-role-row select {
+  width: 100%;
+  padding: 0.38rem;
+  border: 1px solid #111;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.storyboard-rule-field {
+  margin-top: 1rem;
+}
+
+.image-style-guided-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.image-style-guided-grid label:first-child,
+.image-style-guided-grid label:nth-child(4),
+.image-style-guided-grid label:nth-child(5) {
+  grid-column: 1 / -1;
+}
+
+.advanced-config-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0.65rem 0;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.advanced-validation-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 0.6rem;
+  color: #555;
+  font-size: 0.78rem;
+}
+
 .storyboard-config-field {
   display: flex;
   min-width: 0;
@@ -904,6 +1051,34 @@ input.step2-soft-input:focus {
   color: #666;
   font-size: 0.76rem;
   line-height: 1.45;
+}
+
+.animation-preview-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 2px solid #111;
+  border-radius: 9px;
+  background: #fefdf9;
+}
+
+#animation-preview-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#animation-preview-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  color: #777;
+  text-align: center;
+  background: rgba(254, 253, 249, 0.84);
 }
 
 .step3-ai-modal {
@@ -1073,6 +1248,8 @@ input.step2-soft-input:focus {
   .step2-group-row,
   .step2-group-fields,
   .storyboard-config-grid,
+  .storyboard-guided-grid,
+  .image-style-guided-grid,
   .subtitle-settings-layout,
   .reference-image-grid,
   .step3-ai-layout {
@@ -1088,7 +1265,9 @@ input.step2-soft-input:focus {
     padding: 1.1rem;
   }
 
-  .mask-animation-card {
+  .storyboard-range-grid,
+  .storyboard-role-head,
+  .storyboard-role-row {
     grid-template-columns: 1fr;
   }
 
@@ -1772,56 +1951,6 @@ input.step2-soft-input:focus {
   transform: none;
   box-shadow: none;
   background: #eef6ff;
-}
-
-.mask-animation-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 96px auto;
-  gap: 0.65rem;
-  width: 100%;
-  box-sizing: border-box;
-  margin-top: 0.65rem;
-  padding: 0.65rem;
-  border: 1.5px solid color-mix(in srgb, var(--mask-color) 34%, #d5d5d5);
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--mask-color) 7%, white);
-}
-
-.mask-animation-card label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  min-width: 0;
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
-.mask-animation-card select,
-.mask-animation-card input {
-  width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-  padding: 0.42rem 0.5rem;
-  border: 1.5px solid #111;
-  border-radius: 7px;
-  background: #fff;
-  font: inherit;
-}
-
-.mask-animation-preview {
-  align-self: end;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.32rem;
-  min-height: 34px;
-  padding: 0.42rem 0.62rem;
-  white-space: nowrap;
-  font-size: 0.76rem;
-}
-
-.mask-animation-preview .icon {
-  width: 12px;
-  height: 12px;
 }
 
 .mask-visual-card {

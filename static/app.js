@@ -64,6 +64,7 @@ let state = {
     semanticLoading: false,
     confirmingMasks: false,
     animationPreview: null,
+    animationModalPreviewRaf: null,
     narrationPickerBoxIndex: -1,
     narrationPickerSelection: [],
     startX: 0,
@@ -359,6 +360,7 @@ function initGlobalEvents() {
   document.getElementById('step5-btn-new-block')?.addEventListener('click', () => createCurrentSlideBlock());
   document.getElementById('step5-btn-clear-current')?.addEventListener('click', () => clearAllMaskAnnotations());
   document.getElementById('step5-btn-subtitle-settings')?.addEventListener('click', () => openSubtitleSettingsModal());
+  document.getElementById('step5-btn-animation-settings')?.addEventListener('click', () => openAnimationSettingsModal());
   document.getElementById('step5-brush-size')?.addEventListener('input', (e) => updateBrushSize(e.target.value));
   document.getElementById('step5-eraser-size')?.addEventListener('input', (e) => updateEraserSize(e.target.value));
   document.getElementById('btn-narration-picker-cancel')?.addEventListener('click', () => closeNarrationPicker());
@@ -387,11 +389,19 @@ function initGlobalEvents() {
   document.getElementById('btn-storyboard-schema-copy')?.addEventListener('click', () => copyStoryboardSchema());
   document.getElementById('btn-image-style-cancel')?.addEventListener('click', () => closeImageStyleModal());
   document.getElementById('btn-image-style-save')?.addEventListener('click', () => saveImageStyle());
+  document.getElementById('btn-image-style-validate')?.addEventListener('click', () => validateImageStyleYaml());
   document.getElementById('btn-subtitle-settings-close')?.addEventListener('click', () => closeSubtitleSettingsModal());
   document.getElementById('btn-subtitle-settings-save')?.addEventListener('click', () => saveSubtitleSettings());
   document.getElementById('btn-subtitle-settings-reset')?.addEventListener('click', () => resetSubtitleSettings());
-  ['subtitle-sample-text', 'subtitle-font-key', 'subtitle-font-size', 'subtitle-bottom', 'subtitle-horizontal-margin']
+  ['subtitle-sample-text', 'subtitle-font-key', 'subtitle-font-size', 'subtitle-font-weight', 'subtitle-bottom', 'subtitle-horizontal-margin']
     .forEach(id => document.getElementById(id)?.addEventListener('input', () => updateSubtitlePreview()));
+  document.getElementById('btn-animation-settings-close')?.addEventListener('click', () => closeAnimationSettingsModal());
+  document.getElementById('btn-animation-settings-preview')?.addEventListener('click', () => previewGlobalAnimationSettings());
+  document.getElementById('btn-animation-settings-save')?.addEventListener('click', () => saveGlobalAnimationSettings());
+  document.getElementById('btn-animation-settings-reset')?.addEventListener('click', () => resetGlobalAnimationSettings());
+  document.getElementById('animation-setting-duration')?.addEventListener('input', (event) => {
+    document.getElementById('animation-setting-duration-value').textContent = Number(event.target.value).toFixed(2);
+  });
   document.getElementById('setting-llm-provider')?.addEventListener('change', (event) => applyLlmProviderPreset(event.target.value));
   document.addEventListener('wheel', handleGlobalMaskWheel, { passive: false, capture: true });
 }
@@ -2408,6 +2418,71 @@ function applyLlmProviderPreset(provider) {
   if (preset.model) document.getElementById('setting-llm-model').value = preset.model;
 }
 
+function setStoryboardRangeValues(editor = {}) {
+  const slideCount = editor.slide_count || {};
+  const groupCount = editor.visual_group_count || {};
+  const values = {
+    'storyboard-slide-short': slideCount.short_article || '4-6',
+    'storyboard-slide-medium': slideCount.medium_article || '6-8',
+    'storyboard-slide-long': slideCount.long_article || '8-12',
+    'storyboard-group-short': groupCount.short_article || '3-6',
+    'storyboard-group-medium': groupCount.medium_article || '4-7',
+    'storyboard-group-long': groupCount.long_article || '4-9',
+  };
+  Object.entries(values).forEach(([id, value]) => {
+    const input = document.getElementById(id);
+    if (input) input.value = value;
+  });
+}
+
+function renderStoryboardRoleEditor(editor = {}) {
+  const container = document.getElementById('storyboard-role-editor');
+  if (!container) return;
+  const roles = editor.roles || {};
+  container.innerHTML = Object.entries(roles).map(([role, config]) => `
+    <div class="storyboard-role-row" data-role="${escHtml(role)}">
+      <label class="storyboard-role-identity">
+        <input class="storyboard-role-enabled" type="checkbox"${config.enabled === false ? '' : ' checked'}>
+        <span>
+          <strong>${escHtml(config.label || role)}</strong>
+          <small>${escHtml(config.description || role)}</small>
+        </span>
+      </label>
+      <input class="storyboard-role-required" type="checkbox"${config.required ? ' checked' : ''} title="每页是否必须出现">
+      <select class="storyboard-role-speak-policy">
+        <option value="speak"${config.speak_policy === 'speak' ? ' selected' : ''}>朗读</option>
+        <option value="display_only"${config.speak_policy === 'display_only' ? ' selected' : ''}>只展示</option>
+      </select>
+    </div>
+  `).join('');
+}
+
+function readStoryboardProfilePatch() {
+  const roles = {};
+  document.querySelectorAll('#storyboard-role-editor .storyboard-role-row').forEach(row => {
+    const role = row.dataset.role;
+    if (!role) return;
+    roles[role] = {
+      enabled: row.querySelector('.storyboard-role-enabled')?.checked !== false,
+      required: !!row.querySelector('.storyboard-role-required')?.checked,
+      speak_policy: row.querySelector('.storyboard-role-speak-policy')?.value || 'speak',
+    };
+  });
+  return {
+    slide_count: {
+      short_article: document.getElementById('storyboard-slide-short').value.trim(),
+      medium_article: document.getElementById('storyboard-slide-medium').value.trim(),
+      long_article: document.getElementById('storyboard-slide-long').value.trim(),
+    },
+    visual_group_count: {
+      short_article: document.getElementById('storyboard-group-short').value.trim(),
+      medium_article: document.getElementById('storyboard-group-medium').value.trim(),
+      long_article: document.getElementById('storyboard-group-long').value.trim(),
+    },
+    roles,
+  };
+}
+
 async function openStoryboardRulesModal() {
   if (!state.currentProject) return;
   const res = await API.get(`/api/projects/${state.currentProject.id}/steps/2/rules`);
@@ -2416,6 +2491,8 @@ async function openStoryboardRulesModal() {
   document.getElementById('storyboard-schema-input').value = res.schema_text || '';
   document.getElementById('storyboard-prompt-preview').value = '';
   state.storyboardRoles = res.roles || state.storyboardRoles;
+  setStoryboardRangeValues(res.editor);
+  renderStoryboardRoleEditor(res.editor);
   document.getElementById('modal-storyboard-rules').style.display = 'flex';
 }
 
@@ -2425,7 +2502,7 @@ async function copyFullStoryboardRequest() {
   const profile_yaml = document.getElementById('storyboard-profile-input').value.trim();
   const res = await API.post(
     `/api/projects/${state.currentProject.id}/steps/2/prompt-preview`,
-    { rules, profile_yaml },
+    { rules, profile_yaml, profile_patch: readStoryboardProfilePatch() },
   );
   const text = [
     '=== SYSTEM CONTENT ===',
@@ -2458,10 +2535,11 @@ async function saveStoryboardRulesWithOptions(options = {}) {
   const profile_yaml = document.getElementById('storyboard-profile-input').value.trim();
   const res = await API.put(
     `/api/projects/${state.currentProject.id}/steps/2/rules`,
-    { rules, profile_yaml },
+    { rules, profile_yaml, profile_patch: readStoryboardProfilePatch() },
   );
   if (res.success) {
     state.storyboardRoles = res.roles || state.storyboardRoles;
+    document.getElementById('storyboard-profile-input').value = res.profile_yaml || profile_yaml;
     closeStoryboardRulesModal();
     if (state.slides?.length) renderStep2Workspace();
     if (options.regenerate) {
@@ -2476,6 +2554,9 @@ async function saveStoryboardRulesWithOptions(options = {}) {
 async function openImageStyleModal() {
   const res = await API.get('/api/image-style');
   document.getElementById('image-style-input').value = res.style_text || '';
+  populateImageStyleGuidedForm(res.style_data || {});
+  document.getElementById('image-style-use-advanced').checked = false;
+  document.getElementById('image-style-validation-status').textContent = '';
   ['template', 'example'].forEach(kind => {
     const preview = document.getElementById(`image-style-${kind}-preview`);
     const reference = res.references?.[kind];
@@ -2489,6 +2570,57 @@ function closeImageStyleModal() {
   document.getElementById('modal-image-style').style.display = 'none';
 }
 
+function imageStyleLines(value) {
+  return Array.isArray(value) ? value.map(item => String(item || '').trim()).filter(Boolean) : [];
+}
+
+function populateImageStyleGuidedForm(styleData = {}) {
+  const brand = styleData.brand || {};
+  const assets = styleData.visual_assets || {};
+  document.getElementById('image-style-keywords').value = imageStyleLines(brand.style_keywords).join('\n');
+  document.getElementById('image-style-visual-style').value = assets.image_style || '';
+  document.getElementById('image-style-diagram-style').value = assets.diagram_style || '';
+  document.getElementById('image-style-layout-rules').value = imageStyleLines(assets.layout_rules).join('\n');
+  document.getElementById('image-style-avoid').value = imageStyleLines(assets.avoid).join('\n');
+}
+
+function readImageStyleGuidedForm() {
+  const lines = id => document.getElementById(id).value
+    .split(/\r?\n/)
+    .map(item => item.trim())
+    .filter(Boolean);
+  return {
+    brand: {
+      style_keywords: lines('image-style-keywords'),
+    },
+    visual_assets: {
+      image_style: document.getElementById('image-style-visual-style').value.trim(),
+      diagram_style: document.getElementById('image-style-diagram-style').value.trim(),
+      layout_rules: lines('image-style-layout-rules'),
+      avoid: lines('image-style-avoid'),
+    },
+  };
+}
+
+function currentImageStylePayload() {
+  if (document.getElementById('image-style-use-advanced').checked) {
+    return { style_text: document.getElementById('image-style-input').value.trim() };
+  }
+  return { style_data: readImageStyleGuidedForm() };
+}
+
+async function validateImageStyleYaml() {
+  const status = document.getElementById('image-style-validation-status');
+  try {
+    const style_text = document.getElementById('image-style-input').value.trim();
+    const res = await API.post('/api/image-style/validate', { style_text });
+    document.getElementById('image-style-input').value = res.style_text || style_text;
+    status.textContent = '校验通过，已规范化格式';
+  } catch (error) {
+    status.textContent = error.message || '校验失败';
+  }
+}
+
 async function uploadImageStyleReference(kind) {
   const input = document.getElementById(`image-style-${kind}-file`);
   const file = input?.files?.[0];
@@ -2499,9 +2631,10 @@ async function uploadImageStyleReference(kind) {
 }
 
 async function saveImageStyle() {
-  const styleText = document.getElementById('image-style-input').value.trim();
-  const res = await API.put('/api/image-style', { style_text: styleText });
+  const res = await API.put('/api/image-style', currentImageStylePayload());
   if (!res.success) return;
+  document.getElementById('image-style-input').value = res.style_text || '';
+  populateImageStyleGuidedForm(res.style_data || {});
   await uploadImageStyleReference('template');
   await uploadImageStyleReference('example');
   closeImageStyleModal();
@@ -2533,7 +2666,7 @@ function readSubtitleSettingsForm() {
     font_key: fontKey,
     font_family: font.family,
     font_size: Number(document.getElementById('subtitle-font-size').value || 38),
-    font_weight: 500,
+    font_weight: Number(document.getElementById('subtitle-font-weight').value || 500),
     bottom: Number(document.getElementById('subtitle-bottom').value || 18),
     horizontal_margin: Number(document.getElementById('subtitle-horizontal-margin').value || 180),
     color: '#111111',
@@ -2544,6 +2677,7 @@ function populateSubtitleSettingsForm(settings) {
   const value = { ...DEFAULT_SUBTITLE_SETTINGS, ...(settings || {}) };
   document.getElementById('subtitle-font-key').value = value.font_key;
   document.getElementById('subtitle-font-size').value = String(value.font_size);
+  document.getElementById('subtitle-font-weight').value = String(value.font_weight);
   document.getElementById('subtitle-bottom').value = String(value.bottom);
   document.getElementById('subtitle-horizontal-margin').value = String(value.horizontal_margin);
   updateSubtitlePreview();
@@ -2566,6 +2700,7 @@ function updateSubtitlePreview() {
   text.style.right = `${settings.horizontal_margin * scale}px`;
   text.style.color = settings.color;
   document.getElementById('subtitle-font-size-value').textContent = String(settings.font_size);
+  document.getElementById('subtitle-font-weight-value').textContent = String(settings.font_weight);
   document.getElementById('subtitle-bottom-value').textContent = String(settings.bottom);
   document.getElementById('subtitle-margin-value').textContent = String(settings.horizontal_margin);
 }
@@ -2749,9 +2884,6 @@ function renderStep5BoxesForm() {
 
     const spokenText = getSelectedFragmentText(box, step2Slide);
     box.reveal = normalizeMaskReveal(box.reveal);
-    const animationOptions = MASK_ANIMATION_PRESETS.map(preset =>
-      `<option value="${preset.value}"${preset.value === box.reveal.type ? ' selected' : ''}>${preset.label}</option>`
-    ).join('');
     item.innerHTML = `
       <div class="mask-block-head">
         <span class="mask-block-number">${idx + 1}</span>
@@ -2771,20 +2903,6 @@ function renderStep5BoxesForm() {
       <div class="mask-narration-card">
         <span class="mask-narration-label">演讲旁白</span>
         <span class="mask-narration-text">${spokenText ? escHtml(spokenText) : '在下方演讲稿中点选片段'}</span>
-      </div>
-      <div class="mask-animation-card">
-        <label>
-          <span>出现动画（修改后同步全部 Slide）</span>
-          <select class="mask-animation-select">${animationOptions}</select>
-        </label>
-        <label>
-          <span>时长（秒）</span>
-          <input class="mask-animation-duration" type="number" min="0.2" max="3" step="0.05" value="${box.reveal.duration}">
-        </label>
-        <button class="secondary mask-animation-preview" type="button">
-          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-          预览效果
-        </button>
       </div>
     `;
     
@@ -2807,31 +2925,6 @@ function renderStep5BoxesForm() {
       deleteMaskBox(idx);
     });
 
-    item.querySelector('.mask-animation-select').addEventListener('change', (e) => {
-      e.stopPropagation();
-      const preset = revealPreset(e.target.value);
-      box.reveal = applyGlobalMaskReveal(preset);
-      const durationInput = item.querySelector('.mask-animation-duration');
-      if (durationInput) durationInput.value = String(box.reveal.duration);
-      renderStep5BoxesForm();
-      previewMaskAnimation(idx);
-    });
-
-    item.querySelector('.mask-animation-duration').addEventListener('change', (e) => {
-      e.stopPropagation();
-      box.reveal = applyGlobalMaskReveal({
-        ...box.reveal,
-        duration: Math.max(0.2, Math.min(3, Number(e.target.value) || DEFAULT_REVEAL_DURATION_SEC)),
-      });
-      e.target.value = String(box.reveal.duration);
-      renderStep5BoxesForm();
-    });
-
-    item.querySelector('.mask-animation-preview').addEventListener('click', (e) => {
-      e.stopPropagation();
-      previewMaskAnimation(idx);
-    });
-    
     container.appendChild(item);
     
     if (isSelected) {
@@ -3737,6 +3830,120 @@ function previewMaskAnimation(idx) {
     }
   };
   preview.rafId = requestAnimationFrame(tick);
+}
+
+function readGlobalAnimationSettingsForm() {
+  const type = document.getElementById('animation-setting-type').value || 'wipe_left_to_right';
+  return normalizeMaskReveal({
+    ...revealPreset(type),
+    duration: Math.max(
+      0.2,
+      Math.min(3, Number(document.getElementById('animation-setting-duration').value) || DEFAULT_REVEAL_DURATION_SEC),
+    ),
+  });
+}
+
+function populateGlobalAnimationSettingsForm(reveal) {
+  const normalized = normalizeMaskReveal(reveal);
+  document.getElementById('animation-setting-type').value = normalized.type;
+  document.getElementById('animation-setting-duration').value = String(normalized.duration);
+  document.getElementById('animation-setting-duration-value').textContent = Number(normalized.duration).toFixed(2);
+}
+
+function stopAnimationModalPreview() {
+  if (state.canvasState.animationModalPreviewRaf) {
+    cancelAnimationFrame(state.canvasState.animationModalPreviewRaf);
+    clearTimeout(state.canvasState.animationModalPreviewRaf);
+  }
+  state.canvasState.animationModalPreviewRaf = null;
+}
+
+function drawAnimationModalBase() {
+  const canvas = document.getElementById('animation-preview-canvas');
+  const empty = document.getElementById('animation-preview-empty');
+  if (!canvas) return false;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, 1920, 1080);
+  ctx.fillStyle = step3VideoBackground || '#FEFDF9';
+  ctx.fillRect(0, 0, 1920, 1080);
+  if (!step5SourceCanvas) {
+    if (empty) empty.style.display = 'flex';
+    return false;
+  }
+  ctx.drawImage(step5SourceCanvas, 0, 0);
+  const hasMasks = state.canvasState.boxes.some(hasPaintStroke);
+  if (empty) empty.style.display = hasMasks ? 'none' : 'flex';
+  return hasMasks;
+}
+
+function openAnimationSettingsModal() {
+  if (!manifestData?.slides?.length) return;
+  const select = document.getElementById('animation-setting-type');
+  select.innerHTML = MASK_ANIMATION_PRESETS.map(preset =>
+    `<option value="${preset.value}">${preset.label}</option>`
+  ).join('');
+  const reveal = manifestData.animation_defaults?.reveal
+    || state.canvasState.boxes.find(Boolean)?.reveal
+    || revealPreset('wipe_left_to_right');
+  populateGlobalAnimationSettingsForm(reveal);
+  document.getElementById('modal-animation-settings').style.display = 'flex';
+  requestAnimationFrame(() => drawAnimationModalBase());
+}
+
+function closeAnimationSettingsModal() {
+  stopAnimationModalPreview();
+  document.getElementById('modal-animation-settings').style.display = 'none';
+}
+
+function previewGlobalAnimationSettings() {
+  const canvas = document.getElementById('animation-preview-canvas');
+  if (!canvas || !drawAnimationModalBase()) {
+    showToast('请先在当前页为至少一个语块涂抹 Mask。');
+    return;
+  }
+  stopAnimationModalPreview();
+  const ctx = canvas.getContext('2d');
+  const reveal = readGlobalAnimationSettingsForm();
+  const items = state.canvasState.boxes.filter(hasPaintStroke);
+  const previews = items.map(item => ({
+    item,
+    reveal,
+    ...buildMaskAnimationLayers(item),
+  }));
+  const startedAt = performance.now();
+  const staggerMs = Math.min(280, Math.max(110, reveal.duration * 240));
+  const durationMs = Math.max(400, reveal.duration * 1000);
+  const totalMs = durationMs + staggerMs * Math.max(0, previews.length - 1);
+  const tick = now => {
+    ctx.clearRect(0, 0, 1920, 1080);
+    ctx.fillStyle = step3VideoBackground || '#FEFDF9';
+    ctx.fillRect(0, 0, 1920, 1080);
+    ctx.drawImage(step5SourceCanvas, 0, 0);
+    previews.forEach((preview, index) => {
+      const localElapsed = now - startedAt - index * staggerMs;
+      preview.progress = Math.max(0, Math.min(1, localElapsed / durationMs));
+      drawMaskAnimationPreview(ctx, preview);
+    });
+    if (now - startedAt < totalMs) {
+      state.canvasState.animationModalPreviewRaf = requestAnimationFrame(tick);
+    } else {
+      state.canvasState.animationModalPreviewRaf = setTimeout(() => drawAnimationModalBase(), 650);
+    }
+  };
+  state.canvasState.animationModalPreviewRaf = requestAnimationFrame(tick);
+}
+
+function resetGlobalAnimationSettings() {
+  populateGlobalAnimationSettingsForm(revealPreset('wipe_left_to_right'));
+  previewGlobalAnimationSettings();
+}
+
+async function saveGlobalAnimationSettings() {
+  const reveal = applyGlobalMaskReveal(readGlobalAnimationSettingsForm(), { save: false });
+  saveStep5CurrentState();
+  await saveStep5Draft();
+  closeAnimationSettingsModal();
+  showToast(`已将“${revealPreset(reveal.type).label}”应用到全部 Slide 的全部语块。`);
 }
 
 function rebuildStep5SourceCache(image) {

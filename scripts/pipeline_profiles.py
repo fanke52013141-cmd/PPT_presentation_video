@@ -21,8 +21,6 @@ REVEAL_ACTION_ALIASES = {
     "wipe_right_to_left": "wipe_right_to_left",
     "wipe_top_to_bottom": "wipe_top_to_bottom",
     "wipe_bottom_to_top": "wipe_bottom_to_top",
-    "scratch_reveal": "fog_diagonal_erase",
-    "brush_wipe_left_to_right": "fog_diagonal_erase",
     "soft_zoom_in": "crop_soft_zoom_in",
     "fade_in": "crop_fade_up",
     "fade_up": "crop_fade_up",
@@ -75,7 +73,11 @@ def storyboard_requirements(article_content: str, profile: dict[str, Any]) -> tu
 
 def role_catalog(profile: dict[str, Any]) -> dict[str, dict[str, Any]]:
     roles = _nested_dict(profile, "storyboard", "roles")
-    return {str(key): value for key, value in roles.items() if isinstance(value, dict)}
+    return {
+        str(key): value
+        for key, value in roles.items()
+        if isinstance(value, dict) and value.get("enabled") is not False
+    }
 
 
 def display_only_roles(profile: dict[str, Any]) -> set[str]:

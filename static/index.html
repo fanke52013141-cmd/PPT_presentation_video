@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PPT Visualization Studio - 手绘线稿风格</title>
+  <title>PPT Visualization Studio - 内容可视化</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@400;500;700&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=2.10.0">
+  <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=2.11.0">
 </head>
 <body>
 
@@ -244,6 +244,10 @@
               <button id="step5-btn-subtitle-settings" class="secondary">
                 <svg class="icon" viewBox="0 0 24 24"><path d="M4 6h16"></path><path d="M7 10h10"></path><path d="M6 15h12"></path><path d="M9 19h6"></path></svg>
                 字幕设置
+              </button>
+              <button id="step5-btn-animation-settings" class="secondary">
+                <svg class="icon" viewBox="0 0 24 24"><polygon points="7 4 20 12 7 20 7 4"></polygon></svg>
+                动画设置
               </button>
               <span id="step5-draft-status" class="step2-autosave-status"></span>
               <label class="step5-brush-control" title="调整手动涂抹区域的画笔大小">
@@ -647,17 +651,39 @@
   <div id="modal-storyboard-rules" class="modal-overlay" style="display: none;">
     <div class="modal-content config-editor-modal">
       <h3 class="highlight-title">分镜结构、Prompt 与 Schema</h3>
-      <p class="config-editor-note">以下配置只作用于当前项目。结构角色决定允许生成哪些内容块、哪些必选、是否绑定旁白；自定义规则会直接插入 System Content。</p>
-      <div class="storyboard-config-grid">
-        <label class="storyboard-config-field">
-          <span>自定义分镜 Prompt / 规则</span>
-          <textarea id="storyboard-rules-input" rows="12"></textarea>
-        </label>
-        <label class="storyboard-config-field">
-          <span>结构角色配置（YAML，可修改 required、speak_policy、角色及动画默认值）</span>
-          <textarea id="storyboard-profile-input" rows="18" spellcheck="false"></textarea>
-        </label>
+      <div class="config-boundary-note">
+        <strong>可以直接修改：</strong>页数范围、每页语块数、启用的结构类型、是否必选、是否朗读、自定义分镜规则。
+        <br><strong>系统保护：</strong>JSON 层级、Slide/语块 ID、visual_groups 与 narration_beats 的绑定字段不能删除。
       </div>
+      <div class="storyboard-guided-grid">
+        <section class="config-section-card">
+          <h4>页数和每页语块数</h4>
+          <div class="storyboard-range-grid">
+            <label><span>短文章页数</span><input id="storyboard-slide-short" type="text"></label>
+            <label><span>中文章页数</span><input id="storyboard-slide-medium" type="text"></label>
+            <label><span>长文章页数</span><input id="storyboard-slide-long" type="text"></label>
+            <label><span>短文章语块数</span><input id="storyboard-group-short" type="text"></label>
+            <label><span>中文章语块数</span><input id="storyboard-group-medium" type="text"></label>
+            <label><span>长文章语块数</span><input id="storyboard-group-long" type="text"></label>
+          </div>
+        </section>
+        <section class="config-section-card">
+          <h4>可用结构类型</h4>
+          <div class="storyboard-role-head">
+            <span>启用 / 类型</span><span>必选</span><span>旁白策略</span>
+          </div>
+          <div id="storyboard-role-editor" class="storyboard-role-editor"></div>
+        </section>
+      </div>
+      <label class="storyboard-config-field storyboard-rule-field">
+        <span>自定义分镜规则（这里写你希望模型怎么拆页、怎么组织内容）</span>
+        <textarea id="storyboard-rules-input" rows="9"></textarea>
+      </label>
+      <details class="storyboard-schema-panel">
+        <summary>高级 YAML（有明确需要时再修改）</summary>
+        <p class="config-editor-note">常用设置会自动同步到 YAML。高级模式可增加角色或修改更底层的 Prompt 配置，但不能删除 storyboard 和 roles。</p>
+        <textarea id="storyboard-profile-input" rows="18" spellcheck="false"></textarea>
+      </details>
       <details class="storyboard-schema-panel">
         <summary>查看当前 JSON Schema</summary>
         <textarea id="storyboard-schema-input" rows="16" readonly spellcheck="false"></textarea>
@@ -679,8 +705,43 @@
   <div id="modal-image-style" class="modal-overlay" style="display: none;">
     <div class="modal-content config-editor-modal">
       <h3 class="highlight-title">图片风格与参考图</h3>
-      <p class="config-editor-note">这里只编辑静态生图直接使用的画风、配色和版式。动画、图层、字幕渲染等后续视频配置不会进入生图提示词。</p>
-      <textarea id="image-style-input" rows="18" spellcheck="false"></textarea>
+      <div class="config-boundary-note">
+        直接填写下面的风格词即可，不需要遵守 YAML 格式。系统固定 1920×1080、16:9、纯白背景，并保留底部字幕安全区；这些约束用于保证后续 Mask 稳定。
+      </div>
+      <div class="image-style-guided-grid">
+        <label>
+          <span>整体风格词（每行一个）</span>
+          <textarea id="image-style-keywords" rows="6" placeholder="例如：温暖极简&#10;杂志拼贴&#10;中国水墨"></textarea>
+        </label>
+        <label>
+          <span>画面表现方式</span>
+          <input id="image-style-visual-style" type="text" placeholder="例如：editorial_collage / chinese_ink_painting">
+        </label>
+        <label>
+          <span>图示与流程图风格</span>
+          <input id="image-style-diagram-style" type="text" placeholder="例如：clean_infographic">
+        </label>
+        <label>
+          <span>Mask 友好版式规则（每行一个）</span>
+          <textarea id="image-style-layout-rules" rows="6"></textarea>
+        </label>
+        <label>
+          <span>明确避免（每行一个）</span>
+          <textarea id="image-style-avoid" rows="6"></textarea>
+        </label>
+      </div>
+      <details class="storyboard-schema-panel">
+        <summary>高级 YAML（会覆盖上方常用设置）</summary>
+        <label class="advanced-config-toggle">
+          <input id="image-style-use-advanced" type="checkbox">
+          <span>本次保存使用高级 YAML</span>
+        </label>
+        <textarea id="image-style-input" rows="18" spellcheck="false"></textarea>
+        <div class="advanced-validation-row">
+          <button id="btn-image-style-validate" class="secondary" type="button">校验 YAML</button>
+          <span id="image-style-validation-status"></span>
+        </div>
+      </details>
       <div class="reference-image-grid">
         <label class="reference-image-item">
           <span>模板参考图</span>
@@ -728,6 +789,10 @@
             <input id="subtitle-font-size" type="range" min="22" max="72" step="1" value="38">
           </label>
           <label>
+            <span>字体粗细：<strong id="subtitle-font-weight-value">500</strong></span>
+            <input id="subtitle-font-weight" type="range" min="300" max="800" step="100" value="500">
+          </label>
+          <label>
             <span>上下位置（距底部）：<strong id="subtitle-bottom-value">18</strong> px</span>
             <input id="subtitle-bottom" type="range" min="0" max="220" step="2" value="18">
           </label>
@@ -745,10 +810,46 @@
     </div>
   </div>
 
+  <div id="modal-animation-settings" class="modal-overlay" style="display: none;">
+    <div class="modal-content subtitle-settings-modal animation-settings-modal">
+      <div class="subtitle-settings-header">
+        <div>
+          <h3 class="highlight-title">统一动画设置</h3>
+          <p class="config-editor-note">当前设置会同步到全部 Slide 的全部语块。预览使用当前页已经涂抹的 Mask。</p>
+        </div>
+        <button id="btn-animation-settings-close" class="secondary" type="button">关闭</button>
+      </div>
+      <div class="subtitle-settings-layout">
+        <div class="animation-preview-stage">
+          <canvas id="animation-preview-canvas" width="1920" height="1080"></canvas>
+          <div id="animation-preview-empty">当前页还没有可预览的 Mask</div>
+        </div>
+        <div class="subtitle-settings-controls">
+          <label>
+            <span>动画</span>
+            <select id="animation-setting-type"></select>
+          </label>
+          <label>
+            <span>时长：<strong id="animation-setting-duration-value">0.75</strong> 秒</span>
+            <input id="animation-setting-duration" type="range" min="0.2" max="3" step="0.05" value="0.75">
+          </label>
+          <button id="btn-animation-settings-preview" class="secondary" type="button">
+            <svg class="icon" viewBox="0 0 24 24"><polygon points="7 4 20 12 7 20 7 4"></polygon></svg>
+            预览当前页
+          </button>
+        </div>
+      </div>
+      <div class="config-editor-actions">
+        <button id="btn-animation-settings-reset" class="secondary" type="button">恢复默认</button>
+        <button id="btn-animation-settings-save" class="success" type="button">应用到全部语块</button>
+      </div>
+    </div>
+  </div>
+
   <div id="toast-container" aria-live="polite" aria-atomic="false"></div>
 
   <!-- 主业务 JavaScript 脚本 -->
   <script src="flow.js?v=1.0.0"></script>
-  <script src="app.js?v=2.10.0"></script>
+  <script src="app.js?v=2.11.0"></script>
 </body>
 </html>

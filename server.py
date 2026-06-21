@@ -234,6 +234,27 @@ OPEN_SOURCE_CHINESE_FONTS = [
         "source": "Google Fonts",
     },
     {
+        "key": "long_cang",
+        "label": "龙藏体（粗犷手写）",
+        "family": "Long Cang",
+        "license": "SIL OFL 1.1",
+        "source": "Google Fonts",
+    },
+    {
+        "key": "liu_jian_mao_cao",
+        "label": "刘建毛草（奔放草书）",
+        "family": "Liu Jian Mao Cao",
+        "license": "SIL OFL 1.1",
+        "source": "Google Fonts",
+    },
+    {
+        "key": "zhi_mang_xing",
+        "label": "志莽行书（自然行书）",
+        "family": "Zhi Mang Xing",
+        "license": "SIL OFL 1.1",
+        "source": "Google Fonts",
+    },
+    {
         "key": "lxgw_wenkai",
         "label": "霞鹜文楷（本机字体优先）",
         "family": "LXGW WenKai",
@@ -1956,6 +1977,96 @@ def parse_storyboard_profile_text(profile_text: str) -> Dict[str, Any]:
     return profile
 
 
+def storyboard_profile_editor_data(profile: Dict[str, Any]) -> Dict[str, Any]:
+    storyboard = profile.get("storyboard") if isinstance(profile.get("storyboard"), dict) else {}
+    roles = storyboard.get("roles") if isinstance(storyboard.get("roles"), dict) else {}
+    return {
+        "slide_count": copy.deepcopy(storyboard.get("slide_count") or {}),
+        "visual_group_count": copy.deepcopy(storyboard.get("visual_group_count") or {}),
+        "roles": {
+            str(role): {
+                "label": str(config.get("label") or role),
+                "description": str(config.get("description") or ""),
+                "enabled": config.get("enabled") is not False,
+                "required": bool(config.get("required")),
+                "speak_policy": (
+                    "display_only"
+                    if str(config.get("speak_policy") or "").strip() == "display_only"
+                    else "speak"
+                ),
+            }
+            for role, config in roles.items()
+            if isinstance(config, dict)
+        },
+        "protected_fields": [
+            "slide_id",
+            "visual_groups",
+            "narration_beats",
+            "visual_groups[].id",
+            "visual_groups[].content_unit_id",
+            "narration_beats[].group_id",
+            "narration_beats[].content_unit_id",
+        ],
+    }
+
+
+def apply_storyboard_profile_patch(
+    profile: Dict[str, Any],
+    patch: Any,
+) -> Dict[str, Any]:
+    if not isinstance(patch, dict):
+        return profile
+    merged = copy.deepcopy(profile)
+    storyboard = merged.setdefault("storyboard", {})
+    if not isinstance(storyboard, dict):
+        raise HTTPException(status_code=400, detail="storyboard 必须是 YAML 对象")
+
+    for field in ("slide_count", "visual_group_count"):
+        value = patch.get(field)
+        if value is None:
+            continue
+        if not isinstance(value, dict):
+            raise HTTPException(status_code=400, detail=f"{field} 必须是对象")
+        existing = storyboard.get(field)
+        if not isinstance(existing, dict):
+            existing = {}
+        for size_key in ("short_article", "medium_article", "long_article"):
+            if size_key in value:
+                text = str(value.get(size_key) or "").strip()
+                if not text:
+                    raise HTTPException(status_code=400, detail=f"{field}.{size_key} 不能为空")
+                existing[size_key] = text
+        storyboard[field] = existing
+
+    role_patch = patch.get("roles")
+    if role_patch is not None:
+        if not isinstance(role_patch, dict):
+            raise HTTPException(status_code=400, detail="roles 必须是对象")
+        current_roles = storyboard.get("roles")
+        if not isinstance(current_roles, dict):
+            current_roles = {}
+        updated_roles: Dict[str, Any] = {}
+        for role, current_config in current_roles.items():
+            if not isinstance(current_config, dict):
+                continue
+            next_patch = role_patch.get(role)
+            if not isinstance(next_patch, dict):
+                updated_roles[role] = copy.deepcopy(current_config)
+                continue
+            next_config = copy.deepcopy(current_config)
+            next_config["enabled"] = next_patch.get("enabled") is not False
+            next_config["required"] = bool(next_patch.get("required"))
+            policy = str(next_patch.get("speak_policy") or "speak").strip()
+            next_config["speak_policy"] = "display_only" if policy == "display_only" else "speak"
+            updated_roles[role] = next_config
+        if not any(config.get("enabled") is not False for config in updated_roles.values()):
+            raise HTTPException(status_code=400, detail="至少需要启用一个分镜结构类型")
+        storyboard["roles"] = updated_roles
+    return parse_storyboard_profile_text(
+        yaml.safe_dump(merged, allow_unicode=True, sort_keys=False, width=1000)
+    )
+
+
 def read_project_pipeline_profile(project: Project) -> Dict[str, Any]:
     path = storyboard_profile_path(project)
     if os.path.exists(path):
@@ -2048,6 +2159,7 @@ def get_step2_rules(project_id: str, db: Session = Depends(get_db)):
         "profile_yaml": profile_text,
         "schema_text": visual_contract_schema_text(),
         "roles": role_catalog(profile),
+        "editor": storyboard_profile_editor_data(profile),
     }
 
 
@@ -2063,6 +2175,13 @@ def update_step2_rules(project_id: str, payload: Dict[str, Any], db: Session = D
     if not profile_text:
         profile_text = default_storyboard_profile_text().strip()
     profile = parse_storyboard_profile_text(profile_text)
+    profile = apply_storyboard_profile_patch(profile, payload.get("profile_patch"))
+    profile_text = yaml.safe_dump(
+        profile,
+        allow_unicode=True,
+        sort_keys=False,
+        width=1000,
+    ).strip()
     path = storyboard_rules_path(project)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
@@ -2074,6 +2193,7 @@ def update_step2_rules(project_id: str, payload: Dict[str, Any], db: Session = D
         "rules": rules,
         "profile_yaml": profile_text,
         "roles": role_catalog(profile),
+        "editor": storyboard_profile_editor_data(profile),
     }
 
 
@@ -2107,6 +2227,7 @@ def get_step2_prompt_preview(
         if profile_text
         else read_project_pipeline_profile(project)
     )
+    profile = apply_storyboard_profile_patch(profile, (payload or {}).get("profile_patch"))
 
     project_title = (project.name or "").strip() or brief.get("title") or "未命名项目"
     article_content = str(brief.get("content") or "")
@@ -2395,7 +2516,13 @@ def merge_image_style_update(
     merged = copy.deepcopy(style_tokens)
     for key, value in update.items():
         if key != "visual_assets":
-            merged[key] = value
+            existing_value = merged.get(key)
+            if isinstance(existing_value, dict) and isinstance(value, dict):
+                next_value = copy.deepcopy(existing_value)
+                next_value.update(copy.deepcopy(value))
+                merged[key] = next_value
+            else:
+                merged[key] = copy.deepcopy(value)
             continue
         if not isinstance(value, dict):
             raise HTTPException(status_code=400, detail="visual_assets 必须是 YAML 对象")
@@ -2422,6 +2549,26 @@ def merge_image_style_update(
     if isinstance(assets, dict):
         assets["required_background"] = "flat_uniform_pure_white"
     return merged
+
+
+def parse_image_style_payload(payload: Dict[str, Any]) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    current = read_style_tokens_data()
+    style_data = payload.get("style_data")
+    if isinstance(style_data, dict):
+        parsed = style_data
+    else:
+        style_text = str(payload.get("style_text") or "").strip()
+        if not style_text:
+            raise HTTPException(status_code=400, detail="图片风格配置不能为空")
+        try:
+            parsed = yaml.safe_load(style_text)
+        except yaml.YAMLError as exc:
+            mark = getattr(exc, "problem_mark", None)
+            location = f"（第 {mark.line + 1} 行，第 {mark.column + 1} 列）" if mark else ""
+            raise HTTPException(status_code=400, detail=f"YAML 格式错误{location}：{exc}") from exc
+        if not isinstance(parsed, dict):
+            raise HTTPException(status_code=400, detail="图片风格配置必须是 YAML 对象")
+    return current, merge_image_style_update(current, parsed)
 
 
 def build_image_style_prompt(style_tokens: Dict[str, Any]) -> str:
@@ -2492,23 +2639,20 @@ def get_image_style():
     return {
         "success": True,
         "style_text": dump_image_style_editor_text(style_tokens),
+        "style_data": editable_image_style_data(style_tokens),
+        "protected_rules": [
+            "画布固定为 1920×1080、16:9",
+            "生图背景固定为纯白 #FFFFFF，确保 Mask 外围背景可稳定移除",
+            "y=930 以下为字幕安全区，不放关键内容",
+            "高级 YAML 只允许 brand、canvas、colors、layout、visual_assets 顶层字段",
+        ],
         "references": references,
     }
 
 
 @app.put("/api/image-style")
 def update_image_style(payload: Dict[str, Any]):
-    style_text = str(payload.get("style_text") or "").strip()
-    if not style_text:
-        raise HTTPException(status_code=400, detail="图片风格规范不能为空")
-    try:
-        parsed = yaml.safe_load(style_text)
-    except yaml.YAMLError as exc:
-        raise HTTPException(status_code=400, detail=f"YAML 格式错误: {exc}")
-    if not isinstance(parsed, dict):
-        raise HTTPException(status_code=400, detail="图片风格规范必须是 YAML 对象")
-    current = read_style_tokens_data()
-    merged = merge_image_style_update(current, parsed)
+    _, merged = parse_image_style_payload(payload)
     with open(STYLE_TOKENS_PATH, "w", encoding="utf-8") as f:
         yaml.safe_dump(
             merged,
@@ -2517,7 +2661,23 @@ def update_image_style(payload: Dict[str, Any]):
             sort_keys=False,
             width=1000,
         )
-    return {"success": True}
+    return {
+        "success": True,
+        "style_text": dump_image_style_editor_text(merged),
+        "style_data": editable_image_style_data(merged),
+        "prompt_preview": build_image_style_prompt(merged),
+    }
+
+
+@app.post("/api/image-style/validate")
+def validate_image_style(payload: Dict[str, Any]):
+    _, merged = parse_image_style_payload(payload)
+    return {
+        "success": True,
+        "style_text": dump_image_style_editor_text(merged),
+        "style_data": editable_image_style_data(merged),
+        "prompt_preview": build_image_style_prompt(merged),
+    }
 
 
 @app.get("/api/image-style/reference/{kind}")

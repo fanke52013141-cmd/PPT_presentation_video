@@ -11,11 +11,14 @@ import {
   useVideoConfig,
 } from 'remotion';
 import {loadFont as loadMaShanZheng} from '@remotion/google-fonts/MaShanZheng';
+import {loadFont as loadLongCang} from '@remotion/google-fonts/LongCang';
+import {loadFont as loadLiuJianMaoCao} from '@remotion/google-fonts/LiuJianMaoCao';
 import {loadFont as loadNotoSansSC} from '@remotion/google-fonts/NotoSansSC';
 import {loadFont as loadNotoSerifSC} from '@remotion/google-fonts/NotoSerifSC';
 import {loadFont as loadZCOOLKuaiLe} from '@remotion/google-fonts/ZCOOLKuaiLe';
 import {loadFont as loadZCOOLQingKeHuangYou} from '@remotion/google-fonts/ZCOOLQingKeHuangYou';
 import {loadFont as loadZCOOLXiaoWei} from '@remotion/google-fonts/ZCOOLXiaoWei';
+import {loadFont as loadZhiMangXing} from '@remotion/google-fonts/ZhiMangXing';
 
 type LayerBox = {
   x: number;
@@ -142,7 +145,8 @@ const loadedSubtitleFonts = new Map<string, string>();
 
 const subtitleFontFamily = (fontKey?: string, configuredFamily?: string, fontWeight?: number): string => {
   const key = fontKey || 'noto_sans_sc';
-  const notoWeight = fontWeight && fontWeight >= 650 ? '700' : fontWeight && fontWeight <= 450 ? '400' : '500';
+  const normalizedWeight = Math.max(300, Math.min(800, Math.round((fontWeight ?? 500) / 100) * 100));
+  const notoWeight = String(normalizedWeight) as '300' | '400' | '500' | '600' | '700' | '800';
   const cacheKey = `${key}:${notoWeight}`;
   const cached = loadedSubtitleFonts.get(cacheKey);
   if (cached) {
@@ -162,6 +166,12 @@ const subtitleFontFamily = (fontKey?: string, configuredFamily?: string, fontWei
     family = loadZCOOLQingKeHuangYou('normal', {weights: ['400'], subsets: ['chinese-simplified']}).fontFamily;
   } else if (key === 'zcool_kuaile') {
     family = loadZCOOLKuaiLe('normal', {weights: ['400'], subsets: ['chinese-simplified']}).fontFamily;
+  } else if (key === 'long_cang') {
+    family = loadLongCang('normal', {weights: ['400'], subsets: ['chinese-simplified']}).fontFamily;
+  } else if (key === 'liu_jian_mao_cao') {
+    family = loadLiuJianMaoCao('normal', {weights: ['400'], subsets: ['chinese-simplified']}).fontFamily;
+  } else if (key === 'zhi_mang_xing') {
+    family = loadZhiMangXing('normal', {weights: ['400'], subsets: ['chinese-simplified']}).fontFamily;
   } else if (key === 'lxgw_wenkai') {
     family = 'LXGW WenKai, KaiTi, Microsoft YaHei, sans-serif';
   }

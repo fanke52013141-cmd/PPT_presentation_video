@@ -1684,9 +1684,40 @@ input.step2-soft-input:focus {
   margin: 10px auto;
 }
 
+.mini-loader {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #d1d5db;
+  border-top-color: var(--ink-color);
+  border-radius: 50%;
+  animation: modern-spin 0.75s linear infinite;
+}
+
 @keyframes modern-spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+}
+
+.relation-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.05rem 0.35rem;
+  border: 1px solid var(--ink-color);
+  border-radius: 999px;
+  font-size: 0.68rem;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.relation-badge.linked {
+  background-color: var(--success-color);
+}
+
+.relation-badge.unlinked {
+  background-color: #f3f4f6;
+  color: #666;
+  border-color: #bbb;
 }
 
 /* 双向绑定卡片荧光高亮呼吸动画 */

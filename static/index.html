@@ -350,6 +350,12 @@
               </button>
               <button id="step8-btn-finish" class="secondary compact-action-btn">完成并退出项目</button>
             </div>
+
+            <div id="step8-error-box" class="card sketch-dashed" style="display: none; margin-top: 1.5rem; border-color: #d73333; background: #fff4f4;">
+              <h3 style="margin-bottom: 0.6rem;">渲染失败</h3>
+              <p id="step8-error-message" style="white-space: pre-wrap; word-break: break-word;"></p>
+              <p style="margin-top: 0.8rem; font-size: 0.9rem;">详细阶段日志见项目目录下的 logs/pipeline.log。</p>
+            </div>
           </div>
 
           <div id="step8-loading" class="step-inline-loading" style="display: none;">

@@ -135,6 +135,8 @@ def bind_slide(slide_dir: Path, lead_sec: float, preserve_existing_at: bool) -> 
     for index, event in enumerate(events):
         if not isinstance(event, dict):
             raise BindError(f"Invalid event object: {animation_path}")
+        if event.get("link_to_narration") is False:
+            continue
         if preserve_existing_at and isinstance(event.get("at"), (int, float)) and event.get("linked_segment_id"):
             continue
         linked_segment_id = linked_segment_for_event(event, index, beat_map, beat_order, segments)

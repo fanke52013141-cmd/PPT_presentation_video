@@ -35,7 +35,7 @@ from scripts.pipeline_profiles import (
     storyboard_requirements,
 )
 
-def get_openai_client(api_key: str, base_url: str = None) -> OpenAI:
+def get_openai_client(api_key: str, base_url: str = None, timeout: float = 120.0, max_retries: int = 1) -> OpenAI:
     # 强制不使用环境变量中的代理，防止某些局域网代理的 SSL 拦截规则冲突
     # 并强制定义 User-Agent 为 Chrome 浏览器以绕过 Cloudflare WAF/JA3 爬虫过滤指纹
     headers = {
@@ -45,9 +45,16 @@ def get_openai_client(api_key: str, base_url: str = None) -> OpenAI:
     http_client = httpx.Client(
         limits=limits,
         trust_env=False,
-        headers=headers
+        headers=headers,
+        timeout=timeout
     )
-    return OpenAI(api_key=api_key, base_url=base_url, http_client=http_client)
+    return OpenAI(
+        api_key=api_key,
+        base_url=base_url,
+        http_client=http_client,
+        timeout=timeout,
+        max_retries=max_retries,
+    )
 
 
 def normalize_tts_provider(provider: Optional[str]) -> str:
@@ -408,6 +415,51 @@ def template_timestamp() -> str:
 
 ensure_active_image_style_storage()
 
+
+STEP1_LLM_TIMEOUT_SEC = 60.0
+STEP2_LLM_TIMEOUT_SEC = 120.0
+STEP7_TTS_TIMEOUT_SEC = 180
+STEP7_BIND_TIMEOUT_SEC = 60
+
+def _redact_log_value(key: str, value: Any) -> Any:
+    lowered = key.lower()
+    if any(token in lowered for token in ("api_key", "apikey", "authorization", "token", "secret")):
+        return "***REDACTED***" if value else value
+    if isinstance(value, str) and len(value) > 4000:
+        return value[:4000] + f"\n... [truncated {len(value) - 4000} chars]"
+    return value
+
+def write_project_log(project: Project, event: str, **fields: Any) -> None:
+    try:
+        log_dir = os.path.join(project.run_dir, "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        record = {
+            "ts": datetime.now().isoformat(timespec="seconds"),
+            "project_id": project.id,
+            "event": event,
+        }
+        record.update({key: _redact_log_value(key, value) for key, value in fields.items()})
+        line = json.dumps(record, ensure_ascii=False, default=str)
+        with open(os.path.join(log_dir, "pipeline.log"), "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+        logger.info("project=%s event=%s %s", project.id, event, line)
+    except Exception as exc:
+        logger.warning("Failed to write project log for %s: %s", getattr(project, "id", "<unknown>"), exc)
+
+def should_retry_without_response_format(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(
+        marker in msg
+        for marker in (
+            "response_format",
+            "json_object",
+            "unsupported",
+            "unrecognized",
+            "invalid parameter",
+            "not support",
+            "400",
+        )
+    )
 
 # Pydantic 响应模型
 class ProjectCreate(BaseModel):
@@ -1782,7 +1834,7 @@ def handle_step_navigation(project: Project, target_step: int, db: Session):
             current_status[s_str] = "pending"
             
     current_status[str(target_step)] = "completed"
-    project.current_step = target_step
+    project.current_step = max(project.current_step or target_step, target_step)
     project.set_step_status(current_status)
     db.commit()
 
@@ -1948,25 +2000,48 @@ def import_article(project_id: str, content: Optional[str] = Form(None), db: Ses
     
     if not llm_api_key:
         raise HTTPException(status_code=400, detail="未配置大模型 API 密钥，请在系统设置中配置后再试。")
-    
-    client = get_openai_client(api_key=llm_api_key, base_url=llm_base_url)
+
+    write_project_log(
+        project,
+        "step1_import_start",
+        article_chars=len(content),
+        model=llm_model,
+        base_url=llm_base_url,
+        timeout_sec=STEP1_LLM_TIMEOUT_SEC,
+    )
+    client = get_openai_client(
+        api_key=llm_api_key,
+        base_url=llm_base_url,
+        timeout=STEP1_LLM_TIMEOUT_SEC,
+        max_retries=0,
+    )
     system_prompt = "你是一个专业的内容提炼助手。请阅读用户输入的 Markdown 文章，提炼出它的核心标题以及一份易于视频分镜表达的摘要提纲（150字以内）。请直接返回 JSON 格式结果，格式为: {\"title\": \"标题\", \"summary\": \"提炼好的摘要提纲\", \"content\": \"原文\"}"
     
     try:
+        started_at = time.monotonic()
         response = client.chat.completions.create(
             model=llm_model,
             temperature=llm_temp,
             response_format={"type": "json_object"},
+            timeout=STEP1_LLM_TIMEOUT_SEC,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": content}
             ]
         )
+        elapsed = round(time.monotonic() - started_at, 3)
         content_str = response.choices[0].message.content.strip()
+        write_project_log(
+            project,
+            "step1_llm_success",
+            elapsed_sec=elapsed,
+            response_chars=len(content_str),
+        )
         cleaned_content = clean_json_markdown(content_str)
         brief = json.loads(cleaned_content)
         brief["content"] = content
     except Exception as e:
+        write_project_log(project, "step1_llm_error", error_type=type(e).__name__, error=str(e))
         logger.error(f"LLM ingest article error: {e}")
         raise HTTPException(status_code=500, detail=f"文章提炼失败: {str(e)}")
             
@@ -1975,6 +2050,7 @@ def import_article(project_id: str, content: Optional[str] = Form(None), db: Ses
         json.dump(brief, f, ensure_ascii=False, indent=2)
         
     handle_step_navigation(project, 1, db)
+    write_project_log(project, "step1_import_completed", brief_path=brief_path)
     return {"success": True, "brief": brief}
 
 @app.get("/api/projects/{project_id}/steps/1/result")
@@ -2561,8 +2637,71 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
             
         # 写入 JSON
         contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
+        scaffold_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "write_visual_contract.py"))
+        scaffold_args = [
+            sys.executable,
+            scaffold_script,
+            "--run-dir",
+            project.run_dir,
+            "--topic-name",
+            str(brief.get("title") or project.name),
+            "--overwrite",
+        ]
+        started_at = time.monotonic()
+        write_project_log(
+            project,
+            "step2_scaffold_start",
+            trace_id=trace_id,
+            script=scaffold_script,
+            article_path=article_path,
+            contract_path=contract_path,
+        )
+        scaffold_res = subprocess.run(
+            scaffold_args,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        elapsed = round(time.monotonic() - started_at, 3)
+        if scaffold_res.returncode != 0:
+            write_project_log(
+                project,
+                "step2_scaffold_error",
+                trace_id=trace_id,
+                elapsed_sec=elapsed,
+                returncode=scaffold_res.returncode,
+                stdout=scaffold_res.stdout.strip(),
+                stderr=scaffold_res.stderr.strip(),
+            )
+            raise RuntimeError(f"本地分镜骨架生成失败: {scaffold_res.stderr.strip() or scaffold_res.stdout.strip()}")
+
+        write_project_log(
+            project,
+            "step2_scaffold_success",
+            trace_id=trace_id,
+            elapsed_sec=elapsed,
+            stdout=scaffold_res.stdout.strip(),
+        )
+
+        with open(contract_path, "r", encoding="utf-8-sig") as f:
+            contract = json.load(f)
+
+        # 用第一步提炼结果覆盖 topic 元信息，避免脚本从文件名推导出不友好的标题。
+        contract["version"] = "visual_contract_v1"
+        contract["topic"] = {
+            "topic_id": "topic_" + project_id,
+            "topic_name": brief.get("title") or project.name,
+            "topic_summary": brief.get("summary", ""),
+        }
         with open(contract_path, "w", encoding="utf-8") as f:
             json.dump(contract, f, ensure_ascii=False, indent=2)
+        write_project_log(
+            project,
+            "step2_contract_written",
+            trace_id=trace_id,
+            contract_path=contract_path,
+            slide_count=len(contract.get("slides", [])) if isinstance(contract.get("slides"), list) else 0,
+        )
             
         # 调用原项目的验证脚本进行 contract 校验
         validate_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "validate_visual_contract.py"))
@@ -2580,13 +2719,29 @@ def execute_step2(project_id: str, db: Session = Depends(get_db)):
         
         if val_res.returncode != 0:
             logger.warning(f"Visual contract validation warning:\n{val_res.stderr}")
+            write_project_log(
+                project,
+                "step2_contract_validation_warning",
+                trace_id=trace_id,
+                returncode=val_res.returncode,
+                stderr=val_res.stderr.strip(),
+            )
             # 虽然校验可能报错，但如果不严重，仍然保存以方便用户在前台手动修改
+        else:
+            write_project_log(
+                project,
+                "step2_contract_validation_success",
+                trace_id=trace_id,
+                stdout=val_res.stdout.strip(),
+            )
             
         handle_step_navigation(project, 2, db)
+        write_project_log(project, "step2_execute_completed", trace_id=trace_id)
         return {"success": True, "contract": contract}
     except Exception as e:
-        logger.error(f"LLM write visual contract error: {e}")
-        raise HTTPException(status_code=500, detail=f"LLM 规划分镜失败: {str(e)}")
+        write_project_log(project, "step2_execute_error", trace_id=trace_id, error_type=type(e).__name__, error=str(e))
+        logger.error(f"Write visual contract error: {e}")
+        raise HTTPException(status_code=500, detail=f"本地分镜规划失败: {str(e)}")
 
 @app.get("/api/projects/{project_id}/steps/2/result")
 def get_step2_result(project_id: str, db: Session = Depends(get_db)):
@@ -3480,9 +3635,16 @@ def confirm_images(project_id: str, db: Session = Depends(get_db)):
         template_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "write_reveal_manifest_template.py"))
         res = subprocess.run([
             sys.executable, template_script, "--run-dir", project.run_dir
-        ], capture_output=True, text=True, encoding="utf-8")
+        ], capture_output=True, text=True, encoding="utf-8", timeout=90)
         if res.returncode != 0:
             logger.error(f"Failed to write reveal manifest template: {res.stderr}")
+            write_project_log(
+                project,
+                "step5_manifest_template_error",
+                returncode=res.returncode,
+                stdout=res.stdout.strip(),
+                stderr=res.stderr.strip(),
+            )
             raise HTTPException(status_code=500, detail="自动创建 Mask 标注文件失败，请确认分镜规划正常")
             
         # Final rendering is manual-mask-only. Do not run historical box-fitting
@@ -4111,7 +4273,7 @@ def build_step5_preview(project_id: str, payload: Dict[str, Any], db: Session = 
 
 
 @app.put("/api/projects/{project_id}/steps/5/result")
-def update_step5_result(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
+def update_step5_result(project_id: str, payload: Dict[str, Any], build_assets: bool = Query(True), db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
@@ -4135,7 +4297,7 @@ def update_step5_result(project_id: str, payload: Dict[str, Any], db: Session = 
         build_current_reveal_assets(project)
         
     handle_step_navigation(project, 5, db)
-    return {"success": True}
+    return {"success": True, "built_assets": True}
 
 # ==================== 步骤 6: 演讲稿编辑 ====================
 
@@ -4474,7 +4636,7 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
         text_file = os.path.join(project.run_dir, "slides", slide_id, "tts_text.txt")
         out_audio = os.path.join(project.run_dir, "slides", slide_id, "voice.mp3")
         out_meta = os.path.join(project.run_dir, "slides", slide_id, "tts_metadata.json")
-        out_srt = os.path.join(project.run_dir, "slides", slide_id, "tts_narration.srt")
+        out_srt = os.path.join(project.run_dir, "slides", slide_id, "subtitles.srt")
         out_timeline = os.path.join(project.run_dir, "slides", slide_id, "audio_timeline.json")
         
         # 确保 text_file 存在，如果不存在，则从 contract 导出的 narration 中提取
@@ -4521,6 +4683,14 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
         )
         if tts_res.returncode != 0:
             logger.error(f"TTS Synthesis failed for {slide_id}: {tts_res.stderr}")
+            write_project_log(
+                project,
+                "step7_slide_tts_error",
+                slide_id=slide_id,
+                returncode=tts_res.returncode,
+                stdout=tts_res.stdout.strip(),
+                stderr=tts_res.stderr.strip(),
+            )
             raise HTTPException(status_code=500, detail=f"语音合成失败: {tts_res.stderr}")
         rewrite_audio_timeline_by_beats(out_timeline, slide_id, beats_by_slide.get(slide_id, []))
             
@@ -4532,6 +4702,13 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
     
     if bind_res.returncode != 0:
         logger.error(f"Timeline binding failed: {bind_res.stderr}")
+        write_project_log(
+            project,
+            "step7_timeline_bind_error",
+            returncode=bind_res.returncode,
+            stdout=bind_res.stdout.strip(),
+            stderr=bind_res.stderr.strip(),
+        )
         raise HTTPException(status_code=500, detail=f"时间轴绑定失败: {bind_res.stderr}")
         
     return {"success": True, "audio_confirmed": False}
@@ -4696,7 +4873,20 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
     
     if props_res.returncode != 0:
         logger.error(f"Build remotion props failed: {props_res.stderr}")
-        raise HTTPException(status_code=500, detail=f"构建 Remotion 配置失败: {props_res.stderr}")
+        write_project_log(
+            project,
+            "step8_build_props_error",
+            returncode=props_res.returncode,
+            stderr=props_res.stderr or "",
+        )
+        raise HTTPException(status_code=500, detail=f"构建 Remotion 配置失败: {props_res.stderr or ''}")
+
+    write_project_log(
+        project,
+        "step8_build_props_success",
+        elapsed_sec=round(time.time() - props_started, 3),
+        stdout=(props_res.stdout or "").strip(),
+    )
         
     # 接着，执行 Remotion 渲染
     # 检测 Node.js 模块依赖，执行 npm install (如果 node_modules 不存在)
@@ -4705,6 +4895,8 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
     
     if not os.path.exists(node_modules_dir):
         logger.info("Initializing Remotion node_modules, running npm install...")
+        npm_started = time.time()
+        write_project_log(project, "step8_npm_install_start", cwd=remotion_dir)
         # Windows 环境下运行 npm.cmd
         npm_cmd = "npm.cmd" if sys.platform == "win32" else "npm"
         npm_install = subprocess.run(
@@ -4717,7 +4909,21 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
         )
         if npm_install.returncode != 0:
             logger.error(f"npm install failed:\n{npm_install.stderr}")
-            raise HTTPException(status_code=500, detail=f"初始化 Remotion Node 依赖失败: {npm_install.stderr}")
+            write_project_log(
+                project,
+                "step8_npm_install_error",
+                returncode=npm_install.returncode,
+                stderr=npm_install.stderr or "",
+            )
+            raise HTTPException(status_code=500, detail=f"初始化 Remotion Node 依赖失败: {npm_install.stderr or ''}")
+        write_project_log(
+            project,
+            "step8_npm_install_success",
+            elapsed_sec=round(time.time() - npm_started, 3),
+            stdout=(npm_install.stdout or "").strip(),
+        )
+    else:
+        write_project_log(project, "step8_npm_install_skipped", node_modules_dir=node_modules_dir)
             
     # 直接调用 Remotion CLI，避免维护第二套渲染入口。
     npx_cmd = "npx.cmd" if sys.platform == "win32" else "npx"
@@ -4746,6 +4952,21 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
         errors="replace",
     )
     
+    try:
+        render_res = subprocess.run(
+            render_args,
+            cwd=remotion_dir,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=900,
+        )
+    except subprocess.TimeoutExpired:
+        logger.error("Remotion render timed out")
+        write_project_log(project, "step8_remotion_render_timeout", timeout_sec=900)
+        raise HTTPException(status_code=504, detail="视频渲染超时")
+
     if render_res.returncode != 0:
         logger.error(f"Remotion render failed: {render_res.stderr}")
         raise HTTPException(status_code=500, detail=f"视频渲染失败: {render_res.stderr}")
@@ -4849,6 +5070,48 @@ def delete_project_video(project_id: str, filename: str, db: Session = Depends(g
     return {"success": True, "videos": list_video_items(project, project_id)}
 
 # 获取最终生成的 MP4 视频
+@app.get("/api/projects/{project_id}/video/status")
+def get_final_video_status(project_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    video_path = os.path.join(project.run_dir, "out.mp4")
+    exists = os.path.exists(video_path)
+    video_mtime = os.path.getmtime(video_path) if exists else 0
+    latest_input_mtime = 0
+    latest_input_path = None
+
+    input_candidates = [
+        os.path.join(project.run_dir, "reveal_manifest.json"),
+        os.path.join(project.run_dir, "planning", "visual_contract.json"),
+    ]
+    slides_dir = os.path.join(project.run_dir, "slides")
+    if os.path.isdir(slides_dir):
+        for root, _, files in os.walk(slides_dir):
+            for filename in files:
+                if filename.lower().endswith((".json", ".mp3", ".srt", ".png", ".jpg", ".jpeg")):
+                    input_candidates.append(os.path.join(root, filename))
+
+    for path in input_candidates:
+        if not os.path.exists(path):
+            continue
+        mtime = os.path.getmtime(path)
+        if mtime > latest_input_mtime:
+            latest_input_mtime = mtime
+            latest_input_path = path
+
+    stale = bool(exists and latest_input_mtime > video_mtime + 1)
+    return {
+        "exists": exists,
+        "video_url": f"/api/projects/{project_id}/video" if exists else None,
+        "size": os.path.getsize(video_path) if exists else 0,
+        "updated_at": datetime.fromtimestamp(video_mtime).isoformat(timespec="seconds") if exists else None,
+        "stale": stale,
+        "latest_input_updated_at": datetime.fromtimestamp(latest_input_mtime).isoformat(timespec="seconds") if latest_input_mtime else None,
+        "latest_input_path": latest_input_path,
+    }
+
 @app.get("/api/projects/{project_id}/video")
 def get_final_video(project_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()

@@ -388,6 +388,7 @@ function initGlobalEvents() {
 
   // ================= 步骤 8 事件 =================
   document.getElementById('step8-btn-render').addEventListener('click', () => runStep8Render());
+  document.getElementById('step8-btn-rerender').addEventListener('click', () => runStep8Render());
   document.getElementById('step8-btn-finish').addEventListener('click', () => exitWorkspace());
   document.getElementById('btn-storyboard-rules-cancel')?.addEventListener('click', () => closeStoryboardRulesModal());
   document.getElementById('btn-storyboard-rules-save')?.addEventListener('click', () => saveStoryboardRules());
@@ -2965,7 +2966,7 @@ function renderStep5Workspace() {
       statusColor = '#2f80ed';
     } else if (isCurrent) {
       statusClass = 'active';
-      statusText = '标注中';
+      statusText = '当前页';
       statusColor = '#d29a00';
     } else if (isCompleted) {
       statusClass = 'completed';
@@ -3526,6 +3527,25 @@ window.updateMaskBoxField = function(idx, field, val) {
   if (state.canvasState.boxes[idx]) {
     state.canvasState.boxes[idx][field] = val;
   }
+};
+
+window.updateMaskBoxBeatLink = function(idx, beatId) {
+  const box = state.canvasState.boxes[idx];
+  if (!box) return;
+  const currentSlideId = manifestData.slides[state.activeSlideIndex].slide_id;
+  const beats = getStep5BeatsForSlide(currentSlideId);
+  const beat = beats.find(item => item.id === beatId);
+  if (beat) {
+    box.narration_beat_id = beat.id;
+    box.link_to_narration = true;
+    box.linked_segment_id = null;
+  } else {
+    box.narration_beat_id = null;
+    box.link_to_narration = false;
+    box.linked_segment_id = null;
+  }
+  renderStep5BoxesForm();
+  redrawCanvas();
 };
 
 // Canvas 的拖拽与大小缩放事件实现
@@ -4691,6 +4711,7 @@ async function loadStep8Data() {
     }
   } catch (e) {
     document.getElementById('step8-result-box').style.display = 'none';
+    document.getElementById('step8-btn-render').style.display = 'inline-flex';
   }
 }
 
@@ -4707,9 +4728,15 @@ async function runStep8Render() {
       refreshCurrentProjectStatus(8).catch(() => {});
     }
   } catch(e) {
+    console.error('Step 8 render failed:', e);
+    const message = e?.message || '视频渲染失败，请查看项目 logs/pipeline.log。';
+    document.getElementById('step8-error-message').innerText = message;
+    document.getElementById('step8-error-box').style.display = 'block';
+    showToast(`❌ 渲染失败: ${message}`, 7000);
   } finally {
     document.getElementById('step8-loading').style.display = 'none';
-    document.getElementById('step8-btn-render').disabled = false;
+    renderBtn.disabled = false;
+    rerenderBtn.disabled = false;
   }
 }
 

@@ -504,7 +504,8 @@ async function testImageConnection() {
   const payload = {
     base_url: document.getElementById('setting-image-base-url').value.trim() || null,
     api_key: document.getElementById('setting-image-api-key').value.trim(),
-    model: document.getElementById('setting-image-model').value.trim()
+    model: document.getElementById('setting-image-model').value.trim(),
+    size: document.getElementById('setting-image-size').value.trim() || '1024x1024'
   };
   
   if (!payload.api_key) {

@@ -721,6 +721,30 @@ input.step2-soft-input:focus {
   animation: popIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.settings-modal {
+  width: min(760px, 94vw);
+  max-width: 760px;
+  max-height: min(92dvh, 980px);
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+.settings-modal .tabs {
+  position: sticky;
+  top: -1.8rem;
+  z-index: 2;
+  background: var(--bg-color);
+  padding-top: 0.2rem;
+}
+
+.settings-modal .tab-contents {
+  min-height: 0;
+}
+
+.settings-modal textarea {
+  min-height: 92px;
+}
+
 .config-editor-modal {
   width: min(980px, 94vw);
   max-width: 980px;

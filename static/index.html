@@ -375,7 +375,7 @@
 
   <!-- Modal: 系统设置 -->
   <div id="modal-settings" class="modal-overlay" style="display: none;">
-    <div class="modal-content" style="max-width: 650px;">
+    <div class="modal-content settings-modal">
       <h3 class="highlight-title" style="margin-bottom: 1.2rem;">
         <svg class="icon" viewBox="0 0 24 24" style="margin-right: 0.2rem;"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
         系统全局设置
@@ -399,9 +399,6 @@
       <div class="tab-contents">
         <!-- Text LLM Tab -->
         <div id="tab-llm" class="tab-pane">
-          <p style="font-size: 0.82rem; color: #666; background: #f0f4ff; border: 1.5px dashed #aac; border-radius: 8px; padding: 0.6rem 0.9rem; margin-bottom: 1rem; line-height: 1.7;">
-            使用 OpenAI 兼容协议。可直接连接 OpenAI、New API、OpenRouter、LiteLLM 代理及提供兼容接口的国内厂商。
-          </p>
           <div style="margin-bottom: 0.8rem;">
             <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">供应商预设:</label>
             <select id="setting-llm-provider">
@@ -449,9 +446,6 @@
 
         <!-- Image Tab -->
         <div id="tab-image" class="tab-pane" style="display: none;">
-          <p style="font-size: 0.82rem; color: #666; background: #f0f4ff; border: 1.5px dashed #aac; border-radius: 8px; padding: 0.6rem 0.9rem; margin-bottom: 1rem; line-height: 1.7;">
-            💡 <strong>newapi / 中转站用户</strong>：将接口地址填写为中转站的 <code>/v1</code> 路径（如 <code>https://你的域名/v1</code>），密钥填写中转密钥即可。如果与文本模型使用同一个中转站，可点击下方「同步」按钮快速填入。支持 DALL·E、Flux、CogView 等各类生图模型。
-          </p>
           <div style="margin-bottom: 0.8rem;">
             <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">接口地址 (Base URL):</label>
             <div style="display: flex; gap: 0.5rem; align-items: center;">
@@ -469,7 +463,7 @@
           <div style="display: flex; gap: 1rem; margin-bottom: 0.8rem;">
             <div style="flex: 1;">
               <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">生图模型 (Model):</label>
-              <input type="text" id="setting-image-model" placeholder="gpt-image-1 / dall-e-3 / cogview-3">
+              <input type="text" id="setting-image-model" placeholder="gpt-image-1 / doubao-seedream-3-0-t2i">
             </div>
             <div style="flex: 1;">
               <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">图片尺寸 (Size):</label>
@@ -477,7 +471,7 @@
             </div>
           </div>
           <p style="font-size: 0.78rem; color: #888; margin-top: 0.2rem;">
-            常用尺寸：<code>1024x1024</code>（通用）、<code>1536x1024</code>（gpt-image-1 宽屏）、<code>1792x1024</code>（DALL·E 3）。若中转模型不支持尺寸参数，系统将自动去除重试。
+            常用尺寸：<code>1024x1024</code>、<code>1536x1024</code>、<code>1792x1024</code>。火山/豆包 Seedream 可填写方舟模型 ID，接口地址通常为方舟兼容地址。
           </p>
           <div style="margin-top: 1.2rem; display: flex; justify-content: flex-start;">
             <button type="button" class="secondary" id="btn-test-image" style="padding: 0.4rem 1rem; font-size: 0.85rem; display: flex; align-items: center; gap: 0.4rem;">
@@ -489,9 +483,6 @@
 
         <!-- TTS Tab -->
         <div id="tab-tts" class="tab-pane" style="display: none;">
-          <p style="font-size: 0.82rem; color: #666; background: #f0f4ff; border: 1.5px dashed #aac; border-radius: 8px; padding: 0.6rem 0.9rem; margin-bottom: 1rem; line-height: 1.7;">
-            💡 <strong>语音合成说明</strong>：支持 MiniMax、阿里 CosyVoice、腾讯云 TTS 和火山/豆包语音合成。克隆音色可填写 Clone Voice ID；厂商专属参数可放入 Provider Extra JSON。
-          </p>
           <div style="margin-bottom: 0.8rem;">
             <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">语音厂商 (Provider):</label>
             <select id="setting-tts-provider">

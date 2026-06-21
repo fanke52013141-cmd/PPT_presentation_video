@@ -4,6 +4,7 @@ import sys
 import uuid
 import json
 import copy
+import base64
 import shutil
 import logging
 import subprocess
@@ -234,6 +235,7 @@ class TestImagePayload(BaseModel):
     base_url: Optional[str] = None
     api_key: str
     model: str
+    size: Optional[str] = None
 
 class TestTtsPayload(BaseModel):
     provider: Optional[str] = "minimax"
@@ -276,6 +278,127 @@ def process_and_save_image(image_bytes: bytes, save_path: str):
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     final_img.save(save_path, "PNG")
     logger.info(f"Image processed and saved to: {save_path}")
+
+
+def is_seedream_image_model(model: Optional[str], base_url: Optional[str] = None) -> bool:
+    """Detect Volcengine/Doubao Seedream image models behind OpenAI-compatible APIs."""
+    text = f"{model or ''} {base_url or ''}".lower()
+    return any(
+        marker in text
+        for marker in (
+            "seedream",
+            "doubao",
+            "volcengine",
+            "volces",
+            "ark.cn",
+            "ark.volc",
+        )
+    )
+
+
+def response_has_image_data(response: Any) -> bool:
+    first_item = first_image_response_item(response)
+    return bool(
+        image_response_value(first_item, "b64_json")
+        or image_response_value(first_item, "url")
+    )
+
+
+def first_image_response_item(response: Any) -> Any:
+    data = response.get("data") if isinstance(response, dict) else getattr(response, "data", None)
+    if not data:
+        return None
+    return data[0]
+
+
+def image_response_value(item: Any, key: str) -> Any:
+    if item is None:
+        return None
+    if isinstance(item, dict):
+        return item.get(key)
+    return getattr(item, key, None)
+
+
+def extract_image_bytes_from_response(response: Any) -> bytes:
+    """Read generated image bytes from OpenAI-compatible b64_json or URL responses."""
+    first_item = first_image_response_item(response)
+    b64_json = image_response_value(first_item, "b64_json")
+    if b64_json:
+        b64_text = str(b64_json)
+        if "," in b64_text and b64_text.strip().startswith("data:"):
+            b64_text = b64_text.split(",", 1)[1]
+        return base64.b64decode(b64_text)
+
+    image_url = image_response_value(first_item, "url")
+    if image_url:
+        logger.info("Image URL received, downloading generated asset.")
+        with httpx.Client(timeout=60, trust_env=False) as http_client:
+            img_resp = http_client.get(str(image_url))
+        if img_resp.status_code != 200:
+            raise RuntimeError(f"下载生成图片失败: HTTP {img_resp.status_code}")
+        return img_resp.content
+
+    raise RuntimeError("API 响应中既没有 url 也没有 b64_json，无法获取图片数据。")
+
+
+def generate_image_response(
+    client: OpenAI,
+    model: str,
+    prompt: str,
+    size: str,
+    base_url: Optional[str] = None,
+    timeout: Optional[int] = None,
+) -> Any:
+    """Generate an image with provider-specific fallbacks for OpenAI-compatible services."""
+    seedream_mode = is_seedream_image_model(model, base_url)
+    kwargs: Dict[str, Any] = {
+        "model": model,
+        "prompt": prompt,
+        "n": 1,
+    }
+    if timeout:
+        kwargs["timeout"] = timeout
+
+    if seedream_mode:
+        # Volcengine Ark / Doubao Seedream uses OpenAI-compatible images.generate,
+        # but does not accept OpenAI-only knobs such as quality="standard".
+        try:
+            return client.images.generate(
+                **kwargs,
+                size=size,
+                response_format="b64_json",
+            )
+        except Exception as response_format_error:
+            logger.warning("Seedream image generation with response_format failed, retrying without it: %s", response_format_error)
+            try:
+                return client.images.generate(
+                    **kwargs,
+                    size=size,
+                )
+            except Exception as size_error:
+                logger.warning("Seedream image generation with size failed, retrying minimal params: %s", size_error)
+                return client.images.generate(**kwargs)
+
+    try:
+        return client.images.generate(
+            **kwargs,
+            size=size,
+            quality="standard",
+        )
+    except Exception as full_params_err:
+        logger.warning(
+            "Image gen with full params failed (%s). Retrying with size only for compatible providers...",
+            full_params_err,
+        )
+        try:
+            return client.images.generate(
+                **kwargs,
+                size=size,
+            )
+        except Exception as size_err:
+            logger.warning("Image gen with size failed (%s). Retrying minimal params...", size_err)
+            return client.images.generate(**kwargs)
+
 
 def clean_json_markdown(text: str) -> str:
     text = text.strip()
@@ -1211,22 +1334,15 @@ def test_llm_connection(payload: TestLlmPayload):
 def test_image_connection(payload: TestImagePayload):
     try:
         client = get_openai_client(api_key=payload.api_key, base_url=payload.base_url)
-        try:
-            response = client.images.generate(
-                model=payload.model,
-                prompt="a single dot",
-                size="1024x1024",
-                n=1,
-                timeout=15
-            )
-        except Exception:
-            response = client.images.generate(
-                model=payload.model,
-                prompt="a single dot",
-                n=1,
-                timeout=15
-            )
-        if response.data:
+        response = generate_image_response(
+            client=client,
+            model=payload.model,
+            prompt="a single dot",
+            size=payload.size or "1024x1024",
+            base_url=payload.base_url,
+            timeout=15,
+        )
+        if response_has_image_data(response):
             return {"success": True, "message": "连接成功！生图接口响应正常。"}
         return {"success": False, "message": "未返回有效图片数据。"}
     except Exception as e:
@@ -2162,18 +2278,18 @@ def generate_slide_image(
         raise HTTPException(status_code=400, detail="未配置生图 API 密钥，请在系统设置中配置，或使用下方本地上传图片功能。")
         
     try:
-        import base64 as b64lib
         client = get_openai_client(api_key=api_key, base_url=base_url)
         image_size = get_setting("image_size", "1024x1024")
         logger.info(f"Generating image for {slide_id} using {model}, size={image_size}, prompt: {prompt[:80]}")
 
         response = None
+        seedream_mode = is_seedream_image_model(model, base_url)
         reference_paths = [
             os.path.join(STYLE_REFERENCE_DIR, filename)
             for filename in STYLE_REFERENCE_FILES.values()
             if os.path.exists(os.path.join(STYLE_REFERENCE_DIR, filename))
         ]
-        if reference_paths and str(model).startswith("gpt-image"):
+        if reference_paths and str(model).startswith("gpt-image") and not seedream_mode:
             reference_files = []
             try:
                 reference_files = [open(path, "rb") for path in reference_paths]
@@ -2192,43 +2308,16 @@ def generate_slide_image(
                     reference_file.close()
 
         if response is None:
-            try:
-                response = client.images.generate(
-                    model=model,
-                    prompt=prompt,
-                    size=image_size,
-                    quality="standard",
-                    n=1
-                )
-            except Exception as full_params_err:
-                logger.warning(
-                    f"Image gen with full params failed ({full_params_err}). "
-                    "Retrying with minimal params (no size/quality) for newapi compatibility..."
-                )
-                response = client.images.generate(
-                    model=model,
-                    prompt=prompt,
-                    n=1
-                )
+            response = generate_image_response(
+                client=client,
+                model=model,
+                prompt=prompt,
+                size=image_size,
+                base_url=base_url,
+            )
 
         # ── 兼容两种响应格式：URL 和 base64 (b64_json) ──
-        img_bytes: bytes | None = None
-        first_item = response.data[0]
-        
-        # 优先读取 b64_json（部分中转供应商直接返回 base64）
-        if getattr(first_item, "b64_json", None):
-            img_bytes = b64lib.b64decode(first_item.b64_json)
-            logger.info(f"Image received as b64_json for {slide_id}.")
-        elif getattr(first_item, "url", None):
-            image_url = first_item.url
-            logger.info(f"Image URL received: {image_url}. Downloading...")
-            http_client = httpx.Client(timeout=60)
-            img_resp = http_client.get(image_url)
-            if img_resp.status_code != 200:
-                raise RuntimeError(f"下载生成的图片失败: HTTP {img_resp.status_code}")
-            img_bytes = img_resp.content
-        else:
-            raise RuntimeError("API 响应中既没有 url 也没有 b64_json，无法获取图片数据")
+        img_bytes = extract_image_bytes_from_response(response)
 
         process_and_save_image(img_bytes, save_path)
         logger.info(f"Image saved for {slide_id}: {save_path}")

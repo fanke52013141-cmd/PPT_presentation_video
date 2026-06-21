@@ -3,8 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PPT Visualization Studio - 手绘线稿风格</title>
-  <link rel="stylesheet" href="style.css?v=2.4.0">
+  <title>PPT Visualization Studio - 内容可视化</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=2.12.0">
 </head>
 <body>
 
@@ -168,6 +171,7 @@
               <h3 style="margin-bottom: 1rem; border-bottom: 2px solid #111; padding-bottom: 0.5rem; font-size: 1rem;">
                 正在编辑：<span id="step2-current-slide-id" style="color: var(--accent-color);">--</span>
                 <span id="step2-current-slide-title" style="font-weight: normal; color: #555; margin-left: 0.5rem; font-size: 0.9rem;"></span>
+                <button class="secondary step2-add-group" type="button" onclick="addVisualGroup()">添加结构块</button>
               </h3>
               <div id="step2-groups-list" style="display: flex; flex-direction: column; gap: 0.5rem;">
                 <!-- 分组项目 -->
@@ -206,6 +210,13 @@
             <button id="step3-btn-style" class="secondary" style="font-size: 0.85rem; padding: 0.35rem 0.9rem;">
               图片风格设置
             </button>
+            <div class="step3-video-background-control" title="透明图层最终合成时使用的纯色背景">
+              <span>视频背景</span>
+              <input id="step3-video-background-color" type="color" value="#FEFDF9" aria-label="选择最终视频背景色">
+              <input id="step3-video-background-text" type="text" value="#FEFDF9" maxlength="7" spellcheck="false" aria-label="最终视频背景色十六进制">
+              <button id="step3-video-background-apply" type="button">应用</button>
+              <span id="step3-video-background-status" class="step2-autosave-status"></span>
+            </div>
             <button id="step3-btn-confirm" class="success" style="display: none; margin-left: auto; font-size: 0.85rem; padding: 0.35rem 0.9rem;">
               确认所有图片，进入标注步骤
               <svg class="icon" viewBox="0 0 24 24" style="width:14px; height:14px; stroke-width:2.5;"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
@@ -230,9 +241,15 @@
                 <svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v5M14 11v5"></path></svg>
                 清除全部标注
               </button>
-              <button id="step5-btn-preview" class="success" type="button">最终抠除预览</button>
+              <button id="step5-btn-subtitle-settings" class="secondary">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M4 6h16"></path><path d="M7 10h10"></path><path d="M6 15h12"></path><path d="M9 19h6"></path></svg>
+                字幕设置
+              </button>
+              <button id="step5-btn-animation-settings" class="secondary">
+                <svg class="icon" viewBox="0 0 24 24"><polygon points="7 4 20 12 7 20 7 4"></polygon></svg>
+                动画设置
+              </button>
               <span id="step5-draft-status" class="step2-autosave-status"></span>
-              <span id="step5-live-coverage" class="step5-live-coverage">正在加载真实抠除预览...</span>
               <label class="step5-brush-control" title="调整手动涂抹区域的画笔大小">
                 <span>画笔</span>
                 <input id="step5-brush-size" type="range" min="40" max="300" value="170">
@@ -253,7 +270,6 @@
             <div class="workspace-left">
               <div class="canvas-wrapper" id="canvas-container">
                 <img id="step5-bg-img" src="" alt="Slide Background">
-                <img id="step5-foreground-mask-img" src="" alt="" aria-hidden="true">
                 <canvas id="step5-canvas" width="1920" height="1080"></canvas>
                 <div id="step5-brush-cursor" class="step5-brush-cursor" aria-hidden="true"></div>
                 <div id="step5-zoom-indicator" class="step5-zoom-indicator" aria-hidden="true">100%</div>
@@ -278,6 +294,7 @@
                   确认标注，进入下一步
                   <svg class="icon" viewBox="0 0 24 24" style="width:14px; height:14px; stroke-width:2.5;"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
                 </button>
+                <div id="step5-confirm-status" class="step5-confirm-status" style="display: none;" role="status" aria-live="polite"></div>
               </div>
             </div>
           </div>
@@ -374,7 +391,7 @@
 
   <!-- Modal: 系统设置 -->
   <div id="modal-settings" class="modal-overlay" style="display: none;">
-    <div class="modal-content" style="max-width: 650px;">
+    <div class="modal-content settings-modal">
       <h3 class="highlight-title" style="margin-bottom: 1.2rem;">
         <svg class="icon" viewBox="0 0 24 24" style="margin-right: 0.2rem;"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
         系统全局设置
@@ -398,9 +415,6 @@
       <div class="tab-contents">
         <!-- Text LLM Tab -->
         <div id="tab-llm" class="tab-pane">
-          <p style="font-size: 0.82rem; color: #666; background: #f0f4ff; border: 1.5px dashed #aac; border-radius: 8px; padding: 0.6rem 0.9rem; margin-bottom: 1rem; line-height: 1.7;">
-            使用 OpenAI 兼容协议。可直接连接 OpenAI、New API、OpenRouter、LiteLLM 代理及提供兼容接口的国内厂商。
-          </p>
           <div style="margin-bottom: 0.8rem;">
             <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">供应商预设:</label>
             <select id="setting-llm-provider">
@@ -448,9 +462,6 @@
 
         <!-- Image Tab -->
         <div id="tab-image" class="tab-pane" style="display: none;">
-          <p style="font-size: 0.82rem; color: #666; background: #f0f4ff; border: 1.5px dashed #aac; border-radius: 8px; padding: 0.6rem 0.9rem; margin-bottom: 1rem; line-height: 1.7;">
-            💡 <strong>newapi / 中转站用户</strong>：将接口地址填写为中转站的 <code>/v1</code> 路径（如 <code>https://你的域名/v1</code>），密钥填写中转密钥即可。如果与文本模型使用同一个中转站，可点击下方「同步」按钮快速填入。支持 DALL·E、Flux、CogView 等各类生图模型。
-          </p>
           <div style="margin-bottom: 0.8rem;">
             <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">接口地址 (Base URL):</label>
             <div style="display: flex; gap: 0.5rem; align-items: center;">
@@ -468,7 +479,7 @@
           <div style="display: flex; gap: 1rem; margin-bottom: 0.8rem;">
             <div style="flex: 1;">
               <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">生图模型 (Model):</label>
-              <input type="text" id="setting-image-model" placeholder="gpt-image-1 / dall-e-3 / cogview-3">
+              <input type="text" id="setting-image-model" placeholder="gpt-image-1 / doubao-seedream-3-0-t2i">
             </div>
             <div style="flex: 1;">
               <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">图片尺寸 (Size):</label>
@@ -476,7 +487,7 @@
             </div>
           </div>
           <p style="font-size: 0.78rem; color: #888; margin-top: 0.2rem;">
-            常用尺寸：<code>1024x1024</code>（通用）、<code>1536x1024</code>（gpt-image-1 宽屏）、<code>1792x1024</code>（DALL·E 3）。若中转模型不支持尺寸参数，系统将自动去除重试。
+            常用尺寸：<code>1024x1024</code>、<code>1536x1024</code>、<code>1792x1024</code>。火山/豆包 Seedream 可填写方舟模型 ID，接口地址通常为方舟兼容地址。
           </p>
           <div style="margin-top: 1.2rem; display: flex; justify-content: flex-start;">
             <button type="button" class="secondary" id="btn-test-image" style="padding: 0.4rem 1rem; font-size: 0.85rem; display: flex; align-items: center; gap: 0.4rem;">
@@ -488,16 +499,28 @@
 
         <!-- TTS Tab -->
         <div id="tab-tts" class="tab-pane" style="display: none;">
-          <p style="font-size: 0.82rem; color: #666; background: #f0f4ff; border: 1.5px dashed #aac; border-radius: 8px; padding: 0.6rem 0.9rem; margin-bottom: 1rem; line-height: 1.7;">
-            💡 <strong>语音合成说明</strong>：默认使用 MiniMax TTS v2 接口。如果此处留空，系统将自动读取系统环境变量中的 <code>MINIMAX_API_KEY</code> 进行语音合成。若使用中转站接口，需确保中转站完全兼容 MiniMax 音频合成接口格式。
-          </p>
+          <div style="margin-bottom: 0.8rem;">
+            <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">语音厂商 (Provider):</label>
+            <select id="setting-tts-provider">
+              <option value="minimax">MiniMax</option>
+              <option value="aliyun_cosyvoice">阿里 CosyVoice / DashScope</option>
+              <option value="tencent_tts">腾讯云 TTS</option>
+              <option value="volcengine_seed">火山/豆包 Seed Speech</option>
+            </select>
+          </div>
           <div style="margin-bottom: 0.8rem;">
             <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">语音接口地址 (Endpoint):</label>
             <input type="text" id="setting-tts-endpoint" placeholder="https://api.minimaxi.com/v1/t2a_async_v2">
           </div>
-          <div style="margin-bottom: 0.8rem;">
-            <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">语音接口密钥 (API Key):</label>
-            <input type="password" id="setting-tts-api-key" placeholder="API Key">
+          <div style="margin-bottom: 0.8rem; display: flex; gap: 1rem;">
+            <div style="flex: 1;">
+              <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">API Key / SecretId:</label>
+              <input type="password" id="setting-tts-api-key" placeholder="API Key / Tencent SecretId">
+            </div>
+            <div style="flex: 1;">
+              <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">SecretKey（腾讯云）:</label>
+              <input type="password" id="setting-tts-secret-key" placeholder="Tencent SecretKey">
+            </div>
           </div>
           <div style="margin-bottom: 0.8rem; display: flex; gap: 1rem;">
             <div style="flex: 1;">
@@ -507,6 +530,16 @@
             <div style="flex: 1;">
               <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">音色标识 (Voice ID):</label>
               <input type="text" id="setting-tts-voice-id" placeholder="Chinese (Mandarin)_Soft_Girl">
+            </div>
+          </div>
+          <div style="margin-bottom: 0.8rem; display: flex; gap: 1rem;">
+            <div style="flex: 1;">
+              <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">Clone Voice ID（可选）:</label>
+              <input type="text" id="setting-tts-clone-voice-id" placeholder="克隆/复刻后的音色 ID">
+            </div>
+            <div style="flex: 1;">
+              <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">Region（可选）:</label>
+              <input type="text" id="setting-tts-region" placeholder="ap-guangzhou / cn-beijing">
             </div>
           </div>
           <div style="display: flex; gap: 1rem;">
@@ -522,6 +555,10 @@
               <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">音调 (-12 - 12):</label>
               <input type="text" id="setting-tts-pitch" placeholder="0">
             </div>
+          </div>
+          <div style="margin-top: 0.8rem;">
+            <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">Provider Extra JSON（可选）:</label>
+            <textarea id="setting-tts-provider-extra" rows="4" spellcheck="false" placeholder='{"appid":"火山 AppID","cluster":"volcano_tts","resource_id":"seed-tts-2.0"}'></textarea>
           </div>
           <div style="margin-top: 1.2rem; display: flex; justify-content: flex-start;">
             <button type="button" class="secondary" id="btn-test-tts" style="padding: 0.4rem 1rem; font-size: 0.85rem; display: flex; align-items: center; gap: 0.4rem;">
@@ -570,31 +607,6 @@
     </div>
   </div>
 
-  <div id="modal-mask-preview" class="modal-overlay" style="display: none;">
-    <div class="modal-content mask-preview-modal" role="dialog" aria-modal="true" aria-labelledby="mask-preview-title">
-      <div class="mask-preview-header">
-        <div>
-          <h3 id="mask-preview-title" class="highlight-title">最终抠除预览</h3>
-          <p id="mask-preview-summary" class="mask-preview-summary"></p>
-        </div>
-        <button id="btn-mask-preview-close" class="secondary" type="button">关闭</button>
-      </div>
-      <div class="mask-preview-grid">
-        <section>
-          <h4>视频最终会显示的内容</h4>
-          <img id="mask-preview-image" alt="最终抠除结果">
-        </section>
-        <section id="mask-uncovered-section">
-          <h4>Mask 外仍存在的源图内容</h4>
-          <div class="mask-preview-checker">
-            <img id="mask-uncovered-image" alt="Mask 未覆盖内容">
-          </div>
-        </section>
-      </div>
-      <p class="mask-preview-note">红色内容不会进入视频。请返回画布补涂，直到红色提示消失并达到确认标准；系统不会自动扩大、缩小或修补 Mask。</p>
-    </div>
-  </div>
-
   <div id="modal-step3-ai" class="modal-overlay" style="display: none;">
     <div id="step3-editor" class="modal-content step3-ai-modal" role="dialog" aria-modal="true" aria-labelledby="step3-ai-title">
       <div class="step3-ai-header">
@@ -638,11 +650,65 @@
 
   <div id="modal-storyboard-rules" class="modal-overlay" style="display: none;">
     <div class="modal-content config-editor-modal">
-      <h3 class="highlight-title">分镜生成规则</h3>
-      <p class="config-editor-note">这里编辑的是插入 System Content 的自定义规则。完整系统约束、JSON Schema 和 User Content 文章由后台自动拼接。</p>
-      <textarea id="storyboard-rules-input" rows="16"></textarea>
+      <div class="config-editor-scroll">
+        <h3 class="highlight-title">分镜结构、Prompt 与 Schema</h3>
+        <div class="template-manager-bar">
+          <label>
+            <span>选择模板</span>
+            <select id="storyboard-template-select"></select>
+          </label>
+          <button id="btn-storyboard-template-load" class="secondary" type="button">载入模板</button>
+          <label class="template-name-field">
+            <span>新模板名称</span>
+            <input id="storyboard-template-name" type="text" maxlength="60" placeholder="例如：知识科普分镜">
+          </label>
+          <button id="btn-storyboard-template-save" class="secondary" type="button">另存为模板</button>
+        </div>
+        <div class="config-boundary-note">
+          <strong>可以直接修改：</strong>页数范围、每页语块数、启用的结构类型、是否必选、是否朗读、自定义分镜规则。
+          <br><strong>系统保护：</strong>JSON 层级、Slide/语块 ID、visual_groups 与 narration_beats 的绑定字段不能删除。
+        </div>
+        <div class="storyboard-guided-grid">
+          <section class="config-section-card">
+            <h4>页数和每页语块数</h4>
+            <div class="storyboard-range-grid">
+              <label><span>短文章页数</span><input id="storyboard-slide-short" type="text"></label>
+              <label><span>中文章页数</span><input id="storyboard-slide-medium" type="text"></label>
+              <label><span>长文章页数</span><input id="storyboard-slide-long" type="text"></label>
+              <label><span>短文章语块数</span><input id="storyboard-group-short" type="text"></label>
+              <label><span>中文章语块数</span><input id="storyboard-group-medium" type="text"></label>
+              <label><span>长文章语块数</span><input id="storyboard-group-long" type="text"></label>
+            </div>
+          </section>
+          <section class="config-section-card">
+            <h4>可用结构类型</h4>
+            <div class="storyboard-role-head">
+              <span>启用 / 类型</span><span>必选</span><span>旁白策略</span>
+            </div>
+            <div id="storyboard-role-editor" class="storyboard-role-editor"></div>
+          </section>
+        </div>
+        <label class="storyboard-config-field storyboard-rule-field">
+          <span>自定义分镜规则（这里写你希望模型怎么拆页、怎么组织内容）</span>
+          <textarea id="storyboard-rules-input" rows="9"></textarea>
+        </label>
+        <details class="storyboard-schema-panel">
+          <summary>高级 YAML（有明确需要时再修改）</summary>
+          <p class="config-editor-note">常用设置会自动同步到 YAML。高级模式可增加角色或修改更底层的 Prompt 配置，但不能删除 storyboard 和 roles。</p>
+          <textarea id="storyboard-profile-input" rows="18" spellcheck="false"></textarea>
+        </details>
+        <details class="storyboard-schema-panel">
+          <summary>查看当前 JSON Schema</summary>
+          <textarea id="storyboard-schema-input" rows="16" readonly spellcheck="false"></textarea>
+        </details>
+        <details class="storyboard-schema-panel">
+          <summary>查看完整 System Content + User Content</summary>
+          <textarea id="storyboard-prompt-preview" rows="16" readonly spellcheck="false"></textarea>
+        </details>
+      </div>
       <div class="config-editor-actions">
-        <button id="btn-storyboard-rules-copy-full" class="secondary">复制完整请求</button>
+        <button id="btn-storyboard-schema-copy" class="secondary">复制 JSON Schema</button>
+        <button id="btn-storyboard-rules-copy-full" class="secondary">生成并复制完整请求</button>
         <button id="btn-storyboard-rules-cancel" class="secondary">取消</button>
         <button id="btn-storyboard-rules-save" class="success">保存规则</button>
         <button id="btn-storyboard-rules-save-regenerate" class="success">保存并重新规划</button>
@@ -652,20 +718,69 @@
 
   <div id="modal-image-style" class="modal-overlay" style="display: none;">
     <div class="modal-content config-editor-modal">
-      <h3 class="highlight-title">图片风格与参考图</h3>
-      <p class="config-editor-note">这里只编辑静态生图直接使用的画风、配色和版式。动画、图层、字幕渲染等后续视频配置不会进入生图提示词。</p>
-      <textarea id="image-style-input" rows="18" spellcheck="false"></textarea>
-      <div class="reference-image-grid">
-        <label class="reference-image-item">
-          <span>模板参考图</span>
-          <img id="image-style-template-preview" alt="模板参考图">
-          <input id="image-style-template-file" type="file" accept="image/*">
-        </label>
-        <label class="reference-image-item">
-          <span>示例参考图</span>
-          <img id="image-style-example-preview" alt="示例参考图">
-          <input id="image-style-example-file" type="file" accept="image/*">
-        </label>
+      <div class="config-editor-scroll">
+        <h3 class="highlight-title">图片风格与参考图</h3>
+        <div class="template-manager-bar">
+          <label>
+            <span>选择模板</span>
+            <select id="image-style-template-select"></select>
+          </label>
+          <button id="btn-image-style-template-load" class="secondary" type="button">载入模板</button>
+          <label class="template-name-field">
+            <span>新模板名称</span>
+            <input id="image-style-template-name" type="text" maxlength="60" placeholder="例如：水墨科普风格">
+          </label>
+          <button id="btn-image-style-template-save" class="secondary" type="button">另存为模板</button>
+        </div>
+        <div class="config-boundary-note">
+          直接填写下面的风格词即可，不需要遵守 YAML 格式。系统固定 1920×1080、16:9、纯白背景，并保留底部字幕安全区；这些约束用于保证后续 Mask 稳定。
+        </div>
+        <div class="image-style-guided-grid">
+          <label>
+            <span>整体风格词（每行一个）</span>
+            <textarea id="image-style-keywords" rows="6" placeholder="例如：温暖极简&#10;杂志拼贴&#10;中国水墨"></textarea>
+          </label>
+          <label>
+            <span>画面表现方式</span>
+            <input id="image-style-visual-style" type="text" placeholder="例如：editorial_collage / chinese_ink_painting">
+          </label>
+          <label>
+            <span>图示与流程图风格</span>
+            <input id="image-style-diagram-style" type="text" placeholder="例如：clean_infographic">
+          </label>
+          <label>
+            <span>Mask 友好版式规则（每行一个）</span>
+            <textarea id="image-style-layout-rules" rows="6"></textarea>
+          </label>
+          <label>
+            <span>明确避免（每行一个）</span>
+            <textarea id="image-style-avoid" rows="6"></textarea>
+          </label>
+        </div>
+        <details class="storyboard-schema-panel">
+          <summary>高级 YAML（会覆盖上方常用设置）</summary>
+          <label class="advanced-config-toggle">
+            <input id="image-style-use-advanced" type="checkbox">
+            <span>本次保存使用高级 YAML</span>
+          </label>
+          <textarea id="image-style-input" rows="18" spellcheck="false"></textarea>
+          <div class="advanced-validation-row">
+            <button id="btn-image-style-validate" class="secondary" type="button">校验 YAML</button>
+            <span id="image-style-validation-status"></span>
+          </div>
+        </details>
+        <div class="reference-image-grid">
+          <label class="reference-image-item">
+            <span>模板参考图（可替换）</span>
+            <img id="image-style-template-preview" alt="模板参考图">
+            <input id="image-style-template-file" type="file" accept="image/*">
+          </label>
+          <label class="reference-image-item">
+            <span>示例参考图（可替换）</span>
+            <img id="image-style-example-preview" alt="示例参考图">
+            <input id="image-style-example-file" type="file" accept="image/*">
+          </label>
+        </div>
       </div>
       <div class="config-editor-actions">
         <button id="btn-image-style-cancel" class="secondary">取消</button>
@@ -674,10 +789,100 @@
     </div>
   </div>
 
+  <div id="modal-subtitle-settings" class="modal-overlay" style="display: none;">
+    <div class="modal-content subtitle-settings-modal">
+      <div class="subtitle-settings-header">
+        <div>
+          <h3 class="highlight-title">字幕样式与位置</h3>
+          <p class="config-editor-note">优先使用当前项目第一张 Slide；没有 Slide 时使用图片风格中的示例参考图。预览样式会直接进入最终视频。</p>
+        </div>
+        <button id="btn-subtitle-settings-close" class="secondary" type="button">关闭</button>
+      </div>
+      <div class="subtitle-settings-layout">
+        <div class="subtitle-preview-stage">
+          <img id="subtitle-preview-image" alt="字幕背景预览">
+          <div id="subtitle-margin-left-shade" class="subtitle-margin-shade left"></div>
+          <div id="subtitle-margin-right-shade" class="subtitle-margin-shade right"></div>
+          <div id="subtitle-safe-width-guide">
+            <span>字幕可用宽度</span>
+          </div>
+          <div id="subtitle-preview-text">这是一段视频字幕效果预览</div>
+        </div>
+        <div class="subtitle-settings-controls">
+          <label>
+            <span>预览字幕文字</span>
+            <input id="subtitle-sample-text" type="text" value="这是一段视频字幕效果预览">
+          </label>
+          <label>
+            <span>中文字体</span>
+            <select id="subtitle-font-key"></select>
+          </label>
+          <label>
+            <span>字号：<strong id="subtitle-font-size-value">38</strong> px</span>
+            <input id="subtitle-font-size" type="range" min="22" max="72" step="1" value="38">
+          </label>
+          <label>
+            <span>字体粗细：<strong id="subtitle-font-weight-value">500</strong></span>
+            <input id="subtitle-font-weight" type="range" min="300" max="800" step="100" value="500">
+          </label>
+          <label>
+            <span>上下位置（距底部）：<strong id="subtitle-bottom-value">18</strong> px</span>
+            <input id="subtitle-bottom" type="range" min="0" max="220" step="2" value="18">
+          </label>
+          <label>
+            <span>左右留白：<strong id="subtitle-margin-value">180</strong> px</span>
+            <input id="subtitle-horizontal-margin" type="range" min="40" max="420" step="10" value="180">
+          </label>
+          <div class="subtitle-font-note">字体列表优先选择 SIL Open Font License 的开源中文字体；霞鹜文楷使用本机字体，未安装时自动回退。</div>
+        </div>
+      </div>
+      <div class="config-editor-actions">
+        <button id="btn-subtitle-settings-reset" class="secondary" type="button">恢复默认</button>
+        <button id="btn-subtitle-settings-save" class="success" type="button">保存字幕设置</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-animation-settings" class="modal-overlay" style="display: none;">
+    <div class="modal-content subtitle-settings-modal animation-settings-modal">
+      <div class="subtitle-settings-header">
+        <div>
+          <h3 class="highlight-title">统一动画设置</h3>
+          <p class="config-editor-note">当前设置会同步到全部 Slide 的全部语块。预览使用当前页已经涂抹的 Mask。</p>
+        </div>
+        <button id="btn-animation-settings-close" class="secondary" type="button">关闭</button>
+      </div>
+      <div class="subtitle-settings-layout">
+        <div class="animation-preview-stage">
+          <canvas id="animation-preview-canvas" width="1920" height="1080"></canvas>
+          <div id="animation-preview-empty">当前页还没有可预览的 Mask</div>
+        </div>
+        <div class="subtitle-settings-controls">
+          <label>
+            <span>动画</span>
+            <select id="animation-setting-type"></select>
+          </label>
+          <label>
+            <span>时长：<strong id="animation-setting-duration-value">0.75</strong> 秒</span>
+            <input id="animation-setting-duration" type="range" min="0.2" max="3" step="0.05" value="0.75">
+          </label>
+          <button id="btn-animation-settings-preview" class="secondary" type="button">
+            <svg class="icon" viewBox="0 0 24 24"><polygon points="7 4 20 12 7 20 7 4"></polygon></svg>
+            预览当前页
+          </button>
+        </div>
+      </div>
+      <div class="config-editor-actions">
+        <button id="btn-animation-settings-reset" class="secondary" type="button">恢复默认</button>
+        <button id="btn-animation-settings-save" class="success" type="button">应用到全部语块</button>
+      </div>
+    </div>
+  </div>
+
   <div id="toast-container" aria-live="polite" aria-atomic="false"></div>
 
   <!-- 主业务 JavaScript 脚本 -->
   <script src="flow.js?v=1.0.0"></script>
-  <script src="app.js?v=2.6.1"></script>
+  <script src="app.js?v=2.12.0"></script>
 </body>
 </html>

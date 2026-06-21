@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+"""Regression checks for guided storyboard/style settings and unified animation UI."""
+
+from pathlib import Path
+import sys
+import tempfile
+
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.build_reveal_scene import build_event  # noqa: E402
+from scripts.pipeline_profiles import normalize_reveal_action, role_catalog  # noqa: E402
+import server as server_module  # noqa: E402
+from server import (  # noqa: E402
+    OPEN_SOURCE_CHINESE_FONTS,
+    apply_storyboard_profile_patch,
+    image_style_template_detail,
+    list_storyboard_templates,
+    merge_image_style_update,
+    parse_storyboard_profile_text,
+    read_style_tokens_data,
+    storyboard_profile_editor_data,
+)
+
+def main() -> None:
+    profile_text = (ROOT / "config" / "pipeline_profiles.yaml").read_text(encoding="utf-8-sig")
+    profile = parse_storyboard_profile_text(profile_text)
+    editor = storyboard_profile_editor_data(profile)
+    assert editor["roles"]["subtitle"]["speak_policy"] == "display_only"
+    assert "visual_groups[].content_unit_id" in editor["protected_fields"]
+
+    patched = apply_storyboard_profile_patch(
+        profile,
+        {
+            "slide_count": {"short_article": "5-7"},
+            "roles": {
+                "subtitle": {
+                    "enabled": False,
+                    "required": False,
+                    "speak_policy": "speak",
+                }
+            },
+        },
+    )
+    assert patched["storyboard"]["slide_count"]["short_article"] == "5-7"
+    assert "subtitle" not in role_catalog(patched)
+    assert storyboard_profile_editor_data(patched)["roles"]["subtitle"]["enabled"] is False
+    assert normalize_reveal_action("scratch_reveal", profile, for_renderer=True) == "scratch_reveal"
+    assert normalize_reveal_action("brush_wipe_left_to_right", profile, for_renderer=True) == "brush_wipe_left_to_right"
+    scratch_event = build_event(
+        "slide_001",
+        {"id": "group_01", "reveal": {"type": "scratch_reveal", "duration": 0.9}},
+        "group_01_layer",
+        0.5,
+    )
+    assert scratch_event["action"] == "scratch_reveal"
+
+    style = read_style_tokens_data()
+    merged = merge_image_style_update(
+        style,
+        {
+            "brand": {"style_keywords": ["中国水墨", "留白"]},
+            "visual_assets": {
+                "image_style": "chinese_ink",
+                "layout_rules": ["每个语块独立留白"],
+                "avoid": ["复杂背景"],
+            },
+        },
+    )
+    assert merged["brand"]["name"] == style["brand"]["name"]
+    assert merged["brand"]["style_keywords"] == ["中国水墨", "留白"]
+    assert merged["visual_assets"]["reveal_friendly_layout"] == ["每个语块独立留白"]
+    assert merged["canvas"]["background"] == "#FFFFFF"
+
+    html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
+    app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    css = (ROOT / "static" / "style.css").read_text(encoding="utf-8")
+    assert 'id="step5-btn-animation-settings"' in html
+    assert 'id="modal-animation-settings"' in html
+    assert 'id="subtitle-font-weight"' in html
+    assert 'id="storyboard-template-select"' in html
+    assert 'id="image-style-template-select"' in html
+    assert 'id="subtitle-safe-width-guide"' in html
+    assert "mask-animation-card" not in app_js
+    assert "previewGlobalAnimationSettings" in app_js
+    assert ".config-editor-scroll" in css
+    assert list_storyboard_templates()[0]["id"] == "default"
+    assert image_style_template_detail("default")["references"]["template"]["exists"]
+    font_keys = {font["key"] for font in OPEN_SOURCE_CHINESE_FONTS}
+    assert {"lxgw_marker_gothic", "lxgw_wenkai_tc", "noto_sans_tc", "noto_serif_tc"} <= font_keys
+
+    original_paths = {
+        key: getattr(server_module, key)
+        for key in (
+            "STORYBOARD_TEMPLATES_PATH",
+            "STYLE_TOKENS_PATH",
+            "STYLE_REFERENCE_DIR",
+            "IMAGE_STYLE_TEMPLATES_DIR",
+            "IMAGE_STYLE_TEMPLATES_INDEX",
+        )
+    }
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            server_module.STORYBOARD_TEMPLATES_PATH = str(temp_root / "storyboard_templates.json")
+            saved_storyboard = server_module.save_storyboard_template(
+                {
+                    "name": "回归分镜模板",
+                    "rules": server_module.default_storyboard_rules(),
+                    "profile_yaml": server_module.default_storyboard_profile_text(),
+                    "profile_patch": {},
+                }
+            )
+            assert saved_storyboard["template"]["name"] == "回归分镜模板"
+
+            server_module.STYLE_TOKENS_PATH = str(temp_root / "active" / "style_tokens.yaml")
+            server_module.STYLE_REFERENCE_DIR = str(temp_root / "active" / "references")
+            server_module.IMAGE_STYLE_TEMPLATES_DIR = str(temp_root / "image_templates")
+            server_module.IMAGE_STYLE_TEMPLATES_INDEX = str(temp_root / "image_templates" / "index.json")
+            server_module.ensure_active_image_style_storage()
+            saved_image = server_module.save_image_style_template({"name": "回归图片模板"})
+            assert saved_image["template"]["references"]["template"]["exists"]
+            assert saved_image["template"]["references"]["example"]["exists"]
+    finally:
+        for key, value in original_paths.items():
+            setattr(server_module, key, value)
+
+    print("generalized settings checks passed")
+
+
+if __name__ == "__main__":
+    main()

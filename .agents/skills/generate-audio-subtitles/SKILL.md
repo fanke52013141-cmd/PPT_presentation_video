@@ -119,7 +119,7 @@ MiniMax 支持在文本中插入停顿标记 `<#x#>`。`speech-2.8-hd` 和 `spee
 7. 保存语音、MiniMax 响应摘要、字幕和时间轴。
 8. 字幕和 `audio_timeline.json` 必须清洗掉 `<#x#>` 和语气标签。
 9. 若没有官方字幕时间戳，则按字幕分段和音频总长生成近似 `audio_timeline.json`，并标记 `timing_source: estimated`。
-10. 默认 endpoint 使用 `https://api.minimaxi.com/v1/t2a_v2`，备用接口为 `https://api-bj.minimaxi.com/v1/t2a_v2`。
+10. 默认 endpoint 使用 `https://api.minimaxi.com/v1/t2a_async_v2`；异步任务通过 `/v1/query/t2a_async_query_v2` 查询结果。
 
 # Encoding Rules
 

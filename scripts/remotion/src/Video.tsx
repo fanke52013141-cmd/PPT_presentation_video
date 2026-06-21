@@ -10,6 +10,19 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from 'remotion';
+import {loadFont as loadMaShanZheng} from '@remotion/google-fonts/MaShanZheng';
+import {loadFont as loadLongCang} from '@remotion/google-fonts/LongCang';
+import {loadFont as loadLiuJianMaoCao} from '@remotion/google-fonts/LiuJianMaoCao';
+import {loadFont as loadLXGWMarkerGothic} from '@remotion/google-fonts/LXGWMarkerGothic';
+import {loadFont as loadLXGWWenKaiTC} from '@remotion/google-fonts/LXGWWenKaiTC';
+import {loadFont as loadNotoSansSC} from '@remotion/google-fonts/NotoSansSC';
+import {loadFont as loadNotoSansTC} from '@remotion/google-fonts/NotoSansTC';
+import {loadFont as loadNotoSerifSC} from '@remotion/google-fonts/NotoSerifSC';
+import {loadFont as loadNotoSerifTC} from '@remotion/google-fonts/NotoSerifTC';
+import {loadFont as loadZCOOLKuaiLe} from '@remotion/google-fonts/ZCOOLKuaiLe';
+import {loadFont as loadZCOOLQingKeHuangYou} from '@remotion/google-fonts/ZCOOLQingKeHuangYou';
+import {loadFont as loadZCOOLXiaoWei} from '@remotion/google-fonts/ZCOOLXiaoWei';
+import {loadFont as loadZhiMangXing} from '@remotion/google-fonts/ZhiMangXing';
 
 type LayerBox = {
   x: number;
@@ -70,11 +83,22 @@ export type AnimationAction =
   | 'highlight'
   | 'cover_fade_out'
   | 'cover_wipe_left_to_right'
+  | 'cover_wipe_right_to_left'
   | 'cover_wipe_top_to_bottom'
+  | 'cover_wipe_bottom_to_top'
   | 'fog_diagonal_erase'
+  | 'wipe_left_to_right'
+  | 'wipe_right_to_left'
+  | 'wipe_top_to_bottom'
+  | 'wipe_bottom_to_top'
+  | 'scratch_reveal'
+  | 'brush_wipe_left_to_right'
   | 'crop_fade_up'
   | 'crop_slide_in_left'
-  | 'crop_soft_zoom_in';
+  | 'crop_soft_zoom_in'
+  | 'sticker_pop'
+  | 'stamp_in'
+  | 'paper_drop';
 
 export type AnimationEvent = {
   id?: string;
@@ -107,7 +131,68 @@ export type ArticleVideoProps = {
   width?: number;
   height?: number;
   total_duration_sec: number;
+  subtitle_style?: SubtitleStyle;
   slides: Slide[];
+};
+
+export type SubtitleStyle = {
+  font_key?: string;
+  font_family?: string;
+  font_size?: number;
+  font_weight?: number;
+  bottom?: number;
+  horizontal_margin?: number;
+  color?: string;
+};
+
+const loadedSubtitleFonts = new Map<string, string>();
+
+const subtitleFontFamily = (fontKey?: string, configuredFamily?: string, fontWeight?: number): string => {
+  const key = fontKey || 'noto_sans_sc';
+  const normalizedWeight = Math.max(300, Math.min(800, Math.round((fontWeight ?? 500) / 100) * 100));
+  const notoWeight = String(normalizedWeight) as '300' | '400' | '500' | '600' | '700' | '800';
+  const cacheKey = `${key}:${notoWeight}`;
+  const cached = loadedSubtitleFonts.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  let family = configuredFamily || 'Noto Sans SC';
+  if (key === 'noto_sans_sc') {
+    family = loadNotoSansSC('normal', {weights: [notoWeight], subsets: ['chinese-simplified']}).fontFamily;
+  } else if (key === 'noto_serif_sc') {
+    family = loadNotoSerifSC('normal', {weights: [notoWeight], subsets: ['chinese-simplified']}).fontFamily;
+  } else if (key === 'ma_shan_zheng') {
+    family = loadMaShanZheng('normal', {weights: ['400'], subsets: ['chinese-simplified']}).fontFamily;
+  } else if (key === 'zcool_xiaowei') {
+    family = loadZCOOLXiaoWei('normal', {weights: ['400'], subsets: ['chinese-simplified']}).fontFamily;
+  } else if (key === 'zcool_qingke') {
+    family = loadZCOOLQingKeHuangYou('normal', {weights: ['400'], subsets: ['chinese-simplified']}).fontFamily;
+  } else if (key === 'zcool_kuaile') {
+    family = loadZCOOLKuaiLe('normal', {weights: ['400'], subsets: ['chinese-simplified']}).fontFamily;
+  } else if (key === 'long_cang') {
+    family = loadLongCang('normal', {weights: ['400'], subsets: ['chinese-simplified']}).fontFamily;
+  } else if (key === 'liu_jian_mao_cao') {
+    family = loadLiuJianMaoCao('normal', {weights: ['400'], subsets: ['chinese-simplified']}).fontFamily;
+  } else if (key === 'zhi_mang_xing') {
+    family = loadZhiMangXing('normal', {weights: ['400'], subsets: ['chinese-simplified']}).fontFamily;
+  } else if (key === 'lxgw_marker_gothic') {
+    family = loadLXGWMarkerGothic('normal', {weights: ['400'], subsets: ['chinese-traditional']}).fontFamily;
+  } else if (key === 'lxgw_wenkai_tc') {
+    const wenKaiWeight = normalizedWeight <= 300 ? '300' : normalizedWeight >= 600 ? '700' : '400';
+    family = loadLXGWWenKaiTC('normal', {
+      weights: [wenKaiWeight],
+      subsets: ['chinese-traditional'],
+    }).fontFamily;
+  } else if (key === 'noto_sans_tc') {
+    family = loadNotoSansTC('normal', {weights: [notoWeight], subsets: ['chinese-traditional']}).fontFamily;
+  } else if (key === 'noto_serif_tc') {
+    family = loadNotoSerifTC('normal', {weights: [notoWeight], subsets: ['chinese-traditional']}).fontFamily;
+  } else if (key === 'lxgw_wenkai') {
+    family = 'LXGW WenKai, KaiTi, Microsoft YaHei, sans-serif';
+  }
+  loadedSubtitleFonts.set(cacheKey, family);
+  return family;
 };
 
 const toAssetSrc = (value?: string): string | undefined => {
@@ -142,6 +227,11 @@ const numericParam = (event: AnimationEvent, key: string, fallback: number): num
   return typeof value === 'number' ? value : fallback;
 };
 
+const maskGradient = (angle: number, progress: number, feather: number): string => {
+  const sweep = -35 + progress * 170;
+  return `linear-gradient(${angle}deg, transparent ${sweep - feather}%, transparent ${sweep}%, black ${sweep + feather}%)`;
+};
+
 const revealStyle = (
   frame: number,
   fps: number,
@@ -149,7 +239,20 @@ const revealStyle = (
   base: React.CSSProperties
 ): React.CSSProperties => {
   const revealEvent = events.find((event) =>
-    ['cover_fade_out', 'cover_wipe_left_to_right', 'cover_wipe_top_to_bottom', 'fog_diagonal_erase'].includes(event.action)
+    [
+      'cover_fade_out',
+      'cover_wipe_left_to_right',
+      'cover_wipe_right_to_left',
+      'cover_wipe_top_to_bottom',
+      'cover_wipe_bottom_to_top',
+      'fog_diagonal_erase',
+      'wipe_left_to_right',
+      'wipe_right_to_left',
+      'wipe_top_to_bottom',
+      'wipe_bottom_to_top',
+      'scratch_reveal',
+      'brush_wipe_left_to_right',
+    ].includes(event.action)
   );
   if (!revealEvent) {
     return base;
@@ -167,6 +270,13 @@ const revealStyle = (
     };
   }
 
+  if (revealEvent.action === 'cover_wipe_right_to_left') {
+    return {
+      ...base,
+      clipPath: `inset(0 ${progress * 100}% 0 0)`,
+    };
+  }
+
   if (revealEvent.action === 'cover_wipe_top_to_bottom') {
     return {
       ...base,
@@ -174,10 +284,46 @@ const revealStyle = (
     };
   }
 
+  if (revealEvent.action === 'cover_wipe_bottom_to_top') {
+    return {
+      ...base,
+      clipPath: `inset(0 0 ${progress * 100}% 0)`,
+    };
+  }
+
+  if (revealEvent.action === 'wipe_left_to_right') {
+    return {
+      ...base,
+      clipPath: `inset(0 ${100 - progress * 100}% 0 0)`,
+    };
+  }
+
+  if (revealEvent.action === 'wipe_right_to_left') {
+    return {
+      ...base,
+      clipPath: `inset(0 0 0 ${100 - progress * 100}%)`,
+    };
+  }
+
+  if (revealEvent.action === 'wipe_top_to_bottom') {
+    return {
+      ...base,
+      clipPath: `inset(0 0 ${100 - progress * 100}% 0)`,
+    };
+  }
+
+  if (revealEvent.action === 'wipe_bottom_to_top') {
+    return {
+      ...base,
+      clipPath: `inset(${100 - progress * 100}% 0 0 0)`,
+    };
+  }
+
   const feather = numericParam(revealEvent, 'feather', 16);
-  const angle = numericParam(revealEvent, 'angle', 135);
-  const sweep = -35 + progress * 170;
-  const maskImage = `linear-gradient(${angle}deg, transparent ${sweep - feather}%, transparent ${sweep}%, black ${sweep + feather}%)`;
+  const angle = revealEvent.action === 'brush_wipe_left_to_right'
+    ? 90
+    : numericParam(revealEvent, 'angle', revealEvent.action === 'scratch_reveal' ? 100 : 135);
+  const maskImage = maskGradient(angle, progress, feather);
   return {
     ...base,
     WebkitMaskImage: maskImage,
@@ -197,7 +343,18 @@ const animatedStyle = (
 
   let style: React.CSSProperties = revealStyle(frame, fps, events, base);
   const entryEvent = events.find((event) =>
-    ['fade_in', 'fade_up', 'soft_zoom_in', 'slide_in_left', 'crop_fade_up', 'crop_slide_in_left', 'crop_soft_zoom_in'].includes(event.action)
+    [
+      'fade_in',
+      'fade_up',
+      'soft_zoom_in',
+      'slide_in_left',
+      'crop_fade_up',
+      'crop_slide_in_left',
+      'crop_soft_zoom_in',
+      'sticker_pop',
+      'stamp_in',
+      'paper_drop',
+    ].includes(event.action)
   );
 
   if (entryEvent) {
@@ -217,6 +374,32 @@ const animatedStyle = (
       style = {...style, opacity: progress, transform: `translateX(${(1 - springProgress) * -28}px)`};
     } else if (entryEvent.action === 'soft_zoom_in' || entryEvent.action === 'crop_soft_zoom_in') {
       style = {...style, opacity: progress, transform: `scale(${0.97 + springProgress * 0.03})`};
+    } else if (entryEvent.action === 'sticker_pop') {
+      const rotation = numericParam(entryEvent, 'rotation', -4);
+      style = {
+        ...style,
+        opacity: progress,
+        transformOrigin: '50% 50%',
+        transform: `scale(${0.72 + springProgress * 0.28}) rotate(${rotation * (1 - springProgress)}deg)`,
+        filter: `drop-shadow(0 ${10 * (1 - springProgress)}px ${14 * (1 - springProgress)}px rgba(0,0,0,0.22))`,
+      };
+    } else if (entryEvent.action === 'stamp_in') {
+      const rotation = numericParam(entryEvent, 'rotation', 2);
+      style = {
+        ...style,
+        opacity: progress,
+        transformOrigin: '50% 50%',
+        transform: `scale(${1.55 - springProgress * 0.55}) rotate(${rotation * (1 - springProgress)}deg)`,
+      };
+    } else if (entryEvent.action === 'paper_drop') {
+      const rotation = numericParam(entryEvent, 'rotation', -3);
+      style = {
+        ...style,
+        opacity: progress,
+        transformOrigin: '50% 20%',
+        transform: `translateY(${(1 - springProgress) * -48}px) rotate(${rotation * (1 - springProgress)}deg)`,
+        filter: `drop-shadow(0 ${8 * (1 - springProgress)}px ${12 * (1 - springProgress)}px rgba(0,0,0,0.18))`,
+      };
     } else {
       style = {...style, opacity: progress};
     }
@@ -270,7 +453,7 @@ const LayerView: React.FC<{layer: SceneLayer; events?: AnimationEvent[]}> = ({la
   );
 };
 
-const SlideView: React.FC<{slide: Slide}> = ({slide}) => {
+const SlideView: React.FC<{slide: Slide; subtitleStyle?: SubtitleStyle}> = ({slide, subtitleStyle}) => {
   const segments = slide.audio_timeline?.segments ?? [];
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
@@ -282,9 +465,15 @@ const SlideView: React.FC<{slide: Slide}> = ({slide}) => {
     : undefined;
   const background = toAssetSrc(slide.scene.canvas.background_asset);
   const layers = slide.scene.layers ?? [];
+  const subtitleFont = subtitleFontFamily(
+    subtitleStyle?.font_key,
+    subtitleStyle?.font_family,
+    subtitleStyle?.font_weight,
+  );
+  const horizontalMargin = subtitleStyle?.horizontal_margin ?? 180;
 
   return (
-    <AbsoluteFill style={{background: slide.scene.canvas.background || '#FFFDF7'}}>
+    <AbsoluteFill style={{background: slide.scene.canvas.background || '#FEFDF9'}}>
       {background ? <Img src={background} style={{position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover'}} /> : null}
       {layers
         .slice()
@@ -296,27 +485,26 @@ const SlideView: React.FC<{slide: Slide}> = ({slide}) => {
         <div
           style={{
             position: 'absolute',
-            left: 180,
-            right: 180,
-            bottom: 28,
+            left: horizontalMargin,
+            right: horizontalMargin,
+            bottom: subtitleStyle?.bottom ?? 18,
             zIndex: 10000,
-            minHeight: 82,
+            minHeight: 54,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             boxSizing: 'border-box',
-            padding: '0 36px',
-            color: '#111111',
-            background: 'rgba(255, 253, 247, 0.82)',
-            borderRadius: 24,
-            fontSize: 38,
-            fontWeight: 500,
+            padding: '0 24px',
+            color: subtitleStyle?.color ?? '#111111',
+            background: 'transparent',
+            fontSize: subtitleStyle?.font_size ?? 38,
+            fontWeight: subtitleStyle?.font_weight ?? 500,
             lineHeight: 1.15,
             textAlign: 'center',
             whiteSpace: 'normal',
             overflow: 'visible',
             overflowWrap: 'anywhere',
-            fontFamily: 'LXGW WenKai, KaiTi, Microsoft YaHei, sans-serif',
+            fontFamily: subtitleFont,
           }}
         >
           {activeSubtitle.text}
@@ -331,17 +519,17 @@ const SlideView: React.FC<{slide: Slide}> = ({slide}) => {
   );
 };
 
-export const ArticleVideo: React.FC<ArticleVideoProps> = ({slides}) => {
+export const ArticleVideo: React.FC<ArticleVideoProps> = ({slides, subtitle_style}) => {
   const {fps} = useVideoConfig();
   return (
-    <AbsoluteFill style={{background: '#FFFDF7'}}>
+    <AbsoluteFill style={{background: '#FEFDF9'}}>
       {slides.map((slide) => (
         <Sequence
           key={slide.slide_id}
           from={Math.round(slide.start_sec * fps)}
           durationInFrames={Math.max(1, Math.round(slide.duration_sec * fps))}
         >
-          <SlideView slide={slide} />
+          <SlideView slide={slide} subtitleStyle={subtitle_style} />
         </Sequence>
       ))}
     </AbsoluteFill>

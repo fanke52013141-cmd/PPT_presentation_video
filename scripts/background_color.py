@@ -1,78 +1,49 @@
-"""Detect and normalize the nearly-solid slide background without touching content."""
+"""Remove only near-white pixels connected to the outer slide edge."""
 
 from __future__ import annotations
 
-import statistics
-from pathlib import Path
-from typing import Iterable
-
-from PIL import Image, ImageChops, ImageDraw
+import numpy as np
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 
-DEFAULT_BACKGROUND_RGB = (255, 253, 247)
-
-
-def rgb_to_hex(color: tuple[int, int, int]) -> str:
-    return "#" + "".join(f"{channel:02X}" for channel in color)
-
-
-def detect_border_background(image: Image.Image, border: int = 32, stride: int = 4) -> tuple[int, int, int]:
-    rgb = image.convert("RGB")
-    width, height = rgb.size
-    border = max(1, min(border, width // 4, height // 4))
-    samples: list[tuple[int, int, int]] = []
-    for y in range(0, border, stride):
-        for x in range(0, width, stride):
-            samples.append(rgb.getpixel((x, y)))
-            samples.append(rgb.getpixel((x, height - 1 - y)))
-    for x in range(0, border, stride):
-        for y in range(border, height - border, stride):
-            samples.append(rgb.getpixel((x, y)))
-            samples.append(rgb.getpixel((width - 1 - x, y)))
-    if not samples:
-        return DEFAULT_BACKGROUND_RGB
-    return tuple(
-        int(round(statistics.median(sample[channel] for sample in samples)))
-        for channel in range(3)
+def connected_background_mask(
+    image: Image.Image,
+    min_channel: int = 245,
+    max_chroma: int = 12,
+) -> Image.Image:
+    """Return 255 only for near-white pixels connected to the outer image edge."""
+    original = image.convert("RGB")
+    red, green, blue = original.split()
+    channel_floor = ImageChops.multiply(
+        ImageChops.multiply(
+            red.point(lambda value: 255 if value >= min_channel else 0),
+            green.point(lambda value: 255 if value >= min_channel else 0),
+        ),
+        blue.point(lambda value: 255 if value >= min_channel else 0),
     )
-
-
-def detect_project_background(paths: Iterable[Path]) -> tuple[tuple[int, int, int], list[dict[str, object]]]:
-    detected: list[dict[str, object]] = []
-    colors: list[tuple[int, int, int]] = []
-    for path in paths:
-        if not path.exists():
-            continue
-        with Image.open(path) as image:
-            color = detect_border_background(image)
-        colors.append(color)
-        detected.append({"path": str(path), "color": rgb_to_hex(color)})
-    if not colors:
-        return DEFAULT_BACKGROUND_RGB, detected
-    canonical = tuple(
-        int(round(statistics.median(color[channel] for color in colors)))
-        for channel in range(3)
+    maximum = ImageChops.lighter(ImageChops.lighter(red, green), blue)
+    minimum = ImageChops.darker(ImageChops.darker(red, green), blue)
+    low_chroma = ImageChops.subtract(maximum, minimum).point(
+        lambda value: 255 if value <= max_chroma else 0
     )
-    return canonical, detected
+    near_white = ImageChops.multiply(channel_floor, low_chroma)
+
+    # Flood from outside the canvas. Only near-white pixels reachable from an
+    # outer edge become background; enclosed white details remain content.
+    padded = Image.new("L", (original.width + 2, original.height + 2), 255)
+    padded.paste(near_white, (1, 1))
+    ImageDraw.floodfill(padded, (0, 0), 128, thresh=0)
+    connected = padded.crop((1, 1, original.width + 1, original.height + 1))
+    return connected.point(lambda value: 255 if value == 128 else 0)
 
 
 def normalize_connected_background(
     image: Image.Image,
     background_rgb: tuple[int, int, int],
-    threshold: int = 8,
 ) -> tuple[Image.Image, int]:
-    """Replace only background connected to a corner; interior card fills are untouched."""
+    """Replace only outer-connected near-white; interior white fills are untouched."""
     original = image.convert("RGB")
-    marked = original.copy()
-    width, height = marked.size
-    marker_rgb = tuple(255 - channel for channel in background_rgb)
-    for seed in ((0, 0), (width - 1, 0), (0, height - 1), (width - 1, height - 1)):
-        if marked.getpixel(seed) != marker_rgb:
-            ImageDraw.floodfill(marked, seed, marker_rgb, thresh=threshold)
-    red, green, blue = ImageChops.difference(original, marked).split()
-    changed = ImageChops.lighter(ImageChops.lighter(red, green), blue).point(
-        lambda value: 255 if value else 0
-    )
+    changed = connected_background_mask(original)
     normalized = Image.composite(
         Image.new("RGB", original.size, background_rgb),
         original,
@@ -80,3 +51,108 @@ def normalize_connected_background(
     )
     changed_pixel_count = changed.histogram()[255]
     return normalized, int(changed_pixel_count)
+
+
+def masked_outer_white_cutout(
+    image: Image.Image,
+    manual_alpha: Image.Image,
+    hard_min_channel: int = 245,
+    hard_max_chroma: int = 12,
+    soft_min_channel: int = 190,
+    soft_max_chroma: int = 32,
+    feather_px: int = 3,
+) -> tuple[Image.Image, Image.Image, dict[str, int]]:
+    """Cut out outer-connected white inside one user-painted Mask.
+
+    The painted Mask is the processing boundary. Pure/near-white pixels that
+    can be reached from that boundary become transparent. Enclosed white
+    details remain opaque. A short soft-white expansion recovers antialiased
+    edges and removes white halos without running semantic segmentation.
+    """
+    source = image.convert("RGB")
+    alpha = manual_alpha.convert("L")
+    if source.size != alpha.size:
+        raise ValueError("image and manual_alpha must have the same size")
+
+    rgb = np.asarray(source, dtype=np.uint8)
+    manual = np.asarray(alpha, dtype=np.uint8)
+    domain = manual > 0
+    maximum = rgb.max(axis=2)
+    minimum = rgb.min(axis=2)
+    chroma = maximum - minimum
+
+    hard_white = (
+        domain
+        & (minimum >= hard_min_channel)
+        & (chroma <= hard_max_chroma)
+    )
+    outside_mask = ~domain
+    passable = Image.fromarray(
+        np.where(outside_mask | hard_white, 255, 0).astype(np.uint8),
+        mode="L",
+    )
+    padded = Image.new("L", (source.width + 2, source.height + 2), 255)
+    padded.paste(passable, (1, 1))
+    ImageDraw.floodfill(padded, (0, 0), 128, thresh=0)
+    flooded = np.asarray(
+        padded.crop((1, 1, source.width + 1, source.height + 1)),
+        dtype=np.uint8,
+    )
+    hard_background = (flooded == 128) & domain
+
+    soft_white = (
+        domain
+        & (minimum >= soft_min_channel)
+        & (chroma <= soft_max_chroma)
+    )
+    expanded = Image.fromarray(
+        np.where(hard_background, 255, 0).astype(np.uint8),
+        mode="L",
+    )
+    for _ in range(max(0, int(feather_px))):
+        grown = expanded.filter(ImageFilter.MaxFilter(3))
+        expanded = Image.fromarray(
+            np.where(
+                (np.asarray(grown, dtype=np.uint8) > 0) & soft_white,
+                255,
+                0,
+            ).astype(np.uint8),
+            mode="L",
+        )
+    soft_region = (np.asarray(expanded, dtype=np.uint8) > 0) & ~hard_background
+
+    output_alpha = manual.copy()
+    output_alpha[hard_background] = 0
+    white_edge_alpha = (255 - minimum).astype(np.uint8)
+    output_alpha[soft_region] = np.minimum(
+        output_alpha[soft_region],
+        white_edge_alpha[soft_region],
+    )
+
+    output_rgb = rgb.copy()
+    edge_pixels = soft_region & (output_alpha > 0)
+    if np.any(edge_pixels):
+        edge_alpha = output_alpha[edge_pixels].astype(np.float32) / 255.0
+        original = rgb[edge_pixels].astype(np.float32)
+        recovered = (
+            original - (1.0 - edge_alpha[:, None]) * 255.0
+        ) / edge_alpha[:, None]
+        output_rgb[edge_pixels] = np.clip(
+            np.rint(recovered),
+            0,
+            255,
+        ).astype(np.uint8)
+    output_rgb[output_alpha == 0] = 0
+
+    rgba = np.dstack((output_rgb, output_alpha))
+    final_alpha = Image.fromarray(output_alpha, mode="L")
+    return (
+        Image.fromarray(rgba, mode="RGBA"),
+        final_alpha,
+        {
+            "manual_mask_pixel_count": int(np.count_nonzero(domain)),
+            "removed_outer_white_pixel_count": int(np.count_nonzero(hard_background)),
+            "soft_edge_pixel_count": int(np.count_nonzero(soft_region)),
+            "retained_pixel_count": int(np.count_nonzero(output_alpha)),
+        },
+    )

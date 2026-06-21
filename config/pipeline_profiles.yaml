@@ -1,0 +1,199 @@
+version: pipeline_profile_v1
+
+storyboard:
+  slide_count:
+    short_article: "4-6"
+    medium_article: "6-8"
+    long_article: "8-12"
+  visual_group_count:
+    short_article: "3-6"
+    medium_article: "4-7"
+    long_article: "4-9"
+  required_slide_fields:
+    - slide_id
+    - main_title
+    - visual_groups
+    - narration_beats
+  optional_slide_fields:
+    - subtitle
+    - core_message
+    - layout_type
+    - structure_notes
+  roles:
+    title:
+      label: 主标题
+      required: true
+      speak_policy: speak
+      description: 页面主标题，可短，可不承担完整解释。
+      default_reveal: wipe_left_to_right
+    subtitle:
+      label: 副标题
+      required: false
+      speak_policy: display_only
+      description: 可选副标题；如果页面不需要，就不要生成。
+      default_reveal: wipe_left_to_right
+    content_body:
+      label: 正文内容
+      required: false
+      speak_policy: speak
+      description: 普通概念、要点、卡片、列表或解释性文字。
+      default_reveal: wipe_left_to_right
+    diagram:
+      label: 图示/流程图
+      required: false
+      speak_policy: speak
+      description: 图形、流程、关系图、对比图、时间线等。
+      default_reveal: wipe_left_to_right
+    quote:
+      label: 引用/金句
+      required: false
+      speak_policy: speak
+      description: 原文摘录、关键判断或一句话结论。
+      default_reveal: wipe_left_to_right
+    data_point:
+      label: 数据/数字
+      required: false
+      speak_policy: speak
+      description: 数字、指标、公式或表格单元。
+      default_reveal: wipe_left_to_right
+    process_step:
+      label: 步骤
+      required: false
+      speak_policy: speak
+      description: 流程中的单步节点。
+      default_reveal: wipe_left_to_right
+    callout:
+      label: 强调提示
+      required: false
+      speak_policy: speak
+      description: 需要突出强调的提示、风险或反直觉点。
+      default_reveal: wipe_left_to_right
+    annotation:
+      label: 注释
+      required: false
+      speak_policy: speak
+      description: 箭头标注、旁注、补充说明。
+      default_reveal: wipe_left_to_right
+    summary:
+      label: 总结
+      required: false
+      speak_policy: speak
+      description: 可选总结区；不是每页都必须出现。
+      default_reveal: wipe_left_to_right
+    decoration:
+      label: 装饰
+      required: false
+      speak_policy: display_only
+      description: 不承载语义、不绑定旁白的装饰元素。
+      default_reveal: wipe_left_to_right
+  structure_rules:
+    - 每页只强制需要 main_title；subtitle、summary 都是可选结构。
+    - visual_groups 可以使用 roles 中的任意角色，也可以使用自定义 role；自定义 role 默认可被旁白讲解。
+    - 如果某页适合表格、流程、对比、时间线、引用、数据卡片或 FAQ，可以直接用对应结构组织，不要固定套用“主标题/副标题/正文/总结”模板。
+    - 每个可讲解的 visual_group 必须至少有一个 narration_beat 绑定；display_only 组不要绑定旁白。
+    - 每个 visual_group 仍然要能被一个人工 Mask 或矩形区域完整覆盖，避免过密小字和跨组长连线。
+
+image_prompt:
+  opening: "请生成一张 16:9 的完整 PPT/讲解页静态主图。"
+  invariant_rules:
+    - 每个 visual_group 必须作为独立视觉岛出现，组与组之间保留清晰空白，方便后续人工 Mask。
+    - 每个分组指定的 visible_text 必须清晰、完整、原样出现；不要改写、漏字或生成乱码。
+    - 不要把不同 visual_group 的文字、线条、箭头和装饰粘连在一起。
+    - 画布按 1920x1080 构图，底部 y=930..1080 留作视频字幕安全区。
+    - 不要绘制包围整页内容的大外框；主体内容来自这张完整位图，视频阶段不再用 HTML 重画 PPT 正文。
+
+reveal:
+  default_duration_sec: 0.75
+  min_duration_sec: 0.05
+  sync_duration_cap_sec: 0.12
+  default_by_role:
+    title:
+      type: wipe_left_to_right
+      duration: 0.55
+    subtitle:
+      type: wipe_left_to_right
+      duration: 0.75
+    content_body:
+      type: wipe_left_to_right
+      duration: 0.75
+    diagram:
+      type: wipe_left_to_right
+      duration: 0.75
+    quote:
+      type: wipe_left_to_right
+      duration: 0.65
+    data_point:
+      type: wipe_left_to_right
+      duration: 0.75
+    process_step:
+      type: wipe_left_to_right
+      duration: 0.65
+    callout:
+      type: wipe_left_to_right
+      duration: 0.75
+    annotation:
+      type: wipe_left_to_right
+      duration: 0.55
+    summary:
+      type: wipe_left_to_right
+      duration: 0.75
+    decoration:
+      type: wipe_left_to_right
+      duration: 0.75
+  allowed_actions:
+    - fade_in
+    - fade_up
+    - soft_zoom_in
+    - slide_in_left
+    - highlight
+    - cover_fade_out
+    - cover_wipe_left_to_right
+    - cover_wipe_top_to_bottom
+    - fog_diagonal_erase
+    - crop_fade_up
+    - crop_slide_in_left
+    - crop_soft_zoom_in
+    - wipe_left_to_right
+    - wipe_right_to_left
+    - wipe_top_to_bottom
+    - wipe_bottom_to_top
+    - scratch_reveal
+    - brush_wipe_left_to_right
+    - sticker_pop
+    - stamp_in
+    - paper_drop
+
+tts:
+  default_provider: minimax
+  providers:
+    minimax:
+      api_key_env: MINIMAX_API_KEY
+      endpoint_env: MINIMAX_TTS_ENDPOINT
+      default_endpoint: https://api.minimaxi.com/v1/t2a_async_v2
+      default_model: speech-2.8-hd
+      default_voice_id: Chinese (Mandarin)_Soft_Girl
+    aliyun_cosyvoice:
+      api_key_env: DASHSCOPE_API_KEY
+      default_endpoint: https://dashscope.aliyuncs.com/api/v1
+      default_model: cosyvoice-v3-flash
+      default_voice_id: longxiaochun
+      clone_supported: true
+    tencent_tts:
+      secret_id_env: TENCENTCLOUD_SECRET_ID
+      secret_key_env: TENCENTCLOUD_SECRET_KEY
+      default_endpoint: https://tts.tencentcloudapi.com
+      default_region: ap-guangzhou
+      default_model: "1"
+      default_voice_id: "101001"
+      clone_supported: true
+      clone_voice_field: FastVoiceType
+    volcengine_seed:
+      api_key_env: VOLCENGINE_TTS_TOKEN
+      default_endpoint: https://openspeech.bytedance.com/api/v1/tts
+      default_model: seed-tts-1.1
+      default_voice_id: zh_female_qingxinnvsheng_mars_bigtts
+      clone_supported: true
+      provider_extra_hint:
+        appid: "火山控制台 AppID"
+        cluster: "volcano_tts 或控制台分配的 cluster"
+        resource_id: "V3/ICL 场景可配置 X-Api-Resource-Id，例如 seed-tts-2.0 或 seed-icl-1.0"

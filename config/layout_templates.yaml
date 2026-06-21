@@ -1,13 +1,13 @@
 canvas:
   width: 1920
   height: 1080
-  background: "#FFFDF7"
+  background: "#FFFFFF"
   subtitle_reserved_height: 150
 
 templates:
   warm_handdrawn_open_content:
     description: 温暖极简手绘线稿风，左上标题区固定，中间开放内容区无大外框，底部字幕区固定留白。
-    background: solid_warm_white
+    background: solid_pure_white
     regions:
       title_marker:
         label: 品牌竖线
@@ -77,7 +77,7 @@ templates:
         fixed: true
         style_token: subtitle_overlay
     constraints:
-      - 背景固定为 #FFFDF7。
+      - 生图背景固定为纯白 #FFFFFF，四条边和四个角必须连续纯白。
       - 主标题和副标题必须左上对齐。
       - 左侧竖线和副标题横线必须固定存在。
       - 中间内容区不生成大圆角外框，不画 enclosing content frame。
@@ -88,7 +88,7 @@ templates:
 
   fixed_title_free_content:
     description: 兼容旧名称，实际使用 warm_handdrawn_open_content 的布局约束。
-    background: solid_warm_white
+    background: solid_pure_white
     regions:
       title_marker:
         label: 品牌竖线

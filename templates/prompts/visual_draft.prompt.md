@@ -1,10 +1,8 @@
 # Visual Draft Prompt Template
 
-Use this template to generate one complete Image Gen master slide.
-
-The master image will later be split into same-source macro PNG layers. Do not
-ask Image Gen to create independent isolated elements for the default
-production path.
+Use this template to generate one complete Image Gen slide. Optional manual
+Masks may later reveal selected visual groups, but the source remains one
+approved full-slide bitmap.
 
 ## Inputs
 
@@ -43,9 +41,9 @@ The image must support the narration beats in order.
 - Do not show all beats as equally important. Use visual hierarchy to match the
   speaking order.
 
-## Split-Friendly Layout Rules
+## Mask-Friendly Layout Rules
 
-Design the master image so it can be cleanly split later:
+Design the image so visual groups can be painted cleanly with a manual Mask:
 
 - Use 5-8 large macro groups.
 - Keep independent macro groups separated by at least 48-80px of clean
@@ -64,7 +62,10 @@ Design the master image so it can be cleanly split later:
 
 ## Style
 
-- Warm off-white paper background.
+- Flat, uniform pure-white `#FFFFFF` outer background.
+- All four edges and corners must stay continuously pure white.
+- No paper texture, background noise, shadow, gradient, vignette, or warm
+  off-white outer canvas.
 - Hand-drawn black ink text.
 - Yellow accent marker and underline.
 - Soft green and blue label pills when useful.
@@ -73,7 +74,6 @@ Design the master image so it can be cleanly split later:
 
 ## Negative Requirements
 
-- No independent element package in the default production path.
 - No SVG, HTML, CSS, Canvas, React, or Remotion-drawn body content.
 - No crowded center layout.
 - No overlapping macro groups.

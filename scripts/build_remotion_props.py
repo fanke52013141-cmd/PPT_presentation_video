@@ -31,6 +31,7 @@ import argparse
 import json
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -43,6 +44,15 @@ DEFAULT_WIDTH = 1920
 DEFAULT_HEIGHT = 1080
 DEFAULT_REMOTION_PUBLIC_DIR = Path("scripts/remotion/public")
 DEFAULT_AUDIO_TAIL_PADDING_SEC = 0.4
+DEFAULT_SUBTITLE_STYLE = {
+    "font_key": "noto_sans_sc",
+    "font_family": "Noto Sans SC",
+    "font_size": 38,
+    "font_weight": 500,
+    "bottom": 18,
+    "horizontal_margin": 180,
+    "color": "#111111",
+}
 
 
 class BuildError(RuntimeError):
@@ -99,6 +109,22 @@ def read_json(path: Path) -> dict[str, Any]:
         raise BuildError(f"JSON file must contain an object: {path}")
 
     return value
+
+
+def read_subtitle_style(run_dir: Path) -> dict[str, Any]:
+    settings_path = run_dir / "visual_settings.json"
+    if not settings_path.exists():
+        return dict(DEFAULT_SUBTITLE_STYLE)
+    try:
+        payload = read_json(settings_path)
+    except BuildError:
+        return dict(DEFAULT_SUBTITLE_STYLE)
+    style = payload.get("subtitle_style")
+    if not isinstance(style, dict):
+        return dict(DEFAULT_SUBTITLE_STYLE)
+    result = dict(DEFAULT_SUBTITLE_STYLE)
+    result.update({key: style[key] for key in result if key in style})
+    return result
 
 
 def is_url(value: str) -> bool:
@@ -345,6 +371,90 @@ def optional_duration(value: Any) -> float:
     return 0.0
 
 
+def probe_audio_duration_sec(audio_path: Path) -> float | None:
+    if not audio_path.exists() or audio_path.stat().st_size <= 0:
+        return None
+    if not shutil.which("ffprobe"):
+        return None
+    result = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=nw=1:nk=1",
+            str(audio_path),
+        ],
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        duration = float(result.stdout.strip())
+    except ValueError:
+        return None
+    return duration if duration > 0 else None
+
+
+def scale_audio_segments(audio_timeline: dict[str, Any], source_duration: float, target_duration: float) -> dict[str, Any]:
+    if source_duration <= 0 or target_duration <= 0 or abs(source_duration - target_duration) <= 0.05:
+        return audio_timeline
+    ratio = target_duration / source_duration
+    converted = dict(audio_timeline)
+    scaled_segments: list[dict[str, Any]] = []
+    for segment in audio_timeline.get("segments", []):
+        if not isinstance(segment, dict):
+            continue
+        scaled = dict(segment)
+        if isinstance(scaled.get("start"), (int, float)):
+            scaled["start"] = round(max(0.0, float(scaled["start"]) * ratio), 3)
+        if isinstance(scaled.get("end"), (int, float)):
+            scaled["end"] = round(min(target_duration, max(0.0, float(scaled["end"]) * ratio)), 3)
+        if (
+            isinstance(scaled.get("start"), (int, float))
+            and isinstance(scaled.get("end"), (int, float))
+            and scaled["end"] <= scaled["start"]
+        ):
+            scaled["end"] = round(min(target_duration, float(scaled["start"]) + 0.05), 3)
+        scaled_segments.append(scaled)
+    if scaled_segments:
+        scaled_segments[-1]["end"] = round(target_duration, 3)
+    converted["segments"] = scaled_segments
+    converted["timing_source"] = str(converted.get("timing_source") or "estimated") + "_retimed_to_local_audio"
+    return converted
+
+
+def align_audio_timeline_to_voice(audio_timeline: dict[str, Any], voice_path: Path) -> dict[str, Any]:
+    actual_content_duration = probe_audio_duration_sec(voice_path)
+    if not actual_content_duration:
+        return audio_timeline
+
+    audio_start_sec = optional_duration(audio_timeline.get("audio_start_sec"))
+    timeline_content_duration = max(
+        optional_duration(audio_timeline.get("audio_content_duration_sec")),
+        max(
+            0.0,
+            optional_duration(audio_timeline.get("duration_sec")) - audio_start_sec,
+        ),
+        max_segment_end(audio_timeline),
+    )
+    converted = (
+        scale_audio_segments(audio_timeline, timeline_content_duration, actual_content_duration)
+        if timeline_content_duration > 0
+        else dict(audio_timeline)
+    )
+    converted["audio_content_duration_sec"] = round(actual_content_duration, 3)
+    converted["duration_sec"] = round(actual_content_duration + audio_start_sec, 3)
+    converted["duration_source"] = "local_audio_ffprobe"
+    converted["probed_audio_duration_sec"] = round(actual_content_duration, 3)
+    if timeline_content_duration > 0:
+        converted["previous_timeline_content_duration_sec"] = round(timeline_content_duration, 3)
+    return converted
+
+
 def slide_duration(audio_timeline: dict[str, Any], animation_timeline: dict[str, Any], slide_dir: Path) -> float:
     audio_end = max(
         optional_duration(audio_timeline.get("duration_sec")),
@@ -401,6 +511,7 @@ def build_slide(
     validate_animation_timeline(animation_timeline, layer_ids, slide_dir)
 
     voice_path = slide_dir / "voice.mp3"
+    audio_timeline = align_audio_timeline_to_voice(audio_timeline, voice_path)
     audio_file = asset_store.copy(str(voice_path), slide_dir, repo_root, subdir="audio", required_suffix=".mp3")
     converted_audio_timeline = dict(audio_timeline)
     converted_audio_timeline["audio_file"] = audio_file
@@ -467,6 +578,7 @@ def build_props(
         "width": width,
         "height": height,
         "total_duration_sec": round(start_sec, 3),
+        "subtitle_style": read_subtitle_style(run_dir),
         "slides": slides,
     }
 

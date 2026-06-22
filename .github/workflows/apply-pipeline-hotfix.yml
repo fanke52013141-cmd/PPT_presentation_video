@@ -1,0 +1,170 @@
+name: Apply pipeline hotfix
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch pipeline code
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count == 0:
+                  print(f"WARN: pattern not found: {label}")
+                  return text
+              if count > 1:
+                  print(f"WARN: pattern occurred {count} times; replacing first only: {label}")
+              return text.replace(old, new, 1)
+
+          def replace_all(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count == 0:
+                  print(f"WARN: pattern not found: {label}")
+                  return text
+              print(f"Patched {count} occurrence(s): {label}")
+              return text.replace(old, new)
+
+          server_path = Path("server.py")
+          server = server_path.read_text(encoding="utf-8")
+
+          # Step 1: remove unreachable legacy LLM summary block after the local article import return.
+          step1_return = '    handle_step_navigation(project, 1, db)\n    return {"success": True, "brief": brief}\n'
+          step1_next_route = '\n@app.get("/api/projects/{project_id}/steps/1/result")'
+          step1_pos = server.find(step1_return)
+          if step1_pos >= 0:
+              step1_cut_start = step1_pos + len(step1_return)
+              step1_cut_end = server.find(step1_next_route, step1_cut_start)
+              if step1_cut_end >= 0 and step1_cut_end > step1_cut_start:
+                  removed = server[step1_cut_start:step1_cut_end]
+                  if removed.strip():
+                      server = server[:step1_cut_start] + server[step1_cut_end:]
+                      print("Patched: removed unreachable Step 1 legacy LLM summary block")
+              else:
+                  print("WARN: Step 1 next route marker not found")
+          else:
+              print("WARN: Step 1 return marker not found")
+
+          # Step 2: preserve topic_summary when frontend saves a contract without the full topic object.
+          helper_marker = "def preserve_contract_topic_summary("
+          helper_code = '''\n\ndef preserve_contract_topic_summary(project: Project, payload: Dict[str, Any]) -> Dict[str, Any]:\n    """Keep topic_summary stable when a frontend edit only sends topic_id/topic_name."""\n    if not isinstance(payload, dict):\n        return payload\n\n    topic = payload.get("topic") if isinstance(payload.get("topic"), dict) else {}\n    if topic.get("topic_summary"):\n        return payload\n\n    existing_summary = ""\n    existing_path = os.path.join(project.run_dir, "planning", "visual_contract.json")\n    if os.path.exists(existing_path):\n        try:\n            with open(existing_path, "r", encoding="utf-8") as f:\n                existing = json.load(f)\n            existing_summary = str((existing.get("topic") or {}).get("topic_summary") or "")\n        except Exception as exc:\n            logger.warning("Failed to preserve existing topic_summary: %s", exc)\n\n    if not existing_summary:\n        brief_path = os.path.join(project.run_dir, "planning", "article_brief.json")\n        if os.path.exists(brief_path):\n            try:\n                with open(brief_path, "r", encoding="utf-8") as f:\n                    brief = json.load(f)\n                existing_summary = str(brief.get("summary") or "")\n            except Exception as exc:\n                logger.warning("Failed to read article summary while preserving topic_summary: %s", exc)\n\n    topic["topic_id"] = topic.get("topic_id") or f"topic_{project.id}"\n    topic["topic_name"] = topic.get("topic_name") or project.name\n    topic["topic_summary"] = topic.get("topic_summary") or existing_summary\n    payload["topic"] = topic\n    return payload\n'''
+          step2_route = '@app.put("/api/projects/{project_id}/steps/2/result")'
+          if helper_marker not in server:
+              route_pos = server.find(step2_route)
+              if route_pos >= 0:
+                  server = server[:route_pos] + helper_code + "\n" + server[route_pos:]
+                  print("Patched: added preserve_contract_topic_summary helper")
+              else:
+                  print("WARN: Step 2 result route not found for helper insertion")
+
+          if "payload = preserve_contract_topic_summary(project, payload)" not in server:
+              route_pos = server.find(step2_route)
+              if route_pos >= 0:
+                  block_marker = '    if not project:\n        raise HTTPException(status_code=404, detail="项目不存在")\n'
+                  insert_pos = server.find(block_marker, route_pos)
+                  if insert_pos >= 0:
+                      insert_pos += len(block_marker)
+                      server = server[:insert_pos] + '    payload = preserve_contract_topic_summary(project, payload)\n' + server[insert_pos:]
+                      print("Patched: Step 2 result now preserves topic_summary")
+                  else:
+                      print("WARN: Step 2 project-check marker not found")
+
+          # Step 5: make build_assets query parameter honest.
+          step5_route = '@app.put("/api/projects/{project_id}/steps/5/result")'
+          step5_pos = server.find(step5_route)
+          if step5_pos >= 0:
+              step5_end = server.find('\n@app.', step5_pos + 1)
+              if step5_end < 0:
+                  step5_end = len(server)
+              step5_block = server[step5_pos:step5_end]
+              old = '    build_current_reveal_assets(project)\n'
+              new = '    if build_assets:\n        build_current_reveal_assets(project)\n'
+              if old in step5_block and new not in step5_block:
+                  step5_block = step5_block.replace(old, new, 1)
+                  server = server[:step5_pos] + step5_block + server[step5_end:]
+                  print("Patched: Step 5 build_assets flag is now respected")
+          else:
+              print("WARN: Step 5 result route not found")
+
+          # Step 7: avoid hanging TTS subprocesses.
+          old_tts = '''            tts_res = subprocess.run(\n                tts_args,\n                capture_output=True,\n                text=True,\n                encoding="utf-8",\n                errors="replace",\n            )\n            if tts_res.returncode != 0:\n'''
+          new_tts = '''            try:\n                tts_res = subprocess.run(\n                    tts_args,\n                    capture_output=True,\n                    text=True,\n                    encoding="utf-8",\n                    errors="replace",\n                    timeout=STEP7_TTS_TIMEOUT_SEC,\n                )\n            except subprocess.TimeoutExpired:\n                write_project_log(\n                    project,\n                    "step7_slide_tts_timeout",\n                    slide_id=slide_id,\n                    timeout_sec=STEP7_TTS_TIMEOUT_SEC,\n                )\n                raise HTTPException(\n                    status_code=504,\n                    detail=f"{slide_id} 语音合成超时，请检查 TTS 服务或缩短旁白文本。",\n                )\n            if tts_res.returncode != 0:\n'''
+          server = replace_once(server, old_tts, new_tts, "Step 7 TTS timeout")
+
+          old_bind = '''    bind_res = subprocess.run(\n        [sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", "0"],\n        capture_output=True,\n        text=True,\n        encoding="utf-8",\n        errors="replace",\n    )\n'''
+          new_bind = '''    try:\n        bind_res = subprocess.run(\n            [sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", "0"],\n            capture_output=True,\n            text=True,\n            encoding="utf-8",\n            errors="replace",\n            timeout=STEP7_BIND_TIMEOUT_SEC,\n        )\n    except subprocess.TimeoutExpired:\n        write_project_log(\n            project,\n            "reveal_timeline_bind_timeout",\n            timeout_sec=STEP7_BIND_TIMEOUT_SEC,\n        )\n        raise HTTPException(status_code=504, detail="时间轴绑定超时")\n'''
+          server = replace_all(server, old_bind, new_bind, "bind_reveal_timeline timeout")
+
+          # Step 8: fix props_started NameError and bound props build time.
+          old_props = '''    props_res = subprocess.run(\n        [sys.executable, build_props_script, "--run-dir", project.run_dir],\n        capture_output=True,\n        text=True,\n        encoding="utf-8",\n        errors="replace",\n    )\n'''
+          new_props = '''    props_started = time.time()\n    props_res = subprocess.run(\n        [sys.executable, build_props_script, "--run-dir", project.run_dir],\n        capture_output=True,\n        text=True,\n        encoding="utf-8",\n        errors="replace",\n        timeout=120,\n    )\n'''
+          server = replace_once(server, old_props, new_props, "Step 8 props_started")
+
+          # Step 8: remove duplicate first Remotion render call without timeout.
+          old_double_render = '''    render_res = subprocess.run(\n        render_args,\n        cwd=remotion_dir,\n        capture_output=True,\n        text=True,\n        encoding="utf-8",\n        errors="replace",\n    )\n\n    try:\n        render_res = subprocess.run(\n'''
+          new_single_render = '''    try:\n        render_res = subprocess.run(\n'''
+          server = replace_once(server, old_double_render, new_single_render, "remove duplicate Remotion render")
+
+          server_path.write_text(server, encoding="utf-8")
+
+          # Reveal scene: if every painted mask resolves to removable white background, fallback to full static slide.
+          reveal_path = Path("scripts/build_reveal_scene.py")
+          reveal = reveal_path.read_text(encoding="utf-8")
+          fallback_marker = "all_manual_masks_resolved_to_empty_content"
+          if fallback_marker not in reveal:
+              scene_marker = '    scene = {\n        "slide_id": slide_id,\n        "source_visual_draft": str(master_path),\n        "visual_source": "master_reveal_layers",\n'
+              first_scene = reveal.find(scene_marker)
+              second_scene = reveal.find(scene_marker, first_scene + 1) if first_scene >= 0 else -1
+              if second_scene >= 0:
+                  fallback = '''    if not group_reports:\n        normalized_master, normalized_background_pixel_count = normalize_connected_background(\n            master,\n            background_rgb,\n        )\n        static_slide_outputs(\n            slide_id=slide_id,\n            slide_dir=slide_dir,\n            master_path=master_path,\n            master=normalized_master,\n            width=width,\n            height=height,\n            background=background,\n            default_duration_sec=default_duration_sec,\n            input_group_count=len(groups),\n            source_sha256=source_sha256,\n            normalized_background_pixel_count=normalized_background_pixel_count,\n        )\n        report_path = slide_dir / "reveal_report.json"\n        try:\n            report = read_json(report_path)\n            report.setdefault("warnings", []).append({\n                "severity": "warning",\n                "type": "all_manual_masks_resolved_to_empty_content",\n                "message": "All painted masks contained only removable background; fallback to full static slide.",\n            })\n            write_json(report_path, report)\n        except Exception:\n            pass\n        publish_slide_outputs(slide_dir, production_slide_dir)\n        return\n\n'''
+                  reveal = reveal[:second_scene] + fallback + reveal[second_scene:]
+                  print("Patched: reveal scene all-empty mask fallback")
+              else:
+                  print("WARN: painted scene marker not found")
+          reveal_path.write_text(reveal, encoding="utf-8")
+
+          # Frontend cleanup: remove hidden legacy Step 7 button binding if present.
+          app_path = Path("static/app.js")
+          if app_path.exists():
+              app = app_path.read_text(encoding="utf-8")
+              legacy_binding = "document.getElementById('step7-btn-synthesize')?.addEventListener('click', () => runStep7TTS());\n"
+              if legacy_binding in app:
+                  app = app.replace(legacy_binding, "")
+                  app_path.write_text(app, encoding="utf-8")
+                  print("Patched: removed legacy Step 7 frontend binding")
+          PY
+
+      - name: Validate Python syntax
+        shell: bash
+        run: |
+          python -m py_compile server.py scripts/build_reveal_scene.py
+
+      - name: Remove temporary workflow and commit fixes
+        shell: bash
+        run: |
+          rm -f .github/workflows/apply-pipeline-hotfix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if [ -n "$(git status --porcelain)" ]; then
+            git commit -m "Fix pipeline render and state consistency"
+            git push
+          else
+            echo "No changes to commit"
+          fi

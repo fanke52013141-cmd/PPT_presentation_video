@@ -54,6 +54,13 @@ class FakeRoute:
 class FakeApp:
     def __init__(self) -> None:
         self.routes = [FakeRoute()]
+        self.registered_middlewares: list[Any] = []
+
+    def middleware(self, middleware_type: str):
+        def decorator(func: Any) -> Any:
+            self.registered_middlewares.append((middleware_type, func))
+            return func
+        return decorator
 
 
 class FakeProject:
@@ -238,6 +245,25 @@ def check_import_and_subprocess_guard(sitecustomize: ModuleType, result: Result)
     result.pass_("runtime patch installers are present")
 
 
+def check_runtime_security_module(result: Result) -> None:
+    module = importlib.import_module("runtime_security")
+    assert_true(hasattr(module, "install_when_server_is_ready"), "runtime security installer is missing")
+    assert_true(hasattr(module, "_install_on_server_module"), "runtime security server installer is missing")
+    assert_true(module.ACCESS_TOKEN_ENV == "PPT_STUDIO_ACCESS_TOKEN", "unexpected access-token env var name")
+
+    fake_module = ModuleType("fake_security_server")
+    fake_module.app = FakeApp()
+    previous_token = os.environ.pop("PPT_STUDIO_ACCESS_TOKEN", None)
+    try:
+        assert_true(module._install_on_server_module(fake_module) is True, "runtime security no-token install failed")
+        assert_true(getattr(fake_module, module._PATCH_MARKER, False) is True, "runtime security marker was not set")
+        assert_true(fake_module.app.registered_middlewares == [], "runtime security should not add middleware without a token")
+    finally:
+        if previous_token is not None:
+            os.environ["PPT_STUDIO_ACCESS_TOKEN"] = previous_token
+    result.pass_("optional runtime security module is importable and opt-in")
+
+
 def check_manifest_reconcile_and_topic(sitecustomize: ModuleType, result: Result) -> None:
     build_counter = {"count": 0}
     with tempfile.TemporaryDirectory(prefix="ppt-hotfix-check-") as temp_name:
@@ -302,6 +328,7 @@ def main() -> int:
     try:
         sitecustomize = load_sitecustomize()
         check_import_and_subprocess_guard(sitecustomize, result)
+        check_runtime_security_module(result)
         check_manifest_reconcile_and_topic(sitecustomize, result)
         check_step5_build_assets_flag(sitecustomize, result)
     except CheckFailure as exc:

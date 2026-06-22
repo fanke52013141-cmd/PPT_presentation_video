@@ -654,3 +654,8 @@ def _install_subprocess_run_guard() -> None:
 
 _install_subprocess_run_guard()
 _install_reconcile_patch_when_server_is_ready()
+
+try:
+    import runtime_security  # noqa: F401
+except Exception:
+    pass

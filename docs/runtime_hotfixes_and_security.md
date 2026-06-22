@@ -15,6 +15,7 @@ ultimately be migrated back into the normal source files.
 | `usercustomize.py` | Python auto-loaded bridge for small optional hooks. |
 | `runtime_security.py` | Optional access token and origin checks. |
 | `runtime_settings_mask.py` | Optional masking for credentials returned by `/api/settings`. |
+| `scripts/check_python_startup_hooks.py` | Self-check that Python startup imports the hook modules. |
 | `scripts/check_runtime_hotfixes.py` | Self-check for the main runtime safeguards. |
 | `scripts/check_runtime_settings_mask.py` | Self-check for settings credential masking. |
 | `scripts/cleanup_step1_dead_code.py` | Local source cleanup helper for Step 1 unreachable code. |
@@ -108,12 +109,18 @@ python server.py
 Run these from the repository root:
 
 ```bash
+python scripts/check_python_startup_hooks.py
 python scripts/check_runtime_hotfixes.py
 PPT_STUDIO_MASK_SETTINGS_SECRETS=1 python scripts/check_runtime_settings_mask.py
 ```
 
-The first check validates the main runtime pipeline safeguards. The second check
-validates settings credential masking and placeholder preservation.
+`check_python_startup_hooks.py` launches a child Python interpreter and confirms
+that `sitecustomize`, `runtime_security`, `usercustomize`, and
+`runtime_settings_mask` are imported during normal Python startup.
+
+`check_runtime_hotfixes.py` validates the main runtime pipeline safeguards.
+`check_runtime_settings_mask.py` validates settings credential masking and
+placeholder preservation.
 
 ## Step 1 dead-code cleanup
 

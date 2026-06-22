@@ -146,3 +146,90 @@
     isVisibleStepUnlocked
   });
 });
+
+(function installStep3ConfirmBeforeMaskHotfix(root) {
+  const MARKER = '__ppt_step3_confirm_before_mask_hotfix__';
+  if (root[MARKER]) return;
+  root[MARKER] = true;
+
+  let confirmingStep3 = false;
+
+  function normalizeStep(step) {
+    if (root.PPTFlow && typeof root.PPTFlow.normalizeVisibleStep === 'function') {
+      return root.PPTFlow.normalizeVisibleStep(step);
+    }
+    return Number(step);
+  }
+
+  function isStep3PanelActive() {
+    const panel = document.getElementById('step-panel-3');
+    if (!panel) return false;
+    return window.getComputedStyle(panel).display !== 'none';
+  }
+
+  async function confirmBeforeEnteringMask() {
+    if (confirmingStep3) return undefined;
+    if (typeof root.confirmStep3Images !== 'function') return undefined;
+    confirmingStep3 = true;
+    try {
+      return await root.confirmStep3Images();
+    } finally {
+      confirmingStep3 = false;
+    }
+  }
+
+  function install() {
+    if (typeof root.navigateToStep !== 'function' || typeof root.confirmStep3Images !== 'function') {
+      return false;
+    }
+
+    if (!root.navigateToStep.__ppt_step3_confirm_before_mask_wrapped__) {
+      const originalNavigateToStep = root.navigateToStep;
+      const wrappedNavigateToStep = async function wrappedNavigateToStep(step, ...rest) {
+        if (normalizeStep(step) === 5 && isStep3PanelActive() && !confirmingStep3) {
+          return confirmBeforeEnteringMask();
+        }
+        return originalNavigateToStep.call(this, step, ...rest);
+      };
+      wrappedNavigateToStep.__ppt_step3_confirm_before_mask_wrapped__ = true;
+      root.navigateToStep = wrappedNavigateToStep;
+    }
+
+    if (!document.__ppt_step3_confirm_before_mask_click_guard__) {
+      document.addEventListener('click', event => {
+        if (!isStep3PanelActive() || confirmingStep3) return;
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target) return;
+        if (target.closest('#step3-btn-confirm')) return;
+
+        const stepperMaskTarget = target.closest('.step-item[data-step="5"]');
+        const genericNextButton = target.closest('.btn-next-step');
+        if (!stepperMaskTarget && !genericNextButton) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        confirmBeforeEnteringMask();
+      }, true);
+      document.__ppt_step3_confirm_before_mask_click_guard__ = true;
+    }
+
+    return true;
+  }
+
+  function installWithRetry() {
+    let attempts = 0;
+    const timer = window.setInterval(() => {
+      attempts += 1;
+      if (install() || attempts >= 50) {
+        window.clearInterval(timer);
+      }
+    }, 100);
+  }
+
+  if (document.readyState === 'complete') {
+    installWithRetry();
+  } else {
+    window.addEventListener('load', installWithRetry, { once: true });
+  }
+})(typeof globalThis !== 'undefined' ? globalThis : window);

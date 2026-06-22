@@ -18,6 +18,8 @@ ultimately be migrated back into the normal source files.
 | `scripts/check_python_startup_hooks.py` | Self-check that Python startup imports the hook modules. |
 | `scripts/check_runtime_hotfixes.py` | Self-check for the main runtime safeguards. |
 | `scripts/check_runtime_settings_mask.py` | Self-check for settings credential masking. |
+| `scripts/check_smoke_artifacts.py` | Structural artifact checker after manual end-to-end smoke tests. |
+| `docs/e2e_smoke_test_checklist.md` | Manual happy-path smoke test checklist. |
 | `scripts/cleanup_step1_dead_code.py` | Local source cleanup helper for Step 1 unreachable code. |
 
 ## What is currently protected
@@ -121,6 +123,26 @@ that `sitecustomize`, `runtime_security`, `usercustomize`, and
 `check_runtime_hotfixes.py` validates the main runtime pipeline safeguards.
 `check_runtime_settings_mask.py` validates settings credential masking and
 placeholder preservation.
+
+## End-to-end smoke testing
+
+Use the manual checklist after pipeline or security changes:
+
+```text
+docs/e2e_smoke_test_checklist.md
+```
+
+After each stage, validate artifacts structurally with:
+
+```bash
+python scripts/check_smoke_artifacts.py --run-dir runs/<project_id> --stage step1
+python scripts/check_smoke_artifacts.py --run-dir runs/<project_id> --stage step2
+python scripts/check_smoke_artifacts.py --run-dir runs/<project_id> --stage step3
+python scripts/check_smoke_artifacts.py --run-dir runs/<project_id> --stage step5
+python scripts/check_smoke_artifacts.py --run-dir runs/<project_id> --stage step6
+python scripts/check_smoke_artifacts.py --run-dir runs/<project_id> --stage step7
+python scripts/check_smoke_artifacts.py --run-dir runs/<project_id> --stage step8
+```
 
 ## Step 1 dead-code cleanup
 

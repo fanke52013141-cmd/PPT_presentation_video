@@ -15,6 +15,7 @@ ultimately be migrated back into the normal source files.
 | `usercustomize.py` | Python auto-loaded bridge for small optional hooks. |
 | `runtime_security.py` | Optional access token and origin checks. |
 | `runtime_settings_mask.py` | Optional masking for credentials returned by `/api/settings`. |
+| `scripts/ppt_studio_doctor.py` | Consolidated project health check entry point. |
 | `scripts/check_python_startup_hooks.py` | Self-check that Python startup imports the hook modules. |
 | `scripts/check_runtime_hotfixes.py` | Self-check for the main runtime safeguards. |
 | `scripts/check_runtime_settings_mask.py` | Self-check for settings credential masking. |
@@ -108,13 +109,29 @@ python server.py
 
 ## Self-check commands
 
-Run these from the repository root:
+Preferred consolidated check:
+
+```bash
+python scripts/ppt_studio_doctor.py
+```
+
+With a project artifact check:
+
+```bash
+python scripts/ppt_studio_doctor.py --run-dir runs/<project_id> --stage step8
+```
+
+Focused checks are still available:
 
 ```bash
 python scripts/check_python_startup_hooks.py
 python scripts/check_runtime_hotfixes.py
 PPT_STUDIO_MASK_SETTINGS_SECRETS=1 python scripts/check_runtime_settings_mask.py
 ```
+
+`ppt_studio_doctor.py` runs the startup hook check, runtime hotfix check,
+settings masking check, Step 1 cleanup safety preview, and optionally a run_dir
+artifact check.
 
 `check_python_startup_hooks.py` launches a child Python interpreter and confirms
 that `sitecustomize`, `runtime_security`, `usercustomize`, and

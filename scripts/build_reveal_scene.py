@@ -269,6 +269,7 @@ def static_slide_outputs(
     input_group_count: int,
     source_sha256: str,
     normalized_background_pixel_count: int,
+    warnings: list[dict[str, Any]] | None = None,
 ) -> None:
     assets_dir = slide_dir / "assets"
     master.save(assets_dir / "full_slide.png", format="PNG")
@@ -309,7 +310,7 @@ def static_slide_outputs(
             "normalized_pixel_count": normalized_background_pixel_count,
         },
         "source_sha256": source_sha256,
-        "warnings": [],
+        "warnings": warnings or [],
         "input_group_count": input_group_count,
         "group_count": 0,
         "layer_count": 1,
@@ -463,6 +464,34 @@ def compose_slide(
                 **cutout_stats,
             },
         })
+
+    if not group_reports:
+        normalized_master, normalized_background_pixel_count = normalize_connected_background(
+            master,
+            background_rgb,
+        )
+        warnings.append({
+            "severity": "warning",
+            "type": "all_manual_masks_resolved_to_empty_content",
+            "message": "All painted masks contained only removable background; fallback to full static slide.",
+        })
+        static_slide_outputs(
+            slide_id=slide_id,
+            slide_dir=slide_dir,
+            master_path=master_path,
+            master=normalized_master,
+            width=width,
+            height=height,
+            background=background,
+            default_duration_sec=default_duration_sec,
+            input_group_count=len(groups),
+            source_sha256=source_sha256,
+            normalized_background_pixel_count=normalized_background_pixel_count,
+            warnings=warnings,
+        )
+        publish_slide_outputs(slide_dir, production_slide_dir)
+        return
+
     scene = {
         "slide_id": slide_id,
         "source_visual_draft": str(master_path),

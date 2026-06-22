@@ -10,6 +10,7 @@ The safeguards are intentionally narrow:
 - add bounded timeouts to known pipeline subprocesses;
 - preserve edited narration when Step 6 init would otherwise overwrite it;
 - reconcile reveal_manifest.json groups with visual_contract.json at runtime;
+- preserve Step 2 topic summary when front-end autosave payloads omit it;
 - normalize validate_render_color.py stdout to JSON so metadata writing is safe.
 
 Disable with: PPT_STUDIO_DISABLE_RUNTIME_HOTFIXES=1
@@ -385,6 +386,47 @@ def _stable_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def _first_non_empty(*values: Any) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _read_article_brief(run_dir: Path) -> dict[str, Any]:
+    brief_path = run_dir / "planning" / "article_brief.json"
+    if not brief_path.exists():
+        return {}
+    try:
+        value = json.loads(brief_path.read_text(encoding="utf-8-sig"))
+    except Exception:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _ensure_contract_topic_fields(contract: dict[str, Any], project: Any, run_dir: Path) -> bool:
+    before = _stable_json(contract.get("topic"))
+    topic = contract.get("topic") if isinstance(contract.get("topic"), dict) else {}
+    topic = dict(topic)
+    article_brief = _read_article_brief(run_dir)
+
+    project_id = _first_non_empty(getattr(project, "id", ""), "project")
+    project_name = _first_non_empty(getattr(project, "name", ""), article_brief.get("title"), "未命名项目")
+    summary = _first_non_empty(
+        topic.get("topic_summary"),
+        article_brief.get("summary"),
+        getattr(project, "description", ""),
+        project_name,
+    )
+
+    topic["topic_id"] = _first_non_empty(topic.get("topic_id"), f"topic_{project_id}")
+    topic["topic_name"] = _first_non_empty(topic.get("topic_name"), project_name)
+    topic["topic_summary"] = summary
+    contract["topic"] = topic
+    return _stable_json(contract.get("topic")) != before
+
+
 def _install_reveal_manifest_reconcile_patch(server_module: ModuleType) -> bool:
     if getattr(server_module, _RECONCILE_PATCH_MARKER, False):
         return True
@@ -404,18 +446,31 @@ def _install_reveal_manifest_reconcile_patch(server_module: ModuleType) -> bool:
         run_dir = Path(project.run_dir)
         manifest_path = run_dir / "reveal_manifest.json"
         contract_path = run_dir / "planning" / "visual_contract.json"
-        if not manifest_path.exists() or not contract_path.exists():
+        if not contract_path.exists():
             return False
 
         with server_module.reveal_lock_for(project):
             try:
-                manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
                 contract = json.loads(contract_path.read_text(encoding="utf-8-sig"))
             except Exception:
                 return False
-
-            if not isinstance(manifest, dict) or not isinstance(contract, dict):
+            if not isinstance(contract, dict):
                 return False
+
+            contract_changed = _ensure_contract_topic_fields(contract, project, run_dir)
+            if contract_changed:
+                server_module.write_json_atomic(str(contract_path), contract)
+
+            if not manifest_path.exists():
+                return contract_changed
+
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+            except Exception:
+                return contract_changed
+
+            if not isinstance(manifest, dict):
+                return contract_changed
             old_manifest_json = _stable_json(manifest)
 
             contract_slides_by_id = {
@@ -445,7 +500,7 @@ def _install_reveal_manifest_reconcile_patch(server_module: ModuleType) -> bool:
             manifest.setdefault("version", "reveal_v1")
             manifest["slides"] = reconciled_slides
             if _stable_json(manifest) == old_manifest_json:
-                return False
+                return contract_changed
 
             server_module.write_json_atomic(str(manifest_path), manifest)
             return True

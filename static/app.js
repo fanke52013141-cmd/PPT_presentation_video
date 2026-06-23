@@ -325,7 +325,7 @@ function initGlobalEvents() {
   document.getElementById('step1-btn-save-edit')?.addEventListener('click', () => saveStep1Edit());
 
   // ================= 步骤 2 事件 =================
-  document.getElementById('step2-btn-generate')?.addEventListener('click', () => openStep2GenerationModal());
+  document.getElementById('step2-btn-generate')?.addEventListener('click', () => generateStep2Contract());
   document.getElementById('btn-step2-generation-cancel')?.addEventListener('click', () => closeStep2GenerationModal());
   document.getElementById('btn-step2-generation-confirm')?.addEventListener('click', () => confirmStep2Generation());
   document.getElementById('step2-btn-rules')?.addEventListener('click', () => openStoryboardRulesModal());
@@ -1079,10 +1079,6 @@ function closeStep2GenerationModal() {
 
 async function confirmStep2Generation() {
   const requirement = document.getElementById('step2-generation-requirement').value.trim();
-  if (!requirement) {
-    showToast('请先填写本次 AI 分镜生成需求。');
-    return;
-  }
   state.step2GenerationRequirement = requirement;
   closeStep2GenerationModal();
   await generateStep2Contract(requirement);
@@ -1090,10 +1086,6 @@ async function confirmStep2Generation() {
 
 async function generateStep2Contract(requirement = '') {
   const normalizedRequirement = String(requirement || '').trim();
-  if (!normalizedRequirement) {
-    openStep2GenerationModal();
-    return;
-  }
   document.getElementById('step2-loading').style.display = 'block';
   document.getElementById('step2-btn-generate').disabled = true;
   
@@ -1225,7 +1217,6 @@ function copyStep2Prompts() {
       .join('\n');
     const prompt = promptInfo?.prompt || [
       '请生成一张 16:9 PPT 手绘讲解页。',
-      `项目主题：${state.currentProject.name}`,
       `主标题：${slide.main_title || ''}`,
       slide.subtitle ? `副标题：${slide.subtitle}` : '',
       `视觉分组：\n${groups}`,
@@ -2791,8 +2782,8 @@ async function saveStoryboardRulesWithOptions(options = {}) {
     closeStoryboardRulesModal();
     if (state.slides?.length) renderStep2Workspace();
     if (options.regenerate) {
-      showToast('分镜规则已保存。请填写本次生成需求后重新生成分镜。');
-      openStep2GenerationModal();
+      showToast('分镜规则已保存，正在按已保存规则重新生成分镜。');
+      await generateStep2Contract();
       return;
     }
     showToast('分镜规则已保存，将在下次重新规划分镜时生效。');
@@ -4682,18 +4673,34 @@ async function loadStep7Data() {
     return;
   }
 
-  const res = await API.get(`/api/projects/${state.currentProject.id}/steps/3/images`);
+  const [res, audioStatus] = await Promise.all([
+    API.get(`/api/projects/${state.currentProject.id}/steps/3/images`),
+    API.get(`/api/projects/${state.currentProject.id}/steps/7/audio-status`)
+  ]);
   if (res.success) {
+    const audioBySlide = new Map((audioStatus.slides || []).map(item => [item.slide_id, item]));
     res.images.forEach(img => {
       const slot = Array.from(document.querySelectorAll('.step6-slide-audio'))
         .find(item => item.dataset.audioSlideId === img.slide_id);
       if (!slot) return;
-      const audioUrl = `/api/projects/${state.currentProject.id}/slides/${img.slide_id}/audio?t=${Date.now()}`;
+      const audio = audioBySlide.get(img.slide_id);
       slot.classList.add('has-audio');
-      slot.innerHTML = `<audio controls preload="metadata" src="${audioUrl}" class="step7-audio-player" aria-label="${escHtml(img.slide_id)} 音频"></audio>`;
+      if (audio?.audio_exists && !audio?.stale) {
+        const audioUrl = `/api/projects/${state.currentProject.id}/slides/${img.slide_id}/audio?t=${Date.now()}`;
+        slot.innerHTML = `<audio controls preload="metadata" src="${audioUrl}" class="step7-audio-player" aria-label="${escHtml(img.slide_id)} 音频"></audio>`;
+      } else {
+        const reason = audio?.stale ? '音频已过期，请重新生成' : '音频尚未生成';
+        slot.innerHTML = `<div class="step7-audio-missing">${escHtml(reason)}</div>`;
+      }
     });
 
-    if (step7Status === 'pending_reconfirmation') {
+    const allAudioComplete = audioStatus.complete === true;
+    const missingSlides = Array.isArray(audioStatus.missing) ? audioStatus.missing : [];
+    if (!allAudioComplete) {
+      emptyState.style.display = 'block';
+      emptyState.innerText = `部分页面音频尚未生成或已过期：${missingSlides.join('、')}。点击“生成音频”会自动跳过已有音频，只补缺失页面。`;
+      confirmButton.disabled = true;
+    } else if (step7Status === 'pending_reconfirmation') {
       emptyState.style.display = 'block';
       emptyState.innerText = '旁白或上游内容已变更，请重新生成音频后再确认。';
       confirmButton.disabled = true;
@@ -4734,6 +4741,44 @@ async function runStep7TTS() {
     saveAndTtsButton.disabled = false;
   }
   return false;
+}
+
+async function runStep7TTS() {
+  const loading = document.getElementById('step7-loading');
+  const synthButton = document.getElementById('step7-btn-synthesize');
+  const saveAndTtsButton = document.getElementById('step6-btn-save-and-tts');
+  const confirmButton = document.getElementById('step6-btn-audio-confirm-next');
+  loading.style.display = 'inline-flex';
+  synthButton.disabled = true;
+  saveAndTtsButton.disabled = true;
+  confirmButton.disabled = true;
+  showToast('🔊 正在生成音频；已有且未过期的页面会自动跳过，只补缺失页面...');
+
+  try {
+    const res = await API.post(`/api/projects/${state.currentProject.id}/steps/7/synthesize`);
+    if (res.success) {
+      const skipped = Array.isArray(res.skipped) ? res.skipped.length : 0;
+      const generated = Array.isArray(res.generated) ? res.generated.length : 0;
+      const suffix = skipped ? `（新生成 ${generated} 页，跳过已有 ${skipped} 页）` : '';
+      showToast(`🎀 音频生成完成${suffix}，请逐页试听并确认。`);
+      await refreshCurrentProjectStatus(6);
+      await loadStep7Data();
+      return true;
+    }
+
+    const failed = Array.isArray(res.failed) ? res.failed.map(item => item.slide_id).filter(Boolean) : [];
+    const message = res.message || (failed.length ? `音频部分生成失败：${failed.join('、')}` : '音频生成未完成，请稍后重试。');
+    showToast(`⚠️ ${message}`, 7000);
+    await refreshCurrentProjectStatus(6);
+    await loadStep7Data();
+    return false;
+  } catch (e) {
+    return false;
+  } finally {
+    loading.style.display = 'none';
+    synthButton.disabled = false;
+    saveAndTtsButton.disabled = false;
+  }
 }
 
 async function saveNarrationAndRunTTS() {

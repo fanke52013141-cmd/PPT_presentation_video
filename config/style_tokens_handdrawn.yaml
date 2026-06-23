@@ -1,14 +1,14 @@
 brand:
-  name: Content First Flexible PPT
+  name: Handdrawn Science Explainer
   style_keywords:
-    - 内容优先
-    - 自由版式
-    - 清爽 PPT
-    - 讲解清晰
-    - 留白充足
-    - 结构化表达
-    - 适合口播
-    - Mask 友好
+    - 温暖极简
+    - 手绘线稿
+    - 清爽
+    - 亲和
+    - 低门槛
+    - 解释型
+    - 轻科普
+    - 普通人友好
 
 canvas:
   aspect_ratio: "16:9"
@@ -109,13 +109,14 @@ scene_layers:
 visual_assets:
   template_reference_image: references/style_reference/PPT模板.png
   example_reference_image: references/style_reference/PPT示例.png
-  image_style: content_first_flexible_ppt_visual
-  diagram_style: clear_explainer_visual_structure
+  image_style: warm_minimal_handdrawn_line_art
+  diagram_style: handdrawn_explainer_diagram
   required_background: flat_uniform_pure_white
   reveal_friendly_layout:
     - "使用纯净平面 #FFFFFF 背景；四条边和四个角必须连续纯白，不要纸纹、噪声、阴影、渐变或暗角。"
     - 主标题、副标题固定在页面上方标题区；底部 y=930..1080 固定作为视频字幕安全区。
-    - 主体内容区可以任意发挥，按内容选择最清楚的视觉结构，不要机械套用卡片列表。
+    - 手绘风只规定线条、亲和感和轻量图示，不规定主体内容必须是卡片列表。
+    - 主体内容区可以自由使用判断链、流程图、关系图、对比图、场景小插图、时间线、关键词地图等结构。
     - 每个 visual_group 必须能被一个矩形区域完整覆盖。
     - 独立 group 之间保留 80-120px 干净背景。
     - 严禁画面元素重叠：文字、卡片、图标、箭头、线条、标签、装饰、图表之间不得互相覆盖、压住、穿插或粘连。

@@ -643,14 +643,14 @@
   <div id="modal-step2-generate" class="modal-overlay" style="display: none;">
     <div class="modal-content ai-generation-modal">
       <h3 class="highlight-title">AI 生成分镜</h3>
-      <p class="config-editor-note">描述本次想要的拆页方式、叙事节奏、重点内容、页数或视觉组织。该需求只用于本次生成，不会自动覆盖已保存的分镜规则模板。</p>
+      <p class="config-editor-note">这里是可选的临时补充需求。留空时会直接使用已保存的分镜规则和自定义规则生成。</p>
       <label class="ai-requirement-field">
-        <span>本次分镜需求</span>
+        <span>本次补充需求（可选）</span>
         <textarea id="step2-generation-requirement" rows="8" placeholder="例如：控制在 6 页以内；先解释概念，再讲工作机制和实际应用；每页只讲一个重点，多用流程图和对比结构；旁白简洁，避免重复。"></textarea>
       </label>
       <div class="config-editor-actions">
         <button id="btn-step2-generation-cancel" class="secondary" type="button">取消</button>
-        <button id="btn-step2-generation-confirm" class="success" type="button">按需求生成分镜</button>
+        <button id="btn-step2-generation-confirm" class="success" type="button">生成分镜</button>
       </div>
     </div>
   </div>
@@ -782,7 +782,7 @@
           <button id="btn-image-style-template-save" class="secondary" type="button">另存为模板</button>
         </div>
         <div class="config-boundary-note">
-          直接填写下面的风格词即可，不需要遵守 YAML 格式。系统固定 1920×1080、16:9、纯白背景，并保留底部字幕安全区；这些约束用于保证后续 Mask 稳定。
+          直接填写下面的风格词即可，不需要遵守 YAML 格式。系统固定 1920×1080、16:9、纯白背景、顶部主标题/副标题区和底部字幕安全区；主体内容区可自由发挥，但元素严禁重叠，保证后续 Mask 稳定。
         </div>
         <div class="image-style-guided-grid">
           <label>
@@ -932,6 +932,6 @@
 
   <!-- 主业务 JavaScript 脚本 -->
   <script src="flow.js?v=1.0.0"></script>
-  <script src="app.js?v=2.12.7"></script>
+  <script src="app.js?v=2.12.8"></script>
 </body>
 </html>

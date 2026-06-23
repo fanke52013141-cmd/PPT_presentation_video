@@ -153,6 +153,8 @@ def provider_tts_command(
         volume,
         "--pitch",
         pitch,
+        "--timeout",
+        str(STEP7_TTS_TIMEOUT_SEC),
     ]
 
 from database import init_db, get_db, Project, Setting
@@ -180,6 +182,7 @@ REPO_ROOT = os.path.abspath(os.path.dirname(__file__))
 DATA_DIR = os.path.join(REPO_ROOT, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 DEFAULT_STYLE_TOKENS_PATH = os.path.join(REPO_ROOT, "config", "style_tokens.yaml")
+HANDDRAWN_STYLE_TOKENS_PATH = os.path.join(REPO_ROOT, "config", "style_tokens_handdrawn.yaml")
 STYLE_TOKENS_PATH = os.path.join(DATA_DIR, "style_tokens.yaml")
 DEFAULT_STYLE_REFERENCE_DIR = os.path.join(REPO_ROOT, "references", "style_reference")
 STYLE_REFERENCE_DIR = os.path.join(DATA_DIR, "style_reference_active")
@@ -188,6 +191,7 @@ STYLE_REFERENCE_FILES = {
     "example": "PPT示例.png",
 }
 STORYBOARD_TEMPLATES_PATH = os.path.join(DATA_DIR, "storyboard_templates.json")
+HANDDRAWN_STORYBOARD_RULES_PATH = os.path.join(REPO_ROOT, "templates", "prompts", "storyboard_rules_handdrawn.zh.md")
 IMAGE_STYLE_TEMPLATES_DIR = os.path.join(DATA_DIR, "image_style_templates")
 IMAGE_STYLE_TEMPLATES_INDEX = os.path.join(IMAGE_STYLE_TEMPLATES_DIR, "index.json")
 REVEAL_PIPELINE_VERSION = "manual_mask_boundary_white_v4"
@@ -424,8 +428,11 @@ ensure_active_image_style_storage()
 
 STEP1_LLM_TIMEOUT_SEC = 60.0
 STEP2_LLM_TIMEOUT_SEC = 120.0
-STEP7_TTS_TIMEOUT_SEC = 180
-STEP7_BIND_TIMEOUT_SEC = 60
+STEP7_TTS_TIMEOUT_SEC = 300
+STEP7_TTS_PROCESS_TIMEOUT_SEC = STEP7_TTS_TIMEOUT_SEC + 90
+STEP7_TTS_RETRY_ATTEMPTS = 3
+STEP7_TTS_RETRY_BASE_DELAY_SEC = 4
+STEP7_BIND_TIMEOUT_SEC = 90
 
 def _redact_log_value(key: str, value: Any) -> Any:
     lowered = key.lower()
@@ -1828,6 +1835,176 @@ def clear_audio_confirmation(project: Project):
         os.remove(path)
 
 
+def _safe_process_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value)
+
+
+def nonempty_file(path: str) -> bool:
+    return os.path.exists(path) and os.path.isfile(path) and os.path.getsize(path) > 0
+
+
+def slide_tts_artifact_paths(project: Project, slide_id: str) -> Dict[str, str]:
+    slide_dir = os.path.join(project.run_dir, "slides", slide_id)
+    return {
+        "slide_dir": slide_dir,
+        "text": os.path.join(slide_dir, "tts_text.txt"),
+        "audio": os.path.join(slide_dir, "voice.mp3"),
+        "metadata": os.path.join(slide_dir, "tts_metadata.json"),
+        "srt": os.path.join(slide_dir, "subtitles.srt"),
+        "timeline": os.path.join(slide_dir, "audio_timeline.json"),
+    }
+
+
+def read_timeline_duration_sec(timeline_path: str) -> Optional[float]:
+    if not os.path.exists(timeline_path):
+        return None
+    try:
+        with open(timeline_path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        duration = payload.get("audio_content_duration_sec") or payload.get("duration_sec")
+        return float(duration) if duration is not None else None
+    except Exception:
+        return None
+
+
+def slide_tts_artifact_status(project: Project, slide_id: str) -> Dict[str, Any]:
+    paths = slide_tts_artifact_paths(project, slide_id)
+    required = ["audio", "metadata", "srt", "timeline"]
+    exists = {name: nonempty_file(paths[name]) for name in required}
+    complete = all(exists.values())
+    stale = False
+    if complete and os.path.exists(paths["text"]):
+        try:
+            text_mtime = os.path.getmtime(paths["text"])
+            oldest_output_mtime = min(os.path.getmtime(paths[name]) for name in required)
+            stale = oldest_output_mtime + 0.5 < text_mtime
+        except OSError:
+            stale = True
+    missing = [name for name, present in exists.items() if not present]
+    return {
+        "slide_id": slide_id,
+        "audio_exists": exists["audio"],
+        "complete": complete and not stale,
+        "stale": stale,
+        "missing_artifacts": missing,
+        "audio_bytes": os.path.getsize(paths["audio"]) if nonempty_file(paths["audio"]) else 0,
+        "duration_sec": read_timeline_duration_sec(paths["timeline"]),
+    }
+
+
+def remove_tts_artifacts(paths: Dict[str, str]) -> None:
+    for key in ("audio", "metadata", "srt", "timeline"):
+        path = paths.get(key)
+        if path and os.path.exists(path):
+            try:
+                os.remove(path)
+            except OSError as exc:
+                logger.warning("Failed to remove stale TTS artifact %s: %s", path, exc)
+
+
+def ensure_slide_tts_text_file(project: Project, slide_id: str, contract: Dict[str, Any]) -> str:
+    paths = slide_tts_artifact_paths(project, slide_id)
+    text_file = paths["text"]
+    if os.path.exists(text_file):
+        return text_file
+
+    logger.warning("tts_text.txt not found for slide %s, trying to generate it from contract", slide_id)
+    slide_narration = ""
+    for slide in contract.get("slides", []) or []:
+        if not isinstance(slide, dict) or slide.get("slide_id") != slide_id:
+            continue
+        beats = slide.get("narration_beats", []) if isinstance(slide.get("narration_beats"), list) else []
+        slide_narration = "\n".join(
+            beat_tts_text(beat)
+            for beat in beats
+            if isinstance(beat, dict) and clean_tts_text(beat_tts_text(beat))
+        )
+        break
+    os.makedirs(os.path.dirname(text_file), exist_ok=True)
+    with open(text_file, "w", encoding="utf-8") as f:
+        f.write(slide_narration + "\n")
+    return text_file
+
+
+def mark_step_retry_needed(project: Project, target_step: int, db: Session) -> None:
+    current_status = project.get_step_status()
+    current_status[str(target_step)] = "pending_reconfirmation"
+    for s_idx in range(target_step + 1, 9):
+        s_str = str(s_idx)
+        if current_status.get(s_str) in ("completed", "in_progress", "pending_reconfirmation"):
+            current_status[s_str] = "pending"
+    project.current_step = target_step
+    project.set_step_status(current_status)
+    db.commit()
+
+
+def run_tts_command_with_retries(project: Project, slide_id: str, tts_args: List[str]) -> Dict[str, Any]:
+    last_result: Dict[str, Any] = {
+        "ok": False,
+        "returncode": None,
+        "stdout": "",
+        "stderr": "",
+        "attempts": 0,
+    }
+    for attempt in range(1, STEP7_TTS_RETRY_ATTEMPTS + 1):
+        last_result["attempts"] = attempt
+        try:
+            tts_res = subprocess.run(
+                tts_args,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=STEP7_TTS_PROCESS_TIMEOUT_SEC,
+            )
+            last_result.update(
+                {
+                    "returncode": tts_res.returncode,
+                    "stdout": tts_res.stdout.strip(),
+                    "stderr": tts_res.stderr.strip(),
+                }
+            )
+        except subprocess.TimeoutExpired as exc:
+            last_result.update(
+                {
+                    "returncode": 124,
+                    "stdout": _safe_process_text(exc.stdout).strip(),
+                    "stderr": f"TTS process timed out after {STEP7_TTS_PROCESS_TIMEOUT_SEC}s. "
+                    + _safe_process_text(exc.stderr).strip(),
+                }
+            )
+
+        if last_result["returncode"] == 0:
+            last_result["ok"] = True
+            return last_result
+
+        write_project_log(
+            project,
+            "step7_slide_tts_attempt_failed",
+            slide_id=slide_id,
+            attempt=attempt,
+            max_attempts=STEP7_TTS_RETRY_ATTEMPTS,
+            returncode=last_result["returncode"],
+            stdout=last_result["stdout"],
+            stderr=last_result["stderr"],
+        )
+        if attempt < STEP7_TTS_RETRY_ATTEMPTS:
+            delay = STEP7_TTS_RETRY_BASE_DELAY_SEC * attempt
+            logger.warning(
+                "TTS failed for %s on attempt %s/%s; retrying in %ss",
+                slide_id,
+                attempt,
+                STEP7_TTS_RETRY_ATTEMPTS,
+                delay,
+            )
+            time.sleep(delay)
+    return last_result
+
+
 def mark_step_in_progress(project: Project, target_step: int, db: Session):
     current_status = project.get_step_status()
     for s_idx in range(target_step + 1, 9):
@@ -2293,6 +2470,13 @@ def default_storyboard_rules() -> str:
     return "旁白自然口语化；每个旁白语段只绑定一个清晰的视觉分组；画面先于对应语音约 1 秒出现。"
 
 
+def handdrawn_storyboard_rules() -> str:
+    if os.path.exists(HANDDRAWN_STORYBOARD_RULES_PATH):
+        with open(HANDDRAWN_STORYBOARD_RULES_PATH, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    return default_storyboard_rules()
+
+
 def storyboard_template_payload(
     template_id: str,
     name: str,
@@ -2318,11 +2502,18 @@ def list_storyboard_templates() -> List[Dict[str, Any]]:
     templates = [
         storyboard_template_payload(
             "default",
-            "默认分镜模板",
+            "内容优先通用分镜模板",
             default_storyboard_rules(),
             default_storyboard_profile_text(),
             built_in=True,
-        )
+        ),
+        storyboard_template_payload(
+            "handdrawn_explainer",
+            "手绘科普内容优先模板",
+            handdrawn_storyboard_rules(),
+            default_storyboard_profile_text(),
+            built_in=True,
+        ),
     ]
     stored = read_json_file(STORYBOARD_TEMPLATES_PATH, [])
     if not isinstance(stored, list):
@@ -2353,8 +2544,9 @@ def get_storyboard_templates():
 @app.post("/api/storyboard-templates")
 def save_storyboard_template(payload: Dict[str, Any]):
     name = normalized_template_name(payload.get("name"))
-    if name.casefold() == "默认分镜模板".casefold():
-        raise HTTPException(status_code=400, detail="默认分镜模板名称不可覆盖")
+    protected_names = {"默认分镜模板", "内容优先通用分镜模板", "手绘科普内容优先模板"}
+    if name.casefold() in {item.casefold() for item in protected_names}:
+        raise HTTPException(status_code=400, detail="内置分镜模板名称不可覆盖")
     rules = str(payload.get("rules") or "").strip() or default_storyboard_rules()
     profile_text = str(payload.get("profile_yaml") or "").strip() or default_storyboard_profile_text()
     profile = parse_storyboard_profile_text(profile_text)
@@ -2531,16 +2723,23 @@ def build_storyboard_request(
 
     schema_hint = visual_contract_schema_text()
 
-    system_prompt = f"""你是一个顶级的 PPT 视频分镜策划师。
-请阅读用户输入的内容摘要和全文，设计出一份符合 PPT 动画视频制作标准的视觉合约(Visual Contract)。
-视频的画面风格可由后续图片风格配置决定；这里重点规划“内容结构、视觉分组、旁白绑定、Mask 友好性”。
+    system_prompt = f"""你是一个顶级的 PPT 视频分镜策划师和演讲稿设计师。
+请阅读用户输入的内容摘要和全文，先设计“如何把内容讲清楚”的理解路径和演讲稿，再把它编译成符合 PPT 动画视频制作标准的视觉合约(Visual Contract)。
+视频的画面风格可由后续图片风格配置决定；这里重点规划“讲解逻辑、演讲稿、内容结构、视觉表达、旁白绑定、Mask 友好性”。
+总原则：
+- 内容优先，结构服务内容；不要让内容服务固定模板或角色枚举。
+- 演讲稿不是附属品。每页必须有自然、连贯、适合口播的 spoken_text，用来解释推理过程、上下文和结论。
+- 画面不是演讲稿的逐字复刻。visible_text 应是关键词、短句、结构标签、图示标签或结论钩子。
+- visual_groups 是后续 Mask/动画/旁白绑定接口，不是页面设计模板；role 只是后处理语义标签。
+- 主标题、副标题使用页面上方固定位置；底部 y=930..1080 固定为视频字幕安全区。除此之外，主体内容区根据内容自由发挥。
+- 禁止画面元素重叠：文字、卡片、图标、箭头、线条、标签、装饰、图表之间不得互相覆盖、压住、穿插或粘连。
 要求：
 1. 必须要将整篇文章合理划分，分成 {slide_count_requirement} Slide（每页的 slide_id 为 slide_001, slide_002 格式）。
-2. 每页 Slide 建议定义 {group_count_requirement}视觉分组(visual_groups)。不要固定套用“主标题/副标题/正文/总结”模板；副标题、总结、引用、数据点、流程步骤、强调提示等结构都应按内容需要决定。
+2. 每页 Slide 建议定义 {group_count_requirement}视觉分组(visual_groups)。不要固定套用“主标题/副标题/正文/总结”模板；可以按内容需要使用判断链、冲突地图、对象关系图、推理路径、时间压力图、对比、表格、流程、FAQ、场景拆解或行动清单。
 3. 每个视觉分组（visual_groups）必须有：
    - id: 比如 title_group, subtitle_group, body_group_01 等
-   - visible_text: 页面上会显式画出来的中文字符标签（非常重要，通常为 2-8 个字，绝对不能为空）
-   - visual_anchor: 手绘线稿元素的视觉描述（比如“顶部主标题”、“左边带圆圈数字1的方框”、“中间一个简笔画小脑”）
+   - visible_text: 页面上会显式画出来的中文字符标签（非常重要，通常为短句或关键词，绝对不能为空；不要把整段演讲稿塞进这里）
+   - visual_anchor: 视觉描述（比如“顶部主标题”、“左侧判断链起点”、“中间对象关系图”、“右侧结论卡”）
    - narration_function: 解释该分组在画面中所起的视觉/解释作用
    - reveal_order: 页面渲染时层淡入淡出显示的顺序，从 1 开始依次增加
    - content_unit_id: 稳定内容单元 ID，必须和 narration_beats[].content_unit_id 对齐
@@ -2720,13 +2919,13 @@ def execute_step2(
     else:
         storyboard_rules = default_storyboard_rules()
     generation_requirement = str((payload or {}).get("requirement") or "").strip()
-    if not generation_requirement:
-        raise HTTPException(status_code=400, detail="请先填写本次 AI 分镜生成需求。")
-    effective_storyboard_rules = (
-        f"{storyboard_rules}\n\n"
-        "本次生成的用户专项需求如下；只对本次生成生效，并在不破坏固定 JSON 结构和字段约束的前提下优先满足：\n"
-        f"{generation_requirement}"
-    )
+    effective_storyboard_rules = storyboard_rules
+    if generation_requirement:
+        effective_storyboard_rules = (
+            f"{storyboard_rules}\n\n"
+            "本次生成的用户专项需求如下；只对本次生成生效，并在不破坏固定 JSON 结构和字段约束的前提下优先满足：\n"
+            f"{generation_requirement}"
+        )
     system_prompt, user_prompt = build_storyboard_request(
         project_title,
         article_summary,
@@ -3090,9 +3289,27 @@ def build_image_style_prompt(style_tokens: Dict[str, Any]) -> str:
     subtitle_area = layout.get("subtitle_area") if isinstance(layout.get("subtitle_area"), dict) else {}
     subtitle_reserved = canvas.get("subtitle_reserved") if isinstance(canvas.get("subtitle_reserved"), dict) else {}
     if title_block:
-        lines.append("- 标题与副标题位于页面上方，沿用模板参考图的字号层级和左侧标题标记。")
+        main_title_box = title_block.get("main_title") if isinstance(title_block.get("main_title"), dict) else {}
+        subtitle_box = title_block.get("subtitle") if isinstance(title_block.get("subtitle"), dict) else {}
+        title_hint = ""
+        if main_title_box:
+            title_hint += (
+                f"主标题约在 x={main_title_box.get('x', 110)}, y={main_title_box.get('y', 55)}, "
+                f"w={main_title_box.get('w', 1600)}, h={main_title_box.get('h', 86)}；"
+            )
+        if subtitle_box:
+            title_hint += (
+                f"副标题约在 x={subtitle_box.get('x', 110)}, y={subtitle_box.get('y', 150)}, "
+                f"w={subtitle_box.get('w', 1600)}, h={subtitle_box.get('h', 52)}；"
+            )
+        lines.append(f"- 主标题与副标题位置固定在页面上方标题区；{title_hint}只固定位置和层级，不限制主体内容区的表达方式。")
     if content:
-        lines.append("- 主体内容放在页面中部开放区域，不绘制包围整页内容的大外框。")
+        lines.append(
+            "- 主体内容放在页面中部开放区域"
+            f"（约 x={content.get('x', 80)}, y={content.get('y', 235)}, "
+            f"w={content.get('w', 1760)}, h={content.get('h', 680)}），"
+            "根据内容自由选择最清楚的结构；不要机械套用卡片列表，不绘制包围整页内容的大外框。"
+        )
     subtitle_y = subtitle_area.get("y") or subtitle_reserved.get("y")
     if subtitle_y is not None:
         lines.append(f"- y={subtitle_y} 以下留作视频字幕安全区，不放关键文字、人物或图形。")
@@ -3101,14 +3318,15 @@ def build_image_style_prompt(style_tokens: Dict[str, Any]) -> str:
     if isinstance(layout_rules, list):
         for rule in layout_rules:
             text = str(rule).strip()
-            if "纯净平面" in text:
+            if text:
                 lines.append(f"- {text}")
 
     avoid = assets.get("avoid")
     if isinstance(avoid, list) and avoid:
         lines.append(f"- 避免：{'、'.join(str(item) for item in avoid if item)}。")
 
-    lines.append("- 参考图优先：字体感觉、线条粗细、配色、留白和视觉层级以附带的模板图与示例图为准。")
+    lines.append("- 不可变规则：画面元素严禁重叠、互相覆盖、压住、穿插或粘连；任何文字都不能被箭头、图标、卡片边框或装饰压住。")
+    lines.append("- 参考图只用于风格气质、标题区位置、线条粗细、配色和留白参考；不得覆盖“主体内容自由表达”和“元素不重叠”的规则。")
     lines.append("- 四条边和四个角必须保持连续纯白，不要纸纹、阴影、噪声、渐变或暗角。")
     lines.append("- 卡片、文字和图标内部允许使用白色；系统只会移除与画面外围连通的白色。")
     lines.append("- 只生成最终静态整页图片，不要加入图层名称、制作说明或播放器界面。")
@@ -3133,7 +3351,9 @@ def get_image_style():
         "protected_rules": [
             "画布固定为 1920×1080、16:9",
             "生图背景固定为纯白 #FFFFFF，确保 Mask 外围背景可稳定移除",
+            "主标题、副标题固定在页面上方标题区",
             "y=930 以下为字幕安全区，不放关键内容",
+            "主体内容区可以自由发挥，但所有画面元素严禁重叠、覆盖、压住、穿插或粘连",
             "高级 YAML 只允许 brand、canvas、colors、layout、visual_assets 顶层字段",
         ],
         "references": references,
@@ -3227,10 +3447,12 @@ def generate_image_style_ai_draft(
                     "image_style": "warm_minimal_handdrawn_line_art",
                     "diagram_style": "clean_explainer_diagram",
                     "layout_rules": [
-                        "使用纯净平面 #FFFFFF 背景，四边和四角保持连续纯白。",
+                        "主标题、副标题固定在页面上方标题区；底部 y=930..1080 固定留作字幕安全区。",
+                        "主体内容区根据内容自由表达，不机械套用卡片列表。",
                         "每个语义 group 保持独立留白，方便后续矩形 Mask。",
+                        "文字、卡片、图标、箭头、线条、标签、装饰、图表之间严禁重叠、压住、穿插或粘连。",
                     ],
-                    "avoid": ["复杂 3D 背景", "大面积渐变", "乱码文字"],
+                    "avoid": ["复杂 3D 背景", "大面积渐变", "乱码文字", "元素重叠", "箭头穿过文字"],
                 },
             },
         },
@@ -3242,7 +3464,9 @@ def generate_image_style_ai_draft(
         "必须输出严格 JSON，不要 Markdown，不要解释。"
         "只能返回 brand.style_keywords 与 visual_assets.image_style、diagram_style、layout_rules、avoid。"
         "user_requirement 是用户本次明确输入的需求，必须优先满足，并转化为具体可执行的结构化风格字段。"
-        "必须保持 1920x1080、16:9、纯白 #FFFFFF 背景、底部字幕安全区、Mask 友好留白这些约束。"
+        "必须保持 1920x1080、16:9、纯白 #FFFFFF 背景、上方固定标题/副标题区、底部字幕安全区、Mask 友好留白这些约束。"
+        "必须加入元素不重叠规则：文字、卡片、图标、箭头、线条、标签、装饰、图表之间不得互相覆盖、压住、穿插或粘连。"
+        "主体内容区应服务内容自由表达，不要把风格模板写成固定卡片版式。"
         "风格要具体可执行，适合 AI 生图提示词使用，避免泛泛而谈。"
     )
     user_prompt = json.dumps(
@@ -3293,6 +3517,8 @@ def read_image_style_template_index() -> List[Dict[str, Any]]:
 def image_style_template_source(template_id: str) -> tuple[str, str]:
     if template_id == "default":
         return DEFAULT_STYLE_TOKENS_PATH, DEFAULT_STYLE_REFERENCE_DIR
+    if template_id == "handdrawn_explainer":
+        return HANDDRAWN_STYLE_TOKENS_PATH, DEFAULT_STYLE_REFERENCE_DIR
     if not re.fullmatch(r"[0-9a-f]{12}", template_id):
         raise HTTPException(status_code=404, detail="图片风格模板不存在")
     item = next(
@@ -3313,7 +3539,14 @@ def image_style_template_detail(template_id: str) -> Dict[str, Any]:
     if template_id == "default":
         item = {
             "id": "default",
-            "name": "默认图片风格模板",
+            "name": "内容优先通用图片风格模板",
+            "built_in": True,
+            "updated_at": "",
+        }
+    elif template_id == "handdrawn_explainer":
+        item = {
+            "id": "handdrawn_explainer",
+            "name": "手绘科普内容优先图片风格模板",
             "built_in": True,
             "updated_at": "",
         }
@@ -3357,7 +3590,10 @@ def image_style_template_detail(template_id: str) -> Dict[str, Any]:
 
 
 def list_image_style_templates() -> List[Dict[str, Any]]:
-    result = [image_style_template_detail("default")]
+    result = [
+        image_style_template_detail("default"),
+        image_style_template_detail("handdrawn_explainer"),
+    ]
     for item in read_image_style_template_index():
         template_id = str(item.get("id") or "")
         if not template_id:
@@ -3383,8 +3619,9 @@ def get_image_style_template(template_id: str):
 def save_image_style_template(payload: Dict[str, Any]):
     ensure_active_image_style_storage()
     name = normalized_template_name(payload.get("name"))
-    if name.casefold() == "默认图片风格模板".casefold():
-        raise HTTPException(status_code=400, detail="默认图片风格模板名称不可覆盖")
+    protected_names = {"默认图片风格模板", "内容优先通用图片风格模板", "手绘科普内容优先图片风格模板"}
+    if name.casefold() in {item.casefold() for item in protected_names}:
+        raise HTTPException(status_code=400, detail="内置图片风格模板名称不可覆盖")
     index = read_image_style_template_index()
     existing = next(
         (
@@ -3498,10 +3735,19 @@ def generate_prompt_for_slide(
         visible_text = str(g.get("visible_text") or "").strip()
         visual_anchor = str(g.get("visual_anchor") or "").strip()
         role = str(g.get("role") or "content_body").strip()
+        narration_function = str(g.get("narration_function") or "").strip()
         group_lines.append(
-            f"{idx}. role={role}；文字“{visible_text}”；画面：{visual_anchor}。"
+            f"{idx}. role={role}；文字“{visible_text}”；画面：{visual_anchor}；作用：{narration_function}。"
         )
     groups_str = "\n".join(group_lines)
+    beat_lines = []
+    for idx, beat in enumerate(slide.get("narration_beats", []) or [], start=1):
+        if not isinstance(beat, dict):
+            continue
+        beat_lines.append(
+            f"{idx}. 绑定 {beat.get('group_id', '')}：{beat.get('spoken_text') or beat.get('spoken_intent') or ''}"
+        )
+    beats_str = "\n".join(beat_lines) or "无"
     main_title = slide.get("main_title", "")
     subtitle = slide.get("subtitle", "")
     subtitle_part = f"\n副标题：{subtitle}" if subtitle else ""
@@ -3509,8 +3755,15 @@ def generate_prompt_for_slide(
     style_prompt = build_image_style_prompt(read_style_tokens_data())
     return (
         f"{profile_prompt}\n"
-        f"项目主题：{topic_name}\n主标题：{main_title}{subtitle_part}\n\n"
-        f"本页必须呈现的画面内容：\n{groups_str}\n\n"
+        f"主标题：{main_title}{subtitle_part}\n\n"
+        f"本页演讲稿主线（生图必须优先根据这些 spoken_text 组织主体展示）：\n{beats_str}\n\n"
+        "本页设计原则：\n"
+        "- 主标题、副标题放在固定标题区；底部字幕安全区固定留白。\n"
+        "- 主体区域必须服务本页演讲稿内容，可以自由选择最清楚的表达方式，不要机械堆卡片。\n"
+        "- 先理解演讲稿要带观众完成的认知过程，再决定页面展示什么；画面不要只是罗列 visual_groups。\n"
+        "- 需要讲推理就画推理链，需要讲对象就画对象关系，需要讲步骤就画行动流程，需要讲对比就画对比结构。\n"
+        "- 所有主体元素必须清晰分离，严禁任何重叠、压字、穿插、粘连。\n\n"
+        f"本页需要出现在画面中的语义内容和 Mask 分组参考（用于确保必要内容可见与可标注，不是固定版式）：\n{groups_str}\n\n"
         f"{style_prompt}"
     )
 
@@ -3520,7 +3773,9 @@ def enforce_white_generation_background(prompt: str) -> str:
         f"{prompt.strip()}\n\n"
         "不可覆盖的背景要求：整张图片的工作背景必须是纯白 #FFFFFF。"
         "四条边和四个角必须连续纯白；不要米白、暖白、纸纹、噪声、阴影、渐变或暗角。"
-        "不要把纯白背景画进卡片或内容轮廓之外的装饰区域。"
+        "不要把纯白背景画进卡片或内容轮廓之外的装饰区域。\n"
+        "不可覆盖的布局要求：主标题、副标题必须位于页面上方固定标题区；底部 y=930..1080 必须保留为视频字幕安全区。"
+        "主体内容区可以自由发挥，但画面元素严禁重叠、覆盖、压住、穿插或粘连；文字、图标、箭头、卡片、标签、装饰和图表之间必须保留清晰间距，方便后续人工 Mask。"
     )
 
 
@@ -4650,7 +4905,7 @@ def update_step6_result(project_id: str, payload: Dict[str, Any], db: Session = 
 
 # ==================== 步骤 7: 语音合成 ====================
 
-@app.post("/api/projects/{project_id}/steps/7/synthesize")
+@app.post("/api/projects/{project_id}/steps/7/synthesize-legacy")
 def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
@@ -4786,16 +5041,238 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
     return {"success": True, "audio_confirmed": False}
 
 # 获取音频文件接口（供前端试听）
+@app.post("/api/projects/{project_id}/steps/7/synthesize")
+def synthesize_tts_resumable(project_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    provider = normalize_tts_provider(get_setting("tts_provider", "minimax"))
+    defaults = tts_provider_defaults(provider)
+    if provider not in TTS_PROVIDER_DEFAULTS:
+        raise HTTPException(status_code=400, detail=f"不支持的 TTS Provider: {provider}")
+    tts_api_key = configured_tts_api_key(provider)
+    tts_secret_key = configured_tts_secret_key(provider)
+    if not tts_api_key:
+        env_name = defaults.get("api_key_env") or "TTS_API_KEY"
+        raise HTTPException(status_code=400, detail=f"未配置 {provider} 语音合成密钥，也没有读取到环境变量 {env_name}。")
+    if provider == "tencent_tts" and not tts_secret_key:
+        raise HTTPException(status_code=400, detail="腾讯云 TTS 需要同时配置 SecretId 和 SecretKey。")
+
+    contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
+    if not os.path.exists(contract_path):
+        raise HTTPException(status_code=400, detail="分镜规划尚未生成，请返回确认第二步状态。")
+
+    with open(contract_path, "r", encoding="utf-8") as f:
+        contract = json.load(f)
+
+    slide_ids = [
+        str(slide["slide_id"])
+        for slide in contract.get("slides", [])
+        if isinstance(slide, dict) and slide.get("slide_id")
+    ]
+    if not slide_ids:
+        raise HTTPException(status_code=400, detail="分镜规划中没有可生成音频的页面。")
+
+    beats_by_slide: Dict[str, List[Dict[str, Any]]] = {}
+    beats_path = os.path.join(project.run_dir, "planning", "narration_beats.json")
+    if os.path.exists(beats_path):
+        try:
+            sync_narration_beats_to_contract(project, slide_ids)
+            with open(beats_path, "r", encoding="utf-8") as f:
+                beats_payload = json.load(f)
+            for slide_data in beats_payload.get("slides", []) or []:
+                if isinstance(slide_data, dict):
+                    beats_by_slide[str(slide_data.get("slide_id", ""))] = slide_data.get("beats", []) or []
+        except Exception as exc:
+            logger.warning("Failed to load edited narration beats for TTS: %s", exc)
+
+    tts_endpoint = first_non_empty(get_setting("tts_endpoint"), defaults.get("endpoint"))
+    tts_model = first_non_empty(get_setting("tts_model"), defaults.get("model"))
+    tts_voice_id = first_non_empty(get_setting("tts_voice_id"), defaults.get("voice_id"))
+    tts_clone_voice_id = get_setting("tts_clone_voice_id", "")
+    tts_region = first_non_empty(get_setting("tts_region"), defaults.get("region"))
+    tts_provider_extra = get_setting("tts_provider_extra", "")
+    tts_speed = get_setting("tts_speed", "1.0")
+    tts_volume = get_setting("tts_volume", "1.0")
+    tts_pitch = get_setting("tts_pitch", "0" if provider == "minimax" else "1.0")
+
+    clear_audio_confirmation(project)
+    mark_step_in_progress(project, 7, db)
+
+    generated_slides: List[str] = []
+    skipped_slides: List[str] = []
+    failed_slides: List[Dict[str, Any]] = []
+
+    for slide_id in slide_ids:
+        paths = slide_tts_artifact_paths(project, slide_id)
+        text_file = ensure_slide_tts_text_file(project, slide_id, contract)
+        artifact_status = slide_tts_artifact_status(project, slide_id)
+
+        if artifact_status["complete"]:
+            logger.info("Skipping TTS for %s because audio artifacts are already complete and fresh", slide_id)
+            rewrite_audio_timeline_by_beats(paths["timeline"], slide_id, beats_by_slide.get(slide_id, []))
+            skipped_slides.append(slide_id)
+            continue
+
+        if artifact_status["audio_exists"] or artifact_status["missing_artifacts"] or artifact_status["stale"]:
+            remove_tts_artifacts(paths)
+
+        logger.info("Synthesizing TTS audio for slide %s via %s", slide_id, provider)
+        tts_args = provider_tts_command(
+            provider=provider,
+            text_file=text_file,
+            out_audio=paths["audio"],
+            out_meta=paths["metadata"],
+            out_srt=paths["srt"],
+            out_timeline=paths["timeline"],
+            slide_id=slide_id,
+            endpoint=tts_endpoint,
+            api_key=tts_api_key,
+            secret_key=tts_secret_key,
+            region=tts_region,
+            model=tts_model,
+            voice_id=tts_voice_id,
+            clone_voice_id=tts_clone_voice_id,
+            provider_extra=tts_provider_extra,
+            speed=tts_speed,
+            volume=tts_volume,
+            pitch=tts_pitch,
+        )
+
+        tts_result = run_tts_command_with_retries(project, slide_id, tts_args)
+        if not tts_result["ok"]:
+            error_text = (tts_result["stderr"] or tts_result["stdout"] or "TTS synthesis failed").strip()
+            error_text = error_text[-1200:]
+            logger.error("TTS synthesis failed for %s after %s attempts: %s", slide_id, tts_result["attempts"], error_text)
+            write_project_log(
+                project,
+                "step7_slide_tts_error",
+                slide_id=slide_id,
+                attempts=tts_result["attempts"],
+                returncode=tts_result["returncode"],
+                stdout=tts_result["stdout"],
+                stderr=tts_result["stderr"],
+            )
+            failed_slides.append({
+                "slide_id": slide_id,
+                "attempts": tts_result["attempts"],
+                "returncode": tts_result["returncode"],
+                "error": error_text,
+            })
+            continue
+
+        post_status = slide_tts_artifact_status(project, slide_id)
+        if not post_status["complete"]:
+            error_text = "TTS command returned success but required audio artifacts are incomplete: " + ", ".join(post_status["missing_artifacts"])
+            logger.error("%s for %s", error_text, slide_id)
+            write_project_log(
+                project,
+                "step7_slide_tts_incomplete_artifacts",
+                slide_id=slide_id,
+                status=post_status,
+            )
+            failed_slides.append({
+                "slide_id": slide_id,
+                "attempts": tts_result["attempts"],
+                "returncode": tts_result["returncode"],
+                "error": error_text,
+            })
+            continue
+
+        rewrite_audio_timeline_by_beats(paths["timeline"], slide_id, beats_by_slide.get(slide_id, []))
+        generated_slides.append(slide_id)
+
+    if failed_slides:
+        mark_step_retry_needed(project, 7, db)
+        write_project_log(
+            project,
+            "step7_tts_partial_failed",
+            generated=generated_slides,
+            skipped=skipped_slides,
+            failed=failed_slides,
+        )
+        failed_ids = [item["slide_id"] for item in failed_slides]
+        return {
+            "success": False,
+            "message": f"音频部分生成失败，请重试缺失页面：{', '.join(failed_ids)}",
+            "generated": generated_slides,
+            "skipped": skipped_slides,
+            "failed": failed_slides,
+            "audio_status": [slide_tts_artifact_status(project, sid) for sid in slide_ids],
+            "audio_confirmed": False,
+        }
+
+    bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))
+    bind_res = subprocess.run(
+        [sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", "0"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=STEP7_BIND_TIMEOUT_SEC,
+    )
+
+    if bind_res.returncode != 0:
+        logger.error("Timeline binding failed: %s", bind_res.stderr)
+        write_project_log(
+            project,
+            "step7_timeline_bind_error",
+            returncode=bind_res.returncode,
+            stdout=bind_res.stdout.strip(),
+            stderr=bind_res.stderr.strip(),
+        )
+        mark_step_retry_needed(project, 7, db)
+        return {
+            "success": False,
+            "message": f"音频已生成，但时间轴绑定失败：{bind_res.stderr[-1200:]}",
+            "generated": generated_slides,
+            "skipped": skipped_slides,
+            "failed": [{"slide_id": "timeline_binding", "error": bind_res.stderr[-1200:]}],
+            "audio_status": [slide_tts_artifact_status(project, sid) for sid in slide_ids],
+            "audio_confirmed": False,
+        }
+
+    return {
+        "success": True,
+        "message": "音频生成完成",
+        "generated": generated_slides,
+        "skipped": skipped_slides,
+        "failed": [],
+        "audio_status": [slide_tts_artifact_status(project, sid) for sid in slide_ids],
+        "audio_confirmed": False,
+    }
+
+@app.get("/api/projects/{project_id}/steps/7/audio-status")
+def get_tts_audio_status(project_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    slide_ids = read_current_slide_ids_or_404(project)
+    slides = [slide_tts_artifact_status(project, slide_id) for slide_id in slide_ids]
+    missing = [item["slide_id"] for item in slides if not item["complete"]]
+    return {
+        "success": True,
+        "slides": slides,
+        "complete": not missing,
+        "missing": missing,
+        "audio_confirmed": project_audio_confirmed(project),
+    }
+
 @app.get("/api/projects/{project_id}/slides/{slide_id}/audio")
 def get_slide_audio_file(project_id: str, slide_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
         
-    audio_path = os.path.join(project.run_dir, "slides", slide_id, "voice.mp3")
-    if not os.path.exists(audio_path):
+    status = slide_tts_artifact_status(project, slide_id)
+    audio_path = slide_tts_artifact_paths(project, slide_id)["audio"]
+    if not status["audio_exists"]:
         raise HTTPException(status_code=404, detail="该页面音频尚未生成")
         
+    if status["stale"]:
+        raise HTTPException(status_code=409, detail="该页面音频已过期，请重新生成。")
+
     return FileResponse(audio_path, media_type="audio/mp3")
 
 @app.post("/api/projects/{project_id}/steps/7/confirm")
@@ -4806,7 +5283,7 @@ def confirm_tts_audio(project_id: str, db: Session = Depends(get_db)):
     slide_ids = read_current_slide_ids_or_404(project)
     missing = [
         slide_id for slide_id in slide_ids
-        if not os.path.exists(os.path.join(project.run_dir, "slides", slide_id, "voice.mp3"))
+        if not slide_tts_artifact_status(project, slide_id)["complete"]
     ]
     if missing:
         raise HTTPException(status_code=400, detail=f"以下页面尚未生成音频: {', '.join(missing)}")

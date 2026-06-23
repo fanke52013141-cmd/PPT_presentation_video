@@ -433,6 +433,7 @@ STEP7_TTS_PROCESS_TIMEOUT_SEC = STEP7_TTS_TIMEOUT_SEC + 90
 STEP7_TTS_RETRY_ATTEMPTS = 3
 STEP7_TTS_RETRY_BASE_DELAY_SEC = 4
 STEP7_BIND_TIMEOUT_SEC = 90
+STEP8_RENDER_TIMEOUT_SEC = 3600
 
 def _redact_log_value(key: str, value: Any) -> Any:
     lowered = key.lower()
@@ -5416,6 +5417,7 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"渲染前绑定语音时间轴失败: {bind_res.stderr}")
 
     build_props_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "build_remotion_props.py"))
+    props_started = time.time()
     props_res = subprocess.run([
         sys.executable, build_props_script, "--run-dir", project.run_dir
     ], capture_output=True, text=True, encoding="utf-8", errors="replace")
@@ -5483,6 +5485,7 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
     legacy_output_path = os.path.join(project.run_dir, "out.mp4")
     
     logger.info(f"Starting Remotion render for {project_id}...")
+    render_started = time.time()
     render_args = [
         npx_cmd, "remotion", "render", "ArticleVideo", output_mp4_path,
         f"--props={props_json_path}",
@@ -5491,14 +5494,14 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
         "--pixel-format=yuv420p",
         "--color-space=bt709",
     ]
-    
-    render_res = subprocess.run(
-        render_args,
-        cwd=remotion_dir,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
+    with open(props_json_path, "r", encoding="utf-8") as props_file:
+        remotion_props_payload = json.load(props_file)
+    write_project_log(
+        project,
+        "step8_remotion_render_start",
+        output=output_mp4_path,
+        timeout_sec=STEP8_RENDER_TIMEOUT_SEC,
+        total_duration_sec=remotion_props_payload.get("total_duration_sec"),
     )
     
     try:
@@ -5509,16 +5512,29 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=900,
+            timeout=STEP8_RENDER_TIMEOUT_SEC,
         )
     except subprocess.TimeoutExpired:
         logger.error("Remotion render timed out")
-        write_project_log(project, "step8_remotion_render_timeout", timeout_sec=900)
+        write_project_log(project, "step8_remotion_render_timeout", timeout_sec=STEP8_RENDER_TIMEOUT_SEC)
         raise HTTPException(status_code=504, detail="视频渲染超时")
 
     if render_res.returncode != 0:
         logger.error(f"Remotion render failed: {render_res.stderr}")
+        write_project_log(
+            project,
+            "step8_remotion_render_error",
+            returncode=render_res.returncode,
+            stdout=(render_res.stdout or "")[-4000:],
+            stderr=(render_res.stderr or "")[-4000:],
+        )
         raise HTTPException(status_code=500, detail=f"视频渲染失败: {render_res.stderr}")
+    write_project_log(
+        project,
+        "step8_remotion_render_success",
+        elapsed_sec=round(time.time() - render_started, 3),
+        stdout=(render_res.stdout or "")[-4000:],
+    )
     color_validator = os.path.join(REPO_ROOT, "scripts", "validate_render_color.py")
     color_result = subprocess.run(
         [

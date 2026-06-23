@@ -153,9 +153,18 @@ const API = {
   async fetch(url, options = {}) {
     try {
       const response = await fetch(url, options);
-      const data = await response.json();
+      const contentType = response.headers.get('content-type') || '';
+      const rawText = await response.text();
+      let data = {};
+      if (rawText) {
+        if (contentType.includes('application/json')) {
+          data = JSON.parse(rawText);
+        } else {
+          data = { detail: rawText };
+        }
+      }
       if (!response.ok) {
-        throw new Error(data.detail || '请求失败');
+        throw new Error(data.detail || data.message || response.statusText || '请求失败');
       }
       return data;
     } catch (error) {

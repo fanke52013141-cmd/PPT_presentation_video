@@ -221,7 +221,6 @@ def main() -> None:
             server_module.ensure_active_image_style_storage()
             saved_image = server_module.save_image_style_template({"name": "回归图片模板"})
             assert saved_image["template"]["references"]["template"]["exists"]
-            assert saved_image["template"]["references"]["example"]["exists"]
     finally:
         for key, value in original_paths.items():
             setattr(server_module, key, value)

@@ -108,7 +108,6 @@ scene_layers:
 
 visual_assets:
   template_reference_image: references/style_reference/PPT模板.png
-  example_reference_image: references/style_reference/PPT示例.png
   image_style: warm_minimal_handdrawn_line_art
   diagram_style: handdrawn_explainer_diagram
   required_background: flat_uniform_pure_white

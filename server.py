@@ -28,7 +28,6 @@ import yaml
 from openai import OpenAI
 from scripts.background_color import normalize_connected_background
 from scripts.pipeline_profiles import (
-    image_prompt_profile_text,
     read_pipeline_profile,
     role_catalog,
     storyboard_profile_prompt,
@@ -189,7 +188,6 @@ DEFAULT_STYLE_REFERENCE_DIR = os.path.join(REPO_ROOT, "references", "style_refer
 STYLE_REFERENCE_DIR = os.path.join(DATA_DIR, "style_reference_active")
 STYLE_REFERENCE_FILES = {
     "template": "PPT模板.png",
-    "example": "PPT示例.png",
 }
 STORYBOARD_TEMPLATES_PATH = os.path.join(DATA_DIR, "storyboard_templates.json")
 HANDDRAWN_STORYBOARD_RULES_PATH = os.path.join(REPO_ROOT, "templates", "prompts", "storyboard_rules_handdrawn.zh.md")
@@ -1214,9 +1212,9 @@ def subtitle_preview_background_url(project: Project) -> str:
         path = os.path.join(project.run_dir, "slides", slide_id, "visual_draft.png")
         if os.path.exists(path):
             return f"/api/projects/{project.id}/slides/{slide_id}/image?t={int(os.path.getmtime(path))}"
-    example_path = os.path.join(STYLE_REFERENCE_DIR, STYLE_REFERENCE_FILES["example"])
-    if os.path.exists(example_path):
-        return f"/api/image-style/reference/example?t={int(os.path.getmtime(example_path))}"
+    template_path = os.path.join(STYLE_REFERENCE_DIR, STYLE_REFERENCE_FILES["template"])
+    if os.path.exists(template_path):
+        return f"/api/image-style/reference/template?t={int(os.path.getmtime(template_path))}"
     return ""
 
 
@@ -2310,7 +2308,11 @@ def sanitize_storyboard_profile(profile: Dict[str, Any]) -> Dict[str, Any]:
             description = str(config.get("description") or "")
             if any(marker in description for marker in ("只展示不朗读", "不绑定旁白", "可选副标题", "可选总结区")):
                 default_config = default_roles.get(role, {}) if isinstance(default_roles, dict) else {}
-                config["description"] = str(default_config.get("description") or description)
+                fallback_descriptions = {
+                    "decoration": "装饰元素，只在确实帮助理解画面时使用。",
+                    "subtitle": "只能在 presentation_policy.subtitle_policy 为 all_slides_have_subtitle 时出现。",
+                }
+                config["description"] = str(default_config.get("description") or fallback_descriptions.get(role) or description)
 
     structure_rules = storyboard.get("structure_rules")
     if isinstance(structure_rules, list):
@@ -2606,28 +2608,34 @@ def normalize_visual_elements(value: Any) -> List[Dict[str, str]]:
     elements = value if isinstance(value, list) else []
     normalized: List[Dict[str, str]] = []
     allowed_roles = {"title", "subtitle", "body", "decoration"}
+    allowed_visual_types = {"text", "illustration"}
     for index, element in enumerate(elements, start=1):
         if not isinstance(element, dict):
             continue
         role = str(element.get("role") or "body").strip().lower()
         if role not in allowed_roles:
             role = "body"
-        visual_description = str(element.get("visual_description") or element.get("description") or "").strip()
-        text = str(element.get("text") or "").strip()
+        legacy_text = str(element.get("text") or "").strip()
+        visual_description = str(element.get("visual_description") or element.get("description") or legacy_text).strip()
         narration = str(element.get("narration") or "").strip()
-        if not visual_description and not text:
+        visual_type = str(element.get("visual_type") or ("text" if legacy_text else "illustration")).strip().lower()
+        if visual_type == "text_and_illustration":
+            visual_type = "illustration"
+        if visual_type not in allowed_visual_types:
+            visual_type = "illustration"
+        if not visual_description:
             continue
-        normalized.append(
-            {
-                "element_id": stable_plan_id(element.get("element_id"), "el", index),
-                "source_segment_id": str(element.get("source_segment_id") or "").strip(),
-                "role": role,
-                "text": text,
-                "visual_type": str(element.get("visual_type") or ("text" if text else "illustration")).strip(),
-                "visual_description": visual_description or text,
-                "narration": narration,
-            }
-        )
+        normalized_element = {
+            "element_id": stable_plan_id(element.get("element_id"), "el", index),
+            "role": role,
+            "visual_type": visual_type,
+            "visual_description": visual_description,
+            "narration": narration,
+        }
+        source_segment_id = str(element.get("source_segment_id") or "").strip()
+        if source_segment_id:
+            normalized_element["source_segment_id"] = source_segment_id
+        normalized.append(normalized_element)
     return normalized
 
 
@@ -2777,9 +2785,6 @@ def build_step2_visual_user_prompt(script_plan: Dict[str, Any]) -> str:
 
 
 def element_visible_text(element: Dict[str, str], index: int) -> str:
-    text = str(element.get("text") or "").strip()
-    if text:
-        return text
     description = str(element.get("visual_description") or "").strip()
     if description:
         return description[:32]
@@ -2834,18 +2839,19 @@ def compose_visual_contract_from_plans(
             segment = segments.get(source_segment_id, {})
             narration = str(element.get("narration") or segment.get("narration") or "").strip()
             purpose = str(segment.get("purpose") or element.get("visual_description") or "").strip()
+            visual_type = str(element.get("visual_type") or "illustration").strip().lower()
+            display_text = description if visual_type == "text" else ""
             group = {
                 "id": group_id,
                 "role": role,
                 "visible_text": visible_text,
-                "display_text": str(element.get("text") or "").strip(),
+                "display_text": display_text,
                 "visual_anchor": description,
                 "narration_function": purpose or description,
                 "reveal_order": element_index,
                 "content_unit_id": content_unit_id,
                 "mask_target": description,
-                "visual_type": str(element.get("visual_type") or "").strip(),
-                "source_segment_id": source_segment_id,
+                "visual_type": visual_type,
             }
             visual_groups.append(group)
             if narration:
@@ -4597,47 +4603,52 @@ def update_image_style_reference(kind: str, file: UploadFile = File(...)):
 
 
 # 辅助生成某一页 PPT 生图的 Prompt。
-# 在这里，我们需要配合手绘风格的规则，将 visual_anchor 及 visible_text 与预定义的线稿艺术做融合。
+def compact_slide_element_lines(slide: Dict[str, Any]) -> List[str]:
+    slide_id = str(slide.get("slide_id") or "").strip()
+    prefix = f"{slide_id}_" if slide_id else ""
+    lines: List[str] = []
+    for idx, group in enumerate(slide.get("visual_groups", []) or [], start=1):
+        if not isinstance(group, dict):
+            continue
+        group_id = str(group.get("id") or "").strip()
+        element_id = group_id[len(prefix):] if prefix and group_id.startswith(prefix) else (group_id or f"el_{idx:03d}")
+        role = str(group.get("role") or "content_body").strip()
+        visual_type = str(group.get("visual_type") or "").strip().lower()
+        if visual_type not in {"text", "illustration"}:
+            visual_type = "text" if str(group.get("display_text") or "").strip() else "illustration"
+        if visual_type == "text":
+            description = str(group.get("display_text") or group.get("visual_anchor") or group.get("visible_text") or "").strip()
+        else:
+            description = str(group.get("visual_anchor") or group.get("mask_target") or group.get("visible_text") or "").strip()
+        if not description:
+            continue
+        lines.append(
+            f"- slide_id={slide_id}; element_id={element_id}; role={role}; "
+            f"visual_type={visual_type}; visual_description={description}"
+        )
+    return lines
+
+
 def generate_prompt_for_slide(
     slide: Dict[str, Any],
     topic_name: str,
     profile: Optional[Dict[str, Any]] = None,
 ) -> str:
-    group_lines = []
-    for idx, g in enumerate(slide.get("visual_groups", []), start=1):
-        visible_text = str(g.get("visible_text") or "").strip()
-        visual_anchor = str(g.get("visual_anchor") or "").strip()
-        role = str(g.get("role") or "content_body").strip()
-        narration_function = str(g.get("narration_function") or "").strip()
-        group_lines.append(
-            f"{idx}. role={role}；文字“{visible_text}”；画面：{visual_anchor}；作用：{narration_function}。"
-        )
-    groups_str = "\n".join(group_lines)
-    beat_lines = []
-    for idx, beat in enumerate(slide.get("narration_beats", []) or [], start=1):
-        if not isinstance(beat, dict):
-            continue
-        beat_lines.append(
-            f"{idx}. 绑定 {beat.get('group_id', '')}：{beat.get('spoken_text') or beat.get('spoken_intent') or ''}"
-        )
-    beats_str = "\n".join(beat_lines) or "无"
-    main_title = slide.get("main_title", "")
-    subtitle = slide.get("subtitle", "")
-    subtitle_part = f"\n副标题：{subtitle}" if subtitle else ""
-    profile_prompt = image_prompt_profile_text(profile or read_pipeline_profile())
     style_prompt = build_image_style_prompt(read_style_tokens_data())
+    slide_id = str(slide.get("slide_id") or "").strip()
+    elements_str = "\n".join(compact_slide_element_lines(slide)) or "- 无可用视觉元素"
     return (
-        f"{profile_prompt}\n"
-        f"主标题：{main_title}{subtitle_part}\n\n"
-        f"本页演讲稿主线（生图必须优先根据这些 spoken_text 组织主体展示）：\n{beats_str}\n\n"
-        "本页设计原则：\n"
-        "- 主标题、副标题放在固定标题区；底部字幕安全区固定留白。\n"
-        "- 主体区域必须服务本页演讲稿内容，可以自由选择最清楚的表达方式，不要机械堆卡片。\n"
-        "- 先理解演讲稿要带观众完成的认知过程，再决定页面展示什么；画面不要只是罗列 visual_groups。\n"
-        "- 需要讲推理就画推理链，需要讲对象就画对象关系，需要讲步骤就画行动流程，需要讲对比就画对比结构。\n"
-        "- 所有主体元素必须清晰分离，严禁任何重叠、压字、穿插、粘连。\n\n"
-        f"本页需要出现在画面中的语义内容和 Mask 分组参考（用于确保必要内容可见与可标注，不是固定版式）：\n{groups_str}\n\n"
-        f"{style_prompt}"
+        "整体风格提示词：\n"
+        f"{style_prompt}\n\n"
+        "单页生图任务：\n"
+        "- 生成一张 16:9 PPT 静态主图。\n"
+        "- 背景必须是纯白 #FFFFFF，四条边和四个角保持连续纯白。\n"
+        "- 如果请求附带一张参考图，只把它作为整体风格、留白、层级、配色和密度参考。\n"
+        "- 只根据下面的元素清单组织画面；不要加入 narration、讲稿、制作说明或额外页面。\n"
+        "- 每个元素都要清晰分离，方便后续人工 Mask；元素之间不得重叠、穿插、压住或粘连。\n\n"
+        f"Slide ID: {slide_id}\n"
+        "元素清单（程序已从 Step 2B 精简）：\n"
+        f"{elements_str}"
     )
 
 

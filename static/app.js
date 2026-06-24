@@ -446,7 +446,7 @@ function initGlobalEvents() {
     updateImageStyleTemplateDeleteButton();
     if (event.target.value) loadSelectedImageStyleTemplate();
   });
-  ['template', 'example'].forEach(kind => {
+  ['template'].forEach(kind => {
     document.getElementById(`image-style-${kind}-file`)?.addEventListener('change', event => {
       const file = event.target.files?.[0];
       if (!file) return;
@@ -1234,12 +1234,15 @@ function renderStep2Workspace() {
             <input class="step2-soft-input" type="text" value="${escHtml(group.visible_text)}" placeholder="页面上显示的中文" oninput="updateGroupField(${gIdx}, 'visible_text', this.value)">
           </div>
           <div>
-            <label>画面真实文字</label>
-            <input class="step2-soft-input" type="text" value="${escHtml(group.display_text || '')}" placeholder="图片里要写出的文字；纯图像可留空" oninput="updateGroupField(${gIdx}, 'display_text', this.value)">
+            <label>视觉类型</label>
+            <select class="step2-soft-input" onchange="updateGroupField(${gIdx}, 'visual_type', this.value)">
+              <option value="text"${(group.visual_type || '') === 'text' ? ' selected' : ''}>text</option>
+              <option value="illustration"${(group.visual_type || 'illustration') !== 'text' ? ' selected' : ''}>illustration</option>
+            </select>
           </div>
           <div>
-            <label>视觉呈现 / 位置</label>
-            <input class="step2-soft-input" type="text" value="${escHtml(group.visual_anchor)}" placeholder="位置、形态和手绘元素" oninput="updateGroupField(${gIdx}, 'visual_anchor', this.value)">
+            <label>文字 / 画面描述</label>
+            <input class="step2-soft-input" type="text" value="${escHtml(group.visual_anchor)}" placeholder="text 写画面文字；illustration 写内容、位置和表现" oninput="updateGroupField(${gIdx}, 'visual_anchor', this.value)">
           </div>
           <div>
             <label>Mask 目标</label>
@@ -1269,14 +1272,20 @@ function copyStep2Prompts() {
   state.slides.forEach((slide) => {
     const promptInfo = slidePrompts.find(item => item.slide_id === slide.slide_id);
     const groups = (slide.visual_groups || [])
-      .map((group, index) => `${index + 1}. ${group.visible_text || '未命名'}：${group.visual_anchor || '未填写视觉描述'}`)
+      .map((group, index) => {
+        const visualType = group.visual_type || (group.display_text ? 'text' : 'illustration');
+        const description = visualType === 'text'
+          ? (group.display_text || group.visual_anchor || group.visible_text || '未填写文字')
+          : (group.visual_anchor || group.mask_target || group.visible_text || '未填写视觉描述');
+        const elementId = group.id || `el_${String(index + 1).padStart(3, '0')}`;
+        return `- slide_id=${slide.slide_id}; element_id=${elementId}; role=${group.role || 'content_body'}; visual_type=${visualType}; visual_description=${description}`;
+      })
       .join('\n');
     const prompt = promptInfo?.prompt || [
-      '请生成一张 16:9 PPT 手绘讲解页。',
-      `主标题：${slide.main_title || ''}`,
-      slide.subtitle ? `副标题：${slide.subtitle}` : '',
-      `视觉分组：\n${groups}`,
-      '使用温暖极简手绘线稿风，生图背景必须为纯白 #FFFFFF，四条边和四个角连续纯白；黑色线稿，黄色重点标记；底部 150px 留作字幕安全区。'
+      '整体风格提示词：温暖极简、清爽 PPT、留白充足、结构化表达、纯白 #FFFFFF 背景。',
+      `Slide ID: ${slide.slide_id}`,
+      `元素清单（程序已从 Step 2B 精简）：\n${groups}`,
+      '生成一张 16:9 PPT 静态主图；如果有一张参考图，只作为整体风格、留白、层级、配色和密度参考；不要加入 narration 或讲稿。'
     ].filter(Boolean).join('\n');
       
     textParts.push(`--- Slide ${slide.slide_id} ---`);
@@ -1425,7 +1434,14 @@ function storyboardRoleOptions(selectedRole) {
 function updateGroupField(gIdx, field, val) {
   const slide = state.slides[state.activeSlideIndex];
   if (slide && slide.visual_groups[gIdx]) {
-    slide.visual_groups[gIdx][field] = val;
+    const group = slide.visual_groups[gIdx];
+    group[field] = val;
+    if (field === 'visual_type') {
+      group.display_text = val === 'text' ? (group.visual_anchor || group.visible_text || '') : '';
+    }
+    if (field === 'visual_anchor' && group.visual_type === 'text') {
+      group.display_text = val;
+    }
     scheduleStep2AutoSave();
   }
 }
@@ -1440,6 +1456,8 @@ function addVisualGroup() {
     id: groupId,
     role: 'content_body',
     visible_text: '新内容块',
+    display_text: '',
+    visual_type: 'illustration',
     visual_anchor: '请描述该内容块在画面中的位置和形式',
     narration_function: '解释该内容块',
     content_unit_id: `${groupId}_unit`,
@@ -2949,7 +2967,7 @@ async function openImageStyleModal() {
   document.getElementById('image-style-ai-requirement').value = state.imageStyleAiRequirement || '';
   setAiDraftStatus('image-style-ai-draft-status', '');
   renderImageStyleAiDraftPreview();
-  ['template', 'example'].forEach(kind => {
+  ['template'].forEach(kind => {
     document.getElementById(`image-style-${kind}-file`).value = '';
   });
   document.getElementById('modal-image-style').style.display = 'flex';
@@ -2975,7 +2993,7 @@ function renderImageStyleTemplateOptions(templates, selectedId = '') {
 }
 
 function setImageStyleReferencePreviews(references = {}) {
-  ['template', 'example'].forEach(kind => {
+  ['template'].forEach(kind => {
     const preview = document.getElementById(`image-style-${kind}-preview`);
     const reference = references?.[kind];
     preview.src = reference?.exists ? reference.url : '';
@@ -3007,7 +3025,7 @@ async function loadSelectedImageStyleTemplate() {
   document.getElementById('image-style-input').value = template.style_text || '';
   populateImageStyleGuidedForm(template.style_data || {});
   setImageStyleReferencePreviews(template.references || {});
-  ['template', 'example'].forEach(kind => {
+  ['template'].forEach(kind => {
     document.getElementById(`image-style-${kind}-file`).value = '';
   });
   state.selectedImageStyleTemplateId = template.id;
@@ -3151,9 +3169,8 @@ async function persistImageStyle(options = {}) {
   }
   await Promise.all([
     uploadImageStyleReference('template'),
-    uploadImageStyleReference('example'),
   ]);
-  ['template', 'example'].forEach(kind => {
+  ['template'].forEach(kind => {
     document.getElementById(`image-style-${kind}-file`).value = '';
   });
   await refreshStep3Prompts({ updateOpenEditor: state.currentStep === 3 });
@@ -3184,7 +3201,7 @@ async function saveImageStyleTemplate() {
   state.selectedImageStyleTemplateId = res.template?.id || '';
   document.getElementById('image-style-template-name').value = res.template?.name || name;
   setImageStyleReferencePreviews(res.template?.references || {});
-  showToast(`图片风格模板“${res.template?.name || name}”已保存，包含两张参考图。`);
+  showToast(`图片风格模板“${res.template?.name || name}”已保存，包含一张模板参考图。`);
 }
 
 async function deleteSelectedImageStyleTemplate() {

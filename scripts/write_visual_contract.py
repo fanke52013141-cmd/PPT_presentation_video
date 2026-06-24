@@ -4,6 +4,9 @@
 The contract is the minimal semantic mapping source for the pipeline: slide content
 units, visual groups, narration beats, and mask targets live in one file. It is a
 runnable scaffold and still benefits from model or editorial refinement.
+
+This deterministic scaffold supports the same project-level subtitle policy used
+by the AI planner: all slides have subtitles, or no slides have subtitles.
 """
 
 from __future__ import annotations
@@ -19,6 +22,10 @@ from typing import Any
 class ContractBuildError(RuntimeError):
     pass
 
+
+SUBTITLE_POLICY_WITH_SUBTITLE = "all_slides_have_subtitle"
+SUBTITLE_POLICY_NO_SUBTITLE = "no_slides_have_subtitle"
+ALLOWED_SUBTITLE_POLICIES = {SUBTITLE_POLICY_WITH_SUBTITLE, SUBTITLE_POLICY_NO_SUBTITLE}
 
 PUNCT_RE = re.compile(r"[\s\u3000，。！？；：、,.!?;:（）()《》<>\[\]【】\"'`]+")
 SENTENCE_RE = re.compile(r"(?<=[。！？!?；;])\s*")
@@ -184,14 +191,23 @@ def key_points(text: str, count: int = 3) -> list[str]:
     return points[:count]
 
 
-def build_slide(slide_index: int, section: dict[str, Any]) -> dict[str, Any]:
+def default_layout_type(points: list[str]) -> str:
+    if len(points) >= 3:
+        return "cause_effect_chain"
+    if len(points) == 2:
+        return "left_right_comparison"
+    return "hero_diagram"
+
+
+def build_slide(slide_index: int, section: dict[str, Any], subtitle_policy: str) -> dict[str, Any]:
     slide_id = f"slide_{slide_index:03d}"
     title_text = clean_line(str(section.get("title") or f"第{slide_index}页"))[:24]
     section_text = str(section.get("text", ""))
     sentences = split_sentences(section_text)
     points = key_points(section_text, count=3)
     core = compact_summary(sentences)
-    subtitle_text = short_label(core, 16)
+    subtitle_text = short_label(core, 16) if subtitle_policy == SUBTITLE_POLICY_WITH_SUBTITLE else ""
+    layout_type = default_layout_type(points)
 
     visual_groups: list[dict[str, Any]] = [
         semantic_group(
@@ -201,26 +217,30 @@ def build_slide(slide_index: int, section: dict[str, Any]) -> dict[str, Any]:
             visible_text=title_text,
             source_text=title_text,
             visual_anchor="顶部主标题",
-            narration_function="引出本页主题，只讲主标题，不单独讲副标题。",
-            mask_target="覆盖完整主标题、标题左侧黄色标记和标题附近的强调装饰。",
-            must_include=["主标题文字", "标题左侧黄色标记", "标题强调装饰"],
-            must_not_include=["subtitle_group", "body_group_01", "summary_group"],
+            narration_function="引出本页主题。",
+            mask_target="覆盖完整主标题和标题附近的强调装饰。",
+            must_include=["主标题文字", "标题强调装饰"],
+            must_not_include=["body_group_01", "summary_group"],
             reveal_order=1,
-        ),
-        semantic_group(
-            group_id="subtitle_group",
-            content_unit_id="title_sub",
-            role="subtitle",
-            visible_text=subtitle_text,
-            source_text=core,
-            visual_anchor="标题下方副标题",
-            narration_function="辅助展示本页理解角度；是否讲解由 narration_beats 决定。",
-            mask_target="覆盖完整副标题和副标题下方装饰线。",
-            must_include=["副标题文字", "副标题装饰线"],
-            must_not_include=["title_group", "body_group_01"],
-            reveal_order=2,
-        ),
+        )
     ]
+
+    if subtitle_policy == SUBTITLE_POLICY_WITH_SUBTITLE:
+        visual_groups.append(
+            semantic_group(
+                group_id="subtitle_group",
+                content_unit_id="title_sub",
+                role="subtitle",
+                visible_text=subtitle_text,
+                source_text=core,
+                visual_anchor="标题下方副标题",
+                narration_function="辅助展示本页理解角度；是否讲解由 narration_beats 决定。",
+                mask_target="覆盖完整副标题和副标题下方装饰线。",
+                must_include=["副标题文字", "副标题装饰线"],
+                must_not_include=["title_group", "body_group_01"],
+                reveal_order=2,
+            )
+        )
 
     narration_beats: list[dict[str, Any]] = [
         narration_beat(
@@ -234,6 +254,7 @@ def build_slide(slide_index: int, section: dict[str, Any]) -> dict[str, Any]:
     ]
 
     body_group_ids: list[str] = []
+    body_order_offset = 3 if subtitle_policy == SUBTITLE_POLICY_WITH_SUBTITLE else 2
     for point_index, point in enumerate(points, start=1):
         group_id = f"body_group_{point_index:02d}"
         content_unit_id = f"body_{point_index:02d}"
@@ -250,9 +271,13 @@ def build_slide(slide_index: int, section: dict[str, Any]) -> dict[str, Any]:
                 visual_anchor=f"第{point_index}个内容区：{label}",
                 narration_function=point[:100],
                 mask_target=f"覆盖第{point_index}个内容区的完整视觉表达，包括标签、卡片/图标、局部箭头和说明文字。",
-                must_include=["内容区边界或卡片", "可见标签", "相关图标", "局部箭头或连接符", "局部说明文字"],
-                must_not_include=[gid for gid in ["title_group", "subtitle_group", "summary_group", *body_group_ids] if gid != group_id],
-                reveal_order=point_index + 2,
+                must_include=["内容区边界或视觉主体", "可见标签", "相关图标", "局部箭头或连接符", "局部说明文字"],
+                must_not_include=[
+                    gid
+                    for gid in ["title_group", "subtitle_group", "summary_group", *body_group_ids]
+                    if gid != group_id and not (subtitle_policy == SUBTITLE_POLICY_NO_SUBTITLE and gid == "subtitle_group")
+                ],
+                reveal_order=point_index + body_order_offset,
             )
         )
         narration_beats.append(
@@ -274,11 +299,11 @@ def build_slide(slide_index: int, section: dict[str, Any]) -> dict[str, Any]:
             role="summary",
             visible_text=summary_label,
             source_text=core,
-            visual_anchor="底部总结区",
+            visual_anchor="主体内容区内的总结区",
             narration_function="收束本页观点",
-            mask_target="覆盖底部总结区的完整总结标签、强调符号和总结卡片。",
+            mask_target="覆盖主体内容区内的完整总结标签、强调符号和总结卡片，不进入底部字幕安全区。",
             must_include=["总结标签", "总结卡片或强调区", "总结强调符号"],
-            must_not_include=["title_group", "subtitle_group", *body_group_ids],
+            must_not_include=["title_group", *body_group_ids],
             reveal_order=len(visual_groups) + 1,
         )
     )
@@ -299,18 +324,39 @@ def build_slide(slide_index: int, section: dict[str, Any]) -> dict[str, Any]:
         "main_title": title_text,
         "subtitle": subtitle_text,
         "core_message": core,
+        "layout_type": layout_type,
+        "visual_metaphor": "选择一个能直接解释本页核心观点的强主视觉。",
+        "composition": {
+            "primary_focus": "hero_visual",
+            "reading_order": "left_to_right",
+            "hierarchy": ["main_title", "hero_visual", "supporting_groups", "summary"],
+            "group_count": len(visual_groups),
+        },
         "visual_groups": visual_groups,
         "narration_beats": narration_beats,
     }
 
 
-def build_contract(article_path: Path, min_slides: int, max_slides: int, topic_name: str | None) -> dict[str, Any]:
+def build_contract(article_path: Path, min_slides: int, max_slides: int, topic_name: str | None, subtitle_policy: str) -> dict[str, Any]:
+    if subtitle_policy not in ALLOWED_SUBTITLE_POLICIES:
+        raise ContractBuildError(f"Unsupported subtitle policy: {subtitle_policy}")
     inferred_title, sections = parse_article(article_path)
     title = topic_name or inferred_title
     chunks = chunk_sections(sections, min_slides=min_slides, max_slides=max_slides)
-    slides = [build_slide(index, section) for index, section in enumerate(chunks, start=1)]
+    slides = [build_slide(index, section, subtitle_policy=subtitle_policy) for index, section in enumerate(chunks, start=1)]
     return {
         "version": "visual_contract_v1",
+        "presentation_policy": {
+            "subtitle_policy": subtitle_policy,
+            "subtitle_decided_by": "deterministic_scaffold",
+            "subtitle_rationale": (
+                "Scaffold default; AI storyboard generation should replace this with a project-level content decision."
+                if subtitle_policy == SUBTITLE_POLICY_NO_SUBTITLE
+                else "Scaffold was configured to include subtitles on every slide."
+            ),
+            "default_visual_group_count": "3-5",
+            "layout_diversity": "high",
+        },
         "mapping_policy": {
             "semantic_unit": "visual_group",
             "id_chain": "narration_beat.id -> content_unit_id -> visual_group.id -> reveal_manifest.group.id -> box/mask",
@@ -333,6 +379,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--topic-name")
     parser.add_argument("--min-slides", type=int, default=8)
     parser.add_argument("--max-slides", type=int, default=14)
+    parser.add_argument(
+        "--subtitle-policy",
+        choices=sorted(ALLOWED_SUBTITLE_POLICIES),
+        default=SUBTITLE_POLICY_NO_SUBTITLE,
+        help="Project-level subtitle policy for deterministic scaffold output.",
+    )
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
 
@@ -348,7 +400,13 @@ def main() -> int:
         print(f"Error: output exists, use --overwrite: {out}", file=sys.stderr)
         return 2
     try:
-        contract = build_contract(article.resolve(), min_slides=args.min_slides, max_slides=args.max_slides, topic_name=args.topic_name)
+        contract = build_contract(
+            article.resolve(),
+            min_slides=args.min_slides,
+            max_slides=args.max_slides,
+            topic_name=args.topic_name,
+            subtitle_policy=args.subtitle_policy,
+        )
         write_json(out.resolve(), contract)
     except ContractBuildError as exc:
         print(f"Error: {exc}", file=sys.stderr)

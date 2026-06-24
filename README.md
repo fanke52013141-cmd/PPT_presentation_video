@@ -112,7 +112,22 @@ python server.py
 
 ## 验证
 
-基础检查：
+CI 自动检查：
+
+pull request 到 `main` 时会运行 `.github/workflows/ci.yml` 中的低依赖检查：
+
+```powershell
+python -m compileall -q server.py scripts checks
+node --check static\app.js
+node --check static\flow.js
+node checks\test_visible_flow.js
+python scripts\check_runtime_hotfixes.py
+$env:PPT_STUDIO_MASK_SETTINGS_SECRETS = "1"; python scripts\check_runtime_settings_mask.py
+```
+
+这些检查不需要 LLM、生图、TTS API key，也不会执行真实 Remotion 渲染。
+
+本地基础检查和手动 smoke 验证：
 
 ```powershell
 .\.venv\Scripts\python.exe -m compileall -q server.py scripts checks

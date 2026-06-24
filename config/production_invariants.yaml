@@ -1,0 +1,45 @@
+version: production_invariants_v1
+
+canvas:
+  width: 1920
+  height: 1080
+  aspect_ratio: "16:9"
+
+generated_image:
+  background: "#FFFFFF"
+  require_connected_white_edges: true
+
+title:
+  required: true
+  scope: every_slide
+
+subtitle:
+  decision_mode: ai_project_global
+  consistency: all_or_none
+  allowed_policies:
+    - all_slides_have_subtitle
+    - no_slides_have_subtitle
+
+subtitle_safe_zone:
+  y_min: 930
+  y_max: 1080
+  forbid:
+    - text
+    - icon
+    - arrow
+    - label
+    - decoration
+    - shadow
+    - person
+    - partial_object
+    - visual_fragment
+
+maskability:
+  require_manual_maskable_groups: true
+  allow_group_connections: true
+  forbid:
+    - severe_overlap
+    - text_arrow_collision
+    - arrow_through_text
+    - merged_unrelated_groups
+    - tiny_dense_labels

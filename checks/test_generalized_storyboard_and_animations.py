@@ -15,6 +15,7 @@ from scripts.build_reveal_scene import build_event
 from scripts.build_remotion_props import read_subtitle_style
 from scripts.pipeline_profiles import allowed_reveal_actions, read_pipeline_profile, role_catalog
 from scripts.validate_visual_contract import validate_contract
+import server as server_module
 
 
 def main() -> None:
@@ -22,7 +23,51 @@ def main() -> None:
     roles = role_catalog(profile)
     assert all("required" not in config for config in roles.values())
     assert all("speak_policy" not in config for config in roles.values())
-    assert {"quote", "data_point", "process_step", "callout"} <= set(roles)
+
+    script_plan = {
+        "title": "测试主题",
+        "slides": [
+            {
+                "slide_id": "slide_001",
+                "slide_title": "主标题",
+                "slide_subtitle": "",
+                "body_points": [{"point_id": "point_001", "text": "正文要点", "purpose": "讲解正文"}],
+                "narration_segments": [{"segment_id": "seg_001", "narration": "这是演讲稿。", "purpose": "讲解"}],
+            }
+        ],
+    }
+    visual_plan = server_module.normalize_slide_visual_plan(
+        {
+            "slides": [
+                {
+                    "slide_id": "slide_001",
+                    "visual_elements": [
+                        {
+                            "element_id": "el_001",
+                            "role": "body",
+                            "visual_type": "text",
+                            "visual_description": "正文要点",
+                            "narration": "这是演讲稿。",
+                            "source_segment_id": "seg_001",
+                            "text": "旧字段不应进入结果",
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+    element = visual_plan["slides"][0]["visual_elements"][0]
+    assert set(element) == {"element_id", "role", "visual_type", "visual_description", "narration"}
+    assert element["element_id"] == "el_001"
+    assert element["visual_type"] == "text"
+    assert element["visual_description"] == "正文要点"
+    contract = server_module.compose_visual_contract_from_plans(script_plan, visual_plan, "test", "测试主题")
+    group = contract["slides"][0]["visual_groups"][0]
+    assert group["element_id"] == "el_001"
+    assert group["visual_type"] == "text"
+    semantic_block = server_module.deterministic_semantic_blocks("slide_001", contract["slides"][0], None)[0]
+    assert semantic_block["element_id"] == "el_001"
+    assert semantic_block["visual_type"] == "text"
 
     required_actions = {
         "wipe_left_to_right",
@@ -55,6 +100,10 @@ def main() -> None:
 
     narration_authority_contract = {
         "version": "visual_contract_v1",
+        "presentation_policy": {
+            "subtitle_policy": "no_slides_have_subtitle",
+            "subtitle_decided_by": "test",
+        },
         "slides": [
             {
                 "slide_id": "slide_001",

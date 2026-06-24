@@ -135,8 +135,11 @@
                   <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
                   AI 生成分镜
                 </button>
-                <button id="step2-btn-rules" class="secondary" style="font-size: 0.85rem; padding: 0.35rem 0.9rem;">
-                  设置分镜规则
+                <button id="step2-btn-script-prompt" class="secondary" style="font-size: 0.85rem; padding: 0.35rem 0.9rem;">
+                  Step A Prompt
+                </button>
+                <button id="step2-btn-visual-prompt" class="secondary" style="font-size: 0.85rem; padding: 0.35rem 0.9rem;">
+                  Step B Prompt
                 </button>
                 <button id="step2-btn-save" class="secondary" style="display: none; font-size: 0.85rem; padding: 0.35rem 0.9rem;">
                   <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path></svg>
@@ -166,15 +169,29 @@
           <div id="step2-editor-area" style="display: none;">
             <!-- 缩略图移至上面 -->
             
-            <!-- 当前编辑的分镜内容（只展示视觉分组）-->
+            <!-- 当前编辑的分镜内容 -->
             <div id="step2-slide-card" class="step2-slide-editor">
               <h3 style="margin-bottom: 1rem; border-bottom: 2px solid #111; padding-bottom: 0.5rem; font-size: 1rem;">
                 正在编辑：<span id="step2-current-slide-id" style="color: var(--accent-color);">--</span>
                 <span id="step2-current-slide-title" style="font-weight: normal; color: #555; margin-left: 0.5rem; font-size: 0.9rem;"></span>
-                <button class="secondary step2-add-group" type="button" onclick="addVisualGroup()">添加结构块</button>
               </h3>
-              <div id="step2-groups-list" style="display: flex; flex-direction: column; gap: 0.5rem;">
-                <!-- 分组项目 -->
+              <div id="step2-slide-fields" class="step2-slide-fields">
+                <label>
+                  <span>主标题</span>
+                  <input id="step2-slide-title-input" class="step2-soft-input" type="text">
+                </label>
+                <label>
+                  <span>副标题</span>
+                  <input id="step2-slide-subtitle-input" class="step2-soft-input" type="text">
+                </label>
+                <label>
+                  <span>正文</span>
+                  <textarea id="step2-slide-body-input" class="step2-soft-input" rows="7"></textarea>
+                </label>
+                <label>
+                  <span>演讲稿</span>
+                  <textarea id="step2-slide-narration-input" class="step2-soft-input" rows="9"></textarea>
+                </label>
               </div>
             </div>
           </div>
@@ -658,118 +675,31 @@
   <div id="modal-storyboard-rules" class="modal-overlay" style="display: none;">
     <div class="modal-content config-editor-modal">
       <div class="config-editor-scroll">
-        <h3 class="highlight-title">分镜结构、Prompt 与 Schema</h3>
-        <section class="ai-request-panel">
-          <label class="ai-requirement-field">
-            <span>告诉 AI 你想要什么分镜结构</span>
-            <textarea id="storyboard-ai-requirement" rows="5" placeholder="例如：生成适合知识科普视频的结构；短文章 4-5 页，长文章 8-10 页；优先使用流程、对比和数据结构；旁白重点解释核心结论。"></textarea>
-          </label>
-          <div class="ai-request-actions">
-            <span id="storyboard-ai-draft-status" class="ai-draft-status"></span>
-            <button id="btn-storyboard-rules-ai-draft" class="secondary ai-draft-button" type="button">AI 生成分镜结构</button>
-          </div>
-        </section>
-        <section id="storyboard-ai-draft-preview" class="ai-draft-preview" style="display: none;">
-          <div class="ai-draft-preview-header">
-            <h4>AI 草案预览</h4>
-            <span>当前配置尚未修改、尚未保存</span>
-          </div>
-          <textarea id="storyboard-ai-draft-preview-text" rows="14" readonly></textarea>
-          <div class="ai-draft-preview-actions">
-            <button id="btn-storyboard-ai-draft-discard" class="secondary" type="button">放弃草案</button>
-            <button id="btn-storyboard-ai-draft-apply" class="success" type="button">采用到编辑器</button>
-          </div>
-        </section>
-        <div class="template-manager-bar">
-          <label>
-            <span>选择模板</span>
-            <select id="storyboard-template-select"></select>
-          </label>
-          <button id="btn-storyboard-template-load" class="secondary" type="button">载入模板</button>
-          <button id="btn-storyboard-template-delete" class="danger" type="button" disabled>删除模板</button>
-          <label class="template-name-field">
-            <span>新模板名称</span>
-            <input id="storyboard-template-name" type="text" maxlength="60" placeholder="例如：知识科普分镜">
-          </label>
-          <button id="btn-storyboard-template-save" class="secondary" type="button">另存为模板</button>
-        </div>
-        <div class="config-boundary-note">
-          <strong>可以直接修改：</strong>页数范围、每页语块数、启用的结构类型、自定义分镜规则。
-          <br><strong>系统保护：</strong>JSON 层级、Slide/语块 ID、visual_groups 与 narration_beats 的绑定字段不能删除。
-        </div>
-        <div class="storyboard-guided-grid">
-          <section class="config-section-card">
-            <h4>页数和每页语块数</h4>
-            <div class="storyboard-range-grid">
-              <label><span>短文章页数</span><input id="storyboard-slide-short" type="text"></label>
-              <label><span>中文章页数</span><input id="storyboard-slide-medium" type="text"></label>
-              <label><span>长文章页数</span><input id="storyboard-slide-long" type="text"></label>
-              <label><span>短文章语块数</span><input id="storyboard-group-short" type="text"></label>
-              <label><span>中文章语块数</span><input id="storyboard-group-medium" type="text"></label>
-              <label><span>长文章语块数</span><input id="storyboard-group-long" type="text"></label>
-            </div>
-          </section>
-          <section class="config-section-card">
-            <h4>可用结构类型</h4>
-            <div class="storyboard-role-head">
-              <span>启用 / 类型</span>
-            </div>
-            <div id="storyboard-role-editor" class="storyboard-role-editor"></div>
-          </section>
-        </div>
-        <label class="storyboard-config-field storyboard-rule-field">
-          <span>自定义分镜规则（这里写你希望模型怎么拆页、怎么组织内容）</span>
-          <textarea id="storyboard-rules-input" rows="9"></textarea>
-        </label>
-        <details class="storyboard-schema-panel">
-          <summary>高级 YAML（有明确需要时再修改）</summary>
-          <p class="config-editor-note">常用设置会自动同步到 YAML。高级模式可增加角色或修改更底层的 Prompt 配置，但不能删除 storyboard 和 roles。</p>
-          <textarea id="storyboard-profile-input" rows="18" spellcheck="false"></textarea>
-        </details>
-        <details class="storyboard-schema-panel">
-          <summary>查看当前 JSON Schema</summary>
-          <textarea id="storyboard-schema-input" rows="16" readonly spellcheck="false"></textarea>
-        </details>
-        <details class="storyboard-schema-panel">
-          <summary>查看完整 System Content + User Content</summary>
-          <textarea id="storyboard-prompt-preview" rows="16" readonly spellcheck="false"></textarea>
-        </details>
-        <details class="storyboard-schema-panel" open>
-          <summary>Narration-first Step 2A / Step 2B Prompt</summary>
-          <p class="config-editor-note">Step 2A 生成每页标题、正文要点和演讲稿；Step 2B 根据演讲稿反推画面语义块。Output Example 会自动拼接到 System Content 的 &lt;OutputExample&gt; 中。</p>
+        <h3 id="storyboard-prompt-modal-title" class="highlight-title">Step A Prompt</h3>
+        <div id="step2-script-prompt-section">
           <label class="storyboard-config-field storyboard-rule-field">
-            <span>Step 2A System Prompt（生成 Slide 标题、正文要点和演讲稿）</span>
+            <span>Step A System Content</span>
             <textarea id="step2-script-system-prompt" rows="10" spellcheck="false"></textarea>
           </label>
           <label class="storyboard-config-field storyboard-rule-field">
-            <span>Step 2A Output Example</span>
+            <span>Step A Output Example</span>
             <textarea id="step2-script-output-example" rows="10" spellcheck="false"></textarea>
           </label>
+        </div>
+        <div id="step2-visual-prompt-section">
           <label class="storyboard-config-field storyboard-rule-field">
-            <span>Step 2B System Prompt（根据演讲稿规划视觉语义块）</span>
+            <span>Step B System Prompt</span>
             <textarea id="step2-visual-system-prompt" rows="10" spellcheck="false"></textarea>
           </label>
           <label class="storyboard-config-field storyboard-rule-field">
-            <span>Step 2B Output Example</span>
+            <span>Step B Output Example</span>
             <textarea id="step2-visual-output-example" rows="10" spellcheck="false"></textarea>
           </label>
-          <label class="storyboard-config-field storyboard-rule-field">
-            <span>最终发送给 LLM 的 Step 2A System Content</span>
-            <textarea id="step2-script-composed-prompt" rows="10" readonly spellcheck="false"></textarea>
-          </label>
-          <label class="storyboard-config-field storyboard-rule-field">
-            <span>最终发送给 LLM 的 Step 2B System Content</span>
-            <textarea id="step2-visual-composed-prompt" rows="10" readonly spellcheck="false"></textarea>
-          </label>
-        </details>
+        </div>
       </div>
       <div class="config-editor-actions">
-        <button id="btn-storyboard-schema-copy" class="secondary">复制 JSON Schema</button>
-        <button id="btn-storyboard-rules-copy-full" class="secondary">生成并复制完整请求</button>
         <button id="btn-step2-prompts-save" class="secondary">保存 Step 2 Prompt</button>
         <button id="btn-storyboard-rules-cancel" class="secondary">取消</button>
-        <button id="btn-storyboard-rules-save" class="success">保存规则</button>
-        <button id="btn-storyboard-rules-save-regenerate" class="success">保存并重新规划</button>
       </div>
     </div>
   </div>
@@ -778,27 +708,6 @@
     <div class="modal-content config-editor-modal">
       <div class="config-editor-scroll">
         <h3 class="highlight-title">图片风格与参考图</h3>
-        <section class="ai-request-panel">
-          <label class="ai-requirement-field">
-            <span>告诉 AI 你想要什么图片风格</span>
-            <textarea id="image-style-ai-requirement" rows="5" placeholder="例如：现代中国水墨科普风格，黑白线稿配少量朱红色点缀；构图留白充足，流程图清晰；不要 3D、渐变、摄影质感和复杂背景。"></textarea>
-          </label>
-          <div class="ai-request-actions">
-            <span id="image-style-ai-draft-status" class="ai-draft-status"></span>
-            <button id="btn-image-style-ai-draft" class="secondary ai-draft-button" type="button">AI 生成图片风格</button>
-          </div>
-        </section>
-        <section id="image-style-ai-draft-preview" class="ai-draft-preview" style="display: none;">
-          <div class="ai-draft-preview-header">
-            <h4>AI 草案预览</h4>
-            <span>当前风格尚未修改、尚未保存</span>
-          </div>
-          <textarea id="image-style-ai-draft-preview-text" rows="14" readonly></textarea>
-          <div class="ai-draft-preview-actions">
-            <button id="btn-image-style-ai-draft-discard" class="secondary" type="button">放弃草案</button>
-            <button id="btn-image-style-ai-draft-apply" class="success" type="button">采用到编辑器</button>
-          </div>
-        </section>
         <div class="template-manager-bar">
           <label>
             <span>选择模板</span>
@@ -812,53 +721,15 @@
           </label>
           <button id="btn-image-style-template-save" class="secondary" type="button">另存为模板</button>
         </div>
-        <div class="config-boundary-note">
-          直接填写下面的风格词即可，不需要遵守 YAML 格式。系统固定 1920×1080、16:9、纯白背景、顶部主标题/副标题区和底部字幕安全区；主体内容区可自由发挥，但元素严禁重叠，保证后续 Mask 稳定。
-        </div>
-        <div class="image-style-guided-grid">
-          <label>
-            <span>整体风格词（每行一个）</span>
-            <textarea id="image-style-keywords" rows="6" placeholder="例如：温暖极简&#10;杂志拼贴&#10;中国水墨"></textarea>
-          </label>
-          <label>
-            <span>画面表现方式</span>
-            <input id="image-style-visual-style" type="text" placeholder="例如：editorial_collage / chinese_ink_painting">
-          </label>
-          <label>
-            <span>图示与流程图风格</span>
-            <input id="image-style-diagram-style" type="text" placeholder="例如：clean_infographic">
-          </label>
-          <label>
-            <span>Mask 友好版式规则（每行一个）</span>
-            <textarea id="image-style-layout-rules" rows="6"></textarea>
-          </label>
-          <label>
-            <span>明确避免（每行一个）</span>
-            <textarea id="image-style-avoid" rows="6"></textarea>
-          </label>
-        </div>
-        <details class="storyboard-schema-panel">
-          <summary>高级 YAML（会覆盖上方常用设置）</summary>
-          <label class="advanced-config-toggle">
-            <input id="image-style-use-advanced" type="checkbox">
-            <span>本次保存使用高级 YAML</span>
-          </label>
+        <label class="storyboard-config-field storyboard-rule-field">
+          <span>图片生成 System Content</span>
           <textarea id="image-style-input" rows="18" spellcheck="false"></textarea>
-          <div class="advanced-validation-row">
-            <button id="btn-image-style-validate" class="secondary" type="button">校验 YAML</button>
-            <span id="image-style-validation-status"></span>
-          </div>
-        </details>
+        </label>
         <div class="reference-image-grid">
           <label class="reference-image-item">
             <span>模板参考图（可替换）</span>
             <img id="image-style-template-preview" alt="模板参考图">
             <input id="image-style-template-file" type="file" accept="image/*">
-          </label>
-          <label class="reference-image-item">
-            <span>示例参考图（可替换）</span>
-            <img id="image-style-example-preview" alt="示例参考图">
-            <input id="image-style-example-file" type="file" accept="image/*">
           </label>
         </div>
       </div>
@@ -874,7 +745,7 @@
       <div class="subtitle-settings-header">
         <div>
           <h3 class="highlight-title">字幕样式与位置</h3>
-          <p class="config-editor-note">优先使用当前项目第一张 Slide；没有 Slide 时使用图片风格中的示例参考图。预览样式会直接进入最终视频。</p>
+          <p class="config-editor-note">优先使用当前项目第一张 Slide；没有 Slide 时使用图片风格中的模板参考图。预览样式会直接进入最终视频。</p>
         </div>
         <button id="btn-subtitle-settings-close" class="secondary" type="button">关闭</button>
       </div>

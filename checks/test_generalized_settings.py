@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression checks for guided storyboard/style settings and unified animation UI."""
+"""Regression checks for prompt-based Step 2/style settings and unified animation UI."""
 
 from pathlib import Path
 import sys
@@ -152,39 +152,67 @@ def main() -> None:
     html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
     app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
     css = (ROOT / "static" / "style.css").read_text(encoding="utf-8")
+    step2_visual_prompt = (ROOT / "templates" / "prompts" / "step2_visual_system.md").read_text(encoding="utf-8")
     assert 'id="step5-btn-animation-settings"' in html
     assert 'id="modal-animation-settings"' in html
     assert 'id="subtitle-font-weight"' in html
-    assert 'id="storyboard-template-select"' in html
+    assert 'id="step2-btn-script-prompt"' in html
+    assert 'id="step2-btn-visual-prompt"' in html
+    assert 'id="step2-script-system-prompt"' in html
+    assert 'id="step2-script-output-example"' in html
+    assert 'id="step2-visual-system-prompt"' in html
+    assert 'id="step2-visual-output-example"' in html
+    assert 'id="step2-slide-title-input"' in html
+    assert 'id="step2-slide-subtitle-input"' in html
+    assert 'id="step2-slide-body-input"' in html
+    assert 'id="step2-slide-narration-input"' in html
     assert 'id="image-style-template-select"' in html
-    assert 'id="btn-storyboard-rules-ai-draft"' in html
-    assert 'id="btn-image-style-ai-draft"' in html
+    assert 'id="image-style-input"' in html
+    assert 'id="image-style-template-file"' in html
     assert 'id="modal-step2-generate"' in html
     assert 'id="step2-generation-requirement"' in html
-    assert 'id="storyboard-ai-requirement"' in html
-    assert 'id="storyboard-ai-draft-preview"' in html
-    assert 'id="image-style-ai-requirement"' in html
-    assert 'id="image-style-ai-draft-preview"' in html
     assert 'id="subtitle-safe-width-guide"' in html
+    for removed_token in [
+        'storyboard-template-select',
+        'storyboard-rules-input',
+        'storyboard-profile-input',
+        'storyboard-schema-input',
+        'btn-storyboard-rules-ai-draft',
+        'btn-image-style-ai-draft',
+        'image-style-use-advanced',
+        'image-style-validation-status',
+        'step2-groups-list',
+    ]:
+        assert removed_token not in html
     assert "mask-animation-card" not in app_js
-    assert "generateStoryboardRulesAiDraft" in app_js
-    assert "generateImageStyleAiDraft" in app_js
-    assert "applyStoryboardAiDraft" in app_js
-    assert "discardStoryboardAiDraft" in app_js
-    assert "applyImageStyleAiDraft" in app_js
-    assert "discardImageStyleAiDraft" in app_js
-    assert "AI 生成分镜" in app_js
-    assert "rules/ai-draft" in app_js
-    assert "image-style/ai-draft" in app_js
+    for removed_token in [
+        "generateStoryboardRulesAiDraft",
+        "generateImageStyleAiDraft",
+        "applyStoryboardAiDraft",
+        "discardStoryboardAiDraft",
+        "applyImageStyleAiDraft",
+        "discardImageStyleAiDraft",
+        "storyboardRoleOptions",
+        "addVisualGroup",
+        "source_segment_id",
+        "rules/ai-draft",
+        "image-style/ai-draft",
+    ]:
+        assert removed_token not in app_js
+    assert "source_segment_id" not in step2_visual_prompt
+    assert "不要输出 text" in step2_visual_prompt
+    assert "visual_type 与 visual_description 已经足够表达画面内容" in step2_visual_prompt
+    assert server_module.IMAGE_STYLE_PROMPT_KEY == "prompt_system_content"
     assert "previewGlobalAnimationSettings" in app_js
     assert ".config-editor-scroll" in css
-    assert ".ai-draft-status" in css
-    assert ".ai-request-panel" in css
-    assert ".ai-draft-preview" in css
+    assert ".mask-visual-card" in css
+    assert ".ai-draft-status" not in css
+    assert ".ai-request-panel" not in css
+    assert ".ai-draft-preview" not in css
     route_paths = [getattr(route, "path", "") for route in server_module.app.routes]
-    assert route_paths.count("/api/projects/{project_id}/steps/2/prompt-preview") == 1
-    assert "/api/projects/{project_id}/steps/2/rules/ai-draft" in route_paths
-    assert "/api/projects/{project_id}/steps/3/image-style/ai-draft" in route_paths
+    assert route_paths.count("/api/projects/{project_id}/steps/2/prompts") == 2
+    assert "/api/projects/{project_id}/steps/2/rules/ai-draft" not in route_paths
+    assert "/api/projects/{project_id}/steps/3/image-style/ai-draft" not in route_paths
     assert list_storyboard_templates()[0]["id"] == "default"
     assert image_style_template_detail("default")["references"]["template"]["exists"]
     font_keys = {font["key"] for font in OPEN_SOURCE_CHINESE_FONTS}
@@ -221,7 +249,6 @@ def main() -> None:
             server_module.ensure_active_image_style_storage()
             saved_image = server_module.save_image_style_template({"name": "回归图片模板"})
             assert saved_image["template"]["references"]["template"]["exists"]
-            assert saved_image["template"]["references"]["example"]["exists"]
     finally:
         for key, value in original_paths.items():
             setattr(server_module, key, value)

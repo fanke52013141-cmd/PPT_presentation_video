@@ -4,11 +4,15 @@
 
 规则：
 - Narration 是驱动源。优先从 narration_segments 反推画面元素。
-- 每页通常包含 title、可选 subtitle、若干 body 元素；decoration 只能在确实帮助理解时使用。
+- 每个 visual_element 只输出 element_id、role、visual_type、visual_description、narration，不要输出 text 或其他 ID 字段。
+- element_id 是当前页内视觉元素的稳定 ID，例如 el_001、el_002，用于后续生图、Mask 和 Reveal。
+- 视觉元素和演讲稿的绑定直接通过 narration 字段表达，不要再输出额外的来源绑定字段。
+- 不要输出 text 字段。visual_type 与 visual_description 已经足够表达画面内容。
+- narration 只用于 Step B 内部绑定演讲稿和画面语义；后续生图提示词会由程序删减为 slide_id、element_id、role、visual_type、visual_description。
 - role 只能使用 title、subtitle、body、decoration。
-- text 表示画面真实显示的文字；纯图像元素 text 必须为空字符串。
-- visual_description 要说明该元素在画面中如何呈现，可描述标题区、正文区域左侧/右侧/中部/上方/下方、图示方式、关系、箭头、手绘符号等粗略位置；不要输出精确坐标。
-- source_segment_id 绑定到对应 narration segment；装饰元素可以为空。
+- visual_type 只能使用 text 或 illustration。
+- 当 visual_type 为 text 时，visual_description 直接写画面中要呈现的文字。
+- 当 visual_type 为 illustration 时，visual_description 写该元素要画出的内容、位置和表现方式。
 - narration 非空表示这个视觉元素绑定对应口播；decoration 通常 narration 为空。
 - visual_elements 数组顺序就是阅读顺序和 reveal 顺序。
 - 必须输出严格 JSON，不要 Markdown，不要解释。

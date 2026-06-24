@@ -1,6 +1,6 @@
 # Visual Draft Prompt Template
 
-Use this template to generate one complete Image Gen slide. Optional manual Masks may later reveal selected visual groups, but the source remains one approved full-slide bitmap.
+Use this template to generate one complete Image Gen slide. Optional manual Masks may later reveal selected visual anchors, but the source remains one approved full-slide bitmap.
 
 ## Production Invariants
 
@@ -15,25 +15,21 @@ These rules are fixed and cannot be changed by a style profile:
   - If `no_slides_have_subtitle`, no page renders a subtitle, subtitle underline, or subtitle placeholder.
 - Keep y=930..1080 completely empty for video subtitles.
 - Do not place text, icons, arrows, labels, decorations, shadows, partial objects, or visual fragments in y=930..1080.
-- Avoid severe overlap, text-arrow collision, arrow-through-text, merged unrelated groups, and tiny dense labels.
-- Semantic groups must remain manually maskable.
+- Avoid severe overlap, text-arrow collision, arrow-through-text, merged unrelated regions, and tiny dense labels.
+- The page must remain manually maskable, but Mask convenience must not force a rigid block layout.
 
 ## Inputs
 
 - Slide ID: `{{slide_id}}`
-- Page purpose: `{{slide_purpose}}`
 - Main title: `{{main_title}}`
 - Subtitle policy: `{{subtitle_policy}}`
 - Subtitle: `{{subtitle}}`
 - Core message: `{{core_message}}`
-- Layout type: `{{layout_type}}`
-- Visual metaphor: `{{visual_metaphor}}`
-- Composition: `{{composition}}`
-- Content type: `{{content_type}}`
-- Layout intent: `{{layout_intent}}`
-- Content items: `{{content_items}}`
+- Body content: `{{body_content}}`
+- Visual intent: `{{visual_intent}}`
 - Narration: `{{narration}}`
-- Narration beats: `{{narration_beats}}`
+- Optional narration beats: `{{narration_beats}}`
+- Optional visual anchors: `{{visual_groups}}`
 - Style profile: `{{style_profile}}`
 
 ## Image Gen Request
@@ -45,32 +41,31 @@ Use the fixed style references:
 - `references/style_reference/PPT模板.png`
 - `references/style_reference/PPT示例.png`
 
-The image must contain all PPT body visuals as bitmap content: title, optional subtitle when policy allows it, cards, icons, arrows, formulas, diagrams, labels, and summary text. Remotion will not draw these later.
+The image must contain all PPT body visuals as bitmap content: title, optional subtitle when policy allows it, body content, icons, arrows, diagrams, labels, and emphasis marks. Remotion will not draw these later.
 
-## Narration Binding
+## Narration-First Design
 
-The image must support the narration beats in order.
+Design the whole page from the narration and body content. Do not first split the page into fixed roles such as diagram, data, process, quote, or summary.
 
-- Every important narration beat should map to one visible macro group.
-- The narration expands the visible content; it must not be unrelated to the page.
-- Later beats can be represented by later visual groups or a summary group.
-- Do not show all beats as equally important. Use visual hierarchy to match the speaking order.
+- The narration is the source of truth.
+- Body content is the only planned content category besides title and optional subtitle.
+- Choose the best visual expression freely: scene, diagram, metaphor, cards, timeline, comparison, icon cluster, or a mixed layout.
+- Use visual hierarchy to support the speaking order, but do not make every beat an equal isolated card.
+- Optional visual anchors are post-design review handles for Mask/Reveal, not a pre-generation layout template.
 
 ## Mask-Friendly Layout Rules
 
-Design the image so visual groups can be painted cleanly with a manual Mask:
+Design the image so important regions can be painted cleanly with a manual Mask:
 
-- Use 2-6 meaningful semantic visual groups.
-- Prefer one dominant hero visual plus several supporting elements when it improves expression.
-- Groups may be connected by clean arrows, brackets, timelines, or flow paths.
-- Do not create many isolated cards unless the content is truly a list, comparison, or checklist.
-- Keep enough clean white background around each semantic group for manual Mask painting.
+- Prefer one coherent main visual plus supporting details when it improves expression.
+- Use 2-5 loose visual anchors after the page is composed; fewer is acceptable if the page reads clearly.
+- Connections between ideas are allowed: arrows, brackets, paths, timelines, or flow lines.
+- Do not create many isolated cards unless the narration truly calls for a list, comparison, or checklist.
+- Keep enough clean white background around important regions for manual Mask painting.
 - Do not place text on top of arrows, icons, card borders, labels, or formulas.
 - Do not let arrows pierce through text or touch label strokes.
-- If a label, arrow, and icon are inseparable, keep them visually in the same macro group.
 - Keep the bottom subtitle-safe area empty. At 1920x1080, no content or decoration should extend below `y=930`.
-- Avoid many tiny labels. Prefer fewer, larger, readable groups.
-- Do not add a large enclosing rounded content frame around the whole middle area unless the active style explicitly uses it and it does not harm Masking.
+- Avoid many tiny labels. Prefer fewer, larger, readable elements.
 
 ## Style
 
@@ -89,7 +84,7 @@ The active style profile may change typography, line style, icon style, diagram 
 ## Negative Requirements
 
 - No crowded center layout.
-- No overlapping macro groups.
+- No severe overlap.
 - No tiny unreadable text.
 - No dark full-page background or 3D render.
 - No paper texture, background noise, shadow, gradient, vignette, or off-white outer canvas.

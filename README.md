@@ -29,6 +29,21 @@ python -m venv .venv
 5. 编辑旁白、生成音频并试听确认。
 6. 渲染、下载和删除视频。
 
+### 用户步骤与内部 API 步骤映射
+
+用户界面现在固定为 6 个可见步骤，但后端和历史检查脚本仍保留内部 Step 编号。维护时按下表对齐口径：
+
+| 用户可见步骤 | 内部 API / 产物阶段 | 主要产物 |
+| --- | --- | --- |
+| Step 1 导入文章 | Step 1 import | `inputs/article.md`, `planning/article_brief.json` |
+| Step 2 分镜规划 | Step 2 storyboard / visual contract | `planning/visual_contract.json` |
+| Step 3 图片生成/上传 | Step 3 images + Step 4 image confirmation | `slides/<slide_id>/visual_draft.png`, `reveal_manifest.json` |
+| Step 4 Mask | Step 5 reveal manifest / mask assets | `reveal_manifest.json`, reveal layer assets |
+| Step 5 旁白与音频 | Step 6 narration + Step 7 TTS/audio confirmation | `planning/narration_beats.json`, `voice.mp3`, subtitles/timelines |
+| Step 6 视频渲染 | Step 8 Remotion render | `remotion_props.json`, rendered video + `.render.json` sidecar |
+
+文档、检查脚本和代码注释中如出现 Step 5/6/7/8，默认指内部 API 编号；面向用户的说明应优先使用 6 步流程。
+
 ## 当前 Mask 渲染规则
 
 生产管线固定为 `manual_mask_boundary_white_v4`：
@@ -82,6 +97,19 @@ outputs/                   本地交付文件，不提交
 
 设置保存在本机数据库中。不要把真实凭据写入 Git。
 
+### 安全模式说明
+
+默认模式面向本机开发和本地使用。若把服务暴露到局域网或公网，必须开启运行时访问控制和密钥脱敏：
+
+```bash
+export PPT_STUDIO_ACCESS_TOKEN="replace-with-long-random-token"
+export PPT_STUDIO_MASK_SETTINGS_SECRETS=1
+export PPT_STUDIO_ALLOWED_ORIGINS="http://127.0.0.1:8000,http://localhost:8000"
+python server.py
+```
+
+当前访问控制仍通过 runtime bridge 注入，迁移计划见 `docs/runtime_hotfixes_and_security.md` 和 issue #7。
+
 ## 验证
 
 基础检查：
@@ -124,3 +152,10 @@ Pop-Location
 - `logs/**`
 - `data/**`
 - 音视频、字幕、API Key 或 `.env`
+
+## 维护注意事项
+
+- `sitecustomize.py`、`usercustomize.py`、`runtime_security.py` 和 `runtime_settings_mask.py` 是临时 runtime bridge，不应继续扩大职责。
+- 新修复优先落在 `server.py`、`static/**` 或正常启动路径中；只有无法安全改大文件时才使用 runtime bridge。
+- 已合并且相对 `main` 没有 ahead commits 的临时分支可以清理。
+- `scripts/remotion` 目前没有提交 lockfile；需要可复现渲染时，应生成并提交 `package-lock.json`，再把验证命令改为 `npm ci`。

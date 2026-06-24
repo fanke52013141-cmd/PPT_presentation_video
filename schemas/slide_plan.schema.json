@@ -4,6 +4,21 @@
   "type": "object",
   "required": ["topic", "slides"],
   "properties": {
+    "presentation_policy": {
+      "type": "object",
+      "required": ["subtitle_policy"],
+      "properties": {
+        "subtitle_policy": {
+          "type": "string",
+          "enum": ["all_slides_have_subtitle", "no_slides_have_subtitle"]
+        },
+        "subtitle_decided_by": {"type": "string"},
+        "subtitle_rationale": {"type": "string"},
+        "default_visual_group_count": {"type": "string"},
+        "layout_diversity": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
     "topic": {
       "type": "object",
       "required": ["topic_id", "topic_name", "topic_summary"],
@@ -22,7 +37,6 @@
           "slide_id",
           "slide_purpose",
           "main_title",
-          "subtitle",
           "core_message",
           "content",
           "narration"
@@ -33,6 +47,18 @@
           "main_title": {"type": "string"},
           "subtitle": {"type": "string"},
           "core_message": {"type": "string"},
+          "layout_type": {"type": "string"},
+          "visual_metaphor": {"type": "string"},
+          "composition": {
+            "type": "object",
+            "properties": {
+              "primary_focus": {"type": "string"},
+              "reading_order": {"type": "string"},
+              "hierarchy": {"type": "array", "items": {"type": "string"}},
+              "group_count": {"type": ["number", "string"]}
+            },
+            "additionalProperties": true
+          },
           "content": {
             "type": "object",
             "required": ["content_type", "layout_intent", "items"],

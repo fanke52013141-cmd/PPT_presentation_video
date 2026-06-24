@@ -39,6 +39,7 @@ maskability:
   allow_group_connections: true
   forbid:
     - severe_overlap
+    - any_element_overlap
     - text_arrow_collision
     - arrow_through_text
     - merged_unrelated_groups

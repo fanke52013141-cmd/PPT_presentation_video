@@ -27,7 +27,35 @@ ALLOWED_SUBTITLE_POLICIES = {SUBTITLE_POLICY_WITH_SUBTITLE, SUBTITLE_POLICY_NO_S
 
 PUNCT_RE = re.compile(r"[\s\u3000，。！？；：、,.!?;:（）()《》<>\[\]【】\"'`]+")
 SENTENCE_RE = re.compile(r"(?<=[。！？!?；;])\s*")
+CLAUSE_RE = re.compile(r"[，,]\s*")
 HEADING_RE = re.compile(r"^(#{1,3})\s+(.+?)\s*$")
+NUMBERED_HEADING_RE = re.compile(
+    r"^(?:第?[一二三四五六七八九十百千万\d]+[章节部分、.．]\s*)(.+?)\s*$"
+)
+TERMINAL_PUNCT_RE = re.compile(r"[。！？!?；;，,、：:]$")
+PLAIN_HEADING_KEYWORDS = (
+    "定义",
+    "对比",
+    "流程",
+    "组件",
+    "总结",
+    "价值",
+    "方法",
+    "步骤",
+    "规则",
+    "触发器",
+    "生成器",
+    "评估器",
+    "反馈",
+    "修正",
+    "终止",
+    "升级",
+    "Trigger",
+    "Generator",
+    "Evaluator",
+    "Repair",
+    "Stop",
+)
 
 
 def write_json(path: Path, value: dict[str, Any]) -> None:
@@ -47,6 +75,39 @@ def strip_markdown(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def looks_like_document_title(line: str) -> bool:
+    line = clean_line(strip_markdown(line))
+    if not line:
+        return False
+    if len(line) > 90:
+        return False
+    if any(token in line for token in ("完整解读", "指南", "教程", "解析", "科普", "方案")):
+        return True
+    return not TERMINAL_PUNCT_RE.search(line) and len(PUNCT_RE.sub("", line)) <= 42
+
+
+def extract_heading_text(line: str) -> str | None:
+    line = clean_line(line)
+    if not line:
+        return None
+    match = HEADING_RE.match(line)
+    if match:
+        return clean_line(match.group(2))
+    match = NUMBERED_HEADING_RE.match(line)
+    if match:
+        return clean_line(match.group(1))
+    if TERMINAL_PUNCT_RE.search(line):
+        return None
+    plain = clean_line(strip_markdown(line))
+    if not plain or len(PUNCT_RE.sub("", plain)) > 34:
+        return None
+    if any(keyword in plain for keyword in PLAIN_HEADING_KEYWORDS):
+        return plain
+    if re.search(r"[A-Za-z]{2,}", plain) and len(plain) <= 28:
+        return plain
+    return None
+
+
 def split_sentences(text: str) -> list[str]:
     plain = strip_markdown(text)
     parts = [clean_line(part) for part in SENTENCE_RE.split(plain) if clean_line(part)]
@@ -56,7 +117,11 @@ def split_sentences(text: str) -> list[str]:
 
 
 def short_label(text: str, max_chars: int = 9) -> str:
-    text = PUNCT_RE.sub("", text)
+    text = clean_line(strip_markdown(text))
+    text = re.split(r"[。！？!?；;：:\n]", text, maxsplit=1)[0]
+    text = re.sub(r"^[\-—•·\d一二三四五六七八九十、.．\s]+", "", text).strip()
+    text = re.sub(r"^(是|为|核心是|核心在于)\s*", "", text).strip()
+    text = re.sub(r"\s+", " ", text)
     if not text:
         return "关键点"
     return text[:max_chars]
@@ -79,16 +144,32 @@ def parse_article(path: Path) -> tuple[str, list[dict[str, Any]]]:
     sections: list[dict[str, Any]] = []
     current_title = ""
     current_lines: list[str] = []
-    for raw_line in raw.splitlines():
+
+    lines = [line.rstrip() for line in raw.splitlines()]
+    start_index = 0
+    for index, raw_line in enumerate(lines):
         line = raw_line.strip()
+        if not line:
+            continue
         match = HEADING_RE.match(line)
         if match:
-            if not title or title == path.stem:
-                title = clean_line(match.group(2))
+            title = clean_line(match.group(2))
+            start_index = index + 1
+            break
+        if looks_like_document_title(line):
+            title = clean_line(strip_markdown(line))
+            start_index = index + 1
+            break
+        break
+
+    for raw_line in lines[start_index:]:
+        line = raw_line.strip()
+        heading = extract_heading_text(line)
+        if heading:
             if current_lines:
                 sections.append({"title": current_title or title, "text": "\n".join(current_lines)})
                 current_lines = []
-            current_title = clean_line(match.group(2))
+            current_title = heading
             continue
         if line:
             current_lines.append(line)
@@ -99,15 +180,68 @@ def parse_article(path: Path) -> tuple[str, list[dict[str, Any]]]:
     return title, sections
 
 
+def split_long_section(section: dict[str, Any], sentences_per_slide: int = 2) -> list[dict[str, Any]]:
+    section_text = str(section.get("text", ""))
+    sentences = split_sentences(section_text)
+    if len(sentences) <= sentences_per_slide:
+        return [section]
+    chunks: list[dict[str, Any]] = []
+    for index in range(0, len(sentences), sentences_per_slide):
+        part = sentences[index : index + sentences_per_slide]
+        if not part:
+            continue
+        title = str(section.get("title") or "").strip()
+        if index:
+            title = short_label(part[0], 18)
+        chunks.append({"title": title or short_label(part[0], 18), "text": " ".join(part)})
+    return chunks or [section]
+
+
+def merge_section_group(group: list[dict[str, Any]]) -> dict[str, Any]:
+    titles = [clean_line(str(item.get("title") or "")) for item in group if clean_line(str(item.get("title") or ""))]
+    body_parts: list[str] = []
+    for item in group:
+        title = clean_line(str(item.get("title") or ""))
+        text = clean_line(str(item.get("text") or ""))
+        if not text:
+            continue
+        if title and title not in text:
+            body_parts.append(f"{title}：{text}")
+        else:
+            body_parts.append(text)
+    merged_title = " / ".join(titles[:2]) if titles else "关键内容"
+    return {"title": merged_title[:30].rstrip(" /-—：:，,、"), "text": "\n".join(body_parts)}
+
+
+def merge_overflow_sections(sections: list[dict[str, Any]], max_slides: int) -> list[dict[str, Any]]:
+    if len(sections) <= max_slides:
+        return sections
+    preserve_count = 2 if max_slides >= 4 else 1
+    result = sections[:preserve_count]
+    remaining = sections[preserve_count:]
+    slots = max(1, max_slides - len(result))
+    group_size = max(1, -(-len(remaining) // slots))
+    for index in range(0, len(remaining), group_size):
+        result.append(merge_section_group(remaining[index : index + group_size]))
+    return result[:max_slides]
+
+
 def chunk_sections(sections: list[dict[str, Any]], min_slides: int, max_slides: int) -> list[dict[str, Any]]:
+    if len(sections) > max_slides:
+        return merge_overflow_sections(sections, max_slides)
     if len(sections) >= min_slides:
         return sections[:max_slides]
-    all_sentences: list[str] = []
+    expanded: list[dict[str, Any]] = []
     for section in sections:
+        expanded.extend(split_long_section(section))
+    if len(expanded) >= min_slides:
+        return expanded[:max_slides]
+    all_sentences: list[str] = []
+    for section in expanded or sections:
         all_sentences.extend(split_sentences(str(section.get("text", ""))))
     target = min(max(min_slides, len(sections)), max_slides)
     if len(all_sentences) < target:
-        return sections
+        return (expanded or sections)[:max_slides]
     chunks: list[dict[str, Any]] = []
     size = max(1, round(len(all_sentences) / target))
     for index in range(0, len(all_sentences), size):
@@ -121,6 +255,21 @@ def chunk_sections(sections: list[dict[str, Any]], min_slides: int, max_slides: 
 def key_points(text: str, count: int = 3) -> list[str]:
     sentences = split_sentences(text)
     points = [sentence for sentence in sentences if len(PUNCT_RE.sub("", sentence)) >= 6]
+    if len(points) < count:
+        clauses = [
+            clean_line(part)
+            for sentence in sentences or [strip_markdown(text)]
+            for part in CLAUSE_RE.split(sentence)
+            if len(PUNCT_RE.sub("", clean_line(part))) >= 8
+        ]
+        if len(points) == 1 and len(points[0]) > 100 and clauses:
+            points = clauses[:count]
+        else:
+            for clause in clauses:
+                if clause not in points:
+                    points.append(clause)
+                if len(points) >= count:
+                    break
     if not points:
         points = sentences or [text]
     return points[:count]
@@ -162,9 +311,31 @@ def narration_beat(beat_id: str, group_id: str, visible_anchor: str, spoken_inte
     }
 
 
+def readable_slide_title(raw_title: str, slide_index: int) -> str:
+    title = clean_line(strip_markdown(raw_title))
+    if "Loop Engineering" in title and "循环工程" in title:
+        return "Loop Engineering：循环工程"
+    if not title:
+        return f"第{slide_index}页"
+    return title[:24].rstrip(" /-—：:，,、")
+
+
+def infer_role(point: str, point_index: int) -> str:
+    text = clean_line(point)
+    if any(token in text for token in ("原话", "引用", "金句", "我不再")):
+        return "quote"
+    if any(token in text for token in ("Trigger", "Generator", "Evaluator", "Repair", "Stop", "触发器", "生成器", "评估器", "反馈修正", "终止")):
+        return "process_step"
+    if any(token in text for token in ("对比", "流程", "闭环", "链路", "→", "->")):
+        return "diagram"
+    if re.search(r"\d", text):
+        return "data_point" if point_index != 1 else "content_body"
+    return "content_body"
+
+
 def build_slide(slide_index: int, section: dict[str, Any], subtitle_policy: str) -> dict[str, Any]:
     slide_id = f"slide_{slide_index:03d}"
-    title_text = clean_line(str(section.get("title") or f"第{slide_index}页"))[:24]
+    title_text = readable_slide_title(str(section.get("title") or f"第{slide_index}页"), slide_index)
     section_text = str(section.get("text", ""))
     sentences = split_sentences(section_text)
     points = key_points(section_text, count=3)

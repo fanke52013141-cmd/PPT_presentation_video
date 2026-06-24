@@ -224,6 +224,7 @@ def production_invariant_lines(invariants: dict[str, Any], policy: dict[str, Any
         f"- Main title to render: \"{title}\".",
         *subtitle_prompt_lines(policy, slide),
         f"- Keep y={y_min}..{y_max} completely empty for video subtitles: no text, icons, arrows, labels, decorations, shadows, people, partial objects, or visual fragments.",
+        "- Strictly forbid visual overlap. Text, arrows, icons, formulas, card borders, labels, people, and decorations must not cover, intersect, press on, or stick to each other.",
         "- Avoid severe overlap. Text, arrows, icons, formulas, card borders, and labels must not collide.",
         "- The final page should remain manually maskable, but Mask convenience must not force a rigid card grid.",
     ]
@@ -268,8 +269,9 @@ def build_prompt(
 Asset type: 16:9 Image Gen full-slide master for reveal-layer video production
 Slide id: {slide_id}
 Input images:
-- Reference image 1 ({template_ref}): use only as a reusable style/template reference.
-- Reference image 2 ({example_ref}): use only as a filled-slide style reference.
+- Reference image 1 ({template_ref}): use only as a title-area, spacing, hierarchy, and template-density reference.
+- Reference image 2 ({example_ref}): use only as a filled-slide density and hierarchy reference.
+- If reference images conflict with the active style profile below, the active style profile is authoritative.
 
 Primary request:
 Generate one complete full-slide master image from the narration and body content. Do not first force the page into pre-defined blocks.
@@ -297,6 +299,7 @@ Mapping and mask guidance:
 - A later mask should be able to reveal meaningful regions without covering unrelated content.
 - Arrows, icons, labels, and callouts may connect ideas, but they must not collide with text or create severe overlap.
 - Do not place any content or decoration below y=930.
+- Do not overlap elements. Leave visible white space between text, icons, arrows, cards, labels, and decorative marks.
 
 Style profile; these are generalizable and may vary by active style:
 {style_rules}

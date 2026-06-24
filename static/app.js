@@ -20,6 +20,7 @@ let state = {
   subtitleFonts: [],
   storyboardTemplates: [],
   imageStyleTemplates: [],
+  selectedStoryboardTemplateId: '',
   selectedImageStyleTemplateId: '',
   step2GenerationRequirement: '',
   storyboardAiRequirement: '',
@@ -404,10 +405,13 @@ function initGlobalEvents() {
   document.getElementById('btn-storyboard-schema-copy')?.addEventListener('click', () => copyStoryboardSchema());
   document.getElementById('btn-storyboard-template-load')?.addEventListener('click', () => loadSelectedStoryboardTemplate());
   document.getElementById('btn-storyboard-template-save')?.addEventListener('click', () => saveStoryboardTemplate());
+  document.getElementById('btn-storyboard-template-delete')?.addEventListener('click', () => deleteSelectedStoryboardTemplate());
   document.getElementById('btn-storyboard-rules-ai-draft')?.addEventListener('click', () => generateStoryboardRulesAiDraft());
   document.getElementById('btn-storyboard-ai-draft-discard')?.addEventListener('click', () => discardStoryboardAiDraft());
   document.getElementById('btn-storyboard-ai-draft-apply')?.addEventListener('click', () => applyStoryboardAiDraft());
   document.getElementById('storyboard-template-select')?.addEventListener('change', event => {
+    state.selectedStoryboardTemplateId = event.target.value || '';
+    updateStoryboardTemplateDeleteButton();
     if (event.target.value) loadSelectedStoryboardTemplate();
   });
   document.getElementById('btn-image-style-cancel')?.addEventListener('click', () => closeImageStyleModal());
@@ -415,10 +419,13 @@ function initGlobalEvents() {
   document.getElementById('btn-image-style-validate')?.addEventListener('click', () => validateImageStyleYaml());
   document.getElementById('btn-image-style-template-load')?.addEventListener('click', () => loadSelectedImageStyleTemplate());
   document.getElementById('btn-image-style-template-save')?.addEventListener('click', () => saveImageStyleTemplate());
+  document.getElementById('btn-image-style-template-delete')?.addEventListener('click', () => deleteSelectedImageStyleTemplate());
   document.getElementById('btn-image-style-ai-draft')?.addEventListener('click', () => generateImageStyleAiDraft());
   document.getElementById('btn-image-style-ai-draft-discard')?.addEventListener('click', () => discardImageStyleAiDraft());
   document.getElementById('btn-image-style-ai-draft-apply')?.addEventListener('click', () => applyImageStyleAiDraft());
   document.getElementById('image-style-template-select')?.addEventListener('change', event => {
+    state.selectedImageStyleTemplateId = event.target.value || '';
+    updateImageStyleTemplateDeleteButton();
     if (event.target.value) loadSelectedImageStyleTemplate();
   });
   ['template', 'example'].forEach(kind => {
@@ -1077,23 +1084,20 @@ function closeStep2GenerationModal() {
   document.getElementById('modal-step2-generate').style.display = 'none';
 }
 
+function defaultStep2GenerationRequirement() {
+  return '按当前已保存的分镜规则、结构配置和文章内容生成分镜规划。优先把内容讲清楚，不要机械套用固定卡片结构。';
+}
+
 async function confirmStep2Generation() {
-  const requirement = document.getElementById('step2-generation-requirement').value.trim();
-  if (!requirement) {
-    showToast('请先填写本次 AI 分镜生成需求。');
-    return;
-  }
+  const userRequirement = document.getElementById('step2-generation-requirement').value.trim();
+  const requirement = userRequirement || defaultStep2GenerationRequirement();
   state.step2GenerationRequirement = requirement;
   closeStep2GenerationModal();
   await generateStep2Contract(requirement);
 }
 
 async function generateStep2Contract(requirement = '') {
-  const normalizedRequirement = String(requirement || '').trim();
-  if (!normalizedRequirement) {
-    openStep2GenerationModal();
-    return;
-  }
+  const normalizedRequirement = String(requirement || defaultStep2GenerationRequirement()).trim();
   document.getElementById('step2-loading').style.display = 'block';
   document.getElementById('step2-btn-generate').disabled = true;
   
@@ -2582,6 +2586,8 @@ function renderStoryboardTemplateOptions(templates, selectedId = '') {
     ),
   ].join('');
   select.value = selectedId;
+  state.selectedStoryboardTemplateId = selectedId || '';
+  updateStoryboardTemplateDeleteButton();
 }
 
 function applyStoryboardTemplateToForm(template) {
@@ -2590,6 +2596,19 @@ function applyStoryboardTemplateToForm(template) {
   document.getElementById('storyboard-profile-input').value = template.profile_yaml || '';
   setStoryboardRangeValues(template.editor);
   renderStoryboardRoleEditor(template.editor);
+}
+
+function selectedStoryboardTemplate() {
+  const templateId = document.getElementById('storyboard-template-select')?.value || state.selectedStoryboardTemplateId || '';
+  return state.storyboardTemplates.find(item => item.id === templateId) || null;
+}
+
+function updateStoryboardTemplateDeleteButton() {
+  const button = document.getElementById('btn-storyboard-template-delete');
+  if (!button) return;
+  const template = selectedStoryboardTemplate();
+  button.disabled = !template || !!template.built_in;
+  button.title = template?.built_in ? '内置模板不能删除' : '';
 }
 
 function setAiDraftStatus(id, message = '', isError = false) {
@@ -2618,8 +2637,10 @@ async function loadSelectedStoryboardTemplate() {
   }
   const template = state.storyboardTemplates.find(item => item.id === templateId);
   if (!template) return;
+  state.selectedStoryboardTemplateId = template.id;
   applyStoryboardTemplateToForm(template);
   document.getElementById('storyboard-template-name').value = template.built_in ? '' : template.name;
+  updateStoryboardTemplateDeleteButton();
   showToast(`已载入分镜模板“${template.name}”，点击底部保存后应用到当前项目。`);
 }
 
@@ -2636,8 +2657,29 @@ async function saveStoryboardTemplate() {
     profile_patch: readStoryboardProfilePatch(),
   });
   renderStoryboardTemplateOptions(res.templates || [], res.template?.id || '');
+  state.selectedStoryboardTemplateId = res.template?.id || '';
   document.getElementById('storyboard-template-name').value = res.template?.name || name;
   showToast(`分镜模板“${res.template?.name || name}”已保存。`);
+}
+
+async function deleteSelectedStoryboardTemplate() {
+  const template = selectedStoryboardTemplate();
+  if (!template) {
+    showToast('请选择一个要删除的分镜模板。');
+    return;
+  }
+  if (template.built_in) {
+    showToast('内置分镜模板不能删除。');
+    return;
+  }
+  const firstConfirm = window.confirm(`确定删除分镜模板“${template.name}”吗？`);
+  if (!firstConfirm) return;
+  const secondConfirm = window.confirm(`请再次确认：删除“${template.name}”后无法恢复。`);
+  if (!secondConfirm) return;
+  const res = await API.delete(`/api/storyboard-templates/${encodeURIComponent(template.id)}`);
+  renderStoryboardTemplateOptions(res.templates || [], '');
+  document.getElementById('storyboard-template-name').value = '';
+  showToast(`分镜模板“${template.name}”已删除。`);
 }
 
 function storyboardAiDraftPreviewText(draft) {
@@ -2737,6 +2779,7 @@ async function openStoryboardRulesModal() {
   setStoryboardRangeValues(res.editor);
   renderStoryboardRoleEditor(res.editor);
   renderStoryboardTemplateOptions(templateRes.templates || []);
+  state.selectedStoryboardTemplateId = '';
   document.getElementById('storyboard-template-name').value = '';
   document.getElementById('storyboard-ai-requirement').value = state.storyboardAiRequirement || '';
   setAiDraftStatus('storyboard-ai-draft-status', '');
@@ -2791,7 +2834,7 @@ async function saveStoryboardRulesWithOptions(options = {}) {
     closeStoryboardRulesModal();
     if (state.slides?.length) renderStep2Workspace();
     if (options.regenerate) {
-      showToast('分镜规则已保存。请填写本次生成需求后重新生成分镜。');
+      showToast('分镜规则已保存。可直接确认重新生成；如需补充本次要求再填写。');
       openStep2GenerationModal();
       return;
     }
@@ -2836,6 +2879,8 @@ function renderImageStyleTemplateOptions(templates, selectedId = '') {
     ),
   ].join('');
   select.value = selectedId;
+  state.selectedImageStyleTemplateId = selectedId || '';
+  updateImageStyleTemplateDeleteButton();
 }
 
 function setImageStyleReferencePreviews(references = {}) {
@@ -2845,6 +2890,19 @@ function setImageStyleReferencePreviews(references = {}) {
     preview.src = reference?.exists ? reference.url : '';
     preview.style.display = reference?.exists ? 'block' : 'none';
   });
+}
+
+function selectedImageStyleTemplate() {
+  const templateId = document.getElementById('image-style-template-select')?.value || state.selectedImageStyleTemplateId || '';
+  return state.imageStyleTemplates.find(item => item.id === templateId) || null;
+}
+
+function updateImageStyleTemplateDeleteButton() {
+  const button = document.getElementById('btn-image-style-template-delete');
+  if (!button) return;
+  const template = selectedImageStyleTemplate();
+  button.disabled = !template || !!template.built_in;
+  button.title = template?.built_in ? '内置模板不能删除' : '';
 }
 
 async function loadSelectedImageStyleTemplate() {
@@ -2863,6 +2921,7 @@ async function loadSelectedImageStyleTemplate() {
   });
   state.selectedImageStyleTemplateId = template.id;
   document.getElementById('image-style-template-name').value = template.built_in ? '' : template.name;
+  updateImageStyleTemplateDeleteButton();
   showToast(`已载入图片风格模板“${template.name}”，点击底部保存后应用。`);
 }
 
@@ -3035,6 +3094,27 @@ async function saveImageStyleTemplate() {
   document.getElementById('image-style-template-name').value = res.template?.name || name;
   setImageStyleReferencePreviews(res.template?.references || {});
   showToast(`图片风格模板“${res.template?.name || name}”已保存，包含两张参考图。`);
+}
+
+async function deleteSelectedImageStyleTemplate() {
+  const template = selectedImageStyleTemplate();
+  if (!template) {
+    showToast('请选择一个要删除的图片风格模板。');
+    return;
+  }
+  if (template.built_in) {
+    showToast('内置图片风格模板不能删除。');
+    return;
+  }
+  const firstConfirm = window.confirm(`确定删除图片风格模板“${template.name}”吗？`);
+  if (!firstConfirm) return;
+  const secondConfirm = window.confirm(`请再次确认：删除“${template.name}”后无法恢复。`);
+  if (!secondConfirm) return;
+  const res = await API.delete(`/api/image-style/templates/${encodeURIComponent(template.id)}`);
+  renderImageStyleTemplateOptions(res.templates || [], '');
+  state.selectedImageStyleTemplateId = '';
+  document.getElementById('image-style-template-name').value = '';
+  showToast(`图片风格模板“${template.name}”已删除。`);
 }
 
 const DEFAULT_SUBTITLE_SETTINGS = {

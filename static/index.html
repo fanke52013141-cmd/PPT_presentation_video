@@ -643,9 +643,9 @@
   <div id="modal-step2-generate" class="modal-overlay" style="display: none;">
     <div class="modal-content ai-generation-modal">
       <h3 class="highlight-title">AI 生成分镜</h3>
-      <p class="config-editor-note">描述本次想要的拆页方式、叙事节奏、重点内容、页数或视觉组织。该需求只用于本次生成，不会自动覆盖已保存的分镜规则模板。</p>
+      <p class="config-editor-note">这里是可选补充。留空时会直接按当前已保存的分镜规则和文章内容生成；填写后只影响本次生成，不会覆盖模板。</p>
       <label class="ai-requirement-field">
-        <span>本次分镜需求</span>
+        <span>本次分镜需求（可选）</span>
         <textarea id="step2-generation-requirement" rows="8" placeholder="例如：控制在 6 页以内；先解释概念，再讲工作机制和实际应用；每页只讲一个重点，多用流程图和对比结构；旁白简洁，避免重复。"></textarea>
       </label>
       <div class="config-editor-actions">
@@ -686,6 +686,7 @@
             <select id="storyboard-template-select"></select>
           </label>
           <button id="btn-storyboard-template-load" class="secondary" type="button">载入模板</button>
+          <button id="btn-storyboard-template-delete" class="danger" type="button" disabled>删除模板</button>
           <label class="template-name-field">
             <span>新模板名称</span>
             <input id="storyboard-template-name" type="text" maxlength="60" placeholder="例如：知识科普分镜">
@@ -775,6 +776,7 @@
             <select id="image-style-template-select"></select>
           </label>
           <button id="btn-image-style-template-load" class="secondary" type="button">载入模板</button>
+          <button id="btn-image-style-template-delete" class="danger" type="button" disabled>删除模板</button>
           <label class="template-name-field">
             <span>新模板名称</span>
             <input id="image-style-template-name" type="text" maxlength="60" placeholder="例如：水墨科普风格">

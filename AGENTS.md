@@ -11,6 +11,21 @@ The application has six user-visible steps:
 5. Edit narration, generate audio, and confirm audio.
 6. Render and manage videos.
 
+### User-visible steps vs internal step numbers
+
+The UI is intentionally compressed to six user-visible steps, while the backend and historical validation scripts still use internal Step numbers.
+
+| User-visible step | Internal API / artifact stage | Main artifacts |
+| --- | --- | --- |
+| Step 1 Import article | Step 1 import | `inputs/article.md`, `planning/article_brief.json` |
+| Step 2 Plan storyboard | Step 2 storyboard / visual contract | `planning/visual_contract.json` |
+| Step 3 Images | Step 3 images + Step 4 confirmation | `slides/<slide_id>/visual_draft.png`, `reveal_manifest.json` |
+| Step 4 Mask | Step 5 reveal manifest / mask assets | `reveal_manifest.json`, reveal layer assets |
+| Step 5 Narration and audio | Step 6 narration + Step 7 TTS/audio confirmation | `planning/narration_beats.json`, audio, subtitles, timelines |
+| Step 6 Render video | Step 8 Remotion render | `remotion_props.json`, rendered video, `.render.json` sidecar |
+
+When writing user-facing documentation, prefer the six visible steps. When changing API routes, validators, or runtime artifacts, use the internal step numbers and keep this mapping accurate.
+
 The production visual path is:
 
 ```text
@@ -67,6 +82,17 @@ article.md
 - Deleting a rendered video deletes both the MP4 and its sidecar.
 - Runtime data under `runs/`, `outputs/`, `logs/`, and Remotion `public/runtime`
   is never committed.
+
+## Runtime Bridge Policy
+
+The repository still contains runtime bridge modules that patch production behavior during Python startup:
+
+- `sitecustomize.py`
+- `usercustomize.py`
+- `runtime_security.py`
+- `runtime_settings_mask.py`
+
+Treat them as migration debt, not as the normal extension mechanism. New fixes should land in `server.py`, `static/**`, or normal application startup code unless a large-file patch is not safe. Any new runtime bridge behavior must also be added to `docs/runtime_hotfixes_and_security.md` and issue #7.
 
 ## Required Validation
 
@@ -134,3 +160,5 @@ scripts/remotion/public/runtime/**
 .env
 API keys or other credentials
 ```
+
+Merged temporary branches with `ahead_by=0` relative to `main` should be deleted after confirming no follow-up work depends on them.

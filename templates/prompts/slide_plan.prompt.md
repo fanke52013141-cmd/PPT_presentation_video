@@ -3,8 +3,9 @@
 Read `runs/<run_id>/inputs/article.md` and produce
 `runs/<run_id>/planning/slide_plan.json`.
 
-The plan must be narration-first. Each slide needs a voiceover paragraph and a
-set of `narration_beats`. These beats drive visual groups and animation later.
+The plan must be narration-first. Do not over-structure the page. The only fixed
+content structure is: main title, AI project-level subtitle policy, and body
+content / narration.
 
 ## Production Invariants
 
@@ -19,8 +20,7 @@ These rules are not style choices and must never be changed by a style profile:
 - If `no_slides_have_subtitle`, no slide should include a subtitle.
 - Generated slide images use a pure-white `#FFFFFF` background.
 - The visual plan must keep y=930..1080 completely empty for video subtitles.
-- Visual groups must be manually maskable: avoid severe overlap, arrow-through-text,
-  merged unrelated groups, and tiny dense labels.
+- The final image must remain manually maskable, but Mask convenience must not force a rigid block layout.
 
 ## Output Schema
 
@@ -39,22 +39,24 @@ Required top-level fields:
 Each slide must include:
 
 - `slide_id`
-- `slide_purpose`
 - `main_title`
 - `subtitle` only when `presentation_policy.subtitle_policy` is `all_slides_have_subtitle`
 - `core_message`
-- `layout_type`
-- `visual_metaphor`
-- `composition`
-- `content.content_type`
-- `content.layout_intent`
-- `content.items[]`
+- `body_content[]`
+- `visual_intent`
 - `narration`
+
+Optional fields:
+
 - `narration_beats[]`
+- `visual_groups[]`
+
+`visual_groups[]` are post-design visual anchors for Mask/Reveal review. They
+are not a pre-generation layout template.
 
 ## Presentation Policy
 
-Before creating slides, make a project-level choice:
+Before creating slides, make a project-level subtitle choice:
 
 ```json
 {
@@ -62,8 +64,8 @@ Before creating slides, make a project-level choice:
     "subtitle_policy": "all_slides_have_subtitle",
     "subtitle_decided_by": "ai",
     "subtitle_rationale": "Use subtitles when the article benefits from a second explanatory line on every page.",
-    "default_visual_group_count": "3-5",
-    "layout_diversity": "high"
+    "default_visual_anchor_count": "2-5",
+    "layout_freedom": "high"
   }
 }
 ```
@@ -74,71 +76,28 @@ space back to the main visual.
 
 ## Narration Beats
 
-Each `narration_beats[]` item should include:
+`narration_beats[]` are optional rhythm hints. They may include:
 
 - `id`: stable beat id, for example `beat_01`
 - `spoken_point`: the sentence or idea spoken in this beat
 - `source_article_point`: the source concept from the article
-- `visual_group`: the visible group that should support this beat
+- `visual_group`: optional post-design anchor name
 - `animation`: suggested action, such as `fade_up`, `soft_zoom_in`, or `highlight`
 - `time_hint`: rough order hint, such as `early`, `middle`, `late`, or `0-3s`
 
-The narration expands the visible page content. Do not create beats that are
-unrelated to what the page will show.
+Do not create beats merely to cover every visual group. The narration is the
+source of truth; visual anchors are matched after the page is drawn.
 
 ## Planning Rules
 
 - Each slide explains one core idea.
-- Use 3-6 narration beats per slide.
-- Map every important beat to one visible group.
-- Prefer 2-6 semantic visual groups per slide.
-- Prefer one dominant hero visual plus supporting groups when it improves expression.
-- Do not create extra groups merely to fill the page or satisfy Mask requirements.
-- Avoid planning a slide that requires many tiny labels or dense text.
-- If a concept needs many steps, split it into multiple slides.
-- Keep the subtitle safe zone y=930..1080 completely clear in the visual plan.
-- Choose a `layout_type` before defining visual groups.
-
-## Layout Types
-
-Prefer these `layout_type` values:
-
-- `hero_diagram`
-- `left_right_comparison`
-- `process_flow`
-- `cause_effect_chain`
-- `central_mindmap`
-- `timeline`
-- `three_card_framework`
-- `problem_solution`
-- `pyramid`
-- `before_after`
-- `metaphor_scene`
-- `data_callout`
-- `checklist`
-- `summary_takeaway`
-- `custom`
-
-## Content Types
-
-Prefer these `content.content_type` values:
-
-- `concept_explanation`
-- `bullet_list`
-- `process_flow`
-- `comparison`
-- `timeline`
-- `cycle`
-- `cards`
-- `example_breakdown`
-- `misconception_correction`
-- `cause_effect`
-- `framework_map`
-- `hierarchy`
-- `matrix`
-- `checklist`
-- `summary_takeaway`
-- `custom`
+- Keep the plan simple: main title, optional project-wide subtitle, body content, narration.
+- Do not classify content as diagram/data/summary/quote/process/etc. during planning.
+- Put everything besides title/subtitle into `body_content`.
+- Use `visual_intent` to describe the desired meaning or feel, not exact coordinates or blocks.
+- Let the image generation stage decide whether body content becomes a scene, diagram, card, timeline, icon set, metaphor, or mixed layout.
+- If you provide `visual_groups`, keep them as 2-5 loose anchors for later Mask/Reveal review.
+- Keep y=930..1080 completely clear.
 
 ## Example
 
@@ -148,8 +107,8 @@ Prefer these `content.content_type` values:
     "subtitle_policy": "all_slides_have_subtitle",
     "subtitle_decided_by": "ai",
     "subtitle_rationale": "梯度下降概念较抽象，统一副标题能把主标题转成一句可理解的解释。",
-    "default_visual_group_count": "3-5",
-    "layout_diversity": "high"
+    "default_visual_anchor_count": "2-4",
+    "layout_freedom": "high"
   },
   "topic": {
     "topic_id": "gradient_descent",
@@ -159,35 +118,21 @@ Prefer these `content.content_type` values:
   "slides": [
     {
       "slide_id": "slide_001",
-      "slide_purpose": "concept_explanation",
       "main_title": "梯度下降",
       "subtitle": "沿着负梯度，一步步走向最低点",
       "core_message": "负梯度指向损失下降最快的方向。",
-      "layout_type": "hero_diagram",
-      "visual_metaphor": "把优化过程画成一个人沿山坡下山找谷底。",
-      "composition": {
-        "primary_focus": "valley_diagram",
-        "reading_order": "center_then_sides",
-        "hierarchy": ["main_title", "valley_diagram", "gradient_card", "negative_gradient_card"],
-        "group_count": 4
-      },
-      "content": {
-        "content_type": "concept_explanation",
-        "layout_intent": "中间用下山图作为主视觉，左右放梯度和负梯度两个解释卡。",
-        "items": [
-          {"type": "diagram", "label": "下山找谷底", "text": "沿山坡逐步靠近最低点"},
-          {"type": "concept", "label": "梯度", "text": "上升最快方向"},
-          {"type": "concept", "label": "负梯度", "text": "下降最快方向"}
-        ]
-      },
-      "narration": "先把梯度下降想象成下山。梯度指向上升最快的方向，而负梯度就是最陡的下坡路。",
+      "body_content": [
+        "先把梯度下降想象成下山。",
+        "梯度指向上升最快的方向。",
+        "负梯度就是最陡的下坡路。"
+      ],
+      "visual_intent": "用一个清晰、亲和的视觉隐喻解释这段演讲稿，让观众一眼理解‘沿下降方向靠近最低点’。",
+      "narration": "先把梯度下降想象成下山。梯度指向上升最快的方向，而负梯度就是最陡的下坡路。我们每走一步，就重新判断当前最陡的下降方向，再继续靠近谷底。",
       "narration_beats": [
         {
           "id": "beat_01",
           "spoken_point": "先把梯度下降想象成下山。",
           "source_article_point": "生活化比喻：下山找谷底",
-          "visual_group": "valley_diagram",
-          "animation": "soft_zoom_in",
           "time_hint": "early"
         }
       ]

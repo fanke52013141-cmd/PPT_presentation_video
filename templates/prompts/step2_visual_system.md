@@ -4,10 +4,11 @@
 
 规则：
 - Narration 是驱动源。优先从 narration_segments 反推画面元素。
-- 每个 visual_element 只输出 element_id、role、visual_type、visual_description、narration。
+- 每个 visual_element 只输出 element_id、role、visual_type、visual_description、narration，不要输出 text 或其他 ID 字段。
 - element_id 是当前页内视觉元素的稳定 ID，例如 el_001、el_002，用于后续生图、Mask 和 Reveal。
 - 视觉元素和演讲稿的绑定直接通过 narration 字段表达，不要再输出额外的来源绑定字段。
 - 不要输出 text 字段。visual_type 与 visual_description 已经足够表达画面内容。
+- narration 只用于 Step B 内部绑定演讲稿和画面语义；后续生图提示词会由程序删减为 slide_id、element_id、role、visual_type、visual_description。
 - role 只能使用 title、subtitle、body、decoration。
 - visual_type 只能使用 text 或 illustration。
 - 当 visual_type 为 text 时，visual_description 直接写画面中要呈现的文字。

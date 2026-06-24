@@ -424,13 +424,6 @@ def template_timestamp() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
-def safe_suggested_template_name(value: Any, fallback: str) -> str:
-    try:
-        return normalized_template_name(value)
-    except HTTPException:
-        return fallback[:60]
-
-
 ensure_active_image_style_storage()
 
 
@@ -2615,27 +2608,24 @@ def normalize_visual_elements(value: Any) -> List[Dict[str, str]]:
         role = str(element.get("role") or "body").strip().lower()
         if role not in allowed_roles:
             role = "body"
-        legacy_text = str(element.get("text") or "").strip()
-        visual_description = str(element.get("visual_description") or element.get("description") or legacy_text).strip()
+        visual_description = str(element.get("visual_description") or "").strip()
         narration = str(element.get("narration") or "").strip()
-        visual_type = str(element.get("visual_type") or ("text" if legacy_text else "illustration")).strip().lower()
+        visual_type = str(element.get("visual_type") or "illustration").strip().lower()
         if visual_type == "text_and_illustration":
             visual_type = "illustration"
         if visual_type not in allowed_visual_types:
             visual_type = "illustration"
         if not visual_description:
             continue
-        normalized_element = {
-            "element_id": stable_plan_id(element.get("element_id"), "el", index),
-            "role": role,
-            "visual_type": visual_type,
-            "visual_description": visual_description,
-            "narration": narration,
-        }
-        source_segment_id = str(element.get("source_segment_id") or "").strip()
-        if source_segment_id:
-            normalized_element["source_segment_id"] = source_segment_id
-        normalized.append(normalized_element)
+        normalized.append(
+            {
+                "element_id": stable_plan_id(element.get("element_id"), "el", index),
+                "role": role,
+                "visual_type": visual_type,
+                "visual_description": visual_description,
+                "narration": narration,
+            }
+        )
     return normalized
 
 
@@ -2818,31 +2808,26 @@ def compose_visual_contract_from_plans(
         visual_slide = visual_by_id.get(slide_id)
         if not isinstance(visual_slide, dict):
             raise HTTPException(status_code=400, detail=f"{slide_id} 缺少对应的 visual plan")
-        segments = {
-            str(segment.get("segment_id") or "").strip(): segment
-            for segment in script_slide.get("narration_segments", [])
-            if isinstance(segment, dict)
-        }
         body_points = script_slide.get("body_points") if isinstance(script_slide.get("body_points"), list) else []
         visual_groups: List[Dict[str, Any]] = []
         narration_beats: List[Dict[str, Any]] = []
         for element_index, element in enumerate(visual_slide.get("visual_elements") or [], start=1):
             if not isinstance(element, dict):
                 continue
-            group_id = f"{slide_id}_{stable_plan_id(element.get('element_id'), 'el', element_index)}"
+            element_id = stable_plan_id(element.get("element_id"), "el", element_index)
+            group_id = f"{slide_id}_{element_id}"
             content_unit_id = f"{slide_id}_unit_{element_index:03d}"
             role = str(element.get("role") or "body").strip().lower()
             role = "decoration" if role == "decoration" else ("title" if role == "title" else ("subtitle" if role == "subtitle" else "content_body"))
             visible_text = element_visible_text(element, element_index)
             description = str(element.get("visual_description") or visible_text).strip()
-            source_segment_id = str(element.get("source_segment_id") or "").strip()
-            segment = segments.get(source_segment_id, {})
-            narration = str(element.get("narration") or segment.get("narration") or "").strip()
-            purpose = str(segment.get("purpose") or element.get("visual_description") or "").strip()
+            narration = str(element.get("narration") or "").strip()
+            purpose = str(element.get("visual_description") or "").strip()
             visual_type = str(element.get("visual_type") or "illustration").strip().lower()
             display_text = description if visual_type == "text" else ""
             group = {
                 "id": group_id,
+                "element_id": element_id,
                 "role": role,
                 "visible_text": visible_text,
                 "display_text": display_text,
@@ -3027,125 +3012,6 @@ def delete_storyboard_template(template_id: str):
         raise HTTPException(status_code=404, detail="分镜模板不存在")
     write_json_atomic(STORYBOARD_TEMPLATES_PATH, next_stored)
     return {"success": True, "templates": list_storyboard_templates()}
-
-
-@app.post("/api/projects/{project_id}/steps/2/rules/ai-draft")
-def generate_storyboard_rules_ai_draft(
-    project_id: str,
-    payload: Optional[Dict[str, Any]] = None,
-    db: Session = Depends(get_db),
-):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-
-    brief_path = os.path.join(project.run_dir, "planning", "article_brief.json")
-    if not os.path.exists(brief_path):
-        raise HTTPException(status_code=400, detail="请先导入文章，再让 AI 生成分镜规则模板。")
-    with open(brief_path, "r", encoding="utf-8") as f:
-        brief = json.load(f)
-
-    incoming = payload or {}
-    requirement = str(incoming.get("requirement") or "").strip()
-    if not requirement:
-        raise HTTPException(status_code=400, detail="请先填写希望 AI 生成的分镜结构需求。")
-    base_rules = str(incoming.get("rules") or "").strip()
-    if not base_rules:
-        rules_path = storyboard_rules_path(project)
-        if os.path.exists(rules_path):
-            with open(rules_path, "r", encoding="utf-8") as f:
-                base_rules = f.read().strip()
-    if not base_rules:
-        base_rules = default_storyboard_rules()
-
-    profile_text = str(incoming.get("profile_yaml") or "").strip()
-    profile = parse_storyboard_profile_text(profile_text) if profile_text else read_project_pipeline_profile(project)
-    profile = apply_storyboard_profile_patch(profile, incoming.get("profile_patch"))
-    editor = storyboard_profile_editor_data(profile)
-
-    article_content = str(brief.get("content") or "")
-    article_summary = str(brief.get("summary") or build_article_summary(article_content))
-    project_title = (project.name or "").strip() or str(brief.get("title") or "未命名项目")
-    allowed_roles = sorted(editor.get("roles", {}).keys())
-    schema_hint = json.dumps(
-        {
-            "template_name": "适合保存的模板名称，不超过 60 个字符",
-            "rules": "一段中文分镜规则，面向之后反复复用",
-            "profile_patch": {
-                "slide_count": {
-                    "short_article": "3-5",
-                    "medium_article": "5-8",
-                    "long_article": "8-12",
-                },
-                "visual_group_count": {
-                    "short_article": "3-5",
-                    "medium_article": "4-7",
-                    "long_article": "5-8",
-                },
-                "roles": {
-                    "title": {"enabled": True},
-                    "content_body": {"enabled": True},
-                },
-            },
-        },
-        ensure_ascii=False,
-    )
-    system_prompt = (
-        "你是一个中文 PPT 视频的 AI 分镜规则模板设计师。"
-        "你的任务不是生成具体 visual_contract，而是根据文章内容和当前规则，生成一套可复用的分镜规则模板草案。"
-        "必须输出严格 JSON，不要 Markdown，不要解释。"
-        "profile_patch.roles 只能使用用户给定的 allowed_roles；不要创造新 role。"
-        "user_requirement 是用户本次明确输入的需求，必须优先满足，并将其转化为具体、结构化、可复用的配置。"
-        "规则要服务于后续图片生成、Mask 标注、旁白绑定和视频动画，强调结构清晰、分组可遮罩、旁白自然。"
-    )
-    user_prompt = json.dumps(
-        {
-            "project_title": project_title,
-            "article_summary": article_summary,
-            "article_excerpt": article_content[:8000],
-            "allowed_roles": allowed_roles,
-            "user_requirement": requirement,
-            "current_rules": base_rules,
-            "current_editor_config": editor,
-            "output_schema": json.loads(schema_hint),
-        },
-        ensure_ascii=False,
-        indent=2,
-    )
-    ai_data = generate_json_with_configured_llm(
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
-        run_dir=project.run_dir,
-        artifact_prefix="storyboard_rules_ai_draft",
-        schema_hint=schema_hint,
-        temperature=0.35,
-        max_tokens_default=12000,
-    )
-
-    rules = str(ai_data.get("rules") or "").strip()
-    if not rules:
-        raise HTTPException(status_code=500, detail="AI 没有返回可用的分镜规则。")
-    profile_patch = ai_data.get("profile_patch") if isinstance(ai_data.get("profile_patch"), dict) else {}
-    patched_profile = apply_storyboard_profile_patch(profile, profile_patch)
-    patched_profile_text = yaml.safe_dump(
-        patched_profile,
-        allow_unicode=True,
-        sort_keys=False,
-        width=1000,
-    ).strip()
-    suggested_name = safe_suggested_template_name(
-        ai_data.get("template_name"),
-        f"{project_title} 分镜规则",
-    )
-    write_project_log(project, "storyboard_rules_ai_draft_generated", template_name=suggested_name)
-    return {
-        "success": True,
-        "suggested_name": suggested_name,
-        "rules": rules,
-        "profile_yaml": patched_profile_text,
-        "roles": role_catalog(patched_profile),
-        "editor": storyboard_profile_editor_data(patched_profile),
-    }
 
 
 def build_storyboard_request(
@@ -3863,6 +3729,7 @@ def update_step2_result(project_id: str, payload: Dict[str, Any], db: Session = 
 # ==================== 步骤 3-4: 图片生成与管理 ====================
 
 IMAGE_STYLE_TOP_LEVEL_KEYS = ("brand", "canvas", "colors", "layout", "visual_assets")
+IMAGE_STYLE_PROMPT_KEY = "prompt_system_content"
 IMAGE_STYLE_VISUAL_ASSET_FIELDS = {
     "image_style": "image_style",
     "diagram_style": "diagram_style",
@@ -3960,12 +3827,10 @@ def editable_image_style_data(style_tokens: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def dump_image_style_editor_text(style_tokens: Dict[str, Any]) -> str:
-    return yaml.safe_dump(
-        editable_image_style_data(style_tokens),
-        allow_unicode=True,
-        sort_keys=False,
-        width=1000,
-    ).strip()
+    prompt_text = str(style_tokens.get(IMAGE_STYLE_PROMPT_KEY) or "").strip()
+    if prompt_text:
+        return prompt_text
+    return build_image_style_prompt(style_tokens)
 
 
 def merge_image_style_update(
@@ -4021,23 +3886,21 @@ def parse_image_style_payload(payload: Dict[str, Any]) -> tuple[Dict[str, Any], 
     current = read_style_tokens_data()
     style_data = payload.get("style_data")
     if isinstance(style_data, dict):
-        parsed = style_data
-    else:
-        style_text = str(payload.get("style_text") or "").strip()
-        if not style_text:
-            raise HTTPException(status_code=400, detail="图片风格配置不能为空")
-        try:
-            parsed = yaml.safe_load(style_text)
-        except yaml.YAMLError as exc:
-            mark = getattr(exc, "problem_mark", None)
-            location = f"（第 {mark.line + 1} 行，第 {mark.column + 1} 列）" if mark else ""
-            raise HTTPException(status_code=400, detail=f"YAML 格式错误{location}：{exc}") from exc
-        if not isinstance(parsed, dict):
-            raise HTTPException(status_code=400, detail="图片风格配置必须是 YAML 对象")
-    return current, merge_image_style_update(current, parsed)
+        return current, merge_image_style_update(current, style_data)
+
+    style_text = str(payload.get("style_text") or "").strip()
+    if not style_text:
+        raise HTTPException(status_code=400, detail="图片生成 System Content 不能为空")
+    merged = copy.deepcopy(current)
+    merged[IMAGE_STYLE_PROMPT_KEY] = style_text
+    return current, merged
 
 
 def build_image_style_prompt(style_tokens: Dict[str, Any]) -> str:
+    prompt_text = str(style_tokens.get(IMAGE_STYLE_PROMPT_KEY) or "").strip()
+    if prompt_text:
+        return prompt_text
+
     brand = style_tokens.get("brand") if isinstance(style_tokens.get("brand"), dict) else {}
     canvas = style_tokens.get("canvas") if isinstance(style_tokens.get("canvas"), dict) else {}
     colors = style_tokens.get("colors") if isinstance(style_tokens.get("colors"), dict) else {}
@@ -4239,125 +4102,6 @@ def validate_image_style(payload: Dict[str, Any]):
     _, merged = parse_image_style_payload(payload)
     return {
         "success": True,
-        "style_text": dump_image_style_editor_text(merged),
-        "style_data": editable_image_style_data(merged),
-        "prompt_preview": build_image_style_prompt(merged),
-    }
-
-
-@app.post("/api/projects/{project_id}/steps/3/image-style/ai-draft")
-def generate_image_style_ai_draft(
-    project_id: str,
-    payload: Optional[Dict[str, Any]] = None,
-    db: Session = Depends(get_db),
-):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-
-    incoming = payload or {}
-    requirement = str(incoming.get("requirement") or "").strip()
-    if not requirement:
-        raise HTTPException(status_code=400, detail="请先填写希望 AI 生成的图片风格需求。")
-    try:
-        _, base_style = parse_image_style_payload(incoming)
-    except HTTPException:
-        base_style = read_style_tokens_data()
-
-    brief: Dict[str, Any] = {}
-    brief_path = os.path.join(project.run_dir, "planning", "article_brief.json")
-    if os.path.exists(brief_path):
-        with open(brief_path, "r", encoding="utf-8") as f:
-            loaded = json.load(f)
-            if isinstance(loaded, dict):
-                brief = loaded
-
-    slide_titles: List[str] = []
-    contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
-    if os.path.exists(contract_path):
-        try:
-            with open(contract_path, "r", encoding="utf-8") as f:
-                contract = json.load(f)
-            for slide in contract.get("slides", []) if isinstance(contract, dict) else []:
-                if not isinstance(slide, dict):
-                    continue
-                title = str(slide.get("main_title") or slide.get("title") or "").strip()
-                if title:
-                    slide_titles.append(title)
-        except Exception as exc:
-            logger.warning("Failed to read visual contract for image style draft: %s", exc)
-
-    article_content = str(brief.get("content") or "")
-    article_summary = str(brief.get("summary") or build_article_summary(article_content))
-    project_title = (project.name or "").strip() or str(brief.get("title") or "未命名项目")
-    current_editable = editable_image_style_data(base_style)
-    schema_hint = json.dumps(
-        {
-            "template_name": "适合保存的图片风格模板名称，不超过 60 个字符",
-            "style_data": {
-                "brand": {
-                    "style_keywords": ["温暖极简", "知识科普", "留白"],
-                },
-                "visual_assets": {
-                    "image_style": "warm_minimal_handdrawn_line_art",
-                    "diagram_style": "clean_explainer_diagram",
-                    "layout_rules": [
-                        "主标题、副标题固定在页面上方标题区；底部 y=930..1080 固定留作字幕安全区。",
-                        "主体内容区根据内容自由表达，不机械套用卡片列表。",
-                        "每个语义 group 保持独立留白，方便后续矩形 Mask。",
-                        "文字、卡片、图标、箭头、线条、标签、装饰、图表之间严禁重叠、压住、穿插或粘连。",
-                    ],
-                    "avoid": ["复杂 3D 背景", "大面积渐变", "乱码文字", "元素重叠", "箭头穿过文字"],
-                },
-            },
-        },
-        ensure_ascii=False,
-    )
-    system_prompt = (
-        "你是一个中文 PPT 视频的图片风格模板设计师。"
-        "请根据项目主题、文章摘要、分镜标题和当前风格，生成一套可复用的生图风格模板草案。"
-        "必须输出严格 JSON，不要 Markdown，不要解释。"
-        "只能返回 brand.style_keywords 与 visual_assets.image_style、diagram_style、layout_rules、avoid。"
-        "user_requirement 是用户本次明确输入的需求，必须优先满足，并转化为具体可执行的结构化风格字段。"
-        "必须保持 1920x1080、16:9、纯白 #FFFFFF 背景、上方固定标题/副标题区、底部字幕安全区、Mask 友好留白这些约束。"
-        "必须加入元素不重叠规则：文字、卡片、图标、箭头、线条、标签、装饰、图表之间不得互相覆盖、压住、穿插或粘连。"
-        "主体内容区应服务内容自由表达，不要把风格模板写成固定卡片版式。"
-        "风格要具体可执行，适合 AI 生图提示词使用，避免泛泛而谈。"
-    )
-    user_prompt = json.dumps(
-        {
-            "project_title": project_title,
-            "article_summary": article_summary,
-            "article_excerpt": article_content[:8000],
-            "slide_titles": slide_titles[:20],
-            "user_requirement": requirement,
-            "current_style_data": current_editable,
-            "output_schema": json.loads(schema_hint),
-        },
-        ensure_ascii=False,
-        indent=2,
-    )
-    ai_data = generate_json_with_configured_llm(
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
-        run_dir=project.run_dir,
-        artifact_prefix="image_style_ai_draft",
-        schema_hint=schema_hint,
-        temperature=0.45,
-        max_tokens_default=9000,
-    )
-    style_data = ai_data.get("style_data")
-    if not isinstance(style_data, dict):
-        raise HTTPException(status_code=500, detail="AI 没有返回可用的图片风格配置。")
-    merged = merge_image_style_update(base_style, style_data)
-    suggested_name = safe_suggested_template_name(
-        ai_data.get("template_name"),
-        f"{project_title} 图片风格",
-    )
-    write_project_log(project, "image_style_ai_draft_generated", template_name=suggested_name)
-    return {
-        "success": True,
-        "suggested_name": suggested_name,
         "style_text": dump_image_style_editor_text(merged),
         "style_data": editable_image_style_data(merged),
         "prompt_preview": build_image_style_prompt(merged),
@@ -4611,7 +4355,9 @@ def compact_slide_element_lines(slide: Dict[str, Any]) -> List[str]:
         if not isinstance(group, dict):
             continue
         group_id = str(group.get("id") or "").strip()
-        element_id = group_id[len(prefix):] if prefix and group_id.startswith(prefix) else (group_id or f"el_{idx:03d}")
+        element_id = str(group.get("element_id") or "").strip()
+        if not element_id:
+            element_id = group_id[len(prefix):] if prefix and group_id.startswith(prefix) else (group_id or f"el_{idx:03d}")
         role = str(group.get("role") or "content_body").strip()
         visual_type = str(group.get("visual_type") or "").strip().lower()
         if visual_type not in {"text", "illustration"}:
@@ -5138,6 +4884,13 @@ def semantic_block_payload(
     role = str((group or {}).get("role") or "content_body")
     visible_text = str((group or {}).get("visible_text") or ai_block.get("text_label") or f"语块 {index}").strip()
     visual_anchor = str((group or {}).get("visual_anchor") or "").strip()
+    visual_type = str((group or {}).get("visual_type") or ai_block.get("visual_type") or "").strip().lower()
+    if visual_type not in {"text", "illustration"}:
+        visual_type = "text" if str((group or {}).get("display_text") or "").strip() else "illustration"
+    prefix = f"{slide_id}_" if slide_id else ""
+    element_id = str((group or {}).get("element_id") or "").strip()
+    if not element_id:
+        element_id = visual_group_id[len(prefix):] if prefix and visual_group_id.startswith(prefix) else visual_group_id
     semantic_type = str(ai_block.get("semantic_element_type") or role_label(role)).strip()
     visual_description = str(ai_block.get("visual_description") or "").strip()
     if not visual_description:
@@ -5154,7 +4907,9 @@ def semantic_block_payload(
         "group_id": f"semantic_{slide_id}_{index:02d}",
         "source": "ai_semantic",
         "visual_group_id": visual_group_id,
+        "element_id": element_id,
         "role": role,
+        "visual_type": visual_type,
         "text_label": visible_text or f"语块 {index}",
         "visual_anchor": visual_anchor,
         "semantic_element_type": semantic_type,

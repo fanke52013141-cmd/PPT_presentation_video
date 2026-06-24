@@ -16,7 +16,6 @@ from scripts.pipeline_profiles import (
     default_reveal_for_role,
     image_prompt_profile_text,
     read_pipeline_profile,
-    storyboard_profile_prompt,
 )
 
 
@@ -31,14 +30,24 @@ def make_master(path: Path) -> None:
     image.save(path)
 
 
-def test_profile_exposes_generalized_structure() -> None:
+def test_step2_prompt_contracts_are_minimal() -> None:
     profile = read_pipeline_profile()
-    prompt = storyboard_profile_prompt("短文章", profile)
-    assert "不要固定套用" in prompt
-    assert "subtitle" in prompt
-    assert "speak_policy" not in prompt
-    assert "必选" not in prompt
-    assert "可选" not in prompt
+    script_system = (ROOT / "templates" / "prompts" / "step2_script_system.md").read_text(encoding="utf-8")
+    script_example = json.loads((ROOT / "templates" / "prompts" / "step2_script_output_example.json").read_text(encoding="utf-8"))
+    visual_system = (ROOT / "templates" / "prompts" / "step2_visual_system.md").read_text(encoding="utf-8")
+    visual_example = json.loads((ROOT / "templates" / "prompts" / "step2_visual_output_example.json").read_text(encoding="utf-8"))
+
+    assert "slide_title" in script_example["slides"][0]
+    assert "body_points" in script_example["slides"][0]
+    assert "narration_segments" in script_example["slides"][0]
+    assert "visual_groups" not in script_example["slides"][0]
+    assert "不要输出 text 字段" in visual_system
+    assert "slide_id、element_id、role、visual_type、visual_description" in visual_system
+    first_visual_element = visual_example["slides"][0]["visual_elements"][0]
+    assert set(first_visual_element) == {"element_id", "role", "visual_type", "visual_description", "narration"}
+    assert "source_segment_id" not in visual_system
+    assert "source_segment_id" not in json.dumps(visual_example, ensure_ascii=False)
+    assert "speak_policy" not in script_system + visual_system
     assert "scratch_reveal" in allowed_reveal_actions(profile)
     assert default_reveal_for_role("diagram", profile)["type"] == "wipe_left_to_right"
     assert "完整 PPT/讲解页静态主图" in image_prompt_profile_text(profile)
@@ -127,7 +136,7 @@ def test_timeline_binding_keeps_reveal_duration() -> None:
 
 
 if __name__ == "__main__":
-    test_profile_exposes_generalized_structure()
+    test_step2_prompt_contracts_are_minimal()
     test_reveal_builder_preserves_configured_effect_and_duration()
     test_timeline_binding_keeps_reveal_duration()
     print("generalized pipeline config checks passed")

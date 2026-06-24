@@ -12,12 +12,38 @@ if (/\.toast\s*\{[^}]*position:\s*fixed/s.test(css)) throw new Error('individual
 if (!/\.step3-card-title\s*\{[^}]*min-height:\s*0/s.test(css)) throw new Error('image title still reserves fixed vertical space');
 
 if (html.includes('config_effectiveness.js')) throw new Error('runtime patch script is still loaded');
-if (!html.includes('btn-storyboard-rules-save-regenerate')) throw new Error('storyboard regenerate action missing');
-if (!html.includes('storyboard-profile-input') || !html.includes('storyboard-schema-input')) {
-  throw new Error('storyboard role profile or JSON Schema editor is missing');
+for (const requiredStep2Token of [
+  'step2-btn-script-prompt',
+  'step2-btn-visual-prompt',
+  'step2-script-system-prompt',
+  'step2-script-output-example',
+  'step2-visual-system-prompt',
+  'step2-visual-output-example',
+  'step2-slide-title-input',
+  'step2-slide-subtitle-input',
+  'step2-slide-body-input',
+  'step2-slide-narration-input',
+]) {
+  if (!html.includes(requiredStep2Token)) throw new Error(`simplified Step 2 UI missing: ${requiredStep2Token}`);
 }
-if (!app.includes('storyboardRoleOptions') || !app.includes('addVisualGroup')) {
-  throw new Error('storyboard visual role editing is missing');
+for (const removedStep2Token of [
+  'step2-btn-rules',
+  'btn-storyboard-rules-save-regenerate',
+  'storyboard-template-select',
+  'storyboard-profile-input',
+  'storyboard-schema-input',
+  'storyboard-rules-input',
+  'step2-groups-list',
+  'storyboardRoleOptions',
+  'addVisualGroup',
+  'updateGroupField',
+  'removeVisualGroup',
+  'generateStoryboardRulesAiDraft',
+  'storyboard-ai-draft',
+]) {
+  if (app.includes(removedStep2Token) || html.includes(removedStep2Token) || css.includes(removedStep2Token)) {
+    throw new Error(`legacy Step 2 editor still present: ${removedStep2Token}`);
+  }
 }
 if (app.includes("group.id === 'body_group_02'")) {
   throw new Error('legacy hard-coded visual group filtering is still present');
@@ -56,6 +82,37 @@ for (const animation of ['wipe_left_to_right', 'scratch_reveal', 'sticker_pop', 
 }
 if (!html.includes('step5-btn-subtitle-settings') || !html.includes('modal-subtitle-settings')) {
   throw new Error('subtitle settings entry or modal is missing');
+}
+for (const requiredImageStyleToken of [
+  'image-style-template-select',
+  'image-style-input',
+  'image-style-template-file',
+]) {
+  if (!html.includes(requiredImageStyleToken)) throw new Error(`direct image style prompt UI missing: ${requiredImageStyleToken}`);
+}
+for (const removedImageStyleToken of [
+  'btn-image-style-ai-draft',
+  'image-style-ai-requirement',
+  'image-style-ai-draft-preview',
+  'image-style-use-advanced',
+  'image-style-validation-status',
+  'image-style-keywords',
+  'image-style-visual-style',
+  'image-style-diagram-style',
+  'image-style-layout-rules',
+  'image-style-avoid',
+  'generateImageStyleAiDraft',
+  'validateImageStyleYaml',
+  'image-style/ai-draft',
+  '.ai-draft-preview',
+  '.ai-request-panel',
+]) {
+  if (app.includes(removedImageStyleToken) || html.includes(removedImageStyleToken) || css.includes(removedImageStyleToken)) {
+    throw new Error(`legacy image style editor still present: ${removedImageStyleToken}`);
+  }
+}
+if (!app.includes('visual_description') || !css.includes('.mask-visual-card')) {
+  throw new Error('Mask semantic visual description display is missing');
 }
 for (const removedNarrationPolicyToken of [
   'updateGroupSpeakPolicy',

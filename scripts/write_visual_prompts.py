@@ -82,7 +82,9 @@ def compact_visual_element_lines(slide: dict[str, Any]) -> list[str]:
         if not isinstance(group, dict):
             continue
         group_id = str(group.get("id", "")).strip()
-        element_id = group_id[len(prefix):] if prefix and group_id.startswith(prefix) else (group_id or f"el_{idx:03d}")
+        element_id = str(group.get("element_id") or "").strip()
+        if not element_id:
+            element_id = group_id[len(prefix):] if prefix and group_id.startswith(prefix) else (group_id or f"el_{idx:03d}")
         role = str(group.get("role", "content_body")).strip()
         visual_type = str(group.get("visual_type", "")).strip().lower()
         if visual_type not in {"text", "illustration"}:
@@ -100,6 +102,10 @@ def compact_visual_element_lines(slide: dict[str, Any]) -> list[str]:
 
 
 def style_profile_lines(style_tokens: dict[str, Any]) -> list[str]:
+    prompt_text = str(style_tokens.get("prompt_system_content") or "").strip()
+    if prompt_text:
+        return prompt_text.splitlines()
+
     lines: list[str] = []
     brand = style_tokens.get("brand")
     if isinstance(brand, dict):

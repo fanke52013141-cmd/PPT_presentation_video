@@ -2224,67 +2224,7 @@ def import_article(project_id: str, content: Optional[str] = Form(None), db: Ses
 
     handle_step_navigation(project, 1, db)
     return {"success": True, "brief": brief}
-        
-    # 调用 LLM 做文章提炼
-    llm_api_key = get_setting("llm_api_key")
-    llm_base_url = get_setting("llm_base_url")
-    llm_model = get_setting("llm_model")
-    llm_temp = float(get_setting("llm_temperature", "0.7"))
-    
-    if not llm_api_key:
-        raise HTTPException(status_code=400, detail="未配置大模型 API 密钥，请在系统设置中配置后再试。")
 
-    write_project_log(
-        project,
-        "step1_import_start",
-        article_chars=len(content),
-        model=llm_model,
-        base_url=llm_base_url,
-        timeout_sec=STEP1_LLM_TIMEOUT_SEC,
-    )
-    client = get_openai_client(
-        api_key=llm_api_key,
-        base_url=llm_base_url,
-        timeout=STEP1_LLM_TIMEOUT_SEC,
-        max_retries=0,
-    )
-    system_prompt = "你是一个专业的内容提炼助手。请阅读用户输入的 Markdown 文章，提炼出它的核心标题以及一份易于视频分镜表达的摘要提纲（150字以内）。请直接返回 JSON 格式结果，格式为: {\"title\": \"标题\", \"summary\": \"提炼好的摘要提纲\", \"content\": \"原文\"}"
-    
-    try:
-        started_at = time.monotonic()
-        response = client.chat.completions.create(
-            model=llm_model,
-            temperature=llm_temp,
-            response_format={"type": "json_object"},
-            timeout=STEP1_LLM_TIMEOUT_SEC,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": content}
-            ]
-        )
-        elapsed = round(time.monotonic() - started_at, 3)
-        content_str = response.choices[0].message.content.strip()
-        write_project_log(
-            project,
-            "step1_llm_success",
-            elapsed_sec=elapsed,
-            response_chars=len(content_str),
-        )
-        cleaned_content = clean_json_markdown(content_str)
-        brief = json.loads(cleaned_content)
-        brief["content"] = content
-    except Exception as e:
-        write_project_log(project, "step1_llm_error", error_type=type(e).__name__, error=str(e))
-        logger.error(f"LLM ingest article error: {e}")
-        raise HTTPException(status_code=500, detail=f"文章提炼失败: {str(e)}")
-            
-    brief_path = os.path.join(project.run_dir, "planning", "article_brief.json")
-    with open(brief_path, "w", encoding="utf-8") as f:
-        json.dump(brief, f, ensure_ascii=False, indent=2)
-        
-    handle_step_navigation(project, 1, db)
-    write_project_log(project, "step1_import_completed", brief_path=brief_path)
-    return {"success": True, "brief": brief}
 
 @app.get("/api/projects/{project_id}/steps/1/result")
 def get_step1_result(project_id: str, db: Session = Depends(get_db)):

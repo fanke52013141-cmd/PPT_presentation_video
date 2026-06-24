@@ -32,7 +32,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SERVER_PATH = REPO_ROOT / "server.py"
 
 START_ANCHOR = '    return {"success": True, "brief": brief}\n        \n    # 调用 LLM 做文章提炼\n'
-END_ANCHOR = '\n# ==================== 步骤 2: 分镜规划 ====================' 
+END_ANCHOR = '\n@app.get("/api/projects/{project_id}/steps/1/result")'
 
 
 def fail(message: str) -> int:
@@ -42,13 +42,23 @@ def fail(message: str) -> int:
 
 def locate_dead_block(text: str) -> tuple[int, int] | None:
     start_count = text.count(START_ANCHOR)
+    if start_count == 0:
+        legacy_markers = (
+            "# 调用 LLM 做文章提炼",
+            "step1_llm_success",
+            "step1_llm_error",
+        )
+        remaining = [marker for marker in legacy_markers if marker in text]
+        if remaining:
+            raise ValueError(f"START_ANCHOR not found but legacy markers remain: {remaining}")
+        return None
     if start_count != 1:
         raise ValueError(f"expected START_ANCHOR exactly once, found {start_count}")
 
     start = text.index(START_ANCHOR) + len('    return {"success": True, "brief": brief}\n')
     end = text.find(END_ANCHOR, start)
     if end < 0:
-        raise ValueError("END_ANCHOR was not found after the Step 1 return")
+        raise ValueError("Step 1 result route was not found after the Step 1 return")
 
     block = text[start:end]
     required_fragments = (

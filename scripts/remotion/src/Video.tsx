@@ -10,19 +10,6 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from 'remotion';
-import {loadFont as loadMaShanZheng} from '@remotion/google-fonts/MaShanZheng';
-import {loadFont as loadLongCang} from '@remotion/google-fonts/LongCang';
-import {loadFont as loadLiuJianMaoCao} from '@remotion/google-fonts/LiuJianMaoCao';
-import {loadFont as loadLXGWMarkerGothic} from '@remotion/google-fonts/LXGWMarkerGothic';
-import {loadFont as loadLXGWWenKaiTC} from '@remotion/google-fonts/LXGWWenKaiTC';
-import {loadFont as loadNotoSansSC} from '@remotion/google-fonts/NotoSansSC';
-import {loadFont as loadNotoSansTC} from '@remotion/google-fonts/NotoSansTC';
-import {loadFont as loadNotoSerifSC} from '@remotion/google-fonts/NotoSerifSC';
-import {loadFont as loadNotoSerifTC} from '@remotion/google-fonts/NotoSerifTC';
-import {loadFont as loadZCOOLKuaiLe} from '@remotion/google-fonts/ZCOOLKuaiLe';
-import {loadFont as loadZCOOLQingKeHuangYou} from '@remotion/google-fonts/ZCOOLQingKeHuangYou';
-import {loadFont as loadZCOOLXiaoWei} from '@remotion/google-fonts/ZCOOLXiaoWei';
-import {loadFont as loadZhiMangXing} from '@remotion/google-fonts/ZhiMangXing';
 
 type LayerBox = {
   x: number;
@@ -145,54 +132,29 @@ export type SubtitleStyle = {
   color?: string;
 };
 
-const loadedSubtitleFonts = new Map<string, string>();
-
 const subtitleFontFamily = (fontKey?: string, configuredFamily?: string, fontWeight?: number): string => {
   const key = fontKey || 'noto_sans_sc';
-  const normalizedWeight = Math.max(300, Math.min(800, Math.round((fontWeight ?? 500) / 100) * 100));
-  const notoWeight = String(normalizedWeight) as '300' | '400' | '500' | '600' | '700' | '800';
-  const cacheKey = `${key}:${notoWeight}`;
-  const cached = loadedSubtitleFonts.get(cacheKey);
-  if (cached) {
-    return cached;
-  }
-
-  let family = configuredFamily || 'Noto Sans SC';
-  if (key === 'noto_sans_sc') {
-    family = loadNotoSansSC('normal', {weights: [notoWeight], subsets: ['chinese-simplified']}).fontFamily;
-  } else if (key === 'noto_serif_sc') {
-    family = loadNotoSerifSC('normal', {weights: [notoWeight], subsets: ['chinese-simplified']}).fontFamily;
-  } else if (key === 'ma_shan_zheng') {
-    family = loadMaShanZheng('normal', {weights: ['400'], subsets: ['chinese-simplified']}).fontFamily;
-  } else if (key === 'zcool_xiaowei') {
-    family = loadZCOOLXiaoWei('normal', {weights: ['400'], subsets: ['chinese-simplified']}).fontFamily;
-  } else if (key === 'zcool_qingke') {
-    family = loadZCOOLQingKeHuangYou('normal', {weights: ['400'], subsets: ['chinese-simplified']}).fontFamily;
-  } else if (key === 'zcool_kuaile') {
-    family = loadZCOOLKuaiLe('normal', {weights: ['400'], subsets: ['chinese-simplified']}).fontFamily;
-  } else if (key === 'long_cang') {
-    family = loadLongCang('normal', {weights: ['400'], subsets: ['chinese-simplified']}).fontFamily;
-  } else if (key === 'liu_jian_mao_cao') {
-    family = loadLiuJianMaoCao('normal', {weights: ['400'], subsets: ['chinese-simplified']}).fontFamily;
-  } else if (key === 'zhi_mang_xing') {
-    family = loadZhiMangXing('normal', {weights: ['400'], subsets: ['chinese-simplified']}).fontFamily;
-  } else if (key === 'lxgw_marker_gothic') {
-    family = loadLXGWMarkerGothic('normal', {weights: ['400'], subsets: ['chinese-traditional']}).fontFamily;
-  } else if (key === 'lxgw_wenkai_tc') {
-    const wenKaiWeight = normalizedWeight <= 300 ? '300' : normalizedWeight >= 600 ? '700' : '400';
-    family = loadLXGWWenKaiTC('normal', {
-      weights: [wenKaiWeight],
-      subsets: ['chinese-traditional'],
-    }).fontFamily;
-  } else if (key === 'noto_sans_tc') {
-    family = loadNotoSansTC('normal', {weights: [notoWeight], subsets: ['chinese-traditional']}).fontFamily;
-  } else if (key === 'noto_serif_tc') {
-    family = loadNotoSerifTC('normal', {weights: [notoWeight], subsets: ['chinese-traditional']}).fontFamily;
-  } else if (key === 'lxgw_wenkai') {
-    family = 'LXGW WenKai, KaiTi, Microsoft YaHei, sans-serif';
-  }
-  loadedSubtitleFonts.set(cacheKey, family);
-  return family;
+  const configured = configuredFamily ? `"${configuredFamily}", ` : '';
+  const sansFallback = '"Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", Arial, sans-serif';
+  const serifFallback = '"Noto Serif CJK SC", SimSun, "Songti SC", serif';
+  const handwrittenFallback = '"Microsoft YaHei", KaiTi, cursive';
+  const families: Record<string, string> = {
+    noto_sans_sc: `${configured}"Noto Sans SC", ${sansFallback}`,
+    noto_serif_sc: `${configured}"Noto Serif SC", ${serifFallback}`,
+    ma_shan_zheng: `${configured}"Ma Shan Zheng", ${handwrittenFallback}`,
+    zcool_xiaowei: `${configured}"ZCOOL XiaoWei", ${serifFallback}`,
+    zcool_qingke: `${configured}"ZCOOL QingKe HuangYou", ${sansFallback}`,
+    zcool_kuaile: `${configured}"ZCOOL KuaiLe", ${sansFallback}`,
+    long_cang: `${configured}"Long Cang", ${handwrittenFallback}`,
+    liu_jian_mao_cao: `${configured}"Liu Jian Mao Cao", ${handwrittenFallback}`,
+    zhi_mang_xing: `${configured}"Zhi Mang Xing", ${handwrittenFallback}`,
+    lxgw_marker_gothic: `${configured}"LXGW Marker Gothic", ${sansFallback}`,
+    lxgw_wenkai_tc: `${configured}"LXGW WenKai TC", "Microsoft JhengHei", ${sansFallback}`,
+    lxgw_wenkai: `${configured}"LXGW WenKai", KaiTi, ${sansFallback}`,
+    noto_sans_tc: `${configured}"Noto Sans TC", "Microsoft JhengHei", ${sansFallback}`,
+    noto_serif_tc: `${configured}"Noto Serif TC", MingLiU, serif`,
+  };
+  return families[key] || `${configured}${sansFallback}`;
 };
 
 const toAssetSrc = (value?: string): string | undefined => {

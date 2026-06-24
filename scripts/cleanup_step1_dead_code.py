@@ -40,8 +40,43 @@ def fail(message: str) -> int:
     return 1
 
 
+def import_article_source(text: str) -> str:
+    tree = ast.parse(text, filename=str(SERVER_PATH))
+    lines = text.splitlines()
+    matches = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "import_article"
+    ]
+    if len(matches) != 1:
+        raise ValueError(f"expected import_article() exactly once, found {len(matches)}")
+    node = matches[0]
+    if node.end_lineno is None:
+        raise ValueError("Python AST did not provide import_article() end line")
+    return "\n".join(lines[node.lineno - 1 : node.end_lineno])
+
+
+def verify_cleaned_step1(text: str) -> bool:
+    source = import_article_source(text)
+    required_return = 'return {"success": True, "brief": brief}'
+    if source.count(required_return) != 1:
+        return False
+    forbidden_fragments = (
+        "llm_api_key",
+        "llm_model",
+        "client.chat.completions.create(",
+        "step1_llm_success",
+        "step1_llm_error",
+    )
+    return not any(fragment in source for fragment in forbidden_fragments)
+
+
 def locate_dead_block(text: str) -> tuple[int, int] | None:
     start_count = text.count(START_ANCHOR)
+    if start_count == 0:
+        if verify_cleaned_step1(text):
+            return None
+        raise ValueError("START_ANCHOR was not found and import_article() is not in the cleaned state")
     if start_count != 1:
         raise ValueError(f"expected START_ANCHOR exactly once, found {start_count}")
 
@@ -91,6 +126,8 @@ def main() -> int:
     try:
         new_text = patched_text(original)
         ast_check(new_text)
+        if not verify_cleaned_step1(new_text):
+            return fail("cleanup validation failed: import_article() still contains Step 1 LLM logic")
     except Exception as exc:
         return fail(f"cleanup validation failed: {type(exc).__name__}: {exc}")
 

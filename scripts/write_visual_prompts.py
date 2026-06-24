@@ -4,6 +4,9 @@
 The prompt builder keeps production invariants separate from visual style. Style
 profiles may change visual language, but they cannot override fixed generated
 image background, subtitle safety zone, title requirement, or maskability.
+
+The storyboard is intentionally narration-first: visual_groups are treated as
+post-design anchors for Mask/Reveal review, not as a rigid layout template.
 """
 
 from __future__ import annotations
@@ -80,21 +83,14 @@ def visual_group_lines(slide: dict[str, Any]) -> list[str]:
         if not isinstance(group, dict):
             continue
         group_id = str(group.get("id", "")).strip()
-        role = str(group.get("role", "")).strip()
-        content_unit_id = str(group.get("content_unit_id", group_id)).strip()
         visible_text = str(group.get("visible_text", "")).strip()
         anchor = str(group.get("visual_anchor", "")).strip()
         function = str(group.get("narration_function", "")).strip()
-        source_text = str(group.get("source_text", "")).strip()
         mask_target = str(group.get("mask_target", "")).strip()
-        must_include = compact_list(group.get("must_include"))
-        must_not_include = compact_list(group.get("must_not_include"))
         order = str(group.get("reveal_order", "")).strip()
         lines.append(
-            f"- {group_id} / unit {content_unit_id} / {role} / order {order}: "
-            f"visible text=\"{visible_text}\"; source={source_text}; anchor={anchor}; "
-            f"narration function={function}; mask target={mask_target}; "
-            f"include=[{must_include}]; exclude=[{must_not_include}]"
+            f"- anchor {group_id} / order {order}: visible hint=\"{visible_text}\"; "
+            f"possible visual anchor={anchor}; spoken function={function}; mask hint={mask_target}"
         )
     return lines
 
@@ -108,31 +104,34 @@ def beat_lines(slide: dict[str, Any]) -> list[str]:
         if not isinstance(beat, dict):
             continue
         beat_id = str(beat.get("id", "")).strip()
-        content_unit_id = str(beat.get("content_unit_id", "")).strip()
         group_id = str(beat.get("group_id", beat.get("visual_group", ""))).strip()
         anchor = str(beat.get("visible_anchor", "")).strip()
         intent = str(beat.get("spoken_intent", beat.get("spoken_point", beat.get("text", "")))).strip()
         spoken = str(beat.get("spoken_text", "")).strip()
-        lines.append(f"- {beat_id} -> unit {content_unit_id or '-'} -> {group_id}: anchor=\"{anchor}\"; intent={intent}; spoken={spoken}")
+        lines.append(f"- {beat_id} -> optional anchor {group_id}: anchor=\"{anchor}\"; intent={intent}; spoken={spoken}")
     return lines
 
 
 def item_lines(slide: dict[str, Any]) -> list[str]:
+    body_content = slide.get("body_content")
+    lines: list[str] = []
+    if isinstance(body_content, list):
+        lines.extend(f"- {str(item).strip()}" for item in body_content if str(item).strip())
+    elif str(body_content or "").strip():
+        lines.append(f"- {str(body_content).strip()}")
     content = slide.get("content")
     if not isinstance(content, dict):
-        return []
+        return lines
     items = content.get("items")
     if not isinstance(items, list):
-        return []
-    lines: list[str] = []
+        return lines
     for item in items:
         if not isinstance(item, dict):
             continue
         label = str(item.get("label", "")).strip()
         text = str(item.get("text", "")).strip()
         item_type = str(item.get("type", "")).strip()
-        side = str(item.get("side", "")).strip()
-        prefix = " / ".join(part for part in [item_type, label, side] if part)
+        prefix = " / ".join(part for part in [item_type, label] if part)
         if prefix and text:
             lines.append(f"- {prefix}: {text}")
         elif text:
@@ -175,8 +174,8 @@ def presentation_policy(planning: dict[str, Any]) -> dict[str, Any]:
         return {
             "subtitle_policy": SUBTITLE_POLICY_NO_SUBTITLE,
             "subtitle_rationale": "No project-level AI subtitle policy was found; defaulting to no subtitles for visual consistency.",
-            "default_visual_group_count": "3-5",
-            "layout_diversity": "high",
+            "default_visual_anchor_count": "2-5",
+            "layout_freedom": "high",
         }
     result = dict(policy)
     subtitle_policy = str(result.get("subtitle_policy") or "").strip()
@@ -195,7 +194,7 @@ def subtitle_prompt_lines(policy: dict[str, Any], slide: dict[str, Any]) -> list
         if not subtitle:
             raise PromptError(f"Slide {slide.get('slide_id', '')} requires subtitle but subtitle is empty")
         return [
-            f"- Project subtitle policy: every slide must render a subtitle.",
+            "- Project subtitle policy: every slide must render a subtitle.",
             f"- Render subtitle below the main title: \"{subtitle}\".",
             "- Keep subtitle compact; it must not enter the video subtitle safety zone.",
         ]
@@ -226,27 +225,25 @@ def production_invariant_lines(invariants: dict[str, Any], policy: dict[str, Any
         *subtitle_prompt_lines(policy, slide),
         f"- Keep y={y_min}..{y_max} completely empty for video subtitles: no text, icons, arrows, labels, decorations, shadows, people, partial objects, or visual fragments.",
         "- Avoid severe overlap. Text, arrows, icons, formulas, card borders, and labels must not collide.",
-        "- Semantic groups must be manually maskable; groups may be connected by clean arrows, brackets, timelines, or flow paths, but unrelated groups must not merge.",
+        "- The final page should remain manually maskable, but Mask convenience must not force a rigid card grid.",
     ]
 
 
 def design_brief_lines(slide: dict[str, Any], policy: dict[str, Any]) -> list[str]:
-    composition = slide.get("composition")
+    narration = str(slide.get("narration") or "").strip()
+    visual_intent = str(slide.get("visual_intent") or slide.get("visual_metaphor") or "自由选择最能表达演讲稿的整体画面").strip()
     lines = [
-        f"- Slide purpose: {str(slide.get('slide_purpose') or '').strip()}",
         f"- Core message: {str(slide.get('core_message') or '').strip()}",
-        f"- Layout type: {str(slide.get('layout_type') or 'auto_choose_best_explainer_layout').strip()}",
-        f"- Visual metaphor: {str(slide.get('visual_metaphor') or 'choose a clear visual metaphor that fits the content').strip()}",
-        f"- Default visual group count guidance: {str(policy.get('default_visual_group_count') or '3-5').strip()}",
-        f"- Layout diversity guidance: {str(policy.get('layout_diversity') or 'high').strip()}",
+        f"- Visual intent: {visual_intent}",
+        f"- Layout freedom: {str(policy.get('layout_freedom') or 'high').strip()}",
+        f"- Suggested post-design anchor count: {str(policy.get('default_visual_anchor_count') or policy.get('default_visual_group_count') or '2-5').strip()}",
     ]
-    if isinstance(composition, dict):
-        for key in ("primary_focus", "reading_order", "hierarchy", "group_count"):
-            if key in composition:
-                value = composition[key]
-                if isinstance(value, list):
-                    value = ", ".join(str(item) for item in value)
-                lines.append(f"- Composition {key}: {value}")
+    if narration:
+        lines.append(f"- Narration to support: {narration}")
+    body_lines = item_lines(slide)
+    if body_lines:
+        lines.append("- Body content / source points:")
+        lines.extend(f"  {line}" for line in body_lines)
     return [line for line in lines if line.strip() and not line.endswith(": ")]
 
 
@@ -261,9 +258,8 @@ def build_prompt(
 ) -> str:
     slide_id = str(slide.get("slide_id", "")).strip()
     core_message = str(slide.get("core_message", "")).strip()
-    groups = "\n".join(visual_group_lines(slide)) or "- No visual_groups provided; create 2-6 meaningful, maskable semantic visual groups."
-    beats = "\n".join(beat_lines(slide)) or "- No narration_beats provided."
-    fallback_items = "\n".join(item_lines(slide))
+    anchors = "\n".join(visual_group_lines(slide)) or "- No anchors provided yet; after drawing, identify 2-5 maskable visual anchors from the finished page."
+    beats = "\n".join(beat_lines(slide)) or "- No narration_beats provided; align the finished page with the narration as a whole."
     production_rules = "\n".join(production_invariant_lines(invariants, policy, slide))
     design_rules = "\n".join(design_brief_lines(slide, policy))
     style_rules = "\n".join(style_profile_lines(style_tokens)) or "- Use the active style reference images as the visual style source."
@@ -276,49 +272,39 @@ Input images:
 - Reference image 2 ({example_ref}): use only as a filled-slide style reference.
 
 Primary request:
-Generate one complete full-slide master image. The final video will reveal parts of this full-slide image by using cover/fog/crop reveal layers.
-The slide body, title, lines, arrows, icons, labels, and diagram content must all be Image Gen bitmap content.
+Generate one complete full-slide master image from the narration and body content. Do not first force the page into pre-defined blocks.
+The slide body, title, lines, arrows, icons, labels, and diagrams must all be Image Gen bitmap content.
 
 Production invariants that style must not override:
 {production_rules}
 
-Slide design brief:
+Narration-first slide brief:
 {design_rules}
 
 Core message:
 {core_message}
 
-Visual contract groups:
-{groups}
+Optional post-design visual anchors for Mask/Reveal review:
+{anchors}
 
-Narration beats that the visual must support:
+Narration beats, if present, are alignment hints rather than a rigid layout template:
 {beats}
 
-Fallback content items, if any:
-{fallback_items}
-
-Semantic mapping and mask rules:
-- Treat each visual group as one content unit. Preserve the content_unit_id relationship in the layout.
-- For every group, use mask target/include/exclude fields as production hints, not as a requirement to make isolated cards.
-- A later mask should be able to cover all included elements without covering excluded elements.
-- Keep arrows, labels, icons, formulas, and cards inside the same reveal group when semantically connected.
-- Independent groups should have enough clean #FFFFFF around them for manual Mask painting.
-- Prefer one dominant hero visual plus 2-4 supporting semantic groups when it improves expression.
+Mapping and mask guidance:
+- First design a coherent page that expresses the narration and core message.
+- Then make sure the important visible elements can be associated with the narration beats or visual anchors.
+- Visual anchors are not required to become isolated cards; they are review handles for later Mask/Reveal work.
+- A later mask should be able to reveal meaningful regions without covering unrelated content.
+- Arrows, icons, labels, and callouts may connect ideas, but they must not collide with text or create severe overlap.
 - Do not place any content or decoration below y=930.
-
-Narration alignment rules:
-- Narration beats are authoritative: a visual group is discussed only when a beat references it.
-- Visual groups without a narration beat remain visual-only; do not invent narration merely to cover every group.
-- The narration should expand what is visible on the page; it must not introduce unrelated concepts that the page does not show.
-- Use the hierarchy implied by reveal_order and narration order.
 
 Style profile; these are generalizable and may vary by active style:
 {style_rules}
 
 Creative freedom:
-- Choose the exact shapes, icons, arrows, callouts, local decorations, and visual metaphor as long as production invariants are preserved.
+- Choose the exact composition, shapes, icons, arrows, callouts, local decorations, and visual metaphor as long as production invariants are preserved.
 - Make the page visually rich inside the content area, but keep it clean and readable.
-- Do not create many equal isolated cards unless the slide is truly a list, comparison, or checklist.
+- Do not create many equal isolated cards unless the narration truly calls for a list, comparison, or checklist.
 """
 
 

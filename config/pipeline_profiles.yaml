@@ -6,8 +6,8 @@ storyboard:
     medium_article: "6-8"
     long_article: "8-12"
   visual_group_count:
-    short_article: "3-6"
-    medium_article: "4-7"
+    short_article: "3-7"
+    medium_article: "4-8"
     long_article: "4-9"
   required_slide_fields:
     - slide_id
@@ -22,19 +22,19 @@ storyboard:
   roles:
     title:
       label: 主标题
-      description: 页面主标题，可短，可不承担完整解释。
+      description: 页面固定主标题区域；只作为页面主题锚点，不限制主体内容结构。
       default_reveal: wipe_left_to_right
     subtitle:
       label: 副标题
-      description: 辅助说明页面主题；是否生成由内容需要决定。
+      description: 页面固定副标题区域；用于补充本页理解角度，可按内容需要为空或很短。
       default_reveal: wipe_left_to_right
     content_body:
       label: 正文内容
-      description: 普通概念、要点、卡片、列表或解释性文字。
+      description: 后处理语义标签；可承载任何为讲清楚内容而需要的文字、卡片、场景、判断链或结构块。
       default_reveal: wipe_left_to_right
     diagram:
       label: 图示/流程图
-      description: 图形、流程、关系图、对比图、时间线等。
+      description: 后处理语义标签；用于流程、关系、对比、时间线、判断链、对象地图、推理路径等可视化结构。
       default_reveal: wipe_left_to_right
     quote:
       label: 引用/金句
@@ -65,16 +65,22 @@ storyboard:
       description: 不承载核心语义的装饰元素。
       default_reveal: wipe_left_to_right
   structure_rules:
-    - visual_groups 可以使用 roles 中的任意角色，也可以使用自定义 role；具体结构完全由页面内容决定。
-    - 如果某页适合表格、流程、对比、时间线、引用、数据卡片或 FAQ，可以直接用对应结构组织，不要固定套用“主标题/副标题/正文/总结”模板。
+    - 分镜首先服务于“把内容讲清楚”，不要从角色清单或固定版式出发；先规划每页的理解路径、演讲稿和视觉表达，再给结果标注 role。
+    - 主标题、副标题使用页面上方固定区域；底部 y=930..1080 是固定字幕安全区。除这三处外，主体内容区可以根据内容自由发挥。
+    - visual_groups 只是后续 Mask、动画和旁白绑定的生产接口，不是内容设计模板；role 可以使用内置值，也可以使用自定义 role。
+    - 如果某页适合判断链、冲突地图、对象关系图、推理路径、时间压力图、对比、表格、流程、FAQ、场景拆解或行动清单，就直接使用最能讲清楚的结构。
+    - 每页应先有自然演讲稿或讲解节奏，再决定画面上显示哪些关键词、图形和结构；不要把演讲稿降级成 visible_text 的重复朗读。
     - narration_beats 是是否朗读的唯一依据；有对应 beat 的 visual_group 才进入演讲稿，没有 beat 的 visual_group 只用于画面展示。
     - 不要为了覆盖全部 visual_groups 强行生成 narration_beat；演讲稿只讲真正需要讲解的内容。
-    - 每个 visual_group 仍然要能被一个人工 Mask 或矩形区域完整覆盖，避免过密小字和跨组长连线。
+    - 每个 visual_group 必须能被一个人工 Mask 或矩形区域完整覆盖；独立视觉元素、文字、箭头、卡片、图标之间严禁重叠、压住、穿插或粘连。
 
 image_prompt:
   opening: "请生成一张 16:9 的完整 PPT/讲解页静态主图。"
   invariant_rules:
+    - 页面上方主标题、副标题位置固定；底部 y=930..1080 固定留作视频字幕安全区。
+    - 主体内容区是开放画布，必须根据本页内容自由选择最能讲清楚的视觉表达，不要机械套用卡片列表。
     - 每个 visual_group 必须作为独立视觉岛出现，组与组之间保留清晰空白，方便后续人工 Mask。
+    - 严禁画面元素重叠：文字、卡片、图标、箭头、线条、标签、装饰、图表之间不得互相覆盖、压住、穿插或粘连。
     - 每个分组指定的 visible_text 必须清晰、完整、原样出现；不要改写、漏字或生成乱码。
     - 不要把不同 visual_group 的文字、线条、箭头和装饰粘连在一起。
     - 画布按 1920x1080 构图，底部 y=930..1080 留作视频字幕安全区。

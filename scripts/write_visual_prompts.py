@@ -126,26 +126,26 @@ def build_prompt(slide: dict[str, Any], template_ref: str, example_ref: str) -> 
     fallback_items = "\n".join(item_lines(slide))
     slide_purpose = str(slide.get("slide_purpose", "")).strip()
 
-    return f"""Use case: scientific-educational
+    return f"""Use case: content-first PPT explainer
 Asset type: 16:9 Image Gen full-slide master for reveal-layer video production
 Slide id: {slide_id}
 Input images:
-- Reference image 1 ({template_ref}): use as the page template and composition reference.
-- Reference image 2 ({example_ref}): use as the filled-slide visual style reference.
+- Reference image 1 ({template_ref}): use for fixed title/subtitle area, spacing, and style mood.
+- Reference image 2 ({example_ref}): use for visual style reference only; do not force its body layout.
 
 Primary request:
-Generate one complete full-slide master image in the same warm hand-drawn Chinese explainer style as the references. The final video will reveal parts of this full-slide image by using cover/fog/crop reveal layers. Do not generate separate isolated element images for production.
+Generate one complete full-slide master image that serves the content and makes the explanation clear. The final video will reveal parts of this full-slide image by using cover/fog/crop reveal layers. Do not generate separate isolated element images for production.
 The slide body, title, subtitle, lines, arrows, icons, labels, and diagram content must all be Image Gen bitmap content.
 
 Canvas and layout:
 - 16:9 landscape, 1920x1080.
 - Use a flat uniform pure-white #FFFFFF background.
 - All four edges and all four corners must remain continuously pure white, without paper texture, shadows, noise, gradients, or vignettes.
-- Yellow vertical marker at top left.
-- Large handwritten Chinese main title at top left.
-- Smaller handwritten Chinese subtitle below the title with a short yellow underline.
+- Main title and subtitle stay in the fixed top title area.
 - Keep the main content inside x=80,y=235 to x=1840,y=915.
 - Keep y=930 to y=1080 visually calm for Remotion subtitles.
+- The body area is free: choose whatever visual structure best explains this page, such as reasoning chain, comparison, relationship map, process, timeline, scene breakdown, or action checklist.
+- Do not mechanically arrange the body as a few generic cards unless that is truly the clearest explanation.
 
 Text to render exactly where possible:
 Main title: "{title}"
@@ -153,11 +153,11 @@ Subtitle: "{subtitle}"
 Core message: "{core_message}"
 Slide purpose: {slide_purpose}
 
-Visual contract groups:
-{groups}
-
-Narration beats that the visual must support:
+Narration beats / speaker script that the visual must primarily support:
 {beats}
+
+Visual contract groups / Mask grouping reference:
+{groups}
 
 Fallback content items, if any:
 {fallback_items}
@@ -168,16 +168,19 @@ Semantic mapping and mask rules:
 - A later box must be able to cover all included elements without covering excluded elements.
 - Keep arrows, labels, icons, formulas, and cards inside the same reveal group when semantically connected.
 - Leave 80-120px of clean #FFFFFF background between independent groups.
+- Absolutely no overlap: text, cards, icons, arrows, lines, labels, decorations, and charts must not cover, touch, pierce through, or stick to each other.
 - Do not place critical content below y=930.
 
 Narration alignment rules:
+- The narration beats are the primary basis for the slide body composition. First understand what the speaker is explaining, then design the visual body to support that explanation.
 - Narration beats are authoritative: a visual group is discussed only when a beat references it.
 - Visual groups without a narration beat remain visual-only; do not invent narration merely to cover every group.
 - The narration should expand what is visible on the page; it must not introduce unrelated concepts that the page does not show.
 - Use the hierarchy implied by reveal_order and narration order.
 
 Style constraints:
-- Match the two reference images: black hand-drawn ink, yellow accent, soft green and blue highlight pills, simple doodle icons, clean spacing.
+- Use the reference images for style mood, typography feel, spacing, and title treatment only.
+- The body composition must be content-specific and may vary freely from slide to slide.
 - Avoid overlapping objects.
 - Keep text large and readable; avoid dense paragraphs and tiny labels.
 """

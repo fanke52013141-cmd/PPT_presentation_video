@@ -2736,6 +2736,15 @@ input.step2-soft-input:focus {
   height: 35px;
 }
 
+.step7-audio-missing {
+  padding: 0.55rem 0.65rem;
+  border-radius: 10px;
+  background: rgba(255, 183, 3, 0.12);
+  color: #8a5a00;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
 @media (max-width: 900px) {
   .step6-toolbar {
     align-items: stretch;

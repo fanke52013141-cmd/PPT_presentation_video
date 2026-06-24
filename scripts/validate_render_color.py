@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -18,14 +19,76 @@ class RenderColorError(RuntimeError):
     pass
 
 
+def candidate_binary_dirs() -> list[Path]:
+    repo_root = Path(__file__).resolve().parents[1]
+    candidates: list[Path] = []
+    for value in (
+        os.environ.get("PPT_STUDIO_FFMPEG_DIR"),
+        os.environ.get("FFMPEG_DIR"),
+    ):
+        if value:
+            candidates.append(Path(value))
+
+    candidates.extend(
+        [
+            repo_root / "tools" / "ffmpeg" / "bin",
+            repo_root / "runtime" / "ffmpeg" / "bin",
+            repo_root.parent / "work" / "runtime" / "ffmpeg" / "bin",
+            repo_root.parent / "work" / "runtime" / "ffmpeg",
+        ]
+    )
+
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        candidates.extend(
+            [
+                Path(appdata) / "TRAE SOLO CN" / "ModularData" / "ai-agent" / "vm" / "tools" / "app" / "ffmpeg",
+                Path(appdata) / "WEMedia" / "plugin" / "ffmpeg_7_1",
+            ]
+        )
+    return candidates
+
+
+def resolve_media_tool(name: str) -> str | None:
+    direct_env = os.environ.get(f"{name.upper()}_BINARY")
+    if direct_env and Path(direct_env).exists():
+        return direct_env
+    found = shutil.which(name)
+    if found:
+        return found
+    executable = f"{name}.exe" if os.name == "nt" else name
+    for directory in candidate_binary_dirs():
+        path = directory / executable
+        if path.exists():
+            return str(path)
+    return None
+
+
+def require_media_tools() -> tuple[str, str]:
+    ffmpeg = resolve_media_tool("ffmpeg")
+    ffprobe = resolve_media_tool("ffprobe")
+    missing = []
+    if not ffmpeg:
+        missing.append("ffmpeg")
+    if not ffprobe:
+        missing.append("ffprobe")
+    if missing:
+        raise RenderColorError(
+            "Missing media tool(s): "
+            + ", ".join(missing)
+            + ". Install ffmpeg/ffprobe, add them to PATH, or set PPT_STUDIO_FFMPEG_DIR."
+        )
+    return ffmpeg, ffprobe
+
+
 def read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def probe_video(video_path: Path) -> dict:
+def probe_video(video_path: Path, ffprobe_cmd: str) -> dict:
     result = subprocess.run(
         [
-            "ffprobe",
+            ffprobe_cmd,
             "-v",
             "error",
             "-select_streams",
@@ -131,7 +194,8 @@ def expected_slide_image(run_dir: Path, slide_id: str) -> Image.Image:
 
 
 def validate_video(video_path: Path, run_dir: Path, max_channel_mae: float = 20.0) -> dict:
-    metadata = probe_video(video_path)
+    ffmpeg_cmd, ffprobe_cmd = require_media_tools()
+    metadata = probe_video(video_path, ffprobe_cmd)
     validate_metadata(metadata)
     props = read_json(run_dir / "remotion_props.json")
     results: list[dict] = []
@@ -144,7 +208,7 @@ def validate_video(video_path: Path, run_dir: Path, max_channel_mae: float = 20.
             frame_path = temp_dir / f"{slide_id}.png"
             result = subprocess.run(
                 [
-                    "ffmpeg",
+                    ffmpeg_cmd,
                     "-y",
                     "-ss",
                     f"{verification_time(slide):.3f}",
@@ -186,9 +250,6 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    if not shutil.which("ffprobe") or not shutil.which("ffmpeg"):
-        print("Error: ffmpeg and ffprobe are required", file=sys.stderr)
-        return 1
     try:
         result = validate_video(args.video.resolve(), args.run_dir.resolve(), args.max_channel_mae)
     except RenderColorError as exc:

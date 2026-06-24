@@ -64,6 +64,47 @@ PAUSE_RE = re.compile(r"<#\d+(?:\.\d{1,2})?#>")
 EXPRESSION_RE = re.compile(r"\([A-Za-z-]+\)")
 SENTENCE_END_RE = re.compile(r"(?<=[\u3002\uff01\uff1f!?；;])\s*")
 SOFT_SUBTITLE_MARKS = ["\uff0c", "\u3001", "\uff1a", "\uff1b", ",", ":"]
+DEFAULT_HTTP_RETRIES = 3
+RETRIABLE_HTTP_STATUS = {408, 409, 425, 429, 500, 502, 503, 504}
+
+
+def retry_delay_sec(attempt: int) -> float:
+    return min(2.0 * attempt, 8.0)
+
+
+def retry_notice(purpose: str, attempt: int, attempts: int, error: Any) -> None:
+    print(
+        f"Warning: MiniMax {purpose} attempt {attempt}/{attempts} failed: {error}; retrying...",
+        file=sys.stderr,
+    )
+
+
+def request_bytes_with_retry(
+    request: urllib.request.Request,
+    *,
+    timeout: int,
+    purpose: str,
+    attempts: int = DEFAULT_HTTP_RETRIES,
+) -> bytes:
+    for attempt in range(1, attempts + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return response.read()
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            message = f"MiniMax {purpose} HTTP {exc.code}: {body[:800]}"
+            if exc.code in RETRIABLE_HTTP_STATUS and attempt < attempts:
+                retry_notice(purpose, attempt, attempts, message)
+                time.sleep(retry_delay_sec(attempt))
+                continue
+            raise RuntimeError(message) from exc
+        except (TimeoutError, urllib.error.URLError, OSError) as exc:
+            if attempt < attempts:
+                retry_notice(purpose, attempt, attempts, exc)
+                time.sleep(retry_delay_sec(attempt))
+                continue
+            raise RuntimeError(f"MiniMax {purpose} failed after {attempts} attempts: {exc}") from exc
+    raise RuntimeError(f"MiniMax {purpose} failed after {attempts} attempts")
 
 
 def load_dotenv(path: Path) -> None:
@@ -143,15 +184,8 @@ def call_minimax_tts(payload: dict[str, Any], endpoint: str, api_key: str, timeo
         },
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            body = response.read().decode("utf-8")
-            return json.loads(body)
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"MiniMax HTTP {exc.code}: {body}") from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"MiniMax request failed: {exc}") from exc
+    body = request_bytes_with_retry(request, timeout=timeout, purpose="request").decode("utf-8")
+    return json.loads(body)
 
 
 def is_async_endpoint(endpoint: str) -> bool:
@@ -161,15 +195,32 @@ def is_async_endpoint(endpoint: str) -> bool:
 def upload_minimax_text_file(text: str, endpoint: str, api_key: str, timeout: int) -> str:
     parsed = urllib.parse.urlparse(endpoint)
     upload_url = urllib.parse.urlunparse(parsed._replace(path="/v1/files/upload", query=""))
-    with httpx.Client(timeout=timeout, trust_env=False) as client:
-        response = client.post(
-            upload_url,
-            headers={"Authorization": f"Bearer {api_key}"},
-            data={"purpose": "t2a_async_input"},
-            files={"file": ("tts_input.txt", text.encode("utf-8"), "text/plain")},
-        )
-    if response.status_code != 200:
-        raise RuntimeError(f"MiniMax text upload HTTP {response.status_code}: {response.text[:800]}")
+    response = None
+    for attempt in range(1, DEFAULT_HTTP_RETRIES + 1):
+        try:
+            with httpx.Client(timeout=timeout, trust_env=False) as client:
+                response = client.post(
+                    upload_url,
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    data={"purpose": "t2a_async_input"},
+                    files={"file": ("tts_input.txt", text.encode("utf-8"), "text/plain")},
+                )
+            if response.status_code == 200:
+                break
+            message = f"MiniMax text upload HTTP {response.status_code}: {response.text[:800]}"
+            if response.status_code in RETRIABLE_HTTP_STATUS and attempt < DEFAULT_HTTP_RETRIES:
+                retry_notice("text upload", attempt, DEFAULT_HTTP_RETRIES, message)
+                time.sleep(retry_delay_sec(attempt))
+                continue
+            raise RuntimeError(message)
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            if attempt < DEFAULT_HTTP_RETRIES:
+                retry_notice("text upload", attempt, DEFAULT_HTTP_RETRIES, exc)
+                time.sleep(retry_delay_sec(attempt))
+                continue
+            raise RuntimeError(f"MiniMax text upload failed after {DEFAULT_HTTP_RETRIES} attempts: {exc}") from exc
+    if response is None or response.status_code != 200:
+        raise RuntimeError("MiniMax text upload failed without a response")
     payload = response.json()
     check_base_resp(payload, "text upload")
     file_id = str(get_nested(payload, "file", "file_id") or "").strip()
@@ -248,8 +299,7 @@ def response_status(response_json: dict[str, Any]) -> str:
 def download_url(url: str, api_key: str | None = None, timeout: int = 120) -> bytes:
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     request = urllib.request.Request(url, headers=headers, method="GET")
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        return response.read()
+    return request_bytes_with_retry(request, timeout=timeout, purpose="download")
 
 
 def audio_bytes_from_string(value: str, api_key: str, timeout: int) -> bytes:
@@ -300,12 +350,12 @@ def call_minimax_async_tts(payload: dict[str, Any], endpoint: str, api_key: str,
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
                 method="GET",
             )
-            try:
-                with urllib.request.urlopen(request, timeout=min(30, timeout)) as response:
-                    poll_response = json.loads(response.read().decode("utf-8"))
-            except urllib.error.HTTPError as exc:
-                body = exc.read().decode("utf-8", errors="replace")
-                raise RuntimeError(f"MiniMax async query HTTP {exc.code}: {body}") from exc
+            body = request_bytes_with_retry(
+                request,
+                timeout=min(30, timeout),
+                purpose="async query",
+            )
+            poll_response = json.loads(body.decode("utf-8"))
             check_base_resp(poll_response, "async query")
 
             file_id = response_file_id(poll_response) or file_id
@@ -336,8 +386,8 @@ def write_audio(response_json: dict[str, Any], out_audio: Path) -> None:
     out_audio.parent.mkdir(parents=True, exist_ok=True)
 
     if isinstance(audio, str) and audio.startswith(("http://", "https://")):
-        with urllib.request.urlopen(audio, timeout=120) as response:
-            out_audio.write_bytes(response.read())
+        request = urllib.request.Request(audio, method="GET")
+        out_audio.write_bytes(request_bytes_with_retry(request, timeout=120, purpose="audio url download"))
         return
 
     try:

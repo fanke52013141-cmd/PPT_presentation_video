@@ -21,6 +21,9 @@ approved full-slide bitmap.
 
 Generate one 1920x1080, 16:9 Chinese educational PPT-style master image.
 
+The image must be content-first: choose the body composition that best explains
+the slide, instead of mechanically applying a fixed card/list template.
+
 Use the fixed style references:
 
 - `references/style_reference/PPT模板.png`
@@ -40,6 +43,9 @@ The image must support the narration beats in order.
 - Later beats can be represented by later visual groups or a summary group.
 - Do not show all beats as equally important. Use visual hierarchy to match the
   speaking order.
+- If the narration explains reasoning, draw a reasoning path. If it compares,
+  draw a comparison. If it coordinates objects, draw an object map. If it gives
+  actions, draw an action flow.
 
 ## Mask-Friendly Layout Rules
 
@@ -48,6 +54,9 @@ Design the image so visual groups can be painted cleanly with a manual Mask:
 - Use 5-8 large macro groups.
 - Keep independent macro groups separated by at least 48-80px of clean
   background.
+- Absolutely no overlap: text, cards, icons, arrows, lines, labels, decorative
+  marks, charts, and illustrations must not cover, press on, pierce through, or
+  stick to each other.
 - In the middle content area, avoid dense clusters, overlaps, touching edges,
   and near-contact.
 - Do not place text on top of arrows, icons, card borders, labels, or formulas.
@@ -63,6 +72,8 @@ Design the image so visual groups can be painted cleanly with a manual Mask:
 ## Style
 
 - Flat, uniform pure-white `#FFFFFF` outer background.
+- Main title and subtitle stay in the fixed top title area.
+- Bottom subtitle-safe area stays empty.
 - All four edges and corners must stay continuously pure white.
 - No paper texture, background noise, shadow, gradient, vignette, or warm
   off-white outer canvas.
@@ -77,5 +88,6 @@ Design the image so visual groups can be painted cleanly with a manual Mask:
 - No SVG, HTML, CSS, Canvas, React, or Remotion-drawn body content.
 - No crowded center layout.
 - No overlapping macro groups.
+- No overlapping visual elements of any kind.
 - No tiny unreadable text.
 - No photorealistic scene, dark tech background, or 3D render.

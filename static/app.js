@@ -1118,20 +1118,38 @@ async function generateStep2Contract(requirement = '') {
   const normalizedRequirement = String(requirement || defaultStep2GenerationRequirement()).trim();
   document.getElementById('step2-loading').style.display = 'block';
   document.getElementById('step2-btn-generate').disabled = true;
+  const loadingText = document.querySelector('#step2-loading p');
+  const originalLoadingText = loadingText?.innerText || '';
   
   try {
-    const res = await API.post(
-      `/api/projects/${state.currentProject.id}/steps/2/execute`,
+    if (loadingText) loadingText.innerText = 'Step 2A：AI 正在规划每页标题、正文要点和演讲稿...';
+    const scriptRes = await API.post(
+      `/api/projects/${state.currentProject.id}/steps/2/script/execute`,
       { requirement: normalizedRequirement },
     );
-    if (res.success) {
-      showToast('🎉 分镜规划已生成！');
-      state.slides = res.contract.slides || [];
-      renderStep2Workspace();
+    if (!scriptRes.success) {
+      showToast(`❌ 错误: ${scriptRes.message || 'Step 2A 生成失败'}`);
+      return;
     }
+    if (loadingText) loadingText.innerText = 'Step 2B：AI 正在根据演讲稿规划画面语义块...';
+    const visualRes = await API.post(`/api/projects/${state.currentProject.id}/steps/2/visual/execute`);
+    if (!visualRes.success) {
+      showToast(`❌ 错误: ${visualRes.message || 'Step 2B 生成失败'}`);
+      return;
+    }
+    if (loadingText) loadingText.innerText = 'Step 2C：正在合成可用于生图、Mask 和旁白绑定的 visual_contract...';
+    const res = await API.post(`/api/projects/${state.currentProject.id}/steps/2/compose`);
+    if (!res.success) {
+      showToast(`❌ 错误: ${res.message || 'Step 2 合成失败'}`);
+      return;
+    }
+    showToast('🎉 Narration-first 分镜规划已生成！');
+    state.slides = res.contract?.slides || [];
+    renderStep2Workspace();
   } catch(e) {
     // 捕获报错
   } finally {
+    if (loadingText) loadingText.innerText = originalLoadingText;
     document.getElementById('step2-loading').style.display = 'none';
     document.getElementById('step2-btn-generate').disabled = false;
   }
@@ -1212,12 +1230,20 @@ function renderStep2Workspace() {
         </div>
         <div class="step2-group-fields">
           <div>
-            <label>画面文字</label>
+            <label>内部锚点</label>
             <input class="step2-soft-input" type="text" value="${escHtml(group.visible_text)}" placeholder="页面上显示的中文" oninput="updateGroupField(${gIdx}, 'visible_text', this.value)">
           </div>
           <div>
-            <label>视觉描述</label>
+            <label>画面真实文字</label>
+            <input class="step2-soft-input" type="text" value="${escHtml(group.display_text || '')}" placeholder="图片里要写出的文字；纯图像可留空" oninput="updateGroupField(${gIdx}, 'display_text', this.value)">
+          </div>
+          <div>
+            <label>视觉呈现 / 位置</label>
             <input class="step2-soft-input" type="text" value="${escHtml(group.visual_anchor)}" placeholder="位置、形态和手绘元素" oninput="updateGroupField(${gIdx}, 'visual_anchor', this.value)">
+          </div>
+          <div>
+            <label>Mask 目标</label>
+            <input class="step2-soft-input" type="text" value="${escHtml(group.mask_target || group.visual_anchor || '')}" placeholder="人工 Mask 时要圈出的画面对象或区域" oninput="updateGroupField(${gIdx}, 'mask_target', this.value)">
           </div>
         </div>
         <button class="step2-group-delete" type="button" title="删除此结构块" aria-label="删除此结构块" onclick="removeVisualGroup(${gIdx})">

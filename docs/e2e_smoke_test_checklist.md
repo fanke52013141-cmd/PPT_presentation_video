@@ -6,6 +6,21 @@ changes, or security hardening changes.
 The goal is not to judge final visual quality. The goal is to catch regressions
 that break the happy path from article import to rendered video.
 
+## Step numbering note
+
+The browser UI has six user-visible steps, while the backend and historical validators still use internal Step numbers.
+
+| UI step | Internal stage in this checklist |
+| --- | --- |
+| UI Step 1 Import article | Step 1 import |
+| UI Step 2 Storyboard | Step 2 visual contract |
+| UI Step 3 Images | Step 3 images and Step 4 confirmation |
+| UI Step 4 Mask | Step 5 mask / reveal manifest |
+| UI Step 5 Narration and audio | Step 6 narration and Step 7 TTS |
+| UI Step 6 Render video | Step 8 Remotion render |
+
+When this checklist says Step 5/6/7/8, it refers to the internal artifact/API stage.
+
 ## 0. Preflight
 
 Run from the repository root:
@@ -42,7 +57,7 @@ http://127.0.0.1:8000/?access_token=replace-with-long-random-token
 Expected:
 
 - Project appears in the project list.
-- Current visible step is Step 1.
+- Current visible step is UI Step 1.
 - `runs/<project_id>/inputs/` and `runs/<project_id>/planning/` exist.
 
 ## 2. Step 1: import article
@@ -54,8 +69,8 @@ Action:
 
 Expected UI behavior:
 
-- Step 1 completes.
-- Step 2 becomes available.
+- UI Step 1 completes.
+- UI Step 2 becomes available.
 
 Expected artifacts:
 
@@ -79,7 +94,7 @@ Action:
 
 Expected UI behavior:
 
-- Step 2 completes.
+- UI Step 2 completes.
 - Slide list is stable after refresh.
 - No blank slide ids.
 
@@ -87,7 +102,7 @@ Expected artifacts:
 
 - `planning/visual_contract.json`
 - `topic.topic_summary` is present.
-- Each slide has `slide_id` and at least one `visual_group`.
+- Each slide has `slide_id` and at least one `visual_group` or post-design visual anchor.
 
 Artifact check:
 
@@ -101,12 +116,12 @@ Action:
 
 - Generate images, or upload one image per slide.
 - Use the normal Step 3 confirmation button once.
-- Also test direct navigation toward Step 5 from Step 3 if the UI exposes it.
+- Also test direct navigation toward UI Step 4 / internal Step 5 from UI Step 3 if the UI exposes it.
 
 Expected UI behavior:
 
-- Direct Step 3 -> Step 5 navigation confirms images first.
-- Step 5 shows Mask annotation UI, not a stale or empty state.
+- Direct UI Step 3 -> UI Step 4 navigation confirms images first.
+- UI Step 4 shows Mask annotation UI, not a stale or empty state.
 
 Expected artifacts:
 
@@ -131,7 +146,7 @@ Action:
 Expected UI behavior:
 
 - Existing painted masks are not lost after refresh.
-- New visual groups from Step 2 appear in Step 5.
+- New visual groups from Step 2 appear in UI Step 4.
 - Deleted Step 2 groups do not linger unless they are manual groups.
 - Save with normal behavior builds reveal assets.
 
@@ -154,7 +169,7 @@ Action:
 
 - Initialize narration.
 - Edit one narration beat.
-- Leave Step 6 and return to it, or refresh the page.
+- Leave UI Step 5 and return to it, or refresh the page.
 
 Expected UI behavior:
 
@@ -184,7 +199,7 @@ Action:
 Expected UI behavior:
 
 - TTS subprocess does not hang forever.
-- Audio confirmation unlocks Step 8.
+- Audio confirmation unlocks UI Step 6 / internal Step 8.
 
 Expected artifacts:
 
@@ -201,7 +216,7 @@ python scripts/check_smoke_artifacts.py --run-dir runs/<project_id> --stage step
 
 Action:
 
-- Start video render.
+- Start video render from UI Step 6.
 - Wait for completion.
 
 Expected UI behavior:
@@ -248,7 +263,7 @@ Pass when:
 Fail when:
 
 - Any artifact checker reports `FAIL`.
-- Step 3 can enter Step 5 without confirmed images.
+- UI Step 3 can enter UI Step 4 / internal Step 5 without confirmed images.
 - Step 5 loses painted masks after save/refresh.
 - Step 6 overwrites edited narration.
 - Step 8 throws `NameError`, hangs indefinitely, or produces no video.

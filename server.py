@@ -200,6 +200,8 @@ STEP2_PROMPT_TEMPLATE_FILES = {
     "visual_output_example": os.path.join(REPO_ROOT, "templates", "prompts", "step2_visual_output_example.json"),
 }
 STEP2_PROMPTS_FILE = "step2_prompts.json"
+STEP2_SCRIPT_PLAN_FILE = "slide_script_plan.json"
+STEP2_VISUAL_PLAN_FILE = "slide_visual_plan.json"
 IMAGE_STYLE_TEMPLATES_DIR = os.path.join(DATA_DIR, "image_style_templates")
 IMAGE_STYLE_TEMPLATES_INDEX = os.path.join(IMAGE_STYLE_TEMPLATES_DIR, "index.json")
 REVEAL_PIPELINE_VERSION = "manual_mask_boundary_white_v4"
@@ -2459,6 +2461,14 @@ def step2_prompts_path(project: Project) -> str:
     return os.path.join(project.run_dir, "planning", STEP2_PROMPTS_FILE)
 
 
+def step2_script_plan_path(project: Project) -> str:
+    return os.path.join(project.run_dir, "planning", STEP2_SCRIPT_PLAN_FILE)
+
+
+def step2_visual_plan_path(project: Project) -> str:
+    return os.path.join(project.run_dir, "planning", STEP2_VISUAL_PLAN_FILE)
+
+
 def read_prompt_template(path: str) -> str:
     with open(path, "r", encoding="utf-8-sig") as f:
         return f.read().strip()
@@ -2507,6 +2517,375 @@ def step2_prompt_response(project: Project) -> Dict[str, Any]:
                 prompts["visual_output_example"],
             ),
         },
+    }
+
+
+def read_project_article_brief(project: Project) -> Dict[str, Any]:
+    brief_path = os.path.join(project.run_dir, "planning", "article_brief.json")
+    if not os.path.exists(brief_path):
+        raise HTTPException(status_code=400, detail="请先导入文章再生成分镜")
+    with open(brief_path, "r", encoding="utf-8") as f:
+        brief = json.load(f)
+    if not isinstance(brief, dict):
+        raise HTTPException(status_code=400, detail="文章导入结果格式无效")
+    return brief
+
+
+def stable_plan_id(value: Any, prefix: str, index: int) -> str:
+    text = re.sub(r"[^a-zA-Z0-9_\\-]+", "_", str(value or "").strip())
+    return text or f"{prefix}_{index:03d}"
+
+
+def normalize_body_points(value: Any) -> List[Dict[str, str]]:
+    points = value if isinstance(value, list) else []
+    normalized: List[Dict[str, str]] = []
+    for index, point in enumerate(points, start=1):
+        if isinstance(point, dict):
+            text = str(point.get("text") or point.get("content") or "").strip()
+            purpose = str(point.get("purpose") or "").strip()
+            point_id = stable_plan_id(point.get("point_id"), "point", index)
+        else:
+            text = str(point or "").strip()
+            purpose = ""
+            point_id = f"point_{index:03d}"
+        if not text:
+            continue
+        normalized.append({"point_id": point_id, "text": text, "purpose": purpose})
+    return normalized
+
+
+def normalize_narration_segments(value: Any) -> List[Dict[str, str]]:
+    segments = value if isinstance(value, list) else []
+    normalized: List[Dict[str, str]] = []
+    for index, segment in enumerate(segments, start=1):
+        if isinstance(segment, dict):
+            narration = str(segment.get("narration") or segment.get("spoken_text") or "").strip()
+            purpose = str(segment.get("purpose") or segment.get("spoken_intent") or "").strip()
+            segment_id = stable_plan_id(segment.get("segment_id"), "seg", index)
+        else:
+            narration = str(segment or "").strip()
+            purpose = ""
+            segment_id = f"seg_{index:03d}"
+        if not narration:
+            continue
+        normalized.append({"segment_id": segment_id, "narration": narration, "purpose": purpose})
+    return normalized
+
+
+def normalize_slide_script_plan(plan: Dict[str, Any], project_title: str) -> Dict[str, Any]:
+    slides = plan.get("slides") if isinstance(plan, dict) else []
+    if not isinstance(slides, list) or not slides:
+        raise HTTPException(status_code=500, detail="AI 没有返回可用的 slide_script_plan.slides")
+    normalized_slides: List[Dict[str, Any]] = []
+    for index, slide in enumerate(slides, start=1):
+        if not isinstance(slide, dict):
+            continue
+        slide_id = stable_plan_id(slide.get("slide_id"), "slide", index)
+        if not slide_id.startswith("slide_"):
+            slide_id = f"slide_{index:03d}"
+        body_points = normalize_body_points(slide.get("body_points"))
+        narration_segments = normalize_narration_segments(slide.get("narration_segments"))
+        if not narration_segments:
+            raise HTTPException(status_code=500, detail=f"{slide_id} 缺少 narration_segments")
+        slide_title = str(slide.get("slide_title") or slide.get("title") or f"第 {index} 页").strip()
+        normalized_slides.append(
+            {
+                "slide_id": slide_id,
+                "slide_title": slide_title,
+                "slide_subtitle": str(slide.get("slide_subtitle") or slide.get("subtitle") or "").strip(),
+                "body_points": body_points,
+                "narration_segments": narration_segments,
+            }
+        )
+    if not normalized_slides:
+        raise HTTPException(status_code=500, detail="AI 没有返回可用的 slide_script_plan.slides")
+    return {"title": str(plan.get("title") or project_title).strip() or project_title, "slides": normalized_slides}
+
+
+def normalize_visual_elements(value: Any) -> List[Dict[str, str]]:
+    elements = value if isinstance(value, list) else []
+    normalized: List[Dict[str, str]] = []
+    allowed_roles = {"title", "subtitle", "body", "decoration"}
+    for index, element in enumerate(elements, start=1):
+        if not isinstance(element, dict):
+            continue
+        role = str(element.get("role") or "body").strip().lower()
+        if role not in allowed_roles:
+            role = "body"
+        visual_description = str(element.get("visual_description") or element.get("description") or "").strip()
+        text = str(element.get("text") or "").strip()
+        narration = str(element.get("narration") or "").strip()
+        if not visual_description and not text:
+            continue
+        normalized.append(
+            {
+                "element_id": stable_plan_id(element.get("element_id"), "el", index),
+                "source_segment_id": str(element.get("source_segment_id") or "").strip(),
+                "role": role,
+                "text": text,
+                "visual_type": str(element.get("visual_type") or ("text" if text else "illustration")).strip(),
+                "visual_description": visual_description or text,
+                "narration": narration,
+            }
+        )
+    return normalized
+
+
+def normalize_slide_visual_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
+    slides = plan.get("slides") if isinstance(plan, dict) else []
+    if not isinstance(slides, list) or not slides:
+        raise HTTPException(status_code=500, detail="AI 没有返回可用的 slide_visual_plan.slides")
+    normalized_slides: List[Dict[str, Any]] = []
+    for index, slide in enumerate(slides, start=1):
+        if not isinstance(slide, dict):
+            continue
+        slide_id = stable_plan_id(slide.get("slide_id"), "slide", index)
+        if not slide_id.startswith("slide_"):
+            slide_id = f"slide_{index:03d}"
+        elements = normalize_visual_elements(slide.get("visual_elements"))
+        if not elements:
+            raise HTTPException(status_code=500, detail=f"{slide_id} 缺少 visual_elements")
+        normalized_slides.append({"slide_id": slide_id, "visual_elements": elements})
+    if not normalized_slides:
+        raise HTTPException(status_code=500, detail="AI 没有返回可用的 slide_visual_plan.slides")
+    return {"slides": normalized_slides}
+
+
+def read_plan_json(path: str, missing_message: str) -> Dict[str, Any]:
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail=missing_message)
+    with open(path, "r", encoding="utf-8-sig") as f:
+        value = json.load(f)
+    if not isinstance(value, dict):
+        raise HTTPException(status_code=400, detail="规划文件格式无效")
+    return value
+
+
+def configured_step2_llm() -> tuple[str, Optional[str], str, float, int]:
+    llm_api_key = get_setting("llm_api_key")
+    llm_base_url = get_setting("llm_base_url")
+    llm_model = get_setting("llm_model")
+    llm_temp = float(get_setting("llm_temperature", "0.7"))
+    planning_temp = min(llm_temp, 0.2)
+    planning_max_tokens = parse_int_setting(get_setting("llm_max_tokens", "16000"), 16000, 1024, 64000)
+    if not llm_api_key:
+        raise HTTPException(status_code=400, detail="未配置大模型 API 密钥，请在系统设置中配置后再试。")
+    return llm_api_key, llm_base_url, llm_model, planning_temp, planning_max_tokens
+
+
+def run_step2_json_llm(
+    *,
+    project: Project,
+    system_prompt: str,
+    user_prompt: str,
+    artifact_prefix: str,
+    schema_hint: str,
+    trace_id: str,
+) -> Dict[str, Any]:
+    llm_api_key, llm_base_url, llm_model, planning_temp, planning_max_tokens = configured_step2_llm()
+    write_project_log(
+        project,
+        f"{artifact_prefix}_start",
+        trace_id=trace_id,
+        model=llm_model,
+        base_url=llm_base_url,
+        max_tokens=planning_max_tokens,
+    )
+    client = get_openai_client(
+        api_key=llm_api_key,
+        base_url=llm_base_url,
+        timeout=STEP2_LLM_TIMEOUT_SEC,
+        max_retries=0,
+    )
+    try:
+        response = client.chat.completions.create(
+            model=llm_model,
+            temperature=planning_temp,
+            max_tokens=planning_max_tokens,
+            timeout=STEP2_LLM_TIMEOUT_SEC,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+    except Exception as inner_e:
+        if is_timeout_exception(inner_e):
+            raise
+        logger.warning("Failed LLM call with response_format for %s, retrying without it: %s", artifact_prefix, inner_e)
+        response = client.chat.completions.create(
+            model=llm_model,
+            temperature=planning_temp,
+            max_tokens=planning_max_tokens,
+            timeout=STEP2_LLM_TIMEOUT_SEC,
+            messages=[
+                {"role": "system", "content": system_prompt + " 请只输出纯 JSON，不要包含 Markdown 代码块标记（如 ```json ）。"},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+    choice = response.choices[0]
+    logger.info("%s finish_reason=%s usage=%s", artifact_prefix, getattr(choice, "finish_reason", None), getattr(response, "usage", None))
+    content_str = choice.message.content.strip()
+    cleaned_content = clean_json_markdown(content_str)
+    return parse_json_or_repair_with_llm(
+        cleaned_content=cleaned_content,
+        raw_content=content_str,
+        client=client,
+        model=llm_model,
+        run_dir=project.run_dir,
+        artifact_prefix=artifact_prefix,
+        schema_hint=schema_hint,
+        max_tokens=planning_max_tokens,
+    )
+
+
+def script_plan_schema_hint() -> str:
+    return read_prompt_template(STEP2_PROMPT_TEMPLATE_FILES["script_output_example"])
+
+
+def visual_plan_schema_hint() -> str:
+    return read_prompt_template(STEP2_PROMPT_TEMPLATE_FILES["visual_output_example"])
+
+
+def build_step2_script_user_prompt(
+    *,
+    project_title: str,
+    article_content: str,
+    generation_requirement: str,
+) -> str:
+    return json.dumps(
+        {
+            "project_title": project_title,
+            "article_content": article_content,
+            "generation_requirement": generation_requirement,
+            "output_goal": "生成 slide_script_plan.json，只包含每页标题、可选副标题、正文要点和 narration_segments。",
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
+def build_step2_visual_user_prompt(script_plan: Dict[str, Any]) -> str:
+    return json.dumps(
+        {
+            "slide_script_plan": script_plan,
+            "output_goal": "根据 slide_script_plan 生成 slide_visual_plan.json，只包含每页 visual_elements。",
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
+def element_visible_text(element: Dict[str, str], index: int) -> str:
+    text = str(element.get("text") or "").strip()
+    if text:
+        return text
+    description = str(element.get("visual_description") or "").strip()
+    if description:
+        return description[:32]
+    return f"视觉元素 {index}"
+
+
+def compose_visual_contract_from_plans(
+    script_plan: Dict[str, Any],
+    visual_plan: Dict[str, Any],
+    project_id: str,
+    project_title: str,
+) -> Dict[str, Any]:
+    script_slides = script_plan.get("slides") if isinstance(script_plan, dict) else []
+    visual_slides = visual_plan.get("slides") if isinstance(visual_plan, dict) else []
+    if not isinstance(script_slides, list) or not script_slides:
+        raise HTTPException(status_code=400, detail="slide_script_plan.json 缺少 slides")
+    if not isinstance(visual_slides, list) or not visual_slides:
+        raise HTTPException(status_code=400, detail="slide_visual_plan.json 缺少 slides")
+
+    visual_by_id = {
+        str(slide.get("slide_id") or "").strip(): slide
+        for slide in visual_slides
+        if isinstance(slide, dict)
+    }
+    use_subtitles = all(str(slide.get("slide_subtitle") or "").strip() for slide in script_slides if isinstance(slide, dict))
+    slides: List[Dict[str, Any]] = []
+    for slide_index, script_slide in enumerate(script_slides, start=1):
+        if not isinstance(script_slide, dict):
+            continue
+        slide_id = str(script_slide.get("slide_id") or f"slide_{slide_index:03d}").strip()
+        visual_slide = visual_by_id.get(slide_id)
+        if not isinstance(visual_slide, dict):
+            raise HTTPException(status_code=400, detail=f"{slide_id} 缺少对应的 visual plan")
+        segments = {
+            str(segment.get("segment_id") or "").strip(): segment
+            for segment in script_slide.get("narration_segments", [])
+            if isinstance(segment, dict)
+        }
+        body_points = script_slide.get("body_points") if isinstance(script_slide.get("body_points"), list) else []
+        visual_groups: List[Dict[str, Any]] = []
+        narration_beats: List[Dict[str, Any]] = []
+        for element_index, element in enumerate(visual_slide.get("visual_elements") or [], start=1):
+            if not isinstance(element, dict):
+                continue
+            group_id = f"{slide_id}_{stable_plan_id(element.get('element_id'), 'el', element_index)}"
+            content_unit_id = f"{slide_id}_unit_{element_index:03d}"
+            role = str(element.get("role") or "body").strip().lower()
+            role = "decoration" if role == "decoration" else ("title" if role == "title" else ("subtitle" if role == "subtitle" else "content_body"))
+            visible_text = element_visible_text(element, element_index)
+            description = str(element.get("visual_description") or visible_text).strip()
+            source_segment_id = str(element.get("source_segment_id") or "").strip()
+            segment = segments.get(source_segment_id, {})
+            narration = str(element.get("narration") or segment.get("narration") or "").strip()
+            purpose = str(segment.get("purpose") or element.get("visual_description") or "").strip()
+            group = {
+                "id": group_id,
+                "role": role,
+                "visible_text": visible_text,
+                "display_text": str(element.get("text") or "").strip(),
+                "visual_anchor": description,
+                "narration_function": purpose or description,
+                "reveal_order": element_index,
+                "content_unit_id": content_unit_id,
+                "mask_target": description,
+                "visual_type": str(element.get("visual_type") or "").strip(),
+                "source_segment_id": source_segment_id,
+            }
+            visual_groups.append(group)
+            if narration:
+                narration_beats.append(
+                    {
+                        "id": f"{slide_id}_beat_{len(narration_beats) + 1:03d}",
+                        "group_id": group_id,
+                        "visible_anchor": visible_text,
+                        "spoken_intent": purpose or description,
+                        "spoken_text": narration,
+                        "content_unit_id": content_unit_id,
+                    }
+                )
+        if not visual_groups:
+            raise HTTPException(status_code=400, detail=f"{slide_id} 没有可合成的 visual elements")
+        if not narration_beats:
+            raise HTTPException(status_code=400, detail=f"{slide_id} 没有可合成的 narration beats")
+        slides.append(
+            {
+                "slide_id": slide_id,
+                "main_title": str(script_slide.get("slide_title") or f"第 {slide_index} 页").strip(),
+                "subtitle": str(script_slide.get("slide_subtitle") or "").strip() if use_subtitles else "",
+                "core_message": "；".join(str(point.get("text") or "").strip() for point in body_points if isinstance(point, dict) and point.get("text")),
+                "body_content": [str(point.get("text") or "").strip() for point in body_points if isinstance(point, dict) and point.get("text")],
+                "visual_groups": visual_groups,
+                "narration_beats": narration_beats,
+            }
+        )
+    return {
+        "version": "visual_contract_v1",
+        "presentation_policy": {
+            "subtitle_policy": "all_slides_have_subtitle" if use_subtitles else "no_slides_have_subtitle",
+            "subtitle_decided_by": "narration_first_step2",
+        },
+        "topic": {
+            "topic_id": "topic_" + project_id,
+            "topic_name": project_title,
+            "topic_summary": "",
+        },
+        "slides": slides,
     }
 
 
@@ -2905,6 +3284,126 @@ def update_step2_prompts(project_id: str, payload: Dict[str, Any], db: Session =
         prompts[key] = value or default_value
     write_json_atomic(step2_prompts_path(project), prompts)
     return step2_prompt_response(project)
+
+
+@app.post("/api/projects/{project_id}/steps/2/script/execute")
+def execute_step2_script_plan(
+    project_id: str,
+    payload: Optional[Dict[str, Any]] = None,
+    db: Session = Depends(get_db),
+):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    brief = read_project_article_brief(project)
+    project_title = (project.name or "").strip() or str(brief.get("title") or "未命名项目")
+    article_content = str(brief.get("content") or "")
+    generation_requirement = str((payload or {}).get("requirement") or "").strip() or DEFAULT_STEP2_GENERATION_REQUIREMENT
+    prompts = read_step2_prompts(project)
+    trace_id = uuid.uuid4().hex[:8]
+    raw_plan = run_step2_json_llm(
+        project=project,
+        system_prompt=compose_step2_system_prompt(prompts["script_system"], prompts["script_output_example"]),
+        user_prompt=build_step2_script_user_prompt(
+            project_title=project_title,
+            article_content=article_content,
+            generation_requirement=generation_requirement,
+        ),
+        artifact_prefix="step2_script_plan",
+        schema_hint=script_plan_schema_hint(),
+        trace_id=trace_id,
+    )
+    plan = normalize_slide_script_plan(raw_plan, project_title)
+    write_json_atomic(step2_script_plan_path(project), plan)
+    write_project_log(project, "step2_script_plan_written", trace_id=trace_id, slide_count=len(plan.get("slides", [])))
+    return {"success": True, "script_plan": plan}
+
+
+@app.get("/api/projects/{project_id}/steps/2/script/result")
+def get_step2_script_plan(project_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    plan = read_plan_json(step2_script_plan_path(project), "尚未生成演讲稿规划")
+    return {"success": True, "script_plan": plan}
+
+
+@app.put("/api/projects/{project_id}/steps/2/script/result")
+def update_step2_script_plan(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    brief = read_project_article_brief(project)
+    project_title = (project.name or "").strip() or str(brief.get("title") or "未命名项目")
+    plan = normalize_slide_script_plan(payload, project_title)
+    write_json_atomic(step2_script_plan_path(project), plan)
+    return {"success": True, "script_plan": plan}
+
+
+@app.post("/api/projects/{project_id}/steps/2/visual/execute")
+def execute_step2_visual_plan(project_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    script_plan = read_plan_json(step2_script_plan_path(project), "请先生成演讲稿规划")
+    prompts = read_step2_prompts(project)
+    trace_id = uuid.uuid4().hex[:8]
+    raw_plan = run_step2_json_llm(
+        project=project,
+        system_prompt=compose_step2_system_prompt(prompts["visual_system"], prompts["visual_output_example"]),
+        user_prompt=build_step2_visual_user_prompt(script_plan),
+        artifact_prefix="step2_visual_plan",
+        schema_hint=visual_plan_schema_hint(),
+        trace_id=trace_id,
+    )
+    plan = normalize_slide_visual_plan(raw_plan)
+    write_json_atomic(step2_visual_plan_path(project), plan)
+    write_project_log(project, "step2_visual_plan_written", trace_id=trace_id, slide_count=len(plan.get("slides", [])))
+    return {"success": True, "visual_plan": plan}
+
+
+@app.get("/api/projects/{project_id}/steps/2/visual/result")
+def get_step2_visual_plan(project_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    plan = read_plan_json(step2_visual_plan_path(project), "尚未生成视觉规划")
+    return {"success": True, "visual_plan": plan}
+
+
+@app.put("/api/projects/{project_id}/steps/2/visual/result")
+def update_step2_visual_plan(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    plan = normalize_slide_visual_plan(payload)
+    write_json_atomic(step2_visual_plan_path(project), plan)
+    return {"success": True, "visual_plan": plan}
+
+
+@app.post("/api/projects/{project_id}/steps/2/compose")
+def compose_step2_visual_contract(project_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    brief = read_project_article_brief(project)
+    project_title = (project.name or "").strip() or str(brief.get("title") or "未命名项目")
+    article_summary = str(brief.get("summary") or build_article_summary(str(brief.get("content") or "")))
+    script_plan = read_plan_json(step2_script_plan_path(project), "请先生成演讲稿规划")
+    visual_plan = read_plan_json(step2_visual_plan_path(project), "请先生成视觉规划")
+    trace_id = uuid.uuid4().hex[:8]
+    contract = compose_visual_contract_from_plans(script_plan, visual_plan, project_id, project_title)
+    contract = finalize_step2_contract(
+        project=project,
+        project_id=project_id,
+        db=db,
+        contract=contract,
+        project_title=project_title,
+        article_summary=article_summary,
+        trace_id=trace_id,
+        source="narration_first_compose",
+    )
+    return {"success": True, "contract": contract}
 
 
 @app.post("/api/projects/{project_id}/steps/2/prompt-preview")

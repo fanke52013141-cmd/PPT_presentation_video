@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Validate visual_contract.json grounding between content units, visual groups, and narration beats."""
+"""Validate visual_contract.json grounding and production invariants.
+
+The validator keeps hard production rules separate from style generalization:
+- every slide has a title
+- subtitle policy is an AI project-level all-or-none decision
+- visual groups remain maskable and narration-grounded
+"""
 
 from __future__ import annotations
 
@@ -13,6 +19,11 @@ try:
     from scripts.pipeline_profiles import read_pipeline_profile
 except ModuleNotFoundError:
     from pipeline_profiles import read_pipeline_profile
+
+
+SUBTITLE_POLICY_WITH_SUBTITLE = "all_slides_have_subtitle"
+SUBTITLE_POLICY_NO_SUBTITLE = "no_slides_have_subtitle"
+ALLOWED_SUBTITLE_POLICIES = {SUBTITLE_POLICY_WITH_SUBTITLE, SUBTITLE_POLICY_NO_SUBTITLE}
 
 
 class ContractError(RuntimeError):
@@ -38,6 +49,19 @@ def require_non_empty(value: Any, message: str) -> str:
     return text
 
 
+def validate_presentation_policy(contract: dict[str, Any]) -> dict[str, Any]:
+    policy = contract.get("presentation_policy")
+    if not isinstance(policy, dict):
+        raise ContractError("Contract missing presentation_policy")
+    subtitle_policy = str(policy.get("subtitle_policy") or "").strip()
+    if subtitle_policy not in ALLOWED_SUBTITLE_POLICIES:
+        raise ContractError(
+            "presentation_policy.subtitle_policy must be "
+            f"{SUBTITLE_POLICY_WITH_SUBTITLE} or {SUBTITLE_POLICY_NO_SUBTITLE}"
+        )
+    return policy
+
+
 def validate_group_semantics(
     slide_id: str,
     group: dict[str, Any],
@@ -58,15 +82,26 @@ def validate_slide(
     min_groups: int,
     max_groups: int,
     profile: dict[str, Any],
+    presentation_policy: dict[str, Any],
 ) -> None:
     slide_id = str(slide.get("slide_id", "")).strip()
     if not slide_id:
         raise ContractError("Slide missing slide_id")
+    require_non_empty(slide.get("main_title"), f"Slide missing main_title: {slide_id}")
+
+    subtitle_policy = str(presentation_policy.get("subtitle_policy") or "").strip()
+    subtitle = str(slide.get("subtitle") or "").strip()
+    if subtitle_policy == SUBTITLE_POLICY_WITH_SUBTITLE and not subtitle:
+        raise ContractError(f"presentation_policy requires subtitle, but subtitle is empty in {slide_id}")
+    if subtitle_policy == SUBTITLE_POLICY_NO_SUBTITLE and subtitle:
+        raise ContractError(f"presentation_policy forbids subtitle, but subtitle is present in {slide_id}")
+
     groups = slide.get("visual_groups")
     if not isinstance(groups, list) or not groups:
         raise ContractError(f"Slide missing visual_groups[]: {slide_id}")
     if len(groups) < min_groups or len(groups) > max_groups:
         raise ContractError(f"Expected {min_groups}-{max_groups} visual groups in {slide_id}, got {len(groups)}")
+
     group_ids: set[str] = set()
     content_unit_ids: set[str] = set()
     visible_text_by_id: dict[str, str] = {}
@@ -90,6 +125,7 @@ def validate_slide(
         content_unit_ids.add(content_unit_id)
         content_unit_by_group_id[group_id] = content_unit_id
         visible_text_by_id[group_id] = str(group.get("visible_text", "")).strip()
+
     beats = slide.get("narration_beats")
     if not isinstance(beats, list) or not beats:
         raise ContractError(f"Slide missing narration_beats[]: {slide_id}")
@@ -136,21 +172,28 @@ def validate_contract(
 ) -> int:
     if contract.get("version") != "visual_contract_v1":
         raise ContractError("Contract version must be visual_contract_v1")
+    presentation_policy = validate_presentation_policy(contract)
     slides = contract.get("slides")
     if not isinstance(slides, list) or not slides:
         raise ContractError("Contract must contain non-empty slides[]")
     for slide in slides:
         if not isinstance(slide, dict):
             raise ContractError("Each slide must be an object")
-        validate_slide(slide, min_groups=min_groups, max_groups=max_groups, profile=profile)
+        validate_slide(
+            slide,
+            min_groups=min_groups,
+            max_groups=max_groups,
+            profile=profile,
+            presentation_policy=presentation_policy,
+        )
     return len(slides)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Validate visual narration grounding contract.")
     parser.add_argument("--contract", required=True, type=Path)
-    parser.add_argument("--min-groups", type=int, default=3)
-    parser.add_argument("--max-groups", type=int, default=8)
+    parser.add_argument("--min-groups", type=int, default=2)
+    parser.add_argument("--max-groups", type=int, default=6)
     parser.add_argument("--profile", type=Path)
     return parser.parse_args()
 

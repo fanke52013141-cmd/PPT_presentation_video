@@ -193,6 +193,13 @@ STYLE_REFERENCE_FILES = {
 }
 STORYBOARD_TEMPLATES_PATH = os.path.join(DATA_DIR, "storyboard_templates.json")
 HANDDRAWN_STORYBOARD_RULES_PATH = os.path.join(REPO_ROOT, "templates", "prompts", "storyboard_rules_handdrawn.zh.md")
+STEP2_PROMPT_TEMPLATE_FILES = {
+    "script_system": os.path.join(REPO_ROOT, "templates", "prompts", "step2_script_system.md"),
+    "script_output_example": os.path.join(REPO_ROOT, "templates", "prompts", "step2_script_output_example.json"),
+    "visual_system": os.path.join(REPO_ROOT, "templates", "prompts", "step2_visual_system.md"),
+    "visual_output_example": os.path.join(REPO_ROOT, "templates", "prompts", "step2_visual_output_example.json"),
+}
+STEP2_PROMPTS_FILE = "step2_prompts.json"
 IMAGE_STYLE_TEMPLATES_DIR = os.path.join(DATA_DIR, "image_style_templates")
 IMAGE_STYLE_TEMPLATES_INDEX = os.path.join(IMAGE_STYLE_TEMPLATES_DIR, "index.json")
 REVEAL_PIPELINE_VERSION = "manual_mask_boundary_white_v4"
@@ -2214,7 +2221,6 @@ def import_article(project_id: str, content: Optional[str] = Form(None), db: Ses
     project_title = (project.name or "").strip() or "未命名项目"
     brief = {
         "title": project_title,
-        "summary": build_article_summary(content),
         "content": content,
     }
 
@@ -2224,67 +2230,7 @@ def import_article(project_id: str, content: Optional[str] = Form(None), db: Ses
 
     handle_step_navigation(project, 1, db)
     return {"success": True, "brief": brief}
-        
-    # 调用 LLM 做文章提炼
-    llm_api_key = get_setting("llm_api_key")
-    llm_base_url = get_setting("llm_base_url")
-    llm_model = get_setting("llm_model")
-    llm_temp = float(get_setting("llm_temperature", "0.7"))
-    
-    if not llm_api_key:
-        raise HTTPException(status_code=400, detail="未配置大模型 API 密钥，请在系统设置中配置后再试。")
 
-    write_project_log(
-        project,
-        "step1_import_start",
-        article_chars=len(content),
-        model=llm_model,
-        base_url=llm_base_url,
-        timeout_sec=STEP1_LLM_TIMEOUT_SEC,
-    )
-    client = get_openai_client(
-        api_key=llm_api_key,
-        base_url=llm_base_url,
-        timeout=STEP1_LLM_TIMEOUT_SEC,
-        max_retries=0,
-    )
-    system_prompt = "你是一个专业的内容提炼助手。请阅读用户输入的 Markdown 文章，提炼出它的核心标题以及一份易于视频分镜表达的摘要提纲（150字以内）。请直接返回 JSON 格式结果，格式为: {\"title\": \"标题\", \"summary\": \"提炼好的摘要提纲\", \"content\": \"原文\"}"
-    
-    try:
-        started_at = time.monotonic()
-        response = client.chat.completions.create(
-            model=llm_model,
-            temperature=llm_temp,
-            response_format={"type": "json_object"},
-            timeout=STEP1_LLM_TIMEOUT_SEC,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": content}
-            ]
-        )
-        elapsed = round(time.monotonic() - started_at, 3)
-        content_str = response.choices[0].message.content.strip()
-        write_project_log(
-            project,
-            "step1_llm_success",
-            elapsed_sec=elapsed,
-            response_chars=len(content_str),
-        )
-        cleaned_content = clean_json_markdown(content_str)
-        brief = json.loads(cleaned_content)
-        brief["content"] = content
-    except Exception as e:
-        write_project_log(project, "step1_llm_error", error_type=type(e).__name__, error=str(e))
-        logger.error(f"LLM ingest article error: {e}")
-        raise HTTPException(status_code=500, detail=f"文章提炼失败: {str(e)}")
-            
-    brief_path = os.path.join(project.run_dir, "planning", "article_brief.json")
-    with open(brief_path, "w", encoding="utf-8") as f:
-        json.dump(brief, f, ensure_ascii=False, indent=2)
-        
-    handle_step_navigation(project, 1, db)
-    write_project_log(project, "step1_import_completed", brief_path=brief_path)
-    return {"success": True, "brief": brief}
 
 @app.get("/api/projects/{project_id}/steps/1/result")
 def get_step1_result(project_id: str, db: Session = Depends(get_db)):
@@ -2507,6 +2453,61 @@ def handdrawn_storyboard_rules() -> str:
         with open(HANDDRAWN_STORYBOARD_RULES_PATH, "r", encoding="utf-8") as f:
             return f.read().strip()
     return default_storyboard_rules()
+
+
+def step2_prompts_path(project: Project) -> str:
+    return os.path.join(project.run_dir, "planning", STEP2_PROMPTS_FILE)
+
+
+def read_prompt_template(path: str) -> str:
+    with open(path, "r", encoding="utf-8-sig") as f:
+        return f.read().strip()
+
+
+def default_step2_prompts() -> Dict[str, str]:
+    return {
+        key: read_prompt_template(path)
+        for key, path in STEP2_PROMPT_TEMPLATE_FILES.items()
+    }
+
+
+def read_step2_prompts(project: Project) -> Dict[str, str]:
+    prompts = default_step2_prompts()
+    stored = read_json_file(step2_prompts_path(project), {})
+    if isinstance(stored, dict):
+        for key in prompts:
+            value = str(stored.get(key) or "").strip()
+            if value:
+                prompts[key] = value
+    return prompts
+
+
+def compose_step2_system_prompt(system_content: str, output_example: str) -> str:
+    return (
+        str(system_content or "").strip()
+        + "\n\n<OutputExample>\n"
+        + str(output_example or "").strip()
+        + "\n</OutputExample>"
+    )
+
+
+def step2_prompt_response(project: Project) -> Dict[str, Any]:
+    prompts = read_step2_prompts(project)
+    return {
+        "success": True,
+        "prompts": prompts,
+        "defaults": default_step2_prompts(),
+        "composed": {
+            "script_system_content": compose_step2_system_prompt(
+                prompts["script_system"],
+                prompts["script_output_example"],
+            ),
+            "visual_system_content": compose_step2_system_prompt(
+                prompts["visual_system"],
+                prompts["visual_output_example"],
+            ),
+        },
+    }
 
 
 def storyboard_template_payload(
@@ -2882,6 +2883,28 @@ def update_step2_rules(project_id: str, payload: Dict[str, Any], db: Session = D
         "roles": role_catalog(profile),
         "editor": storyboard_profile_editor_data(profile),
     }
+
+
+@app.get("/api/projects/{project_id}/steps/2/prompts")
+def get_step2_prompts(project_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    return step2_prompt_response(project)
+
+
+@app.put("/api/projects/{project_id}/steps/2/prompts")
+def update_step2_prompts(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    defaults = default_step2_prompts()
+    prompts: Dict[str, str] = {}
+    for key, default_value in defaults.items():
+        value = str(payload.get(key) or "").strip()
+        prompts[key] = value or default_value
+    write_json_atomic(step2_prompts_path(project), prompts)
+    return step2_prompt_response(project)
 
 
 @app.post("/api/projects/{project_id}/steps/2/prompt-preview")

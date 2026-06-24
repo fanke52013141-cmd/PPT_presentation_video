@@ -412,6 +412,15 @@ function initGlobalEvents() {
   document.getElementById('btn-storyboard-rules-save-regenerate')?.addEventListener('click', () => saveStoryboardRulesWithOptions({ regenerate: true }));
   document.getElementById('btn-storyboard-rules-copy-full')?.addEventListener('click', () => copyFullStoryboardRequest());
   document.getElementById('btn-storyboard-schema-copy')?.addEventListener('click', () => copyStoryboardSchema());
+  document.getElementById('btn-step2-prompts-save')?.addEventListener('click', () => saveStep2Prompts());
+  [
+    'step2-script-system-prompt',
+    'step2-script-output-example',
+    'step2-visual-system-prompt',
+    'step2-visual-output-example'
+  ].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', () => refreshStep2ComposedPromptPreview());
+  });
   document.getElementById('btn-storyboard-template-load')?.addEventListener('click', () => loadSelectedStoryboardTemplate());
   document.getElementById('btn-storyboard-template-save')?.addEventListener('click', () => saveStoryboardTemplate());
   document.getElementById('btn-storyboard-template-delete')?.addEventListener('click', () => deleteSelectedStoryboardTemplate());
@@ -2775,9 +2784,10 @@ async function generateStoryboardRulesAiDraft() {
 
 async function openStoryboardRulesModal() {
   if (!state.currentProject) return;
-  const [res, templateRes] = await Promise.all([
+  const [res, templateRes, promptRes] = await Promise.all([
     API.get(`/api/projects/${state.currentProject.id}/steps/2/rules`),
     API.get('/api/storyboard-templates'),
+    API.get(`/api/projects/${state.currentProject.id}/steps/2/prompts`),
   ]);
   document.getElementById('storyboard-rules-input').value = res.rules || '';
   document.getElementById('storyboard-profile-input').value = res.profile_yaml || '';
@@ -2790,9 +2800,56 @@ async function openStoryboardRulesModal() {
   state.selectedStoryboardTemplateId = '';
   document.getElementById('storyboard-template-name').value = '';
   document.getElementById('storyboard-ai-requirement').value = state.storyboardAiRequirement || '';
+  renderStep2PromptEditor(promptRes);
   setAiDraftStatus('storyboard-ai-draft-status', '');
   renderStoryboardAiDraftPreview();
   document.getElementById('modal-storyboard-rules').style.display = 'flex';
+}
+
+function renderStep2PromptEditor(promptRes = {}) {
+  const prompts = promptRes.prompts || {};
+  const composed = promptRes.composed || {};
+  const setValue = (id, value) => {
+    const element = document.getElementById(id);
+    if (element) element.value = value || '';
+  };
+  setValue('step2-script-system-prompt', prompts.script_system);
+  setValue('step2-script-output-example', prompts.script_output_example);
+  setValue('step2-visual-system-prompt', prompts.visual_system);
+  setValue('step2-visual-output-example', prompts.visual_output_example);
+  setValue('step2-script-composed-prompt', composed.script_system_content);
+  setValue('step2-visual-composed-prompt', composed.visual_system_content);
+  refreshStep2ComposedPromptPreview();
+}
+
+function composeStep2SystemPromptPreview(systemContent, outputExample) {
+  return `${(systemContent || '').trim()}\n\n<OutputExample>\n${(outputExample || '').trim()}\n</OutputExample>`;
+}
+
+function refreshStep2ComposedPromptPreview() {
+  const scriptSystem = document.getElementById('step2-script-system-prompt')?.value || '';
+  const scriptExample = document.getElementById('step2-script-output-example')?.value || '';
+  const visualSystem = document.getElementById('step2-visual-system-prompt')?.value || '';
+  const visualExample = document.getElementById('step2-visual-output-example')?.value || '';
+  const scriptPreview = document.getElementById('step2-script-composed-prompt');
+  const visualPreview = document.getElementById('step2-visual-composed-prompt');
+  if (scriptPreview) scriptPreview.value = composeStep2SystemPromptPreview(scriptSystem, scriptExample);
+  if (visualPreview) visualPreview.value = composeStep2SystemPromptPreview(visualSystem, visualExample);
+}
+
+async function saveStep2Prompts() {
+  if (!state.currentProject?.id) return;
+  const payload = {
+    script_system: document.getElementById('step2-script-system-prompt')?.value || '',
+    script_output_example: document.getElementById('step2-script-output-example')?.value || '',
+    visual_system: document.getElementById('step2-visual-system-prompt')?.value || '',
+    visual_output_example: document.getElementById('step2-visual-output-example')?.value || '',
+  };
+  const res = await API.put(`/api/projects/${state.currentProject.id}/steps/2/prompts`, payload);
+  if (res.success) {
+    renderStep2PromptEditor(res);
+    showToast('Step 2 Prompt 已保存。');
+  }
 }
 
 async function copyFullStoryboardRequest() {

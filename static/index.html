@@ -734,10 +734,39 @@
           <summary>查看完整 System Content + User Content</summary>
           <textarea id="storyboard-prompt-preview" rows="16" readonly spellcheck="false"></textarea>
         </details>
+        <details class="storyboard-schema-panel" open>
+          <summary>Narration-first Step 2A / Step 2B Prompt</summary>
+          <p class="config-editor-note">Step 2A 生成每页标题、正文要点和演讲稿；Step 2B 根据演讲稿反推画面语义块。Output Example 会自动拼接到 System Content 的 &lt;OutputExample&gt; 中。</p>
+          <label class="storyboard-config-field storyboard-rule-field">
+            <span>Step 2A System Prompt（生成 Slide 标题、正文要点和演讲稿）</span>
+            <textarea id="step2-script-system-prompt" rows="10" spellcheck="false"></textarea>
+          </label>
+          <label class="storyboard-config-field storyboard-rule-field">
+            <span>Step 2A Output Example</span>
+            <textarea id="step2-script-output-example" rows="10" spellcheck="false"></textarea>
+          </label>
+          <label class="storyboard-config-field storyboard-rule-field">
+            <span>Step 2B System Prompt（根据演讲稿规划视觉语义块）</span>
+            <textarea id="step2-visual-system-prompt" rows="10" spellcheck="false"></textarea>
+          </label>
+          <label class="storyboard-config-field storyboard-rule-field">
+            <span>Step 2B Output Example</span>
+            <textarea id="step2-visual-output-example" rows="10" spellcheck="false"></textarea>
+          </label>
+          <label class="storyboard-config-field storyboard-rule-field">
+            <span>最终发送给 LLM 的 Step 2A System Content</span>
+            <textarea id="step2-script-composed-prompt" rows="10" readonly spellcheck="false"></textarea>
+          </label>
+          <label class="storyboard-config-field storyboard-rule-field">
+            <span>最终发送给 LLM 的 Step 2B System Content</span>
+            <textarea id="step2-visual-composed-prompt" rows="10" readonly spellcheck="false"></textarea>
+          </label>
+        </details>
       </div>
       <div class="config-editor-actions">
         <button id="btn-storyboard-schema-copy" class="secondary">复制 JSON Schema</button>
         <button id="btn-storyboard-rules-copy-full" class="secondary">生成并复制完整请求</button>
+        <button id="btn-step2-prompts-save" class="secondary">保存 Step 2 Prompt</button>
         <button id="btn-storyboard-rules-cancel" class="secondary">取消</button>
         <button id="btn-storyboard-rules-save" class="success">保存规则</button>
         <button id="btn-storyboard-rules-save-regenerate" class="success">保存并重新规划</button>

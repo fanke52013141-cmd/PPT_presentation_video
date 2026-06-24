@@ -1,0 +1,27 @@
+{
+  "slides": [
+    {
+      "slide_id": "slide_001",
+      "visual_elements": [
+        {
+          "element_id": "el_001",
+          "source_segment_id": "seg_001",
+          "role": "title",
+          "text": "画面上显示的标题文字",
+          "visual_type": "text",
+          "visual_description": "顶部标题区，用醒目的手写标题呈现。",
+          "narration": "对应的演讲稿原文；无对应旁白则为空字符串。"
+        },
+        {
+          "element_id": "el_002",
+          "source_segment_id": "seg_002",
+          "role": "body",
+          "text": "",
+          "visual_type": "illustration",
+          "visual_description": "正文区域中部，用一个手绘图示表达这一段 narration 的含义。",
+          "narration": "对应的演讲稿原文。"
+        }
+      ]
+    }
+  ]
+}

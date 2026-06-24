@@ -15,6 +15,7 @@ canvas:
   width: 1920
   height: 1080
   background: "#FFFFFF"
+  generated_image_background: "#FFFFFF"
   safe_margin:
     x: 60
     y: 55
@@ -24,6 +25,7 @@ canvas:
 
 colors:
   background: "#FFFFFF"
+  generated_image_background: "#FFFFFF"
   surface: "#FFFFFF"
   ink: "#111111"
   muted_ink: "#1A1A1A"
@@ -111,15 +113,14 @@ visual_assets:
   example_reference_image: references/style_reference/PPT示例.png
   image_style: warm_minimal_handdrawn_line_art
   diagram_style: handdrawn_explainer_diagram
-  required_background: flat_uniform_pure_white
+  required_background: flat_uniform_pure_white_generated_image
   reveal_friendly_layout:
-    - "使用纯净平面 #FFFFFF 背景；四条边和四个角必须连续纯白，不要纸纹、噪声、阴影、渐变或暗角。"
-    - 每页 5-8 个大 visual group，每个 group 有短中文 visible_text。
-    - 每个 group 必须能被一个矩形区域完整覆盖。
-    - 独立 group 之间保留 80-120px 干净背景。
-    - 箭头、标签、图标、公式和卡片必须留在同一个语义 group 内。
-    - 不要跨多个 group 绘制长连接线。
-    - 不要把关键正文内容放到 y=930 以下字幕安全区。
+    - "生成图片背景固定为 #FFFFFF；四条边和四个角必须连续纯白，不要纸纹、噪声、阴影、渐变或暗角。"
+    - 每页建议 2-6 个语义 visual group；优先一个强主视觉加若干辅助组。
+    - 每个 group 必须能被人工 Mask 或矩形区域完整覆盖。
+    - 允许清晰箭头、括号、路径或流程线连接语义组，但不要箭头穿字、文字压线或无关组粘连。
+    - 不要为了 Mask 强行生成大量孤立卡片；只有列表、对比或清单页才使用多个均等卡片。
+    - 不要把任何内容、装饰、阴影或视觉碎片放到 y=930 以下字幕安全区。
   avoid:
     - 科技蓝黑风
     - 赛博朋克
@@ -133,6 +134,8 @@ visual_assets:
     - 纸纹背景
     - 背景噪声
     - 跨组长箭头
+    - 严重遮挡
+    - 箭头穿字
 
 reveal:
   default_padding_px: 32

@@ -1,4 +1,5 @@
 version: pipeline_profile_v1
+production_invariants_ref: config/production_invariants.yaml
 
 storyboard:
   slide_count:
@@ -6,9 +7,9 @@ storyboard:
     medium_article: "6-8"
     long_article: "8-12"
   visual_group_count:
-    short_article: "3-6"
-    medium_article: "4-7"
-    long_article: "4-9"
+    short_article: "2-5"
+    medium_article: "3-5"
+    long_article: "3-6"
   required_slide_fields:
     - slide_id
     - main_title
@@ -18,15 +19,39 @@ storyboard:
     - subtitle
     - core_message
     - layout_type
+    - visual_metaphor
+    - composition
     - structure_notes
+  presentation_policy_rules:
+    - 顶层必须输出 presentation_policy。
+    - subtitle_policy 必须由 AI 根据文章和版式统一决策，只能是 all_slides_have_subtitle 或 no_slides_have_subtitle。
+    - 如果 subtitle_policy 是 all_slides_have_subtitle，则每页 subtitle 必须非空；如果是 no_slides_have_subtitle，则每页不要生成 subtitle。
+    - 副标题策略一旦确定，必须对所有 Slide 一致，不能逐页随机。
+    - presentation_policy 应包含 subtitle_rationale、default_visual_group_count、layout_diversity。
+  layout_types:
+    - hero_diagram
+    - left_right_comparison
+    - process_flow
+    - cause_effect_chain
+    - central_mindmap
+    - timeline
+    - three_card_framework
+    - problem_solution
+    - pyramid
+    - before_after
+    - metaphor_scene
+    - data_callout
+    - checklist
+    - summary_takeaway
+    - custom
   roles:
     title:
       label: 主标题
-      description: 页面主标题，可短，可不承担完整解释。
+      description: 页面主标题，生产铁律要求每页必须有。
       default_reveal: wipe_left_to_right
     subtitle:
       label: 副标题
-      description: 辅助说明页面主题；是否生成由内容需要决定。
+      description: 只能在 presentation_policy.subtitle_policy 为 all_slides_have_subtitle 时出现。
       default_reveal: wipe_left_to_right
     content_body:
       label: 正文内容
@@ -66,19 +91,29 @@ storyboard:
       default_reveal: wipe_left_to_right
   structure_rules:
     - visual_groups 可以使用 roles 中的任意角色，也可以使用自定义 role；具体结构完全由页面内容决定。
+    - 每页先选择 layout_type、visual_metaphor 和 composition，再定义 visual_groups。
     - 如果某页适合表格、流程、对比、时间线、引用、数据卡片或 FAQ，可以直接用对应结构组织，不要固定套用“主标题/副标题/正文/总结”模板。
     - narration_beats 是是否朗读的唯一依据；有对应 beat 的 visual_group 才进入演讲稿，没有 beat 的 visual_group 只用于画面展示。
     - 不要为了覆盖全部 visual_groups 强行生成 narration_beat；演讲稿只讲真正需要讲解的内容。
-    - 每个 visual_group 仍然要能被一个人工 Mask 或矩形区域完整覆盖，避免过密小字和跨组长连线。
+    - 每页建议 2-6 个语义 visual_groups；优先一个强主视觉加若干辅助视觉组，而不是平均分布的孤立卡片。
+    - 每个 visual_group 仍然要能被一个人工 Mask 或矩形区域完整覆盖；允许清晰箭头、括号、流程线连接，但禁止严重遮挡、箭头穿字和跨组粘连。
+    - 底部 y=930..1080 是视频字幕安全区，结构规划时不得依赖该区域承载任何内容或装饰。
 
 image_prompt:
   opening: "请生成一张 16:9 的完整 PPT/讲解页静态主图。"
   invariant_rules:
-    - 每个 visual_group 必须作为独立视觉岛出现，组与组之间保留清晰空白，方便后续人工 Mask。
-    - 每个分组指定的 visible_text 必须清晰、完整、原样出现；不要改写、漏字或生成乱码。
-    - 不要把不同 visual_group 的文字、线条、箭头和装饰粘连在一起。
-    - 画布按 1920x1080 构图，底部 y=930..1080 留作视频字幕安全区。
-    - 不要绘制包围整页内容的大外框；主体内容来自这张完整位图，视频阶段不再用 HTML 重画 PPT 正文。
+    - 每页必须有清晰主标题。
+    - 副标题由 presentation_policy.subtitle_policy 统一决定；如果为 no_slides_have_subtitle，所有页面都不要副标题、不要副标题下划线、不要副标题占位。
+    - 生图背景固定为纯白 #FFFFFF，四角和四边必须连续纯白；风格包不得覆盖该规则。
+    - 画布按 1920x1080 构图，底部 y=930..1080 是字幕安全区，不得出现任何文字、图标、箭头、装饰、阴影、人物、残片或视觉碎片。
+    - 不允许严重遮挡、箭头穿字、文字压线、无关语义组粘连。
+    - 主体内容来自这张完整位图，视频阶段不再用 HTML 重画 PPT 正文。
+  creative_rules:
+    - 根据 slide 的 layout_type、visual_metaphor 和 composition 自由选择版式，不要固定套用卡片模板。
+    - 优先使用一个强主视觉加 2-4 个辅助语义组；只有列表/对比/清单页才使用多个均等卡片。
+    - 允许使用箭头、括号、路径、流程线、图标、局部高亮、编号贴纸、批注和强调符号增强表达力。
+    - 语义组必须可人工 Mask；可以建立视觉关系，但连接线不要穿过文字，不要把无关组融合成一团。
+    - 避免密集段落和小字，页面文字只保留主标题、短标签、关键词和必要结论。
 
 reveal:
   default_duration_sec: 0.75

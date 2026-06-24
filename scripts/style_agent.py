@@ -3,6 +3,10 @@
 This module intentionally contains no FastAPI or database code. The server can call
 these helpers to preview an AI style package, then later materialize it as a reusable
 image-style template.
+
+Style bundles are allowed to generalize visual language, but they must not override
+production invariants such as generated-image size, pure-white source background,
+subtitle safety zone, title requirement, or maskability.
 """
 
 from __future__ import annotations
@@ -24,7 +28,9 @@ VISUAL_ASSET_ALLOWED_KEYS = (
     "avoid",
 )
 HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
-NEAR_WHITE_BACKGROUNDS = {"#FFFFFF", "#FFFDF7", "#FEFDF9"}
+GENERATED_IMAGE_BACKGROUND = "#FFFFFF"
+FINAL_CANVAS_NEAR_WHITE_BACKGROUNDS = {"#FFFFFF", "#FFFDF7", "#FEFDF9"}
+FIXED_SUBTITLE_AREA = {"x": 0, "y": 930, "w": 1920, "h": 150, "fixed": True}
 
 
 class StyleBundleError(ValueError):
@@ -65,9 +71,11 @@ def style_bundle_system_prompt() -> str:
         "只输出合法 JSON 对象，不要 Markdown。JSON 必须包含 name、description、style_data、"
         "template_paste_words、example_paste_words、template_image_prompt、example_image_prompt、negative_prompt。"
         "style_data 只能包含 brand、canvas、colors、layout、visual_assets。"
-        "画布必须是 1920x1080、16:9，y=930 以下必须预留给视频字幕。"
-        "背景必须是连续近白纯色，可用 #FFFFFF、#FFFDF7 或 #FEFDF9；禁止深色整页背景、纸纹、噪声、暗角、"
-        "复杂 3D、赛博朋克、科技蓝黑大背景。所有贴词必须是简短中文。"
+        "注意：你只能泛化风格，不能改生产铁律。生成图片必须是 1920x1080、16:9、纯白 #FFFFFF 背景；"
+        "y=930 以下必须完整留作视频字幕安全区；每页必须有主标题；副标题由内容结构 AI 做项目级统一决策，"
+        "风格包不得要求所有页面必须有副标题或必须无副标题。允许改变字体气质、线条、图标、图表、强调色、"
+        "卡片形状和构图偏好；禁止深色整页背景、纸纹、噪声、暗角、复杂 3D、赛博朋克、科技蓝黑大背景。"
+        "所有贴词必须是简短中文。"
     )
 
 
@@ -87,11 +95,11 @@ def build_style_bundle_user_prompt(request: dict[str, Any], base_style_text: str
         f"示例主题：{sample_topic}\n\n"
         "请生成一个 AI 图片风格模板包。要求：\n"
         "1. style_data.brand.style_keywords 给出 6-10 个中文风格关键词。\n"
-        "2. colors 使用 #RRGGBB，并保持近白背景。\n"
-        "3. visual_assets.reveal_friendly_layout 必须包含字幕安全区、独立 visual group、边缘连续背景约束。\n"
-        "4. template_paste_words.groups 必须是 4-8 个短中文占位词。\n"
+        "2. colors 使用 #RRGGBB；可定义最终视频底色或局部 surface，但不得覆盖生成图纯白 #FFFFFF 铁律。\n"
+        "3. visual_assets.reveal_friendly_layout 必须包含字幕安全区、可人工 Mask、允许清晰连接但禁止严重遮挡的约束。\n"
+        "4. template_paste_words.groups 建议是 3-6 个短中文占位词，不要强制固定每页 4-8 个孤立卡片。\n"
         "5. example_paste_words 必须围绕示例主题，贴词能直接放进示例图。\n"
-        "6. 两段 image_prompt 必须可直接用于生成 16:9 PPT 参考图。"
+        "6. 两段 image_prompt 必须可直接用于生成 16:9 PPT 参考图，并显式遵守生产铁律。"
         f"{base_part}"
     )
 
@@ -118,18 +126,18 @@ def normalize_style_data(style_data: dict[str, Any]) -> dict[str, Any]:
     canvas["aspect_ratio"] = "16:9"
     canvas["width"] = 1920
     canvas["height"] = 1080
-    canvas["background"] = _normalize_hex(canvas.get("background") or "#FEFDF9", "canvas.background")
-    if canvas["background"] not in NEAR_WHITE_BACKGROUNDS:
-        canvas["background"] = "#FEFDF9"
+    canvas["background"] = GENERATED_IMAGE_BACKGROUND
+    canvas["generated_image_background"] = GENERATED_IMAGE_BACKGROUND
     canvas["subtitle_reserved"] = {"y": 930, "height": 150}
 
     colors = result.setdefault("colors", {})
     if not isinstance(colors, dict):
         raise StyleBundleError("style_data.colors must be an object")
-    background = _normalize_hex(colors.get("background") or canvas["background"], "colors.background")
-    if background not in NEAR_WHITE_BACKGROUNDS:
-        background = canvas["background"]
+    background = _normalize_hex(colors.get("background") or GENERATED_IMAGE_BACKGROUND, "colors.background")
+    if background not in FINAL_CANVAS_NEAR_WHITE_BACKGROUNDS:
+        background = GENERATED_IMAGE_BACKGROUND
     colors["background"] = background
+    colors["generated_image_background"] = GENERATED_IMAGE_BACKGROUND
     colors["surface"] = _normalize_hex(colors.get("surface") or "#FFFFFF", "colors.surface")
     colors["paper"] = _normalize_hex(colors.get("paper") or colors["surface"], "colors.paper")
     colors["ink"] = _normalize_hex(colors.get("ink") or "#111111", "colors.ink")
@@ -141,7 +149,7 @@ def normalize_style_data(style_data: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(layout, dict):
         raise StyleBundleError("style_data.layout must be an object")
     layout.setdefault("content", {"x": 80, "y": 235, "w": 1760, "h": 680, "frame": "none"})
-    layout.setdefault("subtitle_area", {"x": 0, "y": 930, "w": 1920, "h": 150, "fixed": True})
+    layout["subtitle_area"] = dict(FIXED_SUBTITLE_AREA)
 
     assets = result.setdefault("visual_assets", {})
     if not isinstance(assets, dict):
@@ -151,19 +159,20 @@ def normalize_style_data(style_data: dict[str, Any]) -> dict[str, Any]:
         raise StyleBundleError(f"visual_assets has unsupported keys: {', '.join(unknown_assets)}")
     assets["image_style"] = str(assets.get("image_style") or "ai_generated_ppt_style").strip()
     assets["diagram_style"] = str(assets.get("diagram_style") or "clean_explainer_diagram").strip()
-    assets["required_background"] = "flat_uniform_connected_background"
+    assets["required_background"] = "flat_uniform_pure_white_generated_image"
     layout_rules = _string_list(assets.get("reveal_friendly_layout"), "visual_assets.reveal_friendly_layout", max_items=12)
     required_rules = [
-        "四角和四边必须保持连续近白纯色背景，不要纸纹、噪声、阴影、复杂渐变或暗角。",
-        "每页 4-8 个独立 visual group，分组之间保留干净背景。",
-        "y=930 以下留作视频字幕安全区，不放关键文字、人物或图形。",
+        "生成图片背景固定为 #FFFFFF；四角和四边必须保持连续纯白，不要纸纹、噪声、阴影、复杂渐变或暗角。",
+        "y=930 以下是视频字幕安全区，不放任何文字、人物、图标、箭头、装饰、阴影或残片。",
+        "每页建议 2-6 个语义视觉组；优先一个强主视觉加若干辅助组，不要为了 Mask 强行做成大量孤立卡片。",
+        "语义组必须可人工 Mask；允许清晰箭头、括号、路径或流程线连接，但禁止箭头穿字、严重遮挡和无关组粘连。",
     ]
     for rule in required_rules:
         if rule not in layout_rules:
             layout_rules.append(rule)
     assets["reveal_friendly_layout"] = layout_rules
     avoid = _string_list(assets.get("avoid"), "visual_assets.avoid", max_items=20)
-    for banned in ("赛博朋克", "复杂 3D 背景", "科技蓝黑风", "AI 生成图里的乱码文字"):
+    for banned in ("整页深色背景", "纸纹背景", "背景噪声", "赛博朋克", "复杂 3D 背景", "科技蓝黑风", "AI 生成图里的乱码文字", "严重遮挡", "箭头穿字"):
         if banned not in avoid:
             avoid.append(banned)
     assets["avoid"] = avoid
@@ -177,7 +186,7 @@ def normalize_paste_words(value: Any, field_name: str) -> dict[str, Any]:
     raw = _as_dict(value, field_name)
     title = str(raw.get("title") or "主题标题").strip()[:40]
     subtitle = str(raw.get("subtitle") or "一句话解释核心问题").strip()[:60]
-    groups = _string_list(raw.get("groups"), f"{field_name}.groups", min_items=4, max_items=8)
+    groups = _string_list(raw.get("groups"), f"{field_name}.groups", min_items=3, max_items=6)
     badges = _string_list(raw.get("badges"), f"{field_name}.badges", max_items=8) if "badges" in raw else []
     return {"title": title, "subtitle": subtitle, "groups": groups, "badges": badges}
 

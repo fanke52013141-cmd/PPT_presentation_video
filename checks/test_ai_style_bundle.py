@@ -46,29 +46,33 @@ def sample_bundle():
             "subtitle": "用变量和链路解释现象",
             "groups": ["变量变化", "成本影响", "预期变化", "结果呈现"],
         },
-        "template_image_prompt": "生成 1920x1080 的 PPT 模板参考图，近白背景。",
+        "template_image_prompt": "生成 1920x1080 的 PPT 模板参考图，纯白背景。",
         "example_image_prompt": "生成一张解释型 PPT 示例页。",
         "negative_prompt": "不要复杂 3D，不要乱码。",
     }
 
 
 def main() -> None:
-    assert "只输出合法 JSON" in style_bundle_system_prompt()
+    system_prompt = style_bundle_system_prompt()
+    assert "只输出合法 JSON" in system_prompt
+    assert "不能改生产铁律" in system_prompt
     user_prompt = build_style_bundle_user_prompt(
         {"name": "财经解释风", "brief": "近白背景，专业简洁。"},
         "brand:\n  name: Base\n",
     )
     assert "财经解释风" in user_prompt
     assert "style_tokens.yaml" in user_prompt
+    assert "不得覆盖生成图纯白 #FFFFFF 铁律" in user_prompt
 
     normalized = validate_style_bundle(sample_bundle())
     style_data = normalized["style_data"]
     assert style_data["canvas"]["width"] == 1920
     assert style_data["canvas"]["height"] == 1080
     assert style_data["canvas"]["subtitle_reserved"] == {"y": 930, "height": 150}
-    assert style_data["canvas"]["background"] == "#FEFDF9"
-    assert style_data["colors"]["background"] == "#FEFDF9"
-    assert style_data["visual_assets"]["required_background"] == "flat_uniform_connected_background"
+    assert style_data["canvas"]["background"] == "#FFFFFF"
+    assert style_data["colors"]["generated_image_background"] == "#FFFFFF"
+    assert style_data["visual_assets"]["required_background"] == "flat_uniform_pure_white_generated_image"
+    assert any("2-6 个语义视觉组" in rule for rule in style_data["visual_assets"]["reveal_friendly_layout"])
 
     yaml_text = style_bundle_to_yaml(sample_bundle())
     assert "brand:" in yaml_text

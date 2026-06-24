@@ -796,7 +796,7 @@ input.step2-soft-input:focus {
 
 .template-manager-bar {
   display: grid;
-  grid-template-columns: minmax(190px, 0.8fr) auto minmax(230px, 1fr) auto;
+  grid-template-columns: minmax(190px, 0.8fr) auto auto minmax(230px, 1fr) auto;
   gap: 0.65rem;
   align-items: end;
   margin-bottom: 0.85rem;

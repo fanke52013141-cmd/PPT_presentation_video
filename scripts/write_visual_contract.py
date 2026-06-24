@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Generate a first-pass visual_contract.json from article.md.
 
-The contract is the minimal semantic mapping source for the pipeline: slide content
-units, visual groups, narration beats, and mask targets live in one file. It is a
-runnable scaffold and still benefits from model or editorial refinement.
+This deterministic scaffold is intentionally simple and narration-first. It
+creates titles, optional project-level subtitles, body content, narration, and a
+small set of post-design visual anchors. The anchors support Mask/Reveal review;
+they are not a rigid page layout template.
 """
 
 from __future__ import annotations
@@ -20,9 +21,41 @@ class ContractBuildError(RuntimeError):
     pass
 
 
+SUBTITLE_POLICY_WITH_SUBTITLE = "all_slides_have_subtitle"
+SUBTITLE_POLICY_NO_SUBTITLE = "no_slides_have_subtitle"
+ALLOWED_SUBTITLE_POLICIES = {SUBTITLE_POLICY_WITH_SUBTITLE, SUBTITLE_POLICY_NO_SUBTITLE}
+
 PUNCT_RE = re.compile(r"[\s\u3000，。！？；：、,.!?;:（）()《》<>\[\]【】\"'`]+")
 SENTENCE_RE = re.compile(r"(?<=[。！？!?；;])\s*")
+CLAUSE_RE = re.compile(r"[，,]\s*")
 HEADING_RE = re.compile(r"^(#{1,3})\s+(.+?)\s*$")
+NUMBERED_HEADING_RE = re.compile(
+    r"^(?:第?[一二三四五六七八九十百千万\d]+[章节部分、.．]\s*)(.+?)\s*$"
+)
+TERMINAL_PUNCT_RE = re.compile(r"[。！？!?；;，,、：:]$")
+PLAIN_HEADING_KEYWORDS = (
+    "定义",
+    "对比",
+    "流程",
+    "组件",
+    "总结",
+    "价值",
+    "方法",
+    "步骤",
+    "规则",
+    "触发器",
+    "生成器",
+    "评估器",
+    "反馈",
+    "修正",
+    "终止",
+    "升级",
+    "Trigger",
+    "Generator",
+    "Evaluator",
+    "Repair",
+    "Stop",
+)
 
 
 def write_json(path: Path, value: dict[str, Any]) -> None:
@@ -42,6 +75,39 @@ def strip_markdown(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def looks_like_document_title(line: str) -> bool:
+    line = clean_line(strip_markdown(line))
+    if not line:
+        return False
+    if len(line) > 90:
+        return False
+    if any(token in line for token in ("完整解读", "指南", "教程", "解析", "科普", "方案")):
+        return True
+    return not TERMINAL_PUNCT_RE.search(line) and len(PUNCT_RE.sub("", line)) <= 42
+
+
+def extract_heading_text(line: str) -> str | None:
+    line = clean_line(line)
+    if not line:
+        return None
+    match = HEADING_RE.match(line)
+    if match:
+        return clean_line(match.group(2))
+    match = NUMBERED_HEADING_RE.match(line)
+    if match:
+        return clean_line(match.group(1))
+    if TERMINAL_PUNCT_RE.search(line):
+        return None
+    plain = clean_line(strip_markdown(line))
+    if not plain or len(PUNCT_RE.sub("", plain)) > 34:
+        return None
+    if any(keyword in plain for keyword in PLAIN_HEADING_KEYWORDS):
+        return plain
+    if re.search(r"[A-Za-z]{2,}", plain) and len(plain) <= 28:
+        return plain
+    return None
+
+
 def split_sentences(text: str) -> list[str]:
     plain = strip_markdown(text)
     parts = [clean_line(part) for part in SENTENCE_RE.split(plain) if clean_line(part)]
@@ -51,7 +117,11 @@ def split_sentences(text: str) -> list[str]:
 
 
 def short_label(text: str, max_chars: int = 9) -> str:
-    text = PUNCT_RE.sub("", text)
+    text = clean_line(strip_markdown(text))
+    text = re.split(r"[。！？!?；;：:\n]", text, maxsplit=1)[0]
+    text = re.sub(r"^[\-—•·\d一二三四五六七八九十、.．\s]+", "", text).strip()
+    text = re.sub(r"^(是|为|核心是|核心在于)\s*", "", text).strip()
+    text = re.sub(r"\s+", " ", text)
     if not text:
         return "关键点"
     return text[:max_chars]
@@ -64,69 +134,6 @@ def compact_summary(sentences: list[str], max_chars: int = 46) -> str:
     return joined[:max_chars]
 
 
-def numbered_body_label(index: int) -> str:
-    return f"第{index}点"
-
-
-def detailed_spoken_text(label: str, point: str, index: int, max_chars: int = 180) -> str:
-    point = clean_line(point)
-    if not point:
-        return f"{numbered_body_label(index)}是“{label}”。这里需要结合画面中的这一块来理解。"
-    return (
-        f"{numbered_body_label(index)}是“{label}”。"
-        f"这里的意思是，{point}"
-        f"请对应看画面中标注为“{label}”的这一块，它就是这句话的视觉说明。"
-    )[:max_chars]
-
-
-def semantic_group(
-    *,
-    group_id: str,
-    content_unit_id: str,
-    role: str,
-    visible_text: str,
-    source_text: str,
-    visual_anchor: str,
-    narration_function: str,
-    mask_target: str,
-    must_include: list[str],
-    must_not_include: list[str],
-    reveal_order: int,
-) -> dict[str, Any]:
-    return {
-        "id": group_id,
-        "content_unit_id": content_unit_id,
-        "role": role,
-        "visible_text": visible_text,
-        "source_text": source_text,
-        "visual_anchor": visual_anchor,
-        "narration_function": narration_function,
-        "mask_target": mask_target,
-        "must_include": must_include,
-        "must_not_include": must_not_include,
-        "reveal_order": reveal_order,
-    }
-
-
-def narration_beat(
-    *,
-    beat_id: str,
-    content_unit_id: str,
-    group_id: str,
-    visible_anchor: str,
-    spoken_intent: str,
-    spoken_text: str,
-) -> dict[str, Any]:
-    return {
-        "id": beat_id,
-        "content_unit_id": content_unit_id,
-        "group_id": group_id,
-        "visible_anchor": visible_anchor,
-        "spoken_intent": spoken_intent,
-        "spoken_text": spoken_text,
-    }
-
-
 def parse_article(path: Path) -> tuple[str, list[dict[str, Any]]]:
     if not path.exists():
         raise ContractBuildError(f"Missing article: {path}")
@@ -137,16 +144,32 @@ def parse_article(path: Path) -> tuple[str, list[dict[str, Any]]]:
     sections: list[dict[str, Any]] = []
     current_title = ""
     current_lines: list[str] = []
-    for raw_line in raw.splitlines():
+
+    lines = [line.rstrip() for line in raw.splitlines()]
+    start_index = 0
+    for index, raw_line in enumerate(lines):
         line = raw_line.strip()
+        if not line:
+            continue
         match = HEADING_RE.match(line)
         if match:
-            if not title or title == path.stem:
-                title = clean_line(match.group(2))
+            title = clean_line(match.group(2))
+            start_index = index + 1
+            break
+        if looks_like_document_title(line):
+            title = clean_line(strip_markdown(line))
+            start_index = index + 1
+            break
+        break
+
+    for raw_line in lines[start_index:]:
+        line = raw_line.strip()
+        heading = extract_heading_text(line)
+        if heading:
             if current_lines:
                 sections.append({"title": current_title or title, "text": "\n".join(current_lines)})
                 current_lines = []
-            current_title = clean_line(match.group(2))
+            current_title = heading
             continue
         if line:
             current_lines.append(line)
@@ -157,15 +180,68 @@ def parse_article(path: Path) -> tuple[str, list[dict[str, Any]]]:
     return title, sections
 
 
+def split_long_section(section: dict[str, Any], sentences_per_slide: int = 2) -> list[dict[str, Any]]:
+    section_text = str(section.get("text", ""))
+    sentences = split_sentences(section_text)
+    if len(sentences) <= sentences_per_slide:
+        return [section]
+    chunks: list[dict[str, Any]] = []
+    for index in range(0, len(sentences), sentences_per_slide):
+        part = sentences[index : index + sentences_per_slide]
+        if not part:
+            continue
+        title = str(section.get("title") or "").strip()
+        if index:
+            title = short_label(part[0], 18)
+        chunks.append({"title": title or short_label(part[0], 18), "text": " ".join(part)})
+    return chunks or [section]
+
+
+def merge_section_group(group: list[dict[str, Any]]) -> dict[str, Any]:
+    titles = [clean_line(str(item.get("title") or "")) for item in group if clean_line(str(item.get("title") or ""))]
+    body_parts: list[str] = []
+    for item in group:
+        title = clean_line(str(item.get("title") or ""))
+        text = clean_line(str(item.get("text") or ""))
+        if not text:
+            continue
+        if title and title not in text:
+            body_parts.append(f"{title}：{text}")
+        else:
+            body_parts.append(text)
+    merged_title = " / ".join(titles[:2]) if titles else "关键内容"
+    return {"title": merged_title[:30].rstrip(" /-—：:，,、"), "text": "\n".join(body_parts)}
+
+
+def merge_overflow_sections(sections: list[dict[str, Any]], max_slides: int) -> list[dict[str, Any]]:
+    if len(sections) <= max_slides:
+        return sections
+    preserve_count = 2 if max_slides >= 4 else 1
+    result = sections[:preserve_count]
+    remaining = sections[preserve_count:]
+    slots = max(1, max_slides - len(result))
+    group_size = max(1, -(-len(remaining) // slots))
+    for index in range(0, len(remaining), group_size):
+        result.append(merge_section_group(remaining[index : index + group_size]))
+    return result[:max_slides]
+
+
 def chunk_sections(sections: list[dict[str, Any]], min_slides: int, max_slides: int) -> list[dict[str, Any]]:
+    if len(sections) > max_slides:
+        return merge_overflow_sections(sections, max_slides)
     if len(sections) >= min_slides:
         return sections[:max_slides]
-    all_sentences: list[str] = []
+    expanded: list[dict[str, Any]] = []
     for section in sections:
+        expanded.extend(split_long_section(section))
+    if len(expanded) >= min_slides:
+        return expanded[:max_slides]
+    all_sentences: list[str] = []
+    for section in expanded or sections:
         all_sentences.extend(split_sentences(str(section.get("text", ""))))
     target = min(max(min_slides, len(sections)), max_slides)
     if len(all_sentences) < target:
-        return sections
+        return (expanded or sections)[:max_slides]
     chunks: list[dict[str, Any]] = []
     size = max(1, round(len(all_sentences) / target))
     for index in range(0, len(all_sentences), size):
@@ -179,119 +255,150 @@ def chunk_sections(sections: list[dict[str, Any]], min_slides: int, max_slides: 
 def key_points(text: str, count: int = 3) -> list[str]:
     sentences = split_sentences(text)
     points = [sentence for sentence in sentences if len(PUNCT_RE.sub("", sentence)) >= 6]
+    if len(points) < count:
+        clauses = [
+            clean_line(part)
+            for sentence in sentences or [strip_markdown(text)]
+            for part in CLAUSE_RE.split(sentence)
+            if len(PUNCT_RE.sub("", clean_line(part))) >= 8
+        ]
+        if len(points) == 1 and len(points[0]) > 100 and clauses:
+            points = clauses[:count]
+        else:
+            for clause in clauses:
+                if clause not in points:
+                    points.append(clause)
+                if len(points) >= count:
+                    break
     if not points:
         points = sentences or [text]
     return points[:count]
 
 
-def build_slide(slide_index: int, section: dict[str, Any]) -> dict[str, Any]:
+def visual_anchor(
+    *,
+    group_id: str,
+    role: str,
+    visible_text: str,
+    source_text: str,
+    order: int,
+) -> dict[str, Any]:
+    """Return a lightweight post-design anchor compatible with existing validators."""
+
+    return {
+        "id": group_id,
+        "content_unit_id": group_id,
+        "role": role,
+        "visible_text": visible_text,
+        "source_text": source_text,
+        "visual_anchor": f"由生图完成后，在画面中匹配“{visible_text}”对应的区域。",
+        "narration_function": source_text[:100] or visible_text,
+        "mask_target": f"生图完成后，覆盖与“{visible_text}”对应的完整可见区域。",
+        "must_include": ["对应可见区域"],
+        "must_not_include": ["无关内容", "底部字幕安全区"],
+        "reveal_order": order,
+    }
+
+
+def narration_beat(beat_id: str, group_id: str, visible_anchor: str, spoken_intent: str, spoken_text: str) -> dict[str, Any]:
+    return {
+        "id": beat_id,
+        "content_unit_id": group_id,
+        "group_id": group_id,
+        "visible_anchor": visible_anchor,
+        "spoken_intent": spoken_intent,
+        "spoken_text": spoken_text,
+    }
+
+
+def readable_slide_title(raw_title: str, slide_index: int) -> str:
+    title = clean_line(strip_markdown(raw_title))
+    if "Loop Engineering" in title and "循环工程" in title:
+        return "Loop Engineering：循环工程"
+    if not title:
+        return f"第{slide_index}页"
+    return title[:24].rstrip(" /-—：:，,、")
+
+
+def infer_role(point: str, point_index: int) -> str:
+    text = clean_line(point)
+    if any(token in text for token in ("原话", "引用", "金句", "我不再")):
+        return "quote"
+    if any(token in text for token in ("Trigger", "Generator", "Evaluator", "Repair", "Stop", "触发器", "生成器", "评估器", "反馈修正", "终止")):
+        return "process_step"
+    if any(token in text for token in ("对比", "流程", "闭环", "链路", "→", "->")):
+        return "diagram"
+    if re.search(r"\d", text):
+        return "data_point" if point_index != 1 else "content_body"
+    return "content_body"
+
+
+def build_slide(slide_index: int, section: dict[str, Any], subtitle_policy: str) -> dict[str, Any]:
     slide_id = f"slide_{slide_index:03d}"
-    title_text = clean_line(str(section.get("title") or f"第{slide_index}页"))[:24]
+    title_text = readable_slide_title(str(section.get("title") or f"第{slide_index}页"), slide_index)
     section_text = str(section.get("text", ""))
     sentences = split_sentences(section_text)
     points = key_points(section_text, count=3)
     core = compact_summary(sentences)
-    subtitle_text = short_label(core, 16)
+    subtitle_text = short_label(core, 16) if subtitle_policy == SUBTITLE_POLICY_WITH_SUBTITLE else ""
+
+    body_content = points or [core]
+    narration = f"这一页我们看“{title_text}”。" + "".join(body_content)
 
     visual_groups: list[dict[str, Any]] = [
-        semantic_group(
+        visual_anchor(
             group_id="title_group",
-            content_unit_id="title_main",
             role="title",
             visible_text=title_text,
-            source_text=title_text,
-            visual_anchor="顶部主标题",
-            narration_function="引出本页主题，只讲主标题，不单独讲副标题。",
-            mask_target="覆盖完整主标题、标题左侧黄色标记和标题附近的强调装饰。",
-            must_include=["主标题文字", "标题左侧黄色标记", "标题强调装饰"],
-            must_not_include=["subtitle_group", "body_group_01", "summary_group"],
-            reveal_order=1,
-        ),
-        semantic_group(
-            group_id="subtitle_group",
-            content_unit_id="title_sub",
-            role="subtitle",
-            visible_text=subtitle_text,
-            source_text=core,
-            visual_anchor="标题下方副标题",
-            narration_function="辅助展示本页理解角度；是否讲解由 narration_beats 决定。",
-            mask_target="覆盖完整副标题和副标题下方装饰线。",
-            must_include=["副标题文字", "副标题装饰线"],
-            must_not_include=["title_group", "body_group_01"],
-            reveal_order=2,
-        ),
+            source_text="页面主标题",
+            order=1,
+        )
     ]
+    next_order = 2
+    if subtitle_policy == SUBTITLE_POLICY_WITH_SUBTITLE:
+        visual_groups.append(
+            visual_anchor(
+                group_id="subtitle_group",
+                role="subtitle",
+                visible_text=subtitle_text,
+                source_text="页面副标题",
+                order=next_order,
+            )
+        )
+        next_order += 1
 
     narration_beats: list[dict[str, Any]] = [
         narration_beat(
-            beat_id="beat_title",
-            content_unit_id="title_main",
-            group_id="title_group",
-            visible_anchor=title_text,
-            spoken_intent="引出本页主题",
-            spoken_text=f"这一页我们看“{title_text}”。接下来我会按画面中的几个内容块，把这个主题拆开讲清楚。",
+            "beat_title",
+            "title_group",
+            title_text,
+            "引出本页主题",
+            f"这一页我们看“{title_text}”。",
         )
     ]
 
-    body_group_ids: list[str] = []
-    for point_index, point in enumerate(points, start=1):
-        group_id = f"body_group_{point_index:02d}"
-        content_unit_id = f"body_{point_index:02d}"
+    for point_index, point in enumerate(body_content, start=1):
         label = short_label(point)
-        body_group_ids.append(group_id)
-        role = "content_body" if point_index != 2 else "diagram"
+        group_id = f"body_anchor_{point_index:02d}"
         visual_groups.append(
-            semantic_group(
+            visual_anchor(
                 group_id=group_id,
-                content_unit_id=content_unit_id,
-                role=role,
+                role="body_content",
                 visible_text=label,
                 source_text=point,
-                visual_anchor=f"第{point_index}个内容区：{label}",
-                narration_function=point[:100],
-                mask_target=f"覆盖第{point_index}个内容区的完整视觉表达，包括标签、卡片/图标、局部箭头和说明文字。",
-                must_include=["内容区边界或卡片", "可见标签", "相关图标", "局部箭头或连接符", "局部说明文字"],
-                must_not_include=[gid for gid in ["title_group", "subtitle_group", "summary_group", *body_group_ids] if gid != group_id],
-                reveal_order=point_index + 2,
+                order=next_order,
             )
         )
+        next_order += 1
         narration_beats.append(
             narration_beat(
-                beat_id=f"beat_{point_index:02d}",
-                content_unit_id=content_unit_id,
-                group_id=group_id,
-                visible_anchor=label,
-                spoken_intent=point[:110],
-                spoken_text=detailed_spoken_text(label, point, point_index),
+                f"beat_{point_index:02d}",
+                group_id,
+                label,
+                point[:110],
+                point,
             )
         )
-
-    summary_label = short_label(core, 12)
-    visual_groups.append(
-        semantic_group(
-            group_id="summary_group",
-            content_unit_id="summary",
-            role="summary",
-            visible_text=summary_label,
-            source_text=core,
-            visual_anchor="底部总结区",
-            narration_function="收束本页观点",
-            mask_target="覆盖底部总结区的完整总结标签、强调符号和总结卡片。",
-            must_include=["总结标签", "总结卡片或强调区", "总结强调符号"],
-            must_not_include=["title_group", "subtitle_group", *body_group_ids],
-            reveal_order=len(visual_groups) + 1,
-        )
-    )
-    narration_beats.append(
-        narration_beat(
-            beat_id="beat_summary",
-            content_unit_id="summary",
-            group_id="summary_group",
-            visible_anchor=summary_label,
-            spoken_intent="总结本页核心观点",
-            spoken_text=f"最后回到“{summary_label}”。这一页的核心结论是：{core}",
-        )
-    )
 
     return {
         "slide_id": slide_id,
@@ -299,22 +406,38 @@ def build_slide(slide_index: int, section: dict[str, Any]) -> dict[str, Any]:
         "main_title": title_text,
         "subtitle": subtitle_text,
         "core_message": core,
+        "body_content": body_content,
+        "visual_intent": "根据演讲稿自由绘制完整页面；视觉锚点只用于后续 Mask/Reveal 匹配，不作为版式模板。",
+        "narration": narration,
         "visual_groups": visual_groups,
         "narration_beats": narration_beats,
     }
 
 
-def build_contract(article_path: Path, min_slides: int, max_slides: int, topic_name: str | None) -> dict[str, Any]:
+def build_contract(article_path: Path, min_slides: int, max_slides: int, topic_name: str | None, subtitle_policy: str) -> dict[str, Any]:
+    if subtitle_policy not in ALLOWED_SUBTITLE_POLICIES:
+        raise ContractBuildError(f"Unsupported subtitle policy: {subtitle_policy}")
     inferred_title, sections = parse_article(article_path)
     title = topic_name or inferred_title
     chunks = chunk_sections(sections, min_slides=min_slides, max_slides=max_slides)
-    slides = [build_slide(index, section) for index, section in enumerate(chunks, start=1)]
+    slides = [build_slide(index, section, subtitle_policy=subtitle_policy) for index, section in enumerate(chunks, start=1)]
     return {
         "version": "visual_contract_v1",
+        "presentation_policy": {
+            "subtitle_policy": subtitle_policy,
+            "subtitle_decided_by": "deterministic_scaffold",
+            "subtitle_rationale": (
+                "Scaffold default; AI storyboard generation should replace this with a project-level content decision."
+                if subtitle_policy == SUBTITLE_POLICY_NO_SUBTITLE
+                else "Scaffold was configured to include subtitles on every slide."
+            ),
+            "default_visual_anchor_count": "2-5",
+            "layout_freedom": "high",
+        },
         "mapping_policy": {
-            "semantic_unit": "visual_group",
-            "id_chain": "narration_beat.id -> content_unit_id -> visual_group.id -> reveal_manifest.group.id -> box/mask",
-            "narration_policy": "narration_beats exclusively determine which visual groups are spoken",
+            "semantic_unit": "post_design_visual_anchor",
+            "id_chain": "narration_beat.id -> visual_anchor.id -> reveal_manifest.group.id -> box/mask",
+            "narration_policy": "narration is the source of truth; visual anchors are reviewed after the page is drawn",
         },
         "topic": {
             "topic_id": re.sub(r"[^A-Za-z0-9_\-]+", "_", article_path.stem).strip("_") or "topic",
@@ -333,6 +456,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--topic-name")
     parser.add_argument("--min-slides", type=int, default=8)
     parser.add_argument("--max-slides", type=int, default=14)
+    parser.add_argument(
+        "--subtitle-policy",
+        choices=sorted(ALLOWED_SUBTITLE_POLICIES),
+        default=SUBTITLE_POLICY_NO_SUBTITLE,
+        help="Project-level subtitle policy for deterministic scaffold output.",
+    )
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
 
@@ -348,7 +477,13 @@ def main() -> int:
         print(f"Error: output exists, use --overwrite: {out}", file=sys.stderr)
         return 2
     try:
-        contract = build_contract(article.resolve(), min_slides=args.min_slides, max_slides=args.max_slides, topic_name=args.topic_name)
+        contract = build_contract(
+            article.resolve(),
+            min_slides=args.min_slides,
+            max_slides=args.max_slides,
+            topic_name=args.topic_name,
+            subtitle_policy=args.subtitle_policy,
+        )
         write_json(out.resolve(), contract)
     except ContractBuildError as exc:
         print(f"Error: {exc}", file=sys.stderr)

@@ -4,6 +4,21 @@
   "type": "object",
   "required": ["topic", "slides"],
   "properties": {
+    "presentation_policy": {
+      "type": "object",
+      "required": ["subtitle_policy"],
+      "properties": {
+        "subtitle_policy": {
+          "type": "string",
+          "enum": ["all_slides_have_subtitle", "no_slides_have_subtitle"]
+        },
+        "subtitle_decided_by": {"type": "string"},
+        "subtitle_rationale": {"type": "string"},
+        "default_visual_anchor_count": {"type": "string"},
+        "layout_freedom": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
     "topic": {
       "type": "object",
       "required": ["topic_id", "topic_name", "topic_summary"],
@@ -20,11 +35,8 @@
         "type": "object",
         "required": [
           "slide_id",
-          "slide_purpose",
           "main_title",
-          "subtitle",
           "core_message",
-          "content",
           "narration"
         ],
         "properties": {
@@ -33,15 +45,18 @@
           "main_title": {"type": "string"},
           "subtitle": {"type": "string"},
           "core_message": {"type": "string"},
+          "body_content": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "visual_intent": {"type": "string"},
           "content": {
             "type": "object",
-            "required": ["content_type", "layout_intent", "items"],
             "properties": {
               "content_type": {"type": "string"},
               "layout_intent": {"type": "string"},
               "items": {
                 "type": "array",
-                "minItems": 1,
                 "items": {
                   "type": "object",
                   "properties": {
@@ -57,10 +72,10 @@
           "narration": {"type": "string"},
           "narration_beats": {
             "type": "array",
-            "description": "Voiceover-driven beats. Each beat should expand an article point and map to one visible group.",
+            "description": "Voiceover rhythm hints. They may reference visual anchors after the page is drawn; they are not a rigid pre-generation layout template.",
             "items": {
               "type": "object",
-              "required": ["id", "spoken_point", "visual_group", "animation"],
+              "required": ["id", "spoken_point"],
               "properties": {
                 "id": {"type": "string"},
                 "spoken_point": {"type": "string"},

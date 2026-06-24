@@ -5,6 +5,7 @@ import uuid
 import json
 import copy
 import base64
+import hashlib
 import shutil
 import logging
 import subprocess
@@ -434,6 +435,10 @@ STEP7_TTS_RETRY_ATTEMPTS = 3
 STEP7_TTS_RETRY_BASE_DELAY_SEC = 4
 STEP7_BIND_TIMEOUT_SEC = 90
 STEP8_RENDER_TIMEOUT_SEC = 3600
+DEFAULT_STEP2_GENERATION_REQUIREMENT = (
+    "按当前已保存的分镜规则、结构配置和文章内容生成分镜规划。"
+    "优先把内容讲清楚，不要机械套用固定卡片结构。"
+)
 
 def _redact_log_value(key: str, value: Any) -> Any:
     lowered = key.lower()
@@ -705,6 +710,32 @@ def parse_int_setting(value: str, default: int, min_value: int, max_value: int) 
     except Exception:
         parsed = default
     return max(min_value, min(max_value, parsed))
+
+
+def is_timeout_exception(exc: BaseException) -> bool:
+    seen: set[int] = set()
+    current: Optional[BaseException] = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        name = type(current).__name__.lower()
+        text = str(current).lower()
+        if isinstance(current, TimeoutError) or "timeout" in name or "timed out" in text:
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def parse_range_text(value: Any, default_min: int, default_max: int) -> tuple[int, int]:
+    numbers = [int(item) for item in re.findall(r"\d+", str(value or ""))]
+    if not numbers:
+        return default_min, default_max
+    if len(numbers) == 1:
+        parsed_min = parsed_max = numbers[0]
+    else:
+        parsed_min, parsed_max = numbers[0], numbers[1]
+    parsed_min = max(1, min(30, parsed_min))
+    parsed_max = max(parsed_min, min(30, parsed_max))
+    return parsed_min, parsed_max
 
 
 def parse_json_or_repair_with_llm(
@@ -2592,6 +2623,26 @@ def save_storyboard_template(payload: Dict[str, Any]):
     }
 
 
+@app.delete("/api/storyboard-templates/{template_id}")
+def delete_storyboard_template(template_id: str):
+    if template_id == "default":
+        raise HTTPException(status_code=400, detail="内置分镜模板不能删除")
+    if not re.fullmatch(r"[0-9a-f]{12}", template_id):
+        raise HTTPException(status_code=404, detail="分镜模板不存在")
+    stored = read_json_file(STORYBOARD_TEMPLATES_PATH, [])
+    if not isinstance(stored, list):
+        stored = []
+    next_stored = [
+        item
+        for item in stored
+        if not (isinstance(item, dict) and str(item.get("id") or "") == template_id)
+    ]
+    if len(next_stored) == len(stored):
+        raise HTTPException(status_code=404, detail="分镜模板不存在")
+    write_json_atomic(STORYBOARD_TEMPLATES_PATH, next_stored)
+    return {"success": True, "templates": list_storyboard_templates()}
+
+
 @app.post("/api/projects/{project_id}/steps/2/rules/ai-draft")
 def generate_storyboard_rules_ai_draft(
     project_id: str,
@@ -2882,6 +2933,144 @@ def get_step2_prompt_preview(
     }
 
 
+def finalize_step2_contract(
+    *,
+    project: Project,
+    project_id: str,
+    db: Session,
+    contract: Dict[str, Any],
+    project_title: str,
+    article_summary: str,
+    trace_id: str,
+    source: str,
+) -> Dict[str, Any]:
+    contract["version"] = "visual_contract_v1"
+    if "topic" not in contract or not isinstance(contract.get("topic"), dict):
+        contract["topic"] = {
+            "topic_id": "topic_" + project_id,
+            "topic_name": project_title,
+            "topic_summary": article_summary,
+        }
+    contract = normalize_visual_contract(contract, read_project_pipeline_profile(project))
+
+    contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
+    os.makedirs(os.path.dirname(contract_path), exist_ok=True)
+    contract["version"] = "visual_contract_v1"
+    contract["topic"] = {
+        "topic_id": "topic_" + project_id,
+        "topic_name": project_title,
+        "topic_summary": article_summary,
+    }
+    with open(contract_path, "w", encoding="utf-8") as f:
+        json.dump(contract, f, ensure_ascii=False, indent=2)
+    write_project_log(
+        project,
+        "step2_contract_written",
+        trace_id=trace_id,
+        contract_path=contract_path,
+        slide_count=len(contract.get("slides", [])) if isinstance(contract.get("slides"), list) else 0,
+        source=source,
+    )
+
+    validate_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "validate_visual_contract.py"))
+    validation_args = [sys.executable, validate_script, "--contract", contract_path]
+    project_profile_path = storyboard_profile_path(project)
+    if os.path.exists(project_profile_path):
+        validation_args.extend(["--profile", project_profile_path])
+    val_res = subprocess.run(
+        validation_args,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+    if val_res.returncode != 0:
+        logger.warning(f"Visual contract validation warning:\n{val_res.stderr}")
+        write_project_log(
+            project,
+            "step2_contract_validation_warning",
+            trace_id=trace_id,
+            returncode=val_res.returncode,
+            stderr=val_res.stderr.strip(),
+            source=source,
+        )
+    else:
+        write_project_log(
+            project,
+            "step2_contract_validation_success",
+            trace_id=trace_id,
+            stdout=val_res.stdout.strip(),
+            source=source,
+        )
+
+    handle_step_navigation(project, 2, db)
+    write_project_log(project, "step2_execute_completed", trace_id=trace_id, source=source)
+    return contract
+
+
+def build_step2_scaffold_contract(
+    *,
+    project: Project,
+    project_title: str,
+    article_content: str,
+    trace_id: str,
+) -> Dict[str, Any]:
+    profile = read_project_pipeline_profile(project)
+    slide_count_text, _ = storyboard_requirements(article_content, profile)
+    min_slides, max_slides = parse_range_text(slide_count_text, 4, 8)
+    fallback_path = os.path.join(project.run_dir, "planning", f"visual_contract_fallback_{trace_id}.json")
+    if os.path.exists(fallback_path):
+        os.remove(fallback_path)
+
+    script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "write_visual_contract.py"))
+    args = [
+        sys.executable,
+        script_path,
+        "--run-dir",
+        project.run_dir,
+        "--out",
+        fallback_path,
+        "--topic-name",
+        project_title,
+        "--min-slides",
+        str(min_slides),
+        "--max-slides",
+        str(max_slides),
+        "--subtitle-policy",
+        "no_slides_have_subtitle",
+        "--overwrite",
+    ]
+    write_project_log(
+        project,
+        "step2_scaffold_fallback_start",
+        trace_id=trace_id,
+        min_slides=min_slides,
+        max_slides=max_slides,
+        subtitle_policy="no_slides_have_subtitle",
+    )
+    result = subprocess.run(
+        args,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=60,
+    )
+    if result.returncode != 0 or not os.path.exists(fallback_path):
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "Step2 scaffold fallback failed")
+    with open(fallback_path, "r", encoding="utf-8") as f:
+        contract = json.load(f)
+    write_project_log(
+        project,
+        "step2_scaffold_fallback_generated",
+        trace_id=trace_id,
+        contract_path=fallback_path,
+        stdout=result.stdout.strip(),
+    )
+    return contract
+
+
 @app.post("/api/projects/{project_id}/steps/2/execute")
 def execute_step2(
     project_id: str,
@@ -2920,13 +3109,13 @@ def execute_step2(
     else:
         storyboard_rules = default_storyboard_rules()
     generation_requirement = str((payload or {}).get("requirement") or "").strip()
-    effective_storyboard_rules = storyboard_rules
-    if generation_requirement:
-        effective_storyboard_rules = (
-            f"{storyboard_rules}\n\n"
-            "本次生成的用户专项需求如下；只对本次生成生效，并在不破坏固定 JSON 结构和字段约束的前提下优先满足：\n"
-            f"{generation_requirement}"
-        )
+    if not generation_requirement:
+        generation_requirement = DEFAULT_STEP2_GENERATION_REQUIREMENT
+    effective_storyboard_rules = (
+        f"{storyboard_rules}\n\n"
+        "本次生成的用户专项需求如下；只对本次生成生效，并在不破坏固定 JSON 结构和字段约束的前提下优先满足：\n"
+        f"{generation_requirement}"
+    )
     system_prompt, user_prompt = build_storyboard_request(
         project_title,
         article_summary,
@@ -2946,12 +3135,18 @@ def execute_step2(
     )
 
     try:
-        client = get_openai_client(api_key=llm_api_key, base_url=llm_base_url)
+        client = get_openai_client(
+            api_key=llm_api_key,
+            base_url=llm_base_url,
+            timeout=STEP2_LLM_TIMEOUT_SEC,
+            max_retries=0,
+        )
         try:
             response = client.chat.completions.create(
                 model=llm_model,
                 temperature=planning_temp,
                 max_tokens=planning_max_tokens,
+                timeout=STEP2_LLM_TIMEOUT_SEC,
                 response_format={"type": "json_object"},
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -2959,11 +3154,14 @@ def execute_step2(
                 ]
             )
         except Exception as inner_e:
+            if is_timeout_exception(inner_e):
+                raise
             logger.warning(f"Failed LLM call with response_format in step 2, retrying without it: {inner_e}")
             response = client.chat.completions.create(
                 model=llm_model,
                 temperature=planning_temp,
                 max_tokens=planning_max_tokens,
+                timeout=STEP2_LLM_TIMEOUT_SEC,
                 messages=[
                     {"role": "system", "content": system_prompt + " 请只输出纯 JSON，不要包含 Markdown 代码块标记（如 ```json ）。"},
                     {"role": "user", "content": user_prompt}
@@ -2984,6 +3182,17 @@ def execute_step2(
             schema_hint=schema_hint,
             max_tokens=planning_max_tokens,
         )
+        contract = finalize_step2_contract(
+            project=project,
+            project_id=project_id,
+            db=db,
+            contract=contract,
+            project_title=project_title,
+            article_summary=article_summary,
+            trace_id=trace_id,
+            source="llm",
+        )
+        return {"success": True, "contract": contract, "fallback": False}
         
         # 强制补充一些固定版本信息
         contract["version"] = "visual_contract_v1"
@@ -3050,6 +3259,46 @@ def execute_step2(
         write_project_log(project, "step2_execute_completed", trace_id=trace_id)
         return {"success": True, "contract": contract}
     except Exception as e:
+        if is_timeout_exception(e):
+            write_project_log(
+                project,
+                "step2_llm_timeout_fallback",
+                trace_id=trace_id,
+                timeout_sec=STEP2_LLM_TIMEOUT_SEC,
+                error_type=type(e).__name__,
+                error=str(e),
+            )
+            try:
+                fallback_contract = build_step2_scaffold_contract(
+                    project=project,
+                    project_title=project_title,
+                    article_content=article_content,
+                    trace_id=trace_id,
+                )
+                fallback_contract = finalize_step2_contract(
+                    project=project,
+                    project_id=project_id,
+                    db=db,
+                    contract=fallback_contract,
+                    project_title=project_title,
+                    article_summary=article_summary,
+                    trace_id=trace_id,
+                    source="scaffold_fallback",
+                )
+                return {
+                    "success": True,
+                    "contract": fallback_contract,
+                    "fallback": True,
+                    "message": "AI 分镜生成超时，已生成本地可编辑分镜草稿。",
+                }
+            except Exception as fallback_error:
+                write_project_log(
+                    project,
+                    "step2_scaffold_fallback_error",
+                    trace_id=trace_id,
+                    error_type=type(fallback_error).__name__,
+                    error=str(fallback_error),
+                )
         write_project_log(project, "step2_execute_error", trace_id=trace_id, error_type=type(e).__name__, error=str(e))
         logger.error(f"Write visual contract error: {e}")
         raise HTTPException(status_code=500, detail=f"本地分镜规划失败: {str(e)}")
@@ -3327,11 +3576,87 @@ def build_image_style_prompt(style_tokens: Dict[str, Any]) -> str:
         lines.append(f"- 避免：{'、'.join(str(item) for item in avoid if item)}。")
 
     lines.append("- 不可变规则：画面元素严禁重叠、互相覆盖、压住、穿插或粘连；任何文字都不能被箭头、图标、卡片边框或装饰压住。")
-    lines.append("- 参考图只用于风格气质、标题区位置、线条粗细、配色和留白参考；不得覆盖“主体内容自由表达”和“元素不重叠”的规则。")
+    lines.append("- 当前风格词优先：如果参考图与当前风格词冲突，以当前风格词、画面表现方式和图示风格为准。")
+    lines.append("- 参考图只作为标题区位置、留白、层级和示例密度参考；除非当前风格明确要求手绘/白板，否则不要复制手绘笔迹、纸感或粗糙线稿。")
+    lines.append("- 严禁画面元素重叠：文字、图标、箭头、线条、标签、卡片边框之间不得互相覆盖、穿插或粘连。")
+    lines.append("- 参考图只用于风格气质、标题区位置、线条粗细、配色、留白、层级和密度参考；不得覆盖“主体内容自由表达”和“元素不重叠”的规则。")
     lines.append("- 四条边和四个角必须保持连续纯白，不要纸纹、阴影、噪声、渐变或暗角。")
     lines.append("- 卡片、文字和图标内部允许使用白色；系统只会移除与画面外围连通的白色。")
     lines.append("- 只生成最终静态整页图片，不要加入图层名称、制作说明或播放器界面。")
     return "\n".join(lines)
+
+
+def file_sha256(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def active_style_reference_paths() -> List[str]:
+    return [
+        os.path.join(STYLE_REFERENCE_DIR, filename)
+        for filename in STYLE_REFERENCE_FILES.values()
+        if os.path.exists(os.path.join(STYLE_REFERENCE_DIR, filename))
+    ]
+
+
+def active_references_are_default_handdrawn(reference_paths: List[str]) -> bool:
+    if not reference_paths:
+        return False
+    for path in reference_paths:
+        filename = os.path.basename(path)
+        default_path = os.path.join(DEFAULT_STYLE_REFERENCE_DIR, filename)
+        if not os.path.exists(default_path):
+            return False
+        try:
+            if file_sha256(path) != file_sha256(default_path):
+                return False
+        except OSError:
+            return False
+    return True
+
+
+def style_prefers_handdrawn_reference(style_tokens: Dict[str, Any]) -> bool:
+    brand = style_tokens.get("brand") if isinstance(style_tokens.get("brand"), dict) else {}
+    assets = style_tokens.get("visual_assets") if isinstance(style_tokens.get("visual_assets"), dict) else {}
+    positive_parts: List[str] = []
+    keywords = brand.get("style_keywords") if isinstance(brand.get("style_keywords"), list) else []
+    positive_parts.extend(str(item) for item in keywords if item)
+    positive_parts.append(str(assets.get("image_style") or ""))
+    positive_parts.append(str(assets.get("diagram_style") or ""))
+    text = "\n".join(positive_parts).lower()
+    handdrawn_hints = (
+        "手绘",
+        "白板",
+        "线稿",
+        "手写",
+        "马克笔",
+        "涂鸦",
+        "sketch",
+        "handdrawn",
+        "hand-drawn",
+        "whiteboard",
+        "marker",
+    )
+    return any(hint in text for hint in handdrawn_hints)
+
+
+def should_send_style_reference_images(
+    *,
+    model: str,
+    base_url: Optional[str],
+    reference_paths: List[str],
+    style_tokens: Dict[str, Any],
+) -> bool:
+    if not reference_paths:
+        return False
+    if not str(model).startswith("gpt-image") or is_seedream_image_model(model, base_url):
+        return False
+    if active_references_are_default_handdrawn(reference_paths) and not style_prefers_handdrawn_reference(style_tokens):
+        return False
+    return True
 
 
 @app.get("/api/image-style")
@@ -3354,6 +3679,7 @@ def get_image_style():
             "生图背景固定为纯白 #FFFFFF，确保 Mask 外围背景可稳定移除",
             "主标题、副标题固定在页面上方标题区",
             "y=930 以下为字幕安全区，不放关键内容",
+            "画面元素严禁重叠、穿插、压住或粘连，保证后续 Mask 可标注",
             "主体内容区可以自由发挥，但所有画面元素严禁重叠、覆盖、压住、穿插或粘连",
             "高级 YAML 只允许 brand、canvas、colors、layout、visual_assets 顶层字段",
         ],
@@ -3657,6 +3983,30 @@ def save_image_style_template(payload: Dict[str, Any]):
     }
 
 
+@app.delete("/api/image-style/templates/{template_id}")
+def delete_image_style_template(template_id: str):
+    if template_id == "default":
+        raise HTTPException(status_code=400, detail="内置图片风格模板不能删除")
+    if not re.fullmatch(r"[0-9a-f]{12}", template_id):
+        raise HTTPException(status_code=404, detail="图片风格模板不存在")
+    index = read_image_style_template_index()
+    next_index = [
+        item
+        for item in index
+        if not (isinstance(item, dict) and str(item.get("id") or "") == template_id)
+    ]
+    if len(next_index) == len(index):
+        raise HTTPException(status_code=404, detail="图片风格模板不存在")
+    write_json_atomic(IMAGE_STYLE_TEMPLATES_INDEX, next_index)
+    base_dir = os.path.abspath(IMAGE_STYLE_TEMPLATES_DIR)
+    template_dir = os.path.abspath(os.path.join(IMAGE_STYLE_TEMPLATES_DIR, template_id))
+    if os.path.commonpath([base_dir, template_dir]) != base_dir:
+        raise HTTPException(status_code=400, detail="图片风格模板路径异常")
+    if os.path.exists(template_dir):
+        shutil.rmtree(template_dir)
+    return {"success": True, "templates": list_image_style_templates()}
+
+
 @app.post("/api/image-style/templates/{template_id}/apply-references")
 def apply_image_style_template_references(template_id: str):
     ensure_active_image_style_storage()
@@ -3777,6 +4127,7 @@ def enforce_white_generation_background(prompt: str) -> str:
         "不要把纯白背景画进卡片或内容轮廓之外的装饰区域。\n"
         "不可覆盖的布局要求：主标题、副标题必须位于页面上方固定标题区；底部 y=930..1080 必须保留为视频字幕安全区。"
         "主体内容区可以自由发挥，但画面元素严禁重叠、覆盖、压住、穿插或粘连；文字、图标、箭头、卡片、标签、装饰和图表之间必须保留清晰间距，方便后续人工 Mask。"
+        "\n不可覆盖的 Mask 要求：严禁画面元素重叠。文字、图标、箭头、线条、标签、卡片边框、人物和装饰之间不得互相覆盖、穿插、压住或粘连；每个语义元素之间必须留出清晰空白。"
     )
 
 
@@ -3841,12 +4192,20 @@ def generate_slide_image(
 
         response = None
         seedream_mode = is_seedream_image_model(model, base_url)
-        reference_paths = [
-            os.path.join(STYLE_REFERENCE_DIR, filename)
-            for filename in STYLE_REFERENCE_FILES.values()
-            if os.path.exists(os.path.join(STYLE_REFERENCE_DIR, filename))
-        ]
-        if reference_paths and str(model).startswith("gpt-image") and not seedream_mode:
+        style_tokens = read_style_tokens_data()
+        reference_paths = active_style_reference_paths()
+        use_reference_images = should_send_style_reference_images(
+            model=model,
+            base_url=base_url,
+            reference_paths=reference_paths,
+            style_tokens=style_tokens,
+        )
+        if reference_paths and not use_reference_images:
+            logger.info(
+                "Skipping binary style reference images for %s: active references are not compatible with current model/style.",
+                slide_id,
+            )
+        if use_reference_images:
             reference_files = []
             try:
                 reference_files = [open(path, "rb") for path in reference_paths]

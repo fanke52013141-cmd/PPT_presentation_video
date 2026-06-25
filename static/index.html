@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=2.12.8">
+  <link rel="stylesheet" href="style.css?v=2.13.0">
 </head>
 <body>
 
@@ -34,6 +34,8 @@
         <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
         系统设置
       </button>
+      <button id="btn-config-export" class="secondary" type="button">配置导出</button>
+      <button id="btn-config-import" class="secondary" type="button">配置导入</button>
     </div>
   </header>
 
@@ -250,10 +252,6 @@
           <div class="step5-mask-header">
             <h2 class="highlight-title">智能 Mask 区域标注</h2>
             <div class="step5-toolbar">
-              <button id="step5-btn-semantic-blocks" class="secondary">
-                <svg class="icon" viewBox="0 0 24 24"><path d="M4 5h16"></path><path d="M4 12h10"></path><path d="M4 19h16"></path><circle cx="18" cy="12" r="2"></circle></svg>
-                <span class="btn-label">AI 语义分块</span>
-              </button>
               <button id="step5-btn-clear-current" class="secondary">
                 <svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v5M14 11v5"></path></svg>
                 清除全部标注
@@ -265,14 +263,6 @@
               <button id="step5-btn-animation-settings" class="secondary">
                 <svg class="icon" viewBox="0 0 24 24"><polygon points="7 4 20 12 7 20 7 4"></polygon></svg>
                 动画设置
-              </button>
-              <button id="step5-btn-prev-slide" class="secondary step5-slide-nav" type="button" title="上一张 Slide">
-                <svg class="icon" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"></polyline></svg>
-                上一张
-              </button>
-              <button id="step5-btn-next-slide" class="secondary step5-slide-nav" type="button" title="下一张 Slide">
-                下一张
-                <svg class="icon" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"></polyline></svg>
               </button>
               <button id="step5-btn-fullscreen" class="secondary" type="button" title="全屏标注">
                 <svg class="icon" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M16 3h3a2 2 0 0 1 2 2v3"></path><path d="M8 21H5a2 2 0 0 1-2-2v-3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path></svg>
@@ -606,8 +596,8 @@
 
       <div class="settings-footer-actions">
         <div class="settings-portability-actions">
-          <button id="btn-settings-export" class="secondary" type="button">导出全局配置</button>
-          <button id="btn-settings-import" class="secondary" type="button">导入全局配置</button>
+          <button id="btn-settings-export" class="secondary" type="button">配置导出</button>
+          <button id="btn-settings-import" class="secondary" type="button">配置导入</button>
           <input id="settings-import-file" type="file" accept="application/json,.json" style="display: none;">
         </div>
         <button id="btn-settings-cancel" class="secondary">取消</button>
@@ -859,6 +849,6 @@
 
   <!-- 主业务 JavaScript 脚本 -->
   <script src="flow.js?v=1.0.0"></script>
-  <script src="app.js?v=2.12.9"></script>
+  <script src="app.js?v=2.13.0"></script>
 </body>
 </html>

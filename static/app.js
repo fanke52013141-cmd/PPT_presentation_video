@@ -265,6 +265,10 @@ function initGlobalEvents() {
   document.getElementById('btn-settings-import')?.addEventListener('click', () => {
     document.getElementById('settings-import-file')?.click();
   });
+  document.getElementById('btn-config-export')?.addEventListener('click', () => exportGlobalSettings());
+  document.getElementById('btn-config-import')?.addEventListener('click', () => {
+    document.getElementById('settings-import-file')?.click();
+  });
   document.getElementById('settings-import-file')?.addEventListener('change', (event) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -386,13 +390,10 @@ function initGlobalEvents() {
   document.getElementById('step3-btn-confirm')?.addEventListener('click', () => confirmStep3Images());
 
   // ================= 步骤 5 事件 =================
-  document.getElementById('step5-btn-semantic-blocks')?.addEventListener('click', () => runStep5SemanticBlocks());
   document.getElementById('step5-btn-new-block')?.addEventListener('click', () => createCurrentSlideBlock());
   document.getElementById('step5-btn-clear-current')?.addEventListener('click', () => clearAllMaskAnnotations());
   document.getElementById('step5-btn-subtitle-settings')?.addEventListener('click', () => openSubtitleSettingsModal());
   document.getElementById('step5-btn-animation-settings')?.addEventListener('click', () => openAnimationSettingsModal());
-  document.getElementById('step5-btn-prev-slide')?.addEventListener('click', () => switchStep5Slide(-1));
-  document.getElementById('step5-btn-next-slide')?.addEventListener('click', () => switchStep5Slide(1));
   document.getElementById('step5-btn-fullscreen')?.addEventListener('click', () => toggleStep5Fullscreen());
   document.getElementById('step5-brush-size')?.addEventListener('input', (e) => updateBrushSize(e.target.value));
   document.getElementById('step5-eraser-size')?.addEventListener('input', (e) => updateEraserSize(e.target.value));
@@ -662,10 +663,22 @@ async function saveSettings() {
 
 function settingsExportFileName() {
   const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
-  return `ppt-studio-global-settings-sensitive-${stamp}.json`;
+  return `ppt-studio-config-bundle-sensitive-${stamp}.json`;
 }
 
-function exportGlobalSettings() {
+async function exportGlobalSettings() {
+  const configPayload = await API.get('/api/config/export');
+  const configBlob = new Blob([JSON.stringify(configPayload, null, 2)], { type: 'application/json' });
+  const configUrl = URL.createObjectURL(configBlob);
+  const configLink = document.createElement('a');
+  configLink.href = configUrl;
+  configLink.download = settingsExportFileName();
+  document.body.appendChild(configLink);
+  configLink.click();
+  configLink.remove();
+  URL.revokeObjectURL(configUrl);
+  showToast('配置已导出。文件包含 API Key、Prompt 模板和参考图，请妥善保存。', 5000);
+  return;
   const currentFormSettings = readSettingsForm();
   const settings = {};
   GLOBAL_SETTINGS_EXPORT_KEYS.forEach(key => {
@@ -727,6 +740,31 @@ async function applyImportedGlobalSettings(settings) {
 }
 
 async function importGlobalSettings(file) {
+  let payload;
+  try {
+    payload = JSON.parse(await file.text());
+  } catch (error) {
+    showToast(`导入失败：${error.message}`, 6000);
+    return;
+  }
+
+  showCustomConfirm(
+    '导入整体配置？',
+    '将覆盖当前 API 配置、分镜模板、Step 2 Prompt 模板和图片风格模板。项目内容不会被修改。',
+    () => {
+      API.post('/api/config/import', payload).then(async () => {
+        await loadSettings();
+        if (document.getElementById('modal-image-style')?.style.display === 'flex') {
+          await openImageStyleModal();
+        }
+        showToast('配置已导入并重新加载。', 5000);
+      }).catch(error => {
+        showToast(`导入失败：${error.message}`, 6000);
+      });
+    }
+  );
+  return;
+
   let settings;
   try {
     const text = await file.text();
@@ -2373,6 +2411,22 @@ function semanticBlockToMaskBox(box, idx) {
   }, idx);
 }
 
+function isManualUserMaskBox(box) {
+  return String(box?.group_id || box?.id || '').startsWith('manual_group_');
+}
+
+function hasLinkedNarration(box) {
+  if (String(box?.spoken_text || '').trim()) return true;
+  if (String(box?.narration_beat_id || '').trim()) return true;
+  if (Array.isArray(box?.narration_beat_ids) && box.narration_beat_ids.some(Boolean)) return true;
+  return Array.isArray(box?.narration_fragments)
+    && box.narration_fragments.some(fragment => String(fragment?.text || fragment?.id || '').trim());
+}
+
+function isDisplayableMaskBox(box) {
+  return isManualUserMaskBox(box) || hasLinkedNarration(box);
+}
+
 function getSlideMaskBoxes(slide) {
   if (!slide) return [];
   const semanticBoxes = Array.isArray(slide.semantic_blocks)
@@ -2405,6 +2459,7 @@ function getSlideMaskBoxes(slide) {
     if (!semanticIds.has(box.group_id)) merged.push(box);
   });
   return merged
+    .filter(isDisplayableMaskBox)
     .map((box, idx) => ({
       ...box,
       manual_mask: {
@@ -2425,6 +2480,7 @@ function syncMaskBoxesToSlide(slide, boxes) {
   const readyBoxes = boxes.filter(maskBox => !isDraftMaskBox(maskBox));
   const semanticBoxes = boxes
     .filter(maskBox => String(maskBox?.source || '') === 'ai_semantic')
+    .filter(hasLinkedNarration)
     .map((maskBox, idx) => ({
       ...maskBox,
       manual_mask: {
@@ -3188,12 +3244,12 @@ function renderStep5BoxesForm() {
         </div>
       </div>
       <div class="mask-visual-card">
-        <span class="mask-visual-label">${escHtml(elementId)} · ${escHtml(box.role || 'content_body')} · ${escHtml(visualType)}</span>
+        <span class="mask-visual-label">画面描述 · ${escHtml(elementId)} · ${escHtml(box.role || 'content_body')} · ${escHtml(visualType)}</span>
         <span class="mask-visual-desc">${escHtml(visualDescription)}</span>
       </div>
       <div class="mask-narration-card">
-        <span class="mask-narration-label">演讲旁白</span>
-        <span class="mask-narration-text">${spokenText ? escHtml(spokenText) : '在下方演讲稿中点选片段'}</span>
+        <span class="mask-narration-label">关联旁白</span>
+        <span class="mask-narration-text">${spokenText ? escHtml(spokenText) : '请在下方旁白中选择片段'}</span>
       </div>
     `;
     

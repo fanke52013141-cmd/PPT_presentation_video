@@ -1762,6 +1762,169 @@ def update_system_settings(payload: SettingsUpdate):
     update_settings(payload.settings)
     return {"success": True, "message": "设置更新成功"}
 
+def read_text_file_if_exists(path: str) -> str:
+    if not os.path.exists(path):
+        return ""
+    with open(path, "r", encoding="utf-8-sig") as file:
+        return file.read()
+
+
+def file_to_config_reference(path: str) -> Dict[str, Any]:
+    if not os.path.exists(path):
+        return {"exists": False, "data": "", "mime": "", "filename": os.path.basename(path)}
+    with open(path, "rb") as file:
+        return {
+            "exists": True,
+            "data": base64.b64encode(file.read()).decode("ascii"),
+            "mime": "image/png",
+            "filename": os.path.basename(path),
+        }
+
+
+def config_references_from_dir(reference_dir: str) -> Dict[str, Dict[str, Any]]:
+    return {
+        kind: file_to_config_reference(os.path.join(reference_dir, filename))
+        for kind, filename in STYLE_REFERENCE_FILES.items()
+    }
+
+
+def safe_image_template_id(value: Any) -> Optional[str]:
+    template_id = str(value or "").strip()
+    return template_id if re.fullmatch(r"[0-9a-f]{12}", template_id) else None
+
+
+def exported_image_style_templates() -> List[Dict[str, Any]]:
+    templates: List[Dict[str, Any]] = []
+    for item in read_image_style_template_index():
+        if not isinstance(item, dict):
+            continue
+        template_id = safe_image_template_id(item.get("id"))
+        if not template_id:
+            continue
+        template_dir = os.path.join(IMAGE_STYLE_TEMPLATES_DIR, template_id)
+        templates.append(
+            {
+                "id": template_id,
+                "name": str(item.get("name") or ""),
+                "created_at": str(item.get("created_at") or ""),
+                "updated_at": str(item.get("updated_at") or ""),
+                "style_tokens_yaml": read_text_file_if_exists(os.path.join(template_dir, "style_tokens.yaml")),
+                "references": config_references_from_dir(os.path.join(template_dir, "references")),
+            }
+        )
+    return templates
+
+
+def decode_config_reference(reference: Any, target_path: str) -> None:
+    if not isinstance(reference, dict) or not reference.get("exists"):
+        if os.path.exists(target_path):
+            os.remove(target_path)
+        return
+    data = str(reference.get("data") or "")
+    if not data:
+        return
+    os.makedirs(os.path.dirname(target_path), exist_ok=True)
+    with open(target_path, "wb") as file:
+        file.write(base64.b64decode(data))
+
+
+def write_config_references(reference_bundle: Any, reference_dir: str) -> None:
+    if not isinstance(reference_bundle, dict):
+        return
+    for kind, filename in STYLE_REFERENCE_FILES.items():
+        if kind in reference_bundle:
+            decode_config_reference(reference_bundle[kind], os.path.join(reference_dir, filename))
+
+
+def normalize_imported_template_list(value: Any) -> List[Dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    result: List[Dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict) or item.get("built_in"):
+            continue
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+        result.append({key: value for key, value in item.items() if key != "built_in"})
+    return result
+
+
+@app.get("/api/config/export")
+def export_full_config():
+    ensure_active_image_style_storage()
+    return {
+        "app": "PPT Visualization Studio",
+        "type": "ppt_studio_config_bundle",
+        "version": 2,
+        "exported_at": datetime.now().isoformat(timespec="seconds"),
+        "warning": "This file may contain API keys, secrets, prompt templates, and reference images. Keep it private.",
+        "settings": get_all_settings(),
+        "storyboard_templates": read_json_file(STORYBOARD_TEMPLATES_PATH, []),
+        "step2_prompt_templates": read_json_file(STEP2_PROMPT_TEMPLATES_PATH, []),
+        "image_style": {
+            "active_style_tokens_yaml": read_text_file_if_exists(STYLE_TOKENS_PATH),
+            "active_references": config_references_from_dir(STYLE_REFERENCE_DIR),
+            "templates": exported_image_style_templates(),
+        },
+    }
+
+
+@app.post("/api/config/import")
+def import_full_config(payload: Dict[str, Any]):
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="配置文件格式不正确")
+    settings = payload.get("settings")
+    if isinstance(settings, dict):
+        update_settings({str(key): str(value) for key, value in settings.items()})
+
+    storyboard_templates = payload.get("storyboard_templates")
+    if isinstance(storyboard_templates, list):
+        write_json_atomic(STORYBOARD_TEMPLATES_PATH, normalize_imported_template_list(storyboard_templates))
+
+    step2_prompt_templates = payload.get("step2_prompt_templates")
+    if isinstance(step2_prompt_templates, list):
+        write_json_atomic(STEP2_PROMPT_TEMPLATES_PATH, normalize_imported_template_list(step2_prompt_templates))
+
+    image_style = payload.get("image_style") if isinstance(payload.get("image_style"), dict) else {}
+    ensure_active_image_style_storage()
+    active_style = str(image_style.get("active_style_tokens_yaml") or "").strip()
+    if active_style:
+        with open(STYLE_TOKENS_PATH, "w", encoding="utf-8", newline="\n") as file:
+            file.write(active_style.rstrip() + "\n")
+    write_config_references(image_style.get("active_references"), STYLE_REFERENCE_DIR)
+
+    imported_image_templates = []
+    has_image_template_payload = isinstance(image_style.get("templates"), list)
+    for item in image_style.get("templates") or []:
+        if not isinstance(item, dict):
+            continue
+        template_id = safe_image_template_id(item.get("id")) or uuid.uuid4().hex[:12]
+        name = str(item.get("name") or "").strip()
+        style_text = str(item.get("style_tokens_yaml") or "").strip()
+        if not name or not style_text:
+            continue
+        template_dir = os.path.abspath(os.path.join(IMAGE_STYLE_TEMPLATES_DIR, template_id))
+        base_dir = os.path.abspath(IMAGE_STYLE_TEMPLATES_DIR)
+        if os.path.commonpath([base_dir, template_dir]) != base_dir:
+            continue
+        os.makedirs(os.path.join(template_dir, "references"), exist_ok=True)
+        with open(os.path.join(template_dir, "style_tokens.yaml"), "w", encoding="utf-8", newline="\n") as file:
+            file.write(style_text.rstrip() + "\n")
+        write_config_references(item.get("references"), os.path.join(template_dir, "references"))
+        imported_image_templates.append(
+            {
+                "id": template_id,
+                "name": name[:60],
+                "created_at": str(item.get("created_at") or template_timestamp()),
+                "updated_at": str(item.get("updated_at") or template_timestamp()),
+            }
+        )
+    if has_image_template_payload:
+        write_json_atomic(IMAGE_STYLE_TEMPLATES_INDEX, imported_image_templates)
+    return {"success": True, "message": "配置已导入"}
+
+
 @app.post("/api/settings/test-llm")
 def test_llm_connection(payload: TestLlmPayload):
     try:
@@ -4302,7 +4465,6 @@ def image_style_template_detail(template_id: str) -> Dict[str, Any]:
 def list_image_style_templates() -> List[Dict[str, Any]]:
     result = [
         image_style_template_detail("default"),
-        image_style_template_detail("handdrawn_explainer"),
     ]
     for item in read_image_style_template_index():
         template_id = str(item.get("id") or "")
@@ -4851,6 +5013,7 @@ def confirm_images(project_id: str, db: Session = Depends(get_db)):
         # Final rendering is manual-mask-only. Do not run historical box-fitting
         # algorithms during normal project initialization.
     sync_reveal_manifest_to_contract(project)
+    refresh_reveal_semantic_blocks(project)
 
     handle_step_navigation(project, 4, db)
     return {"success": True}
@@ -5070,6 +5233,8 @@ def deterministic_semantic_blocks(
         if not isinstance(group, dict):
             continue
         fragment_ids = group_to_fragments.get(group_id) or []
+        if not fragment_ids:
+            continue
         blocks.append(semantic_block_payload(
             slide_id,
             len(blocks) + 1,
@@ -5080,6 +5245,56 @@ def deterministic_semantic_blocks(
             existing_boxes.get(group_id),
         ))
     return blocks
+
+
+def refresh_reveal_semantic_blocks(project: Project, requested_slide_id: str = "") -> tuple[Dict[str, Any], int]:
+    manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
+    contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
+    if not os.path.exists(manifest_path):
+        raise HTTPException(status_code=400, detail="Mask 配置文件尚未生成，请先确认图片")
+    if not os.path.exists(contract_path):
+        raise HTTPException(status_code=400, detail="分镜规划不存在，请先生成分镜")
+
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        manifest = json.load(f)
+    with open(contract_path, "r", encoding="utf-8") as f:
+        contract = json.load(f)
+
+    contract_slides = {
+        str(slide.get("slide_id", "")).strip(): slide
+        for slide in contract.get("slides", [])
+        if isinstance(slide, dict) and str(slide.get("slide_id", "")).strip()
+    }
+    target_slides = []
+    for slide in manifest.get("slides", []):
+        if not isinstance(slide, dict):
+            continue
+        slide_id = str(slide.get("slide_id", "")).strip()
+        if requested_slide_id and slide_id != requested_slide_id:
+            continue
+        if slide_id in contract_slides:
+            target_slides.append(slide)
+    if requested_slide_id and not target_slides:
+        raise HTTPException(status_code=404, detail=f"找不到当前页分镜：{requested_slide_id}")
+
+    processed_count = 0
+    for manifest_slide in target_slides:
+        slide_id = str(manifest_slide.get("slide_id", "")).strip()
+        contract_slide = contract_slides[slide_id]
+        semantic_blocks = deterministic_semantic_blocks(slide_id, contract_slide, manifest_slide)
+        painted_groups = [
+            group for group in manifest_slide.get("groups", []) or []
+            if isinstance(group, dict) and group_has_paint(group)
+        ]
+        manifest_slide["semantic_blocks"] = semantic_blocks
+        manifest_slide["groups"] = painted_groups
+        if semantic_blocks or painted_groups:
+            manifest_slide["status"] = manifest_slide.get("status") or "pending"
+        processed_count += 1
+
+    with reveal_lock_for(project):
+        write_json_atomic(manifest_path, manifest)
+    return manifest, processed_count
 
 
 @app.post("/api/projects/{project_id}/steps/5/auto-mask")
@@ -5265,6 +5480,17 @@ def auto_mask_project(project_id: str, db: Session = Depends(get_db)):
 @app.post("/api/projects/{project_id}/steps/5/semantic-blocks")
 def semantic_blocks_project(project_id: str, payload: Optional[Dict[str, Any]] = None, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
+    if project:
+        payload = payload or {}
+        requested_slide_id = str(payload.get("slide_id") or "").strip()
+        manifest, processed_count = refresh_reveal_semantic_blocks(project, requested_slide_id)
+        return {
+            "success": True,
+            "vision_used": False,
+            "processed": processed_count,
+            "manifest": manifest,
+            "message": "已根据分镜和旁白生成语块，请按清单手动涂抹 Mask。",
+        }
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
 
@@ -5333,6 +5559,7 @@ def get_step5_result(project_id: str, db: Session = Depends(get_db)):
         return {"success": False, "message": "尚未确认图片"}
     with reveal_lock_for(project):
         sync_reveal_manifest_to_contract(project)
+        refresh_reveal_semantic_blocks(project)
         with open(manifest_path, "r", encoding="utf-8") as f:
             manifest = json.load(f)
     return {"success": True, "manifest": manifest}

@@ -176,6 +176,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+try:
+    import runtime_security  # noqa: F401
+except Exception as exc:
+    logger.warning("Optional runtime security module did not load: %s", exc)
+
 RUNS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "runs"))
 os.makedirs(RUNS_DIR, exist_ok=True)
 REPO_ROOT = os.path.abspath(os.path.dirname(__file__))
@@ -473,6 +478,30 @@ class ProjectCreate(BaseModel):
 
 class SettingsUpdate(BaseModel):
     settings: Dict[str, str]
+
+MASKED_SETTINGS_VALUE = "__PPT_STUDIO_MASKED_VALUE__"
+SETTINGS_SECRET_KEYS = {
+    "llm_api_key",
+    "image_api_key",
+    "tts_api_key",
+    "tts_secret_key",
+    "tts_provider_extra",
+}
+
+
+def mask_settings_secrets_enabled() -> bool:
+    return os.environ.get("PPT_STUDIO_MASK_SETTINGS_SECRETS", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def mask_sensitive_settings(settings: Dict[str, Any]) -> Dict[str, Any]:
+    if not mask_settings_secrets_enabled():
+        return settings
+    masked = dict(settings or {})
+    for key in SETTINGS_SECRET_KEYS:
+        if masked.get(key) not in (None, ""):
+            masked[key] = MASKED_SETTINGS_VALUE
+    return masked
+
 
 class StepUpdate(BaseModel):
     step_data: Dict[str, Any]
@@ -955,6 +984,10 @@ def normalize_visual_contract(
             group["id"] = group_id
             role = str(group.get("role") or "content_body").strip()
             group["role"] = role
+            group["visual_type"] = normalize_visual_type(
+                group.get("visual_type"),
+                has_text=bool(str(group.get("display_text") or "").strip()),
+            )
             if not str(group.get("content_unit_id") or "").strip():
                 group["content_unit_id"] = f"{group_id}_unit"
             group.pop("speak_policy", None)
@@ -1349,7 +1382,10 @@ MINIMAX_ALLOWED_EXPRESSION_TAGS = {
     "(whistles)",
 }
 SUBTITLE_MAX_CHARS = 26
-SUBTITLE_SPLIT_MARKS = "，。！？；：、,.!?;:"
+SUBTITLE_HARD_SPLIT_MARKS = "。！？；.!?;"
+SUBTITLE_SOFT_SPLIT_MARKS = "，：、,:"
+SUBTITLE_SPLIT_MARKS = SUBTITLE_HARD_SPLIT_MARKS + SUBTITLE_SOFT_SPLIT_MARKS
+SUBTITLE_EDGE_PUNCTUATION = "，。！？；：、,.!?;: \t\r\n"
 
 
 def clean_tts_text(text: str) -> str:
@@ -1417,22 +1453,25 @@ def split_subtitle_text(text: str, max_chars: int = SUBTITLE_MAX_CHARS) -> List[
     value = re.sub(r"\s+", " ", str(text or "")).strip()
     if not value:
         return []
-    if len(value) <= max_chars:
-        return [value]
 
     chunks: List[str] = []
     remaining = value
-    while len(remaining) > max_chars:
-        window = remaining[: max_chars + 1]
-        cut_at = max((window.rfind(mark) for mark in SUBTITLE_SPLIT_MARKS), default=-1)
-        if cut_at < max(8, max_chars // 2) or cut_at >= max_chars:
-            cut_at = max_chars - 1
-        chunk = remaining[: cut_at + 1].strip()
+    while remaining:
+        if len(remaining) <= max_chars:
+            chunk = remaining
+            remaining = ""
+        else:
+            window = remaining[: max_chars + 1]
+            hard_cut = max((window.rfind(mark) for mark in SUBTITLE_HARD_SPLIT_MARKS), default=-1)
+            soft_cut = max((window.rfind(mark) for mark in SUBTITLE_SOFT_SPLIT_MARKS), default=-1)
+            cut_at = hard_cut if hard_cut >= max(8, max_chars // 2) else soft_cut
+            if cut_at < max(8, max_chars // 2) or cut_at >= max_chars:
+                cut_at = max_chars - 1
+            chunk = remaining[: cut_at + 1]
+            remaining = remaining[cut_at + 1 :].strip()
+        chunk = chunk.strip(SUBTITLE_EDGE_PUNCTUATION)
         if chunk:
             chunks.append(chunk)
-        remaining = remaining[cut_at + 1 :].strip()
-    if remaining:
-        chunks.append(remaining)
     return chunks
 
 
@@ -1755,11 +1794,17 @@ def delete_project(project_id: str, db: Session = Depends(get_db)):
 
 @app.get("/api/settings")
 def get_settings():
-    return get_all_settings()
+    return mask_sensitive_settings(get_all_settings())
 
 @app.put("/api/settings")
 def update_system_settings(payload: SettingsUpdate):
-    update_settings(payload.settings)
+    settings = dict(payload.settings or {})
+    if mask_settings_secrets_enabled():
+        current = get_all_settings()
+        for key in SETTINGS_SECRET_KEYS:
+            if settings.get(key) == MASKED_SETTINGS_VALUE:
+                settings[key] = current.get(key, "")
+    update_settings(settings)
     return {"success": True, "message": "设置更新成功"}
 
 def read_text_file_if_exists(path: str) -> str:
@@ -2701,14 +2746,14 @@ def built_in_step2_prompt_templates() -> List[Dict[str, Any]]:
     return [
         step2_prompt_template_payload(
             "builtin_article_to_slide",
-            "原始模板 · 文章 2slide",
+            "原始模板 · 文章→slides",
             "script",
             defaults,
             built_in=True,
         ),
         step2_prompt_template_payload(
             "builtin_slide_to_visualization",
-            "原始模板 · slide 2visualization",
+            "原始模板 · slides→可视化",
             "visual",
             defaults,
             built_in=True,
@@ -2870,39 +2915,80 @@ def stable_plan_id(value: Any, prefix: str, index: int) -> str:
     return text or f"{prefix}_{index:03d}"
 
 
-def normalize_body_points(value: Any) -> List[Dict[str, str]]:
+def clean_planning_text(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+def clean_planning_block(value: Any) -> str:
+    if isinstance(value, list):
+        parts = [clean_planning_text(item) for item in value]
+        return "\n".join(part for part in parts if part)
+    if isinstance(value, dict):
+        parts = [clean_planning_text(item) for item in value.values()]
+        return "\n".join(part for part in parts if part)
+    return "\n".join(
+        line
+        for line in (clean_planning_text(line) for line in str(value or "").replace("\r", "\n").split("\n"))
+        if line
+    )
+
+
+def normalize_slide_body(slide: Dict[str, Any]) -> str:
+    body = clean_planning_block(slide.get("body") or slide.get("body_content") or slide.get("core_message"))
+    if body:
+        return body
+    return "\n".join(point["text"] for point in normalize_body_points(slide.get("body_points")) if point.get("text"))
+
+
+def normalize_visual_type(value: Any, has_text: bool = False) -> str:
+    visual_type = str(value or "").strip().lower()
+    if visual_type in {"text", "文字"}:
+        return "text"
+    if visual_type in {"picture", "illustration", "image", "diagram", "chart", "visual", "graphic", "text_and_illustration"}:
+        return "picture"
+    return "text" if has_text else "picture"
+
+
+def normalize_body_points(value: Any, fallback_body: str = "") -> List[Dict[str, str]]:
     points = value if isinstance(value, list) else []
     normalized: List[Dict[str, str]] = []
     for index, point in enumerate(points, start=1):
         if isinstance(point, dict):
-            text = str(point.get("text") or point.get("content") or "").strip()
-            purpose = str(point.get("purpose") or "").strip()
+            text = clean_planning_text(point.get("text") or point.get("content") or "")
+            purpose = clean_planning_text(point.get("purpose") or "")
             point_id = stable_plan_id(point.get("point_id"), "point", index)
         else:
-            text = str(point or "").strip()
+            text = clean_planning_text(point)
             purpose = ""
             point_id = f"point_{index:03d}"
         if not text:
             continue
         normalized.append({"point_id": point_id, "text": text, "purpose": purpose})
+    if not normalized and fallback_body:
+        normalized.append({"point_id": "point_001", "text": clean_planning_text(fallback_body), "purpose": "正文"})
     return normalized
 
 
-def normalize_narration_segments(value: Any) -> List[Dict[str, str]]:
+def normalize_narration_segments(value: Any, fallback_narration: str = "") -> List[Dict[str, str]]:
     segments = value if isinstance(value, list) else []
     normalized: List[Dict[str, str]] = []
+    previous_narration = ""
     for index, segment in enumerate(segments, start=1):
         if isinstance(segment, dict):
-            narration = str(segment.get("narration") or segment.get("spoken_text") or "").strip()
-            purpose = str(segment.get("purpose") or segment.get("spoken_intent") or "").strip()
+            narration = clean_planning_text(segment.get("narration") or segment.get("spoken_text") or "")
+            purpose = clean_planning_text(segment.get("purpose") or segment.get("spoken_intent") or "")
             segment_id = stable_plan_id(segment.get("segment_id"), "seg", index)
         else:
-            narration = str(segment or "").strip()
+            narration = clean_planning_text(segment)
             purpose = ""
             segment_id = f"seg_{index:03d}"
-        if not narration:
+        if not narration or narration == previous_narration:
             continue
         normalized.append({"segment_id": segment_id, "narration": narration, "purpose": purpose})
+        previous_narration = narration
+    fallback_narration = clean_planning_text(fallback_narration)
+    if not normalized and fallback_narration:
+        normalized.append({"segment_id": "seg_001", "narration": fallback_narration, "purpose": "完整演讲稿"})
     return normalized
 
 
@@ -2917,16 +3003,29 @@ def normalize_slide_script_plan(plan: Dict[str, Any], project_title: str) -> Dic
         slide_id = stable_plan_id(slide.get("slide_id"), "slide", index)
         if not slide_id.startswith("slide_"):
             slide_id = f"slide_{index:03d}"
-        body_points = normalize_body_points(slide.get("body_points"))
-        narration_segments = normalize_narration_segments(slide.get("narration_segments"))
+        body = normalize_slide_body(slide)
+        narration = clean_planning_text(
+            slide.get("narration")
+            or slide.get("speech")
+            or slide.get("script")
+            or " ".join(
+                clean_planning_text(segment.get("narration") if isinstance(segment, dict) else segment)
+                for segment in (slide.get("narration_segments") or [])
+            )
+        )
+        body_points = normalize_body_points(slide.get("body_points"), body)
+        narration_segments = normalize_narration_segments(slide.get("narration_segments"), narration)
         if not narration_segments:
-            raise HTTPException(status_code=500, detail=f"{slide_id} 缺少 narration_segments")
-        slide_title = str(slide.get("slide_title") or slide.get("title") or f"第 {index} 页").strip()
+            raise HTTPException(status_code=500, detail=f"{slide_id} 缺少 narration")
+        slide_title = clean_planning_text(slide.get("slide_title") or slide.get("title") or f"第 {index} 页")
+        normalized_narration = clean_planning_text(" ".join(segment["narration"] for segment in narration_segments))
         normalized_slides.append(
             {
                 "slide_id": slide_id,
                 "slide_title": slide_title,
-                "slide_subtitle": str(slide.get("slide_subtitle") or slide.get("subtitle") or "").strip(),
+                "slide_subtitle": clean_planning_text(slide.get("slide_subtitle") or slide.get("subtitle") or ""),
+                "body": body,
+                "narration": normalized_narration,
                 "body_points": body_points,
                 "narration_segments": narration_segments,
             }
@@ -2940,20 +3039,15 @@ def normalize_visual_elements(value: Any) -> List[Dict[str, str]]:
     elements = value if isinstance(value, list) else []
     normalized: List[Dict[str, str]] = []
     allowed_roles = {"title", "subtitle", "body", "decoration"}
-    allowed_visual_types = {"text", "illustration"}
     for index, element in enumerate(elements, start=1):
         if not isinstance(element, dict):
             continue
         role = str(element.get("role") or "body").strip().lower()
         if role not in allowed_roles:
             role = "body"
-        visual_description = str(element.get("visual_description") or "").strip()
-        narration = str(element.get("narration") or "").strip()
-        visual_type = str(element.get("visual_type") or "illustration").strip().lower()
-        if visual_type == "text_and_illustration":
-            visual_type = "illustration"
-        if visual_type not in allowed_visual_types:
-            visual_type = "illustration"
+        visual_description = clean_planning_text(element.get("visual_description") or "")
+        narration = clean_planning_text(element.get("narration") or "")
+        visual_type = normalize_visual_type(element.get("visual_type"))
         if not visual_description:
             continue
         normalized.append(
@@ -3095,7 +3189,7 @@ def build_step2_script_user_prompt(
             "project_title": project_title,
             "article_content": article_content,
             "generation_requirement": generation_requirement,
-            "output_goal": "生成 slide_script_plan.json，只包含每页标题、可选副标题、正文要点和 narration_segments。",
+            "output_goal": "生成 slide_script_plan.json，只包含 title、每页 slide_id、slide_title、可选 slide_subtitle、body 和一整段 narration。",
         },
         ensure_ascii=False,
         indent=2,
@@ -3138,7 +3232,17 @@ def compose_visual_contract_from_plans(
         for slide in visual_slides
         if isinstance(slide, dict)
     }
-    use_subtitles = all(str(slide.get("slide_subtitle") or "").strip() for slide in script_slides if isinstance(slide, dict))
+    subtitle_count = sum(
+        1
+        for slide in script_slides
+        if isinstance(slide, dict) and str(slide.get("slide_subtitle") or "").strip()
+    )
+    if subtitle_count == 0:
+        subtitle_policy = "no_slides_have_subtitle"
+    elif subtitle_count == len([slide for slide in script_slides if isinstance(slide, dict)]):
+        subtitle_policy = "all_slides_have_subtitle"
+    else:
+        subtitle_policy = "optional_subtitles"
     slides: List[Dict[str, Any]] = []
     for slide_index, script_slide in enumerate(script_slides, start=1):
         if not isinstance(script_slide, dict):
@@ -3162,7 +3266,7 @@ def compose_visual_contract_from_plans(
             description = str(element.get("visual_description") or visible_text).strip()
             narration = str(element.get("narration") or "").strip()
             purpose = str(element.get("visual_description") or "").strip()
-            visual_type = str(element.get("visual_type") or "illustration").strip().lower()
+            visual_type = normalize_visual_type(element.get("visual_type"))
             display_text = description if visual_type == "text" else ""
             group = {
                 "id": group_id,
@@ -3193,13 +3297,26 @@ def compose_visual_contract_from_plans(
             raise HTTPException(status_code=400, detail=f"{slide_id} 没有可合成的 visual elements")
         if not narration_beats:
             raise HTTPException(status_code=400, detail=f"{slide_id} 没有可合成的 narration beats")
+        body_content = [
+            str(point.get("text") or "").strip()
+            for point in body_points
+            if isinstance(point, dict) and point.get("text")
+        ]
+        if not body_content and str(script_slide.get("body") or "").strip():
+            body_content = [str(script_slide.get("body") or "").strip()]
+        if not body_content:
+            body_content = [
+                str(group.get("visible_text") or "").strip()
+                for group in visual_groups
+                if group.get("role") == "content_body" and str(group.get("visible_text") or "").strip()
+            ]
         slides.append(
             {
                 "slide_id": slide_id,
                 "main_title": str(script_slide.get("slide_title") or f"第 {slide_index} 页").strip(),
-                "subtitle": str(script_slide.get("slide_subtitle") or "").strip() if use_subtitles else "",
-                "core_message": "；".join(str(point.get("text") or "").strip() for point in body_points if isinstance(point, dict) and point.get("text")),
-                "body_content": [str(point.get("text") or "").strip() for point in body_points if isinstance(point, dict) and point.get("text")],
+                "subtitle": str(script_slide.get("slide_subtitle") or "").strip() if subtitle_policy != "no_slides_have_subtitle" else "",
+                "core_message": "；".join(body_content),
+                "body_content": body_content,
                 "visual_groups": visual_groups,
                 "narration_beats": narration_beats,
             }
@@ -3207,7 +3324,7 @@ def compose_visual_contract_from_plans(
     return {
         "version": "visual_contract_v1",
         "presentation_policy": {
-            "subtitle_policy": "all_slides_have_subtitle" if use_subtitles else "no_slides_have_subtitle",
+            "subtitle_policy": subtitle_policy,
             "subtitle_decided_by": "narration_first_step2",
         },
         "topic": {
@@ -4632,9 +4749,10 @@ def compact_slide_element_lines(slide: Dict[str, Any]) -> List[str]:
         if not element_id:
             element_id = group_id[len(prefix):] if prefix and group_id.startswith(prefix) else (group_id or f"el_{idx:03d}")
         role = str(group.get("role") or "content_body").strip()
-        visual_type = str(group.get("visual_type") or "").strip().lower()
-        if visual_type not in {"text", "illustration"}:
-            visual_type = "text" if str(group.get("display_text") or "").strip() else "illustration"
+        visual_type = normalize_visual_type(
+            group.get("visual_type"),
+            has_text=bool(str(group.get("display_text") or "").strip()),
+        )
         if visual_type == "text":
             description = str(group.get("display_text") or group.get("visual_anchor") or group.get("visible_text") or "").strip()
         else:
@@ -5158,9 +5276,10 @@ def semantic_block_payload(
     role = str((group or {}).get("role") or "content_body")
     visible_text = str((group or {}).get("visible_text") or ai_block.get("text_label") or f"语块 {index}").strip()
     visual_anchor = str((group or {}).get("visual_anchor") or "").strip()
-    visual_type = str((group or {}).get("visual_type") or ai_block.get("visual_type") or "").strip().lower()
-    if visual_type not in {"text", "illustration"}:
-        visual_type = "text" if str((group or {}).get("display_text") or "").strip() else "illustration"
+    visual_type = normalize_visual_type(
+        (group or {}).get("visual_type") or ai_block.get("visual_type"),
+        has_text=bool(str((group or {}).get("display_text") or "").strip()),
+    )
     prefix = f"{slide_id}_" if slide_id else ""
     element_id = str((group or {}).get("element_id") or "").strip()
     if not element_id:
@@ -5606,11 +5725,14 @@ def update_step5_result(project_id: str, payload: Dict[str, Any], build_assets: 
         manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
         write_json_atomic(manifest_path, payload)
 
-        # 人工保存后，校验并构建切层 assets，运行 build_reveal_scene.py
-        build_current_reveal_assets(project)
+        built_assets = False
+        if build_assets:
+            # 人工最终保存时校验并构建切层 assets；草稿保存路径不需要阻塞在构建上。
+            build_current_reveal_assets(project)
+            built_assets = True
         
     handle_step_navigation(project, 5, db)
-    return {"success": True, "built_assets": True}
+    return {"success": True, "built_assets": built_assets}
 
 # ==================== 步骤 6: 演讲稿编辑 ====================
 
@@ -5987,13 +6109,28 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
             pitch=tts_pitch,
         )
         
-        tts_res = subprocess.run(
-            tts_args,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
+        try:
+            tts_res = subprocess.run(
+                tts_args,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=STEP7_TTS_PROCESS_TIMEOUT_SEC,
+            )
+        except subprocess.TimeoutExpired as exc:
+            stdout = _safe_process_text(exc.stdout).strip()
+            stderr = _safe_process_text(exc.stderr).strip()
+            logger.error("Legacy TTS synthesis timed out for %s", slide_id)
+            write_project_log(
+                project,
+                "step7_legacy_slide_tts_timeout",
+                slide_id=slide_id,
+                timeout_sec=STEP7_TTS_PROCESS_TIMEOUT_SEC,
+                stdout=stdout,
+                stderr=stderr,
+            )
+            raise HTTPException(status_code=504, detail=f"语音合成超时: {slide_id}") from exc
         if tts_res.returncode != 0:
             logger.error(f"TTS Synthesis failed for {slide_id}: {tts_res.stderr}")
             write_project_log(
@@ -6567,7 +6704,7 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
     logger.info(f"Starting Remotion render for {project_id}...")
     render_started = time.time()
     render_args = [
-        npx_cmd, "remotion", "render", "ArticleVideo", output_mp4_path,
+        npx_cmd, "remotion", "render", "src/index.tsx", "ArticleVideo", output_mp4_path,
         f"--props={props_json_path}",
         "--codec=h264",
         "--image-format=png",

@@ -119,9 +119,8 @@ def main() -> None:
     assert len(slide["narration_beats"]) == 1
     assert all("speak_policy" not in group for group in slide["visual_groups"])
     semantic_blocks = server_module.deterministic_semantic_blocks("slide_001", slide, None)
-    assert {block["visual_group_id"] for block in semantic_blocks} == {"spoken_group", "visual_only_group"}
-    visual_only_block = next(block for block in semantic_blocks if block["visual_group_id"] == "visual_only_group")
-    assert visual_only_block["narration_fragments"] == []
+    assert {block["visual_group_id"] for block in semantic_blocks} == {"spoken_group"}
+    assert all(block["narration_fragments"] for block in semantic_blocks)
     assert normalize_reveal_action("scratch_reveal", profile, for_renderer=True) == "scratch_reveal"
     assert normalize_reveal_action("brush_wipe_left_to_right", profile, for_renderer=True) == "brush_wipe_left_to_right"
     scratch_event = build_event(

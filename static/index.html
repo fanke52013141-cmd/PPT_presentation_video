@@ -138,10 +138,10 @@
                   AI 生成分镜
                 </button>
                 <button id="step2-btn-script-prompt" class="secondary" style="font-size: 0.85rem; padding: 0.35rem 0.9rem;">
-                  文章 2slide
+                  文章→slides
                 </button>
                 <button id="step2-btn-visual-prompt" class="secondary" style="font-size: 0.85rem; padding: 0.35rem 0.9rem;">
-                  slide 2visualization
+                  slides→可视化
                 </button>
                 <button id="step2-btn-save" class="secondary" style="display: none; font-size: 0.85rem; padding: 0.35rem 0.9rem;">
                   <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path></svg>
@@ -182,7 +182,7 @@
                   <span>主标题</span>
                   <input id="step2-slide-title-input" class="step2-soft-input" type="text">
                 </label>
-                <label>
+                <label id="step2-slide-subtitle-field">
                   <span>副标题</span>
                   <input id="step2-slide-subtitle-input" class="step2-soft-input" type="text">
                 </label>
@@ -195,6 +195,7 @@
                   <textarea id="step2-slide-narration-input" class="step2-soft-input" rows="9"></textarea>
                 </label>
               </div>
+              <div id="step2-semantic-map" class="step2-semantic-map"></div>
             </div>
           </div>
           <!-- 隐藏字段保留兼容 -->
@@ -292,6 +293,12 @@
                 <canvas id="step5-canvas" width="1920" height="1080"></canvas>
                 <div id="step5-brush-cursor" class="step5-brush-cursor" aria-hidden="true"></div>
                 <div id="step5-zoom-indicator" class="step5-zoom-indicator" aria-hidden="true">100%</div>
+                <button id="step5-prev-slide" class="step5-page-nav step5-page-nav-prev" type="button" title="上一页" aria-label="上一页">
+                  <svg class="icon" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"></path></svg>
+                </button>
+                <button id="step5-next-slide" class="step5-page-nav step5-page-nav-next" type="button" title="下一页" aria-label="下一页">
+                  <svg class="icon" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"></path></svg>
+                </button>
               </div>
               <div id="step5-narration-panel" class="step5-narration-panel"></div>
             </div>
@@ -677,7 +684,7 @@
   <div id="modal-storyboard-rules" class="modal-overlay" style="display: none;">
     <div class="modal-content config-editor-modal">
       <div class="config-editor-scroll">
-        <h3 id="storyboard-prompt-modal-title" class="highlight-title">文章 2slide</h3>
+        <h3 id="storyboard-prompt-modal-title" class="highlight-title">文章→slides</h3>
         <div class="template-manager-bar step2-prompt-template-bar">
           <label>
             Prompt 模板
@@ -693,21 +700,21 @@
         </div>
         <div id="step2-script-prompt-section">
           <label class="storyboard-config-field storyboard-rule-field">
-            <span>文章 2slide System Content</span>
+            <span>文章→slides System Content</span>
             <textarea id="step2-script-system-prompt" rows="10" spellcheck="false"></textarea>
           </label>
           <label class="storyboard-config-field storyboard-rule-field">
-            <span>文章 2slide Output Example</span>
+            <span>文章→slides Output Example</span>
             <textarea id="step2-script-output-example" rows="10" spellcheck="false"></textarea>
           </label>
         </div>
         <div id="step2-visual-prompt-section">
           <label class="storyboard-config-field storyboard-rule-field">
-            <span>slide 2visualization System Content</span>
+            <span>slides→可视化 System Content</span>
             <textarea id="step2-visual-system-prompt" rows="10" spellcheck="false"></textarea>
           </label>
           <label class="storyboard-config-field storyboard-rule-field">
-            <span>slide 2visualization Output Example</span>
+            <span>slides→可视化 Output Example</span>
             <textarea id="step2-visual-output-example" rows="10" spellcheck="false"></textarea>
           </label>
         </div>

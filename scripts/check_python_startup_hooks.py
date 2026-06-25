@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
-"""Verify that Python auto-loads the repository startup hooks.
+"""Verify that Python can load the remaining repository startup hooks.
 
 Run from the repository root:
 
     python scripts/check_python_startup_hooks.py
 
-This check launches a child Python interpreter from the repository root and
-verifies that Python startup imports the expected hook modules:
+This check launches a child Python interpreter from the repository root with the
+repository on ``PYTHONPATH`` and verifies that startup imports the remaining
+compatibility hook modules:
 
 - sitecustomize
 - runtime_security, imported by sitecustomize
-- usercustomize
-- runtime_settings_mask, imported by usercustomize
 
-It catches environment-specific failures such as running with ``python -S``, a
-working directory outside the repository, or a Python configuration that does not
-load user customization hooks.
+``usercustomize`` and ``runtime_settings_mask`` are no longer required for the
+main web flow: Remotion command normalization and settings masking are handled
+in source code.
 """
 
 from __future__ import annotations
@@ -69,6 +68,11 @@ def main() -> int:
     # disabled them globally, report that explicitly instead of silently passing.
     if env.get("PPT_STUDIO_DISABLE_RUNTIME_HOTFIXES"):
         return fail("PPT_STUDIO_DISABLE_RUNTIME_HOTFIXES is set; startup hooks are intentionally disabled")
+    env["PYTHONPATH"] = (
+        str(REPO_ROOT)
+        if not env.get("PYTHONPATH")
+        else str(REPO_ROOT) + os.pathsep + env["PYTHONPATH"]
+    )
 
     result = subprocess.run(
         [sys.executable, "-c", PROBE_CODE],
@@ -95,7 +99,7 @@ def main() -> int:
         )
 
     modules = payload.get("modules") or {}
-    required = ("sitecustomize", "runtime_security", "usercustomize", "runtime_settings_mask")
+    required = ("sitecustomize", "runtime_security")
     missing = [name for name in required if modules.get(name) is not True]
     if missing:
         return fail(

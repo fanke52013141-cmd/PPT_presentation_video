@@ -13,8 +13,8 @@
         {
           "element_id": "el_002",
           "role": "body",
-          "visual_type": "illustration",
-          "visual_description": "正文区域中部，用一个手绘图示表达这一段 narration 的含义。",
+          "visual_type": "picture",
+          "visual_description": "正文区域中部，用一个流程图或对比图表达这一段 narration 的含义，必要时图中可以包含短文字标签。",
           "narration": "对应的演讲稿原文。"
         }
       ]

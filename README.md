@@ -9,6 +9,7 @@ Windows PowerShell：
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+$env:PYTHONPATH = (Get-Location).Path
 .\.venv\Scripts\python.exe server.py
 ```
 
@@ -108,7 +109,7 @@ export PPT_STUDIO_ALLOWED_ORIGINS="http://127.0.0.1:8000,http://localhost:8000"
 python server.py
 ```
 
-当前访问控制仍通过 runtime bridge 注入，迁移计划见 `docs/runtime_hotfixes_and_security.md` 和 issue #7。
+访问控制在应用启动时加载；密钥脱敏由 `/api/settings` 源码路径处理。历史 runtime bridge 迁移计划见 `docs/runtime_hotfixes_and_security.md` 和 issue #7。
 
 ## 验证
 
@@ -134,13 +135,17 @@ $env:PPT_STUDIO_MASK_SETTINGS_SECRETS = "1"; python scripts\check_runtime_settin
 node --check static\app.js
 node --check static\flow.js
 node checks\test_visible_flow.js
+node checks\test_frontend_quality.js
+.\.venv\Scripts\python.exe checks\test_source_hardening.py
+.\.venv\Scripts\python.exe checks\test_generalized_settings.py
+.\.venv\Scripts\python.exe checks\test_subtitle_style.py
 .\.venv\Scripts\python.exe checks\test_reveal_mask_integrity.py
 .\.venv\Scripts\python.exe checks\test_reveal_pipeline_isolation.py
 .\.venv\Scripts\python.exe checks\test_slide_visual_invalidation.py
 .\.venv\Scripts\python.exe checks\test_audio_confirmation.py
 .\.venv\Scripts\python.exe checks\test_audio_tail_padding.py
 Push-Location scripts\remotion
-npm install
+npm ci
 npx tsc --noEmit -p tsconfig.json
 Pop-Location
 ```
@@ -173,4 +178,4 @@ Pop-Location
 - `sitecustomize.py`、`usercustomize.py`、`runtime_security.py` 和 `runtime_settings_mask.py` 是临时 runtime bridge，不应继续扩大职责。
 - 新修复优先落在 `server.py`、`static/**` 或正常启动路径中；只有无法安全改大文件时才使用 runtime bridge。
 - 已合并且相对 `main` 没有 ahead commits 的临时分支可以清理。
-- `scripts/remotion` 目前没有提交 lockfile；需要可复现渲染时，应生成并提交 `package-lock.json`，再把验证命令改为 `npm ci`。
+- `scripts/remotion` 已提交 `package-lock.json`；可复现验证应使用 `npm ci`。

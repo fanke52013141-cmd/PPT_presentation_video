@@ -176,6 +176,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+try:
+    import runtime_security  # noqa: F401
+except Exception as exc:
+    logger.warning("Optional runtime security module did not load: %s", exc)
+
 RUNS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "runs"))
 os.makedirs(RUNS_DIR, exist_ok=True)
 REPO_ROOT = os.path.abspath(os.path.dirname(__file__))
@@ -473,6 +478,30 @@ class ProjectCreate(BaseModel):
 
 class SettingsUpdate(BaseModel):
     settings: Dict[str, str]
+
+MASKED_SETTINGS_VALUE = "__PPT_STUDIO_MASKED_VALUE__"
+SETTINGS_SECRET_KEYS = {
+    "llm_api_key",
+    "image_api_key",
+    "tts_api_key",
+    "tts_secret_key",
+    "tts_provider_extra",
+}
+
+
+def mask_settings_secrets_enabled() -> bool:
+    return os.environ.get("PPT_STUDIO_MASK_SETTINGS_SECRETS", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def mask_sensitive_settings(settings: Dict[str, Any]) -> Dict[str, Any]:
+    if not mask_settings_secrets_enabled():
+        return settings
+    masked = dict(settings or {})
+    for key in SETTINGS_SECRET_KEYS:
+        if masked.get(key) not in (None, ""):
+            masked[key] = MASKED_SETTINGS_VALUE
+    return masked
+
 
 class StepUpdate(BaseModel):
     step_data: Dict[str, Any]
@@ -1755,11 +1784,17 @@ def delete_project(project_id: str, db: Session = Depends(get_db)):
 
 @app.get("/api/settings")
 def get_settings():
-    return get_all_settings()
+    return mask_sensitive_settings(get_all_settings())
 
 @app.put("/api/settings")
 def update_system_settings(payload: SettingsUpdate):
-    update_settings(payload.settings)
+    settings = dict(payload.settings or {})
+    if mask_settings_secrets_enabled():
+        current = get_all_settings()
+        for key in SETTINGS_SECRET_KEYS:
+            if settings.get(key) == MASKED_SETTINGS_VALUE:
+                settings[key] = current.get(key, "")
+    update_settings(settings)
     return {"success": True, "message": "设置更新成功"}
 
 def read_text_file_if_exists(path: str) -> str:
@@ -5606,11 +5641,14 @@ def update_step5_result(project_id: str, payload: Dict[str, Any], build_assets: 
         manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
         write_json_atomic(manifest_path, payload)
 
-        # 人工保存后，校验并构建切层 assets，运行 build_reveal_scene.py
-        build_current_reveal_assets(project)
+        built_assets = False
+        if build_assets:
+            # 人工最终保存时校验并构建切层 assets；草稿保存路径不需要阻塞在构建上。
+            build_current_reveal_assets(project)
+            built_assets = True
         
     handle_step_navigation(project, 5, db)
-    return {"success": True, "built_assets": True}
+    return {"success": True, "built_assets": built_assets}
 
 # ==================== 步骤 6: 演讲稿编辑 ====================
 
@@ -5987,13 +6025,28 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
             pitch=tts_pitch,
         )
         
-        tts_res = subprocess.run(
-            tts_args,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
+        try:
+            tts_res = subprocess.run(
+                tts_args,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=STEP7_TTS_PROCESS_TIMEOUT_SEC,
+            )
+        except subprocess.TimeoutExpired as exc:
+            stdout = _safe_process_text(exc.stdout).strip()
+            stderr = _safe_process_text(exc.stderr).strip()
+            logger.error("Legacy TTS synthesis timed out for %s", slide_id)
+            write_project_log(
+                project,
+                "step7_legacy_slide_tts_timeout",
+                slide_id=slide_id,
+                timeout_sec=STEP7_TTS_PROCESS_TIMEOUT_SEC,
+                stdout=stdout,
+                stderr=stderr,
+            )
+            raise HTTPException(status_code=504, detail=f"语音合成超时: {slide_id}") from exc
         if tts_res.returncode != 0:
             logger.error(f"TTS Synthesis failed for {slide_id}: {tts_res.stderr}")
             write_project_log(
@@ -6567,7 +6620,7 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
     logger.info(f"Starting Remotion render for {project_id}...")
     render_started = time.time()
     render_args = [
-        npx_cmd, "remotion", "render", "ArticleVideo", output_mp4_path,
+        npx_cmd, "remotion", "render", "src/index.tsx", "ArticleVideo", output_mp4_path,
         f"--props={props_json_path}",
         "--codec=h264",
         "--image-format=png",

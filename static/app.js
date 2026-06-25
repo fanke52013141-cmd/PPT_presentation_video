@@ -4801,35 +4801,6 @@ async function runStep7TTS() {
   synthButton.disabled = true;
   saveAndTtsButton.disabled = true;
   confirmButton.disabled = true;
-  showToast('🔊 正在调用 MiniMax TTS 服务并绑定 Reveal 关键帧时间轴...');
-  
-  try {
-    const res = await API.post(`/api/projects/${state.currentProject.id}/steps/7/synthesize`);
-    if (res.success) {
-      showToast('🎉 音频生成完成，请逐页试听并确认。');
-      await refreshCurrentProjectStatus(6);
-      await loadStep7Data();
-      return true;
-    }
-  } catch (e) {
-    return false;
-  } finally {
-    loading.style.display = 'none';
-    synthButton.disabled = false;
-    saveAndTtsButton.disabled = false;
-  }
-  return false;
-}
-
-async function runStep7TTS() {
-  const loading = document.getElementById('step7-loading');
-  const synthButton = document.getElementById('step7-btn-synthesize');
-  const saveAndTtsButton = document.getElementById('step6-btn-save-and-tts');
-  const confirmButton = document.getElementById('step6-btn-audio-confirm-next');
-  loading.style.display = 'inline-flex';
-  synthButton.disabled = true;
-  saveAndTtsButton.disabled = true;
-  confirmButton.disabled = true;
   showToast('🔊 正在生成音频；已有且未过期的页面会自动跳过，只补缺失页面...');
 
   try {

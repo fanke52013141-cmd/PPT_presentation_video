@@ -27,6 +27,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: npm
+          cache-dependency-path: scripts/remotion/package-lock.json
+
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
 
       - name: Compile Python sources
         run: python -m compileall -q server.py scripts checks
@@ -39,6 +44,16 @@ jobs:
       - name: Run visible-flow contract check
         run: node checks/test_visible_flow.js
 
+      - name: Run frontend quality checks
+        run: node checks/test_frontend_quality.js
+
+      - name: Run source hardening checks
+        run: |
+          python checks/test_source_hardening.py
+          python checks/test_generalized_settings.py
+          python checks/test_subtitle_style.py
+          python scripts/check_python_startup_hooks.py
+
       - name: Run runtime hotfix self-check
         run: python scripts/check_runtime_hotfixes.py
 
@@ -46,3 +61,9 @@ jobs:
         env:
           PPT_STUDIO_MASK_SETTINGS_SECRETS: "1"
         run: python scripts/check_runtime_settings_mask.py
+
+      - name: Check Remotion TypeScript
+        working-directory: scripts/remotion
+        run: |
+          npm ci
+          npx tsc --noEmit -p tsconfig.json

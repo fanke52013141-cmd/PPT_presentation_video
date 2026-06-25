@@ -118,7 +118,7 @@ def storyboard_profile_prompt(article_content: str, profile: dict[str, Any]) -> 
             f"- 每页建议仅给出 {anchor_count} 个后置视觉锚点；锚点只服务 Mask/Reveal，不是前置版式模板。",
             "- 分镜以演讲稿和正文内容为中心，不要在分镜阶段拆成图示、数据、总结、流程等固定 role。",
             "- 先在顶层输出 presentation_policy；副标题必须由 AI 做项目级一次性决策，不能逐页随机。",
-            "- presentation_policy.subtitle_policy 只能是 all_slides_have_subtitle 或 no_slides_have_subtitle。",
+            "- presentation_policy.subtitle_policy 只能是 all_slides_have_subtitle、no_slides_have_subtitle 或 optional_subtitles。",
             f"- Slide 固定结构字段：{required_fields or 'slide_id, main_title, narration'}。",
             f"- Slide 扩展结构字段：{optional_fields or 'subtitle, core_message, body_content, visual_intent, visual_groups, narration_beats'}。",
             "- 最小 role 集合：",

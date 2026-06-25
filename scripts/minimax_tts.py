@@ -63,7 +63,9 @@ ALLOWED_EXPRESSION_TAGS = {
 PAUSE_RE = re.compile(r"<#\d+(?:\.\d{1,2})?#>")
 EXPRESSION_RE = re.compile(r"\([A-Za-z-]+\)")
 SENTENCE_END_RE = re.compile(r"(?<=[\u3002\uff01\uff1f!?；;])\s*")
-SOFT_SUBTITLE_MARKS = ["\uff0c", "\u3001", "\uff1a", "\uff1b", ",", ":"]
+HARD_SUBTITLE_MARKS = ["\u3002", "\uff01", "\uff1f", "!", "?", "\uff1b", ";"]
+SOFT_SUBTITLE_MARKS = ["\uff0c", "\u3001", "\uff1a", ",", ":"]
+SUBTITLE_EDGE_PUNCTUATION = "\uff0c\u3002\uff01\uff1f\uff1b\uff1a\u3001,.!?;: \t\r\n"
 DEFAULT_HTTP_RETRIES = 3
 RETRIABLE_HTTP_STATUS = {408, 409, 425, 429, 500, 502, 503, 504}
 
@@ -409,25 +411,25 @@ def split_subtitle_chunks(sentence: str, max_chars: int = DEFAULT_MAX_SUBTITLE_C
     sentence = sentence.strip()
     if not sentence:
         return []
-    if len(sentence) <= max_chars:
-        return [sentence]
 
     chunks: list[str] = []
-    current = ""
-
-    for char in sentence:
-        current += char
-        if len(current) >= max_chars:
-            cut_index = max([current.rfind(mark) for mark in SOFT_SUBTITLE_MARKS] + [-1])
-            if cut_index > 8:
-                chunks.append(current[: cut_index + 1].strip())
-                current = current[cut_index + 1 :].strip()
-            else:
-                chunks.append(current.strip())
-                current = ""
-
-    if current:
-        chunks.append(current.strip())
+    remaining = sentence
+    while remaining:
+        if len(remaining) <= max_chars:
+            chunk = remaining
+            remaining = ""
+        else:
+            window = remaining[: max_chars + 1]
+            hard_cut = max([window.rfind(mark) for mark in HARD_SUBTITLE_MARKS] + [-1])
+            soft_cut = max([window.rfind(mark) for mark in SOFT_SUBTITLE_MARKS] + [-1])
+            cut_index = hard_cut if hard_cut >= max(8, max_chars // 2) else soft_cut
+            if cut_index < max(8, max_chars // 2) or cut_index >= max_chars:
+                cut_index = max_chars - 1
+            chunk = remaining[: cut_index + 1]
+            remaining = remaining[cut_index + 1 :].strip()
+        chunk = chunk.strip(SUBTITLE_EDGE_PUNCTUATION)
+        if chunk:
+            chunks.append(chunk)
 
     return [chunk for chunk in chunks if chunk]
 

@@ -73,6 +73,8 @@ let state = {
     maskZoomOriginX: 50,
     maskZoomOriginY: 50,
     maskFullscreen: false,
+    undoStack: [],
+    redoStack: [],
     semanticLoading: false,
     confirmingMasks: false,
     animationPreview: null,
@@ -81,6 +83,8 @@ let state = {
     startY: 0
   }
 };
+
+window.getPPTCurrentProject = () => state.currentProject;
 
 function projectFlowContext(project = state.currentProject) {
   return { audioConfirmed: project?.audio_confirmed === true };
@@ -395,8 +399,12 @@ function initGlobalEvents() {
   document.getElementById('step5-btn-subtitle-settings')?.addEventListener('click', () => openSubtitleSettingsModal());
   document.getElementById('step5-btn-animation-settings')?.addEventListener('click', () => openAnimationSettingsModal());
   document.getElementById('step5-btn-fullscreen')?.addEventListener('click', () => toggleStep5Fullscreen());
+  document.getElementById('step5-prev-slide')?.addEventListener('click', () => switchStep5Slide(-1));
+  document.getElementById('step5-next-slide')?.addEventListener('click', () => switchStep5Slide(1));
   document.getElementById('step5-brush-size')?.addEventListener('input', (e) => updateBrushSize(e.target.value));
   document.getElementById('step5-eraser-size')?.addEventListener('input', (e) => updateEraserSize(e.target.value));
+  document.addEventListener('fullscreenchange', syncStep5FullscreenState);
+  document.addEventListener('keydown', handleStep5KeyboardShortcuts);
 
   // ================= 步骤 6 事件 =================
   document.getElementById('step6-btn-init')?.addEventListener('click', () => initStep6Narration());
@@ -1252,8 +1260,10 @@ function renderStep2Workspace() {
     const subtitleInput = document.getElementById('step2-slide-subtitle-input');
     const bodyInput = document.getElementById('step2-slide-body-input');
     const narrationInput = document.getElementById('step2-slide-narration-input');
+    const subtitleField = document.getElementById('step2-slide-subtitle-field');
     if (titleInput) titleInput.value = slide.main_title || '';
     if (subtitleInput) subtitleInput.value = slide.subtitle || '';
+    if (subtitleField) subtitleField.style.display = slide.subtitle ? 'flex' : 'none';
     if (bodyInput) bodyInput.value = step2BodyContentText(slide);
     if (narrationInput) narrationInput.value = step2NarrationText(slide);
     [titleInput, subtitleInput, bodyInput, narrationInput].forEach(input => {
@@ -1262,16 +1272,19 @@ function renderStep2Workspace() {
       input.addEventListener('input', () => {
         if (input.tagName === 'TEXTAREA') autoResizeTextarea(input);
         saveCurrentSlideInputToState();
+        renderStep2SemanticMap(state.slides[state.activeSlideIndex]);
         scheduleStep2AutoSave();
       });
       input.addEventListener('blur', () => {
         if (input.tagName !== 'TEXTAREA') return;
         normalizeAndResizeStep2Textarea(input);
         saveCurrentSlideInputToState();
+        renderStep2SemanticMap(state.slides[state.activeSlideIndex]);
         scheduleStep2AutoSave();
       });
     });
     [bodyInput, narrationInput].forEach(input => requestAnimationFrame(() => autoResizeTextarea(input)));
+    renderStep2SemanticMap(slide);
 
   }
 }
@@ -1291,7 +1304,7 @@ function copyStep2Prompts() {
     const promptInfo = slidePrompts.find(item => item.slide_id === slide.slide_id);
     const groups = (slide.visual_groups || [])
       .map((group, index) => {
-        const visualType = group.visual_type || (group.display_text ? 'text' : 'illustration');
+        const visualType = normalizeClientVisualType(group.visual_type, !!group.display_text);
         const description = visualType === 'text'
           ? (group.display_text || group.visual_anchor || group.visible_text || '未填写文字')
           : (group.visual_anchor || group.mask_target || group.visible_text || '未填写视觉描述');
@@ -1326,6 +1339,15 @@ function copyStep2Prompts() {
 function escHtml(str) {
   if (!str) return '';
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function normalizeClientVisualType(value, hasText = false) {
+  const visualType = String(value || '').trim().toLowerCase();
+  if (visualType === 'text') return 'text';
+  if (['picture', 'illustration', 'image', 'diagram', 'chart', 'graphic', 'visual', 'text_and_illustration'].includes(visualType)) {
+    return 'picture';
+  }
+  return hasText ? 'text' : 'picture';
 }
 
 function updateStep2BatchDeleteButton() {
@@ -1438,10 +1460,86 @@ function step2BodyContentText(slide) {
 
 function step2NarrationText(slide) {
   const beats = Array.isArray(slide?.narration_beats) ? slide.narration_beats : [];
+  const seen = new Set();
   return beats
     .map(beat => normalizeStep2MultilineText(beat?.spoken_text || ''))
-    .filter(Boolean)
-    .join('\n\n');
+    .filter(text => {
+      if (!text || seen.has(text)) return false;
+      seen.add(text);
+      return true;
+    })
+    .join('\n');
+}
+
+function step2GroupDisplayText(group, slide) {
+  const role = String(group?.role || '').trim();
+  if (role === 'title') return slide?.main_title || group?.display_text || group?.visible_text || '';
+  if (role === 'subtitle') return slide?.subtitle || group?.display_text || group?.visible_text || '';
+  return group?.display_text || group?.visible_text || group?.visual_anchor || group?.mask_target || '';
+}
+
+function step2SemanticRoleLabel(group, bodyIndex) {
+  const role = String(group?.role || '').trim();
+  if (role === 'title') return '主标题';
+  if (role === 'subtitle') return '副标题';
+  if (role === 'decoration') return '装饰';
+  return `正文 ${bodyIndex}`;
+}
+
+function renderStep2SemanticMap(slide) {
+  const container = document.getElementById('step2-semantic-map');
+  if (!container || !slide) return;
+  const groups = Array.isArray(slide.visual_groups) ? slide.visual_groups : [];
+  const beats = Array.isArray(slide.narration_beats) ? slide.narration_beats : [];
+  const beatTextByGroup = new Map();
+  beats.forEach(beat => {
+    const groupId = String(beat?.group_id || '').trim();
+    const text = normalizeStep2MultilineText(beat?.spoken_text || '');
+    if (!groupId || !text) return;
+    const current = beatTextByGroup.get(groupId) || [];
+    if (!current.includes(text)) current.push(text);
+    beatTextByGroup.set(groupId, current);
+  });
+
+  let bodyIndex = 0;
+  const rows = groups
+    .map((group, originalIndex) => ({ group, originalIndex }))
+    .filter(({ group }) => {
+      const role = String(group?.role || '').trim();
+      if (role === 'decoration') return false;
+      if (role === 'subtitle' && !String(slide.subtitle || '').trim()) return false;
+      return true;
+    })
+    .map(({ group, originalIndex }) => {
+      const role = String(group?.role || '').trim();
+      if (role !== 'title' && role !== 'subtitle') bodyIndex += 1;
+      const label = step2SemanticRoleLabel(group, bodyIndex);
+      const color = getMaskColor(originalIndex);
+      const displayText = step2GroupDisplayText(group, slide);
+      const narration = (beatTextByGroup.get(group.id) || []).join(' ');
+      return `
+        <div class="step2-map-row" style="--map-color:${color}">
+          <div class="step2-map-content">
+            <span class="step2-map-label">${escHtml(label)}</span>
+            <div class="step2-map-text">${escHtml(displayText || '未填写内容')}</div>
+          </div>
+          <div class="step2-map-narration">
+            <span class="step2-map-label">对应演讲稿</span>
+            <div class="step2-map-text">${escHtml(narration || '未绑定演讲稿片段')}</div>
+          </div>
+        </div>
+      `;
+    });
+
+  const fullNarration = step2NarrationText(slide);
+  container.innerHTML = `
+    <div class="step2-map-title">内容与演讲稿映射</div>
+    ${rows.length ? rows.join('') : '<div class="step2-map-empty">当前页暂无可映射的语义块。</div>'}
+    <div class="step2-map-full-narration">
+      <span class="step2-map-label">完整演讲稿</span>
+      <div>${escHtml(fullNarration || '暂无演讲稿')}</div>
+    </div>
+  `;
 }
 
 function normalizeStep2MultilineText(text) {
@@ -2711,14 +2809,36 @@ async function openStoryboardRulesModal(mode = 'script') {
 }
 
 function step2PromptModeLabel(mode = state.activeStep2PromptMode) {
-  return mode === 'visual' ? 'slide 2visualization' : '文章 2slide';
+  return mode === 'visual' ? 'slides→可视化' : '文章→slides';
+}
+
+function resizeStep2PromptTextareas() {
+  [
+    'step2-script-system-prompt',
+    'step2-script-output-example',
+    'step2-visual-system-prompt',
+    'step2-visual-output-example'
+  ].forEach(id => {
+    const textarea = document.getElementById(id);
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.max(180, textarea.scrollHeight + 4)}px`;
+  });
 }
 
 function renderStep2PromptEditor(promptRes = {}) {
   const prompts = promptRes.prompts || {};
   const setValue = (id, value) => {
     const element = document.getElementById(id);
-    if (element) element.value = value || '';
+    if (element) {
+      element.value = value || '';
+      if (element.tagName === 'TEXTAREA') {
+        if (element.dataset.boundAutoPromptResize !== '1') {
+          element.dataset.boundAutoPromptResize = '1';
+          element.addEventListener('input', resizeStep2PromptTextareas);
+        }
+      }
+    }
   };
   setValue('step2-script-system-prompt', prompts.script_system);
   setValue('step2-script-output-example', prompts.script_output_example);
@@ -2732,6 +2852,7 @@ function renderStep2PromptEditor(promptRes = {}) {
   if (scriptSection) scriptSection.style.display = mode === 'script' ? 'block' : 'none';
   if (visualSection) visualSection.style.display = mode === 'visual' ? 'block' : 'none';
   renderStep2PromptTemplateOptions();
+  requestAnimationFrame(resizeStep2PromptTextareas);
 }
 
 function step2PromptFormPayloadForMode(mode = state.activeStep2PromptMode) {
@@ -2763,6 +2884,7 @@ function applyStep2PromptTemplate(template) {
     if (system) system.value = prompts.script_system || '';
     if (example) example.value = prompts.script_output_example || '';
   }
+  requestAnimationFrame(resizeStep2PromptTextareas);
 }
 
 function renderStep2PromptTemplateOptions(selectedId = state.selectedStep2PromptTemplateId || '') {
@@ -3237,6 +3359,7 @@ function renderStep5Workspace() {
     
     // 初始化 canvas 标注框数据并重绘
     state.canvasState.boxes = getSlideMaskBoxes(slide);
+    resetStep5History();
     state.canvasState.selectedBoxIndex = -1;
     state.canvasState.draggedBoxIndex = -1;
     state.canvasState.draggedHandle = null;
@@ -3267,17 +3390,108 @@ function switchStep5Slide(direction) {
   scheduleStep5Autosave();
 }
 
-function toggleStep5Fullscreen(force) {
-  state.canvasState.maskFullscreen = typeof force === 'boolean'
-    ? force
-    : !state.canvasState.maskFullscreen;
+function resetStep5History() {
+  state.canvasState.undoStack = [];
+  state.canvasState.redoStack = [];
+}
+
+function cloneStep5Boxes() {
+  return JSON.parse(JSON.stringify(state.canvasState.boxes || []));
+}
+
+function pushStep5UndoSnapshot() {
+  if (!Array.isArray(state.canvasState.undoStack)) state.canvasState.undoStack = [];
+  state.canvasState.undoStack.push(cloneStep5Boxes());
+  if (state.canvasState.undoStack.length > 10) {
+    state.canvasState.undoStack.shift();
+  }
+  state.canvasState.redoStack = [];
+}
+
+function restoreStep5Boxes(snapshot) {
+  state.canvasState.boxes = JSON.parse(JSON.stringify(snapshot || []));
+  state.canvasState.selectedBoxIndex = Math.min(
+    state.canvasState.selectedBoxIndex,
+    state.canvasState.boxes.length - 1
+  );
+  if (state.canvasState.selectedBoxIndex < 0 && state.canvasState.boxes.length) {
+    state.canvasState.selectedBoxIndex = 0;
+  }
+  saveStep5CurrentState();
+  redrawCanvas();
+  renderStep5BoxesForm();
+  renderStep5NarrationPanel();
+  scheduleStep5Autosave();
+}
+
+function undoStep5Mask() {
+  const stack = state.canvasState.undoStack || [];
+  if (!stack.length) return;
+  if (!Array.isArray(state.canvasState.redoStack)) state.canvasState.redoStack = [];
+  state.canvasState.redoStack.push(cloneStep5Boxes());
+  restoreStep5Boxes(stack.pop());
+}
+
+function redoStep5Mask() {
+  const stack = state.canvasState.redoStack || [];
+  if (!stack.length) return;
+  if (!Array.isArray(state.canvasState.undoStack)) state.canvasState.undoStack = [];
+  state.canvasState.undoStack.push(cloneStep5Boxes());
+  if (state.canvasState.undoStack.length > 10) state.canvasState.undoStack.shift();
+  restoreStep5Boxes(stack.pop());
+}
+
+function isEditableTarget(target) {
+  const el = target instanceof Element ? target : null;
+  return !!el?.closest('input, textarea, select, [contenteditable="true"]');
+}
+
+function handleStep5KeyboardShortcuts(event) {
+  if (state.currentStep !== 5 || isEditableTarget(event.target)) return;
+  const key = String(event.key || '').toLowerCase();
+  if (!event.ctrlKey || key !== 'z') return;
+  event.preventDefault();
+  if (event.shiftKey) {
+    redoStep5Mask();
+  } else {
+    undoStep5Mask();
+  }
+}
+
+function applyStep5FullscreenUi() {
   document.body.classList.toggle('step5-fullscreen-mode', !!state.canvasState.maskFullscreen);
   const canvas = document.getElementById('step5-canvas');
+  const fullscreenLabel = document.getElementById('step5-fullscreen-label');
+  if (fullscreenLabel) fullscreenLabel.textContent = state.canvasState.maskFullscreen ? '退出全屏' : '放大标注';
   setTimeout(() => {
     applyMaskCanvasZoom(canvas);
     redrawCanvas({ updateDiagnostics: false });
   }, 0);
-  renderStep5Workspace();
+}
+
+async function toggleStep5Fullscreen(force) {
+  const next = typeof force === 'boolean'
+    ? force
+    : !state.canvasState.maskFullscreen;
+  state.canvasState.maskFullscreen = next;
+  applyStep5FullscreenUi();
+  try {
+    if (next && !document.fullscreenElement && document.documentElement.requestFullscreen) {
+      await document.documentElement.requestFullscreen();
+    } else if (!next && document.fullscreenElement && document.exitFullscreen) {
+      await document.exitFullscreen();
+    }
+  } catch (_) {
+    // 浏览器或用户手势限制失败时仍保留页面内放大布局。
+  }
+}
+
+function syncStep5FullscreenState() {
+  if (state.currentStep !== 5) return;
+  if (!document.fullscreenElement && state.canvasState.maskFullscreen) {
+    state.canvasState.maskFullscreen = false;
+    applyStep5FullscreenUi();
+  }
 }
 
 function uuid() {
@@ -3316,7 +3530,7 @@ function renderStep5BoxesForm() {
         ? String(box.visual_group_id).slice(slidePrefix.length)
         : (box.visual_group_id || box.group_id || `el_${String(idx + 1).padStart(3, '0')}`)
     );
-    const visualType = box.visual_type || (box.text_label ? 'text' : 'illustration');
+    const visualType = normalizeClientVisualType(box.visual_type, !!box.text_label);
     const visualDescription = box.visual_description || box.visual_anchor || box.text_label || '请根据当前图像补充这个语义块的画面描述';
     box.reveal = normalizeMaskReveal(box.reveal);
     item.innerHTML = `
@@ -3421,6 +3635,7 @@ function toggleNarrationFragmentForSelectedBox(fragmentId) {
   const fragments = getNarrationFragments();
   const fragment = fragments.find(item => item.id === fragmentId);
   if (!fragment) return;
+  pushStep5UndoSnapshot();
   if (!Array.isArray(maskBox.narration_fragments)) {
     maskBox.narration_fragments = [];
   }
@@ -3575,6 +3790,7 @@ function startMaskErase(idx) {
 }
 
 function createCurrentSlideBlock() {
+  pushStep5UndoSnapshot();
   const nextIdx = state.canvasState.boxes.length;
   const blockId = `manual_group_${Date.now().toString(36)}_${nextIdx + 1}`;
   const newBox = {
@@ -3677,6 +3893,7 @@ function updateMaskBoxFromManualMask(idx) {
 }
 
 window.deleteMaskBox = function(idx) {
+  pushStep5UndoSnapshot();
   state.canvasState.boxes.splice(idx, 1);
   state.canvasState.selectedBoxIndex = -1;
   if (state.canvasState.paintingBoxIndex === idx) {
@@ -3843,8 +4060,9 @@ function positionBrushCursor(canvas, clientX, clientY) {
   }
   const canvasRect = canvas.getBoundingClientRect();
   const toolSize = getActiveMaskToolSize();
-  const size = Math.max(8, toolSize * (canvasRect.width / 1920));
-  const radius = size / 2;
+  const width = Math.max(8, toolSize * (canvasRect.width / 1920));
+  const height = Math.max(8, toolSize * (canvasRect.height / 1080));
+  const radius = Math.max(width, height) / 2;
   if (
     clientX < canvasRect.left - radius ||
     clientX > canvasRect.right + radius ||
@@ -3861,7 +4079,8 @@ function positionBrushCursor(canvas, clientX, clientY) {
   const color = getBoxColor(state.canvasState.boxes[state.canvasState.paintingBoxIndex], state.canvasState.paintingBoxIndex);
   cursor.style.left = `${clientX - wrapperRect.left - borderLeft}px`;
   cursor.style.top = `${clientY - wrapperRect.top - borderTop}px`;
-  cursor.style.setProperty('--cursor-size', `${size}px`);
+  cursor.style.setProperty('--cursor-width', `${width}px`);
+  cursor.style.setProperty('--cursor-height', `${height}px`);
   cursor.style.setProperty('--cursor-color', color);
   cursor.classList.toggle('eraser', !!state.canvasState.eraserMode);
   cursor.classList.add('visible');
@@ -3920,6 +4139,7 @@ function handleCanvasPointerDown(e, canvas) {
     const idx = state.canvasState.paintingBoxIndex;
     const maskBox = state.canvasState.boxes[idx];
     if (!maskBox) return;
+    pushStep5UndoSnapshot();
     const manualMask = ensureManualMask(maskBox, idx);
     const color = getBoxColor(maskBox, idx);
     const toolSize = getActiveMaskToolSize();
@@ -3965,7 +4185,8 @@ function handleCanvasPointerMove(e, canvas) {
   if (state.canvasState.isPainting && state.canvasState.currentStroke) {
     const stroke = state.canvasState.currentStroke;
     const last = stroke.points[stroke.points.length - 1];
-    if (!last || Math.hypot(x - last.x, y - last.y) > 5) {
+    const minDistance = Math.max(6, getActiveMaskToolSize() * 0.32);
+    if (!last || Math.hypot(x - last.x, y - last.y) > minDistance) {
       stroke.points.push({ x: Math.round(x), y: Math.round(y) });
       updateMaskBoxFromManualMask(state.canvasState.paintingBoxIndex);
       redrawCanvas({ updateDiagnostics: false });
@@ -4587,7 +4808,6 @@ function renderStep6Workspace() {
     slideRow.innerHTML = `
       <div class="step6-slide-row-head">
         <h3>${escHtml(slide.slide_id)}</h3>
-        <span class="step6-slide-status">${slide.beats.length ? `${slide.beats.length} 条旁白` : '暂无旁白'}</span>
       </div>
       <div class="step6-slide-beats"></div>
       <div class="step6-slide-audio" data-audio-slide-id="${escHtml(slide.slide_id)}"></div>

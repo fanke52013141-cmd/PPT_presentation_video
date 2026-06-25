@@ -171,6 +171,16 @@
     return window.getComputedStyle(panel).display !== 'none';
   }
 
+  function shouldConfirmBeforeEnteringMask() {
+    const project = typeof root.getPPTCurrentProject === 'function'
+      ? root.getPPTCurrentProject()
+      : null;
+    const status = project?.step_status || {};
+    const imageConfirmed = ['completed', 'pending_reconfirmation'].includes(status['4'])
+      || ['completed', 'pending_reconfirmation'].includes(status['5']);
+    return !imageConfirmed;
+  }
+
   async function confirmBeforeEnteringMask() {
     if (confirmingStep3) return undefined;
     if (typeof root.confirmStep3Images !== 'function') return undefined;
@@ -190,7 +200,7 @@
     if (!root.navigateToStep.__ppt_step3_confirm_before_mask_wrapped__) {
       const originalNavigateToStep = root.navigateToStep;
       const wrappedNavigateToStep = async function wrappedNavigateToStep(step, ...rest) {
-        if (normalizeStep(step) === 5 && isStep3PanelActive() && !confirmingStep3) {
+        if (normalizeStep(step) === 5 && isStep3PanelActive() && !confirmingStep3 && shouldConfirmBeforeEnteringMask()) {
           return confirmBeforeEnteringMask();
         }
         return originalNavigateToStep.call(this, step, ...rest);
@@ -201,7 +211,7 @@
 
     if (!document.__ppt_step3_confirm_before_mask_click_guard__) {
       document.addEventListener('click', event => {
-        if (!isStep3PanelActive() || confirmingStep3) return;
+        if (!isStep3PanelActive() || confirmingStep3 || !shouldConfirmBeforeEnteringMask()) return;
         const target = event.target instanceof Element ? event.target : null;
         if (!target) return;
         if (target.closest('#step3-btn-confirm')) return;

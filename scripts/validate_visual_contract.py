@@ -23,7 +23,8 @@ except ModuleNotFoundError:
 
 SUBTITLE_POLICY_WITH_SUBTITLE = "all_slides_have_subtitle"
 SUBTITLE_POLICY_NO_SUBTITLE = "no_slides_have_subtitle"
-ALLOWED_SUBTITLE_POLICIES = {SUBTITLE_POLICY_WITH_SUBTITLE, SUBTITLE_POLICY_NO_SUBTITLE}
+SUBTITLE_POLICY_OPTIONAL = "optional_subtitles"
+ALLOWED_SUBTITLE_POLICIES = {SUBTITLE_POLICY_WITH_SUBTITLE, SUBTITLE_POLICY_NO_SUBTITLE, SUBTITLE_POLICY_OPTIONAL}
 
 
 class ContractError(RuntimeError):
@@ -57,7 +58,7 @@ def validate_presentation_policy(contract: dict[str, Any]) -> dict[str, Any]:
     if subtitle_policy not in ALLOWED_SUBTITLE_POLICIES:
         raise ContractError(
             "presentation_policy.subtitle_policy must be "
-            f"{SUBTITLE_POLICY_WITH_SUBTITLE} or {SUBTITLE_POLICY_NO_SUBTITLE}"
+            f"{SUBTITLE_POLICY_WITH_SUBTITLE}, {SUBTITLE_POLICY_NO_SUBTITLE}, or {SUBTITLE_POLICY_OPTIONAL}"
         )
     return policy
 

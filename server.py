@@ -190,6 +190,7 @@ STYLE_REFERENCE_FILES = {
     "template": "PPT模板.png",
 }
 STORYBOARD_TEMPLATES_PATH = os.path.join(DATA_DIR, "storyboard_templates.json")
+STEP2_PROMPT_TEMPLATES_PATH = os.path.join(DATA_DIR, "step2_prompt_templates.json")
 HANDDRAWN_STORYBOARD_RULES_PATH = os.path.join(REPO_ROOT, "templates", "prompts", "storyboard_rules_handdrawn.zh.md")
 STEP2_PROMPT_TEMPLATE_FILES = {
     "script_system": os.path.join(REPO_ROOT, "templates", "prompts", "step2_script_system.md"),
@@ -500,6 +501,8 @@ class TestTtsPayload(BaseModel):
 
 # 图片后处理：将任意尺寸等比例缩放，并居中贴在纯白 1920x1080 生图画布上
 def process_and_save_image(image_bytes: bytes, save_path: str):
+    # Keep the original aspect ratio. Non-16:9 sources are fitted and padded;
+    # native 16:9 uploads fill the render canvas without stretching.
     bg_color = (255, 255, 255)
     target_width, target_height = 1920, 1080
     
@@ -512,6 +515,7 @@ def process_and_save_image(image_bytes: bytes, save_path: str):
     elif img.mode != "RGB":
         img = img.convert("RGB")
         
+    source_width, source_height = img.width, img.height
     img_ratio = img.width / img.height
     target_ratio = target_width / target_height
     
@@ -533,7 +537,16 @@ def process_and_save_image(image_bytes: bytes, save_path: str):
     
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     final_img.save(save_path, "PNG")
-    logger.info(f"Image processed and saved to: {save_path}")
+    logger.info(
+        "Image normalized and saved: source=%sx%s fitted=%sx%s canvas=%sx%s path=%s",
+        source_width,
+        source_height,
+        new_width,
+        new_height,
+        target_width,
+        target_height,
+        save_path,
+    )
 
 
 def is_seedream_image_model(model: Optional[str], base_url: Optional[str] = None) -> bool:
@@ -2485,6 +2498,169 @@ def read_step2_prompts(project: Project) -> Dict[str, str]:
             if value:
                 prompts[key] = value
     return prompts
+
+
+def normalize_step2_prompt_type(value: Any) -> str:
+    prompt_type = str(value or "script").strip().lower()
+    if prompt_type not in {"script", "visual"}:
+        raise HTTPException(status_code=400, detail="Prompt 模板类型必须是 script 或 visual")
+    return prompt_type
+
+
+def step2_prompt_keys(prompt_type: str) -> tuple[str, str]:
+    return ("visual_system", "visual_output_example") if prompt_type == "visual" else ("script_system", "script_output_example")
+
+
+def step2_prompt_template_payload(
+    template_id: str,
+    name: str,
+    prompt_type: str,
+    prompts: Dict[str, str],
+    built_in: bool = False,
+    updated_at: str = "",
+) -> Dict[str, Any]:
+    first_key, second_key = step2_prompt_keys(prompt_type)
+    return {
+        "id": template_id,
+        "name": name,
+        "prompt_type": prompt_type,
+        "built_in": built_in,
+        "updated_at": updated_at,
+        "prompts": {
+            first_key: str(prompts.get(first_key) or ""),
+            second_key: str(prompts.get(second_key) or ""),
+        },
+    }
+
+
+def built_in_step2_prompt_templates() -> List[Dict[str, Any]]:
+    defaults = default_step2_prompts()
+    return [
+        step2_prompt_template_payload(
+            "builtin_article_to_slide",
+            "原始模板 · 文章 2slide",
+            "script",
+            defaults,
+            built_in=True,
+        ),
+        step2_prompt_template_payload(
+            "builtin_slide_to_visualization",
+            "原始模板 · slide 2visualization",
+            "visual",
+            defaults,
+            built_in=True,
+        ),
+    ]
+
+
+def list_step2_prompt_templates() -> List[Dict[str, Any]]:
+    templates = built_in_step2_prompt_templates()
+    stored = read_json_file(STEP2_PROMPT_TEMPLATES_PATH, [])
+    if not isinstance(stored, list):
+        return templates
+    for item in stored:
+        if not isinstance(item, dict):
+            continue
+        try:
+            prompt_type = normalize_step2_prompt_type(item.get("prompt_type"))
+            templates.append(
+                step2_prompt_template_payload(
+                    str(item.get("id") or ""),
+                    str(item.get("name") or ""),
+                    prompt_type,
+                    item.get("prompts") if isinstance(item.get("prompts"), dict) else item,
+                    updated_at=str(item.get("updated_at") or ""),
+                )
+            )
+        except HTTPException as exc:
+            logger.warning("Skipping invalid Step 2 prompt template %s: %s", item.get("id"), exc.detail)
+    return templates
+
+
+def step2_prompt_template_detail(template_id: str) -> Dict[str, Any]:
+    for template in list_step2_prompt_templates():
+        if template["id"] == template_id:
+            return template
+    raise HTTPException(status_code=404, detail="Prompt 模板不存在")
+
+
+@app.get("/api/step2-prompt-templates")
+def get_step2_prompt_templates():
+    return {"success": True, "templates": list_step2_prompt_templates()}
+
+
+@app.get("/api/step2-prompt-templates/{template_id}")
+def get_step2_prompt_template(template_id: str):
+    return {"success": True, "template": step2_prompt_template_detail(template_id)}
+
+
+@app.post("/api/step2-prompt-templates")
+def save_step2_prompt_template(payload: Dict[str, Any]):
+    name = normalized_template_name(payload.get("name"))
+    prompt_type = normalize_step2_prompt_type(payload.get("prompt_type"))
+    protected_names = {template["name"].casefold() for template in built_in_step2_prompt_templates()}
+    if name.casefold() in protected_names:
+        raise HTTPException(status_code=400, detail="内置 Prompt 模板名称不可覆盖")
+
+    first_key, second_key = step2_prompt_keys(prompt_type)
+    prompts = {
+        first_key: str(payload.get(first_key) or "").strip(),
+        second_key: str(payload.get(second_key) or "").strip(),
+    }
+    if not prompts[first_key] or not prompts[second_key]:
+        raise HTTPException(status_code=400, detail="Prompt 模板内容不能为空")
+
+    stored = read_json_file(STEP2_PROMPT_TEMPLATES_PATH, [])
+    if not isinstance(stored, list):
+        stored = []
+    existing = next(
+        (
+            item
+            for item in stored
+            if isinstance(item, dict)
+            and str(item.get("prompt_type") or "").strip().lower() == prompt_type
+            and str(item.get("name") or "").strip().casefold() == name.casefold()
+        ),
+        None,
+    )
+    now = template_timestamp()
+    if existing is None:
+        existing = {"id": uuid.uuid4().hex[:12], "created_at": now}
+        stored.append(existing)
+    existing.update(
+        {
+            "name": name,
+            "prompt_type": prompt_type,
+            "prompts": prompts,
+            "updated_at": now,
+        }
+    )
+    write_json_atomic(STEP2_PROMPT_TEMPLATES_PATH, stored)
+    return {
+        "success": True,
+        "template": step2_prompt_template_payload(str(existing["id"]), name, prompt_type, prompts, updated_at=now),
+        "templates": list_step2_prompt_templates(),
+    }
+
+
+@app.delete("/api/step2-prompt-templates/{template_id}")
+def delete_step2_prompt_template(template_id: str):
+    if any(template["id"] == template_id for template in built_in_step2_prompt_templates()):
+        raise HTTPException(status_code=400, detail="内置 Prompt 模板不能删除")
+    if not re.fullmatch(r"[0-9a-f]{12}", template_id):
+        raise HTTPException(status_code=404, detail="Prompt 模板不存在")
+    stored = read_json_file(STEP2_PROMPT_TEMPLATES_PATH, [])
+    if not isinstance(stored, list):
+        stored = []
+    next_stored = [
+        item
+        for item in stored
+        if not (isinstance(item, dict) and str(item.get("id") or "") == template_id)
+    ]
+    if len(next_stored) == len(stored):
+        raise HTTPException(status_code=404, detail="Prompt 模板不存在")
+    write_json_atomic(STEP2_PROMPT_TEMPLATES_PATH, next_stored)
+    return {"success": True, "templates": list_step2_prompt_templates()}
 
 
 def compose_step2_system_prompt(system_content: str, output_example: str) -> str:
@@ -5977,6 +6153,101 @@ def list_video_items(project: Project, project_id: str) -> List[Dict[str, Any]]:
     items.sort(key=lambda item: item["created_at"], reverse=True)
     return items
 
+
+def media_tool_candidate_dirs() -> List[str]:
+    candidates: List[str] = []
+    for value in (
+        os.environ.get("PPT_STUDIO_FFMPEG_DIR"),
+        os.environ.get("FFMPEG_DIR"),
+    ):
+        if value:
+            candidates.append(value)
+    candidates.extend(
+        [
+            os.path.join(REPO_ROOT, "tools", "ffmpeg", "bin"),
+            os.path.join(REPO_ROOT, "runtime", "ffmpeg", "bin"),
+            os.path.join(os.path.dirname(REPO_ROOT), "work", "runtime", "ffmpeg", "bin"),
+            os.path.join(os.path.dirname(REPO_ROOT), "work", "runtime", "ffmpeg"),
+        ]
+    )
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        candidates.extend(
+            [
+                os.path.join(appdata, "TRAE SOLO CN", "ModularData", "ai-agent", "vm", "tools", "app", "ffmpeg"),
+                os.path.join(appdata, "WEMedia", "plugin", "ffmpeg_7_1"),
+            ]
+        )
+    return candidates
+
+
+def resolve_media_tool(name: str) -> Optional[str]:
+    direct_env = os.environ.get(f"{name.upper()}_BINARY")
+    if direct_env and os.path.exists(direct_env):
+        return direct_env
+    found = shutil.which(name)
+    if found:
+        return found
+    executable = f"{name}.exe" if os.name == "nt" else name
+    for directory in media_tool_candidate_dirs():
+        path = os.path.join(directory, executable)
+        if os.path.exists(path):
+            return path
+    return None
+
+
+def normalize_video_color_metadata(video_path: str, project: Project) -> bool:
+    ffmpeg = resolve_media_tool("ffmpeg")
+    if not ffmpeg:
+        write_project_log(project, "step8_color_metadata_normalize_skipped", reason="ffmpeg_not_found")
+        return False
+
+    temp_path = f"{video_path}.bt709.tmp.mp4"
+    if os.path.exists(temp_path):
+        os.remove(temp_path)
+    result = subprocess.run(
+        [
+            ffmpeg,
+            "-y",
+            "-i",
+            video_path,
+            "-c",
+            "copy",
+            "-color_primaries",
+            "bt709",
+            "-color_trc",
+            "bt709",
+            "-colorspace",
+            "bt709",
+            "-movflags",
+            "+faststart",
+            temp_path,
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if result.returncode != 0 or not os.path.exists(temp_path):
+        write_project_log(
+            project,
+            "step8_color_metadata_normalize_error",
+            returncode=result.returncode,
+            stderr=(result.stderr or "")[-4000:],
+        )
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        return False
+
+    os.replace(temp_path, video_path)
+    write_project_log(
+        project,
+        "step8_color_metadata_normalize_success",
+        stdout=(result.stdout or "")[-4000:],
+    )
+    return True
+
+
 @app.post("/api/projects/{project_id}/steps/8/render")
 def render_video(project_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -6117,6 +6388,7 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
         elapsed_sec=round(time.time() - render_started, 3),
         stdout=(render_res.stdout or "")[-4000:],
     )
+    normalize_video_color_metadata(output_mp4_path, project)
     color_validator = os.path.join(REPO_ROOT, "scripts", "validate_render_color.py")
     color_result = subprocess.run(
         [

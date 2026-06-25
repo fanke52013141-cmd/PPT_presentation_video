@@ -136,10 +136,10 @@
                   AI 生成分镜
                 </button>
                 <button id="step2-btn-script-prompt" class="secondary" style="font-size: 0.85rem; padding: 0.35rem 0.9rem;">
-                  Step A Prompt
+                  文章 2slide
                 </button>
                 <button id="step2-btn-visual-prompt" class="secondary" style="font-size: 0.85rem; padding: 0.35rem 0.9rem;">
-                  Step B Prompt
+                  slide 2visualization
                 </button>
                 <button id="step2-btn-save" class="secondary" style="display: none; font-size: 0.85rem; padding: 0.35rem 0.9rem;">
                   <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path></svg>
@@ -265,6 +265,18 @@
               <button id="step5-btn-animation-settings" class="secondary">
                 <svg class="icon" viewBox="0 0 24 24"><polygon points="7 4 20 12 7 20 7 4"></polygon></svg>
                 动画设置
+              </button>
+              <button id="step5-btn-prev-slide" class="secondary step5-slide-nav" type="button" title="上一张 Slide">
+                <svg class="icon" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                上一张
+              </button>
+              <button id="step5-btn-next-slide" class="secondary step5-slide-nav" type="button" title="下一张 Slide">
+                下一张
+                <svg class="icon" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"></polyline></svg>
+              </button>
+              <button id="step5-btn-fullscreen" class="secondary" type="button" title="全屏标注">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M16 3h3a2 2 0 0 1 2 2v3"></path><path d="M8 21H5a2 2 0 0 1-2-2v-3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path></svg>
+                <span id="step5-fullscreen-label">放大标注</span>
               </button>
               <span id="step5-draft-status" class="step2-autosave-status"></span>
               <label class="step5-brush-control" title="调整手动涂抹区域的画笔大小">
@@ -675,30 +687,43 @@
   <div id="modal-storyboard-rules" class="modal-overlay" style="display: none;">
     <div class="modal-content config-editor-modal">
       <div class="config-editor-scroll">
-        <h3 id="storyboard-prompt-modal-title" class="highlight-title">Step A Prompt</h3>
+        <h3 id="storyboard-prompt-modal-title" class="highlight-title">文章 2slide</h3>
+        <div class="template-manager-bar step2-prompt-template-bar">
+          <label>
+            Prompt 模板
+            <select id="step2-prompt-template-select"></select>
+          </label>
+          <button id="btn-step2-prompt-template-load" class="secondary" type="button">载入模板</button>
+          <button id="btn-step2-prompt-template-delete" class="danger" type="button" disabled>删除模板</button>
+          <label class="template-name-field">
+            模板名称
+            <input id="step2-prompt-template-name" type="text" maxlength="60" placeholder="例如：技术文章讲解模板">
+          </label>
+          <button id="btn-step2-prompt-template-save" class="secondary" type="button">另存为模板</button>
+        </div>
         <div id="step2-script-prompt-section">
           <label class="storyboard-config-field storyboard-rule-field">
-            <span>Step A System Content</span>
+            <span>文章 2slide System Content</span>
             <textarea id="step2-script-system-prompt" rows="10" spellcheck="false"></textarea>
           </label>
           <label class="storyboard-config-field storyboard-rule-field">
-            <span>Step A Output Example</span>
+            <span>文章 2slide Output Example</span>
             <textarea id="step2-script-output-example" rows="10" spellcheck="false"></textarea>
           </label>
         </div>
         <div id="step2-visual-prompt-section">
           <label class="storyboard-config-field storyboard-rule-field">
-            <span>Step B System Prompt</span>
+            <span>slide 2visualization System Content</span>
             <textarea id="step2-visual-system-prompt" rows="10" spellcheck="false"></textarea>
           </label>
           <label class="storyboard-config-field storyboard-rule-field">
-            <span>Step B Output Example</span>
+            <span>slide 2visualization Output Example</span>
             <textarea id="step2-visual-output-example" rows="10" spellcheck="false"></textarea>
           </label>
         </div>
       </div>
       <div class="config-editor-actions">
-        <button id="btn-step2-prompts-save" class="secondary">保存 Step 2 Prompt</button>
+        <button id="btn-step2-prompts-save" class="secondary">保存当前 Prompt</button>
         <button id="btn-storyboard-rules-cancel" class="secondary">取消</button>
       </div>
     </div>

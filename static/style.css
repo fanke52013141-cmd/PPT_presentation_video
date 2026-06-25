@@ -633,6 +633,65 @@ textarea.step2-soft-input:focus {
   transform-origin: 50% 50%;
 }
 
+body.step5-fullscreen-mode {
+  overflow: hidden;
+}
+
+body.step5-fullscreen-mode #step-panel-5 {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  display: flex !important;
+  flex-direction: column;
+  padding: 0.8rem;
+  background: var(--bg-color);
+}
+
+body.step5-fullscreen-mode #step-panel-5 .step5-mask-header {
+  flex: 0 0 auto;
+}
+
+body.step5-fullscreen-mode #step5-thumbs {
+  flex: 0 0 auto;
+  max-height: 74px;
+  overflow-y: auto;
+}
+
+body.step5-fullscreen-mode #step-panel-5 .workspace-split {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+  gap: 0.9rem;
+}
+
+body.step5-fullscreen-mode #step-panel-5 .workspace-left {
+  min-width: 0;
+  min-height: 0;
+  justify-content: center;
+}
+
+body.step5-fullscreen-mode #step-panel-5 .workspace-right {
+  min-height: 0;
+}
+
+body.step5-fullscreen-mode #canvas-container {
+  max-width: none;
+  width: min(100%, calc((100vh - 172px) * 16 / 9));
+  max-height: calc(100vh - 172px);
+  margin: 0 auto;
+}
+
+body.step5-fullscreen-mode #step5-narration-panel {
+  max-height: 118px;
+  overflow-y: auto;
+}
+
+body.step5-fullscreen-mode #step5-btn-fullscreen {
+  background: var(--accent-color);
+}
+
 /* 标注编辑器左右分栏布局 */
 .workspace-split {
   display: flex;

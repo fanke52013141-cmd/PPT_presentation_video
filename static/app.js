@@ -20,8 +20,11 @@ let state = {
   subtitleFonts: [],
   storyboardTemplates: [],
   imageStyleTemplates: [],
+  step2PromptTemplates: [],
   selectedStoryboardTemplateId: '',
   selectedImageStyleTemplateId: '',
+  selectedStep2PromptTemplateId: '',
+  activeStep2PromptMode: 'script',
   step2GenerationRequirement: '',
   storyboardAiRequirement: '',
   imageStyleAiRequirement: '',
@@ -69,6 +72,7 @@ let state = {
     maskZoom: 1,
     maskZoomOriginX: 50,
     maskZoomOriginY: 50,
+    maskFullscreen: false,
     semanticLoading: false,
     confirmingMasks: false,
     animationPreview: null,
@@ -387,6 +391,9 @@ function initGlobalEvents() {
   document.getElementById('step5-btn-clear-current')?.addEventListener('click', () => clearAllMaskAnnotations());
   document.getElementById('step5-btn-subtitle-settings')?.addEventListener('click', () => openSubtitleSettingsModal());
   document.getElementById('step5-btn-animation-settings')?.addEventListener('click', () => openAnimationSettingsModal());
+  document.getElementById('step5-btn-prev-slide')?.addEventListener('click', () => switchStep5Slide(-1));
+  document.getElementById('step5-btn-next-slide')?.addEventListener('click', () => switchStep5Slide(1));
+  document.getElementById('step5-btn-fullscreen')?.addEventListener('click', () => toggleStep5Fullscreen());
   document.getElementById('step5-brush-size')?.addEventListener('input', (e) => updateBrushSize(e.target.value));
   document.getElementById('step5-eraser-size')?.addEventListener('input', (e) => updateEraserSize(e.target.value));
 
@@ -409,6 +416,13 @@ function initGlobalEvents() {
   document.getElementById('step8-btn-finish')?.addEventListener('click', () => exitWorkspace());
   document.getElementById('btn-storyboard-rules-cancel')?.addEventListener('click', () => closeStoryboardRulesModal());
   document.getElementById('btn-step2-prompts-save')?.addEventListener('click', () => saveStep2Prompts());
+  document.getElementById('btn-step2-prompt-template-load')?.addEventListener('click', () => loadSelectedStep2PromptTemplate());
+  document.getElementById('btn-step2-prompt-template-save')?.addEventListener('click', () => saveStep2PromptTemplate());
+  document.getElementById('btn-step2-prompt-template-delete')?.addEventListener('click', () => deleteSelectedStep2PromptTemplate());
+  document.getElementById('step2-prompt-template-select')?.addEventListener('change', event => {
+    state.selectedStep2PromptTemplateId = event.target.value || '';
+    updateStep2PromptTemplateDeleteButton();
+  });
   [
     'step2-script-system-prompt',
     'step2-script-output-example',
@@ -2274,12 +2288,17 @@ function hasPaintStroke(maskBox) {
   return (maskBox?.manual_mask?.strokes || []).some(stroke => !isEraseStroke(stroke) && (stroke.points || []).length > 0);
 }
 
+function hasVisibleMaskPixels(maskBox) {
+  if (!hasPaintStroke(maskBox)) return false;
+  return !!maskPixelBounds(maskBox);
+}
+
 function isManualEmptyBox(maskBox) {
-  return String(maskBox?.group_id || '').startsWith('manual_group_') && !hasPaintStroke(maskBox);
+  return String(maskBox?.group_id || '').startsWith('manual_group_') && !hasVisibleMaskPixels(maskBox);
 }
 
 function isSemanticDraftBox(maskBox) {
-  return String(maskBox?.source || '') === 'ai_semantic' && !hasPaintStroke(maskBox);
+  return String(maskBox?.source || '') === 'ai_semantic' && !hasVisibleMaskPixels(maskBox);
 }
 
 function isDraftMaskBox(maskBox) {
@@ -2397,6 +2416,12 @@ function getSlideMaskBoxes(slide) {
 
 function syncMaskBoxesToSlide(slide, boxes) {
   if (!slide) return;
+  boxes = Array.isArray(boxes) ? boxes : [];
+  boxes.forEach((maskBox, idx) => {
+    if (maskBox?.manual_mask?.strokes?.length) {
+      updateMaskBoxFromManualMask(idx);
+    }
+  });
   const readyBoxes = boxes.filter(maskBox => !isDraftMaskBox(maskBox));
   const semanticBoxes = boxes
     .filter(maskBox => String(maskBox?.source || '') === 'ai_semantic')
@@ -2528,9 +2553,17 @@ function applyLlmProviderPreset(provider) {
 async function openStoryboardRulesModal(mode = 'script') {
   if (!state.currentProject) return;
   state.activeStep2PromptMode = mode === 'visual' ? 'visual' : 'script';
-  const promptRes = await API.get(`/api/projects/${state.currentProject.id}/steps/2/prompts`);
+  const [promptRes, templateRes] = await Promise.all([
+    API.get(`/api/projects/${state.currentProject.id}/steps/2/prompts`),
+    API.get('/api/step2-prompt-templates'),
+  ]);
+  state.step2PromptTemplates = Array.isArray(templateRes.templates) ? templateRes.templates : [];
   renderStep2PromptEditor(promptRes);
   document.getElementById('modal-storyboard-rules').style.display = 'flex';
+}
+
+function step2PromptModeLabel(mode = state.activeStep2PromptMode) {
+  return mode === 'visual' ? 'slide 2visualization' : '文章 2slide';
 }
 
 function renderStep2PromptEditor(promptRes = {}) {
@@ -2547,9 +2580,136 @@ function renderStep2PromptEditor(promptRes = {}) {
   const title = document.getElementById('storyboard-prompt-modal-title');
   const scriptSection = document.getElementById('step2-script-prompt-section');
   const visualSection = document.getElementById('step2-visual-prompt-section');
-  if (title) title.textContent = mode === 'visual' ? 'Step B Prompt' : 'Step A Prompt';
+  if (title) title.textContent = step2PromptModeLabel(mode);
   if (scriptSection) scriptSection.style.display = mode === 'script' ? 'block' : 'none';
   if (visualSection) visualSection.style.display = mode === 'visual' ? 'block' : 'none';
+  renderStep2PromptTemplateOptions();
+}
+
+function step2PromptFormPayloadForMode(mode = state.activeStep2PromptMode) {
+  if (mode === 'visual') {
+    return {
+      prompt_type: 'visual',
+      visual_system: document.getElementById('step2-visual-system-prompt')?.value || '',
+      visual_output_example: document.getElementById('step2-visual-output-example')?.value || '',
+    };
+  }
+  return {
+    prompt_type: 'script',
+    script_system: document.getElementById('step2-script-system-prompt')?.value || '',
+    script_output_example: document.getElementById('step2-script-output-example')?.value || '',
+  };
+}
+
+function applyStep2PromptTemplate(template) {
+  if (!template?.prompts) return;
+  const prompts = template.prompts;
+  if (template.prompt_type === 'visual') {
+    const system = document.getElementById('step2-visual-system-prompt');
+    const example = document.getElementById('step2-visual-output-example');
+    if (system) system.value = prompts.visual_system || '';
+    if (example) example.value = prompts.visual_output_example || '';
+  } else {
+    const system = document.getElementById('step2-script-system-prompt');
+    const example = document.getElementById('step2-script-output-example');
+    if (system) system.value = prompts.script_system || '';
+    if (example) example.value = prompts.script_output_example || '';
+  }
+}
+
+function renderStep2PromptTemplateOptions(selectedId = state.selectedStep2PromptTemplateId || '') {
+  const mode = state.activeStep2PromptMode === 'visual' ? 'visual' : 'script';
+  const select = document.getElementById('step2-prompt-template-select');
+  if (!select) return;
+  const templates = (state.step2PromptTemplates || []).filter(template => template.prompt_type === mode);
+  select.innerHTML = [
+    `<option value="">当前 ${escHtml(step2PromptModeLabel(mode))} Prompt</option>`,
+    ...templates.map(template =>
+      `<option value="${escHtml(template.id)}">${escHtml(template.name)}${template.built_in ? ' · 内置' : ''}</option>`
+    ),
+  ].join('');
+  select.value = templates.some(template => template.id === selectedId) ? selectedId : '';
+  state.selectedStep2PromptTemplateId = select.value || '';
+  const nameInput = document.getElementById('step2-prompt-template-name');
+  const selected = selectedStep2PromptTemplate();
+  if (nameInput) nameInput.value = selected && !selected.built_in ? selected.name : '';
+  updateStep2PromptTemplateDeleteButton();
+}
+
+function selectedStep2PromptTemplate() {
+  const templateId = document.getElementById('step2-prompt-template-select')?.value || state.selectedStep2PromptTemplateId || '';
+  return (state.step2PromptTemplates || []).find(template => template.id === templateId) || null;
+}
+
+function updateStep2PromptTemplateDeleteButton() {
+  const button = document.getElementById('btn-step2-prompt-template-delete');
+  if (!button) return;
+  const template = selectedStep2PromptTemplate();
+  button.disabled = !template || !!template.built_in;
+  button.title = template?.built_in ? '内置模板不能删除' : '';
+}
+
+async function refreshStep2PromptTemplates(selectedId = '') {
+  const res = await API.get('/api/step2-prompt-templates');
+  state.step2PromptTemplates = Array.isArray(res.templates) ? res.templates : [];
+  renderStep2PromptTemplateOptions(selectedId);
+  return state.step2PromptTemplates;
+}
+
+async function loadSelectedStep2PromptTemplate() {
+  const template = selectedStep2PromptTemplate();
+  if (!template) {
+    showToast('请选择一个 Prompt 模板。');
+    return;
+  }
+  const res = await API.get(`/api/step2-prompt-templates/${encodeURIComponent(template.id)}`);
+  if (res.success && res.template) {
+    applyStep2PromptTemplate(res.template);
+    state.selectedStep2PromptTemplateId = res.template.id;
+    renderStep2PromptTemplateOptions(res.template.id);
+    showToast(`已载入 ${step2PromptModeLabel()} 模板“${res.template.name}”。`);
+  }
+}
+
+async function saveStep2PromptTemplate() {
+  const name = document.getElementById('step2-prompt-template-name')?.value.trim();
+  if (!name) {
+    showToast('请填写模板名称。');
+    return;
+  }
+  const payload = {
+    name,
+    ...step2PromptFormPayloadForMode(),
+  };
+  const res = await API.post('/api/step2-prompt-templates', payload);
+  if (res.success) {
+    state.step2PromptTemplates = res.templates || [];
+    renderStep2PromptTemplateOptions(res.template?.id || '');
+    showToast(`模板“${res.template?.name || name}”已保存。`);
+  }
+}
+
+async function deleteSelectedStep2PromptTemplate() {
+  const template = selectedStep2PromptTemplate();
+  if (!template) {
+    showToast('请选择要删除的 Prompt 模板。');
+    return;
+  }
+  if (template.built_in) {
+    showToast('内置模板不能删除。');
+    return;
+  }
+  const confirmed = window.confirm(`确定删除模板“${template.name}”吗？`);
+  if (!confirmed) return;
+  const res = await API.delete(`/api/step2-prompt-templates/${encodeURIComponent(template.id)}`);
+  if (res.success) {
+    state.step2PromptTemplates = res.templates || [];
+    state.selectedStep2PromptTemplateId = '';
+    const nameInput = document.getElementById('step2-prompt-template-name');
+    if (nameInput) nameInput.value = '';
+    renderStep2PromptTemplateOptions();
+    showToast(`模板“${template.name}”已删除。`);
+  }
 }
 
 async function saveStep2Prompts() {
@@ -2863,6 +3023,9 @@ async function refreshStep3Prompts(options = {}) {
 function renderStep5Workspace() {
   updateStep5SemanticButton();
   updateStep5ConfirmButton();
+  document.body.classList.toggle('step5-fullscreen-mode', !!state.canvasState.maskFullscreen);
+  const fullscreenLabel = document.getElementById('step5-fullscreen-label');
+  if (fullscreenLabel) fullscreenLabel.textContent = state.canvasState.maskFullscreen ? '退出全屏' : '放大标注';
   const thumbsContainer = document.getElementById('step5-thumbs');
   thumbsContainer.className = 'step5-slides-grid'; // 改用平铺换行类名
   thumbsContainer.innerHTML = '';
@@ -2944,6 +3107,29 @@ function renderStep5Workspace() {
     renderStep5BoxesForm();
     renderStep5NarrationPanel();
   }
+}
+
+function switchStep5Slide(direction) {
+  if (!manifestData?.slides?.length) return;
+  stopMaskAnimationPreview();
+  saveStep5CurrentState();
+  const total = manifestData.slides.length;
+  state.activeSlideIndex = (state.activeSlideIndex + direction + total) % total;
+  renderStep5Workspace();
+  scheduleStep5Autosave();
+}
+
+function toggleStep5Fullscreen(force) {
+  state.canvasState.maskFullscreen = typeof force === 'boolean'
+    ? force
+    : !state.canvasState.maskFullscreen;
+  document.body.classList.toggle('step5-fullscreen-mode', !!state.canvasState.maskFullscreen);
+  const canvas = document.getElementById('step5-canvas');
+  setTimeout(() => {
+    applyMaskCanvasZoom(canvas);
+    redrawCanvas({ updateDiagnostics: false });
+  }, 0);
+  renderStep5Workspace();
 }
 
 function uuid() {
@@ -3321,12 +3507,15 @@ function updateMaskBoxFromManualMask(idx) {
   const maskBox = state.canvasState.boxes[idx];
   if (!maskBox) return;
   const manualMask = ensureManualMask(maskBox, idx);
-  const points = collectManualMaskPoints(manualMask);
-  if (!points.length) return;
-  const x1 = Math.max(0, Math.min(...points.map(p => p.x)));
-  const y1 = Math.max(0, Math.min(...points.map(p => p.y)));
-  const x2 = Math.min(1920, Math.max(...points.map(p => p.x)));
-  const y2 = Math.min(1080, Math.max(...points.map(p => p.y)));
+  const bounds = maskPixelBounds(maskBox);
+  if (!bounds) {
+    manualMask.bounds = null;
+    return;
+  }
+  const x1 = bounds.x;
+  const y1 = bounds.y;
+  const x2 = bounds.x + bounds.w;
+  const y2 = bounds.y + bounds.h;
   if (x2 - x1 < 4 || y2 - y1 < 4) return;
   maskBox.box = [x1, y1, x2, y2];
   manualMask.bounds = {
@@ -3714,6 +3903,32 @@ function rasterizeManualMask(item) {
     maskCtx.restore();
   });
   return maskLayer;
+}
+
+function maskPixelBounds(item) {
+  const maskLayer = rasterizeManualMask(item);
+  const ctx = maskLayer.getContext('2d', { willReadFrequently: true });
+  const { data, width, height } = ctx.getImageData(0, 0, maskLayer.width, maskLayer.height);
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (data[(y * width + x) * 4 + 3] === 0) continue;
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (maxX < minX || maxY < minY) return null;
+  return {
+    x: Math.max(0, minX),
+    y: Math.max(0, minY),
+    w: Math.min(1920, maxX + 1) - Math.max(0, minX),
+    h: Math.min(1080, maxY + 1) - Math.max(0, minY),
+  };
 }
 
 function maskBoxBounds(item) {

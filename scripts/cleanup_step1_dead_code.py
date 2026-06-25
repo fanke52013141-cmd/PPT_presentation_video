@@ -13,8 +13,8 @@ Run from the repository root:
     python scripts/cleanup_step1_dead_code.py --check
     python scripts/cleanup_step1_dead_code.py --apply
 
-The script is intentionally conservative. It only edits ``server.py`` when all
-anchor strings are found exactly once and the resulting file passes Python AST
+The script is intentionally conservative. It only edits ``server.py`` when the
+target function can be located safely and the resulting file passes Python AST
 parsing.
 """
 
@@ -31,8 +31,14 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SERVER_PATH = REPO_ROOT / "server.py"
 
-START_ANCHOR = '    return {"success": True, "brief": brief}\n        \n    # 调用 LLM 做文章提炼\n'
-END_ANCHOR = '\n# ==================== 步骤 2: 分镜规划 ====================' 
+STEP1_RETURN = '    return {"success": True, "brief": brief}'
+END_ANCHOR = '\n@app.get("/api/projects/{project_id}/steps/1/result")'
+LEGACY_STEP1_MARKERS = (
+    'llm_api_key = get_setting("llm_api_key")',
+    "client.chat.completions.create(",
+    "step1_llm_success",
+    "step1_llm_error",
+)
 
 
 def fail(message: str) -> int:
@@ -40,7 +46,15 @@ def fail(message: str) -> int:
     return 1
 
 
-def import_article_source(text: str) -> str:
+def line_start_offsets(text: str) -> list[int]:
+    offsets = [0]
+    for index, char in enumerate(text):
+        if char == "\n":
+            offsets.append(index + 1)
+    return offsets
+
+
+def import_article_span(text: str) -> tuple[int, int, str]:
     tree = ast.parse(text, filename=str(SERVER_PATH))
     lines = text.splitlines()
     matches = [
@@ -53,47 +67,49 @@ def import_article_source(text: str) -> str:
     node = matches[0]
     if node.end_lineno is None:
         raise ValueError("Python AST did not provide import_article() end line")
-    return "\n".join(lines[node.lineno - 1 : node.end_lineno])
+    offsets = line_start_offsets(text)
+    start = offsets[node.lineno - 1]
+    if node.end_lineno < len(offsets):
+        end = offsets[node.end_lineno]
+    else:
+        end = len(text)
+    return start, end, "\n".join(lines[node.lineno - 1 : node.end_lineno])
+
+
+def import_article_source(text: str) -> str:
+    return import_article_span(text)[2]
 
 
 def verify_cleaned_step1(text: str) -> bool:
     source = import_article_source(text)
-    required_return = 'return {"success": True, "brief": brief}'
-    if source.count(required_return) != 1:
+    if source.count(STEP1_RETURN) != 1:
         return False
-    forbidden_fragments = (
-        "llm_api_key",
-        "llm_model",
-        "client.chat.completions.create(",
-        "step1_llm_success",
-        "step1_llm_error",
-    )
-    return not any(fragment in source for fragment in forbidden_fragments)
+    return not any(fragment in source for fragment in LEGACY_STEP1_MARKERS)
 
 
 def locate_dead_block(text: str) -> tuple[int, int] | None:
-    start_count = text.count(START_ANCHOR)
-    if start_count == 0:
-        if verify_cleaned_step1(text):
-            return None
-        raise ValueError("START_ANCHOR was not found and import_article() is not in the cleaned state")
-    if start_count != 1:
-        raise ValueError(f"expected START_ANCHOR exactly once, found {start_count}")
+    function_start, function_end, source = import_article_span(text)
+    return_count = source.count(STEP1_RETURN)
+    if return_count == 0:
+        raise ValueError("Step 1 success return was not found")
+    if return_count != 1:
+        raise ValueError(f"expected Step 1 success return exactly once, found {return_count}")
 
-    start = text.index(START_ANCHOR) + len('    return {"success": True, "brief": brief}\n')
-    end = text.find(END_ANCHOR, start)
-    if end < 0:
-        raise ValueError("END_ANCHOR was not found after the Step 1 return")
+    start = function_start + source.index(STEP1_RETURN) + len(STEP1_RETURN)
+    if start < len(text) and text[start] == "\n":
+        start += 1
+    end = function_end
 
     block = text[start:end]
-    required_fragments = (
-        "# 调用 LLM 做文章提炼",
-        "client.chat.completions.create(",
-        "step1_llm_success",
-        "step1_llm_error",
-        'return {"success": True, "brief": brief}',
-    )
-    missing = [fragment for fragment in required_fragments if fragment not in block]
+    if not any(marker in block for marker in LEGACY_STEP1_MARKERS):
+        if verify_cleaned_step1(text):
+            return None
+        remaining = [marker for marker in LEGACY_STEP1_MARKERS if marker in text]
+        if remaining:
+            raise ValueError(f"legacy Step 1 markers remain outside import_article(): {remaining}")
+        raise ValueError("legacy Step 1 markers not found and import_article() is not in the cleaned state")
+
+    missing = [fragment for fragment in LEGACY_STEP1_MARKERS if fragment not in block]
     if missing:
         raise ValueError(f"dead-code block did not contain expected fragments: {missing}")
     return start, end
@@ -104,8 +120,7 @@ def patched_text(text: str) -> str:
     if not location:
         return text
     start, end = location
-    replacement = "\n"
-    return text[:start] + replacement + text[end:]
+    return text[:start] + "\n" + text[end:]
 
 
 def ast_check(text: str) -> None:

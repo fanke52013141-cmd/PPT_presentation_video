@@ -148,6 +148,10 @@
 });
 
 (function installStep3ConfirmBeforeMaskHotfix(root) {
+  if (!root || typeof root.document === 'undefined' || typeof root.window === 'undefined') {
+    return;
+  }
+
   const MARKER = '__ppt_step3_confirm_before_mask_hotfix__';
   if (root[MARKER]) return;
   root[MARKER] = true;

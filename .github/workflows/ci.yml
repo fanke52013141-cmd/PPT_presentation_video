@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  basic-checks:
+    name: Basic static checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Compile Python sources
+        run: python -m compileall -q server.py scripts checks
+
+      - name: Check frontend JavaScript syntax
+        run: |
+          node --check static/app.js
+          node --check static/flow.js
+
+      - name: Run visible-flow contract check
+        run: node checks/test_visible_flow.js
+
+      - name: Run runtime hotfix self-check
+        run: python scripts/check_runtime_hotfixes.py
+
+      - name: Run settings mask self-check
+        env:
+          PPT_STUDIO_MASK_SETTINGS_SECRETS: "1"
+        run: python scripts/check_runtime_settings_mask.py

@@ -1260,10 +1260,18 @@ function renderStep2Workspace() {
       if (!input || input.dataset.boundStep2SimpleEditor === '1') return;
       input.dataset.boundStep2SimpleEditor = '1';
       input.addEventListener('input', () => {
+        if (input.tagName === 'TEXTAREA') autoResizeTextarea(input);
+        saveCurrentSlideInputToState();
+        scheduleStep2AutoSave();
+      });
+      input.addEventListener('blur', () => {
+        if (input.tagName !== 'TEXTAREA') return;
+        normalizeAndResizeStep2Textarea(input);
         saveCurrentSlideInputToState();
         scheduleStep2AutoSave();
       });
     });
+    [bodyInput, narrationInput].forEach(input => requestAnimationFrame(() => autoResizeTextarea(input)));
 
   }
 }
@@ -1425,12 +1433,39 @@ function scheduleStep2AutoSave() {
 
 function step2BodyContentText(slide) {
   const items = Array.isArray(slide?.body_content) ? slide.body_content : [];
-  return items.map(item => String(item || '').trim()).filter(Boolean).join('\n');
+  return normalizeStep2MultilineText(items.map(item => String(item || '')).filter(Boolean).join('\n'));
 }
 
 function step2NarrationText(slide) {
   const beats = Array.isArray(slide?.narration_beats) ? slide.narration_beats : [];
-  return beats.map(beat => String(beat?.spoken_text || '').trim()).filter(Boolean).join('\n\n');
+  return beats
+    .map(beat => normalizeStep2MultilineText(beat?.spoken_text || ''))
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+function normalizeStep2MultilineText(text) {
+  return String(text || '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map(line => line.trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function autoResizeTextarea(textarea) {
+  if (!textarea) return;
+  if (textarea.tagName === 'TEXTAREA') textarea.rows = 1;
+  textarea.style.height = 'auto';
+  textarea.style.height = `${textarea.scrollHeight + 2}px`;
+}
+
+function normalizeAndResizeStep2Textarea(textarea) {
+  if (!textarea) return;
+  const normalized = normalizeStep2MultilineText(textarea.value);
+  if (textarea.value !== normalized) textarea.value = normalized;
+  autoResizeTextarea(textarea);
 }
 
 function syncStep2SimpleFieldsToInternalGroups(slide) {
@@ -1463,9 +1498,9 @@ function saveCurrentSlideInputToState() {
     slide.subtitle = document.getElementById('step2-slide-subtitle-input')?.value
       ?? document.getElementById('step2-subtitle').value;
     slide.core_message = document.getElementById('step2-core-message').value;
-    const bodyText = document.getElementById('step2-slide-body-input')?.value || '';
+    const bodyText = normalizeStep2MultilineText(document.getElementById('step2-slide-body-input')?.value || '');
     slide.body_content = bodyText.split(/\r?\n/).map(item => item.trim()).filter(Boolean);
-    const narrationText = document.getElementById('step2-slide-narration-input')?.value || '';
+    const narrationText = normalizeStep2MultilineText(document.getElementById('step2-slide-narration-input')?.value || '');
     const narrationLines = narrationText
       .split(/\n\s*\n|\r?\n/)
       .map(item => item.trim())
@@ -2110,8 +2145,13 @@ function getMaskColor(idx) {
   return MASK_COLORS[idx % MASK_COLORS.length];
 }
 
+function isValidMaskColor(color) {
+  return /^#[0-9a-f]{6}$/i.test(String(color || '').trim());
+}
+
 function getBoxColor(maskBox, idx) {
-  return getMaskColor(idx);
+  const storedColor = maskBox?.manual_mask?.color || maskBox?.color;
+  return isValidMaskColor(storedColor) ? String(storedColor).trim() : getMaskColor(idx);
 }
 
 function hexToRgba(hex, alpha) {
@@ -2154,7 +2194,9 @@ function ensureManualMask(maskBox, idx = 0) {
   if (!Array.isArray(maskBox.manual_mask.strokes)) {
     maskBox.manual_mask.strokes = [];
   }
-  maskBox.manual_mask.color = getMaskColor(idx);
+  if (!isValidMaskColor(maskBox.manual_mask.color)) {
+    maskBox.manual_mask.color = getMaskColor(idx);
+  }
   return maskBox.manual_mask;
 }
 
@@ -2427,6 +2469,47 @@ function isDisplayableMaskBox(box) {
   return isManualUserMaskBox(box) || hasLinkedNarration(box);
 }
 
+function clearMaskBoxNarration(maskBox) {
+  maskBox.narration_fragments = [];
+  maskBox.narration_beat_ids = [];
+  maskBox.narration_beat_id = '';
+  maskBox.narration_group_id = '';
+  maskBox.spoken_text = '';
+}
+
+function setMaskBoxNarrationFragments(maskBox, fragments) {
+  const normalized = Array.isArray(fragments) ? fragments : [];
+  maskBox.narration_fragments = normalized;
+  maskBox.narration_beat_ids = [...new Set(normalized.map(item => item.beat_id).filter(Boolean))];
+  maskBox.narration_beat_id = maskBox.narration_beat_ids[0] || '';
+  const groupIds = [...new Set(normalized.map(item => item.group_id).filter(Boolean))];
+  maskBox.narration_group_id = groupIds[0] || '';
+  maskBox.spoken_text = normalized.map(item => item.text).filter(Boolean).join('');
+}
+
+function dedupeMaskBoxNarrationAssignments(boxes) {
+  const usedFragmentIds = new Set();
+  return boxes.map(box => {
+    if (!Array.isArray(box?.narration_fragments) || box.narration_fragments.length === 0) {
+      return box;
+    }
+    const kept = [];
+    box.narration_fragments.forEach(fragment => {
+      const fragmentId = String(fragment?.id || '').trim();
+      if (fragmentId && usedFragmentIds.has(fragmentId)) return;
+      kept.push(fragment);
+      if (fragmentId) usedFragmentIds.add(fragmentId);
+    });
+    if (kept.length === box.narration_fragments.length) return box;
+    if (kept.length === 0) {
+      clearMaskBoxNarration(box);
+      return box;
+    }
+    setMaskBoxNarrationFragments(box, kept);
+    return box;
+  }).filter(isDisplayableMaskBox);
+}
+
 function getSlideMaskBoxes(slide) {
   if (!slide) return [];
   const semanticBoxes = Array.isArray(slide.semantic_blocks)
@@ -2458,15 +2541,24 @@ function getSlideMaskBoxes(slide) {
   baseBoxes.forEach(box => {
     if (!semanticIds.has(box.group_id)) merged.push(box);
   });
-  return merged
-    .filter(isDisplayableMaskBox)
-    .map((box, idx) => ({
-      ...box,
-      manual_mask: {
-        ...cloneManualMask(box.manual_mask || { strokes: [] }),
-        color: getMaskColor(idx)
+  const usedColors = new Set();
+  return dedupeMaskBoxNarrationAssignments(merged.filter(isDisplayableMaskBox))
+    .map((box, idx) => {
+      const manualMask = cloneManualMask(box.manual_mask || { strokes: [] });
+      let color = getBoxColor(box, idx);
+      const colorKey = color.toUpperCase();
+      if (usedColors.has(colorKey)) {
+        color = getMaskColor(idx);
       }
-    }));
+      usedColors.add(color.toUpperCase());
+      return {
+        ...box,
+        manual_mask: {
+          ...manualMask,
+          color
+        }
+      };
+    });
 }
 
 function syncMaskBoxesToSlide(slide, boxes) {
@@ -2532,7 +2624,7 @@ function syncMaskBoxesToSlide(slide, boxes) {
     group.narration_fragments = Array.isArray(maskBox.narration_fragments) ? JSON.parse(JSON.stringify(maskBox.narration_fragments)) : [];
     if (maskBox.spoken_text) group.spoken_text = maskBox.spoken_text;
     group.manual_mask = cloneManualMask(maskBox.manual_mask || { strokes: [] });
-    group.manual_mask.color = getMaskColor(idx);
+    group.manual_mask.color = getBoxColor(maskBox, idx);
     if (group.manual_mask.strokes.length > 0) {
       group.review_status = "manual_painted";
     }
@@ -3293,7 +3385,9 @@ function renderStep5NarrationPanel() {
   const selectedByFragment = new Map();
   state.canvasState.boxes.forEach((box, idx) => {
     getSelectedFragmentIds(box).forEach(fragmentId => {
-      selectedByFragment.set(fragmentId, idx);
+      if (!selectedByFragment.has(fragmentId)) {
+        selectedByFragment.set(fragmentId, idx);
+      }
     });
   });
   panel.innerHTML = `

@@ -158,6 +158,14 @@ def _safe_text(value: Any, limit: int = 12000) -> str:
     return text[:limit]
 
 
+def _safe_int(value: Any, default: int = 0, minimum: int = 0, maximum: int = 3) -> int:
+    try:
+        parsed = int(float(str(value).strip()))
+    except Exception:
+        parsed = default
+    return max(minimum, min(maximum, parsed))
+
+
 def normalize_profile(payload: Any) -> dict[str, Any]:
     source = payload.get("profile") if isinstance(payload, dict) and isinstance(payload.get("profile"), dict) else payload
     if not isinstance(source, dict):
@@ -190,7 +198,7 @@ def normalize_profile(payload: Any) -> dict[str, Any]:
         "description": image_template.get("description", ""),
         "custom_requirement": _safe_text(image_style.get("custom_requirement"), 4000),
         "system_content": _safe_text(image_style.get("system_content") or image_template.get("system_content"), 12000),
-        "reference_image_count_target": max(0, min(3, int(image_style.get("reference_image_count_target") or 0))),
+        "reference_image_count_target": _safe_int(image_style.get("reference_image_count_target"), 0, 0, 3),
     }
 
     background = source.get("background_profile") if isinstance(source.get("background_profile"), dict) else {}

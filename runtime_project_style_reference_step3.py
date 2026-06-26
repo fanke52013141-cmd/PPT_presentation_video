@@ -39,13 +39,13 @@ except Exception:  # pragma: no cover - optional runtime bridge
 
 
 STEP3_ROUTES_MARKER = "__ppt_project_style_references_step3_routes__"
+INSTALL_TIMEOUT_SEC = 120.0
 
 
 def _insert_route_before_existing(app: Any, path: str, endpoint: Any, methods: list[str], name: str) -> None:
     routes = app.router.routes
     for route in routes:
         if getattr(route, "name", "") == name:
-            setattr(app.state, STEP3_ROUTES_MARKER, True)
             return
     method_set = {method.upper() for method in methods}
     insert_index = len(routes)
@@ -219,8 +219,17 @@ def _candidate_modules() -> list[ModuleType]:
     return [module for module in list(sys.modules.values()) if isinstance(module, ModuleType) and hasattr(module, "app") and hasattr(module, "Project")]
 
 
+def _log_timeout() -> None:
+    for module in _candidate_modules():
+        logger = getattr(module, "logger", None)
+        if logger:
+            logger.warning("Project style Step 3 bridge was not installed within %.0f seconds; helper functions may be missing.", INSTALL_TIMEOUT_SEC)
+            return
+
+
 def _install_when_ready() -> None:
     def worker() -> None:
+        started_at = time.monotonic()
         while not os.environ.get("PPT_STUDIO_DISABLE_PROJECT_STYLE_REFERENCES"):
             for module in _candidate_modules():
                 try:
@@ -228,6 +237,9 @@ def _install_when_ready() -> None:
                         return
                 except Exception:
                     pass
+            if time.monotonic() - started_at > INSTALL_TIMEOUT_SEC:
+                _log_timeout()
+                return
             time.sleep(0.1)
     threading.Thread(name="ppt-project-style-step3-runtime", target=worker, daemon=True).start()
 

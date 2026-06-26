@@ -213,6 +213,10 @@ def _register(server_module: ModuleType) -> bool:
         _install_injection(app)
     except Exception:
         pass
+    try:
+        import runtime_project_style_reference_step3  # noqa: F401
+    except Exception:
+        pass
     setattr(server_module, PATCH_MARKER, True)
     return True
 
@@ -233,5 +237,10 @@ def _install_when_ready() -> None:
             time.sleep(0.1)
     threading.Thread(name="ppt-project-style-reference-manager-runtime", target=worker, daemon=True).start()
 
+
+try:
+    import runtime_project_style_reference_step3  # noqa: F401
+except Exception:
+    pass
 
 _install_when_ready()

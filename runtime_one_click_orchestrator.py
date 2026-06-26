@@ -30,6 +30,7 @@ from typing import Any
 PATCH_MARKER = "__ppt_one_click_orchestrator_patch__"
 INJECT_MARKER = "__ppt_one_click_orchestrator_inject_patch__"
 STATUS_FILENAME = "one_click_status.json"
+INSTALL_TIMEOUT_SEC = 120.0
 
 STAGES = [
     ("preflight", "预检查"),
@@ -62,6 +63,13 @@ def _now() -> str:
 
 def _safe_text(value: Any, limit: int = 2000) -> str:
     return str(value or "").strip()[:limit]
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(float(str(value).strip()))
+    except Exception:
+        return default
 
 
 def _read_json(path: Path, fallback: Any) -> Any:
@@ -283,17 +291,20 @@ def _ai_mask_quality_errors(result: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     if not isinstance(result, dict):
         return ["AI Mask 返回结果不是有效对象"]
-    processed = int(result.get("processed_slide_count") or result.get("processed") or 0)
-    updated = int(result.get("updated_group_count") or 0)
+    processed = _safe_int(result.get("processed_slide_count") or result.get("processed"), 0)
+    updated = _safe_int(result.get("updated_group_count"), 0)
     if processed == 0:
         errors.append("AI Mask 没有处理任何 slide")
     if updated == 0:
         errors.append("AI Mask 没有更新任何语块")
+    top_warnings = result.get("warnings") if isinstance(result.get("warnings"), list) else []
+    for warning in top_warnings[:5]:
+        errors.append(f"AI Mask 警告：{_safe_text(warning, 200)}")
     for slide in result.get("slides", []) or []:
         if not isinstance(slide, dict):
             continue
         slide_id = _safe_text(slide.get("slide_id"), 100) or "unknown slide"
-        unmatched_groups = int(slide.get("unmatched_group_count") or 0)
+        unmatched_groups = _safe_int(slide.get("unmatched_group_count"), 0)
         warnings = slide.get("warnings") if isinstance(slide.get("warnings"), list) else []
         if unmatched_groups > 0:
             errors.append(f"{slide_id} 有 {unmatched_groups} 个未匹配语块")
@@ -498,8 +509,17 @@ def _candidate_modules() -> list[ModuleType]:
     return [module for module in list(sys.modules.values()) if isinstance(module, ModuleType) and hasattr(module, "app") and hasattr(module, "Project")]
 
 
+def _log_timeout() -> None:
+    for module in _candidate_modules():
+        logger = getattr(module, "logger", None)
+        if logger:
+            logger.warning("One-click orchestrator bridge was not installed within %.0f seconds; server app or database helpers may be missing.", INSTALL_TIMEOUT_SEC)
+            return
+
+
 def _install_when_ready() -> None:
     def worker() -> None:
+        started_at = time.monotonic()
         while not os.environ.get("PPT_STUDIO_DISABLE_ONE_CLICK_ORCHESTRATOR"):
             for module in _candidate_modules():
                 try:
@@ -507,6 +527,9 @@ def _install_when_ready() -> None:
                         return
                 except Exception:
                     return
+            if time.monotonic() - started_at > INSTALL_TIMEOUT_SEC:
+                _log_timeout()
+                return
             time.sleep(0.1)
     threading.Thread(name="ppt-one-click-orchestrator-runtime", target=worker, daemon=True).start()
 

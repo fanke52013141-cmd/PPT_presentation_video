@@ -3773,6 +3773,89 @@ header .btn {
   gap: 0.5rem;
 }
 
+/* System settings modal: fixed shell with only the active tab body scrolling. */
+#modal-settings {
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+#modal-settings .settings-modal {
+  width: min(860px, calc(100vw - 48px)) !important;
+  height: min(780px, calc(100dvh - 48px)) !important;
+  max-width: none !important;
+  max-height: none !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  box-sizing: border-box !important;
+}
+
+#modal-settings .settings-modal > h3 {
+  flex: 0 0 auto !important;
+  margin: 0 !important;
+  padding: 1.35rem 1.55rem 0.85rem !important;
+  background: var(--color-bg-surface, #fff) !important;
+  border-bottom: 1px solid var(--color-border-default, #e8ecf6) !important;
+  z-index: 3 !important;
+}
+
+#modal-settings .settings-modal > .tabs {
+  flex: 0 0 auto !important;
+  position: static !important;
+  top: auto !important;
+  margin: 0 !important;
+  padding: 0.85rem 1.55rem !important;
+  border-bottom: 1px solid var(--color-border-default, #e8ecf6) !important;
+  border-radius: 0 !important;
+  background: var(--color-bg-subtle, #f6f8ff) !important;
+  box-shadow: none !important;
+  overflow-x: auto !important;
+  z-index: 2 !important;
+}
+
+#modal-settings .settings-modal > .tab-contents {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  padding: 1.15rem 1.55rem !important;
+  background: var(--color-bg-surface, #fff) !important;
+}
+
+#modal-settings .settings-modal .tab-pane {
+  min-height: 100% !important;
+}
+
+#modal-settings .settings-modal > .settings-footer-actions {
+  flex: 0 0 auto !important;
+  margin: 0 !important;
+  padding: 1rem 1.55rem !important;
+  border-top: 1px solid var(--color-border-default, #e8ecf6) !important;
+  background: var(--color-bg-surface, #fff) !important;
+  box-shadow: 0 -10px 24px rgba(31, 41, 55, 0.06) !important;
+  z-index: 3 !important;
+}
+
+@media (max-width: 720px) {
+  #modal-settings .settings-modal {
+    width: calc(100vw - 20px) !important;
+    height: calc(100dvh - 20px) !important;
+  }
+
+  #modal-settings .settings-modal > h3,
+  #modal-settings .settings-modal > .tabs,
+  #modal-settings .settings-modal > .tab-contents,
+  #modal-settings .settings-modal > .settings-footer-actions {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+
+  #modal-settings .settings-modal > .settings-footer-actions {
+    align-items: stretch !important;
+    flex-wrap: wrap !important;
+  }
+}
+
 .step6-empty-state,
 .step-audio-empty,
 .mask-empty-state,

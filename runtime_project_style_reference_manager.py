@@ -1,9 +1,9 @@
 """Project style reference image manager runtime bridge.
 
 Adds lightweight management routes and injects a small UI extension for viewing,
-regenerating, and deleting project-local image style reference PNGs. This module
-is intentionally separate from runtime_project_style_references.py so the core
-Step 3 integration remains focused on generation/use of references.
+regenerating, and deleting project-local image style reference PNGs. Step 3
+binding is loaded directly by usercustomize through
+runtime_project_style_reference_step3.py.
 """
 
 from __future__ import annotations
@@ -225,10 +225,6 @@ def _register(server_module: ModuleType) -> bool:
         logger = getattr(server_module, "logger", None)
         if logger:
             logger.warning("Failed to install project style reference manager UI injection: %s", exc)
-    try:
-        import runtime_project_style_reference_step3  # noqa: F401
-    except Exception:
-        pass
     setattr(server_module, PATCH_MARKER, True)
     return True
 
@@ -249,10 +245,5 @@ def _install_when_ready() -> None:
             time.sleep(0.1)
     threading.Thread(name="ppt-project-style-reference-manager-runtime", target=worker, daemon=True).start()
 
-
-try:
-    import runtime_project_style_reference_step3  # noqa: F401
-except Exception:
-    pass
 
 _install_when_ready()

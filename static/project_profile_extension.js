@@ -160,7 +160,7 @@
               <input id="project-profile-generate-style-references" type="checkbox" checked>
               创建项目后自动生成 1-3 张风格参考图
             </label>
-            <p class="project-profile-note">参考图保存在当前项目 planning/style_references/，不覆盖全局图片风格参考图。</p>
+            <p class="project-profile-note">参考图只在 AI 文字生成风格时自动生成，保存在当前项目 planning/style_references/，不覆盖全局图片风格参考图。</p>
             <div id="project-profile-ai-style-preview" class="project-profile-ai-style-preview"></div>
           </section>
           <section class="project-profile-section">
@@ -269,7 +269,7 @@
     const checkbox = document.getElementById('project-profile-generate-style-references');
     if (!checkbox?.checked) return false;
     const imageStyle = profile?.image_style_profile || {};
-    return imageStyle.source === 'ai_text_generated' || Array.isArray(imageStyle.sample_reference_image_prompts);
+    return imageStyle.source === 'ai_text_generated';
   }
 
   async function generateProjectStyleReferences(projectId, profile) {

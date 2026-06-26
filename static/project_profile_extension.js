@@ -1,29 +1,37 @@
 (function () {
   'use strict';
 
-  const PROFILE_STATE = {
-    templates: null,
-    creating: false,
-  };
+  const PROFILE_STATE = { templates: null, creating: false };
+
+  function parseJsonResponse(response) {
+    return response.json().then(data => {
+      if (!response.ok) throw new Error(data.detail || data.message || response.statusText || '请求失败');
+      return data;
+    });
+  }
 
   function apiGet(url) {
-    return window.API?.get
-      ? window.API.get(url)
-      : fetch(url).then(r => r.json().then(d => { if (!r.ok) throw new Error(d.detail || r.statusText); return d; }));
+    return window.API?.get ? window.API.get(url) : fetch(url).then(parseJsonResponse);
   }
 
   function apiPost(url, body) {
-    return window.API?.post
-      ? window.API.post(url, body)
-      : fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
-        .then(r => r.json().then(d => { if (!r.ok) throw new Error(d.detail || r.statusText); return d; }));
+    if (window.API?.post) return window.API.post(url, body);
+    const isFormData = body instanceof FormData;
+    return fetch(url, {
+      method: 'POST',
+      body: isFormData ? body : JSON.stringify(body || {}),
+      headers: isFormData ? {} : { 'Content-Type': 'application/json' },
+    }).then(parseJsonResponse);
   }
 
   function apiPut(url, body) {
     return window.API?.put
       ? window.API.put(url, body)
-      : fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
-        .then(r => r.json().then(d => { if (!r.ok) throw new Error(d.detail || r.statusText); return d; }));
+      : fetch(url, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body || {}),
+        }).then(parseJsonResponse);
   }
 
   function toast(message, duration) {
@@ -38,8 +46,8 @@
   async function loadTemplates() {
     if (PROFILE_STATE.templates) return PROFILE_STATE.templates;
     try {
-      const res = await apiGet('/api/project-profile/templates');
-      PROFILE_STATE.templates = res;
+      const response = await apiGet('/api/project-profile/templates');
+      PROFILE_STATE.templates = response;
     } catch (error) {
       PROFILE_STATE.templates = {
         storyboard_templates: [{ id: 'science_explainer', name: '科普解释型', description: '默认分镜模板', methodology: '每页只讲一个核心点。' }],
@@ -249,9 +257,11 @@
     }
     PROFILE_STATE.creating = true;
     const button = document.getElementById('btn-create-submit');
-    const original = button.textContent;
-    button.disabled = true;
-    button.textContent = '创建中...';
+    const original = button?.textContent || '创建项目';
+    if (button) {
+      button.disabled = true;
+      button.textContent = '创建中...';
+    }
     try {
       const projectRes = await apiPost('/api/projects', { name, description: desc });
       const project = projectRes.project;
@@ -270,8 +280,10 @@
       else location.reload();
     } finally {
       PROFILE_STATE.creating = false;
-      button.disabled = false;
-      button.textContent = original;
+      if (button) {
+        button.disabled = false;
+        button.textContent = original;
+      }
     }
   }
 

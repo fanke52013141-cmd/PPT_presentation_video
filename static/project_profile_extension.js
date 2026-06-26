@@ -42,12 +42,8 @@
       PROFILE_STATE.templates = res;
     } catch (error) {
       PROFILE_STATE.templates = {
-        storyboard_templates: [
-          { id: 'science_explainer', name: '科普解释型', description: '默认分镜模板', methodology: '每页只讲一个核心点。' },
-        ],
-        image_style_templates: [
-          { id: 'handdrawn_ppt_sticker', name: '手绘 PPT 贴纸风', description: '默认图片风格', system_content: 'Use hand-drawn PPT sticker style. Keep pure-white outer canvas.' },
-        ],
+        storyboard_templates: [{ id: 'science_explainer', name: '科普解释型', description: '默认分镜模板', methodology: '每页只讲一个核心点。' }],
+        image_style_templates: [{ id: 'handdrawn_ppt_sticker', name: '手绘 PPT 贴纸风', description: '默认图片风格', system_content: 'Use hand-drawn PPT sticker style. Keep pure-white outer canvas.' }],
         automation_modes: [
           { id: 'manual_review', name: '手动审核模式', description: '每一步由用户确认。' },
           { id: 'auto', name: '全自动模式', description: '正常路径自动跑完整链路，失败时暂停。' },
@@ -105,7 +101,6 @@
         <h3 class="highlight-title" style="margin-bottom: .8rem;">新建视频项目</h3>
         <p class="config-editor-note">Project Profile 会在创建时确定生产模式、分镜风格、图片风格和最终视频背景。生成图片仍保持纯白底；最终视频背景单独合成。</p>
         <div class="project-profile-warning"><strong>生产不变量：</strong>无论选择什么风格，visual_draft.png 外背景都必须保持纯白 #FFFFFF；元素之间必须分离，不能粘连，方便 AI Mask 和手动 Mask。</div>
-
         <div class="project-profile-grid">
           <section class="project-profile-section">
             <h4>1. 基础信息</h4>
@@ -116,29 +111,20 @@
             <label>可选文章内容</label>
             <textarea id="input-project-article" rows="7" placeholder="可选：创建后自动导入为 Step 1 文章；留空则稍后手动导入。"></textarea>
           </section>
-
           <section class="project-profile-section">
             <h4>2. 生产模式</h4>
-            <div class="project-profile-mode-grid" id="project-profile-automation-options">
-              ${optionCards(templates.automation_modes || [], 'automation_mode', 'manual_review')}
-            </div>
+            <div class="project-profile-mode-grid">${optionCards(templates.automation_modes || [], 'automation_mode', 'manual_review')}</div>
             <p class="project-profile-note">全自动模式在后续 Orchestrator 完成后会从内容自动跑到视频；失败或质量门不通过时暂停给用户处理。当前版本先保存该配置。</p>
           </section>
-
           <section class="project-profile-section">
             <h4>3. 分镜风格</h4>
-            <div id="project-profile-storyboard-options">
-              ${optionCards(templates.storyboard_templates || [], 'storyboard_template', 'science_explainer')}
-            </div>
+            <div>${optionCards(templates.storyboard_templates || [], 'storyboard_template', 'science_explainer')}</div>
             <label>分镜补充要求</label>
             <textarea id="project-profile-storyboard-requirement" rows="4" placeholder="例如：控制在 6 页以内；先讲概念，再讲机制和应用；旁白更口语化。"></textarea>
           </section>
-
           <section class="project-profile-section">
             <h4>4. 图片风格</h4>
-            <div id="project-profile-image-style-options">
-              ${optionCards(templates.image_style_templates || [], 'image_style_template', 'handdrawn_ppt_sticker')}
-            </div>
+            <div>${optionCards(templates.image_style_templates || [], 'image_style_template', 'handdrawn_ppt_sticker')}</div>
             <label>图片风格来源</label>
             <select id="project-profile-image-style-source">
               <option value="template">使用所选模板</option>
@@ -148,7 +134,6 @@
             <label>图片风格补充要求</label>
             <textarea id="project-profile-image-style-requirement" rows="4" placeholder="例如：适合金融科普，蓝白科技感，但不要太严肃；元素之间不要粘连。"></textarea>
           </section>
-
           <section class="project-profile-section">
             <h4>5. 最终视频背景</h4>
             <label>背景类型</label>
@@ -163,7 +148,6 @@
             </div>
             <p class="project-profile-note">这里设置最终视频底图，不改变生图白底。图片背景可以在 Step 2 背景设置里上传。</p>
           </section>
-
           <section class="project-profile-section">
             <h4>6. 质量门</h4>
             <label><input type="checkbox" class="project-profile-gate" data-gate="pause_on_storyboard_validation_error" checked> 分镜结构校验失败时暂停</label>
@@ -199,7 +183,6 @@
 
   function bindModalEvents() {
     document.querySelectorAll('[data-profile-option]').forEach(card => {
-      card.addEventListener('click', () => activateOption(card.dataset.profileOption || card.dataset.profileOption, card.dataset.value));
       card.addEventListener('click', () => activateOption(card.getAttribute('data-profile-option'), card.dataset.value));
     });
     document.getElementById('btn-create-cancel')?.addEventListener('click', () => {

@@ -86,49 +86,51 @@ def _install_remotion_entrypoint_patch() -> None:
 try:
     import runtime_settings_mask  # noqa: F401
 except Exception:
-    # Optional hardening must never prevent the local app from starting.
     pass
 
 try:
     import runtime_ai_mask  # noqa: F401
 except Exception:
-    # Optional AI Mask routes/UI must never prevent the local app from starting.
     pass
 
 try:
     import runtime_storyboard_background  # noqa: F401
 except Exception:
-    # Optional storyboard background routes/UI must never prevent the local app from starting.
     pass
 
 try:
     import runtime_storyboard_background_render  # noqa: F401
 except Exception:
-    # Optional final-video background postprocessing must never prevent startup.
     pass
 
 try:
     import runtime_project_profile  # noqa: F401
 except Exception:
-    # Optional Project Profile routes/UI must never prevent startup.
     pass
 
 try:
     import runtime_project_style_references  # noqa: F401
 except Exception:
-    # Optional project-local style reference images must never prevent startup.
     pass
 
 try:
     import runtime_project_style_reference_manager  # noqa: F401
 except Exception:
-    # Optional project-local style reference image manager must never prevent startup.
+    pass
+
+try:
+    import runtime_project_style_reference_step3  # noqa: F401
+except Exception:
     pass
 
 try:
     import runtime_image_style_reverse  # noqa: F401
 except Exception:
-    # Optional image-to-style reverse engineering must never prevent startup.
+    pass
+
+try:
+    import runtime_one_click_orchestrator  # noqa: F401
+except Exception:
     pass
 
 _install_remotion_entrypoint_patch()

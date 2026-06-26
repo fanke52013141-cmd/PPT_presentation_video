@@ -1,7 +1,11 @@
 (function () {
   'use strict';
 
-  const PROFILE_STATE = { templates: null, creating: false };
+  const PROFILE_STATE = {
+    templates: null,
+    creating: false,
+    generatedImageStyle: null,
+  };
 
   function parseJsonResponse(response) {
     return response.json().then(data => {
@@ -84,7 +88,12 @@
       .project-profile-inline { display: flex; gap: .7rem; align-items: center; }
       .project-profile-inline > * { flex: 1; }
       .project-profile-pill { display: inline-flex; align-items: center; gap: .35rem; border: 1px solid #111; border-radius: 999px; padding: .2rem .55rem; font-size: .78rem; background: #fff; }
-      @media (max-width: 980px) { .project-profile-grid, .project-profile-mode-grid { grid-template-columns: 1fr; } }
+      .project-profile-ai-actions { display: flex; gap: .6rem; align-items: center; margin-top: .6rem; }
+      .project-profile-ai-actions button { flex: 0 0 auto; }
+      .project-profile-ai-style-preview { display: none; margin-top: .65rem; padding: .7rem; border: 1.5px dashed #111; border-radius: 12px; background: #f9fbff; font-size: .86rem; line-height: 1.5; }
+      .project-profile-ai-style-preview strong { display: block; margin-bottom: .25rem; }
+      .project-profile-ai-style-preview code { white-space: pre-wrap; display: block; max-height: 150px; overflow: auto; background: #fff; padding: .45rem; border-radius: 8px; margin-top: .45rem; }
+      @media (max-width: 980px) { .project-profile-grid, .project-profile-mode-grid { grid-template-columns: 1fr; } .project-profile-ai-actions { align-items: stretch; flex-direction: column; } }
     `;
     document.head.appendChild(style);
   }
@@ -136,11 +145,16 @@
             <label>图片风格来源</label>
             <select id="project-profile-image-style-source">
               <option value="template">使用所选模板</option>
-              <option value="ai_text_generated">稍后用文字让 AI 生成风格</option>
+              <option value="ai_text_generated">用文字让 AI 生成风格</option>
               <option value="image_reverse_engineered">稍后上传 1-3 张参考图反推风格</option>
             </select>
             <label>图片风格补充要求</label>
             <textarea id="project-profile-image-style-requirement" rows="4" placeholder="例如：适合金融科普，蓝白科技感，但不要太严肃；元素之间不要粘连。"></textarea>
+            <div class="project-profile-ai-actions">
+              <button id="btn-project-profile-generate-image-style" class="secondary" type="button">AI 生成图片风格草案</button>
+              <span class="project-profile-note">生成后会保存为结构化 image_style_profile。</span>
+            </div>
+            <div id="project-profile-ai-style-preview" class="project-profile-ai-style-preview"></div>
           </section>
           <section class="project-profile-section">
             <h4>5. 最终视频背景</h4>
@@ -189,6 +203,59 @@
     return (items || []).find(item => item.id === id) || (items || [])[0] || {};
   }
 
+  function renderGeneratedImageStyle(style) {
+    const preview = document.getElementById('project-profile-ai-style-preview');
+    if (!preview || !style) return;
+    const visualLanguage = style.visual_language || {};
+    const palette = Array.isArray(visualLanguage.color_palette) ? visualLanguage.color_palette.join(' / ') : '';
+    preview.style.display = 'block';
+    preview.innerHTML = `
+      <strong>${esc(style.style_name || 'AI 生成图片风格')}</strong>
+      <div>${esc(style.style_summary || '')}</div>
+      ${palette ? `<div>Palette: ${esc(palette)}</div>` : ''}
+      <code>${esc(style.system_content || '')}</code>
+    `;
+  }
+
+  async function generateImageStyleDraft() {
+    const requirementEl = document.getElementById('project-profile-image-style-requirement');
+    const sourceEl = document.getElementById('project-profile-image-style-source');
+    const button = document.getElementById('btn-project-profile-generate-image-style');
+    const requirement = requirementEl?.value.trim() || '';
+    if (!requirement) {
+      toast('请先填写图片风格补充要求，例如受众、行业、颜色、线条、质感和禁用项。', 5000);
+      return;
+    }
+    const templates = PROFILE_STATE.templates || {};
+    const imageStyleId = selectedOption('image_style_template', 'handdrawn_ppt_sticker');
+    const imageTemplate = selectedTemplate(templates.image_style_templates, imageStyleId);
+    const projectContext = [
+      document.getElementById('input-project-name')?.value || '',
+      document.getElementById('input-project-desc')?.value || '',
+    ].filter(Boolean).join('\n');
+    const originalText = button?.textContent || 'AI 生成图片风格草案';
+    if (button) {
+      button.disabled = true;
+      button.textContent = '生成中...';
+    }
+    try {
+      const result = await apiPost('/api/project-profile/image-style/generate', {
+        requirement,
+        project_context: projectContext,
+        base_template: imageTemplate,
+      });
+      PROFILE_STATE.generatedImageStyle = result.style;
+      if (sourceEl) sourceEl.value = 'ai_text_generated';
+      renderGeneratedImageStyle(result.style);
+      toast('✅ 图片风格草案已生成，将随项目一起保存。', 4500);
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    }
+  }
+
   function bindModalEvents() {
     document.querySelectorAll('[data-profile-option]').forEach(card => {
       card.addEventListener('click', () => activateOption(card.getAttribute('data-profile-option'), card.dataset.value));
@@ -201,6 +268,17 @@
       event.stopPropagation();
       createProjectWithProfile().catch(error => toast(`❌ 创建失败：${error.message}`, 7000));
     }, true);
+    document.getElementById('btn-project-profile-generate-image-style')?.addEventListener('click', event => {
+      event.preventDefault();
+      generateImageStyleDraft().catch(error => toast(`❌ AI 生成图片风格失败：${error.message}`, 7000));
+    });
+    document.getElementById('project-profile-image-style-source')?.addEventListener('change', event => {
+      if (event.target.value !== 'ai_text_generated') {
+        PROFILE_STATE.generatedImageStyle = null;
+        const preview = document.getElementById('project-profile-ai-style-preview');
+        if (preview) preview.style.display = 'none';
+      }
+    });
     const color = document.getElementById('project-profile-background-color');
     const colorText = document.getElementById('project-profile-background-color-text');
     color?.addEventListener('input', () => { colorText.value = color.value.toUpperCase(); });
@@ -216,6 +294,8 @@
     const imageStyleId = selectedOption('image_style_template', 'handdrawn_ppt_sticker');
     const storyboardTemplate = selectedTemplate(templates.storyboard_templates, storyboardId);
     const imageTemplate = selectedTemplate(templates.image_style_templates, imageStyleId);
+    const imageSource = document.getElementById('project-profile-image-style-source')?.value || 'template';
+    const generatedStyle = imageSource === 'ai_text_generated' ? (PROFILE_STATE.generatedImageStyle || {}) : {};
     const gates = {};
     document.querySelectorAll('.project-profile-gate').forEach(input => { gates[input.dataset.gate] = !!input.checked; });
     return {
@@ -229,12 +309,19 @@
         methodology: storyboardTemplate.methodology || '',
       },
       image_style_profile: {
-        source: document.getElementById('project-profile-image-style-source')?.value || 'template',
-        template_id: imageTemplate.id || imageStyleId,
-        template_name: imageTemplate.name || '',
+        source: imageSource,
+        template_id: generatedStyle.template_id || imageTemplate.id || imageStyleId,
+        template_name: generatedStyle.template_name || generatedStyle.style_name || imageTemplate.name || '',
+        style_name: generatedStyle.style_name || imageTemplate.name || '',
+        style_summary: generatedStyle.style_summary || imageTemplate.description || '',
         custom_requirement: document.getElementById('project-profile-image-style-requirement')?.value || '',
-        system_content: imageTemplate.system_content || '',
-        reference_image_count_target: 0,
+        system_content: generatedStyle.system_content || imageTemplate.system_content || '',
+        visual_language: generatedStyle.visual_language || {},
+        maskability_rules: generatedStyle.maskability_rules || [],
+        negative_prompt_rules: generatedStyle.negative_prompt_rules || [],
+        sample_reference_image_prompts: generatedStyle.sample_reference_image_prompts || [],
+        reference_image_count_target: generatedStyle.reference_image_count_target || 0,
+        generated_at: generatedStyle.generated_at || '',
       },
       background_profile: {
         mode: document.getElementById('project-profile-background-mode')?.value || 'solid',

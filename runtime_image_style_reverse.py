@@ -311,7 +311,7 @@ def _install_injection(app: Any) -> None:
         except Exception:
             return response
         if "image_style_reverse_extension.js" not in body and "</body>" in body:
-            body = body.replace("</body>", '  <script src="image_style_reverse_extension.js?v=1.0.0"></script>\n</body>')
+            body = body.replace("</body>", '  <script src="image_style_reverse_extension.js?v=20260626.1"></script>\n</body>')
         from starlette.responses import Response
         headers = dict(response.headers)
         headers.pop("content-length", None)

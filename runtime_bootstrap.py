@@ -1,17 +1,18 @@
 """Runtime bridge bootstrap for PPT Visualization Studio.
 
 Runtime bridge modules add routes and UI injection around the large ``server.py``
-module. Relying on Python's optional ``usercustomize`` import is not sufficient for
-normal local launches.
+module. Relying on Python's optional ``usercustomize`` import is not sufficient
+for normal local launches.
 
 This bootstrap is imported from ``database.py`` early during ``server.py`` import.
-It patches ``FastAPI.mount`` so the bridge modules are imported immediately before
-the final static catch-all mount is registered. That guarantees API routes are
-registered before ``app.mount("/", StaticFiles(...))`` can shadow them.
+It patches ``FastAPI.mount`` and also exposes a synchronous installer so runtime
+API routes are registered before ``app.mount("/", StaticFiles(...))`` can shadow
+them.
 """
 
 from __future__ import annotations
 
+import importlib
 import os
 import sys
 import threading
@@ -38,11 +39,19 @@ RUNTIME_MODULES = [
     "runtime_one_click_orchestrator",
 ]
 
+EXPECTED_RUNTIME_PATHS = {
+    "/api/settings/ai-mask",
+    "/api/project-profile/templates",
+    "/api/projects/{project_id}/one-click-generate",
+}
+
 
 def _server_candidates() -> list[ModuleType]:
     candidates: list[ModuleType] = []
     for module in list(sys.modules.values()):
         if not isinstance(module, ModuleType):
+            continue
+        if getattr(module, "__name__", "") == "__main__":
             continue
         if all(hasattr(module, attr) for attr in ("app", "Project", "get_db")):
             candidates.append(module)
@@ -57,13 +66,65 @@ def _logger() -> Any:
     return None
 
 
+def _route_paths(server_module: ModuleType) -> set[str]:
+    app = getattr(server_module, "app", None)
+    return {
+        str(getattr(route, "path", ""))
+        for route in getattr(app, "routes", []) or []
+        if getattr(route, "path", "")
+    }
+
+
+def _move_root_static_mount_to_end(server_module: ModuleType) -> None:
+    app = getattr(server_module, "app", None)
+    router = getattr(app, "router", None)
+    routes = getattr(router, "routes", None)
+    if not isinstance(routes, list):
+        return
+
+    seen: set[tuple[Any, ...]] = set()
+    deduped = []
+    for route in routes:
+        endpoint = getattr(route, "endpoint", None)
+        key = (
+            route.__class__.__name__,
+            str(getattr(route, "path", "")),
+            tuple(sorted(getattr(route, "methods", []) or [])),
+            getattr(endpoint, "__module__", ""),
+            getattr(endpoint, "__qualname__", ""),
+            getattr(route, "name", ""),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(route)
+    if len(deduped) != len(routes):
+        routes[:] = deduped
+
+    root_mounts = [
+        route
+        for route in routes
+        if route.__class__.__name__ == "Mount" and str(getattr(route, "path", "")) in {"", "/"}
+    ]
+    if not root_mounts:
+        return
+    ordered = [route for route in routes if route not in root_mounts] + root_mounts
+    if ordered != routes:
+        routes[:] = ordered
+
+
+def runtime_paths_ready(server_module: ModuleType) -> bool:
+    return EXPECTED_RUNTIME_PATHS.issubset(_route_paths(server_module))
+
+
 def _import_runtime_modules() -> bool:
     if getattr(sys, IMPORT_MARKER, False):
         return True
+
     ok = True
     for module_name in RUNTIME_MODULES:
         try:
-            __import__(module_name)
+            importlib.import_module(module_name)
         except Exception as exc:
             ok = False
             logger = _logger()
@@ -72,6 +133,44 @@ def _import_runtime_modules() -> bool:
     if ok:
         setattr(sys, IMPORT_MARKER, True)
     return ok
+
+
+def install_for_server_module(server_module: ModuleType) -> bool:
+    """Install runtime bridge routes on a concrete server module."""
+
+    ok = True
+    for module_name in RUNTIME_MODULES:
+        try:
+            runtime_module = importlib.import_module(module_name)
+        except Exception as exc:
+            ok = False
+            logger = getattr(server_module, "logger", None) or _logger()
+            if logger is not None:
+                logger.warning("Failed to import runtime bridge %s: %s", module_name, exc)
+            continue
+
+        register = getattr(runtime_module, "_register", None)
+        if callable(register):
+            try:
+                if register(server_module) is False:
+                    ok = False
+            except Exception as exc:
+                ok = False
+                logger = getattr(server_module, "logger", None) or _logger()
+                if logger is not None:
+                    logger.warning("Failed to register runtime bridge %s: %s", module_name, exc)
+
+    if ok:
+        setattr(sys, IMPORT_MARKER, True)
+    _move_root_static_mount_to_end(server_module)
+    return ok
+
+
+def _server_module_for_app(app: Any) -> ModuleType | None:
+    for module in _server_candidates():
+        if getattr(module, "app", None) is app:
+            return module
+    return None
 
 
 def _patch_fastapi_mount() -> None:
@@ -86,9 +185,12 @@ def _patch_fastapi_mount() -> None:
     original_mount = current_mount
 
     def mount_with_runtime_bridges(self: Any, path: str, *args: Any, **kwargs: Any):
-        if not os.environ.get("PPT_STUDIO_DISABLE_RUNTIME_BOOTSTRAP"):
-            # Import bridge modules before the static catch-all mount is added.
-            _import_runtime_modules()
+        if not os.environ.get("PPT_STUDIO_DISABLE_RUNTIME_BOOTSTRAP") and str(path) in {"", "/"}:
+            server_module = _server_module_for_app(self)
+            if server_module is not None:
+                install_for_server_module(server_module)
+            else:
+                _import_runtime_modules()
         return original_mount(self, path, *args, **kwargs)
 
     setattr(mount_with_runtime_bridges, MOUNT_PATCH_MARKER, True)
@@ -106,11 +208,9 @@ def install_when_server_ready() -> None:
     def worker() -> None:
         started_at = time.monotonic()
         while not os.environ.get("PPT_STUDIO_DISABLE_RUNTIME_BOOTSTRAP"):
-            if _server_candidates():
-                # Fallback for non-standard apps that do not call FastAPI.mount.
-                # In normal server.py startup, the mount patch above imports the
-                # bridges at the safer pre-static-mount point.
-                if getattr(sys, IMPORT_MARKER, False):
+            for server_module in _server_candidates():
+                install_for_server_module(server_module)
+                if runtime_paths_ready(server_module):
                     return
             if time.monotonic() - started_at > INSTALL_TIMEOUT_SEC:
                 logger = _logger()

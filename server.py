@@ -6778,6 +6778,13 @@ def get_final_video(project_id: str, db: Session = Depends(get_db)):
 static_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "static"))
 os.makedirs(static_dir, exist_ok=True)
 
+try:
+    import runtime_bootstrap
+
+    runtime_bootstrap.install_for_server_module(sys.modules[__name__])
+except Exception as exc:
+    logger.warning("Runtime bridge bootstrap failed before static mount: %s", exc)
+
 # 挂载静态资源
 app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 

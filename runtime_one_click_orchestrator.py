@@ -482,7 +482,7 @@ def _install_injection(app: Any, server_module: ModuleType) -> None:
         except Exception:
             return response
         if "one_click_extension.js" not in body and "</body>" in body:
-            body = body.replace("</body>", '  <script src="one_click_extension.js?v=1.0.1"></script>\n</body>')
+            body = body.replace("</body>", '  <script src="one_click_extension.js?v=20260626.1"></script>\n</body>')
         from starlette.responses import Response
         headers = dict(response.headers)
         headers.pop("content-length", None)

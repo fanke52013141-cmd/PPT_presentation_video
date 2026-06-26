@@ -467,7 +467,7 @@ def _install_injection(app: Any) -> None:
         except Exception:
             return response
         if "project_profile_extension.js" not in body and "</body>" in body:
-            body = body.replace("</body>", '  <script src="project_profile_extension.js?v=1.1.0"></script>\n</body>')
+            body = body.replace("</body>", '  <script src="project_profile_extension.js?v=20260626.1"></script>\n</body>')
         from starlette.responses import Response
         headers = dict(response.headers)
         headers.pop("content-length", None)

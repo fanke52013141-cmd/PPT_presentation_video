@@ -433,7 +433,7 @@ def _install_injection(app: Any) -> None:
         except Exception:
             return response
         if "ai_mask_extension.js" not in body and "</body>" in body:
-            body = body.replace("</body>", '  <script src="ai_mask_extension.js?v=1.0.0"></script>\n</body>')
+            body = body.replace("</body>", '  <script src="ai_mask_extension.js?v=20260626.1"></script>\n</body>')
         headers = dict(response.headers)
         headers.pop("content-length", None)
         return Response(body, status_code=response.status_code, headers=headers, media_type="text/html")

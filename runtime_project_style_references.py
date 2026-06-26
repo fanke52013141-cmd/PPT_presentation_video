@@ -1,8 +1,12 @@
-"""Project-local image style reference generation.
+"""Project-local image style reference generation and Step 3 integration.
 
 This bridge turns Project Profile `sample_reference_image_prompts` into 1-3
 project-local PNG reference images. The generated images are stored under the
 run's planning directory and tracked by planning/project_style_references.json.
+
+It also prepends project-aware Step 3 routes so the local UI uses the project
+Profile image style in prompt previews and sends project-local reference PNGs to
+compatible image-generation models.
 
 The feature is intentionally project-scoped: it does not overwrite global
 config/style_tokens.yaml or global image-style reference images.
@@ -22,6 +26,7 @@ from types import ModuleType
 from typing import Any
 
 PATCH_MARKER = "__ppt_project_style_references_patch__"
+STEP3_ROUTES_MARKER = "__ppt_project_style_references_step3_routes__"
 REFERENCE_DIRNAME = "style_references"
 REFERENCE_MANIFEST = "project_style_references.json"
 
@@ -160,6 +165,29 @@ def _load_manifest(project: Any, project_id: str) -> dict[str, Any]:
     }
 
 
+def _project_reference_paths(project: Any) -> list[str]:
+    manifest = _read_json(_manifest_path(project), {})
+    refs_dir = _references_dir(project)
+    candidates: list[Path] = []
+    if isinstance(manifest, dict) and isinstance(manifest.get("images"), list):
+        for item in manifest["images"]:
+            if not isinstance(item, dict):
+                continue
+            filename = _safe_text(item.get("filename"), 200)
+            if filename:
+                candidates.append(refs_dir / filename)
+    if not candidates and refs_dir.exists():
+        candidates = sorted(refs_dir.glob("style_reference_*.png"))[:3]
+    result: list[str] = []
+    for path in candidates[:3]:
+        try:
+            if path.exists() and path.is_file():
+                result.append(str(path))
+        except OSError:
+            continue
+    return result
+
+
 def _update_prompt_companion(project: Any, manifest: dict[str, Any]) -> None:
     companion_path = _run_dir(project) / "planning" / "project_profile_prompt_companion.json"
     companion = _read_json(companion_path, {})
@@ -244,6 +272,255 @@ def _generate_reference_images(server_module: ModuleType, project: Any, project_
     return manifest
 
 
+def _profile_style_prompt(project: Any, server_module: ModuleType) -> str:
+    image_style = _profile_image_style(project)
+    fallback = ""
+    try:
+        fallback = server_module.build_image_style_prompt(server_module.read_style_tokens_data())
+    except Exception:
+        fallback = ""
+    if not image_style:
+        return fallback
+
+    lines = [
+        "Project Profile 图片风格（优先级高于全局图片风格模板）：",
+    ]
+    for label, key in [
+        ("来源", "source"),
+        ("风格名称", "style_name"),
+        ("风格摘要", "style_summary"),
+        ("用户补充要求", "custom_requirement"),
+    ]:
+        value = _safe_text(image_style.get(key), 2000)
+        if value:
+            lines.append(f"- {label}: {value}")
+    system_content = _safe_text(image_style.get("system_content"), 12000)
+    if system_content:
+        lines.append("- 生图 system content:")
+        lines.extend(f"  {line}" for line in system_content.splitlines() if line.strip())
+    visual_language = image_style.get("visual_language")
+    if isinstance(visual_language, dict) and visual_language:
+        lines.append("- 结构化视觉语言:")
+        for key, value in visual_language.items():
+            if isinstance(value, list):
+                rendered = "、".join(str(item).strip() for item in value if str(item).strip())
+            elif isinstance(value, dict):
+                rendered = "；".join(f"{k}: {v}" for k, v in value.items() if str(v).strip())
+            else:
+                rendered = _safe_text(value, 1000)
+            if rendered:
+                lines.append(f"  - {key}: {rendered}")
+    for title, key in [("Mask 友好规则", "maskability_rules"), ("负向规则", "negative_prompt_rules")]:
+        values = image_style.get(key)
+        if isinstance(values, list) and values:
+            lines.append(f"- {title}:")
+            lines.extend(f"  - {str(item).strip()}" for item in values if str(item).strip())
+    if _project_reference_paths(project):
+        lines.append("- 本项目已有 1-3 张项目级风格参考图；兼容模型会把这些 PNG 作为 reference images 一起提交。")
+    lines.extend([
+        "- 不可覆盖规则：visual_draft.png 外背景必须保持纯白 #FFFFFF。",
+        "- 不可覆盖规则：最终视频背景不能画进生图。",
+        "- 不可覆盖规则：所有语义元素必须留出明显白色间隔，不能重叠、粘连或穿插。",
+    ])
+    if fallback:
+        lines.append("\n全局图片风格模板（仅作为 fallback，若与 Project Profile 冲突，以 Project Profile 为准）：")
+        lines.append(fallback)
+    return "\n".join(lines)
+
+
+def _project_generate_prompt_for_slide(server_module: ModuleType, project: Any, slide: dict[str, Any], topic_name: str) -> str:
+    style_prompt = _profile_style_prompt(project, server_module)
+    slide_id = _safe_text(slide.get("slide_id"), 100)
+    try:
+        elements_str = "\n".join(server_module.compact_slide_element_lines(slide)) or "- 无可用视觉元素"
+    except Exception:
+        elements_str = "- 无可用视觉元素"
+    return (
+        "整体风格提示词：\n"
+        f"{style_prompt}\n\n"
+        "单页生图任务：\n"
+        "- 生成一张 16:9 PPT 静态主图。\n"
+        "- 背景必须是纯白 #FFFFFF，四条边和四个角保持连续纯白。\n"
+        "- 如果请求附带项目级风格参考图，只把它作为整体风格、留白、层级、配色和密度参考；不要复制其中的具体内容。\n"
+        "- 只根据下面的元素清单组织画面；不要加入 narration、讲稿、制作说明或额外页面。\n"
+        "- 每个元素都要清晰分离，方便后续人工 Mask；元素之间不得重叠、穿插、压住或粘连。\n\n"
+        f"Slide ID: {slide_id}\n"
+        "元素清单（程序已从 Step 2B 精简）：\n"
+        f"{elements_str}"
+    )
+
+
+def _can_send_project_references(server_module: ModuleType, model: str, base_url: str | None, reference_paths: list[str]) -> bool:
+    if not reference_paths:
+        return False
+    try:
+        if callable(getattr(server_module, "is_seedream_image_model", None)) and server_module.is_seedream_image_model(model, base_url):
+            return False
+    except Exception:
+        return False
+    return str(model or "").startswith("gpt-image")
+
+
+def _insert_route_before_existing(app: Any, path: str, endpoint: Any, methods: list[str], name: str) -> None:
+    routes = app.router.routes
+    for route in routes:
+        if getattr(route, "name", "") == name:
+            return
+    method_set = {method.upper() for method in methods}
+    insert_index = len(routes)
+    for idx, route in enumerate(routes):
+        if getattr(route, "path", None) == path and method_set.intersection(set(getattr(route, "methods", set()) or set())):
+            insert_index = idx
+            break
+    app.add_api_route(path, endpoint, methods=methods, name=name)
+    new_route = routes.pop()
+    routes.insert(insert_index, new_route)
+
+
+def _install_step3_routes(server_module: ModuleType) -> None:
+    app = server_module.app
+    if getattr(app.state, STEP3_ROUTES_MARKER, False):
+        return
+    required = (
+        "Form", "Depends", "get_db", "Project", "HTTPException", "FileResponse",
+        "read_current_slide_ids_or_404", "get_setting", "get_openai_client",
+        "enforce_white_generation_background", "generate_image_response",
+        "extract_image_bytes_from_response", "process_and_save_image", "mark_slide_image_changed",
+    )
+    if not all(hasattr(server_module, name) for name in required):
+        return
+
+    def get_slide_prompts_with_project_style(project_id: str, db: Any = server_module.Depends(server_module.get_db)) -> dict[str, Any]:
+        project = db.query(server_module.Project).filter(server_module.Project.id == project_id).first()
+        if not project:
+            raise server_module.HTTPException(status_code=404, detail="项目不存在")
+        contract_path = _run_dir(project) / "planning" / "visual_contract.json"
+        if not contract_path.exists():
+            raise server_module.HTTPException(status_code=400, detail="分镜规划尚未生成")
+        contract = _read_json(contract_path, {})
+        topic = contract.get("topic") if isinstance(contract.get("topic"), dict) else {}
+        topic_name = topic.get("topic_name") or getattr(project, "name", "")
+        slide_prompts = []
+        for slide in contract.get("slides", []) if isinstance(contract.get("slides"), list) else []:
+            if not isinstance(slide, dict):
+                continue
+            slide_id = _safe_text(slide.get("slide_id"), 100)
+            if not slide_id:
+                continue
+            slide_prompts.append({
+                "slide_id": slide_id,
+                "title": slide.get("main_title") or slide_id,
+                "prompt": _project_generate_prompt_for_slide(server_module, project, slide, str(topic_name or "")),
+            })
+        return {"success": True, "prompts": slide_prompts}
+
+    def generate_slide_image_with_project_refs(
+        project_id: str,
+        slide_id: str = server_module.Form(...),
+        prompt: str = server_module.Form(...),
+        preview: bool = server_module.Form(False),
+        db: Any = server_module.Depends(server_module.get_db),
+    ) -> dict[str, Any]:
+        project = db.query(server_module.Project).filter(server_module.Project.id == project_id).first()
+        if not project:
+            raise server_module.HTTPException(status_code=404, detail="项目不存在")
+        if slide_id not in server_module.read_current_slide_ids_or_404(project):
+            raise server_module.HTTPException(status_code=404, detail="Slide 不存在")
+
+        api_key = server_module.get_setting("image_api_key")
+        base_url = server_module.get_setting("image_base_url")
+        model = server_module.get_setting("image_model", "gpt-image-1")
+        image_filename = "visual_candidate.png" if preview else "visual_draft.png"
+        save_path = _run_dir(project) / "slides" / slide_id / image_filename
+        if not api_key:
+            raise server_module.HTTPException(status_code=400, detail="未配置生图 API 密钥，请在系统设置中配置，或使用下方本地上传图片功能。")
+
+        try:
+            client = server_module.get_openai_client(api_key=api_key, base_url=base_url)
+            image_size = server_module.get_setting("image_size", "1024x1024")
+            effective_prompt = server_module.enforce_white_generation_background(prompt)
+            response = None
+            project_reference_paths = _project_reference_paths(project)
+            if _can_send_project_references(server_module, model, base_url, project_reference_paths):
+                reference_files = []
+                try:
+                    reference_files = [open(path, "rb") for path in project_reference_paths]
+                    response = client.images.edit(
+                        model=model,
+                        image=reference_files,
+                        prompt=effective_prompt,
+                        size=image_size,
+                        n=1,
+                    )
+                    try:
+                        server_module.write_project_log(
+                            project,
+                            "step3_project_style_references_used",
+                            slide_id=slide_id,
+                            reference_count=len(project_reference_paths),
+                            model=model,
+                        )
+                    except Exception:
+                        pass
+                except Exception as reference_error:
+                    try:
+                        server_module.logger.warning(
+                            "Project style reference generation unavailable for %s, falling back to normal image generation: %s",
+                            slide_id,
+                            reference_error,
+                        )
+                    except Exception:
+                        pass
+                finally:
+                    for reference_file in reference_files:
+                        reference_file.close()
+
+            if response is None:
+                response = server_module.generate_image_response(
+                    client=client,
+                    model=model,
+                    prompt=effective_prompt,
+                    size=image_size,
+                    base_url=base_url,
+                )
+            img_bytes = server_module.extract_image_bytes_from_response(response)
+            server_module.process_and_save_image(img_bytes, str(save_path))
+            if preview:
+                return {
+                    "success": True,
+                    "candidate_url": f"/api/projects/{project_id}/slides/{slide_id}/candidate?t={uuid.uuid4().hex[:6]}",
+                    "used_project_style_references": bool(response is not None and project_reference_paths),
+                }
+            server_module.mark_slide_image_changed(project, slide_id, db)
+            return {
+                "success": True,
+                "image_url": f"/api/projects/{project_id}/slides/{slide_id}/image?t={uuid.uuid4().hex[:6]}",
+                "used_project_style_references": bool(project_reference_paths),
+            }
+        except Exception as exc:
+            try:
+                server_module.logger.error("Image generation error for %s: %s", slide_id, exc)
+            except Exception:
+                pass
+            raise server_module.HTTPException(status_code=500, detail=f"生成图片失败: {exc}") from exc
+
+    _insert_route_before_existing(
+        app,
+        "/api/projects/{project_id}/steps/3/prompts",
+        get_slide_prompts_with_project_style,
+        ["GET"],
+        "get_slide_prompts_with_project_style",
+    )
+    _insert_route_before_existing(
+        app,
+        "/api/projects/{project_id}/steps/3/generate",
+        generate_slide_image_with_project_refs,
+        ["POST"],
+        "generate_slide_image_with_project_refs",
+    )
+    setattr(app.state, STEP3_ROUTES_MARKER, True)
+
+
 def _register(server_module: ModuleType) -> bool:
     if getattr(server_module, PATCH_MARKER, False):
         return True
@@ -279,6 +556,10 @@ def _register(server_module: ModuleType) -> bool:
     app.add_api_route("/api/projects/{project_id}/project-profile/image-style/reference-images", list_reference_images, methods=["GET"])
     app.add_api_route("/api/projects/{project_id}/project-profile/image-style/reference-images/generate", generate_reference_images, methods=["POST"])
     app.add_api_route("/api/projects/{project_id}/project-profile/image-style/reference-images/{index}", get_reference_image, methods=["GET"])
+    try:
+        _install_step3_routes(server_module)
+    except Exception:
+        pass
     setattr(server_module, PATCH_MARKER, True)
     return True
 

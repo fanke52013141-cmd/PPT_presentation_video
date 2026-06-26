@@ -93,6 +93,8 @@
       .project-profile-ai-style-preview { display: none; margin-top: .65rem; padding: .7rem; border: 1.5px dashed #111; border-radius: 12px; background: #f9fbff; font-size: .86rem; line-height: 1.5; }
       .project-profile-ai-style-preview strong { display: block; margin-bottom: .25rem; }
       .project-profile-ai-style-preview code { white-space: pre-wrap; display: block; max-height: 150px; overflow: auto; background: #fff; padding: .45rem; border-radius: 8px; margin-top: .45rem; }
+      .project-profile-ref-toggle { margin-top: .55rem; padding: .55rem .65rem; border: 1px solid #111; border-radius: 12px; background: #fff; font-weight: 700; }
+      .project-profile-ref-toggle input { width: auto; margin-right: .4rem; }
       @media (max-width: 980px) { .project-profile-grid, .project-profile-mode-grid { grid-template-columns: 1fr; } .project-profile-ai-actions { align-items: stretch; flex-direction: column; } }
     `;
     document.head.appendChild(style);
@@ -154,6 +156,11 @@
               <button id="btn-project-profile-generate-image-style" class="secondary" type="button">AI 生成图片风格草案</button>
               <span class="project-profile-note">生成后会保存为结构化 image_style_profile。</span>
             </div>
+            <label class="project-profile-ref-toggle">
+              <input id="project-profile-generate-style-references" type="checkbox" checked>
+              创建项目后自动生成 1-3 张风格参考图
+            </label>
+            <p class="project-profile-note">参考图保存在当前项目 planning/style_references/，不覆盖全局图片风格参考图。</p>
             <div id="project-profile-ai-style-preview" class="project-profile-ai-style-preview"></div>
           </section>
           <section class="project-profile-section">
@@ -208,11 +215,13 @@
     if (!preview || !style) return;
     const visualLanguage = style.visual_language || {};
     const palette = Array.isArray(visualLanguage.color_palette) ? visualLanguage.color_palette.join(' / ') : '';
+    const samples = Array.isArray(style.sample_reference_image_prompts) ? style.sample_reference_image_prompts.length : 0;
     preview.style.display = 'block';
     preview.innerHTML = `
       <strong>${esc(style.style_name || 'AI 生成图片风格')}</strong>
       <div>${esc(style.style_summary || '')}</div>
       ${palette ? `<div>Palette: ${esc(palette)}</div>` : ''}
+      ${samples ? `<div>参考图 Prompt：${samples} 条</div>` : ''}
       <code>${esc(style.system_content || '')}</code>
     `;
   }
@@ -254,6 +263,19 @@
         button.textContent = originalText;
       }
     }
+  }
+
+  function shouldGenerateStyleReferences(profile) {
+    const checkbox = document.getElementById('project-profile-generate-style-references');
+    if (!checkbox?.checked) return false;
+    const imageStyle = profile?.image_style_profile || {};
+    return imageStyle.source === 'ai_text_generated' || Array.isArray(imageStyle.sample_reference_image_prompts);
+  }
+
+  async function generateProjectStyleReferences(projectId, profile) {
+    if (!shouldGenerateStyleReferences(profile)) return null;
+    const targetCount = Math.max(1, Math.min(3, Number(profile.image_style_profile?.reference_image_count_target || 3)));
+    return apiPost(`/api/projects/${projectId}/project-profile/image-style/reference-images/generate`, { count: targetCount });
   }
 
   function bindModalEvents() {
@@ -355,14 +377,26 @@
       if (!project?.id) throw new Error('项目创建成功但未返回 project.id');
       const profile = collectProfile();
       await apiPut(`/api/projects/${project.id}/project-profile`, { profile });
+      let referenceCount = 0;
+      if (shouldGenerateStyleReferences(profile)) {
+        if (button) button.textContent = '生成风格参考图...';
+        try {
+          const referenceResult = await generateProjectStyleReferences(project.id, profile);
+          referenceCount = referenceResult?.references?.images?.length || 0;
+        } catch (error) {
+          toast(`⚠️ 项目已创建，但风格参考图生成失败：${error.message}`, 7000);
+        }
+      }
       if (article) {
+        if (button) button.textContent = '导入文章...';
         const form = new FormData();
         form.append('content', article);
         await apiPost(`/api/projects/${project.id}/steps/1/import`, form);
       }
       document.getElementById('modal-create').style.display = 'none';
       const modeLabel = profile.automation_mode === 'auto' ? '全自动模式' : '手动审核模式';
-      toast(`🎉 项目已创建，并保存 Project Profile（${modeLabel}）。`, 4500);
+      const refText = referenceCount ? `，并生成 ${referenceCount} 张风格参考图` : '';
+      toast(`🎉 项目已创建，并保存 Project Profile（${modeLabel}）${refText}。`, 4500);
       if (window.enterWorkspace) window.enterWorkspace(project.id);
       else location.reload();
     } finally {

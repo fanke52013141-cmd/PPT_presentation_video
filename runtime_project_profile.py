@@ -15,6 +15,7 @@ import sys
 import threading
 import time
 from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -23,6 +24,7 @@ PATCH_MARKER = "__ppt_project_profile_runtime_patch__"
 INJECT_MARKER = "__ppt_project_profile_inject_patch__"
 PROFILE_FILENAME = "project_profile.json"
 PROFILE_VERSION = "project_profile_v1"
+AI_IMAGE_STYLE_SOURCE = "ai_text_generated"
 
 BUILT_IN_STORYBOARD_TEMPLATES = [
     {
@@ -98,8 +100,14 @@ DEFAULT_PROFILE: dict[str, Any] = {
         "source": "template",
         "template_id": "handdrawn_ppt_sticker",
         "template_name": "手绘 PPT 贴纸风",
+        "style_name": "手绘 PPT 贴纸风",
+        "style_summary": "黑色手绘线条、柔和色块、贴纸式元素，适合知识讲解和 Mask reveal。",
         "custom_requirement": "",
         "system_content": "Use clean hand-drawn PPT sticker style. Keep visual_draft.png on pure-white #FFFFFF outer canvas. Keep all visual elements separated for Mask reveal.",
+        "visual_language": {},
+        "maskability_rules": [],
+        "negative_prompt_rules": [],
+        "sample_reference_image_prompts": [],
         "reference_image_count_target": 0,
     },
     "background_profile": {
@@ -116,6 +124,12 @@ DEFAULT_PROFILE: dict[str, Any] = {
         "pause_on_render_failure": True,
     },
 }
+
+PRODUCTION_INVARIANTS = [
+    "visual_draft.png must keep a pure-white #FFFFFF outer canvas for AI Mask and manual Mask.",
+    "Final video background is configured separately and must not be baked into generated slide images.",
+    "Visual elements should not touch, overlap, or stick together; leave clear white gaps for Mask reveal.",
+]
 
 
 def _write_json(path: Path, value: dict[str, Any]) -> None:
@@ -166,6 +180,91 @@ def _safe_int(value: Any, default: int = 0, minimum: int = 0, maximum: int = 3) 
     return max(minimum, min(maximum, parsed))
 
 
+def _safe_list(value: Any, limit: int = 12) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    for item in value:
+        text = _safe_text(item, 500)
+        if text:
+            result.append(text)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def _safe_dict(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, Any] = {}
+    for key, item in value.items():
+        key_text = _safe_text(key, 80)
+        if not key_text:
+            continue
+        if isinstance(item, list):
+            result[key_text] = _safe_list(item, 12)
+        elif isinstance(item, dict):
+            result[key_text] = {str(k)[:80]: _safe_text(v, 500) for k, v in item.items()}
+        else:
+            result[key_text] = _safe_text(item, 1000)
+    return result
+
+
+def _merge_required_rules(rules: list[str]) -> list[str]:
+    merged = list(rules)
+    required = [
+        "Generated slide images must use a flat pure-white #FFFFFF outer background.",
+        "Keep all semantic visual groups separated by clear white gaps for Mask reveal.",
+        "Do not bake final-video background color or image into visual_draft.png.",
+    ]
+    for rule in required:
+        if rule not in merged:
+            merged.append(rule)
+    return merged
+
+
+def _build_system_content(style: dict[str, Any]) -> str:
+    visual = style.get("visual_language") if isinstance(style.get("visual_language"), dict) else {}
+    parts = [
+        f"Image style name: {style.get('style_name') or 'AI-generated reusable style'}.",
+        f"Style summary: {style.get('style_summary') or ''}",
+        "Visual language:",
+    ]
+    for key, value in visual.items():
+        parts.append(f"- {key}: {value}")
+    parts.extend([
+        "Production invariants:",
+        "- Generated slide images must use a flat pure-white #FFFFFF outer canvas.",
+        "- Keep visual elements separated; no touching, sticking, overlapping, or dense collage.",
+        "- Reserve lower subtitle-safe area where the project requires subtitles.",
+        "- Final video background is handled separately and must not appear in visual_draft.png.",
+        "Negative rules:",
+    ])
+    for rule in style.get("negative_prompt_rules") or []:
+        parts.append(f"- {rule}")
+    return "\n".join(part for part in parts if str(part).strip())
+
+
+def normalize_generated_image_style(value: Any, requirement: str = "") -> dict[str, Any]:
+    source = value if isinstance(value, dict) else {}
+    style = {
+        "source": AI_IMAGE_STYLE_SOURCE,
+        "template_id": "ai_generated",
+        "template_name": _safe_text(source.get("style_name") or "AI 生成图片风格", 80),
+        "style_name": _safe_text(source.get("style_name") or "AI 生成图片风格", 80),
+        "style_summary": _safe_text(source.get("style_summary") or source.get("summary") or requirement, 1000),
+        "custom_requirement": _safe_text(requirement or source.get("custom_requirement"), 4000),
+        "visual_language": _safe_dict(source.get("visual_language")),
+        "maskability_rules": _merge_required_rules(_safe_list(source.get("maskability_rules"), 16)),
+        "negative_prompt_rules": _safe_list(source.get("negative_prompt_rules"), 16),
+        "sample_reference_image_prompts": _safe_list(source.get("sample_reference_image_prompts"), 3),
+        "reference_image_count_target": _safe_int(source.get("reference_image_count_target"), 3, 0, 3),
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    style["system_content"] = _safe_text(source.get("system_content") or _build_system_content(style), 12000)
+    return style
+
+
 def normalize_profile(payload: Any) -> dict[str, Any]:
     source = payload.get("profile") if isinstance(payload, dict) and isinstance(payload.get("profile"), dict) else payload
     if not isinstance(source, dict):
@@ -189,17 +288,32 @@ def normalize_profile(payload: Any) -> dict[str, Any]:
     }
 
     image_style = source.get("image_style_profile") if isinstance(source.get("image_style_profile"), dict) else {}
+    image_source = str(image_style.get("source") or "template")[:60]
     image_template_id = str(image_style.get("template_id") or profile["image_style_profile"]["template_id"]).strip()
-    image_template = _template_by_id(BUILT_IN_IMAGE_STYLE_TEMPLATES, image_template_id) or BUILT_IN_IMAGE_STYLE_TEMPLATES[0]
-    profile["image_style_profile"] = {
-        "source": str(image_style.get("source") or "template")[:60],
-        "template_id": image_template["id"],
-        "template_name": image_template["name"],
-        "description": image_template.get("description", ""),
-        "custom_requirement": _safe_text(image_style.get("custom_requirement"), 4000),
-        "system_content": _safe_text(image_style.get("system_content") or image_template.get("system_content"), 12000),
-        "reference_image_count_target": _safe_int(image_style.get("reference_image_count_target"), 0, 0, 3),
-    }
+    image_template = _template_by_id(BUILT_IN_IMAGE_STYLE_TEMPLATES, image_template_id)
+    if image_source == AI_IMAGE_STYLE_SOURCE:
+        normalized_image_style = normalize_generated_image_style(
+            image_style,
+            _safe_text(image_style.get("custom_requirement"), 4000),
+        )
+    else:
+        image_template = image_template or BUILT_IN_IMAGE_STYLE_TEMPLATES[0]
+        normalized_image_style = {
+            "source": image_source,
+            "template_id": image_template["id"],
+            "template_name": image_template["name"],
+            "style_name": _safe_text(image_style.get("style_name") or image_template["name"], 80),
+            "style_summary": _safe_text(image_style.get("style_summary") or image_template.get("description"), 1000),
+            "description": image_template.get("description", ""),
+            "custom_requirement": _safe_text(image_style.get("custom_requirement"), 4000),
+            "system_content": _safe_text(image_style.get("system_content") or image_template.get("system_content"), 12000),
+            "visual_language": _safe_dict(image_style.get("visual_language")),
+            "maskability_rules": _safe_list(image_style.get("maskability_rules"), 16),
+            "negative_prompt_rules": _safe_list(image_style.get("negative_prompt_rules"), 16),
+            "sample_reference_image_prompts": _safe_list(image_style.get("sample_reference_image_prompts"), 3),
+            "reference_image_count_target": _safe_int(image_style.get("reference_image_count_target"), 0, 0, 3),
+        }
+    profile["image_style_profile"] = normalized_image_style
 
     background = source.get("background_profile") if isinstance(source.get("background_profile"), dict) else {}
     mode = "image" if str(background.get("mode") or "solid").strip().lower() == "image" else "solid"
@@ -237,11 +351,8 @@ def _apply_prompt_companion(project: Any, profile: dict[str, Any]) -> None:
         "storyboard_methodology": profile.get("storyboard_profile", {}).get("methodology", ""),
         "image_style_system_content": profile.get("image_style_profile", {}).get("system_content", ""),
         "image_style_custom_requirement": profile.get("image_style_profile", {}).get("custom_requirement", ""),
-        "production_invariants": [
-            "visual_draft.png must keep a pure-white #FFFFFF outer canvas for AI Mask and manual Mask.",
-            "Final video background is configured separately and must not be baked into generated slide images.",
-            "Visual elements should not touch, overlap, or stick together; leave clear white gaps for Mask reveal.",
-        ],
+        "image_style_profile": profile.get("image_style_profile", {}),
+        "production_invariants": PRODUCTION_INVARIANTS,
     }
     _write_json(run_dir / "planning" / "project_profile_prompt_companion.json", companion)
 
@@ -258,6 +369,90 @@ def read_profile(project: Any) -> dict[str, Any]:
     return normalize_profile(_read_json(_profile_path(project), DEFAULT_PROFILE))
 
 
+def _clean_json_markdown(text: str) -> str:
+    value = str(text or "").strip()
+    if value.startswith("```"):
+        value = re.sub(r"^```(?:json)?\s*", "", value, flags=re.I).strip()
+        value = re.sub(r"\s*```$", "", value).strip()
+    start = value.find("{")
+    end = value.rfind("}")
+    if start >= 0 and end > start:
+        return value[start : end + 1]
+    return value
+
+
+def _generate_image_style_with_llm(server_module: ModuleType, payload: dict[str, Any]) -> dict[str, Any]:
+    requirement = _safe_text(payload.get("requirement") or payload.get("custom_requirement"), 4000)
+    if not requirement:
+        raise server_module.HTTPException(status_code=400, detail="请先输入图片风格需求")
+
+    get_setting = getattr(server_module, "get_setting", None)
+    if not callable(get_setting):
+        raise server_module.HTTPException(status_code=500, detail="当前服务无法读取 LLM 设置")
+    api_key = _safe_text(get_setting("llm_api_key"), 4000)
+    model = _safe_text(get_setting("llm_model"), 200)
+    base_url = _safe_text(get_setting("llm_base_url"), 1000) or None
+    if not api_key or not model:
+        raise server_module.HTTPException(status_code=400, detail="请先在系统设置中配置文本模型 API Key 和模型名称")
+
+    base_template = payload.get("base_template") if isinstance(payload.get("base_template"), dict) else {}
+    project_context = _safe_text(payload.get("project_context"), 2000)
+    system_prompt = """
+你是 PPT 视频系统的图片风格设计专家。
+你的任务是根据用户的文字需求，生成一套可复用的图片风格配置，用于批量生成 16:9 slide visual_draft.png。
+必须遵守生产不变量：visual_draft.png 外背景永远是纯白 #FFFFFF；最终视频背景单独合成；元素之间必须分离、不能粘连、不能重叠，方便后续 AI Mask 和手动 Mask reveal。
+只输出 JSON，不要输出解释文字。
+""".strip()
+    output_schema = {
+        "style_name": "中文风格名称",
+        "style_summary": "一句话说明适合的内容、受众和观感",
+        "system_content": "给生图模型使用的英文风格 system content，必须包含 pure-white outer canvas、separated elements、no overlapping、no texture background 等生产约束",
+        "visual_language": {
+            "line_style": "线条风格",
+            "shape_language": "形状语言",
+            "color_palette": ["#FFFFFF", "#..."],
+            "texture": "纹理/材质要求",
+            "layout_density": "布局密度",
+            "typography": "标题和短标签风格",
+            "composition": "构图规则",
+        },
+        "maskability_rules": ["方便 Mask reveal 的正向规则"],
+        "negative_prompt_rules": ["必须避免的内容"],
+        "sample_reference_image_prompts": ["可用于生成风格参考图的英文 prompt，最多 3 条"],
+    }
+    user_prompt = json.dumps(
+        {
+            "user_requirement": requirement,
+            "project_context": project_context,
+            "base_template": base_template,
+            "fixed_output_schema": output_schema,
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+    try:
+        client = server_module.get_openai_client(api_key=api_key, base_url=base_url, timeout=90.0, max_retries=1)
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.35,
+            max_tokens=2500,
+            timeout=90,
+        )
+        raw_content = str(response.choices[0].message.content or "").strip()
+        parsed = json.loads(_clean_json_markdown(raw_content))
+        return normalize_generated_image_style(parsed, requirement)
+    except json.JSONDecodeError as exc:
+        raise server_module.HTTPException(status_code=500, detail=f"AI 返回的图片风格 JSON 解析失败: {exc}") from exc
+    except server_module.HTTPException:
+        raise
+    except Exception as exc:
+        raise server_module.HTTPException(status_code=500, detail=f"AI 生成图片风格失败: {exc}") from exc
+
+
 def _install_injection(app: Any) -> None:
     if getattr(app.state, INJECT_MARKER, False):
         return
@@ -272,7 +467,7 @@ def _install_injection(app: Any) -> None:
         except Exception:
             return response
         if "project_profile_extension.js" not in body and "</body>" in body:
-            body = body.replace("</body>", '  <script src="project_profile_extension.js?v=1.0.0"></script>\n</body>')
+            body = body.replace("</body>", '  <script src="project_profile_extension.js?v=1.1.0"></script>\n</body>')
         from starlette.responses import Response
         headers = dict(response.headers)
         headers.pop("content-length", None)
@@ -300,6 +495,10 @@ def _register(server_module: ModuleType) -> bool:
             ],
         }
 
+    def generate_image_style(payload: dict[str, Any]) -> dict[str, Any]:
+        style = _generate_image_style_with_llm(server_module, payload if isinstance(payload, dict) else {})
+        return {"success": True, "style": style}
+
     def get_profile(project_id: str, db: Any = server_module.Depends(server_module.get_db)) -> dict[str, Any]:
         project = db.query(server_module.Project).filter(server_module.Project.id == project_id).first()
         if not project:
@@ -318,6 +517,7 @@ def _register(server_module: ModuleType) -> bool:
         return {"success": True, "profile": profile}
 
     app.add_api_route("/api/project-profile/templates", get_templates, methods=["GET"])
+    app.add_api_route("/api/project-profile/image-style/generate", generate_image_style, methods=["POST"])
     app.add_api_route("/api/projects/{project_id}/project-profile", get_profile, methods=["GET"])
     app.add_api_route("/api/projects/{project_id}/project-profile", put_profile, methods=["PUT", "POST"])
     try:

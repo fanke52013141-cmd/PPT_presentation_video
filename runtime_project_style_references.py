@@ -297,7 +297,7 @@ def _install_when_ready() -> None:
                 except Exception:
                     return
             time.sleep(0.1)
-    threading.Thread(target="ppt-project-style-references-runtime", target=worker, daemon=True).start()
+    threading.Thread(name="ppt-project-style-references-runtime", target=worker, daemon=True).start()
 
 
 _install_when_ready()

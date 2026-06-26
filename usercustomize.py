@@ -101,4 +101,10 @@ except Exception:
     # Optional storyboard background routes/UI must never prevent the local app from starting.
     pass
 
+try:
+    import runtime_storyboard_background_render  # noqa: F401
+except Exception:
+    # Optional final-video background postprocessing must never prevent startup.
+    pass
+
 _install_remotion_entrypoint_patch()

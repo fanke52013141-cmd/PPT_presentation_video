@@ -95,8 +95,6 @@
       .one-click-pill.running { background: #eaf2ff; }
       .one-click-pill.done { background: #e9ffe9; }
       .one-click-pill.failed, .one-click-pill.paused { background: #ffe9e9; }
-      .one-click-progress { height: 8px; border: 1px solid #111; border-radius: 999px; overflow: hidden; background: #fff; margin-top: .45rem; }
-      .one-click-progress span { display: block; height: 100%; background: #111; width: 0%; }
       @media (max-width: 860px) { .one-click-stage-list { grid-template-columns: 1fr; } }
     `;
     document.head.appendChild(style);
@@ -111,9 +109,9 @@
     modal.innerHTML = `
       <div class="modal-content one-click-modal">
         <h3 class="highlight-title">一键生成</h3>
-        <p class="one-click-note">V1 会串联已有步骤：分镜、图片、AI Mask、演讲稿、TTS、渲染。失败时暂停并保留当前步骤状态，用户可以回到对应步骤修复后再次点击继续。</p>
+        <p class="one-click-note">V1 会串联已有步骤：分镜、图片、AI Mask、演讲稿、TTS、渲染。失败时暂停并保留阶段状态；修复后可重新运行自动生成，系统会复用已存在且未过期的产物。</p>
         <div class="one-click-toolbar">
-          <button id="btn-one-click-start" class="success" type="button">开始 / 继续一键生成</button>
+          <button id="btn-one-click-start" class="success" type="button">重新运行自动生成</button>
           <button id="btn-one-click-refresh" class="secondary" type="button">刷新状态</button>
           <button id="btn-one-click-close" class="secondary" type="button">关闭</button>
         </div>
@@ -160,7 +158,6 @@
     `;
     const list = Array.isArray(status?.stages) ? status.stages : [];
     stages.innerHTML = list.map(stage => {
-      const progress = Math.round(Number(stage.progress || 0) * 100);
       const errors = Array.isArray(stage.blocking_errors) && stage.blocking_errors.length ? `<small>错误：${esc(stage.blocking_errors.join(' / '))}</small>` : '';
       const warnings = Array.isArray(stage.warnings) && stage.warnings.length ? `<small>警告：${esc(stage.warnings.join(' / '))}</small>` : '';
       return `
@@ -168,7 +165,6 @@
           <strong>${esc(stage.title || stage.id)} <span class="one-click-pill ${esc(stage.status || 'pending')}">${esc(stage.status || 'pending')}</span></strong>
           <small>${esc(stage.message || '')}</small>
           ${warnings}${errors}
-          <div class="one-click-progress"><span style="width:${progress}%"></span></div>
         </article>
       `;
     }).join('');
@@ -192,10 +188,10 @@
   async function startOneClick() {
     const projectId = activeProjectId();
     if (!projectId) return toast('当前没有可识别的项目，请先进入项目工作区。', 5000);
-    const confirmed = window.confirm('将自动串联生成分镜、图片、Mask、旁白、音频和视频。失败时会暂停在对应阶段。继续？');
+    const confirmed = window.confirm('将重新运行自动生成流程，并复用已存在且未过期的产物。失败时会暂停在对应阶段。继续？');
     if (!confirmed) return;
     const button = document.getElementById('btn-one-click-start');
-    const original = button?.textContent || '开始 / 继续一键生成';
+    const original = button?.textContent || '重新运行自动生成';
     if (button) {
       button.disabled = true;
       button.textContent = '启动中...';
@@ -203,7 +199,7 @@
     try {
       const result = await apiPost(`/api/projects/${projectId}/one-click-generate`, {});
       renderStatus(result.status || {});
-      toast(result.already_running ? '一键生成正在运行。' : '一键生成已启动。', 4000);
+      toast(result.already_running ? '一键生成正在运行。' : '自动生成已启动。', 4000);
       startPolling();
     } finally {
       if (button) {

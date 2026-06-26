@@ -26,6 +26,7 @@ IMAGE_NAME = "storyboard_background.png"
 PROMPT_START = "<!-- STORYBOARD_BACKGROUND_POLICY_START -->"
 PROMPT_END = "<!-- STORYBOARD_BACKGROUND_POLICY_END -->"
 DEFAULT_COLOR = "#FFFFFF"
+MAX_BACKGROUND_BYTES = 12 * 1024 * 1024
 
 
 def _read_json(path: Path, fallback: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -236,12 +237,20 @@ def _register(server_module: ModuleType) -> bool:
         project = db.query(server_module.Project).filter(server_module.Project.id == project_id).first()
         if not project:
             raise server_module.HTTPException(status_code=404, detail="项目不存在")
+        content_type = str(getattr(file, "content_type", "") or "").lower()
+        if content_type and not content_type.startswith("image/"):
+            raise server_module.HTTPException(status_code=400, detail="背景文件必须是图片")
         data = await file.read()
         if not data:
             raise server_module.HTTPException(status_code=400, detail="背景图片为空")
+        if len(data) > MAX_BACKGROUND_BYTES:
+            raise server_module.HTTPException(status_code=400, detail="背景图片超过 12MB，请压缩后再上传")
         run_dir = _run_dir(project)
         current = _read_config(run_dir, project.id)
-        image = _fit_image(data, (1920, 1080), str(current.get("image_fit") or "cover"))
+        try:
+            image = _fit_image(data, (1920, 1080), str(current.get("image_fit") or "cover"))
+        except Exception as exc:
+            raise server_module.HTTPException(status_code=400, detail=f"无法读取背景图片: {exc}") from exc
         _image_path(run_dir).parent.mkdir(parents=True, exist_ok=True)
         image.save(_image_path(run_dir), format="PNG")
         return {"success": True, "background": _apply(project, {**current, "mode": "image"})}
@@ -261,8 +270,10 @@ def _register(server_module: ModuleType) -> bool:
     app.add_api_route("/api/projects/{project_id}/storyboard-background/image", get_background_image, methods=["GET"])
     try:
         _install_injection(app)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger = getattr(server_module, "logger", None)
+        if logger:
+            logger.warning("Failed to install storyboard background UI injection: %s", exc)
     setattr(server_module, PATCH_MARKER, True)
     return True
 

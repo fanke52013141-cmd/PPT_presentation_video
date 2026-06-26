@@ -95,4 +95,10 @@ except Exception:
     # Optional AI Mask routes/UI must never prevent the local app from starting.
     pass
 
+try:
+    import runtime_storyboard_background  # noqa: F401
+except Exception:
+    # Optional storyboard background routes/UI must never prevent the local app from starting.
+    pass
+
 _install_remotion_entrypoint_patch()

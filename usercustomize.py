@@ -113,4 +113,10 @@ except Exception:
     # Optional Project Profile routes/UI must never prevent startup.
     pass
 
+try:
+    import runtime_project_style_references  # noqa: F401
+except Exception:
+    # Optional project-local style reference images must never prevent startup.
+    pass
+
 _install_remotion_entrypoint_patch()

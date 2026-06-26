@@ -5,6 +5,11 @@ The prompt builder keeps production invariants separate from visual style. Style
 profiles may change visual language, but they cannot override fixed generated
 image background, subtitle safety zone, title requirement, or maskability.
 
+Project Profile v1 is applied as an optional run-local style overlay. When a run
+contains planning/project_profile.json or planning/project_profile_prompt_companion.json,
+its image_style_profile is treated as more authoritative than the global
+config/style_tokens.yaml style profile, while production invariants remain fixed.
+
 The storyboard is intentionally narration-first: visual_groups are treated as
 post-design anchors for Mask/Reveal review, not as a rigid layout template.
 """
@@ -41,6 +46,16 @@ def read_json(path: Path) -> dict[str, Any]:
     return value
 
 
+def read_optional_json(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        value = json.loads(path.read_text(encoding="utf-8-sig"))
+    except Exception:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
 def read_yaml(path: Path, fallback: dict[str, Any] | None = None) -> dict[str, Any]:
     if not path.exists():
         return dict(fallback or {})
@@ -69,6 +84,15 @@ def compact_list(value: Any) -> str:
     if isinstance(value, list):
         return ", ".join(str(item).strip() for item in value if str(item).strip())
     return str(value or "").strip()
+
+
+def as_lines(value: Any, *, indent: str = "") -> list[str]:
+    if isinstance(value, list):
+        return [f"{indent}- {str(item).strip()}" for item in value if str(item).strip()]
+    text = str(value or "").strip()
+    if not text:
+        return []
+    return [f"{indent}{line}" for line in text.splitlines() if line.strip()]
 
 
 def compact_visual_element_lines(slide: dict[str, Any]) -> list[str]:
@@ -131,6 +155,81 @@ def style_profile_lines(style_tokens: dict[str, Any]) -> list[str]:
         accents = ", ".join(f"{key}={colors[key]}" for key in accent_keys if key in colors)
         if accents:
             lines.append(f"- Palette: {accents}")
+    return lines
+
+
+def load_project_image_style(run_dir: Path) -> dict[str, Any]:
+    planning_dir = run_dir / "planning"
+    companion = read_optional_json(planning_dir / "project_profile_prompt_companion.json")
+    image_style = companion.get("image_style_profile")
+    if isinstance(image_style, dict) and image_style:
+        return image_style
+
+    profile = read_optional_json(planning_dir / "project_profile.json")
+    image_style = profile.get("image_style_profile")
+    return image_style if isinstance(image_style, dict) else {}
+
+
+def project_image_style_lines(image_style: dict[str, Any]) -> list[str]:
+    if not isinstance(image_style, dict) or not image_style:
+        return []
+
+    lines: list[str] = [
+        "Project Profile image style overlay (authoritative over global style tokens when there is any conflict):"
+    ]
+    style_name = str(image_style.get("style_name") or image_style.get("template_name") or "").strip()
+    style_summary = str(image_style.get("style_summary") or image_style.get("description") or "").strip()
+    source = str(image_style.get("source") or "").strip()
+    custom_requirement = str(image_style.get("custom_requirement") or "").strip()
+    if style_name:
+        lines.append(f"- Style name: {style_name}")
+    if source:
+        lines.append(f"- Style source: {source}")
+    if style_summary:
+        lines.append(f"- Style summary: {style_summary}")
+    if custom_requirement:
+        lines.append(f"- User style requirement: {custom_requirement}")
+
+    system_content = str(image_style.get("system_content") or "").strip()
+    if system_content:
+        lines.append("- Image generation system content:")
+        lines.extend(f"  {line}" for line in system_content.splitlines() if line.strip())
+
+    visual_language = image_style.get("visual_language")
+    if isinstance(visual_language, dict) and visual_language:
+        lines.append("- Structured visual language:")
+        for key, value in visual_language.items():
+            if isinstance(value, list):
+                rendered = compact_list(value)
+            elif isinstance(value, dict):
+                rendered = "; ".join(f"{k}: {v}" for k, v in value.items() if str(v).strip())
+            else:
+                rendered = str(value or "").strip()
+            if rendered:
+                lines.append(f"  - {key}: {rendered}")
+
+    maskability_rules = image_style.get("maskability_rules")
+    if isinstance(maskability_rules, list) and maskability_rules:
+        lines.append("- Project Profile maskability rules:")
+        lines.extend(f"  - {str(rule).strip()}" for rule in maskability_rules if str(rule).strip())
+
+    negative_rules = image_style.get("negative_prompt_rules")
+    if isinstance(negative_rules, list) and negative_rules:
+        lines.append("- Project Profile negative prompt rules:")
+        lines.extend(f"  - {str(rule).strip()}" for rule in negative_rules if str(rule).strip())
+
+    sample_prompts = image_style.get("sample_reference_image_prompts")
+    if isinstance(sample_prompts, list) and sample_prompts:
+        lines.append("- Optional reference prompt examples for this style:")
+        lines.extend(f"  - {str(prompt).strip()}" for prompt in sample_prompts if str(prompt).strip())
+
+    lines.extend(
+        [
+            "- Non-overridable reminder: generated slide image outer background stays pure-white #FFFFFF.",
+            "- Non-overridable reminder: final-video background is applied later and must not be drawn into visual_draft.png.",
+            "- Non-overridable reminder: leave clear white gaps between semantic visual groups for AI Mask and manual Mask reveal.",
+        ]
+    )
     return lines
 
 
@@ -203,11 +302,23 @@ def build_prompt(
     policy: dict[str, Any],
     invariants: dict[str, Any],
     style_tokens: dict[str, Any],
+    project_style: dict[str, Any] | None = None,
 ) -> str:
     slide_id = str(slide.get("slide_id", "")).strip()
     elements = "\n".join(compact_visual_element_lines(slide)) or "- No visual elements provided."
     production_rules = "\n".join(production_invariant_lines(invariants, policy, slide))
-    style_rules = "\n".join(style_profile_lines(style_tokens)) or "- Use the active style reference images as the visual style source."
+    project_style_rules = project_image_style_lines(project_style or {})
+    global_style_rules = style_profile_lines(style_tokens)
+    combined_style_rules = []
+    if project_style_rules:
+        combined_style_rules.extend(project_style_rules)
+        if global_style_rules:
+            combined_style_rules.append("")
+            combined_style_rules.append("Global fallback style tokens; use only where they do not conflict with Project Profile:")
+            combined_style_rules.extend(global_style_rules)
+    else:
+        combined_style_rules = global_style_rules
+    style_rules = "\n".join(combined_style_rules) or "- Use the active style reference images as the visual style source."
 
     return f"""Use case: scientific-educational
 Asset type: 16:9 Image Gen full-slide master for reveal-layer video production
@@ -234,7 +345,7 @@ Mapping and mask guidance:
 - Do not place any content or decoration below y=930.
 - Do not overlap elements. Leave visible white space between text, icons, arrows, cards, labels, and decorative marks.
 
-Style profile; these are generalizable and may vary by active style:
+Style profile; Project Profile rules are authoritative when present:
 {style_rules}
 
 Creative freedom:
@@ -265,6 +376,7 @@ def write_prompts(run_dir: Path, style_tokens_path: Path, production_invariants_
     invariants = read_yaml(production_invariants_path, fallback={})
     policy = presentation_policy(planning)
     template_ref = extract_style_ref(style_tokens_path)
+    project_style = load_project_image_style(run_dir)
     count = 0
     for slide in slides:
         if not isinstance(slide, dict):
@@ -284,6 +396,7 @@ def write_prompts(run_dir: Path, style_tokens_path: Path, production_invariants_
                 policy=policy,
                 invariants=invariants,
                 style_tokens=style_tokens,
+                project_style=project_style,
             ),
             encoding="utf-8",
         )

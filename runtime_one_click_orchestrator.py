@@ -287,7 +287,32 @@ def _existing_style_refs(project: Any) -> list[Path]:
     return sorted(refs.glob("style_reference_*.png"))[:3] if refs.exists() else []
 
 
-def _ai_mask_quality_errors(result: dict[str, Any]) -> list[str]:
+def _has_manual_mask(group: Any) -> bool:
+    if not isinstance(group, dict):
+        return False
+    manual = group.get("manual_mask")
+    if not isinstance(manual, dict):
+        return False
+    strokes = manual.get("strokes")
+    return isinstance(strokes, list) and len(strokes) > 0
+
+
+def _existing_mask_count(project: Any) -> int:
+    manifest = _read_json(_run_dir(project) / "reveal_manifest.json", {})
+    if not isinstance(manifest, dict):
+        return 0
+    count = 0
+    for slide in manifest.get("slides", []) or []:
+        if not isinstance(slide, dict):
+            continue
+        for collection_name in ("groups", "semantic_blocks"):
+            for group in slide.get(collection_name, []) or []:
+                if _has_manual_mask(group):
+                    count += 1
+    return count
+
+
+def _ai_mask_quality_errors(result: dict[str, Any], existing_mask_count: int = 0) -> list[str]:
     errors: list[str] = []
     if not isinstance(result, dict):
         return ["AI Mask 返回结果不是有效对象"]
@@ -295,8 +320,8 @@ def _ai_mask_quality_errors(result: dict[str, Any]) -> list[str]:
     updated = _safe_int(result.get("updated_group_count"), 0)
     if processed == 0:
         errors.append("AI Mask 没有处理任何 slide")
-    if updated == 0:
-        errors.append("AI Mask 没有更新任何语块")
+    if updated == 0 and existing_mask_count <= 0:
+        errors.append("AI Mask 没有更新任何语块，且当前 manifest 中没有可复用的已有 Mask")
     top_warnings = result.get("warnings") if isinstance(result.get("warnings"), list) else []
     for warning in top_warnings[:5]:
         errors.append(f"AI Mask 警告：{_safe_text(warning, 200)}")
@@ -379,13 +404,14 @@ def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str) -> No
         if ai_mask.status_code == 404:
             ai_mask = client.post(f"/api/projects/{project_id}/steps/5/semantic-blocks", json={})
         result = _require_ok(ai_mask, "AI Mask")
-        quality_errors = _ai_mask_quality_errors(result)
+        existing_masks = _existing_mask_count(project)
+        quality_errors = _ai_mask_quality_errors(result, existing_masks)
         if quality_errors:
             for error in quality_errors:
                 _warn_stage(project, status, "ai_mask", error)
             if gates.get("pause_on_ai_mask_low_confidence", True):
                 raise RuntimeError("AI Mask 质量门暂停：" + "；".join(quality_errors[:5]))
-        _finish_stage(project, status, "ai_mask", "AI Mask 标注完成")
+        _finish_stage(project, status, "ai_mask", f"AI Mask 标注完成；可复用 Mask 数量：{existing_masks}")
 
         _start_stage(project, status, "mask_assets", "构建 Reveal 资源")
         manifest_payload = _require_ok(client.get(f"/api/projects/{project_id}/steps/5/result"), "Step 5 manifest")

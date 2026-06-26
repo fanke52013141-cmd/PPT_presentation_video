@@ -125,4 +125,10 @@ except Exception:
     # Optional project-local style reference image manager must never prevent startup.
     pass
 
+try:
+    import runtime_image_style_reverse  # noqa: F401
+except Exception:
+    # Optional image-to-style reverse engineering must never prevent startup.
+    pass
+
 _install_remotion_entrypoint_patch()

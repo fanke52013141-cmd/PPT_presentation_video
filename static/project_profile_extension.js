@@ -133,7 +133,7 @@
           <section class="project-profile-section">
             <h4>2. 生产模式</h4>
             <div class="project-profile-mode-grid">${optionCards(templates.automation_modes || [], 'automation_mode', 'manual_review')}</div>
-            <p class="project-profile-note">全自动模式在后续 Orchestrator 完成后会从内容自动跑到视频；失败或质量门不通过时暂停给用户处理。当前版本先保存该配置。</p>
+            <p class="project-profile-note">全自动模式会配合一键生成入口运行完整链路；失败或质量门不通过时暂停给用户处理。</p>
           </section>
           <section class="project-profile-section">
             <h4>3. 分镜风格</h4>

@@ -91,3 +91,11 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+try:
+    import runtime_bootstrap
+
+    runtime_bootstrap.install_when_server_ready()
+except Exception:
+    pass

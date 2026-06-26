@@ -29,12 +29,18 @@ jobs:
           node-version: "20"
 
       - name: Compile Python sources
-        run: python -m compileall -q server.py scripts checks
+        run: python -m compileall -q server.py scripts checks runtime_*.py
 
       - name: Check frontend JavaScript syntax
         run: |
           node --check static/app.js
           node --check static/flow.js
+          node --check static/ai_mask_extension.js
+          node --check static/project_profile_extension.js
+          node --check static/style_reference_manager_extension.js
+          node --check static/image_style_reverse_extension.js
+          node --check static/storyboard_background_extension.js
+          node --check static/one_click_extension.js
 
       - name: Run visible-flow contract check
         run: node checks/test_visible_flow.js

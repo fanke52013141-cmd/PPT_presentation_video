@@ -1,12 +1,13 @@
 """Runtime bridge bootstrap for PPT Visualization Studio.
 
-The runtime bridge modules add routes and UI injection around the large ``server.py``
+Runtime bridge modules add routes and UI injection around the large ``server.py``
 module. Relying on Python's optional ``usercustomize`` import is not sufficient for
-normal local launches, so this bootstrap is imported from ``database.py`` and waits
-briefly for the server module to expose its FastAPI app and project helpers.
+normal local launches.
 
-The loader is intentionally bounded and non-blocking. It only imports bridge modules
-when a server-like module is present in ``sys.modules``.
+This bootstrap is imported from ``database.py`` early during ``server.py`` import.
+It patches ``FastAPI.mount`` so the bridge modules are imported immediately before
+the final static catch-all mount is registered. That guarantees API routes are
+registered before ``app.mount("/", StaticFiles(...))`` can shadow them.
 """
 
 from __future__ import annotations
@@ -19,6 +20,8 @@ from types import ModuleType
 from typing import Any
 
 BOOTSTRAP_MARKER = "__ppt_runtime_bootstrap_started__"
+MOUNT_PATCH_MARKER = "__ppt_runtime_bootstrap_mount_patch__"
+IMPORT_MARKER = "__ppt_runtime_bridges_imported__"
 INSTALL_TIMEOUT_SEC = 120.0
 POLL_INTERVAL_SEC = 0.05
 
@@ -55,6 +58,8 @@ def _logger() -> Any:
 
 
 def _import_runtime_modules() -> bool:
+    if getattr(sys, IMPORT_MARKER, False):
+        return True
     ok = True
     for module_name in RUNTIME_MODULES:
         try:
@@ -64,7 +69,30 @@ def _import_runtime_modules() -> bool:
             logger = _logger()
             if logger is not None:
                 logger.warning("Failed to import runtime bridge %s: %s", module_name, exc)
+    if ok:
+        setattr(sys, IMPORT_MARKER, True)
     return ok
+
+
+def _patch_fastapi_mount() -> None:
+    try:
+        from fastapi import FastAPI
+    except Exception:
+        return
+
+    current_mount = getattr(FastAPI, "mount", None)
+    if current_mount is None or getattr(current_mount, MOUNT_PATCH_MARKER, False):
+        return
+    original_mount = current_mount
+
+    def mount_with_runtime_bridges(self: Any, path: str, *args: Any, **kwargs: Any):
+        if not os.environ.get("PPT_STUDIO_DISABLE_RUNTIME_BOOTSTRAP"):
+            # Import bridge modules before the static catch-all mount is added.
+            _import_runtime_modules()
+        return original_mount(self, path, *args, **kwargs)
+
+    setattr(mount_with_runtime_bridges, MOUNT_PATCH_MARKER, True)
+    FastAPI.mount = mount_with_runtime_bridges
 
 
 def install_when_server_ready() -> None:
@@ -73,17 +101,21 @@ def install_when_server_ready() -> None:
     if getattr(sys, BOOTSTRAP_MARKER, False):
         return
     setattr(sys, BOOTSTRAP_MARKER, True)
+    _patch_fastapi_mount()
 
     def worker() -> None:
         started_at = time.monotonic()
         while not os.environ.get("PPT_STUDIO_DISABLE_RUNTIME_BOOTSTRAP"):
             if _server_candidates():
-                _import_runtime_modules()
-                return
+                # Fallback for non-standard apps that do not call FastAPI.mount.
+                # In normal server.py startup, the mount patch above imports the
+                # bridges at the safer pre-static-mount point.
+                if getattr(sys, IMPORT_MARKER, False):
+                    return
             if time.monotonic() - started_at > INSTALL_TIMEOUT_SEC:
                 logger = _logger()
                 if logger is not None:
-                    logger.warning("Runtime bridge bootstrap did not find server app within %.0f seconds.", INSTALL_TIMEOUT_SEC)
+                    logger.warning("Runtime bridge bootstrap did not import bridges within %.0f seconds.", INSTALL_TIMEOUT_SEC)
                 return
             time.sleep(POLL_INTERVAL_SEC)
 

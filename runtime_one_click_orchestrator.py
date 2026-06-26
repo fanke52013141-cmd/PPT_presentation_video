@@ -44,6 +44,14 @@ STAGES = [
     ("render", "渲染视频"),
 ]
 
+DEFAULT_QUALITY_GATES = {
+    "pause_on_storyboard_validation_error": True,
+    "pause_on_image_generation_failure": True,
+    "pause_on_ai_mask_low_confidence": True,
+    "pause_on_tts_failure": True,
+    "pause_on_render_failure": True,
+}
+
 _RUNNING_LOCK = threading.Lock()
 _RUNNING: dict[str, threading.Thread] = {}
 
@@ -76,6 +84,10 @@ def _run_dir(project: Any) -> Path:
 
 def _status_path(project: Any) -> Path:
     return _run_dir(project) / "planning" / STATUS_FILENAME
+
+
+def _profile_path(project: Any) -> Path:
+    return _run_dir(project) / "planning" / "project_profile.json"
 
 
 def _initial_status(project_id: str, run_id: str) -> dict[str, Any]:
@@ -181,8 +193,10 @@ def _http_error(response: Any) -> str:
         payload = response.json()
     except Exception:
         payload = {}
-    detail = payload.get("detail") or payload.get("message") or payload.get("error") if isinstance(payload, dict) else ""
-    return _safe_text(detail or response.text or f"HTTP {response.status_code}", 3000)
+    detail = ""
+    if isinstance(payload, dict):
+        detail = payload.get("detail") or payload.get("message") or payload.get("error") or ""
+    return _safe_text(detail or getattr(response, "text", "") or f"HTTP {response.status_code}", 3000)
 
 
 def _require_ok(response: Any, label: str) -> dict[str, Any]:
@@ -211,17 +225,50 @@ def _slide_ids(project: Any) -> list[str]:
     return [str(slide.get("slide_id") or "").strip() for slide in slides if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()]
 
 
-def _missing_images(project: Any) -> list[str]:
-    missing = []
-    for slide_id in _slide_ids(project):
-        if not (_run_dir(project) / "slides" / slide_id / "visual_draft.png").exists():
-            missing.append(slide_id)
-    return missing
+def _mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def _upstream_image_inputs(project: Any, slide_id: str) -> list[Path]:
+    run_dir = _run_dir(project)
+    return [
+        run_dir / "planning" / "visual_contract.json",
+        run_dir / "planning" / "project_profile.json",
+        run_dir / "planning" / "project_profile_prompt_companion.json",
+        run_dir / "planning" / "project_style_references.json",
+        run_dir / "slides" / slide_id / "visual_prompt.md",
+    ]
+
+
+def _image_needs_generation(project: Any, slide_id: str) -> bool:
+    image_path = _run_dir(project) / "slides" / slide_id / "visual_draft.png"
+    if not image_path.exists():
+        return True
+    image_mtime = _mtime(image_path)
+    return any(_mtime(path) > image_mtime for path in _upstream_image_inputs(project, slide_id))
+
+
+def _slides_requiring_images(project: Any) -> list[str]:
+    return [slide_id for slide_id in _slide_ids(project) if _image_needs_generation(project, slide_id)]
+
+
+def _profile(project: Any) -> dict[str, Any]:
+    value = _read_json(_profile_path(project), {})
+    return value if isinstance(value, dict) else {}
+
+
+def _quality_gates(project: Any) -> dict[str, bool]:
+    gates = (_profile(project).get("quality_gates") or {})
+    if not isinstance(gates, dict):
+        gates = {}
+    return {key: bool(gates.get(key, default)) for key, default in DEFAULT_QUALITY_GATES.items()}
 
 
 def _profile_wants_style_refs(project: Any) -> bool:
-    profile = _read_json(_run_dir(project) / "planning" / "project_profile.json", {})
-    image_style = profile.get("image_style_profile") if isinstance(profile, dict) else {}
+    image_style = _profile(project).get("image_style_profile")
     if not isinstance(image_style, dict):
         return False
     return str(image_style.get("source") or "") == "ai_text_generated"
@@ -230,6 +277,29 @@ def _profile_wants_style_refs(project: Any) -> bool:
 def _existing_style_refs(project: Any) -> list[Path]:
     refs = _run_dir(project) / "planning" / "style_references"
     return sorted(refs.glob("style_reference_*.png"))[:3] if refs.exists() else []
+
+
+def _ai_mask_quality_errors(result: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    if not isinstance(result, dict):
+        return ["AI Mask 返回结果不是有效对象"]
+    processed = int(result.get("processed_slide_count") or result.get("processed") or 0)
+    updated = int(result.get("updated_group_count") or 0)
+    if processed == 0:
+        errors.append("AI Mask 没有处理任何 slide")
+    if updated == 0:
+        errors.append("AI Mask 没有更新任何语块")
+    for slide in result.get("slides", []) or []:
+        if not isinstance(slide, dict):
+            continue
+        slide_id = _safe_text(slide.get("slide_id"), 100) or "unknown slide"
+        unmatched_groups = int(slide.get("unmatched_group_count") or 0)
+        warnings = slide.get("warnings") if isinstance(slide.get("warnings"), list) else []
+        if unmatched_groups > 0:
+            errors.append(f"{slide_id} 有 {unmatched_groups} 个未匹配语块")
+        if warnings:
+            errors.append(f"{slide_id} 有 AI Mask 警告：{'; '.join(_safe_text(item, 200) for item in warnings[:3])}")
+    return errors
 
 
 def _client(server_module: ModuleType) -> Any:
@@ -246,6 +316,7 @@ def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str) -> No
             return
         status = _initial_status(project_id, run_id)
         _save_status(project, status)
+        gates = _quality_gates(project)
         client = _client(server_module)
 
         _start_stage(project, status, "preflight", "检查文章、配置和项目目录")
@@ -271,22 +342,22 @@ def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str) -> No
         else:
             _finish_stage(project, status, "style_references", "风格参考图已就绪或当前项目不需要自动生成")
 
-        _start_stage(project, status, "images", "生成缺失的 slide 图片")
+        _start_stage(project, status, "images", "生成缺失或过期的 slide 图片")
         prompts_payload = _require_ok(client.get(f"/api/projects/{project_id}/steps/3/prompts"), "Step 3 prompts")
         prompts_by_slide = {str(item.get("slide_id") or ""): str(item.get("prompt") or "") for item in prompts_payload.get("prompts", []) if isinstance(item, dict)}
-        missing = _missing_images(project)
+        requiring_images = _slides_requiring_images(project)
         generated = 0
-        for index, slide_id in enumerate(missing, start=1):
+        for index, slide_id in enumerate(requiring_images, start=1):
             prompt = prompts_by_slide.get(slide_id)
             if not prompt:
                 raise RuntimeError(f"缺少 {slide_id} 的生图 Prompt")
             item = _stage(status, "images")
-            item["progress"] = index / max(1, len(missing))
-            item["message"] = f"正在生成 {slide_id} ({index}/{len(missing)})"
+            item["progress"] = index / max(1, len(requiring_images))
+            item["message"] = f"正在生成 {slide_id} ({index}/{len(requiring_images)})"
             _save_status(project, status)
             _require_ok(client.post(f"/api/projects/{project_id}/steps/3/generate", data={"slide_id": slide_id, "prompt": prompt, "preview": "false"}), f"Step 3 image {slide_id}")
             generated += 1
-        _finish_stage(project, status, "images", f"图片已就绪，新增生成 {generated} 张")
+        _finish_stage(project, status, "images", f"图片已就绪，新增或刷新 {generated} 张")
 
         _start_stage(project, status, "confirm_images", "确认图片并创建 reveal_manifest.json")
         _require_ok(client.post(f"/api/projects/{project_id}/steps/3/confirm"), "Step 3 confirm")
@@ -297,9 +368,12 @@ def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str) -> No
         if ai_mask.status_code == 404:
             ai_mask = client.post(f"/api/projects/{project_id}/steps/5/semantic-blocks", json={})
         result = _require_ok(ai_mask, "AI Mask")
-        updated = result.get("updated_group_count") or result.get("processed") or 0
-        if updated == 0 and result.get("processed_slide_count") == 0:
-            _warn_stage(project, status, "ai_mask", "AI Mask 未更新任何语块，请后续人工检查。")
+        quality_errors = _ai_mask_quality_errors(result)
+        if quality_errors:
+            for error in quality_errors:
+                _warn_stage(project, status, "ai_mask", error)
+            if gates.get("pause_on_ai_mask_low_confidence", True):
+                raise RuntimeError("AI Mask 质量门暂停：" + "；".join(quality_errors[:5]))
         _finish_stage(project, status, "ai_mask", "AI Mask 标注完成")
 
         _start_stage(project, status, "mask_assets", "构建 Reveal 资源")
@@ -349,7 +423,7 @@ def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str) -> No
             _RUNNING.pop(project_id, None)
 
 
-def _install_injection(app: Any) -> None:
+def _install_injection(app: Any, server_module: ModuleType) -> None:
     if getattr(app.state, INJECT_MARKER, False):
         return
 
@@ -363,7 +437,7 @@ def _install_injection(app: Any) -> None:
         except Exception:
             return response
         if "one_click_extension.js" not in body and "</body>" in body:
-            body = body.replace("</body>", '  <script src="one_click_extension.js?v=1.0.0"></script>\n</body>')
+            body = body.replace("</body>", '  <script src="one_click_extension.js?v=1.0.1"></script>\n</body>')
         from starlette.responses import Response
         headers = dict(response.headers)
         headers.pop("content-length", None)
@@ -411,9 +485,11 @@ def _register(server_module: ModuleType) -> bool:
     app.add_api_route("/api/projects/{project_id}/one-click-generate", start_one_click, methods=["POST"])
     app.add_api_route("/api/projects/{project_id}/one-click-generate/status", get_one_click_status, methods=["GET"])
     try:
-        _install_injection(app)
-    except Exception:
-        pass
+        _install_injection(app, server_module)
+    except Exception as exc:
+        logger = getattr(server_module, "logger", None)
+        if logger:
+            logger.warning("Failed to install one-click UI injection: %s", exc)
     setattr(server_module, PATCH_MARKER, True)
     return True
 

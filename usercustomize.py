@@ -107,4 +107,10 @@ except Exception:
     # Optional final-video background postprocessing must never prevent startup.
     pass
 
+try:
+    import runtime_project_profile  # noqa: F401
+except Exception:
+    # Optional Project Profile routes/UI must never prevent startup.
+    pass
+
 _install_remotion_entrypoint_patch()

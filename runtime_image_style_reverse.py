@@ -275,26 +275,26 @@ def _apply_style_to_project(project: Any, style: dict[str, Any]) -> dict[str, An
     profile = _read_json(_profile_path(project), {})
     if not isinstance(profile, dict):
         profile = {}
+    profile.setdefault("version", "project_profile_v1")
     profile["image_style_profile"] = style
-    try:
-        import runtime_project_profile as project_profile_runtime
-        return project_profile_runtime.save_profile(project, {"profile": profile})
-    except Exception:
-        profile.setdefault("version", "project_profile_v1")
-        _write_json(_profile_path(project), profile)
-        companion = {
-            "version": "project_profile_prompt_companion_v1",
-            "image_style_system_content": style.get("system_content", ""),
-            "image_style_custom_requirement": style.get("custom_requirement", ""),
-            "image_style_profile": style,
-            "production_invariants": [
-                "visual_draft.png must keep a pure-white #FFFFFF outer canvas for AI Mask and manual Mask.",
-                "Final video background is configured separately and must not be baked into generated slide images.",
-                "Visual elements should not touch, overlap, or stick together; leave clear white gaps for Mask reveal.",
-            ],
-        }
-        _write_json(_run_dir(project) / "planning" / "project_profile_prompt_companion.json", companion)
-        return profile
+    _write_json(_profile_path(project), profile)
+    companion_path = _run_dir(project) / "planning" / "project_profile_prompt_companion.json"
+    companion = _read_json(companion_path, {})
+    if not isinstance(companion, dict):
+        companion = {}
+    companion.update({
+        "version": "project_profile_prompt_companion_v1",
+        "image_style_system_content": style.get("system_content", ""),
+        "image_style_custom_requirement": style.get("custom_requirement", ""),
+        "image_style_profile": style,
+        "production_invariants": [
+            "visual_draft.png must keep a pure-white #FFFFFF outer canvas for AI Mask and manual Mask.",
+            "Final video background is configured separately and must not be baked into generated slide images.",
+            "Visual elements should not touch, overlap, or stick together; leave clear white gaps for Mask reveal.",
+        ],
+    })
+    _write_json(companion_path, companion)
+    return profile
 
 
 def _install_injection(app: Any) -> None:
@@ -323,15 +323,14 @@ def _install_injection(app: Any) -> None:
 def _register(server_module: ModuleType) -> bool:
     if getattr(server_module, PATCH_MARKER, False):
         return True
-    required = ("app", "Project", "HTTPException", "Depends", "get_db", "UploadFile", "File", "Form", "Image")
+    required = ("app", "Project", "HTTPException", "Depends", "get_db", "File", "Form", "Image")
     if not all(hasattr(server_module, name) for name in required):
         return False
     app = server_module.app
-    upload_file_type = server_module.UploadFile
 
     async def reverse_image_style(
         project_id: str,
-        files: list[upload_file_type] = server_module.File(...),
+        files: list[Any] = server_module.File(...),
         requirement: str = server_module.Form(""),
         apply: bool = server_module.Form(True),
         db: Any = server_module.Depends(server_module.get_db),

@@ -343,8 +343,16 @@ def _client(server_module: ModuleType) -> Any:
     return TestClient(server_module.app)
 
 
+def _session_factory(server_module: ModuleType) -> Any:
+    factory = getattr(server_module, "SessionLocal", None)
+    if factory is not None:
+        return factory
+    from database import SessionLocal
+    return SessionLocal
+
+
 def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str) -> None:
-    db = server_module.SessionLocal()
+    db = _session_factory(server_module)()
     project = None
     try:
         project = db.query(server_module.Project).filter(server_module.Project.id == project_id).first()
@@ -486,7 +494,7 @@ def _install_injection(app: Any, server_module: ModuleType) -> None:
 def _register(server_module: ModuleType) -> bool:
     if getattr(server_module, PATCH_MARKER, False):
         return True
-    required = ("app", "Project", "HTTPException", "Depends", "get_db", "SessionLocal")
+    required = ("app", "Project", "HTTPException", "Depends", "get_db")
     if not all(hasattr(server_module, item) for item in required):
         return False
     app = server_module.app

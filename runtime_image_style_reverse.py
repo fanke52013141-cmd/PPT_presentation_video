@@ -9,6 +9,7 @@ visual_draft.png.
 from __future__ import annotations
 
 import base64
+import io
 import json
 import os
 import re
@@ -90,7 +91,7 @@ def _normalize_uploaded_image(server_module: ModuleType, data: bytes, path: Path
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         Image = server_module.Image
-        with Image.open(__import__("io").BytesIO(data)) as img:
+        with Image.open(io.BytesIO(data)) as img:
             img = img.convert("RGBA")
             img.thumbnail((1536, 1536))
             background = Image.new("RGBA", img.size, (255, 255, 255, 255))
@@ -326,10 +327,11 @@ def _register(server_module: ModuleType) -> bool:
     if not all(hasattr(server_module, name) for name in required):
         return False
     app = server_module.app
+    upload_file_type = server_module.UploadFile
 
     async def reverse_image_style(
         project_id: str,
-        files: list[Any] = server_module.File(...),
+        files: list[upload_file_type] = server_module.File(...),
         requirement: str = server_module.Form(""),
         apply: bool = server_module.Form(True),
         db: Any = server_module.Depends(server_module.get_db),

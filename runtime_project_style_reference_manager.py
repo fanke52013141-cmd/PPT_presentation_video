@@ -53,6 +53,19 @@ def _safe_text(value: Any, limit: int = 1000) -> str:
     return str(value or "").strip()[:limit]
 
 
+def _safe_reference_path(project: Any, filename: Any) -> Path | None:
+    refs_dir = _references_dir(project).resolve()
+    name = Path(_safe_text(filename, 200)).name
+    if not name:
+        return None
+    candidate = (refs_dir / name).resolve()
+    try:
+        candidate.relative_to(refs_dir)
+    except ValueError:
+        return None
+    return candidate
+
+
 def _reference_url(project_id: str, index: int) -> str:
     return f"/api/projects/{project_id}/project-profile/image-style/reference-images/{index}?t={int(time.time())}"
 
@@ -70,16 +83,13 @@ def _normalize_manifest(project: Any, project_id: str) -> dict[str, Any]:
             index = int(item.get("index"))
         except Exception:
             continue
-        filename = _safe_text(item.get("filename"), 200)
-        if not filename:
-            continue
-        path = _references_dir(project) / filename
-        if not path.exists():
+        path = _safe_reference_path(project, item.get("filename"))
+        if path is None or not path.exists():
             continue
         normalized.append({
             **item,
             "index": index,
-            "filename": filename,
+            "filename": path.name,
             "url": _reference_url(project_id, index),
         })
     normalized.sort(key=lambda item: int(item.get("index") or 0))
@@ -115,11 +125,10 @@ def _delete_reference(project: Any, project_id: str, index: int) -> dict[str, An
     deleted = False
     for item in manifest.get("images", []):
         if int(item.get("index") or 0) == index:
-            filename = _safe_text(item.get("filename"), 200)
-            if filename:
-                path = _references_dir(project) / filename
+            path = _safe_reference_path(project, item.get("filename"))
+            if path is not None:
                 try:
-                    if path.exists():
+                    if path.exists() and path.is_file():
                         path.unlink()
                 except OSError:
                     pass
@@ -135,13 +144,14 @@ def _delete_reference(project: Any, project_id: str, index: int) -> dict[str, An
 
 
 def _delete_all_references(project: Any, project_id: str) -> dict[str, Any]:
-    refs_dir = _references_dir(project)
+    refs_dir = _references_dir(project).resolve()
     deleted_count = 0
     if refs_dir.exists():
         for path in refs_dir.glob("style_reference_*.png"):
             try:
-                path.unlink()
-                deleted_count += 1
+                if path.resolve().is_file() and path.resolve().parent == refs_dir:
+                    path.unlink()
+                    deleted_count += 1
             except OSError:
                 pass
     manifest = {"version": "project_style_references_v1", "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "images": []}
@@ -211,8 +221,10 @@ def _register(server_module: ModuleType) -> bool:
     app.add_api_route("/api/projects/{project_id}/project-profile/image-style/reference-images", delete_all_reference_images, methods=["DELETE"])
     try:
         _install_injection(app)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger = getattr(server_module, "logger", None)
+        if logger:
+            logger.warning("Failed to install project style reference manager UI injection: %s", exc)
     try:
         import runtime_project_style_reference_step3  # noqa: F401
     except Exception:

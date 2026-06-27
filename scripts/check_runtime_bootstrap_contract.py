@@ -51,6 +51,7 @@ DECORATOR_METHODS = {
     "delete": "DELETE",
     "patch": "PATCH",
 }
+GENERIC_ROUTE_DECORATORS = {"api_route", "route"}
 
 
 def _assignment_value(module: ast.Module, name: str) -> Any:
@@ -140,6 +141,13 @@ def _routes_from_call(call: ast.Call) -> set[tuple[str, str]]:
         if not path:
             return set()
         return {(path, DECORATOR_METHODS[name])}
+
+    if name in GENERIC_ROUTE_DECORATORS:
+        path = _path_from_call(call)
+        if not path:
+            return set()
+        methods = _literal_methods(_keyword_value(call, "methods"))
+        return {(path, method) for method in methods}
 
     return set()
 

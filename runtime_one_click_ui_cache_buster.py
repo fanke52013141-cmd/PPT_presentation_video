@@ -16,7 +16,7 @@ from typing import Any
 
 PATCH_MARKER = "__ppt_one_click_ui_cache_buster_patch__"
 SCRIPT_NAME = "one_click_extension.js"
-SCRIPT_VERSION = "20260627.6"
+SCRIPT_VERSION = "20260627.7"
 SCRIPT_TAG = f'<script src="{SCRIPT_NAME}?v={SCRIPT_VERSION}"></script>'
 
 

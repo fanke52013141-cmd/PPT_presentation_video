@@ -8,6 +8,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BOOTSTRAP = ROOT / "runtime_bootstrap.py"
 GATE = ROOT / "runtime_one_click_visual_quality_gate.py"
+ONE_CLICK_UI = ROOT / "static" / "one_click_extension.js"
+CACHE_BUSTER = ROOT / "runtime_one_click_ui_cache_buster.py"
 
 REQUIRED_BOOTSTRAP_SNIPPETS = [
     "runtime_one_click_visual_quality_gate",
@@ -26,6 +28,17 @@ REQUIRED_GATE_SNIPPETS = [
     "Step 3 图片质量门暂停",
 ]
 
+REQUIRED_UI_SNIPPETS = [
+    "检查 Step 3 图片质量",
+    "白底、尺寸、边界和字幕安全区",
+    "暂停并给出修复建议",
+    "不合格时会暂停",
+]
+
+REQUIRED_CACHE_SNIPPETS = [
+    "SCRIPT_VERSION = \"20260627.6\"",
+]
+
 
 def _missing(path: Path, snippets: list[str]) -> list[str]:
     content = path.read_text(encoding="utf-8")
@@ -38,6 +51,10 @@ def main() -> int:
         problems.append(f"runtime_bootstrap.py missing {snippet!r}")
     for snippet in _missing(GATE, REQUIRED_GATE_SNIPPETS):
         problems.append(f"runtime_one_click_visual_quality_gate.py missing {snippet!r}")
+    for snippet in _missing(ONE_CLICK_UI, REQUIRED_UI_SNIPPETS):
+        problems.append(f"static/one_click_extension.js missing {snippet!r}")
+    for snippet in _missing(CACHE_BUSTER, REQUIRED_CACHE_SNIPPETS):
+        problems.append(f"runtime_one_click_ui_cache_buster.py missing {snippet!r}")
     if problems:
         print("FAIL One-click visual quality gate contract:")
         for problem in problems:

@@ -2,6 +2,9 @@
   'use strict';
 
   const MODAL_ID = 'modal-step3-image-style-reverse';
+  const STATE = {
+    projectId: sessionStorage.getItem('ppt_image_style_reverse_project_id') || sessionStorage.getItem('ppt_project_style_reference_project_id') || '',
+  };
 
   function toast(message, duration) {
     if (window.showToast) window.showToast(message, duration || 3000);
@@ -28,13 +31,62 @@
     return `/api/projects/${encodeURIComponent(projectId)}/steps/3/image-style${suffix}`;
   }
 
-  function projectId() {
+  function rememberProjectId(id) {
+    if (!id) return;
+    STATE.projectId = String(id);
+    sessionStorage.setItem('ppt_image_style_reverse_project_id', STATE.projectId);
+    sessionStorage.setItem('ppt_project_style_reference_project_id', STATE.projectId);
+  }
+
+  function inferProjectIdFromPage() {
     const urls = Array.from(document.querySelectorAll('[src], [href]'))
       .map(el => el.getAttribute('src') || el.getAttribute('href') || '')
       .join('\n');
     const match = urls.match(/\/api\/projects\/([^/]+)\//);
-    if (match) return decodeURIComponent(match[1]);
-    return sessionStorage.getItem('ppt_image_style_reverse_project_id') || '';
+    return match ? decodeURIComponent(match[1]) : '';
+  }
+
+  function projectId() {
+    const fromWindow = window.state?.currentProject?.id || window.PPTStudio?.getCurrentProject?.()?.id;
+    if (fromWindow) {
+      rememberProjectId(fromWindow);
+      return fromWindow;
+    }
+    const inferred = inferProjectIdFromPage();
+    if (inferred) {
+      rememberProjectId(inferred);
+      return inferred;
+    }
+    return STATE.projectId || sessionStorage.getItem('ppt_image_style_reverse_project_id') || sessionStorage.getItem('ppt_project_style_reference_project_id') || '';
+  }
+
+  function patchWorkspaceNavigation() {
+    const patch = () => {
+      if (window.enterWorkspace && !window.enterWorkspace.__imageStyleReversePatched) {
+        const originalEnter = window.enterWorkspace;
+        window.enterWorkspace = async function patchedEnterWorkspace(projectId) {
+          rememberProjectId(projectId);
+          const result = await originalEnter.apply(this, arguments);
+          ensureStep3Button();
+          return result;
+        };
+        window.enterWorkspace.__imageStyleReversePatched = true;
+      }
+      if (window.exitWorkspace && !window.exitWorkspace.__imageStyleReversePatched) {
+        const originalExit = window.exitWorkspace;
+        window.exitWorkspace = function patchedExitWorkspace() {
+          STATE.projectId = '';
+          sessionStorage.removeItem('ppt_image_style_reverse_project_id');
+          return originalExit.apply(this, arguments);
+        };
+        window.exitWorkspace.__imageStyleReversePatched = true;
+      }
+    };
+    patch();
+    const timer = setInterval(() => {
+      patch();
+      if (window.enterWorkspace?.__imageStyleReversePatched) clearInterval(timer);
+    }, 500);
   }
 
   function ensureStyle() {
@@ -150,6 +202,7 @@
     try {
       const result = await apiPost(step3ImageStyleUrl(id, '/reverse'), form);
       renderResult(result.style);
+      rememberProjectId(id);
       toast('已反推并应用到当前项目 Step 3 图片风格。', 4500);
       if (document.getElementById('step3-style-reverse-generate-refs')?.checked) {
         button.textContent = '生成参考图...';
@@ -193,6 +246,7 @@
 
   function boot() {
     removeLegacyHeaderButton();
+    patchWorkspaceNavigation();
     ensureStep3Button();
     const timer = setInterval(() => {
       removeLegacyHeaderButton();

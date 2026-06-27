@@ -29,7 +29,7 @@ jobs:
           node-version: "20"
 
       - name: Compile Python sources
-        run: python -m compileall -q server.py scripts checks runtime_*.py
+        run: python -m compileall -q start_server.py server.py scripts checks runtime_*.py
 
       - name: Check frontend JavaScript syntax
         run: |

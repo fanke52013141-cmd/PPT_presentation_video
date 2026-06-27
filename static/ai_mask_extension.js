@@ -129,11 +129,42 @@
       .ai-mask-prompt-block textarea{width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.84rem;line-height:1.45;box-sizing:border-box}
       .ai-mask-modal-scroll{max-height:72vh;overflow:auto;padding-right:.3rem}
       .ai-mask-run-summary{margin-left:.5rem;font-size:.85rem;color:#555;font-weight:700}
-      body.step5-fullscreen-mode #canvas-container{aspect-ratio:16/9;height:auto!important;max-height:calc(100vh - 172px);width:min(100%,calc((100vh - 172px)*16/9));}
+      body.step5-fullscreen-mode #canvas-container{aspect-ratio:16/9;height:auto!important;max-height:none!important;}
       body.step5-fullscreen-mode #canvas-container canvas,body.step5-fullscreen-mode #canvas-container img{width:100%!important;height:100%!important;object-fit:contain!important;}
       body.step5-fullscreen-mode #step-panel-5 .workspace-left{align-items:center;justify-content:center;overflow:hidden;}
     `;
     document.head.appendChild(style);
+  }
+
+  function fitFullscreenCanvas() {
+    const container = document.getElementById('canvas-container');
+    if (!container) return;
+    if (!document.body.classList.contains('step5-fullscreen-mode')) {
+      container.style.width = '';
+      container.style.height = '';
+      return;
+    }
+    const left = container.closest('.workspace-left') || container.parentElement;
+    const rect = left?.getBoundingClientRect?.();
+    const maxW = Math.max(240, (rect?.width || window.innerWidth) - 12);
+    const maxH = Math.max(135, (rect?.height || window.innerHeight) - 12);
+    let width = maxW;
+    let height = width * 9 / 16;
+    if (height > maxH) {
+      height = maxH;
+      width = height * 16 / 9;
+    }
+    container.style.width = `${Math.floor(width)}px`;
+    container.style.height = `${Math.floor(height)}px`;
+  }
+
+  function installFullscreenFitWatch() {
+    if (window.__aiMaskFullscreenFitWatch) return;
+    window.__aiMaskFullscreenFitWatch = true;
+    window.addEventListener('resize', fitFullscreenCanvas);
+    const observer = new MutationObserver(fitFullscreenCanvas);
+    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    setInterval(fitFullscreenCanvas, 800);
   }
 
   function button(id, text, cls) {
@@ -324,11 +355,14 @@
     } finally {
       if (window.state?.canvasState) window.state.canvasState.semanticLoading = false;
       btn.disabled = false;
+      fitFullscreenCanvas();
     }
   }
 
   function boot() {
     ensureStyles();
+    installFullscreenFitWatch();
+    fitFullscreenCanvas();
     injectButtons();
   }
 

@@ -129,6 +129,11 @@ except Exception:
     pass
 
 try:
+    import runtime_step3_image_style  # noqa: F401
+except Exception:
+    pass
+
+try:
     import runtime_one_click_orchestrator  # noqa: F401
 except Exception:
     pass

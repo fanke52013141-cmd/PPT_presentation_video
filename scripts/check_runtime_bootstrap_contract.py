@@ -270,6 +270,10 @@ def _check_runtime_diagnostics_contract() -> None:
         "middleware_markers",
         "script_versions",
         "runtime_modules",
+        "step5_flush_migration",
+        "native_app_js",
+        "fallback_bridge",
+        "bridge_would_inject",
         "PPT_STUDIO_DISABLE_RUNTIME_DIAGNOSTICS",
         "INSTALL_TIMEOUT_SEC = 120.0",
     ]

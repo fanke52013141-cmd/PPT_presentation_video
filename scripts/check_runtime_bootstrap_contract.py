@@ -243,6 +243,16 @@ def _check_step5_flush_bridge_contract() -> None:
         raise AssertionError("Step 5 flush bridge contract failed:\n" + "\n".join(missing))
 
 
+def _check_bootstrap_installs_before_ready() -> None:
+    content = BOOTSTRAP_PATH.read_text(encoding="utf-8")
+    forbidden = "if runtime_paths_ready(module):\n                    return\n                install_for_server_module(module)"
+    required = "install_for_server_module(module)\n                if runtime_paths_ready(module):\n                    return"
+    if forbidden in content:
+        raise AssertionError("runtime_bootstrap must not return before installing middleware-only runtime bridges")
+    if required not in content:
+        raise AssertionError("runtime_bootstrap worker must install runtime bridges before checking route readiness")
+
+
 def _format_route(route: tuple[str, str]) -> str:
     path, method = route
     return f"{method} {path}"
@@ -251,6 +261,7 @@ def _format_route(route: tuple[str, str]) -> str:
 def main() -> None:
     _check_route_scanner_smoke()
     _check_step5_flush_bridge_contract()
+    _check_bootstrap_installs_before_ready()
     tree = ast.parse(BOOTSTRAP_PATH.read_text(encoding="utf-8"), filename=str(BOOTSTRAP_PATH))
     modules = _literal_string_collection(tree, "RUNTIME_MODULES")
     routes = _literal_route_mapping(tree, "EXPECTED_RUNTIME_ROUTES")

@@ -223,6 +223,11 @@
   }
 
   function ensureStep3Button() {
+    const unifiedPanel = document.getElementById('step3-btn-image-style-panel');
+    if (unifiedPanel) {
+      document.getElementById('step3-btn-image-style-reverse')?.remove();
+      return;
+    }
     ensureStyle();
     ensureModal();
     const toolbar = document.querySelector('#step-panel-3 .step3-toolbar-row');
@@ -232,6 +237,7 @@
     button.className = 'secondary';
     button.type = 'button';
     button.textContent = '上传示例图反推风格';
+    button.title = '兼容入口：新的主入口是 Step 3 工具栏里的“图片风格”。';
     button.addEventListener('click', openModal);
     const refButton = document.getElementById('step3-btn-style-reference-manager');
     const styleButton = document.getElementById('step3-btn-style');

@@ -36,6 +36,12 @@
     return String(value ?? '').replace(/[&<>'"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[ch]));
   }
 
+  function pct(value) {
+    const number = Number(value || 0);
+    if (!Number.isFinite(number)) return '0.0%';
+    return `${(number * 100).toFixed(1)}%`;
+  }
+
   function rememberProjectId(projectId) {
     if (!projectId) return;
     STATE.projectId = String(projectId);
@@ -92,6 +98,12 @@
       .one-click-stage { border: 1.5px solid #111; border-radius: 12px; background: #fff; padding: .65rem; }
       .one-click-stage strong { display: flex; justify-content: space-between; gap: .5rem; }
       .one-click-stage small { display: block; color: #555; margin-top: .25rem; line-height: 1.4; }
+      .one-click-quality-report { border-top: 1px dashed #999; margin-top: .55rem; padding-top: .55rem; display: grid; gap: .45rem; }
+      .one-click-quality-card { border: 1px solid #111; border-radius: 10px; padding: .5rem; background: #fff8f0; }
+      .one-click-quality-card b { display: block; margin-bottom: .25rem; }
+      .one-click-quality-card code { font-size: .78rem; background: rgba(0,0,0,.06); border-radius: 5px; padding: .05rem .25rem; }
+      .one-click-quality-card small { color: #543; }
+      .one-click-quality-metrics { color: #555; margin-top: .2rem; }
       .one-click-pill { display: inline-flex; border: 1px solid #111; border-radius: 999px; padding: .1rem .45rem; font-size: .75rem; background: #fff; }
       .one-click-pill.running { background: #eaf2ff; }
       .one-click-pill.done { background: #e9ffe9; }
@@ -145,6 +157,39 @@
     else header.appendChild(button);
   }
 
+  function slideIdFromQualityItem(item) {
+    return String(item?.path || '').split(/[\\/]/).slice(-2, -1)[0] || 'unknown slide';
+  }
+
+  function renderQualityReport(stage) {
+    const report = stage?.quality_report;
+    if (!report || !Array.isArray(report.results)) return '';
+    const failingItems = report.results.filter(item => Array.isArray(item.issue_details) && item.issue_details.length);
+    if (!failingItems.length) return '';
+    const cards = failingItems.map(item => {
+      const slideId = slideIdFromQualityItem(item);
+      const details = item.issue_details.map(detail => `
+        <div class="one-click-quality-card">
+          <b>${esc(slideId)} · ${esc(detail.title || detail.code || '图片质量问题')} <code>${esc(detail.code || '')}</code></b>
+          <small>${esc(detail.message || '')}</small>
+          ${detail.action ? `<small>建议：${esc(detail.action)}</small>` : ''}
+        </div>
+      `).join('');
+      return `
+        <div>
+          <small class="one-click-quality-metrics">${esc(slideId)}：非白区域 ${pct(item.non_white_ratio)}，边界非白 ${pct(item.border_non_white_ratio)}，字幕区占用 ${pct(item.subtitle_safe_non_white_ratio)}</small>
+          ${details}
+        </div>
+      `;
+    }).join('');
+    return `
+      <div class="one-click-quality-report">
+        <small>图片质量报告：${esc(report.failed_count || failingItems.length)}/${esc(report.checked_count || report.results.length)} 张需要处理</small>
+        ${cards}
+      </div>
+    `;
+  }
+
   function renderStatus(status) {
     const summary = document.getElementById('one-click-status');
     const stages = document.getElementById('one-click-stages');
@@ -165,7 +210,7 @@
         <article class="one-click-stage">
           <strong>${esc(stage.title || stage.id)} <span class="one-click-pill ${esc(stage.status || 'pending')}">${esc(stage.status || 'pending')}</span></strong>
           <small>${esc(stage.message || '')}</small>
-          ${warnings}${errors}
+          ${warnings}${errors}${renderQualityReport(stage)}
         </article>
       `;
     }).join('');

@@ -24,6 +24,10 @@
     return String(value ?? '').replace(/[&<>'"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[ch]));
   }
 
+  function step3ImageStyleUrl(projectId, suffix) {
+    return `/api/projects/${encodeURIComponent(projectId)}/steps/3/image-style${suffix}`;
+  }
+
   function projectId() {
     const urls = Array.from(document.querySelectorAll('[src], [href]'))
       .map(el => el.getAttribute('src') || el.getAttribute('href') || '')
@@ -144,12 +148,12 @@
     button.disabled = true;
     button.textContent = '反推中...';
     try {
-      const result = await apiPost(`/api/projects/${encodeURIComponent(id)}/project-profile/image-style/reverse`, form);
+      const result = await apiPost(step3ImageStyleUrl(id, '/reverse'), form);
       renderResult(result.style);
       toast('已反推并应用到当前项目 Step 3 图片风格。', 4500);
       if (document.getElementById('step3-style-reverse-generate-refs')?.checked) {
         button.textContent = '生成参考图...';
-        const refs = await fetch(`/api/projects/${encodeURIComponent(id)}/project-profile/image-style/reference-images/generate`, {
+        const refs = await fetch(step3ImageStyleUrl(id, '/reference-images/generate'), {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count: 3 })
         }).then(parseJsonResponse);
         toast(`已生成 ${(refs.references?.images || []).length} 张 Step 3 风格参考图。`, 4500);

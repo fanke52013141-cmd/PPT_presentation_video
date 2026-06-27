@@ -24,6 +24,29 @@ MAX_BORDER_NON_WHITE_RATIO = 0.04
 MAX_SUBTITLE_SAFE_NON_WHITE_RATIO = 0.10
 SUBTITLE_SAFE_Y = 930
 
+ISSUE_CATALOG = {
+    "wrong_size": {
+        "title": "图片尺寸不正确",
+        "severity": "error",
+        "action": "重新生成或重新上传 1920×1080 的 visual_draft.png。非 16:9 或非 1920×1080 会导致后续 Mask 坐标和视频合成偏移。",
+    },
+    "non_white_background": {
+        "title": "白底不够干净",
+        "severity": "warning",
+        "action": "建议回到 Step 3 重新生成图片，并在提示词里强调：纯白背景、不要渐变/纸纹/阴影背景，元素之间保持间距。",
+    },
+    "dirty_border": {
+        "title": "边界存在非白内容",
+        "severity": "warning",
+        "action": "建议重新生成图片，让所有视觉元素远离画布边缘；边界不干净会影响白底连通域抠图。",
+    },
+    "subtitle_safe_area": {
+        "title": "字幕安全区占用过多",
+        "severity": "warning",
+        "action": "建议调整 Step 3 提示词，让关键元素避开画面底部字幕区；否则字幕和 Mask 动画容易冲突。",
+    },
+}
+
 
 class QualityFailure(AssertionError):
     """Raised when a visual draft quality check fails."""
@@ -75,6 +98,25 @@ def _border_non_white_ratio(image: Any, margin: int = 24) -> float:
     return weighted_non_white / weighted_total if weighted_total else 0.0
 
 
+def _issue(code: str, message: str, value: Any | None = None) -> dict[str, Any]:
+    catalog = ISSUE_CATALOG[code]
+    detail = {
+        "code": code,
+        "severity": catalog["severity"],
+        "title": catalog["title"],
+        "message": message,
+        "action": catalog["action"],
+    }
+    if value is not None:
+        detail["value"] = value
+    return detail
+
+
+def _append_issue(result: dict[str, Any], issue: dict[str, Any]) -> None:
+    result["issue_details"].append(issue)
+    result["issues"].append(f"{issue['title']}：{issue['message']}。建议：{issue['action']}")
+
+
 def _check_one_image(path: Path) -> dict[str, Any]:
     image = _load_image(path)
     result = {
@@ -84,15 +126,46 @@ def _check_one_image(path: Path) -> dict[str, Any]:
         "border_non_white_ratio": round(_border_non_white_ratio(image), 4),
         "subtitle_safe_non_white_ratio": round(_sample_ratio(image, (0, SUBTITLE_SAFE_Y, image.width, image.height)), 4),
         "issues": [],
+        "issue_details": [],
+        "recommendations": [],
     }
     if (image.width, image.height) != EXPECTED_SIZE:
-        result["issues"].append(f"expected {EXPECTED_SIZE[0]}x{EXPECTED_SIZE[1]}, got {image.width}x{image.height}")
+        _append_issue(
+            result,
+            _issue(
+                "wrong_size",
+                f"预期 {EXPECTED_SIZE[0]}×{EXPECTED_SIZE[1]}，实际 {image.width}×{image.height}",
+                result["size"],
+            ),
+        )
     if result["non_white_ratio"] > MAX_NON_WHITE_RATIO:
-        result["issues"].append(f"too much non-white area: {result['non_white_ratio']:.2%}")
+        _append_issue(
+            result,
+            _issue(
+                "non_white_background",
+                f"整图非白区域比例 {result['non_white_ratio']:.2%}，超过阈值 {MAX_NON_WHITE_RATIO:.2%}",
+                result["non_white_ratio"],
+            ),
+        )
     if result["border_non_white_ratio"] > MAX_BORDER_NON_WHITE_RATIO:
-        result["issues"].append(f"border is not clean white: {result['border_non_white_ratio']:.2%}")
+        _append_issue(
+            result,
+            _issue(
+                "dirty_border",
+                f"画布边界非白比例 {result['border_non_white_ratio']:.2%}，超过阈值 {MAX_BORDER_NON_WHITE_RATIO:.2%}",
+                result["border_non_white_ratio"],
+            ),
+        )
     if result["subtitle_safe_non_white_ratio"] > MAX_SUBTITLE_SAFE_NON_WHITE_RATIO:
-        result["issues"].append(f"subtitle safe area has too much content: {result['subtitle_safe_non_white_ratio']:.2%}")
+        _append_issue(
+            result,
+            _issue(
+                "subtitle_safe_area",
+                f"底部字幕安全区非白比例 {result['subtitle_safe_non_white_ratio']:.2%}，超过阈值 {MAX_SUBTITLE_SAFE_NON_WHITE_RATIO:.2%}",
+                result["subtitle_safe_non_white_ratio"],
+            ),
+        )
+    result["recommendations"] = [issue["action"] for issue in result["issue_details"]]
     return result
 
 
@@ -136,9 +209,12 @@ def main(argv: list[str] | None = None) -> int:
         for item in report["results"]:
             slide = Path(item["path"]).parent.name
             if item["issues"]:
-                print(f"FAIL {slide}: " + "; ".join(item["issues"]))
+                print(f"FAIL {slide}:")
+                for issue in item["issue_details"]:
+                    print(f"  - {issue['title']}：{issue['message']}")
+                    print(f"    建议：{issue['action']}")
             else:
-                print(f"PASS {slide}: white-background quality looks acceptable")
+                print(f"PASS {slide}: 白底质量看起来可接受")
     return 0 if report["success"] else 1
 
 

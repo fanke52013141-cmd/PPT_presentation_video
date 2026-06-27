@@ -297,16 +297,23 @@
     }
   }
 
+  function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
   async function flushStep5DraftBeforeAiMask() {
-    if (window.state?.step5AutoSaveTimer) {
-      clearTimeout(window.state.step5AutoSaveTimer);
-      window.state.step5AutoSaveTimer = null;
-    }
     if (typeof window.saveStep5CurrentState === 'function') {
       window.saveStep5CurrentState();
     }
-    if (window.state?.step5AutoSavePromise) {
-      try { await window.state.step5AutoSavePromise; } catch (_) {}
+    if (typeof window.saveStep5Draft === 'function') {
+      await window.saveStep5Draft();
+    }
+    // Existing Step5 autosave is timer-based. Because state is a top-level let in app.js,
+    // extensions cannot safely clear the timer. Wait once so a pending stale save can finish
+    // before the backend writes AI masks, then save again.
+    await sleep(900);
+    if (typeof window.saveStep5CurrentState === 'function') {
+      window.saveStep5CurrentState();
     }
     if (typeof window.saveStep5Draft === 'function') {
       await window.saveStep5Draft();
@@ -330,11 +337,12 @@
       return;
     }
     const btn = document.getElementById('step5-btn-ai-mask');
+    const settingsBtn = document.getElementById('step5-btn-ai-mask-settings');
     const status = document.getElementById('step5-ai-mask-status');
     btn.disabled = true;
+    if (settingsBtn) settingsBtn.disabled = true;
     if (status) status.textContent = '准备当前标注草稿...';
     try {
-      if (window.state?.canvasState) window.state.canvasState.semanticLoading = true;
       await flushStep5DraftBeforeAiMask();
       if (status) status.textContent = 'AI 标注处理中：所有 Slides...';
       const result = await apiPost(`/api/projects/${encodeURIComponent(id)}/steps/5/ai-mask/annotate`, { scope: 'all_slides' });
@@ -353,7 +361,7 @@
       if (status) status.textContent = 'AI 标注失败';
       toast(`❌ AI 标注失败：${e.message}`, 8000);
     } finally {
-      if (window.state?.canvasState) window.state.canvasState.semanticLoading = false;
+      if (settingsBtn) settingsBtn.disabled = false;
       btn.disabled = false;
       fitFullscreenCanvas();
     }

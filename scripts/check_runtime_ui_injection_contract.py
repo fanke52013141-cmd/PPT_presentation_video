@@ -129,6 +129,30 @@ def check_one_click_cache_buster() -> None:
     assert_contains(injected, buster.SCRIPT_TAG, "One-click cache-buster injection")
 
 
+def check_visual_draft_quality_ui_injection() -> None:
+    buster = importlib.import_module("runtime_visual_draft_quality_ui")
+    html = '<html><body><script src="visual_draft_quality_extension.js?v=old"></script></body></html>'
+    rewritten = buster._rewrite_visual_quality_script(html)
+    assert_contains(rewritten, f"visual_draft_quality_extension.js?v={buster.SCRIPT_VERSION}", "Visual draft quality UI rewrite")
+    assert_true("v=old" not in rewritten, "Visual draft quality UI rewrite must remove stale script version")
+
+    blank_html = "<html><body></body></html>"
+    injected = buster._rewrite_visual_quality_script(blank_html)
+    assert_contains(injected, buster.SCRIPT_TAG, "Visual draft quality UI injection")
+
+
+def check_visual_draft_quality_static_ui() -> None:
+    content = (REPO_ROOT / "static" / "visual_draft_quality_extension.js").read_text(encoding="utf-8")
+    for snippet in [
+        "step3-btn-visual-draft-quality",
+        "图片质量检查",
+        "/steps/3/visual-draft-quality",
+        "visual_draft.png",
+        "Step 5 Mask",
+    ]:
+        assert_contains(content, snippet, "Visual draft quality static UI")
+
+
 def check_static_entrypoint_mentions_app_js() -> None:
     index_html = (REPO_ROOT / "static" / "index.html").read_text(encoding="utf-8")
     assert_contains(index_html, "app.js", "static/index.html")
@@ -141,6 +165,8 @@ def main() -> int:
         check_step5_flush_bridge,
         check_ai_mask_cache_buster,
         check_one_click_cache_buster,
+        check_visual_draft_quality_ui_injection,
+        check_visual_draft_quality_static_ui,
     ]
     try:
         for check in checks:

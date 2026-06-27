@@ -222,7 +222,7 @@ def install_for_server_module(server_module: ModuleType) -> bool:
                 ok = False
                 logger = getattr(server_module, "logger", None) or _logger()
                 if logger is not None:
-                    logger.warning("Failed to register runtime bridge %s: %s", exc)
+                    logger.warning("Failed to register runtime bridge %s: %s", module_name, exc)
 
     if ok:
         setattr(sys, IMPORT_MARKER, True)

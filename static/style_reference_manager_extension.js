@@ -42,6 +42,10 @@
     return String(value ?? '').replace(/[&<>'"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[ch]));
   }
 
+  function step3ImageStyleUrl(projectId, suffix) {
+    return `/api/projects/${encodeURIComponent(projectId)}/steps/3/image-style${suffix}`;
+  }
+
   function rememberProjectId(projectId) {
     if (!projectId) return;
     STATE.projectId = String(projectId);
@@ -196,7 +200,7 @@
       toast('当前没有可识别的项目，请先进入项目工作区。', 5000);
       return;
     }
-    const result = await apiGet(`/api/projects/${projectId}/project-profile/image-style/reference-images`);
+    const result = await apiGet(step3ImageStyleUrl(projectId, '/reference-images'));
     renderReferences(result.references || {});
   }
 
@@ -224,7 +228,7 @@
       button.textContent = '生成中...';
     }
     try {
-      const result = await apiPost(`/api/projects/${projectId}/project-profile/image-style/reference-images/generate`, { count: 3 });
+      const result = await apiPost(step3ImageStyleUrl(projectId, '/reference-images/generate'), { count: 3 });
       renderReferences(result.references || {});
       toast(`已生成 ${(result.references?.images || []).length} 张风格参考图。`, 4500);
     } finally {
@@ -240,7 +244,7 @@
     if (!projectId) return toast('当前没有可识别的项目，请先进入项目工作区。', 5000);
     const confirmed = window.confirm(`确定删除参考图 ${index}？`);
     if (!confirmed) return;
-    const result = await apiDelete(`/api/projects/${projectId}/project-profile/image-style/reference-images/${index}`);
+    const result = await apiDelete(step3ImageStyleUrl(projectId, `/reference-images/${index}`));
     renderReferences(result.references || {});
     toast('参考图已删除。', 3500);
   }
@@ -250,7 +254,7 @@
     if (!projectId) return toast('当前没有可识别的项目，请先进入项目工作区。', 5000);
     const confirmed = window.confirm('确定清空当前项目的全部风格参考图？');
     if (!confirmed) return;
-    const result = await apiDelete(`/api/projects/${projectId}/project-profile/image-style/reference-images`);
+    const result = await apiDelete(step3ImageStyleUrl(projectId, '/reference-images'));
     renderReferences(result.references || {});
     toast('全部风格参考图已清空。', 3500);
   }

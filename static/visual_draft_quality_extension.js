@@ -4,6 +4,7 @@
   const STATE = {
     projectId: sessionStorage.getItem('ppt_visual_draft_quality_project_id') || '',
     loading: false,
+    fetchPatched: false,
   };
 
   function parseJsonResponse(response) {
@@ -36,22 +37,55 @@
     if (!projectId) return;
     STATE.projectId = String(projectId);
     sessionStorage.setItem('ppt_visual_draft_quality_project_id', STATE.projectId);
+    renderProjectContext();
+  }
+
+  function extractProjectIdFromUrl(value) {
+    const raw = String(value || '');
+    const match = raw.match(/\/api\/projects\/([^/?#]+)(?:[/?#]|$)/);
+    return match ? decodeURIComponent(match[1]) : '';
   }
 
   function inferProjectIdFromPage() {
     const urls = Array.from(document.querySelectorAll('[src], [href]'))
       .map(el => el.getAttribute('src') || el.getAttribute('href') || '')
       .join('\n');
-    const match = urls.match(/\/api\/projects\/([^/]+)\//);
-    return match ? decodeURIComponent(match[1]) : '';
+    return extractProjectIdFromUrl(urls);
+  }
+
+  function inferProjectIdFromPerformance() {
+    const entries = performance?.getEntriesByType?.('resource') || [];
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+      const projectId = extractProjectIdFromUrl(entries[index].name || '');
+      if (projectId) return projectId;
+    }
+    return '';
+  }
+
+  function patchFetchForProjectContext() {
+    if (STATE.fetchPatched || typeof window.fetch !== 'function') return;
+    const originalFetch = window.fetch;
+    window.fetch = function patchedVisualQualityFetch(input, init) {
+      const url = typeof input === 'string' ? input : input?.url;
+      const projectId = extractProjectIdFromUrl(url);
+      if (projectId) rememberProjectId(projectId);
+      return originalFetch.apply(this, arguments);
+    };
+    window.fetch.__visualQualityProjectContextPatched = true;
+    STATE.fetchPatched = true;
+  }
+
+  function refreshProjectContext() {
+    const fromWindow = window.state?.currentProject?.id || window.PPTStudio?.getCurrentProject?.()?.id;
+    if (fromWindow) rememberProjectId(fromWindow);
+    const inferred = inferProjectIdFromPage() || inferProjectIdFromPerformance();
+    if (inferred) rememberProjectId(inferred);
+    renderProjectContext();
+    return STATE.projectId || sessionStorage.getItem('ppt_visual_draft_quality_project_id') || inferred || '';
   }
 
   function activeProjectId() {
-    const fromWindow = window.state?.currentProject?.id || window.PPTStudio?.getCurrentProject?.()?.id;
-    if (fromWindow) rememberProjectId(fromWindow);
-    const inferred = inferProjectIdFromPage();
-    if (inferred) rememberProjectId(inferred);
-    return STATE.projectId || sessionStorage.getItem('ppt_visual_draft_quality_project_id') || inferred || '';
+    return refreshProjectContext();
   }
 
   function qualityUrl(projectId) {
@@ -66,6 +100,8 @@
       #step3-btn-visual-draft-quality { font-size: .85rem; padding: .35rem .9rem; }
       .visual-quality-modal { max-width: 1050px; width: min(1050px, 94vw); }
       .visual-quality-note { color: #555; line-height: 1.55; margin: .45rem 0 .85rem; }
+      .visual-quality-context { border: 1.5px dashed #777; border-radius: 10px; padding: .55rem .7rem; margin: .5rem 0 .85rem; font-size: .86rem; background: #fff; color: #444; }
+      .visual-quality-context strong { color: #111; }
       .visual-quality-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .7rem; margin: .85rem 0 1rem; }
       .visual-quality-kpi { border: 2px solid #111; border-radius: 12px; padding: .75rem; background: #fffef9; box-shadow: 2px 2px 0 rgba(0,0,0,.1); }
       .visual-quality-kpi strong { display: block; font-size: 1.25rem; }
@@ -97,9 +133,11 @@
       <div class="modal-content visual-quality-modal">
         <h3 class="highlight-title">Step 3 图片质量检查</h3>
         <p class="visual-quality-note">检查当前项目所有 <code>visual_draft.png</code> 是否适合后续 Step 5 Mask：尺寸应为 1920×1080，背景应保持纯白，边界应干净，字幕安全区不应被大面积占用。</p>
+        <div id="visual-quality-context" class="visual-quality-context">项目上下文：<strong>正在识别...</strong></div>
         <div id="visual-quality-summary" class="visual-quality-summary"></div>
         <div class="visual-quality-toolbar">
           <button id="btn-visual-quality-run" class="primary" type="button">重新检查</button>
+          <button id="btn-visual-quality-refresh-context" class="secondary" type="button">重新识别项目</button>
           <button id="btn-visual-quality-close" class="secondary" type="button">关闭</button>
         </div>
         <div id="visual-quality-results" class="visual-quality-list">
@@ -113,6 +151,20 @@
     });
     document.getElementById('btn-visual-quality-close')?.addEventListener('click', closeModal);
     document.getElementById('btn-visual-quality-run')?.addEventListener('click', () => runQualityCheck().catch(error => renderError(error)));
+    document.getElementById('btn-visual-quality-refresh-context')?.addEventListener('click', () => {
+      const projectId = refreshProjectContext();
+      toast(projectId ? `已识别当前项目：${projectId}` : '仍未识别到当前项目，请先进入项目工作区。', 4000);
+    });
+    renderProjectContext();
+  }
+
+  function renderProjectContext() {
+    const context = document.getElementById('visual-quality-context');
+    if (!context) return;
+    const projectId = STATE.projectId || sessionStorage.getItem('ppt_visual_draft_quality_project_id') || '';
+    context.innerHTML = projectId
+      ? `项目上下文：<strong>${esc(projectId)}</strong>`
+      : '项目上下文：<strong>未识别</strong>。请先进入项目工作区，或点击“重新识别项目”。';
   }
 
   function renderSummary(report) {
@@ -176,7 +228,7 @@
 
   async function runQualityCheck() {
     const projectId = activeProjectId();
-    if (!projectId) throw new Error('未找到当前项目，请先进入项目工作区。');
+    if (!projectId) throw new Error('未找到当前项目，请先进入项目工作区，或点击“重新识别项目”。');
     const button = document.getElementById('btn-visual-quality-run');
     const container = document.getElementById('visual-quality-results');
     if (STATE.loading) return;
@@ -197,6 +249,7 @@
   function openModal() {
     ensureStyle();
     ensureModal();
+    refreshProjectContext();
     const modal = document.getElementById('modal-visual-draft-quality');
     if (modal) modal.style.display = 'block';
     runQualityCheck().catch(error => renderError(error));
@@ -235,6 +288,7 @@
         window.enterWorkspace = async function patchedEnterWorkspace(projectId) {
           rememberProjectId(projectId);
           const result = await originalEnter.apply(this, arguments);
+          refreshProjectContext();
           ensureStep3Button();
           return result;
         };
@@ -245,6 +299,7 @@
         window.exitWorkspace = function patchedExitWorkspace() {
           STATE.projectId = '';
           sessionStorage.removeItem('ppt_visual_draft_quality_project_id');
+          renderProjectContext();
           return originalExit.apply(this, arguments);
         };
         window.exitWorkspace.__visualQualityPatched = true;
@@ -253,12 +308,14 @@
     patch();
     const timer = setInterval(() => {
       patch();
+      refreshProjectContext();
       ensureStep3Button();
       if (window.enterWorkspace?.__visualQualityPatched && document.getElementById('step3-btn-visual-draft-quality')) clearInterval(timer);
     }, 500);
   }
 
   document.addEventListener('DOMContentLoaded', () => {
+    patchFetchForProjectContext();
     patchWorkspaceNavigation();
     ensureStep3Button();
   });

@@ -149,6 +149,12 @@ def check_visual_draft_quality_static_ui() -> None:
         "/steps/3/visual-draft-quality",
         "visual_draft.png",
         "Step 5 Mask",
+        "patchFetchForProjectContext",
+        "extractProjectIdFromUrl",
+        "inferProjectIdFromPerformance",
+        "visual-quality-context",
+        "btn-visual-quality-refresh-context",
+        "重新识别项目",
     ]:
         assert_contains(content, snippet, "Visual draft quality static UI")
 

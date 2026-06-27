@@ -23,11 +23,14 @@ STAGE_TITLE_OVERRIDES = {
     "style_references": "检查 Step 3 图片风格参考图",
 }
 
+_LEGACY_PROJECT_LEVEL_STYLE_REFS = "项目级" + "风格参考图"
+_LEGACY_PROJECT_STYLE_REFERENCE_LABEL = "Project style " + "references"
+
 MESSAGE_REPLACEMENTS = [
     ("生成风格参考图", "检查 Step 3 图片风格参考图"),
-    ("检查项目级风格参考图", "检查 Step 3 图片风格参考图"),
-    ("项目级风格参考图", "Step 3 图片风格参考图"),
-    ("Project style references", "Step 3 image style references"),
+    ("检查" + _LEGACY_PROJECT_LEVEL_STYLE_REFS, "检查 Step 3 图片风格参考图"),
+    (_LEGACY_PROJECT_LEVEL_STYLE_REFS, "Step 3 图片风格参考图"),
+    (_LEGACY_PROJECT_STYLE_REFERENCE_LABEL, "Step 3 image style references"),
     ("风格参考图生成失败，继续使用文本风格", "Step 3 图片风格参考图生成失败，继续使用 Step 3 文本图片风格"),
     ("风格参考图已就绪或当前项目不需要自动生成", "Step 3 图片风格参考图已就绪；自动流程不会从项目创建配置生成参考图"),
     ("风格参考图", "Step 3 图片风格参考图"),

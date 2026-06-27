@@ -319,6 +319,12 @@ def check_step5_build_assets_flag(sitecustomize: ModuleType, result: Result) -> 
         result.pass_("Step 5 build_assets flag is respected")
 
 
+def check_runtime_bootstrap_contract(result: Result) -> None:
+    module = importlib.import_module("scripts.check_runtime_bootstrap_contract")
+    module.main()
+    result.pass_("runtime bootstrap contract is enforced")
+
+
 def main() -> int:
     if os.environ.get("PPT_STUDIO_DISABLE_RUNTIME_HOTFIXES"):
         print("FAIL PPT_STUDIO_DISABLE_RUNTIME_HOTFIXES is set; runtime hotfixes are disabled.")
@@ -331,6 +337,7 @@ def main() -> int:
         check_runtime_security_module(result)
         check_manifest_reconcile_and_topic(sitecustomize, result)
         check_step5_build_assets_flag(sitecustomize, result)
+        check_runtime_bootstrap_contract(result)
     except CheckFailure as exc:
         print(f"FAIL {exc}")
         return 1

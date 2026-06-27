@@ -44,6 +44,14 @@ REQUIRED_READY_ROUTES = {
     ("/api/projects/{project_id}/steps/5/ai-mask/annotate", "POST"),
 }
 
+DECORATOR_METHODS = {
+    "get": "GET",
+    "post": "POST",
+    "put": "PUT",
+    "delete": "DELETE",
+    "patch": "PATCH",
+}
+
 
 def _assignment_value(module: ast.Module, name: str) -> Any:
     for node in module.body:
@@ -109,22 +117,31 @@ def _call_name(call: ast.Call) -> str:
     return ""
 
 
-def _routes_from_call(call: ast.Call) -> set[tuple[str, str]]:
-    name = _call_name(call)
-    if name not in {"add_api_route", "APIRoute"}:
-        return set()
-
+def _path_from_call(call: ast.Call) -> str | None:
     path_node: ast.AST | None = None
     if call.args:
         path_node = call.args[0]
     if path_node is None:
         path_node = _keyword_value(call, "path")
-    path = _string_literal(path_node)
-    if not path:
-        return set()
+    return _string_literal(path_node)
 
-    methods = _literal_methods(_keyword_value(call, "methods"))
-    return {(path, method) for method in methods}
+
+def _routes_from_call(call: ast.Call) -> set[tuple[str, str]]:
+    name = _call_name(call)
+    if name == "add_api_route" or name == "APIRoute":
+        path = _path_from_call(call)
+        if not path:
+            return set()
+        methods = _literal_methods(_keyword_value(call, "methods"))
+        return {(path, method) for method in methods}
+
+    if name in DECORATOR_METHODS:
+        path = _path_from_call(call)
+        if not path:
+            return set()
+        return {(path, DECORATOR_METHODS[name])}
+
+    return set()
 
 
 def _registered_runtime_routes(module_names: set[str]) -> set[tuple[str, str]]:

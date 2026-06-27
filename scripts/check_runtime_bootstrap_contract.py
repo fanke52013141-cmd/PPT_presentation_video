@@ -44,6 +44,7 @@ REQUIRED_READY_ROUTES = {
     ("/api/projects/{project_id}/steps/5/ai-mask/annotate", "POST"),
 }
 
+ROUTE_HOST_NAMES = {"app", "router"}
 DECORATOR_METHODS = {
     "get": "GET",
     "post": "POST",
@@ -118,16 +119,31 @@ def _call_name(call: ast.Call) -> str:
     return ""
 
 
+def _is_known_route_host(call: ast.Call) -> bool:
+    func = call.func
+    if isinstance(func, ast.Name):
+        return func.id == "APIRoute"
+    if isinstance(func, ast.Attribute):
+        return isinstance(func.value, ast.Name) and func.value.id in ROUTE_HOST_NAMES
+    return False
+
+
 def _path_from_call(call: ast.Call) -> str | None:
     path_node: ast.AST | None = None
     if call.args:
         path_node = call.args[0]
     if path_node is None:
         path_node = _keyword_value(call, "path")
-    return _string_literal(path_node)
+    path = _string_literal(path_node)
+    if not path or not path.startswith("/api/"):
+        return None
+    return path
 
 
 def _routes_from_call(call: ast.Call) -> set[tuple[str, str]]:
+    if not _is_known_route_host(call):
+        return set()
+
     name = _call_name(call)
     if name == "add_api_route" or name == "APIRoute":
         path = _path_from_call(call)
@@ -185,6 +201,10 @@ def decorator_get():
 @app.api_route("/api/decorator-api-route", methods=["PATCH"])
 def decorator_api_route():
     pass
+
+payload.get("/api/not-a-route")
+client.post("/api/not-a-route")
+app.get("/static/not-api")
 '''
     expected = {
         ("/api/add", "GET"),
@@ -195,8 +215,14 @@ def decorator_api_route():
     }
     found = _routes_from_source(source)
     missing = expected - found
+    extra = found - expected
+    problems = []
     if missing:
-        raise AssertionError("Route scanner smoke test failed:\n" + "\n".join(_format_route(route) for route in sorted(missing, key=_format_route)))
+        problems.append("Route scanner smoke test missed routes:\n" + "\n".join(_format_route(route) for route in sorted(missing, key=_format_route)))
+    if extra:
+        problems.append("Route scanner smoke test found false positives:\n" + "\n".join(_format_route(route) for route in sorted(extra, key=_format_route)))
+    if problems:
+        raise AssertionError("\n\n".join(problems))
 
 
 def _format_route(route: tuple[str, str]) -> str:

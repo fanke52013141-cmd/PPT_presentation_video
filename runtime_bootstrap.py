@@ -86,6 +86,19 @@ def _route_paths(server_module: ModuleType) -> set[str]:
     }
 
 
+def missing_runtime_paths(server_module: ModuleType) -> set[str]:
+    return EXPECTED_RUNTIME_PATHS - _route_paths(server_module)
+
+
+def _format_missing_routes() -> dict[str, list[str]]:
+    missing_by_module: dict[str, list[str]] = {}
+    for module in _server_candidates():
+        missing = sorted(missing_runtime_paths(module))
+        if missing:
+            missing_by_module[getattr(module, "__name__", "<unknown>")] = missing
+    return missing_by_module
+
+
 def _move_root_static_mount_to_end(server_module: ModuleType) -> None:
     app = getattr(server_module, "app", None)
     router = getattr(app, "router", None)
@@ -125,7 +138,7 @@ def _move_root_static_mount_to_end(server_module: ModuleType) -> None:
 
 
 def runtime_paths_ready(server_module: ModuleType) -> bool:
-    return EXPECTED_RUNTIME_PATHS.issubset(_route_paths(server_module))
+    return not missing_runtime_paths(server_module)
 
 
 def _import_runtime_modules() -> bool:
@@ -228,7 +241,11 @@ def install_when_server_ready() -> None:
             if time.monotonic() - started_at > INSTALL_TIMEOUT_SEC:
                 logger = _logger()
                 if logger is not None:
-                    logger.warning("Runtime bridge bootstrap did not import bridges within %.0f seconds.", INSTALL_TIMEOUT_SEC)
+                    logger.warning(
+                        "Runtime bridge bootstrap did not register all critical routes within %.0f seconds. Missing routes: %s",
+                        INSTALL_TIMEOUT_SEC,
+                        _format_missing_routes() or {"<no-server-module>": sorted(EXPECTED_RUNTIME_PATHS)},
+                    )
                 return
             time.sleep(POLL_INTERVAL_SEC)
 

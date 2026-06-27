@@ -32,6 +32,7 @@ RUNTIME_MODULES = [
     "runtime_storyboard_background",
     "runtime_storyboard_background_render",
     "runtime_project_profile",
+    "runtime_project_profile_templates_override",
     "runtime_project_style_references",
     "runtime_project_style_reference_manager",
     "runtime_project_style_reference_step3",

@@ -2,68 +2,339 @@
   'use strict';
 
   const MODAL_ID = 'modal-ai-mask-settings';
-  const LOCAL_DEFINITIONS = [
-    ['white_threshold','白色亮度阈值','White brightness threshold','number',245,220,255,1,'RGB','判断像素是否属于纯白背景。RGB 三个通道都高于该值，且色差满足容忍度时，才会被当作可连通背景白。','Pixels above this threshold can be treated as connected white background.','数值越高越严格；数值越低，浅灰/米白也可能被当成背景。','Higher is stricter; lower accepts more off-white pixels.','背景残留白边或灰底时调低到 235-242；浅灰文字或浅色图标被误删时调高到 248-252。','Lower to 235-242 for white/gray leftovers; raise to 248-252 if pale artwork is removed.'],
-    ['color_tolerance','白色色差容忍度','White chroma tolerance','number',12,0,40,1,'RGB delta','判断白色时允许 R/G/B 三个通道之间的最大差值，用于区分真正白底和浅色彩色元素。','Maximum RGB channel difference for neutral white.','数值越大，偏黄/偏蓝白底越容易识别为背景；数值越小，彩色高光越不容易误删。','Higher tolerates tinted white; lower protects colored highlights.','白底有色偏时调到 16-24；浅黄色、浅蓝色元素被误抠除时调到 5-8。','Use 16-24 for tinted background; use 5-8 if pale colored elements disappear.'],
-    ['add_border','预处理补白边','Temporary white border','number',2,0,8,1,'px','在 flood fill 前给图片四周临时补纯白边，避免元素贴边导致外部背景不连通。输出坐标会自动还原。','Adds a temporary white border before flood fill so edge-touching elements do not break background connectivity.','主要影响贴边元素和边缘背景的稳定性。','Improves robustness near the canvas edge.','元素贴边时调到 3-6；确认元素都在中间时可调到 0-1。','Use 3-6 for edge-touching elements; use 0-1 when all content is centered.'],
-    ['connectivity','连通性方向','Connectivity','select',8,4,8,1,'4 / 8','Flood fill 和元素连通域使用 4 方向或 8 方向。8 方向会把斜向接触的像素视为连通。','4-neighbor or 8-neighbor connected components. 8-neighbor treats diagonal pixels as connected.','8 方向更不容易把斜线、手绘线拆断；4 方向更容易分离相邻元素。','8 preserves diagonal strokes; 4 separates close objects more aggressively.','手绘线条、斜箭头被拆散时用 8；元素轻微斜向接触导致合并时尝试 4。','Use 8 if diagonal strokes split; try 4 if diagonal adjacency merges elements.'],
-    ['min_element_area','最小元素面积','Minimum element area','number',120,10,10000,10,'px²','小于该面积的连通域会被视为噪点，不进入 LLM 匹配。','Components smaller than this area are excluded as noise.','数值越大，小图标、小点、小字碎片越容易被过滤；数值越小，保留更多细节但噪点会增加。','Higher removes small details/noise; lower preserves tiny icons/text fragments.','噪点太多时调到 300-800；小图标或标点缺失时调到 20-80。','Use 300-800 for noisy images; use 20-80 if small icons or punctuation disappear.'],
-    ['component_padding_px','元素外扩边距','Component padding','number',12,0,80,1,'px','检测到单个元素 bbox 后向外扩的像素数，用于覆盖抗锯齿边缘和少量白边。','Extra pixels around each detected element bbox for anti-aliased edges and halos.','数值越大，Mask 更容易完整包住元素；数值过大会吃到相邻元素。','Higher captures edges; too high may include neighbors.','元素边缘被切时调到 18-32；相邻元素互相串入时调到 4-8。','Use 18-32 if edges are clipped; use 4-8 if neighbors leak in.'],
-    ['merge_gap_px','语块合并间距','Group merge gap','number',40,0,160,4,'px','LLM 把多个视觉元素绑定到同一语块后，若元素之间距离小于该值，会倾向作为一个整体 Mask。','Nearby elements assigned to one narration group are treated as one phrase block.','影响图标+标题+说明文字能否合并成一个语块。数值越大，合并越积极。','Controls whether icon + label + note become one phrase block. Higher merges more.','语块被拆得太碎时调到 60-100；多个语块被合并时调到 12-24。','Use 60-100 if blocks are fragmented; use 12-24 if blocks merge incorrectly.'],
-    ['max_group_elements','单语块最多元素数','Max elements per phrase block','number',8,1,20,1,'items','限制一个 narration group 最多绑定多少个自动检测元素，避免 LLM 把整页误合并。','Limits how many detected elements one narration group can claim.','影响复杂流程图或多组件语块能否完整绑定。','Affects whether complex diagrams can be bound as one group.','复杂流程图缺元素时调大到 12-16；整页被绑定到一组时调小到 3-5。','Use 12-16 for complex diagrams; use 3-5 if one group absorbs the slide.'],
-    ['subtitle_safe_y','字幕安全线 Y','Subtitle safe-line Y','number',930,760,1080,10,'px','非装饰语块的 Mask 不应进入该 Y 坐标以下区域，避免遮挡最终视频字幕。','Non-decoration masks should stay above this Y coordinate to avoid subtitle conflicts.','影响底部元素是否允许自动标注。','Controls whether bottom elements can be auto-annotated.','内容确实靠底部时调高到 980-1040；字幕遮挡风险高时调低到 880-920。','Raise to 980-1040 for intentionally low content; lower to 880-920 if subtitles collide.'],
-    ['llm_confidence_threshold','LLM 匹配置信度阈值','LLM confidence threshold','number',0.72,0,1,0.01,'0-1','LLM 输出 confidence 低于该值时，不自动写入 Mask，只记录为待复核。','Matches below this confidence are not applied automatically.','越高越保守，误配更少但漏配更多；越低越激进。','Higher is conservative; lower is aggressive.','错配多时调到 0.82-0.9；漏配多但大体正确时调到 0.55-0.68。','Use 0.82-0.9 for frequent mismatches; use 0.55-0.68 if valid matches are skipped.'],
-    ['llm_temperature','LLM 温度','LLM temperature','number',0.1,0,1,0.05,'0-1','控制匹配模型输出随机性。匹配任务建议保持低温。','Controls model randomness. Low temperature is recommended.','越高越可能产生创造性解释；越低越稳定。','Higher is more creative; lower is more stable.','默认 0.1。只有模型过于死板、无法处理复杂图时才尝试 0.2-0.35。','Default 0.1. Try 0.2-0.35 only when matching is too rigid.'],
-    ['stroke_brush_size','兼容手动 Mask 画笔宽度','Compatible manual-mask brush size','number',96,24,240,4,'px','AI 标注结果会转换成现有 manual_mask.strokes；该值控制自动生成涂抹笔画的宽度。','AI masks are written as existing manual_mask.strokes; this controls generated stroke width.','越大越容易覆盖完整区域；过大可能越界或覆盖相邻语块。','Higher covers regions more fully; too high spills into neighbors.','Mask 有空洞时调大到 120-180；覆盖到相邻元素时调小到 48-72。','Use 120-180 for holes; use 48-72 if it spills into neighboring elements.'],
-    ['overwrite_existing_manual_mask','覆盖已有手动 Mask','Overwrite existing manual masks','boolean',false,0,1,1,'true / false','关闭时，已有手动涂抹的语块不会被 AI 标注覆盖。','When off, groups with existing manual brush strokes are preserved.','保护已经手工修好的标注。','Protects manually corrected masks.','日常保持关闭；需要整批重跑时再打开。','Keep off normally; enable only for a full re-run.'],
-    ['skip_locked_groups','跳过已确认/锁定语块','Skip approved/locked groups','boolean',true,0,1,1,'true / false','开启时，review_status 为 approved 或 locked 的语块不会被 AI 覆盖。','When on, approved or locked groups are not overwritten.','保护已经确认的 Mask 和语块绑定。','Protects reviewed masks and bindings.','日常保持开启；要强制重算所有语块时关闭。','Keep on normally; turn off only to force recalculation.']
+  const USER_SETTING_KEYS = new Set([
+    'white_threshold',
+    'color_tolerance',
+    'min_element_area',
+    'component_padding_px',
+    'merge_gap_px',
+    'subtitle_safe_y',
+    'stroke_brush_size',
+    'overwrite_existing_manual_mask',
+    'skip_locked_groups'
+  ]);
+
+  const PARAMS = [
+    {
+      key: 'white_threshold', label: '白底识别阈值', type: 'number', default: 245, min: 220, max: 255, step: 1,
+      usual: '235 - 252',
+      help: '判断哪些像素算白色背景。背景灰、白边残留多就调低；浅色元素被误删就调高。'
+    },
+    {
+      key: 'color_tolerance', label: '白色色差容忍', type: 'number', default: 12, min: 0, max: 40, step: 1,
+      usual: '5 - 24',
+      help: '允许白色像素有轻微偏黄、偏蓝。白底有色偏就调高；浅色彩色元素被当背景删掉就调低。'
+    },
+    {
+      key: 'min_element_area', label: '最小元素面积', type: 'number', default: 120, min: 10, max: 10000, step: 10,
+      usual: '20 - 800',
+      help: '小于这个面积的连通块会当噪点过滤。噪点太多调高；小图标、标点、小字被漏掉调低。'
+    },
+    {
+      key: 'component_padding_px', label: '元素外扩边距', type: 'number', default: 12, min: 0, max: 80, step: 1,
+      usual: '4 - 32 px',
+      help: '检测到元素后向外多包一点，避免边缘被切。元素边缘缺失调高；相邻元素被带进去调低。'
+    },
+    {
+      key: 'merge_gap_px', label: '语块合并距离', type: 'number', default: 40, min: 0, max: 160, step: 4,
+      usual: '12 - 100 px',
+      help: '同一个语块绑定多个元素时，决定合并范围。图标+标题被拆太碎调高；多个语块粘在一起调低。'
+    },
+    {
+      key: 'subtitle_safe_y', label: '字幕安全线', type: 'number', default: 930, min: 760, max: 1080, step: 10,
+      usual: '880 - 1040 px',
+      help: '自动 Mask 尽量不进入这条线以下，避免挡字幕。底部内容必须标注就调高；字幕容易冲突就调低。'
+    },
+    {
+      key: 'stroke_brush_size', label: '自动画笔宽度', type: 'number', default: 96, min: 24, max: 240, step: 4,
+      usual: '48 - 180 px',
+      help: 'AI 结果会写成手动 Mask 笔画，这里控制笔画粗细。Mask 有空洞调大；盖到旁边元素调小。'
+    },
+    {
+      key: 'overwrite_existing_manual_mask', label: '覆盖已有 Mask', type: 'boolean', default: false,
+      usual: '默认关闭',
+      help: '关闭时不会覆盖你已经手工画好的 Mask。日常建议关闭；只有整批重跑时再打开。'
+    },
+    {
+      key: 'skip_locked_groups', label: '跳过已确认语块', type: 'boolean', default: true,
+      usual: '默认开启',
+      help: '开启时不会改动已确认或锁定的语块。日常建议开启；需要强制重算所有语块时再关闭。'
+    }
   ];
-  function normalizeDefinitions(items){return items.map(x=>({key:x[0],label_zh:x[1],label_en:x[2],type:x[3],default:x[4],min:x[5],max:x[6],step:x[7],unit:x[8],meaning_zh:x[9],meaning_en:x[10],affects_zh:x[11],affects_en:x[12],tuning_zh:x[13],tuning_en:x[14]}));}
-  const DEFINITIONS = normalizeDefinitions(LOCAL_DEFINITIONS);
 
-  function apiGet(url){return window.API?.get ? window.API.get(url) : fetch(url).then(r=>r.json().then(d=>{if(!r.ok)throw new Error(d.detail||r.statusText);return d;}));}
-  function apiPut(url,body){return window.API?.put ? window.API.put(url,body) : fetch(url,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json().then(d=>{if(!r.ok)throw new Error(d.detail||r.statusText);return d;}));}
-  function apiPost(url,body){return window.API?.post ? window.API.post(url,body) : fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})}).then(r=>r.json().then(d=>{if(!r.ok)throw new Error(d.detail||r.statusText);return d;}));}
-  function toast(msg,duration){if(window.showToast) window.showToast(msg,duration||3000); else console.log(msg);}
-  function projectId(){return window.state?.currentProject?.id || null;}
+  function apiGet(url) {
+    return window.API?.get ? window.API.get(url) : fetch(url).then(async r => {
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.detail || d.message || r.statusText);
+      return d;
+    });
+  }
 
-  function ensureStyles(){
-    if(document.getElementById('ai-mask-extension-style'))return;
-    const style=document.createElement('style'); style.id='ai-mask-extension-style';
-    style.textContent=`.ai-mask-setting-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:.9rem}.ai-mask-param-card{border:2px solid var(--ink-color,#111);border-radius:12px;padding:.85rem;background:#fffef9;box-shadow:3px 3px 0 rgba(0,0,0,.12)}.ai-mask-param-title{display:flex;align-items:baseline;justify-content:space-between;gap:.5rem}.ai-mask-param-title label{font-weight:800}.ai-mask-param-en{color:#666;font-size:.82rem;font-weight:600}.ai-mask-param-help{font-size:.82rem;color:#333;line-height:1.45;margin-top:.45rem}.ai-mask-param-range{color:#666;font-size:.78rem;margin-top:.25rem}.ai-mask-param-control{width:100%;margin-top:.35rem}.ai-mask-modal-scroll{max-height:72vh;overflow:auto;padding-right:.3rem}.ai-mask-prompt-block{margin-top:1rem;border-top:2px dashed #111;padding-top:1rem}.ai-mask-prompt-block textarea{width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.86rem}.ai-mask-run-summary{margin-left:.5rem;font-size:.85rem;color:#555}`;
+  function apiPut(url, body) {
+    return window.API?.put ? window.API.put(url, body) : fetch(url, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    }).then(async r => {
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.detail || d.message || r.statusText);
+      return d;
+    });
+  }
+
+  function apiPost(url, body) {
+    return window.API?.post ? window.API.post(url, body) : fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {})
+    }).then(async r => {
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.detail || d.message || r.statusText);
+      return d;
+    });
+  }
+
+  function toast(msg, duration) {
+    if (window.showToast) window.showToast(msg, duration || 3000);
+    else console.log(msg);
+  }
+
+  function projectId() {
+    const fromWindow = window.state?.currentProject?.id || window.PPTStudio?.getCurrentProject?.()?.id;
+    if (fromWindow) return fromWindow;
+    const bgSrc = document.getElementById('step5-bg-img')?.getAttribute('src') || '';
+    const match = bgSrc.match(/\/api\/projects\/([^/]+)\/slides\//);
+    if (match) return decodeURIComponent(match[1]);
+    const currentLinks = Array.from(document.querySelectorAll('[src], [href]'))
+      .map(el => el.getAttribute('src') || el.getAttribute('href') || '')
+      .join('\n');
+    const anyMatch = currentLinks.match(/\/api\/projects\/([^/]+)\//);
+    return anyMatch ? decodeURIComponent(anyMatch[1]) : null;
+  }
+
+  function escapeAttr(value) {
+    return String(value ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  }
+
+  function ensureStyles() {
+    if (document.getElementById('ai-mask-extension-style')) return;
+    const style = document.createElement('style');
+    style.id = 'ai-mask-extension-style';
+    style.textContent = `
+      .ai-mask-compact-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:.65rem;margin-top:.75rem}
+      .ai-mask-param-row{display:grid;grid-template-columns:minmax(112px,1fr) minmax(88px,120px) 28px;align-items:center;gap:.5rem;border:1.5px solid var(--ink-color,#111);border-radius:9px;padding:.55rem .65rem;background:#fffef9}
+      .ai-mask-param-row label{font-weight:800;font-size:.86rem;color:#222;min-width:0}
+      .ai-mask-param-row input[type="number"],.ai-mask-param-row select{width:100%;min-height:32px;padding:.28rem .4rem;border:1.5px solid #111;border-radius:6px;background:#fff;font:inherit;box-sizing:border-box}
+      .ai-mask-switch{display:flex;align-items:center;justify-content:flex-start;gap:.35rem;font-size:.82rem;font-weight:700;white-space:nowrap}
+      .ai-mask-help{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border:1.5px solid #111;border-radius:999px;background:#f4f2eb;font-weight:900;cursor:help;position:relative;line-height:1}
+      .ai-mask-help:hover::after{content:attr(data-help);position:absolute;right:0;top:30px;width:280px;z-index:9000;padding:.65rem .75rem;border:1.5px solid #111;border-radius:8px;background:#fffef9;box-shadow:3px 3px 0 rgba(0,0,0,.15);white-space:pre-wrap;text-align:left;font-weight:600;font-size:.78rem;line-height:1.45;color:#222}
+      .ai-mask-section-title{display:flex;align-items:center;justify-content:space-between;gap:.8rem;margin-top:1rem}
+      .ai-mask-prompt-block{margin-top:1rem;border-top:1.5px dashed #111;padding-top:.8rem}
+      .ai-mask-prompt-block textarea{width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.84rem;line-height:1.45;box-sizing:border-box}
+      .ai-mask-modal-scroll{max-height:72vh;overflow:auto;padding-right:.3rem}
+      .ai-mask-run-summary{margin-left:.5rem;font-size:.85rem;color:#555;font-weight:700}
+      body.step5-fullscreen-mode #canvas-container{aspect-ratio:16/9;height:auto!important;max-height:calc(100vh - 172px);width:min(100%,calc((100vh - 172px)*16/9));}
+      body.step5-fullscreen-mode #canvas-container canvas,body.step5-fullscreen-mode #canvas-container img{width:100%!important;height:100%!important;object-fit:contain!important;}
+      body.step5-fullscreen-mode #step-panel-5 .workspace-left{align-items:center;justify-content:center;overflow:hidden;}
+    `;
     document.head.appendChild(style);
   }
-  function button(id,text,cls){const b=document.createElement('button');b.id=id;b.type='button';b.className=cls||'secondary';b.textContent=text;return b;}
-  function injectButtons(){
-    const toolbar=document.querySelector('#step-panel-5 .step5-toolbar');
-    if(!toolbar||document.getElementById('step5-btn-ai-mask'))return;
-    const settings=button('step5-btn-ai-mask-settings','AI 标注设置','secondary');
-    const run=button('step5-btn-ai-mask','AI 标注全部 Slides','success');
-    const status=document.createElement('span'); status.id='step5-ai-mask-status'; status.className='ai-mask-run-summary';
-    const anchor=document.getElementById('step5-btn-fullscreen');
-    toolbar.insertBefore(settings,anchor||null); toolbar.insertBefore(run,anchor||null); toolbar.insertBefore(status,anchor||null);
-    settings.addEventListener('click',openSettings); run.addEventListener('click',runAnnotation);
+
+  function button(id, text, cls) {
+    const b = document.createElement('button');
+    b.id = id;
+    b.type = 'button';
+    b.className = cls || 'secondary';
+    b.textContent = text;
+    return b;
   }
-  function inputHtml(def,value){
-    if(def.type==='boolean')return `<label style="display:flex;align-items:center;gap:.5rem"><input class="ai-mask-setting-input" data-key="${def.key}" type="checkbox" ${value?'checked':''}> 开启 / Enabled</label>`;
-    if(def.type==='select')return `<select class="ai-mask-setting-input ai-mask-param-control" data-key="${def.key}"><option value="4" ${String(value)==='4'?'selected':''}>4</option><option value="8" ${String(value)==='8'?'selected':''}>8</option></select>`;
-    return `<input class="ai-mask-setting-input ai-mask-param-control" data-key="${def.key}" type="number" min="${def.min}" max="${def.max}" step="${def.step}" value="${value}">`;
+
+  function injectButtons() {
+    const toolbar = document.querySelector('#step-panel-5 .step5-toolbar');
+    if (!toolbar || document.getElementById('step5-btn-ai-mask')) return;
+    const settings = button('step5-btn-ai-mask-settings', 'AI 标注设置', 'secondary');
+    const run = button('step5-btn-ai-mask', 'AI 标注全部 Slides', 'success');
+    const status = document.createElement('span');
+    status.id = 'step5-ai-mask-status';
+    status.className = 'ai-mask-run-summary';
+    const anchor = document.getElementById('step5-btn-fullscreen');
+    toolbar.insertBefore(settings, anchor || null);
+    toolbar.insertBefore(run, anchor || null);
+    toolbar.insertBefore(status, anchor || null);
+    settings.addEventListener('click', openSettings);
+    run.addEventListener('click', runAnnotation);
   }
-  function card(def,settings){const value=settings[def.key]!==undefined?settings[def.key]:def.default;const range=def.type==='boolean'?'true / false':`${def.min} - ${def.max} ${def.unit||''}`;return `<div class="ai-mask-param-card"><div class="ai-mask-param-title"><label>${def.label_zh}</label><span class="ai-mask-param-en">${def.label_en}</span></div>${inputHtml(def,value)}<div class="ai-mask-param-range">范围 / Range：${range}；默认 / Default：${def.default}</div><div class="ai-mask-param-help"><strong>含义 / Meaning：</strong>${def.meaning_zh}<br>${def.meaning_en}</div><div class="ai-mask-param-help"><strong>影响 / Affects：</strong>${def.affects_zh}<br>${def.affects_en}</div><div class="ai-mask-param-help"><strong>怎么调 / Tuning：</strong>${def.tuning_zh}<br>${def.tuning_en}</div></div>`;}
-  function ensureModal(){
-    let modal=document.getElementById(MODAL_ID); if(modal)return modal;
-    modal=document.createElement('div'); modal.id=MODAL_ID; modal.className='modal-overlay'; modal.style.display='none';
-    modal.innerHTML=`<div class="modal-content config-editor-modal" style="max-width:1120px;width:min(1120px,94vw)"><div class="ai-mask-modal-scroll"><h3 class="highlight-title">AI Mask 自动标注设置</h3><p class="config-editor-note">AI 标注会批量处理所有 Slides：先用纯白背景连通域算法识别元素，再用 LLM 把元素绑定到 visual_groups 和 narration_beats。你可以继续用生图提示词控制元素之间不要粘连。</p><div id="ai-mask-settings-grid" class="ai-mask-setting-grid"></div><div class="ai-mask-prompt-block"><h4>可修改方法论 / Editable System Methodology</h4><p class="config-editor-note">这一段是你日常会调的方法论：匹配优先级、保守程度、语块合并逻辑等。</p><textarea id="ai-mask-methodology" rows="14" spellcheck="false"></textarea></div><div class="ai-mask-prompt-block"><h4>输出结构 / Output Structure</h4><p class="config-editor-note">这一段固定约束 JSON 结构。一般不建议频繁改，除非后端解析结构同步调整。</p><textarea id="ai-mask-output-structure" rows="12" spellcheck="false"></textarea></div></div><div class="config-editor-actions"><button id="btn-ai-mask-settings-cancel" class="secondary" type="button">取消</button><button id="btn-ai-mask-settings-save" class="success" type="button">保存 AI 标注设置</button></div></div>`;
+
+  function inputHtml(def, value) {
+    if (def.type === 'boolean') {
+      return `<label class="ai-mask-switch"><input class="ai-mask-setting-input" data-key="${def.key}" type="checkbox" ${value ? 'checked' : ''}> 开启</label>`;
+    }
+    return `<input class="ai-mask-setting-input" data-key="${def.key}" type="number" min="${def.min}" max="${def.max}" step="${def.step}" value="${escapeAttr(value)}">`;
+  }
+
+  function paramRow(def, settings) {
+    const value = settings[def.key] !== undefined ? settings[def.key] : def.default;
+    const rangeLine = `默认：${def.default}\n常用：${def.usual}\n作用：${def.help}`;
+    return `
+      <div class="ai-mask-param-row">
+        <label for="ai-mask-param-${def.key}">${def.label}</label>
+        ${inputHtml(def, value).replace('class="ai-mask-setting-input"', `id="ai-mask-param-${def.key}" class="ai-mask-setting-input"`)}
+        <span class="ai-mask-help" data-help="${escapeAttr(rangeLine)}">?</span>
+      </div>
+    `;
+  }
+
+  function ensureModal() {
+    let modal = document.getElementById(MODAL_ID);
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = MODAL_ID;
+    modal.className = 'modal-overlay';
+    modal.style.display = 'none';
+    modal.innerHTML = `
+      <div class="modal-content config-editor-modal" style="max-width:900px;width:min(900px,94vw)">
+        <div class="ai-mask-modal-scroll">
+          <h3 class="highlight-title">AI Mask 自动标注设置</h3>
+          <p class="config-editor-note">只保留常用 Mask 参数。大模型匹配参数使用系统默认值；日常只需要调整识别、合并和覆盖策略。</p>
+          <div class="ai-mask-section-title"><h4 style="margin:0">Mask 参数</h4><span class="config-editor-note" style="margin:0">悬停问号查看说明</span></div>
+          <div id="ai-mask-settings-grid" class="ai-mask-compact-grid"></div>
+          <div class="ai-mask-prompt-block">
+            <h4>匹配规则提示词</h4>
+            <p class="config-editor-note">这里控制“画面元素如何匹配到语块和演讲稿”。可以改方法论；不需要调大模型参数。</p>
+            <textarea id="ai-mask-methodology" rows="10" spellcheck="false"></textarea>
+          </div>
+          <details class="ai-mask-prompt-block">
+            <summary style="font-weight:800;cursor:pointer">高级：输出 JSON 结构</summary>
+            <p class="config-editor-note">默认不要修改。只有后端解析结构同步调整时才需要改。</p>
+            <textarea id="ai-mask-output-structure" rows="8" spellcheck="false"></textarea>
+          </details>
+        </div>
+        <div class="config-editor-actions">
+          <button id="btn-ai-mask-settings-cancel" class="secondary" type="button">取消</button>
+          <button id="btn-ai-mask-settings-save" class="success" type="button">保存设置</button>
+        </div>
+      </div>`;
     document.body.appendChild(modal);
-    modal.querySelector('#btn-ai-mask-settings-cancel').addEventListener('click',()=>modal.style.display='none');
-    modal.querySelector('#btn-ai-mask-settings-save').addEventListener('click',saveSettings);
+    modal.querySelector('#btn-ai-mask-settings-cancel').addEventListener('click', () => modal.style.display = 'none');
+    modal.querySelector('#btn-ai-mask-settings-save').addEventListener('click', saveSettings);
     return modal;
   }
-  async function openSettings(){ensureStyles();const modal=ensureModal();modal.style.display='flex';const grid=modal.querySelector('#ai-mask-settings-grid');grid.innerHTML='<div class="card">加载设置中...</div>';try{const data=await apiGet('/api/settings/ai-mask');const settings=data.settings||{};grid.innerHTML=DEFINITIONS.map(def=>card(def,settings)).join('');modal.querySelector('#ai-mask-methodology').value=data.prompts?.methodology||'';modal.querySelector('#ai-mask-output-structure').value=data.prompts?.output_structure||'';}catch(e){grid.innerHTML=`<div class="card sketch-dashed">加载失败：${e.message}</div>`;}}
-  function collect(){const modal=ensureModal();const settings={};modal.querySelectorAll('.ai-mask-setting-input').forEach(input=>{const key=input.dataset.key;if(!key)return;if(input.type==='checkbox')settings[key]=input.checked;else if(input.type==='number')settings[key]=Number(input.value);else settings[key]=input.value;});return {settings,prompts:{methodology:modal.querySelector('#ai-mask-methodology').value,output_structure:modal.querySelector('#ai-mask-output-structure').value}};}
-  async function saveSettings(){const btn=document.getElementById('btn-ai-mask-settings-save');btn.disabled=true;try{await apiPut('/api/settings/ai-mask',collect());toast('✅ AI 标注设置已保存');document.getElementById(MODAL_ID).style.display='none';}catch(e){toast(`❌ 保存失败：${e.message}`,6000);}finally{btn.disabled=false;}}
-  async function runAnnotation(){const id=projectId();if(!id){toast('请先打开一个项目。');return;}const btn=document.getElementById('step5-btn-ai-mask');const status=document.getElementById('step5-ai-mask-status');btn.disabled=true;status.textContent='AI 标注处理中：所有 Slides...';try{const result=await apiPost(`/api/projects/${id}/steps/5/ai-mask/annotate`,{scope:'all_slides'});status.textContent=`完成：${result.processed_slide_count||0} 页，更新 ${result.updated_group_count||0} 个语块`;toast(`✅ AI 标注完成：${result.processed_slide_count||0} 页，更新 ${result.updated_group_count||0} 个语块`,5000);if(typeof window.loadStep5Data==='function')await window.loadStep5Data();else if(typeof loadStep5Data==='function')await loadStep5Data();}catch(e){status.textContent='AI 标注失败';toast(`❌ AI 标注失败：${e.message}`,7000);}finally{btn.disabled=false;}}
-  function boot(){ensureStyles();injectButtons();}
-  const timer=setInterval(()=>{boot();if(document.getElementById('step5-btn-ai-mask'))clearInterval(timer);},500);
-  document.addEventListener('DOMContentLoaded',boot);
+
+  async function openSettings() {
+    ensureStyles();
+    const modal = ensureModal();
+    modal.style.display = 'flex';
+    const grid = modal.querySelector('#ai-mask-settings-grid');
+    grid.innerHTML = '<div class="card">加载设置中...</div>';
+    try {
+      const data = await apiGet('/api/settings/ai-mask');
+      const settings = data.settings || {};
+      grid.innerHTML = PARAMS.map(def => paramRow(def, settings)).join('');
+      modal.querySelector('#ai-mask-methodology').value = data.prompts?.methodology || '';
+      modal.querySelector('#ai-mask-output-structure').value = data.prompts?.output_structure || '';
+    } catch (e) {
+      grid.innerHTML = `<div class="card sketch-dashed">加载失败：${escapeAttr(e.message)}</div>`;
+    }
+  }
+
+  function collect() {
+    const modal = ensureModal();
+    const settings = {};
+    modal.querySelectorAll('.ai-mask-setting-input').forEach(input => {
+      const key = input.dataset.key;
+      if (!key || !USER_SETTING_KEYS.has(key)) return;
+      if (input.type === 'checkbox') settings[key] = input.checked;
+      else if (input.type === 'number') settings[key] = Number(input.value);
+      else settings[key] = input.value;
+    });
+    return {
+      settings,
+      prompts: {
+        methodology: modal.querySelector('#ai-mask-methodology').value,
+        output_structure: modal.querySelector('#ai-mask-output-structure').value
+      }
+    };
+  }
+
+  async function saveSettings() {
+    const btn = document.getElementById('btn-ai-mask-settings-save');
+    btn.disabled = true;
+    try {
+      await apiPut('/api/settings/ai-mask', collect());
+      toast('✅ AI Mask 设置已保存');
+      document.getElementById(MODAL_ID).style.display = 'none';
+    } catch (e) {
+      toast(`❌ 保存失败：${e.message}`, 6000);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function flushStep5DraftBeforeAiMask() {
+    if (window.state?.step5AutoSaveTimer) {
+      clearTimeout(window.state.step5AutoSaveTimer);
+      window.state.step5AutoSaveTimer = null;
+    }
+    if (typeof window.saveStep5CurrentState === 'function') {
+      window.saveStep5CurrentState();
+    }
+    if (window.state?.step5AutoSavePromise) {
+      try { await window.state.step5AutoSavePromise; } catch (_) {}
+    }
+    if (typeof window.saveStep5Draft === 'function') {
+      await window.saveStep5Draft();
+    }
+  }
+
+  function summarizeResult(result) {
+    const slides = Array.isArray(result.slides) ? result.slides : [];
+    const detected = slides.reduce((sum, s) => sum + Number(s.detected_element_count || 0), 0);
+    const matched = slides.reduce((sum, s) => sum + Number(s.matched_group_count || 0), 0);
+    const skipped = slides.reduce((sum, s) => sum + Number(s.skipped_group_count || 0), 0);
+    const warnings = slides.reduce((sum, s) => sum + (Array.isArray(s.warnings) ? s.warnings.length : 0), 0);
+    const updated = Number(result.updated_group_count || 0);
+    return { detected, matched, skipped, warnings, updated, processed: Number(result.processed_slide_count || 0) };
+  }
+
+  async function runAnnotation() {
+    const id = projectId();
+    if (!id) {
+      toast('请先打开项目并进入 Mask 标注页。未能识别当前 project_id。', 6000);
+      return;
+    }
+    const btn = document.getElementById('step5-btn-ai-mask');
+    const status = document.getElementById('step5-ai-mask-status');
+    btn.disabled = true;
+    if (status) status.textContent = '准备当前标注草稿...';
+    try {
+      if (window.state?.canvasState) window.state.canvasState.semanticLoading = true;
+      await flushStep5DraftBeforeAiMask();
+      if (status) status.textContent = 'AI 标注处理中：所有 Slides...';
+      const result = await apiPost(`/api/projects/${encodeURIComponent(id)}/steps/5/ai-mask/annotate`, { scope: 'all_slides' });
+      const summary = summarizeResult(result);
+      if (status) {
+        status.textContent = `完成：${summary.processed} 页，检测 ${summary.detected} 个，匹配 ${summary.matched} 个，写入 ${summary.updated} 个，跳过 ${summary.skipped} 个`;
+      }
+      const detail = summary.updated > 0
+        ? `✅ AI 标注完成：处理 ${summary.processed} 页，写入 ${summary.updated} 个 Mask。`
+        : `⚠️ AI 标注完成，但没有写入新的 Mask。可能是已有手动 Mask、语块已确认/锁定、或匹配置信度不足。`;
+      toast(detail, 7000);
+      if (typeof window.loadStep5Data === 'function') await window.loadStep5Data();
+      else if (typeof loadStep5Data === 'function') await loadStep5Data();
+      if (typeof window.renderStep5Workspace === 'function') window.renderStep5Workspace();
+    } catch (e) {
+      if (status) status.textContent = 'AI 标注失败';
+      toast(`❌ AI 标注失败：${e.message}`, 8000);
+    } finally {
+      if (window.state?.canvasState) window.state.canvasState.semanticLoading = false;
+      btn.disabled = false;
+    }
+  }
+
+  function boot() {
+    ensureStyles();
+    injectButtons();
+  }
+
+  const timer = setInterval(() => {
+    boot();
+    if (document.getElementById('step5-btn-ai-mask')) clearInterval(timer);
+  }, 500);
+  document.addEventListener('DOMContentLoaded', boot);
 })();

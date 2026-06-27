@@ -272,8 +272,6 @@ def install_when_server_ready() -> None:
         started_at = time.monotonic()
         while not os.environ.get("PPT_STUDIO_DISABLE_RUNTIME_BOOTSTRAP"):
             for module in _server_candidates():
-                if runtime_paths_ready(module):
-                    return
                 install_for_server_module(module)
                 if runtime_paths_ready(module):
                     return

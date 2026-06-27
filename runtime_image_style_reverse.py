@@ -1,9 +1,12 @@
-"""Project image-style reverse engineering from uploaded references.
+"""Step 3 image-style reverse engineering from uploaded references.
 
 Allows users to upload 1-3 reference images and turn them into a structured
-Project Profile image_style_profile. The output is style text/rules only: final
-video backgrounds and complex image backgrounds must not be baked into
-visual_draft.png.
+Step 3 image style profile. The output is style text/rules only: final video
+backgrounds and complex image backgrounds must not be baked into visual_draft.png.
+
+The legacy /project-profile/image-style/reverse route is kept for compatibility.
+New UI should use /steps/3/image-style/reverse, which stores state in
+planning/step3_image_style.json.
 """
 
 from __future__ import annotations
@@ -141,7 +144,7 @@ def _save_uploaded_references(server_module: ModuleType, project: Any, files: li
 def _reverse_prompt(requirement: str, output_schema: dict[str, Any]) -> str:
     return json.dumps(
         {
-            "task": "Analyze the uploaded reference images and extract a reusable image style profile for a PPT video generation system.",
+            "task": "Analyze the uploaded reference images and extract a reusable Step 3 image style profile for a PPT video generation system.",
             "user_requirement": requirement,
             "hard_production_invariants": [
                 "Generated slide images must keep a flat pure-white #FFFFFF outer canvas.",
@@ -184,7 +187,7 @@ def _call_vision_model(server_module: ModuleType, saved: list[dict[str, Any]], p
         },
         "maskability_rules": ["方便 Mask reveal 的正向规则"],
         "negative_prompt_rules": ["必须避免的内容"],
-        "sample_reference_image_prompts": ["可用于生成项目级风格参考图的英文 prompt，最多 3 条"],
+        "sample_reference_image_prompts": ["可用于生成 Step 3 图片风格参考图的英文 prompt，最多 3 条"],
         "source_notes": "说明从参考图抽取了什么、舍弃了什么",
         "warnings": ["可能影响稳定生成或 Mask 的风险"],
     }
@@ -199,7 +202,7 @@ def _call_vision_model(server_module: ModuleType, saved: list[dict[str, Any]], p
         })
 
     system_prompt = """
-你是 PPT 视频生成系统的图片风格反推专家。
+你是 PPT 视频生成系统的 Step 3 图片风格反推专家。
 你会从用户上传的 1-3 张参考图中抽取可复用风格，而不是复制具体图片内容。
 必须特别保护生产约束：visual_draft.png 外背景永远纯白 #FFFFFF；最终视频背景单独合成；元素必须分离、不能粘连，方便 AI Mask 和手动 Mask。
 只输出 JSON，不要输出解释文字。
@@ -272,6 +275,8 @@ def _style_with_required_rules(style: dict[str, Any], saved: list[dict[str, Any]
 
 
 def _apply_style_to_project(project: Any, style: dict[str, Any]) -> dict[str, Any]:
+    """Legacy compatibility writer for the old project-profile route."""
+
     profile = _read_json(_profile_path(project), {})
     if not isinstance(profile, dict):
         profile = {}
@@ -284,6 +289,8 @@ def _apply_style_to_project(project: Any, style: dict[str, Any]) -> dict[str, An
         companion = {}
     companion.update({
         "version": "project_profile_prompt_companion_v1",
+        "legacy_compatibility_only": True,
+        "preferred_state_file": "planning/step3_image_style.json",
         "image_style_system_content": style.get("system_content", ""),
         "image_style_custom_requirement": style.get("custom_requirement", ""),
         "image_style_profile": style,
@@ -311,7 +318,7 @@ def _install_injection(app: Any) -> None:
         except Exception:
             return response
         if "image_style_reverse_extension.js" not in body and "</body>" in body:
-            body = body.replace("</body>", '  <script src="image_style_reverse_extension.js?v=20260626.1"></script>\n</body>')
+            body = body.replace("</body>", '  <script src="image_style_reverse_extension.js?v=20260627.2"></script>\n</body>')
         from starlette.responses import Response
         headers = dict(response.headers)
         headers.pop("content-length", None)
@@ -341,18 +348,28 @@ def _register(server_module: ModuleType) -> bool:
         saved = _save_uploaded_references(server_module, project, files)
         raw_style = _call_vision_model(server_module, saved, project, _safe_text(requirement, 4000))
         style = _style_with_required_rules(raw_style, saved, _safe_text(requirement, 4000))
-        profile = _apply_style_to_project(project, style) if apply else None
+        legacy_profile = _apply_style_to_project(project, style) if apply else None
         try:
             server_module.write_project_log(
                 project,
-                "image_style_reverse_engineered",
+                "legacy_image_style_reverse_engineered",
                 reference_count=len(saved),
                 applied=bool(apply),
                 style_name=style.get("style_name"),
+                preferred_route=f"/api/projects/{project_id}/steps/3/image-style/reverse",
             )
         except Exception:
             pass
-        return {"success": True, "style": style, "profile": profile, "inputs": saved}
+        return {
+            "success": True,
+            "style": style,
+            "style_state": None,
+            "legacy_profile": legacy_profile,
+            "profile": legacy_profile,
+            "inputs": saved,
+            "deprecated_route": True,
+            "preferred_route": f"/api/projects/{project_id}/steps/3/image-style/reverse",
+        }
 
     app.add_api_route("/api/projects/{project_id}/project-profile/image-style/reverse", reverse_image_style, methods=["POST"])
     try:

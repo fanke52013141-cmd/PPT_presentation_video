@@ -39,11 +39,15 @@ jobs:
           node --check static/project_profile_extension.js
           node --check static/style_reference_manager_extension.js
           node --check static/image_style_reverse_extension.js
+          node --check static/step2_storyboard_settings_extension.js
           node --check static/storyboard_background_extension.js
           node --check static/one_click_extension.js
 
       - name: Run visible-flow contract check
         run: node checks/test_visible_flow.js
+
+      - name: Run Step ownership contract check
+        run: python checks/test_step_ownership_contract.py
 
       - name: Run runtime hotfix self-check
         run: python scripts/check_runtime_hotfixes.py

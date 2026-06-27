@@ -12,6 +12,7 @@ import os
 import sys
 import threading
 import time
+from pathlib import Path
 from types import ModuleType
 from typing import Any
 
@@ -77,6 +78,28 @@ def _script_versions() -> dict[str, Any]:
     return versions
 
 
+def _step5_flush_migration_status(server_module: ModuleType) -> dict[str, Any]:
+    server_file = Path(str(getattr(server_module, "__file__", ""))).resolve()
+    root = server_file.parent if server_file.name else Path.cwd()
+    app_js = root / "static" / "app.js"
+    status: dict[str, Any] = {"app_js": str(app_js), "mode": "unknown", "native": False, "fallback_bridge_loaded": False}
+    try:
+        content = app_js.read_text(encoding="utf-8")
+    except Exception as exc:
+        status["error"] = f"{type(exc).__name__}: {exc}"
+        return status
+    native = "flushStep5Draft" in content and "window.PPTStudio" in content
+    status["native"] = native
+    try:
+        bridge = importlib.import_module("runtime_step5_flush_bridge")
+        status["fallback_bridge_loaded"] = True
+        status["bridge_would_inject"] = not bridge.app_has_native_step5_flush(content)
+    except Exception as exc:
+        status["fallback_bridge_error"] = f"{type(exc).__name__}: {exc}"
+    status["mode"] = "native_app_js" if native else "fallback_bridge"
+    return status
+
+
 def _diagnostics_payload(server_module: ModuleType) -> dict[str, Any]:
     app = server_module.app
     bootstrap = _runtime_bootstrap()
@@ -94,6 +117,7 @@ def _diagnostics_payload(server_module: ModuleType) -> dict[str, Any]:
         "routes": routes,
         "middleware_markers": _middleware_marker_status(app),
         "script_versions": _script_versions(),
+        "step5_flush_migration": _step5_flush_migration_status(server_module),
     }
 
 

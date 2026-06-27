@@ -87,6 +87,15 @@ FORBIDDEN_ONE_CLICK_STEP3_STYLE_SNIPPETS = [
     "Project style references",
 ]
 
+REQUIRED_ONE_CLICK_UI_SNIPPETS = [
+    "一键生成会读取当前各步骤配置",
+    "Step 2 分镜设置",
+    "Step 3 图片风格/参考图",
+    "Step 5 Mask 设置",
+    "它不会从创建项目弹窗定义分镜或图片风格",
+    "复用当前 Step 2/3/5 配置",
+]
+
 FORBIDDEN_CREATE_WIZARD_CONTROLS = [
     "name=\"storyboard_template_id\"",
     "name=\"image_style_template_id\"",
@@ -164,6 +173,13 @@ def test_one_click_uses_step3_image_style_wording() -> None:
         raise AssertionError("\n\n".join(problems))
 
 
+def test_one_click_ui_explains_current_step_settings() -> None:
+    content = read_text("static/one_click_extension.js")
+    missing = [snippet for snippet in REQUIRED_ONE_CLICK_UI_SNIPPETS if snippet not in content]
+    if missing:
+        raise AssertionError("One-click UI must explain that automation reads current Step settings:\n" + "\n".join(missing))
+
+
 def test_create_project_wizard_has_no_style_controls() -> None:
     content = read_text("static/project_profile_extension.js")
     offenders = [snippet for snippet in FORBIDDEN_CREATE_WIZARD_CONTROLS if snippet in content]
@@ -184,6 +200,7 @@ if __name__ == "__main__":
     test_step3_image_style_panel_is_self_contained()
     test_reverse_style_extension_is_only_a_fallback_entry()
     test_one_click_uses_step3_image_style_wording()
+    test_one_click_ui_explains_current_step_settings()
     test_create_project_wizard_has_no_style_controls()
     test_step3_alias_reverse_writes_step3_state_not_project_profile()
     print("Step ownership wording contract passed.")

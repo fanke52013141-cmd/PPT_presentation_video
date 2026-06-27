@@ -7,7 +7,7 @@ for normal local launches.
 This bootstrap is imported from ``database.py`` early during ``server.py`` import.
 It patches ``FastAPI.mount`` and also exposes a synchronous installer so runtime
 API routes are registered before ``app.mount("/", StaticFiles(...))`` can shadow
-.them.
+them.
 """
 
 from __future__ import annotations
@@ -222,7 +222,7 @@ def install_for_server_module(server_module: ModuleType) -> bool:
                 ok = False
                 logger = getattr(server_module, "logger", None) or _logger()
                 if logger is not None:
-                    logger.warning("Failed to register runtime bridge %s: %s", module_name, exc)
+                    logger.warning("Failed to register runtime bridge %s: %s", exc)
 
     if ok:
         setattr(sys, IMPORT_MARKER, True)

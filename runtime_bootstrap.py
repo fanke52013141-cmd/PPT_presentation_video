@@ -45,16 +45,18 @@ RUNTIME_MODULES = [
     "runtime_one_click_step3_style_patch",
 ]
 
-EXPECTED_RUNTIME_PATHS = {
-    "/api/settings/ai-mask",
-    "/api/project-profile/templates",
-    "/api/projects/{project_id}/one-click-generate",
-    "/api/projects/{project_id}/storyboard-background",
-    "/api/projects/{project_id}/steps/3/image-style",
-    "/api/projects/{project_id}/steps/3/image-style/reverse",
-    "/api/projects/{project_id}/steps/3/image-style/reference-images",
-    "/api/projects/{project_id}/steps/5/ai-mask/annotate",
+EXPECTED_RUNTIME_ROUTES = {
+    "/api/settings/ai-mask": {"GET"},
+    "/api/project-profile/templates": {"GET"},
+    "/api/projects/{project_id}/one-click-generate": {"POST"},
+    "/api/projects/{project_id}/one-click-generate/status": {"GET"},
+    "/api/projects/{project_id}/storyboard-background": {"GET"},
+    "/api/projects/{project_id}/steps/3/image-style": {"GET"},
+    "/api/projects/{project_id}/steps/3/image-style/reverse": {"POST"},
+    "/api/projects/{project_id}/steps/3/image-style/reference-images": {"GET", "POST", "DELETE"},
+    "/api/projects/{project_id}/steps/5/ai-mask/annotate": {"POST"},
 }
+EXPECTED_RUNTIME_PATHS = set(EXPECTED_RUNTIME_ROUTES)
 
 
 def _server_candidates() -> list[ModuleType]:
@@ -77,23 +79,56 @@ def _logger() -> Any:
     return None
 
 
-def _route_paths(server_module: ModuleType) -> set[str]:
+def _route_methods_by_path(server_module: ModuleType) -> dict[str, set[str]]:
     app = getattr(server_module, "app", None)
-    return {
-        str(getattr(route, "path", ""))
-        for route in getattr(app, "routes", []) or []
-        if getattr(route, "path", "")
-    }
+    result: dict[str, set[str]] = {}
+    for route in getattr(app, "routes", []) or []:
+        path = str(getattr(route, "path", ""))
+        if not path:
+            continue
+        methods = {str(method).upper() for method in (getattr(route, "methods", []) or [])}
+        if not methods:
+            continue
+        result.setdefault(path, set()).update(methods)
+    return result
+
+
+def _route_paths(server_module: ModuleType) -> set[str]:
+    return set(_route_methods_by_path(server_module))
+
+
+def _format_expected_route(path: str, method: str) -> str:
+    return f"{method.upper()} {path}"
+
+
+def _format_expected_routes() -> list[str]:
+    return sorted(
+        _format_expected_route(path, method)
+        for path, methods in EXPECTED_RUNTIME_ROUTES.items()
+        for method in methods
+    )
+
+
+def missing_runtime_routes(server_module: ModuleType) -> set[str]:
+    actual = _route_methods_by_path(server_module)
+    missing: set[str] = set()
+    for path, expected_methods in EXPECTED_RUNTIME_ROUTES.items():
+        actual_methods = actual.get(path, set())
+        for method in expected_methods:
+            if method.upper() not in actual_methods:
+                missing.add(_format_expected_route(path, method))
+    return missing
 
 
 def missing_runtime_paths(server_module: ModuleType) -> set[str]:
-    return EXPECTED_RUNTIME_PATHS - _route_paths(server_module)
+    missing_routes = missing_runtime_routes(server_module)
+    return {item.split(" ", 1)[1] for item in missing_routes}
 
 
 def _format_missing_routes() -> dict[str, list[str]]:
     missing_by_module: dict[str, list[str]] = {}
     for module in _server_candidates():
-        missing = sorted(missing_runtime_paths(module))
+        missing = sorted(missing_runtime_routes(module))
         if missing:
             missing_by_module[getattr(module, "__name__", "<unknown>")] = missing
     return missing_by_module
@@ -138,7 +173,7 @@ def _move_root_static_mount_to_end(server_module: ModuleType) -> None:
 
 
 def runtime_paths_ready(server_module: ModuleType) -> bool:
-    return not missing_runtime_paths(server_module)
+    return not missing_runtime_routes(server_module)
 
 
 def _import_runtime_modules() -> bool:
@@ -244,7 +279,7 @@ def install_when_server_ready() -> None:
                     logger.warning(
                         "Runtime bridge bootstrap did not register all critical routes within %.0f seconds. Missing routes: %s",
                         INSTALL_TIMEOUT_SEC,
-                        _format_missing_routes() or {"<no-server-module>": sorted(EXPECTED_RUNTIME_PATHS)},
+                        _format_missing_routes() or {"<no-server-module>": _format_expected_routes()},
                     )
                 return
             time.sleep(POLL_INTERVAL_SEC)

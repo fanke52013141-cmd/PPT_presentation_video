@@ -11,6 +11,7 @@ import os
 import sys
 import threading
 import time
+from pathlib import Path
 from types import ModuleType
 from typing import Any
 
@@ -19,11 +20,11 @@ INSTALL_TIMEOUT_SEC = 120.0
 POLL_INTERVAL_SEC = 0.1
 
 
-def _project_run_dir(project: Any) -> str:
+def _project_run_dir(project: Any) -> Path:
     run_dir = getattr(project, "run_dir", "") or ""
     if not run_dir:
         raise ValueError("Project run_dir is empty")
-    return run_dir
+    return Path(run_dir)
 
 
 def _register(server_module: ModuleType) -> bool:

@@ -1,9 +1,10 @@
-"""Project style reference image manager runtime bridge.
+"""Step 3 image style reference manager compatibility bridge.
 
-Adds lightweight management routes and injects a small UI extension for viewing,
-regenerating, and deleting project-local image style reference PNGs. Step 3
-binding is loaded directly by usercustomize through
-runtime_project_style_reference_step3.py.
+The legacy project-profile reference routes are still used as implementation
+helpers, but the product-facing UI now calls the Step 3 aliases exposed by
+``runtime_step3_image_style.py``. Deleting or clearing references also syncs
+``planning/step3_image_style.json`` so Step 3 prompt generation does not keep
+stale reference-image state.
 """
 
 from __future__ import annotations
@@ -21,6 +22,9 @@ PATCH_MARKER = "__ppt_project_style_reference_manager_patch__"
 INJECT_MARKER = "__ppt_project_style_reference_manager_inject_patch__"
 REFERENCE_DIRNAME = "style_references"
 REFERENCE_MANIFEST = "project_style_references.json"
+STEP3_STYLE_STATE = "step3_image_style.json"
+STYLE_REFERENCE_VERSION = "step3_style_references_v1"
+LEGACY_STYLE_REFERENCE_VERSION = "project_style_references_v1"
 
 
 def _read_json(path: Path, fallback: Any) -> Any:
@@ -45,6 +49,10 @@ def _manifest_path(project: Any) -> Path:
     return _run_dir(project) / "planning" / REFERENCE_MANIFEST
 
 
+def _step3_style_state_path(project: Any) -> Path:
+    return _run_dir(project) / "planning" / STEP3_STYLE_STATE
+
+
 def _references_dir(project: Any) -> Path:
     return _run_dir(project) / "planning" / REFERENCE_DIRNAME
 
@@ -67,6 +75,7 @@ def _safe_reference_path(project: Any, filename: Any) -> Path | None:
 
 
 def _reference_url(project_id: str, index: int) -> str:
+    # Legacy route kept for compatibility. Step 3 aliases rewrite this URL for the UI.
     return f"/api/projects/{project_id}/project-profile/image-style/reference-images/{index}?t={int(time.time())}"
 
 
@@ -94,26 +103,50 @@ def _normalize_manifest(project: Any, project_id: str) -> dict[str, Any]:
         })
     normalized.sort(key=lambda item: int(item.get("index") or 0))
     return {
-        "version": "project_style_references_v1",
+        "version": STYLE_REFERENCE_VERSION,
+        "legacy_version": LEGACY_STYLE_REFERENCE_VERSION,
+        "scope": "step3_image_style",
+        "deprecated_route": True,
+        "preferred_route": f"/api/projects/{project_id}/steps/3/image-style/reference-images",
         "updated_at": _safe_text(manifest.get("updated_at"), 80),
         "style_name": _safe_text(manifest.get("style_name"), 120),
         "images": normalized,
     }
 
 
+def _sync_step3_style_references(project: Any, manifest: dict[str, Any]) -> None:
+    state_path = _step3_style_state_path(project)
+    state = _read_json(state_path, {})
+    if not isinstance(state, dict):
+        state = {}
+    state.setdefault("version", "step3_image_style_v1")
+    state.setdefault("source", "reference_images")
+    state.setdefault("image_style_profile", {})
+    state["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+    state["reference_images"] = manifest.get("images", []) if isinstance(manifest.get("images"), list) else []
+    state["note"] = "Step 3 owns image style. Project creation does not set image style."
+    _write_json(state_path, state)
+
+
 def _write_normalized_manifest(project: Any, manifest: dict[str, Any]) -> None:
     cleaned = {
-        "version": "project_style_references_v1",
+        "version": STYLE_REFERENCE_VERSION,
+        "legacy_version": LEGACY_STYLE_REFERENCE_VERSION,
+        "scope": "step3_image_style",
         "updated_at": _safe_text(manifest.get("updated_at"), 80) or time.strftime("%Y-%m-%dT%H:%M:%S"),
         "style_name": _safe_text(manifest.get("style_name"), 120),
         "images": manifest.get("images", []),
     }
     _write_json(_manifest_path(project), cleaned)
+    _sync_step3_style_references(project, cleaned)
+
     companion_path = _run_dir(project) / "planning" / "project_profile_prompt_companion.json"
     companion = _read_json(companion_path, {})
     if not isinstance(companion, dict):
         companion = {}
     companion["style_reference_images"] = cleaned["images"]
+    companion["legacy_compatibility_only"] = True
+    companion["preferred_state_file"] = f"planning/{STEP3_STYLE_STATE}"
     _write_json(companion_path, companion)
 
 
@@ -154,7 +187,13 @@ def _delete_all_references(project: Any, project_id: str) -> dict[str, Any]:
                     deleted_count += 1
             except OSError:
                 pass
-    manifest = {"version": "project_style_references_v1", "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "images": []}
+    manifest = {
+        "version": STYLE_REFERENCE_VERSION,
+        "legacy_version": LEGACY_STYLE_REFERENCE_VERSION,
+        "scope": "step3_image_style",
+        "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "images": [],
+    }
     _write_normalized_manifest(project, manifest)
     result = _normalize_manifest(project, project_id)
     result["deleted_count"] = deleted_count
@@ -175,7 +214,7 @@ def _install_injection(app: Any) -> None:
         except Exception:
             return response
         if "style_reference_manager_extension.js" not in body and "</body>" in body:
-            body = body.replace("</body>", '  <script src="style_reference_manager_extension.js?v=20260626.1"></script>\n</body>')
+            body = body.replace("</body>", '  <script src="style_reference_manager_extension.js?v=20260627.4"></script>\n</body>')
         from starlette.responses import Response
         headers = dict(response.headers)
         headers.pop("content-length", None)
@@ -201,10 +240,15 @@ def _register(server_module: ModuleType) -> bool:
         except ValueError as exc:
             raise server_module.HTTPException(status_code=400, detail=str(exc)) from exc
         try:
-            server_module.write_project_log(project, "project_style_reference_image_deleted", index=index)
+            server_module.write_project_log(project, "legacy_step3_style_reference_image_deleted", index=index)
         except Exception:
             pass
-        return {"success": True, "references": references}
+        return {
+            "success": True,
+            "references": references,
+            "deprecated_route": True,
+            "preferred_route": f"/api/projects/{project_id}/steps/3/image-style/reference-images/{index}",
+        }
 
     def delete_all_reference_images(project_id: str, db: Any = server_module.Depends(server_module.get_db)) -> dict[str, Any]:
         project = db.query(server_module.Project).filter(server_module.Project.id == project_id).first()
@@ -212,10 +256,15 @@ def _register(server_module: ModuleType) -> bool:
             raise server_module.HTTPException(status_code=404, detail="项目不存在")
         references = _delete_all_references(project, project_id)
         try:
-            server_module.write_project_log(project, "project_style_reference_images_deleted", count=references.get("deleted_count", 0))
+            server_module.write_project_log(project, "legacy_step3_style_reference_images_deleted", count=references.get("deleted_count", 0))
         except Exception:
             pass
-        return {"success": True, "references": references}
+        return {
+            "success": True,
+            "references": references,
+            "deprecated_route": True,
+            "preferred_route": f"/api/projects/{project_id}/steps/3/image-style/reference-images",
+        }
 
     app.add_api_route("/api/projects/{project_id}/project-profile/image-style/reference-images/{index}", delete_reference_image, methods=["DELETE"])
     app.add_api_route("/api/projects/{project_id}/project-profile/image-style/reference-images", delete_all_reference_images, methods=["DELETE"])
@@ -224,7 +273,7 @@ def _register(server_module: ModuleType) -> bool:
     except Exception as exc:
         logger = getattr(server_module, "logger", None)
         if logger:
-            logger.warning("Failed to install project style reference manager UI injection: %s", exc)
+            logger.warning("Failed to install Step 3 style reference manager UI injection: %s", exc)
     setattr(server_module, PATCH_MARKER, True)
     return True
 

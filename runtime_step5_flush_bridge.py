@@ -1,10 +1,10 @@
-"""Step 5 draft flush bridge.
+"""Step 5 draft flush compatibility bridge.
 
-AI Mask writes to the backend Step 5 manifest after the user may have pending
-manual edits in the Step 5 editor. The main app owns the autosave timer and the
-``state`` object, so this bridge rewrites ``app.js`` in the same script scope to
-expose ``window.PPTStudio.flushStep5Draft()``. AI Mask can then clear pending
-Step 5 autosave before it writes generated masks.
+The preferred long-term implementation is a native ``window.PPTStudio.flushStep5Draft``
+export in ``static/app.js``. Until every local checkout has that native export,
+this bridge keeps older app.js responses working by injecting the same function
+inside the app.js script scope. If app.js already exposes the native API, this
+bridge leaves app.js unchanged and only keeps script cache-busting active.
 """
 
 from __future__ import annotations
@@ -73,6 +73,10 @@ AI_MASK_FLUSH_REPLACEMENT = f"""  async function flushStep5DraftBeforeAiMask() {
   }}"""
 
 
+def app_has_native_step5_flush(body: str) -> bool:
+    return "flushStep5Draft" in body and "window.PPTStudio" in body
+
+
 def _rewrite_html(body: str) -> str:
     body = re.sub(r'app\.js(?:\?v=[^"\']+)?', f'app.js?v={APP_SCRIPT_VERSION}', body)
     body = re.sub(r'ai_mask_extension\.js(?:\?v=[^"\']+)?', f'ai_mask_extension.js?v={AI_MASK_SCRIPT_VERSION}', body)
@@ -80,7 +84,7 @@ def _rewrite_html(body: str) -> str:
 
 
 def _rewrite_app_js(body: str) -> str:
-    if APP_FLUSH_MARKER in body:
+    if APP_FLUSH_MARKER in body or app_has_native_step5_flush(body):
         return body
     anchor = "\nasync function runStep5SemanticBlocks() {"
     if anchor not in body:

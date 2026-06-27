@@ -26,6 +26,7 @@ MIDDLEWARE_BRIDGE_MARKERS = {
     "runtime_step5_flush_bridge": "__ppt_step5_flush_bridge_patch__",
     "runtime_step2_storyboard_settings": "__ppt_step2_storyboard_settings_patch__",
     "runtime_project_style_reference_manager": "__ppt_project_style_reference_manager_inject_patch__",
+    "runtime_visual_draft_quality_ui": "__ppt_visual_draft_quality_ui_patch__",
 }
 
 
@@ -69,6 +70,7 @@ def _script_versions() -> dict[str, Any]:
         "runtime_step5_flush_bridge": ["APP_SCRIPT_VERSION", "AI_MASK_SCRIPT_VERSION"],
         "runtime_ai_mask_ui_cache_buster": ["SCRIPT_VERSION"],
         "runtime_one_click_ui_cache_buster": ["SCRIPT_VERSION"],
+        "runtime_visual_draft_quality_ui": ["SCRIPT_VERSION"],
     }.items():
         try:
             module = importlib.import_module(module_name)

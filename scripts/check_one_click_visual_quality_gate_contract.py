@@ -39,6 +39,11 @@ REQUIRED_UI_SNIPPETS = [
     "one-click-quality-card",
     "one-click-quality-metrics",
     "detail.action",
+    "非白区域",
+    "边界非白",
+    "字幕区占用",
+    "function boot()",
+    "document.readyState !== 'loading'",
 ]
 
 REQUIRED_CACHE_SNIPPETS = [

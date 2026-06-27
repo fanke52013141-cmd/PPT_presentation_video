@@ -7,7 +7,7 @@ for normal local launches.
 This bootstrap is imported from ``database.py`` early during ``server.py`` import.
 It patches ``FastAPI.mount`` and also exposes a synchronous installer so runtime
 API routes are registered before ``app.mount("/", StaticFiles(...))`` can shadow
-them.
+.them.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ POLL_INTERVAL_SEC = 0.05
 RUNTIME_MODULES = [
     "runtime_settings_mask",
     "runtime_ai_mask",
+    "runtime_ai_mask_ui_cache_buster",
     "runtime_storyboard_background",
     "runtime_storyboard_background_render",
     "runtime_project_profile",

@@ -37,8 +37,8 @@ REQUIRED_READY_ROUTES = {
     ("/api/projects/{project_id}/steps/3/image-style", "GET"),
     ("/api/projects/{project_id}/steps/3/image-style/reverse", "POST"),
     ("/api/projects/{project_id}/steps/3/image-style/reference-images", "GET"),
-    ("/api/projects/{project_id}/steps/3/image-style/reference-images", "POST"),
     ("/api/projects/{project_id}/steps/3/image-style/reference-images", "DELETE"),
+    ("/api/projects/{project_id}/steps/3/image-style/reference-images/generate", "POST"),
     ("/api/projects/{project_id}/steps/5/ai-mask/annotate", "POST"),
 }
 

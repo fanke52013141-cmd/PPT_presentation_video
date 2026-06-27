@@ -240,6 +240,9 @@ def _check_step5_flush_bridge_contract() -> None:
         "AI_MASK_FLUSH_MARKER",
         "ai_mask_extension.js",
         "app.js",
+        "app_has_native_step5_flush",
+        "APP_FLUSH_MARKER in body or app_has_native_step5_flush(body)",
+        "preferred long-term implementation is a native",
     ]
     missing = [snippet for snippet in required if snippet not in content]
     if missing:

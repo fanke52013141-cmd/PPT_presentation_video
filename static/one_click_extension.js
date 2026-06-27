@@ -110,7 +110,7 @@
     modal.innerHTML = `
       <div class="modal-content one-click-modal">
         <h3 class="highlight-title">一键生成</h3>
-        <p class="one-click-note"><strong>一键生成会读取当前各步骤配置：</strong>Step 2 分镜设置、最终视频背景、Step 3 图片风格/参考图、Step 5 Mask 设置。它不会从创建项目弹窗定义分镜或图片风格。失败时暂停并保留阶段状态；修复后可重新运行自动生成，系统会复用已存在且未过期的产物。</p>
+        <p class="one-click-note"><strong>一键生成会读取当前各步骤配置：</strong>Step 2 分镜设置、最终视频背景、Step 3 图片风格/参考图、Step 5 Mask 设置。自动流程会在 Step 3 图片生成后执行图片质量检查，检查白底、尺寸、边界和字幕安全区；不合格时会暂停在“检查 Step 3 图片质量”阶段并给出修复建议。它不会从创建项目弹窗定义分镜或图片风格。失败时暂停并保留阶段状态；修复后可重新运行自动生成，系统会复用已存在且未过期的产物。</p>
         <div class="one-click-toolbar">
           <button id="btn-one-click-start" class="success" type="button">重新运行自动生成</button>
           <button id="btn-one-click-refresh" class="secondary" type="button">刷新状态</button>
@@ -189,7 +189,7 @@
   async function startOneClick() {
     const projectId = activeProjectId();
     if (!projectId) return toast('当前没有可识别的项目，请先进入项目工作区。', 5000);
-    const confirmed = window.confirm('将重新运行自动生成流程，并复用当前 Step 2/3/5 配置与已存在且未过期的产物。失败时会暂停在对应阶段。继续？');
+    const confirmed = window.confirm('将重新运行自动生成流程，并复用当前 Step 2/3/5 配置与已存在且未过期的产物。Step 3 图片生成后会先检查白底、尺寸、边界和字幕安全区；不合格时会暂停并给出修复建议。继续？');
     if (!confirmed) return;
     const button = document.getElementById('btn-one-click-start');
     const original = button?.textContent || '重新运行自动生成';
@@ -224,7 +224,7 @@
 
   function startPolling() {
     if (STATE.polling) return;
-    STATE.polling = setInterval(refreshStatusSilently, 3000);
+    STATE.polling = setInterval(() => refreshStatusSilently(), 2500);
   }
 
   function stopPolling() {
@@ -232,14 +232,8 @@
     STATE.polling = null;
   }
 
-  function boot() {
-    ensureStyle();
-    ensureModal();
+  document.addEventListener('DOMContentLoaded', () => {
     patchWorkspaceNavigation();
-    const timer = setInterval(ensureEntryButton, 700);
-    setTimeout(() => clearInterval(timer), 15000);
-  }
-
-  document.addEventListener('DOMContentLoaded', boot);
-  if (document.readyState !== 'loading') boot();
+    ensureEntryButton();
+  });
 })();

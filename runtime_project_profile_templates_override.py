@@ -5,9 +5,9 @@ image style and references belong to Step 3. The original Project Profile bridge
 keeps compatibility routes and storage, but this response prevents the create
 modal from seeing project-level storyboard/image-style templates.
 
-This module also imports the lightweight Project Profile route override so normal
-startup no longer saves default storyboard_profile or image_style_profile when the
-create dialog only sends automation mode.
+This module also imports lightweight overrides so normal startup no longer saves
+default storyboard_profile or image_style_profile when the create dialog only
+sends automation mode, and Step 3 image-style actions use Step 3 state storage.
 """
 
 from __future__ import annotations
@@ -21,6 +21,11 @@ from typing import Any
 
 try:
     import runtime_project_profile_lightweight  # noqa: F401
+except Exception:
+    pass
+
+try:
+    import runtime_step3_image_style_state  # noqa: F401
 except Exception:
     pass
 

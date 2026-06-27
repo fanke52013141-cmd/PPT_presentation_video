@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 BOOTSTRAP_PATH = ROOT / "runtime_bootstrap.py"
@@ -27,43 +28,68 @@ REQUIRED_MODULES = {
     "runtime_one_click_step3_style_patch",
 }
 
-REQUIRED_READY_PATHS = {
-    "/api/settings/ai-mask",
-    "/api/project-profile/templates",
-    "/api/projects/{project_id}/one-click-generate",
-    "/api/projects/{project_id}/storyboard-background",
-    "/api/projects/{project_id}/steps/3/image-style",
-    "/api/projects/{project_id}/steps/3/image-style/reverse",
-    "/api/projects/{project_id}/steps/3/image-style/reference-images",
-    "/api/projects/{project_id}/steps/5/ai-mask/annotate",
+REQUIRED_READY_ROUTES = {
+    ("/api/settings/ai-mask", "GET"),
+    ("/api/project-profile/templates", "GET"),
+    ("/api/projects/{project_id}/one-click-generate", "POST"),
+    ("/api/projects/{project_id}/one-click-generate/status", "GET"),
+    ("/api/projects/{project_id}/storyboard-background", "GET"),
+    ("/api/projects/{project_id}/steps/3/image-style", "GET"),
+    ("/api/projects/{project_id}/steps/3/image-style/reverse", "POST"),
+    ("/api/projects/{project_id}/steps/3/image-style/reference-images", "GET"),
+    ("/api/projects/{project_id}/steps/3/image-style/reference-images", "POST"),
+    ("/api/projects/{project_id}/steps/3/image-style/reference-images", "DELETE"),
+    ("/api/projects/{project_id}/steps/5/ai-mask/annotate", "POST"),
 }
 
 
-def _literal_assignment(module: ast.Module, name: str) -> set[str]:
+def _assignment_value(module: ast.Module, name: str) -> Any:
     for node in module.body:
         if not isinstance(node, ast.Assign):
             continue
         if not any(isinstance(target, ast.Name) and target.id == name for target in node.targets):
             continue
-        value = ast.literal_eval(node.value)
-        if not isinstance(value, (list, tuple, set)):
-            raise AssertionError(f"{name} must be a list/tuple/set literal")
-        return {str(item) for item in value}
+        return ast.literal_eval(node.value)
     raise AssertionError(f"Missing {name} assignment in runtime_bootstrap.py")
+
+
+def _literal_string_collection(module: ast.Module, name: str) -> set[str]:
+    value = _assignment_value(module, name)
+    if not isinstance(value, (list, tuple, set)):
+        raise AssertionError(f"{name} must be a list/tuple/set literal")
+    return {str(item) for item in value}
+
+
+def _literal_route_mapping(module: ast.Module, name: str) -> set[tuple[str, str]]:
+    value = _assignment_value(module, name)
+    if not isinstance(value, dict):
+        raise AssertionError(f"{name} must be a dict literal")
+    routes: set[tuple[str, str]] = set()
+    for path, methods in value.items():
+        if not isinstance(methods, (list, tuple, set)):
+            raise AssertionError(f"{name}[{path!r}] must be a list/tuple/set literal")
+        for method in methods:
+            routes.add((str(path), str(method).upper()))
+    return routes
+
+
+def _format_route(route: tuple[str, str]) -> str:
+    path, method = route
+    return f"{method} {path}"
 
 
 def main() -> None:
     tree = ast.parse(BOOTSTRAP_PATH.read_text(encoding="utf-8"), filename=str(BOOTSTRAP_PATH))
-    modules = _literal_assignment(tree, "RUNTIME_MODULES")
-    paths = _literal_assignment(tree, "EXPECTED_RUNTIME_PATHS")
+    modules = _literal_string_collection(tree, "RUNTIME_MODULES")
+    routes = _literal_route_mapping(tree, "EXPECTED_RUNTIME_ROUTES")
 
     missing_modules = sorted(REQUIRED_MODULES - modules)
-    missing_paths = sorted(REQUIRED_READY_PATHS - paths)
+    missing_routes = sorted(REQUIRED_READY_ROUTES - routes, key=_format_route)
     problems = []
     if missing_modules:
         problems.append("Missing runtime modules:\n" + "\n".join(missing_modules))
-    if missing_paths:
-        problems.append("Missing ready paths:\n" + "\n".join(missing_paths))
+    if missing_routes:
+        problems.append("Missing ready routes:\n" + "\n".join(_format_route(route) for route in missing_routes))
     if problems:
         raise SystemExit("\n\n".join(problems))
     print("Runtime bootstrap contract passed.")

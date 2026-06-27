@@ -325,6 +325,13 @@ def check_runtime_bootstrap_contract(result: Result) -> None:
     result.pass_("runtime bootstrap contract is enforced")
 
 
+def check_runtime_ui_injection_contract(result: Result) -> None:
+    module = importlib.import_module("scripts.check_runtime_ui_injection_contract")
+    exit_code = module.main()
+    assert_true(exit_code == 0, "runtime UI injection contract returned non-zero")
+    result.pass_("runtime UI injection contract is enforced")
+
+
 def main() -> int:
     if os.environ.get("PPT_STUDIO_DISABLE_RUNTIME_HOTFIXES"):
         print("FAIL PPT_STUDIO_DISABLE_RUNTIME_HOTFIXES is set; runtime hotfixes are disabled.")
@@ -338,6 +345,7 @@ def main() -> int:
         check_manifest_reconcile_and_topic(sitecustomize, result)
         check_step5_build_assets_flag(sitecustomize, result)
         check_runtime_bootstrap_contract(result)
+        check_runtime_ui_injection_contract(result)
     except CheckFailure as exc:
         print(f"FAIL {exc}")
         return 1

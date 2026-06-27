@@ -49,6 +49,11 @@ EXPECTED_RUNTIME_PATHS = {
     "/api/settings/ai-mask",
     "/api/project-profile/templates",
     "/api/projects/{project_id}/one-click-generate",
+    "/api/projects/{project_id}/storyboard-background",
+    "/api/projects/{project_id}/steps/3/image-style",
+    "/api/projects/{project_id}/steps/3/image-style/reverse",
+    "/api/projects/{project_id}/steps/3/image-style/reference-images",
+    "/api/projects/{project_id}/steps/5/ai-mask/annotate",
 }
 
 

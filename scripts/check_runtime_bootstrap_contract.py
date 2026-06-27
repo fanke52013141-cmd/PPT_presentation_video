@@ -29,9 +29,11 @@ REQUIRED_MODULES = {
     "runtime_one_click_step3_style_patch",
     "runtime_one_click_ui_cache_buster",
     "runtime_step5_flush_bridge",
+    "runtime_diagnostics",
 }
 
 REQUIRED_READY_ROUTES = {
+    ("/api/runtime/diagnostics", "GET"),
     ("/api/settings/ai-mask", "GET"),
     ("/api/project-profile/templates", "GET"),
     ("/api/projects/{project_id}/one-click-generate", "POST"),
@@ -257,6 +259,22 @@ def _check_ai_mask_cache_buster_contract() -> None:
         raise AssertionError("AI Mask UI cache buster contract failed:\n" + "\n".join(missing))
 
 
+def _check_runtime_diagnostics_contract() -> None:
+    content = (ROOT / "runtime_diagnostics.py").read_text(encoding="utf-8")
+    required = [
+        "/api/runtime/diagnostics",
+        "missing_routes",
+        "middleware_markers",
+        "script_versions",
+        "runtime_modules",
+        "PPT_STUDIO_DISABLE_RUNTIME_DIAGNOSTICS",
+        "INSTALL_TIMEOUT_SEC = 120.0",
+    ]
+    missing = [snippet for snippet in required if snippet not in content]
+    if missing:
+        raise AssertionError("Runtime diagnostics bridge contract failed:\n" + "\n".join(missing))
+
+
 def _check_bootstrap_installs_before_ready() -> None:
     content = BOOTSTRAP_PATH.read_text(encoding="utf-8")
     forbidden = "if runtime_paths_ready(module):\n                    return\n                install_for_server_module(module)"
@@ -286,6 +304,7 @@ def main() -> None:
     _check_route_scanner_smoke()
     _check_step5_flush_bridge_contract()
     _check_ai_mask_cache_buster_contract()
+    _check_runtime_diagnostics_contract()
     _check_bootstrap_installs_before_ready()
     _check_bootstrap_logger_contract()
     tree = ast.parse(BOOTSTRAP_PATH.read_text(encoding="utf-8"), filename=str(BOOTSTRAP_PATH))

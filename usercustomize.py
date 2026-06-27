@@ -109,6 +109,11 @@ except Exception:
     pass
 
 try:
+    import runtime_project_profile_templates_override  # noqa: F401
+except Exception:
+    pass
+
+try:
     import runtime_project_style_references  # noqa: F401
 except Exception:
     pass

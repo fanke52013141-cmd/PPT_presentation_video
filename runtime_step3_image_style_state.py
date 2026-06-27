@@ -49,8 +49,17 @@ def _write_json(path: Path, value: dict[str, Any]) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def _step3_style(project: Any) -> dict[str, Any]:
+def _safe_text(value: Any, limit: int = 8000) -> str:
+    return str(value or "").strip()[:limit]
+
+
+def _step3_style_state(project: Any) -> dict[str, Any]:
     state = _read_json(_state_path(project), {})
+    return state if isinstance(state, dict) else {}
+
+
+def _step3_style(project: Any) -> dict[str, Any]:
+    state = _step3_style_state(project)
     if isinstance(state.get("image_style_profile"), dict):
         return state["image_style_profile"]
     legacy = _read_json(_profile_path(project), {}).get("image_style_profile")
@@ -58,15 +67,32 @@ def _step3_style(project: Any) -> dict[str, Any]:
 
 
 def _save_step3_style(project: Any, style: dict[str, Any], source: str) -> dict[str, Any]:
+    existing = _step3_style_state(project)
     state = {
         "version": "step3_image_style_v1",
         "source": source,
         "updated_at": datetime.now().isoformat(timespec="seconds"),
         "image_style_profile": style if isinstance(style, dict) else {},
+        "reference_images": existing.get("reference_images", []) if isinstance(existing.get("reference_images"), list) else [],
         "note": "Step 3 owns image style. Project creation does not set image style.",
     }
     _write_json(_state_path(project), state)
     return state
+
+
+def _save_reference_images_to_step3_state(project: Any, manifest: dict[str, Any]) -> None:
+    state = _step3_style_state(project)
+    if not state:
+        state = {
+            "version": "step3_image_style_v1",
+            "source": "reference_images",
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+            "image_style_profile": _step3_style(project),
+            "note": "Step 3 owns image style. Project creation does not set image style.",
+        }
+    state["updated_at"] = datetime.now().isoformat(timespec="seconds")
+    state["reference_images"] = manifest.get("images", []) if isinstance(manifest, dict) else []
+    _write_json(_state_path(project), state)
 
 
 def _project_or_404(server_module: ModuleType, db: Any, project_id: str) -> Any:
@@ -92,10 +118,70 @@ def _insert_before_existing(app: Any, path: str, methods: set[str], route: Any) 
     routes.append(route)
 
 
+def _step3_style_prompt(project: Any, server_module: ModuleType, refs_impl: ModuleType) -> str:
+    image_style = _step3_style(project)
+    fallback = ""
+    try:
+        fallback = server_module.build_image_style_prompt(server_module.read_style_tokens_data())
+    except Exception:
+        fallback = ""
+    if not image_style:
+        return fallback
+
+    lines = ["Step 3 当前图片风格（优先级高于全局默认图片风格）："]
+    for label, key in [
+        ("来源", "source"),
+        ("风格名称", "style_name"),
+        ("风格摘要", "style_summary"),
+        ("用户补充要求", "custom_requirement"),
+    ]:
+        value = _safe_text(image_style.get(key), 2000)
+        if value:
+            lines.append(f"- {label}: {value}")
+    system_content = _safe_text(image_style.get("system_content"), 12000)
+    if system_content:
+        lines.append("- 生图 system content:")
+        lines.extend(f"  {line}" for line in system_content.splitlines() if line.strip())
+    visual_language = image_style.get("visual_language")
+    if isinstance(visual_language, dict) and visual_language:
+        lines.append("- 结构化视觉语言:")
+        for key, value in visual_language.items():
+            if isinstance(value, list):
+                rendered = "、".join(str(item).strip() for item in value if str(item).strip())
+            elif isinstance(value, dict):
+                rendered = "；".join(f"{k}: {v}" for k, v in value.items() if str(v).strip())
+            else:
+                rendered = _safe_text(value, 1000)
+            if rendered:
+                lines.append(f"  - {key}: {rendered}")
+    for title, key in [("Mask 友好规则", "maskability_rules"), ("负向规则", "negative_prompt_rules")]:
+        values = image_style.get(key)
+        if isinstance(values, list) and values:
+            lines.append(f"- {title}:")
+            lines.extend(f"  - {str(item).strip()}" for item in values if str(item).strip())
+    try:
+        has_refs = bool(refs_impl._project_reference_paths(project))
+    except Exception:
+        has_refs = False
+    if has_refs:
+        lines.append("- 当前 Step 3 已有 1-3 张图片风格参考图；兼容模型会把这些 PNG 作为 reference images 一起提交。")
+    lines.extend([
+        "- 不可覆盖规则：visual_draft.png 外背景必须保持纯白 #FFFFFF。",
+        "- 不可覆盖规则：最终视频背景不能画进生图。",
+        "- 不可覆盖规则：所有语义元素必须留出明显白色间隔，不能重叠、粘连或穿插。",
+    ])
+    if fallback:
+        lines.append("\n全局图片风格模板（仅作为 fallback，若与 Step 3 当前风格冲突，以 Step 3 为准）：")
+        lines.append(fallback)
+    return "\n".join(lines)
+
+
 def _patch_reference_style_source(refs_impl: ModuleType) -> None:
     if getattr(refs_impl, "__ppt_step3_style_source_patch__", False):
         return
     refs_impl._profile_image_style = _step3_style
+    refs_impl._profile_style_prompt = lambda project, server_module: _step3_style_prompt(project, server_module, refs_impl)
+    refs_impl._update_prompt_companion = _save_reference_images_to_step3_state
     setattr(refs_impl, "__ppt_step3_style_source_patch__", True)
 
 
@@ -120,7 +206,7 @@ def _register(server_module: ModuleType) -> bool:
 
     def get_step3_style(project_id: str, db: Any = server_module.Depends(server_module.get_db)) -> dict[str, Any]:
         project = _project_or_404(server_module, db, project_id)
-        state = _read_json(_state_path(project), {})
+        state = _step3_style_state(project)
         return {"success": True, "style_state": state, "style": _step3_style(project)}
 
     async def reverse_step3_style(

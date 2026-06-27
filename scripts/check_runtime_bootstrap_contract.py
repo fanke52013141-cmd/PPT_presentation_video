@@ -26,6 +26,7 @@ REQUIRED_MODULES = {
     "runtime_step2_storyboard_settings",
     "runtime_one_click_orchestrator",
     "runtime_one_click_step3_style_patch",
+    "runtime_one_click_ui_cache_buster",
 }
 
 REQUIRED_READY_ROUTES = {

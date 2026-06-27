@@ -73,6 +73,20 @@ REQUIRED_REVERSE_FALLBACK_SNIPPETS = [
     "兼容入口：新的主入口是 Step 3 工具栏里的“图片风格”。",
 ]
 
+REQUIRED_ONE_CLICK_STEP3_STYLE_SNIPPETS = [
+    "检查 Step 3 图片风格参考图",
+    "Step 3 图片风格参考图已就绪；自动流程不会从项目创建配置生成参考图",
+    "STAGE_TITLE_OVERRIDES",
+    "_normalize_status_titles",
+    "no_project_profile_style_refs",
+]
+
+FORBIDDEN_ONE_CLICK_STEP3_STYLE_SNIPPETS = [
+    "检查项目级风格参考图",
+    "项目级风格参考图",
+    "Project style references",
+]
+
 FORBIDDEN_CREATE_WIZARD_CONTROLS = [
     "name=\"storyboard_template_id\"",
     "name=\"image_style_template_id\"",
@@ -137,6 +151,19 @@ def test_reverse_style_extension_is_only_a_fallback_entry() -> None:
         raise AssertionError("Reverse style extension must stay a fallback when the unified Step 3 panel exists:\n" + "\n".join(missing))
 
 
+def test_one_click_uses_step3_image_style_wording() -> None:
+    content = read_text("runtime_one_click_step3_style_patch.py")
+    missing = [snippet for snippet in REQUIRED_ONE_CLICK_STEP3_STYLE_SNIPPETS if snippet not in content]
+    forbidden = [snippet for snippet in FORBIDDEN_ONE_CLICK_STEP3_STYLE_SNIPPETS if snippet in content]
+    problems = []
+    if missing:
+        problems.append("Missing One-click Step 3 style wording snippets:\n" + "\n".join(missing))
+    if forbidden:
+        problems.append("One-click Step 3 style patch must not expose legacy project-level wording:\n" + "\n".join(forbidden))
+    if problems:
+        raise AssertionError("\n\n".join(problems))
+
+
 def test_create_project_wizard_has_no_style_controls() -> None:
     content = read_text("static/project_profile_extension.js")
     offenders = [snippet for snippet in FORBIDDEN_CREATE_WIZARD_CONTROLS if snippet in content]
@@ -156,6 +183,7 @@ if __name__ == "__main__":
     test_step3_ui_uses_step3_image_style_routes_and_labels()
     test_step3_image_style_panel_is_self_contained()
     test_reverse_style_extension_is_only_a_fallback_entry()
+    test_one_click_uses_step3_image_style_wording()
     test_create_project_wizard_has_no_style_controls()
     test_step3_alias_reverse_writes_step3_state_not_project_profile()
     print("Step ownership wording contract passed.")

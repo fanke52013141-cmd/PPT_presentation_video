@@ -7,7 +7,8 @@ modal from seeing project-level storyboard/image-style templates.
 
 This module also imports lightweight overrides so normal startup no longer saves
 default storyboard_profile or image_style_profile when the create dialog only
-sends automation mode, and Step 3 image-style actions use Step 3 state storage.
+sends automation mode, Step 3 image-style actions use Step 3 state storage, and
+Step 2 storyboard prompt controls are exposed through a user-facing settings UI.
 """
 
 from __future__ import annotations
@@ -26,6 +27,11 @@ except Exception:
 
 try:
     import runtime_step3_image_style_state  # noqa: F401
+except Exception:
+    pass
+
+try:
+    import runtime_step2_storyboard_settings  # noqa: F401
 except Exception:
     pass
 

@@ -46,9 +46,11 @@ RUNTIME_MODULES = [
     "runtime_one_click_step3_style_patch",
     "runtime_one_click_ui_cache_buster",
     "runtime_step5_flush_bridge",
+    "runtime_diagnostics",
 ]
 
 EXPECTED_RUNTIME_ROUTES = {
+    "/api/runtime/diagnostics": {"GET"},
     "/api/settings/ai-mask": {"GET"},
     "/api/project-profile/templates": {"GET"},
     "/api/projects/{project_id}/one-click-generate": {"POST"},

@@ -18,6 +18,7 @@ BOOTSTRAP_PATH = ROOT / "runtime_bootstrap.py"
 REQUIRED_MODULES = {
     "runtime_settings_mask",
     "runtime_ai_mask",
+    "runtime_ai_mask_ui_cache_buster",
     "runtime_storyboard_background",
     "runtime_project_profile_lightweight",
     "runtime_project_profile_templates_override",
@@ -243,6 +244,19 @@ def _check_step5_flush_bridge_contract() -> None:
         raise AssertionError("Step 5 flush bridge contract failed:\n" + "\n".join(missing))
 
 
+def _check_ai_mask_cache_buster_contract() -> None:
+    content = (ROOT / "runtime_ai_mask_ui_cache_buster.py").read_text(encoding="utf-8")
+    required = [
+        "ai_mask_extension.js",
+        "SCRIPT_VERSION",
+        "INSTALL_TIMEOUT_SEC = 120.0",
+        "PPT_STUDIO_DISABLE_AI_MASK_UI_CACHE_BUSTER",
+    ]
+    missing = [snippet for snippet in required if snippet not in content]
+    if missing:
+        raise AssertionError("AI Mask UI cache buster contract failed:\n" + "\n".join(missing))
+
+
 def _check_bootstrap_installs_before_ready() -> None:
     content = BOOTSTRAP_PATH.read_text(encoding="utf-8")
     forbidden = "if runtime_paths_ready(module):\n                    return\n                install_for_server_module(module)"
@@ -253,6 +267,16 @@ def _check_bootstrap_installs_before_ready() -> None:
         raise AssertionError("runtime_bootstrap worker must install runtime bridges before checking route readiness")
 
 
+def _check_bootstrap_logger_contract() -> None:
+    content = BOOTSTRAP_PATH.read_text(encoding="utf-8")
+    required = 'logger.warning("Failed to register runtime bridge %s: %s", module_name, exc)'
+    forbidden = 'logger.warning("Failed to register runtime bridge %s: %s", exc)'
+    if forbidden in content:
+        raise AssertionError("runtime_bootstrap register warning must include module_name and exception")
+    if required not in content:
+        raise AssertionError("runtime_bootstrap register warning format changed unexpectedly")
+
+
 def _format_route(route: tuple[str, str]) -> str:
     path, method = route
     return f"{method} {path}"
@@ -261,7 +285,9 @@ def _format_route(route: tuple[str, str]) -> str:
 def main() -> None:
     _check_route_scanner_smoke()
     _check_step5_flush_bridge_contract()
+    _check_ai_mask_cache_buster_contract()
     _check_bootstrap_installs_before_ready()
+    _check_bootstrap_logger_contract()
     tree = ast.parse(BOOTSTRAP_PATH.read_text(encoding="utf-8"), filename=str(BOOTSTRAP_PATH))
     modules = _literal_string_collection(tree, "RUNTIME_MODULES")
     routes = _literal_route_mapping(tree, "EXPECTED_RUNTIME_ROUTES")

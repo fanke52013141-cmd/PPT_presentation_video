@@ -44,6 +44,7 @@ RUNTIME_MODULES = [
     "runtime_one_click_orchestrator",
     "runtime_one_click_step3_style_patch",
     "runtime_one_click_ui_cache_buster",
+    "runtime_step5_flush_bridge",
 ]
 
 EXPECTED_RUNTIME_ROUTES = {

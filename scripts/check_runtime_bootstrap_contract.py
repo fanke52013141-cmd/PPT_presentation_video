@@ -25,6 +25,7 @@ REQUIRED_MODULES = {
     "runtime_step3_image_style",
     "runtime_step3_image_style_state",
     "runtime_visual_draft_quality",
+    "runtime_visual_draft_quality_ui",
     "runtime_step2_storyboard_settings",
     "runtime_one_click_orchestrator",
     "runtime_one_click_step3_style_patch",
@@ -298,6 +299,28 @@ def _check_visual_draft_quality_contract() -> None:
         raise AssertionError("Step 3 visual draft quality bridge contract failed:\n" + "\n".join(missing))
 
 
+def _check_visual_draft_quality_ui_contract() -> None:
+    runtime_content = (ROOT / "runtime_visual_draft_quality_ui.py").read_text(encoding="utf-8")
+    static_content = (ROOT / "static" / "visual_draft_quality_extension.js").read_text(encoding="utf-8")
+    runtime_required = [
+        "visual_draft_quality_extension.js",
+        "SCRIPT_VERSION",
+        "PPT_STUDIO_DISABLE_VISUAL_DRAFT_QUALITY_UI",
+        "INSTALL_TIMEOUT_SEC = 120.0",
+    ]
+    static_required = [
+        "step3-btn-visual-draft-quality",
+        "图片质量检查",
+        "/steps/3/visual-draft-quality",
+        "visual_draft.png",
+        "Step 5 Mask",
+    ]
+    missing = [snippet for snippet in runtime_required if snippet not in runtime_content]
+    missing.extend(snippet for snippet in static_required if snippet not in static_content)
+    if missing:
+        raise AssertionError("Step 3 visual draft quality UI contract failed:\n" + "\n".join(missing))
+
+
 def _check_bootstrap_installs_before_ready() -> None:
     content = BOOTSTRAP_PATH.read_text(encoding="utf-8")
     forbidden = "if runtime_paths_ready(module):\n                    return\n                install_for_server_module(module)"
@@ -329,6 +352,7 @@ def main() -> None:
     _check_ai_mask_cache_buster_contract()
     _check_runtime_diagnostics_contract()
     _check_visual_draft_quality_contract()
+    _check_visual_draft_quality_ui_contract()
     _check_bootstrap_installs_before_ready()
     _check_bootstrap_logger_contract()
     tree = ast.parse(BOOTSTRAP_PATH.read_text(encoding="utf-8"), filename=str(BOOTSTRAP_PATH))

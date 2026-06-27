@@ -85,6 +85,7 @@
       #btn-one-click-generate { margin-left: .5rem; }
       .one-click-modal { max-width: 1040px; width: min(1040px, 94vw); }
       .one-click-note { color: #555; font-size: .9rem; line-height: 1.55; }
+      .one-click-note strong { color: #111; }
       .one-click-toolbar { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .85rem 0 1rem; }
       .one-click-status-line { border: 2px solid #111; border-radius: 14px; padding: .75rem; background: #fffef9; margin: .7rem 0; }
       .one-click-stage-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
@@ -109,7 +110,7 @@
     modal.innerHTML = `
       <div class="modal-content one-click-modal">
         <h3 class="highlight-title">一键生成</h3>
-        <p class="one-click-note">V1 会串联已有步骤：分镜、图片、AI Mask、演讲稿、TTS、渲染。失败时暂停并保留阶段状态；修复后可重新运行自动生成，系统会复用已存在且未过期的产物。</p>
+        <p class="one-click-note"><strong>一键生成会读取当前各步骤配置：</strong>Step 2 分镜设置、最终视频背景、Step 3 图片风格/参考图、Step 5 Mask 设置。它不会从创建项目弹窗定义分镜或图片风格。失败时暂停并保留阶段状态；修复后可重新运行自动生成，系统会复用已存在且未过期的产物。</p>
         <div class="one-click-toolbar">
           <button id="btn-one-click-start" class="success" type="button">重新运行自动生成</button>
           <button id="btn-one-click-refresh" class="secondary" type="button">刷新状态</button>
@@ -188,7 +189,7 @@
   async function startOneClick() {
     const projectId = activeProjectId();
     if (!projectId) return toast('当前没有可识别的项目，请先进入项目工作区。', 5000);
-    const confirmed = window.confirm('将重新运行自动生成流程，并复用已存在且未过期的产物。失败时会暂停在对应阶段。继续？');
+    const confirmed = window.confirm('将重新运行自动生成流程，并复用当前 Step 2/3/5 配置与已存在且未过期的产物。失败时会暂停在对应阶段。继续？');
     if (!confirmed) return;
     const button = document.getElementById('btn-one-click-start');
     const original = button?.textContent || '重新运行自动生成';

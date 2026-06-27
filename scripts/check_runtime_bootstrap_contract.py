@@ -273,6 +273,8 @@ def _check_runtime_diagnostics_contract() -> None:
         "middleware_markers",
         "script_versions",
         "runtime_modules",
+        "runtime_visual_draft_quality_ui",
+        "__ppt_visual_draft_quality_ui_patch__",
         "step5_flush_migration",
         "native_app_js",
         "fallback_bridge",

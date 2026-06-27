@@ -17,7 +17,7 @@ from typing import Any
 
 PATCH_MARKER = "__ppt_visual_draft_quality_ui_patch__"
 SCRIPT_NAME = "visual_draft_quality_extension.js"
-SCRIPT_VERSION = "20260627.1"
+SCRIPT_VERSION = "20260627.2"
 SCRIPT_TAG = f'<script src="{SCRIPT_NAME}?v={SCRIPT_VERSION}"></script>'
 INSTALL_TIMEOUT_SEC = 120.0
 POLL_INTERVAL_SEC = 0.1

@@ -51,6 +51,28 @@ REQUIRED_STEP3_SNIPPETS = {
     ],
 }
 
+REQUIRED_SELF_CONTAINED_STYLE_PANEL_SNIPPETS = [
+    "style-panel-reverse-files",
+    "btn-style-panel-reverse-run",
+    "renderInlineReversePreview",
+    "renderInlineReverseResult",
+    "apiPostForm(step3ImageStyleUrl(projectId, '/reverse'), form)",
+    "apiPost(step3ImageStyleUrl(projectId, '/reference-images/generate'), { count: 3 })",
+    "window.refreshStep3Prompts",
+]
+
+FORBIDDEN_STYLE_PANEL_BRIDGE_SNIPPETS = [
+    "reverseButton.click()",
+    "openReversePanel",
+    "反推风格面板还没有加载完成",
+]
+
+REQUIRED_REVERSE_FALLBACK_SNIPPETS = [
+    "step3-btn-image-style-panel",
+    "document.getElementById('step3-btn-image-style-reverse')?.remove();",
+    "兼容入口：新的主入口是 Step 3 工具栏里的“图片风格”。",
+]
+
 FORBIDDEN_CREATE_WIZARD_CONTROLS = [
     "name=\"storyboard_template_id\"",
     "name=\"image_style_template_id\"",
@@ -95,6 +117,26 @@ def test_step3_ui_uses_step3_image_style_routes_and_labels() -> None:
         raise AssertionError("Step 3 image style ownership contract failed:\n" + "\n".join(offenders))
 
 
+def test_step3_image_style_panel_is_self_contained() -> None:
+    content = read_text("static/style_reference_manager_extension.js")
+    missing = [snippet for snippet in REQUIRED_SELF_CONTAINED_STYLE_PANEL_SNIPPETS if snippet not in content]
+    forbidden = [snippet for snippet in FORBIDDEN_STYLE_PANEL_BRIDGE_SNIPPETS if snippet in content]
+    problems = []
+    if missing:
+        problems.append("Missing self-contained Step 3 image style panel snippets:\n" + "\n".join(missing))
+    if forbidden:
+        problems.append("Step 3 image style panel must not bridge through hidden reverse button:\n" + "\n".join(forbidden))
+    if problems:
+        raise AssertionError("\n\n".join(problems))
+
+
+def test_reverse_style_extension_is_only_a_fallback_entry() -> None:
+    content = read_text("static/image_style_reverse_extension.js")
+    missing = [snippet for snippet in REQUIRED_REVERSE_FALLBACK_SNIPPETS if snippet not in content]
+    if missing:
+        raise AssertionError("Reverse style extension must stay a fallback when the unified Step 3 panel exists:\n" + "\n".join(missing))
+
+
 def test_create_project_wizard_has_no_style_controls() -> None:
     content = read_text("static/project_profile_extension.js")
     offenders = [snippet for snippet in FORBIDDEN_CREATE_WIZARD_CONTROLS if snippet in content]
@@ -112,6 +154,8 @@ def test_step3_alias_reverse_writes_step3_state_not_project_profile() -> None:
 if __name__ == "__main__":
     test_new_flows_do_not_use_legacy_image_style_routes_or_wording()
     test_step3_ui_uses_step3_image_style_routes_and_labels()
+    test_step3_image_style_panel_is_self_contained()
+    test_reverse_style_extension_is_only_a_fallback_entry()
     test_create_project_wizard_has_no_style_controls()
     test_step3_alias_reverse_writes_step3_state_not_project_profile()
     print("Step ownership wording contract passed.")

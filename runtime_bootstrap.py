@@ -42,6 +42,7 @@ RUNTIME_MODULES = [
     "runtime_step3_image_style",
     "runtime_step3_image_style_state",
     "runtime_visual_draft_quality",
+    "runtime_visual_draft_quality_ui",
     "runtime_step2_storyboard_settings",
     "runtime_one_click_orchestrator",
     "runtime_one_click_step3_style_patch",

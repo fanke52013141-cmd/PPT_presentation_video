@@ -33,10 +33,16 @@ REQUIRED_UI_SNIPPETS = [
     "白底、尺寸、边界和字幕安全区",
     "暂停并给出修复建议",
     "不合格时会暂停",
+    "renderQualityReport",
+    "quality_report",
+    "issue_details",
+    "one-click-quality-card",
+    "one-click-quality-metrics",
+    "detail.action",
 ]
 
 REQUIRED_CACHE_SNIPPETS = [
-    "SCRIPT_VERSION = \"20260627.6\"",
+    "SCRIPT_VERSION = \"20260627.7\"",
 ]
 
 

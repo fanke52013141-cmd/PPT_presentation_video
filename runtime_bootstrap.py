@@ -36,6 +36,7 @@ RUNTIME_MODULES = [
     "runtime_project_style_reference_manager",
     "runtime_project_style_reference_step3",
     "runtime_image_style_reverse",
+    "runtime_step3_image_style",
     "runtime_one_click_orchestrator",
 ]
 
@@ -185,7 +186,7 @@ def _patch_fastapi_mount() -> None:
     original_mount = current_mount
 
     def mount_with_runtime_bridges(self: Any, path: str, *args: Any, **kwargs: Any):
-        if not os.environ.get("PPT_STUDIO_DISABLE_RUNTIME_BOOTSTRAP") and str(path) in {"", "/"}:
+        if not os.environ.get("PPT_STUDIO_DISABLE_RUNTIME_BOOTSTRAP"):
             server_module = _server_module_for_app(self)
             if server_module is not None:
                 install_for_server_module(server_module)
@@ -208,9 +209,11 @@ def install_when_server_ready() -> None:
     def worker() -> None:
         started_at = time.monotonic()
         while not os.environ.get("PPT_STUDIO_DISABLE_RUNTIME_BOOTSTRAP"):
-            for server_module in _server_candidates():
-                install_for_server_module(server_module)
-                if runtime_paths_ready(server_module):
+            for module in _server_candidates():
+                if runtime_paths_ready(module):
+                    return
+                install_for_server_module(module)
+                if runtime_paths_ready(module):
                     return
             if time.monotonic() - started_at > INSTALL_TIMEOUT_SEC:
                 logger = _logger()

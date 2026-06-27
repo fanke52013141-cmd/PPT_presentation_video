@@ -94,10 +94,15 @@
     const style = document.createElement('style');
     style.id = 'style-reference-manager-style';
     style.textContent = `
-      #step3-btn-style-reference-manager { font-size: .85rem; padding: .35rem .9rem; }
+      #step3-btn-image-style-panel { font-size: .85rem; padding: .35rem .9rem; }
+      #step3-btn-style-reference-manager, #step3-btn-image-style-reverse { display: none !important; }
       .style-ref-modal { max-width: 1120px; width: min(1120px, 94vw); }
       .style-ref-toolbar { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; margin: .75rem 0 1rem; }
       .style-ref-note { color: #555; font-size: .88rem; line-height: 1.5; }
+      .style-panel-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; margin: .9rem 0 1rem; }
+      .style-panel-action { border: 2px solid #111; border-radius: 14px; background: #fff; padding: .8rem; text-align: left; cursor: pointer; box-shadow: 2px 2px 0 rgba(0,0,0,.12); }
+      .style-panel-action strong { display: block; margin-bottom: .25rem; }
+      .style-panel-action span { display: block; color: #555; font-size: .84rem; line-height: 1.45; }
       .style-ref-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .9rem; }
       .style-ref-card { border: 2px solid #111; border-radius: 14px; background: #fffef9; box-shadow: 3px 3px 0 rgba(0,0,0,.12); overflow: hidden; }
       .style-ref-card img { width: 100%; aspect-ratio: 16 / 9; object-fit: contain; display: block; background: #fff; border-bottom: 1px solid #111; }
@@ -105,7 +110,7 @@
       .style-ref-card-body strong { display: block; margin-bottom: .35rem; }
       .style-ref-card-body p { margin: .35rem 0; color: #555; font-size: .84rem; line-height: 1.45; max-height: 4.2em; overflow: auto; }
       .style-ref-empty { border: 2px dashed #111; border-radius: 14px; padding: 1rem; background: #fff; color: #555; line-height: 1.55; }
-      @media (max-width: 980px) { .style-ref-grid { grid-template-columns: 1fr; } }
+      @media (max-width: 980px) { .style-ref-grid, .style-panel-actions { grid-template-columns: 1fr; } }
     `;
     document.head.appendChild(style);
   }
@@ -118,10 +123,20 @@
     modal.style.display = 'none';
     modal.innerHTML = `
       <div class="modal-content style-ref-modal">
-        <h3 class="highlight-title">Step 3 图片风格参考图</h3>
-        <p class="style-ref-note">这些参考图只服务于 Step 3 图片生成，用于约束当前项目的生图风格。visual_draft.png 仍必须保持纯白底；最终视频背景单独合成。</p>
+        <h3 class="highlight-title">Step 3 图片风格</h3>
+        <p class="style-ref-note">图片风格只服务于 Step 3 图片生成。这里集中管理“上传示例图反推风格”和“风格参考图”。visual_draft.png 仍必须保持纯白底；最终视频背景单独合成。</p>
+        <div class="style-panel-actions">
+          <button id="btn-style-panel-reverse" class="style-panel-action" type="button">
+            <strong>上传示例图反推风格</strong>
+            <span>上传 1-3 张示例图，抽取线条、色板、构图密度和 Mask 友好规则，并应用到当前 Step 3 图片风格。</span>
+          </button>
+          <button id="btn-style-panel-refresh" class="style-panel-action" type="button">
+            <strong>刷新风格参考图</strong>
+            <span>查看当前项目 Step 3 使用的参考图。可在下方生成、重生成或删除。</span>
+          </button>
+        </div>
         <div class="style-ref-toolbar">
-          <button id="btn-style-ref-refresh" class="secondary" type="button">刷新</button>
+          <button id="btn-style-ref-refresh" class="secondary" type="button">刷新参考图</button>
           <button id="btn-style-ref-regenerate" class="primary" type="button">生成 / 重生成 1-3 张</button>
           <button id="btn-style-ref-delete-all" class="danger" type="button">清空全部</button>
           <button id="btn-style-ref-close" class="secondary" type="button">关闭</button>
@@ -135,6 +150,8 @@
     });
     document.getElementById('btn-style-ref-close')?.addEventListener('click', closeManager);
     document.getElementById('btn-style-ref-refresh')?.addEventListener('click', () => loadReferences().catch(error => toast(`刷新失败：${error.message}`, 6000)));
+    document.getElementById('btn-style-panel-refresh')?.addEventListener('click', () => loadReferences().catch(error => toast(`刷新失败：${error.message}`, 6000)));
+    document.getElementById('btn-style-panel-reverse')?.addEventListener('click', openReversePanel);
     document.getElementById('btn-style-ref-regenerate')?.addEventListener('click', regenerateReferences);
     document.getElementById('btn-style-ref-delete-all')?.addEventListener('click', deleteAllReferences);
   }
@@ -143,12 +160,12 @@
     ensureStyle();
     ensureModal();
     const toolbar = document.querySelector('#step-panel-3 .step3-toolbar-row');
-    if (!toolbar || document.getElementById('step3-btn-style-reference-manager')) return;
+    if (!toolbar || document.getElementById('step3-btn-image-style-panel')) return;
     const button = document.createElement('button');
-    button.id = 'step3-btn-style-reference-manager';
+    button.id = 'step3-btn-image-style-panel';
     button.className = 'secondary';
     button.type = 'button';
-    button.textContent = '风格参考图';
+    button.textContent = '图片风格';
     button.addEventListener('click', () => openManager().catch(error => toast(`打开失败：${error.message}`, 6000)));
     const styleButton = document.getElementById('step3-btn-style');
     if (styleButton?.parentElement === toolbar) {
@@ -214,6 +231,16 @@
   function closeManager() {
     const modal = document.getElementById('modal-style-reference-manager');
     if (modal) modal.style.display = 'none';
+  }
+
+  function openReversePanel() {
+    const reverseButton = document.getElementById('step3-btn-image-style-reverse');
+    if (!reverseButton) {
+      toast('反推风格面板还没有加载完成，请稍后再试。', 4000);
+      return;
+    }
+    closeManager();
+    reverseButton.click();
   }
 
   async function regenerateReferences() {

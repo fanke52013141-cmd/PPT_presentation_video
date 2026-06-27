@@ -1,21 +1,62 @@
 """Step 3 image-style API aliases.
 
-The original Project Profile bridges still own the implementation. This bridge
-exposes Step-3-scoped URLs so image style reverse engineering and style reference
-management appear where they belong in the product flow: image generation.
+Legacy Project Profile bridges remain as compatibility implementations. This
+bridge exposes Step-3-scoped URLs so image style reverse engineering and style
+reference management appear where they belong in the product flow: image
+generation. Step 3 reverse style state is saved to planning/step3_image_style.json.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 from types import ModuleType
 from typing import Any
 
 PATCH_MARKER = "__ppt_step3_image_style_alias_patch__"
+STATE_FILENAME = "step3_image_style.json"
+
+
+def _run_dir(project: Any) -> Path:
+    return Path(str(project.run_dir)).resolve()
+
+
+def _step3_state_path(project: Any) -> Path:
+    return _run_dir(project) / "planning" / STATE_FILENAME
+
+
+def _read_json(path: Path, fallback: Any) -> Any:
+    if not path.exists():
+        return fallback
+    try:
+        value = json.loads(path.read_text(encoding="utf-8-sig"))
+    except Exception:
+        return fallback
+    return value if isinstance(value, dict) else fallback
+
+
+def _write_json(path: Path, value: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _save_step3_style_state(project: Any, style: dict[str, Any], source: str) -> dict[str, Any]:
+    existing = _read_json(_step3_state_path(project), {})
+    state = {
+        "version": "step3_image_style_v1",
+        "source": source,
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+        "image_style_profile": style if isinstance(style, dict) else {},
+        "reference_images": existing.get("reference_images", []) if isinstance(existing.get("reference_images"), list) else [],
+        "note": "Step 3 owns image style. Project creation does not set image style.",
+    }
+    _write_json(_step3_state_path(project), state)
+    return state
 
 
 def _rewrite_reference_urls(value: Any, project_id: str) -> Any:
@@ -64,10 +105,11 @@ def _register(server_module: ModuleType) -> bool:
         db: Any = server_module.Depends(server_module.get_db),
     ) -> dict[str, Any]:
         project = _project_or_404(server_module, db, project_id)
+        requirement_text = reverse_impl._safe_text(requirement, 4000)
         saved = reverse_impl._save_uploaded_references(server_module, project, files)
-        raw_style = reverse_impl._call_vision_model(server_module, saved, project, reverse_impl._safe_text(requirement, 4000))
-        style = reverse_impl._style_with_required_rules(raw_style, saved, reverse_impl._safe_text(requirement, 4000))
-        profile = reverse_impl._apply_style_to_project(project, style) if apply else None
+        raw_style = reverse_impl._call_vision_model(server_module, saved, project, requirement_text)
+        style = reverse_impl._style_with_required_rules(raw_style, saved, requirement_text)
+        style_state = _save_step3_style_state(project, style, "image_reverse_engineered") if apply else {}
         try:
             server_module.write_project_log(
                 project,
@@ -75,10 +117,11 @@ def _register(server_module: ModuleType) -> bool:
                 reference_count=len(saved),
                 applied=bool(apply),
                 style_name=style.get("style_name"),
+                style_state=str(_step3_state_path(project)),
             )
         except Exception:
             pass
-        return {"success": True, "style": style, "profile": profile, "inputs": saved}
+        return {"success": True, "style": style, "style_state": style_state, "inputs": saved}
 
     def list_reference_images_step3(project_id: str, db: Any = server_module.Depends(server_module.get_db)) -> dict[str, Any]:
         project = _project_or_404(server_module, db, project_id)

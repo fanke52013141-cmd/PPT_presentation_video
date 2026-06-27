@@ -4,7 +4,8 @@
 This check does not start the full FastAPI server. It imports the small runtime
 UI bridges and exercises their string rewrite helpers against representative
 HTML and JavaScript snippets. It catches regressions where browser cache-buster
-versions drift apart or the Step 5 flush API stops being injected into app.js.
+versions drift apart or the Step 5 flush API stops being injected into app.js
+when native support is absent.
 """
 
 from __future__ import annotations
@@ -62,7 +63,21 @@ async function runStep5SemanticBlocks() {
         "window.PPTStudio",
         "flushStep5Draft,",
     ]:
-        assert_contains(rewritten_app_js, snippet, "Step 5 app.js flush injection")
+        assert_contains(rewritten_app_js, snippet, "Step 5 app.js flush fallback injection")
+
+    native_app_js = """
+window.PPTStudio = Object.assign(window.PPTStudio || {}, {
+  async flushStep5Draft() { return true; }
+});
+async function runStep5SemanticBlocks() {
+  return true;
+}
+"""
+    assert_true(bridge.app_has_native_step5_flush(native_app_js), "native app.js flush detection failed")
+    assert_true(
+        bridge._rewrite_app_js(native_app_js) == native_app_js,
+        "Step 5 flush bridge must not rewrite native app.js flush support",
+    )
 
     ai_mask_js = """
   async function flushStep5DraftBeforeAiMask() {

@@ -41,6 +41,7 @@ RUNTIME_MODULES = [
     "runtime_image_style_reverse",
     "runtime_step3_image_style",
     "runtime_step3_image_style_state",
+    "runtime_visual_draft_quality",
     "runtime_step2_storyboard_settings",
     "runtime_one_click_orchestrator",
     "runtime_one_click_step3_style_patch",
@@ -61,6 +62,7 @@ EXPECTED_RUNTIME_ROUTES = {
     "/api/projects/{project_id}/steps/3/image-style/reference-images": {"GET", "DELETE"},
     "/api/projects/{project_id}/steps/3/image-style/reference-images/generate": {"POST"},
     "/api/projects/{project_id}/steps/3/image-style/reference-images/{index}": {"GET", "DELETE"},
+    "/api/projects/{project_id}/steps/3/visual-draft-quality": {"GET"},
     "/api/projects/{project_id}/steps/5/ai-mask/annotate": {"POST"},
 }
 EXPECTED_RUNTIME_PATHS = set(EXPECTED_RUNTIME_ROUTES)

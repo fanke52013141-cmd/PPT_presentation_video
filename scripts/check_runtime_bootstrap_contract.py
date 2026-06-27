@@ -24,6 +24,7 @@ REQUIRED_MODULES = {
     "runtime_project_profile_templates_override",
     "runtime_step3_image_style",
     "runtime_step3_image_style_state",
+    "runtime_visual_draft_quality",
     "runtime_step2_storyboard_settings",
     "runtime_one_click_orchestrator",
     "runtime_one_click_step3_style_patch",
@@ -46,6 +47,7 @@ REQUIRED_READY_ROUTES = {
     ("/api/projects/{project_id}/steps/3/image-style/reference-images/generate", "POST"),
     ("/api/projects/{project_id}/steps/3/image-style/reference-images/{index}", "GET"),
     ("/api/projects/{project_id}/steps/3/image-style/reference-images/{index}", "DELETE"),
+    ("/api/projects/{project_id}/steps/3/visual-draft-quality", "GET"),
     ("/api/projects/{project_id}/steps/5/ai-mask/annotate", "POST"),
 }
 
@@ -282,6 +284,20 @@ def _check_runtime_diagnostics_contract() -> None:
         raise AssertionError("Runtime diagnostics bridge contract failed:\n" + "\n".join(missing))
 
 
+def _check_visual_draft_quality_contract() -> None:
+    content = (ROOT / "runtime_visual_draft_quality.py").read_text(encoding="utf-8")
+    required = [
+        "/api/projects/{project_id}/steps/3/visual-draft-quality",
+        "scripts.check_visual_draft_quality",
+        "check_run_dir",
+        "PPT_STUDIO_DISABLE_VISUAL_DRAFT_QUALITY",
+        "INSTALL_TIMEOUT_SEC = 120.0",
+    ]
+    missing = [snippet for snippet in required if snippet not in content]
+    if missing:
+        raise AssertionError("Step 3 visual draft quality bridge contract failed:\n" + "\n".join(missing))
+
+
 def _check_bootstrap_installs_before_ready() -> None:
     content = BOOTSTRAP_PATH.read_text(encoding="utf-8")
     forbidden = "if runtime_paths_ready(module):\n                    return\n                install_for_server_module(module)"
@@ -312,6 +328,7 @@ def main() -> None:
     _check_step5_flush_bridge_contract()
     _check_ai_mask_cache_buster_contract()
     _check_runtime_diagnostics_contract()
+    _check_visual_draft_quality_contract()
     _check_bootstrap_installs_before_ready()
     _check_bootstrap_logger_contract()
     tree = ast.parse(BOOTSTRAP_PATH.read_text(encoding="utf-8"), filename=str(BOOTSTRAP_PATH))

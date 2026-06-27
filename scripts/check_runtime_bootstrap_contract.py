@@ -75,6 +75,71 @@ def _literal_route_mapping(module: ast.Module, name: str) -> set[tuple[str, str]
     return routes
 
 
+def _string_literal(node: ast.AST | None) -> str | None:
+    return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
+
+
+def _literal_methods(node: ast.AST | None) -> set[str]:
+    if node is None:
+        return set()
+    try:
+        value = ast.literal_eval(node)
+    except Exception:
+        return set()
+    if isinstance(value, str):
+        return {value.upper()}
+    if isinstance(value, (list, tuple, set)):
+        return {str(item).upper() for item in value}
+    return set()
+
+
+def _keyword_value(call: ast.Call, name: str) -> ast.AST | None:
+    for keyword in call.keywords:
+        if keyword.arg == name:
+            return keyword.value
+    return None
+
+
+def _call_name(call: ast.Call) -> str:
+    func = call.func
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return ""
+
+
+def _routes_from_call(call: ast.Call) -> set[tuple[str, str]]:
+    name = _call_name(call)
+    if name not in {"add_api_route", "APIRoute"}:
+        return set()
+
+    path_node: ast.AST | None = None
+    if call.args:
+        path_node = call.args[0]
+    if path_node is None:
+        path_node = _keyword_value(call, "path")
+    path = _string_literal(path_node)
+    if not path:
+        return set()
+
+    methods = _literal_methods(_keyword_value(call, "methods"))
+    return {(path, method) for method in methods}
+
+
+def _registered_runtime_routes(module_names: set[str]) -> set[tuple[str, str]]:
+    routes: set[tuple[str, str]] = set()
+    for module_name in sorted(module_names):
+        path = ROOT / f"{module_name}.py"
+        if not path.exists():
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                routes.update(_routes_from_call(node))
+    return routes
+
+
 def _format_route(route: tuple[str, str]) -> str:
     path, method = route
     return f"{method} {path}"
@@ -84,14 +149,18 @@ def main() -> None:
     tree = ast.parse(BOOTSTRAP_PATH.read_text(encoding="utf-8"), filename=str(BOOTSTRAP_PATH))
     modules = _literal_string_collection(tree, "RUNTIME_MODULES")
     routes = _literal_route_mapping(tree, "EXPECTED_RUNTIME_ROUTES")
+    registered_routes = _registered_runtime_routes(modules)
 
     missing_modules = sorted(REQUIRED_MODULES - modules)
     missing_routes = sorted(REQUIRED_READY_ROUTES - routes, key=_format_route)
+    unbacked_ready_routes = sorted(routes - registered_routes, key=_format_route)
     problems = []
     if missing_modules:
         problems.append("Missing runtime modules:\n" + "\n".join(missing_modules))
     if missing_routes:
         problems.append("Missing ready routes:\n" + "\n".join(_format_route(route) for route in missing_routes))
+    if unbacked_ready_routes:
+        problems.append("Ready routes without a matching runtime registration:\n" + "\n".join(_format_route(route) for route in unbacked_ready_routes))
     if problems:
         raise SystemExit("\n\n".join(problems))
     print("Runtime bootstrap contract passed.")

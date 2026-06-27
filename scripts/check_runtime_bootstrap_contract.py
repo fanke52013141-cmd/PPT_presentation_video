@@ -152,17 +152,51 @@ def _routes_from_call(call: ast.Call) -> set[tuple[str, str]]:
     return set()
 
 
+def _routes_from_source(source: str) -> set[tuple[str, str]]:
+    tree = ast.parse(source)
+    routes: set[tuple[str, str]] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            routes.update(_routes_from_call(node))
+    return routes
+
+
 def _registered_runtime_routes(module_names: set[str]) -> set[tuple[str, str]]:
     routes: set[tuple[str, str]] = set()
     for module_name in sorted(module_names):
         path = ROOT / f"{module_name}.py"
         if not path.exists():
             continue
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call):
-                routes.update(_routes_from_call(node))
+        routes.update(_routes_from_source(path.read_text(encoding="utf-8")))
     return routes
+
+
+def _check_route_scanner_smoke() -> None:
+    source = '''
+from fastapi.routing import APIRoute
+
+app.add_api_route("/api/add", handler, methods=["GET", "POST"])
+APIRoute(path="/api/apiroute", endpoint=handler, methods=["DELETE"])
+
+@app.get("/api/decorator-get")
+def decorator_get():
+    pass
+
+@app.api_route("/api/decorator-api-route", methods=["PATCH"])
+def decorator_api_route():
+    pass
+'''
+    expected = {
+        ("/api/add", "GET"),
+        ("/api/add", "POST"),
+        ("/api/apiroute", "DELETE"),
+        ("/api/decorator-get", "GET"),
+        ("/api/decorator-api-route", "PATCH"),
+    }
+    found = _routes_from_source(source)
+    missing = expected - found
+    if missing:
+        raise AssertionError("Route scanner smoke test failed:\n" + "\n".join(_format_route(route) for route in sorted(missing, key=_format_route)))
 
 
 def _format_route(route: tuple[str, str]) -> str:
@@ -171,6 +205,7 @@ def _format_route(route: tuple[str, str]) -> str:
 
 
 def main() -> None:
+    _check_route_scanner_smoke()
     tree = ast.parse(BOOTSTRAP_PATH.read_text(encoding="utf-8"), filename=str(BOOTSTRAP_PATH))
     modules = _literal_string_collection(tree, "RUNTIME_MODULES")
     routes = _literal_route_mapping(tree, "EXPECTED_RUNTIME_ROUTES")

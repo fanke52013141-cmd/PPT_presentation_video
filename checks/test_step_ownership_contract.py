@@ -44,6 +44,11 @@ REQUIRED_STEP3_SNIPPETS = {
         "step3_image_style.json",
         "Step 3 当前图片风格",
     ],
+    "runtime_step3_image_style.py": [
+        "step3_image_style.json",
+        "style_state",
+        "_save_step3_style_state",
+    ],
 }
 
 FORBIDDEN_CREATE_WIZARD_CONTROLS = [
@@ -52,6 +57,12 @@ FORBIDDEN_CREATE_WIZARD_CONTROLS = [
     "name=\"auto_generate_image_style\"",
     "id=\"project-profile-style-references\"",
     "btn-image-style-reverse",
+]
+
+FORBIDDEN_STEP3_ALIAS_SNIPPETS = [
+    "_apply_style_to_project(",
+    '"profile":',
+    "'profile':",
 ]
 
 
@@ -91,8 +102,16 @@ def test_create_project_wizard_has_no_style_controls() -> None:
         raise AssertionError("Create project wizard must not expose style ownership controls:\n" + "\n".join(offenders))
 
 
+def test_step3_alias_reverse_writes_step3_state_not_project_profile() -> None:
+    content = read_text("runtime_step3_image_style.py")
+    offenders = [snippet for snippet in FORBIDDEN_STEP3_ALIAS_SNIPPETS if snippet in content]
+    if offenders:
+        raise AssertionError("Step 3 reverse alias must write step3_image_style.json, not Project Profile:\n" + "\n".join(offenders))
+
+
 if __name__ == "__main__":
     test_new_flows_do_not_use_legacy_image_style_routes_or_wording()
     test_step3_ui_uses_step3_image_style_routes_and_labels()
     test_create_project_wizard_has_no_style_controls()
+    test_step3_alias_reverse_writes_step3_state_not_project_profile()
     print("Step ownership wording contract passed.")

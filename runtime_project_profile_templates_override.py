@@ -4,6 +4,10 @@ Creation should only expose automation mode. Storyboard style belongs to Step 2;
 image style and references belong to Step 3. The original Project Profile bridge
 keeps compatibility routes and storage, but this response prevents the create
 modal from seeing project-level storyboard/image-style templates.
+
+This module also imports the lightweight Project Profile route override so normal
+startup no longer saves default storyboard_profile or image_style_profile when the
+create dialog only sends automation mode.
 """
 
 from __future__ import annotations
@@ -14,6 +18,11 @@ import threading
 import time
 from types import ModuleType
 from typing import Any
+
+try:
+    import runtime_project_profile_lightweight  # noqa: F401
+except Exception:
+    pass
 
 PATCH_MARKER = "__ppt_project_profile_templates_override_patch__"
 

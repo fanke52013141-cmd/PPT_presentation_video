@@ -27,6 +27,7 @@ REQUIRED_MODULES = {
     "runtime_one_click_orchestrator",
     "runtime_one_click_step3_style_patch",
     "runtime_one_click_ui_cache_buster",
+    "runtime_step5_flush_bridge",
 }
 
 REQUIRED_READY_ROUTES = {
@@ -226,6 +227,22 @@ app.get("/static/not-api")
         raise AssertionError("\n\n".join(problems))
 
 
+def _check_step5_flush_bridge_contract() -> None:
+    content = (ROOT / "runtime_step5_flush_bridge.py").read_text(encoding="utf-8")
+    required = [
+        "window.PPTStudio",
+        "flushStep5Draft",
+        "state.step5AutoSaveTimer",
+        "state.step5AutoSavePromise",
+        "AI_MASK_FLUSH_MARKER",
+        "ai_mask_extension.js",
+        "app.js",
+    ]
+    missing = [snippet for snippet in required if snippet not in content]
+    if missing:
+        raise AssertionError("Step 5 flush bridge contract failed:\n" + "\n".join(missing))
+
+
 def _format_route(route: tuple[str, str]) -> str:
     path, method = route
     return f"{method} {path}"
@@ -233,6 +250,7 @@ def _format_route(route: tuple[str, str]) -> str:
 
 def main() -> None:
     _check_route_scanner_smoke()
+    _check_step5_flush_bridge_contract()
     tree = ast.parse(BOOTSTRAP_PATH.read_text(encoding="utf-8"), filename=str(BOOTSTRAP_PATH))
     modules = _literal_string_collection(tree, "RUNTIME_MODULES")
     routes = _literal_route_mapping(tree, "EXPECTED_RUNTIME_ROUTES")

@@ -282,6 +282,9 @@ def _has_manual_mask(group: Any) -> bool:
     manual = group.get("manual_mask")
     if not isinstance(manual, dict):
         return False
+    rle = manual.get("rle")
+    if isinstance(rle, dict) and isinstance(rle.get("runs"), list) and len(rle["runs"]) > 0:
+        return True
     strokes = manual.get("strokes")
     return isinstance(strokes, list) and len(strokes) > 0
 
@@ -320,6 +323,15 @@ def _ai_mask_quality_errors(result: dict[str, Any], existing_mask_count: int = 0
         unmatched_groups = _safe_int(slide.get("unmatched_group_count"), 0)
         if unmatched_groups > 0:
             errors.append(f"{slide_id} 有 {unmatched_groups} 个未匹配语块")
+        quality = slide.get("quality") if isinstance(slide.get("quality"), dict) else {}
+        if quality and not quality.get("passed"):
+            coverage = float(quality.get("foreground_coverage_ratio") or 0)
+            overlap = _safe_int(quality.get("overlap_pixel_count"), 0)
+            unassigned = _safe_int(quality.get("unassigned_component_count"), 0)
+            errors.append(
+                f"{slide_id} 像素 Mask 质量未通过：覆盖率 {coverage:.2%}，"
+                f"重叠 {overlap} 像素，未分配组件 {unassigned}"
+            )
     return errors
 
 

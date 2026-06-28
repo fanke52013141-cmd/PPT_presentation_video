@@ -7,11 +7,13 @@ import os
 import inspect
 
 from PIL import Image, ImageDraw
+import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import runtime_ai_mask as mask
+from scripts.build_reveal_scene import manual_mask_alpha
 os.environ.setdefault("PPT_STUDIO_DISABLE_ONE_CLICK_ORCHESTRATOR", "1")
 import runtime_one_click_orchestrator as one_click
 
@@ -45,7 +47,6 @@ def main() -> None:
         settings = mask.normalize_settings({
             "min_element_area": 10,
             "component_padding_px": 0,
-            "stroke_brush_size": 24,
             "overwrite_existing_manual_mask": True,
             "skip_locked_groups": False,
         })
@@ -55,6 +56,8 @@ def main() -> None:
         assert [item["element_id"] for item in elements] == ["el_auto_001", "el_auto_002"]
         assert (slide_dir / "auto_mask" / "elements" / "el_auto_001.png").exists()
         assert (slide_dir / "auto_mask" / "elements" / "el_auto_002.png").exists()
+        assert all(item["mask_rle"]["encoding"] == "row_runs_v1" for item in elements)
+        assert sum(mask._rle_pixel_count(item["mask_rle"]) for item in elements) == 91 * 91 + 101 * 91
 
         manifest_slide = {
             "slide_id": "slide_001",
@@ -85,15 +88,37 @@ def main() -> None:
         assert len(cleaned["matches"]) == 1
         assert cleaned["unmatched_groups"] == ["group_right"]
 
+        completed = mask._complete_component_coverage(fallback, detected)
+        assert completed["quality"]["passed"] is True
+        assert completed["quality"]["foreground_coverage_ratio"] == 1.0
+        assert completed["quality"]["overlap_pixel_count"] == 0
+        assert completed["unmatched_elements"] == []
+
         manifest = {"slides": [manifest_slide]}
-        applied = mask._apply(manifest, fixture_slide(), detected, fallback, settings)
+        applied = mask._apply(manifest, fixture_slide(), detected, completed, settings)
         assert applied["updated"] == 2
         assert len(manifest_slide["groups"]) == 2
         assert {group["visual_group_id"] for group in manifest_slide["groups"]} == {"group_left", "group_right"}
         colors = {group["manual_mask"]["color"] for group in manifest_slide["groups"]}
         assert len(colors) == 2
-        assert all(group["manual_mask"]["source"] == "ai_auto_mask_v2" for group in manifest_slide["groups"])
+        assert all(group["manual_mask"]["source"] == "ai_auto_mask_v3_exact_rle" for group in manifest_slide["groups"])
+        assert all(group["manual_mask"]["rle"]["runs"] for group in manifest_slide["groups"])
+        assert all(group["manual_mask"]["strokes"] == [] for group in manifest_slide["groups"])
         assert all(group["review_status"] == "ai_matched" for group in manifest_slide["groups"])
+        alphas = [
+            np.asarray(manual_mask_alpha(group["manual_mask"], 320, 180)) > 0
+            for group in manifest_slide["groups"]
+        ]
+        assert not np.any(alphas[0] & alphas[1])
+
+        corrected = dict(manifest_slide["groups"][0]["manual_mask"])
+        corrected["strokes"] = [
+            {"mode": "erase", "eraser": True, "size": 12, "points": [{"x": 50, "y": 50}]},
+            {"mode": "paint", "eraser": False, "size": 8, "points": [{"x": 150, "y": 150}]},
+        ]
+        corrected_alpha = np.asarray(manual_mask_alpha(corrected, 320, 180))
+        assert corrected_alpha[50, 50] == 0
+        assert corrected_alpha[150, 150] == 255
 
         complete_with_decorative_warnings = {
             "complete": True,
@@ -103,6 +128,24 @@ def main() -> None:
             "slides": [{"slide_id": "slide_001", "unmatched_group_count": 0, "warnings": ["装饰元素未匹配"]}],
         }
         assert one_click._ai_mask_quality_errors(complete_with_decorative_warnings, 2) == []
+        broken_pixel_quality = {
+            "complete": True,
+            "processed_slide_count": 1,
+            "updated_group_count": 2,
+            "slides": [{
+                "slide_id": "slide_001",
+                "unmatched_group_count": 0,
+                "quality": {
+                    "passed": False,
+                    "foreground_coverage_ratio": 0.91,
+                    "overlap_pixel_count": 120,
+                    "unassigned_component_count": 3,
+                },
+            }],
+        }
+        pixel_errors = one_click._ai_mask_quality_errors(broken_pixel_quality, 2)
+        assert len(pixel_errors) == 1
+        assert "91.00%" in pixel_errors[0] and "120" in pixel_errors[0] and "3" in pixel_errors[0]
         pipeline_source = inspect.getsource(one_click._run_pipeline)
         assert 'client.put(f"/api/projects/{project_id}/steps/6/result"' in pipeline_source
 

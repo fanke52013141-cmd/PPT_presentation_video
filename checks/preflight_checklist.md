@@ -10,7 +10,7 @@
 
 ## Exact Mask Invariants
 
-- Pipeline version is `manual_mask_boundary_white_v4`.
+- Pipeline version is `exact_rle_mask_with_manual_corrections_v5`.
 - A page without painted Masks uses `full_slide_static`.
 - A page with Masks uses `solid_background_mask_boundary_white_cutout`.
 - Masked pages declare `source_image_used_for_background=false`.

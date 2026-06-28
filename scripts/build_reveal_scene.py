@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Build deterministic reveal assets from manually painted processing regions.
+"""Build deterministic reveal assets from exact or manually corrected Masks.
 
 - A slide with no painted Mask is rendered as one static full-slide image.
-- A painted Mask defines the exact processing boundary for one reveal layer.
+- An exact AI Mask or painted Mask defines the processing boundary for a layer.
 - Only white pixels connected to that Mask boundary are removed.
 - Enclosed white details and all non-white content inside the Mask are retained.
 - No semantic segmentation, coverage scoring, or automatic Mask expansion runs.
@@ -30,7 +30,7 @@ except ModuleNotFoundError:
     from pipeline_profiles import allowed_reveal_actions, normalize_reveal_action, read_pipeline_profile
 
 
-PIPELINE_VERSION = "manual_mask_boundary_white_v4"
+PIPELINE_VERSION = "exact_rle_mask_with_manual_corrections_v5"
 MASKED_COMPOSITION_METHOD = "solid_background_mask_boundary_white_cutout"
 STATIC_COMPOSITION_METHOD = "full_slide_static"
 DEFAULT_CANVAS = {
@@ -129,17 +129,27 @@ def is_erase_stroke(stroke: dict[str, Any]) -> bool:
 
 
 def manual_mask_alpha(manual_mask: Any, width: int, height: int) -> Image.Image | None:
-    """Rasterize saved brush strokes without semantic or visual expansion."""
+    """Rasterize an exact automatic base mask plus manual paint/erase deltas."""
     if not isinstance(manual_mask, dict):
         return None
     strokes = manual_mask.get("strokes")
-    if not isinstance(strokes, list) or not strokes:
-        return None
-
     alpha = Image.new("L", (width, height), 0)
     draw = ImageDraw.Draw(alpha)
     found_paint = False
-    for stroke in strokes:
+
+    rle = manual_mask.get("rle") if isinstance(manual_mask.get("rle"), dict) else {}
+    if rle.get("encoding") == "row_runs_v1":
+        if int(rle.get("width", width)) != width or int(rle.get("height", height)) != height:
+            raise RevealBuildError("Exact Mask RLE canvas does not match slide canvas")
+        for run in rle.get("runs", []) or []:
+            if not isinstance(run, list) or len(run) < 3:
+                continue
+            y, x1, x2 = int(run[0]), int(run[1]), int(run[2])
+            if 0 <= y < height and x2 > x1:
+                draw.rectangle((max(0, x1), y, min(width, x2) - 1, y), fill=255)
+                found_paint = True
+
+    for stroke in strokes if isinstance(strokes, list) else []:
         if not isinstance(stroke, dict):
             continue
         raw_points = stroke.get("points")

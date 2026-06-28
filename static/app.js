@@ -56,8 +56,13 @@ let state = {
     selectedBoxIndex: -1,
     draggedBoxIndex: -1,
     draggedHandle: null, // 'nw', 'ne', 'se', 'sw', 'move'
-    brushSize: 170,
-    eraserSize: 120,
+    paintMode: false,
+    paintingBoxIndex: -1,
+    eraserMode: false,
+    isPainting: false,
+    currentStroke: null,
+    brushSize: 48,
+    eraserSize: 48,
     maskZoom: 1,
     maskZoomOriginX: 50,
     maskZoomOriginY: 50,
@@ -363,9 +368,13 @@ function initGlobalEvents() {
   document.getElementById('step3-btn-confirm')?.addEventListener('click', () => confirmStep3Images());
 
   // ================= 步骤 5 事件 =================
+  document.getElementById('step5-btn-new-block')?.addEventListener('click', () => createCurrentSlideBlock());
+  document.getElementById('step5-btn-clear-current')?.addEventListener('click', () => clearCurrentSlideMaskAnnotations());
   document.getElementById('step5-btn-subtitle-settings')?.addEventListener('click', () => openSubtitleSettingsModal());
   document.getElementById('step5-btn-animation-settings')?.addEventListener('click', () => openAnimationSettingsModal());
   document.getElementById('step5-btn-fullscreen')?.addEventListener('click', () => toggleStep5Fullscreen());
+  document.getElementById('step5-brush-size')?.addEventListener('input', (e) => updateBrushSize(e.target.value));
+  document.getElementById('step5-eraser-size')?.addEventListener('input', (e) => updateEraserSize(e.target.value));
 
   // ================= 步骤 6 事件 =================
   document.getElementById('step6-btn-init')?.addEventListener('click', () => initStep6Narration());
@@ -1676,41 +1685,9 @@ function normalizeStep3BackgroundColor(value) {
   return /^#[0-9A-F]{6}$/.test(color) ? color : '';
 }
 
-function renderStep3VisualSettings() {
-  const colorInput = document.getElementById('step3-video-background-color');
-  const textInput = document.getElementById('step3-video-background-text');
-  if (colorInput) colorInput.value = step3VideoBackground;
-  if (textInput) textInput.value = step3VideoBackground;
-}
-
 async function loadStep3VisualSettings() {
   const res = await API.get(`/api/projects/${state.currentProject.id}/steps/3/visual-settings`);
   step3VideoBackground = normalizeStep3BackgroundColor(res.video_background) || '#FEFDF9';
-  renderStep3VisualSettings();
-}
-
-async function saveStep3VideoBackground(value) {
-  const normalized = normalizeStep3BackgroundColor(value);
-  const status = document.getElementById('step3-video-background-status');
-  if (!normalized) {
-    renderStep3VisualSettings();
-    showToast('视频背景色必须是 #RRGGBB 格式');
-    return false;
-  }
-  if (status) status.innerText = '保存中...';
-  const res = await API.put(
-    `/api/projects/${state.currentProject.id}/steps/3/visual-settings`,
-    { video_background: normalized }
-  );
-  step3VideoBackground = res.video_background || normalized;
-  renderStep3VisualSettings();
-  if (status) status.innerText = '已保存';
-  setTimeout(() => {
-    if (status) status.innerText = '';
-  }, 1400);
-  showToast(`视频背景色已更新为 ${step3VideoBackground}`);
-  refreshCurrentProjectStatus(3).catch(() => {});
-  return true;
 }
 
 async function refreshStep3Images() {
@@ -2207,8 +2184,19 @@ function hexToRgba(hex, alpha) {
 function cloneManualMask(mask) {
   if (!mask || typeof mask !== 'object') return { strokes: [] };
   return {
+    source: mask.source || '',
     color: mask.color || '',
     bounds: mask.bounds ? { ...mask.bounds } : null,
+    rle: mask.rle && mask.rle.encoding === 'row_runs_v1'
+      ? {
+          encoding: 'row_runs_v1',
+          width: Number(mask.rle.width || 1920),
+          height: Number(mask.rle.height || 1080),
+          runs: Array.isArray(mask.rle.runs)
+            ? mask.rle.runs.map(run => [Number(run[0]), Number(run[1]), Number(run[2])])
+            : []
+        }
+      : null,
     strokes: Array.isArray(mask.strokes)
       ? mask.strokes.map(stroke => ({
           color: stroke.color || '',
@@ -2404,6 +2392,8 @@ function isEraseStroke(stroke) {
 }
 
 function hasPaintStroke(maskBox) {
+  const exactRuns = maskBox?.manual_mask?.rle?.runs;
+  if (Array.isArray(exactRuns) && exactRuns.length > 0) return true;
   return (maskBox?.manual_mask?.strokes || []).some(stroke => !isEraseStroke(stroke) && (stroke.points || []).length > 0);
 }
 
@@ -2604,7 +2594,7 @@ function syncMaskBoxesToSlide(slide, boxes) {
   if (!slide) return;
   boxes = Array.isArray(boxes) ? boxes : [];
   boxes.forEach((maskBox, idx) => {
-    if (maskBox?.manual_mask?.strokes?.length) {
+    if (maskBox?.manual_mask?.strokes?.length || maskBox?.manual_mask?.rle?.runs?.length) {
       updateMaskBoxFromManualMask(idx);
     }
   });
@@ -3098,6 +3088,13 @@ function renderStep5Workspace() {
     state.canvasState.selectedBoxIndex = -1;
     state.canvasState.draggedBoxIndex = -1;
     state.canvasState.draggedHandle = null;
+    state.canvasState.paintMode = false;
+    state.canvasState.eraserMode = false;
+    state.canvasState.paintingBoxIndex = -1;
+    state.canvasState.isPainting = false;
+    state.canvasState.currentStroke = null;
+    updateBrushSize(state.canvasState.brushSize, false);
+    updateEraserSize(state.canvasState.eraserSize, false);
     initCanvasEvents();
     redrawCanvas();
     
@@ -3152,8 +3149,10 @@ function renderStep5BoxesForm() {
 
   state.canvasState.boxes.forEach((box, idx) => {
     const isSelected = idx === state.canvasState.selectedBoxIndex;
+    const isPaintTarget = state.canvasState.paintMode && !state.canvasState.eraserMode && idx === state.canvasState.paintingBoxIndex;
+    const isEraseTarget = state.canvasState.paintMode && state.canvasState.eraserMode && idx === state.canvasState.paintingBoxIndex;
     const item = document.createElement('div');
-    item.className = `mask-block-card sketch-dashed${isSelected ? ' highlight-glow' : ''}`;
+    item.className = `mask-block-card sketch-dashed${isSelected ? ' highlight-glow' : ''}${isPaintTarget ? ' paint-active' : ''}${isEraseTarget ? ' erase-active' : ''}`;
     const maskColor = getBoxColor(box, idx);
     item.style.setProperty('--mask-color', maskColor);
 
@@ -3171,6 +3170,17 @@ function renderStep5BoxesForm() {
       <div class="mask-block-head">
         <span class="mask-block-number">${idx + 1}</span>
         <span class="mask-block-caption">语块 ${idx + 1}</span>
+        <div class="mask-block-actions">
+          <button class="mask-icon-btn${isPaintTarget ? ' active' : ''}" type="button" data-action="paint" title="画笔补充当前语块" aria-label="画笔补充">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
+          </button>
+          <button class="mask-icon-btn${isEraseTarget ? ' active' : ''}" type="button" data-action="erase" title="橡皮擦除当前语块" aria-label="橡皮擦除">
+            <svg class="icon" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"></path><path d="M22 21H7"></path></svg>
+          </button>
+          <button class="mask-icon-btn mask-delete-btn" type="button" data-action="delete" title="删除语块" aria-label="删除语块">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path></svg>
+          </button>
+        </div>
       </div>
       <div class="mask-visual-card">
         <span class="mask-visual-label">画面描述 · ${escHtml(elementId)} · ${escHtml(box.role || 'content_body')} · ${escHtml(visualType)}</span>
@@ -3184,6 +3194,19 @@ function renderStep5BoxesForm() {
     
     item.addEventListener('click', () => {
       selectStep5MaskBox(idx);
+    });
+
+    item.querySelector('[data-action="paint"]')?.addEventListener('click', (event) => {
+      event.stopPropagation();
+      startMaskPaint(idx);
+    });
+    item.querySelector('[data-action="erase"]')?.addEventListener('click', (event) => {
+      event.stopPropagation();
+      startMaskErase(idx);
+    });
+    item.querySelector('[data-action="delete"]')?.addEventListener('click', (event) => {
+      event.stopPropagation();
+      deleteMaskBox(idx);
     });
 
     container.appendChild(item);
@@ -3283,6 +3306,106 @@ function selectStep5MaskBox(idx, shouldScroll = true) {
   });
 }
 
+function updateBrushSize(value, shouldRedraw = true) {
+  const size = Math.max(8, Math.min(300, Number(value) || 48));
+  state.canvasState.brushSize = size;
+  const input = document.getElementById('step5-brush-size');
+  const label = document.getElementById('step5-brush-size-value');
+  if (input) input.value = String(size);
+  if (label) label.textContent = String(size);
+  if (shouldRedraw) redrawCanvas();
+}
+
+function updateEraserSize(value, shouldRedraw = true) {
+  const size = Math.max(8, Math.min(300, Number(value) || 48));
+  state.canvasState.eraserSize = size;
+  const input = document.getElementById('step5-eraser-size');
+  const label = document.getElementById('step5-eraser-size-value');
+  if (input) input.value = String(size);
+  if (label) label.textContent = String(size);
+  if (shouldRedraw) redrawCanvas();
+}
+
+function startMaskTool(idx, eraser) {
+  const maskBox = state.canvasState.boxes[idx];
+  if (!maskBox) return;
+  ensureManualMask(maskBox, idx);
+  state.canvasState.paintMode = true;
+  state.canvasState.eraserMode = !!eraser;
+  state.canvasState.paintingBoxIndex = idx;
+  state.canvasState.selectedBoxIndex = idx;
+  redrawCanvas();
+  renderStep5BoxesForm();
+  renderStep5NarrationPanel();
+  showToast(eraser ? '橡皮已启用，在画面中拖动可擦除当前语块。' : '画笔已启用，在画面中拖动可补充当前语块。');
+}
+
+function startMaskPaint(idx) {
+  startMaskTool(idx, false);
+}
+
+function startMaskErase(idx) {
+  startMaskTool(idx, true);
+}
+
+function stopMaskPaint() {
+  state.canvasState.paintMode = false;
+  state.canvasState.eraserMode = false;
+  state.canvasState.paintingBoxIndex = -1;
+  state.canvasState.isPainting = false;
+  state.canvasState.currentStroke = null;
+  redrawCanvas();
+  renderStep5BoxesForm();
+}
+
+function createCurrentSlideBlock() {
+  const idx = state.canvasState.boxes.length;
+  state.canvasState.boxes.push({
+    group_id: `manual_group_${Date.now().toString(36)}_${idx + 1}`,
+    role: 'content_body',
+    text_label: `语块 ${idx + 1}`,
+    narration_beat_id: '',
+    narration_beat_ids: [],
+    narration_fragments: [],
+    spoken_text: '',
+    manual_mask: { source: 'manual', color: getMaskColor(idx), strokes: [] },
+    reveal: normalizeMaskReveal({ type: 'wipe_left_to_right' }),
+    box: [860, 460, 1060, 620]
+  });
+  startMaskPaint(idx);
+  scheduleStep5Autosave();
+}
+
+function clearCurrentSlideMaskAnnotations() {
+  if (!state.canvasState.boxes.length) return;
+  showCustomConfirm(
+    '清除当前页标注',
+    '将清除当前 Slide 的 AI Mask 与手动修正，其他页面不受影响。',
+    () => {
+      state.canvasState.boxes = [];
+      stopMaskPaint();
+      saveStep5CurrentState();
+      renderStep5BoxesForm();
+      renderStep5NarrationPanel();
+      scheduleStep5Autosave();
+    }
+  );
+}
+
+window.deleteMaskBox = function(idx) {
+  state.canvasState.boxes.splice(idx, 1);
+  if (state.canvasState.paintingBoxIndex === idx) {
+    stopMaskPaint();
+  } else if (state.canvasState.paintingBoxIndex > idx) {
+    state.canvasState.paintingBoxIndex -= 1;
+  }
+  state.canvasState.selectedBoxIndex = -1;
+  redrawCanvas();
+  renderStep5BoxesForm();
+  renderStep5NarrationPanel();
+  scheduleStep5Autosave();
+};
+
 function updateMaskBoxFromManualMask(idx) {
   const maskBox = state.canvasState.boxes[idx];
   if (!maskBox) return;
@@ -3306,13 +3429,70 @@ function updateMaskBoxFromManualMask(idx) {
   };
 }
 
-// Canvas 只保留预览与缩放；Mask 由 AI 自动生成，不接受手工涂抹。
+function getCanvasCoords(event, canvas) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: Math.max(0, Math.min(1920, (event.clientX - rect.left) * 1920 / rect.width)),
+    y: Math.max(0, Math.min(1080, (event.clientY - rect.top) * 1080 / rect.height)),
+  };
+}
+
+function beginMaskStroke(event, canvas) {
+  if (!state.canvasState.paintMode || state.canvasState.paintingBoxIndex < 0) return;
+  if (event.button !== undefined && event.button !== 0) return;
+  event.preventDefault();
+  const idx = state.canvasState.paintingBoxIndex;
+  const box = state.canvasState.boxes[idx];
+  if (!box) return;
+  const point = getCanvasCoords(event, canvas);
+  const stroke = {
+    color: getBoxColor(box, idx),
+    size: state.canvasState.eraserMode ? state.canvasState.eraserSize : state.canvasState.brushSize,
+    mode: state.canvasState.eraserMode ? 'erase' : 'paint',
+    eraser: !!state.canvasState.eraserMode,
+    points: [{ x: Math.round(point.x), y: Math.round(point.y) }]
+  };
+  ensureManualMask(box, idx).strokes.push(stroke);
+  state.canvasState.isPainting = true;
+  state.canvasState.currentStroke = stroke;
+  canvas.setPointerCapture?.(event.pointerId);
+  redrawCanvas();
+}
+
+function continueMaskStroke(event, canvas) {
+  if (!state.canvasState.isPainting || !state.canvasState.currentStroke) return;
+  event.preventDefault();
+  const point = getCanvasCoords(event, canvas);
+  const points = state.canvasState.currentStroke.points;
+  const last = points[points.length - 1];
+  if (!last || Math.hypot(point.x - last.x, point.y - last.y) >= 3) {
+    points.push({ x: Math.round(point.x), y: Math.round(point.y) });
+    redrawCanvas();
+  }
+}
+
+function finishMaskStroke(event, canvas) {
+  if (!state.canvasState.isPainting) return;
+  state.canvasState.isPainting = false;
+  state.canvasState.currentStroke = null;
+  if (canvas.hasPointerCapture?.(event.pointerId)) canvas.releasePointerCapture?.(event.pointerId);
+  updateMaskBoxFromManualMask(state.canvasState.paintingBoxIndex);
+  redrawCanvas();
+  renderStep5BoxesForm();
+  scheduleStep5Autosave();
+}
+
+// AI provides the base mask; pointer tools add reversible manual corrections.
 function initCanvasEvents() {
   const canvas = document.getElementById('step5-canvas');
   const wrapper = document.getElementById('canvas-container');
 
   const newCanvas = canvas.cloneNode(true);
   canvas.parentNode.replaceChild(newCanvas, canvas);
+  newCanvas.addEventListener('pointerdown', (event) => beginMaskStroke(event, newCanvas));
+  newCanvas.addEventListener('pointermove', (event) => continueMaskStroke(event, newCanvas));
+  newCanvas.addEventListener('pointerup', (event) => finishMaskStroke(event, newCanvas));
+  newCanvas.addEventListener('pointercancel', (event) => finishMaskStroke(event, newCanvas));
   newCanvas.addEventListener('wheel', (e) => handleMaskCanvasWheel(e, newCanvas), { passive: false });
   if (wrapper) {
     wrapper.onwheel = (e) => handleMaskCanvasWheel(e, newCanvas);
@@ -3373,8 +3553,17 @@ function createStep5OffscreenCanvas() {
 function rasterizeManualMask(item) {
   const maskLayer = createStep5OffscreenCanvas();
   const maskCtx = maskLayer.getContext('2d');
+  const exactRuns = item.manual_mask?.rle?.runs || [];
+  if (exactRuns.length) {
+    maskCtx.fillStyle = 'rgba(0,0,0,1)';
+    exactRuns.forEach(run => {
+      const [y, x1, x2] = run.map(Number);
+      if (Number.isFinite(y) && Number.isFinite(x1) && Number.isFinite(x2) && x2 > x1) {
+        maskCtx.fillRect(x1, y, x2 - x1, 1);
+      }
+    });
+  }
   const strokes = item.manual_mask?.strokes || [];
-  if (!strokes.length) return maskLayer;
   maskCtx.lineCap = 'round';
   maskCtx.lineJoin = 'round';
 
@@ -3667,7 +3856,8 @@ function rebuildStep5SourceCache(image) {
 
 function drawManualMaskStrokes(ctx, item, idx) {
   const strokes = item.manual_mask?.strokes || [];
-  if (!strokes.length) return;
+  const exactRuns = item.manual_mask?.rle?.runs || [];
+  if (!strokes.length && !exactRuns.length) return;
   const isSelected = idx === state.canvasState.selectedBoxIndex;
   const color = getBoxColor(item, idx);
   const maskLayer = rasterizeManualMask(item);
@@ -3689,6 +3879,8 @@ function redrawCanvas(options = {}) {
   ctx.clearRect(0, 0, 1920, 1080);
   ctx.fillStyle = step3VideoBackground;
   ctx.fillRect(0, 0, 1920, 1080);
+  canvas.classList.toggle('painting', state.canvasState.paintMode && !state.canvasState.eraserMode);
+  canvas.classList.toggle('erasing', state.canvasState.paintMode && state.canvasState.eraserMode);
 
   if (!step5SourceCanvas) {
     return;
@@ -3714,7 +3906,8 @@ function saveStep5CurrentState() {
 function boxHasAiPaint(box) {
   const manualMask = box?.manual_mask;
   const strokes = Array.isArray(manualMask?.strokes) ? manualMask.strokes : [];
-  if (!strokes.some(stroke => stroke && !stroke.eraser && stroke.mode !== 'erase' && Array.isArray(stroke.points) && stroke.points.length)) return false;
+  const hasExactMask = Array.isArray(manualMask?.rle?.runs) && manualMask.rle.runs.length > 0;
+  if (!hasExactMask && !strokes.some(stroke => stroke && !stroke.eraser && stroke.mode !== 'erase' && Array.isArray(stroke.points) && stroke.points.length)) return false;
   return String(manualMask?.source || '').startsWith('ai_auto_mask')
     || String(box?.review_status || '') === 'ai_matched_needs_review'
     || !!box?.auto_mask

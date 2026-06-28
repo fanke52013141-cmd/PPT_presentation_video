@@ -6,10 +6,7 @@
     'white_threshold',
     'color_tolerance',
     'min_element_area',
-    'component_padding_px',
-    'merge_gap_px',
-    'subtitle_safe_y',
-    'stroke_brush_size'
+    'component_padding_px'
   ]);
 
   const PARAMS = [
@@ -32,21 +29,6 @@
       key: 'component_padding_px', label: '元素外扩边距', type: 'number', default: 12, min: 0, max: 80, step: 1,
       usual: '4 - 32 px',
       help: '检测到元素后向外多包一点，避免边缘被切。元素边缘缺失调高；相邻元素被带进去调低。'
-    },
-    {
-      key: 'merge_gap_px', label: '语块合并距离', type: 'number', default: 40, min: 0, max: 160, step: 4,
-      usual: '12 - 100 px',
-      help: '同一个语块绑定多个元素时，决定合并范围。图标+标题被拆太碎调高；多个语块粘在一起调低。'
-    },
-    {
-      key: 'subtitle_safe_y', label: '字幕安全线', type: 'number', default: 930, min: 760, max: 1080, step: 10,
-      usual: '880 - 1040 px',
-      help: '自动 Mask 尽量不进入这条线以下，避免挡字幕。底部内容必须标注就调高；字幕容易冲突就调低。'
-    },
-    {
-      key: 'stroke_brush_size', label: '自动画笔宽度', type: 'number', default: 96, min: 24, max: 240, step: 4,
-      usual: '48 - 180 px',
-      help: 'AI 结果会写成手动 Mask 笔画，这里控制笔画粗细。Mask 有空洞调大；盖到旁边元素调小。'
     }
   ];
 
@@ -116,8 +98,7 @@
       .ai-mask-prompt-block{margin-top:1rem;border-top:1.5px dashed #111;padding-top:.8rem}
       .ai-mask-prompt-block textarea{width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.84rem;line-height:1.45;box-sizing:border-box}
       .ai-mask-modal-scroll{max-height:72vh;overflow:auto;padding-right:.3rem}
-      #step5-canvas{pointer-events:none!important;cursor:default!important}
-      #step5-boxes-list input,#step5-boxes-list textarea,#step5-boxes-list select,#step5-boxes-list button{pointer-events:none;opacity:.72}
+      #step5-canvas{pointer-events:auto}
       body.step5-fullscreen-mode #canvas-container{aspect-ratio:16/9;height:auto!important;max-height:none!important;}
       body.step5-fullscreen-mode #canvas-container canvas,body.step5-fullscreen-mode #canvas-container img{width:100%!important;height:100%!important;object-fit:contain!important;}
       body.step5-fullscreen-mode #step-panel-5 .workspace-left{align-items:center;justify-content:center;overflow:hidden;}

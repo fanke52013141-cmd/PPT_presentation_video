@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 server = (ROOT / "server.py").read_text(encoding="utf-8")
 app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
 html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
+background_ui = (ROOT / "static" / "storyboard_background_extension.js").read_text(encoding="utf-8")
 visual_prompts = (ROOT / "scripts" / "write_visual_prompts.py").read_text(encoding="utf-8")
 reveal_builder = (ROOT / "scripts" / "build_reveal_scene.py").read_text(encoding="utf-8")
 background_color = (ROOT / "scripts" / "background_color.py").read_text(encoding="utf-8")
@@ -21,9 +22,10 @@ assert "masked_outer_white_cutout" in background_color
 assert style_tokens["canvas"]["background"] == "#FFFFFF"
 assert style_tokens["visual_assets"]["required_background"] == "flat_uniform_pure_white"
 assert "pure-white #FFFFFF background" in visual_prompts
-assert "step3-video-background-color" in html
-assert "step3-video-background-text" in html
-assert "step3-video-background-apply" in html
-assert "saveStep3VideoBackground" in app
+assert "step3-btn-background-settings" in background_ui
+assert "btn-storyboard-bg-save" in background_ui
+assert "铺满画面" in background_ui and "完整显示" in background_ui
+assert "step3-video-background-apply" not in html
+assert "saveStep3VideoBackground" not in app
 
 print("white background workflow checks passed")

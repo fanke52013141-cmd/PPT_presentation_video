@@ -1,4 +1,5 @@
 import React from 'react';
+import {loadFont as loadNotoSansSC} from '@remotion/google-fonts/NotoSansSC';
 import {
   AbsoluteFill,
   Audio,
@@ -10,6 +11,11 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from 'remotion';
+
+const {fontFamily: loadedNotoSansSCFamily} = loadNotoSansSC('normal', {
+  weights: ['500'],
+  subsets: ['chinese-simplified', 'latin'],
+});
 
 type LayerBox = {
   x: number;
@@ -139,7 +145,7 @@ const subtitleFontFamily = (fontKey?: string, configuredFamily?: string, fontWei
   const serifFallback = '"Noto Serif CJK SC", SimSun, "Songti SC", serif';
   const handwrittenFallback = '"Microsoft YaHei", KaiTi, cursive';
   const families: Record<string, string> = {
-    noto_sans_sc: `${configured}"Noto Sans SC", ${sansFallback}`,
+    noto_sans_sc: `${configured}"${loadedNotoSansSCFamily}", ${sansFallback}`,
     noto_serif_sc: `${configured}"Noto Serif SC", ${serifFallback}`,
     ma_shan_zheng: `${configured}"Ma Shan Zheng", ${handwrittenFallback}`,
     zcool_xiaowei: `${configured}"ZCOOL XiaoWei", ${serifFallback}`,

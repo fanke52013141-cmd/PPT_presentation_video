@@ -259,6 +259,10 @@
           <div class="step5-mask-header">
             <h2 class="highlight-title">智能 Mask 区域标注</h2>
             <div class="step5-toolbar">
+              <button id="step5-btn-clear-current" class="secondary" type="button">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path></svg>
+                清除当前页
+              </button>
               <button id="step5-btn-subtitle-settings" class="secondary">
                 <svg class="icon" viewBox="0 0 24 24"><path d="M4 6h16"></path><path d="M7 10h10"></path><path d="M6 15h12"></path><path d="M9 19h6"></path></svg>
                 字幕设置
@@ -272,6 +276,16 @@
                 <span id="step5-fullscreen-label">放大标注</span>
               </button>
               <span id="step5-draft-status" class="step2-autosave-status"></span>
+              <label class="step5-brush-control" title="调整手动画笔大小">
+                <span>画笔</span>
+                <input id="step5-brush-size" type="range" min="8" max="300" value="48">
+                <span id="step5-brush-size-value">48</span>
+              </label>
+              <label class="step5-brush-control" title="调整橡皮大小">
+                <span>橡皮</span>
+                <input id="step5-eraser-size" type="range" min="8" max="300" value="48">
+                <span id="step5-eraser-size-value">48</span>
+              </label>
             </div>
           </div>
           
@@ -292,6 +306,10 @@
             <div class="workspace-right">
               <div class="step5-side-header">
                 <h3>AI 语块关联</h3>
+                <button id="step5-btn-new-block" class="secondary step5-add-block-btn" type="button">
+                  <svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>
+                  添加语块
+                </button>
               </div>
               <div id="step5-boxes-list" style="display: flex; flex-direction: column; gap: 0.5rem;">
                 <!-- 标注盒子表单 -->

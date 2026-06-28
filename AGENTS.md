@@ -34,7 +34,7 @@ article.md
 -> visual_prompt.md
 -> visual_draft.png
 -> automatic element detection and multimodal narration matching
--> compatible colored Mask strokes in reveal_manifest.json
+-> exact RLE Masks plus optional manual correction strokes in reveal_manifest.json
 -> scripts/build_reveal_scene.py
 -> scripts/bind_reveal_timeline.py
 -> scripts/build_remotion_props.py
@@ -45,14 +45,15 @@ article.md
 
 `scripts/build_reveal_scene.py` is the only production reveal builder.
 
-- Pipeline version: `manual_mask_boundary_white_v4`.
+- Pipeline version: `exact_rle_mask_with_manual_corrections_v5`.
 - AI Mask detects separable elements, names candidate crops, and maps narrated
   visual groups to those candidates with a multimodal model.
-- Only narrated groups are required; decorative candidates may remain unmatched.
-- The automatic result is stored as compatible colored `manual_mask.strokes`
-  because the production reveal builder consumes that stable schema.
-- A slide without Mask strokes is a static full-slide image.
-- A slide with Mask strokes starts from the user-configured video background.
+- Every foreground component is required. Visual-only and decorative components
+  are attached to the nearest narrated semantic anchor.
+- The automatic result is stored as exact `manual_mask.rle` row runs. Optional
+  manual paint/erase strokes are applied on top as corrections.
+- A slide without a Mask is a static full-slide image.
+- A slide with an exact or manually painted Mask starts from the configured video background.
 - Generated images must use a pure-white outer background.
 - Each automatic Mask is a processing boundary; only near-white pixels connected
   inward from that boundary are removed.
@@ -60,8 +61,10 @@ article.md
 - A reveal layer retains non-white source content inside that group's saved
   Mask, with soft antialias alpha and white-edge decontamination.
 - The source image must never be reused as the background of a masked slide.
-- The reveal builder must not rematch elements, expand ownership, or erase
-  across groups; semantic association belongs to the AI Mask stage.
+- Automatic masks must reach at least 99.5% foreground coverage with zero
+  unassigned components and zero cross-group pixel overlap.
+- The reveal builder must not rematch semantic ownership; that belongs to the
+  AI Mask stage. Manual brush, eraser, add, and delete remain available as fallback.
 - Rebuild slide assets and Remotion runtime assets before every render.
 - Validate the pipeline version and reject unreferenced legacy assets before rendering.
 

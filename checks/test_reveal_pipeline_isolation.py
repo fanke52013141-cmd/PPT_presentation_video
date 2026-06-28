@@ -13,7 +13,9 @@ def main() -> None:
     run_validator = (ROOT / "scripts" / "validate_run_assets.py").read_text(encoding="utf-8")
     preflight = (ROOT / "scripts" / "run_reveal_preflight.ps1").read_text(encoding="utf-8")
 
-    assert 'REVEAL_PIPELINE_VERSION = "manual_mask_boundary_white_v4"' in server
+    assert 'REVEAL_PIPELINE_VERSION = "exact_rle_mask_with_manual_corrections_v5"' in server
+    assert 'rle.get("encoding") == "row_runs_v1"' in server
+    assert 'int(run[2]) > int(run[1])' in server
     assert "build_current_reveal_assets(project)" in server
     assert '"--image-format=png"' in server
     assert '"--pixel-format=yuv420p"' in server
@@ -70,7 +72,7 @@ def main() -> None:
     for symbol in forbidden_builder_symbols:
         assert symbol not in builder, symbol
 
-    assert 'PIPELINE_VERSION = "manual_mask_boundary_white_v4"' in builder
+    assert 'PIPELINE_VERSION = "exact_rle_mask_with_manual_corrections_v5"' in builder
     assert '"cutout_method": "mask_boundary_connected_white_soft_alpha"' in builder
     assert '"source_image_used_for_background": False' in builder
     assert 'slide_dir / "assets" / "full_slide.png"' not in run_validator

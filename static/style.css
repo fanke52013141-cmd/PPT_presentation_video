@@ -3649,6 +3649,78 @@ header .btn {
   z-index: 2 !important;
 }
 
+.canvas-wrapper canvas.painting {
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.canvas-wrapper canvas.erasing {
+  cursor: cell;
+  touch-action: none;
+}
+
+.step5-brush-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 34px;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--color-border-default, #d7dbe7);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--color-text-secondary, #555);
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.step5-brush-control input[type="range"] {
+  width: 82px;
+  accent-color: var(--color-primary-deep, #5c66e8);
+}
+
+.mask-block-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+
+.mask-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--color-text-tertiary, #777);
+}
+
+.mask-icon-btn:hover,
+.mask-icon-btn.active {
+  background: color-mix(in srgb, var(--mask-color) 18%, white);
+  color: var(--color-primary-deep, #4d56d8);
+  box-shadow: none;
+  transform: none;
+}
+
+.mask-delete-btn:hover {
+  background: #fff1f2;
+  color: #c9184a;
+}
+
+.mask-block-card.paint-active {
+  background: #fffdf0;
+}
+
+.mask-block-card.erase-active {
+  background: #f3f7ff;
+}
+
 @media (min-width: 761px) {
   body.workspace-open #toast-container {
     left: 266px;

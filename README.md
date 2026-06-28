@@ -46,17 +46,17 @@ python -m venv .venv
 
 ## 当前 Mask 渲染规则
 
-渲染兼容层仍使用稳定版本名 `manual_mask_boundary_white_v4`，但用户侧 Mask 已改为全自动：
+当前使用 `exact_rle_mask_with_manual_corrections_v5`：自动像素标注为主，手动工具作为兜底：
 
 - 没有 Mask：直接显示完整图片。
 - 图片生成提示词强制要求外围背景为纯白色。
-- AI 先检测并裁出画面候选元素，再结合分镜和演讲稿完成多模态语义关联。
-- 自动标注写入兼容的彩色 Mask 笔画结构；每个 Mask 是一个语块的处理边界，只清除从该边界向内连通的纯白/近白背景。
+- AI 先检测连通像素组件，再结合分镜和演讲稿确定语义锚点；正文、装饰和细小边缘组件会确定性归入最近的旁白语块。
+- 自动标注写入精确 `row_runs_v1` RLE；每个像素只能属于一个语块，质量门禁要求覆盖率至少 99.5%、零未分配组件、零跨组重叠。
 - 图像内部被内容包围的白色不会被抠除。
 - 非白色内容按原图保留；边缘只做少量抗锯齿透明度和白边去色。
 - 不使用原图作为背景。
-- Reveal 构建阶段不重新做语义匹配、最近区域分配或跨组擦除。
-- Mask 页面只显示原图、彩色自动 Mask 与语块关联，不提供手工画笔，也不显示检测数量或覆盖率。
+- Reveal 构建阶段直接消费精确 RLE，并在其上按顺序应用手动画笔或橡皮修正。
+- Mask 页面默认展示自动结果，同时保留添加语块、画笔、橡皮、删除和清除当前页作为人工兜底。
 - 每次渲染前都会清理并重建 Reveal 与 Remotion 运行时素材。
 
 生产构建顺序：
@@ -64,7 +64,7 @@ python -m venv .venv
 ```text
 visual_draft.png
 -> 自动元素检测 + 多模态演讲稿关联
--> reveal_manifest.json（兼容彩色 Mask strokes）
+-> reveal_manifest.json（精确 RLE + 可选手动修正 strokes）
 -> scripts/build_reveal_scene.py
 -> scripts/bind_reveal_timeline.py
 -> scripts/build_remotion_props.py

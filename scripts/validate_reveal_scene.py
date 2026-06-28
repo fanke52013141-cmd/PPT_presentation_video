@@ -11,7 +11,7 @@ from typing import Any
 
 from PIL import Image
 
-PIPELINE_VERSION = "manual_mask_boundary_white_v4"
+PIPELINE_VERSION = "exact_rle_mask_with_manual_corrections_v5"
 MASKED_COMPOSITION_METHOD = "solid_background_mask_boundary_white_cutout"
 STATIC_COMPOSITION_METHOD = "full_slide_static"
 CUTOUT_METHOD = "mask_boundary_connected_white_soft_alpha"

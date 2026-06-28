@@ -124,8 +124,11 @@ for (const removedNarrationPolicyToken of [
     throw new Error(`legacy narration policy UI still present: ${removedNarrationPolicyToken}`);
   }
 }
-if (html.includes('id="step5-brush-size"') || html.includes('id="step5-eraser-size"') || html.includes('step5-btn-new-block')) {
-  throw new Error('manual Mask controls are still visible');
+for (const manualMaskControl of ['step5-brush-size', 'step5-eraser-size', 'step5-btn-new-block', 'step5-btn-clear-current']) {
+  if (!html.includes(manualMaskControl)) throw new Error(`manual Mask fallback control missing: ${manualMaskControl}`);
+}
+for (const manualMaskHandler of ['startMaskPaint', 'startMaskErase', 'deleteMaskBox', 'beginMaskStroke']) {
+  if (!app.includes(manualMaskHandler)) throw new Error(`manual Mask fallback handler missing: ${manualMaskHandler}`);
 }
 if (!aiMask.includes('maybeAutoAnnotate') || !aiMask.includes('multimodal') && !aiMask.includes('AI 正在关联')) {
   throw new Error('automatic AI Mask flow is missing');
@@ -161,10 +164,8 @@ for (const token of ['step1-mode-article', 'step1-mode-topic', 'step1-btn-genera
 for (const label of ['文章➡️slides', 'slides➡️可视化']) {
   if (!html.includes(label)) throw new Error(`Step 2 button label missing: ${label}`);
 }
-for (const removedToken of ['step5-btn-new-block', 'step5-btn-clear-current', 'step5-brush-cursor', '涂抹区域', '擦除区域', '删除语块']) {
-  if (html.includes(removedToken) || app.includes(removedToken) || css.includes(removedToken) || aiMask.includes(removedToken)) {
-    throw new Error(`manual Mask editor residue still present: ${removedToken}`);
-  }
+if (!app.includes("rle.encoding === 'row_runs_v1'") || !app.includes('exactRuns.forEach')) {
+  throw new Error('exact RLE Mask preview support missing');
 }
 if (html.includes('请在下方粘贴您的 Markdown 格式文章')) throw new Error('obsolete Step 1 top hint is still present');
 for (const script of ['project_profile_extension.js', 'storyboard_background_extension.js', 'style_reference_manager_extension.js', 'ai_mask_extension.js', 'one_click_extension.js']) {

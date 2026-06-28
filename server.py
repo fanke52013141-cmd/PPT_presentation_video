@@ -203,7 +203,7 @@ STEP2_SCRIPT_PLAN_FILE = "slide_script_plan.json"
 STEP2_VISUAL_PLAN_FILE = "slide_visual_plan.json"
 IMAGE_STYLE_TEMPLATES_DIR = os.path.join(DATA_DIR, "image_style_templates")
 IMAGE_STYLE_TEMPLATES_INDEX = os.path.join(IMAGE_STYLE_TEMPLATES_DIR, "index.json")
-REVEAL_PIPELINE_VERSION = "manual_mask_boundary_white_v4"
+REVEAL_PIPELINE_VERSION = "exact_rle_mask_with_manual_corrections_v5"
 IMAGE_GENERATION_BACKGROUND = "#FFFFFF"
 DEFAULT_VIDEO_BACKGROUND = "#FEFDF9"
 PROJECT_VISUAL_SETTINGS_FILE = "visual_settings.json"
@@ -5223,6 +5223,18 @@ def group_has_paint(group: Dict[str, Any]) -> bool:
     manual_mask = group.get("manual_mask")
     if not isinstance(manual_mask, dict):
         return False
+    rle = manual_mask.get("rle")
+    if isinstance(rle, dict) and rle.get("encoding") == "row_runs_v1":
+        runs = rle.get("runs")
+        if isinstance(runs, list):
+            for run in runs:
+                if not isinstance(run, list) or len(run) < 3:
+                    continue
+                try:
+                    if int(run[2]) > int(run[1]):
+                        return True
+                except (TypeError, ValueError):
+                    continue
     strokes = manual_mask.get("strokes")
     if not isinstance(strokes, list):
         return False
@@ -5598,7 +5610,7 @@ def semantic_blocks_project(project_id: str, payload: Optional[Dict[str, Any]] =
             "vision_used": False,
             "processed": processed_count,
             "manifest": manifest,
-            "message": "已根据分镜和旁白生成语块，请按清单手动涂抹 Mask。",
+            "message": "已根据分镜和旁白生成语块；自动 RLE Mask 可继续手动修正。",
         }
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
@@ -5654,7 +5666,7 @@ def semantic_blocks_project(project_id: str, payload: Optional[Dict[str, Any]] =
     with reveal_lock_for(project):
         write_json_atomic(manifest_path, manifest)
 
-    msg = "已根据分镜合约生成语义分块，请按清单手动涂抹 Mask。"
+    msg = "已根据分镜合约生成语义分块；自动 RLE Mask 可继续使用画笔或橡皮修正。"
     return {"success": True, "vision_used": False, "processed": processed_count, "manifest": manifest, "message": msg}
 
 @app.get("/api/projects/{project_id}/steps/5/result")

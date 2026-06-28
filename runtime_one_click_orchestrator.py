@@ -414,8 +414,16 @@ def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str) -> No
         _start_stage(project, status, "narration", "生成演讲稿并尝试添加 TTS 标记")
         init = _require_ok(client.post(f"/api/projects/{project_id}/steps/6/init"), "Step 6 init")
         annotate = client.post(f"/api/projects/{project_id}/steps/6/annotate", json=init.get("beats") or {})
+        narration_beats = init.get("beats") or {}
         if annotate.status_code >= 400:
             _warn_stage(project, status, "narration", f"AI TTS 标记失败，继续使用原演讲稿：{_http_error(annotate)}")
+        else:
+            annotated = _require_ok(annotate, "Step 6 annotate")
+            narration_beats = annotated.get("beats") or narration_beats
+        _require_ok(
+            client.put(f"/api/projects/{project_id}/steps/6/result", json=narration_beats),
+            "Step 6 confirm narration",
+        )
         _finish_stage(project, status, "narration", "演讲稿已就绪")
 
         _start_stage(project, status, "tts", "合成 TTS 音频并确认")

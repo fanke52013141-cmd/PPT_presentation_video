@@ -61,6 +61,7 @@ def main() -> None:
     assert "/steps/2/visual/execute" in one_click_backend
     assert "/steps/2/compose" in one_click_backend
     assert "/steps/5/ai-mask/annotate" in one_click_backend
+    assert 'client.put(f"/api/projects/{project_id}/steps/6/result"' in one_click_backend
     assert "图片质量检查" not in one_click_ui
     assert "project-profile/image-style" not in one_click_backend
     print("Step ownership wording contract passed.")

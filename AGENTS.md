@@ -4,10 +4,10 @@
 
 The application has six user-visible steps:
 
-1. Import article.
-2. Plan storyboard.
-3. Generate or upload one complete 1920×1080 image per slide.
-4. Paint optional manual Masks.
+1. Import an article or generate one from a topic.
+2. Plan article-to-slide and slide-to-visualization output.
+3. Configure image style/background and generate or upload one 1920×1080 image per slide.
+4. Run automatic multimodal AI Mask annotation.
 5. Edit narration, generate audio, and confirm audio.
 6. Render and manage videos.
 
@@ -33,29 +33,35 @@ article.md
 -> visual_contract.json
 -> visual_prompt.md
 -> visual_draft.png
--> optional manual brush Masks in reveal_manifest.json
+-> automatic element detection and multimodal narration matching
+-> compatible colored Mask strokes in reveal_manifest.json
 -> scripts/build_reveal_scene.py
 -> scripts/bind_reveal_timeline.py
 -> scripts/build_remotion_props.py
 -> Remotion MP4
 ```
 
-## Manual Mask Contract
+## Automatic AI Mask Contract
 
 `scripts/build_reveal_scene.py` is the only production reveal builder.
 
 - Pipeline version: `manual_mask_boundary_white_v4`.
-- A slide without a painted Mask is a static full-slide image.
-- A slide with painted Masks starts from the user-configured video background.
+- AI Mask detects separable elements, names candidate crops, and maps narrated
+  visual groups to those candidates with a multimodal model.
+- Only narrated groups are required; decorative candidates may remain unmatched.
+- The automatic result is stored as compatible colored `manual_mask.strokes`
+  because the production reveal builder consumes that stable schema.
+- A slide without Mask strokes is a static full-slide image.
+- A slide with Mask strokes starts from the user-configured video background.
 - Generated images must use a pure-white outer background.
-- Each painted Mask is a processing boundary; only near-white pixels connected
+- Each automatic Mask is a processing boundary; only near-white pixels connected
   inward from that boundary are removed.
 - White areas enclosed by content are preserved.
 - A reveal layer retains non-white source content inside that group's saved
-  brush Mask, with soft antialias alpha and white-edge decontamination.
+  Mask, with soft antialias alpha and white-edge decontamination.
 - The source image must never be reused as the background of a masked slide.
-- Do not run box expansion, foreground erosion/dilation, nearest-owner
-  assignment, semantic segmentation, or cross-group erasing in production.
+- The reveal builder must not rematch elements, expand ownership, or erase
+  across groups; semantic association belongs to the AI Mask stage.
 - Rebuild slide assets and Remotion runtime assets before every render.
 - Validate the pipeline version and reject unreferenced legacy assets before rendering.
 

@@ -158,6 +158,11 @@ if (!styleManager.includes('window.refreshStep3Prompts')) {
 for (const token of ['step1-mode-article', 'step1-mode-topic', 'step1-btn-generate-article', 'step1-btn-system-content']) {
   if (!html.includes(token)) throw new Error(`Step 1 dual-mode UI missing: ${token}`);
 }
+for (const removedToken of ['step5-btn-new-block', 'step5-btn-clear-current', 'step5-brush-cursor', '涂抹区域', '擦除区域', '删除语块']) {
+  if (html.includes(removedToken) || app.includes(removedToken) || css.includes(removedToken) || aiMask.includes(removedToken)) {
+    throw new Error(`manual Mask editor residue still present: ${removedToken}`);
+  }
+}
 if (html.includes('请在下方粘贴您的 Markdown 格式文章')) throw new Error('obsolete Step 1 top hint is still present');
 for (const script of ['project_profile_extension.js', 'storyboard_background_extension.js', 'style_reference_manager_extension.js', 'ai_mask_extension.js', 'one_click_extension.js']) {
   if (!html.includes(script)) throw new Error(`direct frontend script declaration missing: ${script}`);

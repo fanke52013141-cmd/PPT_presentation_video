@@ -56,16 +56,8 @@ let state = {
     selectedBoxIndex: -1,
     draggedBoxIndex: -1,
     draggedHandle: null, // 'nw', 'ne', 'se', 'sw', 'move'
-    paintMode: false,
-    paintingBoxIndex: -1,
-    eraserMode: false,
-    isPainting: false,
-    currentStroke: null,
     brushSize: 170,
     eraserSize: 120,
-    activePointerId: null,
-    brushCursorClientX: null,
-    brushCursorClientY: null,
     maskZoom: 1,
     maskZoomOriginX: 50,
     maskZoomOriginY: 50,
@@ -371,13 +363,9 @@ function initGlobalEvents() {
   document.getElementById('step3-btn-confirm')?.addEventListener('click', () => confirmStep3Images());
 
   // ================= 步骤 5 事件 =================
-  document.getElementById('step5-btn-new-block')?.addEventListener('click', () => createCurrentSlideBlock());
-  document.getElementById('step5-btn-clear-current')?.addEventListener('click', () => clearAllMaskAnnotations());
   document.getElementById('step5-btn-subtitle-settings')?.addEventListener('click', () => openSubtitleSettingsModal());
   document.getElementById('step5-btn-animation-settings')?.addEventListener('click', () => openAnimationSettingsModal());
   document.getElementById('step5-btn-fullscreen')?.addEventListener('click', () => toggleStep5Fullscreen());
-  document.getElementById('step5-brush-size')?.addEventListener('input', (e) => updateBrushSize(e.target.value));
-  document.getElementById('step5-eraser-size')?.addEventListener('input', (e) => updateEraserSize(e.target.value));
 
   // ================= 步骤 6 事件 =================
   document.getElementById('step6-btn-init')?.addEventListener('click', () => initStep6Narration());
@@ -2174,7 +2162,6 @@ async function confirmStep3Images() {
 // ==================== 步骤 5: Mask 可视化标注 ====================
 
 let manifestData = null;
-let step5GlobalPointerEventsBound = false;
 let step5SourceCanvas = null;
 
 let step2Contract = null; // 用于缓存步骤 2 分镜规划数据
@@ -3109,14 +3096,6 @@ function renderStep5Workspace() {
     state.canvasState.selectedBoxIndex = -1;
     state.canvasState.draggedBoxIndex = -1;
     state.canvasState.draggedHandle = null;
-    state.canvasState.paintMode = false;
-    state.canvasState.eraserMode = false;
-    state.canvasState.paintingBoxIndex = -1;
-    state.canvasState.isPainting = false;
-    state.canvasState.currentStroke = null;
-    state.canvasState.activePointerId = null;
-    updateBrushSize(state.canvasState.brushSize, false);
-    updateEraserSize(state.canvasState.eraserSize, false);
     initCanvasEvents();
     redrawCanvas();
     
@@ -3171,10 +3150,8 @@ function renderStep5BoxesForm() {
 
   state.canvasState.boxes.forEach((box, idx) => {
     const isSelected = idx === state.canvasState.selectedBoxIndex;
-    const isPaintTarget = state.canvasState.paintMode && !state.canvasState.eraserMode && idx === state.canvasState.paintingBoxIndex;
-    const isEraseTarget = state.canvasState.paintMode && state.canvasState.eraserMode && idx === state.canvasState.paintingBoxIndex;
     const item = document.createElement('div');
-    item.className = `mask-block-card sketch-dashed${isSelected ? ' highlight-glow' : ''}${isPaintTarget ? ' paint-active' : ''}${isEraseTarget ? ' erase-active' : ''}`;
+    item.className = `mask-block-card sketch-dashed${isSelected ? ' highlight-glow' : ''}`;
     const maskColor = getBoxColor(box, idx);
     item.style.setProperty('--mask-color', maskColor);
 
@@ -3246,53 +3223,6 @@ function renderStep5NarrationPanel() {
   `;
 }
 
-function toggleNarrationFragmentForSelectedBox(fragmentId) {
-  const idx = state.canvasState.selectedBoxIndex;
-  const maskBox = state.canvasState.boxes[idx];
-  if (!maskBox) {
-    showToast('请先在右侧选中一个语块。');
-    return;
-  }
-  const fragments = getNarrationFragments();
-  const fragment = fragments.find(item => item.id === fragmentId);
-  if (!fragment) return;
-  if (!Array.isArray(maskBox.narration_fragments)) {
-    maskBox.narration_fragments = [];
-  }
-
-  state.canvasState.boxes.forEach((box, boxIdx) => {
-    if (boxIdx === idx || !Array.isArray(box.narration_fragments)) return;
-    box.narration_fragments = box.narration_fragments.filter(item => item.id !== fragmentId);
-    const beatIds = [...new Set(box.narration_fragments.map(item => item.beat_id).filter(Boolean))];
-    const groupIds = [...new Set(box.narration_fragments.map(item => item.group_id).filter(Boolean))];
-    box.narration_beat_ids = beatIds;
-    box.narration_beat_id = beatIds[0] || '';
-    box.narration_group_id = groupIds[0] || '';
-    box.spoken_text = box.narration_fragments.map(item => item.text).join('');
-  });
-
-  const existingIndex = maskBox.narration_fragments.findIndex(item => item.id === fragmentId);
-  if (existingIndex >= 0) {
-    maskBox.narration_fragments.splice(existingIndex, 1);
-  } else {
-    maskBox.narration_fragments.push({
-      id: fragment.id,
-      beat_id: fragment.beat_id,
-      group_id: fragment.group_id,
-      text: fragment.text
-    });
-  }
-  const beatIds = [...new Set(maskBox.narration_fragments.map(item => item.beat_id).filter(Boolean))];
-  const groupIds = [...new Set(maskBox.narration_fragments.map(item => item.group_id).filter(Boolean))];
-  maskBox.narration_beat_ids = beatIds;
-  maskBox.narration_beat_id = beatIds[0] || '';
-  maskBox.narration_group_id = groupIds[0] || '';
-  maskBox.spoken_text = maskBox.narration_fragments.map(item => item.text).join('');
-  renderStep5BoxesForm();
-  renderStep5NarrationPanel();
-  scheduleStep5Autosave();
-}
-
 function updateStep5SemanticButton() {
   const btn = document.getElementById('step5-btn-semantic-blocks');
   if (!btn) return;
@@ -3351,143 +3281,6 @@ function selectStep5MaskBox(idx, shouldScroll = true) {
   });
 }
 
-function updateBrushSize(value, shouldRedraw = true) {
-  const size = Math.max(40, Math.min(300, Number(value) || 170));
-  state.canvasState.brushSize = size;
-  const input = document.getElementById('step5-brush-size');
-  const label = document.getElementById('step5-brush-size-value');
-  if (input) input.value = String(size);
-  if (label) label.innerText = String(size);
-  refreshBrushCursor();
-  if (shouldRedraw) redrawCanvas();
-}
-
-function updateEraserSize(value, shouldRedraw = true) {
-  const size = Math.max(40, Math.min(300, Number(value) || 120));
-  state.canvasState.eraserSize = size;
-  const input = document.getElementById('step5-eraser-size');
-  const label = document.getElementById('step5-eraser-size-value');
-  if (input) input.value = String(size);
-  if (label) label.innerText = String(size);
-  refreshBrushCursor();
-  if (shouldRedraw) redrawCanvas();
-}
-
-function getActiveMaskToolSize() {
-  return state.canvasState.eraserMode
-    ? state.canvasState.eraserSize
-    : state.canvasState.brushSize;
-}
-
-function startMaskPaint(idx) {
-  const maskBox = state.canvasState.boxes[idx];
-  if (!maskBox) return;
-  ensureManualMask(maskBox, idx);
-  state.canvasState.paintMode = true;
-  state.canvasState.eraserMode = false;
-  state.canvasState.paintingBoxIndex = idx;
-  state.canvasState.selectedBoxIndex = idx;
-  refreshBrushCursor();
-  redrawCanvas();
-  renderStep5BoxesForm();
-  renderStep5NarrationPanel();
-  showToast(`已进入第 ${idx + 1} 个语块的涂抹模式，拖动画布即可补正区域。`);
-}
-
-function startMaskErase(idx) {
-  const maskBox = state.canvasState.boxes[idx];
-  if (!maskBox) return;
-  ensureManualMask(maskBox, idx);
-  state.canvasState.paintMode = true;
-  state.canvasState.eraserMode = true;
-  state.canvasState.paintingBoxIndex = idx;
-  state.canvasState.selectedBoxIndex = idx;
-  refreshBrushCursor();
-  redrawCanvas();
-  renderStep5BoxesForm();
-  renderStep5NarrationPanel();
-  showToast(`已进入第 ${idx + 1} 个语块的橡皮模式，拖动画布即可擦除涂抹痕迹。`);
-}
-
-function createCurrentSlideBlock() {
-  const nextIdx = state.canvasState.boxes.length;
-  const blockId = `manual_group_${Date.now().toString(36)}_${nextIdx + 1}`;
-  const newBox = {
-    group_id: blockId,
-    role: "content_body",
-    text_label: `语块 ${nextIdx + 1}`,
-    visual_anchor: "",
-    narration_beat_id: "",
-    narration_beat_ids: [],
-    narration_group_id: "",
-    narration_fragments: [],
-    spoken_text: "",
-    manual_mask: { color: getMaskColor(nextIdx), strokes: [] },
-    reveal: normalizeMaskReveal({ type: 'wipe_left_to_right' }),
-    box: [860, 460, 1060, 620]
-  };
-  state.canvasState.boxes.push(newBox);
-  state.canvasState.selectedBoxIndex = nextIdx;
-  state.canvasState.paintMode = false;
-  state.canvasState.eraserMode = false;
-  state.canvasState.paintingBoxIndex = -1;
-  redrawCanvas();
-  renderStep5BoxesForm();
-  renderStep5NarrationPanel();
-  scheduleStep5Autosave();
-  showToast(`已添加第 ${nextIdx + 1} 个语块。请在下方演讲稿点选片段，再用画笔涂抹区域。`);
-}
-
-function stopMaskPaint() {
-  state.canvasState.paintMode = false;
-  state.canvasState.eraserMode = false;
-  state.canvasState.paintingBoxIndex = -1;
-  state.canvasState.isPainting = false;
-  state.canvasState.currentStroke = null;
-  state.canvasState.activePointerId = null;
-  hideBrushCursor();
-  redrawCanvas();
-  renderStep5BoxesForm();
-}
-
-function clearAllMaskAnnotations() {
-  if (!manifestData?.slides?.length) {
-    showToast('当前没有可清除的标注数据。');
-    return;
-  }
-  showCustomConfirm(
-    '再次确认清除全部标注',
-    '确认后会清除所有 Slide 的 AI 框选、语块和手动画笔痕迹。未重新创建语块的页面会按整页展示处理。',
-    () => {
-      manifestData.slides.forEach(slide => {
-        slide.groups = [];
-        slide.semantic_blocks = [];
-        slide.status = "pending";
-      });
-      state.canvasState.boxes = [];
-      state.canvasState.selectedBoxIndex = -1;
-      stopMaskPaint();
-      renderStep5Workspace();
-      showToast('已清除所有 Slide 的标注，正在实时保存...');
-      saveStep5Draft().then(() => showToast('已清除所有 Slide 的标注，未重建语块的页面将整页展示。'));
-    }
-  );
-}
-
-function collectManualMaskPoints(manualMask) {
-  const points = [];
-  const strokes = manualMask?.strokes || [];
-  strokes.forEach(stroke => {
-    if (isEraseStroke(stroke)) return;
-    const radius = Math.max(1, Number(stroke.size || 42) / 2);
-    (stroke.points || []).forEach(point => {
-      points.push({ x: point.x - radius, y: point.y - radius });
-      points.push({ x: point.x + radius, y: point.y + radius });
-    });
-  });
-  return points;
-}
-
 function updateMaskBoxFromManualMask(idx) {
   const maskBox = state.canvasState.boxes[idx];
   if (!maskBox) return;
@@ -3511,195 +3304,18 @@ function updateMaskBoxFromManualMask(idx) {
   };
 }
 
-window.deleteMaskBox = function(idx) {
-  state.canvasState.boxes.splice(idx, 1);
-  state.canvasState.selectedBoxIndex = -1;
-  if (state.canvasState.paintingBoxIndex === idx) {
-    state.canvasState.paintMode = false;
-    state.canvasState.eraserMode = false;
-    state.canvasState.paintingBoxIndex = -1;
-  } else if (state.canvasState.paintingBoxIndex > idx) {
-    state.canvasState.paintingBoxIndex -= 1;
-  }
-  redrawCanvas();
-  renderStep5BoxesForm();
-  renderStep5NarrationPanel();
-  scheduleStep5Autosave();
-};
-
-window.updateMaskBoxField = function(idx, field, val) {
-  if (state.canvasState.boxes[idx]) {
-    state.canvasState.boxes[idx][field] = val;
-  }
-};
-
-window.updateMaskBoxBeatLink = function(idx, beatId) {
-  const box = state.canvasState.boxes[idx];
-  if (!box) return;
-  const currentSlideId = manifestData.slides[state.activeSlideIndex].slide_id;
-  const beats = getStep5BeatsForSlide(currentSlideId);
-  const beat = beats.find(item => item.id === beatId);
-  if (beat) {
-    box.narration_beat_id = beat.id;
-    box.link_to_narration = true;
-    box.linked_segment_id = null;
-  } else {
-    box.narration_beat_id = null;
-    box.link_to_narration = false;
-    box.linked_segment_id = null;
-  }
-  renderStep5BoxesForm();
-  redrawCanvas();
-};
-
-// Canvas 的拖拽与大小缩放事件实现
+// Canvas 只保留预览与缩放；Mask 由 AI 自动生成，不接受手工涂抹。
 function initCanvasEvents() {
   const canvas = document.getElementById('step5-canvas');
   const wrapper = document.getElementById('canvas-container');
-  
-  // 移除旧事件（利用 cloneNode）
+
   const newCanvas = canvas.cloneNode(true);
   canvas.parentNode.replaceChild(newCanvas, canvas);
-  
-  newCanvas.addEventListener('pointerdown', (e) => handleCanvasPointerDown(e, newCanvas));
-  newCanvas.addEventListener('pointermove', (e) => handleCanvasPointerMove(e, newCanvas));
-  newCanvas.addEventListener('pointerup', (e) => handleCanvasPointerUp(e, newCanvas));
-  newCanvas.addEventListener('pointercancel', (e) => handleCanvasPointerUp(e, newCanvas));
   newCanvas.addEventListener('wheel', (e) => handleMaskCanvasWheel(e, newCanvas), { passive: false });
-  newCanvas.addEventListener('pointerleave', () => {
-    if (!state.canvasState.isPainting) hideBrushCursor();
-  });
   if (wrapper) {
     wrapper.onwheel = (e) => handleMaskCanvasWheel(e, newCanvas);
   }
-  bindStep5GlobalPointerEvents();
   applyMaskCanvasZoom(newCanvas);
-}
-
-function pointerWithinMaskToolReach(e, canvas) {
-  const rect = canvas.getBoundingClientRect();
-  const radius = Math.max(4, getActiveMaskToolSize() * (rect.width / 1920) / 2);
-  return (
-    e.clientX >= rect.left - radius &&
-    e.clientX <= rect.right + radius &&
-    e.clientY >= rect.top - radius &&
-    e.clientY <= rect.bottom + radius
-  );
-}
-
-function bindStep5GlobalPointerEvents() {
-  if (step5GlobalPointerEventsBound) return;
-  step5GlobalPointerEventsBound = true;
-
-  document.addEventListener('pointerdown', (e) => {
-    const canvas = document.getElementById('step5-canvas');
-    const workspace = canvas?.closest('.workspace-left');
-    const blockedTarget = e.target?.closest?.(
-      'button, input, label, textarea, select, a, .step5-narration-panel, .workspace-right'
-    );
-    if (
-      state.currentStep !== 5 ||
-      !state.canvasState.paintMode ||
-      !canvas ||
-      e.target === canvas ||
-      blockedTarget ||
-      !workspace?.contains(e.target) ||
-      !pointerWithinMaskToolReach(e, canvas)
-    ) return;
-    e.stopPropagation();
-    handleCanvasPointerDown(e, canvas);
-  }, true);
-
-  document.addEventListener('pointermove', (e) => {
-    const canvas = document.getElementById('step5-canvas');
-    if (
-      state.currentStep !== 5 ||
-      !state.canvasState.paintMode ||
-      !canvas ||
-      e.target === canvas
-    ) return;
-    if (state.canvasState.isPainting || pointerWithinMaskToolReach(e, canvas)) {
-      handleCanvasPointerMove(e, canvas);
-    } else {
-      hideBrushCursor();
-    }
-  }, true);
-
-  document.addEventListener('pointerup', (e) => {
-    const canvas = document.getElementById('step5-canvas');
-    if (!state.canvasState.isPainting || !canvas || e.target === canvas) return;
-    handleCanvasPointerUp(e, canvas);
-  }, true);
-
-  document.addEventListener('pointercancel', (e) => {
-    const canvas = document.getElementById('step5-canvas');
-    if (!state.canvasState.isPainting || !canvas || e.target === canvas) return;
-    handleCanvasPointerUp(e, canvas);
-  }, true);
-}
-
-function getCanvasCoords(e, canvas) {
-  const rect = canvas.getBoundingClientRect();
-  const x = (e.clientX - rect.left) * (1920 / rect.width);
-  const y = (e.clientY - rect.top) * (1080 / rect.height);
-  return { x, y };
-}
-
-function getBrushCursor() {
-  return document.getElementById('step5-brush-cursor');
-}
-
-function hideBrushCursor() {
-  const cursor = getBrushCursor();
-  if (!cursor) return;
-  cursor.classList.remove('visible', 'eraser');
-  state.canvasState.brushCursorClientX = null;
-  state.canvasState.brushCursorClientY = null;
-}
-
-function refreshBrushCursor(canvas = document.getElementById('step5-canvas')) {
-  const { brushCursorClientX, brushCursorClientY } = state.canvasState;
-  if (brushCursorClientX === null || brushCursorClientY === null || !canvas) return;
-  positionBrushCursor(canvas, brushCursorClientX, brushCursorClientY);
-}
-
-function updateBrushCursor(e, canvas) {
-  state.canvasState.brushCursorClientX = e.clientX;
-  state.canvasState.brushCursorClientY = e.clientY;
-  positionBrushCursor(canvas, e.clientX, e.clientY);
-}
-
-function positionBrushCursor(canvas, clientX, clientY) {
-  const cursor = getBrushCursor();
-  if (!cursor || !canvas) return;
-  if (!state.canvasState.paintMode || state.canvasState.paintingBoxIndex < 0) {
-    hideBrushCursor();
-    return;
-  }
-  const canvasRect = canvas.getBoundingClientRect();
-  const toolSize = getActiveMaskToolSize();
-  const size = Math.max(8, toolSize * (canvasRect.width / 1920));
-  const radius = size / 2;
-  if (
-    clientX < canvasRect.left - radius ||
-    clientX > canvasRect.right + radius ||
-    clientY < canvasRect.top - radius ||
-    clientY > canvasRect.bottom + radius
-  ) {
-    hideBrushCursor();
-    return;
-  }
-  const wrapper = cursor.offsetParent || cursor.parentElement;
-  const wrapperRect = wrapper.getBoundingClientRect();
-  const borderLeft = Number(wrapper.clientLeft || 0);
-  const borderTop = Number(wrapper.clientTop || 0);
-  const color = getBoxColor(state.canvasState.boxes[state.canvasState.paintingBoxIndex], state.canvasState.paintingBoxIndex);
-  cursor.style.left = `${clientX - wrapperRect.left - borderLeft}px`;
-  cursor.style.top = `${clientY - wrapperRect.top - borderTop}px`;
-  cursor.style.setProperty('--cursor-size', `${size}px`);
-  cursor.style.setProperty('--cursor-color', color);
-  cursor.classList.toggle('eraser', !!state.canvasState.eraserMode);
-  cursor.classList.add('visible');
 }
 
 function applyMaskCanvasZoom(canvas = document.getElementById('step5-canvas')) {
@@ -3717,7 +3333,6 @@ function applyMaskCanvasZoom(canvas = document.getElementById('step5-canvas')) {
   });
   const indicator = document.getElementById('step5-zoom-indicator');
   if (indicator) indicator.innerText = `${Math.round(zoom * 100)}%`;
-  refreshBrushCursor(canvas);
 }
 
 function handleMaskCanvasWheel(e, canvas) {
@@ -3744,102 +3359,6 @@ function handleGlobalMaskWheel(e) {
     return;
   }
   handleMaskCanvasWheel(e, canvas);
-}
-
-function handleCanvasPointerDown(e, canvas) {
-  if (e.button !== undefined && e.button !== 0) return;
-  e.preventDefault();
-  updateBrushCursor(e, canvas);
-  const { x, y } = getCanvasCoords(e, canvas);
-  if (state.canvasState.paintMode && state.canvasState.paintingBoxIndex >= 0) {
-    const idx = state.canvasState.paintingBoxIndex;
-    const maskBox = state.canvasState.boxes[idx];
-    if (!maskBox) return;
-    const manualMask = ensureManualMask(maskBox, idx);
-    const color = getBoxColor(maskBox, idx);
-    const toolSize = getActiveMaskToolSize();
-    const stroke = {
-      color,
-      size: toolSize,
-      mode: state.canvasState.eraserMode ? 'erase' : 'paint',
-      eraser: !!state.canvasState.eraserMode,
-      points: [{ x: Math.round(x), y: Math.round(y) }]
-    };
-    manualMask.color = color;
-    manualMask.strokes.push(stroke);
-    state.canvasState.isPainting = true;
-    state.canvasState.currentStroke = stroke;
-    state.canvasState.activePointerId = e.pointerId;
-    try {
-      canvas.setPointerCapture?.(e.pointerId);
-    } catch (_) {
-      // 从画布外半径区域起笔时，由 document 级监听继续接收该指针。
-    }
-    state.canvasState.selectedBoxIndex = idx;
-    updateMaskBoxFromManualMask(idx);
-    redrawCanvas({ updateDiagnostics: false });
-    return;
-  }
-
-  // 点击空白只取消选择；新建语块使用右侧按钮，区域用画笔涂抹完成。
-  state.canvasState.selectedBoxIndex = -1;
-  redrawCanvas();
-  renderStep5BoxesForm();
-  renderStep5NarrationPanel();
-}
-
-function handleCanvasPointerMove(e, canvas) {
-  if (
-    state.canvasState.isPainting &&
-    state.canvasState.activePointerId !== null &&
-    e.pointerId !== state.canvasState.activePointerId
-  ) return;
-  updateBrushCursor(e, canvas);
-  const { x, y } = getCanvasCoords(e, canvas);
-
-  if (state.canvasState.isPainting && state.canvasState.currentStroke) {
-    const stroke = state.canvasState.currentStroke;
-    const last = stroke.points[stroke.points.length - 1];
-    if (!last || Math.hypot(x - last.x, y - last.y) > 5) {
-      stroke.points.push({ x: Math.round(x), y: Math.round(y) });
-      updateMaskBoxFromManualMask(state.canvasState.paintingBoxIndex);
-      redrawCanvas({ updateDiagnostics: false });
-    }
-    return;
-  }
-
-  return;
-}
-
-function handleCanvasPointerUp(e, canvas) {
-  if (
-    state.canvasState.activePointerId !== null &&
-    e?.pointerId !== undefined &&
-    e.pointerId !== state.canvasState.activePointerId
-  ) return;
-  if (canvas && e?.pointerId !== undefined && canvas.hasPointerCapture?.(e.pointerId)) {
-    try {
-      canvas.releasePointerCapture(e.pointerId);
-    } catch (_) {
-      // 指针可能从画布外缘开始，未被 Canvas 捕获。
-    }
-  }
-  if (state.canvasState.isPainting) {
-    state.canvasState.isPainting = false;
-    state.canvasState.currentStroke = null;
-    state.canvasState.activePointerId = null;
-    updateMaskBoxFromManualMask(state.canvasState.paintingBoxIndex);
-    redrawCanvas();
-    renderStep5BoxesForm();
-    renderStep5NarrationPanel();
-    scheduleStep5Autosave();
-    return;
-  }
-
-  state.canvasState.draggedBoxIndex = -1;
-  state.canvasState.draggedHandle = null;
-  state.canvasState.activePointerId = null;
-  renderStep5BoxesForm();
 }
 
 function createStep5OffscreenCanvas() {
@@ -4168,11 +3687,8 @@ function redrawCanvas(options = {}) {
   ctx.clearRect(0, 0, 1920, 1080);
   ctx.fillStyle = step3VideoBackground;
   ctx.fillRect(0, 0, 1920, 1080);
-  canvas.classList.toggle('painting', state.canvasState.paintMode);
-  canvas.classList.toggle('erasing', state.canvasState.paintMode && state.canvasState.eraserMode);
 
   if (!step5SourceCanvas) {
-    refreshBrushCursor(canvas);
     return;
   }
 
@@ -4186,7 +3702,6 @@ function redrawCanvas(options = {}) {
     });
   }
 
-  refreshBrushCursor(canvas);
 }
 
 function saveStep5CurrentState() {

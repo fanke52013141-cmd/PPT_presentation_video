@@ -22,10 +22,10 @@ python -m venv .venv
 
 ## 用户流程
 
-1. 导入文章。
-2. 生成并编辑分镜规划。
-3. 为每页生成或上传完整图片。
-4. 可选地为页面内容涂抹 Mask。
+1. 导入文章，或输入话题让 AI 生成文章；文章生成的 System Content 可单独配置。
+2. 分别配置“文章转 Slide”和“Slide 转可视化”，再生成并编辑分镜。
+3. 配置最终视频背景与图片风格，生成或上传每页完整图片；图片风格支持参考图反推、System Content 生成参考图、手动上传参考图和命名模板。
+4. AI 自动拆解画面元素，并用多模态模型关联演讲稿语块、生成彩色 Mask。
 5. 编辑旁白、生成音频并试听确认。
 6. 渲染、下载和删除视频。
 
@@ -46,23 +46,25 @@ python -m venv .venv
 
 ## 当前 Mask 渲染规则
 
-生产管线固定为 `manual_mask_boundary_white_v4`：
+渲染兼容层仍使用稳定版本名 `manual_mask_boundary_white_v4`，但用户侧 Mask 已改为全自动：
 
 - 没有 Mask：直接显示完整图片。
 - 图片生成提示词强制要求外围背景为纯白色。
-- 有 Mask：每个涂抹区域就是一个语块的处理边界；只清除从该边界向内连通的纯白/近白背景。
+- AI 先检测并裁出画面候选元素，再结合分镜和演讲稿完成多模态语义关联。
+- 自动标注写入兼容的彩色 Mask 笔画结构；每个 Mask 是一个语块的处理边界，只清除从该边界向内连通的纯白/近白背景。
 - 图像内部被内容包围的白色不会被抠除。
 - 非白色内容按原图保留；边缘只做少量抗锯齿透明度和白边去色。
 - 不使用原图作为背景。
-- 不执行自动扩边、前景缩边、最近区域分配、语义分割或跨组擦除。
-- Mask 页面只显示原图和彩色涂抹区域，不显示覆盖率、红色诊断或额外预览。
+- Reveal 构建阶段不重新做语义匹配、最近区域分配或跨组擦除。
+- Mask 页面只显示原图、彩色自动 Mask 与语块关联，不提供手工画笔，也不显示检测数量或覆盖率。
 - 每次渲染前都会清理并重建 Reveal 与 Remotion 运行时素材。
 
 生产构建顺序：
 
 ```text
 visual_draft.png
--> reveal_manifest.json（可选手动 Mask）
+-> 自动元素检测 + 多模态演讲稿关联
+-> reveal_manifest.json（兼容彩色 Mask strokes）
 -> scripts/build_reveal_scene.py
 -> scripts/bind_reveal_timeline.py
 -> scripts/build_remotion_props.py
@@ -75,7 +77,7 @@ visual_draft.png
 server.py                  FastAPI 后端
 static/                    本地 Web 前端
 scripts/build_reveal_scene.py
-                           外围白底与手动 Mask 构建器
+                           外围白底与兼容 Mask strokes 构建器
 scripts/bind_reveal_timeline.py
                            将 Reveal 事件绑定到音频时间
 scripts/build_remotion_props.py

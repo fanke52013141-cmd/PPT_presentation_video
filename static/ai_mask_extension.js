@@ -117,7 +117,6 @@
       .ai-mask-prompt-block textarea{width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.84rem;line-height:1.45;box-sizing:border-box}
       .ai-mask-modal-scroll{max-height:72vh;overflow:auto;padding-right:.3rem}
       #step5-canvas{pointer-events:none!important;cursor:default!important}
-      #step5-brush-cursor{display:none!important}
       #step5-boxes-list input,#step5-boxes-list textarea,#step5-boxes-list select,#step5-boxes-list button{pointer-events:none;opacity:.72}
       body.step5-fullscreen-mode #canvas-container{aspect-ratio:16/9;height:auto!important;max-height:none!important;}
       body.step5-fullscreen-mode #canvas-container canvas,body.step5-fullscreen-mode #canvas-container img{width:100%!important;height:100%!important;object-fit:contain!important;}

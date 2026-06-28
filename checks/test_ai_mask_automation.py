@@ -4,6 +4,7 @@ import tempfile
 from pathlib import Path
 import sys
 import os
+import inspect
 
 from PIL import Image, ImageDraw
 
@@ -102,6 +103,8 @@ def main() -> None:
             "slides": [{"slide_id": "slide_001", "unmatched_group_count": 0, "warnings": ["装饰元素未匹配"]}],
         }
         assert one_click._ai_mask_quality_errors(complete_with_decorative_warnings, 2) == []
+        pipeline_source = inspect.getsource(one_click._run_pipeline)
+        assert 'client.put(f"/api/projects/{project_id}/steps/6/result"' in pipeline_source
 
     print("AI Mask automation checks passed")
 

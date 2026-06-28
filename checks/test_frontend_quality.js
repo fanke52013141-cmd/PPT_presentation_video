@@ -158,6 +158,9 @@ if (!styleManager.includes('window.refreshStep3Prompts')) {
 for (const token of ['step1-mode-article', 'step1-mode-topic', 'step1-btn-generate-article', 'step1-btn-system-content']) {
   if (!html.includes(token)) throw new Error(`Step 1 dual-mode UI missing: ${token}`);
 }
+for (const label of ['文章➡️slides', 'slides➡️可视化']) {
+  if (!html.includes(label)) throw new Error(`Step 2 button label missing: ${label}`);
+}
 for (const removedToken of ['step5-btn-new-block', 'step5-btn-clear-current', 'step5-brush-cursor', '涂抹区域', '擦除区域', '删除语块']) {
   if (html.includes(removedToken) || app.includes(removedToken) || css.includes(removedToken) || aiMask.includes(removedToken)) {
     throw new Error(`manual Mask editor residue still present: ${removedToken}`);
@@ -174,5 +177,11 @@ if (styleManager.includes('visual-draft-quality') || oneClick.includes('图片�
   throw new Error('removed image quality feature is still user-visible');
 }
 if (!oneClick.includes('button-spinner')) throw new Error('one-click stage spinner missing');
+if (!oneClick.includes('one-click-sidebar-entry') || !oneClick.includes('stepper.appendChild(entry)')) {
+  throw new Error('one-click button is not anchored directly below the video step');
+}
+if (!app.includes("document.body.classList.add('workspace-open')") || !css.includes('body.workspace-open #toast-container')) {
+  throw new Error('workspace notifications can still overlap the sidebar action');
+}
 
 console.log('frontend quality checks passed');

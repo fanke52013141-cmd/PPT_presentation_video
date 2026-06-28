@@ -3649,6 +3649,12 @@ header .btn {
   z-index: 2 !important;
 }
 
+@media (min-width: 761px) {
+  body.workspace-open #toast-container {
+    left: 266px;
+  }
+}
+
 .project-activity-status {
   display: none;
   align-items: center;

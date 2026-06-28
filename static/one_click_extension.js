@@ -82,7 +82,8 @@
     const style = document.createElement('style');
     style.id = 'one-click-extension-style';
     style.textContent = `
-      #btn-one-click-generate { width: calc(100% - 1.2rem); margin: .7rem .6rem 0; justify-content: center; }
+      .one-click-sidebar-entry { list-style: none; margin: .18rem .18rem 0; padding: 0; }
+      #btn-one-click-generate { width: 100%; margin: 0; justify-content: center; }
       .one-click-modal { max-width: 1040px; width: min(1040px, 94vw); }
       .one-click-note { color: #555; font-size: .9rem; line-height: 1.55; }
       .one-click-note strong { color: #111; }
@@ -110,7 +111,7 @@
     modal.innerHTML = `
       <div class="modal-content one-click-modal">
         <h3 class="highlight-title">一键生成</h3>
-        <p class="one-click-note"><strong>一键生成会读取当前各步骤配置：</strong>从已导入文章开始，自动完成文章转 Slide、Slide 转可视化、图片生成、AI Mask、旁白与音频以及最终视频合成。失败时会保留阶段状态，重新运行时复用未过期产物。</p>
+        <p class="one-click-note"><strong>一键生成会读取当前各步骤配置：</strong>从已导入文章开始，自动完成文章➡️slides、slides➡️可视化、图片生成、AI Mask、旁白与音频以及最终视频合成。失败时会保留阶段状态，重新运行时复用未过期产物。</p>
         <div class="one-click-toolbar">
           <button id="btn-one-click-start" class="success" type="button">重新运行自动生成</button>
           <button id="btn-one-click-refresh" class="secondary" type="button">刷新状态</button>
@@ -134,13 +135,16 @@
     ensureModal();
     const stepper = document.querySelector('.sidebar .stepper');
     if (!stepper || document.getElementById('btn-one-click-generate')) return;
+    const entry = document.createElement('li');
+    entry.className = 'one-click-sidebar-entry';
     const button = document.createElement('button');
     button.id = 'btn-one-click-generate';
     button.className = 'success';
     button.type = 'button';
     button.textContent = '一键生成';
     button.addEventListener('click', () => openModal().catch(error => toast(`打开失败：${error.message}`, 6000)));
-    stepper.insertAdjacentElement('afterend', button);
+    entry.appendChild(button);
+    stepper.appendChild(entry);
   }
 
   function renderStatus(status) {

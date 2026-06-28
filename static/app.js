@@ -875,6 +875,7 @@ async function enterWorkspace(projectId) {
   // 页面切换
   document.getElementById('page-home').style.display = 'none';
   document.getElementById('page-workspace').style.display = 'flex';
+  document.body.classList.add('workspace-open');
   
   // 加载步骤状态并导航至当前步骤
   updateStepperUI(visibleStep, project.step_status);
@@ -885,6 +886,7 @@ function exitWorkspace() {
   document.getElementById('project-info-header').style.display = 'none';
   document.getElementById('btn-back-home').style.display = 'none';
   document.getElementById('page-workspace').style.display = 'none';
+  document.body.classList.remove('workspace-open');
   document.getElementById('page-home').style.display = 'block';
   
   state.currentProject = null;
@@ -2748,7 +2750,7 @@ async function openStoryboardRulesModal(mode = 'script') {
 }
 
 function step2PromptModeLabel(mode = state.activeStep2PromptMode) {
-  return mode === 'visual' ? 'Slide 转可视化' : '文章转 Slide';
+  return mode === 'visual' ? 'slides➡️可视化' : '文章➡️slides';
 }
 
 function renderStep2PromptEditor(promptRes = {}) {

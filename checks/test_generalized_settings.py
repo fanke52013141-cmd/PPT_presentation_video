@@ -119,9 +119,7 @@ def main() -> None:
     assert len(slide["narration_beats"]) == 1
     assert all("speak_policy" not in group for group in slide["visual_groups"])
     semantic_blocks = server_module.deterministic_semantic_blocks("slide_001", slide, None)
-    assert {block["visual_group_id"] for block in semantic_blocks} == {"spoken_group", "visual_only_group"}
-    visual_only_block = next(block for block in semantic_blocks if block["visual_group_id"] == "visual_only_group")
-    assert visual_only_block["narration_fragments"] == []
+    assert {block["visual_group_id"] for block in semantic_blocks} == {"spoken_group"}
     assert normalize_reveal_action("scratch_reveal", profile, for_renderer=True) == "scratch_reveal"
     assert normalize_reveal_action("brush_wipe_left_to_right", profile, for_renderer=True) == "brush_wipe_left_to_right"
     scratch_event = build_event(
@@ -166,9 +164,7 @@ def main() -> None:
     assert 'id="step2-slide-subtitle-input"' in html
     assert 'id="step2-slide-body-input"' in html
     assert 'id="step2-slide-narration-input"' in html
-    assert 'id="image-style-template-select"' in html
-    assert 'id="image-style-input"' in html
-    assert 'id="image-style-template-file"' in html
+    assert 'style_reference_manager_extension.js' in html
     assert 'id="modal-step2-generate"' in html
     assert 'id="step2-generation-requirement"' in html
     assert 'id="subtitle-safe-width-guide"' in html

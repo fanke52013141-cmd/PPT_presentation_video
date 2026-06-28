@@ -21,7 +21,6 @@ from types import ModuleType
 from typing import Any
 
 PATCH_MARKER = "__ppt_project_profile_runtime_patch__"
-INJECT_MARKER = "__ppt_project_profile_inject_patch__"
 PROFILE_FILENAME = "project_profile.json"
 PROFILE_VERSION = "project_profile_v1"
 AI_IMAGE_STYLE_SOURCE = "ai_text_generated"
@@ -453,29 +452,6 @@ def _generate_image_style_with_llm(server_module: ModuleType, payload: dict[str,
         raise server_module.HTTPException(status_code=500, detail=f"AI 生成图片风格失败: {exc}") from exc
 
 
-def _install_injection(app: Any) -> None:
-    if getattr(app.state, INJECT_MARKER, False):
-        return
-
-    @app.middleware("http")
-    async def project_profile_asset_injection(request: Any, call_next: Any) -> Any:
-        response = await call_next(request)
-        if "text/html" not in response.headers.get("content-type", "").lower():
-            return response
-        try:
-            body = b"".join([chunk async for chunk in response.body_iterator]).decode("utf-8")
-        except Exception:
-            return response
-        if "project_profile_extension.js" not in body and "</body>" in body:
-            body = body.replace("</body>", '  <script src="project_profile_extension.js?v=20260626.1"></script>\n</body>')
-        from starlette.responses import Response
-        headers = dict(response.headers)
-        headers.pop("content-length", None)
-        return Response(body, status_code=response.status_code, headers=headers, media_type="text/html")
-
-    setattr(app.state, INJECT_MARKER, True)
-
-
 def _register(server_module: ModuleType) -> bool:
     if getattr(server_module, PATCH_MARKER, False):
         return True
@@ -520,10 +496,6 @@ def _register(server_module: ModuleType) -> bool:
     app.add_api_route("/api/project-profile/image-style/generate", generate_image_style, methods=["POST"])
     app.add_api_route("/api/projects/{project_id}/project-profile", get_profile, methods=["GET"])
     app.add_api_route("/api/projects/{project_id}/project-profile", put_profile, methods=["PUT", "POST"])
-    try:
-        _install_injection(app)
-    except Exception:
-        pass
     setattr(server_module, PATCH_MARKER, True)
     return True
 

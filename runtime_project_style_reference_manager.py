@@ -19,7 +19,6 @@ from types import ModuleType
 from typing import Any
 
 PATCH_MARKER = "__ppt_project_style_reference_manager_patch__"
-INJECT_MARKER = "__ppt_project_style_reference_manager_inject_patch__"
 REFERENCE_DIRNAME = "style_references"
 REFERENCE_MANIFEST = "project_style_references.json"
 STEP3_STYLE_STATE = "step3_image_style.json"
@@ -200,29 +199,6 @@ def _delete_all_references(project: Any, project_id: str) -> dict[str, Any]:
     return result
 
 
-def _install_injection(app: Any) -> None:
-    if getattr(app.state, INJECT_MARKER, False):
-        return
-
-    @app.middleware("http")
-    async def project_style_reference_manager_injection(request: Any, call_next: Any) -> Any:
-        response = await call_next(request)
-        if "text/html" not in response.headers.get("content-type", "").lower():
-            return response
-        try:
-            body = b"".join([chunk async for chunk in response.body_iterator]).decode("utf-8")
-        except Exception:
-            return response
-        if "style_reference_manager_extension.js" not in body and "</body>" in body:
-            body = body.replace("</body>", '  <script src="style_reference_manager_extension.js?v=20260627.4"></script>\n</body>')
-        from starlette.responses import Response
-        headers = dict(response.headers)
-        headers.pop("content-length", None)
-        return Response(body, status_code=response.status_code, headers=headers, media_type="text/html")
-
-    setattr(app.state, INJECT_MARKER, True)
-
-
 def _register(server_module: ModuleType) -> bool:
     if getattr(server_module, PATCH_MARKER, False):
         return True
@@ -268,12 +244,6 @@ def _register(server_module: ModuleType) -> bool:
 
     app.add_api_route("/api/projects/{project_id}/project-profile/image-style/reference-images/{index}", delete_reference_image, methods=["DELETE"])
     app.add_api_route("/api/projects/{project_id}/project-profile/image-style/reference-images", delete_all_reference_images, methods=["DELETE"])
-    try:
-        _install_injection(app)
-    except Exception as exc:
-        logger = getattr(server_module, "logger", None)
-        if logger:
-            logger.warning("Failed to install Step 3 style reference manager UI injection: %s", exc)
     setattr(server_module, PATCH_MARKER, True)
     return True
 
@@ -284,7 +254,8 @@ def _candidate_modules() -> list[ModuleType]:
 
 def _install_when_ready() -> None:
     def worker() -> None:
-        while not os.environ.get("PPT_STUDIO_DISABLE_PROJECT_STYLE_REFERENCE_MANAGER"):
+        started_at = time.monotonic()
+        while not os.environ.get("PPT_STUDIO_DISABLE_PROJECT_STYLE_REFERENCE_MANAGER") and time.monotonic() - started_at < 120:
             for module in _candidate_modules():
                 try:
                     if _register(module):

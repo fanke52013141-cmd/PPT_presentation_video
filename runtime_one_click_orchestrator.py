@@ -28,14 +28,12 @@ from types import ModuleType
 from typing import Any
 
 PATCH_MARKER = "__ppt_one_click_orchestrator_patch__"
-INJECT_MARKER = "__ppt_one_click_orchestrator_inject_patch__"
 STATUS_FILENAME = "one_click_status.json"
 INSTALL_TIMEOUT_SEC = 120.0
 
 STAGES = [
     ("preflight", "预检查"),
     ("storyboard", "生成分镜"),
-    ("style_references", "生成风格参考图"),
     ("images", "生成全部图片"),
     ("confirm_images", "确认图片并创建 Mask 模板"),
     ("ai_mask", "AI Mask 标注"),
@@ -242,13 +240,16 @@ def _mtime(path: Path) -> float:
 
 def _upstream_image_inputs(project: Any, slide_id: str) -> list[Path]:
     run_dir = _run_dir(project)
-    return [
+    paths = [
         run_dir / "planning" / "visual_contract.json",
-        run_dir / "planning" / "project_profile.json",
-        run_dir / "planning" / "project_profile_prompt_companion.json",
+        run_dir / "planning" / "step3_image_style.json",
         run_dir / "planning" / "project_style_references.json",
         run_dir / "slides" / slide_id / "visual_prompt.md",
     ]
+    references_dir = run_dir / "planning" / "style_references"
+    if references_dir.exists():
+        paths.extend(sorted(references_dir.glob("style_reference_*.png"))[:3])
+    return paths
 
 
 def _image_needs_generation(project: Any, slide_id: str) -> bool:
@@ -273,18 +274,6 @@ def _quality_gates(project: Any) -> dict[str, bool]:
     if not isinstance(gates, dict):
         gates = {}
     return {key: bool(gates.get(key, default)) for key, default in DEFAULT_QUALITY_GATES.items()}
-
-
-def _profile_wants_style_refs(project: Any) -> bool:
-    image_style = _profile(project).get("image_style_profile")
-    if not isinstance(image_style, dict):
-        return False
-    return str(image_style.get("source") or "") == "ai_text_generated"
-
-
-def _existing_style_refs(project: Any) -> list[Path]:
-    refs = _run_dir(project) / "planning" / "style_references"
-    return sorted(refs.glob("style_reference_*.png"))[:3] if refs.exists() else []
 
 
 def _has_manual_mask(group: Any) -> bool:
@@ -316,25 +305,21 @@ def _ai_mask_quality_errors(result: dict[str, Any], existing_mask_count: int = 0
     errors: list[str] = []
     if not isinstance(result, dict):
         return ["AI Mask 返回结果不是有效对象"]
+    if result.get("complete") is False:
+        errors.append("AI Mask 尚未完成全部语块关联")
     processed = _safe_int(result.get("processed_slide_count") or result.get("processed"), 0)
     updated = _safe_int(result.get("updated_group_count"), 0)
     if processed == 0:
         errors.append("AI Mask 没有处理任何 slide")
     if updated == 0 and existing_mask_count <= 0:
         errors.append("AI Mask 没有更新任何语块，且当前 manifest 中没有可复用的已有 Mask")
-    top_warnings = result.get("warnings") if isinstance(result.get("warnings"), list) else []
-    for warning in top_warnings[:5]:
-        errors.append(f"AI Mask 警告：{_safe_text(warning, 200)}")
     for slide in result.get("slides", []) or []:
         if not isinstance(slide, dict):
             continue
         slide_id = _safe_text(slide.get("slide_id"), 100) or "unknown slide"
         unmatched_groups = _safe_int(slide.get("unmatched_group_count"), 0)
-        warnings = slide.get("warnings") if isinstance(slide.get("warnings"), list) else []
         if unmatched_groups > 0:
             errors.append(f"{slide_id} 有 {unmatched_groups} 个未匹配语块")
-        if warnings:
-            errors.append(f"{slide_id} 有 AI Mask 警告：{'; '.join(_safe_text(item, 200) for item in warnings[:3])}")
     return errors
 
 
@@ -370,21 +355,11 @@ def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str) -> No
 
         _start_stage(project, status, "storyboard", "生成或复用 visual_contract.json")
         if not _has_contract(project):
-            _require_ok(client.post(f"/api/projects/{project_id}/steps/2/execute", json={}), "Step 2 storyboard")
+            _require_ok(client.post(f"/api/projects/{project_id}/steps/2/script/execute", json={}), "Step 2 article-to-slide")
+            _require_ok(client.post(f"/api/projects/{project_id}/steps/2/visual/execute", json={}), "Step 2 slide-to-visual")
+            _require_ok(client.post(f"/api/projects/{project_id}/steps/2/compose", json={}), "Step 2 compose")
             db.refresh(project)
         _finish_stage(project, status, "storyboard", "分镜规划已就绪")
-
-        _start_stage(project, status, "style_references", "检查项目级风格参考图")
-        if _profile_wants_style_refs(project) and not _existing_style_refs(project):
-            try:
-                result = _require_ok(client.post(f"/api/projects/{project_id}/project-profile/image-style/reference-images/generate", json={"count": 3}), "Project style references")
-                count = len(((result.get("references") or {}).get("images") or []))
-                _finish_stage(project, status, "style_references", f"已生成 {count} 张风格参考图")
-            except Exception as exc:
-                _warn_stage(project, status, "style_references", f"风格参考图生成失败，继续使用文本风格：{exc}")
-                _finish_stage(project, status, "style_references", "未生成参考图，继续执行")
-        else:
-            _finish_stage(project, status, "style_references", "风格参考图已就绪或当前项目不需要自动生成")
 
         _start_stage(project, status, "images", "生成缺失或过期的 slide 图片")
         prompts_payload = _require_ok(client.get(f"/api/projects/{project_id}/steps/3/prompts"), "Step 3 prompts")
@@ -408,18 +383,25 @@ def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str) -> No
         _finish_stage(project, status, "confirm_images", "图片已确认")
 
         _start_stage(project, status, "ai_mask", "执行 AI Mask 标注")
-        ai_mask = client.post(f"/api/projects/{project_id}/steps/5/ai-mask/annotate", json={})
+        ai_mask_payload = {"settings": {"overwrite_existing_manual_mask": True, "skip_locked_groups": False}}
+        ai_mask = client.post(f"/api/projects/{project_id}/steps/5/ai-mask/annotate", json=ai_mask_payload)
         if ai_mask.status_code == 404:
             ai_mask = client.post(f"/api/projects/{project_id}/steps/5/semantic-blocks", json={})
         result = _require_ok(ai_mask, "AI Mask")
         existing_masks = _existing_mask_count(project)
         quality_errors = _ai_mask_quality_errors(result, existing_masks)
         if quality_errors:
-            for error in quality_errors:
-                _warn_stage(project, status, "ai_mask", error)
-            if gates.get("pause_on_ai_mask_low_confidence", True):
-                raise RuntimeError("AI Mask 质量门暂停：" + "；".join(quality_errors[:5]))
-        _finish_stage(project, status, "ai_mask", f"AI Mask 标注完成；可复用 Mask 数量：{existing_masks}")
+            _warn_stage(project, status, "ai_mask", "首次标注未完整，正在自动重试")
+            retry = _require_ok(
+                client.post(f"/api/projects/{project_id}/steps/5/ai-mask/annotate", json=ai_mask_payload),
+                "AI Mask retry",
+            )
+            existing_masks = _existing_mask_count(project)
+            quality_errors = _ai_mask_quality_errors(retry, existing_masks)
+            result = retry
+            if quality_errors and gates.get("pause_on_ai_mask_low_confidence", True):
+                raise RuntimeError("AI Mask 自动重试后仍未完成：" + "；".join(quality_errors[:5]))
+        _finish_stage(project, status, "ai_mask", "AI Mask 标注完成")
 
         _start_stage(project, status, "mask_assets", "构建 Reveal 资源")
         manifest_payload = _require_ok(client.get(f"/api/projects/{project_id}/steps/5/result"), "Step 5 manifest")
@@ -468,29 +450,6 @@ def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str) -> No
             _RUNNING.pop(project_id, None)
 
 
-def _install_injection(app: Any, server_module: ModuleType) -> None:
-    if getattr(app.state, INJECT_MARKER, False):
-        return
-
-    @app.middleware("http")
-    async def one_click_asset_injection(request: Any, call_next: Any) -> Any:
-        response = await call_next(request)
-        if "text/html" not in response.headers.get("content-type", "").lower():
-            return response
-        try:
-            body = b"".join([chunk async for chunk in response.body_iterator]).decode("utf-8")
-        except Exception:
-            return response
-        if "one_click_extension.js" not in body and "</body>" in body:
-            body = body.replace("</body>", '  <script src="one_click_extension.js?v=20260626.1"></script>\n</body>')
-        from starlette.responses import Response
-        headers = dict(response.headers)
-        headers.pop("content-length", None)
-        return Response(body, status_code=response.status_code, headers=headers, media_type="text/html")
-
-    setattr(app.state, INJECT_MARKER, True)
-
-
 def _register(server_module: ModuleType) -> bool:
     if getattr(server_module, PATCH_MARKER, False):
         return True
@@ -529,12 +488,6 @@ def _register(server_module: ModuleType) -> bool:
 
     app.add_api_route("/api/projects/{project_id}/one-click-generate", start_one_click, methods=["POST"])
     app.add_api_route("/api/projects/{project_id}/one-click-generate/status", get_one_click_status, methods=["GET"])
-    try:
-        _install_injection(app, server_module)
-    except Exception as exc:
-        logger = getattr(server_module, "logger", None)
-        if logger:
-            logger.warning("Failed to install one-click UI injection: %s", exc)
     setattr(server_module, PATCH_MARKER, True)
     return True
 

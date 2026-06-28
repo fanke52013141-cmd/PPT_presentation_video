@@ -25,7 +25,6 @@ from types import ModuleType
 from typing import Any
 
 PATCH_MARKER = "__ppt_image_style_reverse_patch__"
-INJECT_MARKER = "__ppt_image_style_reverse_inject_patch__"
 INPUT_DIRNAME = "reverse_style_inputs"
 INPUT_MANIFEST = "reverse_style_inputs.json"
 
@@ -304,29 +303,6 @@ def _apply_style_to_project(project: Any, style: dict[str, Any]) -> dict[str, An
     return profile
 
 
-def _install_injection(app: Any) -> None:
-    if getattr(app.state, INJECT_MARKER, False):
-        return
-
-    @app.middleware("http")
-    async def image_style_reverse_injection(request: Any, call_next: Any) -> Any:
-        response = await call_next(request)
-        if "text/html" not in response.headers.get("content-type", "").lower():
-            return response
-        try:
-            body = b"".join([chunk async for chunk in response.body_iterator]).decode("utf-8")
-        except Exception:
-            return response
-        if "image_style_reverse_extension.js" not in body and "</body>" in body:
-            body = body.replace("</body>", '  <script src="image_style_reverse_extension.js?v=20260627.2"></script>\n</body>')
-        from starlette.responses import Response
-        headers = dict(response.headers)
-        headers.pop("content-length", None)
-        return Response(body, status_code=response.status_code, headers=headers, media_type="text/html")
-
-    setattr(app.state, INJECT_MARKER, True)
-
-
 def _register(server_module: ModuleType) -> bool:
     if getattr(server_module, PATCH_MARKER, False):
         return True
@@ -372,10 +348,6 @@ def _register(server_module: ModuleType) -> bool:
         }
 
     app.add_api_route("/api/projects/{project_id}/project-profile/image-style/reverse", reverse_image_style, methods=["POST"])
-    try:
-        _install_injection(app)
-    except Exception:
-        pass
     setattr(server_module, PATCH_MARKER, True)
     return True
 

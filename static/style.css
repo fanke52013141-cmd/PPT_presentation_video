@@ -3814,6 +3814,104 @@ header .btn {
   z-index: 2 !important;
 }
 
+.project-activity-status {
+  display: none;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: auto;
+  padding: 0.72rem 0.78rem;
+  border: 1px solid var(--color-border-default, #dbe2f0);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--color-text-secondary, #566179);
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.project-activity-status.active {
+  display: flex;
+}
+
+.project-activity-status.running {
+  color: var(--color-primary-deep, #5b4ee6);
+}
+
+.step1-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.step1-mode-switch {
+  display: inline-flex;
+  gap: 0.35rem;
+  padding: 0.3rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--color-border-default, #dbe2f0);
+  border-radius: 14px;
+  background: var(--color-bg-subtle, #f5f7fb);
+}
+
+.step1-mode-button {
+  min-height: 38px;
+  border: 0 !important;
+  border-radius: 10px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.step1-mode-button.active {
+  background: #ffffff !important;
+  color: var(--color-primary-deep, #5b4ee6) !important;
+  box-shadow: 0 1px 4px rgba(31, 42, 68, 0.1) !important;
+}
+
+.step1-topic-panel {
+  margin-bottom: 1rem;
+}
+
+.step1-topic-panel > label {
+  display: block;
+  margin-bottom: 0.45rem;
+  font-weight: 800;
+}
+
+.step1-topic-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.7rem;
+}
+
+@media (max-width: 760px) {
+  .step1-topic-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+#modal-settings .settings-modal > .tabs .tab-item {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0.35rem !important;
+  min-height: 38px !important;
+  padding: 0.45rem 0.85rem !important;
+  border: 1px solid transparent !important;
+  border-radius: 999px !important;
+  margin: 0 !important;
+  background: transparent !important;
+  color: var(--color-text-primary, #111827) !important;
+  line-height: 1.1 !important;
+  box-shadow: none !important;
+}
+
+#modal-settings .settings-modal > .tabs .tab-item.active {
+  border-color: var(--color-primary-base, #7c6df2) !important;
+  background: #eef2ff !important;
+  color: var(--color-primary-deep, #5b4ee6) !important;
+  box-shadow: inset 0 0 0 1px rgba(124, 109, 242, 0.12) !important;
+}
+
 #modal-settings .settings-modal > .tab-contents {
   flex: 1 1 auto !important;
   min-height: 0 !important;
@@ -4121,14 +4219,17 @@ button.success,
 }
 
 .slides-thumbnail-container {
-  padding: 0.2rem 0.1rem 0.45rem;
+  padding: 0.45rem 0.25rem 0.6rem;
+  overflow-y: visible;
 }
 
 .slide-thumbnail-card,
 .step5-slide-btn {
-  min-height: 54px !important;
+  height: auto !important;
+  min-height: 64px !important;
   padding: 0.58rem 0.82rem !important;
   border-radius: 16px !important;
+  overflow: visible !important;
 }
 
 .step2-slide-editor {

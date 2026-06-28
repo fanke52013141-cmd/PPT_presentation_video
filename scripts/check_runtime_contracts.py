@@ -17,10 +17,7 @@ if str(ROOT) not in sys.path:
 
 CHECKS = [
     ("runtime bootstrap", "scripts.check_runtime_bootstrap_contract", []),
-    ("runtime UI injection", "scripts.check_runtime_ui_injection_contract", []),
     ("static extension references", "scripts.check_static_extension_references", []),
-    ("visual draft quality output", "scripts.check_visual_draft_quality_contract", []),
-    ("One-click visual quality gate", "scripts.check_one_click_visual_quality_gate_contract", []),
     ("runtime bridge installer audit", "scripts.audit_runtime_bridge_installers", []),
 ]
 

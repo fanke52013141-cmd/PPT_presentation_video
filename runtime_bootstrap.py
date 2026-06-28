@@ -1,8 +1,8 @@
 """Runtime bridge bootstrap for PPT Visualization Studio.
 
-Runtime bridge modules add routes and UI injection around the large ``server.py``
-module. Relying on Python's optional ``usercustomize`` import is not sufficient
-for normal local launches.
+Runtime bridge modules add compatibility API routes around the large ``server.py``
+module. User-facing scripts are declared directly in ``static/index.html``; this
+bootstrap only installs backend compatibility routes.
 
 This bootstrap is imported from ``database.py`` early during ``server.py`` import.
 It patches ``FastAPI.mount`` and also exposes a synchronous installer so runtime
@@ -29,7 +29,6 @@ POLL_INTERVAL_SEC = 0.05
 RUNTIME_MODULES = [
     "runtime_settings_mask",
     "runtime_ai_mask",
-    "runtime_ai_mask_ui_cache_buster",
     "runtime_storyboard_background",
     "runtime_storyboard_background_render",
     "runtime_project_profile",
@@ -41,14 +40,7 @@ RUNTIME_MODULES = [
     "runtime_image_style_reverse",
     "runtime_step3_image_style",
     "runtime_step3_image_style_state",
-    "runtime_visual_draft_quality",
-    "runtime_visual_draft_quality_ui",
-    "runtime_step2_storyboard_settings",
     "runtime_one_click_orchestrator",
-    "runtime_one_click_step3_style_patch",
-    "runtime_one_click_visual_quality_gate",
-    "runtime_one_click_ui_cache_buster",
-    "runtime_step5_flush_bridge",
     "runtime_diagnostics",
 ]
 
@@ -59,12 +51,15 @@ EXPECTED_RUNTIME_ROUTES = {
     "/api/projects/{project_id}/one-click-generate": {"POST"},
     "/api/projects/{project_id}/one-click-generate/status": {"GET"},
     "/api/projects/{project_id}/storyboard-background": {"GET"},
-    "/api/projects/{project_id}/steps/3/image-style": {"GET"},
+    "/api/projects/{project_id}/steps/3/image-style": {"GET", "PUT"},
     "/api/projects/{project_id}/steps/3/image-style/reverse": {"POST"},
-    "/api/projects/{project_id}/steps/3/image-style/reference-images": {"GET", "DELETE"},
+    "/api/projects/{project_id}/steps/3/image-style/reference-images": {"GET", "POST", "DELETE"},
     "/api/projects/{project_id}/steps/3/image-style/reference-images/generate": {"POST"},
     "/api/projects/{project_id}/steps/3/image-style/reference-images/{index}": {"GET", "DELETE"},
-    "/api/projects/{project_id}/steps/3/visual-draft-quality": {"GET"},
+    "/api/image-style/project-templates": {"GET"},
+    "/api/projects/{project_id}/steps/3/image-style/templates": {"POST"},
+    "/api/projects/{project_id}/steps/3/image-style/templates/{template_id}/apply": {"POST"},
+    "/api/image-style/project-templates/{template_id}": {"DELETE"},
     "/api/projects/{project_id}/steps/5/ai-mask/annotate": {"POST"},
 }
 EXPECTED_RUNTIME_PATHS = set(EXPECTED_RUNTIME_ROUTES)

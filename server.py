@@ -2295,13 +2295,17 @@ def validate_current_reveal_assets(project: Project) -> None:
             "--repo-root",
             REPO_ROOT,
         ]
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=120,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise HTTPException(status_code=504, detail="Mask 产物校验超时，请重试") from exc
         if result.returncode != 0:
             logger.error("Reveal asset validation failed: %s", result.stderr)
             raise HTTPException(
@@ -2325,13 +2329,18 @@ def build_current_reveal_assets(project: Project) -> None:
             "--repo-root",
             REPO_ROOT,
         ]
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=180,
+            )
+        except subprocess.TimeoutExpired as exc:
+            write_project_log(project, "step5_reveal_build_timeout", timeout_sec=180)
+            raise HTTPException(status_code=504, detail="构建 Mask 切层超时，已停止本次任务，请重试") from exc
         if result.returncode != 0:
             logger.error("Build reveal assets failed: %s", result.stderr)
             raise HTTPException(
@@ -2374,6 +2383,95 @@ def navigate_project(project_id: str, target_step: int = Form(...), db: Session 
 
 # ==================== 步骤 1: 导入文章 ====================
 
+ARTICLE_GENERATION_SYSTEM_CONTENT_KEY = "article_generation_system_content"
+DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT = """你是一名中文长文写作编辑。请根据用户给出的话题写一篇结构完整、事实边界清楚、适合继续转换为演示文稿的 Markdown 文章。
+
+要求：
+1. 直接输出 Markdown 正文，不要解释写作过程，不要使用代码围栏。
+2. 使用清晰的一级、二级标题和必要的列表；每一节只表达一个核心观点。
+3. 先建立背景和问题，再展开关键概念、机制、案例与结论。
+4. 不编造无法确认的数据、引文或来源；不确定的信息要明确标注。
+5. 文章需要为后续分镜规划提供足够具体的内容，但避免空泛重复。"""
+
+
+@app.get("/api/settings/article-generation")
+def get_article_generation_settings():
+    return {
+        "success": True,
+        "system_content": get_setting(
+            ARTICLE_GENERATION_SYSTEM_CONTENT_KEY,
+            DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT,
+        ) or DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT,
+    }
+
+
+@app.put("/api/settings/article-generation")
+def update_article_generation_settings(payload: Dict[str, Any]):
+    system_content = str(payload.get("system_content") or "").strip()
+    if not system_content:
+        raise HTTPException(status_code=400, detail="文章生成 System Content 不能为空")
+    if len(system_content) > 20000:
+        raise HTTPException(status_code=400, detail="文章生成 System Content 不能超过 20000 个字符")
+    update_settings({ARTICLE_GENERATION_SYSTEM_CONTENT_KEY: system_content})
+    return {"success": True, "system_content": system_content}
+
+
+@app.post("/api/projects/{project_id}/steps/1/generate-article")
+def generate_article_from_topic(
+    project_id: str,
+    payload: Dict[str, Any],
+    db: Session = Depends(get_db),
+):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    topic = str(payload.get("topic") or "").strip()
+    if not topic:
+        raise HTTPException(status_code=400, detail="请输入文章话题")
+    if len(topic) > 500:
+        raise HTTPException(status_code=400, detail="文章话题不能超过 500 个字符")
+
+    api_key = get_setting("llm_api_key")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="未配置大模型 API 密钥，请先在系统设置中配置")
+    model = get_setting("llm_model")
+    base_url = get_setting("llm_base_url")
+    system_content = get_setting(
+        ARTICLE_GENERATION_SYSTEM_CONTENT_KEY,
+        DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT,
+    ) or DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT
+    client = get_openai_client(
+        api_key=api_key,
+        base_url=base_url,
+        timeout=STEP2_LLM_TIMEOUT_SEC,
+        max_retries=0,
+    )
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            temperature=min(float(get_setting("llm_temperature", "0.7")), 0.7),
+            max_tokens=parse_int_setting(get_setting("llm_max_tokens", "16000"), 16000, 1024, 64000),
+            timeout=STEP2_LLM_TIMEOUT_SEC,
+            messages=[
+                {"role": "system", "content": system_content},
+                {
+                    "role": "user",
+                    "content": f"项目名称：{(project.name or '').strip() or '未命名项目'}\n文章话题：{topic}\n\n请生成文章。",
+                },
+            ],
+        )
+    except Exception as exc:
+        if is_timeout_exception(exc):
+            raise HTTPException(status_code=504, detail="文章生成超时，请稍后重试") from exc
+        raise HTTPException(status_code=502, detail=f"文章生成失败：{exc}") from exc
+    content = str(response.choices[0].message.content or "").strip()
+    if content.startswith("```"):
+        content = re.sub(r"^```(?:markdown|md)?\s*|\s*```$", "", content, flags=re.I | re.S).strip()
+    if not content:
+        raise HTTPException(status_code=502, detail="大模型没有返回文章内容")
+    write_project_log(project, "step1_article_generated", topic=topic, model=model, character_count=len(content))
+    return {"success": True, "topic": topic, "content": content}
+
 @app.post("/api/projects/{project_id}/steps/1/import")
 def import_article(project_id: str, content: Optional[str] = Form(None), db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -2391,6 +2489,7 @@ def import_article(project_id: str, content: Optional[str] = Form(None), db: Ses
     brief = {
         "title": project_title,
         "content": content,
+        "summary": build_article_summary(content),
     }
 
     brief_path = os.path.join(project.run_dir, "planning", "article_brief.json")
@@ -5220,9 +5319,19 @@ def deterministic_semantic_blocks(
     }
     existing_boxes = {}
     if manifest_slide:
-        for group in manifest_slide.get("groups", []) or []:
-            if isinstance(group, dict):
-                existing_boxes[str(group.get("id") or group.get("group_id") or "")] = group.get("box")
+        for field in ("semantic_blocks", "groups"):
+            for group in manifest_slide.get(field, []) or []:
+                if not isinstance(group, dict):
+                    continue
+                box = group.get("box")
+                for identifier in (
+                    group.get("visual_group_id"),
+                    group.get("id"),
+                    group.get("group_id"),
+                ):
+                    identifier_text = str(identifier or "").strip()
+                    if identifier_text and identifier_text not in existing_boxes:
+                        existing_boxes[identifier_text] = box
     fragments = build_narration_fragments(contract_slide)
     fragments_by_id = {fragment["id"]: fragment for fragment in fragments}
     group_to_fragments: Dict[str, List[str]] = {}
@@ -5606,11 +5715,11 @@ def update_step5_result(project_id: str, payload: Dict[str, Any], build_assets: 
         manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
         write_json_atomic(manifest_path, payload)
 
-        # 人工保存后，校验并构建切层 assets，运行 build_reveal_scene.py
-        build_current_reveal_assets(project)
+        if build_assets:
+            build_current_reveal_assets(project)
         
     handle_step_navigation(project, 5, db)
-    return {"success": True, "built_assets": True}
+    return {"success": True, "built_assets": bool(build_assets)}
 
 # ==================== 步骤 6: 演讲稿编辑 ====================
 
@@ -6009,9 +6118,12 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
             
     # 合成完毕后，运行 bind_reveal_timeline.py 绑定时间轴
     bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))
-    bind_res = subprocess.run([
-        sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", "0"
-    ], capture_output=True, text=True, encoding="utf-8", errors="replace")
+    try:
+        bind_res = subprocess.run([
+            sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", "0"
+        ], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=STEP7_BIND_TIMEOUT_SEC)
+    except subprocess.TimeoutExpired as exc:
+        raise HTTPException(status_code=504, detail="音频时间轴确认超时，请重试") from exc
     
     if bind_res.returncode != 0:
         logger.error(f"Timeline binding failed: {bind_res.stderr}")
@@ -6567,7 +6679,7 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
     logger.info(f"Starting Remotion render for {project_id}...")
     render_started = time.time()
     render_args = [
-        npx_cmd, "remotion", "render", "ArticleVideo", output_mp4_path,
+        npx_cmd, "remotion", "render", "src/index.tsx", "ArticleVideo", output_mp4_path,
         f"--props={props_json_path}",
         "--codec=h264",
         "--image-format=png",

@@ -88,7 +88,6 @@ article.md
 The repository still contains runtime bridge modules that patch production behavior during Python startup:
 
 - `sitecustomize.py`
-- `usercustomize.py`
 - `runtime_security.py`
 - `runtime_settings_mask.py`
 

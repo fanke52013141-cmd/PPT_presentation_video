@@ -169,7 +169,8 @@ def _candidate_modules() -> list[ModuleType]:
 
 def _install_when_ready() -> None:
     def worker() -> None:
-        while not os.environ.get("PPT_STUDIO_DISABLE_LIGHTWEIGHT_PROJECT_PROFILE"):
+        started_at = time.monotonic()
+        while not os.environ.get("PPT_STUDIO_DISABLE_LIGHTWEIGHT_PROJECT_PROFILE") and time.monotonic() - started_at < 120:
             for module in _candidate_modules():
                 try:
                     if _register(module):

@@ -9,9 +9,7 @@
     'component_padding_px',
     'merge_gap_px',
     'subtitle_safe_y',
-    'stroke_brush_size',
-    'overwrite_existing_manual_mask',
-    'skip_locked_groups'
+    'stroke_brush_size'
   ]);
 
   const PARAMS = [
@@ -49,16 +47,6 @@
       key: 'stroke_brush_size', label: '自动画笔宽度', type: 'number', default: 96, min: 24, max: 240, step: 4,
       usual: '48 - 180 px',
       help: 'AI 结果会写成手动 Mask 笔画，这里控制笔画粗细。Mask 有空洞调大；盖到旁边元素调小。'
-    },
-    {
-      key: 'overwrite_existing_manual_mask', label: '覆盖已有 Mask', type: 'boolean', default: false,
-      usual: '默认关闭',
-      help: '关闭时不会覆盖你已经手工画好的 Mask。日常建议关闭；只有整批重跑时再打开。'
-    },
-    {
-      key: 'skip_locked_groups', label: '跳过已确认语块', type: 'boolean', default: true,
-      usual: '默认开启',
-      help: '开启时不会改动已确认或锁定的语块。日常建议开启；需要强制重算所有语块时再关闭。'
     }
   ];
 
@@ -128,7 +116,9 @@
       .ai-mask-prompt-block{margin-top:1rem;border-top:1.5px dashed #111;padding-top:.8rem}
       .ai-mask-prompt-block textarea{width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.84rem;line-height:1.45;box-sizing:border-box}
       .ai-mask-modal-scroll{max-height:72vh;overflow:auto;padding-right:.3rem}
-      .ai-mask-run-summary{margin-left:.5rem;font-size:.85rem;color:#555;font-weight:700}
+      #step5-canvas{pointer-events:none!important;cursor:default!important}
+      #step5-brush-cursor{display:none!important}
+      #step5-boxes-list input,#step5-boxes-list textarea,#step5-boxes-list select,#step5-boxes-list button{pointer-events:none;opacity:.72}
       body.step5-fullscreen-mode #canvas-container{aspect-ratio:16/9;height:auto!important;max-height:none!important;}
       body.step5-fullscreen-mode #canvas-container canvas,body.step5-fullscreen-mode #canvas-container img{width:100%!important;height:100%!important;object-fit:contain!important;}
       body.step5-fullscreen-mode #step-panel-5 .workspace-left{align-items:center;justify-content:center;overflow:hidden;}
@@ -178,18 +168,30 @@
 
   function injectButtons() {
     const toolbar = document.querySelector('#step-panel-5 .step5-toolbar');
-    if (!toolbar || document.getElementById('step5-btn-ai-mask')) return;
+    if (!toolbar) return;
+    ensureInlineStatus();
+    if (document.getElementById('step5-btn-ai-mask')) return;
     const settings = button('step5-btn-ai-mask-settings', 'AI 标注设置', 'secondary');
-    const run = button('step5-btn-ai-mask', 'AI 标注全部 Slides', 'success');
-    const status = document.createElement('span');
-    status.id = 'step5-ai-mask-status';
-    status.className = 'ai-mask-run-summary';
+    const run = button('step5-btn-ai-mask', '重新运行 AI 标注', 'success');
     const anchor = document.getElementById('step5-btn-fullscreen');
     toolbar.insertBefore(settings, anchor || null);
     toolbar.insertBefore(run, anchor || null);
-    toolbar.insertBefore(status, anchor || null);
     settings.addEventListener('click', openSettings);
     run.addEventListener('click', runAnnotation);
+  }
+
+  function ensureInlineStatus() {
+    return document.getElementById('project-activity-status');
+  }
+
+  function setInlineStatus(message, active = true, spinning = false) {
+    const status = ensureInlineStatus();
+    if (!status) return;
+    status.innerHTML = message
+      ? `${spinning ? '<span class="button-spinner"></span>' : ''}<span>${escapeAttr(message)}</span>`
+      : '';
+    status.classList.toggle('active', !!active && !!message);
+    status.classList.toggle('running', !!spinning);
   }
 
   function inputHtml(def, value) {
@@ -297,21 +299,11 @@
     }
   }
 
-  function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
   async function flushStep5DraftBeforeAiMask() {
-    if (typeof window.saveStep5CurrentState === 'function') {
-      window.saveStep5CurrentState();
+    if (window.PPTStudio && typeof window.PPTStudio.flushStep5Draft === 'function') {
+      await window.PPTStudio.flushStep5Draft();
+      return;
     }
-    if (typeof window.saveStep5Draft === 'function') {
-      await window.saveStep5Draft();
-    }
-    // Existing Step5 autosave is timer-based. Because state is a top-level let in app.js,
-    // extensions cannot safely clear the timer. Wait once so a pending stale save can finish
-    // before the backend writes AI masks, then save again.
-    await sleep(900);
     if (typeof window.saveStep5CurrentState === 'function') {
       window.saveStep5CurrentState();
     }
@@ -320,17 +312,7 @@
     }
   }
 
-  function summarizeResult(result) {
-    const slides = Array.isArray(result.slides) ? result.slides : [];
-    const detected = slides.reduce((sum, s) => sum + Number(s.detected_element_count || 0), 0);
-    const matched = slides.reduce((sum, s) => sum + Number(s.matched_group_count || 0), 0);
-    const skipped = slides.reduce((sum, s) => sum + Number(s.skipped_group_count || 0), 0);
-    const warnings = slides.reduce((sum, s) => sum + (Array.isArray(s.warnings) ? s.warnings.length : 0), 0);
-    const updated = Number(result.updated_group_count || 0);
-    return { detected, matched, skipped, warnings, updated, processed: Number(result.processed_slide_count || 0) };
-  }
-
-  async function runAnnotation() {
+  async function runAnnotation(options = {}) {
     const id = projectId();
     if (!id) {
       toast('请先打开项目并进入 Mask 标注页。未能识别当前 project_id。', 6000);
@@ -338,27 +320,33 @@
     }
     const btn = document.getElementById('step5-btn-ai-mask');
     const settingsBtn = document.getElementById('step5-btn-ai-mask-settings');
-    const status = document.getElementById('step5-ai-mask-status');
+    const status = ensureInlineStatus();
     btn.disabled = true;
     if (settingsBtn) settingsBtn.disabled = true;
-    if (status) status.textContent = '准备当前标注草稿...';
+    setInlineStatus('正在准备 AI 标注...', true, true);
     try {
       await flushStep5DraftBeforeAiMask();
-      if (status) status.textContent = 'AI 标注处理中：所有 Slides...';
-      const result = await apiPost(`/api/projects/${encodeURIComponent(id)}/steps/5/ai-mask/annotate`, { scope: 'all_slides' });
-      const summary = summarizeResult(result);
-      if (status) {
-        status.textContent = `完成：${summary.processed} 页，检测 ${summary.detected} 个，匹配 ${summary.matched} 个，写入 ${summary.updated} 个，跳过 ${summary.skipped} 个`;
+      setInlineStatus('AI 正在关联画面元素与演讲稿...', true, true);
+      const result = await apiPost(`/api/projects/${encodeURIComponent(id)}/steps/5/ai-mask/annotate`, {
+        scope: 'all_slides',
+        settings: {
+          overwrite_existing_manual_mask: true,
+          skip_locked_groups: false,
+        },
+      });
+      if (result.complete !== true) {
+        throw new Error('仍有画面语块未能完成关联，请重新运行 AI 标注');
       }
-      const detail = summary.updated > 0
-        ? `✅ AI 标注完成：处理 ${summary.processed} 页，写入 ${summary.updated} 个 Mask。`
-        : `⚠️ AI 标注完成，但没有写入新的 Mask。可能是已有手动 Mask、语块已确认/锁定、或匹配置信度不足。`;
-      toast(detail, 7000);
+      setInlineStatus('AI 标注已完成', true, false);
+      toast(options.automatic ? 'AI 标注已自动完成。' : 'AI 标注已重新完成。', 4500);
       if (typeof window.loadStep5Data === 'function') await window.loadStep5Data();
       else if (typeof loadStep5Data === 'function') await loadStep5Data();
       if (typeof window.renderStep5Workspace === 'function') window.renderStep5Workspace();
+      if (typeof window.focusFirstAiMaskResult === 'function') {
+        window.focusFirstAiMaskResult();
+      }
     } catch (e) {
-      if (status) status.textContent = 'AI 标注失败';
+      setInlineStatus('AI 标注失败', true, false);
       toast(`❌ AI 标注失败：${e.message}`, 8000);
     } finally {
       if (settingsBtn) settingsBtn.disabled = false;
@@ -367,11 +355,44 @@
     }
   }
 
+  const AUTO_ATTEMPTED = new Set();
+
+  async function maybeAutoAnnotate() {
+    const panel = document.getElementById('step-panel-5');
+    if (!panel || window.getComputedStyle(panel).display === 'none') return;
+    const id = projectId();
+    if (!id || AUTO_ATTEMPTED.has(id)) return;
+    AUTO_ATTEMPTED.add(id);
+    try {
+      const result = await apiGet(`/api/projects/${encodeURIComponent(id)}/steps/5/result`);
+      if (result.manifest?.ai_mask_annotation?.status === 'completed') {
+        setInlineStatus('AI 标注已完成', true, false);
+        return;
+      }
+      await runAnnotation({ automatic: true });
+    } catch (error) {
+      setInlineStatus('AI 标注等待重试', true, false);
+    }
+  }
+
+  function installAutoAnnotationWatch() {
+    if (window.__aiMaskAutoAnnotationWatch) return;
+    window.__aiMaskAutoAnnotationWatch = true;
+    const panel = document.getElementById('step-panel-5');
+    if (!panel) return;
+    const observer = new MutationObserver(() => {
+      if (window.getComputedStyle(panel).display !== 'none') maybeAutoAnnotate();
+    });
+    observer.observe(panel, { attributes: true, attributeFilter: ['style', 'class'] });
+    maybeAutoAnnotate();
+  }
+
   function boot() {
     ensureStyles();
     installFullscreenFitWatch();
     fitFullscreenCanvas();
     injectButtons();
+    installAutoAnnotationWatch();
   }
 
   const timer = setInterval(() => {

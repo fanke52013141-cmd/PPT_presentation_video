@@ -5,11 +5,8 @@ image style and references belong to Step 3. The original Project Profile bridge
 keeps compatibility routes and storage, but this response prevents the create
 modal from seeing project-level storyboard/image-style templates.
 
-This module also imports lightweight overrides so normal startup no longer saves
-default storyboard_profile or image_style_profile when the create dialog only
-sends automation mode, Step 3 image-style actions use Step 3 state storage, Step
-2 storyboard prompt controls are exposed through a user-facing settings UI, and
-One-click uses Step 3 image-style state for image invalidation.
+The lightweight profile and Step 3 state modules are installed explicitly by
+runtime_bootstrap; this module only owns the simplified template response.
 """
 
 from __future__ import annotations
@@ -20,26 +17,6 @@ import threading
 import time
 from types import ModuleType
 from typing import Any
-
-try:
-    import runtime_project_profile_lightweight  # noqa: F401
-except Exception:
-    pass
-
-try:
-    import runtime_step3_image_style_state  # noqa: F401
-except Exception:
-    pass
-
-try:
-    import runtime_step2_storyboard_settings  # noqa: F401
-except Exception:
-    pass
-
-try:
-    import runtime_one_click_step3_style_patch  # noqa: F401
-except Exception:
-    pass
 
 PATCH_MARKER = "__ppt_project_profile_templates_override_patch__"
 
@@ -101,7 +78,8 @@ def _candidate_modules() -> list[ModuleType]:
 
 def _install_when_ready() -> None:
     def worker() -> None:
-        while not os.environ.get("PPT_STUDIO_DISABLE_PROJECT_PROFILE_TEMPLATES_OVERRIDE"):
+        started_at = time.monotonic()
+        while not os.environ.get("PPT_STUDIO_DISABLE_PROJECT_PROFILE_TEMPLATES_OVERRIDE") and time.monotonic() - started_at < 120:
             for module in _candidate_modules():
                 try:
                     if _register(module):

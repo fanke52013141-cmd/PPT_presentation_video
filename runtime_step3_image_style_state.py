@@ -80,6 +80,29 @@ def _save_step3_style(project: Any, style: dict[str, Any], source: str) -> dict[
     return state
 
 
+def _manual_style_from_payload(payload: Any, current: dict[str, Any]) -> dict[str, Any]:
+    source = payload.get("style") if isinstance(payload, dict) and isinstance(payload.get("style"), dict) else payload
+    if not isinstance(source, dict):
+        source = {}
+    current = current if isinstance(current, dict) else {}
+    system_content = _safe_text(source.get("system_content") or current.get("system_content"), 12000)
+    style = {
+        **current,
+        **source,
+        "source": _safe_text(source.get("source") or current.get("source") or "manual_system_content", 80),
+        "style_name": _safe_text(source.get("style_name") or current.get("style_name") or "手动 System Content", 120),
+        "style_summary": _safe_text(source.get("style_summary") or current.get("style_summary") or "由用户在 Step 3 图片风格面板手动维护。", 1000),
+        "system_content": system_content,
+        "reference_image_count_target": 3,
+    }
+    prompts = source.get("sample_reference_image_prompts")
+    if isinstance(prompts, list):
+        style["sample_reference_image_prompts"] = [_safe_text(item, 4000) for item in prompts if _safe_text(item, 4000)][:3]
+    if not style.get("sample_reference_image_prompts") and system_content:
+        style["sample_reference_image_prompts"] = [system_content]
+    return style
+
+
 def _save_reference_images_to_step3_state(project: Any, manifest: dict[str, Any]) -> None:
     state = _step3_style_state(project)
     if not state:
@@ -209,6 +232,18 @@ def _register(server_module: ModuleType) -> bool:
         state = _step3_style_state(project)
         return {"success": True, "style_state": state, "style": _step3_style(project)}
 
+    def put_step3_style(project_id: str, payload: dict[str, Any], db: Any = server_module.Depends(server_module.get_db)) -> dict[str, Any]:
+        project = _project_or_404(server_module, db, project_id)
+        style = _manual_style_from_payload(payload if isinstance(payload, dict) else {}, _step3_style(project))
+        if not _safe_text(style.get("system_content"), 12000):
+            raise server_module.HTTPException(status_code=400, detail="图片生成 System Content 不能为空")
+        state = _save_step3_style(project, style, "manual_system_content")
+        try:
+            server_module.write_project_log(project, "step3_image_style_manual_saved", path=str(_state_path(project)))
+        except Exception:
+            pass
+        return {"success": True, "style": style, "style_state": state}
+
     async def reverse_step3_style(
         project_id: str,
         files: list[Any] = server_module.File(...),
@@ -236,6 +271,12 @@ def _register(server_module: ModuleType) -> bool:
     )
     _insert_before_existing(
         app,
+        "/api/projects/{project_id}/steps/3/image-style",
+        {"PUT"},
+        APIRoute("/api/projects/{project_id}/steps/3/image-style", put_step3_style, methods=["PUT"], name="put_step3_image_style_state"),
+    )
+    _insert_before_existing(
+        app,
         "/api/projects/{project_id}/steps/3/image-style/reverse",
         {"POST"},
         APIRoute("/api/projects/{project_id}/steps/3/image-style/reverse", reverse_step3_style, methods=["POST"], name="reverse_step3_image_style_state"),
@@ -250,7 +291,8 @@ def _candidate_modules() -> list[ModuleType]:
 
 def _install_when_ready() -> None:
     def worker() -> None:
-        while not os.environ.get("PPT_STUDIO_DISABLE_STEP3_IMAGE_STYLE_STATE"):
+        started_at = time.monotonic()
+        while not os.environ.get("PPT_STUDIO_DISABLE_STEP3_IMAGE_STYLE_STATE") and time.monotonic() - started_at < 120:
             for module in _candidate_modules():
                 try:
                     if _register(module):

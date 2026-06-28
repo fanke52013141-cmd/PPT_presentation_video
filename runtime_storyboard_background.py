@@ -20,7 +20,6 @@ from typing import Any
 from PIL import Image
 
 PATCH_MARKER = "__ppt_storyboard_background_runtime_patch__"
-INJECT_MARKER = "__ppt_storyboard_background_inject_patch__"
 CONFIG_NAME = "storyboard_background.json"
 IMAGE_NAME = "storyboard_background.png"
 PROMPT_START = "<!-- STORYBOARD_BACKGROUND_POLICY_START -->"
@@ -190,29 +189,6 @@ def _apply(project: Any, payload: dict[str, Any]) -> dict[str, Any]:
     return config
 
 
-def _install_injection(app: Any) -> None:
-    if getattr(app.state, INJECT_MARKER, False):
-        return
-
-    @app.middleware("http")
-    async def storyboard_background_injection(request: Any, call_next: Any) -> Any:
-        response = await call_next(request)
-        if "text/html" not in response.headers.get("content-type", "").lower():
-            return response
-        try:
-            body = b"".join([chunk async for chunk in response.body_iterator]).decode("utf-8")
-        except Exception:
-            return response
-        if "storyboard_background_extension.js" not in body and "</body>" in body:
-            body = body.replace("</body>", '  <script src="storyboard_background_extension.js?v=20260626.1"></script>\n</body>')
-        from starlette.responses import Response
-        headers = dict(response.headers)
-        headers.pop("content-length", None)
-        return Response(body, status_code=response.status_code, headers=headers, media_type="text/html")
-
-    setattr(app.state, INJECT_MARKER, True)
-
-
 def _register(server_module: ModuleType) -> bool:
     if getattr(server_module, PATCH_MARKER, False):
         return True
@@ -268,12 +244,6 @@ def _register(server_module: ModuleType) -> bool:
     app.add_api_route("/api/projects/{project_id}/storyboard-background", put_background, methods=["PUT"])
     app.add_api_route("/api/projects/{project_id}/storyboard-background/image", upload_background, methods=["POST"])
     app.add_api_route("/api/projects/{project_id}/storyboard-background/image", get_background_image, methods=["GET"])
-    try:
-        _install_injection(app)
-    except Exception as exc:
-        logger = getattr(server_module, "logger", None)
-        if logger:
-            logger.warning("Failed to install storyboard background UI injection: %s", exc)
     setattr(server_module, PATCH_MARKER, True)
     return True
 
@@ -284,7 +254,8 @@ def _candidate_modules() -> list[ModuleType]:
 
 def _install_when_ready() -> None:
     def worker() -> None:
-        while not os.environ.get("PPT_STUDIO_DISABLE_STORYBOARD_BACKGROUND"):
+        started_at = time.monotonic()
+        while not os.environ.get("PPT_STUDIO_DISABLE_STORYBOARD_BACKGROUND") and time.monotonic() - started_at < 120:
             for module in _candidate_modules():
                 try:
                     if _register(module):

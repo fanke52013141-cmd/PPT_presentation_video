@@ -10,9 +10,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shutil
 import sys
 import threading
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 from types import ModuleType
@@ -96,6 +99,97 @@ def _register(server_module: ModuleType) -> bool:
         return False
 
     app = server_module.app
+    templates_root = Path(str(getattr(server_module, "DATA_DIR", Path(__file__).parent / "data"))) / "step3_image_style_templates"
+    templates_index_path = templates_root / "index.json"
+
+    def read_templates() -> list[dict[str, Any]]:
+        value = _read_json(templates_index_path, {"templates": []})
+        items = value.get("templates", []) if isinstance(value, dict) else []
+        return [item for item in items if isinstance(item, dict)]
+
+    def write_templates(items: list[dict[str, Any]]) -> None:
+        _write_json(templates_index_path, {"version": "step3_image_style_templates_v1", "templates": items})
+
+    def template_dir_or_404(template_id: str) -> Path:
+        if not re.fullmatch(r"[0-9a-f]{12}", str(template_id or "")):
+            raise server_module.HTTPException(status_code=404, detail="图片风格模板不存在")
+        path = (templates_root / template_id).resolve()
+        if path.parent != templates_root.resolve() or not path.exists():
+            raise server_module.HTTPException(status_code=404, detail="图片风格模板不存在")
+        return path
+
+    def list_step3_templates() -> dict[str, Any]:
+        return {"success": True, "templates": read_templates()}
+
+    def save_step3_template(
+        project_id: str,
+        payload: dict[str, Any],
+        db: Any = server_module.Depends(server_module.get_db),
+    ) -> dict[str, Any]:
+        project = _project_or_404(server_module, db, project_id)
+        name = str((payload or {}).get("name") or "").strip()
+        if not name:
+            raise server_module.HTTPException(status_code=400, detail="模板名称不能为空")
+        if len(name) > 120:
+            raise server_module.HTTPException(status_code=400, detail="模板名称不能超过 120 个字符")
+        state = _read_json(_step3_state_path(project), {})
+        style = state.get("image_style_profile") if isinstance(state.get("image_style_profile"), dict) else {}
+        if not str(style.get("system_content") or "").strip():
+            raise server_module.HTTPException(status_code=400, detail="请先保存图片生成 System Content")
+        items = read_templates()
+        if any(str(item.get("name") or "").strip().casefold() == name.casefold() for item in items):
+            raise server_module.HTTPException(status_code=400, detail="模板名称已存在，请换一个名称")
+        template_id = uuid.uuid4().hex[:12]
+        target = templates_root / template_id
+        target.mkdir(parents=True, exist_ok=False)
+        _write_json(target / "style.json", style)
+        manifest = _read_json(manager_impl._manifest_path(project), {})
+        _write_json(target / "references.json", manifest if isinstance(manifest, dict) else {})
+        source_refs = manager_impl._references_dir(project)
+        if source_refs.exists():
+            shutil.copytree(source_refs, target / "references", dirs_exist_ok=True)
+        item = {
+            "id": template_id,
+            "name": name,
+            "reference_count": len((manifest or {}).get("images", [])) if isinstance(manifest, dict) else 0,
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        items.append(item)
+        write_templates(items)
+        return {"success": True, "template": item, "templates": items}
+
+    def apply_step3_template(
+        project_id: str,
+        template_id: str,
+        db: Any = server_module.Depends(server_module.get_db),
+    ) -> dict[str, Any]:
+        project = _project_or_404(server_module, db, project_id)
+        source = template_dir_or_404(template_id)
+        style = _read_json(source / "style.json", {})
+        if not style:
+            raise server_module.HTTPException(status_code=400, detail="图片风格模板内容损坏")
+        _save_step3_style_state(project, style, "named_template")
+        target_refs = manager_impl._references_dir(project)
+        if target_refs.exists():
+            shutil.rmtree(target_refs)
+        source_refs = source / "references"
+        if source_refs.exists():
+            shutil.copytree(source_refs, target_refs)
+        manifest = _read_json(source / "references.json", {})
+        manager_impl._write_normalized_manifest(project, manifest if isinstance(manifest, dict) else {})
+        references = refs_impl._load_manifest(project, project_id)
+        return {
+            "success": True,
+            "style": style,
+            "references": _rewrite_reference_urls(references, project_id),
+        }
+
+    def delete_step3_template(template_id: str) -> dict[str, Any]:
+        source = template_dir_or_404(template_id)
+        items = [item for item in read_templates() if str(item.get("id") or "") != template_id]
+        shutil.rmtree(source)
+        write_templates(items)
+        return {"success": True, "templates": items}
 
     async def reverse_image_style_step3(
         project_id: str,
@@ -132,6 +226,56 @@ def _register(server_module: ModuleType) -> bool:
         project = _project_or_404(server_module, db, project_id)
         manifest = refs_impl._generate_reference_images(server_module, project, project_id, payload if isinstance(payload, dict) else {})
         return {"success": True, "references": _rewrite_reference_urls(manifest, project_id)}
+
+    async def upload_reference_images_step3(
+        project_id: str,
+        files: list[Any] = server_module.File(...),
+        db: Any = server_module.Depends(server_module.get_db),
+    ) -> dict[str, Any]:
+        project = _project_or_404(server_module, db, project_id)
+        selected = [file for file in (files or []) if file is not None]
+        if not selected:
+            raise server_module.HTTPException(status_code=400, detail="请上传 1-3 张参考图")
+        if len(selected) > 3:
+            raise server_module.HTTPException(status_code=400, detail="最多只能上传 3 张参考图")
+        refs_dir = refs_impl._references_dir(project)
+        refs_dir.mkdir(parents=True, exist_ok=True)
+        uploaded: list[dict[str, Any]] = []
+        for index, file in enumerate(selected, start=1):
+            content = await file.read()
+            if not content:
+                continue
+            filename = f"style_reference_{index:02d}.png"
+            save_path = refs_dir / filename
+            processor = getattr(server_module, "process_and_save_image", None)
+            if callable(processor):
+                processor(content, str(save_path))
+            else:
+                save_path.write_bytes(content)
+            uploaded.append({
+                "index": index,
+                "filename": filename,
+                "prompt": f"手动上传参考图：{Path(str(getattr(file, 'filename', '') or filename)).name}",
+                "source": "manual_upload",
+                "uploaded_at": datetime.now().isoformat(timespec="seconds"),
+                "url": f"/api/projects/{project_id}/steps/3/image-style/reference-images/{index}?t={int(time.time())}",
+            })
+        if not uploaded:
+            raise server_module.HTTPException(status_code=400, detail="参考图文件为空")
+        manifest = {
+            "version": "step3_style_references_v1",
+            "legacy_version": "project_style_references_v1",
+            "scope": "step3_image_style",
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+            "style_name": "手动上传参考图",
+            "images": uploaded,
+        }
+        manager_impl._write_normalized_manifest(project, manifest)
+        try:
+            server_module.write_project_log(project, "step3_image_style_reference_images_uploaded", count=len(uploaded))
+        except Exception:
+            pass
+        return {"success": True, "references": _rewrite_reference_urls(refs_impl._load_manifest(project, project_id), project_id)}
 
     def get_reference_image_step3(project_id: str, index: int, db: Any = server_module.Depends(server_module.get_db)) -> Any:
         project = _project_or_404(server_module, db, project_id)
@@ -170,10 +314,15 @@ def _register(server_module: ModuleType) -> bool:
 
     app.add_api_route("/api/projects/{project_id}/steps/3/image-style/reverse", reverse_image_style_step3, methods=["POST"])
     app.add_api_route("/api/projects/{project_id}/steps/3/image-style/reference-images", list_reference_images_step3, methods=["GET"])
+    app.add_api_route("/api/projects/{project_id}/steps/3/image-style/reference-images", upload_reference_images_step3, methods=["POST"])
     app.add_api_route("/api/projects/{project_id}/steps/3/image-style/reference-images/generate", generate_reference_images_step3, methods=["POST"])
     app.add_api_route("/api/projects/{project_id}/steps/3/image-style/reference-images/{index}", get_reference_image_step3, methods=["GET"])
     app.add_api_route("/api/projects/{project_id}/steps/3/image-style/reference-images/{index}", delete_reference_image_step3, methods=["DELETE"])
     app.add_api_route("/api/projects/{project_id}/steps/3/image-style/reference-images", delete_all_reference_images_step3, methods=["DELETE"])
+    app.add_api_route("/api/image-style/project-templates", list_step3_templates, methods=["GET"])
+    app.add_api_route("/api/projects/{project_id}/steps/3/image-style/templates", save_step3_template, methods=["POST"])
+    app.add_api_route("/api/projects/{project_id}/steps/3/image-style/templates/{template_id}/apply", apply_step3_template, methods=["POST"])
+    app.add_api_route("/api/image-style/project-templates/{template_id}", delete_step3_template, methods=["DELETE"])
     setattr(server_module, PATCH_MARKER, True)
     return True
 
@@ -184,7 +333,8 @@ def _candidate_modules() -> list[ModuleType]:
 
 def _install_when_ready() -> None:
     def worker() -> None:
-        while not os.environ.get("PPT_STUDIO_DISABLE_STEP3_IMAGE_STYLE"):
+        started_at = time.monotonic()
+        while not os.environ.get("PPT_STUDIO_DISABLE_STEP3_IMAGE_STYLE") and time.monotonic() - started_at < 120:
             for module in _candidate_modules():
                 try:
                     if _register(module):

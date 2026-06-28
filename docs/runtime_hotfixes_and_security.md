@@ -12,11 +12,11 @@ ultimately be migrated back into the normal source files.
 | File | Purpose |
 | --- | --- |
 | `sitecustomize.py` | Python auto-loaded runtime safeguards for pipeline stability. |
-| `usercustomize.py` | Python auto-loaded bridge for small optional hooks. |
 | `runtime_security.py` | Optional access token and origin checks. |
 | `runtime_settings_mask.py` | Optional masking for credentials returned by `/api/settings`. |
 | `scripts/ppt_studio_doctor.py` | Consolidated project health check entry point. |
-| `scripts/check_python_startup_hooks.py` | Self-check that Python startup imports the hook modules. |
+| `runtime_bootstrap.py` | Explicit installer for backend compatibility routes. |
+| `scripts/check_python_startup_hooks.py` | Self-check that normal server startup calls the explicit installer. |
 | `scripts/check_runtime_hotfixes.py` | Self-check for the main runtime safeguards. |
 | `scripts/check_runtime_settings_mask.py` | Self-check for settings credential masking. |
 | `scripts/check_smoke_artifacts.py` | Structural artifact checker after manual end-to-end smoke tests. |
@@ -133,9 +133,9 @@ PPT_STUDIO_MASK_SETTINGS_SECRETS=1 python scripts/check_runtime_settings_mask.py
 settings masking check, Step 1 cleanup safety preview, and optionally a run_dir
 artifact check.
 
-`check_python_startup_hooks.py` launches a child Python interpreter and confirms
-that `sitecustomize`, `runtime_security`, `usercustomize`, and
-`runtime_settings_mask` are imported during normal Python startup.
+`check_python_startup_hooks.py` confirms that normal server startup calls
+`runtime_bootstrap.install_for_server_module` and that the retired
+`usercustomize.py` hook is absent.
 
 `check_runtime_hotfixes.py` validates the main runtime pipeline safeguards.
 `check_runtime_settings_mask.py` validates settings credential masking and

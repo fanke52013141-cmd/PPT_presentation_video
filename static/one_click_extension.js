@@ -36,12 +36,6 @@
     return String(value ?? '').replace(/[&<>'"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[ch]));
   }
 
-  function pct(value) {
-    const number = Number(value || 0);
-    if (!Number.isFinite(number)) return '0.0%';
-    return `${(number * 100).toFixed(1)}%`;
-  }
-
   function rememberProjectId(projectId) {
     if (!projectId) return;
     STATE.projectId = String(projectId);
@@ -88,7 +82,7 @@
     const style = document.createElement('style');
     style.id = 'one-click-extension-style';
     style.textContent = `
-      #btn-one-click-generate { margin-left: .5rem; }
+      #btn-one-click-generate { width: calc(100% - 1.2rem); margin: .7rem .6rem 0; justify-content: center; }
       .one-click-modal { max-width: 1040px; width: min(1040px, 94vw); }
       .one-click-note { color: #555; font-size: .9rem; line-height: 1.55; }
       .one-click-note strong { color: #111; }
@@ -98,12 +92,6 @@
       .one-click-stage { border: 1.5px solid #111; border-radius: 12px; background: #fff; padding: .65rem; }
       .one-click-stage strong { display: flex; justify-content: space-between; gap: .5rem; }
       .one-click-stage small { display: block; color: #555; margin-top: .25rem; line-height: 1.4; }
-      .one-click-quality-report { border-top: 1px dashed #999; margin-top: .55rem; padding-top: .55rem; display: grid; gap: .45rem; }
-      .one-click-quality-card { border: 1px solid #111; border-radius: 10px; padding: .5rem; background: #fff8f0; }
-      .one-click-quality-card b { display: block; margin-bottom: .25rem; }
-      .one-click-quality-card code { font-size: .78rem; background: rgba(0,0,0,.06); border-radius: 5px; padding: .05rem .25rem; }
-      .one-click-quality-card small { color: #543; }
-      .one-click-quality-metrics { color: #555; margin-top: .2rem; }
       .one-click-pill { display: inline-flex; border: 1px solid #111; border-radius: 999px; padding: .1rem .45rem; font-size: .75rem; background: #fff; }
       .one-click-pill.running { background: #eaf2ff; }
       .one-click-pill.done { background: #e9ffe9; }
@@ -117,12 +105,12 @@
     if (document.getElementById('modal-one-click-generate')) return;
     const modal = document.createElement('div');
     modal.id = 'modal-one-click-generate';
-    modal.className = 'modal';
+    modal.className = 'modal-overlay';
     modal.style.display = 'none';
     modal.innerHTML = `
       <div class="modal-content one-click-modal">
         <h3 class="highlight-title">一键生成</h3>
-        <p class="one-click-note"><strong>一键生成会读取当前各步骤配置：</strong>Step 2 分镜设置、最终视频背景、Step 3 图片风格/参考图、Step 5 Mask 设置。自动流程会在 Step 3 图片生成后执行图片质量检查，检查白底、尺寸、边界和字幕安全区；不合格时会暂停在“检查 Step 3 图片质量”阶段并给出修复建议。它不会从创建项目弹窗定义分镜或图片风格。失败时暂停并保留阶段状态；修复后可重新运行自动生成，系统会复用已存在且未过期的产物。</p>
+        <p class="one-click-note"><strong>一键生成会读取当前各步骤配置：</strong>从已导入文章开始，自动完成文章转 Slide、Slide 转可视化、图片生成、AI Mask、旁白与音频以及最终视频合成。失败时会保留阶段状态，重新运行时复用未过期产物。</p>
         <div class="one-click-toolbar">
           <button id="btn-one-click-start" class="success" type="button">重新运行自动生成</button>
           <button id="btn-one-click-refresh" class="secondary" type="button">刷新状态</button>
@@ -144,50 +132,15 @@
   function ensureEntryButton() {
     ensureStyle();
     ensureModal();
-    const header = document.getElementById('project-info-header');
-    if (!header || document.getElementById('btn-one-click-generate')) return;
+    const stepper = document.querySelector('.sidebar .stepper');
+    if (!stepper || document.getElementById('btn-one-click-generate')) return;
     const button = document.createElement('button');
     button.id = 'btn-one-click-generate';
     button.className = 'success';
     button.type = 'button';
     button.textContent = '一键生成';
     button.addEventListener('click', () => openModal().catch(error => toast(`打开失败：${error.message}`, 6000)));
-    const backButton = document.getElementById('btn-back-home');
-    if (backButton?.parentElement === header) header.insertBefore(button, backButton);
-    else header.appendChild(button);
-  }
-
-  function slideIdFromQualityItem(item) {
-    return String(item?.path || '').split(/[\\/]/).slice(-2, -1)[0] || 'unknown slide';
-  }
-
-  function renderQualityReport(stage) {
-    const report = stage?.quality_report;
-    if (!report || !Array.isArray(report.results)) return '';
-    const failingItems = report.results.filter(item => Array.isArray(item.issue_details) && item.issue_details.length);
-    if (!failingItems.length) return '';
-    const cards = failingItems.map(item => {
-      const slideId = slideIdFromQualityItem(item);
-      const details = item.issue_details.map(detail => `
-        <div class="one-click-quality-card">
-          <b>${esc(slideId)} · ${esc(detail.title || detail.code || '图片质量问题')} <code>${esc(detail.code || '')}</code></b>
-          <small>${esc(detail.message || '')}</small>
-          ${detail.action ? `<small>建议：${esc(detail.action)}</small>` : ''}
-        </div>
-      `).join('');
-      return `
-        <div>
-          <small class="one-click-quality-metrics">${esc(slideId)}：非白区域 ${pct(item.non_white_ratio)}，边界非白 ${pct(item.border_non_white_ratio)}，字幕区占用 ${pct(item.subtitle_safe_non_white_ratio)}</small>
-          ${details}
-        </div>
-      `;
-    }).join('');
-    return `
-      <div class="one-click-quality-report">
-        <small>图片质量报告：${esc(report.failed_count || failingItems.length)}/${esc(report.checked_count || report.results.length)} 张需要处理</small>
-        ${cards}
-      </div>
-    `;
+    stepper.insertAdjacentElement('afterend', button);
   }
 
   function renderStatus(status) {
@@ -196,6 +149,18 @@
     if (!summary || !stages) return;
     const state = status?.status || 'idle';
     const current = status?.current_stage || '';
+    const activity = document.getElementById('project-activity-status');
+    if (activity) {
+      const currentStage = (status?.stages || []).find(stage => stage.id === current);
+      const message = currentStage?.title || currentStage?.message || '';
+      activity.innerHTML = state === 'running'
+        ? `<span class="button-spinner"></span><span>${esc(message || '一键生成运行中')}</span>`
+        : state === 'done'
+          ? '<span>一键生成已完成</span>'
+          : '';
+      activity.classList.toggle('active', state === 'running' || state === 'done');
+      activity.classList.toggle('running', state === 'running');
+    }
     summary.innerHTML = `
       <strong>状态：</strong><span class="one-click-pill ${esc(state)}">${esc(state)}</span>
       ${current ? `<span style="margin-left:.5rem;">当前阶段：${esc(current)}</span>` : ''}
@@ -208,9 +173,9 @@
       const warnings = Array.isArray(stage.warnings) && stage.warnings.length ? `<small>警告：${esc(stage.warnings.join(' / '))}</small>` : '';
       return `
         <article class="one-click-stage">
-          <strong>${esc(stage.title || stage.id)} <span class="one-click-pill ${esc(stage.status || 'pending')}">${esc(stage.status || 'pending')}</span></strong>
+          <strong>${esc(stage.title || stage.id)} <span>${stage.status === 'running' ? '<span class="button-spinner"></span>' : ''}<span class="one-click-pill ${esc(stage.status || 'pending')}">${esc(stage.status || 'pending')}</span></span></strong>
           <small>${esc(stage.message || '')}</small>
-          ${warnings}${errors}${renderQualityReport(stage)}
+          ${warnings}${errors}
         </article>
       `;
     }).join('');
@@ -234,7 +199,7 @@
   async function startOneClick() {
     const projectId = activeProjectId();
     if (!projectId) return toast('当前没有可识别的项目，请先进入项目工作区。', 5000);
-    const confirmed = window.confirm('将重新运行自动生成流程，并复用当前 Step 2/3/5 配置与已存在且未过期的产物。Step 3 图片生成后会先检查白底、尺寸、边界和字幕安全区；不合格时会暂停并给出修复建议。继续？');
+    const confirmed = window.confirm('将重新运行自动生成流程，并复用当前 Step 2/3/5 配置与已存在且未过期的产物。继续？');
     if (!confirmed) return;
     const button = document.getElementById('btn-one-click-start');
     const original = button?.textContent || '重新运行自动生成';

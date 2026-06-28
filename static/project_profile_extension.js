@@ -103,7 +103,6 @@
     return (items || []).map(item => `
       <div class="project-profile-card-option ${item.id === selectedId ? 'active' : ''}" data-profile-option="${esc(field)}" data-value="${esc(item.id)}">
         <strong>${esc(item.name)}</strong>
-        <span>${esc(item.description || '')}</span>
       </div>
     `).join('');
   }
@@ -117,8 +116,6 @@
     content.innerHTML = `
       <div class="project-profile-scroll">
         <h3 class="highlight-title" style="margin-bottom: .8rem;">新建视频项目</h3>
-        <p class="config-editor-note">这里只创建项目并选择生产模式。分镜风格在 Step 2 设置，图片风格、参考图和“以图定风格”在 Step 3 图片生成阶段设置。</p>
-        <div class="project-profile-warning"><strong>流程边界：</strong>创建项目不再配置分镜风格或图片风格，避免和 Step 2 / Step 3 的模板系统重复。</div>
         <section class="project-profile-section">
           <h4>1. 基础信息</h4>
           <label>项目名称</label>
@@ -131,11 +128,9 @@
         <section class="project-profile-section">
           <h4>2. 生产模式</h4>
           <div class="project-profile-mode-grid">${optionCards(templates.automation_modes || DEFAULT_AUTOMATION_MODES, 'automation_mode', 'manual_review')}</div>
-          <p class="project-profile-note">全自动模式只影响“一键生成”的调度偏好；实际分镜和图片风格仍由对应步骤的当前配置决定。</p>
         </section>
       </div>
       <div class="config-editor-actions">
-        <span class="project-profile-pill">轻量项目创建</span>
         <button id="btn-create-cancel" class="secondary" type="button">取消</button>
         <button id="btn-create-submit" class="success" type="button">创建项目</button>
       </div>
@@ -206,9 +201,20 @@
         form.append('content', article);
         await apiPost(`/api/projects/${encodeURIComponent(project.id)}/steps/1/import`, form);
       }
+      const shouldAutoStart = profile.automation_mode === 'auto' && !!article;
+      let autoStarted = false;
+      if (shouldAutoStart) {
+        if (button) button.textContent = '启动一键生成...';
+        try {
+          await apiPost(`/api/projects/${encodeURIComponent(project.id)}/one-click-generate`, {});
+          autoStarted = true;
+        } catch (error) {
+          toast(`项目已创建，但一键生成启动失败：${error.message}`, 7000);
+        }
+      }
       document.getElementById('modal-create').style.display = 'none';
       const modeLabel = profile.automation_mode === 'auto' ? '全自动模式' : '手动审核模式';
-      toast(`🎉 项目已创建（${modeLabel}）。分镜风格请到 Step 2 设置，图片风格请到 Step 3 设置。`, 4500);
+      toast(autoStarted ? `项目已创建（${modeLabel}），一键生成已启动。` : `项目已创建（${modeLabel}）。`, 4500);
       if (window.enterWorkspace) window.enterWorkspace(project.id);
       else location.reload();
     } finally {

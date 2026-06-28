@@ -19,17 +19,14 @@ let state = {
   subtitleSettings: null,
   subtitleFonts: [],
   storyboardTemplates: [],
-  imageStyleTemplates: [],
   step2PromptTemplates: [],
   selectedStoryboardTemplateId: '',
-  selectedImageStyleTemplateId: '',
   selectedStep2PromptTemplateId: '',
   activeStep2PromptMode: 'script',
   step2GenerationRequirement: '',
   storyboardAiRequirement: '',
-  imageStyleAiRequirement: '',
   pendingStoryboardAiDraft: null,
-  pendingImageStyleAiDraft: null,
+  articleInputMode: 'article',
   storyboardRoles: {
     title: { label: '主标题' },
     subtitle: { label: '副标题' },
@@ -341,6 +338,11 @@ function initGlobalEvents() {
   // ================= 步骤 1 事件 =================
   document.getElementById('step1-btn-submit')?.addEventListener('click', () => submitStep1());
   document.getElementById('step1-btn-save-edit')?.addEventListener('click', () => saveStep1Edit());
+  document.querySelectorAll('[data-step1-mode]').forEach(button => {
+    button.addEventListener('click', () => setStep1Mode(button.dataset.step1Mode));
+  });
+  document.getElementById('step1-btn-generate-article')?.addEventListener('click', () => generateStep1Article());
+  document.getElementById('step1-btn-system-content')?.addEventListener('click', () => openArticleSystemContentModal());
 
   // ================= 步骤 2 事件 =================
   document.getElementById('step2-btn-generate')?.addEventListener('click', () => generateStep2Contract());
@@ -366,27 +368,6 @@ function initGlobalEvents() {
   document.getElementById('step3-batch-upload')?.addEventListener('change', (e) => handleStep3BatchUpload(e));
   document.getElementById('step3-btn-batch-generate')?.addEventListener('click', () => generateAllStep3Images());
   document.getElementById('step3-btn-copy-prompts')?.addEventListener('click', () => copyStep2Prompts());
-  document.getElementById('step3-btn-style')?.addEventListener('click', () => openImageStyleModal());
-  document.getElementById('step3-video-background-color')?.addEventListener('change', (event) => {
-    saveStep3VideoBackground(event.target.value);
-  });
-  document.getElementById('step3-video-background-text')?.addEventListener('change', (event) => {
-    saveStep3VideoBackground(event.target.value);
-  });
-  document.getElementById('step3-video-background-text')?.addEventListener('input', (event) => {
-    const normalized = normalizeStep3BackgroundColor(event.target.value);
-    const colorInput = document.getElementById('step3-video-background-color');
-    if (normalized && colorInput) colorInput.value = normalized;
-  });
-  document.getElementById('step3-video-background-text')?.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      saveStep3VideoBackground(event.target.value);
-    }
-  });
-  document.getElementById('step3-video-background-apply')?.addEventListener('click', () => {
-    saveStep3VideoBackground(document.getElementById('step3-video-background-text')?.value);
-  });
   document.getElementById('step3-btn-confirm')?.addEventListener('click', () => confirmStep3Images());
 
   // ================= 步骤 5 事件 =================
@@ -431,25 +412,6 @@ function initGlobalEvents() {
     'step2-visual-output-example'
   ].forEach(id => {
     document.getElementById(id)?.addEventListener('input', () => {});
-  });
-  document.getElementById('btn-image-style-cancel')?.addEventListener('click', () => closeImageStyleModal());
-  document.getElementById('btn-image-style-save')?.addEventListener('click', () => saveImageStyle());
-  document.getElementById('btn-image-style-template-load')?.addEventListener('click', () => loadSelectedImageStyleTemplate());
-  document.getElementById('btn-image-style-template-save')?.addEventListener('click', () => saveImageStyleTemplate());
-  document.getElementById('btn-image-style-template-delete')?.addEventListener('click', () => deleteSelectedImageStyleTemplate());
-  document.getElementById('image-style-template-select')?.addEventListener('change', event => {
-    state.selectedImageStyleTemplateId = event.target.value || '';
-    updateImageStyleTemplateDeleteButton();
-    if (event.target.value) loadSelectedImageStyleTemplate();
-  });
-  ['template'].forEach(kind => {
-    document.getElementById(`image-style-${kind}-file`)?.addEventListener('change', event => {
-      const file = event.target.files?.[0];
-      if (!file) return;
-      const preview = document.getElementById(`image-style-${kind}-preview`);
-      preview.src = URL.createObjectURL(file);
-      preview.style.display = 'block';
-    });
   });
   document.getElementById('btn-subtitle-settings-close')?.addEventListener('click', () => closeSubtitleSettingsModal());
   document.getElementById('btn-subtitle-settings-save')?.addEventListener('click', () => saveSubtitleSettings());
@@ -754,9 +716,6 @@ async function importGlobalSettings(file) {
     () => {
       API.post('/api/config/import', payload).then(async () => {
         await loadSettings();
-        if (document.getElementById('modal-image-style')?.style.display === 'flex') {
-          await openImageStyleModal();
-        }
         showToast('配置已导入并重新加载。', 5000);
       }).catch(error => {
         showToast(`导入失败：${error.message}`, 6000);
@@ -1048,6 +1007,90 @@ async function loadStep1Data() {
     const saveEditBtn = document.getElementById('step1-btn-save-edit');
     if (saveEditBtn) saveEditBtn.style.display = 'none';
   }
+  setStep1Mode('article');
+}
+
+function setStep1Mode(mode) {
+  const normalized = mode === 'topic' ? 'topic' : 'article';
+  state.articleInputMode = normalized;
+  document.querySelectorAll('[data-step1-mode]').forEach(button => {
+    const active = button.dataset.step1Mode === normalized;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  const topicPanel = document.getElementById('step1-topic-panel');
+  if (topicPanel) topicPanel.style.display = normalized === 'topic' ? 'block' : 'none';
+}
+
+function ensureArticleSystemContentModal() {
+  let modal = document.getElementById('modal-article-system-content');
+  if (modal) return modal;
+  modal = document.createElement('div');
+  modal.id = 'modal-article-system-content';
+  modal.className = 'modal-overlay';
+  modal.style.display = 'none';
+  modal.innerHTML = `
+    <div class="modal-content config-editor-modal" style="max-width:820px;width:min(820px,94vw)">
+      <div class="config-editor-scroll">
+        <h3 class="highlight-title">话题生成文章 · System Content</h3>
+        <textarea id="article-generation-system-content" rows="18" spellcheck="false"></textarea>
+      </div>
+      <div class="config-editor-actions">
+        <button id="btn-article-system-cancel" class="secondary" type="button">取消</button>
+        <button id="btn-article-system-save" class="success" type="button">保存</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', event => {
+    if (event.target === modal) modal.style.display = 'none';
+  });
+  modal.querySelector('#btn-article-system-cancel').addEventListener('click', () => {
+    modal.style.display = 'none';
+  });
+  modal.querySelector('#btn-article-system-save').addEventListener('click', async () => {
+    const button = modal.querySelector('#btn-article-system-save');
+    const systemContent = modal.querySelector('#article-generation-system-content').value.trim();
+    if (!systemContent) return showToast('System Content 不能为空');
+    button.disabled = true;
+    try {
+      await API.put('/api/settings/article-generation', { system_content: systemContent });
+      modal.style.display = 'none';
+      showToast('文章生成 System Content 已保存');
+    } finally {
+      button.disabled = false;
+    }
+  });
+  return modal;
+}
+
+async function openArticleSystemContentModal() {
+  const modal = ensureArticleSystemContentModal();
+  modal.style.display = 'flex';
+  const textarea = modal.querySelector('#article-generation-system-content');
+  textarea.value = '加载中...';
+  const result = await API.get('/api/settings/article-generation');
+  textarea.value = result.system_content || '';
+}
+
+async function generateStep1Article() {
+  const topic = document.getElementById('step1-topic-input')?.value.trim() || '';
+  if (!topic) return showToast('请先输入一个话题');
+  const button = document.getElementById('step1-btn-generate-article');
+  const original = button.textContent;
+  button.disabled = true;
+  button.innerHTML = '<span class="button-spinner"></span> 生成中...';
+  try {
+    const result = await API.post(
+      `/api/projects/${state.currentProject.id}/steps/1/generate-article`,
+      { topic },
+    );
+    document.getElementById('step1-article-input').value = result.content || '';
+    document.getElementById('step1-status-hint').innerText = '文章已生成，可编辑后保存';
+    showToast('AI 文章已生成');
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
 }
 
 async function submitStep1() {
@@ -1250,10 +1293,12 @@ function renderStep2Workspace() {
     // 渲染 visual_groups 属性编辑
     const titleInput = document.getElementById('step2-slide-title-input');
     const subtitleInput = document.getElementById('step2-slide-subtitle-input');
+    const subtitleField = document.getElementById('step2-subtitle-field');
     const bodyInput = document.getElementById('step2-slide-body-input');
     const narrationInput = document.getElementById('step2-slide-narration-input');
     if (titleInput) titleInput.value = slide.main_title || '';
     if (subtitleInput) subtitleInput.value = slide.subtitle || '';
+    if (subtitleField) subtitleField.style.display = String(slide.subtitle || '').trim() ? '' : 'none';
     if (bodyInput) bodyInput.value = step2BodyContentText(slide);
     if (narrationInput) narrationInput.value = step2NarrationText(slide);
     [titleInput, subtitleInput, bodyInput, narrationInput].forEach(input => {
@@ -1481,12 +1526,17 @@ function syncStep2SimpleFieldsToInternalGroups(slide) {
     titleGroup.visual_type = 'text';
   }
   const subtitleGroup = slide.visual_groups.find(group => group?.role === 'subtitle');
-  if (subtitleGroup) {
+  if (subtitleGroup && subtitle) {
     subtitleGroup.visible_text = subtitle;
     subtitleGroup.display_text = subtitle;
     subtitleGroup.visual_anchor = subtitle;
     subtitleGroup.mask_target = subtitle;
     subtitleGroup.visual_type = 'text';
+  } else if (subtitleGroup && !subtitle) {
+    slide.visual_groups = slide.visual_groups.filter(group => group !== subtitleGroup);
+    if (Array.isArray(slide.narration_beats)) {
+      slide.narration_beats = slide.narration_beats.filter(beat => beat?.group_id !== subtitleGroup.id);
+    }
   }
 }
 
@@ -2711,7 +2761,7 @@ async function openStoryboardRulesModal(mode = 'script') {
 }
 
 function step2PromptModeLabel(mode = state.activeStep2PromptMode) {
-  return mode === 'visual' ? 'slide 2visualization' : '文章 2slide';
+  return mode === 'visual' ? 'Slide 转可视化' : '文章转 Slide';
 }
 
 function renderStep2PromptEditor(promptRes = {}) {
@@ -2880,163 +2930,6 @@ function closeStoryboardRulesModal() {
   document.getElementById('modal-storyboard-rules').style.display = 'none';
 }
 
-async function openImageStyleModal() {
-  const [res, templateRes] = await Promise.all([
-    API.get('/api/image-style'),
-    API.get('/api/image-style/templates'),
-  ]);
-  document.getElementById('image-style-input').value = res.style_text || '';
-  setImageStyleReferencePreviews(res.references || {});
-  renderImageStyleTemplateOptions(templateRes.templates || []);
-  state.selectedImageStyleTemplateId = '';
-  document.getElementById('image-style-template-name').value = '';
-  ['template'].forEach(kind => {
-    document.getElementById(`image-style-${kind}-file`).value = '';
-  });
-  document.getElementById('modal-image-style').style.display = 'flex';
-}
-
-function closeImageStyleModal() {
-  state.selectedImageStyleTemplateId = '';
-  document.getElementById('modal-image-style').style.display = 'none';
-}
-
-function renderImageStyleTemplateOptions(templates, selectedId = '') {
-  state.imageStyleTemplates = Array.isArray(templates) ? templates : [];
-  const select = document.getElementById('image-style-template-select');
-  select.innerHTML = [
-    '<option value="">当前风格配置</option>',
-    ...state.imageStyleTemplates.map(template =>
-      `<option value="${escHtml(template.id)}">${escHtml(template.name)}${template.built_in ? ' · 内置' : ''}</option>`
-    ),
-  ].join('');
-  select.value = selectedId;
-  state.selectedImageStyleTemplateId = selectedId || '';
-  updateImageStyleTemplateDeleteButton();
-}
-
-function setImageStyleReferencePreviews(references = {}) {
-  ['template'].forEach(kind => {
-    const preview = document.getElementById(`image-style-${kind}-preview`);
-    const reference = references?.[kind];
-    preview.src = reference?.exists ? reference.url : '';
-    preview.style.display = reference?.exists ? 'block' : 'none';
-  });
-}
-
-function selectedImageStyleTemplate() {
-  const templateId = document.getElementById('image-style-template-select')?.value || state.selectedImageStyleTemplateId || '';
-  return state.imageStyleTemplates.find(item => item.id === templateId) || null;
-}
-
-function updateImageStyleTemplateDeleteButton() {
-  const button = document.getElementById('btn-image-style-template-delete');
-  if (!button) return;
-  const template = selectedImageStyleTemplate();
-  button.disabled = !template || !!template.built_in;
-  button.title = template?.built_in ? '内置模板不能删除' : '';
-}
-
-async function loadSelectedImageStyleTemplate() {
-  const templateId = document.getElementById('image-style-template-select').value;
-  if (!templateId) {
-    showToast('请选择一个图片风格模板。');
-    return;
-  }
-  const res = await API.get(`/api/image-style/templates/${encodeURIComponent(templateId)}`);
-  const template = res.template;
-  document.getElementById('image-style-input').value = template.style_text || '';
-  setImageStyleReferencePreviews(template.references || {});
-  ['template'].forEach(kind => {
-    document.getElementById(`image-style-${kind}-file`).value = '';
-  });
-  state.selectedImageStyleTemplateId = template.id;
-  document.getElementById('image-style-template-name').value = template.built_in ? '' : template.name;
-  updateImageStyleTemplateDeleteButton();
-  showToast(`已载入图片风格模板“${template.name}”，点击底部保存后应用。`);
-}
-
-function currentImageStylePayload() {
-  return { style_text: document.getElementById('image-style-input').value.trim() };
-}
-
-async function uploadImageStyleReference(kind) {
-  const input = document.getElementById(`image-style-${kind}-file`);
-  const file = input?.files?.[0];
-  if (!file) return null;
-  const formData = new FormData();
-  formData.append('file', file);
-  return API.post(`/api/image-style/reference/${kind}`, formData);
-}
-
-async function persistImageStyle(options = {}) {
-  const res = await API.put('/api/image-style', currentImageStylePayload());
-  if (!res.success) return;
-  document.getElementById('image-style-input').value = res.style_text || '';
-  if (state.selectedImageStyleTemplateId) {
-    await API.post(
-      `/api/image-style/templates/${encodeURIComponent(state.selectedImageStyleTemplateId)}/apply-references`,
-      {},
-    );
-  }
-  await Promise.all([
-    uploadImageStyleReference('template'),
-  ]);
-  ['template'].forEach(kind => {
-    document.getElementById(`image-style-${kind}-file`).value = '';
-  });
-  await refreshStep3Prompts({ updateOpenEditor: state.currentStep === 3 });
-  if (options.close !== false) {
-    closeImageStyleModal();
-  } else {
-    const current = await API.get('/api/image-style');
-    setImageStyleReferencePreviews(current.references || {});
-  }
-  return res;
-}
-
-async function saveImageStyle() {
-  const res = await persistImageStyle();
-  if (res) showToast('图片风格与参考图已保存，生图提示词已刷新');
-}
-
-async function saveImageStyleTemplate() {
-  const name = document.getElementById('image-style-template-name').value.trim();
-  if (!name) {
-    showToast('请先填写新模板名称。');
-    return;
-  }
-  const persisted = await persistImageStyle({ close: false });
-  if (!persisted) return;
-  const res = await API.post('/api/image-style/templates', { name });
-  renderImageStyleTemplateOptions(res.templates || [], res.template?.id || '');
-  state.selectedImageStyleTemplateId = res.template?.id || '';
-  document.getElementById('image-style-template-name').value = res.template?.name || name;
-  setImageStyleReferencePreviews(res.template?.references || {});
-  showToast(`图片风格模板“${res.template?.name || name}”已保存，包含一张模板参考图。`);
-}
-
-async function deleteSelectedImageStyleTemplate() {
-  const template = selectedImageStyleTemplate();
-  if (!template) {
-    showToast('请选择一个要删除的图片风格模板。');
-    return;
-  }
-  if (template.built_in) {
-    showToast('内置图片风格模板不能删除。');
-    return;
-  }
-  const firstConfirm = window.confirm(`确定删除图片风格模板“${template.name}”吗？`);
-  if (!firstConfirm) return;
-  const secondConfirm = window.confirm(`请再次确认：删除“${template.name}”后无法恢复。`);
-  if (!secondConfirm) return;
-  const res = await API.delete(`/api/image-style/templates/${encodeURIComponent(template.id)}`);
-  renderImageStyleTemplateOptions(res.templates || [], '');
-  state.selectedImageStyleTemplateId = '';
-  document.getElementById('image-style-template-name').value = '';
-  showToast(`图片风格模板“${template.name}”已删除。`);
-}
-
 const DEFAULT_SUBTITLE_SETTINGS = {
   font_key: 'noto_sans_sc',
   font_family: 'Noto Sans SC',
@@ -3181,33 +3074,9 @@ function renderStep5Workspace() {
   manifestData.slides.forEach((slide, idx) => {
     const btn = document.createElement('div');
     const isCurrent = idx === state.activeSlideIndex;
-    const isSemanticRunning = state.canvasState.semanticLoading && isCurrent;
-    const isCompleted = slide.status === 'completed';
-    
-    let statusClass = '';
-    let statusText = '待标注';
-    let statusColor = '#888';
-    
-    if (isSemanticRunning) {
-      statusClass = 'active';
-      statusText = '分块中';
-      statusColor = '#7b2cbf';
-    } else if (isCurrent) {
-      statusClass = 'active';
-      statusText = '当前页';
-      statusColor = '#d29a00';
-    } else if (isCompleted) {
-      statusClass = 'completed';
-      statusText = '已标注';
-      statusColor = '#4caf50';
-    }
-    
-    btn.className = `step5-slide-btn ${statusClass}`;
+    btn.className = `step5-slide-btn${isCurrent ? ' active' : ''}`;
     btn.innerHTML = `
       <div style="font-size: 0.85rem; font-weight: bold; color: var(--ink-color);">${slide.slide_id}</div>
-      <div style="font-size: 0.65rem; margin-top: 0.15rem; color: ${statusColor}; font-weight: 500;">
-        ${statusText === '已标注' ? '✓ 已标注' : statusText === '分块中' ? '… 分块中' : statusText === '标注中' ? '✍ 标注中' : '待标注'}
-      </div>
     `;
     
     btn.addEventListener('click', () => {
@@ -3294,7 +3163,7 @@ function renderStep5BoxesForm() {
   if (!state.canvasState.boxes.length) {
     container.innerHTML = `
       <div class="sketch-dashed mask-empty-state">
-        当前页没有语义块。保存后将按整页展示处理；如果需要逐一呈现，请新建语块、选择旁白片段，再用同色画笔涂抹区域。
+        当前页暂未生成 AI 语块关联，请重新运行 AI 标注。
       </div>
     `;
     return;
@@ -3323,17 +3192,6 @@ function renderStep5BoxesForm() {
       <div class="mask-block-head">
         <span class="mask-block-number">${idx + 1}</span>
         <span class="mask-block-caption">语块 ${idx + 1}</span>
-        <div class="mask-block-actions">
-          <button class="mask-icon-btn${isPaintTarget ? ' active' : ''}" type="button" data-action="paint" title="涂抹这个语块的 Mask 区域" aria-label="涂抹区域">
-            <svg class="icon" viewBox="0 0 24 24"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
-          </button>
-          <button class="mask-icon-btn${isEraseTarget ? ' active' : ''}" type="button" data-action="erase" title="擦除这个语块的涂抹区域" aria-label="擦除区域">
-            <svg class="icon" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"></path><path d="M22 21H7"></path><path d="m5 11 9 9"></path></svg>
-          </button>
-          <button class="mask-icon-btn mask-delete-btn" type="button" data-action="delete" title="删除语块" aria-label="删除语块">
-            <svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path></svg>
-          </button>
-        </div>
       </div>
       <div class="mask-visual-card">
         <span class="mask-visual-label">画面描述 · ${escHtml(elementId)} · ${escHtml(box.role || 'content_body')} · ${escHtml(visualType)}</span>
@@ -3349,28 +3207,8 @@ function renderStep5BoxesForm() {
       selectStep5MaskBox(idx);
     });
 
-    item.querySelector('[data-action="paint"]').addEventListener('click', (e) => {
-      e.stopPropagation();
-      startMaskPaint(idx);
-    });
-
-    item.querySelector('[data-action="erase"]').addEventListener('click', (e) => {
-      e.stopPropagation();
-      startMaskErase(idx);
-    });
-
-    item.querySelector('[data-action="delete"]').addEventListener('click', (e) => {
-      e.stopPropagation();
-      deleteMaskBox(idx);
-    });
-
     container.appendChild(item);
     
-    if (isSelected) {
-      setTimeout(() => {
-        item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }, 50);
-    }
   });
 }
 
@@ -3398,7 +3236,7 @@ function renderStep5NarrationPanel() {
         const current = owned && ownerIdx === state.canvasState.selectedBoxIndex;
         const color = owned ? getBoxColor(state.canvasState.boxes[ownerIdx], ownerIdx) : '#777777';
         return `
-          <button class="step5-narration-fragment${owned ? ' linked' : ''}${current ? ' current' : ''}" type="button" data-fragment-id="${escHtml(fragment.id)}" style="--fragment-color:${color};">
+          <button class="step5-narration-fragment${owned ? ' linked' : ''}${current ? ' current' : ''}" type="button" data-fragment-id="${escHtml(fragment.id)}" style="--fragment-color:${color};" disabled>
             <span class="step5-narration-fragment-index">${fragment.order}</span>
             ${escHtml(fragment.text)}
           </button>
@@ -3406,9 +3244,6 @@ function renderStep5NarrationPanel() {
       }).join('')}
     </div>
   `;
-  panel.querySelectorAll('.step5-narration-fragment').forEach(btn => {
-    btn.addEventListener('click', () => toggleNarrationFragmentForSelectedBox(btn.dataset.fragmentId));
-  });
 }
 
 function toggleNarrationFragmentForSelectedBox(fragmentId) {
@@ -4359,6 +4194,35 @@ function saveStep5CurrentState() {
   syncMaskBoxesToSlide(slide, state.canvasState.boxes);
 }
 
+function boxHasAiPaint(box) {
+  const manualMask = box?.manual_mask;
+  const strokes = Array.isArray(manualMask?.strokes) ? manualMask.strokes : [];
+  if (!strokes.some(stroke => stroke && !stroke.eraser && stroke.mode !== 'erase' && Array.isArray(stroke.points) && stroke.points.length)) return false;
+  return String(manualMask?.source || '').startsWith('ai_auto_mask')
+    || String(box?.review_status || '') === 'ai_matched_needs_review'
+    || !!box?.auto_mask
+    || !!box?.ai_match;
+}
+
+function focusFirstAiMaskResult() {
+  if (!manifestData?.slides?.length) return false;
+  for (let slideIndex = 0; slideIndex < manifestData.slides.length; slideIndex += 1) {
+    const boxes = getSlideMaskBoxes(manifestData.slides[slideIndex]);
+    const boxIndex = boxes.findIndex(boxHasAiPaint);
+    if (boxIndex < 0) continue;
+    state.activeSlideIndex = slideIndex;
+    renderStep5Workspace();
+    setTimeout(() => {
+      state.canvasState.selectedBoxIndex = boxIndex;
+      selectStep5MaskBox(boxIndex, false);
+      redrawCanvas({ updateDiagnostics: false });
+    }, 80);
+    return true;
+  }
+  redrawCanvas({ updateDiagnostics: false });
+  return false;
+}
+
 function updateStep5DraftStatus(text) {
   const el = document.getElementById('step5-draft-status');
   if (el) el.innerText = text || '';
@@ -4401,6 +4265,23 @@ async function saveStep5Draft() {
       state.step5AutoSavePromise = null;
     }
   }
+}
+
+async function flushStep5Draft() {
+  if (state.step5AutoSaveTimer) {
+    clearTimeout(state.step5AutoSaveTimer);
+    state.step5AutoSaveTimer = null;
+  }
+  if (state.step5AutoSavePromise) {
+    try {
+      await state.step5AutoSavePromise;
+    } catch (error) {
+      // Save the newest editor state below.
+    }
+  }
+  if (!manifestData?.slides?.length) return { success: false, reason: 'no_step5_manifest' };
+  saveStep5CurrentState();
+  return saveStep5Draft();
 }
 
 async function runStep5SemanticBlocks() {
@@ -4470,7 +4351,8 @@ async function saveStep5Masks() {
     manifestData.slides.forEach((slide, index) => {
       slide.status = previousStatuses[index] || 'pending';
     });
-    failureMessage = '确认失败，已恢复按钮，可检查错误后重试。';
+    failureMessage = `确认失败：${e.message || '请检查 Mask 数据后重试'}`;
+    showToast(failureMessage, 7000);
     renderStep5Workspace();
   } finally {
     state.canvasState.confirmingMasks = false;
@@ -4801,35 +4683,6 @@ async function runStep7TTS() {
   synthButton.disabled = true;
   saveAndTtsButton.disabled = true;
   confirmButton.disabled = true;
-  showToast('🔊 正在调用 MiniMax TTS 服务并绑定 Reveal 关键帧时间轴...');
-  
-  try {
-    const res = await API.post(`/api/projects/${state.currentProject.id}/steps/7/synthesize`);
-    if (res.success) {
-      showToast('🎉 音频生成完成，请逐页试听并确认。');
-      await refreshCurrentProjectStatus(6);
-      await loadStep7Data();
-      return true;
-    }
-  } catch (e) {
-    return false;
-  } finally {
-    loading.style.display = 'none';
-    synthButton.disabled = false;
-    saveAndTtsButton.disabled = false;
-  }
-  return false;
-}
-
-async function runStep7TTS() {
-  const loading = document.getElementById('step7-loading');
-  const synthButton = document.getElementById('step7-btn-synthesize');
-  const saveAndTtsButton = document.getElementById('step6-btn-save-and-tts');
-  const confirmButton = document.getElementById('step6-btn-audio-confirm-next');
-  loading.style.display = 'inline-flex';
-  synthButton.disabled = true;
-  saveAndTtsButton.disabled = true;
-  confirmButton.disabled = true;
   showToast('🔊 正在生成音频；已有且未过期的页面会自动跳过，只补缺失页面...');
 
   try {
@@ -4851,6 +4704,7 @@ async function runStep7TTS() {
     await loadStep7Data();
     return false;
   } catch (e) {
+    showToast(`音频生成失败：${e.message}`, 7000);
     return false;
   } finally {
     loading.style.display = 'none';
@@ -4877,6 +4731,7 @@ async function confirmStep7Audio() {
       return true;
     }
   } catch (e) {
+    showToast(`音频确认失败：${e.message}`, 7000);
     return false;
   } finally {
     confirmButton.disabled = false;
@@ -4981,3 +4836,13 @@ function deleteStep8Video(filename) {
 }
 
 window.deleteStep8Video = deleteStep8Video;
+window.loadStep5Data = loadStep5Data;
+window.renderStep5Workspace = renderStep5Workspace;
+window.saveStep5Draft = saveStep5Draft;
+window.saveStep5CurrentState = saveStep5CurrentState;
+window.refreshStep3Prompts = refreshStep3Prompts;
+window.focusFirstAiMaskResult = focusFirstAiMaskResult;
+window.PPTStudio = Object.assign(window.PPTStudio || {}, {
+  getCurrentProject: () => state.currentProject,
+  flushStep5Draft,
+});

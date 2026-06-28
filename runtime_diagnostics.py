@@ -1,7 +1,7 @@
 """Runtime diagnostics endpoint.
 
-This read-only route helps local operators verify that additive runtime bridges,
-critical API routes, and middleware-only UI bridges are installed after startup.
+This read-only route helps local operators verify that runtime API bridges and
+critical routes are installed after startup.
 It does not expose secrets or project data.
 """
 
@@ -12,23 +12,12 @@ import os
 import sys
 import threading
 import time
-from pathlib import Path
 from types import ModuleType
 from typing import Any
 
 PATCH_MARKER = "__ppt_runtime_diagnostics_patch__"
 INSTALL_TIMEOUT_SEC = 120.0
 POLL_INTERVAL_SEC = 0.1
-
-MIDDLEWARE_BRIDGE_MARKERS = {
-    "runtime_ai_mask_ui_cache_buster": "__ppt_ai_mask_ui_cache_buster_patch__",
-    "runtime_one_click_ui_cache_buster": "__ppt_one_click_ui_cache_buster_patch__",
-    "runtime_step5_flush_bridge": "__ppt_step5_flush_bridge_patch__",
-    "runtime_step2_storyboard_settings": "__ppt_step2_storyboard_settings_patch__",
-    "runtime_project_style_reference_manager": "__ppt_project_style_reference_manager_inject_patch__",
-    "runtime_visual_draft_quality_ui": "__ppt_visual_draft_quality_ui_patch__",
-}
-
 
 def _runtime_bootstrap() -> ModuleType | None:
     try:
@@ -60,48 +49,6 @@ def _module_status(module_names: list[str]) -> list[dict[str, Any]]:
     return statuses
 
 
-def _middleware_marker_status(app: Any) -> dict[str, bool]:
-    return {name: bool(getattr(app.state, marker, False)) for name, marker in MIDDLEWARE_BRIDGE_MARKERS.items()}
-
-
-def _script_versions() -> dict[str, Any]:
-    versions: dict[str, Any] = {}
-    for module_name, attrs in {
-        "runtime_step5_flush_bridge": ["APP_SCRIPT_VERSION", "AI_MASK_SCRIPT_VERSION"],
-        "runtime_ai_mask_ui_cache_buster": ["SCRIPT_VERSION"],
-        "runtime_one_click_ui_cache_buster": ["SCRIPT_VERSION"],
-        "runtime_visual_draft_quality_ui": ["SCRIPT_VERSION"],
-    }.items():
-        try:
-            module = importlib.import_module(module_name)
-            versions[module_name] = {attr: getattr(module, attr, None) for attr in attrs}
-        except Exception as exc:
-            versions[module_name] = {"error": f"{type(exc).__name__}: {exc}"}
-    return versions
-
-
-def _step5_flush_migration_status(server_module: ModuleType) -> dict[str, Any]:
-    server_file = Path(str(getattr(server_module, "__file__", ""))).resolve()
-    root = server_file.parent if server_file.name else Path.cwd()
-    app_js = root / "static" / "app.js"
-    status: dict[str, Any] = {"app_js": str(app_js), "mode": "unknown", "native": False, "fallback_bridge_loaded": False}
-    try:
-        content = app_js.read_text(encoding="utf-8")
-    except Exception as exc:
-        status["error"] = f"{type(exc).__name__}: {exc}"
-        return status
-    native = "flushStep5Draft" in content and "window.PPTStudio" in content
-    status["native"] = native
-    try:
-        bridge = importlib.import_module("runtime_step5_flush_bridge")
-        status["fallback_bridge_loaded"] = True
-        status["bridge_would_inject"] = not bridge.app_has_native_step5_flush(content)
-    except Exception as exc:
-        status["fallback_bridge_error"] = f"{type(exc).__name__}: {exc}"
-    status["mode"] = "native_app_js" if native else "fallback_bridge"
-    return status
-
-
 def _diagnostics_payload(server_module: ModuleType) -> dict[str, Any]:
     app = server_module.app
     bootstrap = _runtime_bootstrap()
@@ -117,9 +64,6 @@ def _diagnostics_payload(server_module: ModuleType) -> dict[str, Any]:
         "missing_routes": missing_routes,
         "route_count": len(getattr(app, "routes", []) or []),
         "routes": routes,
-        "middleware_markers": _middleware_marker_status(app),
-        "script_versions": _script_versions(),
-        "step5_flush_migration": _step5_flush_migration_status(server_module),
     }
 
 

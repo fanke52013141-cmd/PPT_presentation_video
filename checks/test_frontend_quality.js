@@ -5,6 +5,10 @@ const root = path.resolve(__dirname, '..');
 const app = fs.readFileSync(path.join(root, 'static', 'app.js'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'static', 'index.html'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'static', 'style.css'), 'utf8');
+const aiMask = fs.readFileSync(path.join(root, 'static', 'ai_mask_extension.js'), 'utf8');
+const background = fs.readFileSync(path.join(root, 'static', 'storyboard_background_extension.js'), 'utf8');
+const styleManager = fs.readFileSync(path.join(root, 'static', 'style_reference_manager_extension.js'), 'utf8');
+const oneClick = fs.readFileSync(path.join(root, 'static', 'one_click_extension.js'), 'utf8');
 
 if (!css.includes('#toast-container')) throw new Error('toast container layout missing');
 if (!css.includes('left: 0.85rem')) throw new Error('toasts are not anchored in the left navigation area');
@@ -49,11 +53,11 @@ if (app.includes("group.id === 'body_group_02'")) {
   throw new Error('legacy hard-coded visual group filtering is still present');
 }
 if (!html.includes('step3-btn-batch-generate')) throw new Error('step 3 batch image generation action missing');
-if (!html.includes('step3-video-background-color') || !html.includes('step3-video-background-text')) {
-  throw new Error('project video background color controls missing');
+if (!background.includes('step3-btn-background-settings')) throw new Error('Step 3 final video background entry missing');
+if (html.includes('step3-video-background-apply') || background.includes('step3-video-background-apply')) {
+  throw new Error('obsolete video background apply button is still present');
 }
-if (!html.includes('step3-video-background-apply')) throw new Error('video background apply button missing');
-if (!app.includes('saveStep3VideoBackground')) throw new Error('video background color save handler missing');
+if (!background.includes('铺满画面') || !background.includes('完整显示')) throw new Error('video background fit modes missing');
 if (!app.includes('hexToRgba(color, isSelected ? 0.46 : 0.34)')) {
   throw new Error('mask overlay colors are too faint');
 }
@@ -82,13 +86,6 @@ for (const animation of ['wipe_left_to_right', 'scratch_reveal', 'sticker_pop', 
 }
 if (!html.includes('step5-btn-subtitle-settings') || !html.includes('modal-subtitle-settings')) {
   throw new Error('subtitle settings entry or modal is missing');
-}
-for (const requiredImageStyleToken of [
-  'image-style-template-select',
-  'image-style-input',
-  'image-style-template-file',
-]) {
-  if (!html.includes(requiredImageStyleToken)) throw new Error(`direct image style prompt UI missing: ${requiredImageStyleToken}`);
 }
 for (const removedImageStyleToken of [
   'btn-image-style-ai-draft',
@@ -127,24 +124,11 @@ for (const removedNarrationPolicyToken of [
     throw new Error(`legacy narration policy UI still present: ${removedNarrationPolicyToken}`);
   }
 }
-if (!html.includes('id="step5-brush-size"') || !html.includes('value="170"')) {
-  throw new Error('brush size control or 170 default missing');
+if (html.includes('id="step5-brush-size"') || html.includes('id="step5-eraser-size"') || html.includes('step5-btn-new-block')) {
+  throw new Error('manual Mask controls are still visible');
 }
-if (!html.includes('id="step5-eraser-size"') || !html.includes('value="120"')) {
-  throw new Error('separate eraser size control or 120 default missing');
-}
-if (!app.includes('getActiveMaskToolSize')) throw new Error('brush and eraser sizes are not selected by tool');
-if (!css.includes('box-sizing: border-box') || !css.includes('.step5-brush-cursor')) {
-  throw new Error('mask cursor outer diameter is not aligned to the stroke diameter');
-}
-if (!app.includes('clientX - wrapperRect.left - borderLeft')) {
-  throw new Error('mask cursor position does not compensate for the canvas wrapper border');
-}
-if (!app.includes("newCanvas.addEventListener('pointerdown'")) {
-  throw new Error('mask editor does not use pointer capture capable input events');
-}
-if (!app.includes('pointerWithinMaskToolReach')) {
-  throw new Error('mask editor has no outside-edge interaction allowance');
+if (!aiMask.includes('maybeAutoAnnotate') || !aiMask.includes('multimodal') && !aiMask.includes('AI 正在关联')) {
+  throw new Error('automatic AI Mask flow is missing');
 }
 if (!app.includes('rebuildStep5SourceCache')) throw new Error('source image cache missing');
 if (!app.includes('ctx.drawImage(step5SourceCanvas, 0, 0)')) {
@@ -168,8 +152,22 @@ for (const removedToken of [
     throw new Error(`legacy Mask diagnostics still present: ${removedToken}`);
   }
 }
-if (!app.includes('refreshStep3Prompts({ updateOpenEditor: state.currentStep === 3 })')) {
+if (!styleManager.includes('window.refreshStep3Prompts')) {
   throw new Error('image style changes do not refresh prompts');
 }
+for (const token of ['step1-mode-article', 'step1-mode-topic', 'step1-btn-generate-article', 'step1-btn-system-content']) {
+  if (!html.includes(token)) throw new Error(`Step 1 dual-mode UI missing: ${token}`);
+}
+if (html.includes('请在下方粘贴您的 Markdown 格式文章')) throw new Error('obsolete Step 1 top hint is still present');
+for (const script of ['project_profile_extension.js', 'storyboard_background_extension.js', 'style_reference_manager_extension.js', 'ai_mask_extension.js', 'one_click_extension.js']) {
+  if (!html.includes(script)) throw new Error(`direct frontend script declaration missing: ${script}`);
+}
+if (!styleManager.includes('style-panel-template-name') || !styleManager.includes('最多只能上传 3 张')) {
+  throw new Error('named image-style templates or three-image limit missing');
+}
+if (styleManager.includes('visual-draft-quality') || oneClick.includes('图片质量检查')) {
+  throw new Error('removed image quality feature is still user-visible');
+}
+if (!oneClick.includes('button-spinner')) throw new Error('one-click stage spinner missing');
 
 console.log('frontend quality checks passed');

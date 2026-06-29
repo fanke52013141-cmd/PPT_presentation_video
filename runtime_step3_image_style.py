@@ -121,6 +121,61 @@ def _register(server_module: ModuleType) -> bool:
     def list_step3_templates() -> dict[str, Any]:
         return {"success": True, "templates": read_templates()}
 
+    def step3_template_detail(template_id: str) -> dict[str, Any]:
+        source = template_dir_or_404(template_id)
+        style = _read_json(source / "style.json", {})
+        manifest = _read_json(source / "references.json", {})
+        images = manifest.get("images", []) if isinstance(manifest, dict) else []
+        normalized_images: list[dict[str, Any]] = []
+        for item in images[:3]:
+            if not isinstance(item, dict):
+                continue
+            try:
+                index = int(item.get("index"))
+            except Exception:
+                continue
+            filename = Path(str(item.get("filename") or f"style_reference_{index:02d}.png")).name
+            path = (source / "references" / filename).resolve()
+            try:
+                path.relative_to((source / "references").resolve())
+            except ValueError:
+                continue
+            if not path.exists() or not path.is_file():
+                continue
+            normalized_images.append({
+                **item,
+                "index": index,
+                "filename": filename,
+                "url": f"/api/image-style/project-templates/{template_id}/reference-images/{index}?t={int(path.stat().st_mtime)}",
+            })
+        item = next((entry for entry in read_templates() if str(entry.get("id") or "") == template_id), {})
+        return {
+            "success": True,
+            "template": item,
+            "style": style if isinstance(style, dict) else {},
+            "references": {
+                "scope": "step3_image_style_template",
+                "style_name": str((style or {}).get("style_name") or item.get("name") or ""),
+                "images": normalized_images,
+            },
+        }
+
+    def get_step3_template_detail(template_id: str) -> dict[str, Any]:
+        return step3_template_detail(template_id)
+
+    def get_step3_template_reference(template_id: str, index: int) -> Any:
+        source = template_dir_or_404(template_id)
+        detail = step3_template_detail(template_id)
+        image = next((item for item in detail["references"]["images"] if int(item.get("index", 0)) == int(index)), None)
+        if image is None:
+            raise server_module.HTTPException(status_code=404, detail="模板参考图不存在")
+        path = (source / "references" / Path(str(image.get("filename") or "")).name).resolve()
+        try:
+            path.relative_to((source / "references").resolve())
+        except ValueError as exc:
+            raise server_module.HTTPException(status_code=404, detail="模板参考图不存在") from exc
+        return server_module.FileResponse(str(path), media_type="image/png")
+
     def save_step3_template(
         project_id: str,
         payload: dict[str, Any],
@@ -136,6 +191,10 @@ def _register(server_module: ModuleType) -> bool:
         style = state.get("image_style_profile") if isinstance(state.get("image_style_profile"), dict) else {}
         if not str(style.get("system_content") or "").strip():
             raise server_module.HTTPException(status_code=400, detail="请先保存图片生成 System Content")
+        manifest = _read_json(manager_impl._manifest_path(project), {})
+        manifest_images = manifest.get("images", []) if isinstance(manifest, dict) else []
+        if not manifest_images:
+            raise server_module.HTTPException(status_code=400, detail="请先生成或上传至少 1 张效果预览")
         items = read_templates()
         if any(str(item.get("name") or "").strip().casefold() == name.casefold() for item in items):
             raise server_module.HTTPException(status_code=400, detail="模板名称已存在，请换一个名称")
@@ -143,7 +202,6 @@ def _register(server_module: ModuleType) -> bool:
         target = templates_root / template_id
         target.mkdir(parents=True, exist_ok=False)
         _write_json(target / "style.json", style)
-        manifest = _read_json(manager_impl._manifest_path(project), {})
         _write_json(target / "references.json", manifest if isinstance(manifest, dict) else {})
         source_refs = manager_impl._references_dir(project)
         if source_refs.exists():
@@ -320,6 +378,8 @@ def _register(server_module: ModuleType) -> bool:
     app.add_api_route("/api/projects/{project_id}/steps/3/image-style/reference-images/{index}", delete_reference_image_step3, methods=["DELETE"])
     app.add_api_route("/api/projects/{project_id}/steps/3/image-style/reference-images", delete_all_reference_images_step3, methods=["DELETE"])
     app.add_api_route("/api/image-style/project-templates", list_step3_templates, methods=["GET"])
+    app.add_api_route("/api/image-style/project-templates/{template_id}", get_step3_template_detail, methods=["GET"])
+    app.add_api_route("/api/image-style/project-templates/{template_id}/reference-images/{index}", get_step3_template_reference, methods=["GET"])
     app.add_api_route("/api/projects/{project_id}/steps/3/image-style/templates", save_step3_template, methods=["POST"])
     app.add_api_route("/api/projects/{project_id}/steps/3/image-style/templates/{template_id}/apply", apply_step3_template, methods=["POST"])
     app.add_api_route("/api/image-style/project-templates/{template_id}", delete_step3_template, methods=["DELETE"])

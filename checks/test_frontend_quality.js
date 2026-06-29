@@ -58,6 +58,9 @@ if (html.includes('step3-video-background-apply') || background.includes('step3-
   throw new Error('obsolete video background apply button is still present');
 }
 if (!background.includes('铺满画面') || !background.includes('完整显示')) throw new Error('video background fit modes missing');
+for (const backgroundMode of ['data-mode-card="image"', 'data-mode-card="solid"', 'aspect-ratio:16 / 9', '16:9 预览']) {
+  if (!background.includes(backgroundMode)) throw new Error(`final background modal contract missing: ${backgroundMode}`);
+}
 if (!app.includes('hexToRgba(color, isSelected ? 0.46 : 0.34)')) {
   throw new Error('mask overlay colors are too faint');
 }
@@ -173,6 +176,12 @@ for (const script of ['project_profile_extension.js', 'storyboard_background_ext
 }
 if (!styleManager.includes('style-panel-template-name') || !styleManager.includes('最多只能上传 3 张')) {
   throw new Error('named image-style templates or three-image limit missing');
+}
+for (const styleMode of ['data-style-tab="template"', 'data-style-tab="manual"', 'data-style-tab="reverse"']) {
+  if (!styleManager.includes(styleMode)) throw new Error(`image-style mode missing: ${styleMode}`);
+}
+if (!styleManager.includes('aspect-ratio:16 / 9') || !styleManager.includes('这 3 张效果预览会作为后续图片生成的实际参考图')) {
+  throw new Error('image-style System Content / 16:9 reference output contract missing');
 }
 if (styleManager.includes('visual-draft-quality') || oneClick.includes('图片质量检查')) {
   throw new Error('removed image quality feature is still user-visible');

@@ -8,6 +8,7 @@ for Mask stability; image backgrounds are stored as separate project assets.
 from __future__ import annotations
 
 import json
+import io
 import os
 import re
 import sys
@@ -22,6 +23,7 @@ from PIL import Image
 PATCH_MARKER = "__ppt_storyboard_background_runtime_patch__"
 CONFIG_NAME = "storyboard_background.json"
 IMAGE_NAME = "storyboard_background.png"
+ORIGINAL_IMAGE_NAME = "storyboard_background_original.png"
 PROMPT_START = "<!-- STORYBOARD_BACKGROUND_POLICY_START -->"
 PROMPT_END = "<!-- STORYBOARD_BACKGROUND_POLICY_END -->"
 DEFAULT_COLOR = "#FFFFFF"
@@ -64,13 +66,17 @@ def _image_path(run_dir: Path) -> Path:
     return run_dir / "planning" / IMAGE_NAME
 
 
+def _original_image_path(run_dir: Path) -> Path:
+    return run_dir / "planning" / ORIGINAL_IMAGE_NAME
+
+
 def _image_url(project_id: Any) -> str:
     return f"/api/projects/{project_id}/storyboard-background/image?t={int(time.time())}"
 
 
 def _read_config(run_dir: Path, project_id: Any | None = None) -> dict[str, Any]:
     payload = _read_json(_config_path(run_dir), {})
-    exists = _image_path(run_dir).exists()
+    exists = _image_path(run_dir).exists() or _original_image_path(run_dir).exists()
     mode = _normalize_mode(payload.get("mode"))
     if mode == "image" and not exists:
         mode = "solid"
@@ -102,6 +108,20 @@ def _fit_image(data: bytes, size: tuple[int, int] = (1920, 1080), fit: str = "co
     left = max(0, (nw - tw) // 2)
     top = max(0, (nh - th) // 2)
     return resized.crop((left, top, left + tw, top + th))
+
+
+def _render_background_image(run_dir: Path, fit: str) -> None:
+    original = _original_image_path(run_dir)
+    rendered = _image_path(run_dir)
+    if not original.exists():
+        if rendered.exists():
+            original.parent.mkdir(parents=True, exist_ok=True)
+            original.write_bytes(rendered.read_bytes())
+        else:
+            return
+    image = _fit_image(original.read_bytes(), (1920, 1080), fit)
+    rendered.parent.mkdir(parents=True, exist_ok=True)
+    image.save(rendered, format="PNG")
 
 
 def _prompt_block(config: dict[str, Any]) -> str:
@@ -174,7 +194,7 @@ def _apply(project: Any, payload: dict[str, Any]) -> dict[str, Any]:
     run_dir = _run_dir(project)
     current = _read_config(run_dir, getattr(project, "id", None))
     mode = _normalize_mode(payload.get("mode", current.get("mode")))
-    if mode == "image" and not _image_path(run_dir).exists():
+    if mode == "image" and not (_image_path(run_dir).exists() or _original_image_path(run_dir).exists()):
         mode = "solid"
     config = {
         "mode": mode,
@@ -182,6 +202,8 @@ def _apply(project: Any, payload: dict[str, Any]) -> dict[str, Any]:
         "image_fit": str(payload.get("image_fit") or current.get("image_fit") or "cover"),
         "generation_policy": "keep_visual_draft_white_for_mask",
     }
+    if mode == "image":
+        _render_background_image(run_dir, config["image_fit"])
     _write_json(_config_path(run_dir), config)
     config = _read_config(run_dir, getattr(project, "id", None))
     config["patched_prompt_count"] = _patch_prompts(run_dir, config)
@@ -224,11 +246,11 @@ def _register(server_module: ModuleType) -> bool:
         run_dir = _run_dir(project)
         current = _read_config(run_dir, project.id)
         try:
-            image = _fit_image(data, (1920, 1080), str(current.get("image_fit") or "cover"))
+            original = Image.open(io.BytesIO(data)).convert("RGB")
         except Exception as exc:
             raise server_module.HTTPException(status_code=400, detail=f"无法读取背景图片: {exc}") from exc
-        _image_path(run_dir).parent.mkdir(parents=True, exist_ok=True)
-        image.save(_image_path(run_dir), format="PNG")
+        _original_image_path(run_dir).parent.mkdir(parents=True, exist_ok=True)
+        original.save(_original_image_path(run_dir), format="PNG")
         return {"success": True, "background": _apply(project, {**current, "mode": "image"})}
 
     def get_background_image(project_id: str, db: Any = server_module.Depends(server_module.get_db)) -> Any:

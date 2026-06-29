@@ -59,7 +59,8 @@ EXPECTED_RUNTIME_ROUTES = {
     "/api/image-style/project-templates": {"GET"},
     "/api/projects/{project_id}/steps/3/image-style/templates": {"POST"},
     "/api/projects/{project_id}/steps/3/image-style/templates/{template_id}/apply": {"POST"},
-    "/api/image-style/project-templates/{template_id}": {"DELETE"},
+    "/api/image-style/project-templates/{template_id}": {"GET", "DELETE"},
+    "/api/image-style/project-templates/{template_id}/reference-images/{index}": {"GET"},
     "/api/projects/{project_id}/steps/5/ai-mask/annotate": {"POST"},
 }
 EXPECTED_RUNTIME_PATHS = set(EXPECTED_RUNTIME_ROUTES)

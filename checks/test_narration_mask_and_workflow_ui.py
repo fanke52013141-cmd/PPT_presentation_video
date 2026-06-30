@@ -1,7 +1,13 @@
 from pathlib import Path
 
 from scripts.write_narration_from_visual_contract import build_slide_narration
-from server import dedupe_narration_beats, narration_dedupe_key, normalize_visual_contract
+from server import (
+    dedupe_narration_beats,
+    narration_dedupe_key,
+    normalize_narration_segments,
+    normalize_visual_contract,
+    normalize_visual_elements,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -70,6 +76,47 @@ def test_narration_writer_does_not_reintroduce_duplicates():
     payload = build_slide_narration(slide, max_beat_chars=220)
     assert len(payload["beats"]) == 1
     assert payload["narration"] == "只讲一次。"
+
+
+def test_step2_script_plan_normalization_removes_duplicate_segments():
+    segments = normalize_narration_segments(
+        [
+            {"segment_id": "seg_001", "narration": "这条信息只讲一次。"},
+            {"segment_id": "seg_002", "narration": "这条信息只讲一次！"},
+            {"segment_id": "seg_003", "narration": "下一条新信息。"},
+        ]
+    )
+    assert [item["segment_id"] for item in segments] == ["seg_001", "seg_003"]
+
+
+def test_step2_visual_plan_keeps_only_one_binding_per_narration():
+    elements = normalize_visual_elements(
+        [
+            {
+                "element_id": "el_001",
+                "role": "body",
+                "visual_type": "text",
+                "visual_description": "信息标题",
+                "narration": "同一段旁白。",
+            },
+            {
+                "element_id": "el_002",
+                "role": "body",
+                "visual_type": "illustration",
+                "visual_description": "辅助插图",
+                "narration": "同一段旁白！",
+            },
+        ]
+    )
+    assert [item["narration"] for item in elements] == ["同一段旁白。", ""]
+
+
+def test_default_step2_prompts_explicitly_forbid_duplicate_narration_binding():
+    script_prompt = (ROOT / "templates" / "prompts" / "step2_script_system.md").read_text(encoding="utf-8")
+    visual_prompt = (ROOT / "templates" / "prompts" / "step2_visual_system.md").read_text(encoding="utf-8")
+    assert "一项信息只讲一次" in script_prompt
+    assert "最多只能被一个 visual_element 使用一次" in visual_prompt
+    assert "所有非空 narration 必须两两不同" in visual_prompt
 
 
 def test_mask_size_cursor_and_outline_contracts():

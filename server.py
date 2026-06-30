@@ -3022,6 +3022,7 @@ def normalize_body_points(value: Any) -> List[Dict[str, str]]:
 def normalize_narration_segments(value: Any) -> List[Dict[str, str]]:
     segments = value if isinstance(value, list) else []
     normalized: List[Dict[str, str]] = []
+    seen_narration: set[str] = set()
     for index, segment in enumerate(segments, start=1):
         if isinstance(segment, dict):
             narration = str(segment.get("narration") or segment.get("spoken_text") or "").strip()
@@ -3033,6 +3034,11 @@ def normalize_narration_segments(value: Any) -> List[Dict[str, str]]:
             segment_id = f"seg_{index:03d}"
         if not narration:
             continue
+        narration_key = narration_dedupe_key(narration)
+        if narration_key and narration_key in seen_narration:
+            continue
+        if narration_key:
+            seen_narration.add(narration_key)
         normalized.append({"segment_id": segment_id, "narration": narration, "purpose": purpose})
     return normalized
 
@@ -3070,6 +3076,7 @@ def normalize_slide_script_plan(plan: Dict[str, Any], project_title: str) -> Dic
 def normalize_visual_elements(value: Any) -> List[Dict[str, str]]:
     elements = value if isinstance(value, list) else []
     normalized: List[Dict[str, str]] = []
+    bound_narration: set[str] = set()
     allowed_roles = {"title", "subtitle", "body", "decoration"}
     allowed_visual_types = {"text", "illustration"}
     for index, element in enumerate(elements, start=1):
@@ -3080,6 +3087,11 @@ def normalize_visual_elements(value: Any) -> List[Dict[str, str]]:
             role = "body"
         visual_description = str(element.get("visual_description") or "").strip()
         narration = str(element.get("narration") or "").strip()
+        narration_key = narration_dedupe_key(narration)
+        if narration_key and narration_key in bound_narration:
+            narration = ""
+        elif narration_key:
+            bound_narration.add(narration_key)
         visual_type = str(element.get("visual_type") or "illustration").strip().lower()
         if visual_type == "text_and_illustration":
             visual_type = "illustration"

@@ -933,6 +933,32 @@ def strip_anchor_lead_in(spoken_text: str, anchor: str) -> str:
     return text
 
 
+def narration_dedupe_key(value: Any) -> str:
+    """Return a punctuation/markup-insensitive key for one spoken sentence."""
+    text = str(value or "").strip().casefold()
+    text = re.sub(r"<#\d+(?:\.\d{1,2})?#>|\([A-Za-z-]+\)", "", text)
+    return re.sub(r"[\W_]+", "", text, flags=re.UNICODE)
+
+
+def dedupe_narration_beats(beats: Any) -> List[Dict[str, Any]]:
+    """Keep the first occurrence of each spoken sentence on a slide."""
+    if not isinstance(beats, list):
+        return []
+    seen: set[str] = set()
+    result: List[Dict[str, Any]] = []
+    for beat in beats:
+        if not isinstance(beat, dict):
+            continue
+        text = beat.get("spoken_text") or beat.get("tts_text") or beat.get("source_text") or ""
+        key = narration_dedupe_key(text)
+        if key and key in seen:
+            continue
+        if key:
+            seen.add(key)
+        result.append(beat)
+    return result
+
+
 def normalize_visual_contract(
     contract: Dict[str, Any],
     profile: Optional[Dict[str, Any]] = None,
@@ -992,7 +1018,7 @@ def normalize_visual_contract(
             else:
                 beat["spoken_text"] = spoken_text
             normalized_beats.append(beat)
-        slide["narration_beats"] = normalized_beats
+        slide["narration_beats"] = dedupe_narration_beats(normalized_beats)
 
     return contract
 
@@ -1307,10 +1333,15 @@ def sync_narration_beats_to_contract(project: Project, slide_ids: Optional[List[
         if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()
     }
     synced_slides = [by_id[slide_id] for slide_id in current_slide_ids if slide_id in by_id]
-    if synced_slides == slides:
+    normalized_slides = []
+    for slide in synced_slides:
+        normalized = dict(slide)
+        normalized["beats"] = dedupe_narration_beats(slide.get("beats"))
+        normalized_slides.append(normalized)
+    if normalized_slides == slides:
         return False
 
-    payload["slides"] = synced_slides
+    payload["slides"] = normalized_slides
     with open(beats_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     logger.info(
@@ -1504,6 +1535,7 @@ def prepare_narration_payload(project: Project, payload: Dict[str, Any]) -> Dict
             beat["source_text"] = source or spoken
             beat["spoken_text"] = spoken or source
             beat["tts_text"] = normalize_minimax_tts_markup(beat.get("tts_text"), beat["spoken_text"])
+        slide_data["beats"] = dedupe_narration_beats(slide_beats)
     payload["slides"] = slides
     return payload
 
@@ -3494,6 +3526,7 @@ def build_storyboard_request(
    - content_unit_id: 必须与绑定 visual_group 的 content_unit_id 一致
    - narration_beats 是是否朗读的唯一依据：某个 visual_group 有对应 beat 才会在演讲稿中讲解，没有 beat 就只作为画面内容展示。
    - 不要为了覆盖所有 visual_groups 而强行补旁白；只为演讲稿实际需要讲解的内容创建 beat。
+   - 同一页内每条 spoken_text 的内容必须唯一；严禁重复、近似复述或为了凑数量复制同一句旁白。
 5. 当前项目的可配置分镜结构如下。请优先遵守：
 {profile_prompt}
 6. 用户自定义的分镜与演讲稿规则如下。请遵守这些内容，但不得修改输出字段、层级、ID 规则或 JSON 结构：
@@ -4082,6 +4115,11 @@ def get_step2_result(project_id: str, db: Session = Depends(get_db)):
         
     with open(contract_path, "r", encoding="utf-8") as f:
         contract = json.load(f)
+    before = json.dumps(contract, ensure_ascii=False, sort_keys=True)
+    contract = normalize_visual_contract(contract, read_project_pipeline_profile(project))
+    if json.dumps(contract, ensure_ascii=False, sort_keys=True) != before:
+        with open(contract_path, "w", encoding="utf-8") as f:
+            json.dump(contract, f, ensure_ascii=False, indent=2)
     return {"success": True, "contract": contract}
 
 @app.put("/api/projects/{project_id}/steps/2/result")
@@ -4090,6 +4128,7 @@ def update_step2_result(project_id: str, payload: Dict[str, Any], db: Session = 
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
         
+    payload = normalize_visual_contract(payload, read_project_pipeline_profile(project))
     contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
     with open(contract_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
@@ -5781,16 +5820,8 @@ def init_step6_narration(project_id: str, db: Session = Depends(get_db)):
                 "beats": []
             })
             
-    global_beats = {"slides": global_slides}
-    beats_path = os.path.join(project.run_dir, "planning", "narration_beats.json")
-    with open(beats_path, "w", encoding="utf-8") as f:
-        json.dump(global_beats, f, ensure_ascii=False, indent=2)
-        
-    # 读回 narration_beats.json 展现给用户编辑
-    with open(beats_path, "r", encoding="utf-8") as f:
-        beats = json.load(f)
-        
-    return {"success": True, "beats": beats}
+    global_beats = persist_narration_beats(project, {"slides": global_slides})
+    return {"success": True, "beats": global_beats}
 
 @app.get("/api/projects/{project_id}/steps/6/result")
 def get_step6_result(project_id: str, db: Session = Depends(get_db)):

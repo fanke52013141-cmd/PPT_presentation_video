@@ -11,9 +11,12 @@ const styleManager = fs.readFileSync(path.join(root, 'static', 'style_reference_
 const oneClick = fs.readFileSync(path.join(root, 'static', 'one_click_extension.js'), 'utf8');
 
 if (!css.includes('#toast-container')) throw new Error('toast container layout missing');
-if (!css.includes('left: 0.85rem')) throw new Error('toasts are not anchored in the left navigation area');
+if (!css.includes('left: 18px')) throw new Error('desktop toasts are not anchored inside the workflow rail');
 if (/\.toast\s*\{[^}]*position:\s*fixed/s.test(css)) throw new Error('individual toasts still overlap at a fixed position');
-if (!/\.step3-card-title\s*\{[^}]*min-height:\s*0/s.test(css)) throw new Error('image title still reserves fixed vertical space');
+if (!/\.step3-card-header\s*\{[^}]*min-height:\s*64px/s.test(css)) throw new Error('image card header height is not stable');
+if (!/\.step3-card-actions\s*\{[^}]*grid-template-columns:\s*48px 36px 36px/s.test(css)) throw new Error('image card action columns are not stable');
+if (!/\.step3-card-action[\s\S]*?white-space:\s*nowrap\s*!important/s.test(css)) throw new Error('image card actions can still wrap and jitter');
+if (!app.includes('step3-action-placeholder')) throw new Error('image card delete action does not reserve a stable slot');
 
 if (html.includes('config_effectiveness.js')) throw new Error('runtime patch script is still loaded');
 for (const requiredStep2Token of [
@@ -130,6 +133,18 @@ for (const removedNarrationPolicyToken of [
 for (const manualMaskControl of ['step5-brush-size', 'step5-eraser-size', 'step5-btn-new-block', 'step5-btn-clear-current']) {
   if (!html.includes(manualMaskControl)) throw new Error(`manual Mask fallback control missing: ${manualMaskControl}`);
 }
+if (!html.includes('id="step5-brush-size" type="range" min="100" max="200" value="140"')) {
+  throw new Error('brush size contract must be 100-200 with a 140 default');
+}
+if (!html.includes('id="step5-eraser-size" type="range" min="100" max="200" value="100"')) {
+  throw new Error('eraser size contract must be 100-200 with a 100 default');
+}
+if (!html.includes('step5-tool-cursor') || !app.includes('toolSize * canvasRect.width / 1920')) {
+  throw new Error('Mask tool cursor does not track the real canvas pixel diameter');
+}
+if (!app.includes('const MASK_PREVIEW_OUTLINE_PX = 5') || !app.includes('buildMaskDisplayLayer')) {
+  throw new Error('same-color 5px Mask preview outline is missing');
+}
 for (const manualMaskHandler of ['startMaskPaint', 'startMaskErase', 'deleteMaskBox', 'beginMaskStroke']) {
   if (!app.includes(manualMaskHandler)) throw new Error(`manual Mask fallback handler missing: ${manualMaskHandler}`);
 }
@@ -192,6 +207,15 @@ if (!oneClick.includes('one-click-sidebar-entry') || !oneClick.includes('stepper
 }
 if (!app.includes("document.body.classList.add('workspace-open')") || !css.includes('body.workspace-open #toast-container')) {
   throw new Error('workspace notifications can still overlap the sidebar action');
+}
+if (!html.includes('sidebar-flow-title') || !html.includes('step-complete') || !css.includes('.sidebar .step-icon svg')) {
+  throw new Error('workflow rail redesign is incomplete');
+}
+if (!css.includes('#step6-btn-audio-confirm-next:disabled') || !css.includes('#step8-btn-render:disabled')) {
+  throw new Error('disabled primary button contrast contract is missing');
+}
+if (!app.includes('narrationDedupeKey') || !app.includes('uniqueNarrationLines')) {
+  throw new Error('frontend narration deduplication guard is missing');
 }
 
 console.log('frontend quality checks passed');

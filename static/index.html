@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260626.2">
+  <link rel="stylesheet" href="style.css?v=20260630.1">
 </head>
 <body>
 
@@ -66,30 +66,46 @@
       
       <!-- 左侧步骤条 -->
       <aside class="sidebar">
+        <div class="sidebar-flow-title">
+          <span class="sidebar-flow-mark" aria-hidden="true">✦</span>
+          <span>创作流程</span>
+        </div>
         <ul class="stepper">
           <li class="step-item active" data-step="1">
             <div class="step-num">1</div>
+            <div class="step-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 2h9l4 4v16H6z"></path><path d="M14 2v5h5M9 12h7M9 16h7"></path></svg></div>
             <div class="step-label">导入文章</div>
+            <span class="step-complete" aria-hidden="true">✓</span>
           </li>
           <li class="step-item" data-step="2">
             <div class="step-num">2</div>
+            <div class="step-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 3 8 4-8 4-8-4 8-4z"></path><path d="m4 12 8 4 8-4M4 17l8 4 8-4"></path></svg></div>
             <div class="step-label">分镜规划</div>
+            <span class="step-complete" aria-hidden="true">✓</span>
           </li>
           <li class="step-item" data-step="3">
             <div class="step-num">3</div>
+            <div class="step-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18h1.3a2 2 0 0 0 0-4H12a1.7 1.7 0 0 1 0-3.4h2.2A6.8 6.8 0 0 0 12 3z"></path><circle cx="7.5" cy="10" r="1"></circle><circle cx="10" cy="6.8" r="1"></circle><circle cx="15" cy="7.2" r="1"></circle></svg></div>
             <div class="step-label">图片生成</div>
+            <span class="step-complete" aria-hidden="true">✓</span>
           </li>
           <li class="step-item" data-step="5">
             <div class="step-num">4</div>
+            <div class="step-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m4 20 4.6-1 10.8-10.8a2.1 2.1 0 0 0-3-3L5.6 16 4 20z"></path><path d="m14.8 6.8 2.4 2.4"></path></svg></div>
             <div class="step-label">Mask标注</div>
+            <span class="step-complete" aria-hidden="true">✓</span>
           </li>
           <li class="step-item" data-step="6">
             <div class="step-num">5</div>
+            <div class="step-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="12" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8"></path></svg></div>
             <div class="step-label">旁白与音频</div>
+            <span class="step-complete" aria-hidden="true">✓</span>
           </li>
           <li class="step-item" data-step="8">
             <div class="step-num">6</div>
+            <div class="step-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="15" height="14" rx="3"></rect><path d="m10 9 4 3-4 3zM18 10l3-2v8l-3-2"></path></svg></div>
             <div class="step-label">视频合成</div>
+            <span class="step-complete" aria-hidden="true">✓</span>
           </li>
         </ul>
         <div id="project-activity-status" class="project-activity-status" role="status" aria-live="polite"></div>
@@ -278,13 +294,13 @@
               <span id="step5-draft-status" class="step2-autosave-status"></span>
               <label class="step5-brush-control" title="调整手动画笔大小">
                 <span>画笔</span>
-                <input id="step5-brush-size" type="range" min="8" max="300" value="48">
-                <span id="step5-brush-size-value">48</span>
+                <input id="step5-brush-size" type="range" min="100" max="200" value="140">
+                <span id="step5-brush-size-value">140</span>
               </label>
               <label class="step5-brush-control" title="调整橡皮大小">
                 <span>橡皮</span>
-                <input id="step5-eraser-size" type="range" min="8" max="300" value="48">
-                <span id="step5-eraser-size-value">48</span>
+                <input id="step5-eraser-size" type="range" min="100" max="200" value="100">
+                <span id="step5-eraser-size-value">100</span>
               </label>
             </div>
           </div>
@@ -297,6 +313,7 @@
               <div class="canvas-wrapper" id="canvas-container">
                 <img id="step5-bg-img" src="" alt="Slide Background">
                 <canvas id="step5-canvas" width="1920" height="1080"></canvas>
+                <div id="step5-tool-cursor" class="step5-tool-cursor" aria-hidden="true"></div>
                 <div id="step5-zoom-indicator" class="step5-zoom-indicator" aria-hidden="true">100%</div>
               </div>
               <div id="step5-narration-panel" class="step5-narration-panel"></div>
@@ -819,11 +836,11 @@
 
   <!-- 主业务 JavaScript 脚本 -->
   <script src="flow.js?v=3.0.0"></script>
-  <script src="app.js?v=3.0.0"></script>
+  <script src="app.js?v=20260630.1"></script>
   <script src="project_profile_extension.js?v=3.0.0"></script>
   <script src="storyboard_background_extension.js?v=3.0.0"></script>
   <script src="style_reference_manager_extension.js?v=3.0.0"></script>
   <script src="ai_mask_extension.js?v=3.0.0"></script>
-  <script src="one_click_extension.js?v=3.0.0"></script>
+  <script src="one_click_extension.js?v=20260630.1"></script>
 </body>
 </html>

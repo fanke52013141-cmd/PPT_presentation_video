@@ -4321,31 +4321,10 @@ textarea.step2-soft-input {
 
 .sidebar {
   width: 270px;
-  padding: 1.25rem 1rem 1rem;
+  padding: 0.72rem 1rem 1rem;
   background: rgba(255, 255, 255, 0.92) !important;
   box-shadow: 12px 0 34px rgba(69, 78, 120, 0.045) !important;
-}
-
-.sidebar-flow-title {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  padding: 0.2rem 0.7rem 1rem;
-  color: var(--color-text-secondary, #59647b);
-  font-size: 0.86rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-}
-
-.sidebar-flow-mark {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  border-radius: 10px;
-  background: var(--gradient-ai-strong);
-  color: #fff;
-  box-shadow: 0 8px 18px rgba(99, 76, 231, 0.2);
+  justify-content: flex-start;
 }
 
 .sidebar .stepper {
@@ -4357,12 +4336,18 @@ textarea.step2-soft-input {
 .sidebar .stepper::before {
   content: '';
   position: absolute;
-  left: 27px;
-  top: 34px;
-  bottom: 34px;
+  left: 30.875px;
+  top: 32px;
+  bottom: auto;
+  height: calc((64px + 0.35rem) * 5);
   width: 2px;
-  border-radius: 999px;
-  background: linear-gradient(180deg, #c9d0e2, #e7eaf2);
+  background: repeating-linear-gradient(
+    to bottom,
+    #cbd3e3 0,
+    #cbd3e3 5px,
+    transparent 5px,
+    transparent 10px
+  );
   z-index: 0;
 }
 
@@ -4373,6 +4358,7 @@ textarea.step2-soft-input {
   grid-template-columns: 38px 28px minmax(0, 1fr) 22px;
   align-items: center;
   gap: 0.62rem;
+  height: 64px;
   min-height: 64px;
   padding: 0.58rem 0.68rem;
   border: 1px solid transparent !important;
@@ -4498,6 +4484,30 @@ textarea.step2-soft-input {
   transform: none !important;
 }
 
+.step2-generation-status {
+  margin: 0 0 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid #d9deea;
+  border-radius: 14px;
+  background: #f7f8fc;
+  color: #4f596b;
+  font-size: 0.9rem;
+  font-weight: 650;
+  line-height: 1.55;
+}
+
+.step2-generation-status.error {
+  border-color: #f1b8be;
+  background: #fff1f2;
+  color: #9f2634;
+}
+
+.step2-generation-status.success {
+  border-color: #b9e2c2;
+  background: #effaf1;
+  color: #2f7444;
+}
+
 .step3-card-header {
   min-height: 64px;
   align-items: flex-start;
@@ -4618,7 +4628,6 @@ button.success:disabled,
 }
 
 @media (max-width: 760px) {
-  .sidebar-flow-title,
   .sidebar .step-icon,
   .step-complete,
   .sidebar .stepper::before {

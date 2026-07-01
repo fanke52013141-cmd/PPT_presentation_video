@@ -1,4 +1,10 @@
+import json
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+from fastapi import HTTPException
+import server
 
 from scripts.write_narration_from_visual_contract import build_slide_narration
 from server import (
@@ -142,3 +148,64 @@ def test_workflow_rail_owns_toasts_and_disabled_buttons_remain_readable():
     assert "left: 18px" in css
     assert "#step6-btn-audio-confirm-next:disabled" in css
     assert "#step8-btn-render:disabled" in css
+
+
+def test_workflow_connector_stops_at_step_six_and_step2_errors_are_visible():
+    html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
+    app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    css = (ROOT / "static" / "style.css").read_text(encoding="utf-8")
+    assert "sidebar-flow-title" not in html
+    assert "left: 30.875px" in css
+    assert "repeating-linear-gradient" in css
+    assert "height: calc((64px + 0.35rem) * 5)" in css
+    assert "step2-generation-status" in html
+    assert "setStep2GenerationStatus" in app
+    assert "Step 2 generation failed" in app
+
+
+def test_step2_timeout_is_logged_and_returned_as_actionable_error(monkeypatch, tmp_path):
+    class FakeCompletions:
+        def create(self, **kwargs):
+            raise TimeoutError("simulated upstream timeout")
+
+    class FakeClient:
+        def __init__(self):
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    client = FakeClient()
+    monkeypatch.setattr(
+        server,
+        "configured_step2_llm",
+        lambda: ("test-key", "https://example.invalid/v1", "test-model", 0.2, 2048),
+    )
+    monkeypatch.setattr(server, "get_openai_client", lambda **kwargs: client)
+    project = SimpleNamespace(id="project-test", run_dir=str(tmp_path))
+
+    with pytest.raises(HTTPException) as exc_info:
+        server.run_step2_json_llm(
+            project=project,
+            system_prompt="system",
+            user_prompt="user",
+            artifact_prefix="step2_script_plan",
+            schema_hint="{}",
+            trace_id="trace123",
+        )
+
+    assert exc_info.value.status_code == 504
+    assert "Step 2A 演讲稿规划" in str(exc_info.value.detail)
+    assert client.closed is True
+    records = [json.loads(line) for line in (tmp_path / "logs" / "pipeline.log").read_text(encoding="utf-8").splitlines()]
+    assert records[-1]["event"] == "step2_script_plan_failed"
+    assert records[-1]["timeout"] is True
+
+
+def test_doubao_step2_requests_disable_deep_thinking():
+    assert server.step2_llm_vendor_options(
+        "doubao-seed-2-1-turbo-260628",
+        "https://ark.cn-beijing.volces.com/api/v3",
+    ) == {"extra_body": {"thinking": {"type": "disabled"}}}
+    assert server.step2_llm_vendor_options("gpt-4.1", "https://api.openai.com/v1") == {}

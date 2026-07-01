@@ -1181,6 +1181,14 @@ function defaultStep2GenerationRequirement() {
   return '按当前已保存的分镜规则、结构配置和文章内容生成分镜规划。优先把内容讲清楚，不要机械套用固定卡片结构。';
 }
 
+function setStep2GenerationStatus(message = '', type = '') {
+  const status = document.getElementById('step2-generation-status');
+  if (!status) return;
+  status.textContent = message;
+  status.className = `step2-generation-status${type ? ` ${type}` : ''}`;
+  status.style.display = message ? 'block' : 'none';
+}
+
 async function confirmStep2Generation() {
   const userRequirement = document.getElementById('step2-generation-requirement').value.trim();
   const requirement = userRequirement || defaultStep2GenerationRequirement();
@@ -1191,6 +1199,7 @@ async function confirmStep2Generation() {
 
 async function generateStep2Contract(requirement = '') {
   const normalizedRequirement = String(requirement || defaultStep2GenerationRequirement()).trim();
+  setStep2GenerationStatus('');
   document.getElementById('step2-loading').style.display = 'block';
   document.getElementById('step2-btn-generate').disabled = true;
   const loadingText = document.querySelector('#step2-loading p');
@@ -1219,10 +1228,13 @@ async function generateStep2Contract(requirement = '') {
       return;
     }
     showToast('🎉 Narration-first 分镜规划已生成！');
+    setStep2GenerationStatus('分镜规划已生成，可以继续检查和编辑各页内容。', 'success');
     state.slides = res.contract?.slides || [];
     renderStep2Workspace();
   } catch(e) {
-    // 捕获报错
+    const message = e?.message || '分镜生成失败，请稍后重试。';
+    console.error('Step 2 generation failed:', e);
+    setStep2GenerationStatus(`分镜生成失败：${message}`, 'error');
   } finally {
     if (loadingText) loadingText.innerText = originalLoadingText;
     document.getElementById('step2-loading').style.display = 'none';

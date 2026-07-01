@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260630.1">
+  <link rel="stylesheet" href="style.css?v=20260701.2">
 </head>
 <body>
 
@@ -66,10 +66,6 @@
       
       <!-- 左侧步骤条 -->
       <aside class="sidebar">
-        <div class="sidebar-flow-title">
-          <span class="sidebar-flow-mark" aria-hidden="true">✦</span>
-          <span>创作流程</span>
-        </div>
         <ul class="stepper">
           <li class="step-item active" data-step="1">
             <div class="step-num">1</div>
@@ -196,6 +192,7 @@
             <div class="sketch-loader"></div>
             <p style="font-size: 1.2rem; margin-top: 1rem;">大模型正在拼命拆解分镜中，请稍候... (大约需要15~30秒)</p>
           </div>
+          <div id="step2-generation-status" class="step2-generation-status" role="status" aria-live="polite" style="display:none;"></div>
 
           <!-- 分镜列表编辑区 -->
           <div id="step2-editor-area" style="display: none;">
@@ -836,7 +833,7 @@
 
   <!-- 主业务 JavaScript 脚本 -->
   <script src="flow.js?v=3.0.0"></script>
-  <script src="app.js?v=20260630.1"></script>
+  <script src="app.js?v=20260701.2"></script>
   <script src="project_profile_extension.js?v=3.0.0"></script>
   <script src="storyboard_background_extension.js?v=3.0.0"></script>
   <script src="style_reference_manager_extension.js?v=3.0.0"></script>

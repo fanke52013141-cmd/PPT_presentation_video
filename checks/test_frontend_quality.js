@@ -208,8 +208,17 @@ if (!oneClick.includes('one-click-sidebar-entry') || !oneClick.includes('stepper
 if (!app.includes("document.body.classList.add('workspace-open')") || !css.includes('body.workspace-open #toast-container')) {
   throw new Error('workspace notifications can still overlap the sidebar action');
 }
-if (!html.includes('sidebar-flow-title') || !html.includes('step-complete') || !css.includes('.sidebar .step-icon svg')) {
+if (html.includes('sidebar-flow-title') || html.includes('sidebar-flow-mark')) {
+  throw new Error('obsolete workflow rail title/icon is still visible');
+}
+if (!html.includes('step-complete') || !css.includes('.sidebar .step-icon svg')) {
   throw new Error('workflow rail redesign is incomplete');
+}
+if (!css.includes('left: 30.875px') || !css.includes('repeating-linear-gradient') || !css.includes('height: calc((64px + 0.35rem) * 5)')) {
+  throw new Error('workflow rail connector is not centered, dashed, and bounded to six steps');
+}
+if (!html.includes('step2-generation-status') || !app.includes('setStep2GenerationStatus') || app.includes('// 捕获报错')) {
+  throw new Error('Step 2 failure is still swallowed without persistent feedback');
 }
 if (!css.includes('#step6-btn-audio-confirm-next:disabled') || !css.includes('#step8-btn-render:disabled')) {
   throw new Error('disabled primary button contrast contract is missing');

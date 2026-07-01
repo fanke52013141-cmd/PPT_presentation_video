@@ -429,7 +429,7 @@ ensure_active_image_style_storage()
 
 
 STEP1_LLM_TIMEOUT_SEC = 60.0
-STEP2_LLM_TIMEOUT_SEC = 120.0
+STEP2_LLM_TIMEOUT_SEC = 240.0
 STEP7_TTS_TIMEOUT_SEC = 300
 STEP7_TTS_PROCESS_TIMEOUT_SEC = STEP7_TTS_TIMEOUT_SEC + 90
 STEP7_TTS_RETRY_ATTEMPTS = 3
@@ -933,6 +933,32 @@ def strip_anchor_lead_in(spoken_text: str, anchor: str) -> str:
     return text
 
 
+def narration_dedupe_key(value: Any) -> str:
+    """Return a punctuation/markup-insensitive key for one spoken sentence."""
+    text = str(value or "").strip().casefold()
+    text = re.sub(r"<#\d+(?:\.\d{1,2})?#>|\([A-Za-z-]+\)", "", text)
+    return re.sub(r"[\W_]+", "", text, flags=re.UNICODE)
+
+
+def dedupe_narration_beats(beats: Any) -> List[Dict[str, Any]]:
+    """Keep the first occurrence of each spoken sentence on a slide."""
+    if not isinstance(beats, list):
+        return []
+    seen: set[str] = set()
+    result: List[Dict[str, Any]] = []
+    for beat in beats:
+        if not isinstance(beat, dict):
+            continue
+        text = beat.get("spoken_text") or beat.get("tts_text") or beat.get("source_text") or ""
+        key = narration_dedupe_key(text)
+        if key and key in seen:
+            continue
+        if key:
+            seen.add(key)
+        result.append(beat)
+    return result
+
+
 def normalize_visual_contract(
     contract: Dict[str, Any],
     profile: Optional[Dict[str, Any]] = None,
@@ -992,7 +1018,7 @@ def normalize_visual_contract(
             else:
                 beat["spoken_text"] = spoken_text
             normalized_beats.append(beat)
-        slide["narration_beats"] = normalized_beats
+        slide["narration_beats"] = dedupe_narration_beats(normalized_beats)
 
     return contract
 
@@ -1307,10 +1333,15 @@ def sync_narration_beats_to_contract(project: Project, slide_ids: Optional[List[
         if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()
     }
     synced_slides = [by_id[slide_id] for slide_id in current_slide_ids if slide_id in by_id]
-    if synced_slides == slides:
+    normalized_slides = []
+    for slide in synced_slides:
+        normalized = dict(slide)
+        normalized["beats"] = dedupe_narration_beats(slide.get("beats"))
+        normalized_slides.append(normalized)
+    if normalized_slides == slides:
         return False
 
-    payload["slides"] = synced_slides
+    payload["slides"] = normalized_slides
     with open(beats_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     logger.info(
@@ -1504,6 +1535,7 @@ def prepare_narration_payload(project: Project, payload: Dict[str, Any]) -> Dict
             beat["source_text"] = source or spoken
             beat["spoken_text"] = spoken or source
             beat["tts_text"] = normalize_minimax_tts_markup(beat.get("tts_text"), beat["spoken_text"])
+        slide_data["beats"] = dedupe_narration_beats(slide_beats)
     payload["slides"] = slides
     return payload
 
@@ -2990,6 +3022,7 @@ def normalize_body_points(value: Any) -> List[Dict[str, str]]:
 def normalize_narration_segments(value: Any) -> List[Dict[str, str]]:
     segments = value if isinstance(value, list) else []
     normalized: List[Dict[str, str]] = []
+    seen_narration: set[str] = set()
     for index, segment in enumerate(segments, start=1):
         if isinstance(segment, dict):
             narration = str(segment.get("narration") or segment.get("spoken_text") or "").strip()
@@ -3001,6 +3034,11 @@ def normalize_narration_segments(value: Any) -> List[Dict[str, str]]:
             segment_id = f"seg_{index:03d}"
         if not narration:
             continue
+        narration_key = narration_dedupe_key(narration)
+        if narration_key and narration_key in seen_narration:
+            continue
+        if narration_key:
+            seen_narration.add(narration_key)
         normalized.append({"segment_id": segment_id, "narration": narration, "purpose": purpose})
     return normalized
 
@@ -3038,6 +3076,7 @@ def normalize_slide_script_plan(plan: Dict[str, Any], project_title: str) -> Dic
 def normalize_visual_elements(value: Any) -> List[Dict[str, str]]:
     elements = value if isinstance(value, list) else []
     normalized: List[Dict[str, str]] = []
+    bound_narration: set[str] = set()
     allowed_roles = {"title", "subtitle", "body", "decoration"}
     allowed_visual_types = {"text", "illustration"}
     for index, element in enumerate(elements, start=1):
@@ -3048,6 +3087,11 @@ def normalize_visual_elements(value: Any) -> List[Dict[str, str]]:
             role = "body"
         visual_description = str(element.get("visual_description") or "").strip()
         narration = str(element.get("narration") or "").strip()
+        narration_key = narration_dedupe_key(narration)
+        if narration_key and narration_key in bound_narration:
+            narration = ""
+        elif narration_key:
+            bound_narration.add(narration_key)
         visual_type = str(element.get("visual_type") or "illustration").strip().lower()
         if visual_type == "text_and_illustration":
             visual_type = "illustration"
@@ -3109,6 +3153,15 @@ def configured_step2_llm() -> tuple[str, Optional[str], str, float, int]:
     return llm_api_key, llm_base_url, llm_model, planning_temp, planning_max_tokens
 
 
+def step2_llm_vendor_options(model: str, base_url: Optional[str]) -> Dict[str, Any]:
+    """Use fast non-thinking mode for Volcengine/Doubao storyboard requests."""
+    model_name = str(model or "").strip().lower()
+    endpoint = str(base_url or "").strip().lower()
+    if model_name.startswith("doubao-") or "volces.com" in endpoint:
+        return {"extra_body": {"thinking": {"type": "disabled"}}}
+    return {}
+
+
 def run_step2_json_llm(
     *,
     project: Project,
@@ -3119,6 +3172,12 @@ def run_step2_json_llm(
     trace_id: str,
 ) -> Dict[str, Any]:
     llm_api_key, llm_base_url, llm_model, planning_temp, planning_max_tokens = configured_step2_llm()
+    stage_label = {
+        "step2_script_plan": "Step 2A 演讲稿规划",
+        "step2_visual_plan": "Step 2B 可视化规划",
+    }.get(artifact_prefix, "Step 2 分镜规划")
+    started_at = time.monotonic()
+    vendor_options = step2_llm_vendor_options(llm_model, llm_base_url)
     write_project_log(
         project,
         f"{artifact_prefix}_start",
@@ -3126,6 +3185,7 @@ def run_step2_json_llm(
         model=llm_model,
         base_url=llm_base_url,
         max_tokens=planning_max_tokens,
+        thinking_disabled=bool(vendor_options),
     )
     client = get_openai_client(
         api_key=llm_api_key,
@@ -3134,45 +3194,82 @@ def run_step2_json_llm(
         max_retries=0,
     )
     try:
-        response = client.chat.completions.create(
+        try:
+            response = client.chat.completions.create(
+                model=llm_model,
+                temperature=planning_temp,
+                max_tokens=planning_max_tokens,
+                timeout=STEP2_LLM_TIMEOUT_SEC,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                **vendor_options,
+            )
+        except Exception as inner_e:
+            if is_timeout_exception(inner_e):
+                raise
+            logger.warning("Failed LLM call with response_format for %s, retrying without it: %s", artifact_prefix, inner_e)
+            response = client.chat.completions.create(
+                model=llm_model,
+                temperature=planning_temp,
+                max_tokens=planning_max_tokens,
+                timeout=STEP2_LLM_TIMEOUT_SEC,
+                messages=[
+                    {"role": "system", "content": system_prompt + " 请只输出纯 JSON，不要包含 Markdown 代码块标记（如 ```json ）。"},
+                    {"role": "user", "content": user_prompt},
+                ],
+                **vendor_options,
+            )
+        choice = response.choices[0]
+        logger.info("%s finish_reason=%s usage=%s", artifact_prefix, getattr(choice, "finish_reason", None), getattr(response, "usage", None))
+        content_str = str(choice.message.content or "").strip()
+        if not content_str:
+            raise ValueError("大模型返回了空内容")
+        cleaned_content = clean_json_markdown(content_str)
+        return parse_json_or_repair_with_llm(
+            cleaned_content=cleaned_content,
+            raw_content=content_str,
+            client=client,
             model=llm_model,
-            temperature=planning_temp,
+            run_dir=project.run_dir,
+            artifact_prefix=artifact_prefix,
+            schema_hint=schema_hint,
             max_tokens=planning_max_tokens,
-            timeout=STEP2_LLM_TIMEOUT_SEC,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
         )
-    except Exception as inner_e:
-        if is_timeout_exception(inner_e):
-            raise
-        logger.warning("Failed LLM call with response_format for %s, retrying without it: %s", artifact_prefix, inner_e)
-        response = client.chat.completions.create(
-            model=llm_model,
-            temperature=planning_temp,
-            max_tokens=planning_max_tokens,
-            timeout=STEP2_LLM_TIMEOUT_SEC,
-            messages=[
-                {"role": "system", "content": system_prompt + " 请只输出纯 JSON，不要包含 Markdown 代码块标记（如 ```json ）。"},
-                {"role": "user", "content": user_prompt},
-            ],
+    except HTTPException as exc:
+        write_project_log(
+            project,
+            f"{artifact_prefix}_failed",
+            trace_id=trace_id,
+            elapsed_sec=round(time.monotonic() - started_at, 2),
+            status_code=exc.status_code,
+            error=str(exc.detail),
         )
-    choice = response.choices[0]
-    logger.info("%s finish_reason=%s usage=%s", artifact_prefix, getattr(choice, "finish_reason", None), getattr(response, "usage", None))
-    content_str = choice.message.content.strip()
-    cleaned_content = clean_json_markdown(content_str)
-    return parse_json_or_repair_with_llm(
-        cleaned_content=cleaned_content,
-        raw_content=content_str,
-        client=client,
-        model=llm_model,
-        run_dir=project.run_dir,
-        artifact_prefix=artifact_prefix,
-        schema_hint=schema_hint,
-        max_tokens=planning_max_tokens,
-    )
+        raise
+    except Exception as exc:
+        timed_out = is_timeout_exception(exc)
+        write_project_log(
+            project,
+            f"{artifact_prefix}_failed",
+            trace_id=trace_id,
+            elapsed_sec=round(time.monotonic() - started_at, 2),
+            timeout=timed_out,
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
+        if timed_out:
+            raise HTTPException(
+                status_code=504,
+                detail=f"{stage_label}超过 {int(STEP2_LLM_TIMEOUT_SEC)} 秒仍未返回，请重试或切换响应更快的模型。",
+            ) from exc
+        raise HTTPException(status_code=502, detail=f"{stage_label}失败：{str(exc)[:300]}") from exc
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
 
 
 def script_plan_schema_hint() -> str:
@@ -3494,6 +3591,7 @@ def build_storyboard_request(
    - content_unit_id: 必须与绑定 visual_group 的 content_unit_id 一致
    - narration_beats 是是否朗读的唯一依据：某个 visual_group 有对应 beat 才会在演讲稿中讲解，没有 beat 就只作为画面内容展示。
    - 不要为了覆盖所有 visual_groups 而强行补旁白；只为演讲稿实际需要讲解的内容创建 beat。
+   - 同一页内每条 spoken_text 的内容必须唯一；严禁重复、近似复述或为了凑数量复制同一句旁白。
 5. 当前项目的可配置分镜结构如下。请优先遵守：
 {profile_prompt}
 6. 用户自定义的分镜与演讲稿规则如下。请遵守这些内容，但不得修改输出字段、层级、ID 规则或 JSON 结构：
@@ -4082,6 +4180,11 @@ def get_step2_result(project_id: str, db: Session = Depends(get_db)):
         
     with open(contract_path, "r", encoding="utf-8") as f:
         contract = json.load(f)
+    before = json.dumps(contract, ensure_ascii=False, sort_keys=True)
+    contract = normalize_visual_contract(contract, read_project_pipeline_profile(project))
+    if json.dumps(contract, ensure_ascii=False, sort_keys=True) != before:
+        with open(contract_path, "w", encoding="utf-8") as f:
+            json.dump(contract, f, ensure_ascii=False, indent=2)
     return {"success": True, "contract": contract}
 
 @app.put("/api/projects/{project_id}/steps/2/result")
@@ -4090,6 +4193,7 @@ def update_step2_result(project_id: str, payload: Dict[str, Any], db: Session = 
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
         
+    payload = normalize_visual_contract(payload, read_project_pipeline_profile(project))
     contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
     with open(contract_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
@@ -5781,16 +5885,8 @@ def init_step6_narration(project_id: str, db: Session = Depends(get_db)):
                 "beats": []
             })
             
-    global_beats = {"slides": global_slides}
-    beats_path = os.path.join(project.run_dir, "planning", "narration_beats.json")
-    with open(beats_path, "w", encoding="utf-8") as f:
-        json.dump(global_beats, f, ensure_ascii=False, indent=2)
-        
-    # 读回 narration_beats.json 展现给用户编辑
-    with open(beats_path, "r", encoding="utf-8") as f:
-        beats = json.load(f)
-        
-    return {"success": True, "beats": beats}
+    global_beats = persist_narration_beats(project, {"slides": global_slides})
+    return {"success": True, "beats": global_beats}
 
 @app.get("/api/projects/{project_id}/steps/6/result")
 def get_step6_result(project_id: str, db: Session = Depends(get_db)):

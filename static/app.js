@@ -61,8 +61,8 @@ let state = {
     eraserMode: false,
     isPainting: false,
     currentStroke: null,
-    brushSize: 48,
-    eraserSize: 48,
+    brushSize: 140,
+    eraserSize: 100,
     maskZoom: 1,
     maskZoomOriginX: 50,
     maskZoomOriginY: 50,
@@ -909,6 +909,7 @@ function updateStepperUI(currentStep, stepStatus) {
   stepItems.forEach(item => {
     const step = parseInt(item.dataset.step);
     item.className = 'step-item'; // 重置
+    item.querySelectorAll('.step-status-tag').forEach(badge => badge.remove());
     
     if (step === activeStep) {
       item.classList.add('active');
@@ -919,17 +920,10 @@ function updateStepperUI(currentStep, stepStatus) {
       item.classList.add('completed');
     } else if (status === 'pending_reconfirmation') {
       item.classList.add('pending_reconfirmation');
-      // 可以在此处插入一个状态角标
-      let badge = item.querySelector('.step-status-tag');
-      if (!badge) {
-        badge = document.createElement('span');
-        badge.className = 'step-status-tag';
-        item.appendChild(badge);
-      }
+      const badge = document.createElement('span');
+      badge.className = 'step-status-tag';
       badge.innerText = '需重做';
-    } else {
-      const badge = item.querySelector('.step-status-tag');
-      if (badge) badge.remove();
+      item.appendChild(badge);
     }
   });
 }
@@ -1181,6 +1175,14 @@ function defaultStep2GenerationRequirement() {
   return '按当前已保存的分镜规则、结构配置和文章内容生成分镜规划。优先把内容讲清楚，不要机械套用固定卡片结构。';
 }
 
+function setStep2GenerationStatus(message = '', type = '') {
+  const status = document.getElementById('step2-generation-status');
+  if (!status) return;
+  status.textContent = message;
+  status.className = `step2-generation-status${type ? ` ${type}` : ''}`;
+  status.style.display = message ? 'block' : 'none';
+}
+
 async function confirmStep2Generation() {
   const userRequirement = document.getElementById('step2-generation-requirement').value.trim();
   const requirement = userRequirement || defaultStep2GenerationRequirement();
@@ -1191,6 +1193,7 @@ async function confirmStep2Generation() {
 
 async function generateStep2Contract(requirement = '') {
   const normalizedRequirement = String(requirement || defaultStep2GenerationRequirement()).trim();
+  setStep2GenerationStatus('');
   document.getElementById('step2-loading').style.display = 'block';
   document.getElementById('step2-btn-generate').disabled = true;
   const loadingText = document.querySelector('#step2-loading p');
@@ -1219,10 +1222,13 @@ async function generateStep2Contract(requirement = '') {
       return;
     }
     showToast('🎉 Narration-first 分镜规划已生成！');
+    setStep2GenerationStatus('分镜规划已生成，可以继续检查和编辑各页内容。', 'success');
     state.slides = res.contract?.slides || [];
     renderStep2Workspace();
   } catch(e) {
-    // 捕获报错
+    const message = e?.message || '分镜生成失败，请稍后重试。';
+    console.error('Step 2 generation failed:', e);
+    setStep2GenerationStatus(`分镜生成失败：${message}`, 'error');
   } finally {
     if (loadingText) loadingText.innerText = originalLoadingText;
     document.getElementById('step2-loading').style.display = 'none';
@@ -1482,10 +1488,34 @@ function step2BodyContentText(slide) {
 
 function step2NarrationText(slide) {
   const beats = Array.isArray(slide?.narration_beats) ? slide.narration_beats : [];
+  const seen = new Set();
   return beats
     .map(beat => normalizeStep2MultilineText(beat?.spoken_text || ''))
     .filter(Boolean)
+    .filter(text => {
+      const key = narrationDedupeKey(text);
+      if (key && seen.has(key)) return false;
+      if (key) seen.add(key);
+      return true;
+    })
     .join('\n\n');
+}
+
+function narrationDedupeKey(text) {
+  return String(text || '')
+    .replace(/<#\d+(?:\.\d{1,2})?#>|\([A-Za-z-]+\)/g, '')
+    .toLocaleLowerCase()
+    .replace(/[\s\p{P}\p{S}_]+/gu, '');
+}
+
+function uniqueNarrationLines(lines) {
+  const seen = new Set();
+  return (lines || []).filter(text => {
+    const key = narrationDedupeKey(text);
+    if (key && seen.has(key)) return false;
+    if (key) seen.add(key);
+    return true;
+  });
 }
 
 function normalizeStep2MultilineText(text) {
@@ -1550,10 +1580,10 @@ function saveCurrentSlideInputToState() {
     const bodyText = normalizeStep2MultilineText(document.getElementById('step2-slide-body-input')?.value || '');
     slide.body_content = bodyText.split(/\r?\n/).map(item => item.trim()).filter(Boolean);
     const narrationText = normalizeStep2MultilineText(document.getElementById('step2-slide-narration-input')?.value || '');
-    const narrationLines = narrationText
+    const narrationLines = uniqueNarrationLines(narrationText
       .split(/\n\s*\n|\r?\n/)
       .map(item => item.trim())
-      .filter(Boolean);
+      .filter(Boolean));
     const existingBeats = Array.isArray(slide.narration_beats) ? slide.narration_beats : [];
     slide.narration_beats = narrationLines.map((text, index) => {
       const previous = existingBeats[index] || {};
@@ -1781,19 +1811,19 @@ function renderStep3Grid() {
             ${isGenerating ? '生成中' : (img.exists ? '已就绪' : '待生成')}
           </span>
         </div>
-        <div style="display: flex; gap: 0.3rem; align-items: center;">
-          <button class="success step3-ai-action" data-slide-id="${escHtml(img.slide_id)}" ${isGenerating ? 'disabled' : ''} style="font-size: 0.72rem; padding: 0.2rem 0.4rem; box-shadow: 1px 1px 0px 0px var(--ink-color); margin: 0;">
+        <div class="step3-card-actions">
+          <button class="success step3-card-action step3-ai-action" data-slide-id="${escHtml(img.slide_id)}" ${isGenerating ? 'disabled' : ''}>
             ${isGenerating ? '生成中' : 'AI生成'}
           </button>
-          <label class="btn secondary ${isGenerating ? 'is-disabled' : ''}" style="font-size: 0.72rem; padding: 0.2rem 0.4rem; cursor: pointer; box-shadow: 1px 1px 0px 0px var(--ink-color); display: inline-flex; align-items: center; gap: 0.1rem; margin: 0;">
+          <label class="btn secondary step3-card-action step3-upload-action ${isGenerating ? 'is-disabled' : ''}">
             上传
             <input class="step3-upload-input" data-slide-id="${escHtml(img.slide_id)}" type="file" accept="image/*" ${isGenerating ? 'disabled' : ''} style="display: none;">
           </label>
           ${img.exists ? `
-            <button class="danger step3-delete-action" data-slide-id="${escHtml(img.slide_id)}" ${isGenerating ? 'disabled' : ''} style="font-size: 0.72rem; padding: 0.2rem 0.4rem; box-shadow: 1px 1px 0px 0px var(--ink-color); margin: 0;">
+            <button class="danger step3-card-action step3-delete-action" data-slide-id="${escHtml(img.slide_id)}" ${isGenerating ? 'disabled' : ''}>
               删除
             </button>
-          ` : ''}
+          ` : '<button class="step3-card-action step3-action-placeholder" type="button" disabled aria-hidden="true" tabindex="-1">删除</button>'}
         </div>
       </div>
       <div class="step3-card-title" title="${escHtml(slideTitle)}">${escHtml(slideTitle)}</div>
@@ -2168,6 +2198,23 @@ function isValidMaskColor(color) {
 function getBoxColor(maskBox, idx) {
   const storedColor = maskBox?.manual_mask?.color || maskBox?.color;
   return isValidMaskColor(storedColor) ? String(storedColor).trim() : getMaskColor(idx);
+}
+
+function claimUniqueMaskColor(preferredColor, idx, usedColors) {
+  const preferred = isValidMaskColor(preferredColor) ? String(preferredColor).trim() : getMaskColor(idx);
+  if (!usedColors.has(preferred.toUpperCase())) {
+    usedColors.add(preferred.toUpperCase());
+    return preferred;
+  }
+  for (let offset = 0; offset < MASK_COLORS.length; offset += 1) {
+    const candidate = getMaskColor(idx + offset);
+    if (!usedColors.has(candidate.toUpperCase())) {
+      usedColors.add(candidate.toUpperCase());
+      return candidate;
+    }
+  }
+  usedColors.add(preferred.toUpperCase());
+  return preferred;
 }
 
 function hexToRgba(hex, alpha) {
@@ -2574,12 +2621,7 @@ function getSlideMaskBoxes(slide) {
   return dedupeMaskBoxNarrationAssignments(merged.filter(isDisplayableMaskBox))
     .map((box, idx) => {
       const manualMask = cloneManualMask(box.manual_mask || { strokes: [] });
-      let color = getBoxColor(box, idx);
-      const colorKey = color.toUpperCase();
-      if (usedColors.has(colorKey)) {
-        color = getMaskColor(idx);
-      }
-      usedColors.add(color.toUpperCase());
+      const color = claimUniqueMaskColor(getBoxColor(box, idx), idx, usedColors);
       return {
         ...box,
         manual_mask: {
@@ -3307,22 +3349,24 @@ function selectStep5MaskBox(idx, shouldScroll = true) {
 }
 
 function updateBrushSize(value, shouldRedraw = true) {
-  const size = Math.max(8, Math.min(300, Number(value) || 48));
+  const size = Math.max(100, Math.min(200, Number(value) || 140));
   state.canvasState.brushSize = size;
   const input = document.getElementById('step5-brush-size');
   const label = document.getElementById('step5-brush-size-value');
   if (input) input.value = String(size);
   if (label) label.textContent = String(size);
+  refreshMaskToolCursor();
   if (shouldRedraw) redrawCanvas();
 }
 
 function updateEraserSize(value, shouldRedraw = true) {
-  const size = Math.max(8, Math.min(300, Number(value) || 48));
+  const size = Math.max(100, Math.min(200, Number(value) || 100));
   state.canvasState.eraserSize = size;
   const input = document.getElementById('step5-eraser-size');
   const label = document.getElementById('step5-eraser-size-value');
   if (input) input.value = String(size);
   if (label) label.textContent = String(size);
+  refreshMaskToolCursor();
   if (shouldRedraw) redrawCanvas();
 }
 
@@ -3354,6 +3398,7 @@ function stopMaskPaint() {
   state.canvasState.paintingBoxIndex = -1;
   state.canvasState.isPainting = false;
   state.canvasState.currentStroke = null;
+  hideMaskToolCursor();
   redrawCanvas();
   renderStep5BoxesForm();
 }
@@ -3437,10 +3482,46 @@ function getCanvasCoords(event, canvas) {
   };
 }
 
+function hideMaskToolCursor() {
+  const cursor = document.getElementById('step5-tool-cursor');
+  if (cursor) cursor.classList.remove('visible');
+}
+
+function refreshMaskToolCursor() {
+  const cursor = document.getElementById('step5-tool-cursor');
+  const canvas = document.getElementById('step5-canvas');
+  const wrapper = document.getElementById('canvas-container');
+  if (!cursor || !canvas || !wrapper || !state.canvasState.paintMode) {
+    hideMaskToolCursor();
+    return;
+  }
+  const clientX = Number(cursor.dataset.clientX);
+  const clientY = Number(cursor.dataset.clientY);
+  if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
+  const canvasRect = canvas.getBoundingClientRect();
+  const wrapperRect = wrapper.getBoundingClientRect();
+  const toolSize = state.canvasState.eraserMode ? state.canvasState.eraserSize : state.canvasState.brushSize;
+  const displaySize = Math.max(8, toolSize * canvasRect.width / 1920);
+  cursor.style.width = `${displaySize}px`;
+  cursor.style.height = `${displaySize}px`;
+  cursor.style.left = `${clientX - wrapperRect.left}px`;
+  cursor.style.top = `${clientY - wrapperRect.top}px`;
+  cursor.classList.add('visible');
+}
+
+function updateMaskToolCursor(event) {
+  const cursor = document.getElementById('step5-tool-cursor');
+  if (!cursor) return;
+  cursor.dataset.clientX = String(event.clientX);
+  cursor.dataset.clientY = String(event.clientY);
+  refreshMaskToolCursor();
+}
+
 function beginMaskStroke(event, canvas) {
   if (!state.canvasState.paintMode || state.canvasState.paintingBoxIndex < 0) return;
   if (event.button !== undefined && event.button !== 0) return;
   event.preventDefault();
+  updateMaskToolCursor(event);
   const idx = state.canvasState.paintingBoxIndex;
   const box = state.canvasState.boxes[idx];
   if (!box) return;
@@ -3460,6 +3541,7 @@ function beginMaskStroke(event, canvas) {
 }
 
 function continueMaskStroke(event, canvas) {
+  updateMaskToolCursor(event);
   if (!state.canvasState.isPainting || !state.canvasState.currentStroke) return;
   event.preventDefault();
   const point = getCanvasCoords(event, canvas);
@@ -3480,6 +3562,7 @@ function finishMaskStroke(event, canvas) {
   redrawCanvas();
   renderStep5BoxesForm();
   scheduleStep5Autosave();
+  updateMaskToolCursor(event);
 }
 
 // AI provides the base mask; pointer tools add reversible manual corrections.
@@ -3493,6 +3576,10 @@ function initCanvasEvents() {
   newCanvas.addEventListener('pointermove', (event) => continueMaskStroke(event, newCanvas));
   newCanvas.addEventListener('pointerup', (event) => finishMaskStroke(event, newCanvas));
   newCanvas.addEventListener('pointercancel', (event) => finishMaskStroke(event, newCanvas));
+  newCanvas.addEventListener('pointerenter', updateMaskToolCursor);
+  newCanvas.addEventListener('pointerleave', () => {
+    if (!state.canvasState.isPainting) hideMaskToolCursor();
+  });
   newCanvas.addEventListener('wheel', (e) => handleMaskCanvasWheel(e, newCanvas), { passive: false });
   if (wrapper) {
     wrapper.onwheel = (e) => handleMaskCanvasWheel(e, newCanvas);
@@ -3548,6 +3635,60 @@ function createStep5OffscreenCanvas() {
   canvas.width = 1920;
   canvas.height = 1080;
   return canvas;
+}
+
+const MASK_PREVIEW_OUTLINE_PX = 5;
+const maskDisplayLayerCache = new WeakMap();
+
+function maskDisplaySignature(item) {
+  const runs = item.manual_mask?.rle?.runs || [];
+  const firstRun = runs[0] || [];
+  const lastRun = runs[runs.length - 1] || [];
+  const strokes = item.manual_mask?.strokes || [];
+  const strokeSignature = strokes.map(stroke => {
+    const points = stroke?.points || [];
+    const last = points[points.length - 1] || {};
+    return `${stroke?.mode || ''}:${stroke?.eraser ? 1 : 0}:${stroke?.size || 0}:${points.length}:${last.x || 0}:${last.y || 0}`;
+  }).join('|');
+  return `${runs.length}:${firstRun.join(',')}:${lastRun.join(',')}:${strokeSignature}`;
+}
+
+function buildMaskDisplayLayer(item, idx) {
+  const isSelected = idx === state.canvasState.selectedBoxIndex;
+  const color = getBoxColor(item, idx);
+  const signature = `${maskDisplaySignature(item)}:${color}:${isSelected ? 1 : 0}`;
+  const cached = maskDisplayLayerCache.get(item);
+  if (cached?.signature === signature) return cached.layer;
+
+  const maskLayer = rasterizeManualMask(item);
+  const outlineMask = createStep5OffscreenCanvas();
+  const outlineMaskCtx = outlineMask.getContext('2d');
+  for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 8) {
+    const offsetX = Math.round(Math.cos(angle) * MASK_PREVIEW_OUTLINE_PX);
+    const offsetY = Math.round(Math.sin(angle) * MASK_PREVIEW_OUTLINE_PX);
+    outlineMaskCtx.drawImage(maskLayer, offsetX, offsetY);
+  }
+  outlineMaskCtx.globalCompositeOperation = 'destination-out';
+  outlineMaskCtx.drawImage(maskLayer, 0, 0);
+
+  const displayLayer = createStep5OffscreenCanvas();
+  const displayCtx = displayLayer.getContext('2d');
+  displayCtx.fillStyle = hexToRgba(color, isSelected ? 0.46 : 0.34);
+  displayCtx.fillRect(0, 0, 1920, 1080);
+  displayCtx.globalCompositeOperation = 'destination-in';
+  displayCtx.drawImage(maskLayer, 0, 0);
+  displayCtx.globalCompositeOperation = 'source-over';
+
+  const outlineColorLayer = createStep5OffscreenCanvas();
+  const outlineColorCtx = outlineColorLayer.getContext('2d');
+  outlineColorCtx.fillStyle = hexToRgba(color, isSelected ? 1 : 0.9);
+  outlineColorCtx.fillRect(0, 0, 1920, 1080);
+  outlineColorCtx.globalCompositeOperation = 'destination-in';
+  outlineColorCtx.drawImage(outlineMask, 0, 0);
+  displayCtx.drawImage(outlineColorLayer, 0, 0);
+
+  maskDisplayLayerCache.set(item, { signature, layer: displayLayer });
+  return displayLayer;
 }
 
 function rasterizeManualMask(item) {
@@ -3858,19 +3999,7 @@ function drawManualMaskStrokes(ctx, item, idx) {
   const strokes = item.manual_mask?.strokes || [];
   const exactRuns = item.manual_mask?.rle?.runs || [];
   if (!strokes.length && !exactRuns.length) return;
-  const isSelected = idx === state.canvasState.selectedBoxIndex;
-  const color = getBoxColor(item, idx);
-  const maskLayer = rasterizeManualMask(item);
-
-  const colorLayer = document.createElement('canvas');
-  colorLayer.width = 1920;
-  colorLayer.height = 1080;
-  const colorCtx = colorLayer.getContext('2d');
-  colorCtx.fillStyle = hexToRgba(color, isSelected ? 0.46 : 0.34);
-  colorCtx.fillRect(0, 0, 1920, 1080);
-  colorCtx.globalCompositeOperation = 'destination-in';
-  colorCtx.drawImage(maskLayer, 0, 0);
-  ctx.drawImage(colorLayer, 0, 0);
+  ctx.drawImage(buildMaskDisplayLayer(item, idx), 0, 0);
 }
 
 function redrawCanvas(options = {}) {
@@ -4155,7 +4284,13 @@ function normalizeStep6Data() {
   }
   narrationData.slides.forEach(slide => {
     if (!Array.isArray(slide.beats)) slide.beats = [];
-    slide.beats = slide.beats.map(normalizeStep6Beat).filter(Boolean);
+    const seen = new Set();
+    slide.beats = slide.beats.map(normalizeStep6Beat).filter(Boolean).filter(beat => {
+      const key = narrationDedupeKey(beat.spoken_text || beat.tts_text || beat.source_text || '');
+      if (key && seen.has(key)) return false;
+      if (key) seen.add(key);
+      return true;
+    });
   });
   if (state.activeSlideIndex >= narrationData.slides.length) {
     state.activeSlideIndex = Math.max(0, narrationData.slides.length - 1);

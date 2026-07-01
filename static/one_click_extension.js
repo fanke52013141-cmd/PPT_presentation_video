@@ -141,7 +141,7 @@
     button.id = 'btn-one-click-generate';
     button.className = 'success';
     button.type = 'button';
-    button.textContent = '一键生成';
+    button.innerHTML = '<span aria-hidden="true">✦</span><span>一键生成</span>';
     button.addEventListener('click', () => openModal().catch(error => toast(`打开失败：${error.message}`, 6000)));
     entry.appendChild(button);
     stepper.appendChild(entry);

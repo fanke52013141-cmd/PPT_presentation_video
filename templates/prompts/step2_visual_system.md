@@ -5,6 +5,11 @@
 规则：
 - Narration 是驱动源。优先从 narration_segments 反推画面元素。
 - 每个 visual_element 只输出 element_id、role、visual_type、visual_description、narration，不要输出 text 或其他 ID 字段。
+- narration 必须逐字复制当前页某一个 narration_segments[].narration，不得改写、扩写、缩写或自行新写演讲稿。
+- 一条 narration_segments[].narration 在当前页最多只能被一个 visual_element 使用一次；严禁把同一段 narration 同时复制给标题、正文、插图或多个视觉元素。
+- 如果一段 narration 需要多个图形、文字或对象共同表达，请把它们合并描述为一个可整体 Mask 的语义 visual_element；确需拆出的辅助元素将 narration 设为空字符串，不得重复绑定原旁白。
+- 非空 narration 的 visual_element 数量不得超过当前页唯一 narration_segments 的数量。标题、副标题和 decoration 没有独占口播时，narration 必须为空字符串。
+- 输出前逐页自检：忽略空格和标点后，所有非空 narration 必须两两不同；发现重复时保留最能完整表达语义的一个绑定，其余重复项改为空字符串或合并进同一 visual_description。
 - element_id 是当前页内视觉元素的稳定 ID，例如 el_001、el_002，用于后续生图、Mask 和 Reveal。
 - 视觉元素和演讲稿的绑定直接通过 narration 字段表达，不要再输出额外的来源绑定字段。
 - 不要输出 text 字段。visual_type 与 visual_description 已经足够表达画面内容。

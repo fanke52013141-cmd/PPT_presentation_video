@@ -4508,6 +4508,48 @@ textarea.step2-soft-input {
   color: #2f7444;
 }
 
+/* Sticky workflow headers must fully occlude scrolling content. */
+.step2-sticky-header,
+.step3-toolbar-row,
+.step5-mask-header,
+.step6-compact-header,
+.step8-header {
+  background: #fafbff !important;
+  background-image: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: 0 1px 0 #e3e7f0, 0 10px 18px rgba(45, 55, 78, 0.06) !important;
+  isolation: isolate;
+}
+
+/* Keep the stale-step badge inside the row instead of creating a fifth grid
+   item that wraps beneath the following step. */
+.sidebar .step-item.pending_reconfirmation .step-complete {
+  display: none !important;
+}
+
+.sidebar .step-status-tag {
+  position: absolute !important;
+  top: 50% !important;
+  right: 0.55rem !important;
+  transform: translateY(-50%);
+  z-index: 3;
+  margin: 0 !important;
+  min-height: 22px;
+  padding: 0.16rem 0.44rem !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.68rem;
+  line-height: 1;
+}
+
+.sidebar .step-item.pending_reconfirmation .step-label {
+  padding-right: 3.4rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .step3-card-header {
   min-height: 64px;
   align-items: flex-start;

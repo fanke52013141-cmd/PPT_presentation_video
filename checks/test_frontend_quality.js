@@ -145,6 +145,18 @@ if (!html.includes('step5-tool-cursor') || !app.includes('toolSize * canvasRect.
 if (!app.includes('const MASK_PREVIEW_OUTLINE_PX = 5') || !app.includes('buildMaskDisplayLayer')) {
   throw new Error('same-color 5px Mask preview outline is missing');
 }
+if (!app.includes('claimUniqueMaskColor') || !app.includes('idx + offset')) {
+  throw new Error('Mask color collision handling must search for an unused palette color');
+}
+if (!css.includes('background: #fafbff !important') || !css.includes('backdrop-filter: none !important')) {
+  throw new Error('sticky workflow headers must use an opaque background');
+}
+if (!css.includes('.sidebar .step-status-tag') || !css.includes('transform: translateY(-50%)')) {
+  throw new Error('pending-reconfirmation badges must stay inside their step row');
+}
+if (aiMask.includes("setInlineStatus('AI 标注已完成'")) {
+  throw new Error('completed AI Mask status must be a temporary toast, not persistent sidebar content');
+}
 for (const manualMaskHandler of ['startMaskPaint', 'startMaskErase', 'deleteMaskBox', 'beginMaskStroke']) {
   if (!app.includes(manualMaskHandler)) throw new Error(`manual Mask fallback handler missing: ${manualMaskHandler}`);
 }

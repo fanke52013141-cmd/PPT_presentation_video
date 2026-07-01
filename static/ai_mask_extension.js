@@ -317,7 +317,7 @@
       if (result.complete !== true) {
         throw new Error('仍有画面语块未能完成关联，请重新运行 AI 标注');
       }
-      setInlineStatus('AI 标注已完成', true, false);
+      setInlineStatus('', false, false);
       toast(options.automatic ? 'AI 标注已自动完成。' : 'AI 标注已重新完成。', 4500);
       if (typeof window.loadStep5Data === 'function') await window.loadStep5Data();
       else if (typeof loadStep5Data === 'function') await loadStep5Data();
@@ -346,7 +346,7 @@
     try {
       const result = await apiGet(`/api/projects/${encodeURIComponent(id)}/steps/5/result`);
       if (result.manifest?.ai_mask_annotation?.status === 'completed') {
-        setInlineStatus('AI 标注已完成', true, false);
+        setInlineStatus('', false, false);
         return;
       }
       await runAnnotation({ automatic: true });

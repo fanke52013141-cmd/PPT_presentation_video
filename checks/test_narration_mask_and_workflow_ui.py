@@ -164,6 +164,8 @@ def test_workflow_connector_stops_at_step_six_and_step2_errors_are_visible():
 
 
 def test_step2_timeout_is_logged_and_returned_as_actionable_error(monkeypatch, tmp_path):
+    assert server.STEP2_LLM_TIMEOUT_SEC == 240.0
+
     class FakeCompletions:
         def create(self, **kwargs):
             raise TimeoutError("simulated upstream timeout")
@@ -196,6 +198,7 @@ def test_step2_timeout_is_logged_and_returned_as_actionable_error(monkeypatch, t
         )
 
     assert exc_info.value.status_code == 504
+    assert "240" in str(exc_info.value.detail)
     assert "Step 2A 演讲稿规划" in str(exc_info.value.detail)
     assert client.closed is True
     records = [json.loads(line) for line in (tmp_path / "logs" / "pipeline.log").read_text(encoding="utf-8").splitlines()]

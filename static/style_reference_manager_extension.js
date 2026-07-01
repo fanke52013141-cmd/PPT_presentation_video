@@ -343,7 +343,7 @@
       const image = detail?.references?.images?.[0];
       const thumb = image ? `<img src="${esc(image.url)}" alt="${esc(item.name)} 模板缩略图">` : '<span class="style-template-thumb-placeholder">16:9 风格模板</span>';
       const count = detail?.references?.images?.length ?? item.reference_count ?? 0;
-      return `<article class="style-template-card ${item.id === STATE.selectedTemplateId ? 'active' : ''}" data-template-id="${esc(item.id)}"><span class="style-template-thumb">${thumb}</span><span><span class="style-template-name">${esc(item.name)}</span><span class="style-template-meta">System Content + ${count} 张参考图</span></span><span class="style-template-check">✓</span>${item.id !== 'current' ? '<button class="style-template-delete" type="button">删除</button>' : ''}</article>`;
+      return `<article class="style-template-card ${item.id === STATE.selectedTemplateId ? 'active' : ''}" data-template-id="${esc(item.id)}"><span class="style-template-thumb">${thumb}</span><span><span class="style-template-name">${esc(item.name)}</span><span class="style-template-meta">System Content + ${count} 张参考图</span></span><span class="style-template-check">✓</span>${item.id !== 'current' && !item.built_in ? '<button class="style-template-delete" type="button">删除</button>' : ''}</article>`;
     }).join('');
     catalog.querySelectorAll('.style-template-card').forEach(card => card.addEventListener('click', event => {
       if (event.target.closest('.style-template-delete')) return;
@@ -390,6 +390,10 @@
         console.warn('图片风格模板详情加载失败', item.id, error);
       }
     }));
+    const currentIsEmpty = !String(STATE.style?.system_content || '').trim() && !(STATE.references?.images || []).length;
+    if (currentIsEmpty && STATE.selectedTemplateId === 'current' && STATE.templates.some(item => String(item.id) === 'handdrawn')) {
+      STATE.selectedTemplateId = 'handdrawn';
+    }
     if (STATE.selectedTemplateId !== 'current' && !STATE.templates.some(item => String(item.id) === STATE.selectedTemplateId)) STATE.selectedTemplateId = 'current';
     renderTemplates();
   }

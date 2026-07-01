@@ -909,6 +909,7 @@ function updateStepperUI(currentStep, stepStatus) {
   stepItems.forEach(item => {
     const step = parseInt(item.dataset.step);
     item.className = 'step-item'; // 重置
+    item.querySelectorAll('.step-status-tag').forEach(badge => badge.remove());
     
     if (step === activeStep) {
       item.classList.add('active');
@@ -919,17 +920,10 @@ function updateStepperUI(currentStep, stepStatus) {
       item.classList.add('completed');
     } else if (status === 'pending_reconfirmation') {
       item.classList.add('pending_reconfirmation');
-      // 可以在此处插入一个状态角标
-      let badge = item.querySelector('.step-status-tag');
-      if (!badge) {
-        badge = document.createElement('span');
-        badge.className = 'step-status-tag';
-        item.appendChild(badge);
-      }
+      const badge = document.createElement('span');
+      badge.className = 'step-status-tag';
       badge.innerText = '需重做';
-    } else {
-      const badge = item.querySelector('.step-status-tag');
-      if (badge) badge.remove();
+      item.appendChild(badge);
     }
   });
 }
@@ -2206,6 +2200,23 @@ function getBoxColor(maskBox, idx) {
   return isValidMaskColor(storedColor) ? String(storedColor).trim() : getMaskColor(idx);
 }
 
+function claimUniqueMaskColor(preferredColor, idx, usedColors) {
+  const preferred = isValidMaskColor(preferredColor) ? String(preferredColor).trim() : getMaskColor(idx);
+  if (!usedColors.has(preferred.toUpperCase())) {
+    usedColors.add(preferred.toUpperCase());
+    return preferred;
+  }
+  for (let offset = 0; offset < MASK_COLORS.length; offset += 1) {
+    const candidate = getMaskColor(idx + offset);
+    if (!usedColors.has(candidate.toUpperCase())) {
+      usedColors.add(candidate.toUpperCase());
+      return candidate;
+    }
+  }
+  usedColors.add(preferred.toUpperCase());
+  return preferred;
+}
+
 function hexToRgba(hex, alpha) {
   const clean = String(hex || '#111111').replace('#', '');
   const full = clean.length === 3 ? clean.split('').map(ch => ch + ch).join('') : clean;
@@ -2610,12 +2621,7 @@ function getSlideMaskBoxes(slide) {
   return dedupeMaskBoxNarrationAssignments(merged.filter(isDisplayableMaskBox))
     .map((box, idx) => {
       const manualMask = cloneManualMask(box.manual_mask || { strokes: [] });
-      let color = getBoxColor(box, idx);
-      const colorKey = color.toUpperCase();
-      if (usedColors.has(colorKey)) {
-        color = getMaskColor(idx);
-      }
-      usedColors.add(color.toUpperCase());
+      const color = claimUniqueMaskColor(getBoxColor(box, idx), idx, usedColors);
       return {
         ...box,
         manual_mask: {

@@ -1297,14 +1297,27 @@ def _apply(manifest: dict[str, Any], slide: dict[str, Any], elements_payload: di
         for index, group in enumerate(slide.get("visual_groups", []) or [])
         if isinstance(group, dict)
     }
-    for match in match_payload.get("matches", []) or []:
+    matches = [match for match in match_payload.get("matches", []) or [] if isinstance(match, dict)]
+    valid_match_group_ids = {
+        str(match.get("group_id") or "")
+        for match in matches
+        if not match.get("below_threshold")
+        and any(str(element_id) in by_element for element_id in match.get("element_ids", []) or [])
+    }
+    for match in matches:
+        gid = str(match.get("group_id") or "")
         if match.get("below_threshold"):
-            skipped += 1
+            # Vision and the deterministic fallback can both report the same
+            # group.  A low-confidence/empty vision candidate is not a real
+            # omission when a later fallback candidate successfully owns the
+            # group, and static title groups are intentionally not dynamic.
+            if gid not in valid_match_group_ids and gid not in static_group_ids:
+                skipped += 1
             continue
-        gid = match["group_id"]
         matched_elements = [by_element[eid] for eid in match.get("element_ids", []) if eid in by_element]
         if not matched_elements:
-            skipped += 1
+            if gid not in valid_match_group_ids and gid not in static_group_ids:
+                skipped += 1
             continue
         exact_mask = _exact_manual_mask(matched_elements, width, height, MASK_COLORS[visual_group_order.get(gid, 0) % len(MASK_COLORS)])
         box = dict(exact_mask["bounds"])

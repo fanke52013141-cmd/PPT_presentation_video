@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260703.2">
+  <link rel="stylesheet" href="style.css?v=20260704.1">
 </head>
 <body>
 
@@ -155,8 +155,8 @@
         <div id="step-panel-2" class="step-panel" style="display: none;">
           
           <!-- 粘性吸顶栏容器：合并按钮与缩略图，使用不透明背景挡住滚上来的正文 -->
-          <div class="step2-sticky-header" style="position: sticky; top: -1rem; margin-top: -1rem; padding-top: 1rem; padding-bottom: 0.8rem; background-color: var(--bg-color); z-index: 100; border-bottom: 2px solid var(--ink-color); margin-bottom: 1rem;">
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.8rem;">
+          <div class="step2-sticky-header" style="position: sticky; top: -1rem; margin-top: -1rem; padding-top: 1rem; padding-bottom: 0.25rem; background-color: var(--bg-color); z-index: 100; border-bottom: 2px solid var(--ink-color); margin-bottom: 0.25rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.35rem;">
               <div style="display: flex; align-items: center; gap: 0.8rem;">
                 <h2 class="highlight-title" style="margin: 0; font-size: 1.25rem;">分镜规划</h2>
                 <button id="step2-btn-generate" class="success" style="font-size: 0.85rem; padding: 0.35rem 0.9rem;">
@@ -200,9 +200,9 @@
             
             <!-- 当前编辑的分镜内容 -->
             <div id="step2-slide-card" class="step2-slide-editor">
-              <h3 style="margin-bottom: 1rem; border-bottom: 2px solid #111; padding-bottom: 0.5rem; font-size: 1rem;">
-                正在编辑：<span id="step2-current-slide-id" style="color: var(--accent-color);">--</span>
-                <span id="step2-current-slide-title" style="font-weight: normal; color: #555; margin-left: 0.5rem; font-size: 0.9rem;"></span>
+              <h3 class="step2-current-slide-heading">
+                <span id="step2-current-slide-title">--</span>
+                <span id="step2-current-slide-id" hidden>--</span>
               </h3>
               <div id="step2-slide-fields" class="step2-slide-fields">
                 <label>
@@ -841,10 +841,10 @@
 
   <!-- 主业务 JavaScript 脚本 -->
   <script src="flow.js?v=3.0.0"></script>
-  <script src="app.js?v=20260702.1"></script>
+  <script src="app.js?v=20260704.1"></script>
   <script src="project_profile_extension.js?v=3.0.0"></script>
   <script src="storyboard_background_extension.js?v=3.0.0"></script>
-  <script src="style_reference_manager_extension.js?v=3.0.0"></script>
+  <script src="style_reference_manager_extension.js?v=3.0.1"></script>
   <script src="ai_mask_extension.js?v=3.0.0"></script>
   <script src="one_click_extension.js?v=20260630.1"></script>
 </body>

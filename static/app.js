@@ -872,6 +872,7 @@ function copyLlmUrlToImage() {
 // ==================== 工作区视图控制逻辑 ====================
 
 async function enterWorkspace(projectId) {
+  resetStep5ProjectState();
   const project = await API.get(`/api/projects/${projectId}`);
   state.currentProject = project;
   const visibleStep = resolveProjectVisibleStep(project);
@@ -892,6 +893,7 @@ async function enterWorkspace(projectId) {
 }
 
 function exitWorkspace() {
+  resetStep5ProjectState();
   document.getElementById('project-info-header').style.display = 'none';
   document.getElementById('btn-back-home').style.display = 'none';
   document.getElementById('page-workspace').style.display = 'none';
@@ -1222,7 +1224,7 @@ async function generateStep2Contract(requirement = '') {
       return;
     }
     showToast('🎉 Narration-first 分镜规划已生成！');
-    setStep2GenerationStatus('分镜规划已生成，可以继续检查和编辑各页内容。', 'success');
+    setStep2GenerationStatus('');
     state.slides = res.contract?.slides || [];
     renderStep2Workspace();
   } catch(e) {
@@ -1289,7 +1291,7 @@ function renderStep2Workspace() {
     const slideIdEl = document.getElementById('step2-current-slide-id');
     const slideTitleEl = document.getElementById('step2-current-slide-title');
     if (slideIdEl) slideIdEl.innerText = slide.slide_id;
-    if (slideTitleEl) slideTitleEl.innerText = slide.main_title ? `「${slide.main_title}」` : '';
+    if (slideTitleEl) slideTitleEl.innerText = slide.main_title || '未命名 Slide';
     // 同步隐藏字段
     document.getElementById('step2-main-title').value = slide.main_title || '';
     document.getElementById('step2-subtitle').value = slide.subtitle || '';
@@ -2171,9 +2173,25 @@ async function confirmStep3Images() {
 // ==================== 步骤 5: Mask 可视化标注 ====================
 
 let manifestData = null;
+let manifestProjectId = '';
 let step5SourceCanvas = null;
 
 let step2Contract = null; // 用于缓存步骤 2 分镜规划数据
+
+function resetStep5ProjectState() {
+  if (state.step5AutoSaveTimer) {
+    clearTimeout(state.step5AutoSaveTimer);
+    state.step5AutoSaveTimer = null;
+  }
+  state.step5AutoSavePromise = null;
+  state.step5AutoSaveInFlight = false;
+  manifestData = null;
+  manifestProjectId = '';
+  step2Contract = null;
+  step5SourceCanvas = null;
+  state.canvasState.boxes = [];
+  state.canvasState.selectedBoxIndex = -1;
+}
 
 const MASK_COLORS = [
   '#E84A5F',
@@ -2714,17 +2732,22 @@ function syncMaskBoxesToSlide(slide, boxes) {
 }
 
 async function loadStep5Data() {
+  const projectId = state.currentProject?.id;
+  if (!projectId) return;
   await loadStep3VisualSettings();
   try {
-    const contractRes = await API.get(`/api/projects/${state.currentProject.id}/steps/2/result`);
+    const contractRes = await API.get(`/api/projects/${projectId}/steps/2/result`);
+    if (state.currentProject?.id !== projectId) return;
     if (contractRes.success && contractRes.contract) {
       step2Contract = contractRes.contract;
     }
   } catch (e) {}
 
-  const res = await API.get(`/api/projects/${state.currentProject.id}/steps/5/result`);
+  const res = await API.get(`/api/projects/${projectId}/steps/5/result`);
+  if (state.currentProject?.id !== projectId) return;
   if (res.success && res.manifest) {
     manifestData = res.manifest;
+    manifestProjectId = projectId;
     // 智能初始化每一页 slide 的状态并向下兼容
     manifestData.slides.forEach(s => {
       if (!s.status) {
@@ -2783,6 +2806,14 @@ async function openStoryboardRulesModal(mode = 'script') {
   ]);
   state.step2PromptTemplates = Array.isArray(templateRes.templates) ? templateRes.templates : [];
   renderStep2PromptEditor(promptRes);
+  const builtInTemplate = state.step2PromptTemplates.find(template =>
+    template.prompt_type === state.activeStep2PromptMode && template.built_in
+  );
+  if (builtInTemplate) {
+    state.selectedStep2PromptTemplateId = builtInTemplate.id;
+    applyStep2PromptTemplate(builtInTemplate);
+    renderStep2PromptTemplateOptions(builtInTemplate.id);
+  }
   document.getElementById('modal-storyboard-rules').style.display = 'flex';
 }
 
@@ -4107,7 +4138,10 @@ function scheduleStep5Autosave() {
 }
 
 async function saveStep5Draft() {
-  if (!manifestData?.slides?.length) return { success: false };
+  const projectId = state.currentProject?.id;
+  if (!projectId || manifestProjectId !== projectId || !manifestData?.slides?.length) {
+    return { success: false, reason: 'stale_or_empty_step5_manifest' };
+  }
   saveStep5CurrentState();
   if (state.step5AutoSavePromise) {
     try {
@@ -4119,7 +4153,7 @@ async function saveStep5Draft() {
   }
   const payload = JSON.parse(JSON.stringify(manifestData));
   state.step5AutoSaveInFlight = true;
-  const savePromise = API.put(`/api/projects/${state.currentProject.id}/steps/5/draft`, payload);
+  const savePromise = API.put(`/api/projects/${projectId}/steps/5/draft`, payload);
   state.step5AutoSavePromise = savePromise;
   try {
     const res = await savePromise;

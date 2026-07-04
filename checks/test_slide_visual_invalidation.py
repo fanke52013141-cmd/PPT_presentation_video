@@ -8,7 +8,7 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from database import Project
-from server import mark_slide_image_changed, prune_stale_mask_groups
+from server import mark_slide_image_changed, prune_stale_mask_groups, sync_reveal_manifest_to_contract
 
 
 class DummyDb:
@@ -106,3 +106,45 @@ with tempfile.TemporaryDirectory() as temp_value:
     assert ids == ["__static_title_header__", "body_group"]
 
 print("static title header pruning checks passed")
+
+
+with tempfile.TemporaryDirectory() as temp_value:
+    run_dir = Path(temp_value)
+    planning = run_dir / "planning"
+    planning.mkdir()
+    contract = {
+        "version": "visual_contract_v1",
+        "slides": [
+            {
+                "slide_id": slide_id,
+                "visual_groups": [
+                    {"id": f"{slide_id}_title", "role": "title", "visible_text": f"Title {index}"},
+                    {"id": f"{slide_id}_body", "role": "content_body", "visible_text": f"Body {index}"},
+                ],
+                "narration_beats": [
+                    {"id": f"{slide_id}_beat", "group_id": f"{slide_id}_body"},
+                ],
+            }
+            for index, slide_id in enumerate(("slide_001", "slide_002"), start=1)
+        ],
+    }
+    (planning / "visual_contract.json").write_text(
+        json.dumps(contract, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (run_dir / "reveal_manifest.json").write_text(
+        json.dumps({
+            "version": "reveal_v1",
+            "slides": [],
+            "ai_mask_annotation": {"status": "completed", "processed_slide_count": 9},
+        }),
+        encoding="utf-8",
+    )
+    project = Project(id="repair-empty", name="repair-empty", run_dir=str(run_dir), current_step=5)
+    assert sync_reveal_manifest_to_contract(project) is True
+    repaired = json.loads((run_dir / "reveal_manifest.json").read_text(encoding="utf-8"))
+    assert [slide["slide_id"] for slide in repaired["slides"]] == ["slide_001", "slide_002"]
+    assert repaired["slides"][0]["groups"][1]["id"] == "slide_001_body"
+    assert "ai_mask_annotation" not in repaired
+
+print("empty reveal manifest repair checks passed")

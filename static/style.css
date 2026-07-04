@@ -4724,6 +4724,77 @@ textarea.step2-soft-input {
   outline: none;
 }
 
+/* Compact Step 2 handoff: selectors, title and fields should read as one
+   continuous editor instead of three vertically separated panels. */
+#step-panel-2 .step2-sticky-header {
+  padding-bottom: 0.2rem !important;
+  margin-bottom: 0.15rem !important;
+}
+
+#step-panel-2 .slides-thumbnail-container {
+  padding: 0.12rem 0.25rem 0.18rem !important;
+  margin-bottom: 0.08rem !important;
+}
+
+#step-panel-2 .step2-slide-editor {
+  margin-top: 0 !important;
+  padding: 0.62rem 1.25rem 1rem !important;
+}
+
+.step2-current-slide-heading {
+  margin: 0 0 0.55rem !important;
+  padding: 0 0 0.5rem !important;
+  border-bottom: 1px solid var(--color-border-default) !important;
+  color: var(--color-text-primary) !important;
+  font-size: 1.02rem !important;
+  font-weight: 800 !important;
+  line-height: 1.35 !important;
+}
+
+.step2-generation-status.success {
+  display: none !important;
+}
+
+/* Image creation controls are intentionally low-emphasis.  Generation is a
+   potentially costly action, so it must not look like the default next step. */
+#step3-btn-batch-generate,
+#step3-batch-upload-label,
+.step3-ai-action,
+.step3-upload-action {
+  background: #ffffff !important;
+  border-color: var(--color-border-default) !important;
+  color: var(--color-text-secondary) !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+
+#step3-btn-batch-generate:hover,
+#step3-batch-upload-label:hover,
+.step3-ai-action:hover,
+.step3-upload-action:hover {
+  background: var(--color-bg-subtle) !important;
+  border-color: var(--color-border-strong) !important;
+  color: var(--color-text-primary) !important;
+  filter: none !important;
+}
+
+.step3-card-actions {
+  grid-template-columns: repeat(3, 54px) !important;
+  width: 170px !important;
+  min-width: 170px !important;
+  flex-basis: 170px !important;
+}
+
+.step3-card-action,
+.step3-card-actions > button,
+.step3-card-actions > label.btn {
+  width: 54px !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  padding: 0 0.2rem !important;
+  font-size: 0.72rem !important;
+}
+
 .step8-speed-badge,
 .step8-speed-source {
   display: inline-flex;

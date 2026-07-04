@@ -8,7 +8,7 @@
     references: { images: [] },
     templates: [],
     templateDetails: new Map(),
-    selectedTemplateId: 'current',
+    selectedTemplateId: 'handdrawn',
   };
 
   function parseResponse(response) {
@@ -61,6 +61,10 @@
 
   function rememberProjectId(projectId) {
     if (!projectId) return;
+    if (STATE.projectId && STATE.projectId !== String(projectId)) {
+      STATE.selectedTemplateId = 'handdrawn';
+      STATE.activeTab = 'template';
+    }
     STATE.projectId = String(projectId);
     sessionStorage.setItem('ppt_project_style_reference_project_id', STATE.projectId);
     sessionStorage.setItem('ppt_image_style_reverse_project_id', STATE.projectId);
@@ -390,11 +394,9 @@
         console.warn('图片风格模板详情加载失败', item.id, error);
       }
     }));
-    const currentIsEmpty = !String(STATE.style?.system_content || '').trim() && !(STATE.references?.images || []).length;
-    if (currentIsEmpty && STATE.selectedTemplateId === 'current' && STATE.templates.some(item => String(item.id) === 'handdrawn')) {
-      STATE.selectedTemplateId = 'handdrawn';
-    }
-    if (STATE.selectedTemplateId !== 'current' && !STATE.templates.some(item => String(item.id) === STATE.selectedTemplateId)) STATE.selectedTemplateId = 'current';
+    const builtInDefault = STATE.templates.find(item => item.built_in && String(item.id) === 'handdrawn')
+      || STATE.templates.find(item => item.built_in);
+    STATE.selectedTemplateId = builtInDefault ? String(builtInDefault.id) : 'current';
     renderTemplates();
   }
 

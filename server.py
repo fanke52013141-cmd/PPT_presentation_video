@@ -14,6 +14,7 @@ import tempfile
 import threading
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, List, Dict, Any
 
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Query
@@ -1142,7 +1143,14 @@ def read_current_slide_ids_or_404(project: Project) -> List[str]:
 
 
 def sync_reveal_manifest_to_contract(project: Project, slide_ids: Optional[List[str]] = None) -> bool:
-    """Keep mask annotations aligned with the slides that still exist in Step 2."""
+    """Keep Mask slides aligned with Step 2 and repair missing template slides.
+
+    Older implementations only removed stale slides.  If a stale browser
+    autosave or interrupted initialization wrote ``slides: []``, the manifest
+    remained permanently empty and AI Mask failed at the first slide.  Build a
+    fresh coordinate template from the visual contract and use it only for
+    missing slides, preserving every existing manual/AI annotation.
+    """
     current_slide_ids = slide_ids if slide_ids is not None else read_contract_slide_ids(project.run_dir)
     if not current_slide_ids:
         return False
@@ -1168,15 +1176,45 @@ def sync_reveal_manifest_to_contract(project: Project, slide_ids: Optional[List[
             for slide in slides
             if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()
         }
-        synced_slides = [by_id[slide_id] for slide_id in current_slide_ids if slide_id in by_id]
-        if synced_slides == slides:
+        missing_slide_ids = [slide_id for slide_id in current_slide_ids if slide_id not in by_id]
+        template_by_id: Dict[str, Dict[str, Any]] = {}
+        if missing_slide_ids:
+            contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
+            try:
+                with open(contract_path, "r", encoding="utf-8-sig") as file:
+                    contract = json.load(file)
+                from scripts.write_reveal_manifest_template import build_manifest
+
+                template_manifest = build_manifest(contract, Path(project.run_dir))
+                template_by_id = {
+                    str(slide.get("slide_id") or "").strip(): slide
+                    for slide in template_manifest.get("slides", [])
+                    if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()
+                }
+            except Exception as exc:
+                logger.exception("Failed to repair missing reveal manifest slides: %s", exc)
+                return False
+
+        synced_slides = [
+            by_id.get(slide_id) or template_by_id.get(slide_id)
+            for slide_id in current_slide_ids
+        ]
+        synced_slides = [slide for slide in synced_slides if isinstance(slide, dict)]
+        changed = synced_slides != slides
+        if not changed:
             return False
 
         manifest["slides"] = synced_slides
+        if missing_slide_ids:
+            # Any previous completion summary is stale once a slide template
+            # has to be reconstructed.  The next annotation run will write a
+            # truthful replacement summary.
+            manifest.pop("ai_mask_annotation", None)
         write_json_atomic(manifest_path, manifest)
     logger.info(
-        "Synced reveal manifest to visual contract: kept %s of %s slides",
+        "Synced reveal manifest to visual contract: %s slides (%s repaired, %s previous)",
         len(synced_slides),
+        len(missing_slide_ids),
         len(slides),
     )
     return True

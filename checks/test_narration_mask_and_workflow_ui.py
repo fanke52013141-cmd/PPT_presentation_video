@@ -138,8 +138,27 @@ def test_step3_actions_reserve_fixed_non_wrapping_slots():
     app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
     css = (ROOT / "static" / "style.css").read_text(encoding="utf-8")
     assert "step3-action-placeholder" in app
-    assert "grid-template-columns: 48px 36px 36px" in css
+    assert "grid-template-columns: repeat(3, 54px)" in css
+    assert "#step3-btn-batch-generate," in css
+    assert ".step3-ai-action," in css
+    assert "background: #ffffff !important" in css
     assert "white-space: nowrap !important" in css
+
+
+def test_builtin_prompts_and_mask_state_are_reset_per_project():
+    html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
+    app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    css = (ROOT / "static" / "style.css").read_text(encoding="utf-8")
+    style_manager = (ROOT / "static" / "style_reference_manager_extension.js").read_text(encoding="utf-8")
+    assert "正在编辑：" not in html
+    assert "`「${slide.main_title}」`" not in app
+    assert "setStep2GenerationStatus('');" in app
+    assert "#step-panel-2 .slides-thumbnail-container" in css
+    assert "resetStep5ProjectState();" in app
+    assert "manifestProjectId !== projectId" in app
+    assert "template.prompt_type === state.activeStep2PromptMode && template.built_in" in app
+    assert "selectedTemplateId: 'handdrawn'" in style_manager
+    assert "STATE.selectedTemplateId = builtInDefault ? String(builtInDefault.id) : 'current'" in style_manager
 
 
 def test_workflow_rail_owns_toasts_and_disabled_buttons_remain_readable():

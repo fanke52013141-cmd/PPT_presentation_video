@@ -46,5 +46,6 @@ def test_builtin_handdrawn_style_has_system_content_and_previews():
     assert '"built_in": True' in STYLE_RUNTIME
     assert '"PPT模板.png"' in STYLE_RUNTIME
     assert '"PPT示例.png"' in STYLE_RUNTIME
-    assert "currentIsEmpty" in STYLE_UI
+    assert "selectedTemplateId: 'handdrawn'" in STYLE_UI
+    assert "STATE.templates.find(item => item.built_in" in STYLE_UI
     assert "!item.built_in" in STYLE_UI

@@ -341,6 +341,32 @@ def main() -> None:
         ]
         assert not np.any(alphas[0] & alphas[1])
 
+        duplicate_candidate_slide = {
+            "slide_id": "slide_001",
+            "groups": [],
+            "semantic_blocks": [],
+        }
+        duplicate_candidate_payload = {
+            **completed,
+            "matches": [
+                {
+                    "group_id": "group_left",
+                    "element_ids": [],
+                    "confidence": 0.7,
+                    "below_threshold": True,
+                },
+                *completed["matches"],
+            ],
+        }
+        duplicate_applied = mask._apply(
+            {"slides": [duplicate_candidate_slide]},
+            fixture_slide(),
+            detected,
+            duplicate_candidate_payload,
+            settings,
+        )
+        assert duplicate_applied == {"updated": 2, "skipped": 0}
+
         corrected = dict(manifest_slide["groups"][0]["manual_mask"])
         corrected["strokes"] = [
             {"mode": "erase", "eraser": True, "size": 12, "points": [{"x": 50, "y": 50}]},

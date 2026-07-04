@@ -45,7 +45,16 @@ if (-not $ffmpegReady) {
 
 Write-Host ""
 Write-Host "[2/4] Checking Python dependencies..." -ForegroundColor Green
-py -m pip install -r requirements.txt
+$pythonExe = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
+if (-not (Test-Path $pythonExe)) {
+    py -m venv (Join-Path $PSScriptRoot ".venv")
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to create Python virtual environment. Please ensure Python is installed and added to PATH."
+        Read-Host "Press Enter to exit..."
+        exit $LASTEXITCODE
+    }
+}
+& $pythonExe -m pip install -r (Join-Path $PSScriptRoot "requirements.txt")
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Failed to install Python dependencies. Please ensure Python is installed and added to PATH."
     Read-Host "Press Enter to exit..."
@@ -55,4 +64,4 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host ""
 Write-Host "[3/4] Starting backend FastAPI server..." -ForegroundColor Green
 Start-Process "http://localhost:8000"
-py server.py
+& $pythonExe (Join-Path $PSScriptRoot "server.py")

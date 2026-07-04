@@ -287,6 +287,8 @@ def production_invariant_lines(invariants: dict[str, Any], policy: dict[str, Any
         "- All four edges and all four corners must remain continuously pure white; no paper texture, shadow, noise, gradient, vignette, or off-white outer canvas.",
         "- Every slide must contain one clear main title.",
         f"- Main title to render: \"{title}\".",
+        "- Typography scale: render the slide-level title at 2x the previous/default title size.",
+        "- Typography scale: render main-title content, subtitle content, body content, and narration-related on-slide text at about 2/3 of the previous/default size.",
         *subtitle_prompt_lines(policy, slide),
         f"- Keep y={y_min}..{y_max} completely empty for video subtitles: no text, icons, arrows, labels, decorations, shadows, people, partial objects, or visual fragments.",
         "- Strictly forbid visual overlap. Text, arrows, icons, formulas, card borders, labels, people, and decorations must not cover, intersect, press on, or stick to each other.",

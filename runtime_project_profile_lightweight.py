@@ -19,6 +19,11 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+try:
+    import runtime_ai_mask_semantic_patch  # noqa: F401
+except Exception:
+    pass
+
 PATCH_MARKER = "__ppt_project_profile_lightweight_patch__"
 PROFILE_VERSION = "project_profile_v1"
 PROFILE_FILENAME = "project_profile.json"

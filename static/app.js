@@ -340,6 +340,7 @@ function initGlobalEvents() {
   });
   document.getElementById('step1-btn-generate-article')?.addEventListener('click', () => generateStep1Article());
   document.getElementById('step1-btn-system-content')?.addEventListener('click', () => openArticleSystemContentModal());
+  document.getElementById('step1-article-input')?.addEventListener('input', event => autoResizeTextarea(event.currentTarget));
 
   // ================= 步骤 2 事件 =================
   document.getElementById('step2-btn-generate')?.addEventListener('click', () => generateStep2Contract());
@@ -1003,6 +1004,7 @@ async function loadStep1Data() {
     if (saveEditBtn) saveEditBtn.style.display = 'none';
   }
   setStep1Mode('article');
+  requestAnimationFrame(() => autoResizeTextarea(document.getElementById('step1-article-input')));
 }
 
 function setStep1Mode(mode) {
@@ -1080,6 +1082,7 @@ async function generateStep1Article() {
       { topic },
     );
     document.getElementById('step1-article-input').value = result.content || '';
+    autoResizeTextarea(document.getElementById('step1-article-input'));
     document.getElementById('step1-status-hint').innerText = '文章已生成，可编辑后保存';
     showToast('AI 文章已生成');
   } finally {
@@ -1492,7 +1495,7 @@ function step2NarrationText(slide) {
   const beats = Array.isArray(slide?.narration_beats) ? slide.narration_beats : [];
   const seen = new Set();
   return beats
-    .map(beat => normalizeStep2MultilineText(beat?.spoken_text || ''))
+    .map(beat => normalizeStep2NarrationText(beat?.spoken_text || ''))
     .filter(Boolean)
     .filter(text => {
       const key = narrationDedupeKey(text);
@@ -1500,7 +1503,7 @@ function step2NarrationText(slide) {
       if (key) seen.add(key);
       return true;
     })
-    .join('\n\n');
+    .join('\n');
 }
 
 function narrationDedupeKey(text) {
@@ -1530,6 +1533,15 @@ function normalizeStep2MultilineText(text) {
     .trim();
 }
 
+function normalizeStep2NarrationText(text) {
+  return String(text || '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .join('\n');
+}
+
 function autoResizeTextarea(textarea) {
   if (!textarea) return;
   if (textarea.tagName === 'TEXTAREA') textarea.rows = 1;
@@ -1539,7 +1551,9 @@ function autoResizeTextarea(textarea) {
 
 function normalizeAndResizeStep2Textarea(textarea) {
   if (!textarea) return;
-  const normalized = normalizeStep2MultilineText(textarea.value);
+  const normalized = textarea.id === 'step2-slide-narration-input'
+    ? normalizeStep2NarrationText(textarea.value)
+    : normalizeStep2MultilineText(textarea.value);
   if (textarea.value !== normalized) textarea.value = normalized;
   autoResizeTextarea(textarea);
 }
@@ -1581,7 +1595,7 @@ function saveCurrentSlideInputToState() {
     slide.core_message = document.getElementById('step2-core-message').value;
     const bodyText = normalizeStep2MultilineText(document.getElementById('step2-slide-body-input')?.value || '');
     slide.body_content = bodyText.split(/\r?\n/).map(item => item.trim()).filter(Boolean);
-    const narrationText = normalizeStep2MultilineText(document.getElementById('step2-slide-narration-input')?.value || '');
+    const narrationText = normalizeStep2NarrationText(document.getElementById('step2-slide-narration-input')?.value || '');
     const narrationLines = uniqueNarrationLines(narrationText
       .split(/\n\s*\n|\r?\n/)
       .map(item => item.trim())

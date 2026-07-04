@@ -3761,10 +3761,39 @@ header .btn {
   display: inline-flex;
   gap: 0.35rem;
   padding: 0.3rem;
-  margin-bottom: 1rem;
+  margin-bottom: 0;
   border: 1px solid var(--color-border-default, #dbe2f0);
   border-radius: 14px;
   background: var(--color-bg-subtle, #f5f7fb);
+}
+
+.step1-card-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.step1-save-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+#step1-article-input {
+  min-height: 180px;
+  height: auto;
+  overflow-y: hidden;
+  resize: none;
+}
+
+.step1-status-hint {
+  display: block;
+  min-height: 1.2rem;
+  margin-top: 0.65rem;
+  color: #888;
+  font-size: 0.9rem;
 }
 
 .step1-mode-button {
@@ -3798,6 +3827,15 @@ header .btn {
 }
 
 @media (max-width: 760px) {
+  .step1-card-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .step1-save-actions {
+    justify-content: flex-end;
+  }
+
   .step1-topic-row {
     grid-template-columns: 1fr;
   }
@@ -4727,18 +4765,43 @@ textarea.step2-soft-input {
 /* Compact Step 2 handoff: selectors, title and fields should read as one
    continuous editor instead of three vertically separated panels. */
 #step-panel-2 .step2-sticky-header {
-  padding-bottom: 0.2rem !important;
-  margin-bottom: 0.15rem !important;
+  padding-bottom: 0.4rem !important;
+  margin-bottom: 0.3rem !important;
 }
 
 #step-panel-2 .slides-thumbnail-container {
-  padding: 0.12rem 0.25rem 0.18rem !important;
-  margin-bottom: 0.08rem !important;
+  padding: 0.24rem 0.25rem 0.36rem !important;
+  margin-bottom: 0.16rem !important;
 }
 
 #step-panel-2 .step2-slide-editor {
-  margin-top: 0 !important;
+  margin-top: 0.16rem !important;
   padding: 0.62rem 1.25rem 1rem !important;
+}
+
+#step-panel-2 .step2-slide-fields label > span {
+  font-size: 1.56rem !important;
+  line-height: 1.35 !important;
+}
+
+#step-panel-2 input.step2-soft-input,
+#step-panel-2 textarea.step2-soft-input {
+  font-size: 1.76rem !important;
+  line-height: 1.55 !important;
+}
+
+#step5-btn-ai-mask {
+  background: #ffffff !important;
+  border-color: var(--color-border-default) !important;
+  color: var(--color-text-secondary) !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+
+#step5-btn-ai-mask:hover {
+  background: var(--color-bg-subtle) !important;
+  border-color: var(--color-border-strong) !important;
+  color: var(--color-text-primary) !important;
 }
 
 .step2-current-slide-heading {

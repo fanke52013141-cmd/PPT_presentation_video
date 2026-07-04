@@ -345,6 +345,9 @@ def compose_slide(
         repo_root,
     )
     production_slide_dir.mkdir(parents=True, exist_ok=True)
+    for stale_build_dir in production_slide_dir.glob(".reveal-build-*"):
+        if stale_build_dir.is_dir():
+            shutil.rmtree(stale_build_dir, ignore_errors=True)
     master_path = resolve_path(
         str(slide["master"]),
         manifest_dir,

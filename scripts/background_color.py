@@ -6,6 +6,70 @@ import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 
+def _boundary_connected_hard_white(hard_white: np.ndarray, domain: np.ndarray) -> np.ndarray:
+    """Return hard-white pixels connected to the outside of one Mask.
+
+    The previous implementation converted the full 1920x1080 canvas to a PIL
+    image and ran ``ImageDraw.floodfill`` once per semantic group.  That call
+    is Python-bound and took roughly five seconds per group on real projects.
+    This run-length connected-component pass preserves the same 4-neighbour
+    semantics while doing work proportional to white spans instead of pixels.
+    """
+    height, width = hard_white.shape
+    passable = (~domain) | hard_white
+    parents: list[int] = []
+    seeded: list[bool] = []
+    rows: list[list[tuple[int, int, int]]] = []
+
+    def find(node: int) -> int:
+        while parents[node] != node:
+            parents[node] = parents[parents[node]]
+            node = parents[node]
+        return node
+
+    def union(left: int, right: int) -> None:
+        left_root = find(left)
+        right_root = find(right)
+        if left_root != right_root:
+            parents[right_root] = left_root
+
+    previous: list[tuple[int, int, int]] = []
+    for y in range(height):
+        row = passable[y]
+        edges = np.diff(np.pad(row.astype(np.int8), (1, 1)))
+        starts = np.flatnonzero(edges == 1)
+        ends = np.flatnonzero(edges == -1)
+        current: list[tuple[int, int, int]] = []
+
+        for x1_raw, x2_raw in zip(starts, ends):
+            x1, x2 = int(x1_raw), int(x2_raw)
+            node = len(parents)
+            parents.append(node)
+            touches_outside = y == 0 or y == height - 1 or x1 == 0 or x2 == width
+            seeded.append(touches_outside)
+            current.append((x1, x2, node))
+
+        previous_index = 0
+        for x1, x2, node in current:
+            while previous_index < len(previous) and previous[previous_index][1] <= x1:
+                previous_index += 1
+            scan_index = previous_index
+            while scan_index < len(previous) and previous[scan_index][0] < x2:
+                union(node, previous[scan_index][2])
+                scan_index += 1
+
+        rows.append(current)
+        previous = current
+
+    connected_roots = {find(node) for node, is_seeded in enumerate(seeded) if is_seeded}
+    result = np.zeros_like(hard_white, dtype=bool)
+    for y, runs in enumerate(rows):
+        for x1, x2, node in runs:
+            if find(node) in connected_roots:
+                result[y, x1:x2] = True
+    return result & domain
+
+
 def connected_background_mask(
     image: Image.Image,
     min_channel: int = 245,
@@ -86,19 +150,7 @@ def masked_outer_white_cutout(
         & (minimum >= hard_min_channel)
         & (chroma <= hard_max_chroma)
     )
-    outside_mask = ~domain
-    passable = Image.fromarray(
-        np.where(outside_mask | hard_white, 255, 0).astype(np.uint8),
-        mode="L",
-    )
-    padded = Image.new("L", (source.width + 2, source.height + 2), 255)
-    padded.paste(passable, (1, 1))
-    ImageDraw.floodfill(padded, (0, 0), 128, thresh=0)
-    flooded = np.asarray(
-        padded.crop((1, 1, source.width + 1, source.height + 1)),
-        dtype=np.uint8,
-    )
-    hard_background = (flooded == 128) & domain
+    hard_background = _boundary_connected_hard_white(hard_white, domain)
 
     soft_white = (
         domain

@@ -436,6 +436,7 @@ ensure_active_image_style_storage()
 
 STEP1_LLM_TIMEOUT_SEC = 60.0
 STEP2_LLM_TIMEOUT_SEC = 240.0
+STEP5_REVEAL_BUILD_TIMEOUT_SEC = float(os.environ.get("PPT_STUDIO_REVEAL_BUILD_TIMEOUT_SEC", "300"))
 STEP7_TTS_TIMEOUT_SEC = 300
 STEP7_TTS_PROCESS_TIMEOUT_SEC = STEP7_TTS_TIMEOUT_SEC + 90
 STEP7_TTS_RETRY_ATTEMPTS = 3
@@ -2470,10 +2471,14 @@ def build_current_reveal_assets(project: Project) -> None:
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                timeout=180,
+                timeout=STEP5_REVEAL_BUILD_TIMEOUT_SEC,
             )
         except subprocess.TimeoutExpired as exc:
-            write_project_log(project, "step5_reveal_build_timeout", timeout_sec=180)
+            write_project_log(
+                project,
+                "step5_reveal_build_timeout",
+                timeout_sec=STEP5_REVEAL_BUILD_TIMEOUT_SEC,
+            )
             raise HTTPException(status_code=504, detail="构建 Mask 切层超时，已停止本次任务，请重试") from exc
         if result.returncode != 0:
             logger.error("Build reveal assets failed: %s", result.stderr)

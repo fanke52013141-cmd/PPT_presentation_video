@@ -152,7 +152,7 @@
     ensureInlineStatus();
     if (document.getElementById('step5-btn-ai-mask')) return;
     const settings = button('step5-btn-ai-mask-settings', 'AI 标注设置', 'secondary');
-    const run = button('step5-btn-ai-mask', '重新运行 AI 标注', 'success');
+    const run = button('step5-btn-ai-mask', '重新运行 AI 标注', 'secondary');
     const anchor = document.getElementById('step5-btn-fullscreen');
     toolbar.insertBefore(settings, anchor || null);
     toolbar.insertBefore(run, anchor || null);

@@ -81,12 +81,12 @@ function projectFlowContext(project = state.currentProject) {
 }
 
 // API 请求工具方法
-const DEFAULT_REVEAL_DURATION_SEC = 0.75;
+const DEFAULT_REVEAL_DURATION_SEC = 0.25;
 const MASK_ANIMATION_PRESETS = [
+  { value: 'crop_fade_up', label: '柔和淡入', duration: 0.25 },
   { value: 'wipe_left_to_right', label: '从左到右显现', duration: 0.75 },
   { value: 'scratch_reveal', label: '手绘线条显现', duration: 0.9, angle: 100, feather: 18 },
   { value: 'brush_wipe_left_to_right', label: '笔刷横向显现', duration: 0.85, angle: 90, feather: 24 },
-  { value: 'crop_fade_up', label: '柔和淡入', duration: 0.55 },
   { value: 'crop_slide_in_left', label: '从左侧滑入显现', duration: 0.65 },
   { value: 'crop_soft_zoom_in', label: '轻微放大显现', duration: 0.7 },
   { value: 'sticker_pop', label: '贴纸粘贴出现', duration: 0.7, rotation: -4 },
@@ -100,7 +100,7 @@ function revealPreset(action) {
 
 function normalizeMaskReveal(reveal) {
   const raw = reveal && typeof reveal === 'object' ? reveal : {};
-  const preset = revealPreset(raw.type || raw.value || 'wipe_left_to_right');
+  const preset = revealPreset(raw.type || raw.value || 'crop_fade_up');
   const normalized = {
     ...preset,
     ...raw,
@@ -144,7 +144,7 @@ function ensureGlobalMaskRevealDefault() {
   const configured = manifestData.animation_defaults?.reveal;
   const normalized = configured
     ? normalizeMaskReveal(configured)
-    : normalizeMaskReveal({ type: 'wipe_left_to_right', duration: DEFAULT_REVEAL_DURATION_SEC });
+    : normalizeMaskReveal({ type: 'crop_fade_up', duration: DEFAULT_REVEAL_DURATION_SEC });
   applyGlobalMaskReveal(normalized, { save: false });
 }
 
@@ -408,7 +408,7 @@ function initGlobalEvents() {
     'step2-visual-system-prompt',
     'step2-visual-output-example'
   ].forEach(id => {
-    document.getElementById(id)?.addEventListener('input', () => {});
+    document.getElementById(id)?.addEventListener('input', () => updateStep2FullPromptPreviews());
   });
   document.getElementById('btn-subtitle-settings-close')?.addEventListener('click', () => closeSubtitleSettingsModal());
   document.getElementById('btn-subtitle-settings-save')?.addEventListener('click', () => saveSubtitleSettings());
@@ -2657,7 +2657,12 @@ function syncMaskBoxesToSlide(slide, boxes) {
     slide.groups = [];
   }
   const visibleGroupIds = new Set(readyBoxes.map(maskBox => maskBox.group_id).filter(Boolean));
-  slide.groups = slide.groups.filter(group => visibleGroupIds.has(group.id || group.group_id));
+  slide.groups = slide.groups.filter(group => (
+    group?.is_static === true
+    || group?.is_static_header === true
+    || String(group?.source || '') === 'ai_static_header'
+    || visibleGroupIds.has(group.id || group.group_id)
+  ));
   readyBoxes.forEach((maskBox, idx) => {
     ensureManualMask(maskBox, idx);
     const [rawX1, rawY1, rawX2, rawY2] = maskBox.box || [0, 0, 1, 1];
@@ -2785,6 +2790,27 @@ function step2PromptModeLabel(mode = state.activeStep2PromptMode) {
   return mode === 'visual' ? 'slides➡️可视化' : '文章➡️slides';
 }
 
+function composeStep2FullPrompt(systemContent, outputExample) {
+  return `${String(systemContent || '').trim()}\n\n<OutputExample>\n${String(outputExample || '').trim()}\n</OutputExample>`;
+}
+
+function updateStep2FullPromptPreviews() {
+  const scriptFull = document.getElementById('step2-script-full-prompt');
+  const visualFull = document.getElementById('step2-visual-full-prompt');
+  if (scriptFull) {
+    scriptFull.value = composeStep2FullPrompt(
+      document.getElementById('step2-script-system-prompt')?.value,
+      document.getElementById('step2-script-output-example')?.value,
+    );
+  }
+  if (visualFull) {
+    visualFull.value = composeStep2FullPrompt(
+      document.getElementById('step2-visual-system-prompt')?.value,
+      document.getElementById('step2-visual-output-example')?.value,
+    );
+  }
+}
+
 function renderStep2PromptEditor(promptRes = {}) {
   const prompts = promptRes.prompts || {};
   const setValue = (id, value) => {
@@ -2795,6 +2821,9 @@ function renderStep2PromptEditor(promptRes = {}) {
   setValue('step2-script-output-example', prompts.script_output_example);
   setValue('step2-visual-system-prompt', prompts.visual_system);
   setValue('step2-visual-output-example', prompts.visual_output_example);
+  setValue('step2-script-full-prompt', promptRes.composed?.script_system_content);
+  setValue('step2-visual-full-prompt', promptRes.composed?.visual_system_content);
+  updateStep2FullPromptPreviews();
   const mode = state.activeStep2PromptMode === 'visual' ? 'visual' : 'script';
   const title = document.getElementById('storyboard-prompt-modal-title');
   const scriptSection = document.getElementById('step2-script-prompt-section');
@@ -2834,6 +2863,7 @@ function applyStep2PromptTemplate(template) {
     if (system) system.value = prompts.script_system || '';
     if (example) example.value = prompts.script_output_example || '';
   }
+  updateStep2FullPromptPreviews();
 }
 
 function renderStep2PromptTemplateOptions(selectedId = state.selectedStep2PromptTemplateId || '') {
@@ -3414,7 +3444,7 @@ function createCurrentSlideBlock() {
     narration_fragments: [],
     spoken_text: '',
     manual_mask: { source: 'manual', color: getMaskColor(idx), strokes: [] },
-    reveal: normalizeMaskReveal({ type: 'wipe_left_to_right' }),
+    reveal: normalizeMaskReveal({ type: 'crop_fade_up' }),
     box: [860, 460, 1060, 620]
   });
   startMaskPaint(idx);
@@ -3925,7 +3955,7 @@ function openAnimationSettingsModal() {
   ).join('');
   const reveal = manifestData.animation_defaults?.reveal
     || state.canvasState.boxes.find(Boolean)?.reveal
-    || revealPreset('wipe_left_to_right');
+    || revealPreset('crop_fade_up');
   populateGlobalAnimationSettingsForm(reveal);
   document.getElementById('modal-animation-settings').style.display = 'flex';
   requestAnimationFrame(() => drawAnimationModalBase());
@@ -3975,7 +4005,7 @@ function previewGlobalAnimationSettings() {
 }
 
 function resetGlobalAnimationSettings() {
-  populateGlobalAnimationSettingsForm(revealPreset('wipe_left_to_right'));
+  populateGlobalAnimationSettingsForm(revealPreset('crop_fade_up'));
   previewGlobalAnimationSettings();
 }
 
@@ -4463,25 +4493,27 @@ async function loadStep7Data() {
   const confirmButton = document.getElementById('step6-btn-audio-confirm-next');
   const synthButton = document.getElementById('step7-btn-synthesize');
   const step7Status = state.currentProject?.step_status?.['7'] || 'pending';
-  const canLoadAudio = ['in_progress', 'completed', 'pending_reconfirmation'].includes(step7Status);
+  const stepAllowsAudio = ['in_progress', 'completed', 'pending_reconfirmation'].includes(step7Status);
 
   confirmButton.disabled = true;
-  synthButton.style.display = canLoadAudio ? 'inline-flex' : 'none';
+  synthButton.style.display = stepAllowsAudio ? 'inline-flex' : 'none';
   emptyState.style.display = 'block';
   document.querySelectorAll('.step6-slide-audio').forEach(slot => {
     slot.innerHTML = '';
     slot.classList.remove('has-audio');
   });
 
-  if (!canLoadAudio) {
-    emptyState.innerText = '尚未生成音频。确认旁白后，点击“生成音频”。';
-    return;
-  }
-
   const [res, audioStatus] = await Promise.all([
     API.get(`/api/projects/${state.currentProject.id}/steps/3/images`),
     API.get(`/api/projects/${state.currentProject.id}/steps/7/audio-status`)
   ]);
+  const hasExistingAudio = (audioStatus.slides || []).some(item => item?.audio_exists);
+  const canLoadAudio = stepAllowsAudio || hasExistingAudio;
+  synthButton.style.display = canLoadAudio ? 'inline-flex' : 'none';
+  if (!canLoadAudio) {
+    emptyState.innerText = '尚未生成音频。确认旁白后，点击“生成音频”。';
+    return;
+  }
   if (res.success) {
     const audioBySlide = new Map((audioStatus.slides || []).map(item => [item.slide_id, item]));
     res.images.forEach(img => {
@@ -4602,8 +4634,10 @@ async function loadStep8Data() {
 }
 
 async function runStep8Render() {
+  const renderBtn = document.getElementById('step8-btn-render');
+  const rerenderBtn = document.getElementById('step8-btn-rerender');
   document.getElementById('step8-loading').style.display = 'inline-flex';
-  document.getElementById('step8-btn-render').disabled = true;
+  renderBtn.disabled = true;
   showToast('🎬 Remotion 渲染进程已启动，请稍候片刻...');
   
   try {
@@ -4637,19 +4671,35 @@ function showStep8VideoResult(videos) {
     list.innerHTML = items.map((item, idx) => {
       const url = `${item.url}?t=${Date.now()}`;
       const created = item.created_at ? new Date(item.created_at).toLocaleString() : '';
+      const playbackRate = Number(item.playback_rate || 1);
+      const speedLabel = `${playbackRate.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}×`;
       return `
         <div class="step8-video-card">
           <div class="step8-video-card-head">
             <strong>
               ${idx === 0 ? '最新渲染' : `历史版本 ${idx + 1}`}
+              ${item.is_speed_variant ? `<span class="step8-speed-badge">${escHtml(speedLabel)} 调速版</span>` : ''}
               ${item.is_legacy ? '<span class="step8-legacy-badge">旧设置/旧算法</span>' : '<span class="step8-current-badge">Mask 边界抠除 v4</span>'}
             </strong>
             <span>${escHtml(created || item.filename || '')}</span>
           </div>
           <div class="video-preview-box">
-            <video controls src="${url}"></video>
+            <video controls src="${url}" data-video-filename="${escHtml(item.filename || '')}"></video>
           </div>
           <div class="step8-video-actions">
+            ${item.is_speed_variant ? `
+              <span class="step8-speed-source">已按 ${escHtml(speedLabel)} 生成，可直接下载</span>
+            ` : `
+              <label class="step8-speed-control">
+                <span>视频语速</span>
+                <select class="step8-speed-select" data-filename="${escHtml(item.filename || '')}">
+                  ${[0.75, 1, 1.25, 1.5, 2].map(rate => `<option value="${rate}" ${rate === 1 ? 'selected' : ''}>${rate}×</option>`).join('')}
+                </select>
+              </label>
+              <button class="secondary compact-action-btn step8-speed-generate" type="button" data-filename="${escHtml(item.filename || '')}">
+                应用语速并生成 MP4
+              </button>
+            `}
             <a href="${item.url}" download class="btn success" style="text-decoration: none;">
               <svg class="icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 3v12"></path></svg>
               下载 MP4
@@ -4661,8 +4711,52 @@ function showStep8VideoResult(videos) {
         </div>
       `;
     }).join('');
+    list.querySelectorAll('.step8-speed-select').forEach(select => {
+      select.addEventListener('change', () => {
+        const card = select.closest('.step8-video-card');
+        const video = card?.querySelector('video');
+        if (video) video.playbackRate = Number(select.value || 1);
+      });
+    });
+    list.querySelectorAll('.step8-speed-generate').forEach(button => {
+      button.addEventListener('click', () => {
+        const card = button.closest('.step8-video-card');
+        const select = card?.querySelector('.step8-speed-select');
+        generateStep8SpeedVideo(button.dataset.filename || '', Number(select?.value || 1), button);
+      });
+    });
   }
   document.getElementById('step8-result-box').style.display = 'block';
+}
+
+async function generateStep8SpeedVideo(filename, speed, button) {
+  if (!filename || !Number.isFinite(speed)) return;
+  if (Math.abs(speed - 1) < 0.001) {
+    showToast('当前是 1× 原速，直接点击“下载 MP4”即可。');
+    return;
+  }
+  const originalText = button?.textContent || '应用语速并生成 MP4';
+  if (button) {
+    button.disabled = true;
+    button.innerHTML = '<span class="button-spinner"></span> 正在生成调速版...';
+  }
+  try {
+    const res = await API.post(
+      `/api/projects/${state.currentProject.id}/videos/${encodeURIComponent(filename)}/speed`,
+      { speed },
+    );
+    if (res.success) {
+      showStep8VideoResult(res.videos || (res.video ? [res.video] : []));
+      showToast(`已生成 ${speed}× 调速版，下载按钮会下载调速后的 MP4。`);
+    }
+  } catch (error) {
+    showToast(`调速视频生成失败：${error.message}`, 7000);
+  } finally {
+    if (button?.isConnected) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }
 }
 
 function deleteStep8Video(filename) {

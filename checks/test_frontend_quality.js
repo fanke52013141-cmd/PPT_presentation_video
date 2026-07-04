@@ -79,7 +79,7 @@ if (!css.includes('.step3-generating-preview')) throw new Error('step 3 loading 
 if (!app.includes('await refreshStep3Images();')) throw new Error('step 3 does not wait for image state');
 if (!app.includes('confirmBtn.disabled = !allImagesReady')) throw new Error('step 3 confirmation is not gated');
 if (!app.includes('step5AutoSavePromise')) throw new Error('step 5 save serialization missing');
-if (!app.includes("raw.type || raw.value || 'wipe_left_to_right'")) {
+if (!app.includes("raw.type || raw.value || 'crop_fade_up'")) {
   throw new Error('mask animation preset values are not normalized correctly');
 }
 if (!app.includes('applyGlobalMaskReveal') || !app.includes('previewGlobalAnimationSettings')) {
@@ -148,8 +148,8 @@ if (!app.includes('const MASK_PREVIEW_OUTLINE_PX = 5') || !app.includes('buildMa
 if (!app.includes('claimUniqueMaskColor') || !app.includes('idx + offset')) {
   throw new Error('Mask color collision handling must search for an unused palette color');
 }
-if (!css.includes('background: #fafbff !important') || !css.includes('backdrop-filter: none !important')) {
-  throw new Error('sticky workflow headers must use an opaque background');
+if (!css.includes('.step3-toolbar-row::before') || !css.includes('backdrop-filter: saturate(135%) blur(24px)') || !css.includes('mask-image: linear-gradient(')) {
+  throw new Error('sticky workflow headers must use the full-width fading glass layer');
 }
 if (!css.includes('.sidebar .step-status-tag') || !css.includes('transform: translateY(-50%)')) {
   throw new Error('pending-reconfirmation badges must stay inside their step row');

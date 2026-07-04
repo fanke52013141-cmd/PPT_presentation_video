@@ -217,6 +217,10 @@
             <p class="config-editor-note">默认不要修改。只有后端解析结构同步调整时才需要改。</p>
             <textarea id="ai-mask-output-structure" rows="8" spellcheck="false"></textarea>
           </details>
+          <div class="ai-mask-prompt-block">
+            <h4>完整提示词（可直接复制）</h4>
+            <textarea id="ai-mask-full-prompt" rows="16" readonly spellcheck="false"></textarea>
+          </div>
         </div>
         <div class="config-editor-actions">
           <button id="btn-ai-mask-settings-cancel" class="secondary" type="button">取消</button>
@@ -226,7 +230,23 @@
     document.body.appendChild(modal);
     modal.querySelector('#btn-ai-mask-settings-cancel').addEventListener('click', () => modal.style.display = 'none');
     modal.querySelector('#btn-ai-mask-settings-save').addEventListener('click', saveSettings);
+    modal.querySelector('#ai-mask-methodology').addEventListener('input', updateFullPromptPreview);
+    modal.querySelector('#ai-mask-output-structure').addEventListener('input', updateFullPromptPreview);
     return modal;
+  }
+
+  function composeFullPrompt(methodology, outputStructure) {
+    return `${String(methodology || '').trim()}\n\n--- OUTPUT STRUCTURE / 输出结构 ---\n${String(outputStructure || '').trim()}`;
+  }
+
+  function updateFullPromptPreview() {
+    const modal = ensureModal();
+    const target = modal.querySelector('#ai-mask-full-prompt');
+    if (!target) return;
+    target.value = composeFullPrompt(
+      modal.querySelector('#ai-mask-methodology')?.value,
+      modal.querySelector('#ai-mask-output-structure')?.value,
+    );
   }
 
   async function openSettings() {
@@ -241,6 +261,8 @@
       grid.innerHTML = PARAMS.map(def => paramRow(def, settings)).join('');
       modal.querySelector('#ai-mask-methodology').value = data.prompts?.methodology || '';
       modal.querySelector('#ai-mask-output-structure').value = data.prompts?.output_structure || '';
+      modal.querySelector('#ai-mask-full-prompt').value = data.prompts?.full_prompt || '';
+      updateFullPromptPreview();
     } catch (e) {
       grid.innerHTML = `<div class="card sketch-dashed">加载失败：${escapeAttr(e.message)}</div>`;
     }

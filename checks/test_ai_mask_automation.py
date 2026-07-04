@@ -66,7 +66,7 @@ def _title_region_fixture() -> tuple[dict, dict]:
     return elements, regions
 
 
-def test_title_and_subtitle_fragments_merge_by_narration():
+def test_title_and_subtitle_fragments_are_static_not_narration_masks():
     elements, regions = _title_region_fixture()
     slide = {
         "slide_id": "slide_001",
@@ -90,17 +90,19 @@ def test_title_and_subtitle_fragments_merge_by_narration():
         "warnings": [],
     }
     consolidated = mask._consolidate_title_regions(payload, elements, slide, regions)
-    assert consolidated["title_region_policy"] == "single_mask_by_narration"
-    assert set(consolidated["forced_element_owners"]) == {"title_a", "title_b", "subtitle_a", "subtitle_b"}
-    assert set(consolidated["forced_element_owners"].values()) == {"opening"}
+    assert consolidated["title_region_policy"] == "static_header_excluded_from_narration_masks"
+    assert set(consolidated["static_element_ids"]) == {"title_a", "title_b", "subtitle_a", "subtitle_b"}
+    assert consolidated["static_group_ids"] == ["opening"]
+    assert consolidated["forced_element_owners"] == {}
     completed = mask._complete_component_coverage(consolidated, elements)
     matches = {item["group_id"]: set(item["element_ids"]) for item in completed["matches"]}
-    assert matches["opening"] == {"title_a", "title_b", "subtitle_a", "subtitle_b"}
+    assert "opening" not in matches
     assert matches["body_group"] == {"body"}
+    assert completed["quality"]["static_header_pixel_count"] > 0
     assert completed["quality"]["passed"] is True
 
 
-def test_title_and_subtitle_stay_separate_for_distinct_narration():
+def test_title_and_subtitle_both_remain_static_even_with_distinct_narration():
     elements, regions = _title_region_fixture()
     slide = {
         "slide_id": "slide_001",
@@ -127,10 +129,10 @@ def test_title_and_subtitle_stay_separate_for_distinct_narration():
         "warnings": [],
     }
     consolidated = mask._consolidate_title_regions(payload, elements, slide, regions)
-    assert consolidated["title_region_policy"] == "separate_masks_by_narration"
-    owners = consolidated["forced_element_owners"]
-    assert owners["title_a"] == owners["title_b"] == "title_group"
-    assert owners["subtitle_a"] == owners["subtitle_b"] == "subtitle_group"
+    assert consolidated["title_region_policy"] == "static_header_excluded_from_narration_masks"
+    assert set(consolidated["static_group_ids"]) == {"title_group", "subtitle_group"}
+    assert set(consolidated["static_element_ids"]) == {"title_a", "title_b", "subtitle_a", "subtitle_b"}
+    assert [item["group_id"] for item in consolidated["matches"]] == ["body_group"]
 
 
 def test_every_narrated_group_gets_an_independent_visual_anchor():
@@ -166,7 +168,8 @@ def test_every_narrated_group_gets_an_independent_visual_anchor():
     assert anchored["unmatched_groups"] == []
     assert anchored["anchor_policy"] == "one_visual_island_per_narrated_group"
     owners = anchored["forced_element_owners"]
-    assert set(owners.values()) == {"opening", "image_group", "summary_group"}
+    assert set(owners.values()) == {"image_group", "summary_group"}
+    assert set(anchored["static_element_ids"]) == {"title_a", "title_b", "subtitle_a", "subtitle_b"}
 
 
 def test_existing_anchor_is_not_stolen_when_seeding_missing_group():
@@ -200,6 +203,33 @@ def test_existing_anchor_is_not_stolen_when_seeding_missing_group():
     assert anchored["unmatched_groups"] == []
 
 
+def test_nearby_icon_is_absorbed_by_closest_large_visual_island():
+    elements = {
+        "canvas": {"width": 320, "height": 180},
+        "elements": [
+            _mask_element("left_island", 20, 45, 100, 90),
+            _mask_element("right_island", 210, 45, 90, 90),
+            _mask_element("near_left_check", 126, 62, 14, 14),
+        ],
+        "residual_elements": [],
+    }
+    # The vision model made the same kind of semantic mistake observed on
+    # slide 3: the check icon was put in the right group despite being next to
+    # the left illustration. Geometry must correct that ownership.
+    payload = {
+        "matches": [
+            {"group_id": "left", "element_ids": ["left_island"], "confidence": 0.9},
+            {"group_id": "right", "element_ids": ["right_island", "near_left_check"], "confidence": 0.9},
+        ],
+        "unmatched_groups": [],
+    }
+    completed = mask._complete_component_coverage(payload, elements)
+    by_group = {item["group_id"]: set(item["element_ids"]) for item in completed["matches"]}
+    assert "near_left_check" in by_group["left"]
+    assert "near_left_check" not in by_group["right"]
+    assert completed["component_assignment_policy"] == "dominant_island_2d_absorption_v2"
+
+
 def test_volcengine_ai_mask_uses_provider_model_and_single_timeout_policy():
     resolved, configured = mask._resolved_vision_model(_FakeVisionSettings)
     assert resolved == "doubao-seed-2-1-turbo-260628"
@@ -226,6 +256,12 @@ def fixture_slide() -> dict:
 
 
 def main() -> None:
+    test_title_and_subtitle_fragments_are_static_not_narration_masks()
+    test_title_and_subtitle_both_remain_static_even_with_distinct_narration()
+    test_every_narrated_group_gets_an_independent_visual_anchor()
+    test_existing_anchor_is_not_stolen_when_seeding_missing_group()
+    test_nearby_icon_is_absorbed_by_closest_large_visual_island()
+    test_volcengine_ai_mask_uses_provider_model_and_single_timeout_policy()
     with tempfile.TemporaryDirectory() as temp_dir:
         slide_dir = Path(temp_dir) / "slide_001"
         slide_dir.mkdir(parents=True)
@@ -297,6 +333,8 @@ def main() -> None:
         assert all(group["manual_mask"]["rle"]["runs"] for group in manifest_slide["groups"])
         assert all(group["manual_mask"]["strokes"] == [] for group in manifest_slide["groups"])
         assert all(group["review_status"] == "ai_matched" for group in manifest_slide["groups"])
+        assert all(group["reveal"]["type"] == "crop_fade_up" for group in manifest_slide["groups"])
+        assert all(group["reveal"]["duration"] == 0.25 for group in manifest_slide["groups"])
         alphas = [
             np.asarray(manual_mask_alpha(group["manual_mask"], 320, 180)) > 0
             for group in manifest_slide["groups"]

@@ -27,6 +27,11 @@ import httpx
 import yaml
 from openai import OpenAI
 from scripts.background_color import normalize_connected_background
+from scripts.media_tools import (
+    media_tool_candidate_dirs as shared_media_tool_candidate_dirs,
+    probe_media_duration_sec,
+    resolve_media_tool as shared_resolve_media_tool,
+)
 from scripts.pipeline_profiles import (
     read_pipeline_profile,
     role_catalog,
@@ -436,6 +441,7 @@ STEP7_TTS_RETRY_ATTEMPTS = 3
 STEP7_TTS_RETRY_BASE_DELAY_SEC = 4
 STEP7_BIND_TIMEOUT_SEC = 90
 STEP8_RENDER_TIMEOUT_SEC = 3600
+REVEAL_VISUAL_LEAD_SEC = 0.45
 DEFAULT_STEP2_GENERATION_REQUIREMENT = (
     "按当前已保存的分镜规则、结构配置和文章内容生成分镜规划。"
     "优先把内容讲清楚，不要机械套用固定卡片结构。"
@@ -1095,6 +1101,17 @@ def prune_stale_mask_groups(project: Project, payload: Dict[str, Any]) -> Dict[s
     def is_current(group: Dict[str, Any], visual_group_ids: set[str]) -> bool:
         group_id = str(group.get("id") or group.get("group_id") or "").strip()
         visual_group_id = str(group.get("visual_group_id") or "").strip()
+        # AI Mask stores the exact title/subtitle pixels as a hidden static
+        # group.  It is intentionally not a visual_contract group, so contract
+        # pruning must preserve it or the next Save/Build operation turns the
+        # opening title back into missing/fragmented dynamic content.
+        if (
+            group.get("is_static") is True
+            or group.get("is_static_header") is True
+            or str(group.get("source") or "") == "ai_static_header"
+            or group_id == "__static_title_header__"
+        ):
+            return True
         if group_id.startswith("manual_group_"):
             return True
         if visual_group_id and visual_group_id in visual_group_ids:
@@ -1591,7 +1608,10 @@ def rewrite_audio_timeline_by_beats(timeline_path: str, slide_id: str, beats: Li
         return
     with open(timeline_path, "r", encoding="utf-8") as f:
         timeline = json.load(f)
-    duration = float(timeline.get("audio_content_duration_sec") or timeline.get("duration_sec") or 0)
+    previous_duration = float(timeline.get("audio_content_duration_sec") or timeline.get("duration_sec") or 0)
+    voice_path = os.path.join(os.path.dirname(timeline_path), "voice.mp3")
+    probed_duration = probe_media_duration_sec(voice_path, repo_root=REPO_ROOT)
+    duration = float(probed_duration or previous_duration)
     if duration <= 0:
         return
     clean_beats: List[Dict[str, Any]] = []
@@ -1607,6 +1627,45 @@ def rewrite_audio_timeline_by_beats(timeline_path: str, slide_id: str, beats: Li
             "parts": parts,
         })
     if not clean_beats:
+        return
+
+    provider_segments = timeline.get("segments") if timeline.get("timing_source") == "provider_sentence_timestamps" else None
+    if isinstance(provider_segments, list) and provider_segments:
+        beat_signatures = [
+            re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]+", "", clean_tts_text("".join(
+                str(part.get("text") or "") for part in beat.get("parts", []) if part.get("type") == "text"
+            )))
+            for beat in clean_beats
+        ]
+        beat_part_counts: Dict[str, int] = {}
+        active_beat_index = 0
+        for segment in provider_segments:
+            if not isinstance(segment, dict):
+                continue
+            segment_signature = re.sub(
+                r"[^0-9A-Za-z\u4e00-\u9fff]+",
+                "",
+                clean_tts_text(str(segment.get("text") or "")),
+            )
+            if segment_signature:
+                for beat_index in range(active_beat_index, len(beat_signatures)):
+                    if segment_signature in beat_signatures[beat_index]:
+                        active_beat_index = beat_index
+                        break
+            beat_id = clean_beats[active_beat_index]["id"]
+            part_number = beat_part_counts.get(beat_id, 0) + 1
+            beat_part_counts[beat_id] = part_number
+            segment["beat_id"] = beat_id
+            segment["id"] = beat_id if part_number == 1 else f"{beat_id}__part_{part_number:02d}"
+            segment["timing_source"] = "provider_sentence_timestamps"
+        timeline["segments"] = provider_segments
+        timeline["audio_content_duration_sec"] = round(duration, 3)
+        timeline["duration_sec"] = round(duration + float(timeline.get("audio_start_sec", 0.0) or 0.0), 3)
+        timeline["duration_source"] = "local_audio_ffprobe" if probed_duration else timeline.get("duration_source")
+        if probed_duration:
+            timeline["probed_audio_duration_sec"] = round(probed_duration, 3)
+        with open(timeline_path, "w", encoding="utf-8") as f:
+            json.dump(timeline, f, ensure_ascii=False, indent=2)
         return
 
     total_pause = sum(
@@ -1692,6 +1751,11 @@ def rewrite_audio_timeline_by_beats(timeline_path: str, slide_id: str, beats: Li
     }
     timeline["audio_content_duration_sec"] = round(duration, 3)
     timeline["duration_sec"] = round(duration + float(timeline.get("audio_start_sec", 0.0) or 0.0), 3)
+    if probed_duration:
+        timeline["duration_source"] = "local_audio_ffprobe"
+        timeline["probed_audio_duration_sec"] = round(probed_duration, 3)
+        if previous_duration > 0 and abs(previous_duration - probed_duration) > 0.05:
+            timeline["previous_timeline_content_duration_sec"] = round(previous_duration, 3)
     with open(timeline_path, "w", encoding="utf-8") as f:
         json.dump(timeline, f, ensure_ascii=False, indent=2)
 
@@ -4444,6 +4508,10 @@ def build_image_style_prompt(style_tokens: Dict[str, Any]) -> str:
         lines.append(f"- 避免：{'、'.join(str(item) for item in avoid if item)}。")
 
     lines.append("- 不可变规则：画面元素严禁重叠、互相覆盖、压住、穿插或粘连；任何文字都不能被箭头、图标、卡片边框或装饰压住。")
+    lines.append("- 主标题/副标题区是固定静态层：必须与主体内容完全分离，不得用箭头、边框、插图或装饰连接标题字形。")
+    lines.append("- 每条旁白对应的主体内容必须形成一个空间连续、边界清楚的视觉岛；不同旁白视觉岛之间优先保留 48-80px 连续纯白间隔。")
+    lines.append("- 大面积主配图拥有其内部和紧邻边缘的文字、图标、对号、标签与说明；其他语块的元素不得进入、跨越或贴住该配图边界。")
+    lines.append("- 左右对比或前后状态只有在对应不同 narration beat 时才画成两个独立视觉岛；若共用一条旁白，改为一个统一构图，避免两个插图被迫同时 Reveal。")
     lines.append("- 当前风格词优先：如果参考图与当前风格词冲突，以当前风格词、画面表现方式和图示风格为准。")
     lines.append("- 参考图只作为标题区位置、留白、层级和示例密度参考；除非当前风格明确要求手绘/白板，否则不要复制手绘笔迹、纸感或粗糙线稿。")
     lines.append("- 严禁画面元素重叠：文字、图标、箭头、线条、标签、卡片边框之间不得互相覆盖、穿插或粘连。")
@@ -5457,6 +5525,8 @@ def deterministic_semantic_blocks(
     for group_id, group in groups.items():
         if not isinstance(group, dict):
             continue
+        if str(group.get("role") or "").strip().lower() in {"title", "subtitle"}:
+            continue
         fragment_ids = group_to_fragments.get(group_id) or []
         if not fragment_ids:
             continue
@@ -6228,7 +6298,7 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
     bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))
     try:
         bind_res = subprocess.run([
-            sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", "0"
+            sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", str(REVEAL_VISUAL_LEAD_SEC)
         ], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=STEP7_BIND_TIMEOUT_SEC)
     except subprocess.TimeoutExpired as exc:
         raise HTTPException(status_code=504, detail="音频时间轴确认超时，请重试") from exc
@@ -6411,7 +6481,7 @@ def synthesize_tts_resumable(project_id: str, db: Session = Depends(get_db)):
 
     bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))
     bind_res = subprocess.run(
-        [sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", "0"],
+        [sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", str(REVEAL_VISUAL_LEAD_SEC)],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -6513,7 +6583,7 @@ def confirm_tts_audio(project_id: str, db: Session = Depends(get_db)):
         )
     bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))
     bind_res = subprocess.run([
-        sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", "0"
+        sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", str(REVEAL_VISUAL_LEAD_SEC)
     ], capture_output=True, text=True, encoding="utf-8", errors="replace")
     if bind_res.returncode != 0:
         logger.error(f"Timeline binding failed during audio confirm: {bind_res.stderr}")
@@ -6566,6 +6636,7 @@ def video_item(project: Project, path: str, label: Optional[str] = None) -> Dict
     has_subtitle_style_metadata = isinstance(metadata.get("subtitle_style"), dict)
     subtitle_style = normalize_subtitle_style(metadata.get("subtitle_style"))
     current_subtitle_style = current_visual_settings["subtitle_style"]
+    playback_rate = float(metadata.get("playback_rate", 1.0) or 1.0)
     return {
         "filename": filename,
         "label": label or filename,
@@ -6575,6 +6646,9 @@ def video_item(project: Project, path: str, label: Optional[str] = None) -> Dict
         "reveal_pipeline_version": pipeline_version or None,
         "video_background": video_background or None,
         "subtitle_style": subtitle_style,
+        "playback_rate": playback_rate,
+        "source_filename": str(metadata.get("source_filename") or "") or None,
+        "is_speed_variant": abs(playback_rate - 1.0) > 0.001,
         "is_legacy": (
             pipeline_version != REVEAL_PIPELINE_VERSION
             or video_background != current_background
@@ -6602,45 +6676,11 @@ def list_video_items(project: Project, project_id: str) -> List[Dict[str, Any]]:
 
 
 def media_tool_candidate_dirs() -> List[str]:
-    candidates: List[str] = []
-    for value in (
-        os.environ.get("PPT_STUDIO_FFMPEG_DIR"),
-        os.environ.get("FFMPEG_DIR"),
-    ):
-        if value:
-            candidates.append(value)
-    candidates.extend(
-        [
-            os.path.join(REPO_ROOT, "tools", "ffmpeg", "bin"),
-            os.path.join(REPO_ROOT, "runtime", "ffmpeg", "bin"),
-            os.path.join(os.path.dirname(REPO_ROOT), "work", "runtime", "ffmpeg", "bin"),
-            os.path.join(os.path.dirname(REPO_ROOT), "work", "runtime", "ffmpeg"),
-        ]
-    )
-    appdata = os.environ.get("APPDATA")
-    if appdata:
-        candidates.extend(
-            [
-                os.path.join(appdata, "TRAE SOLO CN", "ModularData", "ai-agent", "vm", "tools", "app", "ffmpeg"),
-                os.path.join(appdata, "WEMedia", "plugin", "ffmpeg_7_1"),
-            ]
-        )
-    return candidates
+    return [str(path) for path in shared_media_tool_candidate_dirs(REPO_ROOT)]
 
 
 def resolve_media_tool(name: str) -> Optional[str]:
-    direct_env = os.environ.get(f"{name.upper()}_BINARY")
-    if direct_env and os.path.exists(direct_env):
-        return direct_env
-    found = shutil.which(name)
-    if found:
-        return found
-    executable = f"{name}.exe" if os.name == "nt" else name
-    for directory in media_tool_candidate_dirs():
-        path = os.path.join(directory, executable)
-        if os.path.exists(path):
-            return path
-    return None
+    return shared_resolve_media_tool(name, repo_root=REPO_ROOT)
 
 
 def normalize_video_color_metadata(video_path: str, project: Project) -> bool:
@@ -6710,7 +6750,7 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
     # 首先调用 build_remotion_props.py 生成渲染配置属性
     bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))
     bind_res = subprocess.run([
-        sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", "0"
+        sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", str(REVEAL_VISUAL_LEAD_SEC)
     ], capture_output=True, text=True, encoding="utf-8", errors="replace")
     if bind_res.returncode != 0:
         logger.error(f"Timeline binding before render failed: {bind_res.stderr}")
@@ -6899,6 +6939,104 @@ def get_project_video(project_id: str, filename: str, db: Session = Depends(get_
     if not os.path.exists(video_path):
         raise HTTPException(status_code=404, detail="视频文件不存在")
     return FileResponse(video_path, media_type="video/mp4", filename=safe_name)
+
+
+@app.post("/api/projects/{project_id}/videos/{filename}/speed")
+def create_speed_adjusted_video(
+    project_id: str,
+    filename: str,
+    payload: Dict[str, Any],
+    db: Session = Depends(get_db),
+):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    safe_name = os.path.basename(filename)
+    if safe_name != filename or not safe_name.lower().endswith(".mp4"):
+        raise HTTPException(status_code=400, detail="视频文件名无效")
+    try:
+        speed = round(float(payload.get("speed", 1.0)), 2)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="视频语速必须是数字")
+    if speed < 0.5 or speed > 2.0:
+        raise HTTPException(status_code=400, detail="视频语速范围为 0.5× 到 2.0×")
+
+    videos_dir = project_video_dir(project)
+    requested_path = os.path.join(videos_dir, safe_name)
+    if not os.path.exists(requested_path):
+        raise HTTPException(status_code=404, detail="视频文件不存在")
+    requested_metadata = read_video_metadata(requested_path)
+    source_name = os.path.basename(str(requested_metadata.get("source_filename") or safe_name))
+    source_path = os.path.join(videos_dir, source_name)
+    if not os.path.exists(source_path):
+        source_name, source_path = safe_name, requested_path
+    if abs(speed - 1.0) <= 0.001:
+        return {"success": True, "video": video_item(project, source_path), "videos": list_video_items(project, project_id)}
+
+    ffmpeg = resolve_media_tool("ffmpeg")
+    if not ffmpeg:
+        raise HTTPException(status_code=500, detail="未找到 FFmpeg，无法生成调速视频")
+    speed_tag = f"{speed:.2f}".rstrip("0").rstrip(".").replace(".", "_")
+    source_stem = os.path.splitext(source_name)[0]
+    output_name = f"{source_stem}_speed_{speed_tag}x.mp4"
+    output_path = os.path.join(videos_dir, output_name)
+    temp_path = output_path + ".tmp.mp4"
+    if os.path.exists(temp_path):
+        os.remove(temp_path)
+    command = [
+        ffmpeg,
+        "-y",
+        "-i",
+        source_path,
+        "-filter:v",
+        f"setpts=PTS/{speed}",
+        "-filter:a",
+        f"atempo={speed}",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "medium",
+        "-crf",
+        "18",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+        temp_path,
+    ]
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=STEP8_RENDER_TIMEOUT_SEC,
+        )
+    except subprocess.TimeoutExpired as exc:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        raise HTTPException(status_code=504, detail="生成调速视频超时") from exc
+    if result.returncode != 0 or not os.path.exists(temp_path):
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        raise HTTPException(status_code=500, detail=f"生成调速视频失败：{result.stderr[-800:]}")
+    os.replace(temp_path, output_path)
+    source_metadata = read_video_metadata(source_path)
+    source_metadata.update({
+        "rendered_at": datetime.now().isoformat(timespec="seconds"),
+        "playback_rate": speed,
+        "source_filename": source_name,
+        "speed_adjustment": "ffmpeg_setpts_atempo",
+    })
+    with open(video_metadata_path(output_path), "w", encoding="utf-8") as file:
+        json.dump(source_metadata, file, ensure_ascii=False, indent=2)
+    item = video_item(project, output_path)
+    return {"success": True, "video": item, "videos": list_video_items(project, project_id)}
 
 
 @app.delete("/api/projects/{project_id}/videos/{filename}")

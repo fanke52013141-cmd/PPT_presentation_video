@@ -99,8 +99,20 @@ def validate_slide(
     groups = slide.get("visual_groups")
     if not isinstance(groups, list) or not groups:
         raise ContractError(f"Slide missing visual_groups[]: {slide_id}")
-    if len(groups) < min_groups or len(groups) > max_groups:
-        raise ContractError(f"Expected {min_groups}-{max_groups} visual groups in {slide_id}, got {len(groups)}")
+    # The profile range describes revealable visual anchors, not the fixed
+    # title/subtitle groups. Counting the static header made a valid page with
+    # five body islands look like seven groups and only produced a warning after
+    # the contract had already been accepted.
+    revealable_groups = [
+        group for group in groups
+        if isinstance(group, dict)
+        and str(group.get("role") or "").strip().lower() not in {"title", "subtitle", "decoration"}
+    ]
+    if len(revealable_groups) < min_groups or len(revealable_groups) > max_groups:
+        raise ContractError(
+            f"Expected {min_groups}-{max_groups} revealable visual groups in {slide_id}, "
+            f"got {len(revealable_groups)} ({len(groups)} including static title/subtitle groups)"
+        )
 
     group_ids: set[str] = set()
     content_unit_ids: set[str] = set()

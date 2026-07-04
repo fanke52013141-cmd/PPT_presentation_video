@@ -4508,18 +4508,85 @@ textarea.step2-soft-input {
   color: #2f7444;
 }
 
-/* Sticky workflow headers must fully occlude scrolling content. */
+/*
+ * Workflow glass header
+ *
+ * The sticky row itself stays completely transparent.  A separate, full-width
+ * ambient layer blurs only the strip occupied by the sticky header and dissolves
+ * at the bottom.  It deliberately carries no visible panel fill, border, radius,
+ * or shadow: the toolbar remains crisp while content scrolling underneath is
+ * softened, instead of making the controls look trapped in a glass rectangle.
+ */
 .step2-sticky-header,
 .step3-toolbar-row,
 .step5-mask-header,
 .step6-compact-header,
 .step8-header {
-  background: #fafbff !important;
+  background: transparent !important;
   background-image: none !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
-  box-shadow: 0 1px 0 #e3e7f0, 0 10px 18px rgba(45, 55, 78, 0.06) !important;
+  box-shadow: none !important;
   isolation: isolate;
+}
+
+.step2-sticky-header > *,
+.step3-toolbar-row > *,
+.step5-mask-header > *,
+.step6-compact-header > *,
+.step8-header > * {
+  position: relative;
+  z-index: 1;
+}
+
+.step2-sticky-header::before,
+.step3-toolbar-row::before,
+.step5-mask-header::before,
+.step6-compact-header::before,
+.step8-header::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: -1.6rem;
+  right: -2.4rem;
+  bottom: -2.25rem;
+  left: -2.4rem;
+  pointer-events: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  /* A trace of alpha makes backdrop-filter reliable in Chromium without
+     introducing a visible white card of its own. */
+  background: rgba(250, 251, 255, 0.018);
+  -webkit-backdrop-filter: saturate(135%) blur(24px);
+  backdrop-filter: saturate(135%) blur(24px);
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    #000 52%,
+    rgba(0, 0, 0, 0.82) 66%,
+    rgba(0, 0, 0, 0.34) 84%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    #000 52%,
+    rgba(0, 0, 0, 0.82) 66%,
+    rgba(0, 0, 0, 0.34) 84%,
+    transparent 100%
+  );
+}
+
+@media (max-width: 900px) {
+  .step2-sticky-header::before,
+  .step3-toolbar-row::before,
+  .step5-mask-header::before,
+  .step6-compact-header::before,
+  .step8-header::before {
+    right: -1rem;
+    left: -1rem;
+  }
 }
 
 /* Keep the stale-step badge inside the row instead of creating a fifth grid
@@ -4616,6 +4683,58 @@ textarea.step2-soft-input {
   height: 42px !important;
   min-height: 42px !important;
   box-sizing: border-box;
+}
+
+/* Slide selectors are navigation buttons, not preview cards. Keep them at
+   roughly half the former height so the actual editing canvas gets the space. */
+.slide-thumbnail-card.step2-slide-thumb,
+.step5-slide-btn {
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0.18rem 0.62rem !important;
+  border-radius: 11px !important;
+  box-shadow: none !important;
+}
+
+.step5-slides-grid,
+.slides-thumbnail-container {
+  gap: 0.42rem !important;
+  margin-bottom: 0.65rem !important;
+}
+
+.step8-speed-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 42px;
+  padding: 0 0.75rem;
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.82);
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+
+.step8-speed-control select {
+  min-width: 78px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-weight: 800;
+  outline: none;
+}
+
+.step8-speed-badge,
+.step8-speed-source {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0.22rem 0.58rem;
+  border-radius: 999px;
+  background: #edeaff;
+  color: #5f53d9;
+  font-size: 0.76rem;
+  font-weight: 800;
 }
 
 button.success:not(:disabled),

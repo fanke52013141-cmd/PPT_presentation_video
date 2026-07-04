@@ -16,12 +16,14 @@ from __future__ import annotations
 
 import argparse
 import binascii
+import io
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import time
 import urllib.error
 import urllib.parse
@@ -30,6 +32,11 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+
+try:
+    from scripts.media_tools import probe_media_duration_sec
+except ModuleNotFoundError:
+    from media_tools import probe_media_duration_sec
 
 
 DEFAULT_ENDPOINT = "https://api.minimaxi.com/v1/t2a_async_v2"
@@ -314,7 +321,55 @@ def audio_bytes_from_string(value: str, api_key: str, timeout: int) -> bytes:
         return base64.b64decode(text)
 
 
-def download_minimax_file(endpoint: str, file_id: str, api_key: str, out_audio: Path, timeout: int) -> None:
+def extract_minimax_bundle(body: bytes, out_audio: Path) -> dict[str, Any]:
+    """Write the real audio from MiniMax's TAR result and retain timing metadata."""
+    result: dict[str, Any] = {}
+    try:
+        with tarfile.open(fileobj=io.BytesIO(body), mode="r:*") as archive:
+            files = [member for member in archive.getmembers() if member.isfile()]
+            audio_member = next(
+                (member for member in files if Path(member.name).suffix.lower() in {".mp3", ".wav", ".flac"}),
+                None,
+            )
+            if not audio_member:
+                raise RuntimeError("MiniMax result bundle does not contain an audio file")
+            audio_stream = archive.extractfile(audio_member)
+            if not audio_stream:
+                raise RuntimeError("MiniMax result bundle audio could not be read")
+            out_audio.parent.mkdir(parents=True, exist_ok=True)
+            out_audio.write_bytes(audio_stream.read())
+
+            titles_member = next((member for member in files if member.name.lower().endswith(".titles")), None)
+            if titles_member:
+                titles_stream = archive.extractfile(titles_member)
+                if titles_stream:
+                    try:
+                        titles = json.loads(titles_stream.read().decode("utf-8"))
+                        if isinstance(titles, list):
+                            result["subtitle_timestamps"] = titles
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        pass
+
+            extra_member = next((member for member in files if member.name.lower().endswith(".extra")), None)
+            if extra_member:
+                extra_stream = archive.extractfile(extra_member)
+                if extra_stream:
+                    try:
+                        extra = json.loads(extra_stream.read().decode("utf-8"))
+                        if isinstance(extra, dict):
+                            result["extra_info"] = extra
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        pass
+            result["bundle_format"] = "tar"
+            return result
+    except tarfile.ReadError:
+        out_audio.parent.mkdir(parents=True, exist_ok=True)
+        out_audio.write_bytes(body)
+        result["bundle_format"] = "raw_audio"
+        return result
+
+
+def download_minimax_file(endpoint: str, file_id: str, api_key: str, out_audio: Path, timeout: int) -> dict[str, Any]:
     url = file_retrieve_endpoint(endpoint, file_id)
     body = download_url(url, api_key=api_key, timeout=timeout)
     content = body.lstrip()
@@ -327,8 +382,7 @@ def download_minimax_file(endpoint: str, file_id: str, api_key: str, out_audio: 
                 break
         else:
             raise RuntimeError(f"MiniMax file response did not include audio content: {json.dumps(data, ensure_ascii=False)[:800]}")
-    out_audio.parent.mkdir(parents=True, exist_ok=True)
-    out_audio.write_bytes(body)
+    return extract_minimax_bundle(body, out_audio)
 
 
 def call_minimax_async_tts(payload: dict[str, Any], endpoint: str, api_key: str, timeout: int, out_audio: Path) -> dict[str, Any]:
@@ -371,9 +425,14 @@ def call_minimax_async_tts(payload: dict[str, Any], endpoint: str, api_key: str,
         raise RuntimeError(f"MiniMax async task timed out: {json.dumps(poll_response, ensure_ascii=False)[:800]}")
     if not file_id:
         raise RuntimeError(f"MiniMax async response did not include file_id: {json.dumps(poll_response, ensure_ascii=False)[:800]}")
-    download_minimax_file(endpoint, file_id, api_key, out_audio, timeout)
+    bundle = download_minimax_file(endpoint, file_id, api_key, out_audio, timeout)
     poll_response.setdefault("async_submit", response_json)
     poll_response.setdefault("file_id", file_id)
+    if bundle.get("subtitle_timestamps"):
+        poll_response["subtitle_timestamps"] = bundle["subtitle_timestamps"]
+    if bundle.get("extra_info"):
+        poll_response["extra_info"] = bundle["extra_info"]
+    poll_response["bundle_format"] = bundle.get("bundle_format")
     return poll_response
 
 
@@ -455,31 +514,7 @@ def estimate_duration_sec(text: str) -> float:
 
 
 def probe_audio_duration_sec(audio_path: Path) -> float | None:
-    if not audio_path.exists() or audio_path.stat().st_size <= 0:
-        return None
-    if not shutil.which("ffprobe"):
-        return None
-    result = subprocess.run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "default=nw=1:nk=1",
-            str(audio_path),
-        ],
-        text=True,
-        capture_output=True,
-    )
-    if result.returncode != 0:
-        return None
-    try:
-        duration = float(result.stdout.strip())
-    except ValueError:
-        return None
-    return duration if duration > 0 else None
+    return probe_media_duration_sec(audio_path, repo_root=Path(__file__).resolve().parents[1])
 
 
 def choose_audio_duration(response_json: dict[str, Any], subtitle_text: str, audio_path: Path) -> tuple[float, str, float | None]:
@@ -515,6 +550,77 @@ def build_segments(text: str, duration_sec: float, slide_id: str, timing_source:
             }
         )
         cursor = end
+    return segments
+
+
+def build_segments_from_provider_timestamps(
+    entries: Any,
+    slide_id: str,
+    max_subtitle_chars: int,
+    duration_sec: float,
+) -> list[dict[str, Any]]:
+    if not isinstance(entries, list):
+        return []
+    segments: list[dict[str, Any]] = []
+    segment_index = 0
+    pending_punctuation = ""
+    for sentence_index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            continue
+        text = strip_tts_markup(str(entry.get("text") or "")).strip()
+        try:
+            start = max(0.0, float(entry.get("time_begin")) / 1000.0)
+            end = min(duration_sec, float(entry.get("time_end")) / 1000.0)
+        except (TypeError, ValueError):
+            continue
+        if not text or end <= start:
+            continue
+        # MiniMax occasionally emits a standalone punctuation title (for
+        # example a 200 ms "." item). Rendering that item as its own subtitle
+        # creates a visible one-frame flash. Keep the punctuation, but attach
+        # it to the preceding spoken sentence and extend that sentence through
+        # the provider timestamp instead.
+        if not re.search(r"[0-9A-Za-z\u3400-\u9fff]", text):
+            if segments:
+                if not str(segments[-1].get("text") or "").endswith(text):
+                    segments[-1]["text"] = f"{segments[-1]['text']}{text}"
+                segments[-1]["end"] = round(max(float(segments[-1]["end"]), end), 3)
+            else:
+                pending_punctuation += text
+            continue
+        if pending_punctuation:
+            text = f"{pending_punctuation}{text}"
+            pending_punctuation = ""
+        chunks = split_subtitles(text, max_subtitle_chars) or [text]
+        weights = [max(1, len(re.sub(r"\s+", "", chunk))) for chunk in chunks]
+        total_weight = sum(weights)
+        cursor = start
+        for chunk_index, (chunk, weight) in enumerate(zip(chunks, weights), start=1):
+            segment_index += 1
+            chunk_end = end if chunk_index == len(chunks) else cursor + (end - start) * weight / total_weight
+            segments.append(
+                {
+                    "id": f"{slide_id}_seg_{segment_index:03d}",
+                    "start": round(cursor, 3),
+                    "end": round(chunk_end, 3),
+                    "text": chunk,
+                    "timing_source": "provider_sentence_timestamps",
+                    "provider_sentence_index": sentence_index,
+                    "max_cjk_chars": max_subtitle_chars,
+                    "max_lines": 1,
+                }
+            )
+            cursor = chunk_end
+
+    # Provider sentence timestamps commonly contain silent 100-300 ms gaps.
+    # A subtitle disappearing for those gaps reads as jitter even though the
+    # audio itself is continuous. Hold the previous sentence until the next
+    # one begins; longer pauses remain intentionally blank.
+    max_hold_gap_sec = 0.35
+    for previous, following in zip(segments, segments[1:]):
+        gap = float(following["start"]) - float(previous["end"])
+        if 0 < gap <= max_hold_gap_sec:
+            previous["end"] = round(float(following["start"]), 3)
     return segments
 
 
@@ -645,8 +751,16 @@ def main() -> int:
         write_audio(response_json, out_audio)
 
     duration_sec, duration_source, provider_duration_sec = choose_audio_duration(response_json, subtitle_text, out_audio)
-    timing_source = f"estimated_{duration_source}"
-    segments = build_segments(subtitle_text, duration_sec, args.slide_id, timing_source, args.max_subtitle_chars)
+    provider_timestamps = response_json.get("subtitle_timestamps")
+    segments = build_segments_from_provider_timestamps(
+        provider_timestamps,
+        args.slide_id,
+        args.max_subtitle_chars,
+        duration_sec,
+    )
+    timing_source = "provider_sentence_timestamps" if segments else f"estimated_{duration_source}"
+    if not segments:
+        segments = build_segments(subtitle_text, duration_sec, args.slide_id, timing_source, args.max_subtitle_chars)
     timeline = {
         "slide_id": args.slide_id,
         "audio_file": str(out_audio).replace("\\", "/"),
@@ -655,6 +769,7 @@ def main() -> int:
         "duration_source": duration_source,
         "provider_duration_sec": round(provider_duration_sec, 3) if provider_duration_sec else None,
         "timing_source": timing_source,
+        "provider_timestamp_count": len(provider_timestamps) if isinstance(provider_timestamps, list) else 0,
         "subtitle_display": {"max_lines": 1, "max_cjk_chars": args.max_subtitle_chars},
         "segments": segments,
     }

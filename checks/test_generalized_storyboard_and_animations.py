@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.build_reveal_scene import build_event
 from scripts.build_remotion_props import read_subtitle_style
+from scripts.bind_reveal_timeline import bind_slide
 from scripts.pipeline_profiles import allowed_reveal_actions, read_pipeline_profile, role_catalog
 from scripts.validate_visual_contract import validate_contract
 import server as server_module
@@ -79,7 +80,8 @@ def main() -> None:
     }
     assert required_actions <= allowed_reveal_actions(profile)
     for role, reveal in profile["reveal"]["default_by_role"].items():
-        assert reveal["type"] == "wipe_left_to_right", f"{role} default reveal is not uniform"
+        assert reveal["type"] == "crop_fade_up", f"{role} default reveal is not a whole-layer fade"
+        assert reveal["duration"] == 0.25
 
     event = build_event(
         "slide_001",
@@ -97,6 +99,39 @@ def main() -> None:
     assert event["action"] == "sticker_pop"
     assert event["duration"] == 0.7
     assert event["params"]["rotation"] == -4
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        slide_dir = Path(temp_dir)
+        (slide_dir / "audio_timeline.json").write_text(
+            json.dumps(
+                {
+                    "duration_sec": 6.0,
+                    "audio_content_duration_sec": 6.0,
+                    "segments": [
+                        {"id": "seg_1", "start": 0.0, "end": 2.5, "text": "first"},
+                        {"id": "seg_2", "start": 3.0, "end": 6.0, "text": "second"},
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (slide_dir / "animation_timeline.json").write_text(
+            json.dumps(
+                {
+                    "events": [
+                        {"target": "layer_1", "linked_segment_id": "seg_1", "action": "crop_fade_up", "duration": 0.25},
+                        {"target": "layer_2", "linked_segment_id": "seg_2", "action": "crop_fade_up", "duration": 0.25},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        assert bind_slide(slide_dir, lead_sec=0.45, preserve_existing_at=False)
+        bound_audio = json.loads((slide_dir / "audio_timeline.json").read_text(encoding="utf-8"))
+        bound_animation = json.loads((slide_dir / "animation_timeline.json").read_text(encoding="utf-8"))
+        assert bound_audio["audio_start_sec"] == 0.45
+        assert [item["at"] for item in bound_animation["events"]] == [0.0, 3.0]
+        assert [item["narration_start_at"] for item in bound_animation["events"]] == [0.45, 3.45]
 
     narration_authority_contract = {
         "version": "visual_contract_v1",

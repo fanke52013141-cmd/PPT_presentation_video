@@ -8,7 +8,7 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from database import Project
-from server import mark_slide_image_changed
+from server import mark_slide_image_changed, prune_stale_mask_groups
 
 
 class DummyDb:
@@ -74,3 +74,35 @@ with tempfile.TemporaryDirectory() as temp_value:
     assert db.commits == 1
 
 print("slide visual invalidation checks passed")
+
+
+with tempfile.TemporaryDirectory() as temp_value:
+    run_dir = Path(temp_value)
+    planning = run_dir / "planning"
+    planning.mkdir()
+    (planning / "visual_contract.json").write_text(
+        json.dumps({
+            "slides": [{
+                "slide_id": "slide_001",
+                "visual_groups": [{"id": "body_group"}],
+            }],
+        }),
+        encoding="utf-8",
+    )
+    project = Project(id="static-header", name="static-header", run_dir=str(run_dir), current_step=5)
+    payload = {
+        "slides": [{
+            "slide_id": "slide_001",
+            "groups": [
+                {"id": "__static_title_header__", "is_static": True, "is_static_header": True, "source": "ai_static_header"},
+                {"id": "body_group", "visual_group_id": "body_group"},
+                {"id": "stale_group"},
+            ],
+            "semantic_blocks": [],
+        }],
+    }
+    pruned = prune_stale_mask_groups(project, payload)
+    ids = [group["id"] for group in pruned["slides"][0]["groups"]]
+    assert ids == ["__static_title_header__", "body_group"]
+
+print("static title header pruning checks passed")

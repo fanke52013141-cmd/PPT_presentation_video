@@ -410,8 +410,29 @@ def compose_slide(
         publish_slide_outputs(slide_dir, production_slide_dir)
         return
 
-    base_image = Image.new("RGB", (width, height), background_rgb)
-    base_image.save(assets_dir / "base_slide.png", format="PNG")
+    static_painted_groups = [
+        (group, alpha) for group, alpha in painted_groups
+        if bool(group.get("is_static")) or bool(group.get("is_static_header"))
+    ]
+    dynamic_painted_groups = [
+        (group, alpha) for group, alpha in painted_groups
+        if not bool(group.get("is_static")) and not bool(group.get("is_static_header"))
+    ]
+    base_image = Image.new("RGBA", (width, height), (*background_rgb, 255))
+    static_group_reports: list[dict[str, Any]] = []
+    for static_group, static_alpha in static_painted_groups:
+        static_layer, exact_alpha, cutout_stats = masked_outer_white_cutout(source_master, static_alpha)
+        if not exact_alpha.getbbox():
+            continue
+        base_image = Image.alpha_composite(base_image, static_layer.convert("RGBA"))
+        static_group_reports.append({
+            "group_id": str(static_group.get("id") or "__static__"),
+            "mask_bbox": alpha_box(exact_alpha, width, height),
+            "output_alpha_sha256": sha256_bytes(exact_alpha.tobytes()),
+            "manual_mask_sha256": json_fingerprint(static_group.get("manual_mask")),
+            "cutout": {"method": "static_base_exact_mask", **cutout_stats},
+        })
+    base_image.convert("RGB").save(assets_dir / "base_slide.png", format="PNG")
     layers: list[dict[str, Any]] = [{
         "id": "base_slide",
         "type": "png",
@@ -424,7 +445,7 @@ def compose_slide(
     warnings: list[dict[str, Any]] = []
     group_reports: list[dict[str, Any]] = []
 
-    for index, (group, manual_alpha) in enumerate(painted_groups, start=1):
+    for index, (group, manual_alpha) in enumerate(dynamic_painted_groups, start=1):
         group_id = str(group["id"])
         layer_image, alpha, cutout_stats = masked_outer_white_cutout(
             source_master,
@@ -515,6 +536,7 @@ def compose_slide(
             "background_source": "canvas.background",
             "source_image_used_for_background": False,
             "cutout_method": "mask_boundary_connected_white_soft_alpha",
+            "static_header_in_base": bool(static_group_reports),
         },
     }
     duration = max(
@@ -543,6 +565,7 @@ def compose_slide(
             "white_decontamination": True,
         },
         "source_sha256": source_sha256,
+        "static_groups": static_group_reports,
         "warnings": warnings,
         "input_group_count": len(groups),
         "group_count": len(group_reports),

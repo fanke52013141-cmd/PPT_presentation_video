@@ -38,6 +38,11 @@ from typing import Any
 from urllib.parse import unquote, urlparse
 from urllib.request import url2pathname
 
+try:
+    from scripts.media_tools import probe_media_duration_sec
+except ModuleNotFoundError:
+    from media_tools import probe_media_duration_sec
+
 
 DEFAULT_FPS = 30
 DEFAULT_WIDTH = 1920
@@ -372,31 +377,7 @@ def optional_duration(value: Any) -> float:
 
 
 def probe_audio_duration_sec(audio_path: Path) -> float | None:
-    if not audio_path.exists() or audio_path.stat().st_size <= 0:
-        return None
-    if not shutil.which("ffprobe"):
-        return None
-    result = subprocess.run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "default=nw=1:nk=1",
-            str(audio_path),
-        ],
-        text=True,
-        capture_output=True,
-    )
-    if result.returncode != 0:
-        return None
-    try:
-        duration = float(result.stdout.strip())
-    except ValueError:
-        return None
-    return duration if duration > 0 else None
+    return probe_media_duration_sec(audio_path, repo_root=Path(__file__).resolve().parents[1])
 
 
 def scale_audio_segments(audio_timeline: dict[str, Any], source_duration: float, target_duration: float) -> dict[str, Any]:

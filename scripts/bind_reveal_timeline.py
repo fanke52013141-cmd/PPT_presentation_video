@@ -149,9 +149,13 @@ def bind_slide(slide_dir: Path, lead_sec: float, preserve_existing_at: bool) -> 
             duration = max(MIN_REVEAL_DURATION_SEC, duration)
             event["duration"] = round(duration, 3)
             audio_delay = float(audio_timeline.get("audio_start_sec", 0.0) or 0.0)
-            desired_at = audio_delay + segment_by_id[linked_segment_id] + max(0.0, lead_sec)
+            # Visuals must establish the subject before the narration explains
+            # it. A positive lead therefore means "reveal this many seconds
+            # before speech", not a delay after speech has already begun.
+            visual_lead = max(0.0, lead_sec)
+            desired_at = audio_delay + segment_by_id[linked_segment_id] - visual_lead
             if desired_at < 0:
-                audio_delay = max(audio_delay, 0.0 - segment_by_id[linked_segment_id])
+                audio_delay = max(audio_delay, visual_lead - segment_by_id[linked_segment_id])
                 audio_timeline["audio_start_sec"] = round(audio_delay, 3)
                 desired_at = 0.0
             event["at"] = round(max(0.0, desired_at), 3)
@@ -221,7 +225,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Bind reveal animation timing to audio timeline segments.")
     parser.add_argument("--run-dir", required=True, type=Path)
     parser.add_argument("--slide-id")
-    parser.add_argument("--lead-sec", type=float, default=0.0, help="Optional delay after the audio segment starts before revealing.")
+    parser.add_argument("--lead-sec", type=float, default=0.45, help="Reveal visuals this many seconds before the linked narration starts.")
     parser.add_argument("--preserve-existing-at", action="store_true")
     return parser.parse_args()
 

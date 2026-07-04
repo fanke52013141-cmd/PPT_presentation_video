@@ -124,6 +124,33 @@ with tempfile.TemporaryDirectory() as temp_dir_value:
     }
     validate_reveal_output(painted_dir, root, 320, 180, require_no_blocking=False)
 
+    static_header_dir = root / "slides" / "slide_003"
+    static_left = painted_group("__static_title_header__", [(40, 88), (130, 88)], 100)
+    static_left["is_static"] = True
+    static_left["is_static_header"] = True
+    static_left["link_to_narration"] = False
+    compose_slide(
+        {
+            "slide_id": "slide_003",
+            "slide_dir": str(static_header_dir),
+            "master": str(master_path),
+            "canvas": canvas,
+            "groups": [static_left, painted_group("right", [(185, 90), (290, 90)], 100)],
+        },
+        root,
+        root,
+        canvas,
+    )
+    static_scene = read_json(static_header_dir / "scene.json")
+    static_report = read_json(static_header_dir / "reveal_report.json")
+    static_base = Image.open(static_header_dir / "assets" / "base_slide.png").convert("RGB")
+    assert [layer["role"] for layer in static_scene["layers"]] == ["background", "reveal_crop"]
+    assert len(read_json(static_header_dir / "animation_timeline.json")["events"]) == 1
+    assert static_scene["composition"]["static_header_in_base"] is True
+    assert len(static_report["static_groups"]) == 1
+    assert static_base.getpixel((35, 80)) == (17, 17, 17)
+    assert static_base.getpixel((220, 90)) == (254, 253, 249)
+
     reconstructed = Image.open(painted_dir / "assets" / "base_slide.png").convert("RGBA")
     for layer in sorted(scene["layers"][1:], key=lambda item: item["z_index"]):
         reconstructed.alpha_composite(Image.open(painted_dir / layer["asset"]).convert("RGBA"))

@@ -21,8 +21,12 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+import yaml
+
 PATCH_MARKER = "__ppt_step3_image_style_alias_patch__"
 STATE_FILENAME = "step3_image_style.json"
+BUILTIN_HANDDRAWN_TEMPLATE_ID = "handdrawn"
+BUILTIN_HANDDRAWN_TEMPLATE_NAME = "手绘风格"
 
 
 def _run_dir(project: Any) -> Path:
@@ -102,6 +106,63 @@ def _register(server_module: ModuleType) -> bool:
     templates_root = Path(str(getattr(server_module, "DATA_DIR", Path(__file__).parent / "data"))) / "step3_image_style_templates"
     templates_index_path = templates_root / "index.json"
 
+    def builtin_handdrawn_sources() -> tuple[Path, list[Path]]:
+        repo_root = Path(str(getattr(server_module, "REPO_ROOT", Path(__file__).parent)))
+        style_path = Path(str(getattr(server_module, "HANDDRAWN_STYLE_TOKENS_PATH", repo_root / "config" / "style_tokens_handdrawn.yaml")))
+        reference_root = repo_root / "references" / "style_reference"
+        reference_paths = [reference_root / "PPT模板.png", reference_root / "PPT示例.png"]
+        return style_path, [path for path in reference_paths if path.exists() and path.is_file()]
+
+    def builtin_handdrawn_style() -> dict[str, Any]:
+        style_path, _ = builtin_handdrawn_sources()
+        if not style_path.exists():
+            raise server_module.HTTPException(status_code=404, detail="内置手绘风格配置缺失")
+        try:
+            style_tokens = yaml.safe_load(style_path.read_text(encoding="utf-8-sig")) or {}
+        except Exception as exc:
+            raise server_module.HTTPException(status_code=500, detail="内置手绘风格配置损坏") from exc
+        if not isinstance(style_tokens, dict):
+            raise server_module.HTTPException(status_code=500, detail="内置手绘风格配置损坏")
+        system_content = server_module.build_image_style_prompt(style_tokens)
+        return {
+            "source": "built_in_template",
+            "template_id": BUILTIN_HANDDRAWN_TEMPLATE_ID,
+            "style_name": BUILTIN_HANDDRAWN_TEMPLATE_NAME,
+            "style_summary": "温暖极简的手绘线稿科普风格，纯白画布、清晰分组，适合演讲内容可视化与 Mask 显现。",
+            "system_content": system_content,
+            "sample_reference_image_prompts": [system_content],
+            "reference_image_count_target": 3,
+            "style_tokens": style_tokens,
+        }
+
+    def builtin_handdrawn_detail() -> dict[str, Any]:
+        _, reference_paths = builtin_handdrawn_sources()
+        images = [
+            {
+                "index": index,
+                "filename": path.name,
+                "source": "built_in_template",
+                "url": f"/api/image-style/project-templates/{BUILTIN_HANDDRAWN_TEMPLATE_ID}/reference-images/{index}?t={int(path.stat().st_mtime)}",
+            }
+            for index, path in enumerate(reference_paths[:3], start=1)
+        ]
+        item = {
+            "id": BUILTIN_HANDDRAWN_TEMPLATE_ID,
+            "name": BUILTIN_HANDDRAWN_TEMPLATE_NAME,
+            "built_in": True,
+            "reference_count": len(images),
+        }
+        return {
+            "success": True,
+            "template": item,
+            "style": builtin_handdrawn_style(),
+            "references": {
+                "scope": "step3_image_style_template",
+                "style_name": BUILTIN_HANDDRAWN_TEMPLATE_NAME,
+                "images": images,
+            },
+        }
+
     def read_templates() -> list[dict[str, Any]]:
         value = _read_json(templates_index_path, {"templates": []})
         items = value.get("templates", []) if isinstance(value, dict) else []
@@ -119,9 +180,18 @@ def _register(server_module: ModuleType) -> bool:
         return path
 
     def list_step3_templates() -> dict[str, Any]:
-        return {"success": True, "templates": read_templates()}
+        _, reference_paths = builtin_handdrawn_sources()
+        built_in = {
+            "id": BUILTIN_HANDDRAWN_TEMPLATE_ID,
+            "name": BUILTIN_HANDDRAWN_TEMPLATE_NAME,
+            "built_in": True,
+            "reference_count": min(3, len(reference_paths)),
+        }
+        return {"success": True, "templates": [built_in, *read_templates()]}
 
     def step3_template_detail(template_id: str) -> dict[str, Any]:
+        if template_id == BUILTIN_HANDDRAWN_TEMPLATE_ID:
+            return builtin_handdrawn_detail()
         source = template_dir_or_404(template_id)
         style = _read_json(source / "style.json", {})
         manifest = _read_json(source / "references.json", {})
@@ -164,6 +234,11 @@ def _register(server_module: ModuleType) -> bool:
         return step3_template_detail(template_id)
 
     def get_step3_template_reference(template_id: str, index: int) -> Any:
+        if template_id == BUILTIN_HANDDRAWN_TEMPLATE_ID:
+            _, reference_paths = builtin_handdrawn_sources()
+            if index < 1 or index > len(reference_paths):
+                raise server_module.HTTPException(status_code=404, detail="模板参考图不存在")
+            return server_module.FileResponse(str(reference_paths[index - 1]), media_type="image/png")
         source = template_dir_or_404(template_id)
         detail = step3_template_detail(template_id)
         image = next((item for item in detail["references"]["images"] if int(item.get("index", 0)) == int(index)), None)
@@ -222,18 +297,40 @@ def _register(server_module: ModuleType) -> bool:
         db: Any = server_module.Depends(server_module.get_db),
     ) -> dict[str, Any]:
         project = _project_or_404(server_module, db, project_id)
-        source = template_dir_or_404(template_id)
-        style = _read_json(source / "style.json", {})
+        built_in = template_id == BUILTIN_HANDDRAWN_TEMPLATE_ID
+        source = None if built_in else template_dir_or_404(template_id)
+        style = builtin_handdrawn_style() if built_in else _read_json(source / "style.json", {})
         if not style:
             raise server_module.HTTPException(status_code=400, detail="图片风格模板内容损坏")
-        _save_step3_style_state(project, style, "named_template")
+        _save_step3_style_state(project, style, "built_in_template" if built_in else "named_template")
         target_refs = manager_impl._references_dir(project)
         if target_refs.exists():
             shutil.rmtree(target_refs)
-        source_refs = source / "references"
-        if source_refs.exists():
-            shutil.copytree(source_refs, target_refs)
-        manifest = _read_json(source / "references.json", {})
+        if built_in:
+            _, source_images = builtin_handdrawn_sources()
+            target_refs.mkdir(parents=True, exist_ok=True)
+            images = []
+            for index, source_image in enumerate(source_images[:3], start=1):
+                filename = f"style_reference_{index:02d}.png"
+                target = target_refs / filename
+                processor = getattr(server_module, "process_and_save_image", None)
+                if callable(processor):
+                    processor(source_image.read_bytes(), str(target))
+                else:
+                    shutil.copy2(source_image, target)
+                images.append({"index": index, "filename": filename, "source": "built_in_template"})
+            manifest = {
+                "version": "step3_style_references_v1",
+                "scope": "step3_image_style",
+                "style_name": BUILTIN_HANDDRAWN_TEMPLATE_NAME,
+                "updated_at": datetime.now().isoformat(timespec="seconds"),
+                "images": images,
+            }
+        else:
+            source_refs = source / "references"
+            if source_refs.exists():
+                shutil.copytree(source_refs, target_refs)
+            manifest = _read_json(source / "references.json", {})
         manager_impl._write_normalized_manifest(project, manifest if isinstance(manifest, dict) else {})
         references = refs_impl._load_manifest(project, project_id)
         return {
@@ -243,6 +340,8 @@ def _register(server_module: ModuleType) -> bool:
         }
 
     def delete_step3_template(template_id: str) -> dict[str, Any]:
+        if template_id == BUILTIN_HANDDRAWN_TEMPLATE_ID:
+            raise server_module.HTTPException(status_code=400, detail="内置手绘风格不能删除")
         source = template_dir_or_404(template_id)
         items = [item for item in read_templates() if str(item.get("id") or "") != template_id]
         shutil.rmtree(source)

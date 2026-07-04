@@ -4312,3 +4312,497 @@ textarea.step2-soft-input {
     min-height: calc(100vh - 96px);
   }
 }
+
+/* 2026-06-29 workflow rail, stable Step 3 actions, Mask cursor, and contrast fixes. */
+.main-content,
+#workspace-main {
+  scrollbar-gutter: stable;
+}
+
+.sidebar {
+  width: 270px;
+  padding: 0.72rem 1rem 1rem;
+  background: rgba(255, 255, 255, 0.92) !important;
+  box-shadow: 12px 0 34px rgba(69, 78, 120, 0.045) !important;
+  justify-content: flex-start;
+}
+
+.sidebar .stepper {
+  position: relative;
+  gap: 0.35rem;
+  padding: 0;
+}
+
+.sidebar .stepper::before {
+  content: '';
+  position: absolute;
+  left: 30.875px;
+  top: 32px;
+  bottom: auto;
+  height: calc((64px + 0.35rem) * 5);
+  width: 2px;
+  background: repeating-linear-gradient(
+    to bottom,
+    #cbd3e3 0,
+    #cbd3e3 5px,
+    transparent 5px,
+    transparent 10px
+  );
+  z-index: 0;
+}
+
+.sidebar .step-item {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 38px 28px minmax(0, 1fr) 22px;
+  align-items: center;
+  gap: 0.62rem;
+  height: 64px;
+  min-height: 64px;
+  padding: 0.58rem 0.68rem;
+  border: 1px solid transparent !important;
+  border-radius: 18px !important;
+  color: #727c90 !important;
+  background: transparent !important;
+  transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease !important;
+}
+
+.sidebar .step-item:hover {
+  transform: none !important;
+  background: #f7f8fc !important;
+  border-color: #eaedf5 !important;
+}
+
+.sidebar .step-item.active {
+  background: linear-gradient(135deg, #f0edff, #f7f5ff) !important;
+  border-color: #ddd6ff !important;
+  color: #18213b !important;
+  box-shadow: 0 12px 26px rgba(99, 76, 231, 0.1) !important;
+}
+
+.sidebar .step-num {
+  position: relative;
+  z-index: 2;
+  width: 38px;
+  height: 38px;
+  border: 1px solid #dce1ec !important;
+  border-radius: 50% !important;
+  background: #fff !important;
+  color: #7a8498 !important;
+  font-size: 0.92rem;
+}
+
+.sidebar .step-icon {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  color: #687287;
+}
+
+.sidebar .step-icon svg {
+  width: 23px;
+  height: 23px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sidebar .step-label {
+  color: inherit;
+  font-size: 0.96rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.sidebar .step-item.active .step-num {
+  border-color: transparent !important;
+  background: var(--gradient-ai-strong) !important;
+  color: #fff !important;
+  box-shadow: 0 7px 16px rgba(99, 76, 231, 0.22) !important;
+}
+
+.sidebar .step-item.active .step-icon {
+  color: #6549eb;
+}
+
+.sidebar .step-item.completed:not(.active) {
+  color: #3d7c52 !important;
+}
+
+.sidebar .step-item.completed:not(.active) .step-num {
+  border-color: #c9ecc7 !important;
+  background: #d9f7d5 !important;
+  color: #347548 !important;
+}
+
+.step-complete {
+  display: none;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 50%;
+  background: #42b968;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.step-item.completed:not(.active) .step-complete {
+  display: grid;
+}
+
+.step-item.active .step-complete {
+  display: block;
+  width: 10px;
+  height: 10px;
+  justify-self: center;
+  background: #6c4df2;
+  color: transparent;
+}
+
+.one-click-sidebar-entry {
+  margin: 0.65rem 0 0 !important;
+}
+
+#btn-one-click-generate {
+  min-height: 50px !important;
+  border-radius: 16px !important;
+  background: var(--gradient-ai-strong) !important;
+  border-color: transparent !important;
+  color: #fff !important;
+  box-shadow: 0 12px 25px rgba(92, 70, 225, 0.23) !important;
+  font-weight: 800;
+  transform: none !important;
+}
+
+#btn-one-click-generate:hover {
+  filter: brightness(1.04);
+  transform: none !important;
+}
+
+.step2-generation-status {
+  margin: 0 0 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid #d9deea;
+  border-radius: 14px;
+  background: #f7f8fc;
+  color: #4f596b;
+  font-size: 0.9rem;
+  font-weight: 650;
+  line-height: 1.55;
+}
+
+.step2-generation-status.error {
+  border-color: #f1b8be;
+  background: #fff1f2;
+  color: #9f2634;
+}
+
+.step2-generation-status.success {
+  border-color: #b9e2c2;
+  background: #effaf1;
+  color: #2f7444;
+}
+
+/*
+ * Workflow glass header
+ *
+ * The sticky row itself stays completely transparent.  A separate, full-width
+ * ambient layer blurs only the strip occupied by the sticky header and dissolves
+ * at the bottom.  It deliberately carries no visible panel fill, border, radius,
+ * or shadow: the toolbar remains crisp while content scrolling underneath is
+ * softened, instead of making the controls look trapped in a glass rectangle.
+ */
+.step2-sticky-header,
+.step3-toolbar-row,
+.step5-mask-header,
+.step6-compact-header,
+.step8-header {
+  background: transparent !important;
+  background-image: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  isolation: isolate;
+}
+
+.step2-sticky-header > *,
+.step3-toolbar-row > *,
+.step5-mask-header > *,
+.step6-compact-header > *,
+.step8-header > * {
+  position: relative;
+  z-index: 1;
+}
+
+.step2-sticky-header::before,
+.step3-toolbar-row::before,
+.step5-mask-header::before,
+.step6-compact-header::before,
+.step8-header::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: -1.6rem;
+  right: -2.4rem;
+  bottom: -2.25rem;
+  left: -2.4rem;
+  pointer-events: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  /* A trace of alpha makes backdrop-filter reliable in Chromium without
+     introducing a visible white card of its own. */
+  background: rgba(250, 251, 255, 0.018);
+  -webkit-backdrop-filter: saturate(135%) blur(24px);
+  backdrop-filter: saturate(135%) blur(24px);
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    #000 52%,
+    rgba(0, 0, 0, 0.82) 66%,
+    rgba(0, 0, 0, 0.34) 84%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    #000 52%,
+    rgba(0, 0, 0, 0.82) 66%,
+    rgba(0, 0, 0, 0.34) 84%,
+    transparent 100%
+  );
+}
+
+@media (max-width: 900px) {
+  .step2-sticky-header::before,
+  .step3-toolbar-row::before,
+  .step5-mask-header::before,
+  .step6-compact-header::before,
+  .step8-header::before {
+    right: -1rem;
+    left: -1rem;
+  }
+}
+
+/* Keep the stale-step badge inside the row instead of creating a fifth grid
+   item that wraps beneath the following step. */
+.sidebar .step-item.pending_reconfirmation .step-complete {
+  display: none !important;
+}
+
+.sidebar .step-status-tag {
+  position: absolute !important;
+  top: 50% !important;
+  right: 0.55rem !important;
+  transform: translateY(-50%);
+  z-index: 3;
+  margin: 0 !important;
+  min-height: 22px;
+  padding: 0.16rem 0.44rem !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.68rem;
+  line-height: 1;
+}
+
+.sidebar .step-item.pending_reconfirmation .step-label {
+  padding-right: 3.4rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.step3-card-header {
+  min-height: 64px;
+  align-items: flex-start;
+}
+
+.step3-card-identity {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 42px;
+  align-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.step3-card-actions {
+  display: grid;
+  grid-template-columns: 48px 36px 36px;
+  align-items: start;
+  gap: 4px;
+  width: 128px;
+  min-width: 128px;
+  height: 42px;
+  flex: 0 0 128px;
+}
+
+.step3-card-action,
+.step3-card-actions > button,
+.step3-card-actions > label.btn {
+  width: 100%;
+  min-width: 0;
+  height: 42px !important;
+  min-height: 42px !important;
+  margin: 0 !important;
+  padding: 0 0.25rem !important;
+  justify-content: center;
+  border-width: 1px !important;
+  border-radius: 13px !important;
+  font-size: 0.72rem !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+  overflow: hidden;
+  transform: none !important;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease !important;
+  box-sizing: border-box;
+}
+
+.step3-card-action:hover,
+.step3-card-action:active,
+.step3-card-actions > label.btn:hover,
+.step3-card-actions > label.btn:active,
+.step3-toolbar-row button:hover,
+.step3-toolbar-row button:active,
+.step3-toolbar-row .btn:hover,
+.step3-toolbar-row .btn:active {
+  transform: none !important;
+}
+
+.step3-action-placeholder {
+  visibility: hidden !important;
+}
+
+.step3-toolbar-row button,
+.step3-toolbar-row .btn,
+.step3-toolbar-row label.btn {
+  height: 42px !important;
+  min-height: 42px !important;
+  box-sizing: border-box;
+}
+
+/* Slide selectors are navigation buttons, not preview cards. Keep them at
+   roughly half the former height so the actual editing canvas gets the space. */
+.slide-thumbnail-card.step2-slide-thumb,
+.step5-slide-btn {
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0.18rem 0.62rem !important;
+  border-radius: 11px !important;
+  box-shadow: none !important;
+}
+
+.step5-slides-grid,
+.slides-thumbnail-container {
+  gap: 0.42rem !important;
+  margin-bottom: 0.65rem !important;
+}
+
+.step8-speed-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 42px;
+  padding: 0 0.75rem;
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.82);
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+
+.step8-speed-control select {
+  min-width: 78px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-weight: 800;
+  outline: none;
+}
+
+.step8-speed-badge,
+.step8-speed-source {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0.22rem 0.58rem;
+  border-radius: 999px;
+  background: #edeaff;
+  color: #5f53d9;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+button.success:not(:disabled),
+.btn.success:not(.is-disabled),
+.btn-next-step.success:not(:disabled) {
+  color: #fff !important;
+}
+
+button.success:disabled,
+.btn.success.is-disabled,
+.btn-next-step.success:disabled,
+#step6-btn-audio-confirm-next:disabled,
+#step8-btn-render:disabled {
+  background: #e9ecf5 !important;
+  border-color: #d8deeb !important;
+  color: #4f596b !important;
+  box-shadow: none !important;
+  filter: none !important;
+  opacity: 1 !important;
+}
+
+.canvas-wrapper canvas.painting,
+.canvas-wrapper canvas.erasing {
+  cursor: none !important;
+}
+
+.step5-tool-cursor {
+  position: absolute;
+  z-index: 8;
+  display: none;
+  width: 20px;
+  height: 20px;
+  border: 3px solid #000;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.92);
+  box-sizing: border-box;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.step5-tool-cursor.visible {
+  display: block;
+}
+
+@media (min-width: 761px) {
+  body.workspace-open #toast-container {
+    left: 18px;
+    bottom: 92px;
+    width: 234px;
+  }
+}
+
+@media (max-width: 760px) {
+  .sidebar .step-icon,
+  .step-complete,
+  .sidebar .stepper::before {
+    display: none !important;
+  }
+
+  .sidebar .step-item {
+    display: flex;
+    min-height: 46px;
+  }
+
+  body.workspace-open #toast-container {
+    left: 0.85rem;
+    bottom: 1rem;
+    width: min(230px, calc(100vw - 1.7rem));
+  }
+}

@@ -11,9 +11,12 @@ const styleManager = fs.readFileSync(path.join(root, 'static', 'style_reference_
 const oneClick = fs.readFileSync(path.join(root, 'static', 'one_click_extension.js'), 'utf8');
 
 if (!css.includes('#toast-container')) throw new Error('toast container layout missing');
-if (!css.includes('left: 0.85rem')) throw new Error('toasts are not anchored in the left navigation area');
+if (!css.includes('left: 18px')) throw new Error('desktop toasts are not anchored inside the workflow rail');
 if (/\.toast\s*\{[^}]*position:\s*fixed/s.test(css)) throw new Error('individual toasts still overlap at a fixed position');
-if (!/\.step3-card-title\s*\{[^}]*min-height:\s*0/s.test(css)) throw new Error('image title still reserves fixed vertical space');
+if (!/\.step3-card-header\s*\{[^}]*min-height:\s*64px/s.test(css)) throw new Error('image card header height is not stable');
+if (!/\.step3-card-actions\s*\{[^}]*grid-template-columns:\s*48px 36px 36px/s.test(css)) throw new Error('image card action columns are not stable');
+if (!/\.step3-card-action[\s\S]*?white-space:\s*nowrap\s*!important/s.test(css)) throw new Error('image card actions can still wrap and jitter');
+if (!app.includes('step3-action-placeholder')) throw new Error('image card delete action does not reserve a stable slot');
 
 if (html.includes('config_effectiveness.js')) throw new Error('runtime patch script is still loaded');
 for (const requiredStep2Token of [
@@ -76,7 +79,7 @@ if (!css.includes('.step3-generating-preview')) throw new Error('step 3 loading 
 if (!app.includes('await refreshStep3Images();')) throw new Error('step 3 does not wait for image state');
 if (!app.includes('confirmBtn.disabled = !allImagesReady')) throw new Error('step 3 confirmation is not gated');
 if (!app.includes('step5AutoSavePromise')) throw new Error('step 5 save serialization missing');
-if (!app.includes("raw.type || raw.value || 'wipe_left_to_right'")) {
+if (!app.includes("raw.type || raw.value || 'crop_fade_up'")) {
   throw new Error('mask animation preset values are not normalized correctly');
 }
 if (!app.includes('applyGlobalMaskReveal') || !app.includes('previewGlobalAnimationSettings')) {
@@ -129,6 +132,30 @@ for (const removedNarrationPolicyToken of [
 }
 for (const manualMaskControl of ['step5-brush-size', 'step5-eraser-size', 'step5-btn-new-block', 'step5-btn-clear-current']) {
   if (!html.includes(manualMaskControl)) throw new Error(`manual Mask fallback control missing: ${manualMaskControl}`);
+}
+if (!html.includes('id="step5-brush-size" type="range" min="100" max="200" value="140"')) {
+  throw new Error('brush size contract must be 100-200 with a 140 default');
+}
+if (!html.includes('id="step5-eraser-size" type="range" min="100" max="200" value="100"')) {
+  throw new Error('eraser size contract must be 100-200 with a 100 default');
+}
+if (!html.includes('step5-tool-cursor') || !app.includes('toolSize * canvasRect.width / 1920')) {
+  throw new Error('Mask tool cursor does not track the real canvas pixel diameter');
+}
+if (!app.includes('const MASK_PREVIEW_OUTLINE_PX = 5') || !app.includes('buildMaskDisplayLayer')) {
+  throw new Error('same-color 5px Mask preview outline is missing');
+}
+if (!app.includes('claimUniqueMaskColor') || !app.includes('idx + offset')) {
+  throw new Error('Mask color collision handling must search for an unused palette color');
+}
+if (!css.includes('.step3-toolbar-row::before') || !css.includes('backdrop-filter: saturate(135%) blur(24px)') || !css.includes('mask-image: linear-gradient(')) {
+  throw new Error('sticky workflow headers must use the full-width fading glass layer');
+}
+if (!css.includes('.sidebar .step-status-tag') || !css.includes('transform: translateY(-50%)')) {
+  throw new Error('pending-reconfirmation badges must stay inside their step row');
+}
+if (aiMask.includes("setInlineStatus('AI 标注已完成'")) {
+  throw new Error('completed AI Mask status must be a temporary toast, not persistent sidebar content');
 }
 for (const manualMaskHandler of ['startMaskPaint', 'startMaskErase', 'deleteMaskBox', 'beginMaskStroke']) {
   if (!app.includes(manualMaskHandler)) throw new Error(`manual Mask fallback handler missing: ${manualMaskHandler}`);
@@ -192,6 +219,24 @@ if (!oneClick.includes('one-click-sidebar-entry') || !oneClick.includes('stepper
 }
 if (!app.includes("document.body.classList.add('workspace-open')") || !css.includes('body.workspace-open #toast-container')) {
   throw new Error('workspace notifications can still overlap the sidebar action');
+}
+if (html.includes('sidebar-flow-title') || html.includes('sidebar-flow-mark')) {
+  throw new Error('obsolete workflow rail title/icon is still visible');
+}
+if (!html.includes('step-complete') || !css.includes('.sidebar .step-icon svg')) {
+  throw new Error('workflow rail redesign is incomplete');
+}
+if (!css.includes('left: 30.875px') || !css.includes('repeating-linear-gradient') || !css.includes('height: calc((64px + 0.35rem) * 5)')) {
+  throw new Error('workflow rail connector is not centered, dashed, and bounded to six steps');
+}
+if (!html.includes('step2-generation-status') || !app.includes('setStep2GenerationStatus') || app.includes('// 捕获报错')) {
+  throw new Error('Step 2 failure is still swallowed without persistent feedback');
+}
+if (!css.includes('#step6-btn-audio-confirm-next:disabled') || !css.includes('#step8-btn-render:disabled')) {
+  throw new Error('disabled primary button contrast contract is missing');
+}
+if (!app.includes('narrationDedupeKey') || !app.includes('uniqueNarrationLines')) {
+  throw new Error('frontend narration deduplication guard is missing');
 }
 
 console.log('frontend quality checks passed');

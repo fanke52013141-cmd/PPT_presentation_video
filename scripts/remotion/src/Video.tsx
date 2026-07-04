@@ -138,6 +138,34 @@ export type SubtitleStyle = {
   color?: string;
 };
 
+const SUBTITLE_GAP_HOLD_SEC = 0.35;
+
+const hasReadableSubtitleText = (text: string): boolean => /[0-9A-Za-z\u3400-\u9fff]/.test(text);
+
+const subtitleAtTime = (segments: TimelineSegment[], audioSeconds: number): TimelineSegment | undefined => {
+  if (audioSeconds < 0) {
+    return undefined;
+  }
+  // Ignore provider punctuation-only segments. Older projects may already
+  // contain these, so the renderer also defends against them even though new
+  // timelines normalize them during TTS generation.
+  const readable = segments.filter((segment) => hasReadableSubtitleText(segment.text || ''));
+  let previous: TimelineSegment | undefined;
+  for (const segment of readable) {
+    if (audioSeconds >= segment.start && audioSeconds < segment.end) {
+      return segment;
+    }
+    if (segment.end <= audioSeconds) {
+      previous = segment;
+      continue;
+    }
+    if (segment.start > audioSeconds) {
+      return previous && audioSeconds - previous.end <= SUBTITLE_GAP_HOLD_SEC ? previous : undefined;
+    }
+  }
+  return previous && audioSeconds - previous.end <= SUBTITLE_GAP_HOLD_SEC ? previous : undefined;
+};
+
 const subtitleFontFamily = (fontKey?: string, configuredFamily?: string, fontWeight?: number): string => {
   const key = fontKey || 'noto_sans_sc';
   const configured = configuredFamily ? `"${configuredFamily}", ` : '';
@@ -428,9 +456,7 @@ const SlideView: React.FC<{slide: Slide; subtitleStyle?: SubtitleStyle}> = ({sli
   const seconds = frame / fps;
   const audioStartSec = slide.audio_timeline?.audio_start_sec ?? 0;
   const audioSeconds = seconds - audioStartSec;
-  const activeSubtitle = audioSeconds >= 0
-    ? segments.find((segment) => audioSeconds >= segment.start && audioSeconds < segment.end)
-    : undefined;
+  const activeSubtitle = subtitleAtTime(segments, audioSeconds);
   const background = toAssetSrc(slide.scene.canvas.background_asset);
   const layers = slide.scene.layers ?? [];
   const subtitleFont = subtitleFontFamily(

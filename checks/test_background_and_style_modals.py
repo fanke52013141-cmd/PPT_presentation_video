@@ -37,3 +37,14 @@ def test_style_previews_are_16_by_9_and_template_refs_are_readable():
     assert '"/api/image-style/project-templates/{template_id}/reference-images/{index}"' in STYLE_RUNTIME
     assert "上传图片已成为本次生成的实际参考图" in STYLE_UI
     assert "请先生成或上传至少 1 张效果预览" in STYLE_RUNTIME
+
+
+def test_builtin_handdrawn_style_has_system_content_and_previews():
+    assert 'BUILTIN_HANDDRAWN_TEMPLATE_ID = "handdrawn"' in STYLE_RUNTIME
+    assert 'BUILTIN_HANDDRAWN_TEMPLATE_NAME = "手绘风格"' in STYLE_RUNTIME
+    assert '"system_content": system_content' in STYLE_RUNTIME
+    assert '"built_in": True' in STYLE_RUNTIME
+    assert '"PPT模板.png"' in STYLE_RUNTIME
+    assert '"PPT示例.png"' in STYLE_RUNTIME
+    assert "currentIsEmpty" in STYLE_UI
+    assert "!item.built_in" in STYLE_UI

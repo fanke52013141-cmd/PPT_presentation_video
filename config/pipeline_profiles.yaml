@@ -31,15 +31,15 @@ storyboard:
     title:
       label: 主标题
       description: 页面主标题，生产铁律要求每页必须有。
-      default_reveal: wipe_left_to_right
+      default_reveal: crop_fade_up
     subtitle:
       label: 副标题
       description: 只能在 presentation_policy.subtitle_policy 为 all_slides_have_subtitle 时出现。
-      default_reveal: wipe_left_to_right
+      default_reveal: crop_fade_up
     body_content:
       label: 正文内容
       description: 页面除主标题和可选副标题之外的全部内容；不要再细分成图示、数据、总结、流程等固定角色。
-      default_reveal: wipe_left_to_right
+      default_reveal: crop_fade_up
   structure_rules:
     - 分镜阶段只做叙事规划，不做细粒度版式拆解。
     - 每页只需要确定 main_title、可选 subtitle、core_message、body_content/narration，以及页面想表达的 visual_intent。
@@ -72,22 +72,22 @@ image_prompt:
     - 避免密集段落和小字，页面文字只保留主标题、短标签、关键词和必要结论。
 
 reveal:
-  default_duration_sec: 0.75
+  default_duration_sec: 0.25
   min_duration_sec: 0.05
   sync_duration_cap_sec: 0.12
   default_by_role:
     title:
-      type: wipe_left_to_right
-      duration: 0.55
+      type: crop_fade_up
+      duration: 0.25
     subtitle:
-      type: wipe_left_to_right
-      duration: 0.75
+      type: crop_fade_up
+      duration: 0.25
     body_content:
-      type: wipe_left_to_right
-      duration: 0.75
+      type: crop_fade_up
+      duration: 0.25
     content_body:
-      type: wipe_left_to_right
-      duration: 0.75
+      type: crop_fade_up
+      duration: 0.25
   allowed_actions:
     - fade_in
     - fade_up

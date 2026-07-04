@@ -22,6 +22,7 @@ class NarrationBuildError(RuntimeError):
 
 
 PAUSE_RE = re.compile(r"\s+")
+DEDUPE_RE = re.compile(r"[\W_]+", re.UNICODE)
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -43,6 +44,11 @@ def write_json(path: Path, value: dict[str, Any]) -> None:
 
 def normalize(text: str) -> str:
     return PAUSE_RE.sub(" ", text).strip()
+
+
+def narration_key(text: str) -> str:
+    value = re.sub(r"<#\d+(?:\.\d{1,2})?#>|\([A-Za-z-]+\)", "", normalize(text).casefold())
+    return DEDUPE_RE.sub("", value)
 
 
 def group_lookup(slide: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -88,6 +94,7 @@ def build_slide_narration(slide: dict[str, Any], max_beat_chars: int) -> dict[st
     if not isinstance(raw_beats, list) or not raw_beats:
         raise NarrationBuildError(f"Slide missing narration_beats[]: {slide_id}")
     beats: list[dict[str, Any]] = []
+    seen_spoken_text: set[str] = set()
     for index, beat in enumerate(raw_beats, start=1):
         if not isinstance(beat, dict):
             raise NarrationBuildError(f"Invalid beat in {slide_id}")
@@ -104,6 +111,11 @@ def build_slide_narration(slide: dict[str, Any], max_beat_chars: int) -> dict[st
                 f"{beat_content_unit_id} != {group_content_unit_id}"
             )
         spoken_text = spoken_text_for_beat(beat, group, max_chars=max_beat_chars)
+        key = narration_key(spoken_text)
+        if key and key in seen_spoken_text:
+            continue
+        if key:
+            seen_spoken_text.add(key)
         beats.append(
             {
                 "id": beat_id,

@@ -27,6 +27,11 @@ import httpx
 import yaml
 from openai import OpenAI
 from scripts.background_color import normalize_connected_background
+from scripts.media_tools import (
+    media_tool_candidate_dirs as shared_media_tool_candidate_dirs,
+    probe_media_duration_sec,
+    resolve_media_tool as shared_resolve_media_tool,
+)
 from scripts.pipeline_profiles import (
     read_pipeline_profile,
     role_catalog,
@@ -429,13 +434,14 @@ ensure_active_image_style_storage()
 
 
 STEP1_LLM_TIMEOUT_SEC = 60.0
-STEP2_LLM_TIMEOUT_SEC = 120.0
+STEP2_LLM_TIMEOUT_SEC = 240.0
 STEP7_TTS_TIMEOUT_SEC = 300
 STEP7_TTS_PROCESS_TIMEOUT_SEC = STEP7_TTS_TIMEOUT_SEC + 90
 STEP7_TTS_RETRY_ATTEMPTS = 3
 STEP7_TTS_RETRY_BASE_DELAY_SEC = 4
 STEP7_BIND_TIMEOUT_SEC = 90
 STEP8_RENDER_TIMEOUT_SEC = 3600
+REVEAL_VISUAL_LEAD_SEC = 0.45
 DEFAULT_STEP2_GENERATION_REQUIREMENT = (
     "按当前已保存的分镜规则、结构配置和文章内容生成分镜规划。"
     "优先把内容讲清楚，不要机械套用固定卡片结构。"
@@ -933,6 +939,32 @@ def strip_anchor_lead_in(spoken_text: str, anchor: str) -> str:
     return text
 
 
+def narration_dedupe_key(value: Any) -> str:
+    """Return a punctuation/markup-insensitive key for one spoken sentence."""
+    text = str(value or "").strip().casefold()
+    text = re.sub(r"<#\d+(?:\.\d{1,2})?#>|\([A-Za-z-]+\)", "", text)
+    return re.sub(r"[\W_]+", "", text, flags=re.UNICODE)
+
+
+def dedupe_narration_beats(beats: Any) -> List[Dict[str, Any]]:
+    """Keep the first occurrence of each spoken sentence on a slide."""
+    if not isinstance(beats, list):
+        return []
+    seen: set[str] = set()
+    result: List[Dict[str, Any]] = []
+    for beat in beats:
+        if not isinstance(beat, dict):
+            continue
+        text = beat.get("spoken_text") or beat.get("tts_text") or beat.get("source_text") or ""
+        key = narration_dedupe_key(text)
+        if key and key in seen:
+            continue
+        if key:
+            seen.add(key)
+        result.append(beat)
+    return result
+
+
 def normalize_visual_contract(
     contract: Dict[str, Any],
     profile: Optional[Dict[str, Any]] = None,
@@ -992,7 +1024,7 @@ def normalize_visual_contract(
             else:
                 beat["spoken_text"] = spoken_text
             normalized_beats.append(beat)
-        slide["narration_beats"] = normalized_beats
+        slide["narration_beats"] = dedupe_narration_beats(normalized_beats)
 
     return contract
 
@@ -1069,6 +1101,17 @@ def prune_stale_mask_groups(project: Project, payload: Dict[str, Any]) -> Dict[s
     def is_current(group: Dict[str, Any], visual_group_ids: set[str]) -> bool:
         group_id = str(group.get("id") or group.get("group_id") or "").strip()
         visual_group_id = str(group.get("visual_group_id") or "").strip()
+        # AI Mask stores the exact title/subtitle pixels as a hidden static
+        # group.  It is intentionally not a visual_contract group, so contract
+        # pruning must preserve it or the next Save/Build operation turns the
+        # opening title back into missing/fragmented dynamic content.
+        if (
+            group.get("is_static") is True
+            or group.get("is_static_header") is True
+            or str(group.get("source") or "") == "ai_static_header"
+            or group_id == "__static_title_header__"
+        ):
+            return True
         if group_id.startswith("manual_group_"):
             return True
         if visual_group_id and visual_group_id in visual_group_ids:
@@ -1307,10 +1350,15 @@ def sync_narration_beats_to_contract(project: Project, slide_ids: Optional[List[
         if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()
     }
     synced_slides = [by_id[slide_id] for slide_id in current_slide_ids if slide_id in by_id]
-    if synced_slides == slides:
+    normalized_slides = []
+    for slide in synced_slides:
+        normalized = dict(slide)
+        normalized["beats"] = dedupe_narration_beats(slide.get("beats"))
+        normalized_slides.append(normalized)
+    if normalized_slides == slides:
         return False
 
-    payload["slides"] = synced_slides
+    payload["slides"] = normalized_slides
     with open(beats_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     logger.info(
@@ -1504,6 +1552,7 @@ def prepare_narration_payload(project: Project, payload: Dict[str, Any]) -> Dict
             beat["source_text"] = source or spoken
             beat["spoken_text"] = spoken or source
             beat["tts_text"] = normalize_minimax_tts_markup(beat.get("tts_text"), beat["spoken_text"])
+        slide_data["beats"] = dedupe_narration_beats(slide_beats)
     payload["slides"] = slides
     return payload
 
@@ -1559,7 +1608,10 @@ def rewrite_audio_timeline_by_beats(timeline_path: str, slide_id: str, beats: Li
         return
     with open(timeline_path, "r", encoding="utf-8") as f:
         timeline = json.load(f)
-    duration = float(timeline.get("audio_content_duration_sec") or timeline.get("duration_sec") or 0)
+    previous_duration = float(timeline.get("audio_content_duration_sec") or timeline.get("duration_sec") or 0)
+    voice_path = os.path.join(os.path.dirname(timeline_path), "voice.mp3")
+    probed_duration = probe_media_duration_sec(voice_path, repo_root=REPO_ROOT)
+    duration = float(probed_duration or previous_duration)
     if duration <= 0:
         return
     clean_beats: List[Dict[str, Any]] = []
@@ -1575,6 +1627,45 @@ def rewrite_audio_timeline_by_beats(timeline_path: str, slide_id: str, beats: Li
             "parts": parts,
         })
     if not clean_beats:
+        return
+
+    provider_segments = timeline.get("segments") if timeline.get("timing_source") == "provider_sentence_timestamps" else None
+    if isinstance(provider_segments, list) and provider_segments:
+        beat_signatures = [
+            re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]+", "", clean_tts_text("".join(
+                str(part.get("text") or "") for part in beat.get("parts", []) if part.get("type") == "text"
+            )))
+            for beat in clean_beats
+        ]
+        beat_part_counts: Dict[str, int] = {}
+        active_beat_index = 0
+        for segment in provider_segments:
+            if not isinstance(segment, dict):
+                continue
+            segment_signature = re.sub(
+                r"[^0-9A-Za-z\u4e00-\u9fff]+",
+                "",
+                clean_tts_text(str(segment.get("text") or "")),
+            )
+            if segment_signature:
+                for beat_index in range(active_beat_index, len(beat_signatures)):
+                    if segment_signature in beat_signatures[beat_index]:
+                        active_beat_index = beat_index
+                        break
+            beat_id = clean_beats[active_beat_index]["id"]
+            part_number = beat_part_counts.get(beat_id, 0) + 1
+            beat_part_counts[beat_id] = part_number
+            segment["beat_id"] = beat_id
+            segment["id"] = beat_id if part_number == 1 else f"{beat_id}__part_{part_number:02d}"
+            segment["timing_source"] = "provider_sentence_timestamps"
+        timeline["segments"] = provider_segments
+        timeline["audio_content_duration_sec"] = round(duration, 3)
+        timeline["duration_sec"] = round(duration + float(timeline.get("audio_start_sec", 0.0) or 0.0), 3)
+        timeline["duration_source"] = "local_audio_ffprobe" if probed_duration else timeline.get("duration_source")
+        if probed_duration:
+            timeline["probed_audio_duration_sec"] = round(probed_duration, 3)
+        with open(timeline_path, "w", encoding="utf-8") as f:
+            json.dump(timeline, f, ensure_ascii=False, indent=2)
         return
 
     total_pause = sum(
@@ -1660,6 +1751,11 @@ def rewrite_audio_timeline_by_beats(timeline_path: str, slide_id: str, beats: Li
     }
     timeline["audio_content_duration_sec"] = round(duration, 3)
     timeline["duration_sec"] = round(duration + float(timeline.get("audio_start_sec", 0.0) or 0.0), 3)
+    if probed_duration:
+        timeline["duration_source"] = "local_audio_ffprobe"
+        timeline["probed_audio_duration_sec"] = round(probed_duration, 3)
+        if previous_duration > 0 and abs(previous_duration - probed_duration) > 0.05:
+            timeline["previous_timeline_content_duration_sec"] = round(previous_duration, 3)
     with open(timeline_path, "w", encoding="utf-8") as f:
         json.dump(timeline, f, ensure_ascii=False, indent=2)
 
@@ -2990,6 +3086,7 @@ def normalize_body_points(value: Any) -> List[Dict[str, str]]:
 def normalize_narration_segments(value: Any) -> List[Dict[str, str]]:
     segments = value if isinstance(value, list) else []
     normalized: List[Dict[str, str]] = []
+    seen_narration: set[str] = set()
     for index, segment in enumerate(segments, start=1):
         if isinstance(segment, dict):
             narration = str(segment.get("narration") or segment.get("spoken_text") or "").strip()
@@ -3001,6 +3098,11 @@ def normalize_narration_segments(value: Any) -> List[Dict[str, str]]:
             segment_id = f"seg_{index:03d}"
         if not narration:
             continue
+        narration_key = narration_dedupe_key(narration)
+        if narration_key and narration_key in seen_narration:
+            continue
+        if narration_key:
+            seen_narration.add(narration_key)
         normalized.append({"segment_id": segment_id, "narration": narration, "purpose": purpose})
     return normalized
 
@@ -3038,6 +3140,7 @@ def normalize_slide_script_plan(plan: Dict[str, Any], project_title: str) -> Dic
 def normalize_visual_elements(value: Any) -> List[Dict[str, str]]:
     elements = value if isinstance(value, list) else []
     normalized: List[Dict[str, str]] = []
+    bound_narration: set[str] = set()
     allowed_roles = {"title", "subtitle", "body", "decoration"}
     allowed_visual_types = {"text", "illustration"}
     for index, element in enumerate(elements, start=1):
@@ -3048,6 +3151,11 @@ def normalize_visual_elements(value: Any) -> List[Dict[str, str]]:
             role = "body"
         visual_description = str(element.get("visual_description") or "").strip()
         narration = str(element.get("narration") or "").strip()
+        narration_key = narration_dedupe_key(narration)
+        if narration_key and narration_key in bound_narration:
+            narration = ""
+        elif narration_key:
+            bound_narration.add(narration_key)
         visual_type = str(element.get("visual_type") or "illustration").strip().lower()
         if visual_type == "text_and_illustration":
             visual_type = "illustration"
@@ -3109,6 +3217,15 @@ def configured_step2_llm() -> tuple[str, Optional[str], str, float, int]:
     return llm_api_key, llm_base_url, llm_model, planning_temp, planning_max_tokens
 
 
+def step2_llm_vendor_options(model: str, base_url: Optional[str]) -> Dict[str, Any]:
+    """Use fast non-thinking mode for Volcengine/Doubao storyboard requests."""
+    model_name = str(model or "").strip().lower()
+    endpoint = str(base_url or "").strip().lower()
+    if model_name.startswith("doubao-") or "volces.com" in endpoint:
+        return {"extra_body": {"thinking": {"type": "disabled"}}}
+    return {}
+
+
 def run_step2_json_llm(
     *,
     project: Project,
@@ -3119,6 +3236,12 @@ def run_step2_json_llm(
     trace_id: str,
 ) -> Dict[str, Any]:
     llm_api_key, llm_base_url, llm_model, planning_temp, planning_max_tokens = configured_step2_llm()
+    stage_label = {
+        "step2_script_plan": "Step 2A 演讲稿规划",
+        "step2_visual_plan": "Step 2B 可视化规划",
+    }.get(artifact_prefix, "Step 2 分镜规划")
+    started_at = time.monotonic()
+    vendor_options = step2_llm_vendor_options(llm_model, llm_base_url)
     write_project_log(
         project,
         f"{artifact_prefix}_start",
@@ -3126,6 +3249,7 @@ def run_step2_json_llm(
         model=llm_model,
         base_url=llm_base_url,
         max_tokens=planning_max_tokens,
+        thinking_disabled=bool(vendor_options),
     )
     client = get_openai_client(
         api_key=llm_api_key,
@@ -3134,45 +3258,82 @@ def run_step2_json_llm(
         max_retries=0,
     )
     try:
-        response = client.chat.completions.create(
+        try:
+            response = client.chat.completions.create(
+                model=llm_model,
+                temperature=planning_temp,
+                max_tokens=planning_max_tokens,
+                timeout=STEP2_LLM_TIMEOUT_SEC,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                **vendor_options,
+            )
+        except Exception as inner_e:
+            if is_timeout_exception(inner_e):
+                raise
+            logger.warning("Failed LLM call with response_format for %s, retrying without it: %s", artifact_prefix, inner_e)
+            response = client.chat.completions.create(
+                model=llm_model,
+                temperature=planning_temp,
+                max_tokens=planning_max_tokens,
+                timeout=STEP2_LLM_TIMEOUT_SEC,
+                messages=[
+                    {"role": "system", "content": system_prompt + " 请只输出纯 JSON，不要包含 Markdown 代码块标记（如 ```json ）。"},
+                    {"role": "user", "content": user_prompt},
+                ],
+                **vendor_options,
+            )
+        choice = response.choices[0]
+        logger.info("%s finish_reason=%s usage=%s", artifact_prefix, getattr(choice, "finish_reason", None), getattr(response, "usage", None))
+        content_str = str(choice.message.content or "").strip()
+        if not content_str:
+            raise ValueError("大模型返回了空内容")
+        cleaned_content = clean_json_markdown(content_str)
+        return parse_json_or_repair_with_llm(
+            cleaned_content=cleaned_content,
+            raw_content=content_str,
+            client=client,
             model=llm_model,
-            temperature=planning_temp,
+            run_dir=project.run_dir,
+            artifact_prefix=artifact_prefix,
+            schema_hint=schema_hint,
             max_tokens=planning_max_tokens,
-            timeout=STEP2_LLM_TIMEOUT_SEC,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
         )
-    except Exception as inner_e:
-        if is_timeout_exception(inner_e):
-            raise
-        logger.warning("Failed LLM call with response_format for %s, retrying without it: %s", artifact_prefix, inner_e)
-        response = client.chat.completions.create(
-            model=llm_model,
-            temperature=planning_temp,
-            max_tokens=planning_max_tokens,
-            timeout=STEP2_LLM_TIMEOUT_SEC,
-            messages=[
-                {"role": "system", "content": system_prompt + " 请只输出纯 JSON，不要包含 Markdown 代码块标记（如 ```json ）。"},
-                {"role": "user", "content": user_prompt},
-            ],
+    except HTTPException as exc:
+        write_project_log(
+            project,
+            f"{artifact_prefix}_failed",
+            trace_id=trace_id,
+            elapsed_sec=round(time.monotonic() - started_at, 2),
+            status_code=exc.status_code,
+            error=str(exc.detail),
         )
-    choice = response.choices[0]
-    logger.info("%s finish_reason=%s usage=%s", artifact_prefix, getattr(choice, "finish_reason", None), getattr(response, "usage", None))
-    content_str = choice.message.content.strip()
-    cleaned_content = clean_json_markdown(content_str)
-    return parse_json_or_repair_with_llm(
-        cleaned_content=cleaned_content,
-        raw_content=content_str,
-        client=client,
-        model=llm_model,
-        run_dir=project.run_dir,
-        artifact_prefix=artifact_prefix,
-        schema_hint=schema_hint,
-        max_tokens=planning_max_tokens,
-    )
+        raise
+    except Exception as exc:
+        timed_out = is_timeout_exception(exc)
+        write_project_log(
+            project,
+            f"{artifact_prefix}_failed",
+            trace_id=trace_id,
+            elapsed_sec=round(time.monotonic() - started_at, 2),
+            timeout=timed_out,
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
+        if timed_out:
+            raise HTTPException(
+                status_code=504,
+                detail=f"{stage_label}超过 {int(STEP2_LLM_TIMEOUT_SEC)} 秒仍未返回，请重试或切换响应更快的模型。",
+            ) from exc
+        raise HTTPException(status_code=502, detail=f"{stage_label}失败：{str(exc)[:300]}") from exc
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
 
 
 def script_plan_schema_hint() -> str:
@@ -3494,6 +3655,7 @@ def build_storyboard_request(
    - content_unit_id: 必须与绑定 visual_group 的 content_unit_id 一致
    - narration_beats 是是否朗读的唯一依据：某个 visual_group 有对应 beat 才会在演讲稿中讲解，没有 beat 就只作为画面内容展示。
    - 不要为了覆盖所有 visual_groups 而强行补旁白；只为演讲稿实际需要讲解的内容创建 beat。
+   - 同一页内每条 spoken_text 的内容必须唯一；严禁重复、近似复述或为了凑数量复制同一句旁白。
 5. 当前项目的可配置分镜结构如下。请优先遵守：
 {profile_prompt}
 6. 用户自定义的分镜与演讲稿规则如下。请遵守这些内容，但不得修改输出字段、层级、ID 规则或 JSON 结构：
@@ -4082,6 +4244,11 @@ def get_step2_result(project_id: str, db: Session = Depends(get_db)):
         
     with open(contract_path, "r", encoding="utf-8") as f:
         contract = json.load(f)
+    before = json.dumps(contract, ensure_ascii=False, sort_keys=True)
+    contract = normalize_visual_contract(contract, read_project_pipeline_profile(project))
+    if json.dumps(contract, ensure_ascii=False, sort_keys=True) != before:
+        with open(contract_path, "w", encoding="utf-8") as f:
+            json.dump(contract, f, ensure_ascii=False, indent=2)
     return {"success": True, "contract": contract}
 
 @app.put("/api/projects/{project_id}/steps/2/result")
@@ -4090,6 +4257,7 @@ def update_step2_result(project_id: str, payload: Dict[str, Any], db: Session = 
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
         
+    payload = normalize_visual_contract(payload, read_project_pipeline_profile(project))
     contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
     with open(contract_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
@@ -4340,6 +4508,10 @@ def build_image_style_prompt(style_tokens: Dict[str, Any]) -> str:
         lines.append(f"- 避免：{'、'.join(str(item) for item in avoid if item)}。")
 
     lines.append("- 不可变规则：画面元素严禁重叠、互相覆盖、压住、穿插或粘连；任何文字都不能被箭头、图标、卡片边框或装饰压住。")
+    lines.append("- 主标题/副标题区是固定静态层：必须与主体内容完全分离，不得用箭头、边框、插图或装饰连接标题字形。")
+    lines.append("- 每条旁白对应的主体内容必须形成一个空间连续、边界清楚的视觉岛；不同旁白视觉岛之间优先保留 48-80px 连续纯白间隔。")
+    lines.append("- 大面积主配图拥有其内部和紧邻边缘的文字、图标、对号、标签与说明；其他语块的元素不得进入、跨越或贴住该配图边界。")
+    lines.append("- 左右对比或前后状态只有在对应不同 narration beat 时才画成两个独立视觉岛；若共用一条旁白，改为一个统一构图，避免两个插图被迫同时 Reveal。")
     lines.append("- 当前风格词优先：如果参考图与当前风格词冲突，以当前风格词、画面表现方式和图示风格为准。")
     lines.append("- 参考图只作为标题区位置、留白、层级和示例密度参考；除非当前风格明确要求手绘/白板，否则不要复制手绘笔迹、纸感或粗糙线稿。")
     lines.append("- 严禁画面元素重叠：文字、图标、箭头、线条、标签、卡片边框之间不得互相覆盖、穿插或粘连。")
@@ -5353,6 +5525,8 @@ def deterministic_semantic_blocks(
     for group_id, group in groups.items():
         if not isinstance(group, dict):
             continue
+        if str(group.get("role") or "").strip().lower() in {"title", "subtitle"}:
+            continue
         fragment_ids = group_to_fragments.get(group_id) or []
         if not fragment_ids:
             continue
@@ -5781,16 +5955,8 @@ def init_step6_narration(project_id: str, db: Session = Depends(get_db)):
                 "beats": []
             })
             
-    global_beats = {"slides": global_slides}
-    beats_path = os.path.join(project.run_dir, "planning", "narration_beats.json")
-    with open(beats_path, "w", encoding="utf-8") as f:
-        json.dump(global_beats, f, ensure_ascii=False, indent=2)
-        
-    # 读回 narration_beats.json 展现给用户编辑
-    with open(beats_path, "r", encoding="utf-8") as f:
-        beats = json.load(f)
-        
-    return {"success": True, "beats": beats}
+    global_beats = persist_narration_beats(project, {"slides": global_slides})
+    return {"success": True, "beats": global_beats}
 
 @app.get("/api/projects/{project_id}/steps/6/result")
 def get_step6_result(project_id: str, db: Session = Depends(get_db)):
@@ -6132,7 +6298,7 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
     bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))
     try:
         bind_res = subprocess.run([
-            sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", "0"
+            sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", str(REVEAL_VISUAL_LEAD_SEC)
         ], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=STEP7_BIND_TIMEOUT_SEC)
     except subprocess.TimeoutExpired as exc:
         raise HTTPException(status_code=504, detail="音频时间轴确认超时，请重试") from exc
@@ -6315,7 +6481,7 @@ def synthesize_tts_resumable(project_id: str, db: Session = Depends(get_db)):
 
     bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))
     bind_res = subprocess.run(
-        [sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", "0"],
+        [sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", str(REVEAL_VISUAL_LEAD_SEC)],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -6417,7 +6583,7 @@ def confirm_tts_audio(project_id: str, db: Session = Depends(get_db)):
         )
     bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))
     bind_res = subprocess.run([
-        sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", "0"
+        sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", str(REVEAL_VISUAL_LEAD_SEC)
     ], capture_output=True, text=True, encoding="utf-8", errors="replace")
     if bind_res.returncode != 0:
         logger.error(f"Timeline binding failed during audio confirm: {bind_res.stderr}")
@@ -6470,6 +6636,7 @@ def video_item(project: Project, path: str, label: Optional[str] = None) -> Dict
     has_subtitle_style_metadata = isinstance(metadata.get("subtitle_style"), dict)
     subtitle_style = normalize_subtitle_style(metadata.get("subtitle_style"))
     current_subtitle_style = current_visual_settings["subtitle_style"]
+    playback_rate = float(metadata.get("playback_rate", 1.0) or 1.0)
     return {
         "filename": filename,
         "label": label or filename,
@@ -6479,6 +6646,9 @@ def video_item(project: Project, path: str, label: Optional[str] = None) -> Dict
         "reveal_pipeline_version": pipeline_version or None,
         "video_background": video_background or None,
         "subtitle_style": subtitle_style,
+        "playback_rate": playback_rate,
+        "source_filename": str(metadata.get("source_filename") or "") or None,
+        "is_speed_variant": abs(playback_rate - 1.0) > 0.001,
         "is_legacy": (
             pipeline_version != REVEAL_PIPELINE_VERSION
             or video_background != current_background
@@ -6506,45 +6676,11 @@ def list_video_items(project: Project, project_id: str) -> List[Dict[str, Any]]:
 
 
 def media_tool_candidate_dirs() -> List[str]:
-    candidates: List[str] = []
-    for value in (
-        os.environ.get("PPT_STUDIO_FFMPEG_DIR"),
-        os.environ.get("FFMPEG_DIR"),
-    ):
-        if value:
-            candidates.append(value)
-    candidates.extend(
-        [
-            os.path.join(REPO_ROOT, "tools", "ffmpeg", "bin"),
-            os.path.join(REPO_ROOT, "runtime", "ffmpeg", "bin"),
-            os.path.join(os.path.dirname(REPO_ROOT), "work", "runtime", "ffmpeg", "bin"),
-            os.path.join(os.path.dirname(REPO_ROOT), "work", "runtime", "ffmpeg"),
-        ]
-    )
-    appdata = os.environ.get("APPDATA")
-    if appdata:
-        candidates.extend(
-            [
-                os.path.join(appdata, "TRAE SOLO CN", "ModularData", "ai-agent", "vm", "tools", "app", "ffmpeg"),
-                os.path.join(appdata, "WEMedia", "plugin", "ffmpeg_7_1"),
-            ]
-        )
-    return candidates
+    return [str(path) for path in shared_media_tool_candidate_dirs(REPO_ROOT)]
 
 
 def resolve_media_tool(name: str) -> Optional[str]:
-    direct_env = os.environ.get(f"{name.upper()}_BINARY")
-    if direct_env and os.path.exists(direct_env):
-        return direct_env
-    found = shutil.which(name)
-    if found:
-        return found
-    executable = f"{name}.exe" if os.name == "nt" else name
-    for directory in media_tool_candidate_dirs():
-        path = os.path.join(directory, executable)
-        if os.path.exists(path):
-            return path
-    return None
+    return shared_resolve_media_tool(name, repo_root=REPO_ROOT)
 
 
 def normalize_video_color_metadata(video_path: str, project: Project) -> bool:
@@ -6614,7 +6750,7 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
     # 首先调用 build_remotion_props.py 生成渲染配置属性
     bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))
     bind_res = subprocess.run([
-        sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", "0"
+        sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", str(REVEAL_VISUAL_LEAD_SEC)
     ], capture_output=True, text=True, encoding="utf-8", errors="replace")
     if bind_res.returncode != 0:
         logger.error(f"Timeline binding before render failed: {bind_res.stderr}")
@@ -6803,6 +6939,104 @@ def get_project_video(project_id: str, filename: str, db: Session = Depends(get_
     if not os.path.exists(video_path):
         raise HTTPException(status_code=404, detail="视频文件不存在")
     return FileResponse(video_path, media_type="video/mp4", filename=safe_name)
+
+
+@app.post("/api/projects/{project_id}/videos/{filename}/speed")
+def create_speed_adjusted_video(
+    project_id: str,
+    filename: str,
+    payload: Dict[str, Any],
+    db: Session = Depends(get_db),
+):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    safe_name = os.path.basename(filename)
+    if safe_name != filename or not safe_name.lower().endswith(".mp4"):
+        raise HTTPException(status_code=400, detail="视频文件名无效")
+    try:
+        speed = round(float(payload.get("speed", 1.0)), 2)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="视频语速必须是数字")
+    if speed < 0.5 or speed > 2.0:
+        raise HTTPException(status_code=400, detail="视频语速范围为 0.5× 到 2.0×")
+
+    videos_dir = project_video_dir(project)
+    requested_path = os.path.join(videos_dir, safe_name)
+    if not os.path.exists(requested_path):
+        raise HTTPException(status_code=404, detail="视频文件不存在")
+    requested_metadata = read_video_metadata(requested_path)
+    source_name = os.path.basename(str(requested_metadata.get("source_filename") or safe_name))
+    source_path = os.path.join(videos_dir, source_name)
+    if not os.path.exists(source_path):
+        source_name, source_path = safe_name, requested_path
+    if abs(speed - 1.0) <= 0.001:
+        return {"success": True, "video": video_item(project, source_path), "videos": list_video_items(project, project_id)}
+
+    ffmpeg = resolve_media_tool("ffmpeg")
+    if not ffmpeg:
+        raise HTTPException(status_code=500, detail="未找到 FFmpeg，无法生成调速视频")
+    speed_tag = f"{speed:.2f}".rstrip("0").rstrip(".").replace(".", "_")
+    source_stem = os.path.splitext(source_name)[0]
+    output_name = f"{source_stem}_speed_{speed_tag}x.mp4"
+    output_path = os.path.join(videos_dir, output_name)
+    temp_path = output_path + ".tmp.mp4"
+    if os.path.exists(temp_path):
+        os.remove(temp_path)
+    command = [
+        ffmpeg,
+        "-y",
+        "-i",
+        source_path,
+        "-filter:v",
+        f"setpts=PTS/{speed}",
+        "-filter:a",
+        f"atempo={speed}",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "medium",
+        "-crf",
+        "18",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+        temp_path,
+    ]
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=STEP8_RENDER_TIMEOUT_SEC,
+        )
+    except subprocess.TimeoutExpired as exc:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        raise HTTPException(status_code=504, detail="生成调速视频超时") from exc
+    if result.returncode != 0 or not os.path.exists(temp_path):
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        raise HTTPException(status_code=500, detail=f"生成调速视频失败：{result.stderr[-800:]}")
+    os.replace(temp_path, output_path)
+    source_metadata = read_video_metadata(source_path)
+    source_metadata.update({
+        "rendered_at": datetime.now().isoformat(timespec="seconds"),
+        "playback_rate": speed,
+        "source_filename": source_name,
+        "speed_adjustment": "ffmpeg_setpts_atempo",
+    })
+    with open(video_metadata_path(output_path), "w", encoding="utf-8") as file:
+        json.dump(source_metadata, file, ensure_ascii=False, indent=2)
+    item = video_item(project, output_path)
+    return {"success": True, "video": item, "videos": list_video_items(project, project_id)}
 
 
 @app.delete("/api/projects/{project_id}/videos/{filename}")

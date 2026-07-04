@@ -98,12 +98,22 @@ def validate_audio_timeline(path: Path) -> float:
         if not isinstance(segment["start"], (int, float)) or not isinstance(segment["end"], (int, float)) or segment["end"] <= segment["start"]:
             raise ValidationError(f"Audio segment has invalid timing: {path}: {segment.get('id')}")
         max_end = max(max_end, float(segment["end"]))
-    duration = timeline.get("duration_sec")
-    if not isinstance(duration, (int, float)) or duration <= 0:
+    total_duration = timeline.get("duration_sec")
+    if not isinstance(total_duration, (int, float)) or total_duration <= 0:
         raise ValidationError(f"audio_timeline.json missing positive duration_sec: {path}")
-    if abs(float(duration) - max_end) > 0.2:
-        raise ValidationError(f"audio_timeline duration_sec does not match segment ends: {path}")
-    return float(duration)
+    audio_start = float(timeline.get("audio_start_sec", 0.0) or 0.0)
+    content_duration = timeline.get("audio_content_duration_sec")
+    if not isinstance(content_duration, (int, float)):
+        content_duration = max(0.0, float(total_duration) - audio_start)
+    if abs(float(content_duration) - max_end) > 0.2:
+        raise ValidationError(
+            f"audio_timeline audio_content_duration_sec does not match segment ends: {path}"
+        )
+    if abs(float(total_duration) - (float(content_duration) + audio_start)) > 0.2:
+        raise ValidationError(
+            f"audio_timeline duration_sec does not include audio_start_sec correctly: {path}"
+        )
+    return float(total_duration)
 
 
 def validate_voice_duration_matches_timeline(voice_path: Path, timeline_duration_sec: float) -> None:

@@ -45,6 +45,7 @@ MASK_COLORS = (
     "#E84A5F", "#1B998B", "#F6AE2D", "#3D5A80",
     "#7B2CBF", "#2F80ED", "#D45113", "#4C956C",
 )
+AI_MASK_VISION_TIMEOUT_SEC = 180.0
 
 DEFAULT_METHODOLOGY = """你是中文 PPT 视频的 AI Mask 语义标注专家。
 
@@ -54,10 +55,13 @@ DEFAULT_METHODOLOGY = """你是中文 PPT 视频的 AI Mask 语义标注专家�
 1. group_id 只能使用输入 visual_groups[].id，不要发明新的 group。
 2. narration_beat_id 只能使用输入 narration_beats[].id。
 3. element_ids 只能使用输入 auto_elements[].element_id。
-4. 优先匹配 visible_text、visible_anchor、spoken_text，再参考位置、role 和阅读顺序。
-5. 一个语块可以绑定多个元素，例如图标 + 标题 + 说明文字、箭头 + 两端节点、流程数字 + 标签。
-6. 不确定时降低 confidence，不要强行匹配。装饰或无口播元素放入 unmatched_elements。
-7. 输出必须是严格 JSON，不要 Markdown，不要解释段落。
+4. 页面上方固定主标题/副标题区域属于静态上下文，不分配给任何 narration group，不参与逐语块 Reveal。
+5. 优先匹配 visible_text、visible_anchor、spoken_text，再结合元素的二维位置、role 和阅读顺序；横向与纵向距离都必须考虑。
+6. 一个语块可以绑定多个空间连续的元素，例如主配图 + 配图内部文字 + 紧邻图标/对号/标签。大面积主配图应吸收其内部和边缘邻接元素，除非这些元素明确对应独立 narration beat。
+7. 不允许因为颜色相似就跨卡片、跨栏或跨配图分配。落在某一主配图内部、边界上或紧邻区域的元素，不得分给远处语块。
+8. 对比场景左右两侧如果表达不同叙事状态，必须分别绑定到不同 narration beat；不要把两个独立插图合并为同一个 Mask。
+9. 不确定时降低 confidence，不要强行匹配。装饰或无口播元素放入 unmatched_elements。
+10. 输出必须是严格 JSON，不要 Markdown，不要解释段落。
 """
 
 DEFAULT_OUTPUT_STRUCTURE = """必须输出一个 JSON object：
@@ -65,11 +69,11 @@ DEFAULT_OUTPUT_STRUCTURE = """必须输出一个 JSON object：
   "slide_id": "slide_001",
   "matches": [
     {
-      "group_id": "title_group",
-      "narration_beat_id": "beat_title",
-      "element_ids": ["el_auto_001"],
+      "group_id": "body_group_01",
+      "narration_beat_id": "beat_01",
+      "element_ids": ["el_auto_010", "el_auto_011"],
       "confidence": 0.95,
-      "reason": "顶部文字区域与标题 visible_text 一致"
+      "reason": "主配图与紧邻对号位于同一空间岛，并共同对应 beat_01"
     }
   ],
   "unmatched_elements": [],
@@ -82,6 +86,20 @@ DEFAULT_OUTPUT_STRUCTURE = """必须输出一个 JSON object：
 
 PROMPT_METHOD_KEY = SETTING_PREFIX + "match_methodology_system_content"
 PROMPT_OUTPUT_KEY = SETTING_PREFIX + "match_output_structure_system_content"
+LEGACY_TITLE_RULE = "6. 主标题与副标题是否属于同一个 Mask，以 narration_beats 的讲解关系为准，不按字体颜色、断笔或字间距拆分。"
+CURRENT_TITLE_AND_ISLAND_RULES = """6. 页面上方固定主标题/副标题区域属于静态上下文，不分配给任何 narration group，不参与逐语块 Reveal；元素匹配必须同时考虑横向与纵向距离；大面积主配图应吸收其内部、边界上和紧邻的图标、对号、标签与说明，除非它们明确对应独立 narration beat；不允许因为颜色相似就跨卡片、跨栏或跨配图分配。"""
+
+
+def _compose_ai_mask_full_prompt(methodology: str, output_structure: str) -> str:
+    return methodology.strip() + "\n\n--- OUTPUT STRUCTURE / 输出结构 ---\n" + output_structure.strip()
+
+
+def _read_ai_mask_prompts(server_module: ModuleType) -> tuple[str, str]:
+    methodology = str(server_module.get_setting(PROMPT_METHOD_KEY, DEFAULT_METHODOLOGY) or DEFAULT_METHODOLOGY)
+    output_structure = str(server_module.get_setting(PROMPT_OUTPUT_KEY, DEFAULT_OUTPUT_STRUCTURE) or DEFAULT_OUTPUT_STRUCTURE)
+    if LEGACY_TITLE_RULE in methodology:
+        methodology = methodology.replace(LEGACY_TITLE_RULE, CURRENT_TITLE_AND_ISLAND_RULES)
+    return methodology, output_structure
 
 
 def _bool(value: Any, default: bool = False) -> bool:
@@ -546,6 +564,27 @@ def _candidate_overlay(image_path: Path, elements: list[dict[str, Any]], output_
     return buffer.getvalue()
 
 
+def _resolved_vision_model(server_module: ModuleType) -> tuple[str, str]:
+    provider = str(server_module.get_setting("llm_provider") or "").strip().lower()
+    configured = str(server_module.get_setting("vision_model") or "").strip()
+    # A model name from another provider cannot be sent to the active endpoint.
+    # Preserve the configured value for diagnostics and use the provider's
+    # working LLM model as the multimodal fallback.
+    if provider not in {"", "openai", "newapi", "openrouter", "litellm", "custom"} and configured.startswith("gpt-"):
+        return str(server_module.get_setting("llm_model") or "").strip(), configured
+    return configured or str(server_module.get_setting("llm_model") or "").strip(), configured
+
+
+def _is_timeout(server_module: ModuleType, exc: BaseException) -> bool:
+    helper = getattr(server_module, "is_timeout_exception", None)
+    if callable(helper):
+        try:
+            return bool(helper(exc))
+        except Exception:
+            pass
+    return isinstance(exc, TimeoutError) or "timeout" in type(exc).__name__.lower() or "timed out" in str(exc).lower()
+
+
 def _vision_match(
     server_module: ModuleType,
     project: Any,
@@ -561,16 +600,16 @@ def _vision_match(
     if not api_key:
         return None
     overlay_bytes = _candidate_overlay(image_path, elements, overlay_path)
-    provider = str(server_module.get_setting("llm_provider") or "").strip().lower()
-    configured_vision_model = str(server_module.get_setting("vision_model") or "").strip()
-    if provider not in {"", "openai", "newapi", "openrouter", "litellm", "custom"} and configured_vision_model.startswith("gpt-"):
-        model = server_module.get_setting("llm_model")
-    else:
-        model = configured_vision_model or server_module.get_setting("llm_model")
+    model, _ = _resolved_vision_model(server_module)
+    base_url = server_module.get_setting("llm_base_url")
+    vendor_options: dict[str, Any] = {}
+    option_builder = getattr(server_module, "step2_llm_vendor_options", None)
+    if callable(option_builder):
+        vendor_options = option_builder(model, base_url) or {}
     client = server_module.get_openai_client(
         api_key=api_key,
-        base_url=server_module.get_setting("llm_base_url"),
-        timeout=120,
+        base_url=base_url,
+        timeout=AI_MASK_VISION_TIMEOUT_SEC,
         max_retries=0,
     )
     payload = {
@@ -597,27 +636,39 @@ def _vision_match(
         },
     ]
     try:
-        response = client.chat.completions.create(
-            model=model,
-            temperature=float(settings["llm_temperature"]),
-            max_tokens=12000,
-            timeout=120,
-            response_format={"type": "json_object"},
-            messages=messages,
-        )
-    except Exception:
-        response = client.chat.completions.create(
-            model=model,
-            temperature=float(settings["llm_temperature"]),
-            max_tokens=12000,
-            timeout=120,
-            messages=messages,
-        )
-    content = str(response.choices[0].message.content or "").strip()
-    cleaner = getattr(server_module, "clean_json_markdown", None)
-    cleaned = cleaner(content) if callable(cleaner) else content.strip().removeprefix("```json").removesuffix("```").strip()
-    value = json.loads(cleaned)
-    return value if isinstance(value, dict) else None
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                temperature=float(settings["llm_temperature"]),
+                max_tokens=12000,
+                timeout=AI_MASK_VISION_TIMEOUT_SEC,
+                response_format={"type": "json_object"},
+                messages=messages,
+                **vendor_options,
+            )
+        except Exception as exc:
+            # A timeout is not a response-format compatibility problem. Fall
+            # back immediately instead of waiting for another full timeout.
+            if _is_timeout(server_module, exc):
+                raise
+            response = client.chat.completions.create(
+                model=model,
+                temperature=float(settings["llm_temperature"]),
+                max_tokens=12000,
+                timeout=AI_MASK_VISION_TIMEOUT_SEC,
+                messages=messages,
+                **vendor_options,
+            )
+        content = str(response.choices[0].message.content or "").strip()
+        cleaner = getattr(server_module, "clean_json_markdown", None)
+        cleaned = cleaner(content) if callable(cleaner) else content.strip().removeprefix("```json").removesuffix("```").strip()
+        value = json.loads(cleaned)
+        return value if isinstance(value, dict) else None
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
 
 
 def _merge_match_results(primary: Any, fallback: dict[str, Any]) -> dict[str, Any]:
@@ -705,6 +756,231 @@ def _box_center(box: dict[str, Any]) -> tuple[float, float]:
     )
 
 
+def _configured_title_regions(server_module: ModuleType, width: int, height: int) -> dict[str, dict[str, int]]:
+    """Read the canonical title/subtitle zones and scale them to this slide."""
+    defaults = {
+        "main_title": {"x": 110, "y": 55, "w": 1600, "h": 86},
+        "subtitle": {"x": 110, "y": 150, "w": 1600, "h": 52},
+    }
+    canvas_width, canvas_height = 1920, 1080
+    try:
+        tokens = server_module.read_style_tokens_data()
+        canvas = tokens.get("canvas") if isinstance(tokens.get("canvas"), dict) else {}
+        layout = tokens.get("layout") if isinstance(tokens.get("layout"), dict) else {}
+        title_block = layout.get("title_block") if isinstance(layout.get("title_block"), dict) else {}
+        canvas_width = max(1, int(canvas.get("width", canvas_width)))
+        canvas_height = max(1, int(canvas.get("height", canvas_height)))
+        for key in defaults:
+            if isinstance(title_block.get(key), dict):
+                defaults[key] = {**defaults[key], **title_block[key]}
+    except Exception:
+        pass
+
+    scale_x, scale_y = width / canvas_width, height / canvas_height
+    padding_x = max(4, round(24 * scale_x))
+    padding_y = max(4, round(18 * scale_y))
+
+    def scaled(source: dict[str, Any]) -> dict[str, int]:
+        x1 = max(0, round(float(source.get("x", 0)) * scale_x) - padding_x)
+        y1 = max(0, round(float(source.get("y", 0)) * scale_y) - padding_y)
+        x2 = min(width, round((float(source.get("x", 0)) + float(source.get("w", 0))) * scale_x) + padding_x)
+        y2 = min(height, round((float(source.get("y", 0)) + float(source.get("h", 0))) * scale_y) + padding_y)
+        return {"x": x1, "y": y1, "w": max(1, x2 - x1), "h": max(1, y2 - y1)}
+
+    main = scaled(defaults["main_title"])
+    subtitle = scaled(defaults["subtitle"])
+    x1 = min(main["x"], subtitle["x"])
+    y1 = min(main["y"], subtitle["y"])
+    x2 = max(main["x"] + main["w"], subtitle["x"] + subtitle["w"])
+    y2 = max(main["y"] + main["h"], subtitle["y"] + subtitle["h"])
+    return {
+        "main_title": main,
+        "subtitle": subtitle,
+        "combined": {"x": x1, "y": y1, "w": x2 - x1, "h": y2 - y1},
+    }
+
+
+def _element_ids_in_region(elements_payload: dict[str, Any], region: dict[str, Any]) -> list[str]:
+    result: list[str] = []
+    rx1, ry1, rx2, ry2 = _box_xyxy(region) or (0, 0, 0, 0)
+    for element in [
+        *(elements_payload.get("elements", []) or []),
+        *(elements_payload.get("residual_elements", []) or []),
+    ]:
+        if not isinstance(element, dict):
+            continue
+        box = element.get("raw_bbox") if isinstance(element.get("raw_bbox"), dict) else element.get("bbox", {})
+        bounds = _box_xyxy(box)
+        if not bounds:
+            continue
+        x1, y1, x2, y2 = bounds
+        cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+        if rx1 <= cx <= rx2 and ry1 <= cy <= ry2:
+            element_id = str(element.get("element_id") or "")
+            if element_id:
+                result.append(element_id)
+    return result
+
+
+def _speech_signature(value: Any) -> str:
+    return "".join(char.casefold() for char in str(value or "") if char.isalnum())
+
+
+def _consolidate_title_regions(
+    match_payload: dict[str, Any],
+    elements_payload: dict[str, Any],
+    slide: dict[str, Any],
+    regions: dict[str, dict[str, int]],
+) -> dict[str, Any]:
+    """Exclude the fixed title band from narration-driven Mask ownership.
+
+    Main title and subtitle are persistent slide context. Revealing their
+    disconnected glyphs with a narration group caused the first frame to look
+    partially cut out and also let the first group swallow unrelated content.
+    We therefore keep their exact foreground components as a static base layer
+    and remove them from every narrated group.
+    """
+    visual_groups = [group for group in slide.get("visual_groups", []) or [] if isinstance(group, dict)]
+    title_group_ids = {
+        str(group.get("id") or "")
+        for group in visual_groups
+        if str(group.get("role") or "").strip().lower() in {"title", "subtitle"}
+        and str(group.get("id") or "")
+    }
+    active_region = regions["combined"] if str(slide.get("subtitle") or "").strip() else regions["main_title"]
+    static_ids = set(_element_ids_in_region(elements_payload, active_region))
+    static_ids.update(str(value) for value in match_payload.get("static_element_ids", []) or [] if str(value))
+
+    matches: list[dict[str, Any]] = []
+    for original in match_payload.get("matches", []) or []:
+        if not isinstance(original, dict):
+            continue
+        group_id = str(original.get("group_id") or "")
+        if group_id in title_group_ids:
+            continue
+        item = dict(original)
+        item["element_ids"] = [
+            str(element_id)
+            for element_id in item.get("element_ids", []) or []
+            if str(element_id) and str(element_id) not in static_ids
+        ]
+        matches.append(item)
+
+    forced_owners = {
+        str(element_id): str(group_id)
+        for element_id, group_id in (match_payload.get("forced_element_owners") or {}).items()
+        if str(element_id) not in static_ids and str(group_id) not in title_group_ids
+    }
+    result = dict(match_payload)
+    result["matches"] = matches
+    result["forced_element_owners"] = forced_owners
+    result["static_element_ids"] = sorted(static_ids)
+    result["static_group_ids"] = sorted(title_group_ids)
+    result["title_region_policy"] = "static_header_excluded_from_narration_masks"
+    result["unmatched_groups"] = [
+        group_id for group_id in result.get("unmatched_groups", []) or []
+        if str(group_id) not in title_group_ids
+    ]
+    return result
+
+
+def _ensure_narrated_group_anchors(
+    match_payload: dict[str, Any],
+    elements_payload: dict[str, Any],
+    slide: dict[str, Any],
+) -> dict[str, Any]:
+    """Guarantee one independent visual-island seed per narrated group."""
+    beats = [beat for beat in slide.get("narration_beats", []) or [] if isinstance(beat, dict)]
+    static_group_ids = {str(value) for value in match_payload.get("static_group_ids", []) or [] if str(value)}
+    narrated_group_ids = list(dict.fromkeys(
+        str(beat.get("group_id") or "") for beat in beats
+        if str(beat.get("group_id") or "") and str(beat.get("group_id") or "") not in static_group_ids
+    ))
+    if not narrated_group_ids:
+        return match_payload
+    beat_by_group = {
+        str(beat.get("group_id") or ""): str(beat.get("id") or "")
+        for beat in beats
+        if str(beat.get("group_id") or "")
+    }
+    matches = [dict(item) for item in match_payload.get("matches", []) or [] if isinstance(item, dict)]
+    accepted_by_group = {
+        str(item.get("group_id") or ""): item
+        for item in matches
+        if str(item.get("group_id") or "") in narrated_group_ids
+        and not item.get("below_threshold")
+        and item.get("element_ids")
+    }
+    missing_group_ids = [group_id for group_id in narrated_group_ids if group_id not in accepted_by_group]
+    if not missing_group_ids:
+        return match_payload
+
+    all_elements = [
+        element for element in [
+            *(elements_payload.get("elements", []) or []),
+            *(elements_payload.get("residual_elements", []) or []),
+        ] if isinstance(element, dict) and str(element.get("element_id") or "")
+    ]
+    forced_owners = dict(match_payload.get("forced_element_owners") or {})
+    title_locked_ids = set(forced_owners) | {
+        str(value) for value in match_payload.get("static_element_ids", []) or [] if str(value)
+    }
+    canvas = elements_payload.get("canvas", {}) if isinstance(elements_payload.get("canvas"), dict) else {}
+    canvas_area = max(1, int(canvas.get("width", 1920))) * max(1, int(canvas.get("height", 1080)))
+    prominent_area = max(400, round(canvas_area * 0.003))
+    by_id = {str(element.get("element_id") or ""): element for element in all_elements}
+    # Keep one strongest existing seed per accepted group. Missing groups may
+    # claim other components, but can never empty an already accepted group.
+    protected_anchor_ids: set[str] = set()
+    for item in accepted_by_group.values():
+        owned = [by_id[str(element_id)] for element_id in item.get("element_ids", []) or [] if str(element_id) in by_id]
+        if owned:
+            protected_anchor_ids.add(str(max(owned, key=lambda element: int(element.get("area", 0))).get("element_id") or ""))
+    unavailable_ids = title_locked_ids | protected_anchor_ids
+    available = [element for element in all_elements if str(element.get("element_id") or "") not in unavailable_ids]
+    available.sort(key=lambda element: int(element.get("area", 0)), reverse=True)
+    prominent = [element for element in available if int(element.get("area", 0)) >= prominent_area]
+    candidates = [*prominent, *[element for element in available if element not in prominent]]
+
+    claimed_seed_ids: set[str] = set()
+    for group_id in missing_group_ids:
+        seed = next(
+            (
+                element for element in candidates
+                if str(element.get("element_id") or "") not in claimed_seed_ids
+                and str(element.get("element_id") or "") not in forced_owners
+            ),
+            None,
+        )
+        if seed is None:
+            continue
+        seed_id = str(seed.get("element_id") or "")
+        claimed_seed_ids.add(seed_id)
+        for item in matches:
+            item["element_ids"] = [str(element_id) for element_id in item.get("element_ids", []) or [] if str(element_id) != seed_id]
+        seeded = {
+            "group_id": group_id,
+            "narration_beat_id": beat_by_group.get(group_id, ""),
+            "element_ids": [seed_id],
+            "confidence": 0.82,
+            "reason": "deterministic prominent visual-island anchor",
+            "below_threshold": False,
+        }
+        matches.append(seeded)
+        forced_owners[seed_id] = group_id
+
+    anchored_groups = {
+        str(item.get("group_id") or "") for item in matches
+        if not item.get("below_threshold") and item.get("element_ids")
+    }
+    result = dict(match_payload)
+    result["matches"] = matches
+    result["forced_element_owners"] = forced_owners
+    result["unmatched_groups"] = [group_id for group_id in narrated_group_ids if group_id not in anchored_groups]
+    result["anchor_policy"] = "one_visual_island_per_narrated_group"
+    return result
+
+
 def _complete_component_coverage(
     match_payload: dict[str, Any],
     elements_payload: dict[str, Any],
@@ -718,7 +994,18 @@ def _complete_component_coverage(
     """
     candidates = [e for e in elements_payload.get("elements", []) or [] if isinstance(e, dict)]
     residual = [e for e in elements_payload.get("residual_elements", []) or [] if isinstance(e, dict)]
-    all_elements = candidates + residual
+    complete_foreground = candidates + residual
+    static_element_ids = {
+        str(value) for value in match_payload.get("static_element_ids", []) or [] if str(value)
+    }
+    static_elements = [
+        element for element in complete_foreground
+        if str(element.get("element_id") or "") in static_element_ids
+    ]
+    all_elements = [
+        element for element in complete_foreground
+        if str(element.get("element_id") or "") not in static_element_ids
+    ]
     by_id = {str(e.get("element_id") or ""): e for e in all_elements if str(e.get("element_id") or "")}
     accepted = [
         item for item in match_payload.get("matches", []) or []
@@ -731,6 +1018,11 @@ def _complete_component_coverage(
         if str(element_id) in by_id
     }
     assigned: set[str] = set()
+    forced_owners = {
+        str(element_id): str(group_id)
+        for element_id, group_id in (match_payload.get("forced_element_owners") or {}).items()
+        if str(element_id) and str(group_id)
+    }
     anchors: dict[str, dict[str, float]] = {}
     canvas = elements_payload.get("canvas", {}) if isinstance(elements_payload.get("canvas"), dict) else {}
     width = max(1, int(canvas.get("width", 1920)))
@@ -744,15 +1036,40 @@ def _complete_component_coverage(
         boxes = [element.get("raw_bbox", element.get("bbox", {})) for element in anchor_elements]
         if not boxes:
             continue
-        centers = sorted(_box_center(box) for box in boxes)
         largest = max(anchor_elements, key=lambda element: int(element.get("area", 0)))
-        if int(largest.get("area", 0)) >= 10_000:
-            center_x, center_y = _box_center(largest.get("raw_bbox", largest.get("bbox", {})))
-        else:
-            center_x = float(np.median([center[0] for center in centers]))
-            center_y = float(np.median([center[1] for center in centers]))
+        largest_box = largest.get("raw_bbox", largest.get("bbox", {}))
+        largest_bounds = _box_xyxy(largest_box)
+        if not largest_bounds:
+            continue
+        lx1, ly1, lx2, ly2 = largest_bounds
+        dominant_w, dominant_h = lx2 - lx1, ly2 - ly1
+        dominant_area = max(1, int(largest.get("area", 0)))
+        absorb_padding = max(28.0, min(140.0, 0.18 * max(dominant_w, dominant_h)))
+
+        # Build an island envelope from the dominant component plus only the
+        # seed components that are genuinely adjacent to it. A stray semantic
+        # ID on the other side of the page must not stretch the envelope.
+        clustered_bounds: list[tuple[float, float, float, float]] = [largest_bounds]
+        for box in boxes:
+            bounds = _box_xyxy(box)
+            if not bounds or bounds == largest_bounds:
+                continue
+            cx, cy = _box_center(box)
+            dx = max(lx1 - cx, 0.0, cx - lx2)
+            dy = max(ly1 - cy, 0.0, cy - ly2)
+            if float(np.hypot(dx, dy)) <= absorb_padding:
+                clustered_bounds.append(bounds)
+        ax1 = min(value[0] for value in clustered_bounds)
+        ay1 = min(value[1] for value in clustered_bounds)
+        ax2 = max(value[2] for value in clustered_bounds)
+        ay2 = max(value[3] for value in clustered_bounds)
         anchors[str(item.get("group_id") or "")] = {
-            "x": center_x, "y": center_y, "w": 1.0, "h": 1.0,
+            "x": ax1,
+            "y": ay1,
+            "w": max(1.0, ax2 - ax1),
+            "h": max(1.0, ay2 - ay1),
+            "absorb_padding": absorb_padding,
+            "dominant_area": float(dominant_area),
         }
 
     # Repartition every component instead of trusting individual LLM IDs. The
@@ -762,41 +1079,65 @@ def _complete_component_coverage(
         item["element_ids"] = []
     unassigned = list(all_elements)
     if accepted and anchors:
-        ordered_anchor_ids = sorted(anchors, key=lambda group_id: _box_center(anchors[group_id])[1])
-        top_group_id = ordered_anchor_ids[0]
-        top_center_y = _box_center(anchors[top_group_id])[1]
-        next_center_y = _box_center(anchors[ordered_anchor_ids[1]])[1] if len(ordered_anchor_ids) > 1 else height
-        top_group_soft_limit = top_center_y + 0.45 * max(0.0, next_center_y - top_center_y)
+        distance_scale = float(max(1, min(width, height)))
 
-        def score(item: dict[str, Any], cx: float, cy: float) -> float:
+        def box_distance(anchor: dict[str, float], element_box: dict[str, Any]) -> float:
+            bounds = _box_xyxy(element_box)
+            anchor_bounds = _box_xyxy(anchor)
+            if not bounds or not anchor_bounds:
+                return float("inf")
+            ex1, ey1, ex2, ey2 = bounds
+            ax1, ay1, ax2, ay2 = anchor_bounds
+            dx = max(ax1 - ex2, 0.0, ex1 - ax2)
+            dy = max(ay1 - ey2, 0.0, ey1 - ay2)
+            return float(np.hypot(dx, dy))
+
+        def inside_absorption_envelope(anchor: dict[str, float], cx: float, cy: float) -> bool:
+            bounds = _box_xyxy(anchor)
+            if not bounds:
+                return False
+            x1, y1, x2, y2 = bounds
+            padding = float(anchor.get("absorb_padding", 28.0))
+            return x1 - padding <= cx <= x2 + padding and y1 - padding <= cy <= y2 + padding
+
+        def score(item: dict[str, Any], element_box: dict[str, Any], cx: float, cy: float) -> float:
             anchor = anchors[str(item.get("group_id") or "")]
-            return (
-                abs(cy - _box_center(anchor)[1]) / height
-                + 0.03 * abs(cx - _box_center(anchor)[0]) / width
-            )
+            center_x, center_y = _box_center(anchor)
+            edge_distance = box_distance(anchor, element_box) / distance_scale
+            center_distance = float(np.hypot(cx - center_x, cy - center_y)) / distance_scale
+            absorption_bonus = 0.12 if inside_absorption_envelope(anchor, cx, cy) else 0.0
+            return edge_distance + 0.16 * center_distance - absorption_bonus
 
         for element in sorted(unassigned, key=lambda item: (float((item.get("center") or {}).get("y", 0)), float((item.get("center") or {}).get("x", 0)))):
             box = element.get("raw_bbox") if isinstance(element.get("raw_bbox"), dict) else element.get("bbox", {})
             cx, cy = _box_center(box)
             element_id = str(element.get("element_id") or "")
             original_group_id = original_owner.get(element_id, "")
-            choices = [
-                item for item in accepted
-                if str(item.get("group_id") or "") != top_group_id
-                or cy <= top_group_soft_limit
-            ] or accepted
-            best = min(choices, key=lambda item: score(item, cx, cy))
+            forced_group_id = forced_owners.get(element_id, "")
+            forced = next((item for item in accepted if str(item.get("group_id") or "") == forced_group_id), None)
+            if forced is not None:
+                forced.setdefault("element_ids", []).append(element_id)
+                assigned.add(element_id)
+                continue
+            choices = list(accepted)
+            absorbing_choices = [
+                item for item in choices
+                if inside_absorption_envelope(anchors[str(item.get("group_id") or "")], cx, cy)
+            ]
+            if absorbing_choices:
+                choices = absorbing_choices
+            best = min(choices, key=lambda item: score(item, box, cx, cy))
             original = next(
                 (item for item in choices if str(item.get("group_id") or "") == original_group_id),
                 None,
             )
-            if original is not None and score(original, cx, cy) <= score(best, cx, cy) + 0.035:
+            if original is not None and score(original, box, cx, cy) <= score(best, box, cx, cy) + 0.025:
                 best = original
             best.setdefault("element_ids", []).append(str(element.get("element_id") or ""))
             assigned.add(str(element.get("element_id") or ""))
 
     unassigned_ids = sorted(set(by_id) - assigned)
-    target_rle = _merge_row_runs(all_elements, width, height)
+    target_rle = _merge_row_runs(complete_foreground, width, height)
     foreground_pixels = _rle_pixel_count(target_rle)
     group_rles = [
         _merge_row_runs(
@@ -807,15 +1148,18 @@ def _complete_component_coverage(
         for item in accepted
     ]
     assigned_elements = [by_id[element_id] for element_id in assigned if element_id in by_id]
-    assigned_rle = _merge_row_runs(assigned_elements, width, height)
+    dynamic_assigned_rle = _merge_row_runs(assigned_elements, width, height)
+    dynamic_assigned_pixels = _rle_pixel_count(dynamic_assigned_rle)
+    assigned_rle = _merge_row_runs([*assigned_elements, *static_elements], width, height)
     assigned_pixels = _rle_pixel_count(assigned_rle)
     group_pixel_sum = sum(_rle_pixel_count(rle) for rle in group_rles)
-    overlap_pixels = max(0, group_pixel_sum - assigned_pixels)
+    overlap_pixels = max(0, group_pixel_sum - dynamic_assigned_pixels)
     coverage = assigned_pixels / foreground_pixels if foreground_pixels else 0.0
     quality = {
         "version": "ai_mask_quality_v1",
         "foreground_pixel_count": foreground_pixels,
         "assigned_foreground_pixel_count": assigned_pixels,
+        "static_header_pixel_count": _rle_pixel_count(_merge_row_runs(static_elements, width, height)),
         "foreground_coverage_ratio": round(coverage, 6),
         "unassigned_component_count": len(unassigned_ids),
         "overlap_pixel_count": overlap_pixels,
@@ -827,6 +1171,7 @@ def _complete_component_coverage(
     if quality["passed"]:
         match_payload["warnings"] = []
     match_payload["matching_method"] = str(match_payload.get("matching_method") or "unknown") + "+exact_component_completion"
+    match_payload["component_assignment_policy"] = "dominant_island_2d_absorption_v2"
     return match_payload
 
 
@@ -865,6 +1210,30 @@ def _find_group(groups: list[dict[str, Any]], gid: str) -> dict[str, Any] | None
     return None
 
 
+def _migrate_legacy_default_reveal(group: dict[str, Any]) -> None:
+    """Replace only the old default wipe, preserving deliberate custom animation."""
+    reveal = group.get("reveal") if isinstance(group.get("reveal"), dict) else {}
+    if not reveal:
+        # Semantic groups created by AI Mask do not necessarily originate from
+        # the coordinate template.  Give those groups the current production
+        # default explicitly; otherwise the scene builder falls back to its
+        # historical 0.75 s duration and the picture is still animating after
+        # the narration has begun.
+        group["reveal"] = {
+            "type": "crop_fade_up",
+            "duration": 0.25,
+            "auto_default": True,
+        }
+        return
+    reveal_type = str(reveal.get("type") or "")
+    try:
+        duration = float(reveal.get("duration", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        duration = 0.0
+    if reveal_type == "wipe_left_to_right" and abs(duration - 0.75) <= 0.001:
+        group["reveal"] = {"type": "crop_fade_up", "duration": 0.25, "auto_migrated": True}
+
+
 def _apply(manifest: dict[str, Any], slide: dict[str, Any], elements_payload: dict[str, Any], match_payload: dict[str, Any], settings: dict[str, Any]) -> dict[str, int]:
     slide_id = str(slide.get("slide_id") or "")
     mslide = next((s for s in manifest.get("slides", []) if isinstance(s, dict) and str(s.get("slide_id") or "") == slide_id), None)
@@ -880,6 +1249,49 @@ def _apply(manifest: dict[str, Any], slide: dict[str, Any], elements_payload: di
         if isinstance(e, dict) and e.get("element_id")
     }
     updated = skipped = 0
+    static_element_ids = [
+        str(value) for value in match_payload.get("static_element_ids", []) or []
+        if str(value) in by_element
+    ]
+    static_group_ids = {
+        str(value) for value in match_payload.get("static_group_ids", []) or [] if str(value)
+    }
+    # Remove any former title/subtitle paint so it cannot be rebuilt as a
+    # narration-driven crop. The exact title pixels are stored in one hidden
+    # static group that the scene builder composites into base_slide.png.
+    for collection in (groups, semantic):
+        collection[:] = [
+            group for group in collection
+            if not (
+                isinstance(group, dict)
+                and (
+                    str(group.get("id") or group.get("group_id") or group.get("visual_group_id") or "") in static_group_ids
+                    or str(group.get("role") or "").strip().lower() in {"title", "subtitle"}
+                    or bool(group.get("is_static_header"))
+                )
+            )
+        ]
+    if static_element_ids:
+        static_mask = _exact_manual_mask(
+            [by_element[element_id] for element_id in static_element_ids],
+            width,
+            height,
+            "#000000",
+        )
+        groups.append({
+            "id": "__static_title_header__",
+            "group_id": "__static_title_header__",
+            "role": "background",
+            "visible_text": "固定标题区",
+            "box": dict(static_mask["bounds"]),
+            "manual_mask": static_mask,
+            "is_static": True,
+            "is_static_header": True,
+            "link_to_narration": False,
+            "review_status": "ai_static",
+            "source": "ai_static_header",
+            "z_index": 5,
+        })
     visual_group_order = {
         str(group.get("id") or ""): index
         for index, group in enumerate(slide.get("visual_groups", []) or [])
@@ -912,6 +1324,7 @@ def _apply(manifest: dict[str, Any], slide: dict[str, Any], elements_payload: di
                     "z_index": 40 + len(collection),
                 }
                 collection.append(group)
+            _migrate_legacy_default_reveal(group)
             if settings["skip_locked_groups"] and str(group.get("review_status") or "") in {"approved", "locked"}:
                 continue
             if _has_manual(group) and not settings["overwrite_existing_manual_mask"]:
@@ -969,8 +1382,7 @@ def _annotate_project(server_module: ModuleType, project: Any, settings: dict[st
     run_dir = Path(project.run_dir)
     contract = _read_json(run_dir / "planning" / "visual_contract.json")
     manifest = _read_json(run_dir / "reveal_manifest.json")
-    methodology = server_module.get_setting(PROMPT_METHOD_KEY, DEFAULT_METHODOLOGY) or DEFAULT_METHODOLOGY
-    output_structure = server_module.get_setting(PROMPT_OUTPUT_KEY, DEFAULT_OUTPUT_STRUCTURE) or DEFAULT_OUTPUT_STRUCTURE
+    methodology, output_structure = _read_ai_mask_prompts(server_module)
     prepared: list[dict[str, Any]] = []
     for slide in contract.get("slides", []) or []:
         if not isinstance(slide, dict):
@@ -979,6 +1391,12 @@ def _annotate_project(server_module: ModuleType, project: Any, settings: dict[st
         slide_dir = run_dir / "slides" / slide_id
         image_path = slide_dir / "visual_draft.png"
         elements = detect_elements(image_path, slide_dir, settings)
+        canvas = elements.get("canvas", {}) if isinstance(elements.get("canvas"), dict) else {}
+        title_regions = _configured_title_regions(
+            server_module,
+            max(1, int(canvas.get("width", 1920))),
+            max(1, int(canvas.get("height", 1080))),
+        )
         element_list = elements.get("elements", [])
         manifest_slide = next(
             (
@@ -996,9 +1414,12 @@ def _annotate_project(server_module: ModuleType, project: Any, settings: dict[st
             "elements": elements,
             "element_list": element_list,
             "fallback": fallback,
+            "title_regions": title_regions,
         })
 
     def match_slide(item: dict[str, Any]) -> dict[str, Any]:
+        vision_started = time.monotonic()
+        resolved_model, configured_model = _resolved_vision_model(server_module)
         try:
             raw_vision = _vision_match(
                 server_module,
@@ -1016,8 +1437,25 @@ def _annotate_project(server_module: ModuleType, project: Any, settings: dict[st
             logger = getattr(server_module, "logger", None)
             if logger is not None:
                 logger.warning("AI Mask multimodal match failed for %s; using deterministic prior: %s", item["slide_id"], exc)
+            try:
+                server_module.write_project_log(
+                    project,
+                    "ai_mask_vision_failed",
+                    slide_id=item["slide_id"],
+                    elapsed_sec=round(time.monotonic() - vision_started, 2),
+                    timeout=_is_timeout(server_module, exc),
+                    error_type=type(exc).__name__,
+                    error=str(exc)[:500],
+                    configured_vision_model=configured_model,
+                    resolved_vision_model=resolved_model,
+                    thinking_disabled=bool(getattr(server_module, "step2_llm_vendor_options", lambda *_: {})(resolved_model, server_module.get_setting("llm_base_url"))),
+                )
+            except Exception:
+                pass
             raw = item["fallback"]
         cleaned = _clean_match(raw, item["slide"], item["element_list"], settings, item["fallback"])
+        cleaned = _consolidate_title_regions(cleaned, item["elements"], item["slide"], item["title_regions"])
+        cleaned = _ensure_narrated_group_anchors(cleaned, item["elements"], item["slide"])
         return _complete_component_coverage(cleaned, item["elements"])
 
     matches: dict[str, dict[str, Any]] = {}
@@ -1068,7 +1506,16 @@ def _register(server_module: ModuleType) -> bool:
     app = server_module.app
 
     async def get_ai_mask_settings() -> dict[str, Any]:
-        return {"success": True, "settings": _get_store_settings(server_module), "prompts": {"methodology": server_module.get_setting(PROMPT_METHOD_KEY, DEFAULT_METHODOLOGY) or DEFAULT_METHODOLOGY, "output_structure": server_module.get_setting(PROMPT_OUTPUT_KEY, DEFAULT_OUTPUT_STRUCTURE) or DEFAULT_OUTPUT_STRUCTURE}}
+        methodology, output_structure = _read_ai_mask_prompts(server_module)
+        return {
+            "success": True,
+            "settings": _get_store_settings(server_module),
+            "prompts": {
+                "methodology": methodology,
+                "output_structure": output_structure,
+                "full_prompt": _compose_ai_mask_full_prompt(methodology, output_structure),
+            },
+        }
 
     async def put_ai_mask_settings(payload: dict[str, Any]) -> dict[str, Any]:
         return {"success": True, "settings": _save_store_settings(server_module, payload if isinstance(payload, dict) else {})}

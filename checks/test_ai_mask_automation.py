@@ -18,6 +18,228 @@ os.environ.setdefault("PPT_STUDIO_DISABLE_ONE_CLICK_ORCHESTRATOR", "1")
 import runtime_one_click_orchestrator as one_click
 
 
+class _FakeVisionSettings:
+    values = {
+        "llm_provider": "volcengine",
+        "vision_model": "gpt-4o",
+        "llm_model": "doubao-seed-2-1-turbo-260628",
+    }
+
+    @classmethod
+    def get_setting(cls, key):
+        return cls.values.get(key, "")
+
+
+def _mask_element(element_id: str, x: int, y: int, w: int, h: int) -> dict:
+    return {
+        "element_id": element_id,
+        "bbox": {"x": x, "y": y, "w": w, "h": h},
+        "raw_bbox": {"x": x, "y": y, "w": w, "h": h},
+        "center": {"x": x + w / 2, "y": y + h / 2},
+        "area": w * h,
+        "mask_rle": {
+            "encoding": "row_runs_v1",
+            "width": 320,
+            "height": 180,
+            "runs": [[row, x, x + w] for row in range(y, y + h)],
+        },
+    }
+
+
+def _title_region_fixture() -> tuple[dict, dict]:
+    elements = {
+        "canvas": {"width": 320, "height": 180},
+        "elements": [
+            _mask_element("title_a", 20, 10, 40, 12),
+            _mask_element("title_b", 75, 10, 45, 12),
+            _mask_element("subtitle_a", 20, 30, 55, 8),
+            _mask_element("subtitle_b", 85, 30, 50, 8),
+            _mask_element("body", 40, 90, 220, 40),
+        ],
+        "residual_elements": [],
+    }
+    regions = {
+        "main_title": {"x": 0, "y": 0, "w": 320, "h": 27},
+        "subtitle": {"x": 0, "y": 27, "w": 320, "h": 25},
+        "combined": {"x": 0, "y": 0, "w": 320, "h": 52},
+    }
+    return elements, regions
+
+
+def test_title_and_subtitle_fragments_are_static_not_narration_masks():
+    elements, regions = _title_region_fixture()
+    slide = {
+        "slide_id": "slide_001",
+        "main_title": "主标题",
+        "subtitle": "副标题",
+        "visual_groups": [
+            {"id": "opening", "role": "title"},
+            {"id": "body_group", "role": "body"},
+        ],
+        "narration_beats": [
+            {"id": "beat_opening", "group_id": "opening", "spoken_text": "先看标题和副标题。"},
+            {"id": "beat_body", "group_id": "body_group", "spoken_text": "再讲正文。"},
+        ],
+    }
+    payload = {
+        "matches": [
+            {"group_id": "opening", "narration_beat_id": "beat_opening", "element_ids": ["title_a"], "confidence": 0.9},
+            {"group_id": "body_group", "narration_beat_id": "beat_body", "element_ids": ["title_b", "subtitle_a", "subtitle_b", "body"], "confidence": 0.9},
+        ],
+        "unmatched_groups": [],
+        "warnings": [],
+    }
+    consolidated = mask._consolidate_title_regions(payload, elements, slide, regions)
+    assert consolidated["title_region_policy"] == "static_header_excluded_from_narration_masks"
+    assert set(consolidated["static_element_ids"]) == {"title_a", "title_b", "subtitle_a", "subtitle_b"}
+    assert consolidated["static_group_ids"] == ["opening"]
+    assert consolidated["forced_element_owners"] == {}
+    completed = mask._complete_component_coverage(consolidated, elements)
+    matches = {item["group_id"]: set(item["element_ids"]) for item in completed["matches"]}
+    assert "opening" not in matches
+    assert matches["body_group"] == {"body"}
+    assert completed["quality"]["static_header_pixel_count"] > 0
+    assert completed["quality"]["passed"] is True
+
+
+def test_title_and_subtitle_both_remain_static_even_with_distinct_narration():
+    elements, regions = _title_region_fixture()
+    slide = {
+        "slide_id": "slide_001",
+        "main_title": "主标题",
+        "subtitle": "副标题",
+        "visual_groups": [
+            {"id": "title_group", "role": "title"},
+            {"id": "subtitle_group", "role": "subtitle"},
+            {"id": "body_group", "role": "body"},
+        ],
+        "narration_beats": [
+            {"id": "beat_title", "group_id": "title_group", "spoken_text": "这是核心结论。"},
+            {"id": "beat_subtitle", "group_id": "subtitle_group", "spoken_text": "这是结论的解释。"},
+            {"id": "beat_body", "group_id": "body_group", "spoken_text": "这是正文。"},
+        ],
+    }
+    payload = {
+        "matches": [
+            {"group_id": "title_group", "narration_beat_id": "beat_title", "element_ids": ["title_a"], "confidence": 0.9},
+            {"group_id": "subtitle_group", "narration_beat_id": "beat_subtitle", "element_ids": ["subtitle_a"], "confidence": 0.9},
+            {"group_id": "body_group", "narration_beat_id": "beat_body", "element_ids": ["body"], "confidence": 0.9},
+        ],
+        "unmatched_groups": [],
+        "warnings": [],
+    }
+    consolidated = mask._consolidate_title_regions(payload, elements, slide, regions)
+    assert consolidated["title_region_policy"] == "static_header_excluded_from_narration_masks"
+    assert set(consolidated["static_group_ids"]) == {"title_group", "subtitle_group"}
+    assert set(consolidated["static_element_ids"]) == {"title_a", "title_b", "subtitle_a", "subtitle_b"}
+    assert [item["group_id"] for item in consolidated["matches"]] == ["body_group"]
+
+
+def test_every_narrated_group_gets_an_independent_visual_anchor():
+    elements, regions = _title_region_fixture()
+    elements["elements"].append(_mask_element("summary", 250, 140, 50, 20))
+    slide = {
+        "slide_id": "slide_001",
+        "main_title": "主标题",
+        "subtitle": "副标题",
+        "visual_groups": [
+            {"id": "opening", "role": "title"},
+            {"id": "image_group", "role": "body"},
+            {"id": "summary_group", "role": "body"},
+        ],
+        "narration_beats": [
+            {"id": "beat_opening", "group_id": "opening", "spoken_text": "开场。"},
+            {"id": "beat_image", "group_id": "image_group", "spoken_text": "讲图片。"},
+            {"id": "beat_summary", "group_id": "summary_group", "spoken_text": "讲总结。"},
+        ],
+    }
+    swallowed = {
+        "matches": [{
+            "group_id": "opening",
+            "narration_beat_id": "beat_opening",
+            "element_ids": ["title_a", "title_b", "subtitle_a", "subtitle_b", "body", "summary"],
+            "confidence": 0.9,
+        }],
+        "unmatched_groups": ["image_group", "summary_group"],
+        "warnings": [],
+    }
+    consolidated = mask._consolidate_title_regions(swallowed, elements, slide, regions)
+    anchored = mask._ensure_narrated_group_anchors(consolidated, elements, slide)
+    assert anchored["unmatched_groups"] == []
+    assert anchored["anchor_policy"] == "one_visual_island_per_narrated_group"
+    owners = anchored["forced_element_owners"]
+    assert set(owners.values()) == {"image_group", "summary_group"}
+    assert set(anchored["static_element_ids"]) == {"title_a", "title_b", "subtitle_a", "subtitle_b"}
+
+
+def test_existing_anchor_is_not_stolen_when_seeding_missing_group():
+    elements = {
+        "canvas": {"width": 320, "height": 180},
+        "elements": [
+            _mask_element("existing_anchor", 20, 50, 180, 80),
+            _mask_element("available_anchor", 230, 70, 60, 40),
+        ],
+        "residual_elements": [],
+    }
+    slide = {
+        "narration_beats": [
+            {"id": "beat_a", "group_id": "group_a"},
+            {"id": "beat_b", "group_id": "group_b"},
+        ],
+    }
+    payload = {
+        "matches": [{
+            "group_id": "group_a",
+            "narration_beat_id": "beat_a",
+            "element_ids": ["existing_anchor"],
+            "confidence": 0.9,
+        }],
+        "unmatched_groups": ["group_b"],
+    }
+    anchored = mask._ensure_narrated_group_anchors(payload, elements, slide)
+    by_group = {item["group_id"]: item["element_ids"] for item in anchored["matches"]}
+    assert by_group["group_a"] == ["existing_anchor"]
+    assert by_group["group_b"] == ["available_anchor"]
+    assert anchored["unmatched_groups"] == []
+
+
+def test_nearby_icon_is_absorbed_by_closest_large_visual_island():
+    elements = {
+        "canvas": {"width": 320, "height": 180},
+        "elements": [
+            _mask_element("left_island", 20, 45, 100, 90),
+            _mask_element("right_island", 210, 45, 90, 90),
+            _mask_element("near_left_check", 126, 62, 14, 14),
+        ],
+        "residual_elements": [],
+    }
+    # The vision model made the same kind of semantic mistake observed on
+    # slide 3: the check icon was put in the right group despite being next to
+    # the left illustration. Geometry must correct that ownership.
+    payload = {
+        "matches": [
+            {"group_id": "left", "element_ids": ["left_island"], "confidence": 0.9},
+            {"group_id": "right", "element_ids": ["right_island", "near_left_check"], "confidence": 0.9},
+        ],
+        "unmatched_groups": [],
+    }
+    completed = mask._complete_component_coverage(payload, elements)
+    by_group = {item["group_id"]: set(item["element_ids"]) for item in completed["matches"]}
+    assert "near_left_check" in by_group["left"]
+    assert "near_left_check" not in by_group["right"]
+    assert completed["component_assignment_policy"] == "dominant_island_2d_absorption_v2"
+
+
+def test_volcengine_ai_mask_uses_provider_model_and_single_timeout_policy():
+    resolved, configured = mask._resolved_vision_model(_FakeVisionSettings)
+    assert resolved == "doubao-seed-2-1-turbo-260628"
+    assert configured == "gpt-4o"
+    source = inspect.getsource(mask._vision_match)
+    assert "step2_llm_vendor_options" in source
+    assert "AI_MASK_VISION_TIMEOUT_SEC" in source
+    assert "if _is_timeout(server_module, exc)" in source
+
+
 def fixture_slide() -> dict:
     return {
         "slide_id": "slide_001",
@@ -34,6 +256,12 @@ def fixture_slide() -> dict:
 
 
 def main() -> None:
+    test_title_and_subtitle_fragments_are_static_not_narration_masks()
+    test_title_and_subtitle_both_remain_static_even_with_distinct_narration()
+    test_every_narrated_group_gets_an_independent_visual_anchor()
+    test_existing_anchor_is_not_stolen_when_seeding_missing_group()
+    test_nearby_icon_is_absorbed_by_closest_large_visual_island()
+    test_volcengine_ai_mask_uses_provider_model_and_single_timeout_policy()
     with tempfile.TemporaryDirectory() as temp_dir:
         slide_dir = Path(temp_dir) / "slide_001"
         slide_dir.mkdir(parents=True)
@@ -105,6 +333,8 @@ def main() -> None:
         assert all(group["manual_mask"]["rle"]["runs"] for group in manifest_slide["groups"])
         assert all(group["manual_mask"]["strokes"] == [] for group in manifest_slide["groups"])
         assert all(group["review_status"] == "ai_matched" for group in manifest_slide["groups"])
+        assert all(group["reveal"]["type"] == "crop_fade_up" for group in manifest_slide["groups"])
+        assert all(group["reveal"]["duration"] == 0.25 for group in manifest_slide["groups"])
         alphas = [
             np.asarray(manual_mask_alpha(group["manual_mask"], 320, 180)) > 0
             for group in manifest_slide["groups"]

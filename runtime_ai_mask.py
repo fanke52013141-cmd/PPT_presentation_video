@@ -736,7 +736,8 @@ def _clean_match(
             conf = float(item.get("confidence", 0))
         except Exception:
             conf = 0
-        matches.append({"group_id": gid, "narration_beat_id": bid, "element_ids": eids, "confidence": conf, "reason": str(item.get("reason") or ""), "below_threshold": conf < float(settings["llm_confidence_threshold"])})
+        object_ids = [str(value) for value in item.get("object_ids", []) or [] if str(value)]
+        matches.append({"group_id": gid, "narration_beat_id": bid, "object_ids": object_ids, "expanded_from_object_ids": object_ids, "element_ids": eids, "seed_element_ids": list(eids), "confidence": conf, "reason": str(item.get("reason") or ""), "below_threshold": conf < float(settings["llm_confidence_threshold"])})
         used.update(eids)
     matched_groups = {str(item.get("group_id") or "") for item in matches}
     return {
@@ -754,6 +755,45 @@ def _box_center(box: dict[str, Any]) -> tuple[float, float]:
         float(box.get("x", 0)) + float(box.get("w", 0)) / 2,
         float(box.get("y", 0)) + float(box.get("h", 0)) / 2,
     )
+
+
+def _union_bounds(bounds_list: list[tuple[float, float, float, float]]) -> tuple[float, float, float, float] | None:
+    valid = [bounds for bounds in bounds_list if bounds]
+    if not valid:
+        return None
+    return (
+        min(bounds[0] for bounds in valid),
+        min(bounds[1] for bounds in valid),
+        max(bounds[2] for bounds in valid),
+        max(bounds[3] for bounds in valid),
+    )
+
+
+def _bounds_area(bounds: tuple[float, float, float, float] | None) -> float:
+    if not bounds:
+        return 0.0
+    return max(0.0, bounds[2] - bounds[0]) * max(0.0, bounds[3] - bounds[1])
+
+
+def _layout_region(cx: float, cy: float, width: int, height: int) -> str:
+    if cy < 220 * height / 1080:
+        return "title"
+    if cy >= 930 * height / 1080:
+        return "subtitle"
+    if cx < width / 3:
+        return "content_left"
+    if cx > width * 2 / 3:
+        return "content_right"
+    return "content_center"
+
+
+def _compatible_regions(a: str, b: str) -> bool:
+    if a == b:
+        return True
+    if "title" in {a, b} or "subtitle" in {a, b}:
+        return False
+    pairs = {frozenset({"content_left", "content_center"}), frozenset({"content_center", "content_right"})}
+    return frozenset({a, b}) in pairs
 
 
 def _configured_title_regions(server_module: ModuleType, width: int, height: int) -> dict[str, dict[str, int]]:
@@ -1072,15 +1112,16 @@ def _complete_component_coverage(
             "dominant_area": float(dominant_area),
         }
 
-    # Repartition every component instead of trusting individual LLM IDs. The
-    # model establishes semantic group anchors; deterministic geometry then
-    # removes occasional cross-row/cross-card ID mistakes and fills omissions.
     for item in accepted:
-        item["element_ids"] = []
-    unassigned = list(all_elements)
-    if accepted and anchors:
-        distance_scale = float(max(1, min(width, height)))
+        seed_ids = [str(element_id) for element_id in item.get("element_ids", []) or [] if str(element_id) in by_id]
+        existing_seed_ids = item.get("seed_element_ids", []) or []
+        item["seed_element_ids"] = list(dict.fromkeys([*existing_seed_ids, *seed_ids]))
+        item["element_ids"] = list(dict.fromkeys(seed_ids))
+        item["residual_element_ids"] = []
+        assigned.update(item["element_ids"])
 
+    residual_assignment_report: list[dict[str, Any]] = []
+    if accepted and anchors:
         def box_distance(anchor: dict[str, float], element_box: dict[str, Any]) -> float:
             bounds = _box_xyxy(element_box)
             anchor_bounds = _box_xyxy(anchor)
@@ -1100,41 +1141,55 @@ def _complete_component_coverage(
             padding = float(anchor.get("absorb_padding", 28.0))
             return x1 - padding <= cx <= x2 + padding and y1 - padding <= cy <= y2 + padding
 
-        def score(item: dict[str, Any], element_box: dict[str, Any], cx: float, cy: float) -> float:
-            anchor = anchors[str(item.get("group_id") or "")]
-            center_x, center_y = _box_center(anchor)
-            edge_distance = box_distance(anchor, element_box) / distance_scale
-            center_distance = float(np.hypot(cx - center_x, cy - center_y)) / distance_scale
-            absorption_bonus = 0.12 if inside_absorption_envelope(anchor, cx, cy) else 0.0
-            return edge_distance + 0.16 * center_distance - absorption_bonus
-
-        for element in sorted(unassigned, key=lambda item: (float((item.get("center") or {}).get("y", 0)), float((item.get("center") or {}).get("x", 0)))):
-            box = element.get("raw_bbox") if isinstance(element.get("raw_bbox"), dict) else element.get("bbox", {})
-            cx, cy = _box_center(box)
+        for element in sorted(residual, key=lambda item: (float((item.get("center") or {}).get("y", 0)), float((item.get("center") or {}).get("x", 0)))):
             element_id = str(element.get("element_id") or "")
-            original_group_id = original_owner.get(element_id, "")
-            forced_group_id = forced_owners.get(element_id, "")
-            forced = next((item for item in accepted if str(item.get("group_id") or "") == forced_group_id), None)
-            if forced is not None:
-                forced.setdefault("element_ids", []).append(element_id)
-                assigned.add(element_id)
+            if not element_id or element_id in assigned or element_id not in by_id:
                 continue
-            choices = list(accepted)
-            absorbing_choices = [
-                item for item in choices
-                if inside_absorption_envelope(anchors[str(item.get("group_id") or "")], cx, cy)
-            ]
-            if absorbing_choices:
-                choices = absorbing_choices
-            best = min(choices, key=lambda item: score(item, box, cx, cy))
-            original = next(
-                (item for item in choices if str(item.get("group_id") or "") == original_group_id),
-                None,
-            )
-            if original is not None and score(original, box, cx, cy) <= score(best, box, cx, cy) + 0.025:
-                best = original
-            best.setdefault("element_ids", []).append(str(element.get("element_id") or ""))
-            assigned.add(str(element.get("element_id") or ""))
+            box = element.get("raw_bbox") if isinstance(element.get("raw_bbox"), dict) else element.get("bbox", {})
+            bounds = _box_xyxy(box)
+            if not bounds:
+                continue
+            cx, cy = _box_center(box)
+            element_region = _layout_region(cx, cy, width, height)
+            choices = []
+            for item in accepted:
+                group_id = str(item.get("group_id") or "")
+                anchor = anchors.get(group_id)
+                if not anchor:
+                    continue
+                anchor_cx, anchor_cy = _box_center(anchor)
+                anchor_region = _layout_region(anchor_cx, anchor_cy, width, height)
+                if not _compatible_regions(element_region, anchor_region):
+                    continue
+                distance = box_distance(anchor, box)
+                if not inside_absorption_envelope(anchor, cx, cy) and distance > 80:
+                    continue
+                choices.append((distance, item, anchor))
+            choices.sort(key=lambda value: value[0])
+            if not choices:
+                residual_assignment_report.append({"element_id": element_id, "status": "unassigned", "reason": "no_safe_anchor", "region": element_region})
+                continue
+            best_distance, best, best_anchor = choices[0]
+            second_distance = choices[1][0] if len(choices) > 1 else float("inf")
+            if len(choices) > 1 and not (best_distance <= 12 or second_distance / max(best_distance, 1.0) >= 1.8):
+                residual_assignment_report.append({"element_id": element_id, "status": "unassigned", "reason": "ambiguous_nearest_anchor", "nearest_distance": round(best_distance, 2), "second_distance": round(second_distance, 2)})
+                continue
+            current_bounds = _union_bounds([
+                _box_xyxy(by_id[str(existing_id)].get("raw_bbox") if isinstance(by_id[str(existing_id)].get("raw_bbox"), dict) else by_id[str(existing_id)].get("bbox", {}))
+                for existing_id in best.get("element_ids", []) or []
+                if str(existing_id) in by_id
+            ])
+            new_bounds = _union_bounds([bounds, current_bounds] if current_bounds else [bounds])
+            if current_bounds and new_bounds:
+                old_area = max(1.0, _bounds_area(current_bounds))
+                new_area = max(1.0, _bounds_area(new_bounds))
+                if new_area > old_area * 1.35 or (new_bounds[2] - new_bounds[0]) > (current_bounds[2] - current_bounds[0]) + 180 or (new_bounds[3] - new_bounds[1]) > (current_bounds[3] - current_bounds[1]) + 180:
+                    residual_assignment_report.append({"element_id": element_id, "status": "unassigned", "reason": "bbox_expansion_too_large", "area_ratio": round(new_area / old_area, 3)})
+                    continue
+            best.setdefault("element_ids", []).append(element_id)
+            best.setdefault("residual_element_ids", []).append(element_id)
+            assigned.add(element_id)
+            residual_assignment_report.append({"element_id": element_id, "status": "assigned", "group_id": str(best.get("group_id") or ""), "distance": round(best_distance, 2), "region": element_region})
 
     unassigned_ids = sorted(set(by_id) - assigned)
     target_rle = _merge_row_runs(complete_foreground, width, height)
@@ -1155,8 +1210,57 @@ def _complete_component_coverage(
     group_pixel_sum = sum(_rle_pixel_count(rle) for rle in group_rles)
     overlap_pixels = max(0, group_pixel_sum - dynamic_assigned_pixels)
     coverage = assigned_pixels / foreground_pixels if foreground_pixels else 0.0
+    semantic_group_checks: list[dict[str, Any]] = []
+    semantic_warnings: list[dict[str, Any]] = []
+    blocking_errors: list[dict[str, Any]] = []
+    for item in accepted:
+        group_id = str(item.get("group_id") or "")
+        element_ids = [str(element_id) for element_id in item.get("element_ids", []) or [] if str(element_id) in by_id]
+        residual_ids = [str(element_id) for element_id in item.get("residual_element_ids", []) or [] if str(element_id)]
+        bounds_list = [
+            _box_xyxy(by_id[element_id].get("raw_bbox") if isinstance(by_id[element_id].get("raw_bbox"), dict) else by_id[element_id].get("bbox", {}))
+            for element_id in element_ids
+        ]
+        regions = sorted({
+            _layout_region(*_box_center(by_id[element_id].get("raw_bbox") if isinstance(by_id[element_id].get("raw_bbox"), dict) else by_id[element_id].get("bbox", {})), width, height)
+            for element_id in element_ids
+        })
+        residual_ratio = len(residual_ids) / max(1, len(element_ids))
+        check = {
+            "group_id": group_id,
+            "element_count": len(element_ids),
+            "residual_count": len(residual_ids),
+            "residual_ratio": round(residual_ratio, 3),
+            "regions": regions,
+        }
+        semantic_group_checks.append(check)
+        if "subtitle" in regions:
+            blocking_errors.append({"type": "dynamic_group_enters_subtitle_safe_zone", "group_id": group_id})
+        if "title" in regions:
+            blocking_errors.append({"type": "dynamic_group_owns_title_region_pixels", "group_id": group_id})
+        content_regions = [region for region in regions if region.startswith("content_")]
+        if "content_left" in content_regions and "content_right" in content_regions:
+            blocking_errors.append({"type": "group_crosses_left_and_right_regions", "group_id": group_id})
+        if residual_ratio > 0.5:
+            blocking_errors.append({"type": "too_many_residual_components", "group_id": group_id, "residual_ratio": round(residual_ratio, 3)})
+        elif residual_ratio > 0.25:
+            semantic_warnings.append({"type": "many_residual_components", "group_id": group_id, "residual_ratio": round(residual_ratio, 3)})
+        union = _union_bounds(bounds_list)
+        if union:
+            check["bbox"] = {"x": round(union[0]), "y": round(union[1]), "w": round(union[2] - union[0]), "h": round(union[3] - union[1])}
+    semantic_quality = {
+        "version": "ai_mask_semantic_quality_v2",
+        "passed": bool(accepted) and not blocking_errors,
+        "group_checks": semantic_group_checks,
+        "warnings": semantic_warnings,
+        "blocking_errors": blocking_errors,
+        "residual_assignment_summary": {
+            "assigned": sum(1 for item in residual_assignment_report if item.get("status") == "assigned"),
+            "unassigned": sum(1 for item in residual_assignment_report if item.get("status") == "unassigned"),
+        },
+    }
     quality = {
-        "version": "ai_mask_quality_v1",
+        "version": "ai_mask_quality_v2",
         "foreground_pixel_count": foreground_pixels,
         "assigned_foreground_pixel_count": assigned_pixels,
         "static_header_pixel_count": _rle_pixel_count(_merge_row_runs(static_elements, width, height)),
@@ -1164,14 +1268,19 @@ def _complete_component_coverage(
         "unassigned_component_count": len(unassigned_ids),
         "overlap_pixel_count": overlap_pixels,
         "exclusive_component_ownership": overlap_pixels == 0,
-        "passed": bool(accepted) and not unassigned_ids and coverage >= 0.995 and overlap_pixels == 0,
+        "semantic_quality_passed": semantic_quality["passed"],
+        "passed": bool(accepted) and coverage >= 0.9 and overlap_pixels == 0 and semantic_quality["passed"],
     }
     match_payload["unmatched_elements"] = unassigned_ids
     match_payload["quality"] = quality
-    if quality["passed"]:
+    match_payload["semantic_quality"] = semantic_quality
+    match_payload["residual_assignment_report"] = residual_assignment_report
+    if quality["passed"] and not semantic_warnings:
         match_payload["warnings"] = []
-    match_payload["matching_method"] = str(match_payload.get("matching_method") or "unknown") + "+exact_component_completion"
-    match_payload["component_assignment_policy"] = "dominant_island_2d_absorption_v2"
+    else:
+        match_payload["warnings"] = [*(match_payload.get("warnings", []) or []), *semantic_warnings, *blocking_errors]
+    match_payload["matching_method"] = str(match_payload.get("matching_method") or "unknown") + "+constrained_component_completion"
+    match_payload["component_assignment_policy"] = "semantic_object_seed_safe_residual_completion_v3"
     return match_payload
 
 
@@ -1469,7 +1578,16 @@ def _annotate_project(server_module: ModuleType, project: Any, settings: dict[st
         cleaned = _clean_match(raw, item["slide"], item["element_list"], settings, item["fallback"])
         cleaned = _consolidate_title_regions(cleaned, item["elements"], item["slide"], item["title_regions"])
         cleaned = _ensure_narrated_group_anchors(cleaned, item["elements"], item["slide"])
-        return _complete_component_coverage(cleaned, item["elements"])
+        try:
+            _write_json(item["slide_dir"] / "auto_mask" / "auto_match_before_completion.json", cleaned)
+        except Exception:
+            pass
+        completed = _complete_component_coverage(cleaned, item["elements"])
+        try:
+            _write_json(item["slide_dir"] / "auto_mask" / "auto_match_after_completion.json", completed)
+        except Exception:
+            pass
+        return completed
 
     matches: dict[str, dict[str, Any]] = {}
     if prepared:
@@ -1487,6 +1605,12 @@ def _annotate_project(server_module: ModuleType, project: Any, settings: dict[st
         slide_id = item["slide_id"]
         match = matches[slide_id]
         _write_json(item["slide_dir"] / "auto_mask" / "auto_match.json", match)
+        _write_json(item["slide_dir"] / "auto_mask" / "semantic_quality_report.json", {
+            "slide_id": slide_id,
+            "quality": match.get("quality", {}),
+            "semantic_quality": match.get("semantic_quality", {}),
+            "residual_assignment_report": match.get("residual_assignment_report", []),
+        })
         applied = _apply(manifest, item["slide"], item["elements"], match, settings)
         total_updated += applied["updated"]
         total_skipped += applied["skipped"]
@@ -1494,7 +1618,8 @@ def _annotate_project(server_module: ModuleType, project: Any, settings: dict[st
         total_unmatched_groups += unmatched_group_count
         slide_quality = match.get("quality", {}) if isinstance(match.get("quality"), dict) else {}
         quality_passed = quality_passed and bool(slide_quality.get("passed"))
-        slides_out.append({"slide_id": slide_id, "detected_element_count": len(item["element_list"]), "residual_component_count": len(item["elements"].get("residual_elements", [])), "matched_group_count": len(match.get("matches", [])), "updated_group_count": applied["updated"], "skipped_group_count": applied["skipped"], "unmatched_element_count": len(match.get("unmatched_elements", [])), "unmatched_group_count": unmatched_group_count, "matching_method": match.get("matching_method"), "quality": slide_quality, "warnings": match.get("warnings", [])})
+        semantic_quality = match.get("semantic_quality", {}) if isinstance(match.get("semantic_quality"), dict) else {}
+        slides_out.append({"slide_id": slide_id, "detected_element_count": len(item["element_list"]), "residual_component_count": len(item["elements"].get("residual_elements", [])), "matched_group_count": len(match.get("matches", [])), "updated_group_count": applied["updated"], "skipped_group_count": applied["skipped"], "unmatched_element_count": len(match.get("unmatched_elements", [])), "unmatched_group_count": unmatched_group_count, "matching_method": match.get("matching_method"), "quality": slide_quality, "semantic_quality": semantic_quality, "warnings": match.get("warnings", [])})
     complete = total_unmatched_groups == 0 and total_skipped == 0 and total_updated > 0 and quality_passed
     manifest["ai_mask_annotation"] = {
         "version": "ai_mask_annotation_v3_exact_rle",

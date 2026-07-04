@@ -6727,6 +6727,34 @@ def resolve_media_tool(name: str) -> Optional[str]:
     return shared_resolve_media_tool(name, repo_root=REPO_ROOT)
 
 
+def validate_remotion_public_assets(props: Dict[str, Any], public_dir: str) -> List[str]:
+    missing: List[str] = []
+    public_root = os.path.abspath(public_dir)
+
+    def check_asset(value: Any) -> None:
+        if not isinstance(value, str) or not value or re.match(r"^https?://", value):
+            return
+        asset_path = os.path.abspath(os.path.join(public_root, value.replace("/", os.sep)))
+        if not asset_path.startswith(public_root + os.sep) and asset_path != public_root:
+            missing.append(value)
+            return
+        if not os.path.exists(asset_path):
+            missing.append(value)
+
+    for slide in props.get("slides", []) if isinstance(props.get("slides"), list) else []:
+        scene = slide.get("scene") if isinstance(slide, dict) else None
+        layers = scene.get("layers") if isinstance(scene, dict) else None
+        if isinstance(layers, list):
+            for layer in layers:
+                if isinstance(layer, dict):
+                    check_asset(layer.get("asset"))
+                    check_asset(layer.get("cutout_asset"))
+        if isinstance(scene, dict) and isinstance(scene.get("canvas"), dict):
+            check_asset(scene["canvas"].get("background_asset"))
+        check_asset(slide.get("audio_file") if isinstance(slide, dict) else None)
+    return sorted(set(missing))
+
+
 def normalize_video_color_metadata(video_path: str, project: Project) -> bool:
     ffmpeg = resolve_media_tool("ffmpeg")
     if not ffmpeg:
@@ -6801,9 +6829,17 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"渲染前绑定语音时间轴失败: {bind_res.stderr}")
 
     build_props_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "build_remotion_props.py"))
+    remotion_public_dir = os.path.join(REPO_ROOT, "scripts", "remotion", "public")
     props_started = time.time()
     props_res = subprocess.run([
-        sys.executable, build_props_script, "--run-dir", project.run_dir
+        sys.executable,
+        build_props_script,
+        "--run-dir",
+        project.run_dir,
+        "--repo-root",
+        REPO_ROOT,
+        "--remotion-public-dir",
+        remotion_public_dir,
     ], capture_output=True, text=True, encoding="utf-8", errors="replace")
     
     if props_res.returncode != 0:
@@ -6880,6 +6916,16 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
     ]
     with open(props_json_path, "r", encoding="utf-8") as props_file:
         remotion_props_payload = json.load(props_file)
+    missing_assets = validate_remotion_public_assets(remotion_props_payload, remotion_public_dir)
+    if missing_assets:
+        write_project_log(
+            project,
+            "step8_public_asset_validation_error",
+            missing_assets=missing_assets[:50],
+            missing_count=len(missing_assets),
+            public_dir=remotion_public_dir,
+        )
+        raise HTTPException(status_code=500, detail=f"Remotion 渲染素材缺失: {missing_assets[:8]}")
     write_project_log(
         project,
         "step8_remotion_render_start",

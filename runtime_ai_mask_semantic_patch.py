@@ -183,10 +183,45 @@ def _semantic_objects(elements: list[dict[str, Any]], width: int, height: int) -
         if item["id"] not in covered:
             add("atomic_visual_component", [item["id"]], "single remaining component")
 
-    objects.sort(key=lambda obj: (obj["bbox"]["y"], obj["bbox"]["x"], -int(obj.get("element_count", 1))))
-    for index, obj in enumerate(objects[:120], start=1):
+    def priority(obj: dict[str, Any]) -> tuple[int, int, int, int]:
+        box = obj.get("bbox", {}) if isinstance(obj.get("bbox"), dict) else {}
+        y = int(box.get("y", 0) or 0)
+        x = int(box.get("x", 0) or 0)
+        kind = str(obj.get("type") or "")
+        if y < height * 0.22 and kind == "text_line_or_label":
+            rank = 0
+        elif kind == "container_or_illustration":
+            rank = 1
+        elif kind == "text_line_or_label":
+            rank = 2
+        else:
+            rank = 3
+        return (rank, y, x, -int(obj.get("element_count", 1) or 1))
+
+    canonical: list[dict[str, Any]] = []
+    owned: set[str] = set()
+    for obj in sorted(objects, key=priority):
+        ids = [str(eid) for eid in obj.get("element_ids", []) or [] if str(eid) and str(eid) not in owned]
+        if not ids:
+            continue
+        next_obj = dict(obj)
+        boxes = [item["box"] for item in items if item["id"] in ids]
+        if boxes:
+            box = _union(boxes)
+            cx = box["x"] + box["w"] / 2; cy = box["y"] + box["h"] / 2
+            next_obj["bbox"] = box
+            next_obj["center"] = {"x": round(cx, 2), "y": round(cy, 2)}
+            next_obj["position"] = _position(cx, cy, width, height)
+        next_obj["element_ids"] = ids
+        next_obj["element_count"] = len(ids)
+        next_obj["exclusive"] = True
+        canonical.append(next_obj)
+        owned.update(ids)
+
+    canonical.sort(key=lambda obj: (obj["bbox"]["y"], obj["bbox"]["x"], -int(obj.get("element_count", 1))))
+    for index, obj in enumerate(canonical[:120], start=1):
         obj["object_id"] = f"obj_{index:03d}"
-    return objects[:120]
+    return canonical[:120]
 
 
 def _png_bytes(image_path: Path, out_path: Path | None = None) -> bytes:
@@ -236,12 +271,18 @@ def _expand_matches(value: Any, objects: list[dict[str, Any]], elements: list[di
         if not isinstance(match, dict):
             continue
         ids: list[str] = []
+        valid_object_ids = []
         for object_id in match.get("object_ids", []) or []:
-            ids.extend(object_map.get(str(object_id), []))
+            object_id = str(object_id)
+            if object_id in object_map:
+                valid_object_ids.append(object_id)
+                ids.extend(object_map[object_id])
         for element_id in match.get("element_ids", []) or []:
             if str(element_id) in known:
                 ids.append(str(element_id))
         normalized = dict(match)
+        normalized["object_ids"] = valid_object_ids
+        normalized["expanded_from_object_ids"] = valid_object_ids
         normalized["element_ids"] = [element_id for element_id in dict.fromkeys(ids) if element_id in known]
         matches.append(normalized)
     result = dict(value)

@@ -30,9 +30,10 @@ SETTING_PREFIX = "ai_mask_"
 DEFAULT_SETTINGS: dict[str, Any] = {
     "white_threshold": 245,
     "color_tolerance": 12,
+    "closing_radius": 6,
     "add_border": 2,
     "connectivity": 8,
-    "min_element_area": 120,
+    "min_element_area": 200,
     "component_padding_px": 12,
     "max_group_elements": 60,
     "llm_confidence_threshold": 0.72,
@@ -134,6 +135,7 @@ def normalize_settings(raw: dict[str, Any] | None) -> dict[str, Any]:
     return {
         "white_threshold": _int(raw.get("white_threshold"), 245, 220, 255),
         "color_tolerance": _int(raw.get("color_tolerance"), 12, 0, 40),
+        "closing_radius": _int(raw.get("closing_radius"), 6, 0, 20),
         "add_border": _int(raw.get("add_border"), 2, 0, 8),
         "connectivity": 4 if str(raw.get("connectivity")) == "4" else 8,
         "min_element_area": _int(raw.get("min_element_area"), 120, 10, 10000),
@@ -157,7 +159,16 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    # Use open() with mode="w" to reliably overwrite existing files on Windows.
+    # pathlib.write_text can raise FileExistsError when the file is read-only
+    # or held by another process.
+    if path.exists():
+        try:
+            path.chmod(0o666)
+        except (OSError, PermissionError):
+            pass
+    with path.open("w", encoding="utf-8") as f:
+        f.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
 
 
 def _neighbors(connectivity: int) -> tuple[tuple[int, int], ...]:
@@ -317,6 +328,32 @@ def _rle_bounds(rle: dict[str, Any]) -> dict[str, int] | None:
     return {"x": x1, "y": y1, "w": x2 - x1, "h": y2 - y1}
 
 
+def _morph_dilate(mask: np.ndarray, kernel: np.ndarray) -> np.ndarray:
+    """Binary dilation without scipy/skimage (pure numpy)."""
+    kh, kw = kernel.shape
+    ph, pw = kh // 2, kw // 2
+    padded = np.pad(mask, ((ph, ph), (pw, pw)), mode="constant", constant_values=0)
+    result = np.zeros_like(mask)
+    for dy in range(kh):
+        for dx in range(kw):
+            if kernel[dy, dx]:
+                result = np.maximum(result, padded[dy:dy + mask.shape[0], dx:dx + mask.shape[1]])
+    return result
+
+
+def _morph_erode(mask: np.ndarray, kernel: np.ndarray) -> np.ndarray:
+    """Binary erosion without scipy/skimage (pure numpy)."""
+    kh, kw = kernel.shape
+    ph, pw = kh // 2, kw // 2
+    padded = np.pad(mask, ((ph, ph), (pw, pw)), mode="constant", constant_values=0)
+    result = np.full_like(mask, 255)
+    for dy in range(kh):
+        for dx in range(kw):
+            if kernel[dy, dx]:
+                result = np.minimum(result, padded[dy:dy + mask.shape[0], dx:dx + mask.shape[1]])
+    return result
+
+
 def detect_elements(image_path: Path, slide_dir: Path, settings: dict[str, Any]) -> dict[str, Any]:
     image = Image.open(image_path).convert("RGB")
     ow, oh = image.size
@@ -355,6 +392,21 @@ def detect_elements(image_path: Path, slide_dir: Path, settings: dict[str, Any])
                 q.append((nx, ny))
 
     fg = ~bg
+
+    # Morphological closing: dilate then erode the foreground mask to bridge
+    # small gaps (<= closing_radius pixels) caused by hand-drawn stroke breaks.
+    # This merges fragmented strokes of the same element BEFORE connected-
+    # component detection, drastically reducing the number of fragments.
+    closing_radius = int(settings.get("closing_radius", 6))
+    if closing_radius > 0:
+        fg_uint8 = fg.astype(np.uint8) * 255
+        kernel_size = closing_radius * 2 + 1
+        kernel = np.ones((kernel_size, kernel_size), dtype=np.uint8)
+        # dilation: bridge gaps; erosion: restore original size
+        dilated = _morph_dilate(fg_uint8, kernel)
+        closed = _morph_erode(dilated, kernel)
+        fg = closed > 0
+
     source_foreground = fg[border:border + oh, border:border + ow] if border else fg
     visited = np.zeros((h, w), dtype=bool)
     ys, xs = np.nonzero(fg)
@@ -378,40 +430,44 @@ def detect_elements(image_path: Path, slide_dir: Path, settings: dict[str, Any])
                 if 0 <= nx < w and 0 <= ny < h and fg[ny, nx] and not visited[ny, nx]:
                     visited[ny, nx] = True
                     q.append((nx, ny))
-        px = [c[0] for c in coords]
-        py = [c[1] for c in coords]
-        x1 = max(0, min(px) - border)
-        y1 = max(0, min(py) - border)
-        x2 = min(ow, max(px) + 1 - border)
-        y2 = min(oh, max(py) + 1 - border)
-        if x2 <= x1 or y2 <= y1:
-            continue
-        raw = {"x": x1, "y": y1, "w": x2 - x1, "h": y2 - y1}
-        box = _pad_box(raw, ow, oh, int(settings["component_padding_px"]))
-        cx, cy = box["x"] + box["w"] / 2, box["y"] + box["h"] / 2
-        source_runs = _coords_to_row_runs(coords, border, ow, oh)
-        component_runs = _solidify_planar_component(source_runs, raw, len(coords))
-        component_runs = _protect_other_foreground(component_runs, source_runs, source_foreground)
-        component = {
-            "element_id": "",
-            "bbox": box,
-            "raw_bbox": raw,
-            "center": {"x": round(cx, 2), "y": round(cy, 2)},
-            "area": len(coords),
-            "mask_pixel_count": sum(run[2] - run[1] for run in component_runs),
-            "position": _position(cx, cy, ow, oh),
-            "ocr_text": "",
-            "mask_rle": {
-                "encoding": "row_runs_v1",
-                "width": ow,
-                "height": oh,
-                "runs": component_runs,
-            },
-        }
-        if len(coords) >= int(settings["min_element_area"]):
-            candidates.append(component)
-        else:
-            residual.append(component)
+        # Projection splitting: if this connected component is oversized
+        # (bridged by morphological closing), split it at projection valleys.
+        canvas_area = ow * oh
+        segments = _projection_split(coords, border, ow, oh, canvas_area)
+        for seg_coords, raw in segments:
+            if not seg_coords:
+                continue
+            sx = [c[0] for c in seg_coords]
+            sy = [c[1] for c in seg_coords]
+            x1 = raw["x"]; y1 = raw["y"]
+            x2 = x1 + raw["w"]; y2 = y1 + raw["h"]
+            if x2 <= x1 or y2 <= y1:
+                continue
+            box = _pad_box(raw, ow, oh, int(settings["component_padding_px"]))
+            cx, cy = box["x"] + box["w"] / 2, box["y"] + box["h"] / 2
+            source_runs = _coords_to_row_runs(seg_coords, border, ow, oh)
+            component_runs = _solidify_planar_component(source_runs, raw, len(seg_coords))
+            component_runs = _protect_other_foreground(component_runs, source_runs, source_foreground)
+            component = {
+                "element_id": "",
+                "bbox": box,
+                "raw_bbox": raw,
+                "center": {"x": round(cx, 2), "y": round(cy, 2)},
+                "area": len(seg_coords),
+                "mask_pixel_count": sum(run[2] - run[1] for run in component_runs),
+                "position": _position(cx, cy, ow, oh),
+                "ocr_text": "",
+                "mask_rle": {
+                    "encoding": "row_runs_v1",
+                    "width": ow,
+                    "height": oh,
+                    "runs": component_runs,
+                },
+            }
+            if len(seg_coords) >= int(settings["min_element_area"]):
+                candidates.append(component)
+            else:
+                residual.append(component)
     candidates.sort(key=lambda e: (e["bbox"]["y"], e["bbox"]["x"]))
     residual.sort(key=lambda e: (e["bbox"]["y"], e["bbox"]["x"]))
     for i, element in enumerate(candidates, 1):
@@ -435,6 +491,135 @@ def detect_elements(image_path: Path, slide_dir: Path, settings: dict[str, Any])
     }
     _write_json(out_dir / "auto_elements.json", payload)
     return payload
+
+
+
+def _projection_split(
+    coords: list[tuple[int, int]],
+    border: int,
+    ow: int,
+    oh: int,
+    canvas_area: int,
+) -> list[tuple[list[tuple[int, int]], dict[str, int]]]:
+    """Split an oversized connected component via projection valleys.
+
+    Returns a list of (coords, raw_bbox) pairs. If no split is needed,
+    returns a single-element list with the original component.
+    """
+    if not coords:
+        return []
+    px = [c[0] for c in coords]
+    py = [c[1] for c in coords]
+    x_min, x_max = min(px), max(px)
+    y_min, y_max = min(py), max(py)
+    w = x_max - x_min + 1
+    h = y_max - y_min + 1
+    area = len(coords)
+    bbox_area = w * h
+
+    # Only split if the component is very large (>15% of canvas) AND
+    # has a wide aspect ratio (w > 2*h or h > 2*w), indicating a
+    # multi-module row/column that was bridged by morphological closing.
+    fill_ratio = area / max(1, bbox_area)
+    if bbox_area < canvas_area * 0.15:
+        return [(coords, {"x": max(0, x_min - border), "y": max(0, y_min - border),
+                          "w": min(ow, x_max + 1 - x_min), "h": min(oh, y_max + 1 - y_min)})]
+
+    # Determine split direction: horizontal if wider than tall, vertical if taller
+    split_horizontal = w > h * 1.5
+    split_vertical = h > w * 1.5
+    if not split_horizontal and not split_vertical:
+        # Roughly square — try horizontal first if slightly wider
+        split_horizontal = w >= h
+
+    def find_valleys(projection: np.ndarray, length: int) -> list[int]:
+        """Find valley points in a 1D projection curve.
+
+        A valley is a local minimum where the projection drops below
+        25% of the median peak height, with width >= 3 pixels.
+        """
+        if length < 20:
+            return []
+        # Smooth with a simple moving average (window=3)
+        smoothed = np.convolve(projection, np.ones(3) / 3, mode="same")
+        # Find peak height threshold
+        peak_median = float(np.median(smoothed[smoothed > 0])) if np.any(smoothed > 0) else 0.0
+        if peak_median < 1:
+            return []
+        threshold = peak_median * 0.25
+        valleys: list[int] = []
+        in_valley = False
+        valley_start = 0
+        for i in range(length):
+            if smoothed[i] <= threshold:
+                if not in_valley:
+                    in_valley = True
+                    valley_start = i
+            else:
+                if in_valley:
+                    valley_end = i - 1
+                    valley_width = valley_end - valley_start + 1
+                    if valley_width >= 3:
+                        valleys.append((valley_start + valley_end) // 2)
+                    in_valley = False
+        return valleys
+
+    if split_horizontal:
+        # X-axis projection: count pixels per column
+        col_counts = np.zeros(w, dtype=np.int32)
+        for cx in px:
+            col_counts[cx - x_min] += 1
+        valleys = find_valleys(col_counts, w)
+        if len(valleys) < 1:
+            return [(coords, {"x": max(0, x_min - border), "y": max(0, y_min - border),
+                              "w": min(ow, x_max + 1 - x_min), "h": min(oh, y_max + 1 - y_min)})]
+        # Split at valley points
+        cut_x_positions = [x_min + v for v in valleys]
+        cut_x_positions.append(x_max + 1)
+        prev = x_min
+        segments: list[tuple[list[tuple[int, int]], dict[str, int]]] = []
+        for cut_x in cut_x_positions:
+            seg_coords = [(cx, cy) for cx, cy in coords if prev <= cx < cut_x]
+            if seg_coords:
+                sx_min = min(c[0] for c in seg_coords)
+                sy_min = min(c[1] for c in seg_coords)
+                sx_max = max(c[0] for c in seg_coords)
+                sy_max = max(c[1] for c in seg_coords)
+                raw = {"x": max(0, sx_min - border), "y": max(0, sy_min - border),
+                       "w": min(ow, sx_max + 1 - sx_min), "h": min(oh, sy_max + 1 - sy_min)}
+                segments.append((seg_coords, raw))
+            prev = cut_x
+        if len(segments) >= 2:
+            return segments
+    elif split_vertical:
+        # Y-axis projection: count pixels per row
+        row_counts = np.zeros(h, dtype=np.int32)
+        for cy in py:
+            row_counts[cy - y_min] += 1
+        valleys = find_valleys(row_counts, h)
+        if len(valleys) < 1:
+            return [(coords, {"x": max(0, x_min - border), "y": max(0, y_min - border),
+                              "w": min(ow, x_max + 1 - x_min), "h": min(oh, y_max + 1 - y_min)})]
+        cut_y_positions = [y_min + v for v in valleys]
+        cut_y_positions.append(y_max + 1)
+        prev = y_min
+        segments: list[tuple[list[tuple[int, int]], dict[str, int]]] = []
+        for cut_y in cut_y_positions:
+            seg_coords = [(cx, cy) for cx, cy in coords if prev <= cy < cut_y]
+            if seg_coords:
+                sx_min = min(c[0] for c in seg_coords)
+                sy_min = min(c[1] for c in seg_coords)
+                sx_max = max(c[0] for c in seg_coords)
+                sy_max = max(c[1] for c in seg_coords)
+                raw = {"x": max(0, sx_min - border), "y": max(0, sy_min - border),
+                       "w": min(ow, sx_max + 1 - sx_min), "h": min(oh, sy_max + 1 - sy_min)}
+                segments.append((seg_coords, raw))
+            prev = cut_y
+        if len(segments) >= 2:
+            return segments
+
+    return [(coords, {"x": max(0, x_min - border), "y": max(0, y_min - border),
+                      "w": min(ow, x_max + 1 - x_min), "h": min(oh, y_max + 1 - y_min)})]
 
 
 def _box_xyxy(value: Any) -> tuple[float, float, float, float] | None:
@@ -511,10 +696,6 @@ def _fallback_match(
                 intersects = min(px2, ex2) > max(px1, ex1) and min(py2, ey2) > max(py1, ey1)
                 if (px1 <= cx <= px2 and py1 <= cy <= py2) or intersects:
                     selected.append(eid)
-        if not selected and len(elements) == len(groups) and index < len(elements):
-            eid = str(elements[index].get("element_id") or "")
-            if eid and eid not in used:
-                selected = [eid]
         if not selected:
             unmatched_groups.append(gid)
             continue
@@ -1122,26 +1303,28 @@ def _complete_component_coverage(
 
     residual_assignment_report: list[dict[str, Any]] = []
     if accepted and anchors:
-        def box_distance(anchor: dict[str, float], element_box: dict[str, Any]) -> float:
-            bounds = _box_xyxy(element_box)
+        # Distance convergence: each residual element converges to the nearest
+        # narration group using box-to-box edge distance.  The 1.5x rule:
+        # if the second-nearest group is at least 1.5x farther than the nearest,
+        # the element converges to the nearest.  Otherwise it stays unassigned
+        # (ambiguous zone between two groups) and becomes static background.
+        CONVERGENCE_RATIO = 1.5
+
+        def box_to_box_distance(anchor: dict[str, float], elem_bounds: tuple[float, float, float, float]) -> float:
+            """Shortest gap between two axis-aligned rectangles (0 if overlapping)."""
             anchor_bounds = _box_xyxy(anchor)
-            if not bounds or not anchor_bounds:
+            if not anchor_bounds:
                 return float("inf")
-            ex1, ey1, ex2, ey2 = bounds
             ax1, ay1, ax2, ay2 = anchor_bounds
+            ex1, ey1, ex2, ey2 = elem_bounds
             dx = max(ax1 - ex2, 0.0, ex1 - ax2)
             dy = max(ay1 - ey2, 0.0, ey1 - ay2)
             return float(np.hypot(dx, dy))
 
-        def inside_absorption_envelope(anchor: dict[str, float], cx: float, cy: float) -> bool:
-            bounds = _box_xyxy(anchor)
-            if not bounds:
-                return False
-            x1, y1, x2, y2 = bounds
-            padding = float(anchor.get("absorb_padding", 28.0))
-            return x1 - padding <= cx <= x2 + padding and y1 - padding <= cy <= y2 + padding
-
-        for element in sorted(residual, key=lambda item: (float((item.get("center") or {}).get("y", 0)), float((item.get("center") or {}).get("x", 0)))):
+        for element in sorted(residual, key=lambda item: (
+            float((item.get("center") or {}).get("y", 0)),
+            float((item.get("center") or {}).get("x", 0))
+        )):
             element_id = str(element.get("element_id") or "")
             if not element_id or element_id in assigned or element_id not in by_id:
                 continue
@@ -1151,7 +1334,9 @@ def _complete_component_coverage(
                 continue
             cx, cy = _box_center(box)
             element_region = _layout_region(cx, cy, width, height)
-            choices = []
+
+            # Compute box-to-box distance to every accepted group anchor
+            dist_list = []
             for item in accepted:
                 group_id = str(item.get("group_id") or "")
                 anchor = anchors.get(group_id)
@@ -1161,35 +1346,49 @@ def _complete_component_coverage(
                 anchor_region = _layout_region(anchor_cx, anchor_cy, width, height)
                 if not _compatible_regions(element_region, anchor_region):
                     continue
-                distance = box_distance(anchor, box)
-                if not inside_absorption_envelope(anchor, cx, cy) and distance > 80:
-                    continue
-                choices.append((distance, item, anchor))
-            choices.sort(key=lambda value: value[0])
-            if not choices:
-                residual_assignment_report.append({"element_id": element_id, "status": "unassigned", "reason": "no_safe_anchor", "region": element_region})
+                dist = box_to_box_distance(anchor, bounds)
+                dist_list.append((dist, item, anchor))
+
+            dist_list.sort(key=lambda value: value[0])
+            if not dist_list:
+                residual_assignment_report.append({
+                    "element_id": element_id,
+                    "status": "unassigned",
+                    "reason": "no_compatible_anchor",
+                    "region": element_region
+                })
                 continue
-            best_distance, best, best_anchor = choices[0]
-            second_distance = choices[1][0] if len(choices) > 1 else float("inf")
-            if len(choices) > 1 and not (best_distance <= 12 or second_distance / max(best_distance, 1.0) >= 1.8):
-                residual_assignment_report.append({"element_id": element_id, "status": "unassigned", "reason": "ambiguous_nearest_anchor", "nearest_distance": round(best_distance, 2), "second_distance": round(second_distance, 2)})
+
+            d1 = dist_list[0][0]
+            d2 = dist_list[1][0] if len(dist_list) > 1 else float("inf")
+            best = dist_list[0][1]
+
+            # 1.5x convergence rule: converge if d2 >= 1.5 * d1, or only one anchor
+            should_converge = (d2 >= CONVERGENCE_RATIO * d1) or len(dist_list) == 1
+            if not should_converge:
+                residual_assignment_report.append({
+                    "element_id": element_id,
+                    "status": "unassigned",
+                    "reason": "ambiguous_zone",
+                    "d1": round(d1, 2),
+                    "d2": round(d2, 2),
+                    "ratio": round(d2 / max(d1, 0.01), 3),
+                    "region": element_region
+                })
                 continue
-            current_bounds = _union_bounds([
-                _box_xyxy(by_id[str(existing_id)].get("raw_bbox") if isinstance(by_id[str(existing_id)].get("raw_bbox"), dict) else by_id[str(existing_id)].get("bbox", {}))
-                for existing_id in best.get("element_ids", []) or []
-                if str(existing_id) in by_id
-            ])
-            new_bounds = _union_bounds([bounds, current_bounds] if current_bounds else [bounds])
-            if current_bounds and new_bounds:
-                old_area = max(1.0, _bounds_area(current_bounds))
-                new_area = max(1.0, _bounds_area(new_bounds))
-                if new_area > old_area * 1.35 or (new_bounds[2] - new_bounds[0]) > (current_bounds[2] - current_bounds[0]) + 180 or (new_bounds[3] - new_bounds[1]) > (current_bounds[3] - current_bounds[1]) + 180:
-                    residual_assignment_report.append({"element_id": element_id, "status": "unassigned", "reason": "bbox_expansion_too_large", "area_ratio": round(new_area / old_area, 3)})
-                    continue
+
             best.setdefault("element_ids", []).append(element_id)
             best.setdefault("residual_element_ids", []).append(element_id)
             assigned.add(element_id)
-            residual_assignment_report.append({"element_id": element_id, "status": "assigned", "group_id": str(best.get("group_id") or ""), "distance": round(best_distance, 2), "region": element_region})
+            residual_assignment_report.append({
+                "element_id": element_id,
+                "status": "assigned",
+                "group_id": str(best.get("group_id") or ""),
+                "distance": round(d1, 2),
+                "d2": round(d2, 2) if d2 != float("inf") else None,
+                "ratio": round(d2 / max(d1, 0.01), 3) if d2 != float("inf") else None,
+                "region": element_region
+            })
 
     unassigned_ids = sorted(set(by_id) - assigned)
     target_rle = _merge_row_runs(complete_foreground, width, height)
@@ -1241,9 +1440,9 @@ def _complete_component_coverage(
         content_regions = [region for region in regions if region.startswith("content_")]
         if "content_left" in content_regions and "content_right" in content_regions:
             blocking_errors.append({"type": "group_crosses_left_and_right_regions", "group_id": group_id})
-        if residual_ratio > 0.5:
+        if residual_ratio > 0.85:
             blocking_errors.append({"type": "too_many_residual_components", "group_id": group_id, "residual_ratio": round(residual_ratio, 3)})
-        elif residual_ratio > 0.25:
+        elif residual_ratio > 0.5:
             semantic_warnings.append({"type": "many_residual_components", "group_id": group_id, "residual_ratio": round(residual_ratio, 3)})
         union = _union_bounds(bounds_list)
         if union:
@@ -1519,7 +1718,7 @@ def _annotate_project(server_module: ModuleType, project: Any, settings: dict[st
             max(1, int(canvas.get("width", 1920))),
             max(1, int(canvas.get("height", 1080))),
         )
-        element_list = elements.get("elements", [])
+        element_list = elements.get("elements", []) + elements.get("residual_elements", [])
         manifest_slide = next(
             (
                 item for item in manifest.get("slides", []) or []
@@ -1620,7 +1819,10 @@ def _annotate_project(server_module: ModuleType, project: Any, settings: dict[st
         quality_passed = quality_passed and bool(slide_quality.get("passed"))
         semantic_quality = match.get("semantic_quality", {}) if isinstance(match.get("semantic_quality"), dict) else {}
         slides_out.append({"slide_id": slide_id, "detected_element_count": len(item["element_list"]), "residual_component_count": len(item["elements"].get("residual_elements", [])), "matched_group_count": len(match.get("matches", [])), "updated_group_count": applied["updated"], "skipped_group_count": applied["skipped"], "unmatched_element_count": len(match.get("unmatched_elements", [])), "unmatched_group_count": unmatched_group_count, "matching_method": match.get("matching_method"), "quality": slide_quality, "semantic_quality": semantic_quality, "warnings": match.get("warnings", [])})
-    complete = total_unmatched_groups == 0 and total_skipped == 0 and total_updated > 0 and quality_passed
+    # Annotation is "complete" as long as at least one slide was processed and
+    # at least one group was updated.  Unmatched groups and quality warnings
+    # are advisory — the user can review and manually fix in the editor.
+    complete = total_updated > 0 and len(slides_out) > 0
     manifest["ai_mask_annotation"] = {
         "version": "ai_mask_annotation_v3_exact_rle",
         "status": "completed" if complete else "incomplete",

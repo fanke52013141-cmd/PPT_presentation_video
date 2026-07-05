@@ -3748,7 +3748,7 @@ function buildMaskDisplayLayer(item, idx) {
 
   const displayLayer = createStep5OffscreenCanvas();
   const displayCtx = displayLayer.getContext('2d');
-  displayCtx.fillStyle = hexToRgba(color, isSelected ? 0.46 : 0.34);
+  displayCtx.fillStyle = hexToRgba(color, isSelected ? 0.68 : 0.55);
   displayCtx.fillRect(0, 0, 1920, 1080);
   displayCtx.globalCompositeOperation = 'destination-in';
   displayCtx.drawImage(maskLayer, 0, 0);

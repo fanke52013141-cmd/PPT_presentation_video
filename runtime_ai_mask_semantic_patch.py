@@ -24,8 +24,8 @@ DEFAULT_METHODOLOGY = """你是中文 PPT 视频的 AI Mask 语义标注专家�
 任务：把当前 Slide 的画面语义对象绑定到已有 visual_groups 和 narration_beats。你不是重新生成分镜，也不是重写演讲稿；你只做“画面语义对象 → 语块 → 演讲稿 beat”的匹配。
 
 输入包含两张图：
-- image_1_clean_original：未画框的完整原图，用来理解全局版式、阅读顺序和真实语义。
-- image_2_semantic_overlay：在完整原图上标注的 semantic_objects.object_id，用来选择对象 ID。
+- image_full：未画框的完整原图，用来理解全局版式、阅读顺序和真实语义。
+- object_XXX 切片图：每个语义对象的裁切图，图上标注了 object_id。根据切片图的视觉内容判断它对应哪个 visual_group 和 narration_beat。
 
 可修改方法论：
 1. group_id 只能使用输入 visual_groups[].id，不要发明新的 group。
@@ -266,6 +266,10 @@ def _expand_matches(value: Any, objects: list[dict[str, Any]], elements: list[di
         return value
     object_map = {str(obj.get("object_id") or ""): [str(eid) for eid in obj.get("element_ids", []) or []] for obj in objects}
     known = {str(element.get("element_id") or "") for element in elements if str(element.get("element_id") or "")}
+    # Also include element_ids from objects so absorbed residual fragments
+    # (which are not in the candidates list) are not filtered out.
+    for obj in objects:
+        known.update(str(eid) for eid in obj.get("element_ids", []) or [])
     matches = []
     for match in value.get("matches", []) or []:
         if not isinstance(match, dict):
@@ -299,6 +303,232 @@ def _patch_read_prompts(original: Any, server_module: ModuleType) -> tuple[str, 
     return methodology, output_structure
 
 
+
+def _obj_bounds_xyxy(obj: dict[str, Any]) -> tuple[float, float, float, float] | None:
+    box = obj.get("bbox") if isinstance(obj.get("bbox"), dict) else None
+    if not box:
+        return None
+    try:
+        x1 = float(box.get("x", 0)); y1 = float(box.get("y", 0))
+        return x1, y1, x1 + float(box.get("w", 0)), y1 + float(box.get("h", 0))
+    except (TypeError, ValueError):
+        return None
+
+
+def _elem_bounds_xyxy(elem: dict[str, Any]) -> tuple[float, float, float, float] | None:
+    source = elem.get("raw_bbox") if isinstance(elem.get("raw_bbox"), dict) else elem.get("bbox")
+    if not isinstance(source, dict):
+        return None
+    try:
+        x1 = float(source.get("x", 0)); y1 = float(source.get("y", 0))
+        return x1, y1, x1 + float(source.get("w", 0)), y1 + float(source.get("h", 0))
+    except (TypeError, ValueError):
+        return None
+
+
+def _box_gap(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:
+    """Shortest gap between two axis-aligned rectangles (0 if overlapping)."""
+    ax1, ay1, ax2, ay2 = a
+    bx1, by1, bx2, by2 = b
+    dx = max(ax1 - bx2, 0.0, bx1 - ax2)
+    dy = max(ay1 - by2, 0.0, by1 - ay2)
+    return float((dx * dx + dy * dy) ** 0.5)
+
+
+def _union_bounds_list(bounds_list: list[tuple[float, float, float, float]]) -> dict[str, int]:
+    x1 = min(b[0] for b in bounds_list); y1 = min(b[1] for b in bounds_list)
+    x2 = max(b[2] for b in bounds_list); y2 = max(b[3] for b in bounds_list)
+    return {"x": max(0, round(x1)), "y": max(0, round(y1)), "w": max(1, round(x2 - x1)), "h": max(1, round(y2 - y1))}
+
+
+def _absorb_residuals_into_objects(
+    objects: list[dict[str, Any]],
+    residual: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Absorb residual fragments into the nearest semantic_object by box-to-box distance.
+
+    Each residual element is assigned to its single nearest object (no 1.5x
+    ambiguity gate - we want every fragment absorbed before VL sees the crops).
+    Object bbox and element_ids are updated to include absorbed fragments.
+    """
+    if not objects or not residual:
+        return objects
+    obj_bounds = []
+    for obj in objects:
+        bounds = _obj_bounds_xyxy(obj)
+        obj_bounds.append(bounds if bounds else (0.0, 0.0, 0.0, 0.0))
+    elem_map: dict[str, dict[str, Any]] = {}
+    for elem in residual:
+        eid = str(elem.get("element_id") or "")
+        if eid:
+            elem_map[eid] = elem
+        eb = _elem_bounds_xyxy(elem)
+        if not eb:
+            continue
+        best_idx = -1
+        best_dist = float("inf")
+        for idx, ob in enumerate(obj_bounds):
+            d = _box_gap(ob, eb)
+            if d < best_dist:
+                best_dist = d
+                best_idx = idx
+        if best_idx < 0:
+            continue
+        obj = objects[best_idx]
+        existing = list(obj.get("element_ids", []) or [])
+        if eid not in existing:
+            existing.append(eid)
+            obj["element_ids"] = existing
+            obj["element_count"] = len(existing)
+            obj.setdefault("absorbed_residual_ids", []).append(eid)
+    # Recompute bbox for objects that absorbed fragments
+    for obj in objects:
+        absorbed = obj.get("absorbed_residual_ids", [])
+        if not absorbed:
+            continue
+        all_bounds = []
+        ob = _obj_bounds_xyxy(obj)
+        if ob:
+            all_bounds.append(ob)
+        for eid in absorbed:
+            elem = elem_map.get(eid)
+            if elem:
+                eb = _elem_bounds_xyxy(elem)
+                if eb:
+                    all_bounds.append(eb)
+        if len(all_bounds) > 1:
+            obj["bbox"] = _union_bounds_list(all_bounds)
+    return objects
+
+
+def _spatial_cluster_objects(
+    objects: list[dict[str, Any]],
+    target_count: int,
+) -> list[dict[str, Any]]:
+    """Cluster spatially-adjacent semantic_objects into ~target_count groups.
+
+    Uses agglomerative merging by nearest box-to-box distance. Each cluster
+    becomes one composite object whose bbox is the union of its members.
+    """
+    if len(objects) <= target_count or target_count < 1:
+        return objects
+    clusters: list[list[dict[str, Any]]] = [[obj] for obj in objects]
+    cluster_bounds: list[tuple[float, float, float, float]] = []
+    for cluster in clusters:
+        bounds_list = [_obj_bounds_xyxy(obj) for obj in cluster]
+        bounds_list = [b for b in bounds_list if b]
+        if bounds_list:
+            x1 = min(b[0] for b in bounds_list); y1 = min(b[1] for b in bounds_list)
+            x2 = max(b[2] for b in bounds_list); y2 = max(b[3] for b in bounds_list)
+            cluster_bounds.append((x1, y1, x2, y2))
+        else:
+            cluster_bounds.append((0.0, 0.0, 0.0, 0.0))
+
+    while len(clusters) > target_count:
+        best_i = -1
+        best_j = -1
+        best_dist = float("inf")
+        for i in range(len(clusters)):
+            for j in range(i + 1, len(clusters)):
+                d = _box_gap(cluster_bounds[i], cluster_bounds[j])
+                if d < best_dist:
+                    best_dist = d
+                    best_i = i
+                    best_j = j
+        if best_i < 0:
+            break
+        merged_bounds_list = [cluster_bounds[best_i], cluster_bounds[best_j]]
+        x1 = min(b[0] for b in merged_bounds_list); y1 = min(b[1] for b in merged_bounds_list)
+        x2 = max(b[2] for b in merged_bounds_list); y2 = max(b[3] for b in merged_bounds_list)
+        clusters[best_i] = clusters[best_i] + clusters[best_j]
+        cluster_bounds[best_i] = (x1, y1, x2, y2)
+        clusters.pop(best_j)
+        cluster_bounds.pop(best_j)
+
+    result: list[dict[str, Any]] = []
+    for idx, cluster in enumerate(clusters):
+        if len(cluster) == 1:
+            obj = dict(cluster[0])
+            obj["object_id"] = f"obj_{idx + 1:03d}"
+            obj["cluster_member_count"] = 1
+            result.append(obj)
+            continue
+        all_eids: list[str] = []
+        for member in cluster:
+            all_eids.extend(str(eid) for eid in member.get("element_ids", []) or [])
+        unique_eids = list(dict.fromkeys(all_eids))
+        bounds_list = [_obj_bounds_xyxy(obj) for obj in cluster]
+        bounds_list = [b for b in bounds_list if b]
+        bbox = _union_bounds_list(bounds_list) if bounds_list else {"x": 0, "y": 0, "w": 1, "h": 1}
+        cx = bbox["x"] + bbox["w"] / 2
+        cy = bbox["y"] + bbox["h"] / 2
+        result.append({
+            "object_id": f"obj_{idx + 1:03d}",
+            "type": "spatial_cluster",
+            "bbox": bbox,
+            "center": {"x": round(cx, 2), "y": round(cy, 2)},
+            "element_ids": unique_eids,
+            "element_count": len(unique_eids),
+            "cluster_member_count": len(cluster),
+            "member_object_ids": [str(m.get("object_id") or "") for m in cluster],
+            "reason": f"spatial cluster of {len(cluster)} adjacent objects",
+            "exclusive": True,
+        })
+    return result
+
+
+def _crop_object_bytes(image_path: Path, obj: dict[str, Any], max_width: int = 400) -> bytes | None:
+
+    """Crop a single semantic_object region from the slide image and return PNG bytes.
+
+    Adds a small padding around the bbox and draws the object_id label on top
+    so VL can identify which crop is which object.
+    """
+    box = obj.get("bbox") if isinstance(obj.get("bbox"), dict) else None
+    if not box:
+        return None
+    try:
+        image = Image.open(image_path).convert("RGB")
+        ow, oh = image.size
+        sx = MAX_IMAGE_WIDTH / ow if ow > MAX_IMAGE_WIDTH else 1.0
+        if ow > MAX_IMAGE_WIDTH:
+            ratio = MAX_IMAGE_WIDTH / ow
+            image = image.resize((MAX_IMAGE_WIDTH, max(1, int(oh * ratio))), Image.Resampling.LANCZOS)
+        x = int(float(box.get("x", 0)) * sx)
+        y = int(float(box.get("y", 0)) * sx)
+        w = int(float(box.get("w", 0)) * sx)
+        h = int(float(box.get("h", 0)) * sx)
+        # Add padding so VL sees context around the element
+        pad = max(8, min(20, w // 10))
+        x1 = max(0, x - pad)
+        y1 = max(0, y - pad)
+        x2 = min(image.width, x + w + pad)
+        y2 = min(image.height, y + h + pad)
+        if x2 <= x1 or y2 <= y1:
+            return None
+        crop = image.crop((x1, y1, x2, y2))
+        # Resize if too wide, but keep aspect ratio
+        if crop.width > max_width:
+            ratio = max_width / crop.width
+            crop = crop.resize((max_width, max(1, int(crop.height * ratio))), Image.Resampling.LANCZOS)
+        # Draw object_id label at top-left
+        draw = ImageDraw.Draw(crop)
+        label = str(obj.get("object_id") or "")
+        label_bg = (255, 255, 200)
+        label_fg = (180, 30, 50)
+        try:
+            bbox = draw.textbbox((4, 2), label)
+            draw.rectangle(bbox, fill=label_bg)
+            draw.text((4, 2), label, fill=label_fg)
+        except Exception:
+            pass
+        buffer = io.BytesIO()
+        crop.save(buffer, format="PNG")
+        return buffer.getvalue()
+    except Exception:
+        return None
+
+
 def _patched_vision_match(base_module: ModuleType):
     def vision_match(server_module: ModuleType, project: Any, slide: dict[str, Any], elements: list[dict[str, Any]], image_path: Path, overlay_path: Path, methodology: str, output_structure: str, settings: dict[str, Any]) -> dict[str, Any] | None:
         api_key = server_module.get_setting("llm_api_key")
@@ -307,18 +537,37 @@ def _patched_vision_match(base_module: ModuleType):
         with Image.open(image_path) as image:
             width, height = image.size
         objects = _semantic_objects(elements, width, height)
+        # Read residual fragments from auto_elements.json so we can absorb them
+        # into semantic_objects BEFORE VL sees the crops.  This ensures VL
+        # gets complete object crops that include nearby stray fragments.
+        residual_elements: list[dict[str, Any]] = []
+        try:
+            ae_path = overlay_path.parent / "auto_elements.json"
+            if ae_path.exists():
+                ae_data = json.loads(ae_path.read_text(encoding="utf-8"))
+                residual_elements = list(ae_data.get("residual_elements", []) or [])
+        except Exception:
+            pass
+        objects = _absorb_residuals_into_objects(objects, residual_elements)
+        # Spatially cluster objects so VL sees at most (beats + 3) crops.
+        beat_count = len(slide.get("narration_beats", []) or [])
+        target_count = max(1, min(12, beat_count + 3))
+        pre_cluster_count = len(objects)
+        objects = _spatial_cluster_objects(objects, target_count)
         try:
             base_module._write_json(overlay_path.parent / "semantic_objects.json", {
-                "version": "semantic_objects_v1",
+                "version": "semantic_objects_v2_clustered",
                 "slide_id": slide.get("slide_id"),
                 "canvas": {"width": width, "height": height},
                 "objects": objects,
                 "source_auto_element_count": len(elements),
+                "residual_absorbed_count": len(residual_elements),
+                "pre_cluster_object_count": pre_cluster_count,
+                "target_cluster_count": target_count,
             })
         except Exception:
             pass
         clean_bytes = _png_bytes(image_path, overlay_path.with_name("clean_original_for_vision.png"))
-        overlay_bytes = _overlay_bytes(image_path, objects, overlay_path)
         model, _ = base_module._resolved_vision_model(server_module)
         base_url = server_module.get_setting("llm_base_url")
         vendor_options: dict[str, Any] = {}
@@ -326,24 +575,55 @@ def _patched_vision_match(base_module: ModuleType):
         if callable(option_builder):
             vendor_options = option_builder(model, base_url) or {}
         client = server_module.get_openai_client(api_key=api_key, base_url=base_url, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, max_retries=0)
+
+        # Build crop images for each semantic_object — VL sees actual visual
+        # content, not coordinate numbers. Each crop is labeled with object_id.
+        crop_entries = []
+        for obj in objects:
+            crop_bytes = _crop_object_bytes(image_path, obj)
+            if crop_bytes:
+                crop_entries.append({
+                    "object_id": obj.get("object_id"),
+                    "type": obj.get("type"),
+                    "element_count": obj.get("element_count"),
+                    "image_data": crop_bytes,
+                })
+
+        # Simplified payload: slide context + object IDs (no coordinates)
         payload = {
             "slide": {key: slide.get(key) for key in ("slide_id", "main_title", "subtitle", "core_message", "body_content", "visual_groups", "narration_beats")},
-            "semantic_objects": [{key: obj.get(key) for key in ("object_id", "type", "bbox", "center", "position", "element_ids", "element_count", "reason")} for obj in objects],
-            "auto_elements": [{key: element.get(key) for key in ("element_id", "bbox", "raw_bbox", "center", "area", "position", "ocr_text")} for element in elements],
-            "instruction": "先看 image_1_clean_original 理解完整画面，再看 image_2_semantic_overlay 选择 semantic_objects.object_id。优先输出 object_ids；element_ids 必须是所选 semantic_objects.element_ids 的完整展开，不能只选其中的碎片。",
+            "semantic_objects": [
+                {
+                    "object_id": obj.get("object_id"),
+                    "type": obj.get("type"),
+                    "element_count": obj.get("element_count"),
+                    "bbox": obj.get("bbox", {}),
+                    "center": obj.get("center", {}),
+                    "cluster_member_count": obj.get("cluster_member_count", 1),
+                }
+                for obj in objects
+            ],
+            "instruction": "先看完整原图理解全局版式和阅读顺序，再看每个 object_XXX 的切片图及其 bbox 坐标。根据切片图视觉内容和空间位置（bbox 的 x/y/w/h），选择 object_id 对应到 visual_groups 和 narration_beats。一个 object 可能包含多个空间相邻的语义元素（cluster_member_count>1），应作为整体归属。输出 object_ids 和 element_ids。",
         }
         prompt = methodology.strip() + "\n\n--- OUTPUT STRUCTURE / 输出结构 ---\n" + output_structure.strip()
         clean_url = "data:image/png;base64," + base64.b64encode(clean_bytes).decode("ascii")
-        overlay_url = "data:image/png;base64," + base64.b64encode(overlay_bytes).decode("ascii")
+
+        # Build user message: text payload + full image + each crop image
+        user_content = [
+            {"type": "text", "text": json.dumps(payload, ensure_ascii=False, indent=2)},
+            {"type": "text", "text": "完整原图（image_full）：理解全局版式和阅读顺序。"},
+            {"type": "image_url", "image_url": {"url": clean_url}},
+        ]
+        for entry in crop_entries:
+            oid = entry["object_id"]
+            otype = entry["type"]
+            crop_url = "data:image/png;base64," + base64.b64encode(entry["image_data"]).decode("ascii")
+            user_content.append({"type": "text", "text": f"{oid}（类型:{otype}）：此对象的切片图。"})
+            user_content.append({"type": "image_url", "image_url": {"url": crop_url}})
+
         messages = [
             {"role": "system", "content": prompt},
-            {"role": "user", "content": [
-                {"type": "text", "text": json.dumps(payload, ensure_ascii=False, indent=2)},
-                {"type": "text", "text": "image_1_clean_original：未标注完整原图。"},
-                {"type": "image_url", "image_url": {"url": clean_url}},
-                {"type": "text", "text": "image_2_semantic_overlay：完整原图上的 semantic_objects.object_id 标注。"},
-                {"type": "image_url", "image_url": {"url": overlay_url}},
-            ]},
+            {"role": "user", "content": user_content},
         ]
         try:
             try:

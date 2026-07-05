@@ -26,6 +26,16 @@ The UI is intentionally compressed to six user-visible steps, while the backend 
 
 When writing user-facing documentation, prefer the six visible steps. When changing API routes, validators, or runtime artifacts, use the internal step numbers and keep this mapping accurate.
 
+## UI Style Source of Truth
+
+The current product UI is the soft blue-purple "Soft Pastel Studio" interface, not the older black-outline sketch style.
+
+- Primary reference: `docs/ui_style_reference.md`.
+- Implementation reference: the lower half of `static/style.css`, especially `/* Soft Pastel Studio refinement layer */`.
+- Do not treat the early `Flat Outline UI` block in `static/style.css` as the intended design direction. It is a legacy compatibility foundation for existing class names such as `.sketch-border`, `.sketch-dashed`, and `.sketch-shadow`.
+- Keep existing `sketch-*` class names only for DOM compatibility unless doing a deliberate CSS migration. New visual work should use the blue-purple palette, soft borders, rounded cards, glass header, and gradient AI action buttons from the Soft Pastel Studio layer.
+- If the UI appears as heavy black borders or hard offset shadows, first check whether the browser is loading the full `static/style.css` and whether the Soft Pastel Studio layer is present.
+
 The production visual path is:
 
 ```text

@@ -5,30 +5,8 @@
       "slide_id": "slide_001",
       "slide_title": "这一页的标题",
       "slide_subtitle": "可选副标题，没有则为空字符串",
-      "body_points": [
-        {
-          "point_id": "point_001",
-          "text": "正文要点 1",
-          "purpose": "这个要点承担的讲解作用"
-        },
-        {
-          "point_id": "point_002",
-          "text": "正文要点 2",
-          "purpose": "这个要点承担的讲解作用"
-        }
-      ],
-      "narration_segments": [
-        {
-          "segment_id": "seg_001",
-          "narration": "演讲稿原文片段。",
-          "purpose": "这一段的讲解目的。"
-        },
-        {
-          "segment_id": "seg_002",
-          "narration": "第二段演讲稿原文。",
-          "purpose": "第二段的讲解目的。"
-        }
-      ]
+      "body": "这一页正文要表达的核心内容，保持简单，不要拆成要点。",
+      "narration": "这一页完整的演讲稿。它应该是一整段自然口播，覆盖标题、副标题和正文内容，不要空行，也不要重复句子。"
     }
   ]
 }

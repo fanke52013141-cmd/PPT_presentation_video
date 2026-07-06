@@ -32,8 +32,8 @@ def main() -> None:
                 "slide_id": "slide_001",
                 "slide_title": "主标题",
                 "slide_subtitle": "",
-                "body_points": [{"point_id": "point_001", "text": "正文要点", "purpose": "讲解正文"}],
-                "narration_segments": [{"segment_id": "seg_001", "narration": "这是演讲稿。", "purpose": "讲解"}],
+                "body": "正文要点",
+                "narration": "这是演讲稿。",
             }
         ],
     }

@@ -64,4 +64,5 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host ""
 Write-Host "[3/4] Starting backend FastAPI server..." -ForegroundColor Green
 Start-Process "http://localhost:8000"
+$env:PYTHONPATH = "$PSScriptRoot;$env:PYTHONPATH"
 & $pythonExe (Join-Path $PSScriptRoot "server.py")

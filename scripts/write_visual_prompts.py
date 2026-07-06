@@ -31,7 +31,8 @@ class PromptError(RuntimeError):
 
 SUBTITLE_POLICY_WITH_SUBTITLE = "all_slides_have_subtitle"
 SUBTITLE_POLICY_NO_SUBTITLE = "no_slides_have_subtitle"
-ALLOWED_SUBTITLE_POLICIES = {SUBTITLE_POLICY_WITH_SUBTITLE, SUBTITLE_POLICY_NO_SUBTITLE}
+SUBTITLE_POLICY_OPTIONAL = "optional_subtitles"
+ALLOWED_SUBTITLE_POLICIES = {SUBTITLE_POLICY_WITH_SUBTITLE, SUBTITLE_POLICY_NO_SUBTITLE, SUBTITLE_POLICY_OPTIONAL}
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -111,8 +112,10 @@ def compact_visual_element_lines(slide: dict[str, Any]) -> list[str]:
             element_id = group_id[len(prefix):] if prefix and group_id.startswith(prefix) else (group_id or f"el_{idx:03d}")
         role = str(group.get("role", "content_body")).strip()
         visual_type = str(group.get("visual_type", "")).strip().lower()
-        if visual_type not in {"text", "illustration"}:
-            visual_type = "text" if str(group.get("display_text", "")).strip() else "illustration"
+        if visual_type == "illustration":
+            visual_type = "picture"
+        if visual_type not in {"text", "picture"}:
+            visual_type = "text" if str(group.get("display_text", "")).strip() else "picture"
         if visual_type == "text":
             description = str(group.get("display_text") or group.get("visual_anchor") or group.get("visible_text") or "").strip()
         else:
@@ -247,7 +250,7 @@ def presentation_policy(planning: dict[str, Any]) -> dict[str, Any]:
     if subtitle_policy not in ALLOWED_SUBTITLE_POLICIES:
         raise PromptError(
             "presentation_policy.subtitle_policy must be "
-            f"{SUBTITLE_POLICY_WITH_SUBTITLE} or {SUBTITLE_POLICY_NO_SUBTITLE}"
+            f"{SUBTITLE_POLICY_WITH_SUBTITLE}, {SUBTITLE_POLICY_NO_SUBTITLE}, or {SUBTITLE_POLICY_OPTIONAL}"
         )
     return result
 
@@ -267,6 +270,18 @@ def subtitle_prompt_lines(policy: dict[str, Any], slide: dict[str, Any]) -> list
         return [
             "- Project subtitle policy: no slide should render a subtitle.",
             "- Do not draw a subtitle line, subtitle underline, or reserved subtitle placeholder.",
+            "- Use the saved title-area space to strengthen the main visual composition.",
+        ]
+    if subtitle_policy == SUBTITLE_POLICY_OPTIONAL:
+        if subtitle:
+            return [
+                "- Project subtitle policy: subtitles are optional per slide.",
+                f"- This slide has a subtitle; render it below the main title: \"{subtitle}\".",
+                "- Keep subtitle compact; it must not enter the video subtitle safety zone.",
+            ]
+        return [
+            "- Project subtitle policy: subtitles are optional per slide.",
+            "- This slide has no subtitle; do not draw a subtitle placeholder or underline.",
             "- Use the saved title-area space to strengthen the main visual composition.",
         ]
     raise PromptError(f"Unsupported subtitle policy: {subtitle_policy}")

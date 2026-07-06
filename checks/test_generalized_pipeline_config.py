@@ -38,8 +38,10 @@ def test_step2_prompt_contracts_are_minimal() -> None:
     visual_example = json.loads((ROOT / "templates" / "prompts" / "step2_visual_output_example.json").read_text(encoding="utf-8"))
 
     assert "slide_title" in script_example["slides"][0]
-    assert "body_points" in script_example["slides"][0]
-    assert "narration_segments" in script_example["slides"][0]
+    assert "body" in script_example["slides"][0]
+    assert "narration" in script_example["slides"][0]
+    assert "body_points" not in script_example["slides"][0]
+    assert "narration_segments" not in script_example["slides"][0]
     assert "visual_groups" not in script_example["slides"][0]
     assert "不要输出 text 字段" in visual_system
     assert "slide_id、element_id、role、visual_type、visual_description" in visual_system

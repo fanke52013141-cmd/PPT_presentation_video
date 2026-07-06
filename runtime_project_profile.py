@@ -460,6 +460,8 @@ def _register(server_module: ModuleType) -> bool:
         return False
     app = server_module.app
 
+    # DEPRECATED: This route is shadowed by runtime_project_profile_templates_override.py
+    # and will never be hit at runtime. Kept for reference only.
     def get_templates() -> dict[str, Any]:
         return {
             "success": True,
@@ -475,6 +477,8 @@ def _register(server_module: ModuleType) -> bool:
         style = _generate_image_style_with_llm(server_module, payload if isinstance(payload, dict) else {})
         return {"success": True, "style": style}
 
+    # DEPRECATED: This route is shadowed by runtime_project_profile_lightweight.py
+    # and will never be hit at runtime. Kept for reference only.
     def get_profile(project_id: str, db: Any = server_module.Depends(server_module.get_db)) -> dict[str, Any]:
         project = db.query(server_module.Project).filter(server_module.Project.id == project_id).first()
         if not project:

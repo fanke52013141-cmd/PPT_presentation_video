@@ -1,15 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
 
-/* 全局简约线稿风格定义 (Flat Outline UI) */
-:root {
-  --bg-color: #FFFDF7;        /* 温暖偏白底色 */
-  --ink-color: #111111;      /* 纯黑精准线条 */
-  --primary-color: #FFF9DB;   /* 淡雅鹅黄 */
-  --secondary-color: #E0E7FF; /* 雅致淡蓝紫 */
-  --success-color: #E2F3D5;   /* 清爽淡绿 (即记录按钮色) */
-  --danger-color: #FFEBEB;    /* 温和淡粉红 */
-  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans SC", sans-serif;
-}
 
 /* 矢量线稿 SVG 图标规范 */
 .icon {
@@ -2515,29 +2505,7 @@ body.step5-fullscreen-mode #step5-btn-fullscreen {
 
 }
 
-/* Apple-style refinement layer */
-:root {
-  --bg-color: #f5f5f7;
-  --ink-color: #1d1d1f;
-  --primary-color: #ffffff;
-  --secondary-color: #ffffff;
-  --success-color: #0071e3;
-  --danger-color: #fff1f2;
-  --accent-color: #0071e3;
-  --panel-bg: #ffffff;
-  --panel-subtle: #fbfbfd;
-  --border-soft: #d2d2d7;
-  --border-faint: #e5e5ea;
-  --text-muted: #6e6e73;
-  --shadow-soft: 0 18px 45px rgba(0, 0, 0, 0.08);
-  --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.06);
-}
 
-body {
-  background: var(--bg-color);
-  color: var(--ink-color);
-  font-size: 14px;
-}
 
 .highlight-title::after {
   display: none;
@@ -2575,7 +2543,7 @@ button:hover,
 .btn:hover,
 button:active,
 .btn:active {
-  background: #f5f5f7;
+  background: var(--color-bg-subtle);
   border-color: #b8b8bd;
   box-shadow: none;
   transform: none;
@@ -2587,7 +2555,7 @@ button.secondary {
 }
 
 button.secondary:hover {
-  background: #f5f5f7;
+  background: var(--color-bg-subtle);
 }
 
 button.success,
@@ -2614,7 +2582,7 @@ button.danger:hover {
 }
 
 button:disabled {
-  background: #f5f5f7;
+  background: var(--color-bg-subtle);
   border-color: var(--border-faint);
   color: #a1a1a6;
 }
@@ -2694,7 +2662,7 @@ header .btn {
 }
 
 .step-item:hover {
-  background: #f5f5f7;
+  background: var(--color-bg-subtle);
 }
 
 .step-item.active {
@@ -2704,7 +2672,7 @@ header .btn {
 
 .step-num {
   border: 0 !important;
-  background: #f5f5f7;
+  background: var(--color-bg-subtle);
   box-shadow: none !important;
 }
 
@@ -2796,7 +2764,7 @@ header .btn {
 
 .mask-block-number {
   border: 0 !important;
-  background: #f5f5f7 !important;
+  background: var(--color-bg-subtle) !important;
   color: var(--ink-color);
   box-shadow: none !important;
 }
@@ -2923,11 +2891,6 @@ html {
   background: var(--color-bg-page);
 }
 
-body {
-  background: linear-gradient(180deg, var(--color-bg-page) 0%, var(--color-bg-warm) 100%) fixed;
-  color: var(--color-text-primary);
-  font-size: 14px;
-}
 
 h1,
 h2,
@@ -3966,27 +3929,6 @@ header .btn {
   }
 }
 
-/* Reference-screen layout and color correction */
-:root {
-  --color-primary-deep: #6670e8;
-  --color-primary-base: #8f92f7;
-  --color-primary-soft: #dfe3ff;
-  --color-primary-light: #f1f3ff;
-  --color-primary-text: #202b63;
-  --color-lavender: #d7c8ff;
-  --gradient-ai-soft: linear-gradient(135deg, #f0edff 0%, #dfe3ff 100%);
-  --gradient-ai-strong: linear-gradient(135deg, #a89df7 0%, #6670e8 100%);
-  --gradient-progress: linear-gradient(90deg, #6f6fe8 0%, #a59cff 100%);
-  --shadow-card: 0 16px 42px rgba(85, 92, 180, 0.1);
-  --shadow-panel: 0 22px 60px rgba(85, 92, 180, 0.14);
-  --shadow-button: 0 12px 28px rgba(102, 112, 232, 0.28);
-}
-
-body {
-  min-height: 100vh;
-  background:
-    linear-gradient(125deg, rgba(255, 245, 243, 0.58) 0%, rgba(250, 252, 255, 0.92) 34%, rgba(247, 246, 255, 0.82) 72%, rgba(255, 253, 247, 0.9) 100%) fixed;
-}
 
 header,
 header.sketch-border,

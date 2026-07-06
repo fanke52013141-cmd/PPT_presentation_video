@@ -1150,13 +1150,16 @@ def _ensure_narrated_group_anchors(
     canvas_area = max(1, int(canvas.get("width", 1920))) * max(1, int(canvas.get("height", 1080)))
     prominent_area = max(400, round(canvas_area * 0.003))
     by_id = {str(element.get("element_id") or ""): element for element in all_elements}
-    # Keep one strongest existing seed per accepted group. Missing groups may
-    # claim other components, but can never empty an already accepted group.
+    # Protect ALL element_ids from already-accepted groups. When the semantic
+    # patch is active, VL matches objects as wholes; stealing any element from
+    # an accepted group would break the semantic_object boundary and cause the
+    # same label/card to be split across multiple narration beats.
     protected_anchor_ids: set[str] = set()
     for item in accepted_by_group.values():
-        owned = [by_id[str(element_id)] for element_id in item.get("element_ids", []) or [] if str(element_id) in by_id]
-        if owned:
-            protected_anchor_ids.add(str(max(owned, key=lambda element: int(element.get("area", 0))).get("element_id") or ""))
+        protected_anchor_ids.update(
+            str(element_id) for element_id in item.get("element_ids", []) or []
+            if str(element_id)
+        )
     unavailable_ids = title_locked_ids | protected_anchor_ids
     available = [element for element in all_elements if str(element.get("element_id") or "") not in unavailable_ids]
     available.sort(key=lambda element: int(element.get("area", 0)), reverse=True)
@@ -1302,12 +1305,17 @@ def _complete_component_coverage(
         assigned.update(item["element_ids"])
 
     residual_assignment_report: list[dict[str, Any]] = []
-    if accepted and anchors:
-        # Distance convergence: each residual element converges to the nearest
-        # narration group using box-to-box edge distance.  The 1.5x rule:
-        # if the second-nearest group is at least 1.5x farther than the nearest,
-        # the element converges to the nearest.  Otherwise it stays unassigned
-        # (ambiguous zone between two groups) and becomes static background.
+    # When the semantic_object patch is active, residual fragments are absorbed
+    # into semantic_objects BEFORE VL matching and expanded via _expand_matches.
+    # In that case most/all residual elements are already in 'assigned' and the
+    # distance convergence below is a no-op.  We still run it for any truly
+    # unassigned fragments (edge cases where absorption missed something).
+    unassigned_residual = [
+        element for element in residual
+        if str(element.get("element_id") or "") not in assigned
+        and str(element.get("element_id") or "") in by_id
+    ]
+    if accepted and anchors and unassigned_residual:
         CONVERGENCE_RATIO = 1.5
 
         def box_to_box_distance(anchor: dict[str, float], elem_bounds: tuple[float, float, float, float]) -> float:
@@ -1321,7 +1329,7 @@ def _complete_component_coverage(
             dy = max(ay1 - ey2, 0.0, ey1 - ay2)
             return float(np.hypot(dx, dy))
 
-        for element in sorted(residual, key=lambda item: (
+        for element in sorted(unassigned_residual, key=lambda item: (
             float((item.get("center") or {}).get("y", 0)),
             float((item.get("center") or {}).get("x", 0))
         )):

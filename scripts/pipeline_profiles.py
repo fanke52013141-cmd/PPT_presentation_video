@@ -11,7 +11,6 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PROFILE_PATH = REPO_ROOT / "config" / "pipeline_profiles.yaml"
-DEFAULT_INVARIANTS_PATH = REPO_ROOT / "config" / "production_invariants.yaml"
 
 REVEAL_ACTION_ALIASES = {
     "cover_wipe_left_to_right": "cover_wipe_left_to_right",
@@ -34,14 +33,6 @@ def read_pipeline_profile(path: Path | None = None) -> dict[str, Any]:
     payload = yaml.safe_load(profile_path.read_text(encoding="utf-8-sig")) or {}
     if not isinstance(payload, dict):
         raise ValueError(f"Pipeline profile must be a YAML object: {profile_path}")
-    return payload
-
-
-def read_production_invariants(path: Path | None = None) -> dict[str, Any]:
-    invariants_path = path or DEFAULT_INVARIANTS_PATH
-    payload = yaml.safe_load(invariants_path.read_text(encoding="utf-8-sig")) or {}
-    if not isinstance(payload, dict):
-        raise ValueError(f"Production invariants must be a YAML object: {invariants_path}")
     return payload
 
 
@@ -129,31 +120,6 @@ def storyboard_profile_prompt(article_content: str, profile: dict[str, Any]) -> 
             *structure_rules,
         ]
     )
-
-
-def image_prompt_profile_text(profile: dict[str, Any]) -> str:
-    image_prompt = _nested_dict(profile, "image_prompt")
-    opening = str(image_prompt.get("opening") or "").strip()
-    invariant_rules = [
-        f"- {str(item).strip()}"
-        for item in _nested_list(profile, "image_prompt", "invariant_rules")
-        if str(item).strip()
-    ]
-    creative_rules = [
-        f"- {str(item).strip()}"
-        for item in _nested_list(profile, "image_prompt", "creative_rules")
-        if str(item).strip()
-    ]
-    lines = []
-    if opening:
-        lines.append(opening)
-    if invariant_rules:
-        lines.append("通用生产铁律（不可被风格覆盖）：")
-        lines.extend(invariant_rules)
-    if creative_rules:
-        lines.append("可泛化创意指导（可随内容和风格变化）：")
-        lines.extend(creative_rules)
-    return "\n".join(lines)
 
 
 def allowed_reveal_actions(profile: dict[str, Any] | None = None) -> set[str]:

@@ -241,7 +241,6 @@ def check_import_and_subprocess_guard(sitecustomize: ModuleType, result: Result)
     result.pass_("subprocess.run guard is installed")
 
     assert_true(hasattr(sitecustomize, "_install_reveal_manifest_reconcile_patch"), "manifest reconcile installer is missing")
-    assert_true(hasattr(sitecustomize, "_install_step5_build_assets_patch"), "Step 5 build_assets installer is missing")
     result.pass_("runtime patch installers are present")
 
 
@@ -298,38 +297,10 @@ def check_manifest_reconcile_and_topic(sitecustomize: ModuleType, result: Result
         result.pass_("manifest slide/group reconcile preserves masks and links beats")
 
 
-def check_step5_build_assets_flag(sitecustomize: ModuleType, result: Result) -> None:
-    build_counter = {"count": 0}
-    with tempfile.TemporaryDirectory(prefix="ppt-hotfix-check-") as temp_name:
-        run_dir = Path(temp_name)
-        seed_project_files(run_dir)
-        project = FakeProject(run_dir)
-        module = make_fake_server_module(project, build_counter)
-        sitecustomize._install_step5_build_assets_patch(module)
-
-        db = FakeDb(project)
-        payload = read_json(run_dir / "reveal_manifest.json")
-        no_build = module.update_step5_result("project_001", payload, build_assets=False, db=db)
-        assert_true(no_build == {"success": True, "built_assets": False}, "build_assets=false did not return built_assets=false")
-        assert_true(build_counter["count"] == 0, "build_assets=false still invoked build_current_reveal_assets")
-
-        do_build = module.update_step5_result("project_001", payload, build_assets=True, db=db)
-        assert_true(do_build == {"success": True, "built_assets": True}, "build_assets=true did not return built_assets=true")
-        assert_true(build_counter["count"] == 1, "build_assets=true did not invoke build_current_reveal_assets once")
-        result.pass_("Step 5 build_assets flag is respected")
-
-
 def check_runtime_bootstrap_contract(result: Result) -> None:
     module = importlib.import_module("scripts.check_runtime_bootstrap_contract")
     module.main()
     result.pass_("runtime bootstrap contract is enforced")
-
-
-def check_runtime_ui_injection_contract(result: Result) -> None:
-    module = importlib.import_module("scripts.check_runtime_ui_injection_contract")
-    exit_code = module.main()
-    assert_true(exit_code == 0, "runtime UI injection contract returned non-zero")
-    result.pass_("runtime UI injection contract is enforced")
 
 
 def check_static_extension_references(result: Result) -> None:
@@ -350,9 +321,7 @@ def main() -> int:
         check_import_and_subprocess_guard(sitecustomize, result)
         check_runtime_security_module(result)
         check_manifest_reconcile_and_topic(sitecustomize, result)
-        check_step5_build_assets_flag(sitecustomize, result)
         check_runtime_bootstrap_contract(result)
-        check_runtime_ui_injection_contract(result)
         check_static_extension_references(result)
     except CheckFailure as exc:
         print(f"FAIL {exc}")

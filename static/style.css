@@ -3493,7 +3493,7 @@ header .btn {
   border: 1px solid var(--color-border-default) !important;
   border-radius: 999px !important;
   background: var(--color-bg-surface) !important;
-  color: var(--color-text-secondary) !important;
+  color: var(--color-text-primary) !important;
   box-shadow: none !important;
   padding: 0.22rem 0.52rem;
 }
@@ -4686,6 +4686,8 @@ textarea.step2-soft-input {
 .step8-speed-control {
   display: inline-flex;
   align-items: center;
+  flex-wrap: nowrap;
+  white-space: nowrap;
   gap: 0.5rem;
   min-height: 42px;
   padding: 0 0.75rem;
@@ -4703,6 +4705,10 @@ textarea.step2-soft-input {
   font: inherit;
   font-weight: 800;
   outline: none;
+}
+
+.step8-speed-control span {
+  white-space: nowrap;
 }
 
 /* Compact Step 2 handoff: selectors, title and fields should read as one
@@ -4882,4 +4888,320 @@ button.success:disabled,
     bottom: 1rem;
     width: min(230px, calc(100vw - 1.7rem));
   }
+}
+
+/* ============================================================
+ * 分镜规划（Step 2）UI 优化
+ * 核心改动：正文从 ~30px 降到 18px，演讲稿降到 17px，
+ * 主标题控制在 22px，灰底块减少压迫感，整体行距拉开。
+ * 使其更像专业内容编辑后台，而非放大后的 PPT 预览。
+ * ============================================================ */
+
+/* 整体区域：内容收紧，最大宽度受控 */
+#step2-editor-area {
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+#step-panel-2 .step2-slide-editor {
+  margin-top: 0.16rem !important;
+  padding: 24px 28px 28px !important;
+  background: #fff !important;
+  border: 1px solid #edf0f5 !important;
+  border-radius: 18px !important;
+  box-shadow: 0 8px 24px rgba(20, 24, 40, 0.04) !important;
+}
+
+/* 顶部 Slide 小标题：小而清晰，作为当前 slide 标识 */
+#step-panel-2 .step2-current-slide-heading {
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  color: #2f3542 !important;
+  margin: 0 0 20px !important;
+  padding: 0 0 12px !important;
+  border-bottom: 1px solid #eef1f6 !important;
+  line-height: 22px !important;
+}
+
+/* 字段标题：主标题 / 正文 / 演讲稿，统一 18px */
+#step-panel-2 .step2-slide-fields label > span {
+  font-size: 18px !important;
+  font-weight: 700 !important;
+  color: #2f3542 !important;
+  line-height: 26px !important;
+  margin: 22px 0 10px !important;
+}
+
+#step-panel-2 .step2-slide-fields label:first-child > span {
+  margin-top: 0 !important;
+}
+
+/* 主标题 / 副标题输入：22px，不撑满，宽度受控 */
+#step-panel-2 #step2-slide-title-input,
+#step-panel-2 #step2-slide-subtitle-input {
+  width: 640px !important;
+  max-width: 100% !important;
+  min-height: 56px !important;
+  padding: 12px 18px !important;
+  border-radius: 12px !important;
+  border: 1px solid #eef1f6 !important;
+  background: #f7f8fc !important;
+  font-size: 22px !important;
+  line-height: 32px !important;
+  font-weight: 500 !important;
+  color: #303846 !important;
+}
+
+/* 正文：18px，行距拉开 */
+#step-panel-2 #step2-slide-body-input {
+  width: 100% !important;
+  min-height: 0 !important;
+  padding: 18px 20px !important;
+  border-radius: 12px !important;
+  border: 1px solid #eef1f6 !important;
+  background: #f7f8fc !important;
+  font-size: 18px !important;
+  line-height: 1.75 !important;
+  font-weight: 400 !important;
+  color: #3b4352 !important;
+}
+
+/* 演讲稿：17px，更轻、行距更宽，不与正文抢视觉 */
+#step-panel-2 #step2-slide-narration-input {
+  width: 100% !important;
+  min-height: 0 !important;
+  padding: 20px 22px !important;
+  border-radius: 12px !important;
+  border: 1px solid #eef1f6 !important;
+  background: #f8f9fc !important;
+  font-size: 17px !important;
+  line-height: 1.85 !important;
+  font-weight: 400 !important;
+  color: #3f4756 !important;
+}
+
+/* 字段间距收紧 */
+#step-panel-2 .step2-slide-fields {
+  gap: 0.6rem 1.25rem !important;
+}
+
+#step-panel-2 .step2-slide-fields label {
+  gap: 0 !important;
+}
+
+/* 聚焦态：保留柔和高亮 */
+#step-panel-2 #step2-slide-title-input:focus,
+#step-panel-2 #step2-slide-subtitle-input:focus,
+#step-panel-2 #step2-slide-body-input:focus,
+#step-panel-2 #step2-slide-narration-input:focus {
+  border-color: #c9d2e3 !important;
+  background: #fff !important;
+  box-shadow: 0 0 0 3px rgba(99, 122, 220, 0.1) !important;
+}
+
+
+/* ============================================================
+ * Step 2 分镜规划：视觉 ↔ 旁白 对应关系呈现
+ * 把 2B/2C 生成的 visual_groups 与 narration_beats 及其
+ * group_id 对应关系在编辑阶段直接呈现，便于提前校验。
+ * ============================================================ */
+#step2-visual-narration-map {
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid #eef1f6;
+}
+
+.vn-map-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #2f3542;
+  margin-bottom: 6px;
+}
+
+.vn-map-hint {
+  font-size: 13px;
+  color: #98a1b2;
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.vn-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.vn-group-card {
+  position: relative;
+  padding: 16px 18px 16px 24px;
+  border: 1px solid #edf0f5;
+  border-radius: 12px;
+  background: #fafbfd;
+  border-left: 8px solid #c9d2e3;
+}
+
+.vn-group-card.vn-role-title {
+  border-left-color: #6c4df2;
+  background: #f5f2ff;
+}
+
+.vn-group-card.vn-role-subtitle {
+  border-left-color: #8fa7f8;
+  background: #f4f7ff;
+}
+
+.vn-group-card.vn-role-body,
+.vn-group-card.vn-role-body_content,
+.vn-group-card.vn-role-content_body {
+  border-left-color: #c5f1c1;
+  background: #f6fbf5;
+}
+
+.vn-group-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.vn-group-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #2f3542;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(47,53,66,0.25);
+}
+
+.vn-role-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid #e0e5ef;
+  color: #566179;
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.vn-group-anchor {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: #2f3542;
+  font-size: 18px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vn-beat-count {
+  flex-shrink: 0;
+  padding: 2px 10px;
+  border-radius: 6px;
+  background: #eaf7ef;
+  border: 1px solid #cdebd8;
+  color: #2e9e5b;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.vn-group-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 14px;
+}
+
+@media (max-width: 760px) {
+  .vn-group-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.vn-visual,
+.vn-narration {
+  min-width: 0;
+}
+
+.vn-section-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: #98a1b2;
+  margin-bottom: 6px;
+  letter-spacing: 0.02em;
+}
+
+.vn-visual-anchor {
+  font-size: 18px;
+  line-height: 1.75;
+  color: #3b4352;
+}
+
+.vn-visual-fn {
+  margin-top: 6px;
+  font-size: 14px;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+.vn-beat {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid #eef1f6;
+  margin-bottom: 6px;
+}
+
+.vn-beat:last-child {
+  margin-bottom: 0;
+}
+
+.vn-beat-text {
+  font-size: 17px;
+  line-height: 1.85;
+  color: #3f4756;
+}
+
+.vn-beat-intent {
+  margin-top: 4px;
+  font-size: 14px;
+  color: #9aa3b2;
+  line-height: 1.5;
+}
+
+.vn-beat-empty {
+  font-size: 14px;
+  color: #c9184a;
+  font-style: italic;
+  background: #fff5f5;
+  border-color: #ffe1e1;
+}
+
+.vn-orphan {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #fff5f5;
+  border: 1px solid #ffe1e1;
+}
+
+.vn-orphan-head {
+  font-size: 17px;
+  font-weight: 700;
+  color: #c9184a;
+  margin-bottom: 8px;
+}
+
+.vn-orphan .vn-beat {
+  background: #fff;
+  border-color: #ffe1e1;
 }

@@ -33,7 +33,7 @@ against the narration:
 {
   "slide_plan_path": "runs/<run_id>/planning/slide_plan.json",
   "slide_id": "slide_xxx",
-  "task_config_path": "config/task.yaml",
+  "task_config_path": "config/pipeline_profiles.yaml",
   "env": {
     "MINIMAX_API_KEY": "required",
     "MINIMAX_TTS_ENDPOINT": "optional",

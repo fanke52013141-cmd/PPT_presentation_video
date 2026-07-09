@@ -13,7 +13,7 @@ description: Parse an input article into a structured brief for AI science video
 {
   "article_path": "runs/<run_id>/inputs/article.md",
   "source_links_path": "runs/<run_id>/inputs/references/source_links.md 可选",
-  "task_config_path": "config/task.yaml"
+  "task_config_path": "config/pipeline_profiles.yaml"
 }
 ```
 
@@ -63,4 +63,3 @@ description: Parse an input article into a structured brief for AI science video
 - `missing-input`
 - `reference-missing`
 - `content-misread`
-

@@ -1,12 +1,35 @@
 {
-  "title": "项目标题",
+  "title": "Token 是什么",
   "slides": [
     {
       "slide_id": "slide_001",
-      "slide_title": "这一页的标题",
-      "slide_subtitle": "可选副标题，没有则为空字符串",
-      "body": "这一页正文要表达的核心内容，保持简单，不要拆成要点。",
-      "narration": "这一页完整的演讲稿。它应该是一整段自然口播，覆盖标题、副标题和正文内容，不要空行，也不要重复句子。"
+      "slide_title": "Token 的基础定义",
+      "slide_subtitle": "",
+      "body": "Token 是大模型处理文本的最小单位。",
+      "body_points": [
+        {"point_id": "point_001", "text": "Token 是大模型处理文本的最小单位，相当于文字积木", "purpose": "正文"}
+      ],
+      "narration": "首先我们来看什么是 Token。Token 是大模型处理文本的最小单位，你可以把它理解成模型用来拼出文字的积木。",
+      "narration_segments": [
+        {"segment_id": "seg_001", "narration": "首先我们来看什么是 Token。", "purpose": "点题引入"},
+        {"segment_id": "seg_002", "narration": "Token 是大模型处理文本的最小单位，你可以把它理解成模型用来拼出文字的积木。", "purpose": "正文"}
+      ]
+    },
+    {
+      "slide_id": "slide_002",
+      "slide_title": "Token 的拆分规则：英文场景",
+      "slide_subtitle": "",
+      "body": "英文按子词拆分，兼顾单词、词根和后缀。",
+      "body_points": [
+        {"point_id": "point_001", "text": "短完整单词如 apple 为 1 个 Token", "purpose": "正文"},
+        {"point_id": "point_002", "text": "长单词如 unhappiness 拆为 un 和 happiness 两个 Token", "purpose": "正文"}
+      ],
+      "narration": "接下来看英文场景下 Token 怎么拆。短完整单词比如 apple 就是 1 个 Token。长单词比如 unhappiness 会拆成 un 和 happiness 两个 Token。",
+      "narration_segments": [
+        {"segment_id": "seg_001", "narration": "接下来看英文场景下 Token 怎么拆。", "purpose": "点题引入"},
+        {"segment_id": "seg_002", "narration": "短完整单词比如 apple 就是 1 个 Token。", "purpose": "正文"},
+        {"segment_id": "seg_003", "narration": "长单词比如 unhappiness 会拆成 un 和 happiness 两个 Token。", "purpose": "正文"}
+      ]
     }
   ]
 }

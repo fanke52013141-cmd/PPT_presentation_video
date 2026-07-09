@@ -172,8 +172,8 @@
   }
 
   function shouldConfirmBeforeEnteringMask() {
-    const project = typeof root.getPPTCurrentProject === 'function'
-      ? root.getPPTCurrentProject()
+    const project = (root.PPTStudio && typeof root.PPTStudio.getCurrentProject === 'function')
+      ? root.PPTStudio.getCurrentProject()
       : null;
     const status = project?.step_status || {};
     const imageConfirmed = ['completed', 'pending_reconfirmation'].includes(status['4'])

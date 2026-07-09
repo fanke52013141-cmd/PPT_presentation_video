@@ -7,15 +7,41 @@
           "element_id": "el_001",
           "role": "title",
           "visual_type": "text",
-          "visual_description": "画面中显示的标题文字",
-          "narration": "对应的演讲稿原文；如果没有对应旁白则为空字符串。"
+          "visual_description": "Token 的基础定义",
+          "narration": "首先我们来看什么是 Token。"
         },
         {
           "element_id": "el_002",
           "role": "body",
           "visual_type": "picture",
-          "visual_description": "正文区域中部，用一个流程图或对比图表达这一段 narration 的含义，必要时图中可以包含短文字标签。",
-          "narration": "对应的演讲稿原文。"
+          "visual_description": "页面中部用积木示意图展示文字切分成 Token 的过程：左侧汉字/单词，中间彩色 Token 积木，右侧大模型逐个输出。",
+          "narration": "Token 是大模型处理文本的最小单位，你可以把它理解成模型用来拼出文字的积木。"
+        }
+      ]
+    },
+    {
+      "slide_id": "slide_002",
+      "visual_elements": [
+        {
+          "element_id": "el_001",
+          "role": "title",
+          "visual_type": "text",
+          "visual_description": "Token 的拆分规则：英文场景",
+          "narration": "接下来看英文场景下 Token 怎么拆。"
+        },
+        {
+          "element_id": "el_002",
+          "role": "body",
+          "visual_type": "picture",
+          "visual_description": "页面中部展示 apple 标注为 1 个 Token 的示例。",
+          "narration": "短完整单词比如 apple 就是 1 个 Token。"
+        },
+        {
+          "element_id": "el_003",
+          "role": "body",
+          "visual_type": "picture",
+          "visual_description": "页面中部展示 unhappiness 拆分为 un 和 happiness 两个 Token 的示例。",
+          "narration": "长单词比如 unhappiness 会拆成 un 和 happiness 两个 Token。"
         }
       ]
     }

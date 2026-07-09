@@ -14,7 +14,6 @@ from scripts.build_reveal_scene import compose_slide
 from scripts.pipeline_profiles import (
     allowed_reveal_actions,
     default_reveal_for_role,
-    image_prompt_profile_text,
     read_pipeline_profile,
 )
 
@@ -52,7 +51,6 @@ def test_step2_prompt_contracts_are_minimal() -> None:
     assert "speak_policy" not in script_system + visual_system
     assert "scratch_reveal" in allowed_reveal_actions(profile)
     assert default_reveal_for_role("diagram", profile)["type"] == "wipe_left_to_right"
-    assert "完整 PPT/讲解页静态主图" in image_prompt_profile_text(profile)
 
 
 def test_reveal_builder_preserves_configured_effect_and_duration() -> None:

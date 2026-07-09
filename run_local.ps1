@@ -1,6 +1,6 @@
 Write-Host "===================================================" -ForegroundColor Cyan
 Write-Host "  PPT Visualization Studio - Local Web Service" -ForegroundColor Cyan
-Write-Host "  Hand-drawn Sketch Style" -ForegroundColor Cyan
+Write-Host "  Soft Pastel Studio" -ForegroundColor Cyan
 Write-Host "===================================================" -ForegroundColor Cyan
 Write-Host ""
 

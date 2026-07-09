@@ -429,69 +429,8 @@ def _ensure_contract_topic_fields(contract: dict[str, Any], project: Any, run_di
     return _stable_json(contract.get("topic")) != before
 
 
-def _install_step5_build_assets_patch(server_module: ModuleType) -> bool:
-    if getattr(server_module, _STEP5_BUILD_ASSETS_PATCH_MARKER, False):
-        return True
-    required = (
-        "app",
-        "Project",
-        "HTTPException",
-        "read_contract_slide_ids",
-        "reveal_lock_for",
-        "prune_stale_mask_groups",
-        "write_json_atomic",
-        "build_current_reveal_assets",
-        "handle_step_navigation",
-    )
-    if not all(hasattr(server_module, name) for name in required):
-        return False
-
-    def update_step5_result(project_id: str, payload: dict[str, Any], build_assets: bool = True, db: Any = None) -> dict[str, Any]:
-        project = db.query(server_module.Project).filter(server_module.Project.id == project_id).first()
-        if not project:
-            raise server_module.HTTPException(status_code=404, detail="项目不存在")
-
-        built_assets = False
-        with server_module.reveal_lock_for(project):
-            current_slide_ids = server_module.read_contract_slide_ids(project.run_dir)
-            if current_slide_ids and isinstance(payload.get("slides"), list):
-                by_id = {
-                    str(slide.get("slide_id") or "").strip(): slide
-                    for slide in payload.get("slides", [])
-                    if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()
-                }
-                payload["slides"] = [by_id[slide_id] for slide_id in current_slide_ids if slide_id in by_id]
-
-            payload = server_module.prune_stale_mask_groups(project, payload)
-            manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
-            server_module.write_json_atomic(manifest_path, payload)
-
-            if build_assets:
-                server_module.build_current_reveal_assets(project)
-                built_assets = True
-
-        server_module.handle_step_navigation(project, 5, db)
-        return {"success": True, "built_assets": built_assets}
-
-    update_step5_result.__name__ = "update_step5_result"
-    update_step5_result.__doc__ = "Runtime-patched Step 5 save endpoint that respects build_assets."
-    server_module.update_step5_result = update_step5_result
-
-    app = getattr(server_module, "app", None)
-    for route in getattr(app, "routes", []) or []:
-        methods = getattr(route, "methods", set()) or set()
-        if getattr(route, "path", "") == "/api/projects/{project_id}/steps/5/result" and "PUT" in methods:
-            route.endpoint = update_step5_result
-            if hasattr(route, "dependant"):
-                route.dependant.call = update_step5_result
-
-    setattr(server_module, _STEP5_BUILD_ASSETS_PATCH_MARKER, True)
-    return True
-
-
 def _install_reveal_manifest_reconcile_patch(server_module: ModuleType) -> bool:
     if getattr(server_module, _RECONCILE_PATCH_MARKER, False):
-        _install_step5_build_assets_patch(server_module)
         return True
     required = (
         "read_contract_slide_ids",
@@ -572,7 +511,6 @@ def _install_reveal_manifest_reconcile_patch(server_module: ModuleType) -> bool:
     sync_reveal_manifest_to_contract.__doc__ = "Runtime-patched slide and group-level reveal manifest reconciliation."
     server_module.sync_reveal_manifest_to_contract = sync_reveal_manifest_to_contract
     setattr(server_module, _RECONCILE_PATCH_MARKER, True)
-    _install_step5_build_assets_patch(server_module)
     return True
 
 

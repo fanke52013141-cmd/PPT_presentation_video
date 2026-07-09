@@ -380,7 +380,6 @@ function initGlobalEvents() {
   // ================= 步骤 6 事件 =================
   document.getElementById('step6-btn-init')?.addEventListener('click', () => initStep6Narration());
   document.getElementById('step6-btn-ai-annotate')?.addEventListener('click', () => annotateStep6Narration());
-  document.getElementById('step6-btn-save')?.addEventListener('click', () => saveStep6Narration());
   document.getElementById('step6-btn-save-and-tts')?.addEventListener('click', () => saveNarrationAndRunTTS());
   document.getElementById('step6-btn-audio-confirm-next')?.addEventListener('click', async () => {
     const confirmed = await confirmStep7Audio();
@@ -392,7 +391,6 @@ function initGlobalEvents() {
 
   // ================= 步骤 8 事件 =================
   document.getElementById('step8-btn-render')?.addEventListener('click', () => runStep8Render());
-  document.getElementById('step8-btn-rerender')?.addEventListener('click', () => runStep8Render());
   document.getElementById('step8-btn-finish')?.addEventListener('click', () => exitWorkspace());
   document.getElementById('btn-storyboard-rules-cancel')?.addEventListener('click', () => closeStoryboardRulesModal());
   document.getElementById('btn-step2-prompts-save')?.addEventListener('click', () => saveStep2Prompts());
@@ -1327,6 +1325,7 @@ function renderStep2Workspace() {
       });
     });
     [bodyInput, narrationInput].forEach(input => requestAnimationFrame(() => autoResizeTextarea(input)));
+    renderStep2VisualNarrationMap(slide);
 
   }
 }
@@ -1380,7 +1379,7 @@ function copyStep2Prompts() {
 
 function escHtml(str) {
   if (!str) return '';
-  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 function updateStep2BatchDeleteButton() {
@@ -1615,8 +1614,88 @@ function saveCurrentSlideInputToState() {
       };
     });
     syncStep2SimpleFieldsToInternalGroups(slide);
+    renderStep2VisualNarrationMap(slide);
   }
 }
+
+function renderStep2VisualNarrationMap(slide) {
+  const container = document.getElementById('step2-visual-narration-map');
+  if (!container) return;
+  if (!slide) { container.innerHTML = ''; return; }
+
+  const groups = Array.isArray(slide.visual_groups) ? slide.visual_groups : [];
+  const beats = Array.isArray(slide.narration_beats) ? slide.narration_beats : [];
+
+  if (groups.length === 0 && beats.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  const roleLabels = { title: '标题', subtitle: '副标题', body: '正文', body_content: '正文', content_body: '正文' };
+  const roleOrder = { title: 0, subtitle: 1, body: 2, body_content: 2, content_body: 2 };
+
+  const sortedGroups = groups.slice().map((g, i) => ({ g, i })).sort((a, b) => {
+    const ra = Number(a.g?.reveal_order ?? roleOrder[a.g?.role] ?? a.i);
+    const rb = Number(b.g?.reveal_order ?? roleOrder[b.g?.role] ?? b.i);
+    return ra - rb;
+  }).map(item => item.g);
+
+  const usedBeatIds = new Set();
+  const groupCards = sortedGroups.map((group, idx) => {
+    const gid = group?.id || '';
+    const matched = beats.filter(b => {
+      if (b?.group_id && b.group_id === gid) {
+        if (b.id) usedBeatIds.add(b.id);
+        return true;
+      }
+      return false;
+    });
+    const role = group?.role || 'body';
+    const roleLabel = roleLabels[role] || role;
+    const visibleText = group?.visible_text || group?.display_text || '（未填写可见文字）';
+    const visualAnchor = group?.visual_anchor || group?.mask_target || '';
+
+    const beatsHtml = matched.length
+      ? matched.map(b => {
+          return `<div class="vn-beat"><div class="vn-beat-text">${escHtml(b?.spoken_text || '')}</div></div>`;
+        }).join('')
+      : `<div class="vn-beat vn-beat-empty">无对应旁白</div>`;
+
+    return `
+      <div class="vn-group-card vn-role-${role}" data-group-id="${escHtml(gid)}">
+        <div class="vn-group-head">
+          <span class="vn-group-num">${idx + 1}</span>
+          <span class="vn-role-tag">${escHtml(roleLabel)}</span>
+          <span class="vn-group-anchor">${escHtml(visibleText)}</span>
+          <span class="vn-beat-count">${matched.length} 段旁白</span>
+        </div>
+        <div class="vn-group-body">
+          <div class="vn-visual">
+            <div class="vn-section-label">视觉锚点</div>
+            <div class="vn-visual-anchor">${escHtml(visualAnchor || '（未填写画面描述）')}</div>
+          </div>
+          <div class="vn-narration">
+            <div class="vn-section-label">对应旁白</div>
+            ${beatsHtml}
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  const orphanBeats = beats.filter(b => !b.id || !usedBeatIds.has(b.id));
+  const orphanHtml = orphanBeats.length
+    ? `<div class="vn-orphan">
+        <div class="vn-orphan-head">⚠️ 未关联视觉块的旁白（${orphanBeats.length} 段）</div>
+        ${orphanBeats.map(b => `<div class="vn-beat"><div class="vn-beat-text">${escHtml(b?.spoken_text || '')}</div></div>`).join('')}
+      </div>`
+    : '';
+
+  container.innerHTML = `
+    <div class="vn-map-title">视觉 ↔ 旁白</div>
+    <div class="vn-groups">${groupCards}</div>
+    ${orphanHtml}`;
+}
+
 
 async function saveStep2Contract(options = {}) {
   saveCurrentSlideInputToState();
@@ -4683,9 +4762,8 @@ async function loadStep8Data() {
 
 async function runStep8Render() {
   const renderBtn = document.getElementById('step8-btn-render');
-  const rerenderBtn = document.getElementById('step8-btn-rerender');
   document.getElementById('step8-loading').style.display = 'inline-flex';
-  renderBtn.disabled = true;
+  if (renderBtn) renderBtn.disabled = true;
   showToast('🎬 Remotion 渲染进程已启动，请稍候片刻...');
   
   try {
@@ -4703,8 +4781,7 @@ async function runStep8Render() {
     showToast(`❌ 渲染失败: ${message}`, 7000);
   } finally {
     document.getElementById('step8-loading').style.display = 'none';
-    renderBtn.disabled = false;
-    rerenderBtn.disabled = false;
+    if (renderBtn) renderBtn.disabled = false;
   }
 }
 
@@ -4833,3 +4910,4 @@ window.PPTStudio = Object.assign(window.PPTStudio || {}, {
   getCurrentProject: () => state.currentProject,
   flushStep5Draft,
 });
+

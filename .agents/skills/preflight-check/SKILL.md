@@ -9,7 +9,7 @@ description: Validate repository resources, run inputs, credentials, schemas, an
 
 # Required Files
 
-- `config/task.yaml`
+- `config/pipeline_profiles.yaml`
 - `config/style_tokens.yaml`
 - `references/style_reference/PPT模板.png`
 - `references/style_reference/PPT示例.png`

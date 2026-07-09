@@ -1,8 +1,9 @@
 @echo off
 title PPT Visualization Studio Launcher
+cd /d "%~dp0"
 echo ===================================================
 echo   PPT Visualization Studio - Local Web Service
-echo   Hand-drawn Sketch Style
+echo   Soft Pastel Studio
 echo ===================================================
 echo.
 

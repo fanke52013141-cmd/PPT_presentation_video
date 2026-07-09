@@ -387,17 +387,36 @@ def write_json_atomic(path: str, payload: Any) -> None:
             _JSON_WRITE_LOCKS[absolute_path] = write_lock
     with write_lock:
         os.makedirs(os.path.dirname(absolute_path), exist_ok=True)
+        content = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+        # 优先 tmp+rename 原子写；遇到杀软拦截 PermissionError 时重试，最终 fallback 到直接覆写
         temp_path = f"{absolute_path}.{uuid.uuid4().hex}.tmp"
+        last_err = None
+        for attempt in range(4):
+            try:
+                with open(temp_path, "w", encoding="utf-8", newline="\n") as file:
+                    file.write(content)
+                    file.flush()
+                    os.fsync(file.fileno())
+                os.replace(temp_path, absolute_path)
+                return
+            except (PermissionError, OSError) as e:
+                last_err = e
+                try:
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
+                except OSError:
+                    pass
+                import time as _time
+                _time.sleep(0.15 * (attempt + 1))
+                continue
+        # 所有重试失败：fallback 直接覆写目标文件（非原子，但保证数据落盘）
         try:
-            with open(temp_path, "w", encoding="utf-8", newline="\n") as file:
-                json.dump(payload, file, ensure_ascii=False, indent=2)
-                file.write("\n")
+            with open(absolute_path, "w", encoding="utf-8", newline="\n") as file:
+                file.write(content)
                 file.flush()
                 os.fsync(file.fileno())
-            os.replace(temp_path, absolute_path)
-        finally:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
+        except OSError as fallback_err:
+            raise fallback_err from last_err
 
 
 def read_json_file(path: str, fallback: Any) -> Any:
@@ -3568,7 +3587,7 @@ def compose_visual_contract_from_plans(
             visible_text = element_visible_text(element, element_index)
             description = str(element.get("visual_description") or visible_text).strip()
             narration = str(element.get("narration") or "").strip()
-            purpose = str(element.get("visual_description") or "").strip()
+            narration_function_value = str(element.get("narration_function") or element.get("visual_description") or visible_text or "").strip()
             visual_type = normalize_visual_type(element.get("visual_type"))
             display_text = description if visual_type == "text" else ""
             group = {
@@ -3578,7 +3597,7 @@ def compose_visual_contract_from_plans(
                 "visible_text": visible_text,
                 "display_text": display_text,
                 "visual_anchor": description,
-                "narration_function": purpose or description,
+                "narration_function": narration_function_value,
                 "reveal_order": element_index,
                 "content_unit_id": content_unit_id,
                 "mask_target": description,
@@ -3591,7 +3610,7 @@ def compose_visual_contract_from_plans(
                         "id": f"{slide_id}_beat_{len(narration_beats) + 1:03d}",
                         "group_id": group_id,
                         "visible_anchor": visible_text,
-                        "spoken_intent": purpose or description,
+                        "spoken_intent": narration_function_value,
                         "spoken_text": narration,
                         "content_unit_id": content_unit_id,
                     }
@@ -5688,7 +5707,7 @@ def deterministic_semantic_blocks(
     for group_id, group in groups.items():
         if not isinstance(group, dict):
             continue
-        if str(group.get("role") or "").strip().lower() in {"title", "subtitle"}:
+        if str(group.get("role") or "").strip().lower() in {"subtitle", "decoration"}:
             continue
         fragment_ids = group_to_fragments.get(group_id) or []
         if not fragment_ids:

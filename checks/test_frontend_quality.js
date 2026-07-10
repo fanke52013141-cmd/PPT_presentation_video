@@ -64,7 +64,7 @@ if (!background.includes('铺满画面') || !background.includes('完整显示')
 for (const backgroundMode of ['data-mode-card="image"', 'data-mode-card="solid"', 'aspect-ratio:16 / 9', '16:9 预览']) {
   if (!background.includes(backgroundMode)) throw new Error(`final background modal contract missing: ${backgroundMode}`);
 }
-if (!app.includes('hexToRgba(color, isSelected ? 0.46 : 0.34)')) {
+if (!app.includes('hexToRgba(color, isSelected ? 0.68 : 0.55)')) {
   throw new Error('mask overlay colors are too faint');
 }
 if (!app.includes('generateAllStep3Images')) throw new Error('step 3 batch generation handler missing');

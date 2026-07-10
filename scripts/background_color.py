@@ -235,15 +235,9 @@ def masked_outer_white_cutout(
         white_edge_alpha[soft_region],
     )
 
-    # Apply a gentle Gaussian blur to the alpha channel along element edges so
-    # that the transition from opaque to transparent is smooth (was a hard
-    # MaxFilter expansion).  Only blend within the mask domain to avoid
-    # softening the outer slide boundary.
-    alpha_img = Image.fromarray(output_alpha, mode="L")
-    feathered = alpha_img.filter(ImageFilter.GaussianBlur(radius=2))
-    feathered_arr = np.asarray(feathered, dtype=np.uint8)
-    # Only keep the blur effect inside the domain; outside stays 0.
-    output_alpha = np.where(domain, feathered_arr, output_alpha).astype(np.uint8)
+    # white_edge_alpha already provides a source-derived soft transition for
+    # neutral antialiased pixels. Do not blur the entire alpha field: that would
+    # make nearby dark outlines and other solid content semi-transparent.
 
     output_rgb = rgb.copy()
     edge_pixels = soft_region & (output_alpha > 0)

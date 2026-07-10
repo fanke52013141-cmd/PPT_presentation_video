@@ -39,6 +39,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "llm_confidence_threshold": 0.72,
     "llm_temperature": 0.1,
     "overwrite_existing_manual_mask": True,
+    "overwrite_existing_ai_mask": True,
     "skip_locked_groups": False,
 }
 
@@ -144,6 +145,7 @@ def normalize_settings(raw: dict[str, Any] | None) -> dict[str, Any]:
         "llm_confidence_threshold": _float(raw.get("llm_confidence_threshold"), 0.72, 0, 1),
         "llm_temperature": _float(raw.get("llm_temperature"), 0.1, 0, 1),
         "overwrite_existing_manual_mask": _bool(raw.get("overwrite_existing_manual_mask"), True),
+        "overwrite_existing_ai_mask": _bool(raw.get("overwrite_existing_ai_mask"), True),
         "skip_locked_groups": _bool(raw.get("skip_locked_groups"), False),
     }
 
@@ -1296,6 +1298,57 @@ def _complete_component_coverage(
             "dominant_area": float(dominant_area),
         }
 
+    # Recheck only small secondary components that the multimodal model placed
+    # far from their group's dominant visual island. This is deliberately
+    # conservative: dominant components never move, and a new owner must be at
+    # least 1.5x closer to avoid geometry overriding a plausible semantic link.
+    dominant_ids: dict[str, str] = {}
+    for item in accepted:
+        group_id = str(item.get("group_id") or "")
+        owned = [by_id[str(value)] for value in item.get("element_ids", []) or [] if str(value) in by_id]
+        if owned:
+            dominant_ids[group_id] = str(max(owned, key=lambda element: int(element.get("area", 0))).get("element_id") or "")
+
+    def anchor_distance(element: dict[str, Any], anchor: dict[str, float]) -> float:
+        element_bounds = _box_xyxy(element.get("raw_bbox") if isinstance(element.get("raw_bbox"), dict) else element.get("bbox", {}))
+        anchor_bounds = _box_xyxy(anchor)
+        if not element_bounds or not anchor_bounds:
+            return float("inf")
+        ex1, ey1, ex2, ey2 = element_bounds
+        ax1, ay1, ax2, ay2 = anchor_bounds
+        return float(np.hypot(max(ax1 - ex2, 0.0, ex1 - ax2), max(ay1 - ey2, 0.0, ey1 - ay2)))
+
+    moves: list[tuple[str, str, str]] = []
+    for item in accepted:
+        current_group = str(item.get("group_id") or "")
+        current_anchor = anchors.get(current_group)
+        if not current_anchor:
+            continue
+        for value in list(item.get("element_ids", []) or []):
+            element_id = str(value)
+            if element_id == dominant_ids.get(current_group) or element_id not in by_id:
+                continue
+            element = by_id[element_id]
+            if int(element.get("area", 0)) > float(current_anchor.get("dominant_area", 0)) * 0.35:
+                continue
+            distances = sorted(
+                (anchor_distance(element, anchor), group_id)
+                for group_id, anchor in anchors.items()
+            )
+            if not distances or distances[0][1] == current_group:
+                continue
+            best_distance, best_group = distances[0]
+            current_distance = anchor_distance(element, current_anchor)
+            if current_distance >= max(24.0, best_distance * 1.5):
+                moves.append((element_id, current_group, best_group))
+    for element_id, old_group, new_group in moves:
+        old_item = next((item for item in accepted if str(item.get("group_id") or "") == old_group), None)
+        new_item = next((item for item in accepted if str(item.get("group_id") or "") == new_group), None)
+        if old_item is None or new_item is None:
+            continue
+        old_item["element_ids"] = [value for value in old_item.get("element_ids", []) or [] if str(value) != element_id]
+        new_item["element_ids"] = list(dict.fromkeys([*(new_item.get("element_ids", []) or []), element_id]))
+
     for item in accepted:
         seed_ids = [str(element_id) for element_id in item.get("element_ids", []) or [] if str(element_id) in by_id]
         existing_seed_ids = item.get("seed_element_ids", []) or []
@@ -1487,7 +1540,7 @@ def _complete_component_coverage(
     else:
         match_payload["warnings"] = [*(match_payload.get("warnings", []) or []), *semantic_warnings, *blocking_errors]
     match_payload["matching_method"] = str(match_payload.get("matching_method") or "unknown") + "+constrained_component_completion"
-    match_payload["component_assignment_policy"] = "semantic_object_seed_safe_residual_completion_v3"
+    match_payload["component_assignment_policy"] = "dominant_island_2d_absorption_v2"
     return match_payload
 
 
@@ -1510,6 +1563,15 @@ def _has_manual(group: dict[str, Any]) -> bool:
     runs = manual.get("rle", {}).get("runs") if isinstance(manual.get("rle"), dict) else []
     strokes = manual.get("strokes")
     return bool(runs) or (isinstance(strokes, list) and any(isinstance(s, dict) and s.get("points") for s in strokes))
+
+
+def _replaceable_ai_mask(group: dict[str, Any]) -> bool:
+    manual = group.get("manual_mask") if isinstance(group.get("manual_mask"), dict) else {}
+    source = str(manual.get("source") or group.get("source") or "")
+    strokes = manual.get("strokes") if isinstance(manual.get("strokes"), list) else []
+    has_corrections = any(isinstance(stroke, dict) and stroke.get("points") for stroke in strokes)
+    locked = str(group.get("review_status") or "").lower() in {"approved", "locked"}
+    return source.startswith("ai_auto_mask") and not has_corrections and not locked
 
 
 def _find_group(groups: list[dict[str, Any]], gid: str) -> dict[str, Any] | None:
@@ -1657,7 +1719,8 @@ def _apply(manifest: dict[str, Any], slide: dict[str, Any], elements_payload: di
             if settings["skip_locked_groups"] and str(group.get("review_status") or "") in {"approved", "locked"}:
                 continue
             if _has_manual(group) and not settings["overwrite_existing_manual_mask"]:
-                continue
+                if not settings.get("overwrite_existing_ai_mask", True) or not _replaceable_ai_mask(group):
+                    continue
             group["box"] = box
             group["visual_group_id"] = gid
             group["manual_mask"] = {

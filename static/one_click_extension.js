@@ -159,10 +159,10 @@
       const message = currentStage?.title || currentStage?.message || '';
       activity.innerHTML = state === 'running'
         ? `<span class="button-spinner"></span><span>${esc(message || '一键生成运行中')}</span>`
-        : state === 'done'
+        : state === 'completed'
           ? '<span>一键生成已完成</span>'
           : '';
-      activity.classList.toggle('active', state === 'running' || state === 'done');
+      activity.classList.toggle('active', state === 'running' || state === 'completed');
       activity.classList.toggle('running', state === 'running');
     }
     summary.innerHTML = `
@@ -203,7 +203,11 @@
   async function startOneClick() {
     const projectId = activeProjectId();
     if (!projectId) return toast('当前没有可识别的项目，请先进入项目工作区。', 5000);
-    const confirmed = window.confirm('将重新运行自动生成流程，并复用当前 Step 2/3/5 配置与已存在且未过期的产物。继续？');
+    const currentStatus = await refreshStatus();
+    const resume = currentStatus?.status === 'paused';
+    const confirmed = window.confirm(resume
+      ? '将从上次失败阶段继续，并保护已锁定或人工修正的 Mask、旁白和未过期产物。继续？'
+      : '将运行自动生成流程，并保护已锁定或人工修正的 Mask、旁白和未过期产物。继续？');
     if (!confirmed) return;
     const button = document.getElementById('btn-one-click-start');
     const original = button?.textContent || '重新运行自动生成';
@@ -212,7 +216,7 @@
       button.textContent = '启动中...';
     }
     try {
-      const result = await apiPost(`/api/projects/${projectId}/one-click-generate`, {});
+      const result = await apiPost(`/api/projects/${projectId}/one-click-generate`, { mode: resume ? 'resume' : 'restart' });
       renderStatus(result.status || {});
       toast(result.already_running ? '一键生成正在运行。' : '自动生成已启动。', 4000);
       startPolling();

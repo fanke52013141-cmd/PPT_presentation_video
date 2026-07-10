@@ -6752,7 +6752,7 @@ def get_slide_audio_file(project_id: str, slide_id: str, db: Session = Depends(g
     return FileResponse(audio_path, media_type="audio/mp3")
 
 @app.post("/api/projects/{project_id}/steps/7/confirm")
-def confirm_tts_audio(project_id: str, db: Session = Depends(get_db)):
+def confirm_tts_audio(project_id: str, payload: Optional[Dict[str, Any]] = None, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
@@ -6792,7 +6792,11 @@ def confirm_tts_audio(project_id: str, db: Session = Depends(get_db)):
     os.makedirs(os.path.dirname(confirmation_path), exist_ok=True)
     with open(confirmation_path, "w", encoding="utf-8") as f:
         json.dump(
-            {"confirmed_at": datetime.now().isoformat(), "slide_ids": slide_ids},
+            {
+                "confirmed_at": datetime.now().isoformat(),
+                "slide_ids": slide_ids,
+                "confirmation_mode": str((payload or {}).get("confirmation_mode") or "user_reviewed"),
+            },
             f,
             ensure_ascii=False,
             indent=2,

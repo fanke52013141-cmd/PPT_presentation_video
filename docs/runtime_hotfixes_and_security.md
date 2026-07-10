@@ -191,3 +191,20 @@ bridges for the current repository state. Long term, keep `server.py` as the
 source of truth for backend behavior, keep frontend navigation behavior in the
 main frontend code, and keep security middleware in normal application startup
 code.
+# One-click resume and AI Mask protection (2026-07-10)
+
+`runtime_one_click_orchestrator.py` now writes status atomically, distinguishes
+restart from resume, resumes at the failed stage, preserves existing narration,
+and requests automatic technical audio confirmation explicitly. Its AI Mask
+calls preserve locked groups and manual corrections while allowing untouched
+AI-only RLE masks to be refreshed.
+
+`runtime_ai_mask.py` supports `overwrite_existing_ai_mask` separately from
+`overwrite_existing_manual_mask`. Only an unlocked AI mask with no correction
+strokes is replaceable when manual overwrite is disabled. The component
+completion pass also conservatively reassigns small secondary components when
+another dominant visual island is at least 1.5 times closer.
+
+Migration debt: these behaviors remain runtime bridge behavior until the
+one-click orchestration and AI Mask services are moved behind normal modules
+registered directly from `server.py`. Track this migration with issue #7.

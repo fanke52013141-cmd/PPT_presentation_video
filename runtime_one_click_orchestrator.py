@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
 import threading
 import time
@@ -81,7 +82,13 @@ def _read_json(path: Path, fallback: Any) -> Any:
 
 def _write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temp_path = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        temp_path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        os.replace(temp_path, path)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
 
 
 def _run_dir(project: Any) -> Path:
@@ -276,6 +283,64 @@ def _quality_gates(project: Any) -> dict[str, bool]:
     return {key: bool(gates.get(key, default)) for key, default in DEFAULT_QUALITY_GATES.items()}
 
 
+def _stage_index(stage_id: str) -> int:
+    for index, (candidate, _title) in enumerate(STAGES):
+        if candidate == stage_id:
+            return index
+    return 0
+
+
+def _resume_status(project: Any, project_id: str, run_id: str, mode: str) -> tuple[dict[str, Any], int]:
+    previous = _status_for_project(project, project_id)
+    if mode == "resume" and previous.get("status") in {"paused", "running"} and previous.get("current_stage"):
+        start_index = _stage_index(str(previous["current_stage"]))
+        status = previous
+        status.update({
+            "run_id": run_id,
+            "status": "running",
+            "completed_at": "",
+            "video": None,
+        })
+        for index, item in enumerate(status.get("stages", [])):
+            if index >= start_index:
+                item.update({
+                    "status": "pending",
+                    "started_at": "",
+                    "finished_at": "",
+                    "message": "",
+                    "progress": 0,
+                    "warnings": [],
+                    "blocking_errors": [],
+                })
+        return status, start_index
+    return _initial_status(project_id, run_id), 0
+
+
+def _preflight_errors(server_module: ModuleType, project: Any) -> list[str]:
+    errors: list[str] = []
+    if not _has_article(project):
+        errors.append("请先导入文章内容，或在创建项目时填写文章内容。")
+    for key, label in (
+        ("llm_api_key", "LLM API Key"),
+        ("image_api_key", "图片生成 API Key"),
+        ("tts_api_key", "TTS API Key"),
+    ):
+        if not str(server_module.get_setting(key) or "").strip():
+            errors.append(f"未配置 {label}")
+    resolver = getattr(server_module, "resolve_media_tool", None)
+    for tool_name in ("ffmpeg", "ffprobe"):
+        if callable(resolver):
+            available = bool(resolver(tool_name))
+        else:
+            available = bool(shutil.which(tool_name))
+        if not available:
+            errors.append(f"未找到 {tool_name}")
+    remotion_dir = Path(getattr(server_module, "REPO_ROOT", Path(__file__).resolve().parent)) / "scripts" / "remotion"
+    if not (remotion_dir / "package.json").exists():
+        errors.append("Remotion package.json 不存在")
+    return errors
+
+
 def _has_manual_mask(group: Any) -> bool:
     if not isinstance(group, dict):
         return False
@@ -348,105 +413,128 @@ def _session_factory(server_module: ModuleType) -> Any:
     return SessionLocal
 
 
-def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str) -> None:
+def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str, mode: str = "resume") -> None:
     db = _session_factory(server_module)()
     project = None
     try:
         project = db.query(server_module.Project).filter(server_module.Project.id == project_id).first()
         if not project:
             return
-        status = _initial_status(project_id, run_id)
+        status, start_index = _resume_status(project, project_id, run_id, mode)
         _save_status(project, status)
         gates = _quality_gates(project)
         client = _client(server_module)
 
-        _start_stage(project, status, "preflight", "检查文章、配置和项目目录")
-        if not _has_article(project):
-            raise RuntimeError("请先导入文章内容，或在创建项目时填写文章内容。")
-        _finish_stage(project, status, "preflight", "预检查通过")
+        def should_run(stage_id: str) -> bool:
+            return _stage_index(stage_id) >= start_index
 
-        _start_stage(project, status, "storyboard", "生成或复用 visual_contract.json")
-        if not _has_contract(project):
-            _require_ok(client.post(f"/api/projects/{project_id}/steps/2/script/execute", json={}), "Step 2 article-to-slide")
-            _require_ok(client.post(f"/api/projects/{project_id}/steps/2/visual/execute", json={}), "Step 2 slide-to-visual")
-            _require_ok(client.post(f"/api/projects/{project_id}/steps/2/compose", json={}), "Step 2 compose")
-            db.refresh(project)
-        _finish_stage(project, status, "storyboard", "分镜规划已就绪")
+        if should_run("preflight"):
+            _start_stage(project, status, "preflight", "检查文章、凭据、媒体工具和项目目录")
+            preflight_errors = _preflight_errors(server_module, project)
+            if preflight_errors:
+                raise RuntimeError("预检查失败：" + "；".join(preflight_errors))
+            _finish_stage(project, status, "preflight", "预检查通过")
 
-        _start_stage(project, status, "images", "生成缺失或过期的 slide 图片")
-        prompts_payload = _require_ok(client.get(f"/api/projects/{project_id}/steps/3/prompts"), "Step 3 prompts")
-        prompts_by_slide = {str(item.get("slide_id") or ""): str(item.get("prompt") or "") for item in prompts_payload.get("prompts", []) if isinstance(item, dict)}
-        requiring_images = _slides_requiring_images(project)
-        generated = 0
-        for index, slide_id in enumerate(requiring_images, start=1):
-            prompt = prompts_by_slide.get(slide_id)
-            if not prompt:
-                raise RuntimeError(f"缺少 {slide_id} 的生图 Prompt")
-            item = _stage(status, "images")
-            item["progress"] = index / max(1, len(requiring_images))
-            item["message"] = f"正在生成 {slide_id} ({index}/{len(requiring_images)})"
-            _save_status(project, status)
-            _require_ok(client.post(f"/api/projects/{project_id}/steps/3/generate", data={"slide_id": slide_id, "prompt": prompt, "preview": "false"}), f"Step 3 image {slide_id}")
-            generated += 1
-        _finish_stage(project, status, "images", f"图片已就绪，新增或刷新 {generated} 张")
+        if should_run("storyboard"):
+            _start_stage(project, status, "storyboard", "生成或复用 visual_contract.json")
+            if not _has_contract(project):
+                _require_ok(client.post(f"/api/projects/{project_id}/steps/2/script/execute", json={}), "Step 2 article-to-slide")
+                _require_ok(client.post(f"/api/projects/{project_id}/steps/2/visual/execute", json={}), "Step 2 slide-to-visual")
+                _require_ok(client.post(f"/api/projects/{project_id}/steps/2/compose", json={}), "Step 2 compose")
+                db.refresh(project)
+            _finish_stage(project, status, "storyboard", "分镜规划已就绪")
 
-        _start_stage(project, status, "confirm_images", "确认图片并创建 reveal_manifest.json")
-        _require_ok(client.post(f"/api/projects/{project_id}/steps/3/confirm"), "Step 3 confirm")
-        _finish_stage(project, status, "confirm_images", "图片已确认")
+        if should_run("images"):
+            _start_stage(project, status, "images", "生成缺失或过期的 slide 图片")
+            prompts_payload = _require_ok(client.get(f"/api/projects/{project_id}/steps/3/prompts"), "Step 3 prompts")
+            prompts_by_slide = {str(item.get("slide_id") or ""): str(item.get("prompt") or "") for item in prompts_payload.get("prompts", []) if isinstance(item, dict)}
+            requiring_images = _slides_requiring_images(project)
+            generated = 0
+            for index, slide_id in enumerate(requiring_images, start=1):
+                prompt = prompts_by_slide.get(slide_id)
+                if not prompt:
+                    raise RuntimeError(f"缺少 {slide_id} 的生图 Prompt")
+                item = _stage(status, "images")
+                item["progress"] = index / max(1, len(requiring_images))
+                item["message"] = f"正在生成 {slide_id} ({index}/{len(requiring_images)})"
+                _save_status(project, status)
+                _require_ok(client.post(f"/api/projects/{project_id}/steps/3/generate", data={"slide_id": slide_id, "prompt": prompt, "preview": "false"}), f"Step 3 image {slide_id}")
+                generated += 1
+            _finish_stage(project, status, "images", f"图片已就绪，新增或刷新 {generated} 张")
 
-        _start_stage(project, status, "ai_mask", "执行 AI Mask 标注")
-        ai_mask_payload = {"settings": {"overwrite_existing_manual_mask": True, "skip_locked_groups": False}}
-        ai_mask = client.post(f"/api/projects/{project_id}/steps/5/ai-mask/annotate", json=ai_mask_payload)
-        if ai_mask.status_code == 404:
-            ai_mask = client.post(f"/api/projects/{project_id}/steps/5/semantic-blocks", json={})
-        result = _require_ok(ai_mask, "AI Mask")
-        existing_masks = _existing_mask_count(project)
-        quality_errors = _ai_mask_quality_errors(result, existing_masks)
-        if quality_errors:
-            _warn_stage(project, status, "ai_mask", "首次标注未完整，正在自动重试")
-            retry = _require_ok(
-                client.post(f"/api/projects/{project_id}/steps/5/ai-mask/annotate", json=ai_mask_payload),
-                "AI Mask retry",
-            )
+        if should_run("confirm_images"):
+            _start_stage(project, status, "confirm_images", "确认图片并创建 reveal_manifest.json")
+            _require_ok(client.post(f"/api/projects/{project_id}/steps/3/confirm"), "Step 3 confirm")
+            _finish_stage(project, status, "confirm_images", "图片已确认")
+
+        if should_run("ai_mask"):
+            _start_stage(project, status, "ai_mask", "执行 AI Mask 标注")
+            ai_mask_payload = {"settings": {"overwrite_existing_manual_mask": False, "overwrite_existing_ai_mask": True, "skip_locked_groups": True}}
+            ai_mask = client.post(f"/api/projects/{project_id}/steps/5/ai-mask/annotate", json=ai_mask_payload)
+            if ai_mask.status_code == 404:
+                ai_mask = client.post(f"/api/projects/{project_id}/steps/5/semantic-blocks", json={})
+            result = _require_ok(ai_mask, "AI Mask")
             existing_masks = _existing_mask_count(project)
-            quality_errors = _ai_mask_quality_errors(retry, existing_masks)
-            result = retry
-            if quality_errors and gates.get("pause_on_ai_mask_low_confidence", True):
-                raise RuntimeError("AI Mask 自动重试后仍未完成：" + "；".join(quality_errors[:5]))
-        _finish_stage(project, status, "ai_mask", "AI Mask 标注完成")
+            quality_errors = _ai_mask_quality_errors(result, existing_masks)
+            if quality_errors:
+                _warn_stage(project, status, "ai_mask", "首次标注未完整，正在自动重试失败结果")
+                retry = _require_ok(
+                    client.post(f"/api/projects/{project_id}/steps/5/ai-mask/annotate", json=ai_mask_payload),
+                    "AI Mask retry",
+                )
+                existing_masks = _existing_mask_count(project)
+                quality_errors = _ai_mask_quality_errors(retry, existing_masks)
+                result = retry
+                if quality_errors and gates.get("pause_on_ai_mask_low_confidence", True):
+                    raise RuntimeError("AI Mask 自动重试后仍未完成：" + "；".join(quality_errors[:5]))
+            _finish_stage(project, status, "ai_mask", "AI Mask 标注完成")
 
-        _start_stage(project, status, "mask_assets", "构建 Reveal 资源")
-        manifest_payload = _require_ok(client.get(f"/api/projects/{project_id}/steps/5/result"), "Step 5 manifest")
-        manifest = manifest_payload.get("manifest")
-        if not isinstance(manifest, dict):
-            raise RuntimeError("Step 5 manifest 返回为空")
-        _require_ok(client.put(f"/api/projects/{project_id}/steps/5/result", json=manifest), "Step 5 build assets")
-        _finish_stage(project, status, "mask_assets", "Reveal 资源已构建")
+        if should_run("mask_assets"):
+            _start_stage(project, status, "mask_assets", "构建 Reveal 资源")
+            manifest_payload = _require_ok(client.get(f"/api/projects/{project_id}/steps/5/result"), "Step 5 manifest")
+            manifest = manifest_payload.get("manifest")
+            if not isinstance(manifest, dict):
+                raise RuntimeError("Step 5 manifest 返回为空")
+            _require_ok(client.put(f"/api/projects/{project_id}/steps/5/result", json=manifest), "Step 5 build assets")
+            _finish_stage(project, status, "mask_assets", "Reveal 资源已构建")
 
-        _start_stage(project, status, "narration", "生成演讲稿并尝试添加 TTS 标记")
-        init = _require_ok(client.post(f"/api/projects/{project_id}/steps/6/init"), "Step 6 init")
-        annotate = client.post(f"/api/projects/{project_id}/steps/6/annotate", json=init.get("beats") or {})
-        narration_beats = init.get("beats") or {}
-        if annotate.status_code >= 400:
-            _warn_stage(project, status, "narration", f"AI TTS 标记失败，继续使用原演讲稿：{_http_error(annotate)}")
-        else:
-            annotated = _require_ok(annotate, "Step 6 annotate")
-            narration_beats = annotated.get("beats") or narration_beats
-        _require_ok(
-            client.put(f"/api/projects/{project_id}/steps/6/result", json=narration_beats),
-            "Step 6 confirm narration",
-        )
-        _finish_stage(project, status, "narration", "演讲稿已就绪")
+        if should_run("narration"):
+            _start_stage(project, status, "narration", "生成或复用演讲稿并尝试添加 TTS 标记")
+            existing_narration = client.get(f"/api/projects/{project_id}/steps/6/result")
+            if existing_narration.status_code < 400:
+                existing_payload = existing_narration.json()
+            else:
+                existing_payload = {}
+            if isinstance(existing_payload, dict) and existing_payload.get("success") is True and isinstance(existing_payload.get("beats"), dict):
+                init = {"beats": existing_payload["beats"]}
+                _warn_stage(project, status, "narration", "已保留并复用现有演讲稿")
+            else:
+                init = _require_ok(client.post(f"/api/projects/{project_id}/steps/6/init"), "Step 6 init")
+            annotate = client.post(f"/api/projects/{project_id}/steps/6/annotate", json=init.get("beats") or {})
+            narration_beats = init.get("beats") or {}
+            if annotate.status_code >= 400:
+                _warn_stage(project, status, "narration", f"AI TTS 标记失败，继续使用原演讲稿：{_http_error(annotate)}")
+            else:
+                annotated = _require_ok(annotate, "Step 6 annotate")
+                narration_beats = annotated.get("beats") or narration_beats
+            _require_ok(
+                client.put(f"/api/projects/{project_id}/steps/6/result", json=narration_beats),
+                "Step 6 confirm narration",
+            )
+            _finish_stage(project, status, "narration", "演讲稿已就绪")
 
-        _start_stage(project, status, "tts", "合成 TTS 音频并确认")
-        _require_ok(client.post(f"/api/projects/{project_id}/steps/7/synthesize"), "Step 7 synthesize")
-        _require_ok(client.post(f"/api/projects/{project_id}/steps/7/confirm"), "Step 7 confirm")
-        _finish_stage(project, status, "tts", "音频已生成并确认")
+        if should_run("tts"):
+            _start_stage(project, status, "tts", "合成 TTS 音频并执行技术确认")
+            _require_ok(client.post(f"/api/projects/{project_id}/steps/7/synthesize"), "Step 7 synthesize")
+            _require_ok(client.post(f"/api/projects/{project_id}/steps/7/confirm", json={"confirmation_mode": "automatic_technical"}), "Step 7 confirm")
+            _finish_stage(project, status, "tts", "音频已生成并通过自动技术检查（未人工试听）")
 
-        _start_stage(project, status, "render", "渲染最终视频")
-        render = _require_ok(client.post(f"/api/projects/{project_id}/steps/8/render"), "Step 8 render")
-        video = render.get("video") or render.get("item") or render
-        _finish_stage(project, status, "render", "视频渲染完成")
+        video = None
+        if should_run("render"):
+            _start_stage(project, status, "render", "渲染最终视频")
+            render = _require_ok(client.post(f"/api/projects/{project_id}/steps/8/render"), "Step 8 render")
+            video = render.get("video") or render.get("item") or render
+            _finish_stage(project, status, "render", "视频渲染完成")
         _complete(project, status, video=video)
         try:
             server_module.write_project_log(project, "one_click_generate_completed", run_id=run_id, video=video)
@@ -486,10 +574,13 @@ def _register(server_module: ModuleType) -> bool:
             thread = _RUNNING.get(project_id)
             if thread and thread.is_alive():
                 return {"success": True, "already_running": True, "status": _status_for_project(project, project_id)}
+            mode = str((payload or {}).get("mode") or "resume").strip().lower()
+            if mode not in {"resume", "restart"}:
+                raise server_module.HTTPException(status_code=400, detail="mode 必须是 resume 或 restart")
             run_id = uuid.uuid4().hex[:12]
-            status = _initial_status(project_id, run_id)
+            status, _start_index = _resume_status(project, project_id, run_id, mode)
             _save_status(project, status)
-            thread = threading.Thread(name=f"ppt-one-click-{project_id}-{run_id}", target=_run_pipeline, args=(server_module, project_id, run_id), daemon=True)
+            thread = threading.Thread(name=f"ppt-one-click-{project_id}-{run_id}", target=_run_pipeline, args=(server_module, project_id, run_id, mode), daemon=True)
             _RUNNING[project_id] = thread
             thread.start()
         return {"success": True, "started": True, "status": status}

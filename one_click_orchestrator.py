@@ -19,9 +19,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import sys
 import threading
-import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -30,7 +28,6 @@ from typing import Any
 
 PATCH_MARKER = "__ppt_one_click_orchestrator_patch__"
 STATUS_FILENAME = "one_click_status.json"
-INSTALL_TIMEOUT_SEC = 120.0
 
 STAGES = [
     ("preflight", "预检查"),
@@ -601,35 +598,3 @@ def _register(server_module: ModuleType) -> bool:
     app.add_api_route("/api/projects/{project_id}/one-click-generate/status", get_one_click_status, methods=["GET"])
     setattr(server_module, PATCH_MARKER, True)
     return True
-
-
-def _candidate_modules() -> list[ModuleType]:
-    return [module for module in list(sys.modules.values()) if isinstance(module, ModuleType) and hasattr(module, "app") and hasattr(module, "Project")]
-
-
-def _log_timeout() -> None:
-    for module in _candidate_modules():
-        logger = getattr(module, "logger", None)
-        if logger:
-            logger.warning("One-click orchestrator bridge was not installed within %.0f seconds; server app or database helpers may be missing.", INSTALL_TIMEOUT_SEC)
-            return
-
-
-def _install_when_ready() -> None:
-    def worker() -> None:
-        started_at = time.monotonic()
-        while not os.environ.get("PPT_STUDIO_DISABLE_ONE_CLICK_ORCHESTRATOR"):
-            for module in _candidate_modules():
-                try:
-                    if _register(module):
-                        return
-                except Exception:
-                    return
-            if time.monotonic() - started_at > INSTALL_TIMEOUT_SEC:
-                _log_timeout()
-                return
-            time.sleep(0.1)
-    threading.Thread(name="ppt-one-click-orchestrator-runtime", target=worker, daemon=True).start()
-
-
-_install_when_ready()

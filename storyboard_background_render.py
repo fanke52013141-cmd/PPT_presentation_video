@@ -8,10 +8,7 @@ scripts/build_reveal_scene.py finishes successfully.
 from __future__ import annotations
 
 import json
-import os
-import subprocess
 from pathlib import Path
-from subprocess import CompletedProcess
 from typing import Any
 
 from PIL import Image
@@ -21,35 +18,10 @@ try:
 except Exception:  # pragma: no cover
     connected_background_mask = None
 
-PATCH_MARKER = "__ppt_storyboard_background_render_patch__"
 CONFIG_NAME = "storyboard_background.json"
 IMAGE_NAME = "storyboard_background.png"
 
 
-def _as_command_list(args: Any) -> list[str]:
-    if isinstance(args, (list, tuple)):
-        return [str(item) for item in args]
-    if args is None:
-        return []
-    return [str(args)]
-
-
-def _command_from_call(popenargs: tuple[Any, ...], kwargs: dict[str, Any]) -> list[str]:
-    if "args" in kwargs:
-        return _as_command_list(kwargs.get("args"))
-    if popenargs:
-        return _as_command_list(popenargs[0])
-    return []
-
-
-def _arg_value(command: list[str], flag: str) -> str | None:
-    try:
-        index = command.index(flag)
-    except ValueError:
-        return None
-    if index + 1 >= len(command):
-        return None
-    return command[index + 1]
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -143,38 +115,3 @@ def apply_storyboard_background(manifest_path: Path) -> int:
             _write_json(scene_path, scene)
             changed += 1
     return changed
-
-
-def _install_patch() -> None:
-    current = subprocess.run
-    if getattr(current, PATCH_MARKER, False):
-        return
-    original_run = current
-
-    def run_with_storyboard_background(*popenargs: Any, **kwargs: Any):
-        result = original_run(*popenargs, **kwargs)
-        if os.environ.get("PPT_STUDIO_DISABLE_STORYBOARD_BACKGROUND"):
-            return result
-        command = _command_from_call(popenargs, kwargs)
-        command_text = " ".join(command).replace("\\", "/")
-        if "scripts/build_reveal_scene.py" not in command_text:
-            return result
-        if getattr(result, "returncode", 1) != 0:
-            return result
-        manifest = _arg_value(command, "--manifest")
-        if not manifest:
-            return result
-        try:
-            count = apply_storyboard_background(Path(manifest).resolve())
-            if count and isinstance(result, CompletedProcess):
-                result.stdout = (result.stdout or "") + f"Applied storyboard image background to {count} slide(s).\n"
-        except Exception as exc:
-            if isinstance(result, CompletedProcess):
-                result.stderr = (result.stderr or "") + f"Storyboard image background failed: {exc}\n"
-        return result
-
-    setattr(run_with_storyboard_background, PATCH_MARKER, True)
-    subprocess.run = run_with_storyboard_background
-
-
-_install_patch()

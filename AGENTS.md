@@ -107,8 +107,8 @@ article.md
 The repository still contains runtime bridge modules that patch production behavior during Python startup:
 
 - `sitecustomize.py`
-- `runtime_security.py`
-- `runtime_settings_mask.py`
+- Access control is installed explicitly from `app_security.py`.
+- `/api/settings` masks credential fields in the source route by default.
 
 Treat them as migration debt, not as the normal extension mechanism. New fixes should land in `server.py`, `static/**`, or normal application startup code unless a large-file patch is not safe. Any new runtime bridge behavior must also be added to `docs/runtime_hotfixes_and_security.md` and issue #7.
 

@@ -28,7 +28,8 @@ assert "height: 32px !important" in css
 script_prompt = (ROOT / "templates" / "prompts" / "step2_script_system.md").read_text(encoding="utf-8")
 visual_prompt = (ROOT / "templates" / "prompts" / "step2_visual_system.md").read_text(encoding="utf-8")
 image_prompt = (ROOT / "templates" / "prompts" / "visual_draft.prompt.md").read_text(encoding="utf-8")
-assert "独立画面 Reveal" in script_prompt
+assert "body_points" in script_prompt
+assert "narration_segments" in script_prompt
 assert "视觉岛" in visual_prompt
 assert "48-80 px" in image_prompt
 

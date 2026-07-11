@@ -8,16 +8,10 @@ It does not expose secrets or project data.
 from __future__ import annotations
 
 import importlib
-import os
-import sys
-import threading
-import time
 from types import ModuleType
 from typing import Any
 
 PATCH_MARKER = "__ppt_runtime_diagnostics_patch__"
-INSTALL_TIMEOUT_SEC = 120.0
-POLL_INTERVAL_SEC = 0.1
 
 def _runtime_bootstrap() -> ModuleType | None:
     try:
@@ -80,27 +74,3 @@ def _register(server_module: ModuleType) -> bool:
     app.add_api_route("/api/runtime/diagnostics", runtime_diagnostics, methods=["GET"])
     setattr(server_module, PATCH_MARKER, True)
     return True
-
-
-def _candidate_modules() -> list[ModuleType]:
-    return [module for module in list(sys.modules.values()) if isinstance(module, ModuleType) and hasattr(module, "app")]
-
-
-def _install_when_ready() -> None:
-    def worker() -> None:
-        started_at = time.monotonic()
-        while not os.environ.get("PPT_STUDIO_DISABLE_RUNTIME_DIAGNOSTICS"):
-            for module in _candidate_modules():
-                try:
-                    if _register(module):
-                        return
-                except Exception:
-                    return
-            if time.monotonic() - started_at > INSTALL_TIMEOUT_SEC:
-                return
-            time.sleep(POLL_INTERVAL_SEC)
-
-    threading.Thread(name="ppt-runtime-diagnostics", target=worker, daemon=True).start()
-
-
-_install_when_ready()

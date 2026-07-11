@@ -14,7 +14,7 @@ def main() -> None:
     create_ui = read_text("static/project_profile_extension.js")
     style_ui = read_text("static/style_reference_manager_extension.js")
     one_click_ui = read_text("static/one_click_extension.js")
-    one_click_backend = read_text("runtime_one_click_orchestrator.py")
+    one_click_backend = read_text("one_click_orchestrator.py")
     step3_backend = read_text("runtime_step3_image_style.py")
 
     for script in (

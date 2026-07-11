@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT))
 import runtime_ai_mask as mask
 from scripts.build_reveal_scene import manual_mask_alpha
 os.environ.setdefault("PPT_STUDIO_DISABLE_ONE_CLICK_ORCHESTRATOR", "1")
-import runtime_one_click_orchestrator as one_click
+import one_click_orchestrator as one_click
 
 
 class _FakeVisionSettings:

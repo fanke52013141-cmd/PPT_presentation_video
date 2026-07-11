@@ -12,7 +12,8 @@ assert "bottom: subtitleStyle?.bottom ?? 18" in video
 assert "fontSize: subtitleStyle?.font_size ?? 38" in video
 assert "subtitleFontFamily" in video
 assert '"Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", Arial, sans-serif' in video
-assert "@remotion/google-fonts" not in video
+assert "@remotion/google-fonts/NotoSansSC" in video
+assert "loadNotoSansSC" in video
 assert "minHeight: 54" in video
 assert "background: 'transparent'" in video
 assert "rgba(255, 253, 247, 0.82)" not in video

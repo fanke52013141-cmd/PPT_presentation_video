@@ -4,6 +4,9 @@ on:
   pull_request:
     branches:
       - main
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -31,44 +34,10 @@ jobs:
           cache-dependency-path: scripts/remotion/package-lock.json
 
       - name: Install Python dependencies
-        run: python -m pip install -r requirements.txt
+        run: python -m pip install -r requirements-dev.txt
 
-      - name: Compile Python sources
-        run: python -m compileall -q start_server.py server.py scripts checks runtime_*.py
-
-      - name: Check frontend JavaScript syntax
-        run: |
-          node --check static/app.js
-          node --check static/flow.js
-          node --check static/ai_mask_extension.js
-          node --check static/project_profile_extension.js
-          node --check static/style_reference_manager_extension.js
-          node --check static/storyboard_background_extension.js
-          node --check static/one_click_extension.js
-
-      - name: Run visible-flow contract check
-        run: node checks/test_visible_flow.js
-
-      - name: Run Step ownership contract check
-        run: python checks/test_step_ownership_contract.py
-
-      - name: Run frontend quality checks
-        run: node checks/test_frontend_quality.js
-
-      - name: Run source hardening checks
-        run: |
-          python checks/test_source_hardening.py
-          python checks/test_generalized_settings.py
-          python checks/test_subtitle_style.py
-          python scripts/check_python_startup_hooks.py
-
-      - name: Run runtime hotfix self-check
-        run: python scripts/check_runtime_hotfixes.py
-
-      - name: Run settings mask self-check
-        env:
-          PPT_STUDIO_MASK_SETTINGS_SECRETS: "1"
-        run: python scripts/check_runtime_settings_mask.py
+      - name: Run canonical full checks
+        run: python scripts/run_checks.py --level full
 
       - name: Check Remotion TypeScript
         working-directory: scripts/remotion

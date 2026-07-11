@@ -1969,6 +1969,3 @@ def _install_when_ready() -> None:
                     return
             time.sleep(0.1)
     threading.Thread(target=worker, name="ppt-ai-mask-runtime", daemon=True).start()
-
-
-_install_when_ready()

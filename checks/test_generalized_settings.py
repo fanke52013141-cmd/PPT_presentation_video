@@ -198,7 +198,9 @@ def main() -> None:
         assert removed_token not in app_js
     assert "source_segment_id" not in step2_visual_prompt
     assert "不要输出 text" in step2_visual_prompt
-    assert "visual_type 与 visual_description 已经足够表达画面内容" in step2_visual_prompt
+    assert "不要输出 text、" in step2_visual_prompt
+    assert "body_points[]" in step2_visual_prompt
+    assert "narration_segments[]" in step2_visual_prompt
     assert server_module.IMAGE_STYLE_PROMPT_KEY == "prompt_system_content"
     assert "previewGlobalAnimationSettings" in app_js
     assert ".config-editor-scroll" in css

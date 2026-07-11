@@ -4,7 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BACKGROUND_UI = (ROOT / "static" / "storyboard_background_extension.js").read_text(encoding="utf-8")
 STYLE_UI = (ROOT / "static" / "style_reference_manager_extension.js").read_text(encoding="utf-8")
-BACKGROUND_RUNTIME = (ROOT / "runtime_storyboard_background.py").read_text(encoding="utf-8")
+BACKGROUND_RUNTIME = (ROOT / "storyboard_background.py").read_text(encoding="utf-8")
 STYLE_RUNTIME = (ROOT / "runtime_step3_image_style.py").read_text(encoding="utf-8")
 
 

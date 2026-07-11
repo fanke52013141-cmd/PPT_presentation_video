@@ -264,6 +264,3 @@ def _install_when_ready() -> None:
                     return
             time.sleep(0.1)
     threading.Thread(name="ppt-project-style-reference-manager-runtime", target=worker, daemon=True).start()
-
-
-_install_when_ready()

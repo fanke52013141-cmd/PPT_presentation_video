@@ -12,8 +12,8 @@ ultimately be migrated back into the normal source files.
 | File | Purpose |
 | --- | --- |
 | `sitecustomize.py` | Python auto-loaded runtime safeguards for pipeline stability. |
-| `runtime_security.py` | Optional access token and origin checks. |
-| `runtime_settings_mask.py` | Optional masking for credentials returned by `/api/settings`. |
+| `app_security.py` | Explicit access token and origin middleware installed by `server.py`. |
+| `server.py` Settings routes | Credential masking and placeholder-preserving updates, enabled by default. |
 | `scripts/ppt_studio_doctor.py` | Consolidated project health check entry point. |
 | `runtime_bootstrap.py` | Explicit installer for backend compatibility routes. |
 | `scripts/check_python_startup_hooks.py` | Self-check that normal server startup calls the explicit installer. |
@@ -193,7 +193,7 @@ main frontend code, and keep security middleware in normal application startup
 code.
 # One-click resume and AI Mask protection (2026-07-10)
 
-`runtime_one_click_orchestrator.py` now writes status atomically, distinguishes
+`one_click_orchestrator.py` now writes status atomically, distinguishes
 restart from resume, resumes at the failed stage, preserves existing narration,
 and requests automatic technical audio confirmation explicitly. Its AI Mask
 calls preserve locked groups and manual corrections while allowing untouched

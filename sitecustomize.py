@@ -485,6 +485,9 @@ def _install_reveal_manifest_reconcile_patch(server_module: ModuleType) -> bool:
                 for slide in manifest.get("slides", []) or []
                 if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()
             }
+            missing_slide_ids = [
+                str(slide_id) for slide_id in current_slide_ids if str(slide_id) not in old_slides_by_id
+            ]
 
             reconciled_slides: list[dict[str, Any]] = []
             for index, slide_id in enumerate(current_slide_ids, start=1):
@@ -501,6 +504,10 @@ def _install_reveal_manifest_reconcile_patch(server_module: ModuleType) -> bool:
 
             manifest.setdefault("version", "reveal_v1")
             manifest["slides"] = reconciled_slides
+            if missing_slide_ids:
+                # A completion summary cannot remain valid after reconstructing
+                # one or more slide templates.
+                manifest.pop("ai_mask_annotation", None)
             if _stable_json(manifest) == old_manifest_json:
                 return contract_changed
 
@@ -592,8 +599,3 @@ def _install_subprocess_run_guard() -> None:
 
 _install_subprocess_run_guard()
 _install_reconcile_patch_when_server_is_ready()
-
-try:
-    import runtime_security  # noqa: F401
-except Exception:
-    pass

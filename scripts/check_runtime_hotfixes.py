@@ -245,22 +245,15 @@ def check_import_and_subprocess_guard(sitecustomize: ModuleType, result: Result)
 
 
 def check_runtime_security_module(result: Result) -> None:
-    module = importlib.import_module("runtime_security")
-    assert_true(hasattr(module, "install_when_server_is_ready"), "runtime security installer is missing")
-    assert_true(hasattr(module, "_install_on_server_module"), "runtime security server installer is missing")
-    assert_true(module.ACCESS_TOKEN_ENV == "PPT_STUDIO_ACCESS_TOKEN", "unexpected access-token env var name")
+    module = importlib.import_module("app_security")
+    from fastapi import FastAPI
 
-    fake_module = ModuleType("fake_security_server")
-    fake_module.app = FakeApp()
-    previous_token = os.environ.pop("PPT_STUDIO_ACCESS_TOKEN", None)
-    try:
-        assert_true(module._install_on_server_module(fake_module) is True, "runtime security no-token install failed")
-        assert_true(getattr(fake_module, module._PATCH_MARKER, False) is True, "runtime security marker was not set")
-        assert_true(fake_module.app.registered_middlewares == [], "runtime security should not add middleware without a token")
-    finally:
-        if previous_token is not None:
-            os.environ["PPT_STUDIO_ACCESS_TOKEN"] = previous_token
-    result.pass_("optional runtime security module is importable and opt-in")
+    assert_true(hasattr(module, "install_access_control"), "explicit access control installer is missing")
+    assert_true(module.ACCESS_TOKEN_ENV == "PPT_STUDIO_ACCESS_TOKEN", "unexpected access-token env var name")
+    app = FastAPI()
+    assert_true(module.install_access_control(app, {}) is False, "no-token access control should remain disabled")
+    assert_true(app.state.ppt_access_control_installed is True, "access control install marker is missing")
+    result.pass_("explicit access control is installed without runtime scanning")
 
 
 def check_manifest_reconcile_and_topic(sitecustomize: ModuleType, result: Result) -> None:

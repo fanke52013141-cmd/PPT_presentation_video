@@ -35,7 +35,8 @@ def main() -> None:
 
     assert app_js.count("async function runStep7TTS()") == 1
 
-    assert "python checks/test_source_hardening.py" in ci
+    assert "python scripts/run_checks.py --level full" in ci
+    assert 'python_check(ROOT / "checks" / "test_source_hardening.py")' in read_text("scripts/run_checks.py")
     assert "npm ci" in ci
     assert "npx tsc --noEmit -p tsconfig.json" in ci
 

@@ -8,7 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import runtime_ai_mask as ai_mask
-import runtime_one_click_orchestrator as one_click
+import one_click_orchestrator as one_click
+import server
 
 
 def project_for(root: Path) -> SimpleNamespace:
@@ -74,7 +75,7 @@ def test_only_uncorrected_ai_masks_are_replaceable() -> None:
 
 
 def test_one_click_uses_safe_mask_and_audio_modes() -> None:
-    source = Path("runtime_one_click_orchestrator.py").read_text(encoding="utf-8")
+    source = Path("one_click_orchestrator.py").read_text(encoding="utf-8")
     assert '"overwrite_existing_manual_mask": False' in source
     assert '"overwrite_existing_ai_mask": True' in source
     assert '"skip_locked_groups": True' in source
@@ -82,9 +83,21 @@ def test_one_click_uses_safe_mask_and_audio_modes() -> None:
     assert 'client.get(f"/api/projects/{project_id}/steps/6/result")' in source
 
 
+def test_one_click_routes_are_explicit_and_unique() -> None:
+    route_methods = [
+        (getattr(route, "path", ""), frozenset(getattr(route, "methods", set()) or set()))
+        for route in server.app.routes
+    ]
+    assert route_methods.count(("/api/projects/{project_id}/one-click-generate", frozenset({"POST"}))) == 1
+    assert route_methods.count(("/api/projects/{project_id}/one-click-generate/status", frozenset({"GET"}))) == 1
+    assert not hasattr(one_click, "_install_when_ready")
+    assert not hasattr(one_click, "_candidate_modules")
+
+
 if __name__ == "__main__":
     test_atomic_status_write_and_resume()
     test_restart_does_not_reuse_failed_stage_state()
     test_only_uncorrected_ai_masks_are_replaceable()
     test_one_click_uses_safe_mask_and_audio_modes()
+    test_one_click_routes_are_explicit_and_unique()
     print("one-click orchestrator checks passed")

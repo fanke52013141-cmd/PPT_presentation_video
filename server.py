@@ -39,6 +39,34 @@ from scripts.pipeline_profiles import (
     storyboard_profile_prompt,
     storyboard_requirements,
 )
+from pipeline_lifecycle import (
+    clear_all_reveal_artifacts,
+    clear_audio_confirmation as clear_audio_confirmation_artifact,
+    clear_remotion_props,
+    clear_slide_reveal_artifacts,
+    mark_downstream_pending,
+    mark_selected_stale,
+)
+from tts_artifacts import (
+    artifact_paths as tts_artifact_paths,
+    artifact_status as tts_artifact_status,
+    confirmation_path as tts_confirmation_path,
+    is_audio_confirmed,
+    nonempty_file as tts_nonempty_file,
+    remove_outputs as remove_tts_outputs,
+    timeline_duration_sec,
+)
+from pipeline_state import begin_step, complete_step, current_step_after_completion, mark_retry_needed
+from project_storage import (
+    UnsafeProjectPath,
+    legacy_video_file,
+    project_run_dir as validated_project_run_dir,
+    slide_dir as storage_slide_dir,
+    slide_file as storage_slide_file,
+    video_file as storage_video_file,
+    video_sidecar as storage_video_sidecar,
+    videos_dir as storage_videos_dir,
+)
 
 def get_openai_client(api_key: str, base_url: str = None, timeout: float = 120.0, max_retries: int = 1) -> OpenAI:
     # 强制不使用环境变量中的代理，防止某些局域网代理的 SSL 拦截规则冲突
@@ -165,6 +193,7 @@ def provider_tts_command(
 
 from database import init_db, get_db, Project, Setting
 from config_store import get_all_settings, update_settings, get_setting
+from app_security import install_access_control
 
 # 初始化日志与数据库
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -182,13 +211,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-try:
-    import runtime_security  # noqa: F401
-except Exception as exc:
-    logger.warning("Optional runtime security module did not load: %s", exc)
+install_access_control(app)
 
 RUNS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "runs"))
 os.makedirs(RUNS_DIR, exist_ok=True)
+MAX_IMAGE_UPLOAD_BYTES = int(os.environ.get("PPT_STUDIO_MAX_IMAGE_UPLOAD_BYTES", str(20 * 1024 * 1024)))
+MAX_IMAGE_PIXELS = int(os.environ.get("PPT_STUDIO_MAX_IMAGE_PIXELS", "50000000"))
 REPO_ROOT = os.path.abspath(os.path.dirname(__file__))
 DATA_DIR = os.path.join(REPO_ROOT, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -517,7 +545,10 @@ SETTINGS_SECRET_KEYS = {
 
 
 def mask_settings_secrets_enabled() -> bool:
-    return os.environ.get("PPT_STUDIO_MASK_SETTINGS_SECRETS", "").strip().lower() in {"1", "true", "yes", "on"}
+    value = os.environ.get("PPT_STUDIO_MASK_SETTINGS_SECRETS")
+    if value is None:
+        return True
+    return value.strip().lower() not in {"0", "false", "no", "off"}
 
 
 def mask_sensitive_settings(settings: Dict[str, Any]) -> Dict[str, Any]:
@@ -562,7 +593,17 @@ def process_and_save_image(image_bytes: bytes, save_path: str):
     bg_color = (255, 255, 255)
     target_width, target_height = 1920, 1080
     
-    img = Image.open(io.BytesIO(image_bytes))
+    if not image_bytes:
+        raise ValueError("图片文件为空")
+    if len(image_bytes) > MAX_IMAGE_UPLOAD_BYTES:
+        raise ValueError(f"图片文件超过 {MAX_IMAGE_UPLOAD_BYTES // (1024 * 1024)} MB 限制")
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+    except (Image.UnidentifiedImageError, Image.DecompressionBombError, OSError) as exc:
+        raise ValueError("无法识别或不安全的图片文件") from exc
+    if img.width <= 0 or img.height <= 0 or img.width * img.height > MAX_IMAGE_PIXELS:
+        img.close()
+        raise ValueError(f"图片像素总量超过 {MAX_IMAGE_PIXELS} 限制")
     if img.mode in ("RGBA", "LA") or "transparency" in img.info:
         rgba = img.convert("RGBA")
         white = Image.new("RGBA", rgba.size, (*bg_color, 255))
@@ -1195,6 +1236,36 @@ def read_current_slide_ids_or_404(project: Project) -> List[str]:
     return slide_ids
 
 
+def project_run_dir_or_500(project: Project) -> str:
+    try:
+        return str(validated_project_run_dir(RUNS_DIR, project.run_dir, project.id))
+    except UnsafeProjectPath as exc:
+        logger.error("Unsafe project run directory for %s: %s", project.id, exc)
+        raise HTTPException(status_code=500, detail="项目运行目录安全校验失败") from exc
+
+
+def current_slide_file_or_404(project: Project, slide_id: str, filename: str) -> str:
+    run_dir = project_run_dir_or_500(project)
+    if slide_id not in read_current_slide_ids_or_404(project):
+        raise HTTPException(status_code=404, detail="Slide 不存在")
+    try:
+        return str(storage_slide_file(run_dir, slide_id, filename))
+    except UnsafeProjectPath as exc:
+        raise HTTPException(status_code=400, detail="Slide 路径无效") from exc
+
+
+def project_video_file_or_400(project: Project, filename: str) -> str:
+    run_dir = project_run_dir_or_500(project)
+    try:
+        return str(storage_video_file(run_dir, filename))
+    except UnsafeProjectPath as exc:
+        raise HTTPException(status_code=400, detail="视频文件名无效") from exc
+
+
+def project_legacy_video_file(project: Project) -> str:
+    return str(legacy_video_file(project_run_dir_or_500(project)))
+
+
 def sync_reveal_manifest_to_contract(project: Project, slide_ids: Optional[List[str]] = None) -> bool:
     """Keep Mask slides aligned with Step 2 and repair missing template slides.
 
@@ -1359,9 +1430,7 @@ def subtitle_preview_background_url(project: Project) -> str:
 
 
 def invalidate_subtitle_derivatives(project: Project, db: Session) -> None:
-    props_path = os.path.join(project.run_dir, "remotion_props.json")
-    if os.path.exists(props_path):
-        os.remove(props_path)
+    clear_remotion_props(project.run_dir)
     current_status = project.get_step_status()
     if current_status.get("8") == "completed":
         current_status["8"] = "pending_reconfirmation"
@@ -1392,24 +1461,9 @@ def sync_project_background_color(project: Project) -> Optional[str]:
 
 
 def invalidate_video_background_derivatives(project: Project, db: Session) -> None:
-    for slide_id in read_contract_slide_ids(project.run_dir):
-        slide_dir = os.path.join(project.run_dir, "slides", slide_id)
-        for filename in ("scene.json", "animation_timeline.json", "reveal_report.json"):
-            path = os.path.join(slide_dir, filename)
-            if os.path.exists(path):
-                os.remove(path)
-        assets_dir = os.path.join(slide_dir, "assets")
-        if os.path.isdir(assets_dir):
-            shutil.rmtree(assets_dir)
-    props_path = os.path.join(project.run_dir, "remotion_props.json")
-    if os.path.exists(props_path):
-        os.remove(props_path)
+    clear_all_reveal_artifacts(project.run_dir, read_contract_slide_ids(project.run_dir))
     current_status = project.get_step_status()
-    for step_key in ("5", "8"):
-        if current_status.get(step_key) == "completed":
-            current_status[step_key] = "pending_reconfirmation"
-        elif current_status.get(step_key) != "pending":
-            current_status[step_key] = "pending"
+    mark_selected_stale(current_status, (5, 8))
     project.current_step = 3
     project.set_step_status(current_status)
     db.commit()
@@ -1861,7 +1915,7 @@ def rewrite_audio_timeline_by_beats(timeline_path: str, slide_id: str, beats: Li
 @app.post("/api/projects")
 def create_project(payload: ProjectCreate, db: Session = Depends(get_db)):
     project_id = str(uuid.uuid4())[:8] + "_" + datetime.now().strftime("%H%M%S")
-    run_dir = os.path.join(RUNS_DIR, project_id)
+    run_dir = str(validated_project_run_dir(RUNS_DIR, os.path.join(RUNS_DIR, project_id), project_id))
     
     # 初始化文件夹结构
     os.makedirs(os.path.join(run_dir, "inputs"), exist_ok=True)
@@ -1933,12 +1987,15 @@ def delete_project(project_id: str, db: Session = Depends(get_db)):
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
     
-    # 物理删除 runs 文件夹
-    if os.path.exists(project.run_dir):
+    # Only delete a direct, ID-matching child of RUNS_DIR. Never trust a
+    # database path for recursive deletion without this boundary check.
+    run_dir = project_run_dir_or_500(project)
+    if os.path.exists(run_dir):
         try:
-            shutil.rmtree(project.run_dir)
+            shutil.rmtree(run_dir)
         except Exception as e:
-            logger.error(f"Failed to delete directory {project.run_dir}: {e}")
+            logger.error(f"Failed to delete directory {run_dir}: {e}")
+            raise HTTPException(status_code=500, detail="项目文件删除失败") from e
             
     db.delete(project)
     db.commit()
@@ -2229,17 +2286,15 @@ def test_tts_connection(payload: TestTtsPayload):
 # ==================== 流水线状态管理 ====================
 
 def audio_confirmation_path(project: Project) -> str:
-    return os.path.join(project.run_dir, "planning", "audio_confirmed.json")
+    return str(tts_confirmation_path(project.run_dir))
 
 
 def project_audio_confirmed(project: Project) -> bool:
-    return os.path.exists(audio_confirmation_path(project))
+    return is_audio_confirmed(project.run_dir)
 
 
 def clear_audio_confirmation(project: Project):
-    path = audio_confirmation_path(project)
-    if os.path.exists(path):
-        os.remove(path)
+    clear_audio_confirmation_artifact(project.run_dir)
 
 
 def _safe_process_text(value: Any) -> str:
@@ -2251,66 +2306,23 @@ def _safe_process_text(value: Any) -> str:
 
 
 def nonempty_file(path: str) -> bool:
-    return os.path.exists(path) and os.path.isfile(path) and os.path.getsize(path) > 0
+    return tts_nonempty_file(path)
 
 
 def slide_tts_artifact_paths(project: Project, slide_id: str) -> Dict[str, str]:
-    slide_dir = os.path.join(project.run_dir, "slides", slide_id)
-    return {
-        "slide_dir": slide_dir,
-        "text": os.path.join(slide_dir, "tts_text.txt"),
-        "audio": os.path.join(slide_dir, "voice.mp3"),
-        "metadata": os.path.join(slide_dir, "tts_metadata.json"),
-        "srt": os.path.join(slide_dir, "subtitles.srt"),
-        "timeline": os.path.join(slide_dir, "audio_timeline.json"),
-    }
+    return {key: str(path) for key, path in tts_artifact_paths(project.run_dir, slide_id).items()}
 
 
 def read_timeline_duration_sec(timeline_path: str) -> Optional[float]:
-    if not os.path.exists(timeline_path):
-        return None
-    try:
-        with open(timeline_path, "r", encoding="utf-8") as f:
-            payload = json.load(f)
-        duration = payload.get("audio_content_duration_sec") or payload.get("duration_sec")
-        return float(duration) if duration is not None else None
-    except Exception:
-        return None
+    return timeline_duration_sec(timeline_path)
 
 
 def slide_tts_artifact_status(project: Project, slide_id: str) -> Dict[str, Any]:
-    paths = slide_tts_artifact_paths(project, slide_id)
-    required = ["audio", "metadata", "srt", "timeline"]
-    exists = {name: nonempty_file(paths[name]) for name in required}
-    complete = all(exists.values())
-    stale = False
-    if complete and os.path.exists(paths["text"]):
-        try:
-            text_mtime = os.path.getmtime(paths["text"])
-            oldest_output_mtime = min(os.path.getmtime(paths[name]) for name in required)
-            stale = oldest_output_mtime + 0.5 < text_mtime
-        except OSError:
-            stale = True
-    missing = [name for name, present in exists.items() if not present]
-    return {
-        "slide_id": slide_id,
-        "audio_exists": exists["audio"],
-        "complete": complete and not stale,
-        "stale": stale,
-        "missing_artifacts": missing,
-        "audio_bytes": os.path.getsize(paths["audio"]) if nonempty_file(paths["audio"]) else 0,
-        "duration_sec": read_timeline_duration_sec(paths["timeline"]),
-    }
+    return tts_artifact_status(project.run_dir, slide_id)
 
 
 def remove_tts_artifacts(paths: Dict[str, str]) -> None:
-    for key in ("audio", "metadata", "srt", "timeline"):
-        path = paths.get(key)
-        if path and os.path.exists(path):
-            try:
-                os.remove(path)
-            except OSError as exc:
-                logger.warning("Failed to remove stale TTS artifact %s: %s", path, exc)
+    remove_tts_outputs(paths)
 
 
 def ensure_slide_tts_text_file(project: Project, slide_id: str, contract: Dict[str, Any]) -> str:
@@ -2338,12 +2350,7 @@ def ensure_slide_tts_text_file(project: Project, slide_id: str, contract: Dict[s
 
 
 def mark_step_retry_needed(project: Project, target_step: int, db: Session) -> None:
-    current_status = project.get_step_status()
-    current_status[str(target_step)] = "pending_reconfirmation"
-    for s_idx in range(target_step + 1, 9):
-        s_str = str(s_idx)
-        if current_status.get(s_str) in ("completed", "in_progress", "pending_reconfirmation"):
-            current_status[s_str] = "pending"
+    current_status = mark_retry_needed(project.get_step_status(), target_step)
     project.current_step = target_step
     project.set_step_status(current_status)
     db.commit()
@@ -2413,14 +2420,7 @@ def run_tts_command_with_retries(project: Project, slide_id: str, tts_args: List
 
 
 def mark_step_in_progress(project: Project, target_step: int, db: Session):
-    current_status = project.get_step_status()
-    for s_idx in range(target_step + 1, 9):
-        s_str = str(s_idx)
-        if current_status.get(s_str) == "completed":
-            current_status[s_str] = "pending_reconfirmation"
-        elif current_status.get(s_str) == "in_progress":
-            current_status[s_str] = "pending"
-    current_status[str(target_step)] = "in_progress"
+    current_status = begin_step(project.get_step_status(), target_step)
     project.current_step = target_step
     project.set_step_status(current_status)
     db.commit()
@@ -2428,21 +2428,10 @@ def mark_step_in_progress(project: Project, target_step: int, db: Session):
 
 # 回退某一步后，后续步骤状态被标记为 pending_reconfirmation
 def handle_step_navigation(project: Project, target_step: int, db: Session):
-    current_status = project.get_step_status()
+    current_status = complete_step(project.get_step_status(), target_step)
     if target_step < 7:
         clear_audio_confirmation(project)
-    
-    # Downstream completed artifacts become stale when an upstream step changes.
-    # Steps that were merely unlocked or waiting should go back to plain pending.
-    for s_idx in range(target_step + 1, 9):
-        s_str = str(s_idx)
-        if current_status.get(s_str) == "completed":
-            current_status[s_str] = "pending_reconfirmation"
-        elif current_status.get(s_str) in ["in_progress", "pending_reconfirmation"]:
-            current_status[s_str] = "pending"
-            
-    current_status[str(target_step)] = "completed"
-    project.current_step = max(project.current_step or target_step, target_step)
+    project.current_step = current_step_after_completion(project.current_step, target_step)
     project.set_step_status(current_status)
     db.commit()
 
@@ -2470,17 +2459,7 @@ def clear_slide_visual_derivatives(project: Project, slide_id: str) -> None:
             except Exception as exc:
                 logger.warning("Failed to clear Mask data for %s: %s", slide_id, exc)
 
-        slide_dir = os.path.join(project.run_dir, "slides", slide_id)
-        for filename in ("scene.json", "animation_timeline.json", "reveal_report.json"):
-            path = os.path.join(slide_dir, filename)
-            if os.path.exists(path):
-                os.remove(path)
-        assets_dir = os.path.join(slide_dir, "assets")
-        if os.path.isdir(assets_dir):
-            shutil.rmtree(assets_dir)
-        props_path = os.path.join(project.run_dir, "remotion_props.json")
-        if os.path.exists(props_path):
-            os.remove(props_path)
+        clear_slide_reveal_artifacts(project.run_dir, slide_id)
 
 
 def validate_current_reveal_assets(project: Project) -> None:
@@ -2550,6 +2529,9 @@ def build_current_reveal_assets(project: Project) -> None:
                 status_code=500,
                 detail=f"构建精确 Mask 素材失败: {result.stderr}",
             )
+        from storyboard_background_render import apply_storyboard_background
+
+        apply_storyboard_background(Path(manifest_path).resolve())
         validate_current_reveal_assets(project)
 
 
@@ -2558,13 +2540,7 @@ def mark_slide_image_changed(project: Project, slide_id: str, db: Session) -> No
     clear_audio_confirmation(project)
     current_status = project.get_step_status()
     current_status["3"] = "completed" if all_current_slide_images_exist(project) else "in_progress"
-    for step in range(4, 9):
-        step_key = str(step)
-        current_status[step_key] = (
-            "pending_reconfirmation"
-            if current_status.get(step_key) == "completed"
-            else "pending"
-        )
+    mark_downstream_pending(current_status, from_step=4)
     project.current_step = 3
     project.set_step_status(current_status)
     db.commit()
@@ -5176,14 +5152,11 @@ def generate_slide_image(
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
 
-    if slide_id not in read_current_slide_ids_or_404(project):
-        raise HTTPException(status_code=404, detail="Slide 不存在")
-
     api_key = get_setting("image_api_key")
     base_url = get_setting("image_base_url")
     model = get_setting("image_model", "gpt-image-1")
     image_filename = "visual_candidate.png" if preview else "visual_draft.png"
-    save_path = os.path.join(project.run_dir, "slides", slide_id, image_filename)
+    save_path = current_slide_file_or_404(project, slide_id, image_filename)
     
     if not api_key:
         raise HTTPException(status_code=400, detail="未配置生图 API 密钥，请在系统设置中配置，或使用下方本地上传图片功能。")
@@ -5258,15 +5231,16 @@ def upload_slide_image(project_id: str, slide_id: str = Form(...), file: UploadF
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-    if slide_id not in read_current_slide_ids_or_404(project):
-        raise HTTPException(status_code=404, detail="Slide 不存在")
-        
+    save_path = current_slide_file_or_404(project, slide_id, "visual_draft.png")
     try:
-        content = file.file.read()
-        save_path = os.path.join(project.run_dir, "slides", slide_id, "visual_draft.png")
+        content = file.file.read(MAX_IMAGE_UPLOAD_BYTES + 1)
+        if len(content) > MAX_IMAGE_UPLOAD_BYTES:
+            raise ValueError(f"图片文件超过 {MAX_IMAGE_UPLOAD_BYTES // (1024 * 1024)} MB 限制")
         process_and_save_image(content, save_path)
         mark_slide_image_changed(project, slide_id, db)
         return {"success": True, "image_url": f"/api/projects/{project_id}/slides/{slide_id}/image?t={uuid.uuid4().hex[:6]}"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error(f"Upload image error for {slide_id}: {e}")
         raise HTTPException(status_code=500, detail=f"上传图片失败: {str(e)}")
@@ -5278,7 +5252,7 @@ def get_slide_image_file(project_id: str, slide_id: str, db: Session = Depends(g
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
         
-    img_path = os.path.join(project.run_dir, "slides", slide_id, "visual_draft.png")
+    img_path = current_slide_file_or_404(project, slide_id, "visual_draft.png")
     if not os.path.exists(img_path):
         raise HTTPException(status_code=404, detail="图片不存在")
         
@@ -5290,10 +5264,7 @@ def get_slide_candidate_file(project_id: str, slide_id: str, db: Session = Depen
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-    if slide_id not in read_current_slide_ids_or_404(project):
-        raise HTTPException(status_code=404, detail="Slide 不存在")
-
-    candidate_path = os.path.join(project.run_dir, "slides", slide_id, "visual_candidate.png")
+    candidate_path = current_slide_file_or_404(project, slide_id, "visual_candidate.png")
     if not os.path.exists(candidate_path):
         raise HTTPException(status_code=404, detail="候选图片不存在")
     return FileResponse(candidate_path, media_type="image/png")
@@ -5306,12 +5277,8 @@ def apply_slide_candidate(project_id: str, payload: Dict[str, Any], db: Session 
         raise HTTPException(status_code=404, detail="项目不存在")
 
     slide_id = str(payload.get("slide_id") or "").strip()
-    if slide_id not in read_current_slide_ids_or_404(project):
-        raise HTTPException(status_code=404, detail="Slide 不存在")
-
-    slide_dir = os.path.join(project.run_dir, "slides", slide_id)
-    candidate_path = os.path.join(slide_dir, "visual_candidate.png")
-    image_path = os.path.join(slide_dir, "visual_draft.png")
+    candidate_path = current_slide_file_or_404(project, slide_id, "visual_candidate.png")
+    image_path = current_slide_file_or_404(project, slide_id, "visual_draft.png")
     if not os.path.exists(candidate_path):
         raise HTTPException(status_code=404, detail="候选图片不存在，请先生成")
 
@@ -5328,12 +5295,8 @@ def delete_slide_image(project_id: str, slide_id: str, db: Session = Depends(get
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-    if slide_id not in read_current_slide_ids_or_404(project):
-        raise HTTPException(status_code=404, detail="Slide 不存在")
-
-    slide_dir = os.path.join(project.run_dir, "slides", slide_id)
-    image_path = os.path.join(slide_dir, "visual_draft.png")
-    candidate_path = os.path.join(slide_dir, "visual_candidate.png")
+    image_path = current_slide_file_or_404(project, slide_id, "visual_draft.png")
+    candidate_path = current_slide_file_or_404(project, slide_id, "visual_candidate.png")
     if not os.path.exists(image_path):
         raise HTTPException(status_code=404, detail="图片不存在")
     os.remove(image_path)
@@ -6741,8 +6704,8 @@ def get_slide_audio_file(project_id: str, slide_id: str, db: Session = Depends(g
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
         
+    audio_path = current_slide_file_or_404(project, slide_id, "voice.mp3")
     status = slide_tts_artifact_status(project, slide_id)
-    audio_path = slide_tts_artifact_paths(project, slide_id)["audio"]
     if not status["audio_exists"]:
         raise HTTPException(status_code=404, detail="该页面音频尚未生成")
         
@@ -6807,13 +6770,13 @@ def confirm_tts_audio(project_id: str, payload: Optional[Dict[str, Any]] = None,
 # ==================== 步骤 8: 视频合成与渲染 ====================
 
 def project_video_dir(project: Project) -> str:
-    videos_dir = os.path.join(project.run_dir, "videos")
-    os.makedirs(videos_dir, exist_ok=True)
-    return videos_dir
+    target = storage_videos_dir(project_run_dir_or_500(project))
+    target.mkdir(parents=True, exist_ok=True)
+    return str(target)
 
 
 def video_metadata_path(path: str) -> str:
-    return f"{path}.render.json"
+    return str(storage_video_sidecar(path))
 
 
 def read_video_metadata(path: str) -> Dict[str, Any]:
@@ -7059,7 +7022,7 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
     # 直接调用 Remotion CLI，避免维护第二套渲染入口。
     npx_cmd = "npx.cmd" if sys.platform == "win32" else "npx"
     props_json_path = os.path.join(project.run_dir, "remotion_props.json")
-    videos_dir = project_video_dir(project)
+    project_video_dir(project)
     output_filename = f"render_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.mp4"
     output_mp4_path = os.path.join(videos_dir, output_filename)
     legacy_output_path = os.path.join(project.run_dir, "out.mp4")
@@ -7182,13 +7145,10 @@ def get_project_video(project_id: str, filename: str, db: Session = Depends(get_
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-    safe_name = os.path.basename(filename)
-    if safe_name != filename or not safe_name.lower().endswith(".mp4"):
-        raise HTTPException(status_code=400, detail="视频文件名无效")
-    video_path = os.path.join(project.run_dir, "videos", safe_name)
+    video_path = project_video_file_or_400(project, filename)
     if not os.path.exists(video_path):
         raise HTTPException(status_code=404, detail="视频文件不存在")
-    return FileResponse(video_path, media_type="video/mp4", filename=safe_name)
+    return FileResponse(video_path, media_type="video/mp4", filename=filename)
 
 
 @app.post("/api/projects/{project_id}/videos/{filename}/speed")
@@ -7201,9 +7161,8 @@ def create_speed_adjusted_video(
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-    safe_name = os.path.basename(filename)
-    if safe_name != filename or not safe_name.lower().endswith(".mp4"):
-        raise HTTPException(status_code=400, detail="视频文件名无效")
+    requested_path = project_video_file_or_400(project, filename)
+    safe_name = filename
     try:
         speed = round(float(payload.get("speed", 1.0)), 2)
     except (TypeError, ValueError):
@@ -7212,12 +7171,14 @@ def create_speed_adjusted_video(
         raise HTTPException(status_code=400, detail="视频语速范围为 0.5× 到 2.0×")
 
     videos_dir = project_video_dir(project)
-    requested_path = os.path.join(videos_dir, safe_name)
     if not os.path.exists(requested_path):
         raise HTTPException(status_code=404, detail="视频文件不存在")
     requested_metadata = read_video_metadata(requested_path)
     source_name = os.path.basename(str(requested_metadata.get("source_filename") or safe_name))
-    source_path = os.path.join(videos_dir, source_name)
+    try:
+        source_path = str(storage_video_file(project.run_dir, source_name))
+    except UnsafeProjectPath:
+        source_name, source_path = safe_name, requested_path
     if not os.path.exists(source_path):
         source_name, source_path = safe_name, requested_path
     if abs(speed - 1.0) <= 0.001:
@@ -7229,7 +7190,7 @@ def create_speed_adjusted_video(
     speed_tag = f"{speed:.2f}".rstrip("0").rstrip(".").replace(".", "_")
     source_stem = os.path.splitext(source_name)[0]
     output_name = f"{source_stem}_speed_{speed_tag}x.mp4"
-    output_path = os.path.join(videos_dir, output_name)
+    output_path = str(storage_video_file(project.run_dir, output_name))
     temp_path = output_path + ".tmp.mp4"
     if os.path.exists(temp_path):
         os.remove(temp_path)
@@ -7295,13 +7256,11 @@ def delete_project_video(project_id: str, filename: str, db: Session = Depends(g
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
 
-    safe_name = os.path.basename(filename)
-    if safe_name != filename or not safe_name.lower().endswith(".mp4"):
-        raise HTTPException(status_code=400, detail="视频文件名无效")
+    safe_name = filename
     if safe_name == "out.mp4":
-        video_path = os.path.join(project.run_dir, "out.mp4")
+        video_path = project_legacy_video_file(project)
     else:
-        video_path = os.path.join(project.run_dir, "videos", safe_name)
+        video_path = project_video_file_or_400(project, safe_name)
     if not os.path.exists(video_path):
         raise HTTPException(status_code=404, detail="视频文件不存在")
     os.remove(video_path)
@@ -7310,14 +7269,14 @@ def delete_project_video(project_id: str, filename: str, db: Session = Depends(g
         os.remove(metadata_path)
 
     remaining = list_video_items(project, project_id)
-    legacy_path = os.path.join(project.run_dir, "out.mp4")
+    legacy_path = project_legacy_video_file(project)
     regular_remaining = [
         item for item in remaining
         if item.get("filename") != "out.mp4"
-        and os.path.exists(os.path.join(project.run_dir, "videos", item["filename"]))
+        and os.path.exists(project_video_file_or_400(project, item["filename"]))
     ]
     if regular_remaining:
-        newest_path = os.path.join(project.run_dir, "videos", regular_remaining[0]["filename"])
+        newest_path = project_video_file_or_400(project, regular_remaining[0]["filename"])
         shutil.copy2(newest_path, legacy_path)
     elif os.path.exists(legacy_path):
         os.remove(legacy_path)
@@ -7387,16 +7346,53 @@ static_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "static"))
 os.makedirs(static_dir, exist_ok=True)
 
 try:
-    import runtime_bootstrap
+    import one_click_orchestrator
 
-    runtime_bootstrap.install_for_server_module(sys.modules[__name__])
+    if one_click_orchestrator._register(sys.modules[__name__]) is not True:
+        raise RuntimeError("one-click route dependencies are incomplete")
 except Exception as exc:
-    logger.warning("Runtime bridge bootstrap failed before static mount: %s", exc)
+    logger.exception("Explicit one-click route registration failed: %s", exc)
+    raise
+
+try:
+    import diagnostics_routes
+
+    if diagnostics_routes._register(sys.modules[__name__]) is not True:
+        raise RuntimeError("diagnostics route dependencies are incomplete")
+except Exception as exc:
+    logger.exception("Explicit diagnostics route registration failed: %s", exc)
+    raise
+
+try:
+    import storyboard_background
+
+    if storyboard_background._register(sys.modules[__name__]) is not True:
+        raise RuntimeError("storyboard background route dependencies are incomplete")
+except Exception as exc:
+    logger.exception("Explicit storyboard background route registration failed: %s", exc)
+    raise
+
+try:
+    from project_style_routes import register_project_style_routes
+
+    register_project_style_routes(sys.modules[__name__])
+except Exception as exc:
+    logger.exception("Explicit project style route registration failed: %s", exc)
+    raise
+
+try:
+    import runtime_ai_mask
+
+    if runtime_ai_mask._register(sys.modules[__name__]) is not True:
+        raise RuntimeError("AI Mask route dependencies are incomplete")
+except Exception as exc:
+    logger.exception("Explicit AI Mask route registration failed: %s", exc)
+    raise
 
 # 挂载静态资源
 app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 
 if __name__ == "__main__":
-    import uvicorn
-    # 本地交互流程包含长耗时 AI 请求，默认关闭热重载，避免保存过程中连接被重启打断。
-    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=False)
+    from start_server import main as start_main
+
+    raise SystemExit(start_main())

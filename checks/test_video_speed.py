@@ -28,9 +28,10 @@ class FakeDb:
 
 
 with tempfile.TemporaryDirectory() as temp_dir:
-    run_dir = Path(temp_dir)
+    runs_dir = Path(temp_dir) / "runs"
+    run_dir = runs_dir / "project_test"
     videos_dir = run_dir / "videos"
-    videos_dir.mkdir()
+    videos_dir.mkdir(parents=True)
     source = videos_dir / "render_test.mp4"
     source.write_bytes(b"source-video")
     (videos_dir / "render_test.mp4.render.json").write_text(
@@ -51,7 +52,7 @@ with tempfile.TemporaryDirectory() as temp_dir:
         Path(command[-1]).write_bytes(b"speed-video")
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
-    with patch("server.resolve_media_tool", return_value="ffmpeg"), patch("server.subprocess.run", side_effect=fake_run):
+    with patch("server.RUNS_DIR", str(runs_dir)), patch("server.resolve_media_tool", return_value="ffmpeg"), patch("server.subprocess.run", side_effect=fake_run):
         result = server.create_speed_adjusted_video(
             "project_test",
             "render_test.mp4",

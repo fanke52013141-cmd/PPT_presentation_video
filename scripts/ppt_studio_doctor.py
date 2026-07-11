@@ -87,8 +87,7 @@ def run_check(name: str, command: list[str], *, env: dict[str, str] | None = Non
 def check_required_files() -> CheckResult:
     required_paths = [
         "sitecustomize.py",
-        "runtime_security.py",
-        "runtime_settings_mask.py",
+        "app_security.py",
         "scripts/check_python_startup_hooks.py",
         "scripts/check_runtime_hotfixes.py",
         "scripts/check_runtime_settings_mask.py",

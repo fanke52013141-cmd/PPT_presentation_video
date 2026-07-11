@@ -26,42 +26,9 @@ IMPORT_MARKER = "__ppt_runtime_bridges_imported__"
 INSTALL_TIMEOUT_SEC = 120.0
 POLL_INTERVAL_SEC = 0.05
 
-RUNTIME_MODULES = [
-    "runtime_settings_mask",
-    "runtime_ai_mask",
-    "runtime_storyboard_background",
-    "runtime_storyboard_background_render",
-    "runtime_project_profile",
-    "runtime_project_profile_lightweight",
-    "runtime_project_profile_templates_override",
-    "runtime_project_style_references",
-    "runtime_project_style_reference_manager",
-    "runtime_project_style_reference_step3",
-    "runtime_image_style_reverse",
-    "runtime_step3_image_style",
-    "runtime_step3_image_style_state",
-    "runtime_one_click_orchestrator",
-    "runtime_diagnostics",
-]
+RUNTIME_MODULES: list[str] = []
 
 EXPECTED_RUNTIME_ROUTES = {
-    "/api/runtime/diagnostics": {"GET"},
-    "/api/settings/ai-mask": {"GET"},
-    "/api/project-profile/templates": {"GET"},
-    "/api/projects/{project_id}/one-click-generate": {"POST"},
-    "/api/projects/{project_id}/one-click-generate/status": {"GET"},
-    "/api/projects/{project_id}/storyboard-background": {"GET"},
-    "/api/projects/{project_id}/steps/3/image-style": {"GET", "PUT"},
-    "/api/projects/{project_id}/steps/3/image-style/reverse": {"POST"},
-    "/api/projects/{project_id}/steps/3/image-style/reference-images": {"GET", "POST", "DELETE"},
-    "/api/projects/{project_id}/steps/3/image-style/reference-images/generate": {"POST"},
-    "/api/projects/{project_id}/steps/3/image-style/reference-images/{index}": {"GET", "DELETE"},
-    "/api/image-style/project-templates": {"GET"},
-    "/api/projects/{project_id}/steps/3/image-style/templates": {"POST"},
-    "/api/projects/{project_id}/steps/3/image-style/templates/{template_id}/apply": {"POST"},
-    "/api/image-style/project-templates/{template_id}": {"GET", "DELETE"},
-    "/api/image-style/project-templates/{template_id}/reference-images/{index}": {"GET"},
-    "/api/projects/{project_id}/steps/5/ai-mask/annotate": {"POST"},
 }
 EXPECTED_RUNTIME_PATHS = set(EXPECTED_RUNTIME_ROUTES)
 

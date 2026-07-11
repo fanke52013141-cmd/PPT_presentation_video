@@ -367,6 +367,3 @@ def _install_when_ready() -> None:
                     return
             time.sleep(0.1)
     threading.Thread(name="ppt-image-style-reverse-runtime", target=worker, daemon=True).start()
-
-
-_install_when_ready()

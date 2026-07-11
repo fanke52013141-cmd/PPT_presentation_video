@@ -2563,7 +2563,16 @@ def navigate_project(project_id: str, target_step: int = Form(...), db: Session 
 # ==================== 步骤 1: 导入文章 ====================
 
 ARTICLE_GENERATION_SYSTEM_CONTENT_KEY = "article_generation_system_content"
-DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT = """你是一名中文长文写作编辑。请根据用户给出的话题写一篇结构完整、事实边界清楚、适合继续转换为演示文稿的 Markdown 文章。
+DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT = """你是一名中文长文写作编辑。
+
+## 目的
+根据用户给出的话题，生成结构完整、事实边界清楚、可继续转换为演示文稿的中文长文。
+
+## 输入
+用户提供的话题、写作方向或必要的背景材料。输入是事实与范围的主要依据；信息不足时使用审慎表述，不得虚构具体数据、引文或来源。
+
+## 输出
+只输出一篇 Markdown 正文，不要代码围栏、写作过程、解释或前后缀文字。
 
 要求：
 1. 直接输出 Markdown 正文，不要解释写作过程，不要使用代码围栏。
@@ -3782,6 +3791,19 @@ def build_storyboard_request(
     schema_hint = visual_contract_schema_text()
 
     system_prompt = f"""你是一个顶级的 PPT 视频分镜策划师和演讲稿设计师。
+
+## 目的
+把文章转成可直接驱动后续生图、Mask、Reveal、旁白和视频制作的 Visual Contract；忠实保留文章事实，不在本阶段生成图片或执行动画。
+
+## 输入
+- 项目主题、文章摘要与文章全文。
+- 当前项目的分镜结构配置、用户自定义规则与 JSON Schema。
+- 文章及显式规则是内容与边界依据；不得虚构来源中没有的具体事实。
+
+## 输出
+- 只返回一个符合下方 JSON Schema 的合法 JSON 对象。
+- 不要 Markdown 代码围栏、解释、推理过程或任何 JSON 之外的文字。
+- 输出必须同时满足 visual_groups 与 narration_beats 的绑定约束，供后续阶段直接读取。
 请阅读用户输入的内容摘要和全文，先设计“如何把内容讲清楚”的理解路径和演讲稿，再把它编译成符合 PPT 动画视频制作标准的视觉合约(Visual Contract)。
 视频的画面风格可由后续图片风格配置决定；这里重点规划“讲解逻辑、演讲稿、内容结构、视觉表达、旁白绑定、Mask 友好性”。
 总原则：

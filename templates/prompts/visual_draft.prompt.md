@@ -1,5 +1,19 @@
 # Visual Draft Prompt Template
 
+## Purpose
+
+Generate one complete, approved PPT slide bitmap that faithfully presents the supplied slide content and remains suitable for later AI/manual Mask and Reveal processing. Do not generate separate layers or animation instructions.
+
+## Input
+
+- The current slide's approved content, narration intent, visual description, and active style constraints.
+- Treat supplied wording and production invariants as binding; do not invent unsupported facts or omit required content.
+
+## Output
+
+- Exactly one complete 1920x1080 bitmap image.
+- No prose, JSON, layout explanation, alternate versions, contact sheet, mockup frame, or transparent layer output.
+
 Use this template to generate one complete Image Gen slide. Optional manual Masks may later reveal selected visual anchors, but the source remains one approved full-slide bitmap.
 
 ## Production Invariants

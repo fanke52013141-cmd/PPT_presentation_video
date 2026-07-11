@@ -1,5 +1,6 @@
 """Focused checks for automatic AI Mask detection and mapping."""
 
+import json
 import tempfile
 from pathlib import Path
 import sys
@@ -262,6 +263,12 @@ def main() -> None:
     test_existing_anchor_is_not_stolen_when_seeding_missing_group()
     test_nearby_icon_is_absorbed_by_closest_large_visual_island()
     test_volcengine_ai_mask_uses_provider_model_and_single_timeout_policy()
+    safe_defaults = mask.normalize_settings({})
+    assert safe_defaults["overwrite_existing_manual_mask"] is False
+    assert safe_defaults["skip_locked_groups"] is True
+    assert mask._confidence_level(0.9) == "high"
+    assert mask._confidence_level(0.75) == "medium"
+    assert mask._confidence_level(0.4) == "low"
     with tempfile.TemporaryDirectory() as temp_dir:
         slide_dir = Path(temp_dir) / "slide_001"
         slide_dir.mkdir(parents=True)
@@ -340,6 +347,26 @@ def main() -> None:
             for group in manifest_slide["groups"]
         ]
         assert not np.any(alphas[0] & alphas[1])
+
+        review_payload = {
+            "matches": [
+                {"group_id": "group_left", "confidence": 0.78},
+                {"group_id": "group_right", "confidence": 0.92},
+            ],
+            "unmatched_groups": ["group_missing"],
+        }
+        issues = mask._review_issues(review_payload)
+        assert [issue["group_id"] for issue in issues] == ["group_left", "group_missing"]
+        assert issues[0]["confidence_level"] == "medium"
+
+        protected_group = manifest_slide["groups"][0]
+        protected_group["manual_mask"]["source"] = "manual_paint"
+        protected_group["manual_mask"]["strokes"] = [
+            {"mode": "paint", "size": 8, "points": [{"x": 30, "y": 30}]}
+        ]
+        protected_before = json.dumps(protected_group["manual_mask"], sort_keys=True)
+        mask._apply(manifest, fixture_slide(), detected, completed, settings)
+        assert json.dumps(protected_group["manual_mask"], sort_keys=True) == protected_before
 
         duplicate_candidate_slide = {
             "slide_id": "slide_001",

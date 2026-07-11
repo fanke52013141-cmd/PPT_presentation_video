@@ -38,9 +38,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "max_group_elements": 60,
     "llm_confidence_threshold": 0.72,
     "llm_temperature": 0.1,
-    "overwrite_existing_manual_mask": True,
+    "overwrite_existing_manual_mask": False,
     "overwrite_existing_ai_mask": True,
-    "skip_locked_groups": False,
+    "skip_locked_groups": True,
 }
 
 MASK_COLORS = (
@@ -50,6 +50,18 @@ MASK_COLORS = (
 AI_MASK_VISION_TIMEOUT_SEC = 180.0
 
 DEFAULT_METHODOLOGY = """你是中文 PPT 视频的 AI Mask 语义标注专家。
+
+## 目的
+把自动检测到的画面元素绑定到当前 Slide 已有的 visual_groups 与 narration_beats，为后续生成安全、可复核的 Reveal Mask 提供匹配结果；不重写分镜或旁白。
+
+## 输入
+- 当前 Slide 的 visual_groups、narration_beats 与 auto_elements。
+- 带 element_id 标记的画面及其空间位置。
+- 所有返回的 ID 必须来自输入，不得创造新 ID。
+
+## 输出
+- 只输出符合“输出结构”的一个合法 JSON 对象，不要 Markdown、解释或额外文字。
+- 不确定时降低 confidence 或放入 unmatched 列表，不得强行匹配。
 
 任务：把纯白背景图片中自动检测到的视觉元素候选，绑定到当前 Slide 已有的 visual_groups 和 narration_beats。你不是重新生成分镜，也不是重写演讲稿；你只做“画面元素 → 语块 → 演讲稿 beat”的匹配。
 
@@ -144,9 +156,9 @@ def normalize_settings(raw: dict[str, Any] | None) -> dict[str, Any]:
         "max_group_elements": max(20, _int(raw.get("max_group_elements"), 60, 1, 120)),
         "llm_confidence_threshold": _float(raw.get("llm_confidence_threshold"), 0.72, 0, 1),
         "llm_temperature": _float(raw.get("llm_temperature"), 0.1, 0, 1),
-        "overwrite_existing_manual_mask": _bool(raw.get("overwrite_existing_manual_mask"), True),
+        "overwrite_existing_manual_mask": _bool(raw.get("overwrite_existing_manual_mask"), False),
         "overwrite_existing_ai_mask": _bool(raw.get("overwrite_existing_ai_mask"), True),
-        "skip_locked_groups": _bool(raw.get("skip_locked_groups"), False),
+        "skip_locked_groups": _bool(raw.get("skip_locked_groups"), True),
     }
 
 
@@ -1574,6 +1586,42 @@ def _replaceable_ai_mask(group: dict[str, Any]) -> bool:
     return source.startswith("ai_auto_mask") and not has_corrections and not locked
 
 
+def _confidence_level(value: Any) -> str:
+    confidence = _float(value, 0.0, 0.0, 1.0)
+    if confidence >= 0.85:
+        return "high"
+    if confidence >= 0.65:
+        return "medium"
+    return "low"
+
+
+def _review_issues(match_payload: dict[str, Any]) -> list[dict[str, Any]]:
+    issues: list[dict[str, Any]] = []
+    for match in match_payload.get("matches", []) or []:
+        if not isinstance(match, dict):
+            continue
+        confidence = _float(match.get("confidence"), 0.0, 0.0, 1.0)
+        level = _confidence_level(confidence)
+        if level == "high" and not match.get("below_threshold"):
+            continue
+        issues.append({
+            "type": "low_confidence_match" if level == "low" else "review_match",
+            "group_id": str(match.get("group_id") or ""),
+            "confidence": round(confidence, 4),
+            "confidence_level": level,
+            "message": "AI 对该语块的元素归属不够确定，请检查。",
+        })
+    for group_id in match_payload.get("unmatched_groups", []) or []:
+        issues.append({
+            "type": "unmatched_group",
+            "group_id": str(group_id),
+            "confidence": 0.0,
+            "confidence_level": "low",
+            "message": "该语块没有找到可靠的画面元素。",
+        })
+    return issues
+
+
 def _find_group(groups: list[dict[str, Any]], gid: str) -> dict[str, Any] | None:
     for group in groups:
         if not isinstance(group, dict):
@@ -1716,18 +1764,22 @@ def _apply(manifest: dict[str, Any], slide: dict[str, Any], elements_payload: di
                 }
                 collection.append(group)
             _migrate_legacy_default_reveal(group)
-            if settings["skip_locked_groups"] and str(group.get("review_status") or "") in {"approved", "locked"}:
+            if str(group.get("review_status") or "").lower() in {"approved", "locked"}:
                 continue
-            if _has_manual(group) and not settings["overwrite_existing_manual_mask"]:
-                if not settings.get("overwrite_existing_ai_mask", True) or not _replaceable_ai_mask(group):
-                    continue
+            # Human corrections are always authoritative. Only a pristine Mask
+            # produced by a previous AI run may be replaced automatically.
+            if _has_manual(group) and not _replaceable_ai_mask(group):
+                continue
+            if _has_manual(group) and not settings.get("overwrite_existing_ai_mask", True):
+                continue
             group["box"] = box
             group["visual_group_id"] = gid
             group["manual_mask"] = {
                 **exact_mask,
                 "color": color,
             }
-            group["review_status"] = "ai_matched"
+            confidence_level = _confidence_level(match.get("confidence"))
+            group["review_status"] = "ai_matched" if confidence_level == "high" else "ai_review_required"
             group["source"] = "ai_auto_mask"
             if match.get("narration_beat_id"):
                 group["narration_beat_id"] = match["narration_beat_id"]
@@ -1739,7 +1791,12 @@ def _apply(manifest: dict[str, Any], slide: dict[str, Any], elements_payload: di
                 "compatible_manual_corrections": True,
                 "exclusive_pixel_ownership": True,
             }
-            group["ai_match"] = {"confidence": match.get("confidence"), "reason": match.get("reason", "")}
+            group["ai_match"] = {
+                "confidence": match.get("confidence"),
+                "confidence_level": confidence_level,
+                "needs_review": confidence_level != "high",
+                "reason": match.get("reason", ""),
+            }
         updated += 1
     mslide["ai_mask_status"] = {
         "version": "ai_mask_annotation_v3_exact_rle",
@@ -1748,6 +1805,7 @@ def _apply(manifest: dict[str, Any], slide: dict[str, Any], elements_payload: di
         "detected_element_count": len(elements_payload.get("elements", [])),
         "residual_component_count": len(elements_payload.get("residual_elements", [])),
         "quality": match_payload.get("quality", {}),
+        "review_issues": _review_issues(match_payload),
     }
     return {"updated": updated, "skipped": skipped}
 
@@ -1871,6 +1929,7 @@ def _annotate_project(server_module: ModuleType, project: Any, settings: dict[st
     total_unmatched_groups = 0
     total_skipped = 0
     quality_passed = True
+    review_issues: list[dict[str, Any]] = []
     for item in prepared:
         slide_id = item["slide_id"]
         match = matches[slide_id]
@@ -1889,7 +1948,9 @@ def _annotate_project(server_module: ModuleType, project: Any, settings: dict[st
         slide_quality = match.get("quality", {}) if isinstance(match.get("quality"), dict) else {}
         quality_passed = quality_passed and bool(slide_quality.get("passed"))
         semantic_quality = match.get("semantic_quality", {}) if isinstance(match.get("semantic_quality"), dict) else {}
-        slides_out.append({"slide_id": slide_id, "detected_element_count": len(item["element_list"]), "residual_component_count": len(item["elements"].get("residual_elements", [])), "matched_group_count": len(match.get("matches", [])), "updated_group_count": applied["updated"], "skipped_group_count": applied["skipped"], "unmatched_element_count": len(match.get("unmatched_elements", [])), "unmatched_group_count": unmatched_group_count, "matching_method": match.get("matching_method"), "quality": slide_quality, "semantic_quality": semantic_quality, "warnings": match.get("warnings", [])})
+        slide_review_issues = [{"slide_id": slide_id, **issue} for issue in _review_issues(match)]
+        review_issues.extend(slide_review_issues)
+        slides_out.append({"slide_id": slide_id, "detected_element_count": len(item["element_list"]), "residual_component_count": len(item["elements"].get("residual_elements", [])), "matched_group_count": len(match.get("matches", [])), "updated_group_count": applied["updated"], "skipped_group_count": applied["skipped"], "unmatched_element_count": len(match.get("unmatched_elements", [])), "unmatched_group_count": unmatched_group_count, "matching_method": match.get("matching_method"), "quality": slide_quality, "semantic_quality": semantic_quality, "warnings": match.get("warnings", []), "review_required": bool(slide_review_issues), "review_issues": slide_review_issues})
     # Annotation is "complete" as long as at least one slide was processed and
     # at least one group was updated.  Unmatched groups and quality warnings
     # are advisory — the user can review and manually fix in the editor.
@@ -1903,9 +1964,11 @@ def _annotate_project(server_module: ModuleType, project: Any, settings: dict[st
         "unmatched_group_count": total_unmatched_groups,
         "skipped_group_count": total_skipped,
         "quality_passed": quality_passed,
+        "review_required": bool(review_issues),
+        "review_issue_count": len(review_issues),
     }
     _write_json(run_dir / "reveal_manifest.json", manifest)
-    return {"success": True, "complete": complete, "processed_slide_count": len(slides_out), "updated_group_count": total_updated, "unmatched_group_count": total_unmatched_groups, "slides": slides_out, "manifest_path": str(run_dir / "reveal_manifest.json")}
+    return {"success": True, "complete": complete, "processed_slide_count": len(slides_out), "updated_group_count": total_updated, "unmatched_group_count": total_unmatched_groups, "review_required": bool(review_issues), "review_issue_count": len(review_issues), "review_issues": review_issues, "slides": slides_out, "manifest_path": str(run_dir / "reveal_manifest.json")}
 
 
 def _register(server_module: ModuleType) -> bool:

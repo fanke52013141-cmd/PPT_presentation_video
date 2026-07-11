@@ -390,15 +390,20 @@
       const result = await apiPost(`/api/projects/${encodeURIComponent(id)}/steps/5/ai-mask/annotate`, {
         scope: 'all_slides',
         settings: {
-          overwrite_existing_manual_mask: true,
-          skip_locked_groups: false,
+          overwrite_existing_manual_mask: false,
+          skip_locked_groups: true,
         },
       });
       if (result.complete !== true) {
         throw new Error('仍有画面语块未能完成关联，请重新运行 AI 标注');
       }
       setInlineStatus('', false, false);
-      toast(options.automatic ? 'AI 标注已自动完成。' : 'AI 标注已重新完成。', 4500);
+      const reviewCount = Number(result.review_issue_count || 0);
+      if (reviewCount > 0) {
+        toast(`AI 标注已完成，有 ${reviewCount} 个位置建议检查。`, 6500);
+      } else {
+        toast(options.automatic ? 'AI 标注已自动完成。' : 'AI 标注已重新完成。', 4500);
+      }
       if (typeof window.loadStep5Data === 'function') await window.loadStep5Data();
       else if (typeof loadStep5Data === 'function') await loadStep5Data();
       if (typeof window.renderStep5Workspace === 'function') window.renderStep5Workspace();

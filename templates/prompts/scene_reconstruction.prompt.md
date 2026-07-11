@@ -1,5 +1,19 @@
 # Scene Reconstruction Prompt
 
+## Purpose
+
+Reconstruct a production-ready Reveal scene from an approved slide bitmap and optional manual masks while preserving the approved visual content exactly.
+
+## Input
+
+- One approved full-slide bitmap.
+- Optional saved manual brush masks and the current `reveal_manifest.json`.
+
+## Output
+
+- Production scene assets referenced by the updated manifest and a successful validation result.
+- Do not redesign, regenerate, reinterpret, crop, or reassign slide content.
+
 Build the production reveal scene from one approved full-slide bitmap and its optional manual brush masks.
 
 ## Production Contract

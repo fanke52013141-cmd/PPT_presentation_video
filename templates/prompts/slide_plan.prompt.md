@@ -1,5 +1,19 @@
 # Slide Plan Prompt
 
+## Purpose
+
+Convert the supplied article into a narration-first slide plan that downstream visual planning can consume without inventing facts or prematurely fixing the page layout.
+
+## Input
+
+- `runs/<run_id>/inputs/article.md` is the sole content source.
+- Production invariants and the schemas named below define the non-negotiable boundaries.
+
+## Output
+
+- Write one valid JSON object to `runs/<run_id>/planning/slide_plan.json`.
+- Output no Markdown wrapper, commentary, image prompt, Mask coordinates, or Reveal implementation.
+
 Read `runs/<run_id>/inputs/article.md` and produce
 `runs/<run_id>/planning/slide_plan.json`.
 

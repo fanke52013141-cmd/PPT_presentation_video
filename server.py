@@ -5,6 +5,7 @@ import uuid
 import json
 import copy
 import base64
+import binascii
 import hashlib
 import shutil
 import logging
@@ -13,11 +14,12 @@ import re
 import tempfile
 import threading
 import time
+import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Query
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -136,8 +138,6 @@ def provider_tts_command(
     out_timeline: str,
     slide_id: str,
     endpoint: str,
-    api_key: str,
-    secret_key: str,
     region: str,
     model: str,
     voice_id: str,
@@ -167,10 +167,6 @@ def provider_tts_command(
         slide_id,
         "--endpoint",
         endpoint,
-        "--api-key",
-        api_key,
-        "--secret-key",
-        secret_key,
         "--region",
         region,
         "--model",
@@ -190,6 +186,13 @@ def provider_tts_command(
         "--timeout",
         str(STEP7_TTS_TIMEOUT_SEC),
     ]
+
+
+def provider_tts_environment(api_key: str, secret_key: str) -> Dict[str, str]:
+    environment = os.environ.copy()
+    environment[TTS_API_KEY_ENV] = str(api_key or "")
+    environment[TTS_SECRET_KEY_ENV] = str(secret_key or "")
+    return environment
 
 from database import init_db, get_db, Project, Setting
 from config_store import get_all_settings, update_settings, get_setting
@@ -217,6 +220,9 @@ RUNS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "runs"))
 os.makedirs(RUNS_DIR, exist_ok=True)
 MAX_IMAGE_UPLOAD_BYTES = int(os.environ.get("PPT_STUDIO_MAX_IMAGE_UPLOAD_BYTES", str(20 * 1024 * 1024)))
 MAX_IMAGE_PIXELS = int(os.environ.get("PPT_STUDIO_MAX_IMAGE_PIXELS", "50000000"))
+MAX_CONFIG_IMPORT_BYTES = int(os.environ.get("PPT_STUDIO_MAX_CONFIG_IMPORT_BYTES", str(25 * 1024 * 1024)))
+TTS_API_KEY_ENV = "PPT_STUDIO_TTS_API_KEY"
+TTS_SECRET_KEY_ENV = "PPT_STUDIO_TTS_SECRET_KEY"
 REPO_ROOT = os.path.abspath(os.path.dirname(__file__))
 DATA_DIR = os.path.join(REPO_ROOT, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -586,6 +592,27 @@ class TestTtsPayload(BaseModel):
     clone_voice_id: Optional[str] = None
     provider_extra: Optional[str] = None
 
+
+def open_validated_image(image_bytes: bytes) -> Image.Image:
+    if not image_bytes:
+        raise ValueError("图片文件为空")
+    if len(image_bytes) > MAX_IMAGE_UPLOAD_BYTES:
+        raise ValueError(f"图片文件超过 {MAX_IMAGE_UPLOAD_BYTES // (1024 * 1024)} MB 限制")
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            image = Image.open(io.BytesIO(image_bytes))
+            if image.width <= 0 or image.height <= 0 or image.width * image.height > MAX_IMAGE_PIXELS:
+                image.close()
+                raise ValueError(f"图片像素总量超过 {MAX_IMAGE_PIXELS} 限制")
+            image.load()
+            return image
+    except ValueError:
+        raise
+    except (Image.UnidentifiedImageError, Image.DecompressionBombError, Image.DecompressionBombWarning, OSError) as exc:
+        raise ValueError("无法识别或不安全的图片文件") from exc
+
+
 # 图片后处理：将任意尺寸等比例缩放，并居中贴在纯白 1920x1080 生图画布上
 def process_and_save_image(image_bytes: bytes, save_path: str):
     # Keep the original aspect ratio. Non-16:9 sources are fitted and padded;
@@ -593,17 +620,7 @@ def process_and_save_image(image_bytes: bytes, save_path: str):
     bg_color = (255, 255, 255)
     target_width, target_height = 1920, 1080
     
-    if not image_bytes:
-        raise ValueError("图片文件为空")
-    if len(image_bytes) > MAX_IMAGE_UPLOAD_BYTES:
-        raise ValueError(f"图片文件超过 {MAX_IMAGE_UPLOAD_BYTES // (1024 * 1024)} MB 限制")
-    try:
-        img = Image.open(io.BytesIO(image_bytes))
-    except (Image.UnidentifiedImageError, Image.DecompressionBombError, OSError) as exc:
-        raise ValueError("无法识别或不安全的图片文件") from exc
-    if img.width <= 0 or img.height <= 0 or img.width * img.height > MAX_IMAGE_PIXELS:
-        img.close()
-        raise ValueError(f"图片像素总量超过 {MAX_IMAGE_PIXELS} 限制")
+    img = open_validated_image(image_bytes)
     if img.mode in ("RGBA", "LA") or "transparency" in img.info:
         rgba = img.convert("RGBA")
         white = Image.new("RGBA", rgba.size, (*bg_color, 255))
@@ -2071,17 +2088,31 @@ def exported_image_style_templates() -> List[Dict[str, Any]]:
     return templates
 
 
-def decode_config_reference(reference: Any, target_path: str) -> None:
+def decode_config_reference_bytes(reference: Any) -> Optional[bytes]:
     if not isinstance(reference, dict) or not reference.get("exists"):
-        if os.path.exists(target_path):
-            os.remove(target_path)
-        return
+        return None
     data = str(reference.get("data") or "")
     if not data:
+        return None
+    try:
+        decoded = base64.b64decode(data, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError("配置中的参考图 Base64 数据无效") from exc
+    image = open_validated_image(decoded)
+    image.close()
+    return decoded
+
+
+def decode_config_reference(reference: Any, target_path: str) -> None:
+    decoded = decode_config_reference_bytes(reference)
+    if decoded is None:
+        if not isinstance(reference, dict) or not reference.get("exists"):
+            if os.path.exists(target_path):
+                os.remove(target_path)
         return
     os.makedirs(os.path.dirname(target_path), exist_ok=True)
-    with open(target_path, "wb") as file:
-        file.write(base64.b64decode(data))
+    image = open_validated_image(decoded).convert("RGB")
+    image.save(target_path, "PNG")
 
 
 def write_config_references(reference_bundle: Any, reference_dir: str) -> None:
@@ -2126,10 +2157,50 @@ def export_full_config():
     }
 
 
-@app.post("/api/config/import")
-def import_full_config(payload: Dict[str, Any]):
+async def read_limited_json_request(request: Request, max_bytes: int) -> Dict[str, Any]:
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > max_bytes:
+                raise HTTPException(status_code=413, detail=f"配置文件超过 {max_bytes // (1024 * 1024)} MB 限制")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Content-Length 格式不正确")
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > max_bytes:
+            raise HTTPException(status_code=413, detail=f"配置文件超过 {max_bytes // (1024 * 1024)} MB 限制")
+    try:
+        payload = json.loads(body.decode("utf-8-sig"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="配置文件不是有效 JSON") from exc
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="配置文件格式不正确")
+    return payload
+
+
+def validate_config_references(payload: Dict[str, Any]) -> None:
+    image_style = payload.get("image_style") if isinstance(payload.get("image_style"), dict) else {}
+    bundles = [image_style.get("active_references")]
+    for item in image_style.get("templates") or []:
+        if isinstance(item, dict):
+            bundles.append(item.get("references"))
+    for bundle in bundles:
+        if not isinstance(bundle, dict):
+            continue
+        for reference in bundle.values():
+            decode_config_reference_bytes(reference)
+
+
+@app.post("/api/config/import")
+async def import_full_config(request: Request):
+    payload = await read_limited_json_request(request, MAX_CONFIG_IMPORT_BYTES)
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="配置文件格式不正确")
+    try:
+        validate_config_references(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     settings = payload.get("settings")
     if isinstance(settings, dict):
         update_settings({str(key): str(value) for key, value in settings.items()})
@@ -2254,8 +2325,6 @@ def test_tts_connection(payload: TestTtsPayload):
                 out_timeline=out_timeline,
                 slide_id="tts_test",
                 endpoint=endpoint,
-                api_key=api_key,
-                secret_key=secret_key,
                 region=region,
                 model=model,
                 voice_id=voice_id,
@@ -2272,6 +2341,7 @@ def test_tts_connection(payload: TestTtsPayload):
                 encoding="utf-8",
                 errors="replace",
                 timeout=90,
+                env=provider_tts_environment(api_key, secret_key),
             )
             if res.returncode != 0:
                 return {"success": False, "message": f"TTS 测试失败: {(res.stderr or res.stdout)[:600]}"}
@@ -2356,7 +2426,12 @@ def mark_step_retry_needed(project: Project, target_step: int, db: Session) -> N
     db.commit()
 
 
-def run_tts_command_with_retries(project: Project, slide_id: str, tts_args: List[str]) -> Dict[str, Any]:
+def run_tts_command_with_retries(
+    project: Project,
+    slide_id: str,
+    tts_args: List[str],
+    tts_env: Dict[str, str],
+) -> Dict[str, Any]:
     last_result: Dict[str, Any] = {
         "ok": False,
         "returncode": None,
@@ -2374,6 +2449,7 @@ def run_tts_command_with_retries(project: Project, slide_id: str, tts_args: List
                 encoding="utf-8",
                 errors="replace",
                 timeout=STEP7_TTS_PROCESS_TIMEOUT_SEC,
+                env=tts_env,
             )
             last_result.update(
                 {
@@ -2432,6 +2508,16 @@ def handle_step_navigation(project: Project, target_step: int, db: Session):
     if target_step < 7:
         clear_audio_confirmation(project)
     project.current_step = current_step_after_completion(project.current_step, target_step)
+    project.set_step_status(current_status)
+    db.commit()
+
+
+def invalidate_after_upstream_edit(project: Project, source_step: int, db: Session) -> None:
+    """Keep edited source data while making every dependent stage explicitly stale."""
+    current_status = complete_step(project.get_step_status(), source_step)
+    clear_audio_confirmation(project)
+    clear_remotion_props(project.run_dir)
+    project.current_step = source_step
     project.set_step_status(current_status)
     db.commit()
 
@@ -2684,7 +2770,7 @@ def import_article(project_id: str, content: Optional[str] = Form(None), db: Ses
     with open(brief_path, "w", encoding="utf-8") as f:
         json.dump(brief, f, ensure_ascii=False, indent=2)
 
-    handle_step_navigation(project, 1, db)
+    invalidate_after_upstream_edit(project, 1, db)
     return {"success": True, "brief": brief}
 
 
@@ -2712,15 +2798,28 @@ def update_step1_result(project_id: str, payload: Dict[str, Any], db: Session = 
     brief_path = os.path.join(project.run_dir, "planning", "article_brief.json")
     payload["title"] = (project.name or "").strip() or payload.get("title") or "未命名项目"
     payload["summary"] = payload.get("summary") or build_article_summary(str(payload.get("content") or ""))
-    with open(brief_path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
+    existing_brief = read_json_file(brief_path, {})
+    brief_changed = json.dumps(existing_brief, ensure_ascii=False, sort_keys=True) != json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    if brief_changed:
+        with open(brief_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
         
     # 同步回写 article.md
+    article_changed = False
     if "content" in payload:
         article_path = os.path.join(project.run_dir, "inputs", "article.md")
-        with open(article_path, "w", encoding="utf-8") as f:
-            f.write(payload["content"])
-            
+        existing_article = read_text_file_if_exists(article_path)
+        article_changed = existing_article != str(payload["content"])
+        if article_changed:
+            with open(article_path, "w", encoding="utf-8") as f:
+                f.write(payload["content"])
+
+    if brief_changed or article_changed:
+        invalidate_after_upstream_edit(project, 1, db)
     return {"success": True, "brief": payload}
 
 # ==================== 步骤 2: 智能分镜规划 ====================
@@ -4105,6 +4204,50 @@ def get_step2_prompt_preview(
     }
 
 
+def visual_contract_validation_path(project: Project) -> str:
+    return os.path.join(project.run_dir, "planning", "visual_contract.validation.json")
+
+
+def validate_visual_contract_file(
+    project: Project,
+    contract_path: str,
+    *,
+    source: str,
+    trace_id: str = "",
+) -> Dict[str, Any]:
+    validate_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "validate_visual_contract.py"))
+    validation_args = [sys.executable, validate_script, "--contract", contract_path]
+    project_profile_path = storyboard_profile_path(project)
+    if os.path.exists(project_profile_path):
+        validation_args.extend(["--profile", project_profile_path])
+    result = subprocess.run(
+        validation_args,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    contract_bytes = Path(contract_path).read_bytes()
+    validation = {
+        "valid": result.returncode == 0,
+        "contract_sha256": hashlib.sha256(contract_bytes).hexdigest(),
+        "validated_at": datetime.now().isoformat(timespec="seconds"),
+        "returncode": result.returncode,
+        "stdout": result.stdout.strip(),
+        "stderr": result.stderr.strip(),
+        "source": source,
+        "trace_id": trace_id,
+    }
+    write_json_atomic(visual_contract_validation_path(project), validation)
+    return validation
+
+
+def storyboard_validation_gate_enabled(project: Project) -> bool:
+    profile = read_project_pipeline_profile(project)
+    gates = profile.get("quality_gates") if isinstance(profile.get("quality_gates"), dict) else {}
+    return bool(gates.get("pause_on_storyboard_validation_error", True))
+
+
 def finalize_step2_contract(
     *,
     project: Project,
@@ -4144,35 +4287,35 @@ def finalize_step2_contract(
         source=source,
     )
 
-    validate_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "validate_visual_contract.py"))
-    validation_args = [sys.executable, validate_script, "--contract", contract_path]
-    project_profile_path = storyboard_profile_path(project)
-    if os.path.exists(project_profile_path):
-        validation_args.extend(["--profile", project_profile_path])
-    val_res = subprocess.run(
-        validation_args,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
+    validation = validate_visual_contract_file(
+        project,
+        contract_path,
+        source=source,
+        trace_id=trace_id,
     )
 
-    if val_res.returncode != 0:
-        logger.warning(f"Visual contract validation warning:\n{val_res.stderr}")
+    if not validation["valid"]:
+        logger.warning("Visual contract validation warning:\n%s", validation["stderr"])
         write_project_log(
             project,
             "step2_contract_validation_warning",
             trace_id=trace_id,
-            returncode=val_res.returncode,
-            stderr=val_res.stderr.strip(),
+            returncode=validation["returncode"],
+            stderr=validation["stderr"],
             source=source,
         )
+        if storyboard_validation_gate_enabled(project):
+            mark_step_retry_needed(project, 2, db)
+            raise HTTPException(
+                status_code=422,
+                detail="分镜合同校验失败，质量门已暂停流程：" + (validation["stderr"] or "请检查分镜结构"),
+            )
     else:
         write_project_log(
             project,
             "step2_contract_validation_success",
             trace_id=trace_id,
-            stdout=val_res.stdout.strip(),
+            stdout=validation["stdout"],
             source=source,
         )
 
@@ -4437,13 +4580,28 @@ def update_step2_result(project_id: str, payload: Dict[str, Any], db: Session = 
         
     payload = normalize_visual_contract(payload, read_project_pipeline_profile(project))
     contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
+    existing_contract = read_json_file(contract_path, {})
+    changed = json.dumps(existing_contract, ensure_ascii=False, sort_keys=True) != json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    if not changed:
+        return {
+            "success": True,
+            "contract": payload,
+            "validation": read_json_file(visual_contract_validation_path(project), {}),
+            "changed": False,
+        }
     with open(contract_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     current_slide_ids = contract_slide_ids_from_payload(payload)
     sync_reveal_manifest_to_contract(project, current_slide_ids)
     sync_narration_beats_to_contract(project, current_slide_ids)
-        
-    return {"success": True, "contract": payload}
+    validation = validate_visual_contract_file(project, contract_path, source="manual_autosave")
+    invalidate_after_upstream_edit(project, 2, db)
+
+    return {"success": True, "contract": payload, "validation": validation, "changed": True}
 
 # ==================== 步骤 3-4: 图片生成与管理 ====================
 
@@ -4686,7 +4844,7 @@ def build_image_style_prompt(style_tokens: Dict[str, Any]) -> str:
         lines.append(f"- 避免：{'、'.join(str(item) for item in avoid if item)}。")
 
     lines.append("- 不可变规则：画面元素严禁重叠、互相覆盖、压住、穿插或粘连；任何文字都不能被箭头、图标、卡片边框或装饰压住。")
-    lines.append("- 主标题/副标题区是固定静态层：必须与主体内容完全分离，不得用箭头、边框、插图或装饰连接标题字形。")
+    lines.append("- 主标题/副标题区固定布局但可参与语块动画：必须与主体内容完全分离，不得用箭头、边框、插图或装饰连接标题字形，以便标题 Mask 独立 Reveal。")
     lines.append("- 每条旁白对应的主体内容必须形成一个空间连续、边界清楚的视觉岛；不同旁白视觉岛之间优先保留 48-80px 连续纯白间隔。")
     lines.append("- 大面积主配图拥有其内部和紧邻边缘的文字、图标、对号、标签与说明；其他语块的元素不得进入、跨越或贴住该配图边界。")
     lines.append("- 左右对比或前后状态只有在对应不同 narration beat 时才画成两个独立视觉岛；若共用一条旁白，改为一个统一构图，避免两个插图被迫同时 Reveal。")
@@ -5058,12 +5216,12 @@ def update_image_style_reference(kind: str, file: UploadFile = File(...)):
     filename = STYLE_REFERENCE_FILES.get(kind)
     if not filename:
         raise HTTPException(status_code=404, detail="参考图类型不存在")
-    content = file.file.read()
+    content = file.file.read(MAX_IMAGE_UPLOAD_BYTES + 1)
     try:
-        image = Image.open(io.BytesIO(content)).convert("RGB")
+        image = open_validated_image(content).convert("RGB")
         os.makedirs(STYLE_REFERENCE_DIR, exist_ok=True)
         image.save(os.path.join(STYLE_REFERENCE_DIR, filename), "PNG")
-    except Exception as exc:
+    except ValueError as exc:
         raise HTTPException(status_code=400, detail=f"参考图不是有效图片: {exc}")
     return {"success": True, "url": f"/api/image-style/reference/{kind}?t={uuid.uuid4().hex[:8]}"}
 
@@ -5692,7 +5850,7 @@ def deterministic_semantic_blocks(
     for group_id, group in groups.items():
         if not isinstance(group, dict):
             continue
-        if str(group.get("role") or "").strip().lower() in {"subtitle", "decoration"}:
+        if str(group.get("role") or "").strip().lower() == "decoration":
             continue
         fragment_ids = group_to_fragments.get(group_id) or []
         if not fragment_ids:
@@ -6432,8 +6590,6 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
             out_timeline=out_timeline,
             slide_id=slide_id,
             endpoint=tts_endpoint,
-            api_key=tts_api_key,
-            secret_key=tts_secret_key,
             region=tts_region,
             model=tts_model,
             voice_id=tts_voice_id,
@@ -6452,6 +6608,7 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
                 encoding="utf-8",
                 errors="replace",
                 timeout=STEP7_TTS_PROCESS_TIMEOUT_SEC,
+                env=provider_tts_environment(tts_api_key, tts_secret_key),
             )
         except subprocess.TimeoutExpired as exc:
             stdout = _safe_process_text(exc.stdout).strip()
@@ -6589,8 +6746,6 @@ def synthesize_tts_resumable(project_id: str, db: Session = Depends(get_db)):
             out_timeline=paths["timeline"],
             slide_id=slide_id,
             endpoint=tts_endpoint,
-            api_key=tts_api_key,
-            secret_key=tts_secret_key,
             region=tts_region,
             model=tts_model,
             voice_id=tts_voice_id,
@@ -6601,7 +6756,12 @@ def synthesize_tts_resumable(project_id: str, db: Session = Depends(get_db)):
             pitch=tts_pitch,
         )
 
-        tts_result = run_tts_command_with_retries(project, slide_id, tts_args)
+        tts_result = run_tts_command_with_retries(
+            project,
+            slide_id,
+            tts_args,
+            provider_tts_environment(tts_api_key, tts_secret_key),
+        )
         if not tts_result["ok"]:
             error_text = (tts_result["stderr"] or tts_result["stdout"] or "TTS synthesis failed").strip()
             error_text = error_text[-1200:]

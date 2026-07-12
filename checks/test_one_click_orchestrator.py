@@ -1,4 +1,6 @@
 import json
+import hashlib
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -52,6 +54,52 @@ def test_restart_does_not_reuse_failed_stage_state() -> None:
         assert all(stage["status"] == "pending" for stage in restarted["stages"])
 
 
+def test_contract_and_narration_are_only_reused_when_fresh_and_validated() -> None:
+    with tempfile.TemporaryDirectory() as value:
+        root = Path(value)
+        project = project_for(root)
+        (root / "planning").mkdir(parents=True)
+        (root / "inputs").mkdir(parents=True)
+        article = root / "inputs" / "article.md"
+        brief = root / "planning" / "article_brief.json"
+        contract = root / "planning" / "visual_contract.json"
+        narration = root / "planning" / "narration_beats.json"
+        article.write_text("article", encoding="utf-8")
+        brief.write_text('{"content":"article"}', encoding="utf-8")
+        contract.write_text('{"slides":[]}', encoding="utf-8")
+        narration.write_text('{"slide_001":[]}', encoding="utf-8")
+        for path, stamp in ((article, 10), (brief, 10), (contract, 20), (narration, 30)):
+            os.utime(path, (stamp, stamp))
+        validation = {
+            "valid": True,
+            "contract_sha256": hashlib.sha256(contract.read_bytes()).hexdigest(),
+        }
+        (root / "planning" / "visual_contract.validation.json").write_text(
+            json.dumps(validation),
+            encoding="utf-8",
+        )
+        assert one_click._has_contract(project)
+        assert one_click._has_fresh_narration(project)
+
+        os.utime(article, (40, 40))
+        assert not one_click._has_contract(project)
+        contract.write_text('{"slides":[{"slide_id":"changed"}]}', encoding="utf-8")
+        os.utime(contract, (50, 50))
+        assert not one_click._has_contract(project), "changed contracts require a matching validation hash"
+        assert not one_click._has_fresh_narration(project)
+
+
+def test_disabled_quality_gate_marks_terminal_failure() -> None:
+    with tempfile.TemporaryDirectory() as value:
+        project = project_for(Path(value))
+        status = one_click._initial_status(project.id, "run-old")
+        one_click._fail_stage(project, status, "render", "render failed", pause=False)
+        assert status["status"] == "failed"
+        restarted, start_index = one_click._resume_status(project, project.id, "run-new", "resume")
+        assert start_index == 0
+        assert restarted["run_id"] == "run-new"
+
+
 def test_only_uncorrected_ai_masks_are_replaceable() -> None:
     base = {
         "source": "ai_auto_mask",
@@ -81,6 +129,9 @@ def test_one_click_uses_safe_mask_and_audio_modes() -> None:
     assert '"skip_locked_groups": True' in source
     assert '"confirmation_mode": "automatic_technical"' in source
     assert 'client.get(f"/api/projects/{project_id}/steps/6/result")' in source
+    assert 'mode == "restart" or not _has_contract(project)' in source
+    for gate_name in one_click.DEFAULT_QUALITY_GATES:
+        assert source.count(gate_name) >= 2
 
 
 def test_one_click_routes_are_explicit_and_unique() -> None:
@@ -97,6 +148,8 @@ def test_one_click_routes_are_explicit_and_unique() -> None:
 if __name__ == "__main__":
     test_atomic_status_write_and_resume()
     test_restart_does_not_reuse_failed_stage_state()
+    test_contract_and_narration_are_only_reused_when_fresh_and_validated()
+    test_disabled_quality_gate_marks_terminal_failure()
     test_only_uncorrected_ai_masks_are_replaceable()
     test_one_click_uses_safe_mask_and_audio_modes()
     test_one_click_routes_are_explicit_and_unique()

@@ -16,6 +16,7 @@ keeps the user-facing workflow simple while preserving manual recovery paths.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -51,6 +52,12 @@ DEFAULT_QUALITY_GATES = {
 
 _RUNNING_LOCK = threading.Lock()
 _RUNNING: dict[str, threading.Thread] = {}
+
+
+class QualityGateFailure(RuntimeError):
+    def __init__(self, message: str, *, pause: bool) -> None:
+        super().__init__(message)
+        self.pause = pause
 
 
 def _now() -> str:
@@ -180,11 +187,18 @@ def _warn_stage(project: Any, status: dict[str, Any], stage_id: str, warning: st
     _save_status(project, status)
 
 
-def _fail_stage(project: Any, status: dict[str, Any], stage_id: str, error: str) -> None:
+def _fail_stage(
+    project: Any,
+    status: dict[str, Any],
+    stage_id: str,
+    error: str,
+    *,
+    pause: bool = True,
+) -> None:
     item = _stage(status, stage_id)
     item.update({"status": "failed", "finished_at": _now(), "progress": item.get("progress") or 0})
     item.setdefault("blocking_errors", []).append(_safe_text(error, 3000))
-    status["status"] = "paused"
+    status["status"] = "paused" if pause else "failed"
     status["current_stage"] = stage_id
     status["completed_at"] = _now()
     _save_status(project, status)
@@ -221,8 +235,41 @@ def _require_ok(response: Any, label: str) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {"value": payload}
 
 
+def _require_quality_gate(
+    response: Any,
+    label: str,
+    gates: dict[str, bool],
+    gate_name: str,
+) -> dict[str, Any]:
+    try:
+        return _require_ok(response, label)
+    except Exception as exc:
+        raise QualityGateFailure(
+            str(exc),
+            pause=bool(gates.get(gate_name, True)),
+        ) from exc
+
+
 def _has_contract(project: Any) -> bool:
-    return (_run_dir(project) / "planning" / "visual_contract.json").exists()
+    run_dir = _run_dir(project)
+    contract_path = run_dir / "planning" / "visual_contract.json"
+    if not contract_path.exists():
+        return False
+    upstream_paths = [
+        run_dir / "inputs" / "article.md",
+        run_dir / "planning" / "article_brief.json",
+    ]
+    if any(_mtime(path) > _mtime(contract_path) for path in upstream_paths):
+        return False
+    validation = _read_json(run_dir / "planning" / "visual_contract.validation.json", {})
+    if not isinstance(validation, dict) or validation.get("valid") is not True:
+        return False
+    expected_hash = str(validation.get("contract_sha256") or "")
+    try:
+        actual_hash = hashlib.sha256(contract_path.read_bytes()).hexdigest()
+    except OSError:
+        return False
+    return bool(expected_hash) and expected_hash == actual_hash
 
 
 def _has_article(project: Any) -> bool:
@@ -266,6 +313,19 @@ def _image_needs_generation(project: Any, slide_id: str) -> bool:
 
 def _slides_requiring_images(project: Any) -> list[str]:
     return [slide_id for slide_id in _slide_ids(project) if _image_needs_generation(project, slide_id)]
+
+
+def _has_fresh_narration(project: Any) -> bool:
+    run_dir = _run_dir(project)
+    narration = run_dir / "planning" / "narration_beats.json"
+    contract = run_dir / "planning" / "visual_contract.json"
+    payload = _read_json(narration, {})
+    return (
+        narration.exists()
+        and isinstance(payload, dict)
+        and bool(payload)
+        and _mtime(narration) >= _mtime(contract)
+    )
 
 
 def _profile(project: Any) -> dict[str, Any]:
@@ -434,10 +494,25 @@ def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str, mode:
 
         if should_run("storyboard"):
             _start_stage(project, status, "storyboard", "生成或复用 visual_contract.json")
-            if not _has_contract(project):
-                _require_ok(client.post(f"/api/projects/{project_id}/steps/2/script/execute", json={}), "Step 2 article-to-slide")
-                _require_ok(client.post(f"/api/projects/{project_id}/steps/2/visual/execute", json={}), "Step 2 slide-to-visual")
-                _require_ok(client.post(f"/api/projects/{project_id}/steps/2/compose", json={}), "Step 2 compose")
+            if mode == "restart" or not _has_contract(project):
+                _require_quality_gate(
+                    client.post(f"/api/projects/{project_id}/steps/2/script/execute", json={}),
+                    "Step 2 article-to-slide",
+                    gates,
+                    "pause_on_storyboard_validation_error",
+                )
+                _require_quality_gate(
+                    client.post(f"/api/projects/{project_id}/steps/2/visual/execute", json={}),
+                    "Step 2 slide-to-visual",
+                    gates,
+                    "pause_on_storyboard_validation_error",
+                )
+                _require_quality_gate(
+                    client.post(f"/api/projects/{project_id}/steps/2/compose", json={}),
+                    "Step 2 compose",
+                    gates,
+                    "pause_on_storyboard_validation_error",
+                )
                 db.refresh(project)
             _finish_stage(project, status, "storyboard", "分镜规划已就绪")
 
@@ -455,7 +530,12 @@ def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str, mode:
                 item["progress"] = index / max(1, len(requiring_images))
                 item["message"] = f"正在生成 {slide_id} ({index}/{len(requiring_images)})"
                 _save_status(project, status)
-                _require_ok(client.post(f"/api/projects/{project_id}/steps/3/generate", data={"slide_id": slide_id, "prompt": prompt, "preview": "false"}), f"Step 3 image {slide_id}")
+                _require_quality_gate(
+                    client.post(f"/api/projects/{project_id}/steps/3/generate", data={"slide_id": slide_id, "prompt": prompt, "preview": "false"}),
+                    f"Step 3 image {slide_id}",
+                    gates,
+                    "pause_on_image_generation_failure",
+                )
                 generated += 1
             _finish_stage(project, status, "images", f"图片已就绪，新增或刷新 {generated} 张")
 
@@ -502,7 +582,13 @@ def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str, mode:
                 existing_payload = existing_narration.json()
             else:
                 existing_payload = {}
-            if isinstance(existing_payload, dict) and existing_payload.get("success") is True and isinstance(existing_payload.get("beats"), dict):
+            if (
+                mode != "restart"
+                and _has_fresh_narration(project)
+                and isinstance(existing_payload, dict)
+                and existing_payload.get("success") is True
+                and isinstance(existing_payload.get("beats"), dict)
+            ):
                 init = {"beats": existing_payload["beats"]}
                 _warn_stage(project, status, "narration", "已保留并复用现有演讲稿")
             else:
@@ -522,14 +608,29 @@ def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str, mode:
 
         if should_run("tts"):
             _start_stage(project, status, "tts", "合成 TTS 音频并执行技术确认")
-            _require_ok(client.post(f"/api/projects/{project_id}/steps/7/synthesize"), "Step 7 synthesize")
-            _require_ok(client.post(f"/api/projects/{project_id}/steps/7/confirm", json={"confirmation_mode": "automatic_technical"}), "Step 7 confirm")
+            _require_quality_gate(
+                client.post(f"/api/projects/{project_id}/steps/7/synthesize"),
+                "Step 7 synthesize",
+                gates,
+                "pause_on_tts_failure",
+            )
+            _require_quality_gate(
+                client.post(f"/api/projects/{project_id}/steps/7/confirm", json={"confirmation_mode": "automatic_technical"}),
+                "Step 7 confirm",
+                gates,
+                "pause_on_tts_failure",
+            )
             _finish_stage(project, status, "tts", "音频已生成并通过自动技术检查（未人工试听）")
 
         video = None
         if should_run("render"):
             _start_stage(project, status, "render", "渲染最终视频")
-            render = _require_ok(client.post(f"/api/projects/{project_id}/steps/8/render"), "Step 8 render")
+            render = _require_quality_gate(
+                client.post(f"/api/projects/{project_id}/steps/8/render"),
+                "Step 8 render",
+                gates,
+                "pause_on_render_failure",
+            )
             video = render.get("video") or render.get("item") or render
             _finish_stage(project, status, "render", "视频渲染完成")
         _complete(project, status, video=video)
@@ -542,8 +643,15 @@ def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str, mode:
             if project is not None:
                 status = _status_for_project(project, project_id)
                 stage_id = status.get("current_stage") or "preflight"
-                _fail_stage(project, status, str(stage_id), str(exc))
-                server_module.write_project_log(project, "one_click_generate_paused", run_id=run_id, stage=stage_id, error=str(exc))
+                _fail_stage(
+                    project,
+                    status,
+                    str(stage_id),
+                    str(exc),
+                    pause=getattr(exc, "pause", True),
+                )
+                event = "one_click_generate_paused" if getattr(exc, "pause", True) else "one_click_generate_failed"
+                server_module.write_project_log(project, event, run_id=run_id, stage=stage_id, error=str(exc))
         except Exception:
             pass
     finally:

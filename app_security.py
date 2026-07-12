@@ -5,9 +5,10 @@ from __future__ import annotations
 import os
 import secrets
 from typing import Any, Mapping
+from urllib.parse import urlencode
 
 from fastapi import FastAPI
-from starlette.responses import JSONResponse, PlainTextResponse
+from starlette.responses import JSONResponse, PlainTextResponse, RedirectResponse
 
 
 ACCESS_TOKEN_ENV = "PPT_STUDIO_ACCESS_TOKEN"
@@ -71,8 +72,22 @@ def install_access_control(app: FastAPI, environ: Mapping[str, str] | None = Non
             )
             response.headers["WWW-Authenticate"] = "Bearer"
             return response
-        response = await call_next(request)
         if token_from_query:
+            if request.method not in {"GET", "HEAD"}:
+                return JSONResponse(
+                    {"detail": "Query-string access tokens are only accepted for GET or HEAD requests."},
+                    status_code=400,
+                )
+            clean_query = urlencode(
+                [
+                    (key, value)
+                    for key, value in request.query_params.multi_items()
+                    if key not in {"access_token", "token"}
+                ],
+                doseq=True,
+            )
+            clean_url = request.url.replace(query=clean_query)
+            response = RedirectResponse(str(clean_url), status_code=303)
             response.set_cookie(
                 COOKIE_NAME,
                 token,
@@ -81,6 +96,8 @@ def install_access_control(app: FastAPI, environ: Mapping[str, str] | None = Non
                 secure=secure_cookie,
                 max_age=cookie_max_age,
             )
+            return response
+        response = await call_next(request)
         return response
 
     return True

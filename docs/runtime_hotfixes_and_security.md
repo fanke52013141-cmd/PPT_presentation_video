@@ -16,6 +16,7 @@ ultimately be migrated back into the normal source files.
 | `server.py` Settings routes | Credential masking and placeholder-preserving updates, enabled by default. |
 | `scripts/ppt_studio_doctor.py` | Consolidated project health check entry point. |
 | `runtime_bootstrap.py` | Explicit installer for backend compatibility routes. |
+| `runtime_ai_mask_semantic_patch.py` | Semantic-object matcher used by AI Mask before exact title/body ownership is finalized. |
 | `scripts/check_python_startup_hooks.py` | Self-check that normal server startup calls the explicit installer. |
 | `scripts/check_runtime_hotfixes.py` | Self-check for the main runtime safeguards. |
 | `scripts/check_runtime_settings_mask.py` | Self-check for settings credential masking. |
@@ -65,7 +66,9 @@ For browser use, first visit:
 http://127.0.0.1:8000/?access_token=replace-with-long-random-token
 ```
 
-A successful query-token request sets an HttpOnly same-origin cookie.
+A successful query-token request sets an HttpOnly same-origin cookie and immediately
+redirects to the same URL without the token query parameter. Query tokens are rejected
+for state-changing requests.
 
 ### Optional Origin allow-list
 
@@ -204,6 +207,11 @@ AI-only RLE masks to be refreshed.
 strokes is replaceable when manual overwrite is disabled. The component
 completion pass also conservatively reassigns small secondary components when
 another dominant visual island is at least 1.5 times closer.
+
+Narration-bound title and subtitle regions now remain spatially isolated but are
+assigned exact RLE Masks and participate in Reveal animation. The semantic-object
+bridge prompt mirrors this rule; title pixels remain static only when a slide has
+no narration group available.
 
 Migration debt: these behaviors remain runtime bridge behavior until the
 one-click orchestration and AI Mask services are moved behind normal modules

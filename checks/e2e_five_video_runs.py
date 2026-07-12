@@ -511,6 +511,7 @@ def validate_case(
         "short_blank_subtitle_gaps": 0,
         "late_visual_events": 0,
         "static_header_missing": 0,
+        "title_animation_missing": 0,
     }
 
     spoken_seen: dict[str, str] = {}
@@ -539,6 +540,17 @@ def validate_case(
         audio = read_json(audio_path)
         animation = read_json(animation_path)
         scene = read_json(scene_path)
+        title_group_ids = {
+            str(group.get("id") or "")
+            for group in slide.get("visual_groups", []) or []
+            if isinstance(group, dict)
+            and str(group.get("role") or "").strip().lower() in {"title", "subtitle"}
+        }
+        title_beat_ids = {
+            str(beat.get("id") or "")
+            for beat in slide.get("narration_beats", []) or []
+            if isinstance(beat, dict) and str(beat.get("group_id") or "") in title_group_ids
+        }
         segments = [segment for segment in audio.get("segments", []) if isinstance(segment, dict)]
         previous_end: float | None = None
         for segment in segments:
@@ -568,9 +580,17 @@ def validate_case(
                 errors.append(f"{slide_id}: visual is not established before narration ({at:.3f}+{duration:.3f} vs {narration_at:.3f})")
 
         composition = scene.get("composition") if isinstance(scene.get("composition"), dict) else {}
-        if not composition.get("static_header_in_base"):
+        event_beat_ids = {
+            str(event.get("narration_beat_id") or "")
+            for event in animation.get("events", []) or []
+            if isinstance(event, dict) and event.get("link_to_narration") is not False
+        }
+        if title_beat_ids and not title_beat_ids.issubset(event_beat_ids):
+            metrics["title_animation_missing"] += 1
+            errors.append(f"{slide_id}: narrated title/subtitle is missing a Reveal event")
+        elif not title_beat_ids and not composition.get("static_header_in_base"):
             metrics["static_header_missing"] += 1
-            errors.append(f"{slide_id}: static title header is not composited into base")
+            errors.append(f"{slide_id}: non-narrated title header is not composited into base")
 
     mask_result_path = Path(str(case_state.get("mask_result") or ""))
     mask_result = read_json(mask_result_path) if mask_result_path.exists() else {}
@@ -591,8 +611,6 @@ def validate_case(
             errors.append(f"{item.get('slide_id')}: unassigned visual components")
         if float(quality.get("foreground_coverage_ratio") or 0.0) < 0.995:
             errors.append(f"{item.get('slide_id')}: foreground coverage below 99.5%")
-        if int(quality.get("static_header_pixel_count") or 0) <= 0:
-            errors.append(f"{item.get('slide_id')}: no static title/subtitle pixels")
 
     video_path = run_dir / "videos" / str(case_state.get("video_filename") or "")
     if not video_path.exists() or video_path.stat().st_size <= 0:

@@ -272,9 +272,9 @@ def run_minimax(args: argparse.Namespace) -> int:
         cmd.extend(["--emotion", args.emotion])
     if args.language_boost:
         cmd.extend(["--language-boost", args.language_boost])
-    if args.api_key:
-        cmd.extend(["--api-key", args.api_key])
-    result = subprocess.run(cmd, text=True)
+    child_env = os.environ.copy()
+    child_env["MINIMAX_API_KEY"] = str(args.api_key or "")
+    result = subprocess.run(cmd, text=True, env=child_env)
     return result.returncode
 
 
@@ -472,8 +472,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out-timeline")
     parser.add_argument("--slide-id", default="slide_001")
     parser.add_argument("--endpoint", default="")
-    parser.add_argument("--api-key", default="")
-    parser.add_argument("--secret-key", default="")
+    parser.add_argument("--api-key", default=os.getenv("PPT_STUDIO_TTS_API_KEY", ""))
+    parser.add_argument("--secret-key", default=os.getenv("PPT_STUDIO_TTS_SECRET_KEY", ""))
     parser.add_argument("--region", default="")
     parser.add_argument("--model", default="")
     parser.add_argument("--voice-id", default="")

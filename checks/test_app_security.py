@@ -46,11 +46,27 @@ def test_query_token_sets_http_only_cookie() -> None:
     app = _app()
     install_access_control(app, {"PPT_STUDIO_ACCESS_TOKEN": "secret"})
     client = TestClient(app)
-    response = client.get("/?access_token=secret")
+    response = client.get("/?access_token=secret&view=project")
     assert response.status_code == 200
+    assert len(response.history) == 1
+    assert response.history[0].status_code == 303
+    assert "access_token" not in str(response.url)
+    assert response.url.query == b"view=project"
     assert COOKIE_NAME in client.cookies
-    assert "HttpOnly" in response.headers["set-cookie"]
+    assert "HttpOnly" in response.history[0].headers["set-cookie"]
     assert client.get("/api/ping").status_code == 200
+
+
+def test_query_token_is_rejected_for_state_changing_requests() -> None:
+    app = _app()
+
+    @app.post("/api/write")
+    def write() -> dict[str, bool]:
+        return {"written": True}
+
+    install_access_control(app, {"PPT_STUDIO_ACCESS_TOKEN": "secret"})
+    response = TestClient(app).post("/api/write?token=secret")
+    assert response.status_code == 400
 
 
 def test_disallowed_origin_is_rejected() -> None:
@@ -73,5 +89,6 @@ if __name__ == "__main__":
     test_no_token_keeps_local_app_open()
     test_token_protects_api_and_html()
     test_query_token_sets_http_only_cookie()
+    test_query_token_is_rejected_for_state_changing_requests()
     test_disallowed_origin_is_rejected()
     print("application security checks passed")

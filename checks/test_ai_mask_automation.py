@@ -67,7 +67,7 @@ def _title_region_fixture() -> tuple[dict, dict]:
     return elements, regions
 
 
-def test_title_and_subtitle_fragments_are_static_not_narration_masks():
+def test_title_and_subtitle_fragments_follow_narrated_title_group():
     elements, regions = _title_region_fixture()
     slide = {
         "slide_id": "slide_001",
@@ -91,19 +91,32 @@ def test_title_and_subtitle_fragments_are_static_not_narration_masks():
         "warnings": [],
     }
     consolidated = mask._consolidate_title_regions(payload, elements, slide, regions)
-    assert consolidated["title_region_policy"] == "static_header_excluded_from_narration_masks"
-    assert set(consolidated["static_element_ids"]) == {"title_a", "title_b", "subtitle_a", "subtitle_b"}
-    assert consolidated["static_group_ids"] == ["opening"]
-    assert consolidated["forced_element_owners"] == {}
+    assert consolidated["title_region_policy"] == "narrated_title_and_subtitle_masks"
+    assert consolidated["static_element_ids"] == []
+    assert consolidated["static_group_ids"] == []
+    assert set(consolidated["forced_element_owners"]) == {"title_a", "title_b", "subtitle_a", "subtitle_b"}
     completed = mask._complete_component_coverage(consolidated, elements)
     matches = {item["group_id"]: set(item["element_ids"]) for item in completed["matches"]}
-    assert "opening" not in matches
+    assert matches["opening"] == {"title_a", "title_b", "subtitle_a", "subtitle_b"}
     assert matches["body_group"] == {"body"}
-    assert completed["quality"]["static_header_pixel_count"] > 0
+    assert completed["quality"]["static_header_pixel_count"] == 0
     assert completed["quality"]["passed"] is True
+    manifest_slide = {"slide_id": "slide_001", "groups": [], "semantic_blocks": []}
+    applied = mask._apply(
+        {"slides": [manifest_slide]},
+        slide,
+        elements,
+        completed,
+        mask.normalize_settings({"overwrite_existing_ai_mask": True}),
+    )
+    assert applied["updated"] == 2
+    assert not any(group.get("id") == "__static_title_header__" for group in manifest_slide["groups"])
+    opening = next(group for group in manifest_slide["groups"] if group.get("visual_group_id") == "opening")
+    assert opening["manual_mask"]["rle"]["runs"]
+    assert opening.get("is_static") is not True
 
 
-def test_title_and_subtitle_both_remain_static_even_with_distinct_narration():
+def test_title_and_subtitle_use_distinct_narrated_groups_when_available():
     elements, regions = _title_region_fixture()
     slide = {
         "slide_id": "slide_001",
@@ -130,10 +143,33 @@ def test_title_and_subtitle_both_remain_static_even_with_distinct_narration():
         "warnings": [],
     }
     consolidated = mask._consolidate_title_regions(payload, elements, slide, regions)
-    assert consolidated["title_region_policy"] == "static_header_excluded_from_narration_masks"
-    assert set(consolidated["static_group_ids"]) == {"title_group", "subtitle_group"}
+    assert consolidated["title_region_policy"] == "narrated_title_and_subtitle_masks"
+    assert consolidated["static_group_ids"] == []
+    assert consolidated["static_element_ids"] == []
+    matches = {item["group_id"]: set(item["element_ids"]) for item in consolidated["matches"]}
+    assert matches["title_group"] == {"title_a", "title_b"}
+    assert matches["subtitle_group"] == {"subtitle_a", "subtitle_b"}
+    assert matches["body_group"] == {"body"}
+
+
+def test_title_without_any_narration_remains_static_context():
+    elements, regions = _title_region_fixture()
+    slide = {
+        "slide_id": "slide_001",
+        "main_title": "主标题",
+        "subtitle": "副标题",
+        "visual_groups": [{"id": "title_group", "role": "title"}],
+        "narration_beats": [],
+    }
+    consolidated = mask._consolidate_title_regions(
+        {"matches": [], "unmatched_groups": ["title_group"]},
+        elements,
+        slide,
+        regions,
+    )
+    assert consolidated["title_region_policy"] == "static_header_without_narration"
     assert set(consolidated["static_element_ids"]) == {"title_a", "title_b", "subtitle_a", "subtitle_b"}
-    assert [item["group_id"] for item in consolidated["matches"]] == ["body_group"]
+    assert consolidated["static_group_ids"] == ["title_group"]
 
 
 def test_every_narrated_group_gets_an_independent_visual_anchor():
@@ -169,8 +205,11 @@ def test_every_narrated_group_gets_an_independent_visual_anchor():
     assert anchored["unmatched_groups"] == []
     assert anchored["anchor_policy"] == "one_visual_island_per_narrated_group"
     owners = anchored["forced_element_owners"]
-    assert set(owners.values()) == {"image_group", "summary_group"}
-    assert set(anchored["static_element_ids"]) == {"title_a", "title_b", "subtitle_a", "subtitle_b"}
+    assert {"image_group", "summary_group"}.issubset(set(owners.values()))
+    assert all(owners[element_id] == "opening" for element_id in {"title_a", "title_b", "subtitle_a", "subtitle_b"})
+    assert anchored["static_element_ids"] == []
+    by_group = {item["group_id"]: set(item["element_ids"]) for item in anchored["matches"]}
+    assert by_group["opening"] == {"title_a", "title_b", "subtitle_a", "subtitle_b"}
 
 
 def test_existing_anchor_is_not_stolen_when_seeding_missing_group():
@@ -238,7 +277,7 @@ def test_volcengine_ai_mask_uses_provider_model_and_single_timeout_policy():
     source = inspect.getsource(mask._vision_match)
     assert "step2_llm_vendor_options" in source
     assert "AI_MASK_VISION_TIMEOUT_SEC" in source
-    assert "if _is_timeout(server_module, exc)" in source
+    assert "_is_timeout(server_module, exc)" in source
 
 
 def fixture_slide() -> dict:
@@ -257,8 +296,9 @@ def fixture_slide() -> dict:
 
 
 def main() -> None:
-    test_title_and_subtitle_fragments_are_static_not_narration_masks()
-    test_title_and_subtitle_both_remain_static_even_with_distinct_narration()
+    test_title_and_subtitle_fragments_follow_narrated_title_group()
+    test_title_and_subtitle_use_distinct_narrated_groups_when_available()
+    test_title_without_any_narration_remains_static_context()
     test_every_narrated_group_gets_an_independent_visual_anchor()
     test_existing_anchor_is_not_stolen_when_seeding_missing_group()
     test_nearby_icon_is_absorbed_by_closest_large_visual_island()

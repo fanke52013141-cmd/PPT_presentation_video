@@ -77,7 +77,7 @@ Design the image so important regions can be painted cleanly with a manual Mask:
 - Connections between ideas are allowed: arrows, brackets, paths, timelines, or flow lines.
 - Do not create many isolated cards unless the narration truly calls for a list, comparison, or checklist.
 - Keep enough clean white background around important regions for manual Mask painting.
-- Treat the main-title/subtitle band as a fixed static header. Keep it visually isolated from body illustrations and do not connect title glyphs to body arrows, icons, cards, or decoration.
+- Keep the main-title/subtitle band in its fixed layout, but preserve it as a clean independent visual island so narration-bound title and subtitle Masks can reveal it. Do not connect title glyphs to body arrows, icons, cards, or decoration.
 - Each narration-bound visual anchor must form one spatially continuous visual island. Keep a visible pure-white moat (preferably 48-80 px) between different narration islands.
 - A large illustration owns everything inside it and immediately touching its edge: internal labels, check marks, badges, small icons, and attached captions must stay in the same island. Never place another narration group's element inside or across that illustration boundary.
 - When two illustrations represent different comparison sides or different states, draw them as separate islands only when they map to separate narration beats. If they share one beat, use one unified composition instead of two independent pictures that can only reveal together.

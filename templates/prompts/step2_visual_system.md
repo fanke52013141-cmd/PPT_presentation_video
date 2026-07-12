@@ -48,6 +48,7 @@
 - 标题元素 narration 不得为空字符串，除非 2A 只产出 1 段（降级情形）。
 - 每条 narration 必须逐字复制 2A 某一个 narration_segments[].narration，不得改写、扩写、缩写或自行新写演讲稿。
 - 一条 2A narration 在当前页最多只能被一个 visual_element 使用一次；严禁把同一段 narration 同时复制给标题、正文、插图或多个视觉元素。
+- 所有非空 narration 必须两两不同，禁止重复绑定同一段口播。
 - 非空 narration 的 visual_element 数量不得超过 2A 的 narration_segments 数量。
 - role 只能使用 title、subtitle、body、decoration。
 - visual_type 只能使用 text 或 picture。
@@ -56,7 +57,7 @@
 - 一个绑定口播的 visual_element 必须形成一个空间连续、边界清楚的"视觉岛"：主配图、配图内部文字和紧邻图标可作为整体，但不得与其他语块的图形、标签、箭头或装饰交叉、穿插、重叠。
 - 不同 narration 对应的视觉岛之间至少保留明显纯白间隔，建议 40-80px；一个视觉岛内部或紧贴其边界的对号、图标、标签只能属于该岛。
 - 左右对比、前后状态或两个独立插图必须分别对应不同 narration segment 和不同 visual_element。若输入演讲稿仍把两个视觉状态写在同一 segment 中，应优先用一个统一画面表达。
-- 主标题和副标题固定在页面上方标题区，始终静态显示，不参与正文 narration Mask；标题字形不得与主体插图、正文视觉岛相连或重叠。
+- 主标题和副标题固定在页面上方标题区，但必须绑定对应 narration 并参与 Mask Reveal；副标题有独立 narration 时使用独立 subtitle 元素，否则与主标题同组；标题字形不得与主体插图、正文视觉岛相连或重叠。
 - element_id 是当前页内视觉元素的稳定 ID，例如 el_001、el_002，用于后续生图、Mask 和 Reveal。
 - 视觉元素和演讲稿的绑定直接通过 narration 字段表达，不要再输出额外的来源绑定字段。
 - narration 只用于 Step B 内部绑定演讲稿和画面语义；后续生图提示词会由程序删减为 slide_id、element_id、role、visual_type、visual_description。

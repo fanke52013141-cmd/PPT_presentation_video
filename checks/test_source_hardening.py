@@ -16,6 +16,12 @@ def main() -> None:
     assert 'npx_cmd, "remotion", "render", "src/index.tsx", "ArticleVideo", output_mp4_path' in server
     assert 'npx_cmd, "remotion", "render", "ArticleVideo", output_mp4_path' not in server
 
+    render_start = server.index('def render_video(project_id: str')
+    render_end = server.index('@app.get("/api/projects/{project_id}/videos")', render_start)
+    render_source = server[render_start:render_end]
+    assert "videos_dir = project_video_dir(project)" in render_source
+    assert "output_mp4_path = os.path.join(videos_dir, output_filename)" in render_source
+
     assert "def mask_sensitive_settings" in server
     assert "return mask_sensitive_settings(get_all_settings())" in server
     assert 'if settings.get(key) == MASKED_SETTINGS_VALUE:' in server

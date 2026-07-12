@@ -7044,7 +7044,7 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
     # 直接调用 Remotion CLI，避免维护第二套渲染入口。
     npx_cmd = "npx.cmd" if sys.platform == "win32" else "npx"
     props_json_path = os.path.join(project.run_dir, "remotion_props.json")
-    project_video_dir(project)
+    videos_dir = project_video_dir(project)
     output_filename = f"render_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.mp4"
     output_mp4_path = os.path.join(videos_dir, output_filename)
     legacy_output_path = os.path.join(project.run_dir, "out.mp4")

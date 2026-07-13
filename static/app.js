@@ -201,15 +201,35 @@ const API = {
   }
 };
 
-// Toast 提示
+// Toast 提示：用状态色传达语义，不在消息前展示风格不统一的 Emoji 图标。
+function getToastPresentation(message) {
+  const rawMessage = String(message ?? '').trim();
+  const text = rawMessage
+    .replace(/^(?:[\p{Extended_Pictographic}\uFE0F\u200D]+\s*)+/u, '')
+    .trim();
+
+  let tone = 'info';
+  if (/^(?:❌|⛔|🚫)/u.test(rawMessage) || /(失败|错误|异常)/.test(rawMessage)) {
+    tone = 'error';
+  } else if (/^(?:⚠️?|❗)/u.test(rawMessage) || /(请先|请填写|不能为空|缺少|无法|暂无)/.test(rawMessage)) {
+    tone = 'warning';
+  } else if (/^(?:✅|🎉|✨)/u.test(rawMessage) || /(成功|已保存|已确认|已完成|已删除|已应用|已启动)/.test(rawMessage)) {
+    tone = 'success';
+  }
+
+  return { text: text || '操作已完成', tone };
+}
+
 function showToast(message, duration = 3000) {
   const container = document.getElementById('toast-container');
   while (container.children.length >= 4) {
     container.firstElementChild?.remove();
   }
+  const presentation = getToastPresentation(message);
   const toast = document.createElement('div');
-  toast.className = 'toast';
-  toast.innerText = message;
+  toast.className = `toast toast-${presentation.tone}`;
+  toast.setAttribute('role', presentation.tone === 'error' ? 'alert' : 'status');
+  toast.innerText = presentation.text;
   container.appendChild(toast);
   setTimeout(() => {
     toast.style.animation = 'slideUp 0.3s ease-in reverse';
@@ -383,6 +403,11 @@ function initGlobalEvents() {
   // ================= 步骤 6 事件 =================
   document.getElementById('step6-btn-init')?.addEventListener('click', () => initStep6Narration());
   document.getElementById('step6-btn-ai-annotate')?.addEventListener('click', () => annotateStep6Narration());
+  document.getElementById('step6-btn-ai-prompt')?.addEventListener('click', () => openStep6AnnotationPromptModal());
+  document.getElementById('btn-step6-ai-prompt-cancel')?.addEventListener('click', () => closeStep6AnnotationPromptModal());
+  document.getElementById('btn-step6-ai-prompt-save')?.addEventListener('click', () => saveStep6AnnotationPrompts());
+  document.getElementById('step6-ai-system-prompt')?.addEventListener('input', () => updateStep6AnnotationFullPrompt());
+  document.getElementById('step6-ai-output-example')?.addEventListener('input', () => updateStep6AnnotationFullPrompt());
   document.getElementById('step6-btn-save-and-tts')?.addEventListener('click', () => saveNarrationAndRunTTS());
   document.getElementById('step6-btn-audio-confirm-next')?.addEventListener('click', async () => {
     const confirmed = await confirmStep7Audio();
@@ -1334,7 +1359,7 @@ function renderStep2Workspace() {
 }
 
 // 拼接并一键复制所有 Slide 的生图提示词
-function copyStep2Prompts() {
+async function copyStep2Prompts() {
   saveCurrentSlideInputToState();
   
   if (!state.slides || state.slides.length === 0) {
@@ -1342,35 +1367,18 @@ function copyStep2Prompts() {
     return;
   }
   
-  let textParts = [];
-  
-  state.slides.forEach((slide) => {
-    const promptInfo = slidePrompts.find(item => item.slide_id === slide.slide_id);
-    const groups = (slide.visual_groups || [])
-      .map((group, index) => {
-        const visualType = group.visual_type || (group.display_text ? 'text' : 'illustration');
-        const description = visualType === 'text'
-          ? (group.display_text || group.visual_anchor || group.visible_text || '未填写文字')
-          : (group.visual_anchor || group.mask_target || group.visible_text || '未填写视觉描述');
-        const prefix = `${slide.slide_id}_`;
-        const rawElementId = group.element_id || group.id || `el_${String(index + 1).padStart(3, '0')}`;
-        const elementId = String(rawElementId).startsWith(prefix) ? String(rawElementId).slice(prefix.length) : rawElementId;
-        return `- slide_id=${slide.slide_id}; element_id=${elementId}; role=${group.role || 'content_body'}; visual_type=${visualType}; visual_description=${description}`;
-      })
-      .join('\n');
-    const prompt = promptInfo?.prompt || [
-      '整体风格提示词：温暖极简、清爽 PPT、留白充足、结构化表达、纯白 #FFFFFF 背景。',
-      `Slide ID: ${slide.slide_id}`,
-      `元素清单（程序已从 Step 2B 精简）：\n${groups}`,
-      '生成一张 16:9 PPT 静态主图；如果有一张参考图，只作为整体风格、留白、层级、配色和密度参考；不要加入 narration 或讲稿。'
-    ].filter(Boolean).join('\n');
-      
-    textParts.push(`--- Slide ${slide.slide_id} ---`);
-    textParts.push(prompt);
-    textParts.push(''); // 空行
-  });
-  
-  const allPromptsText = textParts.join('\n');
+  if (!String(step3BatchPrompt || '').trim()) {
+    try {
+      await refreshStep3Prompts();
+    } catch (error) {
+      // API.fetch 已展示具体错误，这里只阻止复制空内容。
+    }
+  }
+  const allPromptsText = String(step3BatchPrompt || '').trim();
+  if (!allPromptsText) {
+    showToast('批量提示词加载失败，请稍后重试');
+    return;
+  }
   
   navigator.clipboard.writeText(allPromptsText).then(() => {
     showToast('📋 已成功复制所有 Slide 的生图提示词到剪贴板！');
@@ -1736,6 +1744,7 @@ async function saveStep2Contract(options = {}) {
 // ==================== 步骤 3: 图片生成 ====================
 
 let slidePrompts = [];
+let step3BatchPrompt = '';
 // 全局图片顺序（用于拖拽排序）
 let step3ImageOrder = []; // [{slide_id, exists, url}]
 let step3DraggedIndex = -1;
@@ -1801,7 +1810,10 @@ async function loadStep3Data() {
   // 获取每个 slide 拼接的 Prompt
   try {
     const promptRes = await API.get(`/api/projects/${state.currentProject.id}/steps/3/prompts`);
-    if (promptRes.success) slidePrompts = promptRes.prompts || [];
+    if (promptRes.success) {
+      slidePrompts = promptRes.prompts || [];
+      step3BatchPrompt = promptRes.batch_prompt || '';
+    }
   } catch(e) {}
   
   // 获取生成的图片文件状态
@@ -3227,6 +3239,7 @@ async function refreshStep3Prompts(options = {}) {
   const promptRes = await API.get(`/api/projects/${state.currentProject.id}/steps/3/prompts`);
   if (promptRes.success) {
     slidePrompts = promptRes.prompts || [];
+    step3BatchPrompt = promptRes.batch_prompt || '';
   }
   if (options.updateOpenEditor) {
     const currentSlideId = document.getElementById('step3-slide-id-label')?.innerText;
@@ -4479,6 +4492,69 @@ async function initStep6Narration() {
     normalizeStep6Data();
     updateStep6AutosaveStatus('已同步模板');
     renderStep6Workspace();
+  }
+}
+
+function composeStep6AnnotationPrompt(systemContent, outputExample) {
+  return `${String(systemContent || '').trim()}\n\n<OutputExample>\n${String(outputExample || '').trim()}\n</OutputExample>`;
+}
+
+function updateStep6AnnotationFullPrompt() {
+  const systemInput = document.getElementById('step6-ai-system-prompt');
+  const exampleInput = document.getElementById('step6-ai-output-example');
+  const fullInput = document.getElementById('step6-ai-full-prompt');
+  if (!systemInput || !exampleInput || !fullInput) return;
+  fullInput.value = composeStep6AnnotationPrompt(systemInput.value, exampleInput.value);
+}
+
+async function openStep6AnnotationPromptModal() {
+  const modal = document.getElementById('modal-step6-ai-prompt');
+  const systemInput = document.getElementById('step6-ai-system-prompt');
+  const exampleInput = document.getElementById('step6-ai-output-example');
+  const fullInput = document.getElementById('step6-ai-full-prompt');
+  if (!modal || !systemInput || !exampleInput || !fullInput) return;
+
+  modal.style.display = 'flex';
+  systemInput.value = '加载中...';
+  exampleInput.value = '';
+  fullInput.value = '';
+  try {
+    const res = await API.get('/api/settings/narration-annotation');
+    const prompts = res.prompts || {};
+    systemInput.value = prompts.system_content || '';
+    exampleInput.value = prompts.output_example || '';
+    fullInput.value = prompts.full_prompt || '';
+    updateStep6AnnotationFullPrompt();
+  } catch (error) {
+    closeStep6AnnotationPromptModal();
+  }
+}
+
+function closeStep6AnnotationPromptModal() {
+  const modal = document.getElementById('modal-step6-ai-prompt');
+  if (modal) modal.style.display = 'none';
+}
+
+async function saveStep6AnnotationPrompts() {
+  const systemContent = document.getElementById('step6-ai-system-prompt')?.value.trim() || '';
+  const outputExample = document.getElementById('step6-ai-output-example')?.value.trim() || '';
+  if (!systemContent || !outputExample) {
+    showToast('System Content 和 Output Example 不能为空');
+    return;
+  }
+  const button = document.getElementById('btn-step6-ai-prompt-save');
+  if (button) button.disabled = true;
+  try {
+    await API.put('/api/settings/narration-annotation', {
+      prompts: {
+        system_content: systemContent,
+        output_example: outputExample,
+      },
+    });
+    showToast('旁白 AI 标注 Prompt 已保存');
+    closeStep6AnnotationPromptModal();
+  } finally {
+    if (button) button.disabled = false;
   }
 }
 

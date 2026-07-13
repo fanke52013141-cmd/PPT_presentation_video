@@ -352,6 +352,9 @@ def _profile_style_prompt(project: Any, server_module: ModuleType) -> str:
 
 def _project_generate_prompt_for_slide(server_module: ModuleType, project: Any, slide: dict[str, Any], topic_name: str) -> str:
     style_prompt = _profile_style_prompt(project, server_module)
+    compose_prompt = getattr(server_module, "compose_step3_single_slide_prompt", None)
+    if callable(compose_prompt):
+        return compose_prompt(style_prompt, slide)
     slide_id = _safe_text(slide.get("slide_id"), 100)
     elements_str = "- 无可用视觉元素"
     if callable(getattr(server_module, "compact_slide_element_lines", None)):

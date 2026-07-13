@@ -23,6 +23,7 @@ from typing import Any
 try:
     from runtime_project_style_references import (  # type: ignore
         _can_send_project_references,
+        _profile_style_prompt,
         _project_generate_prompt_for_slide,
         _project_reference_paths,
         _read_json,
@@ -31,6 +32,7 @@ try:
     )
 except Exception:  # pragma: no cover - optional runtime bridge
     _can_send_project_references = None
+    _profile_style_prompt = None
     _project_generate_prompt_for_slide = None
     _project_reference_paths = None
     _read_json = None
@@ -59,7 +61,7 @@ def _insert_route_before_existing(app: Any, path: str, endpoint: Any, methods: l
 
 
 def _required_ready(server_module: ModuleType) -> bool:
-    if not all([_can_send_project_references, _project_generate_prompt_for_slide, _project_reference_paths, _read_json, _run_dir, _safe_text]):
+    if not all([_can_send_project_references, _profile_style_prompt, _project_generate_prompt_for_slide, _project_reference_paths, _read_json, _run_dir, _safe_text]):
         return False
     required = (
         "app", "Form", "Depends", "get_db", "Project", "HTTPException",
@@ -67,6 +69,7 @@ def _required_ready(server_module: ModuleType) -> bool:
         "enforce_white_generation_background", "generate_image_response",
         "extract_image_bytes_from_response", "process_and_save_image", "mark_slide_image_changed",
         "compact_slide_element_lines",
+        "build_step3_global_image_prompt", "build_step3_slide_specific_prompt", "compose_step3_batch_copy_prompt",
     )
     return all(hasattr(server_module, name) for name in required)
 
@@ -88,10 +91,14 @@ def _install_step3_routes(server_module: ModuleType) -> bool:
         contract = _read_json(contract_path, {})
         topic = contract.get("topic") if isinstance(contract.get("topic"), dict) else {}
         topic_name = topic.get("topic_name") or getattr(project, "name", "")
+        slides = [
+            slide
+            for slide in (contract.get("slides", []) if isinstance(contract.get("slides"), list) else [])
+            if isinstance(slide, dict)
+        ]
+        style_prompt = _profile_style_prompt(project, server_module)
         slide_prompts = []
-        for slide in contract.get("slides", []) if isinstance(contract.get("slides"), list) else []:
-            if not isinstance(slide, dict):
-                continue
+        for slide in slides:
             slide_id = _safe_text(slide.get("slide_id"), 100)
             if not slide_id:
                 continue
@@ -99,8 +106,14 @@ def _install_step3_routes(server_module: ModuleType) -> bool:
                 "slide_id": slide_id,
                 "title": slide.get("main_title") or slide_id,
                 "prompt": _project_generate_prompt_for_slide(server_module, project, slide, str(topic_name or "")),
+                "slide_prompt": server_module.build_step3_slide_specific_prompt(slide),
             })
-        return {"success": True, "prompts": slide_prompts}
+        return {
+            "success": True,
+            "prompts": slide_prompts,
+            "global_prompt": server_module.build_step3_global_image_prompt(style_prompt),
+            "batch_prompt": server_module.compose_step3_batch_copy_prompt(style_prompt, slides),
+        }
 
     def generate_slide_image_with_project_refs(
         project_id: str,

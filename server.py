@@ -5262,21 +5262,51 @@ def generate_prompt_for_slide(
     profile: Optional[Dict[str, Any]] = None,
 ) -> str:
     style_prompt = build_image_style_prompt(read_style_tokens_data())
+    return compose_step3_single_slide_prompt(style_prompt, slide)
+
+
+def build_step3_global_image_prompt(style_prompt: str) -> str:
+    return (
+        "整体风格提示词：\n"
+        f"{str(style_prompt or '').strip()}\n\n"
+        "全局统一生成要求：\n"
+        "- 每个 Slide 生成一张独立的 16:9 PPT 静态主图，不要把多个 Slide 合并到同一张图。\n"
+        "- 背景必须是纯白 #FFFFFF，四条边和四个角保持连续纯白。\n"
+        "- 如果请求附带一张参考图，只把它作为整体风格、留白、层级、配色和密度参考。\n"
+        "- 只根据各 Slide 的元素清单组织画面；不要加入 narration、讲稿、制作说明或额外页面。\n"
+        "- 每个元素都要清晰分离，方便后续人工 Mask；元素之间不得重叠、穿插、压住或粘连。"
+    )
+
+
+def build_step3_slide_specific_prompt(slide: Dict[str, Any]) -> str:
     slide_id = str(slide.get("slide_id") or "").strip()
     elements_str = "\n".join(compact_slide_element_lines(slide)) or "- 无可用视觉元素"
     return (
-        "整体风格提示词：\n"
-        f"{style_prompt}\n\n"
-        "单页生图任务：\n"
-        "- 生成一张 16:9 PPT 静态主图。\n"
-        "- 背景必须是纯白 #FFFFFF，四条边和四个角保持连续纯白。\n"
-        "- 如果请求附带一张参考图，只把它作为整体风格、留白、层级、配色和密度参考。\n"
-        "- 只根据下面的元素清单组织画面；不要加入 narration、讲稿、制作说明或额外页面。\n"
-        "- 每个元素都要清晰分离，方便后续人工 Mask；元素之间不得重叠、穿插、压住或粘连。\n\n"
         f"Slide ID: {slide_id}\n"
         "元素清单（程序已从 Step 2B 精简）：\n"
         f"{elements_str}"
     )
+
+
+def compose_step3_single_slide_prompt(style_prompt: str, slide: Dict[str, Any]) -> str:
+    return f"{build_step3_global_image_prompt(style_prompt)}\n\n当前 Slide 具体内容：\n{build_step3_slide_specific_prompt(slide)}"
+
+
+def compose_step3_batch_copy_prompt(style_prompt: str, slides: List[Dict[str, Any]]) -> str:
+    slide_sections = []
+    for slide in slides:
+        if not isinstance(slide, dict):
+            continue
+        slide_id = str(slide.get("slide_id") or "").strip() or "未命名"
+        slide_sections.append(f"--- Slide {slide_id} ---\n{build_step3_slide_specific_prompt(slide)}")
+    return (
+        "请按以下统一要求，依次为每个 Slide 分别生成 1 张独立图片。\n"
+        "先完整理解全局说明，再逐页读取具体内容；不要把多个 Slide 合并到一张图片中。\n\n"
+        "=== 全局统一说明（仅出现一次） ===\n"
+        f"{build_step3_global_image_prompt(style_prompt)}\n\n"
+        "=== 各 Slide 具体内容 ===\n\n"
+        + "\n\n".join(slide_sections)
+    ).strip()
 
 
 def enforce_white_generation_background(prompt: str) -> str:
@@ -5304,21 +5334,26 @@ def get_slide_prompts(project_id: str, db: Session = Depends(get_db)):
     with open(contract_path, "r", encoding="utf-8") as f:
         contract = json.load(f)
         
-    topic_name = contract.get("topic", {}).get("topic_name", project.name)
-    
-    # 遍历 slide 列表，为每页拼接并自动保存生成的 prompt，供前台编辑
+    # 单页生成仍返回完整 Prompt；网页端批量复制另用一份全局说明 + 每页差异内容。
     slide_prompts = []
-    profile = read_project_pipeline_profile(project)
-    for slide in contract.get("slides", []):
+    slides = [slide for slide in contract.get("slides", []) if isinstance(slide, dict)]
+    style_prompt = build_image_style_prompt(read_style_tokens_data())
+    for slide in slides:
         slide_id = slide["slide_id"]
-        generated_prompt = generate_prompt_for_slide(slide, topic_name, profile)
+        generated_prompt = compose_step3_single_slide_prompt(style_prompt, slide)
         slide_prompts.append({
             "slide_id": slide_id,
             "title": slide["main_title"],
-            "prompt": generated_prompt
+            "prompt": generated_prompt,
+            "slide_prompt": build_step3_slide_specific_prompt(slide),
         })
         
-    return {"success": True, "prompts": slide_prompts}
+    return {
+        "success": True,
+        "prompts": slide_prompts,
+        "global_prompt": build_step3_global_image_prompt(style_prompt),
+        "batch_prompt": compose_step3_batch_copy_prompt(style_prompt, slides),
+    }
 
 @app.post("/api/projects/{project_id}/steps/3/generate")
 def generate_slide_image(
@@ -6401,6 +6436,91 @@ def get_step6_result(project_id: str, db: Session = Depends(get_db)):
         beats = json.load(f)
     return {"success": True, "beats": beats}
 
+
+NARRATION_ANNOTATION_SYSTEM_CONTENT_KEY = "narration_annotation_system_content"
+NARRATION_ANNOTATION_OUTPUT_EXAMPLE_KEY = "narration_annotation_output_example"
+DEFAULT_NARRATION_ANNOTATION_SYSTEM_CONTENT = """You are a Chinese voiceover director preparing MiniMax TTS text.
+
+Add only light delivery markup to the existing narration. Preserve the original meaning and words. Do not rewrite technical terms.
+
+Rules:
+1. Every beat longer than 12 Chinese characters must contain at least one MiniMax pause tag.
+2. Normally add one to three pause tags such as <#0.2#>, <#0.35#>, <#0.5#> at natural clause boundaries.
+3. Never put pause tags at the beginning or end, never use consecutive pause tags, and keep pause values between 0.01 and 99.99 seconds.
+4. Expression tags are optional and must use only MiniMax speech-2.8 tags such as (breath), (sighs), (chuckle), (emm), (laughs), (inhale), (exhale), (gasps), (whistles), or (applause).
+5. Avoid expression tags inside numbers, English identifiers, code terms, Token, API, LLM, or backtick content.
+6. Return strict JSON only. Do not output Markdown or explanations."""
+DEFAULT_NARRATION_ANNOTATION_OUTPUT_EXAMPLE = """{
+  "slides": [
+    {
+      "slide_id": "slide_001",
+      "beats": [
+        {
+          "id": "beat_001",
+          "tts_text": "首先看核心概念，<#0.35#>再理解它的实际作用。"
+        }
+      ]
+    }
+  ]
+}"""
+
+
+def read_narration_annotation_prompts() -> tuple[str, str]:
+    system_content = str(
+        get_setting(NARRATION_ANNOTATION_SYSTEM_CONTENT_KEY, DEFAULT_NARRATION_ANNOTATION_SYSTEM_CONTENT)
+        or DEFAULT_NARRATION_ANNOTATION_SYSTEM_CONTENT
+    ).strip()
+    output_example = str(
+        get_setting(NARRATION_ANNOTATION_OUTPUT_EXAMPLE_KEY, DEFAULT_NARRATION_ANNOTATION_OUTPUT_EXAMPLE)
+        or DEFAULT_NARRATION_ANNOTATION_OUTPUT_EXAMPLE
+    ).strip()
+    return system_content, output_example
+
+
+def compose_narration_annotation_prompt(system_content: str, output_example: str) -> str:
+    return (
+        str(system_content or "").strip()
+        + "\n\n<OutputExample>\n"
+        + str(output_example or "").strip()
+        + "\n</OutputExample>"
+    )
+
+
+@app.get("/api/settings/narration-annotation")
+def get_narration_annotation_settings():
+    system_content, output_example = read_narration_annotation_prompts()
+    return {
+        "success": True,
+        "prompts": {
+            "system_content": system_content,
+            "output_example": output_example,
+            "full_prompt": compose_narration_annotation_prompt(system_content, output_example),
+        },
+    }
+
+
+@app.put("/api/settings/narration-annotation")
+def update_narration_annotation_settings(payload: Dict[str, Any]):
+    prompts = payload.get("prompts") if isinstance(payload.get("prompts"), dict) else payload
+    system_content = str(prompts.get("system_content") or "").strip()
+    output_example = str(prompts.get("output_example") or "").strip()
+    if not system_content or not output_example:
+        raise HTTPException(status_code=400, detail="AI 标注的 System Content 和 Output Example 不能为空")
+    if len(system_content) > 30000 or len(output_example) > 20000:
+        raise HTTPException(status_code=400, detail="AI 标注 Prompt 内容过长")
+    update_settings({
+        NARRATION_ANNOTATION_SYSTEM_CONTENT_KEY: system_content,
+        NARRATION_ANNOTATION_OUTPUT_EXAMPLE_KEY: output_example,
+    })
+    return {
+        "success": True,
+        "prompts": {
+            "system_content": system_content,
+            "output_example": output_example,
+            "full_prompt": compose_narration_annotation_prompt(system_content, output_example),
+        },
+    }
+
 @app.post("/api/projects/{project_id}/steps/6/annotate")
 def annotate_step6_narration(project_id: str, payload: Optional[Dict[str, Any]] = None, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -6443,17 +6563,10 @@ def annotate_step6_narration(project_id: str, payload: Optional[Dict[str, Any]] 
             })
         compact_slides.append({"slide_id": slide.get("slide_id"), "beats": compact_beats})
 
-    system_prompt = (
-        "You are a Chinese voiceover director preparing MiniMax TTS text. "
-        "Add only light delivery markup to the existing narration. "
-        "Return strict JSON only, with shape {\"slides\":[{\"slide_id\":\"...\",\"beats\":[{\"id\":\"...\",\"tts_text\":\"...\"}]}]}. "
-        "Preserve the original meaning and words. Do not rewrite technical terms. "
-        "Every beat longer than 12 Chinese characters must contain at least one MiniMax pause tag. "
-        "Normally add one to three pause tags such as <#0.2#>, <#0.35#>, <#0.5#> at natural clause boundaries. "
-        "Never put pause tags at the beginning or end, never use consecutive pause tags, and keep pause values between 0.01 and 99.99 seconds. "
-        "Expression tags are optional and must use only MiniMax speech-2.8 tags such as "
-        "(breath), (sighs), (chuckle), (emm), (laughs), (inhale), (exhale), (gasps), (whistles), or (applause). "
-        "Avoid expression tags inside numbers, English identifiers, code terms, Token, API, LLM, or backtick content."
+    annotation_system_content, annotation_output_example = read_narration_annotation_prompts()
+    system_prompt = compose_narration_annotation_prompt(
+        annotation_system_content,
+        annotation_output_example,
     )
     user_prompt = json.dumps({"slides": compact_slides}, ensure_ascii=False)
 

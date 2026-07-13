@@ -3884,10 +3884,26 @@ header .btn {
 
 .toast {
   border: 1px solid var(--color-border-default) !important;
+  border-left: 4px solid var(--color-primary-base) !important;
   border-radius: var(--radius-lg) !important;
   background: rgba(255, 255, 255, 0.94) !important;
   color: var(--color-text-primary) !important;
   box-shadow: var(--shadow-panel) !important;
+}
+
+.toast-success {
+  border-left-color: var(--color-success-text) !important;
+  background: color-mix(in srgb, var(--color-success-light) 48%, white) !important;
+}
+
+.toast-warning {
+  border-left-color: var(--color-warning-text) !important;
+  background: color-mix(in srgb, var(--color-warning-light) 52%, white) !important;
+}
+
+.toast-error {
+  border-left-color: var(--color-danger-text) !important;
+  background: color-mix(in srgb, var(--color-danger-light) 52%, white) !important;
 }
 
 @media (max-width: 1100px) {

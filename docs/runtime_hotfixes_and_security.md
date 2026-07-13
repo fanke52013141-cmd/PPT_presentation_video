@@ -17,6 +17,8 @@ ultimately be migrated back into the normal source files.
 | `scripts/ppt_studio_doctor.py` | Consolidated project health check entry point. |
 | `runtime_bootstrap.py` | Explicit installer for backend compatibility routes. |
 | `runtime_ai_mask_semantic_patch.py` | Semantic-object matcher used by AI Mask before exact title/body ownership is finalized. |
+| `runtime_project_style_references.py` | Project-local Step 3 image-style prompts and reference image helpers. |
+| `runtime_project_style_reference_step3.py` | Project-style-aware Step 3 routes that currently take precedence over the source routes. |
 | `scripts/check_python_startup_hooks.py` | Self-check that normal server startup calls the explicit installer. |
 | `scripts/check_runtime_hotfixes.py` | Self-check for the main runtime safeguards. |
 | `scripts/check_runtime_settings_mask.py` | Self-check for settings credential masking. |
@@ -216,3 +218,18 @@ no narration group available.
 Migration debt: these behaviors remain runtime bridge behavior until the
 one-click orchestration and AI Mask services are moved behind normal modules
 registered directly from `server.py`. Track this migration with issue #7.
+
+## Step 3 batch Prompt normalization (2026-07-13)
+
+The source Step 3 prompt route now separates the prompt into one global image
+style/rules block and one compact block per Slide. The project-style runtime
+route delegates to the same source composition helpers and returns the same
+`global_prompt`, `slide_prompt`, and `batch_prompt` response contract. This
+prevents the browser's “复制生图提示词” action from repeating the full style and
+production rules for every Slide while preserving complete per-Slide prompts
+for the application's own image-generation API.
+
+Migration debt: `runtime_project_style_reference_step3.py` still prepends a
+compatibility route over the source route. Remove that route after project-local
+style resolution is moved into the normal Step 3 service. Track this item in
+issue #7.

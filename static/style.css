@@ -2997,7 +2997,6 @@ button.success:hover,
 
 #step2-btn-generate,
 #btn-step2-generation-confirm,
-#step3-btn-batch-generate,
 #step3-btn-generate,
 .step3-ai-action,
 #step6-btn-ai-annotate {
@@ -3009,7 +3008,6 @@ button.success:hover,
 
 #step2-btn-generate:hover,
 #btn-step2-generation-confirm:hover,
-#step3-btn-batch-generate:hover,
 #step3-btn-generate:hover,
 .step3-ai-action:hover,
 #step6-btn-ai-annotate:hover {

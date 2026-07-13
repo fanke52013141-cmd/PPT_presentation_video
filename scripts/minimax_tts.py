@@ -707,7 +707,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--voice-id", default=os.getenv("MINIMAX_TTS_VOICE_ID", DEFAULT_VOICE_ID))
     parser.add_argument("--emotion", default=os.getenv("MINIMAX_TTS_EMOTION", "calm"))
     parser.add_argument("--language-boost", default=os.getenv("MINIMAX_TTS_LANGUAGE_BOOST", "Chinese"))
-    parser.add_argument("--speed", type=float, default=env_float("MINIMAX_TTS_SPEED", 1.0))
+    parser.add_argument("--speed", type=float, default=env_float("MINIMAX_TTS_SPEED", 1.2))
     parser.add_argument("--volume", type=float, default=env_float("MINIMAX_TTS_VOLUME", 1.0))
     parser.add_argument("--pitch", type=int, default=env_int("MINIMAX_TTS_PITCH", 0))
     parser.add_argument("--audio-format", default="mp3", choices=["mp3", "wav", "flac"])

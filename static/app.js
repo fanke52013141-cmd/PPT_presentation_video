@@ -523,7 +523,7 @@ async function loadSettings() {
   document.getElementById('setting-llm-api-key').value = state.settings.llm_api_key || '';
   document.getElementById('setting-llm-model').value = state.settings.llm_model || '';
   document.getElementById('setting-llm-temp').value = state.settings.llm_temperature || '0.7';
-  document.getElementById('setting-llm-max-tokens').value = state.settings.llm_max_tokens || '16000';
+  document.getElementById('setting-llm-max-tokens').value = state.settings.llm_max_tokens || '50000';
   
   document.getElementById('setting-image-base-url').value = state.settings.image_base_url || '';
   document.getElementById('setting-image-api-key').value = state.settings.image_api_key || '';
@@ -539,7 +539,7 @@ async function loadSettings() {
   document.getElementById('setting-tts-voice-id').value = state.settings.tts_voice_id || '';
   document.getElementById('setting-tts-clone-voice-id').value = state.settings.tts_clone_voice_id || '';
   document.getElementById('setting-tts-provider-extra').value = state.settings.tts_provider_extra || '';
-  document.getElementById('setting-tts-speed').value = state.settings.tts_speed || '1.0';
+  document.getElementById('setting-tts-speed').value = state.settings.tts_speed || '1.2';
   document.getElementById('setting-tts-volume').value = state.settings.tts_volume || '1.0';
   document.getElementById('setting-tts-pitch').value = state.settings.tts_pitch || '0';
 }
@@ -4910,4 +4910,3 @@ window.PPTStudio = Object.assign(window.PPTStudio || {}, {
   getCurrentProject: () => state.currentProject,
   flushStep5Draft,
 });
-

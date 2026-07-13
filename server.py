@@ -2724,7 +2724,7 @@ def generate_article_from_topic(
         response = client.chat.completions.create(
             model=model,
             temperature=min(float(get_setting("llm_temperature", "0.7")), 0.7),
-            max_tokens=parse_int_setting(get_setting("llm_max_tokens", "16000"), 16000, 1024, 64000),
+            max_tokens=parse_int_setting(get_setting("llm_max_tokens", "50000"), 50000, 1024, 64000),
             timeout=STEP2_LLM_TIMEOUT_SEC,
             messages=[
                 {"role": "system", "content": system_content},
@@ -3451,7 +3451,7 @@ def configured_step2_llm() -> tuple[str, Optional[str], str, float, int]:
     llm_model = get_setting("llm_model")
     llm_temp = float(get_setting("llm_temperature", "0.7"))
     planning_temp = min(llm_temp, 0.2)
-    planning_max_tokens = parse_int_setting(get_setting("llm_max_tokens", "16000"), 16000, 1024, 64000)
+    planning_max_tokens = parse_int_setting(get_setting("llm_max_tokens", "50000"), 50000, 1024, 64000)
     if not llm_api_key:
         raise HTTPException(status_code=400, detail="未配置大模型 API 密钥，请在系统设置中配置后再试。")
     return llm_api_key, llm_base_url, llm_model, planning_temp, planning_max_tokens
@@ -4411,7 +4411,7 @@ def execute_step2(
     llm_model = get_setting("llm_model")
     llm_temp = float(get_setting("llm_temperature", "0.7"))
     planning_temp = min(llm_temp, 0.2)
-    planning_max_tokens = parse_int_setting(get_setting("llm_max_tokens", "16000"), 16000, 1024, 64000)
+    planning_max_tokens = parse_int_setting(get_setting("llm_max_tokens", "50000"), 50000, 1024, 64000)
     
     if not llm_api_key:
         raise HTTPException(status_code=400, detail="未配置大模型 API 密钥，请在系统设置中配置后再试。")
@@ -6326,7 +6326,7 @@ def annotate_step6_narration(project_id: str, payload: Optional[Dict[str, Any]] 
 
     llm_base_url = get_setting("llm_base_url")
     llm_model = get_setting("llm_model", "gpt-4o-mini")
-    llm_max_tokens = parse_int_setting(get_setting("llm_max_tokens", "16000"), 16000, 1024, 64000)
+    llm_max_tokens = parse_int_setting(get_setting("llm_max_tokens", "50000"), 50000, 1024, 64000)
     client = get_openai_client(api_key=llm_api_key, base_url=llm_base_url)
     compact_slides = []
     for slide in incoming.get("slides", []):
@@ -6552,7 +6552,7 @@ def synthesize_tts(project_id: str, db: Session = Depends(get_db)):
     tts_clone_voice_id = get_setting("tts_clone_voice_id", "")
     tts_region = first_non_empty(get_setting("tts_region"), defaults.get("region"))
     tts_provider_extra = get_setting("tts_provider_extra", "")
-    tts_speed = get_setting("tts_speed", "1.0")
+    tts_speed = get_setting("tts_speed", "1.2")
     tts_volume = get_setting("tts_volume", "1.0")
     tts_pitch = get_setting("tts_pitch", "0" if provider == "minimax" else "1.0")
 
@@ -6711,7 +6711,7 @@ def synthesize_tts_resumable(project_id: str, db: Session = Depends(get_db)):
     tts_clone_voice_id = get_setting("tts_clone_voice_id", "")
     tts_region = first_non_empty(get_setting("tts_region"), defaults.get("region"))
     tts_provider_extra = get_setting("tts_provider_extra", "")
-    tts_speed = get_setting("tts_speed", "1.0")
+    tts_speed = get_setting("tts_speed", "1.2")
     tts_volume = get_setting("tts_volume", "1.0")
     tts_pitch = get_setting("tts_pitch", "0" if provider == "minimax" else "1.0")
 

@@ -56,7 +56,7 @@ def init_db():
             "llm_api_key": "",
             "llm_model": "gpt-4o-mini",
             "llm_temperature": "0.7",
-            "llm_max_tokens": "16000",
+            "llm_max_tokens": "50000",
             "vision_model": "gpt-4o",
             # Image Gen (独立)
             "image_base_url": "https://api.openai.com/v1",
@@ -73,7 +73,7 @@ def init_db():
             "tts_voice_id": "Chinese (Mandarin)_Soft_Girl",
             "tts_clone_voice_id": "",
             "tts_provider_extra": "",
-            "tts_speed": "1.0",
+            "tts_speed": "1.2",
             "tts_volume": "1.0",
             "tts_pitch": "0"
         }
@@ -81,6 +81,14 @@ def init_db():
             existing = db.query(Setting).filter(Setting.key == k).first()
             if not existing:
                 db.add(Setting(key=k, value=str(v)))
+        legacy_defaults = {
+            "llm_max_tokens": ("16000", "50000"),
+            "tts_speed": ("1.0", "1.2"),
+        }
+        for key, (old_value, new_value) in legacy_defaults.items():
+            existing = db.query(Setting).filter(Setting.key == key).first()
+            if existing and existing.value == old_value:
+                existing.value = new_value
         db.commit()
     finally:
         db.close()

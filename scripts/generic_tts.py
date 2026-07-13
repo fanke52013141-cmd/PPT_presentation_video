@@ -482,7 +482,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--instruction", default="")
     parser.add_argument("--emotion", default="calm")
     parser.add_argument("--language-boost", default="zh")
-    parser.add_argument("--speed", type=float, default=1.0)
+    parser.add_argument("--speed", type=float, default=1.2)
     parser.add_argument("--volume", type=float, default=1.0)
     parser.add_argument("--pitch", default="1.0")
     parser.add_argument("--audio-format", default="mp3", choices=["mp3", "wav", "pcm", "opus", "flac"])

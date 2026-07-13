@@ -326,6 +326,10 @@ def main() -> None:
             "skip_locked_groups": False,
         })
         detected = mask.detect_elements(image_path, slide_dir, settings)
+        assert detected["version"] == "auto_elements_v3_exact_rle_cached"
+        assert detected["source_sha256"]
+        assert detected["detection_settings_fingerprint"]
+        assert mask.detect_elements(image_path, slide_dir, settings) == detected
         elements = detected["elements"]
         assert len(elements) == 2
         assert [item["element_id"] for item in elements] == ["el_auto_001", "el_auto_002"]
@@ -366,8 +370,55 @@ def main() -> None:
         completed = mask._complete_component_coverage(fallback, detected)
         assert completed["quality"]["passed"] is True
         assert completed["quality"]["foreground_coverage_ratio"] == 1.0
+        assert completed["quality"]["minimum_foreground_coverage_ratio"] == 0.995
         assert completed["quality"]["overlap_pixel_count"] == 0
         assert completed["unmatched_elements"] == []
+
+        cross_region = {
+            "canvas": {"width": 320, "height": 180},
+            "elements": [
+                _mask_element("wide_left", 5, 80, 30, 20),
+                _mask_element("wide_right", 285, 80, 30, 20),
+            ],
+            "residual_elements": [],
+        }
+        cross_completed = mask._complete_component_coverage(
+            {
+                "matches": [{"group_id": "wide_flow", "element_ids": ["wide_left", "wide_right"], "confidence": 0.95}],
+                "unmatched_groups": [],
+            },
+            cross_region,
+        )
+        assert cross_completed["quality"]["passed"] is True
+        assert not cross_completed["semantic_quality"]["blocking_errors"]
+        assert any(
+            warning.get("type") == "group_crosses_left_and_right_regions"
+            for warning in cross_completed["semantic_quality"]["warnings"]
+        )
+
+        forced_completion = {
+            "canvas": {"width": 320, "height": 180},
+            "elements": [
+                _mask_element("left_anchor", 20, 80, 30, 20),
+                _mask_element("right_anchor", 270, 80, 30, 20),
+                _mask_element("left_extra", 55, 82, 12, 12),
+            ],
+            "residual_elements": [],
+        }
+        forced_completed = mask._complete_component_coverage(
+            {
+                "matches": [
+                    {"group_id": "left", "element_ids": ["left_anchor"], "confidence": 0.95},
+                    {"group_id": "right", "element_ids": ["right_anchor"], "confidence": 0.95},
+                ],
+                "unmatched_groups": [],
+            },
+            forced_completion,
+        )
+        assert forced_completed["quality"]["foreground_coverage_ratio"] == 1.0
+        assert forced_completed["quality"]["unassigned_component_count"] == 0
+        left_match = next(item for item in forced_completed["matches"] if item["group_id"] == "left")
+        assert "left_extra" in left_match["element_ids"]
 
         manifest = {"slides": [manifest_slide]}
         applied = mask._apply(manifest, fixture_slide(), detected, completed, settings)

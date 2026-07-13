@@ -26,9 +26,9 @@
       help: '小于这个面积的连通块会当噪点过滤。噪点太多调高；小图标、标点、小字被漏掉调低。'
     },
     {
-      key: 'component_padding_px', label: '元素外扩边距', type: 'number', default: 12, min: 0, max: 80, step: 1,
+      key: 'component_padding_px', label: 'AI 看图框外扩', type: 'number', default: 12, min: 0, max: 80, step: 1,
       usual: '4 - 32 px',
-      help: '检测到元素后向外多包一点，避免边缘被切。元素边缘缺失调高；相邻元素被带进去调低。'
+      help: '只扩大提供给多模态模型的候选框上下文，不修改最终精确 Mask 像素。模型看不清元素周边关系时调高；候选框过度遮挡时调低。'
     }
   ];
 
@@ -139,7 +139,7 @@
       button,.btn{border:1px solid var(--color-border-default)!important;border-radius:14px!important;background:var(--color-bg-surface);color:var(--color-text-secondary);box-shadow:none!important;font-weight:650;letter-spacing:0;transform:none!important;transition:background .16s ease,border-color .16s ease,color .16s ease,box-shadow .16s ease,transform .16s ease}
       button:hover,.btn:hover{background:var(--color-bg-subtle);border-color:var(--color-border-strong)!important;color:var(--color-primary-text);transform:translateY(-1px)!important}
       button.success,.btn.success,.btn-next-step.success{background:var(--color-primary-deep)!important;border-color:var(--color-primary-deep)!important;color:#fff!important;box-shadow:var(--shadow-button)!important}
-      #step2-btn-generate,#btn-step2-generation-confirm,#step3-btn-batch-generate,#step3-btn-generate,.step3-ai-action,#step6-btn-ai-annotate,#step5-btn-ai-mask{background:var(--gradient-ai-strong)!important;border-color:transparent!important;color:#fff!important;box-shadow:0 10px 24px rgba(123,92,214,.18)!important}
+      #step2-btn-generate,#btn-step2-generation-confirm,#step3-btn-generate,.step3-ai-action,#step6-btn-ai-annotate,#step5-btn-ai-mask{background:var(--gradient-ai-strong)!important;border-color:transparent!important;color:#fff!important;box-shadow:0 10px 24px rgba(123,92,214,.18)!important}
       input[type="text"],input[type="password"],input[type="number"],input[type="color"],textarea,select,input.step2-soft-input,textarea.step2-soft-input,.step6-tts-input{border:1px solid var(--color-border-default)!important;border-radius:var(--radius-md)!important;background:var(--color-bg-subtle)!important;color:var(--color-text-secondary)!important;box-shadow:none!important}
       input[type="text"]:focus,input[type="password"]:focus,input[type="number"]:focus,textarea:focus,select:focus,input.step2-soft-input:focus,textarea.step2-soft-input:focus,.step6-tts-input:focus{border-color:var(--color-primary-base)!important;background:var(--color-bg-surface)!important;box-shadow:0 0 0 4px rgba(207,221,254,.55)!important}
       header,header.sketch-border,header.sketch-border-sm{border:0!important;border-bottom:1px solid rgba(232,236,246,.95)!important;border-radius:0!important;background:rgba(255,253,248,.88)!important;backdrop-filter:saturate(165%) blur(18px);box-shadow:0 8px 26px rgba(83,101,208,.06)!important}
@@ -160,6 +160,23 @@
       body.step5-fullscreen-mode #canvas-container{aspect-ratio:16/9;height:auto!important;max-height:none!important;}
       body.step5-fullscreen-mode #canvas-container canvas,body.step5-fullscreen-mode #canvas-container img{width:100%!important;height:100%!important;object-fit:contain!important;}
       body.step5-fullscreen-mode #step-panel-5 .workspace-left{align-items:center;justify-content:center;overflow:hidden;}
+      .ai-mask-review-panel{display:none;align-items:center;gap:.65rem;margin:.65rem 0;padding:.7rem .85rem;border:1px solid var(--color-border-default);border-radius:14px;background:var(--color-bg-surface);box-shadow:var(--shadow-card)}
+      .ai-mask-review-panel.visible{display:flex}
+      .ai-mask-review-panel.passed{border-color:#b8e3cb;background:#f2fbf6}
+      .ai-mask-review-panel.needs-review{border-color:#f1d697;background:#fffaf0}
+      .ai-mask-review-panel.failed{border-color:#f0b7b7;background:#fff5f5}
+      .ai-mask-review-summary{min-width:0;flex:1;font-size:.84rem;font-weight:750;color:var(--color-text-secondary)}
+      .ai-mask-review-summary strong{display:block;color:var(--color-text-primary);font-size:.9rem;margin-bottom:.15rem}
+      .ai-mask-review-actions{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap}
+      .ai-mask-review-position{min-width:48px;text-align:center;color:var(--color-text-tertiary);font-size:.8rem;font-weight:750}
+      .mask-block-card.ai-review-needed{border-color:#e8c66d!important;background:#fffdf6!important}
+      .mask-block-card.ai-review-blocking{border-color:#e99999!important;background:#fff8f8!important}
+      .ai-mask-card-issue-badge{display:inline-flex;align-items:center;margin-left:.25rem;padding:.18rem .45rem;border-radius:999px;background:#fff0c7;color:#7d5711;font-size:.7rem;font-weight:850;white-space:nowrap}
+      .ai-review-blocking .ai-mask-card-issue-badge{background:#ffe0e0;color:#9f2f2f}
+      .ai-mask-preview-modes{display:inline-flex;align-items:center;gap:.2rem;padding:.2rem;border:1px solid var(--color-border-default);border-radius:12px;background:var(--color-bg-subtle)}
+      .ai-mask-preview-modes button{min-height:30px!important;padding:.3rem .58rem!important;border:0!important;border-radius:9px!important;background:transparent!important;font-size:.76rem!important;box-shadow:none!important}
+      .ai-mask-preview-modes button.active{background:#fff!important;color:var(--color-primary-deep)!important;box-shadow:0 3px 10px rgba(83,101,208,.12)!important}
+      .ai-mask-preview-modes button.loading{opacity:.72;cursor:wait}
     `;
     document.head.appendChild(style);
   }
@@ -208,6 +225,8 @@
     const toolbar = document.querySelector('#step-panel-5 .step5-toolbar');
     if (!toolbar) return;
     ensureInlineStatus();
+    ensureReviewPanel();
+    ensurePreviewControls();
     if (document.getElementById('step5-btn-ai-mask')) return;
     const settings = button('step5-btn-ai-mask-settings', 'AI 标注设置', 'secondary');
     const run = button('step5-btn-ai-mask', '重新运行 AI 标注', 'secondary');
@@ -216,6 +235,167 @@
     toolbar.insertBefore(run, anchor || null);
     settings.addEventListener('click', openSettings);
     run.addEventListener('click', runAnnotation);
+  }
+
+  function ensurePreviewControls() {
+    let controls = document.getElementById('ai-mask-preview-modes');
+    if (controls) return controls;
+    const toolbar = document.querySelector('#step-panel-5 .step5-toolbar');
+    if (!toolbar) return null;
+    controls = document.createElement('div');
+    controls.id = 'ai-mask-preview-modes';
+    controls.className = 'ai-mask-preview-modes';
+    controls.setAttribute('aria-label', 'Mask 预览模式');
+    controls.innerHTML = `
+      <button type="button" data-preview-mode="source">原图</button>
+      <button type="button" data-preview-mode="mask" class="active">标注范围</button>
+      <button type="button" data-preview-mode="final" title="使用生产抠图算法构建当前页">最终抠图</button>`;
+    const anchor = document.getElementById('step5-btn-fullscreen');
+    toolbar.insertBefore(controls, anchor || null);
+    controls.querySelector('[data-preview-mode="source"]')?.addEventListener('click', () => setPreviewMode('source'));
+    controls.querySelector('[data-preview-mode="mask"]')?.addEventListener('click', () => setPreviewMode('mask'));
+    controls.querySelector('[data-preview-mode="final"]')?.addEventListener('click', buildExactPreview);
+    return controls;
+  }
+
+  function updatePreviewControls(mode = 'mask', loading = false) {
+    const controls = ensurePreviewControls();
+    if (!controls) return;
+    controls.querySelectorAll('[data-preview-mode]').forEach(button => {
+      button.classList.toggle('active', button.dataset.previewMode === mode);
+    });
+    const finalButton = controls.querySelector('[data-preview-mode="final"]');
+    if (finalButton) {
+      finalButton.disabled = loading;
+      finalButton.classList.toggle('loading', loading);
+      finalButton.textContent = loading ? '构建中…' : '最终抠图';
+    }
+  }
+
+  function setPreviewMode(mode) {
+    if (typeof window.setStep5MaskPreviewMode === 'function') {
+      window.setStep5MaskPreviewMode(mode);
+    }
+    updatePreviewControls(mode, false);
+  }
+
+  function installPreviewEvents() {
+    if (window.__aiMaskPreviewEventsInstalled) return;
+    window.__aiMaskPreviewEventsInstalled = true;
+    window.addEventListener('step5-mask-preview-invalidated', () => updatePreviewControls('mask', false));
+    window.addEventListener('step5-mask-preview-mode', event => updatePreviewControls(event.detail?.mode || 'mask', false));
+  }
+
+  async function buildExactPreview() {
+    const id = projectId();
+    const slideId = typeof window.getCurrentStep5SlideId === 'function' ? window.getCurrentStep5SlideId() : '';
+    if (!id || !slideId) {
+      toast('请先打开需要预览的 Mask 页面。', 5000);
+      return;
+    }
+    setPreviewMode('mask');
+    updatePreviewControls('mask', true);
+    setInlineStatus(`正在构建 ${slideId} 的最终抠图预览...`, true, true);
+    try {
+      await flushStep5DraftBeforeAiMask();
+      const result = await apiPost(
+        `/api/projects/${encodeURIComponent(id)}/steps/5/slides/${encodeURIComponent(slideId)}/preview`,
+        {},
+      );
+      const currentSlideId = typeof window.getCurrentStep5SlideId === 'function' ? window.getCurrentStep5SlideId() : '';
+      if (currentSlideId !== slideId) {
+        setPreviewMode('mask');
+        return;
+      }
+      const loaded = typeof window.setStep5MaskPreviewMode === 'function'
+        ? await window.setStep5MaskPreviewMode('final', result.preview_url, slideId)
+        : false;
+      if (!loaded) throw new Error('预览图片未能加载');
+      updatePreviewControls('final', false);
+      const removed = Number(result.cutout_stats?.removed_outer_white_pixel_count || 0).toLocaleString();
+      toast(`最终抠图预览已生成，移除 ${removed} 个边界连通白底像素。`, 5000);
+      setInlineStatus('', false, false);
+    } catch (error) {
+      setPreviewMode('mask');
+      setInlineStatus('最终抠图预览失败', true, false);
+      toast(`❌ 最终抠图预览失败：${error.message}`, 7000);
+    } finally {
+      const mode = document.querySelector('#ai-mask-preview-modes .active')?.dataset.previewMode || 'mask';
+      updatePreviewControls(mode, false);
+    }
+  }
+
+  let reviewIssues = [];
+  let reviewIndex = 0;
+  let reviewQualityStatus = '';
+
+  function ensureReviewPanel() {
+    let panel = document.getElementById('ai-mask-review-panel');
+    if (panel) return panel;
+    const header = document.querySelector('#step-panel-5 .step5-mask-header');
+    const toolbar = document.querySelector('#step-panel-5 .step5-toolbar');
+    if (!header && !toolbar) return null;
+    panel = document.createElement('div');
+    panel.id = 'ai-mask-review-panel';
+    panel.className = 'ai-mask-review-panel';
+    panel.innerHTML = `
+      <div class="ai-mask-review-summary" aria-live="polite"></div>
+      <div class="ai-mask-review-actions">
+        <button id="ai-mask-review-prev" class="secondary" type="button">上一个问题</button>
+        <span id="ai-mask-review-position" class="ai-mask-review-position"></span>
+        <button id="ai-mask-review-next" class="secondary" type="button">下一个问题</button>
+      </div>`;
+    (header || toolbar.parentElement).insertAdjacentElement('afterend', panel);
+    panel.querySelector('#ai-mask-review-prev')?.addEventListener('click', () => focusReviewIssue(reviewIndex - 1));
+    panel.querySelector('#ai-mask-review-next')?.addEventListener('click', () => focusReviewIssue(reviewIndex + 1));
+    return panel;
+  }
+
+  function setReviewIssues(issues, qualityStatus = '') {
+    reviewIssues = Array.isArray(issues) ? issues.filter(issue => issue && typeof issue === 'object') : [];
+    reviewIndex = Math.min(reviewIndex, Math.max(0, reviewIssues.length - 1));
+    reviewQualityStatus = String(qualityStatus || (reviewIssues.length ? 'needs_review' : 'passed'));
+    window.__aiMaskReviewIssues = reviewIssues;
+    renderReviewPanel();
+    const stepPanel = document.getElementById('step-panel-5');
+    if (stepPanel && typeof window.renderStep5Workspace === 'function' && window.getComputedStyle(stepPanel).display !== 'none') {
+      window.renderStep5Workspace();
+    }
+  }
+
+  function renderReviewPanel() {
+    const panel = ensureReviewPanel();
+    if (!panel) return;
+    const summary = panel.querySelector('.ai-mask-review-summary');
+    const position = panel.querySelector('#ai-mask-review-position');
+    const hasResult = !!reviewQualityStatus;
+    panel.classList.toggle('visible', hasResult);
+    panel.classList.toggle('passed', reviewQualityStatus === 'passed');
+    panel.classList.toggle('needs-review', reviewQualityStatus === 'needs_review');
+    panel.classList.toggle('failed', reviewQualityStatus === 'failed');
+    if (!hasResult) return;
+    const current = reviewIssues[reviewIndex];
+    const blockingCount = reviewIssues.filter(issue => issue.severity === 'blocking').length;
+    if (reviewQualityStatus === 'passed') {
+      summary.innerHTML = '<strong>AI 标注质量通过</strong><span>前景覆盖、组件归属与像素互斥检查均已通过。</span>';
+    } else if (reviewQualityStatus === 'failed') {
+      summary.innerHTML = `<strong>AI 标注未生成有效结果</strong><span>${escapeAttr(current?.message || '请检查设置后重新运行。')}</span>`;
+    } else {
+      summary.innerHTML = `<strong>AI 标注已生成，${reviewIssues.length} 处需要检查${blockingCount ? `（${blockingCount} 处重要）` : ''}</strong><span>${escapeAttr(current?.message || '请逐项复核 Mask 归属。')}</span>`;
+    }
+    if (position) position.textContent = reviewIssues.length ? `${reviewIndex + 1} / ${reviewIssues.length}` : '0 / 0';
+    panel.querySelector('#ai-mask-review-prev').disabled = reviewIssues.length < 2;
+    panel.querySelector('#ai-mask-review-next').disabled = reviewIssues.length < 2;
+    panel.querySelector('.ai-mask-review-actions').style.display = reviewIssues.length ? 'flex' : 'none';
+  }
+
+  function focusReviewIssue(index) {
+    if (!reviewIssues.length) return;
+    reviewIndex = (index + reviewIssues.length) % reviewIssues.length;
+    renderReviewPanel();
+    if (typeof window.focusAiMaskIssue === 'function') {
+      window.focusAiMaskIssue(reviewIssues[reviewIndex]);
+    }
   }
 
   function ensureInlineStatus() {
@@ -265,6 +445,7 @@
           <p class="config-editor-note">只保留常用 Mask 参数。大模型匹配参数使用系统默认值；日常只需要调整识别、合并和覆盖策略。</p>
           <div class="ai-mask-section-title"><h4 style="margin:0">Mask 参数</h4><span class="config-editor-note" style="margin:0">悬停问号查看说明</span></div>
           <div id="ai-mask-settings-grid" class="ai-mask-compact-grid"></div>
+          <div class="config-editor-note" style="margin-top:.75rem">最终手动抠图固定使用“Mask 边界连通近白色剔除”，保留被内容包围的内部白色，并执行抗锯齿白边去污染。以上白底参数用于自动元素检测。</div>
           <div class="ai-mask-prompt-block">
             <h4>匹配规则提示词</h4>
             <p class="config-editor-note">这里控制“画面元素如何匹配到语块和演讲稿”。可以改方法论；不需要调大模型参数。</p>
@@ -382,6 +563,7 @@
     const settingsBtn = document.getElementById('step5-btn-ai-mask-settings');
     const status = ensureInlineStatus();
     btn.disabled = true;
+    setPreviewMode('mask');
     if (settingsBtn) settingsBtn.disabled = true;
     setInlineStatus('正在准备 AI 标注...', true, true);
     try {
@@ -395,10 +577,12 @@
         },
       });
       if (result.complete !== true) {
+        setReviewIssues(result.review_issues || [], result.quality_status || 'failed');
         throw new Error('仍有画面语块未能完成关联，请重新运行 AI 标注');
       }
       setInlineStatus('', false, false);
       const reviewCount = Number(result.review_issue_count || 0);
+      const qualityStatus = String(result.quality_status || (reviewCount ? 'needs_review' : 'passed'));
       if (reviewCount > 0) {
         toast(`AI 标注已完成，有 ${reviewCount} 个位置建议检查。`, 6500);
       } else {
@@ -406,8 +590,10 @@
       }
       if (typeof window.loadStep5Data === 'function') await window.loadStep5Data();
       else if (typeof loadStep5Data === 'function') await loadStep5Data();
-      if (typeof window.renderStep5Workspace === 'function') window.renderStep5Workspace();
-      if (typeof window.focusFirstAiMaskResult === 'function') {
+      setReviewIssues(result.review_issues || [], qualityStatus);
+      if (reviewCount > 0) {
+        focusReviewIssue(0);
+      } else if (typeof window.focusFirstAiMaskResult === 'function') {
         window.focusFirstAiMaskResult();
       }
     } catch (e) {
@@ -430,7 +616,9 @@
     AUTO_ATTEMPTED.add(id);
     try {
       const result = await apiGet(`/api/projects/${encodeURIComponent(id)}/steps/5/result`);
-      if (result.manifest?.ai_mask_annotation?.status === 'completed') {
+      const annotation = result.manifest?.ai_mask_annotation || {};
+      if (['completed', 'completed_needs_review'].includes(annotation.status)) {
+        setReviewIssues(annotation.review_issues || [], annotation.quality_status || (annotation.review_required ? 'needs_review' : 'passed'));
         setInlineStatus('', false, false);
         return;
       }
@@ -455,6 +643,7 @@
   function boot() {
     ensureStyles();
     installFullscreenFitWatch();
+    installPreviewEvents();
     fitFullscreenCanvas();
     injectButtons();
     installAutoAnnotationWatch();

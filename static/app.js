@@ -71,6 +71,9 @@ let state = {
     confirmingMasks: false,
     animationPreview: null,
     animationModalPreviewRaf: null,
+    maskPreviewMode: 'mask',
+    exactPreviewImage: null,
+    exactPreviewSlideId: '',
     startX: 0,
     startY: 0
   }
@@ -3306,6 +3309,7 @@ function switchStep5Slide(direction) {
   saveStep5CurrentState();
   const total = manifestData.slides.length;
   state.activeSlideIndex = (state.activeSlideIndex + direction + total) % total;
+  invalidateStep5ExactPreview();
   renderStep5Workspace();
   scheduleStep5Autosave();
 }
@@ -3325,6 +3329,20 @@ function toggleStep5Fullscreen(force) {
 
 function uuid() {
   return Math.random().toString(36).substring(2, 6);
+}
+
+function aiMaskIssuesForBox(box, slideId) {
+  const issues = Array.isArray(window.__aiMaskReviewIssues) ? window.__aiMaskReviewIssues : [];
+  const identifiers = new Set([
+    box?.id,
+    box?.group_id,
+    box?.visual_group_id,
+    box?.element_id,
+  ].map(value => String(value || '')).filter(Boolean));
+  return issues.filter(issue => (
+    String(issue?.slide_id || '') === String(slideId || '')
+    && identifiers.has(String(issue?.group_id || ''))
+  ));
 }
 
 // 渲染右侧的 box 编辑表单列表
@@ -3348,7 +3366,9 @@ function renderStep5BoxesForm() {
     const isPaintTarget = state.canvasState.paintMode && !state.canvasState.eraserMode && idx === state.canvasState.paintingBoxIndex;
     const isEraseTarget = state.canvasState.paintMode && state.canvasState.eraserMode && idx === state.canvasState.paintingBoxIndex;
     const item = document.createElement('div');
-    item.className = `mask-block-card sketch-dashed${isSelected ? ' highlight-glow' : ''}${isPaintTarget ? ' paint-active' : ''}${isEraseTarget ? ' erase-active' : ''}`;
+    const reviewIssues = aiMaskIssuesForBox(box, currentSlide?.slide_id);
+    const hasBlockingIssue = reviewIssues.some(issue => issue?.severity === 'blocking');
+    item.className = `mask-block-card sketch-dashed${isSelected ? ' highlight-glow' : ''}${isPaintTarget ? ' paint-active' : ''}${isEraseTarget ? ' erase-active' : ''}${reviewIssues.length ? ' ai-review-needed' : ''}${hasBlockingIssue ? ' ai-review-blocking' : ''}`;
     const maskColor = getBoxColor(box, idx);
     item.style.setProperty('--mask-color', maskColor);
 
@@ -3366,6 +3386,7 @@ function renderStep5BoxesForm() {
       <div class="mask-block-head">
         <span class="mask-block-number">${idx + 1}</span>
         <span class="mask-block-caption">语块 ${idx + 1}</span>
+        ${reviewIssues.length ? `<span class="ai-mask-card-issue-badge" title="${escHtml(reviewIssues.map(issue => issue.message || issue.type).join('\n'))}">${hasBlockingIssue ? '需修正' : '待检查'} · ${reviewIssues.length}</span>` : ''}
         <div class="mask-block-actions">
           <button class="mask-icon-btn${isPaintTarget ? ' active' : ''}" type="button" data-action="paint" title="画笔补充当前语块" aria-label="画笔补充">
             <svg class="icon" viewBox="0 0 24 24"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
@@ -3502,6 +3523,30 @@ function selectStep5MaskBox(idx, shouldScroll = true) {
   });
 }
 
+function focusAiMaskIssue(issue) {
+  if (!issue || !manifestData?.slides?.length) return false;
+  const slideIndex = manifestData.slides.findIndex(slide => (
+    String(slide?.slide_id || '') === String(issue.slide_id || '')
+  ));
+  if (slideIndex < 0) return false;
+  state.activeSlideIndex = slideIndex;
+  renderStep5Workspace();
+  const groupId = String(issue.group_id || '');
+  if (!groupId) return true;
+  setTimeout(() => {
+    const boxIndex = state.canvasState.boxes.findIndex(box => [
+      box?.id,
+      box?.group_id,
+      box?.visual_group_id,
+      box?.element_id,
+    ].some(value => String(value || '') === groupId));
+    if (boxIndex >= 0) {
+      selectStep5MaskBox(boxIndex, true);
+    }
+  }, 80);
+  return true;
+}
+
 function updateBrushSize(value, shouldRedraw = true) {
   const size = Math.max(100, Math.min(200, Number(value) || 140));
   state.canvasState.brushSize = size;
@@ -3558,6 +3603,7 @@ function stopMaskPaint() {
 }
 
 function createCurrentSlideBlock() {
+  invalidateStep5ExactPreview();
   const idx = state.canvasState.boxes.length;
   state.canvasState.boxes.push({
     group_id: `manual_group_${Date.now().toString(36)}_${idx + 1}`,
@@ -3581,6 +3627,7 @@ function clearCurrentSlideMaskAnnotations() {
     '清除当前页标注',
     '将清除当前 Slide 的 AI Mask 与手动修正，其他页面不受影响。',
     () => {
+      invalidateStep5ExactPreview();
       state.canvasState.boxes = [];
       stopMaskPaint();
       saveStep5CurrentState();
@@ -3592,6 +3639,7 @@ function clearCurrentSlideMaskAnnotations() {
 }
 
 window.deleteMaskBox = function(idx) {
+  invalidateStep5ExactPreview();
   state.canvasState.boxes.splice(idx, 1);
   if (state.canvasState.paintingBoxIndex === idx) {
     stopMaskPaint();
@@ -3711,6 +3759,7 @@ function finishMaskStroke(event, canvas) {
   if (!state.canvasState.isPainting) return;
   state.canvasState.isPainting = false;
   state.canvasState.currentStroke = null;
+  invalidateStep5ExactPreview();
   if (canvas.hasPointerCapture?.(event.pointerId)) canvas.releasePointerCapture?.(event.pointerId);
   updateMaskBoxFromManualMask(state.canvasState.paintingBoxIndex);
   redrawCanvas();
@@ -4149,6 +4198,42 @@ function rebuildStep5SourceCache(image) {
 
 }
 
+function invalidateStep5ExactPreview() {
+  state.canvasState.exactPreviewImage = null;
+  state.canvasState.exactPreviewSlideId = '';
+  if (state.canvasState.maskPreviewMode === 'final') {
+    state.canvasState.maskPreviewMode = 'mask';
+  }
+  window.dispatchEvent(new CustomEvent('step5-mask-preview-invalidated'));
+}
+
+function setStep5MaskPreviewMode(mode, previewUrl = '', slideId = '') {
+  const normalized = ['source', 'mask', 'final'].includes(mode) ? mode : 'mask';
+  if (normalized !== 'final') {
+    state.canvasState.maskPreviewMode = normalized;
+    redrawCanvas();
+    window.dispatchEvent(new CustomEvent('step5-mask-preview-mode', { detail: { mode: normalized } }));
+    return Promise.resolve(true);
+  }
+  if (!previewUrl) return Promise.resolve(false);
+  return new Promise(resolve => {
+    const image = new Image();
+    image.onload = () => {
+      state.canvasState.exactPreviewImage = image;
+      state.canvasState.exactPreviewSlideId = String(slideId || '');
+      state.canvasState.maskPreviewMode = 'final';
+      redrawCanvas();
+      window.dispatchEvent(new CustomEvent('step5-mask-preview-mode', { detail: { mode: 'final' } }));
+      resolve(true);
+    };
+    image.onerror = () => {
+      showToast('精确 Mask 预览图片加载失败，请重试。', 5000);
+      resolve(false);
+    };
+    image.src = previewUrl;
+  });
+}
+
 function drawManualMaskStrokes(ctx, item, idx) {
   const strokes = item.manual_mask?.strokes || [];
   const exactRuns = item.manual_mask?.rle?.runs || [];
@@ -4169,7 +4254,19 @@ function redrawCanvas(options = {}) {
     return;
   }
 
+  const currentSlideId = String(getCurrentManifestSlide()?.slide_id || '');
+  if (
+    state.canvasState.maskPreviewMode === 'final'
+    && state.canvasState.exactPreviewImage
+    && state.canvasState.exactPreviewSlideId === currentSlideId
+  ) {
+    ctx.drawImage(state.canvasState.exactPreviewImage, 0, 0, 1920, 1080);
+    return;
+  }
   ctx.drawImage(step5SourceCanvas, 0, 0);
+  if (state.canvasState.maskPreviewMode === 'source') {
+    return;
+  }
   const preview = options.animationPreview || state.canvasState.animationPreview;
   if (preview) {
     drawMaskAnimationPreview(ctx, preview);
@@ -4192,7 +4289,7 @@ function boxHasAiPaint(box) {
   const hasExactMask = Array.isArray(manualMask?.rle?.runs) && manualMask.rle.runs.length > 0;
   if (!hasExactMask && !strokes.some(stroke => stroke && !stroke.eraser && stroke.mode !== 'erase' && Array.isArray(stroke.points) && stroke.points.length)) return false;
   return String(manualMask?.source || '').startsWith('ai_auto_mask')
-    || String(box?.review_status || '') === 'ai_matched_needs_review'
+    || ['ai_matched_needs_review', 'ai_review_required'].includes(String(box?.review_status || ''))
     || !!box?.auto_mask
     || !!box?.ai_match;
 }
@@ -4906,6 +5003,9 @@ window.saveStep5Draft = saveStep5Draft;
 window.saveStep5CurrentState = saveStep5CurrentState;
 window.refreshStep3Prompts = refreshStep3Prompts;
 window.focusFirstAiMaskResult = focusFirstAiMaskResult;
+window.focusAiMaskIssue = focusAiMaskIssue;
+window.setStep5MaskPreviewMode = setStep5MaskPreviewMode;
+window.getCurrentStep5SlideId = () => String(getCurrentManifestSlide()?.slide_id || '');
 window.PPTStudio = Object.assign(window.PPTStudio || {}, {
   getCurrentProject: () => state.currentProject,
   flushStep5Draft,

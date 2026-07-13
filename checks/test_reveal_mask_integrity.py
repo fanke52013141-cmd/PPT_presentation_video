@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.build_reveal_scene import (
     MASKED_COMPOSITION_METHOD,
     PIPELINE_VERSION,
+    compose_preview_image,
     compose_slide,
     manual_mask_alpha,
 )
@@ -154,6 +155,11 @@ with tempfile.TemporaryDirectory() as temp_dir_value:
     reconstructed = Image.open(painted_dir / "assets" / "base_slide.png").convert("RGBA")
     for layer in sorted(scene["layers"][1:], key=lambda item: item["z_index"]):
         reconstructed.alpha_composite(Image.open(painted_dir / layer["asset"]).convert("RGBA"))
+
+    preview_path = painted_dir / "mask_preview.png"
+    compose_preview_image(painted_dir, preview_path)
+    preview = Image.open(preview_path).convert("RGBA")
+    assert preview.tobytes() == reconstructed.convert("RGB").convert("RGBA").tobytes()
 
     # Mask-covered white outside the objects is removed to the configured video background.
     assert reconstructed.convert("RGB").getpixel((20, 20)) == (254, 253, 249)

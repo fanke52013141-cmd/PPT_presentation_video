@@ -163,6 +163,15 @@ for (const manualMaskHandler of ['startMaskPaint', 'startMaskErase', 'deleteMask
 if (!aiMask.includes('maybeAutoAnnotate') || !aiMask.includes('multimodal') && !aiMask.includes('AI 正在关联')) {
   throw new Error('automatic AI Mask flow is missing');
 }
+for (const reviewToken of ['ai-mask-review-panel', 'focusReviewIssue', 'quality_status', 'completed_needs_review']) {
+  if (!aiMask.includes(reviewToken)) throw new Error(`AI Mask review UX missing: ${reviewToken}`);
+}
+for (const previewToken of ['data-preview-mode="source"', 'data-preview-mode="mask"', 'data-preview-mode="final"', 'buildExactPreview']) {
+  if (!aiMask.includes(previewToken)) throw new Error(`production Mask preview control missing: ${previewToken}`);
+}
+if (!app.includes('setStep5MaskPreviewMode') || !app.includes('focusAiMaskIssue')) {
+  throw new Error('Mask preview or issue focus bridge missing');
+}
 if (!app.includes('rebuildStep5SourceCache')) throw new Error('source image cache missing');
 if (!app.includes('ctx.drawImage(step5SourceCanvas, 0, 0)')) {
   throw new Error('mask editor does not keep the full source visible');

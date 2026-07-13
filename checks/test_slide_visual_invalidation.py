@@ -31,6 +31,7 @@ with tempfile.TemporaryDirectory() as temp_value:
         (slide_dir / "scene.json").write_text("{}", encoding="utf-8")
         (slide_dir / "animation_timeline.json").write_text("{}", encoding="utf-8")
         (slide_dir / "reveal_report.json").write_text("{}", encoding="utf-8")
+        Image.new("RGB", (32, 18), "#fefdf9").save(slide_dir / "mask_preview.png")
         (slide_dir / "assets" / "old.png").write_bytes(b"old")
 
     (planning / "visual_contract.json").write_text(
@@ -65,6 +66,7 @@ with tempfile.TemporaryDirectory() as temp_value:
     assert slide["semantic_blocks"] == []
     assert slide["status"] == "pending"
     assert not (slides_root / "slide_001" / "scene.json").exists()
+    assert not (slides_root / "slide_001" / "mask_preview.png").exists()
     assert not (slides_root / "slide_001" / "assets").exists()
     assert not (run_dir / "remotion_props.json").exists()
     assert not (planning / "audio_confirmed.json").exists()

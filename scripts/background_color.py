@@ -5,6 +5,12 @@ from __future__ import annotations
 import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
+MASK_CUTOUT_HARD_MIN_CHANNEL = 230
+MASK_CUTOUT_HARD_MAX_CHROMA = 18
+MASK_CUTOUT_SOFT_MIN_CHANNEL = 170
+MASK_CUTOUT_SOFT_MAX_CHROMA = 40
+MASK_CUTOUT_FEATHER_PX = 8
+
 
 def _boundary_connected_hard_white(hard_white: np.ndarray, domain: np.ndarray) -> np.ndarray:
     """Return hard-white pixels connected to the outside of one Mask.
@@ -174,11 +180,11 @@ def normalize_connected_background(
 def masked_outer_white_cutout(
     image: Image.Image,
     manual_alpha: Image.Image,
-    hard_min_channel: int = 230,
-    hard_max_chroma: int = 18,
-    soft_min_channel: int = 170,
-    soft_max_chroma: int = 40,
-    feather_px: int = 8,
+    hard_min_channel: int = MASK_CUTOUT_HARD_MIN_CHANNEL,
+    hard_max_chroma: int = MASK_CUTOUT_HARD_MAX_CHROMA,
+    soft_min_channel: int = MASK_CUTOUT_SOFT_MIN_CHANNEL,
+    soft_max_chroma: int = MASK_CUTOUT_SOFT_MAX_CHROMA,
+    feather_px: int = MASK_CUTOUT_FEATHER_PX,
 ) -> tuple[Image.Image, Image.Image, dict[str, int]]:
     """Cut out outer-connected white inside one user-painted Mask.
 

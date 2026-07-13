@@ -6205,6 +6205,106 @@ def update_step5_draft(project_id: str, payload: Dict[str, Any], db: Session = D
         write_json_atomic(manifest_path, payload)
     return {"success": True}
 
+
+@app.post("/api/projects/{project_id}/steps/5/slides/{slide_id}/preview")
+def build_step5_mask_preview(
+    project_id: str,
+    slide_id: str,
+    payload: Optional[Dict[str, Any]] = None,
+    db: Session = Depends(get_db),
+):
+    """Build one production-accurate static Mask preview without advancing steps."""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    preview_path = current_slide_file_or_404(project, slide_id, "mask_preview.png")
+    manifest_path = os.path.join(project_run_dir_or_500(project), "reveal_manifest.json")
+    if not os.path.exists(manifest_path):
+        raise HTTPException(status_code=400, detail="Mask 配置文件不存在")
+
+    with reveal_lock_for(project):
+        sync_project_background_color(project)
+        build_scene_script = os.path.join(REPO_ROOT, "scripts", "build_reveal_scene.py")
+        command = [
+            sys.executable,
+            build_scene_script,
+            "--manifest",
+            manifest_path,
+            "--repo-root",
+            REPO_ROOT,
+            "--slide-id",
+            slide_id,
+            "--preview-output",
+            preview_path,
+        ]
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=STEP5_REVEAL_BUILD_TIMEOUT_SEC,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise HTTPException(status_code=504, detail="精确 Mask 预览构建超时，请重试") from exc
+        if result.returncode != 0 or not os.path.exists(preview_path):
+            logger.error("Build exact Mask preview failed: %s", result.stderr)
+            raise HTTPException(status_code=500, detail=f"精确 Mask 预览构建失败: {result.stderr or ''}")
+
+        # Match the final render path exactly: image-mode storyboard
+        # backgrounds are applied after reveal assets are built, so regenerate
+        # the static preview from those post-processed production layers.
+        from storyboard_background_render import apply_storyboard_background
+        from scripts.build_reveal_scene import compose_preview_image
+
+        apply_storyboard_background(Path(manifest_path).resolve())
+        compose_preview_image(Path(preview_path).parent, Path(preview_path))
+
+        report_path = current_slide_file_or_404(project, slide_id, "reveal_report.json")
+        report = read_json_file(report_path, {})
+        manifest_bytes = Path(manifest_path).read_bytes()
+        manifest_fingerprint = hashlib.sha256(manifest_bytes).hexdigest()
+        groups = [
+            *(report.get("groups") if isinstance(report.get("groups"), list) else []),
+            *(report.get("static_groups") if isinstance(report.get("static_groups"), list) else []),
+        ]
+        cutout_stats = {
+            key: sum(
+                int((group.get("cutout") or {}).get(key, 0) or 0)
+                for group in groups
+                if isinstance(group, dict)
+            )
+            for key in (
+                "manual_mask_pixel_count",
+                "removed_outer_white_pixel_count",
+                "soft_edge_pixel_count",
+                "retained_pixel_count",
+            )
+        }
+
+    version = int(os.path.getmtime(preview_path) * 1000)
+    return {
+        "success": True,
+        "slide_id": slide_id,
+        "manifest_fingerprint": manifest_fingerprint,
+        "preview_url": f"/api/projects/{project_id}/slides/{slide_id}/mask-preview?t={version}",
+        "fallback_full_slide": bool(report.get("fallback_full_slide")),
+        "warnings": report.get("warnings", []),
+        "cutout_stats": cutout_stats,
+    }
+
+
+@app.get("/api/projects/{project_id}/slides/{slide_id}/mask-preview")
+def get_step5_mask_preview(project_id: str, slide_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    preview_path = current_slide_file_or_404(project, slide_id, "mask_preview.png")
+    if not os.path.exists(preview_path):
+        raise HTTPException(status_code=404, detail="精确 Mask 预览尚未生成")
+    return FileResponse(preview_path, media_type="image/png")
+
 @app.put("/api/projects/{project_id}/steps/5/result")
 def update_step5_result(project_id: str, payload: Dict[str, Any], build_assets: bool = Query(True), db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()

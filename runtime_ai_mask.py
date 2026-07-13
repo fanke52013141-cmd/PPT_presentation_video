@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import hashlib
 import io
 import json
 import os
@@ -33,7 +34,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "closing_radius": 6,
     "add_border": 2,
     "connectivity": 8,
-    "min_element_area": 200,
+    "min_element_area": 120,
     "component_padding_px": 12,
     "max_group_elements": 60,
     "llm_confidence_threshold": 0.72,
@@ -48,6 +49,7 @@ MASK_COLORS = (
     "#7B2CBF", "#2F80ED", "#D45113", "#4C956C",
 )
 AI_MASK_VISION_TIMEOUT_SEC = 180.0
+AI_MASK_MIN_FOREGROUND_COVERAGE = 0.995
 
 DEFAULT_METHODOLOGY = """你是中文 PPT 视频的 AI Mask 语义标注专家。
 
@@ -372,6 +374,36 @@ def _morph_erode(mask: np.ndarray, kernel: np.ndarray) -> np.ndarray:
 
 
 def detect_elements(image_path: Path, slide_dir: Path, settings: dict[str, Any]) -> dict[str, Any]:
+    out_dir = slide_dir / "auto_mask"
+    cache_path = out_dir / "auto_elements.json"
+    detection_settings = {
+        key: settings.get(key)
+        for key in (
+            "white_threshold",
+            "color_tolerance",
+            "closing_radius",
+            "add_border",
+            "connectivity",
+            "min_element_area",
+            "component_padding_px",
+        )
+    }
+    source_sha256 = hashlib.sha256(image_path.read_bytes()).hexdigest()
+    settings_fingerprint = hashlib.sha256(
+        json.dumps(detection_settings, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    if cache_path.exists():
+        try:
+            cached = _read_json(cache_path)
+            if (
+                cached.get("version") == "auto_elements_v3_exact_rle_cached"
+                and cached.get("source_sha256") == source_sha256
+                and cached.get("detection_settings_fingerprint") == settings_fingerprint
+            ):
+                return cached
+        except Exception:
+            pass
+
     image = Image.open(image_path).convert("RGB")
     ow, oh = image.size
     border = int(settings["add_border"])
@@ -429,9 +461,10 @@ def detect_elements(image_path: Path, slide_dir: Path, settings: dict[str, Any])
     ys, xs = np.nonzero(fg)
     candidates: list[dict[str, Any]] = []
     residual: list[dict[str, Any]] = []
-    out_dir = slide_dir / "auto_mask"
     crop_dir = out_dir / "elements"
     crop_dir.mkdir(parents=True, exist_ok=True)
+    for stale_crop in crop_dir.glob("*.png"):
+        stale_crop.unlink(missing_ok=True)
     for sx, sy in zip(xs.tolist(), ys.tolist()):
         if visited[sy, sx] or not fg[sy, sx]:
             continue
@@ -498,12 +531,15 @@ def detect_elements(image_path: Path, slide_dir: Path, settings: dict[str, Any])
     all_components = candidates + residual
     exact_foreground = _merge_row_runs(all_components, ow, oh)
     payload = {
-        "version": "auto_elements_v2_exact_rle",
+        "version": "auto_elements_v3_exact_rle_cached",
         "slide_id": slide_dir.name,
+        "source_sha256": source_sha256,
+        "detection_settings_fingerprint": settings_fingerprint,
+        "detection_settings": detection_settings,
         "canvas": {"width": ow, "height": oh},
         "elements": candidates,
         "residual_elements": residual,
-        "source_foreground_pixel_count": int(np.count_nonzero(fg)),
+        "source_foreground_pixel_count": int(np.count_nonzero(source_foreground)),
         "foreground_pixel_count": _rle_pixel_count(exact_foreground),
     }
     _write_json(out_dir / "auto_elements.json", payload)
@@ -1514,6 +1550,64 @@ def _complete_component_coverage(
                 "region": element_region
             })
 
+    # The production contract requires every foreground component to have one
+    # owner.  The vision model chooses semantic anchors; this final deterministic
+    # pass only closes coverage gaps by attaching any remaining component to the
+    # nearest compatible anchor.  It never changes an existing owner.
+    forced_completion_assignments: list[dict[str, Any]] = []
+    if accepted and anchors:
+        residual_ids = {
+            str(element.get("element_id") or "")
+            for element in residual
+            if str(element.get("element_id") or "")
+        }
+        for element_id in sorted(set(by_id) - assigned):
+            element = by_id[element_id]
+            box = element.get("raw_bbox") if isinstance(element.get("raw_bbox"), dict) else element.get("bbox", {})
+            cx, cy = _box_center(box)
+            element_region = _layout_region(cx, cy, width, height)
+            ranked: list[tuple[int, float, dict[str, Any]]] = []
+            for item in accepted:
+                group_id = str(item.get("group_id") or "")
+                anchor = anchors.get(group_id)
+                if not anchor:
+                    continue
+                anchor_cx, anchor_cy = _box_center(anchor)
+                anchor_region = _layout_region(anchor_cx, anchor_cy, width, height)
+                compatible = _compatible_regions(element_region, anchor_region)
+                ranked.append((0 if compatible else 1, anchor_distance(element, anchor), item))
+            if not ranked:
+                continue
+            compatibility_rank, distance, owner = min(
+                ranked,
+                key=lambda value: (value[0], value[1], str(value[2].get("group_id") or "")),
+            )
+            owner.setdefault("element_ids", []).append(element_id)
+            if element_id in residual_ids:
+                owner.setdefault("residual_element_ids", []).append(element_id)
+            assigned.add(element_id)
+            assignment = {
+                "element_id": element_id,
+                "status": "assigned",
+                "group_id": str(owner.get("group_id") or ""),
+                "distance": round(distance, 2),
+                "region": element_region,
+                "forced": True,
+                "compatible_region": compatibility_rank == 0,
+                "reason": "nearest_compatible_anchor_after_ambiguity" if compatibility_rank == 0 else "nearest_anchor_without_compatible_region",
+                "candidate_component": element_id not in residual_ids,
+            }
+            previous = next(
+                (item for item in residual_assignment_report if item.get("element_id") == element_id),
+                None,
+            )
+            if previous is not None:
+                previous.clear()
+                previous.update(assignment)
+            else:
+                residual_assignment_report.append(assignment)
+            forced_completion_assignments.append(assignment)
+
     unassigned_ids = sorted(set(by_id) - assigned)
     target_rle = _merge_row_runs(complete_foreground, width, height)
     foreground_pixels = _rle_pixel_count(target_rle)
@@ -1535,6 +1629,20 @@ def _complete_component_coverage(
     coverage = assigned_pixels / foreground_pixels if foreground_pixels else 0.0
     semantic_group_checks: list[dict[str, Any]] = []
     semantic_warnings: list[dict[str, Any]] = []
+    forced_candidate_groups = sorted({
+        str(item.get("group_id") or "")
+        for item in forced_completion_assignments
+        if item.get("candidate_component") and str(item.get("group_id") or "")
+    })
+    for group_id in forced_candidate_groups:
+        semantic_warnings.append({
+            "type": "forced_low_confidence_components",
+            "group_id": group_id,
+            "component_count": sum(
+                1 for item in forced_completion_assignments
+                if item.get("candidate_component") and str(item.get("group_id") or "") == group_id
+            ),
+        })
     blocking_errors: list[dict[str, Any]] = []
     for item in accepted:
         group_id = str(item.get("group_id") or "")
@@ -1581,7 +1689,11 @@ def _complete_component_coverage(
             blocking_errors.append({"type": "dynamic_group_owns_title_region_pixels", "group_id": group_id})
         content_regions = [region for region in regions if region.startswith("content_")]
         if "content_left" in content_regions and "content_right" in content_regions:
-            blocking_errors.append({"type": "group_crosses_left_and_right_regions", "group_id": group_id})
+            # Wide comparisons and process diagrams legitimately span both
+            # sides of a slide. Geometry alone is not strong enough evidence
+            # to reject the multimodal semantic ownership, so route this to
+            # human review instead of failing an otherwise exact Mask.
+            semantic_warnings.append({"type": "group_crosses_left_and_right_regions", "group_id": group_id})
         if residual_ratio > 0.85:
             blocking_errors.append({"type": "too_many_residual_components", "group_id": group_id, "residual_ratio": round(residual_ratio, 3)})
         elif residual_ratio > 0.5:
@@ -1610,7 +1722,14 @@ def _complete_component_coverage(
         "overlap_pixel_count": overlap_pixels,
         "exclusive_component_ownership": overlap_pixels == 0,
         "semantic_quality_passed": semantic_quality["passed"],
-        "passed": bool(accepted) and coverage >= 0.9 and overlap_pixels == 0 and semantic_quality["passed"],
+        "minimum_foreground_coverage_ratio": AI_MASK_MIN_FOREGROUND_COVERAGE,
+        "passed": (
+            bool(accepted)
+            and coverage >= AI_MASK_MIN_FOREGROUND_COVERAGE
+            and len(unassigned_ids) == 0
+            and overlap_pixels == 0
+            and semantic_quality["passed"]
+        ),
     }
     match_payload["unmatched_elements"] = unassigned_ids
     match_payload["quality"] = quality
@@ -1675,6 +1794,7 @@ def _review_issues(match_payload: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         issues.append({
             "type": "low_confidence_match" if level == "low" else "review_match",
+            "severity": "warning",
             "group_id": str(match.get("group_id") or ""),
             "confidence": round(confidence, 4),
             "confidence_level": level,
@@ -1683,11 +1803,68 @@ def _review_issues(match_payload: dict[str, Any]) -> list[dict[str, Any]]:
     for group_id in match_payload.get("unmatched_groups", []) or []:
         issues.append({
             "type": "unmatched_group",
+            "severity": "blocking",
             "group_id": str(group_id),
             "confidence": 0.0,
             "confidence_level": "low",
             "message": "该语块没有找到可靠的画面元素。",
         })
+    quality = match_payload.get("quality") if isinstance(match_payload.get("quality"), dict) else {}
+    if quality:
+        coverage = _float(quality.get("foreground_coverage_ratio"), 0.0, 0.0, 1.0)
+        minimum_coverage = _float(
+            quality.get("minimum_foreground_coverage_ratio"),
+            AI_MASK_MIN_FOREGROUND_COVERAGE,
+            0.0,
+            1.0,
+        )
+        if coverage < minimum_coverage:
+            issues.append({
+                "type": "foreground_coverage_below_threshold",
+                "severity": "blocking",
+                "group_id": "",
+                "message": f"前景覆盖率为 {coverage:.2%}，低于要求的 {minimum_coverage:.2%}。",
+                "metrics": {"coverage": round(coverage, 6), "minimum": round(minimum_coverage, 6)},
+            })
+        unassigned_count = _int(quality.get("unassigned_component_count"), 0, 0, 1_000_000)
+        if unassigned_count:
+            issues.append({
+                "type": "unassigned_foreground_components",
+                "severity": "blocking",
+                "group_id": "",
+                "message": f"仍有 {unassigned_count} 个前景组件未分配。",
+                "metrics": {"unassigned_component_count": unassigned_count},
+            })
+        overlap_count = _int(quality.get("overlap_pixel_count"), 0, 0, 1_000_000_000)
+        if overlap_count:
+            issues.append({
+                "type": "cross_group_pixel_overlap",
+                "severity": "blocking",
+                "group_id": "",
+                "message": f"检测到 {overlap_count} 个跨语块重叠像素。",
+                "metrics": {"overlap_pixel_count": overlap_count},
+            })
+    semantic_quality = match_payload.get("semantic_quality") if isinstance(match_payload.get("semantic_quality"), dict) else {}
+    issue_messages = {
+        "dynamic_group_enters_subtitle_safe_zone": "动态语块进入字幕安全区，请检查。",
+        "dynamic_group_owns_title_region_pixels": "正文语块包含标题区域像素，请检查。",
+        "group_crosses_left_and_right_regions": "该语块横跨页面左右区域，请确认它是否属于同一叙事单元。",
+        "too_many_residual_components": "该语块包含较多自动吸附的小组件，请检查。",
+        "many_residual_components": "该语块包含较多自动吸附的小组件，建议检查。",
+        "forced_low_confidence_components": "部分画面组件通过最近锚点规则补全，建议检查归属。",
+    }
+    for severity, field in (("blocking", "blocking_errors"), ("warning", "warnings")):
+        for issue in semantic_quality.get(field, []) or []:
+            if not isinstance(issue, dict):
+                continue
+            issue_type = str(issue.get("type") or "semantic_review")
+            issues.append({
+                **issue,
+                "type": issue_type,
+                "severity": severity,
+                "group_id": str(issue.get("group_id") or ""),
+                "message": issue_messages.get(issue_type, "AI Mask 语义质量需要检查。"),
+            })
     return issues
 
 
@@ -2018,13 +2195,25 @@ def _annotate_project(server_module: ModuleType, project: Any, settings: dict[st
         slide_review_issues = [{"slide_id": slide_id, **issue} for issue in _review_issues(match)]
         review_issues.extend(slide_review_issues)
         slides_out.append({"slide_id": slide_id, "detected_element_count": len(item["element_list"]), "residual_component_count": len(item["elements"].get("residual_elements", [])), "matched_group_count": len(match.get("matches", [])), "updated_group_count": applied["updated"], "skipped_group_count": applied["skipped"], "unmatched_element_count": len(match.get("unmatched_elements", [])), "unmatched_group_count": unmatched_group_count, "matching_method": match.get("matching_method"), "quality": slide_quality, "semantic_quality": semantic_quality, "warnings": match.get("warnings", []), "review_required": bool(slide_review_issues), "review_issues": slide_review_issues})
-    # Annotation is "complete" as long as at least one slide was processed and
-    # at least one group was updated.  Unmatched groups and quality warnings
-    # are advisory — the user can review and manually fix in the editor.
+    # ``complete`` remains a backward-compatible processing signal.  Consumers
+    # must use ``quality_status`` to distinguish a clean result from a usable
+    # result that still needs human review.
     complete = total_updated > 0 and len(slides_out) > 0
+    if not complete:
+        quality_status = "failed"
+    elif quality_passed and not review_issues:
+        quality_status = "passed"
+    else:
+        quality_status = "needs_review"
+    annotation_status = {
+        "passed": "completed",
+        "needs_review": "completed_needs_review",
+        "failed": "incomplete",
+    }[quality_status]
     manifest["ai_mask_annotation"] = {
         "version": "ai_mask_annotation_v3_exact_rle",
-        "status": "completed" if complete else "incomplete",
+        "status": annotation_status,
+        "quality_status": quality_status,
         "settings": settings,
         "processed_slide_count": len(slides_out),
         "updated_group_count": total_updated,
@@ -2033,9 +2222,23 @@ def _annotate_project(server_module: ModuleType, project: Any, settings: dict[st
         "quality_passed": quality_passed,
         "review_required": bool(review_issues),
         "review_issue_count": len(review_issues),
+        "review_issues": review_issues,
     }
     _write_json(run_dir / "reveal_manifest.json", manifest)
-    return {"success": True, "complete": complete, "processed_slide_count": len(slides_out), "updated_group_count": total_updated, "unmatched_group_count": total_unmatched_groups, "review_required": bool(review_issues), "review_issue_count": len(review_issues), "review_issues": review_issues, "slides": slides_out, "manifest_path": str(run_dir / "reveal_manifest.json")}
+    return {
+        "success": True,
+        "complete": complete,
+        "quality_status": quality_status,
+        "quality_passed": quality_passed,
+        "processed_slide_count": len(slides_out),
+        "updated_group_count": total_updated,
+        "unmatched_group_count": total_unmatched_groups,
+        "review_required": bool(review_issues),
+        "review_issue_count": len(review_issues),
+        "review_issues": review_issues,
+        "slides": slides_out,
+        "manifest_path": str(run_dir / "reveal_manifest.json"),
+    }
 
 
 def _register(server_module: ModuleType) -> bool:

@@ -16,7 +16,7 @@ from project_storage import planning_path, safe_child, slide_dir
 
 
 LOGGER = logging.getLogger(__name__)
-REVEAL_FILENAMES = ("scene.json", "animation_timeline.json", "reveal_report.json")
+REVEAL_FILENAMES = ("scene.json", "animation_timeline.json", "reveal_report.json", "mask_preview.png")
 TTS_FILENAMES = ("voice.mp3", "tts_metadata.json", "subtitles.srt", "audio_timeline.json")
 
 

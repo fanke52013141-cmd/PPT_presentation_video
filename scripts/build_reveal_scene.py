@@ -23,10 +23,26 @@ from typing import Any
 from PIL import Image, ImageDraw
 
 try:
-    from scripts.background_color import masked_outer_white_cutout, normalize_connected_background
+    from scripts.background_color import (
+        MASK_CUTOUT_FEATHER_PX,
+        MASK_CUTOUT_HARD_MAX_CHROMA,
+        MASK_CUTOUT_HARD_MIN_CHANNEL,
+        MASK_CUTOUT_SOFT_MAX_CHROMA,
+        MASK_CUTOUT_SOFT_MIN_CHANNEL,
+        masked_outer_white_cutout,
+        normalize_connected_background,
+    )
     from scripts.pipeline_profiles import allowed_reveal_actions, normalize_reveal_action, read_pipeline_profile
 except ModuleNotFoundError:
-    from background_color import masked_outer_white_cutout, normalize_connected_background
+    from background_color import (
+        MASK_CUTOUT_FEATHER_PX,
+        MASK_CUTOUT_HARD_MAX_CHROMA,
+        MASK_CUTOUT_HARD_MIN_CHANNEL,
+        MASK_CUTOUT_SOFT_MAX_CHROMA,
+        MASK_CUTOUT_SOFT_MIN_CHANNEL,
+        masked_outer_white_cutout,
+        normalize_connected_background,
+    )
     from pipeline_profiles import allowed_reveal_actions, normalize_reveal_action, read_pipeline_profile
 
 
@@ -562,8 +578,11 @@ def compose_slide(
         "source_image_used_for_background": False,
         "cutout": {
             "method": "mask_boundary_connected_white_soft_alpha",
-            "hard_white": "RGB channels >=245 and chroma <=12",
-            "soft_edge": "up to 3px through neutral pixels with RGB channels >=190",
+            "hard_min_channel": MASK_CUTOUT_HARD_MIN_CHANNEL,
+            "hard_max_chroma": MASK_CUTOUT_HARD_MAX_CHROMA,
+            "soft_min_channel": MASK_CUTOUT_SOFT_MIN_CHANNEL,
+            "soft_max_chroma": MASK_CUTOUT_SOFT_MAX_CHROMA,
+            "feather_px": MASK_CUTOUT_FEATHER_PX,
             "enclosed_white_preserved": True,
             "white_decontamination": True,
         },
@@ -583,6 +602,7 @@ def build_manifest(
     manifest: dict[str, Any],
     manifest_path: Path,
     repo_root: Path,
+    slide_id: str = "",
 ) -> int:
     if manifest.get("version") != "reveal_v1":
         raise RevealBuildError("Manifest version must be reveal_v1")
@@ -593,28 +613,86 @@ def build_manifest(
     slides = manifest.get("slides")
     if not isinstance(slides, list) or not slides:
         raise RevealBuildError("Manifest must contain non-empty slides[]")
-    for slide in slides:
+    selected_slides = [
+        slide for slide in slides
+        if not slide_id or (isinstance(slide, dict) and str(slide.get("slide_id") or "") == slide_id)
+    ]
+    if slide_id and not selected_slides:
+        raise RevealBuildError(f"Slide not found in manifest: {slide_id}")
+    for slide in selected_slides:
         if not isinstance(slide, dict):
             raise RevealBuildError("Each slide must be an object")
         compose_slide(slide, manifest_path.parent, repo_root, canvas)
-    return len(slides)
+    return len(selected_slides)
+
+
+def compose_preview_image(slide_dir: Path, output_path: Path) -> None:
+    """Composite the production scene layers into a static review PNG."""
+    scene = read_json(slide_dir / "scene.json")
+    canvas = scene.get("canvas") if isinstance(scene.get("canvas"), dict) else {}
+    width = max(1, int(canvas.get("width", 1920)))
+    height = max(1, int(canvas.get("height", 1080)))
+    layers = scene.get("layers")
+    if not isinstance(layers, list) or not layers:
+        raise RevealBuildError(f"Scene has no previewable layers: {slide_dir}")
+    preview = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    for layer in sorted(
+        (item for item in layers if isinstance(item, dict)),
+        key=lambda item: int(item.get("z_index", 0)),
+    ):
+        asset = slide_dir / str(layer.get("asset") or "")
+        if not asset.exists():
+            raise RevealBuildError(f"Missing preview layer: {asset}")
+        image = Image.open(asset).convert("RGBA")
+        if image.size != (width, height):
+            image = image.resize((width, height), Image.Resampling.LANCZOS)
+        preview = Image.alpha_composite(preview, image)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    preview.convert("RGB").save(output_path, format="PNG")
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build exact manual-mask reveal assets.")
     parser.add_argument("--manifest", required=True, type=Path)
     parser.add_argument("--repo-root", default=Path("."), type=Path)
+    parser.add_argument("--slide-id", default="")
+    parser.add_argument("--preview-output", type=Path)
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     try:
+        manifest_path = args.manifest.resolve()
+        manifest_payload = read_json(manifest_path)
         count = build_manifest(
-            read_json(args.manifest.resolve()),
-            args.manifest.resolve(),
+            manifest_payload,
+            manifest_path,
             args.repo_root.resolve(),
+            slide_id=str(args.slide_id or "").strip(),
         )
+        if args.preview_output:
+            if not args.slide_id:
+                raise RevealBuildError("--preview-output requires --slide-id")
+            preview_slide = next(
+                (
+                    slide for slide in manifest_payload.get("slides", []) or []
+                    if isinstance(slide, dict) and str(slide.get("slide_id") or "") == str(args.slide_id)
+                ),
+                None,
+            )
+            if preview_slide is None:
+                raise RevealBuildError(f"Slide not found in manifest: {args.slide_id}")
+            preview_slide_dir = resolve_path(
+                str(preview_slide["slide_dir"]),
+                manifest_path.parent,
+                manifest_path.parent,
+                args.repo_root.resolve(),
+            )
+            compose_preview_image(
+                preview_slide_dir,
+                args.preview_output.resolve(),
+            )
     except RevealBuildError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1

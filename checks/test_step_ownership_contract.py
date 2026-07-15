@@ -57,11 +57,12 @@ def main() -> None:
     ):
         assert forbidden not in create_ui
 
-    assert "/steps/2/script/execute" in one_click_backend
-    assert "/steps/2/visual/execute" in one_click_backend
-    assert "/steps/2/compose" in one_click_backend
-    assert "/steps/5/ai-mask/annotate" in one_click_backend
-    assert 'client.put(f"/api/projects/{project_id}/steps/6/result"' in one_click_backend
+    assert "services.storyboard_script" in one_click_backend
+    assert "services.storyboard_visual" in one_click_backend
+    assert "services.storyboard_compose" in one_click_backend
+    assert "services.annotate_ai_mask" in one_click_backend
+    assert "services.save_narration" in one_click_backend
+    assert "TestClient" not in one_click_backend
     assert "图片质量检查" not in one_click_ui
     assert "project-profile/image-style" not in one_click_backend
     print("Step ownership wording contract passed.")

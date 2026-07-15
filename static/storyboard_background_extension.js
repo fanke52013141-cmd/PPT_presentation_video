@@ -37,57 +37,6 @@
     return current || sessionStorage.getItem('ppt_storyboard_background_project_id') || '';
   }
 
-  function ensureStyle() {
-    if (document.getElementById('storyboard-background-style')) return;
-    const style = document.createElement('style');
-    style.id = 'storyboard-background-style';
-    style.textContent = `
-      #step3-btn-background-settings{font-size:.85rem;padding:.35rem .9rem}
-      .storyboard-bg-modal{width:min(1240px,95vw);max-width:1240px;padding:0!important;overflow:hidden;border-radius:20px}
-      .storyboard-bg-header{height:78px;display:flex;align-items:center;justify-content:space-between;padding:0 28px;border-bottom:1px solid #e5e9f2;background:#fff}
-      .storyboard-bg-title{display:flex;align-items:center;gap:13px;margin:0;font-size:1.35rem;color:#172033}
-      .storyboard-bg-title-icon{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;color:#fff;background:linear-gradient(135deg,#8b7bff,#5939ec);box-shadow:0 8px 18px rgba(103,75,238,.22)}
-      .storyboard-bg-close{display:flex;align-items:center;gap:7px;border:1px solid #dbe2ef!important;background:#fff!important;color:#344054!important;border-radius:10px!important;padding:.62rem .9rem!important}
-      .storyboard-bg-body{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.08fr);min-height:590px;max-height:72vh;overflow:auto;background:#fff}
-      .storyboard-bg-column{padding:26px 28px}
-      .storyboard-bg-column+.storyboard-bg-column{border-left:1px solid #e5e9f2}
-      .storyboard-bg-section{margin-bottom:24px}
-      .storyboard-bg-section-title,.storyboard-bg-preview-title{margin:0 0 14px;font-weight:800;color:#172033;font-size:1rem}
-      .storyboard-bg-choice-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
-      .storyboard-bg-choice{position:relative;min-height:128px;border:1.5px solid #dce3ef;border-radius:13px;padding:21px 20px;background:#fff;cursor:pointer;transition:.18s ease;box-sizing:border-box}
-      .storyboard-bg-choice:hover{border-color:#9b8dff;transform:translateY(-1px)}
-      .storyboard-bg-choice.active{border-color:#684cff;box-shadow:0 0 0 2px rgba(104,76,255,.08);background:linear-gradient(145deg,#fff,#fbfaff)}
-      .storyboard-bg-choice input{position:absolute;right:15px;top:15px;width:22px;height:22px;accent-color:#684cff}
-      .storyboard-bg-choice-icon{font-size:1.8rem;line-height:1;display:block;margin-bottom:15px;color:#6551e8}
-      .storyboard-bg-choice strong{display:block;color:#202a3c;font-size:1rem;margin-bottom:6px}
-      .storyboard-bg-choice small{display:block;color:#7a8497;font-size:.82rem;line-height:1.45}
-      .storyboard-bg-mode-panel[hidden]{display:none!important}
-      .storyboard-bg-hex-label{display:block;color:#344054;font-size:.88rem;margin-bottom:8px}
-      .storyboard-bg-hex{height:52px;display:grid;grid-template-columns:52px 1fr 66px;border:1px solid #dbe2ef;border-radius:10px;overflow:hidden;background:#fff}
-      .storyboard-bg-hex span{display:grid;place-items:center;border-right:1px solid #dbe2ef;color:#344054;font-weight:700}
-      .storyboard-bg-hex input[type=text]{border:0!important;outline:0!important;padding:0 16px!important;box-shadow:none!important;font-weight:700;text-transform:uppercase}
-      .storyboard-bg-hex input[type=color]{width:38px;height:32px;padding:0;border:0;background:none;align-self:center;justify-self:center;cursor:pointer}
-      .storyboard-bg-help{margin:9px 0 0;color:#7a8497;font-size:.82rem;line-height:1.5}
-      .storyboard-bg-upload-line{display:flex;align-items:center;border:1px solid #dbe2ef;border-radius:10px;min-height:44px;overflow:hidden;margin-bottom:12px}
-      .storyboard-bg-file-button{display:inline-flex;align-items:center;gap:7px;padding:11px 16px;color:#5a41e8;background:#f8f7ff;border-right:1px solid #e2ddff;cursor:pointer;font-weight:700;font-size:.86rem}
-      .storyboard-bg-file-name{padding:0 14px;color:#7a8497;font-size:.84rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-      #storyboard-bg-file{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
-      .storyboard-bg-dropzone{height:130px;border:1.5px dashed #b9afff;border-radius:12px;display:grid;place-items:center;text-align:center;color:#687386;background:linear-gradient(180deg,#fff,#fbfaff);cursor:pointer;transition:.18s}
-      .storyboard-bg-dropzone.dragover{border-color:#684cff;background:#f6f3ff}
-      .storyboard-bg-dropzone strong{display:block;color:#4f596c;margin:8px 0 2px}
-      .storyboard-bg-dropzone span{font-size:1.8rem;color:#684cff}
-      .storyboard-bg-preview-meta{display:inline-flex;padding:6px 13px;border-radius:9px;background:#f0edff;color:#6247ed;font-weight:800;font-size:.84rem;margin-bottom:14px}
-      .storyboard-bg-preview{width:100%;aspect-ratio:16 / 9;border:1px solid #e0e5ef;border-radius:12px;display:grid;place-items:center;overflow:hidden;background:#fff;color:#fff;text-align:center;box-sizing:border-box;box-shadow:0 3px 12px rgba(24,32,51,.04)}
-      .storyboard-bg-preview img{width:100%;height:100%;display:block}
-      .storyboard-bg-preview-placeholder{color:#7b8496;padding:20px}
-      .storyboard-bg-preview-placeholder strong{display:block;color:#50596b;margin-top:8px}
-      .storyboard-bg-footer{display:flex;align-items:center;justify-content:flex-end;gap:14px;padding:18px 28px;border-top:1px solid #e5e9f2;background:#fff}
-      .storyboard-bg-footer button{min-width:104px;border-radius:10px!important}
-      .storyboard-bg-footer .primary{min-width:136px;background:linear-gradient(135deg,#745cff,#5334e7)!important}
-      @media(max-width:860px){.storyboard-bg-body{grid-template-columns:1fr;max-height:76vh}.storyboard-bg-column+.storyboard-bg-column{border-left:0;border-top:1px solid #e5e9f2}.storyboard-bg-choice-grid{grid-template-columns:1fr}.storyboard-bg-preview{max-height:none}}
-    `;
-    document.head.appendChild(style);
-  }
 
   function ensureButton() {
     document.getElementById('step2-btn-background-settings')?.remove();
@@ -266,7 +215,6 @@
   async function openModal() {
     const projectId = activeProjectId();
     if (!projectId) return toast('请先打开项目。');
-    ensureStyle();
     const modal = ensureModal();
     modal.style.display = 'flex';
     try {
@@ -320,7 +268,6 @@
   }
 
   function boot() {
-    ensureStyle();
     ensureButton();
   }
 

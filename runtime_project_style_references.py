@@ -12,10 +12,6 @@ compatibility. New UI should call the Step 3 aliases exposed by
 from __future__ import annotations
 
 import json
-import os
-import sys
-import threading
-import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -388,6 +384,35 @@ def _can_send_project_references(server_module: ModuleType, model: str, base_url
     return str(model or "").startswith("gpt-image")
 
 
+# Source-owned Step 3 routes use these stable service wrappers. They resolve
+# the underlying function at call time so the remaining style-state adapter can
+# replace its data source without shadowing the HTTP routes.
+def project_reference_paths(project: Any) -> list[str]:
+    return _project_reference_paths(project)
+
+
+def profile_style_prompt(project: Any, server_module: ModuleType) -> str:
+    return _profile_style_prompt(project, server_module)
+
+
+def project_generate_prompt_for_slide(
+    server_module: ModuleType,
+    project: Any,
+    slide: dict[str, Any],
+    topic_name: str,
+) -> str:
+    return _project_generate_prompt_for_slide(server_module, project, slide, topic_name)
+
+
+def can_send_project_references(
+    server_module: ModuleType,
+    model: str,
+    base_url: str | None,
+    reference_paths: list[str],
+) -> bool:
+    return _can_send_project_references(server_module, model, base_url, reference_paths)
+
+
 def _register(server_module: ModuleType) -> bool:
     if getattr(server_module, PATCH_MARKER, False):
         return True
@@ -435,20 +460,3 @@ def _register(server_module: ModuleType) -> bool:
     app.add_api_route("/api/projects/{project_id}/project-profile/image-style/reference-images/{index}", get_reference_image, methods=["GET"])
     setattr(server_module, PATCH_MARKER, True)
     return True
-
-
-def _candidate_modules() -> list[ModuleType]:
-    return [module for module in list(sys.modules.values()) if isinstance(module, ModuleType) and hasattr(module, "app") and hasattr(module, "Project")]
-
-
-def _install_when_ready() -> None:
-    def worker() -> None:
-        while not os.environ.get("PPT_STUDIO_DISABLE_PROJECT_STYLE_REFERENCES"):
-            for module in _candidate_modules():
-                try:
-                    if _register(module):
-                        return
-                except Exception:
-                    return
-            time.sleep(0.1)
-    threading.Thread(name="ppt-project-style-references-runtime", target=worker, daemon=True).start()

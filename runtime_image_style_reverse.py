@@ -14,11 +14,7 @@ from __future__ import annotations
 import base64
 import io
 import json
-import os
 import re
-import sys
-import threading
-import time
 from datetime import datetime
 from pathlib import Path
 from types import ModuleType
@@ -350,20 +346,3 @@ def _register(server_module: ModuleType) -> bool:
     app.add_api_route("/api/projects/{project_id}/project-profile/image-style/reverse", reverse_image_style, methods=["POST"])
     setattr(server_module, PATCH_MARKER, True)
     return True
-
-
-def _candidate_modules() -> list[ModuleType]:
-    return [module for module in list(sys.modules.values()) if isinstance(module, ModuleType) and hasattr(module, "app") and hasattr(module, "Project")]
-
-
-def _install_when_ready() -> None:
-    def worker() -> None:
-        while not os.environ.get("PPT_STUDIO_DISABLE_IMAGE_STYLE_REVERSE"):
-            for module in _candidate_modules():
-                try:
-                    if _register(module):
-                        return
-                except Exception:
-                    return
-            time.sleep(0.1)
-    threading.Thread(name="ppt-image-style-reverse-runtime", target=worker, daemon=True).start()

@@ -8,10 +8,6 @@ used as fallback for old projects.
 from __future__ import annotations
 
 import json
-import os
-import sys
-import threading
-import time
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
@@ -283,21 +279,3 @@ def _register(server_module: ModuleType) -> bool:
     )
     setattr(server_module, PATCH_MARKER, True)
     return True
-
-
-def _candidate_modules() -> list[ModuleType]:
-    return [module for module in list(sys.modules.values()) if isinstance(module, ModuleType) and hasattr(module, "app") and hasattr(module, "Project")]
-
-
-def _install_when_ready() -> None:
-    def worker() -> None:
-        started_at = time.monotonic()
-        while not os.environ.get("PPT_STUDIO_DISABLE_STEP3_IMAGE_STYLE_STATE") and time.monotonic() - started_at < 120:
-            for module in _candidate_modules():
-                try:
-                    if _register(module):
-                        return
-                except Exception:
-                    return
-            time.sleep(0.1)
-    threading.Thread(name="ppt-step3-image-style-state", target=worker, daemon=True).start()

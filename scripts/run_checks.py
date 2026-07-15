@@ -35,6 +35,7 @@ def quick_checks() -> None:
         "-q",
         "start_server.py",
         "app_security.py",
+        "artifact_fingerprint.py",
         "diagnostics_routes.py",
         "one_click_orchestrator.py",
         "storyboard_background.py",
@@ -45,6 +46,7 @@ def quick_checks() -> None:
         "project_storage.py",
         "project_style_routes.py",
         "tts_artifacts.py",
+        "visual_provenance.py",
         "scripts",
         "checks",
     ])
@@ -65,15 +67,7 @@ def quick_checks() -> None:
 
 def full_checks() -> None:
     quick_checks()
-    for check in sorted((ROOT / "checks").glob("test_*.py")):
-        if check.name in {
-            "test_step_ownership_contract.py",
-            "test_source_hardening.py",
-            "test_generalized_settings.py",
-            "test_subtitle_style.py",
-        }:
-            continue
-        python_check(check)
+    run([sys.executable, "-m", "pytest", "-q"])
 
 
 def remotion_check() -> None:

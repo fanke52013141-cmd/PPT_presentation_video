@@ -521,7 +521,9 @@ def main() -> None:
         assert len(pixel_errors) == 1
         assert "91.00%" in pixel_errors[0] and "120" in pixel_errors[0] and "3" in pixel_errors[0]
         pipeline_source = inspect.getsource(one_click._run_pipeline)
-        assert 'client.put(f"/api/projects/{project_id}/steps/6/result"' in pipeline_source
+        assert "ProjectPipelineServices" in pipeline_source
+        assert "services.save_narration" in pipeline_source
+        assert "TestClient" not in pipeline_source
 
     print("AI Mask automation checks passed")
 

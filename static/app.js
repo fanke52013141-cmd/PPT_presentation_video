@@ -154,7 +154,12 @@ function ensureGlobalMaskRevealDefault() {
 const API = {
   async fetch(url, options = {}) {
     try {
-      const response = await fetch(url, options);
+      const method = String(options.method || 'GET').toUpperCase();
+      const headers = new Headers(options.headers || {});
+      if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+        headers.set('X-PPT-Studio-Request', '1');
+      }
+      const response = await fetch(url, { ...options, headers });
       const contentType = response.headers.get('content-type') || '';
       const rawText = await response.text();
       let data = {};
@@ -200,6 +205,28 @@ const API = {
     return this.fetch(url, { method: 'DELETE' });
   }
 };
+window.API = API;
+
+const artifactRepairPrompts = new Set();
+
+async function offerArtifactRepair(result, label, onRepaired) {
+  const repair = result?.repair;
+  const projectId = state.currentProject?.id;
+  if (!projectId || !repair?.required || !repair?.endpoint) return;
+  const key = `${projectId}:${repair.endpoint}`;
+  if (artifactRepairPrompts.has(key)) return;
+  artifactRepairPrompts.add(key);
+  const confirmed = window.confirm(`检测到${label}属于旧结构或与当前分镜不一致。是否立即执行一次显式修复？`);
+  if (!confirmed) return;
+  try {
+    const repaired = await API.post(repair.endpoint, {});
+    showToast(repaired.changed ? `✅ ${label}已修复` : `✅ ${label}无需修改`);
+    if (typeof onRepaired === 'function') await onRepaired();
+  } catch (error) {
+    artifactRepairPrompts.delete(key);
+    showToast(`⚠️ ${label}修复失败：${error.message}`, 7000);
+  }
+}
 
 // Toast 提示：用状态色传达语义，不在消息前展示风格不统一的 Emoji 图标。
 function getToastPresentation(message) {
@@ -462,7 +489,7 @@ async function loadProjects() {
   
   if (data.length === 0) {
     listEl.innerHTML = `
-      <div class="card sketch-dashed" style="text-align: center; padding: 4rem 2rem; grid-column: 1/-1;">
+      <div class="card soft-outline" style="text-align: center; padding: 4rem 2rem; grid-column: 1/-1;">
         <p style="font-size: 1.2rem; margin-bottom: 1rem;">还没有项目，快去新建一个吧！</p>
         <button onclick="document.getElementById('btn-create-project').click()">立即新建</button>
       </div>`;
@@ -479,7 +506,7 @@ async function loadProjects() {
     const currentVisibleStep = resolveProjectVisibleStep(p);
     
     const card = document.createElement('div');
-    card.className = 'project-card sketch-shadow';
+    card.className = 'project-card soft-elevation';
     card.innerHTML = `
       <div>
         <div class="project-card-header">
@@ -1177,6 +1204,7 @@ async function loadStep2Data() {
     state.step2DeleteSelection = new Set();
     state.step2BatchOriginalSlides = null;
     renderStep2Workspace();
+    void offerArtifactRepair(res, '分镜数据', loadStep2Data);
   } else {
     state.slides = [];
     state.step2BatchDeleteMode = false;
@@ -1747,6 +1775,8 @@ let slidePrompts = [];
 let step3BatchPrompt = '';
 // 全局图片顺序（用于拖拽排序）
 let step3ImageOrder = []; // [{slide_id, exists, url}]
+let step3OrderVersion = '';
+let step3OrderSaveChain = Promise.resolve();
 let step3DraggedIndex = -1;
 let step3CandidateReady = false;
 let step3CandidateSlideId = '';
@@ -1759,7 +1789,7 @@ let step3VideoBackground = '#FEFDF9';
 function step3GeneratingPreviewHtml(message = '生成中') {
   return `
     <div class="step3-generating-preview" role="status" aria-live="polite">
-      <span class="sketch-loader" aria-hidden="true"></span>
+      <span class="loading-spinner" aria-hidden="true"></span>
       <strong>${escHtml(message)}</strong>
       <small>AI 正在绘制图片，请稍候...</small>
     </div>
@@ -1834,7 +1864,10 @@ async function refreshStep3Images() {
   let images = [];
   try {
     const res = await API.get(`/api/projects/${state.currentProject.id}/steps/3/images`);
-    if (res.success) images = res.images || [];
+    if (res.success) {
+      images = res.images || [];
+      step3OrderVersion = String(res.order_version || '');
+    }
   } catch(e) {}
 
   // 如果后端返回空列表但分镜数据已有，自动生成占位展示
@@ -1842,6 +1875,7 @@ async function refreshStep3Images() {
     images = state.slides.map(s => ({ slide_id: s.slide_id, exists: false, url: '' }));
   }
   step3ImageOrder = images;
+  syncStep3OrderState();
   renderStep3Grid();
   if (step3ImageOrder.length > 0 && step3ImageOrder.every(img => img.exists)) {
     refreshCurrentProjectStatus(3).catch(() => {});
@@ -1855,7 +1889,8 @@ function renderStep3Grid() {
 
   const hasSlides = step3ImageOrder.length > 0;
   const missingCount = step3ImageOrder.filter(img => !img.exists).length;
-  const allImagesReady = hasSlides && missingCount === 0 && step3GeneratingSlides.size === 0;
+  const staleProvenanceCount = step3ImageOrder.filter(img => img.exists && img.provenance?.valid !== true).length;
+  const allImagesReady = hasSlides && missingCount === 0 && staleProvenanceCount === 0 && step3GeneratingSlides.size === 0;
   updateStep3BatchButton();
   const confirmBtn = document.getElementById('step3-btn-confirm');
   if (confirmBtn) {
@@ -1863,12 +1898,16 @@ function renderStep3Grid() {
     confirmBtn.disabled = !allImagesReady;
     confirmBtn.title = allImagesReady
       ? ''
-      : (step3GeneratingSlides.size > 0 ? '图片正在生成中' : `还缺少 ${missingCount} 张图片`);
+      : (step3GeneratingSlides.size > 0
+        ? '图片正在生成中'
+        : staleProvenanceCount > 0
+          ? `${staleProvenanceCount} 张图片来源待更新，请重新生成或上传`
+          : `还缺少 ${missingCount} 张图片`);
   }
 
   step3ImageOrder.forEach((img, idx) => {
     const card = document.createElement('div');
-    card.className = 'card sketch-shadow slide-card-draggable';
+    card.className = 'card soft-elevation slide-card-draggable';
     card.style.cssText = 'padding: 0.8rem; position: relative; background: var(--bg-color); margin-bottom: 0;';
 
     card.addEventListener('dragover', (e) => {
@@ -1896,6 +1935,7 @@ function renderStep3Grid() {
     const slideInfo = state.slides.find(item => item.slide_id === img.slide_id);
     const slideTitle = promptInfo?.title || slideInfo?.main_title || '未命名 Slide';
     const isGenerating = step3GeneratingSlides.has(img.slide_id);
+    const provenanceReady = img.provenance?.valid === true;
     const previewHtml = isGenerating
       ? step3GeneratingPreviewHtml()
       : img.exists
@@ -1917,8 +1957,8 @@ function renderStep3Grid() {
           </button>
           <span class="step3-card-position">第 ${idx + 1} 页</span>
           <span class="step3-card-slide-id">${img.slide_id}</span>
-          <span class="step3-card-status ${isGenerating ? 'is-generating' : ''}" style="color: ${img.exists || isGenerating ? 'var(--ink-color)' : '#888'}; background: ${isGenerating ? 'var(--secondary-color)' : (img.exists ? 'var(--success-color)' : '#f3f4f6')};">
-            ${isGenerating ? '生成中' : (img.exists ? '已就绪' : '待生成')}
+          <span class="step3-card-status ${isGenerating ? 'is-generating' : ''}" style="color: ${img.exists || isGenerating ? 'var(--ink-color)' : '#888'}; background: ${isGenerating ? 'var(--secondary-color)' : (img.exists && provenanceReady ? 'var(--success-color)' : '#f3f4f6')};">
+            ${isGenerating ? '生成中' : (img.exists ? (provenanceReady ? '已就绪' : '来源待更新') : '待生成')}
           </span>
         </div>
         <div class="step3-card-actions">
@@ -1996,21 +2036,37 @@ async function reorderStep3Images(draggedIdx, targetIdx) {
     draggedIdx === targetIdx
   ) return;
 
-  const previousOrder = [...step3ImageOrder];
+  // 乐观更新：立即重排并渲染一次，UI 即时响应
   const [moved] = step3ImageOrder.splice(draggedIdx, 1);
   step3ImageOrder.splice(targetIdx, 0, moved);
+  syncStep3OrderState();
   renderStep3Grid();
 
-  try {
-    await API.put(`/api/projects/${state.currentProject.id}/steps/3/order`, {
-      slide_ids: step3ImageOrder.map(item => item.slide_id)
-    });
-    syncStep3OrderState();
-    renderStep3Grid();
+  // 按操作顺序串行保存，后一个请求始终携带前一个请求返回的新版本。
+  const projectId = state.currentProject.id;
+  const desiredSlideIds = step3ImageOrder.map(item => item.slide_id);
+  const saveOrder = async () => {
+    try {
+      const res = await API.put(`/api/projects/${projectId}/steps/3/order`, {
+        slide_ids: desiredSlideIds,
+        order_version: step3OrderVersion,
+      });
+      step3OrderVersion = String(res.order_version || step3OrderVersion);
+      return true;
+    } catch (error) {
+      if (state.currentProject?.id === projectId) {
+        await refreshStep3Images();
+      }
+      return false;
+    }
+  };
+  const saveTask = step3OrderSaveChain.then(saveOrder, saveOrder);
+  step3OrderSaveChain = saveTask.then(() => undefined);
+  const saved = await saveTask;
+  if (saved) {
     showToast('页面顺序已保存');
-  } catch (error) {
-    step3ImageOrder = previousOrder;
-    renderStep3Grid();
+  } else {
+    showToast('顺序保存冲突，已刷新为服务器最新顺序', 'error');
   }
 }
 
@@ -2870,6 +2926,7 @@ async function loadStep5Data() {
     ensureGlobalMaskRevealDefault();
     normalizeManifestNarrationFragments();
     renderStep5Workspace();
+    void offerArtifactRepair(res, 'Mask 数据', loadStep5Data);
   }
 }
 
@@ -3367,7 +3424,7 @@ function renderStep5BoxesForm() {
   
   if (!state.canvasState.boxes.length) {
     container.innerHTML = `
-      <div class="sketch-dashed mask-empty-state">
+      <div class="soft-outline mask-empty-state">
         当前页暂未生成 AI 语块关联，请重新运行 AI 标注。
       </div>
     `;
@@ -3381,7 +3438,7 @@ function renderStep5BoxesForm() {
     const item = document.createElement('div');
     const reviewIssues = aiMaskIssuesForBox(box, currentSlide?.slide_id);
     const hasBlockingIssue = reviewIssues.some(issue => issue?.severity === 'blocking');
-    item.className = `mask-block-card sketch-dashed${isSelected ? ' highlight-glow' : ''}${isPaintTarget ? ' paint-active' : ''}${isEraseTarget ? ' erase-active' : ''}${reviewIssues.length ? ' ai-review-needed' : ''}${hasBlockingIssue ? ' ai-review-blocking' : ''}`;
+    item.className = `mask-block-card soft-outline${isSelected ? ' highlight-glow' : ''}${isPaintTarget ? ' paint-active' : ''}${isEraseTarget ? ' erase-active' : ''}${reviewIssues.length ? ' ai-review-needed' : ''}${hasBlockingIssue ? ' ai-review-blocking' : ''}`;
     const maskColor = getBoxColor(box, idx);
     item.style.setProperty('--mask-color', maskColor);
 
@@ -4478,6 +4535,7 @@ async function loadStep6Data() {
     narrationData = res.beats;
     normalizeStep6Data();
     renderStep6Workspace();
+    void offerArtifactRepair(res, '演讲稿数据', loadStep6Data);
   } else {
     // 首次进入没有演讲稿，提示同步初始化
     await initStep6Narration();
@@ -4633,7 +4691,7 @@ function renderStep6Workspace() {
   container.innerHTML = '';
 
   if (!narrationData?.slides?.length) {
-    container.innerHTML = '<div class="sketch-dashed step6-empty-state">暂无演讲稿，请先同步演讲稿模板。</div>';
+    container.innerHTML = '<div class="soft-outline step6-empty-state">暂无演讲稿，请先同步演讲稿模板。</div>';
     return;
   }
 
@@ -4732,7 +4790,7 @@ async function putStep6NarrationWithRetry(payload) {
       const response = await fetch(`/api/projects/${state.currentProject.id}/steps/6/result`, {
         method: 'PUT',
         body: JSON.stringify(payload),
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json', 'X-PPT-Studio-Request': '1' }
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -4964,20 +5022,27 @@ function showStep8VideoResult(videos) {
   if (!list) return;
   const items = Array.isArray(videos) ? videos : [];
   if (!items.length) {
-    list.innerHTML = '<div class="sketch-dashed step6-empty-state">暂无渲染记录。</div>';
+    list.innerHTML = '<div class="soft-outline step6-empty-state">暂无渲染记录。</div>';
   } else {
     list.innerHTML = items.map((item, idx) => {
       const url = `${item.url}?t=${Date.now()}`;
       const created = item.created_at ? new Date(item.created_at).toLocaleString() : '';
       const playbackRate = Number(item.playback_rate || 1);
       const speedLabel = `${playbackRate.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}×`;
+      const artifactBadge = item.artifact_state === 'current'
+        ? '<span class="step8-current-badge">精确 RLE Mask v5 · 当前</span>'
+        : item.artifact_state === 'stale'
+          ? '<span class="step8-legacy-badge">输入已变化 · 需重渲染</span>'
+          : item.artifact_state === 'invalid'
+            ? '<span class="step8-legacy-badge">元数据损坏</span>'
+            : '<span class="step8-legacy-badge">历史版本 · 状态未知</span>';
       return `
         <div class="step8-video-card">
           <div class="step8-video-card-head">
             <strong>
               ${idx === 0 ? '最新渲染' : `历史版本 ${idx + 1}`}
               ${item.is_speed_variant ? `<span class="step8-speed-badge">${escHtml(speedLabel)} 调速版</span>` : ''}
-              ${item.is_legacy ? '<span class="step8-legacy-badge">旧设置/旧算法</span>' : '<span class="step8-current-badge">Mask 边界抠除 v4</span>'}
+              ${artifactBadge}
             </strong>
             <span>${escHtml(created || item.filename || '')}</span>
           </div>

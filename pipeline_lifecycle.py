@@ -7,15 +7,22 @@ paths, deletion semantics, and downstream step-state transitions.
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 from pathlib import Path
 import shutil
+import threading
+import time
+import uuid
 from typing import Any, Iterable, MutableMapping
 
 from project_storage import planning_path, safe_child, slide_dir
 
 
 LOGGER = logging.getLogger(__name__)
+_JSON_WRITE_LOCKS: dict[str, threading.Lock] = {}
+_JSON_WRITE_LOCKS_GUARD = threading.Lock()
 REVEAL_FILENAMES = ("scene.json", "animation_timeline.json", "reveal_report.json", "mask_preview.png")
 TTS_FILENAMES = ("voice.mp3", "tts_metadata.json", "subtitles.srt", "audio_timeline.json")
 
@@ -44,6 +51,46 @@ def remove_tree(path: str | Path) -> bool:
     except OSError as exc:
         LOGGER.warning("Failed to remove generated artifact directory %s: %s", target, exc)
         return False
+
+
+def read_json_file(path: str | Path) -> Any:
+    try:
+        value = json.loads(Path(path).read_text(encoding="utf-8-sig"))
+        return value
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def write_json_atomic(path: str | Path, payload: Any) -> None:
+    """Write JSON through a same-directory temporary file and atomic replace."""
+    target = Path(path).resolve()
+    key = str(target)
+    with _JSON_WRITE_LOCKS_GUARD:
+        write_lock = _JSON_WRITE_LOCKS.setdefault(key, threading.Lock())
+    with write_lock:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        content = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+        temporary = target.with_name(f"{target.name}.{uuid.uuid4().hex}.tmp")
+        last_error: OSError | None = None
+        for attempt in range(4):
+            try:
+                with temporary.open("w", encoding="utf-8", newline="\n") as file:
+                    file.write(content)
+                    file.flush()
+                    os.fsync(file.fileno())
+                os.replace(temporary, target)
+                return
+            except OSError as exc:
+                last_error = exc
+                remove_file(temporary)
+                time.sleep(0.15 * (attempt + 1))
+        try:
+            with target.open("w", encoding="utf-8", newline="\n") as file:
+                file.write(content)
+                file.flush()
+                os.fsync(file.fileno())
+        except OSError as fallback_error:
+            raise fallback_error from last_error
 
 
 def clear_remotion_props(run_dir: str | Path) -> bool:

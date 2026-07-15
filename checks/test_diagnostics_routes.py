@@ -24,7 +24,8 @@ def test_diagnostics_route_is_explicit_and_unique() -> None:
 def test_diagnostics_payload_reports_current_bootstrap() -> None:
     payload = diagnostics_routes._diagnostics_payload(server)
     assert payload["success"] is True
-    assert payload["runtime_bootstrap_loaded"] is True
+    assert payload["runtime_bootstrap_loaded"] is False
+    assert payload["registration_mode"] == "explicit_source"
     assert payload["missing_routes"] == []
     assert "/api/runtime/diagnostics" in payload["routes"]
     module_names = {item["name"] for item in payload["runtime_modules"]}

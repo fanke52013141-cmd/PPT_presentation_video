@@ -74,30 +74,6 @@
     return PROFILE_STATE.templates;
   }
 
-  function ensureStyle() {
-    if (document.getElementById('project-profile-extension-style')) return;
-    const style = document.createElement('style');
-    style.id = 'project-profile-extension-style';
-    style.textContent = `
-      #modal-create .project-profile-modal { max-width: 780px; width: min(780px, 94vw); }
-      .project-profile-scroll { max-height: 76vh; overflow: auto; padding-right: .35rem; }
-      .project-profile-section { border: 2px solid var(--ink-color, #111); border-radius: 16px; padding: 1rem; background: #fffef9; box-shadow: 3px 3px 0 rgba(0,0,0,.12); margin-bottom: .9rem; }
-      .project-profile-section h4 { margin: 0 0 .65rem; font-size: 1rem; }
-      .project-profile-section label { display: block; font-weight: 800; margin: .65rem 0 .3rem; }
-      .project-profile-section textarea, .project-profile-section input { width: 100%; box-sizing: border-box; }
-      .project-profile-mode-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
-      .project-profile-card-option { border: 2px dashed #111; border-radius: 14px; padding: .75rem; cursor: pointer; background: #fff; transition: transform .12s ease, background .12s ease; }
-      .project-profile-card-option:hover { transform: translateY(-1px); }
-      .project-profile-card-option.active { border-style: solid; background: #f1f3ff; box-shadow: 2px 2px 0 rgba(0,0,0,.14); }
-      .project-profile-card-option strong { display: block; margin-bottom: .25rem; }
-      .project-profile-card-option span { display: block; color: #555; font-size: .86rem; line-height: 1.45; }
-      .project-profile-note { color: #555; font-size: .88rem; line-height: 1.55; margin: .45rem 0 0; }
-      .project-profile-warning { background: #fff8dc; border-left: 4px solid #d6a100; padding: .7rem .85rem; margin: .8rem 0; font-size: .9rem; line-height: 1.5; }
-      .project-profile-pill { display: inline-flex; align-items: center; gap: .35rem; border: 1px solid #111; border-radius: 999px; padding: .2rem .55rem; font-size: .78rem; background: #fff; }
-      @media (max-width: 760px) { .project-profile-mode-grid { grid-template-columns: 1fr; } }
-    `;
-    document.head.appendChild(style);
-  }
 
   function optionCards(items, field, selectedId) {
     return (items || []).map(item => `
@@ -227,7 +203,6 @@
   }
 
   async function enhanceCreateModal() {
-    ensureStyle();
     const templates = await loadTemplates();
     renderModal(templates);
   }

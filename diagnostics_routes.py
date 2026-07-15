@@ -1,23 +1,17 @@
-"""Runtime diagnostics endpoint.
-
-This read-only route helps local operators verify that runtime API bridges and
-critical routes are installed after startup.
-It does not expose secrets or project data.
-"""
+"""Read-only diagnostics for explicitly registered source services."""
 
 from __future__ import annotations
 
-import importlib
 from types import ModuleType
 from typing import Any
 
 PATCH_MARKER = "__ppt_runtime_diagnostics_patch__"
 
-def _runtime_bootstrap() -> ModuleType | None:
-    try:
-        return importlib.import_module("runtime_bootstrap")
-    except Exception:
-        return None
+EXPECTED_SOURCE_ROUTES = {
+    "/api/projects/{project_id}/one-click-generate": {"POST"},
+    "/api/projects/{project_id}/steps/5/ai-mask/annotate": {"POST"},
+    "/api/projects/{project_id}/steps/3/image-style": {"GET", "PUT"},
+}
 
 
 def _route_methods_by_path(app: Any) -> dict[str, list[str]]:
@@ -32,29 +26,21 @@ def _route_methods_by_path(app: Any) -> dict[str, list[str]]:
     return {path: sorted(methods) for path, methods in sorted(result.items())}
 
 
-def _module_status(module_names: list[str]) -> list[dict[str, Any]]:
-    statuses: list[dict[str, Any]] = []
-    for name in module_names:
-        try:
-            module = importlib.import_module(name)
-            statuses.append({"name": name, "imported": True, "file": getattr(module, "__file__", "")})
-        except Exception as exc:
-            statuses.append({"name": name, "imported": False, "error": f"{type(exc).__name__}: {exc}"})
-    return statuses
-
-
 def _diagnostics_payload(server_module: ModuleType) -> dict[str, Any]:
     app = server_module.app
-    bootstrap = _runtime_bootstrap()
-    runtime_modules = list(getattr(bootstrap, "RUNTIME_MODULES", [])) if bootstrap else []
-    expected_routes = getattr(bootstrap, "EXPECTED_RUNTIME_ROUTES", {}) if bootstrap else {}
-    missing_routes = sorted(bootstrap.missing_runtime_routes(server_module)) if bootstrap and hasattr(bootstrap, "missing_runtime_routes") else []
     routes = _route_methods_by_path(app)
+    missing_routes = sorted(
+        f"{method} {path}"
+        for path, methods in EXPECTED_SOURCE_ROUTES.items()
+        for method in methods
+        if method not in routes.get(path, [])
+    )
     return {
         "success": True,
-        "runtime_bootstrap_loaded": bootstrap is not None,
-        "runtime_modules": _module_status(runtime_modules),
-        "expected_routes": {path: sorted(methods) for path, methods in sorted(expected_routes.items())},
+        "registration_mode": "explicit_source",
+        "runtime_bootstrap_loaded": False,
+        "runtime_modules": [],
+        "expected_routes": {path: sorted(methods) for path, methods in sorted(EXPECTED_SOURCE_ROUTES.items())},
         "missing_routes": missing_routes,
         "route_count": len(getattr(app, "routes", []) or []),
         "routes": routes,

@@ -31,6 +31,24 @@ def test_no_token_keeps_local_app_open() -> None:
     assert TestClient(app).get("/api/ping").status_code == 200
 
 
+def test_local_mode_rejects_cross_origin_and_requires_browser_write_header() -> None:
+    app = _app()
+
+    @app.post("/api/write")
+    def write() -> dict[str, bool]:
+        return {"written": True}
+
+    install_access_control(app, {})
+    client = TestClient(app)
+    assert client.get("/api/ping", headers={"Origin": "https://evil.example"}).status_code == 403
+    assert client.post("/api/write", headers={"Origin": "http://testserver"}).status_code == 403
+    response = client.post(
+        "/api/write",
+        headers={"Origin": "http://testserver", "X-PPT-Studio-Request": "1"},
+    )
+    assert response.status_code == 200
+
+
 def test_token_protects_api_and_html() -> None:
     app = _app()
     assert install_access_control(app, {"PPT_STUDIO_ACCESS_TOKEN": "secret"}) is True
@@ -87,6 +105,7 @@ def test_disallowed_origin_is_rejected() -> None:
 
 if __name__ == "__main__":
     test_no_token_keeps_local_app_open()
+    test_local_mode_rejects_cross_origin_and_requires_browser_write_header()
     test_token_protects_api_and_html()
     test_query_token_sets_http_only_cookie()
     test_query_token_is_rejected_for_state_changing_requests()

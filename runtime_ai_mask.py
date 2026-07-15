@@ -13,9 +13,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import io
 import json
-import os
-import sys
-import threading
 import time
 from collections import deque
 from pathlib import Path
@@ -567,13 +564,11 @@ def _projection_split(
     y_min, y_max = min(py), max(py)
     w = x_max - x_min + 1
     h = y_max - y_min + 1
-    area = len(coords)
     bbox_area = w * h
 
     # Only split if the component is very large (>15% of canvas) AND
     # has a wide aspect ratio (w > 2*h or h > 2*w), indicating a
     # multi-module row/column that was bridged by morphological closing.
-    fill_ratio = area / max(1, bbox_area)
     if bbox_area < canvas_area * 0.15:
         return [(coords, {"x": max(0, x_min - border), "y": max(0, y_min - border),
                           "w": min(ow, x_max + 1 - x_min), "h": min(oh, y_max + 1 - y_min)})]
@@ -1155,7 +1150,6 @@ def _consolidate_title_regions(
     for original in match_payload.get("matches", []) or []:
         if not isinstance(original, dict):
             continue
-        group_id = str(original.get("group_id") or "")
         item = dict(original)
         item["element_ids"] = [
             str(element_id)
@@ -1250,7 +1244,6 @@ def _ensure_narrated_group_anchors(
     canvas = elements_payload.get("canvas", {}) if isinstance(elements_payload.get("canvas"), dict) else {}
     canvas_area = max(1, int(canvas.get("width", 1920))) * max(1, int(canvas.get("height", 1080)))
     prominent_area = max(400, round(canvas_area * 0.003))
-    by_id = {str(element.get("element_id") or ""): element for element in all_elements}
     # Protect ALL element_ids from already-accepted groups. When the semantic
     # patch is active, VL matches objects as wholes; stealing any element from
     # an accepted group would break the semantic_object boundary and cause the
@@ -1336,12 +1329,6 @@ def _complete_component_coverage(
         item for item in match_payload.get("matches", []) or []
         if isinstance(item, dict) and not item.get("below_threshold") and item.get("element_ids")
     ]
-    original_owner = {
-        str(element_id): str(item.get("group_id") or "")
-        for item in accepted
-        for element_id in item.get("element_ids", []) or []
-        if str(element_id) in by_id
-    }
     assigned: set[str] = set()
     forced_owners = {
         str(element_id): str(group_id)
@@ -2241,6 +2228,24 @@ def _annotate_project(server_module: ModuleType, project: Any, settings: dict[st
     }
 
 
+def annotate_project(
+    server_module: ModuleType,
+    project: Any,
+    settings_override: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Public AI Mask service shared by the API route and one-click pipeline."""
+    settings = _get_store_settings(server_module)
+    if isinstance(settings_override, dict):
+        settings = normalize_settings({**settings, **settings_override})
+    with server_module.reveal_lock_for(project):
+        result = _annotate_project(server_module, project, settings)
+    try:
+        server_module.write_project_log(project, "ai_mask_annotation", **result)
+    except Exception:
+        pass
+    return result
+
+
 def _register(server_module: ModuleType) -> bool:
     if getattr(server_module, PATCH_MARKER, False):
         return True
@@ -2268,37 +2273,11 @@ def _register(server_module: ModuleType) -> bool:
         project = db.query(server_module.Project).filter(server_module.Project.id == project_id).first()
         if not project:
             raise server_module.HTTPException(status_code=404, detail="项目不存在")
-        settings = _get_store_settings(server_module)
-        if isinstance(payload, dict) and isinstance(payload.get("settings"), dict):
-            settings = normalize_settings({**settings, **payload["settings"]})
-        with server_module.reveal_lock_for(project):
-            result = _annotate_project(server_module, project, settings)
-        try:
-            server_module.write_project_log(project, "ai_mask_annotation", **result)
-        except Exception:
-            pass
-        return result
+        settings = payload.get("settings") if isinstance(payload, dict) and isinstance(payload.get("settings"), dict) else {}
+        return annotate_project(server_module, project, settings)
 
     app.add_api_route("/api/settings/ai-mask", get_ai_mask_settings, methods=["GET"])
     app.add_api_route("/api/settings/ai-mask", put_ai_mask_settings, methods=["PUT"])
     app.add_api_route("/api/projects/{project_id}/steps/5/ai-mask/annotate", annotate_step5, methods=["POST"])
-    app.add_api_route("/api/projects/{project_id}/steps/4/ai-mask/annotate", annotate_step5, methods=["POST"])
     setattr(server_module, PATCH_MARKER, True)
     return True
-
-
-def _candidate_modules() -> list[ModuleType]:
-    return [m for m in list(sys.modules.values()) if isinstance(m, ModuleType) and hasattr(m, "app") and hasattr(m, "Project")]
-
-
-def _install_when_ready() -> None:
-    def worker() -> None:
-        while not os.environ.get("PPT_STUDIO_DISABLE_AI_MASK_RUNTIME"):
-            for module in _candidate_modules():
-                try:
-                    if _register(module):
-                        return
-                except Exception:
-                    return
-            time.sleep(0.1)
-    threading.Thread(target=worker, name="ppt-ai-mask-runtime", daemon=True).start()

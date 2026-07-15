@@ -61,6 +61,7 @@ if %ERRORLEVEL% neq 0 (
 echo.
 echo [3/4] Starting backend FastAPI server...
 start "" http://localhost:8000
+set "PYTHONPATH=%~dp0;%PYTHONPATH%"
 py start_server.py
 
 pause

@@ -25,6 +25,20 @@ def main() -> None:
     assert "def mask_sensitive_settings" in server
     assert "return mask_sensitive_settings(get_all_settings())" in server
     assert 'if settings.get(key) == MASKED_SETTINGS_VALUE:' in server
+    assert 'allow_origins=["*"]' not in server
+    assert "configured_allowed_origins()" in server
+    assert "build_config_export_bundle(mask_sensitive_settings(get_all_settings(), force=True), contains_secrets=False)" in server
+
+    annotation_start = server.index("def annotate_step6_narration(")
+    annotation_end = server.index('@app.put("/api/projects/{project_id}/steps/6/result")', annotation_start)
+    assert "handle_step_navigation(project, 6, db)" in server[annotation_start:annotation_end]
+
+    init_start = server.index("def init_step6_narration(")
+    init_end = server.index('@app.get("/api/projects/{project_id}/steps/6/result")', init_start)
+    assert '"--overwrite"' not in server[init_start:init_end]
+
+    assert '"input_fingerprint": render_fingerprint' in render_source
+    assert "tts_confirmation_status(project.run_dir, slide_ids)" in render_source
 
     step5_start = server.index('def update_step5_result(')
     step5_end = server.index("# ==================== 步骤 6", step5_start)
@@ -33,11 +47,10 @@ def main() -> None:
     assert "if build_assets:" in step5_source
     assert 'return {"success": True, "built_assets": built_assets}' in step5_source
 
-    legacy_start = server.index('def synthesize_tts(project_id: str')
-    legacy_end = server.index("# 获取音频文件接口", legacy_start)
-    legacy_tts_source = server[legacy_start:legacy_end]
-    assert "timeout=STEP7_TTS_PROCESS_TIMEOUT_SEC" in legacy_tts_source
-    assert "except subprocess.TimeoutExpired" in legacy_tts_source
+    assert 'def synthesize_tts(project_id: str' not in server
+    assert 'steps/7/synthesize-legacy' not in server
+    assert "timeout=STEP7_TTS_PROCESS_TIMEOUT_SEC" in server
+    assert "except subprocess.TimeoutExpired" in server
 
     assert app_js.count("async function runStep7TTS()") == 1
 

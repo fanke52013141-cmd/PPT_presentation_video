@@ -5,8 +5,6 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import runtime_ai_mask
-import runtime_bootstrap
 import server
 
 
@@ -15,7 +13,6 @@ def test_ai_mask_routes_are_explicit_and_unique() -> None:
         ("/api/settings/ai-mask", "GET"),
         ("/api/settings/ai-mask", "PUT"),
         ("/api/projects/{project_id}/steps/5/ai-mask/annotate", "POST"),
-        ("/api/projects/{project_id}/steps/4/ai-mask/annotate", "POST"),
     }
     actual = []
     for route in server.app.routes:
@@ -28,9 +25,10 @@ def test_ai_mask_routes_are_explicit_and_unique() -> None:
 
 
 def test_ai_mask_no_longer_auto_installs() -> None:
-    assert runtime_bootstrap.RUNTIME_MODULES == []
+    assert not (ROOT / "runtime_bootstrap.py").exists()
     source = (ROOT / "runtime_ai_mask.py").read_text(encoding="utf-8").rstrip()
-    assert not source.endswith("_install_when_ready()")
+    assert "def _install_when_ready" not in source
+    assert "def _candidate_modules" not in source
 
 
 if __name__ == "__main__":

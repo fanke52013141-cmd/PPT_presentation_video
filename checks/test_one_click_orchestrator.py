@@ -124,11 +124,18 @@ def test_only_uncorrected_ai_masks_are_replaceable() -> None:
 
 def test_one_click_uses_safe_mask_and_audio_modes() -> None:
     source = Path("one_click_orchestrator.py").read_text(encoding="utf-8")
+    services_source = Path("pipeline_services.py").read_text(encoding="utf-8")
     assert '"overwrite_existing_manual_mask": False' in source
     assert '"overwrite_existing_ai_mask": True' in source
     assert '"skip_locked_groups": True' in source
-    assert '"confirmation_mode": "automatic_technical"' in source
-    assert 'client.get(f"/api/projects/{project_id}/steps/6/result")' in source
+    assert '"confirmation_mode": "automatic_technical"' in services_source
+    assert "ProjectPipelineServices" in source
+    assert "services.narration" in source
+    assert "services.save_narration" in source
+    assert "TestClient" not in source
+    assert "client.get(" not in source
+    assert "client.post(" not in source
+    assert "client.put(" not in source
     assert 'mode == "restart" or not _has_contract(project)' in source
     for gate_name in one_click.DEFAULT_QUALITY_GATES:
         assert source.count(gate_name) >= 2

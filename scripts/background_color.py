@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
-from PIL import Image, ImageChops, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter
 
 MASK_CUTOUT_HARD_MIN_CHANNEL = 230
 MASK_CUTOUT_HARD_MAX_CHROMA = 18

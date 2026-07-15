@@ -1,9 +1,20 @@
 import os
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from start_server import _is_loopback_host, _validate_network_security
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_launchers_use_the_same_python_startup_path() -> None:
+    batch = (ROOT / "run_local.bat").read_text(encoding="utf-8")
+    powershell = (ROOT / "run_local.ps1").read_text(encoding="utf-8")
+    assert 'set "PYTHONPATH=%~dp0;%PYTHONPATH%"' in batch
+    assert '$env:PYTHONPATH = "$PSScriptRoot;$env:PYTHONPATH"' in powershell
 
 
 def test_loopback_hosts_are_recognized() -> None:
@@ -25,6 +36,7 @@ def test_token_allows_non_loopback() -> None:
 
 
 if __name__ == "__main__":
+    test_launchers_use_the_same_python_startup_path()
     test_loopback_hosts_are_recognized()
     test_non_loopback_requires_token()
     test_token_allows_non_loopback()

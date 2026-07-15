@@ -4,6 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BACKGROUND_UI = (ROOT / "static" / "storyboard_background_extension.js").read_text(encoding="utf-8")
 STYLE_UI = (ROOT / "static" / "style_reference_manager_extension.js").read_text(encoding="utf-8")
+STYLE_CSS = (ROOT / "static" / "style.css").read_text(encoding="utf-8")
 BACKGROUND_RUNTIME = (ROOT / "storyboard_background.py").read_text(encoding="utf-8")
 STYLE_RUNTIME = (ROOT / "runtime_step3_image_style.py").read_text(encoding="utf-8")
 
@@ -14,7 +15,8 @@ def test_background_modal_has_image_and_solid_modes():
 
 
 def test_background_preview_is_strict_16_by_9():
-    assert "aspect-ratio:16 / 9" in BACKGROUND_UI
+    assert ".storyboard-bg-preview" in STYLE_CSS
+    assert "aspect-ratio:16 / 9" in STYLE_CSS
     assert "16:9 预览" in BACKGROUND_UI
 
 
@@ -31,7 +33,8 @@ def test_image_style_modal_has_three_product_modes():
 
 
 def test_style_previews_are_16_by_9_and_template_refs_are_readable():
-    assert "aspect-ratio:16 / 9" in STYLE_UI
+    assert ".style-ref-card" in STYLE_CSS
+    assert "aspect-ratio:16 / 9" in STYLE_CSS
     assert "会作为后续图片生成的实际参考图" in STYLE_UI
     assert '"/api/image-style/project-templates/{template_id}"' in STYLE_RUNTIME
     assert '"/api/image-style/project-templates/{template_id}/reference-images/{index}"' in STYLE_RUNTIME

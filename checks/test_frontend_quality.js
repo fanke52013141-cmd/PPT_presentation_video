@@ -61,8 +61,11 @@ if (html.includes('step3-video-background-apply') || background.includes('step3-
   throw new Error('obsolete video background apply button is still present');
 }
 if (!background.includes('铺满画面') || !background.includes('完整显示')) throw new Error('video background fit modes missing');
-for (const backgroundMode of ['data-mode-card="image"', 'data-mode-card="solid"', 'aspect-ratio:16 / 9', '16:9 预览']) {
+for (const backgroundMode of ['data-mode-card="image"', 'data-mode-card="solid"', '16:9 预览']) {
   if (!background.includes(backgroundMode)) throw new Error(`final background modal contract missing: ${backgroundMode}`);
+}
+if (!css.includes('.storyboard-bg-preview') || !css.includes('aspect-ratio:16 / 9')) {
+  throw new Error('final background preview is not fixed to 16:9 in the shared stylesheet');
 }
 if (!app.includes('hexToRgba(color, isSelected ? 0.68 : 0.55)')) {
   throw new Error('mask overlay colors are too faint');
@@ -216,7 +219,7 @@ if (!styleManager.includes('style-panel-template-name') || !styleManager.include
 for (const styleMode of ['data-style-tab="template"', 'data-style-tab="manual"', 'data-style-tab="reverse"']) {
   if (!styleManager.includes(styleMode)) throw new Error(`image-style mode missing: ${styleMode}`);
 }
-if (!styleManager.includes('aspect-ratio:16 / 9') || !styleManager.includes('这 3 张效果预览会作为后续图片生成的实际参考图')) {
+if (!css.includes('.style-ref-card') || !css.includes('aspect-ratio:16 / 9') || !styleManager.includes('这 3 张效果预览会作为后续图片生成的实际参考图')) {
   throw new Error('image-style System Content / 16:9 reference output contract missing');
 }
 if (styleManager.includes('visual-draft-quality') || oneClick.includes('图片质量检查')) {

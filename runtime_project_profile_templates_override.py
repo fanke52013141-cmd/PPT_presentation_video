@@ -5,16 +5,12 @@ image style and references belong to Step 3. The original Project Profile bridge
 keeps compatibility routes and storage, but this response prevents the create
 modal from seeing project-level storyboard/image-style templates.
 
-The lightweight profile and Step 3 state modules are installed explicitly by
-runtime_bootstrap; this module only owns the simplified template response.
+The lightweight profile and Step 3 state modules are registered explicitly by
+normal server startup; this module only owns the simplified template response.
 """
 
 from __future__ import annotations
 
-import os
-import sys
-import threading
-import time
 from types import ModuleType
 from typing import Any
 
@@ -70,21 +66,3 @@ def _register(server_module: ModuleType) -> bool:
     _insert_before_existing(app, "/api/project-profile/templates", {"GET"}, route)
     setattr(server_module, PATCH_MARKER, True)
     return True
-
-
-def _candidate_modules() -> list[ModuleType]:
-    return [module for module in list(sys.modules.values()) if isinstance(module, ModuleType) and hasattr(module, "app")]
-
-
-def _install_when_ready() -> None:
-    def worker() -> None:
-        started_at = time.monotonic()
-        while not os.environ.get("PPT_STUDIO_DISABLE_PROJECT_PROFILE_TEMPLATES_OVERRIDE") and time.monotonic() - started_at < 120:
-            for module in _candidate_modules():
-                try:
-                    if _register(module):
-                        return
-                except Exception:
-                    return
-            time.sleep(0.1)
-    threading.Thread(name="ppt-project-profile-templates-override", target=worker, daemon=True).start()

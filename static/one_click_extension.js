@@ -77,30 +77,6 @@
     }, 500);
   }
 
-  function ensureStyle() {
-    if (document.getElementById('one-click-extension-style')) return;
-    const style = document.createElement('style');
-    style.id = 'one-click-extension-style';
-    style.textContent = `
-      .one-click-sidebar-entry { list-style: none; margin: .18rem .18rem 0; padding: 0; }
-      #btn-one-click-generate { width: 100%; margin: 0; justify-content: center; }
-      .one-click-modal { max-width: 1040px; width: min(1040px, 94vw); }
-      .one-click-note { color: #555; font-size: .9rem; line-height: 1.55; }
-      .one-click-note strong { color: #111; }
-      .one-click-toolbar { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .85rem 0 1rem; }
-      .one-click-status-line { border: 2px solid #111; border-radius: 14px; padding: .75rem; background: #fffef9; margin: .7rem 0; }
-      .one-click-stage-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
-      .one-click-stage { border: 1.5px solid #111; border-radius: 12px; background: #fff; padding: .65rem; }
-      .one-click-stage strong { display: flex; justify-content: space-between; gap: .5rem; }
-      .one-click-stage small { display: block; color: #555; margin-top: .25rem; line-height: 1.4; }
-      .one-click-pill { display: inline-flex; border: 1px solid #111; border-radius: 999px; padding: .1rem .45rem; font-size: .75rem; background: #fff; }
-      .one-click-pill.running { background: #eaf2ff; }
-      .one-click-pill.done { background: #e9ffe9; }
-      .one-click-pill.failed, .one-click-pill.paused { background: #ffe9e9; }
-      @media (max-width: 860px) { .one-click-stage-list { grid-template-columns: 1fr; } }
-    `;
-    document.head.appendChild(style);
-  }
 
   function ensureModal() {
     if (document.getElementById('modal-one-click-generate')) return;
@@ -131,7 +107,6 @@
   }
 
   function ensureEntryButton() {
-    ensureStyle();
     ensureModal();
     const stepper = document.querySelector('.sidebar .stepper');
     if (!stepper || document.getElementById('btn-one-click-generate')) return;

@@ -12,6 +12,7 @@ from server import (
     mark_step_in_progress,
     project_audio_confirmed,
 )
+from tts_artifacts import artifact_paths, build_confirmation_payload
 
 
 class DummyDb:
@@ -31,9 +32,29 @@ with tempfile.TemporaryDirectory() as run_dir:
     mark_step_in_progress(project, 7, db)
     assert project.get_step_status()["7"] == "in_progress"
 
+    paths = artifact_paths(run_dir, "slide_001")
+    for key in ("text", "audio", "metadata", "srt", "timeline"):
+        paths[key].parent.mkdir(parents=True, exist_ok=True)
+        paths[key].write_text(f"{key}-content", encoding="utf-8")
+    project.set_step_status({str(i): "pending" for i in range(1, 9)})
+    (Path(run_dir) / "planning" / "visual_contract.json").write_text(
+        json.dumps({"slides": [{"slide_id": "slide_001"}]}),
+        encoding="utf-8",
+    )
     with open(audio_confirmation_path(project), "w", encoding="utf-8") as f:
-        json.dump({"confirmed": True}, f)
+        json.dump(
+            build_confirmation_payload(run_dir, ["slide_001"], confirmation_mode="user_reviewed"),
+            f,
+        )
     assert project_audio_confirmed(project)
+
+    paths["text"].write_text("changed narration", encoding="utf-8")
+    assert not project_audio_confirmed(project)
+    with open(audio_confirmation_path(project), "w", encoding="utf-8") as f:
+        json.dump(
+            build_confirmation_payload(run_dir, ["slide_001"], confirmation_mode="user_reviewed"),
+            f,
+        )
 
     handle_step_navigation(project, 6, db)
     assert not project_audio_confirmed(project)

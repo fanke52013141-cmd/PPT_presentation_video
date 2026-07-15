@@ -9,7 +9,9 @@ all existing validator scripts available for detailed debugging.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -18,8 +20,8 @@ from typing import Any, Sequence
 DEFAULT_WIDTH = 1920
 DEFAULT_HEIGHT = 1080
 STAGE_CHOICES = ("contract", "image", "reveal", "render_ready", "all")
-DEFAULT_ALLOWED_IMAGE_PROVIDERS = ("codex_image_gen", "manual_upload")
-PRODUCTION_ALLOWED_IMAGE_PROVIDERS = ("codex_image_gen",)
+DEFAULT_ALLOWED_IMAGE_PROVIDERS = ("codex_image_gen", "openai_compatible", "manual_upload")
+PRODUCTION_ALLOWED_IMAGE_PROVIDERS = ("codex_image_gen", "openai_compatible")
 
 
 class StageError(RuntimeError):
@@ -36,6 +38,23 @@ def read_json(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise StageError(f"JSON file must contain an object: {path}")
     return value
+
+
+def sha256_path(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def production_allowed_image_providers() -> tuple[str, ...]:
+    configured = tuple(
+        value.strip()
+        for value in os.environ.get("PPT_STUDIO_PRODUCTION_IMAGE_PROVIDERS", "").split(",")
+        if value.strip()
+    )
+    return configured or PRODUCTION_ALLOWED_IMAGE_PROVIDERS
 
 
 def repo_root_from_script() -> Path:
@@ -111,6 +130,17 @@ def validate_image_provenance(slide_dir: Path, allowed_providers: set[str]) -> N
     copied_to = str(provenance.get("copied_to", "")).replace("\\", "/")
     if copied_to and not copied_to.endswith("visual_draft.png"):
         raise StageError(f"visual_provenance.json copied_to does not point to visual_draft.png: {path}")
+    if provenance.get("schema_version") == "visual_provenance_v2":
+        image_path = slide_dir / "visual_draft.png"
+        expected_output_hash = str(provenance.get("output_sha256") or "")
+        if not expected_output_hash or expected_output_hash != sha256_path(image_path):
+            raise StageError(f"visual_provenance.json output hash does not match visual_draft.png: {path}")
+        contract = slide_dir.parent.parent / "planning" / "visual_contract.json"
+        expected_contract_hash = str(provenance.get("contract_sha256") or "")
+        if not expected_contract_hash or expected_contract_hash != sha256_path(contract):
+            raise StageError(f"visual_provenance.json contract hash is stale: {path}")
+        if provider != "manual_upload" and not str(provenance.get("prompt_sha256") or ""):
+            raise StageError(f"visual_provenance.json missing prompt hash for generated image: {path}")
 
 
 def validate_image_stage(
@@ -216,7 +246,7 @@ def parse_args() -> argparse.Namespace:
         "--allowed-image-provider",
         action="append",
         default=None,
-        help="Allowed visual_provenance provider. May be repeated. Defaults to codex_image_gen and manual_upload; --production defaults to codex_image_gen only.",
+        help="Allowed visual_provenance provider. May be repeated. Production defaults to codex_image_gen and openai_compatible, configurable via PPT_STUDIO_PRODUCTION_IMAGE_PROVIDERS.",
     )
     parser.add_argument("--allow-blocking-warnings", action="store_true", help="Pass through to validate_reveal_scene.py.")
     parser.add_argument("--strict-literal", action="store_true", help="Pass through to validate_narration_grounding.py.")
@@ -239,7 +269,7 @@ def main() -> int:
         require_image_provenance = True
         require_reviewed = True
 
-    default_providers = PRODUCTION_ALLOWED_IMAGE_PROVIDERS if args.production else DEFAULT_ALLOWED_IMAGE_PROVIDERS
+    default_providers = production_allowed_image_providers() if args.production else DEFAULT_ALLOWED_IMAGE_PROVIDERS
     allowed_image_providers = set(args.allowed_image_provider or default_providers)
 
     try:

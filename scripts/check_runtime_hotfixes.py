@@ -5,8 +5,8 @@ Run from the repository root:
 
     python scripts/check_runtime_hotfixes.py
 
-The check imports ``sitecustomize.py`` explicitly, then exercises the runtime
-patch installers against a small in-memory fake server module and a temporary
+The check imports ``sitecustomize.py`` explicitly, then exercises its remaining
+compatibility safeguards against a small in-memory fake server module and a temporary
 project directory. It is intentionally dependency-light so it can run before the
 FastAPI app, Remotion, or external API providers are configured.
 """
@@ -241,7 +241,7 @@ def check_import_and_subprocess_guard(sitecustomize: ModuleType, result: Result)
     result.pass_("subprocess.run guard is installed")
 
     assert_true(hasattr(sitecustomize, "_install_reveal_manifest_reconcile_patch"), "manifest reconcile installer is missing")
-    result.pass_("runtime patch installers are present")
+    result.pass_("sitecustomize reconciliation safeguard is present")
 
 
 def check_runtime_security_module(result: Result) -> None:
@@ -290,10 +290,10 @@ def check_manifest_reconcile_and_topic(sitecustomize: ModuleType, result: Result
         result.pass_("manifest slide/group reconcile preserves masks and links beats")
 
 
-def check_runtime_bootstrap_contract(result: Result) -> None:
-    module = importlib.import_module("scripts.check_runtime_bootstrap_contract")
+def check_source_registration_contract(result: Result) -> None:
+    module = importlib.import_module("scripts.check_source_registration_contract")
     module.main()
-    result.pass_("runtime bootstrap contract is enforced")
+    result.pass_("explicit source registration contract is enforced")
 
 
 def check_static_extension_references(result: Result) -> None:
@@ -314,7 +314,7 @@ def main() -> int:
         check_import_and_subprocess_guard(sitecustomize, result)
         check_runtime_security_module(result)
         check_manifest_reconcile_and_topic(sitecustomize, result)
-        check_runtime_bootstrap_contract(result)
+        check_source_registration_contract(result)
         check_static_extension_references(result)
     except CheckFailure as exc:
         print(f"FAIL {exc}")

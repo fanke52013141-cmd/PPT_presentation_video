@@ -100,17 +100,24 @@ outputs/                   本地交付文件，不提交
 
 设置保存在本机数据库中。不要把真实凭据写入 Git。
 
+Step 3 的原生生图、候选图应用和本地上传都会写入逐页 `visual_provenance.json`。
+生产校验默认接受 `codex_image_gen` 和 `openai_compatible`；如发布规范不同，可通过
+`PPT_STUDIO_PRODUCTION_IMAGE_PROVIDERS` 或重复传入 `--allowed-image-provider` 明确配置。
+日常渲染默认也要求逐页 provenance 完整，允许范围可用 `PPT_STUDIO_RENDER_IMAGE_PROVIDERS` 调整；
+历史图片缺少 provenance 时需要在 Step 3 重新生成或重新上传，系统不会伪造来源记录。
+
 ### 安全模式说明
 
 默认模式面向本机开发和本地使用。若把服务暴露到局域网或公网，必须开启运行时访问控制和密钥脱敏：
 
 ```bash
 export PPT_STUDIO_ACCESS_TOKEN="replace-with-long-random-token"
-export PPT_STUDIO_ALLOWED_ORIGINS="http://127.0.0.1:8000,http://localhost:8000"
+export PPT_STUDIO_ALLOWED_ORIGINS="https://studio.example.com"
+export PPT_STUDIO_ALLOWED_HOSTS="studio.example.com"
 python server.py
 ```
 
-访问控制在应用启动时加载；密钥脱敏由 `/api/settings` 源码路径处理。历史 runtime bridge 迁移计划见 `docs/runtime_hotfixes_and_security.md` 和 issue #7。
+默认仅允许同源浏览器访问，跨域来源必须显式加入白名单；浏览器写请求还必须携带应用专用请求头。`/api/settings` 和普通配置导出默认隐藏密钥，只有带明确确认值的独立 POST 接口可以导出密钥。历史 runtime bridge 迁移计划见 `docs/runtime_hotfixes_and_security.md` 和 issue #7。
 
 ## 验证
 

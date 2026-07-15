@@ -9,11 +9,8 @@ generation. Step 3 reverse style state is saved to planning/step3_image_style.js
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
-import sys
-import threading
 import time
 import uuid
 from datetime import datetime
@@ -96,7 +93,6 @@ def _register(server_module: ModuleType) -> bool:
         return False
 
     try:
-        import runtime_image_style_reverse as reverse_impl
         import runtime_project_style_references as refs_impl
         import runtime_project_style_reference_manager as manager_impl
     except Exception:
@@ -348,32 +344,6 @@ def _register(server_module: ModuleType) -> bool:
         write_templates(items)
         return {"success": True, "templates": items}
 
-    async def reverse_image_style_step3(
-        project_id: str,
-        files: list[Any] = server_module.File(...),
-        requirement: str = server_module.Form(""),
-        apply: bool = server_module.Form(True),
-        db: Any = server_module.Depends(server_module.get_db),
-    ) -> dict[str, Any]:
-        project = _project_or_404(server_module, db, project_id)
-        requirement_text = reverse_impl._safe_text(requirement, 4000)
-        saved = reverse_impl._save_uploaded_references(server_module, project, files)
-        raw_style = reverse_impl._call_vision_model(server_module, saved, project, requirement_text)
-        style = reverse_impl._style_with_required_rules(raw_style, saved, requirement_text)
-        style_state = _save_step3_style_state(project, style, "image_reverse_engineered") if apply else {}
-        try:
-            server_module.write_project_log(
-                project,
-                "step3_image_style_reverse_engineered",
-                reference_count=len(saved),
-                applied=bool(apply),
-                style_name=style.get("style_name"),
-                style_state=str(_step3_state_path(project)),
-            )
-        except Exception:
-            pass
-        return {"success": True, "style": style, "style_state": style_state, "inputs": saved}
-
     def list_reference_images_step3(project_id: str, db: Any = server_module.Depends(server_module.get_db)) -> dict[str, Any]:
         project = _project_or_404(server_module, db, project_id)
         references = refs_impl._load_manifest(project, project_id)
@@ -469,7 +439,6 @@ def _register(server_module: ModuleType) -> bool:
             pass
         return {"success": True, "references": _rewrite_reference_urls(references, project_id)}
 
-    app.add_api_route("/api/projects/{project_id}/steps/3/image-style/reverse", reverse_image_style_step3, methods=["POST"])
     app.add_api_route("/api/projects/{project_id}/steps/3/image-style/reference-images", list_reference_images_step3, methods=["GET"])
     app.add_api_route("/api/projects/{project_id}/steps/3/image-style/reference-images", upload_reference_images_step3, methods=["POST"])
     app.add_api_route("/api/projects/{project_id}/steps/3/image-style/reference-images/generate", generate_reference_images_step3, methods=["POST"])
@@ -484,21 +453,3 @@ def _register(server_module: ModuleType) -> bool:
     app.add_api_route("/api/image-style/project-templates/{template_id}", delete_step3_template, methods=["DELETE"])
     setattr(server_module, PATCH_MARKER, True)
     return True
-
-
-def _candidate_modules() -> list[ModuleType]:
-    return [module for module in list(sys.modules.values()) if isinstance(module, ModuleType) and hasattr(module, "app") and hasattr(module, "Project")]
-
-
-def _install_when_ready() -> None:
-    def worker() -> None:
-        started_at = time.monotonic()
-        while not os.environ.get("PPT_STUDIO_DISABLE_STEP3_IMAGE_STYLE") and time.monotonic() - started_at < 120:
-            for module in _candidate_modules():
-                try:
-                    if _register(module):
-                        return
-                except Exception:
-                    return
-            time.sleep(0.1)
-    threading.Thread(name="ppt-step3-image-style-runtime", target=worker, daemon=True).start()

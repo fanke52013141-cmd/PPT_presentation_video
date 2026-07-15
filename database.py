@@ -2,7 +2,7 @@ import os
 import json
 from datetime import datetime
 from sqlalchemy import create_engine, Column, String, Integer, DateTime, Text
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 DB_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "data"))

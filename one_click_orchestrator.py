@@ -1,8 +1,7 @@
-"""One-click generation orchestrator v1.
+"""One-click generation orchestrator v2.
 
-This runtime bridge adds a small in-process automation layer without rewriting the
-large server.py module. V1 intentionally reuses existing FastAPI routes instead of
-maintaining a second implementation of Step 2/3/5/6/7/8.
+The orchestrator uses the same in-process production service facade as the web
+routes. It does not create an HTTP client or route requests back into the app.
 
 Scope:
 - start a single in-process job per project;
@@ -212,37 +211,34 @@ def _complete(project: Any, status: dict[str, Any], video: Any = None) -> None:
     _save_status(project, status)
 
 
-def _http_error(response: Any) -> str:
-    try:
-        payload = response.json()
-    except Exception:
-        payload = {}
-    detail = ""
-    if isinstance(payload, dict):
-        detail = payload.get("detail") or payload.get("message") or payload.get("error") or ""
-    return _safe_text(detail or getattr(response, "text", "") or f"HTTP {response.status_code}", 3000)
+def _error_text(exc: Exception) -> str:
+    detail = getattr(exc, "detail", "")
+    return _safe_text(detail or str(exc) or type(exc).__name__, 3000)
 
 
-def _require_ok(response: Any, label: str) -> dict[str, Any]:
-    if response.status_code >= 400:
-        raise RuntimeError(f"{label} failed: {_http_error(response)}")
-    try:
-        payload = response.json()
-    except Exception as exc:
-        raise RuntimeError(f"{label} returned non-JSON response: {exc}") from exc
+def _require_ok(payload: Any, label: str) -> dict[str, Any]:
     if isinstance(payload, dict) and payload.get("success") is False:
         raise RuntimeError(f"{label} failed: {_safe_text(payload.get('message') or payload.get('detail') or payload, 3000)}")
     return payload if isinstance(payload, dict) else {"value": payload}
 
 
+def _invoke(operation: Any, label: str) -> dict[str, Any]:
+    try:
+        return _require_ok(operation(), label)
+    except Exception as exc:
+        if isinstance(exc, RuntimeError) and str(exc).startswith(f"{label} failed:"):
+            raise
+        raise RuntimeError(f"{label} failed: {_error_text(exc)}") from exc
+
+
 def _require_quality_gate(
-    response: Any,
+    operation: Any,
     label: str,
     gates: dict[str, bool],
     gate_name: str,
 ) -> dict[str, Any]:
     try:
-        return _require_ok(response, label)
+        return _invoke(operation, label)
     except Exception as exc:
         raise QualityGateFailure(
             str(exc),
@@ -457,11 +453,6 @@ def _ai_mask_quality_errors(result: dict[str, Any], existing_mask_count: int = 0
     return errors
 
 
-def _client(server_module: ModuleType) -> Any:
-    from fastapi.testclient import TestClient
-    return TestClient(server_module.app)
-
-
 def _session_factory(server_module: ModuleType) -> Any:
     factory = getattr(server_module, "SessionLocal", None)
     if factory is not None:
@@ -480,7 +471,9 @@ def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str, mode:
         status, start_index = _resume_status(project, project_id, run_id, mode)
         _save_status(project, status)
         gates = _quality_gates(project)
-        client = _client(server_module)
+        from pipeline_services import ProjectPipelineServices
+
+        services = ProjectPipelineServices(server_module, db, project_id)
 
         def should_run(stage_id: str) -> bool:
             return _stage_index(stage_id) >= start_index
@@ -496,19 +489,19 @@ def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str, mode:
             _start_stage(project, status, "storyboard", "生成或复用 visual_contract.json")
             if mode == "restart" or not _has_contract(project):
                 _require_quality_gate(
-                    client.post(f"/api/projects/{project_id}/steps/2/script/execute", json={}),
+                    services.storyboard_script,
                     "Step 2 article-to-slide",
                     gates,
                     "pause_on_storyboard_validation_error",
                 )
                 _require_quality_gate(
-                    client.post(f"/api/projects/{project_id}/steps/2/visual/execute", json={}),
+                    services.storyboard_visual,
                     "Step 2 slide-to-visual",
                     gates,
                     "pause_on_storyboard_validation_error",
                 )
                 _require_quality_gate(
-                    client.post(f"/api/projects/{project_id}/steps/2/compose", json={}),
+                    services.storyboard_compose,
                     "Step 2 compose",
                     gates,
                     "pause_on_storyboard_validation_error",
@@ -518,7 +511,7 @@ def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str, mode:
 
         if should_run("images"):
             _start_stage(project, status, "images", "生成缺失或过期的 slide 图片")
-            prompts_payload = _require_ok(client.get(f"/api/projects/{project_id}/steps/3/prompts"), "Step 3 prompts")
+            prompts_payload = _invoke(services.image_prompts, "Step 3 prompts")
             prompts_by_slide = {str(item.get("slide_id") or ""): str(item.get("prompt") or "") for item in prompts_payload.get("prompts", []) if isinstance(item, dict)}
             requiring_images = _slides_requiring_images(project)
             generated = 0
@@ -531,7 +524,7 @@ def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str, mode:
                 item["message"] = f"正在生成 {slide_id} ({index}/{len(requiring_images)})"
                 _save_status(project, status)
                 _require_quality_gate(
-                    client.post(f"/api/projects/{project_id}/steps/3/generate", data={"slide_id": slide_id, "prompt": prompt, "preview": "false"}),
+                    lambda slide_id=slide_id, prompt=prompt: services.generate_image(slide_id, prompt),
                     f"Step 3 image {slide_id}",
                     gates,
                     "pause_on_image_generation_failure",
@@ -541,22 +534,19 @@ def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str, mode:
 
         if should_run("confirm_images"):
             _start_stage(project, status, "confirm_images", "确认图片并创建 reveal_manifest.json")
-            _require_ok(client.post(f"/api/projects/{project_id}/steps/3/confirm"), "Step 3 confirm")
+            _invoke(services.confirm_images, "Step 3 confirm")
             _finish_stage(project, status, "confirm_images", "图片已确认")
 
         if should_run("ai_mask"):
             _start_stage(project, status, "ai_mask", "执行 AI Mask 标注")
             ai_mask_payload = {"settings": {"overwrite_existing_manual_mask": False, "overwrite_existing_ai_mask": True, "skip_locked_groups": True}}
-            ai_mask = client.post(f"/api/projects/{project_id}/steps/5/ai-mask/annotate", json=ai_mask_payload)
-            if ai_mask.status_code == 404:
-                ai_mask = client.post(f"/api/projects/{project_id}/steps/5/semantic-blocks", json={})
-            result = _require_ok(ai_mask, "AI Mask")
+            result = _invoke(lambda: services.annotate_ai_mask(ai_mask_payload), "AI Mask")
             existing_masks = _existing_mask_count(project)
             quality_errors = _ai_mask_quality_errors(result, existing_masks)
             if quality_errors:
                 _warn_stage(project, status, "ai_mask", "首次标注未完整，正在自动重试失败结果")
-                retry = _require_ok(
-                    client.post(f"/api/projects/{project_id}/steps/5/ai-mask/annotate", json=ai_mask_payload),
+                retry = _invoke(
+                    lambda: services.annotate_ai_mask(ai_mask_payload),
                     "AI Mask retry",
                 )
                 existing_masks = _existing_mask_count(project)
@@ -568,19 +558,22 @@ def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str, mode:
 
         if should_run("mask_assets"):
             _start_stage(project, status, "mask_assets", "构建 Reveal 资源")
-            manifest_payload = _require_ok(client.get(f"/api/projects/{project_id}/steps/5/result"), "Step 5 manifest")
+            manifest_payload = _invoke(services.mask_manifest, "Step 5 manifest")
+            if manifest_payload.get("repair", {}).get("required"):
+                manifest_payload = _invoke(services.repair_mask_manifest, "Step 5 repair")
             manifest = manifest_payload.get("manifest")
             if not isinstance(manifest, dict):
                 raise RuntimeError("Step 5 manifest 返回为空")
-            _require_ok(client.put(f"/api/projects/{project_id}/steps/5/result", json=manifest), "Step 5 build assets")
+            _invoke(lambda: services.build_mask_assets(manifest), "Step 5 build assets")
             _finish_stage(project, status, "mask_assets", "Reveal 资源已构建")
 
         if should_run("narration"):
             _start_stage(project, status, "narration", "生成或复用演讲稿并尝试添加 TTS 标记")
-            existing_narration = client.get(f"/api/projects/{project_id}/steps/6/result")
-            if existing_narration.status_code < 400:
-                existing_payload = existing_narration.json()
-            else:
+            try:
+                existing_payload = _invoke(services.narration, "Step 6 narration")
+                if existing_payload.get("repair", {}).get("required"):
+                    existing_payload = _invoke(services.repair_narration, "Step 6 repair")
+            except Exception:
                 existing_payload = {}
             if (
                 mode != "restart"
@@ -592,30 +585,29 @@ def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str, mode:
                 init = {"beats": existing_payload["beats"]}
                 _warn_stage(project, status, "narration", "已保留并复用现有演讲稿")
             else:
-                init = _require_ok(client.post(f"/api/projects/{project_id}/steps/6/init"), "Step 6 init")
-            annotate = client.post(f"/api/projects/{project_id}/steps/6/annotate", json=init.get("beats") or {})
+                init = _invoke(services.init_narration, "Step 6 init")
             narration_beats = init.get("beats") or {}
-            if annotate.status_code >= 400:
-                _warn_stage(project, status, "narration", f"AI TTS 标记失败，继续使用原演讲稿：{_http_error(annotate)}")
-            else:
-                annotated = _require_ok(annotate, "Step 6 annotate")
+            try:
+                annotated = _invoke(
+                    lambda: services.annotate_narration(narration_beats),
+                    "Step 6 annotate",
+                )
                 narration_beats = annotated.get("beats") or narration_beats
-            _require_ok(
-                client.put(f"/api/projects/{project_id}/steps/6/result", json=narration_beats),
-                "Step 6 confirm narration",
-            )
+            except Exception as exc:
+                _warn_stage(project, status, "narration", f"AI TTS 标记失败，继续使用原演讲稿：{_error_text(exc)}")
+            _invoke(lambda: services.save_narration(narration_beats), "Step 6 confirm narration")
             _finish_stage(project, status, "narration", "演讲稿已就绪")
 
         if should_run("tts"):
             _start_stage(project, status, "tts", "合成 TTS 音频并执行技术确认")
             _require_quality_gate(
-                client.post(f"/api/projects/{project_id}/steps/7/synthesize"),
+                services.synthesize_audio,
                 "Step 7 synthesize",
                 gates,
                 "pause_on_tts_failure",
             )
             _require_quality_gate(
-                client.post(f"/api/projects/{project_id}/steps/7/confirm", json={"confirmation_mode": "automatic_technical"}),
+                services.confirm_audio,
                 "Step 7 confirm",
                 gates,
                 "pause_on_tts_failure",
@@ -626,7 +618,7 @@ def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str, mode:
         if should_run("render"):
             _start_stage(project, status, "render", "渲染最终视频")
             render = _require_quality_gate(
-                client.post(f"/api/projects/{project_id}/steps/8/render"),
+                services.render_video,
                 "Step 8 render",
                 gates,
                 "pause_on_render_failure",

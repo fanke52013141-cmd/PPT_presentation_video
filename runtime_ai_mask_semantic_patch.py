@@ -667,8 +667,9 @@ def install() -> bool:
     original_read = getattr(base_module, "_read_ai_mask_prompts", None)
     if not callable(original_read) or not callable(getattr(base_module, "_vision_match", None)):
         return False
-    base_module.DEFAULT_METHODOLOGY = DEFAULT_METHODOLOGY
-    base_module.DEFAULT_OUTPUT_STRUCTURE = DEFAULT_OUTPUT_STRUCTURE
+    # The production prompt now lives in runtime_ai_mask.py.  Keep this bridge
+    # focused on semantic-object image preparation and do not overwrite the
+    # base module's prompt contract during import.
     base_module._read_ai_mask_prompts = lambda server_module: _patch_read_prompts(original_read, server_module)
     base_module._vision_match = _patched_vision_match(base_module)
     setattr(base_module, PATCH_MARKER, True)

@@ -232,6 +232,15 @@ assigned exact RLE Masks and participate in Reveal animation. The semantic-objec
 bridge prompt mirrors this rule; title pixels remain static only when a slide has
 no narration group available.
 
+As of the visual-group atomicity migration, `runtime_ai_mask.py` is the prompt
+source of truth. `runtime_ai_mask_semantic_patch.py` still prepares merged
+semantic-object images for the multimodal matcher, but it no longer overwrites
+the base AI Mask methodology or output contract during import. The source
+quality pass rejects a visual group whose description asks for multiple
+independent visual islands, preventing full-coverage completion from silently
+absorbing several Reveal units into one Mask. This migration remains tracked in
+issue #7 until semantic-object preparation also moves into the normal service.
+
 Migration debt: the remaining `runtime_*` filenames are explicitly registered
 compatibility adapters, not auto-installing patches. Continue moving their
 business logic into normal services under issue #7.

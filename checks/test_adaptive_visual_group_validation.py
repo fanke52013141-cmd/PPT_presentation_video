@@ -80,6 +80,23 @@ def test_one_semantic_body_group_is_valid() -> None:
     assert validate_contract(make_contract(), 1, 10, read_pipeline_profile()) == 1
 
 
+def test_one_group_cannot_describe_multiple_independent_visual_islands() -> None:
+    contract = make_contract()
+    contract["slides"][0]["visual_groups"][1]["visual_anchor"] = (
+        "页面纵向排列四个独立的条件卡片，每张卡片表达不同约束。"
+    )
+    with pytest.raises(ContractError, match="describes multiple independent visual islands"):
+        validate_contract(contract, 1, 10, read_pipeline_profile())
+
+
+def test_unified_continuous_structure_remains_valid() -> None:
+    contract = make_contract()
+    contract["slides"][0]["visual_groups"][1]["visual_anchor"] = (
+        "一个统一连续结构，在同一连续外框内排列四个步骤节点并整体 Reveal。"
+    )
+    assert validate_contract(contract, 1, 10, read_pipeline_profile()) == 1
+
+
 def test_zero_body_groups_remains_invalid() -> None:
     with pytest.raises(ContractError, match="Expected 1-10 revealable visual groups"):
         validate_contract(make_contract(body_count=0), 1, 10, read_pipeline_profile())

@@ -270,6 +270,61 @@ def test_nearby_icon_is_absorbed_by_closest_large_visual_island():
     assert completed["component_assignment_policy"] == "dominant_island_2d_absorption_v2"
 
 
+def test_atomicity_conflict_blocks_semantic_quality_and_preserves_model_warning():
+    elements = {
+        "canvas": {"width": 320, "height": 180},
+        "elements": [
+            _mask_element("left_card", 20, 60, 80, 60),
+            _mask_element("right_card", 220, 60, 80, 60),
+        ],
+        "residual_elements": [],
+    }
+    slide = {
+        "slide_id": "slide_001",
+        "visual_groups": [
+            {
+                "id": "body_group",
+                "role": "content_body",
+                "visual_anchor": "左侧视觉岛展示问题，右侧视觉岛展示方案。",
+            }
+        ],
+        "narration_beats": [{"id": "beat_001", "group_id": "body_group"}],
+    }
+    completed = mask._complete_component_coverage(
+        {
+            "matches": [
+                {
+                    "group_id": "body_group",
+                    "element_ids": ["left_card", "right_card"],
+                    "confidence": 0.95,
+                }
+            ],
+            "warnings": [
+                {
+                    "type": "insufficient_visual_groups_for_independent_objects",
+                    "object_ids": ["obj_left", "obj_right"],
+                }
+            ],
+        },
+        elements,
+        slide,
+    )
+    assert completed["quality"]["passed"] is False
+    assert any(
+        issue.get("type") == "group_contains_multiple_independent_visual_islands"
+        for issue in completed["semantic_quality"]["blocking_errors"]
+    )
+    assert any(
+        issue.get("type") == "insufficient_visual_groups_for_independent_objects"
+        for issue in completed["semantic_quality"]["blocking_errors"]
+    )
+    assert any(
+        warning.get("type") == "insufficient_visual_groups_for_independent_objects"
+        for warning in completed["warnings"]
+        if isinstance(warning, dict)
+    )
+
+
 def test_volcengine_ai_mask_uses_provider_model_and_single_timeout_policy():
     resolved, configured = mask._resolved_vision_model(_FakeVisionSettings)
     assert resolved == "doubao-seed-2-1-turbo-260628"

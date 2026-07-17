@@ -22,6 +22,8 @@ from typing import Any
 import numpy as np
 from PIL import Image, ImageDraw
 
+from scripts.visual_group_semantics import visual_group_atomicity_issues
+
 PATCH_MARKER = "__ppt_ai_mask_runtime_patch__"
 SETTING_PREFIX = "ai_mask_"
 
@@ -51,30 +53,32 @@ AI_MASK_MIN_FOREGROUND_COVERAGE = 0.995
 DEFAULT_METHODOLOGY = """你是中文 PPT 视频的 AI Mask 语义标注专家。
 
 ## 目的
-把自动检测到的画面元素绑定到当前 Slide 已有的 visual_groups 与 narration_beats，为后续生成安全、可复核的 Reveal Mask 提供匹配结果；不重写分镜或旁白。
+把自动检测到的语义对象绑定到当前 Slide 已有的 visual_groups 与 narration_beats，为后续生成安全、可复核的 Reveal Mask 提供匹配结果；不重写分镜或旁白。
+
+## 系统背景
+visual_group 是最小的 Mask/Reveal 原子。AI Mask 只能匹配已有语块，不能创建、拆分或改写 visual_group。若上游把多个独立视觉岛错误地塞进一个语块，你必须明确报告结构冲突，不能把“所有像素都有归属”误判为“语义分组正确”。
 
 ## 输入
-- 当前 Slide 的 visual_groups、narration_beats 与 auto_elements。
-- 带 element_id 标记的画面及其空间位置。
-- 所有返回的 ID 必须来自输入，不得创造新 ID。
+- 当前 Slide 的 visual_groups、narration_beats 与 semantic_objects。
+- image_full：未画框的完整原图，用于理解全局版式、阅读顺序和真实语义。
+- object_XXX：语义对象切片，包含 object_id、element_ids 和 bbox。
+- 所有返回 ID 必须来自输入，不得创造新 ID。
 
-## 输出
-- 只输出符合“输出结构”的一个合法 JSON 对象，不要 Markdown、解释或额外文字。
-- 不确定时降低 confidence 或放入 unmatched 列表，不得强行匹配。
+## 任务
+完成“画面语义对象 → 已有语块 → 演讲稿 beat”的匹配。你不是重新生成分镜，也不是重写演讲稿。
 
-任务：把纯白背景图片中自动检测到的视觉元素候选，绑定到当前 Slide 已有的 visual_groups 和 narration_beats。你不是重新生成分镜，也不是重写演讲稿；你只做“画面元素 → 语块 → 演讲稿 beat”的匹配。
-
-可修改方法论：
-1. group_id 只能使用输入 visual_groups[].id，不要发明新的 group。
-2. narration_beat_id 只能使用输入 narration_beats[].id。
-3. element_ids 只能使用输入 auto_elements[].element_id。
-4. 页面上方主标题/副标题保持固定布局，但只要存在 narration group，就必须绑定到对应标题语块并参与逐语块 Reveal；副标题优先绑定 subtitle 语块，没有独立 subtitle 语块时与主标题同组。
-5. 优先匹配 visible_text、visible_anchor、spoken_text，再结合元素的二维位置、role 和阅读顺序；横向与纵向距离都必须考虑。
-6. 一个语块可以绑定多个空间连续的元素，例如主配图 + 配图内部文字 + 紧邻图标/对号/标签。大面积主配图应吸收其内部和边缘邻接元素，除非这些元素明确对应独立 narration beat。
-7. 不允许因为颜色相似就跨卡片、跨栏或跨配图分配。落在某一主配图内部、边界上或紧邻区域的元素，不得分给远处语块。
-8. 对比场景左右两侧如果表达不同叙事状态，必须分别绑定到不同 narration beat；不要把两个独立插图合并为同一个 Mask。
-9. 不确定时降低 confidence，不要强行匹配。装饰或无口播元素放入 unmatched_elements。
-10. 输出必须是严格 JSON，不要 Markdown，不要解释段落。
+## 匹配规则
+1. `group_id` 只能使用输入 `visual_groups[].id`，不得发明新 group。
+2. `narration_beat_id` 只能使用输入 `narration_beats[].id`。
+3. 优先匹配 `semantic_objects[].object_id`；输出 `element_ids` 时使用所选对象的完整集合，不只挑碎片。
+4. 一个标题行、标签行、卡片、配图、图标组合或流程节点通常是一个完整对象，不因字形不粘连、颜色不同或边框断开而拆散。
+5. 页面上方主标题/副标题保持固定布局；只有存在对应 narration beat 时才参与逐语块 Reveal。
+6. 优先匹配 `visible_text`、`visual_anchor`、`spoken_text`，再结合二维位置、role 和阅读顺序。
+7. 同一语块可以绑定多个空间连续、共同服务于同一叙事时刻的对象，例如主配图与其内部标签；不能仅因主题相同就跨越明显留白合并对象。
+8. 对比两侧、多个独立卡片、多个独立步骤或相距很远的视觉岛，如果表达不同子结论，必须分别绑定到不同 narration beat，不得合并为一个 Mask。
+9. 匹配前执行结构审计：如果画面明显包含多个应分别 Reveal 的语义对象，但输入只提供一个正文 visual_group/narration beat，不得假装结构正确。仍按已有 ID 返回最可靠匹配，同时在 `warnings` 中加入 `type="insufficient_visual_groups_for_independent_objects"`，列出 object_ids 和原因，交由质量门阻止静默合并。
+10. 不确定时降低 confidence。装饰或无口播对象放入 unmatched 列表，不得在模型输出中仅为达到覆盖率而强行匹配。
+11. 只输出严格 JSON，不要 Markdown、解释或额外文字。
 """
 
 DEFAULT_OUTPUT_STRUCTURE = """必须输出一个 JSON object：
@@ -84,17 +88,25 @@ DEFAULT_OUTPUT_STRUCTURE = """必须输出一个 JSON object：
     {
       "group_id": "body_group_01",
       "narration_beat_id": "beat_01",
+      "object_ids": ["obj_010"],
       "element_ids": ["el_auto_010", "el_auto_011"],
       "confidence": 0.95,
-      "reason": "主配图与紧邻对号位于同一空间岛，并共同对应 beat_01"
+      "reason": "obj_010 是完整语义对象，包含主配图与紧邻标签，并共同对应 beat_01"
     }
   ],
+  "unmatched_objects": [],
   "unmatched_elements": [],
   "unmatched_groups": [],
-  "warnings": []
+  "warnings": [
+    {
+      "type": "insufficient_visual_groups_for_independent_objects",
+      "object_ids": ["obj_010", "obj_020"],
+      "reason": "两个对象空间分离且表达不同子结论，但输入只有一个正文语块"
+    }
+  ]
 }
 
-约束：group_id 必须来自 visual_groups[].id；narration_beat_id 必须来自 narration_beats[].id；element_ids 必须来自 auto_elements[].element_id；confidence 是 0 到 1 的数字。
+约束：group_id 必须来自 visual_groups[].id；narration_beat_id 必须来自 narration_beats[].id；object_ids 必须来自 semantic_objects[].object_id；element_ids 必须来自 semantic_objects[].element_ids 或 auto_elements[].element_id；confidence 是 0 到 1 的数字。没有结构冲突时 warnings 输出空数组。
 """
 
 PROMPT_METHOD_KEY = SETTING_PREFIX + "match_methodology_system_content"
@@ -1302,6 +1314,7 @@ def _ensure_narrated_group_anchors(
 def _complete_component_coverage(
     match_payload: dict[str, Any],
     elements_payload: dict[str, Any],
+    slide: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Assign every foreground component to exactly one accepted narration group.
 
@@ -1630,7 +1643,17 @@ def _complete_component_coverage(
                 if item.get("candidate_component") and str(item.get("group_id") or "") == group_id
             ),
         })
-    blocking_errors: list[dict[str, Any]] = []
+    existing_warnings = list(match_payload.get("warnings", []) or [])
+    structural_model_warnings = [
+        dict(warning)
+        for warning in existing_warnings
+        if isinstance(warning, dict)
+        and warning.get("type") == "insufficient_visual_groups_for_independent_objects"
+    ]
+    blocking_errors: list[dict[str, Any]] = [
+        dict(issue)
+        for issue in visual_group_atomicity_issues(slide)
+    ] + structural_model_warnings
     for item in accepted:
         group_id = str(item.get("group_id") or "")
         element_ids = [str(element_id) for element_id in item.get("element_ids", []) or [] if str(element_id) in by_id]
@@ -1722,10 +1745,18 @@ def _complete_component_coverage(
     match_payload["quality"] = quality
     match_payload["semantic_quality"] = semantic_quality
     match_payload["residual_assignment_report"] = residual_assignment_report
-    if quality["passed"] and not semantic_warnings:
+    if quality["passed"] and not semantic_warnings and not existing_warnings:
         match_payload["warnings"] = []
     else:
-        match_payload["warnings"] = [*(match_payload.get("warnings", []) or []), *semantic_warnings, *blocking_errors]
+        non_structural_model_warnings = [
+            warning
+            for warning in existing_warnings
+            if not (
+                isinstance(warning, dict)
+                and warning.get("type") == "insufficient_visual_groups_for_independent_objects"
+            )
+        ]
+        match_payload["warnings"] = [*non_structural_model_warnings, *semantic_warnings, *blocking_errors]
     match_payload["matching_method"] = str(match_payload.get("matching_method") or "unknown") + "+constrained_component_completion"
     match_payload["component_assignment_policy"] = "dominant_island_2d_absorption_v2"
     return match_payload
@@ -1839,6 +1870,8 @@ def _review_issues(match_payload: dict[str, Any]) -> list[dict[str, Any]]:
         "too_many_residual_components": "该语块包含较多自动吸附的小组件，请检查。",
         "many_residual_components": "该语块包含较多自动吸附的小组件，建议检查。",
         "forced_low_confidence_components": "部分画面组件通过最近锚点规则补全，建议检查归属。",
+        "group_contains_multiple_independent_visual_islands": "一个分镜语块描述了多个应分别 Reveal 的独立视觉岛，请返回分镜规划拆分语块。",
+        "insufficient_visual_groups_for_independent_objects": "画面存在多个独立语义对象，但分镜提供的可 Reveal 语块不足。",
     }
     for severity, field in (("blocking", "blocking_errors"), ("warning", "warnings")):
         for issue in semantic_quality.get(field, []) or []:
@@ -2141,7 +2174,7 @@ def _annotate_project(server_module: ModuleType, project: Any, settings: dict[st
             _write_json(item["slide_dir"] / "auto_mask" / "auto_match_before_completion.json", cleaned)
         except Exception:
             pass
-        completed = _complete_component_coverage(cleaned, item["elements"])
+        completed = _complete_component_coverage(cleaned, item["elements"], item["slide"])
         try:
             _write_json(item["slide_dir"] / "auto_mask" / "auto_match_after_completion.json", completed)
         except Exception:

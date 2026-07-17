@@ -17,8 +17,10 @@ from typing import Any
 
 try:
     from scripts.pipeline_profiles import read_pipeline_profile
+    from scripts.visual_group_semantics import visual_group_atomicity_issues
 except ModuleNotFoundError:
     from pipeline_profiles import read_pipeline_profile
+    from visual_group_semantics import visual_group_atomicity_issues
 
 
 SUBTITLE_POLICY_WITH_SUBTITLE = "all_slides_have_subtitle"
@@ -123,6 +125,14 @@ def validate_slide(
             f"the common range is 1-{RECOMMENDED_MAX_REVEALABLE_GROUPS}. "
             "Keep the extra groups only when they are semantically independent.",
             file=sys.stderr,
+        )
+    atomicity_issues = visual_group_atomicity_issues(slide)
+    if atomicity_issues:
+        issue = atomicity_issues[0]
+        raise ContractError(
+            f"Visual group {issue['group_id']} in {slide_id} describes multiple independent visual islands "
+            f"({', '.join(issue['signals'])}). Split them into separate body groups with separate narration beats, "
+            "or explicitly describe one unified continuous structure when they must reveal together."
         )
 
     group_ids: set[str] = set()

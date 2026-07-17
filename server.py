@@ -3225,12 +3225,51 @@ def compose_step2_system_prompt(system_content: str, output_example: str) -> str
     )
 
 
+def step2_script_prompt_uses_legacy_contract(system_content: str) -> bool:
+    """Detect old prompts that require fields removed from the Step 2A input/output contract."""
+    text = str(system_content or "")
+    if "step2_script_v2" in text:
+        return False
+    legacy_patterns = (
+        r"body_points\s*(?:必须|應|应|需|是)",
+        r"narration_segments\s*(?:必须|應|应|需|是)",
+        r"讲解分段要求",
+    )
+    return any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in legacy_patterns)
+
+
+def step2_visual_prompt_uses_legacy_contract(system_content: str) -> bool:
+    """Detect prompts that depend on Step 2A fields no longer sent to Step 2B."""
+    text = str(system_content or "")
+    if "step2_visual_v2" in text:
+        return False
+    legacy_patterns = (
+        r"narration_segments\[\].{0,40}(?:唯一依据|唯一依據)",
+        r"第\s*i\s*个\s*body_point",
+        r"body_points\[i-1\]",
+        r"seg_\(i\+1\)",
+    )
+    return any(re.search(pattern, text, flags=re.IGNORECASE | re.DOTALL) for pattern in legacy_patterns)
+
+
+def step2_prompt_compatibility(prompts: Dict[str, str]) -> Dict[str, Any]:
+    script_legacy = step2_script_prompt_uses_legacy_contract(prompts.get("script_system", ""))
+    visual_legacy = step2_visual_prompt_uses_legacy_contract(prompts.get("visual_system", ""))
+    return {
+        "contract_version": "step2_minimal_v2",
+        "script_prompt_legacy": script_legacy,
+        "visual_prompt_legacy": visual_legacy,
+        "compatible": not script_legacy and not visual_legacy,
+    }
+
+
 def step2_prompt_response(project: Project) -> Dict[str, Any]:
     prompts = read_step2_prompts(project)
     return {
         "success": True,
         "prompts": prompts,
         "defaults": default_step2_prompts(),
+        "compatibility": step2_prompt_compatibility(prompts),
         "composed": {
             "script_system_content": compose_step2_system_prompt(
                 prompts["script_system"],
@@ -4059,6 +4098,14 @@ def execute_step2_script_plan(
     article_content = str(brief.get("content") or "")
     generation_requirement = str((payload or {}).get("requirement") or "").strip() or DEFAULT_STEP2_GENERATION_REQUIREMENT
     prompts = read_step2_prompts(project)
+    if step2_script_prompt_uses_legacy_contract(prompts["script_system"]):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "当前文章→Slides Prompt 仍要求旧字段 body_points/narration_segments，"
+                "与 Step 2A 的精简输出合同不兼容。请载入最新内置模板或升级该自定义模板后再生成。"
+            ),
+        )
     trace_id = uuid.uuid4().hex[:8]
     raw_plan = run_step2_json_llm(
         project=project,
@@ -4106,6 +4153,15 @@ def execute_step2_visual_plan(project_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="项目不存在")
     script_plan = read_plan_json(step2_script_plan_path(project), "请先生成演讲稿规划")
     prompts = read_step2_prompts(project)
+    if step2_visual_prompt_uses_legacy_contract(prompts["visual_system"]):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "当前 Slides→可视化 Prompt 仍依赖旧字段 body_points/narration_segments，"
+                "但 Step 2B 现在只接收 slide_id、slide_title、slide_subtitle 和完整 narration。"
+                "请载入最新内置模板或升级该自定义模板后再生成。"
+            ),
+        )
     trace_id = uuid.uuid4().hex[:8]
     raw_plan = run_step2_json_llm(
         project=project,

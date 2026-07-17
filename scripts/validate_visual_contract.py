@@ -25,6 +25,9 @@ SUBTITLE_POLICY_WITH_SUBTITLE = "all_slides_have_subtitle"
 SUBTITLE_POLICY_NO_SUBTITLE = "no_slides_have_subtitle"
 SUBTITLE_POLICY_OPTIONAL = "optional_subtitles"
 ALLOWED_SUBTITLE_POLICIES = {SUBTITLE_POLICY_WITH_SUBTITLE, SUBTITLE_POLICY_NO_SUBTITLE, SUBTITLE_POLICY_OPTIONAL}
+DEFAULT_MIN_REVEALABLE_GROUPS = 1
+RECOMMENDED_MAX_REVEALABLE_GROUPS = 6
+DEFAULT_MAX_REVEALABLE_GROUPS = 10
 
 
 class ContractError(RuntimeError):
@@ -114,6 +117,13 @@ def validate_slide(
             f"Expected {min_groups}-{max_groups} revealable visual groups in {slide_id}, "
             f"got {len(revealable_groups)} ({len(groups)} including static title/subtitle groups)"
         )
+    if len(revealable_groups) > RECOMMENDED_MAX_REVEALABLE_GROUPS:
+        print(
+            f"Warning: {slide_id} has {len(revealable_groups)} revealable visual groups; "
+            f"the common range is 1-{RECOMMENDED_MAX_REVEALABLE_GROUPS}. "
+            "Keep the extra groups only when they are semantically independent.",
+            file=sys.stderr,
+        )
 
     group_ids: set[str] = set()
     content_unit_ids: set[str] = set()
@@ -143,6 +153,7 @@ def validate_slide(
     if not isinstance(beats, list) or not beats:
         raise ContractError(f"Slide missing narration_beats[]: {slide_id}")
     beat_ids: set[str] = set()
+    spoken_group_ids: set[str] = set()
     for beat in beats:
         if not isinstance(beat, dict):
             raise ContractError(f"Invalid narration beat in {slide_id}")
@@ -168,6 +179,8 @@ def validate_slide(
             if not str(beat.get(key, "")).strip():
                 raise ContractError(f"Beat {beat_id} missing {key} in {slide_id}")
         spoken_text = str(beat.get("spoken_text", "")).strip()
+        if spoken_text:
+            spoken_group_ids.add(group_id)
         visible_anchor = str(beat.get("visible_anchor", "")).strip()
         visible_text = visible_text_by_id.get(group_id, "")
         if spoken_text and visible_anchor not in spoken_text and visible_text not in spoken_text:
@@ -175,6 +188,17 @@ def validate_slide(
                 f"Warning: beat {beat_id} in {slide_id} does not literally mention its visible anchor/text.",
                 file=sys.stderr,
             )
+
+    revealable_group_ids = {
+        str(group.get("id") or "").strip()
+        for group in revealable_groups
+        if isinstance(group, dict)
+    }
+    if spoken_group_ids and not (spoken_group_ids & revealable_group_ids):
+        raise ContractError(
+            f"All spoken narration is bound to static title/subtitle groups in {slide_id}; "
+            "at least one spoken beat must be bound to a revealable body group"
+        )
 
 
 def validate_contract(
@@ -205,8 +229,8 @@ def validate_contract(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Validate visual narration grounding contract.")
     parser.add_argument("--contract", required=True, type=Path)
-    parser.add_argument("--min-groups", type=int, default=2)
-    parser.add_argument("--max-groups", type=int, default=6)
+    parser.add_argument("--min-groups", type=int, default=DEFAULT_MIN_REVEALABLE_GROUPS)
+    parser.add_argument("--max-groups", type=int, default=DEFAULT_MAX_REVEALABLE_GROUPS)
     parser.add_argument("--profile", type=Path)
     return parser.parse_args()
 

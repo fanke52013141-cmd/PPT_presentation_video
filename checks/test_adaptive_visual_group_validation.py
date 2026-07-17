@@ -51,10 +51,10 @@ def make_contract(body_count: int = 1, *, body_has_narration: bool = True) -> di
                 "mask_target": f"正文视觉岛{index}",
             }
         )
-        if body_has_narration and index == 1:
+        if body_has_narration:
             beats.append(
                 {
-                    "id": "body_beat",
+                    "id": f"body_beat_{index}",
                     "group_id": group_id,
                     "content_unit_id": unit_id,
                     "visible_anchor": f"正文{index}",
@@ -64,7 +64,10 @@ def make_contract(body_count: int = 1, *, body_has_narration: bool = True) -> di
             )
     return {
         "version": "visual_contract_v1",
-        "presentation_policy": {"subtitle_policy": "no_slides_have_subtitle"},
+        "presentation_policy": {
+            "subtitle_policy": "no_slides_have_subtitle",
+            "visual_narration_mapping": "one_visual_element_to_one_narration_beat_v1",
+        },
         "slides": [
             {
                 "slide_id": "slide_001",
@@ -103,7 +106,7 @@ def test_zero_body_groups_remains_invalid() -> None:
 
 
 def test_title_only_narration_binding_is_invalid() -> None:
-    with pytest.raises(ContractError, match="All spoken narration is bound to static"):
+    with pytest.raises(ContractError, match="must have exactly one non-empty narration beat"):
         validate_contract(make_contract(body_has_narration=False), 1, 10, read_pipeline_profile())
 
 
@@ -128,7 +131,7 @@ def test_step2_prompt_compatibility_detects_legacy_field_dependencies() -> None:
     )
     defaults = server.default_step2_prompts()
     assert server.step2_prompt_compatibility(defaults) == {
-        "contract_version": "step2_minimal_v2",
+        "contract_version": "step2_narration_visual_v3",
         "script_prompt_legacy": False,
         "visual_prompt_legacy": False,
         "compatible": True,

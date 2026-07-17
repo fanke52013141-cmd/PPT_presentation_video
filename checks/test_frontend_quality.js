@@ -30,7 +30,6 @@ for (const requiredStep2Token of [
   'step2-prompt-template-create-panel',
   'step2-slide-title-input',
   'step2-slide-subtitle-input',
-  'step2-slide-body-input',
   'step2-slide-narration-input',
 ]) {
   if (!html.includes(requiredStep2Token)) throw new Error(`simplified Step 2 UI missing: ${requiredStep2Token}`);
@@ -68,6 +67,12 @@ for (const backgroundMode of ['data-mode-card="image"', 'data-mode-card="solid"'
 }
 if (!app.includes('handleStep2MapEditorInput') || !app.includes('handleStep2MapEditorChange')) {
   throw new Error('Step 2 visual/narration mapping is not editable');
+}
+if (!html.includes('step2-slide-narration-input') || !html.includes('readonly aria-describedby="step2-narration-source-hint"')) {
+  throw new Error('Step 2 full narration is not a derived read-only view');
+}
+for (const confusingMappingToken of ['画面文字 / 元素名称', '对应旁白与绑定关系', '<span>绑定到</span>']) {
+  if (app.includes(confusingMappingToken)) throw new Error(`Step 2 still exposes internal mapping control: ${confusingMappingToken}`);
 }
 if (!css.includes('grid-column: 3 / 5') || !css.includes('grid-row: 2')) {
   throw new Error('stale step status is not positioned below the step label');

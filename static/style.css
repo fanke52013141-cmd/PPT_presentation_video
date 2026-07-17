@@ -5328,6 +5328,164 @@ button.success:disabled,
   border-color: #ffe1e1;
 }
 
+/* Step 2 narration-first editor: one visible card equals one narration beat. */
+#step-panel-2 .step2-slide-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 14px 18px !important;
+}
+
+#step-panel-2 .step2-slide-fields label > span {
+  margin: 0 0 8px !important;
+  font-size: 14px !important;
+  line-height: 20px !important;
+}
+
+#step-panel-2 #step2-slide-title-input,
+#step-panel-2 #step2-slide-subtitle-input {
+  width: 100% !important;
+  min-height: 44px !important;
+  padding: 9px 12px !important;
+  font-size: 16px !important;
+  line-height: 24px !important;
+}
+
+#step-panel-2 .step2-full-narration-field {
+  grid-column: 1 / -1;
+}
+
+#step-panel-2 #step2-slide-narration-input[readonly] {
+  width: 100% !important;
+  min-height: 86px !important;
+  padding: 12px 14px !important;
+  border: 1px solid #e5e9f2 !important;
+  background: #f8f9fc !important;
+  color: #606a7a !important;
+  font-size: 15px !important;
+  line-height: 1.7 !important;
+  cursor: default;
+}
+
+#step2-narration-source-hint {
+  display: block;
+  margin-top: 6px;
+  color: #8b94a5;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.vn-group-card {
+  padding: 16px 18px !important;
+  border-left-width: 4px !important;
+}
+
+.vn-group-head {
+  display: grid;
+  grid-template-columns: 28px minmax(110px, 1fr) 28px minmax(140px, 1.2fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+  margin-bottom: 12px;
+}
+
+.vn-type-tag,
+.vn-map-target {
+  color: #3b4352;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.vn-map-arrow {
+  color: #8d7bf4;
+  font-size: 18px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.vn-beat-count.is-error {
+  border-color: #ffd5dc;
+  background: #fff3f5;
+  color: #c13e55;
+}
+
+.vn-group-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  align-items: stretch;
+  gap: 18px;
+}
+
+.vn-visual,
+.vn-narration {
+  gap: 0;
+}
+
+.vn-beat {
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  margin: 0;
+}
+
+.vn-edit-field {
+  height: 100%;
+  gap: 6px;
+}
+
+.vn-edit-field > span {
+  min-height: 18px;
+  color: #70798a;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.vn-edit-field input,
+.vn-edit-field textarea {
+  min-height: 92px;
+  height: 100%;
+  padding: 11px 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 1.65;
+  resize: vertical;
+}
+
+.vn-edit-field input {
+  min-height: 46px;
+  height: auto;
+  align-self: start;
+}
+
+.vn-orphan-hint {
+  margin: -2px 0 10px;
+  color: #8b5460;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+@media (max-width: 760px) {
+  #step-panel-2 .step2-slide-fields,
+  .vn-group-body {
+    grid-template-columns: 1fr;
+  }
+
+  #step-panel-2 .step2-full-narration-field {
+    grid-column: auto;
+  }
+
+  .vn-group-head {
+    grid-template-columns: 28px 1fr auto;
+  }
+
+  .vn-map-arrow,
+  .vn-map-target {
+    display: none;
+  }
+}
+
 /* AI Mask controls live here so the product has one visual source of truth. */
 .ai-mask-compact-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:.65rem;margin-top:.75rem}
 .ai-mask-param-row{display:grid;grid-template-columns:minmax(112px,1fr) minmax(88px,120px) 28px;align-items:center;gap:.5rem;border:1px solid var(--color-border-default);border-radius:14px;padding:.62rem .72rem;background:var(--color-bg-surface);box-shadow:var(--shadow-card)}

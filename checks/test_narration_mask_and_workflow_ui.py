@@ -12,6 +12,7 @@ from server import (
     narration_dedupe_key,
     normalize_narration_segments,
     normalize_slide_script_plan,
+    normalize_slide_visual_plan,
     normalize_visual_contract,
     normalize_visual_elements,
 )
@@ -119,7 +120,7 @@ def test_step2_script_plan_normalizes_to_minimal_step_a_contract():
     assert visual_input == plan
 
 
-def test_step2_visual_plan_keeps_only_one_binding_per_narration():
+def test_step2_visual_element_normalization_does_not_silently_delete_duplicate_text():
     elements = normalize_visual_elements(
         [
             {
@@ -138,7 +139,76 @@ def test_step2_visual_plan_keeps_only_one_binding_per_narration():
             },
         ]
     )
-    assert [item["narration"] for item in elements] == ["同一段旁白。", ""]
+    assert [item["narration"] for item in elements] == ["同一段旁白。", "同一段旁白！"]
+
+
+def test_step2_visual_plan_requires_one_to_one_complete_narration_mapping():
+    script_plan = {
+        "title": "测试",
+        "slides": [
+            {
+                "slide_id": "slide_001",
+                "slide_title": "第一页",
+                "slide_subtitle": "说明",
+                "narration": "先介绍本页主题。再讲正文内容。",
+            }
+        ],
+    }
+    valid = normalize_slide_visual_plan(
+        {
+            "slides": [
+                {
+                    "slide_id": "slide_001",
+                    "visual_elements": [
+                        {
+                            "element_id": "el_001",
+                            "role": "title",
+                            "visual_type": "text",
+                            "visual_description": "第一页",
+                            "narration": "先介绍本页主题。",
+                        },
+                        {
+                            "element_id": "el_002",
+                            "role": "body",
+                            "visual_type": "picture",
+                            "visual_description": "一个连续的正文画面",
+                            "narration": "再讲正文内容。",
+                        },
+                    ],
+                }
+            ]
+        },
+        script_plan,
+    )
+    assert len(valid["slides"][0]["visual_elements"]) == 2
+
+    invalid = json.loads(json.dumps(valid, ensure_ascii=False))
+    invalid["slides"][0]["visual_elements"][0]["narration"] = ""
+    with pytest.raises(HTTPException, match="没有对应演讲片段"):
+        normalize_slide_visual_plan(invalid, script_plan)
+
+
+def test_step2_visual_plan_rejects_separate_subtitle_element():
+    script_plan = {
+        "title": "测试",
+        "slides": [{"slide_id": "slide_001", "slide_title": "标题", "slide_subtitle": "副标题", "narration": "先讲标题。再讲正文。"}],
+    }
+    with pytest.raises(HTTPException, match="只能包含 title 和 body"):
+        normalize_slide_visual_plan(
+            {
+                "slides": [
+                    {
+                        "slide_id": "slide_001",
+                        "visual_elements": [
+                            {"element_id": "el_001", "role": "title", "visual_type": "text", "visual_description": "标题", "narration": "先讲标题。"},
+                            {"element_id": "el_002", "role": "subtitle", "visual_type": "text", "visual_description": "副标题", "narration": ""},
+                            {"element_id": "el_003", "role": "body", "visual_type": "text", "visual_description": "正文", "narration": "再讲正文。"},
+                        ],
+                    }
+                ]
+            },
+            script_plan,
+        )
 
 
 def test_default_step2_prompts_explicitly_forbid_duplicate_narration_binding():
@@ -147,6 +217,8 @@ def test_default_step2_prompts_explicitly_forbid_duplicate_narration_binding():
     assert "一项信息只讲一次" in script_prompt
     assert "一个片段只绑定一个元素" in visual_prompt
     assert "不得重复、遗漏或改写" in visual_prompt
+    assert "一个元素也只能绑定一个片段" in visual_prompt
+    assert "每个 `narration` 都必须非空" in visual_prompt
 
 
 def test_mask_size_cursor_and_outline_contracts():

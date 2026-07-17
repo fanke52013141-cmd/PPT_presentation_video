@@ -213,13 +213,10 @@
                   <span>副标题</span>
                   <input id="step2-slide-subtitle-input" class="step2-soft-input" type="text">
                 </label>
-                <label>
-                  <span>正文</span>
-                  <textarea id="step2-slide-body-input" class="step2-soft-input" rows="7"></textarea>
-                </label>
-                <label>
-                  <span>演讲稿</span>
-                  <textarea id="step2-slide-narration-input" class="step2-soft-input" rows="9"></textarea>
+                <label class="step2-full-narration-field">
+                  <span>完整演讲稿</span>
+                  <textarea id="step2-slide-narration-input" class="step2-soft-input" rows="5" readonly aria-describedby="step2-narration-source-hint"></textarea>
+                  <small id="step2-narration-source-hint">由下方每个画面的演讲片段按顺序自动组成；请直接在对应画面卡片中修改片段。</small>
                 </label>
               </div>
               <div id="step2-visual-narration-map" class="step2-vn-map" aria-live="polite"></div>

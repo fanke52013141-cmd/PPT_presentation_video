@@ -33,7 +33,7 @@ def main() -> None:
                 "slide_title": "主标题",
                 "slide_subtitle": "",
                 "body": "正文要点",
-                "narration": "这是演讲稿。",
+                "narration": "先看本页主题。这是演讲稿正文。",
             }
         ],
     }
@@ -45,29 +45,37 @@ def main() -> None:
                     "visual_elements": [
                         {
                             "element_id": "el_001",
+                            "role": "title",
+                            "visual_type": "text",
+                            "visual_description": "主标题",
+                            "narration": "先看本页主题。",
+                        },
+                        {
+                            "element_id": "el_002",
                             "role": "body",
                             "visual_type": "text",
                             "visual_description": "正文要点",
-                            "narration": "这是演讲稿。",
+                            "narration": "这是演讲稿正文。",
                             "source_segment_id": "seg_001",
                             "text": "旧字段不应进入结果",
                         }
                     ],
                 }
             ]
-        }
+        },
+        script_plan,
     )
-    element = visual_plan["slides"][0]["visual_elements"][0]
+    element = visual_plan["slides"][0]["visual_elements"][1]
     assert set(element) == {"element_id", "role", "visual_type", "visual_description", "narration"}
-    assert element["element_id"] == "el_001"
+    assert element["element_id"] == "el_002"
     assert element["visual_type"] == "text"
     assert element["visual_description"] == "正文要点"
     contract = server_module.compose_visual_contract_from_plans(script_plan, visual_plan, "test", "测试主题")
-    group = contract["slides"][0]["visual_groups"][0]
-    assert group["element_id"] == "el_001"
+    group = contract["slides"][0]["visual_groups"][1]
+    assert group["element_id"] == "el_002"
     assert group["visual_type"] == "text"
-    semantic_block = server_module.deterministic_semantic_blocks("slide_001", contract["slides"][0], None)[0]
-    assert semantic_block["element_id"] == "el_001"
+    semantic_block = server_module.deterministic_semantic_blocks("slide_001", contract["slides"][0], None)[1]
+    assert semantic_block["element_id"] == "el_002"
     assert semantic_block["visual_type"] == "text"
 
     required_actions = {
@@ -171,6 +179,14 @@ def main() -> None:
                         "visible_anchor": "需要讲解的副标题",
                         "spoken_intent": "讲解副标题",
                         "spoken_text": "需要讲解的副标题。",
+                    },
+                    {
+                        "id": "visual_beat",
+                        "group_id": "visual_only_group",
+                        "content_unit_id": "visual_only_unit",
+                        "visible_anchor": "画面提示",
+                        "spoken_intent": "解释画面提示",
+                        "spoken_text": "这里解释画面提示。",
                     }
                 ],
             }

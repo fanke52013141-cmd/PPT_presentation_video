@@ -136,6 +136,7 @@ def validate_slide(
         )
 
     group_ids: set[str] = set()
+    title_group_ids: set[str] = set()
     content_unit_ids: set[str] = set()
     visible_text_by_id: dict[str, str] = {}
     content_unit_by_group_id: dict[str, str] = {}
@@ -149,6 +150,8 @@ def validate_slide(
             raise ContractError(f"Duplicate visual group id in {slide_id}: {group_id}")
         group_ids.add(group_id)
         role = str(group.get("role", "content_body")).strip()
+        if role == "title":
+            title_group_ids.add(group_id)
         for key in ["visible_text", "visual_anchor", "narration_function"]:
             if not str(group.get(key, "")).strip():
                 raise ContractError(f"Visual group {group_id} missing {key} in {slide_id}")
@@ -159,11 +162,19 @@ def validate_slide(
         content_unit_by_group_id[group_id] = content_unit_id
         visible_text_by_id[group_id] = str(group.get("visible_text", "")).strip()
 
+    strict_one_to_one_mapping = (
+        str(presentation_policy.get("visual_narration_mapping") or "").strip()
+        == "one_visual_element_to_one_narration_beat_v1"
+    )
+    if strict_one_to_one_mapping and len(title_group_ids) != 1:
+        raise ContractError(f"Expected exactly one title visual group in {slide_id}, got {len(title_group_ids)}")
+
     beats = slide.get("narration_beats")
     if not isinstance(beats, list) or not beats:
         raise ContractError(f"Slide missing narration_beats[]: {slide_id}")
     beat_ids: set[str] = set()
     spoken_group_ids: set[str] = set()
+    spoken_beat_count_by_group: dict[str, int] = {}
     for beat in beats:
         if not isinstance(beat, dict):
             raise ContractError(f"Invalid narration beat in {slide_id}")
@@ -191,6 +202,7 @@ def validate_slide(
         spoken_text = str(beat.get("spoken_text", "")).strip()
         if spoken_text:
             spoken_group_ids.add(group_id)
+            spoken_beat_count_by_group[group_id] = spoken_beat_count_by_group.get(group_id, 0) + 1
         visible_anchor = str(beat.get("visible_anchor", "")).strip()
         visible_text = visible_text_by_id.get(group_id, "")
         if spoken_text and visible_anchor not in spoken_text and visible_text not in spoken_text:
@@ -204,7 +216,17 @@ def validate_slide(
         for group in revealable_groups
         if isinstance(group, dict)
     }
-    if spoken_group_ids and not (spoken_group_ids & revealable_group_ids):
+    if strict_one_to_one_mapping:
+        required_spoken_group_ids = title_group_ids | revealable_group_ids
+        for group_id in sorted(required_spoken_group_ids):
+            spoken_count = spoken_beat_count_by_group.get(group_id, 0)
+            if spoken_count == 1:
+                continue
+            raise ContractError(
+                f"Visual group {group_id} in {slide_id} must have exactly one non-empty narration beat, "
+                f"got {spoken_count}"
+            )
+    elif spoken_group_ids and not (spoken_group_ids & revealable_group_ids):
         raise ContractError(
             f"All spoken narration is bound to static title/subtitle groups in {slide_id}; "
             "at least one spoken beat must be bound to a revealable body group"

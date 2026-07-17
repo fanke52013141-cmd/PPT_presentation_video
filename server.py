@@ -3228,7 +3228,7 @@ def compose_step2_system_prompt(system_content: str, output_example: str) -> str
 def step2_script_prompt_uses_legacy_contract(system_content: str) -> bool:
     """Detect old prompts that require fields removed from the Step 2A input/output contract."""
     text = str(system_content or "")
-    if "step2_script_v2" in text:
+    if "step2_script_v2" in text or "step2_script_v3_narration_first" in text:
         return False
     legacy_patterns = (
         r"body_points\s*(?:必须|應|应|需|是)",
@@ -3241,7 +3241,7 @@ def step2_script_prompt_uses_legacy_contract(system_content: str) -> bool:
 def step2_visual_prompt_uses_legacy_contract(system_content: str) -> bool:
     """Detect prompts that depend on Step 2A fields no longer sent to Step 2B."""
     text = str(system_content or "")
-    if "step2_visual_v2" in text:
+    if "step2_visual_v2" in text or "step2_visual_v4_one_to_one" in text:
         return False
     legacy_patterns = (
         r"narration_segments\[\].{0,40}(?:唯一依据|唯一依據)",
@@ -3256,7 +3256,7 @@ def step2_prompt_compatibility(prompts: Dict[str, str]) -> Dict[str, Any]:
     script_legacy = step2_script_prompt_uses_legacy_contract(prompts.get("script_system", ""))
     visual_legacy = step2_visual_prompt_uses_legacy_contract(prompts.get("visual_system", ""))
     return {
-        "contract_version": "step2_minimal_v2",
+        "contract_version": "step2_narration_visual_v3",
         "script_prompt_legacy": script_legacy,
         "visual_prompt_legacy": visual_legacy,
         "compatible": not script_legacy and not visual_legacy,
@@ -3421,22 +3421,20 @@ def normalize_slide_script_plan(plan: Dict[str, Any], project_title: str) -> Dic
 def normalize_visual_elements(value: Any) -> List[Dict[str, str]]:
     elements = value if isinstance(value, list) else []
     normalized: List[Dict[str, str]] = []
-    bound_narration: set[str] = set()
-    allowed_roles = {"title", "subtitle", "body", "decoration"}
     for index, element in enumerate(elements, start=1):
         if not isinstance(element, dict):
             continue
         role = str(element.get("role") or "body").strip().lower()
-        if role not in allowed_roles:
+        if role in {"content_body", "body_content"}:
             role = "body"
-        visual_description = clean_planning_text(element.get("visual_description") or "")
+        visual_description = clean_planning_text(
+            element.get("visual_description")
+            or element.get("visible_text")
+            or element.get("text")
+            or ""
+        )
         narration = clean_planning_text(element.get("narration") or "")
-        narration_key = narration_dedupe_key(narration)
-        if narration_key and narration_key in bound_narration:
-            narration = ""
-        elif narration_key:
-            bound_narration.add(narration_key)
-        visual_type = normalize_visual_type(element.get("visual_type"))
+        visual_type = normalize_visual_type(element.get("visual_type"), has_text=bool(visual_description))
         if not visual_description:
             continue
         normalized.append(
@@ -3451,10 +3449,76 @@ def normalize_visual_elements(value: Any) -> List[Dict[str, str]]:
     return normalized
 
 
-def normalize_slide_visual_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
+def narration_sequence_key(value: Any) -> str:
+    """Compare Step A narration with Step B fragments without hiding punctuation changes."""
+    return re.sub(r"\s+", "", clean_planning_text(value))
+
+
+def validate_slide_visual_mapping(
+    slide_id: str,
+    elements: List[Dict[str, str]],
+    script_slide: Optional[Dict[str, Any]] = None,
+) -> None:
+    title_elements = [element for element in elements if element.get("role") == "title"]
+    body_elements = [element for element in elements if element.get("role") == "body"]
+    unsupported_roles = sorted({
+        str(element.get("role") or "")
+        for element in elements
+        if element.get("role") not in {"title", "body"}
+    })
+    if unsupported_roles:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"{slide_id} 包含不参与一对一旁白映射的 role: {', '.join(unsupported_roles)}。"
+                "副标题由系统直接渲染，装饰由生图阶段处理；visual_elements 只能包含 title 和 body。"
+            ),
+        )
+    if len(title_elements) != 1 or not elements or elements[0].get("role") != "title":
+        raise HTTPException(status_code=500, detail=f"{slide_id} 必须以且仅以一个 title 元素开头")
+    if not body_elements:
+        raise HTTPException(status_code=500, detail=f"{slide_id} 至少需要一个 body 视觉元素")
+    title = title_elements[0]
+    if title.get("visual_type") != "text":
+        raise HTTPException(status_code=500, detail=f"{slide_id} 的 title 必须使用 text 形式")
+    for element in elements:
+        if not str(element.get("narration") or "").strip():
+            raise HTTPException(
+                status_code=500,
+                detail=f"{slide_id} 的 {element.get('element_id') or 'visual element'} 没有对应演讲片段",
+            )
+    if not isinstance(script_slide, dict):
+        return
+    expected_title = clean_planning_text(script_slide.get("slide_title") or "")
+    if expected_title and clean_planning_text(title.get("visual_description")) != expected_title:
+        raise HTTPException(
+            status_code=500,
+            detail=f"{slide_id} 的标题画面文字必须逐字等于 slide_title: {expected_title}",
+        )
+    source_narration = clean_planning_text(script_slide.get("narration") or "")
+    combined_narration = "".join(str(element.get("narration") or "") for element in elements)
+    if narration_sequence_key(combined_narration) != narration_sequence_key(source_narration):
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"{slide_id} 的视觉元素演讲片段未能完整还原 Step A 演讲稿。"
+                "每个片段必须非空、连续、无遗漏、无重复且保持原顺序。"
+            ),
+        )
+
+
+def normalize_slide_visual_plan(
+    plan: Dict[str, Any],
+    script_plan: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     slides = plan.get("slides") if isinstance(plan, dict) else []
     if not isinstance(slides, list) or not slides:
         raise HTTPException(status_code=500, detail="AI 没有返回可用的 slide_visual_plan.slides")
+    script_by_id = {
+        str(slide.get("slide_id") or "").strip(): slide
+        for slide in ((script_plan or {}).get("slides") or [])
+        if isinstance(slide, dict)
+    }
     normalized_slides: List[Dict[str, Any]] = []
     for index, slide in enumerate(slides, start=1):
         if not isinstance(slide, dict):
@@ -3465,6 +3529,7 @@ def normalize_slide_visual_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
         elements = normalize_visual_elements(slide.get("visual_elements"))
         if not elements:
             raise HTTPException(status_code=500, detail=f"{slide_id} 缺少 visual_elements")
+        validate_slide_visual_mapping(slide_id, elements, script_by_id.get(slide_id))
         normalized_slides.append({"slide_id": slide_id, "visual_elements": elements})
     if not normalized_slides:
         raise HTTPException(status_code=500, detail="AI 没有返回可用的 slide_visual_plan.slides")
@@ -3655,7 +3720,7 @@ def build_step2_visual_user_prompt(script_plan: Dict[str, Any]) -> str:
     return json.dumps(
         {
             "slide_script_plan": minimal_script_plan,
-            "output_goal": "根据每页完整 narration 定义 visual_elements、角色、Text/Picture 类型及逐字旁白绑定。",
+            "output_goal": "把每页完整 narration 按原文顺序切成非空片段；一个片段只对应一个画面文字或画面元素，全部片段拼接后必须完整还原原演讲稿。",
         },
         ensure_ascii=False,
         indent=2,
@@ -3781,6 +3846,7 @@ def compose_visual_contract_from_plans(
         "presentation_policy": {
             "subtitle_policy": subtitle_policy,
             "subtitle_decided_by": "narration_first_step2",
+            "visual_narration_mapping": "one_visual_element_to_one_narration_beat_v1",
         },
         "topic": {
             "topic_id": "topic_" + project_id,
@@ -4171,7 +4237,7 @@ def execute_step2_visual_plan(project_id: str, db: Session = Depends(get_db)):
         schema_hint=visual_plan_schema_hint(),
         trace_id=trace_id,
     )
-    plan = normalize_slide_visual_plan(raw_plan)
+    plan = normalize_slide_visual_plan(raw_plan, script_plan)
     write_json_atomic(step2_visual_plan_path(project), plan)
     write_project_log(project, "step2_visual_plan_written", trace_id=trace_id, slide_count=len(plan.get("slides", [])))
     return {"success": True, "visual_plan": plan}
@@ -4191,7 +4257,8 @@ def update_step2_visual_plan(project_id: str, payload: Dict[str, Any], db: Sessi
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-    plan = normalize_slide_visual_plan(payload)
+    script_plan = read_plan_json(step2_script_plan_path(project), "请先生成演讲稿规划")
+    plan = normalize_slide_visual_plan(payload, script_plan)
     write_json_atomic(step2_visual_plan_path(project), plan)
     return {"success": True, "visual_plan": plan}
 
@@ -4205,7 +4272,10 @@ def compose_step2_visual_contract(project_id: str, db: Session = Depends(get_db)
     project_title = (project.name or "").strip() or str(brief.get("title") or "未命名项目")
     article_summary = str(brief.get("summary") or build_article_summary(str(brief.get("content") or "")))
     script_plan = read_plan_json(step2_script_plan_path(project), "请先生成演讲稿规划")
-    visual_plan = read_plan_json(step2_visual_plan_path(project), "请先生成视觉规划")
+    visual_plan = normalize_slide_visual_plan(
+        read_plan_json(step2_visual_plan_path(project), "请先生成视觉规划"),
+        script_plan,
+    )
     trace_id = uuid.uuid4().hex[:8]
     contract = compose_visual_contract_from_plans(script_plan, visual_plan, project_id, project_title)
     contract = finalize_step2_contract(

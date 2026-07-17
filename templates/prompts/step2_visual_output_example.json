@@ -12,13 +12,6 @@
         },
         {
           "element_id": "el_002",
-          "role": "subtitle",
-          "visual_type": "text",
-          "visual_description": "大模型处理文字的最小单位",
-          "narration": ""
-        },
-        {
-          "element_id": "el_003",
           "role": "body",
           "visual_type": "picture",
           "visual_description": "页面中部用一组独立积木表示被切分的汉字和单词，积木依次进入右侧的大模型，突出“基本处理单位”的含义。",
@@ -38,20 +31,13 @@
         },
         {
           "element_id": "el_002",
-          "role": "subtitle",
-          "visual_type": "text",
-          "visual_description": "短单词与长单词的差异",
-          "narration": ""
-        },
-        {
-          "element_id": "el_003",
           "role": "body",
           "visual_type": "picture",
           "visual_description": "左侧独立视觉岛展示 apple 作为一个完整 Token，用单个圆角词块表达。",
           "narration": "像 apple 这样的短单词通常可以作为一个 Token；"
         },
         {
-          "element_id": "el_004",
+          "element_id": "el_003",
           "role": "body",
           "visual_type": "picture",
           "visual_description": "右侧独立视觉岛展示 unhappiness 被清晰拆成 un 与 happiness 两个词块，中间用分割符强调拆分关系。",

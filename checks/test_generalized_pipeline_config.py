@@ -48,7 +48,9 @@ def test_step2_prompt_contracts_are_minimal() -> None:
     assert "完整还原本页原始演讲稿" in visual_system
     assert "最小的 Mask/Reveal 原子" in visual_system
     assert "多个独立卡片" in visual_system
-    assert "每个需要独立 Mask/Reveal 的正文元素都必须绑定一段非空旁白" in visual_system
+    assert "一个 visual element 对应且只对应一个非空 narration 片段" in visual_system
+    assert "不生成 `role=\"subtitle\"` 元素" in visual_system
+    assert all(element["narration"] for slide in visual_example["slides"] for element in slide["visual_elements"])
     first_visual_element = visual_example["slides"][0]["visual_elements"][0]
     assert set(first_visual_element) == {"element_id", "role", "visual_type", "visual_description", "narration"}
     assert "不输出 `body_points`" in visual_system

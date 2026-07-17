@@ -1364,14 +1364,12 @@ function renderStep2Workspace() {
     const titleInput = document.getElementById('step2-slide-title-input');
     const subtitleInput = document.getElementById('step2-slide-subtitle-input');
     const subtitleField = document.getElementById('step2-subtitle-field');
-    const bodyInput = document.getElementById('step2-slide-body-input');
     const narrationInput = document.getElementById('step2-slide-narration-input');
     if (titleInput) titleInput.value = slide.main_title || '';
     if (subtitleInput) subtitleInput.value = slide.subtitle || '';
     if (subtitleField) subtitleField.style.display = '';
-    if (bodyInput) bodyInput.value = step2BodyContentText(slide);
     if (narrationInput) narrationInput.value = step2NarrationText(slide);
-    [titleInput, subtitleInput, bodyInput, narrationInput].forEach(input => {
+    [titleInput, subtitleInput].forEach(input => {
       if (!input || input.dataset.boundStep2SimpleEditor === '1') return;
       input.dataset.boundStep2SimpleEditor = '1';
       input.addEventListener('input', () => {
@@ -1386,7 +1384,7 @@ function renderStep2Workspace() {
         scheduleStep2AutoSave();
       });
     });
-    [bodyInput, narrationInput].forEach(input => requestAnimationFrame(() => autoResizeTextarea(input)));
+    requestAnimationFrame(() => autoResizeTextarea(narrationInput));
     renderStep2VisualNarrationMap(slide);
 
   }
@@ -1547,7 +1545,7 @@ function step2NarrationText(slide) {
       if (key) seen.add(key);
       return true;
     })
-    .join('\n');
+    .join('');
 }
 
 function narrationDedupeKey(text) {
@@ -1614,26 +1612,7 @@ function syncStep2SimpleFieldsToInternalGroups(slide) {
     titleGroup.mask_target = title;
     titleGroup.visual_type = 'text';
   }
-  let subtitleGroup = slide.visual_groups.find(group => group?.role === 'subtitle');
-  if (!subtitleGroup && subtitle) {
-    const titleIndex = slide.visual_groups.findIndex(group => group?.role === 'title');
-    const insertIndex = titleIndex >= 0 ? titleIndex + 1 : 0;
-    subtitleGroup = {
-      id: `${slide.slide_id}_subtitle_manual`,
-      element_id: 'subtitle_manual',
-      role: 'subtitle',
-      visible_text: subtitle,
-      display_text: subtitle,
-      visual_anchor: subtitle,
-      narration_function: '补充说明本页主题',
-      reveal_order: insertIndex + 1,
-      content_unit_id: `${slide.slide_id}_subtitle_manual_unit`,
-      mask_target: subtitle,
-      visual_type: 'text',
-    };
-    slide.visual_groups.splice(insertIndex, 0, subtitleGroup);
-    slide.visual_groups.forEach((group, index) => { group.reveal_order = index + 1; });
-  }
+  const subtitleGroup = slide.visual_groups.find(group => group?.role === 'subtitle');
   if (subtitleGroup && subtitle) {
     subtitleGroup.visible_text = subtitle;
     subtitleGroup.display_text = subtitle;
@@ -1656,27 +1635,6 @@ function saveCurrentSlideInputToState() {
     slide.subtitle = document.getElementById('step2-slide-subtitle-input')?.value
       ?? document.getElementById('step2-subtitle').value;
     slide.core_message = document.getElementById('step2-core-message').value;
-    const bodyText = normalizeStep2MultilineText(document.getElementById('step2-slide-body-input')?.value || '');
-    slide.body_content = bodyText.split(/\r?\n/).map(item => item.trim()).filter(Boolean);
-    const narrationText = normalizeStep2NarrationText(document.getElementById('step2-slide-narration-input')?.value || '');
-    const narrationLines = uniqueNarrationLines(narrationText
-      .split(/\n\s*\n|\r?\n/)
-      .map(item => item.trim())
-      .filter(Boolean));
-    const existingBeats = Array.isArray(slide.narration_beats) ? slide.narration_beats : [];
-    slide.narration_beats = narrationLines.map((text, index) => {
-      const previous = existingBeats[index] || {};
-      const fallbackGroup = slide.visual_groups?.[Math.min(index, Math.max(0, (slide.visual_groups?.length || 1) - 1))];
-      return {
-        ...previous,
-        id: previous.id || `${slide.slide_id}_beat_${String(index + 1).padStart(3, '0')}`,
-        group_id: previous.group_id || fallbackGroup?.id || '',
-        visible_anchor: previous.visible_anchor || fallbackGroup?.visible_text || '',
-        spoken_intent: previous.spoken_intent || fallbackGroup?.visual_anchor || '',
-        spoken_text: text,
-        content_unit_id: previous.content_unit_id || fallbackGroup?.content_unit_id || `${slide.slide_id}_unit_${String(index + 1).padStart(3, '0')}`,
-      };
-    });
     syncStep2SimpleFieldsToInternalGroups(slide);
     renderStep2VisualNarrationMap(slide);
   }
@@ -1701,9 +1659,8 @@ function renderStep2VisualNarrationMap(slide) {
     if (!beat.id) beat.id = `${slide.slide_id}_beat_${String(index + 1).padStart(3, '0')}`;
   });
 
-  const roleLabels = { title: '标题', subtitle: '副标题', body: '正文', body_content: '正文', content_body: '正文', decoration: '装饰' };
   const roleOrder = { title: 0, subtitle: 1, body: 2, body_content: 2, content_body: 2, decoration: 3 };
-  const sortedGroups = groups.slice().map((g, i) => ({ g, i })).sort((a, b) => {
+  const sortedGroups = groups.filter(group => !['subtitle', 'decoration'].includes(String(group?.role || ''))).map((g, i) => ({ g, i })).sort((a, b) => {
     const ra = Number(a.g?.reveal_order ?? roleOrder[a.g?.role] ?? a.i);
     const rb = Number(b.g?.reveal_order ?? roleOrder[b.g?.role] ?? b.i);
     return ra - rb;
@@ -1718,49 +1675,40 @@ function renderStep2VisualNarrationMap(slide) {
       return true;
     });
     const role = String(group?.role || 'content_body');
-    const roleLabel = roleLabels[role] || role;
     const roleValue = role === 'body' || role === 'body_content' ? 'content_body' : role;
-    const visibleText = String(group?.visible_text || group?.display_text || '');
-    const visualAnchor = String(group?.visual_anchor || group?.mask_target || '');
     const visualType = group?.visual_type === 'text' ? 'text' : 'picture';
+    const visualContent = visualType === 'text'
+      ? String(group?.display_text || group?.visible_text || group?.visual_anchor || '')
+      : String(group?.visual_anchor || group?.mask_target || '');
+    const typeLabel = visualType === 'text' ? '画面文字' : '画面元素';
+    const mappingReady = matched.length === 1 && String(matched[0]?.spoken_text || '').trim();
     const beatsHtml = matched.length
-      ? matched.map(beat => renderStep2EditableBeat(beat, groups)).join('')
-      : '<div class="vn-beat vn-beat-empty">当前没有旁白绑定到这个视觉元素</div>';
+      ? matched.map((beat, beatIndex) => renderStep2EditableBeat(beat, beatIndex, matched.length)).join('')
+      : '<div class="vn-beat vn-beat-empty">缺少对应演讲片段，请重新生成 Slides → 可视化。</div>';
+    const visualField = visualType === 'text'
+      ? `<label class="vn-edit-field">
+          <span>画面文字</span>
+          <input type="text" value="${escHtml(visualContent)}" data-step2-group-id="${escHtml(gid)}" data-step2-group-field="visual_content">
+        </label>`
+      : `<label class="vn-edit-field">
+          <span>画面元素描述</span>
+          <textarea rows="4" data-step2-group-id="${escHtml(gid)}" data-step2-group-field="visual_content">${escHtml(visualContent)}</textarea>
+        </label>`;
 
     return `
       <div class="vn-group-card vn-role-${escHtml(roleValue)}" data-group-id="${escHtml(gid)}">
         <div class="vn-group-head">
           <span class="vn-group-num">${idx + 1}</span>
-          <label class="vn-inline-control">角色
-            <select data-step2-group-id="${escHtml(gid)}" data-step2-group-field="role">
-              <option value="title"${roleValue === 'title' ? ' selected' : ''}>标题</option>
-              <option value="subtitle"${roleValue === 'subtitle' ? ' selected' : ''}>副标题</option>
-              <option value="content_body"${roleValue === 'content_body' ? ' selected' : ''}>正文</option>
-              <option value="decoration"${roleValue === 'decoration' ? ' selected' : ''}>装饰</option>
-            </select>
-          </label>
-          <label class="vn-inline-control">形式
-            <select data-step2-group-id="${escHtml(gid)}" data-step2-group-field="visual_type">
-              <option value="text"${visualType === 'text' ? ' selected' : ''}>Text</option>
-              <option value="picture"${visualType === 'picture' ? ' selected' : ''}>Picture</option>
-            </select>
-          </label>
-          <span class="vn-group-anchor">${escHtml(visibleText || roleLabel)}</span>
-          <span class="vn-beat-count">${matched.length} 段旁白</span>
+          <span class="vn-type-tag">${typeLabel}</span>
+          <span class="vn-map-arrow" aria-hidden="true">→</span>
+          <span class="vn-map-target">对应演讲片段</span>
+          <span class="vn-beat-count${mappingReady ? '' : ' is-error'}">${mappingReady ? '已对应' : '需要检查'}</span>
         </div>
         <div class="vn-group-body">
           <div class="vn-visual">
-            <label class="vn-edit-field">
-              <span>画面文字 / 元素名称</span>
-              <input type="text" value="${escHtml(visibleText)}" data-step2-group-id="${escHtml(gid)}" data-step2-group-field="visible_text">
-            </label>
-            <label class="vn-edit-field">
-              <span>可视化描述</span>
-              <textarea rows="3" data-step2-group-id="${escHtml(gid)}" data-step2-group-field="visual_anchor">${escHtml(visualAnchor)}</textarea>
-            </label>
+            ${visualField}
           </div>
           <div class="vn-narration">
-            <div class="vn-section-label">对应旁白与绑定关系</div>
             ${beatsHtml}
           </div>
         </div>
@@ -1770,36 +1718,24 @@ function renderStep2VisualNarrationMap(slide) {
   const orphanBeats = beats.filter(beat => !usedBeatIds.has(beat.id));
   const orphanHtml = orphanBeats.length
     ? `<div class="vn-orphan">
-        <div class="vn-orphan-head">未关联视觉元素的旁白（${orphanBeats.length} 段）</div>
-        ${orphanBeats.map(beat => renderStep2EditableBeat(beat, groups)).join('')}
+        <div class="vn-orphan-head">发现 ${orphanBeats.length} 段没有对应画面的演讲片段</div>
+        <div class="vn-orphan-hint">当前结构不允许手动选择内部 ID，请重新生成 Slides → 可视化，让系统重新建立一对一关系。</div>
+        ${orphanBeats.map((beat, index) => renderStep2EditableBeat(beat, index, orphanBeats.length)).join('')}
       </div>`
     : '';
 
   container.innerHTML = `
-    <div class="vn-map-title">视觉 ↔ 旁白（可编辑）</div>
-    <div class="vn-map-hint">可修改元素名称、可视化描述、Text/Picture 形式、旁白内容和绑定对象；系统会自动保存，请手动保证画面与旁白含义一致。</div>
+    <div class="vn-map-title">画面与演讲片段</div>
+    <div class="vn-map-hint">每张卡片就是一个 Reveal 单元：左侧是实际画面内容，右侧是该画面出现时播放的演讲片段；两侧内容保持一一对应。</div>
     <div class="vn-groups">${groupCards}</div>
     ${orphanHtml}`;
 }
 
-function renderStep2EditableBeat(beat, groups) {
+function renderStep2EditableBeat(beat, index = 0, total = 1) {
   const beatId = String(beat?.id || '');
-  const selectedGroupId = String(beat?.group_id || '');
-  const groupOptions = [
-    `<option value="" disabled${selectedGroupId ? '' : ' selected'}>请选择视觉元素</option>`,
-    ...groups.map((group, index) => {
-      const groupId = String(group?.id || '');
-      const label = String(group?.visible_text || group?.display_text || `视觉元素 ${index + 1}`);
-      return `<option value="${escHtml(groupId)}"${groupId === selectedGroupId ? ' selected' : ''}>${escHtml(`${index + 1}. ${label}`)}</option>`;
-    }),
-  ].join('');
   return `<div class="vn-beat" data-beat-id="${escHtml(beatId)}">
-    <label class="vn-edit-field vn-binding-field">
-      <span>绑定到</span>
-      <select data-step2-beat-id="${escHtml(beatId)}" data-step2-beat-field="group_id">${groupOptions}</select>
-    </label>
     <label class="vn-edit-field">
-      <span>演讲稿片段</span>
+      <span>${total > 1 ? `演讲片段 ${index + 1}（应合并为一段）` : '演讲片段'}</span>
       <textarea rows="3" data-step2-beat-id="${escHtml(beatId)}" data-step2-beat-field="spoken_text">${escHtml(beat?.spoken_text || '')}</textarea>
     </label>
   </div>`;
@@ -1819,19 +1755,26 @@ function handleStep2MapEditorInput(event) {
   const beatField = target.dataset.step2BeatField;
   let changed = false;
 
-  if (groupId && groupField && groupField !== 'role' && groupField !== 'visual_type') {
+  if (groupId && groupField === 'visual_content') {
     const group = slide.visual_groups?.find(item => item?.id === groupId);
     if (group) {
       const value = target.value;
-      group[groupField] = value;
-      if (groupField === 'visible_text') {
-        if (group.visual_type === 'text') group.display_text = value;
+      if (group.visual_type === 'text') {
+        group.visible_text = value;
+        group.display_text = value;
+        group.visual_anchor = value;
+        group.mask_target = value;
+        group.narration_function = value;
         slide.narration_beats?.filter(beat => beat?.group_id === groupId).forEach(beat => { beat.visible_anchor = value; });
         if (group.role === 'title') slide.main_title = value;
         if (group.role === 'subtitle') slide.subtitle = value;
-      } else if (groupField === 'visual_anchor') {
+      } else {
         group.mask_target = value;
+        group.visual_anchor = value;
         group.narration_function = value || group.visible_text || '';
+        slide.narration_beats?.filter(beat => beat?.group_id === groupId).forEach(beat => {
+          beat.spoken_intent = group.narration_function;
+        });
       }
       changed = true;
     }
@@ -1854,37 +1797,8 @@ function handleStep2MapEditorChange(event) {
   const target = event.target;
   const slide = currentStep2EditorSlide();
   if (!slide || !(target instanceof HTMLElement)) return;
-  const groupId = target.dataset.step2GroupId;
-  const groupField = target.dataset.step2GroupField;
-  const beatId = target.dataset.step2BeatId;
-  const beatField = target.dataset.step2BeatField;
-  let rerender = false;
-
-  if (groupId && (groupField === 'role' || groupField === 'visual_type')) {
-    const group = slide.visual_groups?.find(item => item?.id === groupId);
-    if (group) {
-      group[groupField] = target.value;
-      if (groupField === 'visual_type') {
-        group.display_text = target.value === 'text' ? (group.visible_text || '') : '';
-      }
-      rerender = true;
-    }
-  }
-
-  if (beatId && beatField === 'group_id') {
-    const beat = slide.narration_beats?.find(item => item?.id === beatId);
-    const group = slide.visual_groups?.find(item => item?.id === target.value);
-    if (beat) {
-      beat.group_id = group?.id || '';
-      beat.visible_anchor = group?.visible_text || '';
-      beat.spoken_intent = group?.narration_function || group?.visual_anchor || '';
-      beat.content_unit_id = group?.content_unit_id || '';
-      rerender = true;
-    }
-  }
-
-  if (!rerender) return;
-  renderStep2VisualNarrationMap(slide);
+  if (target.tagName === 'TEXTAREA') autoResizeTextarea(target);
+  syncStep2SummaryInputs(slide);
   scheduleStep2AutoSave();
 }
 

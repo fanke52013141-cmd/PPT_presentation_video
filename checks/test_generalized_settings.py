@@ -165,8 +165,8 @@ def main() -> None:
     assert 'id="step2-prompt-template-create-panel"' in html
     assert 'id="step2-slide-title-input"' in html
     assert 'id="step2-slide-subtitle-input"' in html
-    assert 'id="step2-slide-body-input"' in html
     assert 'id="step2-slide-narration-input"' in html
+    assert 'id="step2-slide-narration-input" class="step2-soft-input" rows="5" readonly' in html
     assert 'style_reference_manager_extension.js' in html
     assert 'id="modal-step2-generate"' in html
     assert 'id="step2-generation-requirement"' in html
@@ -203,6 +203,8 @@ def main() -> None:
     assert "Text/Picture" not in step2_visual_prompt or "visual_type" in step2_visual_prompt
     assert "handleStep2MapEditorInput" in app_js
     assert "handleStep2MapEditorChange" in app_js
+    assert "画面文字 / 元素名称" not in app_js
+    assert "绑定到" not in app_js
     assert server_module.IMAGE_STYLE_PROMPT_KEY == "prompt_system_content"
     assert "previewGlobalAnimationSettings" in app_js
     assert ".config-editor-scroll" in css

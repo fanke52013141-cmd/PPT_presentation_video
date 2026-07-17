@@ -31,7 +31,6 @@ def main() -> None:
             {
                 "slide_id": "slide_001",
                 "slide_title": "主标题",
-                "slide_subtitle": "",
                 "body": "正文要点",
                 "narration": "先看本页主题。这是演讲稿正文。",
             }
@@ -153,13 +152,13 @@ def main() -> None:
                 "main_title": "标题",
                 "visual_groups": [
                     {
-                        "id": "subtitle_group",
-                        "role": "subtitle",
-                        "visible_text": "需要讲解的副标题",
-                        "visual_anchor": "副标题位置",
-                        "narration_function": "补充解释",
-                        "content_unit_id": "subtitle_unit",
-                        "mask_target": "副标题整体",
+                        "id": "title_group",
+                        "role": "title",
+                        "visible_text": "标题",
+                        "visual_anchor": "页面上方主标题位置",
+                        "narration_function": "介绍本页主题",
+                        "content_unit_id": "title_unit",
+                        "mask_target": "完整主标题",
                     },
                     {
                         "id": "visual_only_group",
@@ -173,12 +172,12 @@ def main() -> None:
                 ],
                 "narration_beats": [
                     {
-                        "id": "subtitle_beat",
-                        "group_id": "subtitle_group",
-                        "content_unit_id": "subtitle_unit",
-                        "visible_anchor": "需要讲解的副标题",
-                        "spoken_intent": "讲解副标题",
-                        "spoken_text": "需要讲解的副标题。",
+                        "id": "title_beat",
+                        "group_id": "title_group",
+                        "content_unit_id": "title_unit",
+                        "visible_anchor": "标题",
+                        "spoken_intent": "介绍本页主题",
+                        "spoken_text": "先看本页标题。",
                     },
                     {
                         "id": "visual_beat",

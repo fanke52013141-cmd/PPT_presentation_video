@@ -15,7 +15,6 @@ storyboard:
     - main_title
     - narration
   optional_slide_fields:
-    - subtitle
     - core_message
     - body_content
     - visual_intent
@@ -23,26 +22,20 @@ storyboard:
     - narration_beats
   presentation_policy_rules:
     - 顶层必须输出 presentation_policy。
-    - subtitle_policy 必须由 AI 根据文章和整体版式统一决策，只能是 all_slides_have_subtitle 或 no_slides_have_subtitle。
-    - 如果 subtitle_policy 是 all_slides_have_subtitle，则每页 subtitle 必须非空；如果是 no_slides_have_subtitle，则每页不要生成 subtitle。
-    - 副标题策略一旦确定，必须对所有 Slide 一致，不能逐页随机。
+    - subtitle_policy 固定为 no_slides_have_subtitle；所有 Slide 都不要生成页面副标题。
     - presentation_policy 应包含 subtitle_rationale、default_visual_anchor_count、layout_freedom。
   roles:
     title:
       label: 主标题
       description: 页面主标题，生产铁律要求每页必须有。
       default_reveal: crop_fade_up
-    subtitle:
-      label: 副标题
-      description: 只能在 presentation_policy.subtitle_policy 为 all_slides_have_subtitle 时出现。
-      default_reveal: crop_fade_up
     body_content:
       label: 正文内容
-      description: 页面除主标题和可选副标题之外的全部内容；不要再细分成图示、数据、总结、流程等固定角色。
+      description: 页面除主标题之外的全部内容；不要再细分成图示、数据、总结、流程等固定角色。
       default_reveal: crop_fade_up
   structure_rules:
     - 分镜阶段只做叙事规划，不做细粒度版式拆解。
-    - 每页只需要确定 main_title、可选 subtitle、core_message、body_content/narration，以及页面想表达的 visual_intent。
+    - 每页只需要确定 main_title、core_message、body_content/narration，以及页面想表达的 visual_intent；不生成页面副标题。
     - 不要把正文预先拆成“图示/流程图、数据/数字、总结、引用、步骤”等固定 role；这些都属于 body_content，由生图阶段根据演讲稿自由表现。
     - visual_groups 如果出现，只表示后续 Mask/Reveal 可参考的画面锚点，不是前置版式模板。
     - narration_beats 用于说明演讲稿的节奏；不要为了覆盖全部 visual_groups 强行生成 narration_beat。
@@ -55,8 +48,8 @@ image_prompt:
   opening: "请生成一张 16:9 的完整 PPT/讲解页静态主图。"
   invariant_rules:
     - 每页必须有清晰主标题。
-    - 副标题由 presentation_policy.subtitle_policy 统一决定；如果为 no_slides_have_subtitle，所有页面都不要副标题、不要副标题下划线、不要副标题占位。
-    - 主标题固定在上方标题区；如有副标题，也固定在主标题下方；底部视频字幕位置固定保留。其他内容区可根据内容自由发挥。
+    - 所有页面都不要副标题、不要副标题下划线、不要副标题占位。
+    - 主标题固定在上方标题区；底部视频字幕位置固定保留。其他内容区可根据内容自由发挥。
     - 生图背景固定为纯白 #FFFFFF，四角和四边必须连续纯白；风格包不得覆盖该规则。
     - 画布按 1920x1080 构图，底部 y=930..1080 是字幕安全区，不得出现任何文字、图标、箭头、装饰、阴影、人物、残片或视觉碎片。
     - 严禁画面元素重叠：文字、图标、箭头、线条、标签、卡片边框、人物和装饰之间不得互相覆盖、穿插、压住或粘连。
@@ -64,7 +57,7 @@ image_prompt:
     - 主体内容来自这张完整位图，视频阶段不再用 HTML 重画 PPT 正文。
   creative_rules:
     - 先理解演讲稿和 core_message，再自由设计整页画面；不要先按固定 role 分块。
-    - 除主标题和全局副标题策略外，其余正文内容都可以用图、文字、符号、箭头、场景、隐喻或卡片自由表达。
+    - 除主标题外，其余正文内容都可以用图、文字、符号、箭头、场景、隐喻或卡片自由表达。
     - 优先让画面整体表达意思，而不是平均摆放多个孤立内容块。
     - visual_groups 只作为后续 Mask/Reveal 的锚点提示；不要为了锚点把页面强行画成多块卡片。
     - 可以使用箭头、括号、路径、流程线、图标、局部高亮、编号贴纸、批注和强调符号增强表达力。

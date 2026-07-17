@@ -29,7 +29,6 @@ for (const requiredStep2Token of [
   'btn-step2-prompt-template-new',
   'step2-prompt-template-create-panel',
   'step2-slide-title-input',
-  'step2-slide-subtitle-input',
   'step2-slide-narration-input',
 ]) {
   if (!html.includes(requiredStep2Token)) throw new Error(`simplified Step 2 UI missing: ${requiredStep2Token}`);
@@ -48,6 +47,8 @@ for (const removedStep2Token of [
   'removeVisualGroup',
   'generateStoryboardRulesAiDraft',
   'storyboard-ai-draft',
+  'step2-slide-subtitle-input',
+  'step2-subtitle-field',
 ]) {
   if (app.includes(removedStep2Token) || html.includes(removedStep2Token) || css.includes(removedStep2Token)) {
     throw new Error(`legacy Step 2 editor still present: ${removedStep2Token}`);

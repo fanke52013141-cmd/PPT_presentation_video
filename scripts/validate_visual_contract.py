@@ -2,8 +2,8 @@
 """Validate visual_contract.json grounding and production invariants.
 
 The validator keeps hard production rules separate from style generalization:
-- every slide has a title
-- subtitle policy is an AI project-level all-or-none decision
+- every slide has exactly one title group in the narration-first contract
+- the narration-first contract does not permit slide subtitles
 - visual groups remain maskable and narration-grounded
 """
 
@@ -96,6 +96,12 @@ def validate_slide(
     require_non_empty(slide.get("main_title"), f"Slide missing main_title: {slide_id}")
 
     subtitle_policy = str(presentation_policy.get("subtitle_policy") or "").strip()
+    strict_one_to_one_mapping = (
+        str(presentation_policy.get("visual_narration_mapping") or "").strip()
+        == "one_visual_element_to_one_narration_beat_v1"
+    )
+    if strict_one_to_one_mapping and subtitle_policy != SUBTITLE_POLICY_NO_SUBTITLE:
+        raise ContractError("Narration-first visual contracts must use no_slides_have_subtitle")
     subtitle = str(slide.get("subtitle") or "").strip()
     if subtitle_policy == SUBTITLE_POLICY_WITH_SUBTITLE and not subtitle:
         raise ContractError(f"presentation_policy requires subtitle, but subtitle is empty in {slide_id}")
@@ -150,6 +156,8 @@ def validate_slide(
             raise ContractError(f"Duplicate visual group id in {slide_id}: {group_id}")
         group_ids.add(group_id)
         role = str(group.get("role", "content_body")).strip()
+        if strict_one_to_one_mapping and role == "subtitle":
+            raise ContractError(f"Narration-first visual contract forbids subtitle group in {slide_id}: {group_id}")
         if role == "title":
             title_group_ids.add(group_id)
         for key in ["visible_text", "visual_anchor", "narration_function"]:
@@ -162,10 +170,6 @@ def validate_slide(
         content_unit_by_group_id[group_id] = content_unit_id
         visible_text_by_id[group_id] = str(group.get("visible_text", "")).strip()
 
-    strict_one_to_one_mapping = (
-        str(presentation_policy.get("visual_narration_mapping") or "").strip()
-        == "one_visual_element_to_one_narration_beat_v1"
-    )
     if strict_one_to_one_mapping and len(title_group_ids) != 1:
         raise ContractError(f"Expected exactly one title visual group in {slide_id}, got {len(title_group_ids)}")
 

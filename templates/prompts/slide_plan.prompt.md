@@ -18,20 +18,16 @@ Read `runs/<run_id>/inputs/article.md` and produce
 `runs/<run_id>/planning/slide_plan.json`.
 
 The plan must be narration-first. Do not over-structure the page. The only fixed
-content structure is: main title, AI project-level subtitle policy, and body
-content / narration.
+content structure is: one main title and body content / narration. Page
+subtitles are not part of the product contract.
 
 ## Production Invariants
 
 These rules are not style choices and must never be changed by a style profile:
 
 - Every slide must have one clear `main_title`.
-- Decide subtitle usage once at the project level in `presentation_policy.subtitle_policy`.
-- `subtitle_policy` must be either:
-  - `all_slides_have_subtitle`
-  - `no_slides_have_subtitle`
-- If `all_slides_have_subtitle`, every slide must include a non-empty `subtitle`.
-- If `no_slides_have_subtitle`, no slide should include a subtitle.
+- `presentation_policy.subtitle_policy` must be `no_slides_have_subtitle`.
+- No slide may include a page subtitle, subtitle underline, or subtitle placeholder.
 - Generated slide images use a pure-white `#FFFFFF` background.
 - The visual plan must keep y=930..1080 completely empty for video subtitles.
 - The final image must remain manually maskable, but Mask convenience must not force a rigid block layout.
@@ -54,7 +50,7 @@ Each slide must include:
 
 - `slide_id`
 - `main_title`
-- `subtitle` only when `presentation_policy.subtitle_policy` is `all_slides_have_subtitle`
+- `subtitle` must be an empty string when retained for backward-compatible storage
 - `core_message`
 - `body_content[]`
 - `visual_intent`
@@ -70,23 +66,21 @@ are not a pre-generation layout template.
 
 ## Presentation Policy
 
-Before creating slides, make a project-level subtitle choice:
+Use the fixed no-subtitle presentation policy:
 
 ```json
 {
   "presentation_policy": {
-    "subtitle_policy": "all_slides_have_subtitle",
-    "subtitle_decided_by": "ai",
-    "subtitle_rationale": "Use subtitles when the article benefits from a second explanatory line on every page.",
+    "subtitle_policy": "no_slides_have_subtitle",
+    "subtitle_decided_by": "system_no_subtitle_contract",
+    "subtitle_rationale": "页面只保留主标题，把垂直空间交还给正文视觉。",
     "default_visual_anchor_count": "2-5",
     "layout_freedom": "high"
   }
 }
 ```
 
-Use `all_slides_have_subtitle` only when subtitles clearly improve comprehension
-across the whole video. Otherwise use `no_slides_have_subtitle` and give that
-space back to the main visual.
+Do not choose or generate page subtitles. Give that space back to the main visual.
 
 ## Narration Beats
 
@@ -105,9 +99,9 @@ source of truth; visual anchors are matched after the page is drawn.
 ## Planning Rules
 
 - Each slide explains one core idea.
-- Keep the plan simple: main title, optional project-wide subtitle, body content, narration.
+- Keep the plan simple: main title, body content, narration.
 - Do not classify content as diagram/data/summary/quote/process/etc. during planning.
-- Put everything besides title/subtitle into `body_content`.
+- Put everything besides the title into `body_content`.
 - Use `visual_intent` to describe the desired meaning or feel, not exact coordinates or blocks.
 - Let the image generation stage decide whether body content becomes a scene, diagram, card, timeline, icon set, metaphor, or mixed layout.
 - If you provide `visual_groups`, keep them as 2-5 loose anchors for later Mask/Reveal review.
@@ -118,9 +112,9 @@ source of truth; visual anchors are matched after the page is drawn.
 ```json
 {
   "presentation_policy": {
-    "subtitle_policy": "all_slides_have_subtitle",
-    "subtitle_decided_by": "ai",
-    "subtitle_rationale": "梯度下降概念较抽象，统一副标题能把主标题转成一句可理解的解释。",
+    "subtitle_policy": "no_slides_have_subtitle",
+    "subtitle_decided_by": "system_no_subtitle_contract",
+    "subtitle_rationale": "页面只保留主标题。",
     "default_visual_anchor_count": "2-4",
     "layout_freedom": "high"
   },
@@ -133,7 +127,7 @@ source of truth; visual anchors are matched after the page is drawn.
     {
       "slide_id": "slide_001",
       "main_title": "梯度下降",
-      "subtitle": "沿着负梯度，一步步走向最低点",
+      "subtitle": "",
       "core_message": "负梯度指向损失下降最快的方向。",
       "body_content": [
         "先把梯度下降想象成下山。",

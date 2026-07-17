@@ -131,7 +131,7 @@ def test_step2_prompt_compatibility_detects_legacy_field_dependencies() -> None:
     )
     defaults = server.default_step2_prompts()
     assert server.step2_prompt_compatibility(defaults) == {
-        "contract_version": "step2_narration_visual_v3",
+        "contract_version": "step2_narration_visual_v4_no_subtitle",
         "script_prompt_legacy": False,
         "visual_prompt_legacy": False,
         "compatible": True,

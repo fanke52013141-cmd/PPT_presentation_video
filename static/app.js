@@ -1351,25 +1351,21 @@ function renderStep2Workspace() {
   // 加载当前 Slide 详情
   const slide = state.slides[state.activeSlideIndex];
   if (slide) {
+    syncStep2SimpleFieldsToInternalGroups(slide);
     const slideIdEl = document.getElementById('step2-current-slide-id');
     const slideTitleEl = document.getElementById('step2-current-slide-title');
     if (slideIdEl) slideIdEl.innerText = slide.slide_id;
     if (slideTitleEl) slideTitleEl.innerText = slide.main_title || '未命名 Slide';
     // 同步隐藏字段
     document.getElementById('step2-main-title').value = slide.main_title || '';
-    document.getElementById('step2-subtitle').value = slide.subtitle || '';
     document.getElementById('step2-core-message').value = slide.core_message || '';
     
     // 渲染 visual_groups 属性编辑
     const titleInput = document.getElementById('step2-slide-title-input');
-    const subtitleInput = document.getElementById('step2-slide-subtitle-input');
-    const subtitleField = document.getElementById('step2-subtitle-field');
     const narrationInput = document.getElementById('step2-slide-narration-input');
     if (titleInput) titleInput.value = slide.main_title || '';
-    if (subtitleInput) subtitleInput.value = slide.subtitle || '';
-    if (subtitleField) subtitleField.style.display = '';
     if (narrationInput) narrationInput.value = step2NarrationText(slide);
-    [titleInput, subtitleInput].forEach(input => {
+    [titleInput].forEach(input => {
       if (!input || input.dataset.boundStep2SimpleEditor === '1') return;
       input.dataset.boundStep2SimpleEditor = '1';
       input.addEventListener('input', () => {
@@ -1603,7 +1599,6 @@ function normalizeAndResizeStep2Textarea(textarea) {
 function syncStep2SimpleFieldsToInternalGroups(slide) {
   if (!slide || !Array.isArray(slide.visual_groups)) return;
   const title = String(slide.main_title || '').trim();
-  const subtitle = String(slide.subtitle || '').trim();
   const titleGroup = slide.visual_groups.find(group => group?.role === 'title');
   if (titleGroup && title) {
     titleGroup.visible_text = title;
@@ -1612,18 +1607,16 @@ function syncStep2SimpleFieldsToInternalGroups(slide) {
     titleGroup.mask_target = title;
     titleGroup.visual_type = 'text';
   }
-  const subtitleGroup = slide.visual_groups.find(group => group?.role === 'subtitle');
-  if (subtitleGroup && subtitle) {
-    subtitleGroup.visible_text = subtitle;
-    subtitleGroup.display_text = subtitle;
-    subtitleGroup.visual_anchor = subtitle;
-    subtitleGroup.mask_target = subtitle;
-    subtitleGroup.visual_type = 'text';
-  } else if (subtitleGroup && !subtitle) {
-    slide.visual_groups = slide.visual_groups.filter(group => group !== subtitleGroup);
-    if (Array.isArray(slide.narration_beats)) {
-      slide.narration_beats = slide.narration_beats.filter(beat => beat?.group_id !== subtitleGroup.id);
-    }
+  const subtitleGroupIds = new Set(
+    slide.visual_groups
+      .filter(group => group?.role === 'subtitle')
+      .map(group => group?.id)
+      .filter(Boolean),
+  );
+  slide.subtitle = '';
+  slide.visual_groups = slide.visual_groups.filter(group => group?.role !== 'subtitle');
+  if (subtitleGroupIds.size && Array.isArray(slide.narration_beats)) {
+    slide.narration_beats = slide.narration_beats.filter(beat => !subtitleGroupIds.has(beat?.group_id));
   }
 }
 
@@ -1632,8 +1625,7 @@ function saveCurrentSlideInputToState() {
   if (slide) {
     slide.main_title = document.getElementById('step2-slide-title-input')?.value
       ?? document.getElementById('step2-main-title').value;
-    slide.subtitle = document.getElementById('step2-slide-subtitle-input')?.value
-      ?? document.getElementById('step2-subtitle').value;
+    slide.subtitle = '';
     slide.core_message = document.getElementById('step2-core-message').value;
     syncStep2SimpleFieldsToInternalGroups(slide);
     renderStep2VisualNarrationMap(slide);
@@ -1767,7 +1759,6 @@ function handleStep2MapEditorInput(event) {
         group.narration_function = value;
         slide.narration_beats?.filter(beat => beat?.group_id === groupId).forEach(beat => { beat.visible_anchor = value; });
         if (group.role === 'title') slide.main_title = value;
-        if (group.role === 'subtitle') slide.subtitle = value;
       } else {
         group.mask_target = value;
         group.visual_anchor = value;
@@ -1804,11 +1795,9 @@ function handleStep2MapEditorChange(event) {
 
 function syncStep2SummaryInputs(slide) {
   const titleInput = document.getElementById('step2-slide-title-input');
-  const subtitleInput = document.getElementById('step2-slide-subtitle-input');
   const narrationInput = document.getElementById('step2-slide-narration-input');
   const heading = document.getElementById('step2-current-slide-title');
   if (titleInput && document.activeElement !== titleInput) titleInput.value = slide.main_title || '';
-  if (subtitleInput && document.activeElement !== subtitleInput) subtitleInput.value = slide.subtitle || '';
   if (heading) heading.textContent = slide.main_title || '未命名 Slide';
   if (narrationInput && document.activeElement !== narrationInput) {
     narrationInput.value = step2NarrationText(slide);

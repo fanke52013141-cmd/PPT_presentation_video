@@ -14,10 +14,9 @@ title:
   scope: every_slide
 
 subtitle:
-  decision_mode: ai_project_global
-  consistency: all_or_none
+  decision_mode: system_fixed
+  consistency: none
   allowed_policies:
-    - all_slides_have_subtitle
     - no_slides_have_subtitle
 
 subtitle_safe_zone:

@@ -40,7 +40,7 @@ assert "按语义把整页 `narration` 切成" in visual_prompt
 assert "视觉岛" in visual_prompt
 assert "最小的 Mask/Reveal 原子" in visual_prompt
 assert "多个独立卡片" in visual_prompt
-assert "step2_visual_v4_one_to_one" in visual_prompt
+assert "step2_visual_v5_no_subtitle" in visual_prompt
 assert "字段联动规则" in visual_prompt
 assert "insufficient_visual_groups_for_independent_objects" in mask.DEFAULT_METHODOLOGY
 assert "48-80 px" in image_prompt

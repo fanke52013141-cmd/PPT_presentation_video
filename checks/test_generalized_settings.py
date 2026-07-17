@@ -28,25 +28,17 @@ def main() -> None:
     profile_text = (ROOT / "config" / "pipeline_profiles.yaml").read_text(encoding="utf-8-sig")
     profile = parse_storyboard_profile_text(profile_text)
     editor = storyboard_profile_editor_data(profile)
-    assert set(editor["roles"]["subtitle"]) == {"label", "description", "enabled"}
+    assert "subtitle" not in editor["roles"]
     assert "visual_groups[].content_unit_id" in editor["protected_fields"]
 
     patched = apply_storyboard_profile_patch(
         profile,
         {
             "slide_count": {"short_article": "5-7"},
-            "roles": {
-                "subtitle": {
-                    "enabled": False,
-                }
-            },
         },
     )
     assert patched["storyboard"]["slide_count"]["short_article"] == "5-7"
     assert "subtitle" not in role_catalog(patched)
-    assert "required" not in patched["storyboard"]["roles"]["subtitle"]
-    assert "speak_policy" not in patched["storyboard"]["roles"]["subtitle"]
-    assert storyboard_profile_editor_data(patched)["roles"]["subtitle"]["enabled"] is False
 
     migrated = server_module.sanitize_storyboard_profile(
         {
@@ -69,18 +61,18 @@ def main() -> None:
             }
         }
     )
-    assert "required" not in migrated["storyboard"]["roles"]["subtitle"]
-    assert "speak_policy" not in migrated["storyboard"]["roles"]["subtitle"]
-    assert "可选副标题" not in migrated["storyboard"]["roles"]["subtitle"]["description"]
+    assert "subtitle" not in migrated["storyboard"]["roles"]
     assert "不绑定旁白" not in migrated["storyboard"]["roles"]["decoration"]["description"]
     assert all("display_only" not in rule for rule in migrated["storyboard"]["structure_rules"])
 
     contract = server_module.normalize_visual_contract(
         {
             "version": "visual_contract_v1",
+            "presentation_policy": {"subtitle_policy": "all_slides_have_subtitle"},
             "slides": [
                 {
                     "slide_id": "slide_001",
+                    "subtitle": "旧副标题",
                     "visual_groups": [
                         {
                             "id": "spoken_group",
@@ -100,6 +92,14 @@ def main() -> None:
                             "content_unit_id": "visual_only_unit",
                             "speak_policy": "display_only",
                         },
+                        {
+                            "id": "subtitle_group",
+                            "role": "subtitle",
+                            "visible_text": "旧副标题",
+                            "visual_anchor": "标题下方",
+                            "narration_function": "旧结构兼容输入",
+                            "content_unit_id": "subtitle_unit",
+                        },
                     ],
                     "narration_beats": [
                         {
@@ -109,7 +109,15 @@ def main() -> None:
                             "visible_anchor": "讲解内容",
                             "spoken_intent": "讲解",
                             "spoken_text": "讲解内容。",
-                        }
+                        },
+                        {
+                            "id": "subtitle_beat",
+                            "group_id": "subtitle_group",
+                            "content_unit_id": "subtitle_unit",
+                            "visible_anchor": "旧副标题",
+                            "spoken_intent": "旧结构兼容输入",
+                            "spoken_text": "旧副标题。",
+                        },
                     ],
                 }
             ],
@@ -117,6 +125,9 @@ def main() -> None:
     )
     slide = contract["slides"][0]
     assert len(slide["narration_beats"]) == 1
+    assert contract["presentation_policy"]["subtitle_policy"] == "no_slides_have_subtitle"
+    assert slide["subtitle"] == ""
+    assert all(group.get("role") != "subtitle" for group in slide["visual_groups"])
     assert all("speak_policy" not in group for group in slide["visual_groups"])
     semantic_blocks = server_module.deterministic_semantic_blocks("slide_001", slide, None)
     assert {block["visual_group_id"] for block in semantic_blocks} == {"spoken_group"}
@@ -164,7 +175,7 @@ def main() -> None:
     assert 'id="btn-step2-prompt-template-new"' in html
     assert 'id="step2-prompt-template-create-panel"' in html
     assert 'id="step2-slide-title-input"' in html
-    assert 'id="step2-slide-subtitle-input"' in html
+    assert 'id="step2-slide-subtitle-input"' not in html
     assert 'id="step2-slide-narration-input"' in html
     assert 'id="step2-slide-narration-input" class="step2-soft-input" rows="5" readonly' in html
     assert 'style_reference_manager_extension.js' in html

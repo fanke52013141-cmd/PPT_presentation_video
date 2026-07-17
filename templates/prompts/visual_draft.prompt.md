@@ -24,9 +24,7 @@ These rules are fixed and cannot be changed by a style profile:
 - The generated slide image background must be pure white `#FFFFFF`.
 - All four edges and corners must stay continuously pure white.
 - Every slide must contain a clear main title.
-- Subtitle usage is decided once by `presentation_policy.subtitle_policy`.
-  - If `all_slides_have_subtitle`, every page renders a subtitle.
-  - If `no_slides_have_subtitle`, no page renders a subtitle, subtitle underline, or subtitle placeholder.
+- Do not render a page subtitle, subtitle underline, or subtitle placeholder.
 - Keep y=930..1080 completely empty for video subtitles.
 - Do not place text, icons, arrows, labels, decorations, shadows, partial objects, or visual fragments in y=930..1080.
 - Strictly forbid visible element overlap: text, icons, arrows, lines, labels, card borders, people, decorations, formulas, and charts must not cover, intersect, press on, pierce through, or stick to each other.
@@ -37,8 +35,6 @@ These rules are fixed and cannot be changed by a style profile:
 
 - Slide ID: `{{slide_id}}`
 - Main title: `{{main_title}}`
-- Subtitle policy: `{{subtitle_policy}}`
-- Subtitle: `{{subtitle}}`
 - Core message: `{{core_message}}`
 - Body content: `{{body_content}}`
 - Visual intent: `{{visual_intent}}`
@@ -56,14 +52,14 @@ Use the fixed style references only for title-area placement, spacing, hierarchy
 - `references/style_reference/PPT模板.png`
 - `references/style_reference/PPT示例.png`
 
-The image must contain all PPT body visuals as bitmap content: title, optional subtitle when policy allows it, body content, icons, arrows, diagrams, labels, and emphasis marks. Remotion will not draw these later.
+The image must contain all PPT body visuals as bitmap content: one complete main title, body content, icons, arrows, diagrams, labels, and emphasis marks. Remotion will not draw these later.
 
 ## Narration-First Design
 
 Design the whole page from the narration and body content. Do not first split the page into fixed roles such as diagram, data, process, quote, or summary.
 
 - The narration is the source of truth.
-- Body content is the only planned content category besides title and optional subtitle.
+- Body content is the only planned content category besides the title.
 - Choose the best visual expression freely: scene, diagram, metaphor, cards, timeline, comparison, icon cluster, or a mixed layout.
 - Use visual hierarchy to support the speaking order, but do not make every beat an equal isolated card.
 - Optional visual anchors are post-design review handles for Mask/Reveal, not a pre-generation layout template.
@@ -77,7 +73,7 @@ Design the image so important regions can be painted cleanly with a manual Mask:
 - Connections between ideas are allowed: arrows, brackets, paths, timelines, or flow lines.
 - Do not create many isolated cards unless the narration truly calls for a list, comparison, or checklist.
 - Keep enough clean white background around important regions for manual Mask painting.
-- Keep the main-title/subtitle band in its fixed layout, but preserve it as a clean independent visual island so narration-bound title and subtitle Masks can reveal it. Do not connect title glyphs to body arrows, icons, cards, or decoration.
+- Keep the complete main-title band in its fixed layout and preserve it as one clean independent visual island. Even when individual words use different colors or outlines, the title remains one semantic group and one Mask. Do not connect title glyphs to body arrows, icons, cards, or decoration.
 - Each narration-bound visual anchor must form one spatially continuous visual island. Keep a visible pure-white moat (preferably 48-80 px) between different narration islands.
 - A large illustration owns everything inside it and immediately touching its edge: internal labels, check marks, badges, small icons, and attached captions must stay in the same island. Never place another narration group's element inside or across that illustration boundary.
 - When two illustrations represent different comparison sides or different states, draw them as separate islands only when they map to separate narration beats. If they share one beat, use one unified composition instead of two independent pictures that can only reveal together.

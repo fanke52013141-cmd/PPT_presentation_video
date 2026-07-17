@@ -4,13 +4,11 @@
     {
       "slide_id": "slide_001",
       "slide_title": "Token 的基础定义",
-      "slide_subtitle": "大模型处理文字的最小单位",
       "narration": "首先我们来理解什么是 Token。它是大模型处理文本时使用的基本单位，你可以把它想象成模型用来拼出文字的一块块积木。"
     },
     {
       "slide_id": "slide_002",
       "slide_title": "英文如何拆分 Token",
-      "slide_subtitle": "短单词与长单词的差异",
       "narration": "接下来看英文场景。像 apple 这样的短单词通常可以作为一个 Token；而 unhappiness 这样的长单词，则可能被拆成 un 和 happiness 两个部分。"
     }
   ]

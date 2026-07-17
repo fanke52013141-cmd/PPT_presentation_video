@@ -1059,15 +1059,28 @@ def normalize_visual_contract(
     contract: Dict[str, Any],
     profile: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    presentation_policy = contract.get("presentation_policy")
+    if not isinstance(presentation_policy, dict):
+        presentation_policy = {}
+        contract["presentation_policy"] = presentation_policy
+    presentation_policy["subtitle_policy"] = "no_slides_have_subtitle"
+    presentation_policy["subtitle_decided_by"] = "system_no_subtitle_contract"
     slides = contract.get("slides")
     if not isinstance(slides, list):
         return contract
     for slide in slides:
         if not isinstance(slide, dict):
             continue
+        slide["subtitle"] = ""
         groups = slide.get("visual_groups")
         if not isinstance(groups, list):
             continue
+        groups = [
+            group for group in groups
+            if not isinstance(group, dict)
+            or str(group.get("role") or "").strip().lower() != "subtitle"
+        ]
+        slide["visual_groups"] = groups
 
         group_by_id: Dict[str, Dict[str, Any]] = {}
         for index, group in enumerate(groups, start=1):
@@ -2859,6 +2872,10 @@ def sanitize_storyboard_profile(profile: Dict[str, Any]) -> Dict[str, Any]:
     default_roles = default_storyboard.get("roles", {}) if isinstance(default_storyboard, dict) else {}
     roles = storyboard.get("roles")
     if isinstance(roles, dict):
+        # Page subtitles are no longer part of the production contract. Drop
+        # legacy editable role definitions instead of letting an old template
+        # reintroduce subtitle groups into Step 2.
+        roles.pop("subtitle", None)
         for role, config in roles.items():
             if not isinstance(config, dict):
                 continue
@@ -2869,7 +2886,6 @@ def sanitize_storyboard_profile(profile: Dict[str, Any]) -> Dict[str, Any]:
                 default_config = default_roles.get(role, {}) if isinstance(default_roles, dict) else {}
                 fallback_descriptions = {
                     "decoration": "装饰元素，只在确实帮助理解画面时使用。",
-                    "subtitle": "只能在 presentation_policy.subtitle_policy 为 all_slides_have_subtitle 时出现。",
                 }
                 config["description"] = str(default_config.get("description") or fallback_descriptions.get(role) or description)
 
@@ -3228,8 +3244,10 @@ def compose_step2_system_prompt(system_content: str, output_example: str) -> str
 def step2_script_prompt_uses_legacy_contract(system_content: str) -> bool:
     """Detect old prompts that require fields removed from the Step 2A input/output contract."""
     text = str(system_content or "")
-    if "step2_script_v2" in text or "step2_script_v3_narration_first" in text:
+    if "step2_script_v4_no_subtitle" in text:
         return False
+    if "step2_script_v2" in text or "step2_script_v3_narration_first" in text:
+        return True
     legacy_patterns = (
         r"body_points\s*(?:必须|應|应|需|是)",
         r"narration_segments\s*(?:必须|應|应|需|是)",
@@ -3241,8 +3259,10 @@ def step2_script_prompt_uses_legacy_contract(system_content: str) -> bool:
 def step2_visual_prompt_uses_legacy_contract(system_content: str) -> bool:
     """Detect prompts that depend on Step 2A fields no longer sent to Step 2B."""
     text = str(system_content or "")
-    if "step2_visual_v2" in text or "step2_visual_v4_one_to_one" in text:
+    if "step2_visual_v5_no_subtitle" in text:
         return False
+    if "step2_visual_v2" in text or "step2_visual_v4_one_to_one" in text:
+        return True
     legacy_patterns = (
         r"narration_segments\[\].{0,40}(?:唯一依据|唯一依據)",
         r"第\s*i\s*个\s*body_point",
@@ -3256,7 +3276,7 @@ def step2_prompt_compatibility(prompts: Dict[str, str]) -> Dict[str, Any]:
     script_legacy = step2_script_prompt_uses_legacy_contract(prompts.get("script_system", ""))
     visual_legacy = step2_visual_prompt_uses_legacy_contract(prompts.get("visual_system", ""))
     return {
-        "contract_version": "step2_narration_visual_v3",
+        "contract_version": "step2_narration_visual_v4_no_subtitle",
         "script_prompt_legacy": script_legacy,
         "visual_prompt_legacy": visual_legacy,
         "compatible": not script_legacy and not visual_legacy,
@@ -3409,7 +3429,6 @@ def normalize_slide_script_plan(plan: Dict[str, Any], project_title: str) -> Dic
             {
                 "slide_id": slide_id,
                 "slide_title": slide_title,
-                "slide_subtitle": clean_planning_text(slide.get("slide_subtitle") or slide.get("subtitle") or ""),
                 "narration": narration,
             }
         )
@@ -3471,7 +3490,7 @@ def validate_slide_visual_mapping(
             status_code=500,
             detail=(
                 f"{slide_id} 包含不参与一对一旁白映射的 role: {', '.join(unsupported_roles)}。"
-                "副标题由系统直接渲染，装饰由生图阶段处理；visual_elements 只能包含 title 和 body。"
+                "系统不使用页面副标题；装饰由生图阶段处理，visual_elements 只能包含 title 和 body。"
             ),
         )
     if len(title_elements) != 1 or not elements or elements[0].get("role") != "title":
@@ -3696,7 +3715,7 @@ def build_step2_script_user_prompt(
             "project_title": project_title,
             "article_content": article_content,
             "generation_requirement": generation_requirement,
-            "output_goal": "生成 slide_script_plan.json。根级只包含 title、slides；每页只包含 slide_id、slide_title、slide_subtitle 和一整段 narration。",
+            "output_goal": "生成 slide_script_plan.json。根级只包含 title、slides；每页只包含 slide_id、slide_title 和一整段 narration，不生成副标题。",
         },
         ensure_ascii=False,
         indent=2,
@@ -3710,7 +3729,6 @@ def build_step2_visual_user_prompt(script_plan: Dict[str, Any]) -> str:
             {
                 "slide_id": str(slide.get("slide_id") or "").strip(),
                 "slide_title": str(slide.get("slide_title") or "").strip(),
-                "slide_subtitle": str(slide.get("slide_subtitle") or "").strip(),
                 "narration": str(slide.get("narration") or "").strip(),
             }
             for slide in (script_plan.get("slides") or [])
@@ -3752,17 +3770,7 @@ def compose_visual_contract_from_plans(
         for slide in visual_slides
         if isinstance(slide, dict)
     }
-    subtitle_count = sum(
-        1
-        for slide in script_slides
-        if isinstance(slide, dict) and str(slide.get("slide_subtitle") or "").strip()
-    )
-    if subtitle_count == 0:
-        subtitle_policy = "no_slides_have_subtitle"
-    elif subtitle_count == len([slide for slide in script_slides if isinstance(slide, dict)]):
-        subtitle_policy = "all_slides_have_subtitle"
-    else:
-        subtitle_policy = "optional_subtitles"
+    subtitle_policy = "no_slides_have_subtitle"
     slides: List[Dict[str, Any]] = []
     for slide_index, script_slide in enumerate(script_slides, start=1):
         if not isinstance(script_slide, dict):
@@ -3834,7 +3842,7 @@ def compose_visual_contract_from_plans(
             {
                 "slide_id": slide_id,
                 "main_title": str(script_slide.get("slide_title") or f"第 {slide_index} 页").strip(),
-                "subtitle": str(script_slide.get("slide_subtitle") or "").strip() if subtitle_policy != "no_slides_have_subtitle" else "",
+                "subtitle": "",
                 "core_message": "；".join(body_content),
                 "body_content": body_content,
                 "visual_groups": visual_groups,
@@ -3845,7 +3853,7 @@ def compose_visual_contract_from_plans(
         "version": "visual_contract_v1",
         "presentation_policy": {
             "subtitle_policy": subtitle_policy,
-            "subtitle_decided_by": "narration_first_step2",
+            "subtitle_decided_by": "system_no_subtitle_contract",
             "visual_narration_mapping": "one_visual_element_to_one_narration_beat_v1",
         },
         "topic": {
@@ -4025,14 +4033,14 @@ def build_storyboard_request(
 - 演讲稿不是附属品。每页必须有自然、连贯、适合口播的 spoken_text，用来解释推理过程、上下文和结论。
 - 画面不是演讲稿的逐字复刻。visible_text 应是关键词、短句、结构标签、图示标签或结论钩子。
 - visual_groups 是后续 Mask/动画/旁白绑定接口，不是页面设计模板；role 只是后处理语义标签。
-- 主标题、副标题使用页面上方固定位置；底部 y=930..1080 固定为视频字幕安全区。除此之外，主体内容区根据内容自由发挥。
-- 字号比例必须明确：每页 slide 顶部标题的视觉字号为当前默认标题的 2 倍；主标题内容、副标题内容、正文内容、演讲稿对应画面文字的视觉字号约为当前默认的 2/3。
+- 主标题使用页面上方固定位置，不生成页面副标题；底部 y=930..1080 固定为视频字幕安全区。除此之外，主体内容区根据内容自由发挥。
+- 字号比例必须明确：每页 slide 顶部标题的视觉字号为当前默认标题的 2 倍；正文内容、演讲稿对应画面文字的视觉字号约为当前默认的 2/3。
 - 禁止画面元素重叠：文字、卡片、图标、箭头、线条、标签、装饰、图表之间不得互相覆盖、压住、穿插或粘连。
 要求：
 1. 必须要将整篇文章合理划分，分成 {slide_count_requirement} Slide（每页的 slide_id 为 slide_001, slide_002 格式）。
-2. 每页 Slide 建议定义 {group_count_requirement}视觉分组(visual_groups)。不要固定套用“主标题/副标题/正文/总结”模板；可以按内容需要使用判断链、冲突地图、对象关系图、推理路径、时间压力图、对比、表格、流程、FAQ、场景拆解或行动清单。
+2. 每页 Slide 建议定义 {group_count_requirement}视觉分组(visual_groups)。不要固定套用“主标题/正文/总结”模板；可以按内容需要使用判断链、冲突地图、对象关系图、推理路径、时间压力图、对比、表格、流程、FAQ、场景拆解或行动清单。
 3. 每个视觉分组（visual_groups）必须有：
-   - id: 比如 title_group, subtitle_group, body_group_01 等
+   - id: 比如 title_group, body_group_01 等
    - visible_text: 页面上会显式画出来的中文字符标签（非常重要，通常为短句或关键词，绝对不能为空；不要把整段演讲稿塞进这里）
    - visual_anchor: 视觉描述（比如“顶部主标题”、“左侧判断链起点”、“中间对象关系图”、“右侧结论卡”）
    - narration_function: 解释该分组在画面中所起的视觉/解释作用
@@ -4224,7 +4232,7 @@ def execute_step2_visual_plan(project_id: str, db: Session = Depends(get_db)):
             status_code=409,
             detail=(
                 "当前 Slides→可视化 Prompt 仍依赖旧字段 body_points/narration_segments，"
-                "但 Step 2B 现在只接收 slide_id、slide_title、slide_subtitle 和完整 narration。"
+                "但 Step 2B 现在只接收 slide_id、slide_title 和完整 narration，不接收页面副标题。"
                 "请载入最新内置模板或升级该自定义模板后再生成。"
             ),
         )
@@ -4978,19 +4986,13 @@ def build_image_style_prompt(style_tokens: Dict[str, Any]) -> str:
     subtitle_reserved = canvas.get("subtitle_reserved") if isinstance(canvas.get("subtitle_reserved"), dict) else {}
     if title_block:
         main_title_box = title_block.get("main_title") if isinstance(title_block.get("main_title"), dict) else {}
-        subtitle_box = title_block.get("subtitle") if isinstance(title_block.get("subtitle"), dict) else {}
         title_hint = ""
         if main_title_box:
             title_hint += (
                 f"主标题约在 x={main_title_box.get('x', 110)}, y={main_title_box.get('y', 55)}, "
                 f"w={main_title_box.get('w', 1600)}, h={main_title_box.get('h', 86)}；"
             )
-        if subtitle_box:
-            title_hint += (
-                f"副标题约在 x={subtitle_box.get('x', 110)}, y={subtitle_box.get('y', 150)}, "
-                f"w={subtitle_box.get('w', 1600)}, h={subtitle_box.get('h', 52)}；"
-            )
-        lines.append(f"- 主标题与副标题位置固定在页面上方标题区；{title_hint}只固定位置和层级，不限制主体内容区的表达方式。")
+        lines.append(f"- 主标题位置固定在页面上方标题区，不生成页面副标题、下划线或占位；{title_hint}只固定位置和层级，不限制主体内容区的表达方式。")
     if content:
         lines.append(
             "- 主体内容放在页面中部开放区域"
@@ -5014,7 +5016,7 @@ def build_image_style_prompt(style_tokens: Dict[str, Any]) -> str:
         lines.append(f"- 避免：{'、'.join(str(item) for item in avoid if item)}。")
 
     lines.append("- 不可变规则：画面元素严禁重叠、互相覆盖、压住、穿插或粘连；任何文字都不能被箭头、图标、卡片边框或装饰压住。")
-    lines.append("- 主标题/副标题区固定布局但可参与语块动画：必须与主体内容完全分离，不得用箭头、边框、插图或装饰连接标题字形，以便标题 Mask 独立 Reveal。")
+    lines.append("- 主标题区固定布局并作为一个完整语块参与动画：必须与主体内容完全分离；标题即使包含多色文字或描边，全部字形仍归属同一个标题 Mask，不得拆成多个语块。")
     lines.append("- 每条旁白对应的主体内容必须形成一个空间连续、边界清楚的视觉岛；不同旁白视觉岛之间优先保留 48-80px 连续纯白间隔。")
     lines.append("- 大面积主配图拥有其内部和紧邻边缘的文字、图标、对号、标签与说明；其他语块的元素不得进入、跨越或贴住该配图边界。")
     lines.append("- 左右对比或前后状态只有在对应不同 narration beat 时才画成两个独立视觉岛；若共用一条旁白，改为一个统一构图，避免两个插图被迫同时 Reveal。")
@@ -5118,7 +5120,7 @@ def get_image_style():
         "protected_rules": [
             "画布固定为 1920×1080、16:9",
             "生图背景固定为纯白 #FFFFFF，确保 Mask 外围背景可稳定移除",
-            "主标题、副标题固定在页面上方标题区",
+            "主标题固定在页面上方标题区；不生成页面副标题",
             "y=930 以下为字幕安全区，不放关键内容",
             "画面元素严禁重叠、穿插、压住或粘连，保证后续 Mask 可标注",
             "主体内容区可以自由发挥，但所有画面元素严禁重叠、覆盖、压住、穿插或粘连",
@@ -5483,7 +5485,7 @@ def enforce_white_generation_background(prompt: str) -> str:
         "不可覆盖的背景要求：整张图片的工作背景必须是纯白 #FFFFFF。"
         "四条边和四个角必须连续纯白；不要米白、暖白、纸纹、噪声、阴影、渐变或暗角。"
         "不要把纯白背景画进卡片或内容轮廓之外的装饰区域。\n"
-        "不可覆盖的布局要求：主标题、副标题必须位于页面上方固定标题区；底部 y=930..1080 必须保留为视频字幕安全区。"
+        "不可覆盖的布局要求：主标题必须位于页面上方固定标题区，整页不生成页面副标题、下划线或占位；底部 y=930..1080 必须保留为视频字幕安全区。"
         "主体内容区可以自由发挥，但画面元素严禁重叠、覆盖、压住、穿插或粘连；文字、图标、箭头、卡片、标签、装饰和图表之间必须保留清晰间距，方便后续人工 Mask。"
         "\n不可覆盖的 Mask 要求：严禁画面元素重叠。文字、图标、箭头、线条、标签、卡片边框、人物和装饰之间不得互相覆盖、穿插、压住或粘连；每个语义元素之间必须留出清晰空白。"
     )

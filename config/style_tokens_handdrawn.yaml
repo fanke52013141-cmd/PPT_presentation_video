@@ -49,21 +49,11 @@ layout:
       y: 55
       w: 1600
       h: 86
-    subtitle:
-      x: 110
-      y: 150
-      w: 1600
-      h: 52
-    subtitle_underline:
-      x: 110
-      y: 205
-      w: 210
-      h: 6
   content:
     x: 80
-    y: 235
+    y: 165
     w: 1760
-    h: 680
+    h: 750
     frame: none
   subtitle_area:
     x: 0
@@ -113,7 +103,7 @@ visual_assets:
   required_background: flat_uniform_pure_white
   reveal_friendly_layout:
     - "使用纯净平面 #FFFFFF 背景；四条边和四个角必须连续纯白，不要纸纹、噪声、阴影、渐变或暗角。"
-    - 主标题、副标题固定在页面上方标题区；底部 y=930..1080 固定作为视频字幕安全区。
+    - 主标题作为一个完整标题组固定在页面上方标题区，不生成页面副标题；底部 y=930..1080 固定作为视频字幕安全区。
     - 手绘风只规定线条、亲和感和轻量图示，不规定主体内容必须是卡片列表。
     - 主体内容区可以自由使用判断链、流程图、关系图、对比图、场景小插图、时间线、关键词地图等结构。
     - 每个 visual_group 必须能被一个矩形区域完整覆盖。

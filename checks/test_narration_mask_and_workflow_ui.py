@@ -115,7 +115,8 @@ def test_step2_script_plan_normalizes_to_minimal_step_a_contract():
         },
         "测试",
     )
-    assert set(plan["slides"][0]) == {"slide_id", "slide_title", "slide_subtitle", "narration"}
+    assert set(plan["slides"][0]) == {"slide_id", "slide_title", "narration"}
+    assert "副标题" not in json.dumps(plan, ensure_ascii=False)
     visual_input = json.loads(server.build_step2_visual_user_prompt(plan))["slide_script_plan"]
     assert visual_input == plan
 
@@ -149,7 +150,6 @@ def test_step2_visual_plan_requires_one_to_one_complete_narration_mapping():
             {
                 "slide_id": "slide_001",
                 "slide_title": "第一页",
-                "slide_subtitle": "说明",
                 "narration": "先介绍本页主题。再讲正文内容。",
             }
         ],
@@ -191,7 +191,7 @@ def test_step2_visual_plan_requires_one_to_one_complete_narration_mapping():
 def test_step2_visual_plan_rejects_separate_subtitle_element():
     script_plan = {
         "title": "测试",
-        "slides": [{"slide_id": "slide_001", "slide_title": "标题", "slide_subtitle": "副标题", "narration": "先讲标题。再讲正文。"}],
+        "slides": [{"slide_id": "slide_001", "slide_title": "标题", "narration": "先讲标题。再讲正文。"}],
     }
     with pytest.raises(HTTPException, match="只能包含 title 和 body"):
         normalize_slide_visual_plan(

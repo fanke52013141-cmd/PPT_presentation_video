@@ -95,7 +95,7 @@ def test_title_and_subtitle_fragments_follow_narrated_title_group():
     assert consolidated["static_element_ids"] == []
     assert consolidated["static_group_ids"] == []
     assert set(consolidated["forced_element_owners"]) == {"title_a", "title_b", "subtitle_a", "subtitle_b"}
-    completed = mask._complete_component_coverage(consolidated, elements)
+    completed = mask._complete_component_coverage(consolidated, elements, slide)
     matches = {item["group_id"]: set(item["element_ids"]) for item in completed["matches"]}
     assert matches["opening"] == {"title_a", "title_b", "subtitle_a", "subtitle_b"}
     assert matches["body_group"] == {"body"}
@@ -170,6 +170,49 @@ def test_title_without_any_narration_remains_static_context():
     assert consolidated["title_region_policy"] == "static_header_without_narration"
     assert set(consolidated["static_element_ids"]) == {"title_a", "title_b", "subtitle_a", "subtitle_b"}
     assert consolidated["static_group_ids"] == ["title_group"]
+
+
+def test_legacy_title_without_title_beat_never_falls_back_to_body_group():
+    elements, regions = _title_region_fixture()
+    slide = {
+        "slide_id": "slide_001",
+        "main_title": "主标题",
+        "subtitle": "副标题",
+        "visual_groups": [
+            {"id": "title_group", "role": "title"},
+            {"id": "body_group", "role": "body"},
+        ],
+        "narration_beats": [
+            {"id": "beat_body", "group_id": "body_group", "spoken_text": "只讲正文。"},
+        ],
+    }
+    payload = {
+        "matches": [
+            {
+                "group_id": "body_group",
+                "narration_beat_id": "beat_body",
+                "element_ids": ["title_a", "title_b", "subtitle_a", "subtitle_b", "body"],
+                "confidence": 0.9,
+            }
+        ],
+        "unmatched_groups": ["title_group"],
+        "warnings": [],
+    }
+    consolidated = mask._consolidate_title_regions(payload, elements, slide, regions)
+    assert consolidated["title_region_policy"] == "static_header_without_narration"
+    assert consolidated["static_group_ids"] == ["title_group"]
+    assert set(consolidated["static_element_ids"]) == {
+        "title_a", "title_b", "subtitle_a", "subtitle_b",
+    }
+    assert consolidated["forced_element_owners"] == {}
+    body_match = next(item for item in consolidated["matches"] if item["group_id"] == "body_group")
+    assert body_match["element_ids"] == ["body"]
+
+    completed = mask._complete_component_coverage(consolidated, elements, slide)
+    completed_body = next(item for item in completed["matches"] if item["group_id"] == "body_group")
+    assert completed_body["element_ids"] == ["body"]
+    assert completed["quality"]["static_header_pixel_count"] > 0
+    assert completed["quality"]["passed"] is True
 
 
 def test_every_narrated_group_gets_an_independent_visual_anchor():
@@ -354,6 +397,7 @@ def main() -> None:
     test_title_and_subtitle_fragments_follow_narrated_title_group()
     test_title_and_subtitle_use_distinct_narrated_groups_when_available()
     test_title_without_any_narration_remains_static_context()
+    test_legacy_title_without_title_beat_never_falls_back_to_body_group()
     test_every_narrated_group_gets_an_independent_visual_anchor()
     test_existing_anchor_is_not_stolen_when_seeding_missing_group()
     test_nearby_icon_is_absorbed_by_closest_large_visual_island()

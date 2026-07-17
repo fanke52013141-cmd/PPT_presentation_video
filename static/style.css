@@ -4992,9 +4992,8 @@ button.success:disabled,
   margin-top: 0 !important;
 }
 
-/* 主标题 / 副标题输入：22px，不撑满，宽度受控 */
-#step-panel-2 #step2-slide-title-input,
-#step-panel-2 #step2-slide-subtitle-input {
+/* 主标题输入：22px，不撑满，宽度受控 */
+#step-panel-2 #step2-slide-title-input {
   width: 640px !important;
   max-width: 100% !important;
   min-height: 56px !important;
@@ -5047,7 +5046,6 @@ button.success:disabled,
 
 /* 聚焦态：保留柔和高亮 */
 #step-panel-2 #step2-slide-title-input:focus,
-#step-panel-2 #step2-slide-subtitle-input:focus,
 #step-panel-2 #step2-slide-body-input:focus,
 #step-panel-2 #step2-slide-narration-input:focus {
   border-color: #c9d2e3 !important;
@@ -5331,7 +5329,7 @@ button.success:disabled,
 /* Step 2 narration-first editor: one visible card equals one narration beat. */
 #step-panel-2 .step2-slide-fields {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
   gap: 14px 18px !important;
 }
@@ -5342,8 +5340,7 @@ button.success:disabled,
   line-height: 20px !important;
 }
 
-#step-panel-2 #step2-slide-title-input,
-#step-panel-2 #step2-slide-subtitle-input {
+#step-panel-2 #step2-slide-title-input {
   width: 100% !important;
   min-height: 44px !important;
   padding: 9px 12px !important;

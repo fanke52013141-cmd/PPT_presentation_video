@@ -4,32 +4,14 @@
     {
       "slide_id": "slide_001",
       "slide_title": "Token 的基础定义",
-      "slide_subtitle": "",
-      "body": "Token 是大模型处理文本的最小单位。",
-      "body_points": [
-        {"point_id": "point_001", "text": "Token 是大模型处理文本的最小单位，相当于文字积木", "purpose": "正文"}
-      ],
-      "narration": "首先我们来看什么是 Token。Token 是大模型处理文本的最小单位，你可以把它理解成模型用来拼出文字的积木。",
-      "narration_segments": [
-        {"segment_id": "seg_001", "narration": "首先我们来看什么是 Token。", "purpose": "点题引入"},
-        {"segment_id": "seg_002", "narration": "Token 是大模型处理文本的最小单位，你可以把它理解成模型用来拼出文字的积木。", "purpose": "正文"}
-      ]
+      "slide_subtitle": "大模型处理文字的最小单位",
+      "narration": "首先我们来理解什么是 Token。它是大模型处理文本时使用的基本单位，你可以把它想象成模型用来拼出文字的一块块积木。"
     },
     {
       "slide_id": "slide_002",
-      "slide_title": "Token 的拆分规则：英文场景",
-      "slide_subtitle": "",
-      "body": "英文按子词拆分，兼顾单词、词根和后缀。",
-      "body_points": [
-        {"point_id": "point_001", "text": "短完整单词如 apple 为 1 个 Token", "purpose": "正文"},
-        {"point_id": "point_002", "text": "长单词如 unhappiness 拆为 un 和 happiness 两个 Token", "purpose": "正文"}
-      ],
-      "narration": "接下来看英文场景下 Token 怎么拆。短完整单词比如 apple 就是 1 个 Token。长单词比如 unhappiness 会拆成 un 和 happiness 两个 Token。",
-      "narration_segments": [
-        {"segment_id": "seg_001", "narration": "接下来看英文场景下 Token 怎么拆。", "purpose": "点题引入"},
-        {"segment_id": "seg_002", "narration": "短完整单词比如 apple 就是 1 个 Token。", "purpose": "正文"},
-        {"segment_id": "seg_003", "narration": "长单词比如 unhappiness 会拆成 un 和 happiness 两个 Token。", "purpose": "正文"}
-      ]
+      "slide_title": "英文如何拆分 Token",
+      "slide_subtitle": "短单词与长单词的差异",
+      "narration": "接下来看英文场景。像 apple 这样的短单词通常可以作为一个 Token；而 unhappiness 这样的长单词，则可能被拆成 un 和 happiness 两个部分。"
     }
   ]
 }

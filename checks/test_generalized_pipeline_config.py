@@ -37,22 +37,18 @@ def test_step2_prompt_contracts_are_minimal() -> None:
     visual_example = json.loads((ROOT / "templates" / "prompts" / "step2_visual_output_example.json").read_text(encoding="utf-8"))
 
     assert "slide_title" in script_example["slides"][0]
-    assert "body" in script_example["slides"][0]
     assert "narration" in script_example["slides"][0]
     first_script_slide = script_example["slides"][0]
-    assert first_script_slide["body_points"]
-    assert first_script_slide["narration_segments"]
-    assert all({"point_id", "text", "purpose"} <= set(point) for point in first_script_slide["body_points"])
-    assert len(first_script_slide["narration_segments"]) >= len(first_script_slide["body_points"]) + 1
-    assert "body_points" in script_system
-    assert "narration_segments" in script_system
+    assert set(first_script_slide) == {"slide_id", "slide_title", "slide_subtitle", "narration"}
+    assert "输出字段只能是" in script_system
+    assert "完整演讲稿" in script_system
     assert "visual_groups" not in script_example["slides"][0]
-    assert "不要输出 text、" in visual_system
-    assert "body_points[]" in visual_system
-    assert "slide_id、element_id、role、visual_type、visual_description" in visual_system
+    assert "按语义把整页 `narration` 切成" in visual_system
+    assert "role" in visual_system and "visual_type" in visual_system
+    assert "完整还原本页原始演讲稿" in visual_system
     first_visual_element = visual_example["slides"][0]["visual_elements"][0]
     assert set(first_visual_element) == {"element_id", "role", "visual_type", "visual_description", "narration"}
-    assert "source_segment_id" not in visual_system
+    assert "不输出 `body_points`" in visual_system
     assert "source_segment_id" not in json.dumps(visual_example, ensure_ascii=False)
     assert "speak_policy" not in script_system + visual_system
     assert "scratch_reveal" in allowed_reveal_actions(profile)

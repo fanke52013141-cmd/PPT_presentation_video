@@ -778,6 +778,53 @@ body.step5-fullscreen-mode #step5-btn-fullscreen {
   white-space: nowrap;
 }
 
+.step2-prompt-template-bar {
+  grid-template-columns: minmax(240px, 1fr) auto auto auto;
+}
+
+.step2-prompt-create-panel {
+  grid-template-columns: minmax(210px, 1fr) minmax(240px, 0.8fr) auto auto;
+  gap: 0.7rem;
+  align-items: end;
+  margin: -0.25rem 0 1rem;
+  padding: 0.85rem;
+  border: 1px solid var(--color-primary-soft, #d9ddff);
+  border-radius: 14px;
+  background: #f7f6ff;
+}
+
+.step2-prompt-create-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  align-self: center;
+  color: #50586b;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.step2-prompt-create-copy strong {
+  color: #2f3542;
+  font-size: 0.9rem;
+}
+
+.step2-prompt-create-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  color: #50586b;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.step2-prompt-create-panel input {
+  min-height: 38px;
+  padding: 0.48rem 0.62rem;
+  border: 1px solid var(--color-border-default, #e2e6f0);
+  border-radius: 10px;
+  background: #fff;
+}
+
 .ai-generation-modal {
   width: min(680px, 92vw);
   max-width: 680px;
@@ -1281,6 +1328,7 @@ body.step5-fullscreen-mode #step5-btn-fullscreen {
 
 @media (max-width: 760px) {
   .template-manager-bar,
+  .step2-prompt-create-panel,
   .subtitle-settings-layout,
   .reference-image-grid,
   .step3-ai-layout {
@@ -4565,17 +4613,30 @@ textarea.step2-soft-input {
   }
 }
 
-/* Keep the stale-step badge inside the row instead of creating a fifth grid
-   item that wraps beneath the following step. */
+/* Stale-step status sits below the step name so the name remains readable. */
 .sidebar .step-item.pending_reconfirmation .step-complete {
   display: none !important;
 }
 
+.sidebar .step-item.pending_reconfirmation {
+  height: 88px;
+  min-height: 88px;
+  grid-template-rows: 38px 24px;
+  align-items: center;
+}
+
+.sidebar .step-item.pending_reconfirmation .step-num,
+.sidebar .step-item.pending_reconfirmation .step-icon,
+.sidebar .step-item.pending_reconfirmation .step-label {
+  grid-row: 1;
+}
+
 .sidebar .step-status-tag {
-  position: absolute !important;
-  top: 50% !important;
-  right: 0.55rem !important;
-  transform: translateY(-50%);
+  position: static !important;
+  grid-column: 3 / 5;
+  grid-row: 2;
+  justify-self: start;
+  transform: none;
   z-index: 3;
   margin: 0 !important;
   min-height: 22px;
@@ -4588,9 +4649,9 @@ textarea.step2-soft-input {
 }
 
 .sidebar .step-item.pending_reconfirmation .step-label {
-  padding-right: 3.4rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  padding-right: 0;
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .step3-card-header {
@@ -5164,6 +5225,72 @@ button.success:disabled,
   font-size: 17px;
   line-height: 1.85;
   color: #3f4756;
+}
+
+.vn-inline-control,
+.vn-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.vn-inline-control {
+  flex: 0 0 auto;
+}
+
+.vn-inline-control select,
+.vn-edit-field select,
+.vn-edit-field input,
+.vn-edit-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #dfe4ef;
+  border-radius: 8px;
+  background: #fff;
+  color: #3f4756;
+  font: inherit;
+}
+
+.vn-inline-control select {
+  min-width: 94px;
+  min-height: 34px;
+  padding: 5px 28px 5px 9px;
+}
+
+.vn-edit-field input,
+.vn-edit-field select,
+.vn-edit-field textarea {
+  padding: 8px 10px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.55;
+}
+
+.vn-edit-field textarea {
+  min-height: 76px;
+  resize: vertical;
+}
+
+.vn-edit-field input:focus,
+.vn-edit-field select:focus,
+.vn-edit-field textarea:focus,
+.vn-inline-control select:focus {
+  border-color: #8d7bf4;
+  outline: 3px solid rgba(141, 123, 244, 0.12);
+}
+
+.vn-visual,
+.vn-narration {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vn-binding-field {
+  margin-bottom: 8px;
 }
 
 .vn-beat-intent {

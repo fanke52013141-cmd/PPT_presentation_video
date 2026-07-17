@@ -26,6 +26,8 @@ for (const requiredStep2Token of [
   'step2-script-output-example',
   'step2-visual-system-prompt',
   'step2-visual-output-example',
+  'btn-step2-prompt-template-new',
+  'step2-prompt-template-create-panel',
   'step2-slide-title-input',
   'step2-slide-subtitle-input',
   'step2-slide-body-input',
@@ -63,6 +65,12 @@ if (html.includes('step3-video-background-apply') || background.includes('step3-
 if (!background.includes('铺满画面') || !background.includes('完整显示')) throw new Error('video background fit modes missing');
 for (const backgroundMode of ['data-mode-card="image"', 'data-mode-card="solid"', '16:9 预览']) {
   if (!background.includes(backgroundMode)) throw new Error(`final background modal contract missing: ${backgroundMode}`);
+}
+if (!app.includes('handleStep2MapEditorInput') || !app.includes('handleStep2MapEditorChange')) {
+  throw new Error('Step 2 visual/narration mapping is not editable');
+}
+if (!css.includes('grid-column: 3 / 5') || !css.includes('grid-row: 2')) {
+  throw new Error('stale step status is not positioned below the step label');
 }
 if (!css.includes('.storyboard-bg-preview') || !css.includes('aspect-ratio:16 / 9')) {
   throw new Error('final background preview is not fixed to 16:9 in the shared stylesheet');
@@ -154,8 +162,8 @@ if (!app.includes('claimUniqueMaskColor') || !app.includes('idx + offset')) {
 if (!css.includes('.step3-toolbar-row::before') || !css.includes('backdrop-filter: saturate(135%) blur(24px)') || !css.includes('mask-image: linear-gradient(')) {
   throw new Error('sticky workflow headers must use the full-width fading glass layer');
 }
-if (!css.includes('.sidebar .step-status-tag') || !css.includes('transform: translateY(-50%)')) {
-  throw new Error('pending-reconfirmation badges must stay inside their step row');
+if (!css.includes('.sidebar .step-status-tag') || !css.includes('grid-row: 2') || !css.includes('position: static !important')) {
+  throw new Error('pending-reconfirmation badges must sit below the step label');
 }
 if (aiMask.includes("setInlineStatus('AI 标注已完成'")) {
   throw new Error('completed AI Mask status must be a temporary toast, not persistent sidebar content');

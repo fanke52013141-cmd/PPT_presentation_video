@@ -11,6 +11,7 @@ from server import (
     dedupe_narration_beats,
     narration_dedupe_key,
     normalize_narration_segments,
+    normalize_slide_script_plan,
     normalize_visual_contract,
     normalize_visual_elements,
 )
@@ -95,6 +96,29 @@ def test_step2_script_plan_normalization_removes_duplicate_segments():
     assert [item["segment_id"] for item in segments] == ["seg_001", "seg_003"]
 
 
+def test_step2_script_plan_normalizes_to_minimal_step_a_contract():
+    plan = normalize_slide_script_plan(
+        {
+            "title": "测试",
+            "slides": [
+                {
+                    "slide_id": "slide_001",
+                    "slide_title": "第一页",
+                    "slide_subtitle": "副标题",
+                    "body": "旧正文字段",
+                    "body_points": [{"text": "旧要点"}],
+                    "narration": "这是完整演讲稿。",
+                    "narration_segments": [{"narration": "旧分段"}],
+                }
+            ],
+        },
+        "测试",
+    )
+    assert set(plan["slides"][0]) == {"slide_id", "slide_title", "slide_subtitle", "narration"}
+    visual_input = json.loads(server.build_step2_visual_user_prompt(plan))["slide_script_plan"]
+    assert visual_input == plan
+
+
 def test_step2_visual_plan_keeps_only_one_binding_per_narration():
     elements = normalize_visual_elements(
         [
@@ -121,8 +145,8 @@ def test_default_step2_prompts_explicitly_forbid_duplicate_narration_binding():
     script_prompt = (ROOT / "templates" / "prompts" / "step2_script_system.md").read_text(encoding="utf-8")
     visual_prompt = (ROOT / "templates" / "prompts" / "step2_visual_system.md").read_text(encoding="utf-8")
     assert "一项信息只讲一次" in script_prompt
-    assert "最多只能被一个 visual_element 使用一次" in visual_prompt
-    assert "所有非空 narration 必须两两不同" in visual_prompt
+    assert "一个片段只绑定一个元素" in visual_prompt
+    assert "不得重复、遗漏或改写" in visual_prompt
 
 
 def test_mask_size_cursor_and_outline_contracts():
@@ -156,7 +180,8 @@ def test_builtin_prompts_and_mask_state_are_reset_per_project():
     assert "#step-panel-2 .slides-thumbnail-container" in css
     assert "resetStep5ProjectState();" in app
     assert "manifestProjectId !== projectId" in app
-    assert "template.prompt_type === state.activeStep2PromptMode && template.built_in" in app
+    assert "renderStep2PromptTemplateOptions('');" in app
+    assert "template.prompt_type === state.activeStep2PromptMode && template.built_in" not in app
     assert "selectedTemplateId: 'handdrawn'" in style_manager
     assert "STATE.selectedTemplateId = builtInDefault ? String(builtInDefault.id) : 'current'" in style_manager
 

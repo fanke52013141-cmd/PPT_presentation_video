@@ -11,7 +11,7 @@
       "properties": {
         "subtitle_policy": {
           "type": "string",
-          "enum": ["all_slides_have_subtitle", "no_slides_have_subtitle"]
+          "enum": ["all_slides_have_subtitle", "no_slides_have_subtitle", "optional_subtitles"]
         },
         "subtitle_decided_by": {"type": "string"},
         "subtitle_rationale": {"type": "string"},

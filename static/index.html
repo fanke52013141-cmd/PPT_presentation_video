@@ -732,11 +732,19 @@
           </label>
           <button id="btn-step2-prompt-template-load" class="secondary" type="button">载入模板</button>
           <button id="btn-step2-prompt-template-delete" class="danger" type="button" disabled>删除模板</button>
+          <button id="btn-step2-prompt-template-new" class="secondary" type="button">新建模板</button>
+        </div>
+        <div id="step2-prompt-template-create-panel" class="step2-prompt-create-panel" style="display:none;">
+          <div class="step2-prompt-create-copy">
+            <strong>新建 <span id="step2-prompt-create-mode-label">文章➡️slides</span> 模板</strong>
+            <span>填写模板名称，并在下方定义 System Content 与 Output Example。</span>
+          </div>
           <label class="template-name-field">
             模板名称
             <input id="step2-prompt-template-name" type="text" maxlength="60" placeholder="例如：技术文章讲解模板">
           </label>
-          <button id="btn-step2-prompt-template-save" class="secondary" type="button">另存为模板</button>
+          <button id="btn-step2-prompt-template-create-cancel" class="secondary" type="button">取消新建</button>
+          <button id="btn-step2-prompt-template-save" class="success" type="button">创建模板</button>
         </div>
         <div id="step2-script-prompt-section">
           <label class="storyboard-config-field storyboard-rule-field">

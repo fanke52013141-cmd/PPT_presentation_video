@@ -3354,7 +3354,6 @@ def normalize_slide_script_plan(plan: Dict[str, Any], project_title: str) -> Dic
         slide_id = stable_plan_id(slide.get("slide_id"), "slide", index)
         if not slide_id.startswith("slide_"):
             slide_id = f"slide_{index:03d}"
-        body = normalize_slide_body(slide)
         narration = clean_planning_text(
             slide.get("narration")
             or slide.get("speech")
@@ -3364,21 +3363,15 @@ def normalize_slide_script_plan(plan: Dict[str, Any], project_title: str) -> Dic
                 for segment in (slide.get("narration_segments") or [])
             )
         )
-        body_points = normalize_body_points(slide.get("body_points"), body)
-        narration_segments = normalize_narration_segments(slide.get("narration_segments"), narration)
-        if not narration_segments:
+        if not narration:
             raise HTTPException(status_code=500, detail=f"{slide_id} 缺少 narration")
         slide_title = clean_planning_text(slide.get("slide_title") or slide.get("title") or f"第 {index} 页")
-        normalized_narration = clean_planning_text(" ".join(segment["narration"] for segment in narration_segments))
         normalized_slides.append(
             {
                 "slide_id": slide_id,
                 "slide_title": slide_title,
                 "slide_subtitle": clean_planning_text(slide.get("slide_subtitle") or slide.get("subtitle") or ""),
-                "body": body,
-                "narration": normalized_narration,
-                "body_points": body_points,
-                "narration_segments": narration_segments,
+                "narration": narration,
             }
         )
     if not normalized_slides:
@@ -3599,7 +3592,7 @@ def build_step2_script_user_prompt(
             "project_title": project_title,
             "article_content": article_content,
             "generation_requirement": generation_requirement,
-            "output_goal": "生成 slide_script_plan.json，只包含 title、每页 slide_id、slide_title、可选 slide_subtitle、body 和一整段 narration。",
+            "output_goal": "生成 slide_script_plan.json。根级只包含 title、slides；每页只包含 slide_id、slide_title、slide_subtitle 和一整段 narration。",
         },
         ensure_ascii=False,
         indent=2,
@@ -3607,10 +3600,23 @@ def build_step2_script_user_prompt(
 
 
 def build_step2_visual_user_prompt(script_plan: Dict[str, Any]) -> str:
+    minimal_script_plan = {
+        "title": str(script_plan.get("title") or "").strip(),
+        "slides": [
+            {
+                "slide_id": str(slide.get("slide_id") or "").strip(),
+                "slide_title": str(slide.get("slide_title") or "").strip(),
+                "slide_subtitle": str(slide.get("slide_subtitle") or "").strip(),
+                "narration": str(slide.get("narration") or "").strip(),
+            }
+            for slide in (script_plan.get("slides") or [])
+            if isinstance(slide, dict)
+        ],
+    }
     return json.dumps(
         {
-            "slide_script_plan": script_plan,
-            "output_goal": "根据 slide_script_plan 生成 slide_visual_plan.json，只包含每页 visual_elements。",
+            "slide_script_plan": minimal_script_plan,
+            "output_goal": "根据每页完整 narration 定义 visual_elements、角色、Text/Picture 类型及逐字旁白绑定。",
         },
         ensure_ascii=False,
         indent=2,

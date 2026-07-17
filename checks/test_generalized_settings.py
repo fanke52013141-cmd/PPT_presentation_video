@@ -161,6 +161,8 @@ def main() -> None:
     assert 'id="step2-script-output-example"' in html
     assert 'id="step2-visual-system-prompt"' in html
     assert 'id="step2-visual-output-example"' in html
+    assert 'id="btn-step2-prompt-template-new"' in html
+    assert 'id="step2-prompt-template-create-panel"' in html
     assert 'id="step2-slide-title-input"' in html
     assert 'id="step2-slide-subtitle-input"' in html
     assert 'id="step2-slide-body-input"' in html
@@ -196,11 +198,11 @@ def main() -> None:
         "image-style/ai-draft",
     ]:
         assert removed_token not in app_js
-    assert "source_segment_id" not in step2_visual_prompt
-    assert "不要输出 text" in step2_visual_prompt
-    assert "不要输出 text、" in step2_visual_prompt
-    assert "body_points[]" in step2_visual_prompt
-    assert "narration_segments[]" in step2_visual_prompt
+    assert "不输出 `body_points`" in step2_visual_prompt
+    assert "按语义把整页 `narration` 切成" in step2_visual_prompt
+    assert "Text/Picture" not in step2_visual_prompt or "visual_type" in step2_visual_prompt
+    assert "handleStep2MapEditorInput" in app_js
+    assert "handleStep2MapEditorChange" in app_js
     assert server_module.IMAGE_STYLE_PROMPT_KEY == "prompt_system_content"
     assert "previewGlobalAnimationSettings" in app_js
     assert ".config-editor-scroll" in css

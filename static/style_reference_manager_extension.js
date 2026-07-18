@@ -149,7 +149,7 @@
           </section>
           <section id="style-panel-reverse-section" class="style-ref-view" data-style-view="reverse" hidden>
             <div class="style-workbench-panel">
-              <h4>上传参考图（最多3张）</h4>
+              <div class="style-ref-output-head"><h4>上传参考图（最多3张）</h4><div class="style-ref-actions"><button id="btn-style-panel-reverse-prompt" class="secondary" type="button">反推 Prompt</button><button class="prompt-help-button" type="button" data-prompt-help="style-reverse" aria-label="查看参考图反推 Prompt 的输入输出示例">?</button></div></div>
               <input id="style-panel-reverse-files" type="file" accept="image/*" multiple>
               <div id="style-panel-reverse-preview" class="style-reverse-upload-grid"></div>
               <p class="style-reverse-help">上传图片会以 16:9 横图卡片展示，反推时保留画面风格而不照抄内容。</p>
@@ -185,6 +185,7 @@
     modal.querySelector('#style-panel-upload-files').addEventListener('change', () => uploadManualReferences().catch(showError));
     modal.querySelector('#btn-style-panel-upload-run').addEventListener('click', () => uploadManualReferences().catch(showError));
     modal.querySelector('#style-panel-reverse-files').addEventListener('change', renderInlineReversePreview);
+    modal.querySelector('#btn-style-panel-reverse-prompt').addEventListener('click', () => openReversePromptEditor().catch(showError));
     modal.querySelector('#btn-style-panel-reverse-run').addEventListener('click', event => runInlineReverse(event.currentTarget).catch(showError));
     modal.querySelector('#btn-style-reverse-generate').addEventListener('click', event => regenerateReferences(event.currentTarget).catch(showError));
     modal.querySelector('#btn-style-ref-refresh').addEventListener('click', () => loadReferences().catch(showError));
@@ -192,6 +193,89 @@
     modal.querySelector('#btn-style-apply').addEventListener('click', event => applyCurrentMode(event.currentTarget).catch(showError));
     renderInlineReversePreview();
     return modal;
+  }
+
+  function composeReversePrompt(systemContent, outputExample) {
+    return `${String(systemContent || '').trim()}\n\n<OutputExample>\n${String(outputExample || '').trim()}\n</OutputExample>`;
+  }
+
+  function updateReversePromptPreview() {
+    const modal = document.getElementById('modal-style-reverse-prompt');
+    if (!modal) return;
+    modal.querySelector('#style-reverse-full-prompt').value = composeReversePrompt(
+      modal.querySelector('#style-reverse-system-prompt').value,
+      modal.querySelector('#style-reverse-output-example').value,
+    );
+  }
+
+  function ensureReversePromptEditor() {
+    let modal = document.getElementById('modal-style-reverse-prompt');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'modal-style-reverse-prompt';
+    modal.className = 'modal-overlay';
+    modal.style.display = 'none';
+    modal.innerHTML = `
+      <div class="modal-content config-editor-modal" role="dialog" aria-modal="true" aria-labelledby="style-reverse-prompt-title">
+        <div class="config-editor-scroll">
+          <div class="prompt-title-row"><h3 id="style-reverse-prompt-title" class="highlight-title">参考图反推 · Prompt</h3><button class="prompt-help-button" type="button" data-prompt-help="style-reverse" aria-label="查看参考图反推的输入输出示例">?</button></div>
+          <p class="config-editor-note">这里定义模型如何从参考图抽取可复用视觉语言。生产白底、Mask 和画布规则由程序另行追加，不需要写入本 Prompt。</p>
+          <label>System Content</label>
+          <textarea id="style-reverse-system-prompt" rows="14" spellcheck="false"></textarea>
+          <label>Output Example</label>
+          <textarea id="style-reverse-output-example" rows="12" spellcheck="false"></textarea>
+          <label>完整提示词（只读）</label>
+          <textarea id="style-reverse-full-prompt" rows="16" readonly spellcheck="false"></textarea>
+        </div>
+        <div class="config-editor-actions">
+          <button id="btn-style-reverse-prompt-reset" class="secondary" type="button">恢复默认</button>
+          <button id="btn-style-reverse-prompt-cancel" class="secondary" type="button">取消</button>
+          <button id="btn-style-reverse-prompt-save" class="success" type="button">保存当前 Prompt</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', event => { if (event.target === modal) modal.style.display = 'none'; });
+    modal.querySelector('#btn-style-reverse-prompt-cancel').addEventListener('click', () => { modal.style.display = 'none'; });
+    modal.querySelector('#style-reverse-system-prompt').addEventListener('input', updateReversePromptPreview);
+    modal.querySelector('#style-reverse-output-example').addEventListener('input', updateReversePromptPreview);
+    modal.querySelector('#btn-style-reverse-prompt-reset').addEventListener('click', () => {
+      const defaults = modal._promptDefaults || {};
+      modal.querySelector('#style-reverse-system-prompt').value = defaults.system_content || '';
+      modal.querySelector('#style-reverse-output-example').value = defaults.output_example || '';
+      updateReversePromptPreview();
+    });
+    modal.querySelector('#btn-style-reverse-prompt-save').addEventListener('click', async event => {
+      const button = event.currentTarget;
+      const systemContent = modal.querySelector('#style-reverse-system-prompt').value.trim();
+      const outputExample = modal.querySelector('#style-reverse-output-example').value.trim();
+      if (!systemContent || !outputExample) {
+        toast('System Content 和 Output Example 不能为空。', 4000);
+        return;
+      }
+      const original = button.textContent;
+      button.disabled = true;
+      button.textContent = '保存中...';
+      try {
+        await apiPut('/api/settings/image-style-reverse', { prompts: { system_content: systemContent, output_example: outputExample } });
+        modal.style.display = 'none';
+        toast('参考图反推 Prompt 已保存。', 3500);
+      } finally {
+        button.disabled = false;
+        button.textContent = original;
+      }
+    });
+    return modal;
+  }
+
+  async function openReversePromptEditor() {
+    const modal = ensureReversePromptEditor();
+    modal.style.display = 'flex';
+    const result = await apiGet('/api/settings/image-style-reverse');
+    const prompts = result.prompts || {};
+    modal._promptDefaults = result.defaults || {};
+    modal.querySelector('#style-reverse-system-prompt').value = prompts.system_content || '';
+    modal.querySelector('#style-reverse-output-example').value = prompts.output_example || '';
+    updateReversePromptPreview();
   }
 
   function showError(error) {

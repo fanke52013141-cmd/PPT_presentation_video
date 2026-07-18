@@ -1,0 +1,4 @@
+interface:
+  display_name: "Prompt Optimizer"
+  short_description: "Optimize production prompts with minimum necessary input"
+  default_prompt: "Use $optimize-prompts to trace the real prompt call, remove redundant inputs, strengthen the contract, implement the improved prompt, and validate it."

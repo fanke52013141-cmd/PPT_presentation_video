@@ -1,0 +1,50 @@
+{
+  "trigger_cases": [
+    {
+      "input": "优化一下 AI Mask 的系统提示词，检查真实输入和 JSON 输出",
+      "expected": "trigger"
+    },
+    {
+      "input": "把图片生成 Prompt 改成输入最小且必要，并同步到页面",
+      "expected": "trigger"
+    },
+    {
+      "input": "排查为什么旁白标注 Prompt 会返回不存在的字段",
+      "expected": "trigger"
+    },
+    {
+      "input": "直接根据这篇文章生成一套 PPT",
+      "expected": "do_not_trigger"
+    },
+    {
+      "input": "把按钮文案从保存改成确认",
+      "expected": "do_not_trigger"
+    }
+  ],
+  "effect_cases": [
+    {
+      "name": "system_computable_output",
+      "expect": [
+        "identify invisible output IDs",
+        "move deterministic expansion into code",
+        "keep only semantic object IDs in model output"
+      ]
+    },
+    {
+      "name": "batch_prompt_deduplication",
+      "expect": [
+        "global rules once",
+        "per-item variables only",
+        "no repeated full context"
+      ]
+    },
+    {
+      "name": "insufficient_context",
+      "expect": [
+        "remain in diagnostic mode",
+        "ask no more than three high-value questions",
+        "do not output a final prompt"
+      ]
+    }
+  ]
+}

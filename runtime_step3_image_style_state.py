@@ -147,51 +147,31 @@ def _step3_style_prompt(project: Any, server_module: ModuleType, refs_impl: Modu
     if not image_style:
         return fallback
 
-    lines = ["Step 3 当前图片风格（优先级高于全局默认图片风格）："]
-    for label, key in [
-        ("来源", "source"),
-        ("风格名称", "style_name"),
-        ("风格摘要", "style_summary"),
-        ("用户补充要求", "custom_requirement"),
-    ]:
-        value = _safe_text(image_style.get(key), 2000)
-        if value:
-            lines.append(f"- {label}: {value}")
+    lines = ["Step 3 当前图片风格："]
     system_content = _safe_text(image_style.get("system_content"), 12000)
     if system_content:
-        lines.append("- 生图 system content:")
-        lines.extend(f"  {line}" for line in system_content.splitlines() if line.strip())
-    visual_language = image_style.get("visual_language")
-    if isinstance(visual_language, dict) and visual_language:
-        lines.append("- 结构化视觉语言:")
-        for key, value in visual_language.items():
-            if isinstance(value, list):
-                rendered = "、".join(str(item).strip() for item in value if str(item).strip())
-            elif isinstance(value, dict):
-                rendered = "；".join(f"{k}: {v}" for k, v in value.items() if str(v).strip())
-            else:
-                rendered = _safe_text(value, 1000)
-            if rendered:
-                lines.append(f"  - {key}: {rendered}")
-    for title, key in [("Mask 友好规则", "maskability_rules"), ("负向规则", "negative_prompt_rules")]:
-        values = image_style.get(key)
-        if isinstance(values, list) and values:
-            lines.append(f"- {title}:")
-            lines.extend(f"  - {str(item).strip()}" for item in values if str(item).strip())
+        lines.append(system_content)
+    else:
+        for label, key in [("风格名称", "style_name"), ("风格摘要", "style_summary")]:
+            value = _safe_text(image_style.get(key), 2000)
+            if value:
+                lines.append(f"- {label}: {value}")
+        visual_language = image_style.get("visual_language")
+        if isinstance(visual_language, dict) and visual_language:
+            lines.append("- 结构化视觉语言:")
+            for key, value in visual_language.items():
+                rendered = "、".join(str(item).strip() for item in value) if isinstance(value, list) else _safe_text(value, 1000)
+                if rendered:
+                    lines.append(f"  - {key}: {rendered}")
+        custom_requirement = _safe_text(image_style.get("custom_requirement"), 2000)
+        if custom_requirement:
+            lines.append(f"- 用户补充要求: {custom_requirement}")
     try:
         has_refs = bool(refs_impl._project_reference_paths(project))
     except Exception:
         has_refs = False
     if has_refs:
         lines.append("- 当前 Step 3 已有 1-3 张图片风格参考图；兼容模型会把这些 PNG 作为 reference images 一起提交。")
-    lines.extend([
-        "- 不可覆盖规则：visual_draft.png 外背景必须保持纯白 #FFFFFF。",
-        "- 不可覆盖规则：最终视频背景不能画进生图。",
-        "- 不可覆盖规则：所有语义元素必须留出明显白色间隔，不能重叠、粘连或穿插。",
-    ])
-    if fallback:
-        lines.append("\n全局图片风格模板（仅作为 fallback，若与 Step 3 当前风格冲突，以 Step 3 为准）：")
-        lines.append(fallback)
     return "\n".join(lines)
 
 

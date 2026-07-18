@@ -12,9 +12,9 @@ from scripts.style_agent import style_bundle_system_prompt
 
 def assert_contract(name: str, text: str) -> None:
     normalized = text.lower()
-    purpose = ("## 目的" in text) or ("## purpose" in normalized)
-    prompt_input = ("## 输入" in text) or ("## input" in normalized)
-    output = ("## 输出" in text) or ("## output" in normalized)
+    purpose = any(marker in normalized for marker in ("## 目的", "## purpose", "## 角色与目标", "<purpose>"))
+    prompt_input = any(marker in normalized for marker in ("## 输入", "## input", "## 实际输入", "<inputcontract>"))
+    output = any(marker in normalized for marker in ("## 输出", "## output", "<outputcontract>"))
     assert purpose, f"{name} is missing an explicit purpose section"
     assert prompt_input, f"{name} is missing an explicit input section"
     assert output, f"{name} is missing an explicit output section"

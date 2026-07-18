@@ -74,7 +74,7 @@ Use the fixed no-subtitle presentation policy:
     "subtitle_policy": "no_slides_have_subtitle",
     "subtitle_decided_by": "system_no_subtitle_contract",
     "subtitle_rationale": "页面只保留主标题，把垂直空间交还给正文视觉。",
-    "default_visual_anchor_count": "2-5",
+    "default_visual_anchor_count": "content_driven",
     "layout_freedom": "high"
   }
 }
@@ -104,7 +104,7 @@ source of truth; visual anchors are matched after the page is drawn.
 - Put everything besides the title into `body_content`.
 - Use `visual_intent` to describe the desired meaning or feel, not exact coordinates or blocks.
 - Let the image generation stage decide whether body content becomes a scene, diagram, card, timeline, icon set, metaphor, or mixed layout.
-- If you provide `visual_groups`, keep them as 2-5 loose anchors for later Mask/Reveal review.
+- If you provide `visual_groups`, let the content determine the count. One coherent body group is valid; split only independently narrated or independently revealed visual islands.
 - Keep y=930..1080 completely clear.
 
 ## Example

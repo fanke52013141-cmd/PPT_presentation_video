@@ -269,9 +269,9 @@ function showToast(message, duration = 3000) {
 const PROMPT_IO_HELP = {
   article: {
     title: '话题生成文章',
-    inputSummary: '系统会把当前项目名称和用户填写的话题作为 User Content。',
-    inputFields: ['项目名称', '文章话题（最多 500 字）'],
-    inputExample: '项目名称：Token 科普\n文章话题：为什么大模型需要 Token？\n\n请生成文章。',
+    inputSummary: '系统只把用户填写的话题作为 User Content；项目名称不会重复发送。',
+    inputFields: ['topic：话题、方向和必要背景（最多 500 字）'],
+    inputExample: '{\n  "topic": "面向职场新人解释为什么大模型需要 Token，并说明它对成本的影响"\n}',
     outputSummary: '一篇可继续用于分镜规划的 Markdown 正文。',
     outputExample: '# 为什么大模型需要 Token？\n\n## 从文字到计算\n大模型不会直接读取文字……',
   },
@@ -307,6 +307,14 @@ const PROMPT_IO_HELP = {
     outputSummary: '当前项目的图片风格 System Content，以及最多 3 张实际参与后续生图的风格参考图。',
     outputExample: 'System Content：柔和蓝紫教育信息图风格；线条简洁；标题层级清楚；纯白外围背景。',
   },
+  'style-reverse': {
+    title: '参考图反推图片风格',
+    inputSummary: '以 1–3 张参考图为主要证据；只有用户填写时才额外发送 requirement，不重复发送生产规则或输出 Schema。',
+    inputFields: ['reference_images[]（1–3 张）', 'requirement（可选）'],
+    inputExample: '参考图：2 张\n{\n  "requirement": "保留柔和蓝紫色和圆角线性图标，降低装饰密度"\n}',
+    outputSummary: '严格 JSON 的可复用视觉语言；程序再确定性生成图片风格 System Content，并追加白底与 Mask 生产规则。',
+    outputExample: '{\n  "style_name": "柔和蓝紫线性信息图",\n  "style_summary": "适合知识讲解的轻盈扁平风格。",\n  "visual_language": {"line_style": "rounded outlines", "color_palette": ["#6C63FF", "#DCE7FF"]},\n  "negative_prompt_rules": ["avoid ornate frames"],\n  "sample_reference_image_prompts": ["A concise cause-and-effect explainer."],\n  "warnings": []\n}',
+  },
   'ai-mask': {
     title: 'AI Mask 自动标注',
     inputSummary: '系统提交当前 Slide 原图、自动检测后的语义对象，以及 Step 2 的旁白—视觉绑定关系。',
@@ -318,8 +326,8 @@ const PROMPT_IO_HELP = {
   'narration-annotation': {
     title: '旁白 AI 标注',
     inputSummary: '输入每页语块 ID 和原始旁白，仅添加 MiniMax 停顿与轻量语气标记。',
-    inputFields: ['slides[].slide_id', 'beats[].id', 'beats[].text'],
-    inputExample: '{\n  "slides": [{\n    "slide_id": "slide_001",\n    "beats": [{"id": "beat_001", "text": "首先看核心概念，再理解实际作用。"}]\n  }]\n}',
+    inputFields: ['slides[].slide_id', 'beats[].id', 'beats[].source_text'],
+    inputExample: '{\n  "slides": [{\n    "slide_id": "slide_001",\n    "beats": [{"id": "beat_001", "source_text": "首先看核心概念，再理解实际作用。"}]\n  }]\n}',
     outputSummary: '严格 JSON；保留原词，只在 tts_text 中加入合法标记。',
     outputExample: '{\n  "slides": [{\n    "slide_id": "slide_001",\n    "beats": [{"id": "beat_001", "tts_text": "首先看核心概念，<#0.35#>再理解实际作用。"}]\n  }]\n}',
   },

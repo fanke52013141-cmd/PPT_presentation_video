@@ -16,6 +16,15 @@ from typing import Any
 
 PATCH_MARKER = "__ppt_project_profile_runtime_patch__"
 AI_IMAGE_STYLE_SOURCE = "ai_text_generated"
+AI_IMAGE_STYLE_SYSTEM_PROMPT = """<PromptVersion>image_style_text_generation_v2_minimal</PromptVersion>
+
+You design reusable visual-language profiles for a PPT video image pipeline.
+
+The user provides one required `requirement` and may provide `project_context` or a compact `base_style` to adapt. Decide only the reusable look: line, shape, palette, texture, lighting, density, typography, composition, iconography, style-specific negatives, and up to three short content-neutral reference-image scene briefs.
+
+Production code deterministically adds the 1920x1080 canvas, pure-white outer background, subtitle-safe area, separated Mask boundaries, and final-video-background rules. Do not repeat those universal rules and do not output `system_content` or `maskability_rules`.
+
+Return one valid JSON object with exactly: `style_name`, `style_summary`, `visual_language`, `negative_prompt_rules`, `sample_reference_image_prompts`. Do not output Markdown or explanations."""
 
 
 def _safe_text(value: Any, limit: int = 12000) -> str:
@@ -83,17 +92,39 @@ def _build_system_content(style: dict[str, Any]) -> str:
     ]
     for key, value in visual.items():
         parts.append(f"- {key}: {value}")
-    parts.extend([
-        "Production invariants:",
-        "- Generated slide images must use a flat pure-white #FFFFFF outer canvas.",
-        "- Keep visual elements separated; no touching, sticking, overlapping, or dense collage.",
-        "- Reserve lower subtitle-safe area where the project requires subtitles.",
-        "- Final video background is handled separately and must not appear in visual_draft.png.",
-        "Negative rules:",
-    ])
-    for rule in style.get("negative_prompt_rules") or []:
-        parts.append(f"- {rule}")
+    negative_rules = style.get("negative_prompt_rules") or []
+    if negative_rules:
+        parts.append("Style-specific negative rules:")
+        for rule in negative_rules:
+            parts.append(f"- {rule}")
     return "\n".join(part for part in parts if str(part).strip())
+
+
+def _compact_base_style(value: Any) -> dict[str, Any]:
+    source = value if isinstance(value, dict) else {}
+    compact: dict[str, Any] = {
+        "style_name": _safe_text(source.get("style_name"), 120),
+        "style_summary": _safe_text(source.get("style_summary"), 1000),
+        "visual_language": _safe_dict(source.get("visual_language")),
+        "negative_prompt_rules": _safe_list(source.get("negative_prompt_rules"), 16),
+    }
+    compact = {key: item for key, item in compact.items() if item not in (None, "", [], {})}
+    return compact
+
+
+def build_text_image_style_user_prompt(
+    requirement: str,
+    project_context: str = "",
+    base_template: Any = None,
+) -> str:
+    payload: dict[str, Any] = {"requirement": _safe_text(requirement, 4000)}
+    context = _safe_text(project_context, 2000)
+    base_style = _compact_base_style(base_template)
+    if context:
+        payload["project_context"] = context
+    if base_style:
+        payload["base_style"] = base_style
+    return json.dumps(payload, ensure_ascii=False)
 
 
 def normalize_generated_image_style(value: Any, requirement: str = "") -> dict[str, Any]:
@@ -144,45 +175,13 @@ def _generate_image_style_with_llm(server_module: ModuleType, payload: dict[str,
 
     base_template = payload.get("base_template") if isinstance(payload.get("base_template"), dict) else {}
     project_context = _safe_text(payload.get("project_context"), 2000)
-    system_prompt = """
-你是 PPT 视频系统的图片风格设计专家。
-你的任务是根据用户的文字需求，生成一套可复用的图片风格配置，用于批量生成 16:9 slide visual_draft.png。
-必须遵守生产不变量：visual_draft.png 外背景永远是纯白 #FFFFFF；最终视频背景单独合成；元素之间必须分离、不能粘连、不能重叠，方便后续 AI Mask 和手动 Mask reveal。
-只输出 JSON，不要输出解释文字。
-""".strip()
-    output_schema = {
-        "style_name": "中文风格名称",
-        "style_summary": "一句话说明适合的内容、受众和观感",
-        "system_content": "给生图模型使用的英文风格 system content，必须包含 pure-white outer canvas、separated elements、no overlapping、no texture background 等生产约束",
-        "visual_language": {
-            "line_style": "线条风格",
-            "shape_language": "形状语言",
-            "color_palette": ["#FFFFFF", "#..."],
-            "texture": "纹理/材质要求",
-            "layout_density": "布局密度",
-            "typography": "标题和短标签风格",
-            "composition": "构图规则",
-        },
-        "maskability_rules": ["方便 Mask reveal 的正向规则"],
-        "negative_prompt_rules": ["必须避免的内容"],
-        "sample_reference_image_prompts": ["可用于生成风格参考图的英文 prompt，最多 3 条"],
-    }
-    user_prompt = json.dumps(
-        {
-            "user_requirement": requirement,
-            "project_context": project_context,
-            "base_template": base_template,
-            "fixed_output_schema": output_schema,
-        },
-        ensure_ascii=False,
-        indent=2,
-    )
+    user_prompt = build_text_image_style_user_prompt(requirement, project_context, base_template)
     try:
         client = server_module.get_openai_client(api_key=api_key, base_url=base_url, timeout=90.0, max_retries=1)
         response = client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": AI_IMAGE_STYLE_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.35,

@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -55,14 +56,21 @@ def sample_bundle():
 def main() -> None:
     system_prompt = style_bundle_system_prompt()
     assert "只输出合法 JSON" in system_prompt
-    assert "不能改生产铁律" in system_prompt
+    assert "style_bundle_v2_minimal" in system_prompt
+    assert "不重复生产铁律" in system_prompt
+    assert "不生成页面副标题" in system_prompt
     user_prompt = build_style_bundle_user_prompt(
         {"name": "财经解释风", "brief": "近白背景，专业简洁。"},
         "brand:\n  name: Base\n",
     )
-    assert "财经解释风" in user_prompt
-    assert "style_tokens.yaml" in user_prompt
-    assert "不得覆盖生成图纯白 #FFFFFF 铁律" in user_prompt
+    user_payload = json.loads(user_prompt)
+    assert user_payload == {
+        "requirement": "近白背景，专业简洁。",
+        "name": "财经解释风",
+        "base_style": "brand:\n  name: Base",
+    }
+    assert "fixed_output_schema" not in user_prompt
+    assert "#FFFFFF" not in user_prompt
 
     normalized = validate_style_bundle(sample_bundle())
     style_data = normalized["style_data"]
@@ -72,7 +80,8 @@ def main() -> None:
     assert style_data["canvas"]["background"] == "#FFFFFF"
     assert style_data["colors"]["generated_image_background"] == "#FFFFFF"
     assert style_data["visual_assets"]["required_background"] == "flat_uniform_pure_white_generated_image"
-    assert any("2-6 个语义视觉组" in rule for rule in style_data["visual_assets"]["reveal_friendly_layout"])
+    assert any("一个完整正文视觉组也是合法结果" in rule for rule in style_data["visual_assets"]["reveal_friendly_layout"])
+    assert "subtitle" not in normalized["template_paste_words"]
 
     yaml_text = style_bundle_to_yaml(sample_bundle())
     assert "brand:" in yaml_text

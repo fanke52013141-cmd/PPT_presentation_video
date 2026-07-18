@@ -142,6 +142,24 @@ python scripts/validate_run_assets.py --run-dir runs/<run_id> --repo-root . --re
 Also verify the six visible steps in the local browser, including the exact
 Mask preview and a rendered MP4.
 
+## Prompt Optimization Policy
+
+All new or modified production prompts must use
+`.agents/skills/optimize-prompts/SKILL.md` before implementation.
+
+- Trace the real system message, user payload, attached images/files, output
+  parser, fallback, and downstream consumer. Do not optimize a template in
+  isolation.
+- Keep model input minimum and necessary: stable rules appear once in the
+  system prompt; each request contains only facts needed for the model's next
+  decision; deterministically derivable fields stay in code.
+- Do not ask a model to return IDs or fields that are absent from its input, or
+  values that the application can expand, sort, count, or validate itself.
+- Preserve user-editable prompt settings and complete previews. Migrate only
+  recognized legacy built-in defaults; never overwrite genuine custom prompts.
+- Add tests that prove the runtime payload, output contract, migration, and UI
+  preview remain aligned.
+
 ## Git Rules
 
 Commit reusable application and framework files:

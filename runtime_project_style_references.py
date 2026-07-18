@@ -95,16 +95,10 @@ def _reference_prompts(image_style: dict[str, Any], count: int) -> list[str]:
     else:
         result = []
     if not result:
-        style_name = _safe_text(image_style.get("style_name"), 120) or "Step 3 image style"
-        summary = _safe_text(image_style.get("style_summary"), 1000)
-        system_content = _safe_text(image_style.get("system_content"), 3000)
         result = [
-            (
-                f"Create a 16:9 PPT image style reference sheet for {style_name}. "
-                f"{summary}\n{system_content}\n"
-                "Use separated visual groups, concise title text, simple icons, arrows, and labels. "
-                "Keep the entire outer canvas pure-white #FFFFFF. Do not use texture background."
-            )
+            "A cause-and-effect explainer with one central concept and supporting visual cues.",
+            "A concise process explanation using clear symbols, labels, and directional relationships.",
+            "A comparison page with two clearly differentiated ideas and one closing takeaway.",
         ]
     return result[:count]
 
@@ -112,24 +106,34 @@ def _reference_prompts(image_style: dict[str, Any], count: int) -> list[str]:
 def _style_generation_prompt(raw_prompt: str, image_style: dict[str, Any], index: int) -> str:
     style_name = _safe_text(image_style.get("style_name"), 120)
     style_summary = _safe_text(image_style.get("style_summary"), 1000)
-    maskability_rules = image_style.get("maskability_rules") if isinstance(image_style.get("maskability_rules"), list) else []
+    system_content = _safe_text(image_style.get("system_content"), 5000)
     negative_rules = image_style.get("negative_prompt_rules") if isinstance(image_style.get("negative_prompt_rules"), list) else []
+    if system_content:
+        style_specification = system_content
+    else:
+        style_specification = "\n".join(part for part in [style_name, style_summary] if part)
+    scene_brief = _safe_text(raw_prompt, 4000)
+    if scene_brief == system_content:
+        scene_brief = ""
+    unique_negative_rules = [
+        str(rule).strip()
+        for rule in negative_rules
+        if str(rule).strip() and str(rule).strip() not in style_specification
+    ]
     return "\n".join(
         part
         for part in [
             f"Generate Step 3 image style reference #{index}.",
-            f"Style name: {style_name}" if style_name else "",
-            f"Style summary: {style_summary}" if style_summary else "",
-            "Reference prompt:",
-            raw_prompt,
+            "Reusable style specification:",
+            style_specification,
+            "Content-neutral scene brief:\n" + scene_brief if scene_brief else "",
             "Non-overridable production constraints:",
             "- 16:9 PPT-style image, centered composition, clean readable layout.",
             "- Entire outer canvas must be flat pure-white #FFFFFF; all four edges and corners stay continuously white.",
             "- Do not draw final-video background colors, background images, texture paper, gradients, shadows, vignettes, or noise into the outer canvas.",
-            "- Keep 3-5 example semantic visual groups separated by clear white gaps for AI Mask and manual Mask reveal.",
+            "- Use only as many semantic visual groups as the scene needs; one coherent group is valid.",
             "- No overlap, no touching, no sticking between text, icons, arrows, labels, borders, formulas, people, or decorative marks.",
-            "Maskability rules:\n" + "\n".join(f"- {str(rule).strip()}" for rule in maskability_rules if str(rule).strip()) if maskability_rules else "",
-            "Negative rules:\n" + "\n".join(f"- {str(rule).strip()}" for rule in negative_rules if str(rule).strip()) if negative_rules else "",
+            "Style-specific negative rules:\n" + "\n".join(f"- {rule}" for rule in unique_negative_rules) if unique_negative_rules else "",
             "Only output the image. Do not add production notes or UI elements.",
         ]
         if str(part).strip()

@@ -26,7 +26,7 @@
 <InputContract>
 - `project_title`：整个项目或视频的标题。
 - `article_content`：文章全文，是事实、数据、案例和观点的唯一依据。
-- `generation_requirement`：用户对页数、重点、受众、用途、语气或表达深度的补充要求。
+- `generation_requirement`（可选）：仅在用户明确填写时提供，用于补充页数、重点、受众、用途、语气或表达深度；缺失时直接根据项目标题和文章全文规划。
 
 优先级：事实准确性与文章边界 > 用户明确要求 > 本提示词默认策略。用户要求不能成为补造事实的理由。
 </InputContract>

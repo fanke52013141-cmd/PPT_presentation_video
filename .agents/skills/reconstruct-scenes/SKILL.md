@@ -5,16 +5,17 @@ description: Build deterministic reveal scenes from complete slide images and op
 
 # Purpose
 
-把每页完整位图和可选手工 Mask 转换为 Remotion 使用的 PNG reveal 图层。生产版本固定为 `manual_mask_boundary_white_v4`。
+把每页完整位图、AI Mask 保存的精确 RLE 所有权和可选手工修正转换为 Remotion 使用的 PNG reveal 图层。生产版本固定为 `exact_rle_mask_with_manual_corrections_v5`。
 
 # Behavior
 
 - 无 Mask：整页静态显示，`composition_method=full_slide_static`。
-- 有 Mask：使用用户设置的视频背景色，`composition_method=solid_background_mask_boundary_white_cutout`。
-- 每个涂抹区域是一个处理边界，只移除从该边界向内连通的近白色背景。
+- 有 Mask：从用户设置的视频背景开始合成，绝不复用完整原图作为背景。
+- 每个自动 Mask 是处理边界；手工涂抹/擦除只作为其上的修正。只移除从该边界向内连通的近白色背景。
 - 被内容包围的白色区域保留。
-- 手工 Mask 是处理范围；不做前景腐蚀、自动扩边、覆盖率评分或语义分割。
+- Reveal builder 不重新判断语义归属，不做前景腐蚀或自动扩边。
 - 抗锯齿边缘使用柔和透明度并去除白色污染。
+- 自动 Mask 必须达到至少 99.5% 前景覆盖、零未分配组件和零跨组像素交叉。
 
 # Command
 

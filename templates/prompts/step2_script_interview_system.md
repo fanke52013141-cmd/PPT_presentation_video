@@ -20,7 +20,7 @@
 <InputContract>
 - `project_title`：项目名称。
 - `article_content`：用户提供的完整题目、背景材料和原始解析，是事实依据。若只有题目而没有解析，可以基于通行的机关实务方法进行专业分析，但不得虚构具体政策、数据、案例或题外事实。
-- `generation_requirement`：用户补充的页数、受众、重点和表达要求；与题目原文或权限边界冲突时，以题目事实和机关权限为准。
+- `generation_requirement`（可选）：仅在用户明确填写时提供，用于补充页数、受众、重点和表达要求；与题目原文或权限边界冲突时，以题目事实和机关权限为准。
 </InputContract>
 
 <Methodology>

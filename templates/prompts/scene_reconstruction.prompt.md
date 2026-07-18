@@ -1,33 +1,33 @@
 # Scene Reconstruction Prompt
 
+<PromptVersion>scene_reconstruction_v5_exact_rle</PromptVersion>
+
 ## Purpose
 
-Reconstruct a production-ready Reveal scene from an approved slide bitmap and optional manual masks while preserving the approved visual content exactly.
+Build deterministic Reveal assets from the approved slide bitmap and the semantic ownership already saved by AI Mask. Do not perform semantic rematching or visual redesign.
 
 ## Input
 
-- One approved full-slide bitmap.
-- Optional saved manual brush masks and the current `reveal_manifest.json`.
+- The current `reveal_manifest.json`, including exact automatic `manual_mask.rle` ownership when AI Mask has run.
+- One approved full-slide bitmap per Slide.
+- Optional manual paint/erase correction strokes already stored in the manifest.
 
 ## Output
 
-- Production scene assets referenced by the updated manifest and a successful validation result.
-- Do not redesign, regenerate, reinterpret, crop, or reassign slide content.
-
-Build the production reveal scene from one approved full-slide bitmap and its optional manual brush masks.
+- Scene PNG assets and reports referenced by the current manifest.
+- A successful reveal-scene validation result.
+- No redesigned, regenerated, cropped, rematched, or reassigned slide content.
 
 ## Production Contract
 
-- Pipeline: `manual_mask_boundary_white_v4`.
-- No mask: use the complete slide as `full_slide_static`.
-- With masks: use `solid_background_mask_boundary_white_cutout`.
-- Treat each saved brush Mask as a processing boundary.
-- Remove only near-white pixels connected inward from that Mask boundary.
-- Preserve white pixels enclosed by visible content.
-- Retain all non-white source content inside the saved manual Mask.
-- Do not erode, dilate, auto-expand, segment, crop, or reassign foreground.
-- Apply only soft antialias alpha and white-edge decontamination.
-- Never reuse the complete source image as the background of a masked slide.
+- Pipeline: `exact_rle_mask_with_manual_corrections_v5`.
+- A Slide without a Mask remains `full_slide_static`.
+- A masked Slide starts from the configured video background; never reuse the source bitmap as its background.
+- Treat each saved automatic Mask as a processing boundary and apply optional manual paint/erase strokes only as corrections.
+- Remove only near-white pixels connected inward from that boundary; preserve white areas enclosed by visible content.
+- Retain non-white source content within the saved ownership Mask, with soft antialias alpha and white-edge decontamination.
+- Do not rematch semantic ownership, redesign, regenerate, crop, or silently reuse legacy layer assets.
+- The resulting automatic Masks must preserve at least 99.5% of foreground content, leave zero unassigned components, and have zero cross-group pixel overlap.
 
 ## Commands
 

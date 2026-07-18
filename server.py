@@ -276,10 +276,13 @@ AI_KNOWLEDGE_STEP2_SCRIPT_EXTENSION = """
 </AIKnowledgeAudienceOverride>
 """.strip()
 LEGACY_STEP2_PROMPT_HASHES = {
-    "script_system": "eb40ad64735f5bf5f2c70477c057f632ec8ad8a238919c08aa2be3679a698042",
-    "script_output_example": "a87e75ff998d2b8a415108ba95b73d8b15a12100171439949d3eaa7d2201d603",
-    "visual_system": "2cd1d2c659883ccb641743d2db0a3b255036c4ebc67e34075ffb918e102647f3",
-    "visual_output_example": "d61dc2dfdd60cddd4be3bc13cfe4848ee5b119964ad726ec8ff214840cd7e9fa",
+    "script_system": {
+        "eb40ad64735f5bf5f2c70477c057f632ec8ad8a238919c08aa2be3679a698042",
+        "772bf5f95f6da19a387ff1df76960c5e5a7deebda170bc9f06d66031f0a81609",
+    },
+    "script_output_example": {"a87e75ff998d2b8a415108ba95b73d8b15a12100171439949d3eaa7d2201d603"},
+    "visual_system": {"2cd1d2c659883ccb641743d2db0a3b255036c4ebc67e34075ffb918e102647f3"},
+    "visual_output_example": {"d61dc2dfdd60cddd4be3bc13cfe4848ee5b119964ad726ec8ff214840cd7e9fa"},
 }
 LEGACY_INTERVIEW_SCRIPT_PROMPT_HASH = "7e6f9fbd452f9c94bc02b3c5226edcde21a4bb69d87d5ede8089eb8b28f7bef9"
 STEP2_PROMPTS_FILE = "step2_prompts.json"
@@ -2711,7 +2714,7 @@ def mark_slide_image_changed(project: Project, slide_id: str, db: Session) -> No
 # ==================== 步骤 1: 导入文章 ====================
 
 ARTICLE_GENERATION_SYSTEM_CONTENT_KEY = "article_generation_system_content"
-DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT = """你是一名中文长文写作编辑。
+LEGACY_DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT_V1 = """你是一名中文长文写作编辑。
 
 ## 目的
 根据用户给出的话题，生成结构完整、事实边界清楚、可继续转换为演示文稿的中文长文。
@@ -2728,16 +2731,69 @@ DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT = """你是一名中文长文写作编
 3. 先建立背景和问题，再展开关键概念、机制、案例与结论。
 4. 不编造无法确认的数据、引文或来源；不确定的信息要明确标注。
 5. 文章需要为后续分镜规划提供足够具体的内容，但避免空泛重复。"""
+DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT = """<PromptVersion>article_generation_v2_minimal</PromptVersion>
+
+## 目的
+
+<Role>
+你是一名中文长文写作编辑。你的唯一任务是把用户提供的 `topic` 写成一篇可直接编辑、并可作为后续 Slide 规划唯一文章来源的中文 Markdown 正文。
+</Role>
+
+<SystemBackground>
+后续系统会直接读取本次输出规划演讲稿和视觉内容。因此文章需要有清楚的事实边界、论述顺序和可讲解的具体信息；当前阶段不设计 Slide、画面、Mask、动画或生图提示词。
+</SystemBackground>
+
+## 输入
+
+<InputContract>
+User Content 是一个 JSON 对象，只包含：
+- `topic`：用户给出的话题，也可能同时包含受众、用途、写作方向或必要背景；它是本次写作的唯一事实与范围依据。
+</InputContract>
+
+<WritingRules>
+1. 根据主题选择最合适的结构，不机械套用固定章节；每一节只推进一个核心观点，前后逻辑连贯。
+2. 使用清楚的一级、二级标题和必要列表，正文承担主要信息，避免空话、重复和只列提纲不解释。
+3. 术语、机制、步骤、条件、对比和结论要写到足以继续讲解；仅在输入支持时使用具体数据、案例、引文或来源。
+4. 不得编造无法确认的事实。信息不足但仍可完成时使用审慎表述；缺口会改变核心结论时，明确指出限制，不自行补造。
+5. 不输出 Slide 划分、视觉设计、图片说明、Mask、动画或任何系统内部字段。
+</WritingRules>
+
+## 输出
+
+<OutputContract>
+只输出一篇 Markdown 正文。不要输出 JSON、代码围栏、写作过程、解释、前缀或后缀文字。
+</OutputContract>
+
+<SelfCheck>
+- 内容没有超出 `topic` 的事实边界。
+- 标题层级、论述顺序和结论一致。
+- 正文具体且可讲解，没有为凑结构重复表达。
+- 最终输出只有 Markdown 正文。
+</SelfCheck>"""
+
+
+def read_article_generation_system_content() -> str:
+    value = str(
+        get_setting(
+            ARTICLE_GENERATION_SYSTEM_CONTENT_KEY,
+            DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT,
+        )
+        or DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT
+    ).strip()
+    if value == LEGACY_DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT_V1:
+        return DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT
+    return value
+
+
+def build_article_generation_user_content(topic: str) -> str:
+    return json.dumps({"topic": str(topic or "").strip()}, ensure_ascii=False)
 
 
 @app.get("/api/settings/article-generation")
 def get_article_generation_settings():
     return {
         "success": True,
-        "system_content": get_setting(
-            ARTICLE_GENERATION_SYSTEM_CONTENT_KEY,
-            DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT,
-        ) or DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT,
+        "system_content": read_article_generation_system_content(),
     }
 
 
@@ -2772,10 +2828,7 @@ def generate_article_from_topic(
         raise HTTPException(status_code=400, detail="未配置大模型 API 密钥，请先在系统设置中配置")
     model = get_setting("llm_model")
     base_url = get_setting("llm_base_url")
-    system_content = get_setting(
-        ARTICLE_GENERATION_SYSTEM_CONTENT_KEY,
-        DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT,
-    ) or DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT
+    system_content = read_article_generation_system_content()
     client = get_openai_client(
         api_key=api_key,
         base_url=base_url,
@@ -2792,7 +2845,7 @@ def generate_article_from_topic(
                 {"role": "system", "content": system_content},
                 {
                     "role": "user",
-                    "content": f"项目名称：{(project.name or '').strip() or '未命名项目'}\n文章话题：{topic}\n\n请生成文章。",
+                    "content": build_article_generation_user_content(topic),
                 },
             ],
         )
@@ -3085,7 +3138,7 @@ def normalized_prompt_hash(value: Any) -> str:
 def migrate_legacy_step2_prompt(key: str, value: str, defaults: Dict[str, str]) -> str:
     """Upgrade untouched built-in prompts while preserving genuinely customized text."""
     prompt_hash = normalized_prompt_hash(value)
-    if prompt_hash == LEGACY_STEP2_PROMPT_HASHES.get(key):
+    if prompt_hash in LEGACY_STEP2_PROMPT_HASHES.get(key, set()):
         return defaults[key]
     if key == "script_system" and prompt_hash == LEGACY_INTERVIEW_SCRIPT_PROMPT_HASH:
         return value.replace(
@@ -3749,16 +3802,13 @@ def build_step2_script_user_prompt(
     article_content: str,
     generation_requirement: str,
 ) -> str:
-    return json.dumps(
-        {
-            "project_title": project_title,
-            "article_content": article_content,
-            "generation_requirement": generation_requirement,
-            "output_goal": "生成 slide_script_plan.json。根级只包含 title、slides；每页只包含 slide_id、slide_title 和一整段 narration，不生成副标题。",
-        },
-        ensure_ascii=False,
-        indent=2,
-    )
+    user_input = {
+        "project_title": project_title,
+        "article_content": article_content,
+    }
+    if str(generation_requirement or "").strip():
+        user_input["generation_requirement"] = str(generation_requirement).strip()
+    return json.dumps(user_input, ensure_ascii=False, indent=2)
 
 
 def build_step2_visual_user_prompt(script_plan: Dict[str, Any]) -> str:
@@ -3774,14 +3824,7 @@ def build_step2_visual_user_prompt(script_plan: Dict[str, Any]) -> str:
             if isinstance(slide, dict)
         ],
     }
-    return json.dumps(
-        {
-            "slide_script_plan": minimal_script_plan,
-            "output_goal": "把每页完整 narration 按原文顺序切成非空片段；一个片段只对应一个画面文字或画面元素，全部片段拼接后必须完整还原原演讲稿。",
-        },
-        ensure_ascii=False,
-        indent=2,
-    )
+    return json.dumps({"slide_script_plan": minimal_script_plan}, ensure_ascii=False, indent=2)
 
 
 def element_visible_text(element: Dict[str, str], index: int) -> str:
@@ -4209,7 +4252,7 @@ def execute_step2_script_plan(
     article_source = read_project_article_source(project)
     project_title = article_source["title"]
     article_content = article_source["content"]
-    generation_requirement = str((payload or {}).get("requirement") or "").strip() or DEFAULT_STEP2_GENERATION_REQUIREMENT
+    generation_requirement = str((payload or {}).get("requirement") or "").strip()
     prompts = read_step2_prompts(project)
     if step2_script_prompt_uses_legacy_contract(prompts["script_system"]):
         raise HTTPException(
@@ -6691,7 +6734,7 @@ def repair_step6_result(project_id: str, db: Session = Depends(get_db)):
 
 NARRATION_ANNOTATION_SYSTEM_CONTENT_KEY = "narration_annotation_system_content"
 NARRATION_ANNOTATION_OUTPUT_EXAMPLE_KEY = "narration_annotation_output_example"
-DEFAULT_NARRATION_ANNOTATION_SYSTEM_CONTENT = """You are a Chinese voiceover director preparing MiniMax TTS text.
+LEGACY_DEFAULT_NARRATION_ANNOTATION_SYSTEM_CONTENT_V1 = """You are a Chinese voiceover director preparing MiniMax TTS text.
 
 Add only light delivery markup to the existing narration. Preserve the original meaning and words. Do not rewrite technical terms.
 
@@ -6702,6 +6745,63 @@ Rules:
 4. Expression tags are optional and must use only MiniMax speech-2.8 tags such as (breath), (sighs), (chuckle), (emm), (laughs), (inhale), (exhale), (gasps), (whistles), or (applause).
 5. Avoid expression tags inside numbers, English identifiers, code terms, Token, API, LLM, or backtick content.
 6. Return strict JSON only. Do not output Markdown or explanations."""
+LEGACY_DEFAULT_NARRATION_ANNOTATION_OUTPUT_EXAMPLE_V1 = """{
+  "slides": [
+    {
+      "slide_id": "slide_001",
+      "beats": [
+        {
+          "id": "beat_001",
+          "tts_text": "首先看核心概念，<#0.35#>再理解它的实际作用。"
+        }
+      ]
+    }
+  ]
+}"""
+DEFAULT_NARRATION_ANNOTATION_SYSTEM_CONTENT = """<PromptVersion>narration_annotation_v2_minimal</PromptVersion>
+
+<Role>
+你是一名中文旁白 TTS 标注编辑。你的唯一任务是在原始旁白中加入少量 MiniMax 停顿或自然语气标签，不改写旁白内容。
+</Role>
+
+<SystemBackground>
+输入中的每个 beat 已经与一个画面 Reveal 单元绑定。`source_text` 是用户确认过的最终旁白；系统会把你返回的 `tts_text` 直接用于语音合成，并会在服务端校验去除标签后的文字必须与 `source_text` 完全一致。
+</SystemBackground>
+
+<InputContract>
+User Content 是一个 JSON 对象：
+{
+  "slides": [
+    {
+      "slide_id": "输入中的 Slide ID",
+      "beats": [
+        {"id": "输入中的 beat ID", "source_text": "原始旁白"}
+      ]
+    }
+  ]
+}
+
+只使用输入中真实存在的 `slide_id`、`id` 和 `source_text`，不得创造、删除、合并、拆分或重排 Slide/beat。
+</InputContract>
+
+<AnnotationRules>
+1. 除插入合法标签外，`source_text` 中的汉字、字母、数字、标点、术语和顺序必须保持不变。
+2. 停顿只用于自然分句、转折、对比、举例或结论边界。短句可以不加；较长 beat 通常 1–3 个，宁少勿多。
+3. 停顿格式为 `<#x#>`，常用 `0.2`、`0.35`、`0.5` 秒；不得位于整段开头或结尾，不得连续出现。
+4. 语气标签默认不用；只有语义明确需要时，才可少量使用 `(breath)`、`(sighs)`、`(chuckle)`、`(emm)`、`(laughs)`、`(inhale)`、`(exhale)`、`(gasps)`、`(whistles)` 或 `(applause)`。
+5. 不在数字、英文标识符、代码术语、Token、API、LLM 或反引号内容内部插入标签。
+</AnnotationRules>
+
+<OutputContract>
+只输出一个合法 JSON 对象。保留输入中的 Slide 和 beat 顺序；每个 beat 只输出 `id` 与 `tts_text`，不要复制 `source_text`，不要输出解释或额外字段。
+</OutputContract>
+
+<SelfCheck>
+- 所有 `slide_id` 和 beat `id` 都来自输入，且没有遗漏或重复。
+- 去除所有 TTS 标签后，`tts_text` 与对应 `source_text` 完全一致。
+- 没有段首/段尾标签、连续停顿或不允许的语气标签。
+- 最终输出只有严格 JSON。
+</SelfCheck>"""
 DEFAULT_NARRATION_ANNOTATION_OUTPUT_EXAMPLE = """{
   "slides": [
     {
@@ -6710,6 +6810,10 @@ DEFAULT_NARRATION_ANNOTATION_OUTPUT_EXAMPLE = """{
         {
           "id": "beat_001",
           "tts_text": "首先看核心概念，<#0.35#>再理解它的实际作用。"
+        },
+        {
+          "id": "beat_002",
+          "tts_text": "这是一句短旁白。"
         }
       ]
     }
@@ -6726,7 +6830,41 @@ def read_narration_annotation_prompts() -> tuple[str, str]:
         get_setting(NARRATION_ANNOTATION_OUTPUT_EXAMPLE_KEY, DEFAULT_NARRATION_ANNOTATION_OUTPUT_EXAMPLE)
         or DEFAULT_NARRATION_ANNOTATION_OUTPUT_EXAMPLE
     ).strip()
+    if system_content == LEGACY_DEFAULT_NARRATION_ANNOTATION_SYSTEM_CONTENT_V1:
+        system_content = DEFAULT_NARRATION_ANNOTATION_SYSTEM_CONTENT
+    if output_example == LEGACY_DEFAULT_NARRATION_ANNOTATION_OUTPUT_EXAMPLE_V1:
+        output_example = DEFAULT_NARRATION_ANNOTATION_OUTPUT_EXAMPLE
     return system_content, output_example
+
+
+def build_narration_annotation_input(incoming: Dict[str, Any]) -> Dict[str, Any]:
+    slides: List[Dict[str, Any]] = []
+    for slide in incoming.get("slides", []) or []:
+        if not isinstance(slide, dict):
+            continue
+        beats: List[Dict[str, str]] = []
+        for index, beat in enumerate(slide.get("beats", []) or [], start=1):
+            if not isinstance(beat, dict):
+                continue
+            source_text = clean_tts_text(
+                beat.get("source_text") or beat.get("spoken_text") or beat_tts_text(beat)
+            )
+            if not source_text:
+                continue
+            beats.append({
+                "id": str(beat.get("id") or f"beat_{index:03d}"),
+                "source_text": source_text,
+            })
+        slides.append({"slide_id": str(slide.get("slide_id") or ""), "beats": beats})
+    return {"slides": slides}
+
+
+def narration_annotation_preserves_text(candidate: str, source_text: str) -> bool:
+    def signature(value: str) -> str:
+        without_markup = TTS_MARKUP_RE.sub("", str(value or ""))
+        return re.sub(r"\s+", " ", without_markup).strip()
+
+    return signature(candidate) == signature(source_text)
 
 
 def compose_narration_annotation_prompt(system_content: str, output_example: str) -> str:
@@ -6800,27 +6938,12 @@ def annotate_step6_narration(project_id: str, payload: Optional[Dict[str, Any]] 
     llm_model = get_setting("llm_model", "gpt-4o-mini")
     llm_max_tokens = parse_int_setting(get_setting("llm_max_tokens", "50000"), 50000, 1024, 64000)
     client = get_openai_client(api_key=llm_api_key, base_url=llm_base_url)
-    compact_slides = []
-    for slide in incoming.get("slides", []):
-        compact_beats = []
-        for idx, beat in enumerate(slide.get("beats", []) or [], start=1):
-            if not isinstance(beat, dict):
-                continue
-            compact_beats.append({
-                "id": str(beat.get("id") or f"beat_{idx:03d}"),
-                "index": idx,
-                "source_text": clean_tts_text(beat.get("source_text") or beat.get("spoken_text") or beat_tts_text(beat)),
-                "current_tts_text": beat_tts_text(beat),
-                "anchor": str(beat.get("visible_anchor") or beat.get("group_id") or ""),
-            })
-        compact_slides.append({"slide_id": slide.get("slide_id"), "beats": compact_beats})
-
     annotation_system_content, annotation_output_example = read_narration_annotation_prompts()
     system_prompt = compose_narration_annotation_prompt(
         annotation_system_content,
         annotation_output_example,
     )
-    user_prompt = json.dumps({"slides": compact_slides}, ensure_ascii=False)
+    user_prompt = json.dumps(build_narration_annotation_input(incoming), ensure_ascii=False)
 
     try:
         try:
@@ -6886,9 +7009,15 @@ def annotate_step6_narration(project_id: str, payload: Optional[Dict[str, Any]] 
             beat_id = str(beat.get("id") or "").strip()
             original = beat.get("spoken_text") or beat.get("source_text") or beat_tts_text(beat)
             if beat_id in by_id:
-                beat["tts_text"] = ensure_minimax_delivery_markup(
-                    normalize_minimax_tts_markup(by_id[beat_id], original)
-                )
+                candidate = by_id[beat_id]
+                if not narration_annotation_preserves_text(candidate, original):
+                    logger.warning(
+                        "Narration annotation changed source text; falling back to original: slide=%s beat=%s",
+                        slide_id,
+                        beat_id,
+                    )
+                    candidate = str(original or "")
+                beat["tts_text"] = ensure_minimax_delivery_markup(normalize_minimax_tts_markup(candidate, original))
                 changed += 1
 
     if changed == 0:

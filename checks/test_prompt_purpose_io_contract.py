@@ -27,6 +27,7 @@ def main() -> None:
         "slide_plan.prompt.md",
         "step2_script_system.md",
         "step2_visual_system.md",
+        "step3_image_system.md",
         "visual_draft.prompt.md",
     ]
     for filename in prompt_files:

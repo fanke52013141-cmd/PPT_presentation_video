@@ -33,6 +33,7 @@ SUBTITLE_POLICY_WITH_SUBTITLE = "all_slides_have_subtitle"
 SUBTITLE_POLICY_NO_SUBTITLE = "no_slides_have_subtitle"
 SUBTITLE_POLICY_OPTIONAL = "optional_subtitles"
 ALLOWED_SUBTITLE_POLICIES = {SUBTITLE_POLICY_WITH_SUBTITLE, SUBTITLE_POLICY_NO_SUBTITLE, SUBTITLE_POLICY_OPTIONAL}
+DEFAULT_STEP3_SYSTEM_PROMPT = Path(__file__).resolve().parents[1] / "templates" / "prompts" / "step3_image_system.md"
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -97,20 +98,16 @@ def as_lines(value: Any, *, indent: str = "") -> list[str]:
 
 
 def compact_visual_element_lines(slide: dict[str, Any]) -> list[str]:
-    slide_id = str(slide.get("slide_id", "")).strip()
-    prefix = f"{slide_id}_" if slide_id else ""
     groups = slide.get("visual_groups")
     if not isinstance(groups, list):
         return []
     lines: list[str] = []
-    for idx, group in enumerate(groups, start=1):
+    for group in groups:
         if not isinstance(group, dict):
             continue
-        group_id = str(group.get("id", "")).strip()
-        element_id = str(group.get("element_id") or "").strip()
-        if not element_id:
-            element_id = group_id[len(prefix):] if prefix and group_id.startswith(prefix) else (group_id or f"el_{idx:03d}")
         role = str(group.get("role", "content_body")).strip()
+        if role == "title":
+            continue
         visual_type = str(group.get("visual_type", "")).strip().lower()
         if visual_type == "illustration":
             visual_type = "picture"
@@ -121,11 +118,31 @@ def compact_visual_element_lines(slide: dict[str, Any]) -> list[str]:
         else:
             description = str(group.get("visual_anchor") or group.get("mask_target") or group.get("visible_text") or "").strip()
         if description:
-            lines.append(
-                f"- slide_id={slide_id}; element_id={element_id}; role={role}; "
-                f"visual_type={visual_type}; visual_description={description}"
-            )
+            lines.append(f"- [{visual_type}] {description}")
     return lines
+
+
+def compact_visual_input(slide: dict[str, Any]) -> dict[str, Any]:
+    body_elements = []
+    for line in compact_visual_element_lines(slide):
+        prefix, content = line[2:].split("] ", 1)
+        body_elements.append({"type": prefix[1:], "content": content})
+    return {
+        "slide_id": str(slide.get("slide_id") or "").strip(),
+        "main_title": str(slide.get("main_title") or "").strip(),
+        "body_elements": body_elements,
+    }
+
+
+def load_step3_system_content(run_dir: Path) -> str:
+    stored = read_optional_json(run_dir / "planning" / "step3_image_prompts.json")
+    value = str(stored.get("system_content") or "").strip() if isinstance(stored, dict) else ""
+    if value:
+        return value
+    try:
+        return DEFAULT_STEP3_SYSTEM_PROMPT.read_text(encoding="utf-8-sig").strip()
+    except FileNotFoundError as exc:
+        raise PromptError(f"Missing Step 3 image system prompt: {DEFAULT_STEP3_SYSTEM_PROMPT}") from exc
 
 
 def style_profile_lines(style_tokens: dict[str, Any]) -> list[str]:
@@ -145,13 +162,15 @@ def style_profile_lines(style_tokens: dict[str, Any]) -> list[str]:
             value = str(visual_assets.get(key) or "").strip()
             if value:
                 lines.append(f"- {key}: {value}")
-        reveal_rules = visual_assets.get("reveal_friendly_layout")
-        if isinstance(reveal_rules, list) and reveal_rules:
-            lines.append("- Reveal-friendly style/layout notes:")
-            lines.extend(f"  - {str(rule).strip()}" for rule in reveal_rules if str(rule).strip())
-        avoid = compact_list(visual_assets.get("avoid"))
-        if avoid:
-            lines.append(f"- Avoid: {avoid}")
+        avoid_values = visual_assets.get("avoid") if isinstance(visual_assets.get("avoid"), list) else []
+        production_terms = ("重叠", "遮挡", "箭头", "穿过", "穿字", "粘连", "纸纹", "噪声", "渐变", "阴影")
+        style_avoid = [
+            str(item).strip()
+            for item in avoid_values
+            if str(item).strip() and not any(term in str(item) for term in production_terms)
+        ]
+        if style_avoid:
+            lines.append(f"- Avoid visually: {', '.join(style_avoid)}")
     colors = style_tokens.get("colors")
     if isinstance(colors, dict):
         accent_keys = ("ink", "line", "yellow", "yellow_soft", "green_soft", "blue_soft")
@@ -226,13 +245,6 @@ def project_image_style_lines(image_style: dict[str, Any]) -> list[str]:
         lines.append("- Optional reference prompt examples for this style:")
         lines.extend(f"  - {str(prompt).strip()}" for prompt in sample_prompts if str(prompt).strip())
 
-    lines.extend(
-        [
-            "- Non-overridable reminder: generated slide image outer background stays pure-white #FFFFFF.",
-            "- Non-overridable reminder: final-video background is applied later and must not be drawn into visual_draft.png.",
-            "- Non-overridable reminder: leave clear white gaps between semantic visual groups for AI Mask and manual Mask reveal.",
-        ]
-    )
     return lines
 
 
@@ -320,9 +332,9 @@ def build_prompt(
     invariants: dict[str, Any],
     style_tokens: dict[str, Any],
     project_style: dict[str, Any] | None = None,
+    system_content: str = "",
 ) -> str:
-    slide_id = str(slide.get("slide_id", "")).strip()
-    elements = "\n".join(compact_visual_element_lines(slide)) or "- No visual elements provided."
+    slide_input = compact_visual_input(slide)
     production_rules = "\n".join(production_invariant_lines(invariants, policy, slide))
     project_style_rules = project_image_style_lines(project_style or {})
     global_style_rules = style_profile_lines(style_tokens)
@@ -337,38 +349,20 @@ def build_prompt(
         combined_style_rules = global_style_rules
     style_rules = "\n".join(combined_style_rules) or "- Use the active style reference images as the visual style source."
 
-    return f"""Use case: scientific-educational
-Asset type: 16:9 Image Gen full-slide master for reveal-layer video production
-Slide id: {slide_id}
-Input images:
-- Reference image ({template_ref}): use only as an overall style, title-area, spacing, hierarchy, color, and density reference.
-- If the reference image conflicts with the active style profile below, the active style profile is authoritative.
+    return f"""=== 图片生成 System Content ===
+{system_content.strip()}
 
-Primary request:
-Generate one complete full-slide master image from the compact Step 2B visual element list.
-The slide body, title, lines, arrows, icons, labels, and diagrams must all be Image Gen bitmap content.
-
-Production invariants that style must not override:
-{production_rules}
-
-Compact visual element list:
-{elements}
-
-Mapping and mask guidance:
-- First design a coherent page from the element list.
-- Every listed element must be visible and easy to associate with its element_id during later Mask/Reveal work.
-- A later mask should be able to reveal meaningful regions without covering unrelated content.
-- Arrows, icons, labels, and callouts may connect ideas, but they must not collide with text or create severe overlap.
-- Do not place any content or decoration below y=930.
-- Do not overlap elements. Leave visible white space between text, icons, arrows, cards, labels, and decorative marks.
-
-Style profile; Project Profile rules are authoritative when present:
+=== 当前生效的图片风格 ===
+参考图：{template_ref}。只参考整体风格、留白、层级、配色和密度，不复制其中的具体内容。
 {style_rules}
 
-Creative freedom:
-- Choose the exact composition, shapes, icons, arrows, callouts, local decorations, and visual metaphor as long as production invariants are preserved.
-- Make the page visually rich inside the content area, but keep it clean and readable.
-- Do not create many equal isolated cards unless the narration truly calls for a list, comparison, or checklist.
+=== 当前 Slide 输入 ===
+最小单页输入（不要把字段名、类型名或 slide_id 画进页面）：
+{json.dumps(slide_input, ensure_ascii=False, indent=2)}
+
+<NonOverridableProductionRules>
+{production_rules}
+</NonOverridableProductionRules>
 """
 
 
@@ -394,6 +388,7 @@ def write_prompts(run_dir: Path, style_tokens_path: Path, production_invariants_
     policy = presentation_policy(planning)
     template_ref = extract_style_ref(style_tokens_path)
     project_style = load_project_image_style(run_dir)
+    system_content = load_step3_system_content(run_dir)
     count = 0
     for slide in slides:
         if not isinstance(slide, dict):
@@ -414,6 +409,7 @@ def write_prompts(run_dir: Path, style_tokens_path: Path, production_invariants_
                 invariants=invariants,
                 style_tokens=style_tokens,
                 project_style=project_style,
+                system_content=system_content,
             ),
             encoding="utf-8",
         )

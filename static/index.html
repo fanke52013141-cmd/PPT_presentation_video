@@ -246,6 +246,9 @@
               <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
               复制生图提示词
             </button>
+            <button id="step3-btn-prompt-settings" class="secondary" type="button" style="font-size: 0.85rem; padding: 0.35rem 0.9rem;">
+              生图 Prompt
+            </button>
             <button id="step3-btn-style" class="secondary" style="font-size: 0.85rem; padding: 0.35rem 0.9rem;">
               图片风格设置
             </button>
@@ -643,7 +646,10 @@
       </div>
       <div class="step3-ai-layout">
         <section class="step3-ai-pane">
-          <label class="step3-ai-label" for="step3-prompt-input">生图提示词 (Prompt)</label>
+          <div class="prompt-field-heading">
+            <label class="step3-ai-label" for="step3-prompt-input">生图提示词 (Prompt)</label>
+            <button class="prompt-help-button" type="button" data-prompt-help="step3-image" aria-label="查看图片生成 Prompt 的输入输出示例">?</button>
+          </div>
           <textarea id="step3-prompt-input" rows="14"></textarea>
           <button id="step3-btn-generate" class="success step3-ai-generate" type="button">
             <svg class="icon" viewBox="0 0 24 24"><path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 14.7255 3.09032 17.1962 4.85857 19C5.01445 19.1559 5.09238 19.3789 5.06456 19.5977C5.01915 19.9549 5 20.3197 5 20.69C5 21.4135 5.58654 22 6.31 22H12Z"></path><circle cx="7.5" cy="10.5" r="1.5" fill="currentColor"></circle><circle cx="11.5" cy="7.5" r="1.5" fill="currentColor"></circle><circle cx="16.5" cy="9.5" r="1.5" fill="currentColor"></circle><circle cx="15.5" cy="14.5" r="1.5" fill="currentColor"></circle></svg>
@@ -673,6 +679,35 @@
     </div>
   </div>
 
+  <div id="modal-step3-prompt-settings" class="modal-overlay" style="display: none;">
+    <div class="modal-content config-editor-modal step3-prompt-settings-modal" role="dialog" aria-modal="true" aria-labelledby="step3-prompt-settings-title">
+      <div class="config-editor-scroll">
+        <div class="prompt-title-row">
+          <h3 id="step3-prompt-settings-title" class="highlight-title">图片生成 Prompt</h3>
+          <button class="prompt-help-button" type="button" data-prompt-help="step3-image" aria-label="查看图片生成 Prompt 的输入输出示例">?</button>
+        </div>
+        <p class="config-editor-note">System Content 控制整页图片的生成方法；程序只追加当前风格和“主标题 + 正文视觉元素”的最小输入。固定白底、标题区和字幕安全区仍由服务端强制保护。</p>
+        <label class="storyboard-config-field storyboard-rule-field">
+          <span>图片生成 · System Content（可编辑）</span>
+          <textarea id="step3-image-system-prompt" rows="16" spellcheck="false"></textarea>
+        </label>
+        <label class="storyboard-config-field storyboard-rule-field">
+          <span>当前 Slide · 最小输入（只读）</span>
+          <textarea id="step3-image-input-preview" rows="10" readonly spellcheck="false"></textarea>
+        </label>
+        <label class="storyboard-config-field storyboard-rule-field">
+          <span>当前 Slide · 完整提示词（只读）</span>
+          <textarea id="step3-image-full-prompt" rows="18" readonly spellcheck="false"></textarea>
+        </label>
+      </div>
+      <div class="config-editor-actions">
+        <button id="btn-step3-prompt-reset" class="secondary" type="button">恢复默认</button>
+        <button id="btn-step3-prompt-cancel" class="secondary" type="button">取消</button>
+        <button id="btn-step3-prompt-save" class="success" type="button">保存当前 Prompt</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modal-step2-generate" class="modal-overlay" style="display: none;">
     <div class="modal-content ai-generation-modal">
       <h3 class="highlight-title">AI 生成分镜</h3>
@@ -691,7 +726,10 @@
   <div id="modal-step6-ai-prompt" class="modal-overlay" style="display: none;">
     <div class="modal-content config-editor-modal step6-ai-prompt-modal">
       <div class="config-editor-scroll">
-        <h3 class="highlight-title">旁白 AI 标注 Prompt</h3>
+        <div class="prompt-title-row">
+          <h3 class="highlight-title">旁白 AI 标注 Prompt</h3>
+          <button class="prompt-help-button" type="button" data-prompt-help="narration-annotation" aria-label="查看旁白 AI 标注的输入输出示例">?</button>
+        </div>
         <p class="config-editor-note">用于为第 5 步旁白添加 MiniMax 停顿与轻量语气标记。展示结构与分镜规划 Prompt 一致，修改后会应用到后续所有 AI 标注。</p>
         <label class="storyboard-config-field storyboard-rule-field">
           <span>AI 标注 · System Content</span>
@@ -716,7 +754,10 @@
   <div id="modal-storyboard-rules" class="modal-overlay" style="display: none;">
     <div class="modal-content config-editor-modal">
       <div class="config-editor-scroll">
-        <h3 id="storyboard-prompt-modal-title" class="highlight-title">文章➡️slides</h3>
+        <div class="prompt-title-row">
+          <h3 id="storyboard-prompt-modal-title" class="highlight-title">文章➡️slides</h3>
+          <button id="step2-prompt-help" class="prompt-help-button" type="button" data-prompt-help="step2-script" aria-label="查看当前 Prompt 的输入输出示例">?</button>
+        </div>
         <div class="template-manager-bar step2-prompt-template-bar">
           <label>
             Prompt 模板

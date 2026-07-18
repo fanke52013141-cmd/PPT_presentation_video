@@ -343,7 +343,10 @@
     modal.innerHTML = `
       <div class="modal-content config-editor-modal" style="max-width:900px;width:min(900px,94vw)">
         <div class="ai-mask-modal-scroll">
-          <h3 class="highlight-title">AI Mask 自动标注设置</h3>
+          <div class="prompt-title-row">
+            <h3 class="highlight-title">AI Mask 自动标注设置</h3>
+            <button class="prompt-help-button" type="button" data-prompt-help="ai-mask" aria-label="查看 AI Mask 的输入输出示例">?</button>
+          </div>
           <p class="config-editor-note">只保留常用 Mask 参数。大模型匹配参数使用系统默认值；日常只需要调整识别、合并和覆盖策略。</p>
           <div class="ai-mask-section-title"><h4 style="margin:0">Mask 参数</h4><span class="config-editor-note" style="margin:0">悬停问号查看说明</span></div>
           <div id="ai-mask-settings-grid" class="ai-mask-compact-grid"></div>

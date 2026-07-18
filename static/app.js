@@ -25,6 +25,7 @@ let state = {
   step2PromptCreating: false,
   activeStep2PromptMode: 'script',
   step2GenerationRequirement: '',
+  step3PromptSettings: null,
   storyboardAiRequirement: '',
   pendingStoryboardAiDraft: null,
   articleInputMode: 'article',
@@ -265,6 +266,108 @@ function showToast(message, duration = 3000) {
   }, duration);
 }
 
+const PROMPT_IO_HELP = {
+  article: {
+    title: '话题生成文章',
+    inputSummary: '系统会把当前项目名称和用户填写的话题作为 User Content。',
+    inputFields: ['项目名称', '文章话题（最多 500 字）'],
+    inputExample: '项目名称：Token 科普\n文章话题：为什么大模型需要 Token？\n\n请生成文章。',
+    outputSummary: '一篇可继续用于分镜规划的 Markdown 正文。',
+    outputExample: '# 为什么大模型需要 Token？\n\n## 从文字到计算\n大模型不会直接读取文字……',
+  },
+  'step2-script': {
+    title: '文章➡️slides',
+    inputSummary: '只输入完整 article.md、项目名称和本次可选补充需求。',
+    inputFields: ['project_name', 'article_markdown', 'generation_requirement（可选）'],
+    inputExample: '{\n  "project_name": "Token 科普",\n  "article_markdown": "# Token……",\n  "generation_requirement": "控制在 6 页以内"\n}',
+    outputSummary: '严格 JSON；每页只确定 slide_id、main_title 和完整 narration。',
+    outputExample: '{\n  "slides": [{\n    "slide_id": "slide_001",\n    "main_title": "Token 是什么？",\n    "narration": "先从最基础的定义说起……"\n  }]\n}',
+  },
+  'step2-visual': {
+    title: 'slides➡️可视化',
+    inputSummary: '输入 Step 2A 已确认的每页标题和完整演讲稿，不重复输入文章。',
+    inputFields: ['slides[].slide_id', 'slides[].main_title', 'slides[].narration'],
+    inputExample: '{\n  "slides": [{\n    "slide_id": "slide_001",\n    "main_title": "Token 是什么？",\n    "narration": "先从最基础的定义说起……"\n  }]\n}',
+    outputSummary: '严格 JSON；把演讲稿原子化为可视化元素，并逐项绑定旁白片段。',
+    outputExample: '{\n  "slides": [{\n    "slide_id": "slide_001",\n    "visual_elements": [{\n      "element_id": "el_001",\n      "role": "title",\n      "visual_type": "text",\n      "visual_description": "Token 是什么？",\n      "narration": "先从最基础的定义说起"\n    }]\n  }]\n}',
+  },
+  'step3-image': {
+    title: '图片生成',
+    inputSummary: '每页只发送一次主标题和 Step 2B 已确认的正文视觉元素；文章、完整旁白、核心信息和内部 ID 不重复发送。',
+    inputFields: ['slide_id（仅任务识别）', 'main_title', 'body_elements[].type', 'body_elements[].content', '当前图片风格与参考图'],
+    inputExample: '{\n  "slide_id": "slide_003",\n  "main_title": "为什么要拆分 Token？",\n  "body_elements": [\n    {"type": "picture", "content": "左侧展示一句中文被切分成彩色 Token 积木"},\n    {"type": "text", "content": "模型按 Token 计算，而不是直接读取文字"}\n  ]\n}',
+    outputSummary: '一张完整的 1920×1080、16:9 PPT 位图。',
+    outputExample: 'PNG/JPEG 位图：纯白外围画布；上方一个主标题；正文元素边界清楚；y=930..1080 完全留空。',
+  },
+  'step3-style': {
+    title: '图片风格设置',
+    inputSummary: '可手写 System Content，或上传最多 3 张参考图并填写可选风格要求。',
+    inputFields: ['system_content，或 reference_images[]', 'custom_requirement（可选）'],
+    inputExample: '参考图：2 张\n补充要求：柔和蓝紫配色、扁平线性图标、留白充足，不复制参考图内容。',
+    outputSummary: '当前项目的图片风格 System Content，以及最多 3 张实际参与后续生图的风格参考图。',
+    outputExample: 'System Content：柔和蓝紫教育信息图风格；线条简洁；标题层级清楚；纯白外围背景。',
+  },
+  'ai-mask': {
+    title: 'AI Mask 自动标注',
+    inputSummary: '系统提交当前 Slide 原图、自动检测后的语义对象，以及 Step 2 的旁白—视觉绑定关系。',
+    inputFields: ['image_full', 'semantic_objects[]', 'visual_groups[]', 'narration_beats[]'],
+    inputExample: '{\n  "slide_id": "slide_003",\n  "semantic_objects": [{"object_id": "obj_01", "element_ids": ["el_auto_01"], "ocr_text": "模型按 Token 计算"}],\n  "visual_groups": [{"id": "slide_003_el_002"}],\n  "narration_beats": [{"id": "beat_002", "spoken_text": "模型会先切分文本"}]\n}',
+    outputSummary: '严格 JSON 的语义对象归属；服务端再生成精确 RLE Mask，并验证覆盖率和零交叉。',
+    outputExample: '{\n  "matches": [{\n    "group_id": "slide_003_el_002",\n    "narration_beat_id": "beat_002",\n    "object_ids": ["obj_01"],\n    "element_ids": ["el_auto_01"],\n    "confidence": 0.97\n  }]\n}',
+  },
+  'narration-annotation': {
+    title: '旁白 AI 标注',
+    inputSummary: '输入每页语块 ID 和原始旁白，仅添加 MiniMax 停顿与轻量语气标记。',
+    inputFields: ['slides[].slide_id', 'beats[].id', 'beats[].text'],
+    inputExample: '{\n  "slides": [{\n    "slide_id": "slide_001",\n    "beats": [{"id": "beat_001", "text": "首先看核心概念，再理解实际作用。"}]\n  }]\n}',
+    outputSummary: '严格 JSON；保留原词，只在 tts_text 中加入合法标记。',
+    outputExample: '{\n  "slides": [{\n    "slide_id": "slide_001",\n    "beats": [{"id": "beat_001", "tts_text": "首先看核心概念，<#0.35#>再理解实际作用。"}]\n  }]\n}',
+  },
+};
+
+function ensurePromptIOHelpModal() {
+  let modal = document.getElementById('modal-prompt-io-help');
+  if (modal) return modal;
+  modal = document.createElement('div');
+  modal.id = 'modal-prompt-io-help';
+  modal.className = 'modal-overlay';
+  modal.style.display = 'none';
+  modal.innerHTML = `
+    <div class="modal-content prompt-io-help-modal" role="dialog" aria-modal="true" aria-labelledby="prompt-io-help-title">
+      <header class="prompt-io-help-header">
+        <div><span class="prompt-io-help-kicker">INPUT / OUTPUT</span><h3 id="prompt-io-help-title">Prompt 输入输出</h3></div>
+        <button id="btn-prompt-io-help-close" class="secondary" type="button">关闭</button>
+      </header>
+      <div class="prompt-io-help-grid">
+        <section><h4>输入是什么</h4><p id="prompt-io-input-summary"></p><ul id="prompt-io-input-fields"></ul><pre id="prompt-io-input-example"></pre></section>
+        <section><h4>输出是什么</h4><p id="prompt-io-output-summary"></p><pre id="prompt-io-output-example"></pre></section>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', event => {
+    if (event.target === modal) modal.style.display = 'none';
+  });
+  modal.querySelector('#btn-prompt-io-help-close').addEventListener('click', () => {
+    modal.style.display = 'none';
+  });
+  return modal;
+}
+
+function openPromptIOHelp(kind) {
+  const help = PROMPT_IO_HELP[kind];
+  if (!help) return;
+  const modal = ensurePromptIOHelpModal();
+  modal.querySelector('#prompt-io-help-title').textContent = `${help.title} · 输入与输出示例`;
+  modal.querySelector('#prompt-io-input-summary').textContent = help.inputSummary;
+  modal.querySelector('#prompt-io-input-fields').innerHTML = help.inputFields.map(item => `<li>${escHtml(item)}</li>`).join('');
+  modal.querySelector('#prompt-io-input-example').textContent = help.inputExample;
+  modal.querySelector('#prompt-io-output-summary').textContent = help.outputSummary;
+  modal.querySelector('#prompt-io-output-example').textContent = help.outputExample;
+  modal.style.display = 'flex';
+}
+
+window.openPromptIOHelp = openPromptIOHelp;
+
 // 全局手绘风格自定义确认弹窗
 function showCustomConfirm(title, message, onYes, onNo = null) {
   const modal = document.getElementById('modal-confirm');
@@ -302,6 +405,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // 初始化全局页面级事件监听
 function initGlobalEvents() {
+  document.addEventListener('click', event => {
+    const helpButton = event.target.closest('[data-prompt-help]');
+    if (helpButton) openPromptIOHelp(helpButton.dataset.promptHelp);
+  });
+
   // 顶栏按钮
   document.getElementById('btn-open-settings')?.addEventListener('click', () => openSettingsModal());
   document.getElementById('btn-settings-cancel')?.addEventListener('click', () => closeSettingsModal());
@@ -417,6 +525,11 @@ function initGlobalEvents() {
   document.getElementById('step3-batch-upload')?.addEventListener('change', (e) => handleStep3BatchUpload(e));
   document.getElementById('step3-btn-batch-generate')?.addEventListener('click', () => generateAllStep3Images());
   document.getElementById('step3-btn-copy-prompts')?.addEventListener('click', () => copyStep2Prompts());
+  document.getElementById('step3-btn-prompt-settings')?.addEventListener('click', () => openStep3PromptSettingsModal());
+  document.getElementById('btn-step3-prompt-cancel')?.addEventListener('click', () => closeStep3PromptSettingsModal());
+  document.getElementById('btn-step3-prompt-save')?.addEventListener('click', () => saveStep3PromptSettings());
+  document.getElementById('btn-step3-prompt-reset')?.addEventListener('click', () => resetStep3PromptSettings());
+  document.getElementById('step3-image-system-prompt')?.addEventListener('input', () => updateStep3PromptFullPreview());
   document.getElementById('step3-btn-confirm')?.addEventListener('click', () => confirmStep3Images());
 
   // ================= 步骤 5 事件 =================
@@ -1088,7 +1201,11 @@ function ensureArticleSystemContentModal() {
   modal.innerHTML = `
     <div class="modal-content config-editor-modal" style="max-width:820px;width:min(820px,94vw)">
       <div class="config-editor-scroll">
-        <h3 class="highlight-title">话题生成文章 · System Content</h3>
+        <div class="prompt-title-row">
+          <h3 class="highlight-title">话题生成文章 · System Content</h3>
+          <button class="prompt-help-button" type="button" data-prompt-help="article" aria-label="查看话题生成文章的输入输出示例">?</button>
+        </div>
+        <p class="config-editor-note">这里的 System Content 可直接修改；问号中展示系统实际追加的 User Content 和输出格式示例。</p>
         <textarea id="article-generation-system-content" rows="18" spellcheck="false"></textarea>
       </div>
       <div class="config-editor-actions">
@@ -3088,9 +3205,11 @@ function renderStep2PromptEditor(promptRes = {}) {
   updateStep2FullPromptPreviews();
   const mode = state.activeStep2PromptMode === 'visual' ? 'visual' : 'script';
   const title = document.getElementById('storyboard-prompt-modal-title');
+  const helpButton = document.getElementById('step2-prompt-help');
   const scriptSection = document.getElementById('step2-script-prompt-section');
   const visualSection = document.getElementById('step2-visual-prompt-section');
   if (title) title.textContent = step2PromptModeLabel(mode);
+  if (helpButton) helpButton.dataset.promptHelp = mode === 'visual' ? 'step2-visual' : 'step2-script';
   if (scriptSection) scriptSection.style.display = mode === 'script' ? 'block' : 'none';
   if (visualSection) visualSection.style.display = mode === 'visual' ? 'block' : 'none';
   renderStep2PromptTemplateOptions();
@@ -3404,6 +3523,94 @@ async function refreshStep3Prompts(options = {}) {
     }
   }
   return slidePrompts;
+}
+
+function currentStep3PromptInfo() {
+  const openSlideId = document.getElementById('step3-slide-id-label')?.innerText;
+  const fallbackSlideId = state.slides?.[state.activeSlideIndex]?.slide_id || step3ImageOrder?.[0]?.slide_id;
+  const slideId = openSlideId && openSlideId !== '--' ? openSlideId : fallbackSlideId;
+  return slidePrompts.find(item => item.slide_id === slideId) || slidePrompts[0] || null;
+}
+
+function updateStep3PromptFullPreview() {
+  const settings = state.step3PromptSettings || {};
+  const systemContent = document.getElementById('step3-image-system-prompt')?.value || '';
+  const promptInfo = currentStep3PromptInfo();
+  const inputPreview = document.getElementById('step3-image-input-preview');
+  const fullPreview = document.getElementById('step3-image-full-prompt');
+  const slidePrompt = String(promptInfo?.slide_prompt || '').trim();
+  if (inputPreview) {
+    const jsonStart = slidePrompt.indexOf('{');
+    inputPreview.value = jsonStart >= 0
+      ? slidePrompt.slice(jsonStart)
+      : JSON.stringify(settings.current_input || settings.input_example || {}, null, 2);
+  }
+  if (fullPreview) {
+    fullPreview.value = [
+      '=== 图片生成 System Content ===',
+      systemContent.trim(),
+      '=== 当前生效的图片风格 ===',
+      String(settings.style_content || '').trim(),
+      '=== 当前 Slide 输入 ===',
+      slidePrompt || `最小单页输入：\n${JSON.stringify(settings.current_input || settings.input_example || {}, null, 2)}`,
+      String(settings.protected_rules || '').trim(),
+    ].filter(Boolean).join('\n\n');
+  }
+}
+
+async function openStep3PromptSettingsModal() {
+  if (!state.currentProject?.id) return;
+  const modal = document.getElementById('modal-step3-prompt-settings');
+  const systemInput = document.getElementById('step3-image-system-prompt');
+  const inputPreview = document.getElementById('step3-image-input-preview');
+  const fullPreview = document.getElementById('step3-image-full-prompt');
+  modal.style.display = 'flex';
+  systemInput.value = '加载中...';
+  inputPreview.value = '';
+  fullPreview.value = '';
+  try {
+    const [result] = await Promise.all([
+      API.get(`/api/projects/${state.currentProject.id}/steps/3/prompt-settings`),
+      refreshStep3Prompts(),
+    ]);
+    state.step3PromptSettings = result.prompts || {};
+    systemInput.value = state.step3PromptSettings.system_content || '';
+    updateStep3PromptFullPreview();
+  } catch (error) {
+    modal.style.display = 'none';
+  }
+}
+
+function closeStep3PromptSettingsModal() {
+  const modal = document.getElementById('modal-step3-prompt-settings');
+  if (modal) modal.style.display = 'none';
+}
+
+function resetStep3PromptSettings() {
+  const input = document.getElementById('step3-image-system-prompt');
+  if (!input) return;
+  input.value = state.step3PromptSettings?.default_system_content || '';
+  updateStep3PromptFullPreview();
+  showToast('已恢复默认内容，保存后生效');
+}
+
+async function saveStep3PromptSettings() {
+  const systemContent = document.getElementById('step3-image-system-prompt')?.value.trim() || '';
+  if (!systemContent) return showToast('图片生成 System Content 不能为空');
+  const button = document.getElementById('btn-step3-prompt-save');
+  button.disabled = true;
+  try {
+    const result = await API.put(
+      `/api/projects/${state.currentProject.id}/steps/3/prompt-settings`,
+      { prompts: { system_content: systemContent } },
+    );
+    state.step3PromptSettings = result.prompts || {};
+    await refreshStep3Prompts({ updateOpenEditor: true });
+    closeStep3PromptSettingsModal();
+    showToast('图片生成 Prompt 已保存');
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function renderStep5Workspace() {

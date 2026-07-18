@@ -116,7 +116,7 @@
     modal.style.display = 'none';
     modal.innerHTML = `
       <div class="modal-content style-ref-modal" role="dialog" aria-modal="true" aria-labelledby="style-ref-title">
-        <header class="style-ref-header"><h3 id="style-ref-title">图片风格设置</h3><button id="btn-style-ref-x" class="style-ref-x" type="button" aria-label="关闭">×</button></header>
+        <header class="style-ref-header"><div class="prompt-title-row"><h3 id="style-ref-title">图片风格设置</h3><button class="prompt-help-button" type="button" data-prompt-help="step3-style" aria-label="查看图片风格设置的输入输出示例">?</button></div><button id="btn-style-ref-x" class="style-ref-x" type="button" aria-label="关闭">×</button></header>
         <nav class="style-ref-tabs" aria-label="图片风格设置方式">
           <button class="style-ref-tab active" type="button" data-style-tab="template">使用模板</button>
           <button class="style-ref-tab" type="button" data-style-tab="manual">手写 System Content</button>

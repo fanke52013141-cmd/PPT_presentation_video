@@ -1,108 +1,28 @@
-# Visual Draft Prompt Template
+# Visual Draft Prompt Contract
 
-## Purpose
+## 目的
 
-Generate one complete, approved PPT slide bitmap that faithfully presents the supplied slide content and remains suitable for later AI/manual Mask and Reveal processing. Do not generate separate layers or animation instructions.
+生成一张完整、可直接使用，并适合后续元素抠除与 AI 语义匹配的 1920×1080 PPT 位图。
 
-## Input
+## 输入
 
-- The current slide's approved content, narration intent, visual description, and active style constraints.
-- Treat supplied wording and production invariants as binding; do not invent unsupported facts or omit required content.
+每页只接收必要且最小的内容：
 
-## Output
+- `slide_id`：任务标识，不得画进页面。
+- `main_title`：唯一主标题。
+- `body_elements[]`：Step 2B 已确认的正文视觉元素；每项只包含 `type` 与 `content`。
+- 当前生效的图片风格与可选参考图。
 
-- Exactly one complete 1920x1080 bitmap image.
-- No prose, JSON, layout explanation, alternate versions, contact sheet, mockup frame, or transparent layer output.
+不重复发送完整文章、完整旁白、核心信息、正文摘要、旁白节奏或完整 `visual_groups` 元数据。运行时可编辑的完整规则来源是 `templates/prompts/step3_image_system.md`，项目自定义值保存在 `planning/step3_image_prompts.json`。
 
-Use this template to generate one complete Image Gen slide. Optional manual Masks may later reveal selected visual anchors, but the source remains one approved full-slide bitmap.
+## 输出
 
-## Production Invariants
+只输出一张完整的 1920×1080、16:9 PPT 静态位图，不输出说明、JSON、备选拼图、Mockup、透明图层、Mask、边界框或动画说明。
 
-These rules are fixed and cannot be changed by a style profile:
+## 不可覆盖的生产铁律
 
-- 1920x1080, 16:9.
-- The generated slide image background must be pure white `#FFFFFF`.
-- All four edges and corners must stay continuously pure white.
-- Every slide must contain a clear main title.
-- Do not render a page subtitle, subtitle underline, or subtitle placeholder.
-- Keep y=930..1080 completely empty for video subtitles.
-- Do not place text, icons, arrows, labels, decorations, shadows, partial objects, or visual fragments in y=930..1080.
-- Strictly forbid visible element overlap: text, icons, arrows, lines, labels, card borders, people, decorations, formulas, and charts must not cover, intersect, press on, pierce through, or stick to each other.
-- Avoid text-arrow collision, arrow-through-text, merged unrelated regions, and tiny dense labels.
-- The page must remain manually maskable, but Mask convenience must not force a rigid block layout.
-
-## Inputs
-
-- Slide ID: `{{slide_id}}`
-- Main title: `{{main_title}}`
-- Core message: `{{core_message}}`
-- Body content: `{{body_content}}`
-- Visual intent: `{{visual_intent}}`
-- Narration: `{{narration}}`
-- Optional narration beats: `{{narration_beats}}`
-- Optional visual anchors: `{{visual_groups}}`
-- Style profile: `{{style_profile}}`
-
-## Image Gen Request
-
-Generate one 1920x1080, 16:9 Chinese educational PPT-style master image.
-
-Use the fixed style references only for title-area placement, spacing, hierarchy, and density. If they conflict with the active style profile, the active style profile is authoritative:
-
-- `references/style_reference/PPT模板.png`
-- `references/style_reference/PPT示例.png`
-
-The image must contain all PPT body visuals as bitmap content: one complete main title, body content, icons, arrows, diagrams, labels, and emphasis marks. Remotion will not draw these later.
-
-## Narration-First Design
-
-Design the whole page from the narration and body content. Do not first split the page into fixed roles such as diagram, data, process, quote, or summary.
-
-- The narration is the source of truth.
-- Body content is the only planned content category besides the title.
-- Choose the best visual expression freely: scene, diagram, metaphor, cards, timeline, comparison, icon cluster, or a mixed layout.
-- Use visual hierarchy to support the speaking order, but do not make every beat an equal isolated card.
-- Optional visual anchors are post-design review handles for Mask/Reveal, not a pre-generation layout template.
-
-## Mask-Friendly Layout Rules
-
-Design the image so important regions can be painted cleanly with a manual Mask:
-
-- Prefer one coherent main visual plus supporting details when it improves expression.
-- Use 2-5 loose visual anchors after the page is composed; fewer is acceptable if the page reads clearly.
-- Connections between ideas are allowed: arrows, brackets, paths, timelines, or flow lines.
-- Do not create many isolated cards unless the narration truly calls for a list, comparison, or checklist.
-- Keep enough clean white background around important regions for manual Mask painting.
-- Keep the complete main-title band in its fixed layout and preserve it as one clean independent visual island. Even when individual words use different colors or outlines, the title remains one semantic group and one Mask. Do not connect title glyphs to body arrows, icons, cards, or decoration.
-- Each narration-bound visual anchor must form one spatially continuous visual island. Keep a visible pure-white moat (preferably 48-80 px) between different narration islands.
-- A large illustration owns everything inside it and immediately touching its edge: internal labels, check marks, badges, small icons, and attached captions must stay in the same island. Never place another narration group's element inside or across that illustration boundary.
-- When two illustrations represent different comparison sides or different states, draw them as separate islands only when they map to separate narration beats. If they share one beat, use one unified composition instead of two independent pictures that can only reveal together.
-- Absolutely no overlap: text, icons, arrows, lines, labels, card borders, people, decorations, formulas, charts, and illustrations must not cover, press on, pierce through, touch ambiguously, or stick to each other.
-- Do not place text on top of arrows, icons, card borders, labels, or formulas.
-- Do not let arrows pierce through text or touch label strokes.
-- Keep the bottom subtitle-safe area empty. At 1920x1080, no content or decoration should extend below `y=930`.
-- Avoid many tiny labels. Prefer fewer, larger, readable elements.
-
-## Style
-
-The built-in default style can be warm hand-drawn explainer, but this section is generalizable by the active style profile. When the active profile asks for another style, do not copy hand-drawn strokes from the reference images.
-
-Default style direction:
-
-- Hand-drawn black ink text.
-- Yellow accent marker and underline.
-- Soft green and blue label pills when useful.
-- Simple doodle icons and diagrams.
-- Clean spacing, readable Chinese labels, no fake UI, no watermark.
-
-The active style profile may change typography, line style, icon style, diagram style, accent colors, callouts, card shapes, and visual density. It must not change the production invariants.
-
-## Negative Requirements
-
-- No crowded center layout.
-- No overlapping visual elements of any kind.
-- No severe overlap, arrow-through-text, text pressed onto borders, or unrelated regions merged together.
-- No tiny unreadable text.
-- No dark full-page background or 3D render.
-- No paper texture, background noise, shadow, gradient, vignette, or off-white outer canvas.
-- No content in y=930..1080.
+- 外围画布为连续纯白 `#FFFFFF`。
+- 只有一个主标题，不生成页面副标题。
+- 所有可见内容止于 `y<930`，`y=930..1080` 完全留空。
+- 独立语义元素之间保留清晰纯白间隙，不重叠、穿插、压住或粘连。
+- 图片本身包含全部 PPT 主体；Remotion 不重绘标题、正文、图标、箭头、图表或标签。

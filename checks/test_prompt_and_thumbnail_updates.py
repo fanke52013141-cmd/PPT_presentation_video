@@ -39,6 +39,28 @@ assert 'id="ai-mask-full-prompt"' in mask_ui
 full_mask_prompt = mask._compose_ai_mask_full_prompt("method", "schema")
 assert "method" in full_mask_prompt and "schema" in full_mask_prompt
 assert "OUTPUT STRUCTURE / 输出结构" in full_mask_prompt
+assert "ai_mask_semantic_mapping_v3" in mask.DEFAULT_METHODOLOGY
+assert "语义正确优先于为了覆盖率强行匹配" in mask.DEFAULT_METHODOLOGY
+assert "每个动态 group 最多输出一条 match" in mask.DEFAULT_METHODOLOGY
+assert "不要把多个独立对象硬塞进同一个 Mask" in mask.DEFAULT_METHODOLOGY
+assert "element_ids` 输出空数组" in mask.DEFAULT_OUTPUT_STRUCTURE
+assert "系统会按 object 自动展开" in mask.DEFAULT_OUTPUT_STRUCTURE
+
+
+class _LegacyAiMaskPromptStore:
+    values = {
+        mask.PROMPT_METHOD_KEY: mask.LEGACY_STORED_METHODOLOGY_V2,
+        mask.PROMPT_OUTPUT_KEY: mask.LEGACY_DEFAULT_OUTPUT_STRUCTURE_V2,
+    }
+
+    @classmethod
+    def get_setting(cls, key, default=""):
+        return cls.values.get(key, default)
+
+
+migrated_methodology, migrated_output = mask._read_ai_mask_prompts(_LegacyAiMaskPromptStore)
+assert "ai_mask_semantic_mapping_v3" in migrated_methodology
+assert "系统会按 object 自动展开" in migrated_output
 assert ".slide-thumbnail-card.step2-slide-thumb" in css
 assert "height: 32px !important" in css
 assert "button.prompt-help-button" in css

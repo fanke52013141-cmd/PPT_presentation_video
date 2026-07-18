@@ -378,6 +378,28 @@ def test_volcengine_ai_mask_uses_provider_model_and_single_timeout_policy():
     assert "_is_timeout(server_module, exc)" in source
 
 
+def test_semantic_object_match_expands_element_ids_without_model_guessing():
+    from runtime_ai_mask_semantic_patch import _expand_matches
+
+    expanded = _expand_matches(
+        {
+            "matches": [
+                {
+                    "group_id": "body_group",
+                    "object_ids": ["obj_001"],
+                    "element_ids": [],
+                    "confidence": 0.95,
+                }
+            ]
+        },
+        [{"object_id": "obj_001", "element_ids": ["el_001", "el_002"]}],
+        [{"element_id": "el_001"}, {"element_id": "el_002"}],
+    )
+
+    assert expanded["matches"][0]["object_ids"] == ["obj_001"]
+    assert expanded["matches"][0]["element_ids"] == ["el_001", "el_002"]
+
+
 def fixture_slide() -> dict:
     return {
         "slide_id": "slide_001",
@@ -402,6 +424,7 @@ def main() -> None:
     test_existing_anchor_is_not_stolen_when_seeding_missing_group()
     test_nearby_icon_is_absorbed_by_closest_large_visual_island()
     test_volcengine_ai_mask_uses_provider_model_and_single_timeout_policy()
+    test_semantic_object_match_expands_element_ids_without_model_guessing()
     safe_defaults = mask.normalize_settings({})
     assert safe_defaults["overwrite_existing_manual_mask"] is False
     assert safe_defaults["skip_locked_groups"] is True

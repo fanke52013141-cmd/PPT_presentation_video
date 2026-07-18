@@ -53,7 +53,7 @@ def sample_bundle():
     }
 
 
-def main() -> None:
+def test_style_bundle_prompt_and_normalization() -> None:
     system_prompt = style_bundle_system_prompt()
     assert "只输出合法 JSON" in system_prompt
     assert "style_bundle_v2_minimal" in system_prompt
@@ -90,6 +90,7 @@ def main() -> None:
     preview = bundle_prompt_preview(sample_bundle())
     assert "template_image_prompt" in preview
 
+def test_style_bundle_rejects_unknown_fields() -> None:
     bad_bundle = sample_bundle()
     bad_bundle["style_data"]["extra"] = {}
     try:
@@ -99,6 +100,11 @@ def main() -> None:
     else:
         raise AssertionError("extra style_data key was accepted")
 
+
+
+def main() -> None:
+    test_style_bundle_prompt_and_normalization()
+    test_style_bundle_rejects_unknown_fields()
     print("AI style bundle checks passed")
 
 

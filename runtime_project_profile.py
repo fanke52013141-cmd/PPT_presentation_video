@@ -129,6 +129,7 @@ def build_text_image_style_user_prompt(
 
 def normalize_generated_image_style(value: Any, requirement: str = "") -> dict[str, Any]:
     source = value if isinstance(value, dict) else {}
+    sample_prompts = _safe_list(source.get("sample_reference_image_prompts"), 3)
     style = {
         "source": AI_IMAGE_STYLE_SOURCE,
         "template_id": "ai_generated",
@@ -137,14 +138,42 @@ def normalize_generated_image_style(value: Any, requirement: str = "") -> dict[s
         "style_summary": _safe_text(source.get("style_summary") or source.get("summary") or requirement, 1000),
         "custom_requirement": _safe_text(requirement or source.get("custom_requirement"), 4000),
         "visual_language": _safe_dict(source.get("visual_language")),
-        "maskability_rules": _merge_required_rules(_safe_list(source.get("maskability_rules"), 16)),
+        # Universal production rules are owned by code.  Never trust hidden
+        # fields that the model was explicitly told not to return.
+        "maskability_rules": _merge_required_rules([]),
         "negative_prompt_rules": _safe_list(source.get("negative_prompt_rules"), 16),
-        "sample_reference_image_prompts": _safe_list(source.get("sample_reference_image_prompts"), 3),
-        "reference_image_count_target": _safe_int(source.get("reference_image_count_target"), 3, 0, 3),
+        "sample_reference_image_prompts": sample_prompts,
+        "reference_image_count_target": 3,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
     }
-    style["system_content"] = _safe_text(source.get("system_content") or _build_system_content(style), 12000)
+    style["system_content"] = _safe_text(_build_system_content(style), 12000)
     return style
+
+
+def validate_generated_image_style_model_output(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError("图片风格输出必须是 JSON 对象")
+    expected = {
+        "style_name",
+        "style_summary",
+        "visual_language",
+        "negative_prompt_rules",
+        "sample_reference_image_prompts",
+    }
+    unexpected = sorted(set(value) - expected)
+    missing = sorted(expected - set(value))
+    if missing:
+        raise ValueError(f"图片风格输出缺少字段: {', '.join(missing)}")
+    if unexpected:
+        raise ValueError(f"图片风格输出包含未声明字段: {', '.join(unexpected)}")
+    if not _safe_text(value.get("style_name"), 120) or not _safe_text(value.get("style_summary"), 1000):
+        raise ValueError("style_name 和 style_summary 不能为空")
+    if not isinstance(value.get("visual_language"), dict) or not value.get("visual_language"):
+        raise ValueError("visual_language 必须是非空对象")
+    for key in ("negative_prompt_rules", "sample_reference_image_prompts"):
+        if not isinstance(value.get(key), list):
+            raise ValueError(f"{key} 必须是数组")
+    return value
 
 
 def _clean_json_markdown(text: str) -> str:
@@ -190,8 +219,9 @@ def _generate_image_style_with_llm(server_module: ModuleType, payload: dict[str,
         )
         raw_content = str(response.choices[0].message.content or "").strip()
         parsed = json.loads(_clean_json_markdown(raw_content))
+        validate_generated_image_style_model_output(parsed)
         return normalize_generated_image_style(parsed, requirement)
-    except json.JSONDecodeError as exc:
+    except (json.JSONDecodeError, ValueError) as exc:
         raise server_module.HTTPException(status_code=500, detail=f"AI 返回的图片风格 JSON 解析失败: {exc}") from exc
     except server_module.HTTPException:
         raise

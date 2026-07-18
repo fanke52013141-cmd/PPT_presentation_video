@@ -23,6 +23,19 @@ REFERENCE_DIRNAME = "style_references"
 REFERENCE_MANIFEST = "project_style_references.json"
 MANIFEST_VERSION = "step3_style_references_v1"
 LEGACY_MANIFEST_VERSION = "project_style_references_v1"
+REFERENCE_GENERATION_SYSTEM_CONTENT_KEY = "image_style_reference_generation_system_content"
+DEFAULT_REFERENCE_GENERATION_SYSTEM_CONTENT = """<PromptVersion>image_style_reference_generation_v1_minimal</PromptVersion>
+
+Generate one content-neutral PPT style reference image that demonstrates the supplied reusable style specification.
+
+Use the scene brief only to provide enough neutral subject matter to reveal the style. Do not copy a real slide, brand, named character, watermark, or exact composition. Use only as many visual groups as the scene needs; one coherent group is valid. Keep the result clear enough to judge palette, line language, shapes, typography, composition, density, and iconography.
+
+The reusable style specification and scene brief are supplied separately. Do not restate them as visible production notes. Output only the image."""
+DEFAULT_REFERENCE_SCENE_BRIEFS = [
+    "A cause-and-effect explainer with one central concept and supporting visual cues.",
+    "A concise process explanation using clear symbols, labels, and directional relationships.",
+    "A comparison page with two clearly differentiated ideas and one closing takeaway.",
+]
 
 
 def _read_json(path: Path, fallback: Any) -> Any:
@@ -94,16 +107,30 @@ def _reference_prompts(image_style: dict[str, Any], count: int) -> list[str]:
         result = [_safe_text(item, 4000) for item in prompts if _safe_text(item, 4000)]
     else:
         result = []
-    if not result:
-        result = [
-            "A cause-and-effect explainer with one central concept and supporting visual cues.",
-            "A concise process explanation using clear symbols, labels, and directional relationships.",
-            "A comparison page with two clearly differentiated ideas and one closing takeaway.",
-        ]
+    for default_prompt in DEFAULT_REFERENCE_SCENE_BRIEFS:
+        if len(result) >= count:
+            break
+        if default_prompt not in result:
+            result.append(default_prompt)
     return result[:count]
 
 
-def _style_generation_prompt(raw_prompt: str, image_style: dict[str, Any], index: int) -> str:
+def _read_reference_generation_system_content(server_module: ModuleType) -> str:
+    get_setting = getattr(server_module, "get_setting", None)
+    if not callable(get_setting):
+        return DEFAULT_REFERENCE_GENERATION_SYSTEM_CONTENT
+    return _safe_text(
+        get_setting(REFERENCE_GENERATION_SYSTEM_CONTENT_KEY, DEFAULT_REFERENCE_GENERATION_SYSTEM_CONTENT),
+        30000,
+    ) or DEFAULT_REFERENCE_GENERATION_SYSTEM_CONTENT
+
+
+def _style_generation_prompt(
+    raw_prompt: str,
+    image_style: dict[str, Any],
+    index: int,
+    generation_system_content: str = DEFAULT_REFERENCE_GENERATION_SYSTEM_CONTENT,
+) -> str:
     style_name = _safe_text(image_style.get("style_name"), 120)
     style_summary = _safe_text(image_style.get("style_summary"), 1000)
     system_content = _safe_text(image_style.get("system_content"), 5000)
@@ -123,6 +150,7 @@ def _style_generation_prompt(raw_prompt: str, image_style: dict[str, Any], index
     return "\n".join(
         part
         for part in [
+            _safe_text(generation_system_content, 30000),
             f"Generate Step 3 image style reference #{index}.",
             "Reusable style specification:",
             style_specification,
@@ -247,8 +275,14 @@ def _generate_reference_images(server_module: ModuleType, project: Any, project_
     references_dir.mkdir(parents=True, exist_ok=True)
 
     generated = []
+    generation_system_content = _read_reference_generation_system_content(server_module)
     for index, raw_prompt in enumerate(prompts, start=1):
-        final_prompt = _style_generation_prompt(raw_prompt, image_style, index)
+        final_prompt = _style_generation_prompt(
+            raw_prompt,
+            image_style,
+            index,
+            generation_system_content,
+        )
         response = server_module.generate_image_response(
             client=client,
             model=model,
@@ -410,6 +444,35 @@ def _register(server_module: ModuleType) -> bool:
         return False
     app = server_module.app
 
+    def get_reference_generation_prompt_settings() -> dict[str, Any]:
+        system_content = _read_reference_generation_system_content(server_module)
+        preview = _style_generation_prompt(
+            DEFAULT_REFERENCE_SCENE_BRIEFS[0],
+            {
+                "style_name": "示例图片风格",
+                "system_content": "示例可复用视觉风格 System Content。",
+                "negative_prompt_rules": ["avoid ornate frames"],
+            },
+            1,
+            system_content,
+        )
+        return {
+            "success": True,
+            "prompts": {"system_content": system_content, "full_prompt_example": preview},
+            "defaults": {"system_content": DEFAULT_REFERENCE_GENERATION_SYSTEM_CONTENT},
+        }
+
+    def update_reference_generation_prompt_settings(payload: dict[str, Any]) -> dict[str, Any]:
+        prompts = payload.get("prompts") if isinstance(payload.get("prompts"), dict) else payload
+        system_content = _safe_text(prompts.get("system_content"), 30000)
+        if not system_content:
+            raise server_module.HTTPException(status_code=400, detail="预览图生成 System Content 不能为空")
+        update_settings = getattr(server_module, "update_settings", None)
+        if not callable(update_settings):
+            raise server_module.HTTPException(status_code=500, detail="当前服务无法保存预览图生成 Prompt")
+        update_settings({REFERENCE_GENERATION_SYSTEM_CONTENT_KEY: system_content})
+        return {"success": True, "prompts": {"system_content": system_content}}
+
     def list_reference_images(project_id: str, db: Any = server_module.Depends(server_module.get_db)) -> dict[str, Any]:
         project = db.query(server_module.Project).filter(server_module.Project.id == project_id).first()
         if not project:
@@ -447,5 +510,15 @@ def _register(server_module: ModuleType) -> bool:
     app.add_api_route("/api/projects/{project_id}/project-profile/image-style/reference-images", list_reference_images, methods=["GET"])
     app.add_api_route("/api/projects/{project_id}/project-profile/image-style/reference-images/generate", generate_reference_images, methods=["POST"])
     app.add_api_route("/api/projects/{project_id}/project-profile/image-style/reference-images/{index}", get_reference_image, methods=["GET"])
+    app.add_api_route(
+        "/api/settings/image-style-reference-generation",
+        get_reference_generation_prompt_settings,
+        methods=["GET"],
+    )
+    app.add_api_route(
+        "/api/settings/image-style-reference-generation",
+        update_reference_generation_prompt_settings,
+        methods=["PUT"],
+    )
     setattr(server_module, PATCH_MARKER, True)
     return True

@@ -7,9 +7,9 @@ storyboard:
     medium_article: "6-8"
     long_article: "8-12"
   visual_anchor_count:
-    short_article: "2-4"
-    medium_article: "2-5"
-    long_article: "3-5"
+    short_article: "content_driven"
+    medium_article: "content_driven"
+    long_article: "content_driven"
   required_slide_fields:
     - slide_id
     - main_title
@@ -39,7 +39,7 @@ storyboard:
     - 不要把正文预先拆成“图示/流程图、数据/数字、总结、引用、步骤”等固定 role；这些都属于 body_content，由生图阶段根据演讲稿自由表现。
     - visual_groups 如果出现，只表示后续 Mask/Reveal 可参考的画面锚点，不是前置版式模板。
     - narration_beats 用于说明演讲稿的节奏；不要为了覆盖全部 visual_groups 强行生成 narration_beat。
-    - 每页建议 2-5 个视觉锚点；可以少于正文要点数，允许一个强主视觉承载多个讲解点。
+    - 视觉锚点数量由内容和独立 Reveal 需求决定；一个完整正文视觉组同样合法，不设置固定上下限。
     - 生图阶段先根据演讲稿绘制完整页面，再根据画面元素和演讲稿建立锚点匹配；不要在分镜阶段把画面固定死。
     - 所有视觉锚点都必须能被人工 Mask 或矩形区域完整覆盖；允许清晰箭头、括号、流程线连接，但严禁元素重叠、严重遮挡、箭头穿字和跨组粘连。
     - 底部 y=930..1080 是视频字幕安全区，结构规划时不得依赖该区域承载任何内容或装饰。

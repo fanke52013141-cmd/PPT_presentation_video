@@ -116,7 +116,7 @@
     modal.style.display = 'none';
     modal.innerHTML = `
       <div class="modal-content style-ref-modal" role="dialog" aria-modal="true" aria-labelledby="style-ref-title">
-        <header class="style-ref-header"><div class="prompt-title-row"><h3 id="style-ref-title">图片风格设置</h3><button class="prompt-help-button" type="button" data-prompt-help="step3-style" aria-label="查看图片风格设置的输入输出示例">?</button></div><button id="btn-style-ref-x" class="style-ref-x" type="button" aria-label="关闭">×</button></header>
+        <header class="style-ref-header"><div class="prompt-title-row"><h3 id="style-ref-title">图片风格设置</h3><button id="btn-style-panel-reference-prompt" class="secondary" type="button">预览图 Prompt</button><button class="prompt-help-button" type="button" data-prompt-help="step3-style" aria-label="查看图片风格设置的输入输出示例">?</button></div><button id="btn-style-ref-x" class="style-ref-x" type="button" aria-label="关闭">×</button></header>
         <nav class="style-ref-tabs" aria-label="图片风格设置方式">
           <button class="style-ref-tab active" type="button" data-style-tab="template">使用模板</button>
           <button class="style-ref-tab" type="button" data-style-tab="manual">手写 System Content</button>
@@ -185,6 +185,7 @@
     modal.querySelector('#style-panel-upload-files').addEventListener('change', () => uploadManualReferences().catch(showError));
     modal.querySelector('#btn-style-panel-upload-run').addEventListener('click', () => uploadManualReferences().catch(showError));
     modal.querySelector('#style-panel-reverse-files').addEventListener('change', renderInlineReversePreview);
+    modal.querySelector('#btn-style-panel-reference-prompt').addEventListener('click', () => openReferencePromptEditor().catch(showError));
     modal.querySelector('#btn-style-panel-reverse-prompt').addEventListener('click', () => openReversePromptEditor().catch(showError));
     modal.querySelector('#btn-style-panel-reverse-run').addEventListener('click', event => runInlineReverse(event.currentTarget).catch(showError));
     modal.querySelector('#btn-style-reverse-generate').addEventListener('click', event => regenerateReferences(event.currentTarget).catch(showError));
@@ -276,6 +277,66 @@
     modal.querySelector('#style-reverse-system-prompt').value = prompts.system_content || '';
     modal.querySelector('#style-reverse-output-example').value = prompts.output_example || '';
     updateReversePromptPreview();
+  }
+
+  function ensureReferencePromptEditor() {
+    let modal = document.getElementById('modal-style-reference-generation-prompt');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'modal-style-reference-generation-prompt';
+    modal.className = 'modal-overlay';
+    modal.style.display = 'none';
+    modal.innerHTML = `
+      <div class="modal-content config-editor-modal" role="dialog" aria-modal="true" aria-labelledby="style-reference-generation-prompt-title">
+        <div class="config-editor-scroll">
+          <div class="prompt-title-row"><h3 id="style-reference-generation-prompt-title" class="highlight-title">风格预览图 · Prompt</h3><button class="prompt-help-button" type="button" data-prompt-help="style-reference-generation" aria-label="查看风格预览图的输入输出示例">?</button></div>
+          <p class="config-editor-note">这里定义预览图如何展示当前视觉风格。具体风格、场景和不可覆盖的白底/画布规则由程序在运行时追加。</p>
+          <label>System Content</label>
+          <textarea id="style-reference-generation-system-prompt" rows="14" spellcheck="false"></textarea>
+          <label>完整提示词示例（只读）</label>
+          <textarea id="style-reference-generation-full-prompt" rows="18" readonly spellcheck="false"></textarea>
+        </div>
+        <div class="config-editor-actions">
+          <button id="btn-style-reference-generation-reset" class="secondary" type="button">恢复默认</button>
+          <button id="btn-style-reference-generation-cancel" class="secondary" type="button">取消</button>
+          <button id="btn-style-reference-generation-save" class="success" type="button">保存当前 Prompt</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', event => { if (event.target === modal) modal.style.display = 'none'; });
+    modal.querySelector('#btn-style-reference-generation-cancel').addEventListener('click', () => { modal.style.display = 'none'; });
+    modal.querySelector('#btn-style-reference-generation-reset').addEventListener('click', () => {
+      modal.querySelector('#style-reference-generation-system-prompt').value = modal._promptDefaults?.system_content || '';
+    });
+    modal.querySelector('#btn-style-reference-generation-save').addEventListener('click', async event => {
+      const button = event.currentTarget;
+      const systemContent = modal.querySelector('#style-reference-generation-system-prompt').value.trim();
+      if (!systemContent) {
+        toast('System Content 不能为空。', 4000);
+        return;
+      }
+      const original = button.textContent;
+      button.disabled = true;
+      button.textContent = '保存中...';
+      try {
+        await apiPut('/api/settings/image-style-reference-generation', { prompts: { system_content: systemContent } });
+        modal.style.display = 'none';
+        toast('风格预览图 Prompt 已保存。', 3500);
+      } finally {
+        button.disabled = false;
+        button.textContent = original;
+      }
+    });
+    return modal;
+  }
+
+  async function openReferencePromptEditor() {
+    const modal = ensureReferencePromptEditor();
+    modal.style.display = 'flex';
+    const result = await apiGet('/api/settings/image-style-reference-generation');
+    modal._promptDefaults = result.defaults || {};
+    modal.querySelector('#style-reference-generation-system-prompt').value = result.prompts?.system_content || '';
+    modal.querySelector('#style-reference-generation-full-prompt').value = result.prompts?.full_prompt_example || '';
   }
 
   function showError(error) {
@@ -428,7 +489,6 @@
         style_name: String(document.getElementById('style-panel-template-name')?.value || '').trim() || STATE.style?.style_name || '手动 System Content',
         style_summary: STATE.style?.style_summary || '由用户在 Step 3 图片风格面板手动维护。',
         system_content: systemContent,
-        sample_reference_image_prompts: [systemContent],
         reference_image_count_target: 3,
       },
     });
@@ -537,7 +597,13 @@
       renderCurrentReferences();
       STATE.selectedTemplateId = 'current';
       renderTemplates();
-      toast('System Content 已反推；上传图片已成为本次生成的实际参考图。', 4500);
+      const warnings = Array.isArray(STATE.style.warnings) ? STATE.style.warnings.filter(Boolean) : [];
+      toast(
+        warnings.length
+          ? `System Content 已反推。参考图存在不确定项：${warnings.join('；')}`
+          : 'System Content 已反推；上传图片已成为本次生成的实际参考图。',
+        warnings.length ? 7000 : 4500,
+      );
       return result;
     } finally {
       if (button) { button.disabled = false; button.textContent = original; }

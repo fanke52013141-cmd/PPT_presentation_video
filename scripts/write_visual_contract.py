@@ -431,7 +431,7 @@ def build_contract(article_path: Path, min_slides: int, max_slides: int, topic_n
                 if subtitle_policy == SUBTITLE_POLICY_NO_SUBTITLE
                 else "Scaffold was configured to include subtitles on every slide."
             ),
-            "default_visual_anchor_count": "2-5",
+            "default_visual_anchor_count": "content_driven",
             "layout_freedom": "high",
         },
         "mapping_policy": {

@@ -67,10 +67,7 @@ def storyboard_requirements(article_content: str, profile: dict[str, Any]) -> tu
     size_key = article_size_key(article_content)
     storyboard = _nested_dict(profile, "storyboard")
     slide_count = _nested_dict(storyboard, "slide_count").get(size_key)
-    anchor_count = _nested_dict(storyboard, "visual_anchor_count").get(size_key)
-    if anchor_count is None:
-        anchor_count = _nested_dict(storyboard, "visual_group_count").get(size_key)
-    return str(slide_count or "4-8"), str(anchor_count or "2-5")
+    return str(slide_count or "4-8"), "content_driven"
 
 
 def role_catalog(profile: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -106,7 +103,7 @@ def storyboard_profile_prompt(article_content: str, profile: dict[str, Any]) -> 
         [
             "可配置分镜结构要求：",
             f"- 根据文章长度，本次建议生成 {slide_count} 页 Slide。",
-            f"- 每页建议仅给出 {anchor_count} 个后置视觉锚点；锚点只服务 Mask/Reveal，不是前置版式模板。",
+            "- 视觉锚点数量由内容和独立 Reveal 需求决定；一个完整正文视觉组同样合法，不设置固定上下限。",
             "- 分镜以演讲稿和正文内容为中心，不要在分镜阶段拆成图示、数据、总结、流程等固定 role。",
             "- 先在顶层输出 presentation_policy；副标题必须由 AI 做项目级一次性决策，不能逐页随机。",
             "- presentation_policy.subtitle_policy 只能是 all_slides_have_subtitle、no_slides_have_subtitle 或 optional_subtitles。",

@@ -17,7 +17,7 @@ ultimately be migrated back into the normal source files.
 | `scripts/ppt_studio_doctor.py` | Consolidated project health check entry point. |
 | `pipeline_services.py` | In-process production service facade shared by One-click and route handlers. |
 | `runtime_ai_mask_semantic_patch.py` | Semantic-object matcher used by AI Mask before exact title/body ownership is finalized. |
-| `runtime_project_style_references.py` | Project-local Step 3 image-style prompts and reference image helpers. |
+| `runtime_project_style_references.py` | Project-local Step 3 image-style prompts, editable preview-generation Prompt settings, and reference image helpers. |
 | `scripts/check_python_startup_hooks.py` | Self-check that normal server startup calls the explicit installer. |
 | `scripts/check_runtime_hotfixes.py` | Self-check for the main runtime safeguards. |
 | `scripts/check_runtime_settings_mask.py` | Self-check for settings credential masking. |
@@ -258,6 +258,24 @@ for the application's own image-generation API.
 Project-local style resolution is now called by the normal Step 3 source route;
 the former compatibility route no longer shadows it. The remaining project-style
 runtime modules are still tracked for service extraction in issue #7.
+
+## Prompt-contract hardening (2026-07-18)
+
+Narration annotation now treats the currently editable `tts_text` as the latest
+source of truth and synchronizes its plain text into `source_text` and
+`spoken_text`. Only supported MiniMax pause/expression tags are stripped; literal
+ASCII parentheticals such as `(REST)` and `(GraphQL)` remain narration content.
+
+Text-generated and reference-reversed image styles now validate their declared
+JSON output contracts before persisting them. Model-supplied hidden production
+fields such as `system_content` and `maskability_rules` are rejected or ignored;
+production rules and editable System Content are built deterministically.
+
+`runtime_project_style_references.py` registers the editable global route
+`GET/PUT /api/settings/image-style-reference-generation`. It controls only the
+content-neutral preview-image methodology. Per-project style content, neutral
+scene briefs, and non-overridable 16:9/white-canvas constraints are composed once
+at runtime. This bridge behavior remains migration debt tracked in issue #7.
 
 ## Read-only results and explicit repair (2026-07-15)
 

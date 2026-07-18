@@ -94,8 +94,10 @@ def _manual_style_from_payload(payload: Any, current: dict[str, Any]) -> dict[st
     prompts = source.get("sample_reference_image_prompts")
     if isinstance(prompts, list):
         style["sample_reference_image_prompts"] = [_safe_text(item, 4000) for item in prompts if _safe_text(item, 4000)][:3]
-    if not style.get("sample_reference_image_prompts") and system_content:
-        style["sample_reference_image_prompts"] = [system_content]
+    else:
+        # Reference scenes are content-neutral examples, not copies of the full
+        # style System Content.  The generator supplies three safe defaults.
+        style["sample_reference_image_prompts"] = []
     return style
 
 

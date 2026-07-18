@@ -20,7 +20,7 @@ def assert_contract(name: str, text: str) -> None:
     assert output, f"{name} is missing an explicit output section"
 
 
-def main() -> None:
+def test_prompt_files_declare_purpose_input_and_output() -> None:
     prompt_files = [
         "narration.prompt.md",
         "scene_reconstruction.prompt.md",
@@ -34,6 +34,7 @@ def main() -> None:
         text = (ROOT / "templates" / "prompts" / filename).read_text(encoding="utf-8")
         assert_contract(filename, text)
 
+def test_runtime_prompts_declare_purpose_input_and_output() -> None:
     assert_contract("article generation system prompt", server.DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT)
     assert_contract("style bundle system prompt", style_bundle_system_prompt())
     assert_contract("AI Mask system prompt", ai_mask.DEFAULT_METHODOLOGY)
@@ -45,6 +46,11 @@ def main() -> None:
     assert "只返回一个" in storyboard_system
     assert "合法 JSON" in storyboard_system
     assert "只输出合法 JSON" in style_bundle_system_prompt()
+
+
+def main() -> None:
+    test_prompt_files_declare_purpose_input_and_output()
+    test_runtime_prompts_declare_purpose_input_and_output()
 
 
 if __name__ == "__main__":

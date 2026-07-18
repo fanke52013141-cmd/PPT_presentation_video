@@ -503,10 +503,6 @@ STEP7_TTS_RETRY_BASE_DELAY_SEC = 4
 STEP7_BIND_TIMEOUT_SEC = 90
 STEP8_RENDER_TIMEOUT_SEC = 3600
 REVEAL_VISUAL_LEAD_SEC = 0.45
-DEFAULT_STEP2_GENERATION_REQUIREMENT = (
-    "按当前已保存的分镜规则、结构配置和文章内容生成分镜规划。"
-    "优先把内容讲清楚，不要机械套用固定卡片结构。"
-)
 
 def _redact_log_value(key: str, value: Any) -> Any:
     lowered = key.lower()
@@ -1589,7 +1585,6 @@ def sync_narration_beats_to_contract(project: Project, slide_ids: Optional[List[
     return True
 
 
-TTS_MARKUP_RE = re.compile(r"<#\d+(?:\.\d{1,2})?#>|\([A-Za-z-]+\)")
 MINIMAX_PAUSE_RE = re.compile(r"<#(\d+(?:\.\d{1,2})?)#>")
 MINIMAX_EXPRESSION_RE = re.compile(r"\([A-Za-z-]+\)")
 MINIMAX_ALLOWED_EXPRESSION_TAGS = {
@@ -1616,6 +1611,12 @@ MINIMAX_ALLOWED_EXPRESSION_TAGS = {
     "(sighs)",
     "(whistles)",
 }
+MINIMAX_ALLOWED_EXPRESSION_RE = re.compile(
+    "|".join(re.escape(tag) for tag in sorted(MINIMAX_ALLOWED_EXPRESSION_TAGS, key=len, reverse=True))
+)
+TTS_MARKUP_RE = re.compile(
+    rf"(?:{MINIMAX_PAUSE_RE.pattern}|{MINIMAX_ALLOWED_EXPRESSION_RE.pattern})"
+)
 SUBTITLE_MAX_CHARS = 26
 SUBTITLE_HARD_SPLIT_MARKS = "。！？；.!?;"
 SUBTITLE_SOFT_SPLIT_MARKS = "，：、,:"
@@ -1624,7 +1625,7 @@ SUBTITLE_EDGE_PUNCTUATION = "，。！？；：、,.!?;: \t\r\n"
 
 
 def clean_tts_text(text: str) -> str:
-    value = TTS_MARKUP_RE.sub(" ", str(text or ""))
+    value = TTS_MARKUP_RE.sub("", str(text or ""))
     return re.sub(r"\s+", " ", value).strip()
 
 
@@ -1649,7 +1650,7 @@ def normalize_minimax_tts_markup(text: str, fallback: str = "") -> str:
 
     def keep_expression(match: re.Match[str]) -> str:
         tag = match.group(0)
-        return tag if tag in MINIMAX_ALLOWED_EXPRESSION_TAGS else " "
+        return tag
 
     value = MINIMAX_EXPRESSION_RE.sub(keep_expression, value)
     value = re.sub(
@@ -1657,8 +1658,8 @@ def normalize_minimax_tts_markup(text: str, fallback: str = "") -> str:
         lambda m: (MINIMAX_PAUSE_RE.search(m.group(0)).group(0) + " ") if MINIMAX_PAUSE_RE.search(m.group(0)) else " ",
         value,
     )
-    value = re.sub(r"^(?:\s*(?:<#\d+(?:\.\d{1,2})?#>|\([A-Za-z-]+\))\s*)+", "", value).strip()
-    value = re.sub(r"(?:\s*(?:<#\d+(?:\.\d{1,2})?#>|\([A-Za-z-]+\))\s*)+$", "", value).strip()
+    value = re.sub(rf"^(?:\s*(?:{TTS_MARKUP_RE.pattern})\s*)+", "", value).strip()
+    value = re.sub(rf"(?:\s*(?:{TTS_MARKUP_RE.pattern})\s*)+$", "", value).strip()
     return re.sub(r"\s+", " ", value).strip()
 
 
@@ -4089,7 +4090,7 @@ def build_storyboard_request(
     profile: Optional[Dict[str, Any]] = None,
 ) -> tuple[str, str]:
     profile = profile or read_pipeline_profile()
-    slide_count_requirement, group_count_requirement = storyboard_requirements(article_content, profile)
+    slide_count_requirement, _ = storyboard_requirements(article_content, profile)
     profile_prompt = storyboard_profile_prompt(article_content, profile)
 
     schema_hint = visual_contract_schema_text()
@@ -4120,7 +4121,7 @@ def build_storyboard_request(
 - 禁止画面元素重叠：文字、卡片、图标、箭头、线条、标签、装饰、图表之间不得互相覆盖、压住、穿插或粘连。
 要求：
 1. 必须要将整篇文章合理划分，分成 {slide_count_requirement} Slide（每页的 slide_id 为 slide_001, slide_002 格式）。
-2. 每页 Slide 建议定义 {group_count_requirement}视觉分组(visual_groups)。不要固定套用“主标题/正文/总结”模板；可以按内容需要使用判断链、冲突地图、对象关系图、推理路径、时间压力图、对比、表格、流程、FAQ、场景拆解或行动清单。
+2. 视觉分组数量由内容和独立 Reveal 需求决定；一个完整正文视觉组同样合法，不设置固定上下限。不要固定套用“主标题/正文/总结”模板；可以按内容需要使用判断链、冲突地图、对象关系图、推理路径、时间压力图、对比、表格、流程、FAQ、场景拆解或行动清单。
 3. 每个视觉分组（visual_groups）必须有：
    - id: 比如 title_group, body_group_01 等
    - visible_text: 页面上会显式画出来的中文字符标签（非常重要，通常为短句或关键词，绝对不能为空；不要把整段演讲稿塞进这里）
@@ -4614,161 +4615,21 @@ def execute_step2(
     payload: Optional[Dict[str, Any]] = None,
     db: Session = Depends(get_db),
 ):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-        
-    article_source = read_project_article_source(project)
-    project_title = article_source["title"]
-    article_content = article_source["content"]
-    article_summary = article_source["summary"]
-        
-    llm_api_key = get_setting("llm_api_key")
-    llm_base_url = get_setting("llm_base_url")
-    llm_model = get_setting("llm_model")
-    llm_temp = float(get_setting("llm_temperature", "0.7"))
-    planning_temp = min(llm_temp, 0.2)
-    planning_max_tokens = parse_int_setting(get_setting("llm_max_tokens", "50000"), 50000, 1024, 64000)
-    
-    if not llm_api_key:
-        raise HTTPException(status_code=400, detail="未配置大模型 API 密钥，请在系统设置中配置后再试。")
-        
-    schema_hint = visual_contract_schema_text()
-    rules_path = storyboard_rules_path(project)
-    if os.path.exists(rules_path):
-        with open(rules_path, "r", encoding="utf-8") as f:
-            storyboard_rules = f.read().strip()
-    else:
-        storyboard_rules = default_storyboard_rules()
-    generation_requirement = str((payload or {}).get("requirement") or "").strip()
-    if not generation_requirement:
-        generation_requirement = DEFAULT_STEP2_GENERATION_REQUIREMENT
-    effective_storyboard_rules = (
-        f"{storyboard_rules}\n\n"
-        "本次生成的用户专项需求如下；只对本次生成生效，并在不破坏固定 JSON 结构和字段约束的前提下优先满足：\n"
-        f"{generation_requirement}"
-    )
-    system_prompt, user_prompt = build_storyboard_request(
-        project_title,
-        article_summary,
-        article_content,
-        effective_storyboard_rules,
-        read_project_pipeline_profile(project),
-    )
-    trace_id = uuid.uuid4().hex[:8]
-    write_project_log(
-        project,
-        "step2_execute_start",
-        trace_id=trace_id,
-        model=llm_model,
-        base_url=llm_base_url,
-        max_tokens=planning_max_tokens,
-        generation_requirement=generation_requirement,
-    )
+    """Compatibility endpoint delegated to the narration-first Step 2 pipeline."""
 
-    try:
-        client = get_openai_client(
-            api_key=llm_api_key,
-            base_url=llm_base_url,
-            timeout=STEP2_LLM_TIMEOUT_SEC,
-            max_retries=0,
-        )
-        try:
-            response = client.chat.completions.create(
-                model=llm_model,
-                temperature=planning_temp,
-                max_tokens=planning_max_tokens,
-                timeout=STEP2_LLM_TIMEOUT_SEC,
-                response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ]
-            )
-        except Exception as inner_e:
-            if is_timeout_exception(inner_e):
-                raise
-            logger.warning(f"Failed LLM call with response_format in step 2, retrying without it: {inner_e}")
-            response = client.chat.completions.create(
-                model=llm_model,
-                temperature=planning_temp,
-                max_tokens=planning_max_tokens,
-                timeout=STEP2_LLM_TIMEOUT_SEC,
-                messages=[
-                    {"role": "system", "content": system_prompt + " 请只输出纯 JSON，不要包含 Markdown 代码块标记（如 ```json ）。"},
-                    {"role": "user", "content": user_prompt}
-                ]
-            )
-            
-        choice = response.choices[0]
-        logger.info("Step 2 LLM finish_reason=%s usage=%s", getattr(choice, "finish_reason", None), getattr(response, "usage", None))
-        content_str = choice.message.content.strip()
-        cleaned_content = clean_json_markdown(content_str)
-        contract = parse_json_or_repair_with_llm(
-            cleaned_content=cleaned_content,
-            raw_content=content_str,
-            client=client,
-            model=llm_model,
-            run_dir=project.run_dir,
-            artifact_prefix="visual_contract_llm",
-            schema_hint=schema_hint,
-            max_tokens=planning_max_tokens,
-        )
-        contract = finalize_step2_contract(
-            project=project,
-            project_id=project_id,
-            db=db,
-            contract=contract,
-            project_title=project_title,
-            article_summary=article_summary,
-            trace_id=trace_id,
-            source="llm",
-        )
-        return {"success": True, "contract": contract, "fallback": False}
-    except Exception as e:
-        if is_timeout_exception(e):
-            write_project_log(
-                project,
-                "step2_llm_timeout_fallback",
-                trace_id=trace_id,
-                timeout_sec=STEP2_LLM_TIMEOUT_SEC,
-                error_type=type(e).__name__,
-                error=str(e),
-            )
-            try:
-                fallback_contract = build_step2_scaffold_contract(
-                    project=project,
-                    project_title=project_title,
-                    article_content=article_content,
-                    trace_id=trace_id,
-                )
-                fallback_contract = finalize_step2_contract(
-                    project=project,
-                    project_id=project_id,
-                    db=db,
-                    contract=fallback_contract,
-                    project_title=project_title,
-                    article_summary=article_summary,
-                    trace_id=trace_id,
-                    source="scaffold_fallback",
-                )
-                return {
-                    "success": True,
-                    "contract": fallback_contract,
-                    "fallback": True,
-                    "message": "AI 分镜生成超时，已生成本地可编辑分镜草稿。",
-                }
-            except Exception as fallback_error:
-                write_project_log(
-                    project,
-                    "step2_scaffold_fallback_error",
-                    trace_id=trace_id,
-                    error_type=type(fallback_error).__name__,
-                    error=str(fallback_error),
-                )
-        write_project_log(project, "step2_execute_error", trace_id=trace_id, error_type=type(e).__name__, error=str(e))
-        logger.error(f"Write visual contract error: {e}")
-        raise HTTPException(status_code=500, detail=f"本地分镜规划失败: {str(e)}")
+    execute_step2_script_plan(project_id, payload if isinstance(payload, dict) else {}, db)
+    execute_step2_visual_plan(project_id, db)
+    result = compose_step2_visual_contract(project_id, db)
+    return {
+        **result,
+        "deprecated_route": True,
+        "preferred_routes": [
+            f"/api/projects/{project_id}/steps/2/script/execute",
+            f"/api/projects/{project_id}/steps/2/visual/execute",
+            f"/api/projects/{project_id}/steps/2/compose",
+        ],
+    }
+
 
 @app.get("/api/projects/{project_id}/steps/2/result")
 def get_step2_result(project_id: str, db: Session = Depends(get_db)):
@@ -6846,9 +6707,9 @@ def build_narration_annotation_input(incoming: Dict[str, Any]) -> Dict[str, Any]
         for index, beat in enumerate(slide.get("beats", []) or [], start=1):
             if not isinstance(beat, dict):
                 continue
-            source_text = clean_tts_text(
-                beat.get("source_text") or beat.get("spoken_text") or beat_tts_text(beat)
-            )
+            # The editable TTS field is the latest user-visible narration.  Re-annotation
+            # must never revive a stale source_text/spoken_text value.
+            source_text = clean_tts_text(beat_tts_text(beat))
             if not source_text:
                 continue
             beats.append({
@@ -7007,7 +6868,9 @@ def annotate_step6_narration(project_id: str, payload: Optional[Dict[str, Any]] 
             if not isinstance(beat, dict):
                 continue
             beat_id = str(beat.get("id") or "").strip()
-            original = beat.get("spoken_text") or beat.get("source_text") or beat_tts_text(beat)
+            original = clean_tts_text(beat_tts_text(beat))
+            beat["source_text"] = original
+            beat["spoken_text"] = original
             if beat_id in by_id:
                 candidate = by_id[beat_id]
                 if not narration_annotation_preserves_text(candidate, original):

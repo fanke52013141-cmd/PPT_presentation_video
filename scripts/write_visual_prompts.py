@@ -196,26 +196,21 @@ def project_image_style_lines(image_style: dict[str, Any]) -> list[str]:
     if not isinstance(image_style, dict) or not image_style:
         return []
 
-    lines: list[str] = [
-        "Project Profile image style overlay (authoritative over global style tokens when there is any conflict):"
-    ]
+    lines: list[str] = ["Current project image style (authoritative):"]
+    system_content = str(image_style.get("system_content") or "").strip()
+    if system_content:
+        lines.extend(f"  {line}" for line in system_content.splitlines() if line.strip())
+        return lines
+
     style_name = str(image_style.get("style_name") or image_style.get("template_name") or "").strip()
     style_summary = str(image_style.get("style_summary") or image_style.get("description") or "").strip()
-    source = str(image_style.get("source") or "").strip()
     custom_requirement = str(image_style.get("custom_requirement") or "").strip()
     if style_name:
         lines.append(f"- Style name: {style_name}")
-    if source:
-        lines.append(f"- Style source: {source}")
     if style_summary:
         lines.append(f"- Style summary: {style_summary}")
     if custom_requirement:
         lines.append(f"- User style requirement: {custom_requirement}")
-
-    system_content = str(image_style.get("system_content") or "").strip()
-    if system_content:
-        lines.append("- Image generation system content:")
-        lines.extend(f"  {line}" for line in system_content.splitlines() if line.strip())
 
     visual_language = image_style.get("visual_language")
     if isinstance(visual_language, dict) and visual_language:
@@ -230,20 +225,10 @@ def project_image_style_lines(image_style: dict[str, Any]) -> list[str]:
             if rendered:
                 lines.append(f"  - {key}: {rendered}")
 
-    maskability_rules = image_style.get("maskability_rules")
-    if isinstance(maskability_rules, list) and maskability_rules:
-        lines.append("- Project Profile maskability rules:")
-        lines.extend(f"  - {str(rule).strip()}" for rule in maskability_rules if str(rule).strip())
-
     negative_rules = image_style.get("negative_prompt_rules")
     if isinstance(negative_rules, list) and negative_rules:
         lines.append("- Project Profile negative prompt rules:")
         lines.extend(f"  - {str(rule).strip()}" for rule in negative_rules if str(rule).strip())
-
-    sample_prompts = image_style.get("sample_reference_image_prompts")
-    if isinstance(sample_prompts, list) and sample_prompts:
-        lines.append("- Optional reference prompt examples for this style:")
-        lines.extend(f"  - {str(prompt).strip()}" for prompt in sample_prompts if str(prompt).strip())
 
     return lines
 
@@ -254,7 +239,7 @@ def presentation_policy(planning: dict[str, Any]) -> dict[str, Any]:
         return {
             "subtitle_policy": SUBTITLE_POLICY_NO_SUBTITLE,
             "subtitle_rationale": "No project-level AI subtitle policy was found; defaulting to no subtitles for visual consistency.",
-            "default_visual_anchor_count": "2-5",
+            "default_visual_anchor_count": "content_driven",
             "layout_freedom": "high",
         }
     result = dict(policy)
@@ -340,11 +325,7 @@ def build_prompt(
     global_style_rules = style_profile_lines(style_tokens)
     combined_style_rules = []
     if project_style_rules:
-        combined_style_rules.extend(project_style_rules)
-        if global_style_rules:
-            combined_style_rules.append("")
-            combined_style_rules.append("Global fallback style tokens; use only where they do not conflict with Project Profile:")
-            combined_style_rules.extend(global_style_rules)
+        combined_style_rules = project_style_rules
     else:
         combined_style_rules = global_style_rules
     style_rules = "\n".join(combined_style_rules) or "- Use the active style reference images as the visual style source."

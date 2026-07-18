@@ -115,7 +115,7 @@ source of truth; visual anchors are matched after the page is drawn.
     "subtitle_policy": "no_slides_have_subtitle",
     "subtitle_decided_by": "system_no_subtitle_contract",
     "subtitle_rationale": "页面只保留主标题。",
-    "default_visual_anchor_count": "2-4",
+    "default_visual_anchor_count": "content_driven",
     "layout_freedom": "high"
   },
   "topic": {

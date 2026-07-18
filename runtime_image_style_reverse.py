@@ -160,6 +160,53 @@ def _clean_json_markdown(text: str) -> str:
     return value
 
 
+REVERSE_VISUAL_LANGUAGE_FIELDS = {
+    "line_style",
+    "shape_language",
+    "color_palette",
+    "texture",
+    "lighting",
+    "layout_density",
+    "typography",
+    "composition",
+    "iconography",
+}
+REVERSE_OUTPUT_FIELDS = {
+    "style_name",
+    "style_summary",
+    "visual_language",
+    "negative_prompt_rules",
+    "sample_reference_image_prompts",
+    "warnings",
+}
+
+
+def validate_reverse_style_model_output(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError("参考图反推输出必须是 JSON 对象")
+    missing = sorted(REVERSE_OUTPUT_FIELDS - set(value))
+    unexpected = sorted(set(value) - REVERSE_OUTPUT_FIELDS)
+    if missing:
+        raise ValueError(f"参考图反推输出缺少字段: {', '.join(missing)}")
+    if unexpected:
+        raise ValueError(f"参考图反推输出包含未声明字段: {', '.join(unexpected)}")
+    if not _safe_text(value.get("style_name"), 120) or not _safe_text(value.get("style_summary"), 1000):
+        raise ValueError("style_name 和 style_summary 不能为空")
+    visual_language = value.get("visual_language")
+    if not isinstance(visual_language, dict):
+        raise ValueError("visual_language 必须是对象")
+    missing_visual = sorted(REVERSE_VISUAL_LANGUAGE_FIELDS - set(visual_language))
+    unexpected_visual = sorted(set(visual_language) - REVERSE_VISUAL_LANGUAGE_FIELDS)
+    if missing_visual:
+        raise ValueError(f"visual_language 缺少字段: {', '.join(missing_visual)}")
+    if unexpected_visual:
+        raise ValueError(f"visual_language 包含未声明字段: {', '.join(unexpected_visual)}")
+    for key in ("negative_prompt_rules", "sample_reference_image_prompts", "warnings"):
+        if not isinstance(value.get(key), list):
+            raise ValueError(f"{key} 必须是数组")
+    return value
+
+
 def _mime_type(filename: str, fallback: str = "image/png") -> str:
     ext = Path(filename).suffix.lower()
     if ext in {".jpg", ".jpeg"}:
@@ -263,8 +310,8 @@ def _call_vision_model(server_module: ModuleType, saved: list[dict[str, Any]], p
         )
         raw = str(response.choices[0].message.content or "").strip()
         parsed = json.loads(_clean_json_markdown(raw))
-        return parsed if isinstance(parsed, dict) else {}
-    except json.JSONDecodeError as exc:
+        return validate_reverse_style_model_output(parsed)
+    except (json.JSONDecodeError, ValueError) as exc:
         raise server_module.HTTPException(status_code=500, detail=f"视觉模型返回的 JSON 解析失败: {exc}") from exc
     except server_module.HTTPException:
         raise
@@ -283,7 +330,6 @@ def _style_with_required_rules(style: dict[str, Any], saved: list[dict[str, Any]
         "no complex background, gradient canvas, paper texture, or off-white outer canvas",
         "no crowded collage, tiny dense text, overlapping labels, or sticking objects",
     ]
-    mask_rules = style.get("maskability_rules") if isinstance(style.get("maskability_rules"), list) else []
     neg_rules = style.get("negative_prompt_rules") if isinstance(style.get("negative_prompt_rules"), list) else []
     sample_prompts = style.get("sample_reference_image_prompts") if isinstance(style.get("sample_reference_image_prompts"), list) else []
     visual_language = style.get("visual_language") if isinstance(style.get("visual_language"), dict) else {}
@@ -308,10 +354,10 @@ def _style_with_required_rules(style: dict[str, Any], saved: list[dict[str, Any]
         "custom_requirement": requirement,
         "system_content": system_content,
         "visual_language": visual_language,
-        "maskability_rules": [str(x).strip() for x in [*mask_rules, *required_mask_rules] if str(x).strip()],
+        "maskability_rules": required_mask_rules,
         "negative_prompt_rules": [str(x).strip() for x in [*neg_rules, *negative_required] if str(x).strip()],
         "sample_reference_image_prompts": [str(x).strip() for x in sample_prompts[:3] if str(x).strip()],
-        "reference_image_count_target": min(3, max(1, len(sample_prompts) or len(saved))),
+        "reference_image_count_target": 3,
         "reverse_engineered_from": saved,
         "source_notes": "",
         "warnings": style.get("warnings") if isinstance(style.get("warnings"), list) else [],

@@ -277,17 +277,17 @@ const PROMPT_IO_HELP = {
   },
   'step2-script': {
     title: '文章➡️slides',
-    inputSummary: '只输入完整 article.md、项目名称和本次可选补充需求。',
-    inputFields: ['project_name', 'article_markdown', 'generation_requirement（可选）'],
-    inputExample: '{\n  "project_name": "Token 科普",\n  "article_markdown": "# Token……",\n  "generation_requirement": "控制在 6 页以内"\n}',
-    outputSummary: '严格 JSON；每页只确定 slide_id、main_title 和完整 narration。',
-    outputExample: '{\n  "slides": [{\n    "slide_id": "slide_001",\n    "main_title": "Token 是什么？",\n    "narration": "先从最基础的定义说起……"\n  }]\n}',
+    inputSummary: '只输入完整 article.md、项目标题和用户实际填写的本次补充需求；补充需求为空时不发送该字段。',
+    inputFields: ['project_title', 'article_content', 'generation_requirement（可选）'],
+    inputExample: '{\n  "project_title": "Token 科普",\n  "article_content": "# Token……",\n  "generation_requirement": "控制在 6 页以内"\n}',
+    outputSummary: '严格 JSON；每页只确定 slide_id、slide_title 和完整 narration。',
+    outputExample: '{\n  "title": "Token 科普",\n  "slides": [{\n    "slide_id": "slide_001",\n    "slide_title": "Token 是什么？",\n    "narration": "先从最基础的定义说起……"\n  }]\n}',
   },
   'step2-visual': {
     title: 'slides➡️可视化',
-    inputSummary: '输入 Step 2A 已确认的每页标题和完整演讲稿，不重复输入文章。',
-    inputFields: ['slides[].slide_id', 'slides[].main_title', 'slides[].narration'],
-    inputExample: '{\n  "slides": [{\n    "slide_id": "slide_001",\n    "main_title": "Token 是什么？",\n    "narration": "先从最基础的定义说起……"\n  }]\n}',
+    inputSummary: '只输入 Step 2A 已确认的 slide_script_plan，不重复输入文章或项目规则。',
+    inputFields: ['slide_script_plan.title', 'slide_script_plan.slides[].slide_id', 'slide_script_plan.slides[].slide_title', 'slide_script_plan.slides[].narration'],
+    inputExample: '{\n  "slide_script_plan": {\n    "title": "Token 科普",\n    "slides": [{\n      "slide_id": "slide_001",\n      "slide_title": "Token 是什么？",\n      "narration": "先从最基础的定义说起……"\n    }]\n  }\n}',
     outputSummary: '严格 JSON；把演讲稿原子化为可视化元素，并逐项绑定旁白片段。',
     outputExample: '{\n  "slides": [{\n    "slide_id": "slide_001",\n    "visual_elements": [{\n      "element_id": "el_001",\n      "role": "title",\n      "visual_type": "text",\n      "visual_description": "Token 是什么？",\n      "narration": "先从最基础的定义说起"\n    }]\n  }]\n}',
   },
@@ -305,7 +305,7 @@ const PROMPT_IO_HELP = {
     inputFields: ['system_content，或 reference_images[]', 'custom_requirement（可选）'],
     inputExample: '参考图：2 张\n补充要求：柔和蓝紫配色、扁平线性图标、留白充足，不复制参考图内容。',
     outputSummary: '当前项目的图片风格 System Content，以及最多 3 张实际参与后续生图的风格参考图。',
-    outputExample: 'System Content：柔和蓝紫教育信息图风格；线条简洁；标题层级清楚；纯白外围背景。',
+    outputExample: 'System Content：柔和蓝紫教育信息图风格；线条简洁；标题层级清楚；使用圆角几何与统一线性图标。',
   },
   'style-reverse': {
     title: '参考图反推图片风格',
@@ -313,15 +313,23 @@ const PROMPT_IO_HELP = {
     inputFields: ['reference_images[]（1–3 张）', 'requirement（可选）'],
     inputExample: '参考图：2 张\n{\n  "requirement": "保留柔和蓝紫色和圆角线性图标，降低装饰密度"\n}',
     outputSummary: '严格 JSON 的可复用视觉语言；程序再确定性生成图片风格 System Content，并追加白底与 Mask 生产规则。',
-    outputExample: '{\n  "style_name": "柔和蓝紫线性信息图",\n  "style_summary": "适合知识讲解的轻盈扁平风格。",\n  "visual_language": {"line_style": "rounded outlines", "color_palette": ["#6C63FF", "#DCE7FF"]},\n  "negative_prompt_rules": ["avoid ornate frames"],\n  "sample_reference_image_prompts": ["A concise cause-and-effect explainer."],\n  "warnings": []\n}',
+    outputExample: '{\n  "style_name": "柔和蓝紫线性信息图",\n  "style_summary": "适合知识讲解的轻盈扁平风格。",\n  "visual_language": {\n    "line_style": "rounded outlines",\n    "shape_language": "rounded panels",\n    "color_palette": ["#6C63FF", "#DCE7FF"],\n    "texture": "flat fills",\n    "lighting": "soft and even",\n    "layout_density": "moderate",\n    "typography": "bold concise headings",\n    "composition": "one focal structure",\n    "iconography": "rounded line icons"\n  },\n  "negative_prompt_rules": ["avoid ornate frames"],\n  "sample_reference_image_prompts": ["A concise cause-and-effect explainer."],\n  "warnings": []\n}',
+  },
+  'style-reference-generation': {
+    title: '风格预览图生成',
+    inputSummary: '运行时只组合一份当前风格 System Content、一条内容中立场景简述和不可覆盖的生产规则。',
+    inputFields: ['style_system_content', 'scene_brief', 'production_constraints（程序追加）'],
+    inputExample: 'style_system_content：柔和蓝紫线性信息图\nscene_brief：A concise process explanation using clear symbols.\nproduction_constraints：16:9、纯白外围画布、元素不粘连',
+    outputSummary: '一张用于判断视觉风格的 16:9 预览位图；不输出文字说明或 JSON。',
+    outputExample: 'PNG/JPEG 位图：内容中立、风格清晰、纯白外围画布。',
   },
   'ai-mask': {
     title: 'AI Mask 自动标注',
     inputSummary: '系统提交当前 Slide 原图、自动检测后的语义对象，以及 Step 2 的旁白—视觉绑定关系。',
     inputFields: ['image_full', 'semantic_objects[]', 'visual_groups[]', 'narration_beats[]'],
-    inputExample: '{\n  "slide_id": "slide_003",\n  "semantic_objects": [{"object_id": "obj_01", "element_ids": ["el_auto_01"], "ocr_text": "模型按 Token 计算"}],\n  "visual_groups": [{"id": "slide_003_el_002"}],\n  "narration_beats": [{"id": "beat_002", "spoken_text": "模型会先切分文本"}]\n}',
+    inputExample: '{\n  "slide_id": "slide_003",\n  "semantic_objects": [{"object_id": "obj_01", "type": "text_block", "bbox": [120, 220, 760, 420]}],\n  "visual_groups": [{"id": "slide_003_el_002"}],\n  "narration_beats": [{"id": "beat_002", "spoken_text": "模型会先切分文本"}]\n}',
     outputSummary: '严格 JSON 的语义对象归属；服务端再生成精确 RLE Mask，并验证覆盖率和零交叉。',
-    outputExample: '{\n  "matches": [{\n    "group_id": "slide_003_el_002",\n    "narration_beat_id": "beat_002",\n    "object_ids": ["obj_01"],\n    "element_ids": ["el_auto_01"],\n    "confidence": 0.97\n  }]\n}',
+    outputExample: '{\n  "matches": [{\n    "group_id": "slide_003_el_002",\n    "narration_beat_id": "beat_002",\n    "object_ids": ["obj_01"],\n    "element_ids": [],\n    "confidence": 0.97,\n    "reason": "正文语义与对象文字一致"\n  }],\n  "unmatched_objects": [],\n  "unmatched_elements": [],\n  "unmatched_groups": [],\n  "warnings": []\n}',
   },
   'narration-annotation': {
     title: '旁白 AI 标注',
@@ -1361,10 +1369,6 @@ function closeStep2GenerationModal() {
   document.getElementById('modal-step2-generate').style.display = 'none';
 }
 
-function defaultStep2GenerationRequirement() {
-  return '按当前已保存的分镜规则、结构配置和文章内容生成分镜规划。优先把内容讲清楚，不要机械套用固定卡片结构。';
-}
-
 function setStep2GenerationStatus(message = '', type = '') {
   const status = document.getElementById('step2-generation-status');
   if (!status) return;
@@ -1375,14 +1379,13 @@ function setStep2GenerationStatus(message = '', type = '') {
 
 async function confirmStep2Generation() {
   const userRequirement = document.getElementById('step2-generation-requirement').value.trim();
-  const requirement = userRequirement || defaultStep2GenerationRequirement();
-  state.step2GenerationRequirement = requirement;
+  state.step2GenerationRequirement = userRequirement;
   closeStep2GenerationModal();
-  await generateStep2Contract(requirement);
+  await generateStep2Contract(userRequirement);
 }
 
 async function generateStep2Contract(requirement = '') {
-  const normalizedRequirement = String(requirement || defaultStep2GenerationRequirement()).trim();
+  const normalizedRequirement = String(requirement || '').trim();
   setStep2GenerationStatus('');
   document.getElementById('step2-loading').style.display = 'block';
   document.getElementById('step2-btn-generate').disabled = true;
@@ -1391,9 +1394,10 @@ async function generateStep2Contract(requirement = '') {
   
   try {
     if (loadingText) loadingText.innerText = 'Step 2A：AI 正在规划每页标题、正文要点和演讲稿...';
+    const scriptPayload = normalizedRequirement ? { requirement: normalizedRequirement } : {};
     const scriptRes = await API.post(
       `/api/projects/${state.currentProject.id}/steps/2/script/execute`,
-      { requirement: normalizedRequirement },
+      scriptPayload,
     );
     if (!scriptRes.success) {
       showToast(`❌ 错误: ${scriptRes.message || 'Step 2A 生成失败'}`);
@@ -4968,12 +4972,34 @@ async function annotateStep6Narration() {
   }
 }
 
+const STEP6_ALLOWED_TTS_EXPRESSION_TAGS = new Set([
+  '(applause)', '(breath)', '(burps)', '(chuckle)', '(clear-throat)', '(coughs)',
+  '(crying)', '(emm)', '(exhale)', '(gasps)', '(groans)', '(hissing)', '(humming)',
+  '(inhale)', '(laughs)', '(lip-smacking)', '(pant)', '(sneezes)', '(sniffs)',
+  '(snorts)', '(sighs)', '(whistles)',
+]);
+
+function stripStep6TtsMarkup(value) {
+  return String(value || '')
+    .replace(/<#\d+(?:\.\d{1,2})?#>/g, '')
+    .replace(/\([A-Za-z-]+\)/g, tag => STEP6_ALLOWED_TTS_EXPRESSION_TAGS.has(tag) ? '' : tag)
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function syncStep6BeatText(beat, value) {
+  if (!beat || typeof beat !== 'object') return;
+  const ttsText = String(value || '').trim();
+  const plainText = stripStep6TtsMarkup(ttsText);
+  beat.tts_text = ttsText;
+  beat.source_text = plainText;
+  beat.spoken_text = plainText;
+}
+
 function normalizeStep6Beat(beat, idx) {
   if (!beat || typeof beat !== 'object') return null;
-  const sourceText = String(beat.source_text || beat.spoken_text || '').trim();
-  beat.source_text = sourceText;
-  beat.spoken_text = String(beat.spoken_text || sourceText).trim();
-  beat.tts_text = String(beat.tts_text || beat.spoken_text || sourceText).trim();
+  const visibleText = String(beat.tts_text || beat.spoken_text || beat.source_text || '').trim();
+  syncStep6BeatText(beat, visibleText);
   beat.id = beat.id || `sentence_${idx + 1}`;
   return beat;
 }
@@ -5052,10 +5078,7 @@ function autoResizeNarrationTextarea(textarea) {
 function updateNarrationBeatText(slideIndex, beatIndex, val) {
   const slide = narrationData.slides[slideIndex];
   if (slide && slide.beats[beatIndex]) {
-    slide.beats[beatIndex].tts_text = val;
-    if (!slide.beats[beatIndex].source_text) {
-      slide.beats[beatIndex].source_text = slide.beats[beatIndex].spoken_text || val;
-    }
+    syncStep6BeatText(slide.beats[beatIndex], val);
     scheduleStep6Autosave();
   }
 }
@@ -5068,8 +5091,7 @@ function saveStep6CurrentState() {
     const beatIdx = Number(ta.dataset.beatIndex);
     const beat = narrationData.slides?.[slideIdx]?.beats?.[beatIdx];
     if (beat) {
-      beat.tts_text = ta.value;
-      if (!beat.source_text) beat.source_text = beat.spoken_text || ta.value;
+      syncStep6BeatText(beat, ta.value);
     }
   });
 }

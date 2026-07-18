@@ -5510,6 +5510,10 @@ button.success:disabled,
 }
 
 button.prompt-help-button {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: 0 0 28px;
   width: 28px !important;
   height: 28px !important;
   min-width: 28px !important;
@@ -5523,6 +5527,7 @@ button.prompt-help-button {
   font-size: 0.88rem;
   font-weight: 850;
   line-height: 1;
+  text-align: center;
 }
 
 button.prompt-help-button:hover {

@@ -41,6 +41,8 @@ assert "method" in full_mask_prompt and "schema" in full_mask_prompt
 assert "OUTPUT STRUCTURE / 输出结构" in full_mask_prompt
 assert ".slide-thumbnail-card.step2-slide-thumb" in css
 assert "height: 32px !important" in css
+assert "button.prompt-help-button" in css
+assert "justify-content: center !important" in css
 
 script_prompt = (ROOT / "templates" / "prompts" / "step2_script_system.md").read_text(encoding="utf-8")
 visual_prompt = (ROOT / "templates" / "prompts" / "step2_visual_system.md").read_text(encoding="utf-8")

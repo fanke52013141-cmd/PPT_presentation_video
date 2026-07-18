@@ -61,14 +61,12 @@ def test_contract_and_narration_are_only_reused_when_fresh_and_validated() -> No
         (root / "planning").mkdir(parents=True)
         (root / "inputs").mkdir(parents=True)
         article = root / "inputs" / "article.md"
-        brief = root / "planning" / "article_brief.json"
         contract = root / "planning" / "visual_contract.json"
         narration = root / "planning" / "narration_beats.json"
         article.write_text("article", encoding="utf-8")
-        brief.write_text('{"content":"article"}', encoding="utf-8")
         contract.write_text('{"slides":[]}', encoding="utf-8")
         narration.write_text('{"slide_001":[]}', encoding="utf-8")
-        for path, stamp in ((article, 10), (brief, 10), (contract, 20), (narration, 30)):
+        for path, stamp in ((article, 10), (contract, 20), (narration, 30)):
             os.utime(path, (stamp, stamp))
         validation = {
             "valid": True,
@@ -141,6 +139,32 @@ def test_one_click_uses_safe_mask_and_audio_modes() -> None:
         assert source.count(gate_name) >= 2
 
 
+def test_preflight_migrates_legacy_article_before_checking_source() -> None:
+    with tempfile.TemporaryDirectory() as value:
+        root = Path(value)
+        project = project_for(root)
+        calls = []
+
+        def migrate_article(_project, *, required=True):
+            calls.append(required)
+            article_path = root / "inputs" / "article.md"
+            article_path.parent.mkdir(parents=True, exist_ok=True)
+            article_path.write_text("legacy article", encoding="utf-8")
+            return {"content": "legacy article"}
+
+        module = SimpleNamespace(
+            read_project_article_source=migrate_article,
+            get_setting=lambda _key: "configured",
+            resolve_media_tool=lambda _name: "available",
+            REPO_ROOT=str(ROOT),
+        )
+
+        errors = one_click._preflight_errors(module, project)
+
+        assert calls == [False]
+        assert not any("导入文章" in error for error in errors)
+
+
 def test_one_click_routes_are_explicit_and_unique() -> None:
     route_methods = [
         (getattr(route, "path", ""), frozenset(getattr(route, "methods", set()) or set()))
@@ -159,5 +183,6 @@ if __name__ == "__main__":
     test_disabled_quality_gate_marks_terminal_failure()
     test_only_uncorrected_ai_masks_are_replaceable()
     test_one_click_uses_safe_mask_and_audio_modes()
+    test_preflight_migrates_legacy_article_before_checking_source()
     test_one_click_routes_are_explicit_and_unique()
     print("one-click orchestrator checks passed")

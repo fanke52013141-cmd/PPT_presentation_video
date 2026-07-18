@@ -101,7 +101,7 @@ def test_unified_continuous_structure_remains_valid() -> None:
 
 
 def test_zero_body_groups_remains_invalid() -> None:
-    with pytest.raises(ContractError, match="Expected 1-10 revealable visual groups"):
+    with pytest.raises(ContractError, match="Expected at least 1 revealable visual group"):
         validate_contract(make_contract(body_count=0), 1, 10, read_pipeline_profile())
 
 
@@ -110,16 +110,18 @@ def test_title_only_narration_binding_is_invalid() -> None:
         validate_contract(make_contract(body_has_narration=False), 1, 10, read_pipeline_profile())
 
 
-def test_seven_groups_warn_but_pass(capsys: pytest.CaptureFixture[str]) -> None:
+def test_seven_groups_pass_without_an_arbitrary_common_range_warning(capsys: pytest.CaptureFixture[str]) -> None:
     contract = make_contract(body_count=7)
     assert validate_contract(contract, 1, 10, read_pipeline_profile()) == 1
-    assert "common range is 1-6" in capsys.readouterr().err
+    stderr = capsys.readouterr().err
+    assert "common range" not in stderr
+    assert "density guide" not in stderr
 
 
-def test_more_than_ten_groups_is_invalid() -> None:
+def test_more_than_density_guide_warns_but_remains_valid(capsys: pytest.CaptureFixture[str]) -> None:
     contract = deepcopy(make_contract(body_count=11))
-    with pytest.raises(ContractError, match="Expected 1-10 revealable visual groups"):
-        validate_contract(contract, 1, 10, read_pipeline_profile())
+    assert validate_contract(contract, 1, 10, read_pipeline_profile()) == 1
+    assert "exceeds the configured density guide of 10" in capsys.readouterr().err
 
 
 def test_step2_prompt_compatibility_detects_legacy_field_dependencies() -> None:
@@ -131,7 +133,7 @@ def test_step2_prompt_compatibility_detects_legacy_field_dependencies() -> None:
     )
     defaults = server.default_step2_prompts()
     assert server.step2_prompt_compatibility(defaults) == {
-        "contract_version": "step2_narration_visual_v4_no_subtitle",
+        "contract_version": "step2_narration_visual_v5_speech_atomic",
         "script_prompt_legacy": False,
         "visual_prompt_legacy": False,
         "compatible": True,

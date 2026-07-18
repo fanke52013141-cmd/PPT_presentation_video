@@ -1,19 +1,18 @@
 ---
 name: plan-slides
-description: Convert an input article directly into a structured PPT video slide plan.
+description: Convert a complete article into speech-driven slides and atomic narration-bound visual elements.
 ---
 
 # Purpose
 
-把输入文章直接拆分成 AI 科普 PPT 视频结构。该阶段回答：整篇文章应该拆成哪些 slide、每页讲什么、内容用什么结构表达、每页演讲稿怎么说。
-
-本阶段不再输出 `article_brief.json`，也不再把文章摘要和分镜拆成两个环节。主输出就是 `slide_plan.json`。
+直接读取完整文章，用两个清晰阶段完成分镜规划：先形成认知旅程与逐页演讲稿，再把演讲稿逐字切分为可生成、可 Mask、可 Reveal 的原子视觉元素。流程不依赖文章摘要，不生成页面副标题。
 
 # Inputs
 
 ```json
 {
-  "article_path": "runs/<run_id>/inputs/article.md"
+  "article_path": "runs/<run_id>/inputs/article.md",
+  "generation_requirement": "可选：页数、受众、重点、用途和语气"
 }
 ```
 
@@ -21,119 +20,95 @@ description: Convert an input article directly into a structured PPT video slide
 
 ```json
 {
-  "slide_plan_path": "runs/<run_id>/planning/slide_plan.json",
-  "narration_files_optional": "runs/<run_id>/slides/slide_xxx/narration.txt"
+  "script_plan_path": "runs/<run_id>/planning/slide_script_plan.json",
+  "visual_plan_path": "runs/<run_id>/planning/slide_visual_plan.json",
+  "visual_contract_path": "runs/<run_id>/planning/visual_contract.json"
 }
 ```
 
-`narration_files_optional` 只是从 `slide_plan.json` 中拆出的旁白副本，方便 TTS 脚本读取；业务主数据以 `slide_plan.json` 为准。
+# Stage A: Speech-driven script planning
 
-# Output Structure
+读取 `article.md` 全文，输出：
 
-`slide_plan.json` 必须符合 `schemas/slide_plan.schema.json`。
+```json
+{
+  "title": "项目或视频标题",
+  "slides": [
+    {
+      "slide_id": "slide_001",
+      "slide_title": "本页标题",
+      "narration": "本页完整、可直接朗读的演讲稿"
+    }
+  ]
+}
+```
 
-顶层字段：
+规则：
 
-- `topic.topic_id`
-- `topic.topic_name`
-- `topic.topic_summary`
-- `slides[]`
+- 根据用户要求或文章内容判断领域与受众，不把非 AI 内容强行改写成 AI 科普。
+- 先设计认知旅程，再分页；每页只推进一个主要认知动作。
+- 默认页数自适应，用户明确页数时将其作为目标，但不能牺牲事实和关键逻辑。
+- 演讲稿开头用可独立切分的自然片段引出标题，正文承担主要信息。
+- 不输出副标题、正文要点数组、视觉元素、Mask 或动画。
 
-每个 slide 必须包含：
+# Stage B: Atomic visual planning
 
-- `slide_id`
-- `slide_purpose`
-- `main_title`
-- `subtitle`
-- `core_message`
-- `content`
-- `narration`
+只读取 Stage A 的 `title`、`slide_id`、`slide_title` 和完整 `narration`，输出：
 
-每个 `content` 必须包含：
+```json
+{
+  "slides": [
+    {
+      "slide_id": "slide_001",
+      "visual_elements": [
+        {
+          "element_id": "el_001",
+          "role": "title",
+          "visual_type": "text",
+          "visual_description": "画面实际文字或可画的元素描述",
+          "narration": "原演讲稿中的连续非空片段"
+        }
+      ]
+    }
+  ]
+}
+```
 
-- `content_type`
-- `layout_intent`
-- `items[]`
+规则：
 
-# Supported slide_purpose
+- 每页恰好一个标题元素且至少一个正文元素。
+- 不预设正文数量；由语义、Reveal 时机和空间边界自然决定。
+- 一个元素是一项最小 Mask/Reveal 原子，不包含需要分别出现的独立视觉岛。
+- 标题无论多色、描边或字形分离，始终是一个标题元素和一个组级 Mask。
+- 每个元素绑定且只绑定一个非空旁白片段。
+- 所有片段按顺序直接拼接后必须逐字还原 Stage A 演讲稿，标点不丢失、不重复、不改写。
+- 每页 `element_id` 从 `el_001` 连续编号。
 
-- `opening_question`: 开场提问
-- `problem_setup`: 提出问题背景
-- `concept_intro`: 引出概念
-- `concept_explanation`: 概念解释
-- `example_demo`: 举例说明
-- `process_breakdown`: 流程拆解
-- `comparison_explain`: 对比说明
-- `misunderstanding_fix`: 纠正常见误解
-- `key_takeaway`: 重点提炼
-- `practical_advice`: 使用建议
-- `closing_summary`: 结尾总结
+# Compose
 
-# Supported content_type
-
-- `concept_explanation`: 概念解释
-- `bullet_list`: 分点说明
-- `process_flow`: 流程结构
-- `comparison`: 对比结构
-- `timeline`: 时间轴
-- `cycle`: 循环结构
-- `cards`: 卡片组
-- `example_breakdown`: 示例拆解
-- `misconception_correction`: 误区纠正
-- `cause_effect`: 因果链
-- `framework_map`: 框架图
-- `hierarchy`: 层级结构
-- `matrix`: 矩阵结构
-- `checklist`: 操作清单
-- `summary_takeaway`: 总结页
-- `custom`: 仅在以上结构都不能表达时使用
-
-# Procedure
-
-1. 读取 `article.md`。
-2. 按文章逻辑切分 slide，而不是先做文章摘要。
-3. 每页只讲一个核心观点、一个问题或一个解释单元。
-4. 不限制 slide 数量，以把整篇文章讲清楚为准。
-5. 为每页选择合适的 `slide_purpose` 和 `content.content_type`。
-6. 为每页写主标题、副标题和 `core_message`。
-7. 把页面主要内容写进 `content.items[]`，不要只写一整段大文本。
-8. 为每页写可直接 TTS 的中文 `narration`。
-9. 输出 `slide_plan.json`。
-10. 如后续脚本需要，可把每页 `narration` 拆出为 `runs/<run_id>/slides/slide_xxx/narration.txt`。
-
-# Rules
-
-- 不输出 `target_duration_sec`。
-- 不输出 `duration_sec`。
-- 不输出 `language`。
-- 不输出 `article_brief.json`。
-- 不要求固定 8 到 14 页。
-- 不为了凑时长增加空话或无意义页。
-- 不为了减少页数把多个复杂概念塞进同一页。
-- 旁白必须是演讲稿，不写舞台说明、镜头说明、括号情绪说明。
-- 所有内容默认面向普通人和 AI 初学者，避免术语堆叠。
+把两个规划合并为 `visual_contract.json`，保持一项视觉元素对应一项 narration beat。文章短摘要仅可从 `article.md` 现场计算后写入合同元数据，不能成为演讲稿知识来源。
 
 # Validation
 
-- `slides[]` 不能为空。
-- 文章中的关键内容不能无故遗漏。
-- 每页必须有明确 `core_message`。
-- 每页 `content.items[]` 至少 1 条。
-- 每页 `narration` 不能为空，且必须可直接朗读。
-- 同一页不能同时解释多个复杂概念。
-- `content_type` 必须和页面内容结构匹配。
+- `article.md` 是唯一文章输入且非空。
+- Stage A 每页只有 `slide_id`、`slide_title`、`narration`。
+- Stage B 不改变 Slide 数量、顺序或标题。
+- 每页标题唯一、正文非空，视觉元素和旁白严格一对一。
+- 一个正文元素是合法结果；超过密度参考值只提示，不因数量直接拒绝。
+- 原子性、Mask 可分离性和旁白完整性通过质量门。
 
 # Failure Handling
 
-- 如果文章过长，按自然章节拆成更多 slide，不压缩成少数大页。
-- 如果某一页内容过多，继续拆页。
-- 如果文章结构混乱，先按“问题、概念、过程、例子、误区、建议、总结”的教学顺序重组。
-- 如果没有合适的结构类型，才使用 `custom`，并在 `layout_intent` 中说明原因。
+- 内容简单时允许一页或一个正文视觉元素，不为凑数拆分。
+- 内容复杂时自然增加页面或视觉元素，不把多个独立语义硬塞进一个组。
+- 旁白无法自然切分时设计统一视觉结构，不改写旁白、不创建空旁白元素。
+- 事实不足时保留边界，不补造数字、案例、引文或结论。
 
 # Bad Case Tags
 
-- `output-unclear`
-- `data-break`
-- `scope-creep`
-- `slide-overpacked`
+- `missing-input`
 - `narration-weak`
+- `source-divergence`
+- `mapping-incomplete`
+- `visual-not-atomic`
+- `mask-boundary-unclear`

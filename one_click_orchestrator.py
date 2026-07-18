@@ -253,7 +253,6 @@ def _has_contract(project: Any) -> bool:
         return False
     upstream_paths = [
         run_dir / "inputs" / "article.md",
-        run_dir / "planning" / "article_brief.json",
     ]
     if any(_mtime(path) > _mtime(contract_path) for path in upstream_paths):
         return False
@@ -269,7 +268,11 @@ def _has_contract(project: Any) -> bool:
 
 
 def _has_article(project: Any) -> bool:
-    return (_run_dir(project) / "planning" / "article_brief.json").exists()
+    article_path = _run_dir(project) / "inputs" / "article.md"
+    try:
+        return bool(article_path.read_text(encoding="utf-8-sig").strip())
+    except OSError:
+        return False
 
 
 def _slide_ids(project: Any) -> list[str]:
@@ -371,6 +374,12 @@ def _resume_status(project: Any, project_id: str, run_id: str, mode: str) -> tup
 
 def _preflight_errors(server_module: ModuleType, project: Any) -> list[str]:
     errors: list[str] = []
+    article_reader = getattr(server_module, "read_project_article_source", None)
+    if callable(article_reader):
+        try:
+            article_reader(project, required=False)
+        except Exception:
+            pass
     if not _has_article(project):
         errors.append("请先导入文章内容，或在创建项目时填写文章内容。")
     for key, label in (

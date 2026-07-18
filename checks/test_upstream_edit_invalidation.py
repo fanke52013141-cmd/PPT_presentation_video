@@ -56,7 +56,6 @@ def test_step1_edit_invalidates_every_dependent_stage() -> None:
         run_dir = Path(value)
         (run_dir / "planning").mkdir(parents=True)
         (run_dir / "inputs").mkdir(parents=True)
-        (run_dir / "planning" / "article_brief.json").write_text("{}", encoding="utf-8")
         (run_dir / "planning" / "audio_confirmed.json").write_text("{}", encoding="utf-8")
         (run_dir / "remotion_props.json").write_text("{}", encoding="utf-8")
         project = FakeProject(run_dir)
@@ -75,8 +74,9 @@ def test_step1_edit_invalidates_every_dependent_stage() -> None:
         assert not (run_dir / "planning" / "audio_confirmed.json").exists()
         assert not (run_dir / "remotion_props.json").exists()
         assert (run_dir / "inputs" / "article.md").read_text(encoding="utf-8") == "updated article"
-        brief = json.loads((run_dir / "planning" / "article_brief.json").read_text(encoding="utf-8"))
-        assert brief["title"] == project.name
+        assert response["brief"]["title"] == project.name
+        assert response["brief"]["summary"] == "updated article"
+        assert not (run_dir / "planning" / "article_brief.json").exists()
         assert db.commits == 1
 
         project.current_step = 8
@@ -89,6 +89,28 @@ def test_step1_edit_invalidates_every_dependent_stage() -> None:
         assert (run_dir / "planning" / "audio_confirmed.json").exists()
         assert (run_dir / "remotion_props.json").exists()
         assert db.commits == 1
+
+
+def test_legacy_article_brief_is_migrated_once() -> None:
+    with tempfile.TemporaryDirectory() as value:
+        run_dir = Path(value)
+        (run_dir / "planning").mkdir(parents=True)
+        legacy_path = run_dir / "planning" / "article_brief.json"
+        legacy_path.write_text(
+            json.dumps({"title": "旧标题", "summary": "旧摘要", "content": "旧项目完整文章"}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        project = FakeProject(run_dir)
+
+        source = server.read_project_article_source(project)
+
+        assert source == {
+            "title": project.name,
+            "content": "旧项目完整文章",
+            "summary": "旧项目完整文章",
+        }
+        assert (run_dir / "inputs" / "article.md").read_text(encoding="utf-8") == "旧项目完整文章"
+        assert legacy_path.exists(), "legacy artifact remains untouched for rollback compatibility"
 
 
 def test_step2_autosave_only_invalidates_when_contract_changes() -> None:
@@ -119,5 +141,6 @@ def test_step2_autosave_only_invalidates_when_contract_changes() -> None:
 
 if __name__ == "__main__":
     test_step1_edit_invalidates_every_dependent_stage()
+    test_legacy_article_brief_is_migrated_once()
     test_step2_autosave_only_invalidates_when_contract_changes()
     print("upstream edit invalidation checks passed")

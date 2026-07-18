@@ -1,19 +1,18 @@
 ---
 name: ingest-article
-description: Parse an input article into a structured brief for AI science video planning.
+description: Import and validate the complete article as the single source for slide planning.
 ---
 
 # Purpose
 
-把输入文章拆成后续分镜可用的结构化信息，包括核心论点、关键证据、术语解释、适合科普化的表达和事实风险。
+把用户输入的 Markdown 或纯文本文章完整保存为后续规划的唯一事实来源。该阶段只负责接入、保真和基本可用性检查，不生成文章摘要、不调用 LLM 提炼观点，也不提前设计 Slide。
 
 # Inputs
 
 ```json
 {
-  "article_path": "runs/<run_id>/inputs/article.md",
-  "source_links_path": "runs/<run_id>/inputs/references/source_links.md 可选",
-  "task_config_path": "config/pipeline_profiles.yaml"
+  "article_content": "用户输入的完整文章",
+  "project_title": "项目标题"
 }
 ```
 
@@ -21,45 +20,36 @@ description: Parse an input article into a structured brief for AI science video
 
 ```json
 {
-  "article_brief_path": "runs/<run_id>/planning/article_brief.json",
-  "log_path": "runs/<run_id>/logs/generation_log.md"
+  "article_path": "runs/<run_id>/inputs/article.md"
 }
 ```
 
-`article_brief.json` 必须包含：
-
-- `article_id`
-- `title`
-- `core_thesis`
-- `audience_fit`
-- `key_points[]`
-- `terms[]`
-- `source_quotes[]`
-- `risk_notes[]`
+接口为了兼容现有前端，可以按需返回由 `article.md` 现场计算的 `title`、`content` 和短 `summary`；这些字段不是新的持久化产物，业务主数据始终只有 `article.md`。
 
 # Procedure
 
-1. 读取文章，保留标题、章节和关键段落。
-2. 提炼 1 个核心论点和 5 到 10 个关键观点。
-3. 为 AI 初学者重写术语解释。
-4. 标记所有可能需要核查的事实和数字。
-5. 输出符合 `schemas/article_brief.schema.json` 的 JSON。
+1. 检查输入不是空字符串或纯空白。
+2. 保留原文标题、章节、列表、引文、数字和段落顺序，不做摘要替换。
+3. 以 UTF-8 写入 `runs/<run_id>/inputs/article.md`。
+4. 文章修改时，仅比较并更新 `article.md`；内容实际变化后再使下游产物失效。
+5. 旧项目缺少 `article.md` 但存在 `planning/article_brief.json.content` 时，将完整内容迁移到 `article.md` 一次；不删除旧文件。
 
 # Validation
 
-- `core_thesis` 不为空。
-- `key_points` 至少 3 条。
-- 每个 `key_points[]` 必须有 `claim` 和 `explain_for_beginner`。
-- 不确定信息必须进入 `risk_notes`。
+- `article.md` 存在且内容非空。
+- 保存后的文本与用户输入一致。
+- 新项目不生成 `planning/article_brief.json`。
+- Step 2 直接读取 `article.md`，不读取摘要作为知识来源。
 
 # Failure Handling
 
-- 如果文章过长，先按标题和段落摘要，再进入结构化提取。
-- 如果原文信息不足，输出 `risk_notes`，不要补造事实。
-- 如果文章不是 AI 主题，也仍按科普视频结构提炼，但标记 `domain_mismatch`。
+- 输入为空时停止并提示用户导入有效文章。
+- 旧 brief 不含完整 `content` 时，不使用其 `summary` 代替文章，继续提示缺少文章源。
+- 文件无法读取或写入时返回明确错误，不静默创建空产物。
 
 # Bad Case Tags
 
 - `missing-input`
-- `reference-missing`
-- `content-misread`
+- `empty-article`
+- `source-divergence`
+- `legacy-migration-failed`

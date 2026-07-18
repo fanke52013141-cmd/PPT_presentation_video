@@ -17,7 +17,7 @@ The UI is intentionally compressed to six user-visible steps, while the backend 
 
 | User-visible step | Internal API / artifact stage | Main artifacts |
 | --- | --- | --- |
-| Step 1 Import article | Step 1 import | `inputs/article.md`, `planning/article_brief.json` |
+| Step 1 Import article | Step 1 import | `inputs/article.md` |
 | Step 2 Plan storyboard | Step 2 storyboard / visual contract | `planning/visual_contract.json` |
 | Step 3 Images | Step 3 images + Step 4 confirmation | `slides/<slide_id>/visual_draft.png`, `reveal_manifest.json` |
 | Step 4 Mask | Step 5 reveal manifest / mask assets | `reveal_manifest.json`, reveal layer assets |

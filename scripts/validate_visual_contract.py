@@ -28,7 +28,6 @@ SUBTITLE_POLICY_NO_SUBTITLE = "no_slides_have_subtitle"
 SUBTITLE_POLICY_OPTIONAL = "optional_subtitles"
 ALLOWED_SUBTITLE_POLICIES = {SUBTITLE_POLICY_WITH_SUBTITLE, SUBTITLE_POLICY_NO_SUBTITLE, SUBTITLE_POLICY_OPTIONAL}
 DEFAULT_MIN_REVEALABLE_GROUPS = 1
-RECOMMENDED_MAX_REVEALABLE_GROUPS = 6
 DEFAULT_MAX_REVEALABLE_GROUPS = 10
 
 
@@ -120,16 +119,16 @@ def validate_slide(
         if isinstance(group, dict)
         and str(group.get("role") or "").strip().lower() not in {"title", "subtitle", "decoration"}
     ]
-    if len(revealable_groups) < min_groups or len(revealable_groups) > max_groups:
+    if len(revealable_groups) < min_groups:
         raise ContractError(
-            f"Expected {min_groups}-{max_groups} revealable visual groups in {slide_id}, "
+            f"Expected at least {min_groups} revealable visual group(s) in {slide_id}, "
             f"got {len(revealable_groups)} ({len(groups)} including static title/subtitle groups)"
         )
-    if len(revealable_groups) > RECOMMENDED_MAX_REVEALABLE_GROUPS:
+    if max_groups > 0 and len(revealable_groups) > max_groups:
         print(
             f"Warning: {slide_id} has {len(revealable_groups)} revealable visual groups; "
-            f"the common range is 1-{RECOMMENDED_MAX_REVEALABLE_GROUPS}. "
-            "Keep the extra groups only when they are semantically independent.",
+            f"this exceeds the configured density guide of {max_groups}. "
+            "The contract remains valid when every group is semantically independent, narration-bound, and maskable.",
             file=sys.stderr,
         )
     atomicity_issues = visual_group_atomicity_issues(slide)
@@ -266,7 +265,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Validate visual narration grounding contract.")
     parser.add_argument("--contract", required=True, type=Path)
     parser.add_argument("--min-groups", type=int, default=DEFAULT_MIN_REVEALABLE_GROUPS)
-    parser.add_argument("--max-groups", type=int, default=DEFAULT_MAX_REVEALABLE_GROUPS)
+    parser.add_argument(
+        "--max-groups",
+        type=int,
+        default=DEFAULT_MAX_REVEALABLE_GROUPS,
+        help="Advisory visual-density threshold; exceeding it emits a warning instead of rejecting the contract.",
+    )
     parser.add_argument("--profile", type=Path)
     return parser.parse_args()
 

@@ -267,6 +267,20 @@ STEP2_PROMPT_TEMPLATE_FILES = {
     "visual_system": os.path.join(REPO_ROOT, "templates", "prompts", "step2_visual_system.md"),
     "visual_output_example": os.path.join(REPO_ROOT, "templates", "prompts", "step2_visual_output_example.json"),
 }
+AI_KNOWLEDGE_STEP2_SCRIPT_EXTENSION = """
+<AIKnowledgeAudienceOverride>
+当前模板专用于中文 AI 知识视频。目标受众是已经接触过 ChatGPT、智能助手或常见 AI 产品，但并非算法专家的职场人。他们更关心机制为什么成立、能力边界在哪里、会怎样影响实际工作，以及应该如何判断和行动。
+
+规划时优先采用“真实困惑或常见误解 → 关键机制 → 例子与边界 → 工作影响 → 判断或行动”的认知旅程，但不得机械套用。不要从“什么是 AI”开始，不堆叠术语，不把类比伪装成技术事实。文章和 generation_requirement 仍然是具体内容与事实边界。
+</AIKnowledgeAudienceOverride>
+""".strip()
+LEGACY_STEP2_PROMPT_HASHES = {
+    "script_system": "eb40ad64735f5bf5f2c70477c057f632ec8ad8a238919c08aa2be3679a698042",
+    "script_output_example": "a87e75ff998d2b8a415108ba95b73d8b15a12100171439949d3eaa7d2201d603",
+    "visual_system": "2cd1d2c659883ccb641743d2db0a3b255036c4ebc67e34075ffb918e102647f3",
+    "visual_output_example": "d61dc2dfdd60cddd4be3bc13cfe4848ee5b119964ad726ec8ff214840cd7e9fa",
+}
+LEGACY_INTERVIEW_SCRIPT_PROMPT_HASH = "7e6f9fbd452f9c94bc02b3c5226edcde21a4bb69d87d5ede8089eb8b28f7bef9"
 STEP2_PROMPTS_FILE = "step2_prompts.json"
 STEP2_SCRIPT_PLAN_FILE = "slide_script_plan.json"
 STEP2_VISUAL_PLAN_FILE = "slide_visual_plan.json"
@@ -1146,6 +1160,35 @@ def build_article_summary(content: str, max_chars: int = 180) -> str:
     if len(text) <= max_chars:
         return text
     return text[:max_chars].rstrip() + "..."
+
+
+def article_source_path(project: Project) -> str:
+    """Return the single source-of-truth path for imported article content."""
+    return os.path.join(project.run_dir, "inputs", "article.md")
+
+
+def read_project_article_source(project: Project, *, required: bool = True) -> Dict[str, str]:
+    """Read article.md, with a one-time compatibility migration for legacy runs."""
+    article_path = article_source_path(project)
+    content = read_text_file_if_exists(article_path)
+    if not content.strip():
+        legacy_brief_path = os.path.join(project.run_dir, "planning", "article_brief.json")
+        legacy_brief = read_json_file(legacy_brief_path, {})
+        legacy_content = str(legacy_brief.get("content") or "") if isinstance(legacy_brief, dict) else ""
+        if legacy_content.strip():
+            os.makedirs(os.path.dirname(article_path), exist_ok=True)
+            with open(article_path, "w", encoding="utf-8") as f:
+                f.write(legacy_content)
+            content = legacy_content
+            logger.info("Migrated legacy article_brief.json content to %s", article_path)
+    if not content.strip() and required:
+        raise HTTPException(status_code=400, detail="请先导入文章再继续")
+    project_title = (project.name or "").strip() or "未命名项目"
+    return {
+        "title": project_title,
+        "content": content,
+        "summary": build_article_summary(content),
+    }
 
 
 def contract_slide_ids_from_payload(payload: Dict[str, Any]) -> List[str]:
@@ -2772,23 +2815,13 @@ def import_article(project_id: str, content: Optional[str] = Form(None), db: Ses
     if not content or not content.strip():
         raise HTTPException(status_code=400, detail="请输入有效的文章内容")
 
-    article_path = os.path.join(project.run_dir, "inputs", "article.md")
+    article_path = article_source_path(project)
+    os.makedirs(os.path.dirname(article_path), exist_ok=True)
     with open(article_path, "w", encoding="utf-8") as f:
         f.write(content)
 
-    project_title = (project.name or "").strip() or "未命名项目"
-    brief = {
-        "title": project_title,
-        "content": content,
-        "summary": build_article_summary(content),
-    }
-
-    brief_path = os.path.join(project.run_dir, "planning", "article_brief.json")
-    with open(brief_path, "w", encoding="utf-8") as f:
-        json.dump(brief, f, ensure_ascii=False, indent=2)
-
     invalidate_after_upstream_edit(project, 1, db)
-    return {"success": True, "brief": brief}
+    return {"success": True, "brief": read_project_article_source(project)}
 
 
 @app.get("/api/projects/{project_id}/steps/1/result")
@@ -2797,14 +2830,10 @@ def get_step1_result(project_id: str, db: Session = Depends(get_db)):
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
         
-    brief_path = os.path.join(project.run_dir, "planning", "article_brief.json")
-    if not os.path.exists(brief_path):
+    article_source = read_project_article_source(project, required=False)
+    if not article_source["content"].strip():
         return {"success": False, "message": "尚未导入文章"}
-        
-    with open(brief_path, "r", encoding="utf-8") as f:
-        brief = json.load(f)
-    brief["title"] = (project.name or "").strip() or brief.get("title") or "未命名项目"
-    return {"success": True, "brief": brief}
+    return {"success": True, "brief": article_source}
 
 @app.put("/api/projects/{project_id}/steps/1/result")
 def update_step1_result(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
@@ -2812,32 +2841,20 @@ def update_step1_result(project_id: str, payload: Dict[str, Any], db: Session = 
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
         
-    brief_path = os.path.join(project.run_dir, "planning", "article_brief.json")
-    payload["title"] = (project.name or "").strip() or payload.get("title") or "未命名项目"
-    payload["summary"] = payload.get("summary") or build_article_summary(str(payload.get("content") or ""))
-    existing_brief = read_json_file(brief_path, {})
-    brief_changed = json.dumps(existing_brief, ensure_ascii=False, sort_keys=True) != json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-    )
-    if brief_changed:
-        with open(brief_path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
-        
-    # 同步回写 article.md
+    current_source = read_project_article_source(project, required=False)
+    next_content = str((payload.get("content") or "") if "content" in payload else current_source["content"])
     article_changed = False
-    if "content" in payload:
-        article_path = os.path.join(project.run_dir, "inputs", "article.md")
-        existing_article = read_text_file_if_exists(article_path)
-        article_changed = existing_article != str(payload["content"])
-        if article_changed:
-            with open(article_path, "w", encoding="utf-8") as f:
-                f.write(payload["content"])
+    article_path = article_source_path(project)
+    existing_article = read_text_file_if_exists(article_path)
+    article_changed = existing_article != next_content
+    if article_changed:
+        os.makedirs(os.path.dirname(article_path), exist_ok=True)
+        with open(article_path, "w", encoding="utf-8") as f:
+            f.write(next_content)
 
-    if brief_changed or article_changed:
+    if article_changed:
         invalidate_after_upstream_edit(project, 1, db)
-    return {"success": True, "brief": payload}
+    return {"success": True, "brief": read_project_article_source(project, required=False)}
 
 # ==================== 步骤 2: 智能分镜规划 ====================
 
@@ -3058,14 +3075,34 @@ def default_step2_prompts() -> Dict[str, str]:
     }
 
 
+def normalized_prompt_hash(value: Any) -> str:
+    text = str(value or "").replace("\r\n", "\n").strip()
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def migrate_legacy_step2_prompt(key: str, value: str, defaults: Dict[str, str]) -> str:
+    """Upgrade untouched built-in prompts while preserving genuinely customized text."""
+    prompt_hash = normalized_prompt_hash(value)
+    if prompt_hash == LEGACY_STEP2_PROMPT_HASHES.get(key):
+        return defaults[key]
+    if key == "script_system" and prompt_hash == LEGACY_INTERVIEW_SCRIPT_PROMPT_HASH:
+        return value.replace(
+            "<ContractVersion>step2_script_v4_no_subtitle</ContractVersion>",
+            "<ContractVersion>step2_script_v5_speech_driven_interview</ContractVersion>",
+            1,
+        )
+    return value
+
+
 def read_step2_prompts(project: Project) -> Dict[str, str]:
     prompts = default_step2_prompts()
+    defaults = dict(prompts)
     stored = read_json_file(step2_prompts_path(project), {})
     if isinstance(stored, dict):
         for key in prompts:
             value = str(stored.get(key) or "").strip()
             if value:
-                prompts[key] = value
+                prompts[key] = migrate_legacy_step2_prompt(key, value, defaults)
     return prompts
 
 
@@ -3104,12 +3141,23 @@ def step2_prompt_template_payload(
 
 def built_in_step2_prompt_templates() -> List[Dict[str, Any]]:
     defaults = default_step2_prompts()
+    ai_knowledge_prompts = dict(defaults)
+    ai_knowledge_prompts["script_system"] = (
+        defaults["script_system"] + "\n\n" + AI_KNOWLEDGE_STEP2_SCRIPT_EXTENSION
+    )
     return [
         step2_prompt_template_payload(
             "builtin_article_to_slide",
             "原始模板 · 文章→slides",
             "script",
             defaults,
+            built_in=True,
+        ),
+        step2_prompt_template_payload(
+            "builtin_ai_knowledge_to_slide",
+            "AI 知识科普 · 文章→slides",
+            "script",
+            ai_knowledge_prompts,
             built_in=True,
         ),
         step2_prompt_template_payload(
@@ -3244,7 +3292,7 @@ def compose_step2_system_prompt(system_content: str, output_example: str) -> str
 def step2_script_prompt_uses_legacy_contract(system_content: str) -> bool:
     """Detect old prompts that require fields removed from the Step 2A input/output contract."""
     text = str(system_content or "")
-    if "step2_script_v4_no_subtitle" in text:
+    if "step2_script_v5_speech_driven" in text or "step2_script_v4_no_subtitle" in text:
         return False
     if "step2_script_v2" in text or "step2_script_v3_narration_first" in text:
         return True
@@ -3259,7 +3307,7 @@ def step2_script_prompt_uses_legacy_contract(system_content: str) -> bool:
 def step2_visual_prompt_uses_legacy_contract(system_content: str) -> bool:
     """Detect prompts that depend on Step 2A fields no longer sent to Step 2B."""
     text = str(system_content or "")
-    if "step2_visual_v5_no_subtitle" in text:
+    if "step2_visual_v6_atomic" in text or "step2_visual_v5_no_subtitle" in text:
         return False
     if "step2_visual_v2" in text or "step2_visual_v4_one_to_one" in text:
         return True
@@ -3276,7 +3324,7 @@ def step2_prompt_compatibility(prompts: Dict[str, str]) -> Dict[str, Any]:
     script_legacy = step2_script_prompt_uses_legacy_contract(prompts.get("script_system", ""))
     visual_legacy = step2_visual_prompt_uses_legacy_contract(prompts.get("visual_system", ""))
     return {
-        "contract_version": "step2_narration_visual_v4_no_subtitle",
+        "contract_version": "step2_narration_visual_v5_speech_atomic",
         "script_prompt_legacy": script_legacy,
         "visual_prompt_legacy": visual_legacy,
         "compatible": not script_legacy and not visual_legacy,
@@ -3301,17 +3349,6 @@ def step2_prompt_response(project: Project) -> Dict[str, Any]:
             ),
         },
     }
-
-
-def read_project_article_brief(project: Project) -> Dict[str, Any]:
-    brief_path = os.path.join(project.run_dir, "planning", "article_brief.json")
-    if not os.path.exists(brief_path):
-        raise HTTPException(status_code=400, detail="请先导入文章再生成分镜")
-    with open(brief_path, "r", encoding="utf-8") as f:
-        brief = json.load(f)
-    if not isinstance(brief, dict):
-        raise HTTPException(status_code=400, detail="文章导入结果格式无效")
-    return brief
 
 
 def stable_plan_id(value: Any, prefix: str, index: int) -> str:
@@ -4167,9 +4204,9 @@ def execute_step2_script_plan(
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-    brief = read_project_article_brief(project)
-    project_title = (project.name or "").strip() or str(brief.get("title") or "未命名项目")
-    article_content = str(brief.get("content") or "")
+    article_source = read_project_article_source(project)
+    project_title = article_source["title"]
+    article_content = article_source["content"]
     generation_requirement = str((payload or {}).get("requirement") or "").strip() or DEFAULT_STEP2_GENERATION_REQUIREMENT
     prompts = read_step2_prompts(project)
     if step2_script_prompt_uses_legacy_contract(prompts["script_system"]):
@@ -4213,8 +4250,8 @@ def update_step2_script_plan(project_id: str, payload: Dict[str, Any], db: Sessi
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-    brief = read_project_article_brief(project)
-    project_title = (project.name or "").strip() or str(brief.get("title") or "未命名项目")
+    article_source = read_project_article_source(project)
+    project_title = article_source["title"]
     plan = normalize_slide_script_plan(payload, project_title)
     write_json_atomic(step2_script_plan_path(project), plan)
     return {"success": True, "script_plan": plan}
@@ -4276,9 +4313,9 @@ def compose_step2_visual_contract(project_id: str, db: Session = Depends(get_db)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-    brief = read_project_article_brief(project)
-    project_title = (project.name or "").strip() or str(brief.get("title") or "未命名项目")
-    article_summary = str(brief.get("summary") or build_article_summary(str(brief.get("content") or "")))
+    article_source = read_project_article_source(project)
+    project_title = article_source["title"]
+    article_summary = article_source["summary"]
     script_plan = read_plan_json(step2_script_plan_path(project), "请先生成演讲稿规划")
     visual_plan = normalize_slide_visual_plan(
         read_plan_json(step2_visual_plan_path(project), "请先生成视觉规划"),
@@ -4309,11 +4346,7 @@ def get_step2_prompt_preview(
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
 
-    brief_path = os.path.join(project.run_dir, "planning", "article_brief.json")
-    if not os.path.exists(brief_path):
-        raise HTTPException(status_code=400, detail="请先导入文章再查看完整分镜请求")
-    with open(brief_path, "r", encoding="utf-8") as f:
-        brief = json.load(f)
+    article_source = read_project_article_source(project)
 
     storyboard_rules = str((payload or {}).get("rules") or "").strip()
     if not storyboard_rules:
@@ -4331,9 +4364,9 @@ def get_step2_prompt_preview(
     )
     profile = apply_storyboard_profile_patch(profile, (payload or {}).get("profile_patch"))
 
-    project_title = (project.name or "").strip() or brief.get("title") or "未命名项目"
-    article_content = str(brief.get("content") or "")
-    article_summary = brief.get("summary") or build_article_summary(article_content)
+    project_title = article_source["title"]
+    article_content = article_source["content"]
+    article_summary = article_source["summary"]
     system_prompt, user_prompt = build_storyboard_request(
         project_title,
         article_summary,
@@ -4540,15 +4573,10 @@ def execute_step2(
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
         
-    brief_path = os.path.join(project.run_dir, "planning", "article_brief.json")
-    if not os.path.exists(brief_path):
-        raise HTTPException(status_code=400, detail="请先导入文章再生成分镜")
-        
-    with open(brief_path, "r", encoding="utf-8") as f:
-        brief = json.load(f)
-    project_title = (project.name or "").strip() or brief.get("title") or "未命名项目"
-    article_content = str(brief.get("content") or "")
-    article_summary = brief.get("summary") or build_article_summary(article_content)
+    article_source = read_project_article_source(project)
+    project_title = article_source["title"]
+    article_content = article_source["content"]
+    article_summary = article_source["summary"]
         
     llm_api_key = get_setting("llm_api_key")
     llm_base_url = get_setting("llm_base_url")

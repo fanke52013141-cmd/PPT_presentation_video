@@ -36,7 +36,7 @@ $env:PYTHONPATH = (Get-Location).Path
 
 | 用户可见步骤 | 内部 API / 产物阶段 | 主要产物 |
 | --- | --- | --- |
-| Step 1 导入文章 | Step 1 import | `inputs/article.md`, `planning/article_brief.json` |
+| Step 1 导入文章 | Step 1 import | `inputs/article.md`（文章唯一事实来源） |
 | Step 2 分镜规划 | Step 2 storyboard / visual contract | `planning/visual_contract.json` |
 | Step 3 图片生成/上传 | Step 3 images + Step 4 image confirmation | `slides/<slide_id>/visual_draft.png`, `reveal_manifest.json` |
 | Step 4 Mask | Step 5 reveal manifest / mask assets | `reveal_manifest.json`, reveal layer assets |

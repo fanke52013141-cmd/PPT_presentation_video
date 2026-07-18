@@ -9,6 +9,7 @@ from PIL import Image, ImageDraw
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+import server
 from scripts.bind_reveal_timeline import bind_slide
 from scripts.build_reveal_scene import compose_slide
 from scripts.pipeline_profiles import (
@@ -40,23 +41,43 @@ def test_step2_prompt_contracts_are_minimal() -> None:
     assert "narration" in script_example["slides"][0]
     first_script_slide = script_example["slides"][0]
     assert set(first_script_slide) == {"slide_id", "slide_title", "narration"}
-    assert "输出字段只能是" in script_system
+    assert "step2_script_v5_speech_driven" in script_system
+    assert "认知旅程" in script_system
     assert "完整演讲稿" in script_system
     assert "visual_groups" not in script_example["slides"][0]
-    assert "按语义把整页 `narration` 切成" in visual_system
+    assert "step2_visual_v6_atomic" in visual_system
+    assert "先按语义切分整页 `narration`" in visual_system
     assert "role" in visual_system and "visual_type" in visual_system
-    assert "完整还原本页原始演讲稿" in visual_system
-    assert "最小的 Mask/Reveal 原子" in visual_system
+    assert "逐字还原原演讲稿" in visual_system
+    assert "最小 Mask/Reveal 原子" in visual_system
     assert "多个独立卡片" in visual_system
     assert "一个 visual element 对应且只对应一个非空 narration 片段" in visual_system
-    assert "系统不生成、不绘制副标题" in visual_system
+    assert "系统不使用副标题" in visual_system
     assert "`slide_subtitle`" not in visual_system
     assert all(element["narration"] for slide in visual_example["slides"] for element in slide["visual_elements"])
     first_visual_element = visual_example["slides"][0]["visual_elements"][0]
     assert set(first_visual_element) == {"element_id", "role", "visual_type", "visual_description", "narration"}
-    assert "不输出 `body_points`" in visual_system
+    assert "`body_points`" in visual_system
     assert "source_segment_id" not in json.dumps(visual_example, ensure_ascii=False)
     assert "speak_policy" not in script_system + visual_system
+    ai_template = next(
+        item for item in server.built_in_step2_prompt_templates()
+        if item["id"] == "builtin_ai_knowledge_to_slide"
+    )
+    assert "AIKnowledgeAudienceOverride" in ai_template["prompts"]["script_system"]
+    assert "职场人" in ai_template["prompts"]["script_system"]
+    assert "AIKnowledgeAudienceOverride" not in script_system
+    assert server.migrate_legacy_step2_prompt("script_system", "用户自定义 Prompt", server.default_step2_prompts()) == "用户自定义 Prompt"
+    legacy_interview_prompt = "<ContractVersion>step2_script_v4_no_subtitle</ContractVersion>"
+    assert server.migrate_legacy_step2_prompt(
+        "script_system",
+        legacy_interview_prompt,
+        server.default_step2_prompts(),
+    ) == legacy_interview_prompt
+    server.normalize_slide_visual_plan(
+        visual_example,
+        {"title": script_example["title"], "slides": script_example["slides"][:2]},
+    )
     assert "scratch_reveal" in allowed_reveal_actions(profile)
     diagram_reveal = default_reveal_for_role("diagram", profile)
     assert diagram_reveal["type"] in allowed_reveal_actions(profile)

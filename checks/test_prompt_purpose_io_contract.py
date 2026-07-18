@@ -22,7 +22,6 @@ def assert_contract(name: str, text: str) -> None:
 
 def main() -> None:
     prompt_files = [
-        "article_brief.prompt.md",
         "narration.prompt.md",
         "scene_reconstruction.prompt.md",
         "slide_plan.prompt.md",

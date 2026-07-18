@@ -29,7 +29,6 @@ def require(response, label: str) -> dict:
 def write_preflight_report(run_dir: Path, project_id: str) -> None:
     checks = {
         "article": (run_dir / "inputs" / "article.md").exists(),
-        "article_brief": (run_dir / "planning" / "article_brief.json").exists(),
         "pipeline_profiles": (ROOT / "config" / "pipeline_profiles.yaml").exists(),
         "style_tokens": (ROOT / "config" / "style_tokens.yaml").exists(),
         "ffmpeg": bool(server.resolve_media_tool("ffmpeg")),

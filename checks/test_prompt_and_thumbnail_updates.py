@@ -34,14 +34,16 @@ assert "height: 32px !important" in css
 script_prompt = (ROOT / "templates" / "prompts" / "step2_script_system.md").read_text(encoding="utf-8")
 visual_prompt = (ROOT / "templates" / "prompts" / "step2_visual_system.md").read_text(encoding="utf-8")
 image_prompt = (ROOT / "templates" / "prompts" / "visual_draft.prompt.md").read_text(encoding="utf-8")
-assert "输出字段只能是" in script_prompt
+assert "step2_script_v5_speech_driven" in script_prompt
+assert "认知旅程" in script_prompt
 assert "完整演讲稿" in script_prompt
-assert "按语义把整页 `narration` 切成" in visual_prompt
+assert "step2_visual_v6_atomic" in visual_prompt
+assert "先按语义切分整页 `narration`" in visual_prompt
 assert "视觉岛" in visual_prompt
-assert "最小的 Mask/Reveal 原子" in visual_prompt
+assert "最小 Mask/Reveal 原子" in visual_prompt
 assert "多个独立卡片" in visual_prompt
-assert "step2_visual_v5_no_subtitle" in visual_prompt
-assert "字段联动规则" in visual_prompt
+assert "不预设正文元素数量" in visual_prompt
+assert "标点必须完整归入" in visual_prompt
 assert "insufficient_visual_groups_for_independent_objects" in mask.DEFAULT_METHODOLOGY
 assert "48-80 px" in image_prompt
 

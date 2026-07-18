@@ -75,8 +75,8 @@ Expected UI behavior:
 Expected artifacts:
 
 - `inputs/article.md`
-- `planning/article_brief.json`
-- `article_brief.json.summary` is non-empty.
+- `inputs/article.md` is non-empty and remains the sole article source.
+- New runs do not create `planning/article_brief.json`; legacy files are read only for one-time migration.
 
 Artifact check:
 

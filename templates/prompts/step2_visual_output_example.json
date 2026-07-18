@@ -7,15 +7,15 @@
           "element_id": "el_001",
           "role": "title",
           "visual_type": "text",
-          "visual_description": "Token 的基础定义",
-          "narration": "首先我们来理解什么是 Token。"
+          "visual_description": "看似会说，不等于真正知道",
+          "narration": "先从一个常见误解开始。"
         },
         {
           "element_id": "el_002",
           "role": "body",
           "visual_type": "picture",
-          "visual_description": "页面中部用一组独立积木表示被切分的汉字和单词，积木依次进入右侧的大模型，突出“基本处理单位”的含义。",
-          "narration": "它是大模型处理文本时使用的基本单位，你可以把它想象成模型用来拼出文字的一块块积木。"
+          "visual_description": "一个统一连续外框内展示正在流畅输出文字的对话窗口，以及旁边尚未完成核验的事实清单，用同一整体结构表达“语言流畅不等于事实正确”。",
+          "narration": "大模型回答得流畅、完整，容易让人以为它已经核实了事实；但语言听起来可信，只能说明表达连贯，不能证明内容一定正确。"
         }
       ]
     },
@@ -26,22 +26,22 @@
           "element_id": "el_001",
           "role": "title",
           "visual_type": "text",
-          "visual_description": "英文如何拆分 Token",
-          "narration": "接下来看英文场景。"
+          "visual_description": "答案来自概率生成",
+          "narration": "要理解这种错误，关键是看清答案怎样产生。"
         },
         {
           "element_id": "el_002",
           "role": "body",
           "visual_type": "picture",
-          "visual_description": "左侧独立视觉岛展示 apple 作为一个完整 Token，用单个圆角词块表达。",
-          "narration": "像 apple 这样的短单词通常可以作为一个 Token；"
+          "visual_description": "独立的 Token 预测流程视觉岛：已有上下文依次进入模型，模型从候选词中选择概率最高的下一个 Token，必要标签仅保留“上下文”“候选”“下一个 Token”。",
+          "narration": "模型会根据已有上下文，预测下一个最可能出现的 Token；"
         },
         {
           "element_id": "el_003",
           "role": "body",
           "visual_type": "picture",
-          "visual_description": "右侧独立视觉岛展示 unhappiness 被清晰拆成 un 与 happiness 两个词块，中间用分割符强调拆分关系。",
-          "narration": "而 unhappiness 这样的长单词，则可能被拆成 un 和 happiness 两个部分。"
+          "visual_description": "独立的事实核验视觉岛：连贯文本旁边是一张带问号的待核验清单，强调生成过程与事实检查并不是同一件事。",
+          "narration": "这个过程擅长生成连贯文本，却不会自动核验每一个事实。"
         }
       ]
     }

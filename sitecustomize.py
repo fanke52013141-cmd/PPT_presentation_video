@@ -462,6 +462,15 @@ def _install_reveal_manifest_reconcile_patch(server_module: ModuleType) -> bool:
             contract_changed = _ensure_contract_topic_fields(contract, project, run_dir)
             if contract_changed:
                 server_module.write_json_atomic(str(contract_path), contract)
+                # 热补丁补全 topic 字段后重写了 contract，必须同步刷新每张幻灯片
+                # provenance 里记录的 contract_sha256，否则渲染前的图片来源校验会
+                # 误报 contract_hash_changed（图片本身没动，只是 contract 结构变化）。
+                refresh_provenance = getattr(server_module, "refresh_provenance_contract_hashes", None)
+                if refresh_provenance is not None:
+                    try:
+                        refresh_provenance(run_dir, current_slide_ids)
+                    except Exception:
+                        pass
 
             if not manifest_path.exists():
                 return contract_changed

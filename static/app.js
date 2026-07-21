@@ -1771,13 +1771,14 @@ function renderStep2Workspace() {
     const thumb = document.createElement('div');
     thumb.className = `slide-thumbnail-card step2-slide-thumb ${idx === state.activeSlideIndex ? 'active' : ''}`;
     thumb.style.cssText = 'min-width: 92px; max-width: 92px; min-height: 42px; padding: 0.55rem 0.5rem; cursor: pointer; display: flex; align-items: center; justify-content: center;';
+    const slideTitle = (slide.main_title || '').trim() || `第 ${idx + 1} 页`;
     thumb.innerHTML = `
       ${state.step2BatchDeleteMode ? `
         <button class="step2-thumb-delete" type="button" title="删除此分镜" aria-label="删除此分镜">
           <svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
         </button>
       ` : ''}
-      <div style="font-size: 0.9rem; font-weight: 800; color: #111;">Slide ${idx + 1}</div>
+      <div style="font-size: 0.78rem; font-weight: 800; color: #111; text-align: center; line-height: 1.2; word-break: break-all; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;" title="${escHtml(slideTitle)}">${escHtml(slideTitle)}</div>
     `;
     thumb.addEventListener('click', () => {
       if (state.step2BatchDeleteMode) {
@@ -2367,14 +2368,15 @@ const step3GeneratingSlides = new Set();
 let step3BatchGenerating = false;
 let step3BatchCompleted = 0;
 let step3BatchTotal = 0;
+let step3CurrentGenerating = null;  // 当前正在生成的 slideId（区别于排队中）
 let step3VideoBackground = '#FEFDF9';
 
-function step3GeneratingPreviewHtml(message = '生成中') {
+function step3GeneratingPreviewHtml(message = '生成中', subtitle = 'AI 正在绘制图片，请稍候...') {
   return `
     <div class="step3-generating-preview" role="status" aria-live="polite">
       <span class="loading-spinner" aria-hidden="true"></span>
       <strong>${escHtml(message)}</strong>
-      <small>AI 正在绘制图片，请稍候...</small>
+      <small>${escHtml(subtitle)}</small>
     </div>
   `;
 }
@@ -2491,7 +2493,7 @@ function renderStep3Grid() {
   step3ImageOrder.forEach((img, idx) => {
     const card = document.createElement('div');
     card.className = 'card soft-elevation slide-card-draggable';
-    card.style.cssText = 'padding: 0.8rem; position: relative; background: var(--bg-color); margin-bottom: 0;';
+    card.style.cssText = 'padding: 0.5rem 0.8rem 0.8rem; position: relative; background: var(--bg-color); margin-bottom: 0;';
 
     card.addEventListener('dragover', (e) => {
       if (step3DraggedIndex < 0 || step3DraggedIndex === idx) return;
@@ -2518,9 +2520,16 @@ function renderStep3Grid() {
     const slideInfo = state.slides.find(item => item.slide_id === img.slide_id);
     const slideTitle = promptInfo?.title || slideInfo?.main_title || '未命名 Slide';
     const isGenerating = step3GeneratingSlides.has(img.slide_id);
+    const isCurrentGenerating = step3CurrentGenerating === img.slide_id;  // 当前正在生成的卡片
+    const isQueued = isGenerating && !isCurrentGenerating;  // 排队等待中的卡片
+    if (isCurrentGenerating) {
+      card.classList.add('is-current-generating');
+    }
     const provenanceReady = img.provenance?.valid === true;
-    const previewHtml = isGenerating
-      ? step3GeneratingPreviewHtml()
+    const previewHtml = isCurrentGenerating
+      ? step3GeneratingPreviewHtml('生成中', 'AI 正在绘制图片，请稍候...')
+      : isQueued
+      ? step3GeneratingPreviewHtml('排队中', '等待上一张生成完成...')
       : img.exists
       ? `<img src="${img.url}" style="width: 100%; height: 100%; object-fit: cover;" alt="${escHtml(slideTitle)}">`
       : `<div style="width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.3rem; color: #888; background: #fffdf5;">
@@ -2539,8 +2548,8 @@ function renderStep3Grid() {
             </svg>
           </button>
           <span class="step3-card-position">第 ${idx + 1} 页</span>
-          <span class="step3-card-status ${isGenerating ? 'is-generating' : ''}" style="color: ${img.exists || isGenerating ? 'var(--ink-color)' : '#888'}; background: ${isGenerating ? 'var(--secondary-color)' : (img.exists && provenanceReady ? 'var(--success-color)' : '#f3f4f6')};">
-            ${isGenerating ? '生成中' : (img.exists ? (provenanceReady ? '已就绪' : '来源待更新') : '待生成')}
+          <span class="step3-card-status ${isCurrentGenerating ? 'is-current-generating' : ''} ${isQueued ? 'is-queued' : ''} ${isGenerating ? 'is-generating' : ''}" style="color: ${img.exists || isGenerating ? 'var(--ink-color)' : '#888'}; background: ${isCurrentGenerating ? 'var(--color-primary-base)' : (isQueued ? 'var(--secondary-color)' : (img.exists && provenanceReady ? 'var(--success-color)' : '#f3f4f6'))}; ${isCurrentGenerating ? 'color: #fff;' : ''}">
+            ${isCurrentGenerating ? '生成中' : (isQueued ? '排队中' : (img.exists ? (provenanceReady ? '已就绪' : '来源待更新') : '待生成'))}
           </span>
         </div>
         <div class="step3-card-actions">
@@ -2778,6 +2787,8 @@ async function generateAllStep3Images() {
   const failedSlides = [];
   try {
     for (const task of tasks) {
+      step3CurrentGenerating = task.slideId;  // 标记当前正在生成的卡片
+      renderStep3Grid();
       try {
         const formData = new FormData();
         formData.append('slide_id', task.slideId);
@@ -2799,6 +2810,7 @@ async function generateAllStep3Images() {
         failedSlides.push(task.slideId);
       } finally {
         step3GeneratingSlides.delete(task.slideId);
+        step3CurrentGenerating = null;  // 清除当前生成标记
         step3BatchCompleted += 1;
         renderStep3Grid();
       }
@@ -2808,6 +2820,7 @@ async function generateAllStep3Images() {
     step3BatchCompleted = 0;
     step3BatchTotal = 0;
     step3GeneratingSlides.clear();
+    step3CurrentGenerating = null;
     await refreshStep3Images();
     await refreshCurrentProjectStatus(3);
   }

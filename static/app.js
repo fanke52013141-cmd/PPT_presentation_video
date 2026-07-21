@@ -496,7 +496,14 @@ function initGlobalEvents() {
   // 流水线中所有的“下一步”按钮
   document.querySelectorAll('.btn-next-step').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (state.currentStep === 3) {
+      if (state.currentStep === 2) {
+        // 手动模式下，跳到 Step 3 前先提交手动分镜到后端
+        if (isManualMode()) {
+          const ok = await submitManualSkeletonIfNeeded();
+          if (!ok) return;
+        }
+        navigateToStep(3);
+      } else if (state.currentStep === 3) {
         navigateToStep(5);
       } else if (state.currentStep === 5) {
         const saved = await saveStep5Masks();
@@ -525,13 +532,14 @@ function initGlobalEvents() {
   document.getElementById('step2-btn-visual-prompt')?.addEventListener('click', () => openStoryboardRulesModal('visual'));
   document.getElementById('step2-btn-save')?.addEventListener('click', () => handleStep2BatchDeleteButton());
   document.getElementById('step2-btn-cancel-delete')?.addEventListener('click', () => cancelStep2BatchDelete());
-  // 手动模式骨架编辑器
-  document.getElementById('manual-skeleton-add-btn')?.addEventListener('click', () => appendManualSkeletonCard('', '', ''));
-  document.getElementById('manual-skeleton-submit')?.addEventListener('click', () => submitManualSkeleton());
-  document.getElementById('manual-skeleton-load-existing')?.addEventListener('click', async () => {
-    await loadStep2Data();
-    showToast('已载入已有分镜');
-  });
+  // 手动模式：添加幻灯片 + 批量导入
+  document.getElementById('step2-btn-add-slide')?.addEventListener('click', () => addManualSlide());
+  document.getElementById('step2-btn-batch-import')?.addEventListener('click', () => openStep2BatchImportModal());
+  document.getElementById('step2-batch-import-download')?.addEventListener('click', () => downloadStep2BatchTemplate());
+  document.getElementById('step2-batch-import-file')?.addEventListener('change', e => handleStep2BatchImportFile(e));
+  document.getElementById('btn-step2-batch-import-cancel')?.addEventListener('click', closeStep2BatchImportModal);
+  document.getElementById('btn-step2-batch-import-append')?.addEventListener('click', () => submitStep2BatchImport('append'));
+  document.getElementById('btn-step2-batch-import-overwrite')?.addEventListener('click', () => submitStep2BatchImport('overwrite'));
 
   // ================= 步骤 3 事件 =================
   document.getElementById('step3-btn-generate')?.addEventListener('click', () => generateStep3Image());
@@ -1117,17 +1125,12 @@ function applyProjectAiMode(aiMode) {
   const mode = (aiMode || 'auto').toLowerCase() === 'manual' ? 'manual' : 'auto';
   document.body.classList.remove('mode-manual', 'mode-auto');
   document.body.classList.add(mode === 'manual' ? 'mode-manual' : 'mode-auto');
-  const badge = document.getElementById('project-ai-mode-badge');
   const toggleBtn = document.getElementById('btn-toggle-ai-mode');
-  if (badge) {
-    badge.style.display = 'inline-block';
-    badge.textContent = mode === 'manual' ? '手动模式' : '自动模式';
-    badge.classList.remove('ai-mode-auto', 'ai-mode-manual');
-    badge.classList.add(mode === 'manual' ? 'ai-mode-manual' : 'ai-mode-auto');
-  }
   if (toggleBtn) {
     toggleBtn.style.display = 'inline-block';
-    toggleBtn.textContent = mode === 'manual' ? '切换为自动模式' : '切换为手动模式';
+    toggleBtn.textContent = `AI 模式: ${mode === 'manual' ? '手动' : '自动'}`;
+    toggleBtn.classList.remove('ai-mode-auto', 'ai-mode-manual');
+    toggleBtn.classList.add(mode === 'manual' ? 'ai-mode-manual' : 'ai-mode-auto');
   }
   if (state.currentProject) {
     state.currentProject.ai_mode = mode;
@@ -1408,10 +1411,7 @@ async function loadStep2Data() {
     state.step2BatchDeleteMode = false;
     state.step2DeleteSelection = new Set();
     state.step2BatchOriginalSlides = null;
-    // 手动模式下不渲染自动模式编辑器（CSS 已隐藏），只同步骨架编辑器
-    if (!isManualMode()) {
-      renderStep2Workspace();
-    }
+    renderStep2Workspace();
     void offerArtifactRepair(res, '分镜数据', loadStep2Data);
   } else {
     state.slides = [];
@@ -1419,15 +1419,14 @@ async function loadStep2Data() {
     state.step2DeleteSelection = new Set();
     state.step2BatchOriginalSlides = null;
     document.getElementById('step2-editor-area').style.display = 'none';
-    document.getElementById('step2-btn-generate').style.display = 'inline-flex';
-    document.getElementById('step2-btn-generate').innerHTML = `<svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> AI 生成分镜`;
+    document.getElementById('step2-thumbs').style.display = 'none';
+    if (!isManualMode()) {
+      document.getElementById('step2-btn-generate').style.display = 'inline-flex';
+      document.getElementById('step2-btn-generate').innerHTML = `<svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> AI 生成分镜`;
+    }
     document.getElementById('step2-btn-save').style.display = 'none';
     document.getElementById('step2-btn-next').style.display = 'none';
     updateStep2AutosaveStatus('');
-  }
-  // 手动模式：同步已有分镜到骨架编辑器
-  if (isManualMode()) {
-    syncManualSkeletonFromState();
   }
 }
 
@@ -1435,130 +1434,223 @@ function isManualMode() {
   return document.body.classList.contains('mode-manual');
 }
 
-// ==================== 手动模式骨架编辑器 ====================
-function syncManualSkeletonFromState() {
-  const list = document.getElementById('manual-skeleton-list');
-  if (!list) return;
-  list.innerHTML = '';
-  if (state.slides && state.slides.length) {
-    state.slides.forEach((slide, index) => {
-      const narration = (slide.narration_beats || [])
-        .map(b => b.spoken_text || b.spoken_intent || '')
-        .filter(Boolean)
-        .join('\n');
-      appendManualSkeletonCard(slide.slide_id, slide.main_title || '', narration);
-    });
-  } else {
-    appendManualSkeletonCard('', '', '');
-  }
-}
+// ==================== 手动模式：添加幻灯片 + 批量导入 ====================
 
-function appendManualSkeletonCard(slideId, title, narration) {
-  const list = document.getElementById('manual-skeleton-list');
-  if (!list) return;
-  const card = document.createElement('div');
-  card.className = 'manual-skeleton-card';
-  const idx = list.children.length + 1;
-  card.innerHTML = `
-    <div class="manual-skeleton-card-header">
-      <div class="manual-skeleton-card-title">第 ${idx} 页</div>
-      <div class="manual-skeleton-card-actions">
-        <button type="button" class="manual-skeleton-up">上移</button>
-        <button type="button" class="manual-skeleton-down">下移</button>
-        <button type="button" class="manual-skeleton-remove danger">删除</button>
-      </div>
-    </div>
-    <div class="manual-skeleton-field">
-      <label>主标题</label>
-      <input type="text" class="manual-skeleton-title" value="" placeholder="请输入本页幻灯片标题">
-    </div>
-    <div class="manual-skeleton-field">
-      <label>演讲稿</label>
-      <textarea class="manual-skeleton-narration" placeholder="请输入本页要朗读的演讲稿，可多行"></textarea>
-    </div>
-    <input type="hidden" class="manual-skeleton-id" value="">
-  `;
-  list.appendChild(card);
-  card.querySelector('.manual-skeleton-id').value = slideId || '';
-  card.querySelector('.manual-skeleton-title').value = title || '';
-  card.querySelector('.manual-skeleton-narration').value = narration || '';
-  card.querySelector('.manual-skeleton-up').addEventListener('click', () => {
-    if (card.previousElementSibling) {
-      list.insertBefore(card, card.previousElementSibling);
-      refreshManualSkeletonTitles();
-    }
-  });
-  card.querySelector('.manual-skeleton-down').addEventListener('click', () => {
-    if (card.nextElementSibling) {
-      list.insertBefore(card.nextElementSibling, card);
-      refreshManualSkeletonTitles();
-    }
-  });
-  card.querySelector('.manual-skeleton-remove').addEventListener('click', () => {
-    if (list.children.length <= 1) {
-      showToast('至少保留一页幻灯片');
-      return;
-    }
-    card.remove();
-    refreshManualSkeletonTitles();
+// 从当前 state.slides 收集手动分镜数据（用于提交 manual-skeleton 接口）
+function collectManualSlidesFromState() {
+  return (state.slides || []).map((slide, index) => {
+    const narration = (slide.narration_beats || [])
+      .map(b => b.spoken_text || b.spoken_intent || '')
+      .filter(Boolean)
+      .join('\n');
+    return {
+      slide_id: slide.slide_id || `slide_${String(index + 1).padStart(3, '0')}`,
+      main_title: slide.main_title || '',
+      narration,
+    };
   });
 }
 
-function refreshManualSkeletonTitles() {
-  const list = document.getElementById('manual-skeleton-list');
-  if (!list) return;
-  Array.from(list.children).forEach((card, index) => {
-    const titleEl = card.querySelector('.manual-skeleton-card-title');
-    if (titleEl) titleEl.textContent = `第 ${index + 1} 页`;
+// 添加一页空白幻灯片到 state.slides 末尾并切换过去
+function addManualSlide() {
+  if (!state.slides) state.slides = [];
+  saveCurrentSlideInputToState();
+  const newIndex = state.slides.length;
+  const newSlideId = `slide_${String(newIndex + 1).padStart(3, '0')}`;
+  state.slides.push({
+    slide_id: newSlideId,
+    main_title: '',
+    core_message: '',
+    visual_groups: [],
+    narration_beats: [{
+      id: `beat_001`,
+      group_id: null,
+      content_unit_id: `${newSlideId}_unit_001`,
+      visible_anchor: '',
+      spoken_intent: '',
+      spoken_text: '',
+    }],
+  });
+  state.activeSlideIndex = newIndex;
+  renderStep2Workspace();
+  // 自动触发保存
+  scheduleStep2AutoSave();
+  // 焦点放到标题输入框
+  requestAnimationFrame(() => {
+    document.getElementById('step2-slide-title-input')?.focus();
   });
 }
 
-function collectManualSkeletonSlides() {
-  const list = document.getElementById('manual-skeleton-list');
-  if (!list) return [];
-  const slides = [];
-  Array.from(list.children).forEach((card, index) => {
-    const slideId = (card.querySelector('.manual-skeleton-id')?.value || '').trim();
-    const title = (card.querySelector('.manual-skeleton-title')?.value || '').trim();
-    const narration = (card.querySelector('.manual-skeleton-narration')?.value || '').trim();
-    slides.push({
-      slide_id: slideId || `slide_${String(index + 1).padStart(3, '0')}`,
-      main_title: title,
-      narration: narration,
-    });
-  });
-  return slides;
-}
-
-async function submitManualSkeleton() {
-  if (!state.currentProject) return;
-  const slides = collectManualSkeletonSlides();
+// 提交手动分镜到后端（手动模式下点击"进入图片生成"时调用）
+async function submitManualSkeletonIfNeeded() {
+  if (!state.currentProject || !isManualMode()) return true;
+  const slides = collectManualSlidesFromState();
   if (!slides.length) {
     showToast('⚠️ 请至少添加一页幻灯片');
-    return;
+    return false;
   }
   for (let i = 0; i < slides.length; i++) {
     if (!slides[i].main_title) {
       showToast(`⚠️ 第 ${i + 1} 页标题不能为空`);
-      return;
+      return false;
     }
     if (!slides[i].narration) {
       showToast(`⚠️ 第 ${i + 1} 页演讲稿不能为空`);
-      return;
+      return false;
     }
   }
   try {
     const res = await API.post(`/api/projects/${state.currentProject.id}/steps/2/manual-skeleton`, { slides });
     if (res && res.success) {
-      showToast('✅ 手动分镜已保存');
-      // 重新加载 Step 2 数据以反映已保存的合同
       await loadStep2Data();
-      // 跳到下一步
-      navigateToStep(3);
+      return true;
     }
+    showToast('⚠️ 保存分镜失败');
+    return false;
   } catch (e) {
     showToast('⚠️ 保存失败：' + (e && e.message ? e.message : String(e)));
+    return false;
   }
+}
+
+// ==================== 批量导入弹窗 ====================
+
+const STEP2_BATCH_TEMPLATE = `[
+  {
+    "main_title": "第一页标题",
+    "narration": "第一页要朗读的演讲稿，可多行。"
+  },
+  {
+    "main_title": "第二页标题",
+    "narration": "第二页要朗读的演讲稿。"
+  }
+]
+`;
+
+function openStep2BatchImportModal() {
+  document.getElementById('step2-batch-import-preview').style.display = 'none';
+  document.getElementById('step2-batch-import-preview').innerHTML = '';
+  document.getElementById('step2-batch-import-file').value = '';
+  document.getElementById('btn-step2-batch-import-append').disabled = true;
+  document.getElementById('btn-step2-batch-import-overwrite').disabled = true;
+  document.getElementById('modal-step2-batch-import').style.display = 'flex';
+}
+
+function closeStep2BatchImportModal() {
+  document.getElementById('modal-step2-batch-import').style.display = 'none';
+}
+
+function downloadStep2BatchTemplate() {
+  const blob = new Blob([STEP2_BATCH_TEMPLATE], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = '手动分镜模板.txt';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+let step2BatchImportPending = null;
+
+function handleStep2BatchImportFile(event) {
+  const file = event.target.files && event.target.files[0];
+  const previewEl = document.getElementById('step2-batch-import-preview');
+  const appendBtn = document.getElementById('btn-step2-batch-import-append');
+  const overwriteBtn = document.getElementById('btn-step2-batch-import-overwrite');
+  step2BatchImportPending = null;
+  appendBtn.disabled = true;
+  overwriteBtn.disabled = true;
+  previewEl.style.display = 'none';
+  previewEl.innerHTML = '';
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let parsed = null;
+    let parseError = '';
+    try {
+      parsed = JSON.parse(String(reader.result || ''));
+    } catch (e) {
+      parseError = String(e.message || e);
+    }
+    if (!Array.isArray(parsed)) {
+      previewEl.style.display = 'block';
+      previewEl.innerHTML = `<div class="step2-batch-import-error">❌ 文件内容不是 JSON 数组${parseError ? '：' + escapeHtml(parseError) : ''}</div>`;
+      return;
+    }
+    const slides = [];
+    for (let i = 0; i < parsed.length; i++) {
+      const item = parsed[i] || {};
+      const title = String(item.main_title || '').trim();
+      const narration = String(item.narration || '').trim();
+      if (!title || !narration) {
+        previewEl.style.display = 'block';
+        previewEl.innerHTML = `<div class="step2-batch-import-error">❌ 第 ${i + 1} 项缺少 main_title 或 narration 字段</div>`;
+        return;
+      }
+      slides.push({ main_title: title, narration });
+    }
+    if (!slides.length) {
+      previewEl.style.display = 'block';
+      previewEl.innerHTML = `<div class="step2-batch-import-error">❌ 文件中没有有效条目</div>`;
+      return;
+    }
+    step2BatchImportPending = slides;
+    previewEl.style.display = 'block';
+    const currentCount = (state.slides || []).length;
+    previewEl.innerHTML = `
+      <div class="step2-batch-import-summary">
+        <strong>已解析 ${slides.length} 页分镜：</strong>
+        <ul>
+          ${slides.slice(0, 5).map((s, i) => `<li>第 ${i + 1} 页 · ${escapeHtml(s.main_title)}</li>`).join('')}
+          ${slides.length > 5 ? `<li>... 还有 ${slides.length - 5} 页</li>` : ''}
+        </ul>
+        <div class="step2-batch-import-hint">当前已有 ${currentCount} 页。追加导入后将变成 ${currentCount + slides.length} 页；覆盖导入将清空现有分镜后导入 ${slides.length} 页。</div>
+      </div>
+    `;
+    appendBtn.disabled = false;
+    overwriteBtn.disabled = false;
+  };
+  reader.onerror = () => {
+    previewEl.style.display = 'block';
+    previewEl.innerHTML = `<div class="step2-batch-import-error">❌ 文件读取失败</div>`;
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+async function submitStep2BatchImport(mode) {
+  if (!state.currentProject || !step2BatchImportPending) return;
+  const importedSlides = step2BatchImportPending;
+  let finalSlides = [];
+  if (mode === 'append') {
+    finalSlides = collectManualSlidesFromState().concat(importedSlides);
+  } else {
+    finalSlides = importedSlides.slice();
+  }
+  // 重新编号 slide_id
+  finalSlides = finalSlides.map((s, i) => ({
+    slide_id: `slide_${String(i + 1).padStart(3, '0')}`,
+    main_title: s.main_title,
+    narration: s.narration,
+  }));
+  try {
+    const res = await API.post(`/api/projects/${state.currentProject.id}/steps/2/manual-skeleton`, { slides: finalSlides });
+    if (res && res.success) {
+      showToast(`✅ 已${mode === 'append' ? '追加' : '覆盖'}导入 ${importedSlides.length} 页分镜`);
+      closeStep2BatchImportModal();
+      await loadStep2Data();
+    } else {
+      showToast('⚠️ 导入失败');
+    }
+  } catch (e) {
+    showToast('⚠️ 导入失败：' + (e && e.message ? e.message : String(e)));
+  }
+}
+
+function escapeHtml(str) {
+  if (str == null) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function openStep2GenerationModal() {
@@ -1637,19 +1729,40 @@ function renderStep2Workspace() {
   if (state.activeSlideIndex >= state.slides.length) {
     state.activeSlideIndex = Math.max(0, state.slides.length - 1);
   }
+  const manual = isManualMode();
   document.getElementById('step2-editor-area').style.display = 'block';
-  document.getElementById('step2-btn-generate').style.display = 'inline-flex';
-  document.getElementById('step2-btn-generate').innerHTML = `<svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> AI 生成分镜`;
+  // 按钮显隐：自动模式显示 AI 生成分镜/文章slides/可视化；手动模式显示 添加幻灯片/批量导入
+  const generateBtn = document.getElementById('step2-btn-generate');
+  const scriptPromptBtn = document.getElementById('step2-btn-script-prompt');
+  const visualPromptBtn = document.getElementById('step2-btn-visual-prompt');
+  const addSlideBtn = document.getElementById('step2-btn-add-slide');
+  const batchImportBtn = document.getElementById('step2-btn-batch-import');
+  if (manual) {
+    if (generateBtn) generateBtn.style.display = 'none';
+    if (scriptPromptBtn) scriptPromptBtn.style.display = 'none';
+    if (visualPromptBtn) visualPromptBtn.style.display = 'none';
+    if (addSlideBtn) addSlideBtn.style.display = 'inline-flex';
+    if (batchImportBtn) batchImportBtn.style.display = 'inline-flex';
+  } else {
+    if (generateBtn) {
+      generateBtn.style.display = 'inline-flex';
+      generateBtn.innerHTML = `<svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> AI 生成分镜`;
+    }
+    if (scriptPromptBtn) scriptPromptBtn.style.display = 'inline-flex';
+    if (visualPromptBtn) visualPromptBtn.style.display = 'inline-flex';
+    if (addSlideBtn) addSlideBtn.style.display = 'none';
+    if (batchImportBtn) batchImportBtn.style.display = 'none';
+  }
   document.getElementById('step2-btn-save').style.display = 'inline-flex';
   document.getElementById('step2-btn-next').style.display = 'inline-flex';
   updateStep2BatchDeleteButton();
-  
+
   // 渲染精简版横向缩略图（只显示 Slide 序号）
   const thumbsContainer = document.getElementById('step2-thumbs');
   thumbsContainer.style.display = 'flex'; // 显式呈现
   thumbsContainer.classList.toggle('step2-batch-delete-mode', state.step2BatchDeleteMode);
   thumbsContainer.innerHTML = '';
-  
+
   state.slides.forEach((slide, idx) => {
     const thumb = document.createElement('div');
     thumb.className = `slide-thumbnail-card step2-slide-thumb ${idx === state.activeSlideIndex ? 'active' : ''}`;
@@ -1679,11 +1792,13 @@ function renderStep2Workspace() {
     }
     thumbsContainer.appendChild(thumb);
   });
-  
+
   // 加载当前 Slide 详情
   const slide = state.slides[state.activeSlideIndex];
   if (slide) {
-    syncStep2SimpleFieldsToInternalGroups(slide);
+    if (!manual) {
+      syncStep2SimpleFieldsToInternalGroups(slide);
+    }
     const slideIdEl = document.getElementById('step2-current-slide-id');
     const slideTitleEl = document.getElementById('step2-current-slide-title');
     if (slideIdEl) slideIdEl.innerText = slide.slide_id;
@@ -1691,30 +1806,75 @@ function renderStep2Workspace() {
     // 同步隐藏字段
     document.getElementById('step2-main-title').value = slide.main_title || '';
     document.getElementById('step2-core-message').value = slide.core_message || '';
-    
-    // 渲染 visual_groups 属性编辑
+
     const titleInput = document.getElementById('step2-slide-title-input');
     const narrationInput = document.getElementById('step2-slide-narration-input');
     if (titleInput) titleInput.value = slide.main_title || '';
-    if (narrationInput) narrationInput.value = step2NarrationText(slide);
-    [titleInput].forEach(input => {
+    if (narrationInput) {
+      // 手动模式下演讲稿可编辑，自动模式下只读
+      narrationInput.readOnly = manual ? false : true;
+      narrationInput.value = step2NarrationText(slide);
+    }
+    [titleInput, narrationInput].forEach(input => {
       if (!input || input.dataset.boundStep2SimpleEditor === '1') return;
       input.dataset.boundStep2SimpleEditor = '1';
       input.addEventListener('input', () => {
         if (input.tagName === 'TEXTAREA') autoResizeTextarea(input);
-        saveCurrentSlideInputToState();
+        if (manual) {
+          // 手动模式下直接写回 slide.narration_beats[0].spoken_text
+          saveManualNarrationInputToState(input);
+        } else {
+          saveCurrentSlideInputToState();
+        }
         scheduleStep2AutoSave();
       });
       input.addEventListener('blur', () => {
         if (input.tagName !== 'TEXTAREA') return;
         normalizeAndResizeStep2Textarea(input);
-        saveCurrentSlideInputToState();
+        if (manual) {
+          saveManualNarrationInputToState(input);
+        } else {
+          saveCurrentSlideInputToState();
+        }
         scheduleStep2AutoSave();
       });
     });
     requestAnimationFrame(() => autoResizeTextarea(narrationInput));
-    renderStep2VisualNarrationMap(slide);
+    // 自动模式渲染可视化-旁白映射；手动模式隐藏
+    const vnMap = document.getElementById('step2-visual-narration-map');
+    if (manual) {
+      if (vnMap) vnMap.style.display = 'none';
+    } else {
+      if (vnMap) vnMap.style.display = '';
+      renderStep2VisualNarrationMap(slide);
+    }
+  }
+}
 
+// 手动模式下：把演讲稿输入写回当前 slide 的 narration_beats[0].spoken_text
+function saveManualNarrationInputToState(input) {
+  const slide = state.slides && state.slides[state.activeSlideIndex];
+  if (!slide) return;
+  if (input && input.id === 'step2-slide-narration-input') {
+    if (!Array.isArray(slide.narration_beats) || !slide.narration_beats.length) {
+      slide.narration_beats = [{
+        id: 'beat_001',
+        group_id: null,
+        content_unit_id: `${slide.slide_id}_unit_001`,
+        visible_anchor: '',
+        spoken_intent: '',
+        spoken_text: '',
+      }];
+    }
+    slide.narration_beats[0].spoken_text = input.value;
+    // 同步显示在头部
+    const titleEl = document.getElementById('step2-current-slide-title');
+    // 标题输入也走这个分支
+  }
+  if (input && input.id === 'step2-slide-title-input') {
+    slide.main_title = input.value;
+    const titleEl = document.getElementById('step2-current-slide-title');
+    if (titleEl) titleEl.innerText = input.value || '未命名 Slide';
   }
 }
 
@@ -1959,6 +2119,23 @@ function saveCurrentSlideInputToState() {
       ?? document.getElementById('step2-main-title').value;
     slide.subtitle = '';
     slide.core_message = document.getElementById('step2-core-message').value;
+    if (isManualMode()) {
+      // 手动模式：把演讲稿直接写回 narration_beats[0].spoken_text，不走 visual_groups 同步
+      const narration = document.getElementById('step2-slide-narration-input')?.value || '';
+      if (!Array.isArray(slide.narration_beats) || !slide.narration_beats.length) {
+        slide.narration_beats = [{
+          id: 'beat_001',
+          group_id: null,
+          content_unit_id: `${slide.slide_id}_unit_001`,
+          visible_anchor: '',
+          spoken_intent: '',
+          spoken_text: narration,
+        }];
+      } else {
+        slide.narration_beats[0].spoken_text = narration;
+      }
+      return;
+    }
     syncStep2SimpleFieldsToInternalGroups(slide);
     renderStep2VisualNarrationMap(slide);
   }
@@ -2350,7 +2527,7 @@ function renderStep3Grid() {
     card.innerHTML = `
       <div class="step3-card-header">
         <div class="step3-card-identity">
-          <button class="slide-drag-handle" type="button" draggable="${isGenerating ? 'false' : 'true'}" ${isGenerating ? 'disabled' : ''} title="按住拖动调整页面顺序" aria-label="拖动 ${img.slide_id} 调整顺序">
+          <button class="slide-drag-handle" type="button" draggable="${isGenerating ? 'false' : 'true'}" ${isGenerating ? 'disabled' : ''} title="按住拖动调整页面顺序" aria-label="拖动第 ${idx + 1} 页调整顺序">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <circle cx="9" cy="5" r="1.4"></circle><circle cx="15" cy="5" r="1.4"></circle>
               <circle cx="9" cy="12" r="1.4"></circle><circle cx="15" cy="12" r="1.4"></circle>
@@ -2358,7 +2535,6 @@ function renderStep3Grid() {
             </svg>
           </button>
           <span class="step3-card-position">第 ${idx + 1} 页</span>
-          <span class="step3-card-slide-id">${img.slide_id}</span>
           <span class="step3-card-status ${isGenerating ? 'is-generating' : ''}" style="color: ${img.exists || isGenerating ? 'var(--ink-color)' : '#888'}; background: ${isGenerating ? 'var(--secondary-color)' : (img.exists && provenanceReady ? 'var(--success-color)' : '#f3f4f6')};">
             ${isGenerating ? '生成中' : (img.exists ? (provenanceReady ? '已就绪' : '来源待更新') : '待生成')}
           </span>
@@ -2378,7 +2554,7 @@ function renderStep3Grid() {
           ` : '<button class="step3-card-action step3-action-placeholder" type="button" disabled aria-hidden="true" tabindex="-1">删除</button>'}
         </div>
       </div>
-      <div class="step3-card-title" title="${escHtml(slideTitle)}">${escHtml(slideTitle)}</div>
+      <div class="step3-card-title" title="${escHtml(slideTitle)}" data-slide-id="${escHtml(img.slide_id)}">${escHtml(slideTitle)}</div>
 
       <div class="img-preview-container" style="width: 100%; aspect-ratio: 16/9; position: relative; border: 2px solid var(--ink-color); border-radius: 6px; overflow: hidden; background: #fffdf5;">
         ${previewHtml}

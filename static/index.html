@@ -24,10 +24,8 @@
     </div>
     <div id="project-info-header" style="display: none; font-weight: bold; font-size: 1.15rem; align-items: center; gap: 0.8rem;">
       当前项目: <span id="current-project-name" style="color: var(--ink-color);">--</span>
-      <span id="project-ai-mode-badge" class="ai-mode-badge ai-mode-auto" style="display: none; font-size: 0.8rem; padding: 0.15rem 0.6rem; border-radius: 12px; font-weight: normal;">自动模式</span>
-      <button id="btn-toggle-ai-mode" type="button" class="secondary" style="display: none; font-size: 0.8rem; padding: 0.2rem 0.7rem; font-weight: normal;">切换 AI 模式</button>
     </div>
-    <div style="display: flex; gap: 1rem;">
+    <div style="display: flex; gap: 1rem; align-items: center;">
       <button id="btn-back-home" class="secondary" style="display: none;">
         <svg class="icon" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><circle cx="18" cy="14" r="2.5" fill="var(--success-color)" stroke="currentColor" stroke-width="1.5"></circle></svg>
         返回项目列表
@@ -38,6 +36,7 @@
       </button>
       <button id="btn-config-export" class="secondary" type="button">配置导出</button>
       <button id="btn-config-import" class="secondary" type="button">配置导入</button>
+      <button id="btn-toggle-ai-mode" type="button" class="ai-mode-toggle-btn ai-mode-auto" style="display: none;" title="点击切换 AI 模式">AI 模式: 自动</button>
     </div>
   </header>
 
@@ -171,6 +170,14 @@
                 <button id="step2-btn-visual-prompt" class="secondary" style="font-size: 0.85rem; padding: 0.35rem 0.9rem;">
                   slides➡️可视化
                 </button>
+                <button id="step2-btn-add-slide" class="secondary" style="display: none; font-size: 0.85rem; padding: 0.35rem 0.9rem;">
+                  <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                  添加幻灯片
+                </button>
+                <button id="step2-btn-batch-import" class="secondary" style="display: none; font-size: 0.85rem; padding: 0.35rem 0.9rem;">
+                  <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path></svg>
+                  批量导入
+                </button>
                 <button id="step2-btn-save" class="secondary" style="display: none; font-size: 0.85rem; padding: 0.35rem 0.9rem;">
                   <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path></svg>
                   批量删除
@@ -185,7 +192,7 @@
                 <svg class="icon" viewBox="0 0 24 24" style="width:14px; height:14px; stroke-width:2.5;"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
               </button>
             </div>
-            
+
             <!-- 缩略图横排展示 -->
             <div id="step2-thumbs" class="slides-thumbnail-container" style="margin: 0; padding-bottom: 0; display: none;"></div>
           </div>
@@ -196,10 +203,8 @@
           </div>
           <div id="step2-generation-status" class="step2-generation-status" role="status" aria-live="polite" style="display:none;"></div>
 
-          <!-- 分镜列表编辑区 -->
+          <!-- 分镜列表编辑区（自动模式和手动模式共用） -->
           <div id="step2-editor-area" style="display: none;">
-            <!-- 缩略图移至上面 -->
-            
             <!-- 当前编辑的分镜内容 -->
             <div id="step2-slide-card" class="step2-slide-editor">
               <h3 class="step2-current-slide-heading">
@@ -213,8 +218,8 @@
                 </label>
                 <label class="step2-full-narration-field">
                   <span>完整演讲稿</span>
-                  <textarea id="step2-slide-narration-input" class="step2-soft-input" rows="5" readonly aria-describedby="step2-narration-source-hint"></textarea>
-                  <small id="step2-narration-source-hint">由下方每个画面的演讲片段按顺序自动组成；请直接在对应画面卡片中修改片段。</small>
+                  <textarea id="step2-slide-narration-input" class="step2-soft-input" rows="5" aria-describedby="step2-narration-source-hint"></textarea>
+                  <small id="step2-narration-source-hint">自动模式：由下方每个画面的演讲片段按顺序自动组成；请直接在对应画面卡片中修改片段。手动模式：直接在此输入本页要朗读的演讲稿，可多行。</small>
                 </label>
               </div>
               <div id="step2-visual-narration-map" class="step2-vn-map" aria-live="polite"></div>
@@ -223,26 +228,6 @@
           <!-- 隐藏字段保留兼容 -->
           <input type="hidden" id="step2-main-title">
           <input type="hidden" id="step2-core-message">
-
-          <!-- 手动模式骨架编辑器（自动模式下隐藏） -->
-          <div id="step2-manual-skeleton-panel" style="display: none;">
-            <div class="manual-skeleton-header">
-              <h3>手动分镜规划</h3>
-            </div>
-            <div class="manual-skeleton-intro">
-              在手动模式下，你只需为每页幻灯片填写<strong>标题</strong>与<strong>演讲稿</strong>，可视化与 Mask 都不是必填项。<br>
-              点击"保存并进入下一步"后，系统会生成空 visual_groups 的合同，第三步可上传任意 1920×1080 图片，第五步按需点击"运行 AI 标注"。
-            </div>
-            <div id="manual-skeleton-list" class="manual-skeleton-list"></div>
-            <button type="button" id="manual-skeleton-add-btn" class="manual-skeleton-add-btn">
-              <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-              添加幻灯片
-            </button>
-            <div class="manual-skeleton-submit-row">
-              <button type="button" id="manual-skeleton-load-existing" class="secondary" style="font-size:0.85rem;padding:0.45rem 0.9rem;">载入已有分镜</button>
-              <button type="button" id="manual-skeleton-submit" class="success" style="font-size:0.9rem;padding:0.55rem 1.4rem;">保存并进入下一步</button>
-            </div>
-          </div>
         </div>
 
         <!-- ==================== 步骤 3: 图片生成与上传 ==================== -->
@@ -752,6 +737,30 @@
       <div class="config-editor-actions">
         <button id="btn-step2-generation-cancel" class="secondary" type="button">取消</button>
         <button id="btn-step2-generation-confirm" class="success" type="button">生成分镜</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-step2-batch-import" class="modal-overlay" style="display: none;">
+    <div class="modal-content step2-batch-import-modal">
+      <h3 class="highlight-title">批量导入分镜</h3>
+      <p class="config-editor-note">手动模式专用。下载模板 → 按格式填写 → 上传 txt 文件。文件内容是 JSON 数组，每项含 main_title 与 narration 两个字段。</p>
+      <div class="step2-batch-import-actions">
+        <button id="step2-batch-import-download" class="secondary" type="button">
+          <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path></svg>
+          下载模板
+        </button>
+        <label class="btn secondary step2-batch-import-upload-label">
+          <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path></svg>
+          选择 txt 文件
+          <input id="step2-batch-import-file" type="file" accept=".txt,text/plain" style="display: none;">
+        </label>
+      </div>
+      <div id="step2-batch-import-preview" class="step2-batch-import-preview" style="display: none;"></div>
+      <div class="config-editor-actions">
+        <button id="btn-step2-batch-import-cancel" class="secondary" type="button">取消</button>
+        <button id="btn-step2-batch-import-append" class="success" type="button" disabled>追加导入</button>
+        <button id="btn-step2-batch-import-overwrite" class="danger" type="button" disabled>覆盖导入</button>
       </div>
     </div>
   </div>

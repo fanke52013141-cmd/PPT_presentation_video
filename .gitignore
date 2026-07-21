@@ -46,6 +46,10 @@ venv/
 .env.*
 !.env.example
 
+# Sensitive local settings exports (never commit)
+ppt-studio-global-settings-sensitive*.json
+*-sensitive-*.json
+
 *.log
 *.pid
 scratch/

@@ -58,9 +58,16 @@ def group_map(slide: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return result
 
 
+def is_manual_mode(slide: dict[str, Any]) -> bool:
+    """Manual mode: empty visual_groups means beats are free-standing (no group binding)."""
+    groups = slide.get("visual_groups")
+    return isinstance(groups, list) and len(groups) == 0
+
+
 def validate_slide(run_dir: Path, slide: dict[str, Any], strict_literal: bool) -> None:
     slide_id = str(slide.get("slide_id", "")).strip()
     groups = group_map(slide)
+    manual_mode = is_manual_mode(slide)
     beats_path = run_dir / "slides" / slide_id / "narration_beats.json"
     beats_data = read_json(beats_path)
     beats = beats_data.get("beats")
@@ -72,19 +79,27 @@ def validate_slide(run_dir: Path, slide: dict[str, Any], strict_literal: bool) -
             raise GroundingError(f"Invalid beat in {beats_path}")
         beat_id = str(beat.get("id", "")).strip()
         group_id = str(beat.get("group_id", "")).strip()
-        if group_id not in groups:
-            raise GroundingError(f"Beat {beat_id} references unknown group_id in {slide_id}: {group_id}")
-        referenced_groups.add(group_id)
-        group = groups[group_id]
+        # Manual mode: beats are free-standing, skip group_id cross-check
+        if not manual_mode:
+            if group_id not in groups:
+                raise GroundingError(f"Beat {beat_id} references unknown group_id in {slide_id}: {group_id}")
+            referenced_groups.add(group_id)
+            group = groups[group_id]
+            visible = normalize(str(group.get("visible_text", "")))
+        else:
+            # Manual mode has no groups, so no visible_text to check against
+            visible = ""
         spoken = normalize(str(beat.get("spoken_text", "")))
         anchor = normalize(str(beat.get("visible_anchor", "")))
-        visible = normalize(str(group.get("visible_text", "")))
         if not spoken:
             raise GroundingError(f"Beat {beat_id} has empty spoken_text in {slide_id}")
         if strict_literal and visible and visible not in spoken and anchor and anchor not in spoken:
             raise GroundingError(f"Beat {beat_id} does not mention visible text or anchor in {slide_id}: {group_id}")
         if not strict_literal and visible and visible not in spoken and anchor and anchor not in spoken:
             print(f"Warning: beat {beat_id} does not literally mention visible text/anchor: {slide_id}/{group_id}", file=sys.stderr)
+    # Manual mode: no groups to check for unreferenced
+    if manual_mode:
+        return
     unreferenced = []
     for group_id, group in groups.items():
         role = str(group.get("role", ""))

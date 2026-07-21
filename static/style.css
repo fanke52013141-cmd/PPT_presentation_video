@@ -5833,6 +5833,11 @@ body.mode-manual #step2-autosave-status{display:none !important}
 body.mode-auto #step2-btn-add-slide,
 body.mode-auto #step2-btn-batch-import{display:none !important}
 
+/* 手动模式 Step 6：隐藏"同步"按钮（避免覆盖用户已编辑的演讲稿）。
+   手动模式下 narration 由用户在 Step 2 直接填写，init 会用 contract 的 spoken_text
+   覆盖 Step 6 的编辑结果，所以必须隐藏。如需重置请先清空 narration_beats.json。 */
+body.mode-manual #step6-btn-init{display:none !important}
+
 /* ==================== Step 2 批量导入弹窗 ==================== */
 .step2-batch-import-modal{max-width:560px;width:92vw;padding:1.4rem 1.6rem 1.2rem}
 .step2-batch-import-modal .config-editor-note{margin:0.4rem 0 1rem;color:#67748a;font-size:0.88rem;line-height:1.6}

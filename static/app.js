@@ -1423,6 +1423,10 @@ async function loadStep2Data() {
     if (!isManualMode()) {
       document.getElementById('step2-btn-generate').style.display = 'inline-flex';
       document.getElementById('step2-btn-generate').innerHTML = `<svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> AI 生成分镜`;
+    } else {
+      // 手动模式新建项目：必须显示"添加幻灯片"和"批量导入"，否则用户无法开始
+      document.getElementById('step2-btn-add-slide').style.display = 'inline-flex';
+      document.getElementById('step2-btn-batch-import').style.display = 'inline-flex';
     }
     document.getElementById('step2-btn-save').style.display = 'none';
     document.getElementById('step2-btn-next').style.display = 'none';

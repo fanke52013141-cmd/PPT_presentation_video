@@ -291,7 +291,6 @@
                 <svg class="icon" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M16 3h3a2 2 0 0 1 2 2v3"></path><path d="M8 21H5a2 2 0 0 1-2-2v-3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path></svg>
                 <span id="step5-fullscreen-label">放大标注</span>
               </button>
-              <span id="step5-draft-status" class="step2-autosave-status"></span>
               <label class="step5-brush-control" title="调整手动画笔大小">
                 <span>画笔</span>
                 <input id="step5-brush-size" type="range" min="100" max="200" value="140">
@@ -340,6 +339,7 @@
               </div>
             </div>
           </div>
+          <span id="step5-draft-status" class="step5-draft-floating" role="status" aria-live="polite"></span>
         </div>
 
         <!-- ==================== 步骤 6 + 7: 旁白与音频 ==================== -->

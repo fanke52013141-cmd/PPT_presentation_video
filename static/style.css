@@ -5850,3 +5850,62 @@ body.mode-manual #step6-btn-init{display:none !important}
 .step2-batch-import-hint{margin-top:0.6rem;font-size:0.82rem;color:#67748a}
 .step2-batch-import-error{color:#c0392b;font-weight:500}
 .step2-batch-import-summary strong{color:#2c3a55}
+
+/* ==================== Step 5 已自动保存浮动提示（左下角） ====================
+   原先 #step5-draft-status 放在 .step5-toolbar 内，"已自动保存"文本宽度变化
+   会让工具栏按钮从一行变两行，导致页面抖动。移到 step-panel-5 末尾，用
+   position:fixed 固定在视口左下角，脱离工具栏流，彻底消除抖动。
+   空文本时 opacity:0 不可见，有文本时淡入显示。 */
+.step5-draft-floating{
+  position:fixed;
+  left:1.2rem;
+  bottom:1.2rem;
+  z-index:50;
+  pointer-events:none;
+  padding:0.32rem 0.7rem;
+  background:rgba(44,58,85,0.78);
+  color:#fff !important;
+  font-size:0.76rem;
+  font-weight:700;
+  border-radius:6px;
+  box-shadow:0 2px 6px rgba(0,0,0,0.18);
+  opacity:0;
+  transform:translateY(4px);
+  transition:opacity 0.18s ease, transform 0.18s ease;
+  white-space:nowrap;
+  letter-spacing:0.02em;
+}
+.step5-draft-floating:not(:empty){
+  opacity:1;
+  transform:translateY(0);
+}
+/* 全屏标注模式下同样可见，且确保浮在 canvas 之上 */
+body.step5-fullscreen-mode .step5-draft-floating{z-index:60}
+
+/* ==================== Step 5 演讲稿片段手动关联样式 ====================
+   原先 button 带 disabled，无法点击。现在启用点击关联后，需要：
+   - .no-target：未选中语块时所有片段显示为半透明灰，暗示需先选语块
+   - .linked:hover / 未关联片段 hover：明确反馈"可点击切换关联"
+   - .step5-narration-hint：未选中语块时的引导文案 */
+.step5-narration-fragment:hover{
+  border-color:var(--fragment-color);
+  background:color-mix(in srgb, var(--fragment-color) 10%, white);
+}
+.step5-narration-fragment.no-target{
+  opacity:0.55;
+  cursor:not-allowed;
+}
+.step5-narration-fragment.no-target:hover{
+  border-color:#cccccc;
+  background:#fbfbfb;
+}
+.step5-narration-hint{
+  margin:0 0 0.5rem;
+  padding:0.35rem 0.6rem;
+  background:#fff8e1;
+  border:1px solid #f0d57a;
+  border-radius:6px;
+  color:#8a6d1f;
+  font-size:0.76rem;
+  line-height:1.5;
+}

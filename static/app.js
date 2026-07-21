@@ -4249,15 +4249,24 @@ function renderStep5NarrationPanel() {
       }
     });
   });
+  const currentBoxIdx = state.canvasState.selectedBoxIndex;
+  const hasCurrentBox = currentBoxIdx >= 0 && currentBoxIdx < state.canvasState.boxes.length;
+  const hint = hasCurrentBox
+    ? ''
+    : '<div class="step5-narration-hint">点击右侧语块或新建语块后，再点击下方旁白片段即可建立关联；不关联时整页出现并播完所有旁白。</div>';
   panel.innerHTML = `
+    ${hint}
     <div class="step5-narration-fragments">
       ${fragments.map(fragment => {
         const ownerIdx = selectedByFragment.get(fragment.id);
         const owned = ownerIdx !== undefined;
-        const current = owned && ownerIdx === state.canvasState.selectedBoxIndex;
+        const current = owned && ownerIdx === currentBoxIdx;
         const color = owned ? getBoxColor(state.canvasState.boxes[ownerIdx], ownerIdx) : '#777777';
+        const title = owned
+          ? (current ? '点击取消当前语块与该旁白片段的关联' : `该片段已关联到语块 ${ownerIdx + 1}，点击切换到当前语块`)
+          : (hasCurrentBox ? '点击将此旁白片段关联到当前语块' : '请先选中或新建一个语块，再点击关联');
         return `
-          <button class="step5-narration-fragment${owned ? ' linked' : ''}${current ? ' current' : ''}" type="button" data-fragment-id="${escHtml(fragment.id)}" style="--fragment-color:${color};" disabled>
+          <button class="step5-narration-fragment${owned ? ' linked' : ''}${current ? ' current' : ''}${!hasCurrentBox ? ' no-target' : ''}" type="button" data-fragment-id="${escHtml(fragment.id)}" style="--fragment-color:${color};" title="${escHtml(title)}">
             <span class="step5-narration-fragment-index">${fragment.order}</span>
             ${escHtml(fragment.text)}
           </button>
@@ -4265,6 +4274,80 @@ function renderStep5NarrationPanel() {
       }).join('')}
     </div>
   `;
+  panel.querySelectorAll('.step5-narration-fragment').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const fragmentId = btn.getAttribute('data-fragment-id');
+      if (fragmentId) toggleStep5FragmentLink(fragmentId);
+    });
+  });
+}
+
+// 手动关联/取消关联/切换关联：演讲稿片段 <-> 当前选中语块
+// 一个片段同一时间只能被一个语块关联；点击已关联到当前语块的片段则取消关联
+function toggleStep5FragmentLink(fragmentId) {
+  if (!fragmentId) return;
+  const boxes = state.canvasState.boxes;
+  const currentIdx = state.canvasState.selectedBoxIndex;
+  if (currentIdx < 0 || currentIdx >= boxes.length) {
+    showToast('请先在右侧选中一个语块，或点击"添加语块"新建后再关联旁白。');
+    return;
+  }
+  const currentBox = boxes[currentIdx];
+  const fragments = getNarrationFragments();
+  const fragment = fragments.find(item => item.id === fragmentId);
+  if (!fragment) return;
+
+  invalidateStep5ExactPreview();
+
+  // 找到当前片段的归属
+  const ownerIdx = boxes.findIndex(box =>
+    Array.isArray(box.narration_fragments) && box.narration_fragments.some(item => item.id === fragmentId)
+  );
+
+  // 情况 1：片段已关联到当前语块 → 取消关联
+  if (ownerIdx === currentIdx) {
+    currentBox.narration_fragments = (currentBox.narration_fragments || []).filter(item => item.id !== fragmentId);
+    recomputeMaskBoxNarrationLinks(currentBox);
+    renderStep5BoxesForm();
+    renderStep5NarrationPanel();
+    scheduleStep5Autosave();
+    return;
+  }
+
+  // 情况 2：片段已关联到其他语块 → 从原语块移除
+  if (ownerIdx >= 0) {
+    const ownerBox = boxes[ownerIdx];
+    ownerBox.narration_fragments = (ownerBox.narration_fragments || []).filter(item => item.id !== fragmentId);
+    recomputeMaskBoxNarrationLinks(ownerBox);
+  }
+
+  // 情况 3：添加到当前语块（无论之前是否被关联）
+  if (!Array.isArray(currentBox.narration_fragments)) currentBox.narration_fragments = [];
+  if (!currentBox.narration_fragments.some(item => item.id === fragmentId)) {
+    currentBox.narration_fragments.push({
+      id: fragment.id,
+      beat_id: fragment.beat_id,
+      group_id: fragment.group_id,
+      text: fragment.text
+    });
+  }
+  recomputeMaskBoxNarrationLinks(currentBox);
+  renderStep5BoxesForm();
+  renderStep5NarrationPanel();
+  scheduleStep5Autosave();
+}
+
+// 根据 narration_fragments 重算 box 的 narration_beat_ids / narration_beat_id /
+// narration_group_id / spoken_text，保持字段一致性
+function recomputeMaskBoxNarrationLinks(maskBox) {
+  if (!maskBox) return;
+  const frags = Array.isArray(maskBox.narration_fragments) ? maskBox.narration_fragments : [];
+  const beatIds = [...new Set(frags.map(item => item.beat_id).filter(Boolean))];
+  const groupIds = [...new Set(frags.map(item => item.group_id).filter(Boolean))];
+  maskBox.narration_beat_ids = beatIds;
+  maskBox.narration_beat_id = beatIds[0] || '';
+  maskBox.narration_group_id = groupIds[0] || maskBox.narration_group_id || maskBox.visual_group_id || '';
+  maskBox.spoken_text = frags.map(item => item.text).join('');
 }
 
 function updateStep5SemanticButton() {

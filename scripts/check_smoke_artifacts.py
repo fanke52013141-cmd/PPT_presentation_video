@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -99,11 +100,14 @@ class SmokeCheck:
 
     def check_step1(self) -> None:
         self.required("inputs/article.md")
-        article_path = self.run_dir / "inputs" / "article.md"
-        if article_path.exists() and not article_path.read_text(encoding="utf-8-sig").strip():
-            self.fail("inputs/article.md is empty")
-        elif article_path.exists():
-            self.pass_("article source is present")
+        brief = self.read_json("planning/article_brief.json")
+        if brief:
+            if not str(brief.get("summary") or "").strip():
+                self.fail("article_brief.json is missing a non-empty summary")
+            else:
+                self.pass_("article brief summary is present")
+            if not str(brief.get("content") or "").strip():
+                self.warn("article_brief.json has empty content")
 
     def check_step2(self) -> None:
         self.contract = self.read_json("planning/visual_contract.json")

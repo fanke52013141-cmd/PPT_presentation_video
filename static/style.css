@@ -3709,6 +3709,7 @@ header .btn {
   background: transparent;
   box-shadow: none;
   color: var(--color-text-tertiary, #777);
+  outline: none;
 }
 
 .mask-icon-btn:hover,
@@ -3717,6 +3718,15 @@ header .btn {
   color: var(--color-primary-deep, #4d56d8);
   box-shadow: none;
   transform: none;
+}
+
+/* 覆盖全局 button:active 的 border-color，避免按下时出现灰色边框 */
+.mask-icon-btn:active,
+.mask-icon-btn:focus {
+  border: 0;
+  border-color: transparent;
+  outline: none;
+  box-shadow: none;
 }
 
 .mask-delete-btn:hover {

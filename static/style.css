@@ -998,6 +998,31 @@ body.step5-fullscreen-mode #step5-btn-fullscreen {
   width: 100%;
 }
 
+.subtitle-settings-controls input[type="color"] {
+  width: 100%;
+  height: 2.2rem;
+  padding: 0.15rem;
+  border: 1.5px solid #111;
+  border-radius: 7px;
+  background: #fff;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.subtitle-checkbox-label {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.55rem !important;
+  font-weight: 600 !important;
+}
+
+.subtitle-checkbox-label input[type="checkbox"] {
+  width: 1.1rem;
+  height: 1.1rem;
+  cursor: pointer;
+  accent-color: #1E3A8A;
+}
+
 .subtitle-font-note {
   padding: 0.65rem;
   border: 1px dashed #b9b3a3;

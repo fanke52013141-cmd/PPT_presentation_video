@@ -617,7 +617,7 @@ function initGlobalEvents() {
   document.getElementById('btn-subtitle-settings-close')?.addEventListener('click', () => closeSubtitleSettingsModal());
   document.getElementById('btn-subtitle-settings-save')?.addEventListener('click', () => saveSubtitleSettings());
   document.getElementById('btn-subtitle-settings-reset')?.addEventListener('click', () => resetSubtitleSettings());
-  ['subtitle-sample-text', 'subtitle-font-key', 'subtitle-font-size', 'subtitle-font-weight', 'subtitle-bottom', 'subtitle-horizontal-margin']
+  ['subtitle-sample-text', 'subtitle-font-key', 'subtitle-font-size', 'subtitle-font-weight', 'subtitle-bottom', 'subtitle-horizontal-margin', 'subtitle-highlight-color', 'subtitle-paging-window', 'subtitle-max-lines', 'subtitle-token-highlight']
     .forEach(id => document.getElementById(id)?.addEventListener('input', () => updateSubtitlePreview()));
   document.getElementById('btn-animation-settings-close')?.addEventListener('click', () => closeAnimationSettingsModal());
   document.getElementById('btn-animation-settings-preview')?.addEventListener('click', () => previewGlobalAnimationSettings());
@@ -3792,6 +3792,12 @@ const DEFAULT_SUBTITLE_SETTINGS = {
   bottom: 18,
   horizontal_margin: 180,
   color: '#111111',
+  // 方案 B：TikTok 式整页分页 + 逐字高亮
+  highlight_color: '#1E3A8A',
+  paging_window_ms: 1300,
+  token_highlight: true,
+  max_lines: 2,
+  line_height: 1.4,
 };
 
 function subtitleFontByKey(key) {
@@ -3804,6 +3810,7 @@ function subtitleFontByKey(key) {
 function readSubtitleSettingsForm() {
   const fontKey = document.getElementById('subtitle-font-key').value || DEFAULT_SUBTITLE_SETTINGS.font_key;
   const font = subtitleFontByKey(fontKey);
+  const maxLines = Number(document.getElementById('subtitle-max-lines').value || 2);
   return {
     font_key: fontKey,
     font_family: font.family,
@@ -3812,6 +3819,11 @@ function readSubtitleSettingsForm() {
     bottom: Number(document.getElementById('subtitle-bottom').value || 18),
     horizontal_margin: Number(document.getElementById('subtitle-horizontal-margin').value || 180),
     color: '#111111',
+    highlight_color: document.getElementById('subtitle-highlight-color').value || '#1E3A8A',
+    paging_window_ms: Number(document.getElementById('subtitle-paging-window').value || 1300),
+    token_highlight: document.getElementById('subtitle-token-highlight').checked,
+    max_lines: Math.min(3, Math.max(1, maxLines)),
+    line_height: 1.4,
   };
 }
 
@@ -3822,6 +3834,10 @@ function populateSubtitleSettingsForm(settings) {
   document.getElementById('subtitle-font-weight').value = String(value.font_weight);
   document.getElementById('subtitle-bottom').value = String(value.bottom);
   document.getElementById('subtitle-horizontal-margin').value = String(value.horizontal_margin);
+  document.getElementById('subtitle-highlight-color').value = String(value.highlight_color || '#1E3A8A');
+  document.getElementById('subtitle-paging-window').value = String(value.paging_window_ms || 1300);
+  document.getElementById('subtitle-max-lines').value = String(value.max_lines || 2);
+  document.getElementById('subtitle-token-highlight').checked = value.token_highlight !== false;
   updateSubtitlePreview();
 }
 
@@ -3841,6 +3857,20 @@ function updateSubtitlePreview() {
   text.style.left = `${settings.horizontal_margin * scale}px`;
   text.style.right = `${settings.horizontal_margin * scale}px`;
   text.style.color = settings.color;
+  // 预览中加入逐字高亮示意：把前 1/3 的字着色为 highlight_color
+  const enableHighlight = settings.token_highlight !== false;
+  if (enableHighlight) {
+    text.style.color = settings.highlight_color;
+  } else {
+    text.style.color = settings.color;
+  }
+  text.style.lineHeight = String(settings.line_height || 1.4);
+  text.style.whiteSpace = 'pre-wrap';
+  text.style.wordBreak = 'keep-all';
+  text.style.display = '-webkit-box';
+  text.style.WebkitBoxOrient = 'vertical';
+  text.style.WebkitLineClamp = String(settings.max_lines || 2);
+  text.style.overflow = 'hidden';
   const marginWidth = settings.horizontal_margin * scale;
   const leftShade = document.getElementById('subtitle-margin-left-shade');
   const rightShade = document.getElementById('subtitle-margin-right-shade');
@@ -3857,6 +3887,9 @@ function updateSubtitlePreview() {
   document.getElementById('subtitle-font-weight-value').textContent = String(settings.font_weight);
   document.getElementById('subtitle-bottom-value').textContent = String(settings.bottom);
   document.getElementById('subtitle-margin-value').textContent = String(settings.horizontal_margin);
+  document.getElementById('subtitle-highlight-color-value').textContent = String(settings.highlight_color);
+  document.getElementById('subtitle-paging-window-value').textContent = String(settings.paging_window_ms);
+  document.getElementById('subtitle-max-lines-value').textContent = String(settings.max_lines);
 }
 
 async function openSubtitleSettingsModal() {

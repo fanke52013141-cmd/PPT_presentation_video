@@ -901,7 +901,23 @@
             <span>左右留白：<strong id="subtitle-margin-value">180</strong> px</span>
             <input id="subtitle-horizontal-margin" type="range" min="40" max="420" step="10" value="180">
           </label>
-          <div class="subtitle-font-note">字体列表优先选择 SIL Open Font License 的开源中文字体；霞鹜文楷使用本机字体，未安装时自动回退。</div>
+          <label>
+            <span>高亮颜色：<strong id="subtitle-highlight-color-value">#1E3A8A</strong></span>
+            <input id="subtitle-highlight-color" type="color" value="#1E3A8A">
+          </label>
+          <label>
+            <span>分页时间窗：<strong id="subtitle-paging-window-value">1300</strong> ms</span>
+            <input id="subtitle-paging-window" type="range" min="600" max="2500" step="100" value="1300">
+          </label>
+          <label>
+            <span>最大行数：<strong id="subtitle-max-lines-value">2</strong> 行</span>
+            <input id="subtitle-max-lines" type="range" min="1" max="3" step="1" value="2">
+          </label>
+          <label class="subtitle-checkbox-label">
+            <input id="subtitle-token-highlight" type="checkbox" checked>
+            <span>启用逐字高亮（关闭则整页同色显示）</span>
+          </label>
+          <div class="subtitle-font-note">字体列表优先选择 SIL Open Font License 的开源中文字体；霞鹜文楷使用本机字体，未安装时自动回退。分页时间窗越小越接近逐句切换，越大越倾向合并多句显示。</div>
         </div>
       </div>
       <div class="config-editor-actions">

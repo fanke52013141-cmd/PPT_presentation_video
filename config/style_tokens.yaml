@@ -168,6 +168,11 @@ subtitle:
     max_cjk_chars: 26
     horizontal_margin: 180
     bottom: 18
+    # 方案 B：TikTok 式整页分页 + 逐字高亮
+    highlight_color: "#1E3A8A"
+    paging_window_ms: 1300
+    token_highlight: true
+    line_height: 1.4
 
 animation:
   default_duration_sec: 0.6

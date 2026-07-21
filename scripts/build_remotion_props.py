@@ -56,6 +56,12 @@ DEFAULT_SUBTITLE_STYLE = {
     "bottom": 18,
     "horizontal_margin": 180,
     "color": "#111111",
+    # 方案 B：TikTok 式整页分页 + 逐字高亮
+    "highlight_color": "#1E3A8A",       # 当前朗读 token 的高亮色
+    "paging_window_ms": 1300,           # 合并相邻 token 成一页的时间窗（毫秒）
+    "token_highlight": True,            # 是否启用逐字高亮（关闭则整页同色显示）
+    "max_lines": 2,                     # 字幕最大行数，超出按 keep-all 折行后裁切
+    "line_height": 1.4,                 # 行高
 }
 
 

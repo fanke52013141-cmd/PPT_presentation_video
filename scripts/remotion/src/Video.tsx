@@ -136,19 +136,189 @@ export type SubtitleStyle = {
   bottom?: number;
   horizontal_margin?: number;
   color?: string;
+  // 方案 B：TikTok 式整页分页 + 逐字高亮
+  highlight_color?: string;
+  paging_window_ms?: number;
+  token_highlight?: boolean;
+  max_lines?: number;
+  line_height?: number;
 };
 
 const SUBTITLE_GAP_HOLD_SEC = 0.35;
 
 const hasReadableSubtitleText = (text: string): boolean => /[0-9A-Za-z\u3400-\u9fff]/.test(text);
 
+// ============================================================================
+// 方案 B：TikTok 式整页分页 + 逐字高亮
+//
+// 这里自研了一个与 @remotion/captions.createTikTokStyleCaptions 等价的实现，
+// 对中文做了优化（官方实现依赖前导空格检测句子边界，中文不友好）。
+//
+// 数据流：
+//   audio_timeline.segments[]（句子级）
+//     ↓ buildCaptionPages
+//   CaptionPage[]（每页含完整文本 + tokens[] 时间戳）
+//     ↓ pageAtTime / highlightedTokenCount
+//   当前帧应显示的 page 与高亮 token 数
+//
+// 同一句子的所有 token 永远在同一页，从根本上避免"句子中途被切断"。
+// ============================================================================
+
+type CaptionToken = {
+  text: string;
+  fromMs: number;
+  toMs: number;
+};
+
+type CaptionPage = {
+  text: string;
+  startMs: number;
+  durationMs: number;
+  tokens: CaptionToken[];
+};
+
+// 句子级 segment → 字级 token
+// - 中文按字切（每字一 token）
+// - 拉丁/数字按词切
+// - 标点单独成 token，权重 0（不占时间）
+// - 空白单独成 token，权重 0
+const splitSentenceToTokens = (
+  text: string,
+  startMs: number,
+  endMs: number,
+): CaptionToken[] => {
+  const durationMs = Math.max(0, endMs - startMs);
+  const pieces = text.match(/[\u4e00-\u9fff]|[A-Za-z0-9]+|\s+|[^\s\u4e00-\u9fffA-Za-z0-9]/g) || [text];
+  // 权重：CJK=1，拉丁词=字母数，标点=0.3（让标点有微小时长以稳定显示），空白=0
+  const weights = pieces.map((piece) => {
+    if (/\s/.test(piece)) return 0;
+    if (/[\u4e00-\u9fff]/.test(piece)) return 1;
+    if (/[A-Za-z0-9]/.test(piece)) return piece.length;
+    return 0.3;
+  });
+  const total = weights.reduce((a, b) => a + b, 0);
+  if (total <= 0) {
+    // 整句无可见字符时，全部时间挂在第一个 piece 上
+    return pieces.map((piece) => ({text: piece, fromMs: startMs, toMs: endMs}));
+  }
+  let cursor = startMs;
+  return pieces.map((piece, i) => {
+    const dur = (durationMs * weights[i]) / total;
+    const token: CaptionToken = {
+      text: piece,
+      fromMs: cursor,
+      toMs: cursor + dur,
+    };
+    cursor += dur;
+    return token;
+  });
+};
+
+// 把句子级 segments 转成分页 CaptionPage[]
+// 同一句子的所有 token 一定在同一页；相邻句子的 gap 大于 pagingWindowMs 时分页
+const buildCaptionPages = (
+  segments: TimelineSegment[],
+  pagingWindowMs: number,
+  tokenize: boolean,
+): CaptionPage[] => {
+  const readable = segments.filter((segment) => hasReadableSubtitleText(segment.text || ''));
+  if (readable.length === 0) return [];
+
+  const pages: CaptionPage[] = [];
+  let currentTokens: CaptionToken[] = [];
+  let currentStartMs = 0;
+  let currentEndMs = 0;
+  let currentText = '';
+
+  const flush = () => {
+    if (currentTokens.length === 0) return;
+    pages.push({
+      text: currentText,
+      startMs: currentStartMs,
+      durationMs: currentEndMs - currentStartMs,
+      tokens: currentTokens,
+    });
+    currentTokens = [];
+    currentText = '';
+  };
+
+  readable.forEach((segment, index) => {
+    const segStartMs = segment.start * 1000;
+    const segEndMs = segment.end * 1000;
+    // 与上一句的 gap 超过窗口，则开新页
+    const shouldStartNewPage =
+      currentTokens.length > 0 && segStartMs - currentEndMs > pagingWindowMs;
+    if (shouldStartNewPage) {
+      flush();
+    }
+    if (currentTokens.length === 0) {
+      currentStartMs = segStartMs;
+    }
+    if (tokenize) {
+      const tokens = splitSentenceToTokens(segment.text, segStartMs, segEndMs);
+      currentTokens.push(...tokens);
+    } else {
+      // 不切 token：整句作为一个 token
+      currentTokens.push({text: segment.text, fromMs: segStartMs, toMs: segEndMs});
+    }
+    currentText += segment.text;
+    currentEndMs = Math.max(currentEndMs, segEndMs);
+    if (index === readable.length - 1) {
+      flush();
+    }
+  });
+
+  return pages;
+};
+
+// 找当前时间所在的 page（找不到时回退到上一个，gap ≤ 350ms 内仍显示）
+const pageAtTime = (pages: CaptionPage[], audioSeconds: number): CaptionPage | undefined => {
+  if (audioSeconds < 0 || pages.length === 0) return undefined;
+  const ms = audioSeconds * 1000;
+  let previous: CaptionPage | undefined;
+  for (const page of pages) {
+    if (ms >= page.startMs && ms < page.startMs + page.durationMs) {
+      return page;
+    }
+    if (page.startMs + page.durationMs <= ms) {
+      previous = page;
+      continue;
+    }
+    if (page.startMs > ms) {
+      return previous && ms - (previous.startMs + previous.durationMs) <= SUBTITLE_GAP_HOLD_SEC * 1000
+        ? previous
+        : undefined;
+    }
+  }
+  return previous && ms - (previous.startMs + previous.durationMs) <= SUBTITLE_GAP_HOLD_SEC * 1000
+    ? previous
+    : undefined;
+};
+
+// 计算当前 page 应高亮的 token 数量（已朗读的 token）
+const highlightedTokenCount = (page: CaptionPage, audioSeconds: number): number => {
+  const ms = audioSeconds * 1000;
+  let count = 0;
+  for (const token of page.tokens) {
+    if (ms >= token.toMs - 1) {
+      // token 已读完
+      count++;
+    } else if (ms >= token.fromMs) {
+      // token 正在读：算作高亮（让用户看到正在朗读的词进入高亮状态）
+      count++;
+      break;
+    } else {
+      break;
+    }
+  }
+  return count;
+};
+
+// 旧逻辑保留作为 fallback（无 segments 时使用）
 const subtitleAtTime = (segments: TimelineSegment[], audioSeconds: number): TimelineSegment | undefined => {
   if (audioSeconds < 0) {
     return undefined;
   }
-  // Ignore provider punctuation-only segments. Older projects may already
-  // contain these, so the renderer also defends against them even though new
-  // timelines normalize them during TTS generation.
   const readable = segments.filter((segment) => hasReadableSubtitleText(segment.text || ''));
   let previous: TimelineSegment | undefined;
   for (const segment of readable) {
@@ -449,6 +619,72 @@ const LayerView: React.FC<{layer: SceneLayer; events?: AnimationEvent[]}> = ({la
   );
 };
 
+const SubtitleView: React.FC<{
+  page: CaptionPage;
+  highlightCount: number;
+  subtitleStyle?: SubtitleStyle;
+  fontFamily: string;
+}> = ({page, highlightCount, subtitleStyle, fontFamily}) => {
+  const baseColor = subtitleStyle?.color ?? '#111111';
+  const highlightColor = subtitleStyle?.highlight_color ?? '#1E3A8A';
+  const fontSize = subtitleStyle?.font_size ?? 38;
+  const baseFontWeight = subtitleStyle?.font_weight ?? 500;
+  const maxLines = subtitleStyle?.max_lines ?? 2;
+  const lineHeight = subtitleStyle?.line_height ?? 1.4;
+  const horizontalMargin = subtitleStyle?.horizontal_margin ?? 180;
+  const bottom = subtitleStyle?.bottom ?? 18;
+  const enableHighlight = subtitleStyle?.token_highlight !== false;
+  const highlightFontWeight = Math.min(700, baseFontWeight + 100);
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: horizontalMargin,
+        right: horizontalMargin,
+        bottom,
+        zIndex: 10000,
+        // 给 maxLines 行预留空间，避免内容居中导致位置抖动
+        minHeight: Math.ceil(fontSize * lineHeight) * maxLines,
+        // 使用 -webkit-box 实现 line-clamp 多行裁切，alignItems 走 flex 容器外层处理
+        display: '-webkit-box',
+        WebkitBoxOrient: 'vertical',
+        WebkitLineClamp: maxLines,
+        justifyContent: 'center',
+        boxSizing: 'border-box',
+        padding: '0 24px',
+        color: baseColor,
+        background: 'transparent',
+        fontSize,
+        fontWeight: baseFontWeight,
+        lineHeight,
+        textAlign: 'center',
+        // 关键 CSS：保留空格、允许自然换行、词内不切断、限制最多 maxLines 行
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'keep-all',
+        overflowWrap: 'normal',
+        fontFamily,
+        overflow: 'hidden',
+      }}
+    >
+      {page.tokens.map((token, i) => {
+        const isHighlighted = enableHighlight && i < highlightCount;
+        return (
+          <span
+            key={i}
+            style={{
+              color: isHighlighted ? highlightColor : baseColor,
+              fontWeight: isHighlighted ? highlightFontWeight : baseFontWeight,
+            }}
+          >
+            {token.text}
+          </span>
+        );
+      })}
+    </div>
+  );
+};
+
 const SlideView: React.FC<{slide: Slide; subtitleStyle?: SubtitleStyle}> = ({slide, subtitleStyle}) => {
   const segments = slide.audio_timeline?.segments ?? [];
   const frame = useCurrentFrame();
@@ -456,7 +692,20 @@ const SlideView: React.FC<{slide: Slide; subtitleStyle?: SubtitleStyle}> = ({sli
   const seconds = frame / fps;
   const audioStartSec = slide.audio_timeline?.audio_start_sec ?? 0;
   const audioSeconds = seconds - audioStartSec;
-  const activeSubtitle = subtitleAtTime(segments, audioSeconds);
+
+  // 方案 B：用 page + token 高亮替代单 segment 显示
+  const tokenize = subtitleStyle?.token_highlight !== false;
+  const pagingWindowMs = subtitleStyle?.paging_window_ms ?? 1300;
+  const pages = React.useMemo(
+    () => buildCaptionPages(segments, pagingWindowMs, tokenize),
+    [segments, pagingWindowMs, tokenize],
+  );
+  const activePage = pageAtTime(pages, audioSeconds);
+  const highlightCount = activePage ? highlightedTokenCount(activePage, audioSeconds) : 0;
+
+  // Fallback：无 segments 或 buildCaptionPages 返回空时回到旧逻辑
+  const fallbackSubtitle = pages.length === 0 ? subtitleAtTime(segments, audioSeconds) : undefined;
+
   const background = toAssetSrc(slide.scene.canvas.background_asset);
   const layers = slide.scene.layers ?? [];
   const subtitleFont = subtitleFontFamily(
@@ -465,6 +714,11 @@ const SlideView: React.FC<{slide: Slide; subtitleStyle?: SubtitleStyle}> = ({sli
     subtitleStyle?.font_weight,
   );
   const horizontalMargin = subtitleStyle?.horizontal_margin ?? 180;
+  const fallbackColor = subtitleStyle?.color ?? '#111111';
+  const fallbackFontSize = subtitleStyle?.font_size ?? 38;
+  const fallbackFontWeight = subtitleStyle?.font_weight ?? 500;
+  const fallbackLineHeight = subtitleStyle?.line_height ?? 1.4;
+  const fallbackMaxLines = subtitleStyle?.max_lines ?? 2;
 
   return (
     <AbsoluteFill style={{background: slide.scene.canvas.background || '#FEFDF9'}}>
@@ -475,7 +729,14 @@ const SlideView: React.FC<{slide: Slide; subtitleStyle?: SubtitleStyle}> = ({sli
         .map((layer) => (
           <LayerView key={layer.id} layer={layer} events={slide.animation_timeline?.events} />
         ))}
-      {activeSubtitle ? (
+      {activePage ? (
+        <SubtitleView
+          page={activePage}
+          highlightCount={highlightCount}
+          subtitleStyle={subtitleStyle}
+          fontFamily={subtitleFont}
+        />
+      ) : fallbackSubtitle ? (
         <div
           style={{
             position: 'absolute',
@@ -483,25 +744,27 @@ const SlideView: React.FC<{slide: Slide; subtitleStyle?: SubtitleStyle}> = ({sli
             right: horizontalMargin,
             bottom: subtitleStyle?.bottom ?? 18,
             zIndex: 10000,
-            minHeight: 54,
-            display: 'flex',
-            alignItems: 'center',
+            minHeight: Math.ceil(fallbackFontSize * fallbackLineHeight) * fallbackMaxLines,
+            display: '-webkit-box',
+            WebkitBoxOrient: 'vertical',
+            WebkitLineClamp: fallbackMaxLines,
             justifyContent: 'center',
             boxSizing: 'border-box',
             padding: '0 24px',
-            color: subtitleStyle?.color ?? '#111111',
+            color: fallbackColor,
             background: 'transparent',
-            fontSize: subtitleStyle?.font_size ?? 38,
-            fontWeight: subtitleStyle?.font_weight ?? 500,
-            lineHeight: 1.15,
+            fontSize: fallbackFontSize,
+            fontWeight: fallbackFontWeight,
+            lineHeight: fallbackLineHeight,
             textAlign: 'center',
-            whiteSpace: 'normal',
-            overflow: 'visible',
-            overflowWrap: 'anywhere',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'keep-all',
+            overflowWrap: 'normal',
             fontFamily: subtitleFont,
+            overflow: 'hidden',
           }}
         >
-          {activeSubtitle.text}
+          {fallbackSubtitle.text}
         </div>
       ) : null}
       {slide.audio_file ? (

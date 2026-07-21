@@ -5795,3 +5795,50 @@ body.step5-fullscreen-mode #step-panel-5 .workspace-left{align-items:center;just
 .style-ref-footer button{border-radius:10px!important;min-width:112px}
 .style-ref-footer .style-ref-primary{min-width:170px}
 @media(max-width:980px){.style-ref-modal{width:96vw}.style-ref-tabs{width:auto;margin-left:18px;margin-right:18px}.style-ref-workbench{padding:0 16px 16px}.style-ref-view{grid-template-columns:1fr}.style-ref-preview-grid,.style-reverse-upload-grid{grid-template-columns:1fr}.style-template-card{grid-template-columns:140px minmax(0,1fr) 26px}.style-template-thumb{width:140px}.style-ref-footer{align-items:stretch;flex-direction:column}.style-ref-footer-left,.style-ref-footer-right{justify-content:flex-end;flex-wrap:wrap}}
+
+/* ==================== AI 模式徽标与手动模式 UI 控制 ==================== */
+.ai-mode-badge{display:inline-block;font-size:0.8rem;padding:0.15rem 0.6rem;border-radius:12px;font-weight:500;letter-spacing:0.02em}
+.ai-mode-badge.ai-mode-auto{background:#e8efff;color:#3a5cb8;border:1px solid #cdd9f5}
+.ai-mode-badge.ai-mode-manual{background:#fff4e6;color:#b06a1a;border:1px solid #ffd9a8}
+
+#btn-toggle-ai-mode{background:#fff;border:1px solid #c9d3e6;color:#46587a}
+#btn-toggle-ai-mode:hover{background:#f2f5fb;border-color:#a9b7d6}
+
+/* 手动模式：隐藏第二步"运行 AI 分镜规划"按钮、第五步"自动触发 Mask"等强 AI 入口。
+   保留"运行 AI 标注"等按需触发的按钮，让用户在手动模式下仍能调用 AI。 */
+body.mode-manual #step2-btn-generate,
+body.mode-manual #step2-btn-script-prompt,
+body.mode-manual #step2-btn-visual-prompt,
+body.mode-manual #step2-loading,
+body.mode-manual #step2-generation-status,
+body.mode-manual #step2-autosave-status{display:none !important}
+
+/* 手动模式第二步：隐藏自动 AI 编辑器及其缩略图，显示手动骨架编辑器 */
+body.mode-manual #step2-editor-area,
+body.mode-manual #step2-thumbs{display:none !important}
+body.mode-auto #step2-manual-skeleton-panel{display:none !important}
+body.mode-manual #step2-manual-skeleton-panel{display:block !important}
+
+/* 手动骨架编辑器样式 */
+#step2-manual-skeleton-panel{padding:0.5rem 0 2rem}
+.manual-skeleton-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem}
+.manual-skeleton-header h3{margin:0;font-size:1.1rem;color:#2c3a55}
+.manual-skeleton-intro{color:#67748a;font-size:0.9rem;line-height:1.65;margin-bottom:1.2rem;padding:0.85rem 1rem;background:#f7f9fc;border-left:3px solid #b8c8e8;border-radius:6px}
+.manual-skeleton-list{display:flex;flex-direction:column;gap:0.9rem;margin-bottom:1.2rem}
+.manual-skeleton-card{background:#fff;border:1px solid #e4e8f0;border-radius:12px;padding:1rem 1.1rem;position:relative}
+.manual-skeleton-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:0.7rem}
+.manual-skeleton-card-title{font-weight:600;color:#2c3a55;font-size:0.95rem}
+.manual-skeleton-card-actions{display:flex;gap:0.4rem}
+.manual-skeleton-card-actions button{font-size:0.75rem;padding:0.25rem 0.55rem;border-radius:6px;border:1px solid #d4dae6;background:#fff;color:#525d72;cursor:pointer}
+.manual-skeleton-card-actions button:hover{background:#f2f5fb}
+.manual-skeleton-card-actions button.danger{color:#c0392b;border-color:#f3c2bd}
+.manual-skeleton-card-actions button.danger:hover{background:#fdf0ee}
+.manual-skeleton-field{display:flex;flex-direction:column;gap:0.3rem;margin-bottom:0.6rem}
+.manual-skeleton-field label{font-size:0.8rem;color:#5a647a;font-weight:500}
+.manual-skeleton-field input,.manual-skeleton-field textarea{width:100%;padding:0.55rem 0.75rem;border:1px solid #e4e8f0;border-radius:8px;font-size:0.95rem;font-family:inherit;background:#fbfcfe;color:#2c3a55}
+.manual-skeleton-field input:focus,.manual-skeleton-field textarea:focus{outline:none;border-color:#8aa2d6;background:#fff}
+.manual-skeleton-field textarea{min-height:90px;resize:vertical;line-height:1.65}
+.manual-skeleton-add-btn{display:inline-flex;align-items:center;gap:0.4rem;padding:0.6rem 1.1rem;background:#eef3ff;color:#3a5cb8;border:1px dashed #8aa2d6;border-radius:10px;cursor:pointer;font-size:0.95rem;font-weight:500}
+.manual-skeleton-add-btn:hover{background:#e1ebff}
+.manual-skeleton-submit-row{display:flex;justify-content:flex-end;gap:0.8rem;margin-top:1rem;padding-top:1rem;border-top:1px solid #e4e8f0}
+.manual-skeleton-empty{padding:2rem 1rem;text-align:center;color:#8a93a8;font-size:0.95rem}

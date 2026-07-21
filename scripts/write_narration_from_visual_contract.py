@@ -54,7 +54,9 @@ def narration_key(text: str) -> str:
 def group_lookup(slide: dict[str, Any]) -> dict[str, dict[str, Any]]:
     groups = slide.get("visual_groups")
     if not isinstance(groups, list):
-        raise NarrationBuildError(f"Slide missing visual_groups[]: {slide.get('slide_id')}")
+        # Allow missing/null visual_groups (manual mode). An empty dict here
+        # means beats are free-standing and must not require a group_id.
+        return {}
     result: dict[str, dict[str, Any]] = {}
     for group in groups:
         if not isinstance(group, dict):
@@ -65,10 +67,17 @@ def group_lookup(slide: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return result
 
 
-def spoken_text_for_beat(beat: dict[str, Any], group: dict[str, Any], max_chars: int) -> str:
+def spoken_text_for_beat(beat: dict[str, Any], group: dict[str, Any] | None, max_chars: int) -> str:
     existing = normalize(str(beat.get("spoken_text", "")))
     if existing:
         return existing[:max_chars]
+    if group is None:
+        # Manual mode: no visual group to expand. Fall back to the beat's own
+        # spoken_intent, then to a minimal placeholder.
+        intent = normalize(str(beat.get("spoken_intent", "")))
+        if intent:
+            return intent[:max_chars]
+        return ""
     visible = normalize(str(group.get("visible_text", beat.get("visible_anchor", "这个点"))))
     anchor = normalize(str(group.get("visual_anchor", beat.get("visible_anchor", visible))))
     source = normalize(str(group.get("source_text", "")))
@@ -90,6 +99,7 @@ def build_slide_narration(slide: dict[str, Any], max_beat_chars: int) -> dict[st
     if not slide_id:
         raise NarrationBuildError("Slide missing slide_id")
     groups = group_lookup(slide)
+    manual_mode_slide = not groups  # no visual groups: free-standing beats
     raw_beats = slide.get("narration_beats")
     if not isinstance(raw_beats, list) or not raw_beats:
         raise NarrationBuildError(f"Slide missing narration_beats[]: {slide_id}")
@@ -100,16 +110,23 @@ def build_slide_narration(slide: dict[str, Any], max_beat_chars: int) -> dict[st
             raise NarrationBuildError(f"Invalid beat in {slide_id}")
         beat_id = str(beat.get("id", f"beat_{index:02d}")).strip()
         group_id = str(beat.get("group_id", "")).strip()
-        if group_id not in groups:
-            raise NarrationBuildError(f"Beat {beat_id} references unknown group_id in {slide_id}: {group_id}")
-        group = groups[group_id]
-        group_content_unit_id = str(group.get("content_unit_id", group_id)).strip()
-        beat_content_unit_id = str(beat.get("content_unit_id", group_content_unit_id)).strip()
-        if group_content_unit_id and beat_content_unit_id and beat_content_unit_id != group_content_unit_id:
-            raise NarrationBuildError(
-                f"Beat {beat_id} content_unit_id does not match group in {slide_id}: "
-                f"{beat_content_unit_id} != {group_content_unit_id}"
-            )
+        group = groups.get(group_id)
+        if group is None:
+            if not manual_mode_slide:
+                raise NarrationBuildError(f"Beat {beat_id} references unknown group_id in {slide_id}: {group_id}")
+            # Manual mode: no group binding. content_unit_id stays on the beat.
+            beat_content_unit_id = str(beat.get("content_unit_id", "")).strip()
+            if not beat_content_unit_id:
+                beat_content_unit_id = f"{slide_id}_unit_{index:03d}"
+        else:
+            group_content_unit_id = str(group.get("content_unit_id", group_id)).strip()
+            beat_content_unit_id = str(beat.get("content_unit_id", group_content_unit_id)).strip()
+            if group_content_unit_id and beat_content_unit_id and beat_content_unit_id != group_content_unit_id:
+                raise NarrationBuildError(
+                    f"Beat {beat_id} content_unit_id does not match group in {slide_id}: "
+                    f"{beat_content_unit_id} != {group_content_unit_id}"
+                )
+            beat_content_unit_id = group_content_unit_id or beat_content_unit_id
         spoken_text = spoken_text_for_beat(beat, group, max_chars=max_beat_chars)
         key = narration_key(spoken_text)
         if key and key in seen_spoken_text:
@@ -119,10 +136,14 @@ def build_slide_narration(slide: dict[str, Any], max_beat_chars: int) -> dict[st
         beats.append(
             {
                 "id": beat_id,
-                "content_unit_id": group_content_unit_id or beat_content_unit_id,
+                "content_unit_id": beat_content_unit_id,
                 "group_id": group_id,
-                "visible_anchor": normalize(str(beat.get("visible_anchor", group.get("visible_text", "")))),
-                "spoken_intent": normalize(str(beat.get("spoken_intent", group.get("narration_function", "")))),
+                "visible_anchor": normalize(
+                    str(beat.get("visible_anchor", (group or {}).get("visible_text", "")))
+                ),
+                "spoken_intent": normalize(
+                    str(beat.get("spoken_intent", (group or {}).get("narration_function", "")))
+                ),
                 "spoken_text": spoken_text,
             }
         )

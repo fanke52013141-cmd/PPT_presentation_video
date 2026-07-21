@@ -27,6 +27,8 @@ class Project(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     run_dir = Column(String, nullable=False)
+    # AI 模式：auto=自动调用 AI 做分镜规划/可视化/Mask；manual=手动填写，保留按需触发 AI
+    ai_mode = Column(String, default="auto")
 
     def get_step_status(self):
         try:
@@ -43,9 +45,35 @@ class Setting(Base):
     key = Column(String, primary_key=True, index=True)
     value = Column(Text, nullable=False)
 
+def _migrate_add_ai_mode_column() -> None:
+    """Add ai_mode column to legacy projects tables (SQLite ALTER TABLE).
+
+    SQLAlchemy's create_all only creates missing tables; it does not add
+    columns to existing tables. We add ai_mode manually so legacy databases
+    pick up the new field without losing data.
+    """
+    with engine.connect() as conn:
+        try:
+            cols = conn.exec_driver_sql("PRAGMA table_info(projects)")
+        except Exception:
+            return
+        names = {row[1] for row in cols.fetchall()} if hasattr(cols, "fetchall") else set()
+        if "ai_mode" in names:
+            return
+        try:
+            conn.exec_driver_sql(
+                "ALTER TABLE projects ADD COLUMN ai_mode VARCHAR DEFAULT 'auto'"
+            )
+            conn.commit()
+        except Exception:
+            # Concurrent workers may have added the column first; safe to ignore.
+            pass
+
+
 # 初始化数据库结构
 def init_db():
     Base.metadata.create_all(bind=engine)
+    _migrate_add_ai_mode_column()
     # 初始化默认设置
     db = SessionLocal()
     try:

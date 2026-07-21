@@ -122,8 +122,9 @@ def build_slide(slide: dict[str, Any], run_dir: Path) -> dict[str, Any]:
         raise TemplateError("Slide missing slide_id")
     groups = slide.get("visual_groups")
     beats = slide.get("narration_beats")
-    if not isinstance(groups, list) or not groups:
-        raise TemplateError(f"Slide missing visual_groups[]: {slide_id}")
+    if not isinstance(groups, list):
+        # Allow empty/null visual_groups (manual mode: full-slide static render).
+        groups = []
     if not isinstance(beats, list):
         beats = []
     content_groups = [

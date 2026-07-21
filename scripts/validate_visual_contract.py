@@ -108,8 +108,12 @@ def validate_slide(
         raise ContractError(f"presentation_policy forbids subtitle, but subtitle is present in {slide_id}")
 
     groups = slide.get("visual_groups")
-    if not isinstance(groups, list) or not groups:
-        raise ContractError(f"Slide missing visual_groups[]: {slide_id}")
+    if not isinstance(groups, list):
+        groups = []
+    # Manual mode: empty visual_groups means the slide is a full-slide static
+    # image with no Mask reveal layers. Skip all group-related checks; beats
+    # may carry null/empty group_id and omit content_unit_id/visible_anchor.
+    manual_mode = len(groups) == 0
     # The profile range describes revealable visual anchors, not the fixed
     # title/subtitle groups. Counting the static header made a valid page with
     # five body islands look like seven groups and only produced a warning after
@@ -119,26 +123,27 @@ def validate_slide(
         if isinstance(group, dict)
         and str(group.get("role") or "").strip().lower() not in {"title", "subtitle", "decoration"}
     ]
-    if len(revealable_groups) < min_groups:
-        raise ContractError(
-            f"Expected at least {min_groups} revealable visual group(s) in {slide_id}, "
-            f"got {len(revealable_groups)} ({len(groups)} including static title/subtitle groups)"
-        )
-    if max_groups > 0 and len(revealable_groups) > max_groups:
-        print(
-            f"Warning: {slide_id} has {len(revealable_groups)} revealable visual groups; "
-            f"this exceeds the configured density guide of {max_groups}. "
-            "The contract remains valid when every group is semantically independent, narration-bound, and maskable.",
-            file=sys.stderr,
-        )
-    atomicity_issues = visual_group_atomicity_issues(slide)
-    if atomicity_issues:
-        issue = atomicity_issues[0]
-        raise ContractError(
-            f"Visual group {issue['group_id']} in {slide_id} describes multiple independent visual islands "
-            f"({', '.join(issue['signals'])}). Split them into separate body groups with separate narration beats, "
-            "or explicitly describe one unified continuous structure when they must reveal together."
-        )
+    if not manual_mode:
+        if len(revealable_groups) < min_groups:
+            raise ContractError(
+                f"Expected at least {min_groups} revealable visual group(s) in {slide_id}, "
+                f"got {len(revealable_groups)} ({len(groups)} including static title/subtitle groups)"
+            )
+        if max_groups > 0 and len(revealable_groups) > max_groups:
+            print(
+                f"Warning: {slide_id} has {len(revealable_groups)} revealable visual groups; "
+                f"this exceeds the configured density guide of {max_groups}. "
+                "The contract remains valid when every group is semantically independent, narration-bound, and maskable.",
+                file=sys.stderr,
+            )
+        atomicity_issues = visual_group_atomicity_issues(slide)
+        if atomicity_issues:
+            issue = atomicity_issues[0]
+            raise ContractError(
+                f"Visual group {issue['group_id']} in {slide_id} describes multiple independent visual islands "
+                f"({', '.join(issue['signals'])}). Split them into separate body groups with separate narration beats, "
+                "or explicitly describe one unified continuous structure when they must reveal together."
+            )
 
     group_ids: set[str] = set()
     title_group_ids: set[str] = set()
@@ -169,7 +174,7 @@ def validate_slide(
         content_unit_by_group_id[group_id] = content_unit_id
         visible_text_by_id[group_id] = str(group.get("visible_text", "")).strip()
 
-    if strict_one_to_one_mapping and len(title_group_ids) != 1:
+    if not manual_mode and strict_one_to_one_mapping and len(title_group_ids) != 1:
         raise ContractError(f"Expected exactly one title visual group in {slide_id}, got {len(title_group_ids)}")
 
     beats = slide.get("narration_beats")
@@ -189,30 +194,45 @@ def validate_slide(
         if beat_id in beat_ids:
             raise ContractError(f"Duplicate narration beat id in {slide_id}: {beat_id}")
         beat_ids.add(beat_id)
-        if group_id not in group_ids:
-            raise ContractError(f"Beat {beat_id} references unknown group_id in {slide_id}: {group_id}")
-        expected_content_unit_id = content_unit_by_group_id[group_id]
-        if not content_unit_id:
-            raise ContractError(f"Beat {beat_id} missing content_unit_id in {slide_id}")
-        if content_unit_id != expected_content_unit_id:
-            raise ContractError(
-                f"Beat {beat_id} content_unit_id does not match group in {slide_id}: "
-                f"{content_unit_id} != {expected_content_unit_id}"
-            )
-        for key in ["visible_anchor", "spoken_intent"]:
-            if not str(beat.get(key, "")).strip():
-                raise ContractError(f"Beat {beat_id} missing {key} in {slide_id}")
+        if manual_mode:
+            # In manual mode, beats are not bound to visual groups. Skip the
+            # group_id/content_unit_id cross-checks but still require spoken text.
+            if not content_unit_id:
+                # Auto-fill is allowed; an empty content_unit_id is acceptable
+                # because there is no group to bind to. Downstream consumers
+                # treat the beat as a standalone narration segment.
+                pass
+        else:
+            if group_id not in group_ids:
+                raise ContractError(f"Beat {beat_id} references unknown group_id in {slide_id}: {group_id}")
+            expected_content_unit_id = content_unit_by_group_id[group_id]
+            if not content_unit_id:
+                raise ContractError(f"Beat {beat_id} missing content_unit_id in {slide_id}")
+            if content_unit_id != expected_content_unit_id:
+                raise ContractError(
+                    f"Beat {beat_id} content_unit_id does not match group in {slide_id}: "
+                    f"{content_unit_id} != {expected_content_unit_id}"
+                )
+            for key in ["visible_anchor", "spoken_intent"]:
+                if not str(beat.get(key, "")).strip():
+                    raise ContractError(f"Beat {beat_id} missing {key} in {slide_id}")
         spoken_text = str(beat.get("spoken_text", "")).strip()
         if spoken_text:
-            spoken_group_ids.add(group_id)
-            spoken_beat_count_by_group[group_id] = spoken_beat_count_by_group.get(group_id, 0) + 1
-        visible_anchor = str(beat.get("visible_anchor", "")).strip()
-        visible_text = visible_text_by_id.get(group_id, "")
-        if spoken_text and visible_anchor not in spoken_text and visible_text not in spoken_text:
-            print(
-                f"Warning: beat {beat_id} in {slide_id} does not literally mention its visible anchor/text.",
-                file=sys.stderr,
-            )
+            if group_id:
+                spoken_group_ids.add(group_id)
+                spoken_beat_count_by_group[group_id] = spoken_beat_count_by_group.get(group_id, 0) + 1
+            if not manual_mode:
+                visible_anchor = str(beat.get("visible_anchor", "")).strip()
+                visible_text = visible_text_by_id.get(group_id, "")
+                if visible_anchor not in spoken_text and visible_text not in spoken_text:
+                    print(
+                        f"Warning: beat {beat_id} in {slide_id} does not literally mention its visible anchor/text.",
+                        file=sys.stderr,
+                    )
+
+    if manual_mode:
+        # No group-binding invariants to check; beats are free-standing.
+        return
 
     revealable_group_ids = {
         str(group.get("id") or "").strip()

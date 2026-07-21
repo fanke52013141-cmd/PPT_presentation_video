@@ -444,7 +444,7 @@ function initGlobalEvents() {
     if (file) importGlobalSettings(file);
   });
   document.getElementById('btn-back-home')?.addEventListener('click', () => exitWorkspace());
-  
+  document.getElementById('btn-toggle-ai-mode')?.addEventListener('click', () => toggleProjectAiMode());
   // 绑定设置测试连通性按钮
   document.getElementById('btn-test-llm')?.addEventListener('click', () => testLlmConnection());
   document.getElementById('btn-test-image')?.addEventListener('click', () => testImageConnection());
@@ -525,6 +525,13 @@ function initGlobalEvents() {
   document.getElementById('step2-btn-visual-prompt')?.addEventListener('click', () => openStoryboardRulesModal('visual'));
   document.getElementById('step2-btn-save')?.addEventListener('click', () => handleStep2BatchDeleteButton());
   document.getElementById('step2-btn-cancel-delete')?.addEventListener('click', () => cancelStep2BatchDelete());
+  // 手动模式骨架编辑器
+  document.getElementById('manual-skeleton-add-btn')?.addEventListener('click', () => appendManualSkeletonCard('', '', ''));
+  document.getElementById('manual-skeleton-submit')?.addEventListener('click', () => submitManualSkeleton());
+  document.getElementById('manual-skeleton-load-existing')?.addEventListener('click', async () => {
+    await loadStep2Data();
+    showToast('已载入已有分镜');
+  });
 
   // ================= 步骤 3 事件 =================
   document.getElementById('step3-btn-generate')?.addEventListener('click', () => generateStep3Image());
@@ -613,6 +620,15 @@ function initGlobalEvents() {
   });
   document.getElementById('setting-llm-provider')?.addEventListener('change', (event) => applyLlmProviderPreset(event.target.value));
   document.addEventListener('wheel', handleGlobalMaskWheel, { passive: false, capture: true });
+
+  // 窗口尺寸变化时重新校准 Step 6 旁白输入框高度（文本换行会随宽度变化）。
+  let _step6ResizeTimer = null;
+  window.addEventListener('resize', () => {
+    if (_step6ResizeTimer) clearTimeout(_step6ResizeTimer);
+    _step6ResizeTimer = setTimeout(() => {
+      document.querySelectorAll('.step6-tts-input').forEach(ta => _resizeNarrationTextarea(ta));
+    }, 150);
+  });
 }
 
 // ==================== 项目管理与系统设置逻辑 ====================
@@ -673,13 +689,14 @@ async function loadProjects() {
 async function createProject() {
   const name = document.getElementById('input-project-name').value.trim();
   const desc = document.getElementById('input-project-desc').value.trim();
-  
+  const aiMode = (document.getElementById('input-project-ai-mode')?.value || 'auto').trim();
+
   if (!name) {
     showToast('⚠️ 请输入项目名称');
     return;
   }
-  
-  const res = await API.post('/api/projects', { name, description: desc });
+
+  const res = await API.post('/api/projects', { name, description: desc, ai_mode: aiMode });
   if (res.success) {
     document.getElementById('modal-create').style.display = 'none';
     showToast('🎉 项目新建成功！');
@@ -1065,17 +1082,18 @@ async function enterWorkspace(projectId) {
   const project = await API.get(`/api/projects/${projectId}`);
   state.currentProject = project;
   const visibleStep = resolveProjectVisibleStep(project);
-  
+
   // 顶栏切换
-  document.getElementById('project-info-header').style.display = 'block';
+  document.getElementById('project-info-header').style.display = 'flex';
   document.getElementById('current-project-name').innerText = project.name;
   document.getElementById('btn-back-home').style.display = 'block';
-  
+  applyProjectAiMode(project.ai_mode || 'auto');
+
   // 页面切换
   document.getElementById('page-home').style.display = 'none';
   document.getElementById('page-workspace').style.display = 'flex';
   document.body.classList.add('workspace-open');
-  
+
   // 加载步骤状态并导航至当前步骤
   updateStepperUI(visibleStep, project.step_status);
   navigateToStep(visibleStep);
@@ -1087,10 +1105,58 @@ function exitWorkspace() {
   document.getElementById('btn-back-home').style.display = 'none';
   document.getElementById('page-workspace').style.display = 'none';
   document.body.classList.remove('workspace-open');
+  document.body.classList.remove('mode-manual');
+  document.body.classList.remove('mode-auto');
   document.getElementById('page-home').style.display = 'block';
-  
+
   state.currentProject = null;
   loadProjects();
+}
+
+function applyProjectAiMode(aiMode) {
+  const mode = (aiMode || 'auto').toLowerCase() === 'manual' ? 'manual' : 'auto';
+  document.body.classList.remove('mode-manual', 'mode-auto');
+  document.body.classList.add(mode === 'manual' ? 'mode-manual' : 'mode-auto');
+  const badge = document.getElementById('project-ai-mode-badge');
+  const toggleBtn = document.getElementById('btn-toggle-ai-mode');
+  if (badge) {
+    badge.style.display = 'inline-block';
+    badge.textContent = mode === 'manual' ? '手动模式' : '自动模式';
+    badge.classList.remove('ai-mode-auto', 'ai-mode-manual');
+    badge.classList.add(mode === 'manual' ? 'ai-mode-manual' : 'ai-mode-auto');
+  }
+  if (toggleBtn) {
+    toggleBtn.style.display = 'inline-block';
+    toggleBtn.textContent = mode === 'manual' ? '切换为自动模式' : '切换为手动模式';
+  }
+  if (state.currentProject) {
+    state.currentProject.ai_mode = mode;
+  }
+}
+
+async function toggleProjectAiMode() {
+  if (!state.currentProject) return;
+  const current = (state.currentProject.ai_mode || 'auto').toLowerCase();
+  const next = current === 'manual' ? 'auto' : 'manual';
+  const confirmMsg = next === 'manual'
+    ? '切换到手动模式后：\n- 第二步将只填写标题和演讲稿，不再调用 AI 生成可视化\n- 第五步进入时不会自动触发 Mask 标注，需要手动点击"运行 AI 标注"\n- 已有的分镜数据不会被清除\n\n确认切换吗？'
+    : '切换到自动模式后：\n- 第二步将恢复调用 AI 生成完整分镜\n- 第五步进入时会自动触发 Mask 标注\n- 已有的手动数据不会被清除\n\n确认切换吗？';
+  showCustomConfirm('切换 AI 模式', confirmMsg, async () => {
+    const res = await API.put(`/api/projects/${state.currentProject.id}/ai-mode`, { ai_mode: next });
+    if (res && res.success) {
+      applyProjectAiMode(res.ai_mode);
+      showToast(`已切换为${next === 'manual' ? '手动' : '自动'}模式`);
+      // 切换模式后重置 Step 5 自动标注尝试记录，让新模式下能重新触发
+      if (typeof window.__aiMaskResetAutoAttempted === 'function') {
+        window.__aiMaskResetAutoAttempted();
+      }
+      // 重新加载当前步骤以应用模式变化（如 Step 2 UI 切换）
+      if (typeof navigateToStep === 'function' && state.currentProject) {
+        const visibleStep = resolveProjectVisibleStep(state.currentProject);
+        navigateToStep(visibleStep);
+      }
+    }
+  });
 }
 
 function updateStepperUI(currentStep, stepStatus) {
@@ -1342,7 +1408,10 @@ async function loadStep2Data() {
     state.step2BatchDeleteMode = false;
     state.step2DeleteSelection = new Set();
     state.step2BatchOriginalSlides = null;
-    renderStep2Workspace();
+    // 手动模式下不渲染自动模式编辑器（CSS 已隐藏），只同步骨架编辑器
+    if (!isManualMode()) {
+      renderStep2Workspace();
+    }
     void offerArtifactRepair(res, '分镜数据', loadStep2Data);
   } else {
     state.slides = [];
@@ -1355,6 +1424,140 @@ async function loadStep2Data() {
     document.getElementById('step2-btn-save').style.display = 'none';
     document.getElementById('step2-btn-next').style.display = 'none';
     updateStep2AutosaveStatus('');
+  }
+  // 手动模式：同步已有分镜到骨架编辑器
+  if (isManualMode()) {
+    syncManualSkeletonFromState();
+  }
+}
+
+function isManualMode() {
+  return document.body.classList.contains('mode-manual');
+}
+
+// ==================== 手动模式骨架编辑器 ====================
+function syncManualSkeletonFromState() {
+  const list = document.getElementById('manual-skeleton-list');
+  if (!list) return;
+  list.innerHTML = '';
+  if (state.slides && state.slides.length) {
+    state.slides.forEach((slide, index) => {
+      const narration = (slide.narration_beats || [])
+        .map(b => b.spoken_text || b.spoken_intent || '')
+        .filter(Boolean)
+        .join('\n');
+      appendManualSkeletonCard(slide.slide_id, slide.main_title || '', narration);
+    });
+  } else {
+    appendManualSkeletonCard('', '', '');
+  }
+}
+
+function appendManualSkeletonCard(slideId, title, narration) {
+  const list = document.getElementById('manual-skeleton-list');
+  if (!list) return;
+  const card = document.createElement('div');
+  card.className = 'manual-skeleton-card';
+  const idx = list.children.length + 1;
+  card.innerHTML = `
+    <div class="manual-skeleton-card-header">
+      <div class="manual-skeleton-card-title">第 ${idx} 页</div>
+      <div class="manual-skeleton-card-actions">
+        <button type="button" class="manual-skeleton-up">上移</button>
+        <button type="button" class="manual-skeleton-down">下移</button>
+        <button type="button" class="manual-skeleton-remove danger">删除</button>
+      </div>
+    </div>
+    <div class="manual-skeleton-field">
+      <label>主标题</label>
+      <input type="text" class="manual-skeleton-title" value="" placeholder="请输入本页幻灯片标题">
+    </div>
+    <div class="manual-skeleton-field">
+      <label>演讲稿</label>
+      <textarea class="manual-skeleton-narration" placeholder="请输入本页要朗读的演讲稿，可多行"></textarea>
+    </div>
+    <input type="hidden" class="manual-skeleton-id" value="">
+  `;
+  list.appendChild(card);
+  card.querySelector('.manual-skeleton-id').value = slideId || '';
+  card.querySelector('.manual-skeleton-title').value = title || '';
+  card.querySelector('.manual-skeleton-narration').value = narration || '';
+  card.querySelector('.manual-skeleton-up').addEventListener('click', () => {
+    if (card.previousElementSibling) {
+      list.insertBefore(card, card.previousElementSibling);
+      refreshManualSkeletonTitles();
+    }
+  });
+  card.querySelector('.manual-skeleton-down').addEventListener('click', () => {
+    if (card.nextElementSibling) {
+      list.insertBefore(card.nextElementSibling, card);
+      refreshManualSkeletonTitles();
+    }
+  });
+  card.querySelector('.manual-skeleton-remove').addEventListener('click', () => {
+    if (list.children.length <= 1) {
+      showToast('至少保留一页幻灯片');
+      return;
+    }
+    card.remove();
+    refreshManualSkeletonTitles();
+  });
+}
+
+function refreshManualSkeletonTitles() {
+  const list = document.getElementById('manual-skeleton-list');
+  if (!list) return;
+  Array.from(list.children).forEach((card, index) => {
+    const titleEl = card.querySelector('.manual-skeleton-card-title');
+    if (titleEl) titleEl.textContent = `第 ${index + 1} 页`;
+  });
+}
+
+function collectManualSkeletonSlides() {
+  const list = document.getElementById('manual-skeleton-list');
+  if (!list) return [];
+  const slides = [];
+  Array.from(list.children).forEach((card, index) => {
+    const slideId = (card.querySelector('.manual-skeleton-id')?.value || '').trim();
+    const title = (card.querySelector('.manual-skeleton-title')?.value || '').trim();
+    const narration = (card.querySelector('.manual-skeleton-narration')?.value || '').trim();
+    slides.push({
+      slide_id: slideId || `slide_${String(index + 1).padStart(3, '0')}`,
+      main_title: title,
+      narration: narration,
+    });
+  });
+  return slides;
+}
+
+async function submitManualSkeleton() {
+  if (!state.currentProject) return;
+  const slides = collectManualSkeletonSlides();
+  if (!slides.length) {
+    showToast('⚠️ 请至少添加一页幻灯片');
+    return;
+  }
+  for (let i = 0; i < slides.length; i++) {
+    if (!slides[i].main_title) {
+      showToast(`⚠️ 第 ${i + 1} 页标题不能为空`);
+      return;
+    }
+    if (!slides[i].narration) {
+      showToast(`⚠️ 第 ${i + 1} 页演讲稿不能为空`);
+      return;
+    }
+  }
+  try {
+    const res = await API.post(`/api/projects/${state.currentProject.id}/steps/2/manual-skeleton`, { slides });
+    if (res && res.success) {
+      showToast('✅ 手动分镜已保存');
+      // 重新加载 Step 2 数据以反映已保存的合同
+      await loadStep2Data();
+      // 跳到下一步
+      navigateToStep(3);
+    }
+  } catch (e) {
+    showToast('⚠️ 保存失败：' + (e && e.message ? e.message : String(e)));
   }
 }
 
@@ -5071,8 +5274,17 @@ function renderStep6Workspace() {
 
 function autoResizeNarrationTextarea(textarea) {
   if (!textarea) return;
+  _resizeNarrationTextarea(textarea);
+  // 布局可能尚未稳定（如步骤面板刚切换显示），下一帧再校准一次。
+  requestAnimationFrame(() => _resizeNarrationTextarea(textarea));
+}
+
+function _resizeNarrationTextarea(textarea) {
   textarea.style.height = 'auto';
-  textarea.style.height = `${Math.max(28, textarea.scrollHeight)}px`;
+  // box-sizing: border-box 下，height 含 border 而 scrollHeight 不含，
+  // 需补上边框厚度（约 2px）+ 子像素舍入余量（2px），避免长句末行被裁。
+  const newHeight = Math.max(28, textarea.scrollHeight + 4);
+  textarea.style.height = `${newHeight}px`;
 }
 
 function updateNarrationBeatText(slideIndex, beatIndex, val) {
@@ -5310,8 +5522,95 @@ async function confirmStep7Audio() {
 
 // ==================== 步骤 8: 视频合成与渲染 ====================
 
+// 渲染任务轮询状态。渲染耗时较长（5-60 分钟），后端用后台线程跑，
+// 前端通过 render-status 路由轮询，避免长连接被浏览器超时断开报 "Failed to fetch"。
+let _step8RenderPollTimer = null;
+let _step8RenderTaskId = null;
+
+function updateStep8LoadingText(stageLabel, elapsedSec) {
+  const text = document.getElementById('step8-loading-text');
+  if (!text) return;
+  const stage = stageLabel ? stageLabel : '视频渲染中';
+  const elapsed = (elapsedSec != null && elapsedSec > 0)
+    ? `（已用 ${Math.round(elapsedSec)} 秒）`
+    : '';
+  text.innerText = `${stage}${elapsed}...`;
+}
+
+function stopStep8RenderPolling() {
+  if (_step8RenderPollTimer) {
+    clearInterval(_step8RenderPollTimer);
+    _step8RenderPollTimer = null;
+  }
+  _step8RenderTaskId = null;
+}
+
+function startStep8RenderPolling(taskId) {
+  // 防止重复启动
+  if (_step8RenderPollTimer) clearInterval(_step8RenderPollTimer);
+  _step8RenderTaskId = taskId;
+
+  const poll = async () => {
+    try {
+      const url = `/api/projects/${state.currentProject.id}/steps/8/render-status?task_id=${encodeURIComponent(taskId)}`;
+      const res = await API.get(url);
+      if (!res.success) return;
+
+      if (res.status === 'rendering') {
+        updateStep8LoadingText(res.stage_label, res.elapsed_sec);
+        return;
+      }
+
+      // 终态：success / error / idle
+      stopStep8RenderPolling();
+      document.getElementById('step8-loading').style.display = 'none';
+      const renderBtn = document.getElementById('step8-btn-render');
+      if (renderBtn) renderBtn.disabled = false;
+
+      if (res.status === 'success') {
+        showToast('🎉 视频渲染成功！');
+        showStep8VideoResult(res.videos || (res.video ? [res.video] : []));
+        refreshCurrentProjectStatus(8).catch(() => {});
+      } else if (res.status === 'error') {
+        const message = res.error || '视频渲染失败，请查看 logs/pipeline.log。';
+        document.getElementById('step8-error-message').innerText = message;
+        document.getElementById('step8-error-box').style.display = 'block';
+        showToast(`❌ 渲染失败: ${message}`, 7000);
+      } else if (res.status === 'idle') {
+        // 任务记录丢失（可能服务器重启），刷新视频列表
+        if (res.videos && res.videos.length > 0) {
+          showStep8VideoResult(res.videos);
+        }
+      }
+    } catch (e) {
+      console.error('Step 8 status poll failed:', e);
+      // 网络错误不停止轮询，下一轮重试
+    }
+  };
+
+  // 立即轮询一次
+  poll();
+  // 每 3 秒轮询
+  _step8RenderPollTimer = setInterval(poll, 3000);
+}
+
 async function loadStep8Data() {
   try {
+    // 先检查是否有进行中的渲染任务（页面刷新后恢复轮询）
+    const statusRes = await API.get(`/api/projects/${state.currentProject.id}/steps/8/render-status`);
+    if (statusRes.success && statusRes.status === 'rendering') {
+      document.getElementById('step8-loading').style.display = 'inline-flex';
+      updateStep8LoadingText(statusRes.stage_label, statusRes.elapsed_sec);
+      const renderBtn = document.getElementById('step8-btn-render');
+      if (renderBtn) renderBtn.disabled = true;
+      startStep8RenderPolling(statusRes.task_id);
+      // 同时显示已有视频
+      if (statusRes.videos && statusRes.videos.length > 0) {
+        showStep8VideoResult(statusRes.videos);
+      }
+      return;
+    }
+
     const res = await API.get(`/api/projects/${state.currentProject.id}/videos`);
     if (res.success && Array.isArray(res.videos) && res.videos.length > 0) {
       showStep8VideoResult(res.videos);
@@ -5328,25 +5627,31 @@ async function loadStep8Data() {
 async function runStep8Render() {
   const renderBtn = document.getElementById('step8-btn-render');
   document.getElementById('step8-loading').style.display = 'inline-flex';
+  document.getElementById('step8-loading-text').innerText = '视频渲染中...';
+  document.getElementById('step8-error-box').style.display = 'none';
   if (renderBtn) renderBtn.disabled = true;
   showToast('🎬 Remotion 渲染进程已启动，请稍候片刻...');
-  
+
   try {
     const res = await API.post(`/api/projects/${state.currentProject.id}/steps/8/render`);
-    if (res.success) {
-      showToast('🎉 视频渲染成功！');
-      showStep8VideoResult(res.videos || (res.video ? [res.video] : []));
-      refreshCurrentProjectStatus(8).catch(() => {});
+    if (res.success && res.task_id) {
+      // 异步任务已启动，开始轮询
+      updateStep8LoadingText(res.stage_label, res.elapsed_sec);
+      startStep8RenderPolling(res.task_id);
+    } else if (res.success && res.videos) {
+      // 已有渲染任务在进行中，直接显示当前视频列表
+      showStep8VideoResult(res.videos);
+      document.getElementById('step8-loading').style.display = 'none';
+      if (renderBtn) renderBtn.disabled = false;
     }
   } catch(e) {
-    console.error('Step 8 render failed:', e);
-    const message = e?.message || '视频渲染失败，请查看项目 logs/pipeline.log。';
+    console.error('Step 8 render start failed:', e);
+    const message = e?.message || '视频渲染启动失败，请查看项目 logs/pipeline.log。';
     document.getElementById('step8-error-message').innerText = message;
     document.getElementById('step8-error-box').style.display = 'block';
-    showToast(`❌ 渲染失败: ${message}`, 7000);
-  } finally {
     document.getElementById('step8-loading').style.display = 'none';
     if (renderBtn) renderBtn.disabled = false;
+    showToast(`❌ 渲染失败: ${message}`, 7000);
   }
 }
 

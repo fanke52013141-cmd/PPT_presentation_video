@@ -504,6 +504,67 @@ STEP7_BIND_TIMEOUT_SEC = 90
 STEP8_RENDER_TIMEOUT_SEC = 3600
 REVEAL_VISUAL_LEAD_SEC = 0.45
 
+# 异步渲染任务注册表。
+# 渲染耗时长（5-60 分钟），同步阻塞会让浏览器在拿到响应前就超时断开
+# 报 "Failed to fetch"。改为后台线程渲染 + 前端轮询 render-status 路由。
+_RENDER_TASKS: Dict[str, Dict[str, Any]] = {}
+_RENDER_TASKS_LOCK = threading.Lock()
+_RENDER_PROJECT_LOCKS: Dict[str, threading.Lock] = {}
+_RENDER_PROJECT_LOCKS_GUARD = threading.Lock()
+
+
+def _get_project_render_lock(project_id: str) -> threading.Lock:
+    """每个项目一把锁，防止同一项目并发渲染。"""
+    with _RENDER_PROJECT_LOCKS_GUARD:
+        lock = _RENDER_PROJECT_LOCKS.get(project_id)
+        if lock is None:
+            lock = threading.Lock()
+            _RENDER_PROJECT_LOCKS[project_id] = lock
+        return lock
+
+
+def _active_render_task_for_project(project_id: str) -> Optional[Dict[str, Any]]:
+    """返回该项目当前进行中的渲染任务，没有则返回 None。"""
+    with _RENDER_TASKS_LOCK:
+        for task in _RENDER_TASKS.values():
+            if task["project_id"] == project_id and task["status"] == "rendering":
+                return task
+    return None
+
+
+def _set_render_task_stage(task_id: str, stage: str) -> None:
+    with _RENDER_TASKS_LOCK:
+        task = _RENDER_TASKS.get(task_id)
+        if task is not None:
+            task["stage"] = stage
+            task["elapsed_sec"] = round(time.time() - task["started_at"], 1)
+
+
+def _set_render_task_status(task_id: str, status: str, **fields: Any) -> None:
+    with _RENDER_TASKS_LOCK:
+        task = _RENDER_TASKS.get(task_id)
+        if task is None:
+            return
+        task["status"] = status
+        task["elapsed_sec"] = round(time.time() - task["started_at"], 1)
+        if status in ("success", "error"):
+            task["finished_at"] = time.time()
+        for key, value in fields.items():
+            task[key] = value
+
+
+# 渲染阶段中文标签，供前端 progress 文案使用。
+_RENDER_STAGE_LABELS = {
+    "validating": "校验项目状态",
+    "building_reveal": "构建 Reveal 资源",
+    "binding_timeline": "绑定语音时间轴",
+    "building_props": "构建 Remotion 配置",
+    "rendering": "Remotion 渲染中",
+    "validating_color": "校验视频颜色",
+    "finalizing": "写入元数据",
+}
+
+
 def _redact_log_value(key: str, value: Any) -> Any:
     lowered = key.lower()
     if any(token in lowered for token in ("api_key", "apikey", "authorization", "token", "secret")):
@@ -533,6 +594,7 @@ def write_project_log(project: Project, event: str, **fields: Any) -> None:
 class ProjectCreate(BaseModel):
     name: str
     description: Optional[str] = ""
+    ai_mode: Optional[str] = "auto"
 
 class SettingsUpdate(BaseModel):
     settings: Dict[str, str]
@@ -1124,6 +1186,7 @@ def normalize_visual_contract(
         if not isinstance(beats, list):
             continue
         normalized_beats = []
+        manual_mode_slide = not groups  # no visual groups: beats are free-standing
         for index, beat in enumerate(beats, start=1):
             if not isinstance(beat, dict):
                 continue
@@ -1132,6 +1195,17 @@ def normalize_visual_contract(
             group_id = str(beat.get("group_id") or "").strip()
             group = group_by_id.get(group_id)
             if not group:
+                if manual_mode_slide:
+                    # Manual mode: keep beats without group binding. Fill in
+                    # content_unit_id if missing so downstream consumers don't
+                    # break, but do not require a visual_anchor.
+                    if not str(beat.get("content_unit_id") or "").strip():
+                        beat["content_unit_id"] = f"{slide.get('slide_id', 'slide')}_unit_{index:03d}"
+                    spoken_text = str(beat.get("spoken_text") or "").strip()
+                    if not spoken_text:
+                        intent = str(beat.get("spoken_intent") or "").strip()
+                        beat["spoken_text"] = intent or ""
+                    normalized_beats.append(beat)
                 continue
             if not str(beat.get("content_unit_id") or "").strip():
                 beat["content_unit_id"] = group.get("content_unit_id")
@@ -2001,29 +2075,35 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db)):
     
     # 初始化默认步骤状态字典：1到8步均为 pending
     initial_step_status = {str(i): "pending" for i in range(1, 9)}
-    
+
+    ai_mode = (payload.ai_mode or "auto").strip().lower()
+    if ai_mode not in {"auto", "manual"}:
+        ai_mode = "auto"
+
     db_project = Project(
         id=project_id,
         name=payload.name,
         description=payload.description,
         current_step=1,
         status="active",
-        run_dir=run_dir
+        run_dir=run_dir,
+        ai_mode=ai_mode,
     )
     db_project.set_step_status(initial_step_status)
     db.add(db_project)
     db.commit()
     db.refresh(db_project)
-    
+
     return {
-        "success": True, 
+        "success": True,
         "project": {
             "id": db_project.id,
             "name": db_project.name,
             "description": db_project.description,
             "current_step": db_project.current_step,
             "step_status": db_project.get_step_status(),
-            "audio_confirmed": False
+            "audio_confirmed": False,
+            "ai_mode": db_project.ai_mode or "auto",
         }
     }
 
@@ -2038,6 +2118,7 @@ def list_projects(db: Session = Depends(get_db)):
         "status": p.status,
         "step_status": p.get_step_status(),
         "audio_confirmed": project_audio_confirmed(p),
+        "ai_mode": p.ai_mode or "auto",
         "created_at": p.created_at.isoformat()
     } for p in projects]
 
@@ -2054,8 +2135,35 @@ def get_project(project_id: str, db: Session = Depends(get_db)):
         "status": project.status,
         "step_status": project.get_step_status(),
         "audio_confirmed": project_audio_confirmed(project),
-        "run_dir": project.run_dir
+        "run_dir": project.run_dir,
+        "ai_mode": project.ai_mode or "auto",
     }
+
+
+class AiModeUpdate(BaseModel):
+    ai_mode: str
+
+
+@app.get("/api/projects/{project_id}/ai-mode")
+def get_project_ai_mode(project_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    return {"ai_mode": project.ai_mode or "auto"}
+
+
+@app.put("/api/projects/{project_id}/ai-mode")
+def update_project_ai_mode(project_id: str, payload: AiModeUpdate, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    ai_mode = (payload.ai_mode or "").strip().lower()
+    if ai_mode not in {"auto", "manual"}:
+        raise HTTPException(status_code=400, detail="ai_mode 必须为 auto 或 manual")
+    project.ai_mode = ai_mode
+    db.commit()
+    db.refresh(project)
+    return {"success": True, "ai_mode": project.ai_mode}
 
 @app.delete("/api/projects/{project_id}")
 def delete_project(project_id: str, db: Session = Depends(get_db)):
@@ -4715,6 +4823,102 @@ def update_step2_result(project_id: str, payload: Dict[str, Any], db: Session = 
     invalidate_after_upstream_edit(project, 2, db)
 
     return {"success": True, "contract": payload, "validation": validation, "changed": True}
+
+
+class ManualSkeletonSlide(BaseModel):
+    slide_id: Optional[str] = None
+    main_title: str
+    narration: str
+
+
+class ManualSkeletonPayload(BaseModel):
+    slides: List[ManualSkeletonSlide]
+
+
+@app.post("/api/projects/{project_id}/steps/2/manual-skeleton")
+def submit_step2_manual_skeleton(
+    project_id: str,
+    payload: ManualSkeletonPayload,
+    db: Session = Depends(get_db),
+):
+    """Manual mode: build a visual_contract.json from title + narration only.
+
+    Each slide produces an empty visual_groups[] (full-slide static render)
+    and one narration_beat entry bound to the spoken text. AI Mask is not
+    triggered; the user can still click "运行 AI 标注" later if desired.
+    """
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    if not payload.slides:
+        raise HTTPException(status_code=400, detail="slides 不能为空")
+
+    article_source = read_project_article_source(project, required=False)
+    project_title = article_source.get("title") or project.name or project_id
+    article_summary = article_source.get("summary", "")
+
+    contract_slides: List[Dict[str, Any]] = []
+    for index, slide in enumerate(payload.slides, start=1):
+        slide_id = (slide.slide_id or f"slide_{index:03d}").strip()
+        main_title = (slide.main_title or "").strip()
+        narration = (slide.narration or "").strip()
+        if not main_title:
+            raise HTTPException(status_code=400, detail=f"{slide_id} 标题不能为空")
+        if not narration:
+            raise HTTPException(status_code=400, detail=f"{slide_id} 演讲稿不能为空")
+        contract_slides.append({
+            "slide_id": slide_id,
+            "main_title": main_title,
+            "subtitle": "",
+            "core_message": narration,
+            "body_content": [narration],
+            "visual_groups": [],
+            "narration_beats": [
+                {
+                    "id": f"{slide_id}_beat_001",
+                    "group_id": None,
+                    "visible_anchor": "",
+                    "spoken_intent": main_title,
+                    "spoken_text": narration,
+                    "content_unit_id": f"{slide_id}_unit_001",
+                }
+            ],
+        })
+
+    contract = {
+        "version": "visual_contract_v1",
+        "presentation_policy": {
+            "subtitle_policy": "no_slides_have_subtitle",
+            "subtitle_decided_by": "system_no_subtitle_contract",
+            "visual_narration_mapping": "manual_free_v1",
+        },
+        "topic": {
+            "topic_id": "topic_" + project_id,
+            "topic_name": project_title,
+            "topic_summary": article_summary,
+        },
+        "slides": contract_slides,
+    }
+
+    trace_id = uuid.uuid4().hex[:8]
+    contract = finalize_step2_contract(
+        project=project,
+        project_id=project_id,
+        db=db,
+        contract=contract,
+        project_title=project_title,
+        article_summary=article_summary,
+        trace_id=trace_id,
+        source="manual_skeleton_submit",
+    )
+    # Ensure the project reflects manual mode so the frontend can render the
+    # correct UI affordances (e.g., hide auto-trigger AI Mask).
+    if project.ai_mode != "manual":
+        project.ai_mode = "manual"
+        db.commit()
+        db.refresh(project)
+    return {"success": True, "contract": contract, "ai_mode": project.ai_mode}
+
 
 # ==================== 步骤 3-4: 图片生成与管理 ====================
 
@@ -7447,11 +7651,241 @@ def normalize_video_color_metadata(video_path: str, project: Project) -> bool:
     return True
 
 
+def _render_video_worker(project_id: str, task_id: str) -> None:
+    """后台线程：执行实际渲染流程，把状态写到 _RENDER_TASKS。
+
+    原本同步阻塞的 render_video 在渲染耗时超过浏览器空闲超时（约 5 分钟）
+    时会被前端报 "Failed to fetch"。这里把所有渲染子步骤搬到后台线程，
+    主路由立即返回 task_id，前端通过 render-status 路由轮询。
+    """
+    from database import SessionLocal
+    db = SessionLocal()
+    project_lock = _get_project_render_lock(project_id)
+    try:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            _set_render_task_status(task_id, "error", error="项目不存在")
+            return
+
+        try:
+            # Draft autosave updates the manifest only. Always rebuild reveal assets here
+            # so rendering cannot use stale crops from an earlier mask revision.
+            _set_render_task_stage(task_id, "building_reveal")
+            build_current_reveal_assets(project)
+
+            _set_render_task_stage(task_id, "binding_timeline")
+            bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))
+            bind_res = subprocess.run([
+                sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", str(REVEAL_VISUAL_LEAD_SEC)
+            ], capture_output=True, text=True, encoding="utf-8", errors="replace")
+            if bind_res.returncode != 0:
+                logger.error(f"Timeline binding before render failed: {bind_res.stderr}")
+                raise RuntimeError(f"渲染前绑定语音时间轴失败: {bind_res.stderr}")
+
+            _set_render_task_stage(task_id, "building_props")
+            build_props_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "build_remotion_props.py"))
+            remotion_public_dir = os.path.join(REPO_ROOT, "scripts", "remotion", "public")
+            props_started = time.time()
+            props_res = subprocess.run([
+                sys.executable,
+                build_props_script,
+                "--run-dir",
+                project.run_dir,
+                "--repo-root",
+                REPO_ROOT,
+                "--remotion-public-dir",
+                remotion_public_dir,
+            ], capture_output=True, text=True, encoding="utf-8", errors="replace")
+
+            if props_res.returncode != 0:
+                logger.error(f"Build remotion props failed: {props_res.stderr}")
+                write_project_log(
+                    project,
+                    "step8_build_props_error",
+                    returncode=props_res.returncode,
+                    stderr=props_res.stderr or "",
+                )
+                raise RuntimeError(f"构建 Remotion 配置失败: {props_res.stderr or ''}")
+
+            write_project_log(
+                project,
+                "step8_build_props_success",
+                elapsed_sec=round(time.time() - props_started, 3),
+                stdout=(props_res.stdout or "").strip(),
+            )
+
+            # 检测 Node.js 模块依赖，执行 npm install (如果 node_modules 不存在)
+            remotion_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "remotion"))
+            node_modules_dir = os.path.join(remotion_dir, "node_modules")
+
+            if not os.path.exists(node_modules_dir):
+                logger.info("Initializing Remotion node_modules, running npm install...")
+                npm_started = time.time()
+                write_project_log(project, "step8_npm_install_start", cwd=remotion_dir)
+                # Windows 环境下运行 npm.cmd
+                npm_cmd = "npm.cmd" if sys.platform == "win32" else "npm"
+                npm_install = subprocess.run(
+                    [npm_cmd, "install"],
+                    cwd=remotion_dir,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+                if npm_install.returncode != 0:
+                    logger.error(f"npm install failed:\n{npm_install.stderr}")
+                    write_project_log(
+                        project,
+                        "step8_npm_install_error",
+                        returncode=npm_install.returncode,
+                        stderr=npm_install.stderr or "",
+                    )
+                    raise RuntimeError(f"初始化 Remotion Node 依赖失败: {npm_install.stderr or ''}")
+                write_project_log(
+                    project,
+                    "step8_npm_install_success",
+                    elapsed_sec=round(time.time() - npm_started, 3),
+                    stdout=(npm_install.stdout or "").strip(),
+                )
+            else:
+                write_project_log(project, "step8_npm_install_skipped", node_modules_dir=node_modules_dir)
+
+            # 直接调用 Remotion CLI，避免维护第二套渲染入口。
+            npx_cmd = "npx.cmd" if sys.platform == "win32" else "npx"
+            props_json_path = os.path.join(project.run_dir, "remotion_props.json")
+            videos_dir = project_video_dir(project)
+            output_filename = f"render_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.mp4"
+            output_mp4_path = os.path.join(videos_dir, output_filename)
+            legacy_output_path = os.path.join(project.run_dir, "out.mp4")
+
+            _set_render_task_stage(task_id, "rendering")
+            logger.info(f"Starting Remotion render for {project_id} (task={task_id})...")
+            render_started = time.time()
+            render_args = [
+                npx_cmd, "remotion", "render", "src/index.tsx", "ArticleVideo", output_mp4_path,
+                f"--props={props_json_path}",
+                "--codec=h264",
+                "--image-format=png",
+                "--pixel-format=yuv420p",
+                "--color-space=bt709",
+            ]
+            with open(props_json_path, "r", encoding="utf-8") as props_file:
+                remotion_props_payload = json.load(props_file)
+            missing_assets = validate_remotion_public_assets(remotion_props_payload, remotion_public_dir)
+            if missing_assets:
+                write_project_log(
+                    project,
+                    "step8_public_asset_validation_error",
+                    missing_assets=missing_assets[:50],
+                    missing_count=len(missing_assets),
+                    public_dir=remotion_public_dir,
+                )
+                raise RuntimeError(f"Remotion 渲染素材缺失: {missing_assets[:8]}")
+            write_project_log(
+                project,
+                "step8_remotion_render_start",
+                output=output_mp4_path,
+                timeout_sec=STEP8_RENDER_TIMEOUT_SEC,
+                total_duration_sec=remotion_props_payload.get("total_duration_sec"),
+            )
+
+            try:
+                render_res = subprocess.run(
+                    render_args,
+                    cwd=remotion_dir,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=STEP8_RENDER_TIMEOUT_SEC,
+                )
+            except subprocess.TimeoutExpired:
+                logger.error("Remotion render timed out")
+                write_project_log(project, "step8_remotion_render_timeout", timeout_sec=STEP8_RENDER_TIMEOUT_SEC)
+                raise RuntimeError("视频渲染超时")
+
+            if render_res.returncode != 0:
+                logger.error(f"Remotion render failed: {render_res.stderr}")
+                write_project_log(
+                    project,
+                    "step8_remotion_render_error",
+                    returncode=render_res.returncode,
+                    stdout=(render_res.stdout or "")[-4000:],
+                    stderr=(render_res.stderr or "")[-4000:],
+                )
+                raise RuntimeError(f"视频渲染失败: {render_res.stderr}")
+            write_project_log(
+                project,
+                "step8_remotion_render_success",
+                elapsed_sec=round(time.time() - render_started, 3),
+                stdout=(render_res.stdout or "")[-4000:],
+            )
+
+            _set_render_task_stage(task_id, "validating_color")
+            normalize_video_color_metadata(output_mp4_path, project)
+            color_validator = os.path.join(REPO_ROOT, "scripts", "validate_render_color.py")
+            color_result = subprocess.run(
+                [
+                    sys.executable,
+                    color_validator,
+                    "--video",
+                    output_mp4_path,
+                    "--run-dir",
+                    project.run_dir,
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if color_result.returncode != 0:
+                if os.path.exists(output_mp4_path):
+                    os.remove(output_mp4_path)
+                logger.error("Rendered video color validation failed: %s", color_result.stderr)
+                raise RuntimeError(f"视频颜色校验失败，已阻止输出: {color_result.stderr}")
+
+            _set_render_task_stage(task_id, "finalizing")
+            render_fingerprint = current_render_input_fingerprint(project)
+            write_json_atomic(
+                video_metadata_path(output_mp4_path),
+                {
+                    "rendered_at": datetime.now().isoformat(timespec="seconds"),
+                    "reveal_pipeline_version": REVEAL_PIPELINE_VERSION,
+                    "video_background": read_project_visual_settings(project)["video_background"],
+                    "subtitle_style": read_project_visual_settings(project)["subtitle_style"],
+                    "manifest": "reveal_manifest.json",
+                    "input_fingerprint": render_fingerprint,
+                    "color_standard": "bt709_tv_yuv420p",
+                    "color_validation": json.loads(color_result.stdout),
+                },
+            )
+            shutil.copy2(output_mp4_path, legacy_output_path)
+
+            handle_step_navigation(project, 8, db)
+            video = video_item(project, output_mp4_path)
+            videos = list_video_items(project, project_id)
+            _set_render_task_status(
+                task_id,
+                "success",
+                video=video,
+                videos=videos,
+                output_filename=video.get("filename") or output_filename,
+            )
+        except Exception as e:
+            logger.exception("Async render failed for project %s", project_id)
+            _set_render_task_status(task_id, "error", error=str(e))
+    finally:
+        db.close()
+        project_lock.release()
+
+
 @app.post("/api/projects/{project_id}/steps/8/render")
 def render_video(project_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
+
+    # 前置校验保持同步，让用户立即看到错误。
     slide_ids = read_contract_slide_ids(project.run_dir)
     provenance_errors = validate_visual_provenance_set(project.run_dir, slide_ids)
     if provenance_errors:
@@ -7461,201 +7895,123 @@ def render_video(project_id: str, db: Session = Depends(get_db)):
     if not audio_confirmation.get("confirmed"):
         raise HTTPException(status_code=400, detail="请先在“旁白与音频”步骤试听并确认音频，再开始视频渲染。")
 
-    # Draft autosave updates the manifest only. Always rebuild reveal assets here
-    # so rendering cannot use stale crops from an earlier mask revision.
-    build_current_reveal_assets(project)
+    # 防止同一项目并发渲染：尝试非阻塞获取项目锁。
+    project_lock = _get_project_render_lock(project_id)
+    if not project_lock.acquire(blocking=False):
+        active = _active_render_task_for_project(project_id)
+        if active:
+            return {
+                "success": True,
+                "task_id": active["task_id"],
+                "status": "rendering",
+                "stage": active.get("stage", "rendering"),
+                "stage_label": _RENDER_STAGE_LABELS.get(active.get("stage", ""), ""),
+                "elapsed_sec": round(time.time() - active["started_at"], 1),
+                "message": "已有渲染任务进行中",
+            }
+        raise HTTPException(status_code=409, detail="该项目已有渲染任务进行中，请等待完成或刷新页面查看状态。")
 
-    # 首先调用 build_remotion_props.py 生成渲染配置属性
-    bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))
-    bind_res = subprocess.run([
-        sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", str(REVEAL_VISUAL_LEAD_SEC)
-    ], capture_output=True, text=True, encoding="utf-8", errors="replace")
-    if bind_res.returncode != 0:
-        logger.error(f"Timeline binding before render failed: {bind_res.stderr}")
-        raise HTTPException(status_code=500, detail=f"渲染前绑定语音时间轴失败: {bind_res.stderr}")
+    # 防御性检查：理论上锁已防止并发，但仍检查是否有遗留的 rendering 任务。
+    active = _active_render_task_for_project(project_id)
+    if active:
+        project_lock.release()
+        return {
+            "success": True,
+            "task_id": active["task_id"],
+            "status": "rendering",
+            "stage": active.get("stage", "rendering"),
+            "stage_label": _RENDER_STAGE_LABELS.get(active.get("stage", ""), ""),
+            "elapsed_sec": round(time.time() - active["started_at"], 1),
+            "message": "已有渲染任务进行中",
+        }
 
-    build_props_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "build_remotion_props.py"))
-    remotion_public_dir = os.path.join(REPO_ROOT, "scripts", "remotion", "public")
-    props_started = time.time()
-    props_res = subprocess.run([
-        sys.executable,
-        build_props_script,
-        "--run-dir",
-        project.run_dir,
-        "--repo-root",
-        REPO_ROOT,
-        "--remotion-public-dir",
-        remotion_public_dir,
-    ], capture_output=True, text=True, encoding="utf-8", errors="replace")
-    
-    if props_res.returncode != 0:
-        logger.error(f"Build remotion props failed: {props_res.stderr}")
-        write_project_log(
-            project,
-            "step8_build_props_error",
-            returncode=props_res.returncode,
-            stderr=props_res.stderr or "",
-        )
-        raise HTTPException(status_code=500, detail=f"构建 Remotion 配置失败: {props_res.stderr or ''}")
+    task_id = uuid.uuid4().hex
+    with _RENDER_TASKS_LOCK:
+        _RENDER_TASKS[task_id] = {
+            "task_id": task_id,
+            "project_id": project_id,
+            "status": "rendering",
+            "stage": "validating",
+            "stage_label": _RENDER_STAGE_LABELS.get("validating", ""),
+            "started_at": time.time(),
+            "finished_at": None,
+            "elapsed_sec": 0.0,
+            "error": None,
+            "video": None,
+            "videos": None,
+            "output_filename": None,
+        }
 
-    write_project_log(
-        project,
-        "step8_build_props_success",
-        elapsed_sec=round(time.time() - props_started, 3),
-        stdout=(props_res.stdout or "").strip(),
+    thread = threading.Thread(
+        target=_render_video_worker,
+        args=(project_id, task_id),
+        name=f"render-{project_id}-{task_id[:8]}",
+        daemon=True,
     )
-        
-    # 接着，执行 Remotion 渲染
-    # 检测 Node.js 模块依赖，执行 npm install (如果 node_modules 不存在)
-    remotion_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "remotion"))
-    node_modules_dir = os.path.join(remotion_dir, "node_modules")
-    
-    if not os.path.exists(node_modules_dir):
-        logger.info("Initializing Remotion node_modules, running npm install...")
-        npm_started = time.time()
-        write_project_log(project, "step8_npm_install_start", cwd=remotion_dir)
-        # Windows 环境下运行 npm.cmd
-        npm_cmd = "npm.cmd" if sys.platform == "win32" else "npm"
-        npm_install = subprocess.run(
-            [npm_cmd, "install"],
-            cwd=remotion_dir,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-        if npm_install.returncode != 0:
-            logger.error(f"npm install failed:\n{npm_install.stderr}")
-            write_project_log(
-                project,
-                "step8_npm_install_error",
-                returncode=npm_install.returncode,
-                stderr=npm_install.stderr or "",
-            )
-            raise HTTPException(status_code=500, detail=f"初始化 Remotion Node 依赖失败: {npm_install.stderr or ''}")
-        write_project_log(
-            project,
-            "step8_npm_install_success",
-            elapsed_sec=round(time.time() - npm_started, 3),
-            stdout=(npm_install.stdout or "").strip(),
-        )
-    else:
-        write_project_log(project, "step8_npm_install_skipped", node_modules_dir=node_modules_dir)
-            
-    # 直接调用 Remotion CLI，避免维护第二套渲染入口。
-    npx_cmd = "npx.cmd" if sys.platform == "win32" else "npx"
-    props_json_path = os.path.join(project.run_dir, "remotion_props.json")
-    videos_dir = project_video_dir(project)
-    output_filename = f"render_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.mp4"
-    output_mp4_path = os.path.join(videos_dir, output_filename)
-    legacy_output_path = os.path.join(project.run_dir, "out.mp4")
-    
-    logger.info(f"Starting Remotion render for {project_id}...")
-    render_started = time.time()
-    render_args = [
-        npx_cmd, "remotion", "render", "src/index.tsx", "ArticleVideo", output_mp4_path,
-        f"--props={props_json_path}",
-        "--codec=h264",
-        "--image-format=png",
-        "--pixel-format=yuv420p",
-        "--color-space=bt709",
-    ]
-    with open(props_json_path, "r", encoding="utf-8") as props_file:
-        remotion_props_payload = json.load(props_file)
-    missing_assets = validate_remotion_public_assets(remotion_props_payload, remotion_public_dir)
-    if missing_assets:
-        write_project_log(
-            project,
-            "step8_public_asset_validation_error",
-            missing_assets=missing_assets[:50],
-            missing_count=len(missing_assets),
-            public_dir=remotion_public_dir,
-        )
-        raise HTTPException(status_code=500, detail=f"Remotion 渲染素材缺失: {missing_assets[:8]}")
-    write_project_log(
-        project,
-        "step8_remotion_render_start",
-        output=output_mp4_path,
-        timeout_sec=STEP8_RENDER_TIMEOUT_SEC,
-        total_duration_sec=remotion_props_payload.get("total_duration_sec"),
-    )
-    
-    try:
-        render_res = subprocess.run(
-            render_args,
-            cwd=remotion_dir,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=STEP8_RENDER_TIMEOUT_SEC,
-        )
-    except subprocess.TimeoutExpired:
-        logger.error("Remotion render timed out")
-        write_project_log(project, "step8_remotion_render_timeout", timeout_sec=STEP8_RENDER_TIMEOUT_SEC)
-        raise HTTPException(status_code=504, detail="视频渲染超时")
+    thread.start()
+    # 注意：project_lock 由 _render_video_worker 在 finally 中释放。
 
-    if render_res.returncode != 0:
-        logger.error(f"Remotion render failed: {render_res.stderr}")
-        write_project_log(
-            project,
-            "step8_remotion_render_error",
-            returncode=render_res.returncode,
-            stdout=(render_res.stdout or "")[-4000:],
-            stderr=(render_res.stderr or "")[-4000:],
-        )
-        raise HTTPException(status_code=500, detail=f"视频渲染失败: {render_res.stderr}")
-    write_project_log(
-        project,
-        "step8_remotion_render_success",
-        elapsed_sec=round(time.time() - render_started, 3),
-        stdout=(render_res.stdout or "")[-4000:],
-    )
-    normalize_video_color_metadata(output_mp4_path, project)
-    color_validator = os.path.join(REPO_ROOT, "scripts", "validate_render_color.py")
-    color_result = subprocess.run(
-        [
-            sys.executable,
-            color_validator,
-            "--video",
-            output_mp4_path,
-            "--run-dir",
-            project.run_dir,
-        ],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    if color_result.returncode != 0:
-        if os.path.exists(output_mp4_path):
-            os.remove(output_mp4_path)
-        logger.error("Rendered video color validation failed: %s", color_result.stderr)
-        raise HTTPException(
-            status_code=500,
-            detail=f"视频颜色校验失败，已阻止输出: {color_result.stderr}",
-        )
-    render_fingerprint = current_render_input_fingerprint(project)
-    write_json_atomic(
-        video_metadata_path(output_mp4_path),
-        {
-            "rendered_at": datetime.now().isoformat(timespec="seconds"),
-            "reveal_pipeline_version": REVEAL_PIPELINE_VERSION,
-            "video_background": read_project_visual_settings(project)["video_background"],
-            "subtitle_style": read_project_visual_settings(project)["subtitle_style"],
-            "manifest": "reveal_manifest.json",
-            "input_fingerprint": render_fingerprint,
-            "color_standard": "bt709_tv_yuv420p",
-            "color_validation": json.loads(color_result.stdout),
-        },
-    )
-    shutil.copy2(output_mp4_path, legacy_output_path)
+    return {
+        "success": True,
+        "task_id": task_id,
+        "status": "rendering",
+        "stage": "validating",
+        "stage_label": _RENDER_STAGE_LABELS.get("validating", ""),
+        "elapsed_sec": 0.0,
+        "message": "渲染已启动，请轮询 render-status 接口",
+    }
 
-    handle_step_navigation(project, 8, db)
-    item = video_item(project, output_mp4_path)
-    return {"success": True, "video_url": item["url"], "video": item, "videos": list_video_items(project, project_id)}
 
-@app.get("/api/projects/{project_id}/videos")
+@app.get("/api/projects/{project_id}/steps/8/render-status")
+def get_render_status(
+    project_id: str,
+    task_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    task = None
+    with _RENDER_TASKS_LOCK:
+        if task_id:
+            task = _RENDER_TASKS.get(task_id)
+            if task is not None and task["project_id"] != project_id:
+                task = None
+        else:
+            # 没传 task_id 就找该项目最新的任务
+            candidates = [t for t in _RENDER_TASKS.values() if t["project_id"] == project_id]
+            if candidates:
+                task = max(candidates, key=lambda x: x["started_at"])
+
+    if task is None:
+        # 没有渲染任务记录，返回 idle 状态 + 当前视频列表
+        return {
+            "success": True,
+            "status": "idle",
+            "task_id": None,
+            "stage": None,
+            "stage_label": "",
+            "elapsed_sec": 0.0,
+            "error": None,
+            "video": None,
+            "videos": list_video_items(project, project_id),
+        }
+
+    elapsed = round(time.time() - task["started_at"], 1) if task["status"] == "rendering" else task.get("elapsed_sec", 0.0)
+    return {
+        "success": True,
+        "task_id": task["task_id"],
+        "status": task["status"],
+        "stage": task.get("stage"),
+        "stage_label": _RENDER_STAGE_LABELS.get(task.get("stage") or "", ""),
+        "started_at": task["started_at"],
+        "finished_at": task.get("finished_at"),
+        "elapsed_sec": elapsed,
+        "error": task.get("error"),
+        "video": task.get("video"),
+        "videos": task.get("videos") or list_video_items(project, project_id),
+    }@app.get("/api/projects/{project_id}/videos")
 def list_project_videos(project_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:

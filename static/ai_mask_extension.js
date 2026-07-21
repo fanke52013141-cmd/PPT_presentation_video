@@ -518,6 +518,11 @@
     const id = projectId();
     if (!id || AUTO_ATTEMPTED.has(id)) return;
     AUTO_ATTEMPTED.add(id);
+    // 手动模式：不自动触发 AI Mask。用户仍可点击"运行 AI 标注"按钮按需调用。
+    if (document.body.classList.contains('mode-manual')) {
+      setInlineStatus('手动模式：点击"运行 AI 标注"按钮按需触发', false, false);
+      return;
+    }
     try {
       const result = await apiGet(`/api/projects/${encodeURIComponent(id)}/steps/5/result`);
       const annotation = result.manifest?.ai_mask_annotation || {};
@@ -543,6 +548,13 @@
     observer.observe(panel, { attributes: true, attributeFilter: ['style', 'class'] });
     maybeAutoAnnotate();
   }
+
+  // 暴露重置函数：切换 ai_mode 后调用，让自动标注在新模式下重新尝试
+  window.__aiMaskResetAutoAttempted = function resetAutoAttempted() {
+    AUTO_ATTEMPTED.clear();
+    // 切换后立即尝试一次，自动模式下会触发，手动模式下会显示提示
+    maybeAutoAnnotate();
+  };
 
   function boot() {
     installFullscreenFitWatch();

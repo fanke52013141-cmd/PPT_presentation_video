@@ -3488,6 +3488,8 @@ header .btn {
 .highlight-glow {
   animation: none !important;
   border-color: var(--color-primary-base) !important;
+  /* 保留语块自身的 mask-color 左边框，避免选中时左边框被蓝色覆盖 */
+  border-left-color: var(--mask-color) !important;
   box-shadow: 0 0 0 4px rgba(207, 221, 254, 0.48) !important;
 }
 
@@ -3703,7 +3705,7 @@ header .btn {
   height: 30px;
   padding: 0;
   border: 0;
-  border-radius: 999px;
+  border-radius: 8px;
   background: transparent;
   box-shadow: none;
   color: var(--color-text-tertiary, #777);

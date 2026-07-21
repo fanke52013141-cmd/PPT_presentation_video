@@ -4251,11 +4251,7 @@ function renderStep5NarrationPanel() {
   });
   const currentBoxIdx = state.canvasState.selectedBoxIndex;
   const hasCurrentBox = currentBoxIdx >= 0 && currentBoxIdx < state.canvasState.boxes.length;
-  const hint = hasCurrentBox
-    ? ''
-    : '<div class="step5-narration-hint">点击右侧语块或新建语块后，再点击下方旁白片段即可建立关联；不关联时整页出现并播完所有旁白。</div>';
   panel.innerHTML = `
-    ${hint}
     <div class="step5-narration-fragments">
       ${fragments.map(fragment => {
         const ownerIdx = selectedByFragment.get(fragment.id);

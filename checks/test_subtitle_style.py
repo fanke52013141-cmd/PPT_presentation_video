@@ -30,8 +30,10 @@ assert "SubtitleView" in video, "SubtitleView 组件缺失"
 # 不再使用单 segment 直接显示作为主路径
 assert "subtitleAtTime" in video, "fallback 函数 subtitleAtTime 仍需保留"
 
-# CSS 关键属性：多行裁切、词内不切断、保留空格
-assert "WebkitLineClamp: maxLines" in video, "WebkitLineClamp 必须使用 maxLines"
+# CSS 关键属性：分页器控量、词内不切断、保留空格，主路径不得裁字
+assert "subtitleTextCapacity" in video, "必须根据字号、边距和最大行数计算每页容量"
+assert "splitSegmentForCapacity" in video, "超长单句必须支持安全拆页"
+assert "overflow: 'visible'" in video, "主字幕路径不得隐藏溢出文字"
 assert "wordBreak: 'keep-all'" in video, "wordBreak 必须为 keep-all 防止词内切断"
 assert "whiteSpace: 'pre-wrap'" in video, "whiteSpace 必须为 pre-wrap 保留空格"
 assert "overflowWrap: 'normal'" in video, "overflowWrap 必须为 normal 不允许任意位置折断"

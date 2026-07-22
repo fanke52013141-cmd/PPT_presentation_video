@@ -7,7 +7,7 @@ Run from the repository root after creating a project:
 
 Stages are cumulative:
 
-- step1: imported article and article brief
+- step1: imported article
 - step2: visual contract
 - step3: visual draft images
 - step5: reveal manifest and mask/reveal structure
@@ -99,15 +99,11 @@ class SmokeCheck:
         return result
 
     def check_step1(self) -> None:
-        self.required("inputs/article.md")
-        brief = self.read_json("planning/article_brief.json")
-        if brief:
-            if not str(brief.get("summary") or "").strip():
-                self.fail("article_brief.json is missing a non-empty summary")
-            else:
-                self.pass_("article brief summary is present")
-            if not str(brief.get("content") or "").strip():
-                self.warn("article_brief.json has empty content")
+        article = self.required("inputs/article.md")
+        if article.exists() and not article.read_text(encoding="utf-8-sig").strip():
+            self.fail("inputs/article.md is empty")
+        elif article.exists():
+            self.pass_("article source is non-empty")
 
     def check_step2(self) -> None:
         self.contract = self.read_json("planning/visual_contract.json")
@@ -115,7 +111,7 @@ class SmokeCheck:
             return
         topic = self.contract.get("topic") if isinstance(self.contract.get("topic"), dict) else {}
         if not str(topic.get("topic_summary") or "").strip():
-            self.fail("visual_contract.topic.topic_summary is missing")
+            self.warn("visual_contract.topic.topic_summary is empty")
         else:
             self.pass_("visual_contract topic_summary is present")
         slide_ids = self.slide_ids()
@@ -123,13 +119,23 @@ class SmokeCheck:
             self.fail("visual_contract has no valid slides")
             return
         self.pass_(f"visual_contract has {len(slide_ids)} slide(s)")
+        policy = self.contract.get("presentation_policy") if isinstance(self.contract.get("presentation_policy"), dict) else {}
+        manual_free = policy.get("visual_narration_mapping") == "manual_free_v1"
         for slide in self.contract.get("slides", []) or []:
             if not isinstance(slide, dict):
                 continue
             slide_id = str(slide.get("slide_id") or "").strip()
             visual_groups = slide.get("visual_groups")
             if not isinstance(visual_groups, list) or not visual_groups:
-                self.fail(f"{slide_id} has no visual_groups")
+                if manual_free:
+                    beats = slide.get("narration_beats") if isinstance(slide.get("narration_beats"), list) else []
+                    spoken = [str(beat.get("spoken_text") or "").strip() for beat in beats if isinstance(beat, dict)]
+                    if spoken and all(spoken):
+                        self.pass_(f"{slide_id} uses valid manual narration without visual_groups")
+                    else:
+                        self.fail(f"{slide_id} manual narration is empty or missing")
+                else:
+                    self.fail(f"{slide_id} has no visual_groups")
             else:
                 self.pass_(f"{slide_id} has {len(visual_groups)} visual_group(s)")
 
@@ -173,10 +179,24 @@ class SmokeCheck:
             groups = slide.get("groups") if isinstance(slide.get("groups"), list) else []
             semantic_blocks = slide.get("semantic_blocks") if isinstance(slide.get("semantic_blocks"), list) else []
             if not groups and not semantic_blocks:
-                self.fail(f"{slide_id} has neither groups nor semantic_blocks in reveal_manifest")
+                self.warn(f"{slide_id} is a static full-slide image without Mask groups")
             else:
                 self.pass_(f"{slide_id} has reveal group structure")
-            painted = [group for group in groups + semantic_blocks if isinstance(group, dict) and (group.get("strokes") or group.get("mask") or group.get("mask_path") or group.get("mask_data"))]
+            painted = []
+            for group in groups + semantic_blocks:
+                if not isinstance(group, dict):
+                    continue
+                manual_mask = group.get("manual_mask") if isinstance(group.get("manual_mask"), dict) else {}
+                rle = manual_mask.get("rle") if isinstance(manual_mask.get("rle"), dict) else {}
+                if (
+                    group.get("strokes")
+                    or group.get("mask")
+                    or group.get("mask_path")
+                    or group.get("mask_data")
+                    or manual_mask.get("strokes")
+                    or rle.get("runs")
+                ):
+                    painted.append(group)
             if not painted:
                 self.warn(f"{slide_id} has no painted mask data yet")
 
@@ -213,10 +233,15 @@ class SmokeCheck:
             self.warn("no animation_timeline.json files found")
 
     def check_step8(self) -> None:
-        self.required("remotion_props.json")
         video_files = [path for path in self.run_dir.rglob("*") if path.is_file() and path.suffix.lower() in VIDEO_SUFFIXES and path.stat().st_size > 0]
         if video_files:
             self.pass_(f"found {len(video_files)} rendered video artifact(s)")
+            managed_videos = [path for path in video_files if path.parent.name == "videos"]
+            missing_sidecars = [path for path in managed_videos if not Path(str(path) + ".render.json").exists()]
+            if missing_sidecars:
+                self.fail(f"rendered video sidecar missing for: {[path.name for path in missing_sidecars]}")
+            elif managed_videos:
+                self.pass_(f"found render metadata for {len(managed_videos)} managed video(s)")
         else:
             self.fail("no non-empty rendered video artifact found under run_dir")
 

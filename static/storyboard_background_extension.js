@@ -41,15 +41,29 @@
   function ensureButton() {
     document.getElementById('step2-btn-background-settings')?.remove();
     const toolbar = document.querySelector('#step-panel-3 .step3-toolbar-row');
-    if (!toolbar || document.getElementById('step3-btn-background-settings')) return;
-    const button = document.createElement('button');
-    button.id = 'step3-btn-background-settings';
-    button.type = 'button';
-    button.className = 'secondary';
-    button.textContent = '最终视频背景';
+    if (!toolbar) return;
     const confirmButton = document.getElementById('step3-btn-confirm');
-    toolbar.insertBefore(button, confirmButton || null);
-    button.addEventListener('click', openModal);
+    let button = document.getElementById('step3-btn-background-settings');
+    if (!button) {
+      button = document.createElement('button');
+      button.id = 'step3-btn-background-settings';
+      button.type = 'button';
+      button.className = 'secondary';
+      button.textContent = '最终视频背景';
+      toolbar.insertBefore(button, confirmButton || null);
+      button.addEventListener('click', openModal);
+    }
+
+    let deleteAllButton = document.getElementById('step3-btn-delete-all-images');
+    if (!deleteAllButton) {
+      deleteAllButton = document.createElement('button');
+      deleteAllButton.id = 'step3-btn-delete-all-images';
+      deleteAllButton.type = 'button';
+      deleteAllButton.className = 'secondary step3-delete-all-images';
+      deleteAllButton.textContent = '批量删除图片';
+      toolbar.insertBefore(deleteAllButton, confirmButton || null);
+      deleteAllButton.addEventListener('click', () => window.deleteAllStep3Images?.());
+    }
   }
 
   function ensureModal() {

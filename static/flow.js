@@ -54,6 +54,15 @@
     return numericStep;
   }
 
+  function mapClientPointToCanvas(clientX, clientY, rect, width = 1920, height = 1080) {
+    const rectWidth = Math.max(1, Number(rect?.width) || 0);
+    const rectHeight = Math.max(1, Number(rect?.height) || 0);
+    return {
+      x: Math.max(0, Math.min(width, (Number(clientX) - Number(rect?.left || 0)) * width / rectWidth)),
+      y: Math.max(0, Math.min(height, (Number(clientY) - Number(rect?.top || 0)) * height / rectHeight)),
+    };
+  }
+
   function resolveProjectVisibleStep(project = {}) {
     const internalStep = Number(project.current_step || 1);
     if (internalStep === 7 && project.audio_confirmed === true) {
@@ -133,17 +142,43 @@
     return previousState === 'completed' || previousState === 'pending_reconfirmation';
   }
 
+  function moveStep3ImageAssignment(slots = [], fromIndex, toIndex) {
+    const fixedSlots = slots.map(slot => ({ ...slot }));
+    if (
+      !Number.isInteger(fromIndex)
+      || !Number.isInteger(toIndex)
+      || fromIndex < 0
+      || toIndex < 0
+      || fromIndex >= fixedSlots.length
+      || toIndex >= fixedSlots.length
+      || fromIndex === toIndex
+    ) {
+      return fixedSlots;
+    }
+
+    const slideIds = fixedSlots.map(slot => slot.slide_id);
+    const assignments = fixedSlots.map(({ slide_id, ...image }) => image);
+    const [moved] = assignments.splice(fromIndex, 1);
+    assignments.splice(toIndex, 0, moved);
+    return slideIds.map((slideId, index) => ({
+      slide_id: slideId,
+      ...assignments[index]
+    }));
+  }
+
   return Object.freeze({
     VISIBLE_FLOW,
     VISIBLE_FLOW_STEPS,
     normalizeVisibleStep,
+    mapClientPointToCanvas,
     resolveProjectVisibleStep,
     visibleStepNumber,
     visibleStepLabel,
     getVisibleStepState,
     calculateVisibleProgress,
     getPreviousVisibleStep,
-    isVisibleStepUnlocked
+    isVisibleStepUnlocked,
+    moveStep3ImageAssignment
   });
 });
 

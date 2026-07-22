@@ -13,10 +13,14 @@ const oneClick = fs.readFileSync(path.join(root, 'static', 'one_click_extension.
 if (!css.includes('#toast-container')) throw new Error('toast container layout missing');
 if (!css.includes('left: 18px')) throw new Error('desktop toasts are not anchored inside the workflow rail');
 if (/\.toast\s*\{[^}]*position:\s*fixed/s.test(css)) throw new Error('individual toasts still overlap at a fixed position');
-if (!/\.step3-card-header\s*\{[^}]*min-height:\s*64px/s.test(css)) throw new Error('image card header height is not stable');
+if (!/\.step3-card-header\s*\{[^}]*min-height:\s*42px/s.test(css)) throw new Error('image card header height is not stable');
 if (!/\.step3-card-actions\s*\{[^}]*grid-template-columns:\s*48px 36px 36px/s.test(css)) throw new Error('image card action columns are not stable');
 if (!/\.step3-card-action[\s\S]*?white-space:\s*nowrap\s*!important/s.test(css)) throw new Error('image card actions can still wrap and jitter');
 if (!app.includes('step3-action-placeholder')) throw new Error('image card delete action does not reserve a stable slot');
+if (app.indexOf('step3-delete-action') > app.indexOf('step3-upload-action')) throw new Error('image card delete action must sit between AI generation and upload');
+if (!app.includes('step3UploadingSlides') || !app.includes("step3GeneratingPreviewHtml('上传中'")) throw new Error('per-card upload progress is missing');
+if (!background.includes('step3-btn-delete-all-images') || !app.includes('deleteAllStep3Images')) throw new Error('bulk image deletion control is missing');
+if (html.includes('step3-image-order-hint')) throw new Error('obsolete fixed-position image hint is still visible');
 
 if (html.includes('config_effectiveness.js')) throw new Error('runtime patch script is still loaded');
 for (const requiredStep2Token of [
@@ -69,8 +73,8 @@ for (const backgroundMode of ['data-mode-card="image"', 'data-mode-card="solid"'
 if (!app.includes('handleStep2MapEditorInput') || !app.includes('handleStep2MapEditorChange')) {
   throw new Error('Step 2 visual/narration mapping is not editable');
 }
-if (!html.includes('step2-slide-narration-input') || !html.includes('readonly aria-describedby="step2-narration-source-hint"')) {
-  throw new Error('Step 2 full narration is not a derived read-only view');
+if (!html.includes('step2-slide-narration-input') || !html.includes('aria-describedby="step2-narration-source-hint"')) {
+  throw new Error('Step 2 full narration editor is missing');
 }
 for (const confusingMappingToken of ['画面文字 / 元素名称', '对应旁白与绑定关系', '<span>绑定到</span>']) {
   if (app.includes(confusingMappingToken)) throw new Error(`Step 2 still exposes internal mapping control: ${confusingMappingToken}`);
@@ -156,8 +160,11 @@ if (!html.includes('id="step5-brush-size" type="range" min="100" max="200" value
 if (!html.includes('id="step5-eraser-size" type="range" min="100" max="200" value="100"')) {
   throw new Error('eraser size contract must be 100-200 with a 100 default');
 }
-if (!html.includes('step5-tool-cursor') || !app.includes('toolSize * canvasRect.width / 1920')) {
+if (!html.includes('step5-tool-cursor') || !app.includes('toolSize * displayScale')) {
   throw new Error('Mask tool cursor does not track the real canvas pixel diameter');
+}
+if (!app.includes('getCoalescedEvents') || !app.includes('scheduleLiveMaskRedraw')) {
+  throw new Error('Mask painting does not coalesce pointer samples and redraws');
 }
 if (!app.includes('const MASK_PREVIEW_OUTLINE_PX = 5') || !app.includes('buildMaskDisplayLayer')) {
   throw new Error('same-color 5px Mask preview outline is missing');

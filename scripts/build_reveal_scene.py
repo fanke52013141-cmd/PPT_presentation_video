@@ -355,7 +355,7 @@ def compose_slide(
         raise RevealBuildError("Slide missing slide_id")
 
     production_slide_dir = resolve_path(
-        str(slide["slide_dir"]),
+        str(slide.get("slide_dir") or f"slides/{slide_id}"),
         manifest_dir,
         manifest_dir,
         repo_root,
@@ -365,7 +365,7 @@ def compose_slide(
         if stale_build_dir.is_dir():
             shutil.rmtree(stale_build_dir, ignore_errors=True)
     master_path = resolve_path(
-        str(slide["master"]),
+        str(slide.get("master") or "visual_draft.png"),
         manifest_dir,
         production_slide_dir,
         repo_root,

@@ -70,13 +70,15 @@ def group_lookup(slide: dict[str, Any]) -> dict[str, dict[str, Any]]:
 def spoken_text_for_beat(beat: dict[str, Any], group: dict[str, Any] | None, max_chars: int) -> str:
     existing = normalize(str(beat.get("spoken_text", "")))
     if existing:
-        return existing[:max_chars]
+        # Existing narration is user or upstream-authored source text. Never
+        # truncate it here; max_chars only constrains generated fallback copy.
+        return existing
     if group is None:
         # Manual mode: no visual group to expand. Fall back to the beat's own
         # spoken_intent, then to a minimal placeholder.
         intent = normalize(str(beat.get("spoken_intent", "")))
         if intent:
-            return intent[:max_chars]
+            return intent
         return ""
     visible = normalize(str(group.get("visible_text", beat.get("visible_anchor", "这个点"))))
     anchor = normalize(str(group.get("visual_anchor", beat.get("visible_anchor", visible))))

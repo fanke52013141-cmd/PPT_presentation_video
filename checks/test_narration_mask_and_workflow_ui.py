@@ -226,7 +226,9 @@ def test_mask_size_cursor_and_outline_contracts():
     app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
     assert 'id="step5-brush-size" type="range" min="100" max="200" value="140"' in html
     assert 'id="step5-eraser-size" type="range" min="100" max="200" value="100"' in html
-    assert "toolSize * canvasRect.width / 1920" in app
+    assert "toolSize * displayScale" in app
+    assert "getCoalescedEvents" in app
+    assert "scheduleLiveMaskRedraw" in app
     assert "const MASK_PREVIEW_OUTLINE_PX = 5" in app
 
 

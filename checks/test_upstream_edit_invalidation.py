@@ -123,8 +123,10 @@ def test_step2_autosave_only_invalidates_when_contract_changes() -> None:
 
         first = server.update_step2_result(project.id, payload, db)
         assert first["changed"] is True
+        assert first["validation"]["editable_empty"] is True
+        assert first["validation"]["valid"] is False
         assert project.current_step == 2
-        assert project.get_step_status(2) == "completed"
+        assert project.get_step_status(2) == "in_progress"
         assert all(project.get_step_status(step) == "pending_reconfirmation" for step in range(3, 9))
         assert db.commits == 1
 

@@ -496,7 +496,7 @@ textarea.step2-soft-input:focus {
 .step2-thumb-delete {
   position: absolute;
   top: 3px;
-  right: 3px;
+  right: 6px;
   width: 18px;
   height: 18px;
   min-height: 18px;
@@ -1681,19 +1681,35 @@ body.step5-fullscreen-mode #step5-btn-fullscreen {
 
 .step3-card-position {
   flex: 0 0 auto;
-  color: var(--ink-color);
-  font-size: 0.95rem;
+  color: var(--muted-text, #667085);
+  font-size: 0.72rem;
   font-weight: 800;
+  white-space: nowrap;
+}
+
+.step3-card-heading {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.42rem;
+  margin: 0.2rem 0 0.45rem;
 }
 
 .step3-card-title {
-  min-height: 0;
-  margin: 0 0 0.24rem 0;
+  min-width: 0;
+  margin: 0;
   color: var(--ink-color);
-  font-size: 0.9rem;
+  font-size: 0.94rem;
   font-weight: 800;
   line-height: 1.25;
   overflow-wrap: anywhere;
+}
+
+.step3-image-order-hint {
+  margin: -0.1rem 0 0.65rem;
+  color: var(--muted-text, #667085);
+  font-size: 0.8rem;
+  line-height: 1.45;
 }
 
 .step3-video-background-control {
@@ -4752,6 +4768,23 @@ textarea.step2-soft-input {
   visibility: hidden !important;
 }
 
+.step3-delete-all-images {
+  color: #b42336 !important;
+  border-color: #f0b7c0 !important;
+  background: #fff7f8 !important;
+}
+
+.step2-empty-storyboard {
+  width: 100%;
+  padding: 1rem 1.25rem;
+  border: 1px dashed var(--color-border-default);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--color-text-secondary);
+  text-align: center;
+  font-size: 0.86rem;
+}
+
 .step3-toolbar-row button,
 .step3-toolbar-row .btn,
 .step3-toolbar-row label.btn {
@@ -4769,6 +4802,14 @@ textarea.step2-soft-input {
   padding: 0.18rem 0.62rem !important;
   border-radius: 11px !important;
   box-shadow: none !important;
+}
+
+.slides-thumbnail-container.step2-batch-delete-mode {
+  gap: 0.72rem !important;
+}
+
+.slides-thumbnail-container.step2-batch-delete-mode .slide-thumbnail-card.step2-slide-thumb {
+  padding-right: 1.75rem !important;
 }
 
 .step5-slides-grid,

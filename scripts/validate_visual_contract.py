@@ -217,6 +217,8 @@ def validate_slide(
                 if not str(beat.get(key, "")).strip():
                     raise ContractError(f"Beat {beat_id} missing {key} in {slide_id}")
         spoken_text = str(beat.get("spoken_text", "")).strip()
+        if not spoken_text:
+            raise ContractError(f"Narration beat {beat_id} has empty spoken_text in {slide_id}")
         if spoken_text:
             if group_id:
                 spoken_group_ids.add(group_id)

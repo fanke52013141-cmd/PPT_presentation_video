@@ -45,11 +45,10 @@ from scripts.pipeline_profiles import (
     storyboard_profile_prompt,
     storyboard_requirements,
 )
-from artifact_fingerprint import render_input_fingerprint, sha256_json
+from artifact_fingerprint import render_input_fingerprint, sha256_file, sha256_json
 from visual_provenance import (
     promote_candidate_provenance,
     provenance_path as visual_provenance_path,
-    refresh_provenance_contract_hashes,
     validate_visual_provenance_set,
     visual_provenance_status,
     write_visual_provenance,
@@ -303,6 +302,11 @@ DEFAULT_SUBTITLE_STYLE = {
     "bottom": 18,
     "horizontal_margin": 180,
     "color": "#111111",
+    "highlight_color": "#1E3A8A",
+    "paging_window_ms": 1300,
+    "token_highlight": True,
+    "max_lines": 2,
+    "line_height": 1.4,
 }
 OPEN_SOURCE_CHINESE_FONTS = [
     {
@@ -1201,10 +1205,6 @@ def normalize_visual_contract(
                     # break, but do not require a visual_anchor.
                     if not str(beat.get("content_unit_id") or "").strip():
                         beat["content_unit_id"] = f"{slide.get('slide_id', 'slide')}_unit_{index:03d}"
-                    spoken_text = str(beat.get("spoken_text") or "").strip()
-                    if not spoken_text:
-                        intent = str(beat.get("spoken_intent") or "").strip()
-                        beat["spoken_text"] = intent or ""
                     normalized_beats.append(beat)
                 continue
             if not str(beat.get("content_unit_id") or "").strip():
@@ -1405,8 +1405,9 @@ def sync_reveal_manifest_to_contract(project: Project, slide_ids: Optional[List[
     fresh coordinate template from the visual contract and use it only for
     missing slides, preserving every existing manual/AI annotation.
     """
-    current_slide_ids = slide_ids if slide_ids is not None else read_contract_slide_ids(project.run_dir)
-    if not current_slide_ids:
+    explicit_slide_ids = slide_ids is not None
+    current_slide_ids = slide_ids if explicit_slide_ids else read_contract_slide_ids(project.run_dir)
+    if not current_slide_ids and not explicit_slide_ids:
         return False
 
     manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
@@ -1454,6 +1455,14 @@ def sync_reveal_manifest_to_contract(project: Project, slide_ids: Optional[List[
             for slide_id in current_slide_ids
         ]
         synced_slides = [slide for slide in synced_slides if isinstance(slide, dict)]
+        for slide in synced_slides:
+            slide_id = str(slide.get("slide_id") or "").strip()
+            if not slide_id:
+                continue
+            slide["slide_dir"] = str(
+                Path(storage_slide_file(project.run_dir, slide_id, "visual_draft.png")).parent.as_posix()
+            )
+            slide["master"] = "visual_draft.png"
         changed = synced_slides != slides
         if not changed:
             return False
@@ -1494,6 +1503,26 @@ def normalize_subtitle_style(value: Any) -> Dict[str, Any]:
             parsed = fallback
         return max(minimum, min(maximum, parsed))
 
+    def clamp_float(raw: Any, fallback: float, minimum: float, maximum: float) -> float:
+        try:
+            parsed = float(raw)
+        except (TypeError, ValueError):
+            parsed = fallback
+        return max(minimum, min(maximum, parsed))
+
+    def parse_bool(raw: Any, fallback: bool) -> bool:
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, str):
+            normalized = raw.strip().lower()
+            if normalized in {"true", "1", "yes", "on"}:
+                return True
+            if normalized in {"false", "0", "no", "off"}:
+                return False
+        if isinstance(raw, (int, float)):
+            return bool(raw)
+        return fallback
+
     font_by_key = {font["key"]: font for font in OPEN_SOURCE_CHINESE_FONTS}
     font_key = str(payload.get("font_key") or DEFAULT_SUBTITLE_STYLE["font_key"]).strip()
     if font_key not in font_by_key:
@@ -1512,6 +1541,32 @@ def normalize_subtitle_style(value: Any) -> Dict[str, Any]:
             420,
         ),
         "color": normalize_hex_color(payload.get("color"), DEFAULT_SUBTITLE_STYLE["color"]),
+        "highlight_color": normalize_hex_color(
+            payload.get("highlight_color"),
+            DEFAULT_SUBTITLE_STYLE["highlight_color"],
+        ),
+        "paging_window_ms": clamp_int(
+            payload.get("paging_window_ms"),
+            DEFAULT_SUBTITLE_STYLE["paging_window_ms"],
+            600,
+            2500,
+        ),
+        "token_highlight": parse_bool(
+            payload.get("token_highlight"),
+            DEFAULT_SUBTITLE_STYLE["token_highlight"],
+        ),
+        "max_lines": clamp_int(
+            payload.get("max_lines"),
+            DEFAULT_SUBTITLE_STYLE["max_lines"],
+            1,
+            3,
+        ),
+        "line_height": clamp_float(
+            payload.get("line_height"),
+            DEFAULT_SUBTITLE_STYLE["line_height"],
+            1.0,
+            2.0,
+        ),
     }
 
 
@@ -1600,8 +1655,9 @@ def invalidate_video_background_derivatives(project: Project, db: Session) -> No
 
 
 def sync_narration_beats_to_contract(project: Project, slide_ids: Optional[List[str]] = None) -> bool:
-    current_slide_ids = slide_ids if slide_ids is not None else read_contract_slide_ids(project.run_dir)
-    if not current_slide_ids:
+    explicit_slide_ids = slide_ids is not None
+    current_slide_ids = slide_ids if explicit_slide_ids else read_contract_slide_ids(project.run_dir)
+    if not current_slide_ids and not explicit_slide_ids:
         return False
 
     beats_path = os.path.join(project.run_dir, "planning", "narration_beats.json")
@@ -1656,6 +1712,93 @@ def sync_narration_beats_to_contract(project: Project, slide_ids: Optional[List[
         len(synced_slides),
         len(slides),
     )
+    return True
+
+
+def sync_narration_sources_from_contract(
+    project: Project,
+    previous_contract: Dict[str, Any],
+    current_contract: Dict[str, Any],
+) -> bool:
+    """Propagate Step 2 text edits without overwriting unchanged Step 5 TTS annotations."""
+    beats_path = os.path.join(project.run_dir, "planning", "narration_beats.json")
+    if not os.path.exists(beats_path):
+        return False
+
+    existing_payload = read_json_file(beats_path, {})
+    existing_slides = existing_payload.get("slides") if isinstance(existing_payload, dict) else None
+    if not isinstance(existing_slides, list):
+        return False
+
+    def slide_map(contract: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        return {
+            str(slide.get("slide_id") or "").strip(): slide
+            for slide in contract.get("slides", [])
+            if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()
+        }
+
+    def beat_map(slide: Dict[str, Any], field: str) -> Dict[str, Dict[str, Any]]:
+        beats = slide.get(field)
+        if not isinstance(beats, list):
+            return {}
+        return {
+            str(beat.get("id") or "").strip(): beat
+            for beat in beats
+            if isinstance(beat, dict) and str(beat.get("id") or "").strip()
+        }
+
+    previous_slides = slide_map(previous_contract if isinstance(previous_contract, dict) else {})
+    current_slides = slide_map(current_contract if isinstance(current_contract, dict) else {})
+    existing_by_slide = {
+        str(slide.get("slide_id") or "").strip(): slide
+        for slide in existing_slides
+        if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()
+    }
+    structural_fields = (
+        "id",
+        "group_id",
+        "content_unit_id",
+        "visible_anchor",
+        "spoken_intent",
+    )
+    synced_slides: List[Dict[str, Any]] = []
+
+    for slide_id, current_slide in current_slides.items():
+        previous_beats = beat_map(previous_slides.get(slide_id, {}), "narration_beats")
+        existing_slide = existing_by_slide.get(slide_id, {})
+        existing_beats = beat_map(existing_slide, "beats")
+        merged_beats: List[Dict[str, Any]] = []
+        for current_beat in dedupe_narration_beats(current_slide.get("narration_beats")):
+            beat_id = str(current_beat.get("id") or "").strip()
+            if not beat_id:
+                continue
+            current_text = str(current_beat.get("spoken_text") or "").strip()
+            previous_text = str(previous_beats.get(beat_id, {}).get("spoken_text") or "").strip()
+            existing_beat = existing_beats.get(beat_id)
+            source_changed = beat_id not in previous_beats or current_text != previous_text
+
+            if existing_beat is not None and not source_changed:
+                merged = copy.deepcopy(existing_beat)
+                for field in structural_fields:
+                    if field in current_beat:
+                        merged[field] = copy.deepcopy(current_beat[field])
+            else:
+                merged = copy.deepcopy(current_beat)
+                merged["source_text"] = current_text
+                merged["spoken_text"] = current_text
+                merged["tts_text"] = current_text
+            merged_beats.append(merged)
+        synced_slides.append({"slide_id": slide_id, "beats": merged_beats})
+
+    candidate = dict(existing_payload)
+    candidate["slides"] = synced_slides
+    if candidate == existing_payload:
+        return False
+    prepared = prepare_narration_payload(project, candidate)
+    if prepared == existing_payload:
+        return False
+    persist_narration_beats(project, candidate)
+    logger.info("Synced Step 2 narration sources into Step 5 for %s slides", len(synced_slides))
     return True
 
 
@@ -4802,6 +4945,7 @@ def update_step2_result(project_id: str, payload: Dict[str, Any], db: Session = 
     payload = normalize_visual_contract(payload, read_project_pipeline_profile(project))
     contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
     existing_contract = read_json_file(contract_path, {})
+    previous_slide_ids = contract_slide_ids_from_payload(existing_contract)
     changed = json.dumps(existing_contract, ensure_ascii=False, sort_keys=True) != json.dumps(
         payload,
         ensure_ascii=False,
@@ -4817,9 +4961,43 @@ def update_step2_result(project_id: str, payload: Dict[str, Any], db: Session = 
     with open(contract_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     current_slide_ids = contract_slide_ids_from_payload(payload)
-    sync_reveal_manifest_to_contract(project, current_slide_ids)
-    sync_narration_beats_to_contract(project, current_slide_ids)
+    removed_slide_ids = [slide_id for slide_id in previous_slide_ids if slide_id not in current_slide_ids]
+    for slide_id in removed_slide_ids:
+        slide_path = Path(storage_slide_file(project.run_dir, slide_id, "visual_draft.png")).parent
+        if slide_path.exists():
+            shutil.rmtree(slide_path)
+
+    if not current_slide_ids:
+        validation = {
+            "valid": False,
+            "editable_empty": True,
+            "contract_sha256": hashlib.sha256(Path(contract_path).read_bytes()).hexdigest(),
+            "validated_at": datetime.now().isoformat(timespec="seconds"),
+            "returncode": 0,
+            "stdout": "",
+            "stderr": "分镜列表为空；可以继续添加分镜，但不能进入图片生成。",
+            "source": "manual_empty_storyboard",
+            "trace_id": "",
+        }
+        write_json_atomic(visual_contract_validation_path(project), validation)
+        sync_reveal_manifest_to_contract(project, [])
+        sync_narration_beats_to_contract(project, [])
+        sync_narration_sources_from_contract(project, existing_contract, payload)
+        clear_audio_confirmation(project)
+        clear_remotion_props(project.run_dir)
+        current_status = project.get_step_status()
+        current_status["2"] = "in_progress"
+        mark_downstream_pending(current_status, from_step=3)
+        project.current_step = 2
+        project.set_step_status(current_status)
+        db.commit()
+        return {"success": True, "contract": payload, "validation": validation, "changed": True}
+
     validation = validate_visual_contract_file(project, contract_path, source="manual_autosave")
+    if validation.get("valid"):
+        sync_reveal_manifest_to_contract(project, current_slide_ids)
+        sync_narration_beats_to_contract(project, current_slide_ids)
+        sync_narration_sources_from_contract(project, existing_contract, payload)
     invalidate_after_upstream_edit(project, 2, db)
 
     return {"success": True, "contract": payload, "validation": validation, "changed": True}
@@ -4885,6 +5063,10 @@ def submit_step2_manual_skeleton(
             ],
         })
 
+    previous_contract = read_json_file(
+        os.path.join(project.run_dir, "planning", "visual_contract.json"),
+        {},
+    )
     contract = {
         "version": "visual_contract_v1",
         "presentation_policy": {
@@ -4911,6 +5093,7 @@ def submit_step2_manual_skeleton(
         trace_id=trace_id,
         source="manual_skeleton_submit",
     )
+    sync_narration_sources_from_contract(project, previous_contract, contract)
     # Ensure the project reflects manual mode so the frontend can render the
     # correct UI affordances (e.g., hide auto-trigger AI Mask).
     if project.ai_mode != "manual":
@@ -5975,6 +6158,41 @@ def apply_slide_candidate(project_id: str, payload: Dict[str, Any], db: Session 
     }
 
 
+@app.delete("/api/projects/{project_id}/steps/3/images")
+def delete_all_slide_images(project_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    slide_ids = read_current_slide_ids_or_404(project)
+    deleted_count = 0
+    with reveal_lock_for(project):
+        for slide_id in slide_ids:
+            image_path = Path(storage_slide_file(project.run_dir, slide_id, "visual_draft.png"))
+            candidate_path = Path(storage_slide_file(project.run_dir, slide_id, "visual_candidate.png"))
+            if image_path.exists():
+                image_path.unlink()
+                deleted_count += 1
+            for path in (
+                candidate_path,
+                visual_provenance_path(project.run_dir, slide_id),
+                visual_provenance_path(project.run_dir, slide_id, candidate=True),
+            ):
+                try:
+                    path.unlink()
+                except FileNotFoundError:
+                    pass
+            clear_slide_visual_derivatives(project, slide_id)
+
+        clear_audio_confirmation(project)
+        current_status = project.get_step_status()
+        current_status["3"] = "in_progress"
+        mark_downstream_pending(current_status, from_step=4)
+        project.current_step = 3
+        project.set_step_status(current_status)
+        db.commit()
+    return {"success": True, "deleted_count": deleted_count, "slide_ids": slide_ids}
+
+
 @app.delete("/api/projects/{project_id}/steps/3/images/{slide_id}")
 def delete_slide_image(project_id: str, slide_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -6046,76 +6264,182 @@ def get_all_images(project_id: str, db: Session = Depends(get_db)):
     return {
         "success": True,
         "images": results,
-        "order_version": slide_order_version([item["slide_id"] for item in results]),
+        "order_version": step3_image_assignment_version(
+            project.run_dir,
+            [item["slide_id"] for item in results],
+        ),
     }
 
 
-def slide_order_version(slide_ids: List[str]) -> str:
-    return sha256_json({"slide_ids": [str(slide_id) for slide_id in slide_ids]})
+def step3_image_assignment_version(run_dir: str, slide_ids: List[str]) -> str:
+    """Fingerprint fixed storyboard slots and the image currently assigned to each slot."""
+    root = Path(run_dir)
+    return sha256_json({
+        "slots": [
+            {
+                "slide_id": str(slide_id),
+                "image_sha256": sha256_file(
+                    storage_slide_file(root, str(slide_id), "visual_draft.png")
+                ),
+                "provenance_sha256": sha256_file(visual_provenance_path(root, str(slide_id))),
+            }
+            for slide_id in slide_ids
+        ]
+    })
 
 
-@app.put("/api/projects/{project_id}/steps/3/order")
-def update_step3_order(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
+def _copy_file_atomic(source: Path, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(f"{destination.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        shutil.copy2(source, temporary)
+        os.replace(temporary, destination)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _restore_optional_file(snapshot: Optional[Path], destination: Path) -> None:
+    if snapshot is not None and snapshot.exists():
+        _copy_file_atomic(snapshot, destination)
+        return
+    try:
+        destination.unlink()
+    except FileNotFoundError:
+        pass
+
+
+@app.put("/api/projects/{project_id}/steps/3/image-order")
+def update_step3_image_order(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
 
-    raw_slide_ids = payload.get("slide_ids", [])
-    if not isinstance(raw_slide_ids, list):
-        raise HTTPException(status_code=400, detail="slide_ids 必须是数组")
-    requested_ids = [
-        str(slide_id).strip()
-        for slide_id in raw_slide_ids
-        if str(slide_id).strip()
-    ]
-    if not requested_ids:
-        raise HTTPException(status_code=400, detail="排序列表不能为空")
-    if len(requested_ids) != len(set(requested_ids)):
-        raise HTTPException(status_code=400, detail="排序列表包含重复的 slide_id")
+    from_index = payload.get("from_index")
+    to_index = payload.get("to_index")
+    if (
+        isinstance(from_index, bool)
+        or isinstance(to_index, bool)
+        or not isinstance(from_index, int)
+        or not isinstance(to_index, int)
+    ):
+        raise HTTPException(status_code=400, detail="from_index 和 to_index 必须是整数")
 
     expected_version = str(payload.get("order_version") or "").strip()
     if not expected_version:
         raise HTTPException(status_code=428, detail="缺少排序版本，请刷新页面后重试")
 
-    contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
-    if not os.path.exists(contract_path):
-        raise HTTPException(status_code=400, detail="分镜规划尚未生成")
-    changed = False
-    with reveal_lock_for(project):
-        with open(contract_path, "r", encoding="utf-8") as f:
-            contract = json.load(f)
-
-        slides = contract.get("slides", [])
-        by_id = {
-            str(slide.get("slide_id") or "").strip(): slide
-            for slide in slides
-            if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()
+    slide_ids = read_current_slide_ids_or_404(project)
+    if not (0 <= from_index < len(slide_ids) and 0 <= to_index < len(slide_ids)):
+        raise HTTPException(status_code=400, detail="图片移动位置超出当前分镜范围")
+    if from_index == to_index:
+        return {
+            "success": True,
+            "slide_ids": slide_ids,
+            "order_version": step3_image_assignment_version(project.run_dir, slide_ids),
         }
-        current_ids = list(by_id)
-        current_version = slide_order_version(current_ids)
+
+    root = Path(project.run_dir)
+    with reveal_lock_for(project):
+        current_version = step3_image_assignment_version(project.run_dir, slide_ids)
         if expected_version != current_version:
-            raise HTTPException(status_code=409, detail="页面顺序已被其他操作更新，请刷新后重试")
-        if set(requested_ids) != set(by_id):
-            raise HTTPException(status_code=400, detail="排序列表与当前分镜不一致，请刷新页面后重试")
+            raise HTTPException(status_code=409, detail="图片对应关系已被其他操作更新，请刷新后重试")
 
-        changed = requested_ids != current_ids
-        if changed:
-            contract["slides"] = [by_id[slide_id] for slide_id in requested_ids]
-            write_json_atomic(contract_path, contract)
-            refresh_provenance_contract_hashes(project.run_dir, requested_ids)
-            sync_reveal_manifest_to_contract(project, requested_ids)
-            sync_narration_beats_to_contract(project, requested_ids)
+        source_slide_id = slide_ids[from_index]
+        source_image = Path(storage_slide_file(root, source_slide_id, "visual_draft.png"))
+        if not source_image.exists():
+            raise HTTPException(status_code=400, detail="被移动的位置没有图片")
 
-    if changed:
-        clear_remotion_props(project.run_dir)
+        source_ids = list(slide_ids)
+        moved_source_id = source_ids.pop(from_index)
+        source_ids.insert(to_index, moved_source_id)
+        affected_indexes = range(min(from_index, to_index), max(from_index, to_index) + 1)
+        affected_slide_ids = [slide_ids[index] for index in affected_indexes]
+
+        with tempfile.TemporaryDirectory(prefix="step3-image-move-", dir=root) as temporary_value:
+            snapshot_root = Path(temporary_value)
+            for slide_id in affected_slide_ids:
+                slide_snapshot = snapshot_root / slide_id
+                slide_snapshot.mkdir(parents=True, exist_ok=True)
+                image_path = Path(storage_slide_file(root, slide_id, "visual_draft.png"))
+                provenance_path = visual_provenance_path(root, slide_id)
+                if image_path.exists():
+                    shutil.copy2(image_path, slide_snapshot / "visual_draft.png")
+                if provenance_path.exists():
+                    shutil.copy2(provenance_path, slide_snapshot / "visual_provenance.json")
+
+            try:
+                reassigned_at = datetime.now().isoformat(timespec="seconds")
+                for index in affected_indexes:
+                    target_slide_id = slide_ids[index]
+                    assigned_source_id = source_ids[index]
+                    source_snapshot = snapshot_root / assigned_source_id
+                    target_dir = Path(storage_slide_file(root, target_slide_id, "visual_draft.png")).parent
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                    target_image = target_dir / "visual_draft.png"
+                    target_provenance = visual_provenance_path(root, target_slide_id)
+
+                    _restore_optional_file(source_snapshot / "visual_draft.png", target_image)
+                    source_provenance_path = source_snapshot / "visual_provenance.json"
+                    if source_provenance_path.exists() and target_image.exists():
+                        try:
+                            provenance = json.loads(source_provenance_path.read_text(encoding="utf-8-sig"))
+                        except (OSError, json.JSONDecodeError):
+                            provenance = None
+                        if isinstance(provenance, dict):
+                            history = provenance.get("assignment_history")
+                            if not isinstance(history, list):
+                                history = []
+                            history.append({
+                                "from_slide_id": assigned_source_id,
+                                "to_slide_id": target_slide_id,
+                                "reassigned_at": reassigned_at,
+                            })
+                            provenance["assignment_history"] = history[-20:]
+                            provenance["slide_id"] = target_slide_id
+                            provenance["copied_to"] = f"slides/{target_slide_id}/visual_draft.png"
+                            provenance["output_sha256"] = sha256_file(target_image)
+                            write_json_atomic(target_provenance, provenance)
+                        else:
+                            _restore_optional_file(None, target_provenance)
+                    else:
+                        _restore_optional_file(None, target_provenance)
+            except Exception:
+                for slide_id in affected_slide_ids:
+                    slide_snapshot = snapshot_root / slide_id
+                    target_dir = Path(storage_slide_file(root, slide_id, "visual_draft.png")).parent
+                    _restore_optional_file(slide_snapshot / "visual_draft.png", target_dir / "visual_draft.png")
+                    _restore_optional_file(
+                        slide_snapshot / "visual_provenance.json",
+                        visual_provenance_path(root, slide_id),
+                    )
+                raise
+
+        for slide_id in affected_slide_ids:
+            for candidate in (
+                Path(storage_slide_file(root, slide_id, "visual_candidate.png")),
+                visual_provenance_path(root, slide_id, candidate=True),
+            ):
+                try:
+                    candidate.unlink()
+                except FileNotFoundError:
+                    pass
+            clear_slide_visual_derivatives(project, slide_id)
+
+        clear_audio_confirmation(project)
         current_status = project.get_step_status()
-        mark_selected_stale(current_status, (8,))
+        current_status["3"] = "completed" if all_current_slide_images_exist(project) else "in_progress"
+        mark_downstream_pending(current_status, from_step=4)
+        project.current_step = 3
         project.set_step_status(current_status)
         db.commit()
+
     return {
         "success": True,
-        "slide_ids": requested_ids,
-        "order_version": slide_order_version(requested_ids),
+        "slide_ids": slide_ids,
+        "order_version": step3_image_assignment_version(project.run_dir, slide_ids),
     }
 
 
@@ -6559,6 +6883,17 @@ def update_step5_draft(project_id: str, payload: Dict[str, Any], db: Session = D
             }
             payload["slides"] = [by_id[slide_id] for slide_id in current_slide_ids if slide_id in by_id]
 
+        for slide in payload.get("slides", []) if isinstance(payload.get("slides"), list) else []:
+            if not isinstance(slide, dict):
+                continue
+            slide_id = str(slide.get("slide_id") or "").strip()
+            if not slide_id:
+                continue
+            slide["slide_dir"] = str(
+                Path(storage_slide_file(project.run_dir, slide_id, "visual_draft.png")).parent.as_posix()
+            )
+            slide["master"] = "visual_draft.png"
+
         payload = prune_stale_mask_groups(project, payload)
         manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
         write_json_atomic(manifest_path, payload)
@@ -6681,6 +7016,17 @@ def update_step5_result(project_id: str, payload: Dict[str, Any], build_assets: 
             }
             payload["slides"] = [by_id[slide_id] for slide_id in current_slide_ids if slide_id in by_id]
 
+        for slide in payload.get("slides", []) if isinstance(payload.get("slides"), list) else []:
+            if not isinstance(slide, dict):
+                continue
+            slide_id = str(slide.get("slide_id") or "").strip()
+            if not slide_id:
+                continue
+            slide["slide_dir"] = str(
+                Path(storage_slide_file(project.run_dir, slide_id, "visual_draft.png")).parent.as_posix()
+            )
+            slide["master"] = "visual_draft.png"
+
         payload = prune_stale_mask_groups(project, payload)
         manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
         write_json_atomic(manifest_path, payload)
@@ -6706,6 +7052,11 @@ def init_step6_narration(project_id: str, db: Session = Depends(get_db)):
     contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
     if not os.path.exists(contract_path):
         raise HTTPException(status_code=400, detail="分镜规划不存在，请返回第二步生成分镜")
+
+    beats_path = os.path.join(project.run_dir, "planning", "narration_beats.json")
+    existing_beats = read_json_file(beats_path, {})
+    if isinstance(existing_beats.get("slides"), list):
+        return {"success": True, "beats": existing_beats, "reused": True}
         
     write_narration_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "write_narration_from_visual_contract.py"))
     res = subprocess.run([
@@ -8011,7 +8362,10 @@ def get_render_status(
         "error": task.get("error"),
         "video": task.get("video"),
         "videos": task.get("videos") or list_video_items(project, project_id),
-    }@app.get("/api/projects/{project_id}/videos")
+    }
+
+
+@app.get("/api/projects/{project_id}/videos")
 def list_project_videos(project_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:

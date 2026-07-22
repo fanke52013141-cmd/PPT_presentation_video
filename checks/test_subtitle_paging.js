@@ -32,8 +32,43 @@ function splitSentenceToTokens(text, startMs, endMs) {
   });
 }
 
-function buildCaptionPages(segments, pagingWindowMs, tokenize) {
-  const readable = segments.filter((s) => hasReadableSubtitleText(s.text || ''));
+const subtitleTextUnits = (text) => Array.from(text).reduce((total, character) => {
+  if (/\s/.test(character)) return total;
+  if (/[A-Za-z0-9]/.test(character)) return total + 0.55;
+  return total + 1;
+}, 0);
+
+function splitSegmentForCapacity(segment, maxTextUnits) {
+  if (subtitleTextUnits(segment.text) <= maxTextUnits) return [segment];
+  const tokens = splitSentenceToTokens(segment.text, segment.start * 1000, segment.end * 1000);
+  const chunks = [];
+  let chunkTokens = [];
+  let chunkUnits = 0;
+  const flush = () => {
+    if (chunkTokens.length === 0) return;
+    chunks.push({
+      id: `${segment.id}_page_${chunks.length + 1}`,
+      start: chunkTokens[0].fromMs / 1000,
+      end: chunkTokens[chunkTokens.length - 1].toMs / 1000,
+      text: chunkTokens.map((token) => token.text).join(''),
+    });
+    chunkTokens = [];
+    chunkUnits = 0;
+  };
+  tokens.forEach((token) => {
+    const units = subtitleTextUnits(token.text);
+    if (chunkTokens.length > 0 && chunkUnits + units > maxTextUnits) flush();
+    chunkTokens.push(token);
+    chunkUnits += units;
+  });
+  flush();
+  return chunks;
+}
+
+function buildCaptionPages(segments, pagingWindowMs, tokenize, maxTextUnits = 72, maxPageDurationMs = 6500) {
+  const readable = segments
+    .filter((s) => hasReadableSubtitleText(s.text || ''))
+    .flatMap((segment) => splitSegmentForCapacity(segment, maxTextUnits));
   if (readable.length === 0) return [];
   const pages = [];
   let currentTokens = [];
@@ -50,19 +85,28 @@ function buildCaptionPages(segments, pagingWindowMs, tokenize) {
     });
     currentTokens = [];
     currentText = '';
+    currentEndMs = 0;
   };
   readable.forEach((segment, index) => {
     const segStartMs = segment.start * 1000;
     const segEndMs = segment.end * 1000;
-    const shouldStartNewPage = currentTokens.length > 0 && segStartMs - currentEndMs > pagingWindowMs;
+    const separator = /[A-Za-z0-9]$/.test(currentText) && /^[A-Za-z0-9]/.test(segment.text) ? ' ' : '';
+    const combinedText = `${currentText}${separator}${segment.text}`;
+    const shouldStartNewPage = currentTokens.length > 0 && (
+      segStartMs - currentEndMs > pagingWindowMs
+      || subtitleTextUnits(combinedText) > maxTextUnits
+      || segEndMs - currentStartMs > maxPageDurationMs
+    );
     if (shouldStartNewPage) flush();
     if (currentTokens.length === 0) currentStartMs = segStartMs;
+    const currentSeparator = /[A-Za-z0-9]$/.test(currentText) && /^[A-Za-z0-9]/.test(segment.text) ? ' ' : '';
+    if (currentSeparator) currentTokens.push({text: currentSeparator, fromMs: segStartMs, toMs: segStartMs});
     if (tokenize) {
       currentTokens.push(...splitSentenceToTokens(segment.text, segStartMs, segEndMs));
     } else {
       currentTokens.push({text: segment.text, fromMs: segStartMs, toMs: segEndMs});
     }
-    currentText += segment.text;
+    currentText += `${currentSeparator}${segment.text}`;
     currentEndMs = Math.max(currentEndMs, segEndMs);
     if (index === readable.length - 1) flush();
   });
@@ -224,6 +268,15 @@ function highlightedTokenCount(page, audioSeconds) {
 {
   assert.deepEqual(buildCaptionPages([], 1300, true), []);
   assert.deepEqual(buildCaptionPages([{id: 's', start: 0, end: 1, text: ''}], 1300, true), []);
+}
+
+// 用例 11：连续长旁白即使没有句间空隙，也必须按容量分页且不得丢字
+{
+  const text = '这是一个用于验证长字幕分页完整性的连续句子，它没有足够大的时间间隔，但每一个字符都必须在某一页中出现。';
+  const pages = buildCaptionPages([{id: 'long', start: 0, end: 12, text}], 1300, true, 18);
+  assert.ok(pages.length > 1, '超出页面容量的单句必须拆页');
+  assert.equal(pages.map((page) => page.text).join(''), text, '拆页不得丢失或重复字符');
+  assert.ok(pages.every((page) => subtitleTextUnits(page.text) <= 18), '每页不得超过容量');
 }
 
 console.log('subtitle paging algorithm checks passed');

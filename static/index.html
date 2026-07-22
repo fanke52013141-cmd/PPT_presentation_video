@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260718.1">
+  <link rel="stylesheet" href="style.css?v=20260722.1">
 </head>
 <body>
 
@@ -904,6 +904,10 @@
             <input id="subtitle-horizontal-margin" type="range" min="40" max="420" step="10" value="180">
           </label>
           <label>
+            <span>字幕颜色：<strong id="subtitle-color-value">#111111</strong></span>
+            <input id="subtitle-color" type="color" value="#111111">
+          </label>
+          <label>
             <span>高亮颜色：<strong id="subtitle-highlight-color-value">#1E3A8A</strong></span>
             <input id="subtitle-highlight-color" type="color" value="#1E3A8A">
           </label>
@@ -968,10 +972,10 @@
   <div id="toast-container" aria-live="polite" aria-atomic="false"></div>
 
   <!-- 主业务 JavaScript 脚本 -->
-  <script src="flow.js?v=3.0.0"></script>
-  <script src="app.js?v=20260704.3"></script>
+  <script src="flow.js?v=3.0.1"></script>
+  <script src="app.js?v=20260722.2"></script>
   <script src="project_profile_extension.js?v=3.0.0"></script>
-  <script src="storyboard_background_extension.js?v=3.0.0"></script>
+  <script src="storyboard_background_extension.js?v=3.0.1"></script>
   <script src="style_reference_manager_extension.js?v=3.0.1"></script>
   <script src="ai_mask_extension.js?v=3.0.1"></script>
   <script src="one_click_extension.js?v=20260630.1"></script>

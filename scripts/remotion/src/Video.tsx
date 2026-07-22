@@ -214,14 +214,54 @@ const splitSentenceToTokens = (
   });
 };
 
+const subtitleTextUnits = (text: string): number => Array.from(text).reduce((total, character) => {
+  if (/\s/.test(character)) return total;
+  if (/[A-Za-z0-9]/.test(character)) return total + 0.55;
+  return total + 1;
+}, 0);
+
+const splitSegmentForCapacity = (
+  segment: TimelineSegment,
+  maxTextUnits: number,
+): TimelineSegment[] => {
+  if (subtitleTextUnits(segment.text) <= maxTextUnits) return [segment];
+  const tokens = splitSentenceToTokens(segment.text, segment.start * 1000, segment.end * 1000);
+  const chunks: TimelineSegment[] = [];
+  let chunkTokens: CaptionToken[] = [];
+  let chunkUnits = 0;
+  const flush = () => {
+    if (chunkTokens.length === 0) return;
+    chunks.push({
+      id: `${segment.id}_page_${chunks.length + 1}`,
+      start: chunkTokens[0].fromMs / 1000,
+      end: chunkTokens[chunkTokens.length - 1].toMs / 1000,
+      text: chunkTokens.map((token) => token.text).join(''),
+    });
+    chunkTokens = [];
+    chunkUnits = 0;
+  };
+  tokens.forEach((token) => {
+    const units = subtitleTextUnits(token.text);
+    if (chunkTokens.length > 0 && chunkUnits + units > maxTextUnits) flush();
+    chunkTokens.push(token);
+    chunkUnits += units;
+  });
+  flush();
+  return chunks;
+};
+
 // 把句子级 segments 转成分页 CaptionPage[]
-// 同一句子的所有 token 一定在同一页；相邻句子的 gap 大于 pagingWindowMs 时分页
+// 按可用空间、持续时间和句间间隔分页；超长单句按 token 时间比例安全拆页。
 const buildCaptionPages = (
   segments: TimelineSegment[],
   pagingWindowMs: number,
   tokenize: boolean,
+  maxTextUnits = 72,
+  maxPageDurationMs = 6500,
 ): CaptionPage[] => {
-  const readable = segments.filter((segment) => hasReadableSubtitleText(segment.text || ''));
+  const readable = segments
+    .filter((segment) => hasReadableSubtitleText(segment.text || ''))
+    .flatMap((segment) => splitSegmentForCapacity(segment, maxTextUnits));
   if (readable.length === 0) return [];
 
   const pages: CaptionPage[] = [];
@@ -240,19 +280,29 @@ const buildCaptionPages = (
     });
     currentTokens = [];
     currentText = '';
+    currentEndMs = 0;
   };
 
   readable.forEach((segment, index) => {
     const segStartMs = segment.start * 1000;
     const segEndMs = segment.end * 1000;
     // 与上一句的 gap 超过窗口，则开新页
-    const shouldStartNewPage =
-      currentTokens.length > 0 && segStartMs - currentEndMs > pagingWindowMs;
+    const separator = /[A-Za-z0-9]$/.test(currentText) && /^[A-Za-z0-9]/.test(segment.text) ? ' ' : '';
+    const combinedText = `${currentText}${separator}${segment.text}`;
+    const shouldStartNewPage = currentTokens.length > 0 && (
+      segStartMs - currentEndMs > pagingWindowMs
+      || subtitleTextUnits(combinedText) > maxTextUnits
+      || segEndMs - currentStartMs > maxPageDurationMs
+    );
     if (shouldStartNewPage) {
       flush();
     }
     if (currentTokens.length === 0) {
       currentStartMs = segStartMs;
+    }
+    const currentSeparator = /[A-Za-z0-9]$/.test(currentText) && /^[A-Za-z0-9]/.test(segment.text) ? ' ' : '';
+    if (currentSeparator) {
+      currentTokens.push({text: currentSeparator, fromMs: segStartMs, toMs: segStartMs});
     }
     if (tokenize) {
       const tokens = splitSentenceToTokens(segment.text, segStartMs, segEndMs);
@@ -261,7 +311,7 @@ const buildCaptionPages = (
       // 不切 token：整句作为一个 token
       currentTokens.push({text: segment.text, fromMs: segStartMs, toMs: segEndMs});
     }
-    currentText += segment.text;
+    currentText += `${currentSeparator}${segment.text}`;
     currentEndMs = Math.max(currentEndMs, segEndMs);
     if (index === readable.length - 1) {
       flush();
@@ -646,10 +696,7 @@ const SubtitleView: React.FC<{
         zIndex: 10000,
         // 给 maxLines 行预留空间，避免内容居中导致位置抖动
         minHeight: Math.ceil(fontSize * lineHeight) * maxLines,
-        // 使用 -webkit-box 实现 line-clamp 多行裁切，alignItems 走 flex 容器外层处理
-        display: '-webkit-box',
-        WebkitBoxOrient: 'vertical',
-        WebkitLineClamp: maxLines,
+        display: 'block',
         justifyContent: 'center',
         boxSizing: 'border-box',
         padding: '0 24px',
@@ -659,12 +706,12 @@ const SubtitleView: React.FC<{
         fontWeight: baseFontWeight,
         lineHeight,
         textAlign: 'center',
-        // 关键 CSS：保留空格、允许自然换行、词内不切断、限制最多 maxLines 行
+        // 分页器已按可用宽度和行数控量，这里不再裁切文字。
         whiteSpace: 'pre-wrap',
         wordBreak: 'keep-all',
         overflowWrap: 'normal',
         fontFamily,
-        overflow: 'hidden',
+        overflow: 'visible',
       }}
     >
       {page.tokens.map((token, i) => {
@@ -696,9 +743,16 @@ const SlideView: React.FC<{slide: Slide; subtitleStyle?: SubtitleStyle}> = ({sli
   // 方案 B：用 page + token 高亮替代单 segment 显示
   const tokenize = subtitleStyle?.token_highlight !== false;
   const pagingWindowMs = subtitleStyle?.paging_window_ms ?? 1300;
+  const subtitleFontSize = subtitleStyle?.font_size ?? 38;
+  const subtitleMaxLines = subtitleStyle?.max_lines ?? 2;
+  const subtitleHorizontalMargin = subtitleStyle?.horizontal_margin ?? 180;
+  const subtitleTextCapacity = Math.max(
+    12,
+    Math.floor((1920 - subtitleHorizontalMargin * 2 - 48) / (subtitleFontSize * 1.05)) * subtitleMaxLines,
+  );
   const pages = React.useMemo(
-    () => buildCaptionPages(segments, pagingWindowMs, tokenize),
-    [segments, pagingWindowMs, tokenize],
+    () => buildCaptionPages(segments, pagingWindowMs, tokenize, subtitleTextCapacity),
+    [segments, pagingWindowMs, tokenize, subtitleTextCapacity],
   );
   const activePage = pageAtTime(pages, audioSeconds);
   const highlightCount = activePage ? highlightedTokenCount(activePage, audioSeconds) : 0;

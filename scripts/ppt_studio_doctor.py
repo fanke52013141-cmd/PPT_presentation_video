@@ -14,7 +14,6 @@ The doctor runs existing focused checks instead of duplicating their logic:
 - Python startup hook loading
 - runtime hotfix behavior
 - optional settings secret masking behavior
-- safe Step 1 dead-code cleanup preview
 - optional run_dir artifact checks
 
 Exit code is non-zero when a required check fails.
@@ -87,13 +86,10 @@ def run_check(name: str, command: list[str], *, env: dict[str, str] | None = Non
 def check_required_files() -> CheckResult:
     required_paths = [
         "sitecustomize.py",
-        "usercustomize.py",
-        "runtime_security.py",
-        "runtime_settings_mask.py",
+        "app_security.py",
         "scripts/check_python_startup_hooks.py",
         "scripts/check_runtime_hotfixes.py",
         "scripts/check_runtime_settings_mask.py",
-        "scripts/cleanup_step1_dead_code.py",
         "scripts/check_smoke_artifacts.py",
         "docs/e2e_smoke_test_checklist.md",
         "docs/runtime_hotfixes_and_security.md",
@@ -171,7 +167,8 @@ def main() -> int:
         )
     )
 
-    if not args.skip_step1_cleanup_check:
+    cleanup_script = REPO_ROOT / "scripts" / "cleanup_step1_dead_code.py"
+    if cleanup_script.exists() and not args.skip_step1_cleanup_check:
         checks.append(
             run_check(
                 "Step 1 dead-code cleanup safety preview",

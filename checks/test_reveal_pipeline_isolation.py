@@ -26,6 +26,8 @@ def main() -> None:
     assert "split_master_layers.py" not in server
     assert "auto_fit_reveal_boxes.py" not in preflight
     assert 'MASKED_COMPOSITION_METHOD = "solid_background_mask_boundary_white_cutout"' in builder
+    assert 'slide.get("slide_dir") or f"slides/{slide_id}"' in builder
+    assert 'slide.get("master") or "visual_draft.png"' in builder
 
     removed_paths = (
         "scripts/auto_fit_reveal_boxes.py",

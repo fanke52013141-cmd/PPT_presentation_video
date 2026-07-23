@@ -177,7 +177,9 @@ def main() -> None:
     assert 'id="step2-slide-title-input"' in html
     assert 'id="step2-slide-subtitle-input"' not in html
     assert 'id="step2-slide-narration-input"' in html
-    assert 'id="step2-slide-narration-input" class="step2-soft-input" rows="5" readonly' in html
+    assert 'id="step2-slide-narration-input" class="step2-soft-input" rows="5" readonly' not in html
+    assert "narrationInput.readOnly = !manual || structuredManualSlide;" in app_js
+    assert "if (step2SlideHasStructuredVisuals(slide)) return;" in app_js
     assert 'style_reference_manager_extension.js' in html
     assert 'id="modal-step2-generate"' in html
     assert 'id="step2-generation-requirement"' in html
@@ -209,8 +211,11 @@ def main() -> None:
         "image-style/ai-draft",
     ]:
         assert removed_token not in app_js
-    assert "不输出 `body_points`" in step2_visual_prompt
-    assert "按语义把整页 `narration` 切成" in step2_visual_prompt
+    assert "不输出副标题" in step2_visual_prompt
+    assert "`body_points`" in step2_visual_prompt
+    assert "`narration_segments`" in step2_visual_prompt
+    assert "先按语义切分整页 `narration`" in step2_visual_prompt
+    assert "必须逐字还原原演讲稿" in step2_visual_prompt
     assert "Text/Picture" not in step2_visual_prompt or "visual_type" in step2_visual_prompt
     assert "handleStep2MapEditorInput" in app_js
     assert "handleStep2MapEditorChange" in app_js

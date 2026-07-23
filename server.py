@@ -515,6 +515,7 @@ _RENDER_TASKS: Dict[str, Dict[str, Any]] = {}
 _RENDER_TASKS_LOCK = threading.Lock()
 _RENDER_PROJECT_LOCKS: Dict[str, threading.Lock] = {}
 _RENDER_PROJECT_LOCKS_GUARD = threading.Lock()
+RENDER_TASK_HISTORY_LIMIT = 100
 
 
 def _get_project_render_lock(project_id: str) -> threading.Lock:
@@ -544,6 +545,23 @@ def _set_render_task_stage(task_id: str, stage: str) -> None:
             task["elapsed_sec"] = round(time.time() - task["started_at"], 1)
 
 
+def _prune_render_tasks_locked() -> None:
+    """Bound completed render history without removing active tasks."""
+    excess = len(_RENDER_TASKS) - RENDER_TASK_HISTORY_LIMIT
+    if excess <= 0:
+        return
+    completed = sorted(
+        (
+            task
+            for task in _RENDER_TASKS.values()
+            if task.get("status") in {"success", "error"}
+        ),
+        key=lambda task: task.get("finished_at") or task.get("started_at") or 0.0,
+    )
+    for task in completed[:excess]:
+        _RENDER_TASKS.pop(task["task_id"], None)
+
+
 def _set_render_task_status(task_id: str, status: str, **fields: Any) -> None:
     with _RENDER_TASKS_LOCK:
         task = _RENDER_TASKS.get(task_id)
@@ -555,6 +573,7 @@ def _set_render_task_status(task_id: str, status: str, **fields: Any) -> None:
             task["finished_at"] = time.time()
         for key, value in fields.items():
             task[key] = value
+        _prune_render_tasks_locked()
 
 
 # 渲染阶段中文标签，供前端 progress 文案使用。

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import os
 from pathlib import Path
 import shutil
@@ -12,6 +13,12 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
+QUICK_PYTHON_CHECKS = (
+    ROOT / "checks" / "test_step_ownership_contract.py",
+    ROOT / "checks" / "test_source_hardening.py",
+    ROOT / "checks" / "test_generalized_settings.py",
+    ROOT / "checks" / "test_subtitle_style.py",
+)
 
 
 def run(command: list[str], *, cwd: Path = ROOT, env: dict[str, str] | None = None) -> None:
@@ -25,6 +32,21 @@ def run(command: list[str], *, cwd: Path = ROOT, env: dict[str, str] | None = No
 
 def python_check(path: Path) -> None:
     run([sys.executable, str(path.relative_to(ROOT))])
+
+
+def standalone_python_checks() -> list[Path]:
+    """Return script-style checks that pytest cannot discover."""
+    result: list[Path] = []
+    for path in sorted((ROOT / "checks").glob("test_*.py")):
+        module = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        has_pytest_tests = any(
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name.startswith("test_")
+            for node in module.body
+        )
+        if not has_pytest_tests:
+            result.append(path)
+    return result
 
 
 def quick_checks() -> None:
@@ -52,12 +74,11 @@ def quick_checks() -> None:
     ])
     for source in sorted((ROOT / "static").glob("*.js")):
         run(["node", "--check", str(source.relative_to(ROOT))])
-    python_check(ROOT / "checks" / "test_step_ownership_contract.py")
+    python_check(QUICK_PYTHON_CHECKS[0])
     run(["node", "checks/test_visible_flow.js"])
     run(["node", "checks/test_frontend_quality.js"])
-    python_check(ROOT / "checks" / "test_source_hardening.py")
-    python_check(ROOT / "checks" / "test_generalized_settings.py")
-    python_check(ROOT / "checks" / "test_subtitle_style.py")
+    for path in QUICK_PYTHON_CHECKS[1:]:
+        python_check(path)
     python_check(ROOT / "scripts" / "check_python_startup_hooks.py")
     python_check(ROOT / "scripts" / "check_runtime_hotfixes.py")
     masked_env = os.environ.copy()
@@ -67,6 +88,10 @@ def quick_checks() -> None:
 
 def full_checks() -> None:
     quick_checks()
+    quick_check_set = set(QUICK_PYTHON_CHECKS)
+    for path in standalone_python_checks():
+        if path not in quick_check_set:
+            python_check(path)
     run([sys.executable, "-m", "pytest", "-q"])
 
 

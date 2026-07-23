@@ -2,6 +2,7 @@ import os
 import json
 from datetime import datetime
 from sqlalchemy import create_engine, Column, String, Integer, DateTime, Text
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -45,6 +46,42 @@ class Setting(Base):
     key = Column(String, primary_key=True, index=True)
     value = Column(Text, nullable=False)
 
+
+DEFAULT_SETTINGS = {
+    # LLM + Vision (共享)
+    "llm_provider": "openai",
+    "llm_base_url": "https://api.openai.com/v1",
+    "llm_api_key": "",
+    "llm_model": "gpt-4o-mini",
+    "llm_temperature": "0.7",
+    "llm_max_tokens": "50000",
+    "vision_model": "gpt-4o",
+    # Image Gen (独立)
+    "image_base_url": "https://api.openai.com/v1",
+    "image_api_key": "",
+    "image_model": "gpt-image-1",
+    "image_size": "1024x1024",
+    # TTS
+    "tts_provider": "minimax",
+    "tts_endpoint": "https://api.minimaxi.com/v1/t2a_async_v2",
+    "tts_api_key": "",
+    "tts_secret_key": "",
+    "tts_region": "",
+    "tts_model": "speech-2.8-hd",
+    "tts_voice_id": "Chinese (Mandarin)_Soft_Girl",
+    "tts_clone_voice_id": "",
+    "tts_provider_extra": "",
+    "tts_speed": "1.2",
+    "tts_volume": "1.0",
+    "tts_pitch": "0",
+}
+
+LEGACY_DEFAULTS = {
+    "llm_max_tokens": ("16000", "50000"),
+    "tts_speed": ("1.0", "1.2"),
+}
+
+
 def _migrate_add_ai_mode_column() -> None:
     """Add ai_mode column to legacy projects tables (SQLite ALTER TABLE).
 
@@ -74,46 +111,17 @@ def _migrate_add_ai_mode_column() -> None:
 def init_db():
     Base.metadata.create_all(bind=engine)
     _migrate_add_ai_mode_column()
-    # 初始化默认设置
     db = SessionLocal()
     try:
-        default_settings = {
-            # LLM + Vision (共享)
-            "llm_provider": "openai",
-            "llm_base_url": "https://api.openai.com/v1",
-            "llm_api_key": "",
-            "llm_model": "gpt-4o-mini",
-            "llm_temperature": "0.7",
-            "llm_max_tokens": "50000",
-            "vision_model": "gpt-4o",
-            # Image Gen (独立)
-            "image_base_url": "https://api.openai.com/v1",
-            "image_api_key": "",
-            "image_model": "gpt-image-1",
-            "image_size": "1024x1024",
-            # TTS
-            "tts_provider": "minimax",
-            "tts_endpoint": "https://api.minimaxi.com/v1/t2a_async_v2",
-            "tts_api_key": "",
-            "tts_secret_key": "",
-            "tts_region": "",
-            "tts_model": "speech-2.8-hd",
-            "tts_voice_id": "Chinese (Mandarin)_Soft_Girl",
-            "tts_clone_voice_id": "",
-            "tts_provider_extra": "",
-            "tts_speed": "1.2",
-            "tts_volume": "1.0",
-            "tts_pitch": "0"
-        }
-        for k, v in default_settings.items():
-            existing = db.query(Setting).filter(Setting.key == k).first()
-            if not existing:
-                db.add(Setting(key=k, value=str(v)))
-        legacy_defaults = {
-            "llm_max_tokens": ("16000", "50000"),
-            "tts_speed": ("1.0", "1.2"),
-        }
-        for key, (old_value, new_value) in legacy_defaults.items():
+        # A query-then-insert loop races when multiple workers start together.
+        # SQLite conflict handling makes seeding atomic while preserving
+        # existing user-configured values.
+        statement = sqlite_insert(Setting).values(
+            [{"key": key, "value": str(value)} for key, value in DEFAULT_SETTINGS.items()]
+        )
+        db.execute(statement.on_conflict_do_nothing(index_elements=["key"]))
+
+        for key, (old_value, new_value) in LEGACY_DEFAULTS.items():
             existing = db.query(Setting).filter(Setting.key == key).first()
             if existing and existing.value == old_value:
                 existing.value = new_value

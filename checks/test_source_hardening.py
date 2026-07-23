@@ -16,11 +16,17 @@ def main() -> None:
     assert 'npx_cmd, "remotion", "render", "src/index.tsx", "ArticleVideo", output_mp4_path' in server
     assert 'npx_cmd, "remotion", "render", "ArticleVideo", output_mp4_path' not in server
 
-    render_start = server.index('def render_video(project_id: str')
-    render_end = server.index('@app.get("/api/projects/{project_id}/videos")', render_start)
+    worker_start = server.index("def _render_video_worker(project_id: str")
+    worker_end = server.index('@app.post("/api/projects/{project_id}/steps/8/render")', worker_start)
+    worker_source = server[worker_start:worker_end]
+    assert "videos_dir = project_video_dir(project)" in worker_source
+    assert "output_mp4_path = os.path.join(videos_dir, output_filename)" in worker_source
+    assert "RENDER_TASK_HISTORY_LIMIT = 100" in server
+    assert "_prune_render_tasks_locked()" in server
+
+    render_start = server.index("def render_video(project_id: str")
+    render_end = server.index('@app.get("/api/projects/{project_id}/steps/8/render-status")', render_start)
     render_source = server[render_start:render_end]
-    assert "videos_dir = project_video_dir(project)" in render_source
-    assert "output_mp4_path = os.path.join(videos_dir, output_filename)" in render_source
 
     assert "def mask_sensitive_settings" in server
     assert "return mask_sensitive_settings(get_all_settings())" in server
@@ -37,7 +43,7 @@ def main() -> None:
     init_end = server.index('@app.get("/api/projects/{project_id}/steps/6/result")', init_start)
     assert '"--overwrite"' not in server[init_start:init_end]
 
-    assert '"input_fingerprint": render_fingerprint' in render_source
+    assert '"input_fingerprint": render_fingerprint' in worker_source
     assert "tts_confirmation_status(project.run_dir, slide_ids)" in render_source
 
     step5_start = server.index('def update_step5_result(')
@@ -55,7 +61,9 @@ def main() -> None:
     assert app_js.count("async function runStep7TTS()") == 1
 
     assert "python scripts/run_checks.py --level full" in ci
-    assert 'python_check(ROOT / "checks" / "test_source_hardening.py")' in read_text("scripts/run_checks.py")
+    check_runner = read_text("scripts/run_checks.py")
+    assert 'ROOT / "checks" / "test_source_hardening.py"' in check_runner
+    assert "for path in QUICK_PYTHON_CHECKS[1:]:" in check_runner
     assert "npm ci" in ci
     assert "npx tsc --noEmit -p tsconfig.json" in ci
 

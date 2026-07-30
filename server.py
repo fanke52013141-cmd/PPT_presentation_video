@@ -559,11 +559,6 @@ def write_project_log(project: Project, event: str, **fields: Any) -> None:
         logger.warning("Failed to write project log for %s: %s", getattr(project, "id", "<unknown>"), exc)
 
 # Pydantic 响应模型
-class ProjectCreate(BaseModel):
-    name: str
-    description: Optional[str] = ""
-    ai_mode: Optional[str] = "auto"
-
 class SettingsUpdate(BaseModel):
     settings: Dict[str, str]
 
@@ -2075,132 +2070,7 @@ def rewrite_audio_timeline_by_beats(timeline_path: str, slide_id: str, beats: Li
 
 # ==================== 项目管理接口 ====================
 
-@app.post("/api/projects")
-def create_project(payload: ProjectCreate, db: Session = Depends(get_db)):
-    project_id = str(uuid.uuid4())[:8] + "_" + datetime.now().strftime("%H%M%S")
-    run_dir = str(validated_project_run_dir(RUNS_DIR, os.path.join(RUNS_DIR, project_id), project_id))
-    
-    # 初始化文件夹结构
-    os.makedirs(os.path.join(run_dir, "inputs"), exist_ok=True)
-    os.makedirs(os.path.join(run_dir, "planning"), exist_ok=True)
-    os.makedirs(os.path.join(run_dir, "slides"), exist_ok=True)
-    os.makedirs(os.path.join(run_dir, "review"), exist_ok=True)
-    
-    # 初始化默认步骤状态字典：1到8步均为 pending
-    initial_step_status = {str(i): "pending" for i in range(1, 9)}
-
-    ai_mode = (payload.ai_mode or "auto").strip().lower()
-    if ai_mode not in {"auto", "manual"}:
-        ai_mode = "auto"
-
-    db_project = Project(
-        id=project_id,
-        name=payload.name,
-        description=payload.description,
-        current_step=1,
-        status="active",
-        run_dir=run_dir,
-        ai_mode=ai_mode,
-    )
-    db_project.set_step_status(initial_step_status)
-    db.add(db_project)
-    db.commit()
-    db.refresh(db_project)
-
-    return {
-        "success": True,
-        "project": {
-            "id": db_project.id,
-            "name": db_project.name,
-            "description": db_project.description,
-            "current_step": db_project.current_step,
-            "step_status": db_project.get_step_status(),
-            "audio_confirmed": False,
-            "ai_mode": db_project.ai_mode or "auto",
-        }
-    }
-
-@app.get("/api/projects")
-def list_projects(db: Session = Depends(get_db)):
-    projects = db.query(Project).order_by(Project.created_at.desc()).all()
-    return [{
-        "id": p.id,
-        "name": p.name,
-        "description": p.description,
-        "current_step": p.current_step,
-        "status": p.status,
-        "step_status": p.get_step_status(),
-        "audio_confirmed": project_audio_confirmed(p),
-        "ai_mode": p.ai_mode or "auto",
-        "created_at": p.created_at.isoformat()
-    } for p in projects]
-
-@app.get("/api/projects/{project_id}")
-def get_project(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    return {
-        "id": project.id,
-        "name": project.name,
-        "description": project.description,
-        "current_step": project.current_step,
-        "status": project.status,
-        "step_status": project.get_step_status(),
-        "audio_confirmed": project_audio_confirmed(project),
-        "run_dir": project.run_dir,
-        "ai_mode": project.ai_mode or "auto",
-    }
-
-
-class AiModeUpdate(BaseModel):
-    ai_mode: str
-
-
-@app.get("/api/projects/{project_id}/ai-mode")
-def get_project_ai_mode(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    return {"ai_mode": project.ai_mode or "auto"}
-
-
-@app.put("/api/projects/{project_id}/ai-mode")
-def update_project_ai_mode(project_id: str, payload: AiModeUpdate, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    ai_mode = (payload.ai_mode or "").strip().lower()
-    if ai_mode not in {"auto", "manual"}:
-        raise HTTPException(status_code=400, detail="ai_mode 必须为 auto 或 manual")
-    project.ai_mode = ai_mode
-    db.commit()
-    db.refresh(project)
-    return {"success": True, "ai_mode": project.ai_mode}
-
-@app.delete("/api/projects/{project_id}")
-def delete_project(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    
-    # Only delete a direct, ID-matching child of RUNS_DIR. Never trust a
-    # database path for recursive deletion without this boundary check.
-    run_dir = project_run_dir_or_500(project)
-    if os.path.exists(run_dir):
-        try:
-            shutil.rmtree(run_dir)
-        except Exception as e:
-            logger.error(f"Failed to delete directory {run_dir}: {e}")
-            raise HTTPException(status_code=500, detail="项目文件删除失败") from e
-            
-    db.query(ArtifactRecord).filter(ArtifactRecord.project_id == project_id).delete(synchronize_session=False)
-    db.query(LocalJob).filter(LocalJob.project_id == project_id).delete(synchronize_session=False)
-    db.delete(project)
-    db.commit()
-    return {"success": True, "message": "项目删除成功"}
-
-# ==================== 设置管理接口 ====================
+# Project lifecycle routes are source-owned by project_service.py and project_routes.py.
 
 @app.get("/api/settings")
 def get_settings():
@@ -4963,6 +4833,27 @@ def update_step5_result(project_id: str, payload: Dict[str, Any], build_assets: 
 # ==================== 步骤 6: 演讲稿编辑 ====================
 
 # Narration and TTS routes are source-owned by dedicated services.
+try:
+    from project_routes import router as project_router
+    from project_service import (
+        ProjectDependencies,
+        configure_project_service,
+    )
+
+    configure_project_service(
+        ProjectDependencies(
+            runs_root=Path(RUNS_DIR),
+            project_audio_confirmed=project_audio_confirmed,
+        )
+    )
+    app.include_router(project_router)
+except Exception as exc:
+    logger.exception(
+        "Explicit project route registration failed: %s",
+        exc,
+    )
+    raise
+
 from narration_service import (
     annotate_step6_narration,
     build_narration_annotation_input,

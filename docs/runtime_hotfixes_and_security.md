@@ -30,6 +30,7 @@ should ultimately be migrated behind normal service and route modules.
 | `storyboard_routes.py` | Explicit Step 2 planning and storyboard-template HTTP routes. |
 | `narration_service.py` / `narration_routes.py` | Step 6 narration lifecycle and explicit HTTP routes. |
 | `tts_service.py` / `tts_routes.py` | Step 7 synthesis, audio artifact status/download, confirmation, and explicit HTTP routes. |
+| `project_service.py` / `project_routes.py` | Project lifecycle, AI mode, safe run-directory creation/deletion, and explicit routes. |
 | `one_click_routes.py` | Source-owned One-click HTTP routes. |
 | `one_click_orchestrator.py` | One-click task orchestration configured through narrow `OneClickDependencies`. |
 | `ai_mask_config.py` | Source-owned AI Mask settings persistence and Prompt migration. |

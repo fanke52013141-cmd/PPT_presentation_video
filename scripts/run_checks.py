@@ -55,6 +55,8 @@ def quick_checks() -> None:
         "pptx_service.py",
         "project_profile_service.py",
         "project_profile_store.py",
+        "project_routes.py",
+        "project_service.py",
         "project_style_context.py",
         "project_style_reference_service.py",
         "project_style_reference_store.py",
@@ -111,6 +113,14 @@ def quick_checks() -> None:
         "-m",
         "pytest",
         "checks/test_narration_tts_routes.py",
+        "-q",
+    ])
+    run([
+        sys.executable,
+        "-m",
+        "pytest",
+        "checks/test_project_service.py",
+        "checks/test_project_routes.py",
         "-q",
     ])
     python_check(ROOT / "scripts" / "check_python_startup_hooks.py")

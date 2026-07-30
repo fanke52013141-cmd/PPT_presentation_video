@@ -46,7 +46,7 @@
 
 | 检查 | 结果 |
 | --- | --- |
-| `py -3.13 -m pytest checks -q` | 191 通过，6 条已有第三方弃用警告 |
+| `py -3.13 -m pytest checks -q` | 194 通过，8 条已有第三方弃用警告 |
 | Python `compileall` | 通过 |
 | `node --check static/app.js` | 通过 |
 | `node --check static/flow.js` | 通过 |
@@ -76,6 +76,7 @@
 | Step 8 内部职责拆分为编排器、VideoJobStore、VideoArtifactService 与 RemotionRunner | 通过 |
 | Step 2 分镜服务与显式 Router 拆分，24 条原有路径保持不变 | 通过 |
 | Step 6 旁白与 Step 7 TTS 服务/Router 拆分，11 条原有路径保持不变 | 通过 |
+| 项目生命周期服务/Router 拆分，空文章项目创建与安全删除回归 | 通过 |
 
 安装 Remotion 基线依赖时发现 `postcss 8.5.15` 的高危路径遍历公告。已通过锁文件补丁升级到 `postcss 8.5.25`，同时将传递依赖 `nanoid` 更新到 `3.3.16`；TypeScript 编译和完整回归均通过。
 

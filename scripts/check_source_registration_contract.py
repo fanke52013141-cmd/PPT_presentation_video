@@ -21,6 +21,8 @@ def main() -> None:
     narration_service = (ROOT / "narration_service.py").read_text(encoding="utf-8")
     tts_routes = (ROOT / "tts_routes.py").read_text(encoding="utf-8")
     tts_service = (ROOT / "tts_service.py").read_text(encoding="utf-8")
+    project_routes = (ROOT / "project_routes.py").read_text(encoding="utf-8")
+    project_service = (ROOT / "project_service.py").read_text(encoding="utf-8")
     html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
     assert not (ROOT / "runtime_bootstrap.py").exists(), "empty runtime bootstrap should stay retired"
     assert "app.include_router(one_click_router)" in server, "one-click router is not explicitly registered"
@@ -29,6 +31,7 @@ def main() -> None:
     assert "app.include_router(storyboard_router)" in server, "Step 2 storyboard router is not explicitly registered"
     assert "app.include_router(narration_router)" in server, "narration router is not explicitly registered"
     assert "app.include_router(tts_router)" in server, "TTS router is not explicitly registered"
+    assert "app.include_router(project_router)" in server, "project router is not explicitly registered"
     assert "app.include_router(pptx_router)" in server, "PPTX router is not explicitly registered"
     assert "app.include_router(video_router)" in server, "video router is not explicitly registered"
     assert "one_click_orchestrator._register" not in server, "legacy one-click registration returned"
@@ -50,6 +53,9 @@ def main() -> None:
         assert "sys.modules" not in source, "narration/TTS code receives a dynamic application namespace"
     assert "APIRouter" not in narration_service, "narration service owns HTTP routing again"
     assert "APIRouter" not in tts_service, "TTS service owns HTTP routing again"
+    assert '@app.post("/api/projects")' not in server, "project creation route returned to server"
+    assert "APIRouter" not in project_service, "project service owns HTTP routing again"
+    assert "router = APIRouter()" in project_routes, "project routes module is incomplete"
     assert "register_pptx_routes" not in server, "legacy PPTX registration returned"
     assert "app.include_router(project_style_router)" in server, "project style router is not explicitly registered"
     assert "register_project_style_routes" not in server, "legacy project style registration returned"

@@ -145,6 +145,9 @@ The Python startup monkey patch has been retired. AI Mask is now source-owned:
   `tts_routes.py` own Step 7 synthesis, retry/status, audio download, and
   confirmation. Both services receive narrow dependency records and must not
   import the application module or restore route decorators in `server.py`.
+- `project_service.py` and `project_routes.py` own project creation, listing,
+  detail, AI mode, and deletion. Creating a project must remain independent
+  from importing article content; an empty Step 1 project is valid.
 - `one_click_routes.py` owns the One-click HTTP contract.
   `one_click_orchestrator.py` receives only `OneClickDependencies`; it must
   never receive the FastAPI application or the complete `server` module.

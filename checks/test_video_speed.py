@@ -2,6 +2,7 @@ import json
 import subprocess
 import sys
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -11,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import server
+from video_artifact_service import VideoArtifactService
 
 
 class FakeDb:
@@ -25,6 +27,9 @@ class FakeDb:
 
     def first(self):
         return self.project
+
+    def commit(self):
+        return None
 
 
 with tempfile.TemporaryDirectory() as temp_dir:
@@ -52,12 +57,21 @@ with tempfile.TemporaryDirectory() as temp_dir:
         Path(command[-1]).write_bytes(b"speed-video")
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
-    with patch("server.RUNS_DIR", str(runs_dir)), patch("server.resolve_media_tool", return_value="ffmpeg"), patch("server.subprocess.run", side_effect=fake_run):
-        result = server.create_speed_adjusted_video(
+    dependencies = replace(
+        server.video_render_service.artifacts.dependencies,
+        resolve_media_tool=lambda _name: "ffmpeg",
+        runs_root=runs_dir,
+    )
+    service = VideoArtifactService(dependencies)
+    with patch(
+        "video_artifact_service.subprocess.run",
+        side_effect=fake_run,
+    ), patch("video_artifact_service.record_artifact"):
+        result = service.create_speed_adjusted_video(
+            FakeDb(project),
             "project_test",
             "render_test.mp4",
             {"speed": 1.25},
-            db=FakeDb(project),
         )
 
     command = captured["command"]

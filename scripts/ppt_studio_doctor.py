@@ -12,7 +12,7 @@ With a project artifact check:
 The doctor runs existing focused checks instead of duplicating their logic:
 
 - Python startup hook loading
-- runtime hotfix behavior
+- source-owned pipeline safeguards
 - optional settings secret masking behavior
 - optional run_dir artifact checks
 
@@ -85,7 +85,7 @@ def run_check(name: str, command: list[str], *, env: dict[str, str] | None = Non
 
 def check_required_files() -> CheckResult:
     required_paths = [
-        "sitecustomize.py",
+        "reveal_manifest_service.py",
         "app_security.py",
         "scripts/check_python_startup_hooks.py",
         "scripts/check_runtime_hotfixes.py",
@@ -113,7 +113,6 @@ def check_required_files() -> CheckResult:
 def env_report() -> None:
     print("\n==> environment summary")
     keys = [
-        "PPT_STUDIO_DISABLE_RUNTIME_HOTFIXES",
         "PPT_STUDIO_ACCESS_TOKEN",
         "PPT_STUDIO_ALLOWED_ORIGINS",
         "PPT_STUDIO_MASK_SETTINGS_SECRETS",
@@ -152,7 +151,7 @@ def main() -> int:
     )
     checks.append(
         run_check(
-            "runtime hotfix behavior",
+            "source-owned pipeline safeguards",
             [sys.executable, "scripts/check_runtime_hotfixes.py"],
         )
     )

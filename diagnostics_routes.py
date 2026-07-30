@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from types import ModuleType
 from typing import Any
 
-PATCH_MARKER = "__ppt_runtime_diagnostics_patch__"
+from fastapi import APIRouter, Request
+
+
+router = APIRouter()
 
 EXPECTED_SOURCE_ROUTES = {
     "/api/projects/{project_id}/one-click-generate": {"POST"},
@@ -26,8 +28,7 @@ def _route_methods_by_path(app: Any) -> dict[str, list[str]]:
     return {path: sorted(methods) for path, methods in sorted(result.items())}
 
 
-def _diagnostics_payload(server_module: ModuleType) -> dict[str, Any]:
-    app = server_module.app
+def _diagnostics_payload(app: Any) -> dict[str, Any]:
     routes = _route_methods_by_path(app)
     missing_routes = sorted(
         f"{method} {path}"
@@ -47,16 +48,6 @@ def _diagnostics_payload(server_module: ModuleType) -> dict[str, Any]:
     }
 
 
-def _register(server_module: ModuleType) -> bool:
-    app = getattr(server_module, "app", None)
-    if app is None:
-        return False
-    if getattr(server_module, PATCH_MARKER, False):
-        return True
-
-    def runtime_diagnostics() -> dict[str, Any]:
-        return _diagnostics_payload(server_module)
-
-    app.add_api_route("/api/runtime/diagnostics", runtime_diagnostics, methods=["GET"])
-    setattr(server_module, PATCH_MARKER, True)
-    return True
+@router.get("/api/runtime/diagnostics")
+def runtime_diagnostics(request: Request) -> dict[str, Any]:
+    return _diagnostics_payload(request.app)

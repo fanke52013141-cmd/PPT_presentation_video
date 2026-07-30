@@ -175,7 +175,11 @@ const API = {
         }
       }
       if (!response.ok) {
-        throw new Error(data.detail || data.message || response.statusText || '请求失败');
+        const detail = data.detail || data.message || response.statusText || '请求失败';
+        const message = typeof detail === 'string'
+          ? detail
+          : (detail?.message || JSON.stringify(detail));
+        throw new Error(message);
       }
       return data;
     } catch (error) {
@@ -597,6 +601,7 @@ function initGlobalEvents() {
 
   // ================= 步骤 8 事件 =================
   document.getElementById('step8-btn-render')?.addEventListener('click', () => runStep8Render());
+  document.getElementById('step8-btn-pptx')?.addEventListener('click', () => runStep8PptxExport());
   document.getElementById('step8-btn-finish')?.addEventListener('click', () => exitWorkspace());
   document.getElementById('btn-storyboard-rules-cancel')?.addEventListener('click', () => closeStoryboardRulesModal());
   document.getElementById('btn-step2-prompts-save')?.addEventListener('click', () => saveStep2Prompts());
@@ -5893,8 +5898,8 @@ async function loadStep7Data() {
       emptyState.style.display = 'none';
       confirmButton.disabled = false;
       document.getElementById('step6-audio-confirm-label').innerText = state.currentProject.audio_confirmed
-        ? '进入视频合成'
-        : '确认并进入视频合成';
+        ? '进入作品输出'
+        : '确认并进入作品输出';
     }
   }
 }
@@ -5951,7 +5956,7 @@ async function confirmStep7Audio() {
   try {
     const res = await API.post(`/api/projects/${state.currentProject.id}/steps/7/confirm`, {});
     if (res.success) {
-      showToast('✅ 音频已确认，准备进入视频合成。');
+      showToast('✅ 音频已确认，准备进入作品输出。');
       await refreshCurrentProjectStatus(6);
       return true;
     }
@@ -6017,9 +6022,12 @@ function startStep8RenderPolling(taskId) {
         refreshCurrentProjectStatus(8).catch(() => {});
       } else if (res.status === 'error') {
         const message = res.error || '视频渲染失败，请查看 logs/pipeline.log。';
-        document.getElementById('step8-error-message').innerText = message;
-        document.getElementById('step8-error-box').style.display = 'block';
+        setStep8OutputError('视频渲染失败', message, { showLog: true });
         showToast(`❌ 渲染失败: ${message}`, 7000);
+      } else if (res.status === 'interrupted') {
+        const message = res.error || '应用上次运行时退出，视频任务已中断，请重新生成。';
+        setStep8OutputError('视频任务已中断', message);
+        showToast(message, 7000);
       } else if (res.status === 'idle') {
         // 任务记录丢失（可能服务器重启），刷新视频列表
         if (res.videos && res.videos.length > 0) {
@@ -6039,6 +6047,7 @@ function startStep8RenderPolling(taskId) {
 }
 
 async function loadStep8Data() {
+  await loadStep8PptxData();
   try {
     // 先检查是否有进行中的渲染任务（页面刷新后恢复轮询）
     const statusRes = await API.get(`/api/projects/${state.currentProject.id}/steps/8/render-status`);
@@ -6053,6 +6062,12 @@ async function loadStep8Data() {
         showStep8VideoResult(statusRes.videos);
       }
       return;
+    }
+    if (statusRes.success && (statusRes.status === 'interrupted' || statusRes.status === 'error')) {
+      setStep8OutputError(
+        statusRes.status === 'interrupted' ? '视频任务已中断' : '上次视频生成失败',
+        statusRes.error || '请重新生成视频。',
+      );
     }
 
     const res = await API.get(`/api/projects/${state.currentProject.id}/videos`);
@@ -6091,12 +6106,237 @@ async function runStep8Render() {
   } catch(e) {
     console.error('Step 8 render start failed:', e);
     const message = e?.message || '视频渲染启动失败，请查看项目 logs/pipeline.log。';
-    document.getElementById('step8-error-message').innerText = message;
-    document.getElementById('step8-error-box').style.display = 'block';
+    setStep8OutputError('视频渲染失败', message, { showLog: true });
     document.getElementById('step8-loading').style.display = 'none';
     if (renderBtn) renderBtn.disabled = false;
     showToast(`❌ 渲染失败: ${message}`, 7000);
   }
+}
+
+let _step8PptxPollTimer = null;
+let _step8PptxJobId = null;
+
+function stopStep8PptxPolling() {
+  if (_step8PptxPollTimer) {
+    clearInterval(_step8PptxPollTimer);
+    _step8PptxPollTimer = null;
+  }
+  _step8PptxJobId = null;
+}
+
+function formatArtifactBytes(value) {
+  const bytes = Number(value || 0);
+  if (!Number.isFinite(bytes) || bytes <= 0) return '未知大小';
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function pptxStageLabel(stage) {
+  return ({
+    queued: '等待生成',
+    validating: '检查页面',
+    composing: '写入幻灯片',
+    verifying: '校验 PPTX',
+    completed: '生成完成',
+  })[stage] || '生成 PPTX';
+}
+
+function setStep8OutputError(title, message, options = {}) {
+  const titleNode = document.getElementById('step8-error-title');
+  const messageNode = document.getElementById('step8-error-message');
+  const logHint = document.getElementById('step8-error-log-hint');
+  const box = document.getElementById('step8-error-box');
+  if (titleNode) titleNode.innerText = title || '输出失败';
+  if (messageNode) messageNode.innerText = message || '输出失败，请重试。';
+  if (logHint) logHint.style.display = options.showLog ? 'block' : 'none';
+  if (box) box.style.display = 'block';
+}
+
+function updateStep8PptxLoading(job) {
+  const loading = document.getElementById('step8-pptx-loading');
+  const text = document.getElementById('step8-pptx-loading-text');
+  const button = document.getElementById('step8-btn-pptx');
+  if (loading) loading.style.display = 'inline-flex';
+  if (button) button.disabled = true;
+  if (text) {
+    const progress = Number(job?.progress || 0);
+    text.innerText = `${pptxStageLabel(job?.stage)}${progress > 0 ? ` · ${progress}%` : ''}...`;
+  }
+}
+
+function startStep8PptxPolling(jobId) {
+  stopStep8PptxPolling();
+  _step8PptxJobId = jobId;
+  const poll = async () => {
+    if (!state.currentProject || _step8PptxJobId !== jobId) return;
+    try {
+      const res = await API.get(
+        `/api/projects/${state.currentProject.id}/jobs/${encodeURIComponent(jobId)}`,
+      );
+      const job = res.job || {};
+      if (job.status === 'queued' || job.status === 'running') {
+        updateStep8PptxLoading(job);
+        return;
+      }
+      stopStep8PptxPolling();
+      document.getElementById('step8-pptx-loading').style.display = 'none';
+      if (job.status === 'succeeded') {
+        showToast('PPTX 已生成，可以下载。');
+        await loadStep8PptxData();
+        refreshCurrentProjectStatus(8).catch(() => {});
+      } else {
+        setStep8OutputError(
+          job.status === 'interrupted' ? 'PPTX 任务已中断' : 'PPTX 生成失败',
+          job.error || '生成失败，请重新生成。',
+        );
+        await refreshStep8PptxReadiness();
+      }
+    } catch (error) {
+      console.error('PPTX job polling failed:', error);
+    }
+  };
+  poll();
+  _step8PptxPollTimer = setInterval(poll, 1200);
+}
+
+async function refreshStep8PptxReadiness() {
+  const button = document.getElementById('step8-btn-pptx');
+  const label = document.getElementById('step8-pptx-readiness');
+  if (!state.currentProject || !button || !label) return null;
+  const readiness = await API.get(
+    `/api/projects/${state.currentProject.id}/exports/pptx/readiness`,
+  );
+  label.classList.toggle('ready', readiness.ready === true);
+  label.classList.toggle('blocked', readiness.ready !== true);
+  if (readiness.ready) {
+    label.innerText = `${readiness.slide_count} 页图片已就绪`;
+    label.title = '可以生成图片型 PPTX';
+    button.disabled = Boolean(_step8PptxJobId);
+  } else {
+    const issues = Array.isArray(readiness.issues) ? readiness.issues : [];
+    label.innerText = issues[0]?.message || 'PPTX 尚未就绪';
+    label.title = issues.map(item => item.message).filter(Boolean).join('\n');
+    button.disabled = true;
+  }
+  return readiness;
+}
+
+async function loadStep8PptxData() {
+  if (!state.currentProject) return;
+  try {
+    const [readiness, exportsResult, jobsResult] = await Promise.all([
+      refreshStep8PptxReadiness(),
+      API.get(`/api/projects/${state.currentProject.id}/exports`),
+      API.get(`/api/projects/${state.currentProject.id}/jobs?job_type=pptx_export`),
+    ]);
+    showStep8PptxResults(exportsResult.artifacts || []);
+    const active = (jobsResult.jobs || []).find(job => (
+      job.status === 'queued' || job.status === 'running'
+    ));
+    if (active) {
+      updateStep8PptxLoading(active);
+      startStep8PptxPolling(active.id);
+    } else {
+      stopStep8PptxPolling();
+      const loading = document.getElementById('step8-pptx-loading');
+      if (loading) loading.style.display = 'none';
+      const button = document.getElementById('step8-btn-pptx');
+      if (button) button.disabled = !readiness?.ready;
+    }
+  } catch (error) {
+    console.error('Load PPTX exports failed:', error);
+    const label = document.getElementById('step8-pptx-readiness');
+    if (label) {
+      label.className = 'step8-readiness blocked';
+      label.innerText = 'PPTX 状态读取失败';
+    }
+  }
+}
+
+async function runStep8PptxExport() {
+  const button = document.getElementById('step8-btn-pptx');
+  if (!state.currentProject || button?.disabled) return;
+  if (button) button.disabled = true;
+  document.getElementById('step8-error-box').style.display = 'none';
+  updateStep8PptxLoading({ status: 'queued', stage: 'queued', progress: 0 });
+  try {
+    const res = await API.post(`/api/projects/${state.currentProject.id}/exports/pptx`, {});
+    if (!res.job?.id) throw new Error('服务器没有返回 PPTX 任务编号');
+    showToast(res.reused ? '已有 PPTX 任务正在进行。' : 'PPTX 生成任务已启动。');
+    startStep8PptxPolling(res.job.id);
+  } catch (error) {
+    document.getElementById('step8-pptx-loading').style.display = 'none';
+    setStep8OutputError('PPTX 无法生成', error.message);
+    await refreshStep8PptxReadiness().catch(() => {});
+  }
+}
+
+function showStep8PptxResults(artifacts) {
+  const box = document.getElementById('step8-pptx-result-box');
+  const list = document.getElementById('step8-pptx-list');
+  if (!box || !list) return;
+  const items = Array.isArray(artifacts) ? artifacts : [];
+  if (!items.length) {
+    box.style.display = 'none';
+    list.innerHTML = '';
+    return;
+  }
+  list.innerHTML = items.map((item, index) => {
+    const created = item.created_at ? new Date(item.created_at).toLocaleString() : '';
+    const stateBadge = item.artifact_state === 'current'
+      ? '<span class="step8-current-badge">当前内容</span>'
+      : item.artifact_state === 'stale'
+        ? '<span class="step8-legacy-badge">输入已变化</span>'
+        : '<span class="step8-legacy-badge">文件已缺失</span>';
+    return `
+      <article class="step8-pptx-card">
+        <div class="step8-pptx-icon" aria-hidden="true">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M8 13h8M8 17h5"></path></svg>
+        </div>
+        <div class="step8-pptx-main">
+          <div class="step8-pptx-name">
+            <strong>${index === 0 ? '最新 PPTX' : `历史 PPTX ${index + 1}`}</strong>
+            ${stateBadge}
+          </div>
+          <div class="step8-pptx-meta">
+            <span>${Number(item.slide_count || 0)} 页</span>
+            <span>${formatArtifactBytes(item.size_bytes)}</span>
+            <span>${escHtml(created || item.filename || '')}</span>
+          </div>
+        </div>
+        <div class="step8-pptx-actions">
+          ${item.exists ? `
+            <a href="${item.download_url}" download class="btn success">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 3v12"></path></svg>
+              下载 PPTX
+            </a>
+          ` : ''}
+          <button class="danger compact-action-btn step8-pptx-delete" type="button" data-artifact-id="${escHtml(item.id || '')}">
+            删除
+          </button>
+        </div>
+      </article>
+    `;
+  }).join('');
+  list.querySelectorAll('.step8-pptx-delete').forEach(button => {
+    button.addEventListener('click', () => deleteStep8Pptx(button.dataset.artifactId || ''));
+  });
+  box.style.display = 'block';
+}
+
+function deleteStep8Pptx(artifactId) {
+  if (!artifactId) return;
+  showCustomConfirm(
+    '删除 PPTX',
+    '确定删除这个本地 PPTX 文件吗？删除后无法恢复。',
+    async () => {
+      const res = await API.delete(
+        `/api/projects/${state.currentProject.id}/exports/${encodeURIComponent(artifactId)}`,
+      );
+      showStep8PptxResults(res.artifacts || []);
+      showToast('PPTX 已删除。');
+    },
+  );
 }
 
 function showStep8VideoResult(videos) {
@@ -6221,6 +6461,7 @@ function deleteStep8Video(filename) {
 }
 
 window.deleteStep8Video = deleteStep8Video;
+window.deleteStep8Pptx = deleteStep8Pptx;
 window.loadStep5Data = loadStep5Data;
 window.renderStep5Workspace = renderStep5Workspace;
 window.saveStep5Draft = saveStep5Draft;

@@ -1,23 +1,45 @@
-# Runtime hotfixes and optional security controls
+# Source safeguards, compatibility modules, and optional security controls
 
-This repository still has a small set of explicitly registered compatibility
-adapters around the large `server.py` module. The former polling bootstrap has
-been removed; normal server startup is now the only registration path.
+The Python auto-start hotfix layer has been retired. `sitecustomize.py` no
+longer exists, `subprocess.run` is never globally replaced, and normal server
+startup is the only registration path.
 
-The bridge is intentionally explicit and removable. Every item below should
-ultimately be migrated back into the normal source files.
+Remaining compatibility modules are explicit and removable. Every item below
+should ultimately be migrated behind normal service and route modules.
 
 ## Runtime bridge files
 
 | File | Purpose |
 | --- | --- |
-| `sitecustomize.py` | Python auto-loaded runtime safeguards for pipeline stability. |
+| `reveal_manifest_service.py` | Source-owned storyboard/Manifest reconciliation that preserves painted and manual Masks. |
 | `app_security.py` | Explicit access token and origin middleware installed by `server.py`. |
 | `server.py` Settings routes | Credential masking and placeholder-preserving updates, enabled by default. |
 | `scripts/ppt_studio_doctor.py` | Consolidated project health check entry point. |
-| `pipeline_services.py` | In-process production service facade shared by One-click and route handlers. |
-| `runtime_ai_mask_semantic_patch.py` | Semantic-object matcher used by AI Mask before exact title/body ownership is finalized. |
-| `runtime_project_style_references.py` | Project-local Step 3 image-style prompts, editable preview-generation Prompt settings, and reference image helpers. |
+| `pipeline_services.py` | In-process production facade backed by explicit storyboard, image, Mask, narration, and media operation groups. |
+| `pptx_routes.py` | Source-owned explicit PPTX export, job, download, and deletion routes. |
+| `pptx_service.py` | Persistent PPTX job and artifact lifecycle with narrow session/root dependencies. |
+| `video_routes.py` | Source-owned render, polling, MP4 collection, download, speed, deletion, and final-video routes. |
+| `video_render_service.py` | Video job orchestration, in-memory compatibility state, and per-project locks. |
+| `video_job_store.py` | Persistent SQLite video job creation, polling, transitions, and restart recovery. |
+| `video_artifact_service.py` | Validated MP4 paths, freshness metadata, speed variants, downloads, deletion, and artifact registration. |
+| `remotion_runner.py` | Reveal/timeline/props subprocess chain, Remotion execution, and color validation. |
+| `video_contracts.py` | Shared video configuration and application error contracts. |
+| `diagnostics_routes.py` | Source-owned diagnostics `APIRouter`; reads the request application only when producing diagnostics. |
+| `storyboard_background.py` | Source-owned storyboard background service and explicit `APIRouter`. |
+| `storyboard_service.py` | Step 2 prompt/profile planning, visual-contract normalization, validation, repair, and manual skeleton workflow. |
+| `storyboard_routes.py` | Explicit Step 2 planning and storyboard-template HTTP routes. |
+| `narration_service.py` / `narration_routes.py` | Step 6 narration lifecycle and explicit HTTP routes. |
+| `tts_service.py` / `tts_routes.py` | Step 7 synthesis, audio artifact status/download, confirmation, and explicit HTTP routes. |
+| `one_click_routes.py` | Source-owned One-click HTTP routes. |
+| `one_click_orchestrator.py` | One-click task orchestration configured through narrow `OneClickDependencies`. |
+| `ai_mask_config.py` | Source-owned AI Mask settings persistence and Prompt migration. |
+| `ai_mask_service.py` | Source-owned AI Mask project task orchestration with narrow dependencies. |
+| `ai_mask_routes.py` | Explicit AI Mask settings and annotation FastAPI routes. |
+| `ai_mask_engine.py` | Pixel detection, exact-mask completion, and multimodal matching engine. |
+| `ai_mask_semantic_matcher.py` | Source-owned semantic-object preparation and multimodal matcher, explicitly injected into the task service. |
+| `project_style_routes.py` | Explicit Project Profile and Step 3 image-style FastAPI routes. |
+| `project_style_context.py` | Narrow, explicitly configured dependencies for project-style services. |
+| Project-style service/store modules | Source-owned profile, reverse-analysis, reference-image, state, and template behavior. |
 | `scripts/check_python_startup_hooks.py` | Self-check that normal server startup calls the explicit installer. |
 | `scripts/check_runtime_hotfixes.py` | Self-check for the main runtime safeguards. |
 | `scripts/check_runtime_settings_mask.py` | Self-check for settings credential masking. |
@@ -29,20 +51,20 @@ ultimately be migrated back into the normal source files.
 
 ### Pipeline stability
 
-`sitecustomize.py` provides runtime protections for:
+Normal source code now provides:
 
-- Step 8 `props_started` missing name.
-- Duplicate pre-timeout Remotion render call.
-- Missing timeouts for known subprocesses.
-- Step 6 init narration preservation has moved into `server.py`; the old startup patch is now compatibility-only.
-- Step 2 / Step 5 `visual_contract.json` to `reveal_manifest.json` group-level reconciliation.
-- Step 2 `topic_summary` preservation.
-- Step 5 `build_assets=false` semantics.
+- one timeout-bounded Remotion render invocation;
+- explicit timeouts for timeline binding, props generation, npm install, color normalization, and color validation;
+- Step 6 narration reuse without overwriting an existing `narration_beats.json`;
+- Step 2 / Step 5 group-level reconciliation from `visual_contract.json` to `reveal_manifest.json`;
+- `topic_summary` preservation and provenance hash refresh;
+- correct Step 5 `build_assets=false` semantics;
 - JSON-safe handling for `validate_render_color.py` output.
 
-Project-aware Step 3 prompt and generation behavior now lives in the source
-routes and delegates reusable style resolution to `runtime_project_style_references.py`.
-The duplicate `runtime_project_style_reference_step3.py` route was removed.
+Project-aware Step 3 prompt and generation behavior now lives in source-owned
+routes and services. `project_style_reference_service.py` supplies reusable
+style resolution without receiving the application module. The former runtime
+route-registration and route-shadowing modules have been removed.
 
 ### Frontend flow
 
@@ -146,7 +168,7 @@ python scripts/check_runtime_hotfixes.py
 PPT_STUDIO_MASK_SETTINGS_SECRETS=1 python scripts/check_runtime_settings_mask.py
 ```
 
-`ppt_studio_doctor.py` runs the startup hook check, runtime hotfix check,
+`ppt_studio_doctor.py` runs the startup hook check, source safeguard check,
 settings masking check, Step 1 cleanup safety preview, and optionally a run_dir
 artifact check.
 
@@ -154,7 +176,9 @@ artifact check.
 `usercustomize.py` hook are absent and that normal server startup explicitly
 registers AI Mask.
 
-`check_runtime_hotfixes.py` validates the main runtime pipeline safeguards.
+`check_runtime_hotfixes.py` is retained as a compatible command name, but now
+validates source-owned safeguards and verifies that `sitecustomize.py` and the
+global subprocess monkey patch remain absent.
 `check_runtime_settings_mask.py` validates settings credential masking and
 placeholder preservation.
 
@@ -197,8 +221,8 @@ result with Python AST, and creates a timestamped backup before writing.
 
 Source migration is tracked in GitHub issue #7:
 
-- continue extracting route-handler business logic behind normal service modules;
-- remove runtime bridge code as source patches land;
+- continue extracting AI Mask and project-style route business logic behind normal service modules;
+- remove explicitly registered compatibility modules as source services land;
 - close the gap between local-only defaults and hardened deployment defaults.
 
 ## Important limitations
@@ -216,12 +240,42 @@ and requests automatic technical audio confirmation explicitly. Its AI Mask
 calls preserve locked groups and manual corrections while allowing untouched
 AI-only RLE masks to be refreshed.
 
-As of the second migration batch, One-click no longer creates a FastAPI
-`TestClient` or calls the application's own HTTP routes. It calls
-`ProjectPipelineServices` directly, while AI Mask exposes a shared
-`annotate_project` service used by both the route and One-click.
+As of the explicit-route migration, One-click no longer creates a FastAPI
+`TestClient`, calls the application's own HTTP routes, or receives the complete
+`server` module. `one_click_routes.py` owns the HTTP contract and
+`one_click_orchestrator.py` receives a narrow `OneClickDependencies` object.
+The injected pipeline facade delegates production stage operations to
+`ProjectPipelineServices`, which now receives an immutable
+`PipelineOperations` graph instead of the complete `server` module. The graph
+groups the exact storyboard, image, Mask, narration, and media functions bound
+at application startup. Both the route and One-click use the source-owned
+`AiMaskTaskService`.
 
-`runtime_ai_mask.py` supports `overwrite_existing_ai_mask` separately from
+Diagnostics and storyboard-background registration are also source-owned.
+`server.py` includes their `APIRouter` instances directly; their former
+`_register(server_module)` entry points and patch markers no longer exist.
+
+PPTX export registration is source-owned as well. `pptx_routes.py` exposes an
+explicit `APIRouter`, while `pptx_service.py` owns task recovery, export
+execution, Step 8 completion, artifact listing, download, and deletion. Its
+dependency object contains only the database session factory, validated runs
+root, and an optional executor; the former
+`register_pptx_routes(server_module)` and `_SERVER` global no longer exist.
+
+The complete Step 8 video chain is also source-owned and split by responsibility.
+`video_render_service.py` is now a coordinator: it validates prerequisites,
+creates a persistent job, drives stage transitions, publishes the completed
+artifact, and maintains the in-memory compatibility cache and project lock.
+`video_job_store.py` owns SQLite job persistence and restart recovery;
+`video_artifact_service.py` owns MP4 paths, sidecars, freshness, speed variants,
+and registry lifecycle; `remotion_runner.py` owns the Reveal/timeline/props
+subprocess chain, Remotion invocation, and color QA. `video_routes.py` exposes
+the unchanged HTTP paths. `server.py` explicitly assembles these narrow
+components and injects the coordinator into One-click. The former worker,
+global task dictionaries, video route decorators, and unused
+`persistent_job_store.py` compatibility module remain retired.
+
+`ai_mask_engine.py` supports `overwrite_existing_ai_mask` separately from
 `overwrite_existing_manual_mask`. Only an unlocked AI mask with no correction
 strokes is replaceable when manual overwrite is disabled. The component
 completion pass also conservatively reassigns small secondary components when
@@ -232,18 +286,21 @@ assigned exact RLE Masks and participate in Reveal animation. The semantic-objec
 bridge prompt mirrors this rule; title pixels remain static only when a slide has
 no narration group available.
 
-As of the visual-group atomicity migration, `runtime_ai_mask.py` is the prompt
-source of truth. `runtime_ai_mask_semantic_patch.py` still prepares merged
-semantic-object images for the multimodal matcher, but it no longer overwrites
-the base AI Mask methodology or output contract during import. The source
-quality pass rejects a visual group whose description asks for multiple
-independent visual islands, preventing full-coverage completion from silently
-absorbing several Reveal units into one Mask. This migration remains tracked in
-issue #7 until semantic-object preparation also moves into the normal service.
+As of the AI Mask service extraction, `ai_mask_config.py` is the public Prompt
+and settings source of truth, `ai_mask_service.py` owns task orchestration,
+`ai_mask_routes.py` owns HTTP registration, and `ai_mask_engine.py` owns the
+matching algorithms. `runtime_ai_mask.py` and its `_register(server_module)`
+compatibility entry point no longer exist.
 
-Migration debt: the remaining `runtime_*` filenames are explicitly registered
-compatibility adapters, not auto-installing patches. Continue moving their
-business logic into normal services under issue #7.
+The semantic matcher migration is also complete:
+`ai_mask_semantic_matcher.py` prepares merged semantic-object images and exposes
+`SemanticVisionMatcher`; `server.py` injects its singleton into
+`AiMaskTaskService`, and `ai_mask_engine.py` calls only the matcher it receives.
+No project-style import mutates AI Mask behavior, so startup import order can no
+longer replace `_vision_match`. The source quality pass still rejects a visual
+group whose description asks for multiple independent visual islands,
+preventing full-coverage completion from silently absorbing several Reveal
+units into one Mask.
 
 ## Step 3 batch Prompt normalization (2026-07-13)
 
@@ -271,11 +328,12 @@ JSON output contracts before persisting them. Model-supplied hidden production
 fields such as `system_content` and `maskability_rules` are rejected or ignored;
 production rules and editable System Content are built deterministically.
 
-`runtime_project_style_references.py` registers the editable global route
+`project_style_routes.py` explicitly owns
 `GET/PUT /api/settings/image-style-reference-generation`. It controls only the
 content-neutral preview-image methodology. Per-project style content, neutral
 scene briefs, and non-overridable 16:9/white-canvas constraints are composed once
-at runtime. This bridge behavior remains migration debt tracked in issue #7.
+by `project_style_reference_service.py`. The former runtime registration bridge
+and `register_project_style_routes(server_module)` no longer exist.
 
 ## Read-only results and explicit repair (2026-07-15)
 

@@ -16,15 +16,13 @@ import json
 import time
 from collections import deque
 from pathlib import Path
-from types import ModuleType
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 from PIL import Image, ImageDraw
 
 from scripts.visual_group_semantics import visual_group_atomicity_issues
 
-PATCH_MARKER = "__ppt_ai_mask_runtime_patch__"
 SETTING_PREFIX = "ai_mask_"
 
 DEFAULT_SETTINGS: dict[str, Any] = {
@@ -222,26 +220,6 @@ LEGACY_TITLE_RULE = "6. 主标题与副标题是否属于同一个 Mask，以 na
 STATIC_TITLE_RULE = "6. 页面上方固定主标题/副标题区域属于静态上下文，不分配给任何 narration group，不参与逐语块 Reveal；元素匹配必须同时考虑横向与纵向距离；大面积主配图应吸收其内部、边界上和紧邻的图标、对号、标签与说明，除非它们明确对应独立 narration beat；不允许因为颜色相似就跨卡片、跨栏或跨配图分配。"
 PREVIOUS_TITLE_AND_ISLAND_RULES = """6. 页面上方主标题/副标题保持固定布局，但有 narration 绑定时必须参与逐语块 Reveal；副标题优先绑定独立 subtitle group，没有独立组时与主标题共同绑定到首个标题 narration group；元素匹配必须同时考虑横向与纵向距离；大面积主配图应吸收其内部、边界上和紧邻的图标、对号、标签与说明，除非它们明确对应独立 narration beat；不允许因为颜色相似就跨卡片、跨栏或跨配图分配。"""
 CURRENT_TITLE_AND_ISLAND_RULES = """6. 页面上方只保留一个完整主标题，不使用页面副标题。无论主标题包含多少颜色、描边、断笔或分离字形，都必须整体绑定到唯一的 title group，不能拆给多个正文 group；如果不存在 title narration beat，则整个标题保持静态。元素匹配必须同时考虑横向与纵向距离；大面积主配图应吸收其内部、边界上和紧邻的图标、对号、标签与说明，除非它们明确对应独立 narration beat；不允许因为颜色相似就跨卡片、跨栏或跨配图分配。"""
-
-
-def _compose_ai_mask_full_prompt(methodology: str, output_structure: str) -> str:
-    return methodology.strip() + "\n\n--- OUTPUT STRUCTURE / 输出结构 ---\n" + output_structure.strip()
-
-
-def _read_ai_mask_prompts(server_module: ModuleType) -> tuple[str, str]:
-    methodology = str(server_module.get_setting(PROMPT_METHOD_KEY, DEFAULT_METHODOLOGY) or DEFAULT_METHODOLOGY)
-    output_structure = str(server_module.get_setting(PROMPT_OUTPUT_KEY, DEFAULT_OUTPUT_STRUCTURE) or DEFAULT_OUTPUT_STRUCTURE)
-    if methodology in {LEGACY_DEFAULT_METHODOLOGY_V2, LEGACY_STORED_METHODOLOGY_V2}:
-        methodology = DEFAULT_METHODOLOGY
-    if output_structure == LEGACY_DEFAULT_OUTPUT_STRUCTURE_V2:
-        output_structure = DEFAULT_OUTPUT_STRUCTURE
-    if LEGACY_TITLE_RULE in methodology:
-        methodology = methodology.replace(LEGACY_TITLE_RULE, CURRENT_TITLE_AND_ISLAND_RULES)
-    if STATIC_TITLE_RULE in methodology:
-        methodology = methodology.replace(STATIC_TITLE_RULE, CURRENT_TITLE_AND_ISLAND_RULES)
-    if PREVIOUS_TITLE_AND_ISLAND_RULES in methodology:
-        methodology = methodology.replace(PREVIOUS_TITLE_AND_ISLAND_RULES, CURRENT_TITLE_AND_ISLAND_RULES)
-    return methodology, output_structure
 
 
 def _bool(value: Any, default: bool = False) -> bool:
@@ -919,7 +897,7 @@ def _candidate_overlay(image_path: Path, elements: list[dict[str, Any]], output_
     return buffer.getvalue()
 
 
-def _resolved_vision_model(server_module: ModuleType) -> tuple[str, str]:
+def _resolved_vision_model(server_module: Any) -> tuple[str, str]:
     provider = str(server_module.get_setting("llm_provider") or "").strip().lower()
     configured = str(server_module.get_setting("vision_model") or "").strip()
     # A model name from another provider cannot be sent to the active endpoint.
@@ -930,7 +908,7 @@ def _resolved_vision_model(server_module: ModuleType) -> tuple[str, str]:
     return configured or str(server_module.get_setting("llm_model") or "").strip(), configured
 
 
-def _is_timeout(server_module: ModuleType, exc: BaseException) -> bool:
+def _is_timeout(server_module: Any, exc: BaseException) -> bool:
     helper = getattr(server_module, "is_timeout_exception", None)
     if callable(helper):
         try:
@@ -940,8 +918,8 @@ def _is_timeout(server_module: ModuleType, exc: BaseException) -> bool:
     return isinstance(exc, TimeoutError) or "timeout" in type(exc).__name__.lower() or "timed out" in str(exc).lower()
 
 
-def _vision_match(
-    server_module: ModuleType,
+def raw_component_vision_match(
+    server_module: Any,
     project: Any,
     slide: dict[str, Any],
     elements: list[dict[str, Any]],
@@ -1151,7 +1129,7 @@ def _compatible_regions(a: str, b: str) -> bool:
     return frozenset({a, b}) in pairs
 
 
-def _configured_title_regions(server_module: ModuleType, width: int, height: int) -> dict[str, dict[str, int]]:
+def _configured_title_regions(server_module: Any, width: int, height: int) -> dict[str, dict[str, int]]:
     """Read the canonical title/subtitle zones and scale them to this slide."""
     defaults = {
         "main_title": {"x": 110, "y": 55, "w": 1600, "h": 86},
@@ -2201,29 +2179,17 @@ def _apply(manifest: dict[str, Any], slide: dict[str, Any], elements_payload: di
     return {"updated": updated, "skipped": skipped}
 
 
-def _get_store_settings(server_module: ModuleType) -> dict[str, Any]:
-    raw = {key: server_module.get_setting(SETTING_PREFIX + key, str(default)) for key, default in DEFAULT_SETTINGS.items()}
-    return normalize_settings(raw)
-
-
-def _save_store_settings(server_module: ModuleType, payload: dict[str, Any]) -> dict[str, Any]:
-    values = payload.get("settings") if isinstance(payload.get("settings"), dict) else payload
-    settings = normalize_settings(values if isinstance(values, dict) else {})
-    update = {SETTING_PREFIX + key: value for key, value in settings.items()}
-    prompts = payload.get("prompts") if isinstance(payload.get("prompts"), dict) else {}
-    if str(prompts.get("methodology") or "").strip():
-        update[PROMPT_METHOD_KEY] = prompts["methodology"]
-    if str(prompts.get("output_structure") or "").strip():
-        update[PROMPT_OUTPUT_KEY] = prompts["output_structure"]
-    server_module.update_settings(update)
-    return settings
-
-
-def _annotate_project(server_module: ModuleType, project: Any, settings: dict[str, Any]) -> dict[str, Any]:
+def _annotate_project(
+    server_module: Any,
+    project: Any,
+    settings: dict[str, Any],
+    methodology: str,
+    output_structure: str,
+    vision_matcher: Callable[..., dict[str, Any] | None],
+) -> dict[str, Any]:
     run_dir = Path(project.run_dir)
     contract = _read_json(run_dir / "planning" / "visual_contract.json")
     manifest = _read_json(run_dir / "reveal_manifest.json")
-    methodology, output_structure = _read_ai_mask_prompts(server_module)
     prepared: list[dict[str, Any]] = []
     for slide in contract.get("slides", []) or []:
         if not isinstance(slide, dict):
@@ -2262,7 +2228,7 @@ def _annotate_project(server_module: ModuleType, project: Any, settings: dict[st
         vision_started = time.monotonic()
         resolved_model, configured_model = _resolved_vision_model(server_module)
         try:
-            raw_vision = _vision_match(
+            raw_vision = vision_matcher(
                 server_module,
                 project,
                 item["slide"],
@@ -2388,56 +2354,3 @@ def _annotate_project(server_module: ModuleType, project: Any, settings: dict[st
     }
 
 
-def annotate_project(
-    server_module: ModuleType,
-    project: Any,
-    settings_override: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Public AI Mask service shared by the API route and one-click pipeline."""
-    settings = _get_store_settings(server_module)
-    if isinstance(settings_override, dict):
-        settings = normalize_settings({**settings, **settings_override})
-    with server_module.reveal_lock_for(project):
-        result = _annotate_project(server_module, project, settings)
-    try:
-        server_module.write_project_log(project, "ai_mask_annotation", **result)
-    except Exception:
-        pass
-    return result
-
-
-def _register(server_module: ModuleType) -> bool:
-    if getattr(server_module, PATCH_MARKER, False):
-        return True
-    required = ("app", "Project", "HTTPException", "Depends", "get_db", "get_openai_client", "update_settings", "get_setting", "reveal_lock_for", "write_project_log")
-    if not all(hasattr(server_module, item) for item in required):
-        return False
-    app = server_module.app
-
-    async def get_ai_mask_settings() -> dict[str, Any]:
-        methodology, output_structure = _read_ai_mask_prompts(server_module)
-        return {
-            "success": True,
-            "settings": _get_store_settings(server_module),
-            "prompts": {
-                "methodology": methodology,
-                "output_structure": output_structure,
-                "full_prompt": _compose_ai_mask_full_prompt(methodology, output_structure),
-            },
-        }
-
-    async def put_ai_mask_settings(payload: dict[str, Any]) -> dict[str, Any]:
-        return {"success": True, "settings": _save_store_settings(server_module, payload if isinstance(payload, dict) else {})}
-
-    def annotate_step5(project_id: str, payload: dict[str, Any] | None = None, db: Any = server_module.Depends(server_module.get_db)) -> dict[str, Any]:
-        project = db.query(server_module.Project).filter(server_module.Project.id == project_id).first()
-        if not project:
-            raise server_module.HTTPException(status_code=404, detail="项目不存在")
-        settings = payload.get("settings") if isinstance(payload, dict) and isinstance(payload.get("settings"), dict) else {}
-        return annotate_project(server_module, project, settings)
-
-    app.add_api_route("/api/settings/ai-mask", get_ai_mask_settings, methods=["GET"])
-    app.add_api_route("/api/settings/ai-mask", put_ai_mask_settings, methods=["PUT"])
-    app.add_api_route("/api/projects/{project_id}/steps/5/ai-mask/annotate", annotate_step5, methods=["POST"])
-    setattr(server_module, PATCH_MARKER, True)
-    return True

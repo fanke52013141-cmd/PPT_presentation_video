@@ -1,10 +1,7 @@
-"""Step 3 image style reference manager compatibility bridge.
+"""Step 3 image-style reference storage service.
 
-The legacy project-profile reference routes are still used as implementation
-helpers, but the product-facing UI now calls the Step 3 aliases exposed by
-``runtime_step3_image_style.py``. Deleting or clearing references also syncs
-``planning/step3_image_style.json`` so Step 3 prompt generation does not keep
-stale reference-image state.
+Deleting or clearing references also synchronizes
+``planning/step3_image_style.json``.
 """
 
 from __future__ import annotations
@@ -12,10 +9,8 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
-PATCH_MARKER = "__ppt_project_style_reference_manager_patch__"
 REFERENCE_DIRNAME = "style_references"
 REFERENCE_MANIFEST = "project_style_references.json"
 STEP3_STYLE_STATE = "step3_image_style.json"
@@ -196,50 +191,3 @@ def _delete_all_references(project: Any, project_id: str) -> dict[str, Any]:
     return result
 
 
-def _register(server_module: ModuleType) -> bool:
-    if getattr(server_module, PATCH_MARKER, False):
-        return True
-    required = ("app", "Project", "HTTPException", "Depends", "get_db")
-    if not all(hasattr(server_module, name) for name in required):
-        return False
-    app = server_module.app
-
-    def delete_reference_image(project_id: str, index: int, db: Any = server_module.Depends(server_module.get_db)) -> dict[str, Any]:
-        project = db.query(server_module.Project).filter(server_module.Project.id == project_id).first()
-        if not project:
-            raise server_module.HTTPException(status_code=404, detail="项目不存在")
-        try:
-            references = _delete_reference(project, project_id, int(index))
-        except ValueError as exc:
-            raise server_module.HTTPException(status_code=400, detail=str(exc)) from exc
-        try:
-            server_module.write_project_log(project, "legacy_step3_style_reference_image_deleted", index=index)
-        except Exception:
-            pass
-        return {
-            "success": True,
-            "references": references,
-            "deprecated_route": True,
-            "preferred_route": f"/api/projects/{project_id}/steps/3/image-style/reference-images/{index}",
-        }
-
-    def delete_all_reference_images(project_id: str, db: Any = server_module.Depends(server_module.get_db)) -> dict[str, Any]:
-        project = db.query(server_module.Project).filter(server_module.Project.id == project_id).first()
-        if not project:
-            raise server_module.HTTPException(status_code=404, detail="项目不存在")
-        references = _delete_all_references(project, project_id)
-        try:
-            server_module.write_project_log(project, "legacy_step3_style_reference_images_deleted", count=references.get("deleted_count", 0))
-        except Exception:
-            pass
-        return {
-            "success": True,
-            "references": references,
-            "deprecated_route": True,
-            "preferred_route": f"/api/projects/{project_id}/steps/3/image-style/reference-images",
-        }
-
-    app.add_api_route("/api/projects/{project_id}/project-profile/image-style/reference-images/{index}", delete_reference_image, methods=["DELETE"])
-    app.add_api_route("/api/projects/{project_id}/project-profile/image-style/reference-images", delete_all_reference_images, methods=["DELETE"])
-    setattr(server_module, PATCH_MARKER, True)
-    return True

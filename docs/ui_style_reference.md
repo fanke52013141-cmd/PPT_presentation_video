@@ -74,7 +74,8 @@ The generated PPT slide images are governed by different files:
 - `config/style_tokens.yaml`
 - `config/style_tokens_handdrawn.yaml`
 - `references/style_reference/`
-- `runtime_step3_image_style.py`
+- `project_style_routes.py`
+- `project_style_template_service.py`
 
 Those files affect generated slide imagery and style templates. They do not define the web application’s blue-purple UI shell.
 

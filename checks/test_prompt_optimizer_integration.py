@@ -9,9 +9,10 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import runtime_image_style_reverse as reverse_style
-import runtime_project_profile as text_style
-import runtime_project_style_references as style_references
+import image_style_reverse_service as reverse_style
+import narration_service as narration
+import project_profile_service as text_style
+import project_style_reference_service as style_references
 import server
 from scripts.write_visual_prompts import project_image_style_lines
 
@@ -48,18 +49,18 @@ def test_narration_annotation_payload_is_minimal() -> None:
             }],
         }],
     }
-    assert server.build_narration_annotation_input(incoming) == {
+    assert narration.build_narration_annotation_input(incoming) == {
         "slides": [{
             "slide_id": "slide_001",
             "beats": [{"id": "beat_001", "source_text": "先解释 (REST) 概念，再给出结论。"}],
         }],
     }
-    assert "narration_annotation_v2_minimal" in server.DEFAULT_NARRATION_ANNOTATION_SYSTEM_CONTENT
-    assert server.narration_annotation_preserves_text(
+    assert "narration_annotation_v2_minimal" in narration.DEFAULT_NARRATION_ANNOTATION_SYSTEM_CONTENT
+    assert narration.narration_annotation_preserves_text(
         "先解释概念，<#0.35#>再给出结论。",
         "先解释概念，再给出结论。",
     )
-    assert not server.narration_annotation_preserves_text(
+    assert not narration.narration_annotation_preserves_text(
         "先解释概念，<#0.35#>最后给出结论。",
         "先解释概念，再给出结论。",
     )
@@ -85,22 +86,22 @@ def test_step2_request_omits_stable_output_goal_and_empty_requirement() -> None:
 
 
 def test_narration_annotation_migrates_legacy_builtins() -> None:
-    original = server.get_setting
+    original = narration.get_setting
     values = {
-        server.NARRATION_ANNOTATION_SYSTEM_CONTENT_KEY: server.LEGACY_DEFAULT_NARRATION_ANNOTATION_SYSTEM_CONTENT_V1,
-        server.NARRATION_ANNOTATION_OUTPUT_EXAMPLE_KEY: server.LEGACY_DEFAULT_NARRATION_ANNOTATION_OUTPUT_EXAMPLE_V1,
+        narration.NARRATION_ANNOTATION_SYSTEM_CONTENT_KEY: narration.LEGACY_DEFAULT_NARRATION_ANNOTATION_SYSTEM_CONTENT_V1,
+        narration.NARRATION_ANNOTATION_OUTPUT_EXAMPLE_KEY: narration.LEGACY_DEFAULT_NARRATION_ANNOTATION_OUTPUT_EXAMPLE_V1,
     }
     try:
-        server.get_setting = lambda key, default="": values.get(key, default)
-        prompts = server.read_narration_annotation_prompts()
+        narration.get_setting = lambda key, default="": values.get(key, default)
+        prompts = narration.read_narration_annotation_prompts()
         assert prompts == (
-            server.DEFAULT_NARRATION_ANNOTATION_SYSTEM_CONTENT,
-            server.DEFAULT_NARRATION_ANNOTATION_OUTPUT_EXAMPLE,
+            narration.DEFAULT_NARRATION_ANNOTATION_SYSTEM_CONTENT,
+            narration.DEFAULT_NARRATION_ANNOTATION_OUTPUT_EXAMPLE,
         )
-        values[server.NARRATION_ANNOTATION_SYSTEM_CONTENT_KEY] = "CUSTOM NARRATION PROMPT"
-        assert server.read_narration_annotation_prompts()[0] == "CUSTOM NARRATION PROMPT"
+        values[narration.NARRATION_ANNOTATION_SYSTEM_CONTENT_KEY] = "CUSTOM NARRATION PROMPT"
+        assert narration.read_narration_annotation_prompts()[0] == "CUSTOM NARRATION PROMPT"
     finally:
-        server.get_setting = original
+        narration.get_setting = original
 
 
 def test_reverse_style_prompt_and_user_input_are_minimal() -> None:
@@ -191,12 +192,14 @@ def test_text_style_generation_compacts_optional_context() -> None:
 
 
 def test_step2_compatibility_endpoint_delegates_to_current_pipeline(monkeypatch) -> None:
+    import storyboard_service
+
     calls: list[tuple[str, object]] = []
     db = object()
-    monkeypatch.setattr(server, "execute_step2_script_plan", lambda project_id, payload, session: calls.append(("script", payload)))
-    monkeypatch.setattr(server, "execute_step2_visual_plan", lambda project_id, session: calls.append(("visual", session)))
+    monkeypatch.setattr(storyboard_service, "execute_step2_script_plan", lambda project_id, payload, session: calls.append(("script", payload)))
+    monkeypatch.setattr(storyboard_service, "execute_step2_visual_plan", lambda project_id, session: calls.append(("visual", session)))
     monkeypatch.setattr(
-        server,
+        storyboard_service,
         "compose_step2_visual_contract",
         lambda project_id, session: {"success": True, "contract": {"slides": []}},
     )

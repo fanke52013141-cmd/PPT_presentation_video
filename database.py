@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy import create_engine, Column, String, Integer, DateTime, Text
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
+from database_migrations import run_migrations
 
 DB_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "data"))
 os.makedirs(DB_DIR, exist_ok=True)
@@ -45,35 +46,69 @@ class Setting(Base):
     key = Column(String, primary_key=True, index=True)
     value = Column(Text, nullable=False)
 
-def _migrate_add_ai_mode_column() -> None:
-    """Add ai_mode column to legacy projects tables (SQLite ALTER TABLE).
 
-    SQLAlchemy's create_all only creates missing tables; it does not add
-    columns to existing tables. We add ai_mode manually so legacy databases
-    pick up the new field without losing data.
-    """
-    with engine.connect() as conn:
-        try:
-            cols = conn.exec_driver_sql("PRAGMA table_info(projects)")
-        except Exception:
-            return
-        names = {row[1] for row in cols.fetchall()} if hasattr(cols, "fetchall") else set()
-        if "ai_mode" in names:
-            return
-        try:
-            conn.exec_driver_sql(
-                "ALTER TABLE projects ADD COLUMN ai_mode VARCHAR DEFAULT 'auto'"
-            )
-            conn.commit()
-        except Exception:
-            # Concurrent workers may have added the column first; safe to ignore.
-            pass
+class SchemaMigration(Base):
+    __tablename__ = "schema_migrations"
 
+    version = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    checksum = Column(String(64), nullable=False)
+    applied_at = Column(DateTime, default=datetime.now, nullable=False)
+
+
+class ArtifactRecord(Base):
+    __tablename__ = "artifact_records"
+
+    id = Column(String, primary_key=True, index=True)
+    project_id = Column(String, nullable=False, index=True)
+    artifact_type = Column(String, nullable=False, index=True)
+    filename = Column(String, nullable=False)
+    relative_path = Column(String, nullable=False)
+    mime_type = Column(String, nullable=False)
+    size_bytes = Column(Integer, nullable=False, default=0)
+    source_fingerprint = Column(Text, nullable=False, default="{}")
+    metadata_json = Column(Text, nullable=False, default="{}")
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    def get_source_fingerprint(self):
+        try:
+            return json.loads(self.source_fingerprint) if self.source_fingerprint else {}
+        except Exception:
+            return {}
+
+    def get_metadata(self):
+        try:
+            return json.loads(self.metadata_json) if self.metadata_json else {}
+        except Exception:
+            return {}
+
+
+class LocalJob(Base):
+    __tablename__ = "local_jobs"
+
+    id = Column(String, primary_key=True, index=True)
+    project_id = Column(String, nullable=False, index=True)
+    job_type = Column(String, nullable=False, index=True)
+    status = Column(String, nullable=False, default="queued", index=True)
+    progress = Column(Integer, nullable=False, default=0)
+    stage = Column(String, nullable=False, default="queued")
+    error = Column(Text, nullable=True)
+    result_artifact_id = Column(String, nullable=True)
+    payload_json = Column(Text, nullable=False, default="{}")
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    started_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+    def get_payload(self):
+        try:
+            return json.loads(self.payload_json) if self.payload_json else {}
+        except Exception:
+            return {}
 
 # 初始化数据库结构
 def init_db():
-    Base.metadata.create_all(bind=engine)
-    _migrate_add_ai_mode_column()
+    run_migrations(engine)
     # 初始化默认设置
     db = SessionLocal()
     try:

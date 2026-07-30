@@ -23,8 +23,21 @@ from project_storage import planning_path, safe_child, slide_dir
 LOGGER = logging.getLogger(__name__)
 _JSON_WRITE_LOCKS: dict[str, threading.Lock] = {}
 _JSON_WRITE_LOCKS_GUARD = threading.Lock()
+_PROJECT_ARTIFACT_LOCKS: dict[str, threading.RLock] = {}
+_PROJECT_ARTIFACT_LOCKS_GUARD = threading.Lock()
 REVEAL_FILENAMES = ("scene.json", "animation_timeline.json", "reveal_report.json", "mask_preview.png")
 TTS_FILENAMES = ("voice.mp3", "tts_metadata.json", "subtitles.srt", "audio_timeline.json")
+
+
+def project_artifact_lock(run_dir: str | Path) -> threading.RLock:
+    """Return the shared per-project lock for manifest and derived artifacts."""
+    key = str(Path(run_dir).resolve())
+    with _PROJECT_ARTIFACT_LOCKS_GUARD:
+        lock = _PROJECT_ARTIFACT_LOCKS.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            _PROJECT_ARTIFACT_LOCKS[key] = lock
+        return lock
 
 
 def remove_file(path: str | Path) -> bool:

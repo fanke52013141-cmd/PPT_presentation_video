@@ -5,7 +5,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import runtime_ai_mask as ai_mask
+import ai_mask_engine as ai_mask
 import server
 from scripts.style_agent import style_bundle_system_prompt
 

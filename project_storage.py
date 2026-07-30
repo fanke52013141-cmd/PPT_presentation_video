@@ -8,6 +8,7 @@ import re
 
 SAFE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
 SAFE_VIDEO_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,191}\.mp4$", re.IGNORECASE)
+SAFE_PRESENTATION_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,191}\.pptx$", re.IGNORECASE)
 
 
 class UnsafeProjectPath(ValueError):
@@ -53,6 +54,13 @@ def safe_video_filename(value: str) -> str:
     return text
 
 
+def safe_presentation_filename(value: str) -> str:
+    text = str(value or "").strip()
+    if not SAFE_PRESENTATION_PATTERN.fullmatch(text) or text in {".", ".."}:
+        raise UnsafeProjectPath(f"invalid presentation filename: {value!r}")
+    return text
+
+
 def planning_path(run_dir: str | Path, filename: str) -> Path:
     safe_identifier(Path(filename).stem, label="planning filename")
     if Path(filename).name != filename or Path(filename).suffix not in {".json", ".txt", ".yaml", ".md"}:
@@ -95,3 +103,18 @@ def video_sidecar(video_path: str | Path) -> Path:
     if path.suffix.lower() != ".mp4":
         raise UnsafeProjectPath(f"video sidecar source must be an MP4: {video_path!r}")
     return Path(f"{path}.render.json")
+
+
+def presentations_dir(run_dir: str | Path) -> Path:
+    return safe_child(run_dir, "presentations")
+
+
+def presentation_file(run_dir: str | Path, filename: str) -> Path:
+    return safe_child(presentations_dir(run_dir), safe_presentation_filename(filename))
+
+
+def presentation_sidecar(presentation_path: str | Path) -> Path:
+    path = Path(presentation_path).resolve()
+    if path.suffix.lower() != ".pptx":
+        raise UnsafeProjectPath(f"presentation sidecar source must be a PPTX: {presentation_path!r}")
+    return Path(f"{path}.export.json")

@@ -10,17 +10,28 @@ def read_text(path: str) -> str:
 
 def main() -> None:
     server = read_text("server.py")
+    video_service = read_text("video_render_service.py")
+    remotion_runner = read_text("remotion_runner.py")
+    video_artifacts = read_text("video_artifact_service.py")
+    video_routes = read_text("video_routes.py")
+    narration_service = read_text("narration_service.py")
     app_js = read_text("static/app.js")
     ci = read_text(".github/workflows/ci.yml")
 
-    assert 'npx_cmd, "remotion", "render", "src/index.tsx", "ArticleVideo", output_mp4_path' in server
-    assert 'npx_cmd, "remotion", "render", "ArticleVideo", output_mp4_path' not in server
-
-    render_start = server.index('def render_video(project_id: str')
-    render_end = server.index('@app.get("/api/projects/{project_id}/videos")', render_start)
-    render_source = server[render_start:render_end]
-    assert "videos_dir = project_video_dir(project)" in render_source
-    assert "output_mp4_path = os.path.join(videos_dir, output_filename)" in render_source
+    assert '"src/index.tsx",' in remotion_runner
+    assert '"ArticleVideo",' in remotion_runner
+    assert "output_path = output_dir / output_filename" in remotion_runner
+    assert "def run_render_job(" in video_service
+    assert "def start_render(" in video_service
+    assert "tts_confirmation_status(" in video_service
+    assert "subprocess.run(" not in video_service
+    assert "record_artifact(" not in video_service
+    assert "class VideoJobStore" not in video_service
+    assert "class VideoArtifactService" in video_artifacts
+    assert "class RemotionRunner" in remotion_runner
+    assert "router = APIRouter()" in video_routes
+    assert "app.include_router(video_router)" in server
+    assert "def _render_video_worker(" not in server
 
     assert "def mask_sensitive_settings" in server
     assert "return mask_sensitive_settings(get_all_settings())" in server
@@ -29,16 +40,26 @@ def main() -> None:
     assert "configured_allowed_origins()" in server
     assert "build_config_export_bundle(mask_sensitive_settings(get_all_settings(), force=True), contains_secrets=False)" in server
 
-    annotation_start = server.index("def annotate_step6_narration(")
-    annotation_end = server.index('@app.put("/api/projects/{project_id}/steps/6/result")', annotation_start)
-    assert "handle_step_navigation(project, 6, db)" in server[annotation_start:annotation_end]
+    annotation_start = narration_service.index(
+        "def annotate_step6_narration("
+    )
+    annotation_end = narration_service.index(
+        "def update_step6_result(",
+        annotation_start,
+    )
+    assert "handle_step_navigation(project, 6, db)" in (
+        narration_service[annotation_start:annotation_end]
+    )
 
-    init_start = server.index("def init_step6_narration(")
-    init_end = server.index('@app.get("/api/projects/{project_id}/steps/6/result")', init_start)
-    assert '"--overwrite"' not in server[init_start:init_end]
+    init_start = narration_service.index("def init_step6_narration(")
+    init_end = narration_service.index(
+        "def get_step6_result(",
+        init_start,
+    )
+    assert '"--overwrite"' not in narration_service[init_start:init_end]
 
-    assert '"input_fingerprint": render_fingerprint' in render_source
-    assert "tts_confirmation_status(project.run_dir, slide_ids)" in render_source
+    assert '"input_fingerprint": render_fingerprint' in video_service
+    assert "def record_rendered_video(" in video_artifacts
 
     step5_start = server.index('def update_step5_result(')
     step5_end = server.index("# ==================== 步骤 6", step5_start)

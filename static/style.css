@@ -5848,6 +5848,197 @@ body.step5-fullscreen-mode #step-panel-5 .workspace-left{align-items:center;just
 #style-panel-template-select{display:none}
 .style-ref-output-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:18px 0 10px}
 .style-ref-output-head h4{margin:0}
+
+/* Step 6 output workspace: PPTX export */
+.step8-output-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  min-width: 0;
+}
+
+#step8-error-box {
+  flex: 1 0 100%;
+  width: 100%;
+  margin-top: 0.2rem !important;
+}
+
+.step8-readiness {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  max-width: min(460px, 48vw);
+  padding: 0.28rem 0.72rem;
+  border-radius: 999px;
+  background: var(--color-bg-subtle);
+  color: #71809c;
+  font-size: 0.78rem;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.step8-readiness::before {
+  width: 7px;
+  height: 7px;
+  margin-right: 0.42rem;
+  border-radius: 50%;
+  background: #9ba4ba;
+  content: "";
+  flex: 0 0 auto;
+}
+
+.step8-readiness.ready {
+  background: #eef9f3;
+  color: #2f7251;
+}
+
+.step8-readiness.ready::before {
+  background: #4fa67a;
+}
+
+.step8-readiness.blocked {
+  background: #fff7e9;
+  color: #966620;
+}
+
+.step8-readiness.blocked::before {
+  background: #e4a94f;
+}
+
+#step8-btn-pptx:not(:disabled) {
+  border-color: color-mix(in srgb, var(--color-primary-deep) 24%, var(--color-border-default));
+  background: var(--color-primary-light);
+  color: var(--color-primary-text);
+}
+
+#step8-btn-pptx:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.step8-pptx-section {
+  margin-top: 1.1rem;
+}
+
+.step8-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.step8-section-heading h3 {
+  margin: 0 0 0.3rem;
+}
+
+.step8-section-heading p {
+  margin: 0;
+  color: #71809c;
+  font-size: 0.88rem;
+}
+
+.step8-pptx-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.step8-pptx-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--color-border-default);
+  border-radius: 20px;
+  background: var(--color-bg-surface);
+  box-shadow: 0 10px 28px rgba(58, 76, 130, 0.06);
+}
+
+.step8-pptx-icon {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border-radius: 15px;
+  background: var(--gradient-ai-soft);
+  color: var(--color-primary-deep);
+}
+
+.step8-pptx-icon .icon {
+  width: 22px;
+  height: 22px;
+}
+
+.step8-pptx-main {
+  min-width: 0;
+}
+
+.step8-pptx-name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.step8-pptx-name strong {
+  color: #273657;
+  line-height: 1.35;
+}
+
+.step8-pptx-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.8rem;
+  margin-top: 0.35rem;
+  color: #71809c;
+  font-size: 0.82rem;
+}
+
+.step8-pptx-meta span + span::before {
+  margin-right: 0.8rem;
+  color: #c8cfdd;
+  content: "•";
+}
+
+.step8-pptx-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.55rem;
+}
+
+.step8-pptx-actions .btn {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 1rem;
+  border-radius: 16px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+@media (max-width: 860px) {
+  .step8-readiness {
+    max-width: 100%;
+  }
+
+  .step8-pptx-card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .step8-pptx-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+}
 .style-ref-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .style-ref-actions button{border-radius:9px!important}
 .style-ref-primary{background:linear-gradient(135deg,#735aff,#5231e8)!important;color:#fff!important;border:0!important}

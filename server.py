@@ -30,12 +30,11 @@ from PIL import Image
 import httpx
 import yaml
 from openai import OpenAI
-from database import init_db, get_db, Project
+from database import ArtifactRecord, LocalJob, init_db, get_db, Project
 from config_store import get_all_settings, update_settings, get_setting
 from app_security import configured_allowed_hosts, configured_allowed_origins, install_access_control
 from scripts.background_color import normalize_connected_background
 from scripts.media_tools import (
-    media_tool_candidate_dirs as shared_media_tool_candidate_dirs,
     probe_media_duration_sec,
     resolve_media_tool as shared_resolve_media_tool,
 )
@@ -45,7 +44,7 @@ from scripts.pipeline_profiles import (
     storyboard_profile_prompt,
     storyboard_requirements,
 )
-from artifact_fingerprint import render_input_fingerprint, sha256_file, sha256_json
+from artifact_fingerprint import sha256_file, sha256_json
 from visual_provenance import (
     promote_candidate_provenance,
     provenance_path as visual_provenance_path,
@@ -53,41 +52,33 @@ from visual_provenance import (
     visual_provenance_status,
     write_visual_provenance,
 )
-from runtime_project_style_references import (
+from project_style_reference_service import (
     can_send_project_references,
     profile_style_prompt,
     project_generate_prompt_for_slide,
     project_reference_paths,
 )
 from pipeline_lifecycle import (
-    clear_all_reveal_artifacts,
-    clear_audio_confirmation as clear_audio_confirmation_artifact,
-    clear_remotion_props,
-    clear_slide_reveal_artifacts,
-    mark_downstream_pending,
-    mark_selected_stale,
+    project_artifact_lock,
     write_json_atomic,
 )
+import invalidation_service
+from reveal_manifest_service import sync_reveal_manifest
 from tts_artifacts import (
     artifact_paths as tts_artifact_paths,
     artifact_status as tts_artifact_status,
     build_confirmation_payload as build_audio_confirmation_payload,
-    confirmation_status as tts_confirmation_status,
     confirmation_path as tts_confirmation_path,
     is_audio_confirmed,
     nonempty_file as tts_nonempty_file,
     remove_outputs as remove_tts_outputs,
     timeline_duration_sec,
 )
-from pipeline_state import begin_step, complete_step, current_step_after_completion, mark_retry_needed
+from pipeline_state import mark_retry_needed
 from project_storage import (
     UnsafeProjectPath,
-    legacy_video_file,
     project_run_dir as validated_project_run_dir,
     slide_file as storage_slide_file,
-    video_file as storage_video_file,
-    video_sidecar as storage_video_sidecar,
-    videos_dir as storage_videos_dir,
 )
 
 def get_openai_client(api_key: str, base_url: str = None, timeout: float = 120.0, max_retries: int = 1) -> OpenAI:
@@ -408,9 +399,6 @@ OPEN_SOURCE_CHINESE_FONTS = [
         "source": "LXGW WenKai",
     },
 ]
-_REVEAL_LOCKS: Dict[str, threading.RLock] = {}
-_REVEAL_LOCKS_GUARD = threading.Lock()
-
 TTS_PROVIDER_ALIASES = {
     "doubao": "volcengine_seed",
     "volcengine": "volcengine_seed",
@@ -449,13 +437,47 @@ TTS_PROVIDER_DEFAULTS = {
 }
 
 def reveal_lock_for(project: Project) -> threading.RLock:
-    key = os.path.abspath(project.run_dir)
-    with _REVEAL_LOCKS_GUARD:
-        lock = _REVEAL_LOCKS.get(key)
-        if lock is None:
-            lock = threading.RLock()
-            _REVEAL_LOCKS[key] = lock
-        return lock
+    return project_artifact_lock(project.run_dir)
+
+
+def run_subprocess_bounded(
+    args: List[str],
+    *,
+    timeout_sec: float,
+    **kwargs: Any,
+) -> subprocess.CompletedProcess:
+    """Run a child process with an explicit timeout and result-shaped failure."""
+    try:
+        return subprocess.run(args, timeout=timeout_sec, **kwargs)
+    except subprocess.TimeoutExpired as exc:
+        stdout = (
+            exc.stdout.decode("utf-8", errors="replace")
+            if isinstance(exc.stdout, bytes)
+            else str(exc.stdout or "")
+        )
+        stderr = (
+            exc.stderr.decode("utf-8", errors="replace")
+            if isinstance(exc.stderr, bytes)
+            else str(exc.stderr or "")
+        )
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=124,
+            stdout=stdout,
+            stderr=f"Timed out after {timeout_sec:g} seconds. {stderr}".strip(),
+        )
+
+
+def parse_json_process_stdout(result: subprocess.CompletedProcess) -> Dict[str, Any]:
+    """Return validator JSON without allowing malformed stdout to crash finalization."""
+    try:
+        payload = json.loads(result.stdout or "{}")
+    except (TypeError, json.JSONDecodeError):
+        return {
+            "parse_warning": "validator stdout was not valid JSON",
+            "raw_stdout": str(result.stdout or ""),
+        }
+    return payload if isinstance(payload, dict) else {"result": payload}
 
 
 def read_json_file(path: str, fallback: Any) -> Any:
@@ -506,68 +528,10 @@ STEP7_TTS_RETRY_ATTEMPTS = 3
 STEP7_TTS_RETRY_BASE_DELAY_SEC = 4
 STEP7_BIND_TIMEOUT_SEC = 90
 STEP8_RENDER_TIMEOUT_SEC = 3600
+STEP8_BUILD_PROPS_TIMEOUT_SEC = 180
+STEP8_NPM_INSTALL_TIMEOUT_SEC = 600
+STEP8_COLOR_PROCESS_TIMEOUT_SEC = 300
 REVEAL_VISUAL_LEAD_SEC = 0.45
-
-# 异步渲染任务注册表。
-# 渲染耗时长（5-60 分钟），同步阻塞会让浏览器在拿到响应前就超时断开
-# 报 "Failed to fetch"。改为后台线程渲染 + 前端轮询 render-status 路由。
-_RENDER_TASKS: Dict[str, Dict[str, Any]] = {}
-_RENDER_TASKS_LOCK = threading.Lock()
-_RENDER_PROJECT_LOCKS: Dict[str, threading.Lock] = {}
-_RENDER_PROJECT_LOCKS_GUARD = threading.Lock()
-
-
-def _get_project_render_lock(project_id: str) -> threading.Lock:
-    """每个项目一把锁，防止同一项目并发渲染。"""
-    with _RENDER_PROJECT_LOCKS_GUARD:
-        lock = _RENDER_PROJECT_LOCKS.get(project_id)
-        if lock is None:
-            lock = threading.Lock()
-            _RENDER_PROJECT_LOCKS[project_id] = lock
-        return lock
-
-
-def _active_render_task_for_project(project_id: str) -> Optional[Dict[str, Any]]:
-    """返回该项目当前进行中的渲染任务，没有则返回 None。"""
-    with _RENDER_TASKS_LOCK:
-        for task in _RENDER_TASKS.values():
-            if task["project_id"] == project_id and task["status"] == "rendering":
-                return task
-    return None
-
-
-def _set_render_task_stage(task_id: str, stage: str) -> None:
-    with _RENDER_TASKS_LOCK:
-        task = _RENDER_TASKS.get(task_id)
-        if task is not None:
-            task["stage"] = stage
-            task["elapsed_sec"] = round(time.time() - task["started_at"], 1)
-
-
-def _set_render_task_status(task_id: str, status: str, **fields: Any) -> None:
-    with _RENDER_TASKS_LOCK:
-        task = _RENDER_TASKS.get(task_id)
-        if task is None:
-            return
-        task["status"] = status
-        task["elapsed_sec"] = round(time.time() - task["started_at"], 1)
-        if status in ("success", "error"):
-            task["finished_at"] = time.time()
-        for key, value in fields.items():
-            task[key] = value
-
-
-# 渲染阶段中文标签，供前端 progress 文案使用。
-_RENDER_STAGE_LABELS = {
-    "validating": "校验项目状态",
-    "building_reveal": "构建 Reveal 资源",
-    "binding_timeline": "绑定语音时间轴",
-    "building_props": "构建 Remotion 配置",
-    "rendering": "Remotion 渲染中",
-    "validating_color": "校验视频颜色",
-    "finalizing": "写入元数据",
-}
-
 
 def _redact_log_value(key: str, value: Any) -> Any:
     lowered = key.lower()
@@ -1384,103 +1348,14 @@ def current_slide_file_or_404(project: Project, slide_id: str, filename: str) ->
         raise HTTPException(status_code=400, detail="Slide 路径无效") from exc
 
 
-def project_video_file_or_400(project: Project, filename: str) -> str:
-    run_dir = project_run_dir_or_500(project)
-    try:
-        return str(storage_video_file(run_dir, filename))
-    except UnsafeProjectPath as exc:
-        raise HTTPException(status_code=400, detail="视频文件名无效") from exc
-
-
-def project_legacy_video_file(project: Project) -> str:
-    return str(legacy_video_file(project_run_dir_or_500(project)))
-
-
 def sync_reveal_manifest_to_contract(project: Project, slide_ids: Optional[List[str]] = None) -> bool:
-    """Keep Mask slides aligned with Step 2 and repair missing template slides.
-
-    Older implementations only removed stale slides.  If a stale browser
-    autosave or interrupted initialization wrote ``slides: []``, the manifest
-    remained permanently empty and AI Mask failed at the first slide.  Build a
-    fresh coordinate template from the visual contract and use it only for
-    missing slides, preserving every existing manual/AI annotation.
-    """
     explicit_slide_ids = slide_ids is not None
     current_slide_ids = slide_ids if explicit_slide_ids else read_contract_slide_ids(project.run_dir)
-    if not current_slide_ids and not explicit_slide_ids:
-        return False
-
-    manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
-    if not os.path.exists(manifest_path):
-        return False
-
-    with reveal_lock_for(project):
-        try:
-            with open(manifest_path, "r", encoding="utf-8") as f:
-                manifest = json.load(f)
-        except Exception as e:
-            logger.warning(f"Failed to read reveal manifest for slide sync: {e}")
-            return False
-
-        slides = manifest.get("slides", [])
-        if not isinstance(slides, list):
-            return False
-
-        by_id = {
-            str(slide.get("slide_id") or "").strip(): slide
-            for slide in slides
-            if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()
-        }
-        missing_slide_ids = [slide_id for slide_id in current_slide_ids if slide_id not in by_id]
-        template_by_id: Dict[str, Dict[str, Any]] = {}
-        if missing_slide_ids:
-            contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
-            try:
-                with open(contract_path, "r", encoding="utf-8-sig") as file:
-                    contract = json.load(file)
-                from scripts.write_reveal_manifest_template import build_manifest
-
-                template_manifest = build_manifest(contract, Path(project.run_dir))
-                template_by_id = {
-                    str(slide.get("slide_id") or "").strip(): slide
-                    for slide in template_manifest.get("slides", [])
-                    if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()
-                }
-            except Exception as exc:
-                logger.exception("Failed to repair missing reveal manifest slides: %s", exc)
-                return False
-
-        synced_slides = [
-            by_id.get(slide_id) or template_by_id.get(slide_id)
-            for slide_id in current_slide_ids
-        ]
-        synced_slides = [slide for slide in synced_slides if isinstance(slide, dict)]
-        for slide in synced_slides:
-            slide_id = str(slide.get("slide_id") or "").strip()
-            if not slide_id:
-                continue
-            slide["slide_dir"] = str(
-                Path(storage_slide_file(project.run_dir, slide_id, "visual_draft.png")).parent.as_posix()
-            )
-            slide["master"] = "visual_draft.png"
-        changed = synced_slides != slides
-        if not changed:
-            return False
-
-        manifest["slides"] = synced_slides
-        if missing_slide_ids:
-            # Any previous completion summary is stale once a slide template
-            # has to be reconstructed.  The next annotation run will write a
-            # truthful replacement summary.
-            manifest.pop("ai_mask_annotation", None)
-        write_json_atomic(manifest_path, manifest)
-    logger.info(
-        "Synced reveal manifest to visual contract: %s slides (%s repaired, %s previous)",
-        len(synced_slides),
-        len(missing_slide_ids),
-        len(slides),
+    return sync_reveal_manifest(
+        project,
+        current_slide_ids,
+        allow_empty=explicit_slide_ids,
     )
-    return True
 
 
 def normalize_hex_color(value: Any, fallback: str = DEFAULT_VIDEO_BACKGROUND) -> str:
@@ -1615,11 +1490,7 @@ def subtitle_preview_background_url(project: Project) -> str:
 
 
 def invalidate_subtitle_derivatives(project: Project, db: Session) -> None:
-    clear_remotion_props(project.run_dir)
-    current_status = project.get_step_status()
-    if current_status.get("8") == "completed":
-        current_status["8"] = "pending_reconfirmation"
-    project.set_step_status(current_status)
+    invalidation_service.subtitle_style_changed(project)
     db.commit()
 
 
@@ -1646,11 +1517,10 @@ def sync_project_background_color(project: Project) -> Optional[str]:
 
 
 def invalidate_video_background_derivatives(project: Project, db: Session) -> None:
-    clear_all_reveal_artifacts(project.run_dir, read_contract_slide_ids(project.run_dir))
-    current_status = project.get_step_status()
-    mark_selected_stale(current_status, (5, 8))
-    project.current_step = 3
-    project.set_step_status(current_status)
+    invalidation_service.video_background_changed(
+        project,
+        read_contract_slide_ids(project.run_dir),
+    )
     db.commit()
 
 
@@ -2324,6 +2194,8 @@ def delete_project(project_id: str, db: Session = Depends(get_db)):
             logger.error(f"Failed to delete directory {run_dir}: {e}")
             raise HTTPException(status_code=500, detail="项目文件删除失败") from e
             
+    db.query(ArtifactRecord).filter(ArtifactRecord.project_id == project_id).delete(synchronize_session=False)
+    db.query(LocalJob).filter(LocalJob.project_id == project_id).delete(synchronize_session=False)
     db.delete(project)
     db.commit()
     return {"success": True, "message": "项目删除成功"}
@@ -2693,10 +2565,6 @@ def project_audio_confirmed(project: Project) -> bool:
     return is_audio_confirmed(project.run_dir, read_contract_slide_ids(project.run_dir))
 
 
-def clear_audio_confirmation(project: Project):
-    clear_audio_confirmation_artifact(project.run_dir)
-
-
 def _safe_process_text(value: Any) -> str:
     if value is None:
         return ""
@@ -2826,58 +2694,26 @@ def run_tts_command_with_retries(
 
 
 def mark_step_in_progress(project: Project, target_step: int, db: Session):
-    current_status = begin_step(project.get_step_status(), target_step)
-    project.current_step = target_step
-    project.set_step_status(current_status)
+    """Compatibility wrapper; transition ownership lives in the invalidation service."""
+    invalidation_service.begin_stage(project, target_step)
     db.commit()
 
 
 # 回退某一步后，后续步骤状态被标记为 pending_reconfirmation
 def handle_step_navigation(project: Project, target_step: int, db: Session):
-    current_status = complete_step(project.get_step_status(), target_step)
-    if target_step < 7:
-        clear_audio_confirmation(project)
-    if target_step < 8:
-        clear_remotion_props(project.run_dir)
-    project.current_step = current_step_after_completion(project.current_step, target_step)
-    project.set_step_status(current_status)
+    invalidation_service.complete_stage(project, target_step)
     db.commit()
 
 
 def invalidate_after_upstream_edit(project: Project, source_step: int, db: Session) -> None:
     """Keep edited source data while making every dependent stage explicitly stale."""
-    current_status = complete_step(project.get_step_status(), source_step)
-    clear_audio_confirmation(project)
-    clear_remotion_props(project.run_dir)
-    project.current_step = source_step
-    project.set_step_status(current_status)
+    invalidation_service.upstream_content_changed(project, source_step)
     db.commit()
 
 
 def clear_slide_visual_derivatives(project: Project, slide_id: str) -> None:
     """Remove masks and rendered assets that belong to an older slide image."""
-    manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
-    with reveal_lock_for(project):
-        if os.path.exists(manifest_path):
-            try:
-                with open(manifest_path, "r", encoding="utf-8") as f:
-                    manifest = json.load(f)
-                changed = False
-                for slide in manifest.get("slides", []) or []:
-                    if not isinstance(slide, dict) or str(slide.get("slide_id") or "").strip() != slide_id:
-                        continue
-                    for field in ("groups", "semantic_blocks"):
-                        if slide.get(field):
-                            changed = True
-                        slide[field] = []
-                    slide["status"] = "pending"
-                    changed = True
-                if changed:
-                    write_json_atomic(manifest_path, manifest)
-            except Exception as exc:
-                logger.warning("Failed to clear Mask data for %s: %s", slide_id, exc)
-
-        clear_slide_reveal_artifacts(project.run_dir, slide_id)
+    invalidation_service.clear_slide_visual_derivatives(project, slide_id)
 
 
 def validate_current_reveal_assets(project: Project) -> None:
@@ -2954,13 +2790,11 @@ def build_current_reveal_assets(project: Project) -> None:
 
 
 def mark_slide_image_changed(project: Project, slide_id: str, db: Session) -> None:
-    clear_slide_visual_derivatives(project, slide_id)
-    clear_audio_confirmation(project)
-    current_status = project.get_step_status()
-    current_status["3"] = "completed" if all_current_slide_images_exist(project) else "in_progress"
-    mark_downstream_pending(current_status, from_step=4)
-    project.current_step = 3
-    project.set_step_status(current_status)
+    invalidation_service.slide_images_changed(
+        project,
+        [slide_id],
+        all_images_exist=all_current_slide_images_exist(project),
+    )
     db.commit()
 
 # ==================== 步骤 1: 导入文章 ====================
@@ -3165,1947 +2999,40 @@ def update_step1_result(project_id: str, payload: Dict[str, Any], db: Session = 
 
 # ==================== 步骤 2: 智能分镜规划 ====================
 
-def storyboard_rules_path(project: Project) -> str:
-    return os.path.join(project.run_dir, "planning", "storyboard_rules.txt")
-
-
-def storyboard_profile_path(project: Project) -> str:
-    return os.path.join(project.run_dir, "planning", "pipeline_profile.yaml")
-
-
-def visual_contract_schema_text() -> str:
-    schema_path = os.path.join(REPO_ROOT, "schemas", "visual_contract.schema.json")
-    if not os.path.exists(schema_path):
-        return ""
-    with open(schema_path, "r", encoding="utf-8") as f:
-        return f.read()
-
-
-def default_storyboard_profile_text() -> str:
-    profile_path = os.path.join(REPO_ROOT, "config", "pipeline_profiles.yaml")
-    with open(profile_path, "r", encoding="utf-8-sig") as f:
-        return f.read()
-
-
-def sanitize_storyboard_profile(profile: Dict[str, Any]) -> Dict[str, Any]:
-    sanitized = copy.deepcopy(profile)
-    storyboard = sanitized.get("storyboard")
-    if not isinstance(storyboard, dict):
-        return sanitized
-    default_storyboard = read_pipeline_profile().get("storyboard", {})
-    default_roles = default_storyboard.get("roles", {}) if isinstance(default_storyboard, dict) else {}
-    roles = storyboard.get("roles")
-    if isinstance(roles, dict):
-        # Page subtitles are no longer part of the production contract. Drop
-        # legacy editable role definitions instead of letting an old template
-        # reintroduce subtitle groups into Step 2.
-        roles.pop("subtitle", None)
-        for role, config in roles.items():
-            if not isinstance(config, dict):
-                continue
-            config.pop("required", None)
-            config.pop("speak_policy", None)
-            description = str(config.get("description") or "")
-            if any(marker in description for marker in ("只展示不朗读", "不绑定旁白", "可选副标题", "可选总结区")):
-                default_config = default_roles.get(role, {}) if isinstance(default_roles, dict) else {}
-                fallback_descriptions = {
-                    "decoration": "装饰元素，只在确实帮助理解画面时使用。",
-                }
-                config["description"] = str(default_config.get("description") or fallback_descriptions.get(role) or description)
-
-    structure_rules = storyboard.get("structure_rules")
-    if isinstance(structure_rules, list):
-        legacy_markers = (
-            "speak_policy",
-            "display_only",
-            "可讲解的 visual_group",
-            "旁白讲解",
-            "必选结构",
-            "可选结构",
-        )
-        retained_rules = [
-            rule for rule in structure_rules
-            if not any(marker in str(rule) for marker in legacy_markers)
-        ]
-        default_rules = default_storyboard.get("structure_rules", []) if isinstance(default_storyboard, dict) else []
-        for rule in default_rules if isinstance(default_rules, list) else []:
-            if rule not in retained_rules:
-                retained_rules.append(rule)
-        storyboard["structure_rules"] = retained_rules
-    return sanitized
-
-
-def parse_storyboard_profile_text(profile_text: str) -> Dict[str, Any]:
-    try:
-        profile = yaml.safe_load(profile_text) or {}
-    except yaml.YAMLError as exc:
-        raise HTTPException(status_code=400, detail=f"分镜结构 YAML 格式错误: {exc}") from exc
-    if not isinstance(profile, dict):
-        raise HTTPException(status_code=400, detail="分镜结构配置必须是 YAML 对象")
-    storyboard = profile.get("storyboard")
-    if not isinstance(storyboard, dict):
-        raise HTTPException(status_code=400, detail="分镜结构配置缺少 storyboard 对象")
-    roles = storyboard.get("roles")
-    if not isinstance(roles, dict) or not roles:
-        raise HTTPException(status_code=400, detail="分镜结构配置至少需要一个 storyboard.roles 角色")
-    return sanitize_storyboard_profile(profile)
-
-
-def storyboard_profile_editor_data(profile: Dict[str, Any]) -> Dict[str, Any]:
-    profile = sanitize_storyboard_profile(profile)
-    storyboard = profile.get("storyboard") if isinstance(profile.get("storyboard"), dict) else {}
-    roles = storyboard.get("roles") if isinstance(storyboard.get("roles"), dict) else {}
-    return {
-        "slide_count": copy.deepcopy(storyboard.get("slide_count") or {}),
-        "visual_group_count": copy.deepcopy(storyboard.get("visual_group_count") or {}),
-        "roles": {
-            str(role): {
-                "label": str(config.get("label") or role),
-                "description": str(config.get("description") or ""),
-                "enabled": config.get("enabled") is not False,
-            }
-            for role, config in roles.items()
-            if isinstance(config, dict)
-        },
-        "protected_fields": [
-            "slide_id",
-            "visual_groups",
-            "narration_beats",
-            "visual_groups[].id",
-            "visual_groups[].content_unit_id",
-            "narration_beats[].group_id",
-            "narration_beats[].content_unit_id",
-        ],
-    }
-
-
-def apply_storyboard_profile_patch(
-    profile: Dict[str, Any],
-    patch: Any,
-) -> Dict[str, Any]:
-    if not isinstance(patch, dict):
-        return sanitize_storyboard_profile(profile)
-    merged = copy.deepcopy(profile)
-    storyboard = merged.setdefault("storyboard", {})
-    if not isinstance(storyboard, dict):
-        raise HTTPException(status_code=400, detail="storyboard 必须是 YAML 对象")
-
-    for field in ("slide_count", "visual_group_count"):
-        value = patch.get(field)
-        if value is None:
-            continue
-        if not isinstance(value, dict):
-            raise HTTPException(status_code=400, detail=f"{field} 必须是对象")
-        existing = storyboard.get(field)
-        if not isinstance(existing, dict):
-            existing = {}
-        for size_key in ("short_article", "medium_article", "long_article"):
-            if size_key in value:
-                text = str(value.get(size_key) or "").strip()
-                if not text:
-                    raise HTTPException(status_code=400, detail=f"{field}.{size_key} 不能为空")
-                existing[size_key] = text
-        storyboard[field] = existing
-
-    role_patch = patch.get("roles")
-    if role_patch is not None:
-        if not isinstance(role_patch, dict):
-            raise HTTPException(status_code=400, detail="roles 必须是对象")
-        current_roles = storyboard.get("roles")
-        if not isinstance(current_roles, dict):
-            current_roles = {}
-        updated_roles: Dict[str, Any] = {}
-        for role, current_config in current_roles.items():
-            if not isinstance(current_config, dict):
-                continue
-            next_config = copy.deepcopy(current_config)
-            next_config.pop("required", None)
-            next_config.pop("speak_policy", None)
-            next_patch = role_patch.get(role)
-            if not isinstance(next_patch, dict):
-                updated_roles[role] = next_config
-                continue
-            next_config["enabled"] = next_patch.get("enabled") is not False
-            updated_roles[role] = next_config
-        if not any(config.get("enabled") is not False for config in updated_roles.values()):
-            raise HTTPException(status_code=400, detail="至少需要启用一个分镜结构类型")
-        storyboard["roles"] = updated_roles
-    return parse_storyboard_profile_text(
-        yaml.safe_dump(merged, allow_unicode=True, sort_keys=False, width=1000)
-    )
-
-
-def read_project_pipeline_profile(project: Project) -> Dict[str, Any]:
-    path = storyboard_profile_path(project)
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8-sig") as f:
-            return parse_storyboard_profile_text(f.read())
-    return read_pipeline_profile()
-
-
-def default_storyboard_rules() -> str:
-    default_path = os.path.join(REPO_ROOT, "templates", "prompts", "storyboard_rules.zh.md")
-    if os.path.exists(default_path):
-        with open(default_path, "r", encoding="utf-8") as f:
-            return f.read().strip()
-    return "旁白自然口语化；每个旁白语段只绑定一个清晰的视觉分组；画面先于对应语音约 1 秒出现。"
-
-
-def handdrawn_storyboard_rules() -> str:
-    if os.path.exists(HANDDRAWN_STORYBOARD_RULES_PATH):
-        with open(HANDDRAWN_STORYBOARD_RULES_PATH, "r", encoding="utf-8") as f:
-            return f.read().strip()
-    return default_storyboard_rules()
-
-
-def step2_prompts_path(project: Project) -> str:
-    return os.path.join(project.run_dir, "planning", STEP2_PROMPTS_FILE)
-
-
-def step2_script_plan_path(project: Project) -> str:
-    return os.path.join(project.run_dir, "planning", STEP2_SCRIPT_PLAN_FILE)
-
-
-def step2_visual_plan_path(project: Project) -> str:
-    return os.path.join(project.run_dir, "planning", STEP2_VISUAL_PLAN_FILE)
-
-
-def read_prompt_template(path: str) -> str:
-    with open(path, "r", encoding="utf-8-sig") as f:
-        return f.read().strip()
-
-
-def default_step2_prompts() -> Dict[str, str]:
-    return {
-        key: read_prompt_template(path)
-        for key, path in STEP2_PROMPT_TEMPLATE_FILES.items()
-    }
-
-
-def normalized_prompt_hash(value: Any) -> str:
-    text = str(value or "").replace("\r\n", "\n").strip()
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def migrate_legacy_step2_prompt(key: str, value: str, defaults: Dict[str, str]) -> str:
-    """Upgrade untouched built-in prompts while preserving genuinely customized text."""
-    prompt_hash = normalized_prompt_hash(value)
-    if prompt_hash in LEGACY_STEP2_PROMPT_HASHES.get(key, set()):
-        return defaults[key]
-    if key == "script_system" and prompt_hash == LEGACY_INTERVIEW_SCRIPT_PROMPT_HASH:
-        return value.replace(
-            "<ContractVersion>step2_script_v4_no_subtitle</ContractVersion>",
-            "<ContractVersion>step2_script_v5_speech_driven_interview</ContractVersion>",
-            1,
-        )
-    return value
-
-
-def read_step2_prompts(project: Project) -> Dict[str, str]:
-    prompts = default_step2_prompts()
-    defaults = dict(prompts)
-    stored = read_json_file(step2_prompts_path(project), {})
-    if isinstance(stored, dict):
-        for key in prompts:
-            value = str(stored.get(key) or "").strip()
-            if value:
-                prompts[key] = migrate_legacy_step2_prompt(key, value, defaults)
-    return prompts
-
-
-def normalize_step2_prompt_type(value: Any) -> str:
-    prompt_type = str(value or "script").strip().lower()
-    if prompt_type not in {"script", "visual"}:
-        raise HTTPException(status_code=400, detail="Prompt 模板类型必须是 script 或 visual")
-    return prompt_type
-
-
-def step2_prompt_keys(prompt_type: str) -> tuple[str, str]:
-    return ("visual_system", "visual_output_example") if prompt_type == "visual" else ("script_system", "script_output_example")
-
-
-def step2_prompt_template_payload(
-    template_id: str,
-    name: str,
-    prompt_type: str,
-    prompts: Dict[str, str],
-    built_in: bool = False,
-    updated_at: str = "",
-) -> Dict[str, Any]:
-    first_key, second_key = step2_prompt_keys(prompt_type)
-    return {
-        "id": template_id,
-        "name": name,
-        "prompt_type": prompt_type,
-        "built_in": built_in,
-        "updated_at": updated_at,
-        "prompts": {
-            first_key: str(prompts.get(first_key) or ""),
-            second_key: str(prompts.get(second_key) or ""),
-        },
-    }
-
-
-def built_in_step2_prompt_templates() -> List[Dict[str, Any]]:
-    defaults = default_step2_prompts()
-    ai_knowledge_prompts = dict(defaults)
-    ai_knowledge_prompts["script_system"] = (
-        defaults["script_system"] + "\n\n" + AI_KNOWLEDGE_STEP2_SCRIPT_EXTENSION
-    )
-    return [
-        step2_prompt_template_payload(
-            "builtin_article_to_slide",
-            "原始模板 · 文章→slides",
-            "script",
-            defaults,
-            built_in=True,
-        ),
-        step2_prompt_template_payload(
-            "builtin_ai_knowledge_to_slide",
-            "AI 知识科普 · 文章→slides",
-            "script",
-            ai_knowledge_prompts,
-            built_in=True,
-        ),
-        step2_prompt_template_payload(
-            "builtin_slide_to_visualization",
-            "原始模板 · slides→可视化",
-            "visual",
-            defaults,
-            built_in=True,
-        ),
-    ]
-
-
-def list_step2_prompt_templates() -> List[Dict[str, Any]]:
-    templates = built_in_step2_prompt_templates()
-    stored = read_json_file(STEP2_PROMPT_TEMPLATES_PATH, [])
-    if not isinstance(stored, list):
-        return templates
-    for item in stored:
-        if not isinstance(item, dict):
-            continue
-        try:
-            prompt_type = normalize_step2_prompt_type(item.get("prompt_type"))
-            templates.append(
-                step2_prompt_template_payload(
-                    str(item.get("id") or ""),
-                    str(item.get("name") or ""),
-                    prompt_type,
-                    item.get("prompts") if isinstance(item.get("prompts"), dict) else item,
-                    updated_at=str(item.get("updated_at") or ""),
-                )
-            )
-        except HTTPException as exc:
-            logger.warning("Skipping invalid Step 2 prompt template %s: %s", item.get("id"), exc.detail)
-    return templates
-
-
-def step2_prompt_template_detail(template_id: str) -> Dict[str, Any]:
-    for template in list_step2_prompt_templates():
-        if template["id"] == template_id:
-            return template
-    raise HTTPException(status_code=404, detail="Prompt 模板不存在")
-
-
-@app.get("/api/step2-prompt-templates")
-def get_step2_prompt_templates():
-    return {"success": True, "templates": list_step2_prompt_templates()}
-
-
-@app.get("/api/step2-prompt-templates/{template_id}")
-def get_step2_prompt_template(template_id: str):
-    return {"success": True, "template": step2_prompt_template_detail(template_id)}
-
-
-@app.post("/api/step2-prompt-templates")
-def save_step2_prompt_template(payload: Dict[str, Any]):
-    name = normalized_template_name(payload.get("name"))
-    prompt_type = normalize_step2_prompt_type(payload.get("prompt_type"))
-    protected_names = {template["name"].casefold() for template in built_in_step2_prompt_templates()}
-    if name.casefold() in protected_names:
-        raise HTTPException(status_code=400, detail="内置 Prompt 模板名称不可覆盖")
-
-    first_key, second_key = step2_prompt_keys(prompt_type)
-    prompts = {
-        first_key: str(payload.get(first_key) or "").strip(),
-        second_key: str(payload.get(second_key) or "").strip(),
-    }
-    if not prompts[first_key] or not prompts[second_key]:
-        raise HTTPException(status_code=400, detail="Prompt 模板内容不能为空")
-
-    stored = read_json_file(STEP2_PROMPT_TEMPLATES_PATH, [])
-    if not isinstance(stored, list):
-        stored = []
-    existing = next(
-        (
-            item
-            for item in stored
-            if isinstance(item, dict)
-            and str(item.get("prompt_type") or "").strip().lower() == prompt_type
-            and str(item.get("name") or "").strip().casefold() == name.casefold()
-        ),
-        None,
-    )
-    now = template_timestamp()
-    if existing is None:
-        existing = {"id": uuid.uuid4().hex[:12], "created_at": now}
-        stored.append(existing)
-    existing.update(
-        {
-            "name": name,
-            "prompt_type": prompt_type,
-            "prompts": prompts,
-            "updated_at": now,
-        }
-    )
-    write_json_atomic(STEP2_PROMPT_TEMPLATES_PATH, stored)
-    return {
-        "success": True,
-        "template": step2_prompt_template_payload(str(existing["id"]), name, prompt_type, prompts, updated_at=now),
-        "templates": list_step2_prompt_templates(),
-    }
-
-
-@app.delete("/api/step2-prompt-templates/{template_id}")
-def delete_step2_prompt_template(template_id: str):
-    if any(template["id"] == template_id for template in built_in_step2_prompt_templates()):
-        raise HTTPException(status_code=400, detail="内置 Prompt 模板不能删除")
-    if not re.fullmatch(r"[0-9a-f]{12}", template_id):
-        raise HTTPException(status_code=404, detail="Prompt 模板不存在")
-    stored = read_json_file(STEP2_PROMPT_TEMPLATES_PATH, [])
-    if not isinstance(stored, list):
-        stored = []
-    next_stored = [
-        item
-        for item in stored
-        if not (isinstance(item, dict) and str(item.get("id") or "") == template_id)
-    ]
-    if len(next_stored) == len(stored):
-        raise HTTPException(status_code=404, detail="Prompt 模板不存在")
-    write_json_atomic(STEP2_PROMPT_TEMPLATES_PATH, next_stored)
-    return {"success": True, "templates": list_step2_prompt_templates()}
-
-
-def compose_step2_system_prompt(system_content: str, output_example: str) -> str:
-    return (
-        str(system_content or "").strip()
-        + "\n\n<OutputExample>\n"
-        + str(output_example or "").strip()
-        + "\n</OutputExample>"
-    )
-
-
-def step2_script_prompt_uses_legacy_contract(system_content: str) -> bool:
-    """Detect old prompts that require fields removed from the Step 2A input/output contract."""
-    text = str(system_content or "")
-    if "step2_script_v5_speech_driven" in text or "step2_script_v4_no_subtitle" in text:
-        return False
-    if "step2_script_v2" in text or "step2_script_v3_narration_first" in text:
-        return True
-    legacy_patterns = (
-        r"body_points\s*(?:必须|應|应|需|是)",
-        r"narration_segments\s*(?:必须|應|应|需|是)",
-        r"讲解分段要求",
-    )
-    return any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in legacy_patterns)
-
-
-def step2_visual_prompt_uses_legacy_contract(system_content: str) -> bool:
-    """Detect prompts that depend on Step 2A fields no longer sent to Step 2B."""
-    text = str(system_content or "")
-    if "step2_visual_v6_atomic" in text or "step2_visual_v5_no_subtitle" in text:
-        return False
-    if "step2_visual_v2" in text or "step2_visual_v4_one_to_one" in text:
-        return True
-    legacy_patterns = (
-        r"narration_segments\[\].{0,40}(?:唯一依据|唯一依據)",
-        r"第\s*i\s*个\s*body_point",
-        r"body_points\[i-1\]",
-        r"seg_\(i\+1\)",
-    )
-    return any(re.search(pattern, text, flags=re.IGNORECASE | re.DOTALL) for pattern in legacy_patterns)
-
-
-def step2_prompt_compatibility(prompts: Dict[str, str]) -> Dict[str, Any]:
-    script_legacy = step2_script_prompt_uses_legacy_contract(prompts.get("script_system", ""))
-    visual_legacy = step2_visual_prompt_uses_legacy_contract(prompts.get("visual_system", ""))
-    return {
-        "contract_version": "step2_narration_visual_v5_speech_atomic",
-        "script_prompt_legacy": script_legacy,
-        "visual_prompt_legacy": visual_legacy,
-        "compatible": not script_legacy and not visual_legacy,
-    }
-
-
-def step2_prompt_response(project: Project) -> Dict[str, Any]:
-    prompts = read_step2_prompts(project)
-    return {
-        "success": True,
-        "prompts": prompts,
-        "defaults": default_step2_prompts(),
-        "compatibility": step2_prompt_compatibility(prompts),
-        "composed": {
-            "script_system_content": compose_step2_system_prompt(
-                prompts["script_system"],
-                prompts["script_output_example"],
-            ),
-            "visual_system_content": compose_step2_system_prompt(
-                prompts["visual_system"],
-                prompts["visual_output_example"],
-            ),
-        },
-    }
-
-
-def stable_plan_id(value: Any, prefix: str, index: int) -> str:
-    text = re.sub(r"[^a-zA-Z0-9_\\-]+", "_", str(value or "").strip())
-    return text or f"{prefix}_{index:03d}"
-
-
-def clean_planning_text(value: Any) -> str:
-    return re.sub(r"\s+", " ", str(value or "")).strip()
-
-
-def clean_planning_block(value: Any) -> str:
-    if isinstance(value, list):
-        parts = [clean_planning_text(item) for item in value]
-        return "\n".join(part for part in parts if part)
-    if isinstance(value, dict):
-        parts = [clean_planning_text(item) for item in value.values()]
-        return "\n".join(part for part in parts if part)
-    return "\n".join(
-        line
-        for line in (clean_planning_text(line) for line in str(value or "").replace("\r", "\n").split("\n"))
-        if line
-    )
-
-
-def normalize_slide_body(slide: Dict[str, Any]) -> str:
-    body = clean_planning_block(slide.get("body") or slide.get("body_content") or slide.get("core_message"))
-    if body:
-        return body
-    return "\n".join(point["text"] for point in normalize_body_points(slide.get("body_points")) if point.get("text"))
-
-
-def normalize_visual_type(value: Any, has_text: bool = False) -> str:
-    visual_type = str(value or "").strip().lower()
-    if visual_type in {"text", "文字"}:
-        return "text"
-    if visual_type in {"picture", "illustration", "image", "diagram", "chart", "visual", "graphic", "text_and_illustration"}:
-        return "picture"
-    return "text" if has_text else "picture"
-
-
-def normalize_body_points(value: Any, fallback_body: str = "") -> List[Dict[str, str]]:
-    points = value if isinstance(value, list) else []
-    normalized: List[Dict[str, str]] = []
-    for index, point in enumerate(points, start=1):
-        if isinstance(point, dict):
-            text = clean_planning_text(point.get("text") or point.get("content") or "")
-            purpose = clean_planning_text(point.get("purpose") or "")
-            point_id = stable_plan_id(point.get("point_id"), "point", index)
-        else:
-            text = clean_planning_text(point)
-            purpose = ""
-            point_id = f"point_{index:03d}"
-        if not text:
-            continue
-        normalized.append({"point_id": point_id, "text": text, "purpose": purpose})
-    if not normalized and fallback_body:
-        normalized.append({"point_id": "point_001", "text": clean_planning_text(fallback_body), "purpose": "正文"})
-    return normalized
-
-
-def normalize_narration_segments(value: Any, fallback_narration: str = "") -> List[Dict[str, str]]:
-    segments = value if isinstance(value, list) else []
-    normalized: List[Dict[str, str]] = []
-    seen_narration: set[str] = set()
-    previous_narration = ""
-    for index, segment in enumerate(segments, start=1):
-        if isinstance(segment, dict):
-            narration = clean_planning_text(segment.get("narration") or segment.get("spoken_text") or "")
-            purpose = clean_planning_text(segment.get("purpose") or segment.get("spoken_intent") or "")
-            segment_id = stable_plan_id(segment.get("segment_id"), "seg", index)
-        else:
-            narration = clean_planning_text(segment)
-            purpose = ""
-            segment_id = f"seg_{index:03d}"
-        if not narration or narration == previous_narration:
-            continue
-        narration_key = narration_dedupe_key(narration)
-        if narration_key and narration_key in seen_narration:
-            continue
-        if narration_key:
-            seen_narration.add(narration_key)
-        normalized.append({"segment_id": segment_id, "narration": narration, "purpose": purpose})
-        previous_narration = narration
-    fallback_narration = clean_planning_text(fallback_narration)
-    if not normalized and fallback_narration:
-        normalized.append({"segment_id": "seg_001", "narration": fallback_narration, "purpose": "完整演讲稿"})
-    return normalized
-
-
-def normalize_slide_script_plan(plan: Dict[str, Any], project_title: str) -> Dict[str, Any]:
-    slides = plan.get("slides") if isinstance(plan, dict) else []
-    if not isinstance(slides, list) or not slides:
-        raise HTTPException(status_code=500, detail="AI 没有返回可用的 slide_script_plan.slides")
-    normalized_slides: List[Dict[str, Any]] = []
-    for index, slide in enumerate(slides, start=1):
-        if not isinstance(slide, dict):
-            continue
-        slide_id = stable_plan_id(slide.get("slide_id"), "slide", index)
-        if not slide_id.startswith("slide_"):
-            slide_id = f"slide_{index:03d}"
-        narration = clean_planning_text(
-            slide.get("narration")
-            or slide.get("speech")
-            or slide.get("script")
-            or " ".join(
-                clean_planning_text(segment.get("narration") if isinstance(segment, dict) else segment)
-                for segment in (slide.get("narration_segments") or [])
-            )
-        )
-        if not narration:
-            raise HTTPException(status_code=500, detail=f"{slide_id} 缺少 narration")
-        slide_title = clean_planning_text(slide.get("slide_title") or slide.get("title") or f"第 {index} 页")
-        normalized_slides.append(
-            {
-                "slide_id": slide_id,
-                "slide_title": slide_title,
-                "narration": narration,
-            }
-        )
-    if not normalized_slides:
-        raise HTTPException(status_code=500, detail="AI 没有返回可用的 slide_script_plan.slides")
-    return {"title": str(plan.get("title") or project_title).strip() or project_title, "slides": normalized_slides}
-
-
-def normalize_visual_elements(value: Any) -> List[Dict[str, str]]:
-    elements = value if isinstance(value, list) else []
-    normalized: List[Dict[str, str]] = []
-    for index, element in enumerate(elements, start=1):
-        if not isinstance(element, dict):
-            continue
-        role = str(element.get("role") or "body").strip().lower()
-        if role in {"content_body", "body_content"}:
-            role = "body"
-        visual_description = clean_planning_text(
-            element.get("visual_description")
-            or element.get("visible_text")
-            or element.get("text")
-            or ""
-        )
-        narration = clean_planning_text(element.get("narration") or "")
-        visual_type = normalize_visual_type(element.get("visual_type"), has_text=bool(visual_description))
-        if not visual_description:
-            continue
-        normalized.append(
-            {
-                "element_id": stable_plan_id(element.get("element_id"), "el", index),
-                "role": role,
-                "visual_type": visual_type,
-                "visual_description": visual_description,
-                "narration": narration,
-            }
-        )
-    return normalized
-
-
-def narration_sequence_key(value: Any) -> str:
-    """Compare Step A narration with Step B fragments without hiding punctuation changes."""
-    return re.sub(r"\s+", "", clean_planning_text(value))
-
-
-def validate_slide_visual_mapping(
-    slide_id: str,
-    elements: List[Dict[str, str]],
-    script_slide: Optional[Dict[str, Any]] = None,
-) -> None:
-    title_elements = [element for element in elements if element.get("role") == "title"]
-    body_elements = [element for element in elements if element.get("role") == "body"]
-    unsupported_roles = sorted({
-        str(element.get("role") or "")
-        for element in elements
-        if element.get("role") not in {"title", "body"}
-    })
-    if unsupported_roles:
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                f"{slide_id} 包含不参与一对一旁白映射的 role: {', '.join(unsupported_roles)}。"
-                "系统不使用页面副标题；装饰由生图阶段处理，visual_elements 只能包含 title 和 body。"
-            ),
-        )
-    if len(title_elements) != 1 or not elements or elements[0].get("role") != "title":
-        raise HTTPException(status_code=500, detail=f"{slide_id} 必须以且仅以一个 title 元素开头")
-    if not body_elements:
-        raise HTTPException(status_code=500, detail=f"{slide_id} 至少需要一个 body 视觉元素")
-    title = title_elements[0]
-    if title.get("visual_type") != "text":
-        raise HTTPException(status_code=500, detail=f"{slide_id} 的 title 必须使用 text 形式")
-    for element in elements:
-        if not str(element.get("narration") or "").strip():
-            raise HTTPException(
-                status_code=500,
-                detail=f"{slide_id} 的 {element.get('element_id') or 'visual element'} 没有对应演讲片段",
-            )
-    if not isinstance(script_slide, dict):
-        return
-    expected_title = clean_planning_text(script_slide.get("slide_title") or "")
-    if expected_title and clean_planning_text(title.get("visual_description")) != expected_title:
-        raise HTTPException(
-            status_code=500,
-            detail=f"{slide_id} 的标题画面文字必须逐字等于 slide_title: {expected_title}",
-        )
-    source_narration = clean_planning_text(script_slide.get("narration") or "")
-    combined_narration = "".join(str(element.get("narration") or "") for element in elements)
-    if narration_sequence_key(combined_narration) != narration_sequence_key(source_narration):
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                f"{slide_id} 的视觉元素演讲片段未能完整还原 Step A 演讲稿。"
-                "每个片段必须非空、连续、无遗漏、无重复且保持原顺序。"
-            ),
-        )
-
-
-def normalize_slide_visual_plan(
-    plan: Dict[str, Any],
-    script_plan: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    slides = plan.get("slides") if isinstance(plan, dict) else []
-    if not isinstance(slides, list) or not slides:
-        raise HTTPException(status_code=500, detail="AI 没有返回可用的 slide_visual_plan.slides")
-    script_by_id = {
-        str(slide.get("slide_id") or "").strip(): slide
-        for slide in ((script_plan or {}).get("slides") or [])
-        if isinstance(slide, dict)
-    }
-    normalized_slides: List[Dict[str, Any]] = []
-    for index, slide in enumerate(slides, start=1):
-        if not isinstance(slide, dict):
-            continue
-        slide_id = stable_plan_id(slide.get("slide_id"), "slide", index)
-        if not slide_id.startswith("slide_"):
-            slide_id = f"slide_{index:03d}"
-        elements = normalize_visual_elements(slide.get("visual_elements"))
-        if not elements:
-            raise HTTPException(status_code=500, detail=f"{slide_id} 缺少 visual_elements")
-        validate_slide_visual_mapping(slide_id, elements, script_by_id.get(slide_id))
-        normalized_slides.append({"slide_id": slide_id, "visual_elements": elements})
-    if not normalized_slides:
-        raise HTTPException(status_code=500, detail="AI 没有返回可用的 slide_visual_plan.slides")
-    return {"slides": normalized_slides}
-
-
-def read_plan_json(path: str, missing_message: str) -> Dict[str, Any]:
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail=missing_message)
-    with open(path, "r", encoding="utf-8-sig") as f:
-        value = json.load(f)
-    if not isinstance(value, dict):
-        raise HTTPException(status_code=400, detail="规划文件格式无效")
-    return value
-
-
-def configured_step2_llm() -> tuple[str, Optional[str], str, float, int]:
-    llm_api_key = get_setting("llm_api_key")
-    llm_base_url = get_setting("llm_base_url")
-    llm_model = get_setting("llm_model")
-    llm_temp = float(get_setting("llm_temperature", "0.7"))
-    planning_temp = min(llm_temp, 0.2)
-    planning_max_tokens = parse_int_setting(get_setting("llm_max_tokens", "50000"), 50000, 1024, 64000)
-    if not llm_api_key:
-        raise HTTPException(status_code=400, detail="未配置大模型 API 密钥，请在系统设置中配置后再试。")
-    return llm_api_key, llm_base_url, llm_model, planning_temp, planning_max_tokens
-
-
-def step2_llm_vendor_options(model: str, base_url: Optional[str]) -> Dict[str, Any]:
-    """Use fast non-thinking mode for Volcengine/Doubao storyboard requests."""
-    model_name = str(model or "").strip().lower()
-    endpoint = str(base_url or "").strip().lower()
-    if model_name.startswith("doubao-") or "volces.com" in endpoint:
-        return {"extra_body": {"thinking": {"type": "disabled"}}}
-    return {}
-
-
-def run_step2_json_llm(
-    *,
-    project: Project,
-    system_prompt: str,
-    user_prompt: str,
-    artifact_prefix: str,
-    schema_hint: str,
-    trace_id: str,
-) -> Dict[str, Any]:
-    llm_api_key, llm_base_url, llm_model, planning_temp, planning_max_tokens = configured_step2_llm()
-    stage_label = {
-        "step2_script_plan": "Step 2A 演讲稿规划",
-        "step2_visual_plan": "Step 2B 可视化规划",
-    }.get(artifact_prefix, "Step 2 分镜规划")
-    started_at = time.monotonic()
-    vendor_options = step2_llm_vendor_options(llm_model, llm_base_url)
-    write_project_log(
-        project,
-        f"{artifact_prefix}_start",
-        trace_id=trace_id,
-        model=llm_model,
-        base_url=llm_base_url,
-        max_tokens=planning_max_tokens,
-        thinking_disabled=bool(vendor_options),
-    )
-    client = get_openai_client(
-        api_key=llm_api_key,
-        base_url=llm_base_url,
-        timeout=STEP2_LLM_TIMEOUT_SEC,
-        max_retries=0,
-    )
-    try:
-        try:
-            response = client.chat.completions.create(
-                model=llm_model,
-                temperature=planning_temp,
-                max_tokens=planning_max_tokens,
-                timeout=STEP2_LLM_TIMEOUT_SEC,
-                response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                **vendor_options,
-            )
-        except Exception as inner_e:
-            if is_timeout_exception(inner_e):
-                raise
-            logger.warning("Failed LLM call with response_format for %s, retrying without it: %s", artifact_prefix, inner_e)
-            response = client.chat.completions.create(
-                model=llm_model,
-                temperature=planning_temp,
-                max_tokens=planning_max_tokens,
-                timeout=STEP2_LLM_TIMEOUT_SEC,
-                messages=[
-                    {"role": "system", "content": system_prompt + " 请只输出纯 JSON，不要包含 Markdown 代码块标记（如 ```json ）。"},
-                    {"role": "user", "content": user_prompt},
-                ],
-                **vendor_options,
-            )
-        choice = response.choices[0]
-        logger.info("%s finish_reason=%s usage=%s", artifact_prefix, getattr(choice, "finish_reason", None), getattr(response, "usage", None))
-        content_str = str(choice.message.content or "").strip()
-        if not content_str:
-            raise ValueError("大模型返回了空内容")
-        cleaned_content = clean_json_markdown(content_str)
-        return parse_json_or_repair_with_llm(
-            cleaned_content=cleaned_content,
-            raw_content=content_str,
-            client=client,
-            model=llm_model,
-            run_dir=project.run_dir,
-            artifact_prefix=artifact_prefix,
-            schema_hint=schema_hint,
-            max_tokens=planning_max_tokens,
-        )
-    except HTTPException as exc:
-        write_project_log(
-            project,
-            f"{artifact_prefix}_failed",
-            trace_id=trace_id,
-            elapsed_sec=round(time.monotonic() - started_at, 2),
-            status_code=exc.status_code,
-            error=str(exc.detail),
-        )
-        raise
-    except Exception as exc:
-        timed_out = is_timeout_exception(exc)
-        write_project_log(
-            project,
-            f"{artifact_prefix}_failed",
-            trace_id=trace_id,
-            elapsed_sec=round(time.monotonic() - started_at, 2),
-            timeout=timed_out,
-            error_type=type(exc).__name__,
-            error=str(exc),
-        )
-        if timed_out:
-            raise HTTPException(
-                status_code=504,
-                detail=f"{stage_label}超过 {int(STEP2_LLM_TIMEOUT_SEC)} 秒仍未返回，请重试或切换响应更快的模型。",
-            ) from exc
-        raise HTTPException(status_code=502, detail=f"{stage_label}失败：{str(exc)[:300]}") from exc
-    finally:
-        try:
-            client.close()
-        except Exception:
-            pass
-
-
-def script_plan_schema_hint() -> str:
-    return read_prompt_template(STEP2_PROMPT_TEMPLATE_FILES["script_output_example"])
-
-
-def visual_plan_schema_hint() -> str:
-    return read_prompt_template(STEP2_PROMPT_TEMPLATE_FILES["visual_output_example"])
-
-
-def build_step2_script_user_prompt(
-    *,
-    project_title: str,
-    article_content: str,
-    generation_requirement: str,
-) -> str:
-    user_input = {
-        "project_title": project_title,
-        "article_content": article_content,
-    }
-    if str(generation_requirement or "").strip():
-        user_input["generation_requirement"] = str(generation_requirement).strip()
-    return json.dumps(user_input, ensure_ascii=False, indent=2)
-
-
-def build_step2_visual_user_prompt(script_plan: Dict[str, Any]) -> str:
-    minimal_script_plan = {
-        "title": str(script_plan.get("title") or "").strip(),
-        "slides": [
-            {
-                "slide_id": str(slide.get("slide_id") or "").strip(),
-                "slide_title": str(slide.get("slide_title") or "").strip(),
-                "narration": str(slide.get("narration") or "").strip(),
-            }
-            for slide in (script_plan.get("slides") or [])
-            if isinstance(slide, dict)
-        ],
-    }
-    return json.dumps({"slide_script_plan": minimal_script_plan}, ensure_ascii=False, indent=2)
-
-
-def element_visible_text(element: Dict[str, str], index: int) -> str:
-    description = str(element.get("visual_description") or "").strip()
-    if description:
-        return description[:32]
-    return f"视觉元素 {index}"
-
-
-def compose_visual_contract_from_plans(
-    script_plan: Dict[str, Any],
-    visual_plan: Dict[str, Any],
-    project_id: str,
-    project_title: str,
-) -> Dict[str, Any]:
-    script_slides = script_plan.get("slides") if isinstance(script_plan, dict) else []
-    visual_slides = visual_plan.get("slides") if isinstance(visual_plan, dict) else []
-    if not isinstance(script_slides, list) or not script_slides:
-        raise HTTPException(status_code=400, detail="slide_script_plan.json 缺少 slides")
-    if not isinstance(visual_slides, list) or not visual_slides:
-        raise HTTPException(status_code=400, detail="slide_visual_plan.json 缺少 slides")
-
-    visual_by_id = {
-        str(slide.get("slide_id") or "").strip(): slide
-        for slide in visual_slides
-        if isinstance(slide, dict)
-    }
-    subtitle_policy = "no_slides_have_subtitle"
-    slides: List[Dict[str, Any]] = []
-    for slide_index, script_slide in enumerate(script_slides, start=1):
-        if not isinstance(script_slide, dict):
-            continue
-        slide_id = str(script_slide.get("slide_id") or f"slide_{slide_index:03d}").strip()
-        visual_slide = visual_by_id.get(slide_id)
-        if not isinstance(visual_slide, dict):
-            raise HTTPException(status_code=400, detail=f"{slide_id} 缺少对应的 visual plan")
-        body_points = script_slide.get("body_points") if isinstance(script_slide.get("body_points"), list) else []
-        visual_groups: List[Dict[str, Any]] = []
-        narration_beats: List[Dict[str, Any]] = []
-        for element_index, element in enumerate(visual_slide.get("visual_elements") or [], start=1):
-            if not isinstance(element, dict):
-                continue
-            element_id = stable_plan_id(element.get("element_id"), "el", element_index)
-            group_id = f"{slide_id}_{element_id}"
-            content_unit_id = f"{slide_id}_unit_{element_index:03d}"
-            role = str(element.get("role") or "body").strip().lower()
-            role = "decoration" if role == "decoration" else ("title" if role == "title" else ("subtitle" if role == "subtitle" else "content_body"))
-            visible_text = element_visible_text(element, element_index)
-            description = str(element.get("visual_description") or visible_text).strip()
-            narration = str(element.get("narration") or "").strip()
-            narration_function_value = str(element.get("narration_function") or element.get("visual_description") or visible_text or "").strip()
-            visual_type = normalize_visual_type(element.get("visual_type"))
-            display_text = description if visual_type == "text" else ""
-            group = {
-                "id": group_id,
-                "element_id": element_id,
-                "role": role,
-                "visible_text": visible_text,
-                "display_text": display_text,
-                "visual_anchor": description,
-                "narration_function": narration_function_value,
-                "reveal_order": element_index,
-                "content_unit_id": content_unit_id,
-                "mask_target": description,
-                "visual_type": visual_type,
-            }
-            visual_groups.append(group)
-            if narration:
-                narration_beats.append(
-                    {
-                        "id": f"{slide_id}_beat_{len(narration_beats) + 1:03d}",
-                        "group_id": group_id,
-                        "visible_anchor": visible_text,
-                        "spoken_intent": narration_function_value,
-                        "spoken_text": narration,
-                        "content_unit_id": content_unit_id,
-                    }
-                )
-        if not visual_groups:
-            raise HTTPException(status_code=400, detail=f"{slide_id} 没有可合成的 visual elements")
-        if not narration_beats:
-            raise HTTPException(status_code=400, detail=f"{slide_id} 没有可合成的 narration beats")
-        body_content = [
-            str(point.get("text") or "").strip()
-            for point in body_points
-            if isinstance(point, dict) and point.get("text")
-        ]
-        if not body_content and str(script_slide.get("body") or "").strip():
-            body_content = [str(script_slide.get("body") or "").strip()]
-        if not body_content:
-            body_content = [
-                str(group.get("visible_text") or "").strip()
-                for group in visual_groups
-                if group.get("role") == "content_body" and str(group.get("visible_text") or "").strip()
-            ]
-        slides.append(
-            {
-                "slide_id": slide_id,
-                "main_title": str(script_slide.get("slide_title") or f"第 {slide_index} 页").strip(),
-                "subtitle": "",
-                "core_message": "；".join(body_content),
-                "body_content": body_content,
-                "visual_groups": visual_groups,
-                "narration_beats": narration_beats,
-            }
-        )
-    return {
-        "version": "visual_contract_v1",
-        "presentation_policy": {
-            "subtitle_policy": subtitle_policy,
-            "subtitle_decided_by": "system_no_subtitle_contract",
-            "visual_narration_mapping": "one_visual_element_to_one_narration_beat_v1",
-        },
-        "topic": {
-            "topic_id": "topic_" + project_id,
-            "topic_name": project_title,
-            "topic_summary": "",
-        },
-        "slides": slides,
-    }
-
-
-def storyboard_template_payload(
-    template_id: str,
-    name: str,
-    rules: str,
-    profile_text: str,
-    built_in: bool = False,
-    updated_at: str = "",
-) -> Dict[str, Any]:
-    profile = parse_storyboard_profile_text(profile_text)
-    return {
-        "id": template_id,
-        "name": name,
-        "built_in": built_in,
-        "updated_at": updated_at,
-        "rules": rules,
-        "profile_yaml": profile_text,
-        "roles": role_catalog(profile),
-        "editor": storyboard_profile_editor_data(profile),
-    }
-
-
-def list_storyboard_templates() -> List[Dict[str, Any]]:
-    templates = [
-        storyboard_template_payload(
-            "default",
-            "内容优先通用分镜模板",
-            default_storyboard_rules(),
-            default_storyboard_profile_text(),
-            built_in=True,
-        ),
-        storyboard_template_payload(
-            "handdrawn_explainer",
-            "手绘科普内容优先模板",
-            handdrawn_storyboard_rules(),
-            default_storyboard_profile_text(),
-            built_in=True,
-        ),
-    ]
-    stored = read_json_file(STORYBOARD_TEMPLATES_PATH, [])
-    if not isinstance(stored, list):
-        return templates
-    for item in stored:
-        if not isinstance(item, dict):
-            continue
-        try:
-            templates.append(
-                storyboard_template_payload(
-                    str(item.get("id") or ""),
-                    str(item.get("name") or ""),
-                    str(item.get("rules") or ""),
-                    str(item.get("profile_yaml") or ""),
-                    updated_at=str(item.get("updated_at") or ""),
-                )
-            )
-        except HTTPException as exc:
-            logger.warning("Skipping invalid storyboard template %s: %s", item.get("id"), exc.detail)
-    return templates
-
-
-@app.get("/api/storyboard-templates")
-def get_storyboard_templates():
-    return {"success": True, "templates": list_storyboard_templates()}
-
-
-@app.post("/api/storyboard-templates")
-def save_storyboard_template(payload: Dict[str, Any]):
-    name = normalized_template_name(payload.get("name"))
-    protected_names = {"默认分镜模板", "内容优先通用分镜模板", "手绘科普内容优先模板"}
-    if name.casefold() in {item.casefold() for item in protected_names}:
-        raise HTTPException(status_code=400, detail="内置分镜模板名称不可覆盖")
-    rules = str(payload.get("rules") or "").strip() or default_storyboard_rules()
-    profile_text = str(payload.get("profile_yaml") or "").strip() or default_storyboard_profile_text()
-    profile = parse_storyboard_profile_text(profile_text)
-    profile = apply_storyboard_profile_patch(profile, payload.get("profile_patch"))
-    profile_text = yaml.safe_dump(profile, allow_unicode=True, sort_keys=False, width=1000).strip()
-
-    stored = read_json_file(STORYBOARD_TEMPLATES_PATH, [])
-    if not isinstance(stored, list):
-        stored = []
-    existing = next(
-        (
-            item
-            for item in stored
-            if isinstance(item, dict)
-            and str(item.get("name") or "").strip().casefold() == name.casefold()
-        ),
-        None,
-    )
-    now = template_timestamp()
-    if existing is None:
-        existing = {"id": uuid.uuid4().hex[:12], "created_at": now}
-        stored.append(existing)
-    existing.update(
-        {
-            "name": name,
-            "rules": rules,
-            "profile_yaml": profile_text,
-            "updated_at": now,
-        }
-    )
-    write_json_atomic(STORYBOARD_TEMPLATES_PATH, stored)
-    return {
-        "success": True,
-        "template": storyboard_template_payload(
-            str(existing["id"]),
-            name,
-            rules,
-            profile_text,
-            updated_at=now,
-        ),
-        "templates": list_storyboard_templates(),
-    }
-
-
-@app.delete("/api/storyboard-templates/{template_id}")
-def delete_storyboard_template(template_id: str):
-    if template_id == "default":
-        raise HTTPException(status_code=400, detail="内置分镜模板不能删除")
-    if not re.fullmatch(r"[0-9a-f]{12}", template_id):
-        raise HTTPException(status_code=404, detail="分镜模板不存在")
-    stored = read_json_file(STORYBOARD_TEMPLATES_PATH, [])
-    if not isinstance(stored, list):
-        stored = []
-    next_stored = [
-        item
-        for item in stored
-        if not (isinstance(item, dict) and str(item.get("id") or "") == template_id)
-    ]
-    if len(next_stored) == len(stored):
-        raise HTTPException(status_code=404, detail="分镜模板不存在")
-    write_json_atomic(STORYBOARD_TEMPLATES_PATH, next_stored)
-    return {"success": True, "templates": list_storyboard_templates()}
-
-
-def build_storyboard_request(
-    project_title: str,
-    article_summary: str,
-    article_content: str,
-    storyboard_rules: str,
-    profile: Optional[Dict[str, Any]] = None,
-) -> tuple[str, str]:
-    profile = profile or read_pipeline_profile()
-    slide_count_requirement, _ = storyboard_requirements(article_content, profile)
-    profile_prompt = storyboard_profile_prompt(article_content, profile)
-
-    schema_hint = visual_contract_schema_text()
-
-    system_prompt = f"""你是一个顶级的 PPT 视频分镜策划师和演讲稿设计师。
-
-## 目的
-把文章转成可直接驱动后续生图、Mask、Reveal、旁白和视频制作的 Visual Contract；忠实保留文章事实，不在本阶段生成图片或执行动画。
-
-## 输入
-- 项目主题、文章摘要与文章全文。
-- 当前项目的分镜结构配置、用户自定义规则与 JSON Schema。
-- 文章及显式规则是内容与边界依据；不得虚构来源中没有的具体事实。
-
-## 输出
-- 只返回一个符合下方 JSON Schema 的合法 JSON 对象。
-- 不要 Markdown 代码围栏、解释、推理过程或任何 JSON 之外的文字。
-- 输出必须同时满足 visual_groups 与 narration_beats 的绑定约束，供后续阶段直接读取。
-请阅读用户输入的内容摘要和全文，先设计“如何把内容讲清楚”的理解路径和演讲稿，再把它编译成符合 PPT 动画视频制作标准的视觉合约(Visual Contract)。
-视频的画面风格可由后续图片风格配置决定；这里重点规划“讲解逻辑、演讲稿、内容结构、视觉表达、旁白绑定、Mask 友好性”。
-总原则：
-- 内容优先，结构服务内容；不要让内容服务固定模板或角色枚举。
-- 演讲稿不是附属品。每页必须有自然、连贯、适合口播的 spoken_text，用来解释推理过程、上下文和结论。
-- 画面不是演讲稿的逐字复刻。visible_text 应是关键词、短句、结构标签、图示标签或结论钩子。
-- visual_groups 是后续 Mask/动画/旁白绑定接口，不是页面设计模板；role 只是后处理语义标签。
-- 主标题使用页面上方固定位置，不生成页面副标题；底部 y=930..1080 固定为视频字幕安全区。除此之外，主体内容区根据内容自由发挥。
-- 字号比例必须明确：每页 slide 顶部标题的视觉字号为当前默认标题的 2 倍；正文内容、演讲稿对应画面文字的视觉字号约为当前默认的 2/3。
-- 禁止画面元素重叠：文字、卡片、图标、箭头、线条、标签、装饰、图表之间不得互相覆盖、压住、穿插或粘连。
-要求：
-1. 必须要将整篇文章合理划分，分成 {slide_count_requirement} Slide（每页的 slide_id 为 slide_001, slide_002 格式）。
-2. 视觉分组数量由内容和独立 Reveal 需求决定；一个完整正文视觉组同样合法，不设置固定上下限。不要固定套用“主标题/正文/总结”模板；可以按内容需要使用判断链、冲突地图、对象关系图、推理路径、时间压力图、对比、表格、流程、FAQ、场景拆解或行动清单。
-3. 每个视觉分组（visual_groups）必须有：
-   - id: 比如 title_group, body_group_01 等
-   - visible_text: 页面上会显式画出来的中文字符标签（非常重要，通常为短句或关键词，绝对不能为空；不要把整段演讲稿塞进这里）
-   - visual_anchor: 视觉描述（比如“顶部主标题”、“左侧判断链起点”、“中间对象关系图”、“右侧结论卡”）
-   - narration_function: 解释该分组在画面中所起的视觉/解释作用
-   - reveal_order: 页面渲染时层淡入淡出显示的顺序，从 1 开始依次增加
-   - content_unit_id: 稳定内容单元 ID，必须和 narration_beats[].content_unit_id 对齐
-   - mask_target: 后续人工 Mask 要覆盖的画面目标描述
-4. 必须规划 narration_beats (旁白语段)，使说话声音与相应视觉分组绑定：
-   - group_id: 指向前面定义的 visual_groups 中的 id
-   - visible_anchor: 该分组对应的 visible_text 文本（不可写错，必须一致）
-   - spoken_intent: 这一句话想达到的意图
-   - spoken_text: 这一句话具体要朗读的中文旁白（需自然连贯，解释 visible_text）
-   - content_unit_id: 必须与绑定 visual_group 的 content_unit_id 一致
-   - narration_beats 是是否朗读的唯一依据：某个 visual_group 有对应 beat 才会在演讲稿中讲解，没有 beat 就只作为画面内容展示。
-   - 不要为了覆盖所有 visual_groups 而强行补旁白；只为演讲稿实际需要讲解的内容创建 beat。
-   - 同一页内每条 spoken_text 的内容必须唯一；严禁重复、近似复述或为了凑数量复制同一句旁白。
-5. 当前项目的可配置分镜结构如下。请优先遵守：
-{profile_prompt}
-6. 用户自定义的分镜与演讲稿规则如下。请遵守这些内容，但不得修改输出字段、层级、ID 规则或 JSON 结构：
---- 用户分镜规则开始 ---
-{storyboard_rules}
---- 用户分镜规则结束 ---
-7. 请确保生成的 JSON 数据严格符合以下的 JSON Schema 格式要求：
-{schema_hint}
-
-请直接返回合法的 JSON 对象，不要包含 markdown 标记的 ```json 外壳。"""
-    user_prompt = (
-        f"项目主题：{project_title}\n"
-        f"摘要提纲：{article_summary}\n"
-        f"正文全文：\n{article_content}"
-    )
-    return system_prompt, user_prompt
-
-
-@app.get("/api/projects/{project_id}/steps/2/rules")
-def get_step2_rules(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    path = storyboard_rules_path(project)
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            rules = f.read()
-    else:
-        rules = default_storyboard_rules()
-    profile_path = storyboard_profile_path(project)
-    if os.path.exists(profile_path):
-        with open(profile_path, "r", encoding="utf-8-sig") as f:
-            profile_text = f.read()
-    else:
-        profile_text = default_storyboard_profile_text()
-    profile = parse_storyboard_profile_text(profile_text)
-    return {
-        "success": True,
-        "rules": rules,
-        "profile_yaml": profile_text,
-        "schema_text": visual_contract_schema_text(),
-        "roles": role_catalog(profile),
-        "editor": storyboard_profile_editor_data(profile),
-    }
-
-
-@app.put("/api/projects/{project_id}/steps/2/rules")
-def update_step2_rules(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    rules = str(payload.get("rules") or "").strip()
-    if not rules:
-        rules = default_storyboard_rules()
-    profile_text = str(payload.get("profile_yaml") or "").strip()
-    if not profile_text:
-        profile_text = default_storyboard_profile_text().strip()
-    profile = parse_storyboard_profile_text(profile_text)
-    profile = apply_storyboard_profile_patch(profile, payload.get("profile_patch"))
-    profile_text = yaml.safe_dump(
-        profile,
-        allow_unicode=True,
-        sort_keys=False,
-        width=1000,
-    ).strip()
-    path = storyboard_rules_path(project)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(rules + "\n")
-    with open(storyboard_profile_path(project), "w", encoding="utf-8", newline="\n") as f:
-        f.write(profile_text.rstrip() + "\n")
-    return {
-        "success": True,
-        "rules": rules,
-        "profile_yaml": profile_text,
-        "roles": role_catalog(profile),
-        "editor": storyboard_profile_editor_data(profile),
-    }
-
-
-@app.get("/api/projects/{project_id}/steps/2/prompts")
-def get_step2_prompts(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    return step2_prompt_response(project)
-
-
-@app.put("/api/projects/{project_id}/steps/2/prompts")
-def update_step2_prompts(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    defaults = default_step2_prompts()
-    prompts: Dict[str, str] = {}
-    for key, default_value in defaults.items():
-        value = str(payload.get(key) or "").strip()
-        prompts[key] = value or default_value
-    write_json_atomic(step2_prompts_path(project), prompts)
-    return step2_prompt_response(project)
-
-
-@app.post("/api/projects/{project_id}/steps/2/script/execute")
-def execute_step2_script_plan(
-    project_id: str,
-    payload: Optional[Dict[str, Any]] = None,
-    db: Session = Depends(get_db),
-):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    article_source = read_project_article_source(project)
-    project_title = article_source["title"]
-    article_content = article_source["content"]
-    generation_requirement = str((payload or {}).get("requirement") or "").strip()
-    prompts = read_step2_prompts(project)
-    if step2_script_prompt_uses_legacy_contract(prompts["script_system"]):
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "当前文章→Slides Prompt 仍要求旧字段 body_points/narration_segments，"
-                "与 Step 2A 的精简输出合同不兼容。请载入最新内置模板或升级该自定义模板后再生成。"
-            ),
-        )
-    trace_id = uuid.uuid4().hex[:8]
-    raw_plan = run_step2_json_llm(
-        project=project,
-        system_prompt=compose_step2_system_prompt(prompts["script_system"], prompts["script_output_example"]),
-        user_prompt=build_step2_script_user_prompt(
-            project_title=project_title,
-            article_content=article_content,
-            generation_requirement=generation_requirement,
-        ),
-        artifact_prefix="step2_script_plan",
-        schema_hint=script_plan_schema_hint(),
-        trace_id=trace_id,
-    )
-    plan = normalize_slide_script_plan(raw_plan, project_title)
-    write_json_atomic(step2_script_plan_path(project), plan)
-    write_project_log(project, "step2_script_plan_written", trace_id=trace_id, slide_count=len(plan.get("slides", [])))
-    return {"success": True, "script_plan": plan}
-
-
-@app.get("/api/projects/{project_id}/steps/2/script/result")
-def get_step2_script_plan(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    plan = read_plan_json(step2_script_plan_path(project), "尚未生成演讲稿规划")
-    return {"success": True, "script_plan": plan}
-
-
-@app.put("/api/projects/{project_id}/steps/2/script/result")
-def update_step2_script_plan(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    article_source = read_project_article_source(project)
-    project_title = article_source["title"]
-    plan = normalize_slide_script_plan(payload, project_title)
-    write_json_atomic(step2_script_plan_path(project), plan)
-    return {"success": True, "script_plan": plan}
-
-
-@app.post("/api/projects/{project_id}/steps/2/visual/execute")
-def execute_step2_visual_plan(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    script_plan = read_plan_json(step2_script_plan_path(project), "请先生成演讲稿规划")
-    prompts = read_step2_prompts(project)
-    if step2_visual_prompt_uses_legacy_contract(prompts["visual_system"]):
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "当前 Slides→可视化 Prompt 仍依赖旧字段 body_points/narration_segments，"
-                "但 Step 2B 现在只接收 slide_id、slide_title 和完整 narration，不接收页面副标题。"
-                "请载入最新内置模板或升级该自定义模板后再生成。"
-            ),
-        )
-    trace_id = uuid.uuid4().hex[:8]
-    raw_plan = run_step2_json_llm(
-        project=project,
-        system_prompt=compose_step2_system_prompt(prompts["visual_system"], prompts["visual_output_example"]),
-        user_prompt=build_step2_visual_user_prompt(script_plan),
-        artifact_prefix="step2_visual_plan",
-        schema_hint=visual_plan_schema_hint(),
-        trace_id=trace_id,
-    )
-    plan = normalize_slide_visual_plan(raw_plan, script_plan)
-    write_json_atomic(step2_visual_plan_path(project), plan)
-    write_project_log(project, "step2_visual_plan_written", trace_id=trace_id, slide_count=len(plan.get("slides", [])))
-    return {"success": True, "visual_plan": plan}
-
-
-@app.get("/api/projects/{project_id}/steps/2/visual/result")
-def get_step2_visual_plan(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    plan = read_plan_json(step2_visual_plan_path(project), "尚未生成视觉规划")
-    return {"success": True, "visual_plan": plan}
-
-
-@app.put("/api/projects/{project_id}/steps/2/visual/result")
-def update_step2_visual_plan(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    script_plan = read_plan_json(step2_script_plan_path(project), "请先生成演讲稿规划")
-    plan = normalize_slide_visual_plan(payload, script_plan)
-    write_json_atomic(step2_visual_plan_path(project), plan)
-    return {"success": True, "visual_plan": plan}
-
-
-@app.post("/api/projects/{project_id}/steps/2/compose")
-def compose_step2_visual_contract(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    article_source = read_project_article_source(project)
-    project_title = article_source["title"]
-    article_summary = article_source["summary"]
-    script_plan = read_plan_json(step2_script_plan_path(project), "请先生成演讲稿规划")
-    visual_plan = normalize_slide_visual_plan(
-        read_plan_json(step2_visual_plan_path(project), "请先生成视觉规划"),
-        script_plan,
-    )
-    trace_id = uuid.uuid4().hex[:8]
-    contract = compose_visual_contract_from_plans(script_plan, visual_plan, project_id, project_title)
-    contract = finalize_step2_contract(
-        project=project,
-        project_id=project_id,
-        db=db,
-        contract=contract,
-        project_title=project_title,
-        article_summary=article_summary,
-        trace_id=trace_id,
-        source="narration_first_compose",
-    )
-    return {"success": True, "contract": contract}
-
-
-@app.post("/api/projects/{project_id}/steps/2/prompt-preview")
-def get_step2_prompt_preview(
-    project_id: str,
-    payload: Optional[Dict[str, Any]] = None,
-    db: Session = Depends(get_db),
-):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-
-    article_source = read_project_article_source(project)
-
-    storyboard_rules = str((payload or {}).get("rules") or "").strip()
-    if not storyboard_rules:
-        rules_path = storyboard_rules_path(project)
-        if os.path.exists(rules_path):
-            with open(rules_path, "r", encoding="utf-8") as f:
-                storyboard_rules = f.read().strip()
-        else:
-            storyboard_rules = default_storyboard_rules()
-    profile_text = str((payload or {}).get("profile_yaml") or "").strip()
-    profile = (
-        parse_storyboard_profile_text(profile_text)
-        if profile_text
-        else read_project_pipeline_profile(project)
-    )
-    profile = apply_storyboard_profile_patch(profile, (payload or {}).get("profile_patch"))
-
-    project_title = article_source["title"]
-    article_content = article_source["content"]
-    article_summary = article_source["summary"]
-    system_prompt, user_prompt = build_storyboard_request(
-        project_title,
-        article_summary,
-        article_content,
-        storyboard_rules,
-        profile,
-    )
-    return {
-        "success": True,
-        "system_content": system_prompt,
-        "user_content": user_prompt,
-    }
-
-
-def visual_contract_validation_path(project: Project) -> str:
-    return os.path.join(project.run_dir, "planning", "visual_contract.validation.json")
-
-
-def validate_visual_contract_file(
-    project: Project,
-    contract_path: str,
-    *,
-    source: str,
-    trace_id: str = "",
-) -> Dict[str, Any]:
-    validate_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "validate_visual_contract.py"))
-    validation_args = [sys.executable, validate_script, "--contract", contract_path]
-    project_profile_path = storyboard_profile_path(project)
-    if os.path.exists(project_profile_path):
-        validation_args.extend(["--profile", project_profile_path])
-    result = subprocess.run(
-        validation_args,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    contract_bytes = Path(contract_path).read_bytes()
-    validation = {
-        "valid": result.returncode == 0,
-        "contract_sha256": hashlib.sha256(contract_bytes).hexdigest(),
-        "validated_at": datetime.now().isoformat(timespec="seconds"),
-        "returncode": result.returncode,
-        "stdout": result.stdout.strip(),
-        "stderr": result.stderr.strip(),
-        "source": source,
-        "trace_id": trace_id,
-    }
-    write_json_atomic(visual_contract_validation_path(project), validation)
-    return validation
-
-
-def storyboard_validation_gate_enabled(project: Project) -> bool:
-    profile = read_project_pipeline_profile(project)
-    gates = profile.get("quality_gates") if isinstance(profile.get("quality_gates"), dict) else {}
-    return bool(gates.get("pause_on_storyboard_validation_error", True))
-
-
-def finalize_step2_contract(
-    *,
-    project: Project,
-    project_id: str,
-    db: Session,
-    contract: Dict[str, Any],
-    project_title: str,
-    article_summary: str,
-    trace_id: str,
-    source: str,
-) -> Dict[str, Any]:
-    contract["version"] = "visual_contract_v1"
-    if "topic" not in contract or not isinstance(contract.get("topic"), dict):
-        contract["topic"] = {
-            "topic_id": "topic_" + project_id,
-            "topic_name": project_title,
-            "topic_summary": article_summary,
-        }
-    contract = normalize_visual_contract(contract, read_project_pipeline_profile(project))
-
-    contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
-    os.makedirs(os.path.dirname(contract_path), exist_ok=True)
-    contract["version"] = "visual_contract_v1"
-    contract["topic"] = {
-        "topic_id": "topic_" + project_id,
-        "topic_name": project_title,
-        "topic_summary": article_summary,
-    }
-    with open(contract_path, "w", encoding="utf-8") as f:
-        json.dump(contract, f, ensure_ascii=False, indent=2)
-    write_project_log(
-        project,
-        "step2_contract_written",
-        trace_id=trace_id,
-        contract_path=contract_path,
-        slide_count=len(contract.get("slides", [])) if isinstance(contract.get("slides"), list) else 0,
-        source=source,
-    )
-
-    validation = validate_visual_contract_file(
-        project,
-        contract_path,
-        source=source,
-        trace_id=trace_id,
-    )
-
-    if not validation["valid"]:
-        logger.warning("Visual contract validation warning:\n%s", validation["stderr"])
-        write_project_log(
-            project,
-            "step2_contract_validation_warning",
-            trace_id=trace_id,
-            returncode=validation["returncode"],
-            stderr=validation["stderr"],
-            source=source,
-        )
-        if storyboard_validation_gate_enabled(project):
-            mark_step_retry_needed(project, 2, db)
-            raise HTTPException(
-                status_code=422,
-                detail="分镜合同校验失败，质量门已暂停流程：" + (validation["stderr"] or "请检查分镜结构"),
-            )
-    else:
-        write_project_log(
-            project,
-            "step2_contract_validation_success",
-            trace_id=trace_id,
-            stdout=validation["stdout"],
-            source=source,
-        )
-
-    handle_step_navigation(project, 2, db)
-    write_project_log(project, "step2_execute_completed", trace_id=trace_id, source=source)
-    return contract
-
-
-def build_step2_scaffold_contract(
-    *,
-    project: Project,
-    project_title: str,
-    article_content: str,
-    trace_id: str,
-) -> Dict[str, Any]:
-    profile = read_project_pipeline_profile(project)
-    slide_count_text, _ = storyboard_requirements(article_content, profile)
-    min_slides, max_slides = parse_range_text(slide_count_text, 4, 8)
-    fallback_path = os.path.join(project.run_dir, "planning", f"visual_contract_fallback_{trace_id}.json")
-    if os.path.exists(fallback_path):
-        os.remove(fallback_path)
-
-    script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "write_visual_contract.py"))
-    args = [
-        sys.executable,
-        script_path,
-        "--run-dir",
-        project.run_dir,
-        "--out",
-        fallback_path,
-        "--topic-name",
-        project_title,
-        "--min-slides",
-        str(min_slides),
-        "--max-slides",
-        str(max_slides),
-        "--subtitle-policy",
-        "no_slides_have_subtitle",
-        "--overwrite",
-    ]
-    write_project_log(
-        project,
-        "step2_scaffold_fallback_start",
-        trace_id=trace_id,
-        min_slides=min_slides,
-        max_slides=max_slides,
-        subtitle_policy="no_slides_have_subtitle",
-    )
-    result = subprocess.run(
-        args,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=60,
-    )
-    if result.returncode != 0 or not os.path.exists(fallback_path):
-        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "Step2 scaffold fallback failed")
-    with open(fallback_path, "r", encoding="utf-8") as f:
-        contract = json.load(f)
-    write_project_log(
-        project,
-        "step2_scaffold_fallback_generated",
-        trace_id=trace_id,
-        contract_path=fallback_path,
-        stdout=result.stdout.strip(),
-    )
-    return contract
-
-
-@app.post("/api/projects/{project_id}/steps/2/execute")
-def execute_step2(
-    project_id: str,
-    payload: Optional[Dict[str, Any]] = None,
-    db: Session = Depends(get_db),
-):
-    """Compatibility endpoint delegated to the narration-first Step 2 pipeline."""
-
-    execute_step2_script_plan(project_id, payload if isinstance(payload, dict) else {}, db)
-    execute_step2_visual_plan(project_id, db)
-    result = compose_step2_visual_contract(project_id, db)
-    return {
-        **result,
-        "deprecated_route": True,
-        "preferred_routes": [
-            f"/api/projects/{project_id}/steps/2/script/execute",
-            f"/api/projects/{project_id}/steps/2/visual/execute",
-            f"/api/projects/{project_id}/steps/2/compose",
-        ],
-    }
-
-
-@app.get("/api/projects/{project_id}/steps/2/result")
-def get_step2_result(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-        
-    contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
-    if not os.path.exists(contract_path):
-        return {"success": False, "message": "尚未生成分镜规划"}
-        
-    with open(contract_path, "r", encoding="utf-8") as f:
-        stored_contract = json.load(f)
-    contract = normalize_visual_contract(stored_contract, read_project_pipeline_profile(project))
-    migration_required = json.dumps(contract, ensure_ascii=False, sort_keys=True) != json.dumps(
-        stored_contract,
-        ensure_ascii=False,
-        sort_keys=True,
-    )
-    return {
-        "success": True,
-        "contract": contract,
-        "repair": {
-            "required": migration_required,
-            "reasons": ["visual_contract_schema_normalization"] if migration_required else [],
-            "endpoint": f"/api/projects/{project_id}/steps/2/repair",
-        },
-    }
-
-
-@app.post("/api/projects/{project_id}/steps/2/repair")
-def repair_step2_result(project_id: str, db: Session = Depends(get_db)):
-    """Persist schema normalization explicitly instead of mutating on GET."""
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
-    if not os.path.exists(contract_path):
-        raise HTTPException(status_code=400, detail="尚未生成分镜规划")
-    stored_contract = read_json_file(contract_path, {})
-    contract = normalize_visual_contract(stored_contract, read_project_pipeline_profile(project))
-    changed = json.dumps(contract, ensure_ascii=False, sort_keys=True) != json.dumps(
-        stored_contract,
-        ensure_ascii=False,
-        sort_keys=True,
-    )
-    if changed:
-        write_json_atomic(contract_path, contract)
-        current_slide_ids = contract_slide_ids_from_payload(contract)
-        sync_reveal_manifest_to_contract(project, current_slide_ids)
-        sync_narration_beats_to_contract(project, current_slide_ids)
-        validate_visual_contract_file(project, contract_path, source="explicit_schema_repair")
-        invalidate_after_upstream_edit(project, 2, db)
-    return {"success": True, "changed": changed, "contract": contract}
-
-@app.put("/api/projects/{project_id}/steps/2/result")
-def update_step2_result(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-        
-    payload = normalize_visual_contract(payload, read_project_pipeline_profile(project))
-    contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
-    existing_contract = read_json_file(contract_path, {})
-    previous_slide_ids = contract_slide_ids_from_payload(existing_contract)
-    changed = json.dumps(existing_contract, ensure_ascii=False, sort_keys=True) != json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-    )
-    if not changed:
-        return {
-            "success": True,
-            "contract": payload,
-            "validation": read_json_file(visual_contract_validation_path(project), {}),
-            "changed": False,
-        }
-    with open(contract_path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-    current_slide_ids = contract_slide_ids_from_payload(payload)
-    removed_slide_ids = [slide_id for slide_id in previous_slide_ids if slide_id not in current_slide_ids]
-    for slide_id in removed_slide_ids:
-        slide_path = Path(storage_slide_file(project.run_dir, slide_id, "visual_draft.png")).parent
-        if slide_path.exists():
-            shutil.rmtree(slide_path)
-
-    if not current_slide_ids:
-        validation = {
-            "valid": False,
-            "editable_empty": True,
-            "contract_sha256": hashlib.sha256(Path(contract_path).read_bytes()).hexdigest(),
-            "validated_at": datetime.now().isoformat(timespec="seconds"),
-            "returncode": 0,
-            "stdout": "",
-            "stderr": "分镜列表为空；可以继续添加分镜，但不能进入图片生成。",
-            "source": "manual_empty_storyboard",
-            "trace_id": "",
-        }
-        write_json_atomic(visual_contract_validation_path(project), validation)
-        sync_reveal_manifest_to_contract(project, [])
-        sync_narration_beats_to_contract(project, [])
-        sync_narration_sources_from_contract(project, existing_contract, payload)
-        clear_audio_confirmation(project)
-        clear_remotion_props(project.run_dir)
-        current_status = project.get_step_status()
-        current_status["2"] = "in_progress"
-        mark_downstream_pending(current_status, from_step=3)
-        project.current_step = 2
-        project.set_step_status(current_status)
-        db.commit()
-        return {"success": True, "contract": payload, "validation": validation, "changed": True}
-
-    validation = validate_visual_contract_file(project, contract_path, source="manual_autosave")
-    if validation.get("valid"):
-        sync_reveal_manifest_to_contract(project, current_slide_ids)
-        sync_narration_beats_to_contract(project, current_slide_ids)
-        sync_narration_sources_from_contract(project, existing_contract, payload)
-    invalidate_after_upstream_edit(project, 2, db)
-
-    return {"success": True, "contract": payload, "validation": validation, "changed": True}
-
-
-class ManualSkeletonSlide(BaseModel):
-    slide_id: Optional[str] = None
-    main_title: str
-    narration: str
-
-
-class ManualSkeletonPayload(BaseModel):
-    slides: List[ManualSkeletonSlide]
-
-
-@app.post("/api/projects/{project_id}/steps/2/manual-skeleton")
-def submit_step2_manual_skeleton(
-    project_id: str,
-    payload: ManualSkeletonPayload,
-    db: Session = Depends(get_db),
-):
-    """Manual mode: build a visual_contract.json from title + narration only.
-
-    Each slide produces an empty visual_groups[] (full-slide static render)
-    and one narration_beat entry bound to the spoken text. AI Mask is not
-    triggered; the user can still click "运行 AI 标注" later if desired.
-    """
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    if not payload.slides:
-        raise HTTPException(status_code=400, detail="slides 不能为空")
-
-    article_source = read_project_article_source(project, required=False)
-    project_title = article_source.get("title") or project.name or project_id
-    article_summary = article_source.get("summary", "")
-
-    contract_slides: List[Dict[str, Any]] = []
-    for index, slide in enumerate(payload.slides, start=1):
-        slide_id = (slide.slide_id or f"slide_{index:03d}").strip()
-        main_title = (slide.main_title or "").strip()
-        narration = (slide.narration or "").strip()
-        if not main_title:
-            raise HTTPException(status_code=400, detail=f"{slide_id} 标题不能为空")
-        if not narration:
-            raise HTTPException(status_code=400, detail=f"{slide_id} 演讲稿不能为空")
-        contract_slides.append({
-            "slide_id": slide_id,
-            "main_title": main_title,
-            "subtitle": "",
-            "core_message": narration,
-            "body_content": [narration],
-            "visual_groups": [],
-            "narration_beats": [
-                {
-                    "id": f"{slide_id}_beat_001",
-                    "group_id": None,
-                    "visible_anchor": "",
-                    "spoken_intent": main_title,
-                    "spoken_text": narration,
-                    "content_unit_id": f"{slide_id}_unit_001",
-                }
-            ],
-        })
-
-    previous_contract = read_json_file(
-        os.path.join(project.run_dir, "planning", "visual_contract.json"),
-        {},
-    )
-    contract = {
-        "version": "visual_contract_v1",
-        "presentation_policy": {
-            "subtitle_policy": "no_slides_have_subtitle",
-            "subtitle_decided_by": "system_no_subtitle_contract",
-            "visual_narration_mapping": "manual_free_v1",
-        },
-        "topic": {
-            "topic_id": "topic_" + project_id,
-            "topic_name": project_title,
-            "topic_summary": article_summary,
-        },
-        "slides": contract_slides,
-    }
-
-    trace_id = uuid.uuid4().hex[:8]
-    contract = finalize_step2_contract(
-        project=project,
-        project_id=project_id,
-        db=db,
-        contract=contract,
-        project_title=project_title,
-        article_summary=article_summary,
-        trace_id=trace_id,
-        source="manual_skeleton_submit",
-    )
-    sync_narration_sources_from_contract(project, previous_contract, contract)
-    # Ensure the project reflects manual mode so the frontend can render the
-    # correct UI affordances (e.g., hide auto-trigger AI Mask).
-    if project.ai_mode != "manual":
-        project.ai_mode = "manual"
-        db.commit()
-        db.refresh(project)
-    return {"success": True, "contract": contract, "ai_mode": project.ai_mode}
-
-
-# ==================== 步骤 3-4: 图片生成与管理 ====================
-
-IMAGE_STYLE_TOP_LEVEL_KEYS = ("brand", "canvas", "colors", "layout", "visual_assets")
+# Step 2 storyboard routes are source-owned by storyboard_routes.py.
+from storyboard_service import (
+    build_step2_script_user_prompt,
+    build_step2_visual_user_prompt,
+    build_storyboard_request,
+    built_in_step2_prompt_templates,
+    compose_step2_system_prompt,
+    compose_step2_visual_contract,
+    default_step2_prompts,
+    execute_step2,
+    execute_step2_script_plan,
+    execute_step2_visual_plan,
+    get_step2_result,
+    migrate_legacy_step2_prompt,
+    normalize_slide_visual_plan,
+    normalize_visual_type,
+    read_prompt_template,
+    run_step2_json_llm,
+    step2_llm_vendor_options,
+    step2_prompt_compatibility,
+    step2_script_prompt_uses_legacy_contract,
+    step2_visual_prompt_uses_legacy_contract,
+    storyboard_validation_gate_enabled,
+    update_step2_result,
+    validate_visual_contract_file,
+)
+
+IMAGE_STYLE_TOP_LEVEL_KEYS = (
+    "brand",
+    "canvas",
+    "colors",
+    "layout",
+    "visual_assets",
+)
 IMAGE_STYLE_PROMPT_KEY = "prompt_system_content"
 IMAGE_STYLE_VISUAL_ASSET_FIELDS = {
     "image_style": "image_style",
@@ -5114,7 +3041,6 @@ IMAGE_STYLE_VISUAL_ASSET_FIELDS = {
     "layout_rules": "reveal_friendly_layout",
     "avoid": "avoid",
 }
-
 
 @app.get("/api/projects/{project_id}/steps/3/visual-settings")
 def get_step3_visual_settings(project_id: str, db: Session = Depends(get_db)):
@@ -5883,7 +3809,7 @@ def step3_prompt_settings_response(project: Project) -> Dict[str, Any]:
     slides = contract.get("slides") if isinstance(contract, dict) and isinstance(contract.get("slides"), list) else []
     first_slide = next((slide for slide in slides if isinstance(slide, dict)), None)
     system_content = read_step3_image_system_content(project)
-    style_prompt = profile_style_prompt(project, sys.modules[__name__])
+    style_prompt = profile_style_prompt(project)
     return {
         "success": True,
         "prompts": {
@@ -5949,12 +3875,12 @@ def get_slide_prompts(project_id: str, db: Session = Depends(get_db)):
     slides = [slide for slide in contract.get("slides", []) if isinstance(slide, dict)]
     topic = contract.get("topic") if isinstance(contract.get("topic"), dict) else {}
     topic_name = str(topic.get("topic_name") or project.name or "")
-    style_prompt = profile_style_prompt(project, sys.modules[__name__])
+    style_prompt = profile_style_prompt(project)
     system_content = read_step3_image_system_content(project)
     for slide in slides:
         slide_id = slide["slide_id"]
         generated_prompt = project_generate_prompt_for_slide(
-            sys.modules[__name__], project, slide, topic_name
+            project, slide, topic_name
         )
         slide_prompts.append({
             "slide_id": slide_id,
@@ -6011,7 +3937,7 @@ def generate_slide_image(
         if project_references:
             reference_paths = project_references
             use_reference_images = can_send_project_references(
-                sys.modules[__name__], model, base_url, reference_paths
+                model, base_url, reference_paths
             )
         else:
             style_tokens = read_style_tokens_data()
@@ -6181,14 +4107,11 @@ def delete_all_slide_images(project_id: str, db: Session = Depends(get_db)):
                     path.unlink()
                 except FileNotFoundError:
                     pass
-            clear_slide_visual_derivatives(project, slide_id)
-
-        clear_audio_confirmation(project)
-        current_status = project.get_step_status()
-        current_status["3"] = "in_progress"
-        mark_downstream_pending(current_status, from_step=4)
-        project.current_step = 3
-        project.set_step_status(current_status)
+        invalidation_service.slide_images_changed(
+            project,
+            slide_ids,
+            all_images_exist=False,
+        )
         db.commit()
     return {"success": True, "deleted_count": deleted_count, "slide_ids": slide_ids}
 
@@ -6426,14 +4349,11 @@ def update_step3_image_order(project_id: str, payload: Dict[str, Any], db: Sessi
                     candidate.unlink()
                 except FileNotFoundError:
                     pass
-            clear_slide_visual_derivatives(project, slide_id)
-
-        clear_audio_confirmation(project)
-        current_status = project.get_step_status()
-        current_status["3"] = "completed" if all_current_slide_images_exist(project) else "in_progress"
-        mark_downstream_pending(current_status, from_step=4)
-        project.current_step = 3
-        project.set_step_status(current_status)
+        invalidation_service.slide_images_changed(
+            project,
+            affected_slide_ids,
+            all_images_exist=all_current_slide_images_exist(project),
+        )
         db.commit()
 
     return {
@@ -7042,1533 +4962,169 @@ def update_step5_result(project_id: str, payload: Dict[str, Any], build_assets: 
 
 # ==================== 步骤 6: 演讲稿编辑 ====================
 
-@app.post("/api/projects/{project_id}/steps/6/init")
-def init_step6_narration(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-        
-    # 如果不存在 narration，从 visual contract 自动导出初版
-    contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
-    if not os.path.exists(contract_path):
-        raise HTTPException(status_code=400, detail="分镜规划不存在，请返回第二步生成分镜")
+# Narration and TTS routes are source-owned by dedicated services.
+from narration_service import (
+    annotate_step6_narration,
+    build_narration_annotation_input,
+    get_step6_result,
+    init_step6_narration,
+    narration_annotation_preserves_text,
+    read_narration_annotation_prompts,
+    repair_step6_result,
+    update_step6_result,
+)
+from tts_service import (
+    confirm_tts_audio,
+    get_slide_audio_file,
+    get_tts_audio_status,
+    synthesize_tts_resumable,
+)
 
-    beats_path = os.path.join(project.run_dir, "planning", "narration_beats.json")
-    existing_beats = read_json_file(beats_path, {})
-    if isinstance(existing_beats.get("slides"), list):
-        return {"success": True, "beats": existing_beats, "reused": True}
-        
-    write_narration_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "write_narration_from_visual_contract.py"))
-    res = subprocess.run([
-        sys.executable, write_narration_script, "--run-dir", project.run_dir
-    ], capture_output=True, text=True, encoding="utf-8", errors="replace")
-    
-    if res.returncode != 0:
-        logger.error(f"Init narration failed: {res.stderr}")
-        raise HTTPException(status_code=500, detail="初始化演讲稿模版失败")
-        
-    # 合并各个 slide 独立的 narration_beats.json 到全局的 planning/narration_beats.json
-    with open(contract_path, "r", encoding="utf-8") as f:
-        contract = json.load(f)
-        
-    global_slides = []
-    for s in contract.get("slides", []):
-        slide_id = s["slide_id"]
-        slide_beat_path = os.path.join(project.run_dir, "slides", slide_id, "narration_beats.json")
-        if os.path.exists(slide_beat_path):
-            with open(slide_beat_path, "r", encoding="utf-8") as sf:
-                s_data = json.load(sf)
-                beats = s_data.get("beats", [])
-                for beat in beats:
-                    if isinstance(beat, dict):
-                        beat.setdefault("source_text", beat.get("spoken_text", ""))
-                        beat.setdefault("tts_text", beat.get("spoken_text", ""))
-                global_slides.append({
-                    "slide_id": slide_id,
-                    "beats": beats
-                })
-        else:
-            global_slides.append({
-                "slide_id": slide_id,
-                "beats": []
-            })
-            
-    global_beats = persist_narration_beats(project, {"slides": global_slides})
-    return {"success": True, "beats": global_beats}
-
-@app.get("/api/projects/{project_id}/steps/6/result")
-def get_step6_result(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-        
-    beats_path = os.path.join(project.run_dir, "planning", "narration_beats.json")
-    if not os.path.exists(beats_path):
-        return {"success": False, "message": "演讲稿尚未生成"}
-
-    with open(beats_path, "r", encoding="utf-8") as f:
-        beats = json.load(f)
-    expected_ids = read_contract_slide_ids(project.run_dir)
-    actual_ids = [
-        str(slide.get("slide_id") or "").strip()
-        for slide in beats.get("slides", [])
-        if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()
-    ]
-    missing_ids = [slide_id for slide_id in expected_ids if slide_id not in actual_ids]
-    stale_ids = [slide_id for slide_id in actual_ids if slide_id not in expected_ids]
-    reasons = []
-    if missing_ids:
-        reasons.append("missing_contract_slides")
-    if stale_ids:
-        reasons.append("unreferenced_narration_slides")
-    return {
-        "success": True,
-        "beats": beats,
-        "repair": {
-            "required": bool(reasons),
-            "reasons": reasons,
-            "missing_slide_ids": missing_ids,
-            "stale_slide_ids": stale_ids,
-            "endpoint": f"/api/projects/{project_id}/steps/6/repair",
-        },
-    }
-
-
-@app.post("/api/projects/{project_id}/steps/6/repair")
-def repair_step6_result(project_id: str, db: Session = Depends(get_db)):
-    """Explicitly align historical narration data with the current storyboard."""
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    beats_path = os.path.join(project.run_dir, "planning", "narration_beats.json")
-    if not os.path.exists(beats_path):
-        raise HTTPException(status_code=400, detail="演讲稿尚未生成")
-    changed = sync_narration_beats_to_contract(project)
-    beats = read_json_file(beats_path, {})
-    return {"success": True, "changed": changed, "beats": beats}
-
-
-NARRATION_ANNOTATION_SYSTEM_CONTENT_KEY = "narration_annotation_system_content"
-NARRATION_ANNOTATION_OUTPUT_EXAMPLE_KEY = "narration_annotation_output_example"
-LEGACY_DEFAULT_NARRATION_ANNOTATION_SYSTEM_CONTENT_V1 = """You are a Chinese voiceover director preparing MiniMax TTS text.
-
-Add only light delivery markup to the existing narration. Preserve the original meaning and words. Do not rewrite technical terms.
-
-Rules:
-1. Every beat longer than 12 Chinese characters must contain at least one MiniMax pause tag.
-2. Normally add one to three pause tags such as <#0.2#>, <#0.35#>, <#0.5#> at natural clause boundaries.
-3. Never put pause tags at the beginning or end, never use consecutive pause tags, and keep pause values between 0.01 and 99.99 seconds.
-4. Expression tags are optional and must use only MiniMax speech-2.8 tags such as (breath), (sighs), (chuckle), (emm), (laughs), (inhale), (exhale), (gasps), (whistles), or (applause).
-5. Avoid expression tags inside numbers, English identifiers, code terms, Token, API, LLM, or backtick content.
-6. Return strict JSON only. Do not output Markdown or explanations."""
-LEGACY_DEFAULT_NARRATION_ANNOTATION_OUTPUT_EXAMPLE_V1 = """{
-  "slides": [
-    {
-      "slide_id": "slide_001",
-      "beats": [
-        {
-          "id": "beat_001",
-          "tts_text": "首先看核心概念，<#0.35#>再理解它的实际作用。"
-        }
-      ]
-    }
-  ]
-}"""
-DEFAULT_NARRATION_ANNOTATION_SYSTEM_CONTENT = """<PromptVersion>narration_annotation_v2_minimal</PromptVersion>
-
-<Role>
-你是一名中文旁白 TTS 标注编辑。你的唯一任务是在原始旁白中加入少量 MiniMax 停顿或自然语气标签，不改写旁白内容。
-</Role>
-
-<SystemBackground>
-输入中的每个 beat 已经与一个画面 Reveal 单元绑定。`source_text` 是用户确认过的最终旁白；系统会把你返回的 `tts_text` 直接用于语音合成，并会在服务端校验去除标签后的文字必须与 `source_text` 完全一致。
-</SystemBackground>
-
-<InputContract>
-User Content 是一个 JSON 对象：
-{
-  "slides": [
-    {
-      "slide_id": "输入中的 Slide ID",
-      "beats": [
-        {"id": "输入中的 beat ID", "source_text": "原始旁白"}
-      ]
-    }
-  ]
-}
-
-只使用输入中真实存在的 `slide_id`、`id` 和 `source_text`，不得创造、删除、合并、拆分或重排 Slide/beat。
-</InputContract>
-
-<AnnotationRules>
-1. 除插入合法标签外，`source_text` 中的汉字、字母、数字、标点、术语和顺序必须保持不变。
-2. 停顿只用于自然分句、转折、对比、举例或结论边界。短句可以不加；较长 beat 通常 1–3 个，宁少勿多。
-3. 停顿格式为 `<#x#>`，常用 `0.2`、`0.35`、`0.5` 秒；不得位于整段开头或结尾，不得连续出现。
-4. 语气标签默认不用；只有语义明确需要时，才可少量使用 `(breath)`、`(sighs)`、`(chuckle)`、`(emm)`、`(laughs)`、`(inhale)`、`(exhale)`、`(gasps)`、`(whistles)` 或 `(applause)`。
-5. 不在数字、英文标识符、代码术语、Token、API、LLM 或反引号内容内部插入标签。
-</AnnotationRules>
-
-<OutputContract>
-只输出一个合法 JSON 对象。保留输入中的 Slide 和 beat 顺序；每个 beat 只输出 `id` 与 `tts_text`，不要复制 `source_text`，不要输出解释或额外字段。
-</OutputContract>
-
-<SelfCheck>
-- 所有 `slide_id` 和 beat `id` 都来自输入，且没有遗漏或重复。
-- 去除所有 TTS 标签后，`tts_text` 与对应 `source_text` 完全一致。
-- 没有段首/段尾标签、连续停顿或不允许的语气标签。
-- 最终输出只有严格 JSON。
-</SelfCheck>"""
-DEFAULT_NARRATION_ANNOTATION_OUTPUT_EXAMPLE = """{
-  "slides": [
-    {
-      "slide_id": "slide_001",
-      "beats": [
-        {
-          "id": "beat_001",
-          "tts_text": "首先看核心概念，<#0.35#>再理解它的实际作用。"
-        },
-        {
-          "id": "beat_002",
-          "tts_text": "这是一句短旁白。"
-        }
-      ]
-    }
-  ]
-}"""
-
-
-def read_narration_annotation_prompts() -> tuple[str, str]:
-    system_content = str(
-        get_setting(NARRATION_ANNOTATION_SYSTEM_CONTENT_KEY, DEFAULT_NARRATION_ANNOTATION_SYSTEM_CONTENT)
-        or DEFAULT_NARRATION_ANNOTATION_SYSTEM_CONTENT
-    ).strip()
-    output_example = str(
-        get_setting(NARRATION_ANNOTATION_OUTPUT_EXAMPLE_KEY, DEFAULT_NARRATION_ANNOTATION_OUTPUT_EXAMPLE)
-        or DEFAULT_NARRATION_ANNOTATION_OUTPUT_EXAMPLE
-    ).strip()
-    if system_content == LEGACY_DEFAULT_NARRATION_ANNOTATION_SYSTEM_CONTENT_V1:
-        system_content = DEFAULT_NARRATION_ANNOTATION_SYSTEM_CONTENT
-    if output_example == LEGACY_DEFAULT_NARRATION_ANNOTATION_OUTPUT_EXAMPLE_V1:
-        output_example = DEFAULT_NARRATION_ANNOTATION_OUTPUT_EXAMPLE
-    return system_content, output_example
-
-
-def build_narration_annotation_input(incoming: Dict[str, Any]) -> Dict[str, Any]:
-    slides: List[Dict[str, Any]] = []
-    for slide in incoming.get("slides", []) or []:
-        if not isinstance(slide, dict):
-            continue
-        beats: List[Dict[str, str]] = []
-        for index, beat in enumerate(slide.get("beats", []) or [], start=1):
-            if not isinstance(beat, dict):
-                continue
-            # The editable TTS field is the latest user-visible narration.  Re-annotation
-            # must never revive a stale source_text/spoken_text value.
-            source_text = clean_tts_text(beat_tts_text(beat))
-            if not source_text:
-                continue
-            beats.append({
-                "id": str(beat.get("id") or f"beat_{index:03d}"),
-                "source_text": source_text,
-            })
-        slides.append({"slide_id": str(slide.get("slide_id") or ""), "beats": beats})
-    return {"slides": slides}
-
-
-def narration_annotation_preserves_text(candidate: str, source_text: str) -> bool:
-    def signature(value: str) -> str:
-        without_markup = TTS_MARKUP_RE.sub("", str(value or ""))
-        return re.sub(r"\s+", " ", without_markup).strip()
-
-    return signature(candidate) == signature(source_text)
-
-
-def compose_narration_annotation_prompt(system_content: str, output_example: str) -> str:
-    return (
-        str(system_content or "").strip()
-        + "\n\n<OutputExample>\n"
-        + str(output_example or "").strip()
-        + "\n</OutputExample>"
+try:
+    from narration_routes import router as narration_router
+    from narration_service import (
+        NarrationDependencies,
+        configure_narration_dependencies,
+    )
+    from tts_routes import router as tts_router
+    from tts_service import (
+        TtsDependencies,
+        configure_tts_dependencies,
     )
 
-
-@app.get("/api/settings/narration-annotation")
-def get_narration_annotation_settings():
-    system_content, output_example = read_narration_annotation_prompts()
-    return {
-        "success": True,
-        "prompts": {
-            "system_content": system_content,
-            "output_example": output_example,
-            "full_prompt": compose_narration_annotation_prompt(system_content, output_example),
-        },
-    }
-
-
-@app.put("/api/settings/narration-annotation")
-def update_narration_annotation_settings(payload: Dict[str, Any]):
-    prompts = payload.get("prompts") if isinstance(payload.get("prompts"), dict) else payload
-    system_content = str(prompts.get("system_content") or "").strip()
-    output_example = str(prompts.get("output_example") or "").strip()
-    if not system_content or not output_example:
-        raise HTTPException(status_code=400, detail="AI 标注的 System Content 和 Output Example 不能为空")
-    if len(system_content) > 30000 or len(output_example) > 20000:
-        raise HTTPException(status_code=400, detail="AI 标注 Prompt 内容过长")
-    update_settings({
-        NARRATION_ANNOTATION_SYSTEM_CONTENT_KEY: system_content,
-        NARRATION_ANNOTATION_OUTPUT_EXAMPLE_KEY: output_example,
-    })
-    return {
-        "success": True,
-        "prompts": {
-            "system_content": system_content,
-            "output_example": output_example,
-            "full_prompt": compose_narration_annotation_prompt(system_content, output_example),
-        },
-    }
-
-@app.post("/api/projects/{project_id}/steps/6/annotate")
-def annotate_step6_narration(project_id: str, payload: Optional[Dict[str, Any]] = None, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-
-    llm_api_key = get_setting("llm_api_key")
-    if not llm_api_key:
-        raise HTTPException(status_code=400, detail="Please configure the LLM API key before AI narration annotation.")
-
-    incoming = payload if isinstance(payload, dict) and isinstance(payload.get("slides"), list) else None
-    if incoming is None:
-        beats_path = os.path.join(project.run_dir, "planning", "narration_beats.json")
-        if not os.path.exists(beats_path):
-            raise HTTPException(status_code=400, detail="Narration beats do not exist. Initialize step 6 first.")
-        sync_narration_beats_to_contract(project)
-        with open(beats_path, "r", encoding="utf-8") as f:
-            incoming = json.load(f)
-
-    incoming = prepare_narration_payload(project, incoming)
-    if not incoming.get("slides"):
-        raise HTTPException(status_code=400, detail="No narration beats available for annotation.")
-
-    llm_base_url = get_setting("llm_base_url")
-    llm_model = get_setting("llm_model", "gpt-4o-mini")
-    llm_max_tokens = parse_int_setting(get_setting("llm_max_tokens", "50000"), 50000, 1024, 64000)
-    client = get_openai_client(api_key=llm_api_key, base_url=llm_base_url)
-    annotation_system_content, annotation_output_example = read_narration_annotation_prompts()
-    system_prompt = compose_narration_annotation_prompt(
-        annotation_system_content,
-        annotation_output_example,
-    )
-    user_prompt = json.dumps(build_narration_annotation_input(incoming), ensure_ascii=False)
-
-    try:
-        try:
-            response = client.chat.completions.create(
-                model=llm_model,
-                temperature=0.2,
-                max_tokens=llm_max_tokens,
-                response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-            )
-        except Exception as format_error:
-            logger.warning(f"Narration annotation response_format failed, retrying raw JSON: {format_error}")
-            response = client.chat.completions.create(
-                model=llm_model,
-                temperature=0.2,
-                max_tokens=llm_max_tokens,
-                messages=[
-                    {"role": "system", "content": system_prompt + " Return JSON only. No markdown."},
-                    {"role": "user", "content": user_prompt},
-                ],
-            )
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"AI narration annotation failed: {exc}")
-
-    raw_content = response.choices[0].message.content.strip()
-    ai_data = parse_json_or_repair_with_llm(
-        cleaned_content=clean_json_markdown(raw_content),
-        raw_content=raw_content,
-        client=client,
-        model=llm_model,
-        run_dir=project.run_dir,
-        artifact_prefix="step6_tts_annotation",
-        schema_hint='{"slides":[{"slide_id":"slide_001","beats":[{"id":"beat_001","tts_text":"..."}]}]}',
-        max_tokens=llm_max_tokens,
-    )
-
-    annotated_by_slide: Dict[str, Dict[str, str]] = {}
-    for slide in ai_data.get("slides", []) or []:
-        if not isinstance(slide, dict):
-            continue
-        slide_id = str(slide.get("slide_id") or "").strip()
-        if not slide_id:
-            continue
-        annotated_by_slide[slide_id] = {}
-        for beat in slide.get("beats", []) or []:
-            if not isinstance(beat, dict):
-                continue
-            beat_id = str(beat.get("id") or "").strip()
-            tts_text = str(beat.get("tts_text") or "").strip()
-            if beat_id and tts_text:
-                annotated_by_slide[slide_id][beat_id] = tts_text
-
-    changed = 0
-    for slide in incoming.get("slides", []):
-        slide_id = str(slide.get("slide_id") or "").strip()
-        by_id = annotated_by_slide.get(slide_id, {})
-        for beat in slide.get("beats", []) or []:
-            if not isinstance(beat, dict):
-                continue
-            beat_id = str(beat.get("id") or "").strip()
-            original = clean_tts_text(beat_tts_text(beat))
-            beat["source_text"] = original
-            beat["spoken_text"] = original
-            if beat_id in by_id:
-                candidate = by_id[beat_id]
-                if not narration_annotation_preserves_text(candidate, original):
-                    logger.warning(
-                        "Narration annotation changed source text; falling back to original: slide=%s beat=%s",
-                        slide_id,
-                        beat_id,
-                    )
-                    candidate = str(original or "")
-                beat["tts_text"] = ensure_minimax_delivery_markup(normalize_minimax_tts_markup(candidate, original))
-                changed += 1
-
-    if changed == 0:
-        raise HTTPException(status_code=500, detail="AI returned no usable narration annotations.")
-
-    incoming = persist_narration_beats(project, incoming)
-    handle_step_navigation(project, 6, db)
-    return {"success": True, "beats": incoming, "annotated_count": changed}
-
-@app.put("/api/projects/{project_id}/steps/6/result")
-def update_step6_result(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-        
-    current_slide_ids = read_contract_slide_ids(project.run_dir)
-    if current_slide_ids and isinstance(payload.get("slides"), list):
-        by_id = {
-            str(slide.get("slide_id") or "").strip(): slide
-            for slide in payload.get("slides", [])
-            if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()
-        }
-        payload["slides"] = [by_id[slide_id] for slide_id in current_slide_ids if slide_id in by_id]
-
-    # 保存全局规划下的 narration_beats.json
-    beats_path = os.path.join(project.run_dir, "planning", "narration_beats.json")
-    with open(beats_path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-        
-    narration_lines = []
-    tts_text_lines = []
-    
-    # 循环写入各 Slide 独立的 narration.txt, tts_text.txt 和 narration_beats.json
-    for slide_data in payload.get("slides", []):
-        slide_id = slide_data["slide_id"]
-        slide_dir = os.path.join(project.run_dir, "slides", slide_id)
-        os.makedirs(slide_dir, exist_ok=True)
-        
-        slide_beats = slide_data.get("beats", [])
-        for beat in slide_beats:
-            if isinstance(beat, dict):
-                beat.setdefault("source_text", beat.get("spoken_text", ""))
-                beat.setdefault("tts_text", beat.get("spoken_text", ""))
-        slide_narration = "\n".join(clean_tts_text(beat_tts_text(beat)) for beat in slide_beats)
-        slide_tts_text = "\n".join(beat_tts_text(beat) for beat in slide_beats)
-        
-        with open(os.path.join(slide_dir, "narration.txt"), "w", encoding="utf-8") as f:
-            f.write(slide_narration + "\n")
-        with open(os.path.join(slide_dir, "tts_text.txt"), "w", encoding="utf-8") as f:
-            f.write(slide_tts_text + "\n")
-        with open(os.path.join(slide_dir, "narration_beats.json"), "w", encoding="utf-8") as f:
-            json.dump({"slide_id": slide_id, "beats": slide_beats}, f, ensure_ascii=False, indent=2)
-            
-        narration_lines.append(f"=== {slide_id} ===")
-        tts_text_lines.append(f"=== {slide_id} ===")
-        for beat in slide_beats:
-            g_id = beat.get("group_id") or beat.get("id") or "sentence"
-            text = clean_tts_text(beat_tts_text(beat))
-            narration_lines.append(f"[{g_id}] {text}")
-            tts_text_lines.append(beat_tts_text(beat))
-            
-    narration_txt_path = os.path.join(project.run_dir, "planning", "narration.txt")
-    tts_txt_path = os.path.join(project.run_dir, "planning", "tts_text.txt")
-    
-    with open(narration_txt_path, "w", encoding="utf-8") as f:
-        f.write("\n".join(narration_lines) + "\n")
-    with open(tts_txt_path, "w", encoding="utf-8") as f:
-        f.write("\n".join(tts_text_lines) + "\n")
-        
-    # 运行校验，确保 narration 符合规范
-    validate_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "validate_narration_grounding.py"))
-    val_res = subprocess.run([
-        sys.executable, validate_script, "--run-dir", project.run_dir
-    ], capture_output=True, text=True, encoding="utf-8", errors="replace")
-    
-    if val_res.returncode != 0:
-        logger.warning(f"Narration grounding warned:\n{val_res.stderr}")
-        
-    handle_step_navigation(project, 6, db)
-    return {"success": True}
-
-# ==================== 步骤 7: 语音合成 ====================
-
-
-# 获取音频文件接口（供前端试听）
-@app.post("/api/projects/{project_id}/steps/7/synthesize")
-def synthesize_tts_resumable(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-
-    provider = normalize_tts_provider(get_setting("tts_provider", "minimax"))
-    defaults = tts_provider_defaults(provider)
-    if provider not in TTS_PROVIDER_DEFAULTS:
-        raise HTTPException(status_code=400, detail=f"不支持的 TTS Provider: {provider}")
-    tts_api_key = configured_tts_api_key(provider)
-    tts_secret_key = configured_tts_secret_key(provider)
-    if not tts_api_key:
-        env_name = defaults.get("api_key_env") or "TTS_API_KEY"
-        raise HTTPException(status_code=400, detail=f"未配置 {provider} 语音合成密钥，也没有读取到环境变量 {env_name}。")
-    if provider == "tencent_tts" and not tts_secret_key:
-        raise HTTPException(status_code=400, detail="腾讯云 TTS 需要同时配置 SecretId 和 SecretKey。")
-
-    contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
-    if not os.path.exists(contract_path):
-        raise HTTPException(status_code=400, detail="分镜规划尚未生成，请返回确认第二步状态。")
-
-    with open(contract_path, "r", encoding="utf-8") as f:
-        contract = json.load(f)
-
-    slide_ids = [
-        str(slide["slide_id"])
-        for slide in contract.get("slides", [])
-        if isinstance(slide, dict) and slide.get("slide_id")
-    ]
-    if not slide_ids:
-        raise HTTPException(status_code=400, detail="分镜规划中没有可生成音频的页面。")
-
-    beats_by_slide: Dict[str, List[Dict[str, Any]]] = {}
-    beats_path = os.path.join(project.run_dir, "planning", "narration_beats.json")
-    if os.path.exists(beats_path):
-        try:
-            sync_narration_beats_to_contract(project, slide_ids)
-            with open(beats_path, "r", encoding="utf-8") as f:
-                beats_payload = json.load(f)
-            for slide_data in beats_payload.get("slides", []) or []:
-                if isinstance(slide_data, dict):
-                    beats_by_slide[str(slide_data.get("slide_id", ""))] = slide_data.get("beats", []) or []
-        except Exception as exc:
-            logger.warning("Failed to load edited narration beats for TTS: %s", exc)
-
-    tts_endpoint = first_non_empty(get_setting("tts_endpoint"), defaults.get("endpoint"))
-    tts_model = first_non_empty(get_setting("tts_model"), defaults.get("model"))
-    tts_voice_id = first_non_empty(get_setting("tts_voice_id"), defaults.get("voice_id"))
-    tts_clone_voice_id = get_setting("tts_clone_voice_id", "")
-    tts_region = first_non_empty(get_setting("tts_region"), defaults.get("region"))
-    tts_provider_extra = get_setting("tts_provider_extra", "")
-    tts_speed = get_setting("tts_speed", "1.2")
-    tts_volume = get_setting("tts_volume", "1.0")
-    tts_pitch = get_setting("tts_pitch", "0" if provider == "minimax" else "1.0")
-
-    clear_audio_confirmation(project)
-    mark_step_in_progress(project, 7, db)
-
-    generated_slides: List[str] = []
-    skipped_slides: List[str] = []
-    failed_slides: List[Dict[str, Any]] = []
-
-    for slide_id in slide_ids:
-        paths = slide_tts_artifact_paths(project, slide_id)
-        text_file = ensure_slide_tts_text_file(project, slide_id, contract)
-        artifact_status = slide_tts_artifact_status(project, slide_id)
-
-        if artifact_status["complete"]:
-            logger.info("Skipping TTS for %s because audio artifacts are already complete and fresh", slide_id)
-            rewrite_audio_timeline_by_beats(paths["timeline"], slide_id, beats_by_slide.get(slide_id, []))
-            skipped_slides.append(slide_id)
-            continue
-
-        if artifact_status["audio_exists"] or artifact_status["missing_artifacts"] or artifact_status["stale"]:
-            remove_tts_artifacts(paths)
-
-        logger.info("Synthesizing TTS audio for slide %s via %s", slide_id, provider)
-        tts_args = provider_tts_command(
-            provider=provider,
-            text_file=text_file,
-            out_audio=paths["audio"],
-            out_meta=paths["metadata"],
-            out_srt=paths["srt"],
-            out_timeline=paths["timeline"],
-            slide_id=slide_id,
-            endpoint=tts_endpoint,
-            region=tts_region,
-            model=tts_model,
-            voice_id=tts_voice_id,
-            clone_voice_id=tts_clone_voice_id,
-            provider_extra=tts_provider_extra,
-            speed=tts_speed,
-            volume=tts_volume,
-            pitch=tts_pitch,
+    configure_narration_dependencies(
+        NarrationDependencies(
+            beat_tts_text=beat_tts_text,
+            clean_json_markdown=clean_json_markdown,
+            clean_tts_text=clean_tts_text,
+            ensure_minimax_delivery_markup=(
+                ensure_minimax_delivery_markup
+            ),
+            get_openai_client=get_openai_client,
+            handle_step_navigation=handle_step_navigation,
+            normalize_minimax_tts_markup=(
+                normalize_minimax_tts_markup
+            ),
+            parse_int_setting=parse_int_setting,
+            parse_json_or_repair_with_llm=(
+                parse_json_or_repair_with_llm
+            ),
+            persist_narration_beats=persist_narration_beats,
+            prepare_narration_payload=prepare_narration_payload,
+            read_contract_slide_ids=read_contract_slide_ids,
+            read_json_file=read_json_file,
+            sync_narration_beats_to_contract=(
+                sync_narration_beats_to_contract
+            ),
+            tts_markup_re=TTS_MARKUP_RE,
         )
-
-        tts_result = run_tts_command_with_retries(
-            project,
-            slide_id,
-            tts_args,
-            provider_tts_environment(tts_api_key, tts_secret_key),
-        )
-        if not tts_result["ok"]:
-            error_text = (tts_result["stderr"] or tts_result["stdout"] or "TTS synthesis failed").strip()
-            error_text = error_text[-1200:]
-            logger.error("TTS synthesis failed for %s after %s attempts: %s", slide_id, tts_result["attempts"], error_text)
-            write_project_log(
-                project,
-                "step7_slide_tts_error",
-                slide_id=slide_id,
-                attempts=tts_result["attempts"],
-                returncode=tts_result["returncode"],
-                stdout=tts_result["stdout"],
-                stderr=tts_result["stderr"],
-            )
-            failed_slides.append({
-                "slide_id": slide_id,
-                "attempts": tts_result["attempts"],
-                "returncode": tts_result["returncode"],
-                "error": error_text,
-            })
-            continue
-
-        post_status = slide_tts_artifact_status(project, slide_id)
-        if not post_status["complete"]:
-            error_text = "TTS command returned success but required audio artifacts are incomplete: " + ", ".join(post_status["missing_artifacts"])
-            logger.error("%s for %s", error_text, slide_id)
-            write_project_log(
-                project,
-                "step7_slide_tts_incomplete_artifacts",
-                slide_id=slide_id,
-                status=post_status,
-            )
-            failed_slides.append({
-                "slide_id": slide_id,
-                "attempts": tts_result["attempts"],
-                "returncode": tts_result["returncode"],
-                "error": error_text,
-            })
-            continue
-
-        rewrite_audio_timeline_by_beats(paths["timeline"], slide_id, beats_by_slide.get(slide_id, []))
-        generated_slides.append(slide_id)
-
-    if failed_slides:
-        mark_step_retry_needed(project, 7, db)
-        write_project_log(
-            project,
-            "step7_tts_partial_failed",
-            generated=generated_slides,
-            skipped=skipped_slides,
-            failed=failed_slides,
-        )
-        failed_ids = [item["slide_id"] for item in failed_slides]
-        return {
-            "success": False,
-            "message": f"音频部分生成失败，请重试缺失页面：{', '.join(failed_ids)}",
-            "generated": generated_slides,
-            "skipped": skipped_slides,
-            "failed": failed_slides,
-            "audio_status": [slide_tts_artifact_status(project, sid) for sid in slide_ids],
-            "audio_confirmed": False,
-        }
-
-    bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))
-    bind_res = subprocess.run(
-        [sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", str(REVEAL_VISUAL_LEAD_SEC)],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=STEP7_BIND_TIMEOUT_SEC,
     )
-
-    if bind_res.returncode != 0:
-        logger.error("Timeline binding failed: %s", bind_res.stderr)
-        write_project_log(
-            project,
-            "step7_timeline_bind_error",
-            returncode=bind_res.returncode,
-            stdout=bind_res.stdout.strip(),
-            stderr=bind_res.stderr.strip(),
+    configure_tts_dependencies(
+        TtsDependencies(
+            audio_confirmation_path=audio_confirmation_path,
+            configured_tts_api_key=configured_tts_api_key,
+            configured_tts_secret_key=configured_tts_secret_key,
+            current_slide_file_or_404=current_slide_file_or_404,
+            ensure_slide_tts_text_file=ensure_slide_tts_text_file,
+            first_non_empty=first_non_empty,
+            get_setting=get_setting,
+            handle_step_navigation=handle_step_navigation,
+            mark_step_retry_needed=mark_step_retry_needed,
+            normalize_tts_provider=normalize_tts_provider,
+            project_audio_confirmed=project_audio_confirmed,
+            provider_tts_command=provider_tts_command,
+            provider_tts_environment=provider_tts_environment,
+            read_current_slide_ids_or_404=(
+                read_current_slide_ids_or_404
+            ),
+            remove_tts_artifacts=remove_tts_artifacts,
+            rewrite_audio_timeline_by_beats=(
+                rewrite_audio_timeline_by_beats
+            ),
+            run_subprocess_bounded=run_subprocess_bounded,
+            run_tts_command_with_retries=(
+                run_tts_command_with_retries
+            ),
+            slide_tts_artifact_paths=slide_tts_artifact_paths,
+            slide_tts_artifact_status=slide_tts_artifact_status,
+            sync_narration_beats_to_contract=(
+                sync_narration_beats_to_contract
+            ),
+            tts_provider_defaults=tts_provider_defaults,
+            write_project_log=write_project_log,
+            provider_defaults=TTS_PROVIDER_DEFAULTS,
+            reveal_visual_lead_sec=REVEAL_VISUAL_LEAD_SEC,
+            bind_timeout_sec=STEP7_BIND_TIMEOUT_SEC,
         )
-        mark_step_retry_needed(project, 7, db)
-        return {
-            "success": False,
-            "message": f"音频已生成，但时间轴绑定失败：{bind_res.stderr[-1200:]}",
-            "generated": generated_slides,
-            "skipped": skipped_slides,
-            "failed": [{"slide_id": "timeline_binding", "error": bind_res.stderr[-1200:]}],
-            "audio_status": [slide_tts_artifact_status(project, sid) for sid in slide_ids],
-            "audio_confirmed": False,
-        }
+    )
+    app.include_router(narration_router)
+    app.include_router(tts_router)
+except Exception as exc:
+    logger.exception(
+        "Explicit narration/TTS route registration failed: %s",
+        exc,
+    )
+    raise
 
-    return {
-        "success": True,
-        "message": "音频生成完成",
-        "generated": generated_slides,
-        "skipped": skipped_slides,
-        "failed": [],
-        "audio_status": [slide_tts_artifact_status(project, sid) for sid in slide_ids],
-        "audio_confirmed": False,
-    }
+try:
+    from storyboard_service import (
+        StoryboardDependencies,
+        configure_storyboard_dependencies,
+    )
+    from storyboard_routes import router as storyboard_router
 
-@app.get("/api/projects/{project_id}/steps/7/audio-status")
-def get_tts_audio_status(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    slide_ids = read_current_slide_ids_or_404(project)
-    slides = [slide_tts_artifact_status(project, slide_id) for slide_id in slide_ids]
-    missing = [item["slide_id"] for item in slides if not item["complete"]]
-    return {
-        "success": True,
-        "slides": slides,
-        "complete": not missing,
-        "missing": missing,
-        "audio_confirmed": project_audio_confirmed(project),
-    }
-
-@app.get("/api/projects/{project_id}/slides/{slide_id}/audio")
-def get_slide_audio_file(project_id: str, slide_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-        
-    audio_path = current_slide_file_or_404(project, slide_id, "voice.mp3")
-    status = slide_tts_artifact_status(project, slide_id)
-    if not status["audio_exists"]:
-        raise HTTPException(status_code=404, detail="该页面音频尚未生成")
-        
-    if status["stale"]:
-        raise HTTPException(status_code=409, detail="该页面音频已过期，请重新生成。")
-
-    return FileResponse(audio_path, media_type="audio/mp3")
-
-@app.post("/api/projects/{project_id}/steps/7/confirm")
-def confirm_tts_audio(project_id: str, payload: Optional[Dict[str, Any]] = None, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    slide_ids = read_current_slide_ids_or_404(project)
-    missing = [
-        slide_id for slide_id in slide_ids
-        if not slide_tts_artifact_status(project, slide_id)["complete"]
-    ]
-    if missing:
-        raise HTTPException(status_code=400, detail=f"以下页面尚未生成音频: {', '.join(missing)}")
-    beats_by_slide: Dict[str, List[Dict[str, Any]]] = {}
-    beats_path = os.path.join(project.run_dir, "planning", "narration_beats.json")
-    if os.path.exists(beats_path):
-        try:
-            sync_narration_beats_to_contract(project, slide_ids)
-            with open(beats_path, "r", encoding="utf-8") as f:
-                beats_payload = json.load(f)
-            for slide_data in beats_payload.get("slides", []) or []:
-                if isinstance(slide_data, dict):
-                    beats_by_slide[str(slide_data.get("slide_id", ""))] = slide_data.get("beats", []) or []
-        except Exception as exc:
-            logger.warning(f"Failed to load edited narration beats while confirming TTS: {exc}")
-    for slide_id in slide_ids:
-        rewrite_audio_timeline_by_beats(
-            os.path.join(project.run_dir, "slides", slide_id, "audio_timeline.json"),
-            slide_id,
-            beats_by_slide.get(slide_id, []),
+    configure_storyboard_dependencies(
+        StoryboardDependencies(
+            clean_json_markdown=clean_json_markdown,
+            contract_slide_ids_from_payload=(
+                contract_slide_ids_from_payload
+            ),
+            get_openai_client=get_openai_client,
+            handle_step_navigation=handle_step_navigation,
+            invalidate_after_upstream_edit=(
+                invalidate_after_upstream_edit
+            ),
+            is_timeout_exception=is_timeout_exception,
+            mark_step_retry_needed=mark_step_retry_needed,
+            narration_dedupe_key=narration_dedupe_key,
+            normalize_visual_contract=normalize_visual_contract,
+            normalized_template_name=normalized_template_name,
+            parse_int_setting=parse_int_setting,
+            parse_json_or_repair_with_llm=(
+                parse_json_or_repair_with_llm
+            ),
+            parse_range_text=parse_range_text,
+            read_json_file=read_json_file,
+            read_project_article_source=read_project_article_source,
+            sync_narration_beats_to_contract=(
+                sync_narration_beats_to_contract
+            ),
+            sync_narration_sources_from_contract=(
+                sync_narration_sources_from_contract
+            ),
+            sync_reveal_manifest_to_contract=(
+                sync_reveal_manifest_to_contract
+            ),
+            template_timestamp=template_timestamp,
+            write_project_log=write_project_log,
+            ai_knowledge_script_extension=(
+                AI_KNOWLEDGE_STEP2_SCRIPT_EXTENSION
+            ),
+            legacy_prompt_hashes=LEGACY_STEP2_PROMPT_HASHES,
+            legacy_interview_script_prompt_hash=(
+                LEGACY_INTERVIEW_SCRIPT_PROMPT_HASH
+            ),
         )
-    bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))
-    bind_res = subprocess.run([
-        sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", str(REVEAL_VISUAL_LEAD_SEC)
-    ], capture_output=True, text=True, encoding="utf-8", errors="replace")
-    if bind_res.returncode != 0:
-        logger.error(f"Timeline binding failed during audio confirm: {bind_res.stderr}")
-        raise HTTPException(status_code=500, detail=f"时间轴绑定失败: {bind_res.stderr}")
-    confirmation_path = audio_confirmation_path(project)
-    os.makedirs(os.path.dirname(confirmation_path), exist_ok=True)
-    write_json_atomic(
-        confirmation_path,
-        build_audio_confirmation_payload(
-            project.run_dir,
-            slide_ids,
-            confirmation_mode=str((payload or {}).get("confirmation_mode") or "user_reviewed"),
-        ),
     )
-    handle_step_navigation(project, 7, db)
-    return {"success": True, "audio_confirmed": True}
-
-# ==================== 步骤 8: 视频合成与渲染 ====================
-
-def project_video_dir(project: Project) -> str:
-    target = storage_videos_dir(project_run_dir_or_500(project))
-    target.mkdir(parents=True, exist_ok=True)
-    return str(target)
-
-
-def video_metadata_path(path: str) -> str:
-    return str(storage_video_sidecar(path))
-
-
-def read_video_metadata(path: str) -> Dict[str, Any]:
-    metadata_path = video_metadata_path(path)
-    if not os.path.exists(metadata_path):
-        return {}
-    try:
-        with open(metadata_path, "r", encoding="utf-8") as file:
-            value = json.load(file)
-        return value if isinstance(value, dict) else {}
-    except Exception as exc:
-        logger.warning("Failed to read video metadata %s: %s", metadata_path, exc)
-        return {}
-
-
-def current_render_input_fingerprint(project: Project) -> Dict[str, Any]:
-    return render_input_fingerprint(
-        project.run_dir,
-        visual_settings=read_project_visual_settings(project),
-        pipeline_version=REVEAL_PIPELINE_VERSION,
+    app.include_router(storyboard_router)
+except Exception as exc:
+    logger.exception(
+        "Explicit storyboard route registration failed: %s",
+        exc,
     )
+    raise
 
-
-def video_item(
-    project: Project,
-    path: str,
-    label: Optional[str] = None,
-    current_fingerprint: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    stat = os.stat(path)
-    filename = os.path.basename(path)
-    metadata_exists = os.path.exists(video_metadata_path(path))
-    metadata = read_video_metadata(path)
-    pipeline_version = str(metadata.get("reveal_pipeline_version") or "")
-    video_background = normalize_hex_color(metadata.get("video_background"), fallback="")
-    current_visual_settings = read_project_visual_settings(project)
-    current_background = current_visual_settings["video_background"]
-    has_subtitle_style_metadata = isinstance(metadata.get("subtitle_style"), dict)
-    subtitle_style = normalize_subtitle_style(metadata.get("subtitle_style"))
-    current_subtitle_style = current_visual_settings["subtitle_style"]
-    playback_rate = float(metadata.get("playback_rate", 1.0) or 1.0)
-    stored_fingerprint = metadata.get("input_fingerprint")
-    current_fingerprint = current_fingerprint or current_render_input_fingerprint(project)
-    if metadata_exists and not metadata:
-        artifact_state = "invalid"
-    elif not metadata_exists or pipeline_version != REVEAL_PIPELINE_VERSION or not isinstance(stored_fingerprint, dict):
-        artifact_state = "legacy"
-    elif (
-        stored_fingerprint.get("digest") != current_fingerprint.get("digest")
-        or video_background != current_background
-        or not has_subtitle_style_metadata
-        or subtitle_style != current_subtitle_style
-    ):
-        artifact_state = "stale"
-    else:
-        artifact_state = "current"
-    return {
-        "filename": filename,
-        "label": label or filename,
-        "size": stat.st_size,
-        "created_at": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
-        "url": f"/api/projects/{project.id}/videos/{filename}",
-        "reveal_pipeline_version": pipeline_version or None,
-        "video_background": video_background or None,
-        "subtitle_style": subtitle_style,
-        "playback_rate": playback_rate,
-        "source_filename": str(metadata.get("source_filename") or "") or None,
-        "is_speed_variant": abs(playback_rate - 1.0) > 0.001,
-        "artifact_state": artifact_state,
-        "is_current": artifact_state == "current",
-        "is_stale": artifact_state == "stale",
-        "is_legacy": artifact_state == "legacy",
-        "is_invalid": artifact_state == "invalid",
-    }
-
-
-def list_video_items(project: Project, project_id: str) -> List[Dict[str, Any]]:
-    videos_dir = os.path.join(project.run_dir, "videos")
-    items: List[Dict[str, Any]] = []
-    current_fingerprint: Optional[Dict[str, Any]] = None
-    if os.path.isdir(videos_dir):
-        for name in os.listdir(videos_dir):
-            path = os.path.join(videos_dir, name)
-            if os.path.isfile(path) and name.lower().endswith(".mp4"):
-                current_fingerprint = current_fingerprint or current_render_input_fingerprint(project)
-                items.append(video_item(project, path, current_fingerprint=current_fingerprint))
-    legacy_path = os.path.join(project.run_dir, "out.mp4")
-    if os.path.exists(legacy_path) and not items:
-        current_fingerprint = current_fingerprint or current_render_input_fingerprint(project)
-        legacy = video_item(project, legacy_path, "out.mp4", current_fingerprint=current_fingerprint)
-        legacy["url"] = f"/api/projects/{project_id}/video"
-        items.append(legacy)
-    items.sort(key=lambda item: item["created_at"], reverse=True)
-    return items
-
-
-def media_tool_candidate_dirs() -> List[str]:
-    return [str(path) for path in shared_media_tool_candidate_dirs(REPO_ROOT)]
-
-
-def resolve_media_tool(name: str) -> Optional[str]:
-    return shared_resolve_media_tool(name, repo_root=REPO_ROOT)
-
-
-def validate_remotion_public_assets(props: Dict[str, Any], public_dir: str) -> List[str]:
-    missing: List[str] = []
-    public_root = os.path.abspath(public_dir)
-
-    def check_asset(value: Any) -> None:
-        if not isinstance(value, str) or not value or re.match(r"^https?://", value):
-            return
-        asset_path = os.path.abspath(os.path.join(public_root, value.replace("/", os.sep)))
-        if not asset_path.startswith(public_root + os.sep) and asset_path != public_root:
-            missing.append(value)
-            return
-        if not os.path.exists(asset_path):
-            missing.append(value)
-
-    for slide in props.get("slides", []) if isinstance(props.get("slides"), list) else []:
-        scene = slide.get("scene") if isinstance(slide, dict) else None
-        layers = scene.get("layers") if isinstance(scene, dict) else None
-        if isinstance(layers, list):
-            for layer in layers:
-                if isinstance(layer, dict):
-                    check_asset(layer.get("asset"))
-                    check_asset(layer.get("cutout_asset"))
-        if isinstance(scene, dict) and isinstance(scene.get("canvas"), dict):
-            check_asset(scene["canvas"].get("background_asset"))
-        check_asset(slide.get("audio_file") if isinstance(slide, dict) else None)
-    return sorted(set(missing))
-
-
-def normalize_video_color_metadata(video_path: str, project: Project) -> bool:
-    ffmpeg = resolve_media_tool("ffmpeg")
-    if not ffmpeg:
-        write_project_log(project, "step8_color_metadata_normalize_skipped", reason="ffmpeg_not_found")
-        return False
-
-    temp_path = f"{video_path}.bt709.tmp.mp4"
-    if os.path.exists(temp_path):
-        os.remove(temp_path)
-    result = subprocess.run(
-        [
-            ffmpeg,
-            "-y",
-            "-i",
-            video_path,
-            "-c",
-            "copy",
-            "-color_primaries",
-            "bt709",
-            "-color_trc",
-            "bt709",
-            "-colorspace",
-            "bt709",
-            "-movflags",
-            "+faststart",
-            temp_path,
-        ],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    if result.returncode != 0 or not os.path.exists(temp_path):
-        write_project_log(
-            project,
-            "step8_color_metadata_normalize_error",
-            returncode=result.returncode,
-            stderr=(result.stderr or "")[-4000:],
-        )
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-        return False
-
-    os.replace(temp_path, video_path)
-    write_project_log(
-        project,
-        "step8_color_metadata_normalize_success",
-        stdout=(result.stdout or "")[-4000:],
-    )
-    return True
-
-
-def _render_video_worker(project_id: str, task_id: str) -> None:
-    """后台线程：执行实际渲染流程，把状态写到 _RENDER_TASKS。
-
-    原本同步阻塞的 render_video 在渲染耗时超过浏览器空闲超时（约 5 分钟）
-    时会被前端报 "Failed to fetch"。这里把所有渲染子步骤搬到后台线程，
-    主路由立即返回 task_id，前端通过 render-status 路由轮询。
-    """
-    from database import SessionLocal
-    db = SessionLocal()
-    project_lock = _get_project_render_lock(project_id)
-    try:
-        project = db.query(Project).filter(Project.id == project_id).first()
-        if not project:
-            _set_render_task_status(task_id, "error", error="项目不存在")
-            return
-
-        try:
-            # Draft autosave updates the manifest only. Always rebuild reveal assets here
-            # so rendering cannot use stale crops from an earlier mask revision.
-            _set_render_task_stage(task_id, "building_reveal")
-            build_current_reveal_assets(project)
-
-            _set_render_task_stage(task_id, "binding_timeline")
-            bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))
-            bind_res = subprocess.run([
-                sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", str(REVEAL_VISUAL_LEAD_SEC)
-            ], capture_output=True, text=True, encoding="utf-8", errors="replace")
-            if bind_res.returncode != 0:
-                logger.error(f"Timeline binding before render failed: {bind_res.stderr}")
-                raise RuntimeError(f"渲染前绑定语音时间轴失败: {bind_res.stderr}")
-
-            _set_render_task_stage(task_id, "building_props")
-            build_props_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "build_remotion_props.py"))
-            remotion_public_dir = os.path.join(REPO_ROOT, "scripts", "remotion", "public")
-            props_started = time.time()
-            props_res = subprocess.run([
-                sys.executable,
-                build_props_script,
-                "--run-dir",
-                project.run_dir,
-                "--repo-root",
-                REPO_ROOT,
-                "--remotion-public-dir",
-                remotion_public_dir,
-            ], capture_output=True, text=True, encoding="utf-8", errors="replace")
-
-            if props_res.returncode != 0:
-                logger.error(f"Build remotion props failed: {props_res.stderr}")
-                write_project_log(
-                    project,
-                    "step8_build_props_error",
-                    returncode=props_res.returncode,
-                    stderr=props_res.stderr or "",
-                )
-                raise RuntimeError(f"构建 Remotion 配置失败: {props_res.stderr or ''}")
-
-            write_project_log(
-                project,
-                "step8_build_props_success",
-                elapsed_sec=round(time.time() - props_started, 3),
-                stdout=(props_res.stdout or "").strip(),
-            )
-
-            # 检测 Node.js 模块依赖，执行 npm install (如果 node_modules 不存在)
-            remotion_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "remotion"))
-            node_modules_dir = os.path.join(remotion_dir, "node_modules")
-
-            if not os.path.exists(node_modules_dir):
-                logger.info("Initializing Remotion node_modules, running npm install...")
-                npm_started = time.time()
-                write_project_log(project, "step8_npm_install_start", cwd=remotion_dir)
-                # Windows 环境下运行 npm.cmd
-                npm_cmd = "npm.cmd" if sys.platform == "win32" else "npm"
-                npm_install = subprocess.run(
-                    [npm_cmd, "install"],
-                    cwd=remotion_dir,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                )
-                if npm_install.returncode != 0:
-                    logger.error(f"npm install failed:\n{npm_install.stderr}")
-                    write_project_log(
-                        project,
-                        "step8_npm_install_error",
-                        returncode=npm_install.returncode,
-                        stderr=npm_install.stderr or "",
-                    )
-                    raise RuntimeError(f"初始化 Remotion Node 依赖失败: {npm_install.stderr or ''}")
-                write_project_log(
-                    project,
-                    "step8_npm_install_success",
-                    elapsed_sec=round(time.time() - npm_started, 3),
-                    stdout=(npm_install.stdout or "").strip(),
-                )
-            else:
-                write_project_log(project, "step8_npm_install_skipped", node_modules_dir=node_modules_dir)
-
-            # 直接调用 Remotion CLI，避免维护第二套渲染入口。
-            npx_cmd = "npx.cmd" if sys.platform == "win32" else "npx"
-            props_json_path = os.path.join(project.run_dir, "remotion_props.json")
-            videos_dir = project_video_dir(project)
-            output_filename = f"render_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.mp4"
-            output_mp4_path = os.path.join(videos_dir, output_filename)
-            legacy_output_path = os.path.join(project.run_dir, "out.mp4")
-
-            _set_render_task_stage(task_id, "rendering")
-            logger.info(f"Starting Remotion render for {project_id} (task={task_id})...")
-            render_started = time.time()
-            render_args = [
-                npx_cmd, "remotion", "render", "src/index.tsx", "ArticleVideo", output_mp4_path,
-                f"--props={props_json_path}",
-                "--codec=h264",
-                "--image-format=png",
-                "--pixel-format=yuv420p",
-                "--color-space=bt709",
-            ]
-            with open(props_json_path, "r", encoding="utf-8") as props_file:
-                remotion_props_payload = json.load(props_file)
-            missing_assets = validate_remotion_public_assets(remotion_props_payload, remotion_public_dir)
-            if missing_assets:
-                write_project_log(
-                    project,
-                    "step8_public_asset_validation_error",
-                    missing_assets=missing_assets[:50],
-                    missing_count=len(missing_assets),
-                    public_dir=remotion_public_dir,
-                )
-                raise RuntimeError(f"Remotion 渲染素材缺失: {missing_assets[:8]}")
-            write_project_log(
-                project,
-                "step8_remotion_render_start",
-                output=output_mp4_path,
-                timeout_sec=STEP8_RENDER_TIMEOUT_SEC,
-                total_duration_sec=remotion_props_payload.get("total_duration_sec"),
-            )
-
-            try:
-                render_res = subprocess.run(
-                    render_args,
-                    cwd=remotion_dir,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    timeout=STEP8_RENDER_TIMEOUT_SEC,
-                )
-            except subprocess.TimeoutExpired:
-                logger.error("Remotion render timed out")
-                write_project_log(project, "step8_remotion_render_timeout", timeout_sec=STEP8_RENDER_TIMEOUT_SEC)
-                raise RuntimeError("视频渲染超时")
-
-            if render_res.returncode != 0:
-                logger.error(f"Remotion render failed: {render_res.stderr}")
-                write_project_log(
-                    project,
-                    "step8_remotion_render_error",
-                    returncode=render_res.returncode,
-                    stdout=(render_res.stdout or "")[-4000:],
-                    stderr=(render_res.stderr or "")[-4000:],
-                )
-                raise RuntimeError(f"视频渲染失败: {render_res.stderr}")
-            write_project_log(
-                project,
-                "step8_remotion_render_success",
-                elapsed_sec=round(time.time() - render_started, 3),
-                stdout=(render_res.stdout or "")[-4000:],
-            )
-
-            _set_render_task_stage(task_id, "validating_color")
-            normalize_video_color_metadata(output_mp4_path, project)
-            color_validator = os.path.join(REPO_ROOT, "scripts", "validate_render_color.py")
-            color_result = subprocess.run(
-                [
-                    sys.executable,
-                    color_validator,
-                    "--video",
-                    output_mp4_path,
-                    "--run-dir",
-                    project.run_dir,
-                ],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-            )
-            if color_result.returncode != 0:
-                if os.path.exists(output_mp4_path):
-                    os.remove(output_mp4_path)
-                logger.error("Rendered video color validation failed: %s", color_result.stderr)
-                raise RuntimeError(f"视频颜色校验失败，已阻止输出: {color_result.stderr}")
-
-            _set_render_task_stage(task_id, "finalizing")
-            render_fingerprint = current_render_input_fingerprint(project)
-            write_json_atomic(
-                video_metadata_path(output_mp4_path),
-                {
-                    "rendered_at": datetime.now().isoformat(timespec="seconds"),
-                    "reveal_pipeline_version": REVEAL_PIPELINE_VERSION,
-                    "video_background": read_project_visual_settings(project)["video_background"],
-                    "subtitle_style": read_project_visual_settings(project)["subtitle_style"],
-                    "manifest": "reveal_manifest.json",
-                    "input_fingerprint": render_fingerprint,
-                    "color_standard": "bt709_tv_yuv420p",
-                    "color_validation": json.loads(color_result.stdout),
-                },
-            )
-            shutil.copy2(output_mp4_path, legacy_output_path)
-
-            handle_step_navigation(project, 8, db)
-            video = video_item(project, output_mp4_path)
-            videos = list_video_items(project, project_id)
-            _set_render_task_status(
-                task_id,
-                "success",
-                video=video,
-                videos=videos,
-                output_filename=video.get("filename") or output_filename,
-            )
-        except Exception as e:
-            logger.exception("Async render failed for project %s", project_id)
-            _set_render_task_status(task_id, "error", error=str(e))
-    finally:
-        db.close()
-        project_lock.release()
-
-
-@app.post("/api/projects/{project_id}/steps/8/render")
-def render_video(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-
-    # 前置校验保持同步，让用户立即看到错误。
-    slide_ids = read_contract_slide_ids(project.run_dir)
-    provenance_errors = validate_visual_provenance_set(project.run_dir, slide_ids)
-    if provenance_errors:
-        details = ", ".join(f"{item['slide_id']}({item['reason']})" for item in provenance_errors)
-        raise HTTPException(status_code=409, detail=f"图片来源校验未通过，请返回图片步骤处理: {details}")
-    audio_confirmation = tts_confirmation_status(project.run_dir, slide_ids)
-    if not audio_confirmation.get("confirmed"):
-        raise HTTPException(status_code=400, detail="请先在“旁白与音频”步骤试听并确认音频，再开始视频渲染。")
-
-    # 防止同一项目并发渲染：尝试非阻塞获取项目锁。
-    project_lock = _get_project_render_lock(project_id)
-    if not project_lock.acquire(blocking=False):
-        active = _active_render_task_for_project(project_id)
-        if active:
-            return {
-                "success": True,
-                "task_id": active["task_id"],
-                "status": "rendering",
-                "stage": active.get("stage", "rendering"),
-                "stage_label": _RENDER_STAGE_LABELS.get(active.get("stage", ""), ""),
-                "elapsed_sec": round(time.time() - active["started_at"], 1),
-                "message": "已有渲染任务进行中",
-            }
-        raise HTTPException(status_code=409, detail="该项目已有渲染任务进行中，请等待完成或刷新页面查看状态。")
-
-    # 防御性检查：理论上锁已防止并发，但仍检查是否有遗留的 rendering 任务。
-    active = _active_render_task_for_project(project_id)
-    if active:
-        project_lock.release()
-        return {
-            "success": True,
-            "task_id": active["task_id"],
-            "status": "rendering",
-            "stage": active.get("stage", "rendering"),
-            "stage_label": _RENDER_STAGE_LABELS.get(active.get("stage", ""), ""),
-            "elapsed_sec": round(time.time() - active["started_at"], 1),
-            "message": "已有渲染任务进行中",
-        }
-
-    task_id = uuid.uuid4().hex
-    with _RENDER_TASKS_LOCK:
-        _RENDER_TASKS[task_id] = {
-            "task_id": task_id,
-            "project_id": project_id,
-            "status": "rendering",
-            "stage": "validating",
-            "stage_label": _RENDER_STAGE_LABELS.get("validating", ""),
-            "started_at": time.time(),
-            "finished_at": None,
-            "elapsed_sec": 0.0,
-            "error": None,
-            "video": None,
-            "videos": None,
-            "output_filename": None,
-        }
-
-    thread = threading.Thread(
-        target=_render_video_worker,
-        args=(project_id, task_id),
-        name=f"render-{project_id}-{task_id[:8]}",
-        daemon=True,
-    )
-    thread.start()
-    # 注意：project_lock 由 _render_video_worker 在 finally 中释放。
-
-    return {
-        "success": True,
-        "task_id": task_id,
-        "status": "rendering",
-        "stage": "validating",
-        "stage_label": _RENDER_STAGE_LABELS.get("validating", ""),
-        "elapsed_sec": 0.0,
-        "message": "渲染已启动，请轮询 render-status 接口",
-    }
-
-
-@app.get("/api/projects/{project_id}/steps/8/render-status")
-def get_render_status(
-    project_id: str,
-    task_id: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
-):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-
-    task = None
-    with _RENDER_TASKS_LOCK:
-        if task_id:
-            task = _RENDER_TASKS.get(task_id)
-            if task is not None and task["project_id"] != project_id:
-                task = None
-        else:
-            # 没传 task_id 就找该项目最新的任务
-            candidates = [t for t in _RENDER_TASKS.values() if t["project_id"] == project_id]
-            if candidates:
-                task = max(candidates, key=lambda x: x["started_at"])
-
-    if task is None:
-        # 没有渲染任务记录，返回 idle 状态 + 当前视频列表
-        return {
-            "success": True,
-            "status": "idle",
-            "task_id": None,
-            "stage": None,
-            "stage_label": "",
-            "elapsed_sec": 0.0,
-            "error": None,
-            "video": None,
-            "videos": list_video_items(project, project_id),
-        }
-
-    elapsed = round(time.time() - task["started_at"], 1) if task["status"] == "rendering" else task.get("elapsed_sec", 0.0)
-    return {
-        "success": True,
-        "task_id": task["task_id"],
-        "status": task["status"],
-        "stage": task.get("stage"),
-        "stage_label": _RENDER_STAGE_LABELS.get(task.get("stage") or "", ""),
-        "started_at": task["started_at"],
-        "finished_at": task.get("finished_at"),
-        "elapsed_sec": elapsed,
-        "error": task.get("error"),
-        "video": task.get("video"),
-        "videos": task.get("videos") or list_video_items(project, project_id),
-    }
-
-
-@app.get("/api/projects/{project_id}/videos")
-def list_project_videos(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    return {"success": True, "videos": list_video_items(project, project_id)}
-
-@app.get("/api/projects/{project_id}/videos/{filename}")
-def get_project_video(project_id: str, filename: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    video_path = project_video_file_or_400(project, filename)
-    if not os.path.exists(video_path):
-        raise HTTPException(status_code=404, detail="视频文件不存在")
-    return FileResponse(video_path, media_type="video/mp4", filename=filename)
-
-
-@app.post("/api/projects/{project_id}/videos/{filename}/speed")
-def create_speed_adjusted_video(
-    project_id: str,
-    filename: str,
-    payload: Dict[str, Any],
-    db: Session = Depends(get_db),
-):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    requested_path = project_video_file_or_400(project, filename)
-    safe_name = filename
-    try:
-        speed = round(float(payload.get("speed", 1.0)), 2)
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail="视频语速必须是数字")
-    if speed < 0.5 or speed > 2.0:
-        raise HTTPException(status_code=400, detail="视频语速范围为 0.5× 到 2.0×")
-
-    if not os.path.exists(requested_path):
-        raise HTTPException(status_code=404, detail="视频文件不存在")
-    requested_metadata = read_video_metadata(requested_path)
-    source_name = os.path.basename(str(requested_metadata.get("source_filename") or safe_name))
-    try:
-        source_path = str(storage_video_file(project.run_dir, source_name))
-    except UnsafeProjectPath:
-        source_name, source_path = safe_name, requested_path
-    if not os.path.exists(source_path):
-        source_name, source_path = safe_name, requested_path
-    if abs(speed - 1.0) <= 0.001:
-        return {"success": True, "video": video_item(project, source_path), "videos": list_video_items(project, project_id)}
-
-    ffmpeg = resolve_media_tool("ffmpeg")
-    if not ffmpeg:
-        raise HTTPException(status_code=500, detail="未找到 FFmpeg，无法生成调速视频")
-    speed_tag = f"{speed:.2f}".rstrip("0").rstrip(".").replace(".", "_")
-    source_stem = os.path.splitext(source_name)[0]
-    output_name = f"{source_stem}_speed_{speed_tag}x.mp4"
-    output_path = str(storage_video_file(project.run_dir, output_name))
-    temp_path = output_path + ".tmp.mp4"
-    if os.path.exists(temp_path):
-        os.remove(temp_path)
-    command = [
-        ffmpeg,
-        "-y",
-        "-i",
-        source_path,
-        "-filter:v",
-        f"setpts=PTS/{speed}",
-        "-filter:a",
-        f"atempo={speed}",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "medium",
-        "-crf",
-        "18",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "192k",
-        "-pix_fmt",
-        "yuv420p",
-        "-movflags",
-        "+faststart",
-        temp_path,
-    ]
-    try:
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=STEP8_RENDER_TIMEOUT_SEC,
-        )
-    except subprocess.TimeoutExpired as exc:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-        raise HTTPException(status_code=504, detail="生成调速视频超时") from exc
-    if result.returncode != 0 or not os.path.exists(temp_path):
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-        raise HTTPException(status_code=500, detail=f"生成调速视频失败：{result.stderr[-800:]}")
-    os.replace(temp_path, output_path)
-    source_metadata = read_video_metadata(source_path)
-    source_metadata.update({
-        "rendered_at": datetime.now().isoformat(timespec="seconds"),
-        "playback_rate": speed,
-        "source_filename": source_name,
-        "speed_adjustment": "ffmpeg_setpts_atempo",
-    })
-    write_json_atomic(video_metadata_path(output_path), source_metadata)
-    item = video_item(project, output_path)
-    return {"success": True, "video": item, "videos": list_video_items(project, project_id)}
-
-
-@app.delete("/api/projects/{project_id}/videos/{filename}")
-def delete_project_video(project_id: str, filename: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-
-    safe_name = filename
-    if safe_name == "out.mp4":
-        video_path = project_legacy_video_file(project)
-    else:
-        video_path = project_video_file_or_400(project, safe_name)
-    if not os.path.exists(video_path):
-        raise HTTPException(status_code=404, detail="视频文件不存在")
-    os.remove(video_path)
-    metadata_path = video_metadata_path(video_path)
-    if os.path.exists(metadata_path):
-        os.remove(metadata_path)
-
-    remaining = list_video_items(project, project_id)
-    legacy_path = project_legacy_video_file(project)
-    regular_remaining = [
-        item for item in remaining
-        if item.get("filename") != "out.mp4"
-        and os.path.exists(project_video_file_or_400(project, item["filename"]))
-    ]
-    if regular_remaining:
-        newest_path = project_video_file_or_400(project, regular_remaining[0]["filename"])
-        shutil.copy2(newest_path, legacy_path)
-    elif os.path.exists(legacy_path):
-        os.remove(legacy_path)
-    return {"success": True, "videos": list_video_items(project, project_id)}
-
-# 获取最终生成的 MP4 视频
-@app.get("/api/projects/{project_id}/video/status")
-def get_final_video_status(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-
-    video_path = os.path.join(project.run_dir, "out.mp4")
-    exists = os.path.exists(video_path)
-    video_mtime = os.path.getmtime(video_path) if exists else 0
-    latest_input_mtime = 0
-    latest_input_path = None
-
-    input_candidates = [
-        os.path.join(project.run_dir, "reveal_manifest.json"),
-        os.path.join(project.run_dir, "planning", "visual_contract.json"),
-    ]
-    slides_dir = os.path.join(project.run_dir, "slides")
-    if os.path.isdir(slides_dir):
-        for root, _, files in os.walk(slides_dir):
-            for filename in files:
-                if filename.lower().endswith((".json", ".mp3", ".srt", ".png", ".jpg", ".jpeg")):
-                    input_candidates.append(os.path.join(root, filename))
-
-    for path in input_candidates:
-        if not os.path.exists(path):
-            continue
-        mtime = os.path.getmtime(path)
-        if mtime > latest_input_mtime:
-            latest_input_mtime = mtime
-            latest_input_path = path
-
-    stale = bool(exists and latest_input_mtime > video_mtime + 1)
-    return {
-        "exists": exists,
-        "video_url": f"/api/projects/{project_id}/video" if exists else None,
-        "size": os.path.getsize(video_path) if exists else 0,
-        "updated_at": datetime.fromtimestamp(video_mtime).isoformat(timespec="seconds") if exists else None,
-        "stale": stale,
-        "latest_input_updated_at": datetime.fromtimestamp(latest_input_mtime).isoformat(timespec="seconds") if latest_input_mtime else None,
-        "latest_input_path": latest_input_path,
-    }
-
-@app.get("/api/projects/{project_id}/video")
-def get_final_video(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-        
-    video_path = os.path.join(project.run_dir, "out.mp4")
-    if not os.path.exists(video_path):
-        items = list_video_items(project, project_id)
-        if items:
-            video_path = os.path.join(project.run_dir, "videos", items[0]["filename"])
-    if not os.path.exists(video_path):
-        raise HTTPException(status_code=404, detail="最终视频尚未渲染生成")
-    return FileResponse(video_path, media_type="video/mp4")
+# Step 8 video rendering is source-owned by video_render_service.py and video_routes.py.
 
 # ==================== 前端托管 ====================
 
@@ -8576,45 +5132,237 @@ static_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "static"))
 os.makedirs(static_dir, exist_ok=True)
 
 try:
-    import one_click_orchestrator
+    from database import SessionLocal as VideoSessionLocal
+    from remotion_runner import (
+        RemotionRunner,
+        RemotionRunnerDependencies,
+    )
+    from video_artifact_service import (
+        VideoArtifactDependencies,
+        VideoArtifactService,
+    )
+    from video_contracts import VideoRenderConfig
+    from video_render_service import (
+        VideoRenderDependencies,
+        configure_video_render_service,
+    )
+    from video_routes import router as video_router
 
-    if one_click_orchestrator._register(sys.modules[__name__]) is not True:
-        raise RuntimeError("one-click route dependencies are incomplete")
+    video_render_config = VideoRenderConfig(
+        repo_root=Path(REPO_ROOT),
+        runs_root=Path(RUNS_DIR),
+        pipeline_version=REVEAL_PIPELINE_VERSION,
+        reveal_visual_lead_sec=REVEAL_VISUAL_LEAD_SEC,
+        bind_timeout_sec=STEP7_BIND_TIMEOUT_SEC,
+        build_props_timeout_sec=STEP8_BUILD_PROPS_TIMEOUT_SEC,
+        npm_install_timeout_sec=STEP8_NPM_INSTALL_TIMEOUT_SEC,
+        render_timeout_sec=STEP8_RENDER_TIMEOUT_SEC,
+        color_process_timeout_sec=STEP8_COLOR_PROCESS_TIMEOUT_SEC,
+    )
+    video_artifact_service = VideoArtifactService(
+        VideoArtifactDependencies(
+            runs_root=video_render_config.runs_root,
+            pipeline_version=video_render_config.pipeline_version,
+            render_timeout_sec=video_render_config.render_timeout_sec,
+            read_visual_settings=read_project_visual_settings,
+            normalize_color=normalize_hex_color,
+            normalize_subtitle_style=normalize_subtitle_style,
+            resolve_media_tool=lambda name: shared_resolve_media_tool(
+                name,
+                repo_root=Path(REPO_ROOT),
+            ),
+        )
+    )
+    remotion_runner = RemotionRunner(
+        RemotionRunnerDependencies(
+            config=video_render_config,
+            build_reveal_assets=build_current_reveal_assets,
+            write_project_log=write_project_log,
+            run_subprocess_bounded=run_subprocess_bounded,
+            resolve_media_tool=lambda name: shared_resolve_media_tool(
+                name,
+                repo_root=Path(REPO_ROOT),
+            ),
+        )
+    )
+    video_render_service = configure_video_render_service(
+        VideoRenderDependencies(
+            session_factory=VideoSessionLocal,
+            artifact_service=video_artifact_service,
+            remotion_runner=remotion_runner,
+            config=video_render_config,
+        )
+    )
+    app.include_router(video_router)
+except Exception as exc:
+    logger.exception(
+        "Explicit video render route registration failed: %s",
+        exc,
+    )
+    raise
+
+try:
+    from database import SessionLocal as OneClickSessionLocal
+    from one_click_orchestrator import (
+        OneClickDependencies,
+        configure_one_click_dependencies,
+    )
+    from one_click_routes import router as one_click_router
+    from pipeline_services import (
+        ImagePipelineOperations,
+        MaskPipelineOperations,
+        MediaPipelineOperations,
+        NarrationPipelineOperations,
+        PipelineOperations,
+        ProjectPipelineServices,
+        StoryboardPipelineOperations,
+    )
+
+    pipeline_operations = PipelineOperations(
+        storyboard=StoryboardPipelineOperations(
+            script_plan=execute_step2_script_plan,
+            visual_plan=execute_step2_visual_plan,
+            compose_contract=compose_step2_visual_contract,
+        ),
+        images=ImagePipelineOperations(
+            slide_prompts=get_slide_prompts,
+            generate_slide_image=generate_slide_image,
+            confirm_images=confirm_images,
+        ),
+        mask=MaskPipelineOperations(
+            get_result=get_step5_result,
+            repair_result=repair_step5_result,
+            update_result=update_step5_result,
+        ),
+        narration=NarrationPipelineOperations(
+            get_result=get_step6_result,
+            repair_result=repair_step6_result,
+            initialize=init_step6_narration,
+            annotate=annotate_step6_narration,
+            update_result=update_step6_result,
+        ),
+        media=MediaPipelineOperations(
+            synthesize_audio=synthesize_tts_resumable,
+            confirm_audio=confirm_tts_audio,
+            render_video=lambda project_id, db: (
+                video_render_service.start_render(db, project_id)
+            ),
+        ),
+    )
+
+    configure_one_click_dependencies(
+        OneClickDependencies(
+            session_factory=OneClickSessionLocal,
+            project_model=Project,
+            get_setting=get_setting,
+            resolve_media_tool=lambda name: shared_resolve_media_tool(
+                name,
+                repo_root=Path(REPO_ROOT),
+            ),
+            repo_root=Path(REPO_ROOT),
+            read_project_article_source=read_project_article_source,
+            write_project_log=write_project_log,
+            pipeline_service_factory=lambda db, project_id: ProjectPipelineServices(
+                pipeline_operations,
+                db,
+                project_id,
+            ),
+        )
+    )
+    app.include_router(one_click_router)
 except Exception as exc:
     logger.exception("Explicit one-click route registration failed: %s", exc)
     raise
 
 try:
-    import diagnostics_routes
+    from diagnostics_routes import router as diagnostics_router
 
-    if diagnostics_routes._register(sys.modules[__name__]) is not True:
-        raise RuntimeError("diagnostics route dependencies are incomplete")
+    app.include_router(diagnostics_router)
 except Exception as exc:
     logger.exception("Explicit diagnostics route registration failed: %s", exc)
     raise
 
 try:
-    import storyboard_background
+    from storyboard_background import router as storyboard_background_router
 
-    if storyboard_background._register(sys.modules[__name__]) is not True:
-        raise RuntimeError("storyboard background route dependencies are incomplete")
+    app.include_router(storyboard_background_router)
 except Exception as exc:
     logger.exception("Explicit storyboard background route registration failed: %s", exc)
     raise
 
 try:
-    from project_style_routes import register_project_style_routes
+    from project_style_context import (
+        ProjectStyleDependencies,
+        configure_project_style_context,
+    )
+    from project_style_routes import router as project_style_router
 
-    register_project_style_routes(sys.modules[__name__])
+    configure_project_style_context(
+        ProjectStyleDependencies(
+            get_setting=get_setting,
+            update_settings=update_settings,
+            get_openai_client=get_openai_client,
+            generate_image_response=generate_image_response,
+            extract_image_bytes_from_response=extract_image_bytes_from_response,
+            process_and_save_image=process_and_save_image,
+            write_project_log=write_project_log,
+            build_image_style_prompt=build_image_style_prompt,
+            read_style_tokens_data=read_style_tokens_data,
+            compose_step3_single_slide_prompt=compose_step3_single_slide_prompt,
+            read_step3_image_system_content=read_step3_image_system_content,
+            compact_slide_element_lines=compact_slide_element_lines,
+            is_seedream_image_model=is_seedream_image_model,
+            http_exception=HTTPException,
+            image_class=Image,
+            data_dir=Path(DATA_DIR),
+            repo_root=Path(REPO_ROOT),
+            handdrawn_style_tokens_path=Path(HANDDRAWN_STYLE_TOKENS_PATH),
+        )
+    )
+    app.include_router(project_style_router)
 except Exception as exc:
     logger.exception("Explicit project style route registration failed: %s", exc)
     raise
 
 try:
-    import runtime_ai_mask
+    from database import SessionLocal as PptxSessionLocal
+    from pptx_routes import router as pptx_router
+    from pptx_service import (
+        PptxServiceDependencies,
+        configure_pptx_export_service,
+    )
 
-    if runtime_ai_mask._register(sys.modules[__name__]) is not True:
-        raise RuntimeError("AI Mask route dependencies are incomplete")
+    configure_pptx_export_service(
+        PptxServiceDependencies(
+            session_factory=PptxSessionLocal,
+            runs_root=Path(RUNS_DIR),
+        )
+    )
+    app.include_router(pptx_router)
+except Exception as exc:
+    logger.exception("Explicit PPTX export route registration failed: %s", exc)
+    raise
+
+try:
+    from ai_mask_routes import router as ai_mask_router
+    from ai_mask_semantic_matcher import semantic_vision_matcher
+    from ai_mask_service import AiMaskDependencies, configure_ai_mask_task_service
+
+    configure_ai_mask_task_service(
+        AiMaskDependencies(
+            get_setting=get_setting,
+            get_openai_client=get_openai_client,
+            reveal_lock_for=reveal_lock_for,
+            write_project_log=write_project_log,
+            read_style_tokens_data=read_style_tokens_data,
+            step2_llm_vendor_options=step2_llm_vendor_options,
+            clean_json_markdown=clean_json_markdown,
+            is_timeout_exception=is_timeout_exception,
+            vision_matcher=semantic_vision_matcher,
+            logger=logger,
+        )
+    )
+    app.include_router(ai_mask_router)
 except Exception as exc:
     logger.exception("Explicit AI Mask route registration failed: %s", exc)
     raise

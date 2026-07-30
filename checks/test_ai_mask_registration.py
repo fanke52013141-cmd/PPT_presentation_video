@@ -26,9 +26,18 @@ def test_ai_mask_routes_are_explicit_and_unique() -> None:
 
 def test_ai_mask_no_longer_auto_installs() -> None:
     assert not (ROOT / "runtime_bootstrap.py").exists()
-    source = (ROOT / "runtime_ai_mask.py").read_text(encoding="utf-8").rstrip()
-    assert "def _install_when_ready" not in source
-    assert "def _candidate_modules" not in source
+    assert not (ROOT / "runtime_ai_mask.py").exists()
+    assert not (ROOT / "runtime_ai_mask_semantic_patch.py").exists()
+    source = (ROOT / "server.py").read_text(encoding="utf-8")
+    assert "app.include_router(ai_mask_router)" in source
+    assert "vision_matcher=semantic_vision_matcher" in source
+    assert "runtime_ai_mask._register" not in source
+    assert "def _register(" not in (ROOT / "ai_mask_routes.py").read_text(encoding="utf-8")
+    matcher_source = (ROOT / "ai_mask_semantic_matcher.py").read_text(
+        encoding="utf-8"
+    )
+    assert "def install(" not in matcher_source
+    assert "ai_mask_engine._vision_match =" not in matcher_source
 
 
 if __name__ == "__main__":

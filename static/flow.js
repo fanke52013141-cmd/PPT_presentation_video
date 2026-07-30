@@ -39,7 +39,7 @@
     }),
     Object.freeze({
       step: 8,
-      label: '视频合成',
+      label: '作品输出',
       relevantSteps: Object.freeze([8]),
       completionSteps: Object.freeze([8])
     })

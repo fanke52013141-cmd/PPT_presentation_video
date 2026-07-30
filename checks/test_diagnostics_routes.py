@@ -22,7 +22,7 @@ def test_diagnostics_route_is_explicit_and_unique() -> None:
 
 
 def test_diagnostics_payload_reports_current_bootstrap() -> None:
-    payload = diagnostics_routes._diagnostics_payload(server)
+    payload = diagnostics_routes._diagnostics_payload(server.app)
     assert payload["success"] is True
     assert payload["runtime_bootstrap_loaded"] is False
     assert payload["registration_mode"] == "explicit_source"
@@ -31,6 +31,7 @@ def test_diagnostics_payload_reports_current_bootstrap() -> None:
     module_names = {item["name"] for item in payload["runtime_modules"]}
     assert "runtime_diagnostics" not in module_names
     assert "runtime_one_click_orchestrator" not in module_names
+    assert not hasattr(diagnostics_routes, "_register")
 
 
 if __name__ == "__main__":

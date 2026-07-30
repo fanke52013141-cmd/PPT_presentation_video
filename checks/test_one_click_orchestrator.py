@@ -9,7 +9,7 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import runtime_ai_mask as ai_mask
+import ai_mask_engine as ai_mask
 import one_click_orchestrator as one_click
 import server
 
@@ -127,7 +127,7 @@ def test_one_click_uses_safe_mask_and_audio_modes() -> None:
     assert '"overwrite_existing_ai_mask": True' in source
     assert '"skip_locked_groups": True' in source
     assert '"confirmation_mode": "automatic_technical"' in services_source
-    assert "ProjectPipelineServices" in source
+    assert "pipeline_service_factory" in source
     assert "services.narration" in source
     assert "services.save_narration" in source
     assert "TestClient" not in source
@@ -156,7 +156,7 @@ def test_preflight_migrates_legacy_article_before_checking_source() -> None:
             read_project_article_source=migrate_article,
             get_setting=lambda _key: "configured",
             resolve_media_tool=lambda _name: "available",
-            REPO_ROOT=str(ROOT),
+            repo_root=ROOT,
         )
 
         errors = one_click._preflight_errors(module, project)
@@ -172,8 +172,14 @@ def test_one_click_routes_are_explicit_and_unique() -> None:
     ]
     assert route_methods.count(("/api/projects/{project_id}/one-click-generate", frozenset({"POST"}))) == 1
     assert route_methods.count(("/api/projects/{project_id}/one-click-generate/status", frozenset({"GET"}))) == 1
+    assert not hasattr(one_click, "_register")
+    assert not hasattr(one_click, "PATCH_MARKER")
     assert not hasattr(one_click, "_install_when_ready")
     assert not hasattr(one_click, "_candidate_modules")
+    dependencies = one_click.get_one_click_dependencies()
+    assert dependencies.project_model is server.Project
+    assert not hasattr(dependencies, "app")
+    assert not hasattr(dependencies, "server_module")
 
 
 if __name__ == "__main__":

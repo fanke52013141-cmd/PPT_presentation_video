@@ -13,14 +13,18 @@ if str(ROOT) not in sys.path:
 from scripts.build_reveal_scene import build_event  # noqa: E402
 from scripts.pipeline_profiles import normalize_reveal_action, role_catalog  # noqa: E402
 import server as server_module  # noqa: E402
+import storyboard_service as storyboard_module  # noqa: E402
 from server import (  # noqa: E402
     OPEN_SOURCE_CHINESE_FONTS,
-    apply_storyboard_profile_patch,
     image_style_template_detail,
-    list_storyboard_templates,
     merge_image_style_update,
-    parse_storyboard_profile_text,
     read_style_tokens_data,
+)
+from storyboard_service import (  # noqa: E402
+    apply_storyboard_profile_patch,
+    list_storyboard_templates,
+    parse_storyboard_profile_text,
+    sanitize_storyboard_profile,
     storyboard_profile_editor_data,
 )
 
@@ -40,7 +44,7 @@ def main() -> None:
     assert patched["storyboard"]["slide_count"]["short_article"] == "5-7"
     assert "subtitle" not in role_catalog(patched)
 
-    migrated = server_module.sanitize_storyboard_profile(
+    migrated = sanitize_storyboard_profile(
         {
             "storyboard": {
                 "roles": {
@@ -177,7 +181,8 @@ def main() -> None:
     assert 'id="step2-slide-title-input"' in html
     assert 'id="step2-slide-subtitle-input"' not in html
     assert 'id="step2-slide-narration-input"' in html
-    assert 'id="step2-slide-narration-input" class="step2-soft-input" rows="5" readonly' in html
+    assert 'id="step2-slide-narration-input" class="step2-soft-input" rows="5"' in html
+    assert 'id="step2-slide-narration-input" class="step2-soft-input" rows="5" readonly' not in html
     assert 'style_reference_manager_extension.js' in html
     assert 'id="modal-step2-generate"' in html
     assert 'id="step2-generation-requirement"' in html
@@ -209,8 +214,8 @@ def main() -> None:
         "image-style/ai-draft",
     ]:
         assert removed_token not in app_js
-    assert "不输出 `body_points`" in step2_visual_prompt
-    assert "按语义把整页 `narration` 切成" in step2_visual_prompt
+    assert "不输出副标题、`body_points`" in step2_visual_prompt
+    assert "先按语义切分整页 `narration`" in step2_visual_prompt
     assert "Text/Picture" not in step2_visual_prompt or "visual_type" in step2_visual_prompt
     assert "handleStep2MapEditorInput" in app_js
     assert "handleStep2MapEditorChange" in app_js
@@ -232,10 +237,12 @@ def main() -> None:
     font_keys = {font["key"] for font in OPEN_SOURCE_CHINESE_FONTS}
     assert {"lxgw_marker_gothic", "lxgw_wenkai_tc", "noto_sans_tc", "noto_serif_tc"} <= font_keys
 
+    original_storyboard_path = (
+        storyboard_module.STORYBOARD_TEMPLATES_PATH
+    )
     original_paths = {
         key: getattr(server_module, key)
         for key in (
-            "STORYBOARD_TEMPLATES_PATH",
             "STYLE_TOKENS_PATH",
             "STYLE_REFERENCE_DIR",
             "IMAGE_STYLE_TEMPLATES_DIR",
@@ -245,12 +252,17 @@ def main() -> None:
     try:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)
-            server_module.STORYBOARD_TEMPLATES_PATH = str(temp_root / "storyboard_templates.json")
-            saved_storyboard = server_module.save_storyboard_template(
+            storyboard_module.STORYBOARD_TEMPLATES_PATH = str(
+                temp_root / "storyboard_templates.json"
+            )
+            saved_storyboard = storyboard_module.save_storyboard_template(
                 {
                     "name": "回归分镜模板",
-                    "rules": server_module.default_storyboard_rules(),
-                    "profile_yaml": server_module.default_storyboard_profile_text(),
+                    "rules": storyboard_module.default_storyboard_rules(),
+                    "profile_yaml": (
+                        storyboard_module
+                        .default_storyboard_profile_text()
+                    ),
                     "profile_patch": {},
                 }
             )
@@ -264,6 +276,9 @@ def main() -> None:
             saved_image = server_module.save_image_style_template({"name": "回归图片模板"})
             assert saved_image["template"]["references"]["template"]["exists"]
     finally:
+        storyboard_module.STORYBOARD_TEMPLATES_PATH = (
+            original_storyboard_path
+        )
         for key, value in original_paths.items():
             setattr(server_module, key, value)
 

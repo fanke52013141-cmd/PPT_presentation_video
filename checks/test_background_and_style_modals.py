@@ -6,7 +6,10 @@ BACKGROUND_UI = (ROOT / "static" / "storyboard_background_extension.js").read_te
 STYLE_UI = (ROOT / "static" / "style_reference_manager_extension.js").read_text(encoding="utf-8")
 STYLE_CSS = (ROOT / "static" / "style.css").read_text(encoding="utf-8")
 BACKGROUND_RUNTIME = (ROOT / "storyboard_background.py").read_text(encoding="utf-8")
-STYLE_RUNTIME = (ROOT / "runtime_step3_image_style.py").read_text(encoding="utf-8")
+STYLE_RUNTIME = (
+    (ROOT / "project_style_routes.py").read_text(encoding="utf-8")
+    + (ROOT / "project_style_template_service.py").read_text(encoding="utf-8")
+)
 
 
 def test_background_modal_has_image_and_solid_modes():

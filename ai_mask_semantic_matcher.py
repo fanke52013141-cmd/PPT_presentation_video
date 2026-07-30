@@ -1,9 +1,4 @@
-"""Runtime patch: semantic-object AI Mask matching.
-
-The base bridge still owns exact RLE detection and rendering.  This patch only
-changes the multimodal matching input from raw connected components to merged
-semantic objects, and updates the default prompt accordingly.
-"""
+"""Semantic-object multimodal matcher for AI Mask annotation."""
 
 from __future__ import annotations
 
@@ -11,19 +6,13 @@ import base64
 import io
 import json
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 from PIL import Image, ImageDraw
 
-PATCH_MARKER = "__ppt_ai_mask_semantic_object_patch__"
+import ai_mask_engine
+
 MAX_IMAGE_WIDTH = 1280
-
-RUNTIME_INPUT_CONTRACT = """
-
---- 运行时语义对象合并补充规则 ---
-当前生产路径会先把原子连通组件合并为 `semantic_objects`，再提供完整原图与逐对象切片。请以 `object_ids` 作为语义匹配主键；底层 `element_ids` 由系统自动展开，不要猜测输入中未提供的组件 ID。
-"""
 
 
 def _box(element: dict[str, Any]) -> dict[str, float] | None:
@@ -248,16 +237,6 @@ def _expand_matches(value: Any, objects: list[dict[str, Any]], elements: list[di
     result = dict(value)
     result["matches"] = matches
     return result
-
-
-def _patch_read_prompts(original: Any, server_module: ModuleType, base_module: ModuleType) -> tuple[str, str]:
-    methodology, output_structure = original(server_module)
-    if "semantic_objects" not in methodology:
-        methodology = methodology.rstrip() + RUNTIME_INPUT_CONTRACT
-    if "object_ids" not in output_structure or "semantic_objects" not in output_structure:
-        output_structure = str(base_module.DEFAULT_OUTPUT_STRUCTURE)
-    return methodology, output_structure
-
 
 
 def _obj_bounds_xyxy(obj: dict[str, Any]) -> tuple[float, float, float, float] | None:
@@ -485,8 +464,23 @@ def _crop_object_bytes(image_path: Path, obj: dict[str, Any], max_width: int = 4
         return None
 
 
-def _patched_vision_match(base_module: ModuleType):
-    def vision_match(server_module: ModuleType, project: Any, slide: dict[str, Any], elements: list[dict[str, Any]], image_path: Path, overlay_path: Path, methodology: str, output_structure: str, settings: dict[str, Any]) -> dict[str, Any] | None:
+class SemanticVisionMatcher:
+    """Match detected slide components to narrated groups by semantic object."""
+
+    def __call__(
+        self,
+        context: Any,
+        project: Any,
+        slide: dict[str, Any],
+        elements: list[dict[str, Any]],
+        image_path: Path,
+        overlay_path: Path,
+        methodology: str,
+        output_structure: str,
+        settings: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        base_module = ai_mask_engine
+        server_module = context
         api_key = server_module.get_setting("llm_api_key")
         if not api_key:
             return None
@@ -598,26 +592,6 @@ def _patched_vision_match(base_module: ModuleType):
                 client.close()
             except Exception:
                 pass
-    return vision_match
 
 
-def install() -> bool:
-    try:
-        import runtime_ai_mask as base_module
-    except Exception:
-        return False
-    if getattr(base_module, PATCH_MARKER, False):
-        return True
-    original_read = getattr(base_module, "_read_ai_mask_prompts", None)
-    if not callable(original_read) or not callable(getattr(base_module, "_vision_match", None)):
-        return False
-    # The production prompt now lives in runtime_ai_mask.py.  Keep this bridge
-    # focused on semantic-object image preparation and do not overwrite the
-    # base module's prompt contract during import.
-    base_module._read_ai_mask_prompts = lambda server_module: _patch_read_prompts(original_read, server_module, base_module)
-    base_module._vision_match = _patched_vision_match(base_module)
-    setattr(base_module, PATCH_MARKER, True)
-    return True
-
-
-install()
+semantic_vision_matcher = SemanticVisionMatcher()

@@ -7,7 +7,9 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import runtime_ai_mask as mask
+import ai_mask_engine as mask
+import ai_mask_config
+import narration_service
 import server
 from scripts import write_visual_prompts
 
@@ -34,9 +36,9 @@ assert 'data-prompt-help="narration-annotation"' in html
 assert "openStep6AnnotationPromptModal" in app
 assert "openStep3PromptSettingsModal" in app
 assert "PROMPT_IO_HELP" in app
-assert '<OutputExample>' in server.compose_narration_annotation_prompt("system", "example")
+assert '<OutputExample>' in narration_service.compose_narration_annotation_prompt("system", "example")
 assert 'id="ai-mask-full-prompt"' in mask_ui
-full_mask_prompt = mask._compose_ai_mask_full_prompt("method", "schema")
+full_mask_prompt = ai_mask_config.compose_ai_mask_full_prompt("method", "schema")
 assert "method" in full_mask_prompt and "schema" in full_mask_prompt
 assert "OUTPUT STRUCTURE / 输出结构" in full_mask_prompt
 assert "ai_mask_semantic_mapping_v3" in mask.DEFAULT_METHODOLOGY
@@ -58,7 +60,12 @@ class _LegacyAiMaskPromptStore:
         return cls.values.get(key, default)
 
 
-migrated_methodology, migrated_output = mask._read_ai_mask_prompts(_LegacyAiMaskPromptStore)
+original_get_setting = ai_mask_config.get_setting
+ai_mask_config.get_setting = _LegacyAiMaskPromptStore.get_setting
+try:
+    migrated_methodology, migrated_output = ai_mask_config.read_ai_mask_prompts()
+finally:
+    ai_mask_config.get_setting = original_get_setting
 assert "ai_mask_semantic_mapping_v3" in migrated_methodology
 assert "系统会按 object 自动展开" in migrated_output
 assert ".slide-thumbnail-card.step2-slide-thumb" in css

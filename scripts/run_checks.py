@@ -44,6 +44,7 @@ def quick_checks() -> None:
         "artifact_registry.py",
         "article_routes.py",
         "article_service.py",
+        "config_portability_service.py",
         "database.py",
         "database_migrations.py",
         "diagnostics_routes.py",
@@ -70,6 +71,8 @@ def quick_checks() -> None:
         "storyboard_routes.py",
         "storyboard_service.py",
         "server.py",
+        "settings_routes.py",
+        "settings_service.py",
         "pipeline_lifecycle.py",
         "pipeline_state.py",
         "project_storage.py",
@@ -99,6 +102,15 @@ def quick_checks() -> None:
     python_check(ROOT / "checks" / "test_source_hardening.py")
     python_check(ROOT / "checks" / "test_generalized_settings.py")
     python_check(ROOT / "checks" / "test_subtitle_style.py")
+    run([
+        sys.executable,
+        "-m",
+        "pytest",
+        "checks/test_settings_services.py",
+        "checks/test_config_export_security.py",
+        "checks/test_config_import_limits.py",
+        "-q",
+    ])
     run([
         sys.executable,
         "-m",

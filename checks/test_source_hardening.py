@@ -16,6 +16,9 @@ def main() -> None:
     video_routes = read_text("video_routes.py")
     narration_service = read_text("narration_service.py")
     mask_manifest_service = read_text("mask_manifest_service.py")
+    settings_routes = read_text("settings_routes.py")
+    settings_service = read_text("settings_service.py")
+    config_service = read_text("config_portability_service.py")
     app_js = read_text("static/app.js")
     ci = read_text(".github/workflows/ci.yml")
 
@@ -34,12 +37,16 @@ def main() -> None:
     assert "app.include_router(video_router)" in server
     assert "def _render_video_worker(" not in server
 
-    assert "def mask_sensitive_settings" in server
-    assert "return mask_sensitive_settings(get_all_settings())" in server
-    assert 'if settings.get(key) == MASKED_SETTINGS_VALUE:' in server
+    assert "def mask_sensitive_settings" in settings_service
+    assert "return mask_sensitive_settings(_deps().get_all_settings())" in settings_service
+    assert "preserve_masked_secrets(" in settings_service
     assert 'allow_origins=["*"]' not in server
     assert "configured_allowed_origins()" in server
-    assert "build_config_export_bundle(mask_sensitive_settings(get_all_settings(), force=True), contains_secrets=False)" in server
+    assert "force=True" in config_service
+    assert "app.include_router(settings_router)" in server
+    assert "router = APIRouter()" in settings_routes
+    assert '@app.get("/api/settings")' not in server
+    assert '@app.post("/api/config/import")' not in server
 
     annotation_start = narration_service.index(
         "def annotate_step6_narration("

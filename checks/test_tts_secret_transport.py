@@ -5,13 +5,13 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import server
+import tts_provider_service as provider  # noqa: E402
 
 
 def test_tts_credentials_are_not_command_line_arguments() -> None:
     api_key = "audit-api-key"
     secret_key = "audit-secret-key"
-    command = server.provider_tts_command(
+    command = provider.provider_tts_command(
         provider="minimax",
         text_file="input.txt",
         out_audio="voice.mp3",
@@ -34,9 +34,12 @@ def test_tts_credentials_are_not_command_line_arguments() -> None:
     assert api_key not in command
     assert secret_key not in command
 
-    environment = server.provider_tts_environment(api_key, secret_key)
-    assert environment[server.TTS_API_KEY_ENV] == api_key
-    assert environment[server.TTS_SECRET_KEY_ENV] == secret_key
+    environment = provider.provider_tts_environment(
+        api_key,
+        secret_key,
+    )
+    assert environment[provider.TTS_API_KEY_ENV] == api_key
+    assert environment[provider.TTS_SECRET_KEY_ENV] == secret_key
 
 
 def test_minimax_adapter_does_not_forward_key_on_command_line() -> None:

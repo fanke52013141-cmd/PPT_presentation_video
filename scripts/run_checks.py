@@ -83,6 +83,7 @@ def quick_checks() -> None:
         "step3_image_style_service.py",
         "reveal_manifest_service.py",
         "tts_artifacts.py",
+        "tts_provider_service.py",
         "tts_routes.py",
         "tts_service.py",
         "visual_provenance.py",
@@ -103,6 +104,14 @@ def quick_checks() -> None:
     python_check(ROOT / "checks" / "test_source_hardening.py")
     python_check(ROOT / "checks" / "test_generalized_settings.py")
     python_check(ROOT / "checks" / "test_subtitle_style.py")
+    run([
+        sys.executable,
+        "-m",
+        "pytest",
+        "checks/test_tts_provider_service.py",
+        "checks/test_tts_secret_transport.py",
+        "-q",
+    ])
     run([
         sys.executable,
         "-m",

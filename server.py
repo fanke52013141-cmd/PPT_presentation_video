@@ -8,7 +8,6 @@ import logging
 import subprocess
 import re
 import threading
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any
@@ -80,109 +79,22 @@ from ai_provider_service import (
     process_and_save_image,
     response_has_image_data,
 )
-
-
-def normalize_tts_provider(provider: Optional[str]) -> str:
-    value = str(provider or "minimax").strip().lower()
-    return TTS_PROVIDER_ALIASES.get(value, value or "minimax")
-
-
-def tts_provider_defaults(provider: str) -> Dict[str, str]:
-    return TTS_PROVIDER_DEFAULTS.get(provider, TTS_PROVIDER_DEFAULTS["minimax"])
-
-
-def first_non_empty(*values: Optional[str]) -> str:
-    for value in values:
-        text = str(value or "").strip()
-        if text:
-            return text
-    return ""
-
-
-def configured_tts_api_key(provider: str, explicit: Optional[str] = None) -> str:
-    defaults = tts_provider_defaults(provider)
-    return first_non_empty(
-        explicit,
-        get_setting("tts_api_key"),
-        os.environ.get(str(defaults.get("api_key_env") or "")),
-        os.environ.get("MINIMAX_API_KEY") if provider == "minimax" else "",
-    )
-
-
-def configured_tts_secret_key(provider: str, explicit: Optional[str] = None) -> str:
-    defaults = tts_provider_defaults(provider)
-    return first_non_empty(
-        explicit,
-        get_setting("tts_secret_key"),
-        os.environ.get(str(defaults.get("secret_key_env") or "")),
-    )
-
-
-def provider_tts_command(
-    *,
-    provider: str,
-    text_file: str,
-    out_audio: str,
-    out_meta: str,
-    out_srt: str,
-    out_timeline: str,
-    slide_id: str,
-    endpoint: str,
-    region: str,
-    model: str,
-    voice_id: str,
-    clone_voice_id: str,
-    provider_extra: str,
-    speed: str,
-    volume: str,
-    pitch: str,
-) -> List[str]:
-    script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "generic_tts.py"))
-    return [
-        sys.executable,
-        script,
-        "--provider",
-        provider,
-        "--text-file",
-        text_file,
-        "--out-audio",
-        out_audio,
-        "--out-meta",
-        out_meta,
-        "--out-srt",
-        out_srt,
-        "--out-timeline",
-        out_timeline,
-        "--slide-id",
-        slide_id,
-        "--endpoint",
-        endpoint,
-        "--region",
-        region,
-        "--model",
-        model,
-        "--voice-id",
-        voice_id,
-        "--clone-voice-id",
-        clone_voice_id,
-        "--provider-extra",
-        provider_extra,
-        "--speed",
-        speed,
-        "--volume",
-        volume,
-        "--pitch",
-        pitch,
-        "--timeout",
-        str(STEP7_TTS_TIMEOUT_SEC),
-    ]
-
-
-def provider_tts_environment(api_key: str, secret_key: str) -> Dict[str, str]:
-    environment = os.environ.copy()
-    environment[TTS_API_KEY_ENV] = str(api_key or "")
-    environment[TTS_SECRET_KEY_ENV] = str(secret_key or "")
-    return environment
+from tts_provider_service import (
+    STEP7_TTS_PROCESS_TIMEOUT_SEC,
+    TTS_API_KEY_ENV,
+    TTS_PROVIDER_DEFAULTS,
+    TTS_SECRET_KEY_ENV,
+    TtsProviderDependencies,
+    configure_tts_provider_dependencies,
+    configured_tts_api_key,
+    configured_tts_secret_key,
+    first_non_empty,
+    normalize_tts_provider,
+    provider_tts_command,
+    provider_tts_environment,
+    run_tts_command_with_retries,
+    tts_provider_defaults,
+)
 
 # 初始化日志与数据库
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -212,8 +124,6 @@ install_access_control(app)
 RUNS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "runs"))
 os.makedirs(RUNS_DIR, exist_ok=True)
 MAX_CONFIG_IMPORT_BYTES = int(os.environ.get("PPT_STUDIO_MAX_CONFIG_IMPORT_BYTES", str(25 * 1024 * 1024)))
-TTS_API_KEY_ENV = "PPT_STUDIO_TTS_API_KEY"
-TTS_SECRET_KEY_ENV = "PPT_STUDIO_TTS_SECRET_KEY"
 REPO_ROOT = os.path.abspath(os.path.dirname(__file__))
 DATA_DIR = os.path.join(REPO_ROOT, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -376,43 +286,6 @@ OPEN_SOURCE_CHINESE_FONTS = [
         "source": "LXGW WenKai",
     },
 ]
-TTS_PROVIDER_ALIASES = {
-    "doubao": "volcengine_seed",
-    "volcengine": "volcengine_seed",
-    "aliyun": "aliyun_cosyvoice",
-    "dashscope": "aliyun_cosyvoice",
-    "cosyvoice": "aliyun_cosyvoice",
-    "tencent": "tencent_tts",
-}
-TTS_PROVIDER_DEFAULTS = {
-    "minimax": {
-        "endpoint": "https://api.minimaxi.com/v1/t2a_async_v2",
-        "model": "speech-2.8-hd",
-        "voice_id": "Chinese (Mandarin)_Soft_Girl",
-        "api_key_env": "MINIMAX_API_KEY",
-    },
-    "aliyun_cosyvoice": {
-        "endpoint": "https://dashscope.aliyuncs.com/api/v1",
-        "model": "cosyvoice-v3-flash",
-        "voice_id": "longxiaochun",
-        "api_key_env": "DASHSCOPE_API_KEY",
-    },
-    "tencent_tts": {
-        "endpoint": "https://tts.tencentcloudapi.com",
-        "model": "1",
-        "voice_id": "101001",
-        "api_key_env": "TENCENTCLOUD_SECRET_ID",
-        "secret_key_env": "TENCENTCLOUD_SECRET_KEY",
-        "region": "ap-guangzhou",
-    },
-    "volcengine_seed": {
-        "endpoint": "https://openspeech.bytedance.com/api/v1/tts",
-        "model": "seed-tts-1.1",
-        "voice_id": "zh_female_qingxinnvsheng_mars_bigtts",
-        "api_key_env": "VOLCENGINE_TTS_TOKEN",
-    },
-}
-
 def reveal_lock_for(project: Project) -> threading.RLock:
     return project_artifact_lock(project.run_dir)
 
@@ -499,10 +372,6 @@ ensure_active_image_style_storage()
 STEP1_LLM_TIMEOUT_SEC = 60.0
 STEP2_LLM_TIMEOUT_SEC = 240.0
 STEP5_REVEAL_BUILD_TIMEOUT_SEC = float(os.environ.get("PPT_STUDIO_REVEAL_BUILD_TIMEOUT_SEC", "300"))
-STEP7_TTS_TIMEOUT_SEC = 300
-STEP7_TTS_PROCESS_TIMEOUT_SEC = STEP7_TTS_TIMEOUT_SEC + 90
-STEP7_TTS_RETRY_ATTEMPTS = 3
-STEP7_TTS_RETRY_BASE_DELAY_SEC = 4
 STEP7_BIND_TIMEOUT_SEC = 90
 STEP8_RENDER_TIMEOUT_SEC = 3600
 STEP8_BUILD_PROPS_TIMEOUT_SEC = 180
@@ -1724,6 +1593,12 @@ try:
         configure_settings_dependencies,
     )
 
+    configure_tts_provider_dependencies(
+        TtsProviderDependencies(
+            get_setting=get_setting,
+            write_project_log=write_project_log,
+        )
+    )
     configure_settings_dependencies(
         SettingsDependencies(
             get_all_settings=get_all_settings,
@@ -1790,14 +1665,6 @@ def project_audio_confirmed(project: Project) -> bool:
     return is_audio_confirmed(project.run_dir, read_contract_slide_ids(project.run_dir))
 
 
-def _safe_process_text(value: Any) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
-    return str(value)
-
-
 def nonempty_file(path: str) -> bool:
     return tts_nonempty_file(path)
 
@@ -1847,75 +1714,6 @@ def mark_step_retry_needed(project: Project, target_step: int, db: Session) -> N
     project.current_step = target_step
     project.set_step_status(current_status)
     db.commit()
-
-
-def run_tts_command_with_retries(
-    project: Project,
-    slide_id: str,
-    tts_args: List[str],
-    tts_env: Dict[str, str],
-) -> Dict[str, Any]:
-    last_result: Dict[str, Any] = {
-        "ok": False,
-        "returncode": None,
-        "stdout": "",
-        "stderr": "",
-        "attempts": 0,
-    }
-    for attempt in range(1, STEP7_TTS_RETRY_ATTEMPTS + 1):
-        last_result["attempts"] = attempt
-        try:
-            tts_res = subprocess.run(
-                tts_args,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=STEP7_TTS_PROCESS_TIMEOUT_SEC,
-                env=tts_env,
-            )
-            last_result.update(
-                {
-                    "returncode": tts_res.returncode,
-                    "stdout": tts_res.stdout.strip(),
-                    "stderr": tts_res.stderr.strip(),
-                }
-            )
-        except subprocess.TimeoutExpired as exc:
-            last_result.update(
-                {
-                    "returncode": 124,
-                    "stdout": _safe_process_text(exc.stdout).strip(),
-                    "stderr": f"TTS process timed out after {STEP7_TTS_PROCESS_TIMEOUT_SEC}s. "
-                    + _safe_process_text(exc.stderr).strip(),
-                }
-            )
-
-        if last_result["returncode"] == 0:
-            last_result["ok"] = True
-            return last_result
-
-        write_project_log(
-            project,
-            "step7_slide_tts_attempt_failed",
-            slide_id=slide_id,
-            attempt=attempt,
-            max_attempts=STEP7_TTS_RETRY_ATTEMPTS,
-            returncode=last_result["returncode"],
-            stdout=last_result["stdout"],
-            stderr=last_result["stderr"],
-        )
-        if attempt < STEP7_TTS_RETRY_ATTEMPTS:
-            delay = STEP7_TTS_RETRY_BASE_DELAY_SEC * attempt
-            logger.warning(
-                "TTS failed for %s on attempt %s/%s; retrying in %ss",
-                slide_id,
-                attempt,
-                STEP7_TTS_RETRY_ATTEMPTS,
-                delay,
-            )
-            time.sleep(delay)
-    return last_result
 
 
 def mark_step_in_progress(project: Project, target_step: int, db: Session):

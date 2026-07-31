@@ -21,6 +21,9 @@ def main() -> None:
     ai_provider_service = (
         ROOT / "ai_provider_service.py"
     ).read_text(encoding="utf-8")
+    tts_provider_service = (
+        ROOT / "tts_provider_service.py"
+    ).read_text(encoding="utf-8")
     pipeline = (ROOT / "pipeline_services.py").read_text(encoding="utf-8")
     pptx_routes = (ROOT / "pptx_routes.py").read_text(encoding="utf-8")
     pptx_service = (ROOT / "pptx_service.py").read_text(encoding="utf-8")
@@ -130,6 +133,18 @@ def main() -> None:
         "import server",
     ):
         assert token not in ai_provider_service, "AI provider service owns application wiring again"
+    assert "def provider_tts_command(" in tts_provider_service, "TTS command owner is incomplete"
+    assert "def run_tts_command_with_retries(" in tts_provider_service, "TTS retry owner is incomplete"
+    assert "def provider_tts_command(" not in server, "TTS command implementation returned to server"
+    assert "def run_tts_command_with_retries(" not in server, "TTS retry implementation returned to server"
+    for token in (
+        "APIRouter",
+        "Depends(",
+        "get_db",
+        "server_module",
+        "import server",
+    ):
+        assert token not in tts_provider_service, "TTS provider service owns application wiring again"
     assert "router = APIRouter()" in mask_routes, "Mask editor routes module is incomplete"
     assert "APIRouter" not in mask_manifest, "Mask Manifest service owns HTTP routing again"
     assert "APIRouter" not in mask_preview, "Mask preview service owns HTTP routing again"

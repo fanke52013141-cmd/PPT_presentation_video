@@ -20,6 +20,7 @@ def main() -> None:
     settings_service = read_text("settings_service.py")
     config_service = read_text("config_portability_service.py")
     provider_service = read_text("ai_provider_service.py")
+    tts_provider_service = read_text("tts_provider_service.py")
     app_js = read_text("static/app.js")
     ci = read_text(".github/workflows/ci.yml")
 
@@ -85,8 +86,10 @@ def main() -> None:
 
     assert 'def synthesize_tts(project_id: str' not in server
     assert 'steps/7/synthesize-legacy' not in server
-    assert "timeout=STEP7_TTS_PROCESS_TIMEOUT_SEC" in server
-    assert "except subprocess.TimeoutExpired" in server
+    assert "timeout=STEP7_TTS_PROCESS_TIMEOUT_SEC" in tts_provider_service
+    assert "except subprocess.TimeoutExpired" in tts_provider_service
+    assert "def provider_tts_command(" not in server
+    assert "def run_tts_command_with_retries(" not in server
 
     assert app_js.count("async function runStep7TTS()") == 1
 

@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT))
 os.environ.setdefault("PPT_STUDIO_DISABLE_ONE_CLICK_ORCHESTRATOR", "1")
 
 import server  # noqa: E402
+from mask_manifest_service import build_current_reveal_assets  # noqa: E402
 
 
 def main() -> int:
@@ -27,7 +28,7 @@ def main() -> int:
         project = db.query(server.Project).filter(server.Project.id == args.project_id).first()
         if project is None:
             raise SystemExit(f"Project not found: {args.project_id}")
-        server.build_current_reveal_assets(project)
+        build_current_reveal_assets(project)
         bind_script = ROOT / "scripts" / "bind_reveal_timeline.py"
         result = subprocess.run(
             [

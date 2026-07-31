@@ -46,6 +46,9 @@ def quick_checks() -> None:
         "database_migrations.py",
         "diagnostics_routes.py",
         "invalidation_service.py",
+        "mask_editor_routes.py",
+        "mask_manifest_service.py",
+        "mask_preview_service.py",
         "one_click_orchestrator.py",
         "one_click_routes.py",
         "narration_routes.py",
@@ -106,6 +109,13 @@ def quick_checks() -> None:
         "-m",
         "pytest",
         "checks/test_storyboard_routes.py",
+        "-q",
+    ])
+    run([
+        sys.executable,
+        "-m",
+        "pytest",
+        "checks/test_mask_editor_services.py",
         "-q",
     ])
     run([

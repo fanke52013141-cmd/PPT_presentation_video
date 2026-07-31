@@ -109,14 +109,14 @@ class ProjectPipelineServices:
         return get_ai_mask_task_service().annotate_project(project, settings)
 
     def mask_manifest(self) -> dict[str, Any]:
-        return self.operations.mask.get_result(self.project_id, self.db)
+        return self.operations.mask.get_result(self._project())
 
     def repair_mask_manifest(self) -> dict[str, Any]:
-        return self.operations.mask.repair_result(self.project_id, self.db)
+        return self.operations.mask.repair_result(self._project())
 
     def build_mask_assets(self, manifest: dict[str, Any]) -> dict[str, Any]:
         return self.operations.mask.update_result(
-            self.project_id,
+            self._project(),
             manifest,
             build_assets=True,
             db=self.db,

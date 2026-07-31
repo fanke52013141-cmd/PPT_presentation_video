@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 import server
+from mask_manifest_service import get_step5_result
 
 
 class _Query:
@@ -54,7 +55,7 @@ def test_project_result_gets_do_not_mutate_artifacts(tmp_path: Path) -> None:
     db = _Db(project)
 
     assert server.get_step2_result(project.id, db)["success"] is True
-    assert server.get_step5_result(project.id, db)["success"] is True
+    assert get_step5_result(project)["success"] is True
     assert server.get_step6_result(project.id, db)["success"] is True
 
     assert {path: _digest(path) for path in before} == before

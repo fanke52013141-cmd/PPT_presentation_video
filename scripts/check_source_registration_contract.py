@@ -19,6 +19,9 @@ def main() -> None:
     storyboard_service = (ROOT / "storyboard_service.py").read_text(encoding="utf-8")
     narration_routes = (ROOT / "narration_routes.py").read_text(encoding="utf-8")
     narration_service = (ROOT / "narration_service.py").read_text(encoding="utf-8")
+    mask_routes = (ROOT / "mask_editor_routes.py").read_text(encoding="utf-8")
+    mask_manifest = (ROOT / "mask_manifest_service.py").read_text(encoding="utf-8")
+    mask_preview = (ROOT / "mask_preview_service.py").read_text(encoding="utf-8")
     tts_routes = (ROOT / "tts_routes.py").read_text(encoding="utf-8")
     tts_service = (ROOT / "tts_service.py").read_text(encoding="utf-8")
     project_routes = (ROOT / "project_routes.py").read_text(encoding="utf-8")
@@ -53,6 +56,7 @@ def main() -> None:
     assert "app.include_router(global_image_style_router)" in server, "global image-style router is not explicitly registered"
     assert "app.include_router(image_workflow_router)" in server, "Step 3 image workflow router is not explicitly registered"
     assert "app.include_router(visual_settings_router)" in server, "visual settings router is not explicitly registered"
+    assert "app.include_router(mask_editor_router)" in server, "Mask editor router is not explicitly registered"
     assert "app.include_router(pptx_router)" in server, "PPTX router is not explicitly registered"
     assert "app.include_router(video_router)" in server, "video router is not explicitly registered"
     assert "one_click_orchestrator._register" not in server, "legacy one-click registration returned"
@@ -74,6 +78,13 @@ def main() -> None:
         assert "sys.modules" not in source, "narration/TTS code receives a dynamic application namespace"
     assert "APIRouter" not in narration_service, "narration service owns HTTP routing again"
     assert "APIRouter" not in tts_service, "TTS service owns HTTP routing again"
+    assert "router = APIRouter()" in mask_routes, "Mask editor routes module is incomplete"
+    assert "APIRouter" not in mask_manifest, "Mask Manifest service owns HTTP routing again"
+    assert "APIRouter" not in mask_preview, "Mask preview service owns HTTP routing again"
+    assert '@app.put("/api/projects/{project_id}/steps/5/' not in server, "Step 5 route decorators returned to server"
+    for source in (mask_routes, mask_manifest, mask_preview):
+        assert "server_module" not in source, "Mask code receives the server module again"
+        assert "import server" not in source, "Mask code imports the application module again"
     assert '@app.post("/api/projects")' not in server, "project creation route returned to server"
     assert "APIRouter" not in project_service, "project service owns HTTP routing again"
     assert "router = APIRouter()" in project_routes, "project routes module is incomplete"

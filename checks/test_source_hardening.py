@@ -15,6 +15,7 @@ def main() -> None:
     video_artifacts = read_text("video_artifact_service.py")
     video_routes = read_text("video_routes.py")
     narration_service = read_text("narration_service.py")
+    mask_manifest_service = read_text("mask_manifest_service.py")
     app_js = read_text("static/app.js")
     ci = read_text(".github/workflows/ci.yml")
 
@@ -61,12 +62,12 @@ def main() -> None:
     assert '"input_fingerprint": render_fingerprint' in video_service
     assert "def record_rendered_video(" in video_artifacts
 
-    step5_start = server.index('def update_step5_result(')
-    step5_end = server.index("# ==================== 步骤 6", step5_start)
-    step5_source = server[step5_start:step5_end]
+    step5_start = mask_manifest_service.index('def update_step5_result(')
+    step5_source = mask_manifest_service[step5_start:]
     assert "built_assets = False" in step5_source
     assert "if build_assets:" in step5_source
     assert 'return {"success": True, "built_assets": built_assets}' in step5_source
+    assert "def update_step5_result(" not in server
 
     assert 'def synthesize_tts(project_id: str' not in server
     assert 'steps/7/synthesize-legacy' not in server

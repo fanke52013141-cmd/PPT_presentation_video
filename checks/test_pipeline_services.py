@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 
@@ -59,7 +60,20 @@ def test_pipeline_facade_dispatches_through_explicit_operation_groups() -> None:
             render_video=operation("render_video"),
         ),
     )
-    db = object()
+    project = SimpleNamespace(id="project-1")
+
+    class Query:
+        def filter(self, *_args: Any, **_kwargs: Any) -> "Query":
+            return self
+
+        def first(self) -> Any:
+            return project
+
+    class Db:
+        def query(self, *_args: Any, **_kwargs: Any) -> Query:
+            return Query()
+
+    db = Db()
     services = ProjectPipelineServices(operations, db, "project-1")
 
     assert services.storyboard_script()["operation"] == "storyboard_script"
@@ -88,7 +102,7 @@ def test_pipeline_facade_dispatches_through_explicit_operation_groups() -> None:
     )
     assert calls[8] == (
         "build_mask_assets",
-        ("project-1", {"slides": []}),
+        (project, {"slides": []}),
         {"build_assets": True, "db": db},
     )
     assert calls[15] == (

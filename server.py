@@ -6,7 +6,6 @@ import json
 import copy
 import base64
 import binascii
-import hashlib
 import shutil
 import logging
 import subprocess
@@ -19,10 +18,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Query, Request
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -1257,65 +1255,6 @@ def all_current_slide_images_exist(project: Project) -> bool:
         os.path.exists(os.path.join(project.run_dir, "slides", slide_id, "visual_draft.png"))
         for slide_id in slide_ids
     )
-
-
-def prune_stale_mask_groups(project: Project, payload: Dict[str, Any]) -> Dict[str, Any]:
-    contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
-    if not os.path.exists(contract_path) or not isinstance(payload.get("slides"), list):
-        return payload
-
-    try:
-        with open(contract_path, "r", encoding="utf-8") as f:
-            contract = json.load(f)
-    except Exception as exc:
-        logger.warning("Failed to load visual contract while pruning Mask groups: %s", exc)
-        return payload
-
-    visual_groups_by_slide = {}
-    for slide in contract.get("slides", []) or []:
-        if not isinstance(slide, dict):
-            continue
-        slide_id = str(slide.get("slide_id") or "").strip()
-        visual_groups_by_slide[slide_id] = {
-            str(group.get("id") or "").strip()
-            for group in slide.get("visual_groups", []) or []
-            if isinstance(group, dict) and str(group.get("id") or "").strip()
-        }
-
-    def is_current(group: Dict[str, Any], visual_group_ids: set[str]) -> bool:
-        group_id = str(group.get("id") or group.get("group_id") or "").strip()
-        visual_group_id = str(group.get("visual_group_id") or "").strip()
-        # AI Mask stores the exact title/subtitle pixels as a hidden static
-        # group.  It is intentionally not a visual_contract group, so contract
-        # pruning must preserve it or the next Save/Build operation turns the
-        # opening title back into missing/fragmented dynamic content.
-        if (
-            group.get("is_static") is True
-            or group.get("is_static_header") is True
-            or str(group.get("source") or "") == "ai_static_header"
-            or group_id == "__static_title_header__"
-        ):
-            return True
-        if group_id.startswith("manual_group_"):
-            return True
-        if visual_group_id and visual_group_id in visual_group_ids:
-            return True
-        return group_id in visual_group_ids
-
-    for slide in payload.get("slides", []):
-        if not isinstance(slide, dict):
-            continue
-        slide_id = str(slide.get("slide_id") or "").strip()
-        visual_group_ids = visual_groups_by_slide.get(slide_id, set())
-        for field in ("semantic_blocks", "groups"):
-            groups = slide.get(field)
-            if not isinstance(groups, list):
-                continue
-            slide[field] = [
-                group for group in groups
-                if isinstance(group, dict) and is_current(group, visual_group_ids)
-            ]
-    return payload
 
 
 def read_current_slide_ids_or_404(project: Project) -> List[str]:
@@ -2586,79 +2525,6 @@ def clear_slide_visual_derivatives(project: Project, slide_id: str) -> None:
     invalidation_service.clear_slide_visual_derivatives(project, slide_id)
 
 
-def validate_current_reveal_assets(project: Project) -> None:
-    with reveal_lock_for(project):
-        validator = os.path.join(REPO_ROOT, "scripts", "validate_reveal_scene.py")
-        command = [
-            sys.executable,
-            validator,
-            "--run-dir",
-            project.run_dir,
-            "--repo-root",
-            REPO_ROOT,
-        ]
-        try:
-            result = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=120,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise HTTPException(status_code=504, detail="Mask 产物校验超时，请重试") from exc
-        if result.returncode != 0:
-            logger.error("Reveal asset validation failed: %s", result.stderr)
-            raise HTTPException(
-                status_code=500,
-                detail=f"Mask 产物版本或内容校验失败: {result.stderr}",
-            )
-
-
-def build_current_reveal_assets(project: Project) -> None:
-    with reveal_lock_for(project):
-        manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
-        if not os.path.exists(manifest_path):
-            raise HTTPException(status_code=400, detail="Mask 配置文件不存在")
-        sync_project_background_color(project)
-        build_scene_script = os.path.join(REPO_ROOT, "scripts", "build_reveal_scene.py")
-        command = [
-            sys.executable,
-            build_scene_script,
-            "--manifest",
-            manifest_path,
-            "--repo-root",
-            REPO_ROOT,
-        ]
-        try:
-            result = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=STEP5_REVEAL_BUILD_TIMEOUT_SEC,
-            )
-        except subprocess.TimeoutExpired as exc:
-            write_project_log(
-                project,
-                "step5_reveal_build_timeout",
-                timeout_sec=STEP5_REVEAL_BUILD_TIMEOUT_SEC,
-            )
-            raise HTTPException(status_code=504, detail="构建 Mask 切层超时，已停止本次任务，请重试") from exc
-        if result.returncode != 0:
-            logger.error("Build reveal assets failed: %s", result.stderr)
-            raise HTTPException(
-                status_code=500,
-                detail=f"构建精确 Mask 素材失败: {result.stderr}",
-            )
-        from storyboard_background_render import apply_storyboard_background
-
-        apply_storyboard_background(Path(manifest_path).resolve())
-        validate_current_reveal_assets(project)
-
-
 def mark_slide_image_changed(project: Project, slide_id: str, db: Session) -> None:
     invalidation_service.slide_images_changed(
         project,
@@ -2933,558 +2799,70 @@ from image_workflow_service import (
     read_step3_image_system_content,
 )
 
-NARRATION_SPLIT_DELIMITERS = set("，,。.!！；;？?")
-QUOTE_PAIRS = {
-    "“": "”",
-    "‘": "’",
-    "「": "」",
-    "『": "』",
-    "《": "》",
-    "（": "）",
-    "(": ")",
-    "[": "]",
-    "【": "】",
-    "{": "}",
-}
-INLINE_QUOTE_MARKS = {"`", "\""}
-
-ROLE_LABELS = {
-    "title": "主标题",
-    "subtitle": "副标题",
-    "summary": "总结区",
-    "diagram": "图示",
-    "annotation": "注释",
-    "decoration": "装饰元素",
-    "content_body": "正文内容",
-}
-
-
-def role_label(role: str) -> str:
-    return ROLE_LABELS.get(str(role or "").strip(), "正文内容")
-
-
-def split_narration_text(text: str) -> List[str]:
-    value = str(text or "").strip()
-    if not value:
-        return []
-    parts: List[str] = []
-    stack: List[str] = []
-    start = 0
-    i = 0
-    while i < len(value):
-        ch = value[i]
-        if ch in INLINE_QUOTE_MARKS:
-            if stack and stack[-1] == ch:
-                stack.pop()
-            else:
-                stack.append(ch)
-        elif ch in QUOTE_PAIRS:
-            stack.append(QUOTE_PAIRS[ch])
-        elif stack and ch == stack[-1]:
-            stack.pop()
-
-        is_decimal_point = (
-            ch == "."
-            and i > 0
-            and i + 1 < len(value)
-            and value[i - 1].isdigit()
-            and value[i + 1].isdigit()
-        )
-        should_split = (ch == "\n") or (ch in NARRATION_SPLIT_DELIMITERS and not stack and not is_decimal_point)
-        if should_split:
-            end = i + 1
-            parts.append(value[start:end].strip())
-            start = end
-        i += 1
-    if start < len(value):
-        parts.append(value[start:].strip())
-    return [part.strip() for part in parts if part.strip()]
-
-
-def build_narration_fragments(contract_slide: Dict[str, Any]) -> List[Dict[str, Any]]:
-    fragments: List[Dict[str, Any]] = []
-    for beat_idx, beat in enumerate(contract_slide.get("narration_beats", []) or []):
-        if not isinstance(beat, dict):
-            continue
-        beat_id = str(beat.get("id") or f"beat_{beat_idx + 1}").strip()
-        group_id = str(beat.get("group_id") or "").strip()
-        for frag_idx, text in enumerate(split_narration_text(str(beat.get("spoken_text", ""))), start=1):
-            fragments.append({
-                "id": f"{beat_id}::{frag_idx}",
-                "beat_id": beat_id,
-                "group_id": group_id,
-                "beat_index": beat_idx,
-                "fragment_index": frag_idx - 1,
-                "order": len(fragments) + 1,
-                "text": text,
-            })
-    return fragments
-
-
-def box_to_xyxy(box: Any) -> List[int]:
-    if isinstance(box, dict):
-        x = int(round(float(box.get("x", 860))))
-        y = int(round(float(box.get("y", 460))))
-        w = int(round(float(box.get("w", 200))))
-        h = int(round(float(box.get("h", 160))))
-        return [x, y, max(x + 1, x + w), max(y + 1, y + h)]
-    if isinstance(box, list) and len(box) >= 4:
-        return [int(round(float(v))) for v in box[:4]]
-    return [860, 460, 1060, 620]
-
-
-def group_has_paint(group: Dict[str, Any]) -> bool:
-    manual_mask = group.get("manual_mask")
-    if not isinstance(manual_mask, dict):
-        return False
-    rle = manual_mask.get("rle")
-    if isinstance(rle, dict) and rle.get("encoding") == "row_runs_v1":
-        runs = rle.get("runs")
-        if isinstance(runs, list):
-            for run in runs:
-                if not isinstance(run, list) or len(run) < 3:
-                    continue
-                try:
-                    if int(run[2]) > int(run[1]):
-                        return True
-                except (TypeError, ValueError):
-                    continue
-    strokes = manual_mask.get("strokes")
-    if not isinstance(strokes, list):
-        return False
-    for stroke in strokes:
-        if not isinstance(stroke, dict):
-            continue
-        mode = str(stroke.get("mode", "")).lower()
-        if not stroke.get("eraser") and mode != "erase" and stroke.get("points"):
-            return True
-    return False
-
-
-def semantic_block_payload(
-    slide_id: str,
-    index: int,
-    fragment_ids: List[str],
-    visual_group_id: str,
-    group: Optional[Dict[str, Any]],
-    fragments_by_id: Dict[str, Dict[str, Any]],
-    existing_box: Any = None,
-    ai_block: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    ai_block = ai_block or {}
-    selected_fragments = [fragments_by_id[fid] for fid in fragment_ids if fid in fragments_by_id]
-    beat_ids = []
-    narration_group_ids = []
-    for fragment in selected_fragments:
-        if fragment.get("beat_id") and fragment["beat_id"] not in beat_ids:
-            beat_ids.append(fragment["beat_id"])
-        if fragment.get("group_id") and fragment["group_id"] not in narration_group_ids:
-            narration_group_ids.append(fragment["group_id"])
-    role = str((group or {}).get("role") or "content_body")
-    visible_text = str((group or {}).get("visible_text") or ai_block.get("text_label") or f"语块 {index}").strip()
-    visual_anchor = str((group or {}).get("visual_anchor") or "").strip()
-    visual_type = normalize_visual_type(
-        (group or {}).get("visual_type") or ai_block.get("visual_type"),
-        has_text=bool(str((group or {}).get("display_text") or "").strip()),
-    )
-    prefix = f"{slide_id}_" if slide_id else ""
-    element_id = str((group or {}).get("element_id") or "").strip()
-    if not element_id:
-        element_id = visual_group_id[len(prefix):] if prefix and visual_group_id.startswith(prefix) else visual_group_id
-    semantic_type = str(ai_block.get("semantic_element_type") or role_label(role)).strip()
-    visual_description = str(ai_block.get("visual_description") or "").strip()
-    if not visual_description:
-        if visual_anchor and visible_text:
-            visual_description = f"{semantic_type}：画面中可见文字“{visible_text}”，位置/形态为{visual_anchor}。"
-        elif visual_anchor:
-            visual_description = f"{semantic_type}：{visual_anchor}。"
-        else:
-            visual_description = f"{semantic_type}：请结合 visible_text 和当前页画面定位对应的可见元素。"
-    semantic_note = str(ai_block.get("semantic_note") or "").strip()
-    if not semantic_note:
-        semantic_note = "建议只涂抹该语块对应的可见元素本体，避开相邻箭头、装饰线和底部字幕安全区。"
-    return {
-        "group_id": f"semantic_{slide_id}_{index:02d}",
-        "source": "ai_semantic",
-        "visual_group_id": visual_group_id,
-        "element_id": element_id,
-        "role": role,
-        "visual_type": visual_type,
-        "text_label": visible_text or f"语块 {index}",
-        "visual_anchor": visual_anchor,
-        "semantic_element_type": semantic_type,
-        "visual_description": visual_description,
-        "semantic_note": semantic_note,
-        "semantic_confidence": ai_block.get("confidence"),
-        "narration_beat_id": beat_ids[0] if beat_ids else "",
-        "narration_beat_ids": beat_ids,
-        "narration_group_id": narration_group_ids[0] if narration_group_ids else visual_group_id,
-        "narration_fragments": [
-            {
-                "id": fragment["id"],
-                "beat_id": fragment.get("beat_id", ""),
-                "group_id": fragment.get("group_id", ""),
-                "text": fragment.get("text", ""),
-            }
-            for fragment in selected_fragments
-        ],
-        "spoken_text": "".join(fragment.get("text", "") for fragment in selected_fragments),
-        "manual_mask": {"color": "", "strokes": []},
-        "box": box_to_xyxy(existing_box),
-    }
-
-
-def deterministic_semantic_blocks(
-    slide_id: str,
-    contract_slide: Dict[str, Any],
-    manifest_slide: Optional[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
-    groups = {
-        str(group.get("id", "")).strip(): group
-        for group in (contract_slide.get("visual_groups") or [])
-        if isinstance(group, dict) and str(group.get("id", "")).strip()
-    }
-    existing_boxes = {}
-    if manifest_slide:
-        for field in ("semantic_blocks", "groups"):
-            for group in manifest_slide.get(field, []) or []:
-                if not isinstance(group, dict):
-                    continue
-                box = group.get("box")
-                for identifier in (
-                    group.get("visual_group_id"),
-                    group.get("id"),
-                    group.get("group_id"),
-                ):
-                    identifier_text = str(identifier or "").strip()
-                    if identifier_text and identifier_text not in existing_boxes:
-                        existing_boxes[identifier_text] = box
-    fragments = build_narration_fragments(contract_slide)
-    fragments_by_id = {fragment["id"]: fragment for fragment in fragments}
-    group_to_fragments: Dict[str, List[str]] = {}
-    for fragment in fragments:
-        group_to_fragments.setdefault(fragment["group_id"], []).append(fragment["id"])
-    blocks: List[Dict[str, Any]] = []
-    for group_id, group in groups.items():
-        if not isinstance(group, dict):
-            continue
-        if str(group.get("role") or "").strip().lower() == "decoration":
-            continue
-        fragment_ids = group_to_fragments.get(group_id) or []
-        if not fragment_ids:
-            continue
-        blocks.append(semantic_block_payload(
-            slide_id,
-            len(blocks) + 1,
-            fragment_ids,
-            group_id,
-            group,
-            fragments_by_id,
-            existing_boxes.get(group_id),
-        ))
-    return blocks
-
-
-def refresh_reveal_semantic_blocks(project: Project, requested_slide_id: str = "") -> tuple[Dict[str, Any], int]:
-    manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
-    contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
-    if not os.path.exists(manifest_path):
-        raise HTTPException(status_code=400, detail="Mask 配置文件尚未生成，请先确认图片")
-    if not os.path.exists(contract_path):
-        raise HTTPException(status_code=400, detail="分镜规划不存在，请先生成分镜")
-
-    with open(manifest_path, "r", encoding="utf-8") as f:
-        manifest = json.load(f)
-    with open(contract_path, "r", encoding="utf-8") as f:
-        contract = json.load(f)
-
-    contract_slides = {
-        str(slide.get("slide_id", "")).strip(): slide
-        for slide in contract.get("slides", [])
-        if isinstance(slide, dict) and str(slide.get("slide_id", "")).strip()
-    }
-    target_slides = []
-    for slide in manifest.get("slides", []):
-        if not isinstance(slide, dict):
-            continue
-        slide_id = str(slide.get("slide_id", "")).strip()
-        if requested_slide_id and slide_id != requested_slide_id:
-            continue
-        if slide_id in contract_slides:
-            target_slides.append(slide)
-    if requested_slide_id and not target_slides:
-        raise HTTPException(status_code=404, detail=f"找不到当前页分镜：{requested_slide_id}")
-
-    processed_count = 0
-    for manifest_slide in target_slides:
-        slide_id = str(manifest_slide.get("slide_id", "")).strip()
-        contract_slide = contract_slides[slide_id]
-        semantic_blocks = deterministic_semantic_blocks(slide_id, contract_slide, manifest_slide)
-        painted_groups = [
-            group for group in manifest_slide.get("groups", []) or []
-            if isinstance(group, dict) and group_has_paint(group)
-        ]
-        manifest_slide["semantic_blocks"] = semantic_blocks
-        manifest_slide["groups"] = painted_groups
-        if semantic_blocks or painted_groups:
-            manifest_slide["status"] = manifest_slide.get("status") or "pending"
-        processed_count += 1
-
-    with reveal_lock_for(project):
-        write_json_atomic(manifest_path, manifest)
-    return manifest, processed_count
-
-
-
-@app.post("/api/projects/{project_id}/steps/5/semantic-blocks")
-def semantic_blocks_project(project_id: str, payload: Optional[Dict[str, Any]] = None, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    payload = payload or {}
-    requested_slide_id = str(payload.get("slide_id") or "").strip()
-    manifest, processed_count = refresh_reveal_semantic_blocks(project, requested_slide_id)
-    return {
-        "success": True,
-        "vision_used": False,
-        "processed": processed_count,
-        "manifest": manifest,
-        "message": "已根据分镜和旁白生成语块；自动 RLE Mask 可继续手动修正。",
-    }
-
-@app.get("/api/projects/{project_id}/steps/5/result")
-def get_step5_result(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-        
-    manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
-    if not os.path.exists(manifest_path):
-        return {"success": False, "message": "尚未确认图片"}
-    with reveal_lock_for(project):
-        with open(manifest_path, "r", encoding="utf-8") as f:
-            manifest = json.load(f)
-    expected_ids = read_contract_slide_ids(project.run_dir)
-    actual_ids = [
-        str(slide.get("slide_id") or "").strip()
-        for slide in manifest.get("slides", [])
-        if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()
-    ]
-    missing_ids = [slide_id for slide_id in expected_ids if slide_id not in actual_ids]
-    stale_ids = [slide_id for slide_id in actual_ids if slide_id not in expected_ids]
-    reasons = []
-    if missing_ids:
-        reasons.append("missing_contract_slides")
-    if stale_ids:
-        reasons.append("unreferenced_manifest_slides")
-    return {
-        "success": True,
-        "manifest": manifest,
-        "repair": {
-            "required": bool(reasons),
-            "reasons": reasons,
-            "missing_slide_ids": missing_ids,
-            "stale_slide_ids": stale_ids,
-            "endpoint": f"/api/projects/{project_id}/steps/5/repair",
-        },
-    }
-
-
-@app.post("/api/projects/{project_id}/steps/5/repair")
-def repair_step5_result(project_id: str, db: Session = Depends(get_db)):
-    """Explicitly reconcile a historical Mask manifest with the storyboard."""
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
-    if not os.path.exists(manifest_path):
-        raise HTTPException(status_code=400, detail="尚未确认图片")
-    with reveal_lock_for(project):
-        before = Path(manifest_path).read_bytes()
-        sync_reveal_manifest_to_contract(project)
-        manifest, processed_count = refresh_reveal_semantic_blocks(project)
-        changed = Path(manifest_path).read_bytes() != before
-    return {
-        "success": True,
-        "changed": changed,
-        "processed": processed_count,
-        "manifest": manifest,
-    }
-
-@app.put("/api/projects/{project_id}/steps/5/draft")
-def update_step5_draft(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-
-    with reveal_lock_for(project):
-        current_slide_ids = read_contract_slide_ids(project.run_dir)
-        if current_slide_ids and isinstance(payload.get("slides"), list):
-            by_id = {
-                str(slide.get("slide_id") or "").strip(): slide
-                for slide in payload.get("slides", [])
-                if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()
-            }
-            payload["slides"] = [by_id[slide_id] for slide_id in current_slide_ids if slide_id in by_id]
-
-        for slide in payload.get("slides", []) if isinstance(payload.get("slides"), list) else []:
-            if not isinstance(slide, dict):
-                continue
-            slide_id = str(slide.get("slide_id") or "").strip()
-            if not slide_id:
-                continue
-            slide["slide_dir"] = str(
-                Path(storage_slide_file(project.run_dir, slide_id, "visual_draft.png")).parent.as_posix()
-            )
-            slide["master"] = "visual_draft.png"
-
-        payload = prune_stale_mask_groups(project, payload)
-        manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
-        write_json_atomic(manifest_path, payload)
-    return {"success": True}
-
-
-@app.post("/api/projects/{project_id}/steps/5/slides/{slide_id}/preview")
-def build_step5_mask_preview(
-    project_id: str,
-    slide_id: str,
-    payload: Optional[Dict[str, Any]] = None,
-    db: Session = Depends(get_db),
-):
-    """Build one production-accurate static Mask preview without advancing steps."""
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    preview_path = current_slide_file_or_404(project, slide_id, "mask_preview.png")
-    manifest_path = os.path.join(project_run_dir_or_500(project), "reveal_manifest.json")
-    if not os.path.exists(manifest_path):
-        raise HTTPException(status_code=400, detail="Mask 配置文件不存在")
-
-    with reveal_lock_for(project):
-        sync_project_background_color(project)
-        build_scene_script = os.path.join(REPO_ROOT, "scripts", "build_reveal_scene.py")
-        command = [
-            sys.executable,
-            build_scene_script,
-            "--manifest",
-            manifest_path,
-            "--repo-root",
-            REPO_ROOT,
-            "--slide-id",
-            slide_id,
-            "--preview-output",
-            preview_path,
-        ]
-        try:
-            result = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=STEP5_REVEAL_BUILD_TIMEOUT_SEC,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise HTTPException(status_code=504, detail="精确 Mask 预览构建超时，请重试") from exc
-        if result.returncode != 0 or not os.path.exists(preview_path):
-            logger.error("Build exact Mask preview failed: %s", result.stderr)
-            raise HTTPException(status_code=500, detail=f"精确 Mask 预览构建失败: {result.stderr or ''}")
-
-        # Match the final render path exactly: image-mode storyboard
-        # backgrounds are applied after reveal assets are built, so regenerate
-        # the static preview from those post-processed production layers.
-        from storyboard_background_render import apply_storyboard_background
-        from scripts.build_reveal_scene import compose_preview_image
-
-        apply_storyboard_background(Path(manifest_path).resolve())
-        compose_preview_image(Path(preview_path).parent, Path(preview_path))
-
-        report_path = current_slide_file_or_404(project, slide_id, "reveal_report.json")
-        report = read_json_file(report_path, {})
-        manifest_bytes = Path(manifest_path).read_bytes()
-        manifest_fingerprint = hashlib.sha256(manifest_bytes).hexdigest()
-        groups = [
-            *(report.get("groups") if isinstance(report.get("groups"), list) else []),
-            *(report.get("static_groups") if isinstance(report.get("static_groups"), list) else []),
-        ]
-        cutout_stats = {
-            key: sum(
-                int((group.get("cutout") or {}).get(key, 0) or 0)
-                for group in groups
-                if isinstance(group, dict)
-            )
-            for key in (
-                "manual_mask_pixel_count",
-                "removed_outer_white_pixel_count",
-                "soft_edge_pixel_count",
-                "retained_pixel_count",
-            )
-        }
-
-    version = int(os.path.getmtime(preview_path) * 1000)
-    return {
-        "success": True,
-        "slide_id": slide_id,
-        "manifest_fingerprint": manifest_fingerprint,
-        "preview_url": f"/api/projects/{project_id}/slides/{slide_id}/mask-preview?t={version}",
-        "fallback_full_slide": bool(report.get("fallback_full_slide")),
-        "warnings": report.get("warnings", []),
-        "cutout_stats": cutout_stats,
-    }
-
-
-@app.get("/api/projects/{project_id}/slides/{slide_id}/mask-preview")
-def get_step5_mask_preview(project_id: str, slide_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    preview_path = current_slide_file_or_404(project, slide_id, "mask_preview.png")
-    if not os.path.exists(preview_path):
-        raise HTTPException(status_code=404, detail="精确 Mask 预览尚未生成")
-    return FileResponse(preview_path, media_type="image/png")
-
-@app.put("/api/projects/{project_id}/steps/5/result")
-def update_step5_result(project_id: str, payload: Dict[str, Any], build_assets: bool = Query(True), db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-        
-    with reveal_lock_for(project):
-        # 保存手动编辑修改的 reveal_manifest
-        current_slide_ids = read_contract_slide_ids(project.run_dir)
-        if current_slide_ids and isinstance(payload.get("slides"), list):
-            by_id = {
-                str(slide.get("slide_id") or "").strip(): slide
-                for slide in payload.get("slides", [])
-                if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()
-            }
-            payload["slides"] = [by_id[slide_id] for slide_id in current_slide_ids if slide_id in by_id]
-
-        for slide in payload.get("slides", []) if isinstance(payload.get("slides"), list) else []:
-            if not isinstance(slide, dict):
-                continue
-            slide_id = str(slide.get("slide_id") or "").strip()
-            if not slide_id:
-                continue
-            slide["slide_dir"] = str(
-                Path(storage_slide_file(project.run_dir, slide_id, "visual_draft.png")).parent.as_posix()
-            )
-            slide["master"] = "visual_draft.png"
-
-        payload = prune_stale_mask_groups(project, payload)
-        manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
-        write_json_atomic(manifest_path, payload)
-
-        built_assets = False
-        if build_assets:
-            # 人工最终保存时校验并构建切层 assets；草稿保存路径不需要阻塞在构建上。
-            build_current_reveal_assets(project)
-            built_assets = True
-
-    handle_step_navigation(project, 5, db)
-    return {"success": True, "built_assets": built_assets}
-
 # ==================== 步骤 6: 演讲稿编辑 ====================
+
+# Step 5 Mask editing is source-owned by dedicated services.
+from mask_manifest_service import (
+    build_current_reveal_assets,
+    get_step5_result,
+    refresh_reveal_semantic_blocks,
+    repair_step5_result,
+    update_step5_result,
+)
+
+try:
+    from mask_editor_routes import router as mask_editor_router
+    from mask_manifest_service import (
+        MaskManifestDependencies,
+        configure_mask_manifest_dependencies,
+    )
+    from mask_preview_service import (
+        MaskPreviewDependencies,
+        configure_mask_preview_dependencies,
+    )
+    from scripts.build_reveal_scene import compose_preview_image
+    from storyboard_background_render import apply_storyboard_background
+
+    configure_mask_manifest_dependencies(
+        MaskManifestDependencies(
+            normalize_visual_type=normalize_visual_type,
+            reveal_lock_for=reveal_lock_for,
+            read_contract_slide_ids=read_contract_slide_ids,
+            sync_reveal_manifest_to_contract=(
+                sync_reveal_manifest_to_contract
+            ),
+            storage_slide_file=storage_slide_file,
+            write_json_atomic=write_json_atomic,
+            handle_step_navigation=handle_step_navigation,
+            sync_project_background_color=sync_project_background_color,
+            write_project_log=write_project_log,
+            apply_storyboard_background=apply_storyboard_background,
+            repo_root=Path(REPO_ROOT),
+            python_executable=sys.executable,
+            build_timeout_sec=STEP5_REVEAL_BUILD_TIMEOUT_SEC,
+        )
+    )
+    configure_mask_preview_dependencies(
+        MaskPreviewDependencies(
+            reveal_lock_for=reveal_lock_for,
+            sync_project_background_color=sync_project_background_color,
+            current_slide_file_or_404=current_slide_file_or_404,
+            project_run_dir_or_500=project_run_dir_or_500,
+            read_json_file=read_json_file,
+            apply_storyboard_background=apply_storyboard_background,
+            compose_preview_image=compose_preview_image,
+            repo_root=Path(REPO_ROOT),
+            python_executable=sys.executable,
+            build_timeout_sec=STEP5_REVEAL_BUILD_TIMEOUT_SEC,
+        )
+    )
+    app.include_router(mask_editor_router)
+except Exception as exc:
+    logger.exception(
+        "Explicit Mask editor route registration failed: %s",
+        exc,
+    )
+    raise
 
 # Narration and TTS routes are source-owned by dedicated services.
 try:

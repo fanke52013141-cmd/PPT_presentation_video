@@ -14,6 +14,7 @@ from scripts.build_reveal_scene import build_event  # noqa: E402
 from scripts.pipeline_profiles import normalize_reveal_action, role_catalog  # noqa: E402
 import server as server_module  # noqa: E402
 import global_image_style_service as global_style  # noqa: E402
+from mask_manifest_service import deterministic_semantic_blocks  # noqa: E402
 import storyboard_service as storyboard_module  # noqa: E402
 from server import (  # noqa: E402
     OPEN_SOURCE_CHINESE_FONTS,
@@ -136,7 +137,7 @@ def main() -> None:
     assert slide["subtitle"] == ""
     assert all(group.get("role") != "subtitle" for group in slide["visual_groups"])
     assert all("speak_policy" not in group for group in slide["visual_groups"])
-    semantic_blocks = server_module.deterministic_semantic_blocks("slide_001", slide, None)
+    semantic_blocks = deterministic_semantic_blocks("slide_001", slide, None)
     assert {block["visual_group_id"] for block in semantic_blocks} == {"spoken_group"}
     assert all(block["narration_fragments"] for block in semantic_blocks)
     assert normalize_reveal_action("scratch_reveal", profile, for_renderer=True) == "scratch_reveal"

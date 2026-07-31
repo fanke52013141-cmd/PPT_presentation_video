@@ -16,6 +16,7 @@ from scripts.build_remotion_props import read_subtitle_style
 from scripts.bind_reveal_timeline import bind_slide
 from scripts.pipeline_profiles import allowed_reveal_actions, read_pipeline_profile, role_catalog
 from scripts.validate_visual_contract import validate_contract
+from mask_manifest_service import deterministic_semantic_blocks
 import server as server_module
 
 
@@ -73,7 +74,7 @@ def main() -> None:
     group = contract["slides"][0]["visual_groups"][1]
     assert group["element_id"] == "el_002"
     assert group["visual_type"] == "text"
-    semantic_block = server_module.deterministic_semantic_blocks("slide_001", contract["slides"][0], None)[1]
+    semantic_block = deterministic_semantic_blocks("slide_001", contract["slides"][0], None)[1]
     assert semantic_block["element_id"] == "el_002"
     assert semantic_block["visual_type"] == "text"
 

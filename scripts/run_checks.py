@@ -42,6 +42,8 @@ def quick_checks() -> None:
         "app_security.py",
         "artifact_fingerprint.py",
         "artifact_registry.py",
+        "article_routes.py",
+        "article_service.py",
         "database.py",
         "database_migrations.py",
         "diagnostics_routes.py",
@@ -109,6 +111,13 @@ def quick_checks() -> None:
         "-m",
         "pytest",
         "checks/test_storyboard_routes.py",
+        "-q",
+    ])
+    run([
+        sys.executable,
+        "-m",
+        "pytest",
+        "checks/test_article_service.py",
         "-q",
     ])
     run([

@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import ai_mask_engine as ai_mask
+import article_service as article
 import server
 from scripts.style_agent import style_bundle_system_prompt
 
@@ -35,7 +36,7 @@ def test_prompt_files_declare_purpose_input_and_output() -> None:
         assert_contract(filename, text)
 
 def test_runtime_prompts_declare_purpose_input_and_output() -> None:
-    assert_contract("article generation system prompt", server.DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT)
+    assert_contract("article generation system prompt", article.DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT)
     assert_contract("style bundle system prompt", style_bundle_system_prompt())
     assert_contract("AI Mask system prompt", ai_mask.DEFAULT_METHODOLOGY)
 

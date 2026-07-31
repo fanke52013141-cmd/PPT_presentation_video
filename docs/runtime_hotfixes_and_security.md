@@ -26,6 +26,7 @@ should ultimately be migrated behind normal service and route modules.
 | `video_contracts.py` | Shared video configuration and application error contracts. |
 | `diagnostics_routes.py` | Source-owned diagnostics `APIRouter`; reads the request application only when producing diagnostics. |
 | `storyboard_background.py` | Source-owned storyboard background service and explicit `APIRouter`. |
+| `article_service.py` / `article_routes.py` | Step 1 Prompt settings, topic generation, article source lifecycle, and explicit HTTP routes. |
 | `storyboard_service.py` | Step 2 prompt/profile planning, visual-contract normalization, validation, repair, and manual skeleton workflow. |
 | `storyboard_routes.py` | Explicit Step 2 planning and storyboard-template HTTP routes. |
 | `narration_service.py` / `narration_routes.py` | Step 6 narration lifecycle and explicit HTTP routes. |
@@ -265,6 +266,13 @@ background and subtitle settings. Their paired route modules preserve the
 existing HTTP paths and are included explicitly by `server.py`. These service
 modules receive narrow operation dependencies and do not own FastAPI database
 dependency wiring or import the application module.
+
+Step 1 article handling is source-owned as well. `article_service.py` keeps the
+existing topic-only model request, editable Prompt migration, `article.md`
+source-of-truth lifecycle, legacy brief migration, and change-triggered
+invalidation. `article_routes.py` exposes the six unchanged settings, generate,
+import, and result paths. `server.py` injects only `ArticleDependencies` and
+passes the shared article reader to storyboard and One-click services.
 
 PPTX export registration is source-owned as well. `pptx_routes.py` exposes an
 explicit `APIRouter`, while `pptx_service.py` owns task recovery, export

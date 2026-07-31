@@ -189,6 +189,12 @@ The Python startup monkey patch has been retired. AI Mask is now source-owned:
   background, or One-click code.
 - Access control is installed explicitly from `app_security.py`.
 - `/api/settings` masks credential fields in the source route by default.
+- `article_service.py` owns the Step 1 article Prompt setting, topic-only
+  generation contract, `inputs/article.md` source lifecycle, legacy brief
+  migration, and change-triggered invalidation. `article_routes.py` owns the
+  six unchanged settings/import/result HTTP routes. The service receives only
+  `ArticleDependencies` and must not import `server`, `get_db`, declare
+  `Depends`, or own an `APIRouter`.
 
 Treat the remaining compatibility modules as migration debt, not as the normal
 extension mechanism. Never reintroduce `sitecustomize.py`, polling installers,
@@ -201,7 +207,7 @@ startup code.
 Run before publishing:
 
 ```powershell
-python -m compileall -q server.py diagnostics_routes.py storyboard_background.py storyboard_service.py storyboard_routes.py global_image_style_service.py global_image_style_routes.py image_workflow_service.py image_workflow_routes.py visual_settings_service.py visual_settings_routes.py mask_manifest_service.py mask_preview_service.py mask_editor_routes.py narration_service.py narration_routes.py tts_service.py tts_routes.py one_click_orchestrator.py one_click_routes.py pptx_export.py pptx_service.py pptx_routes.py video_contracts.py video_job_store.py video_artifact_service.py remotion_runner.py video_render_service.py video_routes.py ai_mask_config.py ai_mask_engine.py ai_mask_routes.py ai_mask_semantic_matcher.py ai_mask_service.py project_style_context.py project_style_routes.py project_profile_service.py project_profile_store.py project_style_reference_service.py project_style_reference_store.py project_style_template_service.py image_style_reverse_service.py step3_image_style_service.py database.py database_migrations.py invalidation_service.py reveal_manifest_service.py scripts checks
+python -m compileall -q server.py article_service.py article_routes.py diagnostics_routes.py storyboard_background.py storyboard_service.py storyboard_routes.py global_image_style_service.py global_image_style_routes.py image_workflow_service.py image_workflow_routes.py visual_settings_service.py visual_settings_routes.py mask_manifest_service.py mask_preview_service.py mask_editor_routes.py narration_service.py narration_routes.py tts_service.py tts_routes.py one_click_orchestrator.py one_click_routes.py pptx_export.py pptx_service.py pptx_routes.py video_contracts.py video_job_store.py video_artifact_service.py remotion_runner.py video_render_service.py video_routes.py ai_mask_config.py ai_mask_engine.py ai_mask_routes.py ai_mask_semantic_matcher.py ai_mask_service.py project_style_context.py project_style_routes.py project_profile_service.py project_profile_store.py project_style_reference_service.py project_style_reference_store.py project_style_template_service.py image_style_reverse_service.py step3_image_style_service.py database.py database_migrations.py invalidation_service.py reveal_manifest_service.py scripts checks
 node --check static/app.js
 node --check static/flow.js
 node checks/test_visible_flow.js

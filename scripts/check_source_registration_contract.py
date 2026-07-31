@@ -7,6 +7,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main() -> None:
     server = (ROOT / "server.py").read_text(encoding="utf-8")
+    article_routes = (ROOT / "article_routes.py").read_text(encoding="utf-8")
+    article_service = (ROOT / "article_service.py").read_text(encoding="utf-8")
     pipeline = (ROOT / "pipeline_services.py").read_text(encoding="utf-8")
     pptx_routes = (ROOT / "pptx_routes.py").read_text(encoding="utf-8")
     pptx_service = (ROOT / "pptx_service.py").read_text(encoding="utf-8")
@@ -47,6 +49,7 @@ def main() -> None:
     html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
     assert not (ROOT / "runtime_bootstrap.py").exists(), "empty runtime bootstrap should stay retired"
     assert "app.include_router(one_click_router)" in server, "one-click router is not explicitly registered"
+    assert "app.include_router(article_router)" in server, "article router is not explicitly registered"
     assert "app.include_router(diagnostics_router)" in server, "diagnostics router is not explicitly registered"
     assert "app.include_router(storyboard_background_router)" in server, "storyboard background router is not explicitly registered"
     assert "app.include_router(storyboard_router)" in server, "Step 2 storyboard router is not explicitly registered"
@@ -78,6 +81,14 @@ def main() -> None:
         assert "sys.modules" not in source, "narration/TTS code receives a dynamic application namespace"
     assert "APIRouter" not in narration_service, "narration service owns HTTP routing again"
     assert "APIRouter" not in tts_service, "TTS service owns HTTP routing again"
+    assert "router = APIRouter()" in article_routes, "article routes module is incomplete"
+    assert "APIRouter" not in article_service, "article service owns HTTP routing again"
+    assert "Depends(" not in article_service, "article service owns FastAPI dependency wiring again"
+    assert "get_db" not in article_service, "article service imports the route database dependency again"
+    assert '@app.post("/api/projects/{project_id}/steps/1/' not in server, "Step 1 route decorators returned to server"
+    for source in (article_routes, article_service):
+        assert "server_module" not in source, "article code receives the server module again"
+        assert "import server" not in source, "article code imports the application module again"
     assert "router = APIRouter()" in mask_routes, "Mask editor routes module is incomplete"
     assert "APIRouter" not in mask_manifest, "Mask Manifest service owns HTTP routing again"
     assert "APIRouter" not in mask_preview, "Mask preview service owns HTTP routing again"

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 from pathlib import Path
 import sys
-from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,25 +13,39 @@ import image_style_reverse_service as reverse_style
 import narration_service as narration
 import project_profile_service as text_style
 import project_style_reference_service as style_references
+import article_service as article
 import server
 from scripts.write_visual_prompts import project_image_style_lines
 
 
 def test_article_generation_uses_only_topic() -> None:
-    assert "article_generation_v2_minimal" in server.DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT
-    assert json.loads(server.build_article_generation_user_content("  测试主题  ")) == {"topic": "测试主题"}
-    assert "project_name" not in server.DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT
+    assert "article_generation_v2_minimal" in article.DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT
+    assert json.loads(article.build_article_generation_user_content("  测试主题  ")) == {"topic": "测试主题"}
+    assert "project_name" not in article.DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT
 
 
 def test_article_generation_migrates_only_legacy_default() -> None:
-    original = server.get_setting
+    original = article._dependencies
+    assert original is not None
     try:
-        server.get_setting = lambda key, default="": server.LEGACY_DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT_V1
-        assert server.read_article_generation_system_content() == server.DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT
-        server.get_setting = lambda key, default="": "CUSTOM ARTICLE PROMPT"
-        assert server.read_article_generation_system_content() == "CUSTOM ARTICLE PROMPT"
+        article.configure_article_dependencies(
+            replace(
+                original,
+                get_setting=lambda key, default="": (
+                    article.LEGACY_DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT_V1
+                ),
+            )
+        )
+        assert article.read_article_generation_system_content() == article.DEFAULT_ARTICLE_GENERATION_SYSTEM_CONTENT
+        article.configure_article_dependencies(
+            replace(
+                original,
+                get_setting=lambda key, default="": "CUSTOM ARTICLE PROMPT",
+            )
+        )
+        assert article.read_article_generation_system_content() == "CUSTOM ARTICLE PROMPT"
     finally:
-        server.get_setting = original
+        article.configure_article_dependencies(original)
 
 
 def test_narration_annotation_payload_is_minimal() -> None:

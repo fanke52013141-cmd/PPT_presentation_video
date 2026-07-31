@@ -50,12 +50,15 @@ def test_imported_reference_requires_valid_bounded_image() -> None:
 
     image_data = png_bytes(10, 10)
     encoded = base64.b64encode(image_data).decode("ascii")
-    with patch("server.MAX_IMAGE_UPLOAD_BYTES", len(image_data) - 1):
+    with patch(
+        "ai_provider_service.MAX_IMAGE_UPLOAD_BYTES",
+        len(image_data) - 1,
+    ):
         with pytest.raises(ValueError, match="超过"):
             config_service.decode_config_reference_bytes(
                 {"exists": True, "data": encoded}
             )
-    with patch("server.MAX_IMAGE_PIXELS", 99):
+    with patch("ai_provider_service.MAX_IMAGE_PIXELS", 99):
         with pytest.raises(ValueError, match="像素总量"):
             config_service.decode_config_reference_bytes(
                 {"exists": True, "data": encoded}

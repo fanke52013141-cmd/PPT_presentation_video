@@ -18,6 +18,9 @@ def main() -> None:
     config_portability_service = (
         ROOT / "config_portability_service.py"
     ).read_text(encoding="utf-8")
+    ai_provider_service = (
+        ROOT / "ai_provider_service.py"
+    ).read_text(encoding="utf-8")
     pipeline = (ROOT / "pipeline_services.py").read_text(encoding="utf-8")
     pptx_routes = (ROOT / "pptx_routes.py").read_text(encoding="utf-8")
     pptx_service = (ROOT / "pptx_service.py").read_text(encoding="utf-8")
@@ -114,6 +117,19 @@ def main() -> None:
     for source in (settings_service, config_portability_service):
         assert "Depends(" not in source, "settings service owns FastAPI dependency wiring again"
         assert "get_db" not in source, "settings service imports the route database dependency again"
+    assert "def get_openai_client(" in ai_provider_service, "AI provider client owner is incomplete"
+    assert "def generate_image_response(" in ai_provider_service, "image provider adapter owner is incomplete"
+    assert "def process_and_save_image(" in ai_provider_service, "image normalization owner is incomplete"
+    assert "def get_openai_client(" not in server, "OpenAI client implementation returned to server"
+    assert "def generate_image_response(" not in server, "image provider implementation returned to server"
+    for token in (
+        "APIRouter",
+        "Depends(",
+        "get_db",
+        "server_module",
+        "import server",
+    ):
+        assert token not in ai_provider_service, "AI provider service owns application wiring again"
     assert "router = APIRouter()" in mask_routes, "Mask editor routes module is incomplete"
     assert "APIRouter" not in mask_manifest, "Mask Manifest service owns HTTP routing again"
     assert "APIRouter" not in mask_preview, "Mask preview service owns HTTP routing again"

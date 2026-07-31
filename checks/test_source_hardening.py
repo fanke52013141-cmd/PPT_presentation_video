@@ -19,6 +19,7 @@ def main() -> None:
     settings_routes = read_text("settings_routes.py")
     settings_service = read_text("settings_service.py")
     config_service = read_text("config_portability_service.py")
+    provider_service = read_text("ai_provider_service.py")
     app_js = read_text("static/app.js")
     ci = read_text(".github/workflows/ci.yml")
 
@@ -47,6 +48,12 @@ def main() -> None:
     assert "router = APIRouter()" in settings_routes
     assert '@app.get("/api/settings")' not in server
     assert '@app.post("/api/config/import")' not in server
+    assert "def get_openai_client(" in provider_service
+    assert "def process_and_save_image(" in provider_service
+    assert "def generate_image_response(" in provider_service
+    assert "def get_openai_client(" not in server
+    assert "def process_and_save_image(" not in server
+    assert "def generate_image_response(" not in server
 
     annotation_start = narration_service.index(
         "def annotate_step6_narration("

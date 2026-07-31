@@ -39,6 +39,7 @@ def quick_checks() -> None:
         "ai_mask_routes.py",
         "ai_mask_semantic_matcher.py",
         "ai_mask_service.py",
+        "ai_provider_service.py",
         "app_security.py",
         "artifact_fingerprint.py",
         "artifact_registry.py",
@@ -102,6 +103,14 @@ def quick_checks() -> None:
     python_check(ROOT / "checks" / "test_source_hardening.py")
     python_check(ROOT / "checks" / "test_generalized_settings.py")
     python_check(ROOT / "checks" / "test_subtitle_style.py")
+    run([
+        sys.executable,
+        "-m",
+        "pytest",
+        "checks/test_ai_provider_service.py",
+        "checks/test_image_upload_limits.py",
+        "-q",
+    ])
     run([
         sys.executable,
         "-m",

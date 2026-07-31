@@ -1,17 +1,14 @@
 import os
-import io
 import sys
 import uuid
 import json
 import copy
-import base64
 import shutil
 import logging
 import subprocess
 import re
 import threading
 import time
-import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any
@@ -23,13 +20,11 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from PIL import Image
-import httpx
 import yaml
 from openai import OpenAI
 from database import ArtifactRecord, LocalJob, init_db, get_db, Project
 from config_store import get_all_settings, update_settings, get_setting
 from app_security import configured_allowed_hosts, configured_allowed_origins, install_access_control
-from scripts.background_color import normalize_connected_background
 from scripts.media_tools import (
     probe_media_duration_sec,
     resolve_media_tool as shared_resolve_media_tool,
@@ -76,27 +71,15 @@ from project_storage import (
     project_run_dir as validated_project_run_dir,
     slide_file as storage_slide_file,
 )
-
-def get_openai_client(api_key: str, base_url: str = None, timeout: float = 120.0, max_retries: int = 1) -> OpenAI:
-    # 强制不使用环境变量中的代理，防止某些局域网代理的 SSL 拦截规则冲突
-    # 并强制定义 User-Agent 为 Chrome 浏览器以绕过 Cloudflare WAF/JA3 爬虫过滤指纹
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
-    limits = httpx.Limits(max_keepalive_connections=5, max_connections=10)
-    http_client = httpx.Client(
-        limits=limits,
-        trust_env=False,
-        headers=headers,
-        timeout=timeout
-    )
-    return OpenAI(
-        api_key=api_key,
-        base_url=base_url,
-        http_client=http_client,
-        timeout=timeout,
-        max_retries=max_retries,
-    )
+from ai_provider_service import (
+    extract_image_bytes_from_response,
+    generate_image_response,
+    get_openai_client,
+    is_seedream_image_model,
+    open_validated_image,
+    process_and_save_image,
+    response_has_image_data,
+)
 
 
 def normalize_tts_provider(provider: Optional[str]) -> str:
@@ -228,8 +211,6 @@ install_access_control(app)
 
 RUNS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "runs"))
 os.makedirs(RUNS_DIR, exist_ok=True)
-MAX_IMAGE_UPLOAD_BYTES = int(os.environ.get("PPT_STUDIO_MAX_IMAGE_UPLOAD_BYTES", str(20 * 1024 * 1024)))
-MAX_IMAGE_PIXELS = int(os.environ.get("PPT_STUDIO_MAX_IMAGE_PIXELS", "50000000"))
 MAX_CONFIG_IMPORT_BYTES = int(os.environ.get("PPT_STUDIO_MAX_CONFIG_IMPORT_BYTES", str(25 * 1024 * 1024)))
 TTS_API_KEY_ENV = "PPT_STUDIO_TTS_API_KEY"
 TTS_SECRET_KEY_ENV = "PPT_STUDIO_TTS_SECRET_KEY"
@@ -557,196 +538,6 @@ def write_project_log(project: Project, event: str, **fields: Any) -> None:
 # Pydantic 响应模型
 class StepUpdate(BaseModel):
     step_data: Dict[str, Any]
-
-
-def open_validated_image(image_bytes: bytes) -> Image.Image:
-    if not image_bytes:
-        raise ValueError("图片文件为空")
-    if len(image_bytes) > MAX_IMAGE_UPLOAD_BYTES:
-        raise ValueError(f"图片文件超过 {MAX_IMAGE_UPLOAD_BYTES // (1024 * 1024)} MB 限制")
-    try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", Image.DecompressionBombWarning)
-            image = Image.open(io.BytesIO(image_bytes))
-            if image.width <= 0 or image.height <= 0 or image.width * image.height > MAX_IMAGE_PIXELS:
-                image.close()
-                raise ValueError(f"图片像素总量超过 {MAX_IMAGE_PIXELS} 限制")
-            image.load()
-            return image
-    except ValueError:
-        raise
-    except (Image.UnidentifiedImageError, Image.DecompressionBombError, Image.DecompressionBombWarning, OSError) as exc:
-        raise ValueError("无法识别或不安全的图片文件") from exc
-
-
-# 图片后处理：将任意尺寸等比例缩放，并居中贴在纯白 1920x1080 生图画布上
-def process_and_save_image(image_bytes: bytes, save_path: str):
-    # Keep the original aspect ratio. Non-16:9 sources are fitted and padded;
-    # native 16:9 uploads fill the render canvas without stretching.
-    bg_color = (255, 255, 255)
-    target_width, target_height = 1920, 1080
-    
-    img = open_validated_image(image_bytes)
-    if img.mode in ("RGBA", "LA") or "transparency" in img.info:
-        rgba = img.convert("RGBA")
-        white = Image.new("RGBA", rgba.size, (*bg_color, 255))
-        white.alpha_composite(rgba)
-        img = white.convert("RGB")
-    elif img.mode != "RGB":
-        img = img.convert("RGB")
-        
-    source_width, source_height = img.width, img.height
-    img_ratio = img.width / img.height
-    target_ratio = target_width / target_height
-    
-    if img_ratio > target_ratio:
-        new_width = target_width
-        new_height = int(target_width / img_ratio)
-    else:
-        new_height = target_height
-        new_width = int(target_height * img_ratio)
-        
-    resized_img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-    
-    # 居中贴合到 1920x1080 的温暖极简底图上
-    final_img = Image.new("RGB", (target_width, target_height), bg_color)
-    paste_x = (target_width - new_width) // 2
-    paste_y = (target_height - new_height) // 2
-    final_img.paste(resized_img, (paste_x, paste_y))
-    final_img, _ = normalize_connected_background(final_img, bg_color)
-    
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    final_img.save(save_path, "PNG")
-    logger.info(
-        "Image normalized and saved: source=%sx%s fitted=%sx%s canvas=%sx%s path=%s",
-        source_width,
-        source_height,
-        new_width,
-        new_height,
-        target_width,
-        target_height,
-        save_path,
-    )
-
-
-def is_seedream_image_model(model: Optional[str], base_url: Optional[str] = None) -> bool:
-    """Detect Volcengine/Doubao Seedream image models behind OpenAI-compatible APIs."""
-    text = f"{model or ''} {base_url or ''}".lower()
-    return any(
-        marker in text
-        for marker in (
-            "seedream",
-            "doubao",
-            "volcengine",
-            "volces",
-            "ark.cn",
-            "ark.volc",
-        )
-    )
-
-
-def response_has_image_data(response: Any) -> bool:
-    first_item = first_image_response_item(response)
-    return bool(
-        image_response_value(first_item, "b64_json")
-        or image_response_value(first_item, "url")
-    )
-
-
-def first_image_response_item(response: Any) -> Any:
-    data = response.get("data") if isinstance(response, dict) else getattr(response, "data", None)
-    if not data:
-        return None
-    return data[0]
-
-
-def image_response_value(item: Any, key: str) -> Any:
-    if item is None:
-        return None
-    if isinstance(item, dict):
-        return item.get(key)
-    return getattr(item, key, None)
-
-
-def extract_image_bytes_from_response(response: Any) -> bytes:
-    """Read generated image bytes from OpenAI-compatible b64_json or URL responses."""
-    first_item = first_image_response_item(response)
-    b64_json = image_response_value(first_item, "b64_json")
-    if b64_json:
-        b64_text = str(b64_json)
-        if "," in b64_text and b64_text.strip().startswith("data:"):
-            b64_text = b64_text.split(",", 1)[1]
-        return base64.b64decode(b64_text)
-
-    image_url = image_response_value(first_item, "url")
-    if image_url:
-        logger.info("Image URL received, downloading generated asset.")
-        with httpx.Client(timeout=60, trust_env=False) as http_client:
-            img_resp = http_client.get(str(image_url))
-        if img_resp.status_code != 200:
-            raise RuntimeError(f"下载生成图片失败: HTTP {img_resp.status_code}")
-        return img_resp.content
-
-    raise RuntimeError("API 响应中既没有 url 也没有 b64_json，无法获取图片数据。")
-
-
-def generate_image_response(
-    client: OpenAI,
-    model: str,
-    prompt: str,
-    size: str,
-    base_url: Optional[str] = None,
-    timeout: Optional[int] = None,
-) -> Any:
-    """Generate an image with provider-specific fallbacks for OpenAI-compatible services."""
-    seedream_mode = is_seedream_image_model(model, base_url)
-    kwargs: Dict[str, Any] = {
-        "model": model,
-        "prompt": prompt,
-        "n": 1,
-    }
-    if timeout:
-        kwargs["timeout"] = timeout
-
-    if seedream_mode:
-        # Volcengine Ark / Doubao Seedream uses OpenAI-compatible images.generate,
-        # but does not accept OpenAI-only knobs such as quality="standard".
-        try:
-            return client.images.generate(
-                **kwargs,
-                size=size,
-                response_format="b64_json",
-            )
-        except Exception as response_format_error:
-            logger.warning("Seedream image generation with response_format failed, retrying without it: %s", response_format_error)
-            try:
-                return client.images.generate(
-                    **kwargs,
-                    size=size,
-                )
-            except Exception as size_error:
-                logger.warning("Seedream image generation with size failed, retrying minimal params: %s", size_error)
-                return client.images.generate(**kwargs)
-
-    try:
-        return client.images.generate(
-            **kwargs,
-            size=size,
-            quality="standard",
-        )
-    except Exception as full_params_err:
-        logger.warning(
-            "Image gen with full params failed (%s). Retrying with size only for compatible providers...",
-            full_params_err,
-        )
-        try:
-            return client.images.generate(
-                **kwargs,
-                size=size,
-            )
-        except Exception as size_err:
-            logger.warning("Image gen with size failed (%s). Retrying minimal params...", size_err)
-            return client.images.generate(**kwargs)
 
 
 def clean_json_markdown(text: str) -> str:

@@ -15,6 +15,9 @@ def main() -> None:
     video_artifacts = read_text("video_artifact_service.py")
     video_routes = read_text("video_routes.py")
     narration_service = read_text("narration_service.py")
+    narration_audio_service = read_text(
+        "narration_audio_service.py"
+    )
     mask_manifest_service = read_text("mask_manifest_service.py")
     settings_routes = read_text("settings_routes.py")
     settings_service = read_text("settings_service.py")
@@ -55,6 +58,23 @@ def main() -> None:
     assert "def get_openai_client(" not in server
     assert "def process_and_save_image(" not in server
     assert "def generate_image_response(" not in server
+    assert "def clean_tts_text(" in narration_audio_service
+    assert "def prepare_narration_payload(" in narration_audio_service
+    assert (
+        "def rewrite_audio_timeline_by_beats("
+        in narration_audio_service
+    )
+    assert "def clean_tts_text(" not in server
+    assert "def prepare_narration_payload(" not in server
+    assert "def rewrite_audio_timeline_by_beats(" not in server
+    for token in (
+        "APIRouter",
+        "Depends(",
+        "get_db",
+        "server_module",
+        "import server",
+    ):
+        assert token not in narration_audio_service
 
     annotation_start = narration_service.index(
         "def annotate_step6_narration("

@@ -56,6 +56,7 @@ def quick_checks() -> None:
         "one_click_orchestrator.py",
         "one_click_routes.py",
         "narration_routes.py",
+        "narration_audio_service.py",
         "narration_service.py",
         "pptx_export.py",
         "pptx_routes.py",
@@ -161,6 +162,7 @@ def quick_checks() -> None:
         sys.executable,
         "-m",
         "pytest",
+        "checks/test_narration_audio_service.py",
         "checks/test_narration_tts_routes.py",
         "-q",
     ])

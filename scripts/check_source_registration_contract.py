@@ -36,6 +36,9 @@ def main() -> None:
     storyboard_service = (ROOT / "storyboard_service.py").read_text(encoding="utf-8")
     narration_routes = (ROOT / "narration_routes.py").read_text(encoding="utf-8")
     narration_service = (ROOT / "narration_service.py").read_text(encoding="utf-8")
+    narration_audio_service = (
+        ROOT / "narration_audio_service.py"
+    ).read_text(encoding="utf-8")
     mask_routes = (ROOT / "mask_editor_routes.py").read_text(encoding="utf-8")
     mask_manifest = (ROOT / "mask_manifest_service.py").read_text(encoding="utf-8")
     mask_preview = (ROOT / "mask_preview_service.py").read_text(encoding="utf-8")
@@ -97,6 +100,28 @@ def main() -> None:
         assert "sys.modules" not in source, "narration/TTS code receives a dynamic application namespace"
     assert "APIRouter" not in narration_service, "narration service owns HTTP routing again"
     assert "APIRouter" not in tts_service, "TTS service owns HTTP routing again"
+    for function_name in (
+        "clean_tts_text",
+        "prepare_narration_payload",
+        "sync_narration_sources_from_contract",
+        "rewrite_audio_timeline_by_beats",
+    ):
+        assert f"def {function_name}(" in narration_audio_service, (
+            f"narration audio owner is missing {function_name}"
+        )
+        assert f"def {function_name}(" not in server, (
+            f"{function_name} implementation returned to server"
+        )
+    for token in (
+        "APIRouter",
+        "Depends(",
+        "get_db",
+        "server_module",
+        "import server",
+    ):
+        assert token not in narration_audio_service, (
+            "narration audio service owns application wiring again"
+        )
     assert "router = APIRouter()" in article_routes, "article routes module is incomplete"
     assert "APIRouter" not in article_service, "article service owns HTTP routing again"
     assert "Depends(" not in article_service, "article service owns FastAPI dependency wiring again"

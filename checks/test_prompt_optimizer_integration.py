@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import image_style_reverse_service as reverse_style
+import narration_audio_service as narration_audio
 import narration_service as narration
 import project_profile_service as text_style
 import project_style_reference_service as style_references
@@ -78,10 +79,10 @@ def test_narration_annotation_payload_is_minimal() -> None:
         "先解释概念，<#0.35#>最后给出结论。",
         "先解释概念，再给出结论。",
     )
-    assert server.clean_tts_text("保留 (REST) 和 (GraphQL)，移除 (breath) 与 <#0.3#>。") == (
+    assert narration_audio.clean_tts_text("保留 (REST) 和 (GraphQL)，移除 (breath) 与 <#0.3#>。") == (
         "保留 (REST) 和 (GraphQL)，移除 与 。"
     )
-    assert server.normalize_minimax_tts_markup("说明 (REST) API。") == "说明 (REST) API。"
+    assert narration_audio.normalize_minimax_tts_markup("说明 (REST) API。") == "说明 (REST) API。"
 
 
 def test_step2_request_omits_stable_output_goal_and_empty_requirement() -> None:

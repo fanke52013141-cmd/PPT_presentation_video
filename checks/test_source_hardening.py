@@ -21,6 +21,9 @@ def main() -> None:
     visual_contract_service = read_text(
         "visual_contract_service.py"
     )
+    visual_settings_service = read_text(
+        "visual_settings_service.py"
+    )
     mask_manifest_service = read_text("mask_manifest_service.py")
     settings_routes = read_text("settings_routes.py")
     settings_service = read_text("settings_service.py")
@@ -83,6 +86,19 @@ def main() -> None:
     assert "def read_contract_slide_ids(" in visual_contract_service
     assert "def normalize_visual_contract(" not in server
     assert "def read_contract_slide_ids(" not in server
+    for function_name in (
+        "normalize_hex_color",
+        "normalize_subtitle_style",
+        "read_project_visual_settings",
+        "write_project_visual_settings",
+        "subtitle_preview_background_url",
+        "sync_project_background_color",
+    ):
+        assert f"def {function_name}(" in visual_settings_service
+        assert f"def {function_name}(" not in server
+    assert "read_settings: Callable" not in visual_settings_service
+    assert "write_settings: Callable" not in visual_settings_service
+    assert "sync_background: Callable" not in visual_settings_service
 
     annotation_start = narration_service.index(
         "def annotate_step6_narration("

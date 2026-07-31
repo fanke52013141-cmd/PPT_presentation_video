@@ -206,6 +206,30 @@ def main() -> None:
         assert "APIRouter" not in source, "Step 3 service owns HTTP routing again"
         assert "Depends(" not in source, "Step 3 service owns FastAPI dependency wiring again"
         assert "get_db" not in source, "Step 3 service imports the route database dependency again"
+    for function_name in (
+        "normalize_hex_color",
+        "normalize_subtitle_style",
+        "read_project_visual_settings",
+        "write_project_visual_settings",
+        "sync_project_background_color",
+    ):
+        assert f"def {function_name}(" in visual_settings_service, (
+            f"visual settings owner is missing {function_name}"
+        )
+        assert f"def {function_name}(" not in server, (
+            f"{function_name} implementation returned to server"
+        )
+    for callback_name in (
+        "read_settings",
+        "write_settings",
+        "sync_background",
+        "invalidate_background",
+        "invalidate_subtitles",
+        "preview_background_url",
+    ):
+        assert (
+            f"{callback_name}: Callable" not in visual_settings_service
+        ), "visual settings business callback injection returned"
     for source in (
         global_image_style_routes,
         image_workflow_routes,

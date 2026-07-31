@@ -8,6 +8,9 @@ server = (ROOT / "server.py").read_text(encoding="utf-8")
 visual_settings_routes = (
     ROOT / "visual_settings_routes.py"
 ).read_text(encoding="utf-8")
+visual_settings_service = (
+    ROOT / "visual_settings_service.py"
+).read_text(encoding="utf-8")
 app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
 html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
 background_ui = (ROOT / "static" / "storyboard_background_extension.js").read_text(encoding="utf-8")
@@ -16,8 +19,14 @@ reveal_builder = (ROOT / "scripts" / "build_reveal_scene.py").read_text(encoding
 background_color = (ROOT / "scripts" / "background_color.py").read_text(encoding="utf-8")
 style_tokens = yaml.safe_load((ROOT / "config" / "style_tokens.yaml").read_text(encoding="utf-8"))
 
-assert 'IMAGE_GENERATION_BACKGROUND = "#FFFFFF"' in server
-assert 'DEFAULT_VIDEO_BACKGROUND = "#FEFDF9"' in server
+assert (
+    'IMAGE_GENERATION_BACKGROUND = "#FFFFFF"'
+    in visual_settings_service
+)
+assert (
+    'DEFAULT_VIDEO_BACKGROUND = "#FEFDF9"'
+    in visual_settings_service
+)
 assert "/steps/3/visual-settings" in visual_settings_routes
 assert "/steps/3/visual-settings" not in server
 assert "connected_content_alpha" not in server

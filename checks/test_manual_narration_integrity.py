@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import server
 import narration_audio_service as narration_audio
+import visual_settings_service as visual_settings
 from scripts.write_narration_from_visual_contract import spoken_text_for_beat
 
 
@@ -101,7 +102,7 @@ def test_step2_source_sync_preserves_unchanged_tts_and_updates_changed_text(tmp_
 
 
 def test_subtitle_style_round_trips_all_user_controls() -> None:
-    normalized = server.normalize_subtitle_style({
+    normalized = visual_settings.normalize_subtitle_style({
         "font_key": "noto_serif_sc",
         "font_size": 54,
         "font_weight": 700,

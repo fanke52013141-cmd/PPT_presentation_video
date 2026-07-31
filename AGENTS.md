@@ -140,7 +140,11 @@ The Python startup monkey patch has been retired. AI Mask is now source-owned:
   uploads, candidates, ordering, provenance, deletion, and confirmation.
   `image_workflow_routes.py` owns the corresponding HTTP paths.
 - `visual_settings_service.py` owns per-project video background and subtitle
-  settings. `visual_settings_routes.py` owns their HTTP paths.
+  settings, input normalization, file persistence, preview selection, Reveal
+  Manifest background synchronization, and downstream invalidation.
+  `visual_settings_routes.py` owns their HTTP paths. The service receives only
+  storage/lock/contract-reference primitives; never restore business-operation
+  callbacks from `server.py`.
 - Step 3 service modules must not import `get_db`, declare `Depends`, own an
   `APIRouter`, or import the complete application module.
 - `mask_manifest_service.py` owns Step 5 semantic blocks, Manifest repair,

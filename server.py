@@ -122,6 +122,20 @@ from visual_contract_service import (
     read_contract_slide_ids,
     strip_anchor_lead_in,
 )
+from visual_settings_service import (
+    DEFAULT_SUBTITLE_STYLE,
+    DEFAULT_VIDEO_BACKGROUND,
+    IMAGE_GENERATION_BACKGROUND,
+    OPEN_SOURCE_CHINESE_FONTS,
+    VisualSettingsDependencies,
+    configure_visual_settings_service,
+    normalize_hex_color,
+    normalize_subtitle_style,
+    read_project_visual_settings,
+    subtitle_preview_background_url,
+    sync_project_background_color,
+    write_project_visual_settings,
+)
 
 # 初始化日志与数据库
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -196,123 +210,6 @@ STEP3_IMAGE_PROMPTS_FILE = "step3_image_prompts.json"
 IMAGE_STYLE_TEMPLATES_DIR = os.path.join(DATA_DIR, "image_style_templates")
 IMAGE_STYLE_TEMPLATES_INDEX = os.path.join(IMAGE_STYLE_TEMPLATES_DIR, "index.json")
 REVEAL_PIPELINE_VERSION = "exact_rle_mask_with_manual_corrections_v5"
-IMAGE_GENERATION_BACKGROUND = "#FFFFFF"
-DEFAULT_VIDEO_BACKGROUND = "#FEFDF9"
-PROJECT_VISUAL_SETTINGS_FILE = "visual_settings.json"
-DEFAULT_SUBTITLE_STYLE = {
-    "font_key": "noto_sans_sc",
-    "font_family": "Noto Sans SC",
-    "font_size": 38,
-    "font_weight": 500,
-    "bottom": 18,
-    "horizontal_margin": 180,
-    "color": "#111111",
-    "highlight_color": "#1E3A8A",
-    "paging_window_ms": 1300,
-    "token_highlight": True,
-    "max_lines": 2,
-    "line_height": 1.4,
-}
-OPEN_SOURCE_CHINESE_FONTS = [
-    {
-        "key": "noto_sans_sc",
-        "label": "Noto Sans SC（现代黑体）",
-        "family": "Noto Sans SC",
-        "license": "SIL OFL 1.1",
-        "source": "Google Fonts",
-    },
-    {
-        "key": "noto_serif_sc",
-        "label": "Noto Serif SC（现代宋体）",
-        "family": "Noto Serif SC",
-        "license": "SIL OFL 1.1",
-        "source": "Google Fonts",
-    },
-    {
-        "key": "ma_shan_zheng",
-        "label": "马善政毛笔体（书写感）",
-        "family": "Ma Shan Zheng",
-        "license": "SIL OFL 1.1",
-        "source": "Google Fonts",
-    },
-    {
-        "key": "zcool_xiaowei",
-        "label": "站酷小薇体（标题宋体）",
-        "family": "ZCOOL XiaoWei",
-        "license": "SIL OFL 1.1",
-        "source": "Google Fonts",
-    },
-    {
-        "key": "zcool_qingke",
-        "label": "站酷庆科黄油体（醒目展示）",
-        "family": "ZCOOL QingKe HuangYou",
-        "license": "SIL OFL 1.1",
-        "source": "Google Fonts",
-    },
-    {
-        "key": "zcool_kuaile",
-        "label": "站酷快乐体（活泼手写）",
-        "family": "ZCOOL KuaiLe",
-        "license": "SIL OFL 1.1",
-        "source": "Google Fonts",
-    },
-    {
-        "key": "long_cang",
-        "label": "龙藏体（粗犷手写）",
-        "family": "Long Cang",
-        "license": "SIL OFL 1.1",
-        "source": "Google Fonts",
-    },
-    {
-        "key": "liu_jian_mao_cao",
-        "label": "刘建毛草（奔放草书）",
-        "family": "Liu Jian Mao Cao",
-        "license": "SIL OFL 1.1",
-        "source": "Google Fonts",
-    },
-    {
-        "key": "zhi_mang_xing",
-        "label": "志莽行书（自然行书）",
-        "family": "Zhi Mang Xing",
-        "license": "SIL OFL 1.1",
-        "source": "Google Fonts",
-    },
-    {
-        "key": "lxgw_marker_gothic",
-        "label": "霞鹜标楷黑（马克笔展示）",
-        "family": "LXGW Marker Gothic",
-        "license": "SIL OFL 1.1",
-        "source": "Google Fonts",
-    },
-    {
-        "key": "lxgw_wenkai_tc",
-        "label": "霞鹜文楷 TC（清晰楷体）",
-        "family": "LXGW WenKai TC",
-        "license": "SIL OFL 1.1",
-        "source": "Google Fonts",
-    },
-    {
-        "key": "noto_sans_tc",
-        "label": "Noto Sans TC（繁简兼容黑体）",
-        "family": "Noto Sans TC",
-        "license": "SIL OFL 1.1",
-        "source": "Google Fonts",
-    },
-    {
-        "key": "noto_serif_tc",
-        "label": "Noto Serif TC（繁简兼容宋体）",
-        "family": "Noto Serif TC",
-        "license": "SIL OFL 1.1",
-        "source": "Google Fonts",
-    },
-    {
-        "key": "lxgw_wenkai",
-        "label": "霞鹜文楷（本机字体优先）",
-        "family": "LXGW WenKai",
-        "license": "SIL OFL 1.1",
-        "source": "LXGW WenKai",
-    },
-]
 def reveal_lock_for(project: Project) -> threading.RLock:
     return project_artifact_lock(project.run_dir)
 
@@ -725,172 +622,6 @@ def sync_reveal_manifest_to_contract(project: Project, slide_ids: Optional[List[
         current_slide_ids,
         allow_empty=explicit_slide_ids,
     )
-
-
-def normalize_hex_color(value: Any, fallback: str = DEFAULT_VIDEO_BACKGROUND) -> str:
-    text = str(value or "").strip().upper()
-    if re.fullmatch(r"#[0-9A-F]{6}", text):
-        return text
-    return fallback
-
-
-def project_visual_settings_path(project: Project) -> str:
-    return os.path.join(project.run_dir, PROJECT_VISUAL_SETTINGS_FILE)
-
-
-def normalize_subtitle_style(value: Any) -> Dict[str, Any]:
-    payload = value if isinstance(value, dict) else {}
-    def clamp_int(raw: Any, fallback: int, minimum: int, maximum: int) -> int:
-        try:
-            parsed = int(float(raw))
-        except (TypeError, ValueError):
-            parsed = fallback
-        return max(minimum, min(maximum, parsed))
-
-    def clamp_float(raw: Any, fallback: float, minimum: float, maximum: float) -> float:
-        try:
-            parsed = float(raw)
-        except (TypeError, ValueError):
-            parsed = fallback
-        return max(minimum, min(maximum, parsed))
-
-    def parse_bool(raw: Any, fallback: bool) -> bool:
-        if isinstance(raw, bool):
-            return raw
-        if isinstance(raw, str):
-            normalized = raw.strip().lower()
-            if normalized in {"true", "1", "yes", "on"}:
-                return True
-            if normalized in {"false", "0", "no", "off"}:
-                return False
-        if isinstance(raw, (int, float)):
-            return bool(raw)
-        return fallback
-
-    font_by_key = {font["key"]: font for font in OPEN_SOURCE_CHINESE_FONTS}
-    font_key = str(payload.get("font_key") or DEFAULT_SUBTITLE_STYLE["font_key"]).strip()
-    if font_key not in font_by_key:
-        font_key = DEFAULT_SUBTITLE_STYLE["font_key"]
-    font = font_by_key[font_key]
-    return {
-        "font_key": font_key,
-        "font_family": font["family"],
-        "font_size": clamp_int(payload.get("font_size"), DEFAULT_SUBTITLE_STYLE["font_size"], 22, 72),
-        "font_weight": clamp_int(payload.get("font_weight"), DEFAULT_SUBTITLE_STYLE["font_weight"], 300, 800),
-        "bottom": clamp_int(payload.get("bottom"), DEFAULT_SUBTITLE_STYLE["bottom"], 0, 220),
-        "horizontal_margin": clamp_int(
-            payload.get("horizontal_margin"),
-            DEFAULT_SUBTITLE_STYLE["horizontal_margin"],
-            40,
-            420,
-        ),
-        "color": normalize_hex_color(payload.get("color"), DEFAULT_SUBTITLE_STYLE["color"]),
-        "highlight_color": normalize_hex_color(
-            payload.get("highlight_color"),
-            DEFAULT_SUBTITLE_STYLE["highlight_color"],
-        ),
-        "paging_window_ms": clamp_int(
-            payload.get("paging_window_ms"),
-            DEFAULT_SUBTITLE_STYLE["paging_window_ms"],
-            600,
-            2500,
-        ),
-        "token_highlight": parse_bool(
-            payload.get("token_highlight"),
-            DEFAULT_SUBTITLE_STYLE["token_highlight"],
-        ),
-        "max_lines": clamp_int(
-            payload.get("max_lines"),
-            DEFAULT_SUBTITLE_STYLE["max_lines"],
-            1,
-            3,
-        ),
-        "line_height": clamp_float(
-            payload.get("line_height"),
-            DEFAULT_SUBTITLE_STYLE["line_height"],
-            1.0,
-            2.0,
-        ),
-    }
-
-
-def read_project_visual_settings(project: Project) -> Dict[str, Any]:
-    path = project_visual_settings_path(project)
-    payload: Dict[str, Any] = {}
-    if os.path.exists(path):
-        try:
-            with open(path, "r", encoding="utf-8") as file:
-                value = json.load(file)
-            if isinstance(value, dict):
-                payload = value
-        except Exception as exc:
-            logger.warning("Failed to read project visual settings: %s", exc)
-    return {
-        "generation_background": IMAGE_GENERATION_BACKGROUND,
-        "video_background": normalize_hex_color(payload.get("video_background")),
-        "subtitle_style": normalize_subtitle_style(payload.get("subtitle_style")),
-    }
-
-
-def write_project_visual_settings(
-    project: Project,
-    video_background: Optional[str] = None,
-    subtitle_style: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    current = read_project_visual_settings(project)
-    settings = {
-        "generation_background": IMAGE_GENERATION_BACKGROUND,
-        "video_background": normalize_hex_color(video_background, current["video_background"]),
-        "subtitle_style": normalize_subtitle_style(subtitle_style or current["subtitle_style"]),
-    }
-    write_json_atomic(project_visual_settings_path(project), settings)
-    return settings
-
-
-def subtitle_preview_background_url(project: Project) -> str:
-    for slide_id in read_contract_slide_ids(project.run_dir):
-        path = os.path.join(project.run_dir, "slides", slide_id, "visual_draft.png")
-        if os.path.exists(path):
-            return f"/api/projects/{project.id}/slides/{slide_id}/image?t={int(os.path.getmtime(path))}"
-    template_path = os.path.join(STYLE_REFERENCE_DIR, STYLE_REFERENCE_FILES["template"])
-    if os.path.exists(template_path):
-        return f"/api/image-style/reference/template?t={int(os.path.getmtime(template_path))}"
-    return ""
-
-
-def invalidate_subtitle_derivatives(project: Project, db: Session) -> None:
-    invalidation_service.subtitle_style_changed(project)
-    db.commit()
-
-
-def sync_project_background_color(project: Project) -> Optional[str]:
-    """Apply the user-selected final video background to the reveal manifest."""
-    manifest_path = os.path.join(project.run_dir, "reveal_manifest.json")
-    if not os.path.exists(manifest_path):
-        return None
-    settings = read_project_visual_settings(project)
-    background_hex = settings["video_background"]
-    with reveal_lock_for(project):
-        with open(manifest_path, "r", encoding="utf-8") as file:
-            manifest = json.load(file)
-        canvas = manifest.setdefault("canvas", {})
-        canvas["background"] = background_hex
-        manifest.pop("background_detection", None)
-        manifest["background_settings"] = {
-            "generation_background": IMAGE_GENERATION_BACKGROUND,
-            "video_background": background_hex,
-            "outer_background_removal": "outer_connected_near_white_only",
-        }
-        write_json_atomic(manifest_path, manifest)
-    return background_hex
-
-
-def invalidate_video_background_derivatives(project: Project, db: Session) -> None:
-    invalidation_service.video_background_changed(
-        project,
-        read_contract_slide_ids(project.run_dir),
-    )
-    db.commit()
 
 
 configure_narration_audio_dependencies(
@@ -1338,22 +1069,16 @@ try:
     from visual_settings_routes import (
         router as visual_settings_router,
     )
-    from visual_settings_service import (
-        VisualSettingsDependencies,
-        configure_visual_settings_service,
-    )
 
     configure_visual_settings_service(
         VisualSettingsDependencies(
-            read_settings=read_project_visual_settings,
-            write_settings=write_project_visual_settings,
-            sync_background=sync_project_background_color,
-            invalidate_background=(
-                invalidate_video_background_derivatives
+            read_contract_slide_ids=read_contract_slide_ids,
+            reveal_lock_for=reveal_lock_for,
+            write_json_atomic=write_json_atomic,
+            style_reference_dir=Path(STYLE_REFERENCE_DIR),
+            style_reference_template=(
+                STYLE_REFERENCE_FILES["template"]
             ),
-            invalidate_subtitles=invalidate_subtitle_derivatives,
-            preview_background_url=subtitle_preview_background_url,
-            fonts=OPEN_SOURCE_CHINESE_FONTS,
         )
     )
     app.include_router(visual_settings_router)

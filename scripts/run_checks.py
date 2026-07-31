@@ -157,6 +157,7 @@ def quick_checks() -> None:
         "-m",
         "pytest",
         "checks/test_mask_editor_services.py",
+        "checks/test_step3_service_boundaries.py",
         "-q",
     ])
     run([

@@ -18,6 +18,9 @@ def main() -> None:
     narration_audio_service = read_text(
         "narration_audio_service.py"
     )
+    visual_contract_service = read_text(
+        "visual_contract_service.py"
+    )
     mask_manifest_service = read_text("mask_manifest_service.py")
     settings_routes = read_text("settings_routes.py")
     settings_service = read_text("settings_service.py")
@@ -75,6 +78,11 @@ def main() -> None:
         "import server",
     ):
         assert token not in narration_audio_service
+        assert token not in visual_contract_service
+    assert "def normalize_visual_contract(" in visual_contract_service
+    assert "def read_contract_slide_ids(" in visual_contract_service
+    assert "def normalize_visual_contract(" not in server
+    assert "def read_contract_slide_ids(" not in server
 
     annotation_start = narration_service.index(
         "def annotate_step6_narration("

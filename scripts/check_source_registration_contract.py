@@ -39,6 +39,9 @@ def main() -> None:
     narration_audio_service = (
         ROOT / "narration_audio_service.py"
     ).read_text(encoding="utf-8")
+    visual_contract_service = (
+        ROOT / "visual_contract_service.py"
+    ).read_text(encoding="utf-8")
     mask_routes = (ROOT / "mask_editor_routes.py").read_text(encoding="utf-8")
     mask_manifest = (ROOT / "mask_manifest_service.py").read_text(encoding="utf-8")
     mask_preview = (ROOT / "mask_preview_service.py").read_text(encoding="utf-8")
@@ -121,6 +124,21 @@ def main() -> None:
     ):
         assert token not in narration_audio_service, (
             "narration audio service owns application wiring again"
+        )
+        assert token not in visual_contract_service, (
+            "visual contract service owns application wiring again"
+        )
+    for function_name in (
+        "normalize_visual_type",
+        "narration_dedupe_key",
+        "normalize_visual_contract",
+        "read_contract_slide_ids",
+    ):
+        assert f"def {function_name}(" in visual_contract_service, (
+            f"visual contract owner is missing {function_name}"
+        )
+        assert f"def {function_name}(" not in server, (
+            f"{function_name} implementation returned to server"
         )
     assert "router = APIRouter()" in article_routes, "article routes module is incomplete"
     assert "APIRouter" not in article_service, "article service owns HTTP routing again"

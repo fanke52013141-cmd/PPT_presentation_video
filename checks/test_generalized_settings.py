@@ -13,6 +13,7 @@ if str(ROOT) not in sys.path:
 from scripts.build_reveal_scene import build_event  # noqa: E402
 from scripts.pipeline_profiles import normalize_reveal_action, role_catalog  # noqa: E402
 import server as server_module  # noqa: E402
+import visual_contract_service as visual_contract  # noqa: E402
 import global_image_style_service as global_style  # noqa: E402
 from mask_manifest_service import deterministic_semantic_blocks  # noqa: E402
 import storyboard_service as storyboard_module  # noqa: E402
@@ -73,7 +74,7 @@ def main() -> None:
     assert "不绑定旁白" not in migrated["storyboard"]["roles"]["decoration"]["description"]
     assert all("display_only" not in rule for rule in migrated["storyboard"]["structure_rules"])
 
-    contract = server_module.normalize_visual_contract(
+    contract = visual_contract.normalize_visual_contract(
         {
             "version": "visual_contract_v1",
             "presentation_policy": {"subtitle_policy": "all_slides_have_subtitle"},

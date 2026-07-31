@@ -34,6 +34,7 @@ from scripts.pipeline_profiles import (
     storyboard_profile_prompt,
     storyboard_requirements,
 )
+from visual_contract_service import normalize_visual_type
 
 
 logger = logging.getLogger("PPTStudio.Storyboard")
@@ -734,15 +735,6 @@ def normalize_slide_body(slide: Dict[str, Any]) -> str:
     if body:
         return body
     return "\n".join(point["text"] for point in normalize_body_points(slide.get("body_points")) if point.get("text"))
-
-
-def normalize_visual_type(value: Any, has_text: bool = False) -> str:
-    visual_type = str(value or "").strip().lower()
-    if visual_type in {"text", "文字"}:
-        return "text"
-    if visual_type in {"picture", "illustration", "image", "diagram", "chart", "visual", "graphic", "text_and_illustration"}:
-        return "picture"
-    return "text" if has_text else "picture"
 
 
 def normalize_body_points(value: Any, fallback_body: str = "") -> List[Dict[str, str]]:

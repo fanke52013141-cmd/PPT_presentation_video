@@ -8,7 +8,7 @@ import server
 import storyboard_service
 
 from scripts.write_narration_from_visual_contract import build_slide_narration
-from server import (
+from visual_contract_service import (
     dedupe_narration_beats,
     narration_dedupe_key,
     normalize_visual_contract,

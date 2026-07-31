@@ -37,10 +37,8 @@ from project_style_reference_service import (
     project_generate_prompt_for_slide,
     project_reference_paths,
 )
-from storyboard_service import (
-    normalize_visual_type,
-    read_prompt_template,
-)
+from storyboard_service import read_prompt_template
+from visual_contract_service import normalize_visual_type
 from visual_provenance import (
     promote_candidate_provenance,
     provenance_path as visual_provenance_path,

@@ -88,6 +88,7 @@ def quick_checks() -> None:
         "tts_routes.py",
         "tts_service.py",
         "visual_provenance.py",
+        "visual_contract_service.py",
         "video_artifact_service.py",
         "video_contracts.py",
         "video_job_store.py",
@@ -163,6 +164,7 @@ def quick_checks() -> None:
         "-m",
         "pytest",
         "checks/test_narration_audio_service.py",
+        "checks/test_visual_contract_service.py",
         "checks/test_narration_tts_routes.py",
         "-q",
     ])

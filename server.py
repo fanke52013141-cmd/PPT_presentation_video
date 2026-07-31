@@ -113,6 +113,15 @@ from narration_audio_service import (
     sync_narration_sources_from_contract,
     tts_text_parts_with_pauses,
 )
+from visual_contract_service import (
+    contract_slide_ids_from_payload,
+    dedupe_narration_beats,
+    narration_dedupe_key,
+    normalize_visual_contract,
+    normalize_visual_type,
+    read_contract_slide_ids,
+    strip_anchor_lead_in,
+)
 
 # 初始化日志与数据库
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -673,163 +682,6 @@ def generate_json_with_configured_llm(
     )
 
 
-def strip_anchor_lead_in(spoken_text: str, anchor: str) -> str:
-    text = str(spoken_text or "").strip()
-    anchor = str(anchor or "").strip()
-    if not text or not anchor:
-        return text
-    patterns = [
-        rf"^围绕“{re.escape(anchor)}”[，,]\s*",
-        rf"^围绕\"{re.escape(anchor)}\"[，,]\s*",
-        rf"^围绕「{re.escape(anchor)}」[，,]\s*",
-        rf"^围绕『{re.escape(anchor)}』[，,]\s*",
-    ]
-    for pattern in patterns:
-        cleaned = re.sub(pattern, "", text)
-        if cleaned != text:
-            return cleaned.strip()
-    return text
-
-
-def narration_dedupe_key(value: Any) -> str:
-    """Return a punctuation/markup-insensitive key for one spoken sentence."""
-    text = str(value or "").strip().casefold()
-    text = re.sub(r"<#\d+(?:\.\d{1,2})?#>|\([A-Za-z-]+\)", "", text)
-    return re.sub(r"[\W_]+", "", text, flags=re.UNICODE)
-
-
-def dedupe_narration_beats(beats: Any) -> List[Dict[str, Any]]:
-    """Keep the first occurrence of each spoken sentence on a slide."""
-    if not isinstance(beats, list):
-        return []
-    seen: set[str] = set()
-    result: List[Dict[str, Any]] = []
-    for beat in beats:
-        if not isinstance(beat, dict):
-            continue
-        text = beat.get("spoken_text") or beat.get("tts_text") or beat.get("source_text") or ""
-        key = narration_dedupe_key(text)
-        if key and key in seen:
-            continue
-        if key:
-            seen.add(key)
-        result.append(beat)
-    return result
-
-
-def normalize_visual_contract(
-    contract: Dict[str, Any],
-    profile: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    presentation_policy = contract.get("presentation_policy")
-    if not isinstance(presentation_policy, dict):
-        presentation_policy = {}
-        contract["presentation_policy"] = presentation_policy
-    presentation_policy["subtitle_policy"] = "no_slides_have_subtitle"
-    presentation_policy["subtitle_decided_by"] = "system_no_subtitle_contract"
-    slides = contract.get("slides")
-    if not isinstance(slides, list):
-        return contract
-    for slide in slides:
-        if not isinstance(slide, dict):
-            continue
-        slide["subtitle"] = ""
-        groups = slide.get("visual_groups")
-        if not isinstance(groups, list):
-            continue
-        groups = [
-            group for group in groups
-            if not isinstance(group, dict)
-            or str(group.get("role") or "").strip().lower() != "subtitle"
-        ]
-        slide["visual_groups"] = groups
-
-        group_by_id: Dict[str, Dict[str, Any]] = {}
-        for index, group in enumerate(groups, start=1):
-            if not isinstance(group, dict):
-                continue
-            group_id = str(group.get("id") or f"group_{index:02d}").strip()
-            group["id"] = group_id
-            role = str(group.get("role") or "content_body").strip()
-            group["role"] = role
-            group["visual_type"] = normalize_visual_type(
-                group.get("visual_type"),
-                has_text=bool(str(group.get("display_text") or "").strip()),
-            )
-            if not str(group.get("content_unit_id") or "").strip():
-                group["content_unit_id"] = f"{group_id}_unit"
-            group.pop("speak_policy", None)
-            if role != "decoration" and not str(group.get("mask_target") or "").strip():
-                group["mask_target"] = str(
-                    group.get("visual_anchor") or group.get("visible_text") or group_id
-                ).strip()
-            if not group.get("reveal_order"):
-                group["reveal_order"] = index
-            group_by_id[group_id] = group
-
-        beats = slide.get("narration_beats")
-        if not isinstance(beats, list):
-            continue
-        normalized_beats = []
-        manual_mode_slide = not groups  # no visual groups: beats are free-standing
-        for index, beat in enumerate(beats, start=1):
-            if not isinstance(beat, dict):
-                continue
-            if not str(beat.get("id") or "").strip():
-                beat["id"] = f"beat_{index:02d}"
-            group_id = str(beat.get("group_id") or "").strip()
-            group = group_by_id.get(group_id)
-            if not group:
-                if manual_mode_slide:
-                    # Manual mode: keep beats without group binding. Fill in
-                    # content_unit_id if missing so downstream consumers don't
-                    # break, but do not require a visual_anchor.
-                    if not str(beat.get("content_unit_id") or "").strip():
-                        beat["content_unit_id"] = f"{slide.get('slide_id', 'slide')}_unit_{index:03d}"
-                    normalized_beats.append(beat)
-                continue
-            if not str(beat.get("content_unit_id") or "").strip():
-                beat["content_unit_id"] = group.get("content_unit_id")
-            if not str(beat.get("visible_anchor") or "").strip():
-                beat["visible_anchor"] = group.get("visible_text")
-            anchor = str(beat.get("visible_anchor") or group.get("visible_text") or "").strip()
-            spoken_text = str(beat.get("spoken_text") or "").strip()
-            spoken_text = strip_anchor_lead_in(spoken_text, anchor)
-            if not spoken_text:
-                intent = str(beat.get("spoken_intent") or "").strip()
-                beat["spoken_text"] = intent or f"请看画面中的{anchor}。"
-            else:
-                beat["spoken_text"] = spoken_text
-            normalized_beats.append(beat)
-        slide["narration_beats"] = dedupe_narration_beats(normalized_beats)
-
-    return contract
-
-
-def contract_slide_ids_from_payload(payload: Dict[str, Any]) -> List[str]:
-    slide_ids: List[str] = []
-    for slide in payload.get("slides", []) or []:
-        if not isinstance(slide, dict):
-            continue
-        slide_id = str(slide.get("slide_id") or "").strip()
-        if slide_id:
-            slide_ids.append(slide_id)
-    return slide_ids
-
-
-def read_contract_slide_ids(run_dir: str) -> List[str]:
-    contract_path = os.path.join(run_dir, "planning", "visual_contract.json")
-    if not os.path.exists(contract_path):
-        return []
-    try:
-        with open(contract_path, "r", encoding="utf-8") as f:
-            contract = json.load(f)
-    except Exception as e:
-        logger.warning(f"Failed to read visual contract for slide sync: {e}")
-        return []
-    return contract_slide_ids_from_payload(contract)
-
-
 def all_current_slide_images_exist(project: Project) -> bool:
     slide_ids = read_contract_slide_ids(project.run_dir)
     if not slide_ids:
@@ -1278,7 +1130,6 @@ from storyboard_service import (
     get_step2_result,
     migrate_legacy_step2_prompt,
     normalize_slide_visual_plan,
-    normalize_visual_type,
     read_prompt_template,
     run_step2_json_llm,
     step2_llm_vendor_options,

@@ -98,6 +98,8 @@ def test_production_provider_policy_is_configurable() -> None:
     with patch.dict(os.environ, {"PPT_STUDIO_PRODUCTION_IMAGE_PROVIDERS": "codex_image_gen,manual_upload"}):
         assert production_allowed_image_providers() == ("codex_image_gen", "manual_upload")
 
-    source = (ROOT / "server.py").read_text(encoding="utf-8")
+    source = (
+        ROOT / "image_workflow_service.py"
+    ).read_text(encoding="utf-8")
     assert "write_visual_provenance(" in source
     assert "project_generate_prompt_for_slide(" in source

@@ -9,7 +9,7 @@ from fastapi import HTTPException
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import server  # noqa: E402
+import image_workflow_service as image_workflow  # noqa: E402
 from visual_provenance import visual_provenance_status, write_visual_provenance  # noqa: E402
 
 
@@ -102,9 +102,12 @@ def test_dragging_moves_images_without_reordering_storyboard() -> None:
         project = FakeProject(run_dir)
         db = FakeDb(project)
         slide_ids = ["a", "b", "c"]
-        version = server.step3_image_assignment_version(str(run_dir), slide_ids)
+        version = image_workflow.step3_image_assignment_version(
+            str(run_dir),
+            slide_ids,
+        )
 
-        response = server.update_step3_image_order(
+        response = image_workflow.update_step3_image_order(
             project.id,
             {"from_index": 2, "to_index": 0, "order_version": version},
             db,
@@ -128,7 +131,7 @@ def test_dragging_moves_images_without_reordering_storyboard() -> None:
         assert all(slide["groups"] == [] and slide["status"] == "pending" for slide in manifest["slides"])
 
         try:
-            server.update_step3_image_order(
+            image_workflow.update_step3_image_order(
                 project.id,
                 {"from_index": 0, "to_index": 1, "order_version": version},
                 db,
@@ -159,7 +162,7 @@ def test_bulk_delete_images_clears_all_slide_derivatives() -> None:
 
         project = FakeProject(run_dir)
         db = FakeDb(project)
-        response = server.delete_all_slide_images(project.id, db)
+        response = image_workflow.delete_all_slide_images(project.id, db)
 
         assert response["deleted_count"] == 2
         assert response["slide_ids"] == ["a", "b"]

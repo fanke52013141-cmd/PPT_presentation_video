@@ -23,6 +23,24 @@ def main() -> None:
     tts_service = (ROOT / "tts_service.py").read_text(encoding="utf-8")
     project_routes = (ROOT / "project_routes.py").read_text(encoding="utf-8")
     project_service = (ROOT / "project_service.py").read_text(encoding="utf-8")
+    global_image_style_routes = (
+        ROOT / "global_image_style_routes.py"
+    ).read_text(encoding="utf-8")
+    global_image_style_service = (
+        ROOT / "global_image_style_service.py"
+    ).read_text(encoding="utf-8")
+    image_workflow_routes = (
+        ROOT / "image_workflow_routes.py"
+    ).read_text(encoding="utf-8")
+    image_workflow_service = (
+        ROOT / "image_workflow_service.py"
+    ).read_text(encoding="utf-8")
+    visual_settings_routes = (
+        ROOT / "visual_settings_routes.py"
+    ).read_text(encoding="utf-8")
+    visual_settings_service = (
+        ROOT / "visual_settings_service.py"
+    ).read_text(encoding="utf-8")
     html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
     assert not (ROOT / "runtime_bootstrap.py").exists(), "empty runtime bootstrap should stay retired"
     assert "app.include_router(one_click_router)" in server, "one-click router is not explicitly registered"
@@ -32,6 +50,9 @@ def main() -> None:
     assert "app.include_router(narration_router)" in server, "narration router is not explicitly registered"
     assert "app.include_router(tts_router)" in server, "TTS router is not explicitly registered"
     assert "app.include_router(project_router)" in server, "project router is not explicitly registered"
+    assert "app.include_router(global_image_style_router)" in server, "global image-style router is not explicitly registered"
+    assert "app.include_router(image_workflow_router)" in server, "Step 3 image workflow router is not explicitly registered"
+    assert "app.include_router(visual_settings_router)" in server, "visual settings router is not explicitly registered"
     assert "app.include_router(pptx_router)" in server, "PPTX router is not explicitly registered"
     assert "app.include_router(video_router)" in server, "video router is not explicitly registered"
     assert "one_click_orchestrator._register" not in server, "legacy one-click registration returned"
@@ -56,6 +77,30 @@ def main() -> None:
     assert '@app.post("/api/projects")' not in server, "project creation route returned to server"
     assert "APIRouter" not in project_service, "project service owns HTTP routing again"
     assert "router = APIRouter()" in project_routes, "project routes module is incomplete"
+    for source in (
+        global_image_style_service,
+        image_workflow_service,
+        visual_settings_service,
+    ):
+        assert "APIRouter" not in source, "Step 3 service owns HTTP routing again"
+        assert "Depends(" not in source, "Step 3 service owns FastAPI dependency wiring again"
+        assert "get_db" not in source, "Step 3 service imports the route database dependency again"
+    for source in (
+        global_image_style_routes,
+        image_workflow_routes,
+        visual_settings_routes,
+    ):
+        assert "router = APIRouter()" in source, "Step 3 routes module is incomplete"
+    for source in (
+        global_image_style_routes,
+        global_image_style_service,
+        image_workflow_routes,
+        image_workflow_service,
+        visual_settings_routes,
+        visual_settings_service,
+    ):
+        assert "server_module" not in source, "Step 3 code receives the server module again"
+        assert "import server" not in source, "Step 3 code imports the application module again"
     assert "register_pptx_routes" not in server, "legacy PPTX registration returned"
     assert "app.include_router(project_style_router)" in server, "project style router is not explicitly registered"
     assert "register_project_style_routes" not in server, "legacy project style registration returned"

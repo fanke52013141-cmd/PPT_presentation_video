@@ -46,9 +46,18 @@ def test_imported_reference_requires_valid_bounded_image() -> None:
 
 
 def test_reference_upload_reads_only_limit_plus_one() -> None:
-    source = (ROOT / "server.py").read_text(encoding="utf-8")
-    assert "file.file.read(MAX_IMAGE_UPLOAD_BYTES + 1)" in source
-    assert "image = open_validated_image(content).convert(\"RGB\")" in source
+    global_style_source = (
+        ROOT / "global_image_style_service.py"
+    ).read_text(encoding="utf-8")
+    image_workflow_source = (
+        ROOT / "image_workflow_service.py"
+    ).read_text(encoding="utf-8")
+    for source in (global_style_source, image_workflow_source):
+        assert "file.file.read(MAX_IMAGE_UPLOAD_BYTES + 1)" in source
+    assert (
+        'image = open_validated_image(content).convert("RGB")'
+        in global_style_source
+    )
 
 
 if __name__ == "__main__":

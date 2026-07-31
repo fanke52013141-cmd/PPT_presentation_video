@@ -9,6 +9,8 @@ sys.path.insert(0, str(ROOT))
 
 import ai_mask_engine as mask
 import ai_mask_config
+import global_image_style_service as global_image_style
+import image_workflow_service as image_workflow
 import narration_service
 import server
 from scripts import write_visual_prompts
@@ -113,7 +115,10 @@ sample_slides = [
         ],
     },
 ]
-batch_prompt = server.compose_step3_batch_copy_prompt("UNIQUE_GLOBAL_STYLE", sample_slides)
+batch_prompt = image_workflow.compose_step3_batch_copy_prompt(
+    "UNIQUE_GLOBAL_STYLE",
+    sample_slides,
+)
 assert batch_prompt.count("UNIQUE_GLOBAL_STYLE") == 1
 assert "slide_001" in batch_prompt and "slide_002" in batch_prompt
 assert "First title" in batch_prompt and "Second title" in batch_prompt
@@ -122,20 +127,26 @@ assert "must not enter image input" not in batch_prompt
 assert batch_prompt.count("<NonOverridableProductionRules>") == 1
 assert "step3BatchPrompt" in app
 
-minimal_input = server.step3_slide_input_payload(sample_slides[0])
+minimal_input = image_workflow.step3_slide_input_payload(sample_slides[0])
 assert minimal_input == {
     "slide_id": "slide_001",
     "main_title": "First title",
     "body_elements": [{"type": "text", "content": "Alpha"}],
 }
 assert write_visual_prompts.compact_visual_input(sample_slides[0]) == minimal_input
-single_prompt = server.compose_step3_single_slide_prompt("STYLE", sample_slides[0], "CUSTOM SYSTEM")
+single_prompt = image_workflow.compose_step3_single_slide_prompt(
+    "STYLE",
+    sample_slides[0],
+    "CUSTOM SYSTEM",
+)
 assert "CUSTOM SYSTEM" in single_prompt
 assert "First title" in single_prompt and "Alpha" in single_prompt
 assert single_prompt.count("<NonOverridableProductionRules>") == 1
-assert server.enforce_white_generation_background(single_prompt) == single_prompt
+assert image_workflow.enforce_white_generation_background(single_prompt) == single_prompt
 
-minimal_style = server.build_image_style_prompt(server.read_style_tokens_data())
+minimal_style = global_image_style.build_image_style_prompt(
+    global_image_style.read_style_tokens_data()
+)
 assert "只描述视觉语言，不重复生产规则" in minimal_style
 assert "narration beat" not in minimal_style
 assert "visual_group" not in minimal_style
@@ -144,7 +155,13 @@ assert len(minimal_style) < 1200
 
 with tempfile.TemporaryDirectory() as temp_dir:
     project = SimpleNamespace(run_dir=temp_dir)
-    server.write_step3_image_system_content(project, "PROJECT CUSTOM PROMPT")
-    assert server.read_step3_image_system_content(project) == "PROJECT CUSTOM PROMPT"
+    image_workflow.write_step3_image_system_content(
+        project,
+        "PROJECT CUSTOM PROMPT",
+    )
+    assert (
+        image_workflow.read_step3_image_system_content(project)
+        == "PROJECT CUSTOM PROMPT"
+    )
 
 print("prompt and thumbnail checks passed")

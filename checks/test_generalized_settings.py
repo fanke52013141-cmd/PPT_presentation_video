@@ -13,9 +13,12 @@ if str(ROOT) not in sys.path:
 from scripts.build_reveal_scene import build_event  # noqa: E402
 from scripts.pipeline_profiles import normalize_reveal_action, role_catalog  # noqa: E402
 import server as server_module  # noqa: E402
+import global_image_style_service as global_style  # noqa: E402
 import storyboard_service as storyboard_module  # noqa: E402
 from server import (  # noqa: E402
     OPEN_SOURCE_CHINESE_FONTS,
+)
+from global_image_style_service import (  # noqa: E402
     image_style_template_detail,
     merge_image_style_update,
     read_style_tokens_data,
@@ -221,7 +224,7 @@ def main() -> None:
     assert "handleStep2MapEditorChange" in app_js
     assert "画面文字 / 元素名称" not in app_js
     assert "绑定到" not in app_js
-    assert server_module.IMAGE_STYLE_PROMPT_KEY == "prompt_system_content"
+    assert global_style.IMAGE_STYLE_PROMPT_KEY == "prompt_system_content"
     assert "previewGlobalAnimationSettings" in app_js
     assert ".config-editor-scroll" in css
     assert ".mask-visual-card" in css
@@ -241,7 +244,7 @@ def main() -> None:
         storyboard_module.STORYBOARD_TEMPLATES_PATH
     )
     original_paths = {
-        key: getattr(server_module, key)
+        key: getattr(global_style, key)
         for key in (
             "STYLE_TOKENS_PATH",
             "STYLE_REFERENCE_DIR",
@@ -268,19 +271,19 @@ def main() -> None:
             )
             assert saved_storyboard["template"]["name"] == "回归分镜模板"
 
-            server_module.STYLE_TOKENS_PATH = str(temp_root / "active" / "style_tokens.yaml")
-            server_module.STYLE_REFERENCE_DIR = str(temp_root / "active" / "references")
-            server_module.IMAGE_STYLE_TEMPLATES_DIR = str(temp_root / "image_templates")
-            server_module.IMAGE_STYLE_TEMPLATES_INDEX = str(temp_root / "image_templates" / "index.json")
-            server_module.ensure_active_image_style_storage()
-            saved_image = server_module.save_image_style_template({"name": "回归图片模板"})
+            global_style.STYLE_TOKENS_PATH = str(temp_root / "active" / "style_tokens.yaml")
+            global_style.STYLE_REFERENCE_DIR = str(temp_root / "active" / "references")
+            global_style.IMAGE_STYLE_TEMPLATES_DIR = str(temp_root / "image_templates")
+            global_style.IMAGE_STYLE_TEMPLATES_INDEX = str(temp_root / "image_templates" / "index.json")
+            global_style.ensure_active_image_style_storage()
+            saved_image = global_style.save_image_style_template({"name": "回归图片模板"})
             assert saved_image["template"]["references"]["template"]["exists"]
     finally:
         storyboard_module.STORYBOARD_TEMPLATES_PATH = (
             original_storyboard_path
         )
         for key, value in original_paths.items():
-            setattr(server_module, key, value)
+            setattr(global_style, key, value)
 
     print("generalized settings checks passed")
 

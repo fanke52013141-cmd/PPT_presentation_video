@@ -256,6 +256,16 @@ Diagnostics and storyboard-background registration are also source-owned.
 `server.py` includes their `APIRouter` instances directly; their former
 `_register(server_module)` entry points and patch markers no longer exist.
 
+Step 3 image production is source-owned as well.
+`global_image_style_service.py` owns global image-style settings, references,
+and legacy-compatible templates; `image_workflow_service.py` owns prompt
+settings, generation, upload, candidate promotion, ordering, provenance,
+deletion, and confirmation; `visual_settings_service.py` owns project video
+background and subtitle settings. Their paired route modules preserve the
+existing HTTP paths and are included explicitly by `server.py`. These service
+modules receive narrow operation dependencies and do not own FastAPI database
+dependency wiring or import the application module.
+
 PPTX export registration is source-owned as well. `pptx_routes.py` exposes an
 explicit `APIRouter`, while `pptx_service.py` owns task recovery, export
 execution, Step 8 completion, artifact listing, download, and deletion. Its

@@ -25,6 +25,9 @@ def main() -> None:
         "visual_settings_service.py"
     )
     runtime_support = read_text("runtime_support.py")
+    project_runtime_service = read_text(
+        "project_runtime_service.py"
+    )
     mask_manifest_service = read_text("mask_manifest_service.py")
     settings_routes = read_text("settings_routes.py")
     settings_service = read_text("settings_service.py")
@@ -119,6 +122,26 @@ def main() -> None:
         "import server",
     ):
         assert token not in runtime_support
+        assert token not in project_runtime_service
+    for function_name in (
+        "reveal_lock_for",
+        "write_project_log",
+        "all_current_slide_images_exist",
+        "sync_reveal_manifest_to_contract",
+        "audio_confirmation_path",
+        "project_audio_confirmed",
+        "slide_tts_artifact_paths",
+        "slide_tts_artifact_status",
+        "ensure_slide_tts_text_file",
+        "mark_step_retry_needed",
+        "mark_step_in_progress",
+        "handle_step_navigation",
+        "invalidate_after_upstream_edit",
+        "clear_slide_visual_derivatives",
+        "mark_slide_image_changed",
+    ):
+        assert f"def {function_name}(" in project_runtime_service
+        assert f"def {function_name}(" not in server
 
     annotation_start = narration_service.index(
         "def annotate_step6_narration("

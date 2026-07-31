@@ -5,17 +5,15 @@ import json
 import shutil
 import logging
 import re
-import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import List, Dict, Any
 
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
 from PIL import Image
 import yaml
 from openai import OpenAI
@@ -46,23 +44,10 @@ from project_style_reference_service import (
     project_generate_prompt_for_slide,
     project_reference_paths,
 )
-from pipeline_lifecycle import (
-    project_artifact_lock,
-    write_json_atomic,
-)
-import invalidation_service
-from reveal_manifest_service import sync_reveal_manifest
+from pipeline_lifecycle import write_json_atomic
 from tts_artifacts import (
-    artifact_paths as tts_artifact_paths,
-    artifact_status as tts_artifact_status,
     build_confirmation_payload as build_audio_confirmation_payload,
-    confirmation_path as tts_confirmation_path,
-    is_audio_confirmed,
-    nonempty_file as tts_nonempty_file,
-    remove_outputs as remove_tts_outputs,
-    timeline_duration_sec,
 )
-from pipeline_state import mark_retry_needed
 from project_storage import (
     UnsafeProjectPath,
     project_run_dir as validated_project_run_dir,
@@ -145,6 +130,26 @@ from runtime_support import (
     run_subprocess_bounded,
     write_debug_text,
 )
+from project_runtime_service import (
+    all_current_slide_images_exist,
+    audio_confirmation_path,
+    clear_slide_visual_derivatives,
+    ensure_slide_tts_text_file,
+    handle_step_navigation,
+    invalidate_after_upstream_edit,
+    mark_slide_image_changed,
+    mark_step_in_progress,
+    mark_step_retry_needed,
+    nonempty_file,
+    project_audio_confirmed,
+    read_timeline_duration_sec,
+    remove_tts_artifacts,
+    reveal_lock_for,
+    slide_tts_artifact_paths,
+    slide_tts_artifact_status,
+    sync_reveal_manifest_to_contract,
+    write_project_log,
+)
 
 # 初始化日志与数据库
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -219,9 +224,6 @@ STEP3_IMAGE_PROMPTS_FILE = "step3_image_prompts.json"
 IMAGE_STYLE_TEMPLATES_DIR = os.path.join(DATA_DIR, "image_style_templates")
 IMAGE_STYLE_TEMPLATES_INDEX = os.path.join(IMAGE_STYLE_TEMPLATES_DIR, "index.json")
 REVEAL_PIPELINE_VERSION = "exact_rle_mask_with_manual_corrections_v5"
-def reveal_lock_for(project: Project) -> threading.RLock:
-    return project_artifact_lock(project.run_dir)
-
 
 def ensure_active_image_style_storage() -> None:
     os.makedirs(STYLE_REFERENCE_DIR, exist_ok=True)
@@ -260,31 +262,6 @@ STEP8_BUILD_PROPS_TIMEOUT_SEC = 180
 STEP8_NPM_INSTALL_TIMEOUT_SEC = 600
 STEP8_COLOR_PROCESS_TIMEOUT_SEC = 300
 REVEAL_VISUAL_LEAD_SEC = 0.45
-
-def _redact_log_value(key: str, value: Any) -> Any:
-    lowered = key.lower()
-    if any(token in lowered for token in ("api_key", "apikey", "authorization", "token", "secret")):
-        return "***REDACTED***" if value else value
-    if isinstance(value, str) and len(value) > 4000:
-        return value[:4000] + f"\n... [truncated {len(value) - 4000} chars]"
-    return value
-
-def write_project_log(project: Project, event: str, **fields: Any) -> None:
-    try:
-        log_dir = os.path.join(project.run_dir, "logs")
-        os.makedirs(log_dir, exist_ok=True)
-        record = {
-            "ts": datetime.now().isoformat(timespec="seconds"),
-            "project_id": project.id,
-            "event": event,
-        }
-        record.update({key: _redact_log_value(key, value) for key, value in fields.items()})
-        line = json.dumps(record, ensure_ascii=False, default=str)
-        with open(os.path.join(log_dir, "pipeline.log"), "a", encoding="utf-8") as f:
-            f.write(line + "\n")
-        logger.info("project=%s event=%s %s", project.id, event, line)
-    except Exception as exc:
-        logger.warning("Failed to write project log for %s: %s", getattr(project, "id", "<unknown>"), exc)
 
 # Pydantic 响应模型
 class StepUpdate(BaseModel):
@@ -455,16 +432,6 @@ def generate_json_with_configured_llm(
     )
 
 
-def all_current_slide_images_exist(project: Project) -> bool:
-    slide_ids = read_contract_slide_ids(project.run_dir)
-    if not slide_ids:
-        return False
-    return all(
-        os.path.exists(os.path.join(project.run_dir, "slides", slide_id, "visual_draft.png"))
-        for slide_id in slide_ids
-    )
-
-
 def read_current_slide_ids_or_404(project: Project) -> List[str]:
     slide_ids = read_contract_slide_ids(project.run_dir)
     if not slide_ids:
@@ -488,16 +455,6 @@ def current_slide_file_or_404(project: Project, slide_id: str, filename: str) ->
         return str(storage_slide_file(run_dir, slide_id, filename))
     except UnsafeProjectPath as exc:
         raise HTTPException(status_code=400, detail="Slide 路径无效") from exc
-
-
-def sync_reveal_manifest_to_contract(project: Project, slide_ids: Optional[List[str]] = None) -> bool:
-    explicit_slide_ids = slide_ids is not None
-    current_slide_ids = slide_ids if explicit_slide_ids else read_contract_slide_ids(project.run_dir)
-    return sync_reveal_manifest(
-        project,
-        current_slide_ids,
-        allow_empty=explicit_slide_ids,
-    )
 
 
 configure_narration_audio_dependencies(
@@ -593,98 +550,6 @@ except Exception as exc:
         exc,
     )
     raise
-
-# ==================== 流水线状态管理 ====================
-
-def audio_confirmation_path(project: Project) -> str:
-    return str(tts_confirmation_path(project.run_dir))
-
-
-def project_audio_confirmed(project: Project) -> bool:
-    return is_audio_confirmed(project.run_dir, read_contract_slide_ids(project.run_dir))
-
-
-def nonempty_file(path: str) -> bool:
-    return tts_nonempty_file(path)
-
-
-def slide_tts_artifact_paths(project: Project, slide_id: str) -> Dict[str, str]:
-    return {key: str(path) for key, path in tts_artifact_paths(project.run_dir, slide_id).items()}
-
-
-def read_timeline_duration_sec(timeline_path: str) -> Optional[float]:
-    return timeline_duration_sec(timeline_path)
-
-
-def slide_tts_artifact_status(project: Project, slide_id: str) -> Dict[str, Any]:
-    return tts_artifact_status(project.run_dir, slide_id)
-
-
-def remove_tts_artifacts(paths: Dict[str, str]) -> None:
-    remove_tts_outputs(paths)
-
-
-def ensure_slide_tts_text_file(project: Project, slide_id: str, contract: Dict[str, Any]) -> str:
-    paths = slide_tts_artifact_paths(project, slide_id)
-    text_file = paths["text"]
-    if os.path.exists(text_file):
-        return text_file
-
-    logger.warning("tts_text.txt not found for slide %s, trying to generate it from contract", slide_id)
-    slide_narration = ""
-    for slide in contract.get("slides", []) or []:
-        if not isinstance(slide, dict) or slide.get("slide_id") != slide_id:
-            continue
-        beats = slide.get("narration_beats", []) if isinstance(slide.get("narration_beats"), list) else []
-        slide_narration = "\n".join(
-            beat_tts_text(beat)
-            for beat in beats
-            if isinstance(beat, dict) and clean_tts_text(beat_tts_text(beat))
-        )
-        break
-    os.makedirs(os.path.dirname(text_file), exist_ok=True)
-    with open(text_file, "w", encoding="utf-8") as f:
-        f.write(slide_narration + "\n")
-    return text_file
-
-
-def mark_step_retry_needed(project: Project, target_step: int, db: Session) -> None:
-    current_status = mark_retry_needed(project.get_step_status(), target_step)
-    project.current_step = target_step
-    project.set_step_status(current_status)
-    db.commit()
-
-
-def mark_step_in_progress(project: Project, target_step: int, db: Session):
-    """Compatibility wrapper; transition ownership lives in the invalidation service."""
-    invalidation_service.begin_stage(project, target_step)
-    db.commit()
-
-
-# 回退某一步后，后续步骤状态被标记为 pending_reconfirmation
-def handle_step_navigation(project: Project, target_step: int, db: Session):
-    invalidation_service.complete_stage(project, target_step)
-    db.commit()
-
-
-def invalidate_after_upstream_edit(project: Project, source_step: int, db: Session) -> None:
-    """Keep edited source data while making every dependent stage explicitly stale."""
-    invalidation_service.upstream_content_changed(project, source_step)
-    db.commit()
-
-
-def clear_slide_visual_derivatives(project: Project, slide_id: str) -> None:
-    """Remove masks and rendered assets that belong to an older slide image."""
-    invalidation_service.clear_slide_visual_derivatives(project, slide_id)
-
-
-def mark_slide_image_changed(project: Project, slide_id: str, db: Session) -> None:
-    invalidation_service.slide_images_changed(
-        project,
-        [slide_id],
-        all_images_exist=all_current_slide_images_exist(project),
-    )
-    db.commit()
 
 # ==================== 步骤 1: 导入文章 ====================
 

@@ -45,6 +45,9 @@ def main() -> None:
     runtime_support = (ROOT / "runtime_support.py").read_text(
         encoding="utf-8"
     )
+    project_runtime_service = (
+        ROOT / "project_runtime_service.py"
+    ).read_text(encoding="utf-8")
     mask_routes = (ROOT / "mask_editor_routes.py").read_text(encoding="utf-8")
     mask_manifest = (ROOT / "mask_manifest_service.py").read_text(encoding="utf-8")
     mask_preview = (ROOT / "mask_preview_service.py").read_text(encoding="utf-8")
@@ -134,6 +137,9 @@ def main() -> None:
         assert token not in runtime_support, (
             "runtime support owns application wiring again"
         )
+        assert token not in project_runtime_service, (
+            "project runtime service owns application wiring again"
+        )
     for function_name in (
         "normalize_visual_type",
         "narration_dedupe_key",
@@ -157,6 +163,29 @@ def main() -> None:
     ):
         assert f"def {function_name}(" in runtime_support, (
             f"runtime support owner is missing {function_name}"
+        )
+        assert f"def {function_name}(" not in server, (
+            f"{function_name} implementation returned to server"
+        )
+    for function_name in (
+        "reveal_lock_for",
+        "write_project_log",
+        "all_current_slide_images_exist",
+        "sync_reveal_manifest_to_contract",
+        "audio_confirmation_path",
+        "project_audio_confirmed",
+        "slide_tts_artifact_paths",
+        "slide_tts_artifact_status",
+        "ensure_slide_tts_text_file",
+        "mark_step_retry_needed",
+        "mark_step_in_progress",
+        "handle_step_navigation",
+        "invalidate_after_upstream_edit",
+        "clear_slide_visual_derivatives",
+        "mark_slide_image_changed",
+    ):
+        assert f"def {function_name}(" in project_runtime_service, (
+            f"project runtime owner is missing {function_name}"
         )
         assert f"def {function_name}(" not in server, (
             f"{function_name} implementation returned to server"

@@ -35,6 +35,7 @@ def main() -> int:
         print("PASS Python startup no longer auto-patches subprocess or server functions")
 
         import runtime_support
+        import project_runtime_service
         import server
 
         assert_true(
@@ -84,9 +85,14 @@ def main() -> int:
                 json.dumps({"slides": []}),
                 encoding="utf-8",
             )
-            changed = server.sync_reveal_manifest_to_contract(
+            changed = project_runtime_service.sync_reveal_manifest_to_contract(
                 Project(run_dir),
                 ["slide_001"],
+            )
+            assert_true(
+                server.sync_reveal_manifest_to_contract
+                is project_runtime_service.sync_reveal_manifest_to_contract,
+                "server project runtime compatibility export drifted",
             )
             manifest = json.loads(
                 (run_dir / "reveal_manifest.json").read_text(encoding="utf-8")

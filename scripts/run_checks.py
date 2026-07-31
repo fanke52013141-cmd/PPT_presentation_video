@@ -96,6 +96,7 @@ def quick_checks() -> None:
         "video_routes.py",
         "remotion_runner.py",
         "runtime_support.py",
+        "project_runtime_service.py",
         "scripts",
         "checks",
     ])
@@ -112,6 +113,7 @@ def quick_checks() -> None:
         "-m",
         "pytest",
         "checks/test_runtime_support.py",
+        "checks/test_project_runtime_service.py",
         "checks/test_tts_provider_service.py",
         "checks/test_tts_secret_transport.py",
         "-q",

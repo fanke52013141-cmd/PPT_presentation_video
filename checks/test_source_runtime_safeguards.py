@@ -5,6 +5,7 @@ import subprocess
 import pytest
 
 import reveal_manifest_service
+import runtime_support
 import server
 
 
@@ -113,8 +114,11 @@ def test_bounded_subprocess_returns_timeout_result(monkeypatch: pytest.MonkeyPat
     def timeout(*_args, **_kwargs):
         raise subprocess.TimeoutExpired(["demo"], timeout=12, stderr="still running")
 
-    monkeypatch.setattr(server.subprocess, "run", timeout)
-    result = server.run_subprocess_bounded(["demo"], timeout_sec=12)
+    monkeypatch.setattr(runtime_support.subprocess, "run", timeout)
+    result = runtime_support.run_subprocess_bounded(
+        ["demo"],
+        timeout_sec=12,
+    )
 
     assert result.returncode == 124
     assert "Timed out after 12 seconds" in result.stderr
@@ -125,8 +129,10 @@ def test_validator_stdout_is_json_safe() -> None:
     valid = subprocess.CompletedProcess([], 0, '{"ok": true}', "")
     invalid = subprocess.CompletedProcess([], 0, "not-json", "")
 
-    assert server.parse_json_process_stdout(valid) == {"ok": True}
-    assert server.parse_json_process_stdout(invalid) == {
+    assert runtime_support.parse_json_process_stdout(valid) == {
+        "ok": True
+    }
+    assert runtime_support.parse_json_process_stdout(invalid) == {
         "parse_warning": "validator stdout was not valid JSON",
         "raw_stdout": "not-json",
     }

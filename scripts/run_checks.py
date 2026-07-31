@@ -95,6 +95,7 @@ def quick_checks() -> None:
         "video_render_service.py",
         "video_routes.py",
         "remotion_runner.py",
+        "runtime_support.py",
         "scripts",
         "checks",
     ])
@@ -110,6 +111,7 @@ def quick_checks() -> None:
         sys.executable,
         "-m",
         "pytest",
+        "checks/test_runtime_support.py",
         "checks/test_tts_provider_service.py",
         "checks/test_tts_secret_transport.py",
         "-q",

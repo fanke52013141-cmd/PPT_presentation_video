@@ -24,6 +24,7 @@ def main() -> None:
     visual_settings_service = read_text(
         "visual_settings_service.py"
     )
+    runtime_support = read_text("runtime_support.py")
     mask_manifest_service = read_text("mask_manifest_service.py")
     settings_routes = read_text("settings_routes.py")
     settings_service = read_text("settings_service.py")
@@ -99,6 +100,25 @@ def main() -> None:
     assert "read_settings: Callable" not in visual_settings_service
     assert "write_settings: Callable" not in visual_settings_service
     assert "sync_background: Callable" not in visual_settings_service
+    for function_name in (
+        "run_subprocess_bounded",
+        "parse_json_process_stdout",
+        "read_json_file",
+        "clean_json_markdown",
+        "parse_int_setting",
+        "is_timeout_exception",
+        "parse_range_text",
+    ):
+        assert f"def {function_name}(" in runtime_support
+        assert f"def {function_name}(" not in server
+    for token in (
+        "APIRouter",
+        "Depends(",
+        "get_db",
+        "server_module",
+        "import server",
+    ):
+        assert token not in runtime_support
 
     annotation_start = narration_service.index(
         "def annotate_step6_narration("

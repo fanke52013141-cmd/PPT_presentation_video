@@ -42,6 +42,9 @@ def main() -> None:
     visual_contract_service = (
         ROOT / "visual_contract_service.py"
     ).read_text(encoding="utf-8")
+    runtime_support = (ROOT / "runtime_support.py").read_text(
+        encoding="utf-8"
+    )
     mask_routes = (ROOT / "mask_editor_routes.py").read_text(encoding="utf-8")
     mask_manifest = (ROOT / "mask_manifest_service.py").read_text(encoding="utf-8")
     mask_preview = (ROOT / "mask_preview_service.py").read_text(encoding="utf-8")
@@ -128,6 +131,9 @@ def main() -> None:
         assert token not in visual_contract_service, (
             "visual contract service owns application wiring again"
         )
+        assert token not in runtime_support, (
+            "runtime support owns application wiring again"
+        )
     for function_name in (
         "normalize_visual_type",
         "narration_dedupe_key",
@@ -136,6 +142,21 @@ def main() -> None:
     ):
         assert f"def {function_name}(" in visual_contract_service, (
             f"visual contract owner is missing {function_name}"
+        )
+        assert f"def {function_name}(" not in server, (
+            f"{function_name} implementation returned to server"
+        )
+    for function_name in (
+        "run_subprocess_bounded",
+        "parse_json_process_stdout",
+        "read_json_file",
+        "clean_json_markdown",
+        "parse_int_setting",
+        "is_timeout_exception",
+        "parse_range_text",
+    ):
+        assert f"def {function_name}(" in runtime_support, (
+            f"runtime support owner is missing {function_name}"
         )
         assert f"def {function_name}(" not in server, (
             f"{function_name} implementation returned to server"

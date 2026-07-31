@@ -34,6 +34,7 @@ def main() -> int:
         assert_true(not (ROOT / "sitecustomize.py").exists(), "sitecustomize.py must stay retired")
         print("PASS Python startup no longer auto-patches subprocess or server functions")
 
+        import runtime_support
         import server
 
         assert_true(
@@ -41,16 +42,24 @@ def main() -> int:
             "subprocess.run is still monkey-patched",
         )
         with patch.object(
-            server.subprocess,
+            runtime_support.subprocess,
             "run",
             side_effect=subprocess.TimeoutExpired(["demo"], 3, stderr="busy"),
         ):
-            result = server.run_subprocess_bounded(["demo"], timeout_sec=3)
+            result = runtime_support.run_subprocess_bounded(
+                ["demo"],
+                timeout_sec=3,
+            )
+        assert_true(
+            server.run_subprocess_bounded
+            is runtime_support.run_subprocess_bounded,
+            "server bounded subprocess compatibility export drifted",
+        )
         assert_true(result.returncode == 124, "bounded subprocess timeout was not normalized")
         print("PASS bounded subprocess execution is source-owned")
 
         malformed = subprocess.CompletedProcess([], 0, "not-json", "")
-        parsed = server.parse_json_process_stdout(malformed)
+        parsed = runtime_support.parse_json_process_stdout(malformed)
         assert_true("parse_warning" in parsed, "malformed validator JSON was not made safe")
         print("PASS validator JSON parsing is source-owned")
 

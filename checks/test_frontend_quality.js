@@ -348,6 +348,14 @@ const extensionScriptIndex = html.indexOf('project_profile_extension.js');
 if (!(workspaceScriptIndex > html.indexOf('output_render.js') && eventScriptIndex > workspaceScriptIndex && extensionScriptIndex > eventScriptIndex)) {
   throw new Error('core workflow, navigation, event, and extension script order is unsafe');
 }
+for (const settingsOwner of ['LLM_PROVIDER_PRESETS', 'detectLlmProvider', 'applyLlmProviderPreset']) {
+  if (!settings.includes(settingsOwner)) {
+    throw new Error(`settings module is missing LLM provider ownership: ${settingsOwner}`);
+  }
+  if (app.includes(settingsOwner)) {
+    throw new Error(`LLM provider configuration returned to app.js: ${settingsOwner}`);
+  }
+}
 const fullscreenStart = maskWorkspace.indexOf('function toggleStep5Fullscreen');
 const fullscreenEnd = maskWorkspace.indexOf('function uuid', fullscreenStart);
 const fullscreenImplementation = maskWorkspace.slice(fullscreenStart, fullscreenEnd);

@@ -2,6 +2,38 @@
 // This remains a classic script so existing inline handlers and app.js calls keep
 // the same global function contract while the legacy bundle is modularized.
 
+const LLM_PROVIDER_PRESETS = {
+  openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+  newapi: { baseUrl: '', model: '' },
+  openrouter: { baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' },
+  litellm: { baseUrl: 'http://localhost:4000/v1', model: '' },
+  deepseek: { baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat' },
+  volcengine: { baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: '' },
+  siliconflow: { baseUrl: 'https://api.siliconflow.cn/v1', model: 'deepseek-ai/DeepSeek-V3' },
+  dashscope: { baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
+  zhipu: { baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash' },
+  custom: { baseUrl: '', model: '' }
+};
+
+function detectLlmProvider(savedProvider, baseUrl) {
+  const normalized = String(baseUrl || '').replace(/\/+$/, '').toLowerCase();
+  const known = Object.entries(LLM_PROVIDER_PRESETS).find(([, preset]) =>
+    preset.baseUrl && preset.baseUrl.replace(/\/+$/, '').toLowerCase() === normalized
+  );
+  if (known) return known[0];
+  if (savedProvider === 'newapi' || savedProvider === 'litellm' || savedProvider === 'custom') {
+    return savedProvider;
+  }
+  return normalized ? 'custom' : (savedProvider || 'openai');
+}
+
+function applyLlmProviderPreset(provider) {
+  const preset = LLM_PROVIDER_PRESETS[provider];
+  if (!preset) return;
+  if (preset.baseUrl) document.getElementById('setting-llm-base-url').value = preset.baseUrl;
+  if (preset.model) document.getElementById('setting-llm-model').value = preset.model;
+}
+
 async function loadSettings() {
   state.settings = await API.get('/api/settings');
 
@@ -223,4 +255,3 @@ function copyLlmUrlToImage() {
   document.getElementById('setting-image-base-url').value = llmUrl;
   showToast('已将文本模型 Base URL 同步到图片生成配置');
 }
-

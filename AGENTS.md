@@ -40,9 +40,10 @@ The current product UI is the soft blue-purple "Soft Pastel Studio" interface, n
 
 - `static/app.js` remains the shared workflow shell while the legacy frontend is
   being split without changing the established UI or global handler contract.
-- `static/settings.js` owns settings form synchronization, configuration package
-  import/export, and LLM/image/TTS connection checks. Keep these functions out
-  of `app.js`; the classic script order intentionally preserves existing inline
+- `static/settings.js` owns LLM provider presets/detection, settings form
+  synchronization, configuration package import/export, and LLM/image/TTS
+  connection checks. Keep these functions and provider constants out of
+  `app.js`; the classic script order intentionally preserves existing inline
   handlers and event registration.
 - `static/projects.js` owns project-library rendering, project creation, and
   deletion. Render user-provided names/descriptions through `escHtml` and bind

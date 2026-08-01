@@ -36,6 +36,21 @@ The current product UI is the soft blue-purple "Soft Pastel Studio" interface, n
 - Keep existing `sketch-*` class names only for DOM compatibility unless doing a deliberate CSS migration. New visual work should use the blue-purple palette, soft borders, rounded cards, glass header, and gradient AI action buttons from the Soft Pastel Studio layer.
 - If the UI appears as heavy black borders or hard offset shadows, first check whether the browser is loading the full `static/style.css` and whether the Soft Pastel Studio layer is present.
 
+## Frontend Module Boundaries
+
+- `static/app.js` remains the shared workflow shell while the legacy frontend is
+  being split without changing the established UI or global handler contract.
+- `static/settings.js` owns settings form synchronization, configuration package
+  import/export, and LLM/image/TTS connection checks. Keep these functions out
+  of `app.js`; the classic script order intentionally preserves existing inline
+  handlers and event registration.
+- `static/projects.js` owns project-library rendering, project creation, and
+  deletion. Render user-provided names/descriptions through `escHtml` and bind
+  card actions with event listeners instead of interpolated inline handlers.
+- New extractions must preserve current DOM IDs and API paths, add an explicit
+  script tag in `static/index.html`, and extend `checks/test_frontend_quality.js`
+  with an ownership guard.
+
 The production visual path is:
 
 ```text

@@ -166,10 +166,15 @@
       button.textContent = '创建中...';
     }
     try {
-      const projectRes = await apiPost('/api/projects', { name, description: desc });
+      const profile = collectProfile();
+      const aiMode = profile.automation_mode === 'auto' ? 'auto' : 'manual';
+      const projectRes = await apiPost('/api/projects', {
+        name,
+        description: desc,
+        ai_mode: aiMode,
+      });
       const project = projectRes.project;
       if (!project?.id) throw new Error('项目创建成功但未返回 project.id');
-      const profile = collectProfile();
       await apiPut(`/api/projects/${encodeURIComponent(project.id)}/project-profile`, { profile });
       if (article) {
         if (button) button.textContent = '导入文章...';

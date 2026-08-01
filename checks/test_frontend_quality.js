@@ -3,9 +3,12 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..');
 const app = fs.readFileSync(path.join(root, 'static', 'app.js'), 'utf8');
+const settings = fs.readFileSync(path.join(root, 'static', 'settings.js'), 'utf8');
+const projects = fs.readFileSync(path.join(root, 'static', 'projects.js'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'static', 'index.html'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'static', 'style.css'), 'utf8');
 const aiMask = fs.readFileSync(path.join(root, 'static', 'ai_mask_extension.js'), 'utf8');
+const projectProfile = fs.readFileSync(path.join(root, 'static', 'project_profile_extension.js'), 'utf8');
 const background = fs.readFileSync(path.join(root, 'static', 'storyboard_background_extension.js'), 'utf8');
 const styleManager = fs.readFileSync(path.join(root, 'static', 'style_reference_manager_extension.js'), 'utf8');
 const oneClick = fs.readFileSync(path.join(root, 'static', 'one_click_extension.js'), 'utf8');
@@ -23,6 +26,36 @@ if (!background.includes('step3-btn-delete-all-images') || !app.includes('delete
 if (html.includes('step3-image-order-hint')) throw new Error('obsolete fixed-position image hint is still visible');
 
 if (html.includes('config_effectiveness.js')) throw new Error('runtime patch script is still loaded');
+if (!html.includes('settings.js')) throw new Error('settings frontend module is not loaded explicitly');
+for (const settingsFunction of [
+  'loadSettings',
+  'saveSettings',
+  'exportGlobalSettings',
+  'importGlobalSettings',
+  'testLlmConnection',
+  'testImageConnection',
+  'testTtsConnection',
+]) {
+  if (!settings.includes(`function ${settingsFunction}(`)) {
+    throw new Error(`settings module is missing ${settingsFunction}`);
+  }
+  if (app.includes(`function ${settingsFunction}(`)) {
+    throw new Error(`settings implementation returned to app.js: ${settingsFunction}`);
+  }
+}
+if (!html.includes('projects.js')) throw new Error('project library frontend module is not loaded explicitly');
+for (const projectFunction of ['loadProjects', 'createProject', 'deleteProject']) {
+  if (!projects.includes(`function ${projectFunction}(`)) {
+    throw new Error(`project library module is missing ${projectFunction}`);
+  }
+  if (app.includes(`function ${projectFunction}(`)) {
+    throw new Error(`project library implementation returned to app.js: ${projectFunction}`);
+  }
+}
+if (projects.includes('onclick=')) throw new Error('project cards still use interpolated inline click handlers');
+if (!projects.includes('escHtml(project.name)') || !projects.includes("escHtml(project.description || '无项目描述')")) {
+  throw new Error('project card user content is not HTML escaped');
+}
 for (const requiredStep2Token of [
   'step2-btn-script-prompt',
   'step2-btn-visual-prompt',
@@ -267,6 +300,15 @@ if (!html.includes('step2-generation-status') || !app.includes('setStep2Generati
 }
 if (!css.includes('#step6-btn-audio-confirm-next:disabled') || !css.includes('#step8-btn-render:disabled')) {
   throw new Error('disabled primary button contrast contract is missing');
+}
+if (!projectProfile.includes("const aiMode = profile.automation_mode === 'auto' ? 'auto' : 'manual'")) {
+  throw new Error('project profile mode is not mapped to the backend ai_mode contract');
+}
+if (!projectProfile.includes('ai_mode: aiMode')) {
+  throw new Error('project creation does not submit the selected AI mode');
+}
+if (!app.includes("document.getElementById('btn-toggle-ai-mode').style.display = 'none'")) {
+  throw new Error('project AI mode control remains visible after returning to the project library');
 }
 if (!app.includes('narrationDedupeKey') || !app.includes('uniqueNarrationLines')) {
   throw new Error('frontend narration deduplication guard is missing');

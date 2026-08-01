@@ -73,6 +73,26 @@ def main() -> None:
     visual_settings_service = (
         ROOT / "visual_settings_service.py"
     ).read_text(encoding="utf-8")
+    project_style_context = (
+        ROOT / "project_style_context.py"
+    ).read_text(encoding="utf-8")
+    project_profile_service = (
+        ROOT / "project_profile_service.py"
+    ).read_text(encoding="utf-8")
+    project_style_reference_service = (
+        ROOT / "project_style_reference_service.py"
+    ).read_text(encoding="utf-8")
+    image_style_reverse_service = (
+        ROOT / "image_style_reverse_service.py"
+    ).read_text(encoding="utf-8")
+    step3_image_style_service = (
+        ROOT / "step3_image_style_service.py"
+    ).read_text(encoding="utf-8")
+    ai_mask_engine = (ROOT / "ai_mask_engine.py").read_text(encoding="utf-8")
+    ai_mask_semantic_matcher = (
+        ROOT / "ai_mask_semantic_matcher.py"
+    ).read_text(encoding="utf-8")
+    ai_mask_service = (ROOT / "ai_mask_service.py").read_text(encoding="utf-8")
     html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
     assert not (ROOT / "runtime_bootstrap.py").exists(), "empty runtime bootstrap should stay retired"
     assert "app.include_router(one_click_router)" in server, "one-click router is not explicitly registered"
@@ -299,6 +319,26 @@ def main() -> None:
     assert "register_pptx_routes" not in server, "legacy PPTX registration returned"
     assert "app.include_router(project_style_router)" in server, "project style router is not explicitly registered"
     assert "register_project_style_routes" not in server, "legacy project style registration returned"
+    assert "class ProjectStyleDependencies" in project_style_context, "project style dependency contract is missing"
+    assert "SimpleNamespace" not in project_style_context, "project style context is mutable again"
+    for source in (
+        project_style_context,
+        project_profile_service,
+        project_style_reference_service,
+        image_style_reverse_service,
+        step3_image_style_service,
+    ):
+        assert "server_module" not in source, "project style code receives the server module again"
+        assert "import server" not in source, "project style code imports the application module again"
+    assert "class AiMaskEngineDependencies" in ai_mask_engine, "AI Mask engine dependency contract is missing"
+    for source in (
+        ai_mask_engine,
+        ai_mask_semantic_matcher,
+        ai_mask_service,
+    ):
+        assert "server_module" not in source, "AI Mask code receives the server module again"
+        assert "SimpleNamespace" not in source, "AI Mask code receives a mutable application context again"
+        assert "import server" not in source, "AI Mask code imports the application module again"
     assert "app.include_router(ai_mask_router)" in server, "AI Mask routes are not explicitly registered"
     assert "runtime_ai_mask._register" not in server, "legacy AI Mask registration returned"
     assert "runtime_ai_mask_semantic_patch" not in server, "semantic runtime patch returned"

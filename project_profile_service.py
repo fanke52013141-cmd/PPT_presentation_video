@@ -11,6 +11,8 @@ import re
 from datetime import datetime
 from typing import Any
 
+from project_style_context import ProjectStyleDependencies
+
 AI_IMAGE_STYLE_SOURCE = "ai_text_generated"
 AI_IMAGE_STYLE_SYSTEM_PROMPT = """<PromptVersion>image_style_text_generation_v2_minimal</PromptVersion>
 
@@ -184,25 +186,26 @@ def _clean_json_markdown(text: str) -> str:
     return value
 
 
-def _generate_image_style_with_llm(server_module: Any, payload: dict[str, Any]) -> dict[str, Any]:
+def _generate_image_style_with_llm(
+    dependencies: ProjectStyleDependencies,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
     requirement = _safe_text(payload.get("requirement") or payload.get("custom_requirement"), 4000)
     if not requirement:
-        raise server_module.HTTPException(status_code=400, detail="请先输入图片风格需求")
+        raise dependencies.http_exception(status_code=400, detail="请先输入图片风格需求")
 
-    get_setting = getattr(server_module, "get_setting", None)
-    if not callable(get_setting):
-        raise server_module.HTTPException(status_code=500, detail="当前服务无法读取 LLM 设置")
+    get_setting = dependencies.get_setting
     api_key = _safe_text(get_setting("llm_api_key"), 4000)
     model = _safe_text(get_setting("llm_model"), 200)
     base_url = _safe_text(get_setting("llm_base_url"), 1000) or None
     if not api_key or not model:
-        raise server_module.HTTPException(status_code=400, detail="请先在系统设置中配置文本模型 API Key 和模型名称")
+        raise dependencies.http_exception(status_code=400, detail="请先在系统设置中配置文本模型 API Key 和模型名称")
 
     base_template = payload.get("base_template") if isinstance(payload.get("base_template"), dict) else {}
     project_context = _safe_text(payload.get("project_context"), 2000)
     user_prompt = build_text_image_style_user_prompt(requirement, project_context, base_template)
     try:
-        client = server_module.get_openai_client(api_key=api_key, base_url=base_url, timeout=90.0, max_retries=1)
+        client = dependencies.get_openai_client(api_key=api_key, base_url=base_url, timeout=90.0, max_retries=1)
         response = client.chat.completions.create(
             model=model,
             messages=[
@@ -218,10 +221,10 @@ def _generate_image_style_with_llm(server_module: Any, payload: dict[str, Any]) 
         validate_generated_image_style_model_output(parsed)
         return normalize_generated_image_style(parsed, requirement)
     except (json.JSONDecodeError, ValueError) as exc:
-        raise server_module.HTTPException(status_code=500, detail=f"AI 返回的图片风格 JSON 解析失败: {exc}") from exc
-    except server_module.HTTPException:
+        raise dependencies.http_exception(status_code=500, detail=f"AI 返回的图片风格 JSON 解析失败: {exc}") from exc
+    except dependencies.http_exception:
         raise
     except Exception as exc:
-        raise server_module.HTTPException(status_code=500, detail=f"AI 生成图片风格失败: {exc}") from exc
+        raise dependencies.http_exception(status_code=500, detail=f"AI 生成图片风格失败: {exc}") from exc
 
 

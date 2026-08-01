@@ -46,17 +46,14 @@ from visual_provenance import (
     visual_provenance_status,
     write_visual_provenance,
 )
+from repository_paths import (
+    REPO_ROOT,
+    STEP3_IMAGE_PROMPT_TEMPLATE_PATH,
+)
 
 
 logger = logging.getLogger("PPTStudio.ImageWorkflow")
-REPO_ROOT = os.path.abspath(os.path.dirname(__file__))
 STEP3_IMAGE_PROMPTS_FILE = "step3_image_prompts.json"
-STEP3_IMAGE_PROMPT_TEMPLATE_PATH = os.path.join(
-    REPO_ROOT,
-    "templates",
-    "prompts",
-    "step3_image_system.md",
-)
 MAX_IMAGE_UPLOAD_BYTES = int(
     os.environ.get(
         "PPT_STUDIO_MAX_IMAGE_UPLOAD_BYTES",

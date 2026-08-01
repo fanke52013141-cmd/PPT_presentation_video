@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Callable
 
 
@@ -30,37 +29,18 @@ class ProjectStyleDependencies:
     handdrawn_style_tokens_path: Path
 
 
-_CONTEXT: SimpleNamespace | None = None
+_CONTEXT: ProjectStyleDependencies | None = None
 
 
 def configure_project_style_context(
     dependencies: ProjectStyleDependencies,
-) -> SimpleNamespace:
+) -> ProjectStyleDependencies:
     global _CONTEXT
-    _CONTEXT = SimpleNamespace(
-        get_setting=dependencies.get_setting,
-        update_settings=dependencies.update_settings,
-        get_openai_client=dependencies.get_openai_client,
-        generate_image_response=dependencies.generate_image_response,
-        extract_image_bytes_from_response=dependencies.extract_image_bytes_from_response,
-        process_and_save_image=dependencies.process_and_save_image,
-        write_project_log=dependencies.write_project_log,
-        build_image_style_prompt=dependencies.build_image_style_prompt,
-        read_style_tokens_data=dependencies.read_style_tokens_data,
-        compose_step3_single_slide_prompt=dependencies.compose_step3_single_slide_prompt,
-        read_step3_image_system_content=dependencies.read_step3_image_system_content,
-        compact_slide_element_lines=dependencies.compact_slide_element_lines,
-        is_seedream_image_model=dependencies.is_seedream_image_model,
-        HTTPException=dependencies.http_exception,
-        Image=dependencies.image_class,
-        DATA_DIR=dependencies.data_dir,
-        REPO_ROOT=dependencies.repo_root,
-        HANDDRAWN_STYLE_TOKENS_PATH=dependencies.handdrawn_style_tokens_path,
-    )
+    _CONTEXT = dependencies
     return _CONTEXT
 
 
-def get_project_style_context() -> SimpleNamespace:
+def get_project_style_context() -> ProjectStyleDependencies:
     if _CONTEXT is None:
         raise RuntimeError("Project style context has not been configured")
     return _CONTEXT

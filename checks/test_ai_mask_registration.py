@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import server
+from route_inventory import iter_effective_routes
 
 
 def test_ai_mask_routes_are_explicit_and_unique() -> None:
@@ -15,7 +16,7 @@ def test_ai_mask_routes_are_explicit_and_unique() -> None:
         ("/api/projects/{project_id}/steps/5/ai-mask/annotate", "POST"),
     }
     actual = []
-    for route in server.app.routes:
+    for route in iter_effective_routes(server.app):
         for method in getattr(route, "methods", set()) or set():
             pair = (getattr(route, "path", ""), method)
             if pair in expected:

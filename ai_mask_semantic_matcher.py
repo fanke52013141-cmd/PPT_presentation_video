@@ -469,7 +469,7 @@ class SemanticVisionMatcher:
 
     def __call__(
         self,
-        context: Any,
+        capabilities: Any,
         project: Any,
         slide: dict[str, Any],
         elements: list[dict[str, Any]],
@@ -480,8 +480,7 @@ class SemanticVisionMatcher:
         settings: dict[str, Any],
     ) -> dict[str, Any] | None:
         base_module = ai_mask_engine
-        server_module = context
-        api_key = server_module.get_setting("llm_api_key")
+        api_key = capabilities.get_setting("llm_api_key")
         if not api_key:
             return None
         with Image.open(image_path) as image:
@@ -518,13 +517,10 @@ class SemanticVisionMatcher:
         except Exception:
             pass
         clean_bytes = _png_bytes(image_path, overlay_path.with_name("clean_original_for_vision.png"))
-        model, _ = base_module._resolved_vision_model(server_module)
-        base_url = server_module.get_setting("llm_base_url")
-        vendor_options: dict[str, Any] = {}
-        option_builder = getattr(server_module, "step2_llm_vendor_options", None)
-        if callable(option_builder):
-            vendor_options = option_builder(model, base_url) or {}
-        client = server_module.get_openai_client(api_key=api_key, base_url=base_url, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, max_retries=0)
+        model, _ = base_module._resolved_vision_model(capabilities)
+        base_url = capabilities.get_setting("llm_base_url")
+        vendor_options = capabilities.step2_llm_vendor_options(model, base_url) or {}
+        client = capabilities.get_openai_client(api_key=api_key, base_url=base_url, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, max_retries=0)
 
         # Build crop images for each semantic_object — VL sees actual visual
         # content, not coordinate numbers. Each crop is labeled with object_id.
@@ -579,12 +575,11 @@ class SemanticVisionMatcher:
             try:
                 response = client.chat.completions.create(model=model, temperature=float(settings["llm_temperature"]), max_tokens=12000, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, response_format={"type": "json_object"}, messages=messages, **vendor_options)
             except Exception as exc:
-                if base_module._is_timeout(server_module, exc):
+                if base_module._is_timeout(capabilities, exc):
                     raise
                 response = client.chat.completions.create(model=model, temperature=float(settings["llm_temperature"]), max_tokens=12000, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, messages=messages, **vendor_options)
             content = str(response.choices[0].message.content or "").strip()
-            cleaner = getattr(server_module, "clean_json_markdown", None)
-            cleaned = cleaner(content) if callable(cleaner) else content.strip().removeprefix("```json").removesuffix("```").strip()
+            cleaned = capabilities.clean_json_markdown(content)
             value = json.loads(cleaned)
             return _expand_matches(value, objects, elements) if isinstance(value, dict) else None
         finally:

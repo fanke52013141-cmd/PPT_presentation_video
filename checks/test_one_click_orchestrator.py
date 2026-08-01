@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT))
 
 import ai_mask_engine as ai_mask
 import one_click_orchestrator as one_click
+from route_inventory import iter_effective_routes
 import server
 
 
@@ -168,7 +169,7 @@ def test_preflight_migrates_legacy_article_before_checking_source() -> None:
 def test_one_click_routes_are_explicit_and_unique() -> None:
     route_methods = [
         (getattr(route, "path", ""), frozenset(getattr(route, "methods", set()) or set()))
-        for route in server.app.routes
+        for route in iter_effective_routes(server.app)
     ]
     assert route_methods.count(("/api/projects/{project_id}/one-click-generate", frozenset({"POST"}))) == 1
     assert route_methods.count(("/api/projects/{project_id}/one-click-generate/status", frozenset({"GET"}))) == 1

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
-from types import SimpleNamespace
 from typing import Any, Callable
 
 import ai_mask_engine
@@ -28,9 +27,9 @@ class AiMaskDependencies:
 class AiMaskTaskService:
     def __init__(self, dependencies: AiMaskDependencies) -> None:
         self.dependencies = dependencies
-        # The algorithm receives a narrow capability object, never the server
+        # The algorithm receives a frozen capability record, never the server
         # module or FastAPI application.
-        self.context = SimpleNamespace(
+        self.engine_dependencies = ai_mask_engine.AiMaskEngineDependencies(
             get_setting=dependencies.get_setting,
             get_openai_client=dependencies.get_openai_client,
             read_style_tokens_data=dependencies.read_style_tokens_data,
@@ -54,7 +53,7 @@ class AiMaskTaskService:
         methodology, output_structure = read_ai_mask_prompts()
         with self.dependencies.reveal_lock_for(project):
             result = ai_mask_engine._annotate_project(
-                self.context,
+                self.engine_dependencies,
                 project,
                 settings,
                 methodology,

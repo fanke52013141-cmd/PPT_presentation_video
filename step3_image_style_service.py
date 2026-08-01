@@ -13,6 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from project_style_context import ProjectStyleDependencies
+
 STATE_FILENAME = "step3_image_style.json"
 
 
@@ -114,11 +116,17 @@ def _save_reference_images_to_step3_state(project: Any, manifest: dict[str, Any]
     _write_json(_state_path(project), state)
 
 
-def _step3_style_prompt(project: Any, server_module: Any, refs_impl: Any) -> str:
+def _step3_style_prompt(
+    project: Any,
+    dependencies: ProjectStyleDependencies,
+    refs_impl: Any,
+) -> str:
     image_style = _step3_style(project)
     fallback = ""
     try:
-        fallback = server_module.build_image_style_prompt(server_module.read_style_tokens_data())
+        fallback = dependencies.build_image_style_prompt(
+            dependencies.read_style_tokens_data()
+        )
     except Exception:
         fallback = ""
     if not image_style:

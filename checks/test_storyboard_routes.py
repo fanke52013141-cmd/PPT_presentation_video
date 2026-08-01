@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from route_inventory import iter_effective_routes
 import server
 
 
@@ -31,7 +32,7 @@ EXPECTED_STORYBOARD_PATHS = {
 def test_storyboard_router_preserves_all_public_paths() -> None:
     actual = {
         route.path
-        for route in server.app.routes
+        for route in iter_effective_routes(server.app)
         if (
             "/steps/2/" in route.path
             or "step2-prompt-templates" in route.path

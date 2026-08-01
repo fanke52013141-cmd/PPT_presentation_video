@@ -10,6 +10,7 @@ from sqlalchemy import inspect
 from sqlalchemy.orm import sessionmaker
 
 import pptx_routes
+from route_inventory import iter_effective_routes
 import server
 from database import ArtifactRecord, Base, LocalJob, Project, engine
 from pptx_service import (
@@ -22,7 +23,7 @@ from visual_provenance import write_visual_provenance
 def test_pptx_export_routes_are_registered() -> None:
     route_methods = {
         (getattr(route, "path", ""), method)
-        for route in server.app.routes
+        for route in iter_effective_routes(server.app)
         for method in (getattr(route, "methods", set()) or set())
     }
     assert ("/api/projects/{project_id}/exports/pptx/readiness", "GET") in route_methods

@@ -97,6 +97,8 @@ def quick_checks() -> None:
         "remotion_runner.py",
         "runtime_support.py",
         "project_runtime_service.py",
+        "repository_paths.py",
+        "route_inventory.py",
         "scripts",
         "checks",
     ])
@@ -106,6 +108,7 @@ def quick_checks() -> None:
     run(["node", "checks/test_visible_flow.js"])
     run(["node", "checks/test_frontend_quality.js"])
     python_check(ROOT / "checks" / "test_source_hardening.py")
+    python_check(ROOT / "scripts" / "check_source_registration_contract.py")
     python_check(ROOT / "checks" / "test_generalized_settings.py")
     python_check(ROOT / "checks" / "test_subtitle_style.py")
     run([
@@ -114,6 +117,8 @@ def quick_checks() -> None:
         "pytest",
         "checks/test_runtime_support.py",
         "checks/test_project_runtime_service.py",
+        "checks/test_repository_paths.py",
+        "checks/test_route_inventory.py",
         "checks/test_tts_provider_service.py",
         "checks/test_tts_secret_transport.py",
         "-q",
@@ -154,6 +159,15 @@ def quick_checks() -> None:
         "-m",
         "pytest",
         "checks/test_article_service.py",
+        "-q",
+    ])
+    run([
+        sys.executable,
+        "-m",
+        "pytest",
+        "checks/test_ai_mask_registration.py",
+        "checks/test_ai_mask_services.py",
+        "checks/test_ai_mask_automation.py",
         "-q",
     ])
     run([

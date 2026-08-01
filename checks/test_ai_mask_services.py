@@ -75,7 +75,7 @@ def test_task_service_uses_narrow_dependencies(monkeypatch) -> None:
     )
 
     def annotate(
-        context,
+        capabilities,
         project,
         settings,
         methodology,
@@ -83,7 +83,7 @@ def test_task_service_uses_narrow_dependencies(monkeypatch) -> None:
         vision_matcher,
     ):
         captured.update(
-            context=context,
+            capabilities=capabilities,
             project=project,
             settings=settings,
             methodology=methodology,
@@ -106,8 +106,12 @@ def test_task_service_uses_narrow_dependencies(monkeypatch) -> None:
     assert captured["methodology"] == "methodology"
     assert captured["output_structure"] == "output"
     assert captured["vision_matcher"] is dependencies.vision_matcher
-    assert not hasattr(captured["context"], "app")
-    assert not hasattr(captured["context"], "Project")
+    assert isinstance(
+        captured["capabilities"],
+        ai_mask_engine.AiMaskEngineDependencies,
+    )
+    assert not hasattr(captured["capabilities"], "app")
+    assert not hasattr(captured["capabilities"], "Project")
     assert logs[0][1] == "ai_mask_annotation"
 
 
@@ -131,3 +135,11 @@ def test_runtime_registration_module_is_gone() -> None:
     assert "runtime_ai_mask" not in pipeline_source
     assert "import ai_mask_semantic_matcher" not in profile_source
     assert "ai_mask_semantic_matcher" not in profile_source
+    for filename in (
+        "ai_mask_engine.py",
+        "ai_mask_semantic_matcher.py",
+        "ai_mask_service.py",
+    ):
+        source = (root / filename).read_text(encoding="utf-8")
+        assert "server_module" not in source
+        assert "import server" not in source

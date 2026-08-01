@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 import hashlib
 import io
 import json
@@ -47,6 +48,20 @@ MASK_COLORS = (
 )
 AI_MASK_VISION_TIMEOUT_SEC = 180.0
 AI_MASK_MIN_FOREGROUND_COVERAGE = 0.995
+
+
+@dataclass(frozen=True)
+class AiMaskEngineDependencies:
+    """Explicit capabilities required by the AI Mask algorithm layer."""
+
+    get_setting: Callable[..., Any]
+    get_openai_client: Callable[..., Any]
+    read_style_tokens_data: Callable[[], dict[str, Any]]
+    step2_llm_vendor_options: Callable[..., dict[str, Any]]
+    clean_json_markdown: Callable[[str], str]
+    is_timeout_exception: Callable[[BaseException], bool]
+    write_project_log: Callable[..., None]
+    logger: Any
 
 LEGACY_DEFAULT_METHODOLOGY_V2 = """你是中文 PPT 视频的 AI Mask 语义标注专家。
 
@@ -897,19 +912,19 @@ def _candidate_overlay(image_path: Path, elements: list[dict[str, Any]], output_
     return buffer.getvalue()
 
 
-def _resolved_vision_model(server_module: Any) -> tuple[str, str]:
-    provider = str(server_module.get_setting("llm_provider") or "").strip().lower()
-    configured = str(server_module.get_setting("vision_model") or "").strip()
+def _resolved_vision_model(capabilities: Any) -> tuple[str, str]:
+    provider = str(capabilities.get_setting("llm_provider") or "").strip().lower()
+    configured = str(capabilities.get_setting("vision_model") or "").strip()
     # A model name from another provider cannot be sent to the active endpoint.
     # Preserve the configured value for diagnostics and use the provider's
     # working LLM model as the multimodal fallback.
     if provider not in {"", "openai", "newapi", "openrouter", "litellm", "custom"} and configured.startswith("gpt-"):
-        return str(server_module.get_setting("llm_model") or "").strip(), configured
-    return configured or str(server_module.get_setting("llm_model") or "").strip(), configured
+        return str(capabilities.get_setting("llm_model") or "").strip(), configured
+    return configured or str(capabilities.get_setting("llm_model") or "").strip(), configured
 
 
-def _is_timeout(server_module: Any, exc: BaseException) -> bool:
-    helper = getattr(server_module, "is_timeout_exception", None)
+def _is_timeout(capabilities: Any, exc: BaseException) -> bool:
+    helper = getattr(capabilities, "is_timeout_exception", None)
     if callable(helper):
         try:
             return bool(helper(exc))
@@ -919,7 +934,7 @@ def _is_timeout(server_module: Any, exc: BaseException) -> bool:
 
 
 def raw_component_vision_match(
-    server_module: Any,
+    capabilities: AiMaskEngineDependencies,
     project: Any,
     slide: dict[str, Any],
     elements: list[dict[str, Any]],
@@ -929,17 +944,14 @@ def raw_component_vision_match(
     output_structure: str,
     settings: dict[str, Any],
 ) -> dict[str, Any] | None:
-    api_key = server_module.get_setting("llm_api_key")
+    api_key = capabilities.get_setting("llm_api_key")
     if not api_key:
         return None
     overlay_bytes = _candidate_overlay(image_path, elements, overlay_path)
-    model, _ = _resolved_vision_model(server_module)
-    base_url = server_module.get_setting("llm_base_url")
-    vendor_options: dict[str, Any] = {}
-    option_builder = getattr(server_module, "step2_llm_vendor_options", None)
-    if callable(option_builder):
-        vendor_options = option_builder(model, base_url) or {}
-    client = server_module.get_openai_client(
+    model, _ = _resolved_vision_model(capabilities)
+    base_url = capabilities.get_setting("llm_base_url")
+    vendor_options = capabilities.step2_llm_vendor_options(model, base_url) or {}
+    client = capabilities.get_openai_client(
         api_key=api_key,
         base_url=base_url,
         timeout=AI_MASK_VISION_TIMEOUT_SEC,
@@ -982,7 +994,7 @@ def raw_component_vision_match(
         except Exception as exc:
             # A timeout is not a response-format compatibility problem. Fall
             # back immediately instead of waiting for another full timeout.
-            if _is_timeout(server_module, exc):
+            if _is_timeout(capabilities, exc):
                 raise
             response = client.chat.completions.create(
                 model=model,
@@ -993,8 +1005,7 @@ def raw_component_vision_match(
                 **vendor_options,
             )
         content = str(response.choices[0].message.content or "").strip()
-        cleaner = getattr(server_module, "clean_json_markdown", None)
-        cleaned = cleaner(content) if callable(cleaner) else content.strip().removeprefix("```json").removesuffix("```").strip()
+        cleaned = capabilities.clean_json_markdown(content)
         value = json.loads(cleaned)
         return value if isinstance(value, dict) else None
     finally:
@@ -1129,7 +1140,7 @@ def _compatible_regions(a: str, b: str) -> bool:
     return frozenset({a, b}) in pairs
 
 
-def _configured_title_regions(server_module: Any, width: int, height: int) -> dict[str, dict[str, int]]:
+def _configured_title_regions(capabilities: AiMaskEngineDependencies, width: int, height: int) -> dict[str, dict[str, int]]:
     """Read the canonical title/subtitle zones and scale them to this slide."""
     defaults = {
         "main_title": {"x": 110, "y": 55, "w": 1600, "h": 86},
@@ -1137,7 +1148,7 @@ def _configured_title_regions(server_module: Any, width: int, height: int) -> di
     }
     canvas_width, canvas_height = 1920, 1080
     try:
-        tokens = server_module.read_style_tokens_data()
+        tokens = capabilities.read_style_tokens_data()
         canvas = tokens.get("canvas") if isinstance(tokens.get("canvas"), dict) else {}
         layout = tokens.get("layout") if isinstance(tokens.get("layout"), dict) else {}
         title_block = layout.get("title_block") if isinstance(layout.get("title_block"), dict) else {}
@@ -2180,7 +2191,7 @@ def _apply(manifest: dict[str, Any], slide: dict[str, Any], elements_payload: di
 
 
 def _annotate_project(
-    server_module: Any,
+    capabilities: AiMaskEngineDependencies,
     project: Any,
     settings: dict[str, Any],
     methodology: str,
@@ -2200,7 +2211,7 @@ def _annotate_project(
         elements = detect_elements(image_path, slide_dir, settings)
         canvas = elements.get("canvas", {}) if isinstance(elements.get("canvas"), dict) else {}
         title_regions = _configured_title_regions(
-            server_module,
+            capabilities,
             max(1, int(canvas.get("width", 1920))),
             max(1, int(canvas.get("height", 1080))),
         )
@@ -2226,10 +2237,10 @@ def _annotate_project(
 
     def match_slide(item: dict[str, Any]) -> dict[str, Any]:
         vision_started = time.monotonic()
-        resolved_model, configured_model = _resolved_vision_model(server_module)
+        resolved_model, configured_model = _resolved_vision_model(capabilities)
         try:
             raw_vision = vision_matcher(
-                server_module,
+                capabilities,
                 project,
                 item["slide"],
                 item["element_list"],
@@ -2241,21 +2252,26 @@ def _annotate_project(
             )
             raw = _merge_match_results(raw_vision, item["fallback"])
         except Exception as exc:
-            logger = getattr(server_module, "logger", None)
+            logger = capabilities.logger
             if logger is not None:
                 logger.warning("AI Mask multimodal match failed for %s; using deterministic prior: %s", item["slide_id"], exc)
             try:
-                server_module.write_project_log(
+                capabilities.write_project_log(
                     project,
                     "ai_mask_vision_failed",
                     slide_id=item["slide_id"],
                     elapsed_sec=round(time.monotonic() - vision_started, 2),
-                    timeout=_is_timeout(server_module, exc),
+                    timeout=_is_timeout(capabilities, exc),
                     error_type=type(exc).__name__,
                     error=str(exc)[:500],
                     configured_vision_model=configured_model,
                     resolved_vision_model=resolved_model,
-                    thinking_disabled=bool(getattr(server_module, "step2_llm_vendor_options", lambda *_: {})(resolved_model, server_module.get_setting("llm_base_url"))),
+                    thinking_disabled=bool(
+                        capabilities.step2_llm_vendor_options(
+                            resolved_model,
+                            capabilities.get_setting("llm_base_url"),
+                        )
+                    ),
                 )
             except Exception:
                 pass

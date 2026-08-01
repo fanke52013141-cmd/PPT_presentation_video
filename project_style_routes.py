@@ -18,7 +18,10 @@ from database import Project, get_db
 import image_style_reverse_service as reverse_service
 import project_profile_service
 import project_profile_store
-from project_style_context import get_project_style_context
+from project_style_context import (
+    ProjectStyleDependencies,
+    get_project_style_context,
+)
 import project_style_reference_service as reference_service
 import project_style_reference_store as reference_store
 import project_style_template_service as template_service
@@ -33,7 +36,7 @@ AUTOMATION_MODES = [
 ]
 
 
-def _context() -> Any:
+def _context() -> ProjectStyleDependencies:
     return get_project_style_context()
 
 
@@ -558,7 +561,7 @@ def delete_all_legacy_reference_images(
 
 
 def _templates_root() -> Path:
-    return Path(_context().DATA_DIR) / "step3_image_style_templates"
+    return _context().data_dir / "step3_image_style_templates"
 
 
 def _templates_index() -> Path:
@@ -567,8 +570,8 @@ def _templates_index() -> Path:
 
 def _builtin_sources() -> tuple[Path, list[Path]]:
     context = _context()
-    style_path = Path(context.HANDDRAWN_STYLE_TOKENS_PATH)
-    reference_root = Path(context.REPO_ROOT) / "references" / "style_reference"
+    style_path = context.handdrawn_style_tokens_path
+    reference_root = context.repo_root / "references" / "style_reference"
     paths = [
         reference_root / "PPT模板.png",
         reference_root / "PPT示例.png",

@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT))
 
 import server
 import storyboard_background
+from route_inventory import iter_effective_routes
 from storyboard_background_render import apply_storyboard_background
 
 
@@ -22,7 +23,7 @@ def test_routes_are_explicit_and_unique() -> None:
         ("/api/projects/{project_id}/storyboard-background/image", "GET"),
     }
     actual = []
-    for route in server.app.routes:
+    for route in iter_effective_routes(server.app):
         for method in getattr(route, "methods", set()) or set():
             pair = (getattr(route, "path", ""), method)
             if pair in expected:

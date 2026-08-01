@@ -28,6 +28,14 @@ from database import Project, get_db
 import invalidation_service
 from pipeline_lifecycle import write_json_atomic
 from project_storage import slide_file as storage_slide_file
+from repository_paths import (
+    DATA_DIR,
+    HANDDRAWN_STORYBOARD_RULES_PATH,
+    REPO_ROOT,
+    STEP2_PROMPT_TEMPLATE_FILES,
+    STEP2_PROMPT_TEMPLATES_PATH,
+    STORYBOARD_TEMPLATES_PATH,
+)
 from scripts.pipeline_profiles import (
     read_pipeline_profile,
     role_catalog,
@@ -39,48 +47,6 @@ from visual_contract_service import normalize_visual_type
 
 logger = logging.getLogger("PPTStudio.Storyboard")
 
-REPO_ROOT = os.path.abspath(os.path.dirname(__file__))
-DATA_DIR = os.path.join(REPO_ROOT, "data")
-STORYBOARD_TEMPLATES_PATH = os.path.join(
-    DATA_DIR,
-    "storyboard_templates.json",
-)
-STEP2_PROMPT_TEMPLATES_PATH = os.path.join(
-    DATA_DIR,
-    "step2_prompt_templates.json",
-)
-HANDDRAWN_STORYBOARD_RULES_PATH = os.path.join(
-    REPO_ROOT,
-    "templates",
-    "prompts",
-    "storyboard_rules_handdrawn.zh.md",
-)
-STEP2_PROMPT_TEMPLATE_FILES = {
-    "script_system": os.path.join(
-        REPO_ROOT,
-        "templates",
-        "prompts",
-        "step2_script_system.md",
-    ),
-    "script_output_example": os.path.join(
-        REPO_ROOT,
-        "templates",
-        "prompts",
-        "step2_script_output_example.json",
-    ),
-    "visual_system": os.path.join(
-        REPO_ROOT,
-        "templates",
-        "prompts",
-        "step2_visual_system.md",
-    ),
-    "visual_output_example": os.path.join(
-        REPO_ROOT,
-        "templates",
-        "prompts",
-        "step2_visual_output_example.json",
-    ),
-}
 STEP2_PROMPTS_FILE = "step2_prompts.json"
 STEP2_SCRIPT_PLAN_FILE = "slide_script_plan.json"
 STEP2_VISUAL_PLAN_FILE = "slide_visual_plan.json"

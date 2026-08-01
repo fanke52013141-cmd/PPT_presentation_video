@@ -19,6 +19,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from project_style_context import ProjectStyleDependencies
+
 INPUT_DIRNAME = "reverse_style_inputs"
 INPUT_MANIFEST = "reverse_style_inputs.json"
 REVERSE_SYSTEM_CONTENT_KEY = "image_style_reverse_system_content"
@@ -95,10 +97,10 @@ def compose_reverse_style_prompt(system_content: str, output_example: str) -> st
     )
 
 
-def _read_reverse_style_prompts(server_module: Any) -> tuple[str, str]:
-    get_setting = getattr(server_module, "get_setting", None)
-    if not callable(get_setting):
-        return DEFAULT_REVERSE_SYSTEM_CONTENT, DEFAULT_REVERSE_OUTPUT_EXAMPLE
+def _read_reverse_style_prompts(
+    dependencies: ProjectStyleDependencies,
+) -> tuple[str, str]:
+    get_setting = dependencies.get_setting
     system_content = _safe_text(get_setting(REVERSE_SYSTEM_CONTENT_KEY, DEFAULT_REVERSE_SYSTEM_CONTENT), 30000)
     output_example = _safe_text(get_setting(REVERSE_OUTPUT_EXAMPLE_KEY, DEFAULT_REVERSE_OUTPUT_EXAMPLE), 20000)
     return (
@@ -219,10 +221,14 @@ def _image_data_url(path: Path, mime_type: str) -> str:
     return f"data:{mime_type};base64,{data}"
 
 
-def _normalize_uploaded_image(server_module: Any, data: bytes, path: Path) -> None:
+def _normalize_uploaded_image(
+    dependencies: ProjectStyleDependencies,
+    data: bytes,
+    path: Path,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        Image = server_module.Image
+        Image = dependencies.image_class
         with Image.open(io.BytesIO(data)) as img:
             img = img.convert("RGBA")
             img.thumbnail((1536, 1536))
@@ -233,11 +239,15 @@ def _normalize_uploaded_image(server_module: Any, data: bytes, path: Path) -> No
         path.write_bytes(data)
 
 
-def _save_uploaded_references(server_module: Any, project: Any, files: list[Any]) -> list[dict[str, Any]]:
+def _save_uploaded_references(
+    dependencies: ProjectStyleDependencies,
+    project: Any,
+    files: list[Any],
+) -> list[dict[str, Any]]:
     if not files:
-        raise server_module.HTTPException(status_code=400, detail="请上传 1-3 张参考图")
+        raise dependencies.http_exception(status_code=400, detail="请上传 1-3 张参考图")
     if len(files) > 3:
-        raise server_module.HTTPException(status_code=400, detail="最多只能上传 3 张参考图")
+        raise dependencies.http_exception(status_code=400, detail="最多只能上传 3 张参考图")
     inputs_dir = _inputs_dir(project)
     inputs_dir.mkdir(parents=True, exist_ok=True)
     saved: list[dict[str, Any]] = []
@@ -245,15 +255,15 @@ def _save_uploaded_references(server_module: Any, project: Any, files: list[Any]
         filename = _safe_text(getattr(file, "filename", "") or f"reference_{index}.png", 200)
         content_type = _safe_text(getattr(file, "content_type", "") or _mime_type(filename), 100)
         if not content_type.startswith("image/"):
-            raise server_module.HTTPException(status_code=400, detail=f"{filename} 不是图片文件")
+            raise dependencies.http_exception(status_code=400, detail=f"{filename} 不是图片文件")
         data = file.file.read()
         if not data:
-            raise server_module.HTTPException(status_code=400, detail=f"{filename} 是空文件")
+            raise dependencies.http_exception(status_code=400, detail=f"{filename} 是空文件")
         if len(data) > 12 * 1024 * 1024:
-            raise server_module.HTTPException(status_code=400, detail=f"{filename} 超过 12MB")
+            raise dependencies.http_exception(status_code=400, detail=f"{filename} 超过 12MB")
         out_name = f"reverse_reference_{index:02d}.png"
         out_path = inputs_dir / out_name
-        _normalize_uploaded_image(server_module, data, out_path)
+        _normalize_uploaded_image(dependencies, data, out_path)
         saved.append({
             "index": index,
             "filename": out_name,
@@ -270,15 +280,18 @@ def _save_uploaded_references(server_module: Any, project: Any, files: list[Any]
     return saved
 
 
-def _call_vision_model(server_module: Any, saved: list[dict[str, Any]], project: Any, requirement: str) -> dict[str, Any]:
-    get_setting = getattr(server_module, "get_setting", None)
-    if not callable(get_setting):
-        raise server_module.HTTPException(status_code=500, detail="当前服务无法读取模型设置")
+def _call_vision_model(
+    dependencies: ProjectStyleDependencies,
+    saved: list[dict[str, Any]],
+    project: Any,
+    requirement: str,
+) -> dict[str, Any]:
+    get_setting = dependencies.get_setting
     api_key = _safe_text(get_setting("llm_api_key"), 4000)
     base_url = _safe_text(get_setting("llm_base_url"), 1000) or None
     model = _safe_text(get_setting("vision_model") or get_setting("llm_model"), 200)
     if not api_key or not model:
-        raise server_module.HTTPException(status_code=400, detail="请先在系统设置中配置文本/视觉模型 API Key 和模型名称")
+        raise dependencies.http_exception(status_code=400, detail="请先在系统设置中配置文本/视觉模型 API Key 和模型名称")
 
     content: list[dict[str, Any]] = []
     user_text = build_reverse_style_user_text(requirement)
@@ -291,11 +304,11 @@ def _call_vision_model(server_module: Any, saved: list[dict[str, Any]], project:
             "image_url": {"url": _image_data_url(path, "image/png")},
         })
 
-    system_content, output_example = _read_reverse_style_prompts(server_module)
+    system_content, output_example = _read_reverse_style_prompts(dependencies)
     system_prompt = compose_reverse_style_prompt(system_content, output_example)
 
     try:
-        client = server_module.get_openai_client(api_key=api_key, base_url=base_url, timeout=120.0, max_retries=1)
+        client = dependencies.get_openai_client(api_key=api_key, base_url=base_url, timeout=120.0, max_retries=1)
         response = client.chat.completions.create(
             model=model,
             messages=[
@@ -310,11 +323,11 @@ def _call_vision_model(server_module: Any, saved: list[dict[str, Any]], project:
         parsed = json.loads(_clean_json_markdown(raw))
         return validate_reverse_style_model_output(parsed)
     except (json.JSONDecodeError, ValueError) as exc:
-        raise server_module.HTTPException(status_code=500, detail=f"视觉模型返回的 JSON 解析失败: {exc}") from exc
-    except server_module.HTTPException:
+        raise dependencies.http_exception(status_code=500, detail=f"视觉模型返回的 JSON 解析失败: {exc}") from exc
+    except dependencies.http_exception:
         raise
     except Exception as exc:
-        raise server_module.HTTPException(status_code=500, detail=f"反推图片风格失败: {exc}") from exc
+        raise dependencies.http_exception(status_code=500, detail=f"反推图片风格失败: {exc}") from exc
 
 
 def _style_with_required_rules(style: dict[str, Any], saved: list[dict[str, Any]], requirement: str) -> dict[str, Any]:

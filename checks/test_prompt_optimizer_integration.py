@@ -15,6 +15,7 @@ import narration_service as narration
 import project_profile_service as text_style
 import project_style_reference_service as style_references
 import article_service as article
+from route_inventory import iter_effective_routes
 import server
 from scripts.write_visual_prompts import project_image_style_lines
 
@@ -275,7 +276,7 @@ def test_skill_policy_and_prompt_editor_are_wired() -> None:
 def test_reverse_prompt_settings_routes_are_registered() -> None:
     routes = {
         (route.path, tuple(sorted(route.methods or [])))
-        for route in server.app.routes
+        for route in iter_effective_routes(server.app)
         if getattr(route, "path", "") == "/api/settings/image-style-reverse"
     }
     assert ("/api/settings/image-style-reverse", ("GET",)) in routes
@@ -283,7 +284,7 @@ def test_reverse_prompt_settings_routes_are_registered() -> None:
 
     reference_routes = {
         (route.path, tuple(sorted(route.methods or [])))
-        for route in server.app.routes
+        for route in iter_effective_routes(server.app)
         if getattr(route, "path", "") == "/api/settings/image-style-reference-generation"
     }
     assert ("/api/settings/image-style-reference-generation", ("GET",)) in reference_routes

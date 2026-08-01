@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import server
+from route_inventory import iter_effective_routes
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -12,7 +13,7 @@ def test_project_router_preserves_project_lifecycle_paths() -> None:
             route.path,
             frozenset(getattr(route, "methods", None) or []),
         )
-        for route in server.app.routes
+        for route in iter_effective_routes(server.app)
     }
     assert ("/api/projects", frozenset({"POST"})) in routes
     assert ("/api/projects", frozenset({"GET"})) in routes

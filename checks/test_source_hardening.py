@@ -28,6 +28,12 @@ def main() -> None:
     project_runtime_service = read_text(
         "project_runtime_service.py"
     )
+    repository_paths = read_text("repository_paths.py")
+    global_image_style_service = read_text(
+        "global_image_style_service.py"
+    )
+    storyboard_service = read_text("storyboard_service.py")
+    image_workflow_service = read_text("image_workflow_service.py")
     mask_manifest_service = read_text("mask_manifest_service.py")
     settings_routes = read_text("settings_routes.py")
     settings_service = read_text("settings_service.py")
@@ -123,6 +129,7 @@ def main() -> None:
     ):
         assert token not in runtime_support
         assert token not in project_runtime_service
+        assert token not in repository_paths
     for function_name in (
         "reveal_lock_for",
         "write_project_log",
@@ -142,6 +149,17 @@ def main() -> None:
     ):
         assert f"def {function_name}(" in project_runtime_service
         assert f"def {function_name}(" not in server
+    for source in (
+        server,
+        global_image_style_service,
+        storyboard_service,
+        image_workflow_service,
+    ):
+        assert "REPO_ROOT = os.path.abspath" not in source
+    assert "def ensure_active_image_style_storage(" not in server
+    assert "def ensure_active_image_style_storage(" in (
+        global_image_style_service
+    )
 
     annotation_start = narration_service.index(
         "def annotate_step6_narration("

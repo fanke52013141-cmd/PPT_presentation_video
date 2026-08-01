@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from route_inventory import iter_effective_routes
 import server
 
 
@@ -9,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_narration_and_tts_routes_preserve_public_contract() -> None:
-    paths = {route.path for route in server.app.routes}
+    paths = {route.path for route in iter_effective_routes(server.app)}
     assert {
         "/api/projects/{project_id}/steps/6/init",
         "/api/projects/{project_id}/steps/6/result",

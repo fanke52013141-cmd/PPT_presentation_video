@@ -126,10 +126,16 @@ The Python startup monkey patch has been retired. AI Mask is now source-owned:
 - `ai_mask_semantic_matcher.py` owns semantic-object preparation and is
   injected explicitly into the task service; it must never monkey-patch the
   engine.
+- AI Mask algorithm code receives only `AiMaskEngineDependencies`; never pass
+  a server module, application namespace, or mutable `SimpleNamespace` into
+  `ai_mask_engine.py` or `ai_mask_semantic_matcher.py`.
 - `project_style_routes.py` owns the Project Profile and Step 3 image-style
   HTTP contract. Its dependencies are configured through
   `project_style_context.py`; storage, reference generation, reverse analysis,
   and templates live in normal `project_*_service.py` / `*_store.py` modules.
+- Project-style services receive `ProjectStyleDependencies` directly; do not
+  recreate a mutable compatibility namespace or name that dependency
+  `server_module`.
 - Never restore `register_project_style_routes(server_module)`, route-order
   shadowing, or `runtime_project_*` modules.
 - `global_image_style_service.py` owns legacy-compatible global image-style
@@ -178,6 +184,12 @@ The Python startup monkey patch has been retired. AI Mask is now source-owned:
   transitions. It must remain independent of FastAPI, database wiring, and the
   application module; `server.py` may re-export these helpers for compatibility
   but must not restore their implementations.
+- `repository_paths.py` is the only source of repository-root, runtime-data,
+  style asset, storyboard template, and Prompt template file paths. Consumers
+  may re-export or monkey-patch imported module-level names for compatibility,
+  but must not recalculate these paths or add application wiring to the path
+  registry. Global image-style storage initialization remains owned by
+  `global_image_style_service.py`.
 - `narration_service.py` and `narration_routes.py` own Step 6 initialization,
   annotation, repair, persistence, and HTTP paths. `tts_service.py` and
   `tts_routes.py` own Step 7 synthesis, retry/status, audio download, and
@@ -214,6 +226,10 @@ The Python startup monkey patch has been retired. AI Mask is now source-owned:
 - Never restore `_register(server_module)` in diagnostics, storyboard
   background, or One-click code.
 - Access control is installed explicitly from `app_security.py`.
+- `route_inventory.py` is the only production inspection API for the effective
+  HTTP route surface. FastAPI may retain included routers as nested entries;
+  diagnostics and route-contract tests must not infer public routes from a
+  direct `app.routes` scan.
 - `ai_provider_service.py` owns the shared OpenAI-compatible client,
   bounded image decoding, 1920x1080 white-canvas normalization, image
   response extraction, and provider-specific image-generation fallbacks.
@@ -249,7 +265,7 @@ startup code.
 Run before publishing:
 
 ```powershell
-python -m compileall -q server.py runtime_support.py project_runtime_service.py ai_provider_service.py tts_provider_service.py narration_audio_service.py visual_contract_service.py settings_service.py config_portability_service.py settings_routes.py article_service.py article_routes.py diagnostics_routes.py storyboard_background.py storyboard_service.py storyboard_routes.py global_image_style_service.py global_image_style_routes.py image_workflow_service.py image_workflow_routes.py visual_settings_service.py visual_settings_routes.py mask_manifest_service.py mask_preview_service.py mask_editor_routes.py narration_service.py narration_routes.py tts_service.py tts_routes.py one_click_orchestrator.py one_click_routes.py pptx_export.py pptx_service.py pptx_routes.py video_contracts.py video_job_store.py video_artifact_service.py remotion_runner.py video_render_service.py video_routes.py ai_mask_config.py ai_mask_engine.py ai_mask_routes.py ai_mask_semantic_matcher.py ai_mask_service.py project_style_context.py project_style_routes.py project_profile_service.py project_profile_store.py project_style_reference_service.py project_style_reference_store.py project_style_template_service.py image_style_reverse_service.py step3_image_style_service.py database.py database_migrations.py invalidation_service.py reveal_manifest_service.py scripts checks
+python -m compileall -q server.py runtime_support.py project_runtime_service.py repository_paths.py ai_provider_service.py tts_provider_service.py narration_audio_service.py visual_contract_service.py settings_service.py config_portability_service.py settings_routes.py article_service.py article_routes.py diagnostics_routes.py storyboard_background.py storyboard_service.py storyboard_routes.py global_image_style_service.py global_image_style_routes.py image_workflow_service.py image_workflow_routes.py visual_settings_service.py visual_settings_routes.py mask_manifest_service.py mask_preview_service.py mask_editor_routes.py narration_service.py narration_routes.py tts_service.py tts_routes.py one_click_orchestrator.py one_click_routes.py pptx_export.py pptx_service.py pptx_routes.py video_contracts.py video_job_store.py video_artifact_service.py remotion_runner.py video_render_service.py video_routes.py ai_mask_config.py ai_mask_engine.py ai_mask_routes.py ai_mask_semantic_matcher.py ai_mask_service.py project_style_context.py project_style_routes.py project_profile_service.py project_profile_store.py project_style_reference_service.py project_style_reference_store.py project_style_template_service.py image_style_reverse_service.py step3_image_style_service.py database.py database_migrations.py invalidation_service.py reveal_manifest_service.py scripts checks
 node --check static/app.js
 node --check static/flow.js
 node checks/test_visible_flow.js

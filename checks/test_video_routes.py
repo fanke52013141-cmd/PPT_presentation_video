@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import server
+from route_inventory import iter_effective_routes
 import video_routes
 
 
@@ -25,7 +26,7 @@ class _Db:
 def test_video_collection_route_is_registered() -> None:
     route_methods = {
         (getattr(route, "path", ""), method)
-        for route in server.app.routes
+        for route in iter_effective_routes(server.app)
         for method in (getattr(route, "methods", set()) or set())
     }
     assert ("/api/projects/{project_id}/videos", "GET") in route_methods

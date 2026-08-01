@@ -18,40 +18,21 @@ from fastapi.responses import FileResponse
 import yaml
 
 from pipeline_lifecycle import write_json_atomic
+from repository_paths import (
+    DATA_DIR,
+    DEFAULT_STYLE_REFERENCE_DIR,
+    DEFAULT_STYLE_TOKENS_PATH,
+    HANDDRAWN_STYLE_TOKENS_PATH,
+    IMAGE_STYLE_TEMPLATES_DIR,
+    IMAGE_STYLE_TEMPLATES_INDEX,
+    REPO_ROOT,
+    STYLE_REFERENCE_DIR,
+    STYLE_REFERENCE_FILES,
+    STYLE_TOKENS_PATH,
+)
 
 
 logger = logging.getLogger("PPTStudio.GlobalImageStyle")
-REPO_ROOT = os.path.abspath(os.path.dirname(__file__))
-DATA_DIR = os.path.join(REPO_ROOT, "data")
-DEFAULT_STYLE_TOKENS_PATH = os.path.join(
-    REPO_ROOT,
-    "config",
-    "style_tokens.yaml",
-)
-HANDDRAWN_STYLE_TOKENS_PATH = os.path.join(
-    REPO_ROOT,
-    "config",
-    "style_tokens_handdrawn.yaml",
-)
-STYLE_TOKENS_PATH = os.path.join(DATA_DIR, "style_tokens.yaml")
-DEFAULT_STYLE_REFERENCE_DIR = os.path.join(
-    REPO_ROOT,
-    "references",
-    "style_reference",
-)
-STYLE_REFERENCE_DIR = os.path.join(
-    DATA_DIR,
-    "style_reference_active",
-)
-STYLE_REFERENCE_FILES = {"template": "PPT模板.png"}
-IMAGE_STYLE_TEMPLATES_DIR = os.path.join(
-    DATA_DIR,
-    "image_style_templates",
-)
-IMAGE_STYLE_TEMPLATES_INDEX = os.path.join(
-    IMAGE_STYLE_TEMPLATES_DIR,
-    "index.json",
-)
 IMAGE_GENERATION_BACKGROUND = "#FFFFFF"
 IMAGE_STYLE_TOP_LEVEL_KEYS = (
     "brand",

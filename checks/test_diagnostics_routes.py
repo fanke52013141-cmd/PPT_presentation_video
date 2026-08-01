@@ -6,13 +6,14 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import diagnostics_routes
+from route_inventory import iter_effective_routes
 import server
 
 
 def test_diagnostics_route_is_explicit_and_unique() -> None:
     matches = [
         route
-        for route in server.app.routes
+        for route in iter_effective_routes(server.app)
         if getattr(route, "path", "") == "/api/runtime/diagnostics"
         and "GET" in (getattr(route, "methods", set()) or set())
     ]

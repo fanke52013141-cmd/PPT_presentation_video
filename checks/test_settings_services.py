@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import config_portability_service as config_service  # noqa: E402
+from route_inventory import iter_effective_routes  # noqa: E402
 import server  # noqa: E402
 import settings_service  # noqa: E402
 
@@ -57,7 +58,7 @@ def replace_config_dependencies(
 
 def test_settings_routes_are_registered_exactly_once() -> None:
     route_counts: dict[tuple[str, str], int] = {}
-    for route in server.app.routes:
+    for route in iter_effective_routes(server.app):
         path = getattr(route, "path", "")
         for method in getattr(route, "methods", set()):
             key = (method, path)

@@ -15,6 +15,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from project_style_context import ProjectStyleDependencies
+
 REFERENCE_DIRNAME = "style_references"
 REFERENCE_MANIFEST = "project_style_references.json"
 MANIFEST_VERSION = "step3_style_references_v1"
@@ -109,10 +111,10 @@ def _reference_prompts(image_style: dict[str, Any], count: int) -> list[str]:
     return result[:count]
 
 
-def _read_reference_generation_system_content(server_module: Any) -> str:
-    get_setting = getattr(server_module, "get_setting", None)
-    if not callable(get_setting):
-        return DEFAULT_REFERENCE_GENERATION_SYSTEM_CONTENT
+def _read_reference_generation_system_content(
+    dependencies: ProjectStyleDependencies,
+) -> str:
+    get_setting = dependencies.get_setting
     return _safe_text(
         get_setting(REFERENCE_GENERATION_SYSTEM_CONTENT_KEY, DEFAULT_REFERENCE_GENERATION_SYSTEM_CONTENT),
         30000,
@@ -231,37 +233,35 @@ def _update_prompt_companion(project: Any, manifest: dict[str, Any]) -> None:
     _save_reference_images_to_step3_state(project, manifest)
 
 
-def _generate_reference_images(server_module: Any, project: Any, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+def _generate_reference_images(
+    dependencies: ProjectStyleDependencies,
+    project: Any,
+    project_id: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
     image_style = _profile_image_style(project)
     if not image_style:
-        raise server_module.HTTPException(status_code=400, detail="Step 3 当前图片风格为空，无法生成图片风格参考图")
+        raise dependencies.http_exception(status_code=400, detail="Step 3 当前图片风格为空，无法生成图片风格参考图")
 
     requested_count = _safe_count(payload.get("count") or image_style.get("reference_image_count_target") or 3)
     prompts = _reference_prompts(image_style, requested_count)
     if not prompts:
-        raise server_module.HTTPException(status_code=400, detail="没有可用于生成 Step 3 图片风格参考图的 sample_reference_image_prompts")
+        raise dependencies.http_exception(status_code=400, detail="没有可用于生成 Step 3 图片风格参考图的 sample_reference_image_prompts")
 
-    get_setting = getattr(server_module, "get_setting", None)
-    if not callable(get_setting):
-        raise server_module.HTTPException(status_code=500, detail="当前服务无法读取生图设置")
+    get_setting = dependencies.get_setting
     api_key = _safe_text(get_setting("image_api_key"), 4000)
     base_url = _safe_text(get_setting("image_base_url"), 1000) or None
     model = _safe_text(get_setting("image_model", "gpt-image-1"), 200) or "gpt-image-1"
     image_size = _safe_text(get_setting("image_size", "1024x1024"), 100) or "1024x1024"
     if not api_key:
-        raise server_module.HTTPException(status_code=400, detail="未配置生图 API 密钥，请先在系统设置中配置")
+        raise dependencies.http_exception(status_code=400, detail="未配置生图 API 密钥，请先在系统设置中配置")
 
-    required_helpers = ["get_openai_client", "generate_image_response", "extract_image_bytes_from_response", "process_and_save_image"]
-    for name in required_helpers:
-        if not callable(getattr(server_module, name, None)):
-            raise server_module.HTTPException(status_code=500, detail=f"当前服务缺少生图辅助函数: {name}")
-
-    client = server_module.get_openai_client(api_key=api_key, base_url=base_url, timeout=180.0, max_retries=0)
+    client = dependencies.get_openai_client(api_key=api_key, base_url=base_url, timeout=180.0, max_retries=0)
     references_dir = _references_dir(project)
     references_dir.mkdir(parents=True, exist_ok=True)
 
     generated = []
-    generation_system_content = _read_reference_generation_system_content(server_module)
+    generation_system_content = _read_reference_generation_system_content(dependencies)
     for index, raw_prompt in enumerate(prompts, start=1):
         final_prompt = _style_generation_prompt(
             raw_prompt,
@@ -269,17 +269,17 @@ def _generate_reference_images(server_module: Any, project: Any, project_id: str
             index,
             generation_system_content,
         )
-        response = server_module.generate_image_response(
+        response = dependencies.generate_image_response(
             client=client,
             model=model,
             prompt=final_prompt,
             size=image_size,
             base_url=base_url,
         )
-        img_bytes = server_module.extract_image_bytes_from_response(response)
+        img_bytes = dependencies.extract_image_bytes_from_response(response)
         filename = f"style_reference_{index:02d}.png"
         save_path = references_dir / filename
-        server_module.process_and_save_image(img_bytes, str(save_path))
+        dependencies.process_and_save_image(img_bytes, str(save_path))
         generated.append({
             "index": index,
             "filename": filename,
@@ -301,7 +301,7 @@ def _generate_reference_images(server_module: Any, project: Any, project_id: str
     _write_json(_manifest_path(project), manifest)
     _update_prompt_companion(project, manifest)
     try:
-        server_module.write_project_log(
+        dependencies.write_project_log(
             project,
             "step3_style_reference_images_generated",
             count=len(generated),
@@ -314,11 +314,16 @@ def _generate_reference_images(server_module: Any, project: Any, project_id: str
     return manifest
 
 
-def _profile_style_prompt(project: Any, server_module: Any) -> str:
+def _profile_style_prompt(
+    project: Any,
+    dependencies: ProjectStyleDependencies,
+) -> str:
     image_style = _profile_image_style(project)
     fallback = ""
     try:
-        fallback = server_module.build_image_style_prompt(server_module.read_style_tokens_data())
+        fallback = dependencies.build_image_style_prompt(
+            dependencies.read_style_tokens_data()
+        )
     except Exception:
         fallback = ""
     if not image_style:
@@ -353,20 +358,42 @@ def _profile_style_prompt(project: Any, server_module: Any) -> str:
     return "\n".join(lines)
 
 
-def _project_generate_prompt_for_slide(server_module: Any, project: Any, slide: dict[str, Any], topic_name: str) -> str:
-    style_prompt = _profile_style_prompt(project, server_module)
-    compose_prompt = getattr(server_module, "compose_step3_single_slide_prompt", None)
-    if callable(compose_prompt):
-        prompt_reader = getattr(server_module, "read_step3_image_system_content", None)
-        system_content = prompt_reader(project) if callable(prompt_reader) else None
-        return compose_prompt(style_prompt, slide, system_content)
+def _project_generate_prompt_for_slide(
+    dependencies: ProjectStyleDependencies,
+    project: Any,
+    slide: dict[str, Any],
+    topic_name: str,
+) -> str:
+    style_prompt = _profile_style_prompt(project, dependencies)
+    try:
+        system_content = dependencies.read_step3_image_system_content(project)
+        return dependencies.compose_step3_single_slide_prompt(
+            style_prompt,
+            slide,
+            system_content,
+        )
+    except Exception:
+        return _legacy_project_generate_prompt_for_slide(
+            dependencies,
+            project,
+            slide,
+        )
+
+
+def _legacy_project_generate_prompt_for_slide(
+    dependencies: ProjectStyleDependencies,
+    project: Any,
+    slide: dict[str, Any],
+) -> str:
+    style_prompt = _profile_style_prompt(project, dependencies)
     slide_id = _safe_text(slide.get("slide_id"), 100)
     elements_str = "- 无可用视觉元素"
-    if callable(getattr(server_module, "compact_slide_element_lines", None)):
-        try:
-            elements_str = "\n".join(server_module.compact_slide_element_lines(slide)) or elements_str
-        except Exception:
-            pass
+    try:
+        elements_str = "\n".join(
+            dependencies.compact_slide_element_lines(slide)
+        ) or elements_str
+    except Exception:
+        pass
     return (
         "整体风格提示词：\n"
         f"{style_prompt}\n\n"
@@ -382,11 +409,16 @@ def _project_generate_prompt_for_slide(server_module: Any, project: Any, slide: 
     )
 
 
-def _can_send_project_references(server_module: Any, model: str, base_url: str | None, reference_paths: list[str]) -> bool:
+def _can_send_project_references(
+    dependencies: ProjectStyleDependencies,
+    model: str,
+    base_url: str | None,
+    reference_paths: list[str],
+) -> bool:
     if not reference_paths:
         return False
     try:
-        if callable(getattr(server_module, "is_seedream_image_model", None)) and server_module.is_seedream_image_model(model, base_url):
+        if dependencies.is_seedream_image_model(model, base_url):
             return False
     except Exception:
         return False
@@ -397,37 +429,40 @@ def project_reference_paths(project: Any) -> list[str]:
     return _project_reference_paths(project)
 
 
-def profile_style_prompt(project: Any, server_module: Any | None = None) -> str:
-    if server_module is None:
+def profile_style_prompt(
+    project: Any,
+    dependencies: ProjectStyleDependencies | None = None,
+) -> str:
+    if dependencies is None:
         from project_style_context import get_project_style_context
 
-        server_module = get_project_style_context()
-    return _profile_style_prompt(project, server_module)
+        dependencies = get_project_style_context()
+    return _profile_style_prompt(project, dependencies)
 
 
 def project_generate_prompt_for_slide(
     project: Any,
     slide: dict[str, Any],
     topic_name: str,
-    server_module: Any | None = None,
+    dependencies: ProjectStyleDependencies | None = None,
 ) -> str:
-    if server_module is None:
+    if dependencies is None:
         from project_style_context import get_project_style_context
 
-        server_module = get_project_style_context()
-    return _project_generate_prompt_for_slide(server_module, project, slide, topic_name)
+        dependencies = get_project_style_context()
+    return _project_generate_prompt_for_slide(dependencies, project, slide, topic_name)
 
 
 def can_send_project_references(
     model: str,
     base_url: str | None,
     reference_paths: list[str],
-    server_module: Any | None = None,
+    dependencies: ProjectStyleDependencies | None = None,
 ) -> bool:
-    if server_module is None:
+    if dependencies is None:
         from project_style_context import get_project_style_context
 
-        server_module = get_project_style_context()
-    return _can_send_project_references(server_module, model, base_url, reference_paths)
+        dependencies = get_project_style_context()
+    return _can_send_project_references(dependencies, model, base_url, reference_paths)
 
 

@@ -376,7 +376,7 @@ def test_volcengine_ai_mask_uses_provider_model_and_single_timeout_policy():
     source = inspect.getsource(semantic_matcher.SemanticVisionMatcher.__call__)
     assert "step2_llm_vendor_options" in source
     assert "AI_MASK_VISION_TIMEOUT_SEC" in source
-    assert "_is_timeout(server_module, exc)" in source
+    assert "_is_timeout(capabilities, exc)" in source
 
 
 def test_semantic_object_match_expands_element_ids_without_model_guessing():

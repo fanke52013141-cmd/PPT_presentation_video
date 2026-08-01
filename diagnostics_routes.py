@@ -6,6 +6,8 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
+from route_inventory import iter_effective_routes
+
 
 router = APIRouter()
 
@@ -18,11 +20,11 @@ EXPECTED_SOURCE_ROUTES = {
 
 def _route_methods_by_path(app: Any) -> dict[str, list[str]]:
     result: dict[str, set[str]] = {}
-    for route in getattr(app, "routes", []) or []:
-        path = str(getattr(route, "path", ""))
+    for route in iter_effective_routes(app):
+        path = route.path
         if not path:
             continue
-        methods = {str(method).upper() for method in (getattr(route, "methods", []) or [])}
+        methods = set(route.methods)
         if methods:
             result.setdefault(path, set()).update(methods)
     return {path: sorted(methods) for path, methods in sorted(result.items())}
@@ -30,6 +32,7 @@ def _route_methods_by_path(app: Any) -> dict[str, list[str]]:
 
 def _diagnostics_payload(app: Any) -> dict[str, Any]:
     routes = _route_methods_by_path(app)
+    effective_route_count = sum(1 for _ in iter_effective_routes(app))
     missing_routes = sorted(
         f"{method} {path}"
         for path, methods in EXPECTED_SOURCE_ROUTES.items()
@@ -43,7 +46,7 @@ def _diagnostics_payload(app: Any) -> dict[str, Any]:
         "runtime_modules": [],
         "expected_routes": {path: sorted(methods) for path, methods in sorted(EXPECTED_SOURCE_ROUTES.items())},
         "missing_routes": missing_routes,
-        "route_count": len(getattr(app, "routes", []) or []),
+        "route_count": effective_route_count,
         "routes": routes,
     }
 

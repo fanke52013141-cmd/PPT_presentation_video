@@ -10,6 +10,7 @@ sys.path.insert(0, str(ROOT))
 
 import project_style_routes  # noqa: E402
 from project_style_context import get_project_style_context  # noqa: E402
+from route_inventory import iter_effective_routes  # noqa: E402
 import server  # noqa: E402
 
 
@@ -43,7 +44,7 @@ def test_style_router_is_source_owned_and_explicit() -> None:
 def test_critical_style_routes_are_present() -> None:
     route_methods = {
         (getattr(route, "path", ""), method)
-        for route in server.app.routes
+        for route in iter_effective_routes(server.app)
         for method in (getattr(route, "methods", set()) or set())
     }
     for expected in {
@@ -86,7 +87,7 @@ def test_runtime_style_modules_are_retired() -> None:
 def test_step3_prompt_and_generate_routes_are_unique() -> None:
     routes = [
         (getattr(route, "path", ""), frozenset(getattr(route, "methods", set()) or set()))
-        for route in server.app.routes
+        for route in iter_effective_routes(server.app)
     ]
     assert routes.count(("/api/projects/{project_id}/steps/3/prompts", frozenset({"GET"}))) == 1
     assert routes.count(("/api/projects/{project_id}/steps/3/generate", frozenset({"POST"}))) == 1
@@ -95,7 +96,7 @@ def test_step3_prompt_and_generate_routes_are_unique() -> None:
 def test_application_has_no_duplicate_method_path_routes() -> None:
     keys = [
         (method, getattr(route, "path", ""))
-        for route in server.app.routes
+        for route in iter_effective_routes(server.app)
         for method in (getattr(route, "methods", set()) or set())
         if method not in {"HEAD", "OPTIONS"}
     ]

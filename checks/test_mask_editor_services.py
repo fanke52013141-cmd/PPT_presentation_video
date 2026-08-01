@@ -12,6 +12,7 @@ import pytest
 
 import mask_manifest_service as manifest_service
 import mask_preview_service as preview_service
+from route_inventory import iter_effective_routes
 import server
 
 
@@ -71,7 +72,7 @@ def test_step5_routes_are_source_owned_and_unique() -> None:
     }
     keys = Counter(
         (method, route.path)
-        for route in server.app.routes
+        for route in iter_effective_routes(server.app)
         for method in (getattr(route, "methods", set()) or set())
         if method not in {"HEAD", "OPTIONS"}
     )

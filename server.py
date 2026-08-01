@@ -2,7 +2,6 @@ import os
 import sys
 import uuid
 import json
-import shutil
 import logging
 import re
 from datetime import datetime
@@ -150,6 +149,27 @@ from project_runtime_service import (
     sync_reveal_manifest_to_contract,
     write_project_log,
 )
+from repository_paths import (
+    DATA_DIR,
+    DEFAULT_STYLE_REFERENCE_DIR,
+    DEFAULT_STYLE_TOKENS_PATH,
+    HANDDRAWN_STORYBOARD_RULES_PATH,
+    HANDDRAWN_STYLE_TOKENS_PATH,
+    IMAGE_STYLE_TEMPLATES_DIR,
+    IMAGE_STYLE_TEMPLATES_INDEX,
+    REPO_ROOT,
+    RUNS_DIR,
+    STEP2_PROMPT_TEMPLATE_FILES,
+    STEP2_PROMPT_TEMPLATES_PATH,
+    STEP3_IMAGE_PROMPT_TEMPLATE_PATH,
+    STORYBOARD_TEMPLATES_PATH,
+    STYLE_REFERENCE_DIR,
+    STYLE_REFERENCE_FILES,
+    STYLE_TOKENS_PATH,
+)
+from global_image_style_service import (
+    ensure_active_image_style_storage,
+)
 
 # 初始化日志与数据库
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -176,30 +196,9 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=configured_allowed_hosts
 
 install_access_control(app)
 
-RUNS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "runs"))
 os.makedirs(RUNS_DIR, exist_ok=True)
 MAX_CONFIG_IMPORT_BYTES = int(os.environ.get("PPT_STUDIO_MAX_CONFIG_IMPORT_BYTES", str(25 * 1024 * 1024)))
-REPO_ROOT = os.path.abspath(os.path.dirname(__file__))
-DATA_DIR = os.path.join(REPO_ROOT, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
-DEFAULT_STYLE_TOKENS_PATH = os.path.join(REPO_ROOT, "config", "style_tokens.yaml")
-HANDDRAWN_STYLE_TOKENS_PATH = os.path.join(REPO_ROOT, "config", "style_tokens_handdrawn.yaml")
-STYLE_TOKENS_PATH = os.path.join(DATA_DIR, "style_tokens.yaml")
-DEFAULT_STYLE_REFERENCE_DIR = os.path.join(REPO_ROOT, "references", "style_reference")
-STYLE_REFERENCE_DIR = os.path.join(DATA_DIR, "style_reference_active")
-STYLE_REFERENCE_FILES = {
-    "template": "PPT模板.png",
-}
-STORYBOARD_TEMPLATES_PATH = os.path.join(DATA_DIR, "storyboard_templates.json")
-STEP2_PROMPT_TEMPLATES_PATH = os.path.join(DATA_DIR, "step2_prompt_templates.json")
-HANDDRAWN_STORYBOARD_RULES_PATH = os.path.join(REPO_ROOT, "templates", "prompts", "storyboard_rules_handdrawn.zh.md")
-STEP2_PROMPT_TEMPLATE_FILES = {
-    "script_system": os.path.join(REPO_ROOT, "templates", "prompts", "step2_script_system.md"),
-    "script_output_example": os.path.join(REPO_ROOT, "templates", "prompts", "step2_script_output_example.json"),
-    "visual_system": os.path.join(REPO_ROOT, "templates", "prompts", "step2_visual_system.md"),
-    "visual_output_example": os.path.join(REPO_ROOT, "templates", "prompts", "step2_visual_output_example.json"),
-}
-STEP3_IMAGE_PROMPT_TEMPLATE_PATH = os.path.join(REPO_ROOT, "templates", "prompts", "step3_image_system.md")
 AI_KNOWLEDGE_STEP2_SCRIPT_EXTENSION = """
 <AIKnowledgeAudienceOverride>
 当前模板专用于中文 AI 知识视频。目标受众是已经接触过 ChatGPT、智能助手或常见 AI 产品，但并非算法专家的职场人。他们更关心机制为什么成立、能力边界在哪里、会怎样影响实际工作，以及应该如何判断和行动。
@@ -221,20 +220,7 @@ STEP2_PROMPTS_FILE = "step2_prompts.json"
 STEP2_SCRIPT_PLAN_FILE = "slide_script_plan.json"
 STEP2_VISUAL_PLAN_FILE = "slide_visual_plan.json"
 STEP3_IMAGE_PROMPTS_FILE = "step3_image_prompts.json"
-IMAGE_STYLE_TEMPLATES_DIR = os.path.join(DATA_DIR, "image_style_templates")
-IMAGE_STYLE_TEMPLATES_INDEX = os.path.join(IMAGE_STYLE_TEMPLATES_DIR, "index.json")
 REVEAL_PIPELINE_VERSION = "exact_rle_mask_with_manual_corrections_v5"
-
-def ensure_active_image_style_storage() -> None:
-    os.makedirs(STYLE_REFERENCE_DIR, exist_ok=True)
-    os.makedirs(IMAGE_STYLE_TEMPLATES_DIR, exist_ok=True)
-    if not os.path.exists(STYLE_TOKENS_PATH):
-        shutil.copy2(DEFAULT_STYLE_TOKENS_PATH, STYLE_TOKENS_PATH)
-    for filename in STYLE_REFERENCE_FILES.values():
-        active_path = os.path.join(STYLE_REFERENCE_DIR, filename)
-        default_path = os.path.join(DEFAULT_STYLE_REFERENCE_DIR, filename)
-        if not os.path.exists(active_path) and os.path.exists(default_path):
-            shutil.copy2(default_path, active_path)
 
 
 def normalized_template_name(value: Any) -> str:

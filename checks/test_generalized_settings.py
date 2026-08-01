@@ -13,6 +13,7 @@ if str(ROOT) not in sys.path:
 from scripts.build_reveal_scene import build_event  # noqa: E402
 from scripts.pipeline_profiles import normalize_reveal_action, role_catalog  # noqa: E402
 import server as server_module  # noqa: E402
+from route_inventory import iter_effective_routes  # noqa: E402
 import visual_contract_service as visual_contract  # noqa: E402
 import global_image_style_service as global_style  # noqa: E402
 from mask_manifest_service import deterministic_semantic_blocks  # noqa: E402
@@ -233,7 +234,10 @@ def main() -> None:
     assert ".ai-draft-status" not in css
     assert ".ai-request-panel" not in css
     assert ".ai-draft-preview" not in css
-    route_paths = [getattr(route, "path", "") for route in server_module.app.routes]
+    route_paths = [
+        route.path
+        for route in iter_effective_routes(server_module.app)
+    ]
     assert route_paths.count("/api/projects/{project_id}/steps/2/prompts") == 2
     assert "/api/projects/{project_id}/steps/2/rules/ai-draft" not in route_paths
     assert "/api/projects/{project_id}/steps/3/image-style/ai-draft" not in route_paths

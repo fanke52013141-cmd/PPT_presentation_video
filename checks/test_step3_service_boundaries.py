@@ -10,6 +10,7 @@ import pytest
 from fastapi import HTTPException
 
 import server
+from route_inventory import iter_effective_routes
 import visual_settings_service as visual_settings
 from visual_settings_service import (
     VisualSettingsDependencies,
@@ -232,7 +233,7 @@ def test_step3_routes_are_explicit_and_unique() -> None:
     }
     observed = [
         (route.path, method)
-        for route in server.app.routes
+            for route in iter_effective_routes(server.app)
         for method in getattr(route, "methods", set())
         if (route.path, method) in expected
     ]

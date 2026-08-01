@@ -40,6 +40,9 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+.coverage
+.coverage.*
+htmlcov/
 
 # Secrets
 .env

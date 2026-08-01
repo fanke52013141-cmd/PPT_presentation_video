@@ -2,6 +2,23 @@
 
 ## Production Pipeline
 
+`storyboard_planning.py` owns pure Step 2 plan normalization, narration-to-
+visual mapping validation, minimal AI user-input serialization, and Visual
+Contract composition. `storyboard_service.py` re-exports those functions for
+compatibility but must keep request orchestration, persistence, and finalization
+separate from the pure planning layer.
+`storyboard_profiles.py` owns pipeline-profile sanitization, YAML validation,
+editor patches, project profile loading, and built-in storyboard rules. Profile
+logic must not return to the request-oriented service module.
+`storyboard_prompt_templates.py` owns Step 2 Prompt file paths, built-in and
+custom Prompt templates, legacy Prompt migration, compatibility detection, and
+composed Prompt responses. Runtime persistence/name/timestamp capabilities are
+injected once by `configure_storyboard_dependencies`.
+`storyboard_llm.py` owns bounded Step 2 chat-completion execution, JSON-mode
+fallback, response cleanup/repair, timeout translation, logging, and client
+closure. `storyboard_service.py` owns only the configured wrapper and vendor
+selection; keep direct model-client calls out of it.
+
 The application has six user-visible steps:
 
 1. Import an article or generate one from a topic.

@@ -12,6 +12,8 @@ const images = fs.readFileSync(path.join(root, 'static', 'images.js'), 'utf8');
 const imagePrompts = fs.readFileSync(path.join(root, 'static', 'image_prompts.js'), 'utf8');
 const maskWorkspace = fs.readFileSync(path.join(root, 'static', 'mask_workspace.js'), 'utf8');
 const maskEditor = fs.readFileSync(path.join(root, 'static', 'mask_editor.js'), 'utf8');
+const subtitleSettings = fs.readFileSync(path.join(root, 'static', 'subtitle_settings.js'), 'utf8');
+const narrationAudio = fs.readFileSync(path.join(root, 'static', 'narration_audio.js'), 'utf8');
 const step2Logic = `${app}\n${storyboard}\n${storyboardPrompts}`;
 const html = fs.readFileSync(path.join(root, 'static', 'index.html'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'static', 'style.css'), 'utf8');
@@ -229,6 +231,45 @@ for (const bridge of [
   'window.PPTStudio',
 ]) {
   if (!maskEditor.includes(bridge)) throw new Error(`Step 5 Mask editor bridge is missing: ${bridge}`);
+}
+if (!html.includes('subtitle_settings.js')) throw new Error('subtitle settings module is not loaded explicitly');
+for (const subtitleFunction of [
+  'readSubtitleSettingsForm',
+  'populateSubtitleSettingsForm',
+  'updateSubtitlePreview',
+  'openSubtitleSettingsModal',
+  'saveSubtitleSettings',
+]) {
+  if (!subtitleSettings.includes(`function ${subtitleFunction}(`)) {
+    throw new Error(`subtitle settings module is missing ${subtitleFunction}`);
+  }
+  if (app.includes(`function ${subtitleFunction}(`) || narrationAudio.includes(`function ${subtitleFunction}(`)) {
+    throw new Error(`subtitle settings implementation escaped its module: ${subtitleFunction}`);
+  }
+}
+if (!html.includes('narration_audio.js')) throw new Error('narration/audio module is not loaded explicitly');
+for (const narrationFunction of [
+  'loadStep6Data',
+  'initStep6Narration',
+  'openStep6AnnotationPromptModal',
+  'annotateStep6Narration',
+  'normalizeStep6Data',
+  'renderStep6Workspace',
+  'saveStep6CurrentState',
+  'scheduleStep6Autosave',
+  'flushStep6Autosave',
+  'saveStep6Narration',
+  'loadStep7Data',
+  'runStep7TTS',
+  'saveNarrationAndRunTTS',
+  'confirmStep7Audio',
+]) {
+  if (!narrationAudio.includes(`function ${narrationFunction}(`)) {
+    throw new Error(`narration/audio module is missing ${narrationFunction}`);
+  }
+  if (app.includes(`function ${narrationFunction}(`)) {
+    throw new Error(`narration/audio implementation returned to app.js: ${narrationFunction}`);
+  }
 }
 const fullscreenStart = maskWorkspace.indexOf('function toggleStep5Fullscreen');
 const fullscreenEnd = maskWorkspace.indexOf('function uuid', fullscreenStart);

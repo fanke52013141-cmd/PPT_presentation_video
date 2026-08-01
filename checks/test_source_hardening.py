@@ -41,6 +41,7 @@ def main() -> None:
     provider_service = read_text("ai_provider_service.py")
     tts_provider_service = read_text("tts_provider_service.py")
     app_js = read_text("static/app.js")
+    narration_audio_js = read_text("static/narration_audio.js")
     ci = read_text(".github/workflows/ci.yml")
 
     assert '"src/index.tsx",' in remotion_runner
@@ -197,7 +198,8 @@ def main() -> None:
     assert "def provider_tts_command(" not in server
     assert "def run_tts_command_with_retries(" not in server
 
-    assert app_js.count("async function runStep7TTS()") == 1
+    assert narration_audio_js.count("async function runStep7TTS()") == 1
+    assert "async function runStep7TTS()" not in app_js
 
     assert "python scripts/run_checks.py --level full" in ci
     assert 'python_check(ROOT / "checks" / "test_source_hardening.py")' in read_text("scripts/run_checks.py")

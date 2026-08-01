@@ -115,8 +115,8 @@ with tempfile.TemporaryDirectory() as temp_dir:
     assert [segment["beat_id"] for segment in rewritten["segments"]] == ["beat_1", "beat_2"]
     assert [segment["start"] for segment in rewritten["segments"]] == [0.0, 2.0]
 
-app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
-assert "const hasExistingAudio" in app_js
-assert "const canLoadAudio = stepAllowsAudio || hasExistingAudio" in app_js
+narration_audio_js = (ROOT / "static" / "narration_audio.js").read_text(encoding="utf-8")
+assert "const hasExistingAudio" in narration_audio_js
+assert "const canLoadAudio = stepAllowsAudio || hasExistingAudio" in narration_audio_js
 
 print("audio/subtitle duration checks passed")

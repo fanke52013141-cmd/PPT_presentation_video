@@ -78,6 +78,14 @@ The current product UI is the soft blue-purple "Soft Pastel Studio" interface, n
   Mask/final previews, animation settings and preview, draft autosave/flush,
   semantic-block execution, final confirmation, and its explicit global bridges.
   Keep these functions out of `app.js` and `mask_workspace.js`.
+- `static/subtitle_settings.js` owns subtitle form normalization, project font
+  loading, live preview, reset, and persistence. Keep subtitle configuration out
+  of `app.js` and the narration/audio editor.
+- `static/narration_audio.js` owns the visible narration-and-audio workspace:
+  narration initialization/rendering, AI annotation Prompt and execution,
+  TTS-markup normalization, editor autosave/flush, audio-status rendering, TTS
+  generation, playback readiness, and audio confirmation. Keep these functions
+  out of `app.js`.
 - New extractions must preserve current DOM IDs and API paths, add an explicit
   script tag in `static/index.html`, and extend `checks/test_frontend_quality.js`
   with an ownership guard.

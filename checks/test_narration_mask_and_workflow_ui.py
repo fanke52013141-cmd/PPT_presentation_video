@@ -226,13 +226,13 @@ def test_default_step2_prompts_explicitly_forbid_duplicate_narration_binding():
 
 def test_mask_size_cursor_and_outline_contracts():
     html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
-    app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    mask_editor = (ROOT / "static" / "mask_editor.js").read_text(encoding="utf-8")
     assert 'id="step5-brush-size" type="range" min="100" max="200" value="140"' in html
     assert 'id="step5-eraser-size" type="range" min="100" max="200" value="100"' in html
-    assert "toolSize * displayScale" in app
-    assert "getCoalescedEvents" in app
-    assert "scheduleLiveMaskRedraw" in app
-    assert "const MASK_PREVIEW_OUTLINE_PX = 5" in app
+    assert "toolSize * displayScale" in mask_editor
+    assert "getCoalescedEvents" in mask_editor
+    assert "scheduleLiveMaskRedraw" in mask_editor
+    assert "const MASK_PREVIEW_OUTLINE_PX = 5" in mask_editor
 
 
 def test_step3_actions_reserve_fixed_non_wrapping_slots():
@@ -252,6 +252,7 @@ def test_builtin_prompts_and_mask_state_are_reset_per_project():
     storyboard = (ROOT / "static" / "storyboard.js").read_text(encoding="utf-8")
     storyboard_prompts = (ROOT / "static" / "storyboard_prompts.js").read_text(encoding="utf-8")
     mask_workspace = (ROOT / "static" / "mask_workspace.js").read_text(encoding="utf-8")
+    mask_editor = (ROOT / "static" / "mask_editor.js").read_text(encoding="utf-8")
     css = (ROOT / "static" / "style.css").read_text(encoding="utf-8")
     style_manager = (ROOT / "static" / "style_reference_manager_extension.js").read_text(encoding="utf-8")
     assert "正在编辑：" not in html
@@ -261,7 +262,7 @@ def test_builtin_prompts_and_mask_state_are_reset_per_project():
     assert "function resetStep5ProjectState()" in mask_workspace
     assert "resetStep5ProjectState();" in app
     assert "let manifestProjectId = ''" in mask_workspace
-    assert "manifestProjectId !== projectId" in app
+    assert "manifestProjectId !== projectId" in mask_editor
     assert "renderStep2PromptTemplateOptions('');" in storyboard_prompts
     assert "template.prompt_type === state.activeStep2PromptMode && template.built_in" not in storyboard_prompts
     assert "selectedTemplateId: 'handdrawn'" in style_manager

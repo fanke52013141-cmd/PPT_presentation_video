@@ -11,6 +11,7 @@ const storyboardPrompts = fs.readFileSync(path.join(root, 'static', 'storyboard_
 const images = fs.readFileSync(path.join(root, 'static', 'images.js'), 'utf8');
 const imagePrompts = fs.readFileSync(path.join(root, 'static', 'image_prompts.js'), 'utf8');
 const maskWorkspace = fs.readFileSync(path.join(root, 'static', 'mask_workspace.js'), 'utf8');
+const maskEditor = fs.readFileSync(path.join(root, 'static', 'mask_editor.js'), 'utf8');
 const step2Logic = `${app}\n${storyboard}\n${storyboardPrompts}`;
 const html = fs.readFileSync(path.join(root, 'static', 'index.html'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'static', 'style.css'), 'utf8');
@@ -190,6 +191,45 @@ for (const maskWorkspaceFunction of [
 for (const bridge of ['window.loadStep5Data', 'window.renderStep5Workspace', 'window.focusAiMaskIssue', 'window.getCurrentStep5SlideId']) {
   if (!maskWorkspace.includes(bridge)) throw new Error(`Step 5 Mask workspace bridge is missing: ${bridge}`);
 }
+if (!html.includes('mask_editor.js')) throw new Error('Step 5 Mask editor module is not loaded explicitly');
+for (const maskEditorFunction of [
+  'updateBrushSize',
+  'updateEraserSize',
+  'startMaskTool',
+  'createCurrentSlideBlock',
+  'beginMaskStroke',
+  'continueMaskStroke',
+  'finishMaskStroke',
+  'initCanvasEvents',
+  'applyMaskCanvasZoom',
+  'buildMaskDisplayLayer',
+  'rasterizeManualMask',
+  'setStep5MaskPreviewMode',
+  'drawManualMaskStrokes',
+  'redrawCanvas',
+  'saveStep5CurrentState',
+  'scheduleStep5Autosave',
+  'saveStep5Draft',
+  'flushStep5Draft',
+  'runStep5SemanticBlocks',
+  'saveStep5Masks',
+]) {
+  if (!maskEditor.includes(`function ${maskEditorFunction}(`)) {
+    throw new Error(`Step 5 Mask editor module is missing ${maskEditorFunction}`);
+  }
+  if (app.includes(`function ${maskEditorFunction}(`) || maskWorkspace.includes(`function ${maskEditorFunction}(`)) {
+    throw new Error(`Step 5 Mask editor implementation escaped its module: ${maskEditorFunction}`);
+  }
+}
+for (const bridge of [
+  'window.saveStep5Draft',
+  'window.saveStep5CurrentState',
+  'window.focusFirstAiMaskResult',
+  'window.setStep5MaskPreviewMode',
+  'window.PPTStudio',
+]) {
+  if (!maskEditor.includes(bridge)) throw new Error(`Step 5 Mask editor bridge is missing: ${bridge}`);
+}
 const fullscreenStart = maskWorkspace.indexOf('function toggleStep5Fullscreen');
 const fullscreenEnd = maskWorkspace.indexOf('function uuid', fullscreenStart);
 const fullscreenImplementation = maskWorkspace.slice(fullscreenStart, fullscreenEnd);
@@ -261,7 +301,7 @@ if (!css.includes('grid-column: 3 / 5') || !css.includes('grid-row: 2')) {
 if (!css.includes('.storyboard-bg-preview') || !css.includes('aspect-ratio:16 / 9')) {
   throw new Error('final background preview is not fixed to 16:9 in the shared stylesheet');
 }
-if (!app.includes('hexToRgba(color, isSelected ? 0.68 : 0.55)')) {
+if (!maskEditor.includes('hexToRgba(color, isSelected ? 0.68 : 0.55)')) {
   throw new Error('mask overlay colors are too faint');
 }
 if (!images.includes('generateAllStep3Images')) throw new Error('step 3 batch generation handler missing');
@@ -275,11 +315,11 @@ if (!images.includes("document.getElementById('step3-preview-box').innerHTML = s
 if (!css.includes('.step3-generating-preview')) throw new Error('step 3 loading preview style missing');
 if (!images.includes('await refreshStep3Images();')) throw new Error('step 3 does not wait for image state');
 if (!images.includes('confirmBtn.disabled = !allImagesReady')) throw new Error('step 3 confirmation is not gated');
-if (!app.includes('step5AutoSavePromise')) throw new Error('step 5 save serialization missing');
+if (!maskEditor.includes('step5AutoSavePromise')) throw new Error('step 5 save serialization missing');
 if (!app.includes("raw.type || raw.value || 'crop_fade_up'")) {
   throw new Error('mask animation preset values are not normalized correctly');
 }
-if (!app.includes('applyGlobalMaskReveal') || !app.includes('previewGlobalAnimationSettings')) {
+if (!app.includes('applyGlobalMaskReveal') || !maskEditor.includes('previewGlobalAnimationSettings')) {
   throw new Error('global Mask animation sync or preview is missing');
 }
 for (const animation of ['wipe_left_to_right', 'scratch_reveal', 'sticker_pop', 'stamp_in', 'paper_drop']) {
@@ -336,13 +376,13 @@ if (!html.includes('id="step5-brush-size" type="range" min="100" max="200" value
 if (!html.includes('id="step5-eraser-size" type="range" min="100" max="200" value="100"')) {
   throw new Error('eraser size contract must be 100-200 with a 100 default');
 }
-if (!html.includes('step5-tool-cursor') || !app.includes('toolSize * displayScale')) {
+if (!html.includes('step5-tool-cursor') || !maskEditor.includes('toolSize * displayScale')) {
   throw new Error('Mask tool cursor does not track the real canvas pixel diameter');
 }
-if (!app.includes('getCoalescedEvents') || !app.includes('scheduleLiveMaskRedraw')) {
+if (!maskEditor.includes('getCoalescedEvents') || !maskEditor.includes('scheduleLiveMaskRedraw')) {
   throw new Error('Mask painting does not coalesce pointer samples and redraws');
 }
-if (!app.includes('const MASK_PREVIEW_OUTLINE_PX = 5') || !app.includes('buildMaskDisplayLayer')) {
+if (!maskEditor.includes('const MASK_PREVIEW_OUTLINE_PX = 5') || !maskEditor.includes('buildMaskDisplayLayer')) {
   throw new Error('same-color 5px Mask preview outline is missing');
 }
 if (!maskWorkspace.includes('claimUniqueMaskColor') || !maskWorkspace.includes('idx + offset')) {
@@ -358,7 +398,8 @@ if (aiMask.includes("setInlineStatus('AI 标注已完成'")) {
   throw new Error('completed AI Mask status must be a temporary toast, not persistent sidebar content');
 }
 for (const manualMaskHandler of ['startMaskPaint', 'startMaskErase', 'deleteMaskBox', 'beginMaskStroke']) {
-  if (!app.includes(manualMaskHandler)) throw new Error(`manual Mask fallback handler missing: ${manualMaskHandler}`);
+  const owner = manualMaskHandler === 'deleteMaskBox' ? maskWorkspace : maskEditor;
+  if (!owner.includes(manualMaskHandler)) throw new Error(`manual Mask fallback handler missing: ${manualMaskHandler}`);
 }
 if (!aiMask.includes('maybeAutoAnnotate') || !aiMask.includes('multimodal') && !aiMask.includes('AI 正在关联')) {
   throw new Error('automatic AI Mask flow is missing');
@@ -369,11 +410,11 @@ for (const reviewToken of ['ai-mask-review-panel', 'focusReviewIssue', 'quality_
 for (const previewToken of ['data-preview-mode="source"', 'data-preview-mode="mask"', 'data-preview-mode="final"', 'buildExactPreview']) {
   if (!aiMask.includes(previewToken)) throw new Error(`production Mask preview control missing: ${previewToken}`);
 }
-if (!app.includes('setStep5MaskPreviewMode') || !maskWorkspace.includes('focusAiMaskIssue')) {
+if (!maskEditor.includes('setStep5MaskPreviewMode') || !maskWorkspace.includes('focusAiMaskIssue')) {
   throw new Error('Mask preview or issue focus bridge missing');
 }
-if (!app.includes('rebuildStep5SourceCache')) throw new Error('source image cache missing');
-if (!app.includes('ctx.drawImage(step5SourceCanvas, 0, 0)')) {
+if (!maskEditor.includes('rebuildStep5SourceCache')) throw new Error('source image cache missing');
+if (!maskEditor.includes('ctx.drawImage(step5SourceCanvas, 0, 0)')) {
   throw new Error('mask editor does not keep the full source visible');
 }
 for (const removedToken of [
@@ -390,7 +431,7 @@ for (const removedToken of [
   'autoMaskLoading',
   'runStep5AutoMask',
 ]) {
-  if (html.includes(removedToken) || app.includes(removedToken) || css.includes(removedToken)) {
+  if (html.includes(removedToken) || app.includes(removedToken) || maskEditor.includes(removedToken) || css.includes(removedToken)) {
     throw new Error(`legacy Mask diagnostics still present: ${removedToken}`);
   }
 }
@@ -403,7 +444,7 @@ for (const token of ['step1-mode-article', 'step1-mode-topic', 'step1-btn-genera
 for (const label of ['文章➡️slides', 'slides➡️可视化']) {
   if (!html.includes(label)) throw new Error(`Step 2 button label missing: ${label}`);
 }
-if (!maskWorkspace.includes("rle.encoding === 'row_runs_v1'") || !app.includes('exactRuns.forEach')) {
+if (!maskWorkspace.includes("rle.encoding === 'row_runs_v1'") || !maskEditor.includes('exactRuns.forEach')) {
   throw new Error('exact RLE Mask preview support missing');
 }
 if (html.includes('请在下方粘贴您的 Markdown 格式文章')) throw new Error('obsolete Step 1 top hint is still present');

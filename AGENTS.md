@@ -72,8 +72,12 @@ The current product UI is the soft blue-purple "Soft Pastel Studio" interface, n
   project-scoped state reset/loading, reveal and narration normalization, Slide
   navigation, workspace/semantic-card/narration rendering, fragment mapping,
   selection, review focus, and the explicit workspace bridges consumed by the
-  AI Mask extension. Canvas painting, raster preview, animation preview, and
-  draft persistence remain separate until their own extraction.
+  AI Mask extension. Keep Canvas editing and persistence out of this module.
+- `static/mask_editor.js` owns the Step 5 Canvas editing lifecycle: brush and
+  eraser input, pointer/touch sampling, zoom, manual Mask rasterization, source/
+  Mask/final previews, animation settings and preview, draft autosave/flush,
+  semantic-block execution, final confirmation, and its explicit global bridges.
+  Keep these functions out of `app.js` and `mask_workspace.js`.
 - New extractions must preserve current DOM IDs and API paths, add an explicit
   script tag in `static/index.html`, and extend `checks/test_frontend_quality.js`
   with an ownership guard.

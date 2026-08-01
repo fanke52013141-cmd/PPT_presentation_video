@@ -171,6 +171,7 @@ def main() -> None:
 
     html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
     app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    mask_editor_js = (ROOT / "static" / "mask_editor.js").read_text(encoding="utf-8")
     css = (ROOT / "static" / "style.css").read_text(encoding="utf-8")
     step2_visual_prompt = (ROOT / "templates" / "prompts" / "step2_visual_system.md").read_text(encoding="utf-8")
     assert 'id="step5-btn-animation-settings"' in html
@@ -228,7 +229,7 @@ def main() -> None:
     assert "画面文字 / 元素名称" not in app_js
     assert "绑定到" not in app_js
     assert global_style.IMAGE_STYLE_PROMPT_KEY == "prompt_system_content"
-    assert "previewGlobalAnimationSettings" in app_js
+    assert "previewGlobalAnimationSettings" in mask_editor_js
     assert ".config-editor-scroll" in css
     assert ".mask-visual-card" in css
     assert ".ai-draft-status" not in css

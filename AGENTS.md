@@ -64,6 +64,10 @@ The current product UI is the soft blue-purple "Soft Pastel Studio" interface, n
   deletion, drag reassignment, candidate application, and Step 3 confirmation.
   Keep these functions and their transient state out of `app.js`; Step 3 Prompt
   settings and project image-style management remain separate concerns.
+- `static/image_prompts.js` owns Step 3 image-generation Prompt loading, full
+  preview composition, editing, reset, and persistence. It also exposes the
+  explicit `window.refreshStep3Prompts` bridge consumed by image-style changes.
+  Keep these functions out of both `app.js` and `images.js`.
 - New extractions must preserve current DOM IDs and API paths, add an explicit
   script tag in `static/index.html`, and extend `checks/test_frontend_quality.js`
   with an ownership guard.

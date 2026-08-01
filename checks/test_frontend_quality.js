@@ -9,6 +9,7 @@ const article = fs.readFileSync(path.join(root, 'static', 'article.js'), 'utf8')
 const storyboard = fs.readFileSync(path.join(root, 'static', 'storyboard.js'), 'utf8');
 const storyboardPrompts = fs.readFileSync(path.join(root, 'static', 'storyboard_prompts.js'), 'utf8');
 const images = fs.readFileSync(path.join(root, 'static', 'images.js'), 'utf8');
+const imagePrompts = fs.readFileSync(path.join(root, 'static', 'image_prompts.js'), 'utf8');
 const step2Logic = `${app}\n${storyboard}\n${storyboardPrompts}`;
 const html = fs.readFileSync(path.join(root, 'static', 'index.html'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'static', 'style.css'), 'utf8');
@@ -142,6 +143,26 @@ for (const imageFunction of [
   if (app.includes(`function ${imageFunction}(`)) {
     throw new Error(`Step 3 image implementation returned to app.js: ${imageFunction}`);
   }
+}
+if (!html.includes('image_prompts.js')) throw new Error('Step 3 image Prompt frontend module is not loaded explicitly');
+for (const imagePromptFunction of [
+  'refreshStep3Prompts',
+  'currentStep3PromptInfo',
+  'updateStep3PromptFullPreview',
+  'openStep3PromptSettingsModal',
+  'closeStep3PromptSettingsModal',
+  'resetStep3PromptSettings',
+  'saveStep3PromptSettings',
+]) {
+  if (!imagePrompts.includes(`function ${imagePromptFunction}(`)) {
+    throw new Error(`Step 3 image Prompt module is missing ${imagePromptFunction}`);
+  }
+  if (app.includes(`function ${imagePromptFunction}(`) || images.includes(`function ${imagePromptFunction}(`)) {
+    throw new Error(`Step 3 image Prompt implementation escaped its module: ${imagePromptFunction}`);
+  }
+}
+if (!imagePrompts.includes('window.refreshStep3Prompts = refreshStep3Prompts')) {
+  throw new Error('Step 3 image Prompt refresh bridge is missing');
 }
 for (const requiredStep2Token of [
   'step2-btn-script-prompt',

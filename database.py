@@ -1,6 +1,6 @@
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import create_engine, Column, String, Integer, DateTime, Text
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -14,6 +14,11 @@ engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+
+def utc_now_naive() -> datetime:
+    """Return UTC in the naïve form used by the existing SQLite schema."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
 class Project(Base):
     __tablename__ = "projects"
 
@@ -25,8 +30,8 @@ class Project(Base):
     # step_status 存储 JSON 格式字符串，例如: 
     # {"1": "completed", "2": "pending_reconfirmation", "3": "pending"}
     step_status = Column(Text, default="{}")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now_naive)
+    updated_at = Column(DateTime, default=utc_now_naive, onupdate=utc_now_naive)
     run_dir = Column(String, nullable=False)
     # AI 模式：auto=自动调用 AI 做分镜规划/可视化/Mask；manual=手动填写，保留按需触发 AI
     ai_mode = Column(String, default="auto")

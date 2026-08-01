@@ -3,8 +3,6 @@ import sys
 import uuid
 import json
 import logging
-import re
-from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any
 
@@ -12,7 +10,6 @@ from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from pydantic import BaseModel
 from PIL import Image
 import yaml
 from openai import OpenAI
@@ -46,11 +43,6 @@ from project_style_reference_service import (
 from pipeline_lifecycle import write_json_atomic
 from tts_artifacts import (
     build_confirmation_payload as build_audio_confirmation_payload,
-)
-from project_storage import (
-    UnsafeProjectPath,
-    project_run_dir as validated_project_run_dir,
-    slide_file as storage_slide_file,
 )
 from ai_provider_service import (
     extract_image_bytes_from_response,
@@ -171,6 +163,13 @@ from repository_paths import (
 from global_image_style_service import (
     ensure_active_image_style_storage,
 )
+from project_path_service import (
+    current_slide_file_or_404,
+    project_run_dir_or_500,
+    read_current_slide_ids_or_404,
+)
+from project_storage import slide_file as storage_slide_file
+from template_utils import normalized_template_name, template_timestamp
 
 # 初始化日志与数据库
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -224,19 +223,6 @@ STEP3_IMAGE_PROMPTS_FILE = "step3_image_prompts.json"
 REVEAL_PIPELINE_VERSION = "exact_rle_mask_with_manual_corrections_v5"
 
 
-def normalized_template_name(value: Any) -> str:
-    name = re.sub(r"\s+", " ", str(value or "").strip())
-    if not name:
-        raise HTTPException(status_code=400, detail="模板名称不能为空")
-    if len(name) > 60:
-        raise HTTPException(status_code=400, detail="模板名称不能超过 60 个字符")
-    return name
-
-
-def template_timestamp() -> str:
-    return datetime.now().isoformat(timespec="seconds")
-
-
 ensure_active_image_style_storage()
 
 
@@ -250,198 +236,10 @@ STEP8_NPM_INSTALL_TIMEOUT_SEC = 600
 STEP8_COLOR_PROCESS_TIMEOUT_SEC = 300
 REVEAL_VISUAL_LEAD_SEC = 0.45
 
-# Pydantic 响应模型
-class StepUpdate(BaseModel):
-    step_data: Dict[str, Any]
-
-
-def parse_json_or_repair_with_llm(
-    *,
-    cleaned_content: str,
-    raw_content: str,
-    client: OpenAI,
-    model: str,
-    run_dir: str,
-    artifact_prefix: str,
-    schema_hint: str = "",
-    max_tokens: int = 16000,
-) -> Dict[str, Any]:
-    try:
-        value = json.loads(cleaned_content)
-    except json.JSONDecodeError as first_error:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        raw_path = write_debug_text(run_dir, f"{artifact_prefix}_{timestamp}.raw_failed.txt", raw_content)
-        cleaned_path = write_debug_text(run_dir, f"{artifact_prefix}_{timestamp}.cleaned_failed.json", cleaned_content)
-        context = json_decode_context(cleaned_content, first_error)
-        logger.warning(
-            "Invalid JSON from LLM for %s: %s. Raw saved to %s, cleaned saved to %s. Context near error: %r",
-            artifact_prefix,
-            first_error,
-            raw_path,
-            cleaned_path,
-            context,
-        )
-
-        repair_prompt = (
-            "You repair invalid JSON emitted by another model. "
-            "Return only one valid JSON object. No markdown, no comments, no explanation. "
-            "Fix syntax issues such as missing commas, unescaped quotes, trailing text, "
-            "or incomplete brackets while preserving the original Chinese content and structure."
-        )
-        repair_user = (
-            f"JSON parser error: {first_error}\n\n"
-            f"Schema hint:\n{schema_hint[:12000]}\n\n"
-            f"Invalid JSON to repair:\n{cleaned_content[:120000]}"
-        )
-
-        try:
-            try:
-                repair_response = client.chat.completions.create(
-                    model=model,
-                    temperature=0,
-                    max_tokens=max_tokens,
-                    response_format={"type": "json_object"},
-                    messages=[
-                        {"role": "system", "content": repair_prompt},
-                        {"role": "user", "content": repair_user},
-                    ],
-                )
-            except Exception as repair_format_error:
-                logger.warning(
-                    "LLM JSON repair with response_format failed for %s, retrying without it: %s",
-                    artifact_prefix,
-                    repair_format_error,
-                )
-                repair_response = client.chat.completions.create(
-                    model=model,
-                    temperature=0,
-                    max_tokens=max_tokens,
-                    messages=[
-                        {"role": "system", "content": repair_prompt},
-                        {"role": "user", "content": repair_user},
-                    ],
-                )
-        except Exception as repair_error:
-            logger.error("LLM JSON repair request failed for %s: %s", artifact_prefix, repair_error)
-            raise first_error from repair_error
-
-        repaired_raw = repair_response.choices[0].message.content.strip()
-        repaired_cleaned = clean_json_markdown(repaired_raw)
-        write_debug_text(run_dir, f"{artifact_prefix}_{timestamp}.repaired_raw.txt", repaired_raw)
-        try:
-            value = json.loads(repaired_cleaned)
-        except json.JSONDecodeError as repair_parse_error:
-            repaired_path = write_debug_text(
-                run_dir,
-                f"{artifact_prefix}_{timestamp}.repaired_failed.json",
-                repaired_cleaned,
-            )
-            logger.error(
-                "LLM JSON repair still invalid for %s: %s. Repaired content saved to %s. Context near error: %r",
-                artifact_prefix,
-                repair_parse_error,
-                repaired_path,
-                json_decode_context(repaired_cleaned, repair_parse_error),
-            )
-            raise first_error from repair_parse_error
-
-    if not isinstance(value, dict):
-        raise ValueError("LLM response must be a JSON object")
-    return value
-
-
-def generate_json_with_configured_llm(
-    *,
-    system_prompt: str,
-    user_prompt: str,
-    run_dir: str,
-    artifact_prefix: str,
-    schema_hint: str,
-    temperature: float = 0.35,
-    max_tokens_default: int = 12000,
-) -> Dict[str, Any]:
-    llm_api_key = get_setting("llm_api_key")
-    llm_base_url = get_setting("llm_base_url")
-    llm_model = get_setting("llm_model")
-    if not llm_api_key:
-        raise HTTPException(status_code=400, detail="未配置大模型 API 密钥，请在系统设置中配置后再试。")
-    if not llm_model:
-        raise HTTPException(status_code=400, detail="未配置大模型名称，请在系统设置中配置后再试。")
-    max_tokens = parse_int_setting(
-        get_setting("llm_max_tokens", str(max_tokens_default)),
-        max_tokens_default,
-        1024,
-        64000,
-    )
-    client = get_openai_client(api_key=llm_api_key, base_url=llm_base_url)
-    try:
-        try:
-            response = client.chat.completions.create(
-                model=llm_model,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-            )
-        except Exception as format_error:
-            logger.warning(
-                "AI JSON generation with response_format failed for %s, retrying without it: %s",
-                artifact_prefix,
-                format_error,
-            )
-            response = client.chat.completions.create(
-                model=llm_model,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                messages=[
-                    {"role": "system", "content": system_prompt + "\n只输出纯 JSON，不要 Markdown，不要解释。"},
-                    {"role": "user", "content": user_prompt},
-                ],
-            )
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"AI 生成失败: {exc}") from exc
-
-    raw_content = response.choices[0].message.content.strip()
-    return parse_json_or_repair_with_llm(
-        cleaned_content=clean_json_markdown(raw_content),
-        raw_content=raw_content,
-        client=client,
-        model=llm_model,
-        run_dir=run_dir,
-        artifact_prefix=artifact_prefix,
-        schema_hint=schema_hint,
-        max_tokens=max_tokens,
-    )
-
-
-def read_current_slide_ids_or_404(project: Project) -> List[str]:
-    slide_ids = read_contract_slide_ids(project.run_dir)
-    if not slide_ids:
-        raise HTTPException(status_code=400, detail="分镜规划尚未生成，请先完成第二步")
-    return slide_ids
-
-
-def project_run_dir_or_500(project: Project) -> str:
-    try:
-        return str(validated_project_run_dir(RUNS_DIR, project.run_dir, project.id))
-    except UnsafeProjectPath as exc:
-        logger.error("Unsafe project run directory for %s: %s", project.id, exc)
-        raise HTTPException(status_code=500, detail="项目运行目录安全校验失败") from exc
-
-
-def current_slide_file_or_404(project: Project, slide_id: str, filename: str) -> str:
-    run_dir = project_run_dir_or_500(project)
-    if slide_id not in read_current_slide_ids_or_404(project):
-        raise HTTPException(status_code=404, detail="Slide 不存在")
-    try:
-        return str(storage_slide_file(run_dir, slide_id, filename))
-    except UnsafeProjectPath as exc:
-        raise HTTPException(status_code=400, detail="Slide 路径无效") from exc
+from json_llm_service import (
+    generate_json_with_configured_llm,
+    parse_json_or_repair_with_llm,
+)
 
 
 configure_narration_audio_dependencies(

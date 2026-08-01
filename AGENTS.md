@@ -288,6 +288,18 @@ The Python startup monkey patch has been retired. AI Mask is now source-owned:
   detection. It must remain independent of FastAPI, database wiring, and the
   application module; `server.py` may re-export these helpers for compatibility
   but must not restore their implementations.
+- `json_llm_service.py` owns shared configured JSON generation and the bounded
+  one-shot JSON repair path. `server.py` may re-export these helpers for route
+  dependency wiring, but must not own model request or repair implementations.
+- `project_path_service.py` owns validated project run directories, current
+  Visual Contract slide identity checks, and slide artifact paths translated
+  into stable HTTP errors. `template_utils.py` owns reusable template name
+  validation and timestamps. Keep both independent of the application module.
+- `server.py` is a composition root only: it configures dependency records,
+  includes routers, installs middleware, and mounts static files. Do not add
+  top-level business functions or request models to it. Size-boundary checks
+  protect this rule and the previously extracted frontend, AI Mask, and
+  Storyboard modules from regressing into monoliths.
 - `project_runtime_service.py` owns project-scoped logging and secret
   redaction, artifact locks, current-slide image completeness, Reveal Manifest
   synchronization, TTS artifact adapters, and commit-owning workflow

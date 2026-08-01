@@ -21,7 +21,7 @@ from project_storage import (
     video_file,
     video_sidecar,
 )
-from server import current_slide_file_or_404
+from project_path_service import current_slide_file_or_404
 
 
 def test_normal_project_paths_stay_under_root() -> None:
@@ -83,7 +83,7 @@ def test_polluted_contract_slide_id_cannot_escape() -> None:
             encoding="utf-8",
         )
         project = Project(id=root.name, name="unsafe", run_dir=str(root), current_step=3)
-        with patch("server.RUNS_DIR", str(root.parent)):
+        with patch("project_path_service.RUNS_DIR", str(root.parent)):
             with pytest.raises(HTTPException) as exc_info:
                 current_slide_file_or_404(project, "../outside", "visual_draft.png")
         assert exc_info.value.status_code == 400

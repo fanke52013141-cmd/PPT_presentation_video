@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from types import SimpleNamespace
 
 import server
+import video_routes
 
 
 class _Db:
@@ -30,6 +32,11 @@ def test_video_collection_route_is_registered() -> None:
     assert ("/api/projects/{project_id}/videos/{filename}", "GET") in route_methods
     assert ("/api/projects/{project_id}/videos/{filename}/speed", "POST") in route_methods
     assert ("/api/projects/{project_id}/videos/{filename}", "DELETE") in route_methods
+    assert ("/api/projects/{project_id}/steps/8/render", "POST") in route_methods
+    assert ("/api/projects/{project_id}/steps/8/render-status", "GET") in route_methods
+    assert ("/api/projects/{project_id}/video/status", "GET") in route_methods
+    assert ("/api/projects/{project_id}/video", "GET") in route_methods
+    assert hasattr(video_routes, "router")
 
 
 def test_render_status_returns_active_task_without_type_error(tmp_path) -> None:
@@ -48,48 +55,37 @@ def test_render_status_returns_active_task_without_type_error(tmp_path) -> None:
         "video": None,
         "videos": [{"filename": "existing.mp4"}],
     }
-    with server._RENDER_TASKS_LOCK:
-        server._RENDER_TASKS[task_id] = task
+    service = server.video_render_service
+    with service._tasks_lock:
+        service._tasks[task_id] = task
     try:
-        result = server.get_render_status(project_id, task_id=task_id, db=_Db(project))
+        result = service.render_status(
+            _Db(project),
+            project_id,
+            task_id=task_id,
+        )
     finally:
-        with server._RENDER_TASKS_LOCK:
-            server._RENDER_TASKS.pop(task_id, None)
+        with service._tasks_lock:
+            service._tasks.pop(task_id, None)
 
     assert result["status"] == "rendering"
     assert result["task_id"] == task_id
     assert result["videos"] == [{"filename": "existing.mp4"}]
 
 
-def test_completed_render_task_history_is_bounded() -> None:
-    with server._RENDER_TASKS_LOCK:
-        original_tasks = dict(server._RENDER_TASKS)
-        try:
-            server._RENDER_TASKS.clear()
-            for index in range(server.RENDER_TASK_HISTORY_LIMIT + 5):
-                task_id = f"completed-{index:03d}"
-                server._RENDER_TASKS[task_id] = {
-                    "task_id": task_id,
-                    "project_id": f"project-{index:03d}",
-                    "status": "success",
-                    "started_at": float(index),
-                    "finished_at": float(index),
-                }
-            server._RENDER_TASKS["active-task"] = {
-                "task_id": "active-task",
-                "project_id": "active-project",
-                "status": "rendering",
-                "started_at": 0.0,
-                "finished_at": None,
-            }
-            server._prune_render_tasks_locked()
-            remaining_ids = set(server._RENDER_TASKS)
-            remaining_count = len(server._RENDER_TASKS)
-        finally:
-            server._RENDER_TASKS.clear()
-            server._RENDER_TASKS.update(original_tasks)
-
-    assert remaining_count == server.RENDER_TASK_HISTORY_LIMIT
-    assert "active-task" in remaining_ids
-    assert "completed-000" not in remaining_ids
-    assert f"completed-{server.RENDER_TASK_HISTORY_LIMIT + 4:03d}" in remaining_ids
+def test_video_source_has_no_server_module_or_legacy_routes() -> None:
+    root = Path(__file__).resolve().parents[1]
+    service_source = (root / "video_render_service.py").read_text(
+        encoding="utf-8"
+    )
+    routes_source = (root / "video_routes.py").read_text(
+        encoding="utf-8"
+    )
+    server_source = (root / "server.py").read_text(
+        encoding="utf-8"
+    )
+    for source in (service_source, routes_source):
+        assert "server_module" not in source
+        assert "sys.modules" not in source
+    assert "app.include_router(video_router)" in server_source
+    assert '@app.post("/api/projects/{project_id}/steps/8/render")' not in server_source

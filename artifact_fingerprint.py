@@ -101,3 +101,26 @@ def render_input_fingerprint(
     }
     payload["digest"] = sha256_json(payload)
     return payload
+
+
+def presentation_input_fingerprint(run_dir: str | Path) -> dict[str, Any]:
+    """Fingerprint the ordered, approved bitmap inputs used by a PPTX export."""
+    root = Path(run_dir)
+    slide_ids = _read_contract_slide_ids(root)
+    relative_paths = [Path("planning/visual_contract.json")]
+    for slide_id in slide_ids:
+        base = Path("slides") / slide_id
+        relative_paths.extend(
+            (
+                base / "visual_draft.png",
+                base / "visual_provenance.json",
+            )
+        )
+    payload: dict[str, Any] = {
+        "schema_version": FINGERPRINT_SCHEMA_VERSION,
+        "export_type": "image_only_pptx",
+        "slide_ids": slide_ids,
+        "components": _component_hashes(root, relative_paths),
+    }
+    payload["digest"] = sha256_json(payload)
+    return payload

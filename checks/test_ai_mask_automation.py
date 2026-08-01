@@ -13,7 +13,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import runtime_ai_mask as mask
+import ai_mask_engine as mask
+import ai_mask_semantic_matcher as semantic_matcher
 from scripts.build_reveal_scene import manual_mask_alpha
 os.environ.setdefault("PPT_STUDIO_DISABLE_ONE_CLICK_ORCHESTRATOR", "1")
 import one_click_orchestrator as one_click
@@ -372,16 +373,14 @@ def test_volcengine_ai_mask_uses_provider_model_and_single_timeout_policy():
     resolved, configured = mask._resolved_vision_model(_FakeVisionSettings)
     assert resolved == "doubao-seed-2-1-turbo-260628"
     assert configured == "gpt-4o"
-    source = inspect.getsource(mask._vision_match)
+    source = inspect.getsource(semantic_matcher.SemanticVisionMatcher.__call__)
     assert "step2_llm_vendor_options" in source
     assert "AI_MASK_VISION_TIMEOUT_SEC" in source
     assert "_is_timeout(server_module, exc)" in source
 
 
 def test_semantic_object_match_expands_element_ids_without_model_guessing():
-    from runtime_ai_mask_semantic_patch import _expand_matches
-
-    expanded = _expand_matches(
+    expanded = semantic_matcher._expand_matches(
         {
             "matches": [
                 {
@@ -643,7 +642,8 @@ def main() -> None:
         assert len(pixel_errors) == 1
         assert "91.00%" in pixel_errors[0] and "120" in pixel_errors[0] and "3" in pixel_errors[0]
         pipeline_source = inspect.getsource(one_click._run_pipeline)
-        assert "ProjectPipelineServices" in pipeline_source
+        assert "pipeline_service_factory" in pipeline_source
+        assert "server_module" not in pipeline_source
         assert "services.save_narration" in pipeline_source
         assert "TestClient" not in pipeline_source
 

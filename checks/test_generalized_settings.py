@@ -13,14 +13,23 @@ if str(ROOT) not in sys.path:
 from scripts.build_reveal_scene import build_event  # noqa: E402
 from scripts.pipeline_profiles import normalize_reveal_action, role_catalog  # noqa: E402
 import server as server_module  # noqa: E402
+import visual_contract_service as visual_contract  # noqa: E402
+import global_image_style_service as global_style  # noqa: E402
+from mask_manifest_service import deterministic_semantic_blocks  # noqa: E402
+import storyboard_service as storyboard_module  # noqa: E402
 from server import (  # noqa: E402
     OPEN_SOURCE_CHINESE_FONTS,
-    apply_storyboard_profile_patch,
+)
+from global_image_style_service import (  # noqa: E402
     image_style_template_detail,
-    list_storyboard_templates,
     merge_image_style_update,
-    parse_storyboard_profile_text,
     read_style_tokens_data,
+)
+from storyboard_service import (  # noqa: E402
+    apply_storyboard_profile_patch,
+    list_storyboard_templates,
+    parse_storyboard_profile_text,
+    sanitize_storyboard_profile,
     storyboard_profile_editor_data,
 )
 
@@ -40,7 +49,7 @@ def main() -> None:
     assert patched["storyboard"]["slide_count"]["short_article"] == "5-7"
     assert "subtitle" not in role_catalog(patched)
 
-    migrated = server_module.sanitize_storyboard_profile(
+    migrated = sanitize_storyboard_profile(
         {
             "storyboard": {
                 "roles": {
@@ -65,7 +74,7 @@ def main() -> None:
     assert "不绑定旁白" not in migrated["storyboard"]["roles"]["decoration"]["description"]
     assert all("display_only" not in rule for rule in migrated["storyboard"]["structure_rules"])
 
-    contract = server_module.normalize_visual_contract(
+    contract = visual_contract.normalize_visual_contract(
         {
             "version": "visual_contract_v1",
             "presentation_policy": {"subtitle_policy": "all_slides_have_subtitle"},
@@ -129,7 +138,7 @@ def main() -> None:
     assert slide["subtitle"] == ""
     assert all(group.get("role") != "subtitle" for group in slide["visual_groups"])
     assert all("speak_policy" not in group for group in slide["visual_groups"])
-    semantic_blocks = server_module.deterministic_semantic_blocks("slide_001", slide, None)
+    semantic_blocks = deterministic_semantic_blocks("slide_001", slide, None)
     assert {block["visual_group_id"] for block in semantic_blocks} == {"spoken_group"}
     assert all(block["narration_fragments"] for block in semantic_blocks)
     assert normalize_reveal_action("scratch_reveal", profile, for_renderer=True) == "scratch_reveal"
@@ -177,9 +186,8 @@ def main() -> None:
     assert 'id="step2-slide-title-input"' in html
     assert 'id="step2-slide-subtitle-input"' not in html
     assert 'id="step2-slide-narration-input"' in html
+    assert 'id="step2-slide-narration-input" class="step2-soft-input" rows="5"' in html
     assert 'id="step2-slide-narration-input" class="step2-soft-input" rows="5" readonly' not in html
-    assert "narrationInput.readOnly = !manual || structuredManualSlide;" in app_js
-    assert "if (step2SlideHasStructuredVisuals(slide)) return;" in app_js
     assert 'style_reference_manager_extension.js' in html
     assert 'id="modal-step2-generate"' in html
     assert 'id="step2-generation-requirement"' in html
@@ -211,17 +219,14 @@ def main() -> None:
         "image-style/ai-draft",
     ]:
         assert removed_token not in app_js
-    assert "不输出副标题" in step2_visual_prompt
-    assert "`body_points`" in step2_visual_prompt
-    assert "`narration_segments`" in step2_visual_prompt
+    assert "不输出副标题、`body_points`" in step2_visual_prompt
     assert "先按语义切分整页 `narration`" in step2_visual_prompt
-    assert "必须逐字还原原演讲稿" in step2_visual_prompt
     assert "Text/Picture" not in step2_visual_prompt or "visual_type" in step2_visual_prompt
     assert "handleStep2MapEditorInput" in app_js
     assert "handleStep2MapEditorChange" in app_js
     assert "画面文字 / 元素名称" not in app_js
     assert "绑定到" not in app_js
-    assert server_module.IMAGE_STYLE_PROMPT_KEY == "prompt_system_content"
+    assert global_style.IMAGE_STYLE_PROMPT_KEY == "prompt_system_content"
     assert "previewGlobalAnimationSettings" in app_js
     assert ".config-editor-scroll" in css
     assert ".mask-visual-card" in css
@@ -237,10 +242,12 @@ def main() -> None:
     font_keys = {font["key"] for font in OPEN_SOURCE_CHINESE_FONTS}
     assert {"lxgw_marker_gothic", "lxgw_wenkai_tc", "noto_sans_tc", "noto_serif_tc"} <= font_keys
 
+    original_storyboard_path = (
+        storyboard_module.STORYBOARD_TEMPLATES_PATH
+    )
     original_paths = {
-        key: getattr(server_module, key)
+        key: getattr(global_style, key)
         for key in (
-            "STORYBOARD_TEMPLATES_PATH",
             "STYLE_TOKENS_PATH",
             "STYLE_REFERENCE_DIR",
             "IMAGE_STYLE_TEMPLATES_DIR",
@@ -250,27 +257,35 @@ def main() -> None:
     try:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)
-            server_module.STORYBOARD_TEMPLATES_PATH = str(temp_root / "storyboard_templates.json")
-            saved_storyboard = server_module.save_storyboard_template(
+            storyboard_module.STORYBOARD_TEMPLATES_PATH = str(
+                temp_root / "storyboard_templates.json"
+            )
+            saved_storyboard = storyboard_module.save_storyboard_template(
                 {
                     "name": "回归分镜模板",
-                    "rules": server_module.default_storyboard_rules(),
-                    "profile_yaml": server_module.default_storyboard_profile_text(),
+                    "rules": storyboard_module.default_storyboard_rules(),
+                    "profile_yaml": (
+                        storyboard_module
+                        .default_storyboard_profile_text()
+                    ),
                     "profile_patch": {},
                 }
             )
             assert saved_storyboard["template"]["name"] == "回归分镜模板"
 
-            server_module.STYLE_TOKENS_PATH = str(temp_root / "active" / "style_tokens.yaml")
-            server_module.STYLE_REFERENCE_DIR = str(temp_root / "active" / "references")
-            server_module.IMAGE_STYLE_TEMPLATES_DIR = str(temp_root / "image_templates")
-            server_module.IMAGE_STYLE_TEMPLATES_INDEX = str(temp_root / "image_templates" / "index.json")
-            server_module.ensure_active_image_style_storage()
-            saved_image = server_module.save_image_style_template({"name": "回归图片模板"})
+            global_style.STYLE_TOKENS_PATH = str(temp_root / "active" / "style_tokens.yaml")
+            global_style.STYLE_REFERENCE_DIR = str(temp_root / "active" / "references")
+            global_style.IMAGE_STYLE_TEMPLATES_DIR = str(temp_root / "image_templates")
+            global_style.IMAGE_STYLE_TEMPLATES_INDEX = str(temp_root / "image_templates" / "index.json")
+            global_style.ensure_active_image_style_storage()
+            saved_image = global_style.save_image_style_template({"name": "回归图片模板"})
             assert saved_image["template"]["references"]["template"]["exists"]
     finally:
+        storyboard_module.STORYBOARD_TEMPLATES_PATH = (
+            original_storyboard_path
+        )
         for key, value in original_paths.items():
-            setattr(server_module, key, value)
+            setattr(global_style, key, value)
 
     print("generalized settings checks passed")
 

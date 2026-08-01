@@ -29,6 +29,7 @@ def test_routes_are_explicit_and_unique() -> None:
                 actual.append(pair)
     assert set(actual) == expected
     assert len(actual) == len(expected)
+    assert not hasattr(storyboard_background, "_register")
     assert not hasattr(storyboard_background, "_install_when_ready")
     assert not hasattr(storyboard_background, "_candidate_modules")
 

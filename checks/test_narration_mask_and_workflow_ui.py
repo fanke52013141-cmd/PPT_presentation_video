@@ -5,15 +5,18 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 import server
+import storyboard_service
 
 from scripts.write_narration_from_visual_contract import build_slide_narration
-from server import (
+from visual_contract_service import (
     dedupe_narration_beats,
     narration_dedupe_key,
+    normalize_visual_contract,
+)
+from storyboard_service import (
     normalize_narration_segments,
     normalize_slide_script_plan,
     normalize_slide_visual_plan,
-    normalize_visual_contract,
     normalize_visual_elements,
 )
 
@@ -282,7 +285,7 @@ def test_workflow_connector_stops_at_step_six_and_step2_errors_are_visible():
 
 
 def test_step2_timeout_is_logged_and_returned_as_actionable_error(monkeypatch, tmp_path):
-    assert server.STEP2_LLM_TIMEOUT_SEC == 240.0
+    assert storyboard_service.STEP2_LLM_TIMEOUT_SEC == 240.0
 
     class FakeCompletions:
         def create(self, **kwargs):
@@ -298,15 +301,19 @@ def test_step2_timeout_is_logged_and_returned_as_actionable_error(monkeypatch, t
 
     client = FakeClient()
     monkeypatch.setattr(
-        server,
+        storyboard_service,
         "configured_step2_llm",
         lambda: ("test-key", "https://example.invalid/v1", "test-model", 0.2, 2048),
     )
-    monkeypatch.setattr(server, "get_openai_client", lambda **kwargs: client)
+    monkeypatch.setattr(
+        storyboard_service,
+        "get_openai_client",
+        lambda **kwargs: client,
+    )
     project = SimpleNamespace(id="project-test", run_dir=str(tmp_path))
 
     with pytest.raises(HTTPException) as exc_info:
-        server.run_step2_json_llm(
+        storyboard_service.run_step2_json_llm(
             project=project,
             system_prompt="system",
             user_prompt="user",
@@ -325,8 +332,11 @@ def test_step2_timeout_is_logged_and_returned_as_actionable_error(monkeypatch, t
 
 
 def test_doubao_step2_requests_disable_deep_thinking():
-    assert server.step2_llm_vendor_options(
+    assert storyboard_service.step2_llm_vendor_options(
         "doubao-seed-2-1-turbo-260628",
         "https://ark.cn-beijing.volces.com/api/v3",
     ) == {"extra_body": {"thinking": {"type": "disabled"}}}
-    assert server.step2_llm_vendor_options("gpt-4.1", "https://api.openai.com/v1") == {}
+    assert storyboard_service.step2_llm_vendor_options(
+        "gpt-4.1",
+        "https://api.openai.com/v1",
+    ) == {}

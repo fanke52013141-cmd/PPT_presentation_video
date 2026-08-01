@@ -1,28 +1,43 @@
 from pathlib import Path
 import sys
 from collections import Counter
+from types import SimpleNamespace
+import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import project_style_routes  # noqa: E402
+from project_style_context import get_project_style_context  # noqa: E402
 import server  # noqa: E402
 
 
-def test_style_modules_are_explicit_and_ordered() -> None:
-    names = [name for name, _register in project_style_routes.REGISTRATION_STEPS]
-    assert names == [
-        "project_profile",
-        "project_profile_lightweight",
-        "project_profile_templates_override",
-        "project_style_references",
-        "project_style_reference_manager",
-        "image_style_reverse",
-        "step3_image_style",
-        "step3_image_style_state",
-    ]
-    assert not (ROOT / "runtime_bootstrap.py").exists()
+class _ProjectQuery:
+    def __init__(self, project) -> None:
+        self.project = project
+
+    def filter(self, *_args):
+        return self
+
+    def first(self):
+        return self.project
+
+
+class _ProjectDb:
+    def __init__(self, project) -> None:
+        self.project = project
+
+    def query(self, *_args):
+        return _ProjectQuery(self.project)
+
+
+def test_style_router_is_source_owned_and_explicit() -> None:
+    source = (ROOT / "server.py").read_text(encoding="utf-8")
+    assert "app.include_router(project_style_router)" in source
+    assert "configure_project_style_context" in source
+    assert "register_project_style_routes" not in source
+    assert hasattr(project_style_routes, "router")
 
 
 def test_critical_style_routes_are_present() -> None:
@@ -41,8 +56,8 @@ def test_critical_style_routes_are_present() -> None:
         assert expected in route_methods
 
 
-def test_style_modules_do_not_auto_install_on_import() -> None:
-    for path in (
+def test_runtime_style_modules_are_retired() -> None:
+    legacy_paths = (
         "runtime_project_profile.py",
         "runtime_project_profile_lightweight.py",
         "runtime_project_profile_templates_override.py",
@@ -51,10 +66,21 @@ def test_style_modules_do_not_auto_install_on_import() -> None:
         "runtime_image_style_reverse.py",
         "runtime_step3_image_style.py",
         "runtime_step3_image_style_state.py",
+    )
+    assert not [path for path in legacy_paths if (ROOT / path).exists()]
+    for path in (
+        "project_profile_service.py",
+        "project_profile_store.py",
+        "project_style_reference_service.py",
+        "project_style_reference_store.py",
+        "image_style_reverse_service.py",
+        "step3_image_style_service.py",
+        "project_style_template_service.py",
+        "project_style_routes.py",
     ):
-        source = (ROOT / path).read_text(encoding="utf-8").rstrip()
-        assert "def _install_when_ready" not in source
-        assert "def _candidate_modules" not in source
+        source = (ROOT / path).read_text(encoding="utf-8")
+        assert "def _register(" not in source
+        assert "server_module.app" not in source
 
 
 def test_step3_prompt_and_generate_routes_are_unique() -> None:
@@ -76,10 +102,37 @@ def test_application_has_no_duplicate_method_path_routes() -> None:
     assert not [key for key, count in Counter(keys).items() if count > 1]
 
 
+def test_profile_and_step3_style_round_trip_use_narrow_context() -> None:
+    context = get_project_style_context()
+    assert not hasattr(context, "app")
+    assert not hasattr(context, "Project")
+    with tempfile.TemporaryDirectory() as temp_dir:
+        project = SimpleNamespace(id="project-style-test", run_dir=temp_dir)
+        db = _ProjectDb(project)
+        saved_profile = project_style_routes.save_project_profile(
+            project.id,
+            {"automation_mode": "auto"},
+            db,
+        )
+        assert saved_profile["profile"]["automation_mode"] == "auto"
+        loaded_profile = project_style_routes.get_project_profile(project.id, db)
+        assert loaded_profile["profile"]["automation_mode"] == "auto"
+
+        saved_style = project_style_routes.put_step3_image_style(
+            project.id,
+            {"system_content": "Use soft blue geometric cards."},
+            db,
+        )
+        assert saved_style["style"]["system_content"] == "Use soft blue geometric cards."
+        loaded_style = project_style_routes.get_step3_image_style(project.id, db)
+        assert loaded_style["style"]["system_content"] == "Use soft blue geometric cards."
+
+
 if __name__ == "__main__":
-    test_style_modules_are_explicit_and_ordered()
+    test_style_router_is_source_owned_and_explicit()
     test_critical_style_routes_are_present()
-    test_style_modules_do_not_auto_install_on_import()
+    test_runtime_style_modules_are_retired()
     test_step3_prompt_and_generate_routes_are_unique()
     test_application_has_no_duplicate_method_path_routes()
+    test_profile_and_step3_style_round_trip_use_narrow_context()
     print("project style registration checks passed")

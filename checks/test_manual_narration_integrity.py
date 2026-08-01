@@ -7,6 +7,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import server
+import narration_audio_service as narration_audio
+import visual_settings_service as visual_settings
 from scripts.write_narration_from_visual_contract import spoken_text_for_beat
 
 
@@ -83,7 +85,7 @@ def test_step2_source_sync_preserves_unchanged_tts_and_updates_changed_text(tmp_
     )
     project = SimpleNamespace(run_dir=str(run_dir))
 
-    assert server.sync_narration_sources_from_contract(project, previous, current) is False
+    assert narration_audio.sync_narration_sources_from_contract(project, previous, current) is False
     unchanged = json.loads((planning / "narration_beats.json").read_text(encoding="utf-8"))
     assert unchanged["slides"][0]["beats"][0]["tts_text"] == "原始旁白。<#0.4#>(breath)"
 
@@ -91,7 +93,7 @@ def test_step2_source_sync_preserves_unchanged_tts_and_updates_changed_text(tmp_
     (planning / "visual_contract.json").write_text(
         json.dumps(changed, ensure_ascii=False), encoding="utf-8"
     )
-    assert server.sync_narration_sources_from_contract(project, previous, changed) is True
+    assert narration_audio.sync_narration_sources_from_contract(project, previous, changed) is True
     updated = json.loads((planning / "narration_beats.json").read_text(encoding="utf-8"))
     beat = updated["slides"][0]["beats"][0]
     assert beat["source_text"] == "修改后的完整旁白。"
@@ -100,7 +102,7 @@ def test_step2_source_sync_preserves_unchanged_tts_and_updates_changed_text(tmp_
 
 
 def test_subtitle_style_round_trips_all_user_controls() -> None:
-    normalized = server.normalize_subtitle_style({
+    normalized = visual_settings.normalize_subtitle_style({
         "font_key": "noto_serif_sc",
         "font_size": 54,
         "font_weight": 700,

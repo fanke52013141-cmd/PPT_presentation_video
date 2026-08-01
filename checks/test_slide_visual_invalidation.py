@@ -7,7 +7,8 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from database import Project
-from server import mark_slide_image_changed, prune_stale_mask_groups, sync_reveal_manifest_to_contract
+from mask_manifest_service import prune_stale_mask_groups
+from server import mark_slide_image_changed, sync_reveal_manifest_to_contract
 
 
 class DummyDb:

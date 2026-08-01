@@ -9,18 +9,24 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main() -> None:
     server = (ROOT / "server.py").read_text(encoding="utf-8")
+    mask_manifest = (
+        ROOT / "mask_manifest_service.py"
+    ).read_text(encoding="utf-8")
+    remotion_runner = (
+        ROOT / "remotion_runner.py"
+    ).read_text(encoding="utf-8")
     builder = (ROOT / "scripts" / "build_reveal_scene.py").read_text(encoding="utf-8")
     run_validator = (ROOT / "scripts" / "validate_run_assets.py").read_text(encoding="utf-8")
     preflight = (ROOT / "scripts" / "run_reveal_preflight.ps1").read_text(encoding="utf-8")
 
     assert 'REVEAL_PIPELINE_VERSION = "exact_rle_mask_with_manual_corrections_v5"' in server
-    assert 'rle.get("encoding") == "row_runs_v1"' in server
-    assert 'int(run[2]) > int(run[1])' in server
-    assert "build_current_reveal_assets(project)" in server
-    assert '"--image-format=png"' in server
-    assert '"--pixel-format=yuv420p"' in server
-    assert '"--color-space=bt709"' in server
-    assert "validate_render_color.py" in server
+    assert 'rle.get("encoding") == "row_runs_v1"' in mask_manifest
+    assert 'int(run[2]) > int(run[1])' in mask_manifest
+    assert "def build_current_reveal_assets(project:" in mask_manifest
+    assert '"--image-format=png"' in remotion_runner
+    assert '"--pixel-format=yuv420p"' in remotion_runner
+    assert '"--color-space=bt709"' in remotion_runner
+    assert "validate_render_color.py" in remotion_runner
     assert "auto_fit_reveal_boxes.py" not in server
     assert "decompose_slide_layers.py" not in server
     assert "split_master_layers.py" not in server

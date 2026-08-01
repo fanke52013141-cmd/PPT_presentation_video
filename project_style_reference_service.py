@@ -1,12 +1,10 @@
-"""Step 3 image style reference generation APIs.
+"""Step 3 image-style reference generation service.
 
-This bridge turns Step 3 image-style ``sample_reference_image_prompts`` into 1-3
+This service turns Step 3 image-style ``sample_reference_image_prompts`` into 1-3
 project-local PNG reference images. The generated images are stored under the
 run's planning directory and tracked by planning/project_style_references.json.
 
-The legacy /project-profile/image-style/reference-images routes are kept for
-compatibility. New UI should call the Step 3 aliases exposed by
-``runtime_step3_image_style.py``.
+The explicit router keeps legacy URLs as compatibility aliases.
 """
 
 from __future__ import annotations
@@ -15,10 +13,8 @@ import json
 import uuid
 from datetime import datetime
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
-PATCH_MARKER = "__ppt_project_style_references_patch__"
 REFERENCE_DIRNAME = "style_references"
 REFERENCE_MANIFEST = "project_style_references.json"
 MANIFEST_VERSION = "step3_style_references_v1"
@@ -94,11 +90,9 @@ def _safe_child_path(base: Path, filename: Any) -> Path | None:
 
 
 def _profile_image_style(project: Any) -> dict[str, Any]:
-    profile = _read_json(_profile_path(project), {})
-    if not isinstance(profile, dict):
-        return {}
-    image_style = profile.get("image_style_profile")
-    return image_style if isinstance(image_style, dict) else {}
+    from step3_image_style_service import _step3_style
+
+    return _step3_style(project)
 
 
 def _reference_prompts(image_style: dict[str, Any], count: int) -> list[str]:
@@ -115,7 +109,7 @@ def _reference_prompts(image_style: dict[str, Any], count: int) -> list[str]:
     return result[:count]
 
 
-def _read_reference_generation_system_content(server_module: ModuleType) -> str:
+def _read_reference_generation_system_content(server_module: Any) -> str:
     get_setting = getattr(server_module, "get_setting", None)
     if not callable(get_setting):
         return DEFAULT_REFERENCE_GENERATION_SYSTEM_CONTENT
@@ -232,20 +226,12 @@ def _project_reference_paths(project: Any) -> list[str]:
 
 
 def _update_prompt_companion(project: Any, manifest: dict[str, Any]) -> None:
-    # Legacy fallback only. runtime_step3_image_style_state patches this function
-    # during normal startup so new flows write reference_images into
-    # planning/step3_image_style.json instead.
-    companion_path = _run_dir(project) / "planning" / "project_profile_prompt_companion.json"
-    companion = _read_json(companion_path, {})
-    if not isinstance(companion, dict):
-        companion = {}
-    companion["legacy_compatibility_only"] = True
-    companion["preferred_state_file"] = "planning/step3_image_style.json"
-    companion["style_reference_images"] = manifest.get("images", [])
-    _write_json(companion_path, companion)
+    from step3_image_style_service import _save_reference_images_to_step3_state
+
+    _save_reference_images_to_step3_state(project, manifest)
 
 
-def _generate_reference_images(server_module: ModuleType, project: Any, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+def _generate_reference_images(server_module: Any, project: Any, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     image_style = _profile_image_style(project)
     if not image_style:
         raise server_module.HTTPException(status_code=400, detail="Step 3 当前图片风格为空，无法生成图片风格参考图")
@@ -328,7 +314,7 @@ def _generate_reference_images(server_module: ModuleType, project: Any, project_
     return manifest
 
 
-def _profile_style_prompt(project: Any, server_module: ModuleType) -> str:
+def _profile_style_prompt(project: Any, server_module: Any) -> str:
     image_style = _profile_image_style(project)
     fallback = ""
     try:
@@ -367,7 +353,7 @@ def _profile_style_prompt(project: Any, server_module: ModuleType) -> str:
     return "\n".join(lines)
 
 
-def _project_generate_prompt_for_slide(server_module: ModuleType, project: Any, slide: dict[str, Any], topic_name: str) -> str:
+def _project_generate_prompt_for_slide(server_module: Any, project: Any, slide: dict[str, Any], topic_name: str) -> str:
     style_prompt = _profile_style_prompt(project, server_module)
     compose_prompt = getattr(server_module, "compose_step3_single_slide_prompt", None)
     if callable(compose_prompt):
@@ -396,7 +382,7 @@ def _project_generate_prompt_for_slide(server_module: ModuleType, project: Any, 
     )
 
 
-def _can_send_project_references(server_module: ModuleType, model: str, base_url: str | None, reference_paths: list[str]) -> bool:
+def _can_send_project_references(server_module: Any, model: str, base_url: str | None, reference_paths: list[str]) -> bool:
     if not reference_paths:
         return False
     try:
@@ -407,118 +393,41 @@ def _can_send_project_references(server_module: ModuleType, model: str, base_url
     return str(model or "").startswith("gpt-image")
 
 
-# Source-owned Step 3 routes use these stable service wrappers. They resolve
-# the underlying function at call time so the remaining style-state adapter can
-# replace its data source without shadowing the HTTP routes.
 def project_reference_paths(project: Any) -> list[str]:
     return _project_reference_paths(project)
 
 
-def profile_style_prompt(project: Any, server_module: ModuleType) -> str:
+def profile_style_prompt(project: Any, server_module: Any | None = None) -> str:
+    if server_module is None:
+        from project_style_context import get_project_style_context
+
+        server_module = get_project_style_context()
     return _profile_style_prompt(project, server_module)
 
 
 def project_generate_prompt_for_slide(
-    server_module: ModuleType,
     project: Any,
     slide: dict[str, Any],
     topic_name: str,
+    server_module: Any | None = None,
 ) -> str:
+    if server_module is None:
+        from project_style_context import get_project_style_context
+
+        server_module = get_project_style_context()
     return _project_generate_prompt_for_slide(server_module, project, slide, topic_name)
 
 
 def can_send_project_references(
-    server_module: ModuleType,
     model: str,
     base_url: str | None,
     reference_paths: list[str],
+    server_module: Any | None = None,
 ) -> bool:
+    if server_module is None:
+        from project_style_context import get_project_style_context
+
+        server_module = get_project_style_context()
     return _can_send_project_references(server_module, model, base_url, reference_paths)
 
 
-def _register(server_module: ModuleType) -> bool:
-    if getattr(server_module, PATCH_MARKER, False):
-        return True
-    required = ("app", "Project", "HTTPException", "Depends", "get_db", "FileResponse")
-    if not all(hasattr(server_module, name) for name in required):
-        return False
-    app = server_module.app
-
-    def get_reference_generation_prompt_settings() -> dict[str, Any]:
-        system_content = _read_reference_generation_system_content(server_module)
-        preview = _style_generation_prompt(
-            DEFAULT_REFERENCE_SCENE_BRIEFS[0],
-            {
-                "style_name": "示例图片风格",
-                "system_content": "示例可复用视觉风格 System Content。",
-                "negative_prompt_rules": ["avoid ornate frames"],
-            },
-            1,
-            system_content,
-        )
-        return {
-            "success": True,
-            "prompts": {"system_content": system_content, "full_prompt_example": preview},
-            "defaults": {"system_content": DEFAULT_REFERENCE_GENERATION_SYSTEM_CONTENT},
-        }
-
-    def update_reference_generation_prompt_settings(payload: dict[str, Any]) -> dict[str, Any]:
-        prompts = payload.get("prompts") if isinstance(payload.get("prompts"), dict) else payload
-        system_content = _safe_text(prompts.get("system_content"), 30000)
-        if not system_content:
-            raise server_module.HTTPException(status_code=400, detail="预览图生成 System Content 不能为空")
-        update_settings = getattr(server_module, "update_settings", None)
-        if not callable(update_settings):
-            raise server_module.HTTPException(status_code=500, detail="当前服务无法保存预览图生成 Prompt")
-        update_settings({REFERENCE_GENERATION_SYSTEM_CONTENT_KEY: system_content})
-        return {"success": True, "prompts": {"system_content": system_content}}
-
-    def list_reference_images(project_id: str, db: Any = server_module.Depends(server_module.get_db)) -> dict[str, Any]:
-        project = db.query(server_module.Project).filter(server_module.Project.id == project_id).first()
-        if not project:
-            raise server_module.HTTPException(status_code=404, detail="项目不存在")
-        return {
-            "success": True,
-            "references": _load_manifest(project, project_id),
-            "deprecated_route": True,
-            "preferred_route": f"/api/projects/{project_id}/steps/3/image-style/reference-images",
-        }
-
-    def generate_reference_images(project_id: str, payload: dict[str, Any] | None = None, db: Any = server_module.Depends(server_module.get_db)) -> dict[str, Any]:
-        project = db.query(server_module.Project).filter(server_module.Project.id == project_id).first()
-        if not project:
-            raise server_module.HTTPException(status_code=404, detail="项目不存在")
-        manifest = _generate_reference_images(server_module, project, project_id, payload if isinstance(payload, dict) else {})
-        return {
-            "success": True,
-            "references": manifest,
-            "deprecated_route": True,
-            "preferred_route": f"/api/projects/{project_id}/steps/3/image-style/reference-images/generate",
-        }
-
-    def get_reference_image(project_id: str, index: int, db: Any = server_module.Depends(server_module.get_db)) -> Any:
-        project = db.query(server_module.Project).filter(server_module.Project.id == project_id).first()
-        if not project:
-            raise server_module.HTTPException(status_code=404, detail="项目不存在")
-        if index < 1 or index > 3:
-            raise server_module.HTTPException(status_code=404, detail="参考图不存在")
-        path = _references_dir(project) / f"style_reference_{index:02d}.png"
-        if not path.exists():
-            raise server_module.HTTPException(status_code=404, detail="参考图不存在")
-        return server_module.FileResponse(str(path), media_type="image/png")
-
-    app.add_api_route("/api/projects/{project_id}/project-profile/image-style/reference-images", list_reference_images, methods=["GET"])
-    app.add_api_route("/api/projects/{project_id}/project-profile/image-style/reference-images/generate", generate_reference_images, methods=["POST"])
-    app.add_api_route("/api/projects/{project_id}/project-profile/image-style/reference-images/{index}", get_reference_image, methods=["GET"])
-    app.add_api_route(
-        "/api/settings/image-style-reference-generation",
-        get_reference_generation_prompt_settings,
-        methods=["GET"],
-    )
-    app.add_api_route(
-        "/api/settings/image-style-reference-generation",
-        update_reference_generation_prompt_settings,
-        methods=["PUT"],
-    )
-    setattr(server_module, PATCH_MARKER, True)
-    return True

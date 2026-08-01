@@ -1,6 +1,6 @@
 # PPT Presentation Video
 
-本项目把文章转换为手绘 PPT 风格讲解视频，提供本地 Web 界面完成分镜、图片、Mask、旁白、音频和视频渲染。
+本项目把文章转换为 PPT 风格讲解作品，提供本地 Web 界面完成分镜、图片、Mask、旁白、音频、视频渲染和图片型 PPTX 导出。
 
 ## 本地启动
 
@@ -28,7 +28,9 @@ $env:PYTHONPATH = (Get-Location).Path
 3. 配置最终视频背景与图片风格，生成或上传每页完整图片；图片风格支持参考图反推、System Content 生成参考图、手动上传参考图和命名模板。
 4. AI 自动拆解画面元素，并用多模态模型关联演讲稿语块、生成彩色 Mask。
 5. 编辑旁白、生成音频并试听确认。
-6. 渲染、下载和删除视频。
+6. 在“作品输出”中生成、下载和删除 MP4 视频或图片型 PPTX。
+
+视频渲染和 PPTX 导出任务会写入本机 SQLite。刷新页面不会丢失任务状态；应用异常退出后，未完成的视频任务会显示为“已中断”，可以重新生成。新生成的 MP4、调速 MP4 和 PPTX 都会登记产物记录，并在删除文件时同步清理。
 
 ### 用户步骤与内部 API 步骤映射
 
@@ -41,7 +43,7 @@ $env:PYTHONPATH = (Get-Location).Path
 | Step 3 图片生成/上传 | Step 3 images + Step 4 image confirmation | `slides/<slide_id>/visual_draft.png`, `reveal_manifest.json` |
 | Step 4 Mask | Step 5 reveal manifest / mask assets | `reveal_manifest.json`, reveal layer assets |
 | Step 5 旁白与音频 | Step 6 narration + Step 7 TTS/audio confirmation | `planning/narration_beats.json`, `voice.mp3`, subtitles/timelines |
-| Step 6 视频渲染 | Step 8 Remotion render | `remotion_props.json`, rendered video + `.render.json` sidecar |
+| Step 6 作品输出 | Step 8 Remotion render / PPTX export | `remotion_props.json`、视频与 `.render.json`、图片型 `.pptx` |
 
 文档、检查脚本和代码注释中如出现 Step 5/6/7/8，默认指内部 API 编号；面向用户的说明应优先使用 6 步流程。
 
@@ -119,6 +121,14 @@ python server.py
 
 默认仅允许同源浏览器访问，跨域来源必须显式加入白名单；浏览器写请求还必须携带应用专用请求头。`/api/settings` 和普通配置导出默认隐藏密钥，只有带明确确认值的独立 POST 接口可以导出密钥。历史 runtime bridge 迁移计划见 `docs/runtime_hotfixes_and_security.md` 和 issue #7。
 
+## 数据库迁移与下游失效
+
+- 正常启动由 `database_migrations.py` 依次执行 `migrations/NNNN_name.sql`，不再使用 `create_all` 或启动时手写 `ALTER TABLE` 维护生产库。
+- 每个迁移的编号、名称、SHA-256 和执行时间会写入 `schema_migrations`；迁移失败时 SQL 与版本记录一起回滚。
+- 已发布的迁移文件不可修改。新增数据库结构时继续添加连续编号的 SQL 文件；checksum 不一致或数据库含有当前代码未知的版本时，应用会拒绝启动。
+- 旧版两列迁移标记表会按实际表和字段安全接管，不重复创建已有结构，也不删除项目数据。
+- 编辑文章、分镜、图片、Mask、旁白、字幕样式或视频背景后的派生文件清理与步骤降级，由 `invalidation_service.py` 统一决定。服务本身不提交数据库，API 路由在文件与状态更新成功后只提交一次。
+
 ## 验证
 
 CI 自动检查：
@@ -139,7 +149,7 @@ $env:PPT_STUDIO_MASK_SETTINGS_SECRETS = "1"; python scripts\check_runtime_settin
 本地基础检查和手动 smoke 验证：
 
 ```powershell
-.\.venv\Scripts\python.exe -m compileall -q server.py scripts checks
+.\.venv\Scripts\python.exe -m compileall -q server.py article_service.py article_routes.py diagnostics_routes.py storyboard_background.py storyboard_service.py storyboard_routes.py mask_manifest_service.py mask_preview_service.py mask_editor_routes.py narration_service.py narration_routes.py tts_service.py tts_routes.py one_click_orchestrator.py one_click_routes.py pptx_export.py pptx_service.py pptx_routes.py video_contracts.py video_job_store.py video_artifact_service.py remotion_runner.py video_render_service.py video_routes.py ai_mask_config.py ai_mask_engine.py ai_mask_routes.py ai_mask_semantic_matcher.py ai_mask_service.py project_style_context.py project_style_routes.py project_profile_service.py project_profile_store.py project_style_reference_service.py project_style_reference_store.py project_style_template_service.py image_style_reverse_service.py step3_image_style_service.py database.py database_migrations.py invalidation_service.py reveal_manifest_service.py scripts checks
 node --check static\app.js
 node --check static\flow.js
 node checks\test_visible_flow.js
@@ -150,6 +160,8 @@ node checks\test_frontend_quality.js
 .\.venv\Scripts\python.exe checks\test_reveal_mask_integrity.py
 .\.venv\Scripts\python.exe checks\test_reveal_pipeline_isolation.py
 .\.venv\Scripts\python.exe checks\test_slide_visual_invalidation.py
+.\.venv\Scripts\python.exe -m pytest checks\test_database_migrations.py checks\test_invalidation_service.py -q
+.\.venv\Scripts\python.exe -m pytest checks\test_source_runtime_safeguards.py -q
 .\.venv\Scripts\python.exe checks\test_audio_confirmation.py
 .\.venv\Scripts\python.exe checks\test_audio_tail_padding.py
 Push-Location scripts\remotion
@@ -183,7 +195,8 @@ Pop-Location
 
 ## 维护注意事项
 
-- `sitecustomize.py` 仍是待迁移的 runtime bridge；访问控制已由 `app_security.py` 显式安装，设置凭据由正式 `/api/settings` 路由默认脱敏。
+- `sitecustomize.py` 已删除；Manifest 对齐、子进程超时和校验器 JSON 处理都已迁入正式源码。不得重新引入 Python 自动启动补丁或全局 `subprocess.run` 替换。
+- AI Mask 与项目样式的兼容模块仍由正式启动路径显式注册，后续继续按服务边界迁出。
 - 新修复优先落在 `server.py`、`static/**` 或正常启动路径中；只有无法安全改大文件时才使用 runtime bridge。
 - 已合并且相对 `main` 没有 ahead commits 的临时分支可以清理。
 - `scripts/remotion` 已提交 `package-lock.json`；可复现验证应使用 `npm ci`。

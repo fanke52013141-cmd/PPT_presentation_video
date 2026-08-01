@@ -1,4 +1,4 @@
-"""Storyboard background settings bridge.
+"""Storyboard background settings service and explicit routes.
 
 Background settings are stored per project and applied to prompt files and
 reveal_manifest canvas metadata. The generated visual_draft remains pure white
@@ -12,12 +12,16 @@ import io
 import re
 import time
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from PIL import Image
+from sqlalchemy.orm import Session
 
-PATCH_MARKER = "__ppt_storyboard_background_runtime_patch__"
+from database import Project, get_db
+
+router = APIRouter()
 CONFIG_NAME = "storyboard_background.json"
 IMAGE_NAME = "storyboard_background.png"
 ORIGINAL_IMAGE_NAME = "storyboard_background_original.png"
@@ -208,60 +212,83 @@ def _apply(project: Any, payload: dict[str, Any]) -> dict[str, Any]:
     return config
 
 
-def _register(server_module: ModuleType) -> bool:
-    if getattr(server_module, PATCH_MARKER, False):
-        return True
-    required = ("app", "Project", "HTTPException", "Depends", "get_db", "File", "FileResponse")
-    if not all(hasattr(server_module, item) for item in required):
-        return False
-    app = server_module.app
+def _project_or_404(db: Session, project_id: str) -> Project:
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    return project
 
-    def get_background(project_id: str, db: Any = server_module.Depends(server_module.get_db)) -> dict[str, Any]:
-        project = db.query(server_module.Project).filter(server_module.Project.id == project_id).first()
-        if not project:
-            raise server_module.HTTPException(status_code=404, detail="项目不存在")
-        return {"success": True, "background": _read_config(_run_dir(project), project.id)}
 
-    def put_background(project_id: str, payload: dict[str, Any], db: Any = server_module.Depends(server_module.get_db)) -> dict[str, Any]:
-        project = db.query(server_module.Project).filter(server_module.Project.id == project_id).first()
-        if not project:
-            raise server_module.HTTPException(status_code=404, detail="项目不存在")
-        return {"success": True, "background": _apply(project, payload if isinstance(payload, dict) else {})}
+@router.get("/api/projects/{project_id}/storyboard-background")
+def get_background(
+    project_id: str,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    project = _project_or_404(db, project_id)
+    return {
+        "success": True,
+        "background": _read_config(_run_dir(project), project.id),
+    }
 
-    async def upload_background(project_id: str, file: Any = server_module.File(...), db: Any = server_module.Depends(server_module.get_db)) -> dict[str, Any]:
-        project = db.query(server_module.Project).filter(server_module.Project.id == project_id).first()
-        if not project:
-            raise server_module.HTTPException(status_code=404, detail="项目不存在")
-        content_type = str(getattr(file, "content_type", "") or "").lower()
-        if content_type and not content_type.startswith("image/"):
-            raise server_module.HTTPException(status_code=400, detail="背景文件必须是图片")
-        data = await file.read()
-        if not data:
-            raise server_module.HTTPException(status_code=400, detail="背景图片为空")
-        if len(data) > MAX_BACKGROUND_BYTES:
-            raise server_module.HTTPException(status_code=400, detail="背景图片超过 12MB，请压缩后再上传")
-        run_dir = _run_dir(project)
-        current = _read_config(run_dir, project.id)
-        try:
-            original = Image.open(io.BytesIO(data)).convert("RGB")
-        except Exception as exc:
-            raise server_module.HTTPException(status_code=400, detail=f"无法读取背景图片: {exc}") from exc
-        _original_image_path(run_dir).parent.mkdir(parents=True, exist_ok=True)
-        original.save(_original_image_path(run_dir), format="PNG")
-        return {"success": True, "background": _apply(project, {**current, "mode": "image"})}
 
-    def get_background_image(project_id: str, db: Any = server_module.Depends(server_module.get_db)) -> Any:
-        project = db.query(server_module.Project).filter(server_module.Project.id == project_id).first()
-        if not project:
-            raise server_module.HTTPException(status_code=404, detail="项目不存在")
-        path = _image_path(_run_dir(project))
-        if not path.exists():
-            raise server_module.HTTPException(status_code=404, detail="背景图片不存在")
-        return server_module.FileResponse(str(path), media_type="image/png")
+@router.put("/api/projects/{project_id}/storyboard-background")
+def put_background(
+    project_id: str,
+    payload: dict[str, Any],
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    project = _project_or_404(db, project_id)
+    return {
+        "success": True,
+        "background": _apply(
+            project,
+            payload if isinstance(payload, dict) else {},
+        ),
+    }
 
-    app.add_api_route("/api/projects/{project_id}/storyboard-background", get_background, methods=["GET"])
-    app.add_api_route("/api/projects/{project_id}/storyboard-background", put_background, methods=["PUT"])
-    app.add_api_route("/api/projects/{project_id}/storyboard-background/image", upload_background, methods=["POST"])
-    app.add_api_route("/api/projects/{project_id}/storyboard-background/image", get_background_image, methods=["GET"])
-    setattr(server_module, PATCH_MARKER, True)
-    return True
+
+@router.post("/api/projects/{project_id}/storyboard-background/image")
+async def upload_background(
+    project_id: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    project = _project_or_404(db, project_id)
+    content_type = str(file.content_type or "").lower()
+    if content_type and not content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="背景文件必须是图片")
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="背景图片为空")
+    if len(data) > MAX_BACKGROUND_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail="背景图片超过 12MB，请压缩后再上传",
+        )
+    run_dir = _run_dir(project)
+    current = _read_config(run_dir, project.id)
+    try:
+        original = Image.open(io.BytesIO(data)).convert("RGB")
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"无法读取背景图片: {exc}",
+        ) from exc
+    _original_image_path(run_dir).parent.mkdir(parents=True, exist_ok=True)
+    original.save(_original_image_path(run_dir), format="PNG")
+    return {
+        "success": True,
+        "background": _apply(project, {**current, "mode": "image"}),
+    }
+
+
+@router.get("/api/projects/{project_id}/storyboard-background/image")
+def get_background_image(
+    project_id: str,
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    project = _project_or_404(db, project_id)
+    path = _image_path(_run_dir(project))
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="背景图片不存在")
+    return FileResponse(str(path), media_type="image/png")

@@ -9,7 +9,7 @@ The application has six user-visible steps:
 3. Configure image style/background and generate or upload one 1920×1080 image per slide.
 4. Run automatic multimodal AI Mask annotation.
 5. Edit narration, generate audio, and confirm audio.
-6. Render and manage videos.
+6. Export and manage videos or image-only PPTX presentations.
 
 ### User-visible steps vs internal step numbers
 
@@ -22,7 +22,7 @@ The UI is intentionally compressed to six user-visible steps, while the backend 
 | Step 3 Images | Step 3 images + Step 4 confirmation | `slides/<slide_id>/visual_draft.png`, `reveal_manifest.json` |
 | Step 4 Mask | Step 5 reveal manifest / mask assets | `reveal_manifest.json`, reveal layer assets |
 | Step 5 Narration and audio | Step 6 narration + Step 7 TTS/audio confirmation | `planning/narration_beats.json`, audio, subtitles, timelines |
-| Step 6 Render video | Step 8 Remotion render | `remotion_props.json`, rendered video, `.render.json` sidecar |
+| Step 6 Output works | Step 8 Remotion render / PPTX export | `remotion_props.json`, rendered video, `.render.json` sidecar, image-only `.pptx` |
 
 When writing user-facing documentation, prefer the six visible steps. When changing API routes, validators, or runtime artifacts, use the internal step numbers and keep this mapping accurate.
 
@@ -92,35 +92,169 @@ article.md
 
 ## State and File Lifecycle
 
+- Production schema changes use consecutive `migrations/NNNN_name.sql` files
+  through `database_migrations.py`; never restore `create_all` or startup-time
+  handwritten `ALTER TABLE` calls. Applied migrations are immutable and
+  checksum protected.
+- Business-level downstream invalidation belongs in
+  `invalidation_service.py`. The service updates files and project state but
+  never commits; API callers own one database commit.
 - Replacing or deleting a slide image clears that slide's Masks, reveal assets,
   Remotion props, audio confirmation, and downstream completion state.
 - Editing narration clears audio confirmation.
 - Rendering is blocked until all slide audio has been generated and confirmed.
 - Rendered videos carry a `.render.json` sidecar with the reveal pipeline
   version.
+- Video render jobs and PPTX export jobs are persisted in the `local_jobs`
+  SQLite table. In-memory task maps are compatibility caches, not the source of
+  truth. Jobs left active by an exited process are marked `interrupted`.
+- Newly rendered and speed-adjusted MP4 files are registered in
+  `artifact_records`; deleting a video must remove the matching record.
 - Deleting a rendered video deletes both the MP4 and its sidecar.
 - Runtime data under `runs/`, `outputs/`, `logs/`, and Remotion `public/runtime`
   is never committed.
 
 ## Runtime Bridge Policy
 
-The repository still contains runtime bridge modules that patch production behavior during Python startup:
+The Python startup monkey patch has been retired. AI Mask is now source-owned:
 
-- `sitecustomize.py`
+- `ai_mask_config.py` owns persisted settings and Prompt migration.
+- `ai_mask_service.py` owns project task orchestration through narrow
+  dependencies.
+- `ai_mask_routes.py` owns the explicit FastAPI routes.
+- `ai_mask_engine.py` owns the deterministic and multimodal matching engine.
+- `ai_mask_semantic_matcher.py` owns semantic-object preparation and is
+  injected explicitly into the task service; it must never monkey-patch the
+  engine.
+- `project_style_routes.py` owns the Project Profile and Step 3 image-style
+  HTTP contract. Its dependencies are configured through
+  `project_style_context.py`; storage, reference generation, reverse analysis,
+  and templates live in normal `project_*_service.py` / `*_store.py` modules.
+- Never restore `register_project_style_routes(server_module)`, route-order
+  shadowing, or `runtime_project_*` modules.
+- `global_image_style_service.py` owns legacy-compatible global image-style
+  settings, reference images, and templates.
+  `global_image_style_routes.py` owns the unchanged `/api/image-style/**`
+  contract.
+- `image_workflow_service.py` owns Step 3 prompt settings, image generation,
+  uploads, candidates, ordering, provenance, deletion, and confirmation.
+  `image_workflow_routes.py` owns the corresponding HTTP paths.
+- `visual_settings_service.py` owns per-project video background and subtitle
+  settings, input normalization, file persistence, preview selection, Reveal
+  Manifest background synchronization, and downstream invalidation.
+  `visual_settings_routes.py` owns their HTTP paths. The service receives only
+  storage/lock/contract-reference primitives; never restore business-operation
+  callbacks from `server.py`.
+- Step 3 service modules must not import `get_db`, declare `Depends`, own an
+  `APIRouter`, or import the complete application module.
+- `mask_manifest_service.py` owns Step 5 semantic blocks, Manifest repair,
+  draft/final persistence, stale-group pruning, and production Reveal builds.
+  `mask_preview_service.py` owns exact single-slide preview builds and reports,
+  while `mask_editor_routes.py` owns the seven unchanged editor HTTP routes.
+  Mask services receive only their frozen dependency records and must not
+  import `server`, `get_db`, declare `Depends`, or own an `APIRouter`.
+- `diagnostics_routes.py` and `storyboard_background.py` own explicit
+  `APIRouter` instances and are included directly by `server.py`.
+- `storyboard_service.py` owns Step 2 prompt/profile normalization, planning,
+  visual-contract composition, validation, repair, and manual skeleton logic.
+  `storyboard_routes.py` owns all Step 2 and storyboard-template HTTP paths.
+  Dependencies are configured explicitly with `StoryboardDependencies`; never
+  restore Step 2 route decorators in `server.py` or import the server module
+  from storyboard code.
+- `visual_contract_service.py` owns shared visual-type normalization,
+  narration deduplication, visual-contract normalization, and contract slide
+  identity reads. It must remain independent of FastAPI, database wiring, and
+  the application module; Storyboard, Narration, TTS, Image, and Mask code
+  should reuse this source of truth instead of duplicating contract rules.
+- `runtime_support.py` owns bounded subprocess execution, safe validator
+  stdout parsing, fallback JSON reads, JSON Markdown cleanup, debug-text
+  persistence, bounded numeric parsing, range parsing, and nested timeout
+  detection. It must remain independent of FastAPI, database wiring, and the
+  application module; `server.py` may re-export these helpers for compatibility
+  but must not restore their implementations.
+- `project_runtime_service.py` owns project-scoped logging and secret
+  redaction, artifact locks, current-slide image completeness, Reveal Manifest
+  synchronization, TTS artifact adapters, and commit-owning workflow
+  transitions. It must remain independent of FastAPI, database wiring, and the
+  application module; `server.py` may re-export these helpers for compatibility
+  but must not restore their implementations.
+- `narration_service.py` and `narration_routes.py` own Step 6 initialization,
+  annotation, repair, persistence, and HTTP paths. `tts_service.py` and
+  `tts_routes.py` own Step 7 synthesis, retry/status, audio download, and
+  confirmation. Both services receive narrow dependency records and must not
+  import the application module or restore route decorators in `server.py`.
+- `narration_audio_service.py` owns narration source/TTS synchronization,
+  Minimax delivery markup, subtitle segmentation, narration file persistence,
+  and beat-aligned audio timeline rewriting. It receives only
+  `NarrationAudioDependencies`; never move these implementations back into
+  `server.py` or add FastAPI/database wiring to the service.
+- `project_service.py` and `project_routes.py` own project creation, listing,
+  detail, AI mode, and deletion. Creating a project must remain independent
+  from importing article content; an empty Step 1 project is valid.
+- `one_click_routes.py` owns the One-click HTTP contract.
+  `one_click_orchestrator.py` receives only `OneClickDependencies`; it must
+  never receive the FastAPI application or the complete `server` module.
+- `pipeline_services.py` receives an immutable `PipelineOperations` graph,
+  grouped into storyboard, images, Mask, narration, and media capabilities.
+  Add a named operation when the pipeline grows; never pass `server`,
+  `ModuleType`, or an application namespace into this facade.
+- `pptx_routes.py` owns the explicit PPTX HTTP contract.
+  `pptx_service.py` owns persistent export jobs and artifact lifecycle, and
+  receives only `PptxServiceDependencies` (`session_factory`, `runs_root`, and
+  an optional executor). Never restore `register_pptx_routes(server_module)`.
+- `video_routes.py` owns the explicit render, polling, MP4 collection,
+  download, speed-adjustment, deletion, and legacy final-video routes.
+  `video_render_service.py` owns only orchestration, the in-memory task cache,
+  and per-project locks. `video_job_store.py` owns persistent SQLite jobs,
+  `video_artifact_service.py` owns MP4 paths, freshness metadata, speed
+  variants, and registry lifecycle, while `remotion_runner.py` owns bounded
+  subprocess stages and color validation. Shared configuration and errors live
+  in `video_contracts.py`. Never collapse these boundaries or move Step 8
+  workers and route decorators back into `server.py`.
+- Never restore `_register(server_module)` in diagnostics, storyboard
+  background, or One-click code.
 - Access control is installed explicitly from `app_security.py`.
-- `/api/settings` masks credential fields in the source route by default.
+- `ai_provider_service.py` owns the shared OpenAI-compatible client,
+  bounded image decoding, 1920x1080 white-canvas normalization, image
+  response extraction, and provider-specific image-generation fallbacks.
+  It must not import the application module or own FastAPI/database wiring.
+- `tts_provider_service.py` owns provider aliases/defaults, credential
+  resolution, environment-only secret transport, generic TTS command
+  construction, and bounded retry/backoff behavior. It receives only
+  `TtsProviderDependencies` and must not import `server` or own
+  FastAPI/database wiring.
+- `settings_service.py` owns global settings persistence, credential masking,
+  masked-placeholder preservation, and provider connection checks.
+  `config_portability_service.py` owns configuration export/import and
+  validates every image reference before any write.
+  `settings_routes.py` owns the eight unchanged `/api/settings` and
+  `/api/config` HTTP routes, including bounded request streaming.
+  These services receive only frozen dependency records and must not import
+  `server`, `get_db`, declare `Depends`, or own an `APIRouter`.
+- `article_service.py` owns the Step 1 article Prompt setting, topic-only
+  generation contract, `inputs/article.md` source lifecycle, legacy brief
+  migration, and change-triggered invalidation. `article_routes.py` owns the
+  six unchanged settings/import/result HTTP routes. The service receives only
+  `ArticleDependencies` and must not import `server`, `get_db`, declare
+  `Depends`, or own an `APIRouter`.
 
-Treat them as migration debt, not as the normal extension mechanism. New fixes should land in `server.py`, `static/**`, or normal application startup code unless a large-file patch is not safe. Any new runtime bridge behavior must also be added to `docs/runtime_hotfixes_and_security.md` and issue #7.
+Treat the remaining compatibility modules as migration debt, not as the normal
+extension mechanism. Never reintroduce `sitecustomize.py`, polling installers,
+or global standard-library monkey patches. New fixes should land in
+`server.py`, normal service modules, `static/**`, or explicit application
+startup code.
 
 ## Required Validation
 
 Run before publishing:
 
 ```powershell
-python -m compileall -q server.py scripts checks
+python -m compileall -q server.py runtime_support.py project_runtime_service.py ai_provider_service.py tts_provider_service.py narration_audio_service.py visual_contract_service.py settings_service.py config_portability_service.py settings_routes.py article_service.py article_routes.py diagnostics_routes.py storyboard_background.py storyboard_service.py storyboard_routes.py global_image_style_service.py global_image_style_routes.py image_workflow_service.py image_workflow_routes.py visual_settings_service.py visual_settings_routes.py mask_manifest_service.py mask_preview_service.py mask_editor_routes.py narration_service.py narration_routes.py tts_service.py tts_routes.py one_click_orchestrator.py one_click_routes.py pptx_export.py pptx_service.py pptx_routes.py video_contracts.py video_job_store.py video_artifact_service.py remotion_runner.py video_render_service.py video_routes.py ai_mask_config.py ai_mask_engine.py ai_mask_routes.py ai_mask_semantic_matcher.py ai_mask_service.py project_style_context.py project_style_routes.py project_profile_service.py project_profile_store.py project_style_reference_service.py project_style_reference_store.py project_style_template_service.py image_style_reverse_service.py step3_image_style_service.py database.py database_migrations.py invalidation_service.py reveal_manifest_service.py scripts checks
 node --check static/app.js
 node --check static/flow.js
 node checks/test_visible_flow.js
+python -m pytest checks/test_database_migrations.py checks/test_invalidation_service.py -q
+python -m pytest checks/test_source_runtime_safeguards.py -q
 python checks/test_reveal_mask_integrity.py
 python checks/test_reveal_pipeline_isolation.py
 python checks/test_slide_visual_invalidation.py

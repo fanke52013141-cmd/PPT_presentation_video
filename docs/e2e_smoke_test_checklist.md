@@ -1,6 +1,6 @@
 # End-to-end smoke test checklist
 
-Use this checklist after pipeline fixes, runtime hotfix changes, frontend flow
+Use this checklist after pipeline fixes, source safeguard changes, frontend flow
 changes, or security hardening changes.
 
 The goal is not to judge final visual quality. The goal is to catch regressions

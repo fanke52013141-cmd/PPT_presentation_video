@@ -44,26 +44,27 @@ def test_video_state_tracks_complete_render_inputs() -> None:
 
         video = run_dir / "videos" / "render.mp4"
         _write(video, "video")
-        fingerprint = server.current_render_input_fingerprint(project)
+        service = server.video_render_service
+        fingerprint = service.current_render_input_fingerprint(project)
         metadata = {
-            "reveal_pipeline_version": server.REVEAL_PIPELINE_VERSION,
+            "reveal_pipeline_version": service.config.pipeline_version,
             "video_background": server.DEFAULT_VIDEO_BACKGROUND,
             "subtitle_style": server.DEFAULT_SUBTITLE_STYLE,
             "input_fingerprint": fingerprint,
         }
         _write(Path(str(video) + ".render.json"), json.dumps(metadata))
-        assert server.video_item(project, str(video))["artifact_state"] == "current"
+        assert service.video_item(project, str(video))["artifact_state"] == "current"
 
         _write(run_dir / "slides" / "slide_001" / "tts_text.txt", "changed narration")
-        stale = server.video_item(project, str(video))
+        stale = service.video_item(project, str(video))
         assert stale["artifact_state"] == "stale"
         assert stale["is_stale"] is True
 
         legacy_video = run_dir / "videos" / "legacy.mp4"
         _write(legacy_video, "legacy")
-        assert server.video_item(project, str(legacy_video))["artifact_state"] == "legacy"
+        assert service.video_item(project, str(legacy_video))["artifact_state"] == "legacy"
 
         invalid_video = run_dir / "videos" / "invalid.mp4"
         _write(invalid_video, "invalid")
         _write(Path(str(invalid_video) + ".render.json"), "not-json")
-        assert server.video_item(project, str(invalid_video))["artifact_state"] == "invalid"
+        assert service.video_item(project, str(invalid_video))["artifact_state"] == "invalid"

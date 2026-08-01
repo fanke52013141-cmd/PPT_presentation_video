@@ -12,7 +12,8 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import server
+import server  # noqa: E402, F401
+import settings_service  # noqa: E402
 
 
 def main() -> int:
@@ -28,30 +29,62 @@ def main() -> int:
     def update(values: dict[str, str]) -> None:
         stored.update(values)
 
-    with patch.dict(os.environ, {}, clear=True), patch.object(server, "get_all_settings", side_effect=lambda: dict(stored)), patch.object(server, "update_settings", side_effect=update):
-        masked = server.get_settings()
-        for key in server.SETTINGS_SECRET_KEYS:
-            if masked[key] != server.MASKED_SETTINGS_VALUE:
-                print(f"FAIL {key} was not masked by the production route")
+    original = settings_service._deps()
+    dependencies = settings_service.SettingsDependencies(
+        **{
+            **{
+                field: getattr(original, field)
+                for field in original.__dataclass_fields__
+            },
+            "get_all_settings": lambda: dict(stored),
+            "update_settings": update,
+        }
+    )
+    settings_service.configure_settings_dependencies(dependencies)
+    try:
+        with patch.dict(os.environ, {}, clear=True):
+            masked = settings_service.get_settings()
+            for key in settings_service.SETTINGS_SECRET_KEYS:
+                if (
+                    masked[key]
+                    != settings_service.MASKED_SETTINGS_VALUE
+                ):
+                    print(
+                        f"FAIL {key} was not masked by the "
+                        "production route"
+                    )
+                    return 1
+            if masked["llm_model"] != "model-name":
+                print("FAIL non-sensitive setting was modified")
                 return 1
-        if masked["llm_model"] != "model-name":
-            print("FAIL non-sensitive setting was modified")
-            return 1
 
-        server.update_system_settings(
-            server.SettingsUpdate(
-                settings={
-                    **{key: server.MASKED_SETTINGS_VALUE for key in server.SETTINGS_SECRET_KEYS},
-                    "llm_model": "new-model",
-                }
+            settings_service.update_system_settings(
+                settings_service.SettingsUpdate(
+                    settings={
+                        **{
+                            key: settings_service.MASKED_SETTINGS_VALUE
+                            for key in (
+                                settings_service.SETTINGS_SECRET_KEYS
+                            )
+                        },
+                        "llm_model": "new-model",
+                    }
+                )
             )
-        )
-        if stored["llm_api_key"] != "real-llm-key" or stored["tts_secret_key"] != "real-tts-secret":
-            print("FAIL masked placeholder overwrote a stored credential")
-            return 1
-        if stored["llm_model"] != "new-model":
-            print("FAIL ordinary setting was not updated")
-            return 1
+            if (
+                stored["llm_api_key"] != "real-llm-key"
+                or stored["tts_secret_key"] != "real-tts-secret"
+            ):
+                print(
+                    "FAIL masked placeholder overwrote a stored "
+                    "credential"
+                )
+                return 1
+            if stored["llm_model"] != "new-model":
+                print("FAIL ordinary setting was not updated")
+                return 1
+    finally:
+        settings_service.configure_settings_dependencies(original)
 
     print("OK production settings mask self-check passed.")
     return 0

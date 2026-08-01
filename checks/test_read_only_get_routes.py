@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 
 import server
+from article_service import get_step1_result
+from mask_manifest_service import get_step5_result
 
 
 class _Query:
@@ -40,21 +42,34 @@ def _project(tmp_path: Path) -> server.Project:
 def test_project_result_gets_do_not_mutate_artifacts(tmp_path: Path) -> None:
     planning = tmp_path / "planning"
     planning.mkdir(parents=True)
+    inputs = tmp_path / "inputs"
+    inputs.mkdir()
     contract_path = planning / "visual_contract.json"
     manifest_path = tmp_path / "reveal_manifest.json"
     beats_path = planning / "narration_beats.json"
+    article_path = inputs / "article.md"
+    article_path.write_text("# Article\nBody", encoding="utf-8")
     contract_path.write_text(
         json.dumps({"topic": {"topic_name": "只读检查"}, "slides": []}, ensure_ascii=False),
         encoding="utf-8",
     )
     manifest_path.write_text('{"slides": []}', encoding="utf-8")
     beats_path.write_text('{"slides": []}', encoding="utf-8")
-    before = {path: _digest(path) for path in (contract_path, manifest_path, beats_path)}
+    before = {
+        path: _digest(path)
+        for path in (
+            article_path,
+            contract_path,
+            manifest_path,
+            beats_path,
+        )
+    }
     project = _project(tmp_path)
     db = _Db(project)
 
+    assert get_step1_result(project)["success"] is True
     assert server.get_step2_result(project.id, db)["success"] is True
-    assert server.get_step5_result(project.id, db)["success"] is True
+    assert get_step5_result(project)["success"] is True
     assert server.get_step6_result(project.id, db)["success"] is True
 
     assert {path: _digest(path) for path in before} == before

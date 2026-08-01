@@ -1,4 +1,4 @@
-"""Step 3 image-style reverse engineering from uploaded references.
+"""Step 3 image-style reverse-engineering service.
 
 Allows users to upload 1-3 reference images and turn them into a structured
 Step 3 image style profile. The output is style text/rules only: final video
@@ -17,10 +17,8 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
-PATCH_MARKER = "__ppt_image_style_reverse_patch__"
 INPUT_DIRNAME = "reverse_style_inputs"
 INPUT_MANIFEST = "reverse_style_inputs.json"
 REVERSE_SYSTEM_CONTENT_KEY = "image_style_reverse_system_content"
@@ -97,7 +95,7 @@ def compose_reverse_style_prompt(system_content: str, output_example: str) -> st
     )
 
 
-def _read_reverse_style_prompts(server_module: ModuleType) -> tuple[str, str]:
+def _read_reverse_style_prompts(server_module: Any) -> tuple[str, str]:
     get_setting = getattr(server_module, "get_setting", None)
     if not callable(get_setting):
         return DEFAULT_REVERSE_SYSTEM_CONTENT, DEFAULT_REVERSE_OUTPUT_EXAMPLE
@@ -221,7 +219,7 @@ def _image_data_url(path: Path, mime_type: str) -> str:
     return f"data:{mime_type};base64,{data}"
 
 
-def _normalize_uploaded_image(server_module: ModuleType, data: bytes, path: Path) -> None:
+def _normalize_uploaded_image(server_module: Any, data: bytes, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         Image = server_module.Image
@@ -235,7 +233,7 @@ def _normalize_uploaded_image(server_module: ModuleType, data: bytes, path: Path
         path.write_bytes(data)
 
 
-def _save_uploaded_references(server_module: ModuleType, project: Any, files: list[Any]) -> list[dict[str, Any]]:
+def _save_uploaded_references(server_module: Any, project: Any, files: list[Any]) -> list[dict[str, Any]]:
     if not files:
         raise server_module.HTTPException(status_code=400, detail="请上传 1-3 张参考图")
     if len(files) > 3:
@@ -272,7 +270,7 @@ def _save_uploaded_references(server_module: ModuleType, project: Any, files: li
     return saved
 
 
-def _call_vision_model(server_module: ModuleType, saved: list[dict[str, Any]], project: Any, requirement: str) -> dict[str, Any]:
+def _call_vision_model(server_module: Any, saved: list[dict[str, Any]], project: Any, requirement: str) -> dict[str, Any]:
     get_setting = getattr(server_module, "get_setting", None)
     if not callable(get_setting):
         raise server_module.HTTPException(status_code=500, detail="当前服务无法读取模型设置")
@@ -395,89 +393,3 @@ def _apply_style_to_project(project: Any, style: dict[str, Any]) -> dict[str, An
     return profile
 
 
-def _register(server_module: ModuleType) -> bool:
-    if getattr(server_module, PATCH_MARKER, False):
-        return True
-    required = ("app", "Project", "HTTPException", "Depends", "get_db", "File", "Form", "Image")
-    if not all(hasattr(server_module, name) for name in required):
-        return False
-    app = server_module.app
-
-    def get_reverse_style_prompt_settings() -> dict[str, Any]:
-        system_content, output_example = _read_reverse_style_prompts(server_module)
-        return {
-            "success": True,
-            "prompts": {
-                "system_content": system_content,
-                "output_example": output_example,
-                "full_prompt": compose_reverse_style_prompt(system_content, output_example),
-            },
-            "defaults": {
-                "system_content": DEFAULT_REVERSE_SYSTEM_CONTENT,
-                "output_example": DEFAULT_REVERSE_OUTPUT_EXAMPLE,
-            },
-        }
-
-    def update_reverse_style_prompt_settings(payload: dict[str, Any]) -> dict[str, Any]:
-        prompts = payload.get("prompts") if isinstance(payload.get("prompts"), dict) else payload
-        system_content = _safe_text(prompts.get("system_content"), 30000)
-        output_example = _safe_text(prompts.get("output_example"), 20000)
-        if not system_content or not output_example:
-            raise server_module.HTTPException(status_code=400, detail="图片风格反推的 System Content 和 Output Example 不能为空")
-        update_settings = getattr(server_module, "update_settings", None)
-        if not callable(update_settings):
-            raise server_module.HTTPException(status_code=500, detail="当前服务无法保存图片风格反推 Prompt")
-        update_settings({
-            REVERSE_SYSTEM_CONTENT_KEY: system_content,
-            REVERSE_OUTPUT_EXAMPLE_KEY: output_example,
-        })
-        return {
-            "success": True,
-            "prompts": {
-                "system_content": system_content,
-                "output_example": output_example,
-                "full_prompt": compose_reverse_style_prompt(system_content, output_example),
-            },
-        }
-
-    async def reverse_image_style(
-        project_id: str,
-        files: list[Any] = server_module.File(...),
-        requirement: str = server_module.Form(""),
-        apply: bool = server_module.Form(True),
-        db: Any = server_module.Depends(server_module.get_db),
-    ) -> dict[str, Any]:
-        project = db.query(server_module.Project).filter(server_module.Project.id == project_id).first()
-        if not project:
-            raise server_module.HTTPException(status_code=404, detail="项目不存在")
-        saved = _save_uploaded_references(server_module, project, files)
-        raw_style = _call_vision_model(server_module, saved, project, _safe_text(requirement, 4000))
-        style = _style_with_required_rules(raw_style, saved, _safe_text(requirement, 4000))
-        legacy_profile = _apply_style_to_project(project, style) if apply else None
-        try:
-            server_module.write_project_log(
-                project,
-                "legacy_image_style_reverse_engineered",
-                reference_count=len(saved),
-                applied=bool(apply),
-                style_name=style.get("style_name"),
-                preferred_route=f"/api/projects/{project_id}/steps/3/image-style/reverse",
-            )
-        except Exception:
-            pass
-        return {
-            "success": True,
-            "style": style,
-            "style_state": None,
-            "legacy_profile": legacy_profile,
-            "profile": legacy_profile,
-            "inputs": saved,
-            "deprecated_route": True,
-            "preferred_route": f"/api/projects/{project_id}/steps/3/image-style/reverse",
-        }
-
-    app.add_api_route("/api/settings/image-style-reverse", get_reverse_style_prompt_settings, methods=["GET"])
-    app.add_api_route("/api/settings/image-style-reverse", update_reverse_style_prompt_settings, methods=["PUT"])
-    app.add_api_route("/api/projects/{project_id}/project-profile/image-style/reverse", reverse_image_style, methods=["POST"])
-    setattr(server_module, PATCH_MARKER, True)
-    return True

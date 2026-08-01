@@ -15,18 +15,16 @@ keeps the user-facing workflow simple while preserving manual recovery paths.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import hashlib
 import json
 import os
-import shutil
 import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
-from types import ModuleType
-from typing import Any
+from typing import Any, Callable
 
-PATCH_MARKER = "__ppt_one_click_orchestrator_patch__"
 STATUS_FILENAME = "one_click_status.json"
 
 STAGES = [
@@ -51,6 +49,35 @@ DEFAULT_QUALITY_GATES = {
 
 _RUNNING_LOCK = threading.Lock()
 _RUNNING: dict[str, threading.Thread] = {}
+
+
+@dataclass(frozen=True)
+class OneClickDependencies:
+    session_factory: Callable[[], Any]
+    project_model: Any
+    get_setting: Callable[..., Any]
+    resolve_media_tool: Callable[[str], Any]
+    repo_root: Path
+    read_project_article_source: Callable[..., Any]
+    write_project_log: Callable[..., None]
+    pipeline_service_factory: Callable[[Any, str], Any]
+
+
+_DEPENDENCIES: OneClickDependencies | None = None
+
+
+def configure_one_click_dependencies(
+    dependencies: OneClickDependencies,
+) -> OneClickDependencies:
+    global _DEPENDENCIES
+    _DEPENDENCIES = dependencies
+    return dependencies
+
+
+def get_one_click_dependencies() -> OneClickDependencies:
+    if _DEPENDENCIES is None:
+        raise RuntimeError("One-click dependencies have not been configured")
+    return _DEPENDENCIES
 
 
 class QualityGateFailure(RuntimeError):
@@ -372,14 +399,12 @@ def _resume_status(project: Any, project_id: str, run_id: str, mode: str) -> tup
     return _initial_status(project_id, run_id), 0
 
 
-def _preflight_errors(server_module: ModuleType, project: Any) -> list[str]:
+def _preflight_errors(dependencies: OneClickDependencies, project: Any) -> list[str]:
     errors: list[str] = []
-    article_reader = getattr(server_module, "read_project_article_source", None)
-    if callable(article_reader):
-        try:
-            article_reader(project, required=False)
-        except Exception:
-            pass
+    try:
+        dependencies.read_project_article_source(project, required=False)
+    except Exception:
+        pass
     if not _has_article(project):
         errors.append("请先导入文章内容，或在创建项目时填写文章内容。")
     for key, label in (
@@ -387,17 +412,13 @@ def _preflight_errors(server_module: ModuleType, project: Any) -> list[str]:
         ("image_api_key", "图片生成 API Key"),
         ("tts_api_key", "TTS API Key"),
     ):
-        if not str(server_module.get_setting(key) or "").strip():
+        if not str(dependencies.get_setting(key) or "").strip():
             errors.append(f"未配置 {label}")
-    resolver = getattr(server_module, "resolve_media_tool", None)
     for tool_name in ("ffmpeg", "ffprobe"):
-        if callable(resolver):
-            available = bool(resolver(tool_name))
-        else:
-            available = bool(shutil.which(tool_name))
+        available = bool(dependencies.resolve_media_tool(tool_name))
         if not available:
             errors.append(f"未找到 {tool_name}")
-    remotion_dir = Path(getattr(server_module, "REPO_ROOT", Path(__file__).resolve().parent)) / "scripts" / "remotion"
+    remotion_dir = dependencies.repo_root / "scripts" / "remotion"
     if not (remotion_dir / "package.json").exists():
         errors.append("Remotion package.json 不存在")
     return errors
@@ -462,34 +483,30 @@ def _ai_mask_quality_errors(result: dict[str, Any], existing_mask_count: int = 0
     return errors
 
 
-def _session_factory(server_module: ModuleType) -> Any:
-    factory = getattr(server_module, "SessionLocal", None)
-    if factory is not None:
-        return factory
-    from database import SessionLocal
-    return SessionLocal
-
-
-def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str, mode: str = "resume") -> None:
-    db = _session_factory(server_module)()
+def _run_pipeline(
+    dependencies: OneClickDependencies,
+    project_id: str,
+    run_id: str,
+    mode: str = "resume",
+) -> None:
+    db = dependencies.session_factory()
     project = None
     try:
-        project = db.query(server_module.Project).filter(server_module.Project.id == project_id).first()
+        project_model = dependencies.project_model
+        project = db.query(project_model).filter(project_model.id == project_id).first()
         if not project:
             return
         status, start_index = _resume_status(project, project_id, run_id, mode)
         _save_status(project, status)
         gates = _quality_gates(project)
-        from pipeline_services import ProjectPipelineServices
-
-        services = ProjectPipelineServices(server_module, db, project_id)
+        services = dependencies.pipeline_service_factory(db, project_id)
 
         def should_run(stage_id: str) -> bool:
             return _stage_index(stage_id) >= start_index
 
         if should_run("preflight"):
             _start_stage(project, status, "preflight", "检查文章、凭据、媒体工具和项目目录")
-            preflight_errors = _preflight_errors(server_module, project)
+            preflight_errors = _preflight_errors(dependencies, project)
             if preflight_errors:
                 raise RuntimeError("预检查失败：" + "；".join(preflight_errors))
             _finish_stage(project, status, "preflight", "预检查通过")
@@ -636,7 +653,12 @@ def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str, mode:
             _finish_stage(project, status, "render", "视频渲染完成")
         _complete(project, status, video=video)
         try:
-            server_module.write_project_log(project, "one_click_generate_completed", run_id=run_id, video=video)
+            dependencies.write_project_log(
+                project,
+                "one_click_generate_completed",
+                run_id=run_id,
+                video=video,
+            )
         except Exception:
             pass
     except Exception as exc:
@@ -652,7 +674,13 @@ def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str, mode:
                     pause=getattr(exc, "pause", True),
                 )
                 event = "one_click_generate_paused" if getattr(exc, "pause", True) else "one_click_generate_failed"
-                server_module.write_project_log(project, event, run_id=run_id, stage=stage_id, error=str(exc))
+                dependencies.write_project_log(
+                    project,
+                    event,
+                    run_id=run_id,
+                    stage=stage_id,
+                    error=str(exc),
+                )
         except Exception:
             pass
     finally:
@@ -664,46 +692,48 @@ def _run_pipeline(server_module: ModuleType, project_id: str, run_id: str, mode:
             _RUNNING.pop(project_id, None)
 
 
-def _register(server_module: ModuleType) -> bool:
-    if getattr(server_module, PATCH_MARKER, False):
-        return True
-    required = ("app", "Project", "HTTPException", "Depends", "get_db")
-    if not all(hasattr(server_module, item) for item in required):
-        return False
-    app = server_module.app
-
-    def start_one_click(project_id: str, payload: dict[str, Any] | None = None, db: Any = server_module.Depends(server_module.get_db)) -> dict[str, Any]:
-        project = db.query(server_module.Project).filter(server_module.Project.id == project_id).first()
-        if not project:
-            raise server_module.HTTPException(status_code=404, detail="项目不存在")
-        with _RUNNING_LOCK:
-            thread = _RUNNING.get(project_id)
-            if thread and thread.is_alive():
-                return {"success": True, "already_running": True, "status": _status_for_project(project, project_id)}
-            mode = str((payload or {}).get("mode") or "resume").strip().lower()
-            if mode not in {"resume", "restart"}:
-                raise server_module.HTTPException(status_code=400, detail="mode 必须是 resume 或 restart")
-            run_id = uuid.uuid4().hex[:12]
-            status, _start_index = _resume_status(project, project_id, run_id, mode)
-            _save_status(project, status)
-            thread = threading.Thread(name=f"ppt-one-click-{project_id}-{run_id}", target=_run_pipeline, args=(server_module, project_id, run_id, mode), daemon=True)
-            _RUNNING[project_id] = thread
-            thread.start()
-        return {"success": True, "started": True, "status": status}
-
-    def get_one_click_status(project_id: str, db: Any = server_module.Depends(server_module.get_db)) -> dict[str, Any]:
-        project = db.query(server_module.Project).filter(server_module.Project.id == project_id).first()
-        if not project:
-            raise server_module.HTTPException(status_code=404, detail="项目不存在")
-        status = _status_for_project(project, project_id)
+def start_one_click(
+    project: Any,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    project_id = str(project.id)
+    dependencies = get_one_click_dependencies()
+    with _RUNNING_LOCK:
         thread = _RUNNING.get(project_id)
-        if status.get("status") == "running" and not (thread and thread.is_alive()):
-            status["status"] = "paused"
-            status["completed_at"] = status.get("completed_at") or _now()
-            _save_status(project, status)
-        return {"success": True, "status": status}
+        if thread and thread.is_alive():
+            return {
+                "success": True,
+                "already_running": True,
+                "status": _status_for_project(project, project_id),
+            }
+        mode = str((payload or {}).get("mode") or "resume").strip().lower()
+        if mode not in {"resume", "restart"}:
+            raise ValueError("mode 必须是 resume 或 restart")
+        run_id = uuid.uuid4().hex[:12]
+        status, _start_index = _resume_status(
+            project,
+            project_id,
+            run_id,
+            mode,
+        )
+        _save_status(project, status)
+        thread = threading.Thread(
+            name=f"ppt-one-click-{project_id}-{run_id}",
+            target=_run_pipeline,
+            args=(dependencies, project_id, run_id, mode),
+            daemon=True,
+        )
+        _RUNNING[project_id] = thread
+        thread.start()
+    return {"success": True, "started": True, "status": status}
 
-    app.add_api_route("/api/projects/{project_id}/one-click-generate", start_one_click, methods=["POST"])
-    app.add_api_route("/api/projects/{project_id}/one-click-generate/status", get_one_click_status, methods=["GET"])
-    setattr(server_module, PATCH_MARKER, True)
-    return True
+
+def get_one_click_status(project: Any) -> dict[str, Any]:
+    project_id = str(project.id)
+    status = _status_for_project(project, project_id)
+    thread = _RUNNING.get(project_id)
+    if status.get("status") == "running" and not (thread and thread.is_alive()):
+        status["status"] = "paused"
+        status["completed_at"] = status.get("completed_at") or _now()
+        _save_status(project, status)
+    return {"success": True, "status": status}

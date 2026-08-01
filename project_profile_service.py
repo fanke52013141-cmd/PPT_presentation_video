@@ -1,9 +1,7 @@
-"""Project Profile v1 runtime bridge.
+"""Project Profile AI image-style generation service.
 
-Exposes the AI image-style generation API without rewriting the existing large
-server.py. Project-profile templates and get/put routes are owned by
-runtime_project_profile_templates_override.py and
-runtime_project_profile_lightweight.py respectively.
+The explicit project-style router owns HTTP behavior; this module only builds,
+validates, and generates structured style profiles.
 """
 
 from __future__ import annotations
@@ -11,10 +9,8 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime
-from types import ModuleType
 from typing import Any
 
-PATCH_MARKER = "__ppt_project_profile_runtime_patch__"
 AI_IMAGE_STYLE_SOURCE = "ai_text_generated"
 AI_IMAGE_STYLE_SYSTEM_PROMPT = """<PromptVersion>image_style_text_generation_v2_minimal</PromptVersion>
 
@@ -188,7 +184,7 @@ def _clean_json_markdown(text: str) -> str:
     return value
 
 
-def _generate_image_style_with_llm(server_module: ModuleType, payload: dict[str, Any]) -> dict[str, Any]:
+def _generate_image_style_with_llm(server_module: Any, payload: dict[str, Any]) -> dict[str, Any]:
     requirement = _safe_text(payload.get("requirement") or payload.get("custom_requirement"), 4000)
     if not requirement:
         raise server_module.HTTPException(status_code=400, detail="请先输入图片风格需求")
@@ -229,18 +225,3 @@ def _generate_image_style_with_llm(server_module: ModuleType, payload: dict[str,
         raise server_module.HTTPException(status_code=500, detail=f"AI 生成图片风格失败: {exc}") from exc
 
 
-def _register(server_module: ModuleType) -> bool:
-    if getattr(server_module, PATCH_MARKER, False):
-        return True
-    required = ("app", "Project", "HTTPException", "Depends", "get_db")
-    if not all(hasattr(server_module, name) for name in required):
-        return False
-    app = server_module.app
-
-    def generate_image_style(payload: dict[str, Any]) -> dict[str, Any]:
-        style = _generate_image_style_with_llm(server_module, payload if isinstance(payload, dict) else {})
-        return {"success": True, "style": style}
-
-    app.add_api_route("/api/project-profile/image-style/generate", generate_image_style, methods=["POST"])
-    setattr(server_module, PATCH_MARKER, True)
-    return True

@@ -1,6 +1,7 @@
 import os
 import io
 import json
+from dataclasses import replace
 import subprocess
 import sys
 import tarfile
@@ -14,7 +15,8 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.media_tools import probe_media_duration_sec, resolve_media_tool
 from scripts.minimax_tts import build_segments_from_provider_timestamps, extract_minimax_bundle
-from server import rewrite_audio_timeline_by_beats
+import narration_audio_service as narration_audio
+import server  # noqa: F401
 
 
 with tempfile.TemporaryDirectory() as temp_dir:
@@ -96,8 +98,19 @@ with tempfile.TemporaryDirectory() as temp_dir:
         {"id": "beat_1", "spoken_text": "这是第一段内容。"},
         {"id": "beat_2", "spoken_text": "这是第二段内容。"},
     ]
-    with patch("server.probe_media_duration_sec", return_value=4.0):
-        rewrite_audio_timeline_by_beats(str(timeline_path), "slide_001", beats)
+    dependencies = narration_audio._deps()
+    with patch(
+        "narration_audio_service._dependencies",
+        replace(
+            dependencies,
+            probe_media_duration_sec=lambda *_args, **_kwargs: 4.0,
+        ),
+    ):
+        narration_audio.rewrite_audio_timeline_by_beats(
+            str(timeline_path),
+            "slide_001",
+            beats,
+        )
     rewritten = json.loads(timeline_path.read_text(encoding="utf-8"))
     assert [segment["beat_id"] for segment in rewritten["segments"]] == ["beat_1", "beat_2"]
     assert [segment["start"] for segment in rewritten["segments"]] == [0.0, 2.0]

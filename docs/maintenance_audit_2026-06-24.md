@@ -28,7 +28,9 @@ article.md
 -> Remotion MP4
 ```
 
-The main maintenance risk is that several production behaviors are still implemented through Python startup hooks rather than normal application source. Those hooks are valid short-term bridges, but they should not continue to accumulate responsibilities.
+Historical note: at the time of this audit, several production behaviors still
+used Python startup hooks. As of 2026-07-30, `sitecustomize.py` has been retired;
+remaining AI Mask and style compatibility modules are registered explicitly.
 
 ## Confirmed consistency fixes made in this audit PR
 

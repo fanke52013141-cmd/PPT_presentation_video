@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import server
+import article_service as article
 
 
 class FakeProject:
@@ -61,8 +62,8 @@ def test_step1_edit_invalidates_every_dependent_stage() -> None:
         project = FakeProject(run_dir)
         db = FakeDb(project)
 
-        response = server.update_step1_result(
-            project.id,
+        response = article.update_step1_result(
+            project,
             {"content": "updated article"},
             db,
         )
@@ -83,7 +84,11 @@ def test_step1_edit_invalidates_every_dependent_stage() -> None:
         project._statuses = {str(step): "completed" for step in range(1, 9)}
         (run_dir / "planning" / "audio_confirmed.json").write_text("{}", encoding="utf-8")
         (run_dir / "remotion_props.json").write_text("{}", encoding="utf-8")
-        server.update_step1_result(project.id, {"content": "updated article"}, db)
+        article.update_step1_result(
+            project,
+            {"content": "updated article"},
+            db,
+        )
         assert project.current_step == 8
         assert all(project.get_step_status(step) == "completed" for step in range(1, 9))
         assert (run_dir / "planning" / "audio_confirmed.json").exists()
@@ -102,7 +107,7 @@ def test_legacy_article_brief_is_migrated_once() -> None:
         )
         project = FakeProject(run_dir)
 
-        source = server.read_project_article_source(project)
+        source = article.read_project_article_source(project)
 
         assert source == {
             "title": project.name,

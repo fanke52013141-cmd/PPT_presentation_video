@@ -1,4 +1,4 @@
-"""Step 3 image style state override.
+"""Step 3 image-style state service.
 
 New image style state belongs to Step 3 and is stored in
 ``planning/step3_image_style.json``. Legacy Project Profile image style is still
@@ -11,10 +11,8 @@ import json
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
-PATCH_MARKER = "__ppt_step3_image_style_state_patch__"
 STATE_FILENAME = "step3_image_style.json"
 
 
@@ -116,30 +114,7 @@ def _save_reference_images_to_step3_state(project: Any, manifest: dict[str, Any]
     _write_json(_state_path(project), state)
 
 
-def _project_or_404(server_module: ModuleType, db: Any, project_id: str) -> Any:
-    project = db.query(server_module.Project).filter(server_module.Project.id == project_id).first()
-    if not project:
-        raise server_module.HTTPException(status_code=404, detail="项目不存在")
-    return project
-
-
-def _route_methods(route: Any) -> set[str]:
-    return set(getattr(route, "methods", []) or [])
-
-
-def _insert_before_existing(app: Any, path: str, methods: set[str], route: Any) -> None:
-    routes = getattr(getattr(app, "router", None), "routes", None)
-    if not isinstance(routes, list):
-        app.router.routes.append(route)
-        return
-    for index, existing in enumerate(routes):
-        if str(getattr(existing, "path", "")) == path and methods.intersection(_route_methods(existing)):
-            routes.insert(index, route)
-            return
-    routes.append(route)
-
-
-def _step3_style_prompt(project: Any, server_module: ModuleType, refs_impl: ModuleType) -> str:
+def _step3_style_prompt(project: Any, server_module: Any, refs_impl: Any) -> str:
     image_style = _step3_style(project)
     fallback = ""
     try:
@@ -177,87 +152,3 @@ def _step3_style_prompt(project: Any, server_module: ModuleType, refs_impl: Modu
     return "\n".join(lines)
 
 
-def _patch_reference_style_source(refs_impl: ModuleType) -> None:
-    if getattr(refs_impl, "__ppt_step3_style_source_patch__", False):
-        return
-    refs_impl._profile_image_style = _step3_style
-    refs_impl._profile_style_prompt = lambda project, server_module: _step3_style_prompt(project, server_module, refs_impl)
-    refs_impl._update_prompt_companion = _save_reference_images_to_step3_state
-    setattr(refs_impl, "__ppt_step3_style_source_patch__", True)
-
-
-def _register(server_module: ModuleType) -> bool:
-    if getattr(server_module, PATCH_MARKER, False):
-        return True
-    required = ("app", "Project", "HTTPException", "Depends", "get_db", "File", "Form")
-    if not all(hasattr(server_module, name) for name in required):
-        return False
-
-    try:
-        import runtime_image_style_reverse as reverse_impl
-        import runtime_project_style_references as refs_impl
-    except Exception:
-        return False
-
-    _patch_reference_style_source(refs_impl)
-
-    from fastapi.routing import APIRoute
-
-    app = server_module.app
-
-    def get_step3_style(project_id: str, db: Any = server_module.Depends(server_module.get_db)) -> dict[str, Any]:
-        project = _project_or_404(server_module, db, project_id)
-        state = _step3_style_state(project)
-        return {"success": True, "style_state": state, "style": _step3_style(project)}
-
-    def put_step3_style(project_id: str, payload: dict[str, Any], db: Any = server_module.Depends(server_module.get_db)) -> dict[str, Any]:
-        project = _project_or_404(server_module, db, project_id)
-        style = _manual_style_from_payload(payload if isinstance(payload, dict) else {}, _step3_style(project))
-        if not _safe_text(style.get("system_content"), 12000):
-            raise server_module.HTTPException(status_code=400, detail="图片生成 System Content 不能为空")
-        state = _save_step3_style(project, style, "manual_system_content")
-        try:
-            server_module.write_project_log(project, "step3_image_style_manual_saved", path=str(_state_path(project)))
-        except Exception:
-            pass
-        return {"success": True, "style": style, "style_state": state}
-
-    async def reverse_step3_style(
-        project_id: str,
-        files: list[Any] = server_module.File(...),
-        requirement: str = server_module.Form(""),
-        apply: bool = server_module.Form(True),
-        db: Any = server_module.Depends(server_module.get_db),
-    ) -> dict[str, Any]:
-        project = _project_or_404(server_module, db, project_id)
-        saved = reverse_impl._save_uploaded_references(server_module, project, files)
-        requirement_text = reverse_impl._safe_text(requirement, 4000)
-        raw_style = reverse_impl._call_vision_model(server_module, saved, project, requirement_text)
-        style = reverse_impl._style_with_required_rules(raw_style, saved, requirement_text)
-        state = _save_step3_style(project, style, "image_reverse_engineered") if apply else {}
-        try:
-            server_module.write_project_log(project, "step3_image_style_saved", style_name=style.get("style_name"), path=str(_state_path(project)))
-        except Exception:
-            pass
-        return {"success": True, "style": style, "style_state": state, "inputs": saved}
-
-    _insert_before_existing(
-        app,
-        "/api/projects/{project_id}/steps/3/image-style",
-        {"GET"},
-        APIRoute("/api/projects/{project_id}/steps/3/image-style", get_step3_style, methods=["GET"], name="get_step3_image_style_state"),
-    )
-    _insert_before_existing(
-        app,
-        "/api/projects/{project_id}/steps/3/image-style",
-        {"PUT"},
-        APIRoute("/api/projects/{project_id}/steps/3/image-style", put_step3_style, methods=["PUT"], name="put_step3_image_style_state"),
-    )
-    _insert_before_existing(
-        app,
-        "/api/projects/{project_id}/steps/3/image-style/reverse",
-        {"POST"},
-        APIRoute("/api/projects/{project_id}/steps/3/image-style/reverse", reverse_step3_style, methods=["POST"], name="reverse_step3_image_style_state"),
-    )
-    setattr(server_module, PATCH_MARKER, True)
-    return True

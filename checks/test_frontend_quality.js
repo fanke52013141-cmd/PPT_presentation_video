@@ -3,6 +3,7 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..');
 const app = fs.readFileSync(path.join(root, 'static', 'app.js'), 'utf8');
+const uiFoundation = fs.readFileSync(path.join(root, 'static', 'ui_foundation.js'), 'utf8');
 const apiClient = fs.readFileSync(path.join(root, 'static', 'api_client.js'), 'utf8');
 const artifactRepair = fs.readFileSync(path.join(root, 'static', 'artifact_repair.js'), 'utf8');
 const settings = fs.readFileSync(path.join(root, 'static', 'settings.js'), 'utf8');
@@ -31,6 +32,13 @@ const styleManager = fs.readFileSync(path.join(root, 'static', 'style_reference_
 const oneClick = fs.readFileSync(path.join(root, 'static', 'one_click_extension.js'), 'utf8');
 
 if (!css.includes('#toast-container')) throw new Error('toast container layout missing');
+for (const uiOwner of ['getToastPresentation', 'showToast', 'showCustomConfirm', 'escHtml', 'narrationDedupeKey', 'uniqueNarrationLines', 'autoResizeTextarea']) {
+  if (!uiFoundation.includes(`function ${uiOwner}(`)) throw new Error(`UI foundation is missing ${uiOwner}`);
+  if (app.includes(`function ${uiOwner}(`)) throw new Error(`UI foundation ownership returned to app.js: ${uiOwner}`);
+}
+if (!(html.indexOf('app.js') < html.indexOf('ui_foundation.js') && html.indexOf('ui_foundation.js') < html.indexOf('api_client.js'))) {
+  throw new Error('app shell, UI foundation, and API client script order is unsafe');
+}
 for (const apiOwner of ['const API =', "headers.set('X-PPT-Studio-Request'", 'window.API = API']) {
   if (!apiClient.includes(apiOwner)) throw new Error(`API client is missing ${apiOwner}`);
   if (app.includes(apiOwner)) throw new Error(`API client ownership returned to app.js: ${apiOwner}`);
@@ -641,7 +649,7 @@ if (!projectProfile.includes('ai_mode: aiMode')) {
 if (!workspaceNavigation.includes("document.getElementById('btn-toggle-ai-mode').style.display = 'none'")) {
   throw new Error('project AI mode control remains visible after returning to the project library');
 }
-if (!app.includes('narrationDedupeKey') || !app.includes('uniqueNarrationLines')) {
+if (!uiFoundation.includes('narrationDedupeKey') || !uiFoundation.includes('uniqueNarrationLines')) {
   throw new Error('frontend narration deduplication guard is missing');
 }
 

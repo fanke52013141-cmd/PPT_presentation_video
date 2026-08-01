@@ -40,6 +40,9 @@ The current product UI is the soft blue-purple "Soft Pastel Studio" interface, n
 
 - `static/app.js` remains the shared workflow shell while the legacy frontend is
   being split without changing the established UI or global handler contract.
+- `static/ui_foundation.js` owns Toast presentation, the shared confirmation
+  modal, HTML escaping, narration de-duplication, and textarea sizing. Load it
+  before transport and feature modules; keep these primitives out of `app.js`.
 - `static/api_client.js` owns the shared HTTP transport, request marker, response
   decoding, and error propagation. `static/artifact_repair.js` owns the
   project-scoped legacy-artifact repair prompt and retry guard. Keep both out of

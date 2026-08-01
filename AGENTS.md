@@ -132,6 +132,20 @@ article.md
 
 ## Automatic AI Mask Contract
 
+`ai_mask_component_detection.py` owns deterministic white-background flood
+fill, morphology, connected components, projection splitting, exact row-run RLE,
+and the detection cache. `ai_mask_engine.py` may re-export its public helpers for
+compatibility, but must not take component-detection implementations back.
+`ai_mask_contracts.py` owns cross-stage constants. `ai_mask_manifest_apply.py`
+owns exact Mask construction, manual-correction protection, review issue
+generation, and mutation of `reveal_manifest.json` groups. Keep those
+implementations out of `ai_mask_engine.py` as well.
+`ai_mask_assignment.py` owns fallback matching, model-result cleanup, title
+region consolidation, narrated-group anchoring, deterministic residual
+component completion, and semantic/coverage quality gates. The engine remains
+the prompt/config compatibility surface, multimodal request adapter, and
+project-level orchestrator.
+
 `scripts/build_reveal_scene.py` is the only production reveal builder.
 
 - Pipeline version: `exact_rle_mask_with_manual_corrections_v5`.

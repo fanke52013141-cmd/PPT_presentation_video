@@ -136,10 +136,55 @@ def test_runtime_registration_module_is_gone() -> None:
     assert "import ai_mask_semantic_matcher" not in profile_source
     assert "ai_mask_semantic_matcher" not in profile_source
     for filename in (
+        "ai_mask_assignment.py",
+        "ai_mask_component_detection.py",
+        "ai_mask_contracts.py",
         "ai_mask_engine.py",
+        "ai_mask_manifest_apply.py",
         "ai_mask_semantic_matcher.py",
         "ai_mask_service.py",
     ):
         source = (root / filename).read_text(encoding="utf-8")
         assert "server_module" not in source
         assert "import server" not in source
+
+    component_source = (root / "ai_mask_component_detection.py").read_text(
+        encoding="utf-8"
+    )
+    engine_source = (root / "ai_mask_engine.py").read_text(encoding="utf-8")
+    for owner in (
+        "detect_elements",
+        "_projection_split",
+        "_morph_dilate",
+        "_merge_row_runs",
+    ):
+        assert f"def {owner}(" in component_source
+        assert f"def {owner}(" not in engine_source
+    assert "from ai_mask_component_detection import (" in engine_source
+
+    manifest_source = (root / "ai_mask_manifest_apply.py").read_text(
+        encoding="utf-8"
+    )
+    for owner in (
+        "_exact_manual_mask",
+        "_replaceable_ai_mask",
+        "_review_issues",
+        "_apply",
+    ):
+        assert f"def {owner}(" in manifest_source
+        assert f"def {owner}(" not in engine_source
+    assert "from ai_mask_manifest_apply import (" in engine_source
+
+    assignment_source = (root / "ai_mask_assignment.py").read_text(
+        encoding="utf-8"
+    )
+    for owner in (
+        "_fallback_match",
+        "_clean_match",
+        "_consolidate_title_regions",
+        "_ensure_narrated_group_anchors",
+        "_complete_component_coverage",
+    ):
+        assert f"def {owner}(" in assignment_source
+        assert f"def {owner}(" not in engine_source
+    assert "from ai_mask_assignment import (" in engine_source

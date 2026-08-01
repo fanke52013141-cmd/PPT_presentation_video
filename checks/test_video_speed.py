@@ -85,8 +85,8 @@ with tempfile.TemporaryDirectory() as temp_dir:
     assert result["video"]["is_speed_variant"] is True
     assert result["video"]["playback_rate"] == 1.25
 
-app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
-assert "应用语速并生成 MP4" in app_js
-assert "generateStep8SpeedVideo" in app_js
+output_render_js = (ROOT / "static" / "output_render.js").read_text(encoding="utf-8")
+assert "应用语速并生成 MP4" in output_render_js
+assert "generateStep8SpeedVideo" in output_render_js
 
 print("video speed checks passed")

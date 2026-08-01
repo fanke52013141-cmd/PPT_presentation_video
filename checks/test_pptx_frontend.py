@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_output_workspace_exposes_pptx_controls_and_status() -> None:
     html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
-    script = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    script = (ROOT / "static" / "output_render.js").read_text(encoding="utf-8")
     flow = (ROOT / "static" / "flow.js").read_text(encoding="utf-8")
 
     assert 'id="step8-btn-pptx"' in html

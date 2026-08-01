@@ -86,6 +86,10 @@ The current product UI is the soft blue-purple "Soft Pastel Studio" interface, n
   TTS-markup normalization, editor autosave/flush, audio-status rendering, TTS
   generation, playback readiness, and audio confirmation. Keep these functions
   out of `app.js`.
+- `static/output_render.js` owns the visible output workspace: persistent PPTX
+  and video job polling/recovery, readiness and error presentation, artifact
+  lists/download/delete actions, render submission, and playback-speed variants.
+  Keep output task state and handlers out of `app.js`.
 - New extractions must preserve current DOM IDs and API paths, add an explicit
   script tag in `static/index.html`, and extend `checks/test_frontend_quality.js`
   with an ownership guard.

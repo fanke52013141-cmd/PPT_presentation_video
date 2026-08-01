@@ -14,6 +14,7 @@ const maskWorkspace = fs.readFileSync(path.join(root, 'static', 'mask_workspace.
 const maskEditor = fs.readFileSync(path.join(root, 'static', 'mask_editor.js'), 'utf8');
 const subtitleSettings = fs.readFileSync(path.join(root, 'static', 'subtitle_settings.js'), 'utf8');
 const narrationAudio = fs.readFileSync(path.join(root, 'static', 'narration_audio.js'), 'utf8');
+const outputRender = fs.readFileSync(path.join(root, 'static', 'output_render.js'), 'utf8');
 const step2Logic = `${app}\n${storyboard}\n${storyboardPrompts}`;
 const html = fs.readFileSync(path.join(root, 'static', 'index.html'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'static', 'style.css'), 'utf8');
@@ -270,6 +271,36 @@ for (const narrationFunction of [
   if (app.includes(`function ${narrationFunction}(`)) {
     throw new Error(`narration/audio implementation returned to app.js: ${narrationFunction}`);
   }
+}
+if (!html.includes('output_render.js')) throw new Error('output/render module is not loaded explicitly');
+for (const outputFunction of [
+  'updateStep8LoadingText',
+  'stopStep8RenderPolling',
+  'startStep8RenderPolling',
+  'loadStep8Data',
+  'runStep8Render',
+  'stopStep8PptxPolling',
+  'setStep8OutputError',
+  'updateStep8PptxLoading',
+  'startStep8PptxPolling',
+  'refreshStep8PptxReadiness',
+  'loadStep8PptxData',
+  'runStep8PptxExport',
+  'showStep8PptxResults',
+  'deleteStep8Pptx',
+  'showStep8VideoResult',
+  'generateStep8SpeedVideo',
+  'deleteStep8Video',
+]) {
+  if (!outputRender.includes(`function ${outputFunction}(`)) {
+    throw new Error(`output/render module is missing ${outputFunction}`);
+  }
+  if (app.includes(`function ${outputFunction}(`)) {
+    throw new Error(`output/render implementation returned to app.js: ${outputFunction}`);
+  }
+}
+for (const bridge of ['window.deleteStep8Video', 'window.deleteStep8Pptx']) {
+  if (!outputRender.includes(bridge)) throw new Error(`output/render bridge is missing: ${bridge}`);
 }
 const fullscreenStart = maskWorkspace.indexOf('function toggleStep5Fullscreen');
 const fullscreenEnd = maskWorkspace.indexOf('function uuid', fullscreenStart);

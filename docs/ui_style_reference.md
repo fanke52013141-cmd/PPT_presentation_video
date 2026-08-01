@@ -12,7 +12,7 @@ Use these files in this order when inspecting or modifying the application UI:
    - The earlier `Flat Outline UI` section is a legacy compatibility foundation for historical class names.
 2. `static/index.html`
    - Defines the static DOM, top navigation, sidebar, step panels, and modal containers.
-3. `static/app.js`
+3. `static/workflow_state.js` and feature-owned frontend modules
    - Defines dynamic UI behavior, generated cards, button states, Mask panel rendering, autosave states, and step transitions.
 4. `static/flow.js`
    - Defines the six user-visible workflow steps and their completion/unlock rules.

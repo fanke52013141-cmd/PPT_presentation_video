@@ -11,7 +11,7 @@ visual_settings_routes = (
 visual_settings_service = (
     ROOT / "visual_settings_service.py"
 ).read_text(encoding="utf-8")
-app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+app = (ROOT / "static" / "workflow_state.js").read_text(encoding="utf-8")
 html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
 background_ui = (ROOT / "static" / "storyboard_background_extension.js").read_text(encoding="utf-8")
 visual_prompts = (ROOT / "scripts" / "write_visual_prompts.py").read_text(encoding="utf-8")

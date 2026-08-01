@@ -248,7 +248,7 @@ def test_step3_actions_reserve_fixed_non_wrapping_slots():
 
 def test_builtin_prompts_and_mask_state_are_reset_per_project():
     html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
-    app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    app = (ROOT / "static" / "workflow_state.js").read_text(encoding="utf-8")
     storyboard = (ROOT / "static" / "storyboard.js").read_text(encoding="utf-8")
     storyboard_prompts = (ROOT / "static" / "storyboard_prompts.js").read_text(encoding="utf-8")
     mask_workspace = (ROOT / "static" / "mask_workspace.js").read_text(encoding="utf-8")

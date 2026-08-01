@@ -17,7 +17,7 @@ from scripts import write_visual_prompts
 
 
 html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
-app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+app = (ROOT / "static" / "workflow_state.js").read_text(encoding="utf-8")
 prompt_help = (ROOT / "static" / "prompt_help.js").read_text(encoding="utf-8")
 narration_audio = (ROOT / "static" / "narration_audio.js").read_text(encoding="utf-8")
 storyboard_prompts = (ROOT / "static" / "storyboard_prompts.js").read_text(encoding="utf-8")

@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
-const app = fs.readFileSync(path.join(root, 'static', 'app.js'), 'utf8');
+const app = fs.readFileSync(path.join(root, 'static', 'workflow_state.js'), 'utf8');
 const uiFoundation = fs.readFileSync(path.join(root, 'static', 'ui_foundation.js'), 'utf8');
 const apiClient = fs.readFileSync(path.join(root, 'static', 'api_client.js'), 'utf8');
 const artifactRepair = fs.readFileSync(path.join(root, 'static', 'artifact_repair.js'), 'utf8');
@@ -31,13 +31,19 @@ const background = fs.readFileSync(path.join(root, 'static', 'storyboard_backgro
 const styleManager = fs.readFileSync(path.join(root, 'static', 'style_reference_manager_extension.js'), 'utf8');
 const oneClick = fs.readFileSync(path.join(root, 'static', 'one_click_extension.js'), 'utf8');
 
+if (fs.existsSync(path.join(root, 'static', 'app.js')) || html.includes('app.js')) {
+  throw new Error('legacy app.js runtime entry was recreated');
+}
+for (const stateOwner of ['function createWorkflowState(', 'const state = createWorkflowState()', 'const PPTStudioRuntime =', 'runtime: PPTStudioRuntime']) {
+  if (!app.includes(stateOwner)) throw new Error(`workflow state entry is missing ${stateOwner}`);
+}
 if (!css.includes('#toast-container')) throw new Error('toast container layout missing');
 for (const uiOwner of ['getToastPresentation', 'showToast', 'showCustomConfirm', 'escHtml', 'narrationDedupeKey', 'uniqueNarrationLines', 'autoResizeTextarea']) {
   if (!uiFoundation.includes(`function ${uiOwner}(`)) throw new Error(`UI foundation is missing ${uiOwner}`);
   if (app.includes(`function ${uiOwner}(`)) throw new Error(`UI foundation ownership returned to app.js: ${uiOwner}`);
 }
-if (!(html.indexOf('app.js') < html.indexOf('ui_foundation.js') && html.indexOf('ui_foundation.js') < html.indexOf('api_client.js'))) {
-  throw new Error('app shell, UI foundation, and API client script order is unsafe');
+if (!(html.indexOf('workflow_state.js') < html.indexOf('ui_foundation.js') && html.indexOf('ui_foundation.js') < html.indexOf('api_client.js'))) {
+  throw new Error('workflow state, UI foundation, and API client script order is unsafe');
 }
 for (const apiOwner of ['const API =', "headers.set('X-PPT-Studio-Request'", 'window.API = API']) {
   if (!apiClient.includes(apiOwner)) throw new Error(`API client is missing ${apiOwner}`);
@@ -47,8 +53,8 @@ for (const repairOwner of ['artifactRepairPrompts', 'offerArtifactRepair']) {
   if (!artifactRepair.includes(repairOwner)) throw new Error(`artifact repair module is missing ${repairOwner}`);
   if (app.includes(repairOwner)) throw new Error(`artifact repair ownership returned to app.js: ${repairOwner}`);
 }
-if (!(html.indexOf('app.js') < html.indexOf('api_client.js') && html.indexOf('api_client.js') < html.indexOf('artifact_repair.js'))) {
-  throw new Error('app shell, API client, and artifact repair script order is unsafe');
+if (!(html.indexOf('workflow_state.js') < html.indexOf('api_client.js') && html.indexOf('api_client.js') < html.indexOf('artifact_repair.js'))) {
+  throw new Error('workflow state, API client, and artifact repair script order is unsafe');
 }
 if (!css.includes('left: 18px')) throw new Error('desktop toasts are not anchored inside the workflow rail');
 if (/\.toast\s*\{[^}]*position:\s*fixed/s.test(css)) throw new Error('individual toasts still overlap at a fixed position');

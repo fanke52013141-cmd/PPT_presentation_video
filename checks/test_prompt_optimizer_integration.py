@@ -258,7 +258,7 @@ def test_reference_image_prompt_has_no_fixed_group_count_or_duplicate_style() ->
 def test_skill_policy_and_prompt_editor_are_wired() -> None:
     skill = (ROOT / ".agents" / "skills" / "optimize-prompts" / "SKILL.md").read_text(encoding="utf-8")
     agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
-    app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    app = (ROOT / "static" / "workflow_state.js").read_text(encoding="utf-8")
     prompt_help = (ROOT / "static" / "prompt_help.js").read_text(encoding="utf-8")
     narration_audio = (ROOT / "static" / "narration_audio.js").read_text(encoding="utf-8")
     style_ui = (ROOT / "static" / "style_reference_manager_extension.js").read_text(encoding="utf-8")

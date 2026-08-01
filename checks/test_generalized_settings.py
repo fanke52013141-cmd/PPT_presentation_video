@@ -170,7 +170,7 @@ def main() -> None:
     assert merged["canvas"]["background"] == "#FFFFFF"
 
     html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
-    app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    app_js = (ROOT / "static" / "workflow_state.js").read_text(encoding="utf-8")
     event_bindings_js = (ROOT / "static" / "event_bindings.js").read_text(encoding="utf-8")
     mask_editor_js = (ROOT / "static" / "mask_editor.js").read_text(encoding="utf-8")
     css = (ROOT / "static" / "style.css").read_text(encoding="utf-8")

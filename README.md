@@ -137,7 +137,7 @@ pull request 到 `main` 时会运行 `.github/workflows/ci.yml` 中的低依赖�
 
 ```powershell
 python -m compileall -q server.py scripts checks
-node --check static\app.js
+node --check static\workflow_state.js
 node --check static\flow.js
 node checks\test_visible_flow.js
 python scripts\check_runtime_hotfixes.py
@@ -150,7 +150,7 @@ $env:PPT_STUDIO_MASK_SETTINGS_SECRETS = "1"; python scripts\check_runtime_settin
 
 ```powershell
 .\.venv\Scripts\python.exe -m compileall -q server.py article_service.py article_routes.py diagnostics_routes.py storyboard_background.py storyboard_service.py storyboard_routes.py mask_manifest_service.py mask_preview_service.py mask_editor_routes.py narration_service.py narration_routes.py tts_service.py tts_routes.py one_click_orchestrator.py one_click_routes.py pptx_export.py pptx_service.py pptx_routes.py video_contracts.py video_job_store.py video_artifact_service.py remotion_runner.py video_render_service.py video_routes.py ai_mask_config.py ai_mask_engine.py ai_mask_routes.py ai_mask_semantic_matcher.py ai_mask_service.py project_style_context.py project_style_routes.py project_profile_service.py project_profile_store.py project_style_reference_service.py project_style_reference_store.py project_style_template_service.py image_style_reverse_service.py step3_image_style_service.py database.py database_migrations.py invalidation_service.py reveal_manifest_service.py scripts checks
-node --check static\app.js
+node --check static\workflow_state.js
 node --check static\flow.js
 node checks\test_visible_flow.js
 node checks\test_frontend_quality.js

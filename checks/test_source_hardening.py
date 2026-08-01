@@ -40,7 +40,7 @@ def main() -> None:
     config_service = read_text("config_portability_service.py")
     provider_service = read_text("ai_provider_service.py")
     tts_provider_service = read_text("tts_provider_service.py")
-    app_js = read_text("static/app.js")
+    app_js = read_text("static/workflow_state.js")
     narration_audio_js = read_text("static/narration_audio.js")
     ci = read_text(".github/workflows/ci.yml")
 

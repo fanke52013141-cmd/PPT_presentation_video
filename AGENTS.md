@@ -38,47 +38,49 @@ The current product UI is the soft blue-purple "Soft Pastel Studio" interface, n
 
 ## Frontend Module Boundaries
 
-- `static/app.js` remains the shared workflow shell while the legacy frontend is
-  being split without changing the established UI or global handler contract.
+- `static/workflow_state.js` is the only shared workflow-state entry. It owns
+  flow imports, state construction, `projectFlowContext`, and the explicit
+  `window.PPTStudio.runtime` bridge. Do not recreate `static/app.js`.
 - `static/ui_foundation.js` owns Toast presentation, the shared confirmation
   modal, HTML escaping, narration de-duplication, and textarea sizing. Load it
-  before transport and feature modules; keep these primitives out of `app.js`.
+  before transport and feature modules; keep these primitives out of the shared
+  workflow-state entry.
 - `static/api_client.js` owns the shared HTTP transport, request marker, response
   decoding, and error propagation. `static/artifact_repair.js` owns the
   project-scoped legacy-artifact repair prompt and retry guard. Keep both out of
-  `app.js`, with the API client loaded before every feature module.
+  the workflow-state entry, with the API client loaded before every feature module.
 - `static/settings.js` owns LLM provider presets/detection, settings form
   synchronization, configuration package import/export, and LLM/image/TTS
   connection checks. Keep these functions and provider constants out of
-  `app.js`; the classic script order intentionally preserves existing inline
+  `workflow_state.js`; the classic script order intentionally preserves existing inline
   handlers and event registration.
 - `static/projects.js` owns project-library rendering, project creation, and
   deletion. Render user-provided names/descriptions through `escHtml` and bind
   card actions with event listeners instead of interpolated inline handlers.
 - `static/article.js` owns the visible Step 1 article workflow: source-mode
   switching, topic generation, manual import/editing, and article-generation
-  System Content. Keep Step 1 functions out of `app.js`; a saved article must
+  System Content. Keep Step 1 functions out of `workflow_state.js`; a saved article must
   restore the edit action when the project is reopened.
 - `static/storyboard.js` owns the visible Step 2 storyboard workflow: result
   loading, AI generation, manual slide editing, batch import/delete, visual and
   narration mapping, autosave, and contract persistence. Keep those functions
-  out of `app.js`.
+  out of `workflow_state.js`.
 - `static/storyboard_prompts.js` owns the Step 2 Prompt editor and reusable
   Prompt-template lifecycle: modal loading, full-Prompt preview composition,
   template selection/create/delete, and prompt persistence. Keep this workflow
-  out of both `app.js` and `storyboard.js`.
+  out of both `workflow_state.js` and `storyboard.js`.
 - `static/images.js` owns the visible Step 3 image workflow: image-state loading,
   grid and preview rendering, single/batch generation, single/batch upload,
   deletion, drag reassignment, candidate application, and Step 3 confirmation.
-  Keep these functions and their transient state out of `app.js`; Step 3 Prompt
+  Keep these functions and their transient state out of `workflow_state.js`; Step 3 Prompt
   settings and project image-style management remain separate concerns.
 - `static/image_prompts.js` owns Step 3 image-generation Prompt loading, full
   preview composition, editing, reset, and persistence. It also exposes the
   explicit `window.refreshStep3Prompts` bridge consumed by image-style changes.
-  Keep these functions out of both `app.js` and `images.js`.
+  Keep these functions out of both `workflow_state.js` and `images.js`.
 - `static/mask_reveal.js` owns Reveal animation presets, normalization, and
   project-wide propagation into Mask groups and semantic blocks. Keep these
-  constants and functions out of `app.js`; load it before the Mask workspace.
+  constants and functions out of `workflow_state.js`; load it before the Mask workspace.
 - `static/mask_workspace.js` owns the visible Step 5 Mask workspace shell:
   project-scoped state reset/loading, reveal and narration normalization, Slide
   navigation, workspace/semantic-card/narration rendering, fragment mapping,
@@ -88,21 +90,21 @@ The current product UI is the soft blue-purple "Soft Pastel Studio" interface, n
   eraser input, pointer/touch sampling, zoom, manual Mask rasterization, source/
   Mask/final previews, animation settings and preview, draft autosave/flush,
   semantic-block execution, final confirmation, and its explicit global bridges.
-  Keep these functions out of `app.js` and `mask_workspace.js`.
+  Keep these functions out of `workflow_state.js` and `mask_workspace.js`.
 - `static/subtitle_settings.js` owns subtitle form normalization, project font
   loading, live preview, reset, and persistence. Keep subtitle configuration out
-  of `app.js` and the narration/audio editor.
+  of `workflow_state.js` and the narration/audio editor.
 - `static/narration_audio.js` owns the visible narration-and-audio workspace:
   narration initialization/rendering, AI annotation Prompt and execution,
   TTS-markup normalization, editor autosave/flush, audio-status rendering, TTS
   generation, playback readiness, and audio confirmation. Keep these functions
-  out of `app.js`.
+  out of `workflow_state.js`.
 - `static/output_render.js` owns the visible output workspace: persistent PPTX
   and video job polling/recovery, readiness and error presentation, artifact
   lists/download/delete actions, render submission, and playback-speed variants.
-  Keep output task state and handlers out of `app.js`.
+  Keep output task state and handlers out of `workflow_state.js`.
 - `static/prompt_help.js` owns the shared Prompt input/output help catalog and
-  help modal. Keep help content and modal construction out of `app.js`.
+  help modal. Keep help content and modal construction out of `workflow_state.js`.
 - `static/workspace_navigation.js` owns project workspace entry/exit, AI-mode
   switching, stepper state refresh, visible-step navigation, and step data
   routing. It must load before extension scripts that wrap workspace navigation.
@@ -345,7 +347,7 @@ Run before publishing:
 
 ```powershell
 python -m compileall -q server.py runtime_support.py project_runtime_service.py repository_paths.py ai_provider_service.py tts_provider_service.py narration_audio_service.py visual_contract_service.py settings_service.py config_portability_service.py settings_routes.py article_service.py article_routes.py diagnostics_routes.py storyboard_background.py storyboard_service.py storyboard_routes.py global_image_style_service.py global_image_style_routes.py image_workflow_service.py image_workflow_routes.py visual_settings_service.py visual_settings_routes.py mask_manifest_service.py mask_preview_service.py mask_editor_routes.py narration_service.py narration_routes.py tts_service.py tts_routes.py one_click_orchestrator.py one_click_routes.py pptx_export.py pptx_service.py pptx_routes.py video_contracts.py video_job_store.py video_artifact_service.py remotion_runner.py video_render_service.py video_routes.py ai_mask_config.py ai_mask_engine.py ai_mask_routes.py ai_mask_semantic_matcher.py ai_mask_service.py project_style_context.py project_style_routes.py project_profile_service.py project_profile_store.py project_style_reference_service.py project_style_reference_store.py project_style_template_service.py image_style_reverse_service.py step3_image_style_service.py database.py database_migrations.py invalidation_service.py reveal_manifest_service.py scripts checks
-node --check static/app.js
+node --check static/workflow_state.js
 node --check static/flow.js
 node checks/test_visible_flow.js
 python -m pytest checks/test_database_migrations.py checks/test_invalidation_service.py -q

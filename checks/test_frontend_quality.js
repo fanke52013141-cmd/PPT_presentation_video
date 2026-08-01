@@ -15,6 +15,9 @@ const maskEditor = fs.readFileSync(path.join(root, 'static', 'mask_editor.js'), 
 const subtitleSettings = fs.readFileSync(path.join(root, 'static', 'subtitle_settings.js'), 'utf8');
 const narrationAudio = fs.readFileSync(path.join(root, 'static', 'narration_audio.js'), 'utf8');
 const outputRender = fs.readFileSync(path.join(root, 'static', 'output_render.js'), 'utf8');
+const promptHelp = fs.readFileSync(path.join(root, 'static', 'prompt_help.js'), 'utf8');
+const workspaceNavigation = fs.readFileSync(path.join(root, 'static', 'workspace_navigation.js'), 'utf8');
+const eventBindings = fs.readFileSync(path.join(root, 'static', 'event_bindings.js'), 'utf8');
 const step2Logic = `${app}\n${storyboard}\n${storyboardPrompts}`;
 const html = fs.readFileSync(path.join(root, 'static', 'index.html'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'static', 'style.css'), 'utf8');
@@ -302,6 +305,49 @@ for (const outputFunction of [
 for (const bridge of ['window.deleteStep8Video', 'window.deleteStep8Pptx']) {
   if (!outputRender.includes(bridge)) throw new Error(`output/render bridge is missing: ${bridge}`);
 }
+if (!html.includes('prompt_help.js')) throw new Error('Prompt help module is not loaded explicitly');
+for (const promptHelpFunction of ['ensurePromptIOHelpModal', 'openPromptIOHelp']) {
+  if (!promptHelp.includes(`function ${promptHelpFunction}(`)) {
+    throw new Error(`Prompt help module is missing ${promptHelpFunction}`);
+  }
+  if (app.includes(`function ${promptHelpFunction}(`)) {
+    throw new Error(`Prompt help implementation returned to app.js: ${promptHelpFunction}`);
+  }
+}
+if (!promptHelp.includes('window.openPromptIOHelp = openPromptIOHelp')) {
+  throw new Error('Prompt help global bridge is missing');
+}
+if (!html.includes('workspace_navigation.js')) throw new Error('workspace navigation module is not loaded explicitly');
+for (const navigationFunction of [
+  'enterWorkspace',
+  'exitWorkspace',
+  'applyProjectAiMode',
+  'toggleProjectAiMode',
+  'updateStepperUI',
+  'refreshCurrentProjectStatus',
+  'navigateToStep',
+  'loadStepData',
+]) {
+  if (!workspaceNavigation.includes(`function ${navigationFunction}(`)) {
+    throw new Error(`workspace navigation module is missing ${navigationFunction}`);
+  }
+  if (app.includes(`function ${navigationFunction}(`)) {
+    throw new Error(`workspace navigation implementation returned to app.js: ${navigationFunction}`);
+  }
+}
+if (!html.includes('event_bindings.js')) throw new Error('event bindings module is not loaded explicitly');
+if (!eventBindings.includes('function initGlobalEvents(') || !eventBindings.includes("document.addEventListener('DOMContentLoaded'")) {
+  throw new Error('shared DOM startup contract is missing');
+}
+if (app.includes('function initGlobalEvents(') || app.includes("document.addEventListener('DOMContentLoaded'")) {
+  throw new Error('DOM startup or event bindings returned to app.js');
+}
+const workspaceScriptIndex = html.indexOf('workspace_navigation.js');
+const eventScriptIndex = html.indexOf('event_bindings.js');
+const extensionScriptIndex = html.indexOf('project_profile_extension.js');
+if (!(workspaceScriptIndex > html.indexOf('output_render.js') && eventScriptIndex > workspaceScriptIndex && extensionScriptIndex > eventScriptIndex)) {
+  throw new Error('core workflow, navigation, event, and extension script order is unsafe');
+}
 const fullscreenStart = maskWorkspace.indexOf('function toggleStep5Fullscreen');
 const fullscreenEnd = maskWorkspace.indexOf('function uuid', fullscreenStart);
 const fullscreenImplementation = maskWorkspace.slice(fullscreenStart, fullscreenEnd);
@@ -539,7 +585,7 @@ if (!oneClick.includes('button-spinner')) throw new Error('one-click stage spinn
 if (!oneClick.includes('one-click-sidebar-entry') || !oneClick.includes('stepper.appendChild(entry)')) {
   throw new Error('one-click button is not anchored directly below the video step');
 }
-if (!app.includes("document.body.classList.add('workspace-open')") || !css.includes('body.workspace-open #toast-container')) {
+if (!workspaceNavigation.includes("document.body.classList.add('workspace-open')") || !css.includes('body.workspace-open #toast-container')) {
   throw new Error('workspace notifications can still overlap the sidebar action');
 }
 if (html.includes('sidebar-flow-title') || html.includes('sidebar-flow-mark')) {
@@ -563,7 +609,7 @@ if (!projectProfile.includes("const aiMode = profile.automation_mode === 'auto' 
 if (!projectProfile.includes('ai_mode: aiMode')) {
   throw new Error('project creation does not submit the selected AI mode');
 }
-if (!app.includes("document.getElementById('btn-toggle-ai-mode').style.display = 'none'")) {
+if (!workspaceNavigation.includes("document.getElementById('btn-toggle-ai-mode').style.display = 'none'")) {
   throw new Error('project AI mode control remains visible after returning to the project library');
 }
 if (!app.includes('narrationDedupeKey') || !app.includes('uniqueNarrationLines')) {

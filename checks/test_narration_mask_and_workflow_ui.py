@@ -253,6 +253,7 @@ def test_builtin_prompts_and_mask_state_are_reset_per_project():
     storyboard_prompts = (ROOT / "static" / "storyboard_prompts.js").read_text(encoding="utf-8")
     mask_workspace = (ROOT / "static" / "mask_workspace.js").read_text(encoding="utf-8")
     mask_editor = (ROOT / "static" / "mask_editor.js").read_text(encoding="utf-8")
+    workspace_navigation = (ROOT / "static" / "workspace_navigation.js").read_text(encoding="utf-8")
     css = (ROOT / "static" / "style.css").read_text(encoding="utf-8")
     style_manager = (ROOT / "static" / "style_reference_manager_extension.js").read_text(encoding="utf-8")
     assert "正在编辑：" not in html
@@ -260,7 +261,7 @@ def test_builtin_prompts_and_mask_state_are_reset_per_project():
     assert "setStep2GenerationStatus('');" in storyboard
     assert "#step-panel-2 .slides-thumbnail-container" in css
     assert "function resetStep5ProjectState()" in mask_workspace
-    assert "resetStep5ProjectState();" in app
+    assert "resetStep5ProjectState();" in workspace_navigation
     assert "let manifestProjectId = ''" in mask_workspace
     assert "manifestProjectId !== projectId" in mask_editor
     assert "renderStep2PromptTemplateOptions('');" in storyboard_prompts

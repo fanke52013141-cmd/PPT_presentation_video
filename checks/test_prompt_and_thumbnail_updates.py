@@ -18,6 +18,8 @@ from scripts import write_visual_prompts
 
 html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
 app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+prompt_help = (ROOT / "static" / "prompt_help.js").read_text(encoding="utf-8")
+narration_audio = (ROOT / "static" / "narration_audio.js").read_text(encoding="utf-8")
 storyboard_prompts = (ROOT / "static" / "storyboard_prompts.js").read_text(encoding="utf-8")
 images = (ROOT / "static" / "images.js").read_text(encoding="utf-8")
 image_prompts = (ROOT / "static" / "image_prompts.js").read_text(encoding="utf-8")
@@ -38,9 +40,9 @@ assert 'id="step3-image-input-preview"' in html
 assert 'id="step3-image-full-prompt"' in html
 assert 'data-prompt-help="step3-image"' in html
 assert 'data-prompt-help="narration-annotation"' in html
-assert "openStep6AnnotationPromptModal" in app
+assert "openStep6AnnotationPromptModal" in narration_audio
 assert "openStep3PromptSettingsModal" in image_prompts
-assert "PROMPT_IO_HELP" in app
+assert "PROMPT_IO_HELP" in prompt_help
 assert '<OutputExample>' in narration_service.compose_narration_annotation_prompt("system", "example")
 assert 'id="ai-mask-full-prompt"' in mask_ui
 full_mask_prompt = ai_mask_config.compose_ai_mask_full_prompt("method", "schema")

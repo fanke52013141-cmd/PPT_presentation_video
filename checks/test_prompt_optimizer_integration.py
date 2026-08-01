@@ -259,12 +259,13 @@ def test_skill_policy_and_prompt_editor_are_wired() -> None:
     skill = (ROOT / ".agents" / "skills" / "optimize-prompts" / "SKILL.md").read_text(encoding="utf-8")
     agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
     app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    prompt_help = (ROOT / "static" / "prompt_help.js").read_text(encoding="utf-8")
     narration_audio = (ROOT / "static" / "narration_audio.js").read_text(encoding="utf-8")
     style_ui = (ROOT / "static" / "style_reference_manager_extension.js").read_text(encoding="utf-8")
     scene_prompt = (ROOT / "templates" / "prompts" / "scene_reconstruction.prompt.md").read_text(encoding="utf-8")
     assert "输入最小且必要" in skill
     assert ".agents/skills/optimize-prompts/SKILL.md" in agents
-    assert "style-reverse" in app
+    assert "style-reverse" in prompt_help
     assert "btn-style-panel-reverse-prompt" in style_ui
     assert "/api/settings/image-style-reverse" in style_ui
     assert "/api/settings/image-style-reference-generation" in style_ui

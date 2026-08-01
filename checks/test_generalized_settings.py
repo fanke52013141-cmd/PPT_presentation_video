@@ -171,6 +171,7 @@ def main() -> None:
 
     html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
     app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    event_bindings_js = (ROOT / "static" / "event_bindings.js").read_text(encoding="utf-8")
     mask_editor_js = (ROOT / "static" / "mask_editor.js").read_text(encoding="utf-8")
     css = (ROOT / "static" / "style.css").read_text(encoding="utf-8")
     step2_visual_prompt = (ROOT / "templates" / "prompts" / "step2_visual_system.md").read_text(encoding="utf-8")
@@ -224,8 +225,8 @@ def main() -> None:
     assert "不输出副标题、`body_points`" in step2_visual_prompt
     assert "先按语义切分整页 `narration`" in step2_visual_prompt
     assert "Text/Picture" not in step2_visual_prompt or "visual_type" in step2_visual_prompt
-    assert "handleStep2MapEditorInput" in app_js
-    assert "handleStep2MapEditorChange" in app_js
+    assert "handleStep2MapEditorInput" in event_bindings_js
+    assert "handleStep2MapEditorChange" in event_bindings_js
     assert "画面文字 / 元素名称" not in app_js
     assert "绑定到" not in app_js
     assert global_style.IMAGE_STYLE_PROMPT_KEY == "prompt_system_content"

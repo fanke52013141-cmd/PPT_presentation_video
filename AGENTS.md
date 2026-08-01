@@ -90,6 +90,14 @@ The current product UI is the soft blue-purple "Soft Pastel Studio" interface, n
   and video job polling/recovery, readiness and error presentation, artifact
   lists/download/delete actions, render submission, and playback-speed variants.
   Keep output task state and handlers out of `app.js`.
+- `static/prompt_help.js` owns the shared Prompt input/output help catalog and
+  help modal. Keep help content and modal construction out of `app.js`.
+- `static/workspace_navigation.js` owns project workspace entry/exit, AI-mode
+  switching, stepper state refresh, visible-step navigation, and step data
+  routing. It must load before extension scripts that wrap workspace navigation.
+- `static/event_bindings.js` owns DOM startup and all page-level event binding.
+  It must load after every core workflow module, while its DOMContentLoaded
+  callback remains the only shared frontend boot entry.
 - New extractions must preserve current DOM IDs and API paths, add an explicit
   script tag in `static/index.html`, and extend `checks/test_frontend_quality.js`
   with an ownership guard.

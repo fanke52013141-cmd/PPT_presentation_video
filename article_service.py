@@ -82,6 +82,7 @@ class ArticleDependencies:
     parse_int_setting: Callable[..., int]
     is_timeout_exception: Callable[[BaseException], bool]
     write_project_log: Callable[..., Any]
+    begin_storyboard_after_article_import: Callable[..., Any]
     invalidate_after_upstream_edit: Callable[..., Any]
     llm_timeout_sec: float
 
@@ -337,7 +338,7 @@ def import_article(
     article_path = Path(article_source_path(project))
     article_path.parent.mkdir(parents=True, exist_ok=True)
     article_path.write_text(content, encoding="utf-8")
-    _deps().invalidate_after_upstream_edit(project, 1, db)
+    _deps().begin_storyboard_after_article_import(project, db)
     return {
         "success": True,
         "brief": read_project_article_source(project),

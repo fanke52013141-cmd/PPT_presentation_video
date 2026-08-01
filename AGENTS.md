@@ -47,6 +47,10 @@ The current product UI is the soft blue-purple "Soft Pastel Studio" interface, n
 - `static/projects.js` owns project-library rendering, project creation, and
   deletion. Render user-provided names/descriptions through `escHtml` and bind
   card actions with event listeners instead of interpolated inline handlers.
+- `static/article.js` owns the visible Step 1 article workflow: source-mode
+  switching, topic generation, manual import/editing, and article-generation
+  System Content. Keep Step 1 functions out of `app.js`; a saved article must
+  restore the edit action when the project is reopened.
 - New extractions must preserve current DOM IDs and API paths, add an explicit
   script tag in `static/index.html`, and extend `checks/test_frontend_quality.js`
   with an ownership guard.
@@ -196,7 +200,9 @@ The Python startup monkey patch has been retired. AI Mask is now source-owned:
 - `project_runtime_service.py` owns project-scoped logging and secret
   redaction, artifact locks, current-slide image completeness, Reveal Manifest
   synchronization, TTS artifact adapters, and commit-owning workflow
-  transitions. It must remain independent of FastAPI, database wiring, and the
+  transitions. Initial article import completes Step 1 and begins Step 2 in one
+  commit through `begin_storyboard_after_article_import`. It must remain
+  independent of FastAPI, database wiring, and the
   application module; `server.py` may re-export these helpers for compatibility
   but must not restore their implementations.
 - `repository_paths.py` is the only source of repository-root, runtime-data,

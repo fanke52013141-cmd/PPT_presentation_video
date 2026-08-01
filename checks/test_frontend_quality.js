@@ -5,6 +5,7 @@ const root = path.resolve(__dirname, '..');
 const app = fs.readFileSync(path.join(root, 'static', 'app.js'), 'utf8');
 const settings = fs.readFileSync(path.join(root, 'static', 'settings.js'), 'utf8');
 const projects = fs.readFileSync(path.join(root, 'static', 'projects.js'), 'utf8');
+const article = fs.readFileSync(path.join(root, 'static', 'article.js'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'static', 'index.html'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'static', 'style.css'), 'utf8');
 const aiMask = fs.readFileSync(path.join(root, 'static', 'ai_mask_extension.js'), 'utf8');
@@ -55,6 +56,29 @@ for (const projectFunction of ['loadProjects', 'createProject', 'deleteProject']
 if (projects.includes('onclick=')) throw new Error('project cards still use interpolated inline click handlers');
 if (!projects.includes('escHtml(project.name)') || !projects.includes("escHtml(project.description || '无项目描述')")) {
   throw new Error('project card user content is not HTML escaped');
+}
+if (!html.includes('article.js')) throw new Error('Step 1 article frontend module is not loaded explicitly');
+for (const articleFunction of [
+  'loadStep1Data',
+  'setStep1Mode',
+  'ensureArticleSystemContentModal',
+  'openArticleSystemContentModal',
+  'generateStep1Article',
+  'submitStep1',
+  'saveStep1Edit',
+]) {
+  if (!article.includes(`function ${articleFunction}(`)) {
+    throw new Error(`Step 1 article module is missing ${articleFunction}`);
+  }
+  if (app.includes(`function ${articleFunction}(`)) {
+    throw new Error(`Step 1 implementation returned to app.js: ${articleFunction}`);
+  }
+}
+if (!article.includes("saveEditButton.style.display = 'inline-flex'")) {
+  throw new Error('saved Step 1 articles do not restore the edit action');
+}
+if (!article.includes('await navigateToStep(2)') || article.includes('setTimeout(() =>')) {
+  throw new Error('Step 1 save still relies on an artificial navigation delay');
 }
 for (const requiredStep2Token of [
   'step2-btn-script-prompt',

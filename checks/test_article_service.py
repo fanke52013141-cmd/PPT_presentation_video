@@ -20,12 +20,16 @@ def _dependencies(
     client: Any = None,
     requests: list[dict[str, Any]] | None = None,
     logs: list[tuple[Any, ...]] | None = None,
+    article_imports: list[int] | None = None,
     invalidations: list[int] | None = None,
 ) -> service.ArticleDependencies:
     request_log = requests if requests is not None else []
     event_log = logs if logs is not None else []
     invalidation_log = (
         invalidations if invalidations is not None else []
+    )
+    article_import_log = (
+        article_imports if article_imports is not None else []
     )
 
     def get_client(**kwargs: Any) -> Any:
@@ -40,6 +44,9 @@ def _dependencies(
         is_timeout_exception=lambda exc: isinstance(exc, TimeoutError),
         write_project_log=lambda project, event, **fields: event_log.append(
             (project, event, fields)
+        ),
+        begin_storyboard_after_article_import=(
+            lambda _project, _db: article_import_log.append(2)
         ),
         invalidate_after_upstream_edit=(
             lambda _project, step, _db: invalidation_log.append(step)
@@ -181,11 +188,13 @@ def test_article_generation_preserves_runtime_prompt_contract(
 def test_article_import_and_edit_invalidate_only_on_change(
     tmp_path: Path,
 ) -> None:
+    article_imports: list[int] = []
     invalidations: list[int] = []
     original = service._dependencies
     service.configure_article_dependencies(
         _dependencies(
             settings={},
+            article_imports=article_imports,
             invalidations=invalidations,
         )
     )
@@ -216,7 +225,8 @@ def test_article_import_and_edit_invalidate_only_on_change(
     assert imported["brief"]["content"] == "# 初稿\n正文"
     assert unchanged["brief"]["content"] == "# 初稿\n正文"
     assert updated["brief"]["content"] == "# 修改稿\n新正文"
-    assert invalidations == [1, 1]
+    assert article_imports == [2]
+    assert invalidations == [1]
     assert (
         tmp_path / "inputs" / "article.md"
     ).read_text(encoding="utf-8") == "# 修改稿\n新正文"

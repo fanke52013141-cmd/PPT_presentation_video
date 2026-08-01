@@ -132,6 +132,7 @@ from runtime_support import (
 from project_runtime_service import (
     all_current_slide_images_exist,
     audio_confirmation_path,
+    begin_storyboard_after_article_import,
     clear_slide_visual_derivatives,
     ensure_slide_tts_text_file,
     handle_step_navigation,
@@ -557,6 +558,9 @@ try:
             parse_int_setting=parse_int_setting,
             is_timeout_exception=is_timeout_exception,
             write_project_log=write_project_log,
+            begin_storyboard_after_article_import=(
+                begin_storyboard_after_article_import
+            ),
             invalidate_after_upstream_edit=(
                 invalidate_after_upstream_edit
             ),

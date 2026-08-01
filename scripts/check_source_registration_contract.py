@@ -200,6 +200,7 @@ def main() -> None:
         "mark_step_retry_needed",
         "mark_step_in_progress",
         "handle_step_navigation",
+        "begin_storyboard_after_article_import",
         "invalidate_after_upstream_edit",
         "clear_slide_visual_derivatives",
         "mark_slide_image_changed",

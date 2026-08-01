@@ -246,6 +246,16 @@ def handle_step_navigation(
     db.commit()
 
 
+def begin_storyboard_after_article_import(
+    project: Any,
+    db: Any,
+) -> None:
+    """Complete Step 1 and make Step 2 the resumable active stage."""
+    invalidation_service.upstream_content_changed(project, 1)
+    invalidation_service.begin_stage(project, 2)
+    db.commit()
+
+
 def invalidate_after_upstream_edit(
     project: Any,
     source_step: int,

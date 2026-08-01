@@ -31,6 +31,7 @@ RUNTIME_FUNCTIONS = (
     "mark_step_retry_needed",
     "mark_step_in_progress",
     "handle_step_navigation",
+    "begin_storyboard_after_article_import",
     "invalidate_after_upstream_edit",
     "clear_slide_visual_derivatives",
     "mark_slide_image_changed",
@@ -212,14 +213,47 @@ def test_workflow_adapters_commit_once(
 
     runtime.mark_step_in_progress(project, 3, db)
     runtime.handle_step_navigation(project, 3, db)
+    runtime.begin_storyboard_after_article_import(project, db)
     runtime.invalidate_after_upstream_edit(project, 2, db)
     runtime.mark_slide_image_changed(project, "slide_001", db)
 
-    assert db.commits == 4
+    assert db.commits == 5
     assert calls == [
         ("begin", 3),
         ("complete", 3),
+        ("upstream", 1),
+        ("begin", 2),
         ("upstream", 2),
         ("image", "slide_001"),
         ("all_images", 1),
     ]
+
+
+def test_article_import_completes_step1_and_begins_step2_once(
+    tmp_path: Path,
+) -> None:
+    statuses = {str(step): "pending" for step in range(1, 9)}
+    project = SimpleNamespace(
+        run_dir=str(tmp_path),
+        current_step=1,
+        get_step_status=lambda: dict(statuses),
+    )
+
+    def set_step_status(next_statuses: dict[str, str]) -> None:
+        statuses.clear()
+        statuses.update(next_statuses)
+
+    project.set_step_status = set_step_status
+    db = SimpleNamespace(commits=0)
+    db.commit = lambda: setattr(db, "commits", db.commits + 1)
+
+    runtime.begin_storyboard_after_article_import(project, db)
+
+    assert project.current_step == 2
+    assert statuses["1"] == "completed"
+    assert statuses["2"] == "in_progress"
+    assert all(
+        statuses[str(step)] == "pending"
+        for step in range(3, 9)
+    )
+    assert db.commits == 1

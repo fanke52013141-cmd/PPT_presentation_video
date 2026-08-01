@@ -3,6 +3,8 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..');
 const app = fs.readFileSync(path.join(root, 'static', 'app.js'), 'utf8');
+const apiClient = fs.readFileSync(path.join(root, 'static', 'api_client.js'), 'utf8');
+const artifactRepair = fs.readFileSync(path.join(root, 'static', 'artifact_repair.js'), 'utf8');
 const settings = fs.readFileSync(path.join(root, 'static', 'settings.js'), 'utf8');
 const projects = fs.readFileSync(path.join(root, 'static', 'projects.js'), 'utf8');
 const article = fs.readFileSync(path.join(root, 'static', 'article.js'), 'utf8');
@@ -29,6 +31,17 @@ const styleManager = fs.readFileSync(path.join(root, 'static', 'style_reference_
 const oneClick = fs.readFileSync(path.join(root, 'static', 'one_click_extension.js'), 'utf8');
 
 if (!css.includes('#toast-container')) throw new Error('toast container layout missing');
+for (const apiOwner of ['const API =', "headers.set('X-PPT-Studio-Request'", 'window.API = API']) {
+  if (!apiClient.includes(apiOwner)) throw new Error(`API client is missing ${apiOwner}`);
+  if (app.includes(apiOwner)) throw new Error(`API client ownership returned to app.js: ${apiOwner}`);
+}
+for (const repairOwner of ['artifactRepairPrompts', 'offerArtifactRepair']) {
+  if (!artifactRepair.includes(repairOwner)) throw new Error(`artifact repair module is missing ${repairOwner}`);
+  if (app.includes(repairOwner)) throw new Error(`artifact repair ownership returned to app.js: ${repairOwner}`);
+}
+if (!(html.indexOf('app.js') < html.indexOf('api_client.js') && html.indexOf('api_client.js') < html.indexOf('artifact_repair.js'))) {
+  throw new Error('app shell, API client, and artifact repair script order is unsafe');
+}
 if (!css.includes('left: 18px')) throw new Error('desktop toasts are not anchored inside the workflow rail');
 if (/\.toast\s*\{[^}]*position:\s*fixed/s.test(css)) throw new Error('individual toasts still overlap at a fixed position');
 if (!/\.step3-card-header\s*\{[^}]*min-height:\s*42px/s.test(css)) throw new Error('image card header height is not stable');

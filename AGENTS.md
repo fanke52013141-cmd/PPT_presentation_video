@@ -40,6 +40,10 @@ The current product UI is the soft blue-purple "Soft Pastel Studio" interface, n
 
 - `static/app.js` remains the shared workflow shell while the legacy frontend is
   being split without changing the established UI or global handler contract.
+- `static/api_client.js` owns the shared HTTP transport, request marker, response
+  decoding, and error propagation. `static/artifact_repair.js` owns the
+  project-scoped legacy-artifact repair prompt and retry guard. Keep both out of
+  `app.js`, with the API client loaded before every feature module.
 - `static/settings.js` owns LLM provider presets/detection, settings form
   synchronization, configuration package import/export, and LLM/image/TTS
   connection checks. Keep these functions and provider constants out of

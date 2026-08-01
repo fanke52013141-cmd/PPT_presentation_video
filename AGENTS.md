@@ -54,8 +54,11 @@ The current product UI is the soft blue-purple "Soft Pastel Studio" interface, n
 - `static/storyboard.js` owns the visible Step 2 storyboard workflow: result
   loading, AI generation, manual slide editing, batch import/delete, visual and
   narration mapping, autosave, and contract persistence. Keep those functions
-  out of `app.js`; Prompt/template management remains in the shared shell until
-  it is extracted as a separate module.
+  out of `app.js`.
+- `static/storyboard_prompts.js` owns the Step 2 Prompt editor and reusable
+  Prompt-template lifecycle: modal loading, full-Prompt preview composition,
+  template selection/create/delete, and prompt persistence. Keep this workflow
+  out of both `app.js` and `storyboard.js`.
 - New extractions must preserve current DOM IDs and API paths, add an explicit
   script tag in `static/index.html`, and extend `checks/test_frontend_quality.js`
   with an ownership guard.

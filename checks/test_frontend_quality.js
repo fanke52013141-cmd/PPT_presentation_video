@@ -7,7 +7,8 @@ const settings = fs.readFileSync(path.join(root, 'static', 'settings.js'), 'utf8
 const projects = fs.readFileSync(path.join(root, 'static', 'projects.js'), 'utf8');
 const article = fs.readFileSync(path.join(root, 'static', 'article.js'), 'utf8');
 const storyboard = fs.readFileSync(path.join(root, 'static', 'storyboard.js'), 'utf8');
-const step2Logic = `${app}\n${storyboard}`;
+const storyboardPrompts = fs.readFileSync(path.join(root, 'static', 'storyboard_prompts.js'), 'utf8');
+const step2Logic = `${app}\n${storyboard}\n${storyboardPrompts}`;
 const html = fs.readFileSync(path.join(root, 'static', 'index.html'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'static', 'style.css'), 'utf8');
 const aiMask = fs.readFileSync(path.join(root, 'static', 'ai_mask_extension.js'), 'utf8');
@@ -97,6 +98,25 @@ for (const storyboardFunction of [
   }
   if (app.includes(`function ${storyboardFunction}(`)) {
     throw new Error(`Step 2 implementation returned to app.js: ${storyboardFunction}`);
+  }
+}
+if (!html.includes('storyboard_prompts.js')) throw new Error('Step 2 Prompt frontend module is not loaded explicitly');
+for (const promptFunction of [
+  'openStoryboardRulesModal',
+  'updateStep2FullPromptPreviews',
+  'renderStep2PromptEditor',
+  'renderStep2PromptTemplateOptions',
+  'loadSelectedStep2PromptTemplate',
+  'saveStep2PromptTemplate',
+  'deleteSelectedStep2PromptTemplate',
+  'saveStep2Prompts',
+  'closeStoryboardRulesModal',
+]) {
+  if (!storyboardPrompts.includes(`function ${promptFunction}(`)) {
+    throw new Error(`Step 2 Prompt module is missing ${promptFunction}`);
+  }
+  if (app.includes(`function ${promptFunction}(`) || storyboard.includes(`function ${promptFunction}(`)) {
+    throw new Error(`Step 2 Prompt implementation escaped its module: ${promptFunction}`);
   }
 }
 for (const requiredStep2Token of [

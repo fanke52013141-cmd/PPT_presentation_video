@@ -18,12 +18,13 @@ from scripts import write_visual_prompts
 
 html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
 app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+storyboard_prompts = (ROOT / "static" / "storyboard_prompts.js").read_text(encoding="utf-8")
 mask_ui = (ROOT / "static" / "ai_mask_extension.js").read_text(encoding="utf-8")
 css = (ROOT / "static" / "style.css").read_text(encoding="utf-8")
 
 assert 'id="step2-script-full-prompt"' in html
 assert 'id="step2-visual-full-prompt"' in html
-assert "updateStep2FullPromptPreviews" in app
+assert "updateStep2FullPromptPreviews" in storyboard_prompts
 assert '<OutputExample>' in server.compose_step2_system_prompt("system", "example")
 assert 'id="step6-btn-ai-prompt"' in html
 assert 'id="step6-ai-system-prompt"' in html

@@ -10,6 +10,7 @@ const storyboard = fs.readFileSync(path.join(root, 'static', 'storyboard.js'), '
 const storyboardPrompts = fs.readFileSync(path.join(root, 'static', 'storyboard_prompts.js'), 'utf8');
 const images = fs.readFileSync(path.join(root, 'static', 'images.js'), 'utf8');
 const imagePrompts = fs.readFileSync(path.join(root, 'static', 'image_prompts.js'), 'utf8');
+const maskReveal = fs.readFileSync(path.join(root, 'static', 'mask_reveal.js'), 'utf8');
 const maskWorkspace = fs.readFileSync(path.join(root, 'static', 'mask_workspace.js'), 'utf8');
 const maskEditor = fs.readFileSync(path.join(root, 'static', 'mask_editor.js'), 'utf8');
 const subtitleSettings = fs.readFileSync(path.join(root, 'static', 'subtitle_settings.js'), 'utf8');
@@ -442,16 +443,23 @@ if (!css.includes('.step3-generating-preview')) throw new Error('step 3 loading 
 if (!images.includes('await refreshStep3Images();')) throw new Error('step 3 does not wait for image state');
 if (!images.includes('confirmBtn.disabled = !allImagesReady')) throw new Error('step 3 confirmation is not gated');
 if (!maskEditor.includes('step5AutoSavePromise')) throw new Error('step 5 save serialization missing');
-if (!app.includes("raw.type || raw.value || 'crop_fade_up'")) {
+if (!maskReveal.includes("raw.type || raw.value || 'crop_fade_up'")) {
   throw new Error('mask animation preset values are not normalized correctly');
 }
-if (!app.includes('applyGlobalMaskReveal') || !maskEditor.includes('previewGlobalAnimationSettings')) {
+if (!maskReveal.includes('applyGlobalMaskReveal') || !maskEditor.includes('previewGlobalAnimationSettings')) {
   throw new Error('global Mask animation sync or preview is missing');
 }
 for (const animation of ['wipe_left_to_right', 'scratch_reveal', 'sticker_pop', 'stamp_in', 'paper_drop']) {
-  if (!app.includes(`value: '${animation}'`)) {
+  if (!maskReveal.includes(`value: '${animation}'`)) {
     throw new Error(`mask animation preset missing: ${animation}`);
   }
+}
+for (const revealOwner of ['MASK_ANIMATION_PRESETS', 'normalizeMaskReveal', 'applyGlobalMaskReveal', 'ensureGlobalMaskRevealDefault']) {
+  if (!maskReveal.includes(revealOwner)) throw new Error(`Mask Reveal module is missing ${revealOwner}`);
+  if (app.includes(revealOwner)) throw new Error(`Mask Reveal ownership returned to app.js: ${revealOwner}`);
+}
+if (!(html.indexOf('mask_reveal.js') < html.indexOf('mask_workspace.js'))) {
+  throw new Error('Mask Reveal module must load before the Mask workspace');
 }
 if (!html.includes('step5-btn-subtitle-settings') || !html.includes('modal-subtitle-settings')) {
   throw new Error('subtitle settings entry or modal is missing');

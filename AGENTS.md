@@ -69,6 +69,9 @@ The current product UI is the soft blue-purple "Soft Pastel Studio" interface, n
   preview composition, editing, reset, and persistence. It also exposes the
   explicit `window.refreshStep3Prompts` bridge consumed by image-style changes.
   Keep these functions out of both `app.js` and `images.js`.
+- `static/mask_reveal.js` owns Reveal animation presets, normalization, and
+  project-wide propagation into Mask groups and semantic blocks. Keep these
+  constants and functions out of `app.js`; load it before the Mask workspace.
 - `static/mask_workspace.js` owns the visible Step 5 Mask workspace shell:
   project-scoped state reset/loading, reveal and narration normalization, Slide
   navigation, workspace/semantic-card/narration rendering, fragment mapping,

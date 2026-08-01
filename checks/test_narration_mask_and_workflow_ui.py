@@ -236,9 +236,9 @@ def test_mask_size_cursor_and_outline_contracts():
 
 
 def test_step3_actions_reserve_fixed_non_wrapping_slots():
-    app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    images = (ROOT / "static" / "images.js").read_text(encoding="utf-8")
     css = (ROOT / "static" / "style.css").read_text(encoding="utf-8")
-    assert "step3-action-placeholder" in app
+    assert "step3-action-placeholder" in images
     assert "grid-template-columns: repeat(3, 54px)" in css
     assert "#step3-btn-batch-generate," in css
     assert ".step3-ai-action," in css

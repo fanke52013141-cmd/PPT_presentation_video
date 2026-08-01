@@ -8,6 +8,7 @@ const projects = fs.readFileSync(path.join(root, 'static', 'projects.js'), 'utf8
 const article = fs.readFileSync(path.join(root, 'static', 'article.js'), 'utf8');
 const storyboard = fs.readFileSync(path.join(root, 'static', 'storyboard.js'), 'utf8');
 const storyboardPrompts = fs.readFileSync(path.join(root, 'static', 'storyboard_prompts.js'), 'utf8');
+const images = fs.readFileSync(path.join(root, 'static', 'images.js'), 'utf8');
 const step2Logic = `${app}\n${storyboard}\n${storyboardPrompts}`;
 const html = fs.readFileSync(path.join(root, 'static', 'index.html'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'static', 'style.css'), 'utf8');
@@ -23,10 +24,10 @@ if (/\.toast\s*\{[^}]*position:\s*fixed/s.test(css)) throw new Error('individual
 if (!/\.step3-card-header\s*\{[^}]*min-height:\s*42px/s.test(css)) throw new Error('image card header height is not stable');
 if (!/\.step3-card-actions\s*\{[^}]*grid-template-columns:\s*48px 36px 36px/s.test(css)) throw new Error('image card action columns are not stable');
 if (!/\.step3-card-action[\s\S]*?white-space:\s*nowrap\s*!important/s.test(css)) throw new Error('image card actions can still wrap and jitter');
-if (!app.includes('step3-action-placeholder')) throw new Error('image card delete action does not reserve a stable slot');
-if (app.indexOf('step3-delete-action') > app.indexOf('step3-upload-action')) throw new Error('image card delete action must sit between AI generation and upload');
-if (!app.includes('step3UploadingSlides') || !app.includes("step3GeneratingPreviewHtml('上传中'")) throw new Error('per-card upload progress is missing');
-if (!background.includes('step3-btn-delete-all-images') || !app.includes('deleteAllStep3Images')) throw new Error('bulk image deletion control is missing');
+if (!images.includes('step3-action-placeholder')) throw new Error('image card delete action does not reserve a stable slot');
+if (images.indexOf('step3-delete-action') > images.indexOf('step3-upload-action')) throw new Error('image card delete action must sit between AI generation and upload');
+if (!images.includes('step3UploadingSlides') || !images.includes("step3GeneratingPreviewHtml('上传中'")) throw new Error('per-card upload progress is missing');
+if (!background.includes('step3-btn-delete-all-images') || !images.includes('deleteAllStep3Images')) throw new Error('bulk image deletion control is missing');
 if (html.includes('step3-image-order-hint')) throw new Error('obsolete fixed-position image hint is still visible');
 
 if (html.includes('config_effectiveness.js')) throw new Error('runtime patch script is still loaded');
@@ -119,6 +120,29 @@ for (const promptFunction of [
     throw new Error(`Step 2 Prompt implementation escaped its module: ${promptFunction}`);
   }
 }
+if (!html.includes('images.js')) throw new Error('Step 3 image frontend module is not loaded explicitly');
+for (const imageFunction of [
+  'loadStep3Data',
+  'refreshStep3Images',
+  'renderStep3Grid',
+  'reorderStep3Images',
+  'openStep3AI',
+  'uploadStep3ImageById',
+  'deleteStep3Image',
+  'deleteAllStep3Images',
+  'handleStep3BatchUpload',
+  'generateAllStep3Images',
+  'generateStep3Image',
+  'applyStep3Candidate',
+  'confirmStep3Images',
+]) {
+  if (!images.includes(`function ${imageFunction}(`)) {
+    throw new Error(`Step 3 image module is missing ${imageFunction}`);
+  }
+  if (app.includes(`function ${imageFunction}(`)) {
+    throw new Error(`Step 3 image implementation returned to app.js: ${imageFunction}`);
+  }
+}
 for (const requiredStep2Token of [
   'step2-btn-script-prompt',
   'step2-btn-visual-prompt',
@@ -184,17 +208,17 @@ if (!css.includes('.storyboard-bg-preview') || !css.includes('aspect-ratio:16 / 
 if (!app.includes('hexToRgba(color, isSelected ? 0.68 : 0.55)')) {
   throw new Error('mask overlay colors are too faint');
 }
-if (!app.includes('generateAllStep3Images')) throw new Error('step 3 batch generation handler missing');
-if (!app.includes('step3GeneratingSlides')) throw new Error('step 3 per-slide generation state missing');
-if (!app.includes('tasks.forEach(task => step3GeneratingSlides.add(task.slideId))')) {
+if (!images.includes('generateAllStep3Images')) throw new Error('step 3 batch generation handler missing');
+if (!images.includes('step3GeneratingSlides')) throw new Error('step 3 per-slide generation state missing');
+if (!images.includes('tasks.forEach(task => step3GeneratingSlides.add(task.slideId))')) {
   throw new Error('batch generation does not switch all cards to loading immediately');
 }
-if (!app.includes("document.getElementById('step3-preview-box').innerHTML = step3GeneratingPreviewHtml()")) {
+if (!images.includes("document.getElementById('step3-preview-box').innerHTML = step3GeneratingPreviewHtml()")) {
   throw new Error('single image generation does not show loading in the preview pane');
 }
 if (!css.includes('.step3-generating-preview')) throw new Error('step 3 loading preview style missing');
-if (!app.includes('await refreshStep3Images();')) throw new Error('step 3 does not wait for image state');
-if (!app.includes('confirmBtn.disabled = !allImagesReady')) throw new Error('step 3 confirmation is not gated');
+if (!images.includes('await refreshStep3Images();')) throw new Error('step 3 does not wait for image state');
+if (!images.includes('confirmBtn.disabled = !allImagesReady')) throw new Error('step 3 confirmation is not gated');
 if (!app.includes('step5AutoSavePromise')) throw new Error('step 5 save serialization missing');
 if (!app.includes("raw.type || raw.value || 'crop_fade_up'")) {
   throw new Error('mask animation preset values are not normalized correctly');

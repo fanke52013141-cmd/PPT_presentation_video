@@ -59,6 +59,11 @@ The current product UI is the soft blue-purple "Soft Pastel Studio" interface, n
   Prompt-template lifecycle: modal loading, full-Prompt preview composition,
   template selection/create/delete, and prompt persistence. Keep this workflow
   out of both `app.js` and `storyboard.js`.
+- `static/images.js` owns the visible Step 3 image workflow: image-state loading,
+  grid and preview rendering, single/batch generation, single/batch upload,
+  deletion, drag reassignment, candidate application, and Step 3 confirmation.
+  Keep these functions and their transient state out of `app.js`; Step 3 Prompt
+  settings and project image-style management remain separate concerns.
 - New extractions must preserve current DOM IDs and API paths, add an explicit
   script tag in `static/index.html`, and extend `checks/test_frontend_quality.js`
   with an ownership guard.

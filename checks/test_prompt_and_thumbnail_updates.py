@@ -19,6 +19,7 @@ from scripts import write_visual_prompts
 html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
 app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
 storyboard_prompts = (ROOT / "static" / "storyboard_prompts.js").read_text(encoding="utf-8")
+images = (ROOT / "static" / "images.js").read_text(encoding="utf-8")
 mask_ui = (ROOT / "static" / "ai_mask_extension.js").read_text(encoding="utf-8")
 css = (ROOT / "static" / "style.css").read_text(encoding="utf-8")
 
@@ -126,7 +127,7 @@ assert "First title" in batch_prompt and "Second title" in batch_prompt
 assert "element_id" not in batch_prompt
 assert "must not enter image input" not in batch_prompt
 assert batch_prompt.count("<NonOverridableProductionRules>") == 1
-assert "step3BatchPrompt" in app
+assert "step3BatchPrompt" in images
 
 minimal_input = image_workflow.step3_slide_input_payload(sample_slides[0])
 assert minimal_input == {

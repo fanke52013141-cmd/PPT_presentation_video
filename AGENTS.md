@@ -68,6 +68,12 @@ The current product UI is the soft blue-purple "Soft Pastel Studio" interface, n
   preview composition, editing, reset, and persistence. It also exposes the
   explicit `window.refreshStep3Prompts` bridge consumed by image-style changes.
   Keep these functions out of both `app.js` and `images.js`.
+- `static/mask_workspace.js` owns the visible Step 5 Mask workspace shell:
+  project-scoped state reset/loading, reveal and narration normalization, Slide
+  navigation, workspace/semantic-card/narration rendering, fragment mapping,
+  selection, review focus, and the explicit workspace bridges consumed by the
+  AI Mask extension. Canvas painting, raster preview, animation preview, and
+  draft persistence remain separate until their own extraction.
 - New extractions must preserve current DOM IDs and API paths, add an explicit
   script tag in `static/index.html`, and extend `checks/test_frontend_quality.js`
   with an ownership guard.

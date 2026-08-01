@@ -10,6 +10,7 @@ const storyboard = fs.readFileSync(path.join(root, 'static', 'storyboard.js'), '
 const storyboardPrompts = fs.readFileSync(path.join(root, 'static', 'storyboard_prompts.js'), 'utf8');
 const images = fs.readFileSync(path.join(root, 'static', 'images.js'), 'utf8');
 const imagePrompts = fs.readFileSync(path.join(root, 'static', 'image_prompts.js'), 'utf8');
+const maskWorkspace = fs.readFileSync(path.join(root, 'static', 'mask_workspace.js'), 'utf8');
 const step2Logic = `${app}\n${storyboard}\n${storyboardPrompts}`;
 const html = fs.readFileSync(path.join(root, 'static', 'index.html'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'static', 'style.css'), 'utf8');
@@ -164,6 +165,40 @@ for (const imagePromptFunction of [
 if (!imagePrompts.includes('window.refreshStep3Prompts = refreshStep3Prompts')) {
   throw new Error('Step 3 image Prompt refresh bridge is missing');
 }
+if (!html.includes('mask_workspace.js')) throw new Error('Step 5 Mask workspace module is not loaded explicitly');
+for (const maskWorkspaceFunction of [
+  'resetStep5ProjectState',
+  'loadStep5Data',
+  'normalizeManifestNarrationFragments',
+  'getSlideMaskBoxes',
+  'renderStep5Workspace',
+  'switchStep5Slide',
+  'toggleStep5Fullscreen',
+  'renderStep5BoxesForm',
+  'renderStep5NarrationPanel',
+  'toggleStep5FragmentLink',
+  'selectStep5MaskBox',
+  'focusAiMaskIssue',
+]) {
+  if (!maskWorkspace.includes(`function ${maskWorkspaceFunction}(`)) {
+    throw new Error(`Step 5 Mask workspace module is missing ${maskWorkspaceFunction}`);
+  }
+  if (app.includes(`function ${maskWorkspaceFunction}(`)) {
+    throw new Error(`Step 5 Mask workspace implementation returned to app.js: ${maskWorkspaceFunction}`);
+  }
+}
+for (const bridge of ['window.loadStep5Data', 'window.renderStep5Workspace', 'window.focusAiMaskIssue', 'window.getCurrentStep5SlideId']) {
+  if (!maskWorkspace.includes(bridge)) throw new Error(`Step 5 Mask workspace bridge is missing: ${bridge}`);
+}
+const fullscreenStart = maskWorkspace.indexOf('function toggleStep5Fullscreen');
+const fullscreenEnd = maskWorkspace.indexOf('function uuid', fullscreenStart);
+const fullscreenImplementation = maskWorkspace.slice(fullscreenStart, fullscreenEnd);
+if (!fullscreenImplementation.includes("fullscreenLabel.textContent = state.canvasState.maskFullscreen ? '退出全屏' : '放大标注'")) {
+  throw new Error('Step 5 fullscreen toggle does not update its label directly');
+}
+if (fullscreenImplementation.includes('renderStep5Workspace')) {
+  throw new Error('Step 5 fullscreen toggle still reloads unsaved workspace state');
+}
 for (const requiredStep2Token of [
   'step2-btn-script-prompt',
   'step2-btn-visual-prompt',
@@ -276,7 +311,7 @@ for (const removedImageStyleToken of [
     throw new Error(`legacy image style editor still present: ${removedImageStyleToken}`);
   }
 }
-if (!app.includes('visual_description') || !css.includes('.mask-visual-card')) {
+if (!maskWorkspace.includes('visual_description') || !css.includes('.mask-visual-card')) {
   throw new Error('Mask semantic visual description display is missing');
 }
 for (const removedNarrationPolicyToken of [
@@ -310,7 +345,7 @@ if (!app.includes('getCoalescedEvents') || !app.includes('scheduleLiveMaskRedraw
 if (!app.includes('const MASK_PREVIEW_OUTLINE_PX = 5') || !app.includes('buildMaskDisplayLayer')) {
   throw new Error('same-color 5px Mask preview outline is missing');
 }
-if (!app.includes('claimUniqueMaskColor') || !app.includes('idx + offset')) {
+if (!maskWorkspace.includes('claimUniqueMaskColor') || !maskWorkspace.includes('idx + offset')) {
   throw new Error('Mask color collision handling must search for an unused palette color');
 }
 if (!css.includes('.step3-toolbar-row::before') || !css.includes('backdrop-filter: saturate(135%) blur(24px)') || !css.includes('mask-image: linear-gradient(')) {
@@ -334,7 +369,7 @@ for (const reviewToken of ['ai-mask-review-panel', 'focusReviewIssue', 'quality_
 for (const previewToken of ['data-preview-mode="source"', 'data-preview-mode="mask"', 'data-preview-mode="final"', 'buildExactPreview']) {
   if (!aiMask.includes(previewToken)) throw new Error(`production Mask preview control missing: ${previewToken}`);
 }
-if (!app.includes('setStep5MaskPreviewMode') || !app.includes('focusAiMaskIssue')) {
+if (!app.includes('setStep5MaskPreviewMode') || !maskWorkspace.includes('focusAiMaskIssue')) {
   throw new Error('Mask preview or issue focus bridge missing');
 }
 if (!app.includes('rebuildStep5SourceCache')) throw new Error('source image cache missing');
@@ -368,7 +403,7 @@ for (const token of ['step1-mode-article', 'step1-mode-topic', 'step1-btn-genera
 for (const label of ['文章➡️slides', 'slides➡️可视化']) {
   if (!html.includes(label)) throw new Error(`Step 2 button label missing: ${label}`);
 }
-if (!app.includes("rle.encoding === 'row_runs_v1'") || !app.includes('exactRuns.forEach')) {
+if (!maskWorkspace.includes("rle.encoding === 'row_runs_v1'") || !app.includes('exactRuns.forEach')) {
   throw new Error('exact RLE Mask preview support missing');
 }
 if (html.includes('请在下方粘贴您的 Markdown 格式文章')) throw new Error('obsolete Step 1 top hint is still present');

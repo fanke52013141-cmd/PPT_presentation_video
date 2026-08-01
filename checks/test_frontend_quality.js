@@ -6,6 +6,8 @@ const app = fs.readFileSync(path.join(root, 'static', 'app.js'), 'utf8');
 const settings = fs.readFileSync(path.join(root, 'static', 'settings.js'), 'utf8');
 const projects = fs.readFileSync(path.join(root, 'static', 'projects.js'), 'utf8');
 const article = fs.readFileSync(path.join(root, 'static', 'article.js'), 'utf8');
+const storyboard = fs.readFileSync(path.join(root, 'static', 'storyboard.js'), 'utf8');
+const step2Logic = `${app}\n${storyboard}`;
 const html = fs.readFileSync(path.join(root, 'static', 'index.html'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'static', 'style.css'), 'utf8');
 const aiMask = fs.readFileSync(path.join(root, 'static', 'ai_mask_extension.js'), 'utf8');
@@ -80,6 +82,23 @@ if (!article.includes("saveEditButton.style.display = 'inline-flex'")) {
 if (!article.includes('await navigateToStep(2)') || article.includes('setTimeout(() =>')) {
   throw new Error('Step 1 save still relies on an artificial navigation delay');
 }
+if (!html.includes('storyboard.js')) throw new Error('Step 2 storyboard frontend module is not loaded explicitly');
+for (const storyboardFunction of [
+  'loadStep2Data',
+  'addManualSlide',
+  'submitStep2BatchImport',
+  'generateStep2Contract',
+  'renderStep2Workspace',
+  'handleStep2MapEditorInput',
+  'saveStep2Contract',
+]) {
+  if (!storyboard.includes(`function ${storyboardFunction}(`)) {
+    throw new Error(`Step 2 storyboard module is missing ${storyboardFunction}`);
+  }
+  if (app.includes(`function ${storyboardFunction}(`)) {
+    throw new Error(`Step 2 implementation returned to app.js: ${storyboardFunction}`);
+  }
+}
 for (const requiredStep2Token of [
   'step2-btn-script-prompt',
   'step2-btn-visual-prompt',
@@ -111,11 +130,11 @@ for (const removedStep2Token of [
   'step2-slide-subtitle-input',
   'step2-subtitle-field',
 ]) {
-  if (app.includes(removedStep2Token) || html.includes(removedStep2Token) || css.includes(removedStep2Token)) {
+  if (step2Logic.includes(removedStep2Token) || html.includes(removedStep2Token) || css.includes(removedStep2Token)) {
     throw new Error(`legacy Step 2 editor still present: ${removedStep2Token}`);
   }
 }
-if (app.includes("group.id === 'body_group_02'")) {
+if (step2Logic.includes("group.id === 'body_group_02'")) {
   throw new Error('legacy hard-coded visual group filtering is still present');
 }
 if (!html.includes('step3-btn-batch-generate')) throw new Error('step 3 batch image generation action missing');
@@ -127,14 +146,14 @@ if (!background.includes('铺满画面') || !background.includes('完整显示')
 for (const backgroundMode of ['data-mode-card="image"', 'data-mode-card="solid"', '16:9 预览']) {
   if (!background.includes(backgroundMode)) throw new Error(`final background modal contract missing: ${backgroundMode}`);
 }
-if (!app.includes('handleStep2MapEditorInput') || !app.includes('handleStep2MapEditorChange')) {
+if (!storyboard.includes('handleStep2MapEditorInput') || !storyboard.includes('handleStep2MapEditorChange')) {
   throw new Error('Step 2 visual/narration mapping is not editable');
 }
 if (!html.includes('step2-slide-narration-input') || !html.includes('aria-describedby="step2-narration-source-hint"')) {
   throw new Error('Step 2 full narration editor is missing');
 }
 for (const confusingMappingToken of ['画面文字 / 元素名称', '对应旁白与绑定关系', '<span>绑定到</span>']) {
-  if (app.includes(confusingMappingToken)) throw new Error(`Step 2 still exposes internal mapping control: ${confusingMappingToken}`);
+  if (step2Logic.includes(confusingMappingToken)) throw new Error(`Step 2 still exposes internal mapping control: ${confusingMappingToken}`);
 }
 if (!css.includes('grid-column: 3 / 5') || !css.includes('grid-row: 2')) {
   throw new Error('stale step status is not positioned below the step label');
@@ -204,7 +223,7 @@ for (const removedNarrationPolicyToken of [
   '仅画面展示',
   '旁白策略',
 ]) {
-  if (app.includes(removedNarrationPolicyToken) || html.includes(removedNarrationPolicyToken)) {
+  if (step2Logic.includes(removedNarrationPolicyToken) || html.includes(removedNarrationPolicyToken)) {
     throw new Error(`legacy narration policy UI still present: ${removedNarrationPolicyToken}`);
   }
 }
@@ -319,7 +338,7 @@ if (!html.includes('step-complete') || !css.includes('.sidebar .step-icon svg'))
 if (!css.includes('left: 30.875px') || !css.includes('repeating-linear-gradient') || !css.includes('height: calc((64px + 0.35rem) * 5)')) {
   throw new Error('workflow rail connector is not centered, dashed, and bounded to six steps');
 }
-if (!html.includes('step2-generation-status') || !app.includes('setStep2GenerationStatus') || app.includes('// 捕获报错')) {
+if (!html.includes('step2-generation-status') || !storyboard.includes('setStep2GenerationStatus') || storyboard.includes('// 捕获报错')) {
   throw new Error('Step 2 failure is still swallowed without persistent feedback');
 }
 if (!css.includes('#step6-btn-audio-confirm-next:disabled') || !css.includes('#step8-btn-render:disabled')) {

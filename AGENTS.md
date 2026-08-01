@@ -51,6 +51,11 @@ The current product UI is the soft blue-purple "Soft Pastel Studio" interface, n
   switching, topic generation, manual import/editing, and article-generation
   System Content. Keep Step 1 functions out of `app.js`; a saved article must
   restore the edit action when the project is reopened.
+- `static/storyboard.js` owns the visible Step 2 storyboard workflow: result
+  loading, AI generation, manual slide editing, batch import/delete, visual and
+  narration mapping, autosave, and contract persistence. Keep those functions
+  out of `app.js`; Prompt/template management remains in the shared shell until
+  it is extracted as a separate module.
 - New extractions must preserve current DOM IDs and API paths, add an explicit
   script tag in `static/index.html`, and extend `checks/test_frontend_quality.js`
   with an ownership guard.

@@ -249,11 +249,12 @@ def test_step3_actions_reserve_fixed_non_wrapping_slots():
 def test_builtin_prompts_and_mask_state_are_reset_per_project():
     html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
     app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    storyboard = (ROOT / "static" / "storyboard.js").read_text(encoding="utf-8")
     css = (ROOT / "static" / "style.css").read_text(encoding="utf-8")
     style_manager = (ROOT / "static" / "style_reference_manager_extension.js").read_text(encoding="utf-8")
     assert "正在编辑：" not in html
     assert "`「${slide.main_title}」`" not in app
-    assert "setStep2GenerationStatus('');" in app
+    assert "setStep2GenerationStatus('');" in storyboard
     assert "#step-panel-2 .slides-thumbnail-container" in css
     assert "resetStep5ProjectState();" in app
     assert "manifestProjectId !== projectId" in app
@@ -273,15 +274,15 @@ def test_workflow_rail_owns_toasts_and_disabled_buttons_remain_readable():
 
 def test_workflow_connector_stops_at_step_six_and_step2_errors_are_visible():
     html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
-    app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    storyboard = (ROOT / "static" / "storyboard.js").read_text(encoding="utf-8")
     css = (ROOT / "static" / "style.css").read_text(encoding="utf-8")
     assert "sidebar-flow-title" not in html
     assert "left: 30.875px" in css
     assert "repeating-linear-gradient" in css
     assert "height: calc((64px + 0.35rem) * 5)" in css
     assert "step2-generation-status" in html
-    assert "setStep2GenerationStatus" in app
-    assert "Step 2 generation failed" in app
+    assert "setStep2GenerationStatus" in storyboard
+    assert "Step 2 generation failed" in storyboard
 
 
 def test_step2_timeout_is_logged_and_returned_as_actionable_error(monkeypatch, tmp_path):

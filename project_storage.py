@@ -72,10 +72,6 @@ def visual_contract_path(run_dir: str | Path) -> Path:
     return planning_path(run_dir, "visual_contract.json")
 
 
-def reveal_manifest_path(run_dir: str | Path) -> Path:
-    return safe_child(run_dir, "reveal_manifest.json")
-
-
 def slide_dir(run_dir: str | Path, slide_id: str) -> Path:
     return safe_child(run_dir, "slides", safe_identifier(slide_id, label="slide_id"))
 

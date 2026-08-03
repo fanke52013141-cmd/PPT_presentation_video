@@ -88,15 +88,6 @@ LEGACY_DEFAULTS = {
 }
 
 
-class SchemaMigration(Base):
-    __tablename__ = "schema_migrations"
-
-    version = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False)
-    checksum = Column(String(64), nullable=False)
-    applied_at = Column(DateTime, default=datetime.now, nullable=False)
-
-
 class ArtifactRecord(Base):
     __tablename__ = "artifact_records"
 

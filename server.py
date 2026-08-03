@@ -1,49 +1,21 @@
 import os
 import sys
-import uuid
-import json
 import logging
 from pathlib import Path
-from typing import List, Dict, Any
 
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from PIL import Image
-import yaml
-from openai import OpenAI
-from database import ArtifactRecord, LocalJob, init_db, get_db, Project
+from database import get_db, init_db, Project
 from config_store import get_all_settings, update_settings, get_setting
 from app_security import configured_allowed_hosts, configured_allowed_origins, install_access_control
 from scripts.media_tools import (
     probe_media_duration_sec,
     resolve_media_tool as shared_resolve_media_tool,
 )
-from scripts.pipeline_profiles import (
-    read_pipeline_profile,
-    role_catalog,
-    storyboard_profile_prompt,
-    storyboard_requirements,
-)
-from artifact_fingerprint import sha256_file, sha256_json
-from visual_provenance import (
-    promote_candidate_provenance,
-    provenance_path as visual_provenance_path,
-    validate_visual_provenance_set,
-    visual_provenance_status,
-    write_visual_provenance,
-)
-from project_style_reference_service import (
-    can_send_project_references,
-    profile_style_prompt,
-    project_generate_prompt_for_slide,
-    project_reference_paths,
-)
 from pipeline_lifecycle import write_json_atomic
-from tts_artifacts import (
-    build_confirmation_payload as build_audio_confirmation_payload,
-)
 from ai_provider_service import (
     extract_image_bytes_from_response,
     generate_image_response,
@@ -54,10 +26,7 @@ from ai_provider_service import (
     response_has_image_data,
 )
 from tts_provider_service import (
-    STEP7_TTS_PROCESS_TIMEOUT_SEC,
-    TTS_API_KEY_ENV,
     TTS_PROVIDER_DEFAULTS,
-    TTS_SECRET_KEY_ENV,
     TtsProviderDependencies,
     configure_tts_provider_dependencies,
     configured_tts_api_key,
@@ -80,12 +49,8 @@ from narration_audio_service import (
     persist_narration_beats,
     prepare_narration_payload,
     rewrite_audio_timeline_by_beats,
-    split_subtitle_text,
-    subtitle_chunks_for_timing,
-    subtitle_text_weight,
     sync_narration_beats_to_contract,
     sync_narration_sources_from_contract,
-    tts_text_parts_with_pauses,
 )
 from visual_contract_service import (
     contract_slide_ids_from_payload,
@@ -94,21 +59,17 @@ from visual_contract_service import (
     normalize_visual_contract,
     normalize_visual_type,
     read_contract_slide_ids,
-    strip_anchor_lead_in,
 )
 from visual_settings_service import (
     DEFAULT_SUBTITLE_STYLE,
     DEFAULT_VIDEO_BACKGROUND,
-    IMAGE_GENERATION_BACKGROUND,
     OPEN_SOURCE_CHINESE_FONTS,
     VisualSettingsDependencies,
     configure_visual_settings_service,
     normalize_hex_color,
     normalize_subtitle_style,
     read_project_visual_settings,
-    subtitle_preview_background_url,
     sync_project_background_color,
-    write_project_visual_settings,
 )
 from runtime_support import (
     clean_json_markdown,
@@ -144,9 +105,6 @@ from project_runtime_service import (
 )
 from repository_paths import (
     DATA_DIR,
-    DEFAULT_STYLE_REFERENCE_DIR,
-    DEFAULT_STYLE_TOKENS_PATH,
-    HANDDRAWN_STORYBOARD_RULES_PATH,
     HANDDRAWN_STYLE_TOKENS_PATH,
     IMAGE_STYLE_TEMPLATES_DIR,
     IMAGE_STYLE_TEMPLATES_INDEX,
@@ -154,7 +112,6 @@ from repository_paths import (
     RUNS_DIR,
     STEP2_PROMPT_TEMPLATE_FILES,
     STEP2_PROMPT_TEMPLATES_PATH,
-    STEP3_IMAGE_PROMPT_TEMPLATE_PATH,
     STORYBOARD_TEMPLATES_PATH,
     STYLE_REFERENCE_DIR,
     STYLE_REFERENCE_FILES,
@@ -216,17 +173,12 @@ LEGACY_STEP2_PROMPT_HASHES = {
     "visual_output_example": {"d61dc2dfdd60cddd4be3bc13cfe4848ee5b119964ad726ec8ff214840cd7e9fa"},
 }
 LEGACY_INTERVIEW_SCRIPT_PROMPT_HASH = "7e6f9fbd452f9c94bc02b3c5226edcde21a4bb69d87d5ede8089eb8b28f7bef9"
-STEP2_PROMPTS_FILE = "step2_prompts.json"
-STEP2_SCRIPT_PLAN_FILE = "slide_script_plan.json"
-STEP2_VISUAL_PLAN_FILE = "slide_visual_plan.json"
-STEP3_IMAGE_PROMPTS_FILE = "step3_image_prompts.json"
 REVEAL_PIPELINE_VERSION = "exact_rle_mask_with_manual_corrections_v5"
 
 
 ensure_active_image_style_storage()
 
 
-STEP1_LLM_TIMEOUT_SEC = 60.0
 STEP2_LLM_TIMEOUT_SEC = 240.0
 STEP5_REVEAL_BUILD_TIMEOUT_SEC = float(os.environ.get("PPT_STUDIO_REVEAL_BUILD_TIMEOUT_SEC", "300"))
 STEP7_BIND_TIMEOUT_SEC = 90
@@ -237,7 +189,6 @@ STEP8_COLOR_PROCESS_TIMEOUT_SEC = 300
 REVEAL_VISUAL_LEAD_SEC = 0.45
 
 from json_llm_service import (
-    generate_json_with_configured_llm,
     parse_json_or_repair_with_llm,
 )
 
@@ -383,6 +334,7 @@ from storyboard_service import (
     built_in_step2_prompt_templates,
     compose_step2_system_prompt,
     compose_step2_visual_contract,
+    compose_visual_contract_from_plans,
     default_step2_prompts,
     execute_step2,
     execute_step2_script_plan,
@@ -390,7 +342,6 @@ from storyboard_service import (
     get_step2_result,
     migrate_legacy_step2_prompt,
     normalize_slide_visual_plan,
-    read_prompt_template,
     run_step2_json_llm,
     step2_llm_vendor_options,
     step2_prompt_compatibility,
@@ -401,31 +352,13 @@ from storyboard_service import (
     validate_visual_contract_file,
 )
 
-IMAGE_STYLE_TOP_LEVEL_KEYS = (
-    "brand",
-    "canvas",
-    "colors",
-    "layout",
-    "visual_assets",
-)
-IMAGE_STYLE_PROMPT_KEY = "prompt_system_content"
-IMAGE_STYLE_VISUAL_ASSET_FIELDS = {
-    "image_style": "image_style",
-    "diagram_style": "diagram_style",
-    "required_background": "required_background",
-    "layout_rules": "reveal_friendly_layout",
-    "avoid": "avoid",
-}
-
 # Visual settings routes are source-owned by visual_settings_service.py.
 
 # Global image-style compatibility APIs are source-owned by global_image_style_service.py.
 from global_image_style_service import (
-    active_style_reference_paths,
     build_image_style_prompt,
     read_image_style_template_index,
     read_style_tokens_data,
-    should_send_style_reference_images,
 )
 
 # Step 3 image workflow is source-owned by image_workflow_service.py.
@@ -620,18 +553,13 @@ except Exception as exc:
 
 from narration_service import (
     annotate_step6_narration,
-    build_narration_annotation_input,
     get_step6_result,
     init_step6_narration,
-    narration_annotation_preserves_text,
-    read_narration_annotation_prompts,
     repair_step6_result,
     update_step6_result,
 )
 from tts_service import (
     confirm_tts_audio,
-    get_slide_audio_file,
-    get_tts_audio_status,
     synthesize_tts_resumable,
 )
 

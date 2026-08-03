@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -11,8 +12,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import server
+from config_store import get_setting
 from fastapi.testclient import TestClient
+from scripts.media_tools import resolve_media_tool
+from tts_provider_service import normalize_tts_provider, tts_provider_defaults
 
 
 def require(response, label: str) -> dict:
@@ -26,16 +29,47 @@ def require(response, label: str) -> dict:
     return payload if isinstance(payload, dict) else {"value": payload}
 
 
+def provider_preflight_checks() -> dict[str, bool]:
+    """Check provider prerequisites without exposing stored credential values."""
+    tts_provider = normalize_tts_provider(get_setting("tts_provider", "minimax"))
+    tts_defaults = tts_provider_defaults(tts_provider)
+    tts_api_key = str(
+        get_setting("tts_api_key")
+        or os.environ.get(str(tts_defaults.get("api_key_env") or ""))
+        or ""
+    ).strip()
+    tts_secret_key = str(
+        get_setting("tts_secret_key")
+        or os.environ.get(str(tts_defaults.get("secret_key_env") or ""))
+        or ""
+    ).strip()
+    tts_credentials_ready = bool(tts_api_key) and (
+        tts_provider != "tencent_tts" or bool(tts_secret_key)
+    )
+    return {
+        "llm_credentials": bool(str(get_setting("llm_api_key") or "").strip()),
+        "image_credentials": bool(str(get_setting("image_api_key") or "").strip()),
+        "tts_credentials": tts_credentials_ready,
+    }
+
+
+def require_provider_preflight() -> None:
+    checks = provider_preflight_checks()
+    failed = [name for name, passed in checks.items() if not passed]
+    if failed:
+        raise RuntimeError(
+            "provider preflight failed before project creation: " + ", ".join(failed)
+        )
+
+
 def write_preflight_report(run_dir: Path, project_id: str) -> None:
     checks = {
         "article": (run_dir / "inputs" / "article.md").exists(),
         "pipeline_profiles": (ROOT / "config" / "pipeline_profiles.yaml").exists(),
         "style_tokens": (ROOT / "config" / "style_tokens.yaml").exists(),
-        "ffmpeg": bool(server.resolve_media_tool("ffmpeg")),
-        "ffprobe": bool(server.resolve_media_tool("ffprobe")),
-        "llm_credentials": bool(str(server.get_setting("llm_api_key") or "").strip()),
-        "image_credentials": bool(str(server.get_setting("image_api_key") or "").strip()),
-        "tts_credentials": bool(str(server.configured_tts_api_key(server.normalize_tts_provider(server.get_setting("tts_provider", "minimax"))) or "").strip()),
+        "ffmpeg": bool(resolve_media_tool("ffmpeg", ROOT)),
+        "ffprobe": bool(resolve_media_tool("ffprobe", ROOT)),
+        **provider_preflight_checks(),
     }
     report = [
         "# One-click preflight report",
@@ -64,6 +98,14 @@ def main() -> int:
     parser.add_argument("--timeout-sec", type=int, default=3600)
     parser.add_argument("--resume-project", default="")
     args = parser.parse_args()
+
+    if not args.resume_project:
+        require_provider_preflight()
+
+    # Importing the composition root performs application startup wiring and
+    # orphaned-job recovery. Keep it out of module import time so unit tests and
+    # tooling can inspect this entrypoint without mutating live task state.
+    import server
 
     with TestClient(server.app) as client:
         if args.resume_project:

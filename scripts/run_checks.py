@@ -158,6 +158,8 @@ def quick_checks() -> None:
         "-m",
         "pytest",
         "checks/test_video_render_components.py",
+        "checks/test_persistent_video_jobs.py",
+        "checks/test_e2e_entrypoints.py",
         "-q",
     ])
     run([

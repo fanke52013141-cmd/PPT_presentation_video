@@ -13,6 +13,7 @@ from database import LocalJob
 
 VIDEO_RENDER_JOB_TYPE = "video_render"
 ACTIVE_JOB_STATUSES = ("queued", "running")
+_UNSET = object()
 TERMINAL_JOB_STATUSES = (
     "succeeded",
     "failed",
@@ -120,7 +121,7 @@ class VideoJobStore:
         status: str | None = None,
         stage: str | None = None,
         progress: int | None = None,
-        error: str | None = None,
+        error: str | None | object = _UNSET,
         result_artifact_id: str | None = None,
         payload_updates: dict[str, Any] | None = None,
     ) -> LocalJob | None:
@@ -140,7 +141,7 @@ class VideoJobStore:
                 job.stage = stage
             if progress is not None:
                 job.progress = max(0, min(100, int(progress)))
-            if error is not None:
+            if error is not _UNSET:
                 job.error = str(error)[:4000] if error else None
             if result_artifact_id is not None:
                 job.result_artifact_id = result_artifact_id

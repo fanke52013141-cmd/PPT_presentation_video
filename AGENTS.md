@@ -218,6 +218,11 @@ project-level orchestrator.
 - Video render jobs and PPTX export jobs are persisted in the `local_jobs`
   SQLite table. In-memory task maps are compatibility caches, not the source of
   truth. Jobs left active by an exited process are marked `interrupted`.
+- A successful video job must clear any earlier error text: its persistent
+  terminal state is `succeeded` / `completed` / `100` with `error = NULL`.
+- End-to-end entrypoints must not import `server` at module import time. Load
+  the composition root only after side-effect-free provider preflight passes,
+  so test discovery cannot mutate live job recovery state.
 - Newly rendered and speed-adjusted MP4 files are registered in
   `artifact_records`; deleting a video must remove the matching record.
 - Deleting a rendered video deletes both the MP4 and its sidecar.

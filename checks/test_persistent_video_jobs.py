@@ -70,6 +70,37 @@ def test_video_job_state_survives_outside_memory_cache(
     assert completed.finished_at is not None
 
 
+def test_successful_video_job_clears_an_earlier_error(
+    tmp_path: Path,
+) -> None:
+    testing_session = _session_factory(tmp_path)
+    store = VideoJobStore(testing_session)
+    created = store.create(
+        "project-clear-error",
+        job_id="video-job-clear-error",
+        stage="rendering",
+        payload={},
+    )
+    store.update(
+        created.id,
+        status="interrupted",
+        stage="interrupted",
+        error="应用退出，任务中断",
+    )
+
+    store.update(
+        created.id,
+        status="succeeded",
+        stage="completed",
+        progress=100,
+        error=None,
+    )
+
+    completed = store.get(created.id)
+    assert completed.status == "succeeded"
+    assert completed.error is None
+
+
 def test_startup_recovery_marks_active_video_jobs_interrupted(
     tmp_path: Path,
 ) -> None:

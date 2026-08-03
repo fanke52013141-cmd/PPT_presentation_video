@@ -1,5 +1,5 @@
 // Step 5 Mask workspace state, loading, slide navigation, semantic/narration mapping, and view rendering.
-// Canvas painting, preview rasterization, animation preview, and draft persistence remain in app.js.
+// Canvas painting, preview rasterization, animation preview, and draft persistence remain in ui_foundation.js / workflow_state.js / api_client.js.
 
 
 let manifestData = null;

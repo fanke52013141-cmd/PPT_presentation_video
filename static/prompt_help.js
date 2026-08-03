@@ -1,5 +1,5 @@
 // Shared Prompt input/output help catalog and modal.
-// Escaping is provided by app.js; the document-level trigger lives in event_bindings.js.
+// Escaping is provided by ui_foundation.js / workflow_state.js / api_client.js; the document-level trigger lives in event_bindings.js.
 
 const PROMPT_IO_HELP = {
   article: {

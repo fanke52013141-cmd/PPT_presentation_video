@@ -140,7 +140,9 @@ def quick_checks() -> None:
     python_check(QUICK_PYTHON_CHECKS[0])
     run(["node", "checks/test_visible_flow.js"])
     run(["node", "checks/test_frontend_quality.js"])
+    run(["node", "checks/test_subtitle_paging.js"])
     python_check(ROOT / "scripts" / "check_source_registration_contract.py")
+    python_check(ROOT / "scripts" / "check_static_extension_references.py")
     python_check(ROOT / "checks" / "test_source_hardening.py")
     for path in QUICK_PYTHON_CHECKS[2:]:
         python_check(path)

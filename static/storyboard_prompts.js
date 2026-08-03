@@ -1,5 +1,5 @@
 // Step 2 Prompt editor and reusable Prompt-template management.
-// Shared state, API helpers, and modal utilities are provided by app.js.
+// Shared state, API helpers, and modal utilities are provided by ui_foundation.js / workflow_state.js / api_client.js.
 
 async function openStoryboardRulesModal(mode = 'script') {
   if (!state.currentProject) return;

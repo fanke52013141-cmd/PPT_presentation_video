@@ -1,5 +1,5 @@
 // Project workspace entry/exit, AI-mode switching, stepper state, and step data routing.
-// Shared state/API/flow helpers live in app.js; step implementations live in their owner modules.
+// Shared state/API/flow helpers live in ui_foundation.js / workflow_state.js / api_client.js; step implementations live in their owner modules.
 
 // ==================== 项目管理与系统设置逻辑 ====================
 

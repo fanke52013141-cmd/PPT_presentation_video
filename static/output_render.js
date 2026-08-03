@@ -1,6 +1,6 @@
 // Visible Step 6 output workspace: PPTX export, video rendering, persistent-job polling,
 // artifact presentation/removal, and playback-speed variants.
-// Shared project state, API helpers, confirmation UI, and workflow refresh live in app.js.
+// Shared project state, API helpers, confirmation UI, and workflow refresh live in ui_foundation.js / workflow_state.js / api_client.js.
 
 // ==================== 步骤 8: 视频合成与渲染 ====================
 

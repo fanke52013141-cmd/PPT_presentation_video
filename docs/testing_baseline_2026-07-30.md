@@ -14,7 +14,7 @@
 | 检查 | 结果 |
 | --- | --- |
 | `py -3.13 -m compileall -q server.py scripts checks` | 通过 |
-| `node --check static/app.js` | 通过 |
+| `node --check static/workflow_state.js` | 通过 |
 | `node --check static/flow.js` | 通过 |
 | `node checks/test_visible_flow.js` | 通过 |
 | 五项生产链路脚本检查 | 通过 |
@@ -48,7 +48,7 @@
 | --- | --- |
 | `py -3.13 -m pytest checks -q` | 194 通过，8 条已有第三方弃用警告 |
 | Python `compileall` | 通过 |
-| `node --check static/app.js` | 通过 |
+| `node --check static/workflow_state.js` | 通过 |
 | `node --check static/flow.js` | 通过 |
 | `node checks/test_visible_flow.js` | 通过 |
 | `node checks/test_frontend_quality.js` | 通过 |

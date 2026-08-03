@@ -1,5 +1,7 @@
 # Maintenance audit: 2026-06-24
 
+> 历史归档文档。文中的 runtime bridge（`sitecustomize.py`、`runtime_security.py`、`runtime_settings_mask.py` 等）与 Step 1 legacy 代码均已在后续重构中移除或迁入正式源码（见 `full_flow_audit_2026-08-03.md`），部分命令引用的脚本已不存在，仅作历史参考。
+
 This document records the repository consistency audit and the cleanup queue discovered on 2026-06-24.
 
 ## Scope reviewed

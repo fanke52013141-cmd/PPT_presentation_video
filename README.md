@@ -133,23 +133,23 @@ python server.py
 
 CI 自动检查：
 
-pull request 到 `main` 时会运行 `.github/workflows/ci.yml` 中的低依赖检查：
+pull request 到 `main` 时会运行 `.github/workflows/ci.yml`，其执行 canonical 入口：
 
 ```powershell
-python -m compileall -q server.py scripts checks
-node --check static\workflow_state.js
-node --check static\flow.js
-node checks\test_visible_flow.js
-python scripts\check_runtime_hotfixes.py
-$env:PPT_STUDIO_MASK_SETTINGS_SECRETS = "1"; python scripts\check_runtime_settings_mask.py
+python scripts\run_checks.py --level full
 ```
+
+并在 `scripts/remotion` 下运行 `npx tsc --noEmit -p tsconfig.json`。`run_checks.py` 依次执行 compileall、所有 `node --check`、`checks/*.js`、独立检查脚本（`test_source_hardening.py`、`check_source_registration_contract.py`、`check_python_startup_hooks.py`、`check_runtime_hotfixes.py`、`check_static_extension_references.py` 等）和全部 pytest。
 
 这些检查不需要 LLM、生图、TTS API key，也不会执行真实 Remotion 渲染。
 
 本地基础检查和手动 smoke 验证：
 
+完整检查入口统一为 `scripts\run_checks.py --level full`（与 CI 一致）。以下是最常用的一批，便于快速迭代：
+
 ```powershell
-.\.venv\Scripts\python.exe -m compileall -q server.py article_service.py article_routes.py diagnostics_routes.py storyboard_background.py storyboard_service.py storyboard_routes.py mask_manifest_service.py mask_preview_service.py mask_editor_routes.py narration_service.py narration_routes.py tts_service.py tts_routes.py one_click_orchestrator.py one_click_routes.py pptx_export.py pptx_service.py pptx_routes.py video_contracts.py video_job_store.py video_artifact_service.py remotion_runner.py video_render_service.py video_routes.py ai_mask_config.py ai_mask_engine.py ai_mask_routes.py ai_mask_semantic_matcher.py ai_mask_service.py project_style_context.py project_style_routes.py project_profile_service.py project_profile_store.py project_style_reference_service.py project_style_reference_store.py project_style_template_service.py image_style_reverse_service.py step3_image_style_service.py database.py database_migrations.py invalidation_service.py reveal_manifest_service.py scripts checks
+.\.venv\Scripts\python.exe -m compileall -q server.py scripts checks
+node --check static\workflow_state.js
 node --check static\workflow_state.js
 node --check static\flow.js
 node checks\test_visible_flow.js

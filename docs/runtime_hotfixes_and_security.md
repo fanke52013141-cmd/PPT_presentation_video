@@ -47,7 +47,6 @@ should ultimately be migrated behind normal service and route modules.
 | `scripts/check_runtime_settings_mask.py` | Self-check for settings credential masking. |
 | `scripts/check_smoke_artifacts.py` | Structural artifact checker after manual end-to-end smoke tests. |
 | `docs/e2e_smoke_test_checklist.md` | Manual happy-path smoke test checklist. |
-| `scripts/cleanup_step1_dead_code.py` | Local source cleanup helper for Step 1 unreachable code. |
 
 ## What is currently protected
 
@@ -206,18 +205,10 @@ python scripts/check_smoke_artifacts.py --run-dir runs/<project_id> --stage step
 
 ## Step 1 dead-code cleanup
 
-Step 1 currently returns after writing a local article brief, while an old
-LLM-based ingestion block remains below that return in `server.py`.
-
-Use the helper script locally:
-
-```bash
-python scripts/cleanup_step1_dead_code.py --check
-python scripts/cleanup_step1_dead_code.py --apply
-```
-
-The script checks exact anchors, verifies expected legacy fragments, parses the
-result with Python AST, and creates a timestamped backup before writing.
+Completed. Step 1 is fully owned by `article_service.py` / `article_routes.py`;
+`server.py` is a composition root with no legacy LLM ingestion block below the
+article brief write. The former `scripts/cleanup_step1_dead_code.py` helper no
+longer exists.
 
 ## Migration tracking
 

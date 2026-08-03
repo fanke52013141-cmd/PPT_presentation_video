@@ -1,5 +1,5 @@
 // Global settings, configuration portability, and provider connection checks.
-// This remains a classic script so existing inline handlers and app.js calls keep
+// This remains a classic script so existing inline handlers and ui_foundation.js / workflow_state.js calls keep
 // the same global function contract while the legacy bundle is modularized.
 
 const LLM_PROVIDER_PRESETS = {

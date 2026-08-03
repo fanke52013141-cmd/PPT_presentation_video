@@ -1,5 +1,5 @@
 // Subtitle style form, live preview, persistence, and project-scoped font loading.
-// Shared state, API helpers, escaping, and workflow refresh live in app.js.
+// Shared state, API helpers, escaping, and workflow refresh live in ui_foundation.js / workflow_state.js / api_client.js.
 
 const DEFAULT_SUBTITLE_SETTINGS = {
   font_key: 'noto_sans_sc',

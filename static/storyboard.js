@@ -1,5 +1,5 @@
 // Step 2 storyboard data, generation, editing, batch import, and persistence.
-// Shared helpers and globals are provided by app.js; public functions remain global for classic-script compatibility.
+// Shared helpers and globals are provided by ui_foundation.js / workflow_state.js / api_client.js; public functions remain global for classic-script compatibility.
 
 async function loadStep2Data() {
   try {

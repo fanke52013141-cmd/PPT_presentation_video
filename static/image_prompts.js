@@ -1,5 +1,5 @@
 // Step 3 image-generation Prompt loading, preview, editing, reset, and persistence.
-// Image grid state lives in images.js; shared modal and API utilities live in app.js.
+// Image grid state lives in images.js; shared modal and API utilities live in ui_foundation.js / workflow_state.js / api_client.js.
 
 async function refreshStep3Prompts(options = {}) {
   if (!state.currentProject?.id) return [];

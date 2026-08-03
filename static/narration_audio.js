@@ -1,5 +1,5 @@
 // Visible Step 5 narration editing and audio production lifecycle.
-// Shared project state, API helpers, and workflow navigation live in app.js.
+// Shared project state, API helpers, and workflow navigation live in ui_foundation.js / workflow_state.js / api_client.js.
 
 // ==================== 步骤 6: 演讲稿编辑 ====================
 

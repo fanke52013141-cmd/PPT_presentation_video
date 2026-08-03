@@ -1,5 +1,5 @@
 // Step 5 Canvas painting, mask preview, animation preview, draft persistence, and confirmation.
-// Workspace state/render helpers live in mask_workspace.js; shared modal/API utilities live in app.js.
+// Workspace state/render helpers live in mask_workspace.js; shared modal/API utilities live in ui_foundation.js / workflow_state.js / api_client.js.
 
 function updateBrushSize(value, shouldRedraw = true) {
   const size = Math.max(100, Math.min(200, Number(value) || 140));

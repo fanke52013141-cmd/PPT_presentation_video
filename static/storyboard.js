@@ -186,7 +186,7 @@ function handleStep2BatchImportFile(event) {
     }
     if (!Array.isArray(parsed)) {
       previewEl.style.display = 'block';
-      previewEl.innerHTML = `<div class="step2-batch-import-error">❌ 文件内容不是 JSON 数组${parseError ? '：' + escapeHtml(parseError) : ''}</div>`;
+      previewEl.innerHTML = `<div class="step2-batch-import-error">❌ 文件内容不是 JSON 数组${parseError ? '：' + escHtml(parseError) : ''}</div>`;
       return;
     }
     const slides = [];
@@ -213,7 +213,7 @@ function handleStep2BatchImportFile(event) {
       <div class="step2-batch-import-summary">
         <strong>已解析 ${slides.length} 页分镜：</strong>
         <ul>
-          ${slides.slice(0, 5).map((s, i) => `<li>第 ${i + 1} 页 · ${escapeHtml(s.main_title)}</li>`).join('')}
+          ${slides.slice(0, 5).map((s, i) => `<li>第 ${i + 1} 页 · ${escHtml(s.main_title)}</li>`).join('')}
           ${slides.length > 5 ? `<li>... 还有 ${slides.length - 5} 页</li>` : ''}
         </ul>
         <div class="step2-batch-import-hint">当前已有 ${currentCount} 页。追加导入后将变成 ${currentCount + slides.length} 页；覆盖导入将清空现有分镜后导入 ${slides.length} 页。</div>
@@ -273,11 +273,6 @@ async function submitStep2BatchImport(mode) {
   } catch (e) {
     showToast('⚠️ 导入失败：' + (e && e.message ? e.message : String(e)));
   }
-}
-
-function escapeHtml(str) {
-  if (str == null) return '';
-  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function openStep2GenerationModal() {

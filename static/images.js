@@ -324,12 +324,6 @@ async function reorderStep3Images(draggedIdx, targetIdx) {
   }
 }
 
-async function moveStep3Image(idx, direction) {
-  await reorderStep3Images(idx, idx + direction);
-}
-
-window.moveStep3Image = moveStep3Image;
-
 function openStep3AI(slideId) {
   state.activeSlideIndex = step3ImageOrder.findIndex(img => img.slide_id === slideId);
   step3CandidateReady = false;

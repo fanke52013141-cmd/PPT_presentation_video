@@ -253,17 +253,6 @@ def compact_slide_element_lines(slide: Dict[str, Any]) -> List[str]:
     ]
 
 
-def generate_prompt_for_slide(
-    slide: Dict[str, Any],
-    topic_name: str,
-    profile: Optional[Dict[str, Any]] = None,
-) -> str:
-    style_prompt = build_image_style_prompt(read_style_tokens_data())
-    return compose_step3_single_slide_prompt(
-        style_prompt, slide, default_step3_image_system_content()
-    )
-
-
 def build_step3_global_image_prompt(
     style_prompt: str, system_content: Optional[str] = None
 ) -> str:

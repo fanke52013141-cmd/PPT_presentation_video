@@ -11,7 +11,6 @@ from __future__ import annotations
 import base64
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-import io
 import json
 import time
 from pathlib import Path
@@ -296,33 +295,6 @@ from ai_mask_assignment import (
 )
 
 
-def _candidate_overlay(image_path: Path, elements: list[dict[str, Any]], output_path: Path) -> bytes:
-    image = Image.open(image_path).convert("RGB")
-    original_width, original_height = image.size
-    if image.width > 1280:
-        ratio = 1280 / image.width
-        image = image.resize((1280, max(1, int(image.height * ratio))), Image.Resampling.LANCZOS)
-    scale_x = image.width / original_width
-    scale_y = image.height / original_height
-    draw = ImageDraw.Draw(image)
-    for element in elements:
-        box = element.get("bbox") if isinstance(element.get("bbox"), dict) else {}
-        x1 = int(float(box.get("x", 0)) * scale_x)
-        y1 = int(float(box.get("y", 0)) * scale_y)
-        x2 = int(float(box.get("x", 0) + box.get("w", 0)) * scale_x)
-        y2 = int(float(box.get("y", 0) + box.get("h", 0)) * scale_y)
-        label = str(element.get("element_id") or "")
-        draw.rectangle((x1, y1, x2, y2), outline=(220, 30, 50), width=3)
-        label_box = draw.textbbox((x1, max(0, y1 - 14)), label)
-        draw.rectangle(label_box, fill=(255, 255, 255))
-        draw.text((x1, max(0, y1 - 14)), label, fill=(180, 0, 30))
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    image.save(output_path, format="PNG")
-    buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
-    return buffer.getvalue()
-
-
 def _resolved_vision_model(capabilities: Any) -> tuple[str, str]:
     provider = str(capabilities.get_setting("llm_provider") or "").strip().lower()
     configured = str(capabilities.get_setting("vision_model") or "").strip()
@@ -342,88 +314,6 @@ def _is_timeout(capabilities: Any, exc: BaseException) -> bool:
         except Exception:
             pass
     return isinstance(exc, TimeoutError) or "timeout" in type(exc).__name__.lower() or "timed out" in str(exc).lower()
-
-
-def raw_component_vision_match(
-    capabilities: AiMaskEngineDependencies,
-    project: Any,
-    slide: dict[str, Any],
-    elements: list[dict[str, Any]],
-    image_path: Path,
-    overlay_path: Path,
-    methodology: str,
-    output_structure: str,
-    settings: dict[str, Any],
-) -> dict[str, Any] | None:
-    api_key = capabilities.get_setting("llm_api_key")
-    if not api_key:
-        return None
-    overlay_bytes = _candidate_overlay(image_path, elements, overlay_path)
-    model, _ = _resolved_vision_model(capabilities)
-    base_url = capabilities.get_setting("llm_base_url")
-    vendor_options = capabilities.step2_llm_vendor_options(model, base_url) or {}
-    client = capabilities.get_openai_client(
-        api_key=api_key,
-        base_url=base_url,
-        timeout=AI_MASK_VISION_TIMEOUT_SEC,
-        max_retries=0,
-    )
-    payload = {
-        "slide": {
-            key: slide.get(key)
-            for key in ("slide_id", "main_title", "subtitle", "core_message", "body_content", "visual_groups", "narration_beats")
-        },
-        "auto_elements": [
-            {key: element.get(key) for key in ("element_id", "bbox", "raw_bbox", "center", "area", "position", "ocr_text")}
-            for element in elements
-        ],
-        "instruction": "图中红框标签就是 auto_elements.element_id。结合画面语义、可见文字、分镜 visual_groups 与 narration_beats 完成关联。",
-    }
-    system_prompt = methodology + "\n\n--- OUTPUT STRUCTURE / 输出结构 ---\n" + output_structure
-    image_url = "data:image/png;base64," + base64.b64encode(overlay_bytes).decode("ascii")
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": json.dumps(payload, ensure_ascii=False, indent=2)},
-                {"type": "image_url", "image_url": {"url": image_url}},
-            ],
-        },
-    ]
-    try:
-        try:
-            response = client.chat.completions.create(
-                model=model,
-                temperature=float(settings["llm_temperature"]),
-                max_tokens=12000,
-                timeout=AI_MASK_VISION_TIMEOUT_SEC,
-                response_format={"type": "json_object"},
-                messages=messages,
-                **vendor_options,
-            )
-        except Exception as exc:
-            # A timeout is not a response-format compatibility problem. Fall
-            # back immediately instead of waiting for another full timeout.
-            if _is_timeout(capabilities, exc):
-                raise
-            response = client.chat.completions.create(
-                model=model,
-                temperature=float(settings["llm_temperature"]),
-                max_tokens=12000,
-                timeout=AI_MASK_VISION_TIMEOUT_SEC,
-                messages=messages,
-                **vendor_options,
-            )
-        content = str(response.choices[0].message.content or "").strip()
-        cleaned = capabilities.clean_json_markdown(content)
-        value = json.loads(cleaned)
-        return value if isinstance(value, dict) else None
-    finally:
-        try:
-            client.close()
-        except Exception:
-            pass
 
 
 from ai_mask_manifest_apply import (

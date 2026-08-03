@@ -51,8 +51,10 @@ slide_tts_artifact_status: Callable[..., Any] = _not_configured
 sync_narration_beats_to_contract: Callable[..., Any] = _not_configured
 tts_provider_defaults: Callable[..., Any] = _not_configured
 write_project_log: Callable[..., Any] = _not_configured
-REVEAL_VISUAL_LEAD_SEC = 0.2
-STEP7_BIND_TIMEOUT_SEC = 120.0
+# 注意：运行时会由 server.py 的 configure_tts_dependencies 注入权威值（0.45 / 90）。
+# 此处默认值必须与 server.py 保持一致，避免未注入时静默使用过时值。
+REVEAL_VISUAL_LEAD_SEC = 0.45
+STEP7_BIND_TIMEOUT_SEC = 90
 TTS_PROVIDER_DEFAULTS: dict[str, Any] = {}
 
 

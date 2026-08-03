@@ -905,67 +905,6 @@ def finalize_step2_contract(
     return contract
 
 
-def build_step2_scaffold_contract(
-    *,
-    project: Project,
-    project_title: str,
-    article_content: str,
-    trace_id: str,
-) -> Dict[str, Any]:
-    profile = read_project_pipeline_profile(project)
-    slide_count_text, _ = storyboard_requirements(article_content, profile)
-    min_slides, max_slides = parse_range_text(slide_count_text, 4, 8)
-    fallback_path = os.path.join(project.run_dir, "planning", f"visual_contract_fallback_{trace_id}.json")
-    if os.path.exists(fallback_path):
-        os.remove(fallback_path)
-
-    script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "write_visual_contract.py"))
-    args = [
-        sys.executable,
-        script_path,
-        "--run-dir",
-        project.run_dir,
-        "--out",
-        fallback_path,
-        "--topic-name",
-        project_title,
-        "--min-slides",
-        str(min_slides),
-        "--max-slides",
-        str(max_slides),
-        "--subtitle-policy",
-        "no_slides_have_subtitle",
-        "--overwrite",
-    ]
-    write_project_log(
-        project,
-        "step2_scaffold_fallback_start",
-        trace_id=trace_id,
-        min_slides=min_slides,
-        max_slides=max_slides,
-        subtitle_policy="no_slides_have_subtitle",
-    )
-    result = subprocess.run(
-        args,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=60,
-    )
-    if result.returncode != 0 or not os.path.exists(fallback_path):
-        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "Step2 scaffold fallback failed")
-    with open(fallback_path, "r", encoding="utf-8") as f:
-        contract = json.load(f)
-    write_project_log(
-        project,
-        "step2_scaffold_fallback_generated",
-        trace_id=trace_id,
-        contract_path=fallback_path,
-        stdout=result.stdout.strip(),
-    )
-    return contract
-
 
 def execute_step2(
     project_id: str,

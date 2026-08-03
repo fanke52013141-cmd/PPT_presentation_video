@@ -141,7 +141,8 @@ def quick_checks() -> None:
     run(["node", "checks/test_visible_flow.js"])
     run(["node", "checks/test_frontend_quality.js"])
     python_check(ROOT / "scripts" / "check_source_registration_contract.py")
-    for path in QUICK_PYTHON_CHECKS[1:]:
+    python_check(ROOT / "checks" / "test_source_hardening.py")
+    for path in QUICK_PYTHON_CHECKS[2:]:
         python_check(path)
     run([
         sys.executable,

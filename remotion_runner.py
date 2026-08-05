@@ -340,6 +340,9 @@ class RemotionRunner:
                 timeout=self.config.render_timeout_sec,
             )
         except subprocess.TimeoutExpired as exc:
+            # 超时后杀死整个进程树，避免 npx -> node -> ffmpeg 孙进程残留。
+            from runtime_support import kill_process_tree
+            kill_process_tree(getattr(exc, "process", None))
             self.dependencies.write_project_log(
                 project,
                 "step8_remotion_render_timeout",
@@ -416,7 +419,19 @@ class RemotionRunner:
             if temporary.exists():
                 temporary.unlink()
             return False
-        os.replace(temporary, target)
+        try:
+            os.replace(temporary, target)
+        except OSError as exc:
+            # Windows 上 ffmpeg 可能仍持有输出句柄（杀软/索引服务锁定），
+            # 视频实际已生成，不应因此把整个渲染标记为失败。
+            self.dependencies.write_project_log(
+                project,
+                "step8_color_metadata_normalize_replace_failed",
+                error=str(exc),
+            )
+            if temporary.exists():
+                temporary.unlink()
+            return False
         self.dependencies.write_project_log(
             project,
             "step8_color_metadata_normalize_success",

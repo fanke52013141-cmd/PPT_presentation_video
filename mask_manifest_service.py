@@ -9,6 +9,8 @@ from pathlib import Path
 import subprocess
 from typing import Any, Callable, Dict, List, Optional
 
+from runtime_support import kill_process_tree
+
 
 logger = logging.getLogger("PPTStudio.MaskManifest")
 
@@ -676,6 +678,7 @@ def validate_current_reveal_assets(project: Any) -> None:
                 timeout=dependencies.validation_timeout_sec,
             )
         except subprocess.TimeoutExpired as exc:
+            kill_process_tree(getattr(exc, "process", None))
             raise MaskManifestError(
                 504,
                 "Mask 产物校验超时，请重试",
@@ -722,6 +725,7 @@ def build_current_reveal_assets(project: Any) -> None:
                 timeout=dependencies.build_timeout_sec,
             )
         except subprocess.TimeoutExpired as exc:
+            kill_process_tree(getattr(exc, "process", None))
             dependencies.write_project_log(
                 project,
                 "step5_reveal_build_timeout",

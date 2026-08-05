@@ -10,6 +10,8 @@ from pathlib import Path
 import subprocess
 from typing import Any, Callable, Dict
 
+from runtime_support import kill_process_tree
+
 
 logger = logging.getLogger("PPTStudio.MaskPreview")
 
@@ -97,6 +99,7 @@ def build_step5_mask_preview(
                 timeout=dependencies.build_timeout_sec,
             )
         except subprocess.TimeoutExpired as exc:
+            kill_process_tree(getattr(exc, "process", None))
             raise MaskPreviewError(
                 504,
                 "精确 Mask 预览构建超时，请重试",

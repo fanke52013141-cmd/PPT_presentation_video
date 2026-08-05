@@ -10,6 +10,8 @@ import sys
 import time
 from typing import Any, Callable, Dict, List, Optional
 
+from runtime_support import kill_process_tree
+
 
 logger = logging.getLogger("PPTStudio.TTSProvider")
 TTS_API_KEY_ENV = "PPT_STUDIO_TTS_API_KEY"
@@ -249,6 +251,8 @@ def run_tts_command_with_retries(
                 }
             )
         except subprocess.TimeoutExpired as exc:
+            # 超时后杀死整个进程树，避免 TTS 子进程残留
+            kill_process_tree(getattr(exc, "process", None))
             last_result.update(
                 {
                     "returncode": 124,

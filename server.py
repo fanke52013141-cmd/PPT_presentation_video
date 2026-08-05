@@ -80,6 +80,7 @@ from runtime_support import (
     parse_range_text,
     read_json_file,
     run_subprocess_bounded,
+    run_subprocess_killable,
     write_debug_text,
 )
 from project_runtime_service import (
@@ -624,7 +625,8 @@ try:
             rewrite_audio_timeline_by_beats=(
                 rewrite_audio_timeline_by_beats
             ),
-            run_subprocess_bounded=run_subprocess_bounded,
+            # TTS 子进程可能生成孙进程，超时必须杀整棵进程树，避免残留与管道死锁。
+            run_subprocess_bounded=run_subprocess_killable,
             run_tts_command_with_retries=(
                 run_tts_command_with_retries
             ),
@@ -761,7 +763,9 @@ try:
             config=video_render_config,
             build_reveal_assets=build_current_reveal_assets,
             write_project_log=write_project_log,
-            run_subprocess_bounded=run_subprocess_bounded,
+            # Remotion 渲染（npx -> node -> ffmpeg）是典型多层进程树，
+            # 超时必须杀掉整棵进程树，避免孙进程残留与管道死锁。
+            run_subprocess_bounded=run_subprocess_killable,
             resolve_media_tool=lambda name: shared_resolve_media_tool(
                 name,
                 repo_root=Path(REPO_ROOT),

@@ -1,5 +1,6 @@
 import os
 import json
+import logging
 from datetime import datetime, timezone
 from sqlalchemy import create_engine, Column, String, Integer, DateTime, Text
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -7,11 +8,21 @@ from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
 from database_migrations import run_migrations
 
+logger = logging.getLogger("PPTStudio.Database")
+
 DB_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "data"))
 os.makedirs(DB_DIR, exist_ok=True)
 DATABASE_URL = f"sqlite:///{os.path.join(DB_DIR, 'projects.db')}"
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={
+        "check_same_thread": False,
+        # SQLite 默认 5 秒 busy timeout；渲染线程、one-click 线程与 HTTP
+        # 请求并发写时会抛 "database is locked"。调大超时并开启 WAL 减少写锁冲突。
+        "timeout": 30,
+    },
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -140,6 +151,16 @@ class LocalJob(Base):
 
 # 初始化数据库结构
 def init_db():
+    # 开启 WAL 模式，配合 busy timeout 减少多写线程冲突。
+    # WAL 允许读与写并发，显著降低 "database is locked" 概率。
+    try:
+        with engine.connect() as connection:
+            connection.exec_driver_sql("PRAGMA journal_mode=WAL")
+            connection.exec_driver_sql("PRAGMA busy_timeout=30000")
+            connection.exec_driver_sql("PRAGMA synchronous=NORMAL")
+            connection.commit()
+    except Exception:
+        logger.error("Failed to enable SQLite WAL mode", exc_info=True)
     run_migrations(engine)
     # 初始化默认设置
     db = SessionLocal()

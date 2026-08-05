@@ -14,6 +14,8 @@ from typing import Any, Callable
 
 from sqlalchemy.orm import Session
 
+from runtime_support import kill_process_tree
+
 from artifact_fingerprint import render_input_fingerprint
 from artifact_registry import record_artifact, remove_artifact_record
 from database import Project
@@ -396,6 +398,7 @@ class VideoArtifactService:
                 timeout=self.dependencies.render_timeout_sec,
             )
         except subprocess.TimeoutExpired as exc:
+            kill_process_tree(getattr(exc, "process", None))
             if temporary.exists():
                 temporary.unlink()
             raise VideoRenderError(504, "生成调速视频超时") from exc

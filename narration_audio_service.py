@@ -11,6 +11,9 @@ from pathlib import Path
 import re
 from typing import Any, Callable, Dict, List, Optional
 
+from fastapi import HTTPException
+from project_storage import UnsafeProjectPath, slide_dir as storage_slide_dir
+
 
 logger = logging.getLogger("PPTStudio.NarrationAudio")
 
@@ -374,11 +377,17 @@ def persist_narration_beats(
         ).strip()
         if not slide_id:
             continue
-        slide_dir = os.path.join(
-            project.run_dir,
-            "slides",
-            slide_id,
-        )
+        # 使用带 safe_identifier 校验的 slide_dir() 构造路径，防止路径穿越
+        try:
+            slide_dir = storage_slide_dir(
+                project.run_dir,
+                slide_id,
+            )
+        except UnsafeProjectPath as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"slide_id 含非法字符，已拒绝写入：{slide_id!r}",
+            ) from exc
         os.makedirs(slide_dir, exist_ok=True)
         slide_beats = (
             slide_data.get("beats", [])

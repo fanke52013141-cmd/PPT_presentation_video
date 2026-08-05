@@ -8,8 +8,40 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
+from fastapi import HTTPException
+from project_storage import UnsafeProjectPath, safe_identifier
+
 
 logger = logging.getLogger("PPTStudio.VisualContract")
+
+
+def validate_slide_identifiers(contract: Dict[str, Any]) -> None:
+    """Reject slide_id values that could escape the run directory on write.
+
+    slide_id values flow into filesystem paths (narration.txt, tts_text.txt,
+    narration_beats.json, visual_draft.png, ...) via ``os.path.join``. Without
+    validation, a value like ``..\\..\\outside`` writes outside the project run
+    directory (path traversal). This is called before every contract write so a
+    single check covers all downstream writers.
+    """
+    slides = contract.get("slides")
+    if not isinstance(slides, list):
+        return
+    for slide in slides:
+        if not isinstance(slide, dict):
+            continue
+        slide_id = str(slide.get("slide_id") or "").strip()
+        if not slide_id:
+            continue
+        try:
+            safe_identifier(slide_id, label="slide_id")
+        except UnsafeProjectPath:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"slide_id 含非法字符，可能导致路径穿越，已拒绝：{slide_id!r}"
+                ),
+            )
 
 
 def normalize_visual_type(value: Any, has_text: bool = False) -> str:
@@ -88,6 +120,8 @@ def normalize_visual_contract(
     profile: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     del profile
+    # 在写契约前拦截非法 slide_id，防止路径穿越（见 validate_slide_identifiers）。
+    validate_slide_identifiers(contract)
     presentation_policy = contract.get("presentation_policy")
     if not isinstance(presentation_policy, dict):
         presentation_policy = {}

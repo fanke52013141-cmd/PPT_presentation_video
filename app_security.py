@@ -58,6 +58,21 @@ def _request_token(request: Any) -> tuple[str, bool]:
     return str(request.cookies.get(COOKIE_NAME) or ""), False
 
 
+def verify_access_token(request: Any, environ: Mapping[str, str] | None = None) -> bool:
+    """Return whether the request carries the configured access token.
+
+    Used to gate sensitive endpoints (e.g. config export with secrets) that
+    must not be callable without authentication even in loopback deployments.
+    Returns ``True`` when no token is configured (loopback default).
+    """
+    env = os.environ if environ is None else environ
+    token = str(env.get(ACCESS_TOKEN_ENV, "")).strip()
+    if not token:
+        return True
+    supplied_token, _token_from_query = _request_token(request)
+    return _safe_eq(supplied_token, token)
+
+
 def _request_origin(request: Any) -> str:
     scheme = str(request.url.scheme or "http").lower()
     host = str(request.headers.get("host") or request.url.netloc).lower()

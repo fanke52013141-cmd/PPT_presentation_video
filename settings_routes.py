@@ -7,6 +7,7 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException, Request
 
+from app_security import verify_access_token
 import config_portability_service as config_service
 import settings_service as service
 from settings_service import (
@@ -55,7 +56,13 @@ def export_full_config() -> Dict[str, Any]:
 @router.post("/api/config/export-with-secrets")
 def export_full_config_with_secrets(
     payload: Dict[str, Any],
+    request: Request,
 ) -> Dict[str, Any]:
+    if not verify_access_token(request):
+        raise HTTPException(
+            status_code=401,
+            detail="导出密钥需要有效的 PPT Studio access token。",
+        )
     if str(payload.get("confirmation") or "") != "EXPORT_SECRETS":
         raise HTTPException(
             status_code=400,

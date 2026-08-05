@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from config_store import get_setting, update_settings
 from database import Project, get_db
+from project_storage import slide_dir as storage_slide_dir, UnsafeProjectPath
 
 
 logger = logging.getLogger("PPTStudio.Narration")
@@ -526,7 +527,14 @@ def update_step6_result(project_id: str, payload: Dict[str, Any], db: Session = 
     # 循环写入各 Slide 独立的 narration.txt, tts_text.txt 和 narration_beats.json
     for slide_data in payload.get("slides", []):
         slide_id = slide_data["slide_id"]
-        slide_dir = os.path.join(project.run_dir, "slides", slide_id)
+        # 使用带 safe_identifier 校验的 slide_dir() 构造路径，防止路径穿越
+        try:
+            slide_dir = storage_slide_dir(project.run_dir, slide_id)
+        except UnsafeProjectPath as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"slide_id 含非法字符，已拒绝写入：{slide_id!r}",
+            ) from exc
         os.makedirs(slide_dir, exist_ok=True)
         
         slide_beats = slide_data.get("beats", [])

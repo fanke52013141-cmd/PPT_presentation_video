@@ -166,6 +166,23 @@ class ProjectService:
         db: Session,
     ) -> dict[str, Any]:
         project = self._project(project_id, db)
+        # 拒绝在活跃渲染/一键生成任务期间删除，避免渲染线程重建
+        # 已删除目录（幽灵目录）或对已删除记录继续写库。
+        active_job = (
+            db.query(LocalJob)
+            .filter(
+                LocalJob.project_id == project_id,
+                LocalJob.status.in_(("queued", "running")),
+            )
+            .first()
+        )
+        if active_job is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "项目仍有正在进行的渲染任务，请先等待完成或取消后再删除。"
+                ),
+            )
         try:
             run_dir = project_run_dir(
                 self.dependencies.runs_root,
@@ -190,6 +207,18 @@ class ProjectService:
                     status_code=500,
                     detail="项目文件删除失败",
                 ) from exc
+        # 清理 Remotion 运行时缓存目录（scripts/remotion/public/runtime/<id>），
+        # 避免删除项目后缓存永久残留、占用磁盘。
+        runtime_cache = (
+            Path(__file__).resolve().parent
+            / "scripts"
+            / "remotion"
+            / "public"
+            / "runtime"
+            / project_id
+        )
+        if runtime_cache.exists():
+            shutil.rmtree(runtime_cache, ignore_errors=True)
         (
             db.query(ArtifactRecord)
             .filter(ArtifactRecord.project_id == project_id)

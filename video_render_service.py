@@ -572,6 +572,34 @@ class VideoRenderService:
             progress=RENDER_STAGE_PROGRESS.get(stage, 0),
         )
 
+    def _prune_tasks_locked(self) -> None:
+        """Bound the in-memory ``_tasks`` dict.
+
+        Task entries are kept so the frontend can show recent render history,
+        but success/error entries are never removed today, so long-running
+        sessions leak memory. Cap the dict to the newest MAX_TASKS entries,
+        always preserving any still-running task.
+        """
+        max_tasks = 50
+        if len(self._tasks) <= max_tasks:
+            return
+        running_ids = {
+            task_id
+            for task_id, task in self._tasks.items()
+            if task.get("status") == "rendering"
+        }
+        finished = [
+            (task_id, task)
+            for task_id, task in self._tasks.items()
+            if task_id not in running_ids
+        ]
+        finished.sort(
+            key=lambda item: item[1].get("finished_at") or 0.0,
+            reverse=True,
+        )
+        for task_id, _task in finished[max_tasks - len(running_ids):]:
+            self._tasks.pop(task_id, None)
+
     def _set_task_status(
         self,
         task_id: str,
@@ -593,6 +621,7 @@ class VideoRenderService:
                 }:
                     task["finished_at"] = time.time()
                 task.update(fields)
+            self._prune_tasks_locked()
         persistent_status = {
             "rendering": "running",
             "success": "succeeded",

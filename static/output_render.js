@@ -403,7 +403,7 @@ function showStep8VideoResult(videos) {
             <span>${escHtml(created || item.filename || '')}</span>
           </div>
           <div class="video-preview-box">
-            <video controls src="${url}" data-video-filename="${escHtml(item.filename || '')}"></video>
+            <video controls src="${escHtml(url)}" data-video-filename="${escHtml(item.filename || '')}"></video>
           </div>
           <div class="step8-video-actions">
             ${item.is_speed_variant ? `
@@ -419,11 +419,11 @@ function showStep8VideoResult(videos) {
                 应用语速并生成 MP4
               </button>
             `}
-            <a href="${item.url}" download class="btn success" style="text-decoration: none;">
+            <a href="${escHtml(item.url)}" download class="btn success" style="text-decoration: none;">
               <svg class="icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 3v12"></path></svg>
               下载 MP4
             </a>
-            <button class="danger compact-action-btn" type="button" onclick="deleteStep8Video('${escHtml(item.filename || '')}')">
+            <button class="danger compact-action-btn step8-video-delete" type="button" data-filename="${escHtml(item.filename || '')}">
               删除视频
             </button>
           </div>
@@ -442,6 +442,11 @@ function showStep8VideoResult(videos) {
         const card = button.closest('.step8-video-card');
         const select = card?.querySelector('.step8-speed-select');
         generateStep8SpeedVideo(button.dataset.filename || '', Number(select?.value || 1), button);
+      });
+    });
+    list.querySelectorAll('.step8-video-delete').forEach(button => {
+      button.addEventListener('click', () => {
+        deleteStep8Video(button.dataset.filename || '');
       });
     });
   }

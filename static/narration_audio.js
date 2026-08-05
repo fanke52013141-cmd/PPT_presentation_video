@@ -116,7 +116,12 @@ async function annotateStep6Narration() {
     if (btn) btn.disabled = true;
     updateStep6AutosaveStatus('AI 标注中...');
     showToast('AI 正在标注停顿和语气...');
-    const res = await API.post(`/api/projects/${state.currentProject.id}/steps/6/annotate`, narrationData);
+    // AI 标注逐句段调用 LLM，可能超过 2 分钟，给足前端超时。
+    const res = await API.post(
+      `/api/projects/${state.currentProject.id}/steps/6/annotate`,
+      narrationData,
+      { timeoutMs: 300000 },
+    );
     if (res.success && res.beats) {
       narrationData = res.beats;
       normalizeStep6Data();
@@ -424,7 +429,12 @@ async function runStep7TTS() {
   showToast('🔊 正在生成音频；已有且未过期的页面会自动跳过，只补缺失页面...');
 
   try {
-    const res = await API.post(`/api/projects/${state.currentProject.id}/steps/7/synthesize`);
+    // TTS 全量合成可能长达数分钟（后端含重试），给足前端超时。
+    const res = await API.post(
+      `/api/projects/${state.currentProject.id}/steps/7/synthesize`,
+      undefined,
+      { timeoutMs: 600000 },
+    );
     if (res.success) {
       const skipped = Array.isArray(res.skipped) ? res.skipped.length : 0;
       const generated = Array.isArray(res.generated) ? res.generated.length : 0;

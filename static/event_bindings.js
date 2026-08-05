@@ -157,6 +157,7 @@ function initGlobalEvents() {
   document.getElementById('step3-btn-confirm')?.addEventListener('click', () => confirmStep3Images());
 
   // ================= 步骤 5 事件 =================
+  document.getElementById('step5-btn-semantic-blocks')?.addEventListener('click', () => runStep5SemanticBlocks());
   document.getElementById('step5-btn-new-block')?.addEventListener('click', () => createCurrentSlideBlock());
   document.getElementById('step5-btn-clear-current')?.addEventListener('click', () => clearCurrentSlideMaskAnnotations());
   document.getElementById('step5-btn-subtitle-settings')?.addEventListener('click', () => openSubtitleSettingsModal());

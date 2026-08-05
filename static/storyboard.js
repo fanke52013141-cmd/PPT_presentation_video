@@ -312,16 +312,22 @@ async function generateStep2Contract(requirement = '') {
   try {
     if (loadingText) loadingText.innerText = 'Step 2A：AI 正在规划每页标题、正文要点和演讲稿...';
     const scriptPayload = normalizedRequirement ? { requirement: normalizedRequirement } : {};
+    // LLM 规划可能超过 2 分钟（后端 STEP2_LLM_TIMEOUT_SEC=240s），给足前端超时。
     const scriptRes = await API.post(
       `/api/projects/${state.currentProject.id}/steps/2/script/execute`,
       scriptPayload,
+      { timeoutMs: 300000 },
     );
     if (!scriptRes.success) {
       showToast(`❌ 错误: ${scriptRes.message || 'Step 2A 生成失败'}`);
       return;
     }
     if (loadingText) loadingText.innerText = 'Step 2B：AI 正在根据演讲稿规划画面语义块...';
-    const visualRes = await API.post(`/api/projects/${state.currentProject.id}/steps/2/visual/execute`);
+    const visualRes = await API.post(
+      `/api/projects/${state.currentProject.id}/steps/2/visual/execute`,
+      undefined,
+      { timeoutMs: 300000 },
+    );
     if (!visualRes.success) {
       showToast(`❌ 错误: ${visualRes.message || 'Step 2B 生成失败'}`);
       return;

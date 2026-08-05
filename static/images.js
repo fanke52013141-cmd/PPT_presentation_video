@@ -358,6 +358,13 @@ window.closeStep3AIModal = closeStep3AIModal;
 async function uploadStep3ImageById(slideId, input) {
   const file = input.files[0];
   if (!file) return;
+  // 与后端 MAX_IMAGE_UPLOAD_BYTES=20MB 保持一致，避免上传后才报错
+  const MAX_IMAGE_UPLOAD_BYTES = 20 * 1024 * 1024;
+  if (file.size > MAX_IMAGE_UPLOAD_BYTES) {
+    showToast(`❌ 图片超过 20MB 限制，请压缩后重试`);
+    input.value = '';
+    return;
+  }
   const formData = new FormData();
   formData.append('slide_id', slideId);
   formData.append('file', file);

@@ -31,22 +31,12 @@ async function loadStep2Data() {
       document.getElementById('step2-btn-add-slide').style.display = 'inline-flex';
       document.getElementById('step2-btn-batch-import').style.display = 'inline-flex';
     }
-    document.getElementById('step2-thumbs-actions').style.display = 'none';
+    document.getElementById('step2-btn-save').style.display = 'none';
     document.getElementById('step2-btn-next').style.display = 'none';
     updateStep2AutosaveStatus('');
   }
 }
 
-function toChineseNumber(n) {
-  // 把页码转成中文数字：1→一、11→十一、21→二十一
-  const digits = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
-  const num = Math.floor(Math.abs(Number(n) || 0));
-  if (num <= 10) return num === 0 ? '零' : (digits[num] || String(num));
-  if (num < 20) return '十' + (num % 10 ? digits[num % 10] : '');
-  const tens = Math.floor(num / 10);
-  const ones = num % 10;
-  return digits[tens] + '十' + (ones ? digits[ones] : '');
-}
 
 function isManualMode() {
   return document.body.classList.contains('mode-manual');
@@ -395,12 +385,8 @@ function renderStep2Workspace() {
     if (addSlideBtn) addSlideBtn.style.display = 'none';
     if (batchImportBtn) batchImportBtn.style.display = 'none';
   }
-  // 批量删除/保存按钮在缩略图下方操作行中显示；
-  // 批量删除模式下即使分镜被全部移除也需保留操作行，便于点击“保存”提交删除
-  const thumbsActions = document.getElementById('step2-thumbs-actions');
-  if (thumbsActions) {
-    thumbsActions.style.display = (hasSlides || state.step2BatchDeleteMode) ? 'flex' : 'none';
-  }
+  // 批量删除/保存按钮在工具栏中（批量导入右侧）常显，方便随时进入删除模式
+  document.getElementById('step2-btn-save').style.display = 'inline-flex';
   const step2NextButton = document.getElementById('step2-btn-next');
   step2NextButton.style.display = 'inline-flex';
   step2NextButton.disabled = !hasSlides;
@@ -420,17 +406,18 @@ function renderStep2Workspace() {
   state.slides.forEach((slide, idx) => {
     const thumb = document.createElement('div');
     thumb.className = `slide-thumbnail-card step2-slide-thumb ${idx === state.activeSlideIndex ? 'active' : ''}`;
-    thumb.style.cssText = 'min-width: 112px; max-width: 112px; min-height: 42px; padding: 0.55rem 1.75rem 0.55rem 0.65rem; cursor: pointer; display: flex; align-items: center; justify-content: center;';
-    // 缩略图卡片直接显示中文页码（第一页/第二页…），主标题放悬停提示
-    const pageLabel = `第${toChineseNumber(idx + 1)}页`;
+    // 页码始终居中；删除模式下删除按钮绝对定位贴在卡片右侧边缘、与页码垂直对齐
+    thumb.style.cssText = 'min-width: 112px; max-width: 112px; min-height: 42px; padding: 0.55rem 0.65rem; cursor: pointer; display: flex; align-items: center; justify-content: center;';
+    // 缩略图卡片直接显示页码（第1页/第2页…），主标题放悬停提示
+    const pageLabel = `第${idx + 1}页`;
     const tooltipTitle = (slide.main_title || '').trim() || pageLabel;
     thumb.innerHTML = `
+      <div style="font-size: 0.78rem; font-weight: 800; color: #111; text-align: center; line-height: 1.2; word-break: break-all; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;" title="${escHtml(tooltipTitle)}">${escHtml(pageLabel)}</div>
       ${state.step2BatchDeleteMode ? `
         <button class="step2-thumb-delete" type="button" title="删除此分镜" aria-label="删除此分镜">
           <svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
         </button>
       ` : ''}
-      <div style="font-size: 0.78rem; font-weight: 800; color: #111; text-align: center; line-height: 1.2; word-break: break-all; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;" title="${escHtml(tooltipTitle)}">${escHtml(pageLabel)}</div>
     `;
     thumb.addEventListener('click', () => {
       if (state.step2BatchDeleteMode) {
@@ -457,10 +444,6 @@ function renderStep2Workspace() {
     if (!manual) {
       syncStep2SimpleFieldsToInternalGroups(slide);
     }
-    const slideIdEl = document.getElementById('step2-current-slide-id');
-    const slideTitleEl = document.getElementById('step2-current-slide-title');
-    if (slideIdEl) slideIdEl.innerText = slide.slide_id;
-    if (slideTitleEl) slideTitleEl.innerText = slide.main_title || '未命名 Slide';
     // 同步隐藏字段
     document.getElementById('step2-main-title').value = slide.main_title || '';
     document.getElementById('step2-core-message').value = slide.core_message || '';
@@ -527,14 +510,9 @@ function saveManualNarrationInputToState(input) {
       }];
     }
     slide.narration_beats[0].spoken_text = input.value;
-    // 同步显示在头部
-    const titleEl = document.getElementById('step2-current-slide-title');
-    // 标题输入也走这个分支
   }
   if (input && input.id === 'step2-slide-title-input') {
     slide.main_title = input.value;
-    const titleEl = document.getElementById('step2-current-slide-title');
-    if (titleEl) titleEl.innerText = input.value || '未命名 Slide';
   }
 }
 

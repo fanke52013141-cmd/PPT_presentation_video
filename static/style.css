@@ -495,26 +495,34 @@ textarea.step2-soft-input:focus {
 
 .step2-thumb-delete {
   position: absolute;
-  top: 3px;
-  right: 6px;
-  width: 18px;
-  height: 18px;
-  min-height: 18px;
+  top: 50%;
+  right: 0.3rem;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  min-height: 16px;
   padding: 0;
   border-radius: 50%;
-  background: var(--danger-color);
-  border-color: #e84a5f;
-  border-width: 1.5px;
-  box-shadow: 1px 1px 0px 0px var(--ink-color);
+  background: #f5c518;
+  border: 1.5px solid #d4a800;
+  box-shadow: 1px 1px 0px 0px rgba(0, 0, 0, 0.35);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   z-index: 3;
+  color: #4a3800;
+  cursor: pointer;
+}
+
+.step2-thumb-delete:hover {
+  background: #e6b800;
+  border-color: #c49a00;
 }
 
 .step2-thumb-delete .icon {
-  width: 0.58rem;
-  height: 0.58rem;
+  width: 0.46rem;
+  height: 0.46rem;
   stroke-width: 3;
 }
 
@@ -4228,15 +4236,6 @@ button.success,
   border-radius: 22px !important;
 }
 
-.step2-slide-editor > h3 {
-  margin: 0 0 1rem !important;
-  padding: 0 0 0.85rem !important;
-  border-bottom: 1px solid var(--color-border-default) !important;
-  font-size: 2em;
-  line-height: 1.55;
-  overflow: visible;
-}
-
 .step2-slide-fields {
   gap: 1rem 1.25rem;
 }
@@ -4888,16 +4887,6 @@ textarea.step2-soft-input {
   color: var(--color-text-primary) !important;
 }
 
-.step2-current-slide-heading {
-  margin: 0 0 0.55rem !important;
-  padding: 0 0 0.5rem !important;
-  border-bottom: 1px solid var(--color-border-default) !important;
-  color: var(--color-text-primary) !important;
-  font-size: 1.02rem !important;
-  font-weight: 800 !important;
-  line-height: 1.35 !important;
-}
-
 .step2-generation-status.success {
   display: none !important;
 }
@@ -5045,17 +5034,6 @@ button.success:disabled,
   border: 1px solid #edf0f5 !important;
   border-radius: 18px !important;
   box-shadow: 0 8px 24px rgba(20, 24, 40, 0.04) !important;
-}
-
-/* 顶部 Slide 小标题：小而清晰，作为当前 slide 标识 */
-#step-panel-2 .step2-current-slide-heading {
-  font-size: 15px !important;
-  font-weight: 700 !important;
-  color: #2f3542 !important;
-  margin: 0 0 20px !important;
-  padding: 0 0 12px !important;
-  border-bottom: 1px solid #eef1f6 !important;
-  line-height: 22px !important;
 }
 
 /* 字段标题：主标题 / 正文 / 演讲稿，统一 18px */

@@ -262,7 +262,9 @@ async function submitStep2BatchImport(mode) {
   state.slides = existingSlides.concat(newSlides);
   state.activeSlideIndex = mode === 'append' ? existingSlides.length : 0;
   try {
-    const res = await saveStep2Contract({ silent: true });
+    // 批量导入刚构造完 slides，不能再让 saveStep2Contract 用旧编辑框内容
+    // 覆盖新导入的第一项标题/正文（skipCurrentSlideSync）。
+    const res = await saveStep2Contract({ silent: true, skipCurrentSlideSync: true });
     if (res && res.success && res.validation?.valid !== false) {
       showToast(`✅ 已${mode === 'append' ? '追加' : '覆盖'}导入 ${importedSlides.length} 页分镜`);
       closeStep2BatchImportModal();
@@ -922,7 +924,9 @@ function syncStep2SummaryInputs(slide) {
 }
 
 async function saveStep2Contract(options = {}) {
-  saveCurrentSlideInputToState();
+  if (!options.skipCurrentSlideSync) {
+    saveCurrentSlideInputToState();
+  }
   const pureManualContract = isManualMode()
     && state.slides.every(slide => !step2SlideHasStructuredVisuals(slide));
   const payload = {

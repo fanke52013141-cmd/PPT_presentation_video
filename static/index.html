@@ -180,13 +180,6 @@
                   <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path></svg>
                   批量导入
                 </button>
-                <button id="step2-btn-save" class="secondary" style="display: none; font-size: 0.85rem; padding: 0.35rem 0.9rem;">
-                  <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path></svg>
-                  批量删除
-                </button>
-                <button id="step2-btn-cancel-delete" class="secondary" style="display: none; font-size: 0.85rem; padding: 0.35rem 0.9rem;">
-                  取消
-                </button>
                 <span id="step2-autosave-status" class="step2-autosave-status"></span>
               </div>
               <button class="btn-next-step success" id="step2-btn-next" style="display: none; font-size: 0.85rem; padding: 0.35rem 0.9rem;">
@@ -197,6 +190,16 @@
 
             <!-- 缩略图横排展示 -->
             <div id="step2-thumbs" class="slides-thumbnail-container" style="margin: 0; padding-bottom: 0; display: none;"></div>
+            <!-- 缩略图下方操作行：批量删除 / 取消（只对手动分镜生效） -->
+            <div id="step2-thumbs-actions" style="display: none; flex-direction: row; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
+              <button id="step2-btn-save" class="secondary" style="font-size: 0.85rem; padding: 0.35rem 0.9rem;">
+                <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path></svg>
+                批量删除
+              </button>
+              <button id="step2-btn-cancel-delete" class="secondary" style="display: none; font-size: 0.85rem; padding: 0.35rem 0.9rem;">
+                取消
+              </button>
+            </div>
           </div>
 
           <div id="step2-loading" class="card" style="display: none; text-align: center; padding: 3rem;">

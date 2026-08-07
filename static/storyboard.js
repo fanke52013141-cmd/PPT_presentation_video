@@ -31,10 +31,21 @@ async function loadStep2Data() {
       document.getElementById('step2-btn-add-slide').style.display = 'inline-flex';
       document.getElementById('step2-btn-batch-import').style.display = 'inline-flex';
     }
-    document.getElementById('step2-btn-save').style.display = 'none';
+    document.getElementById('step2-thumbs-actions').style.display = 'none';
     document.getElementById('step2-btn-next').style.display = 'none';
     updateStep2AutosaveStatus('');
   }
+}
+
+function toChineseNumber(n) {
+  // 把页码转成中文数字：1→一、11→十一、21→二十一
+  const digits = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+  const num = Math.floor(Math.abs(Number(n) || 0));
+  if (num <= 10) return num === 0 ? '零' : (digits[num] || String(num));
+  if (num < 20) return '十' + (num % 10 ? digits[num % 10] : '');
+  const tens = Math.floor(num / 10);
+  const ones = num % 10;
+  return digits[tens] + '十' + (ones ? digits[ones] : '');
 }
 
 function isManualMode() {
@@ -384,7 +395,12 @@ function renderStep2Workspace() {
     if (addSlideBtn) addSlideBtn.style.display = 'none';
     if (batchImportBtn) batchImportBtn.style.display = 'none';
   }
-  document.getElementById('step2-btn-save').style.display = 'inline-flex';
+  // 批量删除/保存按钮在缩略图下方操作行中显示；
+  // 批量删除模式下即使分镜被全部移除也需保留操作行，便于点击“保存”提交删除
+  const thumbsActions = document.getElementById('step2-thumbs-actions');
+  if (thumbsActions) {
+    thumbsActions.style.display = (hasSlides || state.step2BatchDeleteMode) ? 'flex' : 'none';
+  }
   const step2NextButton = document.getElementById('step2-btn-next');
   step2NextButton.style.display = 'inline-flex';
   step2NextButton.disabled = !hasSlides;
@@ -405,14 +421,16 @@ function renderStep2Workspace() {
     const thumb = document.createElement('div');
     thumb.className = `slide-thumbnail-card step2-slide-thumb ${idx === state.activeSlideIndex ? 'active' : ''}`;
     thumb.style.cssText = 'min-width: 112px; max-width: 112px; min-height: 42px; padding: 0.55rem 1.75rem 0.55rem 0.65rem; cursor: pointer; display: flex; align-items: center; justify-content: center;';
-    const slideTitle = (slide.main_title || '').trim() || `第 ${idx + 1} 页`;
+    // 缩略图卡片直接显示中文页码（第一页/第二页…），主标题放悬停提示
+    const pageLabel = `第${toChineseNumber(idx + 1)}页`;
+    const tooltipTitle = (slide.main_title || '').trim() || pageLabel;
     thumb.innerHTML = `
       ${state.step2BatchDeleteMode ? `
         <button class="step2-thumb-delete" type="button" title="删除此分镜" aria-label="删除此分镜">
           <svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
         </button>
       ` : ''}
-      <div style="font-size: 0.78rem; font-weight: 800; color: #111; text-align: center; line-height: 1.2; word-break: break-all; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;" title="${escHtml(slideTitle)}">${escHtml(slideTitle)}</div>
+      <div style="font-size: 0.78rem; font-weight: 800; color: #111; text-align: center; line-height: 1.2; word-break: break-all; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;" title="${escHtml(tooltipTitle)}">${escHtml(pageLabel)}</div>
     `;
     thumb.addEventListener('click', () => {
       if (state.step2BatchDeleteMode) {
@@ -572,8 +590,9 @@ function updateStep2BatchDeleteButton() {
 }
 
 async function handleStep2BatchDeleteButton() {
-  if (!state.slides || state.slides.length === 0) return;
   if (!state.step2BatchDeleteMode) {
+    // 只有“进入批量删除模式”需要至少一页；批量删除模式下 slides 可能被全部移除为空
+    if (!state.slides || state.slides.length === 0) return;
     saveCurrentSlideInputToState();
     clearTimeout(state.step2AutoSaveTimer);
     await saveStep2Contract({ silent: true });

@@ -4722,7 +4722,7 @@ textarea.step2-soft-input {
 
 .step3-card-actions {
   display: grid;
-  grid-template-columns: 48px 36px 36px;
+  grid-template-columns: 44px 36px 48px;
   align-items: start;
   gap: 4px;
   width: 128px;

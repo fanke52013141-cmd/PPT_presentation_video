@@ -219,9 +219,6 @@ function renderStep3Grid() {
           </span>
         </div>
         <div class="step3-card-actions">
-          <button class="success step3-card-action step3-ai-action" data-slide-id="${escHtml(img.slide_id)}" ${isBusy ? 'disabled' : ''}>
-            ${isGenerating ? '生成中' : 'AI生成'}
-          </button>
           ${img.exists ? `
             <button class="danger step3-card-action step3-delete-action" data-slide-id="${escHtml(img.slide_id)}" ${isBusy ? 'disabled' : ''}>
               删除
@@ -231,6 +228,9 @@ function renderStep3Grid() {
             ${isUploading ? '上传中' : '上传'}
             <input class="step3-upload-input" data-slide-id="${escHtml(img.slide_id)}" type="file" accept="image/*" ${isBusy ? 'disabled' : ''} style="display: none;">
           </label>
+          <button class="success step3-card-action step3-ai-action" data-slide-id="${escHtml(img.slide_id)}" ${isBusy ? 'disabled' : ''}>
+            ${isGenerating ? '生成中' : 'AI生成'}
+          </button>
         </div>
       </div>
       <div class="step3-card-heading">
@@ -433,15 +433,16 @@ window.deleteAllStep3Images = deleteAllStep3Images;
 
 // 批量上传处理
 async function handleStep3BatchUpload(e) {
-  const files = Array.from(e.target.files);
+  const files = Array.from(e.target.files).sort((a, b) => a.lastModified - b.lastModified);
   if (files.length === 0) return;
-  
-  // 按分镜顺序逐一匹配上传
+
+  // 按分镜顺序逐一匹配上传（文件按最后修改时间升序：最早创建的排最前）
   const slideIds = step3ImageOrder.map(img => img.slide_id);
   const queuedSlideIds = slideIds.slice(0, files.length);
   queuedSlideIds.forEach(slideId => step3UploadingSlides.add(slideId));
   renderStep3Grid();
   
+  let successCount = 0;
   for (let i = 0; i < files.length; i++) {
     const slideId = slideIds[i];
     if (!slideId) break;
@@ -451,18 +452,29 @@ async function handleStep3BatchUpload(e) {
     formData.append('slide_id', slideId);
     formData.append('file', files[i]);
     try {
-      await API.post(`/api/projects/${state.currentProject.id}/steps/3/upload`, formData);
+      const res = await API.post(`/api/projects/${state.currentProject.id}/steps/3/upload`, formData);
+      if (res && res.success) {
+        successCount++;
+        // 上传成功：立即更新内存中的图片状态，图片随下方重绘马上显示，无需等全部传完
+        const target = step3ImageOrder.find(item => item.slide_id === slideId);
+        if (target) {
+          target.exists = true;
+          target.url = res.image_url || `/api/projects/${state.currentProject.id}/slides/${encodeURIComponent(slideId)}/image?t=${Date.now()}`;
+          target.provenance = { valid: true };
+        }
+      }
     } catch(err) {
       showToast(`⚠️ 第 ${i+1} 张上传失败`);
     } finally {
       step3UploadingSlides.delete(slideId);
-      step3CurrentUploading = null;
+      if (step3CurrentUploading === slideId) step3CurrentUploading = null;
       renderStep3Grid();
     }
   }
   queuedSlideIds.forEach(slideId => step3UploadingSlides.delete(slideId));
   step3CurrentUploading = null;
-  showToast('批量上传完成！');
+  showToast(successCount === files.length ? '批量上传完成！' : `批量上传完成（成功 ${successCount}/${files.length}）`);
+  // 全部完成后拉取一次服务端权威列表，补齐 provenance 等完整信息，保证与后端一致
   await refreshStep3Images();
   await refreshCurrentProjectStatus(3);
   e.target.value = '';

@@ -20,6 +20,7 @@ from project_storage import (
     presentation_sidecar,
     presentations_dir,
     safe_identifier,
+    slide_dir,
     slide_file,
     visual_contract_path,
 )
@@ -45,6 +46,26 @@ def _issue(code: str, message: str, slide_id: str = "") -> dict[str, str]:
     if slide_id:
         value["slide_id"] = slide_id
     return value
+
+
+def _read_slide_notes(run_dir: str | Path, slide_id: str) -> str:
+    """读取某页演讲稿作为 PPT 备注文本。
+
+    优先取可读版 narration.txt（clean_tts_text 已去除 TTS 标记）；
+    不存在时回退到 tts_text.txt；两者都缺失则返回空串。
+    """
+    root = Path(run_dir).resolve()
+    slide_dir_path = slide_dir(root, slide_id)
+    for name in ("narration.txt", "tts_text.txt"):
+        candidate = slide_dir_path / name
+        if candidate.is_file():
+            try:
+                text = candidate.read_text(encoding="utf-8-sig").strip()
+            except OSError:
+                continue
+            if text:
+                return text
+    return ""
 
 
 def _read_contract(run_dir: str | Path) -> tuple[dict[str, Any] | None, list[dict[str, str]]]:
@@ -190,6 +211,13 @@ def build_image_only_pptx(
             width=presentation.slide_width,
             height=presentation.slide_height,
         )
+        # 将该页演讲稿写入演讲者备注（notes），便于放映时用演讲者视图逐页讲解。
+        # 备注内容不遮挡图片：备注属于独立的 notes 区，仅演讲者可见。
+        slide_id = slide_data["slide_id"]
+        notes_text = _read_slide_notes(root, slide_id)
+        if notes_text:
+            notes = slide.notes_slide
+            notes.notes_text_frame.text = notes_text
         progress(20 + round(60 * index / len(readiness["slides"])), "composing")
 
     try:

@@ -49,7 +49,7 @@
       button.id = 'step3-btn-background-settings';
       button.type = 'button';
       button.className = 'secondary';
-      button.textContent = '最终视频背景';
+      button.textContent = '视频背景';
       toolbar.insertBefore(button, confirmButton || null);
       button.addEventListener('click', openModal);
     }
@@ -60,7 +60,7 @@
       deleteAllButton.id = 'step3-btn-delete-all-images';
       deleteAllButton.type = 'button';
       deleteAllButton.className = 'secondary step3-delete-all-images';
-      deleteAllButton.textContent = '批量删除图片';
+      deleteAllButton.textContent = '批量删除';
       toolbar.insertBefore(deleteAllButton, confirmButton || null);
       deleteAllButton.addEventListener('click', () => window.deleteAllStep3Images?.());
     }

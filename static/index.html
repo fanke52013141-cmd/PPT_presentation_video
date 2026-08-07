@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260807.2">
+  <link rel="stylesheet" href="style.css?v=20260807.3">
 </head>
 <body>
 
@@ -231,11 +231,11 @@
         <!-- ==================== 步骤 3: 图片生成与上传 ==================== -->
         <div id="step-panel-3" class="step-panel" style="display: none;">
           <!-- 顶部控制栏 -->
-          <div class="step3-toolbar-row" style="display: flex; align-items: center; gap: 0.8rem; padding: 0.55rem 0; border-bottom: 2px solid #111; margin-bottom: 0.65rem;">
+          <div class="step3-toolbar-row" style="display: flex; align-items: center; gap: 0.32rem; padding: 0.55rem 0; border-bottom: 2px solid #111; margin-bottom: 0.65rem;">
             <h2 class="highlight-title" style="margin: 0; font-size: 1.2rem;">图片生成与管理</h2>
             <label id="step3-batch-upload-label" class="btn secondary" style="cursor: pointer; font-size: 0.85rem; padding: 0.35rem 0.9rem; display: inline-flex; align-items: center; gap: 0.4rem;">
               <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path></svg>
-              批量上传本地图片
+              批量上传
               <input type="file" id="step3-batch-upload" accept="image/*" multiple style="display: none;">
             </label>
             <button id="step3-btn-batch-generate" class="secondary" style="font-size: 0.85rem; padding: 0.35rem 0.9rem;">
@@ -245,11 +245,11 @@
                 <path d="m5 17 4.5-4 3.2 2.8 2.3-2.1 4 3.3"></path>
                 <path d="M18 2v4M16 4h4"></path>
               </svg>
-              一键批量生成图片
+              一键生成
             </button>
             <button id="step3-btn-copy-prompts" class="secondary" style="font-size: 0.85rem; padding: 0.35rem 0.9rem;">
               <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-              复制生图提示词
+              复制提示词
             </button>
             <button id="step3-btn-prompt-settings" class="secondary" type="button" style="font-size: 0.85rem; padding: 0.35rem 0.9rem;">
               生图 Prompt
@@ -257,8 +257,8 @@
             <button id="step3-btn-style" class="secondary" style="font-size: 0.85rem; padding: 0.35rem 0.9rem;">
               图片风格设置
             </button>
-            <button id="step3-btn-confirm" class="success" style="display: none; margin-left: auto; font-size: 0.85rem; padding: 0.35rem 0.9rem;">
-              确认所有图片，进入标注步骤
+            <button id="step3-btn-confirm" class="success" style="display: none; margin-left: 0.48rem; font-size: 0.85rem; padding: 0.35rem 0.9rem;">
+              下一步
               <svg class="icon" viewBox="0 0 24 24" style="width:14px; height:14px; stroke-width:2.5;"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
             </button>
           </div>
@@ -1005,7 +1005,7 @@
   <script src="article.js?v=20260801.1"></script>
   <script src="storyboard.js?v=20260807.1"></script>
   <script src="storyboard_prompts.js?v=20260801.1"></script>
-  <script src="images.js?v=20260801.1"></script>
+  <script src="images.js?v=20260807.3"></script>
   <script src="image_prompts.js?v=20260801.1"></script>
   <script src="mask_reveal.js?v=20260801.1"></script>
   <script src="mask_workspace.js?v=20260801.1"></script>
@@ -1016,7 +1016,7 @@
   <script src="workspace_navigation.js?v=20260801.1"></script>
   <script src="event_bindings.js?v=20260801.1"></script>
   <script src="project_profile_extension.js?v=3.0.1"></script>
-  <script src="storyboard_background_extension.js?v=3.0.1"></script>
+  <script src="storyboard_background_extension.js?v=20260807.1"></script>
   <script src="style_reference_manager_extension.js?v=3.0.1"></script>
   <script src="ai_mask_extension.js?v=3.0.1"></script>
   <script src="one_click_extension.js?v=20260630.1"></script>

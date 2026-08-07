@@ -58,3 +58,6 @@ ppt-studio-global-settings-sensitive*.json
 scratch/
 work/
 data/
+
+# Third-party binary tooling (downloaded, not source)
+tools/ffmpeg/

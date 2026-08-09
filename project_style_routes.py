@@ -71,13 +71,7 @@ def get_project_profile(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     project = _project_or_404(db, project_id)
-    profile = project_profile_store._normalize_lightweight_profile(
-        project_profile_store._read_json(
-            project_profile_store._profile_path(project),
-            {},
-        ),
-        {},
-    )
+    profile = project_profile_store.load_profile(project)
     return {"success": True, "profile": profile}
 
 
@@ -91,18 +85,13 @@ def save_project_profile(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     project = _project_or_404(db, project_id)
-    existing = project_profile_store._read_json(
-        project_profile_store._profile_path(project),
-        {},
-    )
-    profile = project_profile_store._normalize_lightweight_profile(
-        payload if isinstance(payload, dict) else {},
-        existing,
-    )
-    project_profile_store._write_json(
-        project_profile_store._profile_path(project),
-        profile,
-    )
+    try:
+        profile = project_profile_store.save_profile(
+            project,
+            payload if isinstance(payload, dict) else {},
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     _log(project, "project_profile_saved_lightweight", profile=profile)
     return {"success": True, "profile": profile}
 

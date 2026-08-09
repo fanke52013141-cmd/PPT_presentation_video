@@ -152,10 +152,10 @@ def _validate_ai_mask(project: Any) -> list[str]:
 
 def _validate_mask_assets(project: Any) -> list[str]:
     root = run_dir(project)
-    source_mtime = max(
+    source_mtime = max([
         mtime(root / "reveal_manifest.json"),
         *(mtime(root / "slides" / slide_id / "visual_draft.png") for slide_id in slide_ids(project)),
-    )
+    ])
     missing_or_stale: list[str] = []
     for slide_id in slide_ids(project):
         slide_root = root / "slides" / slide_id

@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import project_style_routes  # noqa: E402
+import project_profile_store  # noqa: E402
 from project_style_context import get_project_style_context  # noqa: E402
 from route_inventory import iter_effective_routes  # noqa: E402
 import server  # noqa: E402
@@ -108,7 +109,7 @@ def test_profile_and_step3_style_round_trip_use_narrow_context() -> None:
     assert not hasattr(context, "app")
     assert not hasattr(context, "Project")
     with tempfile.TemporaryDirectory() as temp_dir:
-        project = SimpleNamespace(id="project-style-test", run_dir=temp_dir)
+        project = SimpleNamespace(id="project-style-test", run_dir=temp_dir, ai_mode="auto")
         db = _ProjectDb(project)
         saved_profile = project_style_routes.save_project_profile(
             project.id,
@@ -118,6 +119,36 @@ def test_profile_and_step3_style_round_trip_use_narrow_context() -> None:
         assert saved_profile["profile"]["automation_mode"] == "auto"
         loaded_profile = project_style_routes.get_project_profile(project.id, db)
         assert loaded_profile["profile"]["automation_mode"] == "auto"
+
+        project.ai_mode = "manual"
+        loaded_profile = project_style_routes.get_project_profile(project.id, db)
+        assert loaded_profile["profile"]["automation_mode"] == "manual_review"
+        project.ai_mode = "auto"
+
+        try:
+            project_style_routes.save_project_profile(
+                project.id,
+                {"quality_gates": {"pause_on_render_failure": "false"}},
+                db,
+            )
+        except Exception as exc:
+            assert getattr(exc, "status_code", None) == 400
+        else:
+            raise AssertionError("string quality gate values must be rejected")
+
+        profile_source = (ROOT / "project_profile_store.py").read_text(encoding="utf-8")
+        routes_source = (ROOT / "project_style_routes.py").read_text(encoding="utf-8")
+        assert "write_json_atomic(path, value)" in profile_source
+        assert "project_profile_store.load_profile(project)" in routes_source
+        assert "project_profile_store.save_profile(" in routes_source
+
+        profile_path = Path(temp_dir) / "planning" / project_profile_store.PROFILE_FILENAME
+        profile_path.write_text(
+            '{"quality_gates":{"pause_on_render_failure":"false"}}',
+            encoding="utf-8",
+        )
+        legacy_profile = project_profile_store.load_profile(project)
+        assert legacy_profile["quality_gates"]["pause_on_render_failure"] is False
 
         saved_style = project_style_routes.put_step3_image_style(
             project.id,

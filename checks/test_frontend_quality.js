@@ -655,6 +655,15 @@ if (!projectProfile.includes('ai_mode: aiMode')) {
 if (!workspaceNavigation.includes("document.getElementById('btn-toggle-ai-mode').style.display = 'none'")) {
   throw new Error('project AI mode control remains visible after returning to the project library');
 }
+if (!workspaceNavigation.includes('await navigateToStep(visibleStep)') || !workspaceNavigation.includes('workspaceNavigationVersion')) {
+  throw new Error('workspace navigation does not await or invalidate stale loads');
+}
+if (!uiFoundation.includes('await onYes()') || !uiFoundation.includes('showToast(`操作失败')) {
+  throw new Error('shared confirmation does not handle asynchronous failures');
+}
+for (const token of ['智能继续', '从头重跑', "startOneClick('resume')", "startOneClick('restart')"]) {
+  if (!oneClick.includes(token)) throw new Error(`one-click recovery control missing: ${token}`);
+}
 if (!uiFoundation.includes('narrationDedupeKey') || !uiFoundation.includes('uniqueNarrationLines')) {
   throw new Error('frontend narration deduplication guard is missing');
 }

@@ -37,6 +37,7 @@ from one_click_resume_policy import (
     slides_requiring_images as _slides_requiring_images,
     upstream_image_inputs as _upstream_image_inputs,
 )
+from project_profile_store import DEFAULT_QUALITY_GATES, load_profile
 
 STATUS_FILENAME = "one_click_status.json"
 STATUS_VERSION = "one_click_orchestrator_v2"
@@ -52,14 +53,6 @@ STAGES = [
     ("tts", "合成并确认音频"),
     ("render", "渲染视频"),
 ]
-
-DEFAULT_QUALITY_GATES = {
-    "pause_on_storyboard_validation_error": True,
-    "pause_on_image_generation_failure": True,
-    "pause_on_ai_mask_low_confidence": True,
-    "pause_on_tts_failure": True,
-    "pause_on_render_failure": True,
-}
 
 _RUNNING_LOCK = threading.Lock()
 _RUNNING: dict[str, threading.Thread] = {}
@@ -137,10 +130,6 @@ def _write_json(path: Path, value: Any) -> None:
 
 def _status_path(project: Any) -> Path:
     return _run_dir(project) / "planning" / STATUS_FILENAME
-
-
-def _profile_path(project: Any) -> Path:
-    return _run_dir(project) / "planning" / "project_profile.json"
 
 
 def _initial_status(project_id: str, run_id: str) -> dict[str, Any]:
@@ -338,16 +327,8 @@ def _load_existing_narration(
     return payload
 
 
-def _profile(project: Any) -> dict[str, Any]:
-    value = _read_json(_profile_path(project), {})
-    return value if isinstance(value, dict) else {}
-
-
 def _quality_gates(project: Any) -> dict[str, bool]:
-    gates = (_profile(project).get("quality_gates") or {})
-    if not isinstance(gates, dict):
-        gates = {}
-    return {key: bool(gates.get(key, default)) for key, default in DEFAULT_QUALITY_GATES.items()}
+    return dict(load_profile(project)["quality_gates"])
 
 
 def _stage_index(stage_id: str) -> int:
@@ -359,8 +340,10 @@ def _stage_index(stage_id: str) -> int:
 
 def _resume_status(project: Any, project_id: str, run_id: str, mode: str) -> tuple[dict[str, Any], int]:
     previous = _status_for_project(project, project_id)
-    if mode == "resume" and previous.get("status") in {"paused", "running"} and previous.get("current_stage"):
-        plan = build_resume_plan(project, str(previous["current_stage"]))
+    resumable_states = {"paused", "running", "failed", "completed"}
+    if mode == "resume" and previous.get("status") in resumable_states:
+        failed_stage = str(previous.get("current_stage") or ("render" if previous.get("status") == "completed" else "preflight"))
+        plan = build_resume_plan(project, failed_stage)
         start_index = _stage_index(str(plan["effective_start_stage"]))
         status = previous
         status.update({

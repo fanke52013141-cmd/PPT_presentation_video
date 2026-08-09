@@ -89,7 +89,8 @@
         <h3 class="highlight-title">一键生成</h3>
         <p class="one-click-note"><strong>一键生成会读取当前各步骤配置：</strong>从已导入文章开始，自动完成文章➡️slides、slides➡️可视化、图片生成、AI Mask、旁白与音频以及最终视频合成。失败时会保留阶段状态，重新运行时复用未过期产物。</p>
         <div class="one-click-toolbar">
-          <button id="btn-one-click-start" class="success" type="button">重新运行自动生成</button>
+          <button id="btn-one-click-start" class="success" type="button">智能继续</button>
+          <button id="btn-one-click-restart" class="secondary" type="button">从头重跑</button>
           <button id="btn-one-click-refresh" class="secondary" type="button">刷新状态</button>
           <button id="btn-one-click-close" class="secondary" type="button">关闭</button>
         </div>
@@ -103,7 +104,8 @@
     });
     document.getElementById('btn-one-click-close')?.addEventListener('click', closeModal);
     document.getElementById('btn-one-click-refresh')?.addEventListener('click', () => refreshStatus().catch(error => toast(`刷新失败：${error.message}`, 6000)));
-    document.getElementById('btn-one-click-start')?.addEventListener('click', startOneClick);
+    document.getElementById('btn-one-click-start')?.addEventListener('click', () => startOneClick('resume').catch(error => toast(`启动失败：${error.message}`, 6000)));
+    document.getElementById('btn-one-click-restart')?.addEventListener('click', () => startOneClick('restart').catch(error => toast(`启动失败：${error.message}`, 6000)));
   }
 
   function ensureEntryButton() {
@@ -143,6 +145,7 @@
     summary.innerHTML = `
       <strong>状态：</strong><span class="one-click-pill ${esc(state)}">${esc(state)}</span>
       ${current ? `<span style="margin-left:.5rem;">当前阶段：${esc(current)}</span>` : ''}
+      ${status?.effective_start_stage ? `<br><small>恢复计划：从 ${esc(status.effective_start_stage)} 开始</small>` : ''}
       ${status?.started_at ? `<br><small>开始：${esc(status.started_at)}　更新：${esc(status.updated_at || '')}</small>` : ''}
       ${status?.video?.url ? `<br><a href="${esc(status.video.url)}" target="_blank">打开生成视频</a>` : ''}
     `;
@@ -163,7 +166,7 @@
   async function refreshStatus() {
     const projectId = activeProjectId();
     if (!projectId) throw new Error('当前没有可识别的项目，请先进入项目工作区。');
-    const result = await apiGet(`/api/projects/${projectId}/one-click-generate/status`);
+    const result = await apiGet(`/api/projects/${encodeURIComponent(projectId)}/one-click-generate/status`);
     renderStatus(result.status || {});
     const state = result.status?.status;
     if (state === 'running') startPolling();
@@ -175,23 +178,22 @@
     refreshStatus().catch(() => {});
   }
 
-  async function startOneClick() {
+  async function startOneClick(mode = 'resume') {
     const projectId = activeProjectId();
     if (!projectId) return toast('当前没有可识别的项目，请先进入项目工作区。', 5000);
-    const currentStatus = await refreshStatus();
-    const resume = currentStatus?.status === 'paused';
-    const confirmed = window.confirm(resume
-      ? '将从上次失败阶段继续，并保护已锁定或人工修正的 Mask、旁白和未过期产物。继续？'
-      : '将运行自动生成流程，并保护已锁定或人工修正的 Mask、旁白和未过期产物。继续？');
+    await refreshStatus();
+    const confirmed = window.confirm(mode === 'restart'
+      ? '将从预检查开始重跑自动流程。已锁定的 Mask 和人工旁白仍会保护，但分镜、图片和音频可能重新生成。继续？'
+      : '将重新检查上游产物，自动从最早失效阶段继续，并保护人工 Mask、旁白和未过期产物。继续？');
     if (!confirmed) return;
-    const button = document.getElementById('btn-one-click-start');
-    const original = button?.textContent || '重新运行自动生成';
+    const button = document.getElementById(mode === 'restart' ? 'btn-one-click-restart' : 'btn-one-click-start');
+    const original = button?.textContent || '智能继续';
     if (button) {
       button.disabled = true;
       button.textContent = '启动中...';
     }
     try {
-      const result = await apiPost(`/api/projects/${projectId}/one-click-generate`, { mode: resume ? 'resume' : 'restart' });
+      const result = await apiPost(`/api/projects/${encodeURIComponent(projectId)}/one-click-generate`, { mode });
       renderStatus(result.status || {});
       toast(result.already_running ? '一键生成正在运行。' : '自动生成已启动。', 4000);
       startPolling();

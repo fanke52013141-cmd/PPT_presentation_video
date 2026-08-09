@@ -5,6 +5,8 @@
 
 // ==================== 工作区视图控制逻辑 ====================
 
+let workspaceNavigationVersion = 0;
+
 async function enterWorkspace(projectId) {
   resetStep5ProjectState();
   const project = await API.get(`/api/projects/${projectId}`);
@@ -24,7 +26,7 @@ async function enterWorkspace(projectId) {
 
   // 加载步骤状态并导航至当前步骤
   updateStepperUI(visibleStep, project.step_status);
-  navigateToStep(visibleStep);
+  await navigateToStep(visibleStep);
 }
 
 function exitWorkspace() {
@@ -77,7 +79,7 @@ async function toggleProjectAiMode() {
       // 重新加载当前步骤以应用模式变化（如 Step 2 UI 切换）
       if (typeof navigateToStep === 'function' && state.currentProject) {
         const visibleStep = resolveProjectVisibleStep(state.currentProject);
-        navigateToStep(visibleStep);
+        await navigateToStep(visibleStep);
       }
     }
   });
@@ -118,6 +120,7 @@ async function refreshCurrentProjectStatus(activeStep = state.currentStep) {
 
 // 步骤面板切换
 async function navigateToStep(step) {
+  const navigationVersion = ++workspaceNavigationVersion;
   step = normalizeVisibleStep(step);
   state.currentStep = step;
   
@@ -132,8 +135,10 @@ async function navigateToStep(step) {
   if (state.currentProject && state.currentProject.current_step !== step) {
     // 更新数据库步骤与后处理状态
     const res = await API.get(`/api/projects/${state.currentProject.id}`);
+    if (navigationVersion !== workspaceNavigationVersion) return;
     state.currentProject = res;
   }
+  if (navigationVersion !== workspaceNavigationVersion) return;
   updateStepperUI(step, state.currentProject.step_status);
   
   // 针对特定步骤加载结果数据

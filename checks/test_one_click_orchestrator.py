@@ -19,6 +19,23 @@ def project_for(root: Path) -> SimpleNamespace:
     return SimpleNamespace(id="project-test", run_dir=str(root))
 
 
+def test_quality_gates_use_normalized_project_profile_values() -> None:
+    with tempfile.TemporaryDirectory() as value:
+        root = Path(value)
+        project = project_for(root)
+        planning = root / "planning"
+        planning.mkdir(parents=True)
+        (planning / "project_profile.json").write_text(
+            '{"quality_gates":{"pause_on_render_failure":"false"}}',
+            encoding="utf-8",
+        )
+
+        gates = one_click._quality_gates(project)
+
+        assert gates["pause_on_render_failure"] is False
+        assert gates["pause_on_tts_failure"] is True
+
+
 def test_atomic_status_write_and_resume_rewinds_when_upstream_is_missing() -> None:
     with tempfile.TemporaryDirectory() as value:
         root = Path(value)
@@ -147,6 +164,19 @@ def test_restart_does_not_reuse_failed_stage_state() -> None:
         assert start_index == 0
         assert restarted["run_id"] == "run-new"
         assert all(stage["status"] == "pending" for stage in restarted["stages"])
+
+
+def test_completed_run_smart_resume_revalidates_from_render() -> None:
+    with tempfile.TemporaryDirectory() as value:
+        project = project_for(Path(value))
+        status = one_click._initial_status(project.id, "run-old")
+        one_click._complete(project, status, video={"url": "/video.mp4"})
+
+        resumed, start_index = one_click._resume_status(project, project.id, "run-new", "resume")
+
+        assert start_index == one_click._stage_index("preflight")
+        assert resumed["previous_failed_stage"] == "render"
+        assert resumed["effective_start_stage"] == "preflight"
 
 
 def test_legacy_status_is_migrated_in_memory_to_v2() -> None:
@@ -333,8 +363,10 @@ def test_one_click_uses_safe_mask_and_audio_modes() -> None:
     assert "client.post(" not in source
     assert "client.put(" not in source
     assert 'mode == "restart" or not _has_contract(project)' in source
+    assert "from project_profile_store import DEFAULT_QUALITY_GATES, load_profile" in source
+    assert "dict(load_profile(project)[\"quality_gates\"])" in source
     for gate_name in one_click.DEFAULT_QUALITY_GATES:
-        assert source.count(gate_name) >= 2
+        assert gate_name in source
 
 
 def test_preflight_migrates_legacy_article_before_checking_source() -> None:

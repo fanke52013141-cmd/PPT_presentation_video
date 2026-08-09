@@ -54,9 +54,18 @@ function showCustomConfirm(title, message, onYes, onNo = null) {
 
   modal.style.display = 'flex';
 
-  newYes.addEventListener('click', () => {
+  newYes.addEventListener('click', async () => {
     modal.style.display = 'none';
-    if (onYes) onYes();
+    newYes.disabled = true;
+    newNo.disabled = true;
+    try {
+      if (onYes) await onYes();
+    } catch (error) {
+      showToast(`操作失败：${error.message}`, 6000);
+    } finally {
+      newYes.disabled = false;
+      newNo.disabled = false;
+    }
   });
 
   newNo.addEventListener('click', () => {

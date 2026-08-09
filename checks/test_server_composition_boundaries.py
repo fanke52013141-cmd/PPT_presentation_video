@@ -50,3 +50,13 @@ def test_extracted_helpers_have_single_source_ownership() -> None:
         for function_name in function_names:
             assert f"def {function_name}(" in module_source
             assert f"def {function_name}(" not in server_source
+
+
+def test_application_middleware_is_installed_from_its_owner_module() -> None:
+    server_source = source("server.py")
+    middleware_source = source("app_middleware.py")
+
+    assert "from app_middleware import install_static_asset_cache_policy" in server_source
+    assert "install_static_asset_cache_policy(app)" in server_source
+    assert "def no_cache_static_assets(" not in server_source
+    assert "def install_static_asset_cache_policy(" in middleware_source

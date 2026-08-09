@@ -66,6 +66,7 @@ def quick_checks() -> None:
         "ai_mask_semantic_matcher.py",
         "ai_mask_service.py",
         "ai_provider_service.py",
+        "app_middleware.py",
         "app_security.py",
         "artifact_fingerprint.py",
         "artifact_registry.py",

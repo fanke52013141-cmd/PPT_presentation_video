@@ -10,6 +10,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from PIL import Image
 from database import get_db, init_db, Project
 from config_store import get_all_settings, update_settings, get_setting
+from app_middleware import install_static_asset_cache_policy
 from app_security import configured_allowed_hosts, configured_allowed_origins, install_access_control
 from scripts.media_tools import (
     probe_media_duration_sec,
@@ -153,20 +154,7 @@ app.add_middleware(
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=configured_allowed_hosts())
 
 install_access_control(app)
-
-
-# 静态资源禁用浏览器缓存：保证前端改动刷新后立即生效（不影响 /api 与安全逻辑）
-@app.middleware("http")
-async def no_cache_static_assets(request, call_next):
-    response = await call_next(request)
-    path = request.url.path
-    # 只对前端静态资源（html/css/js/图片等，非 /api）禁用缓存
-    if path.startswith("/api") or not path or path == "/favicon.ico":
-        return response
-    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
-    return response
+install_static_asset_cache_policy(app)
 
 os.makedirs(RUNS_DIR, exist_ok=True)
 MAX_CONFIG_IMPORT_BYTES = int(os.environ.get("PPT_STUDIO_MAX_CONFIG_IMPORT_BYTES", str(25 * 1024 * 1024)))

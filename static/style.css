@@ -6917,3 +6917,256 @@ body.step5-fullscreen-mode #step5-thumbs .step5-slide-btn {
 body.step5-fullscreen-mode #step-panel-5 .step5-toolbar {
   flex: 0 0 auto !important;
 }
+
+/* ============================================================
+   Workflow spacing system
+   This is the single authoritative layout layer for every visible workflow
+   header. It deliberately replaces per-step offsets with a small shared scale.
+   ============================================================ */
+:root {
+  --workflow-space-top: 12px;
+  --workflow-section-gap: 12px;
+  --workflow-row-gap: 8px;
+  --workflow-action-gap: 8px;
+  --workflow-title-size: 1.25rem;
+  --workflow-title-line-height: 28px;
+  --workflow-action-height: 34px;
+  --workflow-tab-height: 28px;
+}
+
+#workspace-main {
+  padding-top: var(--workflow-space-top) !important;
+}
+
+.workflow-header {
+  box-sizing: border-box;
+  margin: 0 0 var(--workflow-section-gap) !important;
+  padding: 0 0 var(--workflow-section-gap) !important;
+  border-bottom: 1px solid var(--color-border-default) !important;
+  gap: var(--workflow-row-gap) !important;
+}
+
+.workflow-title {
+  margin: 0 !important;
+  color: var(--color-text-primary) !important;
+  font-size: var(--workflow-title-size) !important;
+  font-weight: 720 !important;
+  line-height: var(--workflow-title-line-height) !important;
+}
+
+.workflow-header--titlebar,
+#step-panel-2 .workflow-titlebar {
+  display: flex !important;
+  align-items: center !important;
+  min-height: 36px;
+  gap: var(--workflow-action-gap) !important;
+}
+
+.workflow-titlebar-actions,
+.workflow-toolbar,
+.workflow-header--titlebar > .workflow-toolbar,
+#step-panel-2 .workflow-titlebar-actions,
+#step-panel-8 .step8-output-title {
+  display: flex !important;
+  align-items: center !important;
+  min-width: 0;
+  gap: var(--workflow-action-gap) !important;
+}
+
+.workflow-header button,
+.workflow-header .btn,
+.workflow-header label.btn,
+.workflow-toolbar > button,
+.workflow-toolbar > .btn,
+.workflow-toolbar > label.btn {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  min-height: var(--workflow-action-height) !important;
+  height: var(--workflow-action-height) !important;
+  padding: 0 0.7rem !important;
+  border-radius: 10px !important;
+  font-size: 0.78rem !important;
+  line-height: 1 !important;
+  white-space: nowrap;
+}
+
+.workflow-header .icon,
+.workflow-toolbar .icon {
+  flex: 0 0 16px !important;
+  width: 16px !important;
+  height: 16px !important;
+}
+
+#step-panel-1 .step1-heading-row {
+  display: flex !important;
+  align-items: center !important;
+  min-height: 36px;
+}
+
+#step-panel-1 .step1-heading-row > button {
+  margin-left: auto !important;
+}
+
+#step-panel-1 .step1-content-card {
+  margin-top: 0 !important;
+}
+
+#step-panel-2 .step2-sticky-header {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 20;
+  margin-top: 0 !important;
+}
+
+#step-panel-2 .workflow-titlebar {
+  margin: 0 0 var(--workflow-row-gap) !important;
+}
+
+#step-panel-2 .workflow-titlebar-actions {
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+}
+
+#step-panel-2 #step2-btn-next {
+  margin-left: auto !important;
+}
+
+#step-panel-3 .step3-toolbar-row {
+  display: flex !important;
+  align-items: center !important;
+  flex-wrap: nowrap !important;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+#step-panel-3 .step3-toolbar-row > #step3-btn-confirm {
+  margin-left: auto !important;
+}
+
+#step-panel-5 .step5-mask-header {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  margin-bottom: var(--workflow-row-gap) !important;
+}
+
+#step-panel-5 .step5-toolbar {
+  width: 100%;
+  min-height: var(--workflow-action-height);
+  flex-wrap: nowrap !important;
+  justify-content: flex-start !important;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0 !important;
+  scrollbar-width: thin;
+}
+
+#step-panel-5 .step5-brush-control {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  min-height: var(--workflow-action-height) !important;
+  height: var(--workflow-action-height) !important;
+  padding: 0 0.7rem !important;
+  border-radius: 10px !important;
+  font-size: 0.75rem !important;
+}
+
+#step-panel-5 .step5-brush-control input[type="range"] {
+  width: 52px;
+}
+
+#step-panel-6 .step6-compact-header,
+#step-panel-8 .step8-header {
+  display: flex !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
+}
+
+#step-panel-6 .step6-header-actions,
+#step-panel-6 .step6-toolbar,
+#step-panel-8 .step8-header-actions {
+  flex-wrap: wrap;
+}
+
+#step-panel-6 .step6-toolbar,
+#step-panel-8 .step8-header-actions {
+  margin-left: auto;
+}
+
+.workflow-tabs {
+  box-sizing: border-box;
+  min-height: var(--workflow-tab-height) !important;
+  margin: 0 0 var(--workflow-section-gap) !important;
+  padding: 0 !important;
+  gap: var(--workflow-action-gap) !important;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+#step-panel-2 .workflow-tabs {
+  margin-bottom: 0 !important;
+}
+
+.workflow-tabs .slide-thumbnail-card.step2-slide-thumb,
+.workflow-tabs .step5-slide-btn {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  min-height: var(--workflow-tab-height) !important;
+  height: var(--workflow-tab-height) !important;
+  padding: 0 0.7rem !important;
+  border-radius: 9px !important;
+  font-size: 0.75rem !important;
+  line-height: 1 !important;
+}
+
+#btn-back-home[hidden] {
+  display: none !important;
+}
+
+#btn-back-home:not([hidden]) {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  width: auto !important;
+  min-width: max-content !important;
+  min-height: 36px !important;
+  height: 36px !important;
+  padding: 0 12px !important;
+  white-space: nowrap !important;
+  line-height: 1 !important;
+}
+
+#btn-back-home .icon {
+  flex: 0 0 16px !important;
+  width: 16px !important;
+  height: 16px !important;
+}
+
+@media (max-width: 1100px) {
+  #step-panel-3 .step3-toolbar-row,
+  #step-panel-2 .workflow-titlebar-actions,
+  #step-panel-6 .step6-header-actions,
+  #step-panel-6 .step6-toolbar,
+  #step-panel-8 .step8-header-actions {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+  }
+}
+
+@media (max-width: 760px) {
+  .workflow-header--titlebar,
+  #step-panel-2 .workflow-titlebar,
+  #step-panel-6 .step6-compact-header,
+  #step-panel-8 .step8-header {
+    align-items: flex-start !important;
+  }
+
+  #step-panel-6 .step6-toolbar,
+  #step-panel-8 .step8-header-actions {
+    margin-left: 0;
+  }
+}

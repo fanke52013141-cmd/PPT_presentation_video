@@ -670,5 +670,34 @@ for (const token of ['智能继续', '从头重跑', "startOneClick('resume')", 
 if (!uiFoundation.includes('narrationDedupeKey') || !uiFoundation.includes('uniqueNarrationLines')) {
   throw new Error('frontend narration deduplication guard is missing');
 }
+if (!html.includes('id="btn-back-home" class="secondary header-action" hidden')) {
+  throw new Error('back-home control must use semantic hidden state instead of an inline display override');
+}
+if (!html.includes('id="step3-btn-batch-generate" class="secondary"') || !html.includes('批量生图')) {
+  throw new Error('Step 3 batch generation action must keep the approved concise label');
+}
+if (!workspaceNavigation.includes("btnBackHome.hidden = false") || !workspaceNavigation.includes("btnBackHome.hidden = true")) {
+  throw new Error('back-home visibility must preserve its inline-flex layout');
+}
+for (const token of [
+  '--workflow-space-top: 12px',
+  '--workflow-action-gap: 8px',
+  '--workflow-tab-height: 28px',
+  '.workflow-header',
+  '.workflow-toolbar',
+  '.workflow-tabs',
+]) {
+  if (!css.includes(token)) throw new Error(`workflow spacing system missing: ${token}`);
+}
+for (const panelClass of [
+  'workflow-header workflow-header--titlebar',
+  'workflow-header workflow-header--tabs',
+  'workflow-header workflow-header--stacked',
+]) {
+  if (!html.includes(panelClass)) throw new Error(`workflow header variant missing: ${panelClass}`);
+}
+if (/step2-sticky-header" style="[^"]*margin-top:/s.test(html) || /step3-toolbar-row" style="[^"]*margin-/s.test(html)) {
+  throw new Error('workflow header spacing must not be controlled by inline margins');
+}
 
 console.log('frontend quality checks passed');

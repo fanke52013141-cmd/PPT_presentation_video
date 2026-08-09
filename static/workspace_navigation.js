@@ -18,7 +18,8 @@ async function enterWorkspace(projectId) {
   // 顶栏切换
   document.getElementById('project-info-header').style.display = 'flex';
   document.getElementById('current-project-name').innerText = project.name;
-  document.getElementById('btn-back-home').style.display = 'block';
+  const btnBackHome = document.getElementById('btn-back-home');
+  if (btnBackHome) btnBackHome.hidden = false;
   applyProjectAiMode(project.ai_mode || 'auto');
 
   // 页面切换
@@ -34,7 +35,8 @@ async function enterWorkspace(projectId) {
 function exitWorkspace() {
   resetStep5ProjectState();
   document.getElementById('project-info-header').style.display = 'none';
-  document.getElementById('btn-back-home').style.display = 'none';
+  const btnBackHome = document.getElementById('btn-back-home');
+  if (btnBackHome) btnBackHome.hidden = true;
   document.getElementById('btn-toggle-ai-mode').style.display = 'none';
   document.getElementById('page-workspace').style.display = 'none';
   document.body.classList.remove('workspace-open');

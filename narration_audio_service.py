@@ -363,8 +363,7 @@ def persist_narration_beats(
         "narration_beats.json",
     )
     os.makedirs(os.path.dirname(beats_path), exist_ok=True)
-    with open(beats_path, "w", encoding="utf-8") as file:
-        json.dump(payload, file, ensure_ascii=False, indent=2)
+    _deps().write_json_atomic(beats_path, payload)
 
     narration_lines = []
     tts_text_lines = []
@@ -415,20 +414,10 @@ def persist_narration_beats(
             encoding="utf-8",
         ) as file:
             file.write(slide_tts_text + "\n")
-        with open(
+        _deps().write_json_atomic(
             os.path.join(slide_dir, "narration_beats.json"),
-            "w",
-            encoding="utf-8",
-        ) as file:
-            json.dump(
-                {
-                    "slide_id": slide_id,
-                    "beats": slide_beats,
-                },
-                file,
-                ensure_ascii=False,
-                indent=2,
-            )
+            {"slide_id": slide_id, "beats": slide_beats},
+        )
 
         narration_lines.append(f"=== {slide_id} ===")
         tts_text_lines.append(f"=== {slide_id} ===")

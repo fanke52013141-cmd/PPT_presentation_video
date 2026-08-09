@@ -16,7 +16,6 @@ from sqlalchemy.orm import Session
 
 from config_store import get_setting, update_settings
 from database import Project, get_db
-from project_storage import slide_dir as storage_slide_dir, UnsafeProjectPath
 
 
 logger = logging.getLogger("PPTStudio.Narration")
@@ -507,66 +506,7 @@ def update_step6_result(project_id: str, payload: Dict[str, Any], db: Session = 
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
         
-    current_slide_ids = read_contract_slide_ids(project.run_dir)
-    if current_slide_ids and isinstance(payload.get("slides"), list):
-        by_id = {
-            str(slide.get("slide_id") or "").strip(): slide
-            for slide in payload.get("slides", [])
-            if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()
-        }
-        payload["slides"] = [by_id[slide_id] for slide_id in current_slide_ids if slide_id in by_id]
-
-    # 保存全局规划下的 narration_beats.json
-    beats_path = os.path.join(project.run_dir, "planning", "narration_beats.json")
-    with open(beats_path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-        
-    narration_lines = []
-    tts_text_lines = []
-    
-    # 循环写入各 Slide 独立的 narration.txt, tts_text.txt 和 narration_beats.json
-    for slide_data in payload.get("slides", []):
-        slide_id = slide_data["slide_id"]
-        # 使用带 safe_identifier 校验的 slide_dir() 构造路径，防止路径穿越
-        try:
-            slide_dir = storage_slide_dir(project.run_dir, slide_id)
-        except UnsafeProjectPath as exc:
-            raise HTTPException(
-                status_code=400,
-                detail=f"slide_id 含非法字符，已拒绝写入：{slide_id!r}",
-            ) from exc
-        os.makedirs(slide_dir, exist_ok=True)
-        
-        slide_beats = slide_data.get("beats", [])
-        for beat in slide_beats:
-            if isinstance(beat, dict):
-                beat.setdefault("source_text", beat.get("spoken_text", ""))
-                beat.setdefault("tts_text", beat.get("spoken_text", ""))
-        slide_narration = "\n".join(clean_tts_text(beat_tts_text(beat)) for beat in slide_beats)
-        slide_tts_text = "\n".join(beat_tts_text(beat) for beat in slide_beats)
-        
-        with open(os.path.join(slide_dir, "narration.txt"), "w", encoding="utf-8") as f:
-            f.write(slide_narration + "\n")
-        with open(os.path.join(slide_dir, "tts_text.txt"), "w", encoding="utf-8") as f:
-            f.write(slide_tts_text + "\n")
-        with open(os.path.join(slide_dir, "narration_beats.json"), "w", encoding="utf-8") as f:
-            json.dump({"slide_id": slide_id, "beats": slide_beats}, f, ensure_ascii=False, indent=2)
-            
-        narration_lines.append(f"=== {slide_id} ===")
-        tts_text_lines.append(f"=== {slide_id} ===")
-        for beat in slide_beats:
-            g_id = beat.get("group_id") or beat.get("id") or "sentence"
-            text = clean_tts_text(beat_tts_text(beat))
-            narration_lines.append(f"[{g_id}] {text}")
-            tts_text_lines.append(beat_tts_text(beat))
-            
-    narration_txt_path = os.path.join(project.run_dir, "planning", "narration.txt")
-    tts_txt_path = os.path.join(project.run_dir, "planning", "tts_text.txt")
-    
-    with open(narration_txt_path, "w", encoding="utf-8") as f:
-        f.write("\n".join(narration_lines) + "\n")
-    with open(tts_txt_path, "w", encoding="utf-8") as f:
-        f.write("\n".join(tts_text_lines) + "\n")
+    persist_narration_beats(project, payload)
         
     # 运行校验，确保 narration 符合规范
     validate_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "validate_narration_grounding.py"))

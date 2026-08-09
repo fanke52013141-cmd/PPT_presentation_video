@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import os
+import shutil
 import threading
 import uuid
 from datetime import datetime
@@ -295,6 +296,48 @@ def _require_quality_gate(
         ) from exc
 
 
+def _backup_narration(project: Any, run_id: str) -> Path | None:
+    source = _run_dir(project) / "planning" / "narration_beats.json"
+    if not source.is_file():
+        return None
+    backup = _run_dir(project) / "planning" / "backups" / f"narration_before_one_click_{run_id}.json"
+    backup.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        shutil.copy2(source, backup)
+    except OSError as exc:
+        raise RuntimeError(f"备份现有演讲稿失败：{_error_text(exc)}") from exc
+    return backup
+
+
+def _load_existing_narration(
+    services: Any,
+    before_mutation: Callable[[], Any],
+) -> dict[str, Any] | None:
+    try:
+        payload = services.narration()
+    except Exception as exc:
+        raise RuntimeError(f"读取现有演讲稿失败：{_error_text(exc)}") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError("读取现有演讲稿失败：返回结果不是有效对象")
+    if payload.get("success") is False:
+        message = _safe_text(payload.get("message") or payload.get("detail"), 1000)
+        if "尚未生成" in message:
+            return None
+        raise RuntimeError(f"读取现有演讲稿失败：{message or '未知错误'}")
+    beats = payload.get("beats")
+    if not isinstance(beats, dict):
+        raise RuntimeError("读取现有演讲稿失败：beats 结构无效")
+    if payload.get("repair", {}).get("required"):
+        before_mutation()
+        try:
+            payload = services.repair_narration()
+        except Exception as exc:
+            raise RuntimeError(f"修复现有演讲稿失败：{_error_text(exc)}") from exc
+        if not isinstance(payload, dict) or payload.get("success") is False or not isinstance(payload.get("beats"), dict):
+            raise RuntimeError("修复现有演讲稿失败：修复结果无效")
+    return payload
+
+
 def _profile(project: Any) -> dict[str, Any]:
     value = _read_json(_profile_path(project), {})
     return value if isinstance(value, dict) else {}
@@ -541,12 +584,17 @@ def _run_pipeline(
 
         if should_run("narration"):
             _start_stage(project, status, "narration", "生成或复用演讲稿并尝试添加 TTS 标记")
-            try:
-                existing_payload = _invoke(services.narration, "Step 6 narration")
-                if existing_payload.get("repair", {}).get("required"):
-                    existing_payload = _invoke(services.repair_narration, "Step 6 repair")
-            except Exception:
-                existing_payload = {}
+            narration_backed_up = False
+
+            def backup_narration_once() -> None:
+                nonlocal narration_backed_up
+                if not narration_backed_up:
+                    _backup_narration(project, run_id)
+                    narration_backed_up = True
+
+            existing_payload = _load_existing_narration(services, backup_narration_once)
+            if existing_payload is not None:
+                backup_narration_once()
             if (
                 mode != "restart"
                 and _has_fresh_narration(project)

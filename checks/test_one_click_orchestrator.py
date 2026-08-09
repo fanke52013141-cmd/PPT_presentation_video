@@ -167,6 +167,66 @@ def test_legacy_status_is_migrated_in_memory_to_v2() -> None:
         assert migrated["revalidation"] == []
 
 
+def test_missing_narration_is_the_only_safe_initialization_fallback() -> None:
+    calls = []
+    services = SimpleNamespace(
+        narration=lambda: {"success": False, "message": "演讲稿尚未生成"},
+    )
+
+    assert one_click._load_existing_narration(services, lambda: calls.append("backup")) is None
+    assert calls == []
+
+
+def test_narration_read_failure_pauses_instead_of_becoming_empty() -> None:
+    def fail_read():
+        raise OSError("disk unavailable")
+
+    services = SimpleNamespace(narration=fail_read)
+
+    try:
+        one_click._load_existing_narration(services, lambda: None)
+    except RuntimeError as exc:
+        assert "读取现有演讲稿失败" in str(exc)
+    else:
+        raise AssertionError("narration read failures must block initialization")
+
+
+def test_narration_is_backed_up_before_repair() -> None:
+    calls = []
+    services = SimpleNamespace(
+        narration=lambda: {
+            "success": True,
+            "beats": {"slides": []},
+            "repair": {"required": True},
+        },
+        repair_narration=lambda: calls.append("repair") or {
+            "success": True,
+            "beats": {"slides": []},
+        },
+    )
+
+    payload = one_click._load_existing_narration(services, lambda: calls.append("backup"))
+
+    assert payload["success"] is True
+    assert calls == ["backup", "repair"]
+
+
+def test_one_click_narration_backup_preserves_original_bytes() -> None:
+    with tempfile.TemporaryDirectory() as value:
+        root = Path(value)
+        project = project_for(root)
+        source = root / "planning" / "narration_beats.json"
+        source.parent.mkdir(parents=True)
+        original = b'{"slides":[{"slide_id":"slide_001"}]}'
+        source.write_bytes(original)
+
+        backup = one_click._backup_narration(project, "run-safe")
+
+        assert backup is not None
+        assert backup.read_bytes() == original
+        assert source.read_bytes() == original
+
+
 def test_contract_and_narration_are_only_reused_when_fresh_and_validated() -> None:
     with tempfile.TemporaryDirectory() as value:
         root = Path(value)

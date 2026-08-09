@@ -2,6 +2,7 @@
   'use strict';
 
   const MODAL_ID = 'modal-ai-mask-settings';
+  const AUTO_STATE = window.createAiMaskAutoState?.();
   const USER_SETTING_KEYS = new Set([
     'white_threshold',
     'color_tolerance',
@@ -461,7 +462,8 @@
     const id = projectId();
     if (!id) {
       toast('请先打开项目并进入 Mask 标注页。未能识别当前 project_id。', 6000);
-      return;
+      if (options.rethrow) throw new Error('未能识别当前 project_id');
+      return false;
     }
     const btn = document.getElementById('step5-btn-ai-mask');
     const settingsBtn = document.getElementById('step5-btn-ai-mask-settings');
@@ -482,7 +484,9 @@
       });
       if (result.complete !== true) {
         setReviewIssues(result.review_issues || [], result.quality_status || 'failed');
-        throw new Error('仍有画面语块未能完成关联，请重新运行 AI 标注');
+        const error = new Error('仍有画面语块未能完成关联，请重新运行 AI 标注');
+        error.retryable = false;
+        throw error;
       }
       setInlineStatus('', false, false);
       const reviewCount = Number(result.review_issue_count || 0);
@@ -500,9 +504,12 @@
       } else if (typeof window.focusFirstAiMaskResult === 'function') {
         window.focusFirstAiMaskResult();
       }
+      return true;
     } catch (e) {
       setInlineStatus('AI 标注失败', true, false);
-      toast(`❌ AI 标注失败：${e.message}`, 8000);
+      if (!options.automatic) toast(`❌ AI 标注失败：${e.message}`, 8000);
+      if (options.rethrow) throw e;
+      return false;
     } finally {
       if (settingsBtn) settingsBtn.disabled = false;
       btn.disabled = false;
@@ -510,30 +517,54 @@
     }
   }
 
-  const AUTO_ATTEMPTED = new Set();
-
   async function maybeAutoAnnotate() {
     const panel = document.getElementById('step-panel-5');
     if (!panel || window.getComputedStyle(panel).display === 'none') return;
     const id = projectId();
-    if (!id || AUTO_ATTEMPTED.has(id)) return;
-    AUTO_ATTEMPTED.add(id);
+    if (!id || !AUTO_STATE || !AUTO_STATE.canStart(id)) return;
     // 手动模式：不自动触发 AI Mask。用户仍可点击"运行 AI 标注"按钮按需调用。
     if (document.body.classList.contains('mode-manual')) {
+      AUTO_STATE.reset(id);
       setInlineStatus('手动模式：点击"运行 AI 标注"按钮按需触发', false, false);
       return;
     }
+    AUTO_STATE.begin(id, 'checking');
     try {
+      try {
+        const oneClick = await apiGet(`/api/projects/${encodeURIComponent(id)}/one-click-generate/status`);
+        if (oneClick.status?.status === 'running') {
+          setInlineStatus('一键生成正在处理，AI Mask 将由自动流程完成', true, false);
+          AUTO_STATE.waitForOneClick(id, maybeAutoAnnotate);
+          return;
+        }
+      } catch (_statusError) {
+        // Status lookup is advisory; a temporary failure must not block Step 5.
+      }
       const result = await apiGet(`/api/projects/${encodeURIComponent(id)}/steps/5/result`);
       const annotation = result.manifest?.ai_mask_annotation || {};
       if (['completed', 'completed_needs_review'].includes(annotation.status)) {
         setReviewIssues(annotation.review_issues || [], annotation.quality_status || (annotation.review_required ? 'needs_review' : 'passed'));
         setInlineStatus('', false, false);
+        AUTO_STATE.complete(id);
         return;
       }
-      await runAnnotation({ automatic: true });
+      AUTO_STATE.begin(id, 'running');
+      await runAnnotation({ automatic: true, rethrow: true });
+      AUTO_STATE.complete(id);
     } catch (error) {
-      setInlineStatus('AI 标注等待重试', true, false);
+      if (error.retryable === false) {
+        AUTO_STATE.fail(id);
+        setInlineStatus('AI 标注需要人工检查', true, false);
+        toast(`AI 标注未通过质量检查：${error.message}`, 8000);
+        return;
+      }
+      const delay = AUTO_STATE.scheduleRetry(id, maybeAutoAnnotate);
+      if (delay === null) {
+        setInlineStatus('AI 标注自动重试失败，请手动重试', true, false);
+        toast(`AI 标注失败：${error.message}`, 8000);
+      } else {
+        setInlineStatus(`AI 标注失败，${Math.ceil(delay / 1000)} 秒后自动重试`, true, false);
+      }
     }
   }
 
@@ -551,7 +582,7 @@
 
   // 暴露重置函数：切换 ai_mode 后调用，让自动标注在新模式下重新尝试
   window.__aiMaskResetAutoAttempted = function resetAutoAttempted() {
-    AUTO_ATTEMPTED.clear();
+    AUTO_STATE?.reset();
     // 切换后立即尝试一次，自动模式下会触发，手动模式下会显示提示
     maybeAutoAnnotate();
   };

@@ -609,7 +609,7 @@ if (!maskWorkspace.includes("rle.encoding === 'row_runs_v1'") || !maskEditor.inc
   throw new Error('exact RLE Mask preview support missing');
 }
 if (html.includes('请在下方粘贴您的 Markdown 格式文章')) throw new Error('obsolete Step 1 top hint is still present');
-for (const script of ['project_profile_extension.js', 'storyboard_background_extension.js', 'style_reference_manager_extension.js', 'ai_mask_extension.js', 'one_click_extension.js']) {
+for (const script of ['project_profile_extension.js', 'storyboard_background_extension.js', 'style_reference_manager_extension.js', 'ai_mask_auto_state.js', 'ai_mask_extension.js', 'one_click_extension.js']) {
   if (!html.includes(script)) throw new Error(`direct frontend script declaration missing: ${script}`);
 }
 if (!styleManager.includes('style-panel-template-name') || !styleManager.includes('最多只能上传 3 张')) {

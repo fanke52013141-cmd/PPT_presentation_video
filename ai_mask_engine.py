@@ -328,6 +328,25 @@ from ai_mask_manifest_apply import (
 )
 
 
+def _select_contract_slides(
+    contract: dict[str, Any],
+    slide_ids: list[str] | None,
+) -> list[dict[str, Any]]:
+    contract_slides = [slide for slide in contract.get("slides", []) or [] if isinstance(slide, dict)]
+    if slide_ids is None:
+        return contract_slides
+    requested_ids = list(dict.fromkeys(str(value).strip() for value in slide_ids if str(value).strip()))
+    contract_ids = {str(slide.get("slide_id") or "") for slide in contract_slides}
+    unknown_ids = [slide_id for slide_id in requested_ids if slide_id not in contract_ids]
+    if unknown_ids:
+        raise ValueError(f"AI Mask slide_ids 不属于当前 Contract: {', '.join(unknown_ids)}")
+    requested_set = set(requested_ids)
+    selected = [slide for slide in contract_slides if str(slide.get("slide_id") or "") in requested_set]
+    if not selected:
+        raise ValueError("AI Mask slide_ids 不能为空")
+    return selected
+
+
 def _annotate_project(
     capabilities: AiMaskEngineDependencies,
     project: Any,
@@ -335,14 +354,14 @@ def _annotate_project(
     methodology: str,
     output_structure: str,
     vision_matcher: Callable[..., dict[str, Any] | None],
+    slide_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     run_dir = Path(project.run_dir)
     contract = _read_json(run_dir / "planning" / "visual_contract.json")
     manifest = _read_json(run_dir / "reveal_manifest.json")
+    contract_slides = _select_contract_slides(contract, slide_ids)
     prepared: list[dict[str, Any]] = []
-    for slide in contract.get("slides", []) or []:
-        if not isinstance(slide, dict):
-            continue
+    for slide in contract_slides:
         slide_id = str(slide.get("slide_id") or "")
         slide_dir = run_dir / "slides" / slide_id
         image_path = slide_dir / "visual_draft.png"
@@ -490,6 +509,7 @@ def _annotate_project(
         "review_required": bool(review_issues),
         "review_issue_count": len(review_issues),
         "review_issues": review_issues,
+        "scope_slide_ids": [item["slide_id"] for item in prepared],
     }
     _write_json(run_dir / "reveal_manifest.json", manifest)
     return {

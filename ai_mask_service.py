@@ -44,6 +44,7 @@ class AiMaskTaskService:
         self,
         project: Any,
         settings_override: dict[str, Any] | None = None,
+        slide_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         settings = get_ai_mask_settings()
         if isinstance(settings_override, dict):
@@ -59,6 +60,7 @@ class AiMaskTaskService:
                 methodology,
                 output_structure,
                 self.dependencies.vision_matcher,
+                slide_ids,
             )
         try:
             self.dependencies.write_project_log(

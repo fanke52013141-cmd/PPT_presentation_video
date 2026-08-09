@@ -42,4 +42,10 @@ def annotate_ai_mask_route(
         if isinstance(payload, dict) and isinstance(payload.get("settings"), dict)
         else {}
     )
-    return get_ai_mask_task_service().annotate_project(project, settings)
+    slide_ids = payload.get("slide_ids") if isinstance(payload, dict) else None
+    if slide_ids is not None and not isinstance(slide_ids, list):
+        raise HTTPException(status_code=400, detail="slide_ids 必须是数组")
+    try:
+        return get_ai_mask_task_service().annotate_project(project, settings, slide_ids)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

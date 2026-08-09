@@ -293,6 +293,31 @@ def test_only_uncorrected_ai_masks_are_replaceable() -> None:
     assert not ai_mask._replaceable_ai_mask(manual)
 
 
+def test_ai_mask_retry_selects_only_failed_slides() -> None:
+    result = {
+        "slides": [
+            {"slide_id": "slide_001", "quality": {"passed": True}},
+            {"slide_id": "slide_002", "quality": {"passed": False}},
+            {"slide_id": "slide_003", "quality": {"passed": True}, "review_required": True},
+        ],
+        "review_issues": [{"slide_id": "slide_003", "reason": "check"}],
+    }
+
+    selected = one_click._ai_mask_failed_slide_ids(
+        result,
+        ["slide_001", "slide_002", "slide_003"],
+    )
+
+    assert selected == ["slide_002", "slide_003"]
+
+
+def test_ai_mask_retry_falls_back_to_all_slides_without_slide_details() -> None:
+    assert one_click._ai_mask_failed_slide_ids(
+        {"complete": False, "slides": []},
+        ["slide_001", "slide_002"],
+    ) == ["slide_001", "slide_002"]
+
+
 def test_one_click_uses_safe_mask_and_audio_modes() -> None:
     source = Path("one_click_orchestrator.py").read_text(encoding="utf-8")
     services_source = Path("pipeline_services.py").read_text(encoding="utf-8")

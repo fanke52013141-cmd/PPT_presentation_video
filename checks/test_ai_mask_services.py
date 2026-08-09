@@ -81,6 +81,7 @@ def test_task_service_uses_narrow_dependencies(monkeypatch) -> None:
         methodology,
         output_structure,
         vision_matcher,
+        slide_ids,
     ):
         captured.update(
             capabilities=capabilities,
@@ -89,6 +90,7 @@ def test_task_service_uses_narrow_dependencies(monkeypatch) -> None:
             methodology=methodology,
             output_structure=output_structure,
             vision_matcher=vision_matcher,
+            slide_ids=slide_ids,
         )
         return {"success": True, "processed_slide_count": 1}
 
@@ -98,6 +100,7 @@ def test_task_service_uses_narrow_dependencies(monkeypatch) -> None:
     result = ai_mask_service.AiMaskTaskService(dependencies).annotate_project(
         project,
         {"white_threshold": 230},
+        ["slide_002"],
     )
 
     assert result["success"] is True
@@ -106,6 +109,7 @@ def test_task_service_uses_narrow_dependencies(monkeypatch) -> None:
     assert captured["methodology"] == "methodology"
     assert captured["output_structure"] == "output"
     assert captured["vision_matcher"] is dependencies.vision_matcher
+    assert captured["slide_ids"] == ["slide_002"]
     assert isinstance(
         captured["capabilities"],
         ai_mask_engine.AiMaskEngineDependencies,
@@ -188,3 +192,31 @@ def test_runtime_registration_module_is_gone() -> None:
         assert f"def {owner}(" in assignment_source
         assert f"def {owner}(" not in engine_source
     assert "from ai_mask_assignment import (" in engine_source
+
+
+def test_engine_selects_requested_contract_slides_in_contract_order() -> None:
+    contract = {
+        "slides": [
+            {"slide_id": "slide_001"},
+            {"slide_id": "slide_002"},
+            {"slide_id": "slide_003"},
+        ]
+    }
+
+    selected = ai_mask_engine._select_contract_slides(
+        contract,
+        ["slide_003", "slide_001", "slide_003"],
+    )
+
+    assert [slide["slide_id"] for slide in selected] == ["slide_001", "slide_003"]
+
+
+def test_engine_rejects_unknown_or_empty_slide_scope() -> None:
+    contract = {"slides": [{"slide_id": "slide_001"}]}
+    for invalid in (["slide_999"], []):
+        try:
+            ai_mask_engine._select_contract_slides(contract, invalid)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"invalid AI Mask scope was accepted: {invalid!r}")

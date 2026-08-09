@@ -106,7 +106,8 @@ class ProjectPipelineServices:
 
         project = self._project()
         settings = payload.get("settings") if isinstance(payload.get("settings"), dict) else {}
-        return get_ai_mask_task_service().annotate_project(project, settings)
+        slide_ids = payload.get("slide_ids") if isinstance(payload.get("slide_ids"), list) else None
+        return get_ai_mask_task_service().annotate_project(project, settings, slide_ids)
 
     def mask_manifest(self) -> dict[str, Any]:
         return self.operations.mask.get_result(self._project())

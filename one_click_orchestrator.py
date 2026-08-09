@@ -426,13 +426,16 @@ def _has_manual_mask(group: Any) -> bool:
     return isinstance(strokes, list) and len(strokes) > 0
 
 
-def _existing_mask_count(project: Any) -> int:
+def _existing_mask_count(project: Any, slide_ids: list[str] | None = None) -> int:
     manifest = _read_json(_run_dir(project) / "reveal_manifest.json", {})
     if not isinstance(manifest, dict):
         return 0
+    selected = set(slide_ids) if slide_ids is not None else None
     count = 0
     for slide in manifest.get("slides", []) or []:
         if not isinstance(slide, dict):
+            continue
+        if selected is not None and str(slide.get("slide_id") or "") not in selected:
             continue
         for collection_name in ("groups", "semantic_blocks"):
             for group in slide.get(collection_name, []) or []:
@@ -470,6 +473,28 @@ def _ai_mask_quality_errors(result: dict[str, Any], existing_mask_count: int = 0
                 f"重叠 {overlap} 像素，未分配组件 {unassigned}"
             )
     return errors
+
+
+def _ai_mask_failed_slide_ids(result: dict[str, Any], fallback: list[str]) -> list[str]:
+    failed: list[str] = []
+    for slide in result.get("slides", []) if isinstance(result, dict) else []:
+        if not isinstance(slide, dict):
+            continue
+        slide_id = _safe_text(slide.get("slide_id"), 100)
+        quality = slide.get("quality") if isinstance(slide.get("quality"), dict) else {}
+        if slide_id and (
+            _safe_int(slide.get("unmatched_group_count"), 0) > 0
+            or (quality and quality.get("passed") is not True)
+            or bool(slide.get("review_required"))
+        ):
+            failed.append(slide_id)
+    for issue in result.get("review_issues", []) if isinstance(result, dict) else []:
+        if isinstance(issue, dict):
+            slide_id = _safe_text(issue.get("slide_id"), 100)
+            if slide_id:
+                failed.append(slide_id)
+    selected = list(dict.fromkeys(failed))
+    return selected or list(fallback)
 
 
 def _run_pipeline(
@@ -559,17 +584,30 @@ def _run_pipeline(
             existing_masks = _existing_mask_count(project)
             quality_errors = _ai_mask_quality_errors(result, existing_masks)
             if quality_errors:
-                _warn_stage(project, status, "ai_mask", "首次标注未完整，正在自动重试失败结果")
+                failed_slide_ids = _ai_mask_failed_slide_ids(result, _slide_ids(project))
+                _warn_stage(
+                    project,
+                    status,
+                    "ai_mask",
+                    f"首次标注未完整，仅重试 {len(failed_slide_ids)} 个失败页面",
+                )
                 retry = _invoke(
-                    lambda: services.annotate_ai_mask(ai_mask_payload),
+                    lambda: services.annotate_ai_mask({**ai_mask_payload, "slide_ids": failed_slide_ids}),
                     "AI Mask retry",
                 )
-                existing_masks = _existing_mask_count(project)
+                existing_masks = _existing_mask_count(project, failed_slide_ids)
                 quality_errors = _ai_mask_quality_errors(retry, existing_masks)
                 result = retry
                 if quality_errors and gates.get("pause_on_ai_mask_low_confidence", True):
                     raise RuntimeError("AI Mask 自动重试后仍未完成：" + "；".join(quality_errors[:5]))
-            _finish_stage(project, status, "ai_mask", "AI Mask 标注完成")
+                if quality_errors:
+                    _warn_stage(project, status, "ai_mask", "质量门已关闭，保留未通过项：" + "；".join(quality_errors[:5]))
+            _finish_stage(
+                project,
+                status,
+                "ai_mask",
+                "AI Mask 标注完成" if not quality_errors else "AI Mask 标注完成（含警告）",
+            )
 
         if should_run("mask_assets"):
             _start_stage(project, status, "mask_assets", "构建 Reveal 资源")

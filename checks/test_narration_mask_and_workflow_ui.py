@@ -224,7 +224,7 @@ def test_default_step2_prompts_explicitly_forbid_duplicate_narration_binding():
     assert "每个 `narration` 都必须非空" in visual_prompt
 
 
-def test_mask_size_cursor_and_outline_contracts():
+def test_mask_size_cursor_and_exact_painted_pixel_contracts():
     html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
     mask_editor = (ROOT / "static" / "mask_editor.js").read_text(encoding="utf-8")
     assert 'id="step5-brush-size" type="range" min="100" max="200" value="140"' in html
@@ -232,7 +232,8 @@ def test_mask_size_cursor_and_outline_contracts():
     assert "toolSize * displayScale" in mask_editor
     assert "getCoalescedEvents" in mask_editor
     assert "scheduleLiveMaskRedraw" in mask_editor
-    assert "const MASK_PREVIEW_OUTLINE_PX = 5" in mask_editor
+    assert "MASK_PREVIEW_OUTLINE_PX" not in mask_editor
+    assert "buildMaskDisplayLayer" in mask_editor
 
 
 def test_step3_actions_reserve_fixed_non_wrapping_slots():

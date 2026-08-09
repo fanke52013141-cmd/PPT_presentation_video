@@ -131,6 +131,42 @@ function updateMaskBoxFromManualMask(idx) {
 }
 
 function getCanvasCoords(event, canvas) {
+  // Fullscreen is already the enlarged editing surface. Keep it as a literal
+  // 1:1 canvas: no focal transform, no inverse transform, and therefore no
+  // possibility of a left/right centre drift.
+  if (state.canvasState.maskFullscreen) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: Math.max(0, Math.min(1920, (event.clientX - rect.left) * 1920 / Math.max(1, rect.width))),
+      y: Math.max(0, Math.min(1080, (event.clientY - rect.top) * 1080 / Math.max(1, rect.height))),
+    };
+  }
+  const stage = document.getElementById('step5-zoom-stage');
+  const wrapper = document.getElementById('canvas-container');
+  // getBoundingClientRect() describes the already transformed stage.  Reusing
+  // that rectangle for input mapping works at 100%, but it makes the two sides
+  // drift toward the centre after a focal-point zoom.  Map through the stage's
+  // untransformed layout box and explicitly invert the scale instead.
+  if (stage && wrapper && canvas && stage.contains(canvas)) {
+    const stageWidth = Math.max(1, stage.offsetWidth);
+    const stageHeight = Math.max(1, stage.offsetHeight);
+    const canvasWidth = Math.max(1, canvas.offsetWidth);
+    const canvasHeight = Math.max(1, canvas.offsetHeight);
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const zoom = Math.max(1, Math.min(4, Number(state.canvasState.maskZoom || 1)));
+    const originX = stageWidth * Math.max(0, Math.min(100, Number(state.canvasState.maskZoomOriginX || 50))) / 100;
+    const originY = stageHeight * Math.max(0, Math.min(100, Number(state.canvasState.maskZoomOriginY || 50))) / 100;
+    const stageLeft = wrapperRect.left + wrapper.clientLeft + stage.offsetLeft;
+    const stageTop = wrapperRect.top + wrapper.clientTop + stage.offsetTop;
+    const localStageX = (event.clientX - stageLeft - originX) / zoom + originX;
+    const localStageY = (event.clientY - stageTop - originY) / zoom + originY;
+    const localCanvasX = localStageX - canvas.offsetLeft;
+    const localCanvasY = localStageY - canvas.offsetTop;
+    return {
+      x: Math.max(0, Math.min(1920, localCanvasX * 1920 / canvasWidth)),
+      y: Math.max(0, Math.min(1080, localCanvasY * 1080 / canvasHeight)),
+    };
+  }
   const rect = canvas.getBoundingClientRect();
   return window.PPTFlow?.mapClientPointToCanvas
     ? window.PPTFlow.mapClientPointToCanvas(event.clientX, event.clientY, rect, 1920, 1080)
@@ -138,6 +174,36 @@ function getCanvasCoords(event, canvas) {
         x: Math.max(0, Math.min(1920, (event.clientX - rect.left) * 1920 / Math.max(1, rect.width))),
         y: Math.max(0, Math.min(1080, (event.clientY - rect.top) * 1080 / Math.max(1, rect.height))),
       };
+}
+
+// The image may be letterboxed by object-fit: contain. The editable Canvas
+// must occupy that exact visible 16:9 rectangle, never the larger wrapper.
+function syncMaskCanvasViewport(canvas = document.getElementById('step5-canvas')) {
+  const stage = document.getElementById('step5-zoom-stage');
+  const image = document.getElementById('step5-bg-img');
+  if (!canvas || !stage || !image) return;
+  const stageWidth = Math.max(1, stage.offsetWidth);
+  const stageHeight = Math.max(1, stage.offsetHeight);
+  const imageRatio = image.naturalWidth > 0 && image.naturalHeight > 0
+    ? image.naturalWidth / image.naturalHeight
+    : 16 / 9;
+  const stageRatio = stageWidth / stageHeight;
+  let width = stageWidth;
+  let height = stageHeight;
+  let left = 0;
+  let top = 0;
+  if (stageRatio > imageRatio) {
+    width = stageHeight * imageRatio;
+    left = (stageWidth - width) / 2;
+  } else if (stageRatio < imageRatio) {
+    height = stageWidth / imageRatio;
+    top = (stageHeight - height) / 2;
+  }
+  const px = value => `${Math.round(value * 1000) / 1000}px`;
+  canvas.style.left = px(left);
+  canvas.style.top = px(top);
+  canvas.style.width = px(width);
+  canvas.style.height = px(height);
 }
 
 function hideMaskToolCursor() {
@@ -265,21 +331,37 @@ function initCanvasEvents() {
   if (wrapper) {
     wrapper.onwheel = (e) => handleMaskCanvasWheel(e, newCanvas);
   }
+  if (!window.__step5CanvasViewportResizeBound) {
+    window.__step5CanvasViewportResizeBound = true;
+    window.addEventListener('resize', () => {
+      const activeCanvas = document.getElementById('step5-canvas');
+      syncMaskCanvasViewport(activeCanvas);
+      refreshMaskToolCursor();
+    });
+  }
+  syncMaskCanvasViewport(newCanvas);
   applyMaskCanvasZoom(newCanvas);
 }
 
 function applyMaskCanvasZoom(canvas = document.getElementById('step5-canvas')) {
   const bg = document.getElementById('step5-bg-img');
-  if (!canvas || !bg) return;
-  const zoom = Math.max(1, Math.min(4, Number(state.canvasState.maskZoom || 1)));
+  const stage = document.getElementById('step5-zoom-stage');
+  if (!canvas || !bg || !stage) return;
+  const fullscreen = !!state.canvasState.maskFullscreen;
+  const zoom = fullscreen ? 1 : Math.max(1, Math.min(4, Number(state.canvasState.maskZoom || 1)));
   state.canvasState.maskZoom = zoom;
   const originX = Math.max(0, Math.min(100, Number(state.canvasState.maskZoomOriginX || 50)));
   const originY = Math.max(0, Math.min(100, Number(state.canvasState.maskZoomOriginY || 50)));
-  const transform = `scale(${zoom})`;
   const origin = `${originX}% ${originY}%`;
+  // Keep the source image and drawing surface in one transformed layer. Scaling
+  // these siblings independently eventually produces different visual and input
+  // coordinate spaces after changing focal points or entering full-screen mode.
+  syncMaskCanvasViewport(canvas);
+  stage.style.transform = zoom === 1 ? 'none' : `scale(${zoom})`;
+  stage.style.transformOrigin = origin;
   [bg, canvas].forEach(el => {
-    el.style.transform = transform;
-    el.style.transformOrigin = origin;
+    el.style.transform = '';
+    el.style.transformOrigin = '';
   });
   const indicator = document.getElementById('step5-zoom-indicator');
   if (indicator) indicator.innerText = `${Math.round(zoom * 100)}%`;
@@ -289,10 +371,17 @@ function handleMaskCanvasWheel(e, canvas) {
   if (!e.ctrlKey) return;
   e.preventDefault();
   e.stopPropagation();
+  // The fullscreen layout itself is the magnifier. Disable nested Ctrl+wheel
+  // transforms there so display and drawing never enter different spaces.
+  if (state.canvasState.maskFullscreen) return;
   const rect = canvas.getBoundingClientRect();
   if (!rect.width || !rect.height) return;
-  state.canvasState.maskZoomOriginX = ((e.clientX - rect.left) / rect.width) * 100;
-  state.canvasState.maskZoomOriginY = ((e.clientY - rect.top) / rect.height) * 100;
+  // Derive the focal point in the stable 1920×1080 drawing space rather than
+  // in a previously transformed DOM rectangle. This keeps consecutive zooms
+  // anchored to the cursor and prevents the annotation layer from drifting.
+  const point = getCanvasCoords(e, canvas);
+  state.canvasState.maskZoomOriginX = (point.x / 1920) * 100;
+  state.canvasState.maskZoomOriginY = (point.y / 1080) * 100;
   const current = Number(state.canvasState.maskZoom || 1);
   const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
   state.canvasState.maskZoom = Math.max(1, Math.min(4, current * factor));
@@ -318,7 +407,6 @@ function createStep5OffscreenCanvas() {
   return canvas;
 }
 
-const MASK_PREVIEW_OUTLINE_PX = 5;
 const maskDisplayLayerCache = new WeakMap();
 
 function maskDisplaySignature(item) {
@@ -350,25 +438,6 @@ function buildMaskDisplayLayer(item, idx, options = {}) {
   displayCtx.globalCompositeOperation = 'destination-in';
   displayCtx.drawImage(maskLayer, 0, 0);
   displayCtx.globalCompositeOperation = 'source-over';
-
-  if (!liveStroke) {
-    const outlineMask = createStep5OffscreenCanvas();
-    const outlineMaskCtx = outlineMask.getContext('2d');
-    for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 8) {
-      const offsetX = Math.round(Math.cos(angle) * MASK_PREVIEW_OUTLINE_PX);
-      const offsetY = Math.round(Math.sin(angle) * MASK_PREVIEW_OUTLINE_PX);
-      outlineMaskCtx.drawImage(maskLayer, offsetX, offsetY);
-    }
-    outlineMaskCtx.globalCompositeOperation = 'destination-out';
-    outlineMaskCtx.drawImage(maskLayer, 0, 0);
-    const outlineColorLayer = createStep5OffscreenCanvas();
-    const outlineColorCtx = outlineColorLayer.getContext('2d');
-    outlineColorCtx.fillStyle = hexToRgba(color, isSelected ? 1 : 0.9);
-    outlineColorCtx.fillRect(0, 0, 1920, 1080);
-    outlineColorCtx.globalCompositeOperation = 'destination-in';
-    outlineColorCtx.drawImage(outlineMask, 0, 0);
-    displayCtx.drawImage(outlineColorLayer, 0, 0);
-  }
 
   maskDisplayLayerCache.set(item, { signature, layer: displayLayer });
   return displayLayer;

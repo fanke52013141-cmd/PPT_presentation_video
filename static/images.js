@@ -47,13 +47,13 @@ function updateStep3BatchButton() {
     deleteAllButton.disabled = generationInProgress || uploadInProgress || !step3ImageOrder.some(item => item.exists);
   }
   button.innerHTML = step3BatchGenerating
-    ? `<span class="step3-button-spinner" aria-hidden="true"></span> 批量生成中 ${step3BatchCompleted}/${step3BatchTotal}`
+    ? `<span class="step3-button-spinner" aria-hidden="true"></span> 批量生图中 ${step3BatchCompleted}/${step3BatchTotal}`
     : `<svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;">
          <rect x="3" y="4" width="18" height="16" rx="2"></rect>
          <circle cx="8.5" cy="9" r="1.5"></circle>
          <path d="m5 17 4.5-4 3.2 2.8 2.3-2.1 4 3.3"></path>
          <path d="M18 2v4M16 4h4"></path>
-       </svg> 一键批量生成图片`;
+       </svg> 批量生图`;
 }
 
 function setStep3SlideGenerating(slideId, generating) {

@@ -59,7 +59,7 @@ if (!(html.indexOf('workflow_state.js') < html.indexOf('api_client.js') && html.
 if (!css.includes('left: 18px')) throw new Error('desktop toasts are not anchored inside the workflow rail');
 if (/\.toast\s*\{[^}]*position:\s*fixed/s.test(css)) throw new Error('individual toasts still overlap at a fixed position');
 if (!/\.step3-card-header\s*\{[^}]*min-height:\s*42px/s.test(css)) throw new Error('image card header height is not stable');
-if (!/\.step3-card-actions\s*\{[^}]*grid-template-columns:\s*48px 36px 36px/s.test(css)) throw new Error('image card action columns are not stable');
+if (!/\.step3-card-actions\s*\{[^}]*grid-template-columns:\s*44px 36px 48px/s.test(css)) throw new Error('image card action columns are not stable');
 if (!/\.step3-card-action[\s\S]*?white-space:\s*nowrap\s*!important/s.test(css)) throw new Error('image card actions can still wrap and jitter');
 if (!images.includes('step3-action-placeholder')) throw new Error('image card delete action does not reserve a stable slot');
 if (images.indexOf('step3-delete-action') > images.indexOf('step3-upload-action')) throw new Error('image card delete action must sit between AI generation and upload');
@@ -543,8 +543,8 @@ if (!html.includes('step5-tool-cursor') || !maskEditor.includes('toolSize * disp
 if (!maskEditor.includes('getCoalescedEvents') || !maskEditor.includes('scheduleLiveMaskRedraw')) {
   throw new Error('Mask painting does not coalesce pointer samples and redraws');
 }
-if (!maskEditor.includes('const MASK_PREVIEW_OUTLINE_PX = 5') || !maskEditor.includes('buildMaskDisplayLayer')) {
-  throw new Error('same-color 5px Mask preview outline is missing');
+if (maskEditor.includes('MASK_PREVIEW_OUTLINE_PX') || !maskEditor.includes('buildMaskDisplayLayer')) {
+  throw new Error('Mask preview must render the exact painted pixels without an added outline');
 }
 if (!maskWorkspace.includes('claimUniqueMaskColor') || !maskWorkspace.includes('idx + offset')) {
   throw new Error('Mask color collision handling must search for an unused palette color');

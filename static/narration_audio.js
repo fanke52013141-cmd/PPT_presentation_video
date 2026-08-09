@@ -219,8 +219,7 @@ function renderStep6Workspace() {
       const row = document.createElement('div');
       row.className = 'step6-beat-row';
       row.innerHTML = `
-        <span class="step6-beat-number">${beatIndex + 1}</span>
-        <textarea class="step6-tts-input" rows="1" data-slide-index="${slideIndex}" data-beat-index="${beatIndex}" aria-label="${escHtml(slide.slide_id)} 第 ${beatIndex + 1} 条旁白" placeholder="输入旁白文本，可保留停顿和语气标记">${escHtml(beat.tts_text || beat.spoken_text || '')}</textarea>
+        <textarea class="step6-tts-input" rows="1" data-slide-index="${slideIndex}" data-beat-index="${beatIndex}" aria-label="${escHtml(slide.slide_id)} 旁白" placeholder="输入旁白文本，可保留停顿和语气标记">${escHtml(beat.tts_text || beat.spoken_text || '')}</textarea>
       `;
       const textarea = row.querySelector('textarea');
       textarea.addEventListener('input', (event) => {

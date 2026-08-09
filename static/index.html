@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260807.3">
+  <link rel="stylesheet" href="style.css?v=20260809.16">
 </head>
 <body>
 
@@ -30,7 +30,7 @@
     <div style="display: flex; gap: 1rem; align-items: center;">
       <button id="btn-back-home" class="secondary" style="display: none;">
         <svg class="icon" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><circle cx="18" cy="14" r="2.5" fill="var(--success-color)" stroke="currentColor" stroke-width="1.5"></circle></svg>
-        返回项目列表
+        返回首页
       </button>
       <button id="btn-open-settings">
         <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
@@ -312,8 +312,10 @@
             <!-- 左栏: Canvas 画布编辑 -->
             <div class="workspace-left">
               <div class="canvas-wrapper" id="canvas-container">
-                <img id="step5-bg-img" src="" alt="Slide Background">
-                <canvas id="step5-canvas" width="1920" height="1080"></canvas>
+                <div id="step5-zoom-stage" class="step5-zoom-stage">
+                  <img id="step5-bg-img" src="" alt="Slide Background">
+                  <canvas id="step5-canvas" width="1920" height="1080"></canvas>
+                </div>
                 <div id="step5-tool-cursor" class="step5-tool-cursor" aria-hidden="true"></div>
                 <div id="step5-zoom-indicator" class="step5-zoom-indicator" aria-hidden="true">100%</div>
               </div>
@@ -1008,8 +1010,8 @@
   <script src="images.js?v=20260807.3"></script>
   <script src="image_prompts.js?v=20260801.1"></script>
   <script src="mask_reveal.js?v=20260801.1"></script>
-  <script src="mask_workspace.js?v=20260801.1"></script>
-  <script src="mask_editor.js?v=20260801.1"></script>
+  <script src="mask_workspace.js?v=20260809.4"></script>
+  <script src="mask_editor.js?v=20260809.4"></script>
   <script src="subtitle_settings.js?v=20260801.1"></script>
   <script src="narration_audio.js?v=20260801.1"></script>
   <script src="output_render.js?v=20260801.1"></script>

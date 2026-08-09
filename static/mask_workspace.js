@@ -610,18 +610,28 @@ function renderStep5Workspace() {
     const btn = document.createElement('div');
     const isCurrent = idx === state.activeSlideIndex;
     btn.className = `step5-slide-btn${isCurrent ? ' active' : ''}`;
+    btn.setAttribute('role', 'button');
+    btn.setAttribute('tabindex', '0');
+    btn.setAttribute('aria-label', `切换到第 ${idx + 1} 页`);
     btn.innerHTML = `
-      <div style="font-size: 0.85rem; font-weight: bold; color: var(--ink-color);">${slide.slide_id}</div>
+      <div class="step5-slide-label">第${idx + 1}页</div>
     `;
     
-    btn.addEventListener('click', () => {
+    const activateSlide = () => {
       stopMaskAnimationPreview();
       saveStep5CurrentState();
       state.activeSlideIndex = idx;
       renderStep5Workspace();
+    };
+    btn.addEventListener('click', activateSlide);
+    btn.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      activateSlide();
     });
     thumbsContainer.appendChild(btn);
   });
+  syncStep5FullscreenThumbs();
   
   // 加载当前 Slide 详情
   const slide = manifestData.slides[state.activeSlideIndex];
@@ -632,6 +642,7 @@ function renderStep5Workspace() {
     step5SourceCanvas = null;
     backgroundImage.onload = () => {
       rebuildStep5SourceCache(backgroundImage);
+      syncMaskCanvasViewport();
       redrawCanvas();
     };
     backgroundImage.onerror = () => {
@@ -660,6 +671,25 @@ function renderStep5Workspace() {
   }
 }
 
+// In focused annotation mode, keep slide navigation visible beside the title
+// instead of spending a second row on it.  Moving the existing element keeps
+// its dynamically rendered tab handlers intact.
+function syncStep5FullscreenThumbs() {
+  const panel = document.getElementById('step-panel-5');
+  const header = panel?.querySelector('.step5-mask-header');
+  const toolbar = header?.querySelector('.step5-toolbar');
+  const thumbs = document.getElementById('step5-thumbs');
+  if (!panel || !header || !toolbar || !thumbs) return;
+
+  if (state.canvasState.maskFullscreen) {
+    if (thumbs.parentElement !== header || thumbs.nextElementSibling !== toolbar) {
+      header.insertBefore(thumbs, toolbar);
+    }
+  } else if (thumbs.parentElement !== panel || header.nextElementSibling !== thumbs) {
+    panel.insertBefore(thumbs, header.nextElementSibling);
+  }
+}
+
 function switchStep5Slide(direction) {
   if (!manifestData?.slides?.length) return;
   stopMaskAnimationPreview();
@@ -672,10 +702,20 @@ function switchStep5Slide(direction) {
 }
 
 function toggleStep5Fullscreen(force) {
-  state.canvasState.maskFullscreen = typeof force === 'boolean'
+  const nextFullscreen = typeof force === 'boolean'
     ? force
     : !state.canvasState.maskFullscreen;
+  // Fullscreen itself already enlarges the 16:9 canvas.  Do not carry a
+  // previous focal zoom into the new viewport; any subsequent Ctrl+wheel zoom
+  // starts from a known 1:1 mapping.
+  if (nextFullscreen !== state.canvasState.maskFullscreen) {
+    state.canvasState.maskZoom = 1;
+    state.canvasState.maskZoomOriginX = 50;
+    state.canvasState.maskZoomOriginY = 50;
+  }
+  state.canvasState.maskFullscreen = nextFullscreen;
   document.body.classList.toggle('step5-fullscreen-mode', !!state.canvasState.maskFullscreen);
+  syncStep5FullscreenThumbs();
   const fullscreenLabel = document.getElementById('step5-fullscreen-label');
   if (fullscreenLabel) fullscreenLabel.textContent = state.canvasState.maskFullscreen ? '退出全屏' : '放大标注';
   const canvas = document.getElementById('step5-canvas');
@@ -706,7 +746,14 @@ function aiMaskIssuesForBox(box, slideId) {
 // 渲染右侧的 box 编辑表单列表
 function renderStep5BoxesForm() {
   const container = document.getElementById('step5-boxes-list');
+  const addBlockButton = document.getElementById('step5-btn-new-block');
   container.innerHTML = '';
+  const placeAddBlockButton = () => {
+    if (!addBlockButton) return;
+    addBlockButton.classList.add('step5-add-block-card-action');
+    addBlockButton.setAttribute('aria-label', '在语块列表末尾添加语块');
+    container.appendChild(addBlockButton);
+  };
   const currentSlide = getCurrentManifestSlide();
   const step2Slide = getStep2SlideForManifestSlide(currentSlide);
   
@@ -716,6 +763,7 @@ function renderStep5BoxesForm() {
         当前页还没有 Mask 语块。可运行 AI 标注，或点击“添加语块”后直接涂抹。
       </div>
     `;
+    placeAddBlockButton();
     return;
   }
 
@@ -787,6 +835,10 @@ function renderStep5BoxesForm() {
     container.appendChild(item);
     
   });
+
+  // Keep the single creation control beneath the last card. It remains in
+  // the normal scroll flow, so a long list can never push it above the panel.
+  placeAddBlockButton();
 }
 
 function renderStep5NarrationPanel() {

@@ -27,7 +27,10 @@ function showToast(message, duration = 3000) {
   const toast = document.createElement('div');
   toast.className = `toast toast-${presentation.tone}`;
   toast.setAttribute('role', presentation.tone === 'error' ? 'alert' : 'status');
-  toast.innerText = presentation.text;
+  const content = document.createElement('div');
+  content.className = 'toast-content';
+  content.textContent = presentation.text;
+  toast.appendChild(content);
   container.appendChild(toast);
   setTimeout(() => {
     toast.style.animation = 'slideUp 0.3s ease-in reverse';

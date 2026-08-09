@@ -628,6 +628,11 @@ body.step5-fullscreen-mode #canvas-container {
   margin: 0 auto;
 }
 
+body.step5-fullscreen-mode #step5-zoom-stage {
+  transform: none !important;
+  transform-origin: 50% 50% !important;
+}
+
 body.step5-fullscreen-mode #step5-narration-panel {
   max-height: 118px;
   overflow-y: auto;
@@ -2267,20 +2272,6 @@ body.step5-fullscreen-mode #step5-btn-fullscreen {
   border: 0;
   border-radius: 0;
   padding: 0.1rem 0;
-}
-
-.step6-beat-number {
-  width: 24px;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1.5px solid var(--ink-color);
-  border-radius: 50%;
-  background: var(--primary-color);
-  font-weight: 800;
-  font-size: 0.78rem;
-  margin-top: 0.22rem;
 }
 
 .step6-tts-input {
@@ -4974,10 +4965,10 @@ button.success:disabled,
   display: none;
   width: 20px;
   height: 20px;
-  border: 3px solid #000;
+  border: 0;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.05);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.92);
+  background: rgba(23, 25, 29, 0.14);
+  box-shadow: none;
   box-sizing: border-box;
   pointer-events: none;
   transform: translate(-50%, -50%);
@@ -5020,12 +5011,6 @@ button.success:disabled,
  * 主标题控制在 22px，灰底块减少压迫感，整体行距拉开。
  * 使其更像专业内容编辑后台，而非放大后的 PPT 预览。
  * ============================================================ */
-
-/* 整体区域：内容收紧，最大宽度受控 */
-#step2-editor-area {
-  max-width: 1280px;
-  margin: 0 auto;
-}
 
 #step-panel-2 .step2-slide-editor {
   margin-top: 0.16rem !important;
@@ -5690,7 +5675,7 @@ button.prompt-help-button:hover {
 .ai-mask-modal-scroll{max-height:72vh;overflow:auto;padding-right:.3rem}
 #step5-canvas{pointer-events:auto}
 body.step5-fullscreen-mode #canvas-container{aspect-ratio:16/9;height:auto!important;max-height:none!important}
-body.step5-fullscreen-mode #canvas-container canvas,body.step5-fullscreen-mode #canvas-container img{width:100%!important;height:100%!important;object-fit:contain!important}
+body.step5-fullscreen-mode #canvas-container img{width:100%!important;height:100%!important;object-fit:contain!important}
 body.step5-fullscreen-mode #step-panel-5 .workspace-left{align-items:center;justify-content:center;overflow:hidden}
 .ai-mask-review-panel{display:none;align-items:center;gap:.65rem;margin:.65rem 0;padding:.7rem .85rem;border:1px solid var(--color-border-default);border-radius:14px;background:var(--color-bg-surface);box-shadow:var(--shadow-card)}
 .ai-mask-review-panel.visible{display:flex}
@@ -6139,4 +6124,796 @@ body.step5-fullscreen-mode .step5-draft-floating{z-index:60}
   color:#8a6d1f;
   font-size:0.76rem;
   line-height:1.5;
+}
+
+/* Step 3: use the available vertical space and make ordinary actions denser.
+   The next-step action stays visually separated as the only forward action. */
+#step-panel-3 .step3-toolbar-row {
+  margin: -0.92rem 0 0.55rem !important;
+  padding: 0.42rem 0 0.62rem !important;
+  column-gap: 4px !important;
+  row-gap: 4px !important;
+}
+
+#step-panel-3 .step3-toolbar-row > :not(#step3-btn-confirm) {
+  margin-left: 0 !important;
+}
+
+#step-panel-3 .step3-toolbar-row > #step3-btn-confirm {
+  margin-left: 0.72rem !important;
+}
+
+#step-panel-3 .step3-toolbar-row button,
+#step-panel-3 .step3-toolbar-row .btn,
+#step-panel-3 .step3-toolbar-row label.btn {
+  height: 34px !important;
+  min-height: 34px !important;
+  padding: 0.32rem 0.58rem !important;
+  border-radius: 12px !important;
+  font-size: 0.75rem !important;
+}
+
+/* Step 5: the title owns the first row; all editing controls share a compact
+   left-aligned second row so the sliders no longer detach into a stray column. */
+#step-panel-5 .step5-mask-header {
+  align-items: stretch !important;
+  flex-direction: column !important;
+  justify-content: flex-start !important;
+  gap: 0.44rem !important;
+  margin: -0.92rem 0 0.28rem !important;
+  padding: 0.42rem 0 0.4rem !important;
+}
+
+#step-panel-5 .step5-mask-header .highlight-title {
+  align-self: flex-start;
+}
+
+#step-panel-5 .step5-toolbar {
+  width: 100%;
+  justify-content: flex-start !important;
+  align-items: center !important;
+  gap: 4px !important;
+  flex-wrap: nowrap !important;
+  overflow-x: auto;
+  padding-bottom: 0.18rem;
+  scrollbar-width: thin;
+}
+
+#step-panel-5 .step5-toolbar button,
+#step-panel-5 .step5-brush-control {
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0.26rem 0.52rem !important;
+  border-radius: 11px !important;
+  font-size: 0.72rem !important;
+}
+
+#step-panel-5 .step5-brush-control {
+  gap: 0.24rem;
+  font-size: 0.7rem;
+}
+
+#step-panel-5 .step5-brush-control input[type="range"] {
+  width: 52px;
+}
+
+#step-panel-5 #step5-thumbs {
+  margin: 0 0 0.42rem !important;
+  padding: 0.12rem 0 0.24rem !important;
+}
+
+#step-panel-5 .step5-slide-btn {
+  min-width: 58px !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  padding: 0.12rem 0.42rem !important;
+  border-radius: 9px !important;
+}
+
+.step5-slide-label {
+  color: var(--color-text-primary);
+  font-size: 0.7rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.step5-zoom-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  transform-origin: 50% 50%;
+  will-change: transform;
+}
+
+.step5-zoom-stage > img,
+.step5-zoom-stage > canvas {
+  transform: none !important;
+  transform-origin: 50% 50% !important;
+}
+
+/* MP4 and PPTX artifacts share the same heading geometry and badge rhythm. */
+.step8-video-card-head strong,
+.step8-pptx-name {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-height: 28px;
+}
+
+@media (max-width: 760px) {
+  #step-panel-5 .step5-toolbar {
+    flex-wrap: wrap !important;
+    overflow-x: visible;
+  }
+}
+
+/* Secondary and utility actions are deliberately quieter and smaller across
+   the workflow. Forward/commit actions retain their stronger emphasis. */
+#step-panel-2 .step2-sticky-header button:not(.success),
+#step-panel-6 .step6-header-actions button:not(.success),
+#step-panel-6 .step6-toolbar button:not(.success),
+#step-panel-8 .step8-header-actions button:not(.success),
+#step-panel-1 .step1-card-toolbar button:not(.success) {
+  height: 34px !important;
+  min-height: 34px !important;
+  padding: 0.32rem 0.58rem !important;
+  border-radius: 12px !important;
+  font-size: 0.75rem !important;
+}
+
+/* ============================================================
+   Quiet Workspace — final visual system
+   A single neutral system for every workflow: white surfaces, graphite text,
+   restrained borders, and one dark action colour.  This intentionally
+   replaces the former multi-pastel presentation layer.
+   ============================================================ */
+:root {
+  --color-primary-deep: #17191d;
+  --color-primary-base: #667085;
+  --color-primary-soft: #e8eaee;
+  --color-primary-light: #f2f3f5;
+  --color-primary-text: #1d2939;
+  --color-coral: #f4f4f5;
+  --color-peach: #f6f6f6;
+  --color-lemon: #f7f7f5;
+  --color-mint: #17191d;
+  --color-lavender: #eef0f3;
+  --color-ai-deep: #17191d;
+  --color-ai-light: #f4f5f6;
+  --color-success-light: #eef7f0;
+  --color-success-text: #2f7a47;
+  --color-warning-light: #fbf7ed;
+  --color-warning-text: #82622b;
+  --color-danger-light: #fff3f3;
+  --color-danger-text: #a63d3d;
+  --color-bg-page: #f5f5f7;
+  --color-bg-warm: #fbfbfc;
+  --color-bg-surface: #ffffff;
+  --color-bg-subtle: #f2f3f5;
+  --color-border-default: #e2e3e7;
+  --color-border-strong: #c8cbd1;
+  --color-text-primary: #1d1d1f;
+  --color-text-secondary: #42464d;
+  --color-text-tertiary: #6e737c;
+  --color-text-disabled: #9ba0a8;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.035), 0 5px 18px rgba(0, 0, 0, 0.025);
+  --shadow-panel: 0 8px 24px rgba(0, 0, 0, 0.045);
+  --shadow-button: none;
+  --gradient-ai-soft: #f2f3f5;
+  --gradient-ai-strong: #17191d;
+  --gradient-progress: #17191d;
+  --success-color: #17191d;
+  --accent-color: #17191d;
+  --color-signature-blue: #5b7893;
+  --color-signature-blue-soft: #eaf0f4;
+}
+
+body,
+.main-content,
+#workspace-main {
+  background: var(--color-bg-page) !important;
+  color: var(--color-text-primary);
+}
+
+/* All workflow pages start close to the application bar on one shared line. */
+.main-content {
+  padding-top: 0.62rem !important;
+}
+
+#step-panel-1 .step1-heading-row,
+#step-panel-6 .step6-compact-header,
+#step-panel-8 .step8-header {
+  margin-top: -0.18rem !important;
+}
+
+#step-panel-2 .step2-sticky-header {
+  top: -0.5rem !important;
+  margin-top: -0.5rem !important;
+}
+
+#step-panel-3 .step3-toolbar-row,
+#step-panel-5 .step5-mask-header {
+  margin-top: -0.42rem !important;
+}
+
+header {
+  min-height: 54px !important;
+  padding: 0.42rem 1.1rem !important;
+  border-bottom: 1px solid #e5e5ea !important;
+  background: rgba(255, 255, 255, 0.92) !important;
+  backdrop-filter: saturate(150%) blur(18px);
+}
+
+header button,
+header .btn {
+  border-radius: 9px !important;
+  border-color: #e5e5ea !important;
+  background: #ffffff !important;
+  color: #42464d !important;
+}
+
+.logo {
+  color: #1d1d1f !important;
+  font-weight: 760 !important;
+  letter-spacing: -0.025em;
+}
+
+.logo-icon {
+  border: 1px solid #e2e3e7 !important;
+  border-radius: 8px !important;
+  background: #f2f3f5 !important;
+  color: #1d1d1f !important;
+}
+
+.sidebar {
+  width: 224px !important;
+  padding: 0.72rem 0.72rem 1rem !important;
+  background: #ffffff !important;
+  border-right: 1px solid #e5e5ea !important;
+  box-shadow: none !important;
+}
+
+.sidebar .stepper::before {
+  display: none !important;
+}
+
+.sidebar .stepper {
+  gap: 0.2rem !important;
+}
+
+.sidebar .step-item {
+  grid-template-columns: 30px 22px minmax(0, 1fr) 16px !important;
+  gap: 0.54rem !important;
+  height: 52px !important;
+  min-height: 52px !important;
+  padding: 0.45rem 0.56rem !important;
+  border: 1px solid transparent !important;
+  border-radius: 10px !important;
+  color: #555b65 !important;
+}
+
+.sidebar .step-item:hover,
+.sidebar .step-item.active {
+  background: #f4f4f5 !important;
+  border-color: #e5e5ea !important;
+  box-shadow: none !important;
+  color: #1d1d1f !important;
+}
+
+.sidebar .step-num {
+  width: 30px !important;
+  height: 30px !important;
+  border: 1px solid #dfe1e5 !important;
+  background: #ffffff !important;
+  color: #6e737c !important;
+  font-size: 0.78rem !important;
+  font-weight: 700;
+}
+
+.sidebar .step-item.active .step-num {
+  background: var(--color-signature-blue) !important;
+  border-color: var(--color-signature-blue) !important;
+  box-shadow: none !important;
+  color: #ffffff !important;
+}
+
+.sidebar .step-icon,
+.sidebar .step-item.active .step-icon {
+  color: currentColor !important;
+}
+
+.sidebar .step-label {
+  font-size: 0.84rem !important;
+  font-weight: 680 !important;
+}
+
+.sidebar .step-item.completed:not(.active),
+.sidebar .step-item.completed:not(.active) .step-num {
+  color: #555b65 !important;
+}
+
+.sidebar .step-item.completed:not(.active) .step-num {
+  border-color: #dfe1e5 !important;
+  background: #f6f7f8 !important;
+}
+
+.step-complete {
+  width: 16px !important;
+  height: 16px !important;
+  background: #70757e !important;
+  color: #ffffff !important;
+  font-size: 0.58rem !important;
+}
+
+.one-click-sidebar-entry,
+.one-click-sidebar-entry button {
+  border-radius: 10px !important;
+  background: #17191d !important;
+  box-shadow: none !important;
+}
+
+.soft-outline,
+.card,
+.project-card,
+.step2-slide-editor,
+.step3-image-card,
+.step6-slide-row,
+.step7-audio-card,
+.step8-video-card,
+.workspace-right,
+.canvas-wrapper {
+  border: 1px solid var(--color-border-default) !important;
+  border-radius: 14px !important;
+  box-shadow: var(--shadow-card) !important;
+}
+
+.soft-elevation,
+.soft-elevation:hover,
+.soft-elevation:active {
+  box-shadow: var(--shadow-card) !important;
+  transform: none !important;
+}
+
+.step2-sticky-header,
+.step3-toolbar-row,
+.step5-mask-header,
+.step6-compact-header,
+.step8-header {
+  border-bottom: 1px solid #e5e5ea !important;
+  background: transparent !important;
+  backdrop-filter: none !important;
+  padding-top: 0 !important;
+  padding-bottom: 0.5rem !important;
+}
+
+#step-panel-3 .step3-toolbar-row {
+  justify-content: flex-start !important;
+  padding-top: 0 !important;
+}
+
+#step-panel-3 .step3-toolbar-row > #step3-btn-confirm {
+  margin-left: auto !important;
+}
+
+#step-panel-5 .step5-mask-header {
+  padding-top: 0 !important;
+}
+
+/* Step 2 is a two-line handoff, not a banner. Keep its controls and slide
+   tabs compact so the editor receives the vertical space. */
+#step-panel-2 .step2-sticky-header > div:first-child {
+  margin-bottom: 0.2rem !important;
+  gap: 0.45rem !important;
+}
+
+#step-panel-2 .step2-sticky-header > div:first-child > div:first-child {
+  gap: 0.45rem !important;
+}
+
+#step-panel-2 .step2-sticky-header button {
+  height: 34px !important;
+  min-height: 34px !important;
+  padding: 0.3rem 0.58rem !important;
+  border-radius: 10px !important;
+  font-size: 0.75rem !important;
+}
+
+#step-panel-2 .slides-thumbnail-container {
+  min-height: 28px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+#step-panel-2 .slide-thumbnail-card.step2-slide-thumb {
+  height: 28px !important;
+  min-height: 28px !important;
+  padding: 0.1rem 0.5rem !important;
+  border-radius: 8px !important;
+}
+
+/* Step 2 shares the exact same content rail as every other workflow.  Its
+   editor must not be independently centred on large displays. */
+#step-panel-2 .step2-sticky-header,
+#step-panel-2 #step2-editor-area {
+  max-width: none !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+h1, h2, h3, h4, h5, h6,
+.highlight-title {
+  color: #1d1d1f !important;
+  font-weight: 720 !important;
+  letter-spacing: -0.025em !important;
+}
+
+button,
+.btn {
+  border: 1px solid #dfe1e5 !important;
+  border-radius: 10px !important;
+  background: #ffffff !important;
+  color: #343941 !important;
+  box-shadow: none !important;
+  font-weight: 620;
+}
+
+button:hover,
+.btn:hover {
+  background: #f4f4f5 !important;
+  border-color: #c8cbd1 !important;
+  color: #17191d !important;
+}
+
+button.success,
+.btn.success,
+.btn-next-step.success,
+.one-click-sidebar-entry button {
+  border-color: #17191d !important;
+  background: #17191d !important;
+  color: #ffffff !important;
+}
+
+button.success:hover,
+.btn.success:hover,
+.btn-next-step.success:hover,
+.one-click-sidebar-entry button:hover {
+  border-color: #343941 !important;
+  background: #343941 !important;
+  color: #ffffff !important;
+}
+
+button.danger {
+  border-color: #f0d7d7 !important;
+  background: #ffffff !important;
+  color: var(--color-danger-text) !important;
+}
+
+button.danger:hover {
+  background: var(--color-danger-light) !important;
+}
+
+input[type="text"],
+input[type="password"],
+textarea,
+select {
+  border: 1px solid #e1e3e7 !important;
+  border-radius: 10px !important;
+  background: #fafafa !important;
+  box-shadow: none !important;
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus,
+textarea:focus,
+select:focus {
+  border-color: #8b919a !important;
+  background: #ffffff !important;
+  box-shadow: 0 0 0 3px rgba(23, 25, 29, 0.08) !important;
+}
+
+.slide-thumbnail-card.active,
+.step5-slide-btn.active,
+.step1-mode-button.active {
+  border-color: var(--color-signature-blue) !important;
+  background: var(--color-signature-blue-soft) !important;
+  color: #284a68 !important;
+  box-shadow: inset 0 0 0 1px var(--color-signature-blue) !important;
+}
+
+/* The only auxiliary accent: quiet blue identifies the current editing mode
+   and selection without competing with the graphite primary actions. */
+body.step5-fullscreen-mode #step5-btn-fullscreen {
+  border-color: var(--color-signature-blue) !important;
+  background: var(--color-signature-blue-soft) !important;
+  color: #284a68 !important;
+}
+
+.step3-image-card .step3-image-preview,
+.step3-ai-preview,
+.step3-generating-preview,
+.img-preview-container,
+.slide-thumbnail-card .img-preview {
+  border-color: #d9dce1 !important;
+  border-style: solid !important;
+  background: #fafafa !important;
+}
+
+/* Step 5: the creation control belongs to the list, not to its fixed header.
+   A long set of blocks therefore keeps the action reachable at the end. */
+.step5-side-header > .step5-add-block-btn {
+  display: none !important;
+}
+
+#step5-boxes-list .step5-add-block-card-action {
+  display: inline-flex !important;
+  width: 100% !important;
+  min-height: 42px !important;
+  margin: 0.15rem 0 0.75rem !important;
+  justify-content: center !important;
+  border-style: dashed !important;
+  border-color: #cfd4da !important;
+  background: #ffffff !important;
+  color: #42464d !important;
+}
+
+#step5-boxes-list .step5-add-block-card-action:hover {
+  border-color: var(--color-signature-blue) !important;
+  background: var(--color-signature-blue-soft) !important;
+  color: #284a68 !important;
+}
+
+/* Step 6 has one speech per slide.  Do not imply a multi-part sequence. */
+.step6-beat-row {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+/* Header context shares the same left rail as every workspace heading. */
+@media (min-width: 981px) {
+  body.workspace-open #project-info-header {
+    /* The app header has its own width transform; this maps to the same
+       rendered rail as the workspace's 2.4rem inner padding. */
+    left: calc(224px + 1.5rem) !important;
+  }
+}
+
+body.step5-fullscreen-mode.workspace-open #project-info-header {
+  left: 2rem !important;
+}
+
+/* A single line-icon system: equal optical size, shared stroke and baseline.
+   It applies to every SVG control without changing each workflow's markup. */
+button,
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.38rem;
+}
+
+button .icon,
+.btn .icon,
+.toolbar .icon,
+.step5-toolbar .icon,
+.step6-compact-header .icon,
+.step8-header .icon {
+  display: block !important;
+  flex: 0 0 16px !important;
+  width: 16px !important;
+  height: 16px !important;
+  margin: 0 !important;
+  fill: none !important;
+  stroke: currentColor !important;
+  stroke-width: 1.8 !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+}
+
+.mask-icon-btn,
+.mask-icon-btn .icon {
+  gap: 0 !important;
+  margin: 0 !important;
+}
+
+.sidebar .step-icon {
+  display: grid !important;
+  width: 18px !important;
+  height: 18px !important;
+  place-items: center !important;
+}
+
+.sidebar .step-icon svg {
+  width: 16px !important;
+  height: 16px !important;
+}
+
+/* Completion marks use the exact same fixed grid column in every state. */
+.sidebar .step-complete,
+.sidebar .step-item.active .step-complete {
+  display: grid !important;
+  width: 16px !important;
+  height: 16px !important;
+  min-width: 16px !important;
+  min-height: 16px !important;
+  place-self: center !important;
+  justify-self: center !important;
+  align-self: center !important;
+  margin: 0 !important;
+  transform: none !important;
+  border-radius: 50% !important;
+  background: #70757e !important;
+  color: #ffffff !important;
+  font-size: 0.58rem !important;
+  line-height: 1 !important;
+}
+
+.sidebar .step-item.active .step-complete {
+  background: var(--color-signature-blue) !important;
+  color: #ffffff !important;
+}
+
+/* Compact, neutral status popover: no coloured side rail, no oversized badge. */
+.toast {
+  grid-template-columns: 28px minmax(0, 1fr) !important;
+  gap: 0.62rem !important;
+  min-height: 58px !important;
+  padding: 0.68rem 0.82rem !important;
+  border: 1px solid #e0e3e7 !important;
+  border-left: 1px solid #e0e3e7 !important;
+  border-radius: 14px !important;
+  background: rgba(255, 255, 255, 0.98) !important;
+  box-shadow: 0 12px 32px rgba(20, 26, 36, 0.1) !important;
+  color: #343941 !important;
+}
+
+.toast-content {
+  min-width: 0;
+}
+
+.toast::before {
+  display: grid !important;
+  width: 28px !important;
+  height: 28px !important;
+  place-items: center !important;
+  border-radius: 9px !important;
+  background: var(--color-signature-blue-soft) !important;
+  box-shadow: inset 0 0 0 1px rgba(91, 120, 147, 0.14) !important;
+  color: #45647d !important;
+  content: "i" !important;
+  font-family: ui-sans-serif, system-ui, sans-serif !important;
+  font-size: 0.82rem !important;
+  font-weight: 800 !important;
+}
+
+.toast-success::before {
+  background: #edf7f0 !important;
+  box-shadow: inset 0 0 0 1px rgba(60, 128, 87, 0.14) !important;
+  color: #347548 !important;
+  content: "✓" !important;
+}
+
+.toast-warning::before {
+  background: #fbf7ed !important;
+  box-shadow: inset 0 0 0 1px rgba(130, 98, 43, 0.14) !important;
+  color: #82622b !important;
+  content: "!" !important;
+}
+
+.toast-error::before {
+  background: #fff3f3 !important;
+  box-shadow: inset 0 0 0 1px rgba(166, 61, 61, 0.14) !important;
+  color: #a63d3d !important;
+  content: "!" !important;
+}
+
+/* Fullscreen Mask is a focused canvas mode, rather than a scaled copy of the
+   normal workspace.  Keep only the escape hatch on the same title baseline. */
+body.step5-fullscreen-mode #step-panel-5 {
+  padding: 0 0.9rem 0.9rem !important;
+  gap: 0 !important;
+}
+
+body.step5-fullscreen-mode #step-panel-5 .step5-mask-header {
+  display: flex !important;
+  flex: 0 0 58px !important;
+  min-height: 58px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  border-bottom: 1px solid #e5e5ea !important;
+}
+
+body.step5-fullscreen-mode #step-panel-5 .step5-mask-header .highlight-title {
+  align-self: auto !important;
+  margin: 0 !important;
+}
+
+body.step5-fullscreen-mode #step-panel-5 .step5-toolbar {
+  width: auto !important;
+  margin-left: auto !important;
+  padding: 0 !important;
+  overflow: visible !important;
+}
+
+body.step5-fullscreen-mode #step-panel-5 .step5-toolbar > * {
+  display: none !important;
+}
+
+body.step5-fullscreen-mode #step-panel-5 .step5-toolbar > #step5-btn-fullscreen {
+  display: inline-flex !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  padding: 0.3rem 0.68rem !important;
+  margin: 0 !important;
+}
+
+body.step5-fullscreen-mode #step-panel-5 .workspace-split {
+  height: calc(100dvh - 70px) !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding-top: 0.55rem !important;
+  gap: 0.75rem !important;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 430px) !important;
+}
+
+body.step5-fullscreen-mode #step-panel-5 .workspace-right {
+  height: 100% !important;
+  min-height: 0 !important;
+  padding-top: 0.72rem !important;
+}
+
+body.step5-fullscreen-mode #canvas-container {
+  width: min(100%, calc((100dvh - 92px) * 16 / 9)) !important;
+  max-height: calc(100dvh - 92px) !important;
+}
+
+/* Header utility actions must never become tall icon-over-text tiles. */
+#btn-back-home {
+  width: auto !important;
+  min-width: max-content !important;
+  min-height: 36px !important;
+  height: 36px !important;
+  padding: 0.32rem 0.68rem !important;
+  flex: 0 0 auto !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  white-space: nowrap !important;
+  line-height: 1 !important;
+}
+
+#btn-back-home .icon {
+  flex: 0 0 16px !important;
+}
+
+/* Focus mode still exposes slide navigation.  It becomes a single scrolling
+   rail directly after the heading, with the exit action fixed at the end. */
+body.step5-fullscreen-mode #step-panel-5 .step5-mask-header {
+  gap: 0.75rem !important;
+}
+
+body.step5-fullscreen-mode #step-panel-5 .step5-mask-header .highlight-title {
+  flex: 0 0 auto !important;
+  white-space: nowrap !important;
+}
+
+body.step5-fullscreen-mode #step5-thumbs {
+  display: flex !important;
+  flex: 1 1 auto !important;
+  flex-wrap: nowrap !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0.15rem 0.1rem 0.15rem 0 !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scrollbar-width: thin;
+}
+
+body.step5-fullscreen-mode #step5-thumbs .step5-slide-btn {
+  flex: 0 0 auto !important;
+}
+
+body.step5-fullscreen-mode #step-panel-5 .step5-toolbar {
+  flex: 0 0 auto !important;
 }

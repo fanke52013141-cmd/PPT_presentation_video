@@ -658,6 +658,9 @@ if (!workspaceNavigation.includes("document.getElementById('btn-toggle-ai-mode')
 if (!workspaceNavigation.includes('await navigateToStep(visibleStep)') || !workspaceNavigation.includes('workspaceNavigationVersion')) {
   throw new Error('workspace navigation does not await or invalidate stale loads');
 }
+if (!workspaceNavigation.includes('const entryVersion = ++workspaceNavigationVersion') || !workspaceNavigation.includes('entryVersion !== workspaceNavigationVersion')) {
+  throw new Error('workspace entry can still be overwritten by a stale project request');
+}
 if (!uiFoundation.includes('await onYes()') || !uiFoundation.includes('showToast(`操作失败')) {
   throw new Error('shared confirmation does not handle asynchronous failures');
 }

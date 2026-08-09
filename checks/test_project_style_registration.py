@@ -150,6 +150,13 @@ def test_profile_and_step3_style_round_trip_use_narrow_context() -> None:
         legacy_profile = project_profile_store.load_profile(project)
         assert legacy_profile["quality_gates"]["pause_on_render_failure"] is False
 
+        profile_path.write_text(
+            '{"quality_gates":{"pause_on_render_failure":{"legacy":"invalid"}}}',
+            encoding="utf-8",
+        )
+        malformed_legacy_profile = project_profile_store.load_profile(project)
+        assert malformed_legacy_profile["quality_gates"]["pause_on_render_failure"] is True
+
         saved_style = project_style_routes.put_step3_image_style(
             project.id,
             {"system_content": "Use soft blue geometric cards."},

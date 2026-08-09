@@ -8,8 +8,10 @@
 let workspaceNavigationVersion = 0;
 
 async function enterWorkspace(projectId) {
+  const entryVersion = ++workspaceNavigationVersion;
   resetStep5ProjectState();
   const project = await API.get(`/api/projects/${projectId}`);
+  if (entryVersion !== workspaceNavigationVersion) return;
   state.currentProject = project;
   const visibleStep = resolveProjectVisibleStep(project);
 

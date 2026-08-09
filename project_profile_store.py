@@ -68,7 +68,7 @@ def _normalize_quality_gates(value: Any, *, strict: bool = False) -> dict[str, b
             raise ValueError(f"quality_gates.{key} 必须是布尔值")
         if isinstance(raw, str) and raw.strip().lower() in {"true", "false"}:
             normalized[key] = raw.strip().lower() == "true"
-        elif raw in {0, 1}:
+        elif isinstance(raw, int) and raw in (0, 1):
             normalized[key] = bool(raw)
         else:
             normalized[key] = default

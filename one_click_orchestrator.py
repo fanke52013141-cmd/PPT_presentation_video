@@ -16,7 +16,6 @@ keeps the user-facing workflow simple while preserving manual recovery paths.
 from __future__ import annotations
 
 from dataclasses import dataclass
-import hashlib
 import json
 import os
 import threading
@@ -25,7 +24,21 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
+from one_click_resume_policy import (
+    build_resume_plan,
+    has_article as _has_article,
+    has_contract as _has_contract,
+    has_fresh_narration as _has_fresh_narration,
+    image_needs_generation as _image_needs_generation,
+    mtime as _mtime,
+    run_dir as _run_dir,
+    slide_ids as _slide_ids,
+    slides_requiring_images as _slides_requiring_images,
+    upstream_image_inputs as _upstream_image_inputs,
+)
+
 STATUS_FILENAME = "one_click_status.json"
+STATUS_VERSION = "one_click_orchestrator_v2"
 
 STAGES = [
     ("preflight", "预检查"),
@@ -121,10 +134,6 @@ def _write_json(path: Path, value: Any) -> None:
             temp_path.unlink()
 
 
-def _run_dir(project: Any) -> Path:
-    return Path(str(project.run_dir)).resolve()
-
-
 def _status_path(project: Any) -> Path:
     return _run_dir(project) / "planning" / STATUS_FILENAME
 
@@ -135,7 +144,7 @@ def _profile_path(project: Any) -> Path:
 
 def _initial_status(project_id: str, run_id: str) -> dict[str, Any]:
     return {
-        "version": "one_click_orchestrator_v1",
+        "version": STATUS_VERSION,
         "project_id": project_id,
         "run_id": run_id,
         "status": "running",
@@ -144,6 +153,10 @@ def _initial_status(project_id: str, run_id: str) -> dict[str, Any]:
         "updated_at": _now(),
         "completed_at": "",
         "video": None,
+        "requested_mode": "",
+        "previous_failed_stage": "",
+        "effective_start_stage": "preflight",
+        "revalidation": [],
         "stages": [
             {
                 "id": stage_id,
@@ -163,10 +176,15 @@ def _initial_status(project_id: str, run_id: str) -> dict[str, Any]:
 
 def _status_for_project(project: Any, project_id: str) -> dict[str, Any]:
     status = _read_json(_status_path(project), {})
-    if isinstance(status, dict) and status.get("version") == "one_click_orchestrator_v1":
+    if isinstance(status, dict) and status.get("version") in {"one_click_orchestrator_v1", STATUS_VERSION}:
+        status["version"] = STATUS_VERSION
+        status.setdefault("requested_mode", "")
+        status.setdefault("previous_failed_stage", "")
+        status.setdefault("effective_start_stage", status.get("current_stage") or "preflight")
+        status.setdefault("revalidation", [])
         return status
     return {
-        "version": "one_click_orchestrator_v1",
+        "version": STATUS_VERSION,
         "project_id": project_id,
         "run_id": "",
         "status": "idle",
@@ -175,6 +193,10 @@ def _status_for_project(project: Any, project_id: str) -> dict[str, Any]:
         "updated_at": "",
         "completed_at": "",
         "video": None,
+        "requested_mode": "",
+        "previous_failed_stage": "",
+        "effective_start_stage": "preflight",
+        "revalidation": [],
         "stages": _initial_status(project_id, "")["stages"],
     }
 
@@ -273,87 +295,6 @@ def _require_quality_gate(
         ) from exc
 
 
-def _has_contract(project: Any) -> bool:
-    run_dir = _run_dir(project)
-    contract_path = run_dir / "planning" / "visual_contract.json"
-    if not contract_path.exists():
-        return False
-    upstream_paths = [
-        run_dir / "inputs" / "article.md",
-    ]
-    if any(_mtime(path) > _mtime(contract_path) for path in upstream_paths):
-        return False
-    validation = _read_json(run_dir / "planning" / "visual_contract.validation.json", {})
-    if not isinstance(validation, dict) or validation.get("valid") is not True:
-        return False
-    expected_hash = str(validation.get("contract_sha256") or "")
-    try:
-        actual_hash = hashlib.sha256(contract_path.read_bytes()).hexdigest()
-    except OSError:
-        return False
-    return bool(expected_hash) and expected_hash == actual_hash
-
-
-def _has_article(project: Any) -> bool:
-    article_path = _run_dir(project) / "inputs" / "article.md"
-    try:
-        return bool(article_path.read_text(encoding="utf-8-sig").strip())
-    except OSError:
-        return False
-
-
-def _slide_ids(project: Any) -> list[str]:
-    contract = _read_json(_run_dir(project) / "planning" / "visual_contract.json", {})
-    slides = contract.get("slides") if isinstance(contract, dict) else []
-    return [str(slide.get("slide_id") or "").strip() for slide in slides if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()]
-
-
-def _mtime(path: Path) -> float:
-    try:
-        return path.stat().st_mtime
-    except OSError:
-        return 0.0
-
-
-def _upstream_image_inputs(project: Any, slide_id: str) -> list[Path]:
-    run_dir = _run_dir(project)
-    paths = [
-        run_dir / "planning" / "visual_contract.json",
-        run_dir / "planning" / "step3_image_style.json",
-        run_dir / "planning" / "project_style_references.json",
-        run_dir / "slides" / slide_id / "visual_prompt.md",
-    ]
-    references_dir = run_dir / "planning" / "style_references"
-    if references_dir.exists():
-        paths.extend(sorted(references_dir.glob("style_reference_*.png"))[:3])
-    return paths
-
-
-def _image_needs_generation(project: Any, slide_id: str) -> bool:
-    image_path = _run_dir(project) / "slides" / slide_id / "visual_draft.png"
-    if not image_path.exists():
-        return True
-    image_mtime = _mtime(image_path)
-    return any(_mtime(path) > image_mtime for path in _upstream_image_inputs(project, slide_id))
-
-
-def _slides_requiring_images(project: Any) -> list[str]:
-    return [slide_id for slide_id in _slide_ids(project) if _image_needs_generation(project, slide_id)]
-
-
-def _has_fresh_narration(project: Any) -> bool:
-    run_dir = _run_dir(project)
-    narration = run_dir / "planning" / "narration_beats.json"
-    contract = run_dir / "planning" / "visual_contract.json"
-    payload = _read_json(narration, {})
-    return (
-        narration.exists()
-        and isinstance(payload, dict)
-        and bool(payload)
-        and _mtime(narration) >= _mtime(contract)
-    )
-
-
 def _profile(project: Any) -> dict[str, Any]:
     value = _read_json(_profile_path(project), {})
     return value if isinstance(value, dict) else {}
@@ -376,13 +317,16 @@ def _stage_index(stage_id: str) -> int:
 def _resume_status(project: Any, project_id: str, run_id: str, mode: str) -> tuple[dict[str, Any], int]:
     previous = _status_for_project(project, project_id)
     if mode == "resume" and previous.get("status") in {"paused", "running"} and previous.get("current_stage"):
-        start_index = _stage_index(str(previous["current_stage"]))
+        plan = build_resume_plan(project, str(previous["current_stage"]))
+        start_index = _stage_index(str(plan["effective_start_stage"]))
         status = previous
         status.update({
             "run_id": run_id,
             "status": "running",
             "completed_at": "",
             "video": None,
+            "requested_mode": mode,
+            **plan,
         })
         for index, item in enumerate(status.get("stages", [])):
             if index >= start_index:
@@ -396,7 +340,9 @@ def _resume_status(project: Any, project_id: str, run_id: str, mode: str) -> tup
                     "blocking_errors": [],
                 })
         return status, start_index
-    return _initial_status(project_id, run_id), 0
+    status = _initial_status(project_id, run_id)
+    status["requested_mode"] = mode
+    return status, 0
 
 
 def _preflight_errors(dependencies: OneClickDependencies, project: Any) -> list[str]:
@@ -504,7 +450,7 @@ def _run_pipeline(
         def should_run(stage_id: str) -> bool:
             return _stage_index(stage_id) >= start_index
 
-        if should_run("preflight"):
+        if should_run("preflight") or mode == "resume":
             _start_stage(project, status, "preflight", "检查文章、凭据、媒体工具和项目目录")
             preflight_errors = _preflight_errors(dependencies, project)
             if preflight_errors:

@@ -82,6 +82,7 @@ def quick_checks() -> None:
         "mask_manifest_service.py",
         "mask_preview_service.py",
         "one_click_orchestrator.py",
+        "one_click_resume_policy.py",
         "one_click_routes.py",
         "narration_routes.py",
         "narration_audio_service.py",

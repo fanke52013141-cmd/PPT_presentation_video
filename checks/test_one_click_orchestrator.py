@@ -19,7 +19,7 @@ def project_for(root: Path) -> SimpleNamespace:
     return SimpleNamespace(id="project-test", run_dir=str(root))
 
 
-def test_atomic_status_write_and_resume() -> None:
+def test_atomic_status_write_and_resume_rewinds_when_upstream_is_missing() -> None:
     with tempfile.TemporaryDirectory() as value:
         root = Path(value)
         project = project_for(root)
@@ -29,19 +29,113 @@ def test_atomic_status_write_and_resume() -> None:
         one_click._fail_stage(project, status, "images", "provider failed")
 
         resumed, start_index = one_click._resume_status(project, project.id, "run-new", "resume")
-        assert start_index == one_click._stage_index("images")
+        assert start_index == one_click._stage_index("preflight")
         assert resumed["run_id"] == "run-new"
         assert resumed["status"] == "running"
-        assert one_click._stage(resumed, "preflight")["status"] == "done"
-        assert one_click._stage(resumed, "storyboard")["status"] == "done"
+        assert one_click._stage(resumed, "preflight")["status"] == "pending"
+        assert one_click._stage(resumed, "storyboard")["status"] == "pending"
         assert one_click._stage(resumed, "images")["status"] == "pending"
+        assert resumed["effective_start_stage"] == "preflight"
+        assert resumed["revalidation"][0]["reasons"] == ["article_missing"]
         assert not list((root / "planning").glob("*.tmp"))
         json.loads((root / "planning" / one_click.STATUS_FILENAME).read_text(encoding="utf-8"))
 
         one_click._save_status(project, resumed)
         thread_resumed, thread_start_index = one_click._resume_status(project, project.id, "run-new", "resume")
-        assert thread_start_index == one_click._stage_index("images")
+        assert thread_start_index == one_click._stage_index("preflight")
         assert thread_resumed["run_id"] == "run-new"
+
+
+def test_resume_keeps_failed_stage_when_upstream_artifacts_are_valid() -> None:
+    with tempfile.TemporaryDirectory() as value:
+        root = Path(value)
+        project = project_for(root)
+        (root / "inputs").mkdir(parents=True)
+        (root / "planning").mkdir(parents=True)
+        article = root / "inputs" / "article.md"
+        contract = root / "planning" / "visual_contract.json"
+        article.write_text("article", encoding="utf-8")
+        contract.write_text('{"slides":[{"slide_id":"slide_001"}]}', encoding="utf-8")
+        os.utime(article, (10, 10))
+        os.utime(contract, (20, 20))
+        (root / "planning" / "visual_contract.validation.json").write_text(
+            json.dumps({
+                "valid": True,
+                "contract_sha256": hashlib.sha256(contract.read_bytes()).hexdigest(),
+            }),
+            encoding="utf-8",
+        )
+        status = one_click._initial_status(project.id, "run-old")
+        one_click._finish_stage(project, status, "preflight", "ok")
+        one_click._finish_stage(project, status, "storyboard", "ok")
+        one_click._fail_stage(project, status, "images", "provider failed")
+
+        resumed, start_index = one_click._resume_status(project, project.id, "run-new", "resume")
+
+        assert start_index == one_click._stage_index("images")
+        assert resumed["effective_start_stage"] == "images"
+        assert all(item["valid"] for item in resumed["revalidation"][:-1])
+        assert resumed["revalidation"][-1]["reasons"] == ["previous_stage_failed"]
+
+
+def test_resume_rewinds_render_to_tts_when_audio_is_not_confirmed() -> None:
+    with tempfile.TemporaryDirectory() as value:
+        root = Path(value)
+        project = project_for(root)
+        planning = root / "planning"
+        slide_dir = root / "slides" / "slide_001"
+        inputs = root / "inputs"
+        planning.mkdir(parents=True)
+        slide_dir.mkdir(parents=True)
+        inputs.mkdir(parents=True)
+        article = inputs / "article.md"
+        contract = planning / "visual_contract.json"
+        image = slide_dir / "visual_draft.png"
+        manifest = root / "reveal_manifest.json"
+        narration = planning / "narration_beats.json"
+        article.write_text("article", encoding="utf-8")
+        contract.write_text('{"slides":[{"slide_id":"slide_001"}]}', encoding="utf-8")
+        (planning / "visual_contract.validation.json").write_text(
+            json.dumps({
+                "valid": True,
+                "contract_sha256": hashlib.sha256(contract.read_bytes()).hexdigest(),
+            }),
+            encoding="utf-8",
+        )
+        image.write_bytes(b"image")
+        manifest.write_text(
+            json.dumps({
+                "slides": [{"slide_id": "slide_001"}],
+                "ai_mask_annotation": {"status": "completed"},
+            }),
+            encoding="utf-8",
+        )
+        for filename in ("scene.json", "animation_timeline.json", "reveal_report.json"):
+            (slide_dir / filename).write_text("{}", encoding="utf-8")
+        narration.write_text(
+            '{"slides":[{"slide_id":"slide_001","beats":[]}]}',
+            encoding="utf-8",
+        )
+        for path, stamp in (
+            (article, 10),
+            (contract, 20),
+            (image, 30),
+            (manifest, 40),
+            (slide_dir / "scene.json", 50),
+            (slide_dir / "animation_timeline.json", 50),
+            (slide_dir / "reveal_report.json", 50),
+            (narration, 60),
+        ):
+            os.utime(path, (stamp, stamp))
+        status = one_click._initial_status(project.id, "run-old")
+        one_click._fail_stage(project, status, "render", "render failed")
+
+        resumed, start_index = one_click._resume_status(project, project.id, "run-new", "resume")
+
+        assert start_index == one_click._stage_index("tts")
+        assert resumed["effective_start_stage"] == "tts"
+        tts_check = next(item for item in resumed["revalidation"] if item["stage"] == "tts")
+        assert tts_check["reasons"] == ["audio_not_confirmed:missing_confirmation"]
 
 
 def test_restart_does_not_reuse_failed_stage_state() -> None:
@@ -55,6 +149,24 @@ def test_restart_does_not_reuse_failed_stage_state() -> None:
         assert all(stage["status"] == "pending" for stage in restarted["stages"])
 
 
+def test_legacy_status_is_migrated_in_memory_to_v2() -> None:
+    with tempfile.TemporaryDirectory() as value:
+        root = Path(value)
+        project = project_for(root)
+        status = one_click._initial_status(project.id, "run-old")
+        status["version"] = "one_click_orchestrator_v1"
+        status.pop("requested_mode", None)
+        status.pop("effective_start_stage", None)
+        status.pop("revalidation", None)
+        one_click._write_json(root / "planning" / one_click.STATUS_FILENAME, status)
+
+        migrated = one_click._status_for_project(project, project.id)
+
+        assert migrated["version"] == one_click.STATUS_VERSION
+        assert migrated["effective_start_stage"] == "preflight"
+        assert migrated["revalidation"] == []
+
+
 def test_contract_and_narration_are_only_reused_when_fresh_and_validated() -> None:
     with tempfile.TemporaryDirectory() as value:
         root = Path(value)
@@ -65,8 +177,8 @@ def test_contract_and_narration_are_only_reused_when_fresh_and_validated() -> No
         contract = root / "planning" / "visual_contract.json"
         narration = root / "planning" / "narration_beats.json"
         article.write_text("article", encoding="utf-8")
-        contract.write_text('{"slides":[]}', encoding="utf-8")
-        narration.write_text('{"slide_001":[]}', encoding="utf-8")
+        contract.write_text('{"slides":[{"slide_id":"slide_001"}]}', encoding="utf-8")
+        narration.write_text('{"slides":[{"slide_id":"slide_001","beats":[]}]}', encoding="utf-8")
         for path, stamp in ((article, 10), (contract, 20), (narration, 30)):
             os.utime(path, (stamp, stamp))
         validation = {

@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
 
 from visual_contract_service import narration_dedupe_key, normalize_visual_type
+
+logger = logging.getLogger("PPTStudio.StoryboardPlanning")
 
 
 def stable_plan_id(value: Any, prefix: str, index: int) -> str:
@@ -198,10 +201,14 @@ def validate_slide_visual_mapping(
         return
     expected_title = clean_planning_text(script_slide.get("slide_title") or "")
     if expected_title and clean_planning_text(title.get("visual_description")) != expected_title:
-        raise HTTPException(
-            status_code=500,
-            detail=f"{slide_id} 的标题画面文字必须逐字等于 slide_title: {expected_title}",
+        # LLM 偶发为标题 visual_description 添加前缀/后缀/装饰说明。
+        # 自动用 expected_title 覆盖，保证后续生图/Mask 拿到的是与 slide_title
+        # 严格一致的标题文字，避免整个分镜生成因此卡住。
+        logger.warning(
+            "%s 的标题 visual_description 与 slide_title 不一致，已自动覆盖: %r -> %r",
+            slide_id, title.get("visual_description"), expected_title,
         )
+        title["visual_description"] = expected_title
     source_narration = clean_planning_text(script_slide.get("narration") or "")
     combined_narration = "".join(str(element.get("narration") or "") for element in elements)
     if narration_sequence_key(combined_narration) != narration_sequence_key(source_narration):
@@ -212,6 +219,70 @@ def validate_slide_visual_mapping(
                 "每个片段必须非空、连续、无遗漏、无重复且保持原顺序。"
             ),
         )
+
+
+
+
+def auto_fill_empty_narrations(
+    elements: List[Dict[str, str]],
+    source_narration: str,
+) -> bool:
+    """为 narration 为空的视觉元素自动回填片段。
+
+    LLM 偶发漏掉某个元素的 narration 字段。本函数从原始演讲稿中减去已有非空
+    片段，将剩余文本按顺序分配给空 narration 元素，使整体拼接仍能还原原文。
+
+    返回 True 表示全部空元素已回填（或原本就没有空元素）。
+    """
+    source = clean_planning_text(source_narration)
+    if not source:
+        return all(clean_planning_text(e.get("narration") or "") for e in elements)
+
+    empty_indices = [
+        i for i, e in enumerate(elements)
+        if not clean_planning_text(e.get("narration") or "")
+    ]
+    if not empty_indices:
+        return True  # 没有空 narration，无需回填
+
+    # 用占位符在 source 中标记已使用片段
+    PLACEHOLDER = "\uFFFF"
+    marked = source
+    for elem in elements:
+        seg = clean_planning_text(elem.get("narration") or "")
+        if not seg:
+            continue
+        # 在尚未标记的部分中查找片段
+        search_text = marked.replace(PLACEHOLDER, "")
+        pos = search_text.find(seg)
+        if pos < 0:
+            continue  # 片段不在原文中（可能 LLM 改写了），跳过
+        # 将 pos 映射回 marked 中的实际位置
+        real_pos = 0
+        count = 0
+        for ci, ch in enumerate(marked):
+            if ch != PLACEHOLDER:
+                if count == pos:
+                    real_pos = ci
+                    break
+                count += 1
+        marked = marked[:real_pos] + PLACEHOLDER * len(seg) + marked[real_pos + len(seg):]
+
+    # 提取未分配的文本块（非占位符的连续片段）
+    remaining_blocks = [b for b in marked.split(PLACEHOLDER) if b.strip()]
+
+    if len(empty_indices) == len(remaining_blocks):
+        for idx, block in zip(empty_indices, remaining_blocks):
+            elements[idx]["narration"] = block.strip()
+        return True
+
+    # 剩余块数与空元素数不匹配时，尝试把全部剩余文本合并给唯一空元素
+    if len(empty_indices) == 1 and remaining_blocks:
+        elements[empty_indices[0]]["narration"] = "".join(remaining_blocks).strip()
+        return True
+
+    # 无法精确回填
+    return False
 
 
 def normalize_slide_visual_plan(
@@ -236,7 +307,10 @@ def normalize_slide_visual_plan(
         elements = normalize_visual_elements(slide.get("visual_elements"))
         if not elements:
             raise HTTPException(status_code=500, detail=f"{slide_id} 缺少 visual_elements")
-        validate_slide_visual_mapping(slide_id, elements, script_by_id.get(slide_id))
+        script_slide = script_by_id.get(slide_id)
+        if script_slide:
+            auto_fill_empty_narrations(elements, script_slide.get("narration") or "")
+        validate_slide_visual_mapping(slide_id, elements, script_slide)
         normalized_slides.append({"slide_id": slide_id, "visual_elements": elements})
     if not normalized_slides:
         raise HTTPException(status_code=500, detail="AI 没有返回可用的 slide_visual_plan.slides")

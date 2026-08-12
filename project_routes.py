@@ -12,6 +12,7 @@ from project_service import (
     AiModeUpdate,
     ProjectCreate,
     ProjectService,
+    ProjectUpdate,
     get_project_service,
 )
 
@@ -62,6 +63,16 @@ def update_project_ai_mode(
     service: ProjectService = Depends(get_project_service),
 ) -> dict[str, Any]:
     return service.update_ai_mode(project_id, payload, db)
+
+
+@router.put("/api/projects/{project_id}")
+def update_project(
+    project_id: str,
+    payload: ProjectUpdate,
+    db: Session = Depends(get_db),
+    service: ProjectService = Depends(get_project_service),
+) -> dict[str, Any]:
+    return service.update(project_id, payload, db)
 
 
 @router.delete("/api/projects/{project_id}")

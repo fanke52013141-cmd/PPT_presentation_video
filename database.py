@@ -47,6 +47,11 @@ class Project(Base):
     run_dir = Column(String, nullable=False)
     # AI 模式：auto=自动调用 AI 做分镜规划/可视化/Mask；manual=手动填写，保留按需触发 AI
     ai_mode = Column(String, default="auto")
+    # 课程/章节归属：nullable=True 表示"独立项目"（不属于任何课程章节）
+    course_id = Column(String, nullable=True, index=True)
+    chapter_id = Column(String, nullable=True, index=True)
+    # 项目在所属章节/课程未分配区中的排序
+    sort_order = Column(Integer, default=0)
 
     def get_step_status(self):
         try:
@@ -56,6 +61,35 @@ class Project(Base):
 
     def set_step_status(self, status_dict):
         self.step_status = json.dumps(status_dict)
+
+class Course(Base):
+    __tablename__ = "courses"
+
+    id = Column(String, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    # 主题色（HEX），新建时从色池随机选取
+    cover_color = Column(String, nullable=False, default="#5B7893")
+    # 封面图片路径（可选，预留扩展）
+    cover_image_path = Column(String, nullable=True)
+    # 课程排序
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=utc_now_naive, nullable=False)
+    updated_at = Column(DateTime, default=utc_now_naive, onupdate=utc_now_naive, nullable=False)
+
+
+class Chapter(Base):
+    __tablename__ = "chapters"
+
+    id = Column(String, primary_key=True, index=True)
+    # 所属课程 ID
+    course_id = Column(String, nullable=False, index=True)
+    name = Column(String, nullable=False)
+    # 章节在课程内的排序
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=utc_now_naive, nullable=False)
+    updated_at = Column(DateTime, default=utc_now_naive, onupdate=utc_now_naive, nullable=False)
+
 
 class Setting(Base):
     __tablename__ = "settings"
@@ -151,16 +185,17 @@ class LocalJob(Base):
 
 # 初始化数据库结构
 def init_db():
-    # 开启 WAL 模式，配合 busy timeout 减少多写线程冲突。
-    # WAL 允许读与写并发，显著降低 "database is locked" 概率。
+    # 强制使用 DELETE 模式（而非 WAL），因为 TRAE 沙箱环境下 WAL 文件
+    # 写入不可靠，会导致已提交数据在后续查询中丢失（disk I/O error）。
+    # DELETE 模式直接写入主数据库文件，虽然写并发性稍差但数据可靠性有保障。
     try:
         with engine.connect() as connection:
-            connection.exec_driver_sql("PRAGMA journal_mode=WAL")
+            connection.exec_driver_sql("PRAGMA journal_mode=DELETE")
             connection.exec_driver_sql("PRAGMA busy_timeout=30000")
-            connection.exec_driver_sql("PRAGMA synchronous=NORMAL")
+            connection.exec_driver_sql("PRAGMA synchronous=FULL")
             connection.commit()
     except Exception:
-        logger.error("Failed to enable SQLite WAL mode", exc_info=True)
+        logger.error("Failed to set DELETE journal mode", exc_info=True)
     run_migrations(engine)
     # 初始化默认设置
     db = SessionLocal()

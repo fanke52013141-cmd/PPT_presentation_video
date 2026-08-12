@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260809.16">
+  <link rel="stylesheet" href="style.css?v=20260812.8">
 </head>
 <body>
 
@@ -29,7 +29,7 @@
     </div>
     <div style="display: flex; gap: 1rem; align-items: center;">
       <button id="btn-back-home" class="secondary header-action" hidden>
-        <svg class="icon" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><circle cx="18" cy="14" r="2.5" fill="var(--success-color)" stroke="currentColor" stroke-width="1.5"></circle></svg>
+        <svg class="icon" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
         返回首页
       </button>
       <button id="btn-open-settings">
@@ -47,12 +47,18 @@
     
     <!-- 首页: 项目管理 -->
     <div id="page-home" class="main-content" style="padding: 2rem 4rem;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
-        <h1 class="highlight-title">我的 PPT 视频项目</h1>
-        <button id="btn-create-project" class="success">
-          <svg class="icon" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-          新建项目
-        </button>
+      <div class="home-toolbar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; gap: 1rem; flex-wrap: wrap;">
+        <h1 class="highlight-title">课程与项目</h1>
+        <div style="display: flex; gap: 1.8rem;">
+          <button id="btn-create-course" type="button">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+            新建课程
+          </button>
+          <button id="btn-create-project" class="success">
+            <svg class="icon" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            新建视频
+          </button>
+        </div>
       </div>
 
       <div id="project-list" class="project-grid">
@@ -471,6 +477,34 @@
       <div style="display: flex; justify-content: flex-end; gap: 1rem;">
         <button id="btn-create-cancel" class="secondary">取消</button>
         <button id="btn-create-submit" class="success">确认新建</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Modal: 修改视频项目设定 -->
+  <div id="modal-edit-project" class="modal-overlay" style="display: none;">
+    <div class="modal-content">
+      <h3 class="highlight-title" style="margin-bottom: 1.2rem;">修改视频设定</h3>
+      <input type="hidden" id="edit-project-id">
+      <div style="margin-bottom: 1rem;">
+        <label style="font-weight: bold; display: block; margin-bottom: 0.4rem;">项目名称:</label>
+        <input type="text" id="edit-project-name" placeholder="请输入项目名称">
+      </div>
+      <div style="margin-bottom: 1rem;">
+        <label style="font-weight: bold; display: block; margin-bottom: 0.4rem;">项目描述:</label>
+        <textarea id="edit-project-desc" rows="3" placeholder="请输入可选的项目描述"></textarea>
+      </div>
+      <div style="margin-bottom: 1.5rem;">
+        <label style="font-weight: bold; display: block; margin-bottom: 0.4rem;">AI 模式:</label>
+        <select id="edit-project-ai-mode" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 6px; background: #fff;">
+          <option value="auto" selected>自动模式（AI 规划分镜 + 可视化 + Mask）</option>
+          <option value="manual">手动模式（自填标题与演讲稿，按需触发 AI）</option>
+        </select>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 1rem;">
+        <button id="btn-edit-cancel" class="secondary" onclick="document.getElementById('modal-edit-project').style.display='none';">取消</button>
+        <button id="btn-edit-submit" class="success" onclick="saveEditProject()">保存修改</button>
       </div>
     </div>
   </div>
@@ -999,11 +1033,12 @@
   <script src="flow.js?v=3.0.2"></script>
   <script src="workflow_state.js?v=20260801.1"></script>
   <script src="ui_foundation.js?v=20260801.1"></script>
-  <script src="api_client.js?v=20260801.1"></script>
+  <script src="api_client.js?v=20260812.1"></script>
   <script src="artifact_repair.js?v=20260801.1"></script>
   <script src="prompt_help.js?v=20260801.1"></script>
   <script src="settings.js?v=20260801.2"></script>
   <script src="projects.js?v=20260801.1"></script>
+    <script src="courses.js?v=20260812.5"></script>
   <script src="article.js?v=20260801.1"></script>
   <script src="storyboard.js?v=20260807.1"></script>
   <script src="storyboard_prompts.js?v=20260801.1"></script>
@@ -1017,7 +1052,7 @@
   <script src="output_render.js?v=20260801.1"></script>
   <script src="workspace_navigation.js?v=20260801.1"></script>
   <script src="event_bindings.js?v=20260801.1"></script>
-  <script src="project_profile_extension.js?v=3.0.1"></script>
+  <script src="project_profile_extension.js?v=3.0.2"></script>
   <script src="storyboard_background_extension.js?v=20260807.1"></script>
   <script src="style_reference_manager_extension.js?v=3.0.1"></script>
   <script src="ai_mask_auto_state.js?v=20260809.1"></script>

@@ -42,7 +42,7 @@ from scripts.pipeline_profiles import (
 from storyboard_llm import StoryboardLlmCapabilities, execute_step2_json_llm
 logger = logging.getLogger("PPTStudio.Storyboard")
 
-STEP2_LLM_TIMEOUT_SEC = 240.0
+STEP2_LLM_TIMEOUT_SEC = 600.0
 
 
 def _not_configured(*_args: Any, **_kwargs: Any) -> Any:

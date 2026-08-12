@@ -61,3 +61,8 @@ data/
 
 # Third-party binary tooling (downloaded, not source)
 tools/ffmpeg/
+
+# Editor/working backups
+*.bak
+*.bak2
+_sandbox_test.txt

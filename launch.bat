@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 chcp 65001 >nul
 title PPT Visualization Studio
 setlocal EnableExtensions
@@ -18,9 +18,20 @@ if %FF_FOUND%==0 (
     set "FF_FOUND=1"
   )
 )
+if %FF_FOUND%==0 (
+  where ffmpeg >nul 2>nul
+  if not errorlevel 1 (
+    where ffprobe >nul 2>nul
+    if not errorlevel 1 set "FF_FOUND=2"
+  )
+)
 if %FF_FOUND%==1 (
   set "PATH=%PPT_STUDIO_FFMPEG_DIR%;%PATH%"
   echo [ffmpeg] using %PPT_STUDIO_FFMPEG_DIR%
+) else if %FF_FOUND%==2 (
+  for /f "delims=" %%F in ('where ffmpeg') do set "PPT_STUDIO_FFMPEG_DIR=%%~dpF"
+  if "%PPT_STUDIO_FFMPEG_DIR:~-1%"=="\" set "PPT_STUDIO_FFMPEG_DIR=%PPT_STUDIO_FFMPEG_DIR:~0,-1%"
+  echo [ffmpeg] using PATH: %PPT_STUDIO_FFMPEG_DIR%
 ) else (
   echo [warn] ffmpeg not found; video color validation / export may fail.
 )

@@ -35,6 +35,12 @@ class AiModeUpdate(BaseModel):
     ai_mode: str
 
 
+class ProjectUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    ai_mode: Optional[str] = None
+
+
 @dataclass(frozen=True)
 class ProjectDependencies:
     runs_root: Path
@@ -159,6 +165,34 @@ class ProjectService:
         db.commit()
         db.refresh(project)
         return {"success": True, "ai_mode": project.ai_mode}
+
+    def update(
+        self,
+        project_id: str,
+        payload: "ProjectUpdate",
+        db: Session,
+    ) -> dict[str, Any]:
+        project = self._project(project_id, db)
+        if payload.name is not None:
+            project.name = payload.name.strip()
+        if payload.description is not None:
+            project.description = payload.description
+        if payload.ai_mode is not None:
+            ai_mode = (payload.ai_mode or "").strip().lower()
+            if ai_mode not in {"auto", "manual"}:
+                ai_mode = "auto"
+            project.ai_mode = ai_mode
+        db.commit()
+        db.refresh(project)
+        return {
+            "success": True,
+            "project": {
+                "id": project.id,
+                "name": project.name,
+                "description": project.description,
+                "ai_mode": project.ai_mode or "auto",
+            },
+        }
 
     def delete(
         self,

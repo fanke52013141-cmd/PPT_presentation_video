@@ -315,11 +315,11 @@ async function generateStep2Contract(requirement = '') {
   try {
     if (loadingText) loadingText.innerText = 'Step 2A：AI 正在规划每页标题、正文要点和演讲稿...';
     const scriptPayload = normalizedRequirement ? { requirement: normalizedRequirement } : {};
-    // LLM 规划可能超过 2 分钟（后端 STEP2_LLM_TIMEOUT_SEC=240s），给足前端超时。
+    // LLM 规划可能超过 5 分钟，且后端在网络错误时会自动重试。前端超时设为 15 分钟以容纳重试。
     const scriptRes = await API.post(
       `/api/projects/${state.currentProject.id}/steps/2/script/execute`,
       scriptPayload,
-      { timeoutMs: 300000 },
+      { timeoutMs: 900000 },
     );
     if (!scriptRes.success) {
       showToast(`❌ 错误: ${scriptRes.message || 'Step 2A 生成失败'}`);
@@ -329,7 +329,7 @@ async function generateStep2Contract(requirement = '') {
     const visualRes = await API.post(
       `/api/projects/${state.currentProject.id}/steps/2/visual/execute`,
       undefined,
-      { timeoutMs: 300000 },
+      { timeoutMs: 900000 },
     );
     if (!visualRes.success) {
       showToast(`❌ 错误: ${visualRes.message || 'Step 2B 生成失败'}`);
@@ -793,13 +793,11 @@ function renderStep2VisualNarrationMap(slide) {
       ? matched.map((beat, beatIndex) => renderStep2EditableBeat(beat, beatIndex, matched.length)).join('')
       : '<div class="vn-beat vn-beat-empty">缺少对应演讲片段，请重新生成 Slides → 可视化。</div>';
     const visualField = visualType === 'text'
-      ? `<label class="vn-edit-field">
-          <span>画面文字</span>
+      ? `<label class="vn-edit-field" aria-label="画面文字">
           <input type="text" value="${escHtml(visualContent)}" data-step2-group-id="${escHtml(gid)}" data-step2-group-field="visual_content">
         </label>`
-      : `<label class="vn-edit-field">
-          <span>画面元素描述</span>
-          <textarea rows="4" data-step2-group-id="${escHtml(gid)}" data-step2-group-field="visual_content">${escHtml(visualContent)}</textarea>
+      : `<label class="vn-edit-field" aria-label="画面元素描述">
+          <textarea data-step2-group-id="${escHtml(gid)}" data-step2-group-field="visual_content">${escHtml(visualContent)}</textarea>
         </label>`;
 
     return `
@@ -807,7 +805,6 @@ function renderStep2VisualNarrationMap(slide) {
         <div class="vn-group-head">
           <span class="vn-group-num">${idx + 1}</span>
           <span class="vn-type-tag">${typeLabel}</span>
-          <span class="vn-map-arrow" aria-hidden="true">→</span>
           <span class="vn-map-target">对应演讲片段</span>
           <span class="vn-beat-count${mappingReady ? '' : ' is-error'}">${mappingReady ? '已对应' : '需要检查'}</span>
         </div>
@@ -833,17 +830,17 @@ function renderStep2VisualNarrationMap(slide) {
 
   container.innerHTML = `
     <div class="vn-map-title">画面与演讲片段</div>
-    <div class="vn-map-hint">每张卡片就是一个 Reveal 单元：左侧是实际画面内容，右侧是该画面出现时播放的演讲片段；两侧内容保持一一对应。</div>
     <div class="vn-groups">${groupCards}</div>
     ${orphanHtml}`;
+  document.dispatchEvent(new CustomEvent('step2WorkspaceRendered'));
+  setTimeout(bindStep2TextareaAutoResize, 0);
 }
 
 function renderStep2EditableBeat(beat, index = 0, total = 1) {
   const beatId = String(beat?.id || '');
   return `<div class="vn-beat" data-beat-id="${escHtml(beatId)}">
-    <label class="vn-edit-field">
-      <span>${total > 1 ? `演讲片段 ${index + 1}（应合并为一段）` : '演讲片段'}</span>
-      <textarea rows="3" data-step2-beat-id="${escHtml(beatId)}" data-step2-beat-field="spoken_text">${escHtml(beat?.spoken_text || '')}</textarea>
+    <label class="vn-edit-field" aria-label="演讲片段"${total > 1 ? ` title="演讲片段 ${index + 1}（应合并为一段）"` : ''}>
+      <textarea data-step2-beat-id="${escHtml(beatId)}" data-step2-beat-field="spoken_text">${escHtml(beat?.spoken_text || '')}</textarea>
     </label>
   </div>`;
 }
@@ -851,6 +848,26 @@ function renderStep2EditableBeat(beat, index = 0, total = 1) {
 function currentStep2EditorSlide() {
   return state.slides?.[state.activeSlideIndex] || null;
 }
+
+function autoResizeStep2Textarea(el) {
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = (el.scrollHeight) + 'px';
+}
+
+function bindStep2TextareaAutoResize() {
+  document.querySelectorAll('#step2-editor-area textarea, .vn-edit-field textarea, .vn-beat textarea').forEach(t => {
+    if (t.dataset.autoResizeBound === '1') return;
+    t.dataset.autoResizeBound = '1';
+    autoResizeStep2Textarea(t);
+    t.addEventListener('input', () => autoResizeStep2Textarea(t));
+  });
+}
+
+document.addEventListener('step2WorkspaceRendered', bindStep2TextareaAutoResize);
+window.addEventListener('load', bindStep2TextareaAutoResize);
+setTimeout(bindStep2TextareaAutoResize, 500);
+
 
 function handleStep2MapEditorInput(event) {
   const target = event.target;

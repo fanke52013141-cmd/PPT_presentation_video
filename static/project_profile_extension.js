@@ -176,6 +176,21 @@
       const project = projectRes.project;
       if (!project?.id) throw new Error('项目创建成功但未返回 project.id');
       await apiPut(`/api/projects/${encodeURIComponent(project.id)}/project-profile`, { profile });
+
+      // 挂载到课程/章节：若由课程/章节的"+视频"按钮触发，
+      // createProjectInCourse / createProjectInChapter 会把目标父级写入
+      // window.__pendingProjectParent。创建成功后调用 /move 完成挂载，
+      // 使视频直接出现在对应课程/章节下。
+      const pendingParent = window.__pendingProjectParent || null;
+      if (pendingParent) {
+        try {
+          await apiPost(`/api/projects/${encodeURIComponent(project.id)}/move`, pendingParent);
+        } catch (e) {
+          toast('视频移动到课程/章节失败，已创建为独立项目');
+        }
+        window.__pendingProjectParent = null;
+      }
+
       if (article) {
         if (button) button.textContent = '导入文章...';
         const form = new FormData();
@@ -196,8 +211,11 @@
       document.getElementById('modal-create').style.display = 'none';
       const modeLabel = profile.automation_mode === 'auto' ? '全自动模式' : '手动审核模式';
       toast(autoStarted ? `项目已创建（${modeLabel}），一键生成已启动。` : `项目已创建（${modeLabel}）。`, 4500);
-      if (window.enterWorkspace) window.enterWorkspace(project.id);
-      else location.reload();
+      // 停留在"课程与项目"主页：刷新课程树，不跳转到视频工作台。
+      // 一键生成（若已启动）在后台运行，用户点击"继续"进入工作台后可见进度。
+      if (window.loadProjects) { await window.loadProjects(); }
+      else if (window.CourseTree && window.CourseTree.load) { await window.CourseTree.load(); }
+      else { location.reload(); }
     } finally {
       PROFILE_STATE.creating = false;
       if (button) {

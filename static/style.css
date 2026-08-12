@@ -201,6 +201,9 @@ header > div:last-child {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.92rem !important;
+  /* 对齐到主区域左边缘（与 sidebar 右边 + main padding 一致） */
+  margin-left: calc(1.2rem - 14px);
+  padding-left: 0;
 }
 
 .logo {
@@ -210,6 +213,10 @@ header > div:last-child {
   align-items: center;
   gap: 0.4rem;
   white-space: nowrap;
+  /* 让 logo 占据与 sidebar 相同的水平位置，使紧随其后的
+     #project-info-header 项目标题能与右侧主区域的左边对齐
+     （即"准备文章"、"分镜规划"等步骤标题的左边缘）。 */
+  min-width: calc(250px - 1.45rem);
 }
 
 .logo-icon {
@@ -496,14 +503,14 @@ textarea.step2-soft-input:focus {
 .step2-thumb-delete {
   position: absolute;
   top: 50%;
-  right: 0.3rem;
+  right: -14px;
   transform: translateY(-50%);
-  width: 16px;
-  height: 16px;
-  min-width: 16px;
-  min-height: 16px;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
   padding: 0;
-  border-radius: 50%;
+  border-radius: 8px;
   background: #f5c518;
   border: 1.5px solid #d4a800;
   box-shadow: 1px 1px 0px 0px rgba(0, 0, 0, 0.35);
@@ -521,8 +528,8 @@ textarea.step2-soft-input:focus {
 }
 
 .step2-thumb-delete .icon {
-  width: 0.46rem;
-  height: 0.46rem;
+  width: 0.7rem;
+  height: 0.7rem;
   stroke-width: 3;
 }
 
@@ -600,6 +607,7 @@ body.step5-fullscreen-mode #step5-thumbs {
   flex: 0 0 auto;
   max-height: 74px;
   overflow-y: auto;
+  justify-content: center;
 }
 
 body.step5-fullscreen-mode #step-panel-5 .workspace-split {
@@ -3441,8 +3449,8 @@ header .btn {
 }
 
 #step3-btn-batch-generate {
-  min-width: 152px;
 }
+
 
 .img-preview-container {
   border: 1.5px dashed var(--color-primary-soft) !important;
@@ -4069,7 +4077,7 @@ header .btn {
 
 #project-info-header {
   flex: 1 1 260px;
-  text-align: center;
+  text-align: left;
   color: #566179 !important;
   min-width: 180px;
 }
@@ -4799,7 +4807,7 @@ textarea.step2-soft-input {
 }
 
 .slides-thumbnail-container.step2-batch-delete-mode .slide-thumbnail-card.step2-slide-thumb {
-  padding-right: 1.75rem !important;
+  padding-right: 0.5rem !important;
 }
 
 .step5-slides-grid,
@@ -5310,8 +5318,13 @@ button.success:disabled,
 }
 
 .vn-edit-field textarea {
-  min-height: 76px;
+  min-height: 60px;
   resize: vertical;
+  /* 高度由内容自适应：无最高高度限制。
+     field-sizing 是新规范（Chrome 123+），自动按内容伸长；
+     其他浏览器由 JS auto-resize 兜底。 */
+  field-sizing: content;
+  overflow: hidden;
 }
 
 .vn-edit-field input:focus,
@@ -5422,7 +5435,7 @@ button.success:disabled,
 
 .vn-group-head {
   display: grid;
-  grid-template-columns: 28px minmax(110px, 1fr) 28px minmax(140px, 1.2fr) auto;
+  grid-template-columns: 28px minmax(110px, 1fr) minmax(140px, 1.2fr) auto;
   align-items: center;
   gap: 10px;
   min-height: 30px;
@@ -5483,19 +5496,20 @@ button.success:disabled,
 
 .vn-edit-field input,
 .vn-edit-field textarea {
-  min-height: 92px;
-  height: 100%;
+  /* 高度由内容自适应：不设 min-height/height:100%，避免固定高度和强制等高 */
   padding: 11px 12px;
   border-radius: 10px;
   font-size: 14px;
   line-height: 1.65;
+  /* 文字左上对齐：input 默认左对齐，textarea 需显式声明 */
+  text-align: left;
+  vertical-align: top;
   resize: vertical;
 }
 
 .vn-edit-field input {
-  min-height: 46px;
+  /* 单行画面文字：高度由自身内容决定，不强制拉伸 */
   height: auto;
-  align-self: start;
 }
 
 .vn-orphan-hint {
@@ -7168,5 +7182,332 @@ body.step5-fullscreen-mode #step-panel-5 .step5-toolbar {
   #step-panel-6 .step6-toolbar,
   #step-panel-8 .step8-header-actions {
     margin-left: 0;
+  }
+}
+
+
+
+
+/* ===== 课程树组件 ===== */
+
+.course-tree-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.course-tree-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+/* 课程卡片 / 独立项目卡片 共用样式 */
+.course-card-item {
+  border: 1px solid var(--color-border-default, #E2E3E7);
+  border-radius: 16px;
+  overflow: hidden;
+  background: #FFFFFF;
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+
+.course-card-item:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+}
+
+.course-card-item.standalone-project {
+  background: #FBFBFC;
+}
+
+.course-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 1rem 1.2rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.course-card-header:hover {
+  background: #F8F8F9;
+}
+
+.course-color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.course-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1D1D1F;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.course-meta {
+  font-size: 0.78rem;
+  color: #9BA0A8;
+  white-space: nowrap;
+}
+
+.course-card-children {
+  padding: 0.6rem 1rem 0.8rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  border-top: 1px solid #F2F3F5;
+}
+
+/* 章节节点 */
+.chapter-node {
+  position: relative;
+  padding-left: 1.2rem;
+}
+
+.chapter-node::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.4rem;
+  bottom: 0.4rem;
+  width: 2px;
+  background: #E2E3E7;
+  border-radius: 1px;
+}
+
+.chapter-node-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.chapter-node-header:hover {
+  background: #F4F4F5;
+}
+
+.chapter-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #42464D;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chapter-meta {
+  font-size: 0.72rem;
+  color: #9BA0A8;
+  white-space: nowrap;
+}
+
+.chapter-node-children {
+  padding: 0.2rem 0 0.3rem 2.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+/* 视频叶子节点 */
+.project-leaf {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.8rem;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.project-leaf:hover {
+  background: #F4F4F5;
+}
+
+.project-name {
+  font-size: 0.85rem;
+  color: #42464D;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-step-badge {
+  font-size: 0.68rem;
+  color: #6E737C;
+  background: #F2F3F5;
+  padding: 2px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+/* 树折叠图标 */
+.tree-toggle {
+  color: #9BA0A8;
+  cursor: pointer;
+  user-select: none;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.tree-toggle:hover {
+  background: #E8E8EA;
+}
+
+.tree-toggle .icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* 图标按钮（统一风格） */
+.course-actions,
+.chapter-actions,
+.project-actions {
+  display: flex;
+  gap: 0.25rem;
+  opacity: 0;
+  transition: opacity 0.2s;
+  flex-shrink: 0;
+}
+
+.course-card-header:hover .course-actions,
+.chapter-node-header:hover .chapter-actions,
+.project-leaf:hover .project-actions,
+.standalone-project .course-actions {
+  opacity: 1;
+}
+
+.icon-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 5px 8px;
+  font-size: 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #E2E3E7;
+  background: #FFFFFF;
+  color: #6E737C;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.icon-action-btn:hover {
+  background: #F4F4F5;
+  border-color: #C8CBD1;
+  color: #1D1D1F;
+}
+
+.icon-action-btn .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.icon-action-btn .action-label {
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.icon-action-btn.danger:hover {
+  background: #FFF0F0;
+  border-color: #FFCDD2;
+  color: #C62828;
+}
+
+.icon-action-btn.success {
+  color: #1D1D1F;
+  border-color: #1D1D1F;
+  background: #1D1D1F;
+  color: #FFFFFF;
+}
+
+.icon-action-btn.success:hover {
+  background: #343941;
+  border-color: #343941;
+  color: #FFFFFF;
+}
+
+.icon-action-btn.success .icon {
+  color: #FFFFFF;
+}
+
+/* 内联重命名输入框 */
+.inline-rename-input {
+  width: 100%;
+  max-width: 280px;
+  padding: 3px 8px;
+  border: 2px solid #5B7893;
+  border-radius: 6px;
+  outline: none;
+  background: #FFFFFF;
+  font-family: inherit;
+}
+
+/* 空提示 */
+.empty-hint {
+  font-size: 0.78rem;
+  color: #9BA0A8;
+  padding: 0.5rem 0.8rem;
+  font-style: italic;
+}
+
+.course-tree-empty {
+  text-align: center;
+  padding: 4rem 2rem;
+}
+
+
+
+/* 课程下未归类视频：与章节同级缩进 */
+.course-card-children .project-leaf {
+  margin-left: 1.2rem;
+}
+
+/* 章节内视频叶子：再缩进一层，体现三级 */
+.chapter-node-children .project-leaf {
+  margin-left: 0;
+}
+
+/* ==== ALIGN & ACTION-GAP FIX (appended) ==== */
+/* 首页树操作按钮间距：0.25rem 的 3 倍 */
+.course-actions,
+.chapter-actions,
+.project-actions {
+  gap: 0.75rem !important;
+  opacity: 1 !important;
+}
+
+/* 顶栏"当前项目"标题与主内容区标题左对齐（桌面端） */
+@media (min-width: 981px) {
+  header.app-header {
+    gap: 0.8rem;
+  }
+  header.app-header .logo {
+    /* 让 logo 精确占满 224px 侧栏轨道：224 - header margin-left(14px) - padding-left(1.1rem) */
+    min-width: calc(224px - 14px - 1.1rem) !important;
+  }
+  body.workspace-open #project-info-header {
+    /* main padding-left(2.4rem) - header gap(0.8rem) = 1.6rem */
+    margin-left: 1.6rem !important;
+    left: auto !important;
   }
 }

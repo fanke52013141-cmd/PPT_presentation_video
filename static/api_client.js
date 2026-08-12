@@ -82,6 +82,15 @@ const API = {
     });
   },
 
+  async patch(url, body, extra = {}) {
+    return this.fetch(url, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json' },
+      ...extra
+    });
+  },
+
   async delete(url) {
     return this.fetch(url, { method: 'DELETE' });
   }

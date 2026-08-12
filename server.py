@@ -182,7 +182,7 @@ REVEAL_PIPELINE_VERSION = "exact_rle_mask_with_manual_corrections_v5"
 ensure_active_image_style_storage()
 
 
-STEP2_LLM_TIMEOUT_SEC = 240.0
+STEP2_LLM_TIMEOUT_SEC = 600.0
 STEP5_REVEAL_BUILD_TIMEOUT_SEC = float(os.environ.get("PPT_STUDIO_REVEAL_BUILD_TIMEOUT_SEC", "300"))
 STEP7_BIND_TIMEOUT_SEC = 90
 STEP8_RENDER_TIMEOUT_SEC = 3600
@@ -511,6 +511,7 @@ except Exception as exc:
 
 try:
     from project_routes import router as project_router
+    from course_routes import router as course_router
     from project_service import (
         ProjectDependencies,
         configure_project_service,
@@ -523,6 +524,7 @@ try:
         )
     )
     app.include_router(project_router)
+    app.include_router(course_router)
 except Exception as exc:
     logger.exception(
         "Explicit project route registration failed: %s",

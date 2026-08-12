@@ -222,6 +222,10 @@ def _known_migration_already_present(connection: Connection, migration: Migratio
                 "updated_at",
             },
         )
+    if key == (4, "courses_and_chapters"):
+        return _has_columns(connection, "courses", {"id", "name", "cover_color", "sort_order"}) \
+            and _has_columns(connection, "chapters", {"id", "course_id", "name", "sort_order"}) \
+            and _has_columns(connection, "projects", {"course_id", "chapter_id", "sort_order"})
     return False
 
 

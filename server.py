@@ -484,6 +484,17 @@ except Exception as exc:
     raise
 
 try:
+    from ip_character_routes import router as ip_character_router
+
+    app.include_router(ip_character_router)
+except Exception as exc:
+    logger.exception(
+        "IP character route registration failed: %s",
+        exc,
+    )
+    raise
+
+try:
     from global_image_style_routes import (
         router as global_image_style_router,
     )

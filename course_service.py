@@ -58,6 +58,24 @@ class ReorderRequest(BaseModel):
     ordered_ids: list[str]
 
 
+class ProjectReorder(BaseModel):
+    """拖拽排序 + 跨层级移动视频的统一请求体。
+
+    ordered_ids 里所有视频会被按顺序写入 sort_order，并同时归属到：
+    - chapter_id 有值：该章节（course_id 自动同步为章节所属课程）
+    - chapter_id 为 None、course_id 有值：该课程的"未归类"区
+    - 两者都为 None：变成独立项目
+    """
+    ordered_ids: list[str]
+    course_id: Optional[str] = None
+    chapter_id: Optional[str] = None
+
+
+class ChapterMove(BaseModel):
+    """把章节移动到目标课程的请求体。目标课程下若已有同名章节会自动改名。"""
+    course_id: str
+
+
 @dataclass(frozen=True)
 class CourseDependencies:
     pass
@@ -270,6 +288,64 @@ class CourseService:
         db.commit()
         return {"success": True, "ordered_ids": payload.ordered_ids}
 
+    def move_chapter(self, chapter_id: str, payload: ChapterMove, db: Session) -> dict[str, Any]:
+        """把章节移动到目标课程下，章节下的所有项目随之迁移。
+
+        若目标课程下已存在同名章节，自动给被移动的章节追加序号后缀（如「(1)」「(2)」）。
+        同课程内移动视为无操作（直接返回）。
+        """
+        chapter = self._require_chapter(chapter_id, db)
+        target_course_id = (payload.course_id or "").strip()
+        if not target_course_id:
+            raise HTTPException(status_code=400, detail="目标课程 ID 不能为空")
+        original_name = chapter.name
+        if target_course_id == chapter.course_id:
+            result = _chapter_to_dict(chapter, db, include_projects=True)
+            result["moved_project_ids"] = []
+            result["renamed"] = False
+            result["original_name"] = original_name
+            return result
+        self._require_course(target_course_id, db)
+        # 同名检测 + 自动改名（追加 (1)/(2) 后缀直到不重名）
+        renamed = False
+        clash = (
+            db.query(Chapter)
+            .filter(Chapter.course_id == target_course_id, Chapter.name == chapter.name)
+            .first()
+        )
+        if clash is not None:
+            base_name = chapter.name
+            suffix = 1
+            while True:
+                candidate = f"{base_name}({suffix})"
+                exists = (
+                    db.query(Chapter)
+                    .filter(Chapter.course_id == target_course_id, Chapter.name == candidate)
+                    .first()
+                )
+                if exists is None:
+                    break
+                suffix += 1
+            chapter.name = candidate
+            renamed = True
+        chapter.course_id = target_course_id
+        chapter.sort_order = self._next_chapter_sort_order(target_course_id, db)
+        chapter.updated_at = _utc_now_naive()
+        # 章节下所有项目的 course_id 同步为新课程（chapter_id 保持不变）
+        moved_projects = db.query(Project).filter(Project.chapter_id == chapter_id).all()
+        moved_project_ids = []
+        for p in moved_projects:
+            p.course_id = target_course_id
+            p.updated_at = _utc_now_naive()
+            moved_project_ids.append(p.id)
+        db.commit()
+        db.refresh(chapter)
+        result = _chapter_to_dict(chapter, db, include_projects=True)
+        result["moved_project_ids"] = moved_project_ids
+        result["renamed"] = renamed
+        result["original_name"] = original_name
+        return result
+
     # ===== Project move =====
 
     def move_project(self, project_id: str, payload: ProjectMove, db: Session) -> dict[str, Any]:
@@ -292,6 +368,46 @@ class CourseService:
         db.commit()
         db.refresh(project)
         return _project_brief(project)
+
+    def reorder_projects(self, payload: ProjectReorder, db: Session) -> dict[str, Any]:
+        """按顺序设置项目的 sort_order，并可同时把它们重新归属到指定课程/章节。
+
+        这是拖拽排序 + 跨层级移动视频的统一入口：
+        - chapter_id 有值：所有项目挂到该章节，course_id 自动同步为章节所属课程
+        - chapter_id 为 None、course_id 有值：所有项目挂到该课程的"未归类"区
+        - 两者都为 None：所有项目变成独立项目
+        """
+        if not payload.ordered_ids:
+            return {"success": True, "ordered_ids": [], "course_id": None, "chapter_id": None, "projects": []}
+        # 若指定了 chapter_id，以章节所属课程为准（并校验章节存在）
+        target_chapter_id = payload.chapter_id
+        target_course_id = payload.course_id
+        if target_chapter_id is not None:
+            chapter = self._require_chapter(target_chapter_id, db)
+            target_course_id = chapter.course_id
+        elif target_course_id is not None:
+            self._require_course(target_course_id, db)
+        # 逐个更新归属 + 排序
+        updated = []
+        for index, pid in enumerate(payload.ordered_ids):
+            project = db.query(Project).filter(Project.id == pid).first()
+            if not project:
+                raise HTTPException(status_code=404, detail=f"项目不存在: {pid}")
+            project.course_id = target_course_id
+            project.chapter_id = target_chapter_id
+            project.sort_order = index
+            project.updated_at = _utc_now_naive()
+            updated.append(project)
+        db.commit()
+        for p in updated:
+            db.refresh(p)
+        return {
+            "success": True,
+            "ordered_ids": payload.ordered_ids,
+            "course_id": target_course_id,
+            "chapter_id": target_chapter_id,
+            "projects": [_project_brief(p) for p in updated],
+        }
 
     # ===== Tree =====
 

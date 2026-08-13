@@ -48,6 +48,14 @@ const CourseTree = (() => {
       btnCreateCourse.__courseBound = true;
       btnCreateCourse.addEventListener('click', () => createCourseQuick());
     }
+
+    // 绑定空白区拖拽（把视频拖出变独立项目）
+    const pageHome = document.getElementById('page-home');
+    if (pageHome && !pageHome.__dragoutBound) {
+      pageHome.__dragoutBound = true;
+      pageHome.addEventListener('dragover', handleBlankDragOver);
+      pageHome.addEventListener('drop', handleBlankDrop);
+    }
   }
 
   function saveExpanded() {
@@ -166,9 +174,10 @@ const CourseTree = (() => {
     node.querySelector('[data-action="delete-course"]').addEventListener('click', () => deleteCourseConfirm(course));
 
     // 拖拽
-    node.addEventListener('dragstart', handleCourseDragStart);
-    node.addEventListener('dragover', handleDragOver);
-    node.addEventListener('drop', handleCourseDrop);
+    node.addEventListener('dragstart', (e) => handleDragStart(e, 'course'));
+    node.addEventListener('dragend', handleDragEnd);
+    node.addEventListener('dragover', (e) => handleNodeDragOver(e, 'course', true));
+    node.addEventListener('drop', (e) => handleNodeDrop(e, 'course', true));
 
     // 子节点容器（章节 + 未归类视频，扁平展示）
     if (expanded) {
@@ -230,9 +239,10 @@ const CourseTree = (() => {
     node.querySelector('[data-action="edit-chapter"]').addEventListener('click', () => startRenameChapter(chapter.id));
     node.querySelector('[data-action="delete-chapter"]').addEventListener('click', () => deleteChapterConfirm(chapter));
 
-    node.addEventListener('dragstart', handleChapterDragStart);
-    node.addEventListener('dragover', handleDragOver);
-    node.addEventListener('drop', handleChapterDrop);
+    node.addEventListener('dragstart', (e) => handleDragStart(e, 'chapter'));
+    node.addEventListener('dragend', handleDragEnd);
+    node.addEventListener('dragover', (e) => handleNodeDragOver(e, 'chapter', true));
+    node.addEventListener('drop', (e) => handleNodeDrop(e, 'chapter', true));
 
     if (expanded) {
       const childrenEl = document.createElement('div');
@@ -273,7 +283,10 @@ const CourseTree = (() => {
     leaf.querySelector('[data-action="open-project"]').addEventListener('click', (e) => { e.stopPropagation(); enterWorkspace(project.id); });
     leaf.querySelector('[data-action="delete-project"]').addEventListener('click', (e) => { e.stopPropagation(); deleteProjectFromTree(project); });
     leaf.addEventListener('dblclick', () => enterWorkspace(project.id));
-    leaf.addEventListener('dragstart', handleProjectDragStart);
+    leaf.addEventListener('dragstart', (e) => handleDragStart(e, 'project'));
+    leaf.addEventListener('dragend', handleDragEnd);
+    leaf.addEventListener('dragover', (e) => handleNodeDragOver(e, 'project', false));
+    leaf.addEventListener('drop', (e) => handleNodeDrop(e, 'project', false));
 
     return leaf;
   }
@@ -310,7 +323,10 @@ const CourseTree = (() => {
     node.querySelector('[data-action="open-project"]').addEventListener('click', (e) => { e.stopPropagation(); enterWorkspace(project.id); });
     node.querySelector('[data-action="delete-project"]').addEventListener('click', (e) => { e.stopPropagation(); deleteProjectFromTree(project); });
 
-    node.addEventListener('dragstart', handleProjectDragStart);
+    node.addEventListener('dragstart', (e) => handleDragStart(e, 'project'));
+    node.addEventListener('dragend', handleDragEnd);
+    node.addEventListener('dragover', (e) => handleNodeDragOver(e, 'project', false));
+    node.addEventListener('drop', (e) => handleNodeDrop(e, 'project', false));
 
     return node;
   }
@@ -480,72 +496,267 @@ const CourseTree = (() => {
     );
   }
 
-  // ===== 拖拽排序 + 移动 =====
+  // ===== 拖拽排序 + 移动（统一分发）=====
+  // 支持矩阵：
+  //   视频 → 视频：同容器排序（前/后指示线）；跨容器则顺势加入目标容器
+  //   视频 → 章节 / 课程：嵌入到目标容器末尾
+  //   视频 → 空白区：拖出变为独立项目
+  //   章节 → 章节：同课程排序 或 跨课程移动（后端自动改名）
+  //   章节 → 课程：移动到该课程
+  //   课程 → 课程：排序
 
-  let dragData = null;
+  let dragData = null;       // { type: 'project'|'chapter'|'course', id }
+  let lastDropTarget = null; // 当前显示指示线的元素
 
-  function handleCourseDragStart(e) {
-    const courseId = e.currentTarget.dataset.courseId;
-    if (!courseId) return;
-    dragData = { type: 'course', id: courseId };
-    e.dataTransfer.effectAllowed = 'move';
+  function clearDropFeedback() {
+    document.querySelectorAll('.drop-indicator-before,.drop-indicator-after,.drop-embed,.dragging-node')
+      .forEach(el => el.classList.remove('drop-indicator-before', 'drop-indicator-after', 'drop-embed', 'dragging-node'));
+    lastDropTarget = null;
   }
 
-  function handleChapterDragStart(e) {
-    const chapterId = e.currentTarget.dataset.chapterId;
-    if (!chapterId) return;
-    dragData = { type: 'chapter', id: chapterId };
+  function handleDragStart(e, type) {
+    const id = e.currentTarget.dataset[type + 'Id'];
+    if (!id) { e.preventDefault(); return; }
+    dragData = { type, id };
     e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', id); } catch (_) {}
+    e.stopPropagation(); // 内层可拖元素优先（视频 > 章节 > 课程）
+    e.currentTarget.classList.add('dragging-node');
+    document.body.classList.add('course-drag-active');
+  }
+
+  function handleDragEnd() {
+    dragData = null;
+    document.body.classList.remove('course-drag-active');
+    clearDropFeedback();
+  }
+
+  function isDropAllowed(srcType, targetType) {
+    if (srcType === 'project') return ['project', 'chapter', 'course', 'blank'].includes(targetType);
+    if (srcType === 'chapter') return targetType === 'chapter' || targetType === 'course';
+    if (srcType === 'course') return targetType === 'course';
+    return false;
+  }
+
+  function computeRawZone(e, rect, allowEmbed) {
+    const y = e.clientY - rect.top;
+    if (!allowEmbed) return y < rect.height / 2 ? 'before' : 'after';
+    if (y < rect.height * 0.3) return 'before';
+    if (y > rect.height * 0.7) return 'after';
+    return 'embed';
+  }
+
+  function effectiveZone(srcType, targetType, rawZone) {
+    if (srcType === 'project' && (targetType === 'chapter' || targetType === 'course')) return 'embed';
+    if (rawZone === 'embed') return 'before'; // 同级元素不支持嵌入，回退为"插到前面"
+    return rawZone;
+  }
+
+  function applyDropIndicator(targetEl, zone) {
+    if (lastDropTarget && lastDropTarget !== targetEl) {
+      lastDropTarget.classList.remove('drop-indicator-before', 'drop-indicator-after', 'drop-embed');
+    }
+    targetEl.classList.remove('drop-indicator-before', 'drop-indicator-after', 'drop-embed');
+    if (zone === 'embed') targetEl.classList.add('drop-embed');
+    else targetEl.classList.add(zone === 'after' ? 'drop-indicator-after' : 'drop-indicator-before');
+    lastDropTarget = targetEl;
+  }
+
+  function handleNodeDragOver(e, targetType, allowEmbed) {
+    if (!dragData) return;
+    if (!isDropAllowed(dragData.type, targetType)) return; // 不阻止冒泡，交由上层合法目标接管
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
     e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const zone = effectiveZone(dragData.type, targetType, computeRawZone(e, rect, allowEmbed));
+    applyDropIndicator(e.currentTarget, zone);
   }
 
-  function handleProjectDragStart(e) {
-    const projectId = e.currentTarget.dataset.projectId;
-    if (!projectId) return;
-    dragData = { type: 'project', id: projectId };
-    e.dataTransfer.effectAllowed = 'move';
+  async function handleNodeDrop(e, targetType, allowEmbed) {
+    if (!dragData) return;
+    if (!isDropAllowed(dragData.type, targetType)) return; // 冒泡到上层
+    e.preventDefault();
     e.stopPropagation();
-  }
-
-  function handleDragOver(e) {
-    if (dragData) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
+    const rect = e.currentTarget.getBoundingClientRect();
+    const zone = effectiveZone(dragData.type, targetType, computeRawZone(e, rect, allowEmbed));
+    const src = dragData;
+    dragData = null;
+    document.body.classList.remove('course-drag-active');
+    clearDropFeedback();
+    try {
+      await dispatchDrop(src, targetType, e.currentTarget, zone);
+    } catch (err) {
+      console.error('拖拽放置失败:', err);
     }
   }
 
-  async function handleCourseDrop(e) {
-    if (!dragData) return;
+  // 空白区：仅视频可拖出变独立
+  function handleBlankDragOver(e) {
+    if (!dragData || dragData.type !== 'project') return;
     e.preventDefault();
-    const targetCourseId = e.currentTarget.dataset.courseId;
-    if (!targetCourseId) return;
+    e.dataTransfer.dropEffect = 'move';
+    if (lastDropTarget) clearDropFeedback();
+  }
 
-    if (dragData.type === 'project') {
-      try {
-        await API.post(`/api/projects/${dragData.id}/move`, { course_id: targetCourseId, chapter_id: null });
-        showToast('项目已移动到课程');
-        expandedNodes.add(`course-${targetCourseId}`);
+  async function handleBlankDrop(e) {
+    if (!dragData || dragData.type !== 'project') return;
+    e.preventDefault();
+    const src = dragData;
+    dragData = null;
+    document.body.classList.remove('course-drag-active');
+    clearDropFeedback();
+    try {
+      await makeProjectStandalone(src.id);
+      showToast('已移出，变为独立项目');
+      await load();
+    } catch (err) {
+      showToast('移出失败');
+    }
+  }
+
+  // ===== 基于 treeData 的查找（不受折叠状态影响）=====
+
+  function findCourse(courseId) {
+    return ((treeData && treeData.courses) || []).find(c => c.id === courseId) || null;
+  }
+
+  function findChapter(chapterId) {
+    for (const c of ((treeData && treeData.courses) || [])) {
+      const ch = (c.chapters || []).find(x => x.id === chapterId);
+      if (ch) return { chapter: ch, course: c };
+    }
+    return null;
+  }
+
+  function findProjectContainer(projectId) {
+    const standalone = (treeData && treeData.standalone_projects) || [];
+    if (standalone.some(p => p.id === projectId)) {
+      return { containerIds: standalone.map(p => p.id), courseId: null, chapterId: null };
+    }
+    for (const c of ((treeData && treeData.courses) || [])) {
+      if ((c.unchaptered_projects || []).some(p => p.id === projectId)) {
+        return { containerIds: (c.unchaptered_projects || []).map(p => p.id), courseId: c.id, chapterId: null };
+      }
+      for (const ch of (c.chapters || [])) {
+        if ((ch.projects || []).some(p => p.id === projectId)) {
+          return { containerIds: (ch.projects || []).map(p => p.id), courseId: c.id, chapterId: ch.id };
+        }
+      }
+    }
+    return null;
+  }
+
+  function insertRelative(ids, draggedId, targetId, zone) {
+    const result = ids.filter(id => id !== draggedId);
+    const idx = result.indexOf(targetId);
+    if (idx === -1) result.push(draggedId);
+    else if (zone === 'after') result.splice(idx + 1, 0, draggedId);
+    else result.splice(idx, 0, draggedId);
+    return result;
+  }
+
+  // ===== 放置分发 =====
+
+  async function dispatchDrop(src, targetType, targetEl, zone) {
+    if (src.type === 'project') {
+      if (targetType === 'project') {
+        if (src.id === targetEl.dataset.projectId) return;
+        await reorderProjectsRelativeTo(src.id, targetEl.dataset.projectId, zone);
+        showToast('已调整视频顺序');
+      } else if (targetType === 'chapter') {
+        await moveProjectIntoChapter(src.id, targetEl.dataset.chapterId);
+        expandedNodes.add(`chapter-${targetEl.dataset.chapterId}`);
         saveExpanded();
-        await load();
-      } catch (err) { showToast('移动失败'); }
+        showToast('已移入章节');
+      } else if (targetType === 'course') {
+        await moveProjectToCourseUnchaptered(src.id, targetEl.dataset.courseId);
+        expandedNodes.add(`course-${targetEl.dataset.courseId}`);
+        saveExpanded();
+        showToast('已移入课程');
+      }
+      await load();
+      return;
     }
-    dragData = null;
+    if (src.type === 'chapter') {
+      if (targetType === 'course') {
+        await moveChapterToCourse(src.id, targetEl.dataset.courseId);
+        expandedNodes.add(`course-${targetEl.dataset.courseId}`);
+        saveExpanded();
+        showToast('章节已移动到课程');
+        await load();
+        return;
+      }
+      if (targetType === 'chapter') {
+        if (src.id === targetEl.dataset.chapterId) return;
+        await reorderOrMoveChapter(src.id, targetEl.dataset.chapterId, zone);
+        await load();
+        return;
+      }
+    }
+    if (src.type === 'course' && targetType === 'course') {
+      if (src.id === targetEl.dataset.courseId) return;
+      await reorderCoursesRelativeTo(src.id, targetEl.dataset.courseId, zone);
+      showToast('课程顺序已更新');
+      await load();
+    }
   }
 
-  async function handleChapterDrop(e) {
-    if (!dragData) return;
-    e.preventDefault();
-    const targetChapterId = e.currentTarget.dataset.chapterId;
-    if (!targetChapterId) return;
+  // ===== 视频（项目）操作 =====
 
-    if (dragData.type === 'project') {
-      try {
-        await API.post(`/api/projects/${dragData.id}/move`, { chapter_id: targetChapterId });
-        showToast('项目已移动到章节');
-        await load();
-      } catch (err) { showToast('移动失败'); }
+  async function reorderProjectsRelativeTo(draggedId, targetProjectId, zone) {
+    const container = findProjectContainer(targetProjectId);
+    if (!container) return;
+    const ids = insertRelative(container.containerIds, draggedId, targetProjectId, zone);
+    await API.patch('/api/projects/reorder', { ordered_ids: ids, course_id: container.courseId, chapter_id: container.chapterId });
+  }
+
+  async function moveProjectIntoChapter(projectId, chapterId) {
+    const found = findChapter(chapterId);
+    const existing = found ? (found.chapter.projects || []).map(p => p.id) : [];
+    const ids = [...existing.filter(id => id !== projectId), projectId];
+    await API.patch('/api/projects/reorder', { ordered_ids: ids, chapter_id: chapterId });
+  }
+
+  async function moveProjectToCourseUnchaptered(projectId, courseId) {
+    const course = findCourse(courseId);
+    const existing = course ? (course.unchaptered_projects || []).map(p => p.id) : [];
+    const ids = [...existing.filter(id => id !== projectId), projectId];
+    await API.patch('/api/projects/reorder', { ordered_ids: ids, course_id: courseId, chapter_id: null });
+  }
+
+  async function makeProjectStandalone(projectId) {
+    const existing = ((treeData && treeData.standalone_projects) || []).map(p => p.id);
+    const ids = [...existing.filter(id => id !== projectId), projectId];
+    await API.patch('/api/projects/reorder', { ordered_ids: ids, course_id: null, chapter_id: null });
+  }
+
+  // ===== 章节操作 =====
+
+  async function reorderOrMoveChapter(draggedId, targetChapterId, zone) {
+    const dragFound = findChapter(draggedId);
+    const targetFound = findChapter(targetChapterId);
+    if (!dragFound || !targetFound) return;
+    if (dragFound.course.id !== targetFound.course.id) {
+      await API.post(`/api/chapters/${draggedId}/move`, { course_id: targetFound.course.id });
+      showToast('章节已移动到目标课程');
+      return;
     }
-    dragData = null;
+    const ids = insertRelative((targetFound.course.chapters || []).map(c => c.id), draggedId, targetChapterId, zone);
+    await API.patch(`/api/chapters/reorder?course_id=${encodeURIComponent(targetFound.course.id)}`, { ordered_ids: ids });
+    showToast('章节顺序已更新');
+  }
+
+  async function moveChapterToCourse(chapterId, courseId) {
+    await API.post(`/api/chapters/${chapterId}/move`, { course_id: courseId });
+  }
+
+  // ===== 课程操作 =====
+
+  async function reorderCoursesRelativeTo(draggedId, targetCourseId, zone) {
+    const ids0 = ((treeData && treeData.courses) || []).map(c => c.id);
+    const ids = insertRelative(ids0, draggedId, targetCourseId, zone);
+    await API.patch('/api/courses/reorder', { ordered_ids: ids });
   }
 
   // ===== 公开 API =====

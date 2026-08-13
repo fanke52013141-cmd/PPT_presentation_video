@@ -9,10 +9,12 @@ from sqlalchemy.orm import Session
 
 from course_service import (
     ChapterCreate,
+    ChapterMove,
     ChapterUpdate,
     CourseCreate,
     CourseUpdate,
     ProjectMove,
+    ProjectReorder,
     ReorderRequest,
     get_course_service,
 )
@@ -124,6 +126,16 @@ def delete_chapter(
     return get_course_service().delete_chapter(chapter_id, db)
 
 
+@router.post("/api/chapters/{chapter_id}/move")
+def move_chapter(
+    chapter_id: str,
+    payload: ChapterMove,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """把章节移动到目标课程下（章节下的项目随之迁移）。目标课程下同名章节会自动改名。"""
+    return get_course_service().move_chapter(chapter_id, payload, db)
+
+
 # ===== Project move =====
 
 @router.post("/api/projects/{project_id}/move")
@@ -134,3 +146,12 @@ def move_project(
 ) -> dict[str, Any]:
     """移动项目到指定课程/章节。course_id 和 chapter_id 都为 null 时变成独立项目。"""
     return get_course_service().move_project(project_id, payload, db)
+
+
+@router.patch("/api/projects/reorder")
+def reorder_projects(
+    payload: ProjectReorder,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """批量重排视频顺序并可同时重新归属（拖拽排序/跨层级移动/拖出独立的统一入口）。"""
+    return get_course_service().reorder_projects(payload, db)

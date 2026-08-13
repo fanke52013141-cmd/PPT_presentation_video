@@ -211,11 +211,17 @@
       document.getElementById('modal-create').style.display = 'none';
       const modeLabel = profile.automation_mode === 'auto' ? '全自动模式' : '手动审核模式';
       toast(autoStarted ? `项目已创建（${modeLabel}），一键生成已启动。` : `项目已创建（${modeLabel}）。`, 4500);
-      // 停留在"课程与项目"主页：刷新课程树，不跳转到视频工作台。
-      // 一键生成（若已启动）在后台运行，用户点击"继续"进入工作台后可见进度。
-      if (window.loadProjects) { await window.loadProjects(); }
-      else if (window.CourseTree && window.CourseTree.load) { await window.CourseTree.load(); }
-      else { location.reload(); }
+      // [创建后进入详情页 20260813]
+      // 先刷新课程树（让新视频出现在列表中），再自动进入工作台。
+      try {
+        if (window.loadProjects) { await window.loadProjects(); }
+        else if (window.CourseTree && window.CourseTree.load) { await window.CourseTree.load(); }
+      } catch (e) { /* 刷新失败不阻断进入 */ }
+      if (typeof window.enterWorkspace === 'function' && project?.id) {
+        await window.enterWorkspace(project.id);
+      } else if (typeof enterWorkspace === 'function' && project?.id) {
+        await enterWorkspace(project.id);
+      }
     } finally {
       PROFILE_STATE.creating = false;
       if (button) {

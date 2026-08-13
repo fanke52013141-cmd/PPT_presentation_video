@@ -38,6 +38,10 @@ from project_style_reference_service import (
     project_reference_paths,
 )
 from storyboard_service import read_prompt_template
+from ip_character_service import (
+    build_ip_character_prompt_segment,
+    ip_character_reference_paths,
+)
 from visual_contract_service import normalize_visual_type
 from visual_provenance import (
     promote_candidate_provenance,
@@ -461,6 +465,9 @@ def generate_slide_image(
         client = get_openai_client(api_key=api_key, base_url=base_url)
         image_size = get_setting("image_size", "1024x1024")
         effective_prompt = enforce_white_generation_background(prompt)
+        ip_prompt_segment = build_ip_character_prompt_segment(project, slide_id)
+        if ip_prompt_segment:
+            effective_prompt = effective_prompt + "\n\n" + ip_prompt_segment
         logger.info(
             f"Generating image for {slide_id} using {model}, size={image_size}, prompt: {effective_prompt[:80]}"
         )
@@ -482,6 +489,13 @@ def generate_slide_image(
                 reference_paths=reference_paths,
                 style_tokens=style_tokens,
             )
+        ip_reference_paths = ip_character_reference_paths(project, slide_id)
+        if ip_reference_paths:
+            reference_paths = list(reference_paths) + ip_reference_paths
+            if not use_reference_images:
+                use_reference_images = can_send_project_references(
+                    model, base_url, reference_paths
+                )
         if reference_paths and not use_reference_images:
             logger.info(
                 "Skipping binary style reference images for %s: active references are not compatible with current model/style.",

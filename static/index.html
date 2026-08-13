@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260812.8">
+  <link rel="stylesheet" href="style.css?v=20260813.1">
 </head>
 <body>
 
@@ -47,9 +47,9 @@
     
     <!-- 首页: 项目管理 -->
     <div id="page-home" class="main-content" style="padding: 2rem 4rem;">
-      <div class="home-toolbar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; gap: 1rem; flex-wrap: wrap;">
+      <div class="home-toolbar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.62rem; gap: 1rem; flex-wrap: wrap;">
         <h1 class="highlight-title">课程与项目</h1>
-        <div style="display: flex; gap: 1.8rem;">
+        <div style="display: flex; gap: 1rem;">
           <button id="btn-create-course" type="button">
             <svg class="icon" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
             新建课程
@@ -262,6 +262,13 @@
             </button>
             <button id="step3-btn-style" class="secondary">
               图片风格设置
+            </button>
+            <button id="step3-btn-ip-character" class="secondary" type="button">
+              <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="8" r="4"></circle>
+                <path d="M4 21v-1a8 8 0 0 1 16 0v1"></path>
+              </svg>
+              IP 形象
             </button>
             <button id="step3-btn-confirm" class="success" style="display: none;">
               下一步
@@ -786,6 +793,43 @@
     </div>
   </div>
 
+  <!-- ==================== IP 形象管理 ==================== -->
+  <div id="modal-ip-character" class="modal-overlay" style="display: none;">
+    <div class="modal-content config-editor-modal ip-character-modal" role="dialog" aria-modal="true" aria-labelledby="ip-character-title">
+      <div class="config-editor-scroll">
+        <div class="prompt-title-row">
+          <h3 id="ip-character-title" class="highlight-title">IP 形象管理</h3>
+        </div>
+        <p class="config-editor-note">为当前项目配置 IP 形象角色（最多 2 个）。生图时角色描述会自动追加到 Prompt，参考图会一并传给图像模型。</p>
+
+        <div class="ip-character-config-row">
+          <label class="storyboard-config-field ip-character-toggle">
+            <input type="checkbox" id="ip-character-enabled">
+            <span>启用 IP 形象融入</span>
+          </label>
+          <label class="storyboard-config-field">
+            <span>应用范围</span>
+            <select id="ip-character-page-scope">
+              <option value="all">全部页面</option>
+              <option value="selected">仅指定页面</option>
+            </select>
+          </label>
+        </div>
+        <div id="ip-character-selected-row" class="storyboard-config-field" style="display:none;">
+          <span>指定页面 ID（逗号分隔，如 slide_001,slide_003）</span>
+          <input type="text" id="ip-character-selected-ids" class="ip-character-input" placeholder="留空则不限制">
+        </div>
+
+        <div id="ip-character-list" class="ip-character-list"></div>
+        <button id="ip-character-btn-add" class="secondary" type="button" style="margin-top:0.8rem;">+ 添加角色</button>
+      </div>
+      <div class="config-editor-actions">
+        <button id="btn-ip-character-cancel" class="secondary" type="button">关闭</button>
+        <button id="btn-ip-character-save-config" class="success" type="button">保存设置</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modal-step2-generate" class="modal-overlay" style="display: none;">
     <div class="modal-content ai-generation-modal">
       <h3 class="highlight-title">AI 生成分镜</h3>
@@ -1044,6 +1088,7 @@
   <script src="storyboard_prompts.js?v=20260801.1"></script>
   <script src="images.js?v=20260807.3"></script>
   <script src="image_prompts.js?v=20260801.1"></script>
+  <script src="ip_character_manager.js?v=20260813.1"></script>
   <script src="mask_reveal.js?v=20260801.1"></script>
   <script src="mask_workspace.js?v=20260809.4"></script>
   <script src="mask_editor.js?v=20260809.4"></script>
@@ -1052,7 +1097,7 @@
   <script src="output_render.js?v=20260801.1"></script>
   <script src="workspace_navigation.js?v=20260801.1"></script>
   <script src="event_bindings.js?v=20260801.1"></script>
-  <script src="project_profile_extension.js?v=3.0.2"></script>
+  <script src="project_profile_extension.js?v=3.0.3"></script>
   <script src="storyboard_background_extension.js?v=20260807.1"></script>
   <script src="style_reference_manager_extension.js?v=3.0.1"></script>
   <script src="ai_mask_auto_state.js?v=20260809.1"></script>

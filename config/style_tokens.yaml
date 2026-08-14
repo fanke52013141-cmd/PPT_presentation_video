@@ -157,19 +157,19 @@ subtitle:
     y: 930
     height: 150
   overlay:
-    font_key: noto_sans_sc
-    font_family: Noto Sans SC
-    font_size: 38
-    font_weight: 500
-    color: "#111111"
+    font_key: lxgw_marker_gothic
+    font_family: LXGW Marker Gothic
+    font_size: 40
+    font_weight: 400
+    color: "#000000"
     background: transparent
     border_radius: 0
-    max_lines: 2
+    max_lines: 1
     max_cjk_chars: 26
-    horizontal_margin: 180
-    bottom: 18
+    horizontal_margin: 110
+    bottom: 0
     # 方案 B：TikTok 式整页分页 + 逐字高亮
-    highlight_color: "#1E3A8A"
+    highlight_color: "#000000"
     paging_window_ms: 1300
     token_highlight: true
     line_height: 1.4

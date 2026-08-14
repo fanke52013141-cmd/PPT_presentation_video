@@ -9,17 +9,19 @@ style_tokens = yaml.safe_load((ROOT / "config" / "style_tokens.yaml").read_text(
 overlay = style_tokens["subtitle"]["overlay"]
 
 # 保留原字体相关断言
-assert "bottom: subtitleStyle?.bottom ?? 18" in video
-assert "subtitleStyle?.font_size ?? 38" in video  # 主路径 SubtitleView 和 fallback 都有此表达式
+assert "bottom: subtitleStyle?.bottom ?? 0" in video
+assert "subtitleStyle?.font_size ?? 40" in video  # 主路径 SubtitleView 和 fallback 都有此表达式
 assert "subtitleFontFamily" in video
 assert '"Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", Arial, sans-serif' in video
-assert "@remotion/google-fonts/NotoSansSC" in video
-assert "loadNotoSansSC" in video
+assert "@remotion/google-fonts/NotoSansSC" not in video
+assert "loadNotoSansSC" not in video
+assert "loadedNotoSansSCFamily" not in video
+assert "noto_sans_sc: `${configured}${sansFallback}`" in video
 assert "background: 'transparent'" in video
 assert "rgba(255, 253, 247, 0.82)" not in video
 assert overlay["background"] == "transparent"
 assert overlay["border_radius"] == 0
-assert overlay["bottom"] == 18
+assert overlay["bottom"] == 0
 
 # 方案 B：TikTok 式整页分页 + 逐字高亮 必须存在
 assert "buildCaptionPages" in video, "buildCaptionPages 函数缺失"
@@ -48,17 +50,17 @@ assert "max_lines?: number" in video, "SubtitleStyle.max_lines 字段缺失"
 assert "line_height?: number" in video, "SubtitleStyle.line_height 字段缺失"
 
 # style_tokens.yaml 同步声明新字段
-assert overlay["highlight_color"] == "#1E3A8A"
+assert overlay["highlight_color"] == "#000000"
 assert overlay["paging_window_ms"] == 1300
 assert overlay["token_highlight"] is True
 assert overlay["line_height"] == 1.4
 
 # build_remotion_props.py 的 DEFAULT_SUBTITLE_STYLE 必须同步
 build_props = (ROOT / "scripts" / "build_remotion_props.py").read_text(encoding="utf-8")
-assert '"highlight_color": "#1E3A8A"' in build_props
+assert '"highlight_color": "#000000"' in build_props
 assert '"paging_window_ms": 1300' in build_props
 assert '"token_highlight": True' in build_props
-assert '"max_lines": 2' in build_props
+assert '"max_lines": 1' in build_props
 assert '"line_height": 1.4' in build_props
 
 print("subtitle style checks passed")

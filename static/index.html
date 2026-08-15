@@ -822,6 +822,17 @@
 
         <div id="ip-character-list" class="ip-character-list"></div>
         <button id="ip-character-btn-add" class="secondary" type="button" style="margin-top:0.8rem;">+ 添加角色</button>
+
+        <div class="ip-character-template-block">
+          <div class="ip-character-template-header">
+            <span class="storyboard-config-field" style="margin-bottom:0;">
+              <span>IP 融入提示词模板（{characters} 会被角色列表替换）</span>
+            </span>
+            <button id="btn-ip-character-reset-template" class="secondary" type="button" style="margin-left:auto;">恢复默认模板</button>
+          </div>
+          <textarea id="ip-character-prompt-template" class="ip-character-input" rows="6" spellcheck="false" placeholder="请保持 {characters} 占位符；不要删除 <IPCharacterRequirements> 标记。"></textarea>
+          <p class="config-editor-note">保存后，AI 编辑器、生图 Prompt 预览与批量复制都会自动带上这段 IP 形象融入要求。</p>
+        </div>
       </div>
       <div class="config-editor-actions">
         <button id="btn-ip-character-cancel" class="secondary" type="button">关闭</button>
@@ -1102,6 +1113,6 @@
   <script src="style_reference_manager_extension.js?v=3.0.1"></script>
   <script src="ai_mask_auto_state.js?v=20260809.1"></script>
   <script src="ai_mask_extension.js?v=20260809.2"></script>
-  <script src="one_click_extension.js?v=20260630.1"></script>
+  <script src="one_click_extension.js?v=20260813.2"></script>
 </body>
 </html>

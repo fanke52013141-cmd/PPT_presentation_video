@@ -13,6 +13,7 @@ Convert the supplied article into a narration-first slide plan that downstream v
 
 - Write one valid JSON object to `runs/<run_id>/planning/slide_plan.json`.
 - Output no Markdown wrapper, commentary, image prompt, Mask coordinates, or Reveal implementation.
+- Output `narration`, `core_message`, and `body_content` in the same language as the input article (Chinese by default); do not switch language mid-document.
 
 Read `runs/<run_id>/inputs/article.md` and produce
 `runs/<run_id>/planning/slide_plan.json`.
@@ -43,7 +44,7 @@ Required top-level fields:
 - `presentation_policy.subtitle_rationale`
 - `topic.topic_id`
 - `topic.topic_name`
-- `topic.topic_summary`
+- `topic.topic_summary` (one concise sentence summarizing the topic)
 - `slides[]`
 
 Each slide must include:
@@ -63,6 +64,10 @@ Optional fields:
 
 `visual_groups[]` are post-design visual anchors for Mask/Reveal review. They
 are not a pre-generation layout template.
+
+Note: `narration_beats[]` and `visual_groups[]` in this contract are coarse
+rhythm and anchor hints only. They are NOT the input contract for Step 2B, which
+independently re-splits the narration into one-to-one visual elements.
 
 ## Presentation Policy
 
@@ -134,7 +139,7 @@ source of truth; visual anchors are matched after the page is drawn.
         "梯度指向上升最快的方向。",
         "负梯度就是最陡的下坡路。"
       ],
-      "visual_intent": "用一个清晰、亲和的视觉隐喻解释这段演讲稿，让观众一眼理解‘沿下降方向靠近最低点’。",
+      "visual_intent": "用一个清晰、亲和的视觉隐喻解释这段演讲稿，让观众一眼理解'沿下降方向靠近最低点'。",
       "narration": "先把梯度下降想象成下山。梯度指向上升最快的方向，而负梯度就是最陡的下坡路。我们每走一步，就重新判断当前最陡的下降方向，再继续靠近谷底。",
       "narration_beats": [
         {

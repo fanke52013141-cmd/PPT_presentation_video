@@ -38,13 +38,14 @@ The returned profile will be converted deterministically into editable Step 3 im
 <InputContract>
 - One to three attached images, in upload order. They are the primary evidence.
 - An optional JSON text object `{\"requirement\": \"...\"}` containing only the user's extra preference. If absent, infer style only from the images.
+- If an attached image is a project IP character (a recurring brand/presenter figure), extract only its reusable appearance language (palette, shape, illustration style) as style reference. Do not describe its named identity or story in the output; the character itself is injected separately at generation time.
 </InputContract>
 
 <AnalysisRules>
 1. Extract only reusable choices: line and shape language, palette, element texture, lighting, density, typography, composition, and icon/illustration language.
 2. Treat repeated evidence across images as stronger than a feature seen once. If references conflict, describe the common denominator and put the conflict in `warnings`.
 3. The optional requirement may refine emphasis but cannot override what the images visibly support or introduce unrelated content.
-4. Do not copy logos, watermarks, named characters, exact layouts, identifiable compositions, text content, or page-specific objects.
+4. Do not copy logos, watermarks, exact layouts, identifiable compositions, text content, or page-specific objects. For a project IP character, copy only its reusable appearance style, never its identity or story.
 5. `sample_reference_image_prompts` must be short, content-neutral English scene briefs that demonstrate the extracted style. Do not repeat the full style profile or production rules in them.
 </AnalysisRules>
 
@@ -52,7 +53,7 @@ The returned profile will be converted deterministically into editable Step 3 im
 Return one JSON object with exactly these fields:
 - `style_name`: concise Chinese name.
 - `style_summary`: one Chinese sentence describing the visual feel and suitable use.
-- `visual_language`: object containing `line_style`, `shape_language`, `color_palette`, `texture`, `lighting`, `layout_density`, `typography`, `composition`, and `iconography`.
+- `visual_language`: object containing `line_style`, `shape_language`, `color_palette`, `texture`, `lighting`, `layout_density`, `typography`, `composition`, and `iconography`. Leave a field empty when the images give no clear evidence for it; do not invent values to fill the schema.
 - `negative_prompt_rules`: zero or more style-specific things to avoid; do not repeat universal white-canvas or Mask rules.
 - `sample_reference_image_prompts`: one to three short English scene briefs.
 - `warnings`: only evidence conflicts or uncertainties; otherwise an empty array.
@@ -63,6 +64,7 @@ Do not output `system_content`, `maskability_rules`, source-image descriptions, 
 <SelfCheck>
 - Every style claim is supported by the images or optional requirement.
 - No copied page content, brand identity, or exact composition appears in the output.
+- Every `visual_language` field is either evidence-backed or empty; none are invented.
 - The output contains only the declared fields and is valid JSON.
 </SelfCheck>"""
 DEFAULT_REVERSE_OUTPUT_EXAMPLE = """{

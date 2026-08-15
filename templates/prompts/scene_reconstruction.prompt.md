@@ -23,22 +23,25 @@ Build deterministic Reveal assets from the approved slide bitmap and the semanti
 - Pipeline: `exact_rle_mask_with_manual_corrections_v5`.
 - A Slide without a Mask remains `full_slide_static`.
 - A masked Slide starts from the configured video background; never reuse the source bitmap as its background.
-- Treat each saved automatic Mask as a processing boundary and apply optional manual paint/erase strokes only as corrections.
+- Treat each saved automatic Mask as a processing boundary and apply optional manual paint/erase strokes only as corrections. No other re-assignment is allowed.
 - Remove only near-white pixels connected inward from that boundary; preserve white areas enclosed by visible content.
 - Retain non-white source content within the saved ownership Mask, with soft antialias alpha and white-edge decontamination.
 - Do not rematch semantic ownership, redesign, regenerate, crop, or silently reuse legacy layer assets.
-- The resulting automatic Masks must preserve at least 99.5% of foreground content, leave zero unassigned components, and have zero cross-group pixel overlap.
 
-## Commands
+## Quality Gates
 
-```powershell
-python scripts/build_reveal_scene.py `
-  --manifest runs/<run_id>/reveal_manifest.json `
-  --repo-root .
+The following thresholds are enforced by deterministic validation scripts (`validate_reveal_scene.py`), not by this model:
 
-python scripts/validate_reveal_scene.py `
-  --run-dir runs/<run_id> `
-  --repo-root .
-```
+- The resulting automatic Masks must preserve at least 99.5% of foreground content.
+- Zero unassigned components and zero cross-group pixel overlap.
+
+The model's job is to produce the scene assets exactly per the contract. When a gate fails, the validation script stops and reports the issue; the model does not attempt to hand-tune pixel metrics.
+
+## Execution
+
+Call the build and validation scripts in order:
+
+- `python scripts/build_reveal_scene.py --manifest runs/<run_id>/reveal_manifest.json --repo-root .`
+- `python scripts/validate_reveal_scene.py --run-dir runs/<run_id> --repo-root .`
 
 Stop when validation reports missing assets, stale pipeline data, source-image background reuse, or unreferenced legacy assets.

@@ -218,7 +218,7 @@ def _morph_erode(mask: np.ndarray, kernel: np.ndarray) -> np.ndarray:
     return result
 
 
-def detect_elements(image_path: Path, slide_dir: Path, settings: dict[str, Any]) -> dict[str, Any]:
+def detect_elements(image_path: Path, slide_dir: Path, settings: dict[str, Any], layout_boxes: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     out_dir = slide_dir / "auto_mask"
     cache_path = out_dir / "auto_elements.json"
     detection_settings = {
@@ -233,6 +233,7 @@ def detect_elements(image_path: Path, slide_dir: Path, settings: dict[str, Any])
             "component_padding_px",
         )
     }
+    layout_fingerprint = _layout_fingerprint(layout_boxes)
     source_sha256 = hashlib.sha256(image_path.read_bytes()).hexdigest()
     settings_fingerprint = hashlib.sha256(
         json.dumps(detection_settings, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -244,6 +245,7 @@ def detect_elements(image_path: Path, slide_dir: Path, settings: dict[str, Any])
                 cached.get("version") == "auto_elements_v3_exact_rle_cached"
                 and cached.get("source_sha256") == source_sha256
                 and cached.get("detection_settings_fingerprint") == settings_fingerprint
+                and cached.get("layout_fingerprint") == layout_fingerprint
             ):
                 return cached
         except Exception:
@@ -373,10 +375,22 @@ def detect_elements(image_path: Path, slide_dir: Path, settings: dict[str, Any])
         )
     for i, element in enumerate(residual, 1):
         element["element_id"] = f"el_residual_{i:04d}"
+    # ---- DocLayout layout binding (post-detection merge) ----
+    if layout_boxes is not None:
+        candidates, residual = _apply_layout_binding(
+            candidates, residual, layout_boxes, ow, oh, settings
+        )
+
     all_components = candidates + residual
     exact_foreground = _merge_row_runs(all_components, ow, oh)
     payload = {
         "version": "auto_elements_v3_exact_rle_cached",
+        "layout_fingerprint": layout_fingerprint,
+        "layout_detection": {
+            "enabled": layout_boxes is not None,
+            "available": layout_boxes is not None,
+            "box_count": len(layout_boxes) if layout_boxes else 0,
+        },
         "slide_id": slide_dir.name,
         "source_sha256": source_sha256,
         "detection_settings_fingerprint": settings_fingerprint,
@@ -518,3 +532,112 @@ def _projection_split(
                       "w": min(ow, x_max + 1 - x_min), "h": min(oh, y_max + 1 - y_min)})]
 
 
+
+
+
+def _apply_layout_binding(
+    candidates: list[dict[str, Any]],
+    residual: list[dict[str, Any]],
+    layout_boxes: list[dict[str, Any]] | None,
+    width: int,
+    height: int,
+    settings: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """把 flood-fill 组件按 DocLayout 候选框聚合成语义元素。
+
+    同一候选框内的组件（candidates 与 residual 均可被吸收）合并为一个
+    layout 元素；聚合后面积小于 min_element_area 时保留原组件不合并。
+    未命中任何候选框的组件保持独立，candidates / residual 身份不丢失。
+    """
+    if not layout_boxes:
+        return candidates, residual
+
+    candidate_ids = {id(comp) for comp in candidates}
+    all_components = list(candidates) + list(residual)
+    used: set[int] = set()
+    merged: list[dict[str, Any]] = []
+    min_element_area = int(settings.get("min_element_area", 120))
+
+    for box_info in layout_boxes:
+        box = box_info.get("box") if isinstance(box_info.get("box"), dict) else {}
+        bx = float(box.get("x", 0))
+        by = float(box.get("y", 0))
+        bx2 = bx + float(box.get("w", 0))
+        by2 = by + float(box.get("h", 0))
+        role = str(box_info.get("role") or "text")
+        confidence = float(box_info.get("confidence", 0) or 0)
+        class_id = int(box_info.get("class_id", -1))
+
+        members: list[dict[str, Any]] = []
+        for comp in all_components:
+            if id(comp) in used:
+                continue
+            center = comp.get("center") if isinstance(comp.get("center"), dict) else {}
+            cx = float(center.get("x", 0))
+            cy = float(center.get("y", 0))
+            if bx <= cx <= bx2 and by <= cy <= by2:
+                members.append(comp)
+
+        total_area = sum(int(member.get("area", 0) or 0) for member in members)
+        if not members or total_area < min_element_area:
+            continue
+
+        member_ids = {id(member) for member in members}
+        x1 = min(float(member["bbox"]["x"]) for member in members)
+        y1 = min(float(member["bbox"]["y"]) for member in members)
+        x2 = max(float(member["bbox"]["x"]) + float(member["bbox"]["w"]) for member in members)
+        y2 = max(float(member["bbox"]["y"]) + float(member["bbox"]["h"]) for member in members)
+        cx = (x1 + x2) / 2.0
+        cy = (y1 + y2) / 2.0
+        mask_rle = _merge_row_runs(members, width, height)
+
+        merged.append({
+            "element_id": f"el_layout_{len(merged) + 1:03d}",
+            "bbox": {"x": x1, "y": y1, "w": x2 - x1, "h": y2 - y1},
+            "raw_bbox": {"x": x1, "y": y1, "w": x2 - x1, "h": y2 - y1},
+            "center": {"x": round(cx, 2), "y": round(cy, 2)},
+            "area": total_area,
+            "mask_pixel_count": _rle_pixel_count(mask_rle),
+            "position": _position(cx, cy, width, height),
+            "ocr_text": "",
+            "mask_rle": mask_rle,
+            "detection_source": "doclayout",
+            "layout_role": role,
+            "layout_class_id": class_id,
+            "layout_confidence": confidence,
+            "layout_member_count": len(members),
+        })
+        used.update(member_ids)
+
+    new_candidates = merged
+    new_residual: list[dict[str, Any]] = []
+    for comp in all_components:
+        if id(comp) in used:
+            continue
+        if id(comp) in candidate_ids:
+            new_candidates.append(comp)
+        else:
+            new_residual.append(comp)
+    new_candidates.sort(key=lambda e: (e["bbox"]["y"], e["bbox"]["x"]))
+    new_residual.sort(key=lambda e: (e["bbox"]["y"], e["bbox"]["x"]))
+    return new_candidates, new_residual
+
+def _layout_fingerprint(layout_boxes: list[dict[str, Any]] | None) -> str:
+    """生成 DocLayout 候选框的稳定指纹，用于缓存区分（无布局框返回空串）。"""
+    if not layout_boxes:
+        return ""
+    try:
+        rows = []
+        for box in layout_boxes:
+            b = box.get("box") if isinstance(box.get("box"), dict) else {}
+            rows.append({
+                "r": str(box.get("role") or ""),
+                "c": round(float(box.get("confidence", 0) or 0), 4),
+                "x": int(b.get("x", 0)), "y": int(b.get("y", 0)),
+                "w": int(b.get("w", 0)), "h": int(b.get("h", 0)),
+            })
+        return hashlib.sha256(
+            json.dumps(rows, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+    except Exception:
+        return ""

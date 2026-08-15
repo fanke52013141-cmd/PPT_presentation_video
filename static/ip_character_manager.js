@@ -5,6 +5,18 @@
   "use strict";
 
   const MAX_CHARACTERS = 2;
+  const DEFAULT_PROMPT_TEMPLATE =
+    "<IPCharacterRequirements>\n" +
+    "【IP 形象融入要求】\n" +
+    "请把以下 IP 形象角色自然融入本页画面，保持每个角色的外观、配色与风格高度一致：\n" +
+    "{characters}\n" +
+    "约束（与生图固定规则同等重要，不得违反）：\n" +
+    "1. 每个已列出的角色都必须出现在画面中，不得省略或替换。\n" +
+    "2. 多个角色互不重叠，也不得遮挡标题、正文文字、图表或关键标签；角色与其它视觉元素之间保留清晰间隙。\n" +
+    "3. 角色必须位于画面内容区（y<930），不得进入底部字幕安全区，不得覆盖页面上方主标题区。\n" +
+    "4. 若某个角色标注了放置位置，请尽量放在该位置；仅当该位置会遮挡关键文字或与其它元素冲突时才可调整。\n" +
+    "5. 请确保 IP 形象与页面其它视觉元素和谐共存，整体保持专业、美观的排版。\n" +
+    "</IPCharacterRequirements>";
   const FALLBACK_POSITIONS = [
     { value: "", label: "不限制" },
     { value: "left_top", label: "左上角" },
@@ -64,6 +76,8 @@
     if (scopeSelect) scopeSelect.value = ipManifest.page_scope || "all";
     if (selectedRow) selectedRow.style.display = ipManifest.page_scope === "selected" ? "" : "none";
     if (selectedInput) selectedInput.value = (ipManifest.selected_slide_ids || []).join(",");
+    const templateInput = document.getElementById("ip-character-prompt-template");
+    if (templateInput) templateInput.value = ipManifest.prompt_template || "";
 
     renderCharacterList();
     updateAddButtonState();
@@ -122,6 +136,10 @@
       '<label class="storyboard-config-field">' +
       "<span>外观描述（服饰 / 配色 / 表情 / 风格）</span>" +
       '<textarea class="ip-character-input ip-char-desc" rows="3" placeholder="例如：穿着蓝色校服的卡通女孩，大眼睛，微笑，扁平化插画风格...">' + escHtml(char.description || "") + "</textarea>" +
+      "</label>" +
+      '<label class="storyboard-config-field">' +
+      "<span>自定义生图提示词（可选，留空自动生成）</span>" +
+      '<textarea class="ip-character-input ip-char-prompt" rows="2" placeholder="例如：蓝色连帽卫衣卡通女孩，圆脸大眼睛，始终面带微笑，扁平化插画风格">' + escHtml(char.prompt_text || "") + "</textarea>" +
       "</label>" +
       '<div class="ip-character-upload-row">' +
       '<div class="ip-character-preview">' + imgPreview + "</div>" +
@@ -182,6 +200,7 @@
     const id = card.getAttribute("data-id") || "";
     const name = (card.querySelector(".ip-char-name") || {}).value;
     const description = (card.querySelector(".ip-char-desc") || {}).value;
+    const promptText = (card.querySelector(".ip-char-prompt") || {}).value;
     const positionSelect = card.querySelector(".ip-char-position");
     const position = positionSelect ? positionSelect.value || null : null;
     const fileInput = card.querySelector(".ip-char-file");
@@ -192,7 +211,7 @@
       return;
     }
 
-    const payload = { name: name.trim(), description: (description || "").trim(), position: position };
+    const payload = { name: name.trim(), description: (description || "").trim(), prompt_text: (promptText || "").trim(), position: position };
     if (id && !id.startsWith("new_")) payload.id = id;
 
     const formData = new FormData();
@@ -249,12 +268,15 @@
     const selected_slide_ids = selectedRaw
       ? selectedRaw.split(",").map(function (s) { return s.trim(); }).filter(Boolean)
       : [];
+    const templateInput = document.getElementById("ip-character-prompt-template");
+    const prompt_template = templateInput ? templateInput.value.trim() : "";
 
     try {
       const res = await API.put("/api/projects/" + projectId + "/ip-characters/config", {
         enabled: enabled,
         page_scope: page_scope,
         selected_slide_ids: selected_slide_ids,
+        prompt_template: prompt_template,
       });
       ipManifest = res.data || ipManifest;
       renderConfig();
@@ -282,16 +304,25 @@
     updateAddButtonState();
   }
 
+  function resetPromptTemplate() {
+    const templateInput = document.getElementById("ip-character-prompt-template");
+    if (!templateInput) return;
+    templateInput.value = DEFAULT_PROMPT_TEMPLATE;
+    showToast("已恢复默认 IP 融入提示词模板，点击「保存设置」生效");
+  }
+
   function init() {
     const btnOpen = document.getElementById("step3-btn-ip-character");
     const btnCancel = document.getElementById("btn-ip-character-cancel");
     const btnSaveConfig = document.getElementById("btn-ip-character-save-config");
     const btnAdd = document.getElementById("ip-character-btn-add");
+    const btnResetTemplate = document.getElementById("btn-ip-character-reset-template");
 
     if (btnOpen) btnOpen.addEventListener("click", openModal);
     if (btnCancel) btnCancel.addEventListener("click", closeModal);
     if (btnSaveConfig) btnSaveConfig.addEventListener("click", saveConfig);
     if (btnAdd) btnAdd.addEventListener("click", addNewCharacter);
+    if (btnResetTemplate) btnResetTemplate.addEventListener("click", resetPromptTemplate);
 
     const modal = document.getElementById("modal-ip-character");
     if (modal) {

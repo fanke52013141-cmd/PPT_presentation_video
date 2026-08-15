@@ -7680,3 +7680,26 @@ body.course-drag-active .course-tree-container * {
   border: 1px dashed var(--border-color, #e0e0e0);
   border-radius: 8px;
 }
+
+.ip-character-template-block {
+  margin-top: 1.2rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--border-color, #eee);
+}
+
+.ip-character-template-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+
+.ip-character-template-block textarea#ip-character-prompt-template {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+}

@@ -363,6 +363,7 @@ def _project_generate_prompt_for_slide(
     project: Any,
     slide: dict[str, Any],
     topic_name: str,
+    ip_prompt_segment: str = "",
 ) -> str:
     style_prompt = _profile_style_prompt(project, dependencies)
     try:
@@ -371,12 +372,14 @@ def _project_generate_prompt_for_slide(
             style_prompt,
             slide,
             system_content,
+            ip_prompt_segment,
         )
     except Exception:
         return _legacy_project_generate_prompt_for_slide(
             dependencies,
             project,
             slide,
+            ip_prompt_segment,
         )
 
 
@@ -384,6 +387,7 @@ def _legacy_project_generate_prompt_for_slide(
     dependencies: ProjectStyleDependencies,
     project: Any,
     slide: dict[str, Any],
+    ip_prompt_segment: str = "",
 ) -> str:
     style_prompt = _profile_style_prompt(project, dependencies)
     slide_id = _safe_text(slide.get("slide_id"), 100)
@@ -394,7 +398,7 @@ def _legacy_project_generate_prompt_for_slide(
         ) or elements_str
     except Exception:
         pass
-    return (
+    prompt = (
         "整体风格提示词：\n"
         f"{style_prompt}\n\n"
         "单页生图任务：\n"
@@ -407,6 +411,9 @@ def _legacy_project_generate_prompt_for_slide(
         "元素清单（程序已从 Step 2B 精简）：\n"
         f"{elements_str}"
     )
+    if ip_prompt_segment:
+        prompt = prompt + "\n\n" + ip_prompt_segment
+    return prompt
 
 
 def _can_send_project_references(
@@ -445,12 +452,15 @@ def project_generate_prompt_for_slide(
     slide: dict[str, Any],
     topic_name: str,
     dependencies: ProjectStyleDependencies | None = None,
+    ip_prompt_segment: str = "",
 ) -> str:
     if dependencies is None:
         from project_style_context import get_project_style_context
 
         dependencies = get_project_style_context()
-    return _project_generate_prompt_for_slide(dependencies, project, slide, topic_name)
+    return _project_generate_prompt_for_slide(
+        dependencies, project, slide, topic_name, ip_prompt_segment
+    )
 
 
 def can_send_project_references(

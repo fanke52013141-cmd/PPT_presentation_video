@@ -23,6 +23,11 @@ from pptx_export import (
     build_image_only_pptx,
     inspect_pptx_readiness,
 )
+from pptx_reveal_export import (
+    PptxRevealExportError,
+    build_reveal_pptx,
+    inspect_reveal_pptx_readiness,
+)
 from project_storage import (
     UnsafeProjectPath,
     presentation_file,
@@ -162,10 +167,10 @@ class PptxExportService:
         project_id: str,
     ) -> dict[str, Any]:
         project = self.get_project(db, project_id)
-        return {
-            "success": True,
-            **inspect_pptx_readiness(self.project_run_dir(project)),
-        }
+        mode, payload = self._resolve_export_mode(
+            self.project_run_dir(project)
+        )
+        return {"success": True, "export_mode": mode, **payload}
 
     def create_export(
         self,
@@ -173,7 +178,9 @@ class PptxExportService:
         project_id: str,
     ) -> dict[str, Any]:
         project = self.get_project(db, project_id)
-        readiness = inspect_pptx_readiness(self.project_run_dir(project))
+        mode, readiness = self._resolve_export_mode(
+            self.project_run_dir(project)
+        )
         if not readiness["ready"]:
             raise PptxServiceError(
                 409,
@@ -190,7 +197,7 @@ class PptxExportService:
                     "reused": True,
                     "job": self.job_item(active),
                 }
-            job = self._new_job(project.id)
+            job = self._new_job(project.id, mode=mode)
             db.add(job)
             db.commit()
             db.refresh(job)
@@ -266,7 +273,7 @@ class PptxExportService:
                 409,
                 "只有失败或中断的任务可以重试",
             )
-        readiness = inspect_pptx_readiness(
+        _, readiness = self._resolve_export_mode(
             self.project_run_dir(project)
         )
         if not readiness["ready"]:
@@ -285,7 +292,10 @@ class PptxExportService:
                     "reused": True,
                     "job": self.job_item(active),
                 }
-            job = self._new_job(project_id)
+            mode, _ = self._resolve_export_mode(
+                self.project_run_dir(project)
+            )
+            job = self._new_job(project_id, mode=mode)
             db.add(job)
             db.commit()
             db.refresh(job)
@@ -456,19 +466,33 @@ class PptxExportService:
             job.updated_at = datetime.now()
             db.commit()
 
-            filename = str(
-                job.get_payload().get("filename") or ""
-            )
-            result = build_image_only_pptx(
-                self.project_run_dir(project),
-                filename,
-                title=project.name,
-                progress=lambda value, stage: self.set_job_progress(
-                    job_id,
-                    value,
-                    stage,
-                ),
-            )
+            payload = job.get_payload() or {}
+            filename = str(payload.get("filename") or "")
+            mode = str(payload.get("mode") or "") or self._resolve_export_mode(
+                self.project_run_dir(project)
+            )[0]
+            if mode == "reveal":
+                result = build_reveal_pptx(
+                    self.project_run_dir(project),
+                    filename,
+                    title=project.name,
+                    progress=lambda value, stage: self.set_job_progress(
+                        job_id,
+                        value,
+                        stage,
+                    ),
+                )
+            else:
+                result = build_image_only_pptx(
+                    self.project_run_dir(project),
+                    filename,
+                    title=project.name,
+                    progress=lambda value, stage: self.set_job_progress(
+                        job_id,
+                        value,
+                        stage,
+                    ),
+                )
             output_path = Path(result["path"])
             artifact = ArtifactRecord(
                 id=uuid.uuid4().hex,
@@ -518,6 +542,17 @@ class PptxExportService:
                 "PPTX readiness changed for job %s: %s",
                 job_id,
                 exc.readiness,
+            )
+        except PptxRevealExportError as exc:
+            self.fail_job(
+                db,
+                job_id,
+                f"带 Mask 流程的导出未就绪：{exc.detail}",
+            )
+            logger.info(
+                "PPTX reveal readiness changed for job %s: %s",
+                job_id,
+                exc.detail,
             )
         except Exception as exc:
             self._remove_partial_output(output_path)
@@ -585,7 +620,24 @@ class PptxExportService:
                 pass
 
     @staticmethod
-    def _new_job(project_id: str) -> LocalJob:
+    def _resolve_export_mode(
+        run_dir: str | Path,
+    ) -> tuple[str, dict[str, Any]]:
+        """自动选择导出模式：有有效 Mask 标注时用 reveal（带流程拆页），否则回退 image_only。
+
+        返回 (mode, readiness_payload)。
+        """
+        try:
+            reveal = inspect_reveal_pptx_readiness(run_dir)
+        except Exception:
+            reveal = None
+        if reveal and reveal.get("ready"):
+            return "reveal", reveal
+        base = inspect_pptx_readiness(run_dir)
+        return "image_only", base
+
+    @staticmethod
+    def _new_job(project_id: str, mode: str = "image_only") -> LocalJob:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = (
             f"presentation_{timestamp}_{uuid.uuid4().hex[:6]}.pptx"
@@ -598,7 +650,7 @@ class PptxExportService:
             progress=0,
             stage="queued",
             payload_json=json.dumps(
-                {"filename": filename},
+                {"filename": filename, "mode": mode},
                 ensure_ascii=False,
             ),
         )

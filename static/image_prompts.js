@@ -40,15 +40,22 @@ function updateStep3PromptFullPreview() {
       : JSON.stringify(settings.current_input || settings.input_example || {}, null, 2);
   }
   if (fullPreview) {
-    fullPreview.value = [
+    const ipSegment = String(settings.ip_prompt_segment || '').trim();
+    const parts = [
       '=== 图片生成 System Content ===',
       systemContent.trim(),
       '=== 当前生效的图片风格 ===',
       String(settings.style_content || '').trim(),
+    ];
+    if (ipSegment) {
+      parts.push('=== IP 形象融入要求 ===', ipSegment);
+    }
+    parts.push(
       '=== 当前 Slide 输入 ===',
       slidePrompt || `最小单页输入：\n${JSON.stringify(settings.current_input || settings.input_example || {}, null, 2)}`,
       String(settings.protected_rules || '').trim(),
-    ].filter(Boolean).join('\n\n');
+    );
+    fullPreview.value = parts.filter(Boolean).join('\n\n');
   }
 }
 

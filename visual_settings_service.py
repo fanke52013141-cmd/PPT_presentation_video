@@ -23,17 +23,17 @@ IMAGE_GENERATION_BACKGROUND = "#FFFFFF"
 DEFAULT_VIDEO_BACKGROUND = "#FEFDF9"
 PROJECT_VISUAL_SETTINGS_FILE = "visual_settings.json"
 DEFAULT_SUBTITLE_STYLE = {
-    "font_key": "noto_sans_sc",
-    "font_family": "Noto Sans SC",
-    "font_size": 38,
-    "font_weight": 500,
-    "bottom": 18,
-    "horizontal_margin": 180,
-    "color": "#111111",
-    "highlight_color": "#1E3A8A",
+    "font_key": "lxgw_marker_gothic",
+    "font_family": "LXGW Marker Gothic",
+    "font_size": 40,
+    "font_weight": 400,
+    "bottom": 0,
+    "horizontal_margin": 110,
+    "color": "#000000",
+    "highlight_color": "#000000",
     "paging_window_ms": 1300,
     "token_highlight": True,
-    "max_lines": 2,
+    "max_lines": 1,
     "line_height": 1.4,
 }
 OPEN_SOURCE_CHINESE_FONTS = [

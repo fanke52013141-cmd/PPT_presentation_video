@@ -1,5 +1,4 @@
 import React from 'react';
-import {loadFont as loadNotoSansSC} from '@remotion/google-fonts/NotoSansSC';
 import {
   AbsoluteFill,
   Audio,
@@ -11,11 +10,6 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from 'remotion';
-
-const {fontFamily: loadedNotoSansSCFamily} = loadNotoSansSC('normal', {
-  weights: ['500'],
-  subsets: ['chinese-simplified', 'latin'],
-});
 
 type LayerBox = {
   x: number;
@@ -393,7 +387,7 @@ const subtitleFontFamily = (fontKey?: string, configuredFamily?: string, fontWei
   const serifFallback = '"Noto Serif CJK SC", SimSun, "Songti SC", serif';
   const handwrittenFallback = '"Microsoft YaHei", KaiTi, cursive';
   const families: Record<string, string> = {
-    noto_sans_sc: `${configured}"${loadedNotoSansSCFamily}", ${sansFallback}`,
+    noto_sans_sc: `${configured}${sansFallback}`,
     noto_serif_sc: `${configured}"Noto Serif SC", ${serifFallback}`,
     ma_shan_zheng: `${configured}"Ma Shan Zheng", ${handwrittenFallback}`,
     zcool_xiaowei: `${configured}"ZCOOL XiaoWei", ${serifFallback}`,
@@ -675,14 +669,14 @@ const SubtitleView: React.FC<{
   subtitleStyle?: SubtitleStyle;
   fontFamily: string;
 }> = ({page, highlightCount, subtitleStyle, fontFamily}) => {
-  const baseColor = subtitleStyle?.color ?? '#111111';
-  const highlightColor = subtitleStyle?.highlight_color ?? '#1E3A8A';
-  const fontSize = subtitleStyle?.font_size ?? 38;
-  const baseFontWeight = subtitleStyle?.font_weight ?? 500;
-  const maxLines = subtitleStyle?.max_lines ?? 2;
+  const baseColor = subtitleStyle?.color ?? '#000000';
+  const highlightColor = subtitleStyle?.highlight_color ?? '#000000';
+  const fontSize = subtitleStyle?.font_size ?? 40;
+  const baseFontWeight = subtitleStyle?.font_weight ?? 400;
+  const maxLines = subtitleStyle?.max_lines ?? 1;
   const lineHeight = subtitleStyle?.line_height ?? 1.4;
-  const horizontalMargin = subtitleStyle?.horizontal_margin ?? 180;
-  const bottom = subtitleStyle?.bottom ?? 18;
+  const horizontalMargin = subtitleStyle?.horizontal_margin ?? 110;
+  const bottom = subtitleStyle?.bottom ?? 0;
   const enableHighlight = subtitleStyle?.token_highlight !== false;
   const highlightFontWeight = Math.min(700, baseFontWeight + 100);
 
@@ -743,9 +737,9 @@ const SlideView: React.FC<{slide: Slide; subtitleStyle?: SubtitleStyle}> = ({sli
   // 方案 B：用 page + token 高亮替代单 segment 显示
   const tokenize = subtitleStyle?.token_highlight !== false;
   const pagingWindowMs = subtitleStyle?.paging_window_ms ?? 1300;
-  const subtitleFontSize = subtitleStyle?.font_size ?? 38;
-  const subtitleMaxLines = subtitleStyle?.max_lines ?? 2;
-  const subtitleHorizontalMargin = subtitleStyle?.horizontal_margin ?? 180;
+  const subtitleFontSize = subtitleStyle?.font_size ?? 40;
+  const subtitleMaxLines = subtitleStyle?.max_lines ?? 1;
+  const subtitleHorizontalMargin = subtitleStyle?.horizontal_margin ?? 110;
   const subtitleTextCapacity = Math.max(
     12,
     Math.floor((1920 - subtitleHorizontalMargin * 2 - 48) / (subtitleFontSize * 1.05)) * subtitleMaxLines,
@@ -767,12 +761,12 @@ const SlideView: React.FC<{slide: Slide; subtitleStyle?: SubtitleStyle}> = ({sli
     subtitleStyle?.font_family,
     subtitleStyle?.font_weight,
   );
-  const horizontalMargin = subtitleStyle?.horizontal_margin ?? 180;
-  const fallbackColor = subtitleStyle?.color ?? '#111111';
-  const fallbackFontSize = subtitleStyle?.font_size ?? 38;
-  const fallbackFontWeight = subtitleStyle?.font_weight ?? 500;
+  const horizontalMargin = subtitleStyle?.horizontal_margin ?? 110;
+  const fallbackColor = subtitleStyle?.color ?? '#000000';
+  const fallbackFontSize = subtitleStyle?.font_size ?? 40;
+  const fallbackFontWeight = subtitleStyle?.font_weight ?? 400;
   const fallbackLineHeight = subtitleStyle?.line_height ?? 1.4;
-  const fallbackMaxLines = subtitleStyle?.max_lines ?? 2;
+  const fallbackMaxLines = subtitleStyle?.max_lines ?? 1;
 
   return (
     <AbsoluteFill style={{background: slide.scene.canvas.background || '#FEFDF9'}}>
@@ -796,7 +790,7 @@ const SlideView: React.FC<{slide: Slide; subtitleStyle?: SubtitleStyle}> = ({sli
             position: 'absolute',
             left: horizontalMargin,
             right: horizontalMargin,
-            bottom: subtitleStyle?.bottom ?? 18,
+            bottom: subtitleStyle?.bottom ?? 0,
             zIndex: 10000,
             minHeight: Math.ceil(fallbackFontSize * fallbackLineHeight) * fallbackMaxLines,
             display: '-webkit-box',

@@ -2,18 +2,18 @@
 // Shared state, API helpers, escaping, and workflow refresh live in ui_foundation.js / workflow_state.js / api_client.js.
 
 const DEFAULT_SUBTITLE_SETTINGS = {
-  font_key: 'noto_sans_sc',
-  font_family: 'Noto Sans SC',
-  font_size: 38,
-  font_weight: 500,
-  bottom: 18,
-  horizontal_margin: 180,
-  color: '#111111',
+  font_key: 'lxgw_marker_gothic',
+  font_family: 'LXGW Marker Gothic',
+  font_size: 40,
+  font_weight: 400,
+  bottom: 0,
+  horizontal_margin: 110,
+  color: '#000000',
   // 方案 B：TikTok 式整页分页 + 逐字高亮
-  highlight_color: '#1E3A8A',
+  highlight_color: '#000000',
   paging_window_ms: 1300,
   token_highlight: true,
-  max_lines: 2,
+  max_lines: 1,
   line_height: 1.4,
 };
 
@@ -27,16 +27,16 @@ function subtitleFontByKey(key) {
 function readSubtitleSettingsForm() {
   const fontKey = document.getElementById('subtitle-font-key').value || DEFAULT_SUBTITLE_SETTINGS.font_key;
   const font = subtitleFontByKey(fontKey);
-  const maxLines = Number(document.getElementById('subtitle-max-lines').value || 2);
+  const maxLines = Number(document.getElementById('subtitle-max-lines').value || 1);
   return {
     font_key: fontKey,
     font_family: font.family,
-    font_size: Number(document.getElementById('subtitle-font-size').value || 38),
-    font_weight: Number(document.getElementById('subtitle-font-weight').value || 500),
-    bottom: Number(document.getElementById('subtitle-bottom').value || 18),
-    horizontal_margin: Number(document.getElementById('subtitle-horizontal-margin').value || 180),
-    color: document.getElementById('subtitle-color').value || '#111111',
-    highlight_color: document.getElementById('subtitle-highlight-color').value || '#1E3A8A',
+    font_size: Number(document.getElementById('subtitle-font-size').value || 40),
+    font_weight: Number(document.getElementById('subtitle-font-weight').value || 400),
+    bottom: Number(document.getElementById('subtitle-bottom').value || 0),
+    horizontal_margin: Number(document.getElementById('subtitle-horizontal-margin').value || 110),
+    color: document.getElementById('subtitle-color').value || '#000000',
+    highlight_color: document.getElementById('subtitle-highlight-color').value || '#000000',
     paging_window_ms: Number(document.getElementById('subtitle-paging-window').value || 1300),
     token_highlight: document.getElementById('subtitle-token-highlight').checked,
     max_lines: Math.min(3, Math.max(1, maxLines)),
@@ -51,10 +51,10 @@ function populateSubtitleSettingsForm(settings) {
   document.getElementById('subtitle-font-weight').value = String(value.font_weight);
   document.getElementById('subtitle-bottom').value = String(value.bottom);
   document.getElementById('subtitle-horizontal-margin').value = String(value.horizontal_margin);
-  document.getElementById('subtitle-color').value = String(value.color || '#111111');
-  document.getElementById('subtitle-highlight-color').value = String(value.highlight_color || '#1E3A8A');
+  document.getElementById('subtitle-color').value = String(value.color || '#000000');
+  document.getElementById('subtitle-highlight-color').value = String(value.highlight_color || '#000000');
   document.getElementById('subtitle-paging-window').value = String(value.paging_window_ms || 1300);
-  document.getElementById('subtitle-max-lines').value = String(value.max_lines || 2);
+  document.getElementById('subtitle-max-lines').value = String(value.max_lines || 1);
   document.getElementById('subtitle-token-highlight').checked = value.token_highlight !== false;
   updateSubtitlePreview();
 }
@@ -95,7 +95,7 @@ function updateSubtitlePreview() {
   text.style.wordBreak = 'keep-all';
   text.style.display = '-webkit-box';
   text.style.WebkitBoxOrient = 'vertical';
-  text.style.WebkitLineClamp = String(settings.max_lines || 2);
+  text.style.WebkitLineClamp = String(settings.max_lines || 1);
   text.style.overflow = 'hidden';
   const marginWidth = settings.horizontal_margin * scale;
   const leftShade = document.getElementById('subtitle-margin-left-shade');

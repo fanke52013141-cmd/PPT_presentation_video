@@ -8,21 +8,13 @@ on top of the automatic base mask.
 
 from __future__ import annotations
 
-import base64
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-import json
 import time
 from pathlib import Path
 from typing import Any, Callable
 
-from PIL import Image, ImageDraw
 
-from ai_mask_contracts import (
-    AI_MASK_MIN_FOREGROUND_COVERAGE,
-    AI_MASK_VISION_TIMEOUT_SEC,
-    MASK_COLORS,
-)
 SETTING_PREFIX = "ai_mask_"
 
 DEFAULT_SETTINGS: dict[str, Any] = {
@@ -33,6 +25,12 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "connectivity": 8,
     "min_element_area": 120,
     "component_padding_px": 12,
+    "doclayout_enabled": True,
+    "doclayout_model_path": "",
+    "doclayout_conf_threshold": 0.35,
+    "doclayout_input_size": 1024,
+    "doclayout_iou_threshold": 0.45,
+    "doclayout_min_area_ratio": 0.002,
     "max_group_elements": 60,
     "llm_confidence_threshold": 0.72,
     "llm_temperature": 0.1,
@@ -153,6 +151,9 @@ DEFAULT_METHODOLOGY = """<PromptVersion>ai_mask_semantic_mapping_v3</PromptVersi
 3. 空间证据：二维位置、包含关系、相邻关系与阅读顺序。
 4. 辅助证据：`role`、编号、颜色。颜色或顺序不能单独决定归属。
 
+### 兼容路径（auto_elements）
+当输入没有 `semantic_objects`、只有 `auto_elements[]` 与带框整图时，按与对象路径完全相同的优先级（语义 > 视觉边界 > 空间 > 辅助）把 element 绑定到目标 group。每个 `element_id` 只能归属一个 group；一个 group 可绑定多个共同构成同一叙事时刻的 element，但同一 element 不得跨 group 重复。其余规则（标题区、完整性、置信度）与对象路径一致。
+
 ## 执行流程
 ### A. 建立目标清单
 - 先根据 `narration_beats[].group_id` 列出需要匹配的动态 group。
@@ -179,6 +180,7 @@ DEFAULT_METHODOLOGY = """<PromptVersion>ai_mask_semantic_mapping_v3</PromptVersi
 - 没有可靠对象的动态 group 放入 `unmatched_groups`，不要用标题、装饰或无关对象补位。
 - 独立装饰、分隔线、角标或无口播对象放入 `unmatched_objects`；下游会处理像素覆盖，不能把装饰当作语义锚点。
 - 置信度标准：`0.90-1.00` 为语义与视觉边界均明确；`0.80-0.89` 为证据充分但存在轻微歧义；`0.72-0.79` 为可匹配但需要人工复核；低于 `0.72` 时不要输出 match，改放 unmatched。
+- 任何低于系统置信度阈值（默认 0.72）的候选匹配都不得写入 `matches`，一律放入 `unmatched_objects` 或 `unmatched_elements`，由下游按确定性规则处理。
 
 ## 输出要求
 严格遵循另行提供的“OUTPUT STRUCTURE / 输出结构”。只返回一个合法 JSON object，不要 Markdown、代码围栏、分析过程或额外文字。
@@ -218,6 +220,7 @@ DEFAULT_OUTPUT_STRUCTURE = """只输出以下结构的一个合法 JSON object�
 5. `confidence` 是 0 到 1 的数字；`reason` 使用“语义=…；边界=…”格式，简短说明关键证据。
 6. `unmatched_objects`、`unmatched_elements`、`unmatched_groups` 只填写输入中真实存在且未匹配的 ID。
 7. 只有发现“独立视觉对象数量多于可用语块”时才输出示例中的告警；否则 `warnings` 必须是空数组。
+8. 任何 `confidence` 低于系统阈值（默认 0.72）的候选不得进入 `matches`，必须放入对应的 unmatched 数组。
 """
 
 PROMPT_METHOD_KEY = SETTING_PREFIX + "match_methodology_system_content"
@@ -266,6 +269,12 @@ def normalize_settings(raw: dict[str, Any] | None) -> dict[str, Any]:
         "min_element_area": _int(raw.get("min_element_area"), 120, 10, 10000),
         "component_padding_px": _int(raw.get("component_padding_px"), 12, 0, 80),
         "max_group_elements": max(20, _int(raw.get("max_group_elements"), 60, 1, 120)),
+        "doclayout_enabled": _bool(raw.get("doclayout_enabled"), False),
+        "doclayout_model_path": str(raw.get("doclayout_model_path") or "").strip(),
+        "doclayout_conf_threshold": _float(raw.get("doclayout_conf_threshold"), 0.35, 0, 1),
+        "doclayout_input_size": _int(raw.get("doclayout_input_size"), 1024, 256, 2048),
+        "doclayout_iou_threshold": _float(raw.get("doclayout_iou_threshold"), 0.45, 0, 1),
+        "doclayout_min_area_ratio": _float(raw.get("doclayout_min_area_ratio"), 0.002, 0, 0.5),
         "llm_confidence_threshold": _float(raw.get("llm_confidence_threshold"), 0.72, 0, 1),
         "llm_temperature": _float(raw.get("llm_temperature"), 0.1, 0, 1),
         "overwrite_existing_manual_mask": _bool(raw.get("overwrite_existing_manual_mask"), False),
@@ -275,10 +284,7 @@ def normalize_settings(raw: dict[str, Any] | None) -> dict[str, Any]:
 
 
 from ai_mask_component_detection import (
-    _merge_row_runs,
     _read_json,
-    _rle_bounds,
-    _rle_pixel_count,
     _write_json,
     detect_elements,
 )
@@ -318,12 +324,6 @@ def _is_timeout(capabilities: Any, exc: BaseException) -> bool:
 
 from ai_mask_manifest_apply import (
     _apply,
-    _confidence_level,
-    _exact_manual_mask,
-    _find_group,
-    _has_manual,
-    _migrate_legacy_default_reveal,
-    _replaceable_ai_mask,
     _review_issues,
 )
 
@@ -365,7 +365,32 @@ def _annotate_project(
         slide_id = str(slide.get("slide_id") or "")
         slide_dir = run_dir / "slides" / slide_id
         image_path = slide_dir / "visual_draft.png"
-        elements = detect_elements(image_path, slide_dir, settings)
+        # ---- DocLayout-YOLO layout detection (optional) ----
+        layout_boxes = None
+        if settings.get("doclayout_enabled"):
+            try:
+                from ai_mask_doclayout import DocLayoutDetector
+                from PIL import Image
+                detector = DocLayoutDetector(
+                    model_path=str(settings.get("doclayout_model_path") or ""),
+                    conf_threshold=float(settings.get("doclayout_conf_threshold", 0.35)),
+                    input_size=int(settings.get("doclayout_input_size", 1024)),
+                    iou_threshold=float(settings.get("doclayout_iou_threshold", 0.45)),
+                    min_area_ratio=float(settings.get("doclayout_min_area_ratio", 0.002)),
+                )
+                if detector.available():
+                    layout_boxes = detector.detect(Image.open(image_path))
+                    if layout_boxes and capabilities.logger is not None:
+                        capabilities.logger.info(
+                            "DocLayout-YOLO: %d layout boxes detected for %s", len(layout_boxes), slide_id
+                        )
+            except Exception as exc:
+                if capabilities.logger is not None:
+                    capabilities.logger.warning(
+                        "DocLayout-YOLO layout detection failed for %s: %s", slide_id, exc
+                    )
+                layout_boxes = None
+        elements = detect_elements(image_path, slide_dir, settings, layout_boxes)
         canvas = elements.get("canvas", {}) if isinstance(elements.get("canvas"), dict) else {}
         title_regions = _configured_title_regions(
             capabilities,

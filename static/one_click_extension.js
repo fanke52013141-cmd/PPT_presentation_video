@@ -4,6 +4,20 @@
   const STATE = {
     projectId: sessionStorage.getItem('ppt_one_click_project_id') || '',
     polling: null,
+    lastFollowedStage: '',
+  };
+
+  // [自动模式跟随 20260813] 后端 stage id -> 左侧菜单 data-step 映射
+  const STAGE_TO_STEP = {
+    preflight: 1,
+    storyboard: 2,
+    images: 3,
+    confirm_images: 3,
+    ai_mask: 5,
+    mask_assets: 5,
+    narration: 6,
+    tts: 6,
+    render: 8,
   };
 
   function parseJsonResponse(response) {
@@ -34,6 +48,46 @@
 
   function esc(value) {
     return String(value ?? '').replace(/[&<>'"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[ch]));
+  }
+
+  // [自动模式跟随 20260813]
+  // 当一键生成处于 running 且当前阶段相对上次发生变化时，
+  // 联动左侧步骤菜单跳转到对应步骤面板，让用户直观看到"正在生成哪一步"。
+  function followActiveStage(status) {
+    const runState = (status && status.status) || 'idle';
+    const stage = (status && status.current_stage) || '';
+    if (!stage) return;
+    // 非运行态不主动跳转，避免暂停/完成时反复打断用户浏览
+    if (runState !== 'running') {
+      STATE.lastFollowedStage = '';
+      return;
+    }
+    // 同一阶段内只跟随一次，避免 2.5s 轮询反复刷新面板打断用户
+    if (stage === STATE.lastFollowedStage) return;
+    const targetStep = STAGE_TO_STEP[stage] || 0;
+    if (!targetStep) return;
+    STATE.lastFollowedStage = stage;
+
+    // state 是 workflow_state.js 顶层 const，不在 window 上，需按标识符直接读取
+    let currentStep = 0;
+    try {
+      if (typeof state === 'object' && state && typeof state.currentStep === 'number') {
+        currentStep = state.currentStep;
+      }
+    } catch (e) { /* state 不可用时回退 0，触发正常跳转 */ }
+    // 已在该步骤面板则只刷新左侧菜单完成态，不重复跳转
+    if (targetStep === currentStep) {
+      if (typeof window.refreshCurrentProjectStatus === 'function') {
+        try { window.refreshCurrentProjectStatus(targetStep); } catch (e) {}
+      }
+      return;
+    }
+    const nav = (typeof window.navigateToStep === 'function')
+      ? window.navigateToStep
+      : (typeof navigateToStep === 'function' ? navigateToStep : null);
+    if (nav) {
+      try { nav(targetStep); } catch (e) { /* 跟随失败不阻断轮询 */ }
+    }
   }
 
   function rememberProjectId(projectId) {
@@ -161,6 +215,8 @@
         </article>
       `;
     }).join('');
+    // [自动模式跟随 20260813] 联动左侧菜单跟随当前生成阶段
+    followActiveStage(status);
   }
 
   async function refreshStatus() {

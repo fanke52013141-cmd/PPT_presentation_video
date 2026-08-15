@@ -43,6 +43,23 @@ MAX_IMAGE_UPLOAD_BYTES = int(
     )
 )
 
+# IP 形象融入提示词段的唯一标记，用于生成时去重（避免重复追加）
+IP_PROMPT_MARKER = "<IPCharacterRequirements>"
+DEFAULT_IP_PROMPT_TEMPLATE = (
+    "<IPCharacterRequirements>\n"
+    "【IP 形象融入要求】\n"
+    "请把以下 IP 形象角色自然融入本页画面，保持每个角色的外观、配色与风格高度一致：\n"
+    "{characters}\n"
+    "约束（与生图固定规则同等重要，不得违反）：\n"
+    "1. 每个已列出的角色都必须出现在画面中，不得省略或替换。\n"
+    "2. 多个角色互不重叠，也不得遮挡标题、正文文字、图表或关键标签；角色与其它视觉元素之间保留清晰间隙。\n"
+    "3. 角色必须位于画面内容区（y<930），不得进入底部字幕安全区，不得覆盖页面上方主标题区。\n"
+    "4. 若某个角色标注了放置位置，请尽量放在该位置；仅当该位置会遮挡关键文字或与其它元素冲突时才可调整。\n"
+    "5. 请确保 IP 形象与页面其它视觉元素和谐共存，整体保持专业、美观的排版。\n"
+    "</IPCharacterRequirements>"
+)
+MAX_IP_PROMPT_TEMPLATE_CHARS = 8000
+
 POSITION_LABELS: dict = {
     None: "不限制，由整体画面构图自然决定",
     "left_top": "画面左上角",
@@ -89,6 +106,7 @@ def _empty_manifest():
         "enabled": False,
         "page_scope": "all",
         "selected_slide_ids": [],
+        "prompt_template": DEFAULT_IP_PROMPT_TEMPLATE,
         "characters": [],
     }
 
@@ -113,6 +131,7 @@ def _normalize_manifest(raw):
                 "description": _safe_text(item.get("description"), 4000),
                 "position": position,
                 "image_filename": _safe_text(item.get("image_filename"), 200) or None,
+                "prompt_text": _safe_text(item.get("prompt_text"), 2000),
                 "created_at": _safe_text(item.get("created_at"), 40),
                 "updated_at": _safe_text(item.get("updated_at"), 40),
             }
@@ -128,6 +147,10 @@ def _normalize_manifest(raw):
         "enabled": bool(raw.get("enabled", False)),
         "page_scope": page_scope,
         "selected_slide_ids": [_safe_text(sid, 120) for sid in selected if sid],
+        "prompt_template": (
+            _safe_text(raw.get("prompt_template"), MAX_IP_PROMPT_TEMPLATE_CHARS)
+            or DEFAULT_IP_PROMPT_TEMPLATE
+        ),
         "characters": normalized_characters[:MAX_IP_CHARACTERS],
     }
 
@@ -183,6 +206,9 @@ def _public_manifest(manifest, project_id):
         "enabled": manifest.get("enabled", False),
         "page_scope": manifest.get("page_scope", "all"),
         "selected_slide_ids": manifest.get("selected_slide_ids", []),
+        "prompt_template": (
+            manifest.get("prompt_template") or DEFAULT_IP_PROMPT_TEMPLATE
+        ),
         "characters": characters,
         "max_characters": MAX_IP_CHARACTERS,
         "positions": [
@@ -256,6 +282,8 @@ def upsert_ip_character(project_id, payload, file, db):
         current["description"] = _safe_text(payload.get("description"), 4000)
         if "position" in payload:
             current["position"] = position
+        if "prompt_text" in payload:
+            current["prompt_text"] = _safe_text(payload.get("prompt_text"), 2000)
         current["updated_at"] = now
     else:
         current = {
@@ -263,6 +291,7 @@ def upsert_ip_character(project_id, payload, file, db):
             "name": _safe_text(payload.get("name"), 100) or "未命名角色",
             "description": _safe_text(payload.get("description"), 4000),
             "position": position,
+            "prompt_text": _safe_text(payload.get("prompt_text"), 2000),
             "image_filename": None,
             "created_at": now,
             "updated_at": now,
@@ -303,6 +332,11 @@ def update_ip_character_config(project_id, payload, db):
 
     if "enabled" in payload:
         manifest["enabled"] = bool(payload.get("enabled"))
+    if "prompt_template" in payload:
+        manifest["prompt_template"] = (
+            _safe_text(payload.get("prompt_template"), MAX_IP_PROMPT_TEMPLATE_CHARS)
+            or DEFAULT_IP_PROMPT_TEMPLATE
+        )
     if "page_scope" in payload:
         scope = payload.get("page_scope")
         manifest["page_scope"] = scope if scope in ("all", "selected") else "all"
@@ -371,7 +405,13 @@ def _slide_in_scope(manifest, slide_id):
     return slide_id in selected
 
 
-def build_ip_character_prompt_segment(project, slide_id=None):
+def render_ip_character_prompt(project, slide_id=None):
+    """按项目模板渲染 IP 形象融入提示词段，未启用/无角色时返回空串。
+
+    每个角色优先使用自定义 prompt_text；留空时自动用
+    「名称 + 描述 + 位置预设」生成。返回内容带 <IPCharacterRequirements> 标记，
+    供生图链路做去重。
+    """
     manifest = _load_manifest(project)
     if not _slide_in_scope(manifest, slide_id):
         return ""
@@ -379,20 +419,31 @@ def build_ip_character_prompt_segment(project, slide_id=None):
     active = [c for c in characters if c.get("name") or c.get("description")]
     if not active:
         return ""
-    lines = ["【IP 形象融入要求】", "请在画面中自然融入以下 IP 形象角色，保持每个角色的外观、配色与风格高度一致："]
+    entries = []
     for index, char in enumerate(active, start=1):
         name = char.get("name") or "未命名角色"
         description = char.get("description") or ""
-        position_label = POSITION_LABELS.get(char.get("position"), POSITION_LABELS[None])
-        entry = f"{index}. {name}"
-        if description:
-            entry += f"：{description}"
-        entry += f"。建议位置：{position_label}。"
-        lines.append(entry)
-    lines.append(
-        "请确保 IP 形象与页面其它视觉元素和谐共存，不遮挡关键文字内容，整体保持专业、美观的排版。"
-    )
-    return "\n".join(lines)
+        position_label = POSITION_LABELS.get(
+            char.get("position"), POSITION_LABELS[None]
+        )
+        prompt_text = _safe_text(char.get("prompt_text"), 2000)
+        if prompt_text:
+            entry = f"{index}. {name}：{prompt_text}。建议位置：{position_label}。"
+        else:
+            entry = f"{index}. {name}"
+            if description:
+                entry += f"：{description}"
+            entry += f"。建议位置：{position_label}。"
+        entries.append(entry)
+    template = _safe_text(
+        manifest.get("prompt_template"), MAX_IP_PROMPT_TEMPLATE_CHARS
+    ) or DEFAULT_IP_PROMPT_TEMPLATE
+    return template.replace("{characters}", "\n".join(entries))
+
+
+def build_ip_character_prompt_segment(project, slide_id=None):
+    """向后兼容别名：渲染带标记的 IP 形象融入提示词段。"""
+    return render_ip_character_prompt(project, slide_id)
 
 
 def ip_character_reference_paths(project, slide_id=None):

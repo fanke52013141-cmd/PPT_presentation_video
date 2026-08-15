@@ -448,7 +448,7 @@ def build_reveal_pptx(
 
     size_bytes = target.stat().st_size
     output_sha = sha256_file(target)
-    source_fp = presentation_input_fingerprint(root, slide_ids)
+    source_fp = presentation_input_fingerprint(root)
     metadata = {
         "schema_version": 1,
         "export_version": PPTX_REVEAL_EXPORT_VERSION,

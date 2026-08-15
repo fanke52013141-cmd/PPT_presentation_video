@@ -39,8 +39,10 @@ from project_style_reference_service import (
 )
 from storyboard_service import read_prompt_template
 from ip_character_service import (
+    IP_PROMPT_MARKER,
     build_ip_character_prompt_segment,
     ip_character_reference_paths,
+    render_ip_character_prompt,
 )
 from visual_contract_service import normalize_visual_type
 from visual_provenance import (
@@ -278,11 +280,12 @@ def compose_step3_single_slide_prompt(
     style_prompt: str,
     slide: Dict[str, Any],
     system_content: Optional[str] = None,
+    ip_prompt_segment: str = "",
 ) -> str:
-    prompt = (
-        f"{build_step3_global_image_prompt(style_prompt, system_content)}"
-        f"\n\n=== 当前 Slide 输入 ===\n{build_step3_slide_specific_prompt(slide)}"
-    )
+    prompt = f"{build_step3_global_image_prompt(style_prompt, system_content)}"
+    if ip_prompt_segment:
+        prompt += f"\n\n{ip_prompt_segment}"
+    prompt += f"\n\n=== 当前 Slide 输入 ===\n{build_step3_slide_specific_prompt(slide)}"
     return enforce_white_generation_background(prompt)
 
 
@@ -290,6 +293,7 @@ def compose_step3_batch_copy_prompt(
     style_prompt: str,
     slides: List[Dict[str, Any]],
     system_content: Optional[str] = None,
+    ip_prompt_segment: str = "",
 ) -> str:
     slide_sections = []
     for slide in slides:
@@ -299,12 +303,16 @@ def compose_step3_batch_copy_prompt(
         slide_sections.append(
             f"--- Slide {slide_id} ---\n{build_step3_slide_specific_prompt(slide)}"
         )
+    global_block = f"{build_step3_global_image_prompt(style_prompt, system_content)}"
+    if ip_prompt_segment:
+        global_block += f"\n\n{ip_prompt_segment}"
     prompt = (
         "请按以下统一要求，依次为每个 Slide 分别生成 1 张独立图片。\n"
-        "先完整理解全局说明，再逐页读取具体内容；不要把多个 Slide 合并到一张图片中。\n\n"
-        "=== 全局统一说明（仅出现一次） ===\n"
-        f"{build_step3_global_image_prompt(style_prompt, system_content)}\n\n"
-        "=== 各 Slide 具体内容 ===\n\n" + "\n\n".join(slide_sections)
+        "先完整阅读全局统一说明，再逐页读取各 Slide 的具体差异输入；不要把多个 Slide 合并到一张图片中。\n\n"
+        "=== 全局统一说明（适用于所有 Slide，仅出现一次，各 Slide 不再重复） ===\n"
+        f"{global_block}\n\n"
+        "=== 各 Slide 具体内容（以下每个 Slide 仅列出本页差异输入，通用规则以上方全局说明为准） ===\n\n"
+        + "\n\n".join(slide_sections)
     ).strip()
     return enforce_white_generation_background(prompt)
 
@@ -351,10 +359,12 @@ def step3_prompt_settings_response(project: Project) -> Dict[str, Any]:
             "output_description": "一张完整的 1920×1080、16:9 PPT 位图；无文字说明、JSON、Mask 或备选拼图。",
             "style_content": style_prompt,
             "protected_rules": step3_non_overridable_rules_prompt(),
+            "ip_prompt_segment": render_ip_character_prompt(project, None),
             "full_prompt_example": compose_step3_single_slide_prompt(
                 style_prompt,
                 first_slide or step3_image_example_slide(),
                 system_content,
+                render_ip_character_prompt(project, None),
             ),
         },
     }
@@ -410,7 +420,9 @@ def get_slide_prompts(project_id: str, db: Session):
     system_content = read_step3_image_system_content(project)
     for slide in slides:
         slide_id = slide["slide_id"]
-        generated_prompt = project_generate_prompt_for_slide(project, slide, topic_name)
+        generated_prompt = project_generate_prompt_for_slide(
+            project, slide, topic_name, ip_prompt_segment=render_ip_character_prompt(project, slide_id)
+        )
         slide_prompts.append(
             {
                 "slide_id": slide_id,
@@ -427,7 +439,7 @@ def get_slide_prompts(project_id: str, db: Session):
             build_step3_global_image_prompt(style_prompt, system_content)
         ),
         "batch_prompt": compose_step3_batch_copy_prompt(
-            style_prompt, slides, system_content
+            style_prompt, slides, system_content, render_ip_character_prompt(project, None)
         ),
         "prompt_settings": {
             "system_content": system_content,
@@ -465,8 +477,8 @@ def generate_slide_image(
         client = get_openai_client(api_key=api_key, base_url=base_url)
         image_size = get_setting("image_size", "1024x1024")
         effective_prompt = enforce_white_generation_background(prompt)
-        ip_prompt_segment = build_ip_character_prompt_segment(project, slide_id)
-        if ip_prompt_segment:
+        ip_prompt_segment = render_ip_character_prompt(project, slide_id)
+        if ip_prompt_segment and IP_PROMPT_MARKER not in effective_prompt:
             effective_prompt = effective_prompt + "\n\n" + ip_prompt_segment
         logger.info(
             f"Generating image for {slide_id} using {model}, size={image_size}, prompt: {effective_prompt[:80]}"

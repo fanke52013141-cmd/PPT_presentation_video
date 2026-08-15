@@ -49,18 +49,18 @@ DEFAULT_HEIGHT = 1080
 DEFAULT_REMOTION_PUBLIC_DIR = Path("scripts/remotion/public")
 DEFAULT_AUDIO_TAIL_PADDING_SEC = 0.4
 DEFAULT_SUBTITLE_STYLE = {
-    "font_key": "noto_sans_sc",
-    "font_family": "Noto Sans SC",
-    "font_size": 38,
-    "font_weight": 500,
-    "bottom": 18,
-    "horizontal_margin": 180,
-    "color": "#111111",
+    "font_key": "lxgw_marker_gothic",
+    "font_family": "LXGW Marker Gothic",
+    "font_size": 40,
+    "font_weight": 400,
+    "bottom": 0,
+    "horizontal_margin": 110,
+    "color": "#000000",
     # 方案 B：TikTok 式整页分页 + 逐字高亮
-    "highlight_color": "#1E3A8A",       # 当前朗读 token 的高亮色
+    "highlight_color": "#000000",       # 当前朗读 token 的高亮色
     "paging_window_ms": 1300,           # 合并相邻 token 成一页的时间窗（毫秒）
     "token_highlight": True,            # 是否启用逐字高亮（关闭则整页同色显示）
-    "max_lines": 2,                     # 字幕最大行数，超出按 keep-all 折行后裁切
+    "max_lines": 1,                     # 字幕最大行数，超出按 keep-all 折行后裁切
     "line_height": 1.4,                 # 行高
 }
 

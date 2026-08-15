@@ -156,17 +156,17 @@ subtitle:
     y: 930
     height: 150
   overlay:
-    font_key: noto_sans_sc
-    font_family: Noto Sans SC
-    font_size: 38
-    font_weight: 500
-    color: "#111111"
+    font_key: lxgw_marker_gothic
+    font_family: LXGW Marker Gothic
+    font_size: 40
+    font_weight: 400
+    color: "#000000"
     background: transparent
     border_radius: 0
-    max_lines: 2
+    max_lines: 1
     max_cjk_chars: 26
-    horizontal_margin: 180
-    bottom: 18
+    horizontal_margin: 110
+    bottom: 0
 
 animation:
   default_duration_sec: 0.6

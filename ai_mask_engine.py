@@ -15,6 +15,9 @@ from pathlib import Path
 from typing import Any, Callable
 
 
+from ai_mask_contracts import AI_MASK_VISION_TIMEOUT_SEC  # noqa: F401 (re-exported for ai_mask_semantic_matcher via ai_mask_engine)
+
+
 SETTING_PREFIX = "ai_mask_"
 
 DEFAULT_SETTINGS: dict[str, Any] = {

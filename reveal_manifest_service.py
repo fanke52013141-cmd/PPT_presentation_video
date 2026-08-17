@@ -46,6 +46,11 @@ def _is_painted_group(group: dict[str, Any]) -> bool:
         mask_strokes = manual_mask.get("strokes") or manual_mask.get("paint_strokes")
         if isinstance(mask_strokes, list) and mask_strokes:
             return True
+        # AI Mask writes exact pixel masks as RLE under manual_mask.rle
+        # (source: ai_auto_mask_v3_exact_rle) without brush strokes.
+        rle = manual_mask.get("rle")
+        if isinstance(rle, dict) and isinstance(rle.get("runs"), list) and rle.get("runs"):
+            return True
     return any(key in group for key in ("mask", "mask_path", "mask_url", "mask_data"))
 
 

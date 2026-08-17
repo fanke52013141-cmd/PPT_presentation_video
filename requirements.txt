@@ -11,5 +11,5 @@ httpx>=0.27.0
 openai>=1.14.0
 numpy>=2.0.0
 
-# DocLayout-YOLO (可选：ONNX CPU 版面检测)
+# DocLayout-YOLO (optional: ONNX CPU layout detection)
 onnxruntime>=1.17.0

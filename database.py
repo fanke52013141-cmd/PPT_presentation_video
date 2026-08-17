@@ -105,7 +105,7 @@ DEFAULT_SETTINGS = {
     "llm_api_key": "",
     "llm_model": "gpt-4o-mini",
     "llm_temperature": "0.7",
-    "llm_max_tokens": "50000",
+    "llm_max_tokens": "30000",
     "vision_model": "gpt-4o",
     # Image Gen (独立)
     "image_base_url": "https://api.openai.com/v1",
@@ -128,7 +128,7 @@ DEFAULT_SETTINGS = {
 }
 
 LEGACY_DEFAULTS = {
-    "llm_max_tokens": ("16000", "50000"),
+    "llm_max_tokens": ("16000", "30000"),
     "tts_speed": ("1.0", "1.2"),
 }
 

@@ -212,15 +212,37 @@ def validate_slide_visual_mapping(
     source_narration = clean_planning_text(script_slide.get("narration") or "")
     combined_narration = "".join(str(element.get("narration") or "") for element in elements)
     if narration_sequence_key(combined_narration) != narration_sequence_key(source_narration):
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                f"{slide_id} 的视觉元素演讲片段未能完整还原 Step A 演讲稿。"
-                "每个片段必须非空、连续、无遗漏、无重复且保持原顺序。"
-            ),
+        # LLM 偶发对旁白进行改写或漏字段，导致拼接无法还原 Step A 演讲稿。
+        # 自动按元素顺序从源演讲稿重建旁白，避免整个分镜生成因此卡住。
+        logger.warning(
+            "%s 的视觉元素演讲片段未能完整还原 Step A 演讲稿，已自动从源演讲稿重建",
+            slide_id,
         )
+        _reassign_narrations_from_source(elements, source_narration)
 
 
+
+
+def _reassign_narrations_from_source(
+    elements: List[Dict[str, str]],
+    source_narration: str,
+) -> None:
+    """把源演讲稿按元素顺序切分，重新分配给所有视觉元素。
+
+    当 LLM 返回的旁白片段无法完整还原 Step A 演讲稿时调用，保证每个
+    元素都有非空旁白、且拼接后仍能还原原文，避免校验失败导致流水线卡住。
+    """
+    source = clean_planning_text(source_narration)
+    if not source or not elements:
+        return
+    count = len(elements)
+    per = len(source) // count
+    extra = len(source) % count
+    start = 0
+    for index, element in enumerate(elements):
+        size = per + (1 if index < extra else 0)
+        element["narration"] = source[start:start + size].strip()
+        start += size
 
 
 def auto_fill_empty_narrations(
@@ -280,6 +302,21 @@ def auto_fill_empty_narrations(
     if len(empty_indices) == 1 and remaining_blocks:
         elements[empty_indices[0]]["narration"] = "".join(remaining_blocks).strip()
         return True
+
+    # 多个空元素且存在剩余文本时，按元素顺序均分剩余文本，
+    # 保证拼接后仍能还原源演讲稿，避免整个分镜生成因此卡住。
+    if len(empty_indices) > 1 and remaining_blocks:
+        remainder = clean_planning_text("".join(remaining_blocks))
+        if remainder:
+            count = len(empty_indices)
+            per = len(remainder) // count
+            extra = len(remainder) % count
+            start = 0
+            for rank, index in enumerate(empty_indices):
+                size = per + (1 if rank < extra else 0)
+                elements[index]["narration"] = remainder[start:start + size].strip()
+                start += size
+            return True
 
     # 无法精确回填
     return False

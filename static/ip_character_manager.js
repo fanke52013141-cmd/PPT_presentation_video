@@ -133,16 +133,7 @@
       '<select class="ip-character-input ip-char-position">' + options + "</select>" +
       "</label>" +
       "</div>" +
-      '<label class="storyboard-config-field">' +
-      "<span>外观描述（生图时使用，例如：穿着蓝色校服的卡通女孩，大眼睛，微笑，扁平化插画风格）</span>" +
-      '<textarea class="ip-character-input ip-char-desc" rows="3" placeholder="例如：穿着蓝色校服的卡通女孩，大眼睛，微笑，扁平化插画风格...">' + escHtml(char.description || "") + "</textarea>" +
-      "</label>" +
-      '<details class="ip-character-card-advanced">' +
-      "<summary>高级：用自定义生图提示词覆盖上面的「外观描述」（二选一，留空则使用外观描述）</summary>" +
-      '<label class="storyboard-config-field">' +
-      '<textarea class="ip-character-input ip-char-prompt" rows="2" placeholder="可选。填写后会替换外观描述直接作为生图提示词。例如：blue hoodie cartoon girl, round face, big eyes, smiling, flat illustration style">' + escHtml(char.prompt_text || "") + "</textarea>" +
-      "</label>" +
-      "</details>" +
+      '<p class="ip-character-reference-hint">该角色的外观、配色、风格将通过下方参考图传给图像模型。</p>' +
       '<div class="ip-character-upload-row">' +
       '<div class="ip-character-preview">' + imgPreview + "</div>" +
       '<label class="btn secondary ip-character-upload-label">' +
@@ -201,8 +192,6 @@
     }
     const id = card.getAttribute("data-id") || "";
     const name = (card.querySelector(".ip-char-name") || {}).value;
-    const description = (card.querySelector(".ip-char-desc") || {}).value;
-    const promptText = (card.querySelector(".ip-char-prompt") || {}).value;
     const positionSelect = card.querySelector(".ip-char-position");
     const position = positionSelect ? positionSelect.value || null : null;
     const fileInput = card.querySelector(".ip-char-file");
@@ -213,7 +202,7 @@
       return;
     }
 
-    const payload = { name: name.trim(), description: (description || "").trim(), prompt_text: (promptText || "").trim(), position: position };
+    const payload = { name: name.trim(), position: position };
     if (id && !id.startsWith("new_")) payload.id = id;
 
     const formData = new FormData();

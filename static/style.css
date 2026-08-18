@@ -7611,6 +7611,15 @@ details[open] .ip-character-advanced-summary::before {
 .ip-character-card-advanced .ip-character-input {
   margin-top: 0.2rem;
 }
+.ip-character-reference-hint {
+  margin: 0.5rem 0 0 0;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.82rem;
+  color: var(--text-secondary, #666);
+  background: var(--bg-card-light, #fbfbfd);
+  border: 1px dashed var(--border-color, #d8d8d8);
+  border-radius: 6px;
+}
 
 .ip-character-config-row {
   display: flex;

@@ -29,9 +29,8 @@ assert '"prompt_text": _safe_text(item.get("prompt_text"), 2000)' in ip_service 
 assert 'if "prompt_text" in payload:' in ip_service  # upsert 已有角色
 assert '"prompt_text": _safe_text(payload.get("prompt_text"), 2000)' in ip_service  # upsert 新建
 assert 'if "prompt_template" in payload:' in ip_service  # update_config
-# render 函数逻辑：自定义提示词优先，留空自动生成
-assert 'prompt_text = _safe_text(char.get("prompt_text"), 2000)' in ip_service
-assert "entry = f\"{index}. {name}：{prompt_text}。建议位置：{position_label}。\"" in ip_service
+# render 函数：IP 形象以参考图为主，文字描述固定为「参考我上传的人物 IP 图」
+assert "参考我上传的人物 IP 图" in ip_service
 # 兼容别名仍存在
 assert 'def build_ip_character_prompt_segment(project, slide_id=None):' in ip_service
 assert "return render_ip_character_prompt(project, slide_id)" in ip_service
@@ -58,11 +57,12 @@ assert "if ip_prompt_segment:" in style_ref  # legacy 分支追加
 assert "project_generate_prompt_for_slide" in style_ref
 
 # ---- 4) 前端 ----
-# 角色卡片自定义提示词字段（折叠到「高级选项」内，明确与外观描述二选一）
-assert "ip-char-prompt" in manager_js
-assert "高级：用自定义生图提示词覆盖上面的「外观描述」（二选一，留空则使用外观描述）" in manager_js
+# 角色卡片已移除「外观描述」和「自定义生图提示词」textarea，改为参考图驱动
+assert "ip-char-prompt" not in manager_js
+assert "ip-char-desc" not in manager_js
+assert "ip-character-reference-hint" in manager_js
 # 保存角色时提交 prompt_text
-assert "prompt_text: (promptText || \"\").trim()" in manager_js
+assert "prompt_text: (promptText || \"\").trim()" not in manager_js
 # 模板编辑与恢复默认
 assert "ip-character-prompt-template" in manager_js
 assert "prompt_template: prompt_template" in manager_js

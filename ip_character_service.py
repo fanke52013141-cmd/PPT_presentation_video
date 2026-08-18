@@ -422,18 +422,12 @@ def render_ip_character_prompt(project, slide_id=None):
     entries = []
     for index, char in enumerate(active, start=1):
         name = char.get("name") or "未命名角色"
-        description = char.get("description") or ""
         position_label = POSITION_LABELS.get(
             char.get("position"), POSITION_LABELS[None]
         )
-        prompt_text = _safe_text(char.get("prompt_text"), 2000)
-        if prompt_text:
-            entry = f"{index}. {name}：{prompt_text}。建议位置：{position_label}。"
-        else:
-            entry = f"{index}. {name}"
-            if description:
-                entry += f"：{description}"
-            entry += f"。建议位置：{position_label}。"
+        # IP 形象以参考图为主要载体，文字描述固定为指引性文案。
+        # 不再读取 description / prompt_text 字段（字段保留以兼容旧数据）。
+        entry = f"{index}. {name}：参考我上传的人物 IP 图。建议位置：{position_label}。"
         entries.append(entry)
     template = _safe_text(
         manifest.get("prompt_template"), MAX_IP_PROMPT_TEMPLATE_CHARS

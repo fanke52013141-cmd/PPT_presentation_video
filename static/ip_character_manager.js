@@ -134,13 +134,15 @@
       "</label>" +
       "</div>" +
       '<label class="storyboard-config-field">' +
-      "<span>外观描述（服饰 / 配色 / 表情 / 风格）</span>" +
+      "<span>外观描述（生图时使用，例如：穿着蓝色校服的卡通女孩，大眼睛，微笑，扁平化插画风格）</span>" +
       '<textarea class="ip-character-input ip-char-desc" rows="3" placeholder="例如：穿着蓝色校服的卡通女孩，大眼睛，微笑，扁平化插画风格...">' + escHtml(char.description || "") + "</textarea>" +
       "</label>" +
+      '<details class="ip-character-card-advanced">' +
+      "<summary>高级：用自定义生图提示词覆盖上面的「外观描述」（二选一，留空则使用外观描述）</summary>" +
       '<label class="storyboard-config-field">' +
-      "<span>自定义生图提示词（可选，留空自动生成）</span>" +
-      '<textarea class="ip-character-input ip-char-prompt" rows="2" placeholder="例如：蓝色连帽卫衣卡通女孩，圆脸大眼睛，始终面带微笑，扁平化插画风格">' + escHtml(char.prompt_text || "") + "</textarea>" +
+      '<textarea class="ip-character-input ip-char-prompt" rows="2" placeholder="可选。填写后会替换外观描述直接作为生图提示词。例如：blue hoodie cartoon girl, round face, big eyes, smiling, flat illustration style">' + escHtml(char.prompt_text || "") + "</textarea>" +
       "</label>" +
+      "</details>" +
       '<div class="ip-character-upload-row">' +
       '<div class="ip-character-preview">' + imgPreview + "</div>" +
       '<label class="btn secondary ip-character-upload-label">' +

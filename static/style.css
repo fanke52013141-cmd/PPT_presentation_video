@@ -7555,7 +7555,61 @@ body.course-drag-active .course-tree-container * {
 /* ==== IP CHARACTER MODAL (appended) ==== */
 .ip-character-modal {
   max-width: 720px;
-  width: 90vw;
+  width: min(720px, 92vw);
+  max-height: min(88vh, 880px);
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+.ip-character-modal .config-editor-scroll {
+  max-height: none;
+}
+.ip-character-advanced-summary {
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--text-secondary, #555);
+  padding: 0.5rem 0.25rem;
+  list-style: none;
+  user-select: none;
+}
+.ip-character-advanced-summary::-webkit-details-marker { display: none; }
+.ip-character-advanced-summary::before {
+  content: "\25B6";
+  display: inline-block;
+  margin-right: 0.4rem;
+  transition: transform 0.18s;
+  font-size: 0.7rem;
+}
+details[open] .ip-character-advanced-summary::before {
+  transform: rotate(90deg);
+}
+.ip-character-card-advanced {
+  margin-top: 0.4rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px dashed var(--border-color, #d8d8d8);
+  border-radius: 6px;
+  background: var(--bg-card-light, #fbfbfd);
+}
+.ip-character-card-advanced summary {
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--text-secondary, #666);
+  list-style: none;
+  user-select: none;
+  margin-bottom: 0.3rem;
+}
+.ip-character-card-advanced summary::-webkit-details-marker { display: none; }
+.ip-character-card-advanced summary::before {
+  content: "\25B6";
+  display: inline-block;
+  margin-right: 0.35rem;
+  transition: transform 0.18s;
+  font-size: 0.65rem;
+}
+.ip-character-card-advanced[open] summary::before {
+  transform: rotate(90deg);
+}
+.ip-character-card-advanced .ip-character-input {
+  margin-top: 0.2rem;
 }
 
 .ip-character-config-row {

@@ -58,9 +58,9 @@ assert "if ip_prompt_segment:" in style_ref  # legacy 分支追加
 assert "project_generate_prompt_for_slide" in style_ref
 
 # ---- 4) 前端 ----
-# 角色卡片增加自定义提示词输入框
+# 角色卡片自定义提示词字段（折叠到「高级选项」内，明确与外观描述二选一）
 assert "ip-char-prompt" in manager_js
-assert "自定义生图提示词（可选，留空自动生成）" in manager_js
+assert "高级：用自定义生图提示词覆盖上面的「外观描述」（二选一，留空则使用外观描述）" in manager_js
 # 保存角色时提交 prompt_text
 assert "prompt_text: (promptText || \"\").trim()" in manager_js
 # 模板编辑与恢复默认

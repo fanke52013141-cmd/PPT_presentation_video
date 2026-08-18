@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260813.1">
+  <link rel="stylesheet" href="style.css?v=20260818.1">
 </head>
 <body>
 
@@ -823,16 +823,19 @@
         <div id="ip-character-list" class="ip-character-list"></div>
         <button id="ip-character-btn-add" class="secondary" type="button" style="margin-top:0.8rem;">+ 添加角色</button>
 
-        <div class="ip-character-template-block">
+        <details class="ip-character-template-block">
+          <summary class="ip-character-advanced-summary">
+            高级选项：自定义 IP 融入提示词模板（普通用户无需修改，留空将使用默认模板）
+          </summary>
           <div class="ip-character-template-header">
             <span class="storyboard-config-field" style="margin-bottom:0;">
-              <span>IP 融入提示词模板（{characters} 会被角色列表替换）</span>
+              <span>IP 融入提示词模板（{characters} 占位符会被角色列表替换）</span>
             </span>
             <button id="btn-ip-character-reset-template" class="secondary" type="button" style="margin-left:auto;">恢复默认模板</button>
           </div>
           <textarea id="ip-character-prompt-template" class="ip-character-input" rows="6" spellcheck="false" placeholder="请保持 {characters} 占位符；不要删除 <IPCharacterRequirements> 标记。"></textarea>
           <p class="config-editor-note">保存后，AI 编辑器、生图 Prompt 预览与批量复制都会自动带上这段 IP 形象融入要求。</p>
-        </div>
+        </details>
       </div>
       <div class="config-editor-actions">
         <button id="btn-ip-character-cancel" class="secondary" type="button">关闭</button>
@@ -1099,7 +1102,7 @@
   <script src="storyboard_prompts.js?v=20260801.1"></script>
   <script src="images.js?v=20260807.3"></script>
   <script src="image_prompts.js?v=20260801.1"></script>
-  <script src="ip_character_manager.js?v=20260813.1"></script>
+  <script src="ip_character_manager.js?v=20260818.1"></script>
   <script src="mask_reveal.js?v=20260801.1"></script>
   <script src="mask_workspace.js?v=20260809.4"></script>
   <script src="mask_editor.js?v=20260809.4"></script>

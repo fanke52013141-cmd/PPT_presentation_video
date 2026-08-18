@@ -39,7 +39,9 @@
   function openModal() {
     const modal = document.getElementById("modal-ip-character");
     if (!modal) return;
-    modal.style.display = "block";
+    // 必须用 flex，与 .modal-overlay 的 display:flex 保持一致，
+    // 否则 align-items/justify-content 居中会失效。
+    modal.style.display = "flex";
     loadConfig();
   }
 

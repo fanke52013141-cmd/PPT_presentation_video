@@ -346,7 +346,13 @@ def normalize_slide_visual_plan(
             raise HTTPException(status_code=500, detail=f"{slide_id} 缺少 visual_elements")
         script_slide = script_by_id.get(slide_id)
         if script_slide:
-            auto_fill_empty_narrations(elements, script_slide.get("narration") or "")
+            source_narration = clean_planning_text(script_slide.get("narration") or "")
+            if not auto_fill_empty_narrations(elements, source_narration) and source_narration:
+                # 空旁白无法从剩余文本精确回填（如 title 为空旁白，而其余元素已
+                # 完整覆盖源演讲稿导致剩余文本为空）时，按元素顺序从源演讲稿等分
+                # 重建，保证所有元素旁白非空且拼接仍能还原原文，避免严格校验直接
+                # 500 导致整个分镜生成卡死。
+                _reassign_narrations_from_source(elements, source_narration)
         validate_slide_visual_mapping(slide_id, elements, script_slide)
         normalized_slides.append({"slide_id": slide_id, "visual_elements": elements})
     if not normalized_slides:

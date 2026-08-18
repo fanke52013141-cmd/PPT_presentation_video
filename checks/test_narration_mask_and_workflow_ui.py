@@ -185,10 +185,51 @@ def test_step2_visual_plan_requires_one_to_one_complete_narration_mapping():
     )
     assert len(valid["slides"][0]["visual_elements"]) == 2
 
+    # 空旁白不再直接 500：当其余元素已覆盖源演讲稿且仍有剩余文本时，
+    # 会被 auto_fill_empty_narrations 精确回填，且拼接仍能还原源演讲稿。
     invalid = json.loads(json.dumps(valid, ensure_ascii=False))
     invalid["slides"][0]["visual_elements"][0]["narration"] = ""
-    with pytest.raises(HTTPException, match="没有对应演讲片段"):
-        normalize_slide_visual_plan(invalid, script_plan)
+    repaired = normalize_slide_visual_plan(invalid, script_plan)
+    repaired_elements = repaired["slides"][0]["visual_elements"]
+    assert all(str(e.get("narration") or "").strip() for e in repaired_elements)
+    source = "先介绍本页主题。再讲正文内容。"
+    combined = "".join(str(e["narration"]) for e in repaired_elements)
+    assert "".join(combined.split()) == "".join(source.split())
+
+
+def test_step2_visual_plan_reassigns_empty_title_when_body_covers_all_source():
+    # 回归：slide_007 场景 —— title 旁白为空，且 body 元素已完整覆盖源演讲稿
+    # （无剩余文本可回填），此时应等分重建，保证所有元素非空且拼接还原原文，
+    # 而不是抛 "没有对应演讲片段" 500 卡死整个分镜生成。
+    script_plan = {
+        "title": "什么是公务员遴选考试",
+        "slides": [
+            {
+                "slide_id": "slide_007",
+                "slide_title": "笔试与面试的考察重点",
+                "narration": "笔试常见题型有案例分析、对策实务、公文写作、策论文，重点考察政策理解、办文办会办事、解决基层实际问题的能力。面试以结构化为主，部分岗位采用结构化小组形式，侧重考察岗位实务和机关工作情景应对能力。",
+            }
+        ],
+    }
+    raw = {
+        "slides": [
+            {
+                "slide_id": "slide_007",
+                "visual_elements": [
+                    {"element_id": "el_001", "role": "title", "visual_type": "text", "visual_description": "笔试与面试的考察重点", "narration": ""},
+                    {"element_id": "el_002", "role": "body", "visual_type": "text", "visual_description": "笔试题型", "narration": "笔试常见题型有案例分析、对策实务、公文写作、策论文，重点考察政策理解、办文办会办事、解决基层实际问题的能力。"},
+                    {"element_id": "el_003", "role": "body", "visual_type": "text", "visual_description": "面试形式", "narration": "面试以结构化为主，部分岗位采用结构化小组形式，侧重考察岗位实务和机关工作情景应对能力。"},
+                ],
+            }
+        ]
+    }
+    result = normalize_slide_visual_plan(raw, script_plan)
+    elements = result["slides"][0]["visual_elements"]
+    assert len(elements) == 3
+    assert all(str(e.get("narration") or "").strip() for e in elements)
+    source = "笔试常见题型有案例分析、对策实务、公文写作、策论文，重点考察政策理解、办文办会办事、解决基层实际问题的能力。面试以结构化为主，部分岗位采用结构化小组形式，侧重考察岗位实务和机关工作情景应对能力。"
+    combined = "".join(str(e["narration"]) for e in elements)
+    assert "".join(combined.split()) == "".join(source.split())
 
 
 def test_step2_visual_plan_rejects_separate_subtitle_element():

@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from ai_provider_service import normalize_image_size
 from project_style_context import ProjectStyleDependencies
 
 REFERENCE_DIRNAME = "style_references"
@@ -252,7 +253,7 @@ def _generate_reference_images(
     api_key = _safe_text(get_setting("image_api_key"), 4000)
     base_url = _safe_text(get_setting("image_base_url"), 1000) or None
     model = _safe_text(get_setting("image_model", "gpt-image-1"), 200) or "gpt-image-1"
-    image_size = _safe_text(get_setting("image_size", "1024x1024"), 100) or "1024x1024"
+    image_size = normalize_image_size(_safe_text(get_setting("image_size", "1024x1024"), 100) or "1024x1024")
     if not api_key:
         raise dependencies.http_exception(status_code=400, detail="未配置生图 API 密钥，请先在系统设置中配置")
 

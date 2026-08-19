@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260818.2">
+  <link rel="stylesheet" href="style.css?v=20260819.2">
 </head>
 <body>
 
@@ -425,6 +425,71 @@
             </div>
           </div>
 
+                    <!-- ==================== 数字人讲解 ==================== -->
+          <div id="digital-human-panel" class="dh-panel card soft-outline" style="margin-top: 1.5rem;">
+            <div class="dh-panel-header">
+              <div class="dh-panel-title">
+                <h3 style="margin: 0;">数字人讲解</h3>
+                <span id="dh-service-status" class="dh-service-status"></span>
+              </div>
+              <label class="dh-enable-toggle">
+                <input type="checkbox" id="dh-enabled">
+                <span class="dh-switch-slider"></span>
+                <span>启用数字人讲解</span>
+              </label>
+            </div>
+            <div id="dh-panel-body" class="dh-panel-body" style="display: none;">
+              <div class="dh-grid">
+                <div class="dh-field">
+                  <div class="dh-field-label">上传已生成的讲解视频</div>
+                  <label class="btn secondary dh-upload-btn" style="width:100%;">
+                    上传视频
+                    <input type="file" id="dh-upload-video-file" accept="video/*" style="display:none;">
+                  </label>
+                  <span id="dh-upload-status" class="dh-upload-status dh-failed">未上传</span>
+                  <div class="dh-drag-hint" style="margin-top:0.6rem;">先用 HeyGem / EchoMimic / Wan2.2 等离线生成讲师讲解视频，再上传到此处，系统会把它放进圆形讲解窗口。</div>
+                  <div class="dh-field-label" style="margin-top:1rem;">LatentSync 生成（模型部署后可用）</div>
+                  <select id="dh-sync-mode" class="dh-input">
+                    <option value="accurate">精准（效果更好）</option>
+                    <option value="fast">快速（更快）</option>
+                  </select>
+                  <button id="dh-btn-generate-all" class="success" style="width:100%; margin-top:0.6rem;">生成全部页数字人</button>
+                  <select id="dh-avatar-select" class="dh-input" style="margin-top:0.4rem;"></select>
+                  <label class="btn secondary dh-upload-btn" style="margin-top:0.4rem;">上传参考视频<input type="file" id="dh-avatar-file" accept="video/*" style="display:none;"></label>
+                </div>
+                <div class="dh-field">
+                  <div class="dh-field-label">圆形讲解窗口（三向自定义）</div>
+                  <div id="dh-circle-canvas" class="dh-circle-canvas">
+                    <div id="dh-circle-layer" class="dh-circle-layer">
+                      <video id="dh-preview-video" muted loop playsinline></video>
+                      <div id="dh-circle-resize" class="dh-circle-resize" title="拖动右下角调整框大小"></div>
+                    </div>
+                  </div>
+                  <div class="dh-drag-hint" style="margin-top:0.4rem;">圆内拖动=平移视频 · 圆外拖动=移动框 · 右下角手柄=调整框大小</div>
+                  <div class="dh-pos-presets" style="margin-top:0.5rem;">
+                    <button type="button" data-dh-pos="right_bottom">右下角</button>
+                    <button type="button" data-dh-pos="left_bottom">左下角</button>
+                    <button type="button" data-dh-pos="right_top">右上角</button>
+                    <button type="button" data-dh-pos="left_top">左上角</button>
+                    <button type="button" id="dh-circle-reset">重置</button>
+                  </div>
+                </div>
+                <div class="dh-field">
+                  <div class="dh-field-label">参数</div>
+                  <div class="dh-circle-meta">
+                    框位置(<span id="dh-cx">0.80</span>,<span id="dh-cy">0.20</span>) · 框大小 <span id="dh-r">0.25</span><br>
+                    视频相对(<span id="dh-ox">0.50</span>,<span id="dh-oy">0.50</span>)
+                  </div>
+                  <div class="dh-slider-row">
+                    <span class="dh-slider-label">视频缩放</span>
+                    <input type="range" id="dh-video-zoom" min="0.5" max="4" step="0.05" value="1">
+                  </div>
+                  <button id="dh-btn-save" class="secondary" style="width:100%; margin-top:0.8rem;">保存设置</button>
+                  <div id="dh-slide-status" class="dh-slide-status"></div>
+                </div>
+              </div>
+            </div>
+
           <div id="step8-loading" class="step-inline-loading" style="display: none;">
             <div class="loading-spinner"></div>
             <span id="step8-loading-text">视频渲染中...</span>
@@ -802,26 +867,38 @@
         </div>
         <p class="config-editor-note">为当前项目配置 IP 形象角色（最多 2 个）。生图时以 <strong>上传的参考图</strong> 作为主要载体，文字描述采用固定指引「参考我上传的人物 IP 图」。</p>
 
-        <div class="ip-character-config-row">
-          <label class="storyboard-config-field ip-character-toggle">
-            <input type="checkbox" id="ip-character-enabled">
-            <span>启用 IP 形象融入</span>
+        <div class="ip-character-settings-card">
+          <label class="ip-character-toggle-bar">
+            <span class="ip-character-toggle-text">
+              <strong>启用 IP 形象融入</strong>
+              <small>开启后，下方配置的 IP 角色将自动融入生图画面</small>
+            </span>
+            <span class="ip-character-switch">
+              <input type="checkbox" id="ip-character-enabled">
+              <span class="ip-character-switch-slider"></span>
+            </span>
           </label>
-          <label class="storyboard-config-field">
-            <span>应用范围</span>
-            <select id="ip-character-page-scope">
-              <option value="all">全部页面</option>
-              <option value="selected">仅指定页面</option>
-            </select>
-          </label>
-        </div>
-        <div id="ip-character-selected-row" class="storyboard-config-field" style="display:none;">
-          <span>指定页面 ID（逗号分隔，如 slide_001,slide_003）</span>
-          <input type="text" id="ip-character-selected-ids" class="ip-character-input" placeholder="留空则不限制">
+          <div class="ip-character-scope-row">
+            <label class="storyboard-config-field ip-character-scope-field">
+              <span>应用范围</span>
+              <select id="ip-character-page-scope">
+                <option value="all">全部页面</option>
+                <option value="selected">仅指定页面</option>
+              </select>
+            </label>
+          </div>
+          <div id="ip-character-selected-row" class="ip-character-slide-panel" style="display:none;">
+            <div class="ip-character-slide-panel-hint">勾选需要融入 IP 形象的页面</div>
+            <div id="ip-character-slide-checklist" class="ip-character-slide-checklist"></div>
+          </div>
         </div>
 
+        <div class="ip-character-section-header">
+          <span>IP 形象角色</span>
+          <small>最多 2 个，以参考图作为主要载体</small>
+        </div>
         <div id="ip-character-list" class="ip-character-list"></div>
-        <button id="ip-character-btn-add" class="secondary" type="button" style="margin-top:0.8rem;">+ 添加角色</button>
+        <button id="ip-character-btn-add" class="secondary ip-character-add-btn" type="button">+ 添加角色</button>
 
         <details class="ip-character-template-block">
           <summary class="ip-character-advanced-summary">
@@ -1102,7 +1179,7 @@
   <script src="storyboard_prompts.js?v=20260801.1"></script>
   <script src="images.js?v=20260807.3"></script>
   <script src="image_prompts.js?v=20260801.1"></script>
-  <script src="ip_character_manager.js?v=20260818.3"></script>
+  <script src="ip_character_manager.js?v=20260818.6"></script>
   <script src="mask_reveal.js?v=20260801.1"></script>
   <script src="mask_workspace.js?v=20260809.4"></script>
   <script src="mask_editor.js?v=20260809.4"></script>
@@ -1115,6 +1192,7 @@
   <script src="storyboard_background_extension.js?v=20260807.1"></script>
   <script src="style_reference_manager_extension.js?v=3.0.1"></script>
   <script src="ai_mask_auto_state.js?v=20260809.1"></script>
+  <script src="digital_human_panel.js?v=20260819.2"></script>
   <script src="ai_mask_extension.js?v=20260809.2"></script>
   <script src="one_click_extension.js?v=20260813.2"></script>
 </body>

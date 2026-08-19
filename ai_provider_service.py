@@ -17,6 +17,32 @@ from scripts.background_color import normalize_connected_background
 
 
 logger = logging.getLogger("PPTStudio.AIProvider")
+
+
+def normalize_image_size(size: Optional[str]) -> Optional[str]:
+    """归一化生图尺寸参数，兼容全角乘号/空格/大写 X。
+
+    OpenAI 兼容 API 要求尺寸为 "auto" 或 "WIDTHxHEIGHT"（半角小写 x）。
+    用户在设置里可能输入 "1536×864"（全角乘号）或 "1536X864"（大写 X），
+    若不归一化，images/edits（携带 IP 参考图）会返回 400 被回退丢弃，
+    导致 IP 参考图丢失、生图反复重试超时。这里统一转成半角小写 x 形式。
+    """
+    if not size:
+        return size
+    text = str(size).strip()
+    if text.lower() == "auto":
+        return "auto"
+    text = (
+        text.replace("\u00d7", "x")   # ×
+        .replace("\uff38", "x")       # Ｘ 全角大写
+        .replace("X", "x")
+        .replace("*", "x")
+        .replace(" ", "")
+    )
+    return text
+
+
+
 MAX_IMAGE_UPLOAD_BYTES = int(
     os.environ.get(
         "PPT_STUDIO_MAX_IMAGE_UPLOAD_BYTES",

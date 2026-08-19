@@ -53,6 +53,18 @@ echo [server] using port %PORT%
 REM ---- open the browser a few seconds after boot ----
 start "" cmd /c "timeout /t 4 /nobreak >nul && start http://127.0.0.1:%PORT%"
 
+
+REM ---- digital human service (separate window, default :9001) ----
+if not defined PPT_DIGITAL_HUMAN_PORT set "PPT_DIGITAL_HUMAN_PORT=9001"
+if not defined PPT_DIGITAL_HUMAN_MOCK set "PPT_DIGITAL_HUMAN_MOCK=1"
+set "DH_PORT_FREE=0"
+for /f "delims=" %%F in ('"%VENV%" "%PROJ%\check_port_free.py" %PPT_DIGITAL_HUMAN_PORT%') do set "DH_PORT_FREE=%%F"
+if "%DH_PORT_FREE%"=="1" (
+  start "Digital Human Service (:9001, mock=%PPT_DIGITAL_HUMAN_MOCK%)" /min "%VENV%" "%PROJ%\digital_human_service.py"
+  echo [digital-human] starting on port %PPT_DIGITAL_HUMAN_PORT% (mock=%PPT_DIGITAL_HUMAN_MOCK%) ...
+) else (
+  echo [digital-human] port %PPT_DIGITAL_HUMAN_PORT% already in use - assume running, skip.
+)
 echo [server] PPT Visualization Studio starting at http://127.0.0.1:%PORT%
 echo [server] Keep this window open. Press Ctrl+C to stop the service.
 "%VENV%" "%PROJ%\start_server.py"

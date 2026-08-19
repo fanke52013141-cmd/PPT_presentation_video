@@ -969,6 +969,14 @@ except Exception as exc:
     logger.exception("Explicit AI Mask route registration failed: %s", exc)
     raise
 
+try:
+    from digital_human_routes import router as digital_human_router
+
+    app.include_router(digital_human_router)
+except Exception as exc:
+    logger.exception("Digital human route registration failed: %s", exc)
+    raise
+
 # 挂载静态资源
 app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 

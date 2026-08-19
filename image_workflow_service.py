@@ -19,6 +19,7 @@ from fastapi import HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from ai_provider_service import normalize_image_size
 from artifact_fingerprint import sha256_file, sha256_json
 from config_store import get_setting
 from database import Project
@@ -475,7 +476,7 @@ def generate_slide_image(
 
     try:
         client = get_openai_client(api_key=api_key, base_url=base_url)
-        image_size = get_setting("image_size", "1024x1024")
+        image_size = normalize_image_size(get_setting("image_size", "1024x1024"))
         effective_prompt = enforce_white_generation_background(prompt)
         ip_prompt_segment = render_ip_character_prompt(project, slide_id)
         if ip_prompt_segment and IP_PROMPT_MARKER not in effective_prompt:

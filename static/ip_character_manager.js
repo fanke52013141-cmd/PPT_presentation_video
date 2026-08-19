@@ -29,11 +29,77 @@
   let ipManifest = null;
 
   function getProjectId() {
-    return (window.state && window.state.currentProject && window.state.currentProject.id) || null;
+    // workflow_state.js 中 state 用 const 声明，属于全局词法作用域而非 window 的属性，
+    // 因此不能通过 window.state 访问。这里优先直接引用全局 state，
+    // 并兼容 window.PPTStudio.getCurrentProject() 运行时桥接（与其它扩展脚本一致）。
+    var project = null;
+    try {
+      if (typeof state !== "undefined" && state && state.currentProject) {
+        project = state.currentProject;
+      }
+    } catch (e) {
+      /* state 尚未定义时忽略 */
+    }
+    if (!project && window.PPTStudio && typeof window.PPTStudio.getCurrentProject === "function") {
+      project = window.PPTStudio.getCurrentProject();
+    }
+    return (project && project.id) || null;
   }
 
   function getPositions() {
     return (ipManifest && ipManifest.positions) || FALLBACK_POSITIONS;
+  }
+
+  function renderSlideChecklist(selectedIds) {
+    var container = document.getElementById("ip-character-slide-checklist");
+    if (!container) return;
+    var slides = [];
+    try {
+      slides = (typeof state !== "undefined" && state && state.slides) || [];
+    } catch (e) {
+      slides = [];
+    }
+    if (slides.length) {
+      _drawSlideChecklist(container, slides, selectedIds || []);
+      return;
+    }
+    // state.slides 为空时尝试从步骤 2 结果 API 拉取（用户可能跳步进入）
+    var pid = getProjectId();
+    if (!pid) {
+      container.innerHTML = '<div class="ip-character-slide-empty">暂无可用页面，请先完成第二步"分镜规划"。</div>';
+      return;
+    }
+    container.innerHTML = '<div class="ip-character-slide-empty">正在加载页面列表...</div>';
+    API.get("/api/projects/" + pid + "/steps/2/result").then(function (res) {
+      var fetched = (res && res.contract && res.contract.slides) || [];
+      try {
+        if (typeof state !== "undefined" && state) state.slides = fetched;
+      } catch (e) {}
+      if (fetched.length) {
+        _drawSlideChecklist(container, fetched, selectedIds || []);
+      } else {
+        container.innerHTML = '<div class="ip-character-slide-empty">暂无可用页面，请先完成第二步"分镜规划"。</div>';
+      }
+    }).catch(function () {
+      container.innerHTML = '<div class="ip-character-slide-empty">页面列表加载失败，请稍后重试。</div>';
+    });
+  }
+
+  function _drawSlideChecklist(container, slides, selectedIds) {
+    var selectedSet = {};
+    selectedIds.forEach(function (id) { selectedSet[id] = true; });
+    container.innerHTML = slides.map(function (slide, index) {
+      var sid = slide.slide_id || ("slide_" + String(index + 1).padStart(3, "0"));
+      var title = slide.main_title || "";
+      var label = title ? (sid + " \u00b7 " + title) : sid;
+      var checked = selectedSet[sid] ? " checked" : "";
+      return (
+        '<label class="ip-character-slide-item">' +
+        '<input type="checkbox" value="' + escHtml(sid) + '" class="ip-character-slide-check"' + checked + ">" +
+        "<span>" + escHtml(label) + "</span>" +
+        "</label>"
+      );
+    }).join("");
   }
 
   function openModal() {
@@ -77,10 +143,11 @@
     if (enabledCheckbox) enabledCheckbox.checked = !!ipManifest.enabled;
     if (scopeSelect) scopeSelect.value = ipManifest.page_scope || "all";
     if (selectedRow) selectedRow.style.display = ipManifest.page_scope === "selected" ? "" : "none";
-    if (selectedInput) selectedInput.value = (ipManifest.selected_slide_ids || []).join(",");
+    renderSlideChecklist(ipManifest.selected_slide_ids || []);
     const templateInput = document.getElementById("ip-character-prompt-template");
     if (templateInput) templateInput.value = ipManifest.prompt_template || "";
 
+    bindScopeToggle();
     renderCharacterList();
     updateAddButtonState();
   }
@@ -177,13 +244,6 @@
       };
     });
 
-    const scopeSelect = document.getElementById("ip-character-page-scope");
-    if (scopeSelect) {
-      scopeSelect.onchange = function () {
-        const selectedRow = document.getElementById("ip-character-selected-row");
-        if (selectedRow) selectedRow.style.display = scopeSelect.value === "selected" ? "" : "none";
-      };
-    }
   }
 
   async function saveCharacter(card) {
@@ -245,22 +305,62 @@
     }
   }
 
+  // 批量保存当前所有已填名称的角色卡片（含新添加/修改的），
+  // 保证用户直接点"保存设置"时角色不会因为重渲染而丢失。
+  async function saveAllPendingCharacters(projectId) {
+    const cards = document.querySelectorAll(".ip-character-card");
+    let savedCount = 0;
+    let skippedEmpty = 0;
+    for (const card of cards) {
+      const nameInput = card.querySelector(".ip-char-name");
+      const name = ((nameInput && nameInput.value) || "").trim();
+      if (!name) {
+        skippedEmpty++;
+        continue;
+      }
+      const id = card.getAttribute("data-id") || "";
+      const positionSelect = card.querySelector(".ip-char-position");
+      const position = positionSelect ? positionSelect.value || null : null;
+      const fileInput = card.querySelector(".ip-char-file");
+      const file = fileInput && fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+
+      const payload = { name: name, position: position };
+      if (id && !id.startsWith("new_")) payload.id = id;
+
+      const formData = new FormData();
+      formData.append("data", JSON.stringify(payload));
+      if (file) formData.append("file", file);
+      try {
+        const res = await API.post("/api/projects/" + projectId + "/ip-characters", formData);
+        ipManifest = res.data || ipManifest;
+        savedCount++;
+      } catch (e) {
+        console.error("[IPCharacter] batch save failed:", e);
+      }
+    }
+    if (skippedEmpty > 0) {
+      showToast("有 " + skippedEmpty + " 个角色未填写名称，已跳过保存");
+    }
+    return savedCount;
+  }
+
   async function saveConfig() {
     const projectId = getProjectId();
     if (!projectId) {
       showToast("请先选择一个项目");
       return;
     }
+    // 先保存所有待保存的角色，再保存全局配置，避免角色丢失
+    await saveAllPendingCharacters(projectId);
     const enabledCheckbox = document.getElementById("ip-character-enabled");
     const scopeSelect = document.getElementById("ip-character-page-scope");
     const selectedInput = document.getElementById("ip-character-selected-ids");
 
     const enabled = enabledCheckbox ? enabledCheckbox.checked : false;
     const page_scope = scopeSelect ? scopeSelect.value : "all";
-    const selectedRaw = selectedInput ? (selectedInput.value || "").trim() : "";
-    const selected_slide_ids = selectedRaw
-      ? selectedRaw.split(",").map(function (s) { return s.trim(); }).filter(Boolean)
-      : [];
+    const selected_slide_ids = Array.prototype.slice
+      .call(document.querySelectorAll(".ip-character-slide-check:checked"))
+      .map(function (cb) { return cb.value; });
     const templateInput = document.getElementById("ip-character-prompt-template");
     const prompt_template = templateInput ? templateInput.value.trim() : "";
 
@@ -304,6 +404,23 @@
     showToast("已恢复默认 IP 融入提示词模板，点击「保存设置」生效");
   }
 
+  function bindScopeToggle() {
+    const scopeSelect = document.getElementById("ip-character-page-scope");
+    if (!scopeSelect) return;
+    if (scopeSelect.dataset.ipBound === "1") return;
+    scopeSelect.dataset.ipBound = "1";
+    scopeSelect.addEventListener("change", function () {
+      const selectedRow = document.getElementById("ip-character-selected-row");
+      if (!selectedRow) return;
+      if (scopeSelect.value === "selected") {
+        selectedRow.style.display = "";
+        renderSlideChecklist((ipManifest && ipManifest.selected_slide_ids) || []);
+      } else {
+        selectedRow.style.display = "none";
+      }
+    });
+  }
+
   function init() {
     const btnOpen = document.getElementById("step3-btn-ip-character");
     const btnCancel = document.getElementById("btn-ip-character-cancel");
@@ -316,6 +433,8 @@
     if (btnSaveConfig) btnSaveConfig.addEventListener("click", saveConfig);
     if (btnAdd) btnAdd.addEventListener("click", addNewCharacter);
     if (btnResetTemplate) btnResetTemplate.addEventListener("click", resetPromptTemplate);
+
+    bindScopeToggle();
 
     const modal = document.getElementById("modal-ip-character");
     if (modal) {

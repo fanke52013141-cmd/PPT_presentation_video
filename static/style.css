@@ -7621,24 +7621,164 @@ details[open] .ip-character-advanced-summary::before {
   border-radius: 6px;
 }
 
-.ip-character-config-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1.2rem;
-  align-items: flex-end;
-  margin-bottom: 0.6rem;
+/* ---- 全局设置卡片 ---- */
+.ip-character-settings-card {
+  border: 1px solid var(--border-color, #e2e4e8);
+  border-radius: 10px;
+  padding: 0;
+  margin-bottom: 0.4rem;
+  background: var(--bg-card-light, #f8f9fb);
+  overflow: hidden;
 }
 
-.ip-character-toggle {
-  flex-direction: row !important;
+/* ---- 横幅式开关 ---- */
+.ip-character-toggle-bar {
+  display: flex;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1.1rem;
+  background: var(--bg-card, #fff);
   cursor: pointer;
+  border-bottom: 1px solid var(--border-color, #eee);
 }
-.ip-character-toggle input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
+.ip-character-toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.ip-character-toggle-text strong {
+  font-size: 0.98rem;
+  color: var(--text-primary, #333);
+}
+.ip-character-toggle-text small {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #888);
+  line-height: 1.4;
+}
+
+/* ---- iOS 风格开关 ---- */
+.ip-character-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+}
+.ip-character-switch input[type="checkbox"] {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+.ip-character-switch-slider {
+  position: absolute;
   cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: #c4c7cc;
+  border-radius: 24px;
+  transition: background 0.25s;
+}
+.ip-character-switch-slider::before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.25s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.ip-character-switch input:checked + .ip-character-switch-slider {
+  background: var(--accent, #5B7893);
+}
+.ip-character-switch input:checked + .ip-character-switch-slider::before {
+  transform: translateX(20px);
+}
+
+/* ---- 应用范围行 ---- */
+.ip-character-scope-row {
+  padding: 0.8rem 1.1rem;
+}
+.ip-character-scope-field {
+  margin-bottom: 0 !important;
+}
+.ip-character-scope-field select {
+  width: 100%;
+  max-width: 240px;
+  padding: 0.5rem 0.8rem;
+  border: 1px solid var(--border-color, #ccc);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  background: var(--bg-card, #fff);
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.7rem center;
+  padding-right: 2rem;
+}
+.ip-character-scope-field select:focus {
+  outline: none;
+  border-color: var(--accent, #5B7893);
+  box-shadow: 0 0 0 2px rgba(91, 120, 147, 0.15);
+}
+
+/* ---- 页面勾选面板 ---- */
+.ip-character-slide-panel {
+  padding: 0 1.1rem 0.9rem;
+  border-top: 1px solid var(--border-color, #eee);
+}
+.ip-character-slide-panel-hint {
+  font-size: 0.82rem;
+  color: var(--text-secondary, #666);
+  margin-bottom: 0.5rem;
+  padding-top: 0.6rem;
+}
+.ip-character-slide-checklist {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.4rem;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 0.2rem;
+}
+.ip-character-slide-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background 0.15s;
+}
+.ip-character-slide-item:hover {
+  background: var(--bg-card, #fff);
+}
+.ip-character-slide-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.ip-character-slide-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary, #444);
+}
+.ip-character-slide-empty {
+  grid-column: 1 / -1;
+  padding: 0.8rem;
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--text-secondary, #999);
 }
 
 .ip-character-input {
@@ -7766,3 +7906,289 @@ details[open] .ip-character-advanced-summary::before {
   box-sizing: border-box;
   resize: vertical;
 }
+
+
+/* ---- IP 角色分区标题 ---- */
+.ip-character-section-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin: 1.3rem 0 0.7rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid var(--accent, #5B7893);
+}
+.ip-character-section-header > span {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-primary, #333);
+}
+.ip-character-section-header > small {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #999);
+}
+
+/* ---- 添加角色按钮 ---- */
+.ip-character-add-btn {
+  width: 100%;
+  padding: 0.7rem;
+  border: 2px dashed var(--border-color, #c8ccd2);
+  background: transparent;
+  font-size: 0.95rem;
+  margin-top: 0.8rem;
+  border-radius: 8px;
+  transition: border-color 0.2s, background 0.2s;
+}
+.ip-character-add-btn:hover {
+  border-color: var(--accent, #5B7893);
+  background: var(--bg-card-light, #f5f7fa);
+}
+
+/* ---- 角色卡片增强 ---- */
+.ip-character-card {
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 10px;
+  padding: 1.1rem 1.2rem;
+  background: var(--bg-card-light, #fafbfc);
+  transition: box-shadow 0.2s;
+}
+.ip-character-card:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+.ip-character-card-header strong {
+  font-size: 1rem;
+  color: var(--text-primary, #333);
+}
+.ip-character-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.7rem;
+}
+.ip-character-preview {
+  width: 100px;
+  height: 80px;
+  border: 1px dashed var(--border-color, #ccc);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: var(--bg-card, #fff);
+}
+/* ---- END IP CHARACTER UI OVERHAUL ---- */
+
+/* ---- 角色卡片内控件圆角统一 ---- */
+.ip-character-card .ip-character-input,
+.ip-character-card select.ip-character-input,
+.ip-character-card input[type="text"].ip-character-input {
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.ip-character-card select.ip-character-input {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.7rem center;
+  padding-right: 2rem;
+}
+
+/* ---- 页面勾选项圆角统一 ---- */
+.ip-character-slide-item {
+  border-radius: 8px;
+  border: 1px solid transparent;
+}
+.ip-character-slide-item:hover {
+  border-color: var(--border-color, #e0e0e0);
+}
+
+/* ---- END IP SCOPE FIX ---- */
+
+/* ==================== 数字人讲解面板 ==================== */
+.dh-panel {
+  padding: 1.2rem 1.4rem;
+}
+.dh-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.dh-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+.dh-panel-title h3 {
+  font-size: 1.05rem;
+  color: var(--text-primary, #333);
+}
+.dh-service-status {
+  font-size: 0.78rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+}
+.dh-service-status.dh-ok { color: #1a7f37; background: #e6f4ea; }
+.dh-service-status.dh-warn { color: #9a6b00; background: #fff4d6; }
+.dh-service-status.dh-error { color: #b42318; background: #fee4e2; }
+
+.dh-enable-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--text-primary, #333);
+  user-select: none;
+}
+.dh-enable-toggle input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.dh-switch-slider {
+  position: relative;
+  width: 42px;
+  height: 22px;
+  background: #c4c7cc;
+  border-radius: 22px;
+  transition: background 0.25s;
+  flex-shrink: 0;
+}
+.dh-switch-slider::before {
+  content: "";
+  position: absolute;
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  top: 3px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.25s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.dh-enable-toggle input:checked + .dh-switch-slider {
+  background: #5B7893;
+}
+.dh-enable-toggle input:checked + .dh-switch-slider::before {
+  transform: translateX(20px);
+}
+
+.dh-panel-body {
+  margin-top: 1.1rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--border-color, #eee);
+}
+.dh-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr 1fr;
+  gap: 1.2rem;
+}
+@media (max-width: 900px) {
+  .dh-grid { grid-template-columns: 1fr; }
+}
+.dh-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.dh-field-label {
+  font-size: 0.85rem;
+  color: var(--text-secondary, #666);
+}
+.dh-input {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border-color, #ccc);
+  border-radius: 6px;
+  font-size: 0.9rem;
+  background: var(--bg-card, #fff);
+  color: var(--text-primary, #222);
+  box-sizing: border-box;
+}
+.dh-upload-btn {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+.dh-circle-canvas {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: #111;
+  border-radius: 8px;
+  overflow: hidden;
+  touch-action: none;
+  cursor: move;
+}
+.dh-circle-layer {
+  position: absolute;
+  inset: 0;
+  clip-path: circle(25% at 80% 20%);
+}
+.dh-circle-layer video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.dh-pos-presets {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.dh-pos-presets button {
+  flex: 1;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.8rem;
+  border: 1px solid var(--border-color, #ccc);
+  border-radius: 6px;
+  background: var(--bg-card, #fff);
+  cursor: pointer;
+}
+.dh-pos-presets button:hover {
+  border-color: #5B7893;
+  color: #5B7893;
+}
+.dh-circle-meta {
+  font-size: 0.78rem;
+  color: var(--text-secondary, #888);
+}
+.dh-slide-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+.dh-slide-chip {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+}
+.dh-slide-chip.dh-done { color: #1a7f37; background: #e6f4ea; }
+.dh-slide-chip.dh-failed { color: #b42318; background: #fee4e2; }
+.dh-slide-chip.dh-busy { color: #9a6b00; background: #fff4d6; }
+.dh-slide-status-note {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #999);
+}
+/* ==================== END 数字人讲解面板 ==================== */
+
+/* ===== 数字人面板 v2：三向圆形讲解窗口 ===== */
+.dh-upload-status { font-size: 0.78rem; padding: 0.15rem 0.45rem; border-radius: 6px; margin-left: 0.4rem; display: inline-block; }
+.dh-upload-status.dh-done { color: #1a7f37; background: #e6f4ea; }
+.dh-upload-status.dh-failed { color: #b42318; background: #fee4e2; }
+.dh-drag-hint { font-size: 0.75rem; color: var(--text-secondary, #888); line-height: 1.4; }
+.dh-circle-canvas { background: #1a1f26; cursor: default; }
+.dh-circle-layer { position: absolute; overflow: hidden; clip-path: circle(50% at 50% 50%); box-shadow: 0 0 0 3px #fff, 0 2px 10px rgba(0,0,0,.5); border-radius: 50%; }
+.dh-circle-layer:hover { box-shadow: 0 0 0 3px #5B7893, 0 2px 10px rgba(0,0,0,.5); }
+.dh-circle-layer video { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; max-width: none; }
+.dh-circle-resize { position: absolute; right: 0; bottom: 0; width: 14px; height: 14px; border-right: 3px solid #fff; border-bottom: 3px solid #fff; border-radius: 0 0 50% 0; cursor: nwse-resize; background: rgba(91,120,147,.9); z-index: 2; }
+.dh-slider-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; }
+.dh-slider-label { font-size: 0.78rem; color: var(--text-secondary, #888); white-space: nowrap; }
+.dh-slider-row input[type="range"] { flex: 1; }

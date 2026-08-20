@@ -14,6 +14,7 @@
     config: {
       enabled: false,
       mode: "upload",
+      shape: "circle",
       avatar_id: "",
       circle: { cx: 0.8, cy: 0.2, r: 0.25 },
       video: { ox: 0.5, oy: 0.5, zoom: 1.0 },
@@ -45,6 +46,7 @@
         dhState.config = res.config;
         if (!dhState.config.circle) dhState.config.circle = { cx: 0.8, cy: 0.2, r: 0.25 };
         if (!dhState.config.video) dhState.config.video = { ox: 0.5, oy: 0.5, zoom: 1.0 };
+        if (dhState.config.shape !== "rect") dhState.config.shape = "circle";
       }
       if (res && res.audioReady) dhState.audioReady = res.audioReady;
       if (res && res.slides) {
@@ -54,6 +56,9 @@
       dhState.uploadVideoExists = !!(res && res.upload_video_exists);
       applyConfigToUI();
       loadPreview();
+      if (typeof window.__dhMarkEnabled === "function") {
+        window.__dhMarkEnabled(!!dhState.config.enabled);
+      }
     } catch (e) {
       console.error("[DH] loadConfig failed:", e);
     }
@@ -73,6 +78,11 @@
     }
     var zoomEl = document.getElementById("dh-video-zoom");
     if (zoomEl) zoomEl.value = String(dhState.config.video && dhState.config.video.zoom || 1);
+    // 形状切换高亮
+    document.querySelectorAll("[data-dh-shape]").forEach(function (btn) {
+      var active = btn.getAttribute("data-dh-shape") === (dhState.config.shape || "circle");
+      btn.classList.toggle("dh-shape-active", active);
+    });
     applyCircleToPreview();
   }
 
@@ -89,12 +99,16 @@
       await API.put(base() + "/config", {
         enabled: dhState.config.enabled,
         mode: dhState.config.mode || "upload",
+        shape: dhState.config.shape || "circle",
         avatar_id: dhState.config.avatar_id,
         sync_mode: dhState.config.sync_mode,
         circle: dhState.config.circle,
         video: dhState.config.video,
       });
       showToast("数字人讲解设置已保存");
+      if (typeof window.__dhMarkEnabled === "function") {
+        window.__dhMarkEnabled(!!dhState.config.enabled);
+      }
     } catch (e) {
       console.error("[DH] saveConfig failed:", e);
     }
@@ -139,6 +153,7 @@
         applyConfigToUI();
         showToast("数字人讲解视频已上传");
         loadPreview();
+        captureVideoFirstFrame();
         saveConfig();
       }
     } catch (e) {
@@ -165,11 +180,13 @@
 
     var c = canvasSize();
     var D = Math.max(24, circle.r * 2 * Math.min(c.w, c.h));
+    var shape = dhState.config.shape === "rect" ? "rect" : "circle";
     layer.style.left = circle.cx * c.w - D / 2 + "px";
     layer.style.top = circle.cy * c.h - D / 2 + "px";
     layer.style.width = D + "px";
     layer.style.height = D + "px";
-    layer.style.clipPath = "circle(50% at 50% 50%)";
+    layer.style.clipPath = shape === "rect" ? "none" : "circle(50% at 50% 50%)";
+    layer.style.borderRadius = shape === "rect" ? "8px" : "50%";
 
     // 视频在框内 cover 缩放 + 平移（与后端 crop 逻辑一致）
     if (videoEl && dhState.videoSize) {
@@ -191,8 +208,12 @@
       videoEl.style.top = "0px";
     }
     if (handle) {
-      handle.style.width = "14px";
-      handle.style.height = "14px";
+      var handleSize = 18;
+      handle.style.width = handleSize + "px";
+      handle.style.height = handleSize + "px";
+      // 手柄定位到圆形左上角边缘（canvas 坐标），避开 clip-path 裁剪
+      handle.style.left = (circle.cx * c.w - D / 2 - handleSize / 2) + "px";
+      handle.style.top = (circle.cy * c.h - D / 2 - handleSize / 2) + "px";
     }
 
     var cxEl = document.getElementById("dh-cx");
@@ -205,6 +226,33 @@
     if (rEl) rEl.textContent = circle.r.toFixed(2);
     if (oxEl) oxEl.textContent = videoCfg.ox.toFixed(2);
     if (oyEl) oyEl.textContent = videoCfg.oy.toFixed(2);
+  }
+
+  function captureVideoFirstFrame() {
+    var video = document.getElementById("dh-preview-video");
+    var refBox = document.getElementById("dh-video-ref-box");
+    var refImg = document.getElementById("dh-video-ref");
+    if (!video || !refBox || !refImg || !video.videoWidth || !video.videoHeight) return;
+    refBox.style.display = "flex";
+    var done = false;
+    var doDraw = function () {
+      if (done) return;
+      done = true;
+      var w = video.videoWidth, h = video.videoHeight;
+      if (!w || !h) return;
+      var cv = document.createElement("canvas");
+      cv.width = w;
+      cv.height = h;
+      cv.getContext("2d").drawImage(video, 0, 0, w, h);
+      refImg.src = cv.toDataURL("image/jpeg", 0.85);
+      video.onseeked = null;
+      // 恢复播放（loop 预览）
+      try { video.play().catch(function () {}); } catch (e) {}
+    };
+    video.onseeked = doDraw;
+    try { video.currentTime = 0.01; } catch (e) { doDraw(); }
+    // 兜底：若 1.5s 内未触发 seeked（如非 seekable 流），直接绘制当前帧
+    setTimeout(function () { if (!done) doDraw(); }, 1500);
   }
 
   function loadPreview() {
@@ -255,10 +303,10 @@
       var dx = px - info.cx;
       var dy = py - info.cy;
       var dist = Math.sqrt(dx * dx + dy * dy);
-      // 命中右下角手柄 → 调整大小
-      var hx = info.cx + info.D / 2 - px;
-      var hy = info.cy + info.D / 2 - py;
-      if (hx <= 14 && hy <= 14 && hx >= -6 && hy >= -6 && dist > info.D * 0.4) {
+      // 命中左上角手柄 → 调整大小
+      var hx = info.cx - info.D / 2 - px;
+      var hy = info.cy - info.D / 2 - py;
+      if (hx <= 20 && hy <= 20 && hx >= -10 && hy >= -10 && dist > info.D * 0.4) {
         dragging = "resize";
       } else if (dist <= info.D / 2) {
         dragging = "panVideo"; // 圆内 → 平移视频
@@ -343,6 +391,46 @@
     dhState.config.video = { ox: 0.5, oy: 0.5, zoom: 1.0 };
     applyConfigToUI();
     saveConfig();
+  }
+
+  function setShape(shape) {
+    dhState.config.shape = shape === "rect" ? "rect" : "circle";
+    applyConfigToUI();
+    saveConfig();
+  }
+
+  // ---------------- 整段语音导出 ----------------
+
+  async function exportFullAudio() {
+    var pid = projectId();
+    if (!pid) return;
+    var btn = document.getElementById("dh-btn-export-audio");
+    var statusEl = document.getElementById("dh-audio-export-status");
+    if (btn) { btn.disabled = true; }
+    if (statusEl) statusEl.textContent = "导出中...";
+    try {
+      var res = await API.post(base() + "/export-audio", { gap_sec: 0.6 }, { timeout: 900000 });
+      if (res && res.success) {
+        var mins = res.duration_sec ? (res.duration_sec / 60).toFixed(1) : "?";
+        if (statusEl) statusEl.textContent = "已导出 " + res.slides + " 页，时长约 " + mins + " 分钟";
+        // 触发下载
+        var a = document.createElement("a");
+        a.href = res.url;
+        a.download = "course_audio_full.mp3";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      } else if (res && res.detail) {
+        if (statusEl) statusEl.textContent = "导出失败";
+        showToast(res.detail);
+      }
+    } catch (e) {
+      console.error("[DH] exportFullAudio failed:", e);
+      if (statusEl) statusEl.textContent = "导出失败";
+      showToast("导出失败：" + ((e && (e.detail || e.message)) || "未知错误"));
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   // ---------------- 生成（LatentSync，保留） ----------------
@@ -509,6 +597,18 @@
     if (btnSave) btnSave.addEventListener("click", saveConfig);
     if (btnReset) btnReset.addEventListener("click", resetCircle);
 
+    var btnExportAudio = document.getElementById("dh-btn-export-audio");
+    if (btnExportAudio) btnExportAudio.addEventListener("click", exportFullAudio);
+    // 第 6 步工具栏的导出按钮也复用同一逻辑
+    var btnStep6Export = document.getElementById("step6-btn-export-audio");
+    if (btnStep6Export) btnStep6Export.addEventListener("click", exportFullAudio);
+
+    document.querySelectorAll("[data-dh-shape]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        setShape(btn.getAttribute("data-dh-shape"));
+      });
+    });
+
     document.querySelectorAll("[data-dh-pos]").forEach(function (btn) {
       btn.addEventListener("click", function () {
         setPositionPreset(btn.getAttribute("data-dh-pos"));
@@ -520,6 +620,7 @@
       video.addEventListener("loadedmetadata", function () {
         dhState.videoSize = { w: video.videoWidth || 0, h: video.videoHeight || 0 };
         applyCircleToPreview();
+        captureVideoFirstFrame();
       });
       video.addEventListener("error", function () {
         dhState.videoSize = null;
@@ -583,11 +684,27 @@
     }, 400);
   }
   window.addEventListener("dh-step8-visible", scheduleRefresh);
+  window.loadStep9Data = function () {
+    loadHealth();
+    loadConfig();
+    loadAvatars();
+  };
   var originalNavigate = window.navigateToStep;
   window.navigateToStep = function (step) {
-    if (Number(step) === 8) {
+    if (Number(step) === 9) {
       scheduleRefresh();
     }
     return originalNavigate ? originalNavigate.apply(this, arguments) : undefined;
   };
+  // 可选步骤完成态同步：启用/关闭数字人时刷新左侧步骤条
+  var _dhSyncStepper = function () {
+    if (typeof window.refreshCurrentProjectStatus === "function") {
+      try { window.refreshCurrentProjectStatus(9); } catch (e) {}
+    }
+  };
+  window.__dhMarkEnabled = function (enabled) {
+    window.__dhEnabled = !!enabled;
+    _dhSyncStepper();
+  };
+  window.__dhMarkEnabled(window.__dhEnabled === true);
 })();

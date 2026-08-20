@@ -410,8 +410,8 @@ async function loadStep7Data() {
       emptyState.style.display = 'none';
       confirmButton.disabled = false;
       document.getElementById('step6-audio-confirm-label').innerText = state.currentProject.audio_confirmed
-        ? '进入作品输出'
-        : '确认并进入作品输出';
+        ? '进入数字人讲解'
+        : '确认并进入数字人讲解';
     }
   }
 }

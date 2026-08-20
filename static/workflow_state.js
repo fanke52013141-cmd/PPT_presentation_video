@@ -89,7 +89,10 @@ function createWorkflowState() {
 const state = createWorkflowState();
 
 function projectFlowContext(project = state.currentProject) {
-  return { audioConfirmed: project?.audio_confirmed === true };
+  return {
+    audioConfirmed: project?.audio_confirmed === true,
+    digitalHumanEnabled: window.__dhEnabled === true,
+  };
 }
 
 const PPTStudioRuntime = Object.freeze({

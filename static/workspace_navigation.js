@@ -170,6 +170,11 @@ async function loadStepData(step) {
     case 8:
       await loadStep8Data();
       break;
+    case 9:
+      if (typeof window.loadStep9Data === 'function') {
+        await window.loadStep9Data();
+      }
+      break;
   }
 }
 

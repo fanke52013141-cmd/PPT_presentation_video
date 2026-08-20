@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260819.2">
+  <link rel="stylesheet" href="style.css?v=20260820.3">
 </head>
 <body>
 
@@ -106,8 +106,14 @@
             <div class="step-label">旁白与音频</div>
             <span class="step-complete" aria-hidden="true">✓</span>
           </li>
-          <li class="step-item" data-step="8">
+          <li class="step-item" data-step="9">
             <div class="step-num">6</div>
+            <div class="step-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"></circle><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"></path></svg></div>
+            <div class="step-label">数字人讲解</div>
+            <span class="step-complete" aria-hidden="true">✓</span>
+          </li>
+          <li class="step-item" data-step="8">
+            <div class="step-num">7</div>
             <div class="step-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="15" height="14" rx="3"></rect><path d="m10 9 4 3-4 3zM18 10l3-2v8l-3-2"></path></svg></div>
             <div class="step-label">作品输出</div>
             <span class="step-complete" aria-hidden="true">✓</span>
@@ -385,8 +391,9 @@
                 <svg class="icon" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
                 重生成
               </button>
+              <button id="step6-btn-export-audio" class="secondary compact-action-btn" type="button" title="拼接全部页面旁白为一整段 mp3，供离线生成数字人视频">导出整段语音</button>
               <button id="step6-btn-audio-confirm-next" class="success" disabled>
-                <span id="step6-audio-confirm-label">确认并进入作品输出</span>
+                <span id="step6-audio-confirm-label">确认并进入数字人讲解</span>
                 <svg class="icon" viewBox="0 0 24 24" style="width:14px; height:14px; stroke-width:2.5;"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
               </button>
             </div>
@@ -397,6 +404,94 @@
           </div>
 
           <div id="step6-beats-list" class="step6-slides-stack"></div>
+        </div>
+
+        <!-- ==================== 步骤 9: 数字人讲解（可选） ==================== -->
+        <div id="step-panel-9" class="step-panel" style="display: none;">
+          <div class="step9-header workflow-header workflow-header--titlebar">
+            <h2 class="highlight-title workflow-title">数字人讲解</h2>
+            <div class="step9-header-actions workflow-toolbar">
+              <span class="step9-optional-hint">可选步骤 · 不设置也能正常出片</span>
+              <button id="step9-btn-skip" class="secondary compact-action-btn" type="button" title="跳过数字人讲解，直接进入作品输出">跳过，进入作品输出</button>
+            </div>
+          </div>
+                    <!-- ==================== 数字人讲解 ==================== -->
+          <div id="digital-human-panel" class="dh-panel card soft-outline" style="margin-top: 1.5rem;">
+            <div class="dh-panel-header">
+              <div class="dh-panel-title">
+                <h3 style="margin: 0;">数字人讲解</h3>
+                <span id="dh-service-status" class="dh-service-status"></span>
+              </div>
+              <label class="dh-enable-toggle">
+                <input type="checkbox" id="dh-enabled">
+                <span class="dh-switch-slider"></span>
+                <span>启用数字人讲解</span>
+              </label>
+            </div>
+            <div id="dh-panel-body" class="dh-panel-body" style="display: none;">
+              <div class="dh-settings-title">数字人讲解设置</div>
+              <div class="dh-grid">
+                <div class="dh-field">
+                  <div class="dh-field-label">① 整段语音导出</div>
+                  <button id="dh-btn-export-audio" class="secondary" style="width:100%;">导出整段语音（拼接全课程）</button>
+                  <div id="dh-audio-export-status" class="dh-drag-hint" style="margin-top:0.4rem;">把全部页面旁白拼接为一整段 mp3（页间自动加静音），供离线生成数字人视频使用。</div>
+                  <div class="dh-field-label" style="margin-top:1rem;">② 上传数字人讲解视频</div>
+                  <label class="btn secondary dh-upload-btn" style="width:100%;">
+                    上传视频
+                    <input type="file" id="dh-upload-video-file" accept="video/*" style="display:none;">
+                  </label>
+                  <span id="dh-upload-status" class="dh-upload-status dh-failed">未上传</span>
+                  <div class="dh-drag-hint" style="margin-top:0.6rem;">先用 HeyGem / EchoMimic / Wan2.2 等离线生成讲师讲解视频，再上传到此处。</div>
+                  <div class="dh-field-label" style="margin-top:1rem;">LatentSync 生成（模型部署后可用）</div>
+                  <select id="dh-sync-mode" class="dh-input">
+                    <option value="accurate">精准（效果更好）</option>
+                    <option value="fast">快速（更快）</option>
+                  </select>
+                  <button id="dh-btn-generate-all" class="success" style="width:100%; margin-top:0.6rem;">生成全部页数字人</button>
+                  <select id="dh-avatar-select" class="dh-input" style="margin-top:0.4rem;"></select>
+                  <label class="btn secondary dh-upload-btn" style="margin-top:0.4rem;">上传参考视频<input type="file" id="dh-avatar-file" accept="video/*" style="display:none;"></label>
+                </div>
+                <div class="dh-field">
+                  <div class="dh-field-label">③ 框选与缩放</div>
+                  <div class="dh-shape-toggle">
+                    <button type="button" data-dh-shape="circle" class="dh-shape-active">圆形</button>
+                    <button type="button" data-dh-shape="rect">矩形</button>
+                  </div>
+                  <div id="dh-video-ref-box" class="dh-video-ref-box" style="display:none;">
+                    <img id="dh-video-ref" alt="完整视频第一帧参考">
+                    <span class="dh-video-ref-label">完整视频第一帧（参考缩放与位置）</span>
+                  </div>
+                  <div id="dh-circle-canvas" class="dh-circle-canvas">
+                    <div id="dh-circle-layer" class="dh-circle-layer">
+                      <video id="dh-preview-video" muted loop playsinline></video>
+                    </div>
+                    <div id="dh-circle-resize" class="dh-circle-resize" title="拖动左上角调整框大小"></div>
+                  </div>
+                  <div class="dh-drag-hint" style="margin-top:0.4rem;">框内拖动=平移视频 · 框外拖动=移动位置 · 左上角手柄=调整大小</div>
+                </div>
+                <div class="dh-field">
+                  <div class="dh-field-label">④ PPT 位置设置</div>
+                  <div class="dh-pos-presets">
+                    <button type="button" data-dh-pos="right_bottom">右下角</button>
+                    <button type="button" data-dh-pos="left_bottom">左下角</button>
+                    <button type="button" data-dh-pos="right_top">右上角</button>
+                    <button type="button" data-dh-pos="left_top">左上角</button>
+                    <button type="button" id="dh-circle-reset">重置</button>
+                  </div>
+                  <div class="dh-circle-meta" style="margin-top:0.5rem;">
+                    框位置(<span id="dh-cx">0.80</span>,<span id="dh-cy">0.20</span>) · 框大小 <span id="dh-r">0.25</span><br>
+                    视频相对(<span id="dh-ox">0.50</span>,<span id="dh-oy">0.50</span>)
+                  </div>
+                  <div class="dh-slider-row">
+                    <span class="dh-slider-label">视频缩放</span>
+                    <input type="range" id="dh-video-zoom" min="1" max="4" step="0.05" value="1">
+                  </div>
+                  <button id="dh-btn-save" class="secondary" style="width:100%; margin-top:0.8rem;">保存设置</button>
+                  <div id="dh-slide-status" class="dh-slide-status"></div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- ==================== 步骤 8: 作品输出 ==================== -->
@@ -424,71 +519,6 @@
               <p id="step8-error-log-hint" style="margin-top: 0.8rem; font-size: 0.9rem;">详细阶段日志见项目目录下的 logs/pipeline.log。</p>
             </div>
           </div>
-
-                    <!-- ==================== 数字人讲解 ==================== -->
-          <div id="digital-human-panel" class="dh-panel card soft-outline" style="margin-top: 1.5rem;">
-            <div class="dh-panel-header">
-              <div class="dh-panel-title">
-                <h3 style="margin: 0;">数字人讲解</h3>
-                <span id="dh-service-status" class="dh-service-status"></span>
-              </div>
-              <label class="dh-enable-toggle">
-                <input type="checkbox" id="dh-enabled">
-                <span class="dh-switch-slider"></span>
-                <span>启用数字人讲解</span>
-              </label>
-            </div>
-            <div id="dh-panel-body" class="dh-panel-body" style="display: none;">
-              <div class="dh-grid">
-                <div class="dh-field">
-                  <div class="dh-field-label">上传已生成的讲解视频</div>
-                  <label class="btn secondary dh-upload-btn" style="width:100%;">
-                    上传视频
-                    <input type="file" id="dh-upload-video-file" accept="video/*" style="display:none;">
-                  </label>
-                  <span id="dh-upload-status" class="dh-upload-status dh-failed">未上传</span>
-                  <div class="dh-drag-hint" style="margin-top:0.6rem;">先用 HeyGem / EchoMimic / Wan2.2 等离线生成讲师讲解视频，再上传到此处，系统会把它放进圆形讲解窗口。</div>
-                  <div class="dh-field-label" style="margin-top:1rem;">LatentSync 生成（模型部署后可用）</div>
-                  <select id="dh-sync-mode" class="dh-input">
-                    <option value="accurate">精准（效果更好）</option>
-                    <option value="fast">快速（更快）</option>
-                  </select>
-                  <button id="dh-btn-generate-all" class="success" style="width:100%; margin-top:0.6rem;">生成全部页数字人</button>
-                  <select id="dh-avatar-select" class="dh-input" style="margin-top:0.4rem;"></select>
-                  <label class="btn secondary dh-upload-btn" style="margin-top:0.4rem;">上传参考视频<input type="file" id="dh-avatar-file" accept="video/*" style="display:none;"></label>
-                </div>
-                <div class="dh-field">
-                  <div class="dh-field-label">圆形讲解窗口（三向自定义）</div>
-                  <div id="dh-circle-canvas" class="dh-circle-canvas">
-                    <div id="dh-circle-layer" class="dh-circle-layer">
-                      <video id="dh-preview-video" muted loop playsinline></video>
-                      <div id="dh-circle-resize" class="dh-circle-resize" title="拖动右下角调整框大小"></div>
-                    </div>
-                  </div>
-                  <div class="dh-drag-hint" style="margin-top:0.4rem;">圆内拖动=平移视频 · 圆外拖动=移动框 · 右下角手柄=调整框大小</div>
-                  <div class="dh-pos-presets" style="margin-top:0.5rem;">
-                    <button type="button" data-dh-pos="right_bottom">右下角</button>
-                    <button type="button" data-dh-pos="left_bottom">左下角</button>
-                    <button type="button" data-dh-pos="right_top">右上角</button>
-                    <button type="button" data-dh-pos="left_top">左上角</button>
-                    <button type="button" id="dh-circle-reset">重置</button>
-                  </div>
-                </div>
-                <div class="dh-field">
-                  <div class="dh-field-label">参数</div>
-                  <div class="dh-circle-meta">
-                    框位置(<span id="dh-cx">0.80</span>,<span id="dh-cy">0.20</span>) · 框大小 <span id="dh-r">0.25</span><br>
-                    视频相对(<span id="dh-ox">0.50</span>,<span id="dh-oy">0.50</span>)
-                  </div>
-                  <div class="dh-slider-row">
-                    <span class="dh-slider-label">视频缩放</span>
-                    <input type="range" id="dh-video-zoom" min="0.5" max="4" step="0.05" value="1">
-                  </div>
-                  <button id="dh-btn-save" class="secondary" style="width:100%; margin-top:0.8rem;">保存设置</button>
-                  <div id="dh-slide-status" class="dh-slide-status"></div>
-                </div>
-              </div>
-            </div>
 
           <div id="step8-loading" class="step-inline-loading" style="display: none;">
             <div class="loading-spinner"></div>
@@ -1165,8 +1195,8 @@
   <div id="toast-container" aria-live="polite" aria-atomic="false"></div>
 
   <!-- 主业务 JavaScript 脚本 -->
-  <script src="flow.js?v=3.0.2"></script>
-  <script src="workflow_state.js?v=20260801.1"></script>
+  <script src="flow.js?v=3.0.3"></script>
+  <script src="workflow_state.js?v=20260820.1"></script>
   <script src="ui_foundation.js?v=20260801.1"></script>
   <script src="api_client.js?v=20260812.1"></script>
   <script src="artifact_repair.js?v=20260801.1"></script>
@@ -1184,15 +1214,15 @@
   <script src="mask_workspace.js?v=20260809.4"></script>
   <script src="mask_editor.js?v=20260809.4"></script>
   <script src="subtitle_settings.js?v=20260801.1"></script>
-  <script src="narration_audio.js?v=20260801.1"></script>
+  <script src="narration_audio.js?v=20260820.1"></script>
   <script src="output_render.js?v=20260801.1"></script>
-  <script src="workspace_navigation.js?v=20260801.1"></script>
-  <script src="event_bindings.js?v=20260801.1"></script>
+  <script src="workspace_navigation.js?v=20260820.1"></script>
+  <script src="event_bindings.js?v=20260820.1"></script>
   <script src="project_profile_extension.js?v=3.0.3"></script>
   <script src="storyboard_background_extension.js?v=20260807.1"></script>
   <script src="style_reference_manager_extension.js?v=3.0.1"></script>
   <script src="ai_mask_auto_state.js?v=20260809.1"></script>
-  <script src="digital_human_panel.js?v=20260819.2"></script>
+  <script src="digital_human_panel.js?v=20260820.4"></script>
   <script src="ai_mask_extension.js?v=20260809.2"></script>
   <script src="one_click_extension.js?v=20260813.2"></script>
 </body>

@@ -38,6 +38,13 @@
       requiresAudioConfirmation: true
     }),
     Object.freeze({
+      step: 9,
+      label: '数字人讲解',
+      relevantSteps: Object.freeze([9]),
+      completionSteps: Object.freeze([9]),
+      optional: true
+    }),
+    Object.freeze({
       step: 8,
       label: '作品输出',
       relevantSteps: Object.freeze([8]),
@@ -90,6 +97,11 @@
     const item = getFlowItem(step);
     if (!item) return 'pending';
 
+    // 可选步骤：数字人讲解启用即视为完成；否则始终 pending（不阻塞任何步骤）
+    if (item.optional) {
+      return context.digitalHumanEnabled === true ? 'completed' : 'pending';
+    }
+
     const relevantStates = item.relevantSteps.map(id => status[String(id)] || 'pending');
     if (relevantStates.includes('pending_reconfirmation')) {
       return 'pending_reconfirmation';
@@ -107,10 +119,11 @@
   }
 
   function calculateVisibleProgress(status = {}, context = {}) {
+    const required = VISIBLE_FLOW.filter(item => !item.optional);
     const completed = VISIBLE_FLOW.filter(
       item => getVisibleStepState(item.step, status, context) === 'completed'
     ).length;
-    return Math.round((completed / VISIBLE_FLOW.length) * 100);
+    return Math.round((Math.min(completed, required.length) / required.length) * 100);
   }
 
   function getPreviousVisibleStep(step) {

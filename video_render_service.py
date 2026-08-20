@@ -37,6 +37,7 @@ RENDER_STAGE_LABELS = {
     "binding_timeline": "绑定语音时间轴",
     "building_props": "构建 Remotion 配置",
     "rendering": "Remotion 渲染中",
+    "digital_human": "合成数字人讲解窗口",
     "validating_color": "校验视频颜色",
     "finalizing": "写入元数据",
     "interrupted": "任务已中断",
@@ -48,6 +49,7 @@ RENDER_STAGE_PROGRESS = {
     "binding_timeline": 28,
     "building_props": 40,
     "rendering": 52,
+    "digital_human": 74,
     "validating_color": 88,
     "finalizing": 96,
 }
@@ -378,6 +380,7 @@ class VideoRenderService:
                 )
                 return
             try:
+                render_started = time.time()
                 result = self.runner.run(
                     project,
                     output_dir=self.project_video_dir(project),
@@ -386,6 +389,24 @@ class VideoRenderService:
                         stage,
                     ),
                 )
+                render_elapsed = round(time.time() - render_started, 1)
+                logger.info(
+                    "[render-time] project=%s stage=remotion elapsed=%ss",
+                    project.id, render_elapsed,
+                )
+                # 数字人讲解合成：启用时把圆形/矩形窗口叠加到渲染视频上
+                composite_started = time.time()
+                result = self._apply_digital_human_composite(
+                    project,
+                    result,
+                    task_id,
+                )
+                composite_elapsed = round(time.time() - composite_started, 1)
+                if composite_elapsed > 0.5:
+                    logger.info(
+                        "[render-time] project=%s stage=digital_human elapsed=%ss",
+                        project.id, composite_elapsed,
+                    )
                 self._set_task_stage(task_id, "finalizing")
                 render_fingerprint = (
                     self.current_render_input_fingerprint(project)
@@ -408,6 +429,10 @@ class VideoRenderService:
                     "input_fingerprint": render_fingerprint,
                     "color_standard": "bt709_tv_yuv420p",
                     "color_validation": result.color_validation,
+                    "timing_sec": {
+                        "remotion_render": render_elapsed,
+                        "digital_human_composite": composite_elapsed,
+                    },
                 }
                 artifact = self.artifacts.record_rendered_video(
                     db,
@@ -446,6 +471,128 @@ class VideoRenderService:
             db.close()
             if project_lock.locked():
                 project_lock.release()
+
+    def _apply_digital_human_composite(
+        self,
+        project: Project,
+        result: Any,
+        task_id: str,
+    ) -> Any:
+        """Remotion 渲染完成后，若启用了数字人讲解（上传模式），
+        把数字人视频窗口合成到渲染出的整段视频上。"""
+        cfg_path = (
+            Path(project.run_dir) / "planning" / "digital_human.json"
+        )
+        if not cfg_path.exists():
+            return result
+        try:
+            cfg = json.loads(
+                cfg_path.read_text(encoding="utf-8-sig")
+            )
+        except (OSError, json.JSONDecodeError):
+            return result
+        if not isinstance(cfg, dict) or not cfg.get("enabled"):
+            return result
+        mode = str(cfg.get("mode") or "upload")
+        digi_dir = Path(project.run_dir) / "planning" / "digital_human"
+        if mode == "upload":
+            digi = digi_dir / "digi_upload.mp4"
+        else:
+            # 生成模式需要逐页数字人视频，整段导出暂不支持，直接跳过
+            return result
+        if not digi.exists():
+            logger.info(
+                "[digital-human] upload video missing, skip composite for %s",
+                project.id,
+            )
+            return result
+
+        self._set_task_stage(task_id, "digital_human")
+        circle = (
+            cfg.get("circle")
+            if isinstance(cfg.get("circle"), dict)
+            else {"cx": 0.8, "cy": 0.2, "r": 0.25}
+        )
+        video = (
+            cfg.get("video")
+            if isinstance(cfg.get("video"), dict)
+            else {"ox": 0.5, "oy": 0.5, "zoom": 1.0}
+        )
+        shape = str(cfg.get("shape") or "circle")
+        border = (
+            cfg.get("border")
+            if isinstance(cfg.get("border"), dict)
+            else None
+        )
+        position = (
+            cfg.get("position")
+            if isinstance(cfg.get("position"), dict)
+            else None
+        )
+
+        composite_out = result.output_path.with_name(
+            result.output_filename.rsplit(".", 1)[0]
+            + "_dh.mp4"
+        )
+        if composite_out.exists():
+            try:
+                composite_out.unlink()
+            except OSError:
+                pass
+        try:
+            from digital_human_client import (
+                DigitalHumanUnavailable,
+                get_digital_human_client,
+            )
+
+            client = get_digital_human_client()
+            res = client.composite(
+                digi_video=digi,
+                base_video=result.output_path,
+                output=composite_out,
+                circle=circle,
+                video=video,
+                shape=shape,
+                border=border,
+                position=position,
+            )
+        except DigitalHumanUnavailable as exc:
+            # 服务未启动：不阻断渲染，但记录原因
+            logger.warning(
+                "[digital-human] service unavailable, skip composite for %s: %s",
+                project.id,
+                exc,
+            )
+            return result
+        except Exception as exc:
+            logger.exception(
+                "[digital-human] composite failed for %s",
+                project.id,
+            )
+            raise RuntimeError(
+                "数字人讲解合成失败：" + str(exc)
+            ) from exc
+
+        if not composite_out.exists():
+            logger.error(
+                "[digital-human] composite produced no output for %s",
+                project.id,
+            )
+            raise RuntimeError("数字人讲解合成失败：未生成合成文件")
+        # 用合成视频替换原渲染视频，保持文件名不变（下游产物逻辑无需改动）
+        try:
+            import os
+            os.replace(composite_out, result.output_path)
+        except OSError as exc:
+            raise RuntimeError(
+                "数字人讲解合成文件替换失败：" + str(exc)
+            ) from exc
+        logger.info(
+            "[digital-human] composite success for %s: %s",
+            project.id,
+            result.output_path,
+        )
+        return result
 
     def list_videos(
         self,

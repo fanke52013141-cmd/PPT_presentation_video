@@ -314,15 +314,18 @@ def composite_circle(
     position: Optional[Dict[str, Any]] = None,
     border: Optional[Dict[str, Any]] = None,
     video: Optional[Dict[str, Any]] = None,
+    shape: str = "circle",
 ) -> Dict[str, Any]:
-    """把 digi_video 裁剪成圆形并叠加到 base_video 上。
+    """把 digi_video 裁剪成圆形/矩形窗口并叠加到 base_video 上。
 
-    circle: {cx, cy, r}，归一化坐标（0~1，圆心相对页面宽/高，r 相对视频短边）。
+    circle: {cx, cy, r}，归一化坐标（0~1，圆心相对页面宽/高，r 相对页面短边）。
     video: {ox, oy, zoom} 视频与框的相对位置：
-        - ox/oy ∈ [0,1]：圆形窗口显示的是视频的哪个子区域（0=左/上边，0.5=居中，1=右/下边）
-        - zoom：视频额外放大倍数（默认 1.0 = cover 填满圆形）
-    position: {x, y} 叠加位置（像素）；省略时由 cx,cy 推导（圆心对齐）。
+        - ox/oy ∈ [0,1]：窗口显示的是视频的哪个子区域（0=左/上边，0.5=居中，1=右/下边）
+        - zoom：视频额外放大倍数（默认 1.0 = cover 填满窗口）
+    shape: "circle" | "rect" 窗口形状。
+    position: {x, y} 叠加位置（像素）；省略时由 cx,cy 推导（窗口中心对齐）。
     """
+    shape = "rect" if str(shape).lower() in ("rect", "rectangle", "square") else "circle"
     digi_size = _probe_video_size(digi_video)
     base_size = _probe_video_size(base_video) if base_video else None
     if base_size is None:
@@ -348,6 +351,11 @@ def composite_circle(
     oy = max(0.0, min(1.0, float(video.get("oy", 0.5))))
     zoom = max(0.5, min(4.0, float(video.get("zoom", 1.0))))
     target = int(round(diameter * zoom))
+    # zoom<1 时 target<diameter，crop 会超界导致 ffmpeg 失败；
+    # zoom 语义是"cover 填满后的额外放大"，强制至少 1.0（cover 填满窗口）。
+    if target < diameter:
+        target = diameter
+        zoom = max(1.0, zoom)
     # cover 缩放后实际尺寸（较小边 = target）
     w, h = digi_size
     if w > 0 and h > 0 and w >= h:
@@ -370,15 +378,21 @@ def composite_circle(
     if base_video is not None:
         inputs.append(str(base_video))
 
-    # digi 缩放到 target（≥圆形直径），再按 ox/oy 裁出直径窗口，用 geq 生成圆形 alpha 遮罩
-    alpha_expr = (
-        f"if(lt((X-{cx_local:.2f})^2+(Y-{cy_local:.2f})^2,{radius:.2f}^2),255,0)"
-    )
-    digi_filter = (
+    # digi 缩放到 target（≥窗口直径），再按 ox/oy 裁出窗口；圆形额外加 alpha 遮罩
+    base_digi = (
         f"[0:v]scale={target}:{target}:force_original_aspect_ratio=increase,"
-        f"crop={diameter}:{diameter}:{crop_x}:{crop_y},setsar=1,format=rgba,"
-        f"geq=a='{alpha_expr}':r='r(X,Y)':g='g(X,Y)':b='b(X,Y)'[digi]"
+        f"crop={diameter}:{diameter}:{crop_x}:{crop_y},setsar=1"
     )
+    if shape == "rect":
+        digi_filter = f"{base_digi},format=yuv420p[digi]"
+    else:
+        alpha_expr = (
+            f"if(lt((X-{cx_local:.2f})^2+(Y-{cy_local:.2f})^2,{radius:.2f}^2),255,0)"
+        )
+        digi_filter = (
+            f"{base_digi},format=rgba,"
+            f"geq=a='{alpha_expr}':r='r(X,Y)':g='g(X,Y)':b='b(X,Y)'[digi]"
+        )
 
     if base_video is not None:
         fc = f"{digi_filter};[1:v][digi]overlay={x}:{y}:shortest=1[v]"
@@ -620,6 +634,7 @@ def composite(payload: Dict[str, Any]) -> Dict[str, Any]:
     position = payload.get("position") if isinstance(payload.get("position"), dict) else None
     border = payload.get("border") if isinstance(payload.get("border"), dict) else None
     video = payload.get("video") if isinstance(payload.get("video"), dict) else None
+    shape = str(payload.get("shape") or "circle").strip() or "circle"
     output = str(payload.get("output") or "").strip()
 
     if not digi_video or not Path(digi_video).exists():
@@ -638,6 +653,7 @@ def composite(payload: Dict[str, Any]) -> Dict[str, Any]:
             position=position,
             border=border,
             video=video,
+            shape=shape,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc))

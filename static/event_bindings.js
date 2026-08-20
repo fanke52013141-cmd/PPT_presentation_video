@@ -177,8 +177,9 @@ function initGlobalEvents() {
   document.getElementById('step6-btn-save-and-tts')?.addEventListener('click', () => saveNarrationAndRunTTS());
   document.getElementById('step6-btn-audio-confirm-next')?.addEventListener('click', async () => {
     const confirmed = await confirmStep7Audio();
-    if (confirmed) navigateToStep(8);
+    if (confirmed) navigateToStep(9);
   });
+  document.getElementById('step9-btn-skip')?.addEventListener('click', () => navigateToStep(8));
 
   // 步骤 7 后端能力已合并到可见步骤 6
   document.getElementById('step7-btn-synthesize')?.addEventListener('click', () => runStep7TTS());

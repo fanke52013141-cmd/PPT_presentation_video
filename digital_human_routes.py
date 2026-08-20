@@ -9,6 +9,8 @@
 from __future__ import annotations
 
 import logging
+import os
+import subprocess
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -22,6 +24,7 @@ from digital_human_client import (
     DigitalHumanUnavailable,
     get_digital_human_client,
 )
+from visual_contract_service import read_contract_slide_ids
 
 logger = logging.getLogger("PPTStudio.DigitalHumanRoutes")
 
@@ -55,6 +58,7 @@ def _default_config() -> Dict[str, Any]:
     return {
         "enabled": False,
         "mode": "upload",  # 'upload' 上传已生成视频 | 'generate' LatentSync 生成
+        "shape": "circle",  # 窗口形状 'circle' | 'rect'
         "avatar_id": "",
         "sync_mode": "accurate",
         "circle": dict(DEFAULT_CIRCLE),  # 框在页面位置(cx,cy) + 大小(r)
@@ -75,6 +79,8 @@ def _load_config(project: Project) -> Dict[str, Any]:
         cfg["circle"] = dict(DEFAULT_CIRCLE)
     if not isinstance(cfg.get("video"), dict):
         cfg["video"] = {"ox": 0.5, "oy": 0.5, "zoom": 1.0}
+    if cfg.get("shape") not in ("circle", "rect"):
+        cfg["shape"] = "circle"
     return cfg
 
 
@@ -116,6 +122,7 @@ def get_dh_config(project_id: str, db: Session = Depends(get_db)) -> Dict[str, A
         "config": {
             "enabled": cfg.get("enabled"),
             "mode": cfg.get("mode"),
+            "shape": cfg.get("shape"),
             "avatar_id": cfg.get("avatar_id"),
             "sync_mode": cfg.get("sync_mode"),
             "circle": cfg.get("circle"),
@@ -140,9 +147,11 @@ def put_dh_config(
 ) -> Dict[str, Any]:
     project = _project_or_404(db, project_id)
     cfg = _load_config(project)
-    for key in ("enabled", "mode", "avatar_id", "sync_mode", "position", "border"):
+    for key in ("enabled", "mode", "shape", "avatar_id", "sync_mode", "position", "border"):
         if key in payload:
             cfg[key] = payload[key]
+    if cfg.get("shape") not in ("circle", "rect"):
+        cfg["shape"] = "circle"
     if isinstance(payload.get("circle"), dict):
         circle = dict(cfg.get("circle") or DEFAULT_CIRCLE)
         circle.update(
@@ -195,7 +204,7 @@ def get_dh_upload_video(
     project_id: str,
     db: Session = Depends(get_db),
 ) -> FileResponse:
-    _project_or_404(db, project_id)
+    project = _project_or_404(db, project_id)
     path = _upload_digi_path(project)
     if not path.exists():
         raise HTTPException(status_code=404, detail="尚未上传数字人视频")
@@ -368,6 +377,7 @@ def compose_dh_slide(
     body = payload or {}
     circle = body.get("circle") if isinstance(body.get("circle"), dict) else cfg.get("circle")
     video = body.get("video") if isinstance(body.get("video"), dict) else cfg.get("video")
+    shape = str(body.get("shape") or cfg.get("shape") or "circle")
     position = body.get("position") if isinstance(body.get("position"), dict) else cfg.get("position")
     border = body.get("border") if isinstance(body.get("border"), dict) else cfg.get("border")
     base_video = str(body.get("base_video") or "").strip() or None
@@ -385,6 +395,7 @@ def compose_dh_slide(
             video=video,
             position=position,
             border=border,
+            shape=shape,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
@@ -407,3 +418,126 @@ def get_dh_composite_video(
     if not path.exists():
         raise HTTPException(status_code=404, detail="合成视频不存在")
     return FileResponse(str(path), media_type="video/mp4")
+
+
+# ---------------- 整段语音导出（供离线生成数字人视频） ----------------
+
+
+def _full_audio_path(project: Project) -> Path:
+    return _digi_dir(project) / "audio_full.mp3"
+
+
+def _find_ffmpeg() -> str:
+    """定位 ffmpeg/ffprobe（主服务进程可能不在带 ffmpeg 的 PATH 中启动）。"""
+    import shutil
+
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    candidates = [
+        os.environ.get("PPT_STUDIO_FFMPEG_DIR", ""),
+        os.environ.get("PPT_DIGITAL_HUMAN_FFMPEG_DIR", ""),
+        str(Path(os.environ.get("APPDATA", ""))
+            / "TRAE SOLO CN" / "ModularData" / "ai-agent" / "vm" / "tools" / "app" / "ffmpeg"),
+    ]
+    for cand in candidates:
+        if cand and (Path(cand) / "ffmpeg.exe").exists():
+            return str(Path(cand) / "ffmpeg.exe")
+    raise HTTPException(status_code=503, detail="未找到 ffmpeg，无法导出整段语音")
+
+
+def _find_ffprobe() -> str:
+    ffmpeg = _find_ffmpeg()
+    if ffmpeg.lower().endswith("ffmpeg.exe"):
+        probe = Path(ffmpeg).with_name("ffprobe.exe")
+        if probe.exists():
+            return str(probe)
+    found = shutil.which("ffprobe")
+    return found or ffmpeg
+
+
+def _full_audio_ready(project: Project) -> bool:
+    return _full_audio_path(project).exists()
+
+
+@router.post("/api/projects/{project_id}/digital-human/export-audio")
+def export_full_audio(
+    project_id: str,
+    payload: Optional[Dict[str, Any]] = None,
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """按页面顺序拼接全部 voice.mp3（页间加 0.6s 静音）为一段完整课程语音。"""
+    project = _project_or_404(db, project_id)
+    slide_ids = read_contract_slide_ids(project.run_dir)
+    audio_files = [_slide_audio_path(project, sid) for sid in slide_ids]
+    audio_files = [p for p in audio_files if p.exists() and p.stat().st_size > 0]
+    if not audio_files:
+        raise HTTPException(status_code=400, detail="未找到任何已生成的旁白音频，请先完成音频合成")
+
+    ffmpeg = _find_ffmpeg()
+    gap = max(0.0, min(3.0, float((payload or {}).get("gap_sec") or 0.6)))
+    out = _full_audio_path(project)
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    # 输入：每页音频 + 1 个静音源（anullsrc）
+    cmd = [ffmpeg, "-y"]
+    for af in audio_files:
+        cmd += ["-i", str(af)]
+    cmd += ["-f", "lavfi", "-t", f"{gap}", "-i", "anullsrc=r=44100:cl=stereo"]
+
+    # 各页音频规整采样率；静音裁剪为 gap 秒
+    n = len(audio_files)
+    fc_parts = []
+    for i in range(n):
+        fc_parts.append(f"[{i}:a]aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS[a{i}]")
+    fc_parts.append(f"[{n}:a]atrim=0:{gap},asetpts=PTS-STARTPTS[g]")
+    concat_inputs = []
+    for i in range(n):
+        concat_inputs.append(f"[a{i}]")
+        if i < n - 1:
+            concat_inputs.append("[g]")
+    fc_parts.append("".join(concat_inputs) + f"concat=n={2 * n - 1}:v=0:a=1[out]")
+    fc = ";".join(fc_parts)
+
+    cmd += ["-filter_complex", fc, "-map", "[out]",
+            "-c:a", "libmp3lame", "-b:a", "192k", str(out)]
+    _log_cmd = " ".join(cmd)
+    logger.info("[audio-export] %s", _log_cmd)
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+    if proc.returncode != 0:
+        raise HTTPException(
+            status_code=500,
+            detail="整段语音导出失败（需 ffmpeg）: " + (proc.stderr or "")[-800:],
+        )
+
+    duration = None
+    try:
+        probe = subprocess.run(
+            [_find_ffprobe(), "-v", "error", "-show_entries", "format=duration",
+             "-of", "csv=s=x:p=0", str(out)],
+            capture_output=True, text=True, timeout=30,
+        )
+        duration = float(probe.stdout.strip()) if probe.returncode == 0 else None
+    except Exception:  # noqa: BLE001
+        duration = None
+
+    return {
+        "success": True,
+        "slides": len(audio_files),
+        "gap_sec": gap,
+        "duration_sec": duration,
+        "bytes": out.stat().st_size,
+        "url": f"/api/projects/{project_id}/digital-human/export-audio/file",
+    }
+
+
+@router.get("/api/projects/{project_id}/digital-human/export-audio/file")
+def get_full_audio(
+    project_id: str,
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    project = _project_or_404(db, project_id)
+    path = _full_audio_path(project)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="整段语音尚未导出")
+    return FileResponse(str(path), media_type="audio/mpeg", filename="course_audio_full.mp3")

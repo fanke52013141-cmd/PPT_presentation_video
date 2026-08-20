@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -88,11 +89,21 @@ def _save_config(project: Project, cfg: Dict[str, Any]) -> None:
     write_json_atomic(_config_path(project), cfg)
 
 
+_SLIDE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _assert_safe_slide_id(slide_id: str) -> None:
+    if not _SLIDE_ID_RE.match(slide_id or ""):
+        raise HTTPException(status_code=400, detail="slide_id 无效")
+
+
 def _slide_audio_path(project: Project, slide_id: str) -> Path:
+    _assert_safe_slide_id(slide_id)
     return Path(str(project.run_dir)).resolve() / "slides" / slide_id / "voice.mp3"
 
 
 def _slide_digi_path(project: Project, slide_id: str) -> Path:
+    _assert_safe_slide_id(slide_id)
     return _digi_dir(project) / f"digi_{slide_id}.mp4"
 
 

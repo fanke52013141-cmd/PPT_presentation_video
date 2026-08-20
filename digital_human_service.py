@@ -35,6 +35,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 import uvicorn
+from urllib.parse import urlsplit
 
 logger = logging.getLogger("PPTStudio.DigitalHuman")
 
@@ -395,11 +396,13 @@ def composite_circle(
         )
 
     if base_video is not None:
-        fc = f"{digi_filter};[1:v][digi]overlay={x}:{y}:shortest=1[v]"
+        # 以主视频时长为基准：去掉 overlay 的 shortest 与输出级 -shortest，
+        # 避免上传的数字人视频比整课短时把整段课程截断
+        fc = f"{digi_filter};[1:v][digi]overlay={x}:{y}[v]"
         cmd = ["ffmpeg", "-y", "-i", str(digi_video), "-i", str(base_video),
                "-filter_complex", fc, "-map", "[v]", "-map", "1:a?",
                "-c:v", "libx264", "-preset", "medium", "-crf", "20",
-               "-c:a", "aac", "-shortest", "-movflags", "+faststart", str(output)]
+               "-c:a", "aac", "-movflags", "+faststart", str(output)]
     else:
         # 只输出圆形 digi 视频（透明背景会变黑，保持纯色底以便预览）
         fc = f"{digi_filter};[digi]format=yuv420p[v]"
@@ -431,10 +434,26 @@ app = FastAPI(title="Digital Human Service", description="LatentSync + 圆形讲
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+        "http://127.0.0.1:9001",
+        "http://localhost:9001",
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def localhost_origin_guard(request, call_next):
+    """仅允许本机来源的浏览器请求，阻止恶意网页借浏览器调用本服务。"""
+    origin = request.headers.get("origin")
+    if origin:
+        host = (urlsplit(origin).hostname or "").lower()
+        if host not in ("127.0.0.1", "localhost", "::1"):
+            return JSONResponse({"detail": "Origin not allowed."}, status_code=403)
+    return await call_next(request)
 
 
 @app.get("/api/digital-human/health")
@@ -558,7 +577,12 @@ def create_job(payload: Dict[str, Any]) -> Dict[str, Any]:
             },
         )
 
-    if len(_jobs) >= MAX_JOBS:
+    active_count = sum(
+        1
+        for j in _jobs.values()
+        if j.get("status") in (JOB_STATUS_QUEUED, JOB_STATUS_PROCESSING)
+    )
+    if active_count >= MAX_JOBS:
         raise HTTPException(status_code=429, detail="任务队列已满，请稍后重试")
 
     job_id = f"job_{uuid.uuid4().hex[:10]}"

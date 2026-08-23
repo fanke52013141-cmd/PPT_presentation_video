@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260820.3">
+  <link rel="stylesheet" href="style.css?v=20260823.1">
 </head>
 <body>
 
@@ -432,24 +432,45 @@
               <div class="dh-settings-title">数字人讲解设置</div>
               <div class="dh-grid">
                 <div class="dh-field">
-                  <div class="dh-field-label">① 整段语音导出</div>
+                  <div class="dh-field-label">① 数字人生成方式</div>
+                  <div class="dh-mode-toggle">
+                    <button type="button" id="dh-tab-comfyui" class="dh-tab-btn dh-tab-active" style="flex:1;">ComfyUI 生成</button>
+                    <button type="button" id="dh-tab-upload" class="dh-tab-btn" style="flex:1;">导入视频</button>
+                  </div>
+                  <!-- ComfyUI 模式面板 -->
+                  <div id="dh-mode-panel-comfyui">
+                    <div style="margin-bottom:0.6rem;">
+                      <label class="btn secondary dh-upload-btn" style="width:100%;">
+                        上传工作流 JSON
+                        <input type="file" id="dh-comfyui-workflow-file" accept=".json" style="display:none;">
+                      </label>
+                      <span id="dh-comfyui-workflow-status" class="dh-drag-hint" style="display:block; margin-top:0.3rem;">未上传工作流</span>
+                    </div>
+                    <label class="btn secondary dh-upload-btn" style="width:100%;">
+                      上传数字人形象图片
+                      <input type="file" id="dh-comfyui-avatar-file" accept="image/*" style="display:none;">
+                    </label>
+                    <span id="dh-comfyui-avatar-status" class="dh-drag-hint" style="display:block; margin-top:0.3rem;">未上传形象图片</span>
+                    <div class="dh-drag-hint" style="margin-top:0.8rem; font-size:0.8rem; line-height:1.6;">
+                      分辨率、采样步数、CFG 等质量参数请在工作流 JSON 中直接调整，确保不同项目通用。
+                    </div>
+                    <button id="dh-btn-generate-all" class="success" style="width:100%; margin-top:0.8rem;">生成全部页数字人</button>
+                  </div>
+                  <!-- 导入视频模式面板 -->
+                  <div id="dh-mode-panel-upload" style="display:none;">
+                    <label class="btn secondary dh-upload-btn" style="width:100%;">
+                      上传数字人视频
+                      <input type="file" id="dh-upload-video-file" accept="video/*" style="display:none;">
+                    </label>
+                    <span id="dh-upload-video-status" class="dh-drag-hint" style="display:block; margin-top:0.3rem;">未上传</span>
+                    <div class="dh-drag-hint" style="margin-top:0.6rem;">
+                      先用 HeyGem / Wan2.2 等工具离线生成讲师讲解视频，再上传到此处。导出整段语音后可用于离线生成。
+                    </div>
+                  </div>
+                  <div id="dh-slide-status" class="dh-slide-status"></div>
+                  <div class="dh-field-label" style="margin-top:1.2rem; border-top: 1px solid rgba(91,120,147,0.2); padding-top:1rem;">② 整段语音导出</div>
                   <button id="dh-btn-export-audio" class="secondary" style="width:100%;">导出整段语音（拼接全课程）</button>
-                  <div id="dh-audio-export-status" class="dh-drag-hint" style="margin-top:0.4rem;">把全部页面旁白拼接为一整段 mp3（页间自动加静音），供离线生成数字人视频使用。</div>
-                  <div class="dh-field-label" style="margin-top:1rem;">② 上传数字人讲解视频</div>
-                  <label class="btn secondary dh-upload-btn" style="width:100%;">
-                    上传视频
-                    <input type="file" id="dh-upload-video-file" accept="video/*" style="display:none;">
-                  </label>
-                  <span id="dh-upload-status" class="dh-upload-status dh-failed">未上传</span>
-                  <div class="dh-drag-hint" style="margin-top:0.6rem;">先用 HeyGem / EchoMimic / Wan2.2 等离线生成讲师讲解视频，再上传到此处。</div>
-                  <div class="dh-field-label" style="margin-top:1rem;">LatentSync 生成（模型部署后可用）</div>
-                  <select id="dh-sync-mode" class="dh-input">
-                    <option value="accurate">精准（效果更好）</option>
-                    <option value="fast">快速（更快）</option>
-                  </select>
-                  <button id="dh-btn-generate-all" class="success" style="width:100%; margin-top:0.6rem;">生成全部页数字人</button>
-                  <select id="dh-avatar-select" class="dh-input" style="margin-top:0.4rem;"></select>
-                  <label class="btn secondary dh-upload-btn" style="margin-top:0.4rem;">上传参考视频<input type="file" id="dh-avatar-file" accept="video/*" style="display:none;"></label>
+                  <div id="dh-audio-export-status" class="dh-drag-hint" style="margin-top:0.4rem;">把全部页面旁白拼接为一整段 mp3，供离线数字人生成使用。</div>
                 </div>
                 <div class="dh-field">
                   <div class="dh-field-label">③ 框选与缩放</div>
@@ -470,21 +491,45 @@
                   <div class="dh-drag-hint" style="margin-top:0.4rem;">框内拖动=平移视频 · 框外拖动=移动位置 · 左上角手柄=调整大小</div>
                 </div>
                 <div class="dh-field">
-                  <div class="dh-field-label">④ PPT 位置设置</div>
-                  <div class="dh-pos-presets">
-                    <button type="button" data-dh-pos="right_bottom">右下角</button>
-                    <button type="button" data-dh-pos="left_bottom">左下角</button>
-                    <button type="button" data-dh-pos="right_top">右上角</button>
-                    <button type="button" data-dh-pos="left_top">左上角</button>
-                    <button type="button" id="dh-circle-reset">重置</button>
+                  <div class="dh-field-label">④ 位置与缩放精调</div>
+                  <div class="dh-lock-row">
+                    <button type="button" id="dh-btn-lock" class="dh-lock-btn">固定当前布局</button>
+                    <span id="dh-lock-status" class="dh-lock-status">未固定</span>
                   </div>
-                  <div class="dh-circle-meta" style="margin-top:0.5rem;">
-                    框位置(<span id="dh-cx">0.80</span>,<span id="dh-cy">0.20</span>) · 框大小 <span id="dh-r">0.25</span><br>
-                    视频相对(<span id="dh-ox">0.50</span>,<span id="dh-oy">0.50</span>)
+                  <div class="dh-slider-group">
+                    <div class="dh-slider-row">
+                      <span class="dh-slider-label">框位置 X</span>
+                      <input type="range" id="dh-slider-cx" min="0" max="1" step="0.01" value="0.8">
+                      <span class="dh-slider-value" id="dh-val-cx">0.80</span>
+                    </div>
+                    <div class="dh-slider-row">
+                      <span class="dh-slider-label">框位置 Y</span>
+                      <input type="range" id="dh-slider-cy" min="0" max="1" step="0.01" value="0.2">
+                      <span class="dh-slider-value" id="dh-val-cy">0.20</span>
+                    </div>
+                    <div class="dh-slider-row">
+                      <span class="dh-slider-label">框大小</span>
+                      <input type="range" id="dh-slider-r" min="0.06" max="0.6" step="0.01" value="0.25">
+                      <span class="dh-slider-value" id="dh-val-r">0.25</span>
+                    </div>
+                    <div class="dh-slider-row">
+                      <span class="dh-slider-label">视频缩放</span>
+                      <input type="range" id="dh-slider-zoom" min="0.5" max="4" step="0.05" value="1">
+                      <span class="dh-slider-value" id="dh-val-zoom">100%</span>
+                    </div>
+                    <div class="dh-slider-row">
+                      <span class="dh-slider-label">视频偏移 X</span>
+                      <input type="range" id="dh-slider-ox" min="0" max="1" step="0.01" value="0.5">
+                      <span class="dh-slider-value" id="dh-val-ox">0.50</span>
+                    </div>
+                    <div class="dh-slider-row">
+                      <span class="dh-slider-label">视频偏移 Y</span>
+                      <input type="range" id="dh-slider-oy" min="0" max="1" step="0.01" value="0.5">
+                      <span class="dh-slider-value" id="dh-val-oy">0.50</span>
+                    </div>
                   </div>
-                  <div class="dh-slider-row">
-                    <span class="dh-slider-label">视频缩放</span>
-                    <input type="range" id="dh-video-zoom" min="1" max="4" step="0.05" value="1">
+                  <div class="dh-circle-info" id="dh-circle-info">
+                    圆框直径 <span id="dh-info-diameter">—</span> px · 中心 (<span id="dh-info-px">—</span>, <span id="dh-info-py">—</span>) px
                   </div>
                   <button id="dh-btn-save" class="secondary" style="width:100%; margin-top:0.8rem;">保存设置</button>
                   <div id="dh-slide-status" class="dh-slide-status"></div>
@@ -1215,14 +1260,14 @@
   <script src="mask_editor.js?v=20260809.4"></script>
   <script src="subtitle_settings.js?v=20260801.1"></script>
   <script src="narration_audio.js?v=20260820.1"></script>
-  <script src="output_render.js?v=20260801.1"></script>
+  <script src="output_render.js?v=20260823.1"></script>
   <script src="workspace_navigation.js?v=20260820.1"></script>
   <script src="event_bindings.js?v=20260820.1"></script>
   <script src="project_profile_extension.js?v=3.0.3"></script>
   <script src="storyboard_background_extension.js?v=20260807.1"></script>
   <script src="style_reference_manager_extension.js?v=3.0.1"></script>
   <script src="ai_mask_auto_state.js?v=20260809.1"></script>
-  <script src="digital_human_panel.js?v=20260820.4"></script>
+  <script src="digital_human_panel.js?v=20260823.4"></script>
   <script src="ai_mask_extension.js?v=20260809.2"></script>
   <script src="one_click_extension.js?v=20260813.2"></script>
 </body>

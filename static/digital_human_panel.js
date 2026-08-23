@@ -13,18 +13,19 @@
   var dhState = {
     config: {
       enabled: false,
-      mode: "upload",
+      mode: "comfyui",          // 'comfyui' | 'upload'
       shape: "circle",
       avatar_id: "",
       circle: { cx: 0.8, cy: 0.2, r: 0.25 },
       video: { ox: 0.5, oy: 0.5, zoom: 1.0 },
       slides: {},
     },
-    avatars: [],
     audioReady: {},
     polling: {},
     uploadVideoExists: false,
     videoSize: null, // {w,h} 预览视频原始尺寸
+    comfyuiWorkflowExists: false,
+    avatarUploaded: false,
   };
 
   function projectId() {
@@ -48,14 +49,30 @@
         if (!dhState.config.video) dhState.config.video = { ox: 0.5, oy: 0.5, zoom: 1.0 };
         if (dhState.config.shape !== "rect") dhState.config.shape = "circle";
       }
-      if (res && res.audioReady) dhState.audioReady = res.audioReady;
+      // 应用全局固定布局（如有），覆盖项目值为用户固定的全局默认
+      applyFixedLayout();
+      if (res && res.audio_ready) dhState.audioReady = res.audio_ready;
+      if (res && res.audio_ready_count !== undefined) dhState.audioReadyCount = res.audio_ready_count;
+      if (res && res.total_slides !== undefined) dhState.totalSlides = res.total_slides;
       if (res && res.slides) {
         dhState.config.slides = res.slides;
-        renderSlideStatus();
       }
       dhState.uploadVideoExists = !!(res && res.upload_video_exists);
+      dhState.avatarUploaded = !!dhState.config.avatar_id;
+      updateAudioStatus();
       applyConfigToUI();
+      checkComfyuiWorkflow();
       loadPreview();
+      // 恢复未完成 job 的轮询（页面刷新后）
+      if (dhState.config.slides) {
+        Object.keys(dhState.config.slides).forEach(function (slideId) {
+          var slide = dhState.config.slides[slideId];
+          if (slide && slide.job_id &&
+              (slide.status === "queued" || slide.status === "processing")) {
+            pollJob(slideId, slide.job_id);
+          }
+        });
+      }
       if (typeof window.__dhMarkEnabled === "function") {
         window.__dhMarkEnabled(!!dhState.config.enabled);
       }
@@ -67,41 +84,65 @@
   function applyConfigToUI() {
     var enabledEl = document.getElementById("dh-enabled");
     var body = document.getElementById("dh-panel-body");
-    var avatarSel = document.getElementById("dh-avatar-select");
-    var uploadStatus = document.getElementById("dh-upload-status");
     if (enabledEl) enabledEl.checked = !!dhState.config.enabled;
     if (body) body.style.display = dhState.config.enabled ? "" : "none";
-    if (avatarSel && dhState.config.avatar_id) avatarSel.value = dhState.config.avatar_id;
-    if (uploadStatus) {
-      uploadStatus.textContent = dhState.uploadVideoExists ? "已上传" : "未上传";
-      uploadStatus.className = "dh-upload-status " + (dhState.uploadVideoExists ? "dh-done" : "dh-failed");
-    }
-    var zoomEl = document.getElementById("dh-video-zoom");
-    if (zoomEl) zoomEl.value = String(dhState.config.video && dhState.config.video.zoom || 1);
     // 形状切换高亮
     document.querySelectorAll("[data-dh-shape]").forEach(function (btn) {
       var active = btn.getAttribute("data-dh-shape") === (dhState.config.shape || "circle");
       btn.classList.toggle("dh-shape-active", active);
     });
+    // 模式选项卡
+    updateModeTabs();
+    // 上传视频状态
+    var uploadStatus = document.getElementById("dh-upload-video-status");
+    if (uploadStatus) {
+      uploadStatus.textContent = dhState.uploadVideoExists ? "已上传" : "未上传";
+      uploadStatus.style.color = dhState.uploadVideoExists ? "#4CAF50" : "";
+    }
+    // 形象图片状态
+    var avatarStatus = document.getElementById("dh-comfyui-avatar-status");
+    if (avatarStatus) {
+      if (dhState.avatarUploaded) {
+        avatarStatus.textContent = "已上传";
+        avatarStatus.style.color = "#4CAF50";
+      } else {
+        avatarStatus.textContent = "未上传形象图片";
+        avatarStatus.style.color = "";
+      }
+    }
     applyCircleToPreview();
+  }
+
+  function updateModeTabs() {
+    var mode = dhState.config.mode || "comfyui";
+    var tabComfyui = document.getElementById("dh-tab-comfyui");
+    var tabUpload = document.getElementById("dh-tab-upload");
+    var panelComfyui = document.getElementById("dh-mode-panel-comfyui");
+    var panelUpload = document.getElementById("dh-mode-panel-upload");
+    if (tabComfyui) tabComfyui.classList.toggle("dh-tab-active", mode === "comfyui");
+    if (tabUpload) tabUpload.classList.toggle("dh-tab-active", mode === "upload");
+    if (panelComfyui) panelComfyui.style.display = mode === "comfyui" ? "" : "none";
+    if (panelUpload) panelUpload.style.display = mode === "upload" ? "" : "none";
+  }
+
+  function switchMode(mode) {
+    dhState.config.mode = mode;
+    updateModeTabs();
+    saveConfig();
   }
 
   async function saveConfig() {
     var pid = projectId();
     if (!pid) return;
     var enabledEl = document.getElementById("dh-enabled");
-    var avatarSel = document.getElementById("dh-avatar-select");
-    var syncEl = document.getElementById("dh-sync-mode");
     dhState.config.enabled = enabledEl ? enabledEl.checked : false;
-    dhState.config.avatar_id = avatarSel ? avatarSel.value : "";
-    dhState.config.sync_mode = syncEl ? syncEl.value : "accurate";
+    dhState.config.mode = dhState.config.mode || "comfyui";
     try {
       await API.put(base() + "/config", {
         enabled: dhState.config.enabled,
-        mode: dhState.config.mode || "upload",
+        mode: dhState.config.mode,
         shape: dhState.config.shape || "circle",
         avatar_id: dhState.config.avatar_id,
-        sync_mode: dhState.config.sync_mode,
         circle: dhState.config.circle,
         video: dhState.config.video,
       });
@@ -119,13 +160,19 @@
   async function loadHealth() {
     var el = document.getElementById("dh-service-status");
     if (!el) return;
+    if (!projectId()) return;  // 首页无选中项目时跳过，避免 404 "项目不存在"
     try {
       var res = await API.get(base() + "/health");
-      if (res && res.model_ready) {
-        el.textContent = "模型就绪";
-        el.className = "dh-service-status dh-ok";
+      if (res) {
+        if (res.model_ready) {
+          el.textContent = res.comfyui_online ? "模型就绪（ComfyUI）" : "模型就绪";
+          el.className = "dh-service-status dh-ok";
+        } else {
+          el.textContent = res.comfyui_online ? "ComfyUI 在线" : "模型未就绪";
+          el.className = "dh-service-status dh-warn";
+        }
       } else {
-        el.textContent = res && res.mock_mode ? "Mock 模式" : "模型未部署";
+        el.textContent = "模型状态未知";
         el.className = "dh-service-status dh-warn";
       }
     } catch (e) {
@@ -153,7 +200,6 @@
         applyConfigToUI();
         showToast("数字人讲解视频已上传");
         loadPreview();
-        captureVideoFirstFrame();
         saveConfig();
       }
     } catch (e) {
@@ -216,16 +262,13 @@
       handle.style.top = (circle.cy * c.h - D / 2 - handleSize / 2) + "px";
     }
 
-    var cxEl = document.getElementById("dh-cx");
-    var cyEl = document.getElementById("dh-cy");
-    var rEl = document.getElementById("dh-r");
-    var oxEl = document.getElementById("dh-ox");
-    var oyEl = document.getElementById("dh-oy");
-    if (cxEl) cxEl.textContent = circle.cx.toFixed(2);
-    if (cyEl) cyEl.textContent = circle.cy.toFixed(2);
-    if (rEl) rEl.textContent = circle.r.toFixed(2);
-    if (oxEl) oxEl.textContent = videoCfg.ox.toFixed(2);
-    if (oyEl) oyEl.textContent = videoCfg.oy.toFixed(2);
+    syncSliders(circle, videoCfg);
+    var diaEl = document.getElementById("dh-info-diameter");
+    var pxEl = document.getElementById("dh-info-px");
+    var pyEl = document.getElementById("dh-info-py");
+    if (diaEl) diaEl.textContent = Math.round(D);
+    if (pxEl) pxEl.textContent = Math.round(circle.cx * c.w);
+    if (pyEl) pyEl.textContent = Math.round(circle.cy * c.h);
   }
 
   function captureVideoFirstFrame() {
@@ -259,23 +302,61 @@
     var video = document.getElementById("dh-preview-video");
     if (!video) return;
     var src = null;
-    if (dhState.uploadVideoExists) {
+    var mode = dhState.config.mode || "comfyui";
+    if (mode === "upload" && dhState.uploadVideoExists) {
       src = base() + "/upload/video?t=" + Date.now();
     } else {
-      // 回退：优先用第一页已生成的数字人视频，否则用形象视频
+      // 优先用整段已生成的数字人视频
       var slides = dhState.config.slides || {};
-      var firstDone = Object.keys(slides).find(function (sid) {
-        return slides[sid] && slides[sid].video_exists;
-      });
-      if (firstDone) {
-        src = base() + "/slides/" + encodeURIComponent(firstDone) + "/video?t=" + Date.now();
-      } else if (dhState.config.avatar_id) {
-        src = base() + "/avatars/" + encodeURIComponent(dhState.config.avatar_id) + "/video?t=" + Date.now();
+      if (slides["full"] && slides["full"].video_exists) {
+        src = base() + "/slides/full/video?t=" + Date.now();
+      } else {
+        var firstDone = Object.keys(slides).find(function (sid) {
+          return slides[sid] && slides[sid].video_exists;
+        });
+        if (firstDone) {
+          src = base() + "/slides/" + encodeURIComponent(firstDone) + "/video?t=" + Date.now();
+        }
       }
     }
     if (src) {
+      // 重置 onseeked 防止旧回调干扰
+      video.onseeked = null;
+      video.onloadeddata = null;
       video.src = src;
-      video.play().catch(function () {});
+      video.load();
+      // 视频元数据就绪后再播放并截取第一帧
+      video.onloadeddata = function () {
+        captureFirstFrame(video);
+        try { video.play().catch(function () {}); } catch (e) {}
+      };
+      // 兜底：5s 后若仍未截取，强制尝试一次
+      setTimeout(function () {
+        if (video.readyState >= 2) captureFirstFrame(video);
+      }, 5000);
+    }
+  }
+
+  // 从预览视频中抽取第一帧，显示到参考图区（dh-video-ref）
+  function captureFirstFrame(video) {
+    if (!video || video.readyState < 2) return;  // 需至少有当前帧数据
+    try {
+      var cv = document.createElement("canvas");
+      var vw = video.videoWidth || 320;
+      var vh = video.videoHeight || 320;
+      cv.width = 320;
+      cv.height = Math.round(320 * vh / Math.max(1, vw));
+      var ctx = cv.getContext("2d");
+      ctx.drawImage(video, 0, 0, cv.width, cv.height);
+      var dataUrl = cv.toDataURL("image/jpeg", 0.85);
+      var refImg = document.getElementById("dh-video-ref");
+      var refBox = document.getElementById("dh-video-ref-box");
+      if (refImg && dataUrl && dataUrl.length > 100) {
+        refImg.src = dataUrl;
+        if (refBox) refBox.style.display = "";
+      }
+    } catch (e) {
+      console.warn("[DH] captureFirstFrame failed:", e);
     }
   }
 
@@ -369,7 +450,82 @@
     });
   }
 
-  // ---------------- 位置预设 / 重置 ----------------
+  // ---------------- 滑块同步 ----------------
+
+  function syncSliders(circle, videoCfg) {
+    var map = [
+      { s: "dh-slider-cx", v: "dh-val-cx", val: circle.cx, fmt: function (x) { return x.toFixed(2); } },
+      { s: "dh-slider-cy", v: "dh-val-cy", val: circle.cy, fmt: function (x) { return x.toFixed(2); } },
+      { s: "dh-slider-r", v: "dh-val-r", val: circle.r, fmt: function (x) { return x.toFixed(2); } },
+      { s: "dh-slider-zoom", v: "dh-val-zoom", val: videoCfg.zoom, fmt: function (x) { return Math.round(x * 100) + "%"; } },
+      { s: "dh-slider-ox", v: "dh-val-ox", val: videoCfg.ox, fmt: function (x) { return x.toFixed(2); } },
+      { s: "dh-slider-oy", v: "dh-val-oy", val: videoCfg.oy, fmt: function (x) { return x.toFixed(2); } },
+    ];
+    map.forEach(function (m) {
+      var sl = document.getElementById(m.s);
+      var vl = document.getElementById(m.v);
+      if (sl) sl.value = String(m.val);
+      if (vl) vl.textContent = m.fmt(Number(m.val) || 0);
+    });
+  }
+
+  // ---------------- 固定布局（全局默认值） ----------------
+
+  var FIXED_KEY = "PPT_DH_FIXED_LAYOUT";
+
+  function getFixedLayout() {
+    try {
+      var raw = localStorage.getItem(FIXED_KEY);
+      if (!raw) return null;
+      var data = JSON.parse(raw);
+      if (data && data.circle && data.video) return data;
+    } catch (e) {}
+    return null;
+  }
+
+  function applyFixedLayout() {
+    var fixed = getFixedLayout();
+    if (!fixed) return;
+    dhState.config.circle = Object.assign({}, fixed.circle);
+    dhState.config.video = Object.assign({}, fixed.video);
+    if (fixed.shape) dhState.config.shape = fixed.shape;
+  }
+
+  function lockLayout() {
+    var fixed = getFixedLayout();
+    if (fixed) {
+      localStorage.removeItem(FIXED_KEY);
+      showToast("已解除固定布局");
+    } else {
+      try {
+        localStorage.setItem(FIXED_KEY, JSON.stringify({
+          circle: dhState.config.circle,
+          video: dhState.config.video,
+          shape: dhState.config.shape,
+        }));
+        showToast("当前布局已固定为全局默认值");
+      } catch (e) {
+        showToast("固定失败：" + ((e && e.message) || "未知错误"));
+      }
+    }
+    updateLockUI();
+  }
+
+  function updateLockUI() {
+    var btn = document.getElementById("dh-btn-lock");
+    var status = document.getElementById("dh-lock-status");
+    var fixed = getFixedLayout();
+    if (btn) {
+      btn.textContent = fixed ? "解除固定" : "固定当前布局";
+      btn.classList.toggle("dh-locked", !!fixed);
+    }
+    if (status) {
+      status.textContent = fixed ? "已固定（全局生效）" : "未固定";
+      status.className = "dh-lock-status " + (fixed ? "dh-lock-on" : "");
+    }
+  }
+
+  // ---------------- 位置预设 / 重置（保留函数，按钮已移除） ----------------
 
   function setPositionPreset(key) {
     var circle = dhState.config.circle || { cx: 0.8, cy: 0.2, r: 0.25 };
@@ -433,7 +589,7 @@
     }
   }
 
-  // ---------------- 生成（LatentSync，保留） ----------------
+  // ---------------- 生成（ComfyUI） ----------------
 
   function audioReadySlides() {
     return Object.keys(dhState.audioReady || {}).filter(function (sid) {
@@ -441,17 +597,50 @@
     });
   }
 
+  function updateAudioStatus() {
+    var el = document.getElementById("dh-slide-status");
+    if (!el) return;
+    var ready = dhState.audioReadyCount || 0;
+    var total = dhState.totalSlides || 0;
+    var slides = dhState.config.slides || {};
+    var labels = { queued: "排队中", processing: "生成中", done: "完成", failed: "失败" };
+
+    // 优先显示整段数字人生成状态
+    var fullItem = slides["full"];
+    if (fullItem && fullItem.status) {
+      var fst = fullItem.status;
+      var fcls = fst === "done" ? "dh-done" : fst === "failed" ? "dh-failed" : "dh-busy";
+      var chips = '<span class="dh-slide-status-note">整段数字人视频</span>';
+      chips += '<div style="margin-top:0.3rem;"><span class="dh-slide-chip ' + fcls + '">' +
+               (labels[fst] || fst) + '</span></div>';
+      if (fst === "done" && fullItem.video_exists) {
+        chips += '<div style="margin-top:0.3rem;"><span class="dh-slide-status-note" style="color:#4CAF50;">整段视频已生成，可在预览中查看</span></div>';
+      }
+      el.innerHTML = chips;
+      return;
+    }
+
+    var chips = "";
+    if (total === 0) {
+      chips = '<span class="dh-slide-status-note">尚未导入文章或生成故事板</span>';
+    } else if (ready === 0) {
+      chips = '<span class="dh-slide-status-note">⚠️ 尚无已合成的旁白音频（0/' + total + ' 页）。请先完成第 5 步「旁白与音频」。</span>';
+    } else {
+      chips = '<span class="dh-slide-status-note">音频就绪：' + ready + '/' + total + ' 页（点击下方按钮将合并为一整段音频并生成单个数字人视频）</span>';
+    }
+    el.innerHTML = chips;
+  }
+
   async function generateSlide(slideId) {
     var pid = projectId();
     if (!pid) return;
     if (!dhState.config.avatar_id) {
-      showToast("请先上传并选择讲解形象");
+      showToast("请先上传数字人形象图片");
       return;
     }
     try {
       var res = await API.post(base() + "/generate/" + encodeURIComponent(slideId), {
         avatar_id: dhState.config.avatar_id,
-        sync_mode: dhState.config.sync_mode || "accurate",
       });
       if (res && res.job_id) {
         markSlideStatus(slideId, "queued");
@@ -467,30 +656,36 @@
   function markSlideStatus(slideId, status) {
     if (!dhState.config.slides) dhState.config.slides = {};
     dhState.config.slides[slideId] = Object.assign({}, dhState.config.slides[slideId], { status: status });
-    renderSlideStatus();
+    updateAudioStatus();
   }
 
   async function pollJob(slideId, jobId) {
     if (dhState.polling[jobId]) return;
     dhState.polling[jobId] = true;
+    var label = slideId === "full" ? "整段" : "页面 " + slideId;
     try {
-      for (var i = 0; i < 600; i++) {
+      for (var i = 0; i < 3600; i++) {
         await sleep(2000);
         var res = await API.get(base() + "/jobs/" + encodeURIComponent(jobId));
         var job = res && res.job ? res.job : res;
         var status = job && job.status;
         if (status === "done") {
           markSlideStatus(slideId, "done");
+          // 标记视频已存在，使 loadPreview 能定位到视频源
+          if (!dhState.config.slides) dhState.config.slides = {};
+          if (!dhState.config.slides[slideId]) dhState.config.slides[slideId] = {};
+          dhState.config.slides[slideId].video_exists = true;
+          updateAudioStatus();
           loadPreview();
-          showToast("页面 " + slideId + " 数字人已生成");
+          showToast(label + " 数字人已生成");
           break;
         } else if (status === "failed") {
           markSlideStatus(slideId, "failed");
-          showToast("页面 " + slideId + " 生成失败：" + ((job && job.error) || "未知错误"));
+          showToast(label + " 生成失败：" + ((job && job.error) || "未知错误"));
           break;
         } else if (status === "unavailable") {
           markSlideStatus(slideId, "failed");
-          showToast("模型未部署，无法生成");
+          showToast("该任务不可用，请确认模型与服务状态");
           break;
         } else {
           markSlideStatus(slideId, status || "processing");
@@ -505,41 +700,103 @@
   }
 
   async function generateAll() {
-    var ids = audioReadySlides();
-    if (!ids.length) {
-      showToast("暂无可生成的页面（需先生成旁白音频）");
-      return;
-    }
+    var pid = projectId();
+    if (!pid) return;
     if (!dhState.config.avatar_id) {
-      showToast("请先上传并选择讲解形象");
+      showToast("请先上传数字人形象图片");
       return;
     }
-    showToast("开始生成 " + ids.length + " 页数字人...");
-    for (var i = 0; i < ids.length; i++) {
-      await generateSlide(ids[i]);
+    if (!dhState.comfyuiWorkflowExists) {
+      showToast("请先上传 ComfyUI 工作流 JSON");
+      return;
+    }
+    var ready = dhState.audioReadyCount || 0;
+    var total = dhState.totalSlides || 0;
+    if (!ready) {
+      showToast("尚无已合成的旁白音频（0/" + total + " 页），请先完成音频合成");
+      return;
+    }
+
+    var btn = document.getElementById("dh-btn-generate-all");
+    if (btn) btn.disabled = true;
+
+    try {
+      // 第一步：确保整段音频已导出（合并 5 页音频 + 页间静音）
+      var statusEl = document.getElementById("dh-slide-status");
+      if (statusEl) statusEl.innerHTML = '<span class="dh-slide-status-note">正在合并 ' + ready + ' 页音频...</span>';
+      var exportRes = await API.post(base() + "/export-audio", { gap_sec: 0.6 }, { timeout: 900000 });
+      if (!exportRes || !exportRes.success) {
+        showToast((exportRes && exportRes.detail) || "导出整段语音失败");
+        updateAudioStatus();
+        return;
+      }
+
+      // 第二步：使用整段音频创建单个数字人生成任务
+      if (statusEl) statusEl.innerHTML = '<span class="dh-slide-status-note">正在提交数字人生成任务...</span>';
+      var res = await API.post(base() + "/generate-full", {
+        avatar_id: dhState.config.avatar_id,
+      });
+      if (res && res.job_id) {
+        markSlideStatus("full", "queued");
+        pollJob("full", res.job_id);
+        showToast("已提交整段数字人生成任务（" + exportRes.slides + " 页音频已合并）。Wan2.2 S2V 生成耗时较长，请耐心等待。");
+      } else if (res && res.detail) {
+        showToast(res.detail);
+        updateAudioStatus();
+      }
+    } catch (e) {
+      console.error("[DH] generateAll failed:", e);
+      showToast("生成失败：" + ((e && (e.detail || e.message)) || "未知错误"));
+      updateAudioStatus();
+    } finally {
+      if (btn) btn.disabled = false;
     }
   }
 
-  function renderSlideStatus() {
-    var container = document.getElementById("dh-slide-status");
-    if (!container) return;
-    var slides = dhState.config.slides || {};
-    var keys = Object.keys(slides);
-    if (!keys.length) {
-      container.innerHTML = '<span class="dh-slide-status-note">尚未生成任何页面</span>';
-      return;
-    }
-    var labels = { queued: "排队中", processing: "生成中", done: "完成", failed: "失败" };
-    container.innerHTML = keys.map(function (sid) {
-      var item = slides[sid] || {};
-      var st = item.status || "queued";
-      var cls = st === "done" ? "dh-done" : st === "failed" ? "dh-failed" : "dh-busy";
-      return '<span class="dh-slide-chip ' + cls + '">' + escHtml(sid) + " " + (labels[st] || st) + "</span>";
-    }).join("");
-  }
+  // renderSlideStatus 已合并到 updateAudioStatus
 
   function sleep(ms) {
     return new Promise(function (resolve) { setTimeout(resolve, ms); });
+  }
+
+  // ---------------- ComfyUI 模式 ----------------
+
+  async function uploadComfyuiWorkflow(file) {
+    if (!file) return;
+    var fd = new FormData();
+    fd.append("file", file);
+    try {
+      var res = await API.post(base() + "/comfyui/workflow", fd);
+      if (res && res.success) {
+        dhState.comfyuiWorkflowExists = true;
+        dhState.config.mode = "comfyui";
+        var statusEl = document.getElementById("dh-comfyui-workflow-status");
+        if (statusEl) {
+          statusEl.textContent = "已上传（" + res.nodes + " 节点）";
+          statusEl.style.color = "#4CAF50";
+        }
+        showToast("ComfyUI 工作流已上传（" + res.nodes + " 节点）");
+      }
+    } catch (e) {
+      console.error("[DH] uploadComfyuiWorkflow failed:", e);
+      showToast("工作流上传失败：" + ((e && (e.detail || e.message)) || "未知错误"));
+    }
+  }
+
+  async function checkComfyuiWorkflow() {
+    try {
+      var res = await API.get(base() + "/comfyui/workflow");
+      if (res && res.exists) {
+        dhState.comfyuiWorkflowExists = true;
+        var statusEl = document.getElementById("dh-comfyui-workflow-status");
+        if (statusEl) {
+          statusEl.textContent = "已上传（" + (res.nodes || 0) + " 节点）";
+          statusEl.style.color = "#4CAF50";
+        }
+      }
+    } catch (e) {
+      // 静默
+    }
   }
 
   // ---------------- 初始化 ----------------
@@ -549,13 +806,9 @@
     if (!panel) return;
 
     var enabledEl = document.getElementById("dh-enabled");
-    var avatarSel = document.getElementById("dh-avatar-select");
-    var avatarFile = document.getElementById("dh-avatar-file");
-    var uploadVideoFile = document.getElementById("dh-upload-video-file");
-    var zoomEl = document.getElementById("dh-video-zoom");
     var btnGenAll = document.getElementById("dh-btn-generate-all");
     var btnSave = document.getElementById("dh-btn-save");
-    var btnReset = document.getElementById("dh-circle-reset");
+    var btnLock = document.getElementById("dh-btn-lock");
 
     if (enabledEl) {
       enabledEl.addEventListener("change", function () {
@@ -564,38 +817,63 @@
         saveConfig();
       });
     }
-    if (avatarSel) {
-      avatarSel.addEventListener("change", function () {
-        dhState.config.avatar_id = avatarSel.value;
+    // 数值精调滑块
+    var dhSliders = [
+      { id: "dh-slider-cx", key: "circle", prop: "cx" },
+      { id: "dh-slider-cy", key: "circle", prop: "cy" },
+      { id: "dh-slider-r", key: "circle", prop: "r" },
+      { id: "dh-slider-zoom", key: "video", prop: "zoom" },
+      { id: "dh-slider-ox", key: "video", prop: "ox" },
+      { id: "dh-slider-oy", key: "video", prop: "oy" },
+    ];
+    dhSliders.forEach(function (s) {
+      var el = document.getElementById(s.id);
+      if (!el) return;
+      el.addEventListener("input", function () {
+        if (!dhState.config[s.key]) return;
+        dhState.config[s.key][s.prop] = Number(el.value);
+        applyCircleToPreview();
+      });
+      el.addEventListener("change", function () {
         saveConfig();
-        loadPreview();
       });
-    }
-    if (avatarFile) {
-      avatarFile.addEventListener("change", function () {
-        uploadAvatar(avatarFile.files && avatarFile.files[0]);
-        avatarFile.value = "";
-      });
-    }
+    });
+    if (btnGenAll) btnGenAll.addEventListener("click", generateAll);
+    if (btnSave) btnSave.addEventListener("click", saveConfig);
+    if (btnLock) btnLock.addEventListener("click", lockLayout);
+
+    // 模式选项卡切换
+    var tabComfyui = document.getElementById("dh-tab-comfyui");
+    var tabUpload = document.getElementById("dh-tab-upload");
+    if (tabComfyui) tabComfyui.addEventListener("click", function () { switchMode("comfyui"); });
+    if (tabUpload) tabUpload.addEventListener("click", function () { switchMode("upload"); });
+
+    // 导入视频上传
+    var uploadVideoFile = document.getElementById("dh-upload-video-file");
     if (uploadVideoFile) {
       uploadVideoFile.addEventListener("change", function () {
         uploadDigiVideo(uploadVideoFile.files && uploadVideoFile.files[0]);
         uploadVideoFile.value = "";
       });
     }
-    if (zoomEl) {
-      zoomEl.addEventListener("input", function () {
-        if (!dhState.config.video) dhState.config.video = { ox: 0.5, oy: 0.5, zoom: 1.0 };
-        dhState.config.video.zoom = Number(zoomEl.value) || 1;
-        applyCircleToPreview();
-      });
-      zoomEl.addEventListener("change", function () {
-        saveConfig();
+
+    // ComfyUI 工作流上传
+    var wfFile = document.getElementById("dh-comfyui-workflow-file");
+    if (wfFile) {
+      wfFile.addEventListener("change", function () {
+        uploadComfyuiWorkflow(wfFile.files && wfFile.files[0]);
+        wfFile.value = "";
       });
     }
-    if (btnGenAll) btnGenAll.addEventListener("click", generateAll);
-    if (btnSave) btnSave.addEventListener("click", saveConfig);
-    if (btnReset) btnReset.addEventListener("click", resetCircle);
+
+    // ComfyUI 形象图片上传（复用 avatar 上传接口，支持图片）
+    var cfAvatarFile = document.getElementById("dh-comfyui-avatar-file");
+    if (cfAvatarFile) {
+      cfAvatarFile.addEventListener("change", function () {
+        uploadAvatar(cfAvatarFile.files && cfAvatarFile.files[0]);
+        cfAvatarFile.value = "";
+      });
+    }
 
     var btnExportAudio = document.getElementById("dh-btn-export-audio");
     if (btnExportAudio) btnExportAudio.addEventListener("click", exportFullAudio);
@@ -606,12 +884,6 @@
     document.querySelectorAll("[data-dh-shape]").forEach(function (btn) {
       btn.addEventListener("click", function () {
         setShape(btn.getAttribute("data-dh-shape"));
-      });
-    });
-
-    document.querySelectorAll("[data-dh-pos]").forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        setPositionPreset(btn.getAttribute("data-dh-pos"));
       });
     });
 
@@ -628,26 +900,9 @@
     }
 
     initCircleDrag();
+    updateLockUI();
     loadHealth();
     loadConfig();
-    loadAvatars();
-  }
-
-  // 保留 LatentSync 生成模式的形象上传逻辑
-  async function loadAvatars() {
-    var sel = document.getElementById("dh-avatar-select");
-    if (!sel) return;
-    try {
-      var res = await API.get(base() + "/avatars");
-      dhState.avatars = (res && res.avatars) || [];
-      sel.innerHTML = '<option value="">选择讲解形象（参考视频）</option>' +
-        dhState.avatars.map(function (a) {
-          return '<option value="' + escHtml(a.avatar_id) + '">' + escHtml(a.filename) + "</option>";
-        }).join("");
-      if (dhState.config.avatar_id) sel.value = dhState.config.avatar_id;
-    } catch (e) {
-      console.error("[DH] loadAvatars failed:", e);
-    }
   }
 
   async function uploadAvatar(file) {
@@ -658,13 +913,15 @@
     try {
       var res = await API.post(base() + "/avatars", fd);
       if (res && res.avatar_id) {
-        showToast("参考视频已上传");
         dhState.config.avatar_id = res.avatar_id;
-        await loadAvatars();
+        dhState.avatarUploaded = true;
+        showToast("数字人形象图片已上传");
+        applyConfigToUI();
         await saveConfig();
       }
     } catch (e) {
       console.error("[DH] uploadAvatar failed:", e);
+      showToast("形象图片上传失败：" + ((e && (e.detail || e.message)) || "未知错误"));
     }
   }
 
@@ -687,7 +944,6 @@
   window.loadStep9Data = function () {
     loadHealth();
     loadConfig();
-    loadAvatars();
   };
   var originalNavigate = window.navigateToStep;
   window.navigateToStep = function (step) {

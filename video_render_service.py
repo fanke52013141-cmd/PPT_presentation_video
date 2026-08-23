@@ -478,8 +478,14 @@ class VideoRenderService:
         result: Any,
         task_id: str,
     ) -> Any:
-        """Remotion 渲染完成后，若启用了数字人讲解（上传模式），
-        把数字人视频窗口合成到渲染出的整段视频上。"""
+        """Remotion 渲染完成后，若启用了数字人讲解，
+        把数字人视频窗口合成到渲染出的整段视频上。
+
+        支持两种数字人源视频：
+          - 上传模式（mode=upload）：使用已上传的整段讲解视频 digi_upload.mp4；
+          - 生成模式（mode=comfyui/generate）：使用已生成的整段数字人视频 digi_full.mp4。
+        两者均未就绪时跳过合成，不阻断渲染。
+        """
         cfg_path = (
             Path(project.run_dir) / "planning" / "digital_human.json"
         )
@@ -495,14 +501,21 @@ class VideoRenderService:
             return result
         mode = str(cfg.get("mode") or "upload")
         digi_dir = Path(project.run_dir) / "planning" / "digital_human"
-        if mode == "upload":
-            digi = digi_dir / "digi_upload.mp4"
-        else:
-            # 生成模式需要逐页数字人视频，整段导出暂不支持，直接跳过
-            return result
-        if not digi.exists():
+        # 数字人源视频优先级：
+        #   1) 上传模式：使用已上传的整段讲解视频 digi_upload.mp4
+        #   2) 生成模式（comfyui/generate）：若已通过生成整段数字人视频，
+        #      则用 digi_full.mp4 合成到成片（整段导出同样支持）
+        #   3) 均未就绪：跳过合成，不阻断渲染
+        upload_video = digi_dir / "digi_upload.mp4"
+        full_video = digi_dir / "digi_full.mp4"
+        digi = None
+        if mode == "upload" and upload_video.exists():
+            digi = upload_video
+        elif full_video.exists():
+            digi = full_video
+        if digi is None:
             logger.info(
-                "[digital-human] upload video missing, skip composite for %s",
+                "[digital-human] 数字人视频未就绪，跳过合成 for %s",
                 project.id,
             )
             return result

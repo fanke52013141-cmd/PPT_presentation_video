@@ -55,6 +55,10 @@ MOCK_MODE = os.environ.get("PPT_DIGITAL_HUMAN_MOCK", "") == "1"
 LATENTSYNC_REPO = Path(
     os.environ.get("PPT_DIGITAL_HUMAN_LATENTSYNC_REPO") or ""
 )
+# 推理后端：latentsync（默认）| comfyui（Wan2.2 S2V）| mock
+INFERENCE_BACKEND = os.environ.get("PPT_DIGITAL_HUMAN_BACKEND", "").strip().lower()
+_wf_env = os.environ.get("PPT_DIGITAL_HUMAN_COMFYUI_WORKFLOW", "").strip()
+COMFYUI_WORKFLOW_PATH = Path(_wf_env) if _wf_env else None
 
 
 def _log(*parts: Any) -> None:
@@ -113,6 +117,26 @@ def _load_persisted_jobs() -> None:
         try:
             job = json.loads(path.read_text(encoding="utf-8"))
             if isinstance(job, dict) and job.get("job_id"):
+                # 服务重启后修复中断的 job：
+                # 后台线程在执行中被杀死，磁盘上的 job 可能停留在
+                # queued/processing 状态，但已无线程继续执行。
+                status = job.get("status")
+                if status in (JOB_STATUS_QUEUED, JOB_STATUS_PROCESSING):
+                    out = Path(job.get("output_path") or "")
+                    if out.exists() and out.stat().st_size > 0:
+                        # 输出文件已生成（ComfyUI 完成了但标记前被中断）
+                        job["status"] = JOB_STATUS_DONE
+                        job["progress"] = 100
+                        job["finished_at"] = _now()
+                        job["result_url"] = f"/api/digital-human/jobs/{job['job_id']}/result"
+                        _log("[restore] job %s output exists → done", job["job_id"])
+                    else:
+                        # 输出文件不存在 → 任务中断
+                        job["status"] = JOB_STATUS_FAILED
+                        job["error"] = "服务重启导致任务中断，请重新生成"
+                        job["finished_at"] = _now()
+                        _log("[restore] job %s was interrupted → failed", job["job_id"])
+                    _persist_job(job)
                 _jobs[job["job_id"]] = job
         except (OSError, json.JSONDecodeError):
             continue
@@ -221,6 +245,52 @@ def _run_mock_inference(
         )
 
 
+def _run_comfyui_inference(
+    job: Dict[str, Any],
+    avatar_path: Path,
+    audio_path: Path,
+    output_path: Path,
+) -> None:
+    """通过 ComfyUI HTTP API 驱动 Wan2.2 S2V 工作流生成数字人视频。"""
+    from comfyui_backend import run_comfyui_inference, ComfyUIError, check_health
+
+    if not check_health():
+        raise ComfyUIError("ComfyUI 服务不可达，请确认已启动且监听 http://127.0.0.1:8188")
+
+    # 工作流模板优先取 job 内嵌，其次取环境变量路径，最后尝试默认文件
+    workflow_template = job.get("workflow_template")
+    # 检测是否为 API 格式（每个 value 都是 dict 且含 class_type）
+    def _is_api_format(wf):
+        if not isinstance(wf, dict) or not wf:
+            return False
+        return all(isinstance(v, dict) and "class_type" in v for v in wf.values())
+
+    if not _is_api_format(workflow_template):
+        if workflow_template is not None:
+            _log("[comfyui] 工作流不是 API 格式（可能是 UI 编辑器格式），回退到默认模板")
+        workflow_template = None
+
+    if not workflow_template:
+        wf_path = COMFYUI_WORKFLOW_PATH or (DATA_DIR / "comfyui_workflow.json")
+        if not wf_path.exists():
+            raise ComfyUIError(f"ComfyUI 工作流模板不存在: {wf_path}")
+        with open(wf_path, "r", encoding="utf-8") as f:
+            workflow_template = json.load(f)
+        if not _is_api_format(workflow_template):
+            raise ComfyUIError(
+                "ComfyUI 工作流模板格式错误：需要 API 格式（在 ComfyUI 中使用 'Save (API Format)' 导出）"
+            )
+
+    result = run_comfyui_inference(
+        image_path=avatar_path,
+        audio_path=audio_path,
+        output_path=output_path,
+        workflow_template=workflow_template,
+        timeout=float(job.get("timeout", 7200)),
+    )
+    _log("[comfyui] done: prompt_id=%s output=%s", result.get("prompt_id"), result.get("output"))
+
+
 def sys_executable() -> str:
     return os.environ.get("PPT_DIGITAL_HUMAN_PYTHON") or sys_executable_default()
 
@@ -245,10 +315,15 @@ def _execute_job(job_id: str) -> None:
         _persist_job(job)
 
     try:
-        if not latentsync_ready():
+        # 优先使用任务自带的 backend（允许前端逐任务指定），其次全局环境变量
+        job_backend = (job.get("backend") or "").strip().lower()
+        backend = job_backend or INFERENCE_BACKEND or ("mock" if MOCK_MODE else "latentsync")
+        if not latentsync_ready() and backend not in ("comfyui",):
             raise RuntimeError("数字人模型未部署（LatentSync 未就绪，或未启用 MOCK）")
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        if MOCK_MODE:
+        if backend == "comfyui":
+            _run_comfyui_inference(job, avatar_path, audio_path, output_path)
+        elif MOCK_MODE or backend == "mock":
             _run_mock_inference(job, avatar_path, audio_path, output_path)
         else:
             _run_real_inference(job, avatar_path, audio_path, output_path)
@@ -458,11 +533,28 @@ async def localhost_origin_guard(request, call_next):
 
 @app.get("/api/digital-human/health")
 def health() -> Dict[str, Any]:
+    import importlib
+    # ComfyUI 在线检测（无论当前后端名为何，供 UI 显示与判断）
+    comfyui_online = False
+    try:
+        comfyui_mod = importlib.import_module("comfyui_backend")
+        comfyui_online = bool(comfyui_mod.check_health())
+    except Exception:
+        comfyui_online = False
+    # 后端类型：ComfyUI 在线时优先显示 comfyui，其次 mock / 显式配置 / latentsync
+    if comfyui_online:
+        backend_used = "comfyui"
+    else:
+        backend_used = INFERENCE_BACKEND or ("mock" if MOCK_MODE else "latentsync")
+    # model_ready：优先认 ComfyUI（用户当前主走 ComfyUI），其次 LatentSync
+    model_ready = MOCK_MODE or comfyui_online or latentsync_ready()
     return {
         "success": True,
         "service": "digital_human",
-        "model_ready": latentsync_ready(),
+        "model_ready": model_ready,
         "mock_mode": MOCK_MODE,
+        "comfyui_online": comfyui_online,
+        "inference_backend": backend_used,
         "latentsync_repo": str(LATENTSYNC_REPO) if LATENTSYNC_REPO else "",
         "data_dir": str(DATA_DIR),
         "active_jobs": len(_jobs),
@@ -495,24 +587,36 @@ def upload_avatar(
 ) -> Dict[str, Any]:
     content = file.file.read(MAX_AVATAR_BYTES + 1)
     if len(content) > MAX_AVATAR_BYTES:
-        raise HTTPException(status_code=400, detail="参考视频超过大小限制")
+        raise HTTPException(status_code=400, detail="文件超过大小限制")
     AVATAR_DIR.mkdir(parents=True, exist_ok=True)
     avatar_id = f"av_{uuid.uuid4().hex[:10]}"
-    ext = Path(file.filename or "video.mp4").suffix.lower() or ".mp4"
-    if ext not in (".mp4", ".mov", ".mkv", ".webm", ".avi"):
+    raw_ext = Path(file.filename or "file").suffix.lower()
+    video_exts = (".mp4", ".mov", ".mkv", ".webm", ".avi")
+    image_exts = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
+    if raw_ext in video_exts:
+        ext = raw_ext
+    elif raw_ext in image_exts:
+        ext = raw_ext
+    elif file.content_type and "image" in file.content_type:
+        ext = ".png"
+    else:
         ext = ".mp4"
     filename = f"{avatar_id}{ext}"
     target = AVATAR_DIR / filename
     target.write_bytes(content)
-    duration = _probe_duration_sec(target)
-    return {
+    result = {
         "success": True,
         "avatar_id": avatar_id,
         "name": name,
         "filename": filename,
-        "url": f"/api/digital-human/avatars/{avatar_id}/video",
-        "duration": duration,
     }
+    if ext in video_exts:
+        result["url"] = f"/api/digital-human/avatars/{avatar_id}/video"
+        result["duration"] = _probe_duration_sec(target)
+    else:
+        result["url"] = f"/api/digital-human/avatars/{avatar_id}/image"
+        result["duration"] = 0
+    return result
 
 
 @app.get("/api/digital-human/avatars")
@@ -567,7 +671,9 @@ def create_job(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not audio_path.exists():
         raise HTTPException(status_code=400, detail=f"音频不存在: {audio_path}")
 
-    if not latentsync_ready():
+    # ComfyUI 后端不需要 LatentSync 就绪
+    is_comfyui = INFERENCE_BACKEND == "comfyui" or str(payload.get("backend") or "").lower() == "comfyui"
+    if not is_comfyui and not latentsync_ready():
         return JSONResponse(
             status_code=503,
             content={
@@ -601,6 +707,12 @@ def create_job(payload: Dict[str, Any]) -> Dict[str, Any]:
         "output_path": str(output_path),
         "created_at": _now(),
     }
+    # ComfyUI 专用字段
+    if is_comfyui:
+        job["backend"] = "comfyui"
+        wf_template = payload.get("workflow_template")
+        if isinstance(wf_template, dict):
+            job["workflow_template"] = wf_template
     with _jobs_lock:
         _jobs[job_id] = job
         _persist_job(job)

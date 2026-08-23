@@ -403,11 +403,7 @@ function showStep8VideoResult(videos) {
             <span>${escHtml(created || item.filename || '')}</span>
           </div>
           <div class="video-preview-box">
-            <div class="player" data-video-filename="${escHtml(item.filename || '')}">
-              <video src="${escHtml(url)}" data-video-filename="${escHtml(item.filename || '')}" playsinline preload="metadata"></video>
-              <div class="player-topbar" title="拖动调整进度"><div class="player-progress-fill"></div></div>
-              <button class="player-toggle" type="button" aria-label="播放/暂停"></button>
-            </div>
+            <video src="${escHtml(url)}" data-video-filename="${escHtml(item.filename || '')}" controls playsinline preload="metadata"></video>
           </div>
           <div class="step8-video-actions">
             ${item.is_speed_variant ? `
@@ -453,111 +449,8 @@ function showStep8VideoResult(videos) {
         deleteStep8Video(button.dataset.filename || '');
       });
     });
-    list.querySelectorAll('.player').forEach(initStep8Player);
   }
   document.getElementById('step8-result-box').style.display = 'block';
-}
-
-// 自定义播放器：隐藏浏览器原生控件，避免控件覆盖在数字人窗口上（保持"真人讲解"观感）。
-// 播放/暂停按钮会放到与数字人窗口相对的角，播放结束后画面定格在最后一帧，
-// 不会在数字人身上出现播放/暂停图标。
-let _dhCircleQuadrantCache = null;
-async function _dhCircleQuadrant() {
-  if (_dhCircleQuadrantCache !== null) return _dhCircleQuadrantCache;
-  _dhCircleQuadrantCache = 'br'; // 未取到配置时按默认右下角处理
-  try {
-    const pid = state && state.currentProject && state.currentProject.id;
-    if (!pid) return _dhCircleQuadrantCache;
-    const res = await API.get(`/api/projects/${pid}/digital-human/config`);
-    const circle = res && res.config && res.config.circle;
-    if (circle) {
-      const cx = Number(circle.cx) || 0.5;
-      const cy = Number(circle.cy) || 0.5;
-      _dhCircleQuadrantCache = (cy > 0.5 ? 'b' : 't') + (cx > 0.5 ? 'r' : 'l');
-    }
-  } catch (e) { /* 保持默认右下角 */ }
-  return _dhCircleQuadrantCache;
-}
-
-function initStep8Player(player) {
-  if (!player || player.dataset.dhPlayerBound === '1') return;
-  player.dataset.dhPlayerBound = '1';
-  const video = player.querySelector('video');
-  const toggle = player.querySelector('.player-toggle');
-  const fill = player.querySelector('.player-progress-fill');
-  if (!video || !toggle) return;
-
-  const ICONS = {
-    play: '<svg class="icon" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>',
-    pause: '<svg class="icon" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>',
-    replay: '<svg class="icon" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>',
-  };
-
-  function setIcon(name) {
-    if (ICONS[name]) toggle.innerHTML = ICONS[name];
-    toggle.setAttribute('aria-label', name === 'pause' ? '暂停' : (name === 'replay' ? '重新播放' : '播放'));
-  }
-
-  function sync() {
-    const ended = !!video.ended;
-    const paused = !!video.paused;
-    player.classList.toggle('playing', !paused && !ended);
-    player.classList.toggle('paused', paused);
-    setIcon(ended ? 'replay' : (paused ? 'play' : 'pause'));
-    if (fill && isFinite(video.duration) && video.duration > 0) {
-      const pct = Math.min(100, (video.currentTime / video.duration) * 100);
-      fill.style.width = pct.toFixed(2) + '%';
-    }
-  }
-
-  function togglePlay() {
-    if (video.ended) {
-      video.currentTime = 0;
-      video.play().catch(() => {});
-    } else if (video.paused) {
-      video.play().catch(() => {});
-    } else {
-      video.pause();
-    }
-  }
-
-  toggle.addEventListener('click', (e) => {
-    e.stopPropagation();
-    togglePlay();
-  });
-
-  // 点击视频画面本身也切换播放/暂停
-  player.addEventListener('click', (e) => {
-    if (e.target === toggle) return;
-    togglePlay();
-  });
-
-  // 顶部进度条可点击跳转进度
-  const topbar = player.querySelector('.player-topbar');
-  if (topbar) {
-    topbar.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const rect = topbar.getBoundingClientRect();
-      if (!rect.width || !isFinite(video.duration) || video.duration <= 0) return;
-      const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-      video.currentTime = ratio * video.duration;
-      sync();
-    });
-  }
-
-  video.addEventListener('timeupdate', sync);
-  video.addEventListener('play', sync);
-  video.addEventListener('pause', sync);
-  video.addEventListener('ended', sync);
-  video.addEventListener('loadedmetadata', sync);
-  sync();
-
-  // 把播放按钮放到与数字人窗口相对的角，避免遮挡
-  _dhCircleQuadrant().then((q) => {
-    const corners = { tl: 'br', tr: 'bl', bl: 'tr', br: 'tl' };
-    const tc = corners[q] || 'tl';
-    player.classList.add('player-toggle--' + tc);
-  });
 }
 
 async function generateStep8SpeedVideo(filename, speed, button) {
@@ -596,6 +489,14 @@ function deleteStep8Video(filename) {
     '删除渲染视频',
     `确定删除本地视频 ${filename} 吗？删除后无法恢复。`,
     async () => {
+      // 释放浏览器中所有 <video> 元素对文件的占用（Windows 下必须）
+      document.querySelectorAll('video').forEach(v => {
+        try { v.pause(); } catch (e) {}
+        v.removeAttribute('src');
+        try { v.load(); } catch (e) {}
+      });
+      // 等待一小段时间让浏览器释放文件句柄
+      await new Promise(r => setTimeout(r, 300));
       const res = await API.delete(`/api/projects/${state.currentProject.id}/videos/${encodeURIComponent(filename)}`);
       if (res.success) {
         showStep8VideoResult(res.videos || []);

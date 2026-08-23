@@ -21,6 +21,8 @@ from sqlalchemy.orm import Session
 
 from database import get_db, Project
 from pipeline_lifecycle import read_json_file, write_json_atomic
+
+REPO_ROOT = Path(__file__).resolve().parent
 from digital_human_client import (
     DigitalHumanUnavailable,
     get_digital_human_client,
@@ -58,7 +60,7 @@ def _config_path(project: Project) -> Path:
 def _default_config() -> Dict[str, Any]:
     return {
         "enabled": False,
-        "mode": "upload",  # 'upload' 上传已生成视频 | 'generate' LatentSync 生成
+        "mode": "comfyui",  # 'comfyui' ComfyUI 生成 | 'upload' 导入已生成视频
         "shape": "circle",  # 窗口形状 'circle' | 'rect'
         "avatar_id": "",
         "sync_mode": "accurate",
@@ -82,6 +84,8 @@ def _load_config(project: Project) -> Dict[str, Any]:
         cfg["video"] = {"ox": 0.5, "oy": 0.5, "zoom": 1.0}
     if cfg.get("shape") not in ("circle", "rect"):
         cfg["shape"] = "circle"
+    if cfg.get("mode") not in ("comfyui", "upload", "generate"):
+        cfg["mode"] = "comfyui"
     return cfg
 
 
@@ -119,14 +123,28 @@ def _upload_digi_path(project: Project) -> Path:
 def get_dh_config(project_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
     project = _project_or_404(db, project_id)
     cfg = _load_config(project)
-    # 附带每页音频是否就绪，便于前端判断可生成
+    # 从 Visual Contract 获取全部 slide ID（不局限于已生成过的）
+    contract_ids = read_contract_slide_ids(project.run_dir)
+    # 附带每页音频是否就绪、生成状态
     slides_info = {}
-    for slide_id in cfg.get("slides", {}):
-        item = cfg["slides"][slide_id]
+    for slide_id in contract_ids:
+        item = cfg.get("slides", {}).get(slide_id, {})
+        audio_ok = _slide_audio_path(project, slide_id).exists()
         slides_info[slide_id] = {
             "job_id": item.get("job_id"),
             "status": item.get("status"),
             "video_exists": _slide_digi_path(project, slide_id).exists(),
+            "audio_ready": audio_ok,
+        }
+    audio_ready_count = sum(1 for s in slides_info.values() if s["audio_ready"])
+    # 附带整段数字人生成状态（如有）
+    full_item = cfg.get("slides", {}).get("full", {})
+    if full_item:
+        slides_info["full"] = {
+            "job_id": full_item.get("job_id"),
+            "status": full_item.get("status"),
+            "video_exists": _slide_digi_path(project, "full").exists(),
+            "audio_ready": _full_audio_path(project).exists(),
         }
     return {
         "success": True,
@@ -143,9 +161,11 @@ def get_dh_config(project_id: str, db: Session = Depends(get_db)) -> Dict[str, A
         },
         "slides": slides_info,
         "audio_ready": {
-            slide_id: _slide_audio_path(project, slide_id).exists()
-            for slide_id in slides_info
+            slide_id: info["audio_ready"]
+            for slide_id, info in slides_info.items()
         },
+        "audio_ready_count": audio_ready_count,
+        "total_slides": len(contract_ids),
         "upload_video_exists": _upload_digi_path(project).exists(),
     }
 
@@ -277,6 +297,55 @@ def list_dh_avatars(project_id: str, db: Session = Depends(get_db)) -> Dict[str,
         raise HTTPException(status_code=503, detail=str(exc))
 
 
+# ---------------- ComfyUI 工作流模板上传 ----------------
+
+
+@router.post("/api/projects/{project_id}/digital-human/comfyui/workflow")
+async def upload_comfyui_workflow(
+    project_id: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """上传 ComfyUI API 格式工作流 JSON 模板。"""
+    project = _project_or_404(db, project_id)
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="文件为空")
+    try:
+        import json as _json
+        wf = _json.loads(content)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"JSON 解析失败: {exc}")
+    if not isinstance(wf, dict):
+        raise HTTPException(status_code=400, detail="工作流 JSON 格式不正确")
+    _digi_dir(project).mkdir(parents=True, exist_ok=True)
+    wf_path = _digi_dir(project) / "comfyui_workflow.json"
+    wf_path.write_bytes(content)
+    cfg = _load_config(project)
+    cfg["mode"] = "comfyui"
+    _save_config(project, cfg)
+    node_count = len(wf)
+    return {"success": True, "nodes": node_count, "saved": str(wf_path)}
+
+
+@router.get("/api/projects/{project_id}/digital-human/comfyui/workflow")
+def get_comfyui_workflow(
+    project_id: str,
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """返回已保存的工作流模板是否存在及节点数。"""
+    project = _project_or_404(db, project_id)
+    wf_path = _digi_dir(project) / "comfyui_workflow.json"
+    if not wf_path.exists():
+        return {"success": True, "exists": False}
+    try:
+        import json as _json
+        wf = _json.loads(wf_path.read_text(encoding="utf-8"))
+        return {"success": True, "exists": True, "nodes": len(wf)}
+    except Exception:
+        return {"success": True, "exists": True, "nodes": 0}
+
+
 # ---------------- 生成任务（手动触发） ----------------
 
 
@@ -301,15 +370,31 @@ def generate_dh(
         raise HTTPException(status_code=400, detail="当前页面音频未生成，请先完成旁白合成")
 
     client = get_digital_human_client()
+    # 构建 create_job payload，附加 ComfyUI 专用字段
+    job_payload: Dict[str, Any] = {
+        "avatar_id": avatar_id,
+        "audio_path": str(audio_path),
+        "slide_id": slide_id,
+        "sync_mode": sync_mode,
+    }
+    if cfg.get("mode") == "comfyui":
+        job_payload["backend"] = "comfyui"
+        # 附带工作流模板（如有）；画质参数由工作流 JSON 自身决定
+        wf_path = _digi_dir(project) / "comfyui_workflow.json"
+        if wf_path.exists():
+            try:
+                import json as _json
+                job_payload["workflow_template"] = _json.loads(wf_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
     try:
-        result = client.create_job(
-            avatar_id=avatar_id,
-            audio_path=audio_path,
-            slide_id=slide_id,
-            sync_mode=sync_mode,
-        )
+        result = client.create_job(payload=job_payload)
     except DigitalHumanUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
+        logger.exception("[dh-generate] create_job failed")
+        raise HTTPException(status_code=500, detail=f"提交数字人生成任务失败: {exc}")
 
     job_id = result.get("job_id")
     if job_id:
@@ -317,6 +402,62 @@ def generate_dh(
         slides.setdefault(slide_id, {})
         slides[slide_id]["job_id"] = job_id
         slides[slide_id]["status"] = result.get("status")
+        _save_config(project, cfg)
+    return {"success": True, "job_id": job_id, "status": result.get("status")}
+
+
+# ---------------- 生成整段数字人视频（单任务） ----------------
+
+
+@router.post("/api/projects/{project_id}/digital-human/generate-full")
+def generate_dh_full(
+    project_id: str,
+    payload: Optional[Dict[str, Any]] = None,
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """使用整段导出音频创建一个数字人生成任务（合并所有页面音频为一段）。"""
+    project = _project_or_404(db, project_id)
+    cfg = _load_config(project)
+    avatar_id = str(
+        (payload or {}).get("avatar_id") or cfg.get("avatar_id") or ""
+    ).strip()
+    if not avatar_id:
+        raise HTTPException(status_code=400, detail="请先上传并选择数字人形象")
+
+    audio_path = _full_audio_path(project)
+    if not audio_path.exists():
+        raise HTTPException(status_code=400, detail="请先导出整段语音")
+
+    sync_mode = str((payload or {}).get("sync_mode") or cfg.get("sync_mode") or "accurate")
+    client = get_digital_human_client()
+    job_payload: Dict[str, Any] = {
+        "avatar_id": avatar_id,
+        "audio_path": str(audio_path),
+        "slide_id": "full",
+        "sync_mode": sync_mode,
+    }
+    if cfg.get("mode") == "comfyui":
+        job_payload["backend"] = "comfyui"
+        wf_path = _digi_dir(project) / "comfyui_workflow.json"
+        if wf_path.exists():
+            try:
+                import json as _json
+                job_payload["workflow_template"] = _json.loads(wf_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
+    try:
+        result = client.create_job(payload=job_payload)
+    except DigitalHumanUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
+        logger.exception("[dh-generate-full] create_job failed")
+        raise HTTPException(status_code=500, detail=f"提交数字人生成任务失败: {exc}")
+
+    job_id = result.get("job_id")
+    if job_id:
+        slides = cfg.setdefault("slides", {})
+        slides["full"] = {"job_id": job_id, "status": result.get("status")}
         _save_config(project, cfg)
     return {"success": True, "job_id": job_id, "status": result.get("status")}
 
@@ -439,21 +580,28 @@ def _full_audio_path(project: Project) -> Path:
 
 
 def _find_ffmpeg() -> str:
-    """定位 ffmpeg/ffprobe（主服务进程可能不在带 ffmpeg 的 PATH 中启动）。"""
+    """定位 ffmpeg/ffprobe（优先使用项目内 Remotion 自带版本，避免外部精简版不兼容）。"""
     import shutil
 
-    found = shutil.which("ffmpeg")
-    if found:
-        return found
+    # 优先：项目内 Remotion 自带的 ffmpeg（完整版，兼容性最好）
+    remotion_ff = REPO_ROOT / "scripts" / "remotion" / "node_modules" / \
+        "@remotion" / "compositor-win32-x64-msvc" / "ffmpeg.exe"
+    if remotion_ff.exists():
+        return str(remotion_ff)
+
+    # 次选：环境变量指定的目录
     candidates = [
         os.environ.get("PPT_STUDIO_FFMPEG_DIR", ""),
         os.environ.get("PPT_DIGITAL_HUMAN_FFMPEG_DIR", ""),
-        str(Path(os.environ.get("APPDATA", ""))
-            / "TRAE SOLO CN" / "ModularData" / "ai-agent" / "vm" / "tools" / "app" / "ffmpeg"),
     ]
     for cand in candidates:
         if cand and (Path(cand) / "ffmpeg.exe").exists():
             return str(Path(cand) / "ffmpeg.exe")
+
+    # 最后回退到 PATH 上的 ffmpeg
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
     raise HTTPException(status_code=503, detail="未找到 ffmpeg，无法导出整段语音")
 
 
@@ -489,37 +637,62 @@ def export_full_audio(
     gap = max(0.0, min(3.0, float((payload or {}).get("gap_sec") or 0.6)))
     out = _full_audio_path(project)
     out.parent.mkdir(parents=True, exist_ok=True)
+    tmp_dir = out.parent / ".tmp_audio_export"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
 
-    # 输入：每页音频 + 1 个静音源（anullsrc）
-    cmd = [ffmpeg, "-y"]
-    for af in audio_files:
-        cmd += ["-i", str(af)]
-    cmd += ["-f", "lavfi", "-t", f"{gap}", "-i", "anullsrc=r=44100:cl=stereo"]
-
-    # 各页音频规整采样率；静音裁剪为 gap 秒
     n = len(audio_files)
-    fc_parts = []
-    for i in range(n):
-        fc_parts.append(f"[{i}:a]aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS[a{i}]")
-    fc_parts.append(f"[{n}:a]atrim=0:{gap},asetpts=PTS-STARTPTS[g]")
-    concat_inputs = []
-    for i in range(n):
-        concat_inputs.append(f"[a{i}]")
-        if i < n - 1:
-            concat_inputs.append("[g]")
-    fc_parts.append("".join(concat_inputs) + f"concat=n={2 * n - 1}:v=0:a=1[out]")
-    fc = ";".join(fc_parts)
+    logger.info("[audio-export] 开始拼接 %d 页音频，间隔 %.1fs", n, gap)
 
-    cmd += ["-filter_complex", fc, "-map", "[out]",
-            "-c:a", "libmp3lame", "-b:a", "192k", str(out)]
-    _log_cmd = " ".join(cmd)
-    logger.info("[audio-export] %s", _log_cmd)
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
-    if proc.returncode != 0:
-        raise HTTPException(
-            status_code=500,
-            detail="整段语音导出失败（需 ffmpeg）: " + (proc.stderr or "")[-800:],
-        )
+    try:
+        # 方案：逐页转码为统一格式 wav，生成静音片段，再用 concat demuxer 拼接
+        normalized_files: list[Path] = []
+        for i, af in enumerate(audio_files):
+            norm_path = tmp_dir / f"norm_{i:04d}.wav"
+            cmd_norm = [ffmpeg, "-y", "-i", str(af),
+                        "-ar", "44100", "-ac", "2", "-sample_fmt", "s16",
+                        str(norm_path)]
+            proc_n = subprocess.run(cmd_norm, capture_output=True, text=True, timeout=120)
+            if proc_n.returncode != 0:
+                raise RuntimeError(f"转码第 {i+1} 页音频失败: {(proc_n.stderr or '')[-400:]}")
+            normalized_files.append(norm_path)
+
+        # 生成静音片段
+        silence_path = tmp_dir / "silence.wav"
+        if gap > 0:
+            cmd_sil = [ffmpeg, "-y", "-f", "lavfi", "-i",
+                       f"anullsrc=r=44100:cl=stereo", "-t", str(gap),
+                       "-sample_fmt", "s16", str(silence_path)]
+            proc_s = subprocess.run(cmd_sil, capture_output=True, text=True, timeout=30)
+            if proc_s.returncode != 0:
+                raise RuntimeError(f"生成静音片段失败: {(proc_s.stderr or '')[-400:]}")
+
+        # 写 concat 列表文件
+        concat_list = tmp_dir / "concat_list.txt"
+        lines = []
+        for i, nf in enumerate(normalized_files):
+            # Windows 路径需要转义反斜杠和单引号
+            safe = str(nf).replace("\\", "/").replace("'", "\\'")
+            lines.append(f"file '{safe}'")
+            if i < n - 1 and gap > 0:
+                safe_sil = str(silence_path).replace("\\", "/").replace("'", "\\'")
+                lines.append(f"file '{safe_sil}'")
+        concat_list.write_text("\n".join(lines), encoding="utf-8")
+
+        # 用 concat demuxer 拼接，输出 mp3
+        cmd_concat = [ffmpeg, "-y", "-f", "concat", "-safe", "0",
+                      "-i", str(concat_list),
+                      "-c:a", "libmp3lame", "-b:a", "192k", str(out)]
+        logger.info("[audio-export] concat demuxer: %s", " ".join(cmd_concat))
+        proc_c = subprocess.run(cmd_concat, capture_output=True, text=True, timeout=900)
+        if proc_c.returncode != 0:
+            raise RuntimeError((proc_c.stderr or "")[-800:])
+
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=f"整段语音导出失败: {exc}")
+    finally:
+        # 清理临时文件
+        import shutil
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
     duration = None
     try:

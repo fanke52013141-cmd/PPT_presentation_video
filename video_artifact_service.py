@@ -34,6 +34,35 @@ from video_contracts import VideoRenderError
 logger = logging.getLogger("PPTStudio.VideoArtifacts")
 
 
+def _safe_unlink(path: Path, retries: int = 3, delay: float = 0.5) -> None:
+    """安全删除文件，处理 Windows 下浏览器占用导致的 PermissionError。
+
+    先尝试直接删除，失败后重试几次（等待浏览器释放句柄）。
+    若仍失败，则将文件重命名为 .deleted 后缀，使其从列表中消失，
+    并标记为待清理（下次删除其他视频时顺带清理）。
+    """
+    import time
+    for attempt in range(retries):
+        try:
+            path.unlink()
+            return
+        except PermissionError:
+            if attempt < retries - 1:
+                time.sleep(delay)
+    # 最终重试仍失败：重命名为 .deleted 后缀使其不再出现在列表中
+    try:
+        dest = path.with_suffix(path.suffix + ".deleted")
+        path.rename(dest)
+        logger.warning("文件被占用，已重命名为待清理: %s", dest)
+        # 尝试删除 .deleted 文件（可能仍被占用，忽略失败）
+        try:
+            dest.unlink()
+        except OSError:
+            pass
+    except OSError as exc:
+        raise VideoRenderError(409, f"视频文件被占用，请关闭预览后重试: {exc}")
+
+
 @dataclass(frozen=True)
 class VideoArtifactDependencies:
     runs_root: Path
@@ -462,10 +491,10 @@ class VideoArtifactService:
         )
         if not path.exists():
             raise VideoRenderError(404, "视频文件不存在")
-        path.unlink()
+        _safe_unlink(path)
         metadata_path = self.video_metadata_path(path)
         if metadata_path.exists():
-            metadata_path.unlink()
+            _safe_unlink(metadata_path)
         remove_artifact_record(
             db,
             project_id=project.id,
@@ -492,7 +521,7 @@ class VideoArtifactService:
             )
             shutil.copy2(newest_path, legacy_path)
         elif legacy_path.exists():
-            legacy_path.unlink()
+            _safe_unlink(legacy_path)
         return {
             "success": True,
             "videos": self.list_video_items(project),

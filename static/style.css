@@ -8162,6 +8162,7 @@ details[open] .ip-character-advanced-summary::before {
 .dh-slide-status {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.4rem;
   margin-top: 0.4rem;
 }
@@ -8169,6 +8170,10 @@ details[open] .ip-character-advanced-summary::before {
   font-size: 0.75rem;
   padding: 0.15rem 0.45rem;
   border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.4;
 }
 .dh-slide-chip.dh-done { color: #1a7f37; background: #e6f4ea; }
 .dh-slide-chip.dh-failed { color: #b42318; background: #fee4e2; }
@@ -8215,8 +8220,28 @@ details[open] .ip-character-advanced-summary::before {
   z-index: 10;
 }
 .dh-slider-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; }
-.dh-slider-label { font-size: 0.78rem; color: var(--text-secondary, #888); white-space: nowrap; }
-.dh-slider-row input[type="range"] { flex: 1; }
+.dh-slider-label { font-size: 0.78rem; color: var(--text-secondary, #888); white-space: nowrap; min-width: 4.5rem; }
+.dh-slider-row input[type="range"] { flex: 1; min-width: 0; }
+.dh-slider-value { font-size: 0.78rem; font-weight: 600; color: var(--text-primary, #333); min-width: 3rem; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ===== 数字人面板 v4：精调滑块组 + 固定布局 ===== */
+.dh-slider-group { display: flex; flex-direction: column; gap: 0.1rem; margin-top: 0.4rem; }
+.dh-lock-row { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.4rem; }
+.dh-lock-btn {
+  padding: 0.35rem 0.8rem; font-size: 0.8rem; border: 1px solid #5B7893; border-radius: 6px;
+  background: #5B7893; color: #fff; cursor: pointer; transition: background 0.15s;
+}
+.dh-lock-btn:hover { background: #4a6580; }
+.dh-lock-btn.dh-locked { background: #1a7f37; border-color: #1a7f37; }
+.dh-lock-btn.dh-locked:hover { background: #156530; }
+.dh-lock-status { font-size: 0.75rem; color: var(--text-secondary, #888); }
+.dh-lock-status.dh-lock-on { color: #1a7f37; font-weight: 600; }
+.dh-circle-info {
+  font-size: 0.75rem; color: var(--text-secondary, #555); margin-top: 0.5rem;
+  padding: 0.3rem 0.5rem; background: var(--bg-card, #f7f8fa);
+  border: 1px solid var(--border-color, #e5e7eb); border-radius: 6px;
+  font-variant-numeric: tabular-nums;
+}
 
 /* ===== 数字人面板 v3：设置区 + 形状切换 ===== */
 .dh-settings-title { font-weight: 600; font-size: 0.92rem; color: #5B7893; margin-bottom: 0.75rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--border-color, #e5e7eb); }
@@ -8224,6 +8249,12 @@ details[open] .ip-character-advanced-summary::before {
 .dh-shape-toggle button { flex: 1; padding: 0.3rem 0.5rem; font-size: 0.8rem; border: 1px solid var(--border-color, #ccc); border-radius: 6px; background: var(--bg-card, #fff); cursor: pointer; }
 .dh-shape-toggle button:hover { border-color: #5B7893; color: #5B7893; }
 .dh-shape-toggle button.dh-shape-active { background: #5B7893; border-color: #5B7893; color: #fff; }
+
+/* 数字人生成方式选项卡 */
+.dh-mode-toggle { display: flex; gap: 0.3rem; border: 1px solid rgba(91,120,147,0.25); border-radius: 10px; padding: 0.3rem; margin-bottom: 0.8rem; background: #f6f8fb; }
+.dh-tab-btn { flex: 1; padding: 0.5rem 0.8rem; font-size: 0.85rem; font-weight: 500; border: none; border-radius: 8px; background: transparent; color: #5B7893; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; }
+.dh-tab-btn:hover { background: rgba(91,120,147,0.08); }
+.dh-tab-btn.dh-tab-active { background: #6C8FBB; color: #fff; box-shadow: 0 1px 4px rgba(91,120,147,0.35); }
 
 /* ==================== 步骤 9: 数字人讲解（可选） ==================== */
 #step-panel-9 .step9-header {

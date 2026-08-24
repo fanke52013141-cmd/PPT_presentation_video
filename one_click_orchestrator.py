@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import logging
 import os
 import shutil
 import threading
@@ -41,6 +42,8 @@ from project_profile_store import DEFAULT_QUALITY_GATES, load_profile
 
 STATUS_FILENAME = "one_click_status.json"
 STATUS_VERSION = "one_click_orchestrator_v2"
+
+logger = logging.getLogger(__name__)
 
 
 # [同步 step_status 20260814] 一键生成 stage -> 前端步骤映射
@@ -269,13 +272,16 @@ def _fail_stage(
     _save_status(project, status)
 
 
-def _complete(project: Any, status: dict[str, Any], video: Any = None) -> None:
+def _complete(project: Any, status: dict[str, Any], db: Any, video: Any = None) -> None:
     status["status"] = "completed"
     status["current_stage"] = ""
     status["completed_at"] = _now()
     status["video"] = video
     _save_status(project, status)
-    # [同步 step_status 20260814] 一键生成完成时，把已完成的 stage 同步到数据库 step_status
+    # [同步 step_status 20260814] 一键生成完成时，把已完成的 stage 同步到数据库 step_status。
+    # 必须复用 _run_pipeline 中持有 project ORM 对象的同一个 db session；另开 session 的
+    # commit 不会提交该 project 的脏数据（旧实现误用未定义的 dependencies 名字并另开
+    # session，导致 NameError 被 except 静默吞掉、step_status 从不落库）。
     try:
         current = project.get_step_status() if hasattr(project, "get_step_status") else {}
         updated = dict(current)
@@ -286,15 +292,10 @@ def _complete(project: Any, status: dict[str, Any], video: Any = None) -> None:
                     updated[step_key] = "completed"
         if hasattr(project, "set_step_status"):
             project.set_step_status(updated)
-        db = dependencies.session_factory()
-        try:
-            db.commit()
-        except Exception:
-            db.rollback()
-        finally:
-            db.close()
+        db.commit()
     except Exception:
-        pass
+        db.rollback()
+        logger.exception("Failed to sync step_status after one-click completion")
 
 
 def _error_text(exc: Exception) -> str:
@@ -734,7 +735,7 @@ def _run_pipeline(
             )
             video = render.get("video") or render.get("item") or render
             _finish_stage(project, status, "render", "视频渲染完成")
-        _complete(project, status, video=video)
+        _complete(project, status, db, video=video)
         try:
             dependencies.write_project_log(
                 project,

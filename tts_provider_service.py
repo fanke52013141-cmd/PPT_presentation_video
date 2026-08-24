@@ -10,7 +10,7 @@ import sys
 import time
 from typing import Any, Callable, Dict, List, Optional
 
-from runtime_support import kill_process_tree
+from runtime_support import run_subprocess_killable
 
 
 logger = logging.getLogger("PPTStudio.TTSProvider")
@@ -234,13 +234,13 @@ def run_tts_command_with_retries(
     for attempt in range(1, STEP7_TTS_RETRY_ATTEMPTS + 1):
         last_result["attempts"] = attempt
         try:
-            result = subprocess.run(
+            result = run_subprocess_killable(
                 tts_args,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                timeout=STEP7_TTS_PROCESS_TIMEOUT_SEC,
+                timeout_sec=STEP7_TTS_PROCESS_TIMEOUT_SEC,
                 env=tts_env,
             )
             last_result.update(
@@ -250,20 +250,15 @@ def run_tts_command_with_retries(
                     "stderr": result.stderr.strip(),
                 }
             )
-        except subprocess.TimeoutExpired as exc:
-            # 超时后杀死整个进程树，避免 TTS 子进程残留
-            kill_process_tree(getattr(exc, "process", None))
+        except Exception as exc:
+            # run_subprocess_killable 内部已处理超时（returncode=124）并真正
+            # 杀死进程树；此处仅兜底捕获意料之外的启动异常。
+            logger.warning("TTS subprocess launch failed: %s", exc)
             last_result.update(
                 {
-                    "returncode": 124,
-                    "stdout": _safe_process_text(
-                        exc.stdout
-                    ).strip(),
-                    "stderr": (
-                        "TTS process timed out after "
-                        f"{STEP7_TTS_PROCESS_TIMEOUT_SEC}s. "
-                        + _safe_process_text(exc.stderr).strip()
-                    ),
+                    "returncode": 1,
+                    "stdout": "",
+                    "stderr": f"TTS subprocess failed to start: {exc}",
                 }
             )
 

@@ -9,7 +9,7 @@ from pathlib import Path
 import subprocess
 from typing import Any, Callable, Dict, List, Optional
 
-from runtime_support import kill_process_tree
+from runtime_support import run_subprocess_killable
 
 
 logger = logging.getLogger("PPTStudio.MaskManifest")
@@ -668,21 +668,19 @@ def validate_current_reveal_assets(project: Any) -> None:
             "--repo-root",
             str(dependencies.repo_root),
         ]
-        try:
-            result = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=dependencies.validation_timeout_sec,
-            )
-        except subprocess.TimeoutExpired as exc:
-            kill_process_tree(getattr(exc, "process", None))
+        result = run_subprocess_killable(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout_sec=dependencies.validation_timeout_sec,
+        )
+        if result.returncode == 124:
             raise MaskManifestError(
                 504,
                 "Mask 产物校验超时，请重试",
-            ) from exc
+            )
         if result.returncode != 0:
             logger.error(
                 "Reveal asset validation failed: %s",
@@ -715,17 +713,15 @@ def build_current_reveal_assets(project: Any) -> None:
             "--repo-root",
             str(dependencies.repo_root),
         ]
-        try:
-            result = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=dependencies.build_timeout_sec,
-            )
-        except subprocess.TimeoutExpired as exc:
-            kill_process_tree(getattr(exc, "process", None))
+        result = run_subprocess_killable(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout_sec=dependencies.build_timeout_sec,
+        )
+        if result.returncode == 124:
             dependencies.write_project_log(
                 project,
                 "step5_reveal_build_timeout",
@@ -734,7 +730,7 @@ def build_current_reveal_assets(project: Any) -> None:
             raise MaskManifestError(
                 504,
                 "构建 Mask 切层超时，已停止本次任务，请重试",
-            ) from exc
+            )
         if result.returncode != 0:
             logger.error("Build reveal assets failed: %s", result.stderr)
             raise MaskManifestError(

@@ -193,8 +193,8 @@ def main() -> None:
 
     assert 'def synthesize_tts(project_id: str' not in server
     assert 'steps/7/synthesize-legacy' not in server
-    assert "timeout=STEP7_TTS_PROCESS_TIMEOUT_SEC" in tts_provider_service
-    assert "except subprocess.TimeoutExpired" in tts_provider_service
+    assert "timeout_sec=STEP7_TTS_PROCESS_TIMEOUT_SEC" in tts_provider_service
+    assert "run_subprocess_killable" in tts_provider_service
     assert "def provider_tts_command(" not in server
     assert "def run_tts_command_with_retries(" not in server
 

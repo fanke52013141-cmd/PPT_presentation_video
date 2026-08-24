@@ -120,9 +120,12 @@ def init_step6_narration(project_id: str, db: Session = Depends(get_db)):
         return {"success": True, "beats": existing_beats, "reused": True}
         
     write_narration_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "write_narration_from_visual_contract.py"))
-    res = subprocess.run([
-        sys.executable, write_narration_script, "--run-dir", project.run_dir
-    ], capture_output=True, text=True, encoding="utf-8", errors="replace")
+    try:
+        res = subprocess.run([
+            sys.executable, write_narration_script, "--run-dir", project.run_dir
+        ], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180)
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="初始化演讲稿超时，请重试")
     
     if res.returncode != 0:
         logger.error(f"Init narration failed: {res.stderr}")
@@ -510,12 +513,14 @@ def update_step6_result(project_id: str, payload: Dict[str, Any], db: Session = 
         
     # 运行校验，确保 narration 符合规范
     validate_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "validate_narration_grounding.py"))
-    val_res = subprocess.run([
-        sys.executable, validate_script, "--run-dir", project.run_dir
-    ], capture_output=True, text=True, encoding="utf-8", errors="replace")
-    
-    if val_res.returncode != 0:
-        logger.warning(f"Narration grounding warned:\n{val_res.stderr}")
+    try:
+        val_res = subprocess.run([
+            sys.executable, validate_script, "--run-dir", project.run_dir
+        ], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=90)
+        if val_res.returncode != 0:
+            logger.warning(f"Narration grounding warned:\n{val_res.stderr}")
+    except subprocess.TimeoutExpired:
+        logger.warning("Narration grounding validation timed out")
         
     handle_step_navigation(project, 6, db)
     return {"success": True}

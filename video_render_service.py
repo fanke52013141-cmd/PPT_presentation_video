@@ -578,28 +578,30 @@ class VideoRenderService:
             )
             return result
         except Exception as exc:
+            # 合成失败不应拖垮已成功的渲染：记录原因并回退到原渲染产物。
             logger.exception(
-                "[digital-human] composite failed for %s",
+                "[digital-human] composite failed for %s, falling back to base render",
                 project.id,
             )
-            raise RuntimeError(
-                "数字人讲解合成失败：" + str(exc)
-            ) from exc
+            return result
 
         if not composite_out.exists():
-            logger.error(
-                "[digital-human] composite produced no output for %s",
+            logger.warning(
+                "[digital-human] composite produced no output for %s, keeping base render",
                 project.id,
             )
-            raise RuntimeError("数字人讲解合成失败：未生成合成文件")
+            return result
         # 用合成视频替换原渲染视频，保持文件名不变（下游产物逻辑无需改动）
         try:
             import os
             os.replace(composite_out, result.output_path)
         except OSError as exc:
-            raise RuntimeError(
-                "数字人讲解合成文件替换失败：" + str(exc)
-            ) from exc
+            logger.warning(
+                "[digital-human] composite file replace failed for %s, keeping base render: %s",
+                project.id,
+                exc,
+            )
+            return result
         logger.info(
             "[digital-human] composite success for %s: %s",
             project.id,

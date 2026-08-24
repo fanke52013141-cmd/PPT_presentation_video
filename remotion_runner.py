@@ -15,6 +15,7 @@ import uuid
 from typing import Any, Callable
 
 from database import Project
+from runtime_support import run_subprocess_killable
 from video_contracts import VideoRenderConfig
 
 
@@ -329,26 +330,24 @@ class RemotionRunner:
             timeout_sec=self.config.render_timeout_sec,
             total_duration_sec=props.get("total_duration_sec"),
         )
-        try:
-            result = subprocess.run(
-                args,
-                cwd=str(remotion_dir),
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=self.config.render_timeout_sec,
-            )
-        except subprocess.TimeoutExpired as exc:
-            # 超时后杀死整个进程树，避免 npx -> node -> ffmpeg 孙进程残留。
-            from runtime_support import kill_process_tree
-            kill_process_tree(getattr(exc, "process", None))
+        result = run_subprocess_killable(
+            args,
+            cwd=str(remotion_dir),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout_sec=self.config.render_timeout_sec,
+        )
+        if result.returncode == 124:
+            # run_subprocess_killable 已在内部真正杀死整个进程树
+            # （npx -> node -> ffmpeg 孙进程），避免孤儿残留与管道阻塞。
             self.dependencies.write_project_log(
                 project,
                 "step8_remotion_render_timeout",
                 timeout_sec=self.config.render_timeout_sec,
             )
-            raise RuntimeError("视频渲染超时") from exc
+            raise RuntimeError("视频渲染超时")
         if result.returncode != 0:
             self.dependencies.write_project_log(
                 project,

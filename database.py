@@ -185,17 +185,19 @@ class LocalJob(Base):
 
 # 初始化数据库结构
 def init_db():
-    # 强制使用 DELETE 模式（而非 WAL），因为 TRAE 沙箱环境下 WAL 文件
-    # 写入不可靠，会导致已提交数据在后续查询中丢失（disk I/O error）。
-    # DELETE 模式直接写入主数据库文件，虽然写并发性稍差但数据可靠性有保障。
+    # 默认使用 WAL 模式：读写并发、写不阻塞读，适合本地一键生成 + 后台渲染 + HTTP 并发。
+    # TRAE 沙箱环境下 WAL 文件写入不可靠（disk I/O error），可通过环境变量
+    # PPT_STUDIO_JOURNAL_MODE=DELETE 回退到 DELETE 模式。
+    journal_mode = os.environ.get("PPT_STUDIO_JOURNAL_MODE", "WAL").upper()
+    synchronous = "NORMAL" if journal_mode == "WAL" else "FULL"
     try:
         with engine.connect() as connection:
-            connection.exec_driver_sql("PRAGMA journal_mode=DELETE")
+            connection.exec_driver_sql(f"PRAGMA journal_mode={journal_mode}")
             connection.exec_driver_sql("PRAGMA busy_timeout=30000")
-            connection.exec_driver_sql("PRAGMA synchronous=FULL")
+            connection.exec_driver_sql(f"PRAGMA synchronous={synchronous}")
             connection.commit()
     except Exception:
-        logger.error("Failed to set DELETE journal mode", exc_info=True)
+        logger.error("Failed to set journal mode to %s", journal_mode, exc_info=True)
     run_migrations(engine)
     # 初始化默认设置
     db = SessionLocal()

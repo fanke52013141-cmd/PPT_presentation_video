@@ -683,37 +683,40 @@ def create_job(payload: Dict[str, Any]) -> Dict[str, Any]:
             },
         )
 
-    active_count = sum(
-        1
-        for j in _jobs.values()
-        if j.get("status") in (JOB_STATUS_QUEUED, JOB_STATUS_PROCESSING)
-    )
-    if active_count >= MAX_JOBS:
-        raise HTTPException(status_code=429, detail="任务队列已满，请稍后重试")
-
-    job_id = f"job_{uuid.uuid4().hex[:10]}"
-    JOB_DIR.mkdir(parents=True, exist_ok=True)
-    output_path = JOB_DIR / f"{job_id}.mp4"
-    job: Dict[str, Any] = {
-        "job_id": job_id,
-        "avatar_id": avatar_id,
-        "avatar_path": str(avatar_path),
-        "audio_path": str(audio_path),
-        "slide_id": slide_id,
-        "sync_mode": sync_mode,
-        "inference_steps": int(payload.get("inference_steps") or 20),
-        "status": JOB_STATUS_QUEUED,
-        "progress": 0,
-        "output_path": str(output_path),
-        "created_at": _now(),
-    }
-    # ComfyUI 专用字段
-    if is_comfyui:
-        job["backend"] = "comfyui"
-        wf_template = payload.get("workflow_template")
-        if isinstance(wf_template, dict):
-            job["workflow_template"] = wf_template
     with _jobs_lock:
+        # 计数、上限判断与任务注册必须在同一临界区内，避免无锁遍历 _jobs
+        # 时被 _execute_job 线程修改字典（RuntimeError: dict changed size）
+        # 以及并发 create_job 双双读到 < MAX_JOBS 的 TOCTOU 竞态。
+        active_count = sum(
+            1
+            for j in _jobs.values()
+            if j.get("status") in (JOB_STATUS_QUEUED, JOB_STATUS_PROCESSING)
+        )
+        if active_count >= MAX_JOBS:
+            raise HTTPException(status_code=429, detail="任务队列已满，请稍后重试")
+
+        job_id = f"job_{uuid.uuid4().hex[:10]}"
+        JOB_DIR.mkdir(parents=True, exist_ok=True)
+        output_path = JOB_DIR / f"{job_id}.mp4"
+        job: Dict[str, Any] = {
+            "job_id": job_id,
+            "avatar_id": avatar_id,
+            "avatar_path": str(avatar_path),
+            "audio_path": str(audio_path),
+            "slide_id": slide_id,
+            "sync_mode": sync_mode,
+            "inference_steps": int(payload.get("inference_steps") or 20),
+            "status": JOB_STATUS_QUEUED,
+            "progress": 0,
+            "output_path": str(output_path),
+            "created_at": _now(),
+        }
+        # ComfyUI 专用字段
+        if is_comfyui:
+            job["backend"] = "comfyui"
+            wf_template = payload.get("workflow_template")
+            if isinstance(wf_template, dict):
+                job["workflow_template"] = wf_template
         _jobs[job_id] = job
         _persist_job(job)
 

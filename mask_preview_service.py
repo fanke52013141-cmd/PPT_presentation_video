@@ -10,7 +10,7 @@ from pathlib import Path
 import subprocess
 from typing import Any, Callable, Dict
 
-from runtime_support import kill_process_tree
+from runtime_support import run_subprocess_killable
 
 
 logger = logging.getLogger("PPTStudio.MaskPreview")
@@ -89,21 +89,19 @@ def build_step5_mask_preview(
             "--preview-output",
             str(preview_path),
         ]
-        try:
-            result = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=dependencies.build_timeout_sec,
-            )
-        except subprocess.TimeoutExpired as exc:
-            kill_process_tree(getattr(exc, "process", None))
+        result = run_subprocess_killable(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout_sec=dependencies.build_timeout_sec,
+        )
+        if result.returncode == 124:
             raise MaskPreviewError(
                 504,
                 "精确 Mask 预览构建超时，请重试",
-            ) from exc
+            )
         if result.returncode != 0 or not preview_path.exists():
             logger.error(
                 "Build exact Mask preview failed: %s",

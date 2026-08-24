@@ -47,7 +47,7 @@ def test_default_settings_initialization_is_concurrency_safe(tmp_path) -> None:
 
         assert len(settings) == len(database.DEFAULT_SETTINGS)
         assert settings["llm_model"] == "custom-model"
-        assert settings["llm_max_tokens"] == "50000"
+        assert settings["llm_max_tokens"] == "30000"
         assert settings["tts_speed"] == "1.2"
     finally:
         test_engine.dispose()

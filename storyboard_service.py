@@ -801,13 +801,19 @@ def validate_visual_contract_file(
     project_profile_path = storyboard_profile_path(project)
     if os.path.exists(project_profile_path):
         validation_args.extend(["--profile", project_profile_path])
-    result = subprocess.run(
-        validation_args,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
+    try:
+        result = subprocess.run(
+            validation_args,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=90,
+        )
+    except subprocess.TimeoutExpired:
+        result = subprocess.CompletedProcess(
+            validation_args, 124, "", "visual contract validation timed out"
+        )
     contract_bytes = Path(contract_path).read_bytes()
     validation = {
         "valid": result.returncode == 0,

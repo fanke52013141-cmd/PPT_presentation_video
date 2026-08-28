@@ -324,8 +324,11 @@ async def upload_dh_avatar(
         tmp_path = Path(tmp.name)
     try:
         return client.upload_avatar(name, tmp_path)
-    except (DigitalHumanUnavailable, Exception) as exc:
+    except DigitalHumanUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
+        logger.exception("upload_avatar 内部错误")
+        raise HTTPException(status_code=500, detail=f"内部错误: {exc}")
     finally:
         try:
             tmp_path.unlink(missing_ok=True)

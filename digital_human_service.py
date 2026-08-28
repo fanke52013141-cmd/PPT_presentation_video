@@ -24,6 +24,7 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -36,6 +37,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 import uvicorn
 from urllib.parse import urlsplit
+
+# 复用项目已有的 killable 子进程执行器（超时后终止整个进程树，含孙进程）
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from runtime_support import run_subprocess_killable
 
 logger = logging.getLogger("PPTStudio.DigitalHuman")
 
@@ -65,12 +70,34 @@ def _log(*parts: Any) -> None:
     logger.info(" ".join(str(p) for p in parts))
 
 
+def _run_subprocess_safe(
+    cmd: list[str],
+    *,
+    cwd: Optional[str] = None,
+    timeout: int = 3600,
+) -> subprocess.CompletedProcess:
+    """安全的 subprocess 执行：超时后终止整个进程树（含孙进程）。
+
+    替代直接 subprocess.run，确保 GPU 推理进程在超时后不会残留，
+    避免 Windows 上 subprocess.run 只 kill 直接子进程的问题。
+    """
+    result = run_subprocess_killable(
+        cmd,
+        timeout_sec=float(timeout),
+        capture_output=True,
+        text=True,
+        cwd=cwd,
+    )
+    if result.returncode == 124:
+        raise RuntimeError(f"子进程超时（{timeout}s），已终止进程树: {' '.join(cmd[:3])}...")
+    return result
+
+
 def _ensure_ffmpeg_in_path() -> Optional[str]:
     """启动时探测 ffmpeg/ffprobe 并加入 PATH（mock 推理与圆形合成依赖）。"""
     candidates = [
         Path(os.environ.get("PPT_DIGITAL_HUMAN_FFMPEG_DIR") or ""),
         Path(os.environ.get("PPT_STUDIO_FFMPEG_DIR") or ""),
-        Path(r"C:\Users\Administrator\AppData\Roaming\TRAE SOLO CN\ModularData\ai-agent\vm\tools\app\ffmpeg"),
         REPO_ROOT / "tools" / "ffmpeg" / "bin",
     ]
     for cand in candidates:
@@ -92,6 +119,26 @@ JOB_STATUS_UNAVAILABLE = "unavailable"  # 模型未部署
 
 _jobs_lock = threading.Lock()
 _jobs: Dict[str, Dict[str, Any]] = {}
+
+# 全局取消令牌：服务关闭时通知所有活跃任务停止轮询和推理
+_cancel_event = threading.Event()
+
+
+def _shutdown_gracefully(*_args: Any) -> None:
+    """服务关闭时通知所有活跃任务取消（atexit / signal handler）。"""
+    _log("[shutdown] 通知活跃任务取消...")
+    _cancel_event.set()
+    # 等待活跃任务退出（最多 10s）
+    for _ in range(100):
+        with _jobs_lock:
+            active = sum(
+                1 for j in _jobs.values()
+                if j.get("status") == JOB_STATUS_PROCESSING
+            )
+        if active == 0:
+            break
+        time.sleep(0.1)
+    _log("[shutdown] 所有任务已停止")
 
 
 def _job_file(job_id: str) -> Path:
@@ -198,7 +245,7 @@ def _run_real_inference(
         "--video_out_path", str(output_path),
     ]
     _log("[latentsync] run (cwd=%s):", repo, " ".join(cmd))
-    proc = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, timeout=3600)
+    proc = _run_subprocess_safe(cmd, cwd=repo, timeout=3600)
     if proc.returncode != 0:
         raise RuntimeError(
             "LatentSync 推理失败:\n" + (proc.stderr or proc.stdout or "")[-2000:]
@@ -220,17 +267,22 @@ def _run_mock_inference(
              "-show_entries", "stream=width,height", "-of", "csv=s=x:p=0", str(avatar_path)]
     size = None
     try:
-        size = subprocess.run(probe, capture_output=True, text=True, timeout=20).stdout.strip()
+        size = _run_subprocess_safe(probe, timeout=20).stdout.strip()
     except Exception:
         size = None
     if not size:
         size = "512x512"
+    # 动态获取系统字体路径（兼容不同 Windows 版本和 SystemRoot 配置）
+    _font_path = os.path.join(
+        os.environ.get("SystemRoot", r"C:\Windows"), "Fonts", "msyh.ttc"
+    )
+    _font_arg = _font_path.replace("\\", "/").replace(":", "\\:")
     cmd = [
         "ffmpeg", "-y", "-i", str(avatar_path), "-i", str(audio_path),
         "-filter_complex", (
             f"scale={size},setsar=1,fps=30,"
             "drawbox=x=8:y=8:w=iw-16:h=ih-16:color=0x5B7893@1:t=4,"
-            f"drawtext=text='DIGI MOCK {job.get('slide_id','')}':fontfile='C\\:/Windows/Fonts/msyh.ttc':"
+            f"drawtext=text='DIGI MOCK {job.get('slide_id','')}':fontfile='{_font_arg}':"
             "x=(w-text_w)/2:y=(h-text_h)/2:fontsize=48:fontcolor=white:"
             "shadowcolor=black@0.6:shadowx=2:shadowy=2"
         ),
@@ -238,7 +290,7 @@ def _run_mock_inference(
         "-c:a", "aac", "-movflags", "+faststart", str(output_path),
     ]
     _log("[mock] run:", " ".join(cmd))
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    proc = _run_subprocess_safe(cmd, timeout=300)
     if proc.returncode != 0:
         raise RuntimeError(
             "Mock 推理失败（需 ffmpeg）:\n" + (proc.stderr or "")[-2000:]
@@ -287,6 +339,7 @@ def _run_comfyui_inference(
         output_path=output_path,
         workflow_template=workflow_template,
         timeout=float(job.get("timeout", 7200)),
+        cancel_event=_cancel_event,
     )
     _log("[comfyui] done: prompt_id=%s output=%s", result.get("prompt_id"), result.get("output"))
 
@@ -362,7 +415,7 @@ def _probe_video_size(path: Path) -> tuple[int, int]:
         "ffprobe", "-v", "error", "-select_streams", "v:0",
         "-show_entries", "stream=width,height", "-of", "csv=s=x:p=0", str(path),
     ]
-    out = subprocess.run(cmd, capture_output=True, text=True, timeout=30).stdout.strip()
+    out = _run_subprocess_safe(cmd, timeout=30).stdout.strip()
     if "x" in out:
         w, h = out.split("x", 1)
         return int(w), int(h)
@@ -374,7 +427,7 @@ def _probe_duration_sec(path: Path) -> float:
         "ffprobe", "-v", "error", "-show_entries", "format=duration",
         "-of", "csv=s=x:p=0", str(path),
     ]
-    out = subprocess.run(cmd, capture_output=True, text=True, timeout=30).stdout.strip()
+    out = _run_subprocess_safe(cmd, timeout=30).stdout.strip()
     try:
         return float(out)
     except ValueError:
@@ -487,7 +540,7 @@ def composite_circle(
                "-c:a", "aac", "-shortest", "-movflags", "+faststart", str(output)]
 
     _log("[composite] run:", " ".join(cmd))
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    proc = _run_subprocess_safe(cmd, timeout=600)
     if proc.returncode != 0:
         raise RuntimeError(
             "圆形合成失败（需 ffmpeg）:\n" + (proc.stderr or "")[-2000:]
@@ -801,11 +854,14 @@ def composite(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def main() -> None:
+    import atexit
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
     )
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     _load_persisted_jobs()
+    # 注册优雅关闭：服务退出时通知活跃任务停止
+    atexit.register(_shutdown_gracefully)
     ffmpeg_dir = _ensure_ffmpeg_in_path()
     if ffmpeg_dir:
         logger.info("Using ffmpeg tools: %s", ffmpeg_dir)

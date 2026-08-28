@@ -18,14 +18,46 @@ import httpx
 
 logger = logging.getLogger("PPTStudio.ComfyUIBackend")
 
-# 工作流模板中需要动态注入文件名的节点 ID 映射
-# 这些 ID 来自用户提供的 Wan2.2 S2V API 格式工作流 JSON
-# 画质参数（分辨率/步数/CFG 等）由用户在工作流 JSON 中直接设定，此处不覆盖
-NODE_IDS = {
+# 工作流模板中需要动态注入文件名的节点 — 优先通过 class_type 匹配
+# 如果工作流中只有一个匹配的节点，即使 ID 不同也能正确注入；
+# 硬编码 ID 作为 fallback（兼容旧工作流）
+NODE_CLASS_PATTERNS = {
+    "load_image": ["LoadImage", "LoadImageDevice", "LoadImageBase64"],
+    "load_audio": ["LoadAudio", "VHS_LoadAudio", "VHS_LoadAudioUpload"],
+    "video_combine": ["VHS_VideoCombine", "SaveAnimatedWEBP", "SaveVideo"],
+}
+
+# 旧工作流的硬编码节点 ID（fallback 用）
+NODE_IDS_FALLBACK = {
     "load_image": "252",
     "load_audio": "254",
     "video_combine": "278",
 }
+
+
+def _find_node_by_class(
+    wf: Dict[str, Any],
+    patterns: list[str],
+    fallback_id: Optional[str] = None,
+) -> Optional[str]:
+    """通过 class_type 模糊匹配节点 ID，兼容任意工作流布局。
+
+    查找顺序：
+    1. 遍历所有节点，按 class_type 模糊匹配
+    2. 如果匹配到多个，返回第一个
+    3. 如果未匹配到，使用 fallback_id（旧工作流硬编码 ID）
+    """
+    found = None
+    for nid, node in wf.items():
+        ct = node.get("class_type", "")
+        for pat in patterns:
+            if pat.lower() in ct.lower():
+                return nid
+    # fallback：尝试硬编码 ID
+    if fallback_id and fallback_id in wf:
+        logger.info("[comfyui] class_type 未匹配，回退到硬编码 ID: %s", fallback_id)
+        return fallback_id
+    return None
 
 
 class ComfyUIError(RuntimeError):
@@ -90,12 +122,23 @@ def _patch_workflow(
         if "_meta" in v:
             wf[k]["_meta"] = v["_meta"]
 
-    nid = NODE_IDS
+    # 通过 class_type 匹配节点（兼容任意工作流布局）
+    img_id = _find_node_by_class(
+        wf, NODE_CLASS_PATTERNS["load_image"], NODE_IDS_FALLBACK["load_image"]
+    )
+    audio_id = _find_node_by_class(
+        wf, NODE_CLASS_PATTERNS["load_audio"], NODE_IDS_FALLBACK["load_audio"]
+    )
+    if not img_id:
+        raise ComfyUIError("工作流中未找到 LoadImage 节点（class_type 匹配失败）")
+    if not audio_id:
+        raise ComfyUIError("工作流中未找到 LoadAudio 节点（class_type 匹配失败）")
+
     # 只注入必须动态变化的输入文件名
-    wf[nid["load_image"]]["inputs"]["image"] = image_info["name"]
-    wf[nid["load_audio"]]["inputs"]["audio"] = audio_info["name"]
+    wf[img_id]["inputs"]["image"] = image_info["name"]
+    wf[audio_id]["inputs"]["audio"] = audio_info["name"]
     # 清除可能残留的 audioUI 路径
-    wf[nid["load_audio"]]["inputs"].pop("audioUI", None)
+    wf[audio_id]["inputs"].pop("audioUI", None)
 
     logger.info(
         "[comfyui] 已注入动态文件名，画质参数沿用工作流模板原始值 "
@@ -123,10 +166,17 @@ def _poll_history(
     prompt_id: str,
     timeout: float = 7200.0,
     poll_interval: float = 3.0,
+    cancel_event: Optional["threading.Event"] = None,
 ) -> Dict[str, Any]:
-    """轮询 /history/{prompt_id}，返回完成的 history 条目。"""
+    """轮询 /history/{prompt_id}，返回完成的 history 条目。
+
+    参数:
+        cancel_event: 可选的取消事件，设置后立即停止轮询并抛出异常
+    """
     deadline = time.time() + timeout
     while time.time() < deadline:
+        if cancel_event is not None and cancel_event.is_set():
+            raise ComfyUIError("任务已被取消（服务关闭）")
         resp = client.get(f"/history/{prompt_id}")
         if resp.status_code == 200:
             data = resp.json()
@@ -143,11 +193,16 @@ def _poll_history(
     raise ComfyUIError(f"等待 ComfyUI 结果超时（{timeout:.0f}s）")
 
 
-def _find_output_video(entry: Dict[str, Any]) -> Optional[Dict[str, str]]:
+def _find_output_video(entry: Dict[str, Any], wf: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, str]]:
     """从 history 条目中提取输出视频的下载信息。"""
     outputs = entry.get("outputs", {})
-    vc_id = NODE_IDS["video_combine"]
-    node_out = outputs.get(vc_id) or outputs.get(str(vc_id))
+    # 优先通过 class_type 匹配的节点 ID 查找（如果提供了工作流）
+    vc_id = None
+    if wf:
+        vc_id = _find_node_by_class(
+            wf, NODE_CLASS_PATTERNS["video_combine"], NODE_IDS_FALLBACK["video_combine"]
+        )
+    node_out = outputs.get(vc_id) if vc_id else None
     if not node_out:
         # 尝试遍历所有输出节点
         for nid_key, node_data in outputs.items():
@@ -195,6 +250,7 @@ def run_comfyui_inference(
     output_path: Path,
     workflow_template: Dict[str, Any],
     timeout: float = 7200.0,
+    cancel_event: Optional["threading.Event"] = None,
 ) -> Dict[str, Any]:
     """完整执行 ComfyUI 推理流程。
 
@@ -223,10 +279,10 @@ def run_comfyui_inference(
         logger.info("[comfyui] submitted prompt_id=%s", prompt_id)
 
     with _make_client(timeout=30.0) as poll_client:
-        entry = _poll_history(poll_client, prompt_id, timeout=timeout)
+        entry = _poll_history(poll_client, prompt_id, timeout=timeout, cancel_event=cancel_event)
         logger.info("[comfyui] prompt %s completed", prompt_id)
 
-        file_info = _find_output_video(entry)
+        file_info = _find_output_video(entry, wf=workflow)
         if not file_info:
             raise ComfyUIError("工作流完成但未找到输出视频节点")
         logger.info("[comfyui] output video: %s", file_info)
@@ -386,6 +442,7 @@ def run_comfyui_tts(
     *,
     overrides: Optional[Dict[str, Any]] = None,
     timeout: float = 300.0,
+    cancel_event: Optional["threading.Event"] = None,
 ) -> Dict[str, Any]:
     """通过 ComfyUI IndexTTS2 工作流合成语音。
 
@@ -419,7 +476,7 @@ def run_comfyui_tts(
 
     # 轮询 + 下载
     with _make_client(timeout=30.0) as poll_client:
-        entry = _poll_history(poll_client, prompt_id, timeout=timeout)
+        entry = _poll_history(poll_client, prompt_id, timeout=timeout, cancel_event=cancel_event)
         logger.info("[comfyui-tts] prompt %s completed", prompt_id)
 
         file_info = _find_output_audio(entry)

@@ -222,7 +222,8 @@ def test_tts_connection(payload: TestTtsPayload) -> Dict[str, Any]:
             "success": False,
             "message": f"不支持的 TTS Provider: {payload.provider}",
         }
-    if not api_key:
+    # ComfyUI TTS 是本地服务，不需要 API Key
+    if provider != "comfyui_tts" and not api_key:
         return {
             "success": False,
             "message": f"缺少 {provider} API Key / SecretId。",
@@ -232,10 +233,17 @@ def test_tts_connection(payload: TestTtsPayload) -> Dict[str, Any]:
             "success": False,
             "message": "腾讯云 TTS 还需要 SecretKey。",
         }
-    if not model or not voice_id:
+    # ComfyUI TTS 不强制要求 voice_id（参考音频可选）
+    if provider != "comfyui_tts":
+        if not model or not voice_id:
+            return {
+                "success": False,
+                "message": "请填写语音模型和音色 ID。",
+            }
+    elif not model:
         return {
             "success": False,
-            "message": "请填写语音模型和音色 ID。",
+            "message": "请填写语音模型名称。",
         }
 
     try:

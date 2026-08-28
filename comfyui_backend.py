@@ -239,3 +239,199 @@ def run_comfyui_inference(
         "output": str(output_path),
         "video_info": file_info,
     }
+
+
+# ============================================================
+# ComfyUI TTS（IndexTTS2）工作流支持
+# ============================================================
+
+# IndexTTS2 工作流模板中需要动态注入值的节点 ID 映射
+# 这些 ID 来自用户在 ComfyUI 中导出的 IndexTTS2 API 格式工作流 JSON
+TTS_NODE_IDS = {
+    "load_ref_audio": "4",   # LoadAudio（参考音频，声音克隆用）
+    "tts_node": "2",          # IndexTTS2 Text to Speech
+    "save_audio": "3",        # SaveAudio / SaveAudioWire
+}
+
+
+def _patch_tts_workflow(
+    template: Dict[str, Any],
+    text: str,
+    ref_audio_info: Optional[Dict[str, str]] = None,
+    overrides: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """将动态值注入 TTS 工作流模板，返回可提交的 prompt JSON。
+
+    注入内容：
+    - text → IndexTTS2 节点的 text 输入
+    - 参考音频文件名 → LoadAudio 节点（如有）
+    - overrides 中的额外参数（speed 等）
+
+    画质/音质参数尊重用户工作流模板中的原始设置，不做覆盖。
+    """
+    wf = {}
+    for k, v in template.items():
+        if not isinstance(v, dict) or "class_type" not in v:
+            logger.debug("[comfyui-tts] 跳过非节点条目: %s", k)
+            continue
+        wf[k] = {"inputs": dict(v.get("inputs", {})), "class_type": v["class_type"]}
+        if "_meta" in v:
+            wf[k]["_meta"] = v["_meta"]
+
+    nid = TTS_NODE_IDS
+
+    # 注入待合成文本
+    tts_id = nid["tts_node"]
+    if tts_id in wf:
+        wf[tts_id]["inputs"]["text"] = text
+    else:
+        # 尝试通过 class_type 匹配
+        for k, v in wf.items():
+            ct = v.get("class_type", "")
+            if "indextts" in ct.lower() or ("tts" in ct.lower() and "speech" in ct.lower()):
+                v["inputs"]["text"] = text
+                nid_actual = k
+                logger.info("[comfyui-tts] 通过 class_type 匹配到 TTS 节点: %s (%s)", k, ct)
+                break
+
+    # 注入参考音频文件名（声音克隆）
+    if ref_audio_info:
+        ref_id = nid["load_ref_audio"]
+        if ref_id in wf:
+            wf[ref_id]["inputs"]["audio"] = ref_audio_info["name"]
+        else:
+            for k, v in wf.items():
+                ct = v.get("class_type", "")
+                if ct.lower() in ("loadaudio", "load audio", "audioload"):
+                    v["inputs"]["audio"] = ref_audio_info["name"]
+                    logger.info("[comfyui-tts] 通过 class_type 匹配到 LoadAudio 节点: %s", k)
+                    break
+
+    # 注入额外覆盖参数（speed 等）
+    if overrides and isinstance(overrides, dict):
+        if tts_id in wf:
+            for key, val in overrides.items():
+                if key in wf[tts_id]["inputs"]:
+                    wf[tts_id]["inputs"][key] = val
+                    logger.info("[comfyui-tts] 覆盖 %s=%s", key, val)
+
+    logger.info("[comfyui-tts] 已注入文本和参考音频，其他参数沿用模板")
+    return wf
+
+
+def _find_output_audio(entry: Dict[str, Any]) -> Optional[Dict[str, str]]:
+    """从 history 条目中提取输出音频的下载信息。"""
+    outputs = entry.get("outputs", {})
+    sa_id = TTS_NODE_IDS["save_audio"]
+
+    # 优先按已知节点 ID 查找
+    node_out = outputs.get(sa_id) or outputs.get(str(sa_id))
+    if not node_out:
+        # 遍历所有输出节点，查找含音频字段的
+        for nid_key, node_data in outputs.items():
+            for key in ("audio", "wav", "result", "audios"):
+                if key in node_data:
+                    node_out = node_data
+                    break
+            if node_out:
+                break
+    if not node_out:
+        return None
+
+    # SaveAudio 输出字段名可能是 "audio"、"wav"、"result" 等
+    for key in ("audio", "wav", "result", "audios"):
+        items = node_out.get(key)
+        if items and isinstance(items, list) and len(items) > 0:
+            item = items[0]
+            if isinstance(item, dict):
+                return {
+                    "filename": item.get("filename", ""),
+                    "subfolder": item.get("subfolder", ""),
+                    "type": item.get("type", "output"),
+                }
+        elif isinstance(items, dict):
+            return {
+                "filename": items.get("filename", ""),
+                "subfolder": items.get("subfolder", ""),
+                "type": items.get("type", "output"),
+            }
+    return None
+
+
+def _download_audio(
+    client: httpx.Client,
+    file_info: Dict[str, str],
+    dest: Path,
+) -> None:
+    """从 ComfyUI 下载输出音频到指定路径。"""
+    params = {
+        "filename": file_info["filename"],
+        "subfolder": file_info.get("subfolder", ""),
+        "type": file_info.get("type", "output"),
+    }
+    with client.stream("GET", "/view", params=params) as resp:
+        if resp.status_code != 200:
+            raise ComfyUIError(f"下载音频失败: HTTP {resp.status_code}")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with open(dest, "wb") as f:
+            for chunk in resp.iter_bytes(chunk_size=65536):
+                f.write(chunk)
+
+
+def run_comfyui_tts(
+    text: str,
+    ref_audio_path: Optional[Path],
+    output_path: Path,
+    workflow_template: Dict[str, Any],
+    *,
+    overrides: Optional[Dict[str, Any]] = None,
+    timeout: float = 300.0,
+) -> Dict[str, Any]:
+    """通过 ComfyUI IndexTTS2 工作流合成语音。
+
+    参数:
+        text: 待合成的纯文本（不含 TTS 标记）
+        ref_audio_path: 参考音频路径（声音克隆用，可选）
+        output_path: 输出音频保存路径
+        workflow_template: ComfyUI API 格式的 IndexTTS2 工作流模板 JSON
+        overrides: 需要覆盖工作流模板的额外参数（如 speed 等）
+        timeout: 总超时秒数（TTS 通常比视频快，默认 300s）
+
+    返回:
+        包含 prompt_id、output 路径等信息的字典
+    """
+    logger.info("[comfyui-tts] start: text=%d chars, ref_audio=%s", len(text), ref_audio_path)
+
+    # 上传参考音频（如有）
+    ref_audio_info: Optional[Dict[str, str]] = None
+    if ref_audio_path and Path(ref_audio_path).exists():
+        with _make_client(timeout=60.0) as upload_client:
+            ref_audio_info = _upload_file(upload_client, Path(ref_audio_path))
+            logger.info("[comfyui-tts] uploaded ref audio: %s", ref_audio_info)
+
+    # 构建工作流
+    workflow = _patch_tts_workflow(workflow_template, text, ref_audio_info, overrides)
+
+    # 提交
+    with _make_client(timeout=30.0) as submit_client:
+        prompt_id = _submit_prompt(submit_client, workflow)
+        logger.info("[comfyui-tts] submitted prompt_id=%s", prompt_id)
+
+    # 轮询 + 下载
+    with _make_client(timeout=30.0) as poll_client:
+        entry = _poll_history(poll_client, prompt_id, timeout=timeout)
+        logger.info("[comfyui-tts] prompt %s completed", prompt_id)
+
+        file_info = _find_output_audio(entry)
+        if not file_info:
+            raise ComfyUIError("TTS 工作流完成但未找到输出音频节点")
+        logger.info("[comfyui-tts] output audio: %s", file_info)
+
+        _download_audio(poll_client, file_info, output_path)
+        logger.info("[comfyui-tts] downloaded to %s (%d bytes)", output_path, output_path.stat().st_size)
+
+    return {
+        "prompt_id": prompt_id,
+        "output": str(output_path),
+        "audio_info": file_info,
+    }

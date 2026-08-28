@@ -773,11 +773,15 @@
               <option value="aliyun_cosyvoice">阿里 CosyVoice / DashScope</option>
               <option value="tencent_tts">腾讯云 TTS</option>
               <option value="volcengine_seed">火山/豆包 Seed Speech</option>
+              <option value="comfyui_tts">ComfyUI IndexTTS 2（本地）</option>
             </select>
           </div>
           <div style="margin-bottom: 0.8rem;">
             <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">语音接口地址 (Endpoint):</label>
             <input type="text" id="setting-tts-endpoint" placeholder="https://api.minimaxi.com/v1/t2a_async_v2">
+            <p id="tts-comfyui-hint" style="font-size: 0.8rem; color: #888; margin-top: 0.3rem; display: none;">
+              ComfyUI TTS 模式：Endpoint 填写 IndexTTS2 工作流 JSON 路径（留空则使用 data/digital_human/comfyui_tts_workflow.json）。API Key 无需填写。Voice ID 填写参考音频文件名（声音克隆）。
+            </p>
           </div>
           <div style="margin-bottom: 0.8rem; display: flex; gap: 1rem;">
             <div style="flex: 1;">

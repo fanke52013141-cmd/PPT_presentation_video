@@ -28,6 +28,11 @@ TTS_PROVIDER_ALIASES = {
     "dashscope": "aliyun_cosyvoice",
     "cosyvoice": "aliyun_cosyvoice",
     "tencent": "tencent_tts",
+    "comfyui": "comfyui_tts",
+    "indextts": "comfyui_tts",
+    "index_tts": "comfyui_tts",
+    "index_tts_2.5": "comfyui_tts",
+    "index_tts2": "comfyui_tts",
 }
 TTS_PROVIDER_DEFAULTS = {
     "minimax": {
@@ -55,6 +60,12 @@ TTS_PROVIDER_DEFAULTS = {
         "model": "seed-tts-1.1",
         "voice_id": "zh_female_qingxinnvsheng_mars_bigtts",
         "api_key_env": "VOLCENGINE_TTS_TOKEN",
+    },
+    "comfyui_tts": {
+        "endpoint": "",
+        "model": "IndexTTS-2",
+        "voice_id": "",
+        "api_key_env": "",
     },
 }
 

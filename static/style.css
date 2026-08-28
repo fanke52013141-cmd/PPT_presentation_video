@@ -8117,6 +8117,23 @@ details[open] .ip-character-advanced-summary::before {
   align-items: center;
   justify-content: center;
   width: 100%;
+  transition: border-color 0.2s, color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+.dh-upload-btn:hover {
+  border-color: #6C8FBB;
+  color: #6C8FBB;
+  box-shadow: 0 0 0 2px rgba(108, 143, 187, 0.15);
+}
+.dh-upload-btn.dh-uploaded {
+  border-color: #4CAF50;
+  color: #4CAF50;
+  background: rgba(76, 175, 80, 0.06);
+  box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.12);
+}
+.dh-upload-btn.dh-uploaded::after {
+  content: ' \2713';
+  font-weight: 700;
+  margin-left: 0.2rem;
 }
 .dh-circle-canvas {
   position: relative;
@@ -8254,7 +8271,7 @@ details[open] .ip-character-advanced-summary::before {
 .dh-mode-toggle { display: flex; gap: 0.3rem; border: 1px solid rgba(91,120,147,0.25); border-radius: 10px; padding: 0.3rem; margin-bottom: 0.8rem; background: #f6f8fb; }
 .dh-tab-btn { flex: 1; padding: 0.5rem 0.8rem; font-size: 0.85rem; font-weight: 500; border: none; border-radius: 8px; background: transparent; color: #5B7893; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; }
 .dh-tab-btn:hover { background: rgba(91,120,147,0.08); }
-.dh-tab-btn.dh-tab-active { background: #6C8FBB; color: #fff; box-shadow: 0 1px 4px rgba(91,120,147,0.35); }
+.dh-tab-btn.dh-tab-active { background: #6C8FBB; color: #fff; font-weight: 600; box-shadow: 0 2px 8px rgba(91,120,147,0.4); }
 
 /* ==================== 步骤 9: 数字人讲解（可选） ==================== */
 #step-panel-9 .step9-header {

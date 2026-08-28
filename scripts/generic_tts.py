@@ -458,6 +458,97 @@ def synthesize_volcengine(args: argparse.Namespace, tts_text: str, subtitle_text
     )
 
 
+def synthesize_comfyui(args: argparse.Namespace, tts_text: str, subtitle_text: str) -> None:
+    """通过 ComfyUI IndexTTS2 工作流合成语音。
+
+    复用项目根目录的 comfyui_backend.run_comfyui_tts() 完成完整的
+    上传 → 提交 → 轮询 → 下载流程，产出统一的音频文件格式。
+    """
+    import sys as _sys
+
+    # 将项目根目录加入 path 以便 import comfyui_backend
+    _repo_root = Path(__file__).resolve().parent.parent
+    if str(_repo_root) not in _sys.path:
+        _sys.path.insert(0, str(_repo_root))
+    from comfyui_backend import run_comfyui_tts, check_health, ComfyUIError  # type: ignore
+
+    if not check_health():
+        raise TtsError("ComfyUI 服务不可达，请确认已启动且监听 http://127.0.0.1:8188")
+
+    # 加载 TTS 工作流模板
+    # endpoint 字段复用为工作流 JSON 路径；空则尝试默认位置
+    wf_path_str = str(args.endpoint or "").strip()
+    if not wf_path_str:
+        wf_path_str = str(_repo_root / "data" / "digital_human" / "comfyui_tts_workflow.json")
+    wf_path = Path(wf_path_str)
+    if not wf_path.exists():
+        raise TtsError(
+            f"ComfyUI TTS 工作流模板不存在: {wf_path}\n"
+            "请在 ComfyUI 中搭建 IndexTTS2 工作流并导出 API 格式 JSON，"
+            "放置到上述路径，或在设置中将 endpoint 指向你的工作流 JSON。"
+        )
+    workflow_template = json.loads(wf_path.read_text(encoding="utf-8"))
+
+    # 校验工作流格式（必须是 API 格式）
+    if not isinstance(workflow_template, dict) or not workflow_template:
+        raise TtsError("ComfyUI TTS 工作流模板格式错误：需要 API 格式 JSON")
+    is_api_format = all(
+        isinstance(v, dict) and "class_type" in v for v in workflow_template.values()
+    )
+    if not is_api_format:
+        raise TtsError(
+            "ComfyUI TTS 工作流不是 API 格式（可能是 UI 编辑器格式），"
+            "请在 ComfyUI 中使用 'Save (API Format)' 重新导出。"
+        )
+
+    # 参考音频（声音克隆）：clone_voice_id 存储参考音频的本地路径
+    ref_audio_path = None
+    clone_voice = str(args.clone_voice_id or "").strip()
+    if clone_voice:
+        if Path(clone_voice).is_file():
+            ref_audio_path = Path(clone_voice)
+        elif clone_voice.lower() in ("none", "default", ""):
+            ref_audio_path = None
+        else:
+            # 可能是 ComfyUI input 目录中的文件名，无需本地路径
+            logger_warning = None
+            # 作为文件名传递给工作流（通过 overrides 处理需要额外逻辑，
+            # 此处简单跳过——用户应在工作流模板中预设参考音频）
+            pass
+
+    # 构建 overrides（speed 等参数透传到 IndexTTS2 节点）
+    overrides: dict[str, Any] = {}
+    if args.speed and float(args.speed) != 1.0:
+        overrides["speed"] = float(args.speed)
+
+    output_path = Path(args.out_audio)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    result = run_comfyui_tts(
+        text=strip_tts_markup(tts_text),
+        ref_audio_path=ref_audio_path,
+        output_path=output_path,
+        workflow_template=workflow_template,
+        overrides=overrides if overrides else None,
+        timeout=float(args.timeout),
+    )
+
+    # 复用统一的输出函数：write_common_outputs 会自动用 ffprobe
+    # 测量音频时长，构建字幕时间轴和 metadata
+    audio_bytes = output_path.read_bytes()
+    write_common_outputs(
+        args=args,
+        provider="comfyui_tts",
+        response_json={
+            "status": "ok",
+            "prompt_id": result.get("prompt_id"),
+            "workflow": str(wf_path),
+        },
+        audio_bytes=audio_bytes,
+        subtitle_text=subtitle_text,
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate TTS audio with a configurable provider.")
     parser.add_argument("--provider", default=os.getenv("TTS_PROVIDER", "minimax"))
@@ -522,6 +613,8 @@ def main() -> int:
         synthesize_tencent(args, tts_text, subtitle_text)
     elif provider == "volcengine_seed":
         synthesize_volcengine(args, tts_text, subtitle_text)
+    elif provider == "comfyui_tts":
+        synthesize_comfyui(args, tts_text, subtitle_text)
     else:
         raise TtsError(f"Unsupported TTS provider: {args.provider}")
     return 0

@@ -15,6 +15,20 @@ const LLM_PROVIDER_PRESETS = {
   custom: { baseUrl: '', model: '' }
 };
 
+function updateTtsProviderHint() {
+  var provider = document.getElementById('setting-tts-provider');
+  var hint = document.getElementById('tts-comfyui-hint');
+  if (!provider || !hint) return;
+  hint.style.display = (provider.value === 'comfyui_tts') ? 'block' : 'none';
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  var ttsProviderSelect = document.getElementById('setting-tts-provider');
+  if (ttsProviderSelect) {
+    ttsProviderSelect.addEventListener('change', updateTtsProviderHint);
+  }
+});
+
 function detectLlmProvider(savedProvider, baseUrl) {
   const normalized = String(baseUrl || '').replace(/\/+$/, '').toLowerCase();
   const known = Object.entries(LLM_PROVIDER_PRESETS).find(([, preset]) =>
@@ -53,6 +67,7 @@ async function loadSettings() {
   document.getElementById('setting-image-size').value = state.settings.image_size || '1024x1024';
 
   document.getElementById('setting-tts-provider').value = state.settings.tts_provider || 'minimax';
+  updateTtsProviderHint();
   document.getElementById('setting-tts-endpoint').value = state.settings.tts_endpoint || '';
   document.getElementById('setting-tts-api-key').value = state.settings.tts_api_key || '';
   document.getElementById('setting-tts-secret-key').value = state.settings.tts_secret_key || '';

@@ -99,6 +99,11 @@
       uploadStatus.textContent = dhState.uploadVideoExists ? "已上传" : "未上传";
       uploadStatus.style.color = dhState.uploadVideoExists ? "#4CAF50" : "";
     }
+    // 上传按钮选中态视觉反馈
+    var uploadVideoBtn = document.querySelector("#dh-upload-video-file");
+    if (uploadVideoBtn && uploadVideoBtn.parentElement) {
+      uploadVideoBtn.parentElement.classList.toggle("dh-uploaded", !!dhState.uploadVideoExists);
+    }
     // 形象图片状态
     var avatarStatus = document.getElementById("dh-comfyui-avatar-status");
     if (avatarStatus) {
@@ -109,6 +114,15 @@
         avatarStatus.textContent = "未上传形象图片";
         avatarStatus.style.color = "";
       }
+    }
+    var avatarBtn = document.querySelector("#dh-comfyui-avatar-file");
+    if (avatarBtn && avatarBtn.parentElement) {
+      avatarBtn.parentElement.classList.toggle("dh-uploaded", !!dhState.avatarUploaded);
+    }
+    // ComfyUI 工作流按钮选中态
+    var workflowBtn = document.querySelector("#dh-comfyui-workflow-file");
+    if (workflowBtn && workflowBtn.parentElement) {
+      workflowBtn.parentElement.classList.toggle("dh-uploaded", !!dhState.comfyuiWorkflowExists);
     }
     applyCircleToPreview();
   }

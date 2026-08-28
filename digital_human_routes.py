@@ -37,6 +37,52 @@ DIGI_DIRNAME = "digital_human"
 CONFIG_FILENAME = "digital_human.json"
 DEFAULT_CIRCLE = {"cx": 0.8, "cy": 0.2, "r": 0.25}  # 默认右下角
 
+# ---- 上传安全限制 ----
+MAX_UPLOAD_VIDEO_BYTES = int(
+    os.environ.get("PPT_MAX_UPLOAD_VIDEO_BYTES", str(2 * 1024 * 1024 * 1024))  # 2GB
+)
+MAX_AVATAR_UPLOAD_BYTES = int(
+    os.environ.get("PPT_MAX_AVATAR_UPLOAD_BYTES", str(500 * 1024 * 1024))  # 500MB
+)
+MAX_WORKFLOW_BYTES = int(
+    os.environ.get("PPT_MAX_WORKFLOW_BYTES", str(1024 * 1024))  # 1MB
+)
+MAX_WORKFLOW_NODES = int(
+    os.environ.get("PPT_MAX_WORKFLOW_NODES", "500")
+)
+ALLOWED_VIDEO_MIMES = {
+    "video/mp4", "video/quicktime", "video/x-msvideo",
+    "video/x-matroska", "application/octet-stream",  # 部分浏览器不发送正确 MIME
+}
+ALLOWED_WORKFLOW_MIMES = {
+    "application/json", "text/plain", "application/octet-stream",
+}
+
+
+def _validate_upload(
+    content: bytes,
+    file: UploadFile,
+    max_bytes: int,
+    allowed_mimes: set[str],
+) -> None:
+    """统一的文件上传校验：大小 + MIME 类型。"""
+    if not content:
+        raise HTTPException(status_code=400, detail="上传文件为空")
+    if len(content) > max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"文件过大：{len(content) // 1048576}MB，"
+                f"上限 {max_bytes // 1048576}MB"
+            ),
+        )
+    mime = (file.content_type or "").lower()
+    if mime and mime not in allowed_mimes:
+        raise HTTPException(
+            status_code=415,
+            detail=f"不支持的文件类型：{mime}，允许：{', '.join(sorted(allowed_mimes))}",
+        )
+
 
 def _project_or_404(db: Session, project_id: str) -> Project:
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -210,8 +256,7 @@ async def upload_dh_video(
 ) -> Dict[str, Any]:
     project = _project_or_404(db, project_id)
     content = await file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="上传文件为空")
+    _validate_upload(content, file, MAX_UPLOAD_VIDEO_BYTES, ALLOWED_VIDEO_MIMES)
     _digi_dir(project).mkdir(parents=True, exist_ok=True)
     dest = _upload_digi_path(project)
     tmp = dest.with_suffix(".mp4.tmp")
@@ -268,6 +313,7 @@ async def upload_dh_avatar(
     _project_or_404(db, project_id)
     client = get_digital_human_client()
     content = await file.read()
+    _validate_upload(content, file, MAX_AVATAR_UPLOAD_BYTES, ALLOWED_VIDEO_MIMES)
     import tempfile
 
     with tempfile.NamedTemporaryFile(
@@ -309,8 +355,7 @@ async def upload_comfyui_workflow(
     """上传 ComfyUI API 格式工作流 JSON 模板。"""
     project = _project_or_404(db, project_id)
     content = await file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="文件为空")
+    _validate_upload(content, file, MAX_WORKFLOW_BYTES, ALLOWED_WORKFLOW_MIMES)
     try:
         import json as _json
         wf = _json.loads(content)
@@ -318,6 +363,11 @@ async def upload_comfyui_workflow(
         raise HTTPException(status_code=400, detail=f"JSON 解析失败: {exc}")
     if not isinstance(wf, dict):
         raise HTTPException(status_code=400, detail="工作流 JSON 格式不正确")
+    if len(wf) > MAX_WORKFLOW_NODES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"工作流节点数过多：{len(wf)}（上限 {MAX_WORKFLOW_NODES}）",
+        )
     _digi_dir(project).mkdir(parents=True, exist_ok=True)
     wf_path = _digi_dir(project) / "comfyui_workflow.json"
     wf_path.write_bytes(content)

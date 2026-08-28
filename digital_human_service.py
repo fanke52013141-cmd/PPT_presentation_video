@@ -93,6 +93,35 @@ def _run_subprocess_safe(
     return result
 
 
+def _is_relative(child: Path, parent: Path) -> bool:
+    """判断 child 是否在 parent 目录下（含自身）。"""
+    try:
+        child.resolve().relative_to(parent.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _assert_path_safe(path_str: str, label: str = "file") -> Path:
+    """验证路径在允许范围内，防止路径遍历攻击。
+
+    允许的根目录：DATA_DIR、REPO_ROOT、系统临时目录。
+    """
+    if not path_str:
+        raise HTTPException(status_code=400, detail=f"{label} 路径为空")
+    p = Path(path_str).resolve()
+    allowed_roots = [DATA_DIR, REPO_ROOT]
+    # 加入系统临时目录（mock 生成的临时视频可能在这里）
+    import tempfile
+    allowed_roots.append(Path(tempfile.gettempdir()))
+    if not any(_is_relative(p, root) for root in allowed_roots):
+        raise HTTPException(
+            status_code=403,
+            detail=f"{label} 路径超出允许范围: {p}",
+        )
+    return p
+
+
 def _ensure_ffmpeg_in_path() -> Optional[str]:
     """启动时探测 ffmpeg/ffprobe 并加入 PATH（mock 推理与圆形合成依赖）。"""
     candidates = [
@@ -560,14 +589,19 @@ def composite_circle(
 
 app = FastAPI(title="Digital Human Service", description="LatentSync + 圆形讲解窗口")
 
+# CORS 来源可通过环境变量配置，默认仅允许本机
+_cors_env = os.environ.get("PPT_DIGITAL_HUMAN_CORS_ORIGINS", "").strip()
+_default_cors = [
+    "http://127.0.0.1:8000",
+    "http://localhost:8000",
+    "http://127.0.0.1:9001",
+    "http://localhost:9001",
+]
+_cors_origins = [o.strip() for o in _cors_env.split(",") if o.strip()] or _default_cors
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://127.0.0.1:8000",
-        "http://localhost:8000",
-        "http://127.0.0.1:9001",
-        "http://localhost:9001",
-    ],
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -829,11 +863,20 @@ def composite(payload: Dict[str, Any]) -> Dict[str, Any]:
     shape = str(payload.get("shape") or "circle").strip() or "circle"
     output = str(payload.get("output") or "").strip()
 
-    if not digi_video or not Path(digi_video).exists():
+    if not digi_video:
         raise HTTPException(status_code=400, detail="digi_video 必填且必须存在")
-    if base_video and not Path(base_video).exists():
-        raise HTTPException(status_code=400, detail=f"base_video 不存在: {base_video}")
-    if not output:
+    digi_path = _assert_path_safe(digi_video, "digi_video")
+    if not digi_path.exists():
+        raise HTTPException(status_code=400, detail="digi_video 必填且必须存在")
+    base_path = None
+    if base_video:
+        base_path = _assert_path_safe(base_video, "base_video")
+        if not base_path.exists():
+            raise HTTPException(status_code=400, detail=f"base_video 不存在: {base_video}")
+    out_path = None
+    if output:
+        out_path = _assert_path_safe(output, "output")
+    else:
         output = str(JOB_DIR / f"composite_{uuid.uuid4().hex[:8]}.mp4")
 
     try:

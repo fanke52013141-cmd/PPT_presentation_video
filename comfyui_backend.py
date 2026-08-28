@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -69,13 +70,33 @@ def get_comfyui_url() -> str:
     return os.environ.get("PPT_COMFYUI_URL", "http://127.0.0.1:8188").rstrip("/")
 
 
+# 模块级连接池单例：避免每次操作都新建 TCP 连接
+_client_singleton: Optional[httpx.Client] = None
+_client_lock = threading.Lock()
+
+
 def _make_client(timeout: float = 30.0) -> httpx.Client:
-    """创建禁用环境代理的 httpx 客户端。"""
-    return httpx.Client(
-        base_url=get_comfyui_url(),
-        timeout=timeout,
-        trust_env=False,   # 关键：不继承系统代理，避免 localhost 被 Clash 劫持
-    )
+    """获取 ComfyUI httpx 客户端（连接池单例，复用 TCP 连接）。
+
+    第一次调用时创建带连接池限制的 Client，后续调用复用同一实例。
+    trust_env=False 关键：不继承系统代理，避免 localhost 被 Clash 劫持。
+    """
+    global _client_singleton
+    with _client_lock:
+        if _client_singleton is None or _client_singleton.is_closed:
+            _client_singleton = httpx.Client(
+                base_url=get_comfyui_url(),
+                timeout=httpx.Timeout(timeout, connect=10.0),
+                trust_env=False,
+                limits=httpx.Limits(
+                    max_connections=4,
+                    max_keepalive_connections=2,
+                    keepalive_expiry=30.0,
+                ),
+            )
+        # 动态调整超时（轮询需要更长超时）
+        _client_singleton.timeout = httpx.Timeout(timeout, connect=10.0)
+    return _client_singleton
 
 
 def check_health() -> bool:
@@ -166,14 +187,19 @@ def _poll_history(
     prompt_id: str,
     timeout: float = 7200.0,
     poll_interval: float = 3.0,
+    max_poll_interval: float = 30.0,
     cancel_event: Optional["threading.Event"] = None,
 ) -> Dict[str, Any]:
     """轮询 /history/{prompt_id}，返回完成的 history 条目。
+
+    采用指数退避策略：初始间隔 poll_interval 秒，每次轮询后乘以 1.5，
+    上限 max_poll_interval 秒。减少长任务期间的无效请求。
 
     参数:
         cancel_event: 可选的取消事件，设置后立即停止轮询并抛出异常
     """
     deadline = time.time() + timeout
+    current_interval = poll_interval
     while time.time() < deadline:
         if cancel_event is not None and cancel_event.is_set():
             raise ComfyUIError("任务已被取消（服务关闭）")
@@ -189,7 +215,9 @@ def _poll_history(
                 if status.get("status_str") == "error":
                     err_msg = status.get("messages", "")
                     raise ComfyUIError(f"ComfyUI 工作流执行失败: {err_msg}")
-        time.sleep(poll_interval)
+        time.sleep(current_interval)
+        # 指数退避：间隔逐渐增大，但不超过上限
+        current_interval = min(current_interval * 1.5, max_poll_interval)
     raise ComfyUIError(f"等待 ComfyUI 结果超时（{timeout:.0f}s）")
 
 

@@ -52,7 +52,7 @@ DATA_DIR = Path(
 AVATAR_DIR = DATA_DIR / "avatars"
 JOB_DIR = DATA_DIR / "jobs"
 MAX_AVATAR_BYTES = int(
-    os.environ.get("PPT_DIGITAL_HUMAN_MAX_AVATAR_BYTES", str(500 * 1024 * 1024))
+    os.environ.get("PPT_DIGITAL_HUMAN_MAX_AVATAR_BYTES", str(200 * 1024 * 1024))  # 200MB
 )
 MAX_JOBS = 32
 
@@ -66,8 +66,14 @@ _wf_env = os.environ.get("PPT_DIGITAL_HUMAN_COMFYUI_WORKFLOW", "").strip()
 COMFYUI_WORKFLOW_PATH = Path(_wf_env) if _wf_env else None
 
 
-def _log(*parts: Any) -> None:
-    logger.info(" ".join(str(p) for p in parts))
+def _log(*parts: Any, level: str = "info") -> None:
+    """统一的日志输出，支持 info/debug/warning/error 级别。
+
+    默认 info 级别输出到控制台。verbose 操作日志可通过 level="debug" 降级，
+    在需要排查问题时设置 logging.DEBUG 即可查看。
+    """
+    msg = " ".join(str(p) for p in parts)
+    getattr(logger, level, logger.info)(msg)
 
 
 def _run_subprocess_safe(
@@ -205,13 +211,13 @@ def _load_persisted_jobs() -> None:
                         job["progress"] = 100
                         job["finished_at"] = _now()
                         job["result_url"] = f"/api/digital-human/jobs/{job['job_id']}/result"
-                        _log("[restore] job %s output exists → done", job["job_id"])
+                        _log("[restore] job %s output exists → done", job["job_id"], level="debug")
                     else:
                         # 输出文件不存在 → 任务中断
                         job["status"] = JOB_STATUS_FAILED
                         job["error"] = "服务重启导致任务中断，请重新生成"
                         job["finished_at"] = _now()
-                        _log("[restore] job %s was interrupted → failed", job["job_id"])
+                        _log("[restore] job %s was interrupted → failed", job["job_id"], level="debug")
                     _persist_job(job)
                 _jobs[job["job_id"]] = job
         except (OSError, json.JSONDecodeError):
@@ -273,7 +279,7 @@ def _run_real_inference(
         "--audio_path", str(audio_path),
         "--video_out_path", str(output_path),
     ]
-    _log("[latentsync] run (cwd=%s):", repo, " ".join(cmd))
+    _log("[latentsync] run (cwd=%s):", repo, " ".join(cmd), level="debug")
     proc = _run_subprocess_safe(cmd, cwd=repo, timeout=3600)
     if proc.returncode != 0:
         raise RuntimeError(
@@ -318,7 +324,7 @@ def _run_mock_inference(
         "-shortest", "-pix_fmt", "yuv420p", "-c:v", "libx264",
         "-c:a", "aac", "-movflags", "+faststart", str(output_path),
     ]
-    _log("[mock] run:", " ".join(cmd))
+    _log("[mock] run:", " ".join(cmd), level="debug")
     proc = _run_subprocess_safe(cmd, timeout=300)
     if proc.returncode != 0:
         raise RuntimeError(
@@ -348,7 +354,7 @@ def _run_comfyui_inference(
 
     if not _is_api_format(workflow_template):
         if workflow_template is not None:
-            _log("[comfyui] 工作流不是 API 格式（可能是 UI 编辑器格式），回退到默认模板")
+            _log("[comfyui] 工作流不是 API 格式（可能是 UI 编辑器格式），回退到默认模板", level="debug")
         workflow_template = None
 
     if not workflow_template:
@@ -370,7 +376,7 @@ def _run_comfyui_inference(
         timeout=float(job.get("timeout", 7200)),
         cancel_event=_cancel_event,
     )
-    _log("[comfyui] done: prompt_id=%s output=%s", result.get("prompt_id"), result.get("output"))
+    _log("[comfyui] done: prompt_id=%s output=%s", result.get("prompt_id"), result.get("output"), level="debug")
 
 
 def sys_executable() -> str:
@@ -568,7 +574,7 @@ def composite_circle(
                "-c:v", "libx264", "-preset", "medium", "-crf", "20",
                "-c:a", "aac", "-shortest", "-movflags", "+faststart", str(output)]
 
-    _log("[composite] run:", " ".join(cmd))
+    _log("[composite] run:", " ".join(cmd), level="debug")
     proc = _run_subprocess_safe(cmd, timeout=600)
     if proc.returncode != 0:
         raise RuntimeError(

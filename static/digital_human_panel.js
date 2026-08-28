@@ -955,26 +955,46 @@
     }, 400);
   }
   window.addEventListener("dh-step8-visible", scheduleRefresh);
-  window.loadStep9Data = function () {
-    loadHealth();
-    loadConfig();
+
+  // ---- 统一命名空间挂载（兼容旧接口） ----
+  // 所有公开接口通过 window.DigitalHumanPanel 暴露，
+  // 同时保留原有 window.loadStep9Data 等别名确保向后兼容
+  var dhPanel = {
+    loadStep9Data: function () {
+      loadHealth();
+      loadConfig();
+    },
+    navigateToStep: null,  // 下方赋值（需要先保存 originalNavigate）
+    markEnabled: function (enabled) {
+      window.__dhEnabled = !!enabled;
+      _dhSyncStepper();
+    },
+    // 调试用：受控地暴露内部状态快照（只读）
+    getStateSnapshot: function () {
+      return JSON.parse(JSON.stringify(dhState));
+    },
   };
+
+  window.DigitalHumanPanel = dhPanel;
+  // 向后兼容别名
+  window.loadStep9Data = dhPanel.loadStep9Data;
+
   var originalNavigate = window.navigateToStep;
-  window.navigateToStep = function (step) {
+  var _dhWrappedNavigate = function (step) {
     if (Number(step) === 9) {
       scheduleRefresh();
     }
     return originalNavigate ? originalNavigate.apply(this, arguments) : undefined;
   };
+  window.navigateToStep = _dhWrappedNavigate;
+  dhPanel.navigateToStep = _dhWrappedNavigate;
+
   // 可选步骤完成态同步：启用/关闭数字人时刷新左侧步骤条
   var _dhSyncStepper = function () {
     if (typeof window.refreshCurrentProjectStatus === "function") {
       try { window.refreshCurrentProjectStatus(9); } catch (e) {}
     }
   };
-  window.__dhMarkEnabled = function (enabled) {
-    window.__dhEnabled = !!enabled;
-    _dhSyncStepper();
-  };
+  window.__dhMarkEnabled = dhPanel.markEnabled;
   window.__dhMarkEnabled(window.__dhEnabled === true);
 })();

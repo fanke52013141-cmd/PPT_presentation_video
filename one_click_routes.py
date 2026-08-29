@@ -7,18 +7,14 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from database import Project, get_db
+from database import get_db
 from one_click_orchestrator import get_one_click_status, start_one_click
 
 
 router = APIRouter()
 
 
-def _project_or_404(db: Session, project_id: str) -> Project:
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    return project
+from project_path_service import project_or_404 as _project_or_404
 
 
 @router.post("/api/projects/{project_id}/one-click-generate")

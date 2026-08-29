@@ -86,11 +86,15 @@ def get_openai_client(
     )
 
 
+class ImagePayloadTooLarge(ValueError):
+    """上传图片超出字节上限；HTTP 层应映射为 413（审查 L-07）。"""
+
+
 def open_validated_image(image_bytes: bytes) -> Image.Image:
     if not image_bytes:
         raise ValueError("图片文件为空")
     if len(image_bytes) > MAX_IMAGE_UPLOAD_BYTES:
-        raise ValueError(
+        raise ImagePayloadTooLarge(
             "图片文件超过 "
             f"{MAX_IMAGE_UPLOAD_BYTES // (1024 * 1024)} MB 限制"
         )

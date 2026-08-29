@@ -19,7 +19,7 @@ fallback, response cleanup/repair, timeout translation, logging, and client
 closure. `storyboard_service.py` owns only the configured wrapper and vendor
 selection; keep direct model-client calls out of it.
 
-The application has six user-visible steps:
+The application has six mandatory user-visible steps plus one optional step:
 
 1. Import an article or generate one from a topic.
 2. Plan article-to-slide and slide-to-visualization output.
@@ -28,9 +28,15 @@ The application has six user-visible steps:
 5. Edit narration, generate audio, and confirm audio.
 6. Export and manage videos or image-only PPTX presentations.
 
+The UI additionally shows an optional Step 9 "数字人讲解" (digital-human
+presenter) between Step 5 and Step 6 when the digital-human feature is
+enabled; it never blocks Step 6 and does not count toward required progress.
+
 ### User-visible steps vs internal step numbers
 
-The UI is intentionally compressed to six user-visible steps, while the backend and historical validation scripts still use internal Step numbers.
+The UI is intentionally compressed to six mandatory user-visible steps plus an
+optional digital-human step, while the backend and historical validation
+scripts still use internal Step numbers.
 
 | User-visible step | Internal API / artifact stage | Main artifacts |
 | --- | --- | --- |
@@ -39,9 +45,10 @@ The UI is intentionally compressed to six user-visible steps, while the backend 
 | Step 3 Images | Step 3 images + Step 4 confirmation | `slides/<slide_id>/visual_draft.png`, `reveal_manifest.json` |
 | Step 4 Mask | Step 5 reveal manifest / mask assets | `reveal_manifest.json`, reveal layer assets |
 | Step 5 Narration and audio | Step 6 narration + Step 7 TTS/audio confirmation | `planning/narration_beats.json`, audio, subtitles, timelines |
+| Optional Step 9 Digital human | digital-human config / jobs | `planning/digital_human.json`, `planning/digital_human/` |
 | Step 6 Output works | Step 8 Remotion render / PPTX export | `remotion_props.json`, rendered video, `.render.json` sidecar, image-only `.pptx` |
 
-When writing user-facing documentation, prefer the six visible steps. When changing API routes, validators, or runtime artifacts, use the internal step numbers and keep this mapping accurate.
+When writing user-facing documentation, prefer the visible steps above. When changing API routes, validators, or runtime artifacts, use the internal step numbers and keep this mapping accurate.
 
 ## UI Style Source of Truth
 
@@ -418,7 +425,8 @@ python scripts/validate_reveal_scene.py --run-dir runs/<run_id> --repo-root .
 python scripts/validate_run_assets.py --run-dir runs/<run_id> --repo-root . --require-layered
 ```
 
-Also verify the six visible steps in the local browser, including the exact
+Also verify the visible steps in the local browser (including optional Step 9
+when the digital-human feature is enabled), including the exact
 Mask preview and a rendered MP4.
 
 ## Prompt Optimization Policy

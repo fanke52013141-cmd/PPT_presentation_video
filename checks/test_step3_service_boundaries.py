@@ -13,6 +13,7 @@ import server
 from route_inventory import iter_effective_routes
 import visual_settings_service as visual_settings
 from visual_settings_service import (
+    DEFAULT_SUBTITLE_STYLE,
     VisualSettingsDependencies,
     VisualSettingsService,
 )
@@ -112,7 +113,7 @@ def test_visual_settings_preserve_background_and_subtitle_payloads(
     )
     assert subtitles["subtitle_style"]["font_size"] == 42
     assert subtitles["subtitle_style"]["font_family"] == (
-        "Noto Sans SC"
+        DEFAULT_SUBTITLE_STYLE["font_family"]
     )
     assert invalidations == [("subtitles", project)]
     assert db.commits == 2
@@ -200,12 +201,13 @@ def test_visual_settings_normalization_is_bounded() -> None:
             "line_height": 8,
         }
     )
-    assert style["font_key"] == "noto_sans_sc"
+    assert style["font_key"] == DEFAULT_SUBTITLE_STYLE["font_key"]
     assert style["font_size"] == 72
     assert style["font_weight"] == 300
     assert style["bottom"] == 0
-    assert style["horizontal_margin"] == 180
-    assert style["color"] == "#111111"
+    # 非法输入回退到当前产品默认值（跟随 DEFAULT_SUBTITLE_STYLE，不硬编码）
+    assert style["horizontal_margin"] == DEFAULT_SUBTITLE_STYLE["horizontal_margin"]
+    assert style["color"] == DEFAULT_SUBTITLE_STYLE["color"]
     assert style["highlight_color"] == "#AABBCC"
     assert style["paging_window_ms"] == 2500
     assert style["token_highlight"] is False

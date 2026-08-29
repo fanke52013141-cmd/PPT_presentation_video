@@ -21,9 +21,14 @@ class _Query:
 class _Db:
     def __init__(self, project):
         self.project = project
+        self.commits = 0
 
     def query(self, *_args, **_kwargs):
         return _Query(self.project)
+
+    def commit(self):
+        # repair 现在会经 handle_step_navigation 触发失效与提交（审查 M-03）
+        self.commits += 1
 
 
 def _digest(path: Path) -> str:

@@ -626,7 +626,7 @@
       var fcls = fst === "done" ? "dh-done" : fst === "failed" ? "dh-failed" : "dh-busy";
       var chips = '<span class="dh-slide-status-note">整段数字人视频</span>';
       chips += '<div style="margin-top:0.3rem;"><span class="dh-slide-chip ' + fcls + '">' +
-               (labels[fst] || fst) + '</span></div>';
+               escHtml(labels[fst] || fst) + '</span></div>';
       if (fst === "done" && fullItem.video_exists) {
         chips += '<div style="margin-top:0.3rem;"><span class="dh-slide-status-note" style="color:#4CAF50;">整段视频已生成，可在预览中查看</span></div>';
       }

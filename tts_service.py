@@ -2,18 +2,23 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import datetime
 import json
 import logging
 import os
 import sys
+import threading
+import uuid
 from typing import Any, Callable, Dict, List, Optional
 
-from fastapi import Depends, HTTPException
+from fastapi import HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from database import Project, get_db
+from database import LocalJob, Project
+from project_path_service import project_or_404
 import invalidation_service
 from pipeline_lifecycle import write_json_atomic
 from tts_artifacts import (
@@ -153,10 +158,48 @@ def configure_tts_dependencies(
     REVEAL_VISUAL_LEAD_SEC = dependencies.reveal_visual_lead_sec
     STEP7_BIND_TIMEOUT_SEC = dependencies.bind_timeout_sec
 
-def synthesize_tts_resumable(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+def _load_beats_by_slide(
+    project: Any,
+    slide_ids: List[str],
+    context: str,
+) -> Dict[str, List[Dict[str, Any]]]:
+    """读取旁白 beats 并按 slide 分组（审查 M-09 去重）。
+
+    TTS 合成与音频确认两条路径共用；读取失败仅降级为空映射并记录警告。
+    """
+    beats_by_slide: Dict[str, List[Dict[str, Any]]] = {}
+    beats_path = os.path.join(project.run_dir, "planning", "narration_beats.json")
+    if not os.path.exists(beats_path):
+        return beats_by_slide
+    try:
+        sync_narration_beats_to_contract(project, slide_ids)
+        with open(beats_path, "r", encoding="utf-8") as f:
+            beats_payload = json.load(f)
+        for slide_data in beats_payload.get("slides", []) or []:
+            if isinstance(slide_data, dict):
+                beats_by_slide[str(slide_data.get("slide_id", ""))] = slide_data.get("beats", []) or []
+    except Exception as exc:
+        logger.warning("Failed to load edited narration beats (%s): %s", context, exc)
+    return beats_by_slide
+
+
+def _run_bind_reveal_timeline(project: Any) -> Any:
+    """有界运行 bind_reveal_timeline 子进程（审查 M-09 去重）。"""
+    bind_script = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py")
+    )
+    return run_subprocess_bounded(
+        [sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", str(REVEAL_VISUAL_LEAD_SEC)],
+        timeout_sec=STEP7_BIND_TIMEOUT_SEC,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+
+def synthesize_tts_resumable(project_id: str, db: Session):
+    project = project_or_404(db, project_id)
 
     provider = normalize_tts_provider(get_setting("tts_provider", "minimax"))
     defaults = tts_provider_defaults(provider)
@@ -185,18 +228,7 @@ def synthesize_tts_resumable(project_id: str, db: Session = Depends(get_db)):
     if not slide_ids:
         raise HTTPException(status_code=400, detail="分镜规划中没有可生成音频的页面。")
 
-    beats_by_slide: Dict[str, List[Dict[str, Any]]] = {}
-    beats_path = os.path.join(project.run_dir, "planning", "narration_beats.json")
-    if os.path.exists(beats_path):
-        try:
-            sync_narration_beats_to_contract(project, slide_ids)
-            with open(beats_path, "r", encoding="utf-8") as f:
-                beats_payload = json.load(f)
-            for slide_data in beats_payload.get("slides", []) or []:
-                if isinstance(slide_data, dict):
-                    beats_by_slide[str(slide_data.get("slide_id", ""))] = slide_data.get("beats", []) or []
-        except Exception as exc:
-            logger.warning("Failed to load edited narration beats for TTS: %s", exc)
+    beats_by_slide = _load_beats_by_slide(project, slide_ids, "TTS synthesis")
 
     tts_endpoint = first_non_empty(get_setting("tts_endpoint"), defaults.get("endpoint"))
     tts_model = first_non_empty(get_setting("tts_model"), defaults.get("model"))
@@ -317,15 +349,7 @@ def synthesize_tts_resumable(project_id: str, db: Session = Depends(get_db)):
             "audio_confirmed": False,
         }
 
-    bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))
-    bind_res = run_subprocess_bounded(
-        [sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", str(REVEAL_VISUAL_LEAD_SEC)],
-        timeout_sec=STEP7_BIND_TIMEOUT_SEC,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
+    bind_res = _run_bind_reveal_timeline(project)
 
     if bind_res.returncode != 0:
         logger.error("Timeline binding failed: %s", bind_res.stderr)
@@ -357,10 +381,8 @@ def synthesize_tts_resumable(project_id: str, db: Session = Depends(get_db)):
         "audio_confirmed": False,
     }
 
-def get_tts_audio_status(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+def get_tts_audio_status(project_id: str, db: Session):
+    project = project_or_404(db, project_id)
     slide_ids = read_current_slide_ids_or_404(project)
     slides = [slide_tts_artifact_status(project, slide_id) for slide_id in slide_ids]
     missing = [item["slide_id"] for item in slides if not item["complete"]]
@@ -372,10 +394,8 @@ def get_tts_audio_status(project_id: str, db: Session = Depends(get_db)):
         "audio_confirmed": project_audio_confirmed(project),
     }
 
-def get_slide_audio_file(project_id: str, slide_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+def get_slide_audio_file(project_id: str, slide_id: str, db: Session):
+    project = project_or_404(db, project_id)
         
     audio_path = current_slide_file_or_404(project, slide_id, "voice.mp3")
     status = slide_tts_artifact_status(project, slide_id)
@@ -387,10 +407,8 @@ def get_slide_audio_file(project_id: str, slide_id: str, db: Session = Depends(g
 
     return FileResponse(audio_path, media_type="audio/mp3")
 
-def confirm_tts_audio(project_id: str, payload: Optional[Dict[str, Any]] = None, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+def confirm_tts_audio(project_id: str, db: Session, payload: Optional[Dict[str, Any]] = None):
+    project = project_or_404(db, project_id)
     slide_ids = read_current_slide_ids_or_404(project)
     missing = [
         slide_id for slide_id in slide_ids
@@ -398,33 +416,14 @@ def confirm_tts_audio(project_id: str, payload: Optional[Dict[str, Any]] = None,
     ]
     if missing:
         raise HTTPException(status_code=400, detail=f"以下页面尚未生成音频: {', '.join(missing)}")
-    beats_by_slide: Dict[str, List[Dict[str, Any]]] = {}
-    beats_path = os.path.join(project.run_dir, "planning", "narration_beats.json")
-    if os.path.exists(beats_path):
-        try:
-            sync_narration_beats_to_contract(project, slide_ids)
-            with open(beats_path, "r", encoding="utf-8") as f:
-                beats_payload = json.load(f)
-            for slide_data in beats_payload.get("slides", []) or []:
-                if isinstance(slide_data, dict):
-                    beats_by_slide[str(slide_data.get("slide_id", ""))] = slide_data.get("beats", []) or []
-        except Exception as exc:
-            logger.warning(f"Failed to load edited narration beats while confirming TTS: {exc}")
+    beats_by_slide = _load_beats_by_slide(project, slide_ids, "audio confirm")
     for slide_id in slide_ids:
         rewrite_audio_timeline_by_beats(
             os.path.join(project.run_dir, "slides", slide_id, "audio_timeline.json"),
             slide_id,
             beats_by_slide.get(slide_id, []),
         )
-    bind_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "bind_reveal_timeline.py"))
-    bind_res = run_subprocess_bounded(
-        [sys.executable, bind_script, "--run-dir", project.run_dir, "--lead-sec", str(REVEAL_VISUAL_LEAD_SEC)],
-        timeout_sec=STEP7_BIND_TIMEOUT_SEC,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
+    bind_res = _run_bind_reveal_timeline(project)
     if bind_res.returncode != 0:
         logger.error(f"Timeline binding failed during audio confirm: {bind_res.stderr}")
         raise HTTPException(status_code=500, detail=f"时间轴绑定失败: {bind_res.stderr}")
@@ -440,4 +439,261 @@ def confirm_tts_audio(project_id: str, payload: Optional[Dict[str, Any]] = None,
     )
     handle_step_navigation(project, 7, db)
     return {"success": True, "audio_confirmed": True}
+
+
+# ==================== 持久化 TTS 合成任务（审查 M-09 第二步） ====================
+
+TTS_JOB_TYPE = "tts_synthesis"
+
+
+@dataclass(frozen=True)
+class TtsAsyncDependencies:
+    """后台合成任务的最小依赖：会话工厂 + 同步合成入口。"""
+
+    session_factory: Callable[[], Session]
+    synthesize: Callable[[str, Session], dict[str, Any]]
+
+
+class TtsAsyncService:
+    """SQLite 持久化的 TTS 合成后台任务（结构与 pptx_export 一致）。
+
+    合成在独立线程执行，客户端断连/代理超时不再影响生成；状态经
+    local_jobs 表持久化，进程重启时 running→interrupted、queued→重新排队。
+    """
+
+    def __init__(self, dependencies: TtsAsyncDependencies) -> None:
+        self.dependencies = dependencies
+        self.executor = ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="tts-synthesis",
+        )
+        self._create_lock = threading.Lock()
+
+    @staticmethod
+    def _iso(value: datetime | None) -> str | None:
+        return value.isoformat(timespec="seconds") if value else None
+
+    def job_item(self, job: LocalJob) -> dict[str, Any]:
+        payload = job.get_payload() or {}
+        return {
+            "id": job.id,
+            "project_id": job.project_id,
+            "job_type": job.job_type,
+            "status": job.status,
+            "progress": int(job.progress or 0),
+            "stage": job.stage,
+            "error": job.error,
+            "result": payload.get("result") or {},
+            "created_at": self._iso(job.created_at),
+            "started_at": self._iso(job.started_at),
+            "finished_at": self._iso(job.finished_at),
+            "updated_at": self._iso(job.updated_at),
+        }
+
+    def _active_job(self, db: Session, project_id: str) -> LocalJob | None:
+        return (
+            db.query(LocalJob)
+            .filter(
+                LocalJob.project_id == project_id,
+                LocalJob.job_type == TTS_JOB_TYPE,
+                LocalJob.status.in_(("queued", "running")),
+            )
+            .first()
+        )
+
+    def create_job(self, db: Session, project_id: str) -> dict[str, Any]:
+        project = project_or_404(db, project_id)
+        with self._create_lock:
+            active = self._active_job(db, project.id)
+            if active:
+                return {
+                    "success": True,
+                    "reused": True,
+                    "job": self.job_item(active),
+                }
+            job = LocalJob(
+                id=uuid.uuid4().hex,
+                project_id=project.id,
+                job_type=TTS_JOB_TYPE,
+                status="queued",
+                progress=0,
+                stage="queued",
+            )
+            db.add(job)
+            db.commit()
+            db.refresh(job)
+        self.submit(job.id)
+        return {"success": True, "reused": False, "job": self.job_item(job)}
+
+    def list_jobs(self, db: Session, project_id: str) -> dict[str, Any]:
+        project_or_404(db, project_id)
+        jobs = (
+            db.query(LocalJob)
+            .filter(
+                LocalJob.project_id == project_id,
+                LocalJob.job_type == TTS_JOB_TYPE,
+            )
+            .order_by(LocalJob.created_at.desc())
+            .limit(20)
+            .all()
+        )
+        return {"success": True, "jobs": [self.job_item(job) for job in jobs]}
+
+    def get_job(
+        self,
+        db: Session,
+        project_id: str,
+        job_id: str,
+    ) -> dict[str, Any]:
+        project_or_404(db, project_id)
+        job = (
+            db.query(LocalJob)
+            .filter(
+                LocalJob.id == job_id,
+                LocalJob.project_id == project_id,
+                LocalJob.job_type == TTS_JOB_TYPE,
+            )
+            .first()
+        )
+        if not job:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        return {"success": True, "job": self.job_item(job)}
+
+    def submit(self, job_id: str) -> None:
+        self.executor.submit(self.run_job, job_id)
+
+    def recover_jobs(self) -> int:
+        """进程重启恢复：running→interrupted，queued→重新排队。"""
+        db = self.dependencies.session_factory()
+        queued_ids: list[str] = []
+        try:
+            now = datetime.now()
+            running = (
+                db.query(LocalJob)
+                .filter(
+                    LocalJob.job_type == TTS_JOB_TYPE,
+                    LocalJob.status == "running",
+                )
+                .all()
+            )
+            for job in running:
+                job.status = "interrupted"
+                job.stage = "interrupted"
+                job.error = "服务重启导致合成中断，请重新生成音频。"
+                job.finished_at = now
+            queued_ids = [
+                job.id
+                for job in db.query(LocalJob)
+                .filter(
+                    LocalJob.job_type == TTS_JOB_TYPE,
+                    LocalJob.status == "queued",
+                )
+                .all()
+            ]
+            db.commit()
+        finally:
+            db.close()
+        for job_id in queued_ids:
+            self.submit(job_id)
+        return len(running)
+
+    def run_job(self, job_id: str) -> None:
+        db = self.dependencies.session_factory()
+        try:
+            job = (
+                db.query(LocalJob)
+                .filter(
+                    LocalJob.id == job_id,
+                    LocalJob.job_type == TTS_JOB_TYPE,
+                )
+                .first()
+            )
+            if not job:
+                return
+            project = (
+                db.query(Project).filter(Project.id == job.project_id).first()
+            )
+            if not project:
+                job.status = "failed"
+                job.stage = "failed"
+                job.error = "项目不存在，无法继续合成"
+                job.finished_at = datetime.now()
+                db.commit()
+                return
+            job.status = "running"
+            job.stage = "synthesizing"
+            job.progress = 10
+            job.started_at = datetime.now()
+            db.commit()
+
+            result = self.dependencies.synthesize(job.project_id, db)
+            summary = {
+                "generated": len(result.get("generated") or []),
+                "skipped": len(result.get("skipped") or []),
+                "failed_ids": [
+                    item.get("slide_id")
+                    for item in (result.get("failed") or [])
+                    if isinstance(item, dict) and item.get("slide_id")
+                ],
+                "message": result.get("message") or "",
+            }
+            job.payload_json = json.dumps(
+                {"result": summary}, ensure_ascii=False
+            )
+            if result.get("success"):
+                job.status = "completed"
+                job.stage = "completed"
+                job.progress = 100
+            else:
+                job.status = "failed"
+                job.stage = "failed"
+                job.error = summary["message"] or "音频生成未完成，请重试。"
+            job.finished_at = datetime.now()
+            db.commit()
+        except Exception as exc:
+            logger.exception("Async TTS synthesis failed for job %s", job_id)
+            try:
+                db.rollback()
+                stale = (
+                    db.query(LocalJob)
+                    .filter(
+                        LocalJob.id == job_id,
+                        LocalJob.job_type == TTS_JOB_TYPE,
+                    )
+                    .first()
+                )
+                if stale:
+                    stale.status = "failed"
+                    stale.stage = "failed"
+                    stale.error = str(exc)[:2000] or "合成过程发生异常"
+                    stale.finished_at = datetime.now()
+                    db.commit()
+            except Exception:
+                logger.exception("Failed to persist TTS job failure state")
+        finally:
+            db.close()
+
+
+_SERVICE: TtsAsyncService | None = None
+_SERVICE_LOCK = threading.Lock()
+
+
+def configure_tts_async_service(
+    dependencies: TtsAsyncDependencies,
+    *,
+    recover_jobs: bool = True,
+) -> TtsAsyncService:
+    global _SERVICE
+    service = TtsAsyncService(dependencies)
+    with _SERVICE_LOCK:
+        _SERVICE = service
+    if recover_jobs:
+        service.recover_jobs()
+    return service
+
+
+def get_tts_async_service() -> TtsAsyncService:
+    if _SERVICE is None:
+        raise RuntimeError("TTS async service has not been configured")
+    return _SERVICE
 

@@ -172,7 +172,7 @@ def test_retry_contract_is_preserved() -> None:
     )
     try:
         with patch(
-            "tts_provider_service.subprocess.run",
+            "tts_provider_service.run_subprocess_killable",
             side_effect=run_process,
         ), patch(
             "tts_provider_service.time.sleep",
@@ -197,13 +197,16 @@ def test_retry_contract_is_preserved() -> None:
     assert sleeps == [4, 8]
     assert len(logs) == 2
     assert [entry[1]["attempt"] for entry in logs] == [1, 2]
+    # TTS 子进程现在经注入的 run_subprocess_killable 执行（审查 M-09/L 系列），
+    # 其超时参数名为 timeout_sec（进程树击杀契约），不再是 subprocess.run 的 timeout。
     assert all(
-        call == {
+        call
+        == {
             "capture_output": True,
             "text": True,
             "encoding": "utf-8",
             "errors": "replace",
-            "timeout": 390,
+            "timeout_sec": provider.STEP7_TTS_PROCESS_TIMEOUT_SEC,
             "env": {"API_KEY": "secret"},
         }
         for call in calls
@@ -220,19 +223,21 @@ def test_timeout_is_returned_as_structured_failure() -> None:
             ),
         )
     )
-    timeout = subprocess.TimeoutExpired(
-        ["tts"],
-        timeout=390,
-        output=b"partial",
-        stderr=b"late",
-    )
+    def killable_timeout(_args, **_kwargs):
+        # run_subprocess_killable 的超时契约：returncode=124 + 结构化 stderr
+        return subprocess.CompletedProcess(
+            ["tts"],
+            124,
+            stdout="partial",
+            stderr="TTS process timed out after 390s. late",
+        )
     try:
         with patch(
             "tts_provider_service.STEP7_TTS_RETRY_ATTEMPTS",
             1,
         ), patch(
-            "tts_provider_service.subprocess.run",
-            side_effect=timeout,
+            "tts_provider_service.run_subprocess_killable",
+            side_effect=killable_timeout,
         ):
             result = provider.run_tts_command_with_retries(
                 SimpleNamespace(id="project"),

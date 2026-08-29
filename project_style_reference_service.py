@@ -79,6 +79,11 @@ def _references_dir(project: Any) -> Path:
     return _run_dir(project) / "planning" / REFERENCE_DIRNAME
 
 
+def references_dir(project: Any) -> Path:
+    """公开包装：项目参考图目录。"""
+    return _references_dir(project)
+
+
 def _safe_child_path(base: Path, filename: Any) -> Path | None:
     name = Path(_safe_text(filename, 200)).name
     if not name:
@@ -476,4 +481,22 @@ def can_send_project_references(
         dependencies = get_project_style_context()
     return _can_send_project_references(dependencies, model, base_url, reference_paths)
 
+def generate_reference_images(*args: Any, **kwargs: Any) -> Any:
+    """公开包装（审查 L-06）：路由与服务经公开名调用。"""
+    return _generate_reference_images(*args, **kwargs)
 
+def load_manifest(*args: Any, **kwargs: Any) -> Any:
+    """公开包装（审查 L-06）：路由与服务经公开名调用。"""
+    return _load_manifest(*args, **kwargs)
+
+def read_reference_generation_system_content(*args: Any, **kwargs: Any) -> Any:
+    """公开包装（审查 L-06）：路由与服务经公开名调用。"""
+    return _read_reference_generation_system_content(*args, **kwargs)
+
+def safe_text(*args: Any, **kwargs: Any) -> Any:
+    """公开包装（审查 L-06）：路由与服务经公开名调用。"""
+    return _safe_text(*args, **kwargs)
+
+def style_generation_prompt(*args: Any, **kwargs: Any) -> Any:
+    """公开包装（审查 L-06）：路由与服务经公开名调用。"""
+    return _style_generation_prompt(*args, **kwargs)

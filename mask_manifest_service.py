@@ -55,22 +55,10 @@ def configure_mask_manifest_dependencies(
 
 
 def _deps() -> MaskManifestDependencies:
+    # 未配置即快速失败（审查 L-08）：不再返回 repo_root="." 的静默默认值，
+    # 避免配置遗漏表现为诡异的子进程失败。
     if _dependencies is None:
-        return MaskManifestDependencies(
-            normalize_visual_type=_not_configured,
-            reveal_lock_for=_not_configured,
-            read_contract_slide_ids=_not_configured,
-            sync_reveal_manifest_to_contract=_not_configured,
-            storage_slide_file=_not_configured,
-            write_json_atomic=_not_configured,
-            handle_step_navigation=_not_configured,
-            sync_project_background_color=_not_configured,
-            write_project_log=_not_configured,
-            apply_storyboard_background=_not_configured,
-            repo_root=Path("."),
-            python_executable="python",
-            build_timeout_sec=300.0,
-        )
+        raise RuntimeError("Mask Manifest dependencies have not been configured")
     return _dependencies
 
 
@@ -404,51 +392,53 @@ def refresh_reveal_semantic_blocks(
             "分镜规划不存在，请先生成分镜",
         )
 
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    contract = json.loads(contract_path.read_text(encoding="utf-8"))
-    contract_slides = {
-        str(slide.get("slide_id", "")).strip(): slide
-        for slide in contract.get("slides", [])
-        if isinstance(slide, dict)
-        and str(slide.get("slide_id", "")).strip()
-    }
-    target_slides = [
-        slide
-        for slide in manifest.get("slides", [])
-        if isinstance(slide, dict)
-        and (
-            not requested_slide_id
-            or str(slide.get("slide_id", "")).strip()
-            == requested_slide_id
-        )
-        and str(slide.get("slide_id", "")).strip() in contract_slides
-    ]
-    if requested_slide_id and not target_slides:
-        raise MaskManifestError(
-            404,
-            f"找不到当前页分镜：{requested_slide_id}",
-        )
-
-    for manifest_slide in target_slides:
-        slide_id = str(manifest_slide.get("slide_id", "")).strip()
-        semantic_blocks = deterministic_semantic_blocks(
-            slide_id,
-            contract_slides[slide_id],
-            manifest_slide,
-        )
-        painted_groups = [
-            group
-            for group in manifest_slide.get("groups", []) or []
-            if isinstance(group, dict) and group_has_paint(group)
+    # 锁内完成 读→改→写 完整临界区：避免与草稿保存并发时基于过期快照
+    # 整体回写，静默覆盖用户刚保存的手动 Mask（审查 H-03）。
+    with _deps().reveal_lock_for(project):
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        contract = json.loads(contract_path.read_text(encoding="utf-8"))
+        contract_slides = {
+            str(slide.get("slide_id", "")).strip(): slide
+            for slide in contract.get("slides", [])
+            if isinstance(slide, dict)
+            and str(slide.get("slide_id", "")).strip()
+        }
+        target_slides = [
+            slide
+            for slide in manifest.get("slides", [])
+            if isinstance(slide, dict)
+            and (
+                not requested_slide_id
+                or str(slide.get("slide_id", "")).strip()
+                == requested_slide_id
+            )
+            and str(slide.get("slide_id", "")).strip() in contract_slides
         ]
-        manifest_slide["semantic_blocks"] = semantic_blocks
-        manifest_slide["groups"] = painted_groups
-        if semantic_blocks or painted_groups:
-            manifest_slide["status"] = (
-                manifest_slide.get("status") or "pending"
+        if requested_slide_id and not target_slides:
+            raise MaskManifestError(
+                404,
+                f"找不到当前页分镜：{requested_slide_id}",
             )
 
-    with _deps().reveal_lock_for(project):
+        for manifest_slide in target_slides:
+            slide_id = str(manifest_slide.get("slide_id", "")).strip()
+            semantic_blocks = deterministic_semantic_blocks(
+                slide_id,
+                contract_slides[slide_id],
+                manifest_slide,
+            )
+            painted_groups = [
+                group
+                for group in manifest_slide.get("groups", []) or []
+                if isinstance(group, dict) and group_has_paint(group)
+            ]
+            manifest_slide["semantic_blocks"] = semantic_blocks
+            manifest_slide["groups"] = painted_groups
+            if semantic_blocks or painted_groups:
+                manifest_slide["status"] = (
+                    manifest_slide.get("status") or "pending"
+                )
+
         _deps().write_json_atomic(manifest_path, manifest)
     return manifest, len(target_slides)
 

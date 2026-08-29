@@ -23,12 +23,14 @@ from ai_provider_service import normalize_image_size
 from artifact_fingerprint import sha256_file, sha256_json
 from config_store import get_setting
 from database import Project
+from project_path_service import project_or_404
 from global_image_style_service import (
     active_style_reference_paths,
     build_image_style_prompt,
     read_style_tokens_data,
     should_send_style_reference_images,
 )
+from ai_provider_service import ImagePayloadTooLarge
 import invalidation_service
 from pipeline_lifecycle import write_json_atomic
 from project_storage import slide_file as storage_slide_file
@@ -38,7 +40,7 @@ from project_style_reference_service import (
     project_generate_prompt_for_slide,
     project_reference_paths,
 )
-from storyboard_service import read_prompt_template
+from storyboard_prompt_templates import read_prompt_template
 from ip_character_service import (
     IP_PROMPT_MARKER,
     build_ip_character_prompt_segment,
@@ -372,9 +374,7 @@ def step3_prompt_settings_response(project: Project) -> Dict[str, Any]:
 
 
 def get_step3_prompt_settings(project_id: str, db: Session):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+    project = project_or_404(db, project_id)
     return step3_prompt_settings_response(project)
 
 
@@ -383,9 +383,7 @@ def update_step3_prompt_settings(
     payload: Dict[str, Any],
     db: Session,
 ):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+    project = project_or_404(db, project_id)
     prompts = (
         payload.get("prompts") if isinstance(payload.get("prompts"), dict) else payload
     )
@@ -401,9 +399,7 @@ def update_step3_prompt_settings(
 
 
 def get_slide_prompts(project_id: str, db: Session):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+    project = project_or_404(db, project_id)
 
     contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
     if not os.path.exists(contract_path):
@@ -458,9 +454,7 @@ def generate_slide_image(
     preview: bool,
     db: Session,
 ):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+    project = project_or_404(db, project_id)
 
     api_key = get_setting("image_api_key")
     base_url = get_setting("image_base_url")
@@ -587,14 +581,19 @@ def upload_slide_image(
     file: UploadFile,
     db: Session,
 ):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+    project = project_or_404(db, project_id)
+    content_type = str(getattr(file, "content_type", "") or "").lower()
+    if (
+        content_type
+        and content_type != "application/octet-stream"
+        and not content_type.startswith("image/")
+    ):
+        raise HTTPException(status_code=415, detail="仅支持图片文件（image/*）")
     save_path = current_slide_file_or_404(project, slide_id, "visual_draft.png")
     try:
         content = file.file.read(MAX_IMAGE_UPLOAD_BYTES + 1)
         if len(content) > MAX_IMAGE_UPLOAD_BYTES:
-            raise ValueError(
+            raise ImagePayloadTooLarge(
                 f"图片文件超过 {MAX_IMAGE_UPLOAD_BYTES // (1024 * 1024)} MB 限制"
             )
         process_and_save_image(content, save_path)
@@ -612,6 +611,8 @@ def upload_slide_image(
             "success": True,
             "image_url": f"/api/projects/{project_id}/slides/{slide_id}/image?t={uuid.uuid4().hex[:6]}",
         }
+    except ImagePayloadTooLarge as e:
+        raise HTTPException(status_code=413, detail=str(e)) from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
@@ -621,9 +622,7 @@ def upload_slide_image(
 
 # 获取指定页面的图片资源接口
 def get_slide_image_file(project_id: str, slide_id: str, db: Session):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+    project = project_or_404(db, project_id)
 
     img_path = current_slide_file_or_404(project, slide_id, "visual_draft.png")
     if not os.path.exists(img_path):
@@ -633,9 +632,7 @@ def get_slide_image_file(project_id: str, slide_id: str, db: Session):
 
 
 def get_slide_candidate_file(project_id: str, slide_id: str, db: Session):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+    project = project_or_404(db, project_id)
     candidate_path = current_slide_file_or_404(
         project, slide_id, "visual_candidate.png"
     )
@@ -645,9 +642,7 @@ def get_slide_candidate_file(project_id: str, slide_id: str, db: Session):
 
 
 def apply_slide_candidate(project_id: str, payload: Dict[str, Any], db: Session):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+    project = project_or_404(db, project_id)
 
     slide_id = str(payload.get("slide_id") or "").strip()
     candidate_path = current_slide_file_or_404(
@@ -667,9 +662,7 @@ def apply_slide_candidate(project_id: str, payload: Dict[str, Any], db: Session)
 
 
 def delete_all_slide_images(project_id: str, db: Session):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+    project = project_or_404(db, project_id)
     slide_ids = read_current_slide_ids_or_404(project)
     deleted_count = 0
     with reveal_lock_for(project):
@@ -702,9 +695,7 @@ def delete_all_slide_images(project_id: str, db: Session):
 
 
 def delete_slide_image(project_id: str, slide_id: str, db: Session):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+    project = project_or_404(db, project_id)
     image_path = current_slide_file_or_404(project, slide_id, "visual_draft.png")
     candidate_path = current_slide_file_or_404(
         project, slide_id, "visual_candidate.png"
@@ -727,9 +718,7 @@ def delete_slide_image(project_id: str, slide_id: str, db: Session):
 
 
 def get_all_images(project_id: str, db: Session):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+    project = project_or_404(db, project_id)
 
     slides_dir = os.path.join(project.run_dir, "slides")
     contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
@@ -841,9 +830,7 @@ def _restore_optional_file(snapshot: Optional[Path], destination: Path) -> None:
 
 
 def update_step3_image_order(project_id: str, payload: Dict[str, Any], db: Session):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+    project = project_or_404(db, project_id)
 
     from_index = payload.get("from_index")
     to_index = payload.get("to_index")
@@ -996,9 +983,7 @@ def update_step3_image_order(project_id: str, payload: Dict[str, Any], db: Sessi
 
 
 def confirm_images(project_id: str, db: Session):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+    project = project_or_404(db, project_id)
     slide_ids = read_current_slide_ids_or_404(project)
     missing_images = [
         slide_id

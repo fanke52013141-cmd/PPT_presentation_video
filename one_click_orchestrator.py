@@ -421,6 +421,8 @@ def _resume_status(project: Any, project_id: str, run_id: str, mode: str) -> tup
 
 def _preflight_errors(dependencies: OneClickDependencies, project: Any) -> list[str]:
     errors: list[str] = []
+    # 注意：此调用有副作用——负责遗留 brief 文章的迁移（不可删除，
+    # 返回值虽被丢弃，但迁移发生在读取路径中）。审查 L-11 曾误判为死代码。
     try:
         dependencies.read_project_article_source(project, required=False)
     except Exception:

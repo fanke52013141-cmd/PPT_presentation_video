@@ -159,4 +159,26 @@ def _step3_style_prompt(
         lines.append("- 当前 Step 3 已有 1-3 张图片风格参考图；兼容模型会把这些 PNG 作为 reference images 一起提交。")
     return "\n".join(lines)
 
+def manual_style_from_payload(*args: Any, **kwargs: Any) -> Any:
+    """公开包装（审查 L-06）：路由与服务经公开名调用。"""
+    return _manual_style_from_payload(*args, **kwargs)
 
+def safe_text(*args: Any, **kwargs: Any) -> Any:
+    """公开包装（审查 L-06）：路由与服务经公开名调用。"""
+    return _safe_text(*args, **kwargs)
+
+def save_step3_style(*args: Any, **kwargs: Any) -> Any:
+    """公开包装（审查 L-06）：路由与服务经公开名调用。"""
+    return _save_step3_style(*args, **kwargs)
+
+def state_path(*args: Any, **kwargs: Any) -> Any:
+    """公开包装（审查 L-06）：路由与服务经公开名调用。"""
+    return _state_path(*args, **kwargs)
+
+def step3_style(*args: Any, **kwargs: Any) -> Any:
+    """公开包装（审查 L-06）：路由与服务经公开名调用。"""
+    return _step3_style(*args, **kwargs)
+
+def step3_style_state(*args: Any, **kwargs: Any) -> Any:
+    """公开包装（审查 L-06）：路由与服务经公开名调用。"""
+    return _step3_style_state(*args, **kwargs)

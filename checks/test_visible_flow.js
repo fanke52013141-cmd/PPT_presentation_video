@@ -5,7 +5,13 @@ assert.equal(flow.normalizeVisibleStep(4), 5);
 assert.equal(flow.normalizeVisibleStep(7), 6);
 assert.equal(flow.resolveProjectVisibleStep({ current_step: 7, audio_confirmed: false }), 6);
 assert.equal(flow.resolveProjectVisibleStep({ current_step: 7, audio_confirmed: true }), 8);
-assert.deepEqual(flow.VISIBLE_FLOW_STEPS, [1, 2, 3, 5, 6, 8]);
+assert.deepEqual(flow.VISIBLE_FLOW_STEPS, [1, 2, 3, 5, 6, 9, 8]);
+assert.equal(flow.normalizeVisibleStep(9), 9);
+
+// 可选步骤 9（数字人讲解）：启用即完成，未启用始终 pending
+assert.equal(flow.getVisibleStepState(9, {}, { digitalHumanEnabled: true }), 'completed');
+assert.equal(flow.getVisibleStepState(9, {}, { digitalHumanEnabled: false }), 'pending');
+assert.equal(flow.getVisibleStepState(9, {}, {}), 'pending');
 assert.deepEqual(
   flow.mapClientPointToCanvas(510, 295, { left: 10, top: 20, width: 1000, height: 562.5 }),
   { x: 960, y: 528 }
@@ -62,6 +68,11 @@ assert.equal(
 
 assert.equal(
   flow.calculateVisibleProgress(audioConfirmed, { audioConfirmed: true }),
+  83
+);
+// 步骤 9 启用后不影响必选步骤进度（分母只含必选步骤）
+assert.equal(
+  flow.calculateVisibleProgress(audioConfirmed, { audioConfirmed: true, digitalHumanEnabled: true }),
   83
 );
 

@@ -394,8 +394,7 @@ class RemotionRunner:
             )
             if result.returncode != 0:
                 return False
-            import json as _json
-            streams = (_json.loads(result.stdout or "{}")).get("streams") or []
+            streams = (json.loads(result.stdout or "{}")).get("streams") or []
             if not streams:
                 return False
             stream = streams[0]
@@ -434,8 +433,7 @@ class RemotionRunner:
             )
             if result.returncode != 0:
                 return {"color_space": None, "color_transfer": None, "color_primaries": None}
-            import json as _json
-            streams = (_json.loads(result.stdout or "{}")).get("streams") or []
+            streams = (json.loads(result.stdout or "{}")).get("streams") or []
             if not streams:
                 return {"color_space": None, "color_transfer": None, "color_primaries": None}
             stream = streams[0]

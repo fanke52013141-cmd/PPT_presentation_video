@@ -17,6 +17,8 @@ from fastapi import HTTPException, UploadFile
 from fastapi.responses import FileResponse
 import yaml
 
+from ai_provider_service import ImagePayloadTooLarge
+
 from pipeline_lifecycle import write_json_atomic
 from repository_paths import (
     DATA_DIR,
@@ -395,7 +397,11 @@ def get_image_style():
 
 def update_image_style(payload: Dict[str, Any]):
     _, merged = parse_image_style_payload(payload)
-    with open(STYLE_TOKENS_PATH, "w", encoding="utf-8") as f:
+    # 原子写入（审查 L-10）：同目录临时文件 + os.replace，避免断电截断
+    target = Path(STYLE_TOKENS_PATH)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f"{target.name}.{uuid.uuid4().hex}.tmp")
+    with open(temporary, "w", encoding="utf-8") as f:
         yaml.safe_dump(
             merged,
             f,
@@ -403,6 +409,7 @@ def update_image_style(payload: Dict[str, Any]):
             sort_keys=False,
             width=1000,
         )
+    os.replace(temporary, target)
     return {
         "success": True,
         "style_text": dump_image_style_editor_text(merged),
@@ -656,6 +663,8 @@ def update_image_style_reference(kind: str, file: UploadFile):
         image = open_validated_image(content).convert("RGB")
         os.makedirs(STYLE_REFERENCE_DIR, exist_ok=True)
         image.save(os.path.join(STYLE_REFERENCE_DIR, filename), "PNG")
+    except ImagePayloadTooLarge as exc:
+        raise HTTPException(status_code=413, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=f"参考图不是有效图片: {exc}")
     return {

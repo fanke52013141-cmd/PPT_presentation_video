@@ -595,6 +595,10 @@ def composite_circle(
 
 app = FastAPI(title="Digital Human Service", description="LatentSync + 圆形讲解窗口")
 
+# 安全边界（审查 L-05）：本服务仅面向本机主应用，默认绑定 127.0.0.1:9001，
+# 且有 localhost Origin 守卫；未内置令牌认证。若需绑定非回环地址，
+# 必须先补齐与主应用 PPT_STUDIO_ACCESS_TOKEN 对等的认证机制。
+
 # CORS 来源可通过环境变量配置，默认仅允许本机
 _cors_env = os.environ.get("PPT_DIGITAL_HUMAN_CORS_ORIGINS", "").strip()
 _default_cors = [
@@ -680,7 +684,7 @@ def upload_avatar(
 ) -> Dict[str, Any]:
     content = file.file.read(MAX_AVATAR_BYTES + 1)
     if len(content) > MAX_AVATAR_BYTES:
-        raise HTTPException(status_code=400, detail="文件超过大小限制")
+        raise HTTPException(status_code=413, detail="文件超过大小限制")
     AVATAR_DIR.mkdir(parents=True, exist_ok=True)
     avatar_id = f"av_{uuid.uuid4().hex[:10]}"
     raw_ext = Path(file.filename or "file").suffix.lower()

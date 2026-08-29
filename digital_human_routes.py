@@ -42,7 +42,7 @@ MAX_UPLOAD_VIDEO_BYTES = int(
     os.environ.get("PPT_MAX_UPLOAD_VIDEO_BYTES", str(2 * 1024 * 1024 * 1024))  # 2GB
 )
 MAX_AVATAR_UPLOAD_BYTES = int(
-    os.environ.get("PPT_MAX_AVATAR_UPLOAD_BYTES", str(500 * 1024 * 1024))  # 500MB
+    os.environ.get("PPT_MAX_AVATAR_UPLOAD_BYTES", str(200 * 1024 * 1024))  # 200MB，与 digital_human_service.MAX_AVATAR_BYTES 保持一致
 )
 MAX_WORKFLOW_BYTES = int(
     os.environ.get("PPT_MAX_WORKFLOW_BYTES", str(1024 * 1024))  # 1MB
@@ -84,11 +84,23 @@ def _validate_upload(
         )
 
 
-def _project_or_404(db: Session, project_id: str) -> Project:
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    return project
+# 视频/头像上传的扩展名白名单（octet-stream 通融时的第二道校验，审查 L-03）
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".webm"}
+
+
+def _validate_video_extension(filename: str | None) -> None:
+    ext = Path(str(filename or "")).suffix.lower()
+    if ext and ext not in VIDEO_EXTENSIONS:
+        raise HTTPException(
+            status_code=415,
+            detail=(
+                f"不支持的文件扩展名：{ext}，"
+                f"允许：{', '.join(sorted(VIDEO_EXTENSIONS))}"
+            ),
+        )
+
+
+from project_path_service import project_or_404 as _project_or_404
 
 
 def _planning_dir(project: Project) -> Path:
@@ -255,8 +267,10 @@ async def upload_dh_video(
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     project = _project_or_404(db, project_id)
-    content = await file.read()
+    # 有界读取：最多多读 1 字节用于超限判定，避免超大文件全量进内存
+    content = await file.read(MAX_UPLOAD_VIDEO_BYTES + 1)
     _validate_upload(content, file, MAX_UPLOAD_VIDEO_BYTES, ALLOWED_VIDEO_MIMES)
+    _validate_video_extension(file.filename)
     _digi_dir(project).mkdir(parents=True, exist_ok=True)
     dest = _upload_digi_path(project)
     tmp = dest.with_suffix(".mp4.tmp")
@@ -312,8 +326,9 @@ async def upload_dh_avatar(
 ) -> Dict[str, Any]:
     _project_or_404(db, project_id)
     client = get_digital_human_client()
-    content = await file.read()
+    content = await file.read(MAX_AVATAR_UPLOAD_BYTES + 1)
     _validate_upload(content, file, MAX_AVATAR_UPLOAD_BYTES, ALLOWED_VIDEO_MIMES)
+    _validate_video_extension(file.filename)
     import tempfile
 
     with tempfile.NamedTemporaryFile(
@@ -357,7 +372,7 @@ async def upload_comfyui_workflow(
 ) -> Dict[str, Any]:
     """上传 ComfyUI API 格式工作流 JSON 模板。"""
     project = _project_or_404(db, project_id)
-    content = await file.read()
+    content = await file.read(MAX_WORKFLOW_BYTES + 1)
     _validate_upload(content, file, MAX_WORKFLOW_BYTES, ALLOWED_WORKFLOW_MIMES)
     try:
         import json as _json

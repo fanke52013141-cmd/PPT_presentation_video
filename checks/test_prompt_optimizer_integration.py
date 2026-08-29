@@ -212,7 +212,7 @@ def test_step2_compatibility_endpoint_delegates_to_current_pipeline(monkeypatch)
 
     calls: list[tuple[str, object]] = []
     db = object()
-    monkeypatch.setattr(storyboard_service, "execute_step2_script_plan", lambda project_id, payload, session: calls.append(("script", payload)))
+    monkeypatch.setattr(storyboard_service, "execute_step2_script_plan", lambda project_id, session, payload=None: calls.append(("script", payload)))
     monkeypatch.setattr(storyboard_service, "execute_step2_visual_plan", lambda project_id, session: calls.append(("visual", session)))
     monkeypatch.setattr(
         storyboard_service,
@@ -220,7 +220,7 @@ def test_step2_compatibility_endpoint_delegates_to_current_pipeline(monkeypatch)
         lambda project_id, session: {"success": True, "contract": {"slides": []}},
     )
 
-    result = server.execute_step2("project_001", {}, db)
+    result = server.execute_step2("project_001", db, {})
 
     assert calls == [("script", {}), ("visual", db)]
     assert result["success"] is True

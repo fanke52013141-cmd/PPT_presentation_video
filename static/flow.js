@@ -120,7 +120,8 @@
 
   function calculateVisibleProgress(status = {}, context = {}) {
     const required = VISIBLE_FLOW.filter(item => !item.optional);
-    const completed = VISIBLE_FLOW.filter(
+    // 只统计必选步骤的完成数，可选步骤（数字人讲解）不得抬高总进度
+    const completed = required.filter(
       item => getVisibleStepState(item.step, status, context) === 'completed'
     ).length;
     return Math.round((Math.min(completed, required.length) / required.length) * 100);

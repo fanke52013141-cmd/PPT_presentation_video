@@ -425,18 +425,51 @@ async function runStep7TTS() {
   synthButton.disabled = true;
   saveAndTtsButton.disabled = true;
   confirmButton.disabled = true;
-  showToast('🔊 正在生成音频；已有且未过期的页面会自动跳过，只补缺失页面...');
+  showToast('🔊 已提交音频生成任务；已有且未过期的页面会自动跳过，只补缺失页面...');
 
+  // TTS 后台任务（M-09 第二步）：提交即返回 job_id，前端轮询直至终态。
+  // 客户端断连/代理超时不再中断合成，状态经 local_jobs 持久化。
+  let pollTimer = null;
   try {
-    // TTS 全量合成可能长达数分钟（后端含重试），给足前端超时。
-    const res = await API.post(
-      `/api/projects/${state.currentProject.id}/steps/7/synthesize`,
-      undefined,
-      { timeoutMs: 600000 },
+    const submitted = await API.post(
+      `/api/projects/${state.currentProject.id}/steps/7/synthesize-async`,
     );
-    if (res.success) {
-      const skipped = Array.isArray(res.skipped) ? res.skipped.length : 0;
-      const generated = Array.isArray(res.generated) ? res.generated.length : 0;
+    if (!submitted.success || !submitted.job) {
+      throw new Error(submitted.message || '无法创建合成任务');
+    }
+    if (submitted.reused) {
+      showToast('⏳ 该项目已有合成任务进行中，继续等待其完成...', 5000);
+    }
+    const jobId = submitted.job.id;
+
+    const finalJob = await new Promise((resolve, reject) => {
+      const started = Date.now();
+      const tick = async () => {
+        try {
+          const res = await API.get(
+            `/api/projects/${state.currentProject.id}/steps/7/synthesize-jobs/${jobId}`,
+          );
+          const job = res.job || {};
+          if (['completed', 'failed', 'interrupted'].includes(job.status)) {
+            resolve(job);
+            return;
+          }
+          if (Date.now() - started > 30 * 60 * 1000) {
+            reject(new Error('合成任务轮询超时（30 分钟），请稍后刷新页面查看状态。'));
+            return;
+          }
+          pollTimer = setTimeout(tick, 2000);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      tick();
+    });
+
+    if (finalJob.status === 'completed') {
+      const result = finalJob.result || {};
+      const skipped = Number(result.skipped || 0);
+      const generated = Number(result.generated || 0);
       const suffix = skipped ? `（新生成 ${generated} 页，跳过已有 ${skipped} 页）` : '';
       showToast(`🎀 音频生成完成${suffix}，请逐页试听并确认。`);
       await refreshCurrentProjectStatus(6);
@@ -444,9 +477,11 @@ async function runStep7TTS() {
       return true;
     }
 
-    const failed = Array.isArray(res.failed) ? res.failed.map(item => item.slide_id).filter(Boolean) : [];
-    const message = res.message || (failed.length ? `音频部分生成失败：${failed.join('、')}` : '音频生成未完成，请稍后重试。');
-    showToast(`⚠️ ${message}`, 7000);
+    const failedIds = Array.isArray(finalJob.result?.failed_ids)
+      ? finalJob.result.failed_ids.filter(Boolean)
+      : [];
+    const fallback = failedIds.length ? `音频部分生成失败：${failedIds.join('、')}` : '音频生成未完成，请重试。';
+    showToast(`⚠️ ${finalJob.error || fallback}`, 7000);
     await refreshCurrentProjectStatus(6);
     await loadStep7Data();
     return false;
@@ -454,6 +489,7 @@ async function runStep7TTS() {
     showToast(`音频生成失败：${e.message}`, 7000);
     return false;
   } finally {
+    if (pollTimer) clearTimeout(pollTimer);
     loading.style.display = 'none';
     synthButton.disabled = false;
     saveAndTtsButton.disabled = false;

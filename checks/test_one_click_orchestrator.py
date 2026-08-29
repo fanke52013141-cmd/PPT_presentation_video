@@ -9,7 +9,7 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import ai_mask_engine as ai_mask
+import ai_mask_manifest_apply as ai_mask
 import one_click_orchestrator as one_click
 from route_inventory import iter_effective_routes
 import server
@@ -170,7 +170,12 @@ def test_completed_run_smart_resume_revalidates_from_render() -> None:
     with tempfile.TemporaryDirectory() as value:
         project = project_for(Path(value))
         status = one_click._initial_status(project.id, "run-old")
-        one_click._complete(project, status, video={"url": "/video.mp4"})
+        one_click._complete(
+            project,
+            status,
+            SimpleNamespace(commit=lambda: None, rollback=lambda: None),
+            video={"url": "/video.mp4"},
+        )
 
         resumed, start_index = one_click._resume_status(project, project.id, "run-new", "resume")
 

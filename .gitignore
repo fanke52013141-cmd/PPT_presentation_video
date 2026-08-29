@@ -66,3 +66,6 @@ tools/ffmpeg/
 *.bak
 *.bak2
 _sandbox_test.txt
+
+# ZCode session runtime data
+.zcode/

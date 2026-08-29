@@ -23,6 +23,32 @@ def synthesize_tts_resumable(
     return service.synthesize_tts_resumable(project_id, db)
 
 
+@router.post("/api/projects/{project_id}/steps/7/synthesize-async")
+def create_tts_synthesis_job(
+    project_id: str,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """提交后台合成任务并立即返回 job_id（审查 M-09 第二步）。"""
+    return service.get_tts_async_service().create_job(db, project_id)
+
+
+@router.get("/api/projects/{project_id}/steps/7/synthesize-jobs")
+def list_tts_synthesis_jobs(
+    project_id: str,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return service.get_tts_async_service().list_jobs(db, project_id)
+
+
+@router.get("/api/projects/{project_id}/steps/7/synthesize-jobs/{job_id}")
+def get_tts_synthesis_job(
+    project_id: str,
+    job_id: str,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return service.get_tts_async_service().get_job(db, project_id, job_id)
+
+
 @router.get("/api/projects/{project_id}/steps/7/audio-status")
 def get_tts_audio_status(
     project_id: str,
@@ -46,4 +72,4 @@ def confirm_tts_audio(
     payload: Optional[Dict[str, Any]] = None,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    return service.confirm_tts_audio(project_id, payload, db)
+    return service.confirm_tts_audio(project_id, db=db, payload=payload)

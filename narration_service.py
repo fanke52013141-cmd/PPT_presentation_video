@@ -11,11 +11,11 @@ import subprocess
 import sys
 from typing import Any, Callable, Dict, List, Optional
 
-from fastapi import Depends, HTTPException
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from config_store import get_setting, update_settings
-from database import Project, get_db
+from project_path_service import project_or_404
 
 
 logger = logging.getLogger("PPTStudio.Narration")
@@ -104,10 +104,8 @@ def configure_narration_dependencies(
     )
     TTS_MARKUP_RE = dependencies.tts_markup_re
 
-def init_step6_narration(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+def init_step6_narration(project_id: str, db: Session):
+    project = project_or_404(db, project_id)
         
     # 如果不存在 narration，从 visual contract 自动导出初版
     contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
@@ -137,7 +135,11 @@ def init_step6_narration(project_id: str, db: Session = Depends(get_db)):
         
     global_slides = []
     for s in contract.get("slides", []):
-        slide_id = s["slide_id"]
+        if not isinstance(s, dict):
+            continue
+        slide_id = str(s.get("slide_id") or "").strip()
+        if not slide_id:
+            continue
         slide_beat_path = os.path.join(project.run_dir, "slides", slide_id, "narration_beats.json")
         if os.path.exists(slide_beat_path):
             with open(slide_beat_path, "r", encoding="utf-8") as sf:
@@ -160,10 +162,8 @@ def init_step6_narration(project_id: str, db: Session = Depends(get_db)):
     global_beats = persist_narration_beats(project, {"slides": global_slides})
     return {"success": True, "beats": global_beats}
 
-def get_step6_result(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+def get_step6_result(project_id: str, db: Session):
+    project = project_or_404(db, project_id)
         
     beats_path = os.path.join(project.run_dir, "planning", "narration_beats.json")
     if not os.path.exists(beats_path):
@@ -197,15 +197,16 @@ def get_step6_result(project_id: str, db: Session = Depends(get_db)):
     }
 
 
-def repair_step6_result(project_id: str, db: Session = Depends(get_db)):
+def repair_step6_result(project_id: str, db: Session):
     """Explicitly align historical narration data with the current storyboard."""
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+    project = project_or_404(db, project_id)
     beats_path = os.path.join(project.run_dir, "planning", "narration_beats.json")
     if not os.path.exists(beats_path):
         raise HTTPException(status_code=400, detail="演讲稿尚未生成")
     changed = sync_narration_beats_to_contract(project)
+    if changed:
+        # 旁白被修复重写 → 与手动编辑同口径走导航失效，清除音频确认（审查 M-03）
+        handle_step_navigation(project, 6, db)
     beats = read_json_file(beats_path, {})
     return {"success": True, "changed": changed, "beats": beats}
 
@@ -387,10 +388,8 @@ def update_narration_annotation_settings(payload: Dict[str, Any]):
         },
     }
 
-def annotate_step6_narration(project_id: str, payload: Optional[Dict[str, Any]] = None, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+def annotate_step6_narration(project_id: str, db: Session, payload: Optional[Dict[str, Any]] = None):
+    project = project_or_404(db, project_id)
 
     llm_api_key = get_setting("llm_api_key")
     if not llm_api_key:
@@ -504,10 +503,8 @@ def annotate_step6_narration(project_id: str, payload: Optional[Dict[str, Any]] 
     handle_step_navigation(project, 6, db)
     return {"success": True, "beats": incoming, "annotated_count": changed}
 
-def update_step6_result(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+def update_step6_result(project_id: str, payload: Dict[str, Any], db: Session):
+    project = project_or_404(db, project_id)
         
     persist_narration_beats(project, payload)
         

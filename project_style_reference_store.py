@@ -40,6 +40,21 @@ def _manifest_path(project: Any) -> Path:
     return _run_dir(project) / "planning" / REFERENCE_MANIFEST
 
 
+def manifest_path(project: Any) -> Path:
+    """公开包装：项目参考图 manifest 路径。"""
+    return _manifest_path(project)
+
+
+def references_dir(project: Any) -> Path:
+    """公开包装：项目参考图目录。"""
+    return _references_dir(project)
+
+
+def write_normalized_manifest(project: Any, manifest: dict[str, Any]) -> None:
+    """公开包装：写入归一化后的参考图 manifest。"""
+    _write_normalized_manifest(project, manifest)
+
+
 def _step3_style_state_path(project: Any) -> Path:
     return _run_dir(project) / "planning" / STEP3_STYLE_STATE
 
@@ -190,4 +205,10 @@ def _delete_all_references(project: Any, project_id: str) -> dict[str, Any]:
     result["deleted_count"] = deleted_count
     return result
 
+def delete_all_references(*args: Any, **kwargs: Any) -> Any:
+    """公开包装（审查 L-06）：路由与服务经公开名调用。"""
+    return _delete_all_references(*args, **kwargs)
 
+def delete_reference(*args: Any, **kwargs: Any) -> Any:
+    """公开包装（审查 L-06）：路由与服务经公开名调用。"""
+    return _delete_reference(*args, **kwargs)

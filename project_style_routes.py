@@ -30,6 +30,9 @@ import step3_image_style_service as style_service
 
 router = APIRouter()
 
+# 单张风格参考图上限（与 storyboard_background / image_style_reverse 的 12MB 标准一致）
+MAX_REFERENCE_IMAGE_BYTES = 12 * 1024 * 1024
+
 AUTOMATION_MODES = [
     {"id": "manual_review", "name": "手动审核模式", "description": "按原流程逐步生成、检查和确认。"},
     {"id": "auto", "name": "全自动模式", "description": "配合一键生成运行完整链路；失败时暂停给用户处理。"},
@@ -40,11 +43,7 @@ def _context() -> ProjectStyleDependencies:
     return get_project_style_context()
 
 
-def _project_or_404(db: Session, project_id: str) -> Project:
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    return project
+from project_path_service import project_or_404 as _project_or_404
 
 
 def _log(project: Project, event: str, **fields: Any) -> None:
@@ -98,7 +97,7 @@ def save_project_profile(
 
 @router.post("/api/project-profile/image-style/generate")
 def generate_project_image_style(payload: dict[str, Any]) -> dict[str, Any]:
-    style = project_profile_service._generate_image_style_with_llm(
+    style = project_profile_service.generate_image_style_with_llm(
         _context(),
         payload if isinstance(payload, dict) else {},
     )
@@ -107,7 +106,7 @@ def generate_project_image_style(payload: dict[str, Any]) -> dict[str, Any]:
 
 @router.get("/api/settings/image-style-reverse")
 def get_reverse_style_prompt_settings() -> dict[str, Any]:
-    system_content, output_example = reverse_service._read_reverse_style_prompts(
+    system_content, output_example = reverse_service.read_reverse_style_prompts(
         _context()
     )
     return {
@@ -132,8 +131,8 @@ def update_reverse_style_prompt_settings(
     payload: dict[str, Any],
 ) -> dict[str, Any]:
     prompts = payload.get("prompts") if isinstance(payload.get("prompts"), dict) else payload
-    system_content = reverse_service._safe_text(prompts.get("system_content"), 30000)
-    output_example = reverse_service._safe_text(prompts.get("output_example"), 20000)
+    system_content = reverse_service.safe_text(prompts.get("system_content"), 30000)
+    output_example = reverse_service.safe_text(prompts.get("output_example"), 20000)
     if not system_content or not output_example:
         raise HTTPException(
             status_code=400,
@@ -162,15 +161,15 @@ async def _reverse_style(
     requirement: str,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     context = _context()
-    saved = reverse_service._save_uploaded_references(context, project, files)
-    requirement_text = reverse_service._safe_text(requirement, 4000)
-    raw_style = reverse_service._call_vision_model(
+    saved = reverse_service.save_uploaded_references(context, project, files)
+    requirement_text = reverse_service.safe_text(requirement, 4000)
+    raw_style = reverse_service.call_vision_model(
         context,
         saved,
         project,
         requirement_text,
     )
-    style = reverse_service._style_with_required_rules(
+    style = reverse_service.style_with_required_rules(
         raw_style,
         saved,
         requirement_text,
@@ -189,7 +188,7 @@ async def reverse_step3_image_style(
     project = _project_or_404(db, project_id)
     saved, style = await _reverse_style(project, files, requirement)
     state = (
-        style_service._save_step3_style(
+        style_service.save_step3_style(
             project,
             style,
             "image_reverse_engineered",
@@ -201,7 +200,7 @@ async def reverse_step3_image_style(
         project,
         "step3_image_style_saved",
         style_name=style.get("style_name"),
-        path=str(style_service._state_path(project)),
+        path=str(style_service.state_path(project)),
     )
     return {
         "success": True,
@@ -222,7 +221,7 @@ async def reverse_legacy_project_image_style(
     project = _project_or_404(db, project_id)
     saved, style = await _reverse_style(project, files, requirement)
     legacy_profile = (
-        reverse_service._apply_style_to_project(project, style) if apply else None
+        reverse_service.apply_style_to_project(project, style) if apply else None
     )
     preferred_route = f"/api/projects/{project_id}/steps/3/image-style/reverse"
     _log(
@@ -253,8 +252,8 @@ def get_step3_image_style(
     project = _project_or_404(db, project_id)
     return {
         "success": True,
-        "style_state": style_service._step3_style_state(project),
-        "style": style_service._step3_style(project),
+        "style_state": style_service.step3_style_state(project),
+        "style": style_service.step3_style(project),
     }
 
 
@@ -265,16 +264,16 @@ def put_step3_image_style(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     project = _project_or_404(db, project_id)
-    style = style_service._manual_style_from_payload(
+    style = style_service.manual_style_from_payload(
         payload if isinstance(payload, dict) else {},
-        style_service._step3_style(project),
+        style_service.step3_style(project),
     )
-    if not style_service._safe_text(style.get("system_content"), 12000):
+    if not style_service.safe_text(style.get("system_content"), 12000):
         raise HTTPException(
             status_code=400,
             detail="图片生成 System Content 不能为空",
         )
-    state = style_service._save_step3_style(
+    state = style_service.save_step3_style(
         project,
         style,
         "manual_system_content",
@@ -282,17 +281,17 @@ def put_step3_image_style(
     _log(
         project,
         "step3_image_style_manual_saved",
-        path=str(style_service._state_path(project)),
+        path=str(style_service.state_path(project)),
     )
     return {"success": True, "style": style, "style_state": state}
 
 
 @router.get("/api/settings/image-style-reference-generation")
 def get_reference_generation_prompt_settings() -> dict[str, Any]:
-    system_content = reference_service._read_reference_generation_system_content(
+    system_content = reference_service.read_reference_generation_system_content(
         _context()
     )
-    preview = reference_service._style_generation_prompt(
+    preview = reference_service.style_generation_prompt(
         reference_service.DEFAULT_REFERENCE_SCENE_BRIEFS[0],
         {
             "style_name": "示例图片风格",
@@ -319,7 +318,7 @@ def update_reference_generation_prompt_settings(
     payload: dict[str, Any],
 ) -> dict[str, Any]:
     prompts = payload.get("prompts") if isinstance(payload.get("prompts"), dict) else payload
-    system_content = reference_service._safe_text(
+    system_content = reference_service.safe_text(
         prompts.get("system_content"),
         30000,
     )
@@ -335,8 +334,8 @@ def update_reference_generation_prompt_settings(
 
 
 def _step3_references(project: Project, project_id: str) -> dict[str, Any]:
-    return template_service._rewrite_reference_urls(
-        reference_service._load_manifest(project, project_id),
+    return template_service.rewrite_reference_urls(
+        reference_service.load_manifest(project, project_id),
         project_id,
     )
 
@@ -357,7 +356,7 @@ def generate_step3_reference_images(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     project = _project_or_404(db, project_id)
-    manifest = reference_service._generate_reference_images(
+    manifest = reference_service.generate_reference_images(
         _context(),
         project,
         project_id,
@@ -365,7 +364,7 @@ def generate_step3_reference_images(
     )
     return {
         "success": True,
-        "references": template_service._rewrite_reference_urls(
+        "references": template_service.rewrite_reference_urls(
             manifest,
             project_id,
         ),
@@ -384,13 +383,24 @@ async def upload_step3_reference_images(
         raise HTTPException(status_code=400, detail="请上传 1-3 张参考图")
     if len(selected) > 3:
         raise HTTPException(status_code=400, detail="最多只能上传 3 张参考图")
-    refs_dir = reference_service._references_dir(project)
+    refs_dir = reference_service.references_dir(project)
     refs_dir.mkdir(parents=True, exist_ok=True)
     uploaded: list[dict[str, Any]] = []
     for index, file in enumerate(selected, start=1):
-        content = await file.read()
+        content_type = str(file.content_type or "").lower()
+        if content_type and not content_type.startswith("image/"):
+            raise HTTPException(
+                status_code=415,
+                detail=f"参考图 {index} 必须是图片文件",
+            )
+        content = await file.read(MAX_REFERENCE_IMAGE_BYTES + 1)
         if not content:
             continue
+        if len(content) > MAX_REFERENCE_IMAGE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"参考图 {index} 超过 12MB，请压缩后再上传",
+            )
         filename = f"style_reference_{index:02d}.png"
         _context().process_and_save_image(content, str(refs_dir / filename))
         uploaded.append({
@@ -411,7 +421,7 @@ async def upload_step3_reference_images(
         "style_name": "手动上传参考图",
         "images": uploaded,
     }
-    reference_store._write_normalized_manifest(project, manifest)
+    reference_store.write_normalized_manifest(project, manifest)
     _log(
         project,
         "step3_image_style_reference_images_uploaded",
@@ -429,7 +439,7 @@ def get_step3_reference_image(
     project = _project_or_404(db, project_id)
     if index < 1 or index > 3:
         raise HTTPException(status_code=404, detail="参考图不存在")
-    root = reference_service._references_dir(project).resolve()
+    root = reference_service.references_dir(project).resolve()
     path = (root / f"style_reference_{index:02d}.png").resolve()
     if path.parent != root or not path.is_file():
         raise HTTPException(status_code=404, detail="参考图不存在")
@@ -444,13 +454,13 @@ def delete_step3_reference_image(
 ) -> dict[str, Any]:
     project = _project_or_404(db, project_id)
     try:
-        references = reference_store._delete_reference(project, project_id, index)
+        references = reference_store.delete_reference(project, project_id, index)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     _log(project, "step3_image_style_reference_image_deleted", index=index)
     return {
         "success": True,
-        "references": template_service._rewrite_reference_urls(
+        "references": template_service.rewrite_reference_urls(
             references,
             project_id,
         ),
@@ -463,7 +473,7 @@ def delete_all_step3_reference_images(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     project = _project_or_404(db, project_id)
-    references = reference_store._delete_all_references(project, project_id)
+    references = reference_store.delete_all_references(project, project_id)
     _log(
         project,
         "step3_image_style_reference_images_deleted",
@@ -471,7 +481,7 @@ def delete_all_step3_reference_images(
     )
     return {
         "success": True,
-        "references": template_service._rewrite_reference_urls(
+        "references": template_service.rewrite_reference_urls(
             references,
             project_id,
         ),
@@ -486,7 +496,7 @@ def list_legacy_reference_images(
     project = _project_or_404(db, project_id)
     return {
         "success": True,
-        "references": reference_service._load_manifest(project, project_id),
+        "references": reference_service.load_manifest(project, project_id),
         "deprecated_route": True,
         "preferred_route": f"/api/projects/{project_id}/steps/3/image-style/reference-images",
     }
@@ -499,7 +509,7 @@ def generate_legacy_reference_images(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     project = _project_or_404(db, project_id)
-    manifest = reference_service._generate_reference_images(
+    manifest = reference_service.generate_reference_images(
         _context(),
         project,
         project_id,
@@ -549,162 +559,25 @@ def delete_all_legacy_reference_images(
     return result
 
 
-def _templates_root() -> Path:
-    return _context().data_dir / "step3_image_style_templates"
-
-
-def _templates_index() -> Path:
-    return _templates_root() / "index.json"
-
-
-def _builtin_sources() -> tuple[Path, list[Path]]:
-    context = _context()
-    style_path = context.handdrawn_style_tokens_path
-    reference_root = context.repo_root / "references" / "style_reference"
-    paths = [
-        reference_root / "PPT模板.png",
-        reference_root / "PPT示例.png",
-    ]
-    return style_path, [path for path in paths if path.is_file()]
-
-
-def _builtin_style() -> dict[str, Any]:
-    style_path, _ = _builtin_sources()
-    if not style_path.exists():
-        raise HTTPException(status_code=404, detail="内置手绘风格配置缺失")
-    try:
-        style_tokens = yaml.safe_load(
-            style_path.read_text(encoding="utf-8-sig")
-        ) or {}
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail="内置手绘风格配置损坏",
-        ) from exc
-    if not isinstance(style_tokens, dict):
-        raise HTTPException(status_code=500, detail="内置手绘风格配置损坏")
-    system_content = _context().build_image_style_prompt(style_tokens)
-    return {
-        "source": "built_in_template",
-        "template_id": template_service.BUILTIN_HANDDRAWN_TEMPLATE_ID,
-        "style_name": template_service.BUILTIN_HANDDRAWN_TEMPLATE_NAME,
-        "style_summary": "温暖极简的手绘线稿科普风格，纯白画布、清晰分组，适合演讲内容可视化与 Mask 显现。",
-        "system_content": system_content,
-        "sample_reference_image_prompts": [system_content],
-        "reference_image_count_target": 3,
-        "style_tokens": style_tokens,
-    }
-
-
-def _read_templates() -> list[dict[str, Any]]:
-    value = template_service._read_json(_templates_index(), {"templates": []})
-    items = value.get("templates", []) if isinstance(value, dict) else []
-    return [item for item in items if isinstance(item, dict)]
-
-
-def _write_templates(items: list[dict[str, Any]]) -> None:
-    template_service._write_json(
-        _templates_index(),
-        {"version": "step3_image_style_templates_v1", "templates": items},
-    )
-
-
-def _template_dir_or_404(template_id: str) -> Path:
-    if len(template_id) != 12 or any(char not in "0123456789abcdef" for char in template_id):
-        raise HTTPException(status_code=404, detail="图片风格模板不存在")
-    root = _templates_root().resolve()
-    path = (root / template_id).resolve()
-    if path.parent != root or not path.exists():
-        raise HTTPException(status_code=404, detail="图片风格模板不存在")
-    return path
-
-
-def _template_detail(template_id: str) -> dict[str, Any]:
-    if template_id == template_service.BUILTIN_HANDDRAWN_TEMPLATE_ID:
-        _, paths = _builtin_sources()
-        images = [
-            {
-                "index": index,
-                "filename": path.name,
-                "source": "built_in_template",
-                "url": f"/api/image-style/project-templates/{template_id}/reference-images/{index}?t={int(path.stat().st_mtime)}",
-            }
-            for index, path in enumerate(paths[:3], start=1)
-        ]
-        item = {
-            "id": template_id,
-            "name": template_service.BUILTIN_HANDDRAWN_TEMPLATE_NAME,
-            "built_in": True,
-            "reference_count": len(images),
-        }
-        return {
-            "success": True,
-            "template": item,
-            "style": _builtin_style(),
-            "references": {
-                "scope": "step3_image_style_template",
-                "style_name": item["name"],
-                "images": images,
-            },
-        }
-    source = _template_dir_or_404(template_id)
-    style = template_service._read_json(source / "style.json", {})
-    manifest = template_service._read_json(source / "references.json", {})
-    normalized = []
-    for item in (manifest.get("images", []) if isinstance(manifest, dict) else [])[:3]:
-        if not isinstance(item, dict):
-            continue
-        try:
-            index = int(item.get("index"))
-        except Exception:
-            continue
-        filename = Path(str(item.get("filename") or f"style_reference_{index:02d}.png")).name
-        path = (source / "references" / filename).resolve()
-        if path.parent != (source / "references").resolve() or not path.is_file():
-            continue
-        normalized.append({
-            **item,
-            "index": index,
-            "filename": filename,
-            "url": f"/api/image-style/project-templates/{template_id}/reference-images/{index}?t={int(path.stat().st_mtime)}",
-        })
-    summary = next(
-        (
-            item
-            for item in _read_templates()
-            if str(item.get("id") or "") == template_id
-        ),
-        {},
-    )
-    return {
-        "success": True,
-        "template": summary,
-        "style": style if isinstance(style, dict) else {},
-        "references": {
-            "scope": "step3_image_style_template",
-            "style_name": str(
-                (style or {}).get("style_name") or summary.get("name") or ""
-            ),
-            "images": normalized,
-        },
-    }
+# 命名图片风格模板库的业务逻辑已迁至 project_style_template_service.py（审查 M-06）；
+# 路由仅保留 HTTP 壳与响应组装。
 
 
 @router.get("/api/image-style/project-templates")
 def list_step3_templates() -> dict[str, Any]:
-    _, paths = _builtin_sources()
+    _, paths = template_service.builtin_sources(_context())
     built_in = {
         "id": template_service.BUILTIN_HANDDRAWN_TEMPLATE_ID,
         "name": template_service.BUILTIN_HANDDRAWN_TEMPLATE_NAME,
         "built_in": True,
         "reference_count": min(3, len(paths)),
     }
-    return {"success": True, "templates": [built_in, *_read_templates()]}
+    return {"success": True, "templates": [built_in, *template_service.read_templates(_context())]}
 
 
 @router.get("/api/image-style/project-templates/{template_id}")
 def get_step3_template_detail(template_id: str) -> dict[str, Any]:
-    return _template_detail(template_id)
+    return template_service.template_detail(_context(), template_id)
 
 
 @router.get("/api/image-style/project-templates/{template_id}/reference-images/{index}")
@@ -712,13 +585,14 @@ def get_step3_template_reference(
     template_id: str,
     index: int,
 ) -> FileResponse:
+    context = _context()
     if template_id == template_service.BUILTIN_HANDDRAWN_TEMPLATE_ID:
-        _, paths = _builtin_sources()
+        _, paths = template_service.builtin_sources(context)
         if index < 1 or index > len(paths):
             raise HTTPException(status_code=404, detail="模板参考图不存在")
         return FileResponse(str(paths[index - 1]), media_type="image/png")
-    source = _template_dir_or_404(template_id)
-    detail = _template_detail(template_id)
+    source = template_service.template_dir_or_404(context, template_id)
+    detail = template_service.template_detail(context, template_id)
     image = next(
         (
             item
@@ -742,44 +616,12 @@ def save_step3_template(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     project = _project_or_404(db, project_id)
-    name = str((payload or {}).get("name") or "").strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="模板名称不能为空")
-    if len(name) > 120:
-        raise HTTPException(status_code=400, detail="模板名称不能超过 120 个字符")
-    state = template_service._read_json(
-        template_service._step3_state_path(project),
-        {},
+    result = template_service.save_named_template(
+        _context(),
+        project,
+        str((payload or {}).get("name") or ""),
     )
-    style = state.get("image_style_profile") if isinstance(state.get("image_style_profile"), dict) else {}
-    if not str(style.get("system_content") or "").strip():
-        raise HTTPException(status_code=400, detail="请先保存图片生成 System Content")
-    manifest = template_service._read_json(
-        reference_store._manifest_path(project),
-        {},
-    )
-    if not (manifest.get("images", []) if isinstance(manifest, dict) else []):
-        raise HTTPException(status_code=400, detail="请先生成或上传至少 1 张效果预览")
-    items = _read_templates()
-    if any(str(item.get("name") or "").strip().casefold() == name.casefold() for item in items):
-        raise HTTPException(status_code=400, detail="模板名称已存在，请换一个名称")
-    template_id = uuid.uuid4().hex[:12]
-    target = _templates_root() / template_id
-    target.mkdir(parents=True, exist_ok=False)
-    template_service._write_json(target / "style.json", style)
-    template_service._write_json(target / "references.json", manifest)
-    source_refs = reference_store._references_dir(project)
-    if source_refs.exists():
-        shutil.copytree(source_refs, target / "references", dirs_exist_ok=True)
-    item = {
-        "id": template_id,
-        "name": name,
-        "reference_count": len(manifest.get("images", [])),
-        "created_at": datetime.now().isoformat(timespec="seconds"),
-    }
-    items.append(item)
-    _write_templates(items)
-    return {"success": True, "template": item, "templates": items}
+    return {"success": True, **result}
 
 
 @router.post("/api/projects/{project_id}/steps/3/image-style/templates/{template_id}/apply")
@@ -789,71 +631,19 @@ def apply_step3_template(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     project = _project_or_404(db, project_id)
-    built_in = template_id == template_service.BUILTIN_HANDDRAWN_TEMPLATE_ID
-    source = None if built_in else _template_dir_or_404(template_id)
-    style = (
-        _builtin_style()
-        if built_in
-        else template_service._read_json(source / "style.json", {})
-    )
-    if not style:
-        raise HTTPException(status_code=400, detail="图片风格模板内容损坏")
-    template_service._save_step3_style_state(
+    outcome = template_service.apply_named_template(
+        _context(),
         project,
-        style,
-        "built_in_template" if built_in else "named_template",
-    )
-    target_refs = reference_store._references_dir(project)
-    if target_refs.exists():
-        shutil.rmtree(target_refs)
-    if built_in:
-        _, source_images = _builtin_sources()
-        target_refs.mkdir(parents=True, exist_ok=True)
-        images = []
-        for index, source_image in enumerate(source_images[:3], start=1):
-            filename = f"style_reference_{index:02d}.png"
-            _context().process_and_save_image(
-                source_image.read_bytes(),
-                str(target_refs / filename),
-            )
-            images.append({
-                "index": index,
-                "filename": filename,
-                "source": "built_in_template",
-            })
-        manifest = {
-            "version": "step3_style_references_v1",
-            "scope": "step3_image_style",
-            "style_name": template_service.BUILTIN_HANDDRAWN_TEMPLATE_NAME,
-            "updated_at": datetime.now().isoformat(timespec="seconds"),
-            "images": images,
-        }
-    else:
-        source_refs = source / "references"
-        if source_refs.exists():
-            shutil.copytree(source_refs, target_refs)
-        manifest = template_service._read_json(source / "references.json", {})
-    reference_store._write_normalized_manifest(
-        project,
-        manifest if isinstance(manifest, dict) else {},
+        template_id,
     )
     return {
         "success": True,
-        "style": style,
+        "style": outcome["style"],
         "references": _step3_references(project, project_id),
     }
 
 
 @router.delete("/api/image-style/project-templates/{template_id}")
 def delete_step3_template(template_id: str) -> dict[str, Any]:
-    if template_id == template_service.BUILTIN_HANDDRAWN_TEMPLATE_ID:
-        raise HTTPException(status_code=400, detail="内置手绘风格不能删除")
-    source = _template_dir_or_404(template_id)
-    items = [
-        item
-        for item in _read_templates()
-        if str(item.get("id") or "") != template_id
-    ]
-    shutil.rmtree(source)
-    _write_templates(items)
+    items = template_service.delete_named_template(_context(), template_id)
     return {"success": True, "templates": items}

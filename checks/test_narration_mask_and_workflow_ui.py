@@ -6,6 +6,7 @@ import pytest
 from fastapi import HTTPException
 import server
 import storyboard_service
+from storyboard_planning import PlanningError
 
 from scripts.write_narration_from_visual_contract import build_slide_narration
 from visual_contract_service import (
@@ -237,7 +238,7 @@ def test_step2_visual_plan_rejects_separate_subtitle_element():
         "title": "测试",
         "slides": [{"slide_id": "slide_001", "slide_title": "标题", "narration": "先讲标题。再讲正文。"}],
     }
-    with pytest.raises(HTTPException, match="只能包含 title 和 body"):
+    with pytest.raises(PlanningError, match="只能包含 title 和 body"):
         normalize_slide_visual_plan(
             {
                 "slides": [

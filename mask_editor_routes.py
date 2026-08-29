@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from database import Project, get_db
+from database import get_db
 import mask_manifest_service as manifest_service
 import mask_preview_service as preview_service
 
@@ -16,11 +16,7 @@ import mask_preview_service as preview_service
 router = APIRouter()
 
 
-def _project_or_404(db: Session, project_id: str) -> Project:
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    return project
+from project_path_service import project_or_404 as _project_or_404
 
 
 def _translate_error(exc: Exception) -> NoReturn:

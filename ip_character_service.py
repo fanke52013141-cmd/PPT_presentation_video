@@ -232,7 +232,7 @@ def _save_uploaded_image(project, file, prefix):
     content = file.file.read(MAX_IMAGE_UPLOAD_BYTES + 1)
     if len(content) > MAX_IMAGE_UPLOAD_BYTES:
         raise HTTPException(
-            status_code=400,
+            status_code=413,
             detail=f"IP 形象图片超过 {MAX_IMAGE_UPLOAD_BYTES // (1024 * 1024)} MB 限制",
         )
     ext = ".png"

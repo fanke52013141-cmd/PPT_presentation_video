@@ -257,12 +257,12 @@ def _save_uploaded_references(
         filename = _safe_text(getattr(file, "filename", "") or f"reference_{index}.png", 200)
         content_type = _safe_text(getattr(file, "content_type", "") or _mime_type(filename), 100)
         if not content_type.startswith("image/"):
-            raise dependencies.http_exception(status_code=400, detail=f"{filename} 不是图片文件")
-        data = file.file.read()
+            raise dependencies.http_exception(status_code=415, detail=f"{filename} 不是图片文件")
+        data = file.file.read(12 * 1024 * 1024 + 1)
         if not data:
             raise dependencies.http_exception(status_code=400, detail=f"{filename} 是空文件")
         if len(data) > 12 * 1024 * 1024:
-            raise dependencies.http_exception(status_code=400, detail=f"{filename} 超过 12MB")
+            raise dependencies.http_exception(status_code=413, detail=f"{filename} 超过 12MB")
         out_name = f"reverse_reference_{index:02d}.png"
         out_path = inputs_dir / out_name
         _normalize_uploaded_image(dependencies, data, out_path)
@@ -407,4 +407,26 @@ def _apply_style_to_project(project: Any, style: dict[str, Any]) -> dict[str, An
     _write_json(companion_path, companion)
     return profile
 
+def apply_style_to_project(*args: Any, **kwargs: Any) -> Any:
+    """公开包装（审查 L-06）：路由与服务经公开名调用。"""
+    return _apply_style_to_project(*args, **kwargs)
 
+def call_vision_model(*args: Any, **kwargs: Any) -> Any:
+    """公开包装（审查 L-06）：路由与服务经公开名调用。"""
+    return _call_vision_model(*args, **kwargs)
+
+def read_reverse_style_prompts(*args: Any, **kwargs: Any) -> Any:
+    """公开包装（审查 L-06）：路由与服务经公开名调用。"""
+    return _read_reverse_style_prompts(*args, **kwargs)
+
+def safe_text(*args: Any, **kwargs: Any) -> Any:
+    """公开包装（审查 L-06）：路由与服务经公开名调用。"""
+    return _safe_text(*args, **kwargs)
+
+def save_uploaded_references(*args: Any, **kwargs: Any) -> Any:
+    """公开包装（审查 L-06）：路由与服务经公开名调用。"""
+    return _save_uploaded_references(*args, **kwargs)
+
+def style_with_required_rules(*args: Any, **kwargs: Any) -> Any:
+    """公开包装（审查 L-06）：路由与服务经公开名调用。"""
+    return _style_with_required_rules(*args, **kwargs)

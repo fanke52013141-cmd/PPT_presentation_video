@@ -58,8 +58,8 @@ def annotate_step6_narration(
 ) -> dict[str, Any]:
     return service.annotate_step6_narration(
         project_id,
-        payload,
-        db,
+        db=db,
+        payload=payload,
     )
 
 

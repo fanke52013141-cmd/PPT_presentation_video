@@ -319,7 +319,9 @@ def test_preview_uses_production_builder_and_reports_cutout_stats(
             build_timeout_sec=1.0,
         )
     )
-    monkeypatch.setattr(preview_service.subprocess, "run", run_builder)
+    monkeypatch.setattr(
+        preview_service, "run_subprocess_killable", run_builder
+    )
     try:
         result = preview_service.build_step5_mask_preview(
             project,
@@ -369,12 +371,12 @@ def test_preview_timeout_maps_to_504(
             build_timeout_sec=1.0,
         )
     )
+    def killable_timeout(_command, **_kwargs):
+        # run_subprocess_killable 的超时契约：返回 returncode=124 的结果
+        return SimpleNamespace(returncode=124, stderr="builder timed out")
+
     monkeypatch.setattr(
-        preview_service.subprocess,
-        "run",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            subprocess.TimeoutExpired("builder", 1.0)
-        ),
+        preview_service, "run_subprocess_killable", killable_timeout
     )
     try:
         with pytest.raises(preview_service.MaskPreviewError) as captured:

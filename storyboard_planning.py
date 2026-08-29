@@ -7,11 +7,23 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
-from fastapi import HTTPException
-
 from visual_contract_service import narration_dedupe_key, normalize_visual_type
 
 logger = logging.getLogger("PPTStudio.StoryboardPlanning")
+
+
+class PlanningError(ValueError):
+    """纯层规划/校验失败。
+
+    纯层不得依赖 FastAPI：携带可选 status_code 供 service 层映射——
+    status_code=400 表示确定的结构错误；status_code=0 表示由调用方
+    按上下文决定（手动编辑→400，LLM 输出→502）。
+    """
+
+    def __init__(self, detail: str, status_code: int = 0) -> None:
+        super().__init__(detail)
+        self.detail = detail
+        self.status_code = status_code
 
 
 def stable_plan_id(value: Any, prefix: str, index: int) -> str:
@@ -96,7 +108,7 @@ def normalize_narration_segments(value: Any, fallback_narration: str = "") -> Li
 def normalize_slide_script_plan(plan: Dict[str, Any], project_title: str) -> Dict[str, Any]:
     slides = plan.get("slides") if isinstance(plan, dict) else []
     if not isinstance(slides, list) or not slides:
-        raise HTTPException(status_code=500, detail="AI 没有返回可用的 slide_script_plan.slides")
+        raise PlanningError("AI 没有返回可用的 slide_script_plan.slides")
     normalized_slides: List[Dict[str, Any]] = []
     for index, slide in enumerate(slides, start=1):
         if not isinstance(slide, dict):
@@ -114,7 +126,7 @@ def normalize_slide_script_plan(plan: Dict[str, Any], project_title: str) -> Dic
             )
         )
         if not narration:
-            raise HTTPException(status_code=500, detail=f"{slide_id} 缺少 narration")
+            raise PlanningError(f"{slide_id} 缺少 narration")
         slide_title = clean_planning_text(slide.get("slide_title") or slide.get("title") or f"第 {index} 页")
         normalized_slides.append(
             {
@@ -124,7 +136,7 @@ def normalize_slide_script_plan(plan: Dict[str, Any], project_title: str) -> Dic
             }
         )
     if not normalized_slides:
-        raise HTTPException(status_code=500, detail="AI 没有返回可用的 slide_script_plan.slides")
+        raise PlanningError("AI 没有返回可用的 slide_script_plan.slides")
     return {"title": str(plan.get("title") or project_title).strip() or project_title, "slides": normalized_slides}
 
 
@@ -177,25 +189,21 @@ def validate_slide_visual_mapping(
         if element.get("role") not in {"title", "body"}
     })
     if unsupported_roles:
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                f"{slide_id} 包含不参与一对一旁白映射的 role: {', '.join(unsupported_roles)}。"
-                "系统不使用页面副标题；装饰由生图阶段处理，visual_elements 只能包含 title 和 body。"
-            ),
+        raise PlanningError(
+            f"{slide_id} 包含不参与一对一旁白映射的 role: {', '.join(unsupported_roles)}。"
+            "系统不使用页面副标题；装饰由生图阶段处理，visual_elements 只能包含 title 和 body。"
         )
     if len(title_elements) != 1 or not elements or elements[0].get("role") != "title":
-        raise HTTPException(status_code=500, detail=f"{slide_id} 必须以且仅以一个 title 元素开头")
+        raise PlanningError(f"{slide_id} 必须以且仅以一个 title 元素开头")
     if not body_elements:
-        raise HTTPException(status_code=500, detail=f"{slide_id} 至少需要一个 body 视觉元素")
+        raise PlanningError(f"{slide_id} 至少需要一个 body 视觉元素")
     title = title_elements[0]
     if title.get("visual_type") != "text":
-        raise HTTPException(status_code=500, detail=f"{slide_id} 的 title 必须使用 text 形式")
+        raise PlanningError(f"{slide_id} 的 title 必须使用 text 形式")
     for element in elements:
         if not str(element.get("narration") or "").strip():
-            raise HTTPException(
-                status_code=500,
-                detail=f"{slide_id} 的 {element.get('element_id') or 'visual element'} 没有对应演讲片段",
+            raise PlanningError(
+                f"{slide_id} 的 {element.get('element_id') or 'visual element'} 没有对应演讲片段"
             )
     if not isinstance(script_slide, dict):
         return
@@ -328,7 +336,7 @@ def normalize_slide_visual_plan(
 ) -> Dict[str, Any]:
     slides = plan.get("slides") if isinstance(plan, dict) else []
     if not isinstance(slides, list) or not slides:
-        raise HTTPException(status_code=500, detail="AI 没有返回可用的 slide_visual_plan.slides")
+        raise PlanningError("AI 没有返回可用的 slide_visual_plan.slides")
     script_by_id = {
         str(slide.get("slide_id") or "").strip(): slide
         for slide in ((script_plan or {}).get("slides") or [])
@@ -343,7 +351,7 @@ def normalize_slide_visual_plan(
             slide_id = f"slide_{index:03d}"
         elements = normalize_visual_elements(slide.get("visual_elements"))
         if not elements:
-            raise HTTPException(status_code=500, detail=f"{slide_id} 缺少 visual_elements")
+            raise PlanningError(f"{slide_id} 缺少 visual_elements")
         script_slide = script_by_id.get(slide_id)
         if script_slide:
             source_narration = clean_planning_text(script_slide.get("narration") or "")
@@ -356,7 +364,7 @@ def normalize_slide_visual_plan(
         validate_slide_visual_mapping(slide_id, elements, script_slide)
         normalized_slides.append({"slide_id": slide_id, "visual_elements": elements})
     if not normalized_slides:
-        raise HTTPException(status_code=500, detail="AI 没有返回可用的 slide_visual_plan.slides")
+        raise PlanningError("AI 没有返回可用的 slide_visual_plan.slides")
     return {"slides": normalized_slides}
 
 
@@ -407,9 +415,9 @@ def compose_visual_contract_from_plans(
     script_slides = script_plan.get("slides") if isinstance(script_plan, dict) else []
     visual_slides = visual_plan.get("slides") if isinstance(visual_plan, dict) else []
     if not isinstance(script_slides, list) or not script_slides:
-        raise HTTPException(status_code=400, detail="slide_script_plan.json 缺少 slides")
+        raise PlanningError("slide_script_plan.json 缺少 slides", status_code=400)
     if not isinstance(visual_slides, list) or not visual_slides:
-        raise HTTPException(status_code=400, detail="slide_visual_plan.json 缺少 slides")
+        raise PlanningError("slide_visual_plan.json 缺少 slides", status_code=400)
 
     visual_by_id = {
         str(slide.get("slide_id") or "").strip(): slide
@@ -424,7 +432,7 @@ def compose_visual_contract_from_plans(
         slide_id = str(script_slide.get("slide_id") or f"slide_{slide_index:03d}").strip()
         visual_slide = visual_by_id.get(slide_id)
         if not isinstance(visual_slide, dict):
-            raise HTTPException(status_code=400, detail=f"{slide_id} 缺少对应的 visual plan")
+            raise PlanningError(f"{slide_id} 缺少对应的 visual plan", status_code=400)
         body_points = script_slide.get("body_points") if isinstance(script_slide.get("body_points"), list) else []
         visual_groups: List[Dict[str, Any]] = []
         narration_beats: List[Dict[str, Any]] = []
@@ -468,9 +476,9 @@ def compose_visual_contract_from_plans(
                     }
                 )
         if not visual_groups:
-            raise HTTPException(status_code=400, detail=f"{slide_id} 没有可合成的 visual elements")
+            raise PlanningError(f"{slide_id} 没有可合成的 visual elements", status_code=400)
         if not narration_beats:
-            raise HTTPException(status_code=400, detail=f"{slide_id} 没有可合成的 narration beats")
+            raise PlanningError(f"{slide_id} 没有可合成的 narration beats", status_code=400)
         body_content = [
             str(point.get("text") or "").strip()
             for point in body_points

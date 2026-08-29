@@ -256,13 +256,13 @@ async def upload_background(
     project = _project_or_404(db, project_id)
     content_type = str(file.content_type or "").lower()
     if content_type and not content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="背景文件必须是图片")
-    data = await file.read()
+        raise HTTPException(status_code=415, detail="背景文件必须是图片")
+    data = await file.read(MAX_BACKGROUND_BYTES + 1)
     if not data:
         raise HTTPException(status_code=400, detail="背景图片为空")
     if len(data) > MAX_BACKGROUND_BYTES:
         raise HTTPException(
-            status_code=400,
+            status_code=413,
             detail="背景图片超过 12MB，请压缩后再上传",
         )
     run_dir = _run_dir(project)

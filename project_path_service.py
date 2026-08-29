@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import HTTPException
+from sqlalchemy.orm import Session
 
 from database import Project
 from project_storage import (
@@ -17,6 +18,14 @@ from visual_contract_service import read_contract_slide_ids
 
 
 logger = logging.getLogger("PPTStudio.ProjectPaths")
+
+
+def project_or_404(db: Session, project_id: str) -> Project:
+    """按 id 读取项目，缺失时统一 404（审查 L-11 样板收敛）。"""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    return project
 
 
 def read_current_slide_ids_or_404(project: Project) -> list[str]:

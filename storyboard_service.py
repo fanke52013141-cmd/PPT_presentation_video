@@ -16,13 +16,14 @@ import sys
 from typing import Any, Callable, Dict, List, Optional
 import uuid
 
-from fastapi import Depends, HTTPException
+from fastapi import HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 import yaml
 
 from config_store import get_setting
-from database import Project, get_db
+from database import Project
+from project_path_service import project_or_404
 import invalidation_service
 from pipeline_lifecycle import write_json_atomic
 from project_storage import slide_file as storage_slide_file
@@ -233,6 +234,7 @@ from storyboard_prompt_templates import (
 
 
 from storyboard_planning import (
+    PlanningError,
     build_step2_script_user_prompt,
     build_step2_visual_user_prompt,
     clean_planning_block,
@@ -249,6 +251,18 @@ from storyboard_planning import (
     stable_plan_id,
     validate_slide_visual_mapping,
 )
+
+
+def _planning_http_error(exc: PlanningError, fallback_status: int) -> HTTPException:
+    """把纯层 PlanningError 映射为 HTTP 语义（审查 M-08）。
+
+    手动编辑路径 fallback 400；LLM 输出路径 fallback 502；
+    PlanningError 自带 status_code=400 的结构错误保持 400。
+    """
+    return HTTPException(
+        status_code=exc.status_code or fallback_status,
+        detail=exc.detail,
+    )
 
 
 def read_plan_json(path: str, missing_message: str) -> Dict[str, Any]:
@@ -527,10 +541,8 @@ def build_storyboard_request(
     return system_prompt, user_prompt
 
 
-def get_step2_rules(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+def get_step2_rules(project_id: str, db: Session):
+    project = project_or_404(db, project_id)
     path = storyboard_rules_path(project)
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
@@ -554,10 +566,8 @@ def get_step2_rules(project_id: str, db: Session = Depends(get_db)):
     }
 
 
-def update_step2_rules(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+def update_step2_rules(project_id: str, payload: Dict[str, Any], db: Session):
+    project = project_or_404(db, project_id)
     rules = str(payload.get("rules") or "").strip()
     if not rules:
         rules = default_storyboard_rules()
@@ -587,17 +597,13 @@ def update_step2_rules(project_id: str, payload: Dict[str, Any], db: Session = D
     }
 
 
-def get_step2_prompts(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+def get_step2_prompts(project_id: str, db: Session):
+    project = project_or_404(db, project_id)
     return step2_prompt_response(project)
 
 
-def update_step2_prompts(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+def update_step2_prompts(project_id: str, payload: Dict[str, Any], db: Session):
+    project = project_or_404(db, project_id)
     defaults = default_step2_prompts()
     prompts: Dict[str, str] = {}
     for key, default_value in defaults.items():
@@ -609,12 +615,10 @@ def update_step2_prompts(project_id: str, payload: Dict[str, Any], db: Session =
 
 def execute_step2_script_plan(
     project_id: str,
+    db: Session,
     payload: Optional[Dict[str, Any]] = None,
-    db: Session = Depends(get_db),
 ):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+    project = project_or_404(db, project_id)
     article_source = read_project_article_source(project)
     project_title = article_source["title"]
     article_content = article_source["content"]
@@ -641,35 +645,35 @@ def execute_step2_script_plan(
         schema_hint=script_plan_schema_hint(),
         trace_id=trace_id,
     )
-    plan = normalize_slide_script_plan(raw_plan, project_title)
+    try:
+        plan = normalize_slide_script_plan(raw_plan, project_title)
+    except PlanningError as exc:
+        raise _planning_http_error(exc, 502)
     write_json_atomic(step2_script_plan_path(project), plan)
     write_project_log(project, "step2_script_plan_written", trace_id=trace_id, slide_count=len(plan.get("slides", [])))
     return {"success": True, "script_plan": plan}
 
 
-def get_step2_script_plan(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+def get_step2_script_plan(project_id: str, db: Session):
+    project = project_or_404(db, project_id)
     plan = read_plan_json(step2_script_plan_path(project), "尚未生成演讲稿规划")
     return {"success": True, "script_plan": plan}
 
 
-def update_step2_script_plan(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+def update_step2_script_plan(project_id: str, payload: Dict[str, Any], db: Session):
+    project = project_or_404(db, project_id)
     article_source = read_project_article_source(project)
     project_title = article_source["title"]
-    plan = normalize_slide_script_plan(payload, project_title)
+    try:
+        plan = normalize_slide_script_plan(payload, project_title)
+    except PlanningError as exc:
+        raise _planning_http_error(exc, 400)
     write_json_atomic(step2_script_plan_path(project), plan)
     return {"success": True, "script_plan": plan}
 
 
-def execute_step2_visual_plan(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+def execute_step2_visual_plan(project_id: str, db: Session):
+    project = project_or_404(db, project_id)
     script_plan = read_plan_json(step2_script_plan_path(project), "请先生成演讲稿规划")
     prompts = read_step2_prompts(project)
     if step2_visual_prompt_uses_legacy_contract(prompts["visual_system"]):
@@ -690,44 +694,47 @@ def execute_step2_visual_plan(project_id: str, db: Session = Depends(get_db)):
         schema_hint=visual_plan_schema_hint(),
         trace_id=trace_id,
     )
-    plan = normalize_slide_visual_plan(raw_plan, script_plan)
+    try:
+        plan = normalize_slide_visual_plan(raw_plan, script_plan)
+    except PlanningError as exc:
+        raise _planning_http_error(exc, 502)
     write_json_atomic(step2_visual_plan_path(project), plan)
     write_project_log(project, "step2_visual_plan_written", trace_id=trace_id, slide_count=len(plan.get("slides", [])))
     return {"success": True, "visual_plan": plan}
 
 
-def get_step2_visual_plan(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+def get_step2_visual_plan(project_id: str, db: Session):
+    project = project_or_404(db, project_id)
     plan = read_plan_json(step2_visual_plan_path(project), "尚未生成视觉规划")
     return {"success": True, "visual_plan": plan}
 
 
-def update_step2_visual_plan(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+def update_step2_visual_plan(project_id: str, payload: Dict[str, Any], db: Session):
+    project = project_or_404(db, project_id)
     script_plan = read_plan_json(step2_script_plan_path(project), "请先生成演讲稿规划")
-    plan = normalize_slide_visual_plan(payload, script_plan)
+    try:
+        plan = normalize_slide_visual_plan(payload, script_plan)
+    except PlanningError as exc:
+        raise _planning_http_error(exc, 400)
     write_json_atomic(step2_visual_plan_path(project), plan)
     return {"success": True, "visual_plan": plan}
 
 
-def compose_step2_visual_contract(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+def compose_step2_visual_contract(project_id: str, db: Session):
+    project = project_or_404(db, project_id)
     article_source = read_project_article_source(project)
     project_title = article_source["title"]
     article_summary = article_source["summary"]
     script_plan = read_plan_json(step2_script_plan_path(project), "请先生成演讲稿规划")
-    visual_plan = normalize_slide_visual_plan(
-        read_plan_json(step2_visual_plan_path(project), "请先生成视觉规划"),
-        script_plan,
-    )
+    try:
+        visual_plan = normalize_slide_visual_plan(
+            read_plan_json(step2_visual_plan_path(project), "请先生成视觉规划"),
+            script_plan,
+        )
+        contract = compose_visual_contract_from_plans(script_plan, visual_plan, project_id, project_title)
+    except PlanningError as exc:
+        raise _planning_http_error(exc, 400)
     trace_id = uuid.uuid4().hex[:8]
-    contract = compose_visual_contract_from_plans(script_plan, visual_plan, project_id, project_title)
     contract = finalize_step2_contract(
         project=project,
         project_id=project_id,
@@ -743,12 +750,10 @@ def compose_step2_visual_contract(project_id: str, db: Session = Depends(get_db)
 
 def get_step2_prompt_preview(
     project_id: str,
+    db: Session,
     payload: Optional[Dict[str, Any]] = None,
-    db: Session = Depends(get_db),
 ):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+    project = project_or_404(db, project_id)
 
     article_source = read_project_article_source(project)
 
@@ -863,8 +868,7 @@ def finalize_step2_contract(
         "topic_name": project_title,
         "topic_summary": article_summary,
     }
-    with open(contract_path, "w", encoding="utf-8") as f:
-        json.dump(contract, f, ensure_ascii=False, indent=2)
+    write_json_atomic(contract_path, contract)
     write_project_log(
         project,
         "step2_contract_written",
@@ -914,12 +918,12 @@ def finalize_step2_contract(
 
 def execute_step2(
     project_id: str,
+    db: Session,
     payload: Optional[Dict[str, Any]] = None,
-    db: Session = Depends(get_db),
 ):
     """Compatibility endpoint delegated to the narration-first Step 2 pipeline."""
 
-    execute_step2_script_plan(project_id, payload if isinstance(payload, dict) else {}, db)
+    execute_step2_script_plan(project_id, db, payload if isinstance(payload, dict) else {})
     execute_step2_visual_plan(project_id, db)
     result = compose_step2_visual_contract(project_id, db)
     return {
@@ -933,10 +937,8 @@ def execute_step2(
     }
 
 
-def get_step2_result(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+def get_step2_result(project_id: str, db: Session):
+    project = project_or_404(db, project_id)
         
     contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
     if not os.path.exists(contract_path):
@@ -961,11 +963,9 @@ def get_step2_result(project_id: str, db: Session = Depends(get_db)):
     }
 
 
-def repair_step2_result(project_id: str, db: Session = Depends(get_db)):
+def repair_step2_result(project_id: str, db: Session):
     """Persist schema normalization explicitly instead of mutating on GET."""
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+    project = project_or_404(db, project_id)
     contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
     if not os.path.exists(contract_path):
         raise HTTPException(status_code=400, detail="尚未生成分镜规划")
@@ -985,10 +985,8 @@ def repair_step2_result(project_id: str, db: Session = Depends(get_db)):
         invalidate_after_upstream_edit(project, 2, db)
     return {"success": True, "changed": changed, "contract": contract}
 
-def update_step2_result(project_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+def update_step2_result(project_id: str, payload: Dict[str, Any], db: Session):
+    project = project_or_404(db, project_id)
         
     payload = normalize_visual_contract(payload, read_project_pipeline_profile(project))
     contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
@@ -1006,8 +1004,7 @@ def update_step2_result(project_id: str, payload: Dict[str, Any], db: Session = 
             "validation": read_json_file(visual_contract_validation_path(project), {}),
             "changed": False,
         }
-    with open(contract_path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
+    write_json_atomic(contract_path, payload)
     current_slide_ids = contract_slide_ids_from_payload(payload)
     removed_slide_ids = [slide_id for slide_id in previous_slide_ids if slide_id not in current_slide_ids]
     for slide_id in removed_slide_ids:
@@ -1060,7 +1057,7 @@ class ManualSkeletonPayload(BaseModel):
 def submit_step2_manual_skeleton(
     project_id: str,
     payload: ManualSkeletonPayload,
-    db: Session = Depends(get_db),
+    db: Session,
 ):
     """Manual mode: build a visual_contract.json from title + narration only.
 
@@ -1068,9 +1065,7 @@ def submit_step2_manual_skeleton(
     and one narration_beat entry bound to the spoken text. AI Mask is not
     triggered; the user can still click "运行 AI 标注" later if desired.
     """
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+    project = project_or_404(db, project_id)
     if not payload.slides:
         raise HTTPException(status_code=400, detail="slides 不能为空")
 

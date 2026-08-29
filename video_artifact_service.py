@@ -168,7 +168,10 @@ class VideoArtifactService:
         current_fingerprint: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         target = Path(path)
-        stat = target.stat()
+        try:
+            stat = target.stat()
+        except OSError as exc:
+            raise FileNotFoundError(f"视频产物不存在: {target}") from exc
         filename = target.name
         metadata_path = self.video_metadata_path(target)
         metadata_exists = metadata_path.exists()
@@ -484,6 +487,14 @@ class VideoArtifactService:
         filename: str,
     ) -> dict[str, Any]:
         project = self.get_project(db, project_id)
+        # 清理此前 _safe_unlink 因占用改名的 .deleted 兜底文件（审查 L-09）
+        video_dir = self.project_video_dir(project)
+        if video_dir.exists():
+            for stale in video_dir.glob("*.deleted"):
+                try:
+                    stale.unlink()
+                except OSError:
+                    pass
         path = (
             self.project_legacy_video_file(project)
             if filename == "out.mp4"

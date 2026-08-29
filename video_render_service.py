@@ -7,7 +7,7 @@ components.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as dataclass_replace
 from datetime import datetime
 import json
 import logging
@@ -237,7 +237,7 @@ class VideoRenderService:
 
         thread = threading.Thread(
             target=self.run_render_job,
-            args=(project_id, task_id),
+            args=(project_id, task_id, project_lock),
             name=f"render-{project_id}-{task_id[:8]}",
             daemon=True,
         )
@@ -363,9 +363,20 @@ class VideoRenderService:
         self,
         project_id: str,
         task_id: str,
+        render_lock: threading.Lock | None = None,
     ) -> None:
+        """执行一次视频渲染任务。
+
+        render_lock 由 start_render 在请求线程获取后显式移交（审查 L-12）：
+        渲染全生命周期持有同一把按项目互斥锁，由本 worker 在 finally 中释放。
+        未传锁（历史调用方/测试直调）时沿用旧的按需读取 + locked() 守卫。
+        """
         db = self.dependencies.session_factory()
-        project_lock = self._project_lock(project_id)
+        project_lock = (
+            render_lock
+            if render_lock is not None
+            else self._project_lock(project_id)
+        )
         try:
             project = (
                 db.query(Project)
@@ -396,7 +407,7 @@ class VideoRenderService:
                 )
                 # 数字人讲解合成：启用时把圆形/矩形窗口叠加到渲染视频上
                 composite_started = time.time()
-                result = self._apply_digital_human_composite(
+                result, dh_composited = self._apply_digital_human_composite(
                     project,
                     result,
                     task_id,
@@ -429,6 +440,7 @@ class VideoRenderService:
                     "input_fingerprint": render_fingerprint,
                     "color_standard": "bt709_tv_yuv420p",
                     "color_validation": result.color_validation,
+                    "digital_human_composite": dh_composited,
                     "timing_sec": {
                         "remotion_render": render_elapsed,
                         "digital_human_composite": composite_elapsed,
@@ -469,7 +481,10 @@ class VideoRenderService:
                 )
         finally:
             db.close()
-            if project_lock.locked():
+            if render_lock is not None:
+                # 显式移交的锁：本 worker 是唯一释放者，无需 locked() 探测
+                render_lock.release()
+            elif project_lock.locked():
                 project_lock.release()
 
     def _apply_digital_human_composite(
@@ -477,7 +492,7 @@ class VideoRenderService:
         project: Project,
         result: Any,
         task_id: str,
-    ) -> Any:
+    ) -> tuple[Any, bool]:
         """Remotion 渲染完成后，若启用了数字人讲解，
         把数字人视频窗口合成到渲染出的整段视频上。
 
@@ -485,20 +500,23 @@ class VideoRenderService:
           - 上传模式（mode=upload）：使用已上传的整段讲解视频 digi_upload.mp4；
           - 生成模式（mode=comfyui/generate）：使用已生成的整段数字人视频 digi_full.mp4。
         两者均未就绪时跳过合成，不阻断渲染。
+
+        返回 (result, composited)：composited=True 时 result.color_validation
+        已经是合成后成片的重新校验结果（审查 M-07）。
         """
         cfg_path = (
             Path(project.run_dir) / "planning" / "digital_human.json"
         )
         if not cfg_path.exists():
-            return result
+            return result, False
         try:
             cfg = json.loads(
                 cfg_path.read_text(encoding="utf-8-sig")
             )
         except (OSError, json.JSONDecodeError):
-            return result
+            return result, False
         if not isinstance(cfg, dict) or not cfg.get("enabled"):
-            return result
+            return result, False
         mode = str(cfg.get("mode") or "upload")
         digi_dir = Path(project.run_dir) / "planning" / "digital_human"
         # 数字人源视频优先级：
@@ -518,7 +536,7 @@ class VideoRenderService:
                 "[digital-human] 数字人视频未就绪，跳过合成 for %s",
                 project.id,
             )
-            return result
+            return result, False
 
         self._set_task_stage(task_id, "digital_human")
         circle = (
@@ -576,21 +594,21 @@ class VideoRenderService:
                 project.id,
                 exc,
             )
-            return result
+            return result, False
         except Exception as exc:
             # 合成失败不应拖垮已成功的渲染：记录原因并回退到原渲染产物。
             logger.exception(
                 "[digital-human] composite failed for %s, falling back to base render",
                 project.id,
             )
-            return result
+            return result, False
 
         if not composite_out.exists():
             logger.warning(
                 "[digital-human] composite produced no output for %s, keeping base render",
                 project.id,
             )
-            return result
+            return result, False
         # 用合成视频替换原渲染视频，保持文件名不变（下游产物逻辑无需改动）
         try:
             import os
@@ -601,13 +619,21 @@ class VideoRenderService:
                 project.id,
                 exc,
             )
-            return result
+            return result, False
+        # 合成后的成片必须重新过 bt709 颜色门禁（审查 M-07）：
+        # sidecar 的颜色声明必须描述最终交付文件，而非被替换前的渲染产物。
+        # 校验失败会删除成片并抛错 → 整个渲染任务按失败处理，绝不输出颜色失实文件。
+        fresh_validation = self.runner._validate_render_color(
+            project,
+            result.output_path,
+            set_stage=lambda stage: self._set_task_stage(task_id, stage),
+        )
         logger.info(
             "[digital-human] composite success for %s: %s",
             project.id,
             result.output_path,
         )
-        return result
+        return dataclass_replace(result, color_validation=fresh_validation), True
 
     def list_videos(
         self,

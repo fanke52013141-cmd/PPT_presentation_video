@@ -99,8 +99,8 @@ def execute_step2_script_plan(
 ) -> dict[str, Any]:
     return service.execute_step2_script_plan(
         project_id,
-        payload,
-        db,
+        db=db,
+        payload=payload,
     )
 
 
@@ -170,8 +170,8 @@ def get_step2_prompt_preview(
 ) -> dict[str, Any]:
     return service.get_step2_prompt_preview(
         project_id,
-        payload,
-        db,
+        db=db,
+        payload=payload,
     )
 
 
@@ -181,7 +181,7 @@ def execute_step2(
     payload: Optional[Dict[str, Any]] = None,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    return service.execute_step2(project_id, payload, db)
+    return service.execute_step2(project_id, db=db, payload=payload)
 
 
 @router.get("/api/projects/{project_id}/steps/2/result")

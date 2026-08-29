@@ -227,4 +227,6 @@ def _generate_image_style_with_llm(
     except Exception as exc:
         raise dependencies.http_exception(status_code=500, detail=f"AI 生成图片风格失败: {exc}") from exc
 
-
+def generate_image_style_with_llm(*args: Any, **kwargs: Any) -> Any:
+    """公开包装（审查 L-06）：路由与服务经公开名调用。"""
+    return _generate_image_style_with_llm(*args, **kwargs)

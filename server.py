@@ -135,7 +135,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger("PPTStudio")
 init_db()
 
-app = FastAPI(title="PPT Visualization Studio", description="本地手绘线稿风 PPT 视频生成系统")
+app = FastAPI(title="PPT Visualization Studio", description="本地 PPT 演示视频生成系统（Soft Pastel Studio 界面）")
 
 # 解决跨域
 app.add_middleware(
@@ -656,6 +656,21 @@ try:
             reveal_visual_lead_sec=REVEAL_VISUAL_LEAD_SEC,
             bind_timeout_sec=STEP7_BIND_TIMEOUT_SEC,
         )
+    )
+    from database import SessionLocal as TtsAsyncSessionLocal
+    import tts_service as tts_service_module
+    from tts_service import (
+        TtsAsyncDependencies,
+        configure_tts_async_service,
+    )
+
+    # 持久化 TTS 合成后台任务（审查 M-09 第二步）：复用同步合成入口，
+    # 进程重启时 running→interrupted、queued→重新排队。
+    configure_tts_async_service(
+        TtsAsyncDependencies(
+            session_factory=TtsAsyncSessionLocal,
+            synthesize=tts_service_module.synthesize_tts_resumable,
+        ),
     )
     app.include_router(narration_router)
     app.include_router(tts_router)

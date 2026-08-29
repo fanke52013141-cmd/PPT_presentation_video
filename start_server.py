@@ -6,6 +6,9 @@
 local environments. This launcher imports `server.app` once and passes the app
 object directly to Uvicorn.
 
+`server` is imported lazily inside `main()` so that importing this module
+(e.g. from test discovery) never triggers composition-root side effects.
+
 Usage:
 
     python start_server.py
@@ -19,35 +22,10 @@ Optional environment variables:
 from __future__ import annotations
 
 import os
-import ipaddress
 
 import uvicorn
 
-from server import app
-
-
-def _is_loopback_host(host: str) -> bool:
-    normalized = host.strip().lower()
-    if normalized == "localhost":
-        return True
-    try:
-        return ipaddress.ip_address(normalized).is_loopback
-    except ValueError:
-        return False
-
-
-def _validate_network_security(host: str) -> None:
-    if _is_loopback_host(host):
-        return
-    if os.environ.get("PPT_STUDIO_ACCESS_TOKEN", "").strip():
-        return
-    if os.environ.get("PPT_STUDIO_ALLOW_INSECURE_NETWORK", "").strip().lower() in {"1", "true", "yes"}:
-        return
-    raise SystemExit(
-        "Refusing to listen on a non-loopback address without PPT_STUDIO_ACCESS_TOKEN. "
-        "Set a token, use PPT_STUDIO_HOST=127.0.0.1, or explicitly opt in with "
-        "PPT_STUDIO_ALLOW_INSECURE_NETWORK=1."
-    )
+from network_guard import validate_network_security
 
 
 def _int_env(name: str, default: int) -> int:
@@ -65,8 +43,10 @@ def _int_env(name: str, default: int) -> int:
 
 def main() -> int:
     host = os.environ.get("PPT_STUDIO_HOST", "127.0.0.1").strip() or "127.0.0.1"
-    _validate_network_security(host)
+    validate_network_security(host)
     port = _int_env("PPT_STUDIO_PORT", 8000)
+    from server import app  # 延迟导入：仅在真正启动时触发组合根副作用
+
     uvicorn.run(app, host=host, port=port, reload=False)
     return 0
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 from pathlib import Path
 import subprocess
@@ -17,6 +18,7 @@ sys.path.insert(0, str(ROOT))
 import config_portability_service as config_service  # noqa: E402
 from route_inventory import iter_effective_routes  # noqa: E402
 import server  # noqa: E402
+import settings_routes  # noqa: E402
 import settings_service  # noqa: E402
 
 
@@ -65,6 +67,32 @@ def test_settings_routes_are_registered_exactly_once() -> None:
             if key in SETTINGS_PATHS:
                 route_counts[key] = route_counts.get(key, 0) + 1
     assert route_counts == {path: 1 for path in SETTINGS_PATHS}
+
+
+def test_comfyui_workflow_upload_reads_at_most_the_configured_limit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class LimitedFile:
+        def __init__(self) -> None:
+            self.read_sizes: list[int] = []
+
+        async def read(self, size: int = -1) -> bytes:
+            self.read_sizes.append(size)
+            return b"x" * size
+
+    file = LimitedFile()
+    monkeypatch.setattr(
+        settings_routes,
+        "_COMFYUI_TTS_WORKFLOW_PATH",
+        str(tmp_path / "comfyui_tts_workflow.json"),
+    )
+
+    with pytest.raises(settings_routes.HTTPException) as exc_info:
+        asyncio.run(settings_routes.upload_comfyui_tts_workflow(file))
+
+    assert getattr(exc_info.value, "status_code", None) == 413
+    assert file.read_sizes == [settings_routes._MAX_TTS_WORKFLOW_BYTES + 1]
 
 
 def test_settings_service_boundaries_are_explicit() -> None:

@@ -170,7 +170,9 @@ def get_comfyui_tts_workflow() -> Dict[str, Any]:
 
 @router.post("/api/settings/comfyui-tts-workflow")
 async def upload_comfyui_tts_workflow(file: UploadFile) -> Dict[str, Any]:
-    content = await file.read()
+    # Read one byte past the declared limit so oversized uploads are rejected
+    # before their complete payload is held in process memory.
+    content = await file.read(_MAX_TTS_WORKFLOW_BYTES + 1)
     if not content:
         raise HTTPException(status_code=400, detail="上传文件为空")
     if len(content) > _MAX_TTS_WORKFLOW_BYTES:

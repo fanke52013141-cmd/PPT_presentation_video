@@ -437,7 +437,7 @@ if (html.includes('step3-video-background-apply') || background.includes('step3-
   throw new Error('obsolete video background apply button is still present');
 }
 if (!background.includes('铺满画面') || !background.includes('完整显示')) throw new Error('video background fit modes missing');
-for (const backgroundMode of ['data-mode-card="image"', 'data-mode-card="solid"', '16:9 预览']) {
+for (const backgroundMode of ['data-mode-card="image"', 'data-mode-card="solid"', 'canvasAspectLabel()']) {
   if (!background.includes(backgroundMode)) throw new Error(`final background modal contract missing: ${backgroundMode}`);
 }
 if (!storyboard.includes('handleStep2MapEditorInput') || !storyboard.includes('handleStep2MapEditorChange')) {
@@ -452,8 +452,8 @@ for (const confusingMappingToken of ['画面文字 / 元素名称', '对应旁�
 if (!css.includes('grid-column: 3 / 5') || !css.includes('grid-row: 2')) {
   throw new Error('stale step status is not positioned below the step label');
 }
-if (!css.includes('.storyboard-bg-preview') || !css.includes('aspect-ratio:16 / 9')) {
-  throw new Error('final background preview is not fixed to 16:9 in the shared stylesheet');
+if (!css.includes('.storyboard-bg-preview') || !css.includes('aspect-ratio:var(--project-aspect-ratio,16 / 9)')) {
+  throw new Error('final background preview does not follow the current project canvas ratio');
 }
 if (!maskEditor.includes('hexToRgba(color, isSelected ? 0.68 : 0.55)')) {
   throw new Error('mask overlay colors are too faint');

@@ -238,7 +238,7 @@ function renderStep3Grid() {
         <strong class="step3-card-title" title="${escHtml(slideTitle)}" data-slide-id="${escHtml(img.slide_id)}">${escHtml(slideTitle)}</strong>
       </div>
 
-      <div class="img-preview-container" style="width: 100%; aspect-ratio: 16/9; position: relative; border: 2px solid var(--ink-color); border-radius: 6px; overflow: hidden; background: #fffdf5;">
+      <div class="img-preview-container" style="width: 100%; aspect-ratio: ${(typeof getProjectCanvasGeometry === 'function' ? getProjectCanvasGeometry().aspectRatio : '16 / 9')}; position: relative; border: 2px solid var(--ink-color); border-radius: 6px; overflow: hidden; background: #fffdf5;">
         ${previewHtml}
       </div>
     `;

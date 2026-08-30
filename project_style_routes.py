@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 import yaml
 
+from canvas_profile_service import get_project_canvas
 from database import Project, get_db
 import image_style_reverse_service as reverse_service
 import project_profile_service
@@ -385,6 +386,7 @@ async def upload_step3_reference_images(
         raise HTTPException(status_code=400, detail="最多只能上传 3 张参考图")
     refs_dir = reference_service.references_dir(project)
     refs_dir.mkdir(parents=True, exist_ok=True)
+    canvas = get_project_canvas(project)
     uploaded: list[dict[str, Any]] = []
     for index, file in enumerate(selected, start=1):
         content_type = str(file.content_type or "").lower()
@@ -402,7 +404,12 @@ async def upload_step3_reference_images(
                 detail=f"参考图 {index} 超过 12MB，请压缩后再上传",
             )
         filename = f"style_reference_{index:02d}.png"
-        _context().process_and_save_image(content, str(refs_dir / filename))
+        _context().process_and_save_image(
+            content,
+            str(refs_dir / filename),
+            target_width=canvas["width"],
+            target_height=canvas["height"],
+        )
         uploaded.append({
             "index": index,
             "filename": filename,

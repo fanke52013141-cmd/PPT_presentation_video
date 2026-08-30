@@ -65,7 +65,11 @@ function updateSubtitlePreview() {
   if (!stage || !text) return;
   const settings = readSubtitleSettingsForm();
   const font = subtitleFontByKey(settings.font_key);
-  const scale = Math.max(0.2, stage.clientWidth / 1920);
+  const canvas = typeof getProjectCanvasGeometry === 'function'
+    ? getProjectCanvasGeometry()
+    : { width: 1920, height: 1080, aspectRatio: '16 / 9' };
+  stage.style.aspectRatio = canvas.aspectRatio;
+  const scale = Math.max(0.2, stage.clientWidth / canvas.width);
   const sample = document.getElementById('subtitle-sample-text').value.trim();
   const sampleText = sample || '这是一段视频字幕效果预览';
   text.style.fontFamily = `${font.family}, "Microsoft YaHei", sans-serif`;
@@ -107,7 +111,7 @@ function updateSubtitlePreview() {
     safeGuide.style.left = `${marginWidth}px`;
     safeGuide.style.right = `${marginWidth}px`;
     const label = safeGuide.querySelector('span');
-    if (label) label.textContent = `字幕可用宽度 ${Math.max(0, 1920 - settings.horizontal_margin * 2)} px`;
+    if (label) label.textContent = `字幕可用宽度 ${Math.max(0, canvas.width - settings.horizontal_margin * 2)} px`;
   }
   document.getElementById('subtitle-font-size-value').textContent = String(settings.font_size);
   document.getElementById('subtitle-font-weight-value').textContent = String(settings.font_weight);

@@ -3,7 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from remotion_runner import RemotionRenderResult, RemotionRunner
+from remotion_runner import (
+    RemotionRenderResult,
+    RemotionRunner,
+    RemotionRunnerDependencies,
+)
 from video_contracts import VideoRenderConfig
 from video_render_service import (
     VideoRenderDependencies,
@@ -55,6 +59,38 @@ def test_remotion_asset_validation_rejects_missing_and_traversal(
         "../outside.png",
         "runtime/missing.mp3",
     ]
+
+
+def test_remotion_props_use_project_canvas_dimensions(tmp_path: Path) -> None:
+    project = SimpleNamespace(
+        id="portrait-project",
+        run_dir=str(tmp_path),
+        canvas_profile="portrait_9_16",
+    )
+    received: list[str] = []
+
+    def build_props_command(args, **_kwargs):
+        received.extend(args)
+        (tmp_path / "remotion_props.json").write_text(
+            '{"width":1080,"height":1920,"slides":[]}', encoding="utf-8"
+        )
+        return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
+    runner = RemotionRunner(
+        RemotionRunnerDependencies(
+            config=_config(tmp_path),
+            build_reveal_assets=lambda _project: None,
+            write_project_log=lambda *_args, **_kwargs: None,
+            run_subprocess_bounded=build_props_command,
+            resolve_media_tool=lambda _name: None,
+        )
+    )
+    props, _public_dir = runner._build_remotion_props(project, lambda _stage: None)
+
+    assert props["width"] == 1080
+    assert props["height"] == 1920
+    assert received[received.index("--width") + 1] == "1080"
+    assert received[received.index("--height") + 1] == "1920"
 
 
 def test_render_coordinator_delegates_and_publishes(

@@ -88,6 +88,20 @@ function createWorkflowState() {
 
 const state = createWorkflowState();
 
+// Canvas geometry is carried by the project API. Existing projects did not
+// persist it, so retain the proven 1920×1080 landscape fallback.
+function getProjectCanvasGeometry(project = state.currentProject) {
+  const canvas = project?.canvas || {};
+  const width = Math.max(1, Number(canvas.width) || 1920);
+  const height = Math.max(1, Number(canvas.height) || 1080);
+  return {
+    width,
+    height,
+    aspectRatio: `${width} / ${height}`,
+    orientation: canvas.orientation || (height > width ? 'portrait' : 'landscape'),
+  };
+}
+
 function projectFlowContext(project = state.currentProject) {
   return {
     audioConfirmed: project?.audio_confirmed === true,
@@ -98,6 +112,7 @@ function projectFlowContext(project = state.currentProject) {
 const PPTStudioRuntime = Object.freeze({
   state,
   projectFlowContext,
+  getProjectCanvasGeometry,
   flow: Object.freeze({
     VISIBLE_FLOW,
     normalizeVisibleStep,

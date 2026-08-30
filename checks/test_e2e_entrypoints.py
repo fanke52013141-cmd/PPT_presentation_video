@@ -7,6 +7,31 @@ import pytest
 from checks import e2e_one_click_run
 
 
+def test_comfyui_provider_preflight_uses_local_capabilities(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import comfyui_backend
+
+    settings = {
+        "tts_provider": "comfyui_tts",
+        "tts_endpoint": "",
+    }
+    monkeypatch.setattr(
+        e2e_one_click_run,
+        "get_setting",
+        lambda key, default=None: settings.get(key, default),
+    )
+    monkeypatch.setattr(
+        comfyui_backend,
+        "inspect_tts_preflight",
+        lambda _workflow: {"success": True},
+    )
+
+    checks = e2e_one_click_run.provider_preflight_checks()
+
+    assert checks["tts_credentials"] is True
+
+
 def test_provider_preflight_reports_presence_without_returning_secrets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

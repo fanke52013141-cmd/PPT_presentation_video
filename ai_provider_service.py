@@ -130,9 +130,12 @@ def open_validated_image(image_bytes: bytes) -> Image.Image:
 def process_and_save_image(
     image_bytes: bytes,
     save_path: str,
+    target_width: int = 1920,
+    target_height: int = 1080,
 ) -> None:
     bg_color = (255, 255, 255)
-    target_width, target_height = 1920, 1080
+    target_width = max(1, int(target_width))
+    target_height = max(1, int(target_height))
 
     image = open_validated_image(image_bytes)
     if image.mode in ("RGBA", "LA") or "transparency" in image.info:

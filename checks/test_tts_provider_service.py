@@ -65,6 +65,8 @@ def test_provider_aliases_and_defaults_are_preserved() -> None:
         "aliyun_cosyvoice"
     )
     assert provider.normalize_tts_provider("tencent") == "tencent_tts"
+    for label in ("IndexTTS-2.5", "Index TTS 2.5", "indextts2.5"):
+        assert provider.normalize_tts_provider(label) == "comfyui_tts"
     assert provider.tts_provider_defaults("unknown") == (
         provider.TTS_PROVIDER_DEFAULTS["minimax"]
     )
@@ -168,6 +170,7 @@ def test_retry_contract_is_preserved() -> None:
             write_project_log=lambda *args, **kwargs: logs.append(
                 (args, kwargs)
             ),
+            run_subprocess=run_process,
         )
     )
     try:
@@ -220,6 +223,12 @@ def test_timeout_is_returned_as_structured_failure() -> None:
         replace_dependencies(
             write_project_log=lambda *args, **kwargs: logs.append(
                 (args, kwargs)
+            ),
+            run_subprocess=lambda *_args, **_kwargs: subprocess.CompletedProcess(
+                ["tts"],
+                124,
+                "partial",
+                "TTS process timed out after 390s. late",
             ),
         )
     )

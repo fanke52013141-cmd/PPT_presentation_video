@@ -14,7 +14,7 @@ class ProjectStyleDependencies:
     get_openai_client: Callable[..., Any]
     generate_image_response: Callable[..., Any]
     extract_image_bytes_from_response: Callable[..., bytes]
-    process_and_save_image: Callable[[bytes, str], Any]
+    process_and_save_image: Callable[..., Any]
     write_project_log: Callable[..., None]
     build_image_style_prompt: Callable[[dict[str, Any]], str]
     read_style_tokens_data: Callable[[], dict[str, Any]]

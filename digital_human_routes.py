@@ -545,21 +545,22 @@ def get_dh_job(
     except Exception as exc:
         raise HTTPException(status_code=404, detail=f"任务不存在: {exc}")
 
-    # 任务完成时拉取数字人视频到项目目录
-    if job.get("status") == "done":
+    # 任务完成时拉取数字人视频到项目目录（始终覆盖旧文件）
+    job_status = job.get("status")
+    if job_status in ("done", "failed"):
         project = _project_or_404(db, project_id)
         slide_id = job.get("slide_id")
         if slide_id:
-            dest = _slide_digi_path(project, slide_id)
-            if not dest.exists():
+            cfg = _load_config(project)
+            cfg.setdefault("slides", {}).setdefault(slide_id, {})["status"] = job_status
+            if job_status == "done":
+                dest = _slide_digi_path(project, slide_id)
                 try:
                     client.download_result(job_id, dest)
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("download digi failed: %s", exc)
-            cfg = _load_config(project)
-            cfg.setdefault("slides", {}).setdefault(slide_id, {})["status"] = "done"
+                job = {**job, "video_exists": dest.exists()}
             _save_config(project, cfg)
-            job = {**job, "video_exists": dest.exists()}
     return {"success": True, "job": job}
 
 

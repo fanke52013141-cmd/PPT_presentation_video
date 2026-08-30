@@ -39,6 +39,7 @@ from one_click_resume_policy import (
     upstream_image_inputs as _upstream_image_inputs,
 )
 from project_profile_store import DEFAULT_QUALITY_GATES, load_profile
+from tts_provider_service import normalize_tts_provider
 
 STATUS_FILENAME = "one_click_status.json"
 STATUS_VERSION = "one_click_orchestrator_v2"
@@ -272,7 +273,12 @@ def _fail_stage(
     _save_status(project, status)
 
 
-def _complete(project: Any, status: dict[str, Any], db: Any, video: Any = None) -> None:
+def _complete(
+    project: Any,
+    status: dict[str, Any],
+    db: Any = None,
+    video: Any = None,
+) -> None:
     status["status"] = "completed"
     status["current_stage"] = ""
     status["completed_at"] = _now()
@@ -292,9 +298,11 @@ def _complete(project: Any, status: dict[str, Any], db: Any, video: Any = None) 
                     updated[step_key] = "completed"
         if hasattr(project, "set_step_status"):
             project.set_step_status(updated)
-        db.commit()
+        if db is not None:
+            db.commit()
     except Exception:
-        db.rollback()
+        if db is not None and hasattr(db, "rollback"):
+            db.rollback()
         logger.exception("Failed to sync step_status after one-click completion")
 
 
@@ -432,10 +440,35 @@ def _preflight_errors(dependencies: OneClickDependencies, project: Any) -> list[
     for key, label in (
         ("llm_api_key", "LLM API Key"),
         ("image_api_key", "图片生成 API Key"),
-        ("tts_api_key", "TTS API Key"),
     ):
         if not str(dependencies.get_setting(key) or "").strip():
             errors.append(f"未配置 {label}")
+
+    # ComfyUI/IndexTTS is a local provider and intentionally has no cloud
+    # credential. Keep its preflight independent from the legacy TTS key
+    # requirement, while still catching a missing workflow before the worker
+    # thread starts.
+    try:
+        configured_provider = dependencies.get_setting("tts_provider", "minimax")
+    except TypeError:
+        configured_provider = dependencies.get_setting("tts_provider")
+    provider = normalize_tts_provider(configured_provider)
+    if provider == "comfyui_tts":
+        try:
+            endpoint = str(dependencies.get_setting("tts_endpoint", "") or "").strip()
+        except TypeError:
+            endpoint = str(dependencies.get_setting("tts_endpoint") or "").strip()
+        if endpoint.lower().startswith(("http://", "https://")):
+            endpoint = ""
+        workflow_path = Path(endpoint) if endpoint else (
+            dependencies.repo_root / "data" / "digital_human" / "comfyui_tts_workflow.json"
+        )
+        if not workflow_path.is_absolute():
+            workflow_path = dependencies.repo_root / workflow_path
+        if not workflow_path.is_file():
+            errors.append(f"ComfyUI TTS 工作流不存在：{workflow_path}")
+    elif not str(dependencies.get_setting("tts_api_key") or "").strip():
+        errors.append("未配置 TTS API Key")
     for tool_name in ("ffmpeg", "ffprobe"):
         available = bool(dependencies.resolve_media_tool(tool_name))
         if not available:

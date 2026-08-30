@@ -102,11 +102,107 @@ def _make_client(timeout: float = 30.0) -> httpx.Client:
 def check_health() -> bool:
     """检查 ComfyUI 是否在线。"""
     try:
+        # 现有上传/提交/轮询代码使用上下文管理器管理客户端；这里也保持
+        # 相同生命周期，避免下一次 `_make_client` 复用一个已进入过 with 的
+        # httpx.Client，触发“Cannot open a client instance more than once”。
         with _make_client(timeout=5.0) as c:
             resp = c.get("/system_stats")
             return resp.status_code == 200
     except Exception:
         return False
+
+
+def inspect_tts_preflight(
+    workflow_template: Dict[str, Any],
+) -> Dict[str, Any]:
+    """检查 IndexTTS 工作流和 ComfyUI 能力，返回可展示的结构化结果。
+
+    该检查只读 `/system_stats` 和 `/object_info`，不会提交任务、上传文件或
+    加载模型。它用于在真正的 TTS 请求前尽早区分“服务离线、工作流错误、节点
+    缺失”三类问题，避免用户等到轮询阶段才看到泛化错误。
+    """
+    checks: Dict[str, Any] = {
+        "service_reachable": False,
+        "system_stats": False,
+        "object_info": False,
+        "workflow_valid": False,
+        "required_nodes": [],
+        "missing_nodes": [],
+        "errors": [],
+    }
+    if not isinstance(workflow_template, dict) or not workflow_template:
+        checks["errors"].append("工作流模板为空或不是对象")
+        return {"success": False, **checks}
+
+    nodes = {
+        str(node_id): node
+        for node_id, node in workflow_template.items()
+        if isinstance(node, dict) and isinstance(node.get("class_type"), str)
+    }
+    if not nodes or len(nodes) != len(workflow_template):
+        checks["errors"].append("工作流不是 ComfyUI API 格式")
+    else:
+        checks["workflow_valid"] = True
+    if not checks["workflow_valid"]:
+        return {"success": False, **checks}
+
+    required: list[str] = []
+    for node in nodes.values():
+        class_type = str(node.get("class_type") or "")
+        lowered = class_type.lower().replace(" ", "")
+        if "indextts" in lowered or ("tts" in lowered and "text" in lowered):
+            required.append(class_type)
+        if any(token in lowered for token in ("saveaudio", "saveaudio", "audiowrite")):
+            required.append(class_type)
+    checks["required_nodes"] = sorted(set(required))
+    if not any("indextts" in value.lower() or "tts" in value.lower() for value in required):
+        checks["errors"].append("工作流中未找到 IndexTTS 合成节点")
+    if not any("saveaudio" in value.lower() or "audiowrite" in value.lower() for value in required):
+        checks["errors"].append("工作流中未找到音频保存节点")
+
+    try:
+        with _make_client(timeout=5.0) as client:
+            system_response = client.get("/system_stats")
+            checks["system_stats"] = system_response.status_code == 200
+            checks["service_reachable"] = checks["system_stats"]
+            if not checks["system_stats"]:
+                checks["errors"].append(
+                    f"ComfyUI /system_stats 返回 HTTP {system_response.status_code}"
+                )
+            else:
+                info_response = client.get("/object_info")
+                checks["object_info"] = info_response.status_code == 200
+                if checks["object_info"]:
+                    payload = info_response.json()
+                    available = set(payload.keys()) if isinstance(payload, dict) else set()
+                    missing = sorted(
+                        {
+                            class_type
+                            for class_type in checks["required_nodes"]
+                            if class_type not in available
+                        }
+                    )
+                    checks["missing_nodes"] = missing
+                    if missing:
+                        checks["errors"].append(
+                            "ComfyUI 缺少工作流节点: " + ", ".join(missing)
+                        )
+                else:
+                    checks["errors"].append(
+                        f"ComfyUI /object_info 返回 HTTP {info_response.status_code}"
+                    )
+    except Exception as exc:
+        checks["errors"].append(f"ComfyUI 连接失败: {type(exc).__name__}")
+
+    return {
+        "success": bool(
+            checks["service_reachable"]
+            and checks["workflow_valid"]
+            and not checks["missing_nodes"]
+            and not checks["errors"]
+        ),
+        **checks,
+    }
 
 
 def _upload_file(client: httpx.Client, file_path: Path) -> Dict[str, str]:
@@ -316,6 +412,8 @@ def run_comfyui_inference(
         logger.info("[comfyui] output video: %s", file_info)
 
         _download_video(poll_client, file_info, output_path)
+        if not output_path.is_file() or output_path.stat().st_size <= 0:
+            raise ComfyUIError("ComfyUI 返回的视频文件为空或未写入")
         logger.info("[comfyui] downloaded to %s (%d bytes)", output_path, output_path.stat().st_size)
 
     return {
@@ -342,16 +440,15 @@ def _patch_tts_workflow(
     template: Dict[str, Any],
     text: str,
     ref_audio_info: Optional[Dict[str, str]] = None,
-    overrides: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """将动态值注入 TTS 工作流模板，返回可提交的 prompt JSON。
 
     注入内容：
     - text → IndexTTS2 节点的 text 输入
     - 参考音频文件名 → LoadAudio 节点（如有）
-    - overrides 中的额外参数（speed 等）
 
-    画质/音质参数尊重用户工作流模板中的原始设置，不做覆盖。
+    除上述每次请求必须变化的值外，其余参数（语速等）一律沿用
+    用户工作流模板中的原始设置，不做覆盖。
     """
     wf = {}
     for k, v in template.items():
@@ -364,40 +461,52 @@ def _patch_tts_workflow(
 
     nid = TTS_NODE_IDS
 
-    # 注入待合成文本
+    # 注入待合成文本。不同 IndexTTS 节点的输入名可能是 text、text_文本
+    # 或其它带有 text 的本地化名称，因此按现有输入键匹配而不是写死。
     tts_id = nid["tts_node"]
-    if tts_id in wf:
-        wf[tts_id]["inputs"]["text"] = text
-    else:
-        # 尝试通过 class_type 匹配
+    tts_node = wf.get(tts_id)
+    # 旧版模板的固定 ID 可能恰好存在但指向其它节点；只有确认其
+    # class_type 确实是 TTS 合成节点时才使用，否则继续按类型搜索。
+    if tts_node is not None:
+        ct = tts_node.get("class_type", "").lower()
+        if not (("indextts" in ct and ("synth" in ct or "generate" in ct))
+                or ("tts" in ct and ("speech" in ct or "synth" in ct))):
+            tts_node = None
+    if tts_node is None:
         for k, v in wf.items():
-            ct = v.get("class_type", "")
-            if "indextts" in ct.lower() or ("tts" in ct.lower() and "speech" in ct.lower()):
-                v["inputs"]["text"] = text
-                nid_actual = k
-                logger.info("[comfyui-tts] 通过 class_type 匹配到 TTS 节点: %s (%s)", k, ct)
+            ct = v.get("class_type", "").lower()
+            if (("indextts" in ct and ("synth" in ct or "generate" in ct))
+                    or ("tts" in ct and ("speech" in ct or "synth" in ct))):
+                tts_id = k
+                tts_node = v
+                logger.info("[comfyui-tts] 通过 class_type 匹配到 TTS 节点: %s (%s)", k, v.get("class_type"))
                 break
+    if tts_node is not None:
+        text_key = next((key for key in tts_node["inputs"] if "text" in key.lower()), "text")
+        tts_node["inputs"][text_key] = text
+    else:
+        logger.warning("[comfyui-tts] 工作流中未找到 IndexTTS 合成节点")
 
     # 注入参考音频文件名（声音克隆）
     if ref_audio_info:
         ref_id = nid["load_ref_audio"]
-        if ref_id in wf:
-            wf[ref_id]["inputs"]["audio"] = ref_audio_info["name"]
-        else:
+        ref_node = wf.get(ref_id)
+        if ref_node is not None:
+            ct = ref_node.get("class_type", "").lower().replace(" ", "")
+            if "loadaudio" not in ct:
+                ref_node = None
+        if ref_node is None:
             for k, v in wf.items():
-                ct = v.get("class_type", "")
-                if ct.lower() in ("loadaudio", "load audio", "audioload"):
-                    v["inputs"]["audio"] = ref_audio_info["name"]
-                    logger.info("[comfyui-tts] 通过 class_type 匹配到 LoadAudio 节点: %s", k)
+                ct = v.get("class_type", "").lower().replace(" ", "")
+                if "loadaudio" in ct:
+                    ref_node = v
+                    logger.info("[comfyui-tts] 通过 class_type 匹配到参考音频节点: %s (%s)", k, v.get("class_type"))
                     break
-
-    # 注入额外覆盖参数（speed 等）
-    if overrides and isinstance(overrides, dict):
-        if tts_id in wf:
-            for key, val in overrides.items():
-                if key in wf[tts_id]["inputs"]:
-                    wf[tts_id]["inputs"][key] = val
-                    logger.info("[comfyui-tts] 覆盖 %s=%s", key, val)
+        if ref_node is not None:
+            audio_key = next((key for key in ref_node["inputs"] if "audio" in key.lower()), "audio")
+            ref_node["inputs"][audio_key] = ref_audio_info["name"]
+        else:
+            logger.warning("[comfyui-tts] 工作流中未找到参考音频节点")
 
     logger.info("[comfyui-tts] 已注入文本和参考音频，其他参数沿用模板")
     return wf
@@ -468,7 +577,6 @@ def run_comfyui_tts(
     output_path: Path,
     workflow_template: Dict[str, Any],
     *,
-    overrides: Optional[Dict[str, Any]] = None,
     timeout: float = 300.0,
     cancel_event: Optional["threading.Event"] = None,
 ) -> Dict[str, Any]:
@@ -479,7 +587,6 @@ def run_comfyui_tts(
         ref_audio_path: 参考音频路径（声音克隆用，可选）
         output_path: 输出音频保存路径
         workflow_template: ComfyUI API 格式的 IndexTTS2 工作流模板 JSON
-        overrides: 需要覆盖工作流模板的额外参数（如 speed 等）
         timeout: 总超时秒数（TTS 通常比视频快，默认 300s）
 
     返回:
@@ -495,7 +602,7 @@ def run_comfyui_tts(
             logger.info("[comfyui-tts] uploaded ref audio: %s", ref_audio_info)
 
     # 构建工作流
-    workflow = _patch_tts_workflow(workflow_template, text, ref_audio_info, overrides)
+    workflow = _patch_tts_workflow(workflow_template, text, ref_audio_info)
 
     # 提交
     with _make_client(timeout=30.0) as submit_client:
@@ -513,6 +620,8 @@ def run_comfyui_tts(
         logger.info("[comfyui-tts] output audio: %s", file_info)
 
         _download_audio(poll_client, file_info, output_path)
+        if not output_path.is_file() or output_path.stat().st_size <= 0:
+            raise ComfyUIError("ComfyUI 返回的音频文件为空或未写入")
         logger.info("[comfyui-tts] downloaded to %s (%d bytes)", output_path, output_path.stat().st_size)
 
     return {

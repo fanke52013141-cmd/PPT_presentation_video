@@ -77,6 +77,9 @@ function hexToRgba(hex, alpha) {
 }
 
 function cloneManualMask(mask) {
+  const canvas = typeof getProjectCanvasGeometry === 'function'
+    ? getProjectCanvasGeometry()
+    : { width: 1920, height: 1080 };
   if (!mask || typeof mask !== 'object') return { strokes: [] };
   return {
     source: mask.source || '',
@@ -85,8 +88,8 @@ function cloneManualMask(mask) {
     rle: mask.rle && mask.rle.encoding === 'row_runs_v1'
       ? {
           encoding: 'row_runs_v1',
-          width: Number(mask.rle.width || 1920),
-          height: Number(mask.rle.height || 1080),
+          width: Number(mask.rle.width || canvas.width),
+          height: Number(mask.rle.height || canvas.height),
           runs: Array.isArray(mask.rle.runs)
             ? mask.rle.runs.map(run => [Number(run[0]), Number(run[1]), Number(run[2])])
             : []
@@ -512,12 +515,15 @@ function syncMaskBoxesToSlide(slide, boxes) {
     || visibleGroupIds.has(group.id || group.group_id)
   ));
   readyBoxes.forEach((maskBox, idx) => {
+    const canvas = typeof getProjectCanvasGeometry === 'function'
+      ? getProjectCanvasGeometry()
+      : { width: 1920, height: 1080 };
     ensureManualMask(maskBox, idx);
     const [rawX1, rawY1, rawX2, rawY2] = maskBox.box || [0, 0, 1, 1];
     const x1 = Math.max(0, Math.round(Math.min(rawX1, rawX2)));
     const y1 = Math.max(0, Math.round(Math.min(rawY1, rawY2)));
-    const x2 = Math.min(1920, Math.round(Math.max(rawX1, rawX2)));
-    const y2 = Math.min(1080, Math.round(Math.max(rawY1, rawY2)));
+    const x2 = Math.min(canvas.width, Math.round(Math.max(rawX1, rawX2)));
+    const y2 = Math.min(canvas.height, Math.round(Math.max(rawY1, rawY2)));
     let group = slide.groups.find(g => g.id === maskBox.group_id);
     if (!group) {
       group = {

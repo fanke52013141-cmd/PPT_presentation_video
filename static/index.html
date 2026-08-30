@@ -611,6 +611,13 @@
         <textarea id="input-project-desc" rows="3" placeholder="请输入可选的项目描述"></textarea>
       </div>
       <div style="margin-bottom: 1.5rem;">
+        <label style="font-weight: bold; display: block; margin-bottom: 0.4rem;">画布比例:</label>
+        <select id="input-project-canvas-profile" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 6px; background: #fff;">
+          <option value="landscape_16_9" selected>横屏 16:9（1920×1080）</option>
+          <option value="portrait_9_16">竖屏 9:16（1080×1920）</option>
+        </select>
+      </div>
+      <div style="margin-bottom: 1.5rem;">
         <label style="font-weight: bold; display: block; margin-bottom: 0.4rem;">AI 模式:</label>
         <select id="input-project-ai-mode" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 6px; background: #fff;">
           <option value="auto" selected>自动模式（AI 规划分镜 + 可视化 + Mask）</option>
@@ -776,14 +783,22 @@
               <option value="comfyui_tts">ComfyUI IndexTTS 2（本地）</option>
             </select>
           </div>
-          <div style="margin-bottom: 0.8rem;">
-            <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">语音接口地址 (Endpoint):</label>
-            <input type="text" id="setting-tts-endpoint" placeholder="https://api.minimaxi.com/v1/t2a_async_v2">
-            <p id="tts-comfyui-hint" style="font-size: 0.8rem; color: #888; margin-top: 0.3rem; display: none;">
-              ComfyUI TTS 模式：Endpoint 填写 IndexTTS2 工作流 JSON 路径（留空则使用 data/digital_human/comfyui_tts_workflow.json）。API Key 无需填写。Voice ID 填写参考音频文件名（声音克隆）。
+          <div id="tts-comfyui-section" style="display: none; margin-bottom: 0.8rem;">
+            <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">ComfyUI 工作流（IndexTTS2，API 格式）:</label>
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+              <button type="button" class="secondary" id="btn-tts-comfyui-workflow" style="padding: 0.4rem 1rem; font-size: 0.85rem;">导入工作流 JSON</button>
+              <span id="tts-comfyui-workflow-status" style="font-size: 0.85rem; color: #888;">未导入</span>
+            </div>
+            <input type="file" id="tts-comfyui-workflow-file" accept=".json,application/json" style="display: none;">
+            <p style="font-size: 0.8rem; color: #888; margin-top: 0.4rem; line-height: 1.5;">
+              在 ComfyUI 中搭建 IndexTTS2 工作流，使用「Save (API Format)」导出 JSON 后导入即可。文本与参考音频由系统自动注入，其余参数（语速等）均以工作流 JSON 中的设置为准。ComfyUI 服务默认地址 http://127.0.0.1:8188。
             </p>
           </div>
-          <div style="margin-bottom: 0.8rem; display: flex; gap: 1rem;">
+          <div id="tts-row-endpoint" style="margin-bottom: 0.8rem;">
+            <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">语音接口地址 (Endpoint):</label>
+            <input type="text" id="setting-tts-endpoint" placeholder="https://api.minimaxi.com/v1/t2a_async_v2">
+          </div>
+          <div id="tts-row-credentials" style="margin-bottom: 0.8rem; display: flex; gap: 1rem;">
             <div style="flex: 1;">
               <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">API Key / SecretId:</label>
               <input type="password" id="setting-tts-api-key" placeholder="API Key / Tencent SecretId">
@@ -793,7 +808,7 @@
               <input type="password" id="setting-tts-secret-key" placeholder="Tencent SecretKey">
             </div>
           </div>
-          <div style="margin-bottom: 0.8rem; display: flex; gap: 1rem;">
+          <div id="tts-row-model-voice" style="margin-bottom: 0.8rem; display: flex; gap: 1rem;">
             <div style="flex: 1;">
               <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">语音模型 (Model):</label>
               <input type="text" id="setting-tts-model" placeholder="speech-2.8-hd">
@@ -803,7 +818,7 @@
               <input type="text" id="setting-tts-voice-id" placeholder="Chinese (Mandarin)_Soft_Girl">
             </div>
           </div>
-          <div style="margin-bottom: 0.8rem; display: flex; gap: 1rem;">
+          <div id="tts-row-clone-region" style="margin-bottom: 0.8rem; display: flex; gap: 1rem;">
             <div style="flex: 1;">
               <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">Clone Voice ID（可选）:</label>
               <input type="text" id="setting-tts-clone-voice-id" placeholder="克隆/复刻后的音色 ID">
@@ -814,20 +829,20 @@
             </div>
           </div>
           <div style="display: flex; gap: 1rem;">
-            <div style="flex: 1;">
+            <div style="flex: 1;" id="tts-field-speed">
               <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">语速 (0.5 - 2.0):</label>
               <input type="text" id="setting-tts-speed" placeholder="1.2">
             </div>
-            <div style="flex: 1;">
+            <div style="flex: 1;" id="tts-field-volume">
               <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">音量 (0.5 - 2.0):</label>
               <input type="text" id="setting-tts-volume" placeholder="1.0">
             </div>
-            <div style="flex: 1;">
+            <div style="flex: 1;" id="tts-field-pitch">
               <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">音调 (-12 - 12):</label>
               <input type="text" id="setting-tts-pitch" placeholder="0">
             </div>
           </div>
-          <div style="margin-top: 0.8rem;">
+          <div id="tts-row-provider-extra" style="margin-top: 0.8rem;">
             <label style="font-weight: bold; display: block; margin-bottom: 0.3rem;">Provider Extra JSON（可选）:</label>
             <textarea id="setting-tts-provider-extra" rows="4" spellcheck="false" placeholder='{"appid":"火山 AppID","cluster":"volcano_tts","resource_id":"seed-tts-2.0"}'></textarea>
           </div>
@@ -1250,7 +1265,7 @@
   <script src="api_client.js?v=20260812.1"></script>
   <script src="artifact_repair.js?v=20260801.1"></script>
   <script src="prompt_help.js?v=20260801.1"></script>
-  <script src="settings.js?v=20260801.2"></script>
+  <script src="settings.js?v=20260828.3"></script>
   <script src="projects.js?v=20260801.1"></script>
     <script src="courses.js?v=20260812.5"></script>
   <script src="article.js?v=20260801.1"></script>
@@ -1271,7 +1286,7 @@
   <script src="storyboard_background_extension.js?v=20260807.1"></script>
   <script src="style_reference_manager_extension.js?v=3.0.1"></script>
   <script src="ai_mask_auto_state.js?v=20260809.1"></script>
-  <script src="digital_human_panel.js?v=20260823.4"></script>
+  <script src="digital_human_panel.js?v=20260827.2"></script>
   <script src="ai_mask_extension.js?v=20260809.2"></script>
   <script src="one_click_extension.js?v=20260813.2"></script>
 </body>

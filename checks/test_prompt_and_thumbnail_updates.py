@@ -149,6 +149,24 @@ assert "First title" in single_prompt and "Alpha" in single_prompt
 assert single_prompt.count("<NonOverridableProductionRules>") == 1
 assert image_workflow.enforce_white_generation_background(single_prompt) == single_prompt
 
+portrait_prompt = image_workflow.compose_step3_single_slide_prompt(
+    "STYLE",
+    sample_slides[0],
+    "CUSTOM SYSTEM",
+    canvas_profile="portrait_9_16",
+)
+assert "1080×1920、9:16" in portrait_prompt
+assert "y<1650" in portrait_prompt
+assert "1920×1080、16:9" not in portrait_prompt
+portrait_system = image_workflow.adapt_step3_system_content_for_canvas(
+    image_workflow.default_step3_image_system_content(),
+    "portrait_9_16",
+)
+assert "1080×1920、9:16" in portrait_system
+assert "x=64..1016, y=180..1650" in portrait_system
+assert "y=1650..1920" in portrait_system
+assert "1920×1080、16:9" not in portrait_system
+
 minimal_style = global_image_style.build_image_style_prompt(
     global_image_style.read_style_tokens_data()
 )

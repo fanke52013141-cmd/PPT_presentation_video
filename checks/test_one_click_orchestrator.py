@@ -400,6 +400,39 @@ def test_preflight_migrates_legacy_article_before_checking_source() -> None:
         assert not any("导入文章" in error for error in errors)
 
 
+def test_preflight_does_not_require_cloud_tts_key_for_local_comfyui() -> None:
+    with tempfile.TemporaryDirectory() as value:
+        root = Path(value)
+        project = project_for(root)
+        article_path = root / "inputs" / "article.md"
+        article_path.parent.mkdir(parents=True, exist_ok=True)
+        article_path.write_text("local tts article", encoding="utf-8")
+        workflow_path = root / "data" / "digital_human" / "comfyui_tts_workflow.json"
+        workflow_path.parent.mkdir(parents=True, exist_ok=True)
+        workflow_path.write_text("{}", encoding="utf-8")
+
+        def get_setting(key, default=""):
+            return {
+                "tts_provider": "IndexTTS-2.5",
+                "tts_endpoint": str(workflow_path),
+                "tts_api_key": "",
+                "llm_api_key": "configured",
+                "image_api_key": "configured",
+            }.get(key, default)
+
+        module = SimpleNamespace(
+            read_project_article_source=lambda *_args, **_kwargs: None,
+            get_setting=get_setting,
+            resolve_media_tool=lambda _name: "available",
+            repo_root=root,
+        )
+
+        errors = one_click._preflight_errors(module, project)
+
+        assert not any("TTS API Key" in error for error in errors)
+        assert not any("工作流不存在" in error for error in errors)
+
+
 def test_one_click_routes_are_explicit_and_unique() -> None:
     route_methods = [
         (getattr(route, "path", ""), frozenset(getattr(route, "methods", set()) or set()))

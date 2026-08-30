@@ -15,6 +15,7 @@ import uuid
 from typing import Any, Callable
 
 from database import Project
+from canvas_profile_service import get_project_canvas
 from runtime_support import run_subprocess_killable
 from video_contracts import VideoRenderConfig
 
@@ -187,6 +188,7 @@ class RemotionRunner:
             / "public"
         )
         started = time.time()
+        canvas = get_project_canvas(project)
         result = self.dependencies.run_subprocess_bounded(
             [
                 sys.executable,
@@ -197,6 +199,10 @@ class RemotionRunner:
                 str(self.config.repo_root),
                 "--remotion-public-dir",
                 str(public_dir),
+                "--width",
+                str(canvas["width"]),
+                "--height",
+                str(canvas["height"]),
             ],
             timeout_sec=self.config.build_props_timeout_sec,
             capture_output=True,

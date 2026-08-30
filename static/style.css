@@ -543,7 +543,7 @@ textarea.step2-soft-input:focus {
   width: 100%;
   max-width: 960px;
   margin: 0 auto;
-  aspect-ratio: 16/9;
+  aspect-ratio: var(--project-aspect-ratio, 16/9);
   overflow: hidden;
 }
 
@@ -631,7 +631,7 @@ body.step5-fullscreen-mode #step-panel-5 .workspace-right {
 
 body.step5-fullscreen-mode #canvas-container {
   max-width: none;
-  width: min(100%, calc((100vh - 172px) * 16 / 9));
+  width: min(100%, calc((100vh - 172px) * var(--project-aspect-ratio-scale, 1.7777778)));
   max-height: calc(100vh - 172px);
   margin: 0 auto;
 }
@@ -916,7 +916,7 @@ body.step5-fullscreen-mode #step5-btn-fullscreen {
 .subtitle-preview-stage {
   position: relative;
   width: 100%;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: var(--project-aspect-ratio, 16 / 9);
   overflow: hidden;
   border: 2px solid #111;
   border-radius: 9px;
@@ -1057,7 +1057,7 @@ body.step5-fullscreen-mode #step5-btn-fullscreen {
 .animation-preview-stage {
   position: relative;
   width: 100%;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: var(--project-aspect-ratio, 16 / 9);
   overflow: hidden;
   border: 2px solid #111;
   border-radius: 9px;
@@ -1182,7 +1182,7 @@ body.step5-fullscreen-mode #step5-btn-fullscreen {
   align-items: center;
   justify-content: center;
   width: 100%;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: var(--project-aspect-ratio, 16 / 9);
   overflow: hidden;
   background: #fff;
   color: #888;
@@ -1301,7 +1301,7 @@ body.step5-fullscreen-mode #step5-btn-fullscreen {
   align-items: center;
   justify-content: center;
   width: 100%;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: var(--project-aspect-ratio, 16 / 9);
   overflow: hidden;
   background: #fff;
   color: #888;
@@ -1441,7 +1441,7 @@ body.step5-fullscreen-mode #step5-btn-fullscreen {
 .video-preview-box {
   width: 100%;
   max-width: 800px;
-  aspect-ratio: 16/9;
+  aspect-ratio: var(--project-aspect-ratio, 16/9);
   border: 2px solid var(--ink-color);
   border-radius: 12px;
   box-shadow: 4px 4px 0px 0px var(--ink-color);
@@ -5688,7 +5688,7 @@ button.prompt-help-button:hover {
 }
 .ai-mask-modal-scroll{max-height:72vh;overflow:auto;padding-right:.3rem}
 #step5-canvas{pointer-events:auto}
-body.step5-fullscreen-mode #canvas-container{aspect-ratio:16/9;height:auto!important;max-height:none!important}
+body.step5-fullscreen-mode #canvas-container{aspect-ratio:var(--project-aspect-ratio,16/9)!important;height:auto!important;max-height:none!important}
 body.step5-fullscreen-mode #canvas-container img{width:100%!important;height:100%!important;object-fit:contain!important}
 body.step5-fullscreen-mode #step-panel-5 .workspace-left{align-items:center;justify-content:center;overflow:hidden}
 .ai-mask-review-panel{display:none;align-items:center;gap:.65rem;margin:.65rem 0;padding:.7rem .85rem;border:1px solid var(--color-border-default);border-radius:14px;background:var(--color-bg-surface);box-shadow:var(--shadow-card)}
@@ -5745,7 +5745,7 @@ body.step5-fullscreen-mode #step-panel-5 .workspace-left{align-items:center;just
 .storyboard-bg-dropzone strong{display:block;color:#4f596c;margin:8px 0 2px}
 .storyboard-bg-dropzone span{font-size:1.8rem;color:#684cff}
 .storyboard-bg-preview-meta{display:inline-flex;padding:6px 13px;border-radius:9px;background:#f0edff;color:#6247ed;font-weight:800;font-size:.84rem;margin-bottom:14px}
-.storyboard-bg-preview{width:100%;aspect-ratio:16 / 9;border:1px solid #e0e5ef;border-radius:12px;display:grid;place-items:center;overflow:hidden;background:#fff;color:#fff;text-align:center;box-sizing:border-box;box-shadow:0 3px 12px rgba(24,32,51,.04)}
+.storyboard-bg-preview{width:100%;aspect-ratio:var(--project-aspect-ratio,16 / 9);border:1px solid #e0e5ef;border-radius:12px;display:grid;place-items:center;overflow:hidden;background:#fff;color:#fff;text-align:center;box-sizing:border-box;box-shadow:0 3px 12px rgba(24,32,51,.04)}
 .storyboard-bg-preview img{width:100%;height:100%;display:block}
 .storyboard-bg-preview-placeholder{color:#7b8496;padding:20px}
 .storyboard-bg-preview-placeholder strong{display:block;color:#50596b;margin-top:8px}
@@ -6020,8 +6020,8 @@ body.step5-fullscreen-mode #step-panel-5 .workspace-left{align-items:center;just
 .style-ref-actions button{border-radius:9px!important}
 .style-ref-primary{background:linear-gradient(135deg,#735aff,#5231e8)!important;color:#fff!important;border:0!important}
 .style-ref-preview-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
-.style-ref-card{position:relative;min-width:0;border-radius:11px;overflow:hidden;background:#f5f6fa;border:1px solid #e0e5ef;aspect-ratio:16 / 9}
-.style-ref-card img{width:100%;height:100%;aspect-ratio:16 / 9;object-fit:cover;display:block;background:#fff}
+.style-ref-card{position:relative;min-width:0;border-radius:11px;overflow:hidden;background:#f5f6fa;border:1px solid #e0e5ef;aspect-ratio:var(--project-aspect-ratio,16 / 9)}
+.style-ref-card img{width:100%;height:100%;aspect-ratio:var(--project-aspect-ratio,16 / 9);object-fit:cover;display:block;background:#fff}
 .style-ref-card-overlay{position:absolute;right:8px;top:8px;display:flex;gap:6px}
 .style-ref-card-overlay button{width:30px;height:30px;min-width:0;padding:0!important;display:grid;place-items:center;border:0!important;border-radius:8px!important;background:rgba(255,255,255,.94)!important;color:#344054!important;box-shadow:0 3px 10px rgba(20,27,44,.14)!important}
 .style-ref-empty-slot{width:100%;height:100%;display:grid;place-items:center;color:#8a93a4;background:linear-gradient(145deg,#fafbfe,#f1f3f8);font-size:.82rem;text-align:center;padding:10px;box-sizing:border-box}
@@ -6032,9 +6032,9 @@ body.step5-fullscreen-mode #step-panel-5 .workspace-left{align-items:center;just
 .style-ref-upload-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid #cfc7ff;border-radius:9px;padding:.56rem .85rem;color:#5d43ea;background:#faf9ff;font-weight:700;cursor:pointer;font-size:.84rem}
 #style-panel-upload-files,#style-panel-reverse-files{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
 .style-reverse-upload-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:18px}
-.style-reverse-input-card{position:relative;aspect-ratio:16 / 9;border:1px solid #e0e5ef;border-radius:10px;overflow:hidden;background:#f6f7fb}
+.style-reverse-input-card{position:relative;aspect-ratio:var(--project-aspect-ratio,16 / 9);border:1px solid #e0e5ef;border-radius:10px;overflow:hidden;background:#f6f7fb}
 .style-reverse-input-card img{width:100%;height:100%;object-fit:cover;display:block}
-.style-reverse-upload-empty{aspect-ratio:16 / 9;border:1.5px dashed #a99bff;border-radius:10px;display:grid;place-items:center;text-align:center;color:#6550e8;background:#fbfaff;cursor:pointer;font-weight:700;font-size:.82rem}
+.style-reverse-upload-empty{aspect-ratio:var(--project-aspect-ratio,16 / 9);border:1.5px dashed #a99bff;border-radius:10px;display:grid;place-items:center;text-align:center;color:#6550e8;background:#fbfaff;cursor:pointer;font-weight:700;font-size:.82rem}
 .style-reverse-upload-empty span{display:block;font-size:1.4rem;margin-bottom:5px}
 .style-reverse-help{color:#7a8496;font-size:.8rem;margin:-8px 0 14px}
 .style-ref-footer{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:17px 24px;border-top:1px solid #e4e8f0;background:#fff}
@@ -6879,7 +6879,7 @@ body.step5-fullscreen-mode #step-panel-5 .workspace-right {
 }
 
 body.step5-fullscreen-mode #canvas-container {
-  width: min(100%, calc((100dvh - 92px) * 16 / 9)) !important;
+  width: min(100%, calc((100dvh - 92px) * var(--project-aspect-ratio-scale, 1.7777778))) !important;
   max-height: calc(100dvh - 92px) !important;
 }
 
@@ -8137,7 +8137,7 @@ details[open] .ip-character-advanced-summary::before {
 }
 .dh-circle-canvas {
   position: relative;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: var(--project-aspect-ratio, 16 / 9);
   background: #111;
   border-radius: 8px;
   overflow: hidden;

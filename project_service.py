@@ -20,6 +20,12 @@ from project_storage import (
     UnsafeProjectPath,
     project_run_dir,
 )
+from canvas_profile_service import (
+    DEFAULT_CANVAS_PROFILE,
+    get_canvas_profile,
+    normalize_canvas_profile,
+    write_project_canvas_snapshot,
+)
 
 
 logger = logging.getLogger("PPTStudio.Projects")
@@ -29,6 +35,7 @@ class ProjectCreate(BaseModel):
     name: str
     description: Optional[str] = ""
     ai_mode: Optional[str] = "auto"
+    canvas_profile: Optional[str] = DEFAULT_CANVAS_PROFILE
 
 
 class AiModeUpdate(BaseModel):
@@ -75,6 +82,7 @@ class ProjectService:
         ai_mode = (payload.ai_mode or "auto").strip().lower()
         if ai_mode not in {"auto", "manual"}:
             ai_mode = "auto"
+        canvas_profile = normalize_canvas_profile(payload.canvas_profile)
         project = Project(
             id=project_id,
             name=payload.name,
@@ -83,11 +91,18 @@ class ProjectService:
             status="active",
             run_dir=str(run_dir),
             ai_mode=ai_mode,
+            canvas_profile=canvas_profile,
         )
         project.set_step_status(initial_step_status)
         db.add(project)
-        db.commit()
+        try:
+            write_project_canvas_snapshot(project)
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
         db.refresh(project)
+        canvas = get_canvas_profile(project.canvas_profile)
         return {
             "success": True,
             "project": {
@@ -98,6 +113,8 @@ class ProjectService:
                 "step_status": project.get_step_status(),
                 "audio_confirmed": False,
                 "ai_mode": project.ai_mode or "auto",
+                "canvas_profile": project.canvas_profile or DEFAULT_CANVAS_PROFILE,
+                "canvas": canvas,
             },
         }
 
@@ -119,6 +136,8 @@ class ProjectService:
                     self.dependencies.project_audio_confirmed(project)
                 ),
                 "ai_mode": project.ai_mode or "auto",
+                "canvas_profile": project.canvas_profile or DEFAULT_CANVAS_PROFILE,
+                "canvas": get_canvas_profile(project.canvas_profile),
                 "created_at": project.created_at.isoformat(),
             }
             for project in projects
@@ -138,6 +157,8 @@ class ProjectService:
             ),
             "run_dir": project.run_dir,
             "ai_mode": project.ai_mode or "auto",
+            "canvas_profile": project.canvas_profile or DEFAULT_CANVAS_PROFILE,
+            "canvas": get_canvas_profile(project.canvas_profile),
         }
 
     def get_ai_mode(

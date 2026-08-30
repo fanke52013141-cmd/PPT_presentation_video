@@ -631,6 +631,14 @@ async def localhost_origin_guard(request, call_next):
 @app.get("/api/digital-human/health")
 def health() -> Dict[str, Any]:
     import importlib
+    active_statuses = {JOB_STATUS_QUEUED, JOB_STATUS_PROCESSING}
+    with _jobs_lock:
+        active_job_count = sum(
+            1
+            for job in _jobs.values()
+            if str(job.get("status") or "") in active_statuses
+        )
+        total_job_count = len(_jobs)
     # ComfyUI 在线检测（无论当前后端名为何，供 UI 显示与判断）
     comfyui_online = False
     try:
@@ -654,7 +662,9 @@ def health() -> Dict[str, Any]:
         "inference_backend": backend_used,
         "latentsync_repo": str(LATENTSYNC_REPO) if LATENTSYNC_REPO else "",
         "data_dir": str(DATA_DIR),
-        "active_jobs": len(_jobs),
+        # 只统计队列中仍在运行的任务；历史完成/失败任务单独暴露总数。
+        "active_jobs": active_job_count,
+        "job_count": total_job_count,
     }
 
 

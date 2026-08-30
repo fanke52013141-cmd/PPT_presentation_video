@@ -20,6 +20,46 @@ import yaml
 
 
 STYLE_TOP_LEVEL_KEYS = ("brand", "canvas", "colors", "layout", "visual_assets")
+LANDSCAPE_CANVAS = {
+    "orientation": "landscape",
+    "aspect_ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "subtitle_safe_zone": {"top": 930, "bottom": 1080},
+    "content_safe_area": {"left": 80, "top": 235, "right": 1840, "bottom": 930},
+}
+
+
+def _resolve_canvas(canvas_profile: Any = None) -> dict[str, Any]:
+    """Resolve a canvas profile dict; unknown shapes fall back to landscape."""
+    if not isinstance(canvas_profile, dict):
+        return copy.deepcopy(LANDSCAPE_CANVAS)
+    width = int(canvas_profile.get("width") or 0)
+    height = int(canvas_profile.get("height") or 0)
+    if width <= 0 or height <= 0:
+        return copy.deepcopy(LANDSCAPE_CANVAS)
+    subtitle = canvas_profile.get("subtitle_safe_zone")
+    subtitle = subtitle if isinstance(subtitle, dict) else {}
+    content = canvas_profile.get("content_safe_area")
+    content = content if isinstance(content, dict) else {}
+    return {
+        "orientation": str(canvas_profile.get("orientation") or ("portrait" if height > width else "landscape")),
+        "aspect_ratio": str(canvas_profile.get("aspect_ratio") or "16:9"),
+        "width": width,
+        "height": height,
+        "subtitle_safe_zone": {
+            "top": int(subtitle.get("top") or round(height * 0.861)),
+            "bottom": int(subtitle.get("bottom") or height),
+        },
+        "content_safe_area": {
+            "left": int(content.get("left") or 80),
+            "top": int(content.get("top") or 235),
+            "right": int(content.get("right") or (width - 80)),
+            "bottom": int(content.get("bottom") or int(subtitle.get("top") or round(height * 0.861))),
+        },
+    }
+
+
 VISUAL_ASSET_ALLOWED_KEYS = (
     "image_style",
     "diagram_style",
@@ -31,6 +71,19 @@ HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 GENERATED_IMAGE_BACKGROUND = "#FFFFFF"
 FINAL_CANVAS_NEAR_WHITE_BACKGROUNDS = {"#FFFFFF", "#FFFDF7", "#FEFDF9"}
 FIXED_SUBTITLE_AREA = {"x": 0, "y": 930, "w": 1920, "h": 150, "fixed": True}
+
+
+def _fixed_subtitle_area(canvas: dict[str, Any] | None = None) -> dict[str, Any]:
+    if not canvas:
+        return dict(FIXED_SUBTITLE_AREA)
+    zone = canvas.get("subtitle_safe_zone") or {}
+    return {
+        "x": 0,
+        "y": int(zone.get("top") or 930),
+        "w": int(canvas.get("width") or 1920),
+        "h": int(canvas.get("height") or 1080) - int(zone.get("top") or 930),
+        "fixed": True,
+    }
 
 
 class StyleBundleError(ValueError):
@@ -63,14 +116,20 @@ def _normalize_hex(value: Any, field_name: str) -> str:
     return text
 
 
-def style_bundle_system_prompt() -> str:
+def style_bundle_system_prompt(canvas_profile: Any = None) -> str:
     """Return the system prompt for asking an LLM to draft a style bundle."""
 
+    canvas = _resolve_canvas(canvas_profile)
+    zone = canvas["subtitle_safe_zone"]
+    invariant_text = (
+        f"{canvas['width']}x{canvas['height']}、{canvas['aspect_ratio']}"
+        f"、纯白 #FFFFFF 外围画布、y={zone['top']}..{zone['bottom']} 视频字幕安全区"
+    )
     return (
         "<PromptVersion>style_bundle_v2_minimal</PromptVersion>\n\n"
         "## 目的\n把用户需求转成可复用的图片风格模板包，只决定视觉语言，不设计具体页面内容。\n\n"
         "## 输入\nUser Content 是 JSON，只包含用户实际提供的 requirement、name、audience、sample_topic 和可选 base_style；缺失字段不得擅自补成特殊领域偏好。\n\n"
-        "## 系统背景\n程序会确定性补齐 1920x1080、16:9、纯白 #FFFFFF 外围画布、y=930..1080 视频字幕安全区、唯一主标题和 Mask 可分离规则。style_data 只描述字体气质、线条、图标、图表、强调色、卡片形状和构图偏好，不重复生产铁律，不生成页面副标题。\n\n"
+        f"## 系统背景\n程序会确定性补齐 {invariant_text}、唯一主标题和 Mask 可分离规则。style_data 只描述字体气质、线条、图标、图表、强调色、卡片形状和构图偏好，不重复生产铁律，不生成页面副标题。\n\n"
         "## 输出\n只输出合法 JSON 对象，不要 Markdown、解释或前后缀文本。根字段必须且只能是 name、description、style_data、template_paste_words、example_paste_words、template_image_prompt、example_image_prompt、negative_prompt；style_data 只能包含 brand、canvas、colors、layout、visual_assets。template_paste_words 和 example_paste_words 只包含 title、groups 和可选 badges。\n\n"
         "## 规则\n只能泛化风格，不复制品牌、角色、文字内容或具体构图。所有贴词使用简短中文；视觉组数量由示例内容自然决定，不为凑数量强拆卡片。禁止深色整页背景、纸纹、噪声、暗角、复杂 3D、赛博朋克和科技蓝黑大背景。"
     )
@@ -93,9 +152,10 @@ def build_style_bundle_user_prompt(request: dict[str, Any], base_style_text: str
     return json.dumps(payload, ensure_ascii=False)
 
 
-def normalize_style_data(style_data: dict[str, Any]) -> dict[str, Any]:
+def normalize_style_data(style_data: dict[str, Any], canvas_profile: Any = None) -> dict[str, Any]:
     """Validate and normalize the style_data section returned by the LLM."""
 
+    canvas_profile_resolved = _resolve_canvas(canvas_profile)
     raw = _as_dict(style_data, "style_data")
     unknown = sorted(set(raw) - set(STYLE_TOP_LEVEL_KEYS))
     if unknown:
@@ -112,12 +172,16 @@ def normalize_style_data(style_data: dict[str, Any]) -> dict[str, Any]:
     canvas = result.setdefault("canvas", {})
     if not isinstance(canvas, dict):
         raise StyleBundleError("style_data.canvas must be an object")
-    canvas["aspect_ratio"] = "16:9"
-    canvas["width"] = 1920
-    canvas["height"] = 1080
+    canvas["aspect_ratio"] = canvas_profile_resolved["aspect_ratio"]
+    canvas["width"] = canvas_profile_resolved["width"]
+    canvas["height"] = canvas_profile_resolved["height"]
     canvas["background"] = GENERATED_IMAGE_BACKGROUND
     canvas["generated_image_background"] = GENERATED_IMAGE_BACKGROUND
-    canvas["subtitle_reserved"] = {"y": 930, "height": 150}
+    subtitle_zone = canvas_profile_resolved["subtitle_safe_zone"]
+    canvas["subtitle_reserved"] = {
+        "y": subtitle_zone["top"],
+        "height": subtitle_zone["bottom"] - subtitle_zone["top"],
+    }
 
     colors = result.setdefault("colors", {})
     if not isinstance(colors, dict):
@@ -137,8 +201,18 @@ def normalize_style_data(style_data: dict[str, Any]) -> dict[str, Any]:
     layout = result.setdefault("layout", {})
     if not isinstance(layout, dict):
         raise StyleBundleError("style_data.layout must be an object")
-    layout.setdefault("content", {"x": 80, "y": 235, "w": 1760, "h": 680, "frame": "none"})
-    layout["subtitle_area"] = dict(FIXED_SUBTITLE_AREA)
+    content_area = canvas_profile_resolved["content_safe_area"]
+    layout.setdefault(
+        "content",
+        {
+            "x": content_area["left"],
+            "y": content_area["top"],
+            "w": content_area["right"] - content_area["left"],
+            "h": content_area["bottom"] - content_area["top"],
+            "frame": "none",
+        },
+    )
+    layout["subtitle_area"] = _fixed_subtitle_area(canvas_profile_resolved)
 
     assets = result.setdefault("visual_assets", {})
     if not isinstance(assets, dict):
@@ -152,7 +226,7 @@ def normalize_style_data(style_data: dict[str, Any]) -> dict[str, Any]:
     layout_rules = _string_list(assets.get("reveal_friendly_layout"), "visual_assets.reveal_friendly_layout", max_items=12)
     required_rules = [
         "生成图片背景固定为 #FFFFFF；四角和四边必须保持连续纯白，不要纸纹、噪声、阴影、复杂渐变或暗角。",
-        "y=930 以下是视频字幕安全区，不放任何文字、人物、图标、箭头、装饰、阴影或残片。",
+        f"y={subtitle_zone['top']} 以下是视频字幕安全区，不放任何文字、人物、图标、箭头、装饰、阴影或残片。",
         "视觉组数量由内容自然决定；一个完整正文视觉组也是合法结果，不要为了 Mask 强行拆成大量孤立卡片。",
         "语义组必须可人工 Mask；允许清晰箭头、括号、路径或流程线连接，但禁止箭头穿字、严重遮挡和无关组粘连。",
     ]
@@ -179,7 +253,7 @@ def normalize_paste_words(value: Any, field_name: str) -> dict[str, Any]:
     return {"title": title, "groups": groups, "badges": badges}
 
 
-def validate_style_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
+def validate_style_bundle(bundle: dict[str, Any], canvas_profile: Any = None) -> dict[str, Any]:
     """Return a normalized, safe style bundle or raise StyleBundleError."""
 
     raw = _as_dict(bundle, "bundle")
@@ -200,7 +274,7 @@ def validate_style_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
     normalized = {
         "name": str(raw.get("name") or "AI 图片风格模板").strip()[:60],
         "description": str(raw.get("description") or "").strip()[:500],
-        "style_data": normalize_style_data(raw["style_data"]),
+        "style_data": normalize_style_data(raw["style_data"], canvas_profile),
         "template_paste_words": normalize_paste_words(raw["template_paste_words"], "template_paste_words"),
         "example_paste_words": normalize_paste_words(raw["example_paste_words"], "example_paste_words"),
         "template_image_prompt": str(raw.get("template_image_prompt") or "").strip(),
@@ -214,10 +288,10 @@ def validate_style_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def style_bundle_to_yaml(bundle: dict[str, Any]) -> str:
+def style_bundle_to_yaml(bundle: dict[str, Any], canvas_profile: Any = None) -> str:
     """Serialize a validated bundle's style_data into editable YAML."""
 
-    normalized = validate_style_bundle(bundle)
+    normalized = validate_style_bundle(bundle, canvas_profile)
     return yaml.safe_dump(
         normalized["style_data"],
         allow_unicode=True,
@@ -226,10 +300,10 @@ def style_bundle_to_yaml(bundle: dict[str, Any]) -> str:
     ).strip()
 
 
-def bundle_prompt_preview(bundle: dict[str, Any]) -> str:
+def bundle_prompt_preview(bundle: dict[str, Any], canvas_profile: Any = None) -> str:
     """Human-readable preview for UI display and debugging."""
 
-    normalized = validate_style_bundle(bundle)
+    normalized = validate_style_bundle(bundle, canvas_profile)
     return json.dumps(
         {
             "name": normalized["name"],

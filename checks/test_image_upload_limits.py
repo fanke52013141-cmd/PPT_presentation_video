@@ -57,8 +57,23 @@ def test_valid_image_is_normalized_to_canvas() -> None:
             assert image.mode == "RGB"
 
 
+def test_valid_image_can_be_normalized_to_portrait_canvas() -> None:
+    with tempfile.TemporaryDirectory() as value:
+        output = Path(value) / "portrait.png"
+        provider.process_and_save_image(
+            _png(16, 9),
+            str(output),
+            target_width=1080,
+            target_height=1920,
+        )
+        with Image.open(output) as image:
+            assert image.size == (1080, 1920)
+            assert image.mode == "RGB"
+
+
 if __name__ == "__main__":
     test_empty_and_oversize_payloads_are_rejected()
     test_pixel_limit_is_enforced_before_resize()
     test_valid_image_is_normalized_to_canvas()
+    test_valid_image_can_be_normalized_to_portrait_canvas()
     print("image upload limit checks passed")

@@ -17,15 +17,84 @@ const LLM_PROVIDER_PRESETS = {
 
 function updateTtsProviderHint() {
   var provider = document.getElementById('setting-tts-provider');
-  var hint = document.getElementById('tts-comfyui-hint');
-  if (!provider || !hint) return;
-  hint.style.display = (provider.value === 'comfyui_tts') ? 'block' : 'none';
+  if (!provider) return;
+  var isComfyui = provider.value === 'comfyui_tts';
+  var section = document.getElementById('tts-comfyui-section');
+  if (section) section.style.display = isComfyui ? 'block' : 'none';
+  // ComfyUI 本地模式不使用云端 API 字段，全部隐藏
+  ['tts-row-endpoint', 'tts-row-credentials', 'tts-row-model-voice', 'tts-row-clone-region', 'tts-row-provider-extra'].forEach(function (rowId) {
+    var row = document.getElementById(rowId);
+    if (row) row.style.display = isComfyui ? 'none' : '';
+  });
+  // ComfyUI 模式下所有音频参数（语速等）由工作流 JSON 自行定义，全部隐藏
+  ['tts-field-speed', 'tts-field-volume', 'tts-field-pitch'].forEach(function (fieldId) {
+    var field = document.getElementById(fieldId);
+    if (field) field.style.display = isComfyui ? 'none' : '';
+  });
+  if (isComfyui) loadComfyuiTtsWorkflowStatus();
+}
+
+async function loadComfyuiTtsWorkflowStatus() {
+  var statusEl = document.getElementById('tts-comfyui-workflow-status');
+  if (!statusEl) return;
+  try {
+    const res = await API.get('/api/settings/comfyui-tts-workflow');
+    if (res && res.exists) {
+      statusEl.textContent = '已导入';
+      statusEl.style.color = '#4CAF50';
+    } else {
+      statusEl.textContent = '未导入';
+      statusEl.style.color = '';
+    }
+  } catch (error) {
+    statusEl.textContent = '状态未知';
+    statusEl.style.color = '';
+  }
+}
+
+async function uploadComfyuiTtsWorkflow(file) {
+  var button = document.getElementById('btn-tts-comfyui-workflow');
+  var statusEl = document.getElementById('tts-comfyui-workflow-status');
+  if (!file || !button) return;
+  var originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = '上传中...';
+  try {
+    const form = new FormData();
+    form.append('file', file);
+    await API.post('/api/settings/comfyui-tts-workflow', form);
+    if (statusEl) {
+      statusEl.textContent = '已导入';
+      statusEl.style.color = '#4CAF50';
+    }
+    showToast('ComfyUI 工作流已导入，语音合成将自动使用该工作流');
+  } catch (error) {
+    // API transport 已展示错误详情，仅重置状态
+    if (statusEl) {
+      statusEl.textContent = '未导入';
+      statusEl.style.color = '';
+    }
+  } finally {
+    button.disabled = false;
+    button.textContent = originalText;
+  }
 }
 
 document.addEventListener('DOMContentLoaded', function() {
   var ttsProviderSelect = document.getElementById('setting-tts-provider');
   if (ttsProviderSelect) {
     ttsProviderSelect.addEventListener('change', updateTtsProviderHint);
+  }
+  var wfButton = document.getElementById('btn-tts-comfyui-workflow');
+  var wfInput = document.getElementById('tts-comfyui-workflow-file');
+  if (wfButton && wfInput) {
+    wfButton.addEventListener('click', function () { wfInput.click(); });
+    wfInput.addEventListener('change', function () {
+      if (wfInput.files && wfInput.files.length > 0) {
+        uploadComfyuiTtsWorkflow(wfInput.files[0]);
+      }
+      wfInput.value = '';
+    });
   }
 });
 

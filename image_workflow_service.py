@@ -20,6 +20,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from ai_provider_service import normalize_image_size
+from canvas_profile_service import get_canvas_profile, get_project_canvas
 from artifact_fingerprint import sha256_file, sha256_json
 from config_store import get_setting
 from database import Project
@@ -262,12 +263,43 @@ def compact_slide_element_lines(slide: Dict[str, Any]) -> List[str]:
     ]
 
 
+def _canvas_for_value(canvas_profile: Any = None) -> Dict[str, Any]:
+    return (
+        get_project_canvas(canvas_profile)
+        if hasattr(canvas_profile, "canvas_profile")
+        else get_canvas_profile(canvas_profile)
+    )
+
+
+def adapt_step3_system_content_for_canvas(
+    system_content: str,
+    canvas_profile: Any = None,
+) -> str:
+    """Adapt the built-in production-area wording without changing legacy prompts."""
+    canvas = _canvas_for_value(canvas_profile)
+    if canvas["orientation"] != "portrait":
+        return str(system_content or "")
+    subtitle = canvas["subtitle_safe_zone"]
+    content = canvas["content_safe_area"]
+    return (
+        str(system_content or "")
+        .replace("1920×1080、16:9", "1080×1920、9:16")
+        .replace("1920×1080 画布", "1080×1920 画布")
+        .replace("字幕安全区始终对应画布底部约 14% 的高度区域", "字幕安全区对应画布底部约 14% 的高度区域")
+        .replace("`x=80..1840, y=60..210`", "`x=64..1016, y=72..170`")
+        .replace("`x=80..1840, y=230..930`", f"`x={content['left']}..{content['right']}, y={content['top']}..{content['bottom']}`")
+        .replace("`y=930..1080`", f"`y={subtitle['top']}..{subtitle['bottom']}`")
+    )
+
+
 def build_step3_global_image_prompt(
-    style_prompt: str, system_content: Optional[str] = None
+    style_prompt: str,
+    system_content: Optional[str] = None,
+    canvas_profile: Any = None,
 ) -> str:
     return (
         "=== 图片生成 System Content ===\n"
-        f"{str(system_content or default_step3_image_system_content()).strip()}\n\n"
+        f"{adapt_step3_system_content_for_canvas(str(system_content or default_step3_image_system_content()).strip(), canvas_profile)}\n\n"
         "=== 当前生效的图片风格 ===\n"
         f"{str(style_prompt or '').strip()}"
     )
@@ -284,12 +316,13 @@ def compose_step3_single_slide_prompt(
     slide: Dict[str, Any],
     system_content: Optional[str] = None,
     ip_prompt_segment: str = "",
+    canvas_profile: Any = None,
 ) -> str:
-    prompt = f"{build_step3_global_image_prompt(style_prompt, system_content)}"
+    prompt = f"{build_step3_global_image_prompt(style_prompt, system_content, canvas_profile)}"
     if ip_prompt_segment:
         prompt += f"\n\n{ip_prompt_segment}"
     prompt += f"\n\n=== 当前 Slide 输入 ===\n{build_step3_slide_specific_prompt(slide)}"
-    return enforce_white_generation_background(prompt)
+    return enforce_white_generation_background(prompt, canvas_profile)
 
 
 def compose_step3_batch_copy_prompt(
@@ -297,6 +330,7 @@ def compose_step3_batch_copy_prompt(
     slides: List[Dict[str, Any]],
     system_content: Optional[str] = None,
     ip_prompt_segment: str = "",
+    canvas_profile: Any = None,
 ) -> str:
     slide_sections = []
     for slide in slides:
@@ -306,7 +340,7 @@ def compose_step3_batch_copy_prompt(
         slide_sections.append(
             f"--- Slide {slide_id} ---\n{build_step3_slide_specific_prompt(slide)}"
         )
-    global_block = f"{build_step3_global_image_prompt(style_prompt, system_content)}"
+    global_block = f"{build_step3_global_image_prompt(style_prompt, system_content, canvas_profile)}"
     if ip_prompt_segment:
         global_block += f"\n\n{ip_prompt_segment}"
     prompt = (
@@ -317,24 +351,26 @@ def compose_step3_batch_copy_prompt(
         "=== 各 Slide 具体内容（以下每个 Slide 仅列出本页差异输入，通用规则以上方全局说明为准） ===\n\n"
         + "\n\n".join(slide_sections)
     ).strip()
-    return enforce_white_generation_background(prompt)
+    return enforce_white_generation_background(prompt, canvas_profile)
 
 
-def step3_non_overridable_rules_prompt() -> str:
+def step3_non_overridable_rules_prompt(canvas_profile: Any = None) -> str:
+    canvas = _canvas_for_value(canvas_profile)
+    subtitle_zone = canvas["subtitle_safe_zone"]
     return (
         "<NonOverridableProductionRules>\n"
-        "这些生产铁律由系统强制追加：1920×1080、16:9；外围背景纯白 #FFFFFF；"
-        "只保留一个主标题且不生成副标题；所有内容止于 y<930；y=930..1080 完全留空；"
+        f"这些生产铁律由系统强制追加：{canvas['width']}×{canvas['height']}、{canvas['aspect_ratio']}；外围背景纯白 #FFFFFF；"
+        f"只保留一个主标题且不生成副标题；所有内容止于 y<{subtitle_zone['top']}；y={subtitle_zone['top']}..{subtitle_zone['bottom']} 完全留空；"
         "独立语义元素不得重叠、穿插、压住或粘连，并保留可见纯白间隙。\n"
         "</NonOverridableProductionRules>"
     )
 
 
-def enforce_white_generation_background(prompt: str) -> str:
+def enforce_white_generation_background(prompt: str, canvas_profile: Any = None) -> str:
     marker = "<NonOverridableProductionRules>"
     if marker in str(prompt or ""):
         return str(prompt or "").strip()
-    return f"{prompt.strip()}\n\n{step3_non_overridable_rules_prompt()}".strip()
+    return f"{prompt.strip()}\n\n{step3_non_overridable_rules_prompt(canvas_profile)}".strip()
 
 
 def step3_prompt_settings_response(project: Project) -> Dict[str, Any]:
@@ -359,15 +395,16 @@ def step3_prompt_settings_response(project: Project) -> Dict[str, Any]:
             else step3_image_input_example(),
             "input_contract": step3_image_input_contract(),
             "input_example": step3_image_input_example(),
-            "output_description": "一张完整的 1920×1080、16:9 PPT 位图；无文字说明、JSON、Mask 或备选拼图。",
+            "output_description": f"一张完整的 {get_project_canvas(project)['width']}×{get_project_canvas(project)['height']}、{get_project_canvas(project)['aspect_ratio']} PPT 位图；无文字说明、JSON、Mask 或备选拼图。",
             "style_content": style_prompt,
-            "protected_rules": step3_non_overridable_rules_prompt(),
+            "protected_rules": step3_non_overridable_rules_prompt(project),
             "ip_prompt_segment": render_ip_character_prompt(project, None),
             "full_prompt_example": compose_step3_single_slide_prompt(
                 style_prompt,
                 first_slide or step3_image_example_slide(),
                 system_content,
                 render_ip_character_prompt(project, None),
+                project,
             ),
         },
     }
@@ -433,16 +470,16 @@ def get_slide_prompts(project_id: str, db: Session):
         "success": True,
         "prompts": slide_prompts,
         "global_prompt": enforce_white_generation_background(
-            build_step3_global_image_prompt(style_prompt, system_content)
+            build_step3_global_image_prompt(style_prompt, system_content, project), project
         ),
         "batch_prompt": compose_step3_batch_copy_prompt(
-            style_prompt, slides, system_content, render_ip_character_prompt(project, None)
+            style_prompt, slides, system_content, render_ip_character_prompt(project, None), project
         ),
         "prompt_settings": {
             "system_content": system_content,
             "input_contract": step3_image_input_contract(),
             "input_example": step3_image_input_example(),
-            "output_description": "一张完整的 1920×1080、16:9 PPT 位图。",
+            "output_description": f"一张完整的 {get_project_canvas(project)['width']}×{get_project_canvas(project)['height']}、{get_project_canvas(project)['aspect_ratio']} PPT 位图。",
         },
     }
 
@@ -471,7 +508,7 @@ def generate_slide_image(
     try:
         client = get_openai_client(api_key=api_key, base_url=base_url)
         image_size = normalize_image_size(get_setting("image_size", "1024x1024"))
-        effective_prompt = enforce_white_generation_background(prompt)
+        effective_prompt = enforce_white_generation_background(prompt, project)
         ip_prompt_segment = render_ip_character_prompt(project, slide_id)
         if ip_prompt_segment and IP_PROMPT_MARKER not in effective_prompt:
             effective_prompt = effective_prompt + "\n\n" + ip_prompt_segment
@@ -545,7 +582,13 @@ def generate_slide_image(
         # ── 兼容两种响应格式：URL 和 base64 (b64_json) ──
         img_bytes = extract_image_bytes_from_response(response)
 
-        process_and_save_image(img_bytes, save_path)
+        canvas = get_project_canvas(project)
+        process_and_save_image(
+            img_bytes,
+            save_path,
+            target_width=canvas["width"],
+            target_height=canvas["height"],
+        )
         write_visual_provenance(
             project.run_dir,
             slide_id,
@@ -596,7 +639,13 @@ def upload_slide_image(
             raise ImagePayloadTooLarge(
                 f"图片文件超过 {MAX_IMAGE_UPLOAD_BYTES // (1024 * 1024)} MB 限制"
             )
-        process_and_save_image(content, save_path)
+        canvas = get_project_canvas(project)
+        process_and_save_image(
+            content,
+            save_path,
+            target_width=canvas["width"],
+            target_height=canvas["height"],
+        )
         write_visual_provenance(
             project.run_dir,
             slide_id,

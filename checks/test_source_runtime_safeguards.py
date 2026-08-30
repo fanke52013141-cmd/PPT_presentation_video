@@ -65,6 +65,7 @@ def test_manifest_reconciliation_is_source_owned(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     project = FakeProject(tmp_path)
+    project.canvas_profile = "portrait_9_16"
 
     assert reveal_manifest_service.sync_reveal_manifest(
         project,
@@ -79,7 +80,10 @@ def test_manifest_reconciliation_is_source_owned(tmp_path: Path) -> None:
         (tmp_path / "reveal_manifest.json").read_text(encoding="utf-8")
     )
     assert [slide["slide_id"] for slide in manifest["slides"]] == ["slide_001"]
+    assert manifest["canvas"]["width"] == 1080
+    assert manifest["canvas"]["height"] == 1920
     slide = manifest["slides"][0]
+    assert slide["canvas"]["subtitle_safe_y"] == 1650
     by_id = {group["id"]: group for group in slide["groups"]}
     assert set(by_id) == {"g1", "g2", "manual_group_keep"}
     assert by_id["g1"]["strokes"] == [{"x": 1, "y": 2}]

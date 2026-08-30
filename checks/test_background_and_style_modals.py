@@ -17,15 +17,16 @@ def test_background_modal_has_image_and_solid_modes():
     assert 'data-mode-card="solid"' in BACKGROUND_UI
 
 
-def test_background_preview_is_strict_16_by_9():
+def test_background_preview_follows_project_canvas():
     assert ".storyboard-bg-preview" in STYLE_CSS
-    assert "aspect-ratio:16 / 9" in STYLE_CSS
-    assert "16:9 预览" in BACKGROUND_UI
+    assert "aspect-ratio:var(--project-aspect-ratio,16 / 9)" in STYLE_CSS
+    assert "${canvasAspectLabel()} 预览" in BACKGROUND_UI
+    assert "${canvasSizeLabel()}" in BACKGROUND_UI
 
 
 def test_background_runtime_preserves_original_for_refitting():
     assert 'ORIGINAL_IMAGE_NAME = "storyboard_background_original.png"' in BACKGROUND_RUNTIME
-    assert "_render_background_image(run_dir, config[\"image_fit\"])" in BACKGROUND_RUNTIME
+    assert '_render_background_image(run_dir, config["image_fit"], get_project_canvas(project))' in BACKGROUND_RUNTIME
 
 
 def test_image_style_modal_has_three_product_modes():
@@ -35,9 +36,9 @@ def test_image_style_modal_has_three_product_modes():
     assert "效果预览" in STYLE_UI
 
 
-def test_style_previews_are_16_by_9_and_template_refs_are_readable():
+def test_style_previews_follow_project_canvas_and_template_refs_are_readable():
     assert ".style-ref-card" in STYLE_CSS
-    assert "aspect-ratio:16 / 9" in STYLE_CSS
+    assert "aspect-ratio:var(--project-aspect-ratio,16 / 9)" in STYLE_CSS
     assert "会作为后续图片生成的实际参考图" in STYLE_UI
     assert '"/api/image-style/project-templates/{template_id}"' in STYLE_RUNTIME
     assert '"/api/image-style/project-templates/{template_id}/reference-images/{index}"' in STYLE_RUNTIME

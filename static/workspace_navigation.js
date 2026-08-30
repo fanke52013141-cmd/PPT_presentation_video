@@ -7,12 +7,29 @@
 
 let workspaceNavigationVersion = 0;
 
+// 画布比例以 CSS 变量下发到根节点，供 style.css 中所有跟随项目画布的
+// 预览容器（Mask 画布、字幕预览、Step3 预览、视频预览等）统一继承。
+function syncProjectCanvasCssVars(project = state.currentProject) {
+  const root = document.documentElement;
+  if (!project) {
+    root.style.removeProperty('--project-aspect-ratio');
+    root.style.removeProperty('--project-aspect-ratio-scale');
+    return;
+  }
+  const geometry = typeof getProjectCanvasGeometry === 'function'
+    ? getProjectCanvasGeometry(project)
+    : { width: 1920, height: 1080, aspectRatio: '1920 / 1080' };
+  root.style.setProperty('--project-aspect-ratio', geometry.aspectRatio);
+  root.style.setProperty('--project-aspect-ratio-scale', String(geometry.width / geometry.height));
+}
+
 async function enterWorkspace(projectId) {
   const entryVersion = ++workspaceNavigationVersion;
   resetStep5ProjectState();
   const project = await API.get(`/api/projects/${projectId}`);
   if (entryVersion !== workspaceNavigationVersion) return;
   state.currentProject = project;
+  syncProjectCanvasCssVars(project);
   const visibleStep = resolveProjectVisibleStep(project);
 
   // 顶栏切换
@@ -45,6 +62,7 @@ function exitWorkspace() {
   document.getElementById('page-home').style.display = 'block';
 
   state.currentProject = null;
+  syncProjectCanvasCssVars(null);
   loadProjects();
 }
 
@@ -119,6 +137,7 @@ async function refreshCurrentProjectStatus(activeStep = state.currentStep) {
   if (!state.currentProject?.id) return;
   const project = await API.get(`/api/projects/${state.currentProject.id}`);
   state.currentProject = project;
+  syncProjectCanvasCssVars(project);
   updateStepperUI(normalizeVisibleStep(activeStep), project.step_status);
 }
 
@@ -141,6 +160,7 @@ async function navigateToStep(step) {
     const res = await API.get(`/api/projects/${state.currentProject.id}`);
     if (navigationVersion !== workspaceNavigationVersion) return;
     state.currentProject = res;
+    syncProjectCanvasCssVars(res);
   }
   if (navigationVersion !== workspaceNavigationVersion) return;
   updateStepperUI(step, state.currentProject.step_status);

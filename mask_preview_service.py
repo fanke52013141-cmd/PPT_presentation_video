@@ -35,6 +35,11 @@ class MaskPreviewDependencies:
     repo_root: Path
     python_executable: str
     build_timeout_sec: float
+    # Injected in tests so the production process-kill/timeout behavior can
+    # be exercised without patching the stdlib subprocess module globally.
+    run_subprocess: Callable[..., subprocess.CompletedProcess] = (
+        run_subprocess_killable
+    )
 
 
 _dependencies: MaskPreviewDependencies | None = None
@@ -89,7 +94,7 @@ def build_step5_mask_preview(
             "--preview-output",
             str(preview_path),
         ]
-        result = run_subprocess_killable(
+        result = dependencies.run_subprocess(
             command,
             capture_output=True,
             text=True,

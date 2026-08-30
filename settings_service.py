@@ -9,6 +9,7 @@ import tempfile
 from typing import Any, Callable, Dict, Mapping, Optional
 
 from pydantic import BaseModel
+from runtime_support import run_subprocess_bounded
 
 
 MASKED_SETTINGS_VALUE = "__PPT_STUDIO_MASKED_VALUE__"
@@ -66,6 +67,7 @@ class SettingsDependencies:
     provider_tts_command: Callable[..., list[str]]
     provider_tts_environment: Callable[[str, str], Dict[str, str]]
     tts_provider_defaults_map: Mapping[str, Dict[str, str]]
+    run_subprocess_bounded: Callable[..., Any] = run_subprocess_bounded
 
 
 _dependencies: SettingsDependencies | None = None
@@ -276,18 +278,23 @@ def test_tts_connection(payload: TestTtsPayload) -> Dict[str, Any]:
                 volume="1.0",
                 pitch="0" if provider == "minimax" else "1.0",
             )
-            result = subprocess.run(
+            result = dependencies.run_subprocess_bounded(
                 command,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                timeout=90,
+                timeout_sec=90,
                 env=dependencies.provider_tts_environment(
                     api_key,
                     secret_key,
                 ),
             )
+            if result.returncode == 124:
+                return {
+                    "success": False,
+                    "message": "TTS 测试超时，请检查 endpoint、鉴权和网络。",
+                }
             if result.returncode != 0:
                 error = (result.stderr or result.stdout)[:600]
                 return {

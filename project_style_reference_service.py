@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from ai_provider_service import normalize_image_size
+from canvas_profile_service import canvas_prompt_instructions, get_project_canvas
 from project_style_context import ProjectStyleDependencies
 
 REFERENCE_DIRNAME = "style_references"
@@ -285,7 +286,13 @@ def _generate_reference_images(
         img_bytes = dependencies.extract_image_bytes_from_response(response)
         filename = f"style_reference_{index:02d}.png"
         save_path = references_dir / filename
-        dependencies.process_and_save_image(img_bytes, str(save_path))
+        canvas = get_project_canvas(project)
+        dependencies.process_and_save_image(
+            img_bytes,
+            str(save_path),
+            target_width=canvas["width"],
+            target_height=canvas["height"],
+        )
         generated.append({
             "index": index,
             "filename": filename,
@@ -374,12 +381,14 @@ def _project_generate_prompt_for_slide(
     style_prompt = _profile_style_prompt(project, dependencies)
     try:
         system_content = dependencies.read_step3_image_system_content(project)
-        return dependencies.compose_step3_single_slide_prompt(
+        prompt = dependencies.compose_step3_single_slide_prompt(
             style_prompt,
             slide,
             system_content,
             ip_prompt_segment,
+            project,
         )
+        return prompt
     except Exception:
         return _legacy_project_generate_prompt_for_slide(
             dependencies,
@@ -408,7 +417,7 @@ def _legacy_project_generate_prompt_for_slide(
         "整体风格提示词：\n"
         f"{style_prompt}\n\n"
         "单页生图任务：\n"
-        "- 生成一张 16:9 PPT 静态主图。\n"
+        f"- 生成一张 {get_project_canvas(project)['aspect_ratio']} PPT 静态主图。\n"
         "- 背景必须是纯白 #FFFFFF，四条边和四个角保持连续纯白。\n"
         "- 如果请求附带 Step 3 图片风格参考图，只把它作为整体风格、留白、层级、配色和密度参考；不要复制其中的具体内容。\n"
         "- 只根据下面的元素清单组织画面；不要加入 narration、讲稿、制作说明或额外页面。\n"
@@ -417,6 +426,9 @@ def _legacy_project_generate_prompt_for_slide(
         "元素清单（程序已从 Step 2B 精简）：\n"
         f"{elements_str}"
     )
+    canvas_rules = canvas_prompt_instructions(project)
+    if canvas_rules:
+        prompt = f"{prompt}\n\n{canvas_rules}"
     if ip_prompt_segment:
         prompt = prompt + "\n\n" + ip_prompt_segment
     return prompt

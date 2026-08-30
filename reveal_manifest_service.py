@@ -8,6 +8,7 @@ from typing import Any, Iterable
 
 from pipeline_lifecycle import project_artifact_lock, write_json_atomic
 from project_storage import slide_dir
+from canvas_profile_service import get_project_canvas
 from visual_provenance import refresh_provenance_contract_hashes
 
 
@@ -52,6 +53,17 @@ def _is_painted_group(group: dict[str, Any]) -> bool:
         if isinstance(rle, dict) and isinstance(rle.get("runs"), list) and rle.get("runs"):
             return True
     return any(key in group for key in ("mask", "mask_path", "mask_url", "mask_data"))
+
+
+def _project_reveal_canvas(project: Any) -> dict[str, Any]:
+    """Translate the canonical project profile to the reveal-scene contract."""
+    canvas = get_project_canvas(project)
+    return {
+        "width": canvas["width"],
+        "height": canvas["height"],
+        "background": "#FEFDF9",
+        "subtitle_safe_y": canvas["subtitle_safe_zone"]["top"],
+    }
 
 
 def _contract_group_id(group: dict[str, Any], slide_id: str, index: int) -> str:
@@ -168,6 +180,7 @@ def _reconciled_slide(
     contract_slide: dict[str, Any],
     old_slide: dict[str, Any] | None,
     slide_index: int,
+    canvas: dict[str, Any],
 ) -> dict[str, Any]:
     slide_id = str(contract_slide.get("slide_id") or f"slide_{slide_index:03d}").strip()
     slide: dict[str, Any] = dict(old_slide or {})
@@ -176,7 +189,7 @@ def _reconciled_slide(
     slide["master"] = "visual_draft.png"
     slide.setdefault("image", f"slides/{slide_id}/visual_draft.png")
     slide.setdefault("status", "pending")
-    slide.setdefault("canvas", {"w": 1920, "h": 1080, "background": "#FEFDF9"})
+    slide["canvas"] = dict(canvas)
 
     old_candidates: list[dict[str, Any]] = []
     if old_slide:
@@ -301,6 +314,8 @@ def sync_reveal_manifest(
             return contract_changed
 
         before = _stable_json(manifest)
+        canvas = _project_reveal_canvas(project)
+        manifest["canvas"] = dict(canvas)
         contract_slides_by_id = {
             str(slide.get("slide_id") or "").strip(): slide
             for slide in contract.get("slides", []) or []
@@ -321,6 +336,7 @@ def sync_reveal_manifest(
                 contract_slides_by_id[slide_id],
                 old_slides_by_id.get(slide_id),
                 index,
+                canvas,
             )
             for index, slide_id in enumerate(current_slide_ids, start=1)
             if slide_id in contract_slides_by_id

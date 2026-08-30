@@ -31,8 +31,38 @@ PPTX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.presentationml.p
 PPTX_EXPORT_VERSION = "image_only_pptx_v1"
 SLIDE_WIDTH_INCHES = 13.333333
 SLIDE_HEIGHT_INCHES = 7.5
+PORTRAIT_SLIDE_WIDTH_INCHES = 7.5
+PORTRAIT_SLIDE_HEIGHT_INCHES = 13.333333
 ASPECT_RATIO = 16 / 9
 ASPECT_TOLERANCE = 0.01
+
+
+def _run_canvas_profile(run_dir: str | Path) -> dict[str, Any]:
+    """Read the persisted canvas snapshot; fall back to landscape defaults."""
+    snapshot = Path(run_dir).resolve() / "planning" / "canvas_profile.json"
+    try:
+        payload = json.loads(snapshot.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        return {"id": "landscape_16_9", "orientation": "landscape", "width": 1920, "height": 1080, "aspect_ratio": "16:9"}
+    if not isinstance(payload, dict):
+        return {"id": "landscape_16_9", "orientation": "landscape", "width": 1920, "height": 1080, "aspect_ratio": "16:9"}
+    return payload
+
+
+def _slide_geometry(canvas: dict[str, Any]) -> dict[str, Any]:
+    if str(canvas.get("orientation") or "").lower() == "portrait":
+        return {
+            "width_inches": PORTRAIT_SLIDE_WIDTH_INCHES,
+            "height_inches": PORTRAIT_SLIDE_HEIGHT_INCHES,
+            "aspect_ratio": 9 / 16,
+            "aspect_label": "9:16",
+        }
+    return {
+        "width_inches": SLIDE_WIDTH_INCHES,
+        "height_inches": SLIDE_HEIGHT_INCHES,
+        "aspect_ratio": ASPECT_RATIO,
+        "aspect_label": "16:9",
+    }
 
 
 class PptxReadinessError(ValueError):
@@ -85,6 +115,9 @@ def _read_contract(run_dir: str | Path) -> tuple[dict[str, Any] | None, list[dic
 
 def inspect_pptx_readiness(run_dir: str | Path) -> dict[str, Any]:
     root = Path(run_dir).resolve()
+    geometry = _slide_geometry(_run_canvas_profile(root))
+    target_ratio = float(geometry["aspect_ratio"])
+    aspect_label = str(geometry["aspect_label"])
     contract, issues = _read_contract(root)
     slide_ids: list[str] = []
     slides: list[dict[str, Any]] = []
@@ -120,11 +153,11 @@ def inspect_pptx_readiness(run_dir: str | Path) -> dict[str, Any]:
             except (OSError, ValueError):
                 issues.append(_issue("invalid_image", "页面图片无法读取或文件已损坏。", slide_id))
                 continue
-            if width <= 0 or height <= 0 or abs((width / height) - ASPECT_RATIO) > ASPECT_TOLERANCE:
+            if width <= 0 or height <= 0 or abs((width / height) - target_ratio) > ASPECT_TOLERANCE:
                 issues.append(
                     _issue(
                         "invalid_aspect_ratio",
-                        f"页面图片必须是 16:9，当前为 {width}×{height}。",
+                        f"页面图片必须是 {aspect_label}，当前为 {width}×{height}。",
                         slide_id,
                     )
                 )
@@ -151,6 +184,7 @@ def inspect_pptx_readiness(run_dir: str | Path) -> dict[str, Any]:
         "ready": not issues and bool(slide_ids),
         "export_type": "pptx",
         "format": "image_only",
+        "aspect_ratio": aspect_label,
         "slide_count": len(slide_ids),
         "ready_slide_count": len(slides),
         "slide_ids": slide_ids,
@@ -159,15 +193,21 @@ def inspect_pptx_readiness(run_dir: str | Path) -> dict[str, Any]:
     }
 
 
-def _validate_saved_presentation(path: Path, expected_slide_count: int) -> None:
+def _validate_saved_presentation(
+    path: Path,
+    expected_slide_count: int,
+    *,
+    slide_width_inches: float = SLIDE_WIDTH_INCHES,
+    slide_height_inches: float = SLIDE_HEIGHT_INCHES,
+) -> None:
     presentation = Presentation(str(path))
     if len(presentation.slides) != expected_slide_count:
         raise RuntimeError(
             f"PPTX 页数校验失败：预期 {expected_slide_count} 页，实际 {len(presentation.slides)} 页"
         )
-    if presentation.slide_width != Inches(SLIDE_WIDTH_INCHES):
+    if presentation.slide_width != Inches(slide_width_inches):
         raise RuntimeError("PPTX 页面宽度校验失败")
-    if presentation.slide_height != Inches(SLIDE_HEIGHT_INCHES):
+    if presentation.slide_height != Inches(slide_height_inches):
         raise RuntimeError("PPTX 页面高度校验失败")
     for index, slide in enumerate(presentation.slides, start=1):
         if not any(shape.shape_type == 13 for shape in slide.shapes):
@@ -195,9 +235,10 @@ def build_image_only_pptx(
         temporary.unlink()
 
     progress(20, "composing")
+    geometry = _slide_geometry(_run_canvas_profile(root))
     presentation = Presentation()
-    presentation.slide_width = Inches(SLIDE_WIDTH_INCHES)
-    presentation.slide_height = Inches(SLIDE_HEIGHT_INCHES)
+    presentation.slide_width = Inches(float(geometry["width_inches"]))
+    presentation.slide_height = Inches(float(geometry["height_inches"]))
     presentation.core_properties.title = str(title or "PPT Studio 图片演示文稿")
     presentation.core_properties.subject = "由已确认的 Slide 图片生成"
     presentation.core_properties.author = "PPT Visualization Studio"
@@ -223,7 +264,12 @@ def build_image_only_pptx(
     try:
         presentation.save(str(temporary))
         progress(88, "verifying")
-        _validate_saved_presentation(temporary, readiness["slide_count"])
+        _validate_saved_presentation(
+            temporary,
+            readiness["slide_count"],
+            slide_width_inches=float(geometry["width_inches"]),
+            slide_height_inches=float(geometry["height_inches"]),
+        )
         os.replace(temporary, target)
     finally:
         if temporary.exists():
@@ -243,9 +289,9 @@ def build_image_only_pptx(
         "slide_count": readiness["slide_count"],
         "slide_ids": readiness["slide_ids"],
         "slide_size": {
-            "width_inches": SLIDE_WIDTH_INCHES,
-            "height_inches": SLIDE_HEIGHT_INCHES,
-            "aspect_ratio": "16:9",
+            "width_inches": float(geometry["width_inches"]),
+            "height_inches": float(geometry["height_inches"]),
+            "aspect_ratio": str(geometry["aspect_label"]),
         },
         "content_mode": "full_slide_bitmap",
         "source_fingerprint": source_fingerprint,

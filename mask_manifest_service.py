@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 from typing import Any, Callable, Dict, List, Optional
 
+from canvas_profile_service import get_project_canvas
 from runtime_support import run_subprocess_killable
 
 
@@ -600,6 +601,14 @@ def _prepare_manifest_for_save(
     project: Any,
     payload: Dict[str, Any],
 ) -> Dict[str, Any]:
+    canvas = get_project_canvas(project)
+    reveal_canvas = {
+        "width": canvas["width"],
+        "height": canvas["height"],
+        "background": "#FEFDF9",
+        "subtitle_safe_y": canvas["subtitle_safe_zone"]["top"],
+    }
+    payload["canvas"] = reveal_canvas
     current_slide_ids = _deps().read_contract_slide_ids(project.run_dir)
     if current_slide_ids and isinstance(payload.get("slides"), list):
         by_id = {
@@ -632,6 +641,7 @@ def _prepare_manifest_for_save(
         )
         slide["slide_dir"] = str(Path(slide_path).parent.as_posix())
         slide["master"] = "visual_draft.png"
+        slide["canvas"] = dict(reveal_canvas)
     return prune_stale_mask_groups(project, payload)
 
 
@@ -648,6 +658,7 @@ def update_step5_draft(
 
 def validate_current_reveal_assets(project: Any) -> None:
     dependencies = _deps()
+    canvas = get_project_canvas(project)
     with dependencies.reveal_lock_for(project):
         validator = dependencies.repo_root / "scripts" / "validate_reveal_scene.py"
         command = [
@@ -657,6 +668,10 @@ def validate_current_reveal_assets(project: Any) -> None:
             project.run_dir,
             "--repo-root",
             str(dependencies.repo_root),
+            "--width",
+            str(canvas["width"]),
+            "--height",
+            str(canvas["height"]),
         ]
         result = run_subprocess_killable(
             command,

@@ -161,6 +161,32 @@ def test_draft_never_builds_or_navigates_and_final_is_explicit(
         manifest_service._dependencies = original_dependencies
 
 
+def test_reveal_validation_uses_the_project_canvas(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_dependencies = manifest_service._dependencies
+    manifest_service.configure_mask_manifest_dependencies(
+        _manifest_dependencies(tmp_path, builds=[], navigations=[])
+    )
+    received: list[str] = []
+
+    def fake_run(command, **_kwargs):
+        received.extend(command)
+        return subprocess.CompletedProcess(command, 0, "ok", "")
+
+    monkeypatch.setattr(manifest_service, "run_subprocess_killable", fake_run)
+    try:
+        manifest_service.validate_current_reveal_assets(
+            SimpleNamespace(run_dir=str(tmp_path), canvas_profile="portrait_9_16")
+        )
+    finally:
+        manifest_service._dependencies = original_dependencies
+
+    assert received[received.index("--width") + 1] == "1080"
+    assert received[received.index("--height") + 1] == "1920"
+
+
 def test_semantic_refresh_preserves_only_painted_manual_groups(
     tmp_path: Path,
 ) -> None:
@@ -317,6 +343,7 @@ def test_preview_uses_production_builder_and_reports_cutout_stats(
             repo_root=tmp_path,
             python_executable="python",
             build_timeout_sec=1.0,
+            run_subprocess=run_builder,
         )
     )
     monkeypatch.setattr(
@@ -369,6 +396,12 @@ def test_preview_timeout_maps_to_504(
             repo_root=tmp_path,
             python_executable="python",
             build_timeout_sec=1.0,
+            run_subprocess=lambda *_args, **_kwargs: subprocess.CompletedProcess(
+                ["builder"],
+                124,
+                "",
+                "Timed out after 1 seconds.",
+            ),
         )
     )
     def killable_timeout(_command, **_kwargs):

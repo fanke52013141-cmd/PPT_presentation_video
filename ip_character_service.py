@@ -26,6 +26,7 @@ from typing import Any
 from fastapi import HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
+from canvas_profile_service import get_project_canvas
 from database import Project
 from pipeline_lifecycle import write_json_atomic
 
@@ -53,7 +54,7 @@ DEFAULT_IP_PROMPT_TEMPLATE = (
     "约束（与生图固定规则同等重要，不得违反）：\n"
     "1. 每个已列出的角色都必须出现在画面中，不得省略或替换。\n"
     "2. 多个角色互不重叠，也不得遮挡标题、正文文字、图表或关键标签；角色与其它视觉元素之间保留清晰间隙。\n"
-    "3. 角色必须位于画面内容区（y<930），不得进入底部字幕安全区，不得覆盖页面上方主标题区。\n"
+    "3. 角色必须位于画面内容区（y<{subtitle_safe_top}），不得进入底部字幕安全区，不得覆盖页面上方主标题区。\n"
     "4. 若某个角色标注了放置位置，请尽量放在该位置；仅当该位置会遮挡关键文字或与其它元素冲突时才可调整。\n"
     "5. 请确保 IP 形象与页面其它视觉元素和谐共存，整体保持专业、美观的排版。\n"
     "</IPCharacterRequirements>"
@@ -432,7 +433,13 @@ def render_ip_character_prompt(project, slide_id=None):
     template = _safe_text(
         manifest.get("prompt_template"), MAX_IP_PROMPT_TEMPLATE_CHARS
     ) or DEFAULT_IP_PROMPT_TEMPLATE
-    return template.replace("{characters}", "\n".join(entries))
+    canvas = get_project_canvas(project)
+    safe_top = int((canvas.get("subtitle_safe_zone") or {}).get("top") or 930)
+    rendered = template.replace("{characters}", "\n".join(entries))
+    rendered = rendered.replace("{subtitle_safe_top}", str(safe_top))
+    if canvas.get("orientation") == "portrait" and "y<930" in rendered:
+        rendered = rendered.replace("y<930", f"y<{safe_top}")
+    return rendered
 
 
 def build_ip_character_prompt_segment(project, slide_id=None):

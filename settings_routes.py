@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 from typing import Any, Dict
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, UploadFile
 
 from app_security import verify_access_token
 import config_portability_service as config_service
@@ -16,10 +18,17 @@ from settings_service import (
     TestLlmPayload,
     TestTtsPayload,
 )
+from repository_paths import DATA_DIR
 
 
 router = APIRouter()
 _max_config_import_bytes: int | None = None
+
+_COMFYUI_TTS_WORKFLOW_PATH = os.path.join(
+    DATA_DIR, "digital_human", "comfyui_tts_workflow.json"
+)
+_MAX_TTS_WORKFLOW_BYTES = 1024 * 1024
+_MAX_TTS_WORKFLOW_NODES = 500
 
 
 def configure_settings_routes(
@@ -148,3 +157,48 @@ def test_tts_connection(
     payload: TestTtsPayload,
 ) -> Dict[str, Any]:
     return service.test_tts_connection(payload)
+
+
+@router.get("/api/settings/comfyui-tts-workflow")
+def get_comfyui_tts_workflow() -> Dict[str, Any]:
+    path = Path(_COMFYUI_TTS_WORKFLOW_PATH)
+    return {
+        "exists": path.is_file(),
+        "path": _COMFYUI_TTS_WORKFLOW_PATH,
+    }
+
+
+@router.post("/api/settings/comfyui-tts-workflow")
+async def upload_comfyui_tts_workflow(file: UploadFile) -> Dict[str, Any]:
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="上传文件为空")
+    if len(content) > _MAX_TTS_WORKFLOW_BYTES:
+        raise HTTPException(status_code=413, detail="工作流文件过大（上限 1MB）")
+    try:
+        wf = json.loads(content.decode("utf-8-sig"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="工作流 JSON 解析失败") from exc
+    if not isinstance(wf, dict) or not wf:
+        raise HTTPException(status_code=400, detail="工作流 JSON 格式不正确")
+    if len(wf) > _MAX_TTS_WORKFLOW_NODES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"工作流节点数过多：{len(wf)}（上限 {_MAX_TTS_WORKFLOW_NODES}）",
+        )
+    is_api_format = all(
+        isinstance(v, dict) and "class_type" in v for v in wf.values()
+    )
+    if not is_api_format:
+        raise HTTPException(
+            status_code=400,
+            detail="工作流不是 ComfyUI API 格式，请在 ComfyUI 中使用「Save (API Format)」导出后重新上传",
+        )
+    dest = Path(_COMFYUI_TTS_WORKFLOW_PATH)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(content)
+    return {
+        "success": True,
+        "path": _COMFYUI_TTS_WORKFLOW_PATH,
+        "nodes": len(wf),
+    }

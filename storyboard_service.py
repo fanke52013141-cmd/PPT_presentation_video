@@ -21,6 +21,10 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 import yaml
 
+from canvas_profile_service import (
+    canvas_prompt_context,
+    normalize_canvas_profile,
+)
 from config_store import get_setting
 from database import Project
 from project_path_service import project_or_404
@@ -472,10 +476,12 @@ def build_storyboard_request(
     article_content: str,
     storyboard_rules: str,
     profile: Optional[Dict[str, Any]] = None,
+    canvas_profile: Any = None,
 ) -> tuple[str, str]:
     profile = profile or read_pipeline_profile()
     slide_count_requirement, _ = storyboard_requirements(article_content, profile)
     profile_prompt = storyboard_profile_prompt(article_content, profile)
+    canvas = canvas_prompt_context(normalize_canvas_profile(canvas_profile))
 
     schema_hint = visual_contract_schema_text()
 
@@ -500,7 +506,7 @@ def build_storyboard_request(
 - 演讲稿不是附属品。每页必须有自然、连贯、适合口播的 spoken_text，用来解释推理过程、上下文和结论。
 - 画面不是演讲稿的逐字复刻。visible_text 应是关键词、短句、结构标签、图示标签或结论钩子。
 - visual_groups 是后续 Mask/动画/旁白绑定接口，不是页面设计模板；role 只是后处理语义标签。
-- 主标题使用页面上方固定位置，不生成页面副标题；底部 y=930..1080 固定为视频字幕安全区。除此之外，主体内容区根据内容自由发挥。
+- 主标题使用页面上方固定位置，不生成页面副标题；底部 y={canvas["subtitle_safe_top"]}..{canvas["subtitle_safe_bottom"]} 固定为视频字幕安全区。当前画布为 {canvas["width"]}×{canvas["height"]}、{canvas["aspect_ratio"]}。除此之外，主体内容区根据内容自由发挥。
 - 字号比例必须明确：每页 slide 顶部标题的视觉字号为当前默认标题的 2 倍；正文内容、演讲稿对应画面文字的视觉字号约为当前默认的 2/3。
 - 禁止画面元素重叠：文字、卡片、图标、箭头、线条、标签、装饰、图表之间不得互相覆盖、压住、穿插或粘连。
 要求：
@@ -782,6 +788,7 @@ def get_step2_prompt_preview(
         article_content,
         storyboard_rules,
         profile,
+        canvas_profile=getattr(project, "canvas_profile", None),
     )
     return {
         "success": True,

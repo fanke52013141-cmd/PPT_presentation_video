@@ -61,13 +61,14 @@ async function createProject() {
   const name = document.getElementById('input-project-name').value.trim();
   const description = document.getElementById('input-project-desc').value.trim();
   const aiMode = (document.getElementById('input-project-ai-mode')?.value || 'auto').trim();
+  const canvasProfile = (document.getElementById('input-project-canvas-profile')?.value || 'landscape_16_9').trim();
 
   if (!name) {
     showToast('请输入项目名称');
     return;
   }
 
-  const result = await API.post('/api/projects', { name, description, ai_mode: aiMode });
+  const result = await API.post('/api/projects', { name, description, ai_mode: aiMode, canvas_profile: canvasProfile });
   if (!result.success) return;
   document.getElementById('modal-create').style.display = 'none';
   showToast('项目新建成功');

@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse
 from PIL import Image
 from sqlalchemy.orm import Session
 
+from canvas_profile_service import get_project_canvas
 from database import Project, get_db
 
 router = APIRouter()
@@ -111,7 +112,7 @@ def _fit_image(data: bytes, size: tuple[int, int] = (1920, 1080), fit: str = "co
     return resized.crop((left, top, left + tw, top + th))
 
 
-def _render_background_image(run_dir: Path, fit: str) -> None:
+def _render_background_image(run_dir: Path, fit: str, canvas: dict[str, Any] | None = None) -> None:
     original = _original_image_path(run_dir)
     rendered = _image_path(run_dir)
     if not original.exists():
@@ -120,7 +121,8 @@ def _render_background_image(run_dir: Path, fit: str) -> None:
             original.write_bytes(rendered.read_bytes())
         else:
             return
-    image = _fit_image(original.read_bytes(), (1920, 1080), fit)
+    target = (int(canvas.get("width", 1920)), int(canvas.get("height", 1080))) if canvas else (1920, 1080)
+    image = _fit_image(original.read_bytes(), target, fit)
     rendered.parent.mkdir(parents=True, exist_ok=True)
     image.save(rendered, format="PNG")
 
@@ -204,7 +206,7 @@ def _apply(project: Any, payload: dict[str, Any]) -> dict[str, Any]:
         "generation_policy": "keep_visual_draft_white_for_mask",
     }
     if mode == "image":
-        _render_background_image(run_dir, config["image_fit"])
+        _render_background_image(run_dir, config["image_fit"], get_project_canvas(project))
     _write_json(_config_path(run_dir), config)
     config = _read_config(run_dir, getattr(project, "id", None))
     config["patched_prompt_count"] = _patch_prompts(run_dir, config)

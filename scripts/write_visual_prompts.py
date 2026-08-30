@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any
@@ -293,8 +294,10 @@ def production_invariant_lines(invariants: dict[str, Any], policy: dict[str, Any
     background = str(invariants.get("generated_image", {}).get("background") or "#FFFFFF").strip() or "#FFFFFF"
     y_min = int(invariants.get("subtitle_safe_zone", {}).get("y_min") or 930)
     y_max = int(invariants.get("subtitle_safe_zone", {}).get("y_max") or 1080)
+    orientation = "portrait" if height > width else "landscape"
+    divisor = math.gcd(width, height) or 1
     return [
-        f"- Canvas: {width}x{height}, 16:9 landscape.",
+        f"- Canvas: {width}x{height}, {width // divisor}:{height // divisor} {orientation}.",
         f"- Generated slide image background must be flat pure-white {background} background; default invariant wording: pure-white #FFFFFF background.",
         "- All four edges and all four corners must remain continuously pure white; no paper texture, shadow, noise, gradient, vignette, or off-white outer canvas.",
         "- Every slide must contain one clear main title.",

@@ -1,6 +1,32 @@
 // Step 5 Canvas painting, mask preview, animation preview, draft persistence, and confirmation.
 // Workspace state/render helpers live in mask_workspace.js; shared modal/API utilities live in ui_foundation.js / workflow_state.js / api_client.js.
 
+function maskCanvasGeometry() {
+  return typeof getProjectCanvasGeometry === 'function'
+    ? getProjectCanvasGeometry()
+    : { width: 1920, height: 1080, aspectRatio: '16 / 9' };
+}
+
+function syncMaskCanvasDimensions(canvas) {
+  if (!canvas) return maskCanvasGeometry();
+  const geometry = maskCanvasGeometry();
+  if (canvas.width !== geometry.width) canvas.width = geometry.width;
+  if (canvas.height !== geometry.height) canvas.height = geometry.height;
+  const container = document.getElementById('canvas-container');
+  if (container) {
+    container.style.aspectRatio = geometry.aspectRatio;
+    container.style.setProperty('--project-aspect-ratio', geometry.aspectRatio);
+    container.style.setProperty('--project-aspect-ratio-scale', String(geometry.width / geometry.height));
+  }
+  const animationCanvas = document.getElementById('animation-preview-canvas');
+  if (animationCanvas) {
+    animationCanvas.width = geometry.width;
+    animationCanvas.height = geometry.height;
+    animationCanvas.closest('.animation-preview-stage')?.style.setProperty('aspect-ratio', geometry.aspectRatio);
+  }
+  return geometry;
+}
+
 function updateBrushSize(value, shouldRedraw = true) {
   const size = Math.max(100, Math.min(200, Number(value) || 140));
   state.canvasState.brushSize = size;
@@ -69,7 +95,10 @@ function createCurrentSlideBlock() {
     spoken_text: '',
     manual_mask: { source: 'manual', color: getMaskColor(idx), strokes: [] },
     reveal: normalizeMaskReveal({ type: 'crop_fade_up' }),
-    box: [860, 460, 1060, 620]
+    box: (() => {
+      const { width, height } = maskCanvasGeometry();
+      return [Math.round(width * 0.45), Math.round(height * 0.43), Math.round(width * 0.55), Math.round(height * 0.57)];
+    })()
   });
   startMaskPaint(idx);
   scheduleStep5Autosave();
@@ -131,14 +160,15 @@ function updateMaskBoxFromManualMask(idx) {
 }
 
 function getCanvasCoords(event, canvas) {
+  const { width, height } = maskCanvasGeometry();
   // Fullscreen is already the enlarged editing surface. Keep it as a literal
   // 1:1 canvas: no focal transform, no inverse transform, and therefore no
   // possibility of a left/right centre drift.
   if (state.canvasState.maskFullscreen) {
     const rect = canvas.getBoundingClientRect();
     return {
-      x: Math.max(0, Math.min(1920, (event.clientX - rect.left) * 1920 / Math.max(1, rect.width))),
-      y: Math.max(0, Math.min(1080, (event.clientY - rect.top) * 1080 / Math.max(1, rect.height))),
+      x: Math.max(0, Math.min(width, (event.clientX - rect.left) * width / Math.max(1, rect.width))),
+      y: Math.max(0, Math.min(height, (event.clientY - rect.top) * height / Math.max(1, rect.height))),
     };
   }
   const stage = document.getElementById('step5-zoom-stage');
@@ -163,21 +193,21 @@ function getCanvasCoords(event, canvas) {
     const localCanvasX = localStageX - canvas.offsetLeft;
     const localCanvasY = localStageY - canvas.offsetTop;
     return {
-      x: Math.max(0, Math.min(1920, localCanvasX * 1920 / canvasWidth)),
-      y: Math.max(0, Math.min(1080, localCanvasY * 1080 / canvasHeight)),
+      x: Math.max(0, Math.min(width, localCanvasX * width / canvasWidth)),
+      y: Math.max(0, Math.min(height, localCanvasY * height / canvasHeight)),
     };
   }
   const rect = canvas.getBoundingClientRect();
   return window.PPTFlow?.mapClientPointToCanvas
-    ? window.PPTFlow.mapClientPointToCanvas(event.clientX, event.clientY, rect, 1920, 1080)
+    ? window.PPTFlow.mapClientPointToCanvas(event.clientX, event.clientY, rect, width, height)
     : {
-        x: Math.max(0, Math.min(1920, (event.clientX - rect.left) * 1920 / Math.max(1, rect.width))),
-        y: Math.max(0, Math.min(1080, (event.clientY - rect.top) * 1080 / Math.max(1, rect.height))),
+        x: Math.max(0, Math.min(width, (event.clientX - rect.left) * width / Math.max(1, rect.width))),
+        y: Math.max(0, Math.min(height, (event.clientY - rect.top) * height / Math.max(1, rect.height))),
       };
 }
 
 // The image may be letterboxed by object-fit: contain. The editable Canvas
-// must occupy that exact visible 16:9 rectangle, never the larger wrapper.
+// must occupy that exact visible project rectangle, never the larger wrapper.
 function syncMaskCanvasViewport(canvas = document.getElementById('step5-canvas')) {
   const stage = document.getElementById('step5-zoom-stage');
   const image = document.getElementById('step5-bg-img');
@@ -186,7 +216,7 @@ function syncMaskCanvasViewport(canvas = document.getElementById('step5-canvas')
   const stageHeight = Math.max(1, stage.offsetHeight);
   const imageRatio = image.naturalWidth > 0 && image.naturalHeight > 0
     ? image.naturalWidth / image.naturalHeight
-    : 16 / 9;
+    : maskCanvasGeometry().width / maskCanvasGeometry().height;
   const stageRatio = stageWidth / stageHeight;
   let width = stageWidth;
   let height = stageHeight;
@@ -225,7 +255,8 @@ function refreshMaskToolCursor() {
   const canvasRect = canvas.getBoundingClientRect();
   const wrapperRect = wrapper.getBoundingClientRect();
   const toolSize = state.canvasState.eraserMode ? state.canvasState.eraserSize : state.canvasState.brushSize;
-  const displayScale = Math.min(canvasRect.width / 1920, canvasRect.height / 1080);
+  const { width, height } = maskCanvasGeometry();
+  const displayScale = Math.min(canvasRect.width / width, canvasRect.height / height);
   const displaySize = Math.max(8, toolSize * displayScale);
   cursor.style.width = `${displaySize}px`;
   cursor.style.height = `${displaySize}px`;
@@ -376,12 +407,13 @@ function handleMaskCanvasWheel(e, canvas) {
   if (state.canvasState.maskFullscreen) return;
   const rect = canvas.getBoundingClientRect();
   if (!rect.width || !rect.height) return;
-  // Derive the focal point in the stable 1920×1080 drawing space rather than
+  // Derive the focal point in the stable project drawing space rather than
   // in a previously transformed DOM rectangle. This keeps consecutive zooms
   // anchored to the cursor and prevents the annotation layer from drifting.
   const point = getCanvasCoords(e, canvas);
-  state.canvasState.maskZoomOriginX = (point.x / 1920) * 100;
-  state.canvasState.maskZoomOriginY = (point.y / 1080) * 100;
+  const { width, height } = maskCanvasGeometry();
+  state.canvasState.maskZoomOriginX = (point.x / width) * 100;
+  state.canvasState.maskZoomOriginY = (point.y / height) * 100;
   const current = Number(state.canvasState.maskZoom || 1);
   const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
   state.canvasState.maskZoom = Math.max(1, Math.min(4, current * factor));
@@ -402,8 +434,9 @@ function handleGlobalMaskWheel(e) {
 
 function createStep5OffscreenCanvas() {
   const canvas = document.createElement('canvas');
-  canvas.width = 1920;
-  canvas.height = 1080;
+  const { width, height } = maskCanvasGeometry();
+  canvas.width = width;
+  canvas.height = height;
   return canvas;
 }
 
@@ -434,7 +467,7 @@ function buildMaskDisplayLayer(item, idx, options = {}) {
   const displayLayer = createStep5OffscreenCanvas();
   const displayCtx = displayLayer.getContext('2d');
   displayCtx.fillStyle = hexToRgba(color, isSelected ? 0.68 : 0.55);
-  displayCtx.fillRect(0, 0, 1920, 1080);
+  displayCtx.fillRect(0, 0, displayLayer.width, displayLayer.height);
   displayCtx.globalCompositeOperation = 'destination-in';
   displayCtx.drawImage(maskLayer, 0, 0);
   displayCtx.globalCompositeOperation = 'source-over';
@@ -511,20 +544,22 @@ function maskPixelBounds(item) {
     }
   }
   if (maxX < minX || maxY < minY) return null;
+  const { width: canvasWidth, height: canvasHeight } = maskCanvasGeometry();
   return {
     x: Math.max(0, minX),
     y: Math.max(0, minY),
-    w: Math.min(1920, maxX + 1) - Math.max(0, minX),
-    h: Math.min(1080, maxY + 1) - Math.max(0, minY),
+    w: Math.min(canvasWidth, maxX + 1) - Math.max(0, minX),
+    h: Math.min(canvasHeight, maxY + 1) - Math.max(0, minY),
   };
 }
 
 function maskBoxBounds(item) {
-  const values = Array.isArray(item?.box) ? item.box.map(Number) : [0, 0, 1920, 1080];
+  const { width, height } = maskCanvasGeometry();
+  const values = Array.isArray(item?.box) ? item.box.map(Number) : [0, 0, width, height];
   const x1 = Math.max(0, Math.min(values[0] || 0, values[2] || 0));
   const y1 = Math.max(0, Math.min(values[1] || 0, values[3] || 0));
-  const x2 = Math.min(1920, Math.max(values[0] || 0, values[2] || 0));
-  const y2 = Math.min(1080, Math.max(values[1] || 0, values[3] || 0));
+  const x2 = Math.min(width, Math.max(values[0] || 0, values[2] || 0));
+  const y2 = Math.min(height, Math.max(values[1] || 0, values[3] || 0));
   return { x: x1, y: y1, w: Math.max(1, x2 - x1), h: Math.max(1, y2 - y1) };
 }
 
@@ -539,7 +574,7 @@ function buildMaskAnimationLayers(item) {
   const coverLayer = createStep5OffscreenCanvas();
   const coverCtx = coverLayer.getContext('2d');
   coverCtx.fillStyle = step3VideoBackground || '#FEFDF9';
-  coverCtx.fillRect(0, 0, 1920, 1080);
+  coverCtx.fillRect(0, 0, coverLayer.width, coverLayer.height);
   coverCtx.globalCompositeOperation = 'destination-in';
   coverCtx.drawImage(maskLayer, 0, 0);
   return { contentLayer, coverLayer };
@@ -655,10 +690,11 @@ function drawAnimationModalBase() {
   const canvas = document.getElementById('animation-preview-canvas');
   const empty = document.getElementById('animation-preview-empty');
   if (!canvas) return false;
+  syncMaskCanvasDimensions(document.getElementById('step5-canvas'));
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, 1920, 1080);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = step3VideoBackground || '#FEFDF9';
-  ctx.fillRect(0, 0, 1920, 1080);
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
   if (!step5SourceCanvas) {
     if (empty) empty.style.display = 'flex';
     return false;
@@ -708,9 +744,9 @@ function previewGlobalAnimationSettings() {
   const durationMs = Math.max(400, reveal.duration * 1000);
   const totalMs = durationMs + staggerMs * Math.max(0, previews.length - 1);
   const tick = now => {
-    ctx.clearRect(0, 0, 1920, 1080);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = step3VideoBackground || '#FEFDF9';
-    ctx.fillRect(0, 0, 1920, 1080);
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(step5SourceCanvas, 0, 0);
     previews.forEach((preview, index) => {
       const localElapsed = now - startedAt - index * staggerMs;
@@ -742,7 +778,7 @@ async function saveGlobalAnimationSettings() {
 function rebuildStep5SourceCache(image) {
   const source = createStep5OffscreenCanvas();
   const sourceCtx = source.getContext('2d');
-  sourceCtx.drawImage(image, 0, 0, 1920, 1080);
+  sourceCtx.drawImage(image, 0, 0, source.width, source.height);
   step5SourceCanvas = source;
 
 }
@@ -792,10 +828,11 @@ function drawManualMaskStrokes(ctx, item, idx, options = {}) {
 
 function redrawCanvas(options = {}) {
   const canvas = document.getElementById('step5-canvas');
+  syncMaskCanvasDimensions(canvas);
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, 1920, 1080);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = step3VideoBackground;
-  ctx.fillRect(0, 0, 1920, 1080);
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
   canvas.classList.toggle('painting', state.canvasState.paintMode && !state.canvasState.eraserMode);
   canvas.classList.toggle('erasing', state.canvasState.paintMode && state.canvasState.eraserMode);
 
@@ -809,7 +846,7 @@ function redrawCanvas(options = {}) {
     && state.canvasState.exactPreviewImage
     && state.canvasState.exactPreviewSlideId === currentSlideId
   ) {
-    ctx.drawImage(state.canvasState.exactPreviewImage, 0, 0, 1920, 1080);
+    ctx.drawImage(state.canvasState.exactPreviewImage, 0, 0, canvas.width, canvas.height);
     return;
   }
   ctx.drawImage(step5SourceCanvas, 0, 0);

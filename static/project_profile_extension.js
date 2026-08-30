@@ -102,7 +102,17 @@
           <textarea id="input-project-article" rows="8" placeholder="可选：创建后自动导入为 Step 1 文章；留空则稍后手动导入。"></textarea>
         </section>
         <section class="project-profile-section">
-          <h4>2. 生产模式</h4>
+          <h4>2. 画布比例</h4>
+          <div class="project-profile-mode-grid">
+            ${optionCards([
+              { id: 'landscape_16_9', name: '横屏 16:9' },
+              { id: 'portrait_9_16', name: '竖屏 9:16' },
+            ], 'canvas_profile', 'landscape_16_9')}
+          </div>
+          <p class="project-profile-help">创建后比例会锁定；需要更换比例时请复制项目重新生成。</p>
+        </section>
+        <section class="project-profile-section">
+          <h4>3. 生产模式</h4>
           <div class="project-profile-mode-grid">${optionCards(templates.automation_modes || DEFAULT_AUTOMATION_MODES, 'automation_mode', 'manual_review')}</div>
         </section>
       </div>
@@ -141,6 +151,7 @@
   function collectProfile() {
     return {
       version: 'project_profile_v1',
+      canvas_profile: selectedOption('canvas_profile', 'landscape_16_9'),
       automation_mode: selectedOption('automation_mode', 'manual_review'),
       quality_gates: { ...DEFAULT_QUALITY_GATES },
       last_used_storyboard_template_id: '',
@@ -172,6 +183,7 @@
         name,
         description: desc,
         ai_mode: aiMode,
+        canvas_profile: profile.canvas_profile,
       });
       const project = projectRes.project;
       if (!project?.id) throw new Error('项目创建成功但未返回 project.id');

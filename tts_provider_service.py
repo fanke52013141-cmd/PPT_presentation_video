@@ -32,6 +32,10 @@ TTS_PROVIDER_ALIASES = {
     "indextts": "comfyui_tts",
     "index_tts": "comfyui_tts",
     "index_tts_2.5": "comfyui_tts",
+    "index tts 2.5": "comfyui_tts",
+    "index tts-2.5": "comfyui_tts",
+    "indextts2.5": "comfyui_tts",
+    "indextts-2.5": "comfyui_tts",
     "index_tts2": "comfyui_tts",
 }
 TTS_PROVIDER_DEFAULTS = {
@@ -74,6 +78,11 @@ TTS_PROVIDER_DEFAULTS = {
 class TtsProviderDependencies:
     get_setting: Callable[..., Any]
     write_project_log: Callable[..., Any]
+    # Keep the process boundary injectable: production uses the killable
+    # runner while unit tests can deterministically model retries/timeouts.
+    run_subprocess: Callable[..., subprocess.CompletedProcess] = (
+        run_subprocess_killable
+    )
 
 
 _dependencies: TtsProviderDependencies | None = None
@@ -96,7 +105,16 @@ def _deps() -> TtsProviderDependencies:
 
 def normalize_tts_provider(provider: Optional[str]) -> str:
     value = str(provider or "minimax").strip().lower()
-    return TTS_PROVIDER_ALIASES.get(value, value or "minimax")
+    normalized = TTS_PROVIDER_ALIASES.get(value)
+    if normalized:
+        return normalized
+    # Settings exported by ComfyUI workflows often contain display labels
+    # such as "IndexTTS-2.5". Treat harmless spacing/punctuation variants as
+    # the same local provider without changing unrelated provider names.
+    compact = value.replace(" ", "").replace("-", "_")
+    if compact in {"indextts_2.5", "indextts2.5", "indextts_2", "indextts2"}:
+        return "comfyui_tts"
+    return value or "minimax"
 
 
 def tts_provider_defaults(provider: str) -> Dict[str, str]:
@@ -245,7 +263,7 @@ def run_tts_command_with_retries(
     for attempt in range(1, STEP7_TTS_RETRY_ATTEMPTS + 1):
         last_result["attempts"] = attempt
         try:
-            result = run_subprocess_killable(
+            result = _deps().run_subprocess(
                 tts_args,
                 capture_output=True,
                 text=True,

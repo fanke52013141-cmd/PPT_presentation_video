@@ -262,6 +262,14 @@ def build_reveal_pptx(
     canvas = manifest.get("canvas") or {}
     canvas_width = int(canvas.get("width") or DEFAULT_CANVAS["width"])
     canvas_height = int(canvas.get("height") or DEFAULT_CANVAS["height"])
+    if canvas_height > canvas_width:
+        slide_width_inches = 7.5
+        slide_height_inches = 13.333333
+        aspect_label = "9:16"
+    else:
+        slide_width_inches = SLIDE_WIDTH_INCHES
+        slide_height_inches = SLIDE_HEIGHT_INCHES
+        aspect_label = "16:9"
     background_hex = str(canvas.get("background") or DEFAULT_BACKGROUND_HEX)
     background_rgb = hex_to_rgb(background_hex)
     slide_ids: list[str] = readiness["slide_ids"]
@@ -276,12 +284,9 @@ def build_reveal_pptx(
         progress(5, "准备画布")
 
     presentation = Presentation()
-    presentation.slide_width = Inches(SLIDE_WIDTH_INCHES)
-    presentation.slide_height = Inches(SLIDE_HEIGHT_INCHES)
+    presentation.slide_width = Inches(slide_width_inches)
+    presentation.slide_height = Inches(slide_height_inches)
     blank_layout = presentation.slide_layouts[6]
-
-    inch_per_px_x = SLIDE_WIDTH_INCHES / canvas_width
-    inch_per_px_y = SLIDE_HEIGHT_INCHES / canvas_height
 
     slide_step = max(1, len(slide_ids))
     progress_pct = 10
@@ -377,16 +382,16 @@ def build_reveal_pptx(
                 str(base_png_path),
                 0,
                 0,
-                width=Inches(SLIDE_WIDTH_INCHES),
-                height=Inches(SLIDE_HEIGHT_INCHES),
+                width=Inches(slide_width_inches),
+                height=Inches(slide_height_inches),
             )
             for idx in range(k):
                 crop_path = crop_paths[idx]
                 _layer, box = crops[idx]
-                left_in = _pixels_to_inches(box["x"], canvas_width, SLIDE_WIDTH_INCHES)
-                top_in = _pixels_to_inches(box["y"], canvas_height, SLIDE_HEIGHT_INCHES)
-                width_in = _pixels_to_inches(box["w"], canvas_width, SLIDE_WIDTH_INCHES)
-                height_in = _pixels_to_inches(box["h"], canvas_height, SLIDE_HEIGHT_INCHES)
+                left_in = _pixels_to_inches(box["x"], canvas_width, slide_width_inches)
+                top_in = _pixels_to_inches(box["y"], canvas_height, slide_height_inches)
+                width_in = _pixels_to_inches(box["w"], canvas_width, slide_width_inches)
+                height_in = _pixels_to_inches(box["h"], canvas_height, slide_height_inches)
                 slide.shapes.add_picture(
                     str(crop_path),
                     Inches(left_in),
@@ -458,9 +463,9 @@ def build_reveal_pptx(
         "slide_ids": slide_ids,
         "total_page_count": verify_slide_count,
         "slide_size": {
-            "width_inches": SLIDE_WIDTH_INCHES,
-            "height_inches": SLIDE_HEIGHT_INCHES,
-            "aspect_ratio": "16:9",
+            "width_inches": slide_width_inches,
+            "height_inches": slide_height_inches,
+            "aspect_ratio": aspect_label,
         },
         "canvas": {
             "width": canvas_width,

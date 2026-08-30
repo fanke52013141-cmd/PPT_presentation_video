@@ -43,9 +43,31 @@ def provider_preflight_checks() -> dict[str, bool]:
         or os.environ.get(str(tts_defaults.get("secret_key_env") or ""))
         or ""
     ).strip()
-    tts_credentials_ready = bool(tts_api_key) and (
-        tts_provider != "tencent_tts" or bool(tts_secret_key)
-    )
+    if tts_provider == "comfyui_tts":
+        # ComfyUI is a local provider: readiness means the service and the
+        # configured API workflow are available, not that a cloud API key is
+        # present. Import lazily so test discovery never starts app wiring.
+        try:
+            import comfyui_backend
+
+            workflow_value = str(get_setting("tts_endpoint") or "").strip()
+            if workflow_value.lower().startswith(("http://", "https://")):
+                workflow_value = ""
+            workflow_path = Path(workflow_value) if workflow_value else (
+                ROOT / "data" / "digital_human" / "comfyui_tts_workflow.json"
+            )
+            if not workflow_path.is_absolute():
+                workflow_path = ROOT / workflow_path
+            workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+            tts_credentials_ready = bool(
+                comfyui_backend.inspect_tts_preflight(workflow).get("success")
+            )
+        except Exception:
+            tts_credentials_ready = False
+    else:
+        tts_credentials_ready = bool(tts_api_key) and (
+            tts_provider != "tencent_tts" or bool(tts_secret_key)
+        )
     return {
         "llm_credentials": bool(str(get_setting("llm_api_key") or "").strip()),
         "image_credentials": bool(str(get_setting("image_api_key") or "").strip()),

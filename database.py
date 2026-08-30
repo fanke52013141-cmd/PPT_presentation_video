@@ -47,6 +47,8 @@ class Project(Base):
     run_dir = Column(String, nullable=False)
     # AI 模式：auto=自动调用 AI 做分镜规划/可视化/Mask；manual=手动填写，保留按需触发 AI
     ai_mode = Column(String, default="auto")
+    # Project-level output geometry. Existing databases migrate to landscape.
+    canvas_profile = Column(String, nullable=False, default="landscape_16_9")
     # 课程/章节归属：nullable=True 表示"独立项目"（不属于任何课程章节）
     course_id = Column(String, nullable=True, index=True)
     chapter_id = Column(String, nullable=True, index=True)

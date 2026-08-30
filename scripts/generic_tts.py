@@ -470,14 +470,17 @@ def synthesize_comfyui(args: argparse.Namespace, tts_text: str, subtitle_text: s
     _repo_root = Path(__file__).resolve().parent.parent
     if str(_repo_root) not in _sys.path:
         _sys.path.insert(0, str(_repo_root))
-    from comfyui_backend import run_comfyui_tts, check_health, ComfyUIError  # type: ignore
-
-    if not check_health():
-        raise TtsError("ComfyUI 服务不可达，请确认已启动且监听 http://127.0.0.1:8188")
+    from comfyui_backend import (  # type: ignore
+        inspect_tts_preflight,
+        run_comfyui_tts,
+    )
 
     # 加载 TTS 工作流模板
-    # endpoint 字段复用为工作流 JSON 路径；空则尝试默认位置
+    # endpoint 字段复用为工作流 JSON 路径；空则尝试默认位置。
+    # 残留的云端 API URL（http(s):// 开头）不是本地工作流路径，直接回退默认位置。
     wf_path_str = str(args.endpoint or "").strip()
+    if wf_path_str and (wf_path_str.lower().startswith("http://") or wf_path_str.lower().startswith("https://")):
+        wf_path_str = ""
     if not wf_path_str:
         wf_path_str = str(_repo_root / "data" / "digital_human" / "comfyui_tts_workflow.json")
     wf_path = Path(wf_path_str)
@@ -501,6 +504,14 @@ def synthesize_comfyui(args: argparse.Namespace, tts_text: str, subtitle_text: s
             "请在 ComfyUI 中使用 'Save (API Format)' 重新导出。"
         )
 
+    preflight = inspect_tts_preflight(workflow_template)
+    if not preflight.get("success"):
+        errors = "；".join(str(item) for item in preflight.get("errors", []))
+        raise TtsError(
+            "ComfyUI/IndexTTS 预检失败"
+            + (f": {errors}" if errors else "")
+        )
+
     # 参考音频（声音克隆）：clone_voice_id 存储参考音频的本地路径
     ref_audio_path = None
     clone_voice = str(args.clone_voice_id or "").strip()
@@ -510,26 +521,19 @@ def synthesize_comfyui(args: argparse.Namespace, tts_text: str, subtitle_text: s
         elif clone_voice.lower() in ("none", "default", ""):
             ref_audio_path = None
         else:
-            # 可能是 ComfyUI input 目录中的文件名，无需本地路径
-            logger_warning = None
-            # 作为文件名传递给工作流（通过 overrides 处理需要额外逻辑，
-            # 此处简单跳过——用户应在工作流模板中预设参考音频）
+            # 可能是 ComfyUI input 目录中的文件名，无需本地路径；
+            # 参考音频由用户在 ComfyUI 工作流模板中预设
             pass
-
-    # 构建 overrides（speed 等参数透传到 IndexTTS2 节点）
-    overrides: dict[str, Any] = {}
-    if args.speed and float(args.speed) != 1.0:
-        overrides["speed"] = float(args.speed)
 
     output_path = Path(args.out_audio)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # 语速等参数不透传：工作流 JSON 是参数唯一权威来源
     result = run_comfyui_tts(
         text=strip_tts_markup(tts_text),
         ref_audio_path=ref_audio_path,
         output_path=output_path,
         workflow_template=workflow_template,
-        overrides=overrides if overrides else None,
         timeout=float(args.timeout),
     )
 

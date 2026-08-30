@@ -63,13 +63,13 @@
       applyConfigToUI();
       checkComfyuiWorkflow();
       loadPreview();
-      // 恢复未完成 job 的轮询（页面刷新后）
+      // 恢复未完成 job 的轮询（页面刷新后），静默处理已结束的旧任务
       if (dhState.config.slides) {
         Object.keys(dhState.config.slides).forEach(function (slideId) {
           var slide = dhState.config.slides[slideId];
           if (slide && slide.job_id &&
               (slide.status === "queued" || slide.status === "processing")) {
-            pollJob(slideId, slide.job_id);
+            pollJob(slideId, slide.job_id, true);
           }
         });
       }
@@ -334,20 +334,26 @@
       }
     }
     if (src) {
-      // 重置 onseeked 防止旧回调干扰
+      var captured = false;
+      function tryCapture() {
+        if (captured) return;
+        if (video.readyState >= 2) {
+          captured = true;
+          captureFirstFrame(video);
+          try { video.play().catch(function () {}); } catch (e) {}
+        }
+      }
+      // 关键：先绑定事件再设置 src，避免浏览器快速加载时错过事件
       video.onseeked = null;
-      video.onloadeddata = null;
+      video.onloadedmetadata = tryCapture;
+      video.onloadeddata = tryCapture;
+      video.oncanplay = tryCapture;
       video.src = src;
       video.load();
-      // 视频元数据就绪后再播放并截取第一帧
-      video.onloadeddata = function () {
-        captureFirstFrame(video);
-        try { video.play().catch(function () {}); } catch (e) {}
-      };
-      // 兜底：5s 后若仍未截取，强制尝试一次
-      setTimeout(function () {
-        if (video.readyState >= 2) captureFirstFrame(video);
-      }, 5000);
+      // 多重兜底：延迟尝试截取
+      setTimeout(tryCapture, 1500);
+      setTimeout(tryCapture, 3000);
+      setTimeout(tryCapture, 5000);
     }
   }
 
@@ -673,7 +679,7 @@
     updateAudioStatus();
   }
 
-  async function pollJob(slideId, jobId) {
+  async function pollJob(slideId, jobId, silent = false) {
     if (dhState.polling[jobId]) return;
     dhState.polling[jobId] = true;
     var label = slideId === "full" ? "整段" : "页面 " + slideId;
@@ -691,15 +697,15 @@
           dhState.config.slides[slideId].video_exists = true;
           updateAudioStatus();
           loadPreview();
-          showToast(label + " 数字人已生成");
+          if (!silent) showToast(label + " 数字人已生成");
           break;
         } else if (status === "failed") {
           markSlideStatus(slideId, "failed");
-          showToast(label + " 生成失败：" + ((job && job.error) || "未知错误"));
+          if (!silent) showToast(label + " 生成失败：" + ((job && job.error) || "未知错误"));
           break;
         } else if (status === "unavailable") {
           markSlideStatus(slideId, "failed");
-          showToast("该任务不可用，请确认模型与服务状态");
+          if (!silent) showToast("该任务不可用，请确认模型与服务状态");
           break;
         } else {
           markSlideStatus(slideId, status || "processing");

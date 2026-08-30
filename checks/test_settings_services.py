@@ -237,15 +237,15 @@ def test_tts_connection_probe_contract_is_unchanged() -> None:
                 "API_KEY": api_key,
                 "SECRET_KEY": secret_key,
             },
+            run_subprocess_bounded=run_process,
         )
     )
     try:
-        with patch("settings_service.subprocess.run", run_process):
-            result = settings_service.test_tts_connection(
-                settings_service.TestTtsPayload(
-                    provider="minimax",
-                )
+        result = settings_service.test_tts_connection(
+            settings_service.TestTtsPayload(
+                provider="minimax",
             )
+        )
     finally:
         settings_service.configure_settings_dependencies(original)
     assert result["success"] is True
@@ -254,7 +254,7 @@ def test_tts_connection_probe_contract_is_unchanged() -> None:
     assert command_args["speed"] == "1.0"
     assert command_args["volume"] == "1.0"
     assert command_args["pitch"] == "0"
-    assert process_args["timeout"] == 90
+    assert process_args["timeout_sec"] == 90
     assert process_args["capture_output"] is True
     assert process_args["text"] is True
     assert process_args["encoding"] == "utf-8"

@@ -55,6 +55,21 @@
     return String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
   }
 
+  function projectCanvasLabel() {
+    const geometry = typeof window.PPTStudio?.runtime?.getProjectCanvasGeometry === 'function'
+      ? window.PPTStudio.runtime.getProjectCanvasGeometry()
+      : { width: 1920, height: 1080 };
+    const width = Math.max(1, Number(geometry.width) || 1920);
+    const height = Math.max(1, Number(geometry.height) || 1080);
+    const divisor = gcd(width, height) || 1;
+    return `${width / divisor}:${height / divisor}${height > width ? ' 竖图' : ' 横图'}`;
+  }
+
+  function gcd(a, b) {
+    while (b) { const next = a % b; a = b; b = next; }
+    return a;
+  }
+
   function step3ImageStyleUrl(projectId, suffix) {
     return `/api/projects/${encodeURIComponent(projectId)}/steps/3/image-style${suffix || ''}`;
   }
@@ -144,7 +159,7 @@
             <div class="style-workbench-panel">
               <div class="style-ref-output-head"><h4>效果预览</h4><div class="style-ref-actions"><label class="style-ref-upload-button" for="style-panel-upload-files">⇧ 手动上传参考图</label><input id="style-panel-upload-files" type="file" accept="image/*" multiple><button id="btn-style-panel-upload-run" type="button" hidden>上传为参考图</button></div></div>
               <div id="style-ref-list" class="style-ref-preview-grid" data-style-preview-list></div>
-              <p class="style-ref-product-note">所有图片统一保存为 1920×1080 横图；预览图会直接参与后续生图。</p>
+              <p class="style-ref-product-note">所有图片统一保存为 ${projectCanvasLabel()}；预览图会直接参与后续生图。</p>
             </div>
           </section>
           <section id="style-panel-reverse-section" class="style-ref-view" data-style-view="reverse" hidden>
@@ -152,7 +167,7 @@
               <div class="style-ref-output-head"><h4>上传参考图（最多3张）</h4><div class="style-ref-actions"><button id="btn-style-panel-reverse-prompt" class="secondary" type="button">反推 Prompt</button><button class="prompt-help-button" type="button" data-prompt-help="style-reverse" aria-label="查看参考图反推 Prompt 的输入输出示例">?</button></div></div>
               <input id="style-panel-reverse-files" type="file" accept="image/*" multiple>
               <div id="style-panel-reverse-preview" class="style-reverse-upload-grid"></div>
-              <p class="style-reverse-help">上传图片会以 16:9 横图卡片展示，反推时保留画面风格而不照抄内容。</p>
+              <p class="style-reverse-help">上传图片会以 ${projectCanvasLabel()}卡片展示，反推时保留画面风格而不照抄内容。</p>
               <label class="style-panel-label" for="style-panel-reverse-requirement">补充要求（可选）</label>
               <textarea id="style-panel-reverse-requirement" class="style-system-textarea" rows="5" placeholder="请输入希望保留或偏好的风格特征，例如：光线、色调、构图、材质等。"></textarea>
               <div class="style-ref-two-actions"><button id="btn-style-panel-reverse-run" class="style-ref-primary" type="button">反推 System Content</button></div>
@@ -376,7 +391,7 @@
         <img src="${esc(item.url)}" alt="风格参考图 ${esc(item.index)}">
         <div class="style-ref-card-overlay"><button class="style-ref-open" type="button" data-url="${esc(item.url)}" aria-label="预览大图">⌕</button>${deletable ? `<button class="style-ref-delete-one" type="button" data-index="${esc(item.index)}" aria-label="删除参考图">⌫</button>` : ''}</div>
       </article>`);
-    for (let index = cards.length; index < 3; index += 1) cards.push('<article class="style-ref-card"><div class="style-ref-empty-slot">16:9 效果预览<br>等待生成</div></article>');
+    for (let index = cards.length; index < 3; index += 1) cards.push(`<article class="style-ref-card"><div class="style-ref-empty-slot">${projectCanvasLabel()} 效果预览<br>等待生成</div></article>`);
     return cards.join('');
   }
 
@@ -508,7 +523,7 @@
       STATE.references = result.references || { images: [] };
       renderCurrentReferences();
       renderTemplates();
-      toast(`已生成 ${(STATE.references.images || []).length} 张 16:9 效果预览。`, 4000);
+      toast(`已生成 ${(STATE.references.images || []).length} 张 ${projectCanvasLabel()}效果预览。`, 4000);
       return result;
     } finally {
       if (button) { button.disabled = false; button.textContent = original; }
@@ -551,7 +566,7 @@
     input.value = '';
     renderCurrentReferences();
     renderTemplates();
-    toast('参考图已上传并统一处理为 16:9 横图。', 4000);
+    toast(`参考图已上传并统一处理为 ${projectCanvasLabel()}。`, 4000);
   }
 
   function renderInlineReversePreview() {
@@ -567,7 +582,7 @@
       return `<article class="style-reverse-input-card"><img src="${esc(url)}" data-object-url="${esc(url)}" alt="${esc(file.name)}"></article>`;
     });
     if (cards.length < 3) cards.push('<label class="style-reverse-upload-empty" for="style-panel-reverse-files"><span>＋</span>上传图片<br><small>继续上传（最多3张）</small></label>');
-    while (cards.length < 3) cards.push('<article class="style-ref-card"><div class="style-ref-empty-slot">16:9 参考图位置</div></article>');
+    while (cards.length < 3) cards.push(`<article class="style-ref-card"><div class="style-ref-empty-slot">${projectCanvasLabel()} 参考图位置</div></article>`);
     preview.innerHTML = cards.join('');
   }
 

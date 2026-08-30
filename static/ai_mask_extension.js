@@ -96,11 +96,15 @@
     const rect = left?.getBoundingClientRect?.();
     const maxW = Math.max(240, (rect?.width || window.innerWidth) - 12);
     const maxH = Math.max(135, (rect?.height || window.innerHeight) - 12);
+    const geometry = typeof getProjectCanvasGeometry === 'function'
+      ? getProjectCanvasGeometry()
+      : { width: 1920, height: 1080 };
+    const ratio = geometry.width / geometry.height;
     let width = maxW;
-    let height = width * 9 / 16;
+    let height = width / ratio;
     if (height > maxH) {
       height = maxH;
-      width = height * 16 / 9;
+      width = height * ratio;
     }
     container.style.width = `${Math.floor(width)}px`;
     container.style.height = `${Math.floor(height)}px`;

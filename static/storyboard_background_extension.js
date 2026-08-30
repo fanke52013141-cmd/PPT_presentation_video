@@ -37,6 +37,30 @@
     return current || sessionStorage.getItem('ppt_storyboard_background_project_id') || '';
   }
 
+  function gcd(a, b) {
+    while (b) { const next = a % b; a = b; b = next; }
+    return a;
+  }
+
+  function canvasGeometry() {
+    return typeof window.PPTStudio?.runtime?.getProjectCanvasGeometry === 'function'
+      ? window.PPTStudio.runtime.getProjectCanvasGeometry()
+      : { width: 1920, height: 1080 };
+  }
+
+  function canvasAspectLabel() {
+    const geometry = canvasGeometry();
+    const width = Math.max(1, Number(geometry.width) || 1920);
+    const height = Math.max(1, Number(geometry.height) || 1080);
+    const divisor = gcd(width, height) || 1;
+    return `${width / divisor}:${height / divisor}`;
+  }
+
+  function canvasSizeLabel() {
+    const geometry = canvasGeometry();
+    return `${Math.max(1, Number(geometry.width) || 1920)}×${Math.max(1, Number(geometry.height) || 1080)}`;
+  }
+
 
   function ensureButton() {
     document.getElementById('step2-btn-background-settings')?.remove();
@@ -104,7 +128,7 @@
               <section class="storyboard-bg-section">
                 <h4 class="storyboard-bg-section-title">2. 图片显示方式</h4>
                 <div class="storyboard-bg-choice-grid">
-                  <label class="storyboard-bg-choice" data-fit-card="cover"><input type="radio" name="storyboard-bg-fit-choice" value="cover"><span class="storyboard-bg-choice-icon">▣</span><strong>铺满画面</strong><small>等比放大铺满 16:9，超出边缘会被裁剪</small></label>
+                  <label class="storyboard-bg-choice" data-fit-card="cover"><input type="radio" name="storyboard-bg-fit-choice" value="cover"><span class="storyboard-bg-choice-icon">▣</span><strong>铺满画面</strong><small>等比放大铺满整个画布，超出边缘会被裁剪</small></label>
                   <label class="storyboard-bg-choice" data-fit-card="contain"><input type="radio" name="storyboard-bg-fit-choice" value="contain"><span class="storyboard-bg-choice-icon">▭</span><strong>完整显示</strong><small>完整显示图片，留白区域使用背景色补齐</small></label>
                 </div>
                 <select id="storyboard-bg-fit" hidden><option value="cover">铺满画面</option><option value="contain">完整显示</option></select>
@@ -113,14 +137,14 @@
                 <h4 class="storyboard-bg-section-title">3. 上传背景图片</h4>
                 <div class="storyboard-bg-upload-line"><label class="storyboard-bg-file-button" for="storyboard-bg-file">⇧ 选择文件</label><span id="storyboard-bg-file-name" class="storyboard-bg-file-name">未选择任何文件</span></div>
                 <input id="storyboard-bg-file" type="file" accept="image/jpeg,image/png,image/webp">
-                <p class="storyboard-bg-help">支持 JPG / PNG / WEBP，建议尺寸 1920×1080，大小不超过 12MB</p>
-                <label id="storyboard-bg-dropzone" class="storyboard-bg-dropzone" for="storyboard-bg-file"><div><span>⬆</span><strong>拖拽图片到这里，或点击上传</strong><small>始终以 16:9 画面预览</small></div></label>
+                <p class="storyboard-bg-help">支持 JPG / PNG / WEBP，建议尺寸 ${canvasSizeLabel()}，大小不超过 12MB</p>
+                <label id="storyboard-bg-dropzone" class="storyboard-bg-dropzone" for="storyboard-bg-file"><div><span>⬆</span><strong>拖拽图片到这里，或点击上传</strong><small>始终以 ${canvasAspectLabel()} 画面预览</small></div></label>
               </section>
             </div>
           </div>
           <div class="storyboard-bg-column">
             <h4 class="storyboard-bg-preview-title">效果预览</h4>
-            <span class="storyboard-bg-preview-meta">16:9 预览</span>
+            <span class="storyboard-bg-preview-meta">${canvasAspectLabel()} 预览</span>
             <div id="storyboard-bg-preview" class="storyboard-bg-preview"></div>
             <p id="storyboard-bg-status" class="storyboard-bg-help"></p>
           </div>
@@ -220,7 +244,7 @@
     if (mode === 'image' && imageUrl) {
       preview.innerHTML = `<img src="${imageUrl}" alt="最终视频背景预览" style="object-fit:${fit};background:${color}">`;
     } else if (mode === 'image') {
-      preview.innerHTML = '<div class="storyboard-bg-preview-placeholder"><span>▧</span><strong>上传后在这里预览</strong><small>预览比例固定为 16:9</small></div>';
+      preview.innerHTML = `<div class="storyboard-bg-preview-placeholder"><span>▧</span><strong>上传后在这里预览</strong><small>预览比例固定为 ${canvasAspectLabel()}</small></div>`;
     } else {
       preview.innerHTML = `<strong>纯色背景预览<br><small>${color}</small></strong>`;
     }

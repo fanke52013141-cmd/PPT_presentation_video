@@ -740,9 +740,10 @@ const SlideView: React.FC<{slide: Slide; subtitleStyle?: SubtitleStyle}> = ({sli
   const subtitleFontSize = subtitleStyle?.font_size ?? 40;
   const subtitleMaxLines = subtitleStyle?.max_lines ?? 1;
   const subtitleHorizontalMargin = subtitleStyle?.horizontal_margin ?? 110;
+  const {width: canvasWidth} = useVideoConfig();
   const subtitleTextCapacity = Math.max(
     12,
-    Math.floor((1920 - subtitleHorizontalMargin * 2 - 48) / (subtitleFontSize * 1.05)) * subtitleMaxLines,
+    Math.floor((canvasWidth - subtitleHorizontalMargin * 2 - 48) / (subtitleFontSize * 1.05)) * subtitleMaxLines,
   );
   const pages = React.useMemo(
     () => buildCaptionPages(segments, pagingWindowMs, tokenize, subtitleTextCapacity),

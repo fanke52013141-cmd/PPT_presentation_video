@@ -383,10 +383,10 @@ def get_image_style():
         "style_text": dump_image_style_editor_text(style_tokens),
         "style_data": editable_image_style_data(style_tokens),
         "protected_rules": [
-            "画布固定为 1920×1080、16:9",
+            "画布尺寸与比例跟随项目画布配置（横屏 1920×1080、16:9；竖屏 1080×1920、9:16）",
             "生图背景固定为纯白 #FFFFFF，确保 Mask 外围背景可稳定移除",
             "主标题固定在页面上方标题区；不生成页面副标题",
-            "y=930 以下为字幕安全区，不放关键内容",
+            "底部字幕安全区（横屏 y=930..1080；竖屏 y=1650..1920）不放关键内容",
             "画面元素严禁重叠、穿插、压住或粘连，保证后续 Mask 可标注",
             "主体内容区可以自由发挥，但所有画面元素严禁重叠、覆盖、压住、穿插或粘连",
             "高级 YAML 只允许 brand、canvas、colors、layout、visual_assets 顶层字段",

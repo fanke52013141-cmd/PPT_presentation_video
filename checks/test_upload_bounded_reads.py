@@ -93,3 +93,18 @@ def test_validate_upload_rejects_empty_oversize_and_bad_mime() -> None:
 
 def test_avatar_route_limit_matches_service_default_value() -> None:
     assert dh_routes.MAX_AVATAR_UPLOAD_BYTES == 200 * 1024 * 1024
+
+
+def test_saved_comfyui_workflow_corruption_is_not_silently_ignored(
+    tmp_path: Path,
+) -> None:
+    project = type("Project", (), {"id": "workflow-test", "run_dir": str(tmp_path)})()
+    workflow_path = tmp_path / "planning" / "digital_human" / "comfyui_workflow.json"
+    workflow_path.parent.mkdir(parents=True)
+    workflow_path.write_text("{broken", encoding="utf-8")
+
+    with pytest.raises(HTTPException) as invalid:
+        dh_routes._read_comfyui_workflow_template(project)
+
+    assert invalid.value.status_code == 409
+    assert "重新上传" in str(invalid.value.detail)

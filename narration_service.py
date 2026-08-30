@@ -104,6 +104,27 @@ def configure_narration_dependencies(
     )
     TTS_MARKUP_RE = dependencies.tts_markup_re
 
+
+def _read_narration_json(path: str, label: str) -> dict[str, Any]:
+    """Turn corrupt narration artifacts into actionable API errors."""
+    try:
+        with open(path, "r", encoding="utf-8") as source:
+            value = json.load(source)
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.error("Unable to read %s: %s", label, path, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"{label}数据无效或无法读取，请重新生成分镜后重试。",
+        ) from exc
+    if not isinstance(value, dict):
+        logger.error("Invalid %s root type: %s", label, path)
+        raise HTTPException(
+            status_code=500,
+            detail=f"{label}数据格式无效，请重新生成分镜后重试。",
+        )
+    return value
+
+
 def init_step6_narration(project_id: str, db: Session):
     project = project_or_404(db, project_id)
         
@@ -126,12 +147,20 @@ def init_step6_narration(project_id: str, db: Session):
         raise HTTPException(status_code=504, detail="初始化演讲稿超时，请重试")
     
     if res.returncode != 0:
-        logger.error(f"Init narration failed: {res.stderr}")
+        diagnostics = "\n".join(
+            value.strip()
+            for value in (res.stderr, res.stdout)
+            if isinstance(value, str) and value.strip()
+        )[:4000]
+        logger.error(
+            "Init narration failed (returncode=%s): %s",
+            res.returncode,
+            diagnostics or "no process output",
+        )
         raise HTTPException(status_code=500, detail="初始化演讲稿模版失败")
         
     # 合并各个 slide 独立的 narration_beats.json 到全局的 planning/narration_beats.json
-    with open(contract_path, "r", encoding="utf-8") as f:
-        contract = json.load(f)
+    contract = _read_narration_json(contract_path, "分镜规划")
         
     global_slides = []
     for s in contract.get("slides", []):
@@ -142,17 +171,25 @@ def init_step6_narration(project_id: str, db: Session):
             continue
         slide_beat_path = os.path.join(project.run_dir, "slides", slide_id, "narration_beats.json")
         if os.path.exists(slide_beat_path):
-            with open(slide_beat_path, "r", encoding="utf-8") as sf:
-                s_data = json.load(sf)
-                beats = s_data.get("beats", [])
-                for beat in beats:
-                    if isinstance(beat, dict):
-                        beat.setdefault("source_text", beat.get("spoken_text", ""))
-                        beat.setdefault("tts_text", beat.get("spoken_text", ""))
-                global_slides.append({
-                    "slide_id": slide_id,
-                    "beats": beats
-                })
+            s_data = _read_narration_json(
+                slide_beat_path,
+                f"第 {slide_id} 页演讲稿",
+            )
+            beats = s_data.get("beats", [])
+            if not isinstance(beats, list):
+                logger.error("Invalid beats list in %s", slide_beat_path)
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"第 {slide_id} 页演讲稿数据格式无效，请重新生成演讲稿后重试。",
+                )
+            for beat in beats:
+                if isinstance(beat, dict):
+                    beat.setdefault("source_text", beat.get("spoken_text", ""))
+                    beat.setdefault("tts_text", beat.get("spoken_text", ""))
+            global_slides.append({
+                "slide_id": slide_id,
+                "beats": beats
+            })
         else:
             global_slides.append({
                 "slide_id": slide_id,

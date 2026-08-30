@@ -1439,8 +1439,15 @@ body.step5-fullscreen-mode #step5-btn-fullscreen {
 
 /* 音视频预览 */
 .video-preview-box {
-  width: 100%;
-  max-width: 800px;
+  /* Keep the complete review player in the current viewport.  Width is
+     derived from the available review height and the active project ratio,
+     so 9:16 videos do not turn into a page-long player. */
+  width: min(
+    100%,
+    960px,
+    calc(min(52dvh, 620px) * var(--project-aspect-ratio-scale, 1.7777778))
+  );
+  max-width: 100%;
   aspect-ratio: var(--project-aspect-ratio, 16/9);
   border: 2px solid var(--ink-color);
   border-radius: 12px;
@@ -1453,6 +1460,7 @@ body.step5-fullscreen-mode #step5-btn-fullscreen {
 .video-preview-box video {
   width: 100%;
   height: 100%;
+  object-fit: contain;
 }
 
 #toast-container {

@@ -116,7 +116,6 @@
     window.addEventListener('resize', fitFullscreenCanvas);
     const observer = new MutationObserver(fitFullscreenCanvas);
     observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
-    setInterval(fitFullscreenCanvas, 800);
   }
 
   function button(id, text, cls) {

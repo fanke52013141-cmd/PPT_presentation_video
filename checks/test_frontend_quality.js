@@ -455,6 +455,12 @@ if (!css.includes('grid-column: 3 / 5') || !css.includes('grid-row: 2')) {
 if (!css.includes('.storyboard-bg-preview') || !css.includes('aspect-ratio:var(--project-aspect-ratio,16 / 9)')) {
   throw new Error('final background preview does not follow the current project canvas ratio');
 }
+if (!css.includes('calc(min(52dvh, 620px) * var(--project-aspect-ratio-scale, 1.7777778))')) {
+  throw new Error('video review preview is not constrained by the viewport and project ratio');
+}
+if (!css.includes('.video-preview-box video') || !css.includes('object-fit: contain;')) {
+  throw new Error('video review preview can crop its source video');
+}
 if (!maskEditor.includes('hexToRgba(color, isSelected ? 0.68 : 0.55)')) {
   throw new Error('mask overlay colors are too faint');
 }
@@ -607,6 +613,9 @@ for (const label of ['文章➡️slides', 'slides➡️可视化']) {
 }
 if (!maskWorkspace.includes("rle.encoding === 'row_runs_v1'") || !maskEditor.includes('exactRuns.forEach')) {
   throw new Error('exact RLE Mask preview support missing');
+}
+if (aiMask.includes('setInterval(fitFullscreenCanvas, 800)') || !aiMask.includes("new MutationObserver(fitFullscreenCanvas)")) {
+  throw new Error('Mask fullscreen fitting must be event-driven rather than permanently polled');
 }
 if (html.includes('请在下方粘贴您的 Markdown 格式文章')) throw new Error('obsolete Step 1 top hint is still present');
 for (const script of ['project_profile_extension.js', 'storyboard_background_extension.js', 'style_reference_manager_extension.js', 'ai_mask_auto_state.js', 'ai_mask_extension.js', 'one_click_extension.js']) {

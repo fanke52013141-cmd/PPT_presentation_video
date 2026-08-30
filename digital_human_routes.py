@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -167,6 +168,35 @@ def _slide_audio_path(project: Project, slide_id: str) -> Path:
 def _slide_digi_path(project: Project, slide_id: str) -> Path:
     _assert_safe_slide_id(slide_id)
     return _digi_dir(project) / f"digi_{slide_id}.mp4"
+
+
+def _read_comfyui_workflow_template(project: Project) -> Dict[str, Any] | None:
+    """Read the saved API workflow without silently changing a job request."""
+    wf_path = _digi_dir(project) / "comfyui_workflow.json"
+    if not wf_path.exists():
+        return None
+    try:
+        workflow = json.loads(wf_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning(
+            "Saved ComfyUI workflow is unreadable for project %s",
+            getattr(project, "id", "unknown"),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=409,
+            detail="已保存的 ComfyUI 工作流无法读取，请重新上传有效的 API 工作流 JSON。",
+        ) from exc
+    if not isinstance(workflow, dict):
+        logger.warning(
+            "Saved ComfyUI workflow has invalid root type for project %s",
+            getattr(project, "id", "unknown"),
+        )
+        raise HTTPException(
+            status_code=409,
+            detail="已保存的 ComfyUI 工作流格式无效，请重新上传有效的 API 工作流 JSON。",
+        )
+    return workflow
 
 
 # ---------------- 配置 ----------------
@@ -375,9 +405,8 @@ async def upload_comfyui_workflow(
     content = await file.read(MAX_WORKFLOW_BYTES + 1)
     _validate_upload(content, file, MAX_WORKFLOW_BYTES, ALLOWED_WORKFLOW_MIMES)
     try:
-        import json as _json
-        wf = _json.loads(content)
-    except Exception as exc:
+        wf = json.loads(content)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=400, detail=f"JSON 解析失败: {exc}")
     if not isinstance(wf, dict):
         raise HTTPException(status_code=400, detail="工作流 JSON 格式不正确")
@@ -407,11 +436,10 @@ def get_comfyui_workflow(
     if not wf_path.exists():
         return {"success": True, "exists": False}
     try:
-        import json as _json
-        wf = _json.loads(wf_path.read_text(encoding="utf-8"))
-        return {"success": True, "exists": True, "nodes": len(wf)}
-    except Exception:
-        return {"success": True, "exists": True, "nodes": 0}
+        wf = _read_comfyui_workflow_template(project)
+        return {"success": True, "exists": True, "valid": True, "nodes": len(wf or {})}
+    except HTTPException:
+        return {"success": True, "exists": True, "valid": False, "nodes": 0}
 
 
 # ---------------- 生成任务（手动触发） ----------------
@@ -448,13 +476,9 @@ def generate_dh(
     if cfg.get("mode") == "comfyui":
         job_payload["backend"] = "comfyui"
         # 附带工作流模板（如有）；画质参数由工作流 JSON 自身决定
-        wf_path = _digi_dir(project) / "comfyui_workflow.json"
-        if wf_path.exists():
-            try:
-                import json as _json
-                job_payload["workflow_template"] = _json.loads(wf_path.read_text(encoding="utf-8"))
-            except Exception:
-                pass
+        workflow_template = _read_comfyui_workflow_template(project)
+        if workflow_template is not None:
+            job_payload["workflow_template"] = workflow_template
 
     try:
         result = client.create_job(payload=job_payload)
@@ -506,13 +530,9 @@ def generate_dh_full(
     }
     if cfg.get("mode") == "comfyui":
         job_payload["backend"] = "comfyui"
-        wf_path = _digi_dir(project) / "comfyui_workflow.json"
-        if wf_path.exists():
-            try:
-                import json as _json
-                job_payload["workflow_template"] = _json.loads(wf_path.read_text(encoding="utf-8"))
-            except Exception:
-                pass
+        workflow_template = _read_comfyui_workflow_template(project)
+        if workflow_template is not None:
+            job_payload["workflow_template"] = workflow_template
 
     try:
         result = client.create_job(payload=job_payload)

@@ -908,6 +908,15 @@ except Exception as exc:
     raise
 
 try:
+    from agent_api import router as agent_api_router, register_agent_error_handlers
+
+    app.include_router(agent_api_router)
+    register_agent_error_handlers(app)
+except Exception as exc:
+    logger.exception("Agent API v1 route registration failed: %s", exc)
+    raise
+
+try:
     from project_style_context import (
         ProjectStyleDependencies,
         configure_project_style_context,

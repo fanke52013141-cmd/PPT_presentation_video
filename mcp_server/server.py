@@ -7,7 +7,7 @@ Usage:
     python -m mcp_server --help           # Show help
 
 Environment variables:
-    PPT_AGENT_API_URL  — Base URL of the Agent API (default: http://127.0.0.1:18000)
+    PPT_AGENT_API_URL  — Base URL of the Agent API (default: http://127.0.0.1:8000)
     PPT_APP_TOKEN      — App token for authentication (default: empty)
 
 The server:
@@ -42,7 +42,7 @@ class MCPServer:
     """Lightweight MCP server processing JSON-RPC 2.0 over stdio."""
 
     def __init__(self, base_url: Optional[str] = None, app_token: Optional[str] = None) -> None:
-        self.base_url = base_url or os.environ.get("PPT_AGENT_API_URL", "http://127.0.0.1:18000")
+        self.base_url = base_url or os.environ.get("PPT_AGENT_API_URL", "http://127.0.0.1:8000")
         self.app_token = app_token or os.environ.get("PPT_APP_TOKEN", "")
         self._client: Optional[AgentClient] = None
         self._initialized = False
@@ -130,8 +130,15 @@ class MCPServer:
                 "isError": True,
             }
 
-        content = handler(arguments, self.client)
-        return {"content": content, "isError": False}
+        try:
+            content = handler(arguments, self.client)
+            is_error = any(bool(item.pop("_agent_error", False)) for item in content if isinstance(item, dict))
+            return {"content": content, "isError": is_error}
+        except Exception as exc:
+            return {
+                "content": [{"type": "text", "text": f"Tool execution failed: {exc}"}],
+                "isError": True,
+            }
 
     def _handle_resources_list(self) -> dict[str, Any]:
         """List resource templates (static — actual resources are project-scoped)."""

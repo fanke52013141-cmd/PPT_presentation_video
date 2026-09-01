@@ -17,6 +17,7 @@ Resources are read-only and fetched via AgentClient.
 from __future__ import annotations
 
 import re
+import base64
 from typing import Any, Optional
 
 from agent_client.client import AgentClient
@@ -140,32 +141,37 @@ def read_resource(uri: str, client: AgentClient) -> dict[str, Any]:
         }
 
     elif rtype == "slide_image":
-        artifacts = client.list_artifacts(project_id, artifact_type="image", slide_id=params.get("slide_id"))
+        data, mime_type = client.get_bytes(
+            f"/api/agent/v1/projects/{project_id}/slides/{params['slide_id']}/image"
+        )
         return {
             "contents": [{
                 "uri": uri,
-                "mimeType": "application/json",
-                "text": _to_json_text(artifacts),
+                "mimeType": mime_type,
+                "blob": base64.b64encode(data).decode("ascii"),
             }]
         }
 
     elif rtype == "slide_audio":
-        artifacts = client.list_artifacts(project_id, artifact_type="audio", slide_id=params.get("slide_id"))
+        data, mime_type = client.get_bytes(
+            f"/api/agent/v1/projects/{project_id}/slides/{params['slide_id']}/audio"
+        )
         return {
             "contents": [{
                 "uri": uri,
-                "mimeType": "application/json",
-                "text": _to_json_text(artifacts),
+                "mimeType": mime_type,
+                "blob": base64.b64encode(data).decode("ascii"),
             }]
         }
 
     elif rtype == "video_latest":
-        artifacts = client.list_artifacts(project_id, artifact_type="video")
         return {
             "contents": [{
                 "uri": uri,
                 "mimeType": "application/json",
-                "text": _to_json_text(artifacts),
+                "text": _to_json_text({
+                    "download_url": f"{client.base_url}/api/agent/v1/projects/{project_id}/videos/latest"
+                }),
             }]
         }
 

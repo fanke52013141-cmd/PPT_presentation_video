@@ -44,6 +44,18 @@ from tts_provider_service import normalize_tts_provider
 STATUS_FILENAME = "one_click_status.json"
 STATUS_VERSION = "one_click_orchestrator_v2"
 
+# Agent/UI review checkpoints pause *between* existing stages.  This keeps the
+# production stage implementations unchanged while making review decisions
+# durable and resumable.
+_REVIEW_CHECKPOINT_AFTER_STAGE = {
+    "storyboard": "storyboard_review",
+    "images": "image_review",
+    "mask_assets": "mask_review",
+    "narration": "narration_review",
+    "tts": "audio_review",
+    "render": "video_review",
+}
+
 logger = logging.getLogger(__name__)
 
 
@@ -178,6 +190,10 @@ def _initial_status(project_id: str, run_id: str) -> dict[str, Any]:
         "previous_failed_stage": "",
         "effective_start_stage": "preflight",
         "revalidation": [],
+        "stop_at": "",
+        "review_checkpoint": "",
+        "review_next_stage": "",
+        "review_decision": "",
         "stages": [
             {
                 "id": stage_id,
@@ -203,6 +219,10 @@ def _status_for_project(project: Any, project_id: str) -> dict[str, Any]:
         status.setdefault("previous_failed_stage", "")
         status.setdefault("effective_start_stage", status.get("current_stage") or "preflight")
         status.setdefault("revalidation", [])
+        status.setdefault("stop_at", "")
+        status.setdefault("review_checkpoint", "")
+        status.setdefault("review_next_stage", "")
+        status.setdefault("review_decision", "")
         return status
     return {
         "version": STATUS_VERSION,
@@ -218,6 +238,10 @@ def _status_for_project(project: Any, project_id: str) -> dict[str, Any]:
         "previous_failed_stage": "",
         "effective_start_stage": "preflight",
         "revalidation": [],
+        "stop_at": "",
+        "review_checkpoint": "",
+        "review_next_stage": "",
+        "review_decision": "",
         "stages": _initial_status(project_id, "")["stages"],
     }
 
@@ -248,6 +272,34 @@ def _finish_stage(project: Any, status: dict[str, Any], stage_id: str, message: 
     item = _stage(status, stage_id)
     item.update({"status": "done", "finished_at": _now(), "message": message, "progress": max(0, min(1, float(progress)))})
     _save_status(project, status)
+
+
+def _pause_for_requested_review(
+    project: Any,
+    status: dict[str, Any],
+    stage_id: str,
+) -> bool:
+    """Persist a review pause after a completed stage when requested."""
+    checkpoint = _REVIEW_CHECKPOINT_AFTER_STAGE.get(stage_id)
+    if not checkpoint or status.get("stop_at") != checkpoint:
+        return False
+    stage_ids = [item[0] for item in STAGES]
+    try:
+        next_stage = stage_ids[stage_ids.index(stage_id) + 1]
+    except (ValueError, IndexError):
+        next_stage = ""
+    status.update(
+        {
+            "status": "waiting_for_review",
+            "current_stage": stage_id,
+            "completed_at": _now(),
+            "review_checkpoint": checkpoint,
+            "review_next_stage": next_stage,
+            "review_decision": "pending",
+        }
+    )
+    _save_status(project, status)
+    return True
 
 
 def _warn_stage(project: Any, status: dict[str, Any], stage_id: str, warning: str) -> None:
@@ -396,6 +448,12 @@ def _stage_index(stage_id: str) -> int:
 
 def _resume_status(project: Any, project_id: str, run_id: str, mode: str) -> tuple[dict[str, Any], int]:
     previous = _status_for_project(project, project_id)
+    if mode == "resume" and previous.get("status") == "waiting_for_review":
+        # Preserve the completed stage and pending checkpoint until the worker
+        # verifies that the caller supplied the matching approval token.
+        status = previous
+        status.update({"run_id": run_id, "requested_mode": mode, "completed_at": ""})
+        return status, _stage_index(str(status.get("review_next_stage") or "preflight"))
     resumable_states = {"paused", "running", "failed", "completed"}
     if mode == "resume" and previous.get("status") in resumable_states:
         failed_stage = str(previous.get("current_stage") or ("render" if previous.get("status") == "completed" else "preflight"))
@@ -589,6 +647,9 @@ def _run_pipeline(
     project_id: str,
     run_id: str,
     mode: str = "resume",
+    start_from: str = "",
+    stop_at: str = "",
+    approved_checkpoint: str = "",
 ) -> None:
     db = dependencies.session_factory()
     project = None
@@ -598,6 +659,30 @@ def _run_pipeline(
         if not project:
             return
         status, start_index = _resume_status(project, project_id, run_id, mode)
+        if status.get("status") == "waiting_for_review":
+            checkpoint = str(status.get("review_checkpoint") or "")
+            if not checkpoint or checkpoint != approved_checkpoint:
+                # A user cannot bypass a pending review merely by calling
+                # resume. The approval endpoint supplies the matching token.
+                return
+            next_stage = str(status.get("review_next_stage") or "")
+            if next_stage not in {stage_id for stage_id, _ in STAGES}:
+                raise RuntimeError("审查点缺少可恢复的下一阶段")
+            start_index = _stage_index(next_stage)
+            status.update(
+                {
+                    "status": "running",
+                    "current_stage": next_stage,
+                    "review_decision": "approved",
+                    "review_checkpoint": "",
+                    "review_next_stage": "",
+                }
+            )
+        elif start_from:
+            start_index = _stage_index(start_from)
+            status["effective_start_stage"] = start_from
+        if stop_at:
+            status["stop_at"] = stop_at
         _save_status(project, status)
         gates = _quality_gates(project)
         services = dependencies.pipeline_service_factory(db, project_id)
@@ -635,6 +720,8 @@ def _run_pipeline(
                 )
                 db.refresh(project)
             _finish_stage(project, status, "storyboard", "分镜规划已就绪")
+            if _pause_for_requested_review(project, status, "storyboard"):
+                return
 
         if should_run("images"):
             _start_stage(project, status, "images", "生成缺失或过期的 slide 图片")
@@ -658,6 +745,8 @@ def _run_pipeline(
                 )
                 generated += 1
             _finish_stage(project, status, "images", f"图片已就绪，新增或刷新 {generated} 张")
+            if _pause_for_requested_review(project, status, "images"):
+                return
 
         if should_run("confirm_images"):
             _start_stage(project, status, "confirm_images", "确认图片并创建 reveal_manifest.json")
@@ -706,6 +795,8 @@ def _run_pipeline(
                 raise RuntimeError("Step 5 manifest 返回为空")
             _invoke(lambda: services.build_mask_assets(manifest), "Step 5 build assets")
             _finish_stage(project, status, "mask_assets", "Reveal 资源已构建")
+            if _pause_for_requested_review(project, status, "mask_assets"):
+                return
 
         if should_run("narration"):
             _start_stage(project, status, "narration", "生成或复用演讲稿并尝试添加 TTS 标记")
@@ -742,6 +833,8 @@ def _run_pipeline(
                 _warn_stage(project, status, "narration", f"AI TTS 标记失败，继续使用原演讲稿：{_error_text(exc)}")
             _invoke(lambda: services.save_narration(narration_beats), "Step 6 confirm narration")
             _finish_stage(project, status, "narration", "演讲稿已就绪")
+            if _pause_for_requested_review(project, status, "narration"):
+                return
 
         if should_run("tts"):
             _start_stage(project, status, "tts", "合成 TTS 音频并执行技术确认")
@@ -758,6 +851,8 @@ def _run_pipeline(
                 "pause_on_tts_failure",
             )
             _finish_stage(project, status, "tts", "音频已生成并通过自动技术检查（未人工试听）")
+            if _pause_for_requested_review(project, status, "tts"):
+                return
 
         video = None
         if should_run("render"):
@@ -770,6 +865,8 @@ def _run_pipeline(
             )
             video = render.get("video") or render.get("item") or render
             _finish_stage(project, status, "render", "视频渲染完成")
+            if _pause_for_requested_review(project, status, "render"):
+                return
         _complete(project, status, db, video=video)
         try:
             dependencies.write_project_log(
@@ -828,6 +925,20 @@ def start_one_click(
         mode = str((payload or {}).get("mode") or "resume").strip().lower()
         if mode not in {"resume", "restart"}:
             raise ValueError("mode 必须是 resume 或 restart")
+        start_from = str((payload or {}).get("start_from") or "").strip()
+        valid_stages = {stage_id for stage_id, _ in STAGES}
+        if start_from and start_from not in valid_stages:
+            raise ValueError(f"start_from 必须是以下阶段之一: {', '.join(sorted(valid_stages))}")
+        stop_at = str((payload or {}).get("stop_at") or "").strip()
+        valid_checkpoints = set(_REVIEW_CHECKPOINT_AFTER_STAGE.values())
+        if stop_at and stop_at not in valid_checkpoints:
+            raise ValueError(f"stop_at 必须是以下审查点之一: {', '.join(sorted(valid_checkpoints))}")
+        approved_checkpoint = str((payload or {}).get("approved_checkpoint") or "").strip()
+        previous = _status_for_project(project, project_id)
+        if previous.get("status") == "waiting_for_review":
+            expected = str(previous.get("review_checkpoint") or "")
+            if approved_checkpoint != expected:
+                raise ValueError(f"项目正在等待审查点 {expected} 的审批")
         run_id = uuid.uuid4().hex[:12]
         status, _start_index = _resume_status(
             project,
@@ -839,7 +950,7 @@ def start_one_click(
         thread = threading.Thread(
             name=f"ppt-one-click-{project_id}-{run_id}",
             target=_run_pipeline,
-            args=(dependencies, project_id, run_id, mode),
+            args=(dependencies, project_id, run_id, mode, start_from, stop_at, approved_checkpoint),
             daemon=True,
         )
         _RUNNING[project_id] = thread
@@ -856,3 +967,17 @@ def get_one_click_status(project: Any) -> dict[str, Any]:
         status["completed_at"] = status.get("completed_at") or _now()
         _save_status(project, status)
     return {"success": True, "status": status}
+
+
+def reject_one_click_checkpoint(project: Any, checkpoint: str, notes: str = "") -> dict[str, Any]:
+    """Persist a rejection without allowing the pipeline to continue."""
+    project_id = str(project.id)
+    status = _status_for_project(project, project_id)
+    if status.get("status") != "waiting_for_review":
+        raise ValueError("项目当前不在等待审查状态")
+    if str(status.get("review_checkpoint") or "") != checkpoint:
+        raise ValueError("审批的审查点与项目当前等待的审查点不一致")
+    status["review_decision"] = "rejected"
+    status["review_notes"] = _safe_text(notes, 2000)
+    _save_status(project, status)
+    return status

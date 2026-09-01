@@ -24,6 +24,7 @@ Examples:
     pptctl tts synthesize --project abc123
     pptctl video render --project abc123
     pptctl artifacts list --project abc123 --type image
+    pptctl artifact get --project abc123 --artifact artifact_id
     pptctl diagnostics
 """
 
@@ -41,6 +42,30 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from agent_client.client import AgentClient, AgentClientError, DEFAULT_BASE_URL
+
+
+# This explicit map is intentionally test-visible.  A capability registered
+# for Agent use must also be reachable from the CLI, and CI compares this map
+# with the capability registry.
+CLI_COMMANDS = {
+    "project create",
+    "project list",
+    "project show",
+    "project update",
+    "source set",
+    "run start",
+    "run status",
+    "run resume",
+    "approve",
+    "stage get",
+    "image regenerate",
+    "narration update",
+    "tts synthesize",
+    "video render",
+    "artifacts list",
+    "artifact get",
+    "diagnostics",
+}
 
 
 def _print_json(data: Any) -> None:
@@ -120,6 +145,11 @@ def cmd_source_set(args: argparse.Namespace) -> None:
     elif args.content:
         content = args.content
 
+    supplied = sum(bool(value) for value in (content, args.topic))
+    if supplied != 1:
+        _print_error("Provide exactly one of --file/--content or --topic")
+        sys.exit(2)
+
     try:
         result = client.set_source(args.project, content=content, topic=args.topic)
         _print_json(result)
@@ -137,6 +167,7 @@ def cmd_run_start(args: argparse.Namespace) -> None:
     try:
         result = client.start_pipeline(
             args.project,
+            start_from=args.start_from,
             stop_at=args.stop_at,
             mode=args.mode,
         )
@@ -264,6 +295,16 @@ def cmd_artifacts_list(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def cmd_artifact_get(args: argparse.Namespace) -> None:
+    client = AgentClient(base_url=args.base_url, app_token=args.token)
+    try:
+        result = client.get_artifact(args.project, args.artifact)
+        _print_json(result)
+    except AgentClientError as e:
+        _print_error(str(e))
+        sys.exit(1)
+
+
 # ---------------------------------------------------------------------------
 # Diagnostics commands
 # ---------------------------------------------------------------------------
@@ -347,6 +388,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     r_start = run_sub.add_parser("start", help="Start pipeline")
     r_start.add_argument("--project", required=True)
+    r_start.add_argument("--start-from", default=None)
     r_start.add_argument("--stop-at", default=None)
     r_start.add_argument("--mode", default="resume")
     r_start.set_defaults(func=cmd_run_start)
@@ -421,6 +463,13 @@ def build_parser() -> argparse.ArgumentParser:
     a_list.add_argument("--type", default=None)
     a_list.add_argument("--slide", default=None)
     a_list.set_defaults(func=cmd_artifacts_list)
+
+    artifact_parser = subparsers.add_parser("artifact", help="Get a single artifact")
+    artifact_sub = artifact_parser.add_subparsers(dest="subcommand", required=True)
+    a_get = artifact_sub.add_parser("get", help="Get artifact details and download URL")
+    a_get.add_argument("--project", required=True)
+    a_get.add_argument("--artifact", required=True)
+    a_get.set_defaults(func=cmd_artifact_get)
 
     # diagnostics
     diag_parser = subparsers.add_parser("diagnostics", help="System diagnostics")

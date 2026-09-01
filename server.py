@@ -833,6 +833,7 @@ try:
         PipelineOperations,
         ProjectPipelineServices,
         StoryboardPipelineOperations,
+        configure_pipeline_service_factory,
     )
 
     pipeline_operations = PipelineOperations(
@@ -884,6 +885,13 @@ try:
                 db,
                 project_id,
             ),
+        )
+    )
+    configure_pipeline_service_factory(
+        lambda db, project_id: ProjectPipelineServices(
+            pipeline_operations,
+            db,
+            project_id,
         )
     )
     app.include_router(one_click_router)

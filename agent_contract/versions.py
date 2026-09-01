@@ -12,9 +12,8 @@ import hashlib
 import json
 from typing import Any
 
-from pydantic import BaseModel
-
 from agent_contract.capabilities import CAPABILITIES, CapabilityStatus
+from agent_contract.schema import capability_input_schema, capability_output_schema
 
 
 AGENT_API_VERSION = "1.0.0"
@@ -29,15 +28,8 @@ def get_contract_hash() -> str:
     # Build a deterministic representation of the registry
     parts: list[str] = []
     for cap in sorted(CAPABILITIES, key=lambda c: c.id):
-        # Bare BaseModel raises AttributeError; only subclasses can generate schemas
-        try:
-            req_schema = cap.request_model.model_json_schema() if cap.request_model is not BaseModel else {}
-        except Exception:
-            req_schema = {}
-        try:
-            res_schema = cap.response_model.model_json_schema() if cap.response_model is not BaseModel else {}
-        except Exception:
-            res_schema = {}
+        req_schema = capability_input_schema(cap)
+        res_schema = capability_output_schema(cap)
         entry = {
             "id": cap.id,
             "version": cap.version,
@@ -76,4 +68,20 @@ def get_meta() -> dict[str, Any]:
         "contract_hash": CONTRACT_VERSION,
         "application_version": app_version,
         "capabilities": get_capability_versions(),
+        "capability_details": [
+            {
+                "id": cap.id,
+                "version": cap.version,
+                "status": cap.status.value,
+                "description": cap.description,
+                "method": cap.agent_api_method,
+                "path": cap.agent_api_path,
+                "mcp_tool": cap.mcp_tool_name,
+                "cli_command": cap.cli_command,
+                "input_schema": capability_input_schema(cap),
+                "output_schema": capability_output_schema(cap),
+            }
+            for cap in CAPABILITIES
+            if cap.status != CapabilityStatus.removed
+        ],
     }

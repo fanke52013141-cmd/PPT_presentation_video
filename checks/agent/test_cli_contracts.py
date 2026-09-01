@@ -27,11 +27,15 @@ class TestCLIContract:
         assert hasattr(cli_mod, "main"), "CLI module must have a main() function"
 
     def test_all_capabilities_have_cli_commands(self):
-        """Every capability must have a CLI command string."""
+        """Every capability command must be implemented by the CLI."""
+        from cli.pptctl import CLI_COMMANDS
         for cap in CAPABILITIES:
             if cap.status == CapabilityStatus.removed:
                 continue
             assert cap.cli_command, f"Capability {cap.id} has no CLI command"
+            assert cap.cli_command in CLI_COMMANDS, (
+                f"Capability {cap.id} is not reachable through pptctl {cap.cli_command}"
+            )
 
 
 class TestAgentClientContract:

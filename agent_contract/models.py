@@ -112,9 +112,9 @@ class SourceSetResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 class PipelineRunRequest(BaseModel):
-    start_from: str = Field("preflight", description="起始阶段")
+    start_from: str = Field("preflight", description="起始阶段；未显式提供时按编排器恢复策略执行")
     stop_at: Optional[str] = Field(None, description="停止阶段，如 image_review")
-    mode: str = Field("resume", description="resume / fresh")
+    mode: str = Field("resume", description="resume / restart")
     idempotency_key: Optional[str] = None
 
 

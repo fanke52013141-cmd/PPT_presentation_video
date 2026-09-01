@@ -50,6 +50,7 @@ def standalone_python_checks() -> list[Path]:
 
 
 def quick_checks() -> None:
+    run([sys.executable, "scripts/generate_agent_contracts.py", "--check"])
     run([
         sys.executable,
         "-m",

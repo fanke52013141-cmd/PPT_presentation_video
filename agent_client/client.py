@@ -1,7 +1,7 @@
 """AgentClient — synchronous HTTP client for the Agent API.
 
 Usage:
-    client = AgentClient(base_url="http://127.0.0.1:18000")
+    client = AgentClient(base_url="http://127.0.0.1:8000")
     result = client.create_project(name="测试", canvas_profile="portrait_9_16")
     status = client.get_pipeline_status(project_id=result["project"]["project_id"])
 
@@ -20,7 +20,7 @@ from typing import Any, Optional
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
-DEFAULT_BASE_URL = os.environ.get("PPT_AGENT_API_URL", "http://127.0.0.1:18000")
+DEFAULT_BASE_URL = os.environ.get("PPT_AGENT_API_URL", "http://127.0.0.1:8000")
 DEFAULT_TIMEOUT = 30  # seconds for normal requests
 DEFAULT_APP_TOKEN = os.environ.get("PPT_APP_TOKEN", "")
 
@@ -91,6 +91,22 @@ class AgentClient:
         except URLError as e:
             raise AgentClientError(f"Connection failed: {e.reason}", status_code=0)
 
+    def get_bytes(self, path: str) -> tuple[bytes, str]:
+        """Fetch a binary Agent API resource with the usual authentication."""
+        headers = {"Accept": "*/*"}
+        if self.app_token:
+            headers["X-App-Token"] = self.app_token
+        req = Request(f"{self.base_url}{path}", method="GET", headers=headers)
+        try:
+            with urlopen(req, timeout=self.timeout) as resp:
+                content_type = str(resp.headers.get_content_type() or "application/octet-stream")
+                return resp.read(), content_type
+        except HTTPError as e:
+            raw = e.read().decode("utf-8", errors="replace") if e.fp else ""
+            raise AgentClientError(raw or str(e), status_code=e.code)
+        except URLError as e:
+            raise AgentClientError(f"Connection failed: {e.reason}", status_code=0)
+
     # ---- Project operations ----
 
     def create_project(
@@ -154,15 +170,16 @@ class AgentClient:
     def start_pipeline(
         self,
         project_id: str,
-        start_from: str = "preflight",
+        start_from: Optional[str] = None,
         stop_at: Optional[str] = None,
         mode: str = "resume",
     ) -> dict[str, Any]:
-        return self._request("POST", f"/api/agent/v1/projects/{project_id}/runs", body={
-            "start_from": start_from,
-            "stop_at": stop_at,
-            "mode": mode,
-        })
+        body: dict[str, Any] = {"mode": mode}
+        if start_from:
+            body["start_from"] = start_from
+        if stop_at:
+            body["stop_at"] = stop_at
+        return self._request("POST", f"/api/agent/v1/projects/{project_id}/runs", body=body)
 
     def get_pipeline_status(self, project_id: str) -> dict[str, Any]:
         return self._request("GET", f"/api/agent/v1/projects/{project_id}/runs/latest")

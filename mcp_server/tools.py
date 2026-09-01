@@ -13,14 +13,13 @@ from __future__ import annotations
 import json
 from typing import Any, Callable
 
-from pydantic import BaseModel
-
 from agent_client.client import AgentClient, AgentClientError
 from agent_contract.capabilities import (
     CAPABILITIES,
     CapabilityStatus,
     AgentCapability,
 )
+from agent_contract.schema import capability_input_schema
 from mcp_server import presenters
 
 
@@ -40,10 +39,20 @@ def _make_tool_handler(cap: AgentCapability) -> Callable:
         try:
             result = _dispatch(cap_id, arguments, client)
             return _format_result(cap_id, result)
-        except AgentClientError as e:
-            return [{"type": "text", "text": f"API Error ({e.status_code}): {e}"}]
-        except Exception as e:
-            return [{"type": "text", "text": f"Tool execution failed: {e}"}]
+        except AgentClientError as exc:
+            # Retain a human-readable content block for direct callers, while
+            # marking it for MCPServer to return the protocol-level isError.
+            return [{
+                "type": "text",
+                "text": f"API Error ({exc.status_code}): {exc}",
+                "_agent_error": True,
+            }]
+        except Exception as exc:
+            return [{
+                "type": "text",
+                "text": f"Tool execution failed: {exc}",
+                "_agent_error": True,
+            }]
 
     handler.__name__ = f"handle_{cap_id.replace('.', '_')}"
     handler.__doc__ = cap.description
@@ -93,7 +102,7 @@ def _dispatch(cap_id: str, args: dict[str, Any], client: AgentClient) -> dict[st
         pid = args.get("project_id", "")
         return client.start_pipeline(
             project_id=pid,
-            start_from=args.get("start_from", "preflight"),
+            start_from=args.get("start_from"),
             stop_at=args.get("stop_at"),
             mode=args.get("mode", "resume"),
         )
@@ -222,69 +231,13 @@ def get_all_tool_definitions() -> list[dict[str, Any]]:
     for cap in CAPABILITIES:
         if cap.status == CapabilityStatus.removed:
             continue
-        schema = _build_input_schema(cap)
+        schema = capability_input_schema(cap)
         definitions.append({
             "name": cap.mcp_tool_name,
             "description": _build_description(cap),
             "inputSchema": schema,
         })
     return definitions
-
-
-def _build_input_schema(cap: AgentCapability) -> dict[str, Any]:
-    """Build a JSON Schema input schema for the tool.
-
-    For capabilities with a real request model, use model_json_schema().
-    For capabilities using bare BaseModel (read-only), build a minimal
-    schema with project_id and other path parameters.
-    """
-    model = cap.request_model
-
-    if model is not BaseModel:
-        schema = model.model_json_schema()
-        # Remove title to keep MCP output clean
-        schema.pop("title", None)
-        for prop in schema.get("properties", {}).values():
-            prop.pop("title", None)
-        return schema
-
-    # Build manual schema for read-only operations
-    properties: dict[str, Any] = {}
-    required: list[str] = []
-
-    if "{project_id}" in cap.agent_api_path:
-        properties["project_id"] = {
-            "type": "string",
-            "description": "The project ID.",
-        }
-        required.append("project_id")
-
-    if "{checkpoint}" in cap.agent_api_path:
-        properties["checkpoint"] = {
-            "type": "string",
-            "description": "The checkpoint name (e.g., image_review).",
-        }
-        required.append("checkpoint")
-
-    if "{stage}" in cap.agent_api_path:
-        properties["stage"] = {
-            "type": "string",
-            "description": "The pipeline stage name (e.g., storyboard, narration).",
-        }
-        required.append("stage")
-
-    if "{artifact_id}" in cap.agent_api_path:
-        properties["artifact_id"] = {
-            "type": "string",
-            "description": "The artifact ID.",
-        }
-        required.append("artifact_id")
-
-    return {
-        "type": "object",
-        "properties": properties,
-        "required": required,
-    }
 
 
 def _build_description(cap: AgentCapability) -> str:

@@ -15,9 +15,11 @@ from __future__ import annotations
 
 import logging
 import uuid
+from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from database import get_db, Project, ArtifactRecord
@@ -205,7 +207,7 @@ def agent_get_project(
     if has_contract:
         try:
             from visual_contract_service import read_contract_slide_ids
-            slide_ids = read_contract_slide_ids(project)
+            slide_ids = read_contract_slide_ids(project.run_dir)
         except Exception:
             pass
 
@@ -265,7 +267,10 @@ def agent_set_source(
         # Topic-based generation
         gen_payload = {"topic": payload.topic}
         result = article_svc.generate_article_from_topic(project, gen_payload)
-        article_text = result.get("article", "")
+        article_text = str(result.get("content") or "")
+        # Topic generation only produces text.  Persist it through the same
+        # source-owned import path used by the web UI before reporting success.
+        article_svc.import_article(project, article_text, db)
     else:
         raise ValidationFailedError("Either 'content' or 'topic' must be provided")
 
@@ -296,6 +301,8 @@ def agent_start_pipeline(
     from one_click_orchestrator import start_one_click
 
     one_click_payload: dict[str, Any] = {}
+    if "start_from" in payload.model_fields_set and payload.start_from:
+        one_click_payload["start_from"] = payload.start_from
     if payload.stop_at:
         one_click_payload["stop_at"] = payload.stop_at
     if payload.mode:
@@ -404,14 +411,21 @@ def agent_approve_checkpoint(
     """Approve or reject a pipeline checkpoint."""
     project = _resolve_project(db, project_id)
     cp_info = get_checkpoint(checkpoint)
+    if payload.checkpoint != checkpoint:
+        raise ValidationFailedError("Checkpoint in the path and request body must match")
 
     if payload.approved:
         # Resume pipeline from this checkpoint
         from one_click_orchestrator import start_one_click
-        start_one_click(project, {"mode": "resume"})
+        start_one_click(
+            project,
+            {"mode": "resume", "approved_checkpoint": checkpoint},
+        )
         next_stage = "pipeline resumed"
     else:
-        next_stage = "pipeline halted at checkpoint"
+        from one_click_orchestrator import reject_one_click_checkpoint
+        reject_one_click_checkpoint(project, checkpoint, payload.notes)
+        next_stage = "pipeline remains halted at checkpoint"
 
     return CheckpointResult(
         project_id=project_id,
@@ -481,6 +495,43 @@ def agent_get_stage(
 
 
 # ---------------------------------------------------------------------------
+# Agent media resources
+# ---------------------------------------------------------------------------
+
+@router.get("/projects/{project_id}/slides/{slide_id}/image")
+def agent_get_slide_image(
+    project_id: str,
+    slide_id: str,
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    """Return the current slide image through the source-owned image service."""
+    from image_workflow_service import get_slide_image_file
+    return get_slide_image_file(project_id, slide_id, db)
+
+
+@router.get("/projects/{project_id}/slides/{slide_id}/audio")
+def agent_get_slide_audio(
+    project_id: str,
+    slide_id: str,
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    """Return the current non-stale slide audio through the TTS service."""
+    from tts_service import get_slide_audio_file
+    return get_slide_audio_file(project_id, slide_id, db)
+
+
+@router.get("/projects/{project_id}/videos/latest")
+def agent_get_latest_video(
+    project_id: str,
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    """Return the latest final video through the configured video service."""
+    from video_render_service import get_video_render_service
+    path = get_video_render_service().final_video_download(db, project_id)
+    return FileResponse(path, media_type="video/mp4")
+
+
+# ---------------------------------------------------------------------------
 # Image regenerate
 # ---------------------------------------------------------------------------
 
@@ -492,11 +543,11 @@ def agent_regenerate_image(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Regenerate a single slide image."""
-    project = _resolve_project(db, project_id)
+    _resolve_project(db, project_id)
 
     try:
-        from pipeline_services import build_pipeline_services
-        services = build_pipeline_services(db, project_id)
+        from pipeline_services import get_project_pipeline_services
+        services = get_project_pipeline_services(db, project_id)
         result = services.generate_image(slide_id, payload.instruction or "")
         revision = result.get("revision", 0)
     except Exception as e:
@@ -528,22 +579,30 @@ def agent_update_narration(
     _resolve_project(db, project_id)
 
     try:
-        from pathlib import Path
-        project = db.query(Project).filter(Project.id == project_id).first()
-        run_dir = Path(project.run_dir)
-        narration_path = run_dir / "planning" / "narration_beats.json"
+        from pipeline_services import get_project_pipeline_services
 
-        import json
-        if narration_path.exists():
-            beats = json.loads(narration_path.read_text(encoding="utf-8-sig"))
-            for beat in beats if isinstance(beats, list) else []:
-                if isinstance(beat, dict) and beat.get("slide_id") == slide_id:
-                    beat["tts_text"] = payload.narration_text
-                    break
-            narration_path.write_text(
-                json.dumps(beats, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+        services = get_project_pipeline_services(db, project_id)
+        current = services.narration()
+        beats = current.get("beats") if isinstance(current, dict) else None
+        if not isinstance(beats, dict) or not isinstance(beats.get("slides"), list):
+            raise ValidationFailedError("Narration beats do not exist; initialize narration first")
+
+        updated = False
+        for slide in beats["slides"]:
+            if isinstance(slide, dict) and str(slide.get("slide_id") or "") == slide_id:
+                # tts_text is the canonical speech text consumed by the TTS
+                # service.  Preserve all other beat metadata verbatim.
+                slide["tts_text"] = payload.narration_text
+                updated = True
+                break
+        if not updated:
+            raise ValidationFailedError(f"Slide '{slide_id}' does not exist in narration beats")
+
+        # The source-owned service persists the payload and invalidates stale
+        # audio/video state through the existing step-navigation lifecycle.
+        services.save_narration(beats)
+    except AgentAPIError:
+        raise
     except Exception as e:
         raise OperationFailedError(f"Narration update failed: {e}")
 
@@ -566,11 +625,16 @@ def agent_tts_synthesize(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Start TTS audio synthesis."""
-    project = _resolve_project(db, project_id)
+    _resolve_project(db, project_id)
+
+    if payload.slide_ids:
+        raise ValidationFailedError(
+            "Partial TTS synthesis is not supported by the production service; omit slide_ids to synthesize the current project"
+        )
 
     try:
-        from pipeline_services import build_pipeline_services
-        services = build_pipeline_services(db, project_id)
+        from pipeline_services import get_project_pipeline_services
+        services = get_project_pipeline_services(db, project_id)
         result = services.synthesize_audio()
     except Exception as e:
         raise OperationFailedError(f"TTS synthesis failed: {e}")
@@ -594,11 +658,11 @@ def agent_video_render(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Start video rendering."""
-    project = _resolve_project(db, project_id)
+    _resolve_project(db, project_id)
 
     try:
-        from pipeline_services import build_pipeline_services
-        services = build_pipeline_services(db, project_id)
+        from pipeline_services import get_project_pipeline_services
+        services = get_project_pipeline_services(db, project_id)
         result = services.render_video()
     except Exception as e:
         raise OperationFailedError(f"Video render failed: {e}")
@@ -692,5 +756,27 @@ def agent_get_artifact(
             revision=meta.get("revision", 0),
             created_at=record.created_at.isoformat() if record.created_at else None,
         ),
-        download_url=f"/api/projects/{project_id}/artifacts/{artifact_id}/download",
+        download_url=f"/api/agent/v1/projects/{project_id}/artifacts/{artifact_id}/content",
     ).model_dump()
+
+
+@router.get("/projects/{project_id}/artifacts/{artifact_id}/content")
+def agent_download_artifact(
+    project_id: str,
+    artifact_id: str,
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    """Download a database-tracked artifact after validating its project path."""
+    project = _resolve_project(db, project_id)
+    record = (
+        db.query(ArtifactRecord)
+        .filter(ArtifactRecord.id == artifact_id, ArtifactRecord.project_id == project_id)
+        .first()
+    )
+    if not record:
+        raise AgentAPIError("ARTIFACT_NOT_FOUND", f"Artifact '{artifact_id}' not found", 404)
+    run_dir = Path(project.run_dir).resolve()
+    candidate = (run_dir / record.relative_path).resolve()
+    if not candidate.is_relative_to(run_dir) or not candidate.is_file():
+        raise AgentAPIError("ARTIFACT_UNAVAILABLE", "Artifact file is unavailable", 404)
+    return FileResponse(candidate, media_type=record.mime_type or mime_for_type(record.artifact_type), filename=record.filename)

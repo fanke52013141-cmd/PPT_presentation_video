@@ -21,6 +21,7 @@ from mcp_server.tools import (
     get_tool_handler,
     get_tool_names,
 )
+from agent_contract.schema import capability_input_schema
 
 
 class TestMCPToolDefinitions:
@@ -55,6 +56,19 @@ class TestMCPToolDefinitions:
             assert schema.get("type") == "object" or "properties" in schema, (
                 f"Tool {d['name']} schema is not a valid JSON Schema object"
             )
+
+    def test_all_path_parameters_are_discoverable(self):
+        definitions = {item["name"]: item for item in get_all_tool_definitions()}
+        for cap in CAPABILITIES:
+            if cap.status == CapabilityStatus.removed:
+                continue
+            schema = definitions[cap.mcp_tool_name]["inputSchema"]
+            required = set(schema.get("required", []))
+            for name in ("project_id", "slide_id", "checkpoint", "stage", "artifact_id"):
+                if "{" + name + "}" in cap.agent_api_path:
+                    assert name in schema.get("properties", {}), f"{cap.id} omits {name} from MCP schema"
+                    assert name in required, f"{cap.id} does not require path parameter {name}"
+            assert schema == capability_input_schema(cap)
 
 
 class TestMCPToolHandlers:

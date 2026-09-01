@@ -1,7 +1,7 @@
 # Agent Capability Matrix
 
 - **Agent API Version**: 1.0.0
-- **Contract Hash**: `3a2c36ae12289051`
+- **Contract Hash**: `9f1b87e6c83005aa`
 - **Total Capabilities**: 17
 
 This document is auto-generated from `agent_contract/capabilities.py`.

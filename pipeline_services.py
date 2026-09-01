@@ -8,7 +8,7 @@ large route handlers are gradually decomposed into smaller domain services.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from fastapi import HTTPException
 
@@ -16,6 +16,29 @@ from database import Project
 
 
 PipelineOperation = Callable[..., dict[str, Any]]
+PipelineServiceFactory = Callable[[Any, str], "ProjectPipelineServices"]
+
+
+_SERVICE_FACTORY: Optional[PipelineServiceFactory] = None
+
+
+def configure_pipeline_service_factory(factory: PipelineServiceFactory) -> None:
+    """Configure the application-owned factory for pipeline service facades.
+
+    The composition root is the only place that knows how the production
+    pipeline operations are wired.  Secondary interfaces such as Agent API
+    must retrieve the same facade through this function instead of inventing
+    an alternative dependency graph.
+    """
+    global _SERVICE_FACTORY
+    _SERVICE_FACTORY = factory
+
+
+def get_project_pipeline_services(db: Any, project_id: str) -> "ProjectPipelineServices":
+    """Return the production pipeline facade for one project."""
+    if _SERVICE_FACTORY is None:
+        raise RuntimeError("Pipeline service factory has not been configured")
+    return _SERVICE_FACTORY(db, project_id)
 
 
 @dataclass(frozen=True)

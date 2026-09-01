@@ -31,6 +31,16 @@ def _make_server_with_matching_contract() -> MCPServer:
     return server
 
 
+def test_mcp_prefers_agent_api_key_environment(monkeypatch):
+    """MCP must use the same preferred authentication variable as AgentClient."""
+    monkeypatch.setenv("PPT_AGENT_API_KEY", "agent-key")
+    monkeypatch.setenv("PPT_APP_TOKEN", "legacy-key")
+
+    server = MCPServer(base_url="http://mock")
+
+    assert server.app_token == "agent-key"
+
+
 class TestInitialize:
     """Test the MCP initialize handshake."""
 

@@ -88,7 +88,7 @@ class TestHeaderInjection:
     """Verify authentication headers."""
 
     @patch("agent_client.client.urlopen")
-    def test_app_token_header(self, mock_urlopen):
+    def test_agent_api_key_uses_bearer_header(self, mock_urlopen):
         mock_resp = MagicMock()
         mock_resp.read.return_value = b'{}'
         mock_resp.__enter__ = MagicMock(return_value=mock_resp)
@@ -99,7 +99,7 @@ class TestHeaderInjection:
         client.get_meta()
 
         req = mock_urlopen.call_args[0][0]
-        assert req.headers["X-app-token"] == "secret-token"
+        assert req.headers["Authorization"] == "Bearer secret-token"
 
     @patch("agent_client.client.urlopen")
     def test_no_token_no_header(self, mock_urlopen):
@@ -113,7 +113,22 @@ class TestHeaderInjection:
         client.get_meta()
 
         req = mock_urlopen.call_args[0][0]
-        assert "X-app-token" not in req.headers
+        assert "Authorization" not in req.headers
+
+    @patch("agent_client.client.urlopen")
+    def test_digital_human_config_uses_request_body(self, mock_urlopen):
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b'{}'
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+        client = AgentClient(base_url="http://test", app_token="secret-token")
+
+        client.update_digital_human_config("p1", {"enabled": True})
+
+        req = mock_urlopen.call_args[0][0]
+        assert req.get_method() == "PATCH"
+        assert json.loads(req.data.decode("utf-8")) == {"config": {"enabled": True}}
 
 
 class TestErrorNormalization:

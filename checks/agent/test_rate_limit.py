@@ -83,3 +83,11 @@ def test_rate_limit_headers_on_success():
     assert resp.status_code == 200
     assert resp.headers["X-RateLimit-Limit"] == "10"
     assert int(resp.headers["X-RateLimit-Remaining"]) == 9
+
+
+def test_forwarded_for_is_ignored_without_explicit_proxy_trust():
+    """A direct caller cannot evade a quota by rotating X-Forwarded-For."""
+    app = _make_app(max_requests=1)
+    client = TestClient(app)
+    assert client.get("/api/agent/v1/ping", headers={"X-Forwarded-For": "198.51.100.1"}).status_code == 200
+    assert client.get("/api/agent/v1/ping", headers={"X-Forwarded-For": "198.51.100.2"}).status_code == 429

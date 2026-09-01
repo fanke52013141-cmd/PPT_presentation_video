@@ -50,6 +50,19 @@ def normalize_status(raw: str) -> OperationStatus:
     return OperationStatus.running
 
 
+def unwrap_one_click_status(result: dict[str, Any]) -> dict[str, Any]:
+    """Return the inner status document from a one-click result.
+
+    The orchestrator wraps public responses as ``{"success": true,
+    "status": {...}}``.  Older callers may already provide the inner status,
+    so this adapter intentionally accepts both shapes.
+    """
+    nested_status = result.get("status") if isinstance(result, dict) else None
+    if isinstance(nested_status, dict):
+        return nested_status
+    return result if isinstance(result, dict) else {}
+
+
 class OperationResult(BaseModel):
     """Unified long-running operation result."""
 
@@ -113,6 +126,7 @@ def get_checkpoint(checkpoint: str) -> dict[str, str]:
 
 def operation_from_one_click(status_dict: dict[str, Any], project_id: str) -> OperationResult:
     """Convert a one-click orchestrator status dict to unified OperationResult."""
+    status_dict = unwrap_one_click_status(status_dict)
     raw_status = status_dict.get("status", "idle")
     op_status = normalize_status(raw_status)
     run_id = status_dict.get("run_id", "")

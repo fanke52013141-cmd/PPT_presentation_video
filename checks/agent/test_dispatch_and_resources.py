@@ -319,6 +319,19 @@ class TestOperationsDeep:
         op = operation_from_one_click({"status": "running"}, "p1")
         assert op.operation_id == "unknown"
 
+    def test_operation_from_wrapped_one_click_result(self):
+        """Agent callers must accept the real one-click public response shape."""
+        from agent_contract.operations import operation_from_one_click, OperationStatus
+
+        op = operation_from_one_click({
+            "success": True,
+            "status": {"run_id": "run-1", "status": "running", "current_stage": "storyboard"},
+        }, "p1")
+
+        assert op.operation_id == "run-1"
+        assert op.status == OperationStatus.running
+        assert op.stage == "storyboard"
+
 
 class TestArtifactsDeep:
     """Deep tests for artifacts.py."""

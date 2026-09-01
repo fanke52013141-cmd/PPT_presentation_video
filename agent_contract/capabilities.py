@@ -34,6 +34,7 @@ from agent_contract.models import (
     VideoRenderRequest, VideoRenderResult,
     CheckpointApproveRequest, CheckpointResult,
     ArtifactsListRequest, ArtifactsListResult,
+    DigitalHumanConfigUpdateRequest, DigitalHumanConfigResult,
     ArtifactGetResult,
     DiagnosticsResult,
 )
@@ -329,8 +330,8 @@ CAPABILITIES: list[AgentCapability] = [
         version="1.0",
         status=CapabilityStatus.stable,
         description="Update digital-human configuration for a project.",
-        request_model=BaseModel,
-        response_model=BaseModel,
+        request_model=DigitalHumanConfigUpdateRequest,
+        response_model=DigitalHumanConfigResult,
         agent_api_method="PATCH",
         agent_api_path="/api/agent/v1/projects/{project_id}/digital-human/config",
         mcp_tool_name="ppt_digital_human_config_update",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import time
 from collections import defaultdict
 from threading import Lock
@@ -35,6 +36,7 @@ class AgentRateLimitMiddleware(BaseHTTPMiddleware):
         max_requests: int = 120,
         window_seconds: int = 60,
         persistent_store: Optional[object] = None,
+        trust_proxy_headers: bool = False,
     ) -> None:
         super().__init__(app)
         self._prefix = prefix
@@ -45,18 +47,23 @@ class AgentRateLimitMiddleware(BaseHTTPMiddleware):
         self._hits: dict[str, list[float]] = defaultdict(list)
         # Optional SQLite-backed store for persistence across restarts.
         self._store = persistent_store
+        self._trust_proxy_headers = trust_proxy_headers
 
     # ------------------------------------------------------------------
     # internal helpers
     # ------------------------------------------------------------------
 
     def _client_key(self, request: Request) -> str:
-        token = request.headers.get("x-agent-token")
+        authorization = request.headers.get("authorization", "")
+        token = authorization[7:].strip() if authorization.startswith("Bearer ") else ""
+        if not token:
+            token = request.headers.get("x-api-key") or request.headers.get("x-agent-token")
         if not token:
             token = request.query_params.get("token")
         if token:
-            return f"token:{token[:64]}"
-        forwarded = request.headers.get("x-forwarded-for", "")
+            digest = hashlib.sha256(token.encode("utf-8")).hexdigest()[:24]
+            return f"token:{digest}"
+        forwarded = request.headers.get("x-forwarded-for", "") if self._trust_proxy_headers else ""
         if forwarded:
             return f"ip:{forwarded.split(',')[0].strip()}"
         client_host = request.client.host if request.client else "unknown"

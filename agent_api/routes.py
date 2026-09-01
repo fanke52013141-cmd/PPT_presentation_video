@@ -32,6 +32,7 @@ from agent_contract.models import (
     SourceSetRequest, SourceSetResult,
     PipelineRunRequest, PipelineRunResult,
     PipelineStatusResult, PipelineResumeRequest,
+    DigitalHumanConfigUpdateRequest, DigitalHumanConfigResult,
     StageGetResult, NarrationUpdateRequest,
     ImageRegenerateRequest, ImageRegenerateResult,
     TtsSynthesizeRequest, TtsSynthesizeResult,
@@ -43,7 +44,7 @@ from agent_contract.models import (
 from agent_contract.operations import (
     OperationResult, OperationStatus,
     CHECKPOINT_STAGES, get_checkpoint,
-    operation_from_one_click,
+    operation_from_one_click, unwrap_one_click_status,
 )
 from agent_contract.artifacts import (
     ArtifactInfo, build_resource_uri, mime_for_type,
@@ -437,13 +438,14 @@ def agent_start_pipeline(
             one_click_payload["mode"] = payload.mode
 
         result = start_one_click(project, one_click_payload)
+        status = unwrap_one_click_status(result)
 
         response = PipelineRunResult(
-            operation_id=result.get("run_id", _gen_op_id()),
+            operation_id=status.get("run_id", _gen_op_id()),
             project_id=project_id,
-            status=result.get("status", "running"),
-            current_stage=result.get("current_stage", "preflight"),
-            message=result.get("message", ""),
+            status=str(status.get("status", "running")),
+            current_stage=str(status.get("current_stage", "preflight")),
+            message=str(status.get("message", "")),
         ).model_dump()
         idempotency.finalize(claim.record_pk, True, response)
         return response
@@ -464,7 +466,7 @@ def agent_pipeline_status(
     project = _resolve_project(db, project_id)
 
     from one_click_orchestrator import get_one_click_status
-    status_dict = get_one_click_status(project)
+    status_dict = unwrap_one_click_status(get_one_click_status(project))
     op = operation_from_one_click(status_dict, project_id)
 
     return PipelineStatusResult(
@@ -542,7 +544,7 @@ def _sse_generator(
                     event_name="error",
                 )
                 return
-            status_dict = get_one_click_status(project)
+            status_dict = unwrap_one_click_status(get_one_click_status(project))
         finally:
             db.close()
 
@@ -609,9 +611,9 @@ def agent_pipeline_stream(
     """
     project = _resolve_project(db, project_id)
 
-    from database import Session as DbSession
+    from database import SessionLocal
 
-    session_factory = DbSession
+    session_factory = SessionLocal
 
     return StreamingResponse(
         _sse_generator(project_id, session_factory),
@@ -653,13 +655,14 @@ def agent_resume_pipeline(
             one_click_payload["stop_at"] = payload.stop_at
 
         result = start_one_click(project, one_click_payload)
+        status = unwrap_one_click_status(result)
 
         response = PipelineRunResult(
-            operation_id=result.get("run_id", _gen_op_id()),
+            operation_id=status.get("run_id", _gen_op_id()),
             project_id=project_id,
-            status=result.get("status", "running"),
-            current_stage=result.get("current_stage", ""),
-            message=result.get("message", ""),
+            status=str(status.get("status", "running")),
+            current_stage=str(status.get("current_stage", "")),
+            message=str(status.get("message", "")),
         ).model_dump()
         idempotency.finalize(claim.record_pk, True, response)
         return response
@@ -1185,21 +1188,15 @@ def agent_get_digital_human_config(
 @router.patch("/projects/{project_id}/digital-human/config")
 def agent_update_digital_human_config(
     project_id: str,
-    request: Request,
+    payload: DigitalHumanConfigUpdateRequest,
     db: Session = Depends(get_db),
-) -> Any:
+) -> DigitalHumanConfigResult:
     """Update the digital-human configuration."""
     project = _resolve_project(db, project_id)
-    body = request.json() if hasattr(request, "json") else None
-    if body is None:
-        import json as _json
-        body = _json.loads(request._body.decode("utf-8"))
-    config_path = Path(project.run_dir) / "planning"
-    config_path.mkdir(parents=True, exist_ok=True)
-    config_path = config_path / "digital_human.json"
-    import json as _json
-    config_path.write_text(_json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
-    return body
+    from digital_human_routes import update_digital_human_config
+
+    config = update_digital_human_config(project, payload.config)
+    return DigitalHumanConfigResult(config=config)
 
 
 @router.get("/projects/{project_id}/digital-human/health")

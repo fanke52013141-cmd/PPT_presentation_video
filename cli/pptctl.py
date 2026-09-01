@@ -495,7 +495,11 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help="Agent API base URL")
-    parser.add_argument("--token", default=os.environ.get("PPT_APP_TOKEN", ""), help="App token")
+    parser.add_argument(
+        "--token",
+        default=os.environ.get("PPT_AGENT_API_KEY") or os.environ.get("PPT_APP_TOKEN", ""),
+        help="Agent API key (defaults to PPT_AGENT_API_KEY)",
+    )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 

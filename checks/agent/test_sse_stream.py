@@ -106,6 +106,22 @@ def test_sse_generator_emits_initial_event_for_idle():
     assert has_complete, f"Missing complete event in {decoded}"
 
 
+def test_sse_generator_accepts_real_wrapped_orchestrator_status():
+    """The actual orchestrator wraps the status payload in success/status."""
+    from agent_api.routes import _sse_generator
+
+    mock_project = MagicMock()
+    mock_session = MagicMock()
+    mock_session.query.return_value.filter.return_value.first.return_value = mock_project
+    wrapped = {"success": True, "status": _make_status(status="completed", stage="output", run_id="run-123")}
+
+    with patch("one_click_orchestrator.get_one_click_status", return_value=wrapped):
+        frames = list(_sse_generator("test-proj", MagicMock(return_value=mock_session), poll_interval=0.01, max_duration=5))
+
+    complete = next(frame.decode("utf-8") for frame in frames if "event: complete" in frame.decode("utf-8"))
+    assert json.loads(complete.split("data: ", 1)[1])['status'] == "completed"
+
+
 def test_sse_generator_emits_terminal_for_completed():
     """Generator must close with a complete event when pipeline finishes."""
     from agent_api.routes import _sse_generator

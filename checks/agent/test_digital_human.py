@@ -23,6 +23,24 @@ def test_client_has_digital_human_methods():
     assert hasattr(AgentClient, "update_digital_human_config")
 
 
+def test_agent_config_update_reuses_canonical_config_writer(tmp_path):
+    """Agent writes must use the same normalized file contract as the web UI."""
+    from types import SimpleNamespace
+    from agent_api.routes import agent_update_digital_human_config
+    from agent_contract.models import DigitalHumanConfigUpdateRequest
+
+    project = SimpleNamespace(id="p1", run_dir=str(tmp_path))
+    with patch("agent_api.routes._resolve_project", return_value=project):
+        result = agent_update_digital_human_config(
+            "p1", DigitalHumanConfigUpdateRequest(config={"enabled": True, "shape": "invalid"}), MagicMock(),
+        )
+
+    assert result.config["enabled"] is True
+    assert result.config["shape"] == "circle"
+    written = json.loads((tmp_path / "planning" / "digital_human.json").read_text(encoding="utf-8"))
+    assert written == result.config
+
+
 # ------------------------------------------------------------------
 # Capability registry
 # ------------------------------------------------------------------

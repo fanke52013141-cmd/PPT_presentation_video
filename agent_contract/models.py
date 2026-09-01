@@ -148,6 +148,23 @@ class PipelineResumeRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Digital human
+# ---------------------------------------------------------------------------
+
+class DigitalHumanConfigUpdateRequest(BaseModel):
+    """Validated Agent transport envelope for the project digital-human config."""
+
+    config: dict[str, Any] = Field(
+        ...,
+        description="Digital-human configuration patch. Only supported fields are persisted.",
+    )
+
+
+class DigitalHumanConfigResult(BaseModel):
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
 # Stage models
 # ---------------------------------------------------------------------------
 

@@ -108,7 +108,7 @@ def test_openapi_servers():
 
     servers = build_agent_openapi_spec()["servers"]
     assert len(servers) >= 1
-    assert any("/api/agent" in s.get("url", "") for s in servers)
+    assert any(s.get("url") == "/" for s in servers)
 
 
 def test_openapi_response_codes():
@@ -125,6 +125,22 @@ def test_openapi_response_codes():
     assert "200" in responses
     assert "400" in responses
     assert "404" in responses
+
+
+def test_openapi_includes_path_parameters_request_and_response_schemas():
+    """Agents need executable I/O contracts, not endpoint names alone."""
+    from agent_api.openapi_docs import build_agent_openapi_spec
+
+    spec = build_agent_openapi_spec()
+    update = spec["paths"]["/api/agent/v1/projects/{project_id}/digital-human/config"]["patch"]
+
+    project_param = next(item for item in update["parameters"] if item["name"] == "project_id")
+    assert project_param["in"] == "path"
+    assert update["requestBody"]["content"]["application/json"]["schema"]["properties"]["config"]["type"] == "object"
+    assert "schema" in update["responses"]["200"]["content"]["application/json"]
+
+    pipeline_run = spec["paths"]["/api/agent/v1/projects/{project_id}/runs"]["post"]
+    assert pipeline_run["requestBody"]["required"] is True
 
 
 def test_openapi_tags_from_capability_ids():

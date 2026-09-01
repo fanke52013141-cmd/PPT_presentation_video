@@ -152,6 +152,30 @@ def _save_config(project: Project, cfg: Dict[str, Any]) -> None:
     write_json_atomic(_config_path(project), cfg)
 
 
+def update_digital_human_config(project: Project, payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Apply the supported digital-human config patch and persist it atomically.
+
+    Shared by the web UI and Agent API so both use identical defaults,
+    field whitelisting, nested-field normalization, and file writes.
+    """
+    cfg = _load_config(project)
+    for key in ("enabled", "mode", "shape", "avatar_id", "sync_mode", "position", "border"):
+        if key in payload:
+            cfg[key] = payload[key]
+    if cfg.get("shape") not in ("circle", "rect"):
+        cfg["shape"] = "circle"
+    if isinstance(payload.get("circle"), dict):
+        circle = dict(cfg.get("circle") or DEFAULT_CIRCLE)
+        circle.update({k: v for k, v in payload["circle"].items() if k in ("cx", "cy", "r")})
+        cfg["circle"] = circle
+    if isinstance(payload.get("video"), dict):
+        video = dict(cfg.get("video") or {"ox": 0.5, "oy": 0.5, "zoom": 1.0})
+        video.update({k: v for k, v in payload["video"].items() if k in ("ox", "oy", "zoom")})
+        cfg["video"] = video
+    _save_config(project, cfg)
+    return cfg
+
+
 _SLIDE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
@@ -265,25 +289,7 @@ def put_dh_config(
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     project = _project_or_404(db, project_id)
-    cfg = _load_config(project)
-    for key in ("enabled", "mode", "shape", "avatar_id", "sync_mode", "position", "border"):
-        if key in payload:
-            cfg[key] = payload[key]
-    if cfg.get("shape") not in ("circle", "rect"):
-        cfg["shape"] = "circle"
-    if isinstance(payload.get("circle"), dict):
-        circle = dict(cfg.get("circle") or DEFAULT_CIRCLE)
-        circle.update(
-            {k: v for k, v in payload["circle"].items() if k in ("cx", "cy", "r")}
-        )
-        cfg["circle"] = circle
-    if isinstance(payload.get("video"), dict):
-        video = dict(cfg.get("video") or {"ox": 0.5, "oy": 0.5, "zoom": 1.0})
-        video.update(
-            {k: v for k, v in payload["video"].items() if k in ("ox", "oy", "zoom")}
-        )
-        cfg["video"] = video
-    _save_config(project, cfg)
+    cfg = update_digital_human_config(project, payload)
     return {"success": True, "config": cfg}
 
 

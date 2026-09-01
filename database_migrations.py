@@ -228,6 +228,14 @@ def _known_migration_already_present(connection: Connection, migration: Migratio
             and _has_columns(connection, "projects", {"course_id", "chapter_id", "sort_order"})
     if key == (5, "project_canvas_profile"):
         return _has_columns(connection, "projects", {"canvas_profile"})
+    if key == (6, "agent_idempotency"):
+        return _has_columns(connection, "projects", {"revision"}) and _has_columns(
+            connection,
+            "agent_idempotency_records",
+            {"scope", "project_id", "idempotency_key", "request_fingerprint", "status"},
+        )
+    if key == (7, "agent_review_policy"):
+        return _has_columns(connection, "projects", {"review_policy"})
     return False
 
 

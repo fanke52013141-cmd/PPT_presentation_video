@@ -1,8 +1,8 @@
 # Agent Capability Matrix
 
-- **Agent API Version**: 1.0.0
-- **Contract Hash**: `9f1b87e6c83005aa`
-- **Total Capabilities**: 17
+- **Agent API Version**: 1.1.0
+- **Contract Hash**: `8cfa3c7b7b47feac`
+- **Total Capabilities**: 22
 
 This document is auto-generated from `agent_contract/capabilities.py`.
 Do not edit manually — run `python scripts/generate_agent_contracts.py`.
@@ -11,23 +11,28 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 
 | Capability ID | Version | Status | Method | Agent API Path | MCP Tool | CLI Command | Service Ref | Long-running | Destructive |
 |---|---|---|---|---|---|---|---|---|---|
-| `project.create` | 1.0 | stable | POST | `/api/agent/v1/projects` | `ppt_project_create` | `project create` | `project_service.ProjectService.create` | No | No |
-| `project.list` | 1.0 | stable | GET | `/api/agent/v1/projects` | `ppt_project_list` | `project list` | `project_service.ProjectService.list` | No | No |
-| `project.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}` | `ppt_project_get` | `project show` | `project_service.ProjectService.get` | No | No |
-| `project.update` | 1.0 | stable | PATCH | `/api/agent/v1/projects/{project_id}` | `ppt_project_update` | `project update` | `project_service.ProjectService.update` | No | No |
-| `source.set` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/source` | `ppt_source_set` | `source set` | `article_service.import_article / generate_article_from_topic` | No | No |
-| `pipeline.run` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/runs` | `ppt_pipeline_run` | `run start` | `one_click_orchestrator.start_one_click` | Yes | No |
+| `project.create` | 1.1 | stable | POST | `/api/agent/v1/projects` | `ppt_project_create` | `project create` | `project_service.ProjectService.create` | No | No |
+| `project.list` | 1.1 | stable | GET | `/api/agent/v1/projects` | `ppt_project_list` | `project list` | `project_service.ProjectService.list` | No | No |
+| `project.get` | 1.1 | stable | GET | `/api/agent/v1/projects/{project_id}` | `ppt_project_get` | `project show` | `project_service.ProjectService.get` | No | No |
+| `project.update` | 1.1 | stable | PATCH | `/api/agent/v1/projects/{project_id}` | `ppt_project_update` | `project update` | `project_service.ProjectService.update` | No | No |
+| `source.set` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/source` | `ppt_source_set` | `source set` | `article_service.import_article / generate_article_from_topic` | No | No |
+| `pipeline.run` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/runs` | `ppt_pipeline_run` | `run start` | `one_click_orchestrator.start_one_click` | Yes | No |
 | `pipeline.status` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/runs/latest` | `ppt_pipeline_status` | `run status` | `one_click_orchestrator.get_one_click_status` | No | No |
-| `pipeline.resume` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/runs/latest/resume` | `ppt_pipeline_resume` | `run resume` | `one_click_orchestrator.start_one_click` | Yes | No |
+| `pipeline.resume` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/runs/latest/resume` | `ppt_pipeline_resume` | `run resume` | `one_click_orchestrator.start_one_click` | Yes | No |
+| `pipeline.stream` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/runs/latest/stream` | `ppt_pipeline_stream` | `run stream` | `agent_api.routes.agent_pipeline_stream` | Yes | No |
 | `checkpoint.approve` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/checkpoints/{checkpoint}/approve` | `ppt_checkpoint_approve` | `approve` | `one_click_orchestrator (stage gating)` | No | No |
 | `stage.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/stages/{stage}` | `ppt_stage_get` | `stage get` | `various service read functions` | No | No |
-| `image.regenerate` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/images/{slide_id}/regenerate` | `ppt_image_regenerate` | `image regenerate` | `image_workflow_service.generate_slide_image` | Yes | No |
-| `narration.update` | 1.0 | stable | PATCH | `/api/agent/v1/projects/{project_id}/narration/{slide_id}` | `ppt_narration_update` | `narration update` | `storyboard_service.update_narration` | No | No |
-| `tts.synthesize` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/tts` | `ppt_tts_synthesize` | `tts synthesize` | `tts_service.start_synthesis` | Yes | No |
-| `video.render` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/videos/render` | `ppt_video_render` | `video render` | `video_render_service.start_render` | Yes | No |
+| `image.regenerate` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/images/{slide_id}/regenerate` | `ppt_image_regenerate` | `image regenerate` | `image_workflow_service.generate_slide_image` | Yes | No |
+| `narration.update` | 1.1 | stable | PATCH | `/api/agent/v1/projects/{project_id}/narration/{slide_id}` | `ppt_narration_update` | `narration update` | `storyboard_service.update_narration` | No | No |
+| `tts.synthesize` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/tts` | `ppt_tts_synthesize` | `tts synthesize` | `tts_service.start_synthesis` | Yes | No |
+| `video.render` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/videos/render` | `ppt_video_render` | `video render` | `video_render_service.start_render` | Yes | No |
 | `artifacts.list` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/artifacts` | `ppt_artifacts_list` | `artifacts list` | `database.ArtifactRecord` | No | No |
 | `artifact.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/artifacts/{artifact_id}` | `ppt_artifact_get` | `artifact get` | `database.ArtifactRecord` | No | No |
 | `diagnostics` | 1.0 | stable | GET | `/api/agent/v1/diagnostics` | `ppt_diagnostics` | `diagnostics` | `agent_api.routes.get_diagnostics` | No | No |
+| `digital_human.config.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/digital-human/config` | `ppt_digital_human_config_get` | `digital-human config` | `digital_human_routes.router` | No | No |
+| `digital_human.config.update` | 1.0 | stable | PATCH | `/api/agent/v1/projects/{project_id}/digital-human/config` | `ppt_digital_human_config_update` | `digital-human config --set` | `digital_human_routes.router` | No | No |
+| `digital_human.health` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/digital-human/health` | `ppt_digital_human_health` | `digital-human health` | `digital_human_client.get_digital_human_client` | No | No |
+| `digital_human.generate` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/digital-human/generate-full` | `ppt_digital_human_generate` | `digital-human generate` | `digital_human_client.get_digital_human_client` | No | No |
 
 ## Pipeline Checkpoints
 
@@ -42,7 +47,7 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 
 ## MCP Tool Summary
 
-The MCP server exposes **17** stable tools:
+The MCP server exposes **22** stable tools:
 
 - `ppt_project_create` — Create a new PPT video project with canvas and mode settings.
 - `ppt_project_list` — List all projects with optional status filter.
@@ -52,6 +57,7 @@ The MCP server exposes **17** stable tools:
 - `ppt_pipeline_run` — Start or resume the automated pipeline. Supports stop_at checkpoints.
 - `ppt_pipeline_status` — Get current pipeline status including stage progress and blocking errors.
 - `ppt_pipeline_resume` — Resume a paused or failed pipeline from the last checkpoint.
+- `ppt_pipeline_stream` — Stream real-time pipeline progress via Server-Sent Events (SSE).
 - `ppt_checkpoint_approve` — Approve or reject a pipeline checkpoint to continue or halt.
 - `ppt_stage_get` — Get detailed data for a specific pipeline stage (storyboard, narration, etc.).
 - `ppt_image_regenerate` — Regenerate a single slide image with optional modification instruction.
@@ -61,6 +67,10 @@ The MCP server exposes **17** stable tools:
 - `ppt_artifacts_list` — List all artifacts (images, audio, video, pptx) for a project.
 - `ppt_artifact_get` — Get details and download URL for a specific artifact.
 - `ppt_diagnostics` — Get system diagnostics including API version, capabilities, and health checks.
+- `ppt_digital_human_config_get` — Get digital-human configuration for a project.
+- `ppt_digital_human_config_update` — Update digital-human configuration for a project.
+- `ppt_digital_human_health` — Check digital-human service availability and model readiness.
+- `ppt_digital_human_generate` — Trigger full digital-human video generation for all slides.
 
 ## Resource URIs
 

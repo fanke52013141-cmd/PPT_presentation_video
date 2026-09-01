@@ -22,7 +22,9 @@ from urllib.error import HTTPError, URLError
 
 DEFAULT_BASE_URL = os.environ.get("PPT_AGENT_API_URL", "http://127.0.0.1:8000")
 DEFAULT_TIMEOUT = 30  # seconds for normal requests
-DEFAULT_APP_TOKEN = os.environ.get("PPT_APP_TOKEN", "")
+# PPT_APP_TOKEN is retained only as a transition fallback for existing local
+# launch scripts. Agent API authentication is configured by this variable.
+DEFAULT_APP_TOKEN = os.environ.get("PPT_AGENT_API_KEY") or os.environ.get("PPT_APP_TOKEN", "")
 
 
 class AgentClientError(Exception):
@@ -66,7 +68,7 @@ class AgentClient:
 
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         if self.app_token:
-            headers["X-App-Token"] = self.app_token
+            headers["Authorization"] = f"Bearer {self.app_token}"
 
         data = None
         if body is not None:
@@ -97,7 +99,7 @@ class AgentClient:
         """Fetch a binary Agent API resource with the usual authentication."""
         headers = {"Accept": "*/*"}
         if self.app_token:
-            headers["X-App-Token"] = self.app_token
+            headers["Authorization"] = f"Bearer {self.app_token}"
         req = Request(f"{self.base_url}{path}", method="GET", headers=headers)
         try:
             with urlopen(req, timeout=self.timeout) as resp:
@@ -306,7 +308,11 @@ class AgentClient:
         return self._request("GET", f"/api/agent/v1/projects/{project_id}/digital-human/config")
 
     def update_digital_human_config(self, project_id: str, config: dict) -> dict[str, Any]:
-        return self._request("PATCH", f"/api/agent/v1/projects/{project_id}/digital-human/config", json=config)
+        return self._request(
+            "PATCH",
+            f"/api/agent/v1/projects/{project_id}/digital-human/config",
+            body={"config": config},
+        )
 
     def check_digital_human_health(self, project_id: str) -> dict[str, Any]:
         return self._request("GET", f"/api/agent/v1/projects/{project_id}/digital-human/health")

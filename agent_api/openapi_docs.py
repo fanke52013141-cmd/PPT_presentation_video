@@ -19,6 +19,30 @@ from agent_contract.capabilities import (
     CapabilityStatus,
     get_stable_capabilities,
 )
+from agent_contract.schema import (
+    capability_input_schema,
+    capability_output_schema,
+    path_parameters_schema,
+)
+
+
+_BODY_METHODS = frozenset({"POST", "PUT", "PATCH"})
+
+
+def _without_path_properties(schema: dict[str, Any], path_names: set[str]) -> dict[str, Any]:
+    """Return a request schema with URL path fields removed from its body."""
+    result = dict(schema)
+    properties = dict(result.get("properties", {}))
+    for name in path_names:
+        properties.pop(name, None)
+    result["properties"] = properties
+    if "required" in result:
+        required = [name for name in result["required"] if name not in path_names]
+        if required:
+            result["required"] = required
+        else:
+            result.pop("required")
+    return result
 
 
 def _http_method_spec(cap: Any) -> dict[str, Any]:
@@ -28,7 +52,33 @@ def _http_method_spec(cap: Any) -> dict[str, Any]:
     if "." in capability_id:
         tags.append(capability_id.split(".")[0])
 
-    return {
+    input_schema = capability_input_schema(cap)
+    output_schema = capability_output_schema(cap)
+    path_schema = path_parameters_schema(cap)
+    path_names = set(path_schema["properties"])
+    method = cap.agent_api_method.upper()
+    parameters: list[dict[str, Any]] = [
+        {
+            "name": name,
+            "in": "path",
+            "required": True,
+            "description": schema.get("description", ""),
+            "schema": {"type": schema.get("type", "string")},
+        }
+        for name, schema in path_schema["properties"].items()
+    ]
+    if method not in _BODY_METHODS:
+        for name, schema in input_schema.get("properties", {}).items():
+            if name not in path_names:
+                parameters.append({
+                    "name": name,
+                    "in": "query",
+                    "required": name in input_schema.get("required", []),
+                    "description": schema.get("description", ""),
+                    "schema": schema,
+                })
+
+    operation: dict[str, Any] = {
         "tags": tags,
         "summary": cap.description,
         "operationId": capability_id.replace(".", "_"),
@@ -36,6 +86,7 @@ def _http_method_spec(cap: Any) -> dict[str, Any]:
         "responses": {
             "200": {
                 "description": "Successful response",
+                "content": {"application/json": {"schema": output_schema}},
             },
             "400": {"description": "Validation error"},
             "401": {"description": "Authentication required"},
@@ -43,6 +94,18 @@ def _http_method_spec(cap: Any) -> dict[str, Any]:
             "429": {"description": "Rate limit exceeded"},
         },
     }
+    if parameters:
+        operation["parameters"] = parameters
+    if method in _BODY_METHODS:
+        body_schema = _without_path_properties(input_schema, path_names)
+        if body_schema.get("properties") or body_schema.get("additionalProperties"):
+            operation["requestBody"] = {
+                # FastAPI declares the request model itself as a required body
+                # parameter even when all of that model's fields have defaults.
+                "required": True,
+                "content": {"application/json": {"schema": body_schema}},
+            }
+    return operation
 
 
 def build_agent_openapi_spec(stable_only: bool = True) -> dict[str, Any]:
@@ -76,7 +139,9 @@ def build_agent_openapi_spec(stable_only: bool = True) -> dict[str, Any]:
             ),
         },
         "servers": [
-            {"url": "/api/agent/v1", "description": "Local development"},
+            # Capability paths already include /api/agent/v1. A root server
+            # avoids Swagger composing the prefix twice.
+            {"url": "/", "description": "Local development"},
         ],
         "paths": paths,
         "components": {

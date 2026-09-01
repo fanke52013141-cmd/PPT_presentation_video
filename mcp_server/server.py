@@ -8,7 +8,8 @@ Usage:
 
 Environment variables:
     PPT_AGENT_API_URL        — Base URL of the Agent API (default: http://127.0.0.1:8000)
-    PPT_APP_TOKEN            — App token for authentication (default: empty)
+    PPT_AGENT_API_KEY        — Agent API key for authentication (preferred)
+    PPT_APP_TOKEN            — Legacy authentication fallback (default: empty)
     PPT_MCP_CONTRACT_CHECK   — Set to "0" to skip contract negotiation (default: "1")
 
 The server:
@@ -55,7 +56,11 @@ class MCPServer:
 
     def __init__(self, base_url: Optional[str] = None, app_token: Optional[str] = None) -> None:
         self.base_url = base_url or os.environ.get("PPT_AGENT_API_URL", "http://127.0.0.1:8000")
-        self.app_token = app_token or os.environ.get("PPT_APP_TOKEN", "")
+        self.app_token = (
+            app_token
+            or os.environ.get("PPT_AGENT_API_KEY")
+            or os.environ.get("PPT_APP_TOKEN", "")
+        )
         self._client: Optional[AgentClient] = None
         self._initialized = False
         self._contract_state: dict[str, Any] = {"checked": False, "match": None}

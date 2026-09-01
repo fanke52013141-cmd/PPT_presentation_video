@@ -36,6 +36,7 @@ class ProjectCreate(BaseModel):
     description: Optional[str] = ""
     ai_mode: Optional[str] = "auto"
     canvas_profile: Optional[str] = DEFAULT_CANVAS_PROFILE
+    review_policy: Optional[str] = "none"
 
 
 class AiModeUpdate(BaseModel):
@@ -83,6 +84,9 @@ class ProjectService:
         if ai_mode not in {"auto", "manual"}:
             ai_mode = "auto"
         canvas_profile = normalize_canvas_profile(payload.canvas_profile)
+        review_policy = (payload.review_policy or "none").strip().lower()
+        if review_policy not in {"none", "images_and_video", "all_stages"}:
+            review_policy = "none"
         project = Project(
             id=project_id,
             name=payload.name,
@@ -92,6 +96,7 @@ class ProjectService:
             run_dir=str(run_dir),
             ai_mode=ai_mode,
             canvas_profile=canvas_profile,
+            review_policy=review_policy,
         )
         project.set_step_status(initial_step_status)
         db.add(project)

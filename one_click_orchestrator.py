@@ -59,6 +59,44 @@ _REVIEW_CHECKPOINT_AFTER_STAGE = {
 logger = logging.getLogger(__name__)
 
 
+# Map a review_policy to the first checkpoint where the pipeline should pause.
+# The orchestrator re-evaluates the policy after each checkpoint so that
+# policies with multiple gates (e.g. all_stages) pause at every boundary.
+_POLICY_CHECKPOINTS: dict[str, list[str]] = {
+    "none": [],
+    "images_and_video": ["image_review", "video_review"],
+    "all_stages": [
+        "storyboard_review",
+        "image_review",
+        "mask_review",
+        "narration_review",
+        "audio_review",
+        "video_review",
+    ],
+}
+
+
+def _stop_at_from_policy(policy: str) -> str:
+    """Return the first pending review checkpoint for *policy*.
+
+    Returns an empty string when the policy requires no review gates.
+    """
+    checkpoints = _POLICY_CHECKPOINTS.get((policy or "none").strip().lower(), [])
+    return checkpoints[0] if checkpoints else ""
+
+
+def _next_stop_at_from_policy(policy: str, after_checkpoint: str) -> str:
+    """Return the next checkpoint after *after_checkpoint* for *policy*."""
+    checkpoints = _POLICY_CHECKPOINTS.get((policy or "none").strip().lower(), [])
+    try:
+        idx = checkpoints.index(after_checkpoint)
+    except ValueError:
+        return ""
+    if idx + 1 < len(checkpoints):
+        return checkpoints[idx + 1]
+    return ""
+
+
 # [同步 step_status 20260814] 一键生成 stage -> 前端步骤映射
 _STAGE_TO_STEP = {
     "preflight": "1",
@@ -669,6 +707,10 @@ def _run_pipeline(
             if next_stage not in {stage_id for stage_id, _ in STAGES}:
                 raise RuntimeError("审查点缺少可恢复的下一阶段")
             start_index = _stage_index(next_stage)
+            # After approving a checkpoint, compute the next policy-driven
+            # stop_at so multi-gate policies (all_stages) pause again.
+            policy = getattr(project, "review_policy", None) or "none"
+            next_stop = _next_stop_at_from_policy(policy, checkpoint)
             status.update(
                 {
                     "status": "running",
@@ -676,6 +718,7 @@ def _run_pipeline(
                     "review_decision": "approved",
                     "review_checkpoint": "",
                     "review_next_stage": "",
+                    "stop_at": next_stop,
                 }
             )
         elif start_from:
@@ -933,6 +976,13 @@ def start_one_click(
         valid_checkpoints = set(_REVIEW_CHECKPOINT_AFTER_STAGE.values())
         if stop_at and stop_at not in valid_checkpoints:
             raise ValueError(f"stop_at 必须是以下审查点之一: {', '.join(sorted(valid_checkpoints))}")
+
+        # If the caller did not specify stop_at, derive it from the project's
+        # persisted review_policy so that review gates are automatic.
+        if not stop_at:
+            policy = getattr(project, "review_policy", None) or "none"
+            stop_at = _stop_at_from_policy(policy)
+
         approved_checkpoint = str((payload or {}).get("approved_checkpoint") or "").strip()
         previous = _status_for_project(project, project_id)
         if previous.get("status") == "waiting_for_review":

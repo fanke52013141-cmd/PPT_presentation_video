@@ -69,6 +69,7 @@ def _dispatch(cap_id: str, args: dict[str, Any], client: AgentClient) -> dict[st
             canvas_profile=args.get("canvas_profile", "landscape_16_9"),
             automation_mode=args.get("automation_mode", "auto"),
             review_policy=args.get("review_policy", "none"),
+            idempotency_key=args.get("idempotency_key"),
         )
 
     elif cap_id == "project.list":
@@ -88,6 +89,8 @@ def _dispatch(cap_id: str, args: dict[str, Any], client: AgentClient) -> dict[st
             name=args.get("name"),
             description=args.get("description"),
             ai_mode=args.get("ai_mode"),
+            expected_revision=args.get("expected_revision"),
+            idempotency_key=args.get("idempotency_key"),
         )
 
     elif cap_id == "source.set":
@@ -96,6 +99,7 @@ def _dispatch(cap_id: str, args: dict[str, Any], client: AgentClient) -> dict[st
             project_id=pid,
             content=args.get("content"),
             topic=args.get("topic"),
+            idempotency_key=args.get("idempotency_key"),
         )
 
     elif cap_id == "pipeline.run":
@@ -105,6 +109,7 @@ def _dispatch(cap_id: str, args: dict[str, Any], client: AgentClient) -> dict[st
             start_from=args.get("start_from"),
             stop_at=args.get("stop_at"),
             mode=args.get("mode", "resume"),
+            idempotency_key=args.get("idempotency_key"),
         )
 
     elif cap_id == "pipeline.status":
@@ -116,6 +121,7 @@ def _dispatch(cap_id: str, args: dict[str, Any], client: AgentClient) -> dict[st
         return client.resume_pipeline(
             project_id=pid,
             stop_at=args.get("stop_at"),
+            idempotency_key=args.get("idempotency_key"),
         )
 
     elif cap_id == "checkpoint.approve":
@@ -125,6 +131,8 @@ def _dispatch(cap_id: str, args: dict[str, Any], client: AgentClient) -> dict[st
             project_id=pid,
             checkpoint=cp,
             approved=args.get("approved", True),
+            notes=args.get("notes", ""),
+            idempotency_key=args.get("idempotency_key"),
         )
 
     elif cap_id == "stage.get":
@@ -139,6 +147,7 @@ def _dispatch(cap_id: str, args: dict[str, Any], client: AgentClient) -> dict[st
             project_id=pid,
             slide_id=sid,
             instruction=args.get("instruction", ""),
+            idempotency_key=args.get("idempotency_key"),
         )
 
     elif cap_id == "narration.update":
@@ -148,6 +157,8 @@ def _dispatch(cap_id: str, args: dict[str, Any], client: AgentClient) -> dict[st
             project_id=pid,
             slide_id=sid,
             narration_text=args.get("narration_text", ""),
+            expected_revision=args.get("expected_revision"),
+            idempotency_key=args.get("idempotency_key"),
         )
 
     elif cap_id == "tts.synthesize":
@@ -155,11 +166,12 @@ def _dispatch(cap_id: str, args: dict[str, Any], client: AgentClient) -> dict[st
         return client.synthesize_tts(
             project_id=pid,
             slide_ids=args.get("slide_ids"),
+            idempotency_key=args.get("idempotency_key"),
         )
 
     elif cap_id == "video.render":
         pid = args.get("project_id", "")
-        return client.render_video(pid)
+        return client.render_video(pid, idempotency_key=args.get("idempotency_key"))
 
     elif cap_id == "artifacts.list":
         pid = args.get("project_id", "")
@@ -176,6 +188,23 @@ def _dispatch(cap_id: str, args: dict[str, Any], client: AgentClient) -> dict[st
 
     elif cap_id == "diagnostics":
         return client.get_diagnostics()
+
+    elif cap_id == "digital_human.config.get":
+        pid = args.get("project_id", "")
+        return client.get_digital_human_config(pid)
+
+    elif cap_id == "digital_human.config.update":
+        pid = args.get("project_id", "")
+        config = args.get("config", {})
+        return client.update_digital_human_config(pid, config)
+
+    elif cap_id == "digital_human.health":
+        pid = args.get("project_id", "")
+        return client.check_digital_human_health(pid)
+
+    elif cap_id == "digital_human.generate":
+        pid = args.get("project_id", "")
+        return client.generate_digital_human(pid)
 
     raise ValueError(f"Unknown capability for dispatch: {cap_id}")
 

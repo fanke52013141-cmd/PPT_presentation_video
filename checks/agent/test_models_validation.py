@@ -133,6 +133,7 @@ class TestProjectSummary:
         )
         assert summary.project_id == "proj_123"
         assert summary.step_status == {}  # default
+        assert summary.revision == 0  # default
 
     def test_with_step_status(self):
         summary = ProjectSummary(
@@ -146,6 +147,29 @@ class TestProjectSummary:
             step_status={"step1": "completed", "step2": "pending"},
         )
         assert summary.step_status["step1"] == "completed"
+
+    def test_with_revision(self):
+        summary = ProjectSummary(
+            project_id="p1",
+            name="t",
+            description="",
+            canvas_profile="landscape_16_9",
+            ai_mode="auto",
+            current_step=3,
+            status="active",
+            revision=42,
+        )
+        assert summary.revision == 42
+
+    def test_revision_in_serialization(self):
+        summary = ProjectSummary(
+            project_id="p1", name="t", description="",
+            canvas_profile="landscape_16_9", ai_mode="auto",
+            current_step=1, status="active", revision=7,
+        )
+        d = summary.model_dump(mode="json")
+        assert "revision" in d
+        assert d["revision"] == 7
 
     def test_missing_required_field_rejected(self):
         with pytest.raises(ValidationError):
@@ -228,6 +252,28 @@ class TestNarrationUpdateRequest:
     def test_valid(self):
         req = NarrationUpdateRequest(slide_id="s1", narration_text="Hello world")
         assert req.narration_text == "Hello world"
+
+    def test_expected_revision_defaults_none(self):
+        req = NarrationUpdateRequest(slide_id="s1", narration_text="test")
+        assert req.expected_revision is None
+
+    def test_with_expected_revision(self):
+        req = NarrationUpdateRequest(
+            slide_id="s1", narration_text="test", expected_revision=3,
+        )
+        assert req.expected_revision == 3
+
+
+class TestOptimisticLockFields:
+    """Verify expected_revision is accepted on all update models."""
+
+    def test_project_update_expected_revision_none_default(self):
+        req = ProjectUpdateRequest()
+        assert req.expected_revision is None
+
+    def test_project_update_with_expected_revision(self):
+        req = ProjectUpdateRequest(description="updated", expected_revision=5)
+        assert req.expected_revision == 5
 
 
 class TestTtsSynthesizeRequest:

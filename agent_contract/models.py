@@ -53,6 +53,8 @@ class ProjectSummary(BaseModel):
     current_step: int
     status: str
     step_status: dict[str, str] = Field(default_factory=dict)
+    revision: int = Field(0, description="乐观锁版本号，每次写操作递增")
+    review_policy: str = Field("none", description="审查策略: none / images_and_video / all_stages")
     created_at: Optional[str] = None
 
 
@@ -83,6 +85,7 @@ class ProjectUpdateRequest(BaseModel):
     description: Optional[str] = None
     ai_mode: Optional[str] = None
     expected_revision: Optional[int] = Field(None, description="乐观锁：期望的项目版本号")
+    idempotency_key: Optional[str] = None
 
 
 class ProjectUpdateResult(BaseModel):
@@ -159,6 +162,7 @@ class NarrationUpdateRequest(BaseModel):
     slide_id: str
     narration_text: str
     expected_revision: Optional[int] = None
+    idempotency_key: Optional[str] = None
 
 
 class ImageRegenerateRequest(BaseModel):
@@ -210,6 +214,7 @@ class CheckpointApproveRequest(BaseModel):
     checkpoint: str = Field(..., description="storyboard_review / image_review / etc.")
     approved: bool = True
     notes: str = ""
+    idempotency_key: Optional[str] = None
 
 
 class CheckpointResult(BaseModel):

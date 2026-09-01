@@ -23,7 +23,7 @@ from ai_provider_service import normalize_image_size
 from canvas_profile_service import get_canvas_profile, get_project_canvas
 from artifact_fingerprint import sha256_file, sha256_json
 from config_store import get_setting
-from database import Project
+from database import ArtifactRecord, Project
 from project_path_service import project_or_404
 from global_image_style_service import (
     active_style_reference_paths,
@@ -33,6 +33,7 @@ from global_image_style_service import (
 )
 from ai_provider_service import ImagePayloadTooLarge
 import invalidation_service
+from artifact_registry import record_artifact, remove_artifact_record
 from pipeline_lifecycle import write_json_atomic
 from project_storage import slide_file as storage_slide_file
 from project_style_reference_service import (
@@ -739,6 +740,13 @@ def delete_all_slide_images(project_id: str, db: Session):
             slide_ids,
             all_images_exist=False,
         )
+        try:
+            db.query(ArtifactRecord).filter(
+                ArtifactRecord.project_id == project.id,
+                ArtifactRecord.artifact_type == "image",
+            ).delete(synchronize_session=False)
+        except Exception:
+            logger.warning("Failed to remove image artifact records for project %s", project.id, exc_info=True)
         db.commit()
     return {"success": True, "deleted_count": deleted_count, "slide_ids": slide_ids}
 
@@ -763,6 +771,15 @@ def delete_slide_image(project_id: str, slide_id: str, db: Session):
         except FileNotFoundError:
             pass
     mark_slide_image_changed(project, slide_id, db)
+    try:
+        remove_artifact_record(
+            db,
+            project_id=project.id,
+            artifact_type="image",
+            filename="visual_draft.png",
+        )
+    except Exception:
+        logger.warning("Failed to remove image artifact record for slide %s", slide_id, exc_info=True)
     return {"success": True, "slide_id": slide_id}
 
 
@@ -1090,6 +1107,23 @@ def confirm_images(project_id: str, db: Session):
         # algorithms during normal project initialization.
     sync_reveal_manifest_to_contract(project)
     refresh_reveal_semantic_blocks(project)
+
+    # Register slide images as queryable artifacts for the Agent API.
+    for slide_id in slide_ids:
+        img_path = os.path.join(project.run_dir, "slides", slide_id, "visual_draft.png")
+        if os.path.exists(img_path):
+            try:
+                record_artifact(
+                    db,
+                    project_id=project.id,
+                    artifact_type="image",
+                    path=img_path,
+                    relative_path=f"slides/{slide_id}/visual_draft.png",
+                    mime_type="image/png",
+                    metadata={"slide_id": slide_id},
+                )
+            except Exception:
+                logger.warning("Failed to register image artifact for slide %s", slide_id, exc_info=True)
 
     handle_step_navigation(project, 4, db)
     return {"success": True}

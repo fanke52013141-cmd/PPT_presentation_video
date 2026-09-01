@@ -55,6 +55,7 @@ class AgentClient:
         path: str,
         body: Optional[dict] = None,
         params: Optional[dict] = None,
+        timeout: Optional[int] = None,
     ) -> dict[str, Any]:
         url = f"{self.base_url}{path}"
         if params:
@@ -72,8 +73,9 @@ class AgentClient:
             data = json.dumps(body).encode("utf-8")
 
         req = Request(url, data=data, method=method, headers=headers)
+        actual_timeout = self.timeout if timeout is None else timeout
         try:
-            with urlopen(req, timeout=self.timeout) as resp:
+            with urlopen(req, timeout=actual_timeout) as resp:
                 raw = resp.read().decode("utf-8")
                 if not raw:
                     return {}
@@ -116,14 +118,18 @@ class AgentClient:
         canvas_profile: str = "landscape_16_9",
         automation_mode: str = "auto",
         review_policy: str = "none",
+        idempotency_key: Optional[str] = None,
     ) -> dict[str, Any]:
-        return self._request("POST", "/api/agent/v1/projects", body={
+        body: dict[str, Any] = {
             "name": name,
             "description": description,
             "canvas_profile": canvas_profile,
             "automation_mode": automation_mode,
             "review_policy": review_policy,
-        })
+        }
+        if idempotency_key:
+            body["idempotency_key"] = idempotency_key
+        return self._request("POST", "/api/agent/v1/projects", body=body)
 
     def list_projects(self, status: Optional[str] = None, limit: int = 50) -> dict[str, Any]:
         return self._request("GET", "/api/agent/v1/projects", params={
@@ -140,6 +146,8 @@ class AgentClient:
         name: Optional[str] = None,
         description: Optional[str] = None,
         ai_mode: Optional[str] = None,
+        expected_revision: Optional[int] = None,
+        idempotency_key: Optional[str] = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {}
         if name is not None:
@@ -148,7 +156,14 @@ class AgentClient:
             body["description"] = description
         if ai_mode is not None:
             body["ai_mode"] = ai_mode
+        if expected_revision is not None:
+            body["expected_revision"] = expected_revision
+        if idempotency_key:
+            body["idempotency_key"] = idempotency_key
         return self._request("PATCH", f"/api/agent/v1/projects/{project_id}", body=body)
+
+    def delete_project(self, project_id: str) -> dict[str, Any]:
+        return self._request("DELETE", f"/api/agent/v1/projects/{project_id}")
 
     # ---- Source ----
 
@@ -157,12 +172,15 @@ class AgentClient:
         project_id: str,
         content: Optional[str] = None,
         topic: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {}
         if content:
             body["content"] = content
         if topic:
             body["topic"] = topic
+        if idempotency_key:
+            body["idempotency_key"] = idempotency_key
         return self._request("POST", f"/api/agent/v1/projects/{project_id}/source", body=body)
 
     # ---- Pipeline ----
@@ -173,21 +191,26 @@ class AgentClient:
         start_from: Optional[str] = None,
         stop_at: Optional[str] = None,
         mode: str = "resume",
+        idempotency_key: Optional[str] = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {"mode": mode}
         if start_from:
             body["start_from"] = start_from
         if stop_at:
             body["stop_at"] = stop_at
+        if idempotency_key:
+            body["idempotency_key"] = idempotency_key
         return self._request("POST", f"/api/agent/v1/projects/{project_id}/runs", body=body)
 
     def get_pipeline_status(self, project_id: str) -> dict[str, Any]:
         return self._request("GET", f"/api/agent/v1/projects/{project_id}/runs/latest")
 
-    def resume_pipeline(self, project_id: str, stop_at: Optional[str] = None) -> dict[str, Any]:
+    def resume_pipeline(self, project_id: str, stop_at: Optional[str] = None, idempotency_key: Optional[str] = None) -> dict[str, Any]:
         body: dict[str, Any] = {"mode": "resume"}
         if stop_at:
             body["stop_at"] = stop_at
+        if idempotency_key:
+            body["idempotency_key"] = idempotency_key
         return self._request("POST", f"/api/agent/v1/projects/{project_id}/runs/latest/resume", body=body)
 
     # ---- Checkpoints ----
@@ -195,11 +218,16 @@ class AgentClient:
     def list_checkpoints(self, project_id: str) -> dict[str, Any]:
         return self._request("GET", f"/api/agent/v1/projects/{project_id}/checkpoints")
 
-    def approve_checkpoint(self, project_id: str, checkpoint: str, approved: bool = True) -> dict[str, Any]:
-        return self._request("POST", f"/api/agent/v1/projects/{project_id}/checkpoints/{checkpoint}/approve", body={
+    def approve_checkpoint(self, project_id: str, checkpoint: str, approved: bool = True, notes: str = "", idempotency_key: Optional[str] = None) -> dict[str, Any]:
+        body: dict[str, Any] = {
             "checkpoint": checkpoint,
             "approved": approved,
-        })
+        }
+        if notes:
+            body["notes"] = notes
+        if idempotency_key:
+            body["idempotency_key"] = idempotency_key
+        return self._request("POST", f"/api/agent/v1/projects/{project_id}/checkpoints/{checkpoint}/approve", body=body)
 
     # ---- Stage data ----
 
@@ -208,32 +236,45 @@ class AgentClient:
 
     # ---- Image regenerate ----
 
-    def regenerate_image(self, project_id: str, slide_id: str, instruction: str = "") -> dict[str, Any]:
-        return self._request("POST", f"/api/agent/v1/projects/{project_id}/images/{slide_id}/regenerate", body={
+    def regenerate_image(self, project_id: str, slide_id: str, instruction: str = "", idempotency_key: Optional[str] = None) -> dict[str, Any]:
+        body: dict[str, Any] = {
             "slide_id": slide_id,
             "instruction": instruction,
-        })
+        }
+        if idempotency_key:
+            body["idempotency_key"] = idempotency_key
+        return self._request("POST", f"/api/agent/v1/projects/{project_id}/images/{slide_id}/regenerate", body=body)
 
     # ---- Narration ----
 
-    def update_narration(self, project_id: str, slide_id: str, narration_text: str) -> dict[str, Any]:
-        return self._request("PATCH", f"/api/agent/v1/projects/{project_id}/narration/{slide_id}", body={
+    def update_narration(self, project_id: str, slide_id: str, narration_text: str, expected_revision: Optional[int] = None, idempotency_key: Optional[str] = None) -> dict[str, Any]:
+        body: dict[str, Any] = {
             "slide_id": slide_id,
             "narration_text": narration_text,
-        })
+        }
+        if expected_revision is not None:
+            body["expected_revision"] = expected_revision
+        if idempotency_key:
+            body["idempotency_key"] = idempotency_key
+        return self._request("PATCH", f"/api/agent/v1/projects/{project_id}/narration/{slide_id}", body=body)
 
     # ---- TTS ----
 
-    def synthesize_tts(self, project_id: str, slide_ids: Optional[list[str]] = None) -> dict[str, Any]:
+    def synthesize_tts(self, project_id: str, slide_ids: Optional[list[str]] = None, idempotency_key: Optional[str] = None) -> dict[str, Any]:
         body: dict[str, Any] = {}
         if slide_ids:
             body["slide_ids"] = slide_ids
+        if idempotency_key:
+            body["idempotency_key"] = idempotency_key
         return self._request("POST", f"/api/agent/v1/projects/{project_id}/tts", body=body)
 
     # ---- Video ----
 
-    def render_video(self, project_id: str) -> dict[str, Any]:
-        return self._request("POST", f"/api/agent/v1/projects/{project_id}/videos/render", body={})
+    def render_video(self, project_id: str, idempotency_key: Optional[str] = None) -> dict[str, Any]:
+        body: dict[str, Any] = {}
+        if idempotency_key:
+            body["idempotency_key"] = idempotency_key
+        return self._request("POST", f"/api/agent/v1/projects/{project_id}/videos/render", body=body)
 
     # ---- Artifacts ----
 
@@ -253,8 +294,22 @@ class AgentClient:
 
     # ---- Diagnostics ----
 
-    def get_meta(self) -> dict[str, Any]:
-        return self._request("GET", "/api/agent/v1/meta")
+    def get_meta(self, timeout: Optional[int] = None) -> dict[str, Any]:
+        return self._request("GET", "/api/agent/v1/meta", timeout=timeout)
 
     def get_diagnostics(self) -> dict[str, Any]:
         return self._request("GET", "/api/agent/v1/diagnostics")
+
+    # ---- Digital Human ----
+
+    def get_digital_human_config(self, project_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/api/agent/v1/projects/{project_id}/digital-human/config")
+
+    def update_digital_human_config(self, project_id: str, config: dict) -> dict[str, Any]:
+        return self._request("PATCH", f"/api/agent/v1/projects/{project_id}/digital-human/config", json=config)
+
+    def check_digital_human_health(self, project_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/api/agent/v1/projects/{project_id}/digital-human/health")
+
+    def generate_digital_human(self, project_id: str) -> dict[str, Any]:
+        return self._request("POST", f"/api/agent/v1/projects/{project_id}/digital-human/generate-full")

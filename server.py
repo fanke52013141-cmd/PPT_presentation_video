@@ -917,9 +917,23 @@ except Exception as exc:
 
 try:
     from agent_api import router as agent_api_router, register_agent_error_handlers
+    from agent_api.auth import AgentAuthMiddleware
+    from agent_api.rate_limit import AgentRateLimitMiddleware
+    from agent_api.request_tracing import AgentRequestTracingMiddleware
 
+    app.add_middleware(AgentRateLimitMiddleware)
+    app.add_middleware(AgentRequestTracingMiddleware)
+    app.add_middleware(AgentAuthMiddleware)
     app.include_router(agent_api_router)
     register_agent_error_handlers(app)
+    from database import SessionLocal as IdempotencySessionLocal
+    from agent_idempotency_service import (
+        AgentIdempotencyDependencies,
+        configure_idempotency_service,
+    )
+    configure_idempotency_service(
+        AgentIdempotencyDependencies(session_factory=IdempotencySessionLocal)
+    )
 except Exception as exc:
     logger.exception("Agent API v1 route registration failed: %s", exc)
     raise

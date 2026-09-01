@@ -73,7 +73,7 @@ class AgentCapability:
 CAPABILITIES: list[AgentCapability] = [
     AgentCapability(
         id="project.create",
-        version="1.0",
+        version="1.1",
         status=CapabilityStatus.stable,
         description="Create a new PPT video project with canvas and mode settings.",
         request_model=ProjectCreateRequest,
@@ -86,7 +86,7 @@ CAPABILITIES: list[AgentCapability] = [
     ),
     AgentCapability(
         id="project.list",
-        version="1.0",
+        version="1.1",
         status=CapabilityStatus.stable,
         description="List all projects with optional status filter.",
         request_model=ProjectListRequest,
@@ -99,7 +99,7 @@ CAPABILITIES: list[AgentCapability] = [
     ),
     AgentCapability(
         id="project.get",
-        version="1.0",
+        version="1.1",
         status=CapabilityStatus.stable,
         description="Get project details including article/contract status and slide IDs.",
         request_model=BaseModel,
@@ -112,7 +112,7 @@ CAPABILITIES: list[AgentCapability] = [
     ),
     AgentCapability(
         id="project.update",
-        version="1.0",
+        version="1.1",
         status=CapabilityStatus.stable,
         description="Update project name, description, or AI mode.",
         request_model=ProjectUpdateRequest,
@@ -125,7 +125,7 @@ CAPABILITIES: list[AgentCapability] = [
     ),
     AgentCapability(
         id="source.set",
-        version="1.0",
+        version="1.1",
         status=CapabilityStatus.stable,
         description="Set project source content — either direct article text or a topic for AI generation.",
         request_model=SourceSetRequest,
@@ -138,7 +138,7 @@ CAPABILITIES: list[AgentCapability] = [
     ),
     AgentCapability(
         id="pipeline.run",
-        version="1.0",
+        version="1.1",
         status=CapabilityStatus.stable,
         description="Start or resume the automated pipeline. Supports stop_at checkpoints.",
         request_model=PipelineRunRequest,
@@ -165,7 +165,7 @@ CAPABILITIES: list[AgentCapability] = [
     ),
     AgentCapability(
         id="pipeline.resume",
-        version="1.0",
+        version="1.1",
         status=CapabilityStatus.stable,
         description="Resume a paused or failed pipeline from the last checkpoint.",
         request_model=PipelineResumeRequest,
@@ -175,6 +175,20 @@ CAPABILITIES: list[AgentCapability] = [
         mcp_tool_name="ppt_pipeline_resume",
         cli_command="run resume",
         service_ref="one_click_orchestrator.start_one_click",
+        long_running=True,
+    ),
+    AgentCapability(
+        id="pipeline.stream",
+        version="1.0",
+        status=CapabilityStatus.stable,
+        description="Stream real-time pipeline progress via Server-Sent Events (SSE).",
+        request_model=BaseModel,
+        response_model=BaseModel,
+        agent_api_method="GET",
+        agent_api_path="/api/agent/v1/projects/{project_id}/runs/latest/stream",
+        mcp_tool_name="ppt_pipeline_stream",
+        cli_command="run stream",
+        service_ref="agent_api.routes.agent_pipeline_stream",
         long_running=True,
     ),
     AgentCapability(
@@ -205,7 +219,7 @@ CAPABILITIES: list[AgentCapability] = [
     ),
     AgentCapability(
         id="image.regenerate",
-        version="1.0",
+        version="1.1",
         status=CapabilityStatus.stable,
         description="Regenerate a single slide image with optional modification instruction.",
         request_model=ImageRegenerateRequest,
@@ -219,7 +233,7 @@ CAPABILITIES: list[AgentCapability] = [
     ),
     AgentCapability(
         id="narration.update",
-        version="1.0",
+        version="1.1",
         status=CapabilityStatus.stable,
         description="Update narration text for a specific slide.",
         request_model=NarrationUpdateRequest,
@@ -232,7 +246,7 @@ CAPABILITIES: list[AgentCapability] = [
     ),
     AgentCapability(
         id="tts.synthesize",
-        version="1.0",
+        version="1.1",
         status=CapabilityStatus.stable,
         description="Start TTS audio synthesis for specified or all slides.",
         request_model=TtsSynthesizeRequest,
@@ -246,7 +260,7 @@ CAPABILITIES: list[AgentCapability] = [
     ),
     AgentCapability(
         id="video.render",
-        version="1.0",
+        version="1.1",
         status=CapabilityStatus.stable,
         description="Start video rendering for the project.",
         request_model=VideoRenderRequest,
@@ -297,6 +311,58 @@ CAPABILITIES: list[AgentCapability] = [
         cli_command="diagnostics",
         service_ref="agent_api.routes.get_diagnostics",
     ),
+    AgentCapability(
+        id="digital_human.config.get",
+        version="1.0",
+        status=CapabilityStatus.stable,
+        description="Get digital-human configuration for a project.",
+        request_model=BaseModel,
+        response_model=BaseModel,
+        agent_api_method="GET",
+        agent_api_path="/api/agent/v1/projects/{project_id}/digital-human/config",
+        mcp_tool_name="ppt_digital_human_config_get",
+        cli_command="digital-human config",
+        service_ref="digital_human_routes.router",
+    ),
+    AgentCapability(
+        id="digital_human.config.update",
+        version="1.0",
+        status=CapabilityStatus.stable,
+        description="Update digital-human configuration for a project.",
+        request_model=BaseModel,
+        response_model=BaseModel,
+        agent_api_method="PATCH",
+        agent_api_path="/api/agent/v1/projects/{project_id}/digital-human/config",
+        mcp_tool_name="ppt_digital_human_config_update",
+        cli_command="digital-human config --set",
+        service_ref="digital_human_routes.router",
+    ),
+    AgentCapability(
+        id="digital_human.health",
+        version="1.0",
+        status=CapabilityStatus.stable,
+        description="Check digital-human service availability and model readiness.",
+        request_model=BaseModel,
+        response_model=BaseModel,
+        agent_api_method="GET",
+        agent_api_path="/api/agent/v1/projects/{project_id}/digital-human/health",
+        mcp_tool_name="ppt_digital_human_health",
+        cli_command="digital-human health",
+        service_ref="digital_human_client.get_digital_human_client",
+    ),
+    AgentCapability(
+        id="digital_human.generate",
+        version="1.0",
+        status=CapabilityStatus.stable,
+        description="Trigger full digital-human video generation for all slides.",
+        request_model=BaseModel,
+        response_model=BaseModel,
+        agent_api_method="POST",
+        agent_api_path="/api/agent/v1/projects/{project_id}/digital-human/generate-full",
+        mcp_tool_name="ppt_digital_human_generate",
+        cli_command="digital-human generate",
+        service_ref="digital_human_client.get_digital_human_client",
+    ),
 ]
 
 
@@ -319,3 +385,81 @@ def get_capability_by_mcp_tool(tool_name: str) -> AgentCapability:
         if cap.mcp_tool_name == tool_name:
             return cap
     raise ValueError(f"Unknown MCP tool: {tool_name}")
+
+
+# ---------------------------------------------------------------------------
+# Capability ↔ review_policy dynamic linkage
+# ---------------------------------------------------------------------------
+
+# Capabilities whose relevance depends on the project's review_policy.
+# ``active`` policies enable them; ``inactive`` means the policy has no
+# checkpoints so the capability is a no-op.
+_REVIEW_GATED_CAPABILITY_IDS = frozenset({
+    "checkpoint.approve",
+})
+
+# Maps each review policy to the set of checkpoint names it uses.
+# Must stay in sync with one_click_orchestrator._POLICY_CHECKPOINTS.
+_POLICY_RELEVANCE: dict[str, frozenset[str]] = {
+    "none": frozenset(),
+    "images_and_video": frozenset({"image_review", "video_review"}),
+    "all_stages": frozenset({
+        "storyboard_review", "image_review", "mask_review",
+        "narration_review", "audio_review", "video_review",
+    }),
+}
+
+# Policy-level labels for capability relevance.
+_RELEVANCE_ACTIVE = "active"
+_RELEVANCE_INACTIVE = "inactive"
+_RELEVANCE_ALWAYS = "always"
+
+
+def _policy_relevance(capability_id: str, policy: str) -> str:
+    """Return the policy relevance label for a capability under a given policy."""
+    if capability_id not in _REVIEW_GATED_CAPABILITY_IDS:
+        return _RELEVANCE_ALWAYS
+    checkpoints = _POLICY_RELEVANCE.get((policy or "none").strip().lower(), frozenset())
+    return _RELEVANCE_ACTIVE if checkpoints else _RELEVANCE_INACTIVE
+
+
+def capabilities_for_policy(
+    policy: str,
+    *,
+    stable_only: bool = True,
+) -> list[dict[str, object]]:
+    """Return capability summaries annotated with ``policy_relevance``.
+
+    Each entry is a plain dict with ``id``, ``status``, ``description``,
+    ``agent_api_method``, ``agent_api_path``, ``mcp_tool_name``,
+    ``cli_command``, and ``policy_relevance``.
+
+    *policy* is the project's ``review_policy`` value ("none",
+    "images_and_video", or "all_stages").
+    """
+    normalized = (policy or "none").strip().lower()
+    if normalized not in _POLICY_RELEVANCE:
+        normalized = "none"
+
+    source = get_stable_capabilities() if stable_only else list(CAPABILITIES)
+    result: list[dict[str, object]] = []
+    for cap in source:
+        result.append({
+            "id": cap.id,
+            "status": cap.status.value,
+            "description": cap.description,
+            "agent_api_method": cap.agent_api_method,
+            "agent_api_path": cap.agent_api_path,
+            "mcp_tool_name": cap.mcp_tool_name,
+            "cli_command": cap.cli_command,
+            "policy_relevance": _policy_relevance(cap.id, normalized),
+        })
+    return result
+
+
+def get_active_checkpoints(policy: str) -> list[str]:
+    """Return the ordered checkpoint list for a given review policy."""
+    normalized = (policy or "none").strip().lower()
+    checkpoints = _POLICY_RELEVANCE.get(normalized, frozenset())
+    return sorted(checkpoints)
+

@@ -10,6 +10,9 @@ Supported URIs:
     ppt://projects/{id}/videos/latest — latest rendered video
     ppt://projects/{id}/artifacts     — all artifacts
     ppt://projects/{id}/contract      — visual contract JSON
+    ppt://projects/{id}/digital-human/config       — digital-human config
+    ppt://projects/{id}/digital-human/videos        — digital-human video listing
+    ppt://projects/{id}/digital-human/videos/{sid}  — per-slide DH video
 
 Resources are read-only and fetched via AgentClient.
 """
@@ -32,6 +35,9 @@ _URI_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"^ppt://projects/([^/]+)/videos/latest$"), "video_latest"),
     (re.compile(r"^ppt://projects/([^/]+)/artifacts$"), "artifacts"),
     (re.compile(r"^ppt://projects/([^/]+)/contract$"), "contract"),
+    (re.compile(r"^ppt://projects/([^/]+)/digital-human/config$"), "dh_config"),
+    (re.compile(r"^ppt://projects/([^/]+)/digital-human/videos$"), "dh_videos"),
+    (re.compile(r"^ppt://projects/([^/]+)/digital-human/videos/([^/]+)$"), "dh_video_slide"),
 ]
 
 
@@ -45,7 +51,7 @@ def parse_resource_uri(uri: str) -> Optional[tuple[str, str, dict[str, str]]]:
         if m:
             groups = m.groups()
             params: dict[str, str] = {}
-            if rtype in ("slide_image", "slide_audio"):
+            if rtype in ("slide_image", "slide_audio", "dh_video_slide"):
                 params["project_id"] = groups[0]
                 params["slide_id"] = groups[1]
             else:
@@ -98,6 +104,24 @@ def list_resource_templates() -> list[dict[str, Any]]:
             "name": "Visual Contract",
             "description": "Get the visual contract JSON for the project.",
             "mimeType": "application/json",
+        },
+        {
+            "uriTemplate": "ppt://projects/{project_id}/digital-human/config",
+            "name": "Digital Human Config",
+            "description": "Get the digital-human presenter configuration for the project.",
+            "mimeType": "application/json",
+        },
+        {
+            "uriTemplate": "ppt://projects/{project_id}/digital-human/videos",
+            "name": "Digital Human Videos",
+            "description": "List all generated digital-human presenter videos.",
+            "mimeType": "application/json",
+        },
+        {
+            "uriTemplate": "ppt://projects/{project_id}/digital-human/videos/{slide_id}",
+            "name": "Digital Human Slide Video",
+            "description": "Get the digital-human presenter video for a specific slide.",
+            "mimeType": "video/mp4",
         },
     ]
 
@@ -187,6 +211,61 @@ def read_resource(uri: str, client: AgentClient) -> dict[str, Any]:
 
     elif rtype == "contract":
         data = client.get_stage(project_id, "storyboard")
+        return {
+            "contents": [{
+                "uri": uri,
+                "mimeType": "application/json",
+                "text": _to_json_text(data),
+            }]
+        }
+
+    elif rtype == "dh_config":
+        data = client.get_digital_human_config(project_id)
+        return {
+            "contents": [{
+                "uri": uri,
+                "mimeType": "application/json",
+                "text": _to_json_text(data),
+            }]
+        }
+
+    elif rtype == "dh_videos":
+        health = client.check_digital_human_health(project_id)
+        config = client.get_digital_human_config(project_id)
+        data = {
+            "service": health,
+            "config": config,
+            "videos": {},
+        }
+        if config.get("enabled") and config.get("slides"):
+            for slide_id in config["slides"]:
+                data["videos"][slide_id] = {
+                    "uri": f"ppt://projects/{project_id}/digital-human/videos/{slide_id}",
+                    "status": "pending",
+                }
+        return {
+            "contents": [{
+                "uri": uri,
+                "mimeType": "application/json",
+                "text": _to_json_text(data),
+            }]
+        }
+
+    elif rtype == "dh_video_slide":
+        slide_id = params.get("slide_id", "")
+        config = client.get_digital_human_config(project_id)
+        slide_cfg = {}
+        if isinstance(config.get("slides"), dict):
+            slide_cfg = config["slides"].get(slide_id, {})
+        elif isinstance(config.get("slides"), list) and slide_id in config.get("slides", []):
+            slide_cfg = {"slide_id": slide_id, "configured": True}
+        data = {
+            "project_id": project_id,
+            "slide_id": slide_id,
+            "configured": bool(slide_cfg),
+            "config": slide_cfg,
+            "download_url": f"{client.base_url}/api/agent/v1/projects/{project_id}/digital-human/videos/{slide_id}",
+        }
         return {
             "contents": [{
                 "uri": uri,

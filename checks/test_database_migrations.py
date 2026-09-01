@@ -26,11 +26,12 @@ def test_numbered_migrations_apply_once_and_store_checksums() -> None:
     with tempfile.TemporaryDirectory() as value:
         engine = sqlite_engine(Path(value) / "fresh.db")
 
-        assert run_migrations(engine) == [1, 2, 3, 4, 5]
+        assert run_migrations(engine) == [1, 2, 3, 4, 5, 6]
         assert run_migrations(engine) == []
-        assert {"projects", "settings", "artifact_records", "local_jobs"}.issubset(
-            table_names(engine)
-        )
+        assert {
+            "projects", "settings", "artifact_records", "local_jobs",
+            "agent_idempotency_records",
+        }.issubset(table_names(engine))
 
         with engine.connect() as connection:
             rows = connection.exec_driver_sql(
@@ -40,16 +41,18 @@ def test_numbered_migrations_apply_once_and_store_checksums() -> None:
                 row[1]
                 for row in connection.exec_driver_sql("PRAGMA table_info(projects)").fetchall()
             }
-        assert [row[0] for row in rows] == [1, 2, 3, 4, 5]
+        assert [row[0] for row in rows] == [1, 2, 3, 4, 5, 6]
         assert [row[1] for row in rows] == [
             "core_schema",
             "project_ai_mode",
             "artifacts_and_local_jobs",
             "courses_and_chapters",
             "project_canvas_profile",
+            "agent_idempotency",
         ]
         assert all(len(row[2]) == 64 for row in rows)
         assert "ai_mode" in project_columns
+        assert "revision" in project_columns
         engine.dispose()
 
 
@@ -131,7 +134,7 @@ def test_legacy_marker_database_is_adopted_without_losing_data() -> None:
                 """
             )
 
-        assert run_migrations(engine) == [1, 2, 3, 4, 5]
+        assert run_migrations(engine) == [1, 2, 3, 4, 5, 6]
         with engine.connect() as connection:
             project = connection.exec_driver_sql(
                 "SELECT id, name, ai_mode FROM projects WHERE id = 'kept'"
@@ -146,6 +149,7 @@ def test_legacy_marker_database_is_adopted_without_losing_data() -> None:
             (3, "artifacts_and_local_jobs"),
             (4, "courses_and_chapters"),
             (5, "project_canvas_profile"),
+            (6, "agent_idempotency"),
         ]
         engine.dispose()
 
@@ -196,5 +200,5 @@ def test_failed_migration_rolls_back_schema_and_ledger() -> None:
 def test_production_migration_files_are_consecutive() -> None:
     with tempfile.TemporaryDirectory() as value:
         engine = sqlite_engine(Path(value) / "production-shape.db")
-        assert run_migrations(engine, MIGRATIONS_DIR) == [1, 2, 3, 4, 5]
+        assert run_migrations(engine, MIGRATIONS_DIR) == [1, 2, 3, 4, 5, 6]
         engine.dispose()

@@ -54,6 +54,10 @@ class Project(Base):
     chapter_id = Column(String, nullable=True, index=True)
     # 项目在所属章节/课程未分配区中的排序
     sort_order = Column(Integer, default=0)
+    # Agent 侧乐观锁版本号：每次 Agent 可见变更 +1（Web UI 路径不递增）
+    revision = Column(Integer, nullable=False, default=0)
+    # Agent 侧审查策略：none / images_and_video / all_stages
+    review_policy = Column(String, nullable=False, default="none")
 
     def get_step_status(self):
         try:
@@ -184,6 +188,20 @@ class LocalJob(Base):
             return json.loads(self.payload_json) if self.payload_json else {}
         except Exception:
             return {}
+
+
+class AgentIdempotencyRecord(Base):
+    __tablename__ = "agent_idempotency_records"
+
+    scope = Column(String, primary_key=True)
+    project_id = Column(String, primary_key=True, default="")
+    idempotency_key = Column(String, primary_key=True)
+    request_fingerprint = Column(String(64), nullable=False)
+    status = Column(String, nullable=False, default="in_progress")
+    response_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utc_now_naive)
+    updated_at = Column(DateTime, nullable=False, default=utc_now_naive, onupdate=utc_now_naive)
+
 
 # 初始化数据库结构
 def init_db():

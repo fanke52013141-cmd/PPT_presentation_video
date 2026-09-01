@@ -16,7 +16,7 @@ from agent_contract.capabilities import CAPABILITIES, CapabilityStatus
 from agent_contract.schema import capability_input_schema, capability_output_schema
 
 
-AGENT_API_VERSION = "1.0.0"
+AGENT_API_VERSION = "1.1.0"
 
 
 def get_contract_hash() -> str:
@@ -47,6 +47,40 @@ def get_contract_hash() -> str:
 
 
 CONTRACT_VERSION = get_contract_hash()
+
+
+def is_version_compatible(local: str, remote: str) -> tuple[bool, str]:
+    """Check semantic version compatibility between two ``X.Y.Z`` strings.
+
+    Returns ``(compatible, detail)``:
+    - Major version difference → ``(False, explanation)``.
+    - Minor/patch difference → ``(True, warning_text)``.
+    - Identical → ``(True, "")``.
+    """
+    def _parse(ver: str) -> tuple[int, int, int]:
+        parts = ver.split(".")
+        return (
+            int(parts[0]) if len(parts) > 0 and parts[0].lstrip("-").isdigit() else 0,
+            int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0,
+            int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0,
+        )
+
+    try:
+        local_major, local_minor, local_patch = _parse(local)
+        remote_major, remote_minor, remote_patch = _parse(remote)
+    except (ValueError, IndexError):
+        return False, f"Cannot parse version: local={local!r}, remote={remote!r}"
+
+    if local_major != remote_major:
+        return (
+            False,
+            f"Major version mismatch: local {local} vs remote {remote}",
+        )
+
+    if local_minor != remote_minor or local_patch != remote_patch:
+        return True, f"Minor/patch difference: local {local} vs remote {remote}"
+
+    return True, ""
 
 
 def get_capability_versions() -> list[str]:

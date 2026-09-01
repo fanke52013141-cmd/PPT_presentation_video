@@ -9,12 +9,15 @@ from checks import e2e_one_click_run
 
 def test_comfyui_provider_preflight_uses_local_capabilities(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     import comfyui_backend
 
+    workflow_file = tmp_path / "comfyui_tts_workflow.json"
+    workflow_file.write_text("{}", encoding="utf-8")
     settings = {
         "tts_provider": "comfyui_tts",
-        "tts_endpoint": "",
+        "tts_endpoint": str(workflow_file),
     }
     monkeypatch.setattr(
         e2e_one_click_run,

@@ -55,6 +55,7 @@ CLI_COMMANDS = {
     "source set",
     "run start",
     "run status",
+    "run stream",
     "run resume",
     "approve",
     "stage get",
@@ -65,6 +66,13 @@ CLI_COMMANDS = {
     "artifacts list",
     "artifact get",
     "diagnostics",
+    "digital-human config",
+    "digital-human config --set",
+    "digital-human health",
+    "digital-human generate",
+    "batch status",
+    "batch render",
+    "batch cleanup",
 }
 
 
@@ -90,6 +98,8 @@ def cmd_project_create(args: argparse.Namespace) -> None:
             description=args.description or "",
             canvas_profile=args.canvas,
             automation_mode=args.mode,
+            review_policy=args.review_policy,
+            idempotency_key=args.idempotency_key,
         )
         _print_json(result)
     except AgentClientError as e:
@@ -125,6 +135,8 @@ def cmd_project_update(args: argparse.Namespace) -> None:
             name=args.name,
             description=args.description,
             ai_mode=args.ai_mode,
+            expected_revision=args.expected_revision,
+            idempotency_key=args.idempotency_key,
         )
         _print_json(result)
     except AgentClientError as e:
@@ -151,7 +163,7 @@ def cmd_source_set(args: argparse.Namespace) -> None:
         sys.exit(2)
 
     try:
-        result = client.set_source(args.project, content=content, topic=args.topic)
+        result = client.set_source(args.project, content=content, topic=args.topic, idempotency_key=args.idempotency_key)
         _print_json(result)
     except AgentClientError as e:
         _print_error(str(e))
@@ -170,6 +182,7 @@ def cmd_run_start(args: argparse.Namespace) -> None:
             start_from=args.start_from,
             stop_at=args.stop_at,
             mode=args.mode,
+            idempotency_key=args.idempotency_key,
         )
         _print_json(result)
     except AgentClientError as e:
@@ -187,10 +200,41 @@ def cmd_run_status(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def cmd_run_stream(args: argparse.Namespace) -> None:
+    """Poll pipeline status until terminal, printing each state change."""
+    import time
+
+    terminal_states = frozenset({
+        "completed", "failed", "waiting_for_review", "idle", "paused",
+    })
+    interval = getattr(args, "interval", 1.0)
+    max_polls = getattr(args, "max_polls", 1800)
+    client = AgentClient(base_url=args.base_url, app_token=args.token)
+    last_fingerprint: Optional[str] = None
+    try:
+        for _ in range(max_polls):
+            result = client.get_pipeline_status(args.project)
+            status = result.get("status", "unknown")
+            stage = result.get("current_stage", "")
+            run_id = result.get("run_id", "")
+            fingerprint = f"{status}|{stage}|{run_id}"
+            if fingerprint != last_fingerprint:
+                _print_json(result)
+                last_fingerprint = fingerprint
+            if status in terminal_states:
+                break
+            time.sleep(interval)
+        else:
+            _print_error("Max polls reached; pipeline still running")
+    except AgentClientError as e:
+        _print_error(str(e))
+        sys.exit(1)
+
+
 def cmd_run_resume(args: argparse.Namespace) -> None:
     client = AgentClient(base_url=args.base_url, app_token=args.token)
     try:
-        result = client.resume_pipeline(args.project, stop_at=args.stop_at)
+        result = client.resume_pipeline(args.project, stop_at=args.stop_at, idempotency_key=args.idempotency_key)
         _print_json(result)
     except AgentClientError as e:
         _print_error(str(e))
@@ -204,7 +248,7 @@ def cmd_run_resume(args: argparse.Namespace) -> None:
 def cmd_approve(args: argparse.Namespace) -> None:
     client = AgentClient(base_url=args.base_url, app_token=args.token)
     try:
-        result = client.approve_checkpoint(args.project, args.checkpoint, approved=not args.reject)
+        result = client.approve_checkpoint(args.project, args.checkpoint, approved=not args.reject, notes=args.notes, idempotency_key=args.idempotency_key)
         _print_json(result)
     except AgentClientError as e:
         _print_error(str(e))
@@ -232,7 +276,7 @@ def cmd_stage_get(args: argparse.Namespace) -> None:
 def cmd_image_regenerate(args: argparse.Namespace) -> None:
     client = AgentClient(base_url=args.base_url, app_token=args.token)
     try:
-        result = client.regenerate_image(args.project, args.slide, args.instruction)
+        result = client.regenerate_image(args.project, args.slide, args.instruction, idempotency_key=args.idempotency_key)
         _print_json(result)
     except AgentClientError as e:
         _print_error(str(e))
@@ -246,7 +290,7 @@ def cmd_image_regenerate(args: argparse.Namespace) -> None:
 def cmd_narration_update(args: argparse.Namespace) -> None:
     client = AgentClient(base_url=args.base_url, app_token=args.token)
     try:
-        result = client.update_narration(args.project, args.slide, args.text)
+        result = client.update_narration(args.project, args.slide, args.text, expected_revision=args.expected_revision, idempotency_key=args.idempotency_key)
         _print_json(result)
     except AgentClientError as e:
         _print_error(str(e))
@@ -260,7 +304,7 @@ def cmd_narration_update(args: argparse.Namespace) -> None:
 def cmd_tts_synthesize(args: argparse.Namespace) -> None:
     client = AgentClient(base_url=args.base_url, app_token=args.token)
     try:
-        result = client.synthesize_tts(args.project)
+        result = client.synthesize_tts(args.project, idempotency_key=args.idempotency_key)
         _print_json(result)
     except AgentClientError as e:
         _print_error(str(e))
@@ -274,7 +318,7 @@ def cmd_tts_synthesize(args: argparse.Namespace) -> None:
 def cmd_video_render(args: argparse.Namespace) -> None:
     client = AgentClient(base_url=args.base_url, app_token=args.token)
     try:
-        result = client.render_video(args.project)
+        result = client.render_video(args.project, idempotency_key=args.idempotency_key)
         _print_json(result)
     except AgentClientError as e:
         _print_error(str(e))
@@ -319,6 +363,117 @@ def cmd_diagnostics(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+# ---------------------------------------------------------------------------
+# Digital Human commands
+# ---------------------------------------------------------------------------
+
+def cmd_digital_human_config(args: argparse.Namespace) -> None:
+    client = AgentClient(base_url=args.base_url, app_token=args.token)
+    try:
+        if getattr(args, "set", None):
+            body = json.loads(args.set)
+            result = client.update_digital_human_config(args.project, body)
+        else:
+            result = client.get_digital_human_config(args.project)
+        _print_json(result)
+    except AgentClientError as e:
+        _print_error(str(e))
+        sys.exit(1)
+
+
+def cmd_digital_human_health(args: argparse.Namespace) -> None:
+    client = AgentClient(base_url=args.base_url, app_token=args.token)
+    try:
+        result = client.check_digital_human_health(args.project)
+        _print_json(result)
+    except AgentClientError as e:
+        _print_error(str(e))
+        sys.exit(1)
+
+
+def cmd_digital_human_generate(args: argparse.Namespace) -> None:
+    client = AgentClient(base_url=args.base_url, app_token=args.token)
+    try:
+        result = client.generate_digital_human(args.project)
+        _print_json(result)
+    except AgentClientError as e:
+        _print_error(str(e))
+        sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Batch commands
+# ---------------------------------------------------------------------------
+
+def cmd_batch_status(args: argparse.Namespace) -> None:
+    """Get pipeline status for all (or filtered) projects in one call."""
+    client = AgentClient(base_url=args.base_url, app_token=args.token)
+    try:
+        projects = client.list_projects(status_filter=args.status)
+        project_list = projects.get("projects", projects) if isinstance(projects, dict) else projects
+        results = []
+        errors = []
+        for proj in project_list:
+            pid = proj.get("project_id", proj.get("id", "")) if isinstance(proj, dict) else str(proj)
+            if not pid:
+                continue
+            try:
+                status = client.get_pipeline_status(pid)
+                results.append({"project_id": pid, "status": status})
+            except AgentClientError as e:
+                errors.append({"project_id": pid, "error": str(e)})
+        _print_json({"results": results, "errors": errors, "total": len(results)})
+    except AgentClientError as e:
+        _print_error(str(e))
+        sys.exit(1)
+
+
+def cmd_batch_render(args: argparse.Namespace) -> None:
+    """Submit video render jobs for all ready projects."""
+    client = AgentClient(base_url=args.base_url, app_token=args.token)
+    try:
+        projects = client.list_projects()
+        project_list = projects.get("projects", projects) if isinstance(projects, dict) else projects
+        results = []
+        errors = []
+        for proj in project_list:
+            pid = proj.get("project_id", proj.get("id", "")) if isinstance(proj, dict) else str(proj)
+            if not pid:
+                continue
+            try:
+                result = client.render_video(pid, speed=args.speed)
+                results.append({"project_id": pid, "result": result})
+            except AgentClientError as e:
+                errors.append({"project_id": pid, "error": str(e)})
+        _print_json({"results": results, "errors": errors, "total": len(results)})
+    except AgentClientError as e:
+        _print_error(str(e))
+        sys.exit(1)
+
+
+def cmd_batch_cleanup(args: argparse.Namespace) -> None:
+    """Delete completed or all projects (destructive)."""
+    client = AgentClient(base_url=args.base_url, app_token=args.token)
+    try:
+        projects = client.list_projects(status_filter=args.status)
+        project_list = projects.get("projects", projects) if isinstance(projects, dict) else projects
+        results = []
+        errors = []
+        for proj in project_list:
+            pid = proj.get("project_id", proj.get("id", "")) if isinstance(proj, dict) else str(proj)
+            if not pid:
+                continue
+            try:
+                result = client.delete_project(pid)
+                results.append({"project_id": pid, "deleted": True})
+            except AgentClientError as e:
+                errors.append({"project_id": pid, "error": str(e)})
+        _print_json({"deleted": results, "errors": errors, "total": len(results)})
+    except AgentClientError as e:
+        _print_error(str(e))
+        sys.exit(1)
+
+
 def cmd_meta(args: argparse.Namespace) -> None:
     client = AgentClient(base_url=args.base_url, app_token=args.token)
     try:
@@ -353,6 +508,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_create.add_argument("--description", default="")
     p_create.add_argument("--canvas", default="landscape_16_9", choices=["landscape_16_9", "portrait_9_16"])
     p_create.add_argument("--mode", default="auto", choices=["auto", "manual", "agent"])
+    p_create.add_argument("--review-policy", default="none", choices=["none", "images_and_video", "all_stages"], help="Review policy for checkpoint approval")
+    p_create.add_argument("--idempotency-key", default=None, help="Idempotency key to prevent duplicate creation")
     p_create.set_defaults(func=cmd_project_create)
 
     p_list = proj_sub.add_parser("list", help="List projects")
@@ -369,6 +526,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_update.add_argument("--name", default=None)
     p_update.add_argument("--description", default=None)
     p_update.add_argument("--ai-mode", default=None)
+    p_update.add_argument("--expected-revision", type=int, default=None, help="Optimistic lock: expected project revision")
+    p_update.add_argument("--idempotency-key", default=None, help="Idempotency key to prevent duplicate updates")
     p_update.set_defaults(func=cmd_project_update)
 
     # source
@@ -380,6 +539,7 @@ def build_parser() -> argparse.ArgumentParser:
     s_set.add_argument("--file", default=None, help="Path to article file (Markdown)")
     s_set.add_argument("--content", default=None, help="Direct article text")
     s_set.add_argument("--topic", default=None, help="Topic for AI generation")
+    s_set.add_argument("--idempotency-key", default=None, help="Idempotency key to prevent duplicate operations")
     s_set.set_defaults(func=cmd_source_set)
 
     # run
@@ -391,15 +551,23 @@ def build_parser() -> argparse.ArgumentParser:
     r_start.add_argument("--start-from", default=None)
     r_start.add_argument("--stop-at", default=None)
     r_start.add_argument("--mode", default="resume")
+    r_start.add_argument("--idempotency-key", default=None, help="Idempotency key to prevent duplicate pipeline starts")
     r_start.set_defaults(func=cmd_run_start)
 
     r_status = run_sub.add_parser("status", help="Get pipeline status")
     r_status.add_argument("--project", required=True)
     r_status.set_defaults(func=cmd_run_status)
 
+    r_stream = run_sub.add_parser("stream", help="Stream pipeline progress via polling")
+    r_stream.add_argument("--project", required=True)
+    r_stream.add_argument("--interval", type=float, default=1.0, help="Polling interval in seconds")
+    r_stream.add_argument("--max-polls", type=int, default=1800, help="Maximum number of polling iterations")
+    r_stream.set_defaults(func=cmd_run_stream)
+
     r_resume = run_sub.add_parser("resume", help="Resume pipeline")
     r_resume.add_argument("--project", required=True)
     r_resume.add_argument("--stop-at", default=None)
+    r_resume.add_argument("--idempotency-key", default=None, help="Idempotency key to prevent duplicate resumes")
     r_resume.set_defaults(func=cmd_run_resume)
 
     # approve
@@ -407,6 +575,8 @@ def build_parser() -> argparse.ArgumentParser:
     ap_parser.add_argument("--project", required=True)
     ap_parser.add_argument("--checkpoint", required=True)
     ap_parser.add_argument("--reject", action="store_true")
+    ap_parser.add_argument("--notes", default="", help="Notes for rejection")
+    ap_parser.add_argument("--idempotency-key", default=None, help="Idempotency key to prevent duplicate approvals")
     ap_parser.set_defaults(func=cmd_approve)
 
     # stage
@@ -426,6 +596,7 @@ def build_parser() -> argparse.ArgumentParser:
     i_regen.add_argument("--project", required=True)
     i_regen.add_argument("--slide", required=True)
     i_regen.add_argument("--instruction", default="")
+    i_regen.add_argument("--idempotency-key", default=None, help="Idempotency key to prevent duplicate regeneration")
     i_regen.set_defaults(func=cmd_image_regenerate)
 
     # narration
@@ -436,6 +607,8 @@ def build_parser() -> argparse.ArgumentParser:
     n_update.add_argument("--project", required=True)
     n_update.add_argument("--slide", required=True)
     n_update.add_argument("--text", required=True)
+    n_update.add_argument("--expected-revision", type=int, default=None, help="Optimistic lock: expected project revision")
+    n_update.add_argument("--idempotency-key", default=None, help="Idempotency key to prevent duplicate updates")
     n_update.set_defaults(func=cmd_narration_update)
 
     # tts
@@ -444,6 +617,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     t_synth = tts_sub.add_parser("synthesize", help="Synthesize audio")
     t_synth.add_argument("--project", required=True)
+    t_synth.add_argument("--idempotency-key", default=None, help="Idempotency key to prevent duplicate synthesis")
     t_synth.set_defaults(func=cmd_tts_synthesize)
 
     # video
@@ -452,6 +626,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     v_render = vid_sub.add_parser("render", help="Render video")
     v_render.add_argument("--project", required=True)
+    v_render.add_argument("--idempotency-key", default=None, help="Idempotency key to prevent duplicate renders")
     v_render.set_defaults(func=cmd_video_render)
 
     # artifacts
@@ -474,6 +649,39 @@ def build_parser() -> argparse.ArgumentParser:
     # diagnostics
     diag_parser = subparsers.add_parser("diagnostics", help="System diagnostics")
     diag_parser.set_defaults(func=cmd_diagnostics)
+
+    # digital-human
+    dh_parser = subparsers.add_parser("digital-human", help="Digital human operations")
+    dh_sub = dh_parser.add_subparsers(dest="dh_action")
+
+    dh_config = dh_sub.add_parser("config", help="Get or update digital-human config")
+    dh_config.add_argument("--project", required=True)
+    dh_config.add_argument("--set", default=None, help="JSON string to update config (PATCH)")
+    dh_config.set_defaults(func=cmd_digital_human_config)
+
+    dh_health = dh_sub.add_parser("health", help="Check digital-human service health")
+    dh_health.add_argument("--project", required=True)
+    dh_health.set_defaults(func=cmd_digital_human_health)
+
+    dh_gen = dh_sub.add_parser("generate", help="Generate digital-human videos for all slides")
+    dh_gen.add_argument("--project", required=True)
+    dh_gen.set_defaults(func=cmd_digital_human_generate)
+
+    # batch
+    batch_parser = subparsers.add_parser("batch", help="Batch operations across multiple projects")
+    batch_sub = batch_parser.add_subparsers(dest="batch_action", required=True)
+
+    b_status = batch_sub.add_parser("status", help="Get pipeline status for all projects")
+    b_status.add_argument("--status", default=None, help="Filter by project status")
+    b_status.set_defaults(func=cmd_batch_status)
+
+    b_render = batch_sub.add_parser("render", help="Submit video render for all projects")
+    b_render.add_argument("--speed", default="1.0", help="Playback speed (e.g. 1.0, 1.25)")
+    b_render.set_defaults(func=cmd_batch_render)
+
+    b_cleanup = batch_sub.add_parser("cleanup", help="Delete projects (destructive)")
+    b_cleanup.add_argument("--status", default="completed", help="Filter projects to delete by status")
+    b_cleanup.set_defaults(func=cmd_batch_cleanup)
 
     # meta
     meta_parser = subparsers.add_parser("meta", help="Agent API metadata")

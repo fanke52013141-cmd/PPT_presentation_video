@@ -6,7 +6,7 @@ to the same source-owned services used by the web UI.
 """
 
 from agent_api.routes import router
-from fastapi import HTTPException
+from starlette.exceptions import HTTPException
 
 from agent_api.errors import AgentAPIError, agent_error_handler, http_exception_handler
 
@@ -20,6 +20,8 @@ def register_agent_error_handlers(app) -> None:
     so existing web-UI routes keep FastAPI's default error response shape.
     """
     app.add_exception_handler(AgentAPIError, agent_error_handler)
+    # FastAPI registers its default handler under starlette's HTTPException key,
+    # not the fastapi.HTTPException subclass, so the lookup must use the same key.
     previous_http_handler = app.exception_handlers.get(HTTPException)
 
     async def scoped_http_exception_handler(request, exc):

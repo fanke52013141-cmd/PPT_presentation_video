@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from database import get_db, Project, ArtifactRecord
@@ -53,6 +53,12 @@ from agent_api.errors import (
     AgentAPIError, ProjectNotFoundError, ValidationFailedError,
     ConflictError, OperationFailedError,
 )
+from agent_idempotency_service import (
+    AgentIdempotencyService,
+    compute_fingerprint,
+    get_idempotency_service,
+    IdempotencyConflictError,
+)
 
 logger = logging.getLogger("PPTStudio.AgentAPI")
 
@@ -74,12 +80,24 @@ def _project_summary(project: Project) -> ProjectSummary:
         current_step=project.current_step or 1,
         status=project.status or "active",
         step_status=project.get_step_status(),
+        revision=getattr(project, "revision", 0) or 0,
+        review_policy=getattr(project, "review_policy", "none") or "none",
         created_at=project.created_at.isoformat() if project.created_at else None,
     )
 
 
 def _gen_op_id() -> str:
     return f"op_{uuid.uuid4().hex[:12]}"
+
+
+def _idempotency_replay_or_raise(claim_result) -> Optional[dict[str, Any]]:
+    """Return a replay dict (with header) or None; convert conflicts."""
+    if claim_result.replay_response is not None:
+        return JSONResponse(
+            claim_result.replay_response,
+            headers={"X-Agent-Idempotency-Replay": "true"},
+        )
+    return None
 
 
 def _resolve_project(db: Session, project_id: str) -> Project:
@@ -138,6 +156,27 @@ def get_diagnostics(db: Session = Depends(get_db)) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# OpenAPI / Swagger documentation
+# ---------------------------------------------------------------------------
+
+@router.get("/openapi.json")
+def agent_openapi_json() -> dict[str, Any]:
+    """Return the OpenAPI 3.0 specification for the Agent API."""
+    from agent_api.openapi_docs import build_agent_openapi_spec
+    return build_agent_openapi_spec(stable_only=True)
+
+
+@router.get("/docs")
+def agent_swagger_ui() -> str:
+    """Return an embedded Swagger UI page pointing at the Agent API OpenAPI spec."""
+    from agent_api.openapi_docs import render_swagger_ui
+
+    return HTMLResponse(
+        content=render_swagger_ui("/api/agent/v1/openapi.json"),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Project CRUD
 # ---------------------------------------------------------------------------
 
@@ -149,22 +188,41 @@ def agent_create_project(
     """Create a new project via Agent API."""
     from project_service import ProjectCreate, get_project_service
 
-    # Map Agent API request to existing service
-    service = get_project_service()
-    internal_payload = ProjectCreate(
-        name=payload.name,
-        description=payload.description,
-        ai_mode=payload.automation_mode.value if payload.automation_mode else "auto",
-        canvas_profile=payload.canvas_profile.value if payload.canvas_profile else "landscape_16_9",
-    )
-    result = service.create(internal_payload, db)
-    project_id = result.get("project", {}).get("id", "")
-    project = db.query(Project).filter(Project.id == project_id).first()
+    idempotency = get_idempotency_service()
+    try:
+        claim = idempotency.claim(
+            "project.create", "", payload.idempotency_key or "",
+            compute_fingerprint(payload.model_dump(mode="json")),
+        )
+    except IdempotencyConflictError as e:
+        raise ConflictError(str(e), details=e.details)
+    replay = _idempotency_replay_or_raise(claim)
+    if replay is not None:
+        return replay
 
-    return ProjectCreateResult(
-        project=_project_summary(project),
-        operation_id=_gen_op_id(),
-    ).model_dump()
+    try:
+        # Map Agent API request to existing service
+        service = get_project_service()
+        internal_payload = ProjectCreate(
+            name=payload.name,
+            description=payload.description,
+            ai_mode=payload.automation_mode.value if payload.automation_mode else "auto",
+            canvas_profile=payload.canvas_profile.value if payload.canvas_profile else "landscape_16_9",
+            review_policy=payload.review_policy.value if payload.review_policy else "none",
+        )
+        result = service.create(internal_payload, db)
+        project_id = result.get("project", {}).get("id", "")
+        project = db.query(Project).filter(Project.id == project_id).first()
+
+        response = ProjectCreateResult(
+            project=_project_summary(project),
+            operation_id=_gen_op_id(),
+        ).model_dump()
+        idempotency.finalize(claim.record_pk, True, response)
+        return response
+    except Exception:
+        idempotency.finalize(claim.record_pk, False, None)
+        raise
 
 
 @router.get("/projects")
@@ -228,20 +286,59 @@ def agent_update_project(
     """Update project metadata via Agent API."""
     project = _resolve_project(db, project_id)
 
-    if payload.name is not None:
-        project.name = payload.name
-    if payload.description is not None:
-        project.description = payload.description
-    if payload.ai_mode is not None:
-        project.ai_mode = payload.ai_mode
+    idempotency = get_idempotency_service()
+    try:
+        claim = idempotency.claim(
+            "project.update", project_id, payload.idempotency_key or "",
+            compute_fingerprint(payload.model_dump(mode="json")),
+        )
+    except IdempotencyConflictError as e:
+        raise ConflictError(str(e), details=e.details)
+    replay = _idempotency_replay_or_raise(claim)
+    if replay is not None:
+        return replay
 
-    db.commit()
-    db.refresh(project)
+    try:
+        AgentIdempotencyService.check_revision(project, payload.expected_revision)
+    except IdempotencyConflictError as e:
+        idempotency.finalize(claim.record_pk, False, None)
+        raise ConflictError(str(e), details=e.details)
 
-    return ProjectUpdateResult(
-        project=_project_summary(project),
-        updated=True,
-    ).model_dump()
+    try:
+        if payload.name is not None:
+            project.name = payload.name
+        if payload.description is not None:
+            project.description = payload.description
+        if payload.ai_mode is not None:
+            project.ai_mode = payload.ai_mode
+
+        AgentIdempotencyService.bump_revision(db, project)
+        db.commit()
+        db.refresh(project)
+
+        response = ProjectUpdateResult(
+            project=_project_summary(project),
+            updated=True,
+        ).model_dump()
+        idempotency.finalize(claim.record_pk, True, response)
+        return response
+    except Exception:
+        idempotency.finalize(claim.record_pk, False, None)
+        raise
+
+
+@router.delete("/projects/{project_id}")
+def agent_delete_project(
+    project_id: str,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Delete a project and all its artifacts."""
+    project = _resolve_project(db, project_id)
+    from project_service import get_project_service
+
+    service = get_project_service()
+    result = service.delete(project_id, db)
+    return {"project_id": project_id, "deleted": True, "details": result}
 
 
 # ---------------------------------------------------------------------------
@@ -257,32 +354,50 @@ def agent_set_source(
     """Set project source — direct content or topic-based generation."""
     project = _resolve_project(db, project_id)
 
-    import article_service as article_svc
+    idempotency = get_idempotency_service()
+    try:
+        claim = idempotency.claim(
+            "source.set", project_id, payload.idempotency_key or "",
+            compute_fingerprint(payload.model_dump(mode="json")),
+        )
+    except IdempotencyConflictError as e:
+        raise ConflictError(str(e), details=e.details)
+    replay = _idempotency_replay_or_raise(claim)
+    if replay is not None:
+        return replay
 
-    if payload.content:
-        # Direct article import
-        result = article_svc.import_article(project, payload.content, db)
-        article_text = payload.content
-    elif payload.topic:
-        # Topic-based generation
-        gen_payload = {"topic": payload.topic}
-        result = article_svc.generate_article_from_topic(project, gen_payload)
-        article_text = str(result.get("content") or "")
-        # Topic generation only produces text.  Persist it through the same
-        # source-owned import path used by the web UI before reporting success.
-        article_svc.import_article(project, article_text, db)
-    else:
-        raise ValidationFailedError("Either 'content' or 'topic' must be provided")
+    try:
+        import article_service as article_svc
 
-    preview = article_text[:500] if article_text else ""
-    word_count = len(article_text) if article_text else 0
+        if payload.content:
+            # Direct article import
+            result = article_svc.import_article(project, payload.content, db)
+            article_text = payload.content
+        elif payload.topic:
+            # Topic-based generation
+            gen_payload = {"topic": payload.topic}
+            result = article_svc.generate_article_from_topic(project, gen_payload)
+            article_text = str(result.get("content") or "")
+            # Topic generation only produces text.  Persist it through the same
+            # source-owned import path used by the web UI before reporting success.
+            article_svc.import_article(project, article_text, db)
+        else:
+            raise ValidationFailedError("Either 'content' or 'topic' must be provided")
 
-    return SourceSetResult(
-        project_id=project_id,
-        article_imported=True,
-        article_preview=preview,
-        word_count=word_count,
-    ).model_dump()
+        preview = article_text[:500] if article_text else ""
+        word_count = len(article_text) if article_text else 0
+
+        response = SourceSetResult(
+            project_id=project_id,
+            article_imported=True,
+            article_preview=preview,
+            word_count=word_count,
+        ).model_dump()
+        idempotency.finalize(claim.record_pk, True, response)
+        return response
+    except Exception:
+        idempotency.finalize(claim.record_pk, False, None)
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -298,30 +413,46 @@ def agent_start_pipeline(
     """Start or resume the automated pipeline."""
     project = _resolve_project(db, project_id)
 
-    from one_click_orchestrator import start_one_click
-
-    one_click_payload: dict[str, Any] = {}
-    if "start_from" in payload.model_fields_set and payload.start_from:
-        one_click_payload["start_from"] = payload.start_from
-    if payload.stop_at:
-        one_click_payload["stop_at"] = payload.stop_at
-    if payload.mode:
-        one_click_payload["mode"] = payload.mode
+    idempotency = get_idempotency_service()
+    try:
+        claim = idempotency.claim(
+            "pipeline.run", project_id, payload.idempotency_key or "",
+            compute_fingerprint(payload.model_dump(mode="json")),
+        )
+    except IdempotencyConflictError as e:
+        raise ConflictError(str(e), details=e.details)
+    replay = _idempotency_replay_or_raise(claim)
+    if replay is not None:
+        return replay
 
     try:
+        from one_click_orchestrator import start_one_click
+
+        one_click_payload: dict[str, Any] = {}
+        if "start_from" in payload.model_fields_set and payload.start_from:
+            one_click_payload["start_from"] = payload.start_from
+        if payload.stop_at:
+            one_click_payload["stop_at"] = payload.stop_at
+        if payload.mode:
+            one_click_payload["mode"] = payload.mode
+
         result = start_one_click(project, one_click_payload)
+
+        response = PipelineRunResult(
+            operation_id=result.get("run_id", _gen_op_id()),
+            project_id=project_id,
+            status=result.get("status", "running"),
+            current_stage=result.get("current_stage", "preflight"),
+            message=result.get("message", ""),
+        ).model_dump()
+        idempotency.finalize(claim.record_pk, True, response)
+        return response
     except ValueError as e:
+        idempotency.finalize(claim.record_pk, False, None)
         raise ValidationFailedError(str(e))
     except Exception as e:
+        idempotency.finalize(claim.record_pk, False, None)
         raise OperationFailedError(f"Pipeline start failed: {e}")
-
-    return PipelineRunResult(
-        operation_id=result.get("run_id", _gen_op_id()),
-        project_id=project_id,
-        status=result.get("status", "running"),
-        current_stage=result.get("current_stage", "preflight"),
-        message=result.get("message", ""),
-    ).model_dump()
 
 
 @router.get("/projects/{project_id}/runs/latest")
@@ -350,6 +481,149 @@ def agent_pipeline_status(
     ).model_dump()
 
 
+_SSE_TERMINAL_STATES = frozenset({"completed", "failed", "waiting_for_review", "idle", "paused"})
+_SSE_POLL_INTERVAL = 1.0
+_SSE_HEARTBEAT_INTERVAL = 15.0
+_SSE_MAX_DURATION = 1800.0  # 30 minutes safety valve
+
+
+def _sse_event(data: dict[str, Any], event_name: str = "progress") -> bytes:
+    """Format a Server-Sent Events frame."""
+    import json
+    payload = json.dumps(data, ensure_ascii=False, default=str)
+    frame = f"event: {event_name}\ndata: {payload}\n\n"
+    return frame.encode("utf-8")
+
+
+def _sse_heartbeat() -> bytes:
+    """SSE heartbeat comment for connection keep-alive."""
+    return b": heartbeat\n\n"
+
+
+def _sse_generator(
+    project_id: str,
+    db_session_factory,
+    poll_interval: float = _SSE_POLL_INTERVAL,
+    heartbeat_interval: float = _SSE_HEARTBEAT_INTERVAL,
+    max_duration: float = _SSE_MAX_DURATION,
+):
+    """Generate SSE events by polling the pipeline status.
+
+    Yields progress events when the pipeline stage or status changes,
+    a final terminal event when the pipeline reaches a terminal state,
+    and heartbeat comments periodically.
+    """
+    import time
+
+    from one_click_orchestrator import get_one_click_status, _RUNNING
+    from database import Project
+
+    start_time = time.monotonic()
+    last_heartbeat = start_time
+    last_sent = None
+    terminal_sent = False
+
+    while True:
+        elapsed = time.monotonic() - start_time
+        if elapsed >= max_duration:
+            yield _sse_event(
+                {"project_id": project_id, "reason": "max_duration_exceeded", "status": "timeout"},
+                event_name="close",
+            )
+            return
+
+        # Poll the current status
+        db = db_session_factory()
+        try:
+            project = db.query(Project).filter(Project.id == project_id).first()
+            if not project:
+                yield _sse_event(
+                    {"project_id": project_id, "error": "Project not found"},
+                    event_name="error",
+                )
+                return
+            status_dict = get_one_click_status(project)
+        finally:
+            db.close()
+
+        status = status_dict.get("status", "idle")
+        current_stage = status_dict.get("current_stage", "")
+        run_id = status_dict.get("run_id", "")
+        stages = status_dict.get("stages", [])
+
+        # Compute aggregate progress from stages
+        stage_items = stages if isinstance(stages, list) else []
+        done_count = sum(1 for s in stage_items if s.get("status") == "done")
+        total_count = max(1, len(stage_items))
+        progress = round(done_count / total_count, 4)
+
+        snapshot = {
+            "project_id": project_id,
+            "run_id": run_id,
+            "status": status,
+            "current_stage": current_stage,
+            "progress": progress,
+            "stages": stage_items,
+            "blocking_errors": status_dict.get("blocking_errors", []),
+            "review_checkpoint": status_dict.get("review_checkpoint", ""),
+            "updated_at": status_dict.get("updated_at", ""),
+        }
+
+        # Send event when something changes
+        fingerprint = (status, current_stage, run_id)
+        if fingerprint != last_sent:
+            yield _sse_event(snapshot, event_name="progress")
+            last_sent = fingerprint
+
+        # Check for terminal state
+        if status in _SSE_TERMINAL_STATES:
+            if not terminal_sent:
+                yield _sse_event(snapshot, event_name="complete")
+                terminal_sent = True
+            return
+
+        # Heartbeat
+        now = time.monotonic()
+        if now - last_heartbeat >= heartbeat_interval:
+            yield _sse_heartbeat()
+            last_heartbeat = now
+
+        # Wait before next poll
+        time.sleep(poll_interval)
+
+
+@router.get("/projects/{project_id}/runs/latest/stream")
+def agent_pipeline_stream(
+    project_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Stream real-time pipeline progress via Server-Sent Events.
+
+    The client connects once and receives ``event: progress`` frames
+    whenever the pipeline stage or status changes, an ``event: complete``
+    frame when the pipeline reaches a terminal state, and periodic
+    ``: heartbeat`` comments to keep the connection alive.
+
+    The stream auto-closes after the terminal event or after 30 minutes.
+    """
+    project = _resolve_project(db, project_id)
+
+    from database import Session as DbSession
+
+    session_factory = DbSession
+
+    return StreamingResponse(
+        _sse_generator(project_id, session_factory),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @router.post("/projects/{project_id}/runs/latest/resume")
 def agent_resume_pipeline(
     project_id: str,
@@ -359,26 +633,42 @@ def agent_resume_pipeline(
     """Resume a paused or failed pipeline."""
     project = _resolve_project(db, project_id)
 
-    from one_click_orchestrator import start_one_click
-
-    one_click_payload: dict[str, Any] = {"mode": "resume"}
-    if payload.stop_at:
-        one_click_payload["stop_at"] = payload.stop_at
+    idempotency = get_idempotency_service()
+    try:
+        claim = idempotency.claim(
+            "pipeline.resume", project_id, payload.idempotency_key or "",
+            compute_fingerprint(payload.model_dump(mode="json")),
+        )
+    except IdempotencyConflictError as e:
+        raise ConflictError(str(e), details=e.details)
+    replay = _idempotency_replay_or_raise(claim)
+    if replay is not None:
+        return replay
 
     try:
+        from one_click_orchestrator import start_one_click
+
+        one_click_payload: dict[str, Any] = {"mode": "resume"}
+        if payload.stop_at:
+            one_click_payload["stop_at"] = payload.stop_at
+
         result = start_one_click(project, one_click_payload)
+
+        response = PipelineRunResult(
+            operation_id=result.get("run_id", _gen_op_id()),
+            project_id=project_id,
+            status=result.get("status", "running"),
+            current_stage=result.get("current_stage", ""),
+            message=result.get("message", ""),
+        ).model_dump()
+        idempotency.finalize(claim.record_pk, True, response)
+        return response
     except ValueError as e:
+        idempotency.finalize(claim.record_pk, False, None)
         raise ValidationFailedError(str(e))
     except Exception as e:
+        idempotency.finalize(claim.record_pk, False, None)
         raise OperationFailedError(f"Pipeline resume failed: {e}")
-
-    return PipelineRunResult(
-        operation_id=result.get("run_id", _gen_op_id()),
-        project_id=project_id,
-        status=result.get("status", "running"),
-        current_stage=result.get("current_stage", ""),
-        message=result.get("message", ""),
-    ).model_dump()
 
 
 # ---------------------------------------------------------------------------
@@ -414,25 +704,46 @@ def agent_approve_checkpoint(
     if payload.checkpoint != checkpoint:
         raise ValidationFailedError("Checkpoint in the path and request body must match")
 
-    if payload.approved:
-        # Resume pipeline from this checkpoint
-        from one_click_orchestrator import start_one_click
-        start_one_click(
-            project,
-            {"mode": "resume", "approved_checkpoint": checkpoint},
+    idempotency = get_idempotency_service()
+    try:
+        claim = idempotency.claim(
+            "checkpoint.approve", project_id, payload.idempotency_key or "",
+            compute_fingerprint(payload.model_dump(mode="json")),
         )
-        next_stage = "pipeline resumed"
-    else:
-        from one_click_orchestrator import reject_one_click_checkpoint
-        reject_one_click_checkpoint(project, checkpoint, payload.notes)
-        next_stage = "pipeline remains halted at checkpoint"
+    except IdempotencyConflictError as e:
+        raise ConflictError(str(e), details=e.details)
+    replay = _idempotency_replay_or_raise(claim)
+    if replay is not None:
+        return replay
 
-    return CheckpointResult(
-        project_id=project_id,
-        checkpoint=checkpoint,
-        approved=payload.approved,
-        next_stage=next_stage,
-    ).model_dump()
+    try:
+        if payload.approved:
+            # Resume pipeline from this checkpoint
+            from one_click_orchestrator import start_one_click
+            start_one_click(
+                project,
+                {"mode": "resume", "approved_checkpoint": checkpoint},
+            )
+            next_stage = "pipeline resumed"
+        else:
+            from one_click_orchestrator import reject_one_click_checkpoint
+            reject_one_click_checkpoint(project, checkpoint, payload.notes)
+            next_stage = "pipeline remains halted at checkpoint"
+
+        response = CheckpointResult(
+            project_id=project_id,
+            checkpoint=checkpoint,
+            approved=payload.approved,
+            next_stage=next_stage,
+        ).model_dump()
+        idempotency.finalize(claim.record_pk, True, response)
+        return response
+    except AgentAPIError:
+        idempotency.finalize(claim.record_pk, False, None)
+        raise
+    except Exception as e:
+        idempotency.finalize(claim.record_pk, False, None)
+        raise OperationFailedError(f"Checkpoint approve failed: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -545,23 +856,38 @@ def agent_regenerate_image(
     """Regenerate a single slide image."""
     _resolve_project(db, project_id)
 
+    idempotency = get_idempotency_service()
+    try:
+        claim = idempotency.claim(
+            "images.regenerate", project_id, payload.idempotency_key or "",
+            compute_fingerprint(payload.model_dump(mode="json")),
+        )
+    except IdempotencyConflictError as e:
+        raise ConflictError(str(e), details=e.details)
+    replay = _idempotency_replay_or_raise(claim)
+    if replay is not None:
+        return replay
+
     try:
         from pipeline_services import get_project_pipeline_services
         services = get_project_pipeline_services(db, project_id)
         result = services.generate_image(slide_id, payload.instruction or "")
         revision = result.get("revision", 0)
     except Exception as e:
+        idempotency.finalize(claim.record_pk, False, None)
         raise OperationFailedError(f"Image regeneration failed: {e}")
 
     resource_uri = build_resource_uri(project_id, "image", slide_id)
 
-    return ImageRegenerateResult(
+    response = ImageRegenerateResult(
         slide_id=slide_id,
         artifact_id=result.get("artifact_id", ""),
         resource_uri=resource_uri,
         revision=revision,
         message="Image regenerated successfully",
     ).model_dump()
+    idempotency.finalize(claim.record_pk, True, response)
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -576,7 +902,25 @@ def agent_update_narration(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Update narration text for a specific slide."""
-    _resolve_project(db, project_id)
+    project = _resolve_project(db, project_id)
+
+    idempotency = get_idempotency_service()
+    try:
+        claim = idempotency.claim(
+            "narration.update", project_id, payload.idempotency_key or "",
+            compute_fingerprint(payload.model_dump(mode="json")),
+        )
+    except IdempotencyConflictError as e:
+        raise ConflictError(str(e), details=e.details)
+    replay = _idempotency_replay_or_raise(claim)
+    if replay is not None:
+        return replay
+
+    try:
+        AgentIdempotencyService.check_revision(project, payload.expected_revision)
+    except IdempotencyConflictError as e:
+        idempotency.finalize(claim.record_pk, False, None)
+        raise ConflictError(str(e), details=e.details)
 
     try:
         from pipeline_services import get_project_pipeline_services
@@ -601,17 +945,24 @@ def agent_update_narration(
         # The source-owned service persists the payload and invalidates stale
         # audio/video state through the existing step-navigation lifecycle.
         services.save_narration(beats)
+
+        AgentIdempotencyService.bump_revision(db, project)
+        db.commit()
+
+        response = {
+            "project_id": project_id,
+            "slide_id": slide_id,
+            "updated": True,
+            "narration_text": payload.narration_text,
+        }
+        idempotency.finalize(claim.record_pk, True, response)
+        return response
     except AgentAPIError:
+        idempotency.finalize(claim.record_pk, False, None)
         raise
     except Exception as e:
+        idempotency.finalize(claim.record_pk, False, None)
         raise OperationFailedError(f"Narration update failed: {e}")
-
-    return {
-        "project_id": project_id,
-        "slide_id": slide_id,
-        "updated": True,
-        "narration_text": payload.narration_text,
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -632,19 +983,34 @@ def agent_tts_synthesize(
             "Partial TTS synthesis is not supported by the production service; omit slide_ids to synthesize the current project"
         )
 
+    idempotency = get_idempotency_service()
+    try:
+        claim = idempotency.claim(
+            "tts.synthesize", project_id, payload.idempotency_key or "",
+            compute_fingerprint(payload.model_dump(mode="json")),
+        )
+    except IdempotencyConflictError as e:
+        raise ConflictError(str(e), details=e.details)
+    replay = _idempotency_replay_or_raise(claim)
+    if replay is not None:
+        return replay
+
     try:
         from pipeline_services import get_project_pipeline_services
         services = get_project_pipeline_services(db, project_id)
         result = services.synthesize_audio()
     except Exception as e:
+        idempotency.finalize(claim.record_pk, False, None)
         raise OperationFailedError(f"TTS synthesis failed: {e}")
 
-    return TtsSynthesizeResult(
+    response = TtsSynthesizeResult(
         operation_id=_gen_op_id(),
         project_id=project_id,
         status=result.get("status", "running"),
         job_id=result.get("job_id", result.get("task_id", "")),
     ).model_dump()
+    idempotency.finalize(claim.record_pk, True, response)
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -660,19 +1026,34 @@ def agent_video_render(
     """Start video rendering."""
     _resolve_project(db, project_id)
 
+    idempotency = get_idempotency_service()
+    try:
+        claim = idempotency.claim(
+            "videos.render", project_id, payload.idempotency_key or "",
+            compute_fingerprint(payload.model_dump(mode="json")),
+        )
+    except IdempotencyConflictError as e:
+        raise ConflictError(str(e), details=e.details)
+    replay = _idempotency_replay_or_raise(claim)
+    if replay is not None:
+        return replay
+
     try:
         from pipeline_services import get_project_pipeline_services
         services = get_project_pipeline_services(db, project_id)
         result = services.render_video()
     except Exception as e:
+        idempotency.finalize(claim.record_pk, False, None)
         raise OperationFailedError(f"Video render failed: {e}")
 
-    return VideoRenderResult(
+    response = VideoRenderResult(
         operation_id=_gen_op_id(),
         project_id=project_id,
         status=result.get("status", "running"),
         job_id=result.get("job_id", result.get("task_id", "")),
     ).model_dump()
+    idempotency.finalize(claim.record_pk, True, response)
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -780,3 +1161,91 @@ def agent_download_artifact(
     if not candidate.is_relative_to(run_dir) or not candidate.is_file():
         raise AgentAPIError("ARTIFACT_UNAVAILABLE", "Artifact file is unavailable", 404)
     return FileResponse(candidate, media_type=record.mime_type or mime_for_type(record.artifact_type), filename=record.filename)
+
+
+# ---------------------------------------------------------------------------
+# Digital Human (Step 9 optional)
+# ---------------------------------------------------------------------------
+
+@router.get("/projects/{project_id}/digital-human/config")
+def agent_get_digital_human_config(
+    project_id: str,
+    db: Session = Depends(get_db),
+) -> Any:
+    """Get the digital-human configuration for a project."""
+    project = _resolve_project(db, project_id)
+    config_path = Path(project.run_dir) / "planning" / "digital_human.json"
+    if not config_path.is_file():
+        return JSONResponse({"enabled": False, "configured": False})
+    import json as _json
+    data = _json.loads(config_path.read_text(encoding="utf-8"))
+    return data
+
+
+@router.patch("/projects/{project_id}/digital-human/config")
+def agent_update_digital_human_config(
+    project_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Any:
+    """Update the digital-human configuration."""
+    project = _resolve_project(db, project_id)
+    body = request.json() if hasattr(request, "json") else None
+    if body is None:
+        import json as _json
+        body = _json.loads(request._body.decode("utf-8"))
+    config_path = Path(project.run_dir) / "planning"
+    config_path.mkdir(parents=True, exist_ok=True)
+    config_path = config_path / "digital_human.json"
+    import json as _json
+    config_path.write_text(_json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
+    return body
+
+
+@router.get("/projects/{project_id}/digital-human/health")
+def agent_digital_human_health(
+    project_id: str,
+    db: Session = Depends(get_db),
+) -> Any:
+    """Check digital-human service availability."""
+    _resolve_project(db, project_id)
+    try:
+        from digital_human_client import get_digital_human_client
+        client = get_digital_human_client()
+        health = client.health()
+        return {"available": True, "health": health}
+    except Exception as e:
+        return {"available": False, "error": str(e)}
+
+
+@router.post("/projects/{project_id}/digital-human/generate-full")
+def agent_digital_human_generate_full(
+    project_id: str,
+    db: Session = Depends(get_db),
+) -> Any:
+    """Trigger full digital-human generation for all slides."""
+    project = _resolve_project(db, project_id)
+    from visual_contract_service import read_contract_slide_ids
+    slide_ids = read_contract_slide_ids(Path(project.run_dir))
+    if not slide_ids:
+        raise ValidationFailedError("No slides found in visual contract")
+    try:
+        from digital_human_client import get_digital_human_client, DigitalHumanUnavailable
+        client = get_digital_human_client()
+    except Exception as e:
+        raise OperationFailedError(f"Digital human service unavailable: {e}")
+
+    results: list[dict[str, Any]] = []
+    for slide_id in slide_ids:
+        audio_path = Path(project.run_dir) / "slides" / slide_id / "voice.mp3"
+        if not audio_path.is_file():
+            results.append({"slide_id": slide_id, "status": "skipped", "reason": "no audio"})
+            continue
+        try:
+            job = client.create_job(audio_path=str(audio_path), slide_id=slide_id)
+            results.append({"slide_id": slide_id, "status": "submitted", "job": job})
+        except DigitalHumanUnavailable as e:
+            results.append({"slide_id": slide_id, "status": "failed", "error": str(e)})
+        except Exception as e:
+            results.append({"slide_id": slide_id, "status": "failed", "error": str(e)})
+    return {"success": True, "results": results}

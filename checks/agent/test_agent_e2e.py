@@ -185,3 +185,91 @@ class TestStageEndpoint:
         data = resp.json()
         assert data["stage"] == "storyboard"
         assert "data" in data
+
+
+class TestIdempotencyIntegration:
+    """Test idempotency claim/finalize/replay via the Agent API."""
+
+    def test_duplicate_create_with_same_key_returns_replay(self, api_client):
+        body = {"name": "Idem Replay Test", "description": "test replay", "idempotency_key": "e2e-replay-1"}
+
+        resp1 = api_client.post("/api/agent/v1/projects", json=body)
+        assert resp1.status_code == 200, f"First create failed: {resp1.text}"
+        data1 = resp1.json()
+
+        resp2 = api_client.post("/api/agent/v1/projects", json=body)
+        assert resp2.status_code == 200
+        assert resp2.headers.get("X-Agent-Idempotency-Replay") == "true"
+        assert resp2.json()["project"]["project_id"] == data1["project"]["project_id"]
+
+    def test_same_key_different_body_returns_conflict(self, api_client):
+        body1 = {"name": "Conflict A", "idempotency_key": "e2e-conflict-1"}
+        resp1 = api_client.post("/api/agent/v1/projects", json=body1)
+        assert resp1.status_code == 200
+
+        body2 = {"name": "Conflict B", "idempotency_key": "e2e-conflict-1"}
+        resp2 = api_client.post("/api/agent/v1/projects", json=body2)
+        assert resp2.status_code == 409
+
+    def test_create_without_key_is_not_idempotent(self, api_client):
+        """Requests without idempotency_key should always create new projects."""
+        resp1 = api_client.post("/api/agent/v1/projects", json={"name": "No-Key 1"})
+        resp2 = api_client.post("/api/agent/v1/projects", json={"name": "No-Key 2"})
+        assert resp1.status_code == 200
+        assert resp2.status_code == 200
+        assert resp1.json()["project"]["project_id"] != resp2.json()["project"]["project_id"]
+        assert "X-Agent-Idempotency-Replay" not in resp2.headers
+
+
+class TestOptimisticLocking:
+    """Test expected_revision optimistic locking on update operations."""
+
+    def test_update_with_correct_revision_succeeds(self, api_client):
+        create_resp = api_client.post(
+            "/api/agent/v1/projects",
+            json={"name": "Lock Test"},
+        )
+        project_id = create_resp.json()["project"]["project_id"]
+        initial_revision = create_resp.json()["project"].get("revision", 0)
+
+        update_resp = api_client.patch(
+            f"/api/agent/v1/projects/{project_id}",
+            json={"description": "Updated", "expected_revision": initial_revision},
+        )
+        assert update_resp.status_code == 200
+        assert update_resp.json()["project"]["description"] == "Updated"
+        assert update_resp.json()["project"]["revision"] == initial_revision + 1
+
+    def test_update_with_stale_revision_returns_conflict(self, api_client):
+        create_resp = api_client.post(
+            "/api/agent/v1/projects",
+            json={"name": "Stale Lock Test"},
+        )
+        project_id = create_resp.json()["project"]["project_id"]
+
+        # First update succeeds and bumps revision
+        api_client.patch(
+            f"/api/agent/v1/projects/{project_id}",
+            json={"description": "First update", "expected_revision": 0},
+        )
+
+        # Second update with stale revision 0 should conflict
+        stale_resp = api_client.patch(
+            f"/api/agent/v1/projects/{project_id}",
+            json={"description": "Second update", "expected_revision": 0},
+        )
+        assert stale_resp.status_code == 409
+
+    def test_update_without_revision_key_bypasses_lock(self, api_client):
+        """Omitting expected_revision should skip the lock check entirely."""
+        create_resp = api_client.post(
+            "/api/agent/v1/projects",
+            json={"name": "No-Lock Test"},
+        )
+        project_id = create_resp.json()["project"]["project_id"]
+
+        update_resp = api_client.patch(
+            f"/api/agent/v1/projects/{project_id}",
+            json={"description": "No lock check"},
+        )
+        assert update_resp.status_code == 200

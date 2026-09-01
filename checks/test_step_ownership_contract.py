@@ -15,7 +15,8 @@ def main() -> None:
     style_ui = read_text("static/style_reference_manager_extension.js")
     one_click_ui = read_text("static/one_click_extension.js")
     one_click_backend = read_text("one_click_orchestrator.py")
-    step3_backend = read_text("project_style_routes.py")
+    step3_routes = read_text("project_style_routes.py")
+    step3_template_backend = read_text("project_style_template_service.py")
 
     for script in (
         "project_profile_extension.js",
@@ -48,7 +49,11 @@ def main() -> None:
     ):
         assert token in style_ui, f"Step 3 image-style flow missing: {token}"
     assert "/project-profile/image-style" not in style_ui
-    assert "step3_image_style_templates" in step3_backend
+    assert "step3_image_style_templates" in step3_template_backend
+    for template_token in ("_templates_root", "_write_templates", "step3_image_style_templates"):
+        assert template_token not in step3_routes, (
+            f"Step 3 template logic must stay in project_style_template_service.py: {template_token}"
+        )
 
     for forbidden in (
         'name="storyboard_template_id"',

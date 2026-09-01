@@ -20,8 +20,10 @@ from sqlalchemy.orm import Session
 from database import LocalJob, Project
 from project_path_service import project_or_404
 import invalidation_service
+from artifact_registry import record_artifact
 from pipeline_lifecycle import write_json_atomic
 from tts_artifacts import (
+    artifact_paths as tts_artifact_paths,
     build_confirmation_payload as build_audio_confirmation_payload,
 )
 
@@ -438,6 +440,25 @@ def confirm_tts_audio(project_id: str, db: Session, payload: Optional[Dict[str, 
         ),
     )
     handle_step_navigation(project, 7, db)
+
+    # Register audio artifacts as queryable for the Agent API.
+    for slide_id in slide_ids:
+        paths = tts_artifact_paths(project.run_dir, slide_id)
+        audio_path = paths.get("audio")
+        if audio_path and os.path.exists(audio_path):
+            try:
+                record_artifact(
+                    db,
+                    project_id=project.id,
+                    artifact_type="audio",
+                    path=audio_path,
+                    relative_path=f"slides/{slide_id}/{audio_path.name}",
+                    mime_type="audio/mpeg",
+                    metadata={"slide_id": slide_id},
+                )
+            except Exception:
+                logger.warning("Failed to register audio artifact for slide %s", slide_id, exc_info=True)
+
     return {"success": True, "audio_confirmed": True}
 
 

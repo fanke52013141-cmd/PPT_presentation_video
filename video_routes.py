@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from database import get_db
+from error_log_service import log_pipeline_error
 from video_contracts import VideoRenderError
 from video_render_service import VideoRenderService, get_video_render_service
 
@@ -16,10 +17,21 @@ from video_render_service import VideoRenderService, get_video_render_service
 router = APIRouter()
 
 
-def _service_call(operation: Callable[[], Any]) -> Any:
+def _service_call(
+    operation: Callable[[], Any],
+    *,
+    project_id: str = "",
+    step: str = "step8",
+) -> Any:
     try:
         return operation()
     except VideoRenderError as exc:
+        log_pipeline_error(
+            project_id=project_id,
+            step=step,
+            error_message=str(exc.detail),
+            error_type="VideoRenderError",
+        )
         raise HTTPException(
             status_code=exc.status_code,
             detail=exc.detail,
@@ -35,7 +47,9 @@ def render_video(
     ),
 ) -> dict[str, Any]:
     return _service_call(
-        lambda: service.start_render(db, project_id)
+        lambda: service.start_render(db, project_id),
+        project_id=project_id,
+        step="render",
     )
 
 
@@ -53,7 +67,9 @@ def get_render_status(
             db,
             project_id,
             task_id=task_id,
-        )
+        ),
+        project_id=project_id,
+        step="render",
     )
 
 
@@ -66,7 +82,8 @@ def list_project_videos(
     ),
 ) -> dict[str, Any]:
     return _service_call(
-        lambda: service.list_videos(db, project_id)
+        lambda: service.list_videos(db, project_id),
+        project_id=project_id,
     )
 
 
@@ -84,7 +101,8 @@ def get_project_video(
             db,
             project_id,
             filename,
-        )
+        ),
+        project_id=project_id,
     )
     return FileResponse(
         path,
@@ -111,7 +129,9 @@ def create_speed_adjusted_video(
             project_id,
             filename,
             payload,
-        )
+        ),
+        project_id=project_id,
+        step="speed",
     )
 
 
@@ -129,7 +149,8 @@ def delete_project_video(
             db,
             project_id,
             filename,
-        )
+        ),
+        project_id=project_id,
     )
 
 
@@ -142,7 +163,8 @@ def get_final_video_status(
     ),
 ) -> dict[str, Any]:
     return _service_call(
-        lambda: service.final_video_status(db, project_id)
+        lambda: service.final_video_status(db, project_id),
+        project_id=project_id,
     )
 
 
@@ -158,6 +180,7 @@ def get_final_video(
         lambda: service.final_video_download(
             db,
             project_id,
-        )
+        ),
+        project_id=project_id,
     )
     return FileResponse(path, media_type="video/mp4")

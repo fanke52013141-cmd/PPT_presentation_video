@@ -58,6 +58,11 @@ class Project(Base):
     revision = Column(Integer, nullable=False, default=0)
     # Agent 侧审查策略：none / images_and_video / all_stages
     review_policy = Column(String, nullable=False, default="none")
+    # 自动化模式下需要手动暂停的模块（JSON 数组）
+    # 合法值: "digital_human", "mask", "narration"
+    manual_pause_steps = Column(Text, nullable=False, default="[]")
+    # 创建项目时选择的图片风格模板 id
+    image_style_template = Column(String, nullable=False, default="default")
 
     def get_step_status(self):
         try:

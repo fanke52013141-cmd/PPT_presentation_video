@@ -19,6 +19,7 @@ from runtime_support import kill_process_tree
 from artifact_fingerprint import render_input_fingerprint
 from artifact_registry import record_artifact, remove_artifact_record
 from database import Project
+from error_log_service import log_pipeline_error
 from pipeline_lifecycle import write_json_atomic
 from project_storage import (
     UnsafeProjectPath,
@@ -395,13 +396,17 @@ class VideoArtifactService:
         temporary = Path(f"{output_path}.tmp.mp4")
         if temporary.exists():
             temporary.unlink()
+        # Use multiplication instead of division to avoid Windows path
+        # conversion issues where FFmpeg's MSYS2 layer interprets the '/'
+        # in "PTS/1.25" as a path separator (e.g. "setpts=PTS*0.8" == "PTS/1.25").
+        pts_factor = round(1.0 / speed, 6)
         command = [
             ffmpeg,
             "-y",
             "-i",
             str(source_path),
             "-filter:v",
-            f"setpts=PTS/{speed}",
+            f"setpts=PTS*{pts_factor}",
             "-filter:a",
             f"atempo={speed}",
             "-c:v",
@@ -433,14 +438,40 @@ class VideoArtifactService:
             kill_process_tree(getattr(exc, "process", None))
             if temporary.exists():
                 temporary.unlink()
+            log_pipeline_error(
+                project_id=project.id,
+                project_name=getattr(project, "name", ""),
+                step="speed",
+                error_message="生成调速视频超时",
+                error_type="TimeoutExpired",
+                details={
+                    "source_file": source_name,
+                    "speed": speed,
+                    "timeout_sec": self.dependencies.render_timeout_sec,
+                },
+            )
             raise VideoRenderError(504, "生成调速视频超时") from exc
         if result.returncode != 0 or not temporary.exists():
             if temporary.exists():
                 temporary.unlink()
+            error_text = str(result.stderr or "")[-800:]
+            log_pipeline_error(
+                project_id=project.id,
+                project_name=getattr(project, "name", ""),
+                step="speed",
+                error_message=f"生成调速视频失败：{error_text}",
+                error_type="VideoRenderError",
+                details={
+                    "source_file": source_name,
+                    "speed": speed,
+                    "ffmpeg_returncode": result.returncode,
+                    "ffmpeg_command": " ".join(str(c) for c in command),
+                    "ffmpeg_stderr": str(result.stderr or "")[-2000:],
+                },
+            )
             raise VideoRenderError(
                 500,
-                "生成调速视频失败："
-                + str(result.stderr or "")[-800:],
+                "生成调速视频失败：" + error_text,
             )
         os.replace(temporary, output_path)
         source_metadata = self.read_video_metadata(source_path)

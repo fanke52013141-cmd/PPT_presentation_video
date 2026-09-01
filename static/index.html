@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260830.2">
+  <link rel="stylesheet" href="style.css?v=20260902.4">
 </head>
 <body>
 
@@ -626,6 +626,32 @@
         <div style="font-size: 0.85rem; color: var(--muted-color); margin-top: 0.4rem; line-height: 1.5;">
           自动模式：第二步调用 AI 生成完整分镜，第五步进入时自动触发 Mask 标注。<br>
           手动模式：第二步只填标题与演讲稿，不生成可视化；第五步保留"运行 AI 标注"按钮按需触发。
+        </div>
+      </div>
+      <div id="create-pause-section" style="margin-bottom: 1.5rem;">
+        <label style="font-weight: bold; display: block; margin-bottom: 0.4rem;">手动暂停模块（自动化模式下生效）:</label>
+        <div style="display: flex; flex-wrap: wrap; gap: 0.8rem; margin-top: 0.5rem;">
+          <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer; padding: 0.4rem 0.8rem; border: 1px solid var(--border-color); border-radius: 6px; background: #fff;">
+            <input type="checkbox" class="create-pause-step" value="mask"> Mask 标注模块
+          </label>
+          <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer; padding: 0.4rem 0.8rem; border: 1px solid var(--border-color); border-radius: 6px; background: #fff;">
+            <input type="checkbox" class="create-pause-step" value="narration"> 旁白语音模块
+          </label>
+          <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer; padding: 0.4rem 0.8rem; border: 1px solid var(--border-color); border-radius: 6px; background: #fff;">
+            <input type="checkbox" class="create-pause-step" value="digital_human"> 数字人模块
+          </label>
+        </div>
+        <div style="font-size: 0.85rem; color: var(--muted-color); margin-top: 0.4rem; line-height: 1.5;">
+          勾选的模块在自动化流程进行到该步骤时会暂停，等待您手动操作后再继续。不勾选则全自动执行。
+        </div>
+      </div>
+      <div id="create-style-section" style="margin-bottom: 1.5rem;">
+        <label style="font-weight: bold; display: block; margin-bottom: 0.4rem;">图片风格:</label>
+        <div id="create-style-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 0.6rem; margin-top: 0.5rem; max-height: 200px; overflow-y: auto;">
+          <div style="color: var(--muted-color); font-size: 0.85rem; padding: 1rem 0;">加载中...</div>
+        </div>
+        <div style="font-size: 0.85rem; color: var(--muted-color); margin-top: 0.4rem; line-height: 1.5;">
+          选择图片风格模板，将在生成图片时自动应用该风格。
         </div>
       </div>
       <div style="display: flex; justify-content: flex-end; gap: 1rem;">
@@ -1266,7 +1292,7 @@
   <script src="artifact_repair.js?v=20260801.1"></script>
   <script src="prompt_help.js?v=20260801.1"></script>
   <script src="settings.js?v=20260828.3"></script>
-  <script src="projects.js?v=20260801.1"></script>
+  <script src="projects.js?v=20260902.1"></script>
     <script src="courses.js?v=20260812.5"></script>
   <script src="article.js?v=20260801.1"></script>
   <script src="storyboard.js?v=20260807.1"></script>
@@ -1281,8 +1307,8 @@
   <script src="narration_audio.js?v=20260820.1"></script>
   <script src="output_render.js?v=20260823.1"></script>
   <script src="workspace_navigation.js?v=20260820.1"></script>
-  <script src="event_bindings.js?v=20260820.1"></script>
-  <script src="project_profile_extension.js?v=3.0.3"></script>
+  <script src="event_bindings.js?v=20260902.1"></script>
+  <script src="project_profile_extension.js?v=20260902.4"></script>
   <script src="storyboard_background_extension.js?v=20260807.1"></script>
   <script src="style_reference_manager_extension.js?v=3.0.1"></script>
   <script src="ai_mask_auto_state.js?v=20260809.1"></script>

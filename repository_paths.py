@@ -8,6 +8,7 @@ import os
 REPO_ROOT = os.path.abspath(os.path.dirname(__file__))
 RUNS_DIR = os.path.join(REPO_ROOT, "runs")
 DATA_DIR = os.path.join(REPO_ROOT, "data")
+LOGS_DIR = os.path.join(REPO_ROOT, "logs")
 
 DEFAULT_STYLE_TOKENS_PATH = os.path.join(
     REPO_ROOT,

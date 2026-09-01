@@ -43,12 +43,26 @@ function initGlobalEvents() {
   document.getElementById('btn-create-project')?.addEventListener('click', () => {
     document.getElementById('input-project-name').value = '';
     document.getElementById('input-project-desc').value = '';
+    // Reset pause-step checkboxes.
+    document.querySelectorAll('.create-pause-step').forEach(cb => { cb.checked = false; });
+    // Load image-style templates into the grid.
+    loadImageStyleTemplates();
     document.getElementById('modal-create').style.display = 'flex';
   });
   document.getElementById('btn-create-cancel')?.addEventListener('click', () => {
     document.getElementById('modal-create').style.display = 'none';
   });
   document.getElementById('btn-create-submit')?.addEventListener('click', () => createProject());
+
+  // Show/hide pause section based on AI mode selection.
+  const aiModeSelect = document.getElementById('input-project-ai-mode');
+  const pauseSection = document.getElementById('create-pause-section');
+  function syncPauseSectionVisibility() {
+    if (!aiModeSelect || !pauseSection) return;
+    pauseSection.style.display = aiModeSelect.value === 'auto' ? '' : 'none';
+  }
+  aiModeSelect?.addEventListener('change', syncPauseSectionVisibility);
+  syncPauseSectionVisibility();
 
   // 设置面板 Tab 切换
   const tabs = document.querySelectorAll('#modal-settings .tab-item');

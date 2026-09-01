@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import json
 import logging
 import os
 from pathlib import Path
@@ -37,6 +38,8 @@ class ProjectCreate(BaseModel):
     ai_mode: Optional[str] = "auto"
     canvas_profile: Optional[str] = DEFAULT_CANVAS_PROFILE
     review_policy: Optional[str] = "none"
+    manual_pause_steps: Optional[list[str]] = None
+    image_style_template: Optional[str] = "default"
 
 
 class AiModeUpdate(BaseModel):
@@ -87,6 +90,11 @@ class ProjectService:
         review_policy = (payload.review_policy or "none").strip().lower()
         if review_policy not in {"none", "images_and_video", "all_stages"}:
             review_policy = "none"
+        # Normalize manual pause steps — only accept known module names.
+        _valid_pause = {"digital_human", "mask", "narration"}
+        raw_pause = payload.manual_pause_steps or []
+        manual_pause = [s for s in raw_pause if s in _valid_pause]
+        image_style_template = (payload.image_style_template or "default").strip()
         project = Project(
             id=project_id,
             name=payload.name,
@@ -97,6 +105,8 @@ class ProjectService:
             ai_mode=ai_mode,
             canvas_profile=canvas_profile,
             review_policy=review_policy,
+            manual_pause_steps=json.dumps(manual_pause),
+            image_style_template=image_style_template,
         )
         project.set_step_status(initial_step_status)
         db.add(project)
@@ -120,6 +130,8 @@ class ProjectService:
                 "ai_mode": project.ai_mode or "auto",
                 "canvas_profile": project.canvas_profile or DEFAULT_CANVAS_PROFILE,
                 "canvas": canvas,
+                "manual_pause_steps": json.loads(project.manual_pause_steps or "[]"),
+                "image_style_template": project.image_style_template or "default",
             },
         }
 
@@ -144,6 +156,8 @@ class ProjectService:
                 "canvas_profile": project.canvas_profile or DEFAULT_CANVAS_PROFILE,
                 "canvas": get_canvas_profile(project.canvas_profile),
                 "created_at": project.created_at.isoformat(),
+                "manual_pause_steps": json.loads(project.manual_pause_steps or "[]"),
+                "image_style_template": project.image_style_template or "default",
             }
             for project in projects
         ]
@@ -164,6 +178,8 @@ class ProjectService:
             "ai_mode": project.ai_mode or "auto",
             "canvas_profile": project.canvas_profile or DEFAULT_CANVAS_PROFILE,
             "canvas": get_canvas_profile(project.canvas_profile),
+            "manual_pause_steps": json.loads(project.manual_pause_steps or "[]"),
+            "image_style_template": project.image_style_template or "default",
         }
 
     def get_ai_mode(

@@ -123,6 +123,7 @@ STAGES = [
 
 _RUNNING_LOCK = threading.Lock()
 _RUNNING: dict[str, threading.Thread] = {}
+_PAUSE_REQUESTS: set[str] = set()
 
 
 @dataclass(frozen=True)
@@ -340,6 +341,61 @@ def _pause_for_requested_review(
     return True
 
 
+# Map manual pause module names to the pipeline stage after which they
+# should pause for user interaction.
+_MANUAL_PAUSE_AFTER_STAGE: dict[str, str] = {
+    "mask": "mask_assets",
+    "narration": "narration",
+    "digital_human": "tts",
+}
+
+
+def _pause_for_manual_step(
+    project: Any,
+    status: dict[str, Any],
+    stage_id: str,
+) -> bool:
+    """Pause after *stage_id* if the user requested manual interaction.
+
+    Unlike ``_pause_for_requested_review`` (which is driven by
+    ``review_policy``), this checks the per-project ``manual_pause_steps``
+    list — modules the user explicitly flagged for manual handling.
+    """
+    import json as _json
+
+    raw = getattr(project, "manual_pause_steps", "[]") or "[]"
+    try:
+        pause_modules = _json.loads(raw)
+    except (ValueError, TypeError):
+        pause_modules = []
+    if not isinstance(pause_modules, list) or not pause_modules:
+        return False
+
+    for module_name, after_stage in _MANUAL_PAUSE_AFTER_STAGE.items():
+        if module_name in pause_modules and after_stage == stage_id:
+            stage_ids = [item[0] for item in STAGES]
+            try:
+                next_stage = stage_ids[stage_ids.index(stage_id) + 1]
+            except (ValueError, IndexError):
+                next_stage = ""
+            checkpoint = _REVIEW_CHECKPOINT_AFTER_STAGE.get(stage_id, "")
+            status.update(
+                {
+                    "status": "waiting_for_user",
+                    "current_stage": stage_id,
+                    "completed_at": _now(),
+                    "review_checkpoint": checkpoint,
+                    "review_next_stage": next_stage,
+                    "review_decision": "pending",
+                    "manual_pause_module": module_name,
+                    "message": f"等待手动操作：{module_name}",
+                }
+            )
+            _save_status(project, status)
+            return True
+    return False
+
+
 def _warn_stage(project: Any, status: dict[str, Any], stage_id: str, warning: str) -> None:
     item = _stage(status, stage_id)
     item.setdefault("warnings", []).append(_safe_text(warning, 1200))
@@ -486,7 +542,7 @@ def _stage_index(stage_id: str) -> int:
 
 def _resume_status(project: Any, project_id: str, run_id: str, mode: str) -> tuple[dict[str, Any], int]:
     previous = _status_for_project(project, project_id)
-    if mode == "resume" and previous.get("status") == "waiting_for_review":
+    if mode == "resume" and previous.get("status") in ("waiting_for_review", "waiting_for_user"):
         # Preserve the completed stage and pending checkpoint until the worker
         # verifies that the caller supplied the matching approval token.
         status = previous
@@ -721,6 +777,23 @@ def _run_pipeline(
                     "stop_at": next_stop,
                 }
             )
+        elif status.get("status") == "waiting_for_user":
+            # Manual pause (user-flagged module). Resume without checkpoint
+            # approval — the user explicitly clicked "continue".
+            next_stage = str(status.get("review_next_stage") or "")
+            if next_stage not in {stage_id for stage_id, _ in STAGES}:
+                raise RuntimeError("手动暂停缺少可恢复的下一阶段")
+            start_index = _stage_index(next_stage)
+            status.update(
+                {
+                    "status": "running",
+                    "current_stage": next_stage,
+                    "review_decision": "",
+                    "review_checkpoint": "",
+                    "review_next_stage": "",
+                    "manual_pause_module": "",
+                }
+            )
         elif start_from:
             start_index = _stage_index(start_from)
             status["effective_start_stage"] = start_from
@@ -731,6 +804,8 @@ def _run_pipeline(
         services = dependencies.pipeline_service_factory(db, project_id)
 
         def should_run(stage_id: str) -> bool:
+            if project_id in _PAUSE_REQUESTS:
+                return False
             return _stage_index(stage_id) >= start_index
 
         if should_run("preflight") or mode == "resume":
@@ -840,6 +915,8 @@ def _run_pipeline(
             _finish_stage(project, status, "mask_assets", "Reveal 资源已构建")
             if _pause_for_requested_review(project, status, "mask_assets"):
                 return
+            if _pause_for_manual_step(project, status, "mask_assets"):
+                return
 
         if should_run("narration"):
             _start_stage(project, status, "narration", "生成或复用演讲稿并尝试添加 TTS 标记")
@@ -878,6 +955,8 @@ def _run_pipeline(
             _finish_stage(project, status, "narration", "演讲稿已就绪")
             if _pause_for_requested_review(project, status, "narration"):
                 return
+            if _pause_for_manual_step(project, status, "narration"):
+                return
 
         if should_run("tts"):
             _start_stage(project, status, "tts", "合成 TTS 音频并执行技术确认")
@@ -896,6 +975,8 @@ def _run_pipeline(
             _finish_stage(project, status, "tts", "音频已生成并通过自动技术检查（未人工试听）")
             if _pause_for_requested_review(project, status, "tts"):
                 return
+            if _pause_for_manual_step(project, status, "tts"):
+                return
 
         video = None
         if should_run("render"):
@@ -910,6 +991,16 @@ def _run_pipeline(
             _finish_stage(project, status, "render", "视频渲染完成")
             if _pause_for_requested_review(project, status, "render"):
                 return
+
+        # If the user requested a pause while the pipeline was running,
+        # short-circuit before completion.
+        if project_id in _PAUSE_REQUESTS:
+            _PAUSE_REQUESTS.discard(project_id)
+            status["status"] = "paused"
+            status["completed_at"] = _now()
+            _save_status(project, status)
+            return
+
         _complete(project, status, db, video=video)
         try:
             dependencies.write_project_log(
@@ -1031,3 +1122,64 @@ def reject_one_click_checkpoint(project: Any, checkpoint: str, notes: str = "") 
     status["review_notes"] = _safe_text(notes, 2000)
     _save_status(project, status)
     return status
+
+
+def pause_one_click(project: Any) -> dict[str, Any]:
+    """Request the running pipeline to pause at the next stage boundary."""
+    project_id = str(project.id)
+    thread = _RUNNING.get(project_id)
+    if not thread or not thread.is_alive():
+        # If the pipeline already exited (paused / failed / waiting), just
+        # confirm the current status.
+        status = _status_for_project(project, project_id)
+        if status.get("status") == "running":
+            status["status"] = "paused"
+            status["completed_at"] = _now()
+            _save_status(project, status)
+        return {"success": True, "status": status}
+    # Signal the worker thread to stop at the next stage boundary.
+    _PAUSE_REQUESTS.add(project_id)
+    status = _status_for_project(project, project_id)
+    return {"success": True, "status": status, "pause_requested": True}
+
+
+def batch_one_click_status(
+    project_model: Any,
+    session_factory: Callable,
+) -> dict[str, Any]:
+    """Return one-click automation status for all projects in a single query."""
+    db = session_factory()
+    try:
+        projects = db.query(project_model).all()
+    finally:
+        db.close()
+    items: list[dict[str, Any]] = []
+    for project in projects:
+        project_id = str(project.id)
+        status = _status_for_project(project, project_id)
+        thread = _RUNNING.get(project_id)
+        if status.get("status") == "running" and not (thread and thread.is_alive()):
+            status["status"] = "paused"
+            status["completed_at"] = status.get("completed_at") or _now()
+            _save_status(project, status)
+        items.append(
+            {
+                "project_id": project_id,
+                "project_name": getattr(project, "name", ""),
+                "status": status.get("status", ""),
+                "current_stage": status.get("current_stage", ""),
+                "manual_pause_module": status.get("manual_pause_module", ""),
+                "progress": _overall_progress(status),
+                "completed_at": status.get("completed_at", ""),
+            }
+        )
+    return {"success": True, "items": items}
+
+
+def _overall_progress(status: dict[str, Any]) -> float:
+    """Compute overall pipeline progress as a 0-1 float."""
+    stages = status.get("stages") or []
+    if not stages:
+        return 0.0
+    done = sum(1 for item in stages if item.get("status") == "completed")
+    return round(done / len(stages), 4)

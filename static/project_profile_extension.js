@@ -3,12 +3,14 @@
 
   const PROFILE_STATE = {
     templates: null,
+    imageStyles: null,
+    selectedStyleTemplate: 'default',
     creating: false,
   };
 
   const DEFAULT_AUTOMATION_MODES = [
     { id: 'manual_review', name: '手动审核模式', description: '按原流程逐步生成、检查和确认。' },
-    { id: 'auto', name: '全自动模式', description: '配合“一键生成”运行完整链路；失败时暂停给用户处理。' },
+    { id: 'auto', name: '全自动模式', description: '配合"一键生成"运行完整链路；失败时暂停给用户处理。' },
   ];
 
   const DEFAULT_QUALITY_GATES = {
@@ -59,6 +61,17 @@
     return String(value ?? '').replace(/[&<>'"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[ch]));
   }
 
+  async function loadImageStyles() {
+    if (PROFILE_STATE.imageStyles) return PROFILE_STATE.imageStyles;
+    try {
+      const data = await apiGet('/api/image-style/templates');
+      PROFILE_STATE.imageStyles = (data && data.templates) || [];
+    } catch (_) {
+      PROFILE_STATE.imageStyles = [];
+    }
+    return PROFILE_STATE.imageStyles;
+  }
+
   async function loadTemplates() {
     if (PROFILE_STATE.templates) return PROFILE_STATE.templates;
     try {
@@ -83,7 +96,27 @@
     `).join('');
   }
 
-  function renderModal(templates) {
+  function styleTiles(styles) {
+    PROFILE_STATE.selectedStyleTemplate = 'default';
+    return (styles || []).map(t => {
+      let thumb = '';
+      if (t.references && typeof t.references === 'object') {
+        for (const key of Object.keys(t.references)) {
+          const ref = t.references[key];
+          if (ref && ref.url) { thumb = ref.url; break; }
+        }
+      }
+      const sel = t.id === 'default' ? 'selected' : '';
+      return `<div class="profile-style-tile ${sel}" data-style-id="${esc(t.id)}">
+        ${thumb
+          ? `<img src="${esc(thumb)}" alt="${esc(t.name)}" style="width:100%;height:72px;object-fit:cover;display:block;">`
+          : `<div style="width:100%;height:72px;background:var(--color-bg-subtle);display:flex;align-items:center;justify-content:center;color:var(--color-text-tertiary);font-size:.74rem;">无预览</div>`}
+        <div style="padding:.35rem .4rem;font-size:.8rem;text-align:center;background:var(--color-bg-surface);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--color-text-secondary);">${esc(t.name)}</div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderModal(templates, imageStyles) {
     const modal = document.getElementById('modal-create');
     const content = modal?.querySelector('.modal-content');
     if (!modal || !content || content.dataset.projectProfileWizard === '1') return;
@@ -115,6 +148,20 @@
           <h4>3. 生产模式</h4>
           <div class="project-profile-mode-grid">${optionCards(templates.automation_modes || DEFAULT_AUTOMATION_MODES, 'automation_mode', 'manual_review')}</div>
         </section>
+        <section class="project-profile-section" id="profile-pause-section" style="display:none;">
+          <h4>4. 手动暂停模块</h4>
+          <p class="project-profile-help" style="margin-bottom:.7rem;">勾选的模块在全自动流程到达该步骤时暂停，等待您手动操作后再继续。</p>
+          <div class="profile-pause-chips">
+            <label class="profile-pause-chip"><input type="checkbox" class="profile-pause-step" value="mask">Mask 标注模块</label>
+            <label class="profile-pause-chip"><input type="checkbox" class="profile-pause-step" value="narration">旁白语音模块</label>
+            <label class="profile-pause-chip"><input type="checkbox" class="profile-pause-step" value="digital_human">数字人模块</label>
+          </div>
+        </section>
+        <section class="project-profile-section">
+          <h4>5. 图片风格</h4>
+          <div class="profile-style-grid">${styleTiles(imageStyles)}</div>
+          <p class="project-profile-help">选择图片风格模板，将在生成图片时自动应用该风格。</p>
+        </section>
       </div>
       <div class="config-editor-actions">
         <button id="btn-create-cancel" class="secondary" type="button">取消</button>
@@ -135,9 +182,31 @@
   }
 
   function bindModalEvents() {
+    // Show/hide pause section based on automation mode
+    function syncPauseVisibility() {
+      const mode = selectedOption('automation_mode', 'manual_review');
+      const pauseSection = document.getElementById('profile-pause-section');
+      if (pauseSection) pauseSection.style.display = mode === 'auto' ? '' : 'none';
+    }
+
     document.querySelectorAll('[data-profile-option]').forEach(card => {
-      card.addEventListener('click', () => activateOption(card.getAttribute('data-profile-option'), card.dataset.value));
+      card.addEventListener('click', () => {
+        activateOption(card.getAttribute('data-profile-option'), card.dataset.value);
+        if (card.getAttribute('data-profile-option') === 'automation_mode') syncPauseVisibility();
+      });
     });
+
+    // Style tile selection
+    document.querySelectorAll('.profile-style-tile').forEach(tile => {
+      tile.addEventListener('click', () => {
+        document.querySelectorAll('.profile-style-tile').forEach(t => { t.classList.remove('selected'); });
+        tile.classList.add('selected');
+        PROFILE_STATE.selectedStyleTemplate = tile.getAttribute('data-style-id') || 'default';
+      });
+    });
+
+    syncPauseVisibility();
+
     document.getElementById('btn-create-cancel')?.addEventListener('click', () => {
       document.getElementById('modal-create').style.display = 'none';
     });
@@ -155,9 +224,15 @@
       automation_mode: selectedOption('automation_mode', 'manual_review'),
       quality_gates: { ...DEFAULT_QUALITY_GATES },
       last_used_storyboard_template_id: '',
-      last_used_image_style_template_id: '',
+      last_used_image_style_template_id: PROFILE_STATE.selectedStyleTemplate || 'default',
       notes: 'Lightweight profile only. Step 2 owns storyboard style; Step 3 owns image style and references.',
     };
+  }
+
+  function collectManualPauseSteps() {
+    const steps = [];
+    document.querySelectorAll('.profile-pause-step:checked').forEach(cb => steps.push(cb.value));
+    return steps;
   }
 
   async function createProjectWithProfile() {
@@ -179,15 +254,26 @@
     try {
       const profile = collectProfile();
       const aiMode = profile.automation_mode === 'auto' ? 'auto' : 'manual';
+      const manualPauseSteps = collectManualPauseSteps();
+      const styleTemplate = PROFILE_STATE.selectedStyleTemplate || 'default';
       const projectRes = await apiPost('/api/projects', {
         name,
         description: desc,
         ai_mode: aiMode,
         canvas_profile: profile.canvas_profile,
+        manual_pause_steps: manualPauseSteps,
+        image_style_template: styleTemplate,
       });
       const project = projectRes.project;
       if (!project?.id) throw new Error('项目创建成功但未返回 project.id');
       await apiPut(`/api/projects/${encodeURIComponent(project.id)}/project-profile`, { profile });
+
+      // Apply image style template if not default
+      if (styleTemplate && styleTemplate !== 'default') {
+        try {
+          await apiPost(`/api/projects/${encodeURIComponent(project.id)}/steps/3/image-style/templates/${encodeURIComponent(styleTemplate)}/apply`);
+        } catch (_) { /* non-fatal */ }
+      }
 
       // 挂载到课程/章节：若由课程/章节的"+视频"按钮触发，
       // createProjectInCourse / createProjectInChapter 会把目标父级写入
@@ -244,8 +330,8 @@
   }
 
   async function enhanceCreateModal() {
-    const templates = await loadTemplates();
-    renderModal(templates);
+    const [templates, imageStyles] = await Promise.all([loadTemplates(), loadImageStyles()]);
+    renderModal(templates, imageStyles);
   }
 
   function boot() {

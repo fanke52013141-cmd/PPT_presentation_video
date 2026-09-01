@@ -412,7 +412,7 @@ function showStep8VideoResult(videos) {
               <label class="step8-speed-control">
                 <span>视频语速</span>
                 <select class="step8-speed-select" data-filename="${escHtml(item.filename || '')}">
-                  ${[0.75, 1, 1.25, 1.5, 2].map(rate => `<option value="${rate}" ${rate === 1 ? 'selected' : ''}>${rate}×</option>`).join('')}
+                  ${[0.8, 0.9, 1, 1.1, 1.2, 1.25, 1.3, 1.4, 1.5].map(rate => `<option value="${rate}" ${rate === 1 ? 'selected' : ''}>${rate}×</option>`).join('')}
                 </select>
               </label>
               <button class="secondary compact-action-btn step8-speed-generate" type="button" data-filename="${escHtml(item.filename || '')}">

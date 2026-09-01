@@ -75,7 +75,8 @@ with tempfile.TemporaryDirectory() as temp_dir:
         )
 
     command = captured["command"]
-    assert "setpts=PTS/1.25" in command
+    # Multiplication form avoids Windows path conversion of '/' in "PTS/1.25".
+    assert "setpts=PTS*0.8" in command
     assert "atempo=1.25" in command
     adjusted = videos_dir / "render_test_speed_1_25x.mp4"
     assert adjusted.read_bytes() == b"speed-video"

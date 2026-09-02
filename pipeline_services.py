@@ -158,8 +158,8 @@ class ProjectPipelineServices:
     def annotate_narration(self, beats: dict[str, Any]) -> dict[str, Any]:
         return self.operations.narration.annotate(
             self.project_id,
-            beats,
             self.db,
+            beats,
         )
 
     def save_narration(self, beats: dict[str, Any]) -> dict[str, Any]:
@@ -175,8 +175,8 @@ class ProjectPipelineServices:
     def confirm_audio(self) -> dict[str, Any]:
         return self.operations.media.confirm_audio(
             self.project_id,
-            {"confirmation_mode": "automatic_technical"},
             self.db,
+            {"confirmation_mode": "automatic_technical"},
         )
 
     def render_video(self) -> dict[str, Any]:

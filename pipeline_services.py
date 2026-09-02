@@ -101,7 +101,7 @@ class ProjectPipelineServices:
         self.project_id = project_id
 
     def storyboard_script(self) -> dict[str, Any]:
-        return self.operations.storyboard.script_plan(self.project_id, {}, self.db)
+        return self.operations.storyboard.script_plan(self.project_id, self.db, {})
 
     def storyboard_visual(self) -> dict[str, Any]:
         return self.operations.storyboard.visual_plan(self.project_id, self.db)

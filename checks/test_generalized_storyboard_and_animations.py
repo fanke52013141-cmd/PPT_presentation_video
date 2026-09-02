@@ -66,7 +66,7 @@ def main() -> None:
         script_plan,
     )
     element = visual_plan["slides"][0]["visual_elements"][1]
-    assert set(element) == {"element_id", "role", "visual_type", "visual_description", "narration"}
+    assert set(element) == {"element_id", "role", "visual_type", "visual_description", "narration", "reveal_mode"}
     assert element["element_id"] == "el_002"
     assert element["visual_type"] == "text"
     assert element["visual_description"] == "正文要点"
@@ -74,6 +74,7 @@ def main() -> None:
     group = contract["slides"][0]["visual_groups"][1]
     assert group["element_id"] == "el_002"
     assert group["visual_type"] == "text"
+    assert group["reveal_mode"] == "sequential"
     semantic_block = deterministic_semantic_blocks("slide_001", contract["slides"][0], None)[1]
     assert semantic_block["element_id"] == "el_002"
     assert semantic_block["visual_type"] == "text"

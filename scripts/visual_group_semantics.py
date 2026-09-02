@@ -6,6 +6,11 @@ from __future__ import annotations
 import re
 from typing import Any
 
+try:
+    from scripts.visual_reveal_modes import REVEAL_MODE_TOGETHER, normalize_reveal_mode
+except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
+    from visual_reveal_modes import REVEAL_MODE_TOGETHER, normalize_reveal_mode
+
 
 _UNIFIED_STRUCTURE_PATTERN = re.compile(
     r"(?:统一|一体化|不可分割|同一(?:个)?(?:连续|完整)?(?:外框|容器|视觉岛|场景|图表|流程|结构)|"
@@ -70,6 +75,12 @@ def visual_group_atomicity_issues(slide: dict[str, Any] | None) -> list[dict[str
             continue
         role = str(group.get("role") or "").strip().lower()
         if role in {"title", "subtitle", "decoration"}:
+            continue
+        # A group explicitly marked as together is one narration-time unit.
+        # It may contain several disconnected cards/components and still be a
+        # valid single reveal.  Missing values remain sequential for backwards
+        # compatibility and therefore keep the historical strict behaviour.
+        if normalize_reveal_mode(group.get("reveal_mode")) == REVEAL_MODE_TOGETHER:
             continue
         description = str(
             group.get("visual_anchor")

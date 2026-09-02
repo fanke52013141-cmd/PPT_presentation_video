@@ -5543,6 +5543,11 @@ button.success:disabled,
   line-height: 18px;
 }
 
+.vn-reveal-field {
+  height: auto;
+  margin-top: 10px;
+}
+
 .vn-edit-field input,
 .vn-edit-field textarea {
   /* 高度由内容自适应：不设 min-height/height:100%，避免固定高度和强制等高 */

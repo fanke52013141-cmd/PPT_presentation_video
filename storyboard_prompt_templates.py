@@ -321,7 +321,11 @@ def step2_script_prompt_uses_legacy_contract(system_content: str) -> bool:
 def step2_visual_prompt_uses_legacy_contract(system_content: str) -> bool:
     """Detect prompts that depend on Step 2A fields no longer sent to Step 2B."""
     text = str(system_content or "")
-    if "step2_visual_v6_atomic" in text or "step2_visual_v5_no_subtitle" in text:
+    if (
+        "step2_visual_v7_reveal_intent" in text
+        or "step2_visual_v6_atomic" in text
+        or "step2_visual_v5_no_subtitle" in text
+    ):
         return False
     if "step2_visual_v2" in text or "step2_visual_v4_one_to_one" in text:
         return True

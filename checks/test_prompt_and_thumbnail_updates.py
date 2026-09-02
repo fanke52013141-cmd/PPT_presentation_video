@@ -87,7 +87,7 @@ step3_system_prompt = (ROOT / "templates" / "prompts" / "step3_image_system.md")
 assert "step2_script_v5_speech_driven" in script_prompt
 assert "认知旅程" in script_prompt
 assert "完整演讲稿" in script_prompt
-assert "step2_visual_v6_atomic" in visual_prompt
+assert "step2_visual_v7_reveal_intent" in visual_prompt
 assert "先按语义切分整页 `narration`" in visual_prompt
 assert "视觉岛" in visual_prompt
 assert "最小 Mask/Reveal 原子" in visual_prompt

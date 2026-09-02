@@ -45,7 +45,7 @@ def test_step2_prompt_contracts_are_minimal() -> None:
     assert "认知旅程" in script_system
     assert "完整演讲稿" in script_system
     assert "visual_groups" not in script_example["slides"][0]
-    assert "step2_visual_v6_atomic" in visual_system
+    assert "step2_visual_v7_reveal_intent" in visual_system
     assert "先按语义切分整页 `narration`" in visual_system
     assert "role" in visual_system and "visual_type" in visual_system
     assert "逐字还原原演讲稿" in visual_system
@@ -56,7 +56,8 @@ def test_step2_prompt_contracts_are_minimal() -> None:
     assert "`slide_subtitle`" not in visual_system
     assert all(element["narration"] for slide in visual_example["slides"] for element in slide["visual_elements"])
     first_visual_element = visual_example["slides"][0]["visual_elements"][0]
-    assert set(first_visual_element) == {"element_id", "role", "visual_type", "visual_description", "narration"}
+    assert set(first_visual_element) == {"element_id", "role", "visual_type", "visual_description", "narration", "reveal_mode"}
+    assert first_visual_element["reveal_mode"] in {"sequential", "together"}
     assert "`body_points`" in visual_system
     assert "source_segment_id" not in json.dumps(visual_example, ensure_ascii=False)
     assert "speak_policy" not in script_system + visual_system

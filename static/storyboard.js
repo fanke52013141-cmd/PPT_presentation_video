@@ -799,6 +799,17 @@ function renderStep2VisualNarrationMap(slide) {
       : `<label class="vn-edit-field" aria-label="画面元素描述">
           <textarea data-step2-group-id="${escHtml(gid)}" data-step2-group-field="visual_content">${escHtml(visualContent)}</textarea>
         </label>`;
+    const isRevealableBody = roleValue === 'content_body';
+    const revealMode = group?.reveal_mode === 'together' ? 'together' : 'sequential';
+    const revealModeField = isRevealableBody
+      ? `<label class="vn-edit-field vn-reveal-field" aria-label="画面出现方式">
+          <span>画面出现方式</span>
+          <select data-step2-group-id="${escHtml(gid)}" data-step2-group-field="reveal_mode">
+            <option value="sequential"${revealMode === 'sequential' ? ' selected' : ''}>依次展示（需要独立 Mask）</option>
+            <option value="together"${revealMode === 'together' ? ' selected' : ''}>同时展示（同段旁白整体出现）</option>
+          </select>
+        </label>`
+      : '';
 
     return `
       <div class="vn-group-card vn-role-${escHtml(roleValue)}" data-group-id="${escHtml(gid)}">
@@ -811,6 +822,7 @@ function renderStep2VisualNarrationMap(slide) {
         <div class="vn-group-body">
           <div class="vn-visual">
             ${visualField}
+            ${revealModeField}
           </div>
           <div class="vn-narration">
             ${beatsHtml}
@@ -903,6 +915,14 @@ function handleStep2MapEditorInput(event) {
     }
   }
 
+  if (groupId && groupField === 'reveal_mode') {
+    const group = slide.visual_groups?.find(item => item?.id === groupId);
+    if (group) {
+      group.reveal_mode = target.value === 'together' ? 'together' : 'sequential';
+      changed = true;
+    }
+  }
+
   if (beatId && beatField === 'spoken_text') {
     const beat = slide.narration_beats?.find(item => item?.id === beatId);
     if (beat) {
@@ -920,6 +940,10 @@ function handleStep2MapEditorChange(event) {
   const target = event.target;
   const slide = currentStep2EditorSlide();
   if (!slide || !(target instanceof HTMLElement)) return;
+  if (target.dataset.step2GroupField === 'reveal_mode') {
+    handleStep2MapEditorInput(event);
+    return;
+  }
   if (target.tagName === 'TEXTAREA') autoResizeTextarea(target);
   syncStep2SummaryInputs(slide);
   scheduleStep2AutoSave();

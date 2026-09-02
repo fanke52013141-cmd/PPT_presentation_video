@@ -240,6 +240,7 @@ from storyboard_prompt_templates import (
 from storyboard_planning import (
     PlanningError,
     build_step2_script_user_prompt,
+    build_step2_visual_repair_user_prompt,
     build_step2_visual_user_prompt,
     clean_planning_block,
     clean_planning_text,
@@ -255,6 +256,17 @@ from storyboard_planning import (
     stable_plan_id,
     validate_slide_visual_mapping,
 )
+
+
+STEP2_VISUAL_REVEAL_MODE_CONTRACT = """
+<RevealModeContract>
+Every visual element must include reveal_mode. Use "sequential" when the
+element must reveal independently at its own narration beat. Use "together"
+only when all visual components in that one element intentionally appear as a
+single whole with its one narration beat; multiple cards or islands are then
+allowed. This field is required in the JSON output for title and body elements.
+</RevealModeContract>
+""".strip()
 
 
 def _planning_http_error(exc: PlanningError, fallback_status: int) -> HTTPException:
@@ -678,9 +690,14 @@ def update_step2_script_plan(project_id: str, payload: Dict[str, Any], db: Sessi
     return {"success": True, "script_plan": plan}
 
 
-def execute_step2_visual_plan(project_id: str, db: Session):
-    project = project_or_404(db, project_id)
-    script_plan = read_plan_json(step2_script_plan_path(project), "请先生成演讲稿规划")
+def _execute_step2_visual_plan(
+    project: Project,
+    script_plan: Dict[str, Any],
+    *,
+    repair_validation_error: str = "",
+    previous_visual_plan: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Generate a visual plan, with at most one targeted atomicity repair call."""
     prompts = read_step2_prompts(project)
     if step2_visual_prompt_uses_legacy_contract(prompts["visual_system"]):
         raise HTTPException(
@@ -696,14 +713,23 @@ def execute_step2_visual_plan(project_id: str, db: Session):
         for s in (script_plan.get("slides") or [])
         if isinstance(s, dict)
     ]
-    max_retries = 2
+    is_targeted_repair = bool(str(repair_validation_error or "").strip())
+    max_retries = 0 if is_targeted_repair else 2
     last_error: Optional[str] = None
     for attempt in range(1, max_retries + 2):
         trace_id = uuid.uuid4().hex[:8]
         system_prompt = compose_step2_system_prompt(
             prompts["visual_system"], prompts["visual_output_example"]
+        ) + "\n\n" + STEP2_VISUAL_REVEAL_MODE_CONTRACT
+        user_prompt = (
+            build_step2_visual_repair_user_prompt(
+                script_plan,
+                previous_visual_plan or {},
+                repair_validation_error,
+            )
+            if is_targeted_repair
+            else build_step2_visual_user_prompt(script_plan)
         )
-        user_prompt = build_step2_visual_user_prompt(script_plan)
         if attempt > 1:
             user_prompt += (
                 f"\n\n⚠️ 上一次返回不完整，缺少部分幻灯片。"
@@ -737,8 +763,20 @@ def execute_step2_visual_plan(project_id: str, db: Session):
                 continue
             raise _planning_http_error(exc, 502)
         write_json_atomic(step2_visual_plan_path(project), plan)
-        write_project_log(project, "step2_visual_plan_written", trace_id=trace_id, slide_count=len(plan.get("slides", [])))
+        write_project_log(
+            project,
+            "step2_visual_plan_written",
+            trace_id=trace_id,
+            slide_count=len(plan.get("slides", [])),
+            source="atomicity_targeted_repair" if is_targeted_repair else "initial_generation",
+        )
         return {"success": True, "visual_plan": plan}
+
+
+def execute_step2_visual_plan(project_id: str, db: Session):
+    project = project_or_404(db, project_id)
+    script_plan = read_plan_json(step2_script_plan_path(project), "请先生成演讲稿规划")
+    return _execute_step2_visual_plan(project, script_plan)
 
 
 def get_step2_visual_plan(project_id: str, db: Session):
@@ -773,15 +811,69 @@ def compose_step2_visual_contract(project_id: str, db: Session):
     except PlanningError as exc:
         raise _planning_http_error(exc, 400)
     trace_id = uuid.uuid4().hex[:8]
-    contract = finalize_step2_contract(
+    completion_trace_id = trace_id
+    completion_source = "narration_first_compose"
+    contract, validation = persist_and_validate_step2_contract(
         project=project,
         project_id=project_id,
-        db=db,
         contract=contract,
         project_title=project_title,
         article_summary=article_summary,
         trace_id=trace_id,
         source="narration_first_compose",
+    )
+    if not validation["valid"] and validation_has_repairable_atomicity_failure(validation):
+        # This is intentionally bounded to one extra LLM request.  It repairs
+        # only the semantic quality-gate conflict and leaves all other errors
+        # visible to the user instead of looping forever.
+        write_project_log(
+            project,
+            "step2_atomicity_repair_started",
+            trace_id=trace_id,
+            stderr=validation["stderr"],
+        )
+        repaired = _execute_step2_visual_plan(
+            project,
+            script_plan,
+            repair_validation_error=validation["stderr"],
+            previous_visual_plan=visual_plan,
+        )
+        repaired_visual_plan = repaired["visual_plan"]
+        try:
+            contract = compose_visual_contract_from_plans(
+                script_plan,
+                repaired_visual_plan,
+                project_id,
+                project_title,
+            )
+        except PlanningError as exc:
+            raise _planning_http_error(exc, 502)
+        repair_trace_id = uuid.uuid4().hex[:8]
+        contract, validation = persist_and_validate_step2_contract(
+            project=project,
+            project_id=project_id,
+            contract=contract,
+            project_title=project_title,
+            article_summary=article_summary,
+            trace_id=repair_trace_id,
+            source="narration_first_atomicity_repair",
+        )
+        completion_trace_id = repair_trace_id
+        completion_source = "narration_first_atomicity_repair"
+        write_project_log(
+            project,
+            "step2_atomicity_repair_finished",
+            trace_id=repair_trace_id,
+            valid=validation["valid"],
+            stderr=validation["stderr"],
+        )
+    contract = finish_step2_contract_validation(
+        project=project,
+        db=db,
+        contract=contract,
+        validation=validation,
+        trace_id=completion_trace_id,
+        source=completion_source,
     )
     return {"success": True, "contract": contract}
 
@@ -842,6 +934,10 @@ def validate_visual_contract_file(
 ) -> Dict[str, Any]:
     validate_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts", "validate_visual_contract.py"))
     validation_args = [sys.executable, validate_script, "--contract", contract_path]
+    if not bool(getattr(project, "mask_enabled", 1) or 0):
+        # Without the Mask stage, connectedness/atomic reveal boundaries are
+        # not a production invariant.  Keep every other contract check active.
+        validation_args.append("--allow-combined-visual-groups")
     project_profile_path = storyboard_profile_path(project)
     if os.path.exists(project_profile_path):
         validation_args.extend(["--profile", project_profile_path])
@@ -879,17 +975,22 @@ def storyboard_validation_gate_enabled(project: Project) -> bool:
     return bool(gates.get("pause_on_storyboard_validation_error", True))
 
 
-def finalize_step2_contract(
+def validation_has_repairable_atomicity_failure(validation: Dict[str, Any]) -> bool:
+    """True only for the quality-gate conflict that has a safe LLM repair path."""
+    return "describes multiple independent visual islands" in str(validation.get("stderr") or "")
+
+
+def persist_and_validate_step2_contract(
     *,
     project: Project,
     project_id: str,
-    db: Session,
     contract: Dict[str, Any],
     project_title: str,
     article_summary: str,
     trace_id: str,
     source: str,
-) -> Dict[str, Any]:
+) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    """Persist a candidate contract and return its validation result without changing workflow state."""
     contract["version"] = "visual_contract_v1"
     if "topic" not in contract or not isinstance(contract.get("topic"), dict):
         contract["topic"] = {
@@ -916,15 +1017,21 @@ def finalize_step2_contract(
         slide_count=len(contract.get("slides", [])) if isinstance(contract.get("slides"), list) else 0,
         source=source,
     )
-
     validation = validate_visual_contract_file(
         project,
         contract_path,
         source=source,
         trace_id=trace_id,
     )
-
-    if not validation["valid"]:
+    if validation["valid"]:
+        write_project_log(
+            project,
+            "step2_contract_validation_success",
+            trace_id=trace_id,
+            stdout=validation["stdout"],
+            source=source,
+        )
+    else:
         logger.warning("Visual contract validation warning:\n%s", validation["stderr"])
         write_project_log(
             project,
@@ -934,24 +1041,58 @@ def finalize_step2_contract(
             stderr=validation["stderr"],
             source=source,
         )
-        if storyboard_validation_gate_enabled(project):
-            mark_step_retry_needed(project, 2, db)
-            raise HTTPException(
-                status_code=422,
-                detail="分镜合同校验失败，质量门已暂停流程：" + (validation["stderr"] or "请检查分镜结构"),
-            )
-    else:
-        write_project_log(
-            project,
-            "step2_contract_validation_success",
-            trace_id=trace_id,
-            stdout=validation["stdout"],
-            source=source,
-        )
+    return contract, validation
 
+
+def finish_step2_contract_validation(
+    *,
+    project: Project,
+    db: Session,
+    contract: Dict[str, Any],
+    validation: Dict[str, Any],
+    trace_id: str,
+    source: str,
+) -> Dict[str, Any]:
+    """Apply the quality gate only after any bounded targeted repair has run."""
+    if not validation["valid"] and storyboard_validation_gate_enabled(project):
+        mark_step_retry_needed(project, 2, db)
+        raise HTTPException(
+            status_code=422,
+            detail="分镜合同校验失败，质量门已暂停流程：" + (validation["stderr"] or "请检查分镜结构"),
+        )
     handle_step_navigation(project, 2, db)
     write_project_log(project, "step2_execute_completed", trace_id=trace_id, source=source)
     return contract
+
+
+def finalize_step2_contract(
+    *,
+    project: Project,
+    project_id: str,
+    db: Session,
+    contract: Dict[str, Any],
+    project_title: str,
+    article_summary: str,
+    trace_id: str,
+    source: str,
+) -> Dict[str, Any]:
+    contract, validation = persist_and_validate_step2_contract(
+        project=project,
+        project_id=project_id,
+        contract=contract,
+        project_title=project_title,
+        article_summary=article_summary,
+        trace_id=trace_id,
+        source=source,
+    )
+    return finish_step2_contract_validation(
+        project=project,
+        db=db,
+        contract=contract,
+        validation=validation,
+        trace_id=trace_id,
+        source=source,
+    )
 
 
 

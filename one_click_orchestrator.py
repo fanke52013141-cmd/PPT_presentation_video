@@ -135,6 +135,7 @@ class OneClickDependencies:
     repo_root: Path
     read_project_article_source: Callable[..., Any]
     write_project_log: Callable[..., None]
+    inspect_tts_preflight: Callable[[dict[str, Any]], dict[str, Any]]
     pipeline_service_factory: Callable[[Any, str], Any]
 
 
@@ -619,6 +620,29 @@ def _preflight_errors(dependencies: OneClickDependencies, project: Any) -> list[
             workflow_path = dependencies.repo_root / workflow_path
         if not workflow_path.is_file():
             errors.append(f"ComfyUI TTS 工作流不存在：{workflow_path}")
+        else:
+            inspector = getattr(dependencies, "inspect_tts_preflight", None)
+            if callable(inspector):
+                try:
+                    workflow = json.loads(workflow_path.read_text(encoding="utf-8-sig"))
+                except (OSError, json.JSONDecodeError) as exc:
+                    errors.append(f"ComfyUI TTS 工作流无法读取：{workflow_path}（{type(exc).__name__}）")
+                else:
+                    result = inspector(workflow)
+                    if not isinstance(result, dict) or not result.get("success"):
+                        details = []
+                        if isinstance(result, dict):
+                            details = [
+                                _safe_text(item, 300)
+                                for item in result.get("errors", []) or []
+                                if _safe_text(item, 300)
+                            ]
+                        reason = "；".join(details) or "预检查未返回成功状态"
+                        errors.append(
+                            "ComfyUI/IndexTTS 不可用："
+                            + reason
+                            + "。请启动包含 IndexTTS 2.5 节点的 ComfyUI，并确认 http://127.0.0.1:8188/ 可打开。"
+                        )
     elif not str(dependencies.get_setting("tts_api_key") or "").strip():
         errors.append("未配置 TTS API Key")
     for tool_name in ("ffmpeg", "ffprobe"):
@@ -810,7 +834,7 @@ def _run_pipeline(
             return _stage_index(stage_id) >= start_index
 
         if should_run("preflight") or mode == "resume":
-            _start_stage(project, status, "preflight", "检查文章、凭据、媒体工具和项目目录")
+            _start_stage(project, status, "preflight", "检查文章、凭据、媒体工具、项目目录及 ComfyUI/IndexTTS")
             preflight_errors = _preflight_errors(dependencies, project)
             if preflight_errors:
                 raise RuntimeError("预检查失败：" + "；".join(preflight_errors))

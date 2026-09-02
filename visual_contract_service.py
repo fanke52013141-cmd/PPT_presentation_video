@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
 from project_storage import UnsafeProjectPath, safe_identifier
+from scripts.visual_reveal_modes import normalize_reveal_mode
 
 
 logger = logging.getLogger("PPTStudio.VisualContract")
@@ -183,6 +184,7 @@ def normalize_visual_contract(
                 ).strip()
             if not group.get("reveal_order"):
                 group["reveal_order"] = index
+            group["reveal_mode"] = normalize_reveal_mode(group.get("reveal_mode"))
             group_by_id[group_id] = group
 
         beats = slide.get("narration_beats")

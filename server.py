@@ -820,6 +820,7 @@ except Exception as exc:
 
 try:
     from database import SessionLocal as OneClickSessionLocal
+    from comfyui_backend import inspect_tts_preflight
     from one_click_orchestrator import (
         OneClickDependencies,
         configure_one_click_dependencies,
@@ -880,6 +881,7 @@ try:
             repo_root=Path(REPO_ROOT),
             read_project_article_source=read_project_article_source,
             write_project_log=write_project_log,
+            inspect_tts_preflight=inspect_tts_preflight,
             pipeline_service_factory=lambda db, project_id: ProjectPipelineServices(
                 pipeline_operations,
                 db,

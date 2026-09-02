@@ -88,6 +88,7 @@ def validate_slide(
     max_groups: int,
     profile: dict[str, Any],
     presentation_policy: dict[str, Any],
+    enforce_reveal_atomicity: bool = True,
 ) -> None:
     slide_id = str(slide.get("slide_id", "")).strip()
     if not slide_id:
@@ -136,14 +137,15 @@ def validate_slide(
                 "The contract remains valid when every group is semantically independent, narration-bound, and maskable.",
                 file=sys.stderr,
             )
-        atomicity_issues = visual_group_atomicity_issues(slide)
-        if atomicity_issues:
-            issue = atomicity_issues[0]
-            raise ContractError(
-                f"Visual group {issue['group_id']} in {slide_id} describes multiple independent visual islands "
-                f"({', '.join(issue['signals'])}). Split them into separate body groups with separate narration beats, "
-                "or explicitly describe one unified continuous structure when they must reveal together."
-            )
+        if enforce_reveal_atomicity:
+            atomicity_issues = visual_group_atomicity_issues(slide)
+            if atomicity_issues:
+                issue = atomicity_issues[0]
+                raise ContractError(
+                    f"Visual group {issue['group_id']} in {slide_id} describes multiple independent visual islands "
+                    f"({', '.join(issue['signals'])}). Split them into separate body groups with separate narration beats, "
+                    "or mark the group reveal_mode as together when all islands must appear with one narration beat."
+                )
 
     group_ids: set[str] = set()
     title_group_ids: set[str] = set()
@@ -263,6 +265,7 @@ def validate_contract(
     min_groups: int,
     max_groups: int,
     profile: dict[str, Any],
+    enforce_reveal_atomicity: bool = True,
 ) -> int:
     if contract.get("version") != "visual_contract_v1":
         raise ContractError("Contract version must be visual_contract_v1")
@@ -279,6 +282,7 @@ def validate_contract(
             max_groups=max_groups,
             profile=profile,
             presentation_policy=presentation_policy,
+            enforce_reveal_atomicity=enforce_reveal_atomicity,
         )
     return len(slides)
 
@@ -294,6 +298,11 @@ def parse_args() -> argparse.Namespace:
         help="Advisory visual-density threshold; exceeding it emits a warning instead of rejecting the contract.",
     )
     parser.add_argument("--profile", type=Path)
+    parser.add_argument(
+        "--allow-combined-visual-groups",
+        action="store_true",
+        help="Skip Mask/reveal atomicity checks when the project does not run AI Mask.",
+    )
     return parser.parse_args()
 
 
@@ -306,6 +315,7 @@ def main() -> int:
             min_groups=args.min_groups,
             max_groups=args.max_groups,
             profile=profile,
+            enforce_reveal_atomicity=not args.allow_combined_visual_groups,
         )
     except ContractError as exc:
         print(f"Error: {exc}", file=sys.stderr)

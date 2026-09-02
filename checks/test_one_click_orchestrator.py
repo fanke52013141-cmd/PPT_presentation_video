@@ -425,12 +425,50 @@ def test_preflight_does_not_require_cloud_tts_key_for_local_comfyui() -> None:
             get_setting=get_setting,
             resolve_media_tool=lambda _name: "available",
             repo_root=root,
+            inspect_tts_preflight=lambda _workflow: {"success": True, "errors": []},
         )
 
         errors = one_click._preflight_errors(module, project)
 
         assert not any("TTS API Key" in error for error in errors)
         assert not any("工作流不存在" in error for error in errors)
+
+
+def test_preflight_blocks_offline_comfyui_before_storyboard_generation() -> None:
+    with tempfile.TemporaryDirectory() as value:
+        root = Path(value)
+        project = project_for(root)
+        article_path = root / "inputs" / "article.md"
+        article_path.parent.mkdir(parents=True, exist_ok=True)
+        article_path.write_text("local tts article", encoding="utf-8")
+        workflow_path = root / "data" / "digital_human" / "comfyui_tts_workflow.json"
+        workflow_path.parent.mkdir(parents=True, exist_ok=True)
+        workflow_path.write_text(
+            json.dumps({"1": {"class_type": "BSAI_IndexTTS2.5Synthesis", "inputs": {}}}),
+            encoding="utf-8",
+        )
+
+        module = SimpleNamespace(
+            read_project_article_source=lambda *_args, **_kwargs: None,
+            get_setting=lambda key, default="": {
+                "tts_provider": "comfyui_tts",
+                "tts_endpoint": str(workflow_path),
+                "tts_api_key": "",
+                "llm_api_key": "configured",
+                "image_api_key": "configured",
+            }.get(key, default),
+            resolve_media_tool=lambda _name: "available",
+            repo_root=root,
+            inspect_tts_preflight=lambda _workflow: {
+                "success": False,
+                "errors": ["ComfyUI 连接失败: ConnectError"],
+            },
+        )
+
+        errors = one_click._preflight_errors(module, project)
+
+        assert any("ComfyUI/IndexTTS 不可用" in error for error in errors)
+        assert any("127.0.0.1:8188" in error for error in errors)
 
 
 def test_one_click_routes_are_explicit_and_unique() -> None:

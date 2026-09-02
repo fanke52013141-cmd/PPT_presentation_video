@@ -7,6 +7,8 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
+from scripts.visual_reveal_modes import normalize_reveal_mode
+
 from visual_contract_service import narration_dedupe_key, normalize_visual_type
 
 logger = logging.getLogger("PPTStudio.StoryboardPlanning")
@@ -166,6 +168,9 @@ def normalize_visual_elements(value: Any) -> List[Dict[str, str]]:
                 "visual_type": visual_type,
                 "visual_description": visual_description,
                 "narration": narration,
+                # Existing plans did not have this field.  Defaulting to
+                # sequential preserves the former strict Mask/reveal contract.
+                "reveal_mode": normalize_reveal_mode(element.get("reveal_mode")),
             }
         )
     return normalized
@@ -408,6 +413,27 @@ def build_step2_visual_user_prompt(script_plan: Dict[str, Any]) -> str:
     return json.dumps({"slide_script_plan": minimal_script_plan}, ensure_ascii=False, indent=2)
 
 
+def build_step2_visual_repair_user_prompt(
+    script_plan: Dict[str, Any],
+    previous_visual_plan: Dict[str, Any],
+    validation_error: str,
+) -> str:
+    """Ask the planner for one bounded, full-plan repair after an atomicity failure."""
+    return (
+        build_step2_visual_user_prompt(script_plan)
+        + "\n\n<PreviousVisualPlan>\n"
+        + json.dumps(previous_visual_plan, ensure_ascii=False, indent=2)
+        + "\n</PreviousVisualPlan>\n"
+        + "\n<ValidationFailure>\n"
+        + str(validation_error or "").strip()
+        + "\n</ValidationFailure>\n"
+        + "\n请基于上一版完整修复并重新输出全部 slides。对被指出含多个独立视觉岛的元素："
+        + "若它们应跟随同一段旁白整体出现，保留该元素并显式设置 reveal_mode 为 together；"
+        + "若它们需要依次出现，拆成多个 body 元素，并把原旁白按自然边界连续分配。"
+        + "不要省略未报错页面，不要改写 slide_id 或演讲稿。"
+    )
+
+
 def element_visible_text(element: Dict[str, str], index: int) -> str:
     description = str(element.get("visual_description") or "").strip()
     if description:
@@ -458,6 +484,7 @@ def compose_visual_contract_from_plans(
             narration = str(element.get("narration") or "").strip()
             narration_function_value = str(element.get("narration_function") or element.get("visual_description") or visible_text or "").strip()
             visual_type = normalize_visual_type(element.get("visual_type"))
+            reveal_mode = normalize_reveal_mode(element.get("reveal_mode"))
             display_text = description if visual_type == "text" else ""
             group = {
                 "id": group_id,
@@ -468,6 +495,7 @@ def compose_visual_contract_from_plans(
                 "visual_anchor": description,
                 "narration_function": narration_function_value,
                 "reveal_order": element_index,
+                "reveal_mode": reveal_mode,
                 "content_unit_id": content_unit_id,
                 "mask_target": description,
                 "visual_type": visual_type,

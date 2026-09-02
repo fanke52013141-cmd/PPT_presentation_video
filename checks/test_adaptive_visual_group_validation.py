@@ -100,6 +100,28 @@ def test_unified_continuous_structure_remains_valid() -> None:
     assert validate_contract(contract, 1, 10, read_pipeline_profile()) == 1
 
 
+def test_together_reveal_mode_allows_multiple_independent_islands() -> None:
+    contract = make_contract()
+    group = contract["slides"][0]["visual_groups"][1]
+    group["visual_anchor"] = "页面横向排列三个独立的场景卡片，分别展示输入、处理和输出。"
+    group["reveal_mode"] = "together"
+    assert validate_contract(contract, 1, 10, read_pipeline_profile()) == 1
+
+
+def test_mask_disabled_validation_can_allow_combined_groups() -> None:
+    contract = make_contract()
+    contract["slides"][0]["visual_groups"][1]["visual_anchor"] = (
+        "页面纵向排列四个独立的条件卡片，每张卡片表达不同约束。"
+    )
+    assert validate_contract(
+        contract,
+        1,
+        10,
+        read_pipeline_profile(),
+        enforce_reveal_atomicity=False,
+    ) == 1
+
+
 def test_zero_body_groups_remains_invalid() -> None:
     with pytest.raises(ContractError, match="Expected at least 1 revealable visual group"):
         validate_contract(make_contract(body_count=0), 1, 10, read_pipeline_profile())

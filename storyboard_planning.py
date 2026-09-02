@@ -365,6 +365,15 @@ def normalize_slide_visual_plan(
         normalized_slides.append({"slide_id": slide_id, "visual_elements": elements})
     if not normalized_slides:
         raise PlanningError("AI 没有返回可用的 slide_visual_plan.slides")
+    # Completeness check: all script_plan slides must be present.
+    if script_by_id:
+        returned_ids = {s["slide_id"] for s in normalized_slides}
+        missing_ids = [sid for sid in script_by_id if sid not in returned_ids]
+        if missing_ids:
+            raise PlanningError(
+                f"AI 只返回了 {len(normalized_slides)}/{len(script_by_id)} 张幻灯片的可视化规划，"
+                f"缺少: {', '.join(missing_ids[:5])}{'…' if len(missing_ids) > 5 else ''}"
+            )
     return {"slides": normalized_slides}
 
 

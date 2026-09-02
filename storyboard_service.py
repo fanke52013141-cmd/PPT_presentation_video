@@ -691,22 +691,54 @@ def execute_step2_visual_plan(project_id: str, db: Session):
                 "请载入最新内置模板或升级该自定义模板后再生成。"
             ),
         )
-    trace_id = uuid.uuid4().hex[:8]
-    raw_plan = run_step2_json_llm(
-        project=project,
-        system_prompt=compose_step2_system_prompt(prompts["visual_system"], prompts["visual_output_example"]),
-        user_prompt=build_step2_visual_user_prompt(script_plan),
-        artifact_prefix="step2_visual_plan",
-        schema_hint=visual_plan_schema_hint(),
-        trace_id=trace_id,
-    )
-    try:
-        plan = normalize_slide_visual_plan(raw_plan, script_plan)
-    except PlanningError as exc:
-        raise _planning_http_error(exc, 502)
-    write_json_atomic(step2_visual_plan_path(project), plan)
-    write_project_log(project, "step2_visual_plan_written", trace_id=trace_id, slide_count=len(plan.get("slides", [])))
-    return {"success": True, "visual_plan": plan}
+    script_slide_ids = [
+        str(s.get("slide_id") or "").strip()
+        for s in (script_plan.get("slides") or [])
+        if isinstance(s, dict)
+    ]
+    max_retries = 2
+    last_error: Optional[str] = None
+    for attempt in range(1, max_retries + 2):
+        trace_id = uuid.uuid4().hex[:8]
+        system_prompt = compose_step2_system_prompt(
+            prompts["visual_system"], prompts["visual_output_example"]
+        )
+        user_prompt = build_step2_visual_user_prompt(script_plan)
+        if attempt > 1:
+            user_prompt += (
+                f"\n\n⚠️ 上一次返回不完整，缺少部分幻灯片。"
+                f"请务必为以下所有 slide_id 生成完整的 visual_elements："
+                f"{', '.join(script_slide_ids)}。不要遗漏任何一张。"
+            )
+            write_project_log(
+                project,
+                "step2_visual_plan_retry",
+                trace_id=trace_id,
+                attempt=attempt,
+                reason=last_error or "incomplete",
+            )
+        raw_plan = run_step2_json_llm(
+            project=project,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            artifact_prefix="step2_visual_plan",
+            schema_hint=visual_plan_schema_hint(),
+            trace_id=trace_id,
+        )
+        try:
+            plan = normalize_slide_visual_plan(raw_plan, script_plan)
+        except PlanningError as exc:
+            last_error = str(exc)
+            if attempt <= max_retries:
+                logger.warning(
+                    "Step 2B visual plan attempt %d/%d failed: %s",
+                    attempt, max_retries + 1, last_error,
+                )
+                continue
+            raise _planning_http_error(exc, 502)
+        write_json_atomic(step2_visual_plan_path(project), plan)
+        write_project_log(project, "step2_visual_plan_written", trace_id=trace_id, slide_count=len(plan.get("slides", [])))
+        return {"success": True, "visual_plan": plan}
 
 
 def get_step2_visual_plan(project_id: str, db: Session):

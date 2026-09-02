@@ -40,6 +40,7 @@ class ProjectCreate(BaseModel):
     review_policy: Optional[str] = "none"
     manual_pause_steps: Optional[list[str]] = None
     image_style_template: Optional[str] = "default"
+    mask_enabled: Optional[bool] = True
 
 
 class AiModeUpdate(BaseModel):
@@ -95,6 +96,7 @@ class ProjectService:
         raw_pause = payload.manual_pause_steps or []
         manual_pause = [s for s in raw_pause if s in _valid_pause]
         image_style_template = (payload.image_style_template or "default").strip()
+        mask_enabled = 1 if payload.mask_enabled else 0
         project = Project(
             id=project_id,
             name=payload.name,
@@ -107,6 +109,7 @@ class ProjectService:
             review_policy=review_policy,
             manual_pause_steps=json.dumps(manual_pause),
             image_style_template=image_style_template,
+            mask_enabled=mask_enabled,
         )
         project.set_step_status(initial_step_status)
         db.add(project)
@@ -132,6 +135,7 @@ class ProjectService:
                 "canvas": canvas,
                 "manual_pause_steps": json.loads(project.manual_pause_steps or "[]"),
                 "image_style_template": project.image_style_template or "default",
+                "mask_enabled": bool(project.mask_enabled if project.mask_enabled is not None else 1),
             },
         }
 
@@ -158,6 +162,7 @@ class ProjectService:
                 "created_at": project.created_at.isoformat(),
                 "manual_pause_steps": json.loads(project.manual_pause_steps or "[]"),
                 "image_style_template": project.image_style_template or "default",
+                "mask_enabled": bool(project.mask_enabled if project.mask_enabled is not None else 1),
             }
             for project in projects
         ]
@@ -180,6 +185,7 @@ class ProjectService:
             "canvas": get_canvas_profile(project.canvas_profile),
             "manual_pause_steps": json.loads(project.manual_pause_steps or "[]"),
             "image_style_template": project.image_style_template or "default",
+            "mask_enabled": bool(project.mask_enabled if project.mask_enabled is not None else 1),
         }
 
     def get_ai_mode(

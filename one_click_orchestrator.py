@@ -802,6 +802,7 @@ def _run_pipeline(
         _save_status(project, status)
         gates = _quality_gates(project)
         services = dependencies.pipeline_service_factory(db, project_id)
+        mask_enabled = bool(getattr(project, "mask_enabled", 1) or 0)
 
         def should_run(stage_id: str) -> bool:
             if project_id in _PAUSE_REQUESTS:
@@ -871,7 +872,11 @@ def _run_pipeline(
             _invoke(services.confirm_images, "Step 3 confirm")
             _finish_stage(project, status, "confirm_images", "图片已确认")
 
-        if should_run("ai_mask"):
+        if not mask_enabled and should_run("ai_mask"):
+            _finish_stage(project, status, "ai_mask", "已跳过 Mask 标注（项目设置为整页切换）")
+            _finish_stage(project, status, "mask_assets", "已跳过 Reveal 资源构建（整页切换模式）")
+
+        if should_run("ai_mask") and mask_enabled:
             _start_stage(project, status, "ai_mask", "执行 AI Mask 标注")
             ai_mask_payload = {"settings": {"overwrite_existing_manual_mask": False, "overwrite_existing_ai_mask": True, "skip_locked_groups": True}}
             result = _invoke(lambda: services.annotate_ai_mask(ai_mask_payload), "AI Mask")
@@ -903,7 +908,7 @@ def _run_pipeline(
                 "AI Mask 标注完成" if not quality_errors else "AI Mask 标注完成（含警告）",
             )
 
-        if should_run("mask_assets"):
+        if should_run("mask_assets") and mask_enabled:
             _start_stage(project, status, "mask_assets", "构建 Reveal 资源")
             manifest_payload = _invoke(services.mask_manifest, "Step 5 manifest")
             if manifest_payload.get("repair", {}).get("required"):

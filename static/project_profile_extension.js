@@ -148,17 +148,27 @@
           <h4>3. 生产模式</h4>
           <div class="project-profile-mode-grid">${optionCards(templates.automation_modes || DEFAULT_AUTOMATION_MODES, 'automation_mode', 'manual_review')}</div>
         </section>
+        <section class="project-profile-section">
+          <h4>4. 是否需要 Mask 标注</h4>
+          <div class="project-profile-mode-grid">
+            ${optionCards([
+              { id: 'true', name: '是（逐元素揭示动画）' },
+              { id: 'false', name: '否（整页切换）' },
+            ], 'mask_enabled', 'true')}
+          </div>
+          <p class="project-profile-help">选择"否"将跳过 AI Mask 标注步骤，视频以整页切换方式呈现，速度更快。</p>
+        </section>
         <section class="project-profile-section" id="profile-pause-section" style="display:none;">
-          <h4>4. 手动暂停模块</h4>
+          <h4>5. 手动暂停模块</h4>
           <p class="project-profile-help" style="margin-bottom:.7rem;">勾选的模块在全自动流程到达该步骤时暂停，等待您手动操作后再继续。</p>
           <div class="profile-pause-chips">
-            <label class="profile-pause-chip"><input type="checkbox" class="profile-pause-step" value="mask">Mask 标注模块</label>
+            <label class="profile-pause-chip" id="profile-pause-chip-mask"><input type="checkbox" class="profile-pause-step" value="mask">Mask 标注模块</label>
             <label class="profile-pause-chip"><input type="checkbox" class="profile-pause-step" value="narration">旁白语音模块</label>
             <label class="profile-pause-chip"><input type="checkbox" class="profile-pause-step" value="digital_human">数字人模块</label>
           </div>
         </section>
         <section class="project-profile-section">
-          <h4>5. 图片风格</h4>
+          <h4>6. 图片风格</h4>
           <div class="profile-style-grid">${styleTiles(imageStyles)}</div>
           <p class="project-profile-help">选择图片风格模板，将在生成图片时自动应用该风格。</p>
         </section>
@@ -187,12 +197,25 @@
       const mode = selectedOption('automation_mode', 'manual_review');
       const pauseSection = document.getElementById('profile-pause-section');
       if (pauseSection) pauseSection.style.display = mode === 'auto' ? '' : 'none';
+      syncMaskChipVisibility();
+    }
+
+    // Show/hide Mask pause chip based on mask_enabled selection
+    function syncMaskChipVisibility() {
+      const maskEnabled = selectedOption('mask_enabled', 'true');
+      const maskChip = document.getElementById('profile-pause-chip-mask');
+      if (maskChip) maskChip.style.display = maskEnabled === 'true' ? '' : 'none';
+      if (maskEnabled === 'false') {
+        const maskCb = maskChip?.querySelector('input');
+        if (maskCb) maskCb.checked = false;
+      }
     }
 
     document.querySelectorAll('[data-profile-option]').forEach(card => {
       card.addEventListener('click', () => {
         activateOption(card.getAttribute('data-profile-option'), card.dataset.value);
         if (card.getAttribute('data-profile-option') === 'automation_mode') syncPauseVisibility();
+        if (card.getAttribute('data-profile-option') === 'mask_enabled') syncMaskChipVisibility();
       });
     });
 
@@ -222,6 +245,7 @@
       version: 'project_profile_v1',
       canvas_profile: selectedOption('canvas_profile', 'landscape_16_9'),
       automation_mode: selectedOption('automation_mode', 'manual_review'),
+      mask_enabled: selectedOption('mask_enabled', 'true') !== 'false',
       quality_gates: { ...DEFAULT_QUALITY_GATES },
       last_used_storyboard_template_id: '',
       last_used_image_style_template_id: PROFILE_STATE.selectedStyleTemplate || 'default',
@@ -263,6 +287,7 @@
         canvas_profile: profile.canvas_profile,
         manual_pause_steps: manualPauseSteps,
         image_style_template: styleTemplate,
+        mask_enabled: profile.mask_enabled !== false,
       });
       const project = projectRes.project;
       if (!project?.id) throw new Error('项目创建成功但未返回 project.id');

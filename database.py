@@ -63,6 +63,8 @@ class Project(Base):
     manual_pause_steps = Column(Text, nullable=False, default="[]")
     # 创建项目时选择的图片风格模板 id
     image_style_template = Column(String, nullable=False, default="default")
+    # 是否启用 Mask 标注（1=启用逐元素 Reveal 动画, 0=跳过，按整页切换）
+    mask_enabled = Column(Integer, nullable=False, default=1)
 
     def get_step_status(self):
         try:

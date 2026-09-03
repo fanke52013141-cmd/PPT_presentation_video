@@ -7,6 +7,7 @@ import json
 import time
 from typing import Any, Callable
 
+from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
@@ -80,6 +81,8 @@ class VideoJobStore:
         job_id: str,
         stage: str,
         payload: dict[str, Any],
+        submission_key: str | None = None,
+        submission_attempt: int = 0,
     ) -> LocalJob:
         """Insert one queued job in a short transaction.
 
@@ -114,6 +117,28 @@ class VideoJobStore:
                     ),
                 )
                 db.add(job)
+                if submission_key is not None:
+                    # LocalJob intentionally remains backward-compatible with
+                    # older database.py mappings.  The migration-owned fields
+                    # are read and written through parameterized SQL until the
+                    # shared model can be updated in its own change set.
+                    db.flush()
+                    db.execute(
+                        text(
+                            "UPDATE local_jobs "
+                            "SET submission_key = :submission_key, "
+                            "submission_attempt = :submission_attempt "
+                            "WHERE id = :job_id"
+                        ),
+                        {
+                            "submission_key": submission_key,
+                            "submission_attempt": max(
+                                0,
+                                int(submission_attempt),
+                            ),
+                            "job_id": job_id,
+                        },
+                    )
                 db.commit()
                 committed = True
                 db.refresh(job)
@@ -163,6 +188,48 @@ class VideoJobStore:
             self._sleep(delay)
 
         raise AssertionError("video job retry loop exited unexpectedly")
+
+    def latest_for_submission(
+        self,
+        project_id: str,
+        submission_key: str,
+    ) -> LocalJob | None:
+        """Return the latest render job for one stable input submission.
+
+        ``submission_key`` and ``submission_attempt`` were added by migration
+        0010.  They intentionally stay outside the legacy ``LocalJob`` ORM
+        mapping so a concurrent, unrelated model change cannot alter this
+        persistence path.
+        """
+        db = self.session_factory()
+        try:
+            job = (
+                db.query(LocalJob)
+                .from_statement(
+                    text(
+                        "SELECT id, project_id, job_type, status, progress, "
+                        "stage, error, result_artifact_id, payload_json, "
+                        "created_at, started_at, finished_at, updated_at "
+                        "FROM local_jobs "
+                        "WHERE project_id = :project_id "
+                        "AND job_type = :job_type "
+                        "AND submission_key = :submission_key "
+                        "ORDER BY submission_attempt DESC, created_at DESC "
+                        "LIMIT 1"
+                    )
+                )
+                .params(
+                    project_id=project_id,
+                    job_type=VIDEO_RENDER_JOB_TYPE,
+                    submission_key=submission_key,
+                )
+                .first()
+            )
+            if job:
+                db.expunge(job)
+            return job
+        finally:
+            db.close()
 
     def get(
         self,

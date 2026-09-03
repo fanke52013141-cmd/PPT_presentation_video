@@ -19,13 +19,18 @@ from typing import Any, Callable
 
 from sqlalchemy.orm import Session
 
+from artifact_fingerprint import sha256_json
 from database import LocalJob, Project
 import invalidation_service
 from remotion_runner import RemotionRunner
 from tts_artifacts import confirmation_status as tts_confirmation_status
 from video_artifact_service import VideoArtifactService
 from video_contracts import VideoRenderConfig, VideoRenderError
-from video_job_store import VideoJobPersistenceError, VideoJobStore
+from video_job_store import (
+    ACTIVE_JOB_STATUSES,
+    VideoJobPersistenceError,
+    VideoJobStore,
+)
 from visual_provenance import validate_visual_provenance_set
 
 
@@ -53,6 +58,10 @@ RENDER_STAGE_PROGRESS = {
     "validating_color": 88,
     "finalizing": 96,
 }
+
+RENDER_SUBMISSION_SCHEMA_VERSION = 1
+RENDER_OUTPUT_FPS = 30
+RENDER_OUTPUT_CODEC = "h264"
 
 
 @dataclass(frozen=True)
@@ -180,6 +189,7 @@ class VideoRenderService:
                 400,
                 "请先在“旁白与音频”步骤试听并确认音频，再开始视频渲染。",
             )
+        submission_key = self._submission_key(project)
 
         project_lock = self._project_lock(project_id)
         if not project_lock.acquire(blocking=False):
@@ -190,6 +200,17 @@ class VideoRenderService:
                 409,
                 "该项目已有渲染任务进行中，请等待完成或刷新页面查看状态。",
             )
+
+        prior_submission = self._latest_submission(
+            project_id,
+            submission_key,
+        )
+        if prior_submission and self._can_reuse_submission(
+            project,
+            prior_submission,
+        ):
+            project_lock.release()
+            return self._submission_reuse_response(prior_submission)
 
         active = self._active_task(project_id)
         if active:
@@ -208,16 +229,26 @@ class VideoRenderService:
             project_lock.release()
             raise
         task_id = uuid.uuid4().hex
+        submission_attempt = self._next_submission_attempt(
+            prior_submission,
+        )
+        payload = {
+            "requested_at": datetime.now().isoformat(timespec="seconds"),
+            "submission_key": submission_key,
+            "submission_attempt": submission_attempt,
+        }
+        if prior_submission:
+            # The prior id is a local opaque identifier.  Do not include
+            # database paths, request payloads, or any provider credentials.
+            payload["prior_job_id"] = prior_submission.id
         try:
             self.job_store.create(
                 project_id,
                 job_id=task_id,
                 stage="validating",
-                payload={
-                    "requested_at": datetime.now().isoformat(
-                        timespec="seconds"
-                    )
-                },
+                payload=payload,
+                submission_key=submission_key,
+                submission_attempt=submission_attempt,
             )
         except VideoJobPersistenceError as exc:
             project_lock.release()
@@ -297,6 +328,124 @@ class VideoRenderService:
             "stage_label": RENDER_STAGE_LABELS["validating"],
             "elapsed_sec": 0.0,
             "message": "渲染已启动，请轮询 render-status 接口",
+        }
+
+    def _submission_key(self, project: Project) -> str:
+        """Hash the complete render input without persisting sensitive data.
+
+        The artifact fingerprint already covers the ordered Slide assets,
+        confirmed audio, visual settings, Remotion props, and pipeline version.
+        Only its digest is used here.  The small explicit render config section
+        covers service-level output-affecting values that are not files.
+        """
+        fingerprint = self.current_render_input_fingerprint(project)
+        # ``scene.json``, ``animation_timeline.json``, and
+        # ``remotion_props.json`` are generated during a render.  Including
+        # them would make the exact same submission appear new immediately
+        # after its first successful render.  Keep only the source artifacts
+        # that are already confirmed before a worker begins.
+        components = fingerprint.get("components")
+        if isinstance(components, dict):
+            stable_components = {
+                str(path): value
+                for path, value in components.items()
+                if str(path) != "remotion_props.json"
+                and not str(path).endswith("/scene.json")
+                and not str(path).endswith("/animation_timeline.json")
+            }
+            fingerprint_digest = sha256_json(
+                {
+                    "schema_version": fingerprint.get("schema_version"),
+                    "pipeline_version": fingerprint.get("pipeline_version"),
+                    "slide_ids": fingerprint.get("slide_ids"),
+                    "visual_settings": fingerprint.get("visual_settings"),
+                    "components": stable_components,
+                }
+            )
+        else:
+            # Test and extension callers that only provide a digest retain a
+            # stable key without exposing the full input payload.
+            fingerprint_digest = str(fingerprint.get("digest") or "")
+            if not fingerprint_digest:
+                fingerprint_digest = sha256_json(fingerprint)
+        return sha256_json(
+            {
+                "schema_version": RENDER_SUBMISSION_SCHEMA_VERSION,
+                "project_id": project.id,
+                "render_input_digest": fingerprint_digest,
+                "render_config": {
+                    "pipeline_version": self.config.pipeline_version,
+                    "reveal_visual_lead_sec": (
+                        self.config.reveal_visual_lead_sec
+                    ),
+                    "canvas_profile": str(
+                        getattr(project, "canvas_profile", "landscape_16_9")
+                        or "landscape_16_9"
+                    ),
+                    "fps": RENDER_OUTPUT_FPS,
+                    "codec": RENDER_OUTPUT_CODEC,
+                },
+            }
+        )
+
+    def _latest_submission(
+        self,
+        project_id: str,
+        submission_key: str,
+    ) -> LocalJob | None:
+        lookup = getattr(self.job_store, "latest_for_submission", None)
+        return lookup(project_id, submission_key) if callable(lookup) else None
+
+    def _can_reuse_submission(
+        self,
+        project: Project,
+        job: LocalJob,
+    ) -> bool:
+        if job.status in ACTIVE_JOB_STATUSES:
+            return True
+        if job.status != "succeeded":
+            return False
+        payload = job.get_payload()
+        output_filename = str(payload.get("output_filename") or "").strip()
+        if not output_filename:
+            return False
+        try:
+            return self.project_video_file(
+                project,
+                output_filename,
+            ).is_file()
+        except (OSError, VideoRenderError):
+            return False
+
+    @staticmethod
+    def _next_submission_attempt(job: LocalJob | None) -> int:
+        if job is None:
+            return 0
+        payload = job.get_payload()
+        try:
+            prior_attempt = int(payload.get("submission_attempt", 0))
+        except (TypeError, ValueError):
+            prior_attempt = 0
+        return max(0, prior_attempt) + 1
+
+    def _submission_reuse_response(
+        self,
+        job: LocalJob,
+    ) -> dict[str, Any]:
+        task = self._persistent_job_to_task(job)
+        if job.status in ACTIVE_JOB_STATUSES:
+            return self._active_task_response(task)
+        return {
+            "success": True,
+            "task_id": task["task_id"],
+            "status": task["status"],
+            "stage": task["stage"],
+            "stage_label": RENDER_STAGE_LABELS.get(
+                task.get("stage") or "",
+                "",
+            ),
+            "elapsed_sec": task["elapsed_sec"],
+            "message": "当前输入已有可用视频，无需重复渲染。",
         }
 
     @staticmethod

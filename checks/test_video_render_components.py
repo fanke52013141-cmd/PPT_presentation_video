@@ -225,6 +225,9 @@ def test_start_render_ends_caller_transaction_before_creating_job(
     )
     service.get_project = lambda _db, _project_id: project
     service._read_contract_slide_ids = lambda _run_dir: ["slide_001"]
+    service.current_render_input_fingerprint = lambda _project: {
+        "digest": "test-input"
+    }
 
     def create_job(*_args, **_kwargs) -> None:
         assert events == ["caller_commit"]
@@ -282,6 +285,9 @@ def test_start_render_reports_sanitized_persistence_diagnostic(
     )
     service.get_project = lambda _db, _project_id: project
     service._read_contract_slide_ids = lambda _run_dir: ["slide_001"]
+    service.current_render_input_fingerprint = lambda _project: {
+        "digest": "test-input"
+    }
     monkeypatch.setattr(
         "video_render_service.validate_visual_provenance_set",
         lambda *_args: [],
@@ -337,6 +343,9 @@ def test_start_render_releases_project_lock_when_transaction_close_fails(
     )
     service.get_project = lambda _db, _project_id: project
     service._read_contract_slide_ids = lambda _run_dir: ["slide_001"]
+    service.current_render_input_fingerprint = lambda _project: {
+        "digest": "test-input"
+    }
     service.job_store = SimpleNamespace(
         active=lambda *_args, **_kwargs: None,
         create=lambda *_args, **_kwargs: pytest.fail("must not create a job"),

@@ -25,7 +25,7 @@ from remotion_runner import RemotionRunner
 from tts_artifacts import confirmation_status as tts_confirmation_status
 from video_artifact_service import VideoArtifactService
 from video_contracts import VideoRenderConfig, VideoRenderError
-from video_job_store import VideoJobStore
+from video_job_store import VideoJobPersistenceError, VideoJobStore
 from visual_provenance import validate_visual_provenance_set
 
 
@@ -196,6 +196,17 @@ class VideoRenderService:
             project_lock.release()
             return self._active_task_response(active)
 
+        try:
+            self._complete_caller_transaction_before_job_create(
+                db,
+                project_id,
+            )
+        except Exception:
+            # No worker owns the project lock until the persistent job has
+            # been created.  Transaction-boundary failures must therefore
+            # release it in this request path.
+            project_lock.release()
+            raise
         task_id = uuid.uuid4().hex
         try:
             self.job_store.create(
@@ -208,11 +219,31 @@ class VideoRenderService:
                     )
                 },
             )
+        except VideoJobPersistenceError as exc:
+            project_lock.release()
+            logger.error(
+                "Video render job persistence failed project_id=%s "
+                "category=%s exception_type=%s attempts=%s retryable=%s",
+                project_id,
+                exc.category,
+                exc.exception_type,
+                exc.attempt_count,
+                exc.retryable,
+            )
+            raise VideoRenderError(
+                500,
+                exc.public_message,
+            ) from exc
         except Exception as exc:
             project_lock.release()
-            logger.exception(
-                "Failed to persist video render job for %s",
+            logger.error(
+                "Video render job persistence failed project_id=%s "
+                "category=%s exception_type=%s attempts=%s retryable=%s",
                 project_id,
+                "unclassified_persistence_failure",
+                type(exc).__name__,
+                1,
+                False,
             )
             raise VideoRenderError(
                 500,
@@ -267,6 +298,43 @@ class VideoRenderService:
             "elapsed_sec": 0.0,
             "message": "渲染已启动，请轮询 render-status 接口",
         }
+
+    @staticmethod
+    def _complete_caller_transaction_before_job_create(
+        db: Session,
+        project_id: str,
+    ) -> None:
+        """End a caller-owned transaction before the job store opens its own.
+
+        One-click passes a long-lived session through all earlier stages.  The
+        persistent render-job insertion deliberately uses a separate session,
+        so leaving an earlier write transaction open can deadlock SQLite's
+        single writer.  Commit even read-only sessions to close their current
+        transaction boundary; on failure immediately roll it back.
+        """
+        try:
+            db.commit()
+        except Exception as exc:
+            try:
+                db.rollback()
+            except Exception:
+                # The original transaction-finalization failure is the useful
+                # diagnostic; never replace it with a rollback failure.
+                pass
+            logger.error(
+                "Video render caller transaction finalization failed "
+                "project_id=%s category=%s exception_type=%s "
+                "attempts=%s retryable=%s",
+                project_id,
+                "caller_transaction_finalize_failed",
+                type(exc).__name__,
+                1,
+                False,
+            )
+            raise VideoRenderError(
+                500,
+                "无法准备持久化视频任务，请重试。",
+            ) from exc
 
     def render_status(
         self,

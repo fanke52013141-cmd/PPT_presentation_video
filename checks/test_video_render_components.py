@@ -3,12 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from remotion_runner import (
     RemotionRenderResult,
     RemotionRunner,
     RemotionRunnerDependencies,
 )
-from video_contracts import VideoRenderConfig
+from video_contracts import VideoRenderConfig, VideoRenderError
 from video_render_service import (
     VideoRenderDependencies,
     VideoRenderService,
@@ -197,3 +199,160 @@ def test_render_coordinator_delegates_and_publishes(
     assert task["status"] == "success"
     assert task["output_filename"] == output_path.name
     assert task["result_artifact_id"] == "artifact-test"
+
+
+def test_start_render_ends_caller_transaction_before_creating_job(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    project = SimpleNamespace(id="project-test", run_dir=str(tmp_path))
+    events: list[str] = []
+
+    class CallerDb:
+        def commit(self) -> None:
+            events.append("caller_commit")
+
+        def rollback(self) -> None:
+            events.append("caller_rollback")
+
+    service = VideoRenderService(
+        VideoRenderDependencies(
+            session_factory=CallerDb,
+            artifact_service=SimpleNamespace(),
+            remotion_runner=SimpleNamespace(),
+            config=_config(tmp_path),
+        )
+    )
+    service.get_project = lambda _db, _project_id: project
+    service._read_contract_slide_ids = lambda _run_dir: ["slide_001"]
+
+    def create_job(*_args, **_kwargs) -> None:
+        assert events == ["caller_commit"]
+        events.append("job_create")
+
+    service.job_store = SimpleNamespace(
+        active=lambda *_args, **_kwargs: None,
+        create=create_job,
+    )
+    monkeypatch.setattr(
+        "video_render_service.validate_visual_provenance_set",
+        lambda *_args: [],
+    )
+    monkeypatch.setattr(
+        "video_render_service.tts_confirmation_status",
+        lambda *_args: {"confirmed": True},
+    )
+
+    class NoopThread:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def start(self) -> None:
+            events.append("thread_start")
+
+    monkeypatch.setattr("video_render_service.threading.Thread", NoopThread)
+
+    response = service.start_render(CallerDb(), project.id)
+
+    assert response["success"] is True
+    assert events == ["caller_commit", "job_create", "thread_start"]
+
+
+def test_start_render_reports_sanitized_persistence_diagnostic(
+    tmp_path: Path,
+    monkeypatch,
+    caplog,
+) -> None:
+    project = SimpleNamespace(id="project-test", run_dir=str(tmp_path))
+
+    class CallerDb:
+        def commit(self) -> None:
+            return None
+
+        def rollback(self) -> None:
+            return None
+
+    service = VideoRenderService(
+        VideoRenderDependencies(
+            session_factory=CallerDb,
+            artifact_service=SimpleNamespace(),
+            remotion_runner=SimpleNamespace(),
+            config=_config(tmp_path),
+        )
+    )
+    service.get_project = lambda _db, _project_id: project
+    service._read_contract_slide_ids = lambda _run_dir: ["slide_001"]
+    monkeypatch.setattr(
+        "video_render_service.validate_visual_provenance_set",
+        lambda *_args: [],
+    )
+    monkeypatch.setattr(
+        "video_render_service.tts_confirmation_status",
+        lambda *_args: {"confirmed": True},
+    )
+
+    from video_job_store import VideoJobPersistenceError
+
+    service.job_store = SimpleNamespace(
+        active=lambda *_args, **_kwargs: None,
+        create=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            VideoJobPersistenceError(
+                category="sqlite_write_locked",
+                exception_type="OperationalError",
+                attempt_count=3,
+                retryable=True,
+            )
+        )
+    )
+
+    with pytest.raises(VideoRenderError, match="本地任务数据库正忙"):
+        service.start_render(CallerDb(), project.id)
+
+    message = caplog.text
+    assert "category=sqlite_write_locked" in message
+    assert "exception_type=OperationalError" in message
+    assert "must-not-appear-in-diagnostics" not in message
+
+
+def test_start_render_releases_project_lock_when_transaction_close_fails(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    project = SimpleNamespace(id="project-test", run_dir=str(tmp_path))
+
+    class CallerDb:
+        def commit(self) -> None:
+            raise RuntimeError("transaction commit failed")
+
+        def rollback(self) -> None:
+            return None
+
+    service = VideoRenderService(
+        VideoRenderDependencies(
+            session_factory=CallerDb,
+            artifact_service=SimpleNamespace(),
+            remotion_runner=SimpleNamespace(),
+            config=_config(tmp_path),
+        )
+    )
+    service.get_project = lambda _db, _project_id: project
+    service._read_contract_slide_ids = lambda _run_dir: ["slide_001"]
+    service.job_store = SimpleNamespace(
+        active=lambda *_args, **_kwargs: None,
+        create=lambda *_args, **_kwargs: pytest.fail("must not create a job"),
+    )
+    monkeypatch.setattr(
+        "video_render_service.validate_visual_provenance_set",
+        lambda *_args: [],
+    )
+    monkeypatch.setattr(
+        "video_render_service.tts_confirmation_status",
+        lambda *_args: {"confirmed": True},
+    )
+
+    with pytest.raises(VideoRenderError, match="无法准备持久化视频任务"):
+        service.start_render(CallerDb(), project.id)
+
+    project_lock = service._project_lock(project.id)
+    assert project_lock.acquire(blocking=False)
+    project_lock.release()

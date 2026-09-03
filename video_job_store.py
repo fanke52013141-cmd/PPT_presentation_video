@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from datetime import datetime
 import json
+import time
 from typing import Any, Callable
 
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from database import LocalJob
@@ -14,6 +16,7 @@ from database import LocalJob
 VIDEO_RENDER_JOB_TYPE = "video_render"
 ACTIVE_JOB_STATUSES = ("queued", "running")
 _UNSET = object()
+_CREATE_RETRY_DELAYS_SEC = (0.15, 0.5)
 TERMINAL_JOB_STATUSES = (
     "succeeded",
     "failed",
@@ -22,11 +25,53 @@ TERMINAL_JOB_STATUSES = (
 )
 
 
+class VideoJobPersistenceError(RuntimeError):
+    """A safe, structured failure while creating a persistent render job.
+
+    The underlying driver exception can include SQL statements, bound values, or
+    database locations.  Keep it chained for local debugging, but expose only
+    this small diagnostic contract to the render service and user-facing logs.
+    """
+
+    def __init__(
+        self,
+        *,
+        category: str,
+        exception_type: str,
+        attempt_count: int,
+        retryable: bool,
+    ) -> None:
+        super().__init__(category)
+        self.category = category
+        self.exception_type = exception_type
+        self.attempt_count = attempt_count
+        self.retryable = retryable
+
+    @property
+    def public_message(self) -> str:
+        if self.category == "sqlite_write_locked":
+            return "本地任务数据库正忙，请稍后重试。"
+        return "无法创建持久化视频任务，请重试。"
+
+
+def _is_sqlite_busy_or_locked(exc: OperationalError) -> bool:
+    """Return true only for SQLite's explicit transient writer contention."""
+
+    message = str(getattr(exc, "orig", exc)).lower()
+    return "database is locked" in message or "database is busy" in message
+
+
 class VideoJobStore:
     """SQLite job operations bound to the rendering session factory."""
 
-    def __init__(self, session_factory: Callable[[], Session]) -> None:
+    def __init__(
+        self,
+        session_factory: Callable[[], Session],
+        *,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
         self.session_factory = session_factory
+        self._sleep = sleep
 
     def create(
         self,
@@ -36,28 +81,88 @@ class VideoJobStore:
         stage: str,
         payload: dict[str, Any],
     ) -> LocalJob:
-        db = self.session_factory()
-        try:
-            job = LocalJob(
-                id=job_id,
-                project_id=project_id,
-                job_type=VIDEO_RENDER_JOB_TYPE,
-                status="queued",
-                progress=0,
-                stage=stage,
-                payload_json=json.dumps(
-                    payload,
-                    ensure_ascii=False,
-                    sort_keys=True,
-                ),
-            )
-            db.add(job)
-            db.commit()
-            db.refresh(job)
-            db.expunge(job)
-            return job
-        finally:
-            db.close()
+        """Insert one queued job in a short transaction.
+
+        Each attempt receives a fresh session.  SQLite writer contention is the
+        only retryable database condition; all other failures are surfaced with
+        a sanitized diagnostic instead of retrying a potentially invalid write.
+        """
+        max_attempts = len(_CREATE_RETRY_DELAYS_SEC) + 1
+        for attempt in range(1, max_attempts + 1):
+            try:
+                db = self.session_factory()
+            except Exception as exc:
+                raise VideoJobPersistenceError(
+                    category="database_session_open_failed",
+                    exception_type=type(exc).__name__,
+                    attempt_count=attempt,
+                    retryable=False,
+                ) from exc
+            committed = False
+            try:
+                job = LocalJob(
+                    id=job_id,
+                    project_id=project_id,
+                    job_type=VIDEO_RENDER_JOB_TYPE,
+                    status="queued",
+                    progress=0,
+                    stage=stage,
+                    payload_json=json.dumps(
+                        payload,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                )
+                db.add(job)
+                db.commit()
+                committed = True
+                db.refresh(job)
+                db.expunge(job)
+                return job
+            except OperationalError as exc:
+                locked = not committed and _is_sqlite_busy_or_locked(exc)
+                retryable = locked
+                if locked and attempt < max_attempts:
+                    delay = _CREATE_RETRY_DELAYS_SEC[attempt - 1]
+                else:
+                    category = (
+                        "sqlite_write_locked"
+                        if locked
+                        else "database_operational_error"
+                    )
+                    raise VideoJobPersistenceError(
+                        category=category,
+                        exception_type=type(exc).__name__,
+                        attempt_count=attempt,
+                        retryable=retryable,
+                    ) from exc
+            except Exception as exc:
+                raise VideoJobPersistenceError(
+                    category="database_write_failed",
+                    exception_type=type(exc).__name__,
+                    attempt_count=attempt,
+                    retryable=False,
+                ) from exc
+            finally:
+                # Rollback is harmless after a successful commit and ensures
+                # failures never leave a pending write transaction behind.
+                try:
+                    db.rollback()
+                except Exception:
+                    # The original persistence error remains the actionable
+                    # one.  Do not replace its sanitized diagnostic with a
+                    # cleanup implementation detail.
+                    pass
+                finally:
+                    try:
+                        db.close()
+                    except Exception:
+                        # A close failure must not replace the sanitized write
+                        # failure above or expose driver details to callers.
+                        pass
+            self._sleep(delay)
+
+        raise AssertionError("video job retry loop exited unexpectedly")
 
     def get(
         self,

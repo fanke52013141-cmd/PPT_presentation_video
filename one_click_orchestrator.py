@@ -897,8 +897,10 @@ def _run_pipeline(
             _finish_stage(project, status, "confirm_images", "图片已确认")
 
         if not mask_enabled and should_run("ai_mask"):
+            # 整页切换模式只跳过 AI Mask 标注；mask_assets 仍然运行，
+            # 因为 build_reveal_scene 对无 Mask 幻灯片也要产出静态整页的
+            # scene.json / animation_timeline.json，Step 7 时间轴绑定依赖它。
             _finish_stage(project, status, "ai_mask", "已跳过 Mask 标注（项目设置为整页切换）")
-            _finish_stage(project, status, "mask_assets", "已跳过 Reveal 资源构建（整页切换模式）")
 
         if should_run("ai_mask") and mask_enabled:
             _start_stage(project, status, "ai_mask", "执行 AI Mask 标注")
@@ -932,7 +934,7 @@ def _run_pipeline(
                 "AI Mask 标注完成" if not quality_errors else "AI Mask 标注完成（含警告）",
             )
 
-        if should_run("mask_assets") and mask_enabled:
+        if should_run("mask_assets"):
             _start_stage(project, status, "mask_assets", "构建 Reveal 资源")
             manifest_payload = _invoke(services.mask_manifest, "Step 5 manifest")
             if manifest_payload.get("repair", {}).get("required"):
@@ -942,10 +944,19 @@ def _run_pipeline(
                 raise RuntimeError("Step 5 manifest 返回为空")
             _invoke(lambda: services.build_mask_assets(manifest), "Step 5 build assets")
             _finish_stage(project, status, "mask_assets", "Reveal 资源已构建")
-            if _pause_for_requested_review(project, status, "mask_assets"):
-                return
-            if _pause_for_manual_step(project, status, "mask_assets"):
-                return
+            if mask_enabled:
+                if _pause_for_requested_review(project, status, "mask_assets"):
+                    return
+                if _pause_for_manual_step(project, status, "mask_assets"):
+                    return
+            elif status.get("stop_at") == "mask_review":
+                # 整页切换模式没有 Mask 可审：显式推进 stop_at 到策略中的
+                # 下一个审查点。stop_at 只在审查通过分支推进，若停留在此处
+                # 会让后续所有审查门因 stop_at != checkpoint 而被静默跳过。
+                status["stop_at"] = _next_stop_at_from_policy(
+                    getattr(project, "review_policy", None) or "none", "mask_review"
+                )
+                _save_status(project, status)
 
         if should_run("narration"):
             _start_stage(project, status, "narration", "生成或复用演讲稿并尝试添加 TTS 标记")

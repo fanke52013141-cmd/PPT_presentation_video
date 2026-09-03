@@ -374,6 +374,26 @@ def test_one_click_uses_safe_mask_and_audio_modes() -> None:
         assert gate_name in source
 
 
+def test_mask_disabled_still_builds_reveal_assets() -> None:
+    """整页切换（mask_enabled=False）只跳过 AI Mask 标注，不跳过 Reveal 资源构建。
+
+    回归锁定 2026-09-03 事故：mask_assets 被整体跳过后，build_reveal_scene
+    不再产出 animation_timeline.json，导致 Step 7 时间轴绑定失败
+    （"音频已生成，但时间轴绑定失败"），且音频本体实际已全部合成成功。
+    无 Mask 幻灯片必须由 build_reveal_scene 生成静态整页场景。
+    """
+    source = Path("one_click_orchestrator.py").read_text(encoding="utf-8")
+    # 1. ai_mask 的跳过仍然存在，但只跳过 ai_mask 一个阶段。
+    assert "已跳过 Mask 标注（项目设置为整页切换）" in source
+    assert "已跳过 Reveal 资源构建" not in source
+    # 2. mask_assets 阶段不再受 mask_enabled 门控，始终构建。
+    assert 'if should_run("mask_assets"):' in source
+    assert 'if should_run("mask_assets") and mask_enabled:' not in source
+    # 3. 整页切换模式下 mask_review 审查点必须显式推进 stop_at，
+    #    否则后续审查门会因 stop_at != checkpoint 被静默跳过。
+    assert 'elif status.get("stop_at") == "mask_review":' in source
+
+
 def test_preflight_migrates_legacy_article_before_checking_source() -> None:
     with tempfile.TemporaryDirectory() as value:
         root = Path(value)

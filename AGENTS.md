@@ -396,17 +396,47 @@ or global standard-library monkey patches. New fixes should land in
 `server.py`, normal service modules, `static/**`, or explicit application
 startup code.
 
+## Agent Contract Synchronization Policy
+
+The application exposes an external Agent integration surface that must stay
+in lockstep with every feature change:
+
+- `agent_contract/capabilities.py` is the single capability registry. Agent
+  API paths, MCP tool names, and CLI commands must only be declared there.
+- `agent_contract/models.py` is the single source of truth for Agent-facing
+  request/response schemas; `agent_api/routes.py` maps them onto internal
+  services; never duplicate parameter definitions across layers.
+- `agent_contract/versions.py` owns `AGENT_API_VERSION` and the contract hash.
+
+Any change in the categories below MUST trigger the listed synchronization
+steps in the same change set:
+
+| Trigger | Mandatory synchronization |
+| --- | --- |
+| Internal service model gains/renames a field (e.g. `project_service.ProjectCreate`, stage result payloads) | Register the field in `checks/agent/test_contract_model_parity.py` mapping tables (contract field name, or `None` = intentionally hidden); expose it in `agent_contract/models.py` + `agent_api/routes.py` when Agents should control/read it; bump capability version |
+| New pipeline stage / stage skip logic (e.g. `STAGES`, `mask_enabled` skip) | Verify `agent_contract/operations.py` `CHECKPOINT_STAGES` and progress mapping still hold; ensure skipped stages still report `done` so Agent progress math works |
+| New/changed Agent-facing HTTP route | Register an `AgentCapability` in `agent_contract/capabilities.py` with version, models, and mappings; add tests to `checks/agent/test_transport_contract_sync.py` coverage |
+| Any change touching request/response models or the capability registry | Bump the affected capability `version` (minor for additive-compatible fields), bump `AGENT_API_VERSION`, run `python scripts/generate_agent_contracts.py` and commit the regenerated `docs/agent/capability-matrix.md` |
+| Database migration adding a project-visible column | Check whether `agent_contract/models.py` and `_project_summary` need the new column, and whether `checks/agent/test_contract_model_parity.py` mapping tables must be extended |
+
+The parity tests in `checks/agent/test_contract_model_parity.py` fail loudly
+whenever an internal model grows a field without a deliberate exposure
+decision — treat that failure as a required step in the feature, not as an
+obstacle to remove.
+
 ## Required Validation
 
 Run before publishing:
 
 ```powershell
-python -m compileall -q server.py runtime_support.py project_runtime_service.py repository_paths.py ai_provider_service.py tts_provider_service.py narration_audio_service.py visual_contract_service.py settings_service.py config_portability_service.py settings_routes.py article_service.py article_routes.py diagnostics_routes.py storyboard_background.py storyboard_service.py storyboard_routes.py global_image_style_service.py global_image_style_routes.py image_workflow_service.py image_workflow_routes.py visual_settings_service.py visual_settings_routes.py mask_manifest_service.py mask_preview_service.py mask_editor_routes.py narration_service.py narration_routes.py tts_service.py tts_routes.py one_click_orchestrator.py one_click_routes.py pptx_export.py pptx_service.py pptx_routes.py video_contracts.py video_job_store.py video_artifact_service.py remotion_runner.py video_render_service.py video_routes.py ai_mask_config.py ai_mask_engine.py ai_mask_routes.py ai_mask_semantic_matcher.py ai_mask_service.py project_style_context.py project_style_routes.py project_profile_service.py project_profile_store.py project_style_reference_service.py project_style_reference_store.py project_style_template_service.py image_style_reverse_service.py step3_image_style_service.py database.py database_migrations.py invalidation_service.py reveal_manifest_service.py scripts checks
+python -m compileall -q server.py runtime_support.py project_runtime_service.py repository_paths.py ai_provider_service.py tts_provider_service.py narration_audio_service.py visual_contract_service.py settings_service.py config_portability_service.py settings_routes.py article_service.py article_routes.py diagnostics_routes.py storyboard_background.py storyboard_service.py storyboard_routes.py global_image_style_service.py global_image_style_routes.py image_workflow_service.py image_workflow_routes.py visual_settings_service.py visual_settings_routes.py mask_manifest_service.py mask_preview_service.py mask_editor_routes.py narration_service.py narration_routes.py tts_service.py tts_routes.py one_click_orchestrator.py one_click_routes.py pptx_export.py pptx_service.py pptx_routes.py video_contracts.py video_job_store.py video_artifact_service.py remotion_runner.py video_render_service.py video_routes.py ai_mask_config.py ai_mask_engine.py ai_mask_routes.py ai_mask_semantic_matcher.py ai_mask_service.py project_style_context.py project_style_routes.py project_profile_service.py project_profile_store.py project_style_reference_service.py project_style_reference_store.py project_style_template_service.py image_style_reverse_service.py step3_image_style_service.py database.py database_migrations.py invalidation_service.py reveal_manifest_service.py agent_contract scripts checks
 node --check static/workflow_state.js
 node --check static/flow.js
 node checks/test_visible_flow.js
 python -m pytest checks/test_database_migrations.py checks/test_invalidation_service.py -q
 python -m pytest checks/test_source_runtime_safeguards.py -q
+python -m pytest checks/agent/ -q
+python scripts/generate_agent_contracts.py --check
 python checks/test_reveal_mask_integrity.py
 python checks/test_reveal_pipeline_isolation.py
 python checks/test_slide_visual_invalidation.py

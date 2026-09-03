@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import sys
 import os
+import uuid
 import pytest
 
 # Ensure repo root is on path
@@ -191,7 +192,9 @@ class TestIdempotencyIntegration:
     """Test idempotency claim/finalize/replay via the Agent API."""
 
     def test_duplicate_create_with_same_key_returns_replay(self, api_client):
-        body = {"name": "Idem Replay Test", "description": "test replay", "idempotency_key": "e2e-replay-1"}
+        # Unique per run: the idempotency store persists across test runs.
+        key = f"e2e-replay-{uuid.uuid4().hex[:8]}"
+        body = {"name": "Idem Replay Test", "description": "test replay", "idempotency_key": key}
 
         resp1 = api_client.post("/api/agent/v1/projects", json=body)
         assert resp1.status_code == 200, f"First create failed: {resp1.text}"
@@ -203,11 +206,12 @@ class TestIdempotencyIntegration:
         assert resp2.json()["project"]["project_id"] == data1["project"]["project_id"]
 
     def test_same_key_different_body_returns_conflict(self, api_client):
-        body1 = {"name": "Conflict A", "idempotency_key": "e2e-conflict-1"}
+        key = f"e2e-conflict-{uuid.uuid4().hex[:8]}"
+        body1 = {"name": "Conflict A", "idempotency_key": key}
         resp1 = api_client.post("/api/agent/v1/projects", json=body1)
         assert resp1.status_code == 200
 
-        body2 = {"name": "Conflict B", "idempotency_key": "e2e-conflict-1"}
+        body2 = {"name": "Conflict B", "idempotency_key": key}
         resp2 = api_client.post("/api/agent/v1/projects", json=body2)
         assert resp2.status_code == 409
 

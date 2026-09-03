@@ -1,7 +1,7 @@
 # Agent Capability Matrix
 
-- **Agent API Version**: 1.1.0
-- **Contract Hash**: `8cfa3c7b7b47feac`
+- **Agent API Version**: 1.2.0
+- **Contract Hash**: `3f88bcd08e5bac91`
 - **Total Capabilities**: 22
 
 This document is auto-generated from `agent_contract/capabilities.py`.
@@ -11,10 +11,10 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 
 | Capability ID | Version | Status | Method | Agent API Path | MCP Tool | CLI Command | Service Ref | Long-running | Destructive |
 |---|---|---|---|---|---|---|---|---|---|
-| `project.create` | 1.1 | stable | POST | `/api/agent/v1/projects` | `ppt_project_create` | `project create` | `project_service.ProjectService.create` | No | No |
-| `project.list` | 1.1 | stable | GET | `/api/agent/v1/projects` | `ppt_project_list` | `project list` | `project_service.ProjectService.list` | No | No |
-| `project.get` | 1.1 | stable | GET | `/api/agent/v1/projects/{project_id}` | `ppt_project_get` | `project show` | `project_service.ProjectService.get` | No | No |
-| `project.update` | 1.1 | stable | PATCH | `/api/agent/v1/projects/{project_id}` | `ppt_project_update` | `project update` | `project_service.ProjectService.update` | No | No |
+| `project.create` | 1.2 | stable | POST | `/api/agent/v1/projects` | `ppt_project_create` | `project create` | `project_service.ProjectService.create` | No | No |
+| `project.list` | 1.2 | stable | GET | `/api/agent/v1/projects` | `ppt_project_list` | `project list` | `project_service.ProjectService.list` | No | No |
+| `project.get` | 1.2 | stable | GET | `/api/agent/v1/projects/{project_id}` | `ppt_project_get` | `project show` | `project_service.ProjectService.get` | No | No |
+| `project.update` | 1.2 | stable | PATCH | `/api/agent/v1/projects/{project_id}` | `ppt_project_update` | `project update` | `project_service.ProjectService.update` | No | No |
 | `source.set` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/source` | `ppt_source_set` | `source set` | `article_service.import_article / generate_article_from_topic` | No | No |
 | `pipeline.run` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/runs` | `ppt_pipeline_run` | `run start` | `one_click_orchestrator.start_one_click` | Yes | No |
 | `pipeline.status` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/runs/latest` | `ppt_pipeline_status` | `run status` | `one_click_orchestrator.get_one_click_status` | No | No |
@@ -49,9 +49,9 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 
 The MCP server exposes **22** stable tools:
 
-- `ppt_project_create` — Create a new PPT video project with canvas and mode settings.
+- `ppt_project_create` — Create a new PPT video project with canvas, mode, and mask annotation settings.
 - `ppt_project_list` — List all projects with optional status filter.
-- `ppt_project_get` — Get project details including article/contract status and slide IDs.
+- `ppt_project_get` — Get project details including article/contract status, slide IDs, and mask mode.
 - `ppt_project_update` — Update project name, description, or AI mode.
 - `ppt_source_set` — Set project source content — either direct article text or a topic for AI generation.
 - `ppt_pipeline_run` — Start or resume the automated pipeline. Supports stop_at checkpoints.

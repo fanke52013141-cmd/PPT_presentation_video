@@ -31,6 +31,17 @@ def _make_server_with_matching_contract() -> MCPServer:
     return server
 
 
+def _relative_version(*, minor_offset: int = 0, patch_offset: int = 0) -> str:
+    """Return a version derived from AGENT_API_VERSION with a fixed offset.
+
+    Keeps the mocked remote version stable relative to the real registry
+    version, so contract-negotiation tests do not break whenever
+    AGENT_API_VERSION is bumped.
+    """
+    major, minor, patch = (int(part) for part in AGENT_API_VERSION.split("."))
+    return f"{major}.{minor + minor_offset}.{patch + patch_offset}"
+
+
 def test_mcp_prefers_agent_api_key_environment(monkeypatch):
     """MCP must use the same preferred authentication variable as AgentClient."""
     monkeypatch.setenv("PPT_AGENT_API_KEY", "agent-key")
@@ -122,7 +133,7 @@ class TestContractNegotiation:
         """Hash mismatch + minor version difference → success with mismatchDetail."""
         server = _make_server_with_mismatched_contract(
             api_hash="cccc0000dddd0000",
-            api_version="1.2.0",
+            api_version=_relative_version(minor_offset=1),
         )
         result = server.handle_request({
             "jsonrpc": "2.0", "id": 101, "method": "initialize", "params": {}
@@ -135,7 +146,7 @@ class TestContractNegotiation:
         """Hash mismatch + patch version difference → success with mismatchDetail."""
         server = _make_server_with_mismatched_contract(
             api_hash="eeee0000ffff0000",
-            api_version="1.1.5",
+            api_version=_relative_version(patch_offset=1),
         )
         result = server.handle_request({
             "jsonrpc": "2.0", "id": 102, "method": "initialize", "params": {}

@@ -83,6 +83,7 @@ def _project_summary(project: Project) -> ProjectSummary:
         step_status=project.get_step_status(),
         revision=getattr(project, "revision", 0) or 0,
         review_policy=getattr(project, "review_policy", "none") or "none",
+        mask_enabled=bool(getattr(project, "mask_enabled", 1) or 0),
         created_at=project.created_at.isoformat() if project.created_at else None,
     )
 
@@ -210,6 +211,7 @@ def agent_create_project(
             ai_mode=payload.automation_mode.value if payload.automation_mode else "auto",
             canvas_profile=payload.canvas_profile.value if payload.canvas_profile else "landscape_16_9",
             review_policy=payload.review_policy.value if payload.review_policy else "none",
+            mask_enabled=payload.mask_enabled,
         )
         result = service.create(internal_payload, db)
         project_id = result.get("project", {}).get("id", "")

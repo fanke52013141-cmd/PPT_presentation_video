@@ -130,7 +130,7 @@
           <label>项目名称</label>
           <input type="text" id="input-project-name" placeholder="例如：AI 大模型原理解析">
           <label>项目描述</label>
-          <textarea id="input-project-desc" rows="3" placeholder="可选：说明项目用途、受众或备注。"></textarea>
+          <textarea id="input-project-desc" rows="1" placeholder="可选：说明项目用途、受众或备注。"></textarea>
           <label>可选文章内容</label>
           <textarea id="input-project-article" rows="8" placeholder="可选：创建后自动导入为 Step 1 文章；留空则稍后手动导入。"></textarea>
         </section>
@@ -152,9 +152,9 @@
           <h4>4. 是否需要 Mask 标注</h4>
           <div class="project-profile-mode-grid">
             ${optionCards([
-              { id: 'true', name: '是（逐元素揭示动画）' },
               { id: 'false', name: '否（整页切换）' },
-            ], 'mask_enabled', 'true')}
+              { id: 'true', name: '是（逐元素揭示动画）' },
+            ], 'mask_enabled', 'false')}
           </div>
           <p class="project-profile-help">选择"否"将跳过 AI Mask 标注步骤，视频以整页切换方式呈现，速度更快。</p>
         </section>
@@ -202,7 +202,7 @@
 
     // Show/hide Mask pause chip based on mask_enabled selection
     function syncMaskChipVisibility() {
-      const maskEnabled = selectedOption('mask_enabled', 'true');
+      const maskEnabled = selectedOption('mask_enabled', 'false');
       const maskChip = document.getElementById('profile-pause-chip-mask');
       if (maskChip) maskChip.style.display = maskEnabled === 'true' ? '' : 'none';
       if (maskEnabled === 'false') {
@@ -245,7 +245,7 @@
       version: 'project_profile_v1',
       canvas_profile: selectedOption('canvas_profile', 'landscape_16_9'),
       automation_mode: selectedOption('automation_mode', 'manual_review'),
-      mask_enabled: selectedOption('mask_enabled', 'true') !== 'false',
+      mask_enabled: selectedOption('mask_enabled', 'false') !== 'false',
       quality_gates: { ...DEFAULT_QUALITY_GATES },
       last_used_storyboard_template_id: '',
       last_used_image_style_template_id: PROFILE_STATE.selectedStyleTemplate || 'default',

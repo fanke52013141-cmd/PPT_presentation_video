@@ -5831,7 +5831,7 @@ body.step5-fullscreen-mode #step-panel-5 .workspace-left{align-items:center;just
 .project-profile-scroll { max-height: 76vh; overflow: auto; padding-right: .35rem; }
 .project-profile-section { border: 1px solid var(--color-border-default); border-radius: 12px; padding: 1.1rem 1.2rem; background: var(--color-bg-surface); box-shadow: var(--shadow-card); margin-bottom: .9rem; transition: border-color .16s ease; }
 .project-profile-section h4 { margin: 0 0 .7rem; font-size: 1rem; color: var(--color-text-primary); font-weight: 700; }
-.project-profile-section label { display: block; font-weight: 600; margin: .6rem 0 .3rem; color: var(--color-text-secondary); font-size: .9rem; }
+.project-profile-section label:not(.profile-pause-chip) { display: block; font-weight: 600; margin: .6rem 0 .3rem; color: var(--color-text-secondary); font-size: .9rem; }
 .project-profile-section textarea, .project-profile-section input[type="text"] { width: 100%; box-sizing: border-box; border: 1px solid var(--color-border-default); border-radius: 10px; padding: .55rem .7rem; background: #fafafa; color: var(--color-text-primary); font-size: .92rem; transition: border-color .16s ease, box-shadow .16s ease, background .16s ease; }
 .project-profile-section textarea:focus, .project-profile-section input[type="text"]:focus { outline: none; border-color: #8b919a; background: #ffffff; box-shadow: 0 0 0 3px rgba(23, 25, 29, 0.08); }
 .project-profile-section textarea { resize: vertical; }

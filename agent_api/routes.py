@@ -84,6 +84,15 @@ def _project_summary(project: Project) -> ProjectSummary:
         revision=getattr(project, "revision", 0) or 0,
         review_policy=getattr(project, "review_policy", "none") or "none",
         mask_enabled=bool(getattr(project, "mask_enabled", 1) or 0),
+        creation_config=(
+            {
+                "package_id": project.creation_config_package_id,
+                "version": project.creation_config_version,
+                "content_hash": project.creation_config_hash,
+            }
+            if getattr(project, "creation_config_package_id", None)
+            else None
+        ),
         created_at=project.created_at.isoformat() if project.created_at else None,
     )
 
@@ -212,6 +221,9 @@ def agent_create_project(
             canvas_profile=payload.canvas_profile.value if payload.canvas_profile else "landscape_16_9",
             review_policy=payload.review_policy.value if payload.review_policy else "none",
             mask_enabled=payload.mask_enabled,
+            config_package_id=payload.config_package_id,
+            config_package_version=payload.config_package_version,
+            config_overrides=payload.config_overrides,
         )
         result = service.create(internal_payload, db)
         project_id = result.get("project", {}).get("id", "")

@@ -26,6 +26,7 @@ from tts_artifacts import (
     artifact_paths as tts_artifact_paths,
     build_confirmation_payload as build_audio_confirmation_payload,
 )
+from project_config_runtime import get_config_value
 
 
 logger = logging.getLogger("PPTStudio.TTS")
@@ -58,6 +59,8 @@ slide_tts_artifact_status: Callable[..., Any] = _not_configured
 sync_narration_beats_to_contract: Callable[..., Any] = _not_configured
 tts_provider_defaults: Callable[..., Any] = _not_configured
 write_project_log: Callable[..., Any] = _not_configured
+resolve_model_connection: Callable[..., Any] = _not_configured
+get_credential: Callable[..., Any] = _not_configured
 # 注意：运行时会由 server.py 的 configure_tts_dependencies 注入权威值（0.45 / 90）。
 # 此处默认值必须与 server.py 保持一致，避免未注入时静默使用过时值。
 REVEAL_VISUAL_LEAD_SEC = 0.45
@@ -93,6 +96,8 @@ class TtsDependencies:
     provider_defaults: dict[str, Any]
     reveal_visual_lead_sec: float
     bind_timeout_sec: float
+    resolve_model_connection: Callable[..., Any] = _not_configured
+    get_credential: Callable[..., Any] = _not_configured
 
 
 def configure_tts_dependencies(
@@ -124,6 +129,8 @@ def configure_tts_dependencies(
     global sync_narration_beats_to_contract
     global tts_provider_defaults
     global write_project_log
+    global resolve_model_connection
+    global get_credential
 
     audio_confirmation_path = dependencies.audio_confirmation_path
     configured_tts_api_key = dependencies.configured_tts_api_key
@@ -156,9 +163,88 @@ def configure_tts_dependencies(
     )
     tts_provider_defaults = dependencies.tts_provider_defaults
     write_project_log = dependencies.write_project_log
+    resolve_model_connection = dependencies.resolve_model_connection
+    get_credential = dependencies.get_credential
     TTS_PROVIDER_DEFAULTS = dependencies.provider_defaults
     REVEAL_VISUAL_LEAD_SEC = dependencies.reveal_visual_lead_sec
     STEP7_BIND_TIMEOUT_SEC = dependencies.bind_timeout_sec
+
+
+def _connection_value(connection: Any, name: str, default: Any = None) -> Any:
+    if isinstance(connection, dict):
+        return connection.get(name, default)
+    return getattr(connection, name, default)
+
+
+def _credential_value(values: Any, *names: str) -> str:
+    if not isinstance(values, dict):
+        return ""
+    normalized = {
+        str(key).replace("-", "_").lower(): value
+        for key, value in values.items()
+    }
+    for name in names:
+        value = normalized.get(name.replace("-", "_").lower())
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _redact_runtime_secrets(value: Any, secrets: Any) -> str:
+    text = str(value)
+    if isinstance(secrets, dict):
+        for secret in secrets.values():
+            if isinstance(secret, str) and secret:
+                text = text.replace(secret, "[REDACTED]")
+    return text
+
+
+def _project_tts_runtime(project: Project) -> Optional[Dict[str, Any]]:
+    """Return immutable TTS settings for a project-bound connection.
+
+    A project without a TTS binding deliberately returns ``None`` so legacy
+    projects keep using the pre-existing global settings path.
+    """
+    connection_binding = get_config_value(project, "tts.connection", None)
+    if not isinstance(connection_binding, dict):
+        connection_binding = get_config_value(project, "model_bindings.tts", None)
+    if not isinstance(connection_binding, dict):
+        return None
+    connection_id = str(connection_binding.get("connection_id") or "").strip()
+    revision = connection_binding.get("revision")
+    if not connection_id or not isinstance(revision, int):
+        raise HTTPException(status_code=400, detail="项目语音模型连接配置无效。")
+    try:
+        connection = resolve_model_connection(connection_id, revision)
+    except Exception as exc:
+        logger.warning("Project TTS connection cannot be resolved: %s", type(exc).__name__)
+        raise HTTPException(status_code=400, detail="项目语音模型连接不可用。") from exc
+    if _connection_value(connection, "kind") != "tts":
+        raise HTTPException(status_code=400, detail="项目语音模型连接类型不正确。")
+    credential_ref = _connection_value(connection, "credential_ref")
+    if not isinstance(credential_ref, str) or not credential_ref:
+        raise HTTPException(status_code=400, detail="项目语音模型连接缺少凭据。")
+    try:
+        secrets = get_credential(credential_ref)
+    except Exception as exc:
+        logger.warning("Project TTS credential is unavailable: %s", type(exc).__name__)
+        raise HTTPException(status_code=400, detail="项目语音模型凭据不可用。") from exc
+    api_key = _credential_value(
+        secrets, "api_key", "tts_api_key", "secret_id", "access_token", "token", "key"
+    )
+    secret_key = _credential_value(secrets, "secret_key", "tts_secret_key", "api_secret")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="项目语音模型凭据缺少 API Key。")
+    public_config = _connection_value(connection, "public_config", {})
+    return {
+        "provider": str(_connection_value(connection, "provider") or "").strip(),
+        "endpoint": _connection_value(connection, "endpoint") or "",
+        "model": str(_connection_value(connection, "model") or "").strip(),
+        "public_config": public_config if isinstance(public_config, dict) else {},
+        "api_key": api_key,
+        "secret_key": secret_key,
+        "secrets": secrets,
+    }
 
 def _load_beats_by_slide(
     project: Any,
@@ -203,12 +289,28 @@ def _run_bind_reveal_timeline(project: Any) -> Any:
 def synthesize_tts_resumable(project_id: str, db: Session):
     project = project_or_404(db, project_id)
 
-    provider = normalize_tts_provider(get_setting("tts_provider", "minimax"))
+    project_runtime = _project_tts_runtime(project)
+    provider = normalize_tts_provider(
+        project_runtime["provider"]
+        if project_runtime is not None
+        else get_setting("tts_provider", "minimax")
+    )
     defaults = tts_provider_defaults(provider)
     if provider not in TTS_PROVIDER_DEFAULTS:
         raise HTTPException(status_code=400, detail=f"不支持的 TTS Provider: {provider}")
-    tts_api_key = configured_tts_api_key(provider)
-    tts_secret_key = configured_tts_secret_key(provider)
+    tts_api_key = (
+        project_runtime["api_key"]
+        if project_runtime is not None
+        else configured_tts_api_key(provider)
+    )
+    tts_secret_key = (
+        project_runtime["secret_key"]
+        if project_runtime is not None
+        else configured_tts_secret_key(provider)
+    )
+    runtime_secrets: Dict[str, Any] = (
+        project_runtime["secrets"] if project_runtime is not None else {}
+    )
     if not tts_api_key:
         env_name = defaults.get("api_key_env") or "TTS_API_KEY"
         raise HTTPException(status_code=400, detail=f"未配置 {provider} 语音合成密钥，也没有读取到环境变量 {env_name}。")
@@ -232,15 +334,64 @@ def synthesize_tts_resumable(project_id: str, db: Session):
 
     beats_by_slide = _load_beats_by_slide(project, slide_ids, "TTS synthesis")
 
-    tts_endpoint = first_non_empty(get_setting("tts_endpoint"), defaults.get("endpoint"))
-    tts_model = first_non_empty(get_setting("tts_model"), defaults.get("model"))
-    tts_voice_id = first_non_empty(get_setting("tts_voice_id"), defaults.get("voice_id"))
-    tts_clone_voice_id = get_setting("tts_clone_voice_id", "")
-    tts_region = first_non_empty(get_setting("tts_region"), defaults.get("region"))
-    tts_provider_extra = get_setting("tts_provider_extra", "")
-    tts_speed = get_setting("tts_speed", "1.2")
-    tts_volume = get_setting("tts_volume", "1.0")
-    tts_pitch = get_setting("tts_pitch", "0" if provider == "minimax" else "1.0")
+    public_config = project_runtime["public_config"] if project_runtime else {}
+    snapshot_value = lambda path, fallback: get_config_value(project, path, fallback)
+    tts_endpoint = first_non_empty(
+        project_runtime["endpoint"] if project_runtime else "",
+        public_config.get("endpoint") if project_runtime else "",
+        get_setting("tts_endpoint") if project_runtime is None else "",
+        defaults.get("endpoint"),
+    )
+    tts_model = first_non_empty(
+        project_runtime["model"] if project_runtime else "",
+        public_config.get("model") if project_runtime else "",
+        get_setting("tts_model") if project_runtime is None else "",
+        defaults.get("model"),
+    )
+    tts_voice_id = first_non_empty(
+        snapshot_value("tts.voice_id", "") if project_runtime else "",
+        public_config.get("voice_id") if project_runtime else "",
+        get_setting("tts_voice_id") if project_runtime is None else "",
+        defaults.get("voice_id"),
+    )
+    tts_clone_voice_id = first_non_empty(
+        snapshot_value("tts.clone_voice_id", "") if project_runtime else "",
+        public_config.get("clone_voice_id") if project_runtime else "",
+        get_setting("tts_clone_voice_id", "") if project_runtime is None else "",
+    )
+    tts_region = first_non_empty(
+        snapshot_value("tts.region", "") if project_runtime else "",
+        public_config.get("region") if project_runtime else "",
+        get_setting("tts_region") if project_runtime is None else "",
+        defaults.get("region"),
+    )
+    tts_provider_extra = first_non_empty(
+        snapshot_value("tts.provider_extra", "") if project_runtime else "",
+        public_config.get("provider_extra") if project_runtime else "",
+        get_setting("tts_provider_extra", "") if project_runtime is None else "",
+    )
+    tts_speed = str(
+        snapshot_value("tts.speed", "") if project_runtime else ""
+        or (public_config.get("speed") if project_runtime else "")
+        or (get_setting("tts_speed", "1.2") if project_runtime is None else "")
+        or "1.2"
+    )
+    tts_volume = str(
+        snapshot_value("tts.volume", "") if project_runtime else ""
+        or (public_config.get("volume") if project_runtime else "")
+        or (get_setting("tts_volume", "1.0") if project_runtime is None else "")
+        or "1.0"
+    )
+    tts_pitch = str(
+        snapshot_value("tts.pitch", "") if project_runtime else ""
+        or (public_config.get("pitch") if project_runtime else "")
+        or (
+            get_setting("tts_pitch", "0" if provider == "minimax" else "1.0")
+            if project_runtime is None
+            else ""
+        )
+        or ("0" if provider == "minimax" else "1.0")
+    )
 
     invalidation_service.narration_synthesis_started(project)
     db.commit()
@@ -290,7 +441,10 @@ def synthesize_tts_resumable(project_id: str, db: Session):
             provider_tts_environment(tts_api_key, tts_secret_key),
         )
         if not tts_result["ok"]:
-            error_text = (tts_result["stderr"] or tts_result["stdout"] or "TTS synthesis failed").strip()
+            error_text = _redact_runtime_secrets(
+                (tts_result["stderr"] or tts_result["stdout"] or "TTS synthesis failed").strip(),
+                runtime_secrets,
+            )
             error_text = error_text[-1200:]
             logger.error("TTS synthesis failed for %s after %s attempts: %s", slide_id, tts_result["attempts"], error_text)
             write_project_log(
@@ -299,8 +453,8 @@ def synthesize_tts_resumable(project_id: str, db: Session):
                 slide_id=slide_id,
                 attempts=tts_result["attempts"],
                 returncode=tts_result["returncode"],
-                stdout=tts_result["stdout"],
-                stderr=tts_result["stderr"],
+                stdout=_redact_runtime_secrets(tts_result["stdout"], runtime_secrets),
+                stderr=_redact_runtime_secrets(tts_result["stderr"], runtime_secrets),
             )
             failed_slides.append({
                 "slide_id": slide_id,
@@ -717,4 +871,3 @@ def get_tts_async_service() -> TtsAsyncService:
     if _SERVICE is None:
         raise RuntimeError("TTS async service has not been configured")
     return _SERVICE
-

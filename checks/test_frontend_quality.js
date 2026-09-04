@@ -30,6 +30,7 @@ const projectProfile = fs.readFileSync(path.join(root, 'static', 'project_profil
 const background = fs.readFileSync(path.join(root, 'static', 'storyboard_background_extension.js'), 'utf8');
 const styleManager = fs.readFileSync(path.join(root, 'static', 'style_reference_manager_extension.js'), 'utf8');
 const oneClick = fs.readFileSync(path.join(root, 'static', 'one_click_extension.js'), 'utf8');
+const creationConfigManagement = fs.readFileSync(path.join(root, 'static', 'creation_config_management.js'), 'utf8');
 
 if (fs.existsSync(path.join(root, 'static', 'app.js')) || html.includes('app.js')) {
   throw new Error('legacy app.js runtime entry was recreated');
@@ -93,6 +94,65 @@ for (const projectFunction of ['loadProjects', 'createProject', 'deleteProject']
   if (app.includes(`function ${projectFunction}(`)) {
     throw new Error(`project library implementation returned to app.js: ${projectFunction}`);
   }
+}
+for (const creationConfigFunction of ['ensureCreationConfigSelector', 'selectedCreationConfig', 'loadCreationConfigs']) {
+  if (!projects.includes(`function ${creationConfigFunction}(`)) {
+    throw new Error(`project creation configuration selector is missing ${creationConfigFunction}`);
+  }
+}
+if (!html.includes('id="input-creation-config"')) {
+  throw new Error('project creation configuration selector is missing from the static modal');
+}
+for (const creationConfigToken of [
+  "API.get('/api/creation-configs')",
+  'config_package_id: creationConfig.id',
+  'config_package_version: creationConfig.version',
+  'option.textContent = `${String(item.name || \'未命名配置包\')} · v${version}`',
+]) {
+  if (!projects.includes(creationConfigToken)) {
+    throw new Error(`project creation configuration contract missing: ${creationConfigToken}`);
+  }
+}
+if (!eventBindings.includes('loadCreationConfigs();')) {
+  throw new Error('creation configuration packages are not loaded when opening the project modal');
+}
+for (const managementToken of [
+  'openCreationConfigManagement',
+  "window.API.get('/api/creation-configs')",
+  "window.API.get('/api/model-connections')",
+  "window.API.post('/api/model-connections', payload)",
+  'buildStructuredEditor',
+  'syncStructuredFieldsToJson',
+  'loadPayloadIntoStructured',
+  'readBindingValue',
+  'versions',
+  'copyPackage',
+  'archivePackage',
+]) {
+  if (!creationConfigManagement.includes(managementToken)) {
+    throw new Error(`creation configuration management UI missing: ${managementToken}`);
+  }
+}
+if (!html.includes('creation_config_management.js')
+  || !html.includes('btn-open-creation-config-management')
+  || !html.includes('modal-creation-config-management')
+  || !html.includes('creation-config-prompt-fields')
+  || !html.includes('creation-config-model-binding-fields')
+  || !html.includes('creation-config-tts-voice-id')
+  || !html.includes('creation-config-subtitle-enabled')) {
+  throw new Error('creation configuration management UI is not declared');
+}
+if (!(html.indexOf('api_client.js') < html.indexOf('creation_config_management.js')
+  && html.indexOf('creation_config_management.js') < html.indexOf('event_bindings.js'))) {
+  throw new Error('creation configuration management script order is unsafe');
+}
+if (!eventBindings.includes('initCreationConfigManagementEvents')) {
+  throw new Error('creation configuration management events are not bound at startup');
+}
+if (!projectProfile.includes("apiGet('/api/creation-configs')")
+  || !projectProfile.includes('config_package_id: creationConfig.id')
+  || !projectProfile.includes('config_package_version: creationConfig.version')) {
+  throw new Error('profile project creation does not preserve the selected creation configuration');
 }
 if (projects.includes('onclick=')) throw new Error('project cards still use interpolated inline click handlers');
 if (!projects.includes('escHtml(project.name)') || !projects.includes("escHtml(project.description || '无项目描述')")) {
@@ -637,6 +697,15 @@ if (!oneClick.includes('button-spinner')) throw new Error('one-click stage spinn
 if (!oneClick.includes('one-click-sidebar-entry') || !oneClick.includes('stepper.appendChild(entry)')) {
   throw new Error('one-click button is not anchored directly below the video step');
 }
+// [轮询自愈 20260904] 一键轮询必须保留连接失败计数、前台恢复刷新与
+// 新鲜度展示，且不允许回退到完全静默吞错的轮询实现。
+if (oneClick.includes('catch(() => {})')) {
+  throw new Error('one-click polling must not swallow connection errors silently');
+}
+for (const token of ['renderConnectionAlert', 'visibilitychange', 'lastRefreshAt', '页面数据刷新于']) {
+  if (!oneClick.includes(token)) throw new Error(`one-click polling self-healing missing: ${token}`);
+}
+if (!css.includes('one-click-conn-alert')) throw new Error('one-click connection alert style missing');
 if (!workspaceNavigation.includes("document.body.classList.add('workspace-open')") || !css.includes('body.workspace-open #toast-container')) {
   throw new Error('workspace notifications can still overlap the sidebar action');
 }

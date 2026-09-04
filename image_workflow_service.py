@@ -61,6 +61,7 @@ from repository_paths import (
     REPO_ROOT,
     STEP3_IMAGE_PROMPT_TEMPLATE_PATH,
 )
+from project_config_runtime import get_config_value
 
 
 logger = logging.getLogger("PPTStudio.ImageWorkflow")
@@ -91,6 +92,8 @@ refresh_reveal_semantic_blocks: Callable[..., Any] = _not_configured
 reveal_lock_for: Callable[..., Any] = _not_configured
 sync_reveal_manifest_to_contract: Callable[..., Any] = _not_configured
 write_project_log: Callable[..., Any] = _not_configured
+resolve_model_connection: Callable[..., Any] = _not_configured
+get_credential: Callable[..., Any] = _not_configured
 
 
 @dataclass(frozen=True)
@@ -109,6 +112,8 @@ class ImageWorkflowDependencies:
     reveal_lock_for: Callable[..., Any]
     sync_reveal_manifest_to_contract: Callable[..., Any]
     write_project_log: Callable[..., Any]
+    resolve_model_connection: Callable[..., Any] = _not_configured
+    get_credential: Callable[..., Any] = _not_configured
 
 
 def configure_image_workflow_dependencies(
@@ -128,6 +133,8 @@ def configure_image_workflow_dependencies(
     global reveal_lock_for
     global sync_reveal_manifest_to_contract
     global write_project_log
+    global resolve_model_connection
+    global get_credential
     all_current_slide_images_exist = dependencies.all_current_slide_images_exist
     current_slide_file_or_404 = dependencies.current_slide_file_or_404
     extract_image_bytes_from_response = dependencies.extract_image_bytes_from_response
@@ -142,6 +149,83 @@ def configure_image_workflow_dependencies(
     reveal_lock_for = dependencies.reveal_lock_for
     sync_reveal_manifest_to_contract = dependencies.sync_reveal_manifest_to_contract
     write_project_log = dependencies.write_project_log
+    resolve_model_connection = dependencies.resolve_model_connection
+    get_credential = dependencies.get_credential
+
+
+def _connection_value(connection: Any, name: str, default: Any = None) -> Any:
+    if isinstance(connection, dict):
+        return connection.get(name, default)
+    return getattr(connection, name, default)
+
+
+def _credential_value(values: Any, *names: str) -> str:
+    if not isinstance(values, dict):
+        return ""
+    normalized = {
+        str(key).replace("-", "_").lower(): value
+        for key, value in values.items()
+    }
+    for name in names:
+        value = normalized.get(name.replace("-", "_").lower())
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _redact_runtime_secrets(value: Any, secrets: Any) -> str:
+    text = str(value)
+    if isinstance(secrets, dict):
+        for secret in secrets.values():
+            if isinstance(secret, str) and secret:
+                text = text.replace(secret, "[REDACTED]")
+    return text
+
+
+def _project_image_runtime(project: Project) -> Optional[Dict[str, Any]]:
+    """Resolve a project-pinned image connection without exposing its secret."""
+    binding = get_config_value(
+        project,
+        "model_bindings.image_generation",
+        None,
+    )
+    if not isinstance(binding, dict):
+        return None
+    connection_id = str(binding.get("connection_id") or "").strip()
+    revision = binding.get("revision")
+    if not connection_id or not isinstance(revision, int):
+        raise HTTPException(status_code=400, detail="项目图片模型连接配置无效。")
+    try:
+        connection = resolve_model_connection(connection_id, revision)
+    except Exception as exc:
+        logger.warning("Project image connection cannot be resolved: %s", type(exc).__name__)
+        raise HTTPException(status_code=400, detail="项目图片模型连接不可用。") from exc
+    if _connection_value(connection, "kind") != "image":
+        raise HTTPException(status_code=400, detail="项目图片模型连接类型不正确。")
+    credential_ref = _connection_value(connection, "credential_ref")
+    if not isinstance(credential_ref, str) or not credential_ref:
+        raise HTTPException(status_code=400, detail="项目图片模型连接缺少凭据。")
+    try:
+        secrets = get_credential(credential_ref)
+    except Exception as exc:
+        logger.warning("Project image credential is unavailable: %s", type(exc).__name__)
+        raise HTTPException(status_code=400, detail="项目图片模型凭据不可用。") from exc
+    api_key = _credential_value(secrets, "api_key", "access_token", "token", "key")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="项目图片模型凭据缺少 API Key。")
+    public_config = _connection_value(connection, "public_config", {})
+    return {
+        "api_key": api_key,
+        "base_url": _connection_value(connection, "endpoint") or "",
+        "model": str(_connection_value(connection, "model") or "").strip(),
+        "provider": str(_connection_value(connection, "provider") or "openai_compatible"),
+        "image_size": (
+            public_config.get("image_size")
+            if isinstance(public_config, dict)
+            else None
+        ),
+        "secrets": secrets,
+    }
 
 
 def step3_image_prompts_path(project: Project) -> str:
@@ -494,9 +578,25 @@ def generate_slide_image(
 ):
     project = project_or_404(db, project_id)
 
-    api_key = get_setting("image_api_key")
-    base_url = get_setting("image_base_url")
-    model = get_setting("image_model", "gpt-image-1")
+    project_runtime = _project_image_runtime(project)
+    if project_runtime is None:
+        api_key = get_setting("image_api_key")
+        base_url = get_setting("image_base_url")
+        model = get_setting("image_model", "gpt-image-1")
+        image_size_setting = get_setting("image_size", "1024x1024")
+        image_provider = "openai_compatible"
+        runtime_secrets: Dict[str, Any] = {}
+    else:
+        api_key = project_runtime["api_key"]
+        base_url = project_runtime["base_url"]
+        model = project_runtime["model"]
+        image_size_setting = project_runtime["image_size"] or get_setting(
+            "image_size", "1024x1024"
+        )
+        image_provider = project_runtime["provider"]
+        runtime_secrets = project_runtime["secrets"]
+        if not model:
+            raise HTTPException(status_code=400, detail="项目图片模型连接缺少模型名称。")
     image_filename = "visual_candidate.png" if preview else "visual_draft.png"
     save_path = current_slide_file_or_404(project, slide_id, image_filename)
 
@@ -508,7 +608,7 @@ def generate_slide_image(
 
     try:
         client = get_openai_client(api_key=api_key, base_url=base_url)
-        image_size = normalize_image_size(get_setting("image_size", "1024x1024"))
+        image_size = normalize_image_size(image_size_setting)
         effective_prompt = enforce_white_generation_background(prompt, project)
         ip_prompt_segment = render_ip_character_prompt(project, slide_id)
         if ip_prompt_segment and IP_PROMPT_MARKER not in effective_prompt:
@@ -594,7 +694,7 @@ def generate_slide_image(
             project.run_dir,
             slide_id,
             image_path=save_path,
-            provider="openai_compatible",
+            provider=image_provider,
             source_type="api_generation",
             model=model,
             prompt=effective_prompt,
@@ -614,9 +714,12 @@ def generate_slide_image(
             "success": True,
             "image_url": f"/api/projects/{project_id}/slides/{slide_id}/image?t={uuid.uuid4().hex[:6]}",
         }
-    except Exception as e:
-        logger.error(f"Image generation error for {slide_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"生成图片失败: {str(e)}")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        safe_error = _redact_runtime_secrets(exc, runtime_secrets)
+        logger.error("Image generation error for %s: %s", slide_id, safe_error)
+        raise HTTPException(status_code=500, detail=f"生成图片失败: {safe_error}") from exc
 
 
 def upload_slide_image(

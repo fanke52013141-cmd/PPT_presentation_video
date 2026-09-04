@@ -49,6 +49,7 @@ DEFAULT_HEIGHT = 1080
 DEFAULT_REMOTION_PUBLIC_DIR = Path("scripts/remotion/public")
 DEFAULT_AUDIO_TAIL_PADDING_SEC = 0.4
 DEFAULT_SUBTITLE_STYLE = {
+    "enabled": True,
     "font_key": "lxgw_marker_gothic",
     "font_family": "LXGW Marker Gothic",
     "font_size": 40,
@@ -122,18 +123,29 @@ def read_json(path: Path) -> dict[str, Any]:
 
 
 def read_subtitle_style(run_dir: Path) -> dict[str, Any]:
+    # A project creation package is the immutable source for new projects;
+    # the visual settings file remains the explicit per-project override.
+    package_style: dict[str, Any] = {}
+    project_config_path = run_dir / "planning" / "project_config.json"
+    if project_config_path.exists():
+        try:
+            project_config = read_json(project_config_path)
+            payload = project_config.get("payload")
+            if isinstance(payload, dict) and isinstance(payload.get("subtitle"), dict):
+                package_style = dict(payload["subtitle"])
+        except BuildError:
+            package_style = {}
     settings_path = run_dir / "visual_settings.json"
-    if not settings_path.exists():
-        return dict(DEFAULT_SUBTITLE_STYLE)
-    try:
-        payload = read_json(settings_path)
-    except BuildError:
-        return dict(DEFAULT_SUBTITLE_STYLE)
-    style = payload.get("subtitle_style")
-    if not isinstance(style, dict):
-        return dict(DEFAULT_SUBTITLE_STYLE)
     result = dict(DEFAULT_SUBTITLE_STYLE)
-    result.update({key: style[key] for key in result if key in style})
+    result.update({key: package_style[key] for key in result if key in package_style})
+    if settings_path.exists():
+        try:
+            payload = read_json(settings_path)
+        except BuildError:
+            payload = {}
+        style = payload.get("subtitle_style") if isinstance(payload, dict) else None
+        if isinstance(style, dict):
+            result.update({key: style[key] for key in result if key in style})
     return result
 
 

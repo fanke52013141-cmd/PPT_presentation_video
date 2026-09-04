@@ -58,6 +58,7 @@ def test_pipeline_facade_dispatches_through_explicit_operation_groups() -> None:
             synthesize_audio=operation("synthesize_audio"),
             confirm_audio=operation("confirm_audio"),
             render_video=operation("render_video"),
+            render_video_status=operation("render_video_status"),
         ),
     )
     project = SimpleNamespace(id="project-1")
@@ -93,8 +94,12 @@ def test_pipeline_facade_dispatches_through_explicit_operation_groups() -> None:
     assert services.synthesize_audio()["operation"] == "synthesize_audio"
     assert services.confirm_audio()["operation"] == "confirm_audio"
     assert services.render_video()["operation"] == "render_video"
+    assert services.render_video_status()["operation"] == "render_video_status"
+    assert services.render_video_status("task-1")["operation"] == "render_video_status"
 
-    assert calls[0] == ("storyboard_script", ("project-1", {}, db), {})
+    # [参数顺序修正 20260904] 期望值对齐真实调用 (project_id, db, payload)，
+    # 与 storyboard_service.execute_step2_script_plan 签名一致。
+    assert calls[0] == ("storyboard_script", ("project-1", db, {}), {})
     assert calls[4] == (
         "generate_image",
         ("project-1",),
@@ -105,9 +110,10 @@ def test_pipeline_facade_dispatches_through_explicit_operation_groups() -> None:
         (project, {"slides": []}),
         {"build_assets": True, "db": db},
     )
+    # [参数顺序修正 20260904] confirm_audio 实际调用为 (project_id, db, payload)。
     assert calls[15] == (
         "confirm_audio",
-        ("project-1", {"confirmation_mode": "automatic_technical"}, db),
+        ("project-1", db, {"confirmation_mode": "automatic_technical"}),
         {},
     )
     assert not hasattr(services, "server")

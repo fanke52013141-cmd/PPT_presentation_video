@@ -107,9 +107,12 @@ from project_runtime_service import (
 )
 from repository_paths import (
     DATA_DIR,
+    CREDENTIALS_PATH,
+    CREATION_CONFIGS_PATH,
     HANDDRAWN_STYLE_TOKENS_PATH,
     IMAGE_STYLE_TEMPLATES_DIR,
     IMAGE_STYLE_TEMPLATES_INDEX,
+    MODEL_CONNECTIONS_PATH,
     REPO_ROOT,
     RUNS_DIR,
     STEP2_PROMPT_TEMPLATE_FILES,
@@ -290,6 +293,27 @@ except Exception as exc:
     )
     raise
 
+# Reusable model connections, creation configuration packages, and credentials.
+try:
+    from model_connection_service import resolve_model_connection
+    from credential_store import get_credential
+    from creation_config_service import resolve_creation_config
+    from reusable_config_startup import configure_reusable_config_routes
+    configure_reusable_config_routes(
+        app,
+        model_connections_path=MODEL_CONNECTIONS_PATH,
+        creation_configs_path=CREATION_CONFIGS_PATH,
+        credentials_path=CREDENTIALS_PATH,
+        read_json_file=read_json_file,
+        write_json_atomic=write_json_atomic,
+    )
+except Exception as exc:
+    logger.exception(
+        "Reusable model/config route registration failed: %s",
+        exc,
+    )
+    raise
+
 # ==================== 步骤 1: 导入文章 ====================
 
 # Step 1 article routes are source-owned by article_service.py and article_routes.py.
@@ -317,6 +341,8 @@ try:
                 invalidate_after_upstream_edit
             ),
             llm_timeout_sec=STEP2_LLM_TIMEOUT_SEC,
+            resolve_model_connection=resolve_model_connection,
+            get_credential=get_credential,
         )
     )
     app.include_router(article_router)
@@ -473,6 +499,8 @@ try:
                 sync_reveal_manifest_to_contract
             ),
             write_project_log=write_project_log,
+            resolve_model_connection=resolve_model_connection,
+            get_credential=get_credential,
         )
     )
     app.include_router(image_workflow_router)
@@ -532,6 +560,14 @@ try:
         ProjectDependencies(
             runs_root=Path(RUNS_DIR),
             project_audio_confirmed=project_audio_confirmed,
+            resolve_creation_config=(
+                lambda package_id, version, overrides: resolve_creation_config(
+                    package_id,
+                    version=version,
+                    overrides=overrides,
+                )
+            ),
+            write_json_atomic=write_json_atomic,
         )
     )
     app.include_router(project_router)
@@ -616,6 +652,8 @@ try:
                 sync_narration_beats_to_contract
             ),
             tts_markup_re=TTS_MARKUP_RE,
+            resolve_model_connection=resolve_model_connection,
+            get_credential=get_credential,
         )
     )
     configure_tts_dependencies(
@@ -655,6 +693,8 @@ try:
             provider_defaults=TTS_PROVIDER_DEFAULTS,
             reveal_visual_lead_sec=REVEAL_VISUAL_LEAD_SEC,
             bind_timeout_sec=STEP7_BIND_TIMEOUT_SEC,
+            resolve_model_connection=resolve_model_connection,
+            get_credential=get_credential,
         )
     )
     from database import SessionLocal as TtsAsyncSessionLocal
@@ -729,6 +769,8 @@ try:
             legacy_interview_script_prompt_hash=(
                 LEGACY_INTERVIEW_SCRIPT_PROMPT_HASH
             ),
+            resolve_model_connection=resolve_model_connection,
+            get_credential=get_credential,
         )
     )
     app.include_router(storyboard_router)
@@ -865,6 +907,13 @@ try:
             confirm_audio=confirm_tts_audio,
             render_video=lambda project_id, db: (
                 video_render_service.start_render(db, project_id)
+            ),
+            render_video_status=lambda project_id, db, task_id=None: (
+                video_render_service.render_status(
+                    db,
+                    project_id,
+                    task_id=task_id,
+                )
             ),
         ),
     )

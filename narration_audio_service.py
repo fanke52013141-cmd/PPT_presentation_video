@@ -352,10 +352,45 @@ def prepare_narration_payload(
     return payload
 
 
+def _write_text_if_changed(path: str, content: str) -> bool:
+    """幂等写入文本：内容一致时保留原文件与 mtime。
+
+    Step 7 以 tts_text.txt 的 mtime 判定音频是否过期（晚于音频即删除
+    重合成）。演讲稿内容没有变化时必须跳过重写，否则一次恢复重试会把
+    全部已生成音频判为过期并从头重造。
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as file:
+            if file.read() == content:
+                return False
+    except OSError:
+        pass
+    with open(path, "w", encoding="utf-8") as file:
+        file.write(content)
+    return True
+
+
+def _write_json_if_changed(
+    write_json_atomic: Callable[..., Any],
+    path: str,
+    payload: Dict[str, Any],
+) -> bool:
+    """幂等写入 JSON：语义内容一致时跳过原子重写。"""
+    try:
+        with open(path, "r", encoding="utf-8") as file:
+            if json.load(file) == payload:
+                return False
+    except (OSError, json.JSONDecodeError):
+        pass
+    write_json_atomic(path, payload)
+    return True
+
+
 def persist_narration_beats(
     project: Any,
     payload: Dict[str, Any],
 ) -> Dict[str, Any]:
+    dependencies = _deps()
     payload = prepare_narration_payload(project, payload)
     planning_dir = os.path.join(project.run_dir, "planning")
     beats_path = os.path.join(
@@ -363,7 +398,10 @@ def persist_narration_beats(
         "narration_beats.json",
     )
     os.makedirs(os.path.dirname(beats_path), exist_ok=True)
-    _deps().write_json_atomic(beats_path, payload)
+    # planning/narration_beats.json 保持无条件写入：其 mtime 是
+    # has_fresh_narration 判定演讲稿新鲜的依据，重写可让下一轮恢复直接
+    # 复用演讲稿，避免重复执行 AI 标注。
+    dependencies.write_json_atomic(beats_path, payload)
 
     narration_lines = []
     tts_text_lines = []
@@ -402,19 +440,16 @@ def persist_narration_beats(
             for beat in slide_beats
         )
 
-        with open(
+        _write_text_if_changed(
             os.path.join(slide_dir, "narration.txt"),
-            "w",
-            encoding="utf-8",
-        ) as file:
-            file.write(slide_narration + "\n")
-        with open(
+            slide_narration + "\n",
+        )
+        _write_text_if_changed(
             os.path.join(slide_dir, "tts_text.txt"),
-            "w",
-            encoding="utf-8",
-        ) as file:
-            file.write(slide_tts_text + "\n")
-        _deps().write_json_atomic(
+            slide_tts_text + "\n",
+        )
+        _write_json_if_changed(
+            dependencies.write_json_atomic,
             os.path.join(slide_dir, "narration_beats.json"),
             {"slide_id": slide_id, "beats": slide_beats},
         )
@@ -433,18 +468,14 @@ def persist_narration_beats(
             narration_lines.append(f"[{group_id}] {text}")
             tts_text_lines.append(beat_tts_text(beat))
 
-    with open(
+    _write_text_if_changed(
         os.path.join(planning_dir, "narration.txt"),
-        "w",
-        encoding="utf-8",
-    ) as file:
-        file.write("\n".join(narration_lines) + "\n")
-    with open(
+        "\n".join(narration_lines) + "\n",
+    )
+    _write_text_if_changed(
         os.path.join(planning_dir, "tts_text.txt"),
-        "w",
-        encoding="utf-8",
-    ) as file:
-        file.write("\n".join(tts_text_lines) + "\n")
+        "\n".join(tts_text_lines) + "\n",
+    )
     return payload
 
 

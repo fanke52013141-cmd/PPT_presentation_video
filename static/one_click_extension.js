@@ -5,7 +5,21 @@
     projectId: sessionStorage.getItem('ppt_one_click_project_id') || '',
     polling: null,
     lastFollowedStage: '',
+    // [轮询自愈 20260904] 记录连续失败次数、最近一次成功刷新时间、后台跳过
+    // 计数与连接告警去重标记，用于连接中断提示与陈旧状态指示。
+    failCount: 0,
+    lastRefreshAt: 0,
+    hiddenSkip: 0,
+    connAlertShown: false,
   };
+
+  // [轮询自愈 20260904] 连续失败达到该阈值（约 7.5 秒无响应）才展示连接
+  // 中断提示：瞬时网络抖动（1~2 次）不打扰用户，服务重启期间明确告知
+  // "正在自动重试"，避免画面停留在旧状态被误读为流程卡住。
+  const POLL_FAIL_ALERT_THRESHOLD = 3;
+  // [轮询自愈 20260904] 页面隐藏时保留的轮询心跳上限：浏览器对后台标签页
+  // 的定时器有分钟级节流，若 tick 仍被触发则以少量心跳检测任务终态。
+  const POLL_MAX_HIDDEN_SKIP = 4;
 
   // [自动模式跟随 20260813] 后端 stage id -> 左侧菜单 data-step 映射
   const STAGE_TO_STEP = {
@@ -50,43 +64,58 @@
     return String(value ?? '').replace(/[&<>'"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[ch]));
   }
 
-  // [自动模式跟随 20260813]
-  // 当一键生成处于 running 且当前阶段相对上次发生变化时，
-  // 联动左侧步骤菜单跳转到对应步骤面板，让用户直观看到"正在生成哪一步"。
+  // [自动模式跟随 20260904]
+  // 一键生成运行时只刷新左侧菜单高亮/完成态，不再强制切换步骤面板：
+  // 长耗时阶段（TTS 合成可达十余分钟、Remotion 渲染）期间强制跟随会把
+  // 用户"锁"在当前面板，造成"跳不过去"的观感。当前进行中的阶段改由
+  // 顶部活动状态条与一键弹窗展示，用户可自由浏览已解锁步骤。
   function followActiveStage(status) {
     const runState = (status && status.status) || 'idle';
-    const stage = (status && status.current_stage) || '';
-    if (!stage) return;
-    // 非运行态不主动跳转，避免暂停/完成时反复打断用户浏览
     if (runState !== 'running') {
       STATE.lastFollowedStage = '';
       return;
     }
-    // 同一阶段内只跟随一次，避免 2.5s 轮询反复刷新面板打断用户
-    if (stage === STATE.lastFollowedStage) return;
-    const targetStep = STAGE_TO_STEP[stage] || 0;
-    if (!targetStep) return;
+    const stage = (status && status.current_stage) || '';
+    if (!stage || stage === STATE.lastFollowedStage) return;
     STATE.lastFollowedStage = stage;
+    if (typeof window.refreshCurrentProjectStatus === 'function') {
+      try { window.refreshCurrentProjectStatus(); } catch (e) { /* 刷新失败不阻断轮询 */ }
+    }
+  }
 
-    // state 是 workflow_state.js 顶层 const，不在 window 上，需按标识符直接读取
-    let currentStep = 0;
-    try {
-      if (typeof state === 'object' && state && typeof state.currentStep === 'number') {
-        currentStep = state.currentStep;
-      }
-    } catch (e) { /* state 不可用时回退 0，触发正常跳转 */ }
-    // 已在该步骤面板则只刷新左侧菜单完成态，不重复跳转
-    if (targetStep === currentStep) {
-      if (typeof window.refreshCurrentProjectStatus === 'function') {
-        try { window.refreshCurrentProjectStatus(targetStep); } catch (e) {}
-      }
+  // [一键进度出口 20260904] 一键生成运行时，把当前阶段进度注入对应步骤面板顶部。
+  // 长耗时阶段（TTS 合成可达十余分钟、Remotion 渲染更久）期间，面板内确认按钮
+  // 处于禁用态；没有进度出口时用户会误以为界面卡死。横幅提供真实阶段消息与
+  // "查看进度"入口（打开一键弹窗），并明确提示可自由浏览其他已解锁步骤。
+  function renderStageProgressInPanel(status) {
+    const bannerId = 'one-click-stage-progress-banner';
+    let banner = document.getElementById(bannerId);
+    const runState = (status && status.status) || 'idle';
+    const stage = (status && status.current_stage) || '';
+    const targetStep = STAGE_TO_STEP[stage] || 0;
+    const panel = targetStep ? document.getElementById(`step-panel-${targetStep}`) : null;
+    if (runState !== 'running' || !panel) {
+      if (banner) banner.remove();
       return;
     }
-    const nav = (typeof window.navigateToStep === 'function')
-      ? window.navigateToStep
-      : (typeof navigateToStep === 'function' ? navigateToStep : null);
-    if (nav) {
-      try { nav(targetStep); } catch (e) { /* 跟随失败不阻断轮询 */ }
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = bannerId;
+      banner.className = 'one-click-stage-progress-banner';
+      banner.addEventListener('click', event => {
+        if (event.target.closest('button')) {
+          openModal().catch(error => toast(`打开失败：${error.message}`, 6000));
+        }
+      });
+      panel.prepend(banner);
+    }
+    const stageItem = (status?.stages || []).find(item => item.id === stage);
+    const message = stageItem?.message || stageItem?.title || '处理中';
+    const summary = `<span class="button-spinner"></span><span>一键生成进行中：${esc(message)}</span>`;
+    const current = banner.dataset.summary || '';
+    if (current !== summary) {
+      banner.dataset.summary = summary;
+      banner.innerHTML = `${summary}<span class="one-click-stage-progress-hint">可先浏览其他已解锁步骤，后台会自动继续</span><button type="button" class="secondary compact-action-btn">查看进度</button>`;
     }
   }
 
@@ -184,16 +213,25 @@
     if (!summary || !stages) return;
     const state = status?.status || 'idle';
     const current = status?.current_stage || '';
+    // [轮询自愈 20260904] 本地数据新鲜度：running 态下轮询每 2.5 秒重渲染，
+    // 该数字会持续滚动；切后台导致的滞后一眼可辨。
+    const freshNote = STATE.lastRefreshAt
+      ? `页面数据刷新于 ${Math.max(0, Math.round((Date.now() - STATE.lastRefreshAt) / 1000))} 秒前`
+      : '';
     const activity = document.getElementById('project-activity-status');
     if (activity) {
       const currentStage = (status?.stages || []).find(stage => stage.id === current);
       const message = currentStage?.title || currentStage?.message || '';
+      // [完成基准 20260904] 一键生成的完成以视频产出为基准：
+      // 后端保证 completed 时 status.video.url 存在；前端双保险，
+      // 拿不到视频链接时不显示"已完成"，避免渲染仍在后台跑时误报。
+      const finished = state === 'completed' && !!status?.video?.url;
       activity.innerHTML = state === 'running'
         ? `<span class="button-spinner"></span><span>${esc(message || '一键生成运行中')}</span>`
-        : state === 'completed'
+        : finished
           ? '<span>一键生成已完成</span>'
           : '';
-      activity.classList.toggle('active', state === 'running' || state === 'completed');
+      activity.classList.toggle('active', state === 'running' || finished);
       activity.classList.toggle('running', state === 'running');
     }
     summary.innerHTML = `
@@ -201,6 +239,7 @@
       ${current ? `<span style="margin-left:.5rem;">当前阶段：${esc(current)}</span>` : ''}
       ${status?.effective_start_stage ? `<br><small>恢复计划：从 ${esc(status.effective_start_stage)} 开始</small>` : ''}
       ${status?.started_at ? `<br><small>开始：${esc(status.started_at)}　更新：${esc(status.updated_at || '')}</small>` : ''}
+      ${freshNote ? `<br><small>${freshNote}</small>` : ''}
       ${status?.video?.url ? `<br><a href="${esc(status.video.url)}" target="_blank">打开生成视频</a>` : ''}
     `;
     const list = Array.isArray(status?.stages) ? status.stages : [];
@@ -215,14 +254,21 @@
         </article>
       `;
     }).join('');
-    // [自动模式跟随 20260813] 联动左侧菜单跟随当前生成阶段
+    // [自动模式跟随 20260904] 只刷新左侧菜单完成态，不再强制切换面板
     followActiveStage(status);
+    // [一键进度出口 20260904] 面板内注入当前阶段进度横幅
+    renderStageProgressInPanel(status);
   }
 
   async function refreshStatus() {
     const projectId = activeProjectId();
     if (!projectId) throw new Error('当前没有可识别的项目，请先进入项目工作区。');
     const result = await apiGet(`/api/projects/${encodeURIComponent(projectId)}/one-click-generate/status`);
+    // [轮询自愈 20260904] 任一路径成功即视为链路恢复：
+    // 重置连续失败计数与连接告警标记，并记录本地刷新时刻供新鲜度展示。
+    STATE.failCount = 0;
+    STATE.connAlertShown = false;
+    STATE.lastRefreshAt = Date.now();
     renderStatus(result.status || {});
     const state = result.status?.status;
     if (state === 'running') startPolling();
@@ -230,8 +276,43 @@
     return result.status;
   }
 
+  // [轮询自愈 20260904] 连接中断提示：连续失败达到阈值后写入顶部活动状态条
+  // 与一键弹窗摘要。成功刷新时 renderStatus 会整体重写这两个区域，提示随之
+  // 自动消失，无需专门的清除逻辑。connAlertShown 做去重，避免每个 tick 重复
+  // 写 DOM。
+  function renderConnectionAlert() {
+    if (STATE.failCount < POLL_FAIL_ALERT_THRESHOLD || STATE.connAlertShown) return;
+    STATE.connAlertShown = true;
+    const activity = document.getElementById('project-activity-status');
+    if (activity) {
+      activity.innerHTML = '<span class="one-click-conn-alert">与服务器失去连接，正在自动重试…</span>';
+      activity.classList.add('active');
+      activity.classList.remove('running');
+    }
+    const summary = document.getElementById('one-click-status');
+    if (summary && !document.getElementById('one-click-conn-alert')) {
+      const alert = document.createElement('div');
+      alert.id = 'one-click-conn-alert';
+      alert.className = 'one-click-conn-alert';
+      alert.textContent = `与服务器失去连接（已连续失败 ${STATE.failCount} 次），正在自动重试。若刚重启过服务请稍候，或手动刷新页面。`;
+      summary.prepend(alert);
+    }
+  }
+
   function refreshStatusSilently() {
-    refreshStatus().catch(() => {});
+    // [轮询自愈 20260904] 页面隐藏时定时器已被浏览器节流；tick 若仍触发，
+    // 只保留少量心跳请求检测任务终态，其余主动让路。回到前台立即恢复全量轮询。
+    if (document.hidden && STATE.hiddenSkip < POLL_MAX_HIDDEN_SKIP) {
+      STATE.hiddenSkip += 1;
+      return;
+    }
+    if (!document.hidden) STATE.hiddenSkip = 0;
+    refreshStatus().catch(() => {
+      // [轮询自愈 20260904] 失败不再完全静默：递增连续失败计数，
+      // 达到阈值后给出明确连接提示；恢复成功由 refreshStatus 自动复位。
+      STATE.failCount += 1;
+      renderConnectionAlert();
+    });
   }
 
   async function startOneClick(mode = 'resume') {
@@ -286,6 +367,13 @@
   function boot() {
     patchWorkspaceNavigation();
     ensureEntryButton();
+    // [轮询自愈 20260904] 浏览器会把后台标签页的定时器节流到分钟级，切回
+    // 前台时屏幕上的状态可能已滞后数分钟。页面重新可见时立即补一次刷新，
+    // 不等下一个轮询 tick；连接已断开时也会立刻尝试并进入失败计数。
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible') return;
+      if (STATE.polling && activeProjectId()) refreshStatusSilently();
+    });
   }
 
   document.addEventListener('DOMContentLoaded', boot);

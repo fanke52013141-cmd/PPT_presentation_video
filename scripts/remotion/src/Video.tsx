@@ -123,6 +123,7 @@ export type ArticleVideoProps = {
 };
 
 export type SubtitleStyle = {
+  enabled?: boolean;
   font_key?: string;
   font_family?: string;
   font_size?: number;
@@ -768,6 +769,7 @@ const SlideView: React.FC<{slide: Slide; subtitleStyle?: SubtitleStyle}> = ({sli
   const fallbackFontWeight = subtitleStyle?.font_weight ?? 400;
   const fallbackLineHeight = subtitleStyle?.line_height ?? 1.4;
   const fallbackMaxLines = subtitleStyle?.max_lines ?? 1;
+  const subtitlesEnabled = subtitleStyle?.enabled !== false;
 
   return (
     <AbsoluteFill style={{background: slide.scene.canvas.background || '#FEFDF9'}}>
@@ -778,14 +780,14 @@ const SlideView: React.FC<{slide: Slide; subtitleStyle?: SubtitleStyle}> = ({sli
         .map((layer) => (
           <LayerView key={layer.id} layer={layer} events={slide.animation_timeline?.events} />
         ))}
-      {activePage ? (
+      {subtitlesEnabled && activePage ? (
         <SubtitleView
           page={activePage}
           highlightCount={highlightCount}
           subtitleStyle={subtitleStyle}
           fontFamily={subtitleFont}
         />
-      ) : fallbackSubtitle ? (
+      ) : subtitlesEnabled && fallbackSubtitle ? (
         <div
           style={{
             position: 'absolute',

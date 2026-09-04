@@ -30,6 +30,10 @@ from database import Project
 from project_path_service import project_or_404
 import invalidation_service
 from pipeline_lifecycle import write_json_atomic
+from project_config_runtime import (
+    get_config_value,
+)
+from storyboard_project_config import read_step2_prompts_for_project, resolve_step2_llm
 from project_storage import slide_file as storage_slide_file
 from repository_paths import (
     DATA_DIR,
@@ -105,9 +109,13 @@ class StoryboardDependencies:
     ai_knowledge_script_extension: str
     legacy_prompt_hashes: dict[str, set[str]]
     legacy_interview_script_prompt_hash: str
+    resolve_model_connection: Optional[Callable[[str, int], Any]] = None
+    get_credential: Optional[Callable[[str], Any]] = None
 
 
 _DEPENDENCIES: StoryboardDependencies | None = None
+read_project_step2_prompts = lambda project: read_step2_prompts_for_project(project, read_prompts=read_step2_prompts)
+configured_project_step2_llm = lambda project, binding_name: resolve_step2_llm(project, binding_name, resolve_model_connection=_DEPENDENCIES.resolve_model_connection, get_credential=_DEPENDENCIES.get_credential, parse_int_setting=parse_int_setting, fallback=configured_step2_llm) if _DEPENDENCIES is not None else (_ for _ in ()).throw(RuntimeError("Storyboard dependencies have not been configured"))
 
 
 def configure_storyboard_dependencies(
@@ -321,7 +329,22 @@ def run_step2_json_llm(
     schema_hint: str,
     trace_id: str,
 ) -> Dict[str, Any]:
-    llm_config = configured_step2_llm()
+    binding_name = (
+        "visualization"
+        if artifact_prefix == "step2_visual_plan"
+        else "storyboard"
+    )
+    dependencies = _DEPENDENCIES
+    if dependencies is None:
+        raise RuntimeError("Storyboard dependencies have not been configured")
+    llm_config = resolve_step2_llm(
+        project,
+        binding_name,
+        resolve_model_connection=dependencies.resolve_model_connection,
+        get_credential=dependencies.get_credential,
+        parse_int_setting=parse_int_setting,
+        fallback=configured_step2_llm,
+    )
     return execute_step2_json_llm(
         capabilities=StoryboardLlmCapabilities(
             get_openai_client=get_openai_client,
@@ -641,7 +664,7 @@ def execute_step2_script_plan(
     project_title = article_source["title"]
     article_content = article_source["content"]
     generation_requirement = str((payload or {}).get("requirement") or "").strip()
-    prompts = read_step2_prompts(project)
+    prompts = read_step2_prompts_for_project(project, read_prompts=read_step2_prompts)
     if step2_script_prompt_uses_legacy_contract(prompts["script_system"]):
         raise HTTPException(
             status_code=409,
@@ -660,7 +683,7 @@ def execute_step2_script_plan(
             generation_requirement=generation_requirement,
         ),
         artifact_prefix="step2_script_plan",
-        schema_hint=script_plan_schema_hint(),
+        schema_hint=prompts["script_output_example"],
         trace_id=trace_id,
     )
     try:
@@ -698,7 +721,7 @@ def _execute_step2_visual_plan(
     previous_visual_plan: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Generate a visual plan, with at most one targeted atomicity repair call."""
-    prompts = read_step2_prompts(project)
+    prompts = read_step2_prompts_for_project(project, read_prompts=read_step2_prompts)
     if step2_visual_prompt_uses_legacy_contract(prompts["visual_system"]):
         raise HTTPException(
             status_code=409,
@@ -748,7 +771,7 @@ def _execute_step2_visual_plan(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             artifact_prefix="step2_visual_plan",
-            schema_hint=visual_plan_schema_hint(),
+            schema_hint=prompts["visual_output_example"],
             trace_id=trace_id,
         )
         try:

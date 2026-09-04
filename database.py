@@ -65,6 +65,12 @@ class Project(Base):
     image_style_template = Column(String, nullable=False, default="default")
     # 是否启用 Mask 标注（1=启用逐元素 Reveal 动画, 0=跳过，按整页切换）
     mask_enabled = Column(Integer, nullable=False, default=1)
+    # Immutable creation-configuration source captured when the project is created.
+    # The full effective payload lives in the project run directory; these fields
+    # keep list/detail queries able to show its origin without reading files.
+    creation_config_package_id = Column(String, nullable=True, index=True)
+    creation_config_version = Column(Integer, nullable=True)
+    creation_config_hash = Column(String, nullable=True)
 
     def get_step_status(self):
         try:

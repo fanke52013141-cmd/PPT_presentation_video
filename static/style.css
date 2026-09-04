@@ -3852,6 +3852,50 @@ header .btn {
   color: var(--color-primary-deep, #5b4ee6);
 }
 
+/* [一键进度出口 20260904] 面板内一键生成进度横幅：软蓝紫玻璃卡风格 */
+.one-click-stage-progress-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--color-border-default, #dbe2f0);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--color-primary-deep, #5b4ee6);
+  font-size: 0.86rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.one-click-stage-progress-banner .one-click-stage-progress-hint {
+  flex: 1 1 auto;
+  min-width: 12rem;
+  color: var(--color-text-secondary, #566179);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+/* [轮询自愈 20260904] 连接中断提示：顶部活动状态条与一键弹窗内共用，
+   琥珀警示色，成功恢复后随区域重写自动消失 */
+.one-click-conn-alert {
+  color: var(--color-warning-deep, #a86500);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+#one-click-conn-alert {
+  margin: 0 0 0.5rem;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid #f0d9a8;
+  border-radius: 10px;
+  background: #fff8ec;
+  color: #8a5a00;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
 .step1-heading-row {
   display: flex;
   align-items: center;
@@ -8390,6 +8434,74 @@ details[open] .ip-character-advanced-summary::before {
   line-height: 1.4;
 }
 /* ===== END 参考区 ===== */
+
+/* Structured creation configuration editor */
+.creation-config-structured-editor {
+  margin: 0.8rem 0;
+  padding: 0.85rem;
+  border: 1px solid rgba(118, 103, 190, 0.18);
+  border-radius: 14px;
+  background: rgba(248, 247, 255, 0.74);
+}
+.creation-config-section {
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.66);
+}
+.creation-config-section h5,
+.creation-config-section h6 {
+  margin: 0 0 0.55rem;
+  color: var(--heading-color, #4c3f86);
+}
+.creation-config-prompt-fields,
+.creation-config-model-binding-fields,
+.creation-config-section--two-column {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+.creation-config-prompt-card {
+  padding: 0.65rem;
+  border: 1px solid rgba(118, 103, 190, 0.14);
+  border-radius: 10px;
+}
+.creation-config-prompt-card label,
+.creation-config-binding-field,
+.creation-config-section label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.55rem;
+}
+.creation-config-check {
+  flex-direction: row !important;
+  align-items: center;
+}
+.creation-config-number-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+.creation-config-json-editor {
+  margin-top: 0.7rem;
+  padding: 0.65rem;
+  border: 1px dashed rgba(118, 103, 190, 0.3);
+  border-radius: 10px;
+}
+.creation-config-package-actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+@media (max-width: 760px) {
+  .creation-config-prompt-fields,
+  .creation-config-model-binding-fields,
+  .creation-config-section--two-column,
+  .creation-config-number-grid {
+    grid-template-columns: 1fr;
+  }
+}
 
 /* 自定义视频播放器：隐藏原生控件，避免控件覆盖在数字人窗口上 */
 .video-preview-box .player {

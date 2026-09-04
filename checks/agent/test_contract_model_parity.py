@@ -35,6 +35,12 @@ _CREATE_FIELD_MAP = {
     "manual_pause_steps": None,      # UI-only, derived from automation_mode
     "image_style_template": None,     # UI-only, Step 3 image-style selection
     "mask_enabled": "mask_enabled",
+    "creation_config_package_id": None,  # canonical internal alias; Agent uses short name
+    "creation_config_version": None,
+    "creation_config_overrides": None,
+    "config_package_id": "config_package_id",
+    "config_package_version": "config_package_version",
+    "config_overrides": "config_overrides",
 }
 
 # project_service project payload key -> agent_contract ProjectSummary field.
@@ -53,6 +59,7 @@ _SUMMARY_FIELD_MAP = {
     "manual_pause_steps": None,
     "image_style_template": None,
     "mask_enabled": "mask_enabled",
+    "creation_config": "creation_config",
     "created_at": "created_at",
 }
 

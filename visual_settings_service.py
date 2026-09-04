@@ -23,6 +23,7 @@ IMAGE_GENERATION_BACKGROUND = "#FFFFFF"
 DEFAULT_VIDEO_BACKGROUND = "#FEFDF9"
 PROJECT_VISUAL_SETTINGS_FILE = "visual_settings.json"
 DEFAULT_SUBTITLE_STYLE = {
+    "enabled": True,
     "font_key": "lxgw_marker_gothic",
     "font_family": "LXGW Marker Gothic",
     "font_size": 40,
@@ -208,6 +209,10 @@ def normalize_subtitle_style(value: Any) -> dict[str, Any]:
         font_key = DEFAULT_SUBTITLE_STYLE["font_key"]
     font = font_by_key[font_key]
     return {
+        "enabled": parse_bool(
+            payload.get("enabled"),
+            DEFAULT_SUBTITLE_STYLE["enabled"],
+        ),
         "font_key": font_key,
         "font_family": font["family"],
         "font_size": clamp_int(

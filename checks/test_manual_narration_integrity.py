@@ -103,6 +103,7 @@ def test_step2_source_sync_preserves_unchanged_tts_and_updates_changed_text(tmp_
 
 def test_subtitle_style_round_trips_all_user_controls() -> None:
     normalized = visual_settings.normalize_subtitle_style({
+        "enabled": False,
         "font_key": "noto_serif_sc",
         "font_size": 54,
         "font_weight": 700,
@@ -116,6 +117,7 @@ def test_subtitle_style_round_trips_all_user_controls() -> None:
         "line_height": 1.6,
     })
     assert normalized["font_size"] == 54
+    assert normalized["enabled"] is False
     assert normalized["color"] == "#223344"
     assert normalized["highlight_color"] == "#AABBCC"
     assert normalized["paging_window_ms"] == 900

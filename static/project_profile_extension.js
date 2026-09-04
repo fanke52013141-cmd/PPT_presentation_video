@@ -4,6 +4,7 @@
   const PROFILE_STATE = {
     templates: null,
     imageStyles: null,
+    creationConfigs: null,
     selectedStyleTemplate: 'default',
     creating: false,
   };
@@ -87,6 +88,20 @@
     return PROFILE_STATE.templates;
   }
 
+  async function loadCreationConfigs() {
+    try {
+      const response = await apiGet('/api/creation-configs');
+      PROFILE_STATE.creationConfigs = Array.isArray(response?.packages)
+        ? response.packages
+        : [];
+    } catch (_) {
+      // A package is optional; leaving the list empty preserves ordinary
+      // project creation when the package registry is unavailable.
+      PROFILE_STATE.creationConfigs = [];
+    }
+    return PROFILE_STATE.creationConfigs;
+  }
+
 
   function optionCards(items, field, selectedId) {
     return (items || []).map(item => `
@@ -116,7 +131,26 @@
     }).join('');
   }
 
-  function renderModal(templates, imageStyles) {
+  function creationConfigOptions(packages) {
+    const available = (packages || []).filter(item => (
+      item
+      && !item.archived
+      && typeof item.id === 'string'
+      && item.id
+      && Number.isInteger(Number(item.latest_version))
+      && Number(item.latest_version) > 0
+    ));
+    const options = ['<option value="">不使用创作配置包</option>'];
+    available.forEach(item => {
+      const version = Number(item.latest_version);
+      options.push(
+        `<option value="${esc(item.id)}" data-version="${version}">${esc(item.name || '未命名配置包')} · v${version}</option>`
+      );
+    });
+    return options.join('');
+  }
+
+  function renderModal(templates, imageStyles, creationConfigs) {
     const modal = document.getElementById('modal-create');
     const content = modal?.querySelector('.modal-content');
     if (!modal || !content || content.dataset.projectProfileWizard === '1') return;
@@ -148,8 +182,14 @@
           <h4>3. 生产模式</h4>
           <div class="project-profile-mode-grid">${optionCards(templates.automation_modes || DEFAULT_AUTOMATION_MODES, 'automation_mode', 'manual_review')}</div>
         </section>
+        <section class="project-profile-section" id="create-creation-config-section">
+          <h4>4. 创作配置包</h4>
+          <label for="input-creation-config">选择配置包</label>
+          <select id="input-creation-config">${creationConfigOptions(creationConfigs)}</select>
+          <p id="create-creation-config-help" class="project-profile-help">${creationConfigs?.length ? '选择后会固定使用该配置包的最新版本；不选择则沿用当前项目创建方式。' : '暂无可用创作配置包；仍可按当前项目创建方式继续。'}</p>
+        </section>
         <section class="project-profile-section">
-          <h4>4. 是否需要 Mask 标注</h4>
+          <h4>5. 是否需要 Mask 标注</h4>
           <div class="project-profile-mode-grid">
             ${optionCards([
               { id: 'false', name: '否（整页切换）' },
@@ -159,7 +199,7 @@
           <p class="project-profile-help">选择"否"将跳过 AI Mask 标注步骤，视频以整页切换方式呈现，速度更快。</p>
         </section>
         <section class="project-profile-section" id="profile-pause-section" style="display:none;">
-          <h4>5. 手动暂停模块</h4>
+          <h4>6. 手动暂停模块</h4>
           <p class="project-profile-help" style="margin-bottom:.7rem;">勾选的模块在全自动流程到达该步骤时暂停，等待您手动操作后再继续。</p>
           <div class="profile-pause-chips">
             <label class="profile-pause-chip" id="profile-pause-chip-mask"><input type="checkbox" class="profile-pause-step" value="mask">Mask 标注模块</label>
@@ -168,7 +208,7 @@
           </div>
         </section>
         <section class="project-profile-section">
-          <h4>6. 图片风格</h4>
+          <h4>7. 图片风格</h4>
           <div class="profile-style-grid">${styleTiles(imageStyles)}</div>
           <p class="project-profile-help">选择图片风格模板，将在生成图片时自动应用该风格。</p>
         </section>
@@ -259,6 +299,14 @@
     return steps;
   }
 
+  function selectedCreationConfig() {
+    const select = document.getElementById('input-creation-config');
+    const option = select?.selectedOptions?.[0];
+    const version = Number(option?.dataset?.version);
+    if (!select?.value || !Number.isInteger(version) || version < 1) return null;
+    return { id: select.value, version };
+  }
+
   async function createProjectWithProfile() {
     if (PROFILE_STATE.creating) return;
     const name = document.getElementById('input-project-name')?.value.trim() || '';
@@ -280,6 +328,7 @@
       const aiMode = profile.automation_mode === 'auto' ? 'auto' : 'manual';
       const manualPauseSteps = collectManualPauseSteps();
       const styleTemplate = PROFILE_STATE.selectedStyleTemplate || 'default';
+      const creationConfig = selectedCreationConfig();
       const projectRes = await apiPost('/api/projects', {
         name,
         description: desc,
@@ -288,6 +337,10 @@
         manual_pause_steps: manualPauseSteps,
         image_style_template: styleTemplate,
         mask_enabled: profile.mask_enabled !== false,
+        ...(creationConfig ? {
+          config_package_id: creationConfig.id,
+          config_package_version: creationConfig.version,
+        } : {}),
       });
       const project = projectRes.project;
       if (!project?.id) throw new Error('项目创建成功但未返回 project.id');
@@ -355,8 +408,12 @@
   }
 
   async function enhanceCreateModal() {
-    const [templates, imageStyles] = await Promise.all([loadTemplates(), loadImageStyles()]);
-    renderModal(templates, imageStyles);
+    const [templates, imageStyles, creationConfigs] = await Promise.all([
+      loadTemplates(),
+      loadImageStyles(),
+      loadCreationConfigs(),
+    ]);
+    renderModal(templates, imageStyles, creationConfigs);
   }
 
   function boot() {

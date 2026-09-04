@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 import json
+import os
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -246,6 +247,82 @@ def test_persistence_writes_global_and_per_slide_contracts(
         str(slide_dir / "narration_beats.json"),
         {},
     )["slide_id"] == "slide_001"
+
+
+def test_persistence_is_idempotent_when_content_unchanged(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run"
+    planning = run_dir / "planning"
+    planning.mkdir(parents=True)
+    _write_json(
+        str(planning / "visual_contract.json"),
+        _contract("第一句，第二句。"),
+    )
+    project = SimpleNamespace(run_dir=str(run_dir))
+    payload = {
+        "slides": [
+            {
+                "slide_id": "slide_001",
+                "beats": [
+                    {
+                        "id": "beat_001",
+                        "group_id": "group_001",
+                        "spoken_text": "第一句，第二句。",
+                        "tts_text": "第一句，<#0.35#>第二句。",
+                    }
+                ],
+            }
+        ]
+    }
+
+    service.persist_narration_beats(project, payload)
+    slide_dir = run_dir / "slides" / "slide_001"
+    tts_text_path = slide_dir / "tts_text.txt"
+    narration_path = slide_dir / "narration.txt"
+    beats_path = slide_dir / "narration_beats.json"
+
+    # 模拟 Step 7 已生成的音频产物（晚于 tts_text.txt）。
+    audio_path = slide_dir / "voice.mp3"
+    audio_path.write_bytes(b"fake-audio")
+    text_mtime = tts_text_path.stat().st_mtime_ns
+    beats_mtime = beats_path.stat().st_mtime_ns
+    narration_mtime = narration_path.stat().st_mtime_ns
+
+    # 同一内容重复持久化：不得触碰任何触发过期判定的文件 mtime。
+    service.persist_narration_beats(project, dict(payload))
+    assert tts_text_path.stat().st_mtime_ns == text_mtime
+    assert narration_path.stat().st_mtime_ns == narration_mtime
+    assert beats_path.stat().st_mtime_ns == beats_mtime
+    assert tts_text_path.read_text(encoding="utf-8") == (
+        "第一句，<#0.35#>第二句。\n"
+    )
+
+    # 内容真正变化时必须重写：先把文本 mtime 回拨 1 秒，
+    # 使“重写后 mtime 前移”成为跨文件系统的确定性断言。
+    backdated_ns = text_mtime - 1_000_000_000
+    os.utime(tts_text_path, ns=(backdated_ns, backdated_ns))
+    changed = {
+        "slides": [
+            {
+                "slide_id": "slide_001",
+                "beats": [
+                    {
+                        "id": "beat_001",
+                        "group_id": "group_001",
+                        "spoken_text": "全新的演讲稿内容。",
+                        "tts_text": "全新的<#0.35#>演讲稿内容。",
+                    }
+                ],
+            }
+        ]
+    }
+    service.persist_narration_beats(project, changed)
+    assert tts_text_path.stat().st_mtime_ns > backdated_ns
+    assert tts_text_path.read_text(encoding="utf-8") == (
+        "全新的<#0.35#>演讲稿内容。\n"
+    )
+    assert audio_path.read_bytes() == b"fake-audio"
 
 
 def test_provider_timestamps_map_to_beats_and_use_probed_duration(

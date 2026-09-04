@@ -42,6 +42,9 @@ class ProjectCreateRequest(BaseModel):
     automation_mode: AutomationMode = AutomationMode.auto
     review_policy: ReviewPolicy = ReviewPolicy.none
     mask_enabled: bool = Field(True, description="是否启用 Mask 标注；False 时流水线跳过 AI Mask 与 Reveal 资源构建，按整页切换渲染")
+    config_package_id: Optional[str] = Field(None, min_length=1, max_length=120, description="创作配置包 ID")
+    config_package_version: Optional[int] = Field(None, ge=1, description="创作配置包版本；不填时固定当前最新版本")
+    config_overrides: dict[str, Any] = Field(default_factory=dict, description="仅本项目的创作配置覆盖项")
     idempotency_key: Optional[str] = Field(None, description="幂等键，防止重复创建")
 
 
@@ -57,6 +60,7 @@ class ProjectSummary(BaseModel):
     revision: int = Field(0, description="乐观锁版本号，每次写操作递增")
     review_policy: str = Field("none", description="审查策略: none / images_and_video / all_stages")
     mask_enabled: bool = Field(True, description="项目是否启用 Mask 标注（整页切换模式为 False）")
+    creation_config: Optional[dict[str, Any]] = Field(None, description="项目固定使用的创作配置包版本摘要")
     created_at: Optional[str] = None
 
 

@@ -22,6 +22,8 @@ def _dependencies(
     logs: list[tuple[Any, ...]] | None = None,
     article_imports: list[int] | None = None,
     invalidations: list[int] | None = None,
+    resolve_model_connection: Any = None,
+    get_credential: Any = None,
 ) -> service.ArticleDependencies:
     request_log = requests if requests is not None else []
     event_log = logs if logs is not None else []
@@ -52,6 +54,8 @@ def _dependencies(
             lambda _project, step, _db: invalidation_log.append(step)
         ),
         llm_timeout_sec=12.0,
+        resolve_model_connection=resolve_model_connection,
+        get_credential=get_credential,
     )
 
 
@@ -266,3 +270,87 @@ def test_article_generation_timeout_remains_504(
     finally:
         service._dependencies = original
     assert captured.value.status_code == 504
+
+
+def test_article_generation_uses_project_snapshot_prompt_and_connection(
+    tmp_path: Path,
+) -> None:
+    calls: list[dict[str, Any]] = []
+    logs: list[tuple[Any, ...]] = []
+    secret = "article-secret-must-not-be-logged"
+    (tmp_path / "planning").mkdir()
+    (tmp_path / "planning" / "project_config.json").write_text(
+        json.dumps(
+            {
+                "package_id": "science",
+                "version": 2,
+                "payload": {
+                    "schema_version": "creation_config_v1",
+                    "prompts": {
+                        "article_generation": {
+                            "system_content": "PROJECT ARTICLE PROMPT"
+                        }
+                    },
+                    "model_bindings": {
+                        "article_generation": {
+                            "connection_id": "text-science",
+                            "revision": 3,
+                        }
+                    },
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    class Completions:
+        @staticmethod
+        def create(**kwargs: Any) -> Any:
+            calls.append(kwargs)
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content="# 文章"))]
+            )
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
+    original = service._dependencies
+    service.configure_article_dependencies(
+        _dependencies(
+            settings={
+                "llm_api_key": "legacy-key",
+                "llm_model": "legacy-model",
+                "llm_base_url": "https://legacy.example.test/v1",
+                "llm_temperature": "0.2",
+                "llm_max_tokens": "2048",
+            },
+            client=client,
+            requests=calls,
+            logs=logs,
+            resolve_model_connection=lambda connection_id, revision: SimpleNamespace(
+                connection_id=connection_id,
+                revision=revision,
+                kind="text",
+                provider="openai_compatible",
+                model="project-writing-model",
+                endpoint="https://project.example.test/v1",
+                credential_ref="credential://science/text",
+                public_config={},
+            ),
+            get_credential=lambda reference: {"api_key": secret},
+        )
+    )
+    project = SimpleNamespace(id="snapshot-article", name="Snapshot", run_dir=str(tmp_path))
+    try:
+        service.generate_article_from_topic(project, {"topic": "快照测试"})
+    finally:
+        service._dependencies = original
+
+    assert calls[0]["client"] == {
+        "api_key": secret,
+        "base_url": "https://project.example.test/v1",
+        "timeout": 12.0,
+        "max_retries": 0,
+    }
+    assert calls[1]["model"] == "project-writing-model"
+    assert calls[1]["messages"][0]["content"] == "PROJECT ARTICLE PROMPT"
+    assert secret not in repr(logs)

@@ -2,6 +2,7 @@
 // Shared state, API helpers, escaping, and workflow refresh live in ui_foundation.js / workflow_state.js / api_client.js.
 
 const DEFAULT_SUBTITLE_SETTINGS = {
+  enabled: true,
   font_key: 'lxgw_marker_gothic',
   font_family: 'LXGW Marker Gothic',
   font_size: 40,
@@ -29,6 +30,7 @@ function readSubtitleSettingsForm() {
   const font = subtitleFontByKey(fontKey);
   const maxLines = Number(document.getElementById('subtitle-max-lines').value || 1);
   return {
+    enabled: document.getElementById('subtitle-enabled').checked,
     font_key: fontKey,
     font_family: font.family,
     font_size: Number(document.getElementById('subtitle-font-size').value || 40),
@@ -46,6 +48,7 @@ function readSubtitleSettingsForm() {
 
 function populateSubtitleSettingsForm(settings) {
   const value = { ...DEFAULT_SUBTITLE_SETTINGS, ...(settings || {}) };
+  document.getElementById('subtitle-enabled').checked = value.enabled !== false;
   document.getElementById('subtitle-font-key').value = value.font_key;
   document.getElementById('subtitle-font-size').value = String(value.font_size);
   document.getElementById('subtitle-font-weight').value = String(value.font_weight);
@@ -64,6 +67,9 @@ function updateSubtitlePreview() {
   const text = document.getElementById('subtitle-preview-text');
   if (!stage || !text) return;
   const settings = readSubtitleSettingsForm();
+  const enabled = settings.enabled !== false;
+  stage.classList.toggle('subtitle-preview-disabled', !enabled);
+  text.style.opacity = enabled ? '1' : '0.35';
   const font = subtitleFontByKey(settings.font_key);
   const canvas = typeof getProjectCanvasGeometry === 'function'
     ? getProjectCanvasGeometry()

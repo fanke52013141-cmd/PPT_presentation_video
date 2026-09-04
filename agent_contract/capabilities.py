@@ -74,9 +74,9 @@ class AgentCapability:
 CAPABILITIES: list[AgentCapability] = [
     AgentCapability(
         id="project.create",
-        version="1.2",
+        version="1.3",
         status=CapabilityStatus.stable,
-        description="Create a new PPT video project with canvas, mode, and mask annotation settings.",
+        description="Create a new PPT video project with canvas, automation, mask, and versioned creation configuration settings.",
         request_model=ProjectCreateRequest,
         response_model=ProjectCreateResult,
         agent_api_method="POST",

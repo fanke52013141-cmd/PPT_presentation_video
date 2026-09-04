@@ -16,6 +16,11 @@ from sqlalchemy.orm import Session
 
 from config_store import get_setting, update_settings
 from project_path_service import project_or_404
+from project_config_runtime import (
+    ProjectConfigBindingError,
+    get_config_value,
+    resolve_project_model_binding,
+)
 
 
 logger = logging.getLogger("PPTStudio.Narration")
@@ -39,6 +44,8 @@ prepare_narration_payload: Callable[..., Any] = _not_configured
 read_contract_slide_ids: Callable[..., Any] = _not_configured
 read_json_file: Callable[..., Any] = _not_configured
 sync_narration_beats_to_contract: Callable[..., Any] = _not_configured
+resolve_model_connection: Optional[Callable[[str, int], Any]] = None
+get_credential: Optional[Callable[[str], Any]] = None
 TTS_MARKUP_RE = re.compile(r"$^")
 
 
@@ -59,6 +66,8 @@ class NarrationDependencies:
     read_json_file: Callable[..., Any]
     sync_narration_beats_to_contract: Callable[..., Any]
     tts_markup_re: Any
+    resolve_model_connection: Optional[Callable[[str, int], Any]] = None
+    get_credential: Optional[Callable[[str], Any]] = None
 
 
 def configure_narration_dependencies(
@@ -79,6 +88,8 @@ def configure_narration_dependencies(
     global read_contract_slide_ids
     global read_json_file
     global sync_narration_beats_to_contract
+    global resolve_model_connection
+    global get_credential
 
     beat_tts_text = dependencies.beat_tts_text
     clean_json_markdown = dependencies.clean_json_markdown
@@ -102,6 +113,8 @@ def configure_narration_dependencies(
     sync_narration_beats_to_contract = (
         dependencies.sync_narration_beats_to_contract
     )
+    resolve_model_connection = dependencies.resolve_model_connection
+    get_credential = dependencies.get_credential
     TTS_MARKUP_RE = dependencies.tts_markup_re
 
 
@@ -337,7 +350,7 @@ DEFAULT_NARRATION_ANNOTATION_OUTPUT_EXAMPLE = """{
 }"""
 
 
-def read_narration_annotation_prompts() -> tuple[str, str]:
+def read_narration_annotation_prompts(project: Any = None) -> tuple[str, str]:
     system_content = str(
         get_setting(NARRATION_ANNOTATION_SYSTEM_CONTENT_KEY, DEFAULT_NARRATION_ANNOTATION_SYSTEM_CONTENT)
         or DEFAULT_NARRATION_ANNOTATION_SYSTEM_CONTENT
@@ -350,7 +363,55 @@ def read_narration_annotation_prompts() -> tuple[str, str]:
         system_content = DEFAULT_NARRATION_ANNOTATION_SYSTEM_CONTENT
     if output_example == LEGACY_DEFAULT_NARRATION_ANNOTATION_OUTPUT_EXAMPLE_V1:
         output_example = DEFAULT_NARRATION_ANNOTATION_OUTPUT_EXAMPLE
+    if project is not None:
+        configured = get_config_value(project, "prompts.narration_annotation")
+        if isinstance(configured, dict):
+            value = configured.get("system_content")
+            if isinstance(value, str) and value.strip():
+                system_content = value.strip()
+            value = configured.get("output_example")
+            if isinstance(value, str) and value.strip():
+                output_example = value.strip()
     return system_content, output_example
+
+
+def configured_narration_annotation_llm(
+    project: Any,
+) -> tuple[str, Optional[str], str, int]:
+    """Resolve the snapshot's annotation model or use legacy global settings."""
+    try:
+        binding = resolve_project_model_binding(
+            project,
+            "narration_annotation",
+            expected_kind="text",
+            resolve_model_connection=resolve_model_connection,
+            get_credential=get_credential,
+        )
+    except ProjectConfigBindingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if binding is None:
+        return (
+            get_setting("llm_api_key"),
+            get_setting("llm_base_url"),
+            get_setting("llm_model", "gpt-4o-mini"),
+            parse_int_setting(
+                get_setting("llm_max_tokens", "50000"),
+                50000,
+                1024,
+                64000,
+            ),
+        )
+    return (
+        binding.api_key,
+        binding.endpoint,
+        binding.model,
+        parse_int_setting(
+            binding.public_config.get("max_tokens", 50000),
+            50000,
+            1024,
+            64000,
+        ),
+    )
 
 
 def build_narration_annotation_input(incoming: Dict[str, Any]) -> Dict[str, Any]:
@@ -428,7 +489,9 @@ def update_narration_annotation_settings(payload: Dict[str, Any]):
 def annotate_step6_narration(project_id: str, db: Session, payload: Optional[Dict[str, Any]] = None):
     project = project_or_404(db, project_id)
 
-    llm_api_key = get_setting("llm_api_key")
+    llm_api_key, llm_base_url, llm_model, llm_max_tokens = (
+        configured_narration_annotation_llm(project)
+    )
     if not llm_api_key:
         raise HTTPException(status_code=400, detail="Please configure the LLM API key before AI narration annotation.")
 
@@ -445,11 +508,8 @@ def annotate_step6_narration(project_id: str, db: Session, payload: Optional[Dic
     if not incoming.get("slides"):
         raise HTTPException(status_code=400, detail="No narration beats available for annotation.")
 
-    llm_base_url = get_setting("llm_base_url")
-    llm_model = get_setting("llm_model", "gpt-4o-mini")
-    llm_max_tokens = parse_int_setting(get_setting("llm_max_tokens", "50000"), 50000, 1024, 64000)
     client = get_openai_client(api_key=llm_api_key, base_url=llm_base_url)
-    annotation_system_content, annotation_output_example = read_narration_annotation_prompts()
+    annotation_system_content, annotation_output_example = read_narration_annotation_prompts(project)
     system_prompt = compose_narration_annotation_prompt(
         annotation_system_content,
         annotation_output_example,
@@ -469,7 +529,10 @@ def annotate_step6_narration(project_id: str, db: Session, payload: Optional[Dic
                 ],
             )
         except Exception as format_error:
-            logger.warning(f"Narration annotation response_format failed, retrying raw JSON: {format_error}")
+            logger.warning(
+                "Narration annotation response_format failed (%s); retrying raw JSON",
+                type(format_error).__name__,
+            )
             response = client.chat.completions.create(
                 model=llm_model,
                 temperature=0.2,
@@ -480,7 +543,14 @@ def annotate_step6_narration(project_id: str, db: Session, payload: Optional[Dic
                 ],
             )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"AI narration annotation failed: {exc}")
+        logger.warning(
+            "Narration annotation request failed (%s)",
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="AI narration annotation failed; please check the selected model connection.",
+        ) from exc
 
     raw_content = response.choices[0].message.content.strip()
     ai_data = parse_json_or_repair_with_llm(

@@ -6,6 +6,90 @@ let _automationPollTimer = null;
 // The image-style template chosen in the create-project modal.
 let _selectedStyleTemplate = 'default';
 
+/**
+ * Ensure the creation-config selector is present in both the static modal and
+ * the project-profile wizard, which replaces the modal body at runtime.
+ */
+function ensureCreationConfigSelector() {
+  let select = document.getElementById('input-creation-config');
+  if (select) return select;
+
+  const modalContent = document.querySelector('#modal-create .modal-content');
+  const styleSection = modalContent?.querySelector('.profile-style-grid')?.closest('.project-profile-section');
+  if (!modalContent || !styleSection) return null;
+
+  const section = document.createElement('section');
+  section.id = 'create-creation-config-section';
+  section.className = 'project-profile-section';
+
+  const heading = document.createElement('h4');
+  heading.textContent = '创作配置包';
+  const label = document.createElement('label');
+  label.htmlFor = 'input-creation-config';
+  label.textContent = '选择配置包';
+  select = document.createElement('select');
+  select.id = 'input-creation-config';
+  select.style.width = '100%';
+  const help = document.createElement('p');
+  help.id = 'create-creation-config-help';
+  help.className = 'project-profile-help';
+  help.textContent = '选择后会固定使用该配置包的最新版本；不选择则沿用当前项目创建方式。';
+
+  section.append(heading, label, select, help);
+  styleSection.before(section);
+  return select;
+}
+
+function selectedCreationConfig() {
+  const select = document.getElementById('input-creation-config');
+  const option = select?.selectedOptions?.[0];
+  const version = Number(option?.dataset?.version);
+  if (!select?.value || !Number.isInteger(version) || version < 1) return null;
+  return { id: select.value, version };
+}
+
+/** Load reusable creation packages without making package selection mandatory. */
+async function loadCreationConfigs() {
+  const select = ensureCreationConfigSelector();
+  const help = document.getElementById('create-creation-config-help');
+  if (!select) return;
+
+  const selectedId = select.value;
+  const selectedVersion = select.selectedOptions?.[0]?.dataset?.version || '';
+  const emptyOption = document.createElement('option');
+  emptyOption.value = '';
+  emptyOption.textContent = '不使用创作配置包';
+
+  try {
+    const data = await API.get('/api/creation-configs');
+    const packages = Array.isArray(data?.packages) ? data.packages : [];
+    select.replaceChildren(emptyOption);
+    packages.forEach(item => {
+      if (!item || typeof item.id !== 'string' || !item.id || item.archived) return;
+      const version = Number(item.latest_version);
+      if (!Number.isInteger(version) || version < 1) return;
+      const option = document.createElement('option');
+      option.value = item.id;
+      option.dataset.version = String(version);
+      option.textContent = `${String(item.name || '未命名配置包')} · v${version}`;
+      select.appendChild(option);
+    });
+    const restore = Array.from(select.options).find(option => (
+      option.value === selectedId && option.dataset.version === selectedVersion
+    ));
+    select.value = restore ? selectedId : '';
+    if (help) {
+      help.textContent = packages.length
+        ? '选择后会固定使用该配置包的最新版本；不选择则沿用当前项目创建方式。'
+        : '暂无可用创作配置包；仍可按当前项目创建方式继续。';
+    }
+  } catch (_) {
+    select.replaceChildren(emptyOption);
+    select.value = '';
+    if (help) help.textContent = '创作配置包加载失败；仍可按当前项目创建方式继续。';
+  }
+}
+
 /** Normalise a raw one-click status string to a badge descriptor. */
 function _badgeFromStatus(rawStatus) {
   switch (rawStatus) {
@@ -214,6 +298,7 @@ async function createProject() {
   const pauseSteps = Array.from(document.querySelectorAll('.create-pause-step:checked'))
     .map(cb => cb.value)
     .filter(Boolean);
+  const creationConfig = selectedCreationConfig();
 
   const result = await API.post('/api/projects', {
     name,
@@ -222,6 +307,10 @@ async function createProject() {
     canvas_profile: canvasProfile,
     manual_pause_steps: pauseSteps,
     image_style_template: _selectedStyleTemplate || 'default',
+    ...(creationConfig ? {
+      config_package_id: creationConfig.id,
+      config_package_version: creationConfig.version,
+    } : {}),
   });
   if (!result.success) return;
   document.getElementById('modal-create').style.display = 'none';

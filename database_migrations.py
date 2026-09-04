@@ -236,6 +236,33 @@ def _known_migration_already_present(connection: Connection, migration: Migratio
         )
     if key == (7, "agent_review_policy"):
         return _has_columns(connection, "projects", {"review_policy"})
+    if key == (8, "auto_mode_pause_and_style"):
+        # Older deployments may have created the current SQLAlchemy schema
+        # before the migration ledger existed. Adopt both columns together so
+        # initialization remains idempotent instead of re-running ALTER TABLE.
+        return _has_columns(
+            connection,
+            "projects",
+            {"manual_pause_steps", "image_style_template"},
+        )
+    if key == (9, "project_mask_enabled"):
+        return _has_columns(connection, "projects", {"mask_enabled"})
+    if key == (10, "local_job_submission_key"):
+        return _has_columns(
+            connection,
+            "local_jobs",
+            {"submission_key", "submission_attempt"},
+        )
+    if key == (11, "project_creation_config"):
+        return _has_columns(
+            connection,
+            "projects",
+            {
+                "creation_config_package_id",
+                "creation_config_version",
+                "creation_config_hash",
+            },
+        )
     return False
 
 

@@ -10,6 +10,14 @@ RUNS_DIR = os.path.join(REPO_ROOT, "runs")
 DATA_DIR = os.path.join(REPO_ROOT, "data")
 LOGS_DIR = os.path.join(REPO_ROOT, "logs")
 
+# Versioned, user-managed registries.  These are JSON persistence adapters for
+# the first configuration rollout; the services keep the storage boundary
+# injectable so a database-backed adapter can be introduced without changing
+# callers.
+MODEL_CONNECTIONS_PATH = os.path.join(DATA_DIR, "model_connections.json")
+CREATION_CONFIGS_PATH = os.path.join(DATA_DIR, "creation_configs.json")
+CREDENTIALS_PATH = os.path.join(DATA_DIR, "credentials.json")
+
 DEFAULT_STYLE_TOKENS_PATH = os.path.join(
     REPO_ROOT,
     "config",

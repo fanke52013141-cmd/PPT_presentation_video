@@ -1,7 +1,7 @@
 # Agent Capability Matrix
 
-- **Agent API Version**: 1.2.0
-- **Contract Hash**: `3f88bcd08e5bac91`
+- **Agent API Version**: 1.3.0
+- **Contract Hash**: `312ef5b239464c3a`
 - **Total Capabilities**: 22
 
 This document is auto-generated from `agent_contract/capabilities.py`.
@@ -11,7 +11,7 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 
 | Capability ID | Version | Status | Method | Agent API Path | MCP Tool | CLI Command | Service Ref | Long-running | Destructive |
 |---|---|---|---|---|---|---|---|---|---|
-| `project.create` | 1.2 | stable | POST | `/api/agent/v1/projects` | `ppt_project_create` | `project create` | `project_service.ProjectService.create` | No | No |
+| `project.create` | 1.3 | stable | POST | `/api/agent/v1/projects` | `ppt_project_create` | `project create` | `project_service.ProjectService.create` | No | No |
 | `project.list` | 1.2 | stable | GET | `/api/agent/v1/projects` | `ppt_project_list` | `project list` | `project_service.ProjectService.list` | No | No |
 | `project.get` | 1.2 | stable | GET | `/api/agent/v1/projects/{project_id}` | `ppt_project_get` | `project show` | `project_service.ProjectService.get` | No | No |
 | `project.update` | 1.2 | stable | PATCH | `/api/agent/v1/projects/{project_id}` | `ppt_project_update` | `project update` | `project_service.ProjectService.update` | No | No |
@@ -49,7 +49,7 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 
 The MCP server exposes **22** stable tools:
 
-- `ppt_project_create` — Create a new PPT video project with canvas, mode, and mask annotation settings.
+- `ppt_project_create` — Create a new PPT video project with canvas, automation, mask, and versioned creation configuration settings.
 - `ppt_project_list` — List all projects with optional status filter.
 - `ppt_project_get` — Get project details including article/contract status, slide IDs, and mask mode.
 - `ppt_project_update` — Update project name, description, or AI mode.

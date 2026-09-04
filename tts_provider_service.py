@@ -16,7 +16,9 @@ from runtime_support import run_subprocess_killable
 logger = logging.getLogger("PPTStudio.TTSProvider")
 TTS_API_KEY_ENV = "PPT_STUDIO_TTS_API_KEY"
 TTS_SECRET_KEY_ENV = "PPT_STUDIO_TTS_SECRET_KEY"
-STEP7_TTS_TIMEOUT_SEC = 300
+# MiniMax 异步合成在高峰期轮询耗时会显著拉长，300 秒会在服务端
+# 拥塞时造成整页三连失败。480 秒 + 90 秒进程缓冲显著降低误判超时。
+STEP7_TTS_TIMEOUT_SEC = 480
 STEP7_TTS_PROCESS_TIMEOUT_SEC = STEP7_TTS_TIMEOUT_SEC + 90
 STEP7_TTS_RETRY_ATTEMPTS = 3
 STEP7_TTS_RETRY_BASE_DELAY_SEC = 4

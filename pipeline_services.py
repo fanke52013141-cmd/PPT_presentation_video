@@ -76,6 +76,7 @@ class MediaPipelineOperations:
     synthesize_audio: PipelineOperation
     confirm_audio: PipelineOperation
     render_video: PipelineOperation
+    render_video_status: PipelineOperation
 
 
 @dataclass(frozen=True)
@@ -181,6 +182,13 @@ class ProjectPipelineServices:
 
     def render_video(self) -> dict[str, Any]:
         return self.operations.media.render_video(self.project_id, self.db)
+
+    def render_video_status(self, task_id: str | None = None) -> dict[str, Any]:
+        return self.operations.media.render_video_status(
+            self.project_id,
+            self.db,
+            task_id=task_id,
+        )
 
     def _project(self) -> Project:
         project = (

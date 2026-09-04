@@ -610,6 +610,15 @@
         <label style="font-weight: bold; display: block; margin-bottom: 0.4rem;">项目描述:</label>
         <textarea id="input-project-desc" rows="3" placeholder="请输入可选的项目描述"></textarea>
       </div>
+      <div id="create-creation-config-section" style="margin-bottom: 1.5rem;">
+        <label style="font-weight: bold; display: block; margin-bottom: 0.4rem;" for="input-creation-config">创作配置包:</label>
+        <select id="input-creation-config" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 6px; background: #fff;">
+          <option value="">不使用创作配置包</option>
+        </select>
+        <div id="create-creation-config-help" style="font-size: 0.85rem; color: var(--muted-color); margin-top: 0.4rem; line-height: 1.5;">
+          选择后会固定使用该配置包的最新版本；不选择则沿用当前项目创建方式。
+        </div>
+      </div>
       <div style="margin-bottom: 1.5rem;">
         <label style="font-weight: bold; display: block; margin-bottom: 0.4rem;">画布比例:</label>
         <select id="input-project-canvas-profile" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 6px; background: #fff;">
@@ -883,12 +892,122 @@
 
       <div class="settings-footer-actions">
         <div class="settings-portability-actions">
+          <button id="btn-open-creation-config-management" class="secondary" type="button">创作配置管理</button>
           <button id="btn-settings-export" class="secondary" type="button">配置导出</button>
           <button id="btn-settings-import" class="secondary" type="button">配置导入</button>
           <input id="settings-import-file" type="file" accept="application/json,.json" style="display: none;">
         </div>
         <button id="btn-settings-cancel" class="secondary">取消</button>
         <button id="btn-settings-save" class="success">保存设置</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: 创作配置与模型连接管理 -->
+  <div id="modal-creation-config-management" class="modal-overlay" style="display: none;">
+    <div class="modal-content config-editor-modal" role="dialog" aria-modal="true" aria-labelledby="creation-config-management-title" style="max-width: 960px;">
+      <div class="config-editor-scroll">
+        <div class="prompt-title-row">
+          <h3 id="creation-config-management-title" class="highlight-title">创作配置管理</h3>
+          <button id="btn-creation-config-management-refresh" class="secondary" type="button">刷新</button>
+        </div>
+        <p class="config-editor-note">在此管理可复用的创作配置包和模型连接。模型连接只保存凭据引用；API Key 等敏感信息由凭据管理服务保存，不会显示在此处。</p>
+        <p id="creation-config-management-status" class="config-editor-note" aria-live="polite"></p>
+        <div style="display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); gap:1rem; align-items:start;">
+          <section class="soft-outline" style="padding:1rem; border-radius:12px;">
+            <h4 style="margin-top:0;">创作配置包</h4>
+            <p class="config-editor-note">复制一套现有配置后，可针对不同账号调整提示词、图片风格、声音、字幕和自动化策略。</p>
+            <label style="display:block; margin-bottom:0.55rem;">配置包名称<input id="creation-config-package-name" type="text" maxlength="80" placeholder="例如：科普账号长视频"></label>
+            <label style="display:block; margin-bottom:0.55rem;">说明（可选）<input id="creation-config-package-description" type="text" maxlength="1000" placeholder="例如：轻松科普风格，保留字幕"></label>
+            <p id="creation-config-editing-status" class="config-editor-note" aria-live="polite"></p>
+            <div id="creation-config-structured-editor" class="creation-config-structured-editor">
+              <section class="creation-config-section">
+                <h5>Prompt</h5>
+                <p class="config-editor-note">每个模块可分别定义系统提示词和输出示例；留空即不写入配置包。</p>
+                <div id="creation-config-prompt-fields" class="creation-config-prompt-fields"></div>
+              </section>
+              <section class="creation-config-section">
+                <h5>模型绑定</h5>
+                <p class="config-editor-note">连接按类型过滤，保存时固定到当前 revision。未选择不会写入绑定。</p>
+                <div id="creation-config-model-binding-fields" class="creation-config-model-binding-fields"></div>
+              </section>
+              <section class="creation-config-section">
+                <h5>图片风格</h5>
+                <label>风格名称<input id="creation-config-image-style-name" type="text" maxlength="120" placeholder="例如：简洁科技插画"></label>
+                <label>风格提示词<textarea id="creation-config-image-style-system-content" rows="4" placeholder="描述统一的配色、构图、材质、留白等图片风格"></textarea></label>
+              </section>
+              <section class="creation-config-section creation-config-section--two-column">
+                <div>
+                  <h5>TTS</h5>
+                  <label>Voice ID<input id="creation-config-tts-voice-id" type="text" maxlength="160" placeholder="MiniMax voice_id"></label>
+                  <label>克隆音色 ID<input id="creation-config-tts-clone-voice-id" type="text" maxlength="160" placeholder="可选"></label>
+                  <div class="creation-config-number-grid">
+                    <label>语速<input id="creation-config-tts-speed" type="number" min="0.1" max="4" step="0.05" placeholder="1"></label>
+                    <label>音量<input id="creation-config-tts-volume" type="number" min="0" max="10" step="0.1" placeholder="可选"></label>
+                    <label>音调<input id="creation-config-tts-pitch" type="number" min="-12" max="12" step="0.1" placeholder="可选"></label>
+                  </div>
+                </div>
+                <div>
+                  <h5>生成开关</h5>
+                  <label class="creation-config-check"><input id="creation-config-subtitle-enabled" type="checkbox" checked> 导出字幕</label>
+                  <label class="creation-config-check"><input id="creation-config-mask-enabled" type="checkbox" checked> 启用 AI Mask</label>
+                  <h5 class="creation-config-subheading">全自动暂停</h5>
+                  <div class="creation-config-pause-grid">
+                    <label class="creation-config-check"><input type="checkbox" data-creation-config-pause="mask"> Mask 标注</label>
+                    <label class="creation-config-check"><input type="checkbox" data-creation-config-pause="narration"> 旁白编辑</label>
+                    <label class="creation-config-check"><input type="checkbox" data-creation-config-pause="tts"> 语音合成</label>
+                    <label class="creation-config-check"><input type="checkbox" data-creation-config-pause="digital_human"> 数字人</label>
+                  </div>
+                </div>
+              </section>
+            </div>
+            <details class="creation-config-json-editor">
+              <summary>高级 JSON 编辑</summary>
+              <p class="config-editor-note">结构化表单与 JSON 会同步。直接修改 JSON 后点击“从 JSON 载入”以刷新表单。</p>
+              <label>配置内容 JSON<textarea id="creation-config-package-payload" rows="12" spellcheck="false">{}</textarea></label>
+              <button id="btn-creation-config-load-json" class="secondary" type="button">从 JSON 载入</button>
+            </details>
+            <div class="creation-config-package-actions">
+              <button id="btn-create-creation-config" class="success" type="button">新建配置包</button>
+              <button id="btn-cancel-creation-config-edit" class="secondary" type="button" hidden>取消编辑</button>
+            </div>
+            <div id="creation-config-package-list"></div>
+          </section>
+          <section class="soft-outline" style="padding:1rem; border-radius:12px;">
+            <h4 style="margin-top:0;">模型连接</h4>
+            <p class="config-editor-note">先添加文本、图片或语音模型，再在配置包中按步骤选择。凭据引用可留空，或填入已创建的 credential:// 引用。</p>
+            <div id="creation-config-connection-list"></div>
+            <h4 style="margin-top:1.25rem;">凭据</h4>
+            <p class="config-editor-note">列表只显示凭据的安全元数据，实际值不会回显。</p>
+            <div id="creation-config-credential-list"></div>
+          </section>
+        </div>
+        <section class="soft-outline" style="padding:1rem; border-radius:12px; margin-top:1rem;">
+          <h4 style="margin-top:0;">添加模型连接</h4>
+          <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0.75rem;">
+            <label>连接名称<input id="creation-config-connection-name" type="text" maxlength="120" placeholder="例如：科普账号文本模型"></label>
+            <label>类别<select id="creation-config-connection-kind"><option value="text">文本</option><option value="image">图片</option><option value="tts">语音</option></select></label>
+            <label>服务标识<input id="creation-config-connection-provider" type="text" maxlength="80" placeholder="例如：openai_compatible / minimax"></label>
+            <label>模型<input id="creation-config-connection-model" type="text" maxlength="160" placeholder="例如：gpt-4o-mini / speech-2.8-hd"></label>
+            <label>接口地址（可选）<input id="creation-config-connection-endpoint" type="url" maxlength="1000" placeholder="https://…"></label>
+            <label>凭据引用（可选）<input id="creation-config-connection-credential-ref" type="text" maxlength="500" placeholder="credential://…"></label>
+          </div>
+          <label style="display:block; margin-top:0.75rem;">公开参数 JSON（可选）<textarea id="creation-config-connection-public-config" rows="3" spellcheck="false" placeholder='{"temperature":0.7}'></textarea></label>
+          <button id="btn-create-model-connection" class="success" type="button" style="margin-top:0.75rem;">添加模型连接</button>
+        </section>
+        <section class="soft-outline" style="padding:1rem; border-radius:12px; margin-top:1rem;">
+          <h4 style="margin-top:0;">添加凭据</h4>
+          <p class="config-editor-note">凭据值只会发送给服务端安全存储，保存后不会显示或保留在页面中。</p>
+          <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0.75rem;">
+            <label>服务标识<input id="creation-config-credential-provider" type="text" maxlength="80" placeholder="例如：minimax / openai_compatible"></label>
+            <label>凭据名称<input id="creation-config-credential-label" type="text" maxlength="120" placeholder="例如：MiniMax 主账号"></label>
+          </div>
+          <label style="display:block; margin-top:0.75rem;">凭据值 JSON<textarea id="creation-config-credential-secret-values" rows="4" spellcheck="false" placeholder='{"api_key":"…"}'></textarea></label>
+          <button id="btn-create-credential" class="success" type="button" style="margin-top:0.75rem;">添加凭据</button>
+        </section>
+      </div>
+      <div class="config-editor-actions">
+        <button id="btn-creation-config-management-close" class="secondary" type="button">关闭</button>
       </div>
     </div>
   </div>
@@ -1192,6 +1311,10 @@
           <div id="subtitle-preview-text">这是一段视频字幕效果预览</div>
         </div>
         <div class="subtitle-settings-controls">
+          <label class="subtitle-checkbox-label">
+            <input id="subtitle-enabled" type="checkbox" checked>
+            <span>在视频中显示字幕（关闭后仍生成音频和字幕时间轴）</span>
+          </label>
           <label>
             <span>预览字幕文字</span>
             <input id="subtitle-sample-text" type="text" value="这是一段视频字幕效果预览">
@@ -1293,6 +1416,7 @@
   <script src="prompt_help.js?v=20260801.1"></script>
   <script src="settings.js?v=20260828.3"></script>
   <script src="projects.js?v=20260902.1"></script>
+  <script src="creation_config_management.js?v=20260904.1"></script>
     <script src="courses.js?v=20260812.5"></script>
   <script src="article.js?v=20260801.1"></script>
   <script src="storyboard.js?v=20260902.1"></script>

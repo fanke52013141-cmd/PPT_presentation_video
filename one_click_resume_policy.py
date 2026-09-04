@@ -144,6 +144,12 @@ def _validate_confirm_images(project: Any) -> list[str]:
 
 
 def _validate_ai_mask(project: Any) -> list[str]:
+    mask_enabled = bool(getattr(project, "mask_enabled", 1) or 0)
+    if not mask_enabled:
+        # 整页切换模式下编排器会整体跳过 AI Mask 标注，manifest 中的
+        # ai_mask_annotation.status 因此不会进入 completed 状态。此时
+        # 不应据此把恢复起点强制回退到 ai_mask 阶段。
+        return []
     manifest = read_json(run_dir(project) / "reveal_manifest.json", {})
     annotation = manifest.get("ai_mask_annotation") if isinstance(manifest, dict) else None
     status = str(annotation.get("status") or "") if isinstance(annotation, dict) else ""

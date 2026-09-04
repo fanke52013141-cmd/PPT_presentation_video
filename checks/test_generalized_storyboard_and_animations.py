@@ -201,6 +201,7 @@ def main() -> None:
             json.dumps(
                 {
                     "subtitle_style": {
+                        "enabled": False,
                         "font_key": "noto_serif_sc",
                         "font_family": "Noto Serif SC",
                         "font_size": 46,
@@ -212,8 +213,20 @@ def main() -> None:
         )
         subtitle_style = read_subtitle_style(run_dir)
         assert subtitle_style["font_key"] == "noto_serif_sc"
+        assert subtitle_style["enabled"] is False
         assert subtitle_style["font_size"] == 46
         assert subtitle_style["bottom"] == 60
+
+        (run_dir / "planning").mkdir()
+        (run_dir / "planning" / "project_config.json").write_text(
+            json.dumps({"payload": {"subtitle": {"enabled": False, "font_size": 52}}}),
+            encoding="utf-8",
+        )
+        # An explicit visual_settings.json remains the per-project override;
+        # package values are used for fields it does not override.
+        subtitle_style = read_subtitle_style(run_dir)
+        assert subtitle_style["enabled"] is False
+        assert subtitle_style["font_size"] == 46
 
     for schema_name in ("reveal_manifest.schema.json", "animation_timeline.schema.json"):
         schema = json.loads((ROOT / "schemas" / schema_name).read_text(encoding="utf-8-sig"))

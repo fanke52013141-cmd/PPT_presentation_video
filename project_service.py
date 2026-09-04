@@ -41,6 +41,14 @@ class ProjectCreate(BaseModel):
     manual_pause_steps: Optional[list[str]] = None
     image_style_template: Optional[str] = "default"
     mask_enabled: Optional[bool] = True
+    creation_config_package_id: Optional[str] = None
+    creation_config_version: Optional[int] = None
+    creation_config_overrides: Optional[dict[str, Any]] = None
+    # Short aliases are accepted by automation clients; the response always
+    # exposes the canonical ``creation_config`` summary.
+    config_package_id: Optional[str] = None
+    config_package_version: Optional[int] = None
+    config_overrides: Optional[dict[str, Any]] = None
 
 
 class AiModeUpdate(BaseModel):
@@ -57,6 +65,10 @@ class ProjectUpdate(BaseModel):
 class ProjectDependencies:
     runs_root: Path
     project_audio_confirmed: Callable[[Project], bool]
+    resolve_creation_config: Optional[
+        Callable[[str, Optional[int], dict[str, Any]], dict[str, Any]]
+    ] = None
+    write_json_atomic: Optional[Callable[[str | Path, Any], None]] = None
 
 
 class ProjectService:
@@ -97,6 +109,59 @@ class ProjectService:
         manual_pause = [s for s in raw_pause if s in _valid_pause]
         image_style_template = (payload.image_style_template or "default").strip()
         mask_enabled = 1 if payload.mask_enabled else 0
+        creation_config: dict[str, Any] | None = None
+        supplied_package_ids = [
+            value.strip()
+            for value in (
+                payload.creation_config_package_id,
+                payload.config_package_id,
+            )
+            if isinstance(value, str) and value.strip()
+        ]
+        if len(set(supplied_package_ids)) > 1:
+            raise HTTPException(status_code=400, detail="创作配置包 ID 不能同时指定不同值")
+        config_package_id = supplied_package_ids[0] if supplied_package_ids else None
+        config_version = (
+            payload.creation_config_version
+            if payload.creation_config_version is not None
+            else payload.config_package_version
+        )
+        if (
+            payload.creation_config_version is not None
+            and payload.config_package_version is not None
+            and payload.creation_config_version != payload.config_package_version
+        ):
+            raise HTTPException(status_code=400, detail="创作配置版本不能同时指定不同值")
+        config_overrides = (
+            payload.creation_config_overrides
+            if payload.creation_config_overrides is not None
+            else payload.config_overrides
+        )
+        if (
+            payload.creation_config_overrides is not None
+            and payload.config_overrides is not None
+            and payload.creation_config_overrides != payload.config_overrides
+        ):
+            raise HTTPException(status_code=400, detail="创作配置覆盖项不能同时指定不同值")
+        if config_package_id:
+            if self.dependencies.resolve_creation_config is None:
+                raise HTTPException(status_code=503, detail="创作配置服务尚未配置")
+            overrides = config_overrides or {}
+            if not isinstance(overrides, dict):
+                raise HTTPException(status_code=400, detail="creation_config_overrides 必须是对象")
+            try:
+                creation_config = self.dependencies.resolve_creation_config(
+                    config_package_id,
+                    config_version,
+                    overrides,
+                )
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=f"创作配置不可用: {exc}") from exc
+        elif config_version is not None or config_overrides:
+            raise HTTPException(
+                status_code=400,
+                detail="指定创作配置版本或覆盖项时必须选择 creation_config_package_id",
+            )
         project = Project(
             id=project_id,
             name=payload.name,
@@ -110,11 +175,33 @@ class ProjectService:
             manual_pause_steps=json.dumps(manual_pause),
             image_style_template=image_style_template,
             mask_enabled=mask_enabled,
+            creation_config_package_id=(
+                creation_config.get("package_id") if creation_config else None
+            ),
+            creation_config_version=(
+                creation_config.get("version") if creation_config else None
+            ),
+            creation_config_hash=(
+                creation_config.get("content_hash") if creation_config else None
+            ),
         )
         project.set_step_status(initial_step_status)
         db.add(project)
         try:
             write_project_canvas_snapshot(project)
+            if creation_config is not None:
+                snapshot_path = run_dir / "planning" / "project_config.json"
+                if self.dependencies.write_json_atomic is None:
+                    snapshot_path.write_text(
+                        json.dumps(
+                            creation_config,
+                            ensure_ascii=False,
+                            indent=2,
+                        ),
+                        encoding="utf-8",
+                    )
+                else:
+                    self.dependencies.write_json_atomic(snapshot_path, creation_config)
             db.commit()
         except Exception:
             db.rollback()
@@ -136,6 +223,7 @@ class ProjectService:
                 "manual_pause_steps": json.loads(project.manual_pause_steps or "[]"),
                 "image_style_template": project.image_style_template or "default",
                 "mask_enabled": bool(project.mask_enabled if project.mask_enabled is not None else 1),
+                "creation_config": self._creation_config_summary(project),
             },
         }
 
@@ -163,6 +251,7 @@ class ProjectService:
                 "manual_pause_steps": json.loads(project.manual_pause_steps or "[]"),
                 "image_style_template": project.image_style_template or "default",
                 "mask_enabled": bool(project.mask_enabled if project.mask_enabled is not None else 1),
+                "creation_config": self._creation_config_summary(project),
             }
             for project in projects
         ]
@@ -186,6 +275,18 @@ class ProjectService:
             "manual_pause_steps": json.loads(project.manual_pause_steps or "[]"),
             "image_style_template": project.image_style_template or "default",
             "mask_enabled": bool(project.mask_enabled if project.mask_enabled is not None else 1),
+            "creation_config": self._creation_config_summary(project),
+        }
+
+    @staticmethod
+    def _creation_config_summary(project: Project) -> dict[str, Any] | None:
+        package_id = getattr(project, "creation_config_package_id", None)
+        if not package_id:
+            return None
+        return {
+            "package_id": package_id,
+            "version": getattr(project, "creation_config_version", None),
+            "content_hash": getattr(project, "creation_config_hash", None),
         }
 
     def get_ai_mode(

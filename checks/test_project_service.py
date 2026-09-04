@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -85,5 +86,63 @@ def test_project_can_be_created_with_portrait_canvas_profile(
         }
         snapshot = Path(project["run_dir"]) / "planning" / "canvas_profile.json"
         assert '"aspect_ratio": "9:16"' in snapshot.read_text(encoding="utf-8")
+    finally:
+        db.close()
+
+
+def test_project_creation_binds_and_snapshots_creation_config(
+    tmp_path: Path,
+) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'config.db'}")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+
+    effective = {
+        "package_id": "science",
+        "version": 3,
+        "content_hash": "hash-v3",
+        "payload": {
+            "subtitle": {"enabled": False},
+            "model_bindings": {
+                "article_generation": {
+                    "connection_id": "text-a",
+                    "revision": 2,
+                }
+            },
+        },
+    }
+    service = ProjectService(
+        ProjectDependencies(
+            runs_root=tmp_path / "runs",
+            project_audio_confirmed=lambda _project: False,
+            resolve_creation_config=lambda package_id, version, overrides: (
+                effective
+                if package_id == "science" and version == 3 and overrides == {}
+                else (_ for _ in ()).throw(ValueError("unexpected config"))
+            ),
+            write_json_atomic=lambda path, payload: Path(path).write_text(
+                json.dumps(payload, ensure_ascii=False), encoding="utf-8"
+            ),
+        )
+    )
+    db = session_factory()
+    try:
+        result = service.create(
+            ProjectCreate(
+                name="Configured project",
+                creation_config_package_id="science",
+                creation_config_version=3,
+            ),
+            db,
+        )
+        project_id = result["project"]["id"]
+        project = service.get(project_id, db)
+        assert project["creation_config"] == {
+            "package_id": "science",
+            "version": 3,
+            "content_hash": "hash-v3",
+        }
+        snapshot = Path(project["run_dir"]) / "planning" / "project_config.json"
+        assert json.loads(snapshot.read_text(encoding="utf-8")) == effective
     finally:
         db.close()

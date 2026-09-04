@@ -38,6 +38,9 @@ function initGlobalEvents() {
   document.getElementById('btn-test-llm')?.addEventListener('click', () => testLlmConnection());
   document.getElementById('btn-test-image')?.addEventListener('click', () => testImageConnection());
   document.getElementById('btn-test-tts')?.addEventListener('click', () => testTtsConnection());
+  // This module owns the creation-config/model-connection panel listeners;
+  // keeping the registration here preserves one shared DOM startup entry.
+  window.initCreationConfigManagementEvents?.();
   
   // 新建项目 Modal
   document.getElementById('btn-create-project')?.addEventListener('click', () => {
@@ -47,6 +50,11 @@ function initGlobalEvents() {
     document.querySelectorAll('.create-pause-step').forEach(cb => { cb.checked = false; });
     // Load image-style templates into the grid.
     loadImageStyleTemplates();
+    // Creation packages are optional. A loading failure leaves the normal
+    // project-creation path available.
+    const creationConfigSelect = ensureCreationConfigSelector();
+    if (creationConfigSelect) creationConfigSelect.value = '';
+    loadCreationConfigs();
     document.getElementById('modal-create').style.display = 'flex';
   });
   document.getElementById('btn-create-cancel')?.addEventListener('click', () => {
@@ -227,7 +235,7 @@ function initGlobalEvents() {
   document.getElementById('btn-subtitle-settings-close')?.addEventListener('click', () => closeSubtitleSettingsModal());
   document.getElementById('btn-subtitle-settings-save')?.addEventListener('click', () => saveSubtitleSettings());
   document.getElementById('btn-subtitle-settings-reset')?.addEventListener('click', () => resetSubtitleSettings());
-  ['subtitle-sample-text', 'subtitle-font-key', 'subtitle-font-size', 'subtitle-font-weight', 'subtitle-bottom', 'subtitle-horizontal-margin', 'subtitle-color', 'subtitle-highlight-color', 'subtitle-paging-window', 'subtitle-max-lines', 'subtitle-token-highlight']
+  ['subtitle-enabled', 'subtitle-sample-text', 'subtitle-font-key', 'subtitle-font-size', 'subtitle-font-weight', 'subtitle-bottom', 'subtitle-horizontal-margin', 'subtitle-color', 'subtitle-highlight-color', 'subtitle-paging-window', 'subtitle-max-lines', 'subtitle-token-highlight']
     .forEach(id => document.getElementById(id)?.addEventListener('input', () => updateSubtitlePreview()));
   document.getElementById('btn-animation-settings-close')?.addEventListener('click', () => closeAnimationSettingsModal());
   document.getElementById('btn-animation-settings-preview')?.addEventListener('click', () => previewGlobalAnimationSettings());

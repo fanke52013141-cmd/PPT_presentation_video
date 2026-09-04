@@ -21,6 +21,7 @@ import logging
 import os
 import shutil
 import threading
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -40,6 +41,7 @@ from one_click_resume_policy import (
 )
 from project_profile_store import DEFAULT_QUALITY_GATES, load_profile
 from tts_provider_service import normalize_tts_provider
+from video_render_service import RENDER_STAGE_PROGRESS
 
 STATUS_FILENAME = "one_click_status.json"
 STATUS_VERSION = "one_click_orchestrator_v2"
@@ -426,6 +428,17 @@ def _complete(
     db: Any = None,
     video: Any = None,
 ) -> None:
+    video_url = str(video.get("url") or "") if isinstance(video, dict) else ""
+    if not video_url:
+        # [完成基准 20260904] 一键生成的完成以视频产出为基准。
+        # 没有可下载视频时绝不写 completed，避免前端误报"一键生成已完成"。
+        status["status"] = "paused"
+        status["completed_at"] = _now()
+        status["message"] = "一键生成未产出可下载视频，未标记完成"
+        item = _stage(status, "render")
+        item.setdefault("blocking_errors", []).append("未产出可下载的视频文件")
+        _save_status(project, status)
+        return
     status["status"] = "completed"
     status["current_stage"] = ""
     status["completed_at"] = _now()
@@ -486,6 +499,74 @@ def _require_quality_gate(
             str(exc),
             pause=bool(gates.get(gate_name, True)),
         ) from exc
+
+
+# [render 终态轮询 20260904] start_render 只是异步提交后台渲染任务并立即返回，
+# 一键生成 render 阶段的完成语义必须以"视频文件真正产出"为基准。
+_RENDER_POLL_INTERVAL_SEC = 5.0
+_RENDER_POLL_TIMEOUT_SEC = 60 * 30  # Remotion 渲染 + 数字人合成可能超过 20 分钟。
+_RENDER_TERMINAL_STATES = {"error", "failed", "interrupted", "cancelled"}
+
+
+def _render_stage_progress(stage: Any) -> float | None:
+    mapped = RENDER_STAGE_PROGRESS.get(str(stage or ""))
+    if mapped is None:
+        return None
+    return max(0.0, min(1.0, float(mapped) / 100.0))
+
+
+def _wait_for_render_terminal(
+    project: Any,
+    status: dict[str, Any],
+    services: Any,
+    submission: dict[str, Any],
+) -> dict[str, Any]:
+    """轮询视频渲染任务直到终态，返回 {"video": ...}。
+
+    - success 且有可下载视频：返回 {"video": video_payload}。
+    - error/failed/interrupted/cancelled 或超时：抛 RuntimeError，
+      由 _require_quality_gate 的 pause_on_render_failure 门统一处理。
+    - 渲染仍在进行：把渲染子阶段进度映射到 render stage 并在变化时落盘。
+    """
+    task_id = submission.get("task_id") if isinstance(submission, dict) else None
+    deadline = time.monotonic() + _RENDER_POLL_TIMEOUT_SEC
+    last_stage_key = ""
+    while True:
+        payload = services.render_video_status(task_id)
+        if not isinstance(payload, dict):
+            payload = {}
+        state = str(payload.get("status") or "idle")
+        if state == "success":
+            video = payload.get("video")
+            if isinstance(video, dict) and str(video.get("url") or ""):
+                return {"video": video}
+            videos = payload.get("videos")
+            if isinstance(videos, list) and videos and isinstance(videos[0], dict):
+                first = videos[0]
+                if str(first.get("url") or ""):
+                    return {"video": first}
+            raise RuntimeError("视频渲染已结束但未产出可下载的视频文件")
+        if state in _RENDER_TERMINAL_STATES:
+            raise RuntimeError(
+                str(payload.get("error") or f"视频渲染任务已终止（{state}）")
+            )
+        stage_name = str(payload.get("stage") or "")
+        stage_label = str(payload.get("stage_label") or stage_name or "渲染排队中")
+        stage_key = f"{stage_name}|{stage_label}"
+        if stage_key != last_stage_key:
+            last_stage_key = stage_key
+            item = _stage(status, "render")
+            progress = _render_stage_progress(stage_name)
+            if progress is not None:
+                item["progress"] = progress
+            item["message"] = stage_label
+            _save_status(project, status)
+        if time.monotonic() >= deadline:
+            raise RuntimeError(
+                f"视频渲染等待超过 {_RENDER_POLL_TIMEOUT_SEC // 60} 分钟仍未完成"
+                + (f"（任务 {task_id}）" if task_id else "")
+            )
+        time.sleep(_RENDER_POLL_INTERVAL_SEC)
 
 
 def _backup_narration(project: Any, run_id: str) -> Path | None:
@@ -1021,13 +1102,20 @@ def _run_pipeline(
         video = None
         if should_run("render"):
             _start_stage(project, status, "render", "渲染最终视频")
-            render = _require_quality_gate(
-                services.render_video,
+
+            def _render_until_video_ready() -> dict[str, Any]:
+                submission = _invoke(services.render_video, "Step 8 render")
+                # start_render 只做异步提交；必须轮询到渲染任务终态、
+                # 确认视频文件产出后，render 阶段才算完成。
+                return _wait_for_render_terminal(project, status, services, submission)
+
+            result = _require_quality_gate(
+                _render_until_video_ready,
                 "Step 8 render",
                 gates,
                 "pause_on_render_failure",
             )
-            video = render.get("video") or render.get("item") or render
+            video = result.get("video") or result.get("item") or result
             _finish_stage(project, status, "render", "视频渲染完成")
             if _pause_for_requested_review(project, status, "render"):
                 return
@@ -1040,6 +1128,11 @@ def _run_pipeline(
             status["completed_at"] = _now()
             _save_status(project, status)
             return
+
+        if not (isinstance(video, dict) and str(video.get("url") or "")):
+            # 正常流程由 _wait_for_render_terminal 保证 video 有 url；这里
+            # 兜底防御，确保完成事件只在视频真正产出时记录。
+            raise RuntimeError("一键生成未能产出可下载的视频，不能标记完成")
 
         _complete(project, status, db, video=video)
         try:
@@ -1139,6 +1232,112 @@ def start_one_click(
     return {"success": True, "started": True, "status": status}
 
 
+_RECONCILE_THROTTLE_SEC = 60.0
+_RECONCILE_THROTTLE: dict[str, float] = {}
+
+
+def _reconcile_completed_status(
+    project: Any,
+    project_id: str,
+    status: dict[str, Any],
+) -> dict[str, Any]:
+    """对账历史 completed 状态：视频未产出而渲染任务仍在跑时降级 running。
+
+    旧版本编排器在渲染任务异步提交后立即写 completed，造成"一键生成
+    已完成"误报。这里读取持久化渲染任务做对账：
+    - 渲染任务仍在进行（rendering）→ 降级为 running 并恢复 render 阶段
+      进度展示，让前端继续轮询真实进度。
+    - 任务已成功且有可下载视频 → 回填 status["video"]。
+    - 任务失败/中断 → 修正为 paused 并附上真实错误。
+    - 查询失败或任务不可见（如手动清理）→ 保持 completed，避免对
+      手动渲染或旧项目造成破坏性降级。
+
+    对账会打开数据库会话，而状态接口被前端（2.5s）与 Agent SSE（1s）
+    高频轮询；无法立即修正的 completed 结果按项目节流 60 秒，避免
+    每次轮询都重复开库查询。
+    """
+    video = status.get("video")
+    if isinstance(video, dict) and str(video.get("url") or ""):
+        return status
+    now = time.monotonic()
+    last = _RECONCILE_THROTTLE.get(project_id, 0.0)
+    if now - last < _RECONCILE_THROTTLE_SEC:
+        return status
+    _RECONCILE_THROTTLE[project_id] = now
+    try:
+        dependencies = get_one_click_dependencies()
+    except RuntimeError:
+        return status
+    payload: dict[str, Any] = {}
+    try:
+        db = dependencies.session_factory()
+        try:
+            services = dependencies.pipeline_service_factory(db, project_id)
+            candidate = services.render_video_status()
+            if isinstance(candidate, dict):
+                payload = candidate
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+    except Exception:
+        logger.debug("one-click completed status reconcile failed", exc_info=True)
+        return status
+    render_state = str(payload.get("status") or "idle")
+    if render_state == "rendering":
+        _RECONCILE_THROTTLE.pop(project_id, None)
+        status["status"] = "running"
+        status["current_stage"] = "render"
+        status["completed_at"] = ""
+        status["message"] = ""
+        item = _stage(status, "render")
+        progress = _render_stage_progress(payload.get("stage")) or 0.52
+        item.update(
+            {
+                "status": "running",
+                "finished_at": "",
+                "progress": progress,
+                "message": str(payload.get("stage_label") or "渲染视频（已恢复跟踪）"),
+            }
+        )
+        blocking_errors = item.setdefault("blocking_errors", [])
+        blocking_errors.clear()
+        _save_status(project, status)
+        return status
+    if render_state == "success":
+        _RECONCILE_THROTTLE.pop(project_id, None)
+        render_video = payload.get("video")
+        if isinstance(render_video, dict) and str(render_video.get("url") or ""):
+            status["video"] = render_video
+            _save_status(project, status)
+            return status
+        return status
+    if render_state in _RENDER_TERMINAL_STATES:
+        _RECONCILE_THROTTLE.pop(project_id, None)
+        error_text = str(payload.get("error") or f"渲染任务状态 {render_state}")
+        status["status"] = "paused"
+        status["completed_at"] = _now()
+        status["message"] = f"视频渲染未完成：{error_text}"
+        item = _stage(status, "render")
+        item.update({"status": "failed", "finished_at": _now()})
+        item.setdefault("blocking_errors", []).append(_safe_text(error_text, 3000))
+        _save_status(project, status)
+        return status
+    if render_state == "idle":
+        # 无进行中的渲染任务：渲染服务仍会返回历史视频列表，
+        # 尝试回填第一个可下载视频，让完成状态带上产物入口。
+        videos = payload.get("videos")
+        if isinstance(videos, list):
+            for candidate in videos:
+                if isinstance(candidate, dict) and str(candidate.get("url") or ""):
+                    status["video"] = candidate
+                    _RECONCILE_THROTTLE.pop(project_id, None)
+                    _save_status(project, status)
+                    return status
+    return status
+
+
 def get_one_click_status(project: Any) -> dict[str, Any]:
     project_id = str(project.id)
     status = _status_for_project(project, project_id)
@@ -1147,6 +1346,8 @@ def get_one_click_status(project: Any) -> dict[str, Any]:
         status["status"] = "paused"
         status["completed_at"] = status.get("completed_at") or _now()
         _save_status(project, status)
+    if status.get("status") == "completed":
+        status = _reconcile_completed_status(project, project_id, status)
     return {"success": True, "status": status}
 
 

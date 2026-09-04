@@ -11,6 +11,12 @@ from typing import Any, Callable, Dict, Optional
 
 from fastapi import HTTPException
 
+from project_config_runtime import (
+    ProjectConfigBindingError,
+    get_config_value,
+    resolve_project_model_binding,
+)
+
 
 logger = logging.getLogger("PPTStudio.Article")
 
@@ -95,6 +101,8 @@ class ArticleDependencies:
     begin_storyboard_after_article_import: Callable[..., Any]
     invalidate_after_upstream_edit: Callable[..., Any]
     llm_timeout_sec: float
+    resolve_model_connection: Optional[Callable[[str, int], Any]] = None
+    get_credential: Optional[Callable[[str], Any]] = None
 
 
 _dependencies: ArticleDependencies | None = None
@@ -196,6 +204,39 @@ def read_article_generation_system_content() -> str:
     return value
 
 
+def read_project_article_generation_system_content(project: Any) -> str:
+    """Use an immutable project Prompt when present, else the global default."""
+    configured = get_config_value(
+        project,
+        "prompts.article_generation.system_content",
+    )
+    if isinstance(configured, str) and configured.strip():
+        return configured.strip()
+    return read_article_generation_system_content()
+
+
+def configured_article_llm(project: Any) -> tuple[str, Optional[str], str]:
+    """Resolve a project text binding, retaining the legacy global fallback."""
+    dependencies = _deps()
+    try:
+        binding = resolve_project_model_binding(
+            project,
+            "article_generation",
+            expected_kind="text",
+            resolve_model_connection=dependencies.resolve_model_connection,
+            get_credential=dependencies.get_credential,
+        )
+    except ProjectConfigBindingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if binding is not None:
+        return binding.api_key, binding.endpoint, binding.model
+    return (
+        dependencies.get_setting("llm_api_key"),
+        dependencies.get_setting("llm_base_url"),
+        dependencies.get_setting("llm_model"),
+    )
+
+
 def build_article_generation_user_content(topic: str) -> str:
     return json.dumps(
         {"topic": str(topic or "").strip()},
@@ -247,15 +288,13 @@ def generate_article_from_topic(
             detail="文章话题不能超过 500 个字符",
         )
 
-    api_key = dependencies.get_setting("llm_api_key")
+    api_key, base_url, model = configured_article_llm(project)
     if not api_key:
         raise HTTPException(
             status_code=400,
             detail="未配置大模型 API 密钥，请先在系统设置中配置",
         )
-    model = dependencies.get_setting("llm_model")
-    base_url = dependencies.get_setting("llm_base_url")
-    system_content = read_article_generation_system_content()
+    system_content = read_project_article_generation_system_content(project)
     client = dependencies.get_openai_client(
         api_key=api_key,
         base_url=base_url,

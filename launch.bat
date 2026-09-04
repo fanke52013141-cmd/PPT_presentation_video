@@ -1,10 +1,10 @@
-﻿@echo off
+@echo off
 chcp 65001 >nul
 title PPT Visualization Studio
 setlocal EnableExtensions
 
-REM ---- 绝对路径，避开中文目录 %~dp0 解析问题 ----
-set "PROJ=C:\Users\Administrator\Desktop\软件\PPT_presentation_video"
+REM ---- use the shortcut's configured working directory; keep this file ASCII-safe ----
+set "PROJ=%CD%"
 set "VENV=%PROJ%\.venv\Scripts\python.exe"
 
 REM ---- ffmpeg discovery ----
@@ -30,7 +30,6 @@ if %FF_FOUND%==1 (
   echo [ffmpeg] using %PPT_STUDIO_FFMPEG_DIR%
 ) else if %FF_FOUND%==2 (
   for /f "delims=" %%F in ('where ffmpeg') do set "PPT_STUDIO_FFMPEG_DIR=%%~dpF"
-  if "%PPT_STUDIO_FFMPEG_DIR:~-1%"=="\" set "PPT_STUDIO_FFMPEG_DIR=%PPT_STUDIO_FFMPEG_DIR:~0,-1%"
   echo [ffmpeg] using PATH: %PPT_STUDIO_FFMPEG_DIR%
 ) else (
   echo [warn] ffmpeg not found; video color validation / export may fail.
@@ -60,8 +59,8 @@ if not defined PPT_DIGITAL_HUMAN_MOCK set "PPT_DIGITAL_HUMAN_MOCK=1"
 set "DH_PORT_FREE=0"
 for /f "delims=" %%F in ('"%VENV%" "%PROJ%\check_port_free.py" %PPT_DIGITAL_HUMAN_PORT%') do set "DH_PORT_FREE=%%F"
 if "%DH_PORT_FREE%"=="1" (
-  start "Digital Human Service (:9001, mock=%PPT_DIGITAL_HUMAN_MOCK%)" /min "%VENV%" "%PROJ%\digital_human_service.py"
-  echo [digital-human] starting on port %PPT_DIGITAL_HUMAN_PORT% (mock=%PPT_DIGITAL_HUMAN_MOCK%) ...
+  start "Digital Human Service %PPT_DIGITAL_HUMAN_PORT%" /min "%VENV%" "%PROJ%\digital_human_service.py"
+  echo [digital-human] starting on port %PPT_DIGITAL_HUMAN_PORT% ...
 ) else (
   echo [digital-human] port %PPT_DIGITAL_HUMAN_PORT% already in use - assume running, skip.
 )

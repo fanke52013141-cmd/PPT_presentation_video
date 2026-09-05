@@ -19,6 +19,7 @@ from threading import RLock
 from typing import Any, Callable, Protocol
 from uuid import uuid4
 from functools import wraps
+from account_context import get_current_account_id
 
 
 STORE_VERSION = "creation_config_store_v1"
@@ -36,6 +37,7 @@ _ALLOWED_TOP_LEVEL_KEYS = frozenset(
         "schema_version",
         "prompts",
         "model_bindings",
+        "step_contracts",
         "image_style",
         "tts",
         "subtitle",
@@ -65,6 +67,21 @@ _MODEL_BINDING_KEYS = frozenset(
         "narration_annotation",
         "tts",
     }
+)
+_STEP_CONTRACT_KEYS = frozenset(
+    {
+        "article_generation",
+        "storyboard",
+        "visualization",
+        "image_generation",
+        "ai_mask",
+        "narration_annotation",
+        "tts",
+        "output",
+    }
+)
+_JSON_SCHEMA_TYPES = frozenset(
+    {"object", "array", "string", "number", "integer", "boolean", "null"}
 )
 _SENSITIVE_KEY_PARTS = frozenset(
     {
@@ -281,6 +298,157 @@ def _validate_connection_fields(value: Any, *, path: str = "payload") -> None:
                 _validate_connection_fields(item, path=f"{path}.{key}[{index}]")
 
 
+def _validate_json_schema(schema: Any, *, path: str) -> None:
+    """Validate the supported, transport-safe JSON Schema subset.
+
+    Contracts are consumed by the prompt editor and downstream pipeline.  A
+    deliberately small subset gives users useful structural guarantees without
+    accepting executable references, remote schema URLs, or unbounded syntax.
+    """
+    if not isinstance(schema, dict):
+        raise CreationConfigValidationError(f"{path}.output_schema 必须是对象")
+    schema_type = schema.get("type")
+    if schema_type not in _JSON_SCHEMA_TYPES:
+        raise CreationConfigValidationError(
+            f"{path}.output_schema.type 必须是受支持的 JSON Schema 类型"
+        )
+    if schema_type == "object":
+        properties = schema.get("properties")
+        if not isinstance(properties, dict):
+            raise CreationConfigValidationError(
+                f"{path}.output_schema.properties 必须是对象"
+            )
+        required = schema.get("required", [])
+        if not isinstance(required, list) or not all(
+            isinstance(item, str) and item in properties for item in required
+        ):
+            raise CreationConfigValidationError(
+                f"{path}.output_schema.required 必须引用 properties 中的字段"
+            )
+        for name, child in properties.items():
+            if not isinstance(name, str) or not name:
+                raise CreationConfigValidationError(
+                    f"{path}.output_schema.properties 的字段名不能为空"
+                )
+            _validate_json_schema(child, path=f"{path}.output_schema.properties.{name}")
+    if schema_type == "array" and "items" in schema:
+        _validate_json_schema(schema["items"], path=f"{path}.output_schema.items")
+    enum = schema.get("enum")
+    if enum is not None and (not isinstance(enum, list) or not enum):
+        raise CreationConfigValidationError(
+            f"{path}.output_schema.enum 必须是非空数组"
+        )
+
+
+def _validate_step_contracts(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise CreationConfigValidationError("step_contracts 必须是对象")
+    unknown = sorted(set(value) - _STEP_CONTRACT_KEYS)
+    if unknown:
+        raise CreationConfigValidationError(
+            f"step_contracts 包含不支持的步骤: {', '.join(unknown)}"
+        )
+    normalized: dict[str, Any] = {}
+    for step, contract in value.items():
+        if not isinstance(contract, dict):
+            raise CreationConfigValidationError(f"step_contracts.{step} 必须是对象")
+        extras = sorted(set(contract) - {"input_template", "output_schema"})
+        if extras:
+            raise CreationConfigValidationError(
+                f"step_contracts.{step} 包含不支持的字段: {', '.join(extras)}"
+            )
+        item = deepcopy(contract)
+        if "input_template" in item and not isinstance(item["input_template"], (dict, list)):
+            raise CreationConfigValidationError(
+                f"step_contracts.{step}.input_template 必须是对象或数组"
+            )
+        if "output_schema" in item:
+            _validate_json_schema(item["output_schema"], path=f"step_contracts.{step}")
+        if not item:
+            continue
+        normalized[step] = item
+    return normalized
+
+
+def _validate_image_style(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise CreationConfigValidationError("image_style 必须是对象")
+    allowed = {
+        "template_id", "package_id", "version", "style_version",
+        "reference_policy", "reference_mode", "minimum_reference_images",
+    }
+    unknown = sorted(set(value) - allowed)
+    if unknown:
+        raise CreationConfigValidationError(
+            f"image_style 包含不支持的字段: {', '.join(unknown)}"
+        )
+    template_id = str(value.get("template_id") or value.get("package_id") or "").strip()
+    if not template_id:
+        raise CreationConfigValidationError("image_style.template_id 不能为空")
+    if len(template_id) > 120 or any(char in template_id for char in ("/", "\\", "\x00")):
+        raise CreationConfigValidationError("image_style.template_id 无效")
+    raw_version = value.get("version", value.get("style_version", 1))
+    if not isinstance(raw_version, int) or isinstance(raw_version, bool) or raw_version < 1:
+        raise CreationConfigValidationError("image_style.version 必须是正整数")
+    policy = str(
+        value.get("reference_policy") or value.get("reference_mode") or "preferred"
+    ).strip().lower()
+    if policy not in {"required", "preferred", "text_only"}:
+        raise CreationConfigValidationError(
+            "image_style.reference_policy 必须是 required、preferred 或 text_only"
+        )
+    minimum = value.get("minimum_reference_images", 1)
+    if not isinstance(minimum, int) or isinstance(minimum, bool) or not 0 <= minimum <= 3:
+        raise CreationConfigValidationError(
+            "image_style.minimum_reference_images 必须是 0 到 3 的整数"
+        )
+    if policy == "required" and minimum < 1:
+        raise CreationConfigValidationError("required 模式至少需要 1 张参考图")
+    if policy == "text_only":
+        minimum = 0
+    return {
+        "template_id": template_id,
+        "version": raw_version,
+        "reference_policy": policy,
+        "minimum_reference_images": minimum,
+    }
+
+
+def validate_step_output(contract: Any, output: Any, *, path: str = "output") -> None:
+    """Validate a model response against the stored schema subset.
+
+    Pipeline modules can call this before handing a model result to their next
+    stage.  No contract means legacy projects retain their prior behavior.
+    """
+    if not isinstance(contract, dict) or not isinstance(contract.get("output_schema"), dict):
+        return
+    schema = contract["output_schema"]
+    expected = schema["type"]
+    type_ok = {
+        "object": isinstance(output, dict),
+        "array": isinstance(output, list),
+        "string": isinstance(output, str),
+        "number": isinstance(output, (int, float)) and not isinstance(output, bool),
+        "integer": isinstance(output, int) and not isinstance(output, bool),
+        "boolean": isinstance(output, bool),
+        "null": output is None,
+    }[expected]
+    if not type_ok:
+        raise CreationConfigValidationError(f"{path} 必须符合 {expected} 输出契约")
+    if "enum" in schema and output not in schema["enum"]:
+        raise CreationConfigValidationError(f"{path} 不在输出契约允许的枚举值中")
+    if expected == "object":
+        for name in schema.get("required", []):
+            if name not in output:
+                raise CreationConfigValidationError(f"{path} 缺少输出契约要求的字段: {name}")
+        for name, child in schema.get("properties", {}).items():
+            if name in output:
+                validate_step_output({"output_schema": child}, output[name], path=f"{path}.{name}")
+    if expected == "array" and "items" in schema:
+        for index, item in enumerate(output):
+            validate_step_output({"output_schema": schema["items"]}, item, path=f"{path}[{index}]")
+
+
 def validate_payload(payload: Any) -> dict[str, Any]:
     """Normalize the supported package payload and reject credentials early."""
     if not isinstance(payload, dict):
@@ -330,6 +498,10 @@ def validate_payload(payload: Any) -> dict[str, Any]:
                 f"prompts 包含不支持的模块: {', '.join(unknown_prompts)}"
             )
 
+    step_contracts = normalized.get("step_contracts")
+    if step_contracts is not None:
+        normalized["step_contracts"] = _validate_step_contracts(step_contracts)
+
     bindings = normalized.get("model_bindings")
     if bindings is not None:
         if not isinstance(bindings, dict):
@@ -344,6 +516,10 @@ def validate_payload(payload: Any) -> dict[str, Any]:
             for key, value in bindings.items()
         }
         _validate_connection_fields(bindings, path="model_bindings")
+
+    image_style = normalized.get("image_style")
+    if image_style is not None:
+        normalized["image_style"] = _validate_image_style(image_style)
 
     tts = normalized.get("tts")
     if tts is not None:
@@ -445,7 +621,9 @@ def _store() -> dict[str, Any]:
 
 def _package_or_raise(store: dict[str, Any], package_id: str) -> dict[str, Any]:
     package = store["packages"].get(package_id)
-    if not isinstance(package, dict):
+    if not isinstance(package, dict) or (
+        str(package.get("account_id") or "default") != get_current_account_id()
+    ):
         raise CreationConfigNotFound("未找到创作配置包")
     return package
 
@@ -479,6 +657,7 @@ def _public_package(package: dict[str, Any], *, include_payload: bool = False) -
         "created_at": package["created_at"],
         "updated_at": package["updated_at"],
         "latest_version": package["latest_version"],
+        "account_id": str(package.get("account_id") or "default"),
     }
     latest = _version_or_raise(package, None)
     result["content_hash"] = latest["content_hash"]
@@ -498,7 +677,8 @@ def list_creation_configs(*, include_archived: bool = False) -> list[dict[str, A
     packages = [
         _public_package(package)
         for package in store["packages"].values()
-        if include_archived or not package.get("archived")
+        if str(package.get("account_id") or "default") == get_current_account_id()
+        and (include_archived or not package.get("archived"))
     ]
     return sorted(packages, key=lambda item: (item["archived"], item["name"].casefold()))
 
@@ -538,6 +718,7 @@ def create_creation_config(
                 "payload": normalized_payload,
             }
         },
+        "account_id": get_current_account_id(),
     }
     if package_id in store["packages"]:
         raise CreationConfigConflict("创作配置 ID 冲突，请重试")

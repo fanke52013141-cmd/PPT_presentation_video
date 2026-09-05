@@ -2,17 +2,11 @@
   'use strict';
 
   const PROFILE_STATE = {
-    templates: null,
     imageStyles: null,
     creationConfigs: null,
     selectedStyleTemplate: 'default',
     creating: false,
   };
-
-  const DEFAULT_AUTOMATION_MODES = [
-    { id: 'manual_review', name: '手动审核模式', description: '按原流程逐步生成、检查和确认。' },
-    { id: 'auto', name: '全自动模式', description: '配合"一键生成"运行完整链路；失败时暂停给用户处理。' },
-  ];
 
   const DEFAULT_QUALITY_GATES = {
     pause_on_storyboard_validation_error: true,
@@ -73,21 +67,6 @@
     return PROFILE_STATE.imageStyles;
   }
 
-  async function loadTemplates() {
-    if (PROFILE_STATE.templates) return PROFILE_STATE.templates;
-    try {
-      const response = await apiGet('/api/project-profile/templates');
-      PROFILE_STATE.templates = {
-        automation_modes: Array.isArray(response.automation_modes) && response.automation_modes.length
-          ? response.automation_modes
-          : DEFAULT_AUTOMATION_MODES,
-      };
-    } catch (_) {
-      PROFILE_STATE.templates = { automation_modes: DEFAULT_AUTOMATION_MODES };
-    }
-    return PROFILE_STATE.templates;
-  }
-
   async function loadCreationConfigs() {
     try {
       const response = await apiGet('/api/creation-configs');
@@ -131,8 +110,8 @@
     }).join('');
   }
 
-  function creationConfigOptions(packages) {
-    const available = (packages || []).filter(item => (
+  function availableCreationConfigs(packages) {
+    return (packages || []).filter(item => (
       item
       && !item.archived
       && typeof item.id === 'string'
@@ -140,7 +119,12 @@
       && Number.isInteger(Number(item.latest_version))
       && Number(item.latest_version) > 0
     ));
-    const options = ['<option value="">不使用创作配置包</option>'];
+  }
+
+  function creationConfigOptions(packages) {
+    const available = availableCreationConfigs(packages);
+    if (!available.length) return '<option value="">暂无可用创作配置包</option>';
+    const options = [];
     available.forEach(item => {
       const version = Number(item.latest_version);
       options.push(
@@ -150,7 +134,44 @@
     return options.join('');
   }
 
-  function renderModal(templates, imageStyles, creationConfigs) {
+  function creationConfigChoices(packages) {
+    const available = availableCreationConfigs(packages);
+    if (!available.length) {
+      return '<div class="creation-config-choice" aria-disabled="true"><strong>暂无可用创作配置包</strong><span>请先在“创作配置”中保存一套配置。</span></div>';
+    }
+    const choices = available.map(item => ({
+      id: item.id,
+      name: item.name || '未命名配置包',
+      detail: `最新版本 v${Number(item.latest_version)} · 提示词与模型关联`
+    }));
+    return choices.map(item => `
+      <button type="button" class="creation-config-choice" data-creation-config-choice="${esc(item.id)}" role="radio" aria-checked="false">
+        <strong>${esc(item.name)}</strong>
+        <span>${esc(item.detail)}</span>
+      </button>
+    `).join('');
+  }
+
+  function refreshCreationConfigChoices(packages) {
+    const grid = document.getElementById('creation-config-choice-grid');
+    const select = document.getElementById('input-creation-config');
+    if (!grid || !select) return;
+    const available = availableCreationConfigs(packages);
+    const selected = available.some(item => item.id === select.value)
+      ? select.value
+      : (available[0]?.id || '');
+    grid.innerHTML = creationConfigChoices(packages);
+    select.value = selected;
+    grid.querySelectorAll('[data-creation-config-choice]').forEach(choice => {
+      const active = choice.dataset.creationConfigChoice === select.value;
+      choice.classList.toggle('active', active);
+      choice.setAttribute('aria-checked', String(active));
+    });
+  }
+
+  window.refreshCreationConfigChoices = refreshCreationConfigChoices;
+
+  function renderModal(imageStyles, creationConfigs) {
     const modal = document.getElementById('modal-create');
     const content = modal?.querySelector('.modal-content');
     if (!modal || !content || content.dataset.projectProfileWizard === '1') return;
@@ -168,8 +189,20 @@
           <label>可选文章内容</label>
           <textarea id="input-project-article" rows="8" placeholder="可选：创建后自动导入为 Step 1 文章；留空则稍后手动导入。"></textarea>
         </section>
+        <section class="project-profile-section" id="create-creation-config-section">
+          <h4>2. 创作配置包</h4>
+          <span class="project-profile-field-label">选择创作配置包</span>
+          <div id="creation-config-choice-grid" class="creation-config-choice-grid" role="radiogroup" aria-label="创作配置包">
+            ${creationConfigChoices(creationConfigs)}
+          </div>
+          <select id="input-creation-config" class="creation-config-native-select" aria-hidden="true" tabindex="-1">${creationConfigOptions(creationConfigs)}</select>
+          <p id="create-creation-config-help" class="project-profile-help">${creationConfigs?.length ? '本项目会保存所选配置包的版本。' : '暂无可用创作配置包。'}</p>
+        </section>
+        <details class="project-profile-advanced">
+          <summary>高级设置 <span>画布、图片风格与参考图</span></summary>
+          <div class="project-profile-advanced-body">
         <section class="project-profile-section">
-          <h4>2. 画布比例</h4>
+          <h4>3. 画布比例</h4>
           <div class="project-profile-mode-grid">
             ${optionCards([
               { id: 'landscape_16_9', name: '横屏 16:9' },
@@ -179,39 +212,21 @@
           <p class="project-profile-help">创建后比例会锁定；需要更换比例时请复制项目重新生成。</p>
         </section>
         <section class="project-profile-section">
-          <h4>3. 生产模式</h4>
-          <div class="project-profile-mode-grid">${optionCards(templates.automation_modes || DEFAULT_AUTOMATION_MODES, 'automation_mode', 'manual_review')}</div>
-        </section>
-        <section class="project-profile-section" id="create-creation-config-section">
-          <h4>4. 创作配置包</h4>
-          <label for="input-creation-config">选择配置包</label>
-          <select id="input-creation-config">${creationConfigOptions(creationConfigs)}</select>
-          <p id="create-creation-config-help" class="project-profile-help">${creationConfigs?.length ? '选择后会固定使用该配置包的最新版本；不选择则沿用当前项目创建方式。' : '暂无可用创作配置包；仍可按当前项目创建方式继续。'}</p>
-        </section>
-        <section class="project-profile-section">
-          <h4>5. 是否需要 Mask 标注</h4>
-          <div class="project-profile-mode-grid">
-            ${optionCards([
-              { id: 'false', name: '否（整页切换）' },
-              { id: 'true', name: '是（逐元素揭示动画）' },
-            ], 'mask_enabled', 'false')}
-          </div>
-          <p class="project-profile-help">选择"否"将跳过 AI Mask 标注步骤，视频以整页切换方式呈现，速度更快。</p>
-        </section>
-        <section class="project-profile-section" id="profile-pause-section" style="display:none;">
-          <h4>6. 手动暂停模块</h4>
-          <p class="project-profile-help" style="margin-bottom:.7rem;">勾选的模块在全自动流程到达该步骤时暂停，等待您手动操作后再继续。</p>
-          <div class="profile-pause-chips">
-            <label class="profile-pause-chip" id="profile-pause-chip-mask"><input type="checkbox" class="profile-pause-step" value="mask">Mask 标注模块</label>
-            <label class="profile-pause-chip"><input type="checkbox" class="profile-pause-step" value="narration">旁白语音模块</label>
-            <label class="profile-pause-chip"><input type="checkbox" class="profile-pause-step" value="digital_human">数字人模块</label>
-          </div>
-        </section>
-        <section class="project-profile-section">
-          <h4>7. 图片风格</h4>
+          <h4>4. 图片风格</h4>
           <div class="profile-style-grid">${styleTiles(imageStyles)}</div>
-          <p class="project-profile-help">选择图片风格模板，将在生成图片时自动应用该风格。</p>
+          <p class="project-profile-help">选择模板作为基础风格；本项目还可以单独上传参考图。</p>
         </section>
+        <section class="project-profile-section">
+          <h4>5. 本项目参考图片</h4>
+          <label class="profile-upload-box" for="input-project-reference-images">
+            <strong>添加 1–3 张参考图</strong>
+            <span>只作用于当前项目；支持 PNG、JPG、WEBP，单张不超过 12MB。</span>
+            <input id="input-project-reference-images" type="file" accept="image/*" multiple>
+          </label>
+          <div id="project-reference-preview" class="project-reference-preview"></div>
+        </section>
+          </div>
+        </details>
       </div>
       <div class="config-editor-actions">
         <button id="btn-create-cancel" class="secondary" type="button">取消</button>
@@ -232,30 +247,9 @@
   }
 
   function bindModalEvents() {
-    // Show/hide pause section based on automation mode
-    function syncPauseVisibility() {
-      const mode = selectedOption('automation_mode', 'manual_review');
-      const pauseSection = document.getElementById('profile-pause-section');
-      if (pauseSection) pauseSection.style.display = mode === 'auto' ? '' : 'none';
-      syncMaskChipVisibility();
-    }
-
-    // Show/hide Mask pause chip based on mask_enabled selection
-    function syncMaskChipVisibility() {
-      const maskEnabled = selectedOption('mask_enabled', 'false');
-      const maskChip = document.getElementById('profile-pause-chip-mask');
-      if (maskChip) maskChip.style.display = maskEnabled === 'true' ? '' : 'none';
-      if (maskEnabled === 'false') {
-        const maskCb = maskChip?.querySelector('input');
-        if (maskCb) maskCb.checked = false;
-      }
-    }
-
     document.querySelectorAll('[data-profile-option]').forEach(card => {
       card.addEventListener('click', () => {
         activateOption(card.getAttribute('data-profile-option'), card.dataset.value);
-        if (card.getAttribute('data-profile-option') === 'automation_mode') syncPauseVisibility();
-        if (card.getAttribute('data-profile-option') === 'mask_enabled') syncMaskChipVisibility();
       });
     });
 
@@ -268,8 +262,6 @@
       });
     });
 
-    syncPauseVisibility();
-
     document.getElementById('btn-create-cancel')?.addEventListener('click', () => {
       document.getElementById('modal-create').style.display = 'none';
     });
@@ -278,25 +270,50 @@
       event.stopPropagation();
       createProjectWithProfile().catch(error => toast(`❌ 创建失败：${error.message}`, 7000));
     }, true);
+    document.getElementById('input-project-reference-images')?.addEventListener('change', event => {
+      const files = Array.from(event.target.files || []).slice(0, 3);
+      if (event.target.files?.length > 3) toast('最多选择 3 张参考图');
+      const preview = document.getElementById('project-reference-preview');
+      if (!preview) return;
+      preview.replaceChildren();
+      files.forEach(file => {
+        const item = document.createElement('div');
+        item.className = 'project-reference-preview-item';
+        const image = document.createElement('img');
+        image.alt = file.name;
+        image.src = URL.createObjectURL(file);
+        const name = document.createElement('span');
+        name.textContent = file.name;
+        item.append(image, name);
+        preview.append(item);
+      });
+    });
+
+    const configGrid = document.getElementById('creation-config-choice-grid');
+    configGrid?.addEventListener('click', event => {
+      const choice = event.target.closest('[data-creation-config-choice]');
+      const select = document.getElementById('input-creation-config');
+      if (!choice || !select) return;
+      select.value = choice.dataset.creationConfigChoice || '';
+      configGrid.querySelectorAll('[data-creation-config-choice]').forEach(item => {
+        const active = item === choice;
+        item.classList.toggle('active', active);
+        item.setAttribute('aria-checked', String(active));
+      });
+    });
   }
 
   function collectProfile() {
     return {
       version: 'project_profile_v1',
       canvas_profile: selectedOption('canvas_profile', 'landscape_16_9'),
-      automation_mode: selectedOption('automation_mode', 'manual_review'),
-      mask_enabled: selectedOption('mask_enabled', 'false') !== 'false',
+      // Generation switches and pause points are defined by the creation package.
+      automation_mode: 'auto',
       quality_gates: { ...DEFAULT_QUALITY_GATES },
       last_used_storyboard_template_id: '',
       last_used_image_style_template_id: PROFILE_STATE.selectedStyleTemplate || 'default',
       notes: 'Lightweight profile only. Step 2 owns storyboard style; Step 3 owns image style and references.',
     };
-  }
-
-  function collectManualPauseSteps() {
-    const steps = [];
-    document.querySelectorAll('.profile-pause-step:checked').forEach(cb => steps.push(cb.value));
-    return steps;
   }
 
   function selectedCreationConfig() {
@@ -325,22 +342,19 @@
     }
     try {
       const profile = collectProfile();
-      const aiMode = profile.automation_mode === 'auto' ? 'auto' : 'manual';
-      const manualPauseSteps = collectManualPauseSteps();
       const styleTemplate = PROFILE_STATE.selectedStyleTemplate || 'default';
       const creationConfig = selectedCreationConfig();
+      const pendingParent = window.__pendingProjectParent || null;
       const projectRes = await apiPost('/api/projects', {
         name,
         description: desc,
-        ai_mode: aiMode,
         canvas_profile: profile.canvas_profile,
-        manual_pause_steps: manualPauseSteps,
         image_style_template: styleTemplate,
-        mask_enabled: profile.mask_enabled !== false,
         ...(creationConfig ? {
           config_package_id: creationConfig.id,
           config_package_version: creationConfig.version,
         } : {}),
+        ...(pendingParent || {}),
       });
       const project = projectRes.project;
       if (!project?.id) throw new Error('项目创建成功但未返回 project.id');
@@ -353,19 +367,7 @@
         } catch (_) { /* non-fatal */ }
       }
 
-      // 挂载到课程/章节：若由课程/章节的"+视频"按钮触发，
-      // createProjectInCourse / createProjectInChapter 会把目标父级写入
-      // window.__pendingProjectParent。创建成功后调用 /move 完成挂载，
-      // 使视频直接出现在对应课程/章节下。
-      const pendingParent = window.__pendingProjectParent || null;
-      if (pendingParent) {
-        try {
-          await apiPost(`/api/projects/${encodeURIComponent(project.id)}/move`, pendingParent);
-        } catch (e) {
-          toast('视频移动到课程/章节失败，已创建为独立项目');
-        }
-        window.__pendingProjectParent = null;
-      }
+      window.__pendingProjectParent = null;
 
       if (article) {
         if (button) button.textContent = '导入文章...';
@@ -373,20 +375,16 @@
         form.append('content', article);
         await apiPost(`/api/projects/${encodeURIComponent(project.id)}/steps/1/import`, form);
       }
-      const shouldAutoStart = profile.automation_mode === 'auto' && !!article;
-      let autoStarted = false;
-      if (shouldAutoStart) {
-        if (button) button.textContent = '启动一键生成...';
-        try {
-          await apiPost(`/api/projects/${encodeURIComponent(project.id)}/one-click-generate`, {});
-          autoStarted = true;
-        } catch (error) {
-          toast(`项目已创建，但一键生成启动失败：${error.message}`, 7000);
-        }
+      const referenceInput = document.getElementById('input-project-reference-images');
+      const referenceFiles = Array.from(referenceInput?.files || []).slice(0, 3);
+      if (referenceFiles.length) {
+        if (button) button.textContent = '上传参考图...';
+        const form = new FormData();
+        referenceFiles.forEach(file => form.append('files', file));
+        await apiPost(`/api/projects/${encodeURIComponent(project.id)}/steps/3/image-style/reference-images`, form);
       }
       document.getElementById('modal-create').style.display = 'none';
-      const modeLabel = profile.automation_mode === 'auto' ? '全自动模式' : '手动审核模式';
-      toast(autoStarted ? `项目已创建（${modeLabel}），一键生成已启动。` : `项目已创建（${modeLabel}）。`, 4500);
+      toast('项目已创建。', 4500);
       // [创建后进入详情页 20260813]
       // 先刷新课程树（让新视频出现在列表中），再自动进入工作台。
       try {
@@ -408,12 +406,11 @@
   }
 
   async function enhanceCreateModal() {
-    const [templates, imageStyles, creationConfigs] = await Promise.all([
-      loadTemplates(),
+    const [imageStyles, creationConfigs] = await Promise.all([
       loadImageStyles(),
       loadCreationConfigs(),
     ]);
-    renderModal(templates, imageStyles, creationConfigs);
+    renderModal(imageStyles, creationConfigs);
   }
 
   function boot() {

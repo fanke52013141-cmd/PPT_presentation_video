@@ -196,7 +196,7 @@ async function saveSettings() {
 
 function settingsExportFileName() {
   const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
-  return `ppt-studio-config-bundle-sensitive-${stamp}.json`;
+  return `ppt-studio-config-bundle-${stamp}.json`;
 }
 
 async function exportGlobalSettings() {
@@ -210,7 +210,7 @@ async function exportGlobalSettings() {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
-  showToast('配置已导出。文件包含 API Key、Prompt 模板和参考图，请妥善保存。', 5000);
+  showToast('配置包已导出：包含模型、创作配置、Prompt 模板和参考图；密钥不会写入普通导出。', 6000);
 }
 
 async function importGlobalSettings(file) {
@@ -224,7 +224,7 @@ async function importGlobalSettings(file) {
 
   showCustomConfirm(
     '导入整体配置？',
-    '将覆盖当前 API 配置、分镜模板、Step 2 Prompt 模板和图片风格模板。项目内容不会被修改。',
+    '将更新当前账号的模型、创作配置、Prompt 模板和图片风格；普通配置包不包含密钥，项目内容不会被修改。',
     () => {
       API.post('/api/config/import', payload).then(async () => {
         await loadSettings();

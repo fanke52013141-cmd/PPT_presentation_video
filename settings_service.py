@@ -169,6 +169,8 @@ def test_image_connection(payload: TestImagePayload) -> Dict[str, Any]:
             prompt="a single dot",
             size=payload.size or "1024x1024",
             base_url=payload.base_url,
+            # Keep the connection probe responsive. A full image-generation
+            # job may take longer, but the settings UI should fail fast.
             timeout=15,
         )
         if dependencies.response_has_image_data(response):

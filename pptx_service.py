@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from artifact_fingerprint import presentation_input_fingerprint
 from database import ArtifactRecord, LocalJob, Project
+from account_context import get_current_account_id, reset_current_account_id, set_current_account_id
 import invalidation_service
 from pptx_export import (
     PPTX_MIME_TYPE,
@@ -197,7 +198,11 @@ class PptxExportService:
                     "reused": True,
                     "job": self.job_item(active),
                 }
-            job = self._new_job(project.id, mode=mode)
+            job = self._new_job(
+                project.id,
+                mode=mode,
+                account_id=getattr(project, "account_id", None) or get_current_account_id(),
+            )
             db.add(job)
             db.commit()
             db.refresh(job)
@@ -440,6 +445,7 @@ class PptxExportService:
             self.submit(job_id)
 
     def run_job(self, job_id: str) -> None:
+        account_context_token = None
         db = self.dependencies.session_factory()
         output_path: Path | None = None
         try:
@@ -450,9 +456,16 @@ class PptxExportService:
             )
             if not job:
                 return
+            payload = job.get_payload() or {}
+            account_context_token = set_current_account_id(
+                str(payload.get("account_id") or "default")
+            )
             project = (
                 db.query(Project)
-                .filter(Project.id == job.project_id)
+                .filter(
+                    Project.id == job.project_id,
+                    Project.account_id == get_current_account_id(),
+                )
                 .first()
             )
             if not project:
@@ -560,6 +573,8 @@ class PptxExportService:
             self.fail_job(db, job_id, str(exc))
         finally:
             db.close()
+            if account_context_token is not None:
+                reset_current_account_id(account_context_token)
 
     def set_job_progress(
         self,
@@ -637,7 +652,11 @@ class PptxExportService:
         return "image_only", base
 
     @staticmethod
-    def _new_job(project_id: str, mode: str = "image_only") -> LocalJob:
+    def _new_job(
+        project_id: str,
+        mode: str = "image_only",
+        account_id: str = "default",
+    ) -> LocalJob:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = (
             f"presentation_{timestamp}_{uuid.uuid4().hex[:6]}.pptx"
@@ -650,7 +669,7 @@ class PptxExportService:
             progress=0,
             stage="queued",
             payload_json=json.dumps(
-                {"filename": filename, "mode": mode},
+                {"filename": filename, "mode": mode, "account_id": account_id},
                 ensure_ascii=False,
             ),
         )

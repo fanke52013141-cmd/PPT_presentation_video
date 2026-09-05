@@ -113,6 +113,9 @@ class AgentClient:
 
     # ---- Project operations ----
 
+    def get_identity(self) -> dict[str, Any]:
+        return self._request("GET", "/api/agent/v1/identity")
+
     def create_project(
         self,
         name: str,
@@ -120,6 +123,12 @@ class AgentClient:
         canvas_profile: str = "landscape_16_9",
         automation_mode: str = "auto",
         review_policy: str = "none",
+        mask_enabled: bool = True,
+        config_package_id: Optional[str] = None,
+        config_package_version: Optional[int] = None,
+        config_overrides: Optional[dict[str, Any]] = None,
+        course_id: Optional[str] = None,
+        chapter_id: Optional[str] = None,
         idempotency_key: Optional[str] = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {
@@ -128,7 +137,18 @@ class AgentClient:
             "canvas_profile": canvas_profile,
             "automation_mode": automation_mode,
             "review_policy": review_policy,
+            "mask_enabled": mask_enabled,
         }
+        if config_package_id is not None:
+            body["config_package_id"] = config_package_id
+        if config_package_version is not None:
+            body["config_package_version"] = config_package_version
+        if config_overrides is not None:
+            body["config_overrides"] = config_overrides
+        if course_id is not None:
+            body["course_id"] = course_id
+        if chapter_id is not None:
+            body["chapter_id"] = chapter_id
         if idempotency_key:
             body["idempotency_key"] = idempotency_key
         return self._request("POST", "/api/agent/v1/projects", body=body)

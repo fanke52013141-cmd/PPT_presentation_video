@@ -30,6 +30,7 @@ assert 'id="step2-script-full-prompt"' in html
 assert 'id="step2-visual-full-prompt"' in html
 assert "updateStep2FullPromptPreviews" in storyboard_prompts
 assert '<OutputExample>' in server.compose_step2_system_prompt("system", "example")
+assert '<OutputExample>' not in server.compose_step2_system_prompt("system", "")
 assert 'id="step6-btn-ai-prompt"' in html
 assert 'id="step6-ai-system-prompt"' in html
 assert 'id="step6-ai-output-example"' in html
@@ -44,6 +45,7 @@ assert "openStep6AnnotationPromptModal" in narration_audio
 assert "openStep3PromptSettingsModal" in image_prompts
 assert "PROMPT_IO_HELP" in prompt_help
 assert '<OutputExample>' in narration_service.compose_narration_annotation_prompt("system", "example")
+assert '<OutputExample>' not in narration_service.compose_narration_annotation_prompt("system", "")
 assert 'id="ai-mask-full-prompt"' in mask_ui
 full_mask_prompt = ai_mask_config.compose_ai_mask_full_prompt("method", "schema")
 assert "method" in full_mask_prompt and "schema" in full_mask_prompt

@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import narration_service
 import project_config_runtime as runtime
 import storyboard_service
+import pytest
 
 
 def _snapshot(tmp_path: Path, payload: dict) -> SimpleNamespace:
@@ -51,6 +52,30 @@ def test_safe_snapshot_read_and_legacy_fallback(tmp_path: Path) -> None:
     assert runtime.get_config_value(
         project, "prompts.article_generation.system_content"
     ) == "项目 Prompt"
+
+
+def test_project_step_contract_is_an_optional_runtime_quality_gate(tmp_path: Path) -> None:
+    project = _snapshot(
+        tmp_path,
+        {
+            "step_contracts": {
+                "storyboard": {
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {"slides": {"type": "array"}},
+                        "required": ["slides"],
+                    }
+                }
+            }
+        },
+    )
+
+    runtime.validate_project_step_output(project, "storyboard", {"slides": []})
+    with pytest.raises(runtime.ProjectConfigContractError, match="缺少输出契约要求的字段"):
+        runtime.validate_project_step_output(project, "storyboard", {})
+
+    # No contract keeps the legacy pipeline behavior unchanged.
+    runtime.validate_project_step_output(project, "article_generation", "legacy text")
 
 
 def test_storyboard_snapshot_prompt_and_model_override(tmp_path: Path, monkeypatch) -> None:

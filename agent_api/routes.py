@@ -23,6 +23,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from sqlalchemy.orm import Session
 
 from database import get_db, Project, ArtifactRecord
+from account_context import get_current_account_id
 from project_path_service import project_or_404
 
 from agent_contract.models import (
@@ -40,6 +41,7 @@ from agent_contract.models import (
     CheckpointApproveRequest, CheckpointResult,
     ArtifactsListResult, ArtifactGetResult,
     DiagnosticsResult,
+    IdentityResult,
 )
 from agent_contract.operations import (
     OperationResult, OperationStatus,
@@ -93,6 +95,8 @@ def _project_summary(project: Project) -> ProjectSummary:
             if getattr(project, "creation_config_package_id", None)
             else None
         ),
+        course_id=getattr(project, "course_id", None),
+        chapter_id=getattr(project, "chapter_id", None),
         created_at=project.created_at.isoformat() if project.created_at else None,
     )
 
@@ -113,7 +117,10 @@ def _idempotency_replay_or_raise(claim_result) -> Optional[dict[str, Any]]:
 
 def _resolve_project(db: Session, project_id: str) -> Project:
     """Find a project or raise ProjectNotFoundError."""
-    project = db.query(Project).filter(Project.id == project_id).first()
+    project = db.query(Project).filter(
+        Project.id == project_id,
+        Project.account_id == get_current_account_id(),
+    ).first()
     if not project:
         raise ProjectNotFoundError(project_id)
     return project
@@ -129,13 +136,32 @@ def get_agent_meta() -> dict[str, Any]:
     return get_meta()
 
 
+@router.get("/identity")
+def get_agent_identity(request: Request, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Return the account identity selected by the Agent token/context."""
+    from account_service import get_account
+    account = get_account(db, get_current_account_id())
+    return IdentityResult(
+        account_id=account.id,
+        account_name=account.name,
+        scopes=sorted(getattr(request.state, "agent_scopes", set())),
+        authenticated=bool(getattr(request.state, "agent_authenticated", False)),
+    ).model_dump()
+
+
 @router.get("/diagnostics")
 def get_diagnostics(db: Session = Depends(get_db)) -> dict[str, Any]:
     """Return system diagnostics for troubleshooting."""
     from agent_contract.capabilities import get_stable_capabilities
 
-    project_count = db.query(Project).count()
-    artifact_count = db.query(ArtifactRecord).count()
+    account_id = get_current_account_id()
+    project_count = db.query(Project).filter(Project.account_id == account_id).count()
+    artifact_count = (
+        db.query(ArtifactRecord)
+        .join(Project, Project.id == ArtifactRecord.project_id)
+        .filter(Project.account_id == account_id)
+        .count()
+    )
 
     checks: dict[str, Any] = {
         "database": "ok" if project_count >= 0 else "error",
@@ -224,10 +250,15 @@ def agent_create_project(
             config_package_id=payload.config_package_id,
             config_package_version=payload.config_package_version,
             config_overrides=payload.config_overrides,
+            course_id=payload.course_id,
+            chapter_id=payload.chapter_id,
         )
         result = service.create(internal_payload, db)
         project_id = result.get("project", {}).get("id", "")
-        project = db.query(Project).filter(Project.id == project_id).first()
+        project = db.query(Project).filter(
+            Project.id == project_id,
+            Project.account_id == get_current_account_id(),
+        ).first()
 
         response = ProjectCreateResult(
             project=_project_summary(project),
@@ -247,7 +278,7 @@ def agent_list_projects(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """List projects via Agent API."""
-    query = db.query(Project)
+    query = db.query(Project).filter(Project.account_id == get_current_account_id())
     if status_filter and status_filter != "all":
         query = query.filter(Project.status == status_filter)
     query = query.order_by(Project.created_at.desc()).limit(limit)
@@ -519,6 +550,7 @@ def _sse_heartbeat() -> bytes:
 def _sse_generator(
     project_id: str,
     db_session_factory,
+    account_id: str = "default",
     poll_interval: float = _SSE_POLL_INTERVAL,
     heartbeat_interval: float = _SSE_HEARTBEAT_INTERVAL,
     max_duration: float = _SSE_MAX_DURATION,
@@ -551,7 +583,10 @@ def _sse_generator(
         # Poll the current status
         db = db_session_factory()
         try:
-            project = db.query(Project).filter(Project.id == project_id).first()
+            project = db.query(Project).filter(
+                Project.id == project_id,
+                Project.account_id == account_id,
+            ).first()
             if not project:
                 yield _sse_event(
                     {"project_id": project_id, "error": "Project not found"},
@@ -630,7 +665,7 @@ def agent_pipeline_stream(
     session_factory = SessionLocal
 
     return StreamingResponse(
-        _sse_generator(project_id, session_factory),
+        _sse_generator(project_id, session_factory, get_current_account_id()),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

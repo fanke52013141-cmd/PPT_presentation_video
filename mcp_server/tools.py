@@ -62,13 +62,21 @@ def _make_tool_handler(cap: AgentCapability) -> Callable:
 def _dispatch(cap_id: str, args: dict[str, Any], client: AgentClient) -> dict[str, Any]:
     """Route a capability ID to the appropriate AgentClient method."""
 
-    if cap_id == "project.create":
+    if cap_id == "identity.get":
+        return client.get_identity()
+    elif cap_id == "project.create":
         return client.create_project(
             name=args.get("name", ""),
             description=args.get("description", ""),
             canvas_profile=args.get("canvas_profile", "landscape_16_9"),
             automation_mode=args.get("automation_mode", "auto"),
             review_policy=args.get("review_policy", "none"),
+            mask_enabled=args.get("mask_enabled", True),
+            config_package_id=args.get("config_package_id"),
+            config_package_version=args.get("config_package_version"),
+            config_overrides=args.get("config_overrides"),
+            course_id=args.get("course_id"),
+            chapter_id=args.get("chapter_id"),
             idempotency_key=args.get("idempotency_key"),
         )
 

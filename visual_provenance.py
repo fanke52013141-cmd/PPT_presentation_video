@@ -93,6 +93,10 @@ def build_visual_provenance(
     source_bytes: bytes | None = None,
     source_filename: str = "",
     candidate: bool = False,
+    reference_policy: str = "",
+    reference_status: str = "",
+    requested_reference_count: int = 0,
+    submitted_reference_count: int = 0,
 ) -> dict[str, Any]:
     root = Path(run_dir)
     image = Path(image_path)
@@ -109,6 +113,10 @@ def build_visual_provenance(
         "prompt_sha256": sha256_bytes(str(prompt or "").encode("utf-8")) if prompt else None,
         "contract_sha256": sha256_file(contract),
         "reference_sha256s": [digest for digest in (sha256_file(path) for path in references) if digest],
+        "reference_policy": str(reference_policy or "").strip() or None,
+        "reference_status": str(reference_status or "").strip() or None,
+        "requested_reference_count": max(0, int(requested_reference_count or 0)),
+        "submitted_reference_count": max(0, int(submitted_reference_count or 0)),
         "source_sha256": sha256_bytes(source_bytes) if source_bytes is not None else None,
         "source_filename": Path(str(source_filename or "")).name,
         "output_sha256": sha256_file(image),
@@ -129,6 +137,10 @@ def write_visual_provenance(
     source_bytes: bytes | None = None,
     source_filename: str = "",
     candidate: bool = False,
+    reference_policy: str = "",
+    reference_status: str = "",
+    requested_reference_count: int = 0,
+    submitted_reference_count: int = 0,
 ) -> dict[str, Any]:
     from pipeline_lifecycle import write_json_atomic
 
@@ -144,6 +156,10 @@ def write_visual_provenance(
         source_bytes=source_bytes,
         source_filename=source_filename,
         candidate=candidate,
+        reference_policy=reference_policy,
+        reference_status=reference_status,
+        requested_reference_count=requested_reference_count,
+        submitted_reference_count=submitted_reference_count,
     )
     write_json_atomic(provenance_path(run_dir, slide_id, candidate=candidate), payload)
     return payload

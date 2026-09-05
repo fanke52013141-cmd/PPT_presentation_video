@@ -48,6 +48,7 @@ from agent_client.client import AgentClient, AgentClientError, DEFAULT_BASE_URL
 # for Agent use must also be reachable from the CLI, and CI compares this map
 # with the capability registry.
 CLI_COMMANDS = {
+    "identity",
     "project create",
     "project list",
     "project show",
@@ -99,6 +100,12 @@ def cmd_project_create(args: argparse.Namespace) -> None:
             canvas_profile=args.canvas,
             automation_mode=args.mode,
             review_policy=args.review_policy,
+            mask_enabled=args.mask_enabled,
+            config_package_id=args.config_package_id,
+            config_package_version=args.config_package_version,
+            config_overrides=json.loads(args.config_overrides) if args.config_overrides else None,
+            course_id=args.course_id,
+            chapter_id=args.chapter_id,
             idempotency_key=args.idempotency_key,
         )
         _print_json(result)
@@ -484,6 +491,15 @@ def cmd_meta(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def cmd_identity(args: argparse.Namespace) -> None:
+    client = AgentClient(base_url=args.base_url, app_token=args.token)
+    try:
+        _print_json(client.get_identity())
+    except AgentClientError as e:
+        _print_error(str(e))
+        sys.exit(1)
+
+
 # ---------------------------------------------------------------------------
 # Argument parser
 # ---------------------------------------------------------------------------
@@ -513,6 +529,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_create.add_argument("--canvas", default="landscape_16_9", choices=["landscape_16_9", "portrait_9_16"])
     p_create.add_argument("--mode", default="auto", choices=["auto", "manual", "agent"])
     p_create.add_argument("--review-policy", default="none", choices=["none", "images_and_video", "all_stages"], help="Review policy for checkpoint approval")
+    p_create.add_argument("--mask-enabled", action=argparse.BooleanOptionalAction, default=True, help="Enable or disable AI Mask")
+    p_create.add_argument("--config-package-id", default=None, help="Creation configuration package ID")
+    p_create.add_argument("--config-package-version", type=int, default=None, help="Pinned creation configuration version")
+    p_create.add_argument("--config-overrides", default=None, help="JSON object with project-only configuration overrides")
+    p_create.add_argument("--course-id", default=None, help="Create under this course")
+    p_create.add_argument("--chapter-id", default=None, help="Create under this chapter (also validates its course/account)")
     p_create.add_argument("--idempotency-key", default=None, help="Idempotency key to prevent duplicate creation")
     p_create.set_defaults(func=cmd_project_create)
 
@@ -686,6 +708,10 @@ def build_parser() -> argparse.ArgumentParser:
     b_cleanup = batch_sub.add_parser("cleanup", help="Delete projects (destructive)")
     b_cleanup.add_argument("--status", default="completed", help="Filter projects to delete by status")
     b_cleanup.set_defaults(func=cmd_batch_cleanup)
+
+    # meta
+    identity_parser = subparsers.add_parser("identity", help="Show the Agent creative account identity")
+    identity_parser.set_defaults(func=cmd_identity)
 
     # meta
     meta_parser = subparsers.add_parser("meta", help="Agent API metadata")

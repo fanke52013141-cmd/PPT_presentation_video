@@ -37,6 +37,7 @@ from agent_contract.models import (
     DigitalHumanConfigUpdateRequest, DigitalHumanConfigResult,
     ArtifactGetResult,
     DiagnosticsResult,
+    IdentityResult,
 )
 
 
@@ -73,10 +74,23 @@ class AgentCapability:
 
 CAPABILITIES: list[AgentCapability] = [
     AgentCapability(
-        id="project.create",
-        version="1.3",
+        id="identity.get",
+        version="1.0",
         status=CapabilityStatus.stable,
-        description="Create a new PPT video project with canvas, automation, mask, and versioned creation configuration settings.",
+        description="Return the creative account and scopes associated with this Agent connection.",
+        request_model=BaseModel,
+        response_model=IdentityResult,
+        agent_api_method="GET",
+        agent_api_path="/api/agent/v1/identity",
+        mcp_tool_name="ppt_identity_get",
+        cli_command="identity",
+        service_ref="agent_api.auth / account_service",
+    ),
+    AgentCapability(
+        id="project.create",
+        version="1.4",
+        status=CapabilityStatus.stable,
+        description="Create a new PPT video project with canvas, automation, mask, versioned creation configuration, and optional course/chapter ownership.",
         request_model=ProjectCreateRequest,
         response_model=ProjectCreateResult,
         agent_api_method="POST",

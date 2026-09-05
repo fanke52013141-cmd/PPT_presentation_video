@@ -22,11 +22,12 @@ from one_click_orchestrator import (
 # Mapping
 # ---------------------------------------------------------------------------
 
-def test_manual_pause_mapping_covers_three_modules() -> None:
-    """The three user-facing modules must map to valid pipeline stages."""
-    assert set(_MANUAL_PAUSE_AFTER_STAGE.keys()) == {"mask", "narration", "digital_human"}
+def test_manual_pause_mapping_covers_configurable_modules() -> None:
+    """Every creation-config pause option must map to a valid pipeline stage."""
+    assert set(_MANUAL_PAUSE_AFTER_STAGE.keys()) == {"mask", "narration", "tts", "digital_human"}
     assert _MANUAL_PAUSE_AFTER_STAGE["mask"] == "mask_assets"
     assert _MANUAL_PAUSE_AFTER_STAGE["narration"] == "narration"
+    assert _MANUAL_PAUSE_AFTER_STAGE["tts"] == "tts"
     assert _MANUAL_PAUSE_AFTER_STAGE["digital_human"] == "tts"
 
 
@@ -84,6 +85,17 @@ def test_pause_sets_waiting_for_user_on_digital_human(mock_save: MagicMock) -> N
     assert result is True
     assert status["status"] == "waiting_for_user"
     assert status["manual_pause_module"] == "digital_human"
+    mock_save.assert_called_once()
+
+
+@patch("one_click_orchestrator._save_status")
+def test_pause_sets_waiting_for_user_on_tts(mock_save: MagicMock) -> None:
+    project = _make_project(["tts"])
+    status: dict = {"stages": []}
+    result = _pause_for_manual_step(project, status, "tts")
+    assert result is True
+    assert status["status"] == "waiting_for_user"
+    assert status["manual_pause_module"] == "tts"
     mock_save.assert_called_once()
 
 

@@ -4,6 +4,8 @@
 // 首次加载初始化
 document.addEventListener('DOMContentLoaded', () => {
   initGlobalEvents();
+  initAccountManagement?.();
+  loadAccounts?.();
   loadProjects();
   loadSettings();
 });
@@ -19,6 +21,14 @@ function initGlobalEvents() {
   document.getElementById('btn-open-settings')?.addEventListener('click', () => openSettingsModal());
   document.getElementById('btn-settings-cancel')?.addEventListener('click', () => closeSettingsModal());
   document.getElementById('btn-settings-save')?.addEventListener('click', () => saveSettings());
+  document.getElementById('system-settings-open-models')?.addEventListener('click', () => {
+    closeSettingsModal();
+    window.openModelManagement?.();
+  });
+  document.getElementById('system-settings-open-configs')?.addEventListener('click', () => {
+    closeSettingsModal();
+    window.openCreationConfigManagement?.();
+  });
   document.getElementById('btn-settings-export')?.addEventListener('click', () => exportGlobalSettings());
   document.getElementById('btn-settings-import')?.addEventListener('click', () => {
     document.getElementById('settings-import-file')?.click();
@@ -46,14 +56,8 @@ function initGlobalEvents() {
   document.getElementById('btn-create-project')?.addEventListener('click', () => {
     document.getElementById('input-project-name').value = '';
     document.getElementById('input-project-desc').value = '';
-    // Reset pause-step checkboxes.
-    document.querySelectorAll('.create-pause-step').forEach(cb => { cb.checked = false; });
     // Load image-style templates into the grid.
     loadImageStyleTemplates();
-    // Creation packages are optional. A loading failure leaves the normal
-    // project-creation path available.
-    const creationConfigSelect = ensureCreationConfigSelector();
-    if (creationConfigSelect) creationConfigSelect.value = '';
     loadCreationConfigs();
     document.getElementById('modal-create').style.display = 'flex';
   });
@@ -61,16 +65,6 @@ function initGlobalEvents() {
     document.getElementById('modal-create').style.display = 'none';
   });
   document.getElementById('btn-create-submit')?.addEventListener('click', () => createProject());
-
-  // Show/hide pause section based on AI mode selection.
-  const aiModeSelect = document.getElementById('input-project-ai-mode');
-  const pauseSection = document.getElementById('create-pause-section');
-  function syncPauseSectionVisibility() {
-    if (!aiModeSelect || !pauseSection) return;
-    pauseSection.style.display = aiModeSelect.value === 'auto' ? '' : 'none';
-  }
-  aiModeSelect?.addEventListener('change', syncPauseSectionVisibility);
-  syncPauseSectionVisibility();
 
   // 设置面板 Tab 切换
   const tabs = document.querySelectorAll('#modal-settings .tab-item');

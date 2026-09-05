@@ -41,6 +41,8 @@ _CREATE_FIELD_MAP = {
     "config_package_id": "config_package_id",
     "config_package_version": "config_package_version",
     "config_overrides": "config_overrides",
+    "course_id": "course_id",
+    "chapter_id": "chapter_id",
 }
 
 # project_service project payload key -> agent_contract ProjectSummary field.
@@ -60,6 +62,8 @@ _SUMMARY_FIELD_MAP = {
     "image_style_template": None,
     "mask_enabled": "mask_enabled",
     "creation_config": "creation_config",
+    "course_id": "course_id",
+    "chapter_id": "chapter_id",
     "created_at": "created_at",
 }
 

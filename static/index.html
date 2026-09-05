@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260902.4">
+  <link rel="stylesheet" href="style.css?v=20260905.9">
 </head>
 <body>
 
@@ -28,11 +28,24 @@
       当前项目: <span id="current-project-name" style="color: var(--ink-color);">--</span>
     </div>
     <div style="display: flex; gap: 1rem; align-items: center;">
+      <div class="account-switcher">
+        <button id="account-picker-trigger" class="account-picker" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="切换创作账号">
+          <span id="account-picker-avatar" class="account-picker-avatar" aria-hidden="true">默</span>
+          <span id="account-picker-name">默认创作账号</span>
+          <span class="account-picker-chevron" aria-hidden="true"></span>
+        </button>
+        <div id="account-picker-menu" class="account-picker-menu" role="listbox" aria-label="创作账号列表" hidden></div>
+        <select id="current-account-select" class="account-select-native" aria-label="当前创作账号" tabindex="-1"></select>
+        <button id="btn-create-account" class="secondary" type="button" title="创建创作账号">＋</button>
+      </div>
+      <button id="btn-open-creation-config-management" class="secondary header-config-action" type="button">创作配置</button>
+      <button id="btn-open-model-management" class="secondary header-config-action" type="button">模型设置</button>
+      <button id="btn-open-agent" class="secondary header-config-action" type="button">Agent 对接</button>
       <button id="btn-back-home" class="secondary header-action" hidden>
         <svg class="icon" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
         返回首页
       </button>
-      <button id="btn-open-settings">
+      <button id="btn-open-settings" style="display:none;">
         <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
         系统设置
       </button>
@@ -50,13 +63,13 @@
       <div class="home-toolbar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.62rem; gap: 1rem; flex-wrap: wrap;">
         <h1 class="highlight-title">课程与项目</h1>
         <div style="display: flex; gap: 1rem;">
-          <button id="btn-create-course" type="button">
+          <button id="btn-create-course" class="success" type="button">
             <svg class="icon" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
             新建课程
           </button>
-          <button id="btn-create-project" class="success">
+          <button id="btn-create-project" class="secondary legacy-project-entry" type="button" title="仅用于导入或继续不归属课程的旧项目；正式内容请从课程进入">
             <svg class="icon" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            新建视频
+            兼容项目
           </button>
         </div>
       </div>
@@ -64,8 +77,8 @@
       <div id="project-list" class="project-grid">
         <!-- 项目卡片动态插入 -->
         <div class="card soft-outline" style="text-align: center; padding: 4rem 2rem;">
-          <p style="font-size: 1.2rem; margin-bottom: 1rem;">还没有项目，快去新建一个吧！</p>
-          <button onclick="document.getElementById('btn-create-project').click()">立即新建</button>
+          <p style="font-size: 1.2rem; margin-bottom: 1rem;">还没有课程，先新建课程，再添加章节和视频项目。</p>
+          <button class="success" onclick="document.getElementById('btn-create-course').click()">新建课程</button>
         </div>
       </div>
     </div>
@@ -626,34 +639,6 @@
           <option value="portrait_9_16">竖屏 9:16（1080×1920）</option>
         </select>
       </div>
-      <div style="margin-bottom: 1.5rem;">
-        <label style="font-weight: bold; display: block; margin-bottom: 0.4rem;">AI 模式:</label>
-        <select id="input-project-ai-mode" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 6px; background: #fff;">
-          <option value="auto" selected>自动模式（AI 规划分镜 + 可视化 + Mask）</option>
-          <option value="manual">手动模式（自填标题与演讲稿，按需触发 AI）</option>
-        </select>
-        <div style="font-size: 0.85rem; color: var(--muted-color); margin-top: 0.4rem; line-height: 1.5;">
-          自动模式：第二步调用 AI 生成完整分镜，第五步进入时自动触发 Mask 标注。<br>
-          手动模式：第二步只填标题与演讲稿，不生成可视化；第五步保留"运行 AI 标注"按钮按需触发。
-        </div>
-      </div>
-      <div id="create-pause-section" style="margin-bottom: 1.5rem;">
-        <label style="font-weight: bold; display: block; margin-bottom: 0.4rem;">手动暂停模块（自动化模式下生效）:</label>
-        <div style="display: flex; flex-wrap: wrap; gap: 0.8rem; margin-top: 0.5rem;">
-          <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer; padding: 0.4rem 0.8rem; border: 1px solid var(--border-color); border-radius: 6px; background: #fff;">
-            <input type="checkbox" class="create-pause-step" value="mask"> Mask 标注模块
-          </label>
-          <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer; padding: 0.4rem 0.8rem; border: 1px solid var(--border-color); border-radius: 6px; background: #fff;">
-            <input type="checkbox" class="create-pause-step" value="narration"> 旁白语音模块
-          </label>
-          <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer; padding: 0.4rem 0.8rem; border: 1px solid var(--border-color); border-radius: 6px; background: #fff;">
-            <input type="checkbox" class="create-pause-step" value="digital_human"> 数字人模块
-          </label>
-        </div>
-        <div style="font-size: 0.85rem; color: var(--muted-color); margin-top: 0.4rem; line-height: 1.5;">
-          勾选的模块在自动化流程进行到该步骤时会暂停，等待您手动操作后再继续。不勾选则全自动执行。
-        </div>
-      </div>
       <div id="create-style-section" style="margin-bottom: 1.5rem;">
         <label style="font-weight: bold; display: block; margin-bottom: 0.4rem;">图片风格:</label>
         <div id="create-style-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 0.6rem; margin-top: 0.5rem; max-height: 200px; overflow-y: auto;">
@@ -662,6 +647,11 @@
         <div style="font-size: 0.85rem; color: var(--muted-color); margin-top: 0.4rem; line-height: 1.5;">
           选择图片风格模板，将在生成图片时自动应用该风格。
         </div>
+      </div>
+      <div style="margin-bottom: 1.5rem;">
+        <label style="font-weight: bold; display: block; margin-bottom: 0.4rem;" for="input-project-reference-images">本项目参考图片:</label>
+        <input type="file" id="input-project-reference-images" accept="image/*" multiple>
+        <div style="font-size: 0.85rem; color: var(--muted-color); margin-top: 0.4rem;">可选 1–3 张，只作用于当前项目；单张不超过 12MB。</div>
       </div>
       <div style="display: flex; justify-content: flex-end; gap: 1rem;">
         <button id="btn-create-cancel" class="secondary">取消</button>
@@ -703,10 +693,10 @@
     <div class="modal-content settings-modal">
       <h3 class="highlight-title" style="margin-bottom: 1.2rem;">
         <svg class="icon" viewBox="0 0 24 24" style="margin-right: 0.2rem;"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-        系统全局设置
+        系统设置
       </h3>
       
-      <div class="tabs">
+      <div class="tabs legacy-settings-tabs" style="display:none" aria-hidden="true">
         <div class="tab-item active" data-tab="tab-llm">
           <svg class="icon" viewBox="0 0 24 24" style="margin-right: 0.2rem;"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
           文本模型
@@ -721,7 +711,7 @@
         </div>
       </div>
 
-      <div class="tab-contents">
+      <div class="tab-contents legacy-settings-content" style="display:none" aria-hidden="true">
         <!-- Text LLM Tab -->
         <div id="tab-llm" class="tab-pane">
           <div style="margin-bottom: 0.8rem;">
@@ -891,74 +881,79 @@
       </div>
 
       <div class="settings-footer-actions">
-        <div class="settings-portability-actions">
-          <button id="btn-open-creation-config-management" class="secondary" type="button">创作配置管理</button>
-          <button id="btn-settings-export" class="secondary" type="button">配置导出</button>
-          <button id="btn-settings-import" class="secondary" type="button">配置导入</button>
-          <input id="settings-import-file" type="file" accept="application/json,.json" style="display: none;">
-        </div>
+        <!-- Compatibility hooks for older extensions; the visible entry points
+             are the two overview cards above to avoid duplicate actions. -->
+        <input id="settings-import-file" type="file" accept="application/json,.json" style="display: none;">
         <button id="btn-settings-cancel" class="secondary">取消</button>
         <button id="btn-settings-save" class="success">保存设置</button>
       </div>
     </div>
   </div>
 
-  <!-- Modal: 创作配置与模型连接管理 -->
+  <!-- Modal: 创作配置 -->
   <div id="modal-creation-config-management" class="modal-overlay" style="display: none;">
-    <div class="modal-content config-editor-modal" role="dialog" aria-modal="true" aria-labelledby="creation-config-management-title" style="max-width: 960px;">
+    <div class="modal-content config-editor-modal" role="dialog" aria-modal="true" aria-labelledby="creation-config-management-title" style="max-width: 1280px; width:min(1280px, calc(100vw - 32px));">
       <div class="config-editor-scroll">
         <div class="prompt-title-row">
-          <h3 id="creation-config-management-title" class="highlight-title">创作配置管理</h3>
+          <h3 id="creation-config-management-title" class="highlight-title">创作配置</h3>
           <button id="btn-creation-config-management-refresh" class="secondary" type="button">刷新</button>
         </div>
-        <p class="config-editor-note">在此管理可复用的创作配置包和模型连接。模型连接只保存凭据引用；API Key 等敏感信息由凭据管理服务保存，不会显示在此处。</p>
         <p id="creation-config-management-status" class="config-editor-note" aria-live="polite"></p>
-        <div style="display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); gap:1rem; align-items:start;">
+        <div id="creation-config-management-body" class="creation-config-management-body">
           <section class="soft-outline" style="padding:1rem; border-radius:12px;">
             <h4 style="margin-top:0;">创作配置包</h4>
-            <p class="config-editor-note">复制一套现有配置后，可针对不同账号调整提示词、图片风格、声音、字幕和自动化策略。</p>
             <label style="display:block; margin-bottom:0.55rem;">配置包名称<input id="creation-config-package-name" type="text" maxlength="80" placeholder="例如：科普账号长视频"></label>
-            <label style="display:block; margin-bottom:0.55rem;">说明（可选）<input id="creation-config-package-description" type="text" maxlength="1000" placeholder="例如：轻松科普风格，保留字幕"></label>
             <p id="creation-config-editing-status" class="config-editor-note" aria-live="polite"></p>
             <div id="creation-config-structured-editor" class="creation-config-structured-editor">
               <section class="creation-config-section">
-                <h5>Prompt</h5>
-                <p class="config-editor-note">每个模块可分别定义系统提示词和输出示例；留空即不写入配置包。</p>
-                <div id="creation-config-prompt-fields" class="creation-config-prompt-fields"></div>
-              </section>
-              <section class="creation-config-section">
-                <h5>模型绑定</h5>
-                <p class="config-editor-note">连接按类型过滤，保存时固定到当前 revision。未选择不会写入绑定。</p>
+                <h5>模型关联</h5>
                 <div id="creation-config-model-binding-fields" class="creation-config-model-binding-fields"></div>
               </section>
-              <section class="creation-config-section">
-                <h5>图片风格</h5>
-                <label>风格名称<input id="creation-config-image-style-name" type="text" maxlength="120" placeholder="例如：简洁科技插画"></label>
-                <label>风格提示词<textarea id="creation-config-image-style-system-content" rows="4" placeholder="描述统一的配色、构图、材质、留白等图片风格"></textarea></label>
+              <section class="creation-config-section creation-config-image-style-section">
+                <div class="creation-config-section-heading">
+                  <h5>图片风格</h5>
+                  <span id="creation-config-image-style-summary" class="config-editor-note"></span>
+                </div>
+                <div class="creation-config-image-style-grid">
+                  <label>风格资源
+                    <select id="creation-config-image-style-template"></select>
+                  </label>
+                  <label>最低参考图数量
+                    <select id="creation-config-image-style-minimum">
+                      <option value="1">1 张</option>
+                      <option value="2">2 张</option>
+                      <option value="3">3 张</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="creation-config-policy-row" role="radiogroup" aria-label="参考图使用方式">
+                  <label class="creation-config-policy-card"><input type="radio" name="creation-config-reference-policy" value="required"><span><strong>必须使用</strong><small>参考图不足或模型不支持时停止生成</small></span></label>
+                  <label class="creation-config-policy-card"><input type="radio" name="creation-config-reference-policy" value="preferred" checked><span><strong>优先使用</strong><small>不可用时继续按风格提示词生成</small></span></label>
+                  <label class="creation-config-policy-card"><input type="radio" name="creation-config-reference-policy" value="text_only"><span><strong>仅提示词</strong><small>保留风格文字，不发送参考图片</small></span></label>
+                </div>
               </section>
-              <section class="creation-config-section creation-config-section--two-column">
-                <div>
-                  <h5>TTS</h5>
-                  <label>Voice ID<input id="creation-config-tts-voice-id" type="text" maxlength="160" placeholder="MiniMax voice_id"></label>
-                  <label>克隆音色 ID<input id="creation-config-tts-clone-voice-id" type="text" maxlength="160" placeholder="可选"></label>
-                  <div class="creation-config-number-grid">
-                    <label>语速<input id="creation-config-tts-speed" type="number" min="0.1" max="4" step="0.05" placeholder="1"></label>
-                    <label>音量<input id="creation-config-tts-volume" type="number" min="0" max="10" step="0.1" placeholder="可选"></label>
-                    <label>音调<input id="creation-config-tts-pitch" type="number" min="-12" max="12" step="0.1" placeholder="可选"></label>
+              <section class="creation-config-section creation-config-section--options">
+                <div class="creation-config-option-group">
+                  <h5>生成开关</h5>
+                  <div class="creation-config-options-row">
+                    <label class="creation-config-check"><input id="creation-config-subtitle-enabled" type="checkbox" checked> 导出字幕</label>
+                    <label class="creation-config-check"><input id="creation-config-mask-enabled" type="checkbox" checked> 启用 AI Mask</label>
                   </div>
                 </div>
-                <div>
-                  <h5>生成开关</h5>
-                  <label class="creation-config-check"><input id="creation-config-subtitle-enabled" type="checkbox" checked> 导出字幕</label>
-                  <label class="creation-config-check"><input id="creation-config-mask-enabled" type="checkbox" checked> 启用 AI Mask</label>
-                  <h5 class="creation-config-subheading">全自动暂停</h5>
-                  <div class="creation-config-pause-grid">
+                <div class="creation-config-option-group">
+                  <h5>全自动暂停</h5>
+                  <div class="creation-config-options-row">
                     <label class="creation-config-check"><input type="checkbox" data-creation-config-pause="mask"> Mask 标注</label>
                     <label class="creation-config-check"><input type="checkbox" data-creation-config-pause="narration"> 旁白编辑</label>
                     <label class="creation-config-check"><input type="checkbox" data-creation-config-pause="tts"> 语音合成</label>
                     <label class="creation-config-check"><input type="checkbox" data-creation-config-pause="digital_human"> 数字人</label>
                   </div>
                 </div>
+              </section>
+              <section class="creation-config-section creation-config-prompts-section">
+                <h5>Prompt</h5>
+                <p class="config-editor-note">按需要展开对应步骤；没有输出示例时保持为空。</p>
+                <div id="creation-config-prompt-fields" class="creation-config-prompt-fields"></div>
               </section>
             </div>
             <details class="creation-config-json-editor">
@@ -973,41 +968,84 @@
             </div>
             <div id="creation-config-package-list"></div>
           </section>
-          <section class="soft-outline" style="padding:1rem; border-radius:12px;">
-            <h4 style="margin-top:0;">模型连接</h4>
-            <p class="config-editor-note">先添加文本、图片或语音模型，再在配置包中按步骤选择。凭据引用可留空，或填入已创建的 credential:// 引用。</p>
-            <div id="creation-config-connection-list"></div>
-            <h4 style="margin-top:1.25rem;">凭据</h4>
-            <p class="config-editor-note">列表只显示凭据的安全元数据，实际值不会回显。</p>
-            <div id="creation-config-credential-list"></div>
-          </section>
         </div>
-        <section class="soft-outline" style="padding:1rem; border-radius:12px; margin-top:1rem;">
-          <h4 style="margin-top:0;">添加模型连接</h4>
-          <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0.75rem;">
-            <label>连接名称<input id="creation-config-connection-name" type="text" maxlength="120" placeholder="例如：科普账号文本模型"></label>
-            <label>类别<select id="creation-config-connection-kind"><option value="text">文本</option><option value="image">图片</option><option value="tts">语音</option></select></label>
-            <label>服务标识<input id="creation-config-connection-provider" type="text" maxlength="80" placeholder="例如：openai_compatible / minimax"></label>
-            <label>模型<input id="creation-config-connection-model" type="text" maxlength="160" placeholder="例如：gpt-4o-mini / speech-2.8-hd"></label>
-            <label>接口地址（可选）<input id="creation-config-connection-endpoint" type="url" maxlength="1000" placeholder="https://…"></label>
-            <label>凭据引用（可选）<input id="creation-config-connection-credential-ref" type="text" maxlength="500" placeholder="credential://…"></label>
-          </div>
-          <label style="display:block; margin-top:0.75rem;">公开参数 JSON（可选）<textarea id="creation-config-connection-public-config" rows="3" spellcheck="false" placeholder='{"temperature":0.7}'></textarea></label>
-          <button id="btn-create-model-connection" class="success" type="button" style="margin-top:0.75rem;">添加模型连接</button>
-        </section>
-        <section class="soft-outline" style="padding:1rem; border-radius:12px; margin-top:1rem;">
-          <h4 style="margin-top:0;">添加凭据</h4>
-          <p class="config-editor-note">凭据值只会发送给服务端安全存储，保存后不会显示或保留在页面中。</p>
-          <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0.75rem;">
-            <label>服务标识<input id="creation-config-credential-provider" type="text" maxlength="80" placeholder="例如：minimax / openai_compatible"></label>
-            <label>凭据名称<input id="creation-config-credential-label" type="text" maxlength="120" placeholder="例如：MiniMax 主账号"></label>
-          </div>
-          <label style="display:block; margin-top:0.75rem;">凭据值 JSON<textarea id="creation-config-credential-secret-values" rows="4" spellcheck="false" placeholder='{"api_key":"…"}'></textarea></label>
-          <button id="btn-create-credential" class="success" type="button" style="margin-top:0.75rem;">添加凭据</button>
-        </section>
       </div>
       <div class="config-editor-actions">
         <button id="btn-creation-config-management-close" class="secondary" type="button">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: 模型设置。独立于创作配置，避免跨概念切换。 -->
+  <div id="modal-model-management" class="modal-overlay" style="display: none;">
+    <div class="modal-content config-editor-modal" role="dialog" aria-modal="true" aria-labelledby="model-management-title" style="max-width: 1080px; width:min(1080px, calc(100vw - 32px));">
+      <div class="config-editor-scroll">
+        <div class="prompt-title-row">
+          <h3 id="model-management-title" class="highlight-title">模型设置</h3>
+          <button id="btn-model-management-refresh" class="secondary" type="button">刷新</button>
+        </div>
+        <p id="model-management-status" class="config-editor-note" aria-live="polite"></p>
+        <section class="model-library-section">
+          <div class="model-kind-tabs" role="tablist" aria-label="模型类型">
+            <button class="model-kind-tab is-active" type="button" data-model-kind="text" role="tab" aria-selected="true">文本模型</button>
+            <button class="model-kind-tab" type="button" data-model-kind="image" role="tab" aria-selected="false">图片模型</button>
+            <button class="model-kind-tab" type="button" data-model-kind="tts" role="tab" aria-selected="false">语音模型</button>
+          </div>
+          <div id="model-library-list" class="model-library-list"></div>
+        </section>
+        <section class="model-setup-card" aria-labelledby="model-setup-title">
+          <div class="model-setup-heading">
+            <div>
+              <h4 id="model-setup-title">新增文本模型</h4>
+              <p id="model-setup-description">使用 OpenAI 或任意兼容 OpenAI Chat Completions 的服务。</p>
+            </div>
+          </div>
+          <div class="model-setup-grid">
+            <label>显示名称<input id="model-form-name" type="text" maxlength="120" placeholder="例如：豆包写作模型"></label>
+            <label id="model-form-protocol-row">接入方式
+              <select id="model-form-protocol">
+                <option value="openai">OpenAI 兼容接口</option>
+                <option value="openrouter">OpenRouter</option>
+                <option value="newapi">New API / 自建中转</option>
+                <option value="litellm">LiteLLM Proxy</option>
+                <option value="custom">自定义兼容接口</option>
+              </select>
+            </label>
+            <label id="model-form-endpoint-row">接口地址（Base URL）<input id="model-form-endpoint" type="url" maxlength="1000" placeholder="https://api.example.com/v1"></label>
+            <label id="model-form-api-key-row">API 密钥<input id="model-form-api-key" type="password" maxlength="2000" autocomplete="off" placeholder="保存后不会再次显示"></label>
+            <label id="model-form-model-row">模型 ID<input id="model-form-model" type="text" maxlength="160" placeholder="例如：gpt-4o-mini"></label>
+            <label id="model-form-image-size-row" hidden>图片尺寸（可选）<input id="model-form-image-size" type="text" maxlength="80" placeholder="例如：1024x1024"></label>
+            <label id="model-form-image-reference-row" hidden>参考图能力
+              <span class="model-inline-check"><input id="model-form-image-supports-references" type="checkbox" checked> 支持上传参考图生成</span>
+            </label>
+            <label id="model-form-image-reference-count-row" hidden>最多参考图
+              <select id="model-form-image-max-references"><option value="1">1 张</option><option value="2">2 张</option><option value="3" selected>3 张</option><option value="4">4 张</option><option value="6">6 张</option></select>
+            </label>
+            <label id="model-form-tts-provider-row" hidden>语音方式
+              <select id="model-form-tts-provider"><option value="minimax">MiniMax 云端语音</option><option value="comfyui_tts">ComfyUI / IndexTTS（本地）</option></select>
+            </label>
+          </div>
+          <div id="model-form-minimax" class="model-provider-panel" hidden>
+            <div class="model-setup-grid">
+              <label>MiniMax 接口地址<input id="model-form-minimax-endpoint" type="url" maxlength="1000" value="https://api.minimaxi.com/v1/t2a_async_v2"></label>
+              <label>API Token<input id="model-form-minimax-token" type="password" maxlength="2000" autocomplete="off" placeholder="保存后不会再次显示"></label>
+              <label>语音模型<input id="model-form-minimax-model" type="text" maxlength="160" value="speech-2.8-hd"></label>
+              <label>音色 ID<input id="model-form-minimax-voice-id" type="text" maxlength="200" placeholder="例如：Chinese (Mandarin)_News_Anchor"></label>
+            </div>
+          </div>
+          <div id="model-form-comfyui" class="model-provider-panel" hidden>
+            <label>ComfyUI 服务地址<input id="model-form-comfyui-endpoint" type="url" maxlength="1000" value="http://127.0.0.1:8188"></label>
+            <div class="model-workflow-row">
+              <input id="model-form-comfyui-workflow-file" type="file" accept="application/json,.json" hidden>
+              <button id="btn-model-form-comfyui-workflow" class="secondary" type="button">导入 IndexTTS 工作流 JSON</button>
+              <span id="model-form-comfyui-workflow-status" class="config-editor-note" aria-live="polite"></span>
+            </div>
+          </div>
+          <button id="btn-save-model" class="success" type="button">保存文本模型</button>
+        </section>
+      </div>
+      <div class="config-editor-actions">
+        <button id="btn-model-management-close" class="secondary" type="button">关闭</button>
       </div>
     </div>
   </div>
@@ -1414,10 +1452,10 @@
   <script src="api_client.js?v=20260812.1"></script>
   <script src="artifact_repair.js?v=20260801.1"></script>
   <script src="prompt_help.js?v=20260801.1"></script>
-  <script src="settings.js?v=20260828.3"></script>
-  <script src="projects.js?v=20260902.1"></script>
-  <script src="creation_config_management.js?v=20260904.1"></script>
-    <script src="courses.js?v=20260812.5"></script>
+  <script src="settings.js?v=20260905.3"></script>
+  <script src="projects.js?v=20260905.2"></script>
+  <script src="creation_config_management.js?v=20260905.8"></script>
+  <script src="courses.js?v=20260905.2"></script>
   <script src="article.js?v=20260801.1"></script>
   <script src="storyboard.js?v=20260902.1"></script>
   <script src="storyboard_prompts.js?v=20260801.1"></script>
@@ -1430,14 +1468,15 @@
   <script src="subtitle_settings.js?v=20260801.1"></script>
   <script src="narration_audio.js?v=20260820.1"></script>
   <script src="output_render.js?v=20260823.1"></script>
+  <script src="account_management.js?v=20260905.3"></script>
   <script src="workspace_navigation.js?v=20260820.1"></script>
-  <script src="event_bindings.js?v=20260902.1"></script>
-  <script src="project_profile_extension.js?v=20260902.4"></script>
+  <script src="event_bindings.js?v=20260905.1"></script>
+  <script src="project_profile_extension.js?v=20260905.4"></script>
   <script src="storyboard_background_extension.js?v=20260807.1"></script>
   <script src="style_reference_manager_extension.js?v=3.0.1"></script>
   <script src="ai_mask_auto_state.js?v=20260809.1"></script>
   <script src="digital_human_panel.js?v=20260827.2"></script>
   <script src="ai_mask_extension.js?v=20260831.1"></script>
-  <script src="one_click_extension.js?v=20260813.2"></script>
+  <script src="one_click_extension.js?v=20260905.3"></script>
 </body>
 </html>

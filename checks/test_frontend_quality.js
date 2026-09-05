@@ -119,8 +119,13 @@ if (!eventBindings.includes('loadCreationConfigs();')) {
 for (const managementToken of [
   'openCreationConfigManagement',
   "window.API.get('/api/creation-configs')",
+  "window.API.get('/api/accounts/current')",
+  'defaultPackageId',
   "window.API.get('/api/model-connections')",
   "window.API.post('/api/model-connections', payload)",
+  'MODEL_KIND_COPY',
+  'saveApiSecret',
+  'saveModel',
   'buildStructuredEditor',
   'syncStructuredFieldsToJson',
   'loadPayloadIntoStructured',
@@ -138,9 +143,45 @@ if (!html.includes('creation_config_management.js')
   || !html.includes('modal-creation-config-management')
   || !html.includes('creation-config-prompt-fields')
   || !html.includes('creation-config-model-binding-fields')
-  || !html.includes('creation-config-tts-voice-id')
+  || !projectProfile.includes('creation-config-choice-grid')
+  || !projectProfile.includes('refreshCreationConfigChoices')
+  || !creationConfigManagement.includes("['tts', '语音模型'")
   || !html.includes('creation-config-subtitle-enabled')) {
   throw new Error('creation configuration management UI is not declared');
+}
+for (const imageStyleControl of [
+  'creation-config-image-style-template',
+  'creation-config-reference-policy',
+  'model-form-image-supports-references',
+  'model-form-image-max-references',
+]) {
+  if (!html.includes(imageStyleControl) && !creationConfigManagement.includes(imageStyleControl)) {
+    throw new Error(`image style configuration control missing: ${imageStyleControl}`);
+  }
+}
+if (html.includes('creation-config-contract-fields')
+  || html.includes('creation-config-image-style-name')
+  || html.includes('creation-config-tts-voice-id')) {
+  throw new Error('obsolete creation configuration fields are still exposed');
+}
+for (const modelSetupControl of [
+  'model-library-list',
+  'data-model-kind="text"',
+  'data-model-kind="image"',
+  'data-model-kind="tts"',
+  'model-form-protocol',
+  'model-form-minimax-token',
+  'model-form-comfyui-workflow-file',
+  'btn-save-model',
+]) {
+  if (!html.includes(modelSetupControl)) {
+    throw new Error(`typed model setup control missing: ${modelSetupControl}`);
+  }
+}
+if (html.includes('creation-config-credential-list')
+  || html.includes('btn-create-credential')
+  || html.includes('凭据引用')) {
+  throw new Error('legacy credential-management controls are still exposed');
 }
 if (!(html.indexOf('api_client.js') < html.indexOf('creation_config_management.js')
   && html.indexOf('creation_config_management.js') < html.indexOf('event_bindings.js'))) {
@@ -724,11 +765,11 @@ if (!html.includes('step2-generation-status') || !storyboard.includes('setStep2G
 if (!css.includes('#step6-btn-audio-confirm-next:disabled') || !css.includes('#step8-btn-render:disabled')) {
   throw new Error('disabled primary button contrast contract is missing');
 }
-if (!projectProfile.includes("const aiMode = profile.automation_mode === 'auto' ? 'auto' : 'manual'")) {
-  throw new Error('project profile mode is not mapped to the backend ai_mode contract');
+if (!projectProfile.includes("automation_mode: 'auto'")) {
+  throw new Error('project profile must retain the package-owned automatic pipeline mode');
 }
-if (!projectProfile.includes('ai_mode: aiMode')) {
-  throw new Error('project creation does not submit the selected AI mode');
+if (projectProfile.includes('ai_mode: aiMode') || projectProfile.includes('manual_pause_steps: manualPauseSteps')) {
+  throw new Error('project creation must not duplicate creation-package automation settings');
 }
 if (!workspaceNavigation.includes("document.getElementById('btn-toggle-ai-mode').style.display = 'none'")) {
   throw new Error('project AI mode control remains visible after returning to the project library');

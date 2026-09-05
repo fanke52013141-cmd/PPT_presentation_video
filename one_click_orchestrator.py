@@ -42,6 +42,8 @@ from one_click_resume_policy import (
 from project_profile_store import DEFAULT_QUALITY_GATES, load_profile
 from tts_provider_service import normalize_tts_provider
 from video_render_service import RENDER_STAGE_PROGRESS
+from project_config_runtime import get_config_value, load_project_config
+from account_context import get_current_account_id, reset_current_account_id, set_current_account_id
 
 STATUS_FILENAME = "one_click_status.json"
 STATUS_VERSION = "one_click_orchestrator_v2"
@@ -349,6 +351,7 @@ def _pause_for_requested_review(
 _MANUAL_PAUSE_AFTER_STAGE: dict[str, str] = {
     "mask": "mask_assets",
     "narration": "narration",
+    "tts": "tts",
     "digital_human": "tts",
 }
 
@@ -671,13 +674,29 @@ def _preflight_errors(dependencies: OneClickDependencies, project: Any) -> list[
         pass
     if not _has_article(project):
         errors.append("请先导入文章内容，或在创建项目时填写文章内容。")
-    for key, label in (
-        ("llm_api_key", "LLM API Key"),
-        ("image_api_key", "图片生成 API Key"),
-    ):
-        if not str(dependencies.get_setting(key) or "").strip():
-            errors.append(f"未配置 {label}")
+    # A project snapshot is authoritative for the stages it binds.  The old
+    # global settings are checked only for legacy projects or for an
+    # unbound stage, preventing a valid account-specific package from being
+    # rejected by an unrelated default account key.
+    snapshot = load_project_config(project)
+    text_bindings = get_config_value(project, "model_bindings", {}) or {}
+    image_bound = isinstance(text_bindings, dict) and bool(text_bindings.get("image_generation"))
+    text_bound = isinstance(text_bindings, dict) and any(
+        text_bindings.get(name) for name in (
+            "article_generation", "storyboard", "visualization", "narration_annotation"
+        )
+    )
+    if snapshot is None or not text_bound:
+        if not str(dependencies.get_setting("llm_api_key") or "").strip():
+            errors.append("未配置 LLM API Key")
+    if snapshot is None or not image_bound:
+        if not str(dependencies.get_setting("image_api_key") or "").strip():
+            errors.append("未配置 图片生成 API Key")
 
+    tts_bound = bool(
+        get_config_value(project, "tts.connection", None)
+        or get_config_value(project, "model_bindings.tts", None)
+    )
     # ComfyUI/IndexTTS is a local provider and intentionally has no cloud
     # credential. Keep its preflight independent from the legacy TTS key
     # requirement, while still catching a missing workflow before the worker
@@ -687,7 +706,7 @@ def _preflight_errors(dependencies: OneClickDependencies, project: Any) -> list[
     except TypeError:
         configured_provider = dependencies.get_setting("tts_provider")
     provider = normalize_tts_provider(configured_provider)
-    if provider == "comfyui_tts":
+    if not tts_bound and provider == "comfyui_tts":
         try:
             endpoint = str(dependencies.get_setting("tts_endpoint", "") or "").strip()
         except TypeError:
@@ -724,8 +743,9 @@ def _preflight_errors(dependencies: OneClickDependencies, project: Any) -> list[
                             + reason
                             + "。请启动包含 IndexTTS 2.5 节点的 ComfyUI，并确认 http://127.0.0.1:8188/ 可打开。"
                         )
-    elif not str(dependencies.get_setting("tts_api_key") or "").strip():
-        errors.append("未配置 TTS API Key")
+    else:
+        if not tts_bound and not str(dependencies.get_setting("tts_api_key") or "").strip():
+            errors.append("未配置 TTS API Key")
     for tool_name in ("ffmpeg", "ffprobe"):
         available = bool(dependencies.resolve_media_tool(tool_name))
         if not available:
@@ -849,7 +869,9 @@ def _run_pipeline(
     start_from: str = "",
     stop_at: str = "",
     approved_checkpoint: str = "",
+    account_id: str = "default",
 ) -> None:
+    account_context_token = set_current_account_id(account_id)
     db = dependencies.session_factory()
     project = None
     try:
@@ -1173,6 +1195,7 @@ def _run_pipeline(
             pass
         with _RUNNING_LOCK:
             _RUNNING.pop(project_id, None)
+        reset_current_account_id(account_context_token)
 
 
 def start_one_click(
@@ -1224,7 +1247,11 @@ def start_one_click(
         thread = threading.Thread(
             name=f"ppt-one-click-{project_id}-{run_id}",
             target=_run_pipeline,
-            args=(dependencies, project_id, run_id, mode, start_from, stop_at, approved_checkpoint),
+            args=(
+                dependencies, project_id, run_id, mode, start_from, stop_at,
+                approved_checkpoint,
+                str(getattr(project, "account_id", None) or get_current_account_id()),
+            ),
             daemon=True,
         )
         _RUNNING[project_id] = thread

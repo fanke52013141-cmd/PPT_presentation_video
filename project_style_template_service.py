@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from datetime import datetime
+import base64
+import binascii
+import hashlib
+from io import BytesIO
 import json
 from pathlib import Path
 import shutil
@@ -12,11 +16,14 @@ import uuid
 
 import yaml
 
+from account_context import DEFAULT_ACCOUNT_ID, get_current_account_id
+
 
 STATE_FILENAME = "step3_image_style.json"
 BUILTIN_HANDDRAWN_TEMPLATE_ID = "handdrawn"
 BUILTIN_HANDDRAWN_TEMPLATE_NAME = "手绘风格"
 TEMPLATES_INDEX_VERSION = "step3_image_style_templates_v1"
+MAX_PORTABLE_REFERENCE_IMAGES = 3
 
 
 def _run_dir(project: Any) -> Path:
@@ -96,8 +103,24 @@ def _rewrite_reference_urls(value: Any, project_id: str) -> Any:
 # ---------------------------------------------------------------------------
 
 
+def _safe_account_segment(account_id: str) -> str:
+    value = str(account_id or DEFAULT_ACCOUNT_ID).strip() or DEFAULT_ACCOUNT_ID
+    if all(char.isalnum() or char in {"-", "_"} for char in value):
+        return value
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:24]
+
+
 def templates_root(context: Any) -> Path:
-    return Path(context.data_dir) / "step3_image_style_templates"
+    """Return the current account's style library root.
+
+    The default account keeps the historical directory so existing templates
+    continue to work. Every additional account gets an isolated library.
+    """
+    root = Path(context.data_dir) / "step3_image_style_templates"
+    account_id = get_current_account_id()
+    if account_id == DEFAULT_ACCOUNT_ID:
+        return root
+    return root / "accounts" / _safe_account_segment(account_id)
 
 
 def templates_index(context: Any) -> Path:
@@ -146,10 +169,17 @@ def builtin_style(context: Any) -> dict[str, Any]:
     }
 
 
-def read_templates(context: Any) -> list[dict[str, Any]]:
+def read_templates(
+    context: Any,
+    *,
+    include_archived: bool = False,
+) -> list[dict[str, Any]]:
     value = _read_json(templates_index(context), {"templates": []})
     items = value.get("templates", []) if isinstance(value, dict) else []
-    return [item for item in items if isinstance(item, dict)]
+    normalized = [item for item in items if isinstance(item, dict)]
+    if include_archived:
+        return normalized
+    return [item for item in normalized if not item.get("archived")]
 
 
 def write_templates(context: Any, items: list[dict[str, Any]]) -> None:
@@ -194,6 +224,22 @@ def template_detail(context: Any, template_id: str) -> dict[str, Any]:
             "id": template_id,
             "name": BUILTIN_HANDDRAWN_TEMPLATE_NAME,
             "built_in": True,
+            "version": 1,
+            "account_id": get_current_account_id(),
+            "content_hash": hashlib.sha256(
+                json.dumps(
+                    {
+                        "style": builtin_style(context),
+                        "reference_sha256s": [
+                            hashlib.sha256(path.read_bytes()).hexdigest()
+                            for path in paths[:3]
+                        ],
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest(),
             "reference_count": len(images),
         }
         return {
@@ -233,7 +279,7 @@ def template_detail(context: Any, template_id: str) -> dict[str, Any]:
     summary = next(
         (
             item
-            for item in read_templates(context)
+            for item in read_templates(context, include_archived=True)
             if str(item.get("id") or "") == template_id
         ),
         {},
@@ -301,9 +347,23 @@ def save_named_template(
     source_refs = references_dir(project)
     if source_refs.exists():
         shutil.copytree(source_refs, target / "references", dirs_exist_ok=True)
+    content_payload = {
+        "style": style,
+        "references": manifest,
+    }
     item = {
         "id": template_id,
         "name": name,
+        "version": 1,
+        "account_id": get_current_account_id(),
+        "content_hash": hashlib.sha256(
+            json.dumps(
+                content_payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest(),
         "reference_count": len(manifest.get("images", [])),
         "created_at": datetime.now().isoformat(timespec="seconds"),
     }
@@ -381,15 +441,323 @@ def delete_named_template(context: Any, template_id: str) -> list[dict[str, Any]
         raise context.http_exception(
             status_code=400, detail="内置手绘风格不能删除"
         )
-    source = template_dir_or_404(context, template_id)
-    items = [
-        item
-        for item in read_templates(context)
-        if str(item.get("id") or "") != template_id
-    ]
-    shutil.rmtree(source)
+    template_dir_or_404(context, template_id)
+    items = read_templates(context, include_archived=True)
+    matched = False
+    for item in items:
+        if str(item.get("id") or "") != template_id:
+            continue
+        item["archived"] = True
+        item["archived_at"] = datetime.now().isoformat(timespec="seconds")
+        matched = True
+        break
+    if not matched:
+        raise context.http_exception(status_code=404, detail="图片风格模板不存在")
     write_templates(context, items)
-    return items
+    return [item for item in items if not item.get("archived")]
+
+
+def export_portable_templates(context: Any) -> dict[str, Any]:
+    """Export account-owned reusable styles, including their generation refs."""
+    exported: list[dict[str, Any]] = []
+    for summary in read_templates(context, include_archived=True):
+        template_id = str(summary.get("id") or "")
+        if len(template_id) != 12:
+            continue
+        source = template_dir_or_404(context, template_id)
+        style = _read_json(source / "style.json", {})
+        manifest = _read_json(source / "references.json", {})
+        images: list[dict[str, Any]] = []
+        for item in (
+            manifest.get("images", []) if isinstance(manifest, dict) else []
+        )[:MAX_PORTABLE_REFERENCE_IMAGES]:
+            if not isinstance(item, dict):
+                continue
+            try:
+                index = int(item.get("index"))
+            except (TypeError, ValueError):
+                continue
+            filename = Path(
+                str(item.get("filename") or f"style_reference_{index:02d}.png")
+            ).name
+            image_path = (source / "references" / filename).resolve()
+            if (
+                image_path.parent != (source / "references").resolve()
+                or not image_path.is_file()
+            ):
+                continue
+            images.append({
+                "index": index,
+                "filename": filename,
+                "source": str(item.get("source") or "portable_config"),
+                "mime": "image/png",
+                "data": base64.b64encode(image_path.read_bytes()).decode("ascii"),
+            })
+        exported.append({
+            "id": template_id,
+            "name": str(summary.get("name") or ""),
+            "version": int(summary.get("version") or 1),
+            "content_hash": str(summary.get("content_hash") or ""),
+            "created_at": str(summary.get("created_at") or ""),
+            "archived": bool(summary.get("archived")),
+            "style": style if isinstance(style, dict) else {},
+            "references": {
+                "version": str(
+                    (manifest or {}).get("version")
+                    or "step3_style_references_v1"
+                ),
+                "scope": "step3_image_style",
+                "style_name": str(
+                    (manifest or {}).get("style_name")
+                    or summary.get("name")
+                    or ""
+                ),
+                "images": images,
+            },
+        })
+    return {
+        "version": TEMPLATES_INDEX_VERSION,
+        "templates": exported,
+    }
+
+
+def _decode_portable_reference(context: Any, item: Any) -> bytes:
+    if not isinstance(item, dict):
+        raise ValueError("图片风格参考图格式无效")
+    try:
+        decoded = base64.b64decode(str(item.get("data") or ""), validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError("图片风格参考图 Base64 数据无效") from exc
+    if not decoded:
+        raise ValueError("图片风格参考图内容为空")
+    try:
+        image = context.image_class.open(BytesIO(decoded))
+        image.verify()
+        image.close()
+    except Exception as exc:
+        raise ValueError("图片风格参考图不是有效图片") from exc
+    return decoded
+
+
+def normalize_portable_templates(context: Any, value: Any) -> list[dict[str, Any]]:
+    if value in (None, {}):
+        return []
+    if not isinstance(value, dict):
+        raise ValueError("图片风格资源包格式无效")
+    templates = value.get("templates")
+    if templates is None:
+        return []
+    if not isinstance(templates, list):
+        raise ValueError("图片风格资源列表格式无效")
+    normalized: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in templates:
+        if not isinstance(item, dict):
+            raise ValueError("图片风格资源格式无效")
+        template_id = str(item.get("id") or "").strip()
+        if (
+            len(template_id) != 12
+            or any(char not in "0123456789abcdef" for char in template_id)
+            or template_id in seen
+        ):
+            raise ValueError("图片风格资源 ID 无效或重复")
+        seen.add(template_id)
+        name = str(item.get("name") or "").strip()
+        style = item.get("style")
+        if not name or not isinstance(style, dict) or not style:
+            raise ValueError("图片风格资源缺少名称或提示词")
+        references = item.get("references")
+        references = references if isinstance(references, dict) else {}
+        raw_images = references.get("images", [])
+        if not isinstance(raw_images, list):
+            raise ValueError("图片风格参考图列表格式无效")
+        if len(raw_images) > MAX_PORTABLE_REFERENCE_IMAGES:
+            raise ValueError("每套图片风格最多携带 3 张参考图")
+        images: list[dict[str, Any]] = []
+        for position, image_item in enumerate(raw_images, start=1):
+            decoded = _decode_portable_reference(context, image_item)
+            try:
+                index = int(image_item.get("index") or position)
+            except (TypeError, ValueError):
+                index = position
+            images.append({
+                "index": max(1, index),
+                "filename": f"style_reference_{position:02d}.png",
+                "source": str(image_item.get("source") or "portable_config"),
+                "bytes": decoded,
+            })
+        try:
+            version = int(item.get("version") or 1)
+        except (TypeError, ValueError):
+            version = 1
+        normalized.append({
+            "id": template_id,
+            "name": name[:120],
+            "version": max(1, version),
+            "content_hash": str(item.get("content_hash") or ""),
+            "created_at": str(item.get("created_at") or ""),
+            "archived": bool(item.get("archived")),
+            "style": style,
+            "reference_version": str(
+                references.get("version") or "step3_style_references_v1"
+            ),
+            "style_name": str(references.get("style_name") or name),
+            "images": images,
+        })
+    return normalized
+
+
+def validate_portable_templates(context: Any, value: Any) -> None:
+    normalize_portable_templates(context, value)
+
+
+def import_portable_templates(context: Any, value: Any) -> list[dict[str, Any]]:
+    """Merge portable styles into the current account library, preserving IDs."""
+    normalized = normalize_portable_templates(context, value)
+    if not normalized:
+        return read_templates(context)
+    root = templates_root(context)
+    root.mkdir(parents=True, exist_ok=True)
+    staging = root / f".import-{uuid.uuid4().hex}"
+    staging.mkdir(parents=False, exist_ok=False)
+    try:
+        imported_summaries: list[dict[str, Any]] = []
+        for item in normalized:
+            target = staging / item["id"]
+            references = target / "references"
+            references.mkdir(parents=True, exist_ok=False)
+            _write_json(target / "style.json", item["style"])
+            manifest_images: list[dict[str, Any]] = []
+            for image in item["images"]:
+                context.process_and_save_image(
+                    image["bytes"],
+                    str(references / image["filename"]),
+                )
+                manifest_images.append({
+                    "index": image["index"],
+                    "filename": image["filename"],
+                    "source": image["source"],
+                })
+            _write_json(target / "references.json", {
+                "version": item["reference_version"],
+                "scope": "step3_image_style",
+                "style_name": item["style_name"],
+                "updated_at": datetime.now().isoformat(timespec="seconds"),
+                "images": manifest_images,
+            })
+            imported_summaries.append({
+                "id": item["id"],
+                "name": item["name"],
+                "version": item["version"],
+                "account_id": get_current_account_id(),
+                "content_hash": item["content_hash"],
+                "reference_count": len(manifest_images),
+                "created_at": item["created_at"] or datetime.now().isoformat(timespec="seconds"),
+                "archived": item["archived"],
+            })
+        for item in imported_summaries:
+            source = staging / item["id"]
+            target = root / item["id"]
+            if target.exists():
+                shutil.rmtree(target)
+            source.replace(target)
+        existing = {
+            str(item.get("id") or ""): item
+            for item in read_templates(context, include_archived=True)
+            if isinstance(item, dict)
+        }
+        for item in imported_summaries:
+            existing[item["id"]] = item
+        write_templates(context, list(existing.values()))
+        return read_templates(context)
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging)
+
+
+def normalize_creation_config_binding(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    template_id = str(value.get("template_id") or value.get("package_id") or "").strip()
+    if not template_id:
+        return {}
+    try:
+        version = int(value.get("version") or value.get("style_version") or 1)
+    except (TypeError, ValueError):
+        version = 1
+    policy = str(
+        value.get("reference_policy") or value.get("reference_mode") or "preferred"
+    ).strip().lower()
+    if policy not in {"required", "preferred", "text_only"}:
+        policy = "preferred"
+    try:
+        minimum = int(value.get("minimum_reference_images", 1))
+    except (TypeError, ValueError):
+        minimum = 1
+    minimum = max(0, min(3, minimum))
+    if policy == "required":
+        minimum = max(1, minimum)
+    elif policy == "text_only":
+        minimum = 0
+    return {
+        "template_id": template_id,
+        "version": max(1, version),
+        "reference_policy": policy,
+        "minimum_reference_images": minimum,
+    }
+
+
+def materialize_creation_config_style(
+    context: Any,
+    project: Any,
+    binding: Any,
+) -> dict[str, Any] | None:
+    """Copy a reusable style into a project and persist an immutable snapshot."""
+    normalized = normalize_creation_config_binding(binding)
+    if not normalized:
+        return None
+    template_id = normalized["template_id"]
+    detail = template_detail(context, template_id)
+    summary = detail.get("template") if isinstance(detail, dict) else {}
+    summary = summary if isinstance(summary, dict) else {}
+    template_version = int(summary.get("version") or 1)
+    if normalized["version"] != template_version:
+        raise context.http_exception(
+            status_code=409,
+            detail=f"图片风格版本不可用：需要 v{normalized['version']}，当前为 v{template_version}",
+        )
+    applied = apply_named_template(context, project, template_id)
+    manifest = applied.get("manifest") if isinstance(applied, dict) else {}
+    images = manifest.get("images", []) if isinstance(manifest, dict) else []
+    reference_count = len([item for item in images if isinstance(item, dict)])
+    if (
+        normalized["reference_policy"] == "required"
+        and reference_count < normalized["minimum_reference_images"]
+    ):
+        raise context.http_exception(
+            status_code=409,
+            detail=(
+                "图片风格参考图不足："
+                f"至少需要 {normalized['minimum_reference_images']} 张，当前 {reference_count} 张"
+            ),
+        )
+    snapshot = {
+        "schema_version": "project_image_style_snapshot_v1",
+        **normalized,
+        "name": str(summary.get("name") or ""),
+        "content_hash": str(summary.get("content_hash") or ""),
+        "reference_count": reference_count,
+        "materialized_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    _write_json(
+        _run_dir(project) / "planning" / "project_image_style_snapshot.json",
+        snapshot,
+    )
+    state = _read_json(_step3_state_path(project), {})
+    state["creation_config_binding"] = normalized
+    state["note"] = "Step 3 owns the project style snapshot and generation references."
+    _write_json(_step3_state_path(project), state)
+    return snapshot
 
 def rewrite_reference_urls(*args: Any, **kwargs: Any) -> Any:
     """公开包装（审查 L-06）：路由与服务经公开名调用。"""

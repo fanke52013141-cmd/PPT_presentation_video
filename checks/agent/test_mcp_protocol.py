@@ -86,6 +86,7 @@ class TestInitialize:
         assert "contractHash" in result["serverInfo"]
         assert len(result["serverInfo"]["contractHash"]) > 0
         assert result["serverInfo"]["contractMatch"] is True
+        assert result["serverInfo"]["writeAllowed"] is True
 
 
 def _make_server_with_mismatched_contract(
@@ -141,6 +142,7 @@ class TestContractNegotiation:
         assert result["serverInfo"]["contractMatch"] is True
         assert "mismatchDetail" in result["serverInfo"]
         assert "Minor/patch difference" in result["serverInfo"]["mismatchDetail"]
+        assert result["serverInfo"]["writeAllowed"] is False
 
     def test_hash_mismatch_patch_version_succeeds_with_warning(self):
         """Hash mismatch + patch version difference → success with mismatchDetail."""
@@ -153,6 +155,7 @@ class TestContractNegotiation:
         })["result"]
         assert result["serverInfo"]["contractMatch"] is True
         assert "mismatchDetail" in result["serverInfo"]
+        assert result["serverInfo"]["writeAllowed"] is False
 
     def test_api_unreachable_returns_error(self):
         """API service unreachable → error code -32000."""
@@ -216,6 +219,65 @@ class TestContractNegotiation:
             "params": {"name": "ppt_project_list", "arguments": {}}
         })["result"]
         assert call_result["isError"] is False
+
+    def test_write_tool_blocked_after_minor_mismatch(self):
+        """Hash drift may keep reads available but must block state changes."""
+        server = _make_server_with_mismatched_contract(
+            api_hash="minor00000", api_version="1.1.0",
+        )
+        init_resp = server.handle_request({
+            "jsonrpc": "2.0", "id": 110, "method": "initialize", "params": {}
+        })
+        assert "result" in init_resp
+
+        call_result = server.handle_request({
+            "jsonrpc": "2.0", "id": 111,
+            "method": "tools/call",
+            "params": {
+                "name": "ppt_project_create",
+                "arguments": {"name": "should-not-be-created"},
+            },
+        })["result"]
+        assert call_result["isError"] is True
+        assert "Write tool calls are blocked" in call_result["content"][0]["text"]
+        server._client.create_project.assert_not_called()
+
+    def test_write_tool_allowed_when_contract_matches(self):
+        """An exact contract match keeps write tools available."""
+        server = _make_server_with_matching_contract()
+        server._client.create_project.return_value = {
+            "project": {"project_id": "p1", "name": "created"}
+        }
+        init_resp = server.handle_request({
+            "jsonrpc": "2.0", "id": 112, "method": "initialize", "params": {}
+        })
+        assert "result" in init_resp
+
+        call_result = server.handle_request({
+            "jsonrpc": "2.0", "id": 114,
+            "method": "tools/call",
+            "params": {
+                "name": "ppt_project_create",
+                "arguments": {"name": "created"},
+            },
+        })["result"]
+        assert call_result["isError"] is False
+        server._client.create_project.assert_called_once()
+
+    def test_write_tool_requires_initialize(self):
+        """State-changing tools fail closed until MCP negotiation completes."""
+        server = MCPServer(base_url="http://mock")
+
+        call_result = server.handle_request({
+            "jsonrpc": "2.0", "id": 113,
+            "method": "tools/call",
+            "params": {
+                "name": "ppt_project_create",
+                "arguments": {"name": "should-not-be-created"},
+            },
+        })["result"]
+        assert call_result["isError"] is True
+        assert "Write tool calls are blocked" in call_result["content"][0]["text"]
 
     def test_initialize_includes_api_contract_fields_on_success(self):
         """Successful negotiation includes apiContractHash and apiAgentApiVersion."""

@@ -15,6 +15,8 @@ from settings_service import (
     mask_sensitive_settings,
     preserve_masked_secrets,
 )
+from account_context import get_current_account_id
+from credential_store import STORE_VERSION as CREDENTIAL_STORE_VERSION
 
 
 @dataclass(frozen=True)
@@ -34,6 +36,15 @@ class ConfigPortabilityDependencies:
     style_reference_files: Mapping[str, str]
     image_style_templates_dir: str
     image_style_templates_index: str
+    # Reusable configuration stores are deliberately injected here so the
+    # portable bundle stays independent from the route layer and can be
+    # replaced by a database adapter later.
+    model_connections_path: Optional[str] = None
+    creation_configs_path: Optional[str] = None
+    credentials_path: Optional[str] = None
+    export_project_style_templates: Optional[Callable[[], Dict[str, Any]]] = None
+    validate_project_style_templates: Optional[Callable[[Any], None]] = None
+    import_project_style_templates: Optional[Callable[[Any], Any]] = None
 
 
 _dependencies: ConfigPortabilityDependencies | None = None
@@ -197,6 +208,94 @@ def normalize_imported_template_list(
     return result
 
 
+def _account_owned_items(value: Any, collection_key: str) -> Dict[str, Any]:
+    """Return only current-account records from a versioned JSON store."""
+    if not isinstance(value, dict) or not isinstance(value.get(collection_key), dict):
+        return {}
+    account_id = get_current_account_id()
+    return {
+        str(item_id): item
+        for item_id, item in value[collection_key].items()
+        if isinstance(item, dict)
+        and str(item.get("account_id") or "default") == account_id
+    }
+
+
+def _export_reusable_config(*, contains_secrets: bool) -> Dict[str, Any]:
+    """Export the new model/config stores without leaking secrets by default."""
+    dependencies = _deps()
+    result: Dict[str, Any] = {
+        "account_id": get_current_account_id(),
+        "models": {"version": "model_connections_v1", "connections": {}},
+        "creation_configs": {
+            "version": "creation_config_store_v1", "packages": {}
+        },
+        "credentials": {
+            "version": CREDENTIAL_STORE_VERSION,
+            "credentials": {},
+            "included": False,
+        },
+        "image_style_resources": {
+            "version": "step3_image_style_templates_v1",
+            "templates": [],
+        },
+    }
+    if dependencies.export_project_style_templates:
+        exported_styles = dependencies.export_project_style_templates()
+        if isinstance(exported_styles, dict):
+            result["image_style_resources"] = exported_styles
+    if dependencies.model_connections_path:
+        raw_models = dependencies.read_json_file(
+            dependencies.model_connections_path,
+            {"version": "model_connections_v1", "connections": {}},
+        )
+        result["models"] = {
+            "version": "model_connections_v1",
+            "connections": _account_owned_items(raw_models, "connections"),
+        }
+    if dependencies.creation_configs_path:
+        raw_configs = dependencies.read_json_file(
+            dependencies.creation_configs_path,
+            {"version": "creation_config_store_v1", "packages": {}},
+        )
+        result["creation_configs"] = {
+            "version": "creation_config_store_v1",
+            "packages": _account_owned_items(raw_configs, "packages"),
+        }
+    if contains_secrets and dependencies.credentials_path:
+        raw_credentials = dependencies.read_json_file(
+            dependencies.credentials_path,
+            {"version": CREDENTIAL_STORE_VERSION, "credentials": {}},
+        )
+        result["credentials"] = {
+            "version": CREDENTIAL_STORE_VERSION,
+            "credentials": _account_owned_items(raw_credentials, "credentials"),
+            "included": True,
+        }
+    else:
+        # Normal exports include enough information for the UI to explain why
+        # a credential must be configured again, but never include its value.
+        if dependencies.credentials_path:
+            raw_credentials = dependencies.read_json_file(
+                dependencies.credentials_path,
+                {"version": CREDENTIAL_STORE_VERSION, "credentials": {}},
+            )
+            result["credentials"]["credentials"] = {
+                ref: {
+                    "credential_ref": item.get("credential_ref"),
+                    "provider": item.get("provider"),
+                    "label": item.get("label"),
+                    "state": item.get("state", "active"),
+                    "configured": bool(item.get("secret_values")),
+                    "created_at": item.get("created_at"),
+                    "updated_at": item.get("updated_at"),
+                    "account_id": item.get("account_id"),
+                }
+                for ref, item in _account_owned_items(raw_credentials, "credentials").items()
+            }
+    return result
+
+
 def build_config_export_bundle(
     settings: Dict[str, Any],
     *,
@@ -235,6 +334,9 @@ def build_config_export_bundle(
             ),
             "templates": exported_image_style_templates(),
         },
+        "reusable_config": _export_reusable_config(
+            contains_secrets=contains_secrets,
+        ),
     }
 
 
@@ -271,11 +373,103 @@ def validate_config_references(payload: Dict[str, Any]) -> None:
             continue
         for reference in bundle.values():
             decode_config_reference_bytes(reference)
+    reusable = payload.get("reusable_config")
+    if isinstance(reusable, dict) and _deps().validate_project_style_templates:
+        _deps().validate_project_style_templates(
+            reusable.get("image_style_resources")
+        )
+
+
+def _import_reusable_config(payload: Any) -> None:
+    """Restore reusable stores into the current account, preserving IDs."""
+    if not isinstance(payload, dict):
+        return
+    dependencies = _deps()
+    current_account_id = get_current_account_id()
+
+    if dependencies.import_project_style_templates:
+        dependencies.import_project_style_templates(
+            payload.get("image_style_resources")
+        )
+
+    models = payload.get("models")
+    if dependencies.model_connections_path and isinstance(models, dict):
+        connections = models.get("connections")
+        if isinstance(connections, dict):
+            existing = dependencies.read_json_file(
+                dependencies.model_connections_path,
+                {"version": "model_connections_v1", "connections": {}},
+            )
+            if not isinstance(existing, dict):
+                existing = {"version": "model_connections_v1", "connections": {}}
+            target = existing.setdefault("connections", {})
+            if not isinstance(target, dict):
+                target = {}
+                existing["connections"] = target
+            for item_id, item in connections.items():
+                if not isinstance(item, dict):
+                    continue
+                imported = dict(item)
+                imported["account_id"] = current_account_id
+                target[str(item_id)] = imported
+            existing["version"] = "model_connections_v1"
+            dependencies.write_json_atomic(dependencies.model_connections_path, existing)
+
+    creation_configs = payload.get("creation_configs")
+    if dependencies.creation_configs_path and isinstance(creation_configs, dict):
+        packages = creation_configs.get("packages")
+        if isinstance(packages, dict):
+            existing = dependencies.read_json_file(
+                dependencies.creation_configs_path,
+                {"version": "creation_config_store_v1", "packages": {}},
+            )
+            if not isinstance(existing, dict):
+                existing = {"version": "creation_config_store_v1", "packages": {}}
+            target = existing.setdefault("packages", {})
+            if not isinstance(target, dict):
+                target = {}
+                existing["packages"] = target
+            for item_id, item in packages.items():
+                if not isinstance(item, dict):
+                    continue
+                imported = dict(item)
+                imported["account_id"] = current_account_id
+                target[str(item_id)] = imported
+            existing["version"] = "creation_config_store_v1"
+            dependencies.write_json_atomic(dependencies.creation_configs_path, existing)
+
+    credentials = payload.get("credentials")
+    if (
+        dependencies.credentials_path
+        and isinstance(credentials, dict)
+        and credentials.get("included") is True
+    ):
+        items = credentials.get("credentials")
+        if isinstance(items, dict):
+            existing = dependencies.read_json_file(
+                dependencies.credentials_path,
+                {"version": CREDENTIAL_STORE_VERSION, "credentials": {}},
+            )
+            if not isinstance(existing, dict):
+                existing = {"version": CREDENTIAL_STORE_VERSION, "credentials": {}}
+            target = existing.setdefault("credentials", {})
+            if not isinstance(target, dict):
+                target = {}
+                existing["credentials"] = target
+            for reference, item in items.items():
+                if not isinstance(item, dict) or not isinstance(item.get("secret_values"), dict):
+                    continue
+                imported = dict(item)
+                imported["account_id"] = current_account_id
+                target[str(reference)] = imported
+            existing["version"] = CREDENTIAL_STORE_VERSION
+            dependencies.write_json_atomic(dependencies.credentials_path, existing)
 
 
 def import_full_config(payload: Dict[str, Any]) -> Dict[str, Any]:
     dependencies = _deps()
     validate_config_references(payload)
+    _import_reusable_config(payload.get("reusable_config"))
 
     settings = payload.get("settings")
     if isinstance(settings, dict):
@@ -388,4 +582,12 @@ def import_full_config(payload: Dict[str, Any]) -> Dict[str, Any]:
             dependencies.image_style_templates_index,
             imported_image_templates,
         )
-    return {"success": True, "message": "配置已导入"}
+    reusable = payload.get("reusable_config")
+    reusable_message = ""
+    if isinstance(reusable, dict):
+        credential_bundle = reusable.get("credentials")
+        if not isinstance(credential_bundle, dict) or credential_bundle.get("included") is not True:
+            reusable_message = "；模型与创作配置已导入，凭据需在当前账号重新配置"
+        else:
+            reusable_message = "；模型、创作配置和凭据已导入"
+    return {"success": True, "message": "配置已导入" + reusable_message}

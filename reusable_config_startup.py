@@ -25,12 +25,16 @@ def configure_reusable_config_routes(
         utc_timestamp,
     )
     from credential_routes import router as credential_router
-    from credential_store import CredentialDependencies, configure_credential_dependencies
+    from credential_store import (
+        STORE_VERSION as CREDENTIAL_STORE_VERSION,
+        CredentialDependencies,
+        configure_credential_dependencies,
+    )
     from model_connection_routes import router as model_connection_router
     from model_connection_service import ModelConnectionDependencies, configure_model_connection_dependencies
 
     configure_model_connection_dependencies(ModelConnectionDependencies(
-        read_registry=lambda: read_json_file(model_connections_path),
+        read_registry=lambda: read_json_file(model_connections_path, {}),
         write_registry=lambda value: write_json_atomic(model_connections_path, value),
     ))
     configure_creation_config_dependencies(CreationConfigDependencies(
@@ -39,7 +43,14 @@ def configure_reusable_config_routes(
         new_id=new_creation_config_id,
     ))
     configure_credential_dependencies(CredentialDependencies(
-        read_store=lambda: read_json_file(credentials_path),
+        # A new installation has no credentials file yet.  The credential
+        # service expects its versioned envelope even for an empty store;
+        # returning a bare object here makes every credentials read fail with
+        # "凭据存储格式不正确" before the first credential can be created.
+        read_store=lambda: read_json_file(
+            credentials_path,
+            {"version": CREDENTIAL_STORE_VERSION, "credentials": {}},
+        ),
         write_store=lambda value: write_json_atomic(credentials_path, value),
     ))
     app.include_router(model_connection_router)

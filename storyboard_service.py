@@ -30,9 +30,7 @@ from database import Project
 from project_path_service import project_or_404
 import invalidation_service
 from pipeline_lifecycle import write_json_atomic
-from project_config_runtime import (
-    get_config_value,
-)
+from project_config_runtime import get_config_value
 from storyboard_project_config import read_step2_prompts_for_project, resolve_step2_llm
 from project_storage import slide_file as storage_slide_file
 from repository_paths import (
@@ -1022,7 +1020,6 @@ def persist_and_validate_step2_contract(
             "topic_summary": article_summary,
         }
     contract = normalize_visual_contract(contract, read_project_pipeline_profile(project))
-
     contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
     os.makedirs(os.path.dirname(contract_path), exist_ok=True)
     contract["version"] = "visual_contract_v1"
@@ -1343,8 +1340,5 @@ def submit_step2_manual_skeleton(
         db.refresh(project)
     return {"success": True, "contract": contract, "ai_mode": project.ai_mode}
 
-
 # ==================== 步骤 3-4: 图片生成与管理 ====================
-
-
 

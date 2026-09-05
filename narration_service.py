@@ -445,12 +445,11 @@ def narration_annotation_preserves_text(candidate: str, source_text: str) -> boo
 
 
 def compose_narration_annotation_prompt(system_content: str, output_example: str) -> str:
-    return (
-        str(system_content or "").strip()
-        + "\n\n<OutputExample>\n"
-        + str(output_example or "").strip()
-        + "\n</OutputExample>"
-    )
+    system = str(system_content or "").strip()
+    example = str(output_example or "").strip()
+    if not example:
+        return system
+    return f"{system}\n\n<OutputExample>\n{example}\n</OutputExample>"
 
 
 def get_narration_annotation_settings():

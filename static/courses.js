@@ -114,7 +114,19 @@ const CourseTree = (() => {
       treeEl.appendChild(renderCourseNode(course));
     });
 
-    // 独立项目：每个都用和课程一样的卡片样式
+    // 独立项目：每个都用和课程一样的卡片样式，但明确标注为兼容区，
+    // 避免用户误以为可以跳过课程和章节直接开始正式创作。
+    if (standaloneList.length > 0) {
+      const standaloneHeading = document.createElement('div');
+      standaloneHeading.className = 'course-tree-standalone-heading';
+      standaloneHeading.innerHTML = `
+        <div>
+          <strong>未归档项目</strong>
+          <span>旧项目或临时项目；正式内容请放入课程 → 章节 → 视频。</span>
+        </div>
+      `;
+      treeEl.appendChild(standaloneHeading);
+    }
     standaloneList.forEach(project => {
       treeEl.appendChild(renderStandaloneProjectCard(project));
     });
@@ -154,7 +166,6 @@ const CourseTree = (() => {
         <span class="course-meta">${chapterCount} 章 · ${projectCount} 视频</span>
         <div class="course-actions">
           <button class="icon-action-btn" data-action="add-chapter" data-course-id="${course.id}" title="新建章节">${ICON.plus}<span class="action-label">章节</span></button>
-          <button class="icon-action-btn" data-action="add-project" data-course-id="${course.id}" title="新建视频">${ICON.plus}<span class="action-label">视频</span></button>
           <button class="icon-action-btn" data-action="edit-course" data-course-id="${course.id}" title="重命名">${ICON.edit}<span class="action-label">修改</span></button>
           <button class="icon-action-btn danger" data-action="delete-course" data-course-id="${course.id}" title="删除课程">${ICON.trash}<span class="action-label">删除</span></button>
         </div>
@@ -169,7 +180,6 @@ const CourseTree = (() => {
     });
     node.querySelector('.course-name').addEventListener('dblclick', () => startRenameCourse(course.id));
     node.querySelector('[data-action="add-chapter"]').addEventListener('click', () => createChapterQuick(course.id));
-    node.querySelector('[data-action="add-project"]').addEventListener('click', () => createProjectInCourse(course.id));
     node.querySelector('[data-action="edit-course"]').addEventListener('click', () => startRenameCourse(course.id));
     node.querySelector('[data-action="delete-course"]').addEventListener('click', () => deleteCourseConfirm(course));
 
@@ -188,10 +198,16 @@ const CourseTree = (() => {
         childrenEl.appendChild(renderChapterNode(chapter));
       });
 
-      // 课程下未归类视频（直接跟在章节后面，无额外分组标签）
-      (course.unchaptered_projects || []).forEach(p => {
-        childrenEl.appendChild(renderProjectLeaf(p));
-      });
+      // 正式入口只允许课程 → 章节 → 视频。旧数据中的未归档视频仍然
+      // 保留并可打开，但明确标出待归档，避免用户误以为它是推荐结构。
+      const unchaptered = course.unchaptered_projects || [];
+      if (unchaptered.length) {
+        const legacyHeading = document.createElement('div');
+        legacyHeading.className = 'course-tree-unchaptered-heading';
+        legacyHeading.textContent = `待归档视频 · ${unchaptered.length}`;
+        childrenEl.appendChild(legacyHeading);
+        unchaptered.forEach(p => childrenEl.appendChild(renderProjectLeaf(p)));
+      }
 
       if (chapterCount === 0 && unchapteredCount === 0) {
         childrenEl.innerHTML = '<div class="empty-hint">暂无章节或视频，点上方 + 添加</div>';
@@ -385,13 +401,11 @@ const CourseTree = (() => {
 
   // 打开新建项目弹窗（复用 modal-create），清空表单
   function openCreateProjectModal() {
-    const modal = document.getElementById('modal-create');
-    if (!modal) { showToast('新建弹窗未就绪'); return; }
-    document.getElementById('input-project-name').value = '';
-    document.getElementById('input-project-desc').value = '';
-    // 同步父级挂载目标给全局桥接函数读取
+    const createButton = document.getElementById('btn-create-project');
+    if (!createButton) { showToast('新建弹窗未就绪'); return; }
+    // 触发原有入口，确保风格模板、创作配置和自动化选项都会加载。
     window.__pendingProjectParent = pendingProjectParent;
-    modal.style.display = 'flex';
+    createButton.click();
   }
 
   // ===== 内联重命名 =====
@@ -770,6 +784,8 @@ const CourseTree = (() => {
   };
 })();
 
+window.CourseTree = CourseTree;
+
 // 桥接：把原有的 loadProjects() 重定向到 CourseTree，
 // 这样 event_bindings.js / projects.js / workspace_navigation.js
 // 里的所有 loadProjects() 调用都会自动渲染课程树，无需改动现有文件。
@@ -778,49 +794,9 @@ window.loadProjects = function loadProjectsViaCourseTree() {
   return CourseTree.load();
 };
 
-// 桥接：完全接管 createProject()，新建视频后停在课程与项目主页（不跳转工作台）。
-// 如果是从课程/章节触发的创建（__pendingProjectParent 有值），创建后自动移动到父级。
-(function overrideCreateProjectForTree() {
-  if (typeof window.createProject !== 'function' || window.createProject.__treeOverridden) return;
-
-  const overridden = async function createProjectStayHome() {
-    const parent = window.__pendingProjectParent || null;
-
-    // 读取表单
-    const nameEl = document.getElementById('input-project-name');
-    const descEl = document.getElementById('input-project-desc');
-    const modeEl = document.getElementById('input-project-ai-mode');
-    const name = (nameEl?.value || '').trim();
-    const description = (descEl?.value || '').trim();
-    const aiMode = (modeEl?.value || 'auto').trim();
-
-    if (!name) { showToast('请输入项目名称'); return; }
-
-    // 创建项目
-    const result = await API.post('/api/projects', { name, description, ai_mode: aiMode });
-    if (!result || !result.success) return;
-
-    // 关闭弹窗
-    document.getElementById('modal-create').style.display = 'none';
-    showToast('视频创建成功');
-
-    // 移动到父级（课程/章节）
-    if (parent) {
-      try {
-        await API.post(`/api/projects/${result.project.id}/move`, parent);
-      } catch (e) {
-        showToast('视频移动失败，已创建为独立项目');
-      }
-      window.__pendingProjectParent = null;
-    }
-
-    // 刷新课程树，停在主页（不调用 enterWorkspace）
-    await CourseTree.load();
-  };
-
-  overridden.__treeOverridden = true;
-  window.createProject = overridden;
-})();
+// Project creation is implemented in projects.js. The course tree only sets
+// window.__pendingProjectParent before opening its full form, so standalone
+// and chapter-contained projects use identical configuration behavior.
 
 // 修改项目设定（弹窗，不跳转工作台）
 function openEditProjectModal(project) {

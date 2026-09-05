@@ -83,10 +83,12 @@ async function loadCreationConfigs() {
         ? '选择后会固定使用该配置包的最新版本；不选择则沿用当前项目创建方式。'
         : '暂无可用创作配置包；仍可按当前项目创建方式继续。';
     }
+    window.refreshCreationConfigChoices?.(packages);
   } catch (_) {
     select.replaceChildren(emptyOption);
     select.value = '';
     if (help) help.textContent = '创作配置包加载失败；仍可按当前项目创建方式继续。';
+    window.refreshCreationConfigChoices?.([]);
   }
 }
 
@@ -286,7 +288,6 @@ async function loadProjects() {
 async function createProject() {
   const name = document.getElementById('input-project-name').value.trim();
   const description = document.getElementById('input-project-desc').value.trim();
-  const aiMode = (document.getElementById('input-project-ai-mode')?.value || 'auto').trim();
   const canvasProfile = (document.getElementById('input-project-canvas-profile')?.value || 'landscape_16_9').trim();
 
   if (!name) {
@@ -294,27 +295,38 @@ async function createProject() {
     return;
   }
 
-  // Collect manual pause steps from checkboxes.
-  const pauseSteps = Array.from(document.querySelectorAll('.create-pause-step:checked'))
-    .map(cb => cb.value)
-    .filter(Boolean);
   const creationConfig = selectedCreationConfig();
+  // A course-tree entry point can preselect the destination. Passing the
+  // ownership IDs on the initial create keeps this as one atomic, account-
+  // scoped operation instead of creating an unassigned project then moving it.
+  const parent = window.__pendingProjectParent || null;
+  const referenceFiles = Array.from(document.getElementById('input-project-reference-images')?.files || []).slice(0, 3);
 
   const result = await API.post('/api/projects', {
     name,
     description,
-    ai_mode: aiMode,
     canvas_profile: canvasProfile,
-    manual_pause_steps: pauseSteps,
     image_style_template: _selectedStyleTemplate || 'default',
     ...(creationConfig ? {
       config_package_id: creationConfig.id,
       config_package_version: creationConfig.version,
     } : {}),
+    ...(parent || {}),
   });
   if (!result.success) return;
   document.getElementById('modal-create').style.display = 'none';
   showToast('项目新建成功');
+  window.__pendingProjectParent = null;
+
+  if (referenceFiles.length) {
+    const form = new FormData();
+    referenceFiles.forEach(file => form.append('files', file));
+    try {
+      await API.post(`/api/projects/${encodeURIComponent(result.project.id)}/steps/3/image-style/reference-images`, form);
+    } catch (_) {
+      showToast('项目已创建，但参考图上传失败，可在第 3 步重新上传');
+    }
+  }
 
   // Apply the selected image-style template if it's not the default.
   const templateId = _selectedStyleTemplate || 'default';
@@ -324,7 +336,13 @@ async function createProject() {
     } catch (_) { /* non-fatal — user can apply manually in Step 3 */ }
   }
 
-  enterWorkspace(result.project.id);
+  // Course and chapter creation stays in the library so the user can keep
+  // organizing the course tree. The normal entry retains its direct opening.
+  if (parent && window.CourseTree?.load) {
+    await window.CourseTree.load();
+  } else {
+    enterWorkspace(result.project.id);
+  }
 }
 
 function deleteProject(id) {

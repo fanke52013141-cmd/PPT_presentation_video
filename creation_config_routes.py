@@ -47,6 +47,16 @@ def list_creation_configs(
     )
 
 
+@router.get("/api/creation-configs/default-payload")
+def get_default_creation_config_payload() -> dict[str, Any]:
+    from creation_config_defaults import default_creation_config_payload
+
+    return {
+        "success": True,
+        "payload": default_creation_config_payload(),
+    }
+
+
 @router.post("/api/creation-configs")
 def create_creation_config(payload: CreationConfigCreate) -> dict[str, Any]:
     return _run(

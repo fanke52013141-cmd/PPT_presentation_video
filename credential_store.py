@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 import threading
 from typing import Any, Callable, Mapping
 from uuid import uuid4
+from account_context import get_current_account_id
 
 
 STORE_VERSION = "credential_store_v1"
@@ -97,6 +98,7 @@ def _metadata(item: Mapping[str, Any]) -> dict[str, Any]:
         "configured": bool(item.get("secret_values")),
         "created_at": str(item["created_at"]),
         "updated_at": str(item["updated_at"]),
+        "account_id": str(item.get("account_id") or "default"),
     }
 
 
@@ -116,6 +118,7 @@ def create_credential(*, provider: Any, label: Any, secret_values: Any) -> dict[
             "state": "active",
             "created_at": timestamp,
             "updated_at": timestamp,
+            "account_id": get_current_account_id(),
         }
         store["credentials"][reference] = item
         _deps().write_store(store)
@@ -124,7 +127,10 @@ def create_credential(*, provider: Any, label: Any, secret_values: Any) -> dict[
 
 def list_credentials(*, include_disabled: bool = False) -> list[dict[str, Any]]:
     with _lock:
-        items = [_metadata(item) for item in _store()["credentials"].values()]
+        items = [
+            _metadata(item) for item in _store()["credentials"].values()
+            if str(item.get("account_id") or "default") == get_current_account_id()
+        ]
     return sorted(
         (item for item in items if include_disabled or item["state"] == "active"),
         key=lambda item: (item["provider"].casefold(), item["label"].casefold()),
@@ -134,7 +140,7 @@ def list_credentials(*, include_disabled: bool = False) -> list[dict[str, Any]]:
 def get_credential(credential_ref: str) -> dict[str, Any]:
     with _lock:
         item = _store()["credentials"].get(str(credential_ref))
-        if not isinstance(item, dict):
+        if not isinstance(item, dict) or str(item.get("account_id") or "default") != get_current_account_id():
             raise CredentialNotFound("凭据不存在")
         if item.get("state") != "active":
             raise CredentialUnavailable("凭据已停用")
@@ -151,7 +157,7 @@ def update_credential(
     with _lock:
         store = _store()
         item = store["credentials"].get(str(credential_ref))
-        if not isinstance(item, dict):
+        if not isinstance(item, dict) or str(item.get("account_id") or "default") != get_current_account_id():
             raise CredentialNotFound("凭据不存在")
         if label is not None:
             item["label"] = _clean(label, "label", 120)

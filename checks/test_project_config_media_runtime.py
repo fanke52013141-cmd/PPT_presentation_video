@@ -122,6 +122,52 @@ def test_image_runtime_without_snapshot_binding_keeps_global_fallback(tmp_path: 
     assert images._project_image_runtime(project) is None
 
 
+def test_required_style_references_block_an_unsupported_image_model(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = _project(
+        tmp_path,
+        {
+            "model_bindings": {
+                "image_generation": {"connection_id": "image-a", "revision": 1}
+            },
+            "image_style": {
+                "template_id": "handdrawn",
+                "version": 1,
+                "reference_policy": "required",
+                "minimum_reference_images": 1,
+            },
+        },
+    )
+    reference = tmp_path / "reference.png"
+    reference.write_bytes(b"reference")
+    monkeypatch.setattr(images, "project_or_404", lambda _db, _id: project)
+    monkeypatch.setattr(
+        images,
+        "resolve_model_connection",
+        lambda *_args: {
+            **_image_connection("", 1),
+            "public_config": {
+                "image_size": "1024x1024",
+                "supports_reference_images": False,
+            },
+        },
+    )
+    monkeypatch.setattr(images, "get_credential", lambda _ref: {"api_key": "secret"})
+    monkeypatch.setattr(images, "current_slide_file_or_404", lambda *_args: str(tmp_path / "out.png"))
+    monkeypatch.setattr(images, "get_openai_client", lambda **_kwargs: SimpleNamespace())
+    monkeypatch.setattr(images, "project_reference_paths", lambda _project: [str(reference)])
+    monkeypatch.setattr(images, "ip_character_reference_paths", lambda *_args: [])
+    monkeypatch.setattr(images, "render_ip_character_prompt", lambda *_args: "")
+
+    with pytest.raises(images.HTTPException) as exc_info:
+        images.generate_slide_image("project-media", "slide_001", "draw", False, object())
+
+    assert exc_info.value.status_code == 409
+    assert "未启用参考图能力" in exc_info.value.detail
+
+
 def test_tts_generation_uses_project_voice_settings_and_redacts_failed_output(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -196,3 +242,31 @@ def test_tts_generation_uses_project_voice_settings_and_redacts_failed_output(
 def test_tts_runtime_without_snapshot_binding_keeps_global_fallback(tmp_path: Path) -> None:
     project = SimpleNamespace(run_dir=str(tmp_path / "legacy"))
     assert tts._project_tts_runtime(project) is None
+
+
+def test_project_bound_comfyui_tts_needs_no_cloud_credential(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = _project(
+        tmp_path,
+        {"tts": {"connection": {"connection_id": "local-voice", "revision": 1}}},
+    )
+    monkeypatch.setattr(
+        tts,
+        "resolve_model_connection",
+        lambda *_args: {
+            "kind": "tts",
+            "provider": "comfyui_tts",
+            "model": "IndexTTS-2",
+            "endpoint": "",
+            "credential_ref": None,
+            "public_config": {"workflow_mode": "legacy_import"},
+        },
+    )
+    monkeypatch.setattr(tts, "normalize_tts_provider", lambda provider: provider)
+    runtime = tts._project_tts_runtime(project)
+    assert runtime is not None
+    assert runtime["provider"] == "comfyui_tts"
+    assert runtime["api_key"] == ""
+    assert runtime["public_config"]["workflow_mode"] == "legacy_import"

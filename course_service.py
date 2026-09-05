@@ -12,6 +12,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from account_context import get_current_account_id
 from database import Chapter, Course, Project
 
 
@@ -93,6 +94,7 @@ def _gen_id(prefix: str) -> str:
 def _course_to_dict(course: Course, db: Session, include_children: bool = False) -> dict[str, Any]:
     result = {
         "id": course.id,
+        "account_id": course.account_id,
         "name": course.name,
         "description": course.description or "",
         "cover_color": course.cover_color,
@@ -110,11 +112,22 @@ def _course_to_dict(course: Course, db: Session, include_children: bool = False)
         )
         chapter_list = []
         for ch in chapters:
-            chapter_list.append(_chapter_to_dict(ch, db, include_projects=True))
+            chapter_list.append(
+                _chapter_to_dict(
+                    ch,
+                    db,
+                    include_projects=True,
+                    account_id=course.account_id,
+                )
+            )
         # 课程下未归入章节的项目
         unchaptered_projects = (
             db.query(Project)
-            .filter(Project.course_id == course.id, Project.chapter_id.is_(None))
+            .filter(
+                Project.account_id == course.account_id,
+                Project.course_id == course.id,
+                Project.chapter_id.is_(None),
+            )
             .order_by(Project.sort_order, Project.created_at.desc())
             .all()
         )
@@ -128,7 +141,13 @@ def _course_to_dict(course: Course, db: Session, include_children: bool = False)
     return result
 
 
-def _chapter_to_dict(chapter: Chapter, db: Session, include_projects: bool = False) -> dict[str, Any]:
+def _chapter_to_dict(
+    chapter: Chapter,
+    db: Session,
+    include_projects: bool = False,
+    *,
+    account_id: str | None = None,
+) -> dict[str, Any]:
     result = {
         "id": chapter.id,
         "course_id": chapter.course_id,
@@ -140,7 +159,10 @@ def _chapter_to_dict(chapter: Chapter, db: Session, include_projects: bool = Fal
     if include_projects:
         projects = (
             db.query(Project)
-            .filter(Project.chapter_id == chapter.id)
+            .filter(
+                Project.chapter_id == chapter.id,
+                Project.account_id == (account_id or get_current_account_id()),
+            )
             .order_by(Project.sort_order, Project.created_at.desc())
             .all()
         )
@@ -172,6 +194,7 @@ class CourseService:
 
     def create_course(self, payload: CourseCreate, db: Session) -> dict[str, Any]:
         import random
+        account_id = get_current_account_id()
         course_id = _gen_id("course")
         course = Course(
             id=course_id,
@@ -179,7 +202,8 @@ class CourseService:
             description=(payload.description or "").strip() or None,
             cover_color=payload.cover_color or random.choice(DEFAULT_COVER_COLORS),
             cover_image_path=payload.cover_image_path,
-            sort_order=self._next_course_sort_order(db),
+            sort_order=self._next_course_sort_order(db, account_id),
+            account_id=account_id,
             created_at=_utc_now_naive(),
             updated_at=_utc_now_naive(),
         )
@@ -189,8 +213,10 @@ class CourseService:
         return _course_to_dict(course, db)
 
     def list_courses(self, db: Session, include_children: bool = False) -> list[dict[str, Any]]:
+        account_id = get_current_account_id()
         courses = (
             db.query(Course)
+            .filter(Course.account_id == account_id)
             .order_by(Course.sort_order, Course.created_at.desc())
             .all()
         )
@@ -221,7 +247,11 @@ class CourseService:
         chapters = db.query(Chapter).filter(Chapter.course_id == course_id).all()
         chapter_ids = [ch.id for ch in chapters]
         # 把课程下所有项目解绑（变成独立项目）
-        projects = db.query(Project).filter(Project.course_id == course_id).all()
+        projects = (
+            db.query(Project)
+            .filter(Project.account_id == course.account_id, Project.course_id == course_id)
+            .all()
+        )
         for p in projects:
             p.course_id = None
             p.chapter_id = None
@@ -237,8 +267,13 @@ class CourseService:
         }
 
     def reorder_courses(self, payload: ReorderRequest, db: Session) -> dict[str, Any]:
+        account_id = get_current_account_id()
         for index, cid in enumerate(payload.ordered_ids):
-            course = db.query(Course).filter(Course.id == cid).first()
+            course = (
+                db.query(Course)
+                .filter(Course.id == cid, Course.account_id == account_id)
+                .first()
+            )
             if course:
                 course.sort_order = index
         db.commit()
@@ -273,7 +308,11 @@ class CourseService:
     def delete_chapter(self, chapter_id: str, db: Session) -> dict[str, Any]:
         chapter = self._require_chapter(chapter_id, db)
         # 把章节下所有项目解绑（保留 course_id 归到课程的"未归类"分组）
-        projects = db.query(Project).filter(Project.chapter_id == chapter_id).all()
+        projects = (
+            db.query(Project)
+            .filter(Project.account_id == get_current_account_id(), Project.chapter_id == chapter_id)
+            .all()
+        )
         for p in projects:
             p.chapter_id = None
         db.delete(chapter)
@@ -281,8 +320,9 @@ class CourseService:
         return {"success": True, "unbound_project_ids": [p.id for p in projects]}
 
     def reorder_chapters(self, course_id: str, payload: ReorderRequest, db: Session) -> dict[str, Any]:
+        course = self._require_course(course_id, db)
         for index, cid in enumerate(payload.ordered_ids):
-            chapter = db.query(Chapter).filter(Chapter.id == cid, Chapter.course_id == course_id).first()
+            chapter = db.query(Chapter).filter(Chapter.id == cid, Chapter.course_id == course.id).first()
             if chapter:
                 chapter.sort_order = index
         db.commit()
@@ -332,7 +372,11 @@ class CourseService:
         chapter.sort_order = self._next_chapter_sort_order(target_course_id, db)
         chapter.updated_at = _utc_now_naive()
         # 章节下所有项目的 course_id 同步为新课程（chapter_id 保持不变）
-        moved_projects = db.query(Project).filter(Project.chapter_id == chapter_id).all()
+        moved_projects = (
+            db.query(Project)
+            .filter(Project.account_id == get_current_account_id(), Project.chapter_id == chapter_id)
+            .all()
+        )
         moved_project_ids = []
         for p in moved_projects:
             p.course_id = target_course_id
@@ -349,7 +393,12 @@ class CourseService:
     # ===== Project move =====
 
     def move_project(self, project_id: str, payload: ProjectMove, db: Session) -> dict[str, Any]:
-        project = db.query(Project).filter(Project.id == project_id).first()
+        account_id = get_current_account_id()
+        project = (
+            db.query(Project)
+            .filter(Project.id == project_id, Project.account_id == account_id)
+            .first()
+        )
         if not project:
             raise HTTPException(status_code=404, detail=f"项目不存在: {project_id}")
         # 校验 course_id 有效
@@ -388,9 +437,14 @@ class CourseService:
         elif target_course_id is not None:
             self._require_course(target_course_id, db)
         # 逐个更新归属 + 排序
+        account_id = get_current_account_id()
         updated = []
         for index, pid in enumerate(payload.ordered_ids):
-            project = db.query(Project).filter(Project.id == pid).first()
+            project = (
+                db.query(Project)
+                .filter(Project.id == pid, Project.account_id == account_id)
+                .first()
+            )
             if not project:
                 raise HTTPException(status_code=404, detail=f"项目不存在: {pid}")
             project.course_id = target_course_id
@@ -417,7 +471,10 @@ class CourseService:
         # 独立项目（未归入任何课程）
         standalone_projects = (
             db.query(Project)
-            .filter(Project.course_id.is_(None))
+            .filter(
+                Project.account_id == get_current_account_id(),
+                Project.course_id.is_(None),
+            )
             .order_by(Project.sort_order, Project.created_at.desc())
             .all()
         )
@@ -429,19 +486,28 @@ class CourseService:
     # ===== Helpers =====
 
     def _require_course(self, course_id: str, db: Session) -> Course:
-        course = db.query(Course).filter(Course.id == course_id).first()
+        course = (
+            db.query(Course)
+            .filter(Course.id == course_id, Course.account_id == get_current_account_id())
+            .first()
+        )
         if not course:
             raise HTTPException(status_code=404, detail=f"课程不存在: {course_id}")
         return course
 
     def _require_chapter(self, chapter_id: str, db: Session) -> Chapter:
-        chapter = db.query(Chapter).filter(Chapter.id == chapter_id).first()
+        chapter = (
+            db.query(Chapter)
+            .join(Course, Course.id == Chapter.course_id)
+            .filter(Chapter.id == chapter_id, Course.account_id == get_current_account_id())
+            .first()
+        )
         if not chapter:
             raise HTTPException(status_code=404, detail=f"章节不存在: {chapter_id}")
         return chapter
 
-    def _next_course_sort_order(self, db: Session) -> int:
-        max_order = db.query(Course).count()
+    def _next_course_sort_order(self, db: Session, account_id: str) -> int:
+        max_order = db.query(Course).filter(Course.account_id == account_id).count()
         return max_order
 
     def _next_chapter_sort_order(self, course_id: str, db: Session) -> int:

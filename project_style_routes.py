@@ -572,13 +572,9 @@ def delete_all_legacy_reference_images(
 
 @router.get("/api/image-style/project-templates")
 def list_step3_templates() -> dict[str, Any]:
-    _, paths = template_service.builtin_sources(_context())
-    built_in = {
-        "id": template_service.BUILTIN_HANDDRAWN_TEMPLATE_ID,
-        "name": template_service.BUILTIN_HANDDRAWN_TEMPLATE_NAME,
-        "built_in": True,
-        "reference_count": min(3, len(paths)),
-    }
+    built_in = template_service.template_detail(
+        _context(), template_service.BUILTIN_HANDDRAWN_TEMPLATE_ID
+    )["template"]
     return {"success": True, "templates": [built_in, *template_service.read_templates(_context())]}
 
 

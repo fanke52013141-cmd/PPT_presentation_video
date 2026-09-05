@@ -27,6 +27,7 @@ from tts_artifacts import (
     build_confirmation_payload as build_audio_confirmation_payload,
 )
 from project_config_runtime import get_config_value
+from account_context import get_current_account_id, reset_current_account_id, set_current_account_id
 
 
 logger = logging.getLogger("PPTStudio.TTS")
@@ -221,6 +222,23 @@ def _project_tts_runtime(project: Project) -> Optional[Dict[str, Any]]:
         raise HTTPException(status_code=400, detail="项目语音模型连接不可用。") from exc
     if _connection_value(connection, "kind") != "tts":
         raise HTTPException(status_code=400, detail="项目语音模型连接类型不正确。")
+    provider = normalize_tts_provider(
+        str(_connection_value(connection, "provider") or "")
+    )
+    public_config = _connection_value(connection, "public_config", {})
+    # ComfyUI / IndexTTS is a local workflow transport.  It intentionally has
+    # no cloud API credential; requiring one here made a valid project-bound
+    # ComfyUI connection unusable even though the legacy settings path worked.
+    if provider == "comfyui_tts":
+        return {
+            "provider": provider,
+            "endpoint": _connection_value(connection, "endpoint") or "",
+            "model": str(_connection_value(connection, "model") or "IndexTTS-2").strip(),
+            "public_config": public_config if isinstance(public_config, dict) else {},
+            "api_key": "",
+            "secret_key": "",
+            "secrets": {},
+        }
     credential_ref = _connection_value(connection, "credential_ref")
     if not isinstance(credential_ref, str) or not credential_ref:
         raise HTTPException(status_code=400, detail="项目语音模型连接缺少凭据。")
@@ -235,9 +253,8 @@ def _project_tts_runtime(project: Project) -> Optional[Dict[str, Any]]:
     secret_key = _credential_value(secrets, "secret_key", "tts_secret_key", "api_secret")
     if not api_key:
         raise HTTPException(status_code=400, detail="项目语音模型凭据缺少 API Key。")
-    public_config = _connection_value(connection, "public_config", {})
     return {
-        "provider": str(_connection_value(connection, "provider") or "").strip(),
+        "provider": provider,
         "endpoint": _connection_value(connection, "endpoint") or "",
         "model": str(_connection_value(connection, "model") or "").strip(),
         "public_config": public_config if isinstance(public_config, dict) else {},
@@ -311,7 +328,7 @@ def synthesize_tts_resumable(project_id: str, db: Session):
     runtime_secrets: Dict[str, Any] = (
         project_runtime["secrets"] if project_runtime is not None else {}
     )
-    if not tts_api_key:
+    if provider != "comfyui_tts" and not tts_api_key:
         env_name = defaults.get("api_key_env") or "TTS_API_KEY"
         raise HTTPException(status_code=400, detail=f"未配置 {provider} 语音合成密钥，也没有读取到环境变量 {env_name}。")
     if provider == "tencent_tts" and not tts_secret_key:
@@ -693,6 +710,7 @@ class TtsAsyncService:
                 status="queued",
                 progress=0,
                 stage="queued",
+                payload_json=json.dumps({"account_id": getattr(project, "account_id", None) or get_current_account_id()}, ensure_ascii=False),
             )
             db.add(job)
             db.commit()
@@ -773,6 +791,7 @@ class TtsAsyncService:
         return len(running)
 
     def run_job(self, job_id: str) -> None:
+        account_context_token = None
         db = self.dependencies.session_factory()
         try:
             job = (
@@ -785,8 +804,15 @@ class TtsAsyncService:
             )
             if not job:
                 return
+            payload = job.get_payload() or {}
+            account_context_token = set_current_account_id(
+                str(payload.get("account_id") or "default")
+            )
             project = (
-                db.query(Project).filter(Project.id == job.project_id).first()
+                db.query(Project).filter(
+                    Project.id == job.project_id,
+                    Project.account_id == get_current_account_id(),
+                ).first()
             )
             if not project:
                 job.status = "failed"
@@ -847,6 +873,8 @@ class TtsAsyncService:
                 logger.exception("Failed to persist TTS job failure state")
         finally:
             db.close()
+            if account_context_token is not None:
+                reset_current_account_id(account_context_token)
 
 
 _SERVICE: TtsAsyncService | None = None

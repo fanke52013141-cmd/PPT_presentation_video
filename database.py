@@ -71,6 +71,8 @@ class Project(Base):
     creation_config_package_id = Column(String, nullable=True, index=True)
     creation_config_version = Column(Integer, nullable=True)
     creation_config_hash = Column(String, nullable=True)
+    # Creative-account owner. Legacy projects are backfilled to ``default``.
+    account_id = Column(String, nullable=False, default="default", index=True)
 
     def get_step_status(self):
         try:
@@ -93,6 +95,8 @@ class Course(Base):
     cover_image_path = Column(String, nullable=True)
     # 课程排序
     sort_order = Column(Integer, nullable=False, default=0)
+    # 课程属于一个创作账号。章节通过课程归属，项目创建时再校验三层一致。
+    account_id = Column(String, nullable=False, default="default", index=True)
     created_at = Column(DateTime, default=utc_now_naive, nullable=False)
     updated_at = Column(DateTime, default=utc_now_naive, onupdate=utc_now_naive, nullable=False)
 
@@ -115,6 +119,32 @@ class Setting(Base):
 
     key = Column(String, primary_key=True, index=True)
     value = Column(Text, nullable=False)
+
+
+class Account(Base):
+    __tablename__ = "accounts"
+
+    id = Column(String, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="active")
+    default_creation_config_package_id = Column(String, nullable=True)
+    default_creation_config_version = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=utc_now_naive, nullable=False)
+    updated_at = Column(DateTime, default=utc_now_naive, onupdate=utc_now_naive, nullable=False)
+
+
+class AgentToken(Base):
+    __tablename__ = "agent_tokens"
+
+    id = Column(String, primary_key=True, index=True)
+    account_id = Column(String, nullable=False, index=True)
+    name = Column(String, nullable=False)
+    token_hash = Column(String(64), nullable=False, unique=True, index=True)
+    scopes = Column(String(1000), nullable=False, default="project:read,project:write,pipeline:write,artifact:read")
+    status = Column(String, nullable=False, default="active")
+    created_at = Column(DateTime, default=utc_now_naive, nullable=False)
+    last_used_at = Column(DateTime, nullable=True)
 
 
 DEFAULT_SETTINGS = {

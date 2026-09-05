@@ -23,6 +23,7 @@ from model_connection_models import (
     ModelConnectionStateUpdate,
     ModelConnectionUpdate,
 )
+from account_context import get_current_account_id
 
 
 REGISTRY_VERSION = "model_connections_v1"
@@ -183,7 +184,7 @@ def _registry() -> dict[str, Any]:
 
 def _connection(registry: Mapping[str, Any], connection_id: str) -> dict[str, Any]:
     item = registry.get("connections", {}).get(str(connection_id))
-    if not isinstance(item, dict):
+    if not isinstance(item, dict) or str(item.get("account_id") or "default") != get_current_account_id():
         raise ModelConnectionNotFoundError(f"模型连接不存在: {connection_id}")
     return item
 
@@ -280,7 +281,11 @@ def list_model_connections(
         raise ValueError("kind 必须是 text、image 或 tts")
     with _registry_lock:
         connections = _registry()["connections"].values()
-        public = [_public_connection(item) for item in connections if isinstance(item, dict)]
+        public = [
+            _public_connection(item) for item in connections
+            if isinstance(item, dict)
+            and str(item.get("account_id") or "default") == get_current_account_id()
+        ]
     return sorted(
         (
             item for item in public
@@ -325,6 +330,7 @@ def create_model_connection(payload: ModelConnectionCreate) -> dict[str, Any]:
             "updated_at": now,
             "archived_at": None,
             "revisions": [revision],
+            "account_id": get_current_account_id(),
         }
         registry["connections"][connection_id] = connection
         _deps().write_registry(registry)
@@ -364,6 +370,7 @@ def copy_model_connection(
             "updated_at": now,
             "archived_at": None,
             "revisions": [revision],
+            "account_id": get_current_account_id(),
         }
         registry["connections"][target_id] = connection
         _deps().write_registry(registry)

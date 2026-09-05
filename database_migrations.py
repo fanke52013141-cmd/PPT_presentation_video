@@ -263,6 +263,14 @@ def _known_migration_already_present(connection: Connection, migration: Migratio
                 "creation_config_hash",
             },
         )
+    if key == (12, "creative_accounts"):
+        return _has_columns(connection, "accounts", {"id", "name", "status"}) and _has_columns(
+            connection, "projects", {"account_id"}
+        ) and _has_columns(
+            connection, "agent_tokens", {"id", "account_id", "token_hash", "status"}
+        )
+    if key == (13, "course_account_ownership"):
+        return _has_columns(connection, "courses", {"account_id"})
     return False
 
 

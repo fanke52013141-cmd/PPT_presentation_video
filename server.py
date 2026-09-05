@@ -12,6 +12,8 @@ from database import get_db, init_db, Project
 from config_store import get_all_settings, update_settings, get_setting
 from app_middleware import install_static_asset_cache_policy
 from app_security import configured_allowed_hosts, configured_allowed_origins, install_access_control
+from account_context import AccountContextMiddleware
+from account_service import get_default_creation_config
 from scripts.media_tools import (
     probe_media_duration_sec,
     resolve_media_tool as shared_resolve_media_tool,
@@ -152,11 +154,13 @@ app.add_middleware(
         "If-Match",
         "X-App-Token",
         "X-PPT-Studio-Request",
+        "X-PPT-Account-ID",
     ],
 )
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=configured_allowed_hosts())
 
 install_access_control(app)
+app.add_middleware(AccountContextMiddleware)
 install_static_asset_cache_policy(app)
 
 os.makedirs(RUNS_DIR, exist_ok=True)
@@ -213,6 +217,12 @@ configure_narration_audio_dependencies(
 # ==================== 项目管理接口 ====================
 
 # Project lifecycle routes are source-owned by project_service.py and project_routes.py.
+try:
+    from account_routes import router as account_router
+    app.include_router(account_router)
+except Exception as exc:
+    logger.exception("Creative account route registration failed: %s", exc)
+    raise
 
 try:
     from config_portability_service import (
@@ -226,10 +236,8 @@ try:
         configure_settings_routes,
         router as settings_router,
     )
-    from settings_service import (
-        SettingsDependencies,
-        configure_settings_dependencies,
-    )
+    from settings_service import SettingsDependencies, configure_settings_dependencies
+    from project_style_integration import (export_current_project_style_templates, import_current_project_style_templates, materialize_project_image_style, validate_current_project_style_templates)
 
     configure_tts_provider_dependencies(
         TtsProviderDependencies(
@@ -280,6 +288,10 @@ try:
             image_style_templates_index=(
                 IMAGE_STYLE_TEMPLATES_INDEX
             ),
+            model_connections_path=MODEL_CONNECTIONS_PATH, creation_configs_path=CREATION_CONFIGS_PATH, credentials_path=CREDENTIALS_PATH,
+            export_project_style_templates=export_current_project_style_templates,
+            validate_project_style_templates=validate_current_project_style_templates,
+            import_project_style_templates=import_current_project_style_templates,
         )
     )
     configure_settings_routes(
@@ -551,10 +563,7 @@ except Exception as exc:
 try:
     from project_routes import router as project_router
     from course_routes import router as course_router
-    from project_service import (
-        ProjectDependencies,
-        configure_project_service,
-    )
+    from project_service import ProjectDependencies, configure_project_service
 
     configure_project_service(
         ProjectDependencies(
@@ -567,7 +576,9 @@ try:
                     overrides=overrides,
                 )
             ),
+            get_default_creation_config=get_default_creation_config,
             write_json_atomic=write_json_atomic,
+            materialize_image_style=materialize_project_image_style,
         )
     )
     app.include_router(project_router)

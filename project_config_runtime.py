@@ -25,6 +25,10 @@ class ProjectConfigBindingError(ValueError):
     """A selected project binding cannot safely be used at runtime."""
 
 
+class ProjectConfigContractError(ValueError):
+    """A project step result does not satisfy its saved output contract."""
+
+
 @dataclass(frozen=True)
 class ResolvedProjectModelBinding:
     """Runtime-only provider details resolved from a project snapshot.
@@ -107,6 +111,36 @@ def get_config_value(
             return default
         value = value[key]
     return deepcopy(value)
+
+
+def validate_project_step_output(project: Any, step: str, output: Any) -> None:
+    """Validate a pipeline result against the project's optional step contract.
+
+    Config snapshots deliberately remain readable by legacy projects.  A
+    missing contract is therefore a no-op, whereas a configured contract is a
+    real quality gate: callers must stop before handing malformed JSON to the
+    next pipeline stage.
+    """
+    snapshot = load_project_config(project)
+    if snapshot is None:
+        return
+    contracts = snapshot["payload"].get("step_contracts")
+    if not isinstance(contracts, Mapping):
+        return
+    contract = contracts.get(step)
+    if not isinstance(contract, Mapping) or not isinstance(contract.get("output_schema"), Mapping):
+        return
+    # Keep the contract implementation centralized with package validation so
+    # save-time and run-time semantics cannot drift.
+    from creation_config_service import (  # local import avoids a registry cycle
+        CreationConfigValidationError,
+        validate_step_output,
+    )
+
+    try:
+        validate_step_output(dict(contract), output, path=f"{step}.output")
+    except CreationConfigValidationError as exc:
+        raise ProjectConfigContractError(str(exc)) from exc
 
 
 def resolve_project_model_binding(

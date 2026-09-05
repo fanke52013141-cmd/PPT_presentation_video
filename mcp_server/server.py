@@ -28,6 +28,7 @@ import traceback
 from typing import Any, Optional
 
 from agent_client.client import AgentClient
+from agent_contract.capabilities import get_capability_by_mcp_tool
 from agent_contract.versions import (
     AGENT_API_VERSION,
     get_contract_hash,
@@ -41,7 +42,7 @@ MCP_PROTOCOL_VERSION = "2024-11-05"
 
 # Server info
 SERVER_NAME = "ppt-studio-mcp"
-SERVER_VERSION = "1.0.0"
+SERVER_VERSION = "1.1.0"
 
 # Short timeout (seconds) for the API meta call during contract negotiation.
 _NEGOTIATE_TIMEOUT = 5
@@ -63,7 +64,15 @@ class MCPServer:
         )
         self._client: Optional[AgentClient] = None
         self._initialized = False
-        self._contract_state: dict[str, Any] = {"checked": False, "match": None}
+        # Fail closed for state-changing tools until initialize negotiates the
+        # contract. Read-only tools retain the existing direct-call behavior
+        # used by lightweight clients and tests.
+        self._contract_state: dict[str, Any] = {
+            "checked": False,
+            "match": None,
+            "write_allowed": False,
+            "detail": "Contract negotiation is required before write tools can be used.",
+        }
 
     @property
     def client(self) -> AgentClient:
@@ -124,6 +133,7 @@ class MCPServer:
         Returns a dict with keys:
         - ``checked``: whether negotiation was performed (False if bypassed).
         - ``match``: True / False / None (None = bypassed).
+        - ``write_allowed``: whether state-changing tools may execute.
         - ``detail``: human-readable explanation.
         - ``api_meta``: the raw ``/meta`` response from the API, or None.
         """
@@ -135,6 +145,7 @@ class MCPServer:
             return {
                 "checked": False,
                 "match": None,
+                "write_allowed": True,
                 "detail": "Contract check disabled (PPT_MCP_CONTRACT_CHECK=0)",
                 "api_meta": None,
             }
@@ -145,6 +156,7 @@ class MCPServer:
             return {
                 "checked": True,
                 "match": False,
+                "write_allowed": False,
                 "detail": (
                     f"Cannot reach API service at {self.base_url} for contract "
                     f"negotiation: {exc}. Ensure the API service is running and "
@@ -160,6 +172,7 @@ class MCPServer:
             return {
                 "checked": True,
                 "match": True,
+                "write_allowed": True,
                 "detail": None,
                 "api_meta": api_meta,
             }
@@ -170,6 +183,7 @@ class MCPServer:
             return {
                 "checked": True,
                 "match": False,
+                "write_allowed": False,
                 "detail": (
                     f"Contract mismatch: local hash {local_hash} ({local_version}) "
                     f"vs API hash {api_hash} ({api_version}). {compat_detail}. "
@@ -178,10 +192,13 @@ class MCPServer:
                 "api_meta": api_meta,
             }
 
-        # Compatible minor/patch difference — allow with warning.
+        # Compatible minor/patch differences are safe for reads, but not for
+        # writes: the remote API may have added or changed request semantics
+        # even when the semantic version remains compatible.
         return {
             "checked": True,
             "match": True,
+            "write_allowed": False,
             "detail": compat_detail,
             "api_meta": api_meta,
         }
@@ -198,6 +215,7 @@ class MCPServer:
             "agentApiVersion": AGENT_API_VERSION,
             "contractHash": local_hash,
             "contractMatch": negotiation["match"],
+            "writeAllowed": negotiation.get("write_allowed", False),
         }
         if negotiation.get("api_meta"):
             api_meta = negotiation["api_meta"]
@@ -242,6 +260,30 @@ class MCPServer:
 
         tool_name = params.get("name", "")
         arguments = params.get("arguments", {})
+
+        # A compatible semantic version is sufficient to keep read-only tools
+        # useful, but a hash mismatch must never authorize a state-changing
+        # tool. The capability registry is the only source of truth for the
+        # MCP tool's HTTP method.
+        if contract_state.get("write_allowed") is False:
+            try:
+                capability = get_capability_by_mcp_tool(tool_name)
+            except ValueError:
+                capability = None
+            if capability is not None and capability.agent_api_method != "GET":
+                return {
+                    "content": [{
+                        "type": "text",
+                        "text": (
+                            "Write tool calls are blocked because the local and "
+                            "API contract hashes differ. Read-only tools remain "
+                            "available, but restart the MCP server with the "
+                            "matching code version before retrying this write. "
+                            f"{contract_state.get('detail', '')}"
+                        ).strip(),
+                    }],
+                    "isError": True,
+                }
 
         try:
             handler = tools.get_tool_handler(tool_name)

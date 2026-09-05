@@ -31,8 +31,10 @@ def read_step2_prompts_for_project(
         output = section.get(output_key, section.get("output_example"))
         if isinstance(system, str) and system.strip():
             prompts[system_key] = system.strip()
-        if isinstance(output, str) and output.strip():
-            prompts[output_key] = output.strip()
+        # A project prompt section is an explicit override.  An empty example
+        # means the user intentionally disabled the inherited example; it must
+        # not silently fall back to the global template.
+        prompts[output_key] = output.strip() if isinstance(output, str) else ""
     return prompts
 
 

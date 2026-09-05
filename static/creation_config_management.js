@@ -9,27 +9,30 @@
     packages: [],
     connections: [],
     credentials: [],
+    styleTemplates: [],
+    defaultPayload: {},
+    defaultPackageId: null,
     loading: false,
     editingPackageId: null,
     editingVersion: null,
+    activeModelKind: 'text',
   };
 
   const PROMPT_MODULES = [
     ['article_generation', '文章生成'],
-    ['storyboard', '分镜'],
+    ['storyboard', '分镜生成'],
     ['visualization', '分镜可视化'],
     ['image_generation', '图片生成'],
     ['ai_mask', 'AI Mask'],
     ['narration_annotation', '旁白'],
   ];
-  const MODEL_BINDINGS = [
-    ['article_generation', '文章生成', 'text'],
-    ['storyboard', '分镜', 'text'],
-    ['visualization', '分镜可视化', 'text'],
-    ['image_generation', '图片生成', 'image'],
-    ['ai_mask', 'AI Mask', 'text'],
-    ['narration_annotation', '旁白', 'text'],
-    ['tts', '语音合成', 'tts'],
+  const MODEL_BINDING_GROUPS = [
+    ['text', '文本模型', '文章、分镜、可视化、旁白和 AI Mask', 'text'],
+    ['image', '图片模型', '图片生成及需要图片理解的阶段', 'image'],
+    ['tts', '语音模型', '旁白语音合成', 'tts'],
+  ];
+  const TEXT_BINDING_KEYS = [
+    'article_generation', 'storyboard', 'visualization', 'ai_mask', 'narration_annotation',
   ];
 
   function element(id) {
@@ -91,55 +94,68 @@
     if (field) field.value = typeof value === 'string' ? value : '';
   }
 
-  function setNumberField(id, value) {
-    const field = element(id);
-    if (field) field.value = typeof value === 'number' && Number.isFinite(value) ? String(value) : '';
-  }
-
   function buildStructuredEditor() {
     const promptTarget = element('creation-config-prompt-fields');
     const bindingTarget = element('creation-config-model-binding-fields');
     if (!promptTarget || !bindingTarget || promptTarget.childElementCount || bindingTarget.childElementCount) return;
 
     PROMPT_MODULES.forEach(([key, label]) => {
-      const section = document.createElement('section');
+      const section = document.createElement('details');
       section.className = 'creation-config-prompt-card';
-      const heading = document.createElement('h6');
-      heading.textContent = label;
+      const summary = document.createElement('summary');
+      summary.className = 'creation-config-prompt-summary';
+      const summaryTitle = document.createElement('strong');
+      summaryTitle.textContent = label;
+      const summaryHint = document.createElement('span');
+      summaryHint.textContent = '编辑提示词与输出示例';
+      summary.append(summaryTitle, summaryHint);
+      const headingRow = document.createElement('div');
+      headingRow.className = 'creation-config-prompt-heading';
+      const restore = document.createElement('button');
+      restore.type = 'button';
+      restore.className = 'secondary creation-config-restore-prompt';
+      restore.textContent = '恢复默认';
+      restore.title = `将${label}的提示词恢复为系统默认值`;
+      restore.addEventListener('click', () => restorePromptModule(key, label));
+      headingRow.append(restore);
       const systemLabel = document.createElement('label');
       systemLabel.textContent = '系统提示词';
       const system = document.createElement('textarea');
       system.id = `creation-config-prompt-${key}-system-content`;
-      system.rows = 3;
-      system.placeholder = '留空则沿用系统默认提示词';
+      system.rows = 10;
+      system.placeholder = '新建配置默认已填入；留空则沿用系统默认提示词';
+      system.spellcheck = false;
       systemLabel.append(system);
       const exampleLabel = document.createElement('label');
-      exampleLabel.textContent = '输出示例';
+      exampleLabel.textContent = '输出示例（JSON，可选）';
       const example = document.createElement('textarea');
       example.id = `creation-config-prompt-${key}-output-example`;
-      example.rows = 2;
-      example.placeholder = '可选，用于约束输出结构';
+      example.rows = 8;
+      example.spellcheck = false;
+      example.placeholder = '没有示例可以留空；如果有，请保留完整 JSON 结构，便于后续流程校验和优化';
       exampleLabel.append(example);
-      section.append(heading, systemLabel, exampleLabel);
+      section.append(summary, headingRow, systemLabel, exampleLabel);
       promptTarget.append(section);
     });
 
-    MODEL_BINDINGS.forEach(([key, label, kind]) => {
+    MODEL_BINDING_GROUPS.forEach(([key, label, help, kind]) => {
       const labelNode = document.createElement('label');
       labelNode.className = 'creation-config-binding-field';
       const title = document.createElement('span');
-      title.textContent = `${label}（${kind === 'text' ? '文本' : kind === 'image' ? '图片' : '语音'}）`;
+      title.textContent = label;
       const select = document.createElement('select');
       select.id = `creation-config-binding-${key}`;
       select.dataset.kind = kind;
       select.dataset.binding = key;
-      labelNode.append(title, select);
+      const hint = document.createElement('small');
+      hint.textContent = help;
+      labelNode.append(title, select, hint);
       bindingTarget.append(labelNode);
     });
   }
 
   function renderConnectionSelectors() {
-    MODEL_BINDINGS.forEach(([key, , kind]) => {
+    MODEL_BINDING_GROUPS.forEach(([key, , , kind]) => {
       const select = element(`creation-config-binding-${key}`);
       if (!select) return;
       const selected = select.value;
@@ -172,7 +188,100 @@
 
   function setBindingValue(key, reference) {
     const select = element(`creation-config-binding-${key}`);
-    if (select) select.value = connectionValue(reference);
+    if (!select) return;
+    const value = connectionValue(reference);
+    if (value && ![...select.options].some(option => option.value === value)) {
+      // Historical versions are valid for immutable existing packages even if
+      // the connection was disabled, archived, or upgraded.  Keep an explicit
+      // selectable record so opening and saving an old package never clears it.
+      const historical = document.createElement('option');
+      historical.value = value;
+      historical.textContent = `已绑定历史版本 · ${value}`;
+      historical.dataset.historicalBinding = 'true';
+      select.append(historical);
+    }
+    select.value = value;
+  }
+
+  function currentReferencePolicy() {
+    return document.querySelector('input[name="creation-config-reference-policy"]:checked')?.value || 'preferred';
+  }
+
+  function updateImageStyleSummary() {
+    const select = element('creation-config-image-style-template');
+    const selected = state.styleTemplates.find(item => item.id === select?.value);
+    const summary = element('creation-config-image-style-summary');
+    if (summary) {
+      summary.textContent = selected
+        ? `${selected.reference_count || 0} 张参考图 · v${selected.version || 1}`
+        : '未关联风格资源';
+    }
+    const minimum = element('creation-config-image-style-minimum');
+    if (minimum) minimum.disabled = currentReferencePolicy() !== 'required';
+  }
+
+  function renderImageStyleSelector() {
+    const select = element('creation-config-image-style-template');
+    if (!select) return;
+    const selected = select.value;
+    select.replaceChildren();
+    state.styleTemplates.forEach(item => {
+      if (!item?.id) return;
+      const option = document.createElement('option');
+      option.value = item.id;
+      option.textContent = `${item.name || '未命名风格'} · ${item.reference_count || 0} 张参考图`;
+      option.dataset.version = String(item.version || 1);
+      select.append(option);
+    });
+    if ([...select.options].some(option => option.value === selected)) select.value = selected;
+    else if ([...select.options].some(option => option.value === 'handdrawn')) select.value = 'handdrawn';
+    updateImageStyleSummary();
+  }
+
+  function setImageStyleValue(value) {
+    const style = objectValue(value);
+    const select = element('creation-config-image-style-template');
+    const templateId = typeof style.template_id === 'string' ? style.template_id : '';
+    if (select && templateId && ![...select.options].some(option => option.value === templateId)) {
+      const historical = document.createElement('option');
+      historical.value = templateId;
+      historical.dataset.version = String(Number(style.version) || 1);
+      historical.textContent = `历史风格资源 · ${templateId}`;
+      select.append(historical);
+    }
+    if (select) select.value = templateId || (select.querySelector('option[value="handdrawn"]') ? 'handdrawn' : '');
+    const policy = ['required', 'preferred', 'text_only'].includes(style.reference_policy)
+      ? style.reference_policy
+      : 'preferred';
+    const radio = document.querySelector(`input[name="creation-config-reference-policy"][value="${policy}"]`);
+    if (radio) radio.checked = true;
+    const minimum = element('creation-config-image-style-minimum');
+    if (minimum) minimum.value = String(Math.max(1, Math.min(3, Number(style.minimum_reference_images) || 1)));
+    updateImageStyleSummary();
+  }
+
+  function firstActiveConnectionReference(kind) {
+    const connection = state.connections.find(item => item.kind === kind && item.state === 'active');
+    const revision = connectionRevision(connection);
+    const revisionNumber = Number(revision.revision || connection?.current_revision);
+    return connection?.id && Number.isInteger(revisionNumber) && revisionNumber > 0
+      ? { connection_id: connection.id, revision: revisionNumber }
+      : null;
+  }
+
+  function applyDefaultModelBindings() {
+    setBindingValue('text', firstActiveConnectionReference('text'));
+    setBindingValue('image', firstActiveConnectionReference('image'));
+    setBindingValue('tts', firstActiveConnectionReference('tts'));
+  }
+
+  function restorePromptModule(key, label) {
+    const defaults = objectValue(objectValue(state.defaultPayload).prompts)[key];
+    const module = objectValue(defaults);
+    setStringField(`creation-config-prompt-${key}-system-content`, module.system_content);
+    setStringField(`creation-config-prompt-${key}-output-example`, module.output_example);
+    syncStructuredFieldsToJson();
+    toast(`${label}已恢复默认提示词`);
   }
 
   function readBindingValue(key) {
@@ -209,12 +318,20 @@
     if (Object.keys(prompts).length) payload.prompts = prompts;
     else delete payload.prompts;
 
+    // Pipeline validation remains internal.  New packages do not persist a
+    // second user-authored input/output contract layer.
+    delete payload.step_contracts;
+
     const bindings = objectValue(payload.model_bindings);
-    MODEL_BINDINGS.filter(([key]) => key !== 'tts').forEach(([key]) => {
-      const reference = readBindingValue(key);
-      if (reference) bindings[key] = reference;
+    const textBinding = readBindingValue('text');
+    TEXT_BINDING_KEYS.forEach(key => {
+      if (textBinding) bindings[key] = textBinding;
       else delete bindings[key];
     });
+    const imageBinding = readBindingValue('image');
+    if (imageBinding) bindings.image_generation = imageBinding;
+    else delete bindings.image_generation;
+    delete bindings.tts;
     if (Object.keys(bindings).length) payload.model_bindings = bindings;
     else delete payload.model_bindings;
 
@@ -222,33 +339,24 @@
     const ttsBinding = readBindingValue('tts');
     if (ttsBinding) tts.connection = ttsBinding;
     else delete tts.connection;
-    [
-      ['voice_id', 'creation-config-tts-voice-id', 'string'],
-      ['clone_voice_id', 'creation-config-tts-clone-voice-id', 'string'],
-      ['speed', 'creation-config-tts-speed', 'number'],
-      ['volume', 'creation-config-tts-volume', 'number'],
-      ['pitch', 'creation-config-tts-pitch', 'number'],
-    ].forEach(([key, id, type]) => {
-      const raw = element(id)?.value.trim() || '';
-      if (!raw) delete tts[key];
-      else if (type === 'number') {
-        const value = Number(raw);
-        if (Number.isFinite(value)) tts[key] = value;
-        else delete tts[key];
-      } else tts[key] = raw;
-    });
     if (Object.keys(tts).length) payload.tts = tts;
     else delete payload.tts;
 
-    const imageStyle = objectValue(payload.image_style);
-    const imageName = element('creation-config-image-style-name')?.value.trim() || '';
-    const imageSystem = element('creation-config-image-style-system-content')?.value.trim() || '';
-    if (imageName) imageStyle.name = imageName;
-    else delete imageStyle.name;
-    if (imageSystem) imageStyle.system_content = imageSystem;
-    else delete imageStyle.system_content;
-    if (Object.keys(imageStyle).length) payload.image_style = imageStyle;
-    else delete payload.image_style;
+    const styleSelect = element('creation-config-image-style-template');
+    if (styleSelect?.value) {
+      const selectedOption = styleSelect.selectedOptions?.[0];
+      const policy = currentReferencePolicy();
+      payload.image_style = {
+        template_id: styleSelect.value,
+        version: Number(selectedOption?.dataset.version) || 1,
+        reference_policy: policy,
+        minimum_reference_images: policy === 'text_only'
+          ? 0
+          : Math.max(1, Math.min(3, Number(element('creation-config-image-style-minimum')?.value) || 1)),
+      };
+    } else {
+      delete payload.image_style;
+    }
 
     payload.subtitle = { ...objectValue(payload.subtitle), enabled: !!element('creation-config-subtitle-enabled')?.checked };
     payload.mask = { ...objectValue(payload.mask), enabled: !!element('creation-config-mask-enabled')?.checked };
@@ -274,17 +382,11 @@
       setStringField(`creation-config-prompt-${key}-output-example`, module.output_example);
     });
     const bindings = objectValue(value.model_bindings);
-    MODEL_BINDINGS.filter(([key]) => key !== 'tts').forEach(([key]) => setBindingValue(key, bindings[key]));
+    setBindingValue('text', TEXT_BINDING_KEYS.map(key => bindings[key]).find(Boolean));
+    setBindingValue('image', bindings.image_generation);
     const tts = objectValue(value.tts);
     setBindingValue('tts', tts.connection || bindings.tts);
-    setStringField('creation-config-tts-voice-id', tts.voice_id);
-    setStringField('creation-config-tts-clone-voice-id', tts.clone_voice_id);
-    setNumberField('creation-config-tts-speed', tts.speed);
-    setNumberField('creation-config-tts-volume', tts.volume);
-    setNumberField('creation-config-tts-pitch', tts.pitch);
-    const imageStyle = objectValue(value.image_style);
-    setStringField('creation-config-image-style-name', imageStyle.name);
-    setStringField('creation-config-image-style-system-content', imageStyle.system_content);
+    setImageStyleValue(value.image_style);
     const subtitle = objectValue(value.subtitle || value.subtitles);
     const mask = objectValue(value.mask);
     const subtitleToggle = element('creation-config-subtitle-enabled');
@@ -314,12 +416,15 @@
     state.editingPackageId = null;
     state.editingVersion = null;
     const name = element('creation-config-package-name');
-    const description = element('creation-config-package-description');
     const payload = element('creation-config-package-payload');
     if (name) { name.value = ''; name.readOnly = false; }
-    if (description) { description.value = ''; description.readOnly = false; }
-    if (payload) payload.value = '{}';
-    loadPayloadIntoStructured({});
+    const defaultPayload = clonePayload(state.defaultPayload);
+    if (payload) payload.value = JSON.stringify(defaultPayload, null, 2);
+    loadPayloadIntoStructured(defaultPayload);
+    // A fresh package is immediately runnable when reusable connections exist.
+    // Users can still switch any of these three bindings independently.
+    applyDefaultModelBindings();
+    syncStructuredFieldsToJson();
     const status = element('creation-config-editing-status');
     if (status) status.textContent = '正在新建配置包。';
     const submit = element('btn-create-creation-config');
@@ -345,7 +450,7 @@
         : '';
       const item = card(
         `${packageItem.name || '未命名配置包'} · v${packageItem.latest_version || 1}`,
-        `${packageItem.description || '未填写说明'}${tags}`,
+        `${tags ? tags.slice(3) : '提示词、模型关联与执行选项'}`,
       );
       const actions = document.createElement('div');
       actions.style.cssText = 'display:flex; gap:0.55rem; flex-wrap:wrap;';
@@ -360,71 +465,184 @@
   }
 
   function renderConnections() {
-    const target = element('creation-config-connection-list');
+    const target = element('model-library-list');
     if (!target) return;
     target.replaceChildren();
-    if (!state.connections.length) {
+    const kind = state.activeModelKind;
+    const labels = { text: '文本模型', image: '图片模型', tts: '语音模型' };
+    const connections = state.connections.filter(connection => connection.kind === kind);
+    if (!connections.length) {
       const empty = document.createElement('p');
       empty.className = 'config-editor-note';
-      empty.textContent = '暂无模型连接。添加文本、图片或语音连接后，可在创作配置包中选择它。';
+      empty.textContent = `暂无${labels[kind]}。在下方填写一次，即可在创作配置中关联使用。`;
       target.append(empty);
       return;
     }
-    state.connections.forEach(connection => {
+    connections.forEach(connection => {
       const revision = connectionRevision(connection);
-      const configured = revision.credential_configured ? '已关联凭据' : '未关联凭据';
+      const configured = revision.credential_configured ? '密钥已保存' : (revision.provider === 'comfyui_tts' ? '本地工作流' : '尚未配置密钥');
+      const publicConfig = objectValue(revision.public_config);
+      const referenceCapability = kind === 'image'
+        ? ` · 参考图${publicConfig.supports_reference_images === false ? '未启用' : `最多 ${publicConfig.max_reference_images || 3} 张`}`
+        : '';
       const item = card(
-        `${connection.name || '未命名连接'} · ${connection.kind || 'unknown'}`,
-        `${revision.provider || '未指定服务'} / ${revision.model || '未指定模型'} · ${configured}`,
+        connection.name || '未命名模型',
+        `${modelProviderLabel(revision.provider)} · ${revision.model || '未指定模型'} · ${configured}${referenceCapability}`,
       );
+      item.classList.add('model-library-card');
       target.append(item);
     });
   }
 
   function renderCredentials() {
-    const target = element('creation-config-credential-list');
-    if (!target) return;
-    target.replaceChildren();
-    if (!state.credentials.length) {
-      const empty = document.createElement('p');
-      empty.className = 'config-editor-note';
-      empty.textContent = '暂无已配置凭据。添加后会自动填入下方模型连接的凭据引用。';
-      target.append(empty);
-      return;
-    }
-    state.credentials.forEach(credential => {
-      const configured = credential.configured ? '已配置' : '未配置';
-      const stateLabel = credential.state === 'disabled' ? '已停用' : '可用';
-      const item = card(
-        credential.label || '未命名凭据',
-        `${credential.provider || '未指定服务'} · ${configured} · ${stateLabel}`,
-      );
-      target.append(item);
+    // API keys and provider tokens are deliberately not a separate user-facing
+    // concept. They are stored safely behind each model after the user saves it.
+  }
+
+  const MODEL_KIND_COPY = {
+    text: {
+      title: '新增文本模型',
+      description: '适用于文章、分镜、可视化、旁白标注和 AI Mask。',
+      action: '保存文本模型',
+      name: '例如：豆包写作模型',
+      model: '例如：doubao-seed-2-1-turbo-260628',
+    },
+    image: {
+      title: '新增图片模型',
+      description: '适用于整页图片生成；使用兼容 OpenAI Images API 的服务。',
+      action: '保存图片模型',
+      name: '例如：GPT Image 图片模型',
+      model: '例如：gpt-image-2',
+    },
+    tts: {
+      title: '新增语音模型',
+      description: 'MiniMax 使用云端 Token；ComfyUI / IndexTTS 使用本地工作流，不需要 API 密钥。',
+      action: '保存语音模型',
+      name: '例如：自然讲解语音',
+      model: '',
+    },
+  };
+
+  const OPENAI_COMPATIBLE_PRESETS = {
+    openai: { endpoint: 'https://api.openai.com/v1', model: '' },
+    openrouter: { endpoint: 'https://openrouter.ai/api/v1', model: '' },
+    newapi: { endpoint: '', model: '' },
+    litellm: { endpoint: 'http://localhost:4000/v1', model: '' },
+    custom: { endpoint: '', model: '' },
+  };
+
+  function modelProviderLabel(provider) {
+    const labels = {
+      openai_compatible: 'OpenAI 兼容接口',
+      minimax: 'MiniMax',
+      comfyui_tts: 'ComfyUI / IndexTTS',
+    };
+    return labels[provider] || provider || '未指定服务';
+  }
+
+  function setHidden(id, hidden) {
+    const field = element(id);
+    if (field) field.hidden = hidden;
+  }
+
+  function currentTtsProvider() {
+    return element('model-form-tts-provider')?.value || 'minimax';
+  }
+
+  function updateModelProviderPanels() {
+    const isTts = state.activeModelKind === 'tts';
+    const isComfy = isTts && currentTtsProvider() === 'comfyui_tts';
+    setHidden('model-form-minimax', !isTts || isComfy);
+    setHidden('model-form-comfyui', !isComfy);
+    if (isComfy) refreshComfyUiWorkflowStatus();
+  }
+
+  function updateModelSetupForm() {
+    const kind = state.activeModelKind;
+    const copy = MODEL_KIND_COPY[kind];
+    document.querySelectorAll('[data-model-kind]').forEach(tab => {
+      const active = tab.dataset.modelKind === kind;
+      tab.classList.toggle('is-active', active);
+      tab.setAttribute('aria-selected', active ? 'true' : 'false');
     });
+    const title = element('model-setup-title');
+    const description = element('model-setup-description');
+    const action = element('btn-save-model');
+    if (title) title.textContent = copy.title;
+    if (description) description.textContent = copy.description;
+    if (action) action.textContent = copy.action;
+    const name = element('model-form-name');
+    const model = element('model-form-model');
+    if (name) name.placeholder = copy.name;
+    if (model) model.placeholder = copy.model;
+    const isTts = kind === 'tts';
+    setHidden('model-form-protocol-row', isTts);
+    setHidden('model-form-endpoint-row', isTts);
+    setHidden('model-form-api-key-row', isTts);
+    setHidden('model-form-model-row', isTts);
+    setHidden('model-form-image-size-row', kind !== 'image');
+    setHidden('model-form-image-reference-row', kind !== 'image');
+    setHidden('model-form-image-reference-count-row', kind !== 'image');
+    setHidden('model-form-tts-provider-row', !isTts);
+    updateModelProviderPanels();
+    renderConnections();
+  }
+
+  function selectModelKind(kind) {
+    if (!MODEL_KIND_COPY[kind]) return;
+    state.activeModelKind = kind;
+    updateModelSetupForm();
+  }
+
+  function applyOpenAiCompatiblePreset() {
+    const preset = OPENAI_COMPATIBLE_PRESETS[element('model-form-protocol')?.value] || OPENAI_COMPATIBLE_PRESETS.custom;
+    const endpoint = element('model-form-endpoint');
+    const model = element('model-form-model');
+    if (endpoint && preset.endpoint) endpoint.value = preset.endpoint;
+    if (model && preset.model) model.value = preset.model;
   }
 
   async function refreshCreationConfigManagement() {
     if (state.loading || !window.API) return;
     state.loading = true;
-    const status = element('creation-config-management-status');
-    if (status) status.textContent = '正在加载…';
+    const statuses = [
+      element('creation-config-management-status'),
+      element('model-management-status'),
+    ].filter(Boolean);
+    statuses.forEach(status => { status.textContent = '正在加载…'; });
     try {
-      const [packagesResponse, connectionsResponse, credentialsResponse] = await Promise.all([
+      const [packagesResponse, connectionsResponse, credentialsResponse, defaultsResponse, accountResponse, stylesResponse] = await Promise.all([
         window.API.get('/api/creation-configs'),
         window.API.get('/api/model-connections'),
         window.API.get('/api/credentials'),
+        window.API.get('/api/creation-configs/default-payload'),
+        window.API.get('/api/accounts/current'),
+        window.API.get('/api/image-style/project-templates'),
       ]);
       state.packages = Array.isArray(packagesResponse?.packages) ? packagesResponse.packages : [];
       state.connections = Array.isArray(connectionsResponse?.connections) ? connectionsResponse.connections : [];
       state.credentials = Array.isArray(credentialsResponse?.credentials) ? credentialsResponse.credentials : [];
+      state.defaultPayload = objectValue(defaultsResponse?.payload);
+      state.defaultPackageId = typeof accountResponse?.account?.default_creation_config?.package_id === 'string'
+        ? accountResponse.account.default_creation_config.package_id
+        : null;
+      state.styleTemplates = Array.isArray(stylesResponse?.templates) ? stylesResponse.templates : [];
       buildStructuredEditor();
       renderConnectionSelectors();
+      renderImageStyleSelector();
       renderPackages();
       renderConnections();
       renderCredentials();
-      if (status) status.textContent = `已加载 ${state.packages.length} 个配置包、${state.connections.length} 个模型连接和 ${state.credentials.length} 个凭据`;
+      if (!state.editingPackageId && !element('creation-config-package-name')?.value.trim()) {
+        const defaultPackage = state.packages.find(item => item.id === state.defaultPackageId);
+        if (defaultPackage) await editPackage(defaultPackage);
+        else resetCreationConfigEditor();
+      }
+      statuses.forEach(status => {
+        status.textContent = `已加载 ${state.packages.length} 个创作配置包和 ${state.connections.length} 个模型。`;
+      });
     } catch (error) {
-      if (status) status.textContent = '加载失败，请检查服务状态后重试。';
+      statuses.forEach(status => { status.textContent = '加载失败，请检查服务状态后重试。'; });
       requestError('无法加载创作配置管理数据', error);
     } finally {
       state.loading = false;
@@ -465,15 +683,13 @@
       state.editingPackageId = current.id;
       state.editingVersion = Number(version.version);
       const name = element('creation-config-package-name');
-      const description = element('creation-config-package-description');
       const payload = element('creation-config-package-payload');
       if (name) { name.value = current.name || ''; name.readOnly = true; }
-      if (description) { description.value = current.description || ''; description.readOnly = true; }
       if (payload) payload.value = JSON.stringify(version.payload, null, 2);
       renderConnectionSelectors();
       loadPayloadIntoStructured(version.payload);
       const status = element('creation-config-editing-status');
-      if (status) status.textContent = `正在编辑“${current.name || '未命名配置包'}”v${version.version}；保存会创建 v${Number(version.version) + 1}。名称和说明会保持不变。`;
+      if (status) status.textContent = `正在编辑“${current.name || '未命名配置包'}”v${version.version}；保存会创建 v${Number(version.version) + 1}。`;
       const submit = element('btn-create-creation-config');
       if (submit) submit.textContent = '保存为新版本';
       const cancel = element('btn-cancel-creation-config-edit');
@@ -502,13 +718,13 @@
 
   async function createCreationConfig() {
     const name = element('creation-config-package-name')?.value.trim() || '';
-    const description = element('creation-config-package-description')?.value.trim() || '';
     if (!name) {
       toast('请输入创作配置包名称');
       return;
     }
     let payload;
     try {
+      syncStructuredFieldsToJson();
       payload = parseCreationConfigPayload();
     } catch (error) {
       requestError('无法创建配置包', error);
@@ -521,7 +737,7 @@
         await window.API.post(`/api/creation-configs/${encodeURIComponent(state.editingPackageId)}/versions`, { payload });
         toast('已保存为配置包新版本');
       } else {
-        await window.API.post('/api/creation-configs', { name, description, payload });
+        await window.API.post('/api/creation-configs', { name, payload });
         toast('创作配置包已创建');
       }
       await refreshCreationConfigManagement();
@@ -547,115 +763,125 @@
     }
   }
 
-  function parsePublicConfig() {
-    const field = element('creation-config-connection-public-config');
-    const raw = field ? field.value.trim() : '';
-    if (!raw) return {};
-    let parsed;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (_) {
-      throw new Error('公开参数必须是有效 JSON 对象');
+  async function saveApiSecret(provider, label, apiKey) {
+    const response = await window.API.post('/api/credentials', {
+      provider,
+      label,
+      secret_values: { api_key: apiKey },
+    });
+    const reference = response?.credential_ref || response?.credential?.credential_ref;
+    if (!reference || typeof reference !== 'string') {
+      throw new Error('API 密钥已保存，但未能关联到模型');
     }
-    if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
-      throw new Error('公开参数必须是 JSON 对象');
-    }
-    return parsed;
+    return reference;
   }
 
-  function parseCredentialSecrets() {
-    const field = element('creation-config-credential-secret-values');
-    const raw = field ? field.value.trim() : '';
-    let parsed;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (_) {
-      throw new Error('凭据值必须是有效 JSON 对象');
-    }
-    if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
-      throw new Error('凭据值必须是 JSON 对象');
-    }
-    const valid = Object.keys(parsed).length > 0
-      && Object.values(parsed).every(value => typeof value === 'string');
-    if (!valid) throw new Error('凭据值必须至少包含一个字符串字段');
-    return parsed;
+  function clearModelForm() {
+    ['model-form-name', 'model-form-api-key', 'model-form-model', 'model-form-image-size', 'model-form-minimax-token', 'model-form-minimax-voice-id']
+      .forEach(id => { const field = element(id); if (field) field.value = ''; });
+    const supportsReferences = element('model-form-image-supports-references');
+    if (supportsReferences) supportsReferences.checked = true;
+    const maxReferences = element('model-form-image-max-references');
+    if (maxReferences) maxReferences.value = '3';
   }
 
-  async function createCredential() {
-    const provider = element('creation-config-credential-provider')?.value.trim() || '';
-    const label = element('creation-config-credential-label')?.value.trim() || '';
-    if (!provider || !label) {
-      toast('请填写凭据服务和名称');
+  async function saveModel() {
+    const kind = state.activeModelKind;
+    const name = element('model-form-name')?.value.trim() || '';
+    if (!name) {
+      toast('请先填写显示名称');
       return;
     }
-    let secretValues;
-    try {
-      secretValues = parseCredentialSecrets();
-    } catch (error) {
-      requestError('无法添加凭据', error);
-      return;
-    }
-    const submit = element('btn-create-credential');
-    if (submit) submit.disabled = true;
-    try {
-      const response = await window.API.post('/api/credentials', {
-        provider,
-        label,
-        secret_values: secretValues,
-      });
-      // Support the metadata response used by both the current and planned
-      // credential route contract while accepting no secret data from either.
-      const credentialRef = response?.credential_ref || response?.credential?.credential_ref;
-      if (!credentialRef || typeof credentialRef !== 'string') {
-        throw new Error('凭据已保存，但服务未返回可用引用');
+    let provider = 'openai_compatible';
+    let model = '';
+    let endpoint = '';
+    let apiKey = '';
+    let publicConfig = {};
+    if (kind === 'tts') {
+      provider = currentTtsProvider();
+      if (provider === 'minimax') {
+        endpoint = element('model-form-minimax-endpoint')?.value.trim() || 'https://api.minimaxi.com/v1/t2a_async_v2';
+        apiKey = element('model-form-minimax-token')?.value.trim() || '';
+        model = element('model-form-minimax-model')?.value.trim() || 'speech-2.8-hd';
+        const voiceId = element('model-form-minimax-voice-id')?.value.trim() || '';
+        if (!apiKey || !voiceId) {
+          toast('MiniMax 需要填写 API Token 和音色 ID');
+          return;
+        }
+        publicConfig = { voice_id: voiceId };
+      } else {
+        endpoint = element('model-form-comfyui-endpoint')?.value.trim() || 'http://127.0.0.1:8188';
+        model = 'IndexTTS-2';
       }
-      const credentialField = element('creation-config-connection-credential-ref');
-      if (credentialField) credentialField.value = credentialRef;
-      const secretField = element('creation-config-credential-secret-values');
-      const labelField = element('creation-config-credential-label');
-      if (secretField) secretField.value = '';
-      if (labelField) labelField.value = '';
-      toast('凭据已添加，已填入模型连接的凭据引用');
+    } else {
+      endpoint = element('model-form-endpoint')?.value.trim() || '';
+      apiKey = element('model-form-api-key')?.value.trim() || '';
+      model = element('model-form-model')?.value.trim() || '';
+      if (!endpoint || !apiKey || !model) {
+        toast('请填写接口地址、API 密钥和模型 ID');
+        return;
+      }
+      publicConfig = {
+        protocol: 'openai_compatible',
+        preset: element('model-form-protocol')?.value || 'custom',
+      };
+      if (kind === 'image') {
+        const size = element('model-form-image-size')?.value.trim() || '';
+        if (size) publicConfig.image_size = size;
+        publicConfig.supports_reference_images = !!element('model-form-image-supports-references')?.checked;
+        publicConfig.max_reference_images = Math.max(
+          1,
+          Math.min(6, Number(element('model-form-image-max-references')?.value) || 3),
+        );
+      }
+    }
+    const submit = element('btn-save-model');
+    if (submit) submit.disabled = true;
+    try {
+      const credentialRef = apiKey ? await saveApiSecret(provider, `${name} API 密钥`, apiKey) : null;
+      const payload = { name, kind, provider, model, endpoint: endpoint || null, public_config: publicConfig };
+      if (credentialRef) payload.credential_ref = credentialRef;
+      await window.API.post('/api/model-connections', payload);
+      clearModelForm();
+      toast(`${MODEL_KIND_COPY[kind].title.replace('新增', '')}已保存`);
       await refreshCreationConfigManagement();
+      updateModelSetupForm();
     } catch (error) {
-      requestError('添加凭据失败', error);
+      requestError('保存模型失败', error);
     } finally {
       if (submit) submit.disabled = false;
     }
   }
 
-  async function createModelConnection() {
-    const name = element('creation-config-connection-name')?.value.trim() || '';
-    const kind = element('creation-config-connection-kind')?.value || '';
-    const provider = element('creation-config-connection-provider')?.value.trim() || '';
-    const model = element('creation-config-connection-model')?.value.trim() || '';
-    const endpoint = element('creation-config-connection-endpoint')?.value.trim() || '';
-    const credentialRef = element('creation-config-connection-credential-ref')?.value.trim() || '';
-    if (!name || !kind || !provider || !model) {
-      toast('请填写连接名称、类别、服务和模型');
+  async function refreshComfyUiWorkflowStatus() {
+    const status = element('model-form-comfyui-workflow-status');
+    if (!status || !window.API) return;
+    try {
+      const result = await window.API.get('/api/settings/comfyui-tts-workflow');
+      status.textContent = result?.exists ? '已导入工作流，可直接使用。' : '尚未导入工作流。';
+    } catch (_) {
+      status.textContent = '无法读取工作流状态。';
+    }
+  }
+
+  async function importComfyUiWorkflow() {
+    const input = element('model-form-comfyui-workflow-file');
+    const status = element('model-form-comfyui-workflow-status');
+    const file = input?.files?.[0];
+    if (!file) {
+      if (input) input.click();
       return;
     }
-    let publicConfig;
+    const form = new FormData();
+    form.append('file', file);
     try {
-      publicConfig = parsePublicConfig();
+      const result = await window.API.post('/api/settings/comfyui-tts-workflow', form);
+      if (status) status.textContent = `已导入 ${result?.nodes || 0} 个节点；该连接将沿用此工作流。`;
+      toast('ComfyUI 工作流已导入');
     } catch (error) {
-      requestError('无法创建模型连接', error);
-      return;
-    }
-    const payload = { name, kind, provider, model, endpoint: endpoint || null, public_config: publicConfig };
-    if (credentialRef) payload.credential_ref = credentialRef;
-    const submit = element('btn-create-model-connection');
-    if (submit) submit.disabled = true;
-    try {
-      await window.API.post('/api/model-connections', payload);
-      toast('模型连接已添加');
-      ['creation-config-connection-name', 'creation-config-connection-provider', 'creation-config-connection-model', 'creation-config-connection-endpoint', 'creation-config-connection-credential-ref', 'creation-config-connection-public-config']
-        .forEach(id => { const field = element(id); if (field) field.value = ''; });
-      await refreshCreationConfigManagement();
-    } catch (error) {
-      requestError('创建模型连接失败', error);
+      requestError('ComfyUI 工作流导入失败', error);
     } finally {
-      if (submit) submit.disabled = false;
+      if (input) input.value = '';
     }
   }
 
@@ -666,8 +892,20 @@
     refreshCreationConfigManagement();
   }
 
+  function openModelManagement() {
+    const modal = element('modal-model-management');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    refreshCreationConfigManagement();
+  }
+
   function closeCreationConfigManagement() {
     const modal = element('modal-creation-config-management');
+    if (modal) modal.style.display = 'none';
+  }
+
+  function closeModelManagement() {
+    const modal = element('modal-model-management');
     if (modal) modal.style.display = 'none';
   }
 
@@ -675,22 +913,56 @@
     buildStructuredEditor();
     renderConnectionSelectors();
     element('btn-open-creation-config-management')?.addEventListener('click', openCreationConfigManagement);
+    element('btn-open-model-management')?.addEventListener('click', openModelManagement);
     element('btn-creation-config-management-close')?.addEventListener('click', closeCreationConfigManagement);
+    element('btn-model-management-close')?.addEventListener('click', closeModelManagement);
     element('btn-creation-config-management-refresh')?.addEventListener('click', refreshCreationConfigManagement);
+    element('btn-model-management-refresh')?.addEventListener('click', refreshCreationConfigManagement);
     element('btn-create-creation-config')?.addEventListener('click', createCreationConfig);
     element('btn-cancel-creation-config-edit')?.addEventListener('click', resetCreationConfigEditor);
     element('btn-creation-config-load-json')?.addEventListener('click', loadJsonIntoStructured);
-    element('btn-create-credential')?.addEventListener('click', createCredential);
-    element('btn-create-model-connection')?.addEventListener('click', createModelConnection);
-    element('creation-config-structured-editor')?.addEventListener('input', syncStructuredFieldsToJson);
-    element('creation-config-structured-editor')?.addEventListener('change', syncStructuredFieldsToJson);
+    document.querySelectorAll('[data-model-kind]').forEach(tab => {
+      tab.addEventListener('click', () => selectModelKind(tab.dataset.modelKind));
+    });
+    element('model-form-protocol')?.addEventListener('change', applyOpenAiCompatiblePreset);
+    element('model-form-tts-provider')?.addEventListener('change', updateModelProviderPanels);
+    element('creation-config-image-style-template')?.addEventListener('change', updateImageStyleSummary);
+    document.querySelectorAll('input[name="creation-config-reference-policy"]').forEach(input => {
+      input.addEventListener('change', updateImageStyleSummary);
+    });
+    element('btn-model-form-comfyui-workflow')?.addEventListener('click', importComfyUiWorkflow);
+    element('model-form-comfyui-workflow-file')?.addEventListener('change', importComfyUiWorkflow);
+    element('btn-save-model')?.addEventListener('click', saveModel);
+    updateModelSetupForm();
+    const syncEditor = () => {
+      try {
+        syncStructuredFieldsToJson();
+        const status = element('creation-config-editing-status');
+        if (status?.dataset.configError) {
+          delete status.dataset.configError;
+          status.textContent = state.editingPackageId ? '可以保存为新版本。' : '可以创建配置包。';
+        }
+      } catch (error) {
+        const status = element('creation-config-editing-status');
+        if (status) {
+          status.dataset.configError = 'true';
+          status.textContent = error?.message || '配置内容格式不正确。';
+        }
+      }
+    };
+    element('creation-config-structured-editor')?.addEventListener('input', syncEditor);
+    element('creation-config-structured-editor')?.addEventListener('change', syncEditor);
     element('modal-creation-config-management')?.addEventListener('click', event => {
       if (event.target?.id === 'modal-creation-config-management') closeCreationConfigManagement();
+    });
+    element('modal-model-management')?.addEventListener('click', event => {
+      if (event.target?.id === 'modal-model-management') closeModelManagement();
     });
     resetCreationConfigEditor();
   }
 
   window.openCreationConfigManagement = openCreationConfigManagement;
+  window.openModelManagement = openModelManagement;
   window.closeCreationConfigManagement = closeCreationConfigManagement;
   window.refreshCreationConfigManagement = refreshCreationConfigManagement;
   window.initCreationConfigManagementEvents = initCreationConfigManagementEvents;

@@ -162,3 +162,79 @@ def test_connection_references_reject_inline_provider_settings() -> None:
 
     with pytest.raises(service.CreationConfigValidationError):
         service.create_creation_config(name="错误配置", payload=unsafe)
+
+
+def test_image_style_binding_is_normalized_without_embedding_images() -> None:
+    configured = payload()
+    configured["image_style"] = {
+        "package_id": "handdrawn",
+        "style_version": 1,
+        "reference_mode": "required",
+        "minimum_reference_images": 2,
+    }
+
+    created = service.create_creation_config(name="带图片风格", payload=configured)
+
+    assert created["versions"][0]["payload"]["image_style"] == {
+        "template_id": "handdrawn",
+        "version": 1,
+        "reference_policy": "required",
+        "minimum_reference_images": 2,
+    }
+
+
+def test_image_style_required_mode_rejects_zero_references() -> None:
+    configured = payload()
+    configured["image_style"] = {
+        "template_id": "handdrawn",
+        "version": 1,
+        "reference_policy": "required",
+        "minimum_reference_images": 0,
+    }
+    with pytest.raises(service.CreationConfigValidationError, match="至少需要 1 张"):
+        service.create_creation_config(name="错误图片风格", payload=configured)
+
+
+def test_step_contracts_are_versioned_and_validate_model_output() -> None:
+    configured = payload()
+    configured["step_contracts"] = {
+        "article_generation": {
+            "input_template": {"topic": "string"},
+            "output_schema": {
+                "type": "object",
+                "required": ["title", "body"],
+                "properties": {
+                    "title": {"type": "string"},
+                    "body": {"type": "string"},
+                },
+            },
+        },
+        "tts": {
+            "input_template": {"text": "string"},
+            "output_schema": {
+                "type": "object",
+                "required": ["audio_url"],
+                "properties": {"audio_url": {"type": "string"}},
+            },
+        },
+    }
+    created = service.create_creation_config(name="带契约配置", payload=configured)
+    contracts = created["versions"][0]["payload"]["step_contracts"]
+    service.validate_step_output(contracts["article_generation"], {"title": "标题", "body": "正文"})
+    with pytest.raises(service.CreationConfigValidationError, match="缺少"):
+        service.validate_step_output(contracts["article_generation"], {"title": "标题"})
+
+
+def test_step_contract_rejects_invalid_schema_before_it_can_reach_a_project() -> None:
+    configured = payload()
+    configured["step_contracts"] = {
+        "article_generation": {
+            "output_schema": {
+                "type": "object",
+                "required": ["missing"],
+                "properties": {"title": {"type": "string"}},
+            }
+        }
+    }
+    with pytest.raises(service.CreationConfigValidationError, match="required"):
+        service.create_creation_config(name="错误契约", payload=configured)

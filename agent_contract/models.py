@@ -14,6 +14,13 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 
+class IdentityResult(BaseModel):
+    account_id: str
+    account_name: str
+    scopes: list[str] = Field(default_factory=list)
+    authenticated: bool = False
+
+
 # ---------------------------------------------------------------------------
 # Project models
 # ---------------------------------------------------------------------------
@@ -45,6 +52,8 @@ class ProjectCreateRequest(BaseModel):
     config_package_id: Optional[str] = Field(None, min_length=1, max_length=120, description="创作配置包 ID")
     config_package_version: Optional[int] = Field(None, ge=1, description="创作配置包版本；不填时固定当前最新版本")
     config_overrides: dict[str, Any] = Field(default_factory=dict, description="仅本项目的创作配置覆盖项")
+    course_id: Optional[str] = Field(None, min_length=1, max_length=120, description="项目所属课程 ID；不填则保留独立项目兼容模式")
+    chapter_id: Optional[str] = Field(None, min_length=1, max_length=120, description="项目所属章节 ID；填写时服务端验证课程与账号归属")
     idempotency_key: Optional[str] = Field(None, description="幂等键，防止重复创建")
 
 
@@ -61,6 +70,8 @@ class ProjectSummary(BaseModel):
     review_policy: str = Field("none", description="审查策略: none / images_and_video / all_stages")
     mask_enabled: bool = Field(True, description="项目是否启用 Mask 标注（整页切换模式为 False）")
     creation_config: Optional[dict[str, Any]] = Field(None, description="项目固定使用的创作配置包版本摘要")
+    course_id: Optional[str] = None
+    chapter_id: Optional[str] = None
     created_at: Optional[str] = None
 
 

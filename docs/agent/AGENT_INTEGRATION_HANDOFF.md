@@ -93,6 +93,13 @@ Capability Registry + schema builders (agent_contract/)
    删除图片同步清理，`/artifacts` 返回全部产物类型。
 9. **请求链路追踪**：`X-Request-ID` 生成/传播，`request.state.request_id` 供日志引用。
 
+## 五点一、后续增强（当前工作区）
+
+- MCP 服务版本已提升至 `1.1.0`。
+- 契约哈希发生漂移但主版本兼容时，MCP 仍允许只读工具继续工作，
+  但会阻断所有状态变更工具，并在 `initialize.serverInfo.writeAllowed` 中明确告知客户端。
+- MCP 在完成 `initialize` 前对写工具默认拒绝，避免绕过契约协商直接修改项目状态。
+
 ## 六、运行方式
 
 ```powershell
@@ -133,9 +140,8 @@ python scripts/run_checks.py --level quick           # 全仓快速回归
 
 ## 八、已知限制与后续建议
 
-- MCP 目前只在 `initialize` 时协商契约；长生命周期进程尚无 TTL/写操作前复检。
-- hash 不一致但 minor/patch 兼容时当前允许调用；若要求"任何契约变化都不能漏同步"，
-  应改为至少阻止写操作。
+- MCP 目前只在 `initialize` 时协商契约；长生命周期进程尚无 TTL/周期性重新协商。
+  当前实现会在初始化后阻止契约哈希漂移下的写操作，但不会主动发现服务端随后发生的漂移。
 - 外部 LLM、生图、IndexTTS、ComfyUI 与数字人服务仍需在具备测试凭据/GPU 的受控环境
   执行一次真实全链路发布验收。
 - 后续工程项：继续拆分 `server.py`、提高测试覆盖率、锁定 Python 依赖版本、迁移

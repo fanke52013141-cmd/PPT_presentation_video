@@ -32,6 +32,7 @@ from video_job_store import (
     VideoJobStore,
 )
 from visual_provenance import validate_visual_provenance_set
+from account_context import get_current_account_id, reset_current_account_id, set_current_account_id
 
 
 logger = logging.getLogger("PPTStudio.VideoRender")
@@ -236,6 +237,7 @@ class VideoRenderService:
             "requested_at": datetime.now().isoformat(timespec="seconds"),
             "submission_key": submission_key,
             "submission_attempt": submission_attempt,
+            "account_id": getattr(project, "account_id", None) or get_current_account_id(),
         }
         if prior_submission:
             # The prior id is a local opaque identifier.  Do not include
@@ -299,7 +301,12 @@ class VideoRenderService:
 
         thread = threading.Thread(
             target=self.run_render_job,
-            args=(project_id, task_id, project_lock),
+            args=(
+                project_id,
+                task_id,
+                project_lock,
+                getattr(project, "account_id", None) or get_current_account_id(),
+            ),
             name=f"render-{project_id}-{task_id[:8]}",
             daemon=True,
         )
@@ -581,6 +588,7 @@ class VideoRenderService:
         project_id: str,
         task_id: str,
         render_lock: threading.Lock | None = None,
+        account_id: str = "default",
     ) -> None:
         """执行一次视频渲染任务。
 
@@ -588,6 +596,7 @@ class VideoRenderService:
         渲染全生命周期持有同一把按项目互斥锁，由本 worker 在 finally 中释放。
         未传锁（历史调用方/测试直调）时沿用旧的按需读取 + locked() 守卫。
         """
+        account_context_token = set_current_account_id(account_id)
         db = self.dependencies.session_factory()
         project_lock = (
             render_lock
@@ -597,7 +606,7 @@ class VideoRenderService:
         try:
             project = (
                 db.query(Project)
-                .filter(Project.id == project_id)
+                .filter(Project.id == project_id, Project.account_id == get_current_account_id())
                 .first()
             )
             if not project:
@@ -703,6 +712,7 @@ class VideoRenderService:
                 render_lock.release()
             elif project_lock.locked():
                 project_lock.release()
+            reset_current_account_id(account_context_token)
 
     def _apply_digital_human_composite(
         self,

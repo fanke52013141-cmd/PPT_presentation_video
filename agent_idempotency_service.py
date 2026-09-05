@@ -25,6 +25,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from database import AgentIdempotencyRecord, utc_now_naive
+from account_context import get_current_account_id
 
 logger = logging.getLogger("PPTStudio.AgentIdempotency")
 
@@ -98,6 +99,11 @@ class AgentIdempotencyService:
         Raises ``IdempotencyConflictError`` on key reuse with a different
         request body, or when an operation is already in progress.
         """
+        account_id = get_current_account_id()
+        # Preserve the historical default-account key space for backwards
+        # compatibility. New accounts are isolated at the primary-key level.
+        if account_id != "default":
+            scope = f"{account_id}:{scope}"
         if not idempotency_key:
             # No key provided — bypass idempotency entirely.
             return ClaimResult(is_new=True, replay_response=None, record_pk=None)

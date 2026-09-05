@@ -16,7 +16,8 @@ from fastapi import HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from database import ArtifactRecord, LocalJob, Project
+from database import ArtifactRecord, Chapter, Course, LocalJob, Project
+from account_context import get_current_account_id
 from project_storage import (
     UnsafeProjectPath,
     project_run_dir,
@@ -26,6 +27,10 @@ from canvas_profile_service import (
     get_canvas_profile,
     normalize_canvas_profile,
     write_project_canvas_snapshot,
+)
+from visual_settings_service import (
+    PROJECT_VISUAL_SETTINGS_FILE,
+    normalize_subtitle_style,
 )
 
 
@@ -49,6 +54,10 @@ class ProjectCreate(BaseModel):
     config_package_id: Optional[str] = None
     config_package_version: Optional[int] = None
     config_overrides: Optional[dict[str, Any]] = None
+    # New projects are normally created from a chapter.  Both fields remain
+    # optional for legacy standalone projects and Agent compatibility.
+    course_id: Optional[str] = None
+    chapter_id: Optional[str] = None
 
 
 class AiModeUpdate(BaseModel):
@@ -69,6 +78,10 @@ class ProjectDependencies:
         Callable[[str, Optional[int], dict[str, Any]], dict[str, Any]]
     ] = None
     write_json_atomic: Optional[Callable[[str | Path, Any], None]] = None
+    get_default_creation_config: Optional[Callable[[str, Session], dict[str, Any] | None]] = None
+    materialize_image_style: Optional[
+        Callable[[Project, dict[str, Any]], dict[str, Any] | None]
+    ] = None
 
 
 class ProjectService:
@@ -79,7 +92,9 @@ class ProjectService:
         self,
         payload: ProjectCreate,
         db: Session,
+        account_id: str | None = None,
     ) -> dict[str, Any]:
+        account_id = account_id or get_current_account_id()
         project_id = (
             str(uuid.uuid4())[:8]
             + "_"
@@ -104,11 +119,37 @@ class ProjectService:
         if review_policy not in {"none", "images_and_video", "all_stages"}:
             review_policy = "none"
         # Normalize manual pause steps — only accept known module names.
-        _valid_pause = {"digital_human", "mask", "narration"}
+        _valid_pause = {"digital_human", "mask", "narration", "tts"}
         raw_pause = payload.manual_pause_steps or []
         manual_pause = [s for s in raw_pause if s in _valid_pause]
         image_style_template = (payload.image_style_template or "default").strip()
         mask_enabled = 1 if payload.mask_enabled else 0
+        configured_subtitle_style: dict[str, Any] | None = None
+        course_id = str(payload.course_id or "").strip() or None
+        chapter_id = str(payload.chapter_id or "").strip() or None
+        if chapter_id:
+            chapter = (
+                db.query(Chapter)
+                .join(Course, Course.id == Chapter.course_id)
+                .filter(
+                    Chapter.id == chapter_id,
+                    Course.account_id == account_id,
+                )
+                .first()
+            )
+            if chapter is None:
+                raise HTTPException(status_code=404, detail="章节不存在或不属于当前创作账号")
+            if course_id and course_id != chapter.course_id:
+                raise HTTPException(status_code=400, detail="章节不属于指定课程")
+            course_id = chapter.course_id
+        elif course_id:
+            course = (
+                db.query(Course)
+                .filter(Course.id == course_id, Course.account_id == account_id)
+                .first()
+            )
+            if course is None:
+                raise HTTPException(status_code=404, detail="课程不存在或不属于当前创作账号")
         creation_config: dict[str, Any] | None = None
         supplied_package_ids = [
             value.strip()
@@ -143,12 +184,12 @@ class ProjectService:
             and payload.creation_config_overrides != payload.config_overrides
         ):
             raise HTTPException(status_code=400, detail="创作配置覆盖项不能同时指定不同值")
+        if config_overrides is not None and not isinstance(config_overrides, dict):
+            raise HTTPException(status_code=400, detail="creation_config_overrides 必须是对象")
         if config_package_id:
             if self.dependencies.resolve_creation_config is None:
                 raise HTTPException(status_code=503, detail="创作配置服务尚未配置")
             overrides = config_overrides or {}
-            if not isinstance(overrides, dict):
-                raise HTTPException(status_code=400, detail="creation_config_overrides 必须是对象")
             try:
                 creation_config = self.dependencies.resolve_creation_config(
                     config_package_id,
@@ -157,11 +198,60 @@ class ProjectService:
                 )
             except Exception as exc:
                 raise HTTPException(status_code=400, detail=f"创作配置不可用: {exc}") from exc
+        elif self.dependencies.get_default_creation_config is not None:
+            default_config = self.dependencies.get_default_creation_config(account_id, db)
+            if default_config:
+                config_package_id = str(default_config.get("package_id") or "").strip() or None
+                # Explicit creation parameters must behave identically whether
+                # the package was selected directly or supplied by the account
+                # default.  In particular, callers may override a default
+                # package's version and/or only selected fields.
+                if config_version is None:
+                    config_version = default_config.get("version")
+                if config_package_id and self.dependencies.resolve_creation_config is not None:
+                    try:
+                        creation_config = self.dependencies.resolve_creation_config(
+                            config_package_id, config_version, config_overrides or {}
+                        )
+                    except Exception as exc:
+                        raise HTTPException(status_code=400, detail=f"账号默认创作配置不可用: {exc}") from exc
         elif config_version is not None or config_overrides:
             raise HTTPException(
                 status_code=400,
                 detail="指定创作配置版本或覆盖项时必须选择 creation_config_package_id",
             )
+        # A creation package is the single owner of pipeline switches.  Once
+        # resolved, its immutable snapshot decides Mask and automatic pause
+        # behavior; project creation must not silently replace those choices.
+        if creation_config is not None:
+            config_payload = creation_config.get("payload")
+            if isinstance(config_payload, dict):
+                automation = config_payload.get("automation")
+                configured_pause = (
+                    automation.get("manual_pause_steps")
+                    if isinstance(automation, dict)
+                    else None
+                )
+                if isinstance(configured_pause, list):
+                    if "manual_pause_steps" not in payload.model_fields_set:
+                        manual_pause = [
+                            step for step in configured_pause if step in _valid_pause
+                        ]
+                mask = config_payload.get("mask")
+                if (
+                    "mask_enabled" not in payload.model_fields_set
+                    and isinstance(mask, dict)
+                    and isinstance(mask.get("enabled"), bool)
+                ):
+                    mask_enabled = 1 if mask["enabled"] else 0
+                subtitle = config_payload.get("subtitle")
+                if (
+                    isinstance(subtitle, dict)
+                    and isinstance(subtitle.get("enabled"), bool)
+                ):
+                    configured_subtitle_style = normalize_subtitle_style(
+                        {"enabled": subtitle["enabled"]}
+                    )
         project = Project(
             id=project_id,
             name=payload.name,
@@ -169,6 +259,9 @@ class ProjectService:
             current_step=1,
             status="active",
             run_dir=str(run_dir),
+            account_id=account_id,
+            course_id=course_id,
+            chapter_id=chapter_id,
             ai_mode=ai_mode,
             canvas_profile=canvas_profile,
             review_policy=review_policy,
@@ -189,6 +282,25 @@ class ProjectService:
         db.add(project)
         try:
             write_project_canvas_snapshot(project)
+            if configured_subtitle_style is not None:
+                visual_settings_path = run_dir / PROJECT_VISUAL_SETTINGS_FILE
+                visual_settings_payload = {
+                    "subtitle_style": configured_subtitle_style,
+                }
+                if self.dependencies.write_json_atomic is None:
+                    visual_settings_path.write_text(
+                        json.dumps(
+                            visual_settings_payload,
+                            ensure_ascii=False,
+                            indent=2,
+                        ),
+                        encoding="utf-8",
+                    )
+                else:
+                    self.dependencies.write_json_atomic(
+                        visual_settings_path,
+                        visual_settings_payload,
+                    )
             if creation_config is not None:
                 snapshot_path = run_dir / "planning" / "project_config.json"
                 if self.dependencies.write_json_atomic is None:
@@ -202,6 +314,17 @@ class ProjectService:
                     )
                 else:
                     self.dependencies.write_json_atomic(snapshot_path, creation_config)
+                config_payload = creation_config.get("payload")
+                image_style = (
+                    config_payload.get("image_style")
+                    if isinstance(config_payload, dict)
+                    else None
+                )
+                if (
+                    isinstance(image_style, dict)
+                    and self.dependencies.materialize_image_style is not None
+                ):
+                    self.dependencies.materialize_image_style(project, image_style)
             db.commit()
         except Exception:
             db.rollback()
@@ -224,12 +347,16 @@ class ProjectService:
                 "image_style_template": project.image_style_template or "default",
                 "mask_enabled": bool(project.mask_enabled if project.mask_enabled is not None else 1),
                 "creation_config": self._creation_config_summary(project),
+                "course_id": project.course_id,
+                "chapter_id": project.chapter_id,
             },
         }
 
-    def list(self, db: Session) -> list[dict[str, Any]]:
+    def list(self, db: Session, account_id: str | None = None) -> list[dict[str, Any]]:
+        account_id = account_id or get_current_account_id()
         projects = (
             db.query(Project)
+            .filter(Project.account_id == account_id)
             .order_by(Project.created_at.desc())
             .all()
         )
@@ -252,12 +379,14 @@ class ProjectService:
                 "image_style_template": project.image_style_template or "default",
                 "mask_enabled": bool(project.mask_enabled if project.mask_enabled is not None else 1),
                 "creation_config": self._creation_config_summary(project),
+                "course_id": project.course_id,
+                "chapter_id": project.chapter_id,
             }
             for project in projects
         ]
 
-    def get(self, project_id: str, db: Session) -> dict[str, Any]:
-        project = self._project(project_id, db)
+    def get(self, project_id: str, db: Session, account_id: str | None = None) -> dict[str, Any]:
+        project = self._project(project_id, db, account_id or get_current_account_id())
         return {
             "id": project.id,
             "name": project.name,
@@ -276,6 +405,8 @@ class ProjectService:
             "image_style_template": project.image_style_template or "default",
             "mask_enabled": bool(project.mask_enabled if project.mask_enabled is not None else 1),
             "creation_config": self._creation_config_summary(project),
+            "course_id": project.course_id,
+            "chapter_id": project.chapter_id,
         }
 
     @staticmethod
@@ -294,7 +425,7 @@ class ProjectService:
         project_id: str,
         db: Session,
     ) -> dict[str, str]:
-        project = self._project(project_id, db)
+        project = self._project(project_id, db, get_current_account_id())
         return {"ai_mode": project.ai_mode or "auto"}
 
     def update_ai_mode(
@@ -303,7 +434,7 @@ class ProjectService:
         payload: AiModeUpdate,
         db: Session,
     ) -> dict[str, Any]:
-        project = self._project(project_id, db)
+        project = self._project(project_id, db, get_current_account_id())
         ai_mode = (payload.ai_mode or "").strip().lower()
         if ai_mode not in {"auto", "manual"}:
             raise HTTPException(
@@ -321,7 +452,7 @@ class ProjectService:
         payload: "ProjectUpdate",
         db: Session,
     ) -> dict[str, Any]:
-        project = self._project(project_id, db)
+        project = self._project(project_id, db, get_current_account_id())
         if payload.name is not None:
             project.name = payload.name.strip()
         if payload.description is not None:
@@ -347,8 +478,9 @@ class ProjectService:
         self,
         project_id: str,
         db: Session,
+        account_id: str | None = None,
     ) -> dict[str, Any]:
-        project = self._project(project_id, db)
+        project = self._project(project_id, db, account_id or get_current_account_id())
         # 拒绝在活跃渲染/一键生成任务期间删除，避免渲染线程重建
         # 已删除目录（幽灵目录）或对已删除记录继续写库。
         active_job = (
@@ -417,10 +549,10 @@ class ProjectService:
         return {"success": True, "message": "项目删除成功"}
 
     @staticmethod
-    def _project(project_id: str, db: Session) -> Project:
+    def _project(project_id: str, db: Session, account_id: str = "default") -> Project:
         project = (
             db.query(Project)
-            .filter(Project.id == project_id)
+            .filter(Project.id == project_id, Project.account_id == account_id)
             .first()
         )
         if not project:

@@ -214,18 +214,54 @@ def _project_image_runtime(project: Project) -> Optional[Dict[str, Any]]:
     if not api_key:
         raise HTTPException(status_code=400, detail="项目图片模型凭据缺少 API Key。")
     public_config = _connection_value(connection, "public_config", {})
+    public_config = public_config if isinstance(public_config, dict) else {}
     return {
         "api_key": api_key,
         "base_url": _connection_value(connection, "endpoint") or "",
         "model": str(_connection_value(connection, "model") or "").strip(),
         "provider": str(_connection_value(connection, "provider") or "openai_compatible"),
         "image_size": (
-            public_config.get("image_size")
-            if isinstance(public_config, dict)
-            else None
+            public_config.get("image_size") or public_config.get("size")
         ),
+        "public_config": public_config,
         "secrets": secrets,
     }
+
+
+def _image_reference_policy(project: Project) -> dict[str, Any]:
+    value = get_config_value(project, "image_style", {})
+    value = value if isinstance(value, dict) else {}
+    policy = str(value.get("reference_policy") or "preferred").strip().lower()
+    if policy not in {"required", "preferred", "text_only"}:
+        policy = "preferred"
+    try:
+        minimum = int(value.get("minimum_reference_images", 1))
+    except (TypeError, ValueError):
+        minimum = 1
+    minimum = max(0, min(3, minimum))
+    if policy == "required":
+        minimum = max(1, minimum)
+    elif policy == "text_only":
+        minimum = 0
+    return {"policy": policy, "minimum": minimum}
+
+
+def _image_reference_capability(
+    model: str,
+    base_url: str,
+    public_config: dict[str, Any],
+    reference_paths: List[str],
+) -> tuple[bool, int]:
+    explicit = public_config.get("supports_reference_images")
+    if isinstance(explicit, bool):
+        supported = explicit
+    else:
+        supported = can_send_project_references(model, base_url, reference_paths)
+    try:
+        maximum = int(public_config.get("max_reference_images", 3))
+    except (TypeError, ValueError):
+        maximum = 3
+    return supported, max(1, min(6, maximum))
 
 
 def step3_image_prompts_path(project: Project) -> str:
@@ -586,6 +622,7 @@ def generate_slide_image(
         image_size_setting = get_setting("image_size", "1024x1024")
         image_provider = "openai_compatible"
         runtime_secrets: Dict[str, Any] = {}
+        image_public_config: Dict[str, Any] = {}
     else:
         api_key = project_runtime["api_key"]
         base_url = project_runtime["base_url"]
@@ -595,6 +632,7 @@ def generate_slide_image(
         )
         image_provider = project_runtime["provider"]
         runtime_secrets = project_runtime["secrets"]
+        image_public_config = project_runtime["public_config"]
         if not model:
             raise HTTPException(status_code=400, detail="项目图片模型连接缺少模型名称。")
     image_filename = "visual_candidate.png" if preview else "visual_draft.png"
@@ -619,29 +657,66 @@ def generate_slide_image(
 
         response = None
         used_reference_paths: List[str] = []
+        reference_policy = _image_reference_policy(project)
+        reference_status = "not_requested"
         project_references = project_reference_paths(project)
-        if project_references:
-            reference_paths = project_references
-            use_reference_images = can_send_project_references(
-                model, base_url, reference_paths
-            )
+        if reference_policy["policy"] == "text_only":
+            style_reference_paths: List[str] = []
+            reference_status = "text_only"
+        elif project_references:
+            style_reference_paths = list(project_references)
         else:
             style_tokens = read_style_tokens_data()
-            reference_paths = active_style_reference_paths()
-            use_reference_images = should_send_style_reference_images(
+            style_reference_paths = active_style_reference_paths()
+            legacy_style_supported = should_send_style_reference_images(
                 model=model,
                 base_url=base_url,
-                reference_paths=reference_paths,
+                reference_paths=style_reference_paths,
                 style_tokens=style_tokens,
             )
+            if not legacy_style_supported and reference_policy["policy"] == "preferred":
+                style_reference_paths = []
+                reference_status = "fallback_text_only"
+        if (
+            reference_policy["policy"] == "required"
+            and len(style_reference_paths) < reference_policy["minimum"]
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "当前创作配置要求使用参考图，但项目参考图不足："
+                    f"至少 {reference_policy['minimum']} 张，当前 {len(style_reference_paths)} 张。"
+                ),
+            )
         ip_reference_paths = ip_character_reference_paths(project, slide_id)
-        if ip_reference_paths:
-            reference_paths = list(reference_paths) + ip_reference_paths
-            if not use_reference_images:
-                use_reference_images = can_send_project_references(
-                    model, base_url, reference_paths
+        reference_paths = list(style_reference_paths) + list(ip_reference_paths)
+        use_reference_images = False
+        max_reference_images = 3
+        if reference_paths:
+            use_reference_images, max_reference_images = _image_reference_capability(
+                model, base_url, image_public_config, reference_paths
+            )
+            if (
+                reference_policy["policy"] == "required"
+                and max_reference_images < reference_policy["minimum"]
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "当前图片模型最多支持 "
+                        f"{max_reference_images} 张参考图，少于创作配置要求的 "
+                        f"{reference_policy['minimum']} 张。"
+                    ),
                 )
+            reference_paths = reference_paths[:max_reference_images]
+        if reference_policy["policy"] == "required" and not use_reference_images:
+            raise HTTPException(
+                status_code=409,
+                detail="当前图片模型未启用参考图能力，请在模型设置中开启后再生成。",
+            )
         if reference_paths and not use_reference_images:
+            if reference_status == "not_requested":
+                reference_status = "fallback_text_only"
             logger.info(
                 "Skipping binary style reference images for %s: active references are not compatible with current model/style.",
                 slide_id,
@@ -658,11 +733,21 @@ def generate_slide_image(
                     n=1,
                 )
                 used_reference_paths = list(reference_paths)
+                reference_status = "used"
                 logger.info(
                     "Image generation used %s style reference images.",
                     len(reference_files),
                 )
             except Exception as reference_error:
+                if reference_policy["policy"] == "required":
+                    safe_reference_error = _redact_runtime_secrets(
+                        reference_error, runtime_secrets
+                    )
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"参考图生成失败，已按创作配置停止：{safe_reference_error}",
+                    ) from reference_error
+                reference_status = "fallback_text_only"
                 logger.warning(
                     "Reference image generation is unavailable, falling back to images.generate: %s",
                     reference_error,
@@ -699,6 +784,10 @@ def generate_slide_image(
             model=model,
             prompt=effective_prompt,
             reference_paths=used_reference_paths,
+            reference_policy=reference_policy["policy"],
+            reference_status=reference_status,
+            requested_reference_count=len(style_reference_paths),
+            submitted_reference_count=len(used_reference_paths),
             source_bytes=img_bytes,
             candidate=preview,
         )
@@ -706,12 +795,16 @@ def generate_slide_image(
         if preview:
             return {
                 "success": True,
+                "reference_status": reference_status,
+                "reference_count": len(used_reference_paths),
                 "candidate_url": f"/api/projects/{project_id}/slides/{slide_id}/candidate?t={uuid.uuid4().hex[:6]}",
             }
         mark_slide_image_changed(project, slide_id, db)
 
         return {
             "success": True,
+            "reference_status": reference_status,
+            "reference_count": len(used_reference_paths),
             "image_url": f"/api/projects/{project_id}/slides/{slide_id}/image?t={uuid.uuid4().hex[:6]}",
         }
     except HTTPException:

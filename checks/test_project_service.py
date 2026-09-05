@@ -97,12 +97,21 @@ def test_project_creation_binds_and_snapshots_creation_config(
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine)
 
+    materialized: list[tuple[str, dict]] = []
     effective = {
         "package_id": "science",
         "version": 3,
         "content_hash": "hash-v3",
         "payload": {
             "subtitle": {"enabled": False},
+            "mask": {"enabled": False},
+            "automation": {"manual_pause_steps": ["mask", "tts"]},
+            "image_style": {
+                "template_id": "handdrawn",
+                "version": 1,
+                "reference_policy": "preferred",
+                "minimum_reference_images": 1,
+            },
             "model_bindings": {
                 "article_generation": {
                     "connection_id": "text-a",
@@ -123,6 +132,9 @@ def test_project_creation_binds_and_snapshots_creation_config(
             write_json_atomic=lambda path, payload: Path(path).write_text(
                 json.dumps(payload, ensure_ascii=False), encoding="utf-8"
             ),
+            materialize_image_style=lambda project, binding: materialized.append(
+                (project.id, binding)
+            ) or {"template_id": binding["template_id"]},
         )
     )
     db = session_factory()
@@ -144,5 +156,53 @@ def test_project_creation_binds_and_snapshots_creation_config(
         }
         snapshot = Path(project["run_dir"]) / "planning" / "project_config.json"
         assert json.loads(snapshot.read_text(encoding="utf-8")) == effective
+        assert project["mask_enabled"] is False
+        assert project["manual_pause_steps"] == ["mask", "tts"]
+        visual_settings = Path(project["run_dir"]) / "visual_settings.json"
+        assert json.loads(visual_settings.read_text(encoding="utf-8"))["subtitle_style"]["enabled"] is False
+        assert materialized == [(project_id, effective["payload"]["image_style"])]
     finally:
         db.close()
+
+
+def test_default_creation_config_honors_explicit_version_and_overrides(
+    tmp_path: Path,
+) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'default-config.db'}")
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine)()
+    calls: list[tuple[str, int | None, dict]] = []
+
+    def resolve(package_id: str, version: int | None, overrides: dict) -> dict:
+        calls.append((package_id, version, overrides))
+        return {
+            "package_id": package_id,
+            "version": version,
+            "content_hash": "resolved",
+            "payload": {"subtitle": {"enabled": overrides.get("enabled", True)}},
+        }
+
+    service = ProjectService(
+        ProjectDependencies(
+            runs_root=tmp_path / "runs",
+            project_audio_confirmed=lambda _project: False,
+            resolve_creation_config=resolve,
+            get_default_creation_config=lambda _account_id, _db: {
+                "package_id": "account-default", "version": 1
+            },
+        )
+    )
+    try:
+        result = service.create(
+            ProjectCreate(
+                name="Default with overrides",
+                config_package_version=2,
+                config_overrides={"enabled": False},
+            ),
+            db,
+        )
+        assert calls == [("account-default", 2, {"enabled": False})]
+        assert result["project"]["creation_config"]["version"] == 2
+    finally:
+        db.close()
+        engine.dispose()

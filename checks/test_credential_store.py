@@ -84,3 +84,26 @@ def test_invalid_secret_shape_does_not_persist(configured: MemoryStore) -> None:
             secret_values={"api_key": ""},
         )
     assert configured.value["credentials"] == {}
+
+
+def test_reusable_startup_uses_empty_versioned_store_when_file_is_missing(tmp_path) -> None:
+    """A fresh install must be able to open model settings before saving a key."""
+    from reusable_config_startup import configure_reusable_config_routes
+
+    class App:
+        def include_router(self, _router: Any) -> None:
+            return None
+
+    previous = service._dependencies
+    try:
+        configure_reusable_config_routes(
+            App(),
+            model_connections_path=tmp_path / "model_connections.json",
+            creation_configs_path=tmp_path / "creation_configs.json",
+            credentials_path=tmp_path / "credentials.json",
+            read_json_file=lambda _path, fallback: deepcopy(fallback),
+            write_json_atomic=lambda _path, _value: None,
+        )
+        assert service.list_credentials() == []
+    finally:
+        service._dependencies = previous

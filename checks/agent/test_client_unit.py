@@ -69,6 +69,29 @@ class TestUrlConstruction:
         assert json.loads(body)["name"] == "Test"
 
     @patch("agent_client.client.urlopen")
+    def test_create_forwards_account_creation_configuration(self, mock_urlopen):
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b'{"project": {}}'
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+
+        client = AgentClient(base_url="http://test")
+        client.create_project(
+            name="Configured",
+            mask_enabled=False,
+            config_package_id="training",
+            config_package_version=4,
+            config_overrides={"subtitle": {"enabled": False}},
+        )
+
+        payload = json.loads(mock_urlopen.call_args[0][0].data.decode("utf-8"))
+        assert payload["mask_enabled"] is False
+        assert payload["config_package_id"] == "training"
+        assert payload["config_package_version"] == 4
+        assert payload["config_overrides"] == {"subtitle": {"enabled": False}}
+
+    @patch("agent_client.client.urlopen")
     def test_none_params_excluded(self, mock_urlopen):
         mock_resp = MagicMock()
         mock_resp.read.return_value = b'{"projects": []}'

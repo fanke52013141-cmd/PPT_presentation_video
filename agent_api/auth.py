@@ -88,12 +88,36 @@ class AgentAuthMiddleware(BaseHTTPMiddleware):
         if any(path.endswith(suffix) for suffix in _PUBLIC_SUFFIXES):
             return await call_next(request)
 
-        # If no token is configured, pass through (development mode).
-        if not self.enabled:
-            return await call_next(request)
-
         token = self._extract_token(request)
-        if not token or not secrets.compare_digest(token, self._expected_token):
+        account_id = "default"
+        authenticated = False
+        scopes: set[str] = set()
+        if token and self._expected_token and secrets.compare_digest(token, self._expected_token):
+            authenticated = True
+            # The legacy process token remains a deliberately local default
+            # account token until it is replaced by a per-account token.
+        elif token:
+            try:
+                from database import SessionLocal
+                from account_service import authenticate_agent_token
+                db = SessionLocal()
+                try:
+                    account_token = authenticate_agent_token(db, token)
+                    if account_token is not None:
+                        account_id = account_token.account_id
+                        scopes = set(filter(None, account_token.scopes.split(",")))
+                        authenticated = True
+                finally:
+                    db.close()
+            except Exception:
+                # Authentication must fail closed when token storage is not
+                # available; do not turn a database error into anonymous access.
+                authenticated = False
+
+        # If neither the legacy key nor a stored account token is configured,
+        # preserve the existing loopback development behavior. A caller may
+        # select an account explicitly in local development with the header.
+        if not authenticated and self.enabled:
             body = json.dumps(
                 {
                     "error": {
@@ -109,5 +133,28 @@ class AgentAuthMiddleware(BaseHTTPMiddleware):
                 media_type="application/json",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-
-        return await call_next(request)
+        if not authenticated and not self.enabled:
+            account_id = request.headers.get("x-ppt-account-id", "default").strip() or "default"
+        if authenticated and scopes:
+            required_scope = "project:read"
+            if request.method.upper() != "GET":
+                required_scope = "project:write"
+            if "/runs" in path or path.endswith("/render"):
+                required_scope = "pipeline:write"
+            if "/artifacts" in path and request.method.upper() == "GET":
+                required_scope = "artifact:read"
+            if required_scope not in scopes:
+                return Response(
+                    content=json.dumps({"error": {"code": "FORBIDDEN", "message": f"Missing scope: {required_scope}"}}, ensure_ascii=False),
+                    status_code=403,
+                    media_type="application/json",
+                )
+        from account_context import set_current_account_id, reset_current_account_id
+        context_token = set_current_account_id(account_id)
+        request.state.account_id = account_id
+        request.state.agent_scopes = scopes
+        request.state.agent_authenticated = authenticated
+        try:
+            return await call_next(request)
+        finally:
+            reset_current_account_id(context_token)

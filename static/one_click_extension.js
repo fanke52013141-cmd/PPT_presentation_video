@@ -33,6 +33,35 @@
     tts: 6,
     render: 8,
   };
+  const STAGE_LABELS = {
+    preflight: '准备检查',
+    storyboard: '生成分镜',
+    images: '生成图片',
+    confirm_images: '确认图片',
+    ai_mask: '生成 Mask',
+    mask_assets: '整理 Mask 素材',
+    narration: '生成旁白标注',
+    tts: '合成语音',
+    render: '合成视频',
+  };
+  const STATUS_LABELS = {
+    idle: '未开始',
+    running: '进行中',
+    completed: '已完成',
+    failed: '需要处理',
+    paused: '已暂停',
+    cancelled: '已取消',
+    pending: '待处理',
+    success: '已完成',
+  };
+
+  function stageLabel(value) {
+    return STAGE_LABELS[value] || value || '准备中';
+  }
+
+  function statusLabel(value) {
+    return STATUS_LABELS[value] || value || '未开始';
+  }
 
   function parseJsonResponse(response) {
     return response.json().then(data => {
@@ -221,7 +250,7 @@
     const activity = document.getElementById('project-activity-status');
     if (activity) {
       const currentStage = (status?.stages || []).find(stage => stage.id === current);
-      const message = currentStage?.title || currentStage?.message || '';
+      const message = currentStage?.title || stageLabel(current) || currentStage?.message || '';
       // [完成基准 20260904] 一键生成的完成以视频产出为基准：
       // 后端保证 completed 时 status.video.url 存在；前端双保险，
       // 拿不到视频链接时不显示"已完成"，避免渲染仍在后台跑时误报。
@@ -235,9 +264,9 @@
       activity.classList.toggle('running', state === 'running');
     }
     summary.innerHTML = `
-      <strong>状态：</strong><span class="one-click-pill ${esc(state)}">${esc(state)}</span>
-      ${current ? `<span style="margin-left:.5rem;">当前阶段：${esc(current)}</span>` : ''}
-      ${status?.effective_start_stage ? `<br><small>恢复计划：从 ${esc(status.effective_start_stage)} 开始</small>` : ''}
+      <strong>状态：</strong><span class="one-click-pill ${esc(state)}">${esc(statusLabel(state))}</span>
+      ${current ? `<span style="margin-left:.5rem;">当前阶段：${esc(stageLabel(current))}</span>` : ''}
+      ${state === 'running' ? '<br><small>系统会复用已完成且仍有效的产物；你可以继续查看已解锁步骤。</small>' : ''}
       ${status?.started_at ? `<br><small>开始：${esc(status.started_at)}　更新：${esc(status.updated_at || '')}</small>` : ''}
       ${freshNote ? `<br><small>${freshNote}</small>` : ''}
       ${status?.video?.url ? `<br><a href="${esc(status.video.url)}" target="_blank">打开生成视频</a>` : ''}
@@ -248,7 +277,7 @@
       const warnings = Array.isArray(stage.warnings) && stage.warnings.length ? `<small>警告：${esc(stage.warnings.join(' / '))}</small>` : '';
       return `
         <article class="one-click-stage">
-          <strong>${esc(stage.title || stage.id)} <span>${stage.status === 'running' ? '<span class="button-spinner"></span>' : ''}<span class="one-click-pill ${esc(stage.status || 'pending')}">${esc(stage.status || 'pending')}</span></span></strong>
+          <strong>${esc(stage.title || stageLabel(stage.id))} <span>${stage.status === 'running' ? '<span class="button-spinner"></span>' : ''}<span class="one-click-pill ${esc(stage.status || 'pending')}">${esc(statusLabel(stage.status || 'pending'))}</span></span></strong>
           <small>${esc(stage.message || '')}</small>
           ${warnings}${errors}
         </article>

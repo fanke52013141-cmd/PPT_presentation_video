@@ -15,8 +15,6 @@ STAGE_IDS = (
     "storyboard",
     "images",
     "confirm_images",
-    "ai_mask",
-    "mask_assets",
     "narration",
     "tts",
     "render",
@@ -140,23 +138,12 @@ def _validate_confirm_images(project: Any) -> list[str]:
         for slide in slides or []
         if isinstance(slide, dict) and str(slide.get("slide_id") or "").strip()
     ]
-    return [] if actual == slide_ids(project) and actual else ["reveal_manifest_slide_set_mismatch"]
+    if actual != slide_ids(project) or not actual:
+        return ["reveal_manifest_slide_set_mismatch"]
+    return _validate_static_scene_assets(project)
 
 
-def _validate_ai_mask(project: Any) -> list[str]:
-    mask_enabled = bool(getattr(project, "mask_enabled", 1) or 0)
-    if not mask_enabled:
-        # 整页切换模式下编排器会整体跳过 AI Mask 标注，manifest 中的
-        # ai_mask_annotation.status 因此不会进入 completed 状态。此时
-        # 不应据此把恢复起点强制回退到 ai_mask 阶段。
-        return []
-    manifest = read_json(run_dir(project) / "reveal_manifest.json", {})
-    annotation = manifest.get("ai_mask_annotation") if isinstance(manifest, dict) else None
-    status = str(annotation.get("status") or "") if isinstance(annotation, dict) else ""
-    return [] if status in {"completed", "completed_needs_review"} else ["ai_mask_incomplete"]
-
-
-def _validate_mask_assets(project: Any) -> list[str]:
+def _validate_static_scene_assets(project: Any) -> list[str]:
     root = run_dir(project)
     source_mtime = max([
         mtime(root / "reveal_manifest.json"),
@@ -168,7 +155,7 @@ def _validate_mask_assets(project: Any) -> list[str]:
         outputs = [slide_root / "scene.json", slide_root / "animation_timeline.json", slide_root / "reveal_report.json"]
         if any(not path.is_file() or mtime(path) < source_mtime for path in outputs):
             missing_or_stale.append(slide_id)
-    return [] if not missing_or_stale else [f"mask_assets_stale:{','.join(missing_or_stale)}"]
+    return [] if not missing_or_stale else [f"static_scene_assets_stale:{','.join(missing_or_stale)}"]
 
 
 def _validate_narration(project: Any) -> list[str]:
@@ -185,8 +172,6 @@ VALIDATORS: dict[str, Callable[[Any], list[str]]] = {
     "storyboard": _validate_storyboard,
     "images": _validate_images,
     "confirm_images": _validate_confirm_images,
-    "ai_mask": _validate_ai_mask,
-    "mask_assets": _validate_mask_assets,
     "narration": _validate_narration,
     "tts": _validate_tts,
 }
@@ -196,8 +181,6 @@ STAGE_INTERNAL_STEP = {
     "storyboard": 2,
     "images": 3,
     "confirm_images": 4,
-    "ai_mask": 5,
-    "mask_assets": 5,
     "narration": 6,
     "tts": 7,
     "render": 8,

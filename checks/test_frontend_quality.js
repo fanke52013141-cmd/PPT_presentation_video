@@ -688,10 +688,10 @@ for (const manualMaskHandler of ['startMaskPaint', 'startMaskErase', 'deleteMask
   const owner = manualMaskHandler === 'deleteMaskBox' ? maskWorkspace : maskEditor;
   if (!owner.includes(manualMaskHandler)) throw new Error(`manual Mask fallback handler missing: ${manualMaskHandler}`);
 }
-if (!aiMask.includes('maybeAutoAnnotate') || !aiMask.includes('multimodal') && !aiMask.includes('AI 正在关联')) {
-  throw new Error('automatic AI Mask flow is missing');
+if (!aiMask.includes('maybeAutoAnnotate') || !aiMask.includes("presentationMode() !== 'reveal'") || !aiMask.includes('运行 AI 标注')) {
+  throw new Error('opt-in AI Mask flow is missing');
 }
-for (const reviewToken of ['ai-mask-review-panel', 'focusReviewIssue', 'quality_status', 'completed_needs_review']) {
+for (const reviewToken of ['ai-mask-review-panel', 'focusReviewIssue', 'quality_status']) {
   if (!aiMask.includes(reviewToken)) throw new Error(`AI Mask review UX missing: ${reviewToken}`);
 }
 for (const previewToken of ['data-preview-mode="source"', 'data-preview-mode="mask"', 'data-preview-mode="final"', 'buildExactPreview']) {

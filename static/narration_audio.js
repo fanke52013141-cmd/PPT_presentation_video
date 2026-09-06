@@ -212,7 +212,7 @@ function renderStep6Workspace() {
     `;
     const beatsContainer = slideRow.querySelector('.step6-slide-beats');
     if (!slide.beats.length) {
-      beatsContainer.innerHTML = '<div class="step6-empty-state">当前 Slide 暂无旁白。可返回 Mask 标注页建立语块，或重新同步旁白。</div>';
+      beatsContainer.innerHTML = '<div class="step6-empty-state">当前 Slide 暂无旁白。可返回元素动画页建立语块，或重新同步旁白。</div>';
     }
     slide.beats.forEach((beat, beatIndex) => {
       normalizeStep6Beat(beat, beatIndex);

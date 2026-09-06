@@ -31,10 +31,11 @@ function renderAccountPicker() {
     option.className = 'account-picker-option';
     option.setAttribute('role', 'option');
     option.setAttribute('aria-selected', String(account.id === currentId));
-    option.innerHTML = '<span class="account-picker-option-avatar"></span><span class="account-picker-option-copy"><strong></strong><small></small></span>';
+    option.innerHTML = '<span class="account-picker-option-avatar"></span><span class="account-picker-option-copy"><strong></strong></span><span class="account-picker-status-dot" aria-label="当前使用中" hidden></span>';
     option.querySelector('.account-picker-option-avatar').textContent = (account.name || account.id || '账').slice(0, 1);
     option.querySelector('strong').textContent = account.name || account.id;
-    option.querySelector('small').textContent = account.id === currentId ? '当前使用中' : '切换到此账号';
+    const activeDot = option.querySelector('.account-picker-status-dot');
+    if (activeDot) activeDot.hidden = account.id !== currentId;
     option.addEventListener('click', async () => {
       closeAccountPicker();
       if (account.id !== select.value) await selectAccount(account.id);

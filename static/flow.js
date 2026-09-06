@@ -26,7 +26,7 @@
     }),
     Object.freeze({
       step: 5,
-      label: 'Mask 标注',
+      label: '元素动画（可选）',
       relevantSteps: Object.freeze([5]),
       completionSteps: Object.freeze([5])
     }),

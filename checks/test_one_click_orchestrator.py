@@ -416,12 +416,11 @@ def test_ai_mask_retry_falls_back_to_all_slides_without_slide_details() -> None:
     ) == ["slide_001", "slide_002"]
 
 
-def test_one_click_uses_safe_mask_and_audio_modes() -> None:
+def test_one_click_uses_full_frame_and_safe_audio_modes() -> None:
     source = Path("one_click_orchestrator.py").read_text(encoding="utf-8")
     services_source = Path("pipeline_services.py").read_text(encoding="utf-8")
-    assert '"overwrite_existing_manual_mask": False' in source
-    assert '"overwrite_existing_ai_mask": True' in source
-    assert '"skip_locked_groups": True' in source
+    assert "Build full-frame scenes" in source
+    assert 'services.annotate_ai_mask' not in source
     assert '"confirmation_mode": "automatic_technical"' in services_source
     assert "pipeline_service_factory" in source
     assert "services.narration" in source
@@ -434,27 +433,17 @@ def test_one_click_uses_safe_mask_and_audio_modes() -> None:
     assert "from project_profile_store import DEFAULT_QUALITY_GATES, load_profile" in source
     assert "dict(load_profile(project)[\"quality_gates\"])" in source
     for gate_name in one_click.DEFAULT_QUALITY_GATES:
+        if gate_name == "pause_on_ai_mask_low_confidence":
+            continue
         assert gate_name in source
 
 
-def test_mask_disabled_still_builds_reveal_assets() -> None:
-    """整页切换（mask_enabled=False）只跳过 AI Mask 标注，不跳过 Reveal 资源构建。
-
-    回归锁定 2026-09-03 事故：mask_assets 被整体跳过后，build_reveal_scene
-    不再产出 animation_timeline.json，导致 Step 7 时间轴绑定失败
-    （"音频已生成，但时间轴绑定失败"），且音频本体实际已全部合成成功。
-    无 Mask 幻灯片必须由 build_reveal_scene 生成静态整页场景。
-    """
+def test_one_click_builds_static_scenes_without_ai_mask() -> None:
+    """One-click keeps Step 7 scene assets but never annotates elements."""
     source = Path("one_click_orchestrator.py").read_text(encoding="utf-8")
-    # 1. ai_mask 的跳过仍然存在，但只跳过 ai_mask 一个阶段。
-    assert "已跳过 Mask 标注（项目设置为整页切换）" in source
-    assert "已跳过 Reveal 资源构建" not in source
-    # 2. mask_assets 阶段不再受 mask_enabled 门控，始终构建。
-    assert 'if should_run("mask_assets"):' in source
-    assert 'if should_run("mask_assets") and mask_enabled:' not in source
-    # 3. 整页切换模式下 mask_review 审查点必须显式推进 stop_at，
-    #    否则后续审查门会因 stop_at != checkpoint 被静默跳过。
-    assert 'elif status.get("stop_at") == "mask_review":' in source
+    assert 'if should_run("confirm_images"):' in source
+    assert 'services.build_mask_assets(manifest)' in source
+    assert 'services.annotate_ai_mask' not in source
 
 
 def test_preflight_migrates_legacy_article_before_checking_source() -> None:

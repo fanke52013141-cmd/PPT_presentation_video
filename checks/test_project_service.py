@@ -157,6 +157,8 @@ def test_project_creation_binds_and_snapshots_creation_config(
         snapshot = Path(project["run_dir"]) / "planning" / "project_config.json"
         assert json.loads(snapshot.read_text(encoding="utf-8")) == effective
         assert project["mask_enabled"] is False
+        assert project["production_mode"] == "guided"
+        assert project["presentation_mode"] == "full_frame"
         assert project["manual_pause_steps"] == ["mask", "tts"]
         visual_settings = Path(project["run_dir"]) / "visual_settings.json"
         assert json.loads(visual_settings.read_text(encoding="utf-8"))["subtitle_style"]["enabled"] is False

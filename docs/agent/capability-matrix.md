@@ -1,7 +1,7 @@
 # Agent Capability Matrix
 
 - **Agent API Version**: 1.5.0
-- **Contract Hash**: `2e7e89b4a841497a`
+- **Contract Hash**: `70b350be92040a7e`
 - **Total Capabilities**: 23
 
 This document is auto-generated from `agent_contract/capabilities.py`.
@@ -12,8 +12,8 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 | Capability ID | Version | Status | Method | Agent API Path | MCP Tool | MCP enabled | CLI Command | Service Ref | Long-running | Destructive |
 |---|---|---|---|---|---|---|---|---|---|---|
 | `identity.get` | 1.0 | stable | GET | `/api/agent/v1/identity` | `ppt_identity_get` | Yes | `identity` | `agent_api.auth / account_service` | No | No |
-| `project.create` | 1.4 | stable | POST | `/api/agent/v1/projects` | `ppt_project_create` | Yes | `project create` | `project_service.ProjectService.create` | No | No |
-| `project.list` | 1.2 | stable | GET | `/api/agent/v1/projects` | `ppt_project_list` | Yes | `project list` | `project_service.ProjectService.list` | No | No |
+| `project.create` | 1.5 | stable | POST | `/api/agent/v1/projects` | `ppt_project_create` | Yes | `project create` | `project_service.ProjectService.create` | No | No |
+| `project.list` | 1.3 | stable | GET | `/api/agent/v1/projects` | `ppt_project_list` | Yes | `project list` | `project_service.ProjectService.list` | No | No |
 | `project.get` | 1.2 | stable | GET | `/api/agent/v1/projects/{project_id}` | `ppt_project_get` | Yes | `project show` | `project_service.ProjectService.get` | No | No |
 | `project.update` | 1.2 | stable | PATCH | `/api/agent/v1/projects/{project_id}` | `ppt_project_update` | Yes | `project update` | `project_service.ProjectService.update` | No | No |
 | `source.set` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/source` | `ppt_source_set` | Yes | `source set` | `article_service.import_article / generate_article_from_topic` | No | No |
@@ -51,10 +51,10 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 The MCP server exposes **22** stable tools:
 
 - `ppt_identity_get` — Return the creative account and scopes associated with this Agent connection.
-- `ppt_project_create` — Create a new PPT video project with canvas, automation, mask, versioned creation configuration, and optional course/chapter ownership.
+- `ppt_project_create` — Create a project with canvas, production/presentation mode, versioned creation configuration, and optional course/chapter ownership.
 - `ppt_project_list` — List all projects with optional status filter.
 - `ppt_project_get` — Get project details including article/contract status, slide IDs, and mask mode.
-- `ppt_project_update` — Update project name, description, or AI mode.
+- `ppt_project_update` — Update project name, description, AI mode, production mode, or presentation mode.
 - `ppt_source_set` — Set project source content — either direct article text or a topic for AI generation.
 - `ppt_pipeline_run` — Start or resume the automated pipeline. Supports stop_at checkpoints.
 - `ppt_pipeline_status` — Get current pipeline status including stage progress and blocking errors.

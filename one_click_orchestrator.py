@@ -56,7 +56,6 @@ STATUS_VERSION = "one_click_orchestrator_v2"
 _REVIEW_CHECKPOINT_AFTER_STAGE = {
     "storyboard": "storyboard_review",
     "images": "image_review",
-    "mask_assets": "mask_review",
     "narration": "narration_review",
     "tts": "audio_review",
     "render": "video_review",
@@ -74,7 +73,6 @@ _POLICY_CHECKPOINTS: dict[str, list[str]] = {
     "all_stages": [
         "storyboard_review",
         "image_review",
-        "mask_review",
         "narration_review",
         "audio_review",
         "video_review",
@@ -109,8 +107,6 @@ _STAGE_TO_STEP = {
     "storyboard": "2",
     "images": "3",
     "confirm_images": "3",
-    "ai_mask": "5",
-    "mask_assets": "5",
     "narration": "6",
     "tts": "6",
     "render": "8",
@@ -119,9 +115,7 @@ STAGES = [
     ("preflight", "预检查"),
     ("storyboard", "生成分镜"),
     ("images", "生成全部图片"),
-    ("confirm_images", "确认图片并创建 Mask 模板"),
-    ("ai_mask", "AI Mask 标注"),
-    ("mask_assets", "构建 Reveal 资源"),
+    ("confirm_images", "确认整页图片并准备场景"),
     ("narration", "生成演讲稿"),
     ("tts", "合成并确认音频"),
     ("render", "渲染视频"),
@@ -495,7 +489,6 @@ def _pause_for_requested_review(
 # Map manual pause module names to the pipeline stage after which they
 # should pause for user interaction.
 _MANUAL_PAUSE_AFTER_STAGE: dict[str, str] = {
-    "mask": "mask_assets",
     "narration": "narration",
     "tts": "tts",
     "digital_human": "tts",
@@ -1075,8 +1068,6 @@ def _run_pipeline(
         _save_status(project, status)
         gates = _quality_gates(project)
         services = dependencies.pipeline_service_factory(db, project_id)
-        mask_enabled = bool(getattr(project, "mask_enabled", 1) or 0)
-
         def should_run(stage_id: str) -> bool:
             if project_id in _PAUSE_REQUESTS:
                 return False
@@ -1237,71 +1228,27 @@ def _run_pipeline(
                 return
 
         if should_run("confirm_images"):
-            _start_stage(project, status, "confirm_images", "确认图片并创建 reveal_manifest.json")
+            _start_stage(project, status, "confirm_images", "确认整页图片并准备视频场景")
             _invoke(services.confirm_images, "Step 3 confirm")
-            _finish_stage(project, status, "confirm_images", "图片已确认")
-
-        if not mask_enabled and should_run("ai_mask"):
-            # 整页切换模式只跳过 AI Mask 标注；mask_assets 仍然运行，
-            # 因为 build_reveal_scene 对无 Mask 幻灯片也要产出静态整页的
-            # scene.json / animation_timeline.json，Step 7 时间轴绑定依赖它。
-            _finish_stage(project, status, "ai_mask", "已跳过 Mask 标注（项目设置为整页切换）")
-
-        if should_run("ai_mask") and mask_enabled:
-            _start_stage(project, status, "ai_mask", "执行 AI Mask 标注")
-            ai_mask_payload = {"settings": {"overwrite_existing_manual_mask": False, "overwrite_existing_ai_mask": True, "skip_locked_groups": True}}
-            result = _invoke(lambda: services.annotate_ai_mask(ai_mask_payload), "AI Mask")
-            existing_masks = _existing_mask_count(project)
-            quality_errors = _ai_mask_quality_errors(result, existing_masks)
-            if quality_errors:
-                failed_slide_ids = _ai_mask_failed_slide_ids(result, _slide_ids(project))
-                _warn_stage(
-                    project,
-                    status,
-                    "ai_mask",
-                    f"首次标注未完整，仅重试 {len(failed_slide_ids)} 个失败页面",
-                )
-                retry = _invoke(
-                    lambda: services.annotate_ai_mask({**ai_mask_payload, "slide_ids": failed_slide_ids}),
-                    "AI Mask retry",
-                )
-                existing_masks = _existing_mask_count(project, failed_slide_ids)
-                quality_errors = _ai_mask_quality_errors(retry, existing_masks)
-                result = retry
-                if quality_errors and gates.get("pause_on_ai_mask_low_confidence", True):
-                    raise RuntimeError("AI Mask 自动重试后仍未完成：" + "；".join(quality_errors[:5]))
-                if quality_errors:
-                    _warn_stage(project, status, "ai_mask", "质量门已关闭，保留未通过项：" + "；".join(quality_errors[:5]))
-            _finish_stage(
-                project,
-                status,
-                "ai_mask",
-                "AI Mask 标注完成" if not quality_errors else "AI Mask 标注完成（含警告）",
-            )
-
-        if should_run("mask_assets"):
-            _start_stage(project, status, "mask_assets", "构建 Reveal 资源")
-            manifest_payload = _invoke(services.mask_manifest, "Step 5 manifest")
+            manifest_payload = _invoke(services.mask_manifest, "Static scene manifest")
             if manifest_payload.get("repair", {}).get("required"):
-                manifest_payload = _invoke(services.repair_mask_manifest, "Step 5 repair")
+                manifest_payload = _invoke(services.repair_mask_manifest, "Static scene repair")
             manifest = manifest_payload.get("manifest")
             if not isinstance(manifest, dict):
-                raise RuntimeError("Step 5 manifest 返回为空")
-            _invoke(lambda: services.build_mask_assets(manifest), "Step 5 build assets")
-            _finish_stage(project, status, "mask_assets", "Reveal 资源已构建")
-            if mask_enabled:
-                if _pause_for_requested_review(project, status, "mask_assets"):
-                    return
-                if _pause_for_manual_step(project, status, "mask_assets"):
-                    return
-            elif status.get("stop_at") == "mask_review":
-                # 整页切换模式没有 Mask 可审：显式推进 stop_at 到策略中的
-                # 下一个审查点。stop_at 只在审查通过分支推进，若停留在此处
-                # 会让后续所有审查门因 stop_at != checkpoint 而被静默跳过。
-                status["stop_at"] = _next_stop_at_from_policy(
-                    getattr(project, "review_policy", None) or "none", "mask_review"
-                )
-                _save_status(project, status)
+                raise RuntimeError("整页场景清单返回为空")
+            # This legacy builder is still responsible for writing Step 7's
+            # static scene and timeline files, without running AI annotation.
+            _invoke(lambda: services.build_mask_assets(manifest), "Build full-frame scenes")
+            _finish_stage(project, status, "confirm_images", "图片已确认，整页场景已准备")
+
+        # A status file written by an older version can retain the retired
+        # Mask review checkpoint. Move it forward so resuming cannot stall.
+        if status.get("stop_at") == "mask_review":
+            status["stop_at"] = _next_stop_at_from_policy(
+                getattr(project, "review_policy", None) or "none",
+                "mask_review",
+            )
+            _save_status(project, status)
 
         if should_run("narration"):
             _start_stage(project, status, "narration", "生成或复用演讲稿并尝试添加 TTS 标记")

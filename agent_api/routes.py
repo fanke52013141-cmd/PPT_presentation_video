@@ -85,7 +85,9 @@ def _project_summary(project: Project) -> ProjectSummary:
         step_status=project.get_step_status(),
         revision=getattr(project, "revision", 0) or 0,
         review_policy=getattr(project, "review_policy", "none") or "none",
-        mask_enabled=bool(getattr(project, "mask_enabled", 1) or 0),
+        mask_enabled=bool(getattr(project, "mask_enabled", 0) or 0),
+        production_mode=getattr(project, "production_mode", "guided") or "guided",
+        presentation_mode=getattr(project, "presentation_mode", "full_frame") or "full_frame",
         creation_config=(
             {
                 "package_id": project.creation_config_package_id,
@@ -247,6 +249,8 @@ def agent_create_project(
             canvas_profile=payload.canvas_profile.value if payload.canvas_profile else "landscape_16_9",
             review_policy=payload.review_policy.value if payload.review_policy else "none",
             mask_enabled=payload.mask_enabled,
+            production_mode=payload.production_mode.value if payload.production_mode else "guided",
+            presentation_mode=payload.presentation_mode.value if payload.presentation_mode else "full_frame",
             config_package_id=payload.config_package_id,
             config_package_version=payload.config_package_version,
             config_overrides=payload.config_overrides,
@@ -357,6 +361,16 @@ def agent_update_project(
             project.description = payload.description
         if payload.ai_mode is not None:
             project.ai_mode = payload.ai_mode
+        if payload.production_mode is not None:
+            project.production_mode = payload.production_mode.value
+            if project.production_mode == "one_click":
+                project.presentation_mode = "full_frame"
+                project.mask_enabled = 0
+        if payload.presentation_mode is not None:
+            if project.production_mode == "one_click" and payload.presentation_mode.value == "reveal":
+                raise HTTPException(status_code=400, detail="一键生成仅支持整页展示")
+            project.presentation_mode = payload.presentation_mode.value
+            project.mask_enabled = 1 if project.presentation_mode == "reveal" else 0
 
         AgentIdempotencyService.bump_revision(db, project)
         db.commit()

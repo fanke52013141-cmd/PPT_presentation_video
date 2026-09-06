@@ -24,8 +24,7 @@ from one_click_orchestrator import (
 
 def test_manual_pause_mapping_covers_configurable_modules() -> None:
     """Every creation-config pause option must map to a valid pipeline stage."""
-    assert set(_MANUAL_PAUSE_AFTER_STAGE.keys()) == {"mask", "narration", "tts", "digital_human"}
-    assert _MANUAL_PAUSE_AFTER_STAGE["mask"] == "mask_assets"
+    assert set(_MANUAL_PAUSE_AFTER_STAGE.keys()) == {"narration", "tts", "digital_human"}
     assert _MANUAL_PAUSE_AFTER_STAGE["narration"] == "narration"
     assert _MANUAL_PAUSE_AFTER_STAGE["tts"] == "tts"
     assert _MANUAL_PAUSE_AFTER_STAGE["digital_human"] == "tts"
@@ -56,14 +55,12 @@ def test_pause_returns_false_when_stage_not_matched() -> None:
 
 
 @patch("one_click_orchestrator._save_status")
-def test_pause_sets_waiting_for_user_on_mask(mock_save: MagicMock) -> None:
+def test_legacy_mask_pause_is_ignored_by_one_click(mock_save: MagicMock) -> None:
     project = _make_project(["mask"])
     status: dict = {"stages": []}
     result = _pause_for_manual_step(project, status, "mask_assets")
-    assert result is True
-    assert status["status"] == "waiting_for_user"
-    assert status["manual_pause_module"] == "mask"
-    mock_save.assert_called_once()
+    assert result is False
+    mock_save.assert_not_called()
 
 
 @patch("one_click_orchestrator._save_status")
@@ -103,9 +100,11 @@ def test_pause_sets_waiting_for_user_on_tts(mock_save: MagicMock) -> None:
 def test_pause_with_multiple_modules_only_triggers_matching_one(mock_save: MagicMock) -> None:
     project = _make_project(["mask", "narration", "digital_human"])
     status: dict = {"stages": []}
-    # At mask_assets stage, should pause for mask
-    assert _pause_for_manual_step(project, status, "mask_assets") is True
-    assert status["manual_pause_module"] == "mask"
+    # Legacy Mask pauses are retained in imported packages but ignored by
+    # one-click; narration remains a valid manual stop.
+    assert _pause_for_manual_step(project, status, "mask_assets") is False
+    assert _pause_for_manual_step(project, status, "narration") is True
+    assert status["manual_pause_module"] == "narration"
     mock_save.assert_called_once()
 
 

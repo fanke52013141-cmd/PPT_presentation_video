@@ -29,6 +29,13 @@ def start_one_click_route(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     project = _project_or_404(db, project_id)
+    # This endpoint is the explicit one-click choice. Persist the intent so
+    # reopening the workspace can explain its whole-image behaviour.
+    project.production_mode = "one_click"
+    project.presentation_mode = "full_frame"
+    project.mask_enabled = 0
+    db.commit()
+    db.refresh(project)
     try:
         return start_one_click(project, payload)
     except ValueError as exc:

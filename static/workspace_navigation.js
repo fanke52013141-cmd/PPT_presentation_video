@@ -61,6 +61,7 @@ async function enterWorkspace(projectId) {
   const btnBackHome = document.getElementById('btn-back-home');
   if (btnBackHome) btnBackHome.hidden = false;
   applyProjectAiMode(project.ai_mode || 'auto');
+  renderProductionModeSummary(project);
 
   // 页面切换
   document.getElementById('page-home').style.display = 'none';
@@ -80,6 +81,7 @@ function exitWorkspace() {
   const btnBackHome = document.getElementById('btn-back-home');
   if (btnBackHome) btnBackHome.hidden = true;
   document.getElementById('btn-toggle-ai-mode').style.display = 'none';
+  document.getElementById('project-production-mode')?.remove();
   document.getElementById('page-workspace').style.display = 'none';
   document.body.classList.remove('workspace-open');
   document.body.classList.remove('mode-manual');
@@ -98,7 +100,7 @@ function applyProjectAiMode(aiMode) {
   const toggleBtn = document.getElementById('btn-toggle-ai-mode');
   if (toggleBtn) {
     toggleBtn.style.display = 'inline-block';
-    toggleBtn.textContent = `AI 模式: ${mode === 'manual' ? '手动' : '自动'}`;
+    toggleBtn.textContent = `分镜方式：${mode === 'manual' ? '手动编排' : 'AI 辅助'}`;
     toggleBtn.classList.remove('ai-mode-auto', 'ai-mode-manual');
     toggleBtn.classList.add(mode === 'manual' ? 'ai-mode-manual' : 'ai-mode-auto');
   }
@@ -112,14 +114,14 @@ async function toggleProjectAiMode() {
   const current = (state.currentProject.ai_mode || 'auto').toLowerCase();
   const next = current === 'manual' ? 'auto' : 'manual';
   const confirmMsg = next === 'manual'
-    ? '切换到手动模式后：\n- 第二步将只填写标题和演讲稿，不再调用 AI 生成可视化\n- 第五步进入时不会自动触发 Mask 标注，需要手动点击"运行 AI 标注"\n- 已有的分镜数据不会被清除\n\n确认切换吗？'
-    : '切换到自动模式后：\n- 第二步将恢复调用 AI 生成完整分镜\n- 第五步进入时会自动触发 Mask 标注\n- 已有的手动数据不会被清除\n\n确认切换吗？';
+    ? '切换到手动编排后：\n- 第二步将只填写标题和演讲稿，不再调用 AI 生成可视化\n- 元素动画仍需在第 5 步由你主动启用\n- 已有的分镜数据不会被清除\n\n确认切换吗？'
+    : '切换到 AI 辅助后：\n- 第二步将恢复调用 AI 生成完整分镜\n- 元素动画仍只会在第 5 步由你主动启用\n- 已有的手动数据不会被清除\n\n确认切换吗？';
   showCustomConfirm('切换 AI 模式', confirmMsg, async () => {
     const res = await API.put(`/api/projects/${state.currentProject.id}/ai-mode`, { ai_mode: next });
     if (res && res.success) {
       applyProjectAiMode(res.ai_mode);
       showToast(`已切换为${next === 'manual' ? '手动' : '自动'}模式`);
-      // 切换模式后重置 Step 5 自动标注尝试记录，让新模式下能重新触发
+      // 重新刷新可选元素动画区的状态。
       if (typeof window.__aiMaskResetAutoAttempted === 'function') {
         window.__aiMaskResetAutoAttempted();
       }
@@ -130,6 +132,39 @@ async function toggleProjectAiMode() {
       }
     }
   });
+}
+
+function renderProductionModeSummary(project = state.currentProject) {
+  const header = document.getElementById('project-info-header');
+  if (!header || !project) return;
+  let card = document.getElementById('project-production-mode');
+  if (!card) {
+    card = document.createElement('button');
+    card.id = 'project-production-mode';
+    card.type = 'button';
+    card.className = 'project-production-mode';
+    card.addEventListener('click', () => selectProductionMode());
+    header.appendChild(card);
+  }
+  const production = project.production_mode === 'one_click' ? '一键生成' : '分步制作';
+  const presentation = project.presentation_mode === 'reveal' ? '逐元素讲解' : '整页展示';
+  card.textContent = `${production} · ${presentation}`;
+}
+
+async function selectProductionMode() {
+  if (!state.currentProject) return;
+  const current = state.currentProject.production_mode === 'one_click' ? 'one_click' : 'guided';
+  const chooseOneClick = window.confirm(
+    '选择“确定”会进入一键生成：自动完成分镜、整页图片、旁白、语音和视频，不会做 AI Mask 标注。\n\n选择“取消”则使用分步制作，可在第 5 步主动启用元素动画。'
+  );
+  const next = chooseOneClick ? 'one_click' : 'guided';
+  if (next === current) return;
+  const result = await API.put(`/api/projects/${state.currentProject.id}`, { production_mode: next });
+  if (result?.project) {
+    Object.assign(state.currentProject, result.project);
+    renderProductionModeSummary();
+    showToast(next === 'one_click' ? '已切换为一键生成：将使用整页展示。' : '已切换为分步制作。');
+  }
 }
 
 function updateStepperUI(currentStep, stepStatus) {

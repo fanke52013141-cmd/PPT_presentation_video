@@ -35,6 +35,8 @@ _CREATE_FIELD_MAP = {
     "manual_pause_steps": None,      # UI-only, derived from automation_mode
     "image_style_template": None,     # UI-only, Step 3 image-style selection
     "mask_enabled": "mask_enabled",
+    "production_mode": "production_mode",
+    "presentation_mode": "presentation_mode",
     "creation_config_package_id": None,  # canonical internal alias; Agent uses short name
     "creation_config_version": None,
     "creation_config_overrides": None,
@@ -61,6 +63,8 @@ _SUMMARY_FIELD_MAP = {
     "manual_pause_steps": None,
     "image_style_template": None,
     "mask_enabled": "mask_enabled",
+    "production_mode": "production_mode",
+    "presentation_mode": "presentation_mode",
     "creation_config": "creation_config",
     "course_id": "course_id",
     "chapter_id": "chapter_id",
@@ -142,12 +146,12 @@ class TestProjectSummaryMaskMode:
         summary = _project_summary(_mock_project(mask_enabled=1))
         assert summary.mask_enabled is True
 
-    def test_missing_mask_column_defaults_to_enabled(self):
+    def test_missing_mask_column_defaults_to_full_frame(self):
         from agent_api.routes import _project_summary
 
         project = _mock_project()
         summary = _project_summary(project)
-        assert summary.mask_enabled is True
+        assert summary.mask_enabled is False
 
 
 @pytest.fixture(scope="module")
@@ -178,10 +182,13 @@ class TestAgentCreateProjectMaskMode:
         assert get_resp.status_code == 200
         assert get_resp.json()["project"]["mask_enabled"] is False
 
-    def test_create_defaults_to_mask_enabled(self, api_client):
+    def test_create_defaults_to_full_frame(self, api_client):
         resp = api_client.post(
             "/api/agent/v1/projects",
             json={"name": "Parity Mask Default Test"},
         )
         assert resp.status_code == 200, resp.text
-        assert resp.json()["project"]["mask_enabled"] is True
+        project = resp.json()["project"]
+        assert project["mask_enabled"] is False
+        assert project["production_mode"] == "guided"
+        assert project["presentation_mode"] == "full_frame"

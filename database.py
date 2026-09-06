@@ -63,8 +63,13 @@ class Project(Base):
     manual_pause_steps = Column(Text, nullable=False, default="[]")
     # 创建项目时选择的图片风格模板 id
     image_style_template = Column(String, nullable=False, default="default")
-    # 是否启用 Mask 标注（1=启用逐元素 Reveal 动画, 0=跳过，按整页切换）
-    mask_enabled = Column(Integer, nullable=False, default=1)
+    # Legacy rendering flag. New projects use ``presentation_mode`` as the
+    # source of truth and keep this value in sync for older render services.
+    mask_enabled = Column(Integer, nullable=False, default=0)
+    # 制作方式：one_click=直接完成整条整页视频；guided=分步制作。
+    production_mode = Column(String, nullable=False, default="guided")
+    # 呈现方式：full_frame=整页展示；reveal=逐元素讲解（仅分步制作按需启用）。
+    presentation_mode = Column(String, nullable=False, default="full_frame")
     # Immutable creation-configuration source captured when the project is created.
     # The full effective payload lives in the project run directory; these fields
     # keep list/detail queries able to show its origin without reading files.

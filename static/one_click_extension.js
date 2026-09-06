@@ -27,8 +27,6 @@
     storyboard: 2,
     images: 3,
     confirm_images: 3,
-    ai_mask: 5,
-    mask_assets: 5,
     narration: 6,
     tts: 6,
     render: 8,
@@ -37,9 +35,7 @@
     preflight: '准备检查',
     storyboard: '生成分镜',
     images: '生成图片',
-    confirm_images: '确认图片',
-    ai_mask: '生成 Mask',
-    mask_assets: '整理 Mask 素材',
+    confirm_images: '确认整页图片',
     narration: '生成旁白标注',
     tts: '合成语音',
     render: '合成视频',
@@ -211,8 +207,8 @@
     modal.style.display = 'none';
     modal.innerHTML = `
       <div class="modal-content one-click-modal">
-        <h3 class="highlight-title">一键生成</h3>
-        <p class="one-click-note"><strong>一键生成会读取当前各步骤配置：</strong>从已导入文章开始，自动完成文章➡️slides、slides➡️可视化、图片生成、AI Mask、旁白与音频以及最终视频合成。失败时会保留阶段状态，重新运行时复用未过期产物。</p>
+        <h3 class="highlight-title">一键生成视频</h3>
+        <p class="one-click-note"><strong>一键生成采用整页展示：</strong>从已导入文章开始，自动完成分镜、图片、旁白、语音与视频合成；不会运行 AI Mask 标注。失败时会保留阶段状态，重新运行时复用未过期产物。</p>
         <div class="one-click-toolbar">
           <button id="btn-one-click-start" class="success" type="button">智能继续</button>
           <button id="btn-one-click-restart" class="secondary" type="button">从头重跑</button>
@@ -243,7 +239,7 @@
     button.id = 'btn-one-click-generate';
     button.className = 'success';
     button.type = 'button';
-    button.innerHTML = '<span aria-hidden="true">✦</span><span>一键生成</span>';
+    button.innerHTML = '<span aria-hidden="true">✦</span><span>一键生成视频</span>';
     button.addEventListener('click', () => openModal().catch(error => toast(`打开失败：${error.message}`, 6000)));
     entry.appendChild(button);
     stepper.appendChild(entry);
@@ -374,6 +370,10 @@
     }
     try {
       const result = await apiPost(`/api/projects/${encodeURIComponent(projectId)}/one-click-generate`, { mode });
+      if (window.state?.currentProject) {
+        Object.assign(window.state.currentProject, { production_mode: 'one_click', presentation_mode: 'full_frame', mask_enabled: false });
+        window.renderProductionModeSummary?.();
+      }
       renderStatus(result.status || {});
       toast(result.already_running ? '一键生成正在运行。' : '自动生成已启动。', 4000);
       startPolling();

@@ -26,7 +26,7 @@ def test_numbered_migrations_apply_once_and_store_checksums() -> None:
     with tempfile.TemporaryDirectory() as value:
         engine = sqlite_engine(Path(value) / "fresh.db")
 
-        assert run_migrations(engine) == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+        assert run_migrations(engine) == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
         assert run_migrations(engine) == []
         assert {
             "projects", "settings", "artifact_records", "local_jobs",
@@ -41,7 +41,7 @@ def test_numbered_migrations_apply_once_and_store_checksums() -> None:
                 row[1]
                 for row in connection.exec_driver_sql("PRAGMA table_info(projects)").fetchall()
             }
-        assert [row[0] for row in rows] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+        assert [row[0] for row in rows] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
         assert [row[1] for row in rows] == [
             "core_schema",
             "project_ai_mode",
@@ -56,6 +56,7 @@ def test_numbered_migrations_apply_once_and_store_checksums() -> None:
             "project_creation_config",
             "creative_accounts",
             "course_account_ownership",
+            "project_production_and_presentation_modes",
         ]
         assert all(len(row[2]) == 64 for row in rows)
         assert "ai_mode" in project_columns
@@ -68,6 +69,8 @@ def test_numbered_migrations_apply_once_and_store_checksums() -> None:
         assert "creation_config_version" in project_columns
         assert "creation_config_hash" in project_columns
         assert "account_id" in project_columns
+        assert "production_mode" in project_columns
+        assert "presentation_mode" in project_columns
         assert {"accounts", "agent_tokens"}.issubset(table_names(engine))
         with engine.connect() as connection:
             course_columns = {
@@ -82,7 +85,7 @@ def test_known_creative_accounts_legacy_checksum_is_rebased_after_schema_check()
     """A prior 0012 release must not prevent an otherwise valid DB from starting."""
     with tempfile.TemporaryDirectory() as value:
         engine = sqlite_engine(Path(value) / "legacy-0012.db")
-        assert run_migrations(engine) == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+        assert run_migrations(engine) == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
         legacy_checksum = "a99a22439d12b3ab9c84e8ccaf7237882c5dc93ebe0f477db47c5a8e9e6004e6"
         with engine.begin() as connection:
             connection.exec_driver_sql(
@@ -178,7 +181,7 @@ def test_legacy_marker_database_is_adopted_without_losing_data() -> None:
                 """
             )
 
-        assert run_migrations(engine) == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+        assert run_migrations(engine) == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
         with engine.connect() as connection:
             project = connection.exec_driver_sql(
                 "SELECT id, name, ai_mode FROM projects WHERE id = 'kept'"
@@ -201,6 +204,7 @@ def test_legacy_marker_database_is_adopted_without_losing_data() -> None:
                 (11, "project_creation_config"),
                 (12, "creative_accounts"),
                 (13, "course_account_ownership"),
+                (14, "project_production_and_presentation_modes"),
         ]
         engine.dispose()
 
@@ -251,5 +255,5 @@ def test_failed_migration_rolls_back_schema_and_ledger() -> None:
 def test_production_migration_files_are_consecutive() -> None:
     with tempfile.TemporaryDirectory() as value:
         engine = sqlite_engine(Path(value) / "production-shape.db")
-        assert run_migrations(engine, MIGRATIONS_DIR) == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+        assert run_migrations(engine, MIGRATIONS_DIR) == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
         engine.dispose()

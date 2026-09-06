@@ -130,17 +130,71 @@
   function injectButtons() {
     const toolbar = document.querySelector('#step-panel-5 .step5-toolbar');
     if (!toolbar) return;
+    ensurePresentationMode();
     ensureInlineStatus();
     ensureReviewPanel();
     ensurePreviewControls();
     if (document.getElementById('step5-btn-ai-mask')) return;
     const settings = button('step5-btn-ai-mask-settings', 'AI 标注设置', 'secondary');
-    const run = button('step5-btn-ai-mask', '重新运行 AI 标注', 'secondary');
+    const run = button('step5-btn-ai-mask', '运行 AI 标注', 'secondary');
     const anchor = document.getElementById('step5-btn-fullscreen');
     toolbar.insertBefore(settings, anchor || null);
     toolbar.insertBefore(run, anchor || null);
     settings.addEventListener('click', openSettings);
     run.addEventListener('click', runAnnotation);
+  }
+
+  function presentationMode() {
+    return window.state?.currentProject?.presentation_mode === 'reveal' ? 'reveal' : 'full_frame';
+  }
+
+  function applyPresentationMode(mode) {
+    const reveal = mode === 'reveal';
+    document.body.classList.toggle('step5-reveal-enabled', reveal);
+    document.body.classList.toggle('step5-full-frame', !reveal);
+    document.querySelectorAll('[data-presentation-mode]').forEach(item => {
+      item.classList.toggle('active', item.dataset.presentationMode === mode);
+    });
+    const status = document.getElementById('step5-ai-mask-status');
+    if (!reveal && status) {
+      status.textContent = '整页展示：此项目不会进行 AI 标注，视频会直接展示完整画面。';
+      status.classList.remove('error', 'loading');
+    }
+  }
+
+  function ensurePresentationMode() {
+    let chooser = document.getElementById('step5-presentation-mode');
+    if (!chooser) {
+      const header = document.querySelector('#step-panel-5 .step5-mask-header');
+      if (!header) return null;
+      chooser = document.createElement('section');
+      chooser.id = 'step5-presentation-mode';
+      chooser.className = 'step5-presentation-mode';
+      chooser.innerHTML = `
+        <div><strong>画面呈现</strong><span>默认整页展示；元素动画仅在分步制作时按需使用。</span></div>
+        <div class="step5-presentation-actions">
+          <button type="button" data-presentation-mode="full_frame">整页展示</button>
+          <button type="button" data-presentation-mode="reveal">逐元素讲解</button>
+        </div>`;
+      header.insertAdjacentElement('afterend', chooser);
+      chooser.querySelectorAll('[data-presentation-mode]').forEach(item => {
+        item.addEventListener('click', async () => {
+          const next = item.dataset.presentationMode;
+          if (!window.state?.currentProject) return;
+          if (next === presentationMode()) return;
+          try {
+            const result = await apiPut(`/api/projects/${encodeURIComponent(projectId())}`, { presentation_mode: next });
+            if (result?.project) Object.assign(window.state.currentProject, result.project);
+            applyPresentationMode(next);
+            toast(next === 'reveal' ? '已启用逐元素讲解。请主动运行 AI 标注或手动绘制。' : '已切换为整页展示。');
+          } catch (error) {
+            toast(`切换画面呈现失败：${error.message}`, 6000);
+          }
+        });
+      });
+    }
+    applyPresentationMode(presentationMode());
+    return chooser;
   }
 
   function ensurePreviewControls() {
@@ -462,9 +516,13 @@
   }
 
   async function runAnnotation(options = {}) {
+    if (presentationMode() !== 'reveal') {
+      toast('请先选择“逐元素讲解”，再运行 AI 标注。', 5000);
+      return false;
+    }
     const id = projectId();
     if (!id) {
-      toast('请先打开项目并进入 Mask 标注页。未能识别当前 project_id。', 6000);
+      toast('请先打开项目并进入元素动画页。未能识别当前 project_id。', 6000);
       if (options.rethrow) throw new Error('未能识别当前 project_id');
       return false;
     }
@@ -523,52 +581,11 @@
   async function maybeAutoAnnotate() {
     const panel = document.getElementById('step-panel-5');
     if (!panel || window.getComputedStyle(panel).display === 'none') return;
-    const id = projectId();
-    if (!id || !AUTO_STATE || !AUTO_STATE.canStart(id)) return;
-    // 手动模式：不自动触发 AI Mask。用户仍可点击"运行 AI 标注"按钮按需调用。
-    if (document.body.classList.contains('mode-manual')) {
-      AUTO_STATE.reset(id);
-      setInlineStatus('手动模式：点击"运行 AI 标注"按钮按需触发', false, false);
-      return;
-    }
-    AUTO_STATE.begin(id, 'checking');
-    try {
-      try {
-        const oneClick = await apiGet(`/api/projects/${encodeURIComponent(id)}/one-click-generate/status`);
-        if (oneClick.status?.status === 'running') {
-          setInlineStatus('一键生成正在处理，AI Mask 将由自动流程完成', true, false);
-          AUTO_STATE.waitForOneClick(id, maybeAutoAnnotate);
-          return;
-        }
-      } catch (_statusError) {
-        // Status lookup is advisory; a temporary failure must not block Step 5.
-      }
-      const result = await apiGet(`/api/projects/${encodeURIComponent(id)}/steps/5/result`);
-      const annotation = result.manifest?.ai_mask_annotation || {};
-      if (['completed', 'completed_needs_review'].includes(annotation.status)) {
-        setReviewIssues(annotation.review_issues || [], annotation.quality_status || (annotation.review_required ? 'needs_review' : 'passed'));
-        setInlineStatus('', false, false);
-        AUTO_STATE.complete(id);
-        return;
-      }
-      AUTO_STATE.begin(id, 'running');
-      await runAnnotation({ automatic: true, rethrow: true });
-      AUTO_STATE.complete(id);
-    } catch (error) {
-      if (error.retryable === false) {
-        AUTO_STATE.fail(id);
-        setInlineStatus('AI 标注需要人工检查', true, false);
-        toast(`AI 标注未通过质量检查：${error.message}`, 8000);
-        return;
-      }
-      const delay = AUTO_STATE.scheduleRetry(id, maybeAutoAnnotate);
-      if (delay === null) {
-        setInlineStatus('AI 标注自动重试失败，请手动重试', true, false);
-        toast(`AI 标注失败：${error.message}`, 8000);
-      } else {
-        setInlineStatus(`AI 标注失败，${Math.ceil(delay / 1000)} 秒后自动重试`, true, false);
-      }
-    }
+    ensurePresentationMode();
+    if (presentationMode() !== 'reveal') return;
+    // Element animation is deliberately opt-in.  Never call annotation when
+    // a user merely enters Step 5, regardless of production or AI mode.
+    setInlineStatus('逐元素讲解：点击“运行 AI 标注”或手动绘制需要讲解的元素。', false, false);
   }
 
   function installAutoAnnotationWatch() {

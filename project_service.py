@@ -45,7 +45,10 @@ class ProjectCreate(BaseModel):
     review_policy: Optional[str] = "none"
     manual_pause_steps: Optional[list[str]] = None
     image_style_template: Optional[str] = "default"
-    mask_enabled: Optional[bool] = True
+    # Kept for callers using the old API.  New projects start as full-frame.
+    mask_enabled: Optional[bool] = False
+    production_mode: Optional[str] = "guided"
+    presentation_mode: Optional[str] = "full_frame"
     creation_config_package_id: Optional[str] = None
     creation_config_version: Optional[int] = None
     creation_config_overrides: Optional[dict[str, Any]] = None
@@ -68,6 +71,8 @@ class ProjectUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     ai_mode: Optional[str] = None
+    production_mode: Optional[str] = None
+    presentation_mode: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -123,7 +128,17 @@ class ProjectService:
         raw_pause = payload.manual_pause_steps or []
         manual_pause = [s for s in raw_pause if s in _valid_pause]
         image_style_template = (payload.image_style_template or "default").strip()
-        mask_enabled = 1 if payload.mask_enabled else 0
+        production_mode = (payload.production_mode or "guided").strip().lower()
+        if production_mode not in {"one_click", "guided"}:
+            production_mode = "guided"
+        presentation_mode = (payload.presentation_mode or "full_frame").strip().lower()
+        if presentation_mode not in {"full_frame", "reveal"}:
+            presentation_mode = "full_frame"
+        # One-click is always a complete-frame video.  ``mask_enabled`` stays
+        # as a compatibility mirror for legacy render/timeline code.
+        if production_mode == "one_click":
+            presentation_mode = "full_frame"
+        mask_enabled = 1 if presentation_mode == "reveal" else 0
         configured_subtitle_style: dict[str, Any] | None = None
         course_id = str(payload.course_id or "").strip() or None
         chapter_id = str(payload.chapter_id or "").strip() or None
@@ -237,13 +252,10 @@ class ProjectService:
                         manual_pause = [
                             step for step in configured_pause if step in _valid_pause
                         ]
-                mask = config_payload.get("mask")
-                if (
-                    "mask_enabled" not in payload.model_fields_set
-                    and isinstance(mask, dict)
-                    and isinstance(mask.get("enabled"), bool)
-                ):
-                    mask_enabled = 1 if mask["enabled"] else 0
+                # ``mask`` is intentionally preserved in the immutable
+                # configuration snapshot for package import/export
+                # compatibility.  It no longer chooses the presentation mode
+                # of a new project: the user selects that in the workspace.
                 subtitle = config_payload.get("subtitle")
                 if (
                     isinstance(subtitle, dict)
@@ -268,6 +280,8 @@ class ProjectService:
             manual_pause_steps=json.dumps(manual_pause),
             image_style_template=image_style_template,
             mask_enabled=mask_enabled,
+            production_mode=production_mode,
+            presentation_mode=presentation_mode,
             creation_config_package_id=(
                 creation_config.get("package_id") if creation_config else None
             ),
@@ -346,6 +360,8 @@ class ProjectService:
                 "manual_pause_steps": json.loads(project.manual_pause_steps or "[]"),
                 "image_style_template": project.image_style_template or "default",
                 "mask_enabled": bool(project.mask_enabled if project.mask_enabled is not None else 1),
+                "production_mode": project.production_mode or "guided",
+                "presentation_mode": project.presentation_mode or "full_frame",
                 "creation_config": self._creation_config_summary(project),
                 "course_id": project.course_id,
                 "chapter_id": project.chapter_id,
@@ -378,6 +394,8 @@ class ProjectService:
                 "manual_pause_steps": json.loads(project.manual_pause_steps or "[]"),
                 "image_style_template": project.image_style_template or "default",
                 "mask_enabled": bool(project.mask_enabled if project.mask_enabled is not None else 1),
+                "production_mode": project.production_mode or "guided",
+                "presentation_mode": project.presentation_mode or "full_frame",
                 "creation_config": self._creation_config_summary(project),
                 "course_id": project.course_id,
                 "chapter_id": project.chapter_id,
@@ -404,6 +422,8 @@ class ProjectService:
             "manual_pause_steps": json.loads(project.manual_pause_steps or "[]"),
             "image_style_template": project.image_style_template or "default",
             "mask_enabled": bool(project.mask_enabled if project.mask_enabled is not None else 1),
+            "production_mode": project.production_mode or "guided",
+            "presentation_mode": project.presentation_mode or "full_frame",
             "creation_config": self._creation_config_summary(project),
             "course_id": project.course_id,
             "chapter_id": project.chapter_id,
@@ -462,6 +482,22 @@ class ProjectService:
             if ai_mode not in {"auto", "manual"}:
                 ai_mode = "auto"
             project.ai_mode = ai_mode
+        if payload.production_mode is not None:
+            production_mode = (payload.production_mode or "").strip().lower()
+            if production_mode not in {"one_click", "guided"}:
+                raise HTTPException(status_code=400, detail="production_mode 必须为 one_click 或 guided")
+            project.production_mode = production_mode
+            if production_mode == "one_click":
+                project.presentation_mode = "full_frame"
+                project.mask_enabled = 0
+        if payload.presentation_mode is not None:
+            presentation_mode = (payload.presentation_mode or "").strip().lower()
+            if presentation_mode not in {"full_frame", "reveal"}:
+                raise HTTPException(status_code=400, detail="presentation_mode 必须为 full_frame 或 reveal")
+            if (project.production_mode or "guided") == "one_click" and presentation_mode == "reveal":
+                raise HTTPException(status_code=400, detail="一键生成仅支持整页展示；请切换到分步制作后启用元素动画")
+            project.presentation_mode = presentation_mode
+            project.mask_enabled = 1 if presentation_mode == "reveal" else 0
         db.commit()
         db.refresh(project)
         return {
@@ -471,6 +507,8 @@ class ProjectService:
                 "name": project.name,
                 "description": project.description,
                 "ai_mode": project.ai_mode or "auto",
+                "production_mode": project.production_mode or "guided",
+                "presentation_mode": project.presentation_mode or "full_frame",
             },
         }
 

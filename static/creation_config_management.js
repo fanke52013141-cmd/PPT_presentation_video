@@ -435,7 +435,8 @@
     }
 
     payload.subtitle = { ...objectValue(payload.subtitle), enabled: !!element('creation-config-subtitle-enabled')?.checked };
-    payload.mask = { ...objectValue(payload.mask), enabled: !!element('creation-config-mask-enabled')?.checked };
+    // Keep legacy ``mask`` data untouched. It remains part of imported and
+    // exported configuration packages, but no longer controls new projects.
     const pauseSteps = [...document.querySelectorAll('[data-creation-config-pause]:checked')]
       .map(input => input.dataset.creationConfigPause)
       .filter(Boolean);
@@ -471,11 +472,8 @@
     setStringField('creation-config-tts-rpm', String(Math.max(1, Math.min(600, Number(tts.requests_per_minute) || 10))));
     setImageStyleValue(value.image_style);
     const subtitle = objectValue(value.subtitle || value.subtitles);
-    const mask = objectValue(value.mask);
     const subtitleToggle = element('creation-config-subtitle-enabled');
-    const maskToggle = element('creation-config-mask-enabled');
     if (subtitleToggle) subtitleToggle.checked = subtitle.enabled !== false;
-    if (maskToggle) maskToggle.checked = mask.enabled !== false;
     const automation = objectValue(value.automation);
     setStringField('creation-config-image-concurrency', String(Math.max(1, Math.min(6, Number(automation.image_concurrency) || 5))));
     setStringField('creation-config-render-acceleration', objectValue(value.render).acceleration || 'auto');

@@ -8624,9 +8624,81 @@ details[open] .ip-character-advanced-summary::before {
 .creation-config-number-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.55rem;
+  gap: 0.8rem;
+}
+.creation-config-number-grid label {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 5.5rem;
+  align-items: center;
+  min-height: 3.25rem;
+  margin: 0 !important;
+  padding: .5rem .62rem .5rem .8rem;
+  border: 1px solid var(--color-border-default, #dfe3ef);
+  border-radius: 11px;
+  background: var(--color-bg-surface, #fff);
+  color: var(--color-text-secondary);
+  font-size: .82rem;
+  font-weight: 700;
+}
+.creation-config-number-grid input {
+  min-height: 2.25rem;
+  padding: .25rem .5rem;
+  text-align: center;
+  font-size: 1rem;
+  font-weight: 800;
 }
 .creation-config-render-field { max-width: 320px; margin: 0 !important; }
+.project-production-mode {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: .3rem .62rem;
+  border: 1px solid var(--color-border-default);
+  border-radius: 999px !important;
+  background: var(--color-bg-subtle, #f7f8fb);
+  color: var(--color-text-secondary);
+  font-size: .76rem;
+  font-weight: 750;
+}
+.project-production-mode:hover { border-color: var(--color-primary-base); color: var(--color-primary-text); }
+.step5-presentation-mode {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: .25rem 0 .72rem;
+  padding: .72rem .86rem;
+  border: 1px solid var(--color-border-default);
+  border-radius: 12px;
+  background: var(--color-bg-subtle, #f8f9fc);
+}
+.step5-presentation-mode > div:first-child { display: grid; gap: .18rem; }
+.step5-presentation-mode strong { color: var(--color-text-primary); font-size: .9rem; }
+.step5-presentation-mode span { color: var(--color-text-tertiary); font-size: .76rem; }
+.step5-presentation-actions { display: inline-flex; gap: .42rem; flex: 0 0 auto; }
+.step5-presentation-actions button {
+  min-height: 2.15rem;
+  padding: .35rem .66rem;
+  border: 1px solid var(--color-border-default);
+  border-radius: 9px !important;
+  background: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+}
+.step5-presentation-actions button.active {
+  border-color: var(--color-primary-base);
+  background: var(--color-primary-light);
+  color: var(--color-primary-text);
+  font-weight: 800;
+}
+body.step5-full-frame #step-panel-5 .workspace-split,
+body.step5-full-frame #step-panel-5 #step5-thumbs,
+body.step5-full-frame #step-panel-5 .step5-toolbar { display: none !important; }
+body.step5-full-frame #step-panel-5 .step5-presentation-mode { margin-bottom: 0; }
+@media (max-width: 760px) {
+  .step5-presentation-mode { align-items: stretch; flex-direction: column; }
+  .step5-presentation-actions { width: 100%; }
+  .step5-presentation-actions button { flex: 1 1 0; }
+}
 .creation-config-json-editor {
   margin-top: 0.7rem;
   padding: 0.65rem;
@@ -8907,7 +8979,8 @@ details[open] .ip-character-advanced-summary::before {
   display: inline-flex;
   align-items: center;
   gap: .55rem;
-  min-width: 9.5rem;
+  width: 14.5rem;
+  min-width: 14.5rem;
   min-height: 40px;
   padding: .4rem .72rem;
   border: 1px solid var(--color-border-default);
@@ -8941,19 +9014,19 @@ details[open] .ip-character-advanced-summary::before {
   height: .48rem;
   border-right: 1.5px solid var(--color-text-tertiary);
   border-bottom: 1.5px solid var(--color-text-tertiary);
-  transform: rotate(45deg) translateY(-2px);
+  transform: rotate(45deg);
   transform-origin: center;
   transition: transform .16s ease;
 }
 .account-picker[aria-expanded="true"] .account-picker-chevron {
-  transform: rotate(225deg) translate(-1px, -1px);
+  transform: rotate(-135deg);
 }
 .account-picker-menu {
   position: absolute;
   top: calc(100% + .55rem);
   right: 0;
   z-index: 1400;
-  width: min(270px, calc(100vw - 32px));
+  width: min(14.5rem, calc(100vw - 32px));
   padding: .4rem;
   border: 1px solid var(--color-border-default);
   border-radius: 16px;
@@ -8966,8 +9039,8 @@ details[open] .ip-character-advanced-summary::before {
   align-items: center;
   width: 100%;
   gap: .65rem;
-  min-height: 3.2rem;
-  padding: .55rem .65rem;
+  min-height: 2.75rem;
+  padding: .45rem .6rem;
   border: 0;
   border-radius: 11px !important;
   background: transparent;
@@ -8982,6 +9055,15 @@ details[open] .ip-character-advanced-summary::before {
   display: grid;
   min-width: 0;
   gap: .1rem;
+}
+.account-picker-status-dot {
+  flex: 0 0 auto;
+  width: .52rem;
+  height: .52rem;
+  margin-left: auto;
+  border-radius: 50%;
+  background: #32a665;
+  box-shadow: 0 0 0 3px rgba(50, 166, 101, .12);
 }
 .account-picker-option-copy strong,
 .account-picker-option-copy small {

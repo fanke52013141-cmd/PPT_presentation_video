@@ -47,22 +47,23 @@ def test_batch_parser_status_has_func():
     assert callable(args.func)
 
 
-def test_batch_parser_render_has_speed():
-    """batch render must accept --speed."""
+def test_batch_parser_render_has_func():
+    """batch render must be accepted without unsupported render parameters."""
     from cli.pptctl import build_parser
 
     parser = build_parser()
-    args = parser.parse_args(["batch", "render", "--speed", "1.5"])
-    assert args.speed == "1.5"
+    args = parser.parse_args(["batch", "render"])
+    assert callable(args.func)
 
 
-def test_batch_parser_cleanup_has_status():
-    """batch cleanup must accept --status."""
+def test_batch_parser_cleanup_requires_explicit_confirmation_flag():
+    """batch cleanup must expose the explicit destructive-operation guard."""
     from cli.pptctl import build_parser
 
     parser = build_parser()
-    args = parser.parse_args(["batch", "cleanup", "--status", "completed"])
+    args = parser.parse_args(["batch", "cleanup", "--status", "completed", "--confirm-delete"])
     assert args.status == "completed"
+    assert args.confirm_delete is True
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +100,8 @@ def test_cmd_batch_status_executes():
     from cli.pptctl import cmd_batch_status
     from argparse import Namespace
 
-    mock_client = MagicMock()
+    from agent_client.client import AgentClient
+    mock_client = MagicMock(spec=AgentClient)
     mock_client.list_projects.return_value = {
         "projects": [
             {"project_id": "proj-1"},
@@ -124,6 +126,7 @@ def test_cmd_batch_status_executes():
     assert len(output["results"]) == 2
     assert output["results"][0]["project_id"] == "proj-1"
     assert len(output["errors"]) == 0
+    mock_client.list_projects.assert_called_once_with(status=None)
 
 
 def test_cmd_batch_status_handles_errors():
@@ -132,7 +135,8 @@ def test_cmd_batch_status_handles_errors():
     from cli.pptctl import AgentClientError
     from argparse import Namespace
 
-    mock_client = MagicMock()
+    from agent_client.client import AgentClient
+    mock_client = MagicMock(spec=AgentClient)
     mock_client.list_projects.return_value = {
         "projects": [{"project_id": "ok-proj"}, {"project_id": "err-proj"}]
     }
@@ -164,7 +168,8 @@ def test_cmd_batch_render_executes():
     from cli.pptctl import cmd_batch_render
     from argparse import Namespace
 
-    mock_client = MagicMock()
+    from agent_client.client import AgentClient
+    mock_client = MagicMock(spec=AgentClient)
     mock_client.list_projects.return_value = {
         "projects": [{"project_id": "proj-1"}, {"project_id": "proj-2"}]
     }
@@ -178,12 +183,13 @@ def test_cmd_batch_render_executes():
             cmd_batch_render(Namespace(
                 base_url="http://localhost:8000",
                 token="",
-                speed="1.0",
             ))
 
     output = json.loads(mock_stdout.getvalue())
     assert output["total"] == 2
     assert len(output["results"]) == 2
+    assert mock_client.render_video.call_args_list[0].args == ("proj-1",)
+    assert mock_client.render_video.call_args_list[1].args == ("proj-2",)
 
 
 def test_cmd_batch_cleanup_executes():
@@ -191,7 +197,8 @@ def test_cmd_batch_cleanup_executes():
     from cli.pptctl import cmd_batch_cleanup
     from argparse import Namespace
 
-    mock_client = MagicMock()
+    from agent_client.client import AgentClient
+    mock_client = MagicMock(spec=AgentClient)
     mock_client.list_projects.return_value = {
         "projects": [{"project_id": "old-1"}, {"project_id": "old-2"}]
     }
@@ -203,9 +210,23 @@ def test_cmd_batch_cleanup_executes():
                 base_url="http://localhost:8000",
                 token="",
                 status="completed",
+                confirm_delete=True,
             ))
 
     output = json.loads(mock_stdout.getvalue())
     assert output["total"] == 2
     assert len(output["deleted"]) == 2
     assert mock_client.delete_project.call_count == 2
+    mock_client.list_projects.assert_called_once_with(status="completed")
+
+
+def test_cmd_batch_cleanup_refuses_without_confirmation(capsys):
+    """The batch command must not enumerate or delete projects by default."""
+    from argparse import Namespace
+    from cli.pptctl import cmd_batch_cleanup
+
+    with pytest.raises(SystemExit) as exc_info:
+        cmd_batch_cleanup(Namespace(base_url="http://localhost:8000", token="", status="completed"))
+
+    assert exc_info.value.code == 2
+    assert "--confirm-delete" in capsys.readouterr().err

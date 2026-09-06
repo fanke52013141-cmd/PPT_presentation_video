@@ -11,6 +11,7 @@ import pytest
 from unittest.mock import MagicMock
 
 from agent_client.client import AgentClient, AgentClientError
+from agent_contract.capabilities import CAPABILITIES, CapabilityStatus
 from mcp_server import tools, presenters
 
 
@@ -117,6 +118,13 @@ class TestDispatchRouting:
     def test_dispatch_unknown_raises(self, mock_client):
         with pytest.raises(ValueError, match="Unknown capability"):
             tools._dispatch("nonexistent.cap", {}, mock_client)
+
+    def test_every_advertised_mcp_capability_has_a_dispatch_path(self, mock_client):
+        """Adding a tool to the registry must not leave it uncallable."""
+        for cap in CAPABILITIES:
+            if cap.status == CapabilityStatus.removed or not cap.mcp_enabled:
+                continue
+            tools._dispatch(cap.id, {}, mock_client)
 
 
 class TestFormatResult:
@@ -253,6 +261,7 @@ class TestOperationsDeep:
         test_cases = [
             ("idle", OperationStatus.succeeded),
             ("running", OperationStatus.running),
+            ("waiting_for_user", OperationStatus.waiting_for_user),
             ("paused", OperationStatus.waiting_for_review),
             ("succeeded", OperationStatus.succeeded),
             ("completed", OperationStatus.succeeded),

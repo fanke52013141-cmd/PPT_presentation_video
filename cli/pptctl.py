@@ -42,39 +42,22 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from agent_client.client import AgentClient, AgentClientError, DEFAULT_BASE_URL
+from agent_contract.capabilities import CAPABILITIES, CapabilityStatus
 
 
-# This explicit map is intentionally test-visible.  A capability registered
-# for Agent use must also be reachable from the CLI, and CI compares this map
-# with the capability registry.
-CLI_COMMANDS = {
-    "identity",
-    "project create",
-    "project list",
-    "project show",
-    "project update",
-    "source set",
-    "run start",
-    "run status",
-    "run stream",
-    "run resume",
-    "approve",
-    "stage get",
-    "image regenerate",
-    "narration update",
-    "tts synthesize",
-    "video render",
-    "artifacts list",
-    "artifact get",
-    "diagnostics",
-    "digital-human config",
-    "digital-human config --set",
-    "digital-human health",
-    "digital-human generate",
+# Capability commands are derived from the contract registry so CI cannot
+# silently accept a stale hand-maintained command list.  Batch commands are
+# local CLI composites rather than Agent capabilities.
+CLI_COMPOSITE_COMMANDS = frozenset({
     "batch status",
     "batch render",
     "batch cleanup",
-}
+})
+CLI_COMMANDS = frozenset(
+    cap.cli_command
+    for cap in CAPABILITIES
+    if cap.status != CapabilityStatus.removed
+) | CLI_COMPOSITE_COMMANDS
 
 
 def _print_json(data: Any) -> None:
@@ -212,7 +195,7 @@ def cmd_run_stream(args: argparse.Namespace) -> None:
     import time
 
     terminal_states = frozenset({
-        "completed", "failed", "waiting_for_review", "idle", "paused",
+        "completed", "failed", "waiting_for_review", "waiting_for_user", "idle", "paused",
     })
     interval = getattr(args, "interval", 1.0)
     max_polls = getattr(args, "max_polls", 1800)
@@ -416,7 +399,7 @@ def cmd_batch_status(args: argparse.Namespace) -> None:
     """Get pipeline status for all (or filtered) projects in one call."""
     client = AgentClient(base_url=args.base_url, app_token=args.token)
     try:
-        projects = client.list_projects(status_filter=args.status)
+        projects = client.list_projects(status=args.status)
         project_list = projects.get("projects", projects) if isinstance(projects, dict) else projects
         results = []
         errors = []
@@ -448,7 +431,7 @@ def cmd_batch_render(args: argparse.Namespace) -> None:
             if not pid:
                 continue
             try:
-                result = client.render_video(pid, speed=args.speed)
+                result = client.render_video(pid)
                 results.append({"project_id": pid, "result": result})
             except AgentClientError as e:
                 errors.append({"project_id": pid, "error": str(e)})
@@ -460,9 +443,12 @@ def cmd_batch_render(args: argparse.Namespace) -> None:
 
 def cmd_batch_cleanup(args: argparse.Namespace) -> None:
     """Delete completed or all projects (destructive)."""
+    if not getattr(args, "confirm_delete", False):
+        _print_error("Batch cleanup is destructive. Re-run with --confirm-delete.")
+        sys.exit(2)
     client = AgentClient(base_url=args.base_url, app_token=args.token)
     try:
-        projects = client.list_projects(status_filter=args.status)
+        projects = client.list_projects(status=args.status)
         project_list = projects.get("projects", projects) if isinstance(projects, dict) else projects
         results = []
         errors = []
@@ -702,11 +688,15 @@ def build_parser() -> argparse.ArgumentParser:
     b_status.set_defaults(func=cmd_batch_status)
 
     b_render = batch_sub.add_parser("render", help="Submit video render for all projects")
-    b_render.add_argument("--speed", default="1.0", help="Playback speed (e.g. 1.0, 1.25)")
     b_render.set_defaults(func=cmd_batch_render)
 
     b_cleanup = batch_sub.add_parser("cleanup", help="Delete projects (destructive)")
     b_cleanup.add_argument("--status", default="completed", help="Filter projects to delete by status")
+    b_cleanup.add_argument(
+        "--confirm-delete",
+        action="store_true",
+        help="Confirm deletion of every project selected by --status",
+    )
     b_cleanup.set_defaults(func=cmd_batch_cleanup)
 
     # meta

@@ -592,7 +592,8 @@ body.step5-fullscreen-mode {
 body.step5-fullscreen-mode #step-panel-5 {
   position: fixed;
   inset: 0;
-  z-index: 4000;
+  /* Keep modal (1000) and toast (2000) layers usable while annotating. */
+  z-index: 900;
   display: flex !important;
   flex-direction: column;
   padding: 0.8rem;

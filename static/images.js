@@ -20,6 +20,21 @@ let step3CurrentGenerating = null;  // 当前正在生成的 slideId（区别于
 let step3CurrentUploading = null;
 let step3VideoBackground = '#FEFDF9';
 
+function resetStep3ProjectState() {
+  step3GeneratingSlides.clear();
+  step3UploadingSlides.clear();
+  step3BatchGenerating = false;
+  step3BatchCompleted = 0;
+  step3BatchTotal = 0;
+  step3CurrentGenerating = null;
+  step3CurrentUploading = null;
+  step3ImageOrder = [];
+  slidePrompts = [];
+  step3BatchPrompt = '';
+}
+
+window.resetStep3ProjectState = resetStep3ProjectState;
+
 function step3GeneratingPreviewHtml(message = '生成中', subtitle = 'AI 正在绘制图片，请稍候...') {
   return `
     <div class="step3-generating-preview" role="status" aria-live="polite">
@@ -66,19 +81,25 @@ function setStep3SlideGenerating(slideId, generating) {
 }
 
 async function loadStep3Data() {
+  const projectId = state.currentProject?.id;
+  const sessionVersion = workspaceNavigationVersion;
+  if (!projectId) return;
   // 优先加载分镜数据，保证即使无图片也能渲染占位卡
   if (!state.slides || state.slides.length === 0) {
-    const contractRes = await API.get(`/api/projects/${state.currentProject.id}/steps/2/result`);
+    const contractRes = await API.get(`/api/projects/${projectId}/steps/2/result`);
+    if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return;
     if (contractRes.success && contractRes.contract) {
       state.slides = contractRes.contract.slides || [];
     }
   }
 
-  await loadStep3VisualSettings();
+  await loadStep3VisualSettings(projectId, sessionVersion);
+  if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return;
 
   // 获取每个 slide 拼接的 Prompt
   try {
-    const promptRes = await API.get(`/api/projects/${state.currentProject.id}/steps/3/prompts`);
+    const promptRes = await API.get(`/api/projects/${projectId}/steps/3/prompts`);
+    if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return;
     if (promptRes.success) {
       slidePrompts = promptRes.prompts || [];
       step3BatchPrompt = promptRes.batch_prompt || '';
@@ -86,7 +107,7 @@ async function loadStep3Data() {
   } catch(e) {}
   
   // 获取生成的图片文件状态
-  await refreshStep3Images();
+  await refreshStep3Images(projectId, sessionVersion);
 }
 
 function normalizeStep3BackgroundColor(value) {
@@ -94,15 +115,25 @@ function normalizeStep3BackgroundColor(value) {
   return /^#[0-9A-F]{6}$/.test(color) ? color : '';
 }
 
-async function loadStep3VisualSettings() {
-  const res = await API.get(`/api/projects/${state.currentProject.id}/steps/3/visual-settings`);
+async function loadStep3VisualSettings(
+  projectId = state.currentProject?.id,
+  sessionVersion = workspaceNavigationVersion,
+) {
+  if (!projectId) return;
+  const res = await API.get(`/api/projects/${projectId}/steps/3/visual-settings`);
+  if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return;
   step3VideoBackground = normalizeStep3BackgroundColor(res.video_background) || '#FEFDF9';
 }
 
-async function refreshStep3Images() {
+async function refreshStep3Images(
+  projectId = state.currentProject?.id,
+  sessionVersion = workspaceNavigationVersion,
+) {
+  if (!projectId) return;
   let images = [];
   try {
-    const res = await API.get(`/api/projects/${state.currentProject.id}/steps/3/images`);
+    const res = await API.get(`/api/projects/${projectId}/steps/3/images`);
+    if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return;
     if (res.success) {
       images = res.images || [];
       step3OrderVersion = String(res.order_version || '');
@@ -113,6 +144,7 @@ async function refreshStep3Images() {
   if (images.length === 0 && state.slides && state.slides.length > 0) {
     images = state.slides.map(s => ({ slide_id: s.slide_id, exists: false, url: '' }));
   }
+  if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return;
   step3ImageOrder = images;
   syncStep3ActiveSlideIndex();
   renderStep3Grid();
@@ -433,6 +465,9 @@ window.deleteAllStep3Images = deleteAllStep3Images;
 
 // 批量上传处理
 async function handleStep3BatchUpload(e) {
+  const projectId = state.currentProject?.id;
+  const sessionVersion = workspaceNavigationVersion;
+  if (!projectId) return;
   const files = Array.from(e.target.files).sort((a, b) => a.lastModified - b.lastModified);
   if (files.length === 0) return;
 
@@ -444,6 +479,7 @@ async function handleStep3BatchUpload(e) {
   
   let successCount = 0;
   for (let i = 0; i < files.length; i++) {
+    if (!isCurrentWorkspaceProject(projectId, sessionVersion)) break;
     const slideId = slideIds[i];
     if (!slideId) break;
     step3CurrentUploading = slideId;
@@ -452,35 +488,42 @@ async function handleStep3BatchUpload(e) {
     formData.append('slide_id', slideId);
     formData.append('file', files[i]);
     try {
-      const res = await API.post(`/api/projects/${state.currentProject.id}/steps/3/upload`, formData);
+      const res = await API.post(`/api/projects/${projectId}/steps/3/upload`, formData);
+      if (!isCurrentWorkspaceProject(projectId, sessionVersion)) break;
       if (res && res.success) {
         successCount++;
         // 上传成功：立即更新内存中的图片状态，图片随下方重绘马上显示，无需等全部传完
         const target = step3ImageOrder.find(item => item.slide_id === slideId);
         if (target) {
           target.exists = true;
-          target.url = res.image_url || `/api/projects/${state.currentProject.id}/slides/${encodeURIComponent(slideId)}/image?t=${Date.now()}`;
+          target.url = res.image_url || `/api/projects/${projectId}/slides/${encodeURIComponent(slideId)}/image?t=${Date.now()}`;
           target.provenance = { valid: true };
         }
       }
     } catch(err) {
       showToast(`⚠️ 第 ${i+1} 张上传失败`);
     } finally {
-      step3UploadingSlides.delete(slideId);
-      if (step3CurrentUploading === slideId) step3CurrentUploading = null;
-      renderStep3Grid();
+      if (isCurrentWorkspaceProject(projectId, sessionVersion)) {
+        step3UploadingSlides.delete(slideId);
+        if (step3CurrentUploading === slideId) step3CurrentUploading = null;
+        renderStep3Grid();
+      }
     }
   }
+  if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return;
   queuedSlideIds.forEach(slideId => step3UploadingSlides.delete(slideId));
   step3CurrentUploading = null;
   showToast(successCount === files.length ? '批量上传完成！' : `批量上传完成（成功 ${successCount}/${files.length}）`);
   // 全部完成后拉取一次服务端权威列表，补齐 provenance 等完整信息，保证与后端一致
-  await refreshStep3Images();
+  await refreshStep3Images(projectId, sessionVersion);
   await refreshCurrentProjectStatus(3);
   e.target.value = '';
 }
 
 async function generateAllStep3Images() {
+  const projectId = state.currentProject?.id;
+  const sessionVersion = workspaceNavigationVersion;
+  if (!projectId) return;
   if (step3BatchGenerating || step3ImageOrder.length === 0) return;
 
   const tasks = step3ImageOrder.map(image => {
@@ -507,6 +550,7 @@ async function generateAllStep3Images() {
   const failedSlides = [];
   try {
     for (const task of tasks) {
+      if (!isCurrentWorkspaceProject(projectId, sessionVersion)) break;
       step3CurrentGenerating = task.slideId;  // 标记当前正在生成的卡片
       renderStep3Grid();
       try {
@@ -515,9 +559,10 @@ async function generateAllStep3Images() {
         formData.append('prompt', task.prompt);
         formData.append('preview', 'false');
         const res = await API.post(
-          `/api/projects/${state.currentProject.id}/steps/3/generate`,
+          `/api/projects/${projectId}/steps/3/generate`,
           formData
         );
+        if (!isCurrentWorkspaceProject(projectId, sessionVersion)) break;
         if (res.success) {
           successCount += 1;
           const image = step3ImageOrder.find(item => item.slide_id === task.slideId);
@@ -536,12 +581,13 @@ async function generateAllStep3Images() {
       }
     }
   } finally {
+    if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return;
     step3BatchGenerating = false;
     step3BatchCompleted = 0;
     step3BatchTotal = 0;
     step3GeneratingSlides.clear();
     step3CurrentGenerating = null;
-    await refreshStep3Images();
+    await refreshStep3Images(projectId, sessionVersion);
     await refreshCurrentProjectStatus(3);
   }
 

@@ -78,6 +78,28 @@ def test_numbered_migrations_apply_once_and_store_checksums() -> None:
         engine.dispose()
 
 
+def test_known_creative_accounts_legacy_checksum_is_rebased_after_schema_check() -> None:
+    """A prior 0012 release must not prevent an otherwise valid DB from starting."""
+    with tempfile.TemporaryDirectory() as value:
+        engine = sqlite_engine(Path(value) / "legacy-0012.db")
+        assert run_migrations(engine) == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+        legacy_checksum = "a99a22439d12b3ab9c84e8ccaf7237882c5dc93ebe0f477db47c5a8e9e6004e6"
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "UPDATE schema_migrations SET checksum = ? WHERE version = 12",
+                (legacy_checksum,),
+            )
+
+        assert run_migrations(engine) == []
+        with engine.connect() as connection:
+            checksum = connection.exec_driver_sql(
+                "SELECT checksum FROM schema_migrations WHERE version = 12"
+            ).scalar_one()
+        assert checksum != legacy_checksum
+        assert len(checksum) == 64
+        engine.dispose()
+
+
 def test_legacy_marker_database_is_adopted_without_losing_data() -> None:
     with tempfile.TemporaryDirectory() as value:
         database_path = Path(value) / "legacy.db"

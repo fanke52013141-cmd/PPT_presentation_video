@@ -1704,5 +1704,10 @@ def _overall_progress(status: dict[str, Any]) -> float:
     stages = status.get("stages") or []
     if not stages:
         return 0.0
-    done = sum(1 for item in stages if item.get("status") == "completed")
+    # Newer run records persist completed stages as ``done``.  Retain
+    # ``completed`` for historical projects created by earlier releases.
+    done = sum(
+        1 for item in stages
+        if isinstance(item, dict) and item.get("status") in {"done", "completed"}
+    )
     return round(done / len(stages), 4)

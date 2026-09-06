@@ -49,8 +49,8 @@ def generate_markdown() -> str:
     lines.append("")
 
     # Table header
-    lines.append("| Capability ID | Version | Status | Method | Agent API Path | MCP Tool | CLI Command | Service Ref | Long-running | Destructive |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|")
+    lines.append("| Capability ID | Version | Status | Method | Agent API Path | MCP Tool | MCP enabled | CLI Command | Service Ref | Long-running | Destructive |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
 
     for cap in CAPABILITIES:
         row = "| "
@@ -60,6 +60,7 @@ def generate_markdown() -> str:
         row += f"{cap.agent_api_method} | "
         row += f"`{cap.agent_api_path}` | "
         row += f"`{cap.mcp_tool_name}` | "
+        row += ("Yes" if cap.mcp_enabled else "No") + " | "
         row += f"`{cap.cli_command}` | "
         row += f"`{cap.service_ref}` | "
         row += ("Yes" if cap.long_running else "No") + " | "
@@ -82,7 +83,10 @@ def generate_markdown() -> str:
     # MCP tool summary
     lines.append("## MCP Tool Summary")
     lines.append("")
-    stable_caps = [c for c in CAPABILITIES if c.status == CapabilityStatus.stable]
+    stable_caps = [
+        c for c in CAPABILITIES
+        if c.status == CapabilityStatus.stable and c.mcp_enabled
+    ]
     lines.append(f"The MCP server exposes **{len(stable_caps)}** stable tools:")
     lines.append("")
     for cap in stable_caps:

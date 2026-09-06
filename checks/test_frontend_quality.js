@@ -510,6 +510,9 @@ if (!fullscreenImplementation.includes("fullscreenLabel.textContent = state.canv
 if (fullscreenImplementation.includes('renderStep5Workspace')) {
   throw new Error('Step 5 fullscreen toggle still reloads unsaved workspace state');
 }
+if (!css.includes('body.step5-fullscreen-mode #step-panel-5') || !css.includes('z-index: 900;')) {
+  throw new Error('Step 5 fullscreen workspace must remain below modal and toast layers');
+}
 for (const requiredStep2Token of [
   'step2-btn-script-prompt',
   'step2-btn-visual-prompt',
@@ -753,6 +756,26 @@ if (styleManager.includes('visual-draft-quality') || oneClick.includes('图片�
 if (!oneClick.includes('button-spinner')) throw new Error('one-click stage spinner missing');
 if (!oneClick.includes('one-click-sidebar-entry') || !oneClick.includes('stepper.appendChild(entry)')) {
   throw new Error('one-click button is not anchored directly below the video step');
+}
+for (const lifecycleOwner of ['function isCurrentWorkspaceProject(', 'function resetProjectScopedAsyncUi(', '++workspaceNavigationVersion;']) {
+  if (!workspaceNavigation.includes(lifecycleOwner)) {
+    throw new Error(`project lifecycle guard is missing: ${lifecycleOwner}`);
+  }
+}
+for (const guardedStep2Token of ['const projectId = state.currentProject?.id;', 'saveStep2Contract({ silent: true, autosave: true, projectId, sessionVersion })']) {
+  if (!storyboard.includes(guardedStep2Token)) {
+    throw new Error(`Step 2 cross-project save guard is missing: ${guardedStep2Token}`);
+  }
+}
+for (const guardedStep3Token of ['function resetStep3ProjectState()', 'if (!isCurrentWorkspaceProject(projectId, sessionVersion)) break;', '/steps/3/generate']) {
+  if (!images.includes(guardedStep3Token)) {
+    throw new Error(`Step 3 cross-project operation guard is missing: ${guardedStep3Token}`);
+  }
+}
+for (const guardedOutputToken of ['_step8RenderProjectId', '_step8PptxProjectId', 'stopStep8RenderPolling();']) {
+  if (!outputRender.includes(guardedOutputToken)) {
+    throw new Error(`Step 8 project-scoped polling guard is missing: ${guardedOutputToken}`);
+  }
 }
 if (!oneClick.includes('window.navigateToStep(targetStep)')) {
   throw new Error('one-click stage changes no longer switch the active workspace tab');

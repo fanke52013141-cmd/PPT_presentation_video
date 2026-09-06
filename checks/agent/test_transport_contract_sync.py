@@ -28,5 +28,6 @@ def test_meta_exposes_complete_machine_readable_capabilities():
             continue
         detail = details[cap.id]
         assert detail["mcp_tool"] == cap.mcp_tool_name
+        assert detail["mcp_enabled"] is cap.mcp_enabled
         assert detail["cli_command"] == cap.cli_command
         assert "input_schema" in detail and "output_schema" in detail

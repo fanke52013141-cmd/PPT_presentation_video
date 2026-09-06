@@ -7,6 +7,25 @@
 
 let workspaceNavigationVersion = 0;
 
+function isCurrentWorkspaceProject(projectId, sessionVersion = workspaceNavigationVersion) {
+  return Boolean(
+    projectId
+    && state.currentProject?.id === projectId
+    && workspaceNavigationVersion === sessionVersion
+    && document.body.classList.contains('workspace-open')
+  );
+}
+
+function resetProjectScopedAsyncUi() {
+  clearTimeout(state.step2AutoSaveTimer);
+  state.step2AutoSaveTimer = null;
+  if (typeof stopStep8RenderPolling === 'function') stopStep8RenderPolling();
+  if (typeof stopStep8PptxPolling === 'function') stopStep8PptxPolling();
+  if (typeof resetStep3ProjectState === 'function') resetStep3ProjectState();
+  const generateButton = document.getElementById('step2-btn-generate');
+  if (generateButton) generateButton.disabled = false;
+}
+
 // 画布比例以 CSS 变量下发到根节点，供 style.css 中所有跟随项目画布的
 // 预览容器（Mask 画布、字幕预览、Step3 预览、视频预览等）统一继承。
 function syncProjectCanvasCssVars(project = state.currentProject) {
@@ -25,7 +44,11 @@ function syncProjectCanvasCssVars(project = state.currentProject) {
 
 async function enterWorkspace(projectId) {
   const entryVersion = ++workspaceNavigationVersion;
+  resetProjectScopedAsyncUi();
   resetStep5ProjectState();
+  // In-flight work from the old project must fail its ownership guard while
+  // the new project's metadata is being fetched.
+  state.currentProject = null;
   const project = await API.get(`/api/projects/${projectId}`);
   if (entryVersion !== workspaceNavigationVersion) return;
   state.currentProject = project;
@@ -50,6 +73,8 @@ async function enterWorkspace(projectId) {
 }
 
 function exitWorkspace() {
+  ++workspaceNavigationVersion;
+  resetProjectScopedAsyncUi();
   resetStep5ProjectState();
   document.getElementById('project-info-header').style.display = 'none';
   const btnBackHome = document.getElementById('btn-back-home');
@@ -134,8 +159,11 @@ function updateStepperUI(currentStep, stepStatus) {
 }
 
 async function refreshCurrentProjectStatus(activeStep = state.currentStep) {
-  if (!state.currentProject?.id) return;
-  const project = await API.get(`/api/projects/${state.currentProject.id}`);
+  const projectId = state.currentProject?.id;
+  const navigationVersion = workspaceNavigationVersion;
+  if (!projectId) return;
+  const project = await API.get(`/api/projects/${projectId}`);
+  if (navigationVersion !== workspaceNavigationVersion || !isCurrentWorkspaceProject(projectId)) return;
   state.currentProject = project;
   syncProjectCanvasCssVars(project);
   updateStepperUI(normalizeVisibleStep(activeStep), project.step_status);
@@ -162,7 +190,7 @@ async function navigateToStep(step) {
     state.currentProject = res;
     syncProjectCanvasCssVars(res);
   }
-  if (navigationVersion !== workspaceNavigationVersion) return;
+  if (navigationVersion !== workspaceNavigationVersion || !state.currentProject) return;
   updateStepperUI(step, state.currentProject.step_status);
   
   // 针对特定步骤加载结果数据

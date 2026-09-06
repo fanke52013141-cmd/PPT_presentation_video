@@ -8,6 +8,8 @@
 // 前端通过 render-status 路由轮询，避免长连接被浏览器超时断开报 "Failed to fetch"。
 let _step8RenderPollTimer = null;
 let _step8RenderTaskId = null;
+let _step8RenderProjectId = null;
+let _step8RenderSessionVersion = null;
 
 function updateStep8LoadingText(stageLabel, elapsedSec) {
   const text = document.getElementById('step8-loading-text');
@@ -25,18 +27,38 @@ function stopStep8RenderPolling() {
     _step8RenderPollTimer = null;
   }
   _step8RenderTaskId = null;
+  _step8RenderProjectId = null;
+  _step8RenderSessionVersion = null;
 }
 
-function startStep8RenderPolling(taskId) {
+function startStep8RenderPolling(
+  taskId,
+  projectId = state.currentProject?.id,
+  sessionVersion = workspaceNavigationVersion,
+) {
   // 防止重复启动
   if (_step8RenderPollTimer) clearInterval(_step8RenderPollTimer);
   _step8RenderTaskId = taskId;
+  _step8RenderProjectId = projectId;
+  _step8RenderSessionVersion = sessionVersion;
 
   const poll = async () => {
     try {
-      const url = `/api/projects/${state.currentProject.id}/steps/8/render-status?task_id=${encodeURIComponent(taskId)}`;
+      if (!isCurrentWorkspaceProject(projectId, sessionVersion)
+        || _step8RenderProjectId !== projectId
+        || _step8RenderSessionVersion !== sessionVersion) {
+        stopStep8RenderPolling();
+        return;
+      }
+      const url = `/api/projects/${projectId}/steps/8/render-status?task_id=${encodeURIComponent(taskId)}`;
       const res = await API.get(url);
-      if (!res.success) return;
+      if (!isCurrentWorkspaceProject(projectId, sessionVersion)
+        || _step8RenderProjectId !== projectId
+        || _step8RenderSessionVersion !== sessionVersion) return;
+      if (!res.success) {
+        stopStep8RenderPolling();
+        return;
+      }
 
       if (res.status === 'rendering') {
         updateStep8LoadingText(res.stage_label, res.elapsed_sec);
@@ -80,16 +102,21 @@ function startStep8RenderPolling(taskId) {
 }
 
 async function loadStep8Data() {
-  await loadStep8PptxData();
+  const projectId = state.currentProject?.id;
+  const sessionVersion = workspaceNavigationVersion;
+  if (!projectId) return;
+  await loadStep8PptxData(projectId, sessionVersion);
+  if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return;
   try {
     // 先检查是否有进行中的渲染任务（页面刷新后恢复轮询）
-    const statusRes = await API.get(`/api/projects/${state.currentProject.id}/steps/8/render-status`);
+    const statusRes = await API.get(`/api/projects/${projectId}/steps/8/render-status`);
+    if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return;
     if (statusRes.success && statusRes.status === 'rendering') {
       document.getElementById('step8-loading').style.display = 'inline-flex';
       updateStep8LoadingText(statusRes.stage_label, statusRes.elapsed_sec);
       const renderBtn = document.getElementById('step8-btn-render');
       if (renderBtn) renderBtn.disabled = true;
-      startStep8RenderPolling(statusRes.task_id);
+      startStep8RenderPolling(statusRes.task_id, projectId, sessionVersion);
       // 同时显示已有视频
       if (statusRes.videos && statusRes.videos.length > 0) {
         showStep8VideoResult(statusRes.videos);
@@ -103,7 +130,8 @@ async function loadStep8Data() {
       );
     }
 
-    const res = await API.get(`/api/projects/${state.currentProject.id}/videos`);
+    const res = await API.get(`/api/projects/${projectId}/videos`);
+    if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return;
     if (res.success && Array.isArray(res.videos) && res.videos.length > 0) {
       showStep8VideoResult(res.videos);
     } else {
@@ -117,6 +145,9 @@ async function loadStep8Data() {
 }
 
 async function runStep8Render() {
+  const projectId = state.currentProject?.id;
+  const sessionVersion = workspaceNavigationVersion;
+  if (!projectId) return;
   const renderBtn = document.getElementById('step8-btn-render');
   document.getElementById('step8-loading').style.display = 'inline-flex';
   document.getElementById('step8-loading-text').innerText = '视频渲染中...';
@@ -125,11 +156,12 @@ async function runStep8Render() {
   showToast('🎬 Remotion 渲染进程已启动，请稍候片刻...');
 
   try {
-    const res = await API.post(`/api/projects/${state.currentProject.id}/steps/8/render`);
+    const res = await API.post(`/api/projects/${projectId}/steps/8/render`);
+    if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return;
     if (res.success && res.task_id) {
       // 异步任务已启动，开始轮询
       updateStep8LoadingText(res.stage_label, res.elapsed_sec);
-      startStep8RenderPolling(res.task_id);
+      startStep8RenderPolling(res.task_id, projectId, sessionVersion);
     } else if (res.success && res.videos) {
       // 已有渲染任务在进行中，直接显示当前视频列表
       showStep8VideoResult(res.videos);
@@ -148,6 +180,8 @@ async function runStep8Render() {
 
 let _step8PptxPollTimer = null;
 let _step8PptxJobId = null;
+let _step8PptxProjectId = null;
+let _step8PptxSessionVersion = null;
 
 function stopStep8PptxPolling() {
   if (_step8PptxPollTimer) {
@@ -155,6 +189,8 @@ function stopStep8PptxPolling() {
     _step8PptxPollTimer = null;
   }
   _step8PptxJobId = null;
+  _step8PptxProjectId = null;
+  _step8PptxSessionVersion = null;
 }
 
 function formatArtifactBytes(value) {
@@ -197,15 +233,30 @@ function updateStep8PptxLoading(job) {
   }
 }
 
-function startStep8PptxPolling(jobId) {
+function startStep8PptxPolling(
+  jobId,
+  projectId = state.currentProject?.id,
+  sessionVersion = workspaceNavigationVersion,
+) {
   stopStep8PptxPolling();
   _step8PptxJobId = jobId;
+  _step8PptxProjectId = projectId;
+  _step8PptxSessionVersion = sessionVersion;
   const poll = async () => {
-    if (!state.currentProject || _step8PptxJobId !== jobId) return;
+    if (!isCurrentWorkspaceProject(projectId, sessionVersion)
+      || _step8PptxJobId !== jobId
+      || _step8PptxProjectId !== projectId
+      || _step8PptxSessionVersion !== sessionVersion) {
+      stopStep8PptxPolling();
+      return;
+    }
     try {
       const res = await API.get(
-        `/api/projects/${state.currentProject.id}/jobs/${encodeURIComponent(jobId)}`,
+        `/api/projects/${projectId}/jobs/${encodeURIComponent(jobId)}`,
       );
+      if (!isCurrentWorkspaceProject(projectId, sessionVersion)
+        || _step8PptxProjectId !== projectId
+        || _step8PptxSessionVersion !== sessionVersion) return;
       const job = res.job || {};
       if (job.status === 'queued' || job.status === 'running') {
         updateStep8PptxLoading(job);
@@ -215,14 +266,14 @@ function startStep8PptxPolling(jobId) {
       document.getElementById('step8-pptx-loading').style.display = 'none';
       if (job.status === 'succeeded') {
         showToast('PPTX 已生成，可以下载。');
-        await loadStep8PptxData();
+        await loadStep8PptxData(projectId, sessionVersion);
         refreshCurrentProjectStatus(8).catch(() => {});
       } else {
         setStep8OutputError(
           job.status === 'interrupted' ? 'PPTX 任务已中断' : 'PPTX 生成失败',
           job.error || '生成失败，请重新生成。',
         );
-        await refreshStep8PptxReadiness();
+        await refreshStep8PptxReadiness(projectId, sessionVersion);
       }
     } catch (error) {
       console.error('PPTX job polling failed:', error);
@@ -232,13 +283,17 @@ function startStep8PptxPolling(jobId) {
   _step8PptxPollTimer = setInterval(poll, 1200);
 }
 
-async function refreshStep8PptxReadiness() {
+async function refreshStep8PptxReadiness(
+  projectId = state.currentProject?.id,
+  sessionVersion = workspaceNavigationVersion,
+) {
   const button = document.getElementById('step8-btn-pptx');
   const label = document.getElementById('step8-pptx-readiness');
-  if (!state.currentProject || !button || !label) return null;
+  if (!projectId || !isCurrentWorkspaceProject(projectId, sessionVersion) || !button || !label) return null;
   const readiness = await API.get(
-    `/api/projects/${state.currentProject.id}/exports/pptx/readiness`,
+    `/api/projects/${projectId}/exports/pptx/readiness`,
   );
+  if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return null;
   label.classList.toggle('ready', readiness.ready === true);
   label.classList.toggle('blocked', readiness.ready !== true);
   if (readiness.ready) {
@@ -254,21 +309,25 @@ async function refreshStep8PptxReadiness() {
   return readiness;
 }
 
-async function loadStep8PptxData() {
-  if (!state.currentProject) return;
+async function loadStep8PptxData(
+  projectId = state.currentProject?.id,
+  sessionVersion = workspaceNavigationVersion,
+) {
+  if (!projectId || !isCurrentWorkspaceProject(projectId, sessionVersion)) return;
   try {
     const [readiness, exportsResult, jobsResult] = await Promise.all([
-      refreshStep8PptxReadiness(),
-      API.get(`/api/projects/${state.currentProject.id}/exports`),
-      API.get(`/api/projects/${state.currentProject.id}/jobs?job_type=pptx_export`),
+      refreshStep8PptxReadiness(projectId, sessionVersion),
+      API.get(`/api/projects/${projectId}/exports`),
+      API.get(`/api/projects/${projectId}/jobs?job_type=pptx_export`),
     ]);
+    if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return;
     showStep8PptxResults(exportsResult.artifacts || []);
     const active = (jobsResult.jobs || []).find(job => (
       job.status === 'queued' || job.status === 'running'
     ));
     if (active) {
       updateStep8PptxLoading(active);
-      startStep8PptxPolling(active.id);
+      startStep8PptxPolling(active.id, projectId, sessionVersion);
     } else {
       stopStep8PptxPolling();
       const loading = document.getElementById('step8-pptx-loading');
@@ -287,20 +346,25 @@ async function loadStep8PptxData() {
 }
 
 async function runStep8PptxExport() {
+  const projectId = state.currentProject?.id;
+  const sessionVersion = workspaceNavigationVersion;
   const button = document.getElementById('step8-btn-pptx');
-  if (!state.currentProject || button?.disabled) return;
+  if (!projectId || button?.disabled) return;
   if (button) button.disabled = true;
   document.getElementById('step8-error-box').style.display = 'none';
   updateStep8PptxLoading({ status: 'queued', stage: 'queued', progress: 0 });
   try {
-    const res = await API.post(`/api/projects/${state.currentProject.id}/exports/pptx`, {});
+    const res = await API.post(`/api/projects/${projectId}/exports/pptx`, {});
+    if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return;
     if (!res.job?.id) throw new Error('服务器没有返回 PPTX 任务编号');
     showToast(res.reused ? '已有 PPTX 任务正在进行。' : 'PPTX 生成任务已启动。');
-    startStep8PptxPolling(res.job.id);
+    startStep8PptxPolling(res.job.id, projectId, sessionVersion);
   } catch (error) {
     document.getElementById('step8-pptx-loading').style.display = 'none';
     setStep8OutputError('PPTX 无法生成', error.message);
-    await refreshStep8PptxReadiness().catch(() => {});
+    if (isCurrentWorkspaceProject(projectId, sessionVersion)) {
+      await refreshStep8PptxReadiness(projectId, sessionVersion).catch(() => {});
+    }
   }
 }
 

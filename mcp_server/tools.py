@@ -266,7 +266,7 @@ def get_all_tool_definitions() -> list[dict[str, Any]]:
     """
     definitions: list[dict[str, Any]] = []
     for cap in CAPABILITIES:
-        if cap.status == CapabilityStatus.removed:
+        if cap.status == CapabilityStatus.removed or not cap.mcp_enabled:
             continue
         schema = capability_input_schema(cap)
         definitions.append({
@@ -294,7 +294,11 @@ def _build_description(cap: AgentCapability) -> str:
 def get_tool_handler(tool_name: str) -> Callable:
     """Get the handler function for a specific MCP tool name."""
     for cap in CAPABILITIES:
-        if cap.mcp_tool_name == tool_name and cap.status != CapabilityStatus.removed:
+        if (
+            cap.mcp_tool_name == tool_name
+            and cap.status != CapabilityStatus.removed
+            and cap.mcp_enabled
+        ):
             return _make_tool_handler(cap)
     raise ValueError(f"Unknown MCP tool: {tool_name}")
 
@@ -304,5 +308,5 @@ def get_tool_names() -> list[str]:
     return [
         cap.mcp_tool_name
         for cap in CAPABILITIES
-        if cap.status != CapabilityStatus.removed
+        if cap.status != CapabilityStatus.removed and cap.mcp_enabled
     ]

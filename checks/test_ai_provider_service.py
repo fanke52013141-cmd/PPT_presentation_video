@@ -187,4 +187,4 @@ def test_locked_subtitle_region_is_measured_and_cleared(tmp_path: Path) -> None:
     assert report["cleared"] is True
     assert report["nonwhite_ratio"] == 0.3
     with Image.open(path) as cleared:
-        assert set(cleared.crop((0, 80, 100, 100)).get_flattened_data()) == {(255, 255, 255)}
+        assert set(cleared.crop((0, 80, 100, 100)).getdata()) == {(255, 255, 255)}

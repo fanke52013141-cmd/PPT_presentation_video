@@ -18,6 +18,7 @@ class OperationStatus(str, Enum):
     queued = "queued"
     running = "running"
     waiting_for_review = "waiting_for_review"
+    waiting_for_user = "waiting_for_user"
     succeeded = "succeeded"
     failed = "failed"
     cancelled = "cancelled"
@@ -29,6 +30,7 @@ _ONE_CLICK_STATUS_MAP = {
     "idle": OperationStatus.succeeded,
     "running": OperationStatus.running,
     "waiting_for_review": OperationStatus.waiting_for_review,
+    "waiting_for_user": OperationStatus.waiting_for_user,
     "paused": OperationStatus.waiting_for_review,
     "succeeded": OperationStatus.succeeded,
     "completed": OperationStatus.succeeded,
@@ -149,7 +151,7 @@ def operation_from_one_click(status_dict: dict[str, Any], project_id: str) -> Op
     if stages:
         completed = sum(
             1 for s in stages
-            if isinstance(s, dict) and s.get("status") in {"done", "succeeded"}
+            if isinstance(s, dict) and s.get("status") in {"done", "succeeded", "completed"}
         )
         progress = int(completed / len(stages) * 100)
 

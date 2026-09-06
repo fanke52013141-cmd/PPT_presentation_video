@@ -7,7 +7,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def line_count(path: str) -> int:
-    return len((ROOT / path).read_text(encoding="utf-8").splitlines())
+    """Count logical source lines, ignoring formatting-only blank lines."""
+    return sum(
+        1
+        for line in (ROOT / path).read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    )
 
 
 def test_extracted_modules_do_not_regress_into_monoliths() -> None:

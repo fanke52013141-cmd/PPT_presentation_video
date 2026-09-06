@@ -63,6 +63,9 @@ class AgentCapability:
     mcp_tool_name: str
     cli_command: str
     service_ref: str       # e.g. project_service.ProjectService.create
+    # Some transport-specific capabilities (for example SSE streams) cannot
+    # be represented as an MCP request/response tool invocation.
+    mcp_enabled: bool = True
     destructive: bool = False
     long_running: bool = False
     replaced_by: Optional[str] = None
@@ -167,7 +170,7 @@ CAPABILITIES: list[AgentCapability] = [
     ),
     AgentCapability(
         id="pipeline.status",
-        version="1.0",
+        version="1.1",
         status=CapabilityStatus.stable,
         description="Get current pipeline status including stage progress and blocking errors.",
         request_model=BaseModel,
@@ -194,7 +197,7 @@ CAPABILITIES: list[AgentCapability] = [
     ),
     AgentCapability(
         id="pipeline.stream",
-        version="1.0",
+        version="1.1",
         status=CapabilityStatus.stable,
         description="Stream real-time pipeline progress via Server-Sent Events (SSE).",
         request_model=BaseModel,
@@ -202,6 +205,7 @@ CAPABILITIES: list[AgentCapability] = [
         agent_api_method="GET",
         agent_api_path="/api/agent/v1/projects/{project_id}/runs/latest/stream",
         mcp_tool_name="ppt_pipeline_stream",
+        mcp_enabled=False,
         cli_command="run stream",
         service_ref="agent_api.routes.agent_pipeline_stream",
         long_running=True,

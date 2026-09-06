@@ -24,7 +24,7 @@ class PollConfig:
     timeout: int = 300  # max seconds to wait
     interval: int = 5   # seconds between polls
     terminal_statuses: frozenset = frozenset({
-        "succeeded", "failed", "cancelled", "interrupted", "waiting_for_review",
+        "succeeded", "failed", "cancelled", "interrupted", "waiting_for_review", "waiting_for_user",
     })
 
 

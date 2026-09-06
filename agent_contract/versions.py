@@ -16,7 +16,7 @@ from agent_contract.capabilities import CAPABILITIES, CapabilityStatus
 from agent_contract.schema import capability_input_schema, capability_output_schema
 
 
-AGENT_API_VERSION = "1.4.0"
+AGENT_API_VERSION = "1.5.0"
 
 
 def get_contract_hash() -> str:
@@ -37,6 +37,7 @@ def get_contract_hash() -> str:
             "method": cap.agent_api_method,
             "path": cap.agent_api_path,
             "mcp_tool": cap.mcp_tool_name,
+            "mcp_enabled": cap.mcp_enabled,
             "cli": cap.cli_command,
             "request_schema": req_schema,
             "response_schema": res_schema,
@@ -111,6 +112,7 @@ def get_meta() -> dict[str, Any]:
                 "method": cap.agent_api_method,
                 "path": cap.agent_api_path,
                 "mcp_tool": cap.mcp_tool_name,
+                "mcp_enabled": cap.mcp_enabled,
                 "cli_command": cap.cli_command,
                 "input_schema": capability_input_schema(cap),
                 "output_schema": capability_output_schema(cap),

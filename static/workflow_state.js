@@ -52,6 +52,7 @@ function createWorkflowState() {
     step2BatchOriginalActiveIndex: 0,
     step2AutoSaveTimer: null,
     step2AutoSaveInFlight: false,
+    step2AutoSaveProjectId: '',
     step5AutoSaveTimer: null,
     step5AutoSaveInFlight: false,
     step5AutoSavePromise: null,

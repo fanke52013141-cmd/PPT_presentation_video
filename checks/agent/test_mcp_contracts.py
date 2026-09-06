@@ -29,7 +29,10 @@ class TestMCPToolDefinitions:
 
     def test_tool_count_matches_capabilities(self):
         defs = get_all_tool_definitions()
-        expected = [c for c in CAPABILITIES if c.status != CapabilityStatus.removed]
+        expected = [
+            c for c in CAPABILITIES
+            if c.status != CapabilityStatus.removed and c.mcp_enabled
+        ]
         assert len(defs) == len(expected), (
             f"Tool count {len(defs)} != capability count {len(expected)}"
         )
@@ -38,7 +41,7 @@ class TestMCPToolDefinitions:
         defs = get_all_tool_definitions()
         names = [d["name"] for d in defs]
         for cap in CAPABILITIES:
-            if cap.status != CapabilityStatus.removed:
+            if cap.status != CapabilityStatus.removed and cap.mcp_enabled:
                 assert cap.mcp_tool_name in names, (
                     f"MCP tool {cap.mcp_tool_name} missing from definitions"
                 )
@@ -60,7 +63,7 @@ class TestMCPToolDefinitions:
     def test_all_path_parameters_are_discoverable(self):
         definitions = {item["name"]: item for item in get_all_tool_definitions()}
         for cap in CAPABILITIES:
-            if cap.status == CapabilityStatus.removed:
+            if cap.status == CapabilityStatus.removed or not cap.mcp_enabled:
                 continue
             schema = definitions[cap.mcp_tool_name]["inputSchema"]
             required = set(schema.get("required", []))
@@ -100,7 +103,7 @@ class TestMCPContractAlignment:
         """Long-running capabilities should mention polling in description."""
         defs_by_name = {d["name"]: d for d in get_all_tool_definitions()}
         for cap in CAPABILITIES:
-            if cap.long_running and cap.status != CapabilityStatus.removed:
+            if cap.long_running and cap.status != CapabilityStatus.removed and cap.mcp_enabled:
                 desc = defs_by_name[cap.mcp_tool_name]["description"]
                 assert "long-running" in desc.lower() or "polling" in desc.lower(), (
                     f"Long-running capability {cap.id} description should mention polling"

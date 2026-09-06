@@ -528,7 +528,9 @@ def agent_pipeline_status(
     ).model_dump()
 
 
-_SSE_TERMINAL_STATES = frozenset({"completed", "failed", "waiting_for_review", "idle", "paused"})
+_SSE_TERMINAL_STATES = frozenset({
+    "completed", "failed", "waiting_for_review", "waiting_for_user", "idle", "paused",
+})
 _SSE_POLL_INTERVAL = 1.0
 _SSE_HEARTBEAT_INTERVAL = 15.0
 _SSE_MAX_DURATION = 1800.0  # 30 minutes safety valve

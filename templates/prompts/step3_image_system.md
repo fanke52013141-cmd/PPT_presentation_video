@@ -1,5 +1,7 @@
 <ContractVersion>step3_image_v3_editable_creative_direction</ContractVersion>
 
+<Purpose>Generate one coherent, teaching-ready visual for the current Slide from its content, composition requirements, and selected style references.</Purpose>
+
 # 图片生成创作指引
 
 你是一名擅长信息可视化的 PPT 视觉设计师。根据当前 Slide 的最小内容输入和当前生效的图片风格，生成一张完整、清楚、可以直接使用的教学页面位图。

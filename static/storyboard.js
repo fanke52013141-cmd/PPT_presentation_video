@@ -2,11 +2,16 @@
 // Shared helpers and globals are provided by ui_foundation.js / workflow_state.js / api_client.js; public functions remain global for classic-script compatibility.
 
 async function loadStep2Data() {
+  const projectId = state.currentProject?.id;
+  const sessionVersion = workspaceNavigationVersion;
+  if (!projectId) return;
   try {
-    const configRes = await API.get(`/api/projects/${state.currentProject.id}/steps/2/rules`);
+    const configRes = await API.get(`/api/projects/${projectId}/steps/2/rules`);
+    if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return;
     state.storyboardRoles = configRes.roles || state.storyboardRoles;
   } catch (e) {}
-  const res = await API.get(`/api/projects/${state.currentProject.id}/steps/2/result`);
+  const res = await API.get(`/api/projects/${projectId}/steps/2/result`);
+  if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return;
   if (res.success && res.contract) {
     state.slides = res.contract.slides || [];
     state.step2PresentationPolicy = res.contract.presentation_policy || {};
@@ -305,6 +310,9 @@ async function confirmStep2Generation() {
 }
 
 async function generateStep2Contract(requirement = '') {
+  const projectId = state.currentProject?.id;
+  const sessionVersion = workspaceNavigationVersion;
+  if (!projectId) return;
   const normalizedRequirement = String(requirement || '').trim();
   setStep2GenerationStatus('');
   document.getElementById('step2-loading').style.display = 'block';
@@ -317,26 +325,29 @@ async function generateStep2Contract(requirement = '') {
     const scriptPayload = normalizedRequirement ? { requirement: normalizedRequirement } : {};
     // LLM 规划可能超过 5 分钟，且后端在网络错误时会自动重试。前端超时设为 15 分钟以容纳重试。
     const scriptRes = await API.post(
-      `/api/projects/${state.currentProject.id}/steps/2/script/execute`,
+      `/api/projects/${projectId}/steps/2/script/execute`,
       scriptPayload,
       { timeoutMs: 900000 },
     );
+    if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return;
     if (!scriptRes.success) {
       showToast(`❌ 错误: ${scriptRes.message || 'Step 2A 生成失败'}`);
       return;
     }
     if (loadingText) loadingText.innerText = 'Step 2B：AI 正在根据演讲稿规划画面语义块...';
     const visualRes = await API.post(
-      `/api/projects/${state.currentProject.id}/steps/2/visual/execute`,
+      `/api/projects/${projectId}/steps/2/visual/execute`,
       undefined,
       { timeoutMs: 900000 },
     );
+    if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return;
     if (!visualRes.success) {
       showToast(`❌ 错误: ${visualRes.message || 'Step 2B 生成失败'}`);
       return;
     }
     if (loadingText) loadingText.innerText = 'Step 2C：正在合成可用于生图、Mask 和旁白绑定的 visual_contract...';
-    const res = await API.post(`/api/projects/${state.currentProject.id}/steps/2/compose`);
+    const res = await API.post(`/api/projects/${projectId}/steps/2/compose`);
+    if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return;
     if (!res.success) {
       showToast(`❌ 错误: ${res.message || 'Step 2 合成失败'}`);
       return;
@@ -350,6 +361,7 @@ async function generateStep2Contract(requirement = '') {
     console.error('Step 2 generation failed:', e);
     setStep2GenerationStatus(`分镜生成失败：${message}`, 'error');
   } finally {
+    if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return;
     if (loadingText) loadingText.innerText = originalLoadingText;
     document.getElementById('step2-loading').style.display = 'none';
     document.getElementById('step2-btn-generate').disabled = false;
@@ -641,8 +653,11 @@ function scheduleStep2AutoSave() {
   if (state.step2BatchDeleteMode) return;
   updateStep2AutosaveStatus('自动保存中...');
   clearTimeout(state.step2AutoSaveTimer);
+  const projectId = state.currentProject.id;
+  const sessionVersion = workspaceNavigationVersion;
   state.step2AutoSaveTimer = setTimeout(() => {
-    saveStep2Contract({ silent: true, autosave: true });
+    if (!isCurrentWorkspaceProject(projectId, sessionVersion) || state.currentStep !== 2) return;
+    saveStep2Contract({ silent: true, autosave: true, projectId, sessionVersion });
   }, 700);
 }
 
@@ -962,6 +977,9 @@ function syncStep2SummaryInputs(slide) {
 }
 
 async function saveStep2Contract(options = {}) {
+  const projectId = options.projectId || state.currentProject?.id;
+  const sessionVersion = options.sessionVersion ?? workspaceNavigationVersion;
+  if (!projectId || !isCurrentWorkspaceProject(projectId, sessionVersion)) return { success: false, cancelled: true };
   if (!options.skipCurrentSlideSync) {
     saveCurrentSlideInputToState();
   }
@@ -970,7 +988,7 @@ async function saveStep2Contract(options = {}) {
   const payload = {
     version: "visual_contract_v1",
     topic: state.currentProject.topic || {
-      topic_id: "topic_" + state.currentProject.id,
+      topic_id: "topic_" + projectId,
       topic_name: state.currentProject.name
     },
     presentation_policy: pureManualContract ? {
@@ -981,13 +999,15 @@ async function saveStep2Contract(options = {}) {
     slides: state.slides
   };
   
-  if (state.step2AutoSaveInFlight && options.autosave) {
+  if (state.step2AutoSaveInFlight && options.autosave && state.step2AutoSaveProjectId === projectId) {
     scheduleStep2AutoSave();
     return { success: false };
   }
   state.step2AutoSaveInFlight = true;
+  state.step2AutoSaveProjectId = projectId;
   try {
-    const res = await API.put(`/api/projects/${state.currentProject.id}/steps/2/result`, payload);
+    const res = await API.put(`/api/projects/${projectId}/steps/2/result`, payload);
+    if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return { success: false, cancelled: true };
     if (res.success) {
       state.step2PresentationPolicy = res.contract?.presentation_policy || payload.presentation_policy;
       updateStep2AutosaveStatus(options.autosave ? '已自动保存' : '');
@@ -997,8 +1017,8 @@ async function saveStep2Contract(options = {}) {
     }
     return res;
   } finally {
-    state.step2AutoSaveInFlight = false;
-    if (options.autosave) {
+    if (state.step2AutoSaveProjectId === projectId) state.step2AutoSaveInFlight = false;
+    if (options.autosave && isCurrentWorkspaceProject(projectId, sessionVersion)) {
       setTimeout(() => updateStep2AutosaveStatus(''), 1400);
     }
   }

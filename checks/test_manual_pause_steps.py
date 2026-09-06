@@ -132,16 +132,21 @@ def test_overall_progress_empty_stages() -> None:
     assert _overall_progress({}) == 0.0
 
 
-def test_overall_progress_all_completed() -> None:
-    stages = [{"status": "completed"} for _ in range(10)]
+def test_overall_progress_all_done() -> None:
+    stages = [{"status": "done"} for _ in range(10)]
     assert _overall_progress({"stages": stages}) == 1.0
 
 
-def test_overall_progress_half_completed() -> None:
-    stages = [{"status": "completed"} for _ in range(5)] + [
+def test_overall_progress_half_done() -> None:
+    stages = [{"status": "done"} for _ in range(5)] + [
         {"status": "pending"} for _ in range(5)
     ]
     assert _overall_progress({"stages": stages}) == 0.5
+
+
+def test_overall_progress_supports_legacy_completed_status() -> None:
+    stages = [{"status": "completed"} for _ in range(2)] + [{"status": "pending"}]
+    assert _overall_progress({"stages": stages}) == round(2 / 3, 4)
 
 
 # ---------------------------------------------------------------------------

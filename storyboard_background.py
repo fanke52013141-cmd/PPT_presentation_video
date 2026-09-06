@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from canvas_profile_service import get_project_canvas
 from database import Project, get_db
+from pipeline_lifecycle import project_artifact_lock, write_json_atomic
 
 router = APIRouter()
 CONFIG_NAME = "storyboard_background.json"
@@ -43,8 +44,7 @@ def _read_json(path: Path, fallback: dict[str, Any] | None = None) -> dict[str, 
 
 
 def _write_json(path: Path, value: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    write_json_atomic(path, value)
 
 
 def _normalize_color(value: Any, fallback: str = DEFAULT_COLOR) -> str:
@@ -171,26 +171,29 @@ def _patch_manifest(run_dir: Path, config: dict[str, Any]) -> bool:
     path = run_dir / "reveal_manifest.json"
     if not path.exists():
         return False
-    manifest = _read_json(path, {})
-    before = json.dumps(manifest, ensure_ascii=False, sort_keys=True)
-    canvas = manifest.setdefault("canvas", {})
-    if config.get("mode") == "image":
-        canvas["background_mode"] = "image"
-        canvas["background"] = _normalize_color(config.get("solid_color"), DEFAULT_COLOR)
-        canvas["background_image"] = _relative(_image_path(run_dir), run_dir)
-        canvas["background_image_fit"] = str(config.get("image_fit") or "cover")
-    else:
-        canvas["background_mode"] = "solid"
-        canvas["background"] = _normalize_color(config.get("solid_color"), DEFAULT_COLOR)
-        canvas.pop("background_image", None)
-        canvas.pop("background_image_fit", None)
-    for slide in manifest.get("slides", []) or []:
-        if isinstance(slide, dict):
-            slide.setdefault("canvas", {}).update(canvas)
-    if json.dumps(manifest, ensure_ascii=False, sort_keys=True) == before:
-        return False
-    _write_json(path, manifest)
-    return True
+    # The manifest is shared with Mask editing and reveal building. Keep the
+    # complete read-modify-write operation under the shared project lock.
+    with project_artifact_lock(run_dir):
+        manifest = _read_json(path, {})
+        before = json.dumps(manifest, ensure_ascii=False, sort_keys=True)
+        canvas = manifest.setdefault("canvas", {})
+        if config.get("mode") == "image":
+            canvas["background_mode"] = "image"
+            canvas["background"] = _normalize_color(config.get("solid_color"), DEFAULT_COLOR)
+            canvas["background_image"] = _relative(_image_path(run_dir), run_dir)
+            canvas["background_image_fit"] = str(config.get("image_fit") or "cover")
+        else:
+            canvas["background_mode"] = "solid"
+            canvas["background"] = _normalize_color(config.get("solid_color"), DEFAULT_COLOR)
+            canvas.pop("background_image", None)
+            canvas.pop("background_image_fit", None)
+        for slide in manifest.get("slides", []) or []:
+            if isinstance(slide, dict):
+                slide.setdefault("canvas", {}).update(canvas)
+        if json.dumps(manifest, ensure_ascii=False, sort_keys=True) == before:
+            return False
+        _write_json(path, manifest)
+        return True
 
 
 def _apply(project: Any, payload: dict[str, Any]) -> dict[str, Any]:

@@ -844,17 +844,7 @@ def rewrite_audio_timeline_by_beats(
                 probed_duration,
                 3,
             )
-        with open(
-            timeline_path,
-            "w",
-            encoding="utf-8",
-        ) as file:
-            json.dump(
-                timeline,
-                file,
-                ensure_ascii=False,
-                indent=2,
-            )
+        _deps().write_json_atomic(timeline_path, timeline)
         return
 
     total_pause = sum(
@@ -1009,10 +999,4 @@ def rewrite_audio_timeline_by_beats(
             timeline[
                 "previous_timeline_content_duration_sec"
             ] = round(previous_duration, 3)
-    with open(timeline_path, "w", encoding="utf-8") as file:
-        json.dump(
-            timeline,
-            file,
-            ensure_ascii=False,
-            indent=2,
-        )
+    _deps().write_json_atomic(timeline_path, timeline)

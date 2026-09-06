@@ -204,6 +204,7 @@ def test_sse_capability_registered():
     assert cap.agent_api_method == "GET"
     assert cap.agent_api_path == "/api/agent/v1/projects/{project_id}/runs/latest/stream"
     assert cap.mcp_tool_name == "ppt_pipeline_stream"
+    assert cap.mcp_enabled is False
     assert cap.status.value == "stable"
 
 
@@ -211,5 +212,21 @@ def test_sse_terminal_states_contains_expected():
     """Terminal states must include the core terminal pipeline statuses."""
     from agent_api.routes import _SSE_TERMINAL_STATES
 
-    for expected in ("completed", "failed", "idle", "paused", "waiting_for_review"):
+    for expected in ("completed", "failed", "idle", "paused", "waiting_for_review", "waiting_for_user"):
         assert expected in _SSE_TERMINAL_STATES, f"Missing terminal state: {expected}"
+
+
+def test_sse_generator_emits_terminal_for_waiting_for_user():
+    """Manual technical pauses must close the stream instead of polling forever."""
+    from agent_api.routes import _sse_generator
+
+    mock_project = MagicMock()
+    mock_session = MagicMock()
+    mock_session.query.return_value.filter.return_value.first.return_value = mock_project
+    status = _make_status(status="waiting_for_user", stage="tts", run_id="run-123")
+
+    with patch("one_click_orchestrator.get_one_click_status", return_value=status):
+        frames = list(_sse_generator("test-proj", MagicMock(return_value=mock_session), poll_interval=0.01, max_duration=5))
+
+    complete = next(frame.decode("utf-8") for frame in frames if "event: complete" in frame.decode("utf-8"))
+    assert json.loads(complete.split("data: ", 1)[1])["status"] == "waiting_for_user"

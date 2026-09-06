@@ -23,6 +23,15 @@ MIGRATION_FILE_PATTERN = re.compile(r"^(?P<version>\d{4})_(?P<name>[a-z0-9_]+)\.
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 _MIGRATION_LOCK = threading.Lock()
 
+# 0012 shipped briefly with a different SQL body. Existing databases with this
+# exact ledger value have the same verified schema; update only their ledger
+# entry after a structural check.
+_LEGACY_CHECKSUM_ALIASES: dict[tuple[int, str], frozenset[str]] = {
+    (12, "creative_accounts"): frozenset({
+        "a99a22439d12b3ab9c84e8ccaf7237882c5dc93ebe0f477db47c5a8e9e6004e6",
+    }),
+}
+
 
 class MigrationError(RuntimeError):
     """Raised when migration discovery, integrity, or execution fails."""
@@ -281,6 +290,16 @@ def _applied_rows(connection: Connection) -> dict[int, tuple[str, str]]:
     return {int(row[0]): (str(row[1]), str(row[2])) for row in rows}
 
 
+def _can_normalize_legacy_checksum(
+    connection: Connection,
+    migration: Migration,
+    applied_checksum: str,
+) -> bool:
+    """Return whether one known historical checksum can safely be rebased."""
+    aliases = _LEGACY_CHECKSUM_ALIASES.get((migration.version, migration.name), frozenset())
+    return applied_checksum in aliases and _known_migration_already_present(connection, migration)
+
+
 def run_migrations(
     engine: Engine,
     migrations_dir: str | Path = MIGRATIONS_DIR,
@@ -313,6 +332,15 @@ def run_migrations(
                                 f"{current_name!r} to {migration.name!r}"
                             )
                         if current_checksum != migration.checksum:
+                            if _can_normalize_legacy_checksum(
+                                connection, migration, current_checksum,
+                            ):
+                                connection.exec_driver_sql(
+                                    "UPDATE schema_migrations SET checksum = ? WHERE version = ?",
+                                    (migration.checksum, migration.version),
+                                )
+                                connection.commit()
+                                continue
                             raise MigrationError(
                                 f"migration {migration.version:04d}_{migration.name} "
                                 "checksum does not match the applied migration"

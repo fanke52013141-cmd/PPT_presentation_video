@@ -37,6 +37,17 @@ class TestCLIContract:
                 f"Capability {cap.id} is not reachable through pptctl {cap.cli_command}"
             )
 
+    def test_cli_command_registry_has_no_unclassified_commands(self):
+        """CLI commands must be a capability command or explicit composite."""
+        from cli.pptctl import CLI_COMMANDS, CLI_COMPOSITE_COMMANDS
+
+        expected = {
+            cap.cli_command
+            for cap in CAPABILITIES
+            if cap.status != CapabilityStatus.removed
+        } | set(CLI_COMPOSITE_COMMANDS)
+        assert set(CLI_COMMANDS) == expected
+
 
 class TestAgentClientContract:
     """Verify AgentClient methods exist for all capabilities."""
@@ -73,7 +84,7 @@ class TestOperationsContract:
     def test_operation_status_enum_values(self):
         from agent_contract.operations import OperationStatus
         expected = {
-            "queued", "running", "waiting_for_review",
+            "queued", "running", "waiting_for_review", "waiting_for_user",
             "succeeded", "failed", "cancelled", "interrupted",
         }
         actual = {s.value for s in OperationStatus}
@@ -84,6 +95,7 @@ class TestOperationsContract:
         assert normalize_status("running") == OperationStatus.running
         assert normalize_status("idle") == OperationStatus.succeeded
         assert normalize_status("paused") == OperationStatus.waiting_for_review
+        assert normalize_status("waiting_for_user") == OperationStatus.waiting_for_user
         assert normalize_status("failed") == OperationStatus.failed
 
     def test_normalize_status_unknown_defaults_to_running(self):

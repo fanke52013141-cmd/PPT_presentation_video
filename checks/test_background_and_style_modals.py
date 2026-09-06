@@ -29,6 +29,11 @@ def test_background_runtime_preserves_original_for_refitting():
     assert '_render_background_image(run_dir, config["image_fit"], get_project_canvas(project))' in BACKGROUND_RUNTIME
 
 
+def test_background_manifest_updates_use_atomic_write_and_shared_lock():
+    assert "with project_artifact_lock(run_dir):" in BACKGROUND_RUNTIME
+    assert "write_json_atomic(path, value)" in BACKGROUND_RUNTIME
+
+
 def test_image_style_modal_has_three_product_modes():
     for tab in ('template', 'manual', 'reverse'):
         assert f'data-style-tab="{tab}"' in STYLE_UI

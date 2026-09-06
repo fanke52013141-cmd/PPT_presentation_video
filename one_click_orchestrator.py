@@ -15,10 +15,12 @@ keeps the user-facing workflow simple while preserving manual recovery paths.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 import json
 import logging
 import os
+import re
 import shutil
 import threading
 import time
@@ -170,6 +172,44 @@ def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
+_TERMINAL_RUN_STATES = {
+    "completed",
+    "paused",
+    "failed",
+    "cancelled",
+    "waiting_for_review",
+    "waiting_for_user",
+}
+
+
+def _run_elapsed_seconds(status: dict[str, Any], now: str | None = None) -> int:
+    """Return wall-clock duration for this one-click invocation.
+
+    ``started_at`` predates resumable runs, so the dedicated run fields are
+    authoritative whenever present. Legacy status files still fall back to
+    ``started_at`` without losing their existing progress information.
+    """
+    started_at = str(status.get("run_started_at") or status.get("started_at") or "")
+    finished_at = str(status.get("run_finished_at") or now or _now())
+    if not started_at:
+        return 0
+    try:
+        elapsed = datetime.fromisoformat(finished_at) - datetime.fromisoformat(started_at)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, int(elapsed.total_seconds()))
+
+
+def _refresh_run_timing(status: dict[str, Any], now: str) -> None:
+    """Persist a stable duration once a run reaches a terminal state."""
+    if status.get("status") in _TERMINAL_RUN_STATES:
+        if not status.get("run_finished_at"):
+            status["run_finished_at"] = now
+    elif status.get("status") == "running":
+        status["run_finished_at"] = ""
+    status["run_elapsed_seconds"] = _run_elapsed_seconds(status, now)
+
+
 def _safe_text(value: Any, limit: int = 2000) -> str:
     return str(value or "").strip()[:limit]
 
@@ -179,6 +219,93 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return int(float(str(value).strip()))
     except Exception:
         return default
+
+
+def _bounded_parallelism(
+    project: Any,
+    *,
+    config_path: str,
+    environment_name: str,
+    default: int,
+    maximum: int,
+) -> int:
+    """Resolve an optional package setting without allowing unsafe fan-out."""
+    configured = get_config_value(
+        project,
+        config_path,
+        os.environ.get(environment_name, default),
+    )
+    return max(1, min(maximum, _safe_int(configured, default)))
+
+
+def _is_rate_limit_error(error: Exception) -> bool:
+    """Return whether a provider failure is safe to retry more slowly."""
+    detail = f"{type(error).__name__}: {error}".lower()
+    return any(
+        marker in detail
+        for marker in (
+            "429",
+            "rate limit",
+            "rate_limit",
+            "too many requests",
+            "请求过于频繁",
+            "请求频繁",
+        )
+    )
+
+
+def _image_rate_limit_delay_seconds(error: Exception, attempt: int) -> float:
+    """Use a bounded provider hint when available, otherwise a short backoff."""
+    match = re.search(
+        r"retry(?:-| )?after\s*[:=]?\s*(\d+(?:\.\d+)?)",
+        str(error),
+        re.I,
+    )
+    if match:
+        return max(1.0, min(20.0, float(match.group(1))))
+    return float(min(12, 2 ** max(0, attempt)))
+
+
+def _reduced_image_parallelism(current: int) -> int:
+    """Back off one slot at a time without serializing all work immediately."""
+    return max(1, current - 1)
+
+
+class _AdaptiveImageLimiter:
+    """Share a shrinking image-provider concurrency limit across worker threads."""
+
+    def __init__(self, concurrency: int, on_backoff: Callable[..., None]) -> None:
+        self._limit = max(1, concurrency)
+        self._active = 0
+        self._attempts = 0
+        self._condition = threading.Condition()
+        self._on_backoff = on_backoff
+
+    def run(self, work: Callable[[], Any]) -> Any:
+        while True:
+            with self._condition:
+                while self._active >= self._limit:
+                    self._condition.wait()
+                self._active += 1
+            try:
+                return work()
+            except Exception as error:
+                if not _is_rate_limit_error(error):
+                    raise
+                with self._condition:
+                    previous = self._limit
+                    if self._limit <= 1:
+                        raise
+                    self._limit = _reduced_image_parallelism(self._limit)
+                    self._attempts += 1
+                    delay = _image_rate_limit_delay_seconds(error, self._attempts)
+                    current = self._limit
+                self._on_backoff(previous, current, delay)
+                time.sleep(delay)
+            finally:
+                with self._condition:
+                    self._active -= 1
+                    self._condition.notify_all()
 
 
 def _read_json(path: Path, fallback: Any) -> Any:
@@ -220,15 +347,19 @@ def _status_path(project: Any) -> Path:
 
 
 def _initial_status(project_id: str, run_id: str) -> dict[str, Any]:
+    started_at = _now()
     return {
         "version": STATUS_VERSION,
         "project_id": project_id,
         "run_id": run_id,
         "status": "running",
         "current_stage": "preflight",
-        "started_at": _now(),
-        "updated_at": _now(),
+        "started_at": started_at,
+        "updated_at": started_at,
         "completed_at": "",
+        "run_started_at": started_at,
+        "run_finished_at": "",
+        "run_elapsed_seconds": 0,
         "video": None,
         "requested_mode": "",
         "previous_failed_stage": "",
@@ -267,6 +398,16 @@ def _status_for_project(project: Any, project_id: str) -> dict[str, Any]:
         status.setdefault("review_checkpoint", "")
         status.setdefault("review_next_stage", "")
         status.setdefault("review_decision", "")
+        if "run_started_at" not in status:
+            status["run_started_at"] = status.get("started_at") or ""
+        if "run_finished_at" not in status:
+            status["run_finished_at"] = (
+                status.get("completed_at") or ""
+                if status.get("status") in _TERMINAL_RUN_STATES
+                else ""
+            )
+        if "run_elapsed_seconds" not in status:
+            status["run_elapsed_seconds"] = _run_elapsed_seconds(status)
         return status
     return {
         "version": STATUS_VERSION,
@@ -277,6 +418,9 @@ def _status_for_project(project: Any, project_id: str) -> dict[str, Any]:
         "started_at": "",
         "updated_at": "",
         "completed_at": "",
+        "run_started_at": "",
+        "run_finished_at": "",
+        "run_elapsed_seconds": 0,
         "video": None,
         "requested_mode": "",
         "previous_failed_stage": "",
@@ -291,7 +435,9 @@ def _status_for_project(project: Any, project_id: str) -> dict[str, Any]:
 
 
 def _save_status(project: Any, status: dict[str, Any]) -> None:
-    status["updated_at"] = _now()
+    now = _now()
+    status["updated_at"] = now
+    _refresh_run_timing(status, now)
     _write_json(_status_path(project), status)
 
 
@@ -974,22 +1120,118 @@ def _run_pipeline(
             prompts_payload = _invoke(services.image_prompts, "Step 3 prompts")
             prompts_by_slide = {str(item.get("slide_id") or ""): str(item.get("prompt") or "") for item in prompts_payload.get("prompts", []) if isinstance(item, dict)}
             requiring_images = _slides_requiring_images(project)
-            generated = 0
+            image_jobs: list[tuple[int, str, str]] = []
             for index, slide_id in enumerate(requiring_images, start=1):
                 prompt = prompts_by_slide.get(slide_id)
                 if not prompt:
                     raise RuntimeError(f"缺少 {slide_id} 的生图 Prompt")
-                item = _stage(status, "images")
-                item["progress"] = index / max(1, len(requiring_images))
-                item["message"] = f"正在生成 {slide_id} ({index}/{len(requiring_images)})"
-                _save_status(project, status)
-                _require_quality_gate(
-                    lambda slide_id=slide_id, prompt=prompt: services.generate_image(slide_id, prompt),
-                    f"Step 3 image {slide_id}",
-                    gates,
-                    "pause_on_image_generation_failure",
+                image_jobs.append((index, slide_id, prompt))
+
+            image_workers = min(
+                _bounded_parallelism(
+                    project,
+                    config_path="automation.image_concurrency",
+                    environment_name="PPT_STUDIO_IMAGE_CONCURRENCY",
+                    default=5,
+                    maximum=6,
+                ),
+                len(image_jobs),
+            ) if image_jobs else 1
+            account_id = str(getattr(project, "account_id", "") or get_current_account_id())
+
+            def generate_one_image(
+                index: int,
+                slide_id: str,
+                prompt: str,
+            ) -> tuple[int, str, dict[str, Any], float]:
+                worker_db = dependencies.session_factory()
+                account_token = set_current_account_id(account_id)
+                started = time.monotonic()
+                try:
+                    worker_services = dependencies.pipeline_service_factory(
+                        worker_db,
+                        project_id,
+                    )
+                    result = _require_quality_gate(
+                        lambda: worker_services.generate_image(
+                            slide_id,
+                            prompt,
+                            defer_invalidation=True,
+                        ),
+                        f"Step 3 image {slide_id}",
+                        gates,
+                        "pause_on_image_generation_failure",
+                    )
+                    return index, slide_id, result, round(time.monotonic() - started, 3)
+                finally:
+                    reset_current_account_id(account_token)
+                    worker_db.close()
+
+            generated = 0
+            failures: list[Exception] = []
+            completed_slide_ids: list[str] = []
+            if image_jobs:
+                dependencies.write_project_log(
+                    project,
+                    "step3_parallel_image_start",
+                    submitted=len(image_jobs),
+                    concurrency=image_workers,
                 )
-                generated += 1
+
+                def note_image_backoff(previous: int, current: int, delay: float) -> None:
+                    dependencies.write_project_log(
+                        project,
+                        "step3_parallel_image_backoff",
+                        previous_concurrency=previous,
+                        concurrency=current,
+                        delay_seconds=delay,
+                    )
+
+                image_limiter = _AdaptiveImageLimiter(image_workers, note_image_backoff)
+
+                def generate_limited_image(
+                index: int,
+                slide_id: str,
+                prompt: str,
+            ) -> tuple[int, str, dict[str, Any], float]:
+                    return image_limiter.run(
+                        lambda: generate_one_image(index, slide_id, prompt)
+                    )
+
+                with ThreadPoolExecutor(
+                    max_workers=image_workers,
+                    thread_name_prefix="one-click-image",
+                ) as executor:
+                    futures = [
+                        executor.submit(generate_limited_image, index, slide_id, prompt)
+                        for index, slide_id, prompt in image_jobs
+                    ]
+                    for future in as_completed(futures):
+                        try:
+                            _, slide_id, _, elapsed_sec = future.result()
+                            generated += 1
+                            completed_slide_ids.append(slide_id)
+                            dependencies.write_project_log(
+                                project,
+                                "step3_parallel_image_success",
+                                slide_id=slide_id,
+                                elapsed_sec=elapsed_sec,
+                            )
+                            item = _stage(status, "images")
+                            item["progress"] = generated / len(image_jobs)
+                            item["message"] = (
+                                f"已生成 {generated}/{len(image_jobs)} 张（刚完成 {slide_id}）"
+                            )
+                            _save_status(project, status)
+                        except Exception as exc:
+                            failures.append(exc)
+                if completed_slide_ids:
+                    _invoke(
+                        lambda: services.finalize_images(completed_slide_ids),
+                        "Step 3 finalize images",
+                    )
+                if failures:
+                    raise failures[0]
             _finish_stage(project, status, "images", f"图片已就绪，新增或刷新 {generated} 张")
             if _pause_for_requested_review(project, status, "images"):
                 return
@@ -1163,6 +1405,7 @@ def _run_pipeline(
                 "one_click_generate_completed",
                 run_id=run_id,
                 video=video,
+                total_elapsed_seconds=status.get("run_elapsed_seconds", 0),
             )
         except Exception:
             pass
@@ -1185,6 +1428,7 @@ def _run_pipeline(
                     run_id=run_id,
                     stage=stage_id,
                     error=str(exc),
+                    total_elapsed_seconds=status.get("run_elapsed_seconds", 0),
                 )
         except Exception:
             pass
@@ -1242,6 +1486,17 @@ def start_one_click(
             project_id,
             run_id,
             mode,
+        )
+        # A resume/restart is a distinct user-requested production run. Keep
+        # the historical status timestamps for compatibility, but measure and
+        # report this invocation from the moment the user pressed one-click.
+        run_started_at = _now()
+        status.update(
+            {
+                "run_started_at": run_started_at,
+                "run_finished_at": "",
+                "run_elapsed_seconds": 0,
+            }
         )
         _save_status(project, status)
         thread = threading.Thread(

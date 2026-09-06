@@ -16,12 +16,22 @@ from runtime_support import run_subprocess_killable
 logger = logging.getLogger("PPTStudio.TTSProvider")
 TTS_API_KEY_ENV = "PPT_STUDIO_TTS_API_KEY"
 TTS_SECRET_KEY_ENV = "PPT_STUDIO_TTS_SECRET_KEY"
-# MiniMax 异步合成在高峰期轮询耗时会显著拉长，300 秒会在服务端
-# 拥塞时造成整页三连失败。480 秒 + 90 秒进程缓冲显著降低误判超时。
-STEP7_TTS_TIMEOUT_SEC = 480
+# MiniMax 异步合成在服务端排队时，单个任务可能超过数分钟。轮询窗口要
+# 明显长于普通请求超时，避免服务端仍在 Processing 时被本地误判为失败。
+# 进程额外保留 90 秒，用于上传文本、下载音频和写入时间轴。
+STEP7_TTS_TIMEOUT_SEC = 900
 STEP7_TTS_PROCESS_TIMEOUT_SEC = STEP7_TTS_TIMEOUT_SEC + 90
 STEP7_TTS_RETRY_ATTEMPTS = 3
 STEP7_TTS_RETRY_BASE_DELAY_SEC = 4
+STEP7_TTS_RATE_LIMIT_BASE_DELAY_SEC = 15
+STEP7_TTS_RATE_LIMIT_MAX_DELAY_SEC = 90
+_RATE_LIMIT_MARKERS = (
+    "429",
+    "rate limit",
+    "rate_limit",
+    "too many requests",
+    "quota exceeded",
+)
 
 TTS_PROVIDER_ALIASES = {
     "doubao": "volcengine_seed",
@@ -249,6 +259,36 @@ def _safe_process_text(value: Any) -> str:
     return str(value)
 
 
+def _is_rate_limited(value: Any) -> bool:
+    text = _safe_process_text(value).lower()
+    return any(marker in text for marker in _RATE_LIMIT_MARKERS)
+
+
+def _retry_delay_seconds(attempt: int, output: Any) -> int:
+    """Use longer bounded backoff when the provider explicitly rate limits."""
+    safe_attempt = max(1, int(attempt))
+    if _is_rate_limited(output):
+        return min(
+            STEP7_TTS_RATE_LIMIT_BASE_DELAY_SEC * (2 ** (safe_attempt - 1)),
+            STEP7_TTS_RATE_LIMIT_MAX_DELAY_SEC,
+        )
+    return STEP7_TTS_RETRY_BASE_DELAY_SEC * safe_attempt
+
+
+def _redact_tts_process_output(value: Any, tts_env: Dict[str, str]) -> str:
+    text = _safe_process_text(value)
+    for name in (
+        TTS_API_KEY_ENV,
+        TTS_SECRET_KEY_ENV,
+        "MINIMAX_API_KEY",
+        "MINIMAX_TTS_API_KEY",
+    ):
+        secret = str(tts_env.get(name) or "")
+        if secret:
+            text = text.replace(secret, "[REDACTED]")
+    return text
+
+
 def run_tts_command_with_retries(
     project: Any,
     slide_id: str,
@@ -284,7 +324,9 @@ def run_tts_command_with_retries(
         except Exception as exc:
             # run_subprocess_killable 内部已处理超时（returncode=124）并真正
             # 杀死进程树；此处仅兜底捕获意料之外的启动异常。
-            logger.warning("TTS subprocess launch failed: %s", exc)
+            logger.warning(
+                "TTS subprocess launch failed: %s", type(exc).__name__
+            )
             last_result.update(
                 {
                     "returncode": 1,
@@ -297,6 +339,15 @@ def run_tts_command_with_retries(
             last_result["ok"] = True
             return last_result
 
+        # Do not persist process output before masking credentials.  Provider
+        # failures are usually safe, but a proxy may echo an authorization
+        # value in its diagnostic response.
+        last_result["stdout"] = _redact_tts_process_output(
+            last_result["stdout"], tts_env
+        )
+        last_result["stderr"] = _redact_tts_process_output(
+            last_result["stderr"], tts_env
+        )
         _deps().write_project_log(
             project,
             "step7_slide_tts_attempt_failed",
@@ -308,10 +359,15 @@ def run_tts_command_with_retries(
             stderr=last_result["stderr"],
         )
         if attempt < STEP7_TTS_RETRY_ATTEMPTS:
-            delay = STEP7_TTS_RETRY_BASE_DELAY_SEC * attempt
+            combined_output = (
+                f"{last_result['stderr']}\n{last_result['stdout']}"
+            )
+            delay = _retry_delay_seconds(attempt, combined_output)
+            reason = "rate limit" if _is_rate_limited(combined_output) else "failure"
             logger.warning(
-                "TTS failed for %s on attempt %s/%s; "
+                "TTS %s for %s on attempt %s/%s; "
                 "retrying in %ss",
+                reason,
                 slide_id,
                 attempt,
                 STEP7_TTS_RETRY_ATTEMPTS,

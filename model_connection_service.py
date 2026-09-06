@@ -41,6 +41,16 @@ _SENSITIVE_TOKENS = {
     "secret_key",
     "private_key",
 }
+# These are model capacity controls, not credentials.  Keep the allow-list
+# deliberately narrow because public_config is also the boundary that prevents
+# accidental secret persistence.
+_PUBLIC_TOKEN_SETTING_KEYS = {
+    "max_tokens",
+    "max_output_tokens",
+    "context_window_tokens",
+    "input_tokens_limit",
+    "output_tokens_limit",
+}
 
 
 class ModelConnectionNotFoundError(KeyError):
@@ -119,6 +129,8 @@ def _credential_ref(value: Any) -> Optional[str]:
 
 def _is_sensitive_key(value: Any) -> bool:
     key = str(value or "").strip().lower().replace("-", "_")
+    if key in _PUBLIC_TOKEN_SETTING_KEYS:
+        return False
     return key in _SENSITIVE_TOKENS or any(
         token in key
         for token in ("password", "secret", "token", "credential")

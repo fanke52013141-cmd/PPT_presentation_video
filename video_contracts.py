@@ -29,3 +29,6 @@ class VideoRenderConfig:
     npm_install_timeout_sec: float
     render_timeout_sec: float
     color_process_timeout_sec: float
+    # The value is parsed by video_acceleration.normalize_render_acceleration.
+    # Keeping a default preserves existing render configuration construction.
+    render_acceleration: str = "auto"

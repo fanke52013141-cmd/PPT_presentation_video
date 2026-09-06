@@ -93,11 +93,9 @@
     return String(value ?? '').replace(/[&<>'"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[ch]));
   }
 
-  // [自动模式跟随 20260904]
-  // 一键生成运行时只刷新左侧菜单高亮/完成态，不再强制切换步骤面板：
-  // 长耗时阶段（TTS 合成可达十余分钟、Remotion 渲染）期间强制跟随会把
-  // 用户"锁"在当前面板，造成"跳不过去"的观感。当前进行中的阶段改由
-  // 顶部活动状态条与一键弹窗展示，用户可自由浏览已解锁步骤。
+  // 一键生成的进度就是工作区的主叙事。每次后端进入一个新的阶段，都把
+  // 左侧高亮和内容面板切到相应步骤；lastFollowedStage 保证轮询不会反复
+  // 重载同一个面板。
   function followActiveStage(status) {
     const runState = (status && status.status) || 'idle';
     if (runState !== 'running') {
@@ -107,9 +105,24 @@
     const stage = (status && status.current_stage) || '';
     if (!stage || stage === STATE.lastFollowedStage) return;
     STATE.lastFollowedStage = stage;
-    if (typeof window.refreshCurrentProjectStatus === 'function') {
+    const targetStep = STAGE_TO_STEP[stage];
+    if (targetStep && typeof window.navigateToStep === 'function') {
+      Promise.resolve(window.navigateToStep(targetStep)).catch(() => {
+        // 导航失败不阻断状态轮询；下一次阶段切换或手动点击仍可恢复。
+      });
+    } else if (typeof window.refreshCurrentProjectStatus === 'function') {
       try { window.refreshCurrentProjectStatus(); } catch (e) { /* 刷新失败不阻断轮询 */ }
     }
+  }
+
+  function formatElapsedSeconds(value) {
+    const seconds = Math.max(0, Math.floor(Number(value) || 0));
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainder = seconds % 60;
+    return hours > 0
+      ? `${hours}小时${minutes}分${remainder}秒`
+      : `${minutes}分${remainder}秒`;
   }
 
   // [一键进度出口 20260904] 一键生成运行时，把当前阶段进度注入对应步骤面板顶部。
@@ -267,7 +280,8 @@
       <strong>状态：</strong><span class="one-click-pill ${esc(state)}">${esc(statusLabel(state))}</span>
       ${current ? `<span style="margin-left:.5rem;">当前阶段：${esc(stageLabel(current))}</span>` : ''}
       ${state === 'running' ? '<br><small>系统会复用已完成且仍有效的产物；你可以继续查看已解锁步骤。</small>' : ''}
-      ${status?.started_at ? `<br><small>开始：${esc(status.started_at)}　更新：${esc(status.updated_at || '')}</small>` : ''}
+      ${status?.run_started_at || status?.started_at ? `<br><small>本次开始：${esc(status.run_started_at || status.started_at)}　${state === 'running' ? '已用' : '总耗时'}：${esc(formatElapsedSeconds(status.run_elapsed_seconds))}</small>` : ''}
+      ${status?.run_finished_at ? `<br><small>本次结束：${esc(status.run_finished_at)}</small>` : ''}
       ${freshNote ? `<br><small>${freshNote}</small>` : ''}
       ${status?.video?.url ? `<br><a href="${esc(status.video.url)}" target="_blank">打开生成视频</a>` : ''}
     `;
@@ -283,7 +297,7 @@
         </article>
       `;
     }).join('');
-    // [自动模式跟随 20260904] 只刷新左侧菜单完成态，不再强制切换面板
+    // 阶段变化时同步切换左侧 Tab 和对应内容面板。
     followActiveStage(status);
     // [一键进度出口 20260904] 面板内注入当前阶段进度横幅
     renderStageProgressInPanel(status);

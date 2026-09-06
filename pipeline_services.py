@@ -53,6 +53,7 @@ class ImagePipelineOperations:
     slide_prompts: PipelineOperation
     generate_slide_image: PipelineOperation
     confirm_images: PipelineOperation
+    finalize_images: PipelineOperation | None = None
 
 
 @dataclass(frozen=True)
@@ -113,14 +114,31 @@ class ProjectPipelineServices:
     def image_prompts(self) -> dict[str, Any]:
         return self.operations.images.slide_prompts(self.project_id, self.db)
 
-    def generate_image(self, slide_id: str, prompt: str) -> dict[str, Any]:
+    def generate_image(
+        self,
+        slide_id: str,
+        prompt: str,
+        *,
+        defer_invalidation: bool = False,
+    ) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {
+            "slide_id": slide_id,
+            "prompt": prompt,
+            "preview": False,
+            "db": self.db,
+        }
+        if defer_invalidation:
+            kwargs["defer_invalidation"] = True
         return self.operations.images.generate_slide_image(
             self.project_id,
-            slide_id=slide_id,
-            prompt=prompt,
-            preview=False,
-            db=self.db,
+            **kwargs,
         )
+
+    def finalize_images(self, slide_ids: list[str]) -> dict[str, Any]:
+        operation = self.operations.images.finalize_images
+        if operation is None:
+            return {"success": True, "slide_ids": slide_ids}
+        return operation(self.project_id, slide_ids, self.db)
 
     def confirm_images(self) -> dict[str, Any]:
         return self.operations.images.confirm_images(self.project_id, self.db)

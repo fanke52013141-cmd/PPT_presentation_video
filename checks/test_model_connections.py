@@ -93,6 +93,28 @@ def test_edit_creates_immutable_revision_and_old_revision_resolves(
     assert registry["value"]["connections"][created["id"]]["revisions"][0]["model"] == "writing-v1"
 
 
+def test_capacity_controls_are_public_configuration_not_credentials(
+    registry: dict[str, Any],
+) -> None:
+    created = service.create_model_connection(
+        _text_connection(
+            public_config={
+                "temperature": 0.35,
+                "context_window_tokens": 128000,
+                "max_tokens": 24000,
+            }
+        )
+    )
+
+    assert created["revision"]["public_config"] == {
+        "temperature": 0.35,
+        "context_window_tokens": 128000,
+        "max_tokens": 24000,
+    }
+    resolved = service.resolve_model_connection(created["id"])
+    assert resolved.public_config["max_tokens"] == 24000
+
+
 def test_copy_has_a_distinct_connection_and_first_revision(
     registry: dict[str, Any],
 ) -> None:
@@ -179,4 +201,3 @@ def test_routes_translate_archive_conflict_without_exposing_secret(
         )
     assert exc_info.value.status_code == 409
     assert "credential" not in str(exc_info.value.detail).lower()
-

@@ -64,5 +64,8 @@ def default_creation_config_payload() -> dict[str, Any]:
         },
         "subtitle": {"enabled": True},
         "mask": {"enabled": True},
+        "automation": {"image_concurrency": 5},
+        "tts": {"concurrency": 10, "requests_per_minute": 10},
+        "render": {"acceleration": "auto"},
     }
     return deepcopy(payload)

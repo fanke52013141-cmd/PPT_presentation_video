@@ -31,6 +31,7 @@ const background = fs.readFileSync(path.join(root, 'static', 'storyboard_backgro
 const styleManager = fs.readFileSync(path.join(root, 'static', 'style_reference_manager_extension.js'), 'utf8');
 const oneClick = fs.readFileSync(path.join(root, 'static', 'one_click_extension.js'), 'utf8');
 const creationConfigManagement = fs.readFileSync(path.join(root, 'static', 'creation_config_management.js'), 'utf8');
+const selectMenus = fs.readFileSync(path.join(root, 'static', 'select_menus.js'), 'utf8');
 
 if (fs.existsSync(path.join(root, 'static', 'app.js')) || html.includes('app.js')) {
   throw new Error('legacy app.js runtime entry was recreated');
@@ -189,6 +190,9 @@ if (!(html.indexOf('api_client.js') < html.indexOf('creation_config_management.j
 }
 if (!eventBindings.includes('initCreationConfigManagementEvents')) {
   throw new Error('creation configuration management events are not bound at startup');
+}
+if (!html.includes('select_menus.js') || !selectMenus.includes('initPptSelectMenus') || !selectMenus.includes('HTMLSelectElement')) {
+  throw new Error('shared select-menu component is not loaded correctly');
 }
 if (!projectProfile.includes("apiGet('/api/creation-configs')")
   || !projectProfile.includes('config_package_id: creationConfig.id')
@@ -737,6 +741,12 @@ if (styleManager.includes('visual-draft-quality') || oneClick.includes('图片�
 if (!oneClick.includes('button-spinner')) throw new Error('one-click stage spinner missing');
 if (!oneClick.includes('one-click-sidebar-entry') || !oneClick.includes('stepper.appendChild(entry)')) {
   throw new Error('one-click button is not anchored directly below the video step');
+}
+if (!oneClick.includes('window.navigateToStep(targetStep)')) {
+  throw new Error('one-click stage changes no longer switch the active workspace tab');
+}
+if (!oneClick.includes('formatElapsedSeconds') || !oneClick.includes('总耗时')) {
+  throw new Error('one-click total duration presentation is missing');
 }
 // [轮询自愈 20260904] 一键轮询必须保留连接失败计数、前台恢复刷新与
 // 新鲜度展示，且不允许回退到完全静默吞错的轮询实现。

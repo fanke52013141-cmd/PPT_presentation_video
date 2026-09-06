@@ -18,6 +18,7 @@ from scripts.validate_run import (  # noqa: E402
 )
 from visual_provenance import (  # noqa: E402
     promote_candidate_provenance,
+    render_allowed_providers,
     refresh_provenance_contract_hashes,
     write_visual_provenance,
 )
@@ -97,6 +98,7 @@ def test_order_only_change_can_refresh_contract_hash_without_fabricating_output(
 def test_production_provider_policy_is_configurable() -> None:
     with patch.dict(os.environ, {"PPT_STUDIO_PRODUCTION_IMAGE_PROVIDERS": "codex_image_gen,manual_upload"}):
         assert production_allowed_image_providers() == ("codex_image_gen", "manual_upload")
+    assert "codex2api" in render_allowed_providers()
 
     source = (
         ROOT / "image_workflow_service.py"

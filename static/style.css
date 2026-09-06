@@ -8635,7 +8635,11 @@ details[open] .ip-character-advanced-summary::before {
   display: flex;
   gap: 0.6rem;
   flex-wrap: wrap;
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(118, 103, 190, 0.16);
 }
+.creation-config-package-actions + #creation-config-package-list { margin-top: 1.35rem; }
 .creation-config-section-heading {
   display: flex;
   align-items: baseline;
@@ -8999,7 +9003,26 @@ details[open] .ip-character-advanced-summary::before {
   margin-top: .85rem;
 }
 .model-library-list > .config-editor-note { grid-column: 1 / -1; margin: .25rem 0; }
-.model-library-card { margin: 0 !important; min-height: 5.4rem; }
+.model-library-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "heading actions" "detail actions" "status actions";
+  gap: .28rem .7rem;
+  min-height: 0;
+  padding: .72rem .8rem !important;
+  margin: 0 !important;
+  border: 1px solid var(--color-border-default);
+  border-radius: 12px;
+  background: var(--color-bg-surface);
+}
+.model-library-card-heading { grid-area: heading; display: flex; min-width: 0; align-items: center; gap: .45rem; }
+.model-library-card-heading strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-library-card-version { flex: 0 0 auto; padding: .1rem .38rem; border-radius: 999px; background: var(--color-bg-subtle); color: var(--color-text-tertiary); font-size: .7rem; font-weight: 700; }
+.model-library-card-detail { grid-area: detail; margin: 0; overflow: hidden; color: var(--color-text-secondary); font-size: .78rem; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.model-library-card-status { grid-area: status; color: var(--color-text-tertiary); font-size: .74rem; }
+.model-library-card-status.is-configured { color: #348160; }
+.model-library-card-actions { grid-area: actions; display: flex; align-items: center; }
+.model-library-card-actions button { min-height: 2rem; margin: 0 !important; padding: .35rem .65rem !important; font-size: .78rem; white-space: nowrap; }
 .model-setup-heading h4 { margin: 0; font-size: 1.05rem; }
 .model-setup-heading p { margin: .32rem 0 1rem; color: var(--color-text-secondary); font-size: .88rem; }
 .model-setup-grid {
@@ -9038,12 +9061,30 @@ details[open] .ip-character-advanced-summary::before {
   gap: .6rem;
   margin-top: .85rem;
 }
-#btn-save-model { margin-top: 1rem; }
+.model-setup-actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: 1rem; }
+.model-setup-actions #btn-save-model { margin: 0; }
+#model-setup-editing-status { margin: .9rem 0 0; padding: .65rem .75rem; border: 1px solid rgba(83, 101, 208, .2); border-radius: 10px; background: var(--color-primary-light); }
 @media (max-width: 680px) {
   .model-setup-grid { grid-template-columns: 1fr; }
   .model-kind-tabs { width: 100%; }
   .model-kind-tab { flex: 1 1 0; padding-inline: .45rem; }
+  .model-library-card { grid-template-columns: 1fr; grid-template-areas: "heading" "detail" "status" "actions"; }
 }
+
+/* Shared select menus.  Native selects remain the data source, but the menu
+ * itself follows the studio's Soft Pastel surface instead of OS popup chrome. */
+.ppt-select-menu { position: relative; width: 100%; min-width: 0; }
+.ppt-select-menu > select[data-select-menu-native="true"] { position: absolute !important; width: 1px !important; height: 1px !important; margin: -1px !important; padding: 0 !important; overflow: hidden !important; clip: rect(0 0 0 0) !important; clip-path: inset(50%) !important; white-space: nowrap !important; opacity: 0 !important; pointer-events: none !important; }
+.ppt-select-menu-trigger { display: flex; align-items: center; width: 100%; min-height: 2.6rem; margin: 0 !important; padding: .5rem .76rem !important; border: 1px solid var(--color-border-default) !important; border-radius: var(--radius-md) !important; background: var(--color-bg-subtle) !important; color: var(--color-text-secondary) !important; box-shadow: none !important; font: inherit; font-size: .95rem !important; font-weight: 500 !important; text-align: left; }
+.ppt-select-menu-trigger:hover, .ppt-select-menu-trigger[aria-expanded="true"] { border-color: var(--color-primary-base) !important; background: var(--color-bg-surface) !important; color: var(--color-text-primary) !important; }
+.ppt-select-menu-trigger:focus-visible { outline: none; border-color: var(--color-primary-base) !important; box-shadow: 0 0 0 4px rgba(207, 221, 254, .55) !important; }
+.ppt-select-menu-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ppt-select-menu-chevron { width: .55rem; height: .55rem; margin-left: auto; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg) translateY(-2px); transition: transform .16s ease; }
+.ppt-select-menu-trigger[aria-expanded="true"] .ppt-select-menu-chevron { transform: rotate(225deg) translate(-1px, -1px); }
+.ppt-select-menu-list { position: absolute; z-index: 1550; top: calc(100% + .36rem); left: 0; width: 100%; max-height: min(18rem, 52vh); padding: .35rem; overflow: auto; border: 1px solid var(--color-border-default); border-radius: 12px; background: var(--color-bg-surface); box-shadow: 0 18px 38px rgba(44, 55, 95, .18); }
+.ppt-select-menu-option { display: block; width: 100%; min-height: 2.35rem; margin: 0 !important; padding: .48rem .6rem !important; border: 0 !important; border-radius: 8px !important; background: transparent !important; color: var(--color-text-secondary) !important; font: inherit; font-size: .88rem !important; font-weight: 500 !important; text-align: left; box-shadow: none !important; }
+.ppt-select-menu-option:hover, .ppt-select-menu-option:focus-visible, .ppt-select-menu-option.is-selected { background: var(--color-primary-light) !important; color: var(--color-primary-text) !important; outline: none; }
+.ppt-select-menu-option:disabled { opacity: .55; cursor: not-allowed; }
 @media (max-width: 980px) {
   .header-config-action { padding-inline: .7rem !important; }
   .account-picker { min-width: 8.5rem; }

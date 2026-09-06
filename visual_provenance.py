@@ -13,7 +13,15 @@ from project_storage import planning_path, slide_dir
 
 
 PROVENANCE_SCHEMA_VERSION = "visual_provenance_v2"
-DEFAULT_RENDER_ALLOWED_PROVIDERS = ("codex_image_gen", "openai_compatible", "manual_upload")
+# Keep the provider identifiers emitted by the configured image adapters in
+# the production allow-list.  ``codex2api`` is the provider used by the
+# Codex2API OpenAI-compatible gateway and is a valid generated-image source.
+DEFAULT_RENDER_ALLOWED_PROVIDERS = (
+    "codex_image_gen",
+    "codex2api",
+    "openai_compatible",
+    "manual_upload",
+)
 
 
 def provenance_path(run_dir: str | Path, slide_id: str, *, candidate: bool = False) -> Path:

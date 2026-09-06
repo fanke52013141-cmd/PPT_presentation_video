@@ -36,6 +36,26 @@ def test_quality_gates_use_normalized_project_profile_values() -> None:
         assert gates["pause_on_tts_failure"] is True
 
 
+def test_image_parallelism_defaults_to_five_and_is_bounded() -> None:
+    project = SimpleNamespace()
+    assert one_click._bounded_parallelism(
+        project,
+        config_path="automation.image_concurrency",
+        environment_name="PPT_STUDIO_TEST_IMAGE_CONCURRENCY",
+        default=5,
+        maximum=6,
+    ) == 5
+    assert one_click._reduced_image_parallelism(5) == 4
+    assert one_click._reduced_image_parallelism(1) == 1
+
+
+def test_image_rate_limit_detection_and_backoff_hint() -> None:
+    error = RuntimeError("HTTP 429: Retry-After: 7")
+    assert one_click._is_rate_limit_error(error)
+    assert one_click._image_rate_limit_delay_seconds(error, 1) == 7.0
+    assert one_click._image_rate_limit_delay_seconds(RuntimeError("429"), 3) == 8.0
+
+
 def test_atomic_status_write_and_resume_rewinds_when_upstream_is_missing() -> None:
     with tempfile.TemporaryDirectory() as value:
         root = Path(value)
@@ -200,6 +220,49 @@ def test_legacy_status_is_migrated_in_memory_to_v2() -> None:
         assert migrated["version"] == one_click.STATUS_VERSION
         assert migrated["effective_start_stage"] == "preflight"
         assert migrated["revalidation"] == []
+
+
+def test_one_click_run_duration_uses_the_current_invocation() -> None:
+    status = {
+        "started_at": "2026-09-06T08:00:00",
+        "run_started_at": "2026-09-06T09:00:00",
+        "run_finished_at": "2026-09-06T09:02:05",
+        "status": "completed",
+    }
+
+    assert one_click._run_elapsed_seconds(status) == 125
+
+
+def test_running_one_click_duration_uses_current_time() -> None:
+    status = {
+        "run_started_at": "2026-09-06T09:00:00",
+        "run_finished_at": "",
+        "status": "running",
+    }
+
+    assert one_click._run_elapsed_seconds(status, "2026-09-06T09:01:01") == 61
+
+
+def test_legacy_terminal_status_backfills_total_duration() -> None:
+    with tempfile.TemporaryDirectory() as value:
+        root = Path(value)
+        project = project_for(root)
+        status = one_click._initial_status(project.id, "run-old")
+        status.update(
+            {
+                "status": "completed",
+                "started_at": "2026-09-06T09:00:00",
+                "completed_at": "2026-09-06T09:03:20",
+            }
+        )
+        for key in ("run_started_at", "run_finished_at", "run_elapsed_seconds"):
+            status.pop(key, None)
+        one_click._write_json(root / "planning" / one_click.STATUS_FILENAME, status)
+
+        migrated = one_click._status_for_project(project, project.id)
+
+        assert migrated["run_finished_at"] == "2026-09-06T09:03:20"
+        assert migrated["run_elapsed_seconds"] == 200
 
 
 def test_missing_narration_is_the_only_safe_initialization_fallback() -> None:

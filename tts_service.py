@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
 import json
@@ -10,6 +10,7 @@ import logging
 import os
 import sys
 import threading
+import time
 import uuid
 from typing import Any, Callable, Dict, List, Optional
 
@@ -67,6 +68,11 @@ get_credential: Callable[..., Any] = _not_configured
 REVEAL_VISUAL_LEAD_SEC = 0.45
 STEP7_BIND_TIMEOUT_SEC = 90
 TTS_PROVIDER_DEFAULTS: dict[str, Any] = {}
+_DEFAULT_TTS_SYNTHESIS_CONCURRENCY = 10
+_MAX_TTS_SYNTHESIS_CONCURRENCY = 10
+_DEFAULT_MINIMAX_REQUESTS_PER_MINUTE = 10
+_DEFAULT_MINIMAX_POLL_INTERVAL_SEC = 8.0
+_MINIMAX_REQUEST_BUDGET_RATIO = 0.6
 
 
 @dataclass(frozen=True)
@@ -303,6 +309,79 @@ def _run_bind_reveal_timeline(project: Any) -> Any:
     )
 
 
+def _bounded_tts_concurrency(provider: str, value: Any = None) -> int:
+    """Return a safe per-project TTS fan-out.
+
+    Cloud providers benefit from a few concurrent asynchronous tasks, while a
+    local ComfyUI worker generally owns one GPU and must stay serial.  The
+    optional value is intentionally bounded so a malformed advanced config
+    cannot flood a provider or exhaust local process slots.
+    """
+    if provider == "comfyui_tts":
+        return 1
+    try:
+        requested = int(float(str(value).strip()))
+    except (TypeError, ValueError):
+        requested = _DEFAULT_TTS_SYNTHESIS_CONCURRENCY
+    return max(1, min(_MAX_TTS_SYNTHESIS_CONCURRENCY, requested))
+
+
+def _bounded_requests_per_minute(value: Any = None) -> int:
+    """Return a conservative provider request budget for a project.
+
+    MiniMax publishes RPM entitlement, which is not the same as the number of
+    active asynchronous tasks.  Keep the value bounded so an imported config
+    cannot turn a local retry into a request burst.
+    """
+    try:
+        requested = int(float(str(value).strip()))
+    except (TypeError, ValueError):
+        requested = _DEFAULT_MINIMAX_REQUESTS_PER_MINUTE
+    return max(1, min(600, requested))
+
+
+def _minimax_poll_interval_seconds(
+    active_jobs: int,
+    requests_per_minute: int,
+    requested_interval: Any = None,
+) -> float:
+    """Derive an async polling interval which leaves request budget for I/O.
+
+    Each active MiniMax process uploads, submits, polls and downloads.  The
+    polling budget intentionally uses only 60% of the advertised RPM so the
+    other requests and retries still have room.  A user supplied value can
+    make polling slower, never faster than the safe calculated cadence.
+    """
+    safe_jobs = max(1, int(active_jobs))
+    safe_rpm = max(1, int(requests_per_minute))
+    calculated = max(
+        _DEFAULT_MINIMAX_POLL_INTERVAL_SEC,
+        (60.0 * safe_jobs) / (safe_rpm * _MINIMAX_REQUEST_BUDGET_RATIO),
+    )
+    try:
+        requested = float(str(requested_interval).strip())
+    except (TypeError, ValueError):
+        requested = 0.0
+    return round(max(calculated, requested), 2)
+
+
+class _TtsLaunchThrottle:
+    """Serialize cloud submission starts without reducing active job capacity."""
+
+    def __init__(self, minimum_interval_sec: float) -> None:
+        self._minimum_interval_sec = max(0.0, float(minimum_interval_sec))
+        self._next_start_at = 0.0
+        self._lock = threading.Lock()
+
+    def wait_for_turn(self) -> None:
+        with self._lock:
+            now = time.monotonic()
+            wait_sec = max(0.0, self._next_start_at - now)
+            if wait_sec:
+                time.sleep(wait_sec)
+            self._next_start_at = time.monotonic() + self._minimum_interval_sec
+
+
 def synthesize_tts_resumable(project_id: str, db: Session):
     project = project_or_404(db, project_id)
 
@@ -409,6 +488,13 @@ def synthesize_tts_resumable(project_id: str, db: Session):
         )
         or ("0" if provider == "minimax" else "1.0")
     )
+    tts_concurrency = _bounded_tts_concurrency(
+        provider,
+        snapshot_value("tts.concurrency", "") if project_runtime else "",
+    )
+    tts_requests_per_minute = _bounded_requests_per_minute(
+        snapshot_value("tts.requests_per_minute", "") if project_runtime else "",
+    )
 
     invalidation_service.narration_synthesis_started(project)
     db.commit()
@@ -417,6 +503,7 @@ def synthesize_tts_resumable(project_id: str, db: Session):
     skipped_slides: List[str] = []
     failed_slides: List[Dict[str, Any]] = []
 
+    pending_jobs: list[dict[str, Any]] = []
     for slide_id in slide_ids:
         paths = slide_tts_artifact_paths(project, slide_id)
         text_file = ensure_slide_tts_text_file(project, slide_id, contract)
@@ -431,7 +518,7 @@ def synthesize_tts_resumable(project_id: str, db: Session):
         if artifact_status["audio_exists"] or artifact_status["missing_artifacts"] or artifact_status["stale"]:
             remove_tts_artifacts(paths)
 
-        logger.info("Synthesizing TTS audio for slide %s via %s", slide_id, provider)
+        logger.info("Preparing TTS audio for slide %s via %s", slide_id, provider)
         tts_args = provider_tts_command(
             provider=provider,
             text_file=text_file,
@@ -451,56 +538,134 @@ def synthesize_tts_resumable(project_id: str, db: Session):
             pitch=tts_pitch,
         )
 
-        tts_result = run_tts_command_with_retries(
-            project,
-            slide_id,
-            tts_args,
-            provider_tts_environment(tts_api_key, tts_secret_key),
+        pending_jobs.append(
+            {
+                "slide_id": slide_id,
+                "paths": paths,
+                "args": tts_args,
+            }
         )
-        if not tts_result["ok"]:
-            error_text = _redact_runtime_secrets(
-                (tts_result["stderr"] or tts_result["stdout"] or "TTS synthesis failed").strip(),
-                runtime_secrets,
-            )
-            error_text = error_text[-1200:]
-            logger.error("TTS synthesis failed for %s after %s attempts: %s", slide_id, tts_result["attempts"], error_text)
-            write_project_log(
-                project,
-                "step7_slide_tts_error",
-                slide_id=slide_id,
-                attempts=tts_result["attempts"],
-                returncode=tts_result["returncode"],
-                stdout=_redact_runtime_secrets(tts_result["stdout"], runtime_secrets),
-                stderr=_redact_runtime_secrets(tts_result["stderr"], runtime_secrets),
-            )
-            failed_slides.append({
-                "slide_id": slide_id,
-                "attempts": tts_result["attempts"],
-                "returncode": tts_result["returncode"],
-                "error": error_text,
-            })
-            continue
 
-        post_status = slide_tts_artifact_status(project, slide_id)
-        if not post_status["complete"]:
-            error_text = "TTS command returned success but required audio artifacts are incomplete: " + ", ".join(post_status["missing_artifacts"])
-            logger.error("%s for %s", error_text, slide_id)
-            write_project_log(
-                project,
-                "step7_slide_tts_incomplete_artifacts",
-                slide_id=slide_id,
-                status=post_status,
+    if pending_jobs:
+        worker_count = min(tts_concurrency, len(pending_jobs))
+        minimax_poll_interval_sec = (
+            _minimax_poll_interval_seconds(
+                worker_count,
+                tts_requests_per_minute,
+                snapshot_value("tts.poll_interval_seconds", "")
+                if project_runtime
+                else "",
             )
-            failed_slides.append({
-                "slide_id": slide_id,
-                "attempts": tts_result["attempts"],
-                "returncode": tts_result["returncode"],
-                "error": error_text,
-            })
-            continue
+            if provider == "minimax"
+            else None
+        )
+        # A single shared launch gate prevents all slide processes from
+        # uploading/submitting at once.  It does not reduce the number of
+        # active async jobs after they have started.
+        launch_throttle = (
+            _TtsLaunchThrottle(60.0 / tts_requests_per_minute)
+            if provider == "minimax"
+            else None
+        )
+        write_project_log(
+            project,
+            "step7_tts_parallel_start",
+            provider=provider,
+            submitted=len(pending_jobs),
+            concurrency=worker_count,
+            requests_per_minute=(
+                tts_requests_per_minute if provider == "minimax" else None
+            ),
+            poll_interval_sec=minimax_poll_interval_sec,
+            launch_interval_sec=(
+                round(60.0 / tts_requests_per_minute, 2)
+                if provider == "minimax"
+                else None
+            ),
+        )
 
-        rewrite_audio_timeline_by_beats(paths["timeline"], slide_id, beats_by_slide.get(slide_id, []))
-        generated_slides.append(slide_id)
+        def synthesize_one(job: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+            tts_env = provider_tts_environment(tts_api_key, tts_secret_key)
+            if minimax_poll_interval_sec is not None:
+                # generic_tts passes its process environment through to the
+                # MiniMax helper.  The setting is intentionally environment
+                # only so it never becomes part of project logs or metadata.
+                tts_env["MINIMAX_TTS_POLL_INTERVAL_SEC"] = str(
+                    minimax_poll_interval_sec
+                )
+            if launch_throttle is not None:
+                launch_throttle.wait_for_turn()
+            return (
+                job,
+                run_tts_command_with_retries(
+                    project,
+                    job["slide_id"],
+                    job["args"],
+                    tts_env,
+                ),
+            )
+
+        successful_jobs: list[dict[str, Any]] = []
+        with ThreadPoolExecutor(
+            max_workers=worker_count,
+            thread_name_prefix="tts-slide",
+        ) as executor:
+            futures = [executor.submit(synthesize_one, job) for job in pending_jobs]
+            for future in as_completed(futures):
+                job, tts_result = future.result()
+                slide_id = job["slide_id"]
+                if not tts_result["ok"]:
+                    error_text = _redact_runtime_secrets(
+                        (tts_result["stderr"] or tts_result["stdout"] or "TTS synthesis failed").strip(),
+                        runtime_secrets,
+                    )
+                    error_text = error_text[-1200:]
+                    logger.error("TTS synthesis failed for %s after %s attempts: %s", slide_id, tts_result["attempts"], error_text)
+                    write_project_log(
+                        project,
+                        "step7_slide_tts_error",
+                        slide_id=slide_id,
+                        attempts=tts_result["attempts"],
+                        returncode=tts_result["returncode"],
+                        stdout=_redact_runtime_secrets(tts_result["stdout"], runtime_secrets),
+                        stderr=_redact_runtime_secrets(tts_result["stderr"], runtime_secrets),
+                    )
+                    failed_slides.append({
+                        "slide_id": slide_id,
+                        "attempts": tts_result["attempts"],
+                        "returncode": tts_result["returncode"],
+                        "error": error_text,
+                    })
+                    continue
+                post_status = slide_tts_artifact_status(project, slide_id)
+                if not post_status["complete"]:
+                    error_text = "TTS command returned success but required audio artifacts are incomplete: " + ", ".join(post_status["missing_artifacts"])
+                    logger.error("%s for %s", error_text, slide_id)
+                    write_project_log(
+                        project,
+                        "step7_slide_tts_incomplete_artifacts",
+                        slide_id=slide_id,
+                        status=post_status,
+                    )
+                    failed_slides.append({
+                        "slide_id": slide_id,
+                        "attempts": tts_result["attempts"],
+                        "returncode": tts_result["returncode"],
+                        "error": error_text,
+                    })
+                    continue
+                successful_jobs.append(job)
+
+        for job in successful_jobs:
+            slide_id = job["slide_id"]
+            rewrite_audio_timeline_by_beats(
+                job["paths"]["timeline"],
+                slide_id,
+                beats_by_slide.get(slide_id, []),
+            )
+            generated_slides.append(slide_id)
+
+    generated_slides.sort(key=slide_ids.index)
 
     if failed_slides:
         mark_step_retry_needed(project, 7, db)

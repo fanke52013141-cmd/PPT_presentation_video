@@ -85,6 +85,21 @@ def test_new_package_has_initial_immutable_version_and_content_hash() -> None:
     assert created["versions"][0]["payload"]["schema_version"] == service.PAYLOAD_VERSION
 
 
+def test_package_preserves_validated_automation_concurrency() -> None:
+    configured = payload()
+    configured["automation"]["image_concurrency"] = 5
+    configured["tts"]["concurrency"] = 10
+    configured["tts"]["requests_per_minute"] = 20
+    configured["render"] = {"acceleration": "gpu"}
+
+    normalized = service.validate_payload(configured)
+
+    assert normalized["automation"]["image_concurrency"] == 5
+    assert normalized["tts"]["concurrency"] == 10
+    assert normalized["tts"]["requests_per_minute"] == 20
+    assert normalized["render"]["acceleration"] == "gpu"
+
+
 def test_copy_names_a_new_package_and_uses_selected_source_version() -> None:
     source = service.create_creation_config(name="科普账号", payload=payload())
     changed = payload(subtitles=False)

@@ -949,10 +949,19 @@
                     <label class="creation-config-check"><input type="checkbox" data-creation-config-pause="digital_human"> 数字人</label>
                   </div>
                 </div>
+                <div class="creation-config-option-group">
+                  <h5>自动化并发</h5>
+                  <div class="creation-config-number-grid">
+                    <label>图片并发数<input id="creation-config-image-concurrency" type="number" min="1" max="6" value="5" inputmode="numeric"><small>同时生成图片的数量；默认 5。遇到限流时会自动逐级降速并重试。</small></label>
+                    <label>语音活跃任务数<input id="creation-config-tts-concurrency" type="number" min="1" max="10" value="10" inputmode="numeric"><small>MiniMax 默认同时保持 10 个活跃任务；实际请求频率会按账号 RPM 自动限流，本地 ComfyUI 固定为 1。</small></label>
+                    <label>MiniMax 请求上限（RPM）<input id="creation-config-tts-rpm" type="number" min="1" max="600" value="10" inputmode="numeric"><small>免费账号按 10 设置；充值账号可按账户实际额度调整为 20。该值同时控制任务提交与状态轮询。</small></label>
+                    <label>视频渲染加速<select id="creation-config-render-acceleration"><option value="auto">自动检测 GPU（推荐）</option><option value="gpu">仅使用 GPU</option><option value="cpu">仅使用 CPU</option></select><small>自动模式会优先调用可用硬件编码器，失败时回退 CPU。</small></label>
+                  </div>
+                </div>
               </section>
               <section class="creation-config-section creation-config-prompts-section">
                 <h5>Prompt</h5>
-                <p class="config-editor-note">按需要展开对应步骤；没有输出示例时保持为空。</p>
+                <p class="config-editor-note">所有步骤默认展开，方便一次性审阅和编辑；没有输出示例时保持为空。</p>
                 <div id="creation-config-prompt-fields" class="creation-config-prompt-fields"></div>
               </section>
             </div>
@@ -1014,6 +1023,9 @@
             <label id="model-form-endpoint-row">接口地址（Base URL）<input id="model-form-endpoint" type="url" maxlength="1000" placeholder="https://api.example.com/v1"></label>
             <label id="model-form-api-key-row">API 密钥<input id="model-form-api-key" type="password" maxlength="2000" autocomplete="off" placeholder="保存后不会再次显示"></label>
             <label id="model-form-model-row">模型 ID<input id="model-form-model" type="text" maxlength="160" placeholder="例如：gpt-4o-mini"></label>
+            <label id="model-form-text-context-window-row">上下文窗口（Token，可选）<input id="model-form-text-context-window" type="number" min="1024" max="2000000" step="1024" placeholder="例如：128000"></label>
+            <label id="model-form-text-max-tokens-row">单次最大输出（Token，可选）<input id="model-form-text-max-tokens" type="number" min="256" max="64000" step="256" placeholder="例如：24000"></label>
+            <label id="model-form-text-temperature-row">温度（可选）<input id="model-form-text-temperature" type="number" min="0" max="2" step="0.05" placeholder="例如：0.35"></label>
             <label id="model-form-image-size-row" hidden>图片尺寸（可选）<input id="model-form-image-size" type="text" maxlength="80" placeholder="例如：1024x1024"></label>
             <label id="model-form-image-reference-row" hidden>参考图能力
               <span class="model-inline-check"><input id="model-form-image-supports-references" type="checkbox" checked> 支持上传参考图生成</span>
@@ -1031,7 +1043,11 @@
               <label>API Token<input id="model-form-minimax-token" type="password" maxlength="2000" autocomplete="off" placeholder="保存后不会再次显示"></label>
               <label>语音模型<input id="model-form-minimax-model" type="text" maxlength="160" value="speech-2.8-hd"></label>
               <label>音色 ID<input id="model-form-minimax-voice-id" type="text" maxlength="200" placeholder="例如：Chinese (Mandarin)_News_Anchor"></label>
+              <label>语速<input id="model-form-minimax-speed" type="number" min="0.5" max="2" step="0.05" value="1" aria-describedby="model-form-minimax-controls-help"></label>
+              <label>音量<input id="model-form-minimax-volume" type="number" min="0" max="10" step="0.1" value="1" aria-describedby="model-form-minimax-controls-help"></label>
+              <label>音调<input id="model-form-minimax-pitch" type="number" min="-12" max="12" step="1" value="0" aria-describedby="model-form-minimax-controls-help"></label>
             </div>
+            <p id="model-form-minimax-controls-help" class="config-editor-note">MiniMax 会在合成时使用语速、音量和音调；留在常用范围内可保持声音稳定。</p>
           </div>
           <div id="model-form-comfyui" class="model-provider-panel" hidden>
             <label>ComfyUI 服务地址<input id="model-form-comfyui-endpoint" type="url" maxlength="1000" value="http://127.0.0.1:8188"></label>
@@ -1041,7 +1057,11 @@
               <span id="model-form-comfyui-workflow-status" class="config-editor-note" aria-live="polite"></span>
             </div>
           </div>
-          <button id="btn-save-model" class="success" type="button">保存文本模型</button>
+          <p id="model-setup-editing-status" class="config-editor-note" aria-live="polite" hidden></p>
+          <div class="model-setup-actions">
+            <button id="btn-save-model" class="success" type="button">保存文本模型</button>
+            <button id="btn-cancel-model-edit" class="secondary" type="button" hidden>取消编辑</button>
+          </div>
         </section>
       </div>
       <div class="config-editor-actions">
@@ -1455,6 +1475,7 @@
   <script src="settings.js?v=20260905.3"></script>
   <script src="projects.js?v=20260905.2"></script>
   <script src="creation_config_management.js?v=20260905.8"></script>
+  <script src="select_menus.js?v=20260906.1"></script>
   <script src="courses.js?v=20260905.2"></script>
   <script src="article.js?v=20260801.1"></script>
   <script src="storyboard.js?v=20260902.1"></script>
@@ -1477,6 +1498,6 @@
   <script src="ai_mask_auto_state.js?v=20260809.1"></script>
   <script src="digital_human_panel.js?v=20260827.2"></script>
   <script src="ai_mask_extension.js?v=20260831.1"></script>
-  <script src="one_click_extension.js?v=20260905.3"></script>
+  <script src="one_click_extension.js?v=20260906.1"></script>
 </body>
 </html>

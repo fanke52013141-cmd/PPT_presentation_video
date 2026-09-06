@@ -611,6 +611,8 @@ def generate_slide_image(
     prompt: str,
     preview: bool,
     db: Session,
+    *,
+    defer_invalidation: bool = False,
 ):
     project = project_or_404(db, project_id)
 
@@ -799,7 +801,8 @@ def generate_slide_image(
                 "reference_count": len(used_reference_paths),
                 "candidate_url": f"/api/projects/{project_id}/slides/{slide_id}/candidate?t={uuid.uuid4().hex[:6]}",
             }
-        mark_slide_image_changed(project, slide_id, db)
+        if not defer_invalidation:
+            mark_slide_image_changed(project, slide_id, db)
 
         return {
             "success": True,
@@ -813,6 +816,34 @@ def generate_slide_image(
         safe_error = _redact_runtime_secrets(exc, runtime_secrets)
         logger.error("Image generation error for %s: %s", slide_id, safe_error)
         raise HTTPException(status_code=500, detail=f"生成图片失败: {safe_error}") from exc
+
+
+def finalize_generated_images(
+    project_id: str,
+    slide_ids: List[str],
+    db: Session,
+) -> Dict[str, Any]:
+    """Invalidate downstream artifacts once after a concurrent image batch.
+
+    Individual image requests can safely write separate slide files in parallel.
+    The project-level invalidation and database commit must stay singular so
+    concurrent workers cannot overwrite each other's step-status updates.
+    """
+    project = project_or_404(db, project_id)
+    normalized_ids = list(
+        dict.fromkeys(
+            str(slide_id).strip() for slide_id in slide_ids if str(slide_id).strip()
+        )
+    )
+    if not normalized_ids:
+        return {"success": True, "slide_ids": []}
+    invalidation_service.slide_images_changed(
+        project,
+        normalized_ids,
+        all_images_exist=all_current_slide_images_exist(project),
+    )
+    db.commit()
+    return {"success": True, "slide_ids": normalized_ids}
 
 
 def upload_slide_image(

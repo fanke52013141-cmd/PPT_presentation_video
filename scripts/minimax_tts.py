@@ -73,10 +73,15 @@ SOFT_SUBTITLE_MARKS = ["\uff0c", "\u3001", "\uff1a", ",", ":"]
 SUBTITLE_EDGE_PUNCTUATION = "\uff0c\u3002\uff01\uff1f\uff1b\uff1a\u3001,.!?;: \t\r\n"
 DEFAULT_HTTP_RETRIES = 3
 RETRIABLE_HTTP_STATUS = {408, 409, 425, 429, 500, 502, 503, 504}
+DEFAULT_ASYNC_POLL_INTERVAL_SEC = 8.0
 
 
-def retry_delay_sec(attempt: int) -> float:
-    return min(2.0 * attempt, 8.0)
+def retry_delay_sec(attempt: int, *, rate_limited: bool = False) -> float:
+    """Back off longer for provider rate limits than transient failures."""
+    safe_attempt = max(1, int(attempt))
+    if rate_limited:
+        return min(15.0 * (2 ** (safe_attempt - 1)), 90.0)
+    return min(2.0 * safe_attempt, 8.0)
 
 
 def retry_notice(purpose: str, attempt: int, attempts: int, error: Any) -> None:
@@ -102,7 +107,7 @@ def request_bytes_with_retry(
             message = f"MiniMax {purpose} HTTP {exc.code}: {body[:800]}"
             if exc.code in RETRIABLE_HTTP_STATUS and attempt < attempts:
                 retry_notice(purpose, attempt, attempts, message)
-                time.sleep(retry_delay_sec(attempt))
+                time.sleep(retry_delay_sec(attempt, rate_limited=exc.code == 429))
                 continue
             raise RuntimeError(message) from exc
         except (TimeoutError, urllib.error.URLError, OSError) as exc:
@@ -217,7 +222,12 @@ def upload_minimax_text_file(text: str, endpoint: str, api_key: str, timeout: in
             message = f"MiniMax text upload HTTP {response.status_code}: {response.text[:800]}"
             if response.status_code in RETRIABLE_HTTP_STATUS and attempt < DEFAULT_HTTP_RETRIES:
                 retry_notice("text upload", attempt, DEFAULT_HTTP_RETRIES, message)
-                time.sleep(retry_delay_sec(attempt))
+                time.sleep(
+                    retry_delay_sec(
+                        attempt,
+                        rate_limited=response.status_code == 429,
+                    )
+                )
                 continue
             raise RuntimeError(message)
         except (httpx.TimeoutException, httpx.TransportError) as exc:
@@ -385,7 +395,14 @@ def download_minimax_file(endpoint: str, file_id: str, api_key: str, out_audio: 
     return extract_minimax_bundle(body, out_audio)
 
 
-def call_minimax_async_tts(payload: dict[str, Any], endpoint: str, api_key: str, timeout: int, out_audio: Path) -> dict[str, Any]:
+def call_minimax_async_tts(
+    payload: dict[str, Any],
+    endpoint: str,
+    api_key: str,
+    timeout: int,
+    out_audio: Path,
+    poll_interval_sec: float = DEFAULT_ASYNC_POLL_INTERVAL_SEC,
+) -> dict[str, Any]:
     async_payload = dict(payload)
     async_payload.pop("stream", None)
     response_json = call_minimax_tts(async_payload, endpoint, api_key, timeout)
@@ -419,7 +436,11 @@ def call_minimax_async_tts(payload: dict[str, Any], endpoint: str, api_key: str,
                 break
             if status in {"failed", "fail", "error", "expired"}:
                 raise RuntimeError(f"MiniMax async task failed: {json.dumps(poll_response, ensure_ascii=False)[:800]}")
-            time.sleep(2)
+            # Each slide has its own helper process, so the parent passes a
+            # calculated interval based on active jobs and account RPM.  A
+            # conservative floor prevents an imported setting from restoring
+            # the former two-second polling burst.
+            time.sleep(max(1.0, float(poll_interval_sec)))
 
     if task_id and not completed:
         raise RuntimeError(f"MiniMax async task timed out: {json.dumps(poll_response, ensure_ascii=False)[:800]}")
@@ -715,6 +736,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--subtitle-enable", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--subtitle-type", default="sentence", choices=["sentence", "word"])
     parser.add_argument("--timeout", type=int, default=300)
+    parser.add_argument(
+        "--poll-interval-sec",
+        type=float,
+        default=env_float(
+            "MINIMAX_TTS_POLL_INTERVAL_SEC",
+            DEFAULT_ASYNC_POLL_INTERVAL_SEC,
+        ),
+        help="Seconds between asynchronous status requests (minimum 1 second).",
+    )
     return parser.parse_args()
 
 
@@ -744,7 +774,14 @@ def main() -> int:
         text_file_id = upload_minimax_text_file(tts_text, args.endpoint, args.api_key, args.timeout)
         payload.pop("text", None)
         payload["text_file_id"] = int(text_file_id) if text_file_id.isdigit() else text_file_id
-        response_json = call_minimax_async_tts(payload, args.endpoint, args.api_key, args.timeout, out_audio)
+        response_json = call_minimax_async_tts(
+            payload,
+            args.endpoint,
+            args.api_key,
+            args.timeout,
+            out_audio,
+            poll_interval_sec=max(1.0, float(args.poll_interval_sec)),
+        )
     else:
         response_json = call_minimax_tts(payload, args.endpoint, args.api_key, args.timeout)
         check_base_resp(response_json, "sync")

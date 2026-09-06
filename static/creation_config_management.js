@@ -15,6 +15,7 @@
     loading: false,
     editingPackageId: null,
     editingVersion: null,
+    editingConnectionId: null,
     activeModelKind: 'text',
   };
 
@@ -102,6 +103,7 @@
     PROMPT_MODULES.forEach(([key, label]) => {
       const section = document.createElement('details');
       section.className = 'creation-config-prompt-card';
+      section.open = true;
       const summary = document.createElement('summary');
       summary.className = 'creation-config-prompt-summary';
       const summaryTitle = document.createElement('strong');
@@ -339,6 +341,10 @@
     const ttsBinding = readBindingValue('tts');
     if (ttsBinding) tts.connection = ttsBinding;
     else delete tts.connection;
+    const ttsConcurrency = Math.max(1, Math.min(10, Number(element('creation-config-tts-concurrency')?.value) || 10));
+    tts.concurrency = ttsConcurrency;
+    const ttsRequestsPerMinute = Math.max(1, Math.min(600, Number(element('creation-config-tts-rpm')?.value) || 10));
+    tts.requests_per_minute = ttsRequestsPerMinute;
     if (Object.keys(tts).length) payload.tts = tts;
     else delete payload.tts;
 
@@ -364,10 +370,15 @@
       .map(input => input.dataset.creationConfigPause)
       .filter(Boolean);
     const automation = objectValue(payload.automation);
+    const imageConcurrency = Math.max(1, Math.min(6, Number(element('creation-config-image-concurrency')?.value) || 5));
+    automation.image_concurrency = imageConcurrency;
     if (pauseSteps.length) automation.manual_pause_steps = pauseSteps;
     else delete automation.manual_pause_steps;
     if (Object.keys(automation).length) payload.automation = automation;
     else delete payload.automation;
+    payload.render = {
+      acceleration: element('creation-config-render-acceleration')?.value || 'auto',
+    };
 
     const field = element('creation-config-package-payload');
     if (field) field.value = JSON.stringify(payload, null, 2);
@@ -386,6 +397,8 @@
     setBindingValue('image', bindings.image_generation);
     const tts = objectValue(value.tts);
     setBindingValue('tts', tts.connection || bindings.tts);
+    setStringField('creation-config-tts-concurrency', String(Math.max(1, Math.min(10, Number(tts.concurrency) || 10))));
+    setStringField('creation-config-tts-rpm', String(Math.max(1, Math.min(600, Number(tts.requests_per_minute) || 10))));
     setImageStyleValue(value.image_style);
     const subtitle = objectValue(value.subtitle || value.subtitles);
     const mask = objectValue(value.mask);
@@ -393,7 +406,10 @@
     const maskToggle = element('creation-config-mask-enabled');
     if (subtitleToggle) subtitleToggle.checked = subtitle.enabled !== false;
     if (maskToggle) maskToggle.checked = mask.enabled !== false;
-    const pauseSteps = objectValue(value.automation).manual_pause_steps;
+    const automation = objectValue(value.automation);
+    setStringField('creation-config-image-concurrency', String(Math.max(1, Math.min(6, Number(automation.image_concurrency) || 5))));
+    setStringField('creation-config-render-acceleration', objectValue(value.render).acceleration || 'auto');
+    const pauseSteps = automation.manual_pause_steps;
     const pauses = Array.isArray(pauseSteps) ? new Set(pauseSteps) : new Set();
     document.querySelectorAll('[data-creation-config-pause]').forEach(input => {
       input.checked = pauses.has(input.dataset.creationConfigPause);
@@ -485,11 +501,26 @@
       const referenceCapability = kind === 'image'
         ? ` · 参考图${publicConfig.supports_reference_images === false ? '未启用' : `最多 ${publicConfig.max_reference_images || 3} 张`}`
         : '';
-      const item = card(
-        connection.name || '未命名模型',
-        `${modelProviderLabel(revision.provider)} · ${revision.model || '未指定模型'} · ${configured}${referenceCapability}`,
-      );
+      const item = document.createElement('article');
       item.classList.add('model-library-card');
+      const heading = document.createElement('div');
+      heading.className = 'model-library-card-heading';
+      const title = document.createElement('strong');
+      title.textContent = connection.name || '未命名模型';
+      const version = document.createElement('span');
+      version.className = 'model-library-card-version';
+      version.textContent = `v${revision.revision || connection.current_revision || 1}`;
+      heading.append(title, version);
+      const detail = document.createElement('p');
+      detail.className = 'model-library-card-detail';
+      detail.textContent = `${modelProviderLabel(revision.provider)} · ${revision.model || '未指定模型'}${referenceCapability}`;
+      const status = document.createElement('span');
+      status.className = `model-library-card-status${revision.credential_configured ? ' is-configured' : ''}`;
+      status.textContent = configured;
+      const actions = document.createElement('div');
+      actions.className = 'model-library-card-actions';
+      actions.append(button('编辑', 'secondary', () => editModelConnection(connection)));
+      item.append(heading, detail, status, actions);
       target.append(item);
     });
   }
@@ -568,9 +599,11 @@
     const title = element('model-setup-title');
     const description = element('model-setup-description');
     const action = element('btn-save-model');
-    if (title) title.textContent = copy.title;
+    const editing = state.connections.find(item => item.id === state.editingConnectionId);
+    const isEditing = !!editing && editing.kind === kind;
+    if (title) title.textContent = isEditing ? `编辑${{ text: '文本', image: '图片', tts: '语音' }[kind]}模型` : copy.title;
     if (description) description.textContent = copy.description;
-    if (action) action.textContent = copy.action;
+    if (action) action.textContent = isEditing ? '保存修改（创建新版本）' : copy.action;
     const name = element('model-form-name');
     const model = element('model-form-model');
     if (name) name.placeholder = copy.name;
@@ -580,10 +613,22 @@
     setHidden('model-form-endpoint-row', isTts);
     setHidden('model-form-api-key-row', isTts);
     setHidden('model-form-model-row', isTts);
+    setHidden('model-form-text-context-window-row', kind !== 'text');
+    setHidden('model-form-text-max-tokens-row', kind !== 'text');
+    setHidden('model-form-text-temperature-row', kind !== 'text');
     setHidden('model-form-image-size-row', kind !== 'image');
     setHidden('model-form-image-reference-row', kind !== 'image');
     setHidden('model-form-image-reference-count-row', kind !== 'image');
     setHidden('model-form-tts-provider-row', !isTts);
+    const editingStatus = element('model-setup-editing-status');
+    if (editingStatus) {
+      editingStatus.hidden = !isEditing;
+      editingStatus.textContent = isEditing
+        ? `正在编辑“${editing.name || '未命名模型'}”v${editing.current_revision || 1}；保存会创建新的模型版本。密钥已保存时可留空不改。`
+        : '';
+    }
+    const cancel = element('btn-cancel-model-edit');
+    if (cancel) cancel.hidden = !isEditing;
     updateModelProviderPanels();
     renderConnections();
   }
@@ -591,6 +636,8 @@
   function selectModelKind(kind) {
     if (!MODEL_KIND_COPY[kind]) return;
     state.activeModelKind = kind;
+    if (state.editingConnectionId) clearModelForm();
+    state.editingConnectionId = null;
     updateModelSetupForm();
   }
 
@@ -777,26 +824,99 @@
   }
 
   function clearModelForm() {
-    ['model-form-name', 'model-form-api-key', 'model-form-model', 'model-form-image-size', 'model-form-minimax-token', 'model-form-minimax-voice-id']
+    ['model-form-name', 'model-form-endpoint', 'model-form-api-key', 'model-form-model', 'model-form-image-size', 'model-form-minimax-token', 'model-form-minimax-voice-id', 'model-form-text-context-window', 'model-form-text-max-tokens', 'model-form-text-temperature']
       .forEach(id => { const field = element(id); if (field) field.value = ''; });
+    setStringField('model-form-protocol', 'custom');
     const supportsReferences = element('model-form-image-supports-references');
     if (supportsReferences) supportsReferences.checked = true;
     const maxReferences = element('model-form-image-max-references');
     if (maxReferences) maxReferences.value = '3';
+    setStringField('model-form-minimax-endpoint', 'https://api.minimaxi.com/v1/t2a_async_v2');
+    setStringField('model-form-minimax-model', 'speech-2.8-hd');
+    setStringField('model-form-minimax-speed', '1');
+    setStringField('model-form-minimax-volume', '1');
+    setStringField('model-form-minimax-pitch', '0');
+    setStringField('model-form-comfyui-endpoint', 'http://127.0.0.1:8188');
+    const genericSecret = element('model-form-api-key');
+    const minimaxSecret = element('model-form-minimax-token');
+    if (genericSecret) genericSecret.placeholder = '保存后不会再次显示';
+    if (minimaxSecret) minimaxSecret.placeholder = '保存后不会再次显示';
+  }
+
+  function setNumberField(id, value) {
+    const field = element(id);
+    if (!field) return;
+    field.value = Number.isFinite(Number(value)) ? String(value) : '';
+  }
+
+  function readOptionalNumber(id, min, max, label) {
+    const raw = element(id)?.value.trim() || '';
+    if (!raw) return undefined;
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value < min || value > max) {
+      throw new Error(`${label}应在 ${min} 到 ${max} 之间`);
+    }
+    return value;
+  }
+
+  function editModelConnection(connection) {
+    if (!connection?.id) return;
+    const revision = connectionRevision(connection);
+    const publicConfig = objectValue(revision.public_config);
+    state.activeModelKind = connection.kind;
+    state.editingConnectionId = connection.id;
+    clearModelForm();
+    setStringField('model-form-name', connection.name);
+    setStringField('model-form-protocol', publicConfig.preset || 'custom');
+    setStringField('model-form-endpoint', revision.endpoint);
+    setStringField('model-form-model', revision.model);
+    setNumberField('model-form-text-context-window', publicConfig.context_window_tokens);
+    setNumberField('model-form-text-max-tokens', publicConfig.max_tokens);
+    setNumberField('model-form-text-temperature', publicConfig.temperature);
+    setStringField('model-form-image-size', publicConfig.image_size);
+    const supportsReferences = element('model-form-image-supports-references');
+    if (supportsReferences) supportsReferences.checked = publicConfig.supports_reference_images !== false;
+    setNumberField('model-form-image-max-references', publicConfig.max_reference_images || 3);
+    if (connection.kind === 'tts') {
+      setStringField('model-form-tts-provider', revision.provider || 'minimax');
+      setStringField('model-form-minimax-endpoint', revision.endpoint || 'https://api.minimaxi.com/v1/t2a_async_v2');
+      setStringField('model-form-minimax-model', revision.model || 'speech-2.8-hd');
+      setStringField('model-form-minimax-voice-id', publicConfig.voice_id);
+      setNumberField('model-form-minimax-speed', publicConfig.speed ?? 1);
+      setNumberField('model-form-minimax-volume', publicConfig.volume ?? 1);
+      setNumberField('model-form-minimax-pitch', publicConfig.pitch ?? 0);
+      setStringField('model-form-comfyui-endpoint', revision.endpoint || 'http://127.0.0.1:8188');
+    }
+    const secretField = connection.kind === 'tts' && revision.provider === 'minimax'
+      ? element('model-form-minimax-token')
+      : element('model-form-api-key');
+    if (secretField && revision.credential_configured) secretField.placeholder = '密钥已保存；留空则不修改';
+    updateModelSetupForm();
+    element('model-form-name')?.focus();
+  }
+
+  function cancelModelEdit() {
+    state.editingConnectionId = null;
+    clearModelForm();
+    updateModelSetupForm();
   }
 
   async function saveModel() {
     const kind = state.activeModelKind;
+    const editingConnection = state.connections.find(item => item.id === state.editingConnectionId);
+    const isEditing = !!editingConnection && editingConnection.kind === kind;
     const name = element('model-form-name')?.value.trim() || '';
     if (!name) {
       toast('请先填写显示名称');
       return;
     }
-    let provider = 'openai_compatible';
+    let provider = isEditing
+      ? (editingConnection?.revision?.provider || 'openai_compatible')
+      : 'openai_compatible';
     let model = '';
     let endpoint = '';
     let apiKey = '';
-    let publicConfig = {};
+    let publicConfig = isEditing ? clonePayload(editingConnection?.revision?.public_config) : {};
     if (kind === 'tts') {
       provider = currentTtsProvider();
       if (provider === 'minimax') {
@@ -804,11 +924,17 @@
         apiKey = element('model-form-minimax-token')?.value.trim() || '';
         model = element('model-form-minimax-model')?.value.trim() || 'speech-2.8-hd';
         const voiceId = element('model-form-minimax-voice-id')?.value.trim() || '';
-        if (!apiKey || !voiceId) {
-          toast('MiniMax 需要填写 API Token 和音色 ID');
+        if ((!apiKey && !(isEditing && editingConnection?.revision?.credential_configured)) || !voiceId) {
+          toast(isEditing ? 'MiniMax 需要保留已保存的 Token 或填写新的 Token，并填写音色 ID' : 'MiniMax 需要填写 API Token 和音色 ID');
           return;
         }
-        publicConfig = { voice_id: voiceId };
+        publicConfig = {
+          ...publicConfig,
+          voice_id: voiceId,
+          speed: readOptionalNumber('model-form-minimax-speed', 0.5, 2, '语速') ?? 1,
+          volume: readOptionalNumber('model-form-minimax-volume', 0, 10, '音量') ?? 1,
+          pitch: readOptionalNumber('model-form-minimax-pitch', -12, 12, '音调') ?? 0,
+        };
       } else {
         endpoint = element('model-form-comfyui-endpoint')?.value.trim() || 'http://127.0.0.1:8188';
         model = 'IndexTTS-2';
@@ -817,14 +943,23 @@
       endpoint = element('model-form-endpoint')?.value.trim() || '';
       apiKey = element('model-form-api-key')?.value.trim() || '';
       model = element('model-form-model')?.value.trim() || '';
-      if (!endpoint || !apiKey || !model) {
-        toast('请填写接口地址、API 密钥和模型 ID');
+      if (!endpoint || (!apiKey && !(isEditing && editingConnection?.revision?.credential_configured)) || !model) {
+        toast(isEditing ? '请填写接口地址和模型 ID；密钥已保存时可以留空不改' : '请填写接口地址、API 密钥和模型 ID');
         return;
       }
       publicConfig = {
+        ...publicConfig,
         protocol: 'openai_compatible',
         preset: element('model-form-protocol')?.value || 'custom',
       };
+      if (kind === 'text') {
+        const contextWindow = readOptionalNumber('model-form-text-context-window', 1024, 2000000, '上下文窗口');
+        const maxTokens = readOptionalNumber('model-form-text-max-tokens', 256, 64000, '单次最大输出');
+        const temperature = readOptionalNumber('model-form-text-temperature', 0, 2, '温度');
+        if (contextWindow !== undefined) publicConfig.context_window_tokens = Math.round(contextWindow);
+        if (maxTokens !== undefined) publicConfig.max_tokens = Math.round(maxTokens);
+        if (temperature !== undefined) publicConfig.temperature = temperature;
+      }
       if (kind === 'image') {
         const size = element('model-form-image-size')?.value.trim() || '';
         if (size) publicConfig.image_size = size;
@@ -839,11 +974,14 @@
     if (submit) submit.disabled = true;
     try {
       const credentialRef = apiKey ? await saveApiSecret(provider, `${name} API 密钥`, apiKey) : null;
-      const payload = { name, kind, provider, model, endpoint: endpoint || null, public_config: publicConfig };
+      const payload = { name, provider, model, endpoint: endpoint || null, public_config: publicConfig };
+      if (!isEditing) payload.kind = kind;
       if (credentialRef) payload.credential_ref = credentialRef;
-      await window.API.post('/api/model-connections', payload);
+      if (isEditing) await window.API.put(`/api/model-connections/${encodeURIComponent(editingConnection.id)}`, payload);
+      else await window.API.post('/api/model-connections', payload);
+      state.editingConnectionId = null;
       clearModelForm();
-      toast(`${MODEL_KIND_COPY[kind].title.replace('新增', '')}已保存`);
+      toast(isEditing ? '模型修改已保存为新版本' : `${MODEL_KIND_COPY[kind].title.replace('新增', '')}已保存`);
       await refreshCreationConfigManagement();
       updateModelSetupForm();
     } catch (error) {
@@ -933,6 +1071,7 @@
     element('btn-model-form-comfyui-workflow')?.addEventListener('click', importComfyUiWorkflow);
     element('model-form-comfyui-workflow-file')?.addEventListener('change', importComfyUiWorkflow);
     element('btn-save-model')?.addEventListener('click', saveModel);
+    element('btn-cancel-model-edit')?.addEventListener('click', cancelModelEdit);
     updateModelSetupForm();
     const syncEditor = () => {
       try {

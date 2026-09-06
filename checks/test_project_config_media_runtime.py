@@ -234,7 +234,11 @@ def test_tts_generation_uses_project_voice_settings_and_redacts_failed_output(
     assert command["pitch"] == "2"
     assert command["region"] == "shanghai"
     assert command["provider_extra"] == "snapshot-extra"
-    assert captured["environment"] == {"api": "tts-secret", "secret": ""}
+    assert captured["environment"]["api"] == "tts-secret"
+    assert captured["environment"]["secret"] == ""
+    # One MiniMax job at the free-tier 10 RPM budget polls no faster than the
+    # calculated 10 seconds, rather than the historical two-second loop.
+    assert captured["environment"]["MINIMAX_TTS_POLL_INTERVAL_SEC"] == "10.0"
     assert "tts-secret" not in result["failed"][0]["error"]
     assert all("tts-secret" not in repr(item) for item in logs)
 
@@ -242,6 +246,20 @@ def test_tts_generation_uses_project_voice_settings_and_redacts_failed_output(
 def test_tts_runtime_without_snapshot_binding_keeps_global_fallback(tmp_path: Path) -> None:
     project = SimpleNamespace(run_dir=str(tmp_path / "legacy"))
     assert tts._project_tts_runtime(project) is None
+
+
+def test_tts_parallelism_is_bounded_and_keeps_local_gpu_serial() -> None:
+    assert tts._bounded_tts_concurrency("minimax") == 10
+    assert tts._bounded_tts_concurrency("minimax", "99") == 10
+    assert tts._bounded_tts_concurrency("minimax", "invalid") == 10
+    assert tts._bounded_tts_concurrency("comfyui_tts", "4") == 1
+    assert tts._bounded_requests_per_minute() == 10
+    assert tts._bounded_requests_per_minute("999") == 600
+    assert tts._minimax_poll_interval_seconds(1, 10) == 10.0
+    # Ten active jobs on a 10 RPM connection reserve 40% for uploads,
+    # downloads and retries, so polling cannot burst at 2-second intervals.
+    assert tts._minimax_poll_interval_seconds(10, 10) == 100.0
+    assert tts._minimax_poll_interval_seconds(10, 10, "120") == 120.0
 
 
 def test_project_bound_comfyui_tts_needs_no_cloud_credential(

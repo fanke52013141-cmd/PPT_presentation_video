@@ -43,6 +43,7 @@ _ALLOWED_TOP_LEVEL_KEYS = frozenset(
         "subtitle",
         "subtitles",
         "automation",
+        "render",
         "digital_human",
         "mask",
     }
@@ -525,11 +526,40 @@ def validate_payload(payload: Any) -> dict[str, Any]:
     if tts is not None:
         if not isinstance(tts, dict):
             raise CreationConfigValidationError("tts 必须是对象")
+        if "concurrency" in tts:
+            concurrency = tts["concurrency"]
+            if isinstance(concurrency, bool) or not isinstance(concurrency, int) or not 1 <= concurrency <= 10:
+                raise CreationConfigValidationError("tts.concurrency 必须是 1 到 10 的整数")
+        if "requests_per_minute" in tts:
+            requests_per_minute = tts["requests_per_minute"]
+            if (
+                isinstance(requests_per_minute, bool)
+                or not isinstance(requests_per_minute, int)
+                or not 1 <= requests_per_minute <= 600
+            ):
+                raise CreationConfigValidationError("tts.requests_per_minute 必须是 1 到 600 的整数")
         if "connection" in tts:
             normalized["tts"] = deepcopy(tts)
             normalized["tts"]["connection"] = _require_connection_reference(
                 tts["connection"], path="tts.connection"
             )
+
+    automation = normalized.get("automation")
+    if automation is not None:
+        if not isinstance(automation, dict):
+            raise CreationConfigValidationError("automation 必须是对象")
+        if "image_concurrency" in automation:
+            concurrency = automation["image_concurrency"]
+            if isinstance(concurrency, bool) or not isinstance(concurrency, int) or not 1 <= concurrency <= 6:
+                raise CreationConfigValidationError("automation.image_concurrency 必须是 1 到 6 的整数")
+
+    render = normalized.get("render")
+    if render is not None:
+        if not isinstance(render, dict):
+            raise CreationConfigValidationError("render 必须是对象")
+        acceleration = render.get("acceleration")
+        if acceleration is not None and acceleration not in {"auto", "gpu", "cpu"}:
+            raise CreationConfigValidationError("render.acceleration 必须是 auto、gpu 或 cpu")
 
     subtitle = normalized.get("subtitle")
     if subtitle is not None:

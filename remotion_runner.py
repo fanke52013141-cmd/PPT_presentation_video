@@ -17,6 +17,13 @@ from typing import Any, Callable
 from database import Project
 from canvas_profile_service import get_project_canvas
 from runtime_support import run_subprocess_killable
+from project_config_runtime import get_config_value
+from video_acceleration import (
+    VideoEncoderSelection,
+    encoder_reencode_arguments,
+    parse_ffmpeg_video_encoders,
+    select_video_encoder,
+)
 from video_contracts import VideoRenderConfig
 
 
@@ -36,6 +43,13 @@ class RemotionRenderResult:
     color_validation: dict[str, Any]
 
 
+def _remotion_hardware_acceleration(selection: VideoEncoderSelection) -> str:
+    """Map our user-facing mode to Remotion's supported encoder policy."""
+    if not selection.hardware:
+        return "disable"
+    return "required" if selection.mode == "gpu" else "if-possible"
+
+
 class RemotionRunner:
     """Runs reveal building, timeline binding, Remotion, and color QA."""
 
@@ -53,6 +67,7 @@ class RemotionRunner:
         output_dir: Path,
         set_stage: Callable[[str], None],
     ) -> RemotionRenderResult:
+        encoder_selection = self._select_video_encoder(project)
         set_stage("building_reveal")
         self.dependencies.build_reveal_assets(project)
         self._bind_timeline(project, set_stage)
@@ -67,17 +82,87 @@ class RemotionRunner:
             public_dir,
             output_dir,
             set_stage,
+            encoder_selection,
         )
         color_validation = self._validate_render_color(
             project,
             output_path,
             set_stage,
+            encoder_selection,
         )
         return RemotionRenderResult(
             output_path=output_path,
             output_filename=output_filename,
             color_validation=color_validation,
         )
+
+    def _select_video_encoder(self, project: Project) -> VideoEncoderSelection:
+        """Probe the bundled ffmpeg before starting an expensive render.
+
+        Remotion's Chromium composition is still CPU-oriented.  The selected
+        encoder is used by the ffmpeg colour-normalisation re-encode fallback;
+        keeping this probe here makes the selected capability explicit in
+        project logs and fails strict GPU mode early.
+        """
+
+        requested_acceleration = str(
+            get_config_value(
+                project,
+                "render.acceleration",
+                self.config.render_acceleration,
+            )
+        )
+        ffmpeg = self.dependencies.resolve_media_tool("ffmpeg")
+        advertised: frozenset[str] = frozenset()
+        probe_error: str | None = None
+        if ffmpeg:
+            try:
+                result = self.dependencies.run_subprocess_bounded(
+                    [ffmpeg, "-hide_banner", "-encoders"],
+                    timeout_sec=30,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+                if result.returncode == 0:
+                    advertised = parse_ffmpeg_video_encoders(
+                        (result.stdout or "") + "\n" + (result.stderr or "")
+                    )
+                else:
+                    probe_error = f"ffmpeg_encoder_probe_exit_{result.returncode}"
+            except Exception as exc:
+                probe_error = f"ffmpeg_encoder_probe_error:{type(exc).__name__}"
+        else:
+            probe_error = "ffmpeg_not_found"
+
+        try:
+            selection = select_video_encoder(
+                requested_acceleration,
+                advertised,
+            )
+        except RuntimeError as exc:
+            self.dependencies.write_project_log(
+                project,
+                "step8_render_acceleration_unavailable",
+                requested_mode=requested_acceleration,
+                advertised_encoders=sorted(advertised),
+                probe_error=probe_error,
+                error=str(exc),
+            )
+            raise
+        self.dependencies.write_project_log(
+            project,
+            "step8_render_acceleration_selected",
+            requested_mode=requested_acceleration,
+            encoder=selection.encoder,
+            hardware=selection.hardware,
+            fallback_reason=selection.fallback_reason,
+            advertised_encoders=sorted(advertised),
+            probe_error=probe_error,
+            scope="ffmpeg_color_normalization",
+        )
+        return selection
 
     @staticmethod
     def validate_public_assets(
@@ -287,6 +372,7 @@ class RemotionRunner:
         public_dir: Path,
         output_dir: Path,
         set_stage: Callable[[str], None],
+        encoder_selection: VideoEncoderSelection,
     ) -> tuple[Path, str]:
         missing_assets = self.validate_public_assets(
             props,
@@ -314,6 +400,9 @@ class RemotionRunner:
         output_path = output_dir / output_filename
         props_path = Path(project.run_dir) / "remotion_props.json"
         npx_cmd = "npx.cmd" if sys.platform == "win32" else "npx"
+        remotion_hardware_acceleration = _remotion_hardware_acceleration(
+            encoder_selection
+        )
         args = [
             npx_cmd,
             "remotion",
@@ -326,6 +415,7 @@ class RemotionRunner:
             "--image-format=png",
             "--pixel-format=yuv420p",
             "--color-space=bt709",
+            f"--hardware-acceleration={remotion_hardware_acceleration}",
         ]
         set_stage("rendering")
         started = time.time()
@@ -335,6 +425,8 @@ class RemotionRunner:
             output=str(output_path),
             timeout_sec=self.config.render_timeout_sec,
             total_duration_sec=props.get("total_duration_sec"),
+            hardware_acceleration=remotion_hardware_acceleration,
+            encoder=encoder_selection.encoder,
         )
         result = run_subprocess_killable(
             args,
@@ -467,16 +559,16 @@ class RemotionRunner:
         temporary: Path,
         *,
         re_encode: bool,
+        encoder: str = "libx264",
     ):
-        """两段式颜色归一化的核心：re_encode=False 走 stream copy，True 走 libx264 重编码。"""
+        """Colour normalization: stream-copy first, then selected H.264 encoder."""
         cmd = [ffmpeg, "-y", "-i", str(target)]
         if re_encode:
             # 重编码：保证 bt709 元数据 100% 写入。
             # CRF 18 视觉无损；preset=veryfast 比 medium 快 30-50%，画质差异肉眼几乎无感。
             cmd.extend([
-                "-c:v", "libx264",
-                "-preset", "veryfast",
-                "-crf", "18",
+                "-c:v", encoder,
+                *encoder_reencode_arguments(encoder),
                 "-pix_fmt", "yuv420p",
                 "-color_primaries", "bt709",
                 "-color_trc", "bt709",
@@ -507,6 +599,7 @@ class RemotionRunner:
         self,
         video_path: str | Path,
         project: Project,
+        encoder_selection: VideoEncoderSelection | None = None,
     ) -> bool:
         ffmpeg = self.dependencies.resolve_media_tool("ffmpeg")
         if not ffmpeg:
@@ -594,19 +687,46 @@ class RemotionRunner:
             except OSError:
                 pass
 
-        # Stage 2: libx264 重编码（稳）——保证 bt709 元数据 100% 写入
+        # Stage 2: selected encoder re-encode.  Hardware failures retry once
+        # with libx264 so auto mode never loses a completed render.
         reencoded = Path(f"{target}.bt709.reenc.tmp.mp4")
         if reencoded.exists():
             reencoded.unlink()
 
         reenc_result = self._run_ffmpeg_color_normalize(
-            ffmpeg, target, reencoded, re_encode=True,
+            ffmpeg,
+            target,
+            reencoded,
+            re_encode=True,
+            encoder=(encoder_selection.encoder if encoder_selection else "libx264"),
         )
+        selected_encoder = (
+            encoder_selection.encoder if encoder_selection else "libx264"
+        )
+        if (
+            (reenc_result.returncode != 0 or not reencoded.exists())
+            and selected_encoder != "libx264"
+        ):
+            self.dependencies.write_project_log(
+                project,
+                "step8_color_metadata_hardware_fallback",
+                failed_encoder=selected_encoder,
+                fallback_encoder="libx264",
+                returncode=reenc_result.returncode,
+                stderr=(reenc_result.stderr or "")[-3000:],
+            )
+            if reencoded.exists():
+                reencoded.unlink()
+            reenc_result = self._run_ffmpeg_color_normalize(
+                ffmpeg, target, reencoded, re_encode=True, encoder="libx264",
+            )
+            selected_encoder = "libx264"
         if reenc_result.returncode != 0 or not reencoded.exists():
             self.dependencies.write_project_log(
                 project,
                 "step8_color_metadata_normalize_error",
                 stage="stage2_re_encode",
+                encoder=selected_encoder,
                 returncode=reenc_result.returncode,
                 stderr=(reenc_result.stderr or "")[-4000:],
             )
@@ -622,6 +742,7 @@ class RemotionRunner:
                 project,
                 "step8_color_metadata_normalize_error",
                 stage="stage2_re_encode_verify_failed",
+                encoder=selected_encoder,
                 returncode=0,
                 stderr="ffmpeg re-encode succeeded but ffprobe still reads unexpected color metadata",
             )
@@ -652,6 +773,7 @@ class RemotionRunner:
             project,
             "step8_color_metadata_normalize_success",
             mode="re_encode",
+            encoder=selected_encoder,
             stdout=(reenc_result.stdout or "")[-2000:],
         )
         return True
@@ -661,9 +783,14 @@ class RemotionRunner:
         project: Project,
         output_path: Path,
         set_stage: Callable[[str], None],
+        encoder_selection: VideoEncoderSelection | None = None,
     ) -> dict[str, Any]:
         set_stage("validating_color")
-        self._normalize_video_color_metadata(output_path, project)
+        self._normalize_video_color_metadata(
+            output_path,
+            project,
+            encoder_selection,
+        )
         validator = (
             self.config.repo_root
             / "scripts"

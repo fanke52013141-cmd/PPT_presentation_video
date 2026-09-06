@@ -407,6 +407,7 @@ from image_workflow_service import (
     compact_slide_element_lines,
     compose_step3_single_slide_prompt,
     confirm_images,
+    finalize_generated_images,
     generate_slide_image,
     get_slide_prompts,
     read_step3_image_system_content,
@@ -826,6 +827,7 @@ try:
         npm_install_timeout_sec=STEP8_NPM_INSTALL_TIMEOUT_SEC,
         render_timeout_sec=STEP8_RENDER_TIMEOUT_SEC,
         color_process_timeout_sec=STEP8_COLOR_PROCESS_TIMEOUT_SEC,
+        render_acceleration=os.environ.get("PPT_STUDIO_RENDER_ACCELERATION", "auto"),
     )
     video_artifact_service = VideoArtifactService(
         VideoArtifactDependencies(
@@ -900,6 +902,7 @@ try:
             slide_prompts=get_slide_prompts,
             generate_slide_image=generate_slide_image,
             confirm_images=confirm_images,
+            finalize_images=finalize_generated_images,
         ),
         mask=MaskPipelineOperations(
             get_result=get_step5_result,

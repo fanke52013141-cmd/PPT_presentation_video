@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT))
 
 import server  # noqa: E402
 import tts_provider_service as provider  # noqa: E402
+from scripts import minimax_tts  # noqa: E402
 
 
 def replace_dependencies(
@@ -70,6 +71,28 @@ def test_provider_aliases_and_defaults_are_preserved() -> None:
     assert provider.tts_provider_defaults("unknown") == (
         provider.TTS_PROVIDER_DEFAULTS["minimax"]
     )
+
+
+def test_minimax_async_polling_window_has_download_headroom() -> None:
+    assert provider.STEP7_TTS_TIMEOUT_SEC == 900
+    assert provider.STEP7_TTS_PROCESS_TIMEOUT_SEC == 990
+
+
+def test_rate_limit_backoff_is_longer_and_process_output_is_redacted() -> None:
+    assert provider._retry_delay_seconds(1, "ordinary failure") == 4
+    assert provider._retry_delay_seconds(1, "HTTP 429 too many requests") == 15
+    assert provider._retry_delay_seconds(2, "rate limit") == 30
+    assert provider._retry_delay_seconds(9, "429") == 90
+    assert provider._redact_tts_process_output(
+        "upstream echoed secret-token", {"PPT_STUDIO_TTS_API_KEY": "secret-token"}
+    ) == "upstream echoed [REDACTED]"
+
+
+def test_minimax_rate_limit_retry_and_safe_async_poll_default() -> None:
+    assert minimax_tts.DEFAULT_ASYNC_POLL_INTERVAL_SEC == 8.0
+    assert minimax_tts.retry_delay_sec(1) == 2.0
+    assert minimax_tts.retry_delay_sec(1, rate_limited=True) == 15.0
+    assert minimax_tts.retry_delay_sec(3, rate_limited=True) == 60.0
 
 
 def test_credential_priority_is_preserved() -> None:

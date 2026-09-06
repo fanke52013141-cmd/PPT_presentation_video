@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260905.9">
+  <link rel="stylesheet" href="style.css?v=20260906.3">
 </head>
 <body>
 
@@ -67,9 +67,9 @@
             <svg class="icon" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
             新建课程
           </button>
-          <button id="btn-create-project" class="secondary legacy-project-entry" type="button" title="仅用于导入或继续不归属课程的旧项目；正式内容请从课程进入">
+          <button id="btn-create-project" class="secondary legacy-project-entry" type="button" title="新建一个独立视频项目">
             <svg class="icon" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            兼容项目
+            新建视频
           </button>
         </div>
       </div>
@@ -639,20 +639,6 @@
           <option value="portrait_9_16">竖屏 9:16（1080×1920）</option>
         </select>
       </div>
-      <div id="create-style-section" style="margin-bottom: 1.5rem;">
-        <label style="font-weight: bold; display: block; margin-bottom: 0.4rem;">图片风格:</label>
-        <div id="create-style-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 0.6rem; margin-top: 0.5rem; max-height: 200px; overflow-y: auto;">
-          <div style="color: var(--muted-color); font-size: 0.85rem; padding: 1rem 0;">加载中...</div>
-        </div>
-        <div style="font-size: 0.85rem; color: var(--muted-color); margin-top: 0.4rem; line-height: 1.5;">
-          选择图片风格模板，将在生成图片时自动应用该风格。
-        </div>
-      </div>
-      <div style="margin-bottom: 1.5rem;">
-        <label style="font-weight: bold; display: block; margin-bottom: 0.4rem;" for="input-project-reference-images">本项目参考图片:</label>
-        <input type="file" id="input-project-reference-images" accept="image/*" multiple>
-        <div style="font-size: 0.85rem; color: var(--muted-color); margin-top: 0.4rem;">可选 1–3 张，只作用于当前项目；单张不超过 12MB。</div>
-      </div>
       <div style="display: flex; justify-content: flex-end; gap: 1rem;">
         <button id="btn-create-cancel" class="secondary">取消</button>
         <button id="btn-create-submit" class="success">确认新建</button>
@@ -916,7 +902,7 @@
                 </div>
                 <div class="creation-config-image-style-grid">
                   <label>风格资源
-                    <select id="creation-config-image-style-template"></select>
+                    <select id="creation-config-image-style-template" class="creation-config-native-select" aria-label="图片风格资源"></select>
                   </label>
                   <label>最低参考图数量
                     <select id="creation-config-image-style-minimum">
@@ -926,6 +912,7 @@
                     </select>
                   </label>
                 </div>
+                <div id="creation-config-image-style-cards" class="creation-config-image-style-cards" role="radiogroup" aria-label="选择图片风格"></div>
                 <div class="creation-config-policy-row" role="radiogroup" aria-label="参考图使用方式">
                   <label class="creation-config-policy-card"><input type="radio" name="creation-config-reference-policy" value="required"><span><strong>必须使用</strong><small>参考图不足或模型不支持时停止生成</small></span></label>
                   <label class="creation-config-policy-card"><input type="radio" name="creation-config-reference-policy" value="preferred" checked><span><strong>优先使用</strong><small>不可用时继续按风格提示词生成</small></span></label>
@@ -952,11 +939,14 @@
                 <div class="creation-config-option-group">
                   <h5>自动化并发</h5>
                   <div class="creation-config-number-grid">
-                    <label>图片并发数<input id="creation-config-image-concurrency" type="number" min="1" max="6" value="5" inputmode="numeric"><small>同时生成图片的数量；默认 5。遇到限流时会自动逐级降速并重试。</small></label>
-                    <label>语音活跃任务数<input id="creation-config-tts-concurrency" type="number" min="1" max="10" value="10" inputmode="numeric"><small>MiniMax 默认同时保持 10 个活跃任务；实际请求频率会按账号 RPM 自动限流，本地 ComfyUI 固定为 1。</small></label>
-                    <label>MiniMax 请求上限（RPM）<input id="creation-config-tts-rpm" type="number" min="1" max="600" value="10" inputmode="numeric"><small>免费账号按 10 设置；充值账号可按账户实际额度调整为 20。该值同时控制任务提交与状态轮询。</small></label>
-                    <label>视频渲染加速<select id="creation-config-render-acceleration"><option value="auto">自动检测 GPU（推荐）</option><option value="gpu">仅使用 GPU</option><option value="cpu">仅使用 CPU</option></select><small>自动模式会优先调用可用硬件编码器，失败时回退 CPU。</small></label>
+                    <label>图片并发<input id="creation-config-image-concurrency" type="number" min="1" max="6" value="5" inputmode="numeric"></label>
+                    <label>语音活跃任务数<input id="creation-config-tts-concurrency" type="number" min="1" max="10" value="10" inputmode="numeric"></label>
+                    <label>MiniMax 请求上限（RPM）<input id="creation-config-tts-rpm" type="number" min="1" max="600" value="10" inputmode="numeric"></label>
                   </div>
+                </div>
+                <div class="creation-config-option-group">
+                  <h5>视频渲染加速</h5>
+                  <label class="creation-config-render-field">渲染方式<select id="creation-config-render-acceleration"><option value="auto">自动检测 GPU（推荐）</option><option value="gpu">仅使用 GPU</option><option value="cpu">仅使用 CPU</option></select></label>
                 </div>
               </section>
               <section class="creation-config-section creation-config-prompts-section">
@@ -1477,10 +1467,10 @@
   <script src="artifact_repair.js?v=20260801.1"></script>
   <script src="prompt_help.js?v=20260801.1"></script>
   <script src="settings.js?v=20260905.3"></script>
-  <script src="projects.js?v=20260905.2"></script>
-  <script src="creation_config_management.js?v=20260905.8"></script>
+  <script src="projects.js?v=20260906.1"></script>
+  <script src="creation_config_management.js?v=20260906.1"></script>
   <script src="select_menus.js?v=20260906.1"></script>
-  <script src="courses.js?v=20260905.2"></script>
+  <script src="courses.js?v=20260906.1"></script>
   <script src="article.js?v=20260801.1"></script>
   <script src="storyboard.js?v=20260902.1"></script>
   <script src="storyboard_prompts.js?v=20260801.1"></script>
@@ -1495,8 +1485,8 @@
   <script src="output_render.js?v=20260823.1"></script>
   <script src="account_management.js?v=20260905.3"></script>
   <script src="workspace_navigation.js?v=20260820.1"></script>
-  <script src="event_bindings.js?v=20260905.1"></script>
-  <script src="project_profile_extension.js?v=20260905.4"></script>
+  <script src="event_bindings.js?v=20260906.1"></script>
+  <script src="project_profile_extension.js?v=20260906.1"></script>
   <script src="storyboard_background_extension.js?v=20260807.1"></script>
   <script src="style_reference_manager_extension.js?v=3.0.1"></script>
   <script src="ai_mask_auto_state.js?v=20260809.1"></script>

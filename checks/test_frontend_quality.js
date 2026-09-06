@@ -152,6 +152,7 @@ if (!html.includes('creation_config_management.js')
 }
 for (const imageStyleControl of [
   'creation-config-image-style-template',
+  'creation-config-image-style-cards',
   'creation-config-reference-policy',
   'model-form-image-supports-references',
   'model-form-image-max-references',
@@ -190,6 +191,17 @@ if (!(html.indexOf('api_client.js') < html.indexOf('creation_config_management.j
 }
 if (!eventBindings.includes('initCreationConfigManagementEvents')) {
   throw new Error('creation configuration management events are not bound at startup');
+}
+if (!creationConfigManagement.includes('renderImageStyleCards')
+  || !css.includes('.creation-config-image-style-card')) {
+  throw new Error('creation configuration image-style preview cards are missing');
+}
+if (html.includes('兼容项目')
+  || html.includes('input-project-reference-images')
+  || html.includes('create-style-grid')
+  || projectProfile.includes('input-project-reference-images')
+  || projectProfile.includes('profile-style-tile')) {
+  throw new Error('new-video creation still exposes duplicated project-level image-style controls');
 }
 if (!html.includes('select_menus.js') || !selectMenus.includes('initPptSelectMenus') || !selectMenus.includes('HTMLSelectElement')) {
   throw new Error('shared select-menu component is not loaded correctly');

@@ -7,7 +7,7 @@
  * - 快速新建（自动聚焦重命名，Enter确认/Esc默认名）
  * - 双击节点重命名
  * - 拖拽排序 + 跨层级移动
- * - 兼容旧项目（独立项目也用卡片样式，通过图标区分）
+ * - 独立视频项目（独立项目也用卡片样式，通过图标区分）
  *
  * 注意：顶部标题和按钮由 index.html 提供，本组件只负责 #project-list 内的树主体。
  */
@@ -121,8 +121,8 @@ const CourseTree = (() => {
       standaloneHeading.className = 'course-tree-standalone-heading';
       standaloneHeading.innerHTML = `
         <div>
-          <strong>未归档项目</strong>
-          <span>旧项目或临时项目；正式内容请放入课程 → 章节 → 视频。</span>
+          <strong>独立视频项目</strong>
+          <span>未归入课程的视频项目。</span>
         </div>
       `;
       treeEl.appendChild(standaloneHeading);
@@ -403,7 +403,7 @@ const CourseTree = (() => {
   function openCreateProjectModal() {
     const createButton = document.getElementById('btn-create-project');
     if (!createButton) { showToast('新建弹窗未就绪'); return; }
-    // 触发原有入口，确保风格模板、创作配置和自动化选项都会加载。
+    // 触发统一的新建视频入口，确保创作配置会一并加载。
     window.__pendingProjectParent = pendingProjectParent;
     createButton.click();
   }

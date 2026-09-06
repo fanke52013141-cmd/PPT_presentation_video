@@ -10,6 +10,7 @@
     connections: [],
     credentials: [],
     styleTemplates: [],
+    styleTemplateDetails: new Map(),
     defaultPayload: {},
     defaultPackageId: null,
     loading: false,
@@ -232,10 +233,12 @@
   function updateImageStyleSummary() {
     const select = element('creation-config-image-style-template');
     const selected = state.styleTemplates.find(item => item.id === select?.value);
+    const detail = state.styleTemplateDetails.get(String(select?.value || ''));
+    const referenceCount = detail?.references?.images?.length ?? selected?.reference_count ?? 0;
     const summary = element('creation-config-image-style-summary');
     if (summary) {
       summary.textContent = selected
-        ? `${selected.reference_count || 0} 张参考图 · v${selected.version || 1}`
+        ? `${selected.name || '未命名风格'} · ${referenceCount} 张参考图 · v${selected.version || 1}`
         : '未关联风格资源';
     }
     const minimum = element('creation-config-image-style-minimum');
@@ -258,6 +261,52 @@
     if ([...select.options].some(option => option.value === selected)) select.value = selected;
     else if ([...select.options].some(option => option.value === 'handdrawn')) select.value = 'handdrawn';
     updateImageStyleSummary();
+    renderImageStyleCards();
+  }
+
+  function renderImageStyleCards() {
+    const target = element('creation-config-image-style-cards');
+    const select = element('creation-config-image-style-template');
+    if (!target || !select) return;
+    target.replaceChildren();
+    state.styleTemplates.forEach(item => {
+      if (!item?.id) return;
+      const detail = state.styleTemplateDetails.get(String(item.id));
+      const imageInfo = detail?.references?.images?.[0];
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'creation-config-image-style-card';
+      const active = item.id === select.value;
+      card.classList.toggle('active', active);
+      card.setAttribute('role', 'radio');
+      card.setAttribute('aria-checked', String(active));
+      card.title = item.summary || item.name || '图片风格';
+      const preview = document.createElement('span');
+      preview.className = 'creation-config-image-style-thumb';
+      if (imageInfo?.url) {
+        const image = document.createElement('img');
+        image.src = imageInfo.url;
+        image.alt = `${item.name || '图片风格'}参考图`;
+        preview.append(image);
+      } else {
+        preview.textContent = '加载预览中';
+      }
+      const copy = document.createElement('span');
+      copy.className = 'creation-config-image-style-copy';
+      const name = document.createElement('strong');
+      name.textContent = item.name || '未命名风格';
+      const meta = document.createElement('small');
+      const count = detail?.references?.images?.length ?? item.reference_count ?? 0;
+      meta.textContent = `${item.built_in ? '系统内置 · ' : ''}${count} 张参考图`;
+      copy.append(name, meta);
+      card.append(preview, copy);
+      card.addEventListener('click', () => {
+        select.value = item.id;
+        updateImageStyleSummary();
+        renderImageStyleCards();
+      });
+      target.append(card);
+    });
   }
 
   function setImageStyleValue(value) {
@@ -280,6 +329,7 @@
     const minimum = element('creation-config-image-style-minimum');
     if (minimum) minimum.value = String(Math.max(1, Math.min(3, Number(style.minimum_reference_images) || 1)));
     updateImageStyleSummary();
+    renderImageStyleCards();
   }
 
   function firstActiveConnectionReference(kind) {
@@ -694,6 +744,16 @@
         ? accountResponse.account.default_creation_config.package_id
         : null;
       state.styleTemplates = Array.isArray(stylesResponse?.templates) ? stylesResponse.templates : [];
+      state.styleTemplateDetails = new Map();
+      await Promise.all(state.styleTemplates.map(async item => {
+        if (!item?.id) return;
+        try {
+          const detail = await window.API.get(`/api/image-style/project-templates/${encodeURIComponent(item.id)}`);
+          state.styleTemplateDetails.set(String(item.id), detail);
+        } catch (_) {
+          // A preview failure must not prevent selecting a valid style package.
+        }
+      }));
       buildStructuredEditor();
       renderConnectionSelectors();
       renderImageStyleSelector();
@@ -1084,7 +1144,10 @@
     });
     element('model-form-protocol')?.addEventListener('change', applyOpenAiCompatiblePreset);
     element('model-form-tts-provider')?.addEventListener('change', updateModelProviderPanels);
-    element('creation-config-image-style-template')?.addEventListener('change', updateImageStyleSummary);
+    element('creation-config-image-style-template')?.addEventListener('change', () => {
+      updateImageStyleSummary();
+      renderImageStyleCards();
+    });
     document.querySelectorAll('input[name="creation-config-reference-policy"]').forEach(input => {
       input.addEventListener('change', updateImageStyleSummary);
     });

@@ -3,9 +3,6 @@
 // Cache of batch automation statuses keyed by project_id.
 let _automationStatusMap = {};
 let _automationPollTimer = null;
-// The image-style template chosen in the create-project modal.
-let _selectedStyleTemplate = 'default';
-
 /**
  * Ensure the creation-config selector is present in both the static modal and
  * the project-profile wizard, which replaces the modal body at runtime.
@@ -15,8 +12,8 @@ function ensureCreationConfigSelector() {
   if (select) return select;
 
   const modalContent = document.querySelector('#modal-create .modal-content');
-  const styleSection = modalContent?.querySelector('.profile-style-grid')?.closest('.project-profile-section');
-  if (!modalContent || !styleSection) return null;
+  const canvasSection = modalContent?.querySelector('#input-project-canvas-profile')?.closest('div');
+  if (!modalContent || !canvasSection) return null;
 
   const section = document.createElement('section');
   section.id = 'create-creation-config-section';
@@ -33,10 +30,10 @@ function ensureCreationConfigSelector() {
   const help = document.createElement('p');
   help.id = 'create-creation-config-help';
   help.className = 'project-profile-help';
-  help.textContent = '选择后会固定使用该配置包的最新版本；不选择则沿用当前项目创建方式。';
+  help.textContent = '选择后会固定使用该配置包的最新版本，图片风格和参考图也由该配置包统一决定。';
 
   section.append(heading, label, select, help);
-  styleSection.before(section);
+  canvasSection.before(section);
   return select;
 }
 
@@ -80,7 +77,7 @@ async function loadCreationConfigs() {
     select.value = restore ? selectedId : '';
     if (help) {
       help.textContent = packages.length
-        ? '选择后会固定使用该配置包的最新版本；不选择则沿用当前项目创建方式。'
+        ? '选择后会固定使用该配置包的最新版本，图片风格和参考图也由该配置包统一决定。'
         : '暂无可用创作配置包；仍可按当前项目创建方式继续。';
     }
     window.refreshCreationConfigChoices?.(packages);
@@ -162,56 +159,6 @@ async function resumeAutomationFromCard(projectId) {
     showToast('自动化已继续');
     pollAutomationStatus();
   } catch (_) { showToast('继续失败，请稍后重试'); }
-}
-
-/** Load image-style templates into the create-project modal grid. */
-async function loadImageStyleTemplates() {
-  const grid = document.getElementById('create-style-grid');
-  if (!grid) return;
-  try {
-    const data = await API.get('/api/image-style/templates');
-    const templates = (data && data.templates) || [];
-    if (templates.length === 0) {
-      grid.innerHTML = '<div style="color: var(--muted-color); font-size: 0.85rem; padding: 1rem 0;">暂无可用风格模板</div>';
-      return;
-    }
-    _selectedStyleTemplate = 'default';
-    grid.innerHTML = templates.map(t => {
-      // references is an object like {"template": {"url": "..."}} not an array
-      let thumb = '';
-      if (t.references && typeof t.references === 'object') {
-        const refKeys = Object.keys(t.references);
-        for (const key of refKeys) {
-          const ref = t.references[key];
-          if (ref && ref.url) { thumb = ref.url; break; }
-        }
-      }
-      const sel = t.id === 'default' ? 'selected' : '';
-      return `
-        <div class="style-tile ${sel}" data-style-id="${escHtml(t.id)}" style="cursor: pointer; border: 2px solid var(--border-color); border-radius: 8px; overflow: hidden; transition: border-color 0.2s; position: relative;">
-          ${thumb
-            ? `<img src="${escHtml(thumb)}" alt="${escHtml(t.name)}" style="width: 100%; height: 80px; object-fit: cover; display: block;">`
-            : `<div style="width: 100%; height: 80px; background: #f0f0f0; display: flex; align-items: center; justify-content: center; color: #999; font-size: 0.75rem;">无预览</div>`
-          }
-          <div style="padding: 0.3rem; font-size: 0.8rem; text-align: center; background: #fff;">${escHtml(t.name)}</div>
-        </div>`;
-    }).join('');
-
-    // Click handlers for template selection.
-    grid.querySelectorAll('.style-tile').forEach(tile => {
-      tile.addEventListener('click', () => {
-        grid.querySelectorAll('.style-tile').forEach(t => {
-          t.classList.remove('selected');
-          t.style.borderColor = 'var(--border-color)';
-        });
-        tile.classList.add('selected');
-        tile.style.borderColor = 'var(--primary-color, #7c6cf0)';
-        _selectedStyleTemplate = tile.getAttribute('data-style-id') || 'default';
-      });
-    });
-  } catch (err) {
-    grid.innerHTML = '<div style="color: var(--muted-color); font-size: 0.85rem; padding: 1rem 0;">加载失败</div>';
-  }
 }
 
 async function loadProjects() {
@@ -300,13 +247,10 @@ async function createProject() {
   // ownership IDs on the initial create keeps this as one atomic, account-
   // scoped operation instead of creating an unassigned project then moving it.
   const parent = window.__pendingProjectParent || null;
-  const referenceFiles = Array.from(document.getElementById('input-project-reference-images')?.files || []).slice(0, 3);
-
   const result = await API.post('/api/projects', {
     name,
     description,
     canvas_profile: canvasProfile,
-    image_style_template: _selectedStyleTemplate || 'default',
     ...(creationConfig ? {
       config_package_id: creationConfig.id,
       config_package_version: creationConfig.version,
@@ -317,24 +261,6 @@ async function createProject() {
   document.getElementById('modal-create').style.display = 'none';
   showToast('项目新建成功');
   window.__pendingProjectParent = null;
-
-  if (referenceFiles.length) {
-    const form = new FormData();
-    referenceFiles.forEach(file => form.append('files', file));
-    try {
-      await API.post(`/api/projects/${encodeURIComponent(result.project.id)}/steps/3/image-style/reference-images`, form);
-    } catch (_) {
-      showToast('项目已创建，但参考图上传失败，可在第 3 步重新上传');
-    }
-  }
-
-  // Apply the selected image-style template if it's not the default.
-  const templateId = _selectedStyleTemplate || 'default';
-  if (templateId && templateId !== 'default') {
-    try {
-      await API.post(`/api/projects/${result.project.id}/steps/3/image-style/templates/${encodeURIComponent(templateId)}/apply`);
-    } catch (_) { /* non-fatal — user can apply manually in Step 3 */ }
-  }
 
   // Course and chapter creation stays in the library so the user can keep
   // organizing the course tree. The normal entry retains its direct opening.

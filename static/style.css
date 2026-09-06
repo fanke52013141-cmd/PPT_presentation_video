@@ -8625,6 +8625,7 @@ details[open] .ip-character-advanced-summary::before {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.55rem;
 }
+.creation-config-render-field { max-width: 320px; margin: 0 !important; }
 .creation-config-json-editor {
   margin-top: 0.7rem;
   padding: 0.65rem;
@@ -8653,6 +8654,47 @@ details[open] .ip-character-advanced-summary::before {
   grid-template-columns: minmax(260px, 2fr) minmax(150px, .7fr);
   gap: .75rem;
 }
+.creation-config-image-style-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: .65rem;
+  margin: .25rem 0 .8rem;
+}
+.creation-config-image-style-card {
+  display: grid;
+  grid-template-columns: 94px minmax(0, 1fr);
+  gap: .65rem;
+  align-items: center;
+  min-height: 76px;
+  padding: .45rem;
+  overflow: hidden;
+  border: 1px solid var(--color-border-default);
+  border-radius: 11px;
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  text-align: left;
+  box-shadow: none;
+}
+.creation-config-image-style-card:hover { border-color: var(--color-primary-base); transform: translateY(-1px); }
+.creation-config-image-style-card.active { border-color: var(--color-primary-base); background: var(--color-primary-light); box-shadow: 0 0 0 2px rgba(111, 91, 211, .1); }
+.creation-config-image-style-thumb {
+  display: grid;
+  width: 94px;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--color-bg-subtle);
+  color: var(--color-text-tertiary);
+  font-size: .68rem;
+  text-align: center;
+}
+.creation-config-image-style-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.creation-config-image-style-copy { min-width: 0; }
+.creation-config-image-style-copy strong,
+.creation-config-image-style-copy small { display: block; }
+.creation-config-image-style-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.creation-config-image-style-copy small { margin-top: .2rem; color: var(--color-text-tertiary); font-size: .74rem; }
 .creation-config-policy-row {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -8713,7 +8755,8 @@ details[open] .ip-character-advanced-summary::before {
     grid-template-columns: 1fr;
   }
   .creation-config-image-style-grid,
-  .creation-config-policy-row {
+  .creation-config-policy-row,
+  .creation-config-image-style-cards {
     grid-template-columns: 1fr;
   }
 }

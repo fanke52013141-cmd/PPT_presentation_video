@@ -2,9 +2,7 @@
   'use strict';
 
   const PROFILE_STATE = {
-    imageStyles: null,
     creationConfigs: null,
-    selectedStyleTemplate: 'default',
     creating: false,
   };
 
@@ -56,17 +54,6 @@
     return String(value ?? '').replace(/[&<>'"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[ch]));
   }
 
-  async function loadImageStyles() {
-    if (PROFILE_STATE.imageStyles) return PROFILE_STATE.imageStyles;
-    try {
-      const data = await apiGet('/api/image-style/templates');
-      PROFILE_STATE.imageStyles = (data && data.templates) || [];
-    } catch (_) {
-      PROFILE_STATE.imageStyles = [];
-    }
-    return PROFILE_STATE.imageStyles;
-  }
-
   async function loadCreationConfigs() {
     try {
       const response = await apiGet('/api/creation-configs');
@@ -88,26 +75,6 @@
         <strong>${esc(item.name)}</strong>
       </div>
     `).join('');
-  }
-
-  function styleTiles(styles) {
-    PROFILE_STATE.selectedStyleTemplate = 'default';
-    return (styles || []).map(t => {
-      let thumb = '';
-      if (t.references && typeof t.references === 'object') {
-        for (const key of Object.keys(t.references)) {
-          const ref = t.references[key];
-          if (ref && ref.url) { thumb = ref.url; break; }
-        }
-      }
-      const sel = t.id === 'default' ? 'selected' : '';
-      return `<div class="profile-style-tile ${sel}" data-style-id="${esc(t.id)}">
-        ${thumb
-          ? `<img src="${esc(thumb)}" alt="${esc(t.name)}" style="width:100%;height:72px;object-fit:cover;display:block;">`
-          : `<div style="width:100%;height:72px;background:var(--color-bg-subtle);display:flex;align-items:center;justify-content:center;color:var(--color-text-tertiary);font-size:.74rem;">无预览</div>`}
-        <div style="padding:.35rem .4rem;font-size:.8rem;text-align:center;background:var(--color-bg-surface);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--color-text-secondary);">${esc(t.name)}</div>
-      </div>`;
-    }).join('');
   }
 
   function availableCreationConfigs(packages) {
@@ -142,7 +109,7 @@
     const choices = available.map(item => ({
       id: item.id,
       name: item.name || '未命名配置包',
-      detail: `最新版本 v${Number(item.latest_version)} · 提示词与模型关联`
+      detail: `最新版本 v${Number(item.latest_version)} · 提示词、模型与图片风格`
     }));
     return choices.map(item => `
       <button type="button" class="creation-config-choice" data-creation-config-choice="${esc(item.id)}" role="radio" aria-checked="false">
@@ -171,7 +138,7 @@
 
   window.refreshCreationConfigChoices = refreshCreationConfigChoices;
 
-  function renderModal(imageStyles, creationConfigs) {
+  function renderModal(creationConfigs) {
     const modal = document.getElementById('modal-create');
     const content = modal?.querySelector('.modal-content');
     if (!modal || !content || content.dataset.projectProfileWizard === '1') return;
@@ -196,10 +163,10 @@
             ${creationConfigChoices(creationConfigs)}
           </div>
           <select id="input-creation-config" class="creation-config-native-select" aria-hidden="true" tabindex="-1">${creationConfigOptions(creationConfigs)}</select>
-          <p id="create-creation-config-help" class="project-profile-help">${creationConfigs?.length ? '本项目会保存所选配置包的版本。' : '暂无可用创作配置包。'}</p>
+          <p id="create-creation-config-help" class="project-profile-help">${creationConfigs?.length ? '本项目会保存所选配置包的版本，模型、提示词、图片风格和参考图均以该配置包为准。' : '暂无可用创作配置包。'}</p>
         </section>
         <details class="project-profile-advanced">
-          <summary>高级设置 <span>画布、图片风格与参考图</span></summary>
+          <summary>高级设置 <span>画布比例</span></summary>
           <div class="project-profile-advanced-body">
         <section class="project-profile-section">
           <h4>3. 画布比例</h4>
@@ -210,20 +177,6 @@
             ], 'canvas_profile', 'landscape_16_9')}
           </div>
           <p class="project-profile-help">创建后比例会锁定；需要更换比例时请复制项目重新生成。</p>
-        </section>
-        <section class="project-profile-section">
-          <h4>4. 图片风格</h4>
-          <div class="profile-style-grid">${styleTiles(imageStyles)}</div>
-          <p class="project-profile-help">选择模板作为基础风格；本项目还可以单独上传参考图。</p>
-        </section>
-        <section class="project-profile-section">
-          <h4>5. 本项目参考图片</h4>
-          <label class="profile-upload-box" for="input-project-reference-images">
-            <strong>添加 1–3 张参考图</strong>
-            <span>只作用于当前项目；支持 PNG、JPG、WEBP，单张不超过 12MB。</span>
-            <input id="input-project-reference-images" type="file" accept="image/*" multiple>
-          </label>
-          <div id="project-reference-preview" class="project-reference-preview"></div>
         </section>
           </div>
         </details>
@@ -253,15 +206,6 @@
       });
     });
 
-    // Style tile selection
-    document.querySelectorAll('.profile-style-tile').forEach(tile => {
-      tile.addEventListener('click', () => {
-        document.querySelectorAll('.profile-style-tile').forEach(t => { t.classList.remove('selected'); });
-        tile.classList.add('selected');
-        PROFILE_STATE.selectedStyleTemplate = tile.getAttribute('data-style-id') || 'default';
-      });
-    });
-
     document.getElementById('btn-create-cancel')?.addEventListener('click', () => {
       document.getElementById('modal-create').style.display = 'none';
     });
@@ -270,25 +214,6 @@
       event.stopPropagation();
       createProjectWithProfile().catch(error => toast(`❌ 创建失败：${error.message}`, 7000));
     }, true);
-    document.getElementById('input-project-reference-images')?.addEventListener('change', event => {
-      const files = Array.from(event.target.files || []).slice(0, 3);
-      if (event.target.files?.length > 3) toast('最多选择 3 张参考图');
-      const preview = document.getElementById('project-reference-preview');
-      if (!preview) return;
-      preview.replaceChildren();
-      files.forEach(file => {
-        const item = document.createElement('div');
-        item.className = 'project-reference-preview-item';
-        const image = document.createElement('img');
-        image.alt = file.name;
-        image.src = URL.createObjectURL(file);
-        const name = document.createElement('span');
-        name.textContent = file.name;
-        item.append(image, name);
-        preview.append(item);
-      });
-    });
-
     const configGrid = document.getElementById('creation-config-choice-grid');
     configGrid?.addEventListener('click', event => {
       const choice = event.target.closest('[data-creation-config-choice]');
@@ -311,8 +236,7 @@
       automation_mode: 'auto',
       quality_gates: { ...DEFAULT_QUALITY_GATES },
       last_used_storyboard_template_id: '',
-      last_used_image_style_template_id: PROFILE_STATE.selectedStyleTemplate || 'default',
-      notes: 'Lightweight profile only. Step 2 owns storyboard style; Step 3 owns image style and references.',
+      notes: 'Lightweight profile only. The selected creation package owns prompts, models, image style, and reference images.',
     };
   }
 
@@ -342,14 +266,12 @@
     }
     try {
       const profile = collectProfile();
-      const styleTemplate = PROFILE_STATE.selectedStyleTemplate || 'default';
       const creationConfig = selectedCreationConfig();
       const pendingParent = window.__pendingProjectParent || null;
       const projectRes = await apiPost('/api/projects', {
         name,
         description: desc,
         canvas_profile: profile.canvas_profile,
-        image_style_template: styleTemplate,
         ...(creationConfig ? {
           config_package_id: creationConfig.id,
           config_package_version: creationConfig.version,
@@ -360,13 +282,6 @@
       if (!project?.id) throw new Error('项目创建成功但未返回 project.id');
       await apiPut(`/api/projects/${encodeURIComponent(project.id)}/project-profile`, { profile });
 
-      // Apply image style template if not default
-      if (styleTemplate && styleTemplate !== 'default') {
-        try {
-          await apiPost(`/api/projects/${encodeURIComponent(project.id)}/steps/3/image-style/templates/${encodeURIComponent(styleTemplate)}/apply`);
-        } catch (_) { /* non-fatal */ }
-      }
-
       window.__pendingProjectParent = null;
 
       if (article) {
@@ -374,14 +289,6 @@
         const form = new FormData();
         form.append('content', article);
         await apiPost(`/api/projects/${encodeURIComponent(project.id)}/steps/1/import`, form);
-      }
-      const referenceInput = document.getElementById('input-project-reference-images');
-      const referenceFiles = Array.from(referenceInput?.files || []).slice(0, 3);
-      if (referenceFiles.length) {
-        if (button) button.textContent = '上传参考图...';
-        const form = new FormData();
-        referenceFiles.forEach(file => form.append('files', file));
-        await apiPost(`/api/projects/${encodeURIComponent(project.id)}/steps/3/image-style/reference-images`, form);
       }
       document.getElementById('modal-create').style.display = 'none';
       toast('项目已创建。', 4500);
@@ -406,11 +313,8 @@
   }
 
   async function enhanceCreateModal() {
-    const [imageStyles, creationConfigs] = await Promise.all([
-      loadImageStyles(),
-      loadCreationConfigs(),
-    ]);
-    renderModal(imageStyles, creationConfigs);
+    const creationConfigs = await loadCreationConfigs();
+    renderModal(creationConfigs);
   }
 
   function boot() {

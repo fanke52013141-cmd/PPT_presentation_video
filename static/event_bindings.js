@@ -56,8 +56,6 @@ function initGlobalEvents() {
   document.getElementById('btn-create-project')?.addEventListener('click', () => {
     document.getElementById('input-project-name').value = '';
     document.getElementById('input-project-desc').value = '';
-    // Load image-style templates into the grid.
-    loadImageStyleTemplates();
     loadCreationConfigs();
     document.getElementById('modal-create').style.display = 'flex';
   });

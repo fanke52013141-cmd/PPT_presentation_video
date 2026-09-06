@@ -109,7 +109,9 @@
       const summaryTitle = document.createElement('strong');
       summaryTitle.textContent = label;
       const summaryHint = document.createElement('span');
-      summaryHint.textContent = '编辑提示词与输出示例';
+      summaryHint.textContent = key === 'image_generation'
+        ? '编辑创作指引；生产合同由系统锁定'
+        : '编辑提示词与输出示例';
       summary.append(summaryTitle, summaryHint);
       const headingRow = document.createElement('div');
       headingRow.className = 'creation-config-prompt-heading';
@@ -121,7 +123,7 @@
       restore.addEventListener('click', () => restorePromptModule(key, label));
       headingRow.append(restore);
       const systemLabel = document.createElement('label');
-      systemLabel.textContent = '系统提示词';
+      systemLabel.textContent = key === 'image_generation' ? '创作指引（可编辑）' : '系统提示词';
       const system = document.createElement('textarea');
       system.id = `creation-config-prompt-${key}-system-content`;
       system.rows = 10;
@@ -137,6 +139,24 @@
       example.placeholder = '没有示例可以留空；如果有，请保留完整 JSON 结构，便于后续流程校验和优化';
       exampleLabel.append(example);
       section.append(summary, headingRow, systemLabel, exampleLabel);
+      if (key === 'image_generation') {
+        const lockedLabel = document.createElement('label');
+        lockedLabel.className = 'creation-config-locked-prompt';
+        lockedLabel.textContent = '固定生产合同（系统锁定）';
+        const locked = document.createElement('textarea');
+        locked.rows = 8;
+        locked.readOnly = true;
+        locked.value = [
+          '1920×1080 横屏或项目选定画布比例；外围画布保持纯白。',
+          '主标题只能有一个，并完整位于标题保护区；禁止页面副标题。',
+          '正文、人物、图标、箭头和装饰必须位于正文安全区。',
+          '底部约 14% 为视频字幕安全区，必须完全留空并保持纯白。',
+          '独立语义元素保持清楚边界和可见白色间距。',
+          '以上规则由服务端在每次生图请求末尾强制追加，配置包无法覆盖。',
+        ].join('\n');
+        lockedLabel.append(locked);
+        section.append(lockedLabel);
+      }
       promptTarget.append(section);
     });
 
@@ -231,7 +251,7 @@
       if (!item?.id) return;
       const option = document.createElement('option');
       option.value = item.id;
-      option.textContent = `${item.name || '未命名风格'} · ${item.reference_count || 0} 张参考图`;
+      option.textContent = `${item.built_in ? '系统内置 · ' : ''}${item.name || '未命名风格'} · ${item.reference_count || 0} 张参考图`;
       option.dataset.version = String(item.version || 1);
       select.append(option);
     });

@@ -572,10 +572,14 @@ def delete_all_legacy_reference_images(
 
 @router.get("/api/image-style/project-templates")
 def list_step3_templates() -> dict[str, Any]:
-    built_in = template_service.template_detail(
-        _context(), template_service.BUILTIN_HANDDRAWN_TEMPLATE_ID
-    )["template"]
-    return {"success": True, "templates": [built_in, *template_service.read_templates(_context())]}
+    context = _context()
+    return {
+        "success": True,
+        "templates": [
+            *template_service.builtin_template_summaries(context),
+            *template_service.read_templates(context),
+        ],
+    }
 
 
 @router.get("/api/image-style/project-templates/{template_id}")
@@ -589,8 +593,8 @@ def get_step3_template_reference(
     index: int,
 ) -> FileResponse:
     context = _context()
-    if template_id == template_service.BUILTIN_HANDDRAWN_TEMPLATE_ID:
-        _, paths = template_service.builtin_sources(context)
+    if template_service.is_builtin_template(template_id):
+        _, paths = template_service.builtin_sources(context, template_id)
         if index < 1 or index > len(paths):
             raise HTTPException(status_code=404, detail="模板参考图不存在")
         return FileResponse(str(paths[index - 1]), media_type="image/png")

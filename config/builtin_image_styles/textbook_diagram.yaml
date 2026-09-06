@@ -1,0 +1,18 @@
+brand:
+  name: Textbook Diagram
+  style_keywords: [教材图解, 学术清晰, 扁平矢量, 结构严谨]
+colors:
+  background: "#FFFFFF"
+  surface: "#FFFFFF"
+  ink: "#102A5E"
+  blue_soft: "#DCEBFA"
+  green_soft: "#DDF1EF"
+  yellow_soft: "#FCE8D8"
+  yellow: "#E47A2E"
+visual_assets:
+  image_style: modern_educational_textbook_diagram
+  diagram_style: precise_flat_concept_map
+  required_background: flat_uniform_pure_white
+  avoid: [企业仪表盘, 密集数据表, 厚重渐变, 玻璃质感, 复杂3D, 儿童卡通]
+prompt_system_content: |
+  使用现代教材图解风。以深蓝文字和线条为基础，用低饱和蓝绿区分概念模块，少量暖橙突出关键关系。图形采用精确、简洁的扁平矢量语言，适合概念拆解、因果关系、层级结构和知识体系；保持学术清楚但容易理解。避免企业仪表盘、密集数据表、厚重渐变、玻璃质感和复杂三维效果。参考图只用于统一图解语言、配色和信息密度，不复制其文字与具体版式。

@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import ai_provider_service as provider  # noqa: E402
+from PIL import Image  # noqa: E402
 
 
 class FailingImageApi:
@@ -171,3 +172,19 @@ def test_image_response_decoding_contract_is_preserved() -> None:
         data=[SimpleNamespace(url="https://example.invalid/image.png")]
     )
     assert provider.response_has_image_data(object_response)
+
+
+def test_locked_subtitle_region_is_measured_and_cleared(tmp_path: Path) -> None:
+    path = tmp_path / "slide.png"
+    image = Image.new("RGB", (100, 100), "white")
+    for x in range(20, 80):
+        for y in range(85, 95):
+            image.putpixel((x, y), (20, 20, 20))
+    image.save(path, "PNG")
+
+    report = provider.enforce_white_image_region(str(path), top=80, bottom=100)
+
+    assert report["cleared"] is True
+    assert report["nonwhite_ratio"] == 0.3
+    with Image.open(path) as cleared:
+        assert set(cleared.crop((0, 80, 100, 100)).get_flattened_data()) == {(255, 255, 255)}

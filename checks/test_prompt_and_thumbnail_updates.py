@@ -98,10 +98,10 @@ assert "不预设正文元素数量" in visual_prompt
 assert "标点必须完整归入" in visual_prompt
 assert "insufficient_visual_groups_for_independent_objects" in mask.DEFAULT_METHODOLOGY
 assert "必要且最小" in image_prompt
-assert "step3_image_v2_minimal_mask_ready" in step3_system_prompt
+assert "step3_image_v3_editable_creative_direction" in step3_system_prompt
 assert "`main_title` 和 `body_elements`" in step3_system_prompt
-assert "完整文章、完整旁白" in step3_system_prompt
-assert "32–64 px" in step3_system_prompt
+assert "固定生产合同" in step3_system_prompt
+assert "标题区、正文区、字幕安全区" in step3_system_prompt
 
 sample_slides = [
     {
@@ -158,16 +158,15 @@ portrait_prompt = image_workflow.compose_step3_single_slide_prompt(
     canvas_profile="portrait_9_16",
 )
 assert "1080×1920、9:16" in portrait_prompt
-assert "y<1650" in portrait_prompt
+assert "y=1650..1920" in portrait_prompt
 assert "1920×1080、16:9" not in portrait_prompt
 portrait_system = image_workflow.adapt_step3_system_content_for_canvas(
     image_workflow.default_step3_image_system_content(),
     "portrait_9_16",
 )
-assert "1080×1920、9:16" in portrait_system
-assert "x=64..1016, y=180..1650" in portrait_system
-assert "y=1650..1920" in portrait_system
-assert "1920×1080、16:9" not in portrait_system
+assert "内容表达与构图方法" in portrait_system
+assert "字幕安全区" in portrait_system
+assert "1920×1080" not in portrait_system
 
 minimal_style = global_image_style.build_image_style_prompt(
     global_image_style.read_style_tokens_data()

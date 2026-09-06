@@ -22,6 +22,53 @@ from account_context import DEFAULT_ACCOUNT_ID, get_current_account_id
 STATE_FILENAME = "step3_image_style.json"
 BUILTIN_HANDDRAWN_TEMPLATE_ID = "handdrawn"
 BUILTIN_HANDDRAWN_TEMPLATE_NAME = "手绘风格"
+BUILTIN_IMAGE_STYLE_TEMPLATES: dict[str, dict[str, Any]] = {
+    BUILTIN_HANDDRAWN_TEMPLATE_ID: {
+        "name": BUILTIN_HANDDRAWN_TEMPLATE_NAME,
+        "summary": "温暖极简的手绘线稿科普风格，适合经验分享、备考方法和观点讲解。",
+        "style_path": "config/style_tokens_handdrawn.yaml",
+        "reference_paths": [
+            "references/style_reference/PPT模板.png",
+            "references/style_reference/PPT示例.png",
+        ],
+    },
+    "government_brief": {
+        "name": "政务教学风",
+        "summary": "藏青与政务蓝主导的克制信息图，适合政策解读、案例分析和规范答题。",
+        "style_path": "config/builtin_image_styles/government_brief.yaml",
+        "reference_dir": "references/style_reference/government_brief",
+    },
+    "light_teaching": {
+        "name": "轻松教学风",
+        "summary": "低饱和蓝绿与暖色强调的亲和教学风，适合方法讲解和避坑清单。",
+        "style_path": "config/builtin_image_styles/light_teaching.yaml",
+        "reference_dir": "references/style_reference/light_teaching",
+    },
+    "blackboard_chalk": {
+        "name": "黑板粉笔风",
+        "summary": "黑板面板与白色粉笔图示组合，适合课堂推演、答题步骤和公式拆解。",
+        "style_path": "config/builtin_image_styles/blackboard_chalk.yaml",
+        "reference_dir": "references/style_reference/blackboard_chalk",
+    },
+    "annotated_notes": {
+        "name": "三色批注笔记风",
+        "summary": "红蓝绿批注与纸张笔记语言，适合错题复盘、材料批注和思路纠偏。",
+        "style_path": "config/builtin_image_styles/annotated_notes.yaml",
+        "reference_dir": "references/style_reference/annotated_notes",
+    },
+    "textbook_diagram": {
+        "name": "教材图解风",
+        "summary": "严谨的扁平教材插图与关系图，适合概念拆解、结构分析和知识体系。",
+        "style_path": "config/builtin_image_styles/textbook_diagram.yaml",
+        "reference_dir": "references/style_reference/textbook_diagram",
+    },
+    "minimal_classroom": {
+        "name": "简约课堂信息图",
+        "summary": "清晰编号、轻量图标和柔和色块，适合步骤教学、清单和快速总结。",
+        "style_path": "config/builtin_image_styles/minimal_classroom.yaml",
+        "reference_dir": "references/style_reference/minimal_classroom",
+    },
+}
 TEMPLATES_INDEX_VERSION = "step3_image_style_templates_v1"
 MAX_PORTABLE_REFERENCE_IMAGES = 3
 
@@ -127,21 +174,39 @@ def templates_index(context: Any) -> Path:
     return templates_root(context) / "index.json"
 
 
-def builtin_sources(context: Any) -> tuple[Path, list[Path]]:
-    style_path = Path(context.handdrawn_style_tokens_path)
-    reference_root = Path(context.repo_root) / "references" / "style_reference"
-    paths = [
-        reference_root / "PPT模板.png",
-        reference_root / "PPT示例.png",
-    ]
+def is_builtin_template(template_id: str) -> bool:
+    return str(template_id or "") in BUILTIN_IMAGE_STYLE_TEMPLATES
+
+
+def builtin_sources(
+    context: Any,
+    template_id: str = BUILTIN_HANDDRAWN_TEMPLATE_ID,
+) -> tuple[Path, list[Path]]:
+    definition = BUILTIN_IMAGE_STYLE_TEMPLATES.get(str(template_id or ""))
+    if definition is None:
+        raise context.http_exception(status_code=404, detail="内置图片风格不存在")
+    repo_root = Path(context.repo_root)
+    style_path = repo_root / str(definition["style_path"])
+    explicit = definition.get("reference_paths")
+    if isinstance(explicit, list):
+        paths = [repo_root / str(value) for value in explicit]
+    else:
+        reference_dir = repo_root / str(definition.get("reference_dir") or "")
+        paths = sorted(reference_dir.glob("reference_*.png")) if reference_dir.is_dir() else []
     return style_path, [path for path in paths if path.is_file()]
 
 
-def builtin_style(context: Any) -> dict[str, Any]:
-    style_path, _ = builtin_sources(context)
+def builtin_style(
+    context: Any,
+    template_id: str = BUILTIN_HANDDRAWN_TEMPLATE_ID,
+) -> dict[str, Any]:
+    definition = BUILTIN_IMAGE_STYLE_TEMPLATES.get(str(template_id or ""))
+    if definition is None:
+        raise context.http_exception(status_code=404, detail="内置图片风格不存在")
+    style_path, reference_paths = builtin_sources(context, template_id)
     if not style_path.exists():
         raise context.http_exception(
-            status_code=404, detail="内置手绘风格配置缺失"
+            status_code=404, detail=f"内置图片风格配置缺失：{definition['name']}"
         )
     try:
         style_tokens = yaml.safe_load(
@@ -150,23 +215,32 @@ def builtin_style(context: Any) -> dict[str, Any]:
     except Exception as exc:
         raise context.http_exception(
             status_code=500,
-            detail="内置手绘风格配置损坏",
+            detail=f"内置图片风格配置损坏：{definition['name']}",
         ) from exc
     if not isinstance(style_tokens, dict):
         raise context.http_exception(
-            status_code=500, detail="内置手绘风格配置损坏"
+            status_code=500, detail=f"内置图片风格配置损坏：{definition['name']}"
         )
     system_content = context.build_image_style_prompt(style_tokens)
     return {
         "source": "built_in_template",
-        "template_id": BUILTIN_HANDDRAWN_TEMPLATE_ID,
-        "style_name": BUILTIN_HANDDRAWN_TEMPLATE_NAME,
-        "style_summary": "温暖极简的手绘线稿科普风格，纯白画布、清晰分组，适合演讲内容可视化与 Mask 显现。",
+        "template_id": template_id,
+        "style_name": str(definition["name"]),
+        "style_summary": str(definition["summary"]),
         "system_content": system_content,
         "sample_reference_image_prompts": [system_content],
-        "reference_image_count_target": 3,
+        "reference_image_count_target": max(1, min(3, len(reference_paths))),
+        "locked": True,
+        "production_contract_version": "step3_visual_contract_v3",
         "style_tokens": style_tokens,
     }
+
+
+def builtin_template_summaries(context: Any) -> list[dict[str, Any]]:
+    return [
+        template_detail(context, template_id)["template"]
+        for template_id in BUILTIN_IMAGE_STYLE_TEMPLATES
+    ]
 
 
 def read_templates(
@@ -206,8 +280,9 @@ def template_dir_or_404(context: Any, template_id: str) -> Path:
 
 
 def template_detail(context: Any, template_id: str) -> dict[str, Any]:
-    if template_id == BUILTIN_HANDDRAWN_TEMPLATE_ID:
-        _, paths = builtin_sources(context)
+    if is_builtin_template(template_id):
+        definition = BUILTIN_IMAGE_STYLE_TEMPLATES[template_id]
+        _, paths = builtin_sources(context, template_id)
         images = [
             {
                 "index": index,
@@ -222,14 +297,15 @@ def template_detail(context: Any, template_id: str) -> dict[str, Any]:
         ]
         item = {
             "id": template_id,
-            "name": BUILTIN_HANDDRAWN_TEMPLATE_NAME,
+            "name": str(definition["name"]),
             "built_in": True,
+            "locked": True,
             "version": 1,
             "account_id": get_current_account_id(),
             "content_hash": hashlib.sha256(
                 json.dumps(
                     {
-                        "style": builtin_style(context),
+                        "style": builtin_style(context, template_id),
                         "reference_sha256s": [
                             hashlib.sha256(path.read_bytes()).hexdigest()
                             for path in paths[:3]
@@ -245,7 +321,7 @@ def template_detail(context: Any, template_id: str) -> dict[str, Any]:
         return {
             "success": True,
             "template": item,
-            "style": builtin_style(context),
+            "style": builtin_style(context, template_id),
             "references": {
                 "scope": "step3_image_style_template",
                 "style_name": item["name"],
@@ -383,10 +459,10 @@ def apply_named_template(
         write_normalized_manifest,
     )
 
-    built_in = template_id == BUILTIN_HANDDRAWN_TEMPLATE_ID
+    built_in = is_builtin_template(template_id)
     source = None if built_in else template_dir_or_404(context, template_id)
     style = (
-        builtin_style(context)
+        builtin_style(context, template_id)
         if built_in
         else _read_json(source / "style.json", {})
     )
@@ -403,7 +479,8 @@ def apply_named_template(
     if target_refs.exists():
         shutil.rmtree(target_refs)
     if built_in:
-        _, source_images = builtin_sources(context)
+        definition = BUILTIN_IMAGE_STYLE_TEMPLATES[template_id]
+        _, source_images = builtin_sources(context, template_id)
         target_refs.mkdir(parents=True, exist_ok=True)
         images = []
         for index, source_image in enumerate(source_images[:3], start=1):
@@ -420,7 +497,7 @@ def apply_named_template(
         manifest = {
             "version": "step3_style_references_v1",
             "scope": "step3_image_style",
-            "style_name": BUILTIN_HANDDRAWN_TEMPLATE_NAME,
+            "style_name": str(definition["name"]),
             "updated_at": datetime.now().isoformat(timespec="seconds"),
             "images": images,
         }
@@ -437,9 +514,9 @@ def apply_named_template(
 
 
 def delete_named_template(context: Any, template_id: str) -> list[dict[str, Any]]:
-    if template_id == BUILTIN_HANDDRAWN_TEMPLATE_ID:
+    if is_builtin_template(template_id):
         raise context.http_exception(
-            status_code=400, detail="内置手绘风格不能删除"
+            status_code=400, detail="系统内置图片风格不能删除"
         )
     template_dir_or_404(context, template_id)
     items = read_templates(context, include_archived=True)

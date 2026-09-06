@@ -1,0 +1,18 @@
+brand:
+  name: Minimal Classroom
+  style_keywords: [简约课堂, 步骤教学, 轻量图标, 快速理解]
+colors:
+  background: "#FFFFFF"
+  surface: "#FFFFFF"
+  ink: "#102A5E"
+  blue_soft: "#DCEEFF"
+  green_soft: "#DEF3E8"
+  yellow_soft: "#FFF2BD"
+  yellow: "#F3B700"
+visual_assets:
+  image_style: minimal_adult_classroom_infographic
+  diagram_style: numbered_step_learning_visual
+  required_background: flat_uniform_pure_white
+  avoid: [密集卡片网格, 复杂场景插画, 贴纸风, 儿童化角色, 阴影堆叠, 假UI]
+prompt_system_content: |
+  使用简约课堂信息图风。以深藏青文字、浅天空蓝与薄荷绿色块为主，少量暖黄作为步骤与重点提示；使用大编号、轻量线性图标、清楚箭头和简洁模块建立强阅读顺序。风格面向成人学习者，清爽、快速理解，不使用密集卡片网格、复杂场景插画、贴纸和儿童化角色。参考图只用于统一编号方式、图标线条、色块比例和信息密度，不复制其文字与具体版式。

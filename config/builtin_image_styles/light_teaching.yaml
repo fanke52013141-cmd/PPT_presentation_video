@@ -1,0 +1,18 @@
+brand:
+  name: Light Teaching
+  style_keywords: [轻松教学, 清爽亲和, 低饱和, 成人学习]
+colors:
+  background: "#FFFFFF"
+  surface: "#FFFFFF"
+  ink: "#17325C"
+  blue_soft: "#DCEFFD"
+  green_soft: "#DDF3E8"
+  yellow_soft: "#FFF0B5"
+  yellow: "#FF8B73"
+visual_assets:
+  image_style: light_friendly_adult_teaching
+  diagram_style: rounded_step_explainer
+  required_background: flat_uniform_pure_white
+  avoid: [儿童卡通, 密集贴纸, 夸张表情, 糖果色堆叠, 复杂背景, 假UI]
+prompt_system_content: |
+  使用轻松、清楚、具有课堂讲解感的信息图风格。采用低饱和天空蓝、薄荷绿、暖黄和少量珊瑚色，配合圆角内容模块、轻量线性图标、步骤图和小型场景插画。阅读顺序明确、留白充足、亲和但不过度儿童化。避免密集贴纸、夸张表情、糖果色堆叠和无意义装饰。参考图只用于统一视觉气质、配色、线条和信息密度，不复制其文字与具体版式。

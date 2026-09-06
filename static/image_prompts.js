@@ -32,6 +32,7 @@ function updateStep3PromptFullPreview() {
   const promptInfo = currentStep3PromptInfo();
   const inputPreview = document.getElementById('step3-image-input-preview');
   const fullPreview = document.getElementById('step3-image-full-prompt');
+  const protectedPreview = document.getElementById('step3-image-protected-rules');
   const slidePrompt = String(promptInfo?.slide_prompt || '').trim();
   if (inputPreview) {
     const jsonStart = slidePrompt.indexOf('{');
@@ -57,6 +58,7 @@ function updateStep3PromptFullPreview() {
     );
     fullPreview.value = parts.filter(Boolean).join('\n\n');
   }
+  if (protectedPreview) protectedPreview.value = String(settings.protected_rules || '').trim();
 }
 
 async function openStep3PromptSettingsModal() {
@@ -65,10 +67,12 @@ async function openStep3PromptSettingsModal() {
   const systemInput = document.getElementById('step3-image-system-prompt');
   const inputPreview = document.getElementById('step3-image-input-preview');
   const fullPreview = document.getElementById('step3-image-full-prompt');
+  const protectedPreview = document.getElementById('step3-image-protected-rules');
   modal.style.display = 'flex';
   systemInput.value = '加载中...';
   inputPreview.value = '';
   fullPreview.value = '';
+  if (protectedPreview) protectedPreview.value = '';
   try {
     const [result] = await Promise.all([
       API.get(`/api/projects/${state.currentProject.id}/steps/3/prompt-settings`),

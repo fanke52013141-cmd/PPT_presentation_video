@@ -438,7 +438,8 @@
       const image = detail?.references?.images?.[0];
       const thumb = image ? `<img src="${esc(image.url)}" alt="${esc(item.name)} 模板缩略图">` : '<span class="style-template-thumb-placeholder">16:9 风格模板</span>';
       const count = detail?.references?.images?.length ?? item.reference_count ?? 0;
-      return `<article class="style-template-card ${item.id === STATE.selectedTemplateId ? 'active' : ''}" data-template-id="${esc(item.id)}"><span class="style-template-thumb">${thumb}</span><span><span class="style-template-name">${esc(item.name)}</span><span class="style-template-meta">System Content + ${count} 张参考图</span></span><span class="style-template-check">✓</span>${item.id !== 'current' && !item.built_in ? '<button class="style-template-delete" type="button">删除</button>' : ''}</article>`;
+      const lock = item.built_in ? '<span class="style-template-lock">系统锁定</span>' : '';
+      return `<article class="style-template-card ${item.id === STATE.selectedTemplateId ? 'active' : ''}" data-template-id="${esc(item.id)}"><span class="style-template-thumb">${thumb}</span><span><span class="style-template-name">${esc(item.name)} ${lock}</span><span class="style-template-meta">风格指引 + ${count} 张参考图</span></span><span class="style-template-check">✓</span>${item.id !== 'current' && !item.built_in ? '<button class="style-template-delete" type="button">删除</button>' : ''}</article>`;
     }).join('');
     catalog.querySelectorAll('.style-template-card').forEach(card => card.addEventListener('click', event => {
       if (event.target.closest('.style-template-delete')) return;

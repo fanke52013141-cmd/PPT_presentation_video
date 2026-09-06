@@ -9093,3 +9093,36 @@ details[open] .ip-character-advanced-summary::before {
   .account-picker { min-width: 8rem; }
   .header-config-action { display: none; }
 }
+/* Locked production-contract fields in Prompt and style editors. */
+.creation-config-locked-prompt textarea,
+.prompt-locked-field textarea {
+  background: #f2f5fb;
+  color: #536177;
+  border-color: #d6deec;
+  cursor: default;
+}
+
+.creation-config-locked-prompt::before,
+.prompt-locked-field > span::after {
+  content: "锁定";
+  display: inline-flex;
+  margin-right: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e8edff;
+  color: #5266c7;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.style-template-lock {
+  display: inline-flex;
+  margin-left: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #e8edff;
+  color: #5266c7;
+  font-size: 10px;
+  font-weight: 700;
+  vertical-align: middle;
+}

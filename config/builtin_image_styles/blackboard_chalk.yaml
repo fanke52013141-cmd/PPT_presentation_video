@@ -1,0 +1,18 @@
+brand:
+  name: Blackboard Chalk
+  style_keywords: [黑板粉笔, 黑白手写, 课堂推演, 高对比]
+colors:
+  background: "#FFFFFF"
+  surface: "#1D1F20"
+  ink: "#F8F8F2"
+  blue_soft: "#D9DDE0"
+  green_soft: "#ECEFEF"
+  yellow_soft: "#F4F1E8"
+  yellow: "#FFFFFF"
+visual_assets:
+  image_style: monochrome_blackboard_chalk_panel
+  diagram_style: chalk_handwritten_explainer
+  required_background: flat_uniform_pure_white
+  avoid: [彩色霓虹粉笔, 真实教室照片, 木质黑板框, 粉尘堆积, 儿童涂鸦, 全屏黑色背景]
+prompt_system_content: |
+  使用成熟克制的黑板粉笔教学风。正文主要放在一个边界清楚的深炭黑黑板面板中，以白色粉笔手写字、编号、箭头和简笔图示表达；只允许极轻微的灰白变化，不使用彩色霓虹粉笔。黑板必须是纯白画布中的独立矩形内容面板，不延伸到画布边缘，不使用真实教室、木框、投影光或大量粉尘。参考图只用于统一粉笔线条、黑白对比和课堂推演气质，不复制其文字与具体版式。

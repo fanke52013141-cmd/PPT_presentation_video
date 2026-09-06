@@ -189,6 +189,43 @@ def process_and_save_image(
     )
 
 
+def enforce_white_image_region(
+    image_path: str,
+    *,
+    top: int,
+    bottom: int,
+    white_threshold: int = 248,
+) -> Dict[str, Any]:
+    """Measure and then clear a production-owned white region.
+
+    Prompt rules reduce violations, but generated pixels are never trusted as a
+    layout guarantee.  The returned ratio is logged by the workflow so a model
+    that repeatedly draws into the subtitle band remains observable.
+    """
+    with Image.open(image_path) as source:
+        image = source.convert("RGB")
+    top = max(0, min(image.height, int(top)))
+    bottom = max(top, min(image.height, int(bottom)))
+    if bottom <= top:
+        return {"top": top, "bottom": bottom, "nonwhite_ratio": 0.0, "cleared": False}
+    region = image.crop((0, top, image.width, bottom))
+    pixels = region.get_flattened_data()
+    total = max(1, region.width * region.height)
+    nonwhite = sum(
+        1 for red, green, blue in pixels
+        if min(red, green, blue) < white_threshold
+    )
+    ratio = nonwhite / total
+    image.paste((255, 255, 255), (0, top, image.width, bottom))
+    image.save(image_path, "PNG")
+    return {
+        "top": top,
+        "bottom": bottom,
+        "nonwhite_ratio": round(ratio, 6),
+        "cleared": nonwhite > 0,
+    }
+
+
 def is_seedream_image_model(
     model: Optional[str],
     base_url: Optional[str] = None,

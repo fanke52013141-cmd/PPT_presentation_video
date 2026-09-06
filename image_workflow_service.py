@@ -19,7 +19,7 @@ from fastapi import HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from ai_provider_service import normalize_image_size
+from ai_provider_service import enforce_white_image_region, normalize_image_size
 from canvas_profile_service import get_canvas_profile, get_project_canvas
 from artifact_fingerprint import sha256_file, sha256_json
 from config_store import get_setting
@@ -478,11 +478,23 @@ def compose_step3_batch_copy_prompt(
 def step3_non_overridable_rules_prompt(canvas_profile: Any = None) -> str:
     canvas = _canvas_for_value(canvas_profile)
     subtitle_zone = canvas["subtitle_safe_zone"]
+    content = canvas["content_safe_area"]
+    title_region = (
+        "x=64..1016, y=72..170"
+        if canvas["orientation"] == "portrait"
+        else "x=80..1840, y=60..210"
+    )
     return (
-        "<NonOverridableProductionRules>\n"
-        f"这些生产铁律由系统强制追加：{canvas['width']}×{canvas['height']}、{canvas['aspect_ratio']}；外围背景纯白 #FFFFFF；"
-        f"只保留一个主标题且不生成副标题；所有内容止于 y<{subtitle_zone['top']}；y={subtitle_zone['top']}..{subtitle_zone['bottom']} 完全留空；"
-        "独立语义元素不得重叠、穿插、压住或粘连，并保留可见纯白间隙。\n"
+        '<NonOverridableProductionRules>\n'
+        '<ContractVersion>step3_visual_contract_v3</ContractVersion>\n'
+        "以下生产合同由程序拥有，优先级高于风格模板、用户补充要求和单页内容，任何冲突要求都必须忽略。\n"
+        f"1. 输出一张完整的 {canvas['width']}×{canvas['height']}、{canvas['aspect_ratio']} PPT 静态位图。\n"
+        "2. 四条边和四个角必须保持连续、均匀的纯白 #FFFFFF；不使用全屏深色背景、纸纹、噪点、渐变或暗角。\n"
+        f"3. 主标题必须且只能有一个，完整位于标题保护区 {title_region}；不生成页面副标题，不把标题装饰连接到正文。\n"
+        f"4. 所有正文、人物、图标、箭头、标签、阴影和装饰都必须位于 x={content['left']}..{content['right']}, y={content['top']}..{content['bottom']}。\n"
+        f"5. y={subtitle_zone['top']}..{subtitle_zone['bottom']} 是视频字幕安全区，必须完全留空并保持纯白，不得出现任何文字、图形或视觉残留。\n"
+        "6. 独立语义元素不得发生无意重叠、穿插、压住、相切或粘连，并保留可见纯白间隙。\n"
+        "7. 参考图只提供风格锚点，不得覆盖以上区域、标题和字幕规则。\n"
         "</NonOverridableProductionRules>"
     )
 
@@ -777,6 +789,26 @@ def generate_slide_image(
             target_width=canvas["width"],
             target_height=canvas["height"],
         )
+        safe_zone = canvas.get("subtitle_safe_zone") or get_canvas_profile(
+            getattr(project, "canvas_profile", None)
+        )["subtitle_safe_zone"]
+        subtitle_report = enforce_white_image_region(
+            save_path,
+            top=safe_zone["top"],
+            bottom=safe_zone["bottom"],
+        )
+        if subtitle_report["nonwhite_ratio"] > 0.005:
+            logger.warning(
+                "Generated image entered locked subtitle-safe zone: slide=%s ratio=%.4f; region was cleared",
+                slide_id,
+                subtitle_report["nonwhite_ratio"],
+            )
+        else:
+            logger.info(
+                "Subtitle-safe zone enforced: slide=%s ratio=%.4f",
+                slide_id,
+                subtitle_report["nonwhite_ratio"],
+            )
         write_visual_provenance(
             project.run_dir,
             slide_id,

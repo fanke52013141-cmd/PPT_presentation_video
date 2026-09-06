@@ -1,0 +1,18 @@
+brand:
+  name: Government Brief
+  style_keywords: [政务教学, 克制严谨, 结构清晰, 专业可信]
+colors:
+  background: "#FFFFFF"
+  surface: "#FFFFFF"
+  ink: "#102A56"
+  blue_soft: "#DCE9F7"
+  green_soft: "#E5EFEA"
+  yellow_soft: "#F5EBD3"
+  yellow: "#C9362B"
+visual_assets:
+  image_style: restrained_government_education_infographic
+  diagram_style: structured_policy_explainer
+  required_background: flat_uniform_pure_white
+  avoid: [虚构政府标识, 国徽印章, 新闻演播室, 会议背景, 赛博科技感, 金属质感, 复杂3D]
+prompt_system_content: |
+  使用克制、严谨的政务教学信息图风格。以深藏青和政务蓝为主色，暖白用于大面积留白，红色只用于结论、风险和重要提醒。使用清晰网格、细边框、扁平图标和简洁关系图；页面庄重但不沉闷。不得生成国徽、印章、旗帜、虚构政府标识或新闻演播室背景。参考图只用于统一视觉气质、配色、线条和信息密度，不复制其文字与具体版式。

@@ -89,6 +89,11 @@ def test_image_generation_uses_project_connection_and_redacts_credential_errors(
     monkeypatch.setattr(images, "generate_image_response", lambda **_kwargs: object())
     monkeypatch.setattr(images, "extract_image_bytes_from_response", lambda _response: b"image")
     monkeypatch.setattr(images, "process_and_save_image", lambda _data, path, **_kwargs: Path(path).write_bytes(b"image"))
+    monkeypatch.setattr(
+        images,
+        "enforce_white_image_region",
+        lambda *_args, **_kwargs: {"nonwhite_ratio": 0.0, "cleared": False},
+    )
     monkeypatch.setattr(images, "get_project_canvas", lambda _project: {"width": 1920, "height": 1080})
     monkeypatch.setattr(images, "project_reference_paths", lambda _project: [])
     monkeypatch.setattr(images, "active_style_reference_paths", lambda: [])

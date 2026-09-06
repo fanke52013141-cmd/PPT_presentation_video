@@ -51,8 +51,23 @@ def test_builtin_handdrawn_style_has_system_content_and_previews():
     assert 'BUILTIN_HANDDRAWN_TEMPLATE_NAME = "手绘风格"' in STYLE_RUNTIME
     assert '"system_content": system_content' in STYLE_RUNTIME
     assert '"built_in": True' in STYLE_RUNTIME
-    assert '"PPT模板.png"' in STYLE_RUNTIME
-    assert '"PPT示例.png"' in STYLE_RUNTIME
+    assert '"references/style_reference/PPT模板.png"' in STYLE_RUNTIME
+    assert '"references/style_reference/PPT示例.png"' in STYLE_RUNTIME
     assert "selectedTemplateId: 'handdrawn'" in STYLE_UI
     assert "STATE.templates.find(item => item.built_in" in STYLE_UI
     assert "!item.built_in" in STYLE_UI
+
+
+def test_seven_locked_builtin_teaching_styles_are_registered():
+    for template_id in (
+        "handdrawn",
+        "government_brief",
+        "light_teaching",
+        "blackboard_chalk",
+        "annotated_notes",
+        "textbook_diagram",
+        "minimal_classroom",
+    ):
+        assert f'"{template_id}"' in STYLE_RUNTIME
+    assert '"locked": True' in STYLE_RUNTIME
+    assert "系统内置图片风格不能删除" in STYLE_RUNTIME

@@ -1,0 +1,18 @@
+brand:
+  name: Annotated Notes
+  style_keywords: [三色批注, 复盘笔记, 成人备考, 清晰手写]
+colors:
+  background: "#FFFFFF"
+  surface: "#FFFDF7"
+  ink: "#171717"
+  blue_soft: "#DDEAF8"
+  green_soft: "#DDEEDD"
+  yellow_soft: "#F8EED8"
+  yellow: "#B3261E"
+visual_assets:
+  image_style: clean_annotated_exam_notes
+  diagram_style: red_blue_green_review_annotations
+  required_background: flat_uniform_pure_white
+  avoid: [撕纸拼贴, 真实文具照片, 杂乱草稿, 便利贴堆叠, 儿童贴纸, 过度纸张纹理]
+prompt_system_content: |
+  使用整洁的成人备考批注笔记风。正文以清晰的黑色印刷或工整手写为主体，红色用于失分点与重点下划线，蓝色用于思路分析和侧批，绿色用于结论、检查与防错策略。可以使用括号、批注箭头、勾选和轻量纸张区块，但不得做成撕纸拼贴、真实文具照片或杂乱草稿。参考图只用于统一三色批注规则、纸张气质和信息密度，不复制其文字与具体版式。

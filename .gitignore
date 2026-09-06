@@ -25,6 +25,11 @@ outputs/*
 !references/style_reference/*.jpg
 !references/style_reference/*.jpeg
 !references/style_reference/*.webp
+!references/style_reference/**/
+!references/style_reference/**/*.png
+!references/style_reference/**/*.jpg
+!references/style_reference/**/*.jpeg
+!references/style_reference/**/*.webp
 
 # Local caches and builds
 .cache/

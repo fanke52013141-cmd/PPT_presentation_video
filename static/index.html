@@ -1133,10 +1133,14 @@
           <h3 id="step3-prompt-settings-title" class="highlight-title">图片生成 Prompt</h3>
           <button class="prompt-help-button" type="button" data-prompt-help="step3-image" aria-label="查看图片生成 Prompt 的输入输出示例">?</button>
         </div>
-        <p class="config-editor-note">System Content 控制整页图片的生成方法；程序只追加当前风格和“主标题 + 正文视觉元素”的最小输入。固定白底、标题区和字幕安全区仍由服务端强制保护。</p>
+        <p class="config-editor-note">这里只编辑内容表达与构图方法。画布、标题区、正文区、字幕安全区和白底规则由服务端固定，不能被项目 Prompt 或风格模板覆盖。</p>
         <label class="storyboard-config-field storyboard-rule-field">
-          <span>图片生成 · System Content（可编辑）</span>
+          <span>图片生成 · 创作指引（可编辑）</span>
           <textarea id="step3-image-system-prompt" rows="16" spellcheck="false"></textarea>
+        </label>
+        <label class="storyboard-config-field storyboard-rule-field prompt-locked-field">
+          <span>图片生成 · 固定生产合同（系统锁定）</span>
+          <textarea id="step3-image-protected-rules" rows="10" readonly spellcheck="false"></textarea>
         </label>
         <label class="storyboard-config-field storyboard-rule-field">
           <span>当前 Slide · 最小输入（只读）</span>

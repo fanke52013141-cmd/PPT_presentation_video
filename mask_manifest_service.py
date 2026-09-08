@@ -10,6 +10,7 @@ import subprocess
 from typing import Any, Callable, Dict, List, Optional
 
 from canvas_profile_service import get_project_canvas
+from project_config_runtime import project_subtitles_enabled
 from runtime_support import run_subprocess_killable
 
 
@@ -602,11 +603,16 @@ def _prepare_manifest_for_save(
     payload: Dict[str, Any],
 ) -> Dict[str, Any]:
     canvas = get_project_canvas(project)
+    subtitles_enabled = project_subtitles_enabled(project)
     reveal_canvas = {
         "width": canvas["width"],
         "height": canvas["height"],
         "background": "#FEFDF9",
-        "subtitle_safe_y": canvas["subtitle_safe_zone"]["top"],
+        "subtitle_safe_y": (
+            canvas["subtitle_safe_zone"]["top"]
+            if subtitles_enabled
+            else canvas["height"]
+        ),
     }
     payload["canvas"] = reveal_canvas
     current_slide_ids = _deps().read_contract_slide_ids(project.run_dir)

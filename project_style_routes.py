@@ -600,6 +600,47 @@ def create_account_style_template(payload: dict[str, Any]) -> dict[str, Any]:
     return {"success": True, **result}
 
 
+@router.post("/api/image-style/project-templates/with-references")
+async def create_account_style_template_with_references(
+    name: str = Form(...),
+    system_content: str = Form(...),
+    style_summary: str = Form(""),
+    files: list[UploadFile] = File(default=[]),
+) -> dict[str, Any]:
+    """Create a reusable account style and persist its optional 1–3 references."""
+    selected = [file for file in (files or []) if file is not None]
+    if len(selected) > 3:
+        raise HTTPException(status_code=400, detail="最多只能上传 3 张参考图")
+    reference_images: list[dict[str, Any]] = []
+    for index, file in enumerate(selected, start=1):
+        content_type = str(file.content_type or "").lower()
+        if content_type and not content_type.startswith("image/"):
+            raise HTTPException(
+                status_code=415,
+                detail=f"参考图 {index} 必须是图片文件",
+            )
+        content = await file.read(MAX_REFERENCE_IMAGE_BYTES + 1)
+        if not content:
+            raise HTTPException(status_code=400, detail=f"参考图 {index} 文件为空")
+        if len(content) > MAX_REFERENCE_IMAGE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"参考图 {index} 超过 12MB，请压缩后再上传",
+            )
+        reference_images.append({
+            "filename": Path(str(file.filename or f"reference_{index}.png")).name,
+            "bytes": content,
+        })
+    result = template_service.create_account_template(
+        _context(),
+        name,
+        system_content,
+        style_summary,
+        reference_images=reference_images,
+    )
+    return {"success": True, **result}
+
+
 @router.get("/api/image-style/project-templates/{template_id}/reference-images/{index}")
 def get_step3_template_reference(
     template_id: str,

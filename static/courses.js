@@ -114,17 +114,11 @@ const CourseTree = (() => {
       treeEl.appendChild(renderCourseNode(course));
     });
 
-    // 独立项目：每个都用和课程一样的卡片样式，但明确标注为兼容区，
-    // 避免用户误以为可以跳过课程和章节直接开始正式创作。
+    // 独立项目使用一个紧凑的分割标题，避免占用项目列表的垂直空间。
     if (standaloneList.length > 0) {
       const standaloneHeading = document.createElement('div');
       standaloneHeading.className = 'course-tree-standalone-heading';
-      standaloneHeading.innerHTML = `
-        <div>
-          <strong>独立视频项目</strong>
-          <span>未归入课程的视频项目。</span>
-        </div>
-      `;
+      standaloneHeading.textContent = '独立视频项目';
       treeEl.appendChild(standaloneHeading);
     }
     standaloneList.forEach(project => {

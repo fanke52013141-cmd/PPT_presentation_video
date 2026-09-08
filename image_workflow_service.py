@@ -61,7 +61,7 @@ from repository_paths import (
     REPO_ROOT,
     STEP3_IMAGE_PROMPT_TEMPLATE_PATH,
 )
-from project_config_runtime import get_config_value
+from project_config_runtime import get_config_value, project_subtitles_enabled
 
 
 logger = logging.getLogger("PPTStudio.ImageWorkflow")
@@ -479,10 +479,21 @@ def step3_non_overridable_rules_prompt(canvas_profile: Any = None) -> str:
     canvas = _canvas_for_value(canvas_profile)
     subtitle_zone = canvas["subtitle_safe_zone"]
     content = canvas["content_safe_area"]
+    subtitles_enabled = (
+        project_subtitles_enabled(canvas_profile)
+        if hasattr(canvas_profile, "run_dir")
+        else True
+    )
+    content_bottom = content["bottom"] if subtitles_enabled else canvas["height"] - 60
     title_region = (
         "x=64..1016, y=72..170"
         if canvas["orientation"] == "portrait"
         else "x=80..1840, y=60..210"
+    )
+    subtitle_rule = (
+        f"5. y={subtitle_zone['top']}..{subtitle_zone['bottom']} 是视频字幕安全区，必须完全留空并保持纯白，不得出现任何文字、图形或视觉残留。\n"
+        if subtitles_enabled
+        else "5. 当前项目关闭视频字幕：底部区域不预留字幕安全区；正文和图示可以延伸至该区域，但四条边和四个角仍保持纯白。\n"
     )
     return (
         '<NonOverridableProductionRules>\n'
@@ -491,9 +502,9 @@ def step3_non_overridable_rules_prompt(canvas_profile: Any = None) -> str:
         f"1. 输出一张完整的 {canvas['width']}×{canvas['height']}、{canvas['aspect_ratio']} PPT 静态位图。\n"
         "2. 四条边和四个角必须保持连续、均匀的纯白 #FFFFFF；不使用全屏深色背景、纸纹、噪点、渐变或暗角。\n"
         f"3. 主标题必须且只能有一个，完整位于标题保护区 {title_region}；不生成页面副标题，不把标题装饰连接到正文。\n"
-        f"4. 所有正文、人物、图标、箭头、标签、阴影和装饰都必须位于 x={content['left']}..{content['right']}, y={content['top']}..{content['bottom']}。\n"
-        f"5. y={subtitle_zone['top']}..{subtitle_zone['bottom']} 是视频字幕安全区，必须完全留空并保持纯白，不得出现任何文字、图形或视觉残留。\n"
-        "6. 独立语义元素不得发生无意重叠、穿插、压住、相切或粘连，并保留可见纯白间隙。\n"
+        f"4. 所有正文、人物、图标、箭头、标签、阴影和装饰都必须位于 x={content['left']}..{content['right']}, y={content['top']}..{content_bottom}。\n"
+        + subtitle_rule
+        + "6. 独立语义元素不得发生无意重叠、穿插、压住、相切或粘连，并保留可见纯白间隙。\n"
         "7. 参考图只提供风格锚点，不得覆盖以上区域、标题和字幕规则。\n"
         "</NonOverridableProductionRules>"
     )
@@ -789,26 +800,29 @@ def generate_slide_image(
             target_width=canvas["width"],
             target_height=canvas["height"],
         )
-        safe_zone = canvas.get("subtitle_safe_zone") or get_canvas_profile(
-            getattr(project, "canvas_profile", None)
-        )["subtitle_safe_zone"]
-        subtitle_report = enforce_white_image_region(
-            save_path,
-            top=safe_zone["top"],
-            bottom=safe_zone["bottom"],
-        )
-        if subtitle_report["nonwhite_ratio"] > 0.005:
-            logger.warning(
-                "Generated image entered locked subtitle-safe zone: slide=%s ratio=%.4f; region was cleared",
-                slide_id,
-                subtitle_report["nonwhite_ratio"],
+        if project_subtitles_enabled(project):
+            safe_zone = canvas.get("subtitle_safe_zone") or get_canvas_profile(
+                getattr(project, "canvas_profile", None)
+            )["subtitle_safe_zone"]
+            subtitle_report = enforce_white_image_region(
+                save_path,
+                top=safe_zone["top"],
+                bottom=safe_zone["bottom"],
             )
+            if subtitle_report["nonwhite_ratio"] > 0.005:
+                logger.warning(
+                    "Generated image entered locked subtitle-safe zone: slide=%s ratio=%.4f; region was cleared",
+                    slide_id,
+                    subtitle_report["nonwhite_ratio"],
+                )
+            else:
+                logger.info(
+                    "Subtitle-safe zone enforced: slide=%s ratio=%.4f",
+                    slide_id,
+                    subtitle_report["nonwhite_ratio"],
+                )
         else:
-            logger.info(
-                "Subtitle-safe zone enforced: slide=%s ratio=%.4f",
-                slide_id,
-                subtitle_report["nonwhite_ratio"],
-            )
+            logger.info("Subtitle-safe zone is disabled for slide=%s; retaining the full PPT image.", slide_id)
         write_visual_provenance(
             project.run_dir,
             slide_id,

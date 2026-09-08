@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from database import Project
 import invalidation_service
+from project_config_runtime import get_config_value, project_subtitles_enabled
 
 
 logger = logging.getLogger("PPTStudio.VisualSettings")
@@ -308,14 +309,17 @@ class VisualSettingsService:
                     "Failed to read project visual settings: %s",
                     exc,
                 )
+        package_subtitle = get_config_value(project, "subtitle", {})
+        base_subtitle = normalize_subtitle_style(package_subtitle)
+        subtitle_override = payload.get("subtitle_style")
+        if isinstance(subtitle_override, dict):
+            base_subtitle.update(subtitle_override)
         return {
             "generation_background": IMAGE_GENERATION_BACKGROUND,
             "video_background": normalize_hex_color(
                 payload.get("video_background")
             ),
-            "subtitle_style": normalize_subtitle_style(
-                payload.get("subtitle_style")
-            ),
+            "subtitle_style": normalize_subtitle_style(base_subtitle),
         }
 
     def write_settings(
@@ -397,6 +401,7 @@ class VisualSettingsService:
     ) -> dict[str, Any]:
         project = self._project(project_id, db)
         previous = self.read_settings(project)
+        previous_enabled = project_subtitles_enabled(project)
         subtitle_style = (
             payload.get("subtitle_style")
             if isinstance(payload, dict)
@@ -407,11 +412,20 @@ class VisualSettingsService:
             subtitle_style=subtitle_style,
         )
         if previous["subtitle_style"] != settings["subtitle_style"]:
-            invalidation_service.subtitle_style_changed(project)
+            if previous_enabled != project_subtitles_enabled(project):
+                invalidation_service.subtitle_visibility_changed(
+                    project,
+                    self.dependencies.read_contract_slide_ids(project.run_dir),
+                )
+            else:
+                invalidation_service.subtitle_style_changed(project)
             db.commit()
         return {
             "success": True,
             "subtitle_style": settings["subtitle_style"],
+            "requires_image_regeneration": (
+                previous_enabled != project_subtitles_enabled(project)
+            ),
             "fonts": OPEN_SOURCE_CHINESE_FONTS,
             "preview_url": self.preview_background_url(project),
         }

@@ -38,6 +38,8 @@ def seed_slide_derivatives(run_dir: Path, *slide_ids: str) -> None:
             (target / filename).write_bytes(b"derived")
         (target / "assets" / "layer.png").write_bytes(b"layer")
         (target / "visual_draft.png").write_bytes(b"source-image")
+        (target / "visual_provenance.json").write_text("{}", encoding="utf-8")
+        (target / "visual_candidate.provenance.json").write_text("{}", encoding="utf-8")
         slides.append(
             {
                 "slide_id": slide_id,
@@ -68,6 +70,23 @@ def test_upstream_and_empty_storyboard_invalidation_matrix() -> None:
             for step in range(2, 9)
         )
         assert not (run_dir / "planning" / "audio_confirmed.json").exists()
+        assert not (run_dir / "remotion_props.json").exists()
+
+        seed_common_derivatives(run_dir)
+        project = FakeProject(run_dir)
+        visibility_report = invalidation_service.subtitle_visibility_changed(
+            project,
+            ["slide_001", "slide_002"],
+        )
+        assert visibility_report.affected_steps == tuple(range(3, 9))
+        assert project.current_step == 3
+        assert all(
+            project._statuses[str(step)] == "pending_reconfirmation"
+            for step in range(3, 9)
+        )
+        assert not (run_dir / "slides" / "slide_001" / "scene.json").exists()
+        assert not (run_dir / "slides" / "slide_001" / "visual_provenance.json").exists()
+        assert not (run_dir / "slides" / "slide_001" / "visual_candidate.provenance.json").exists()
         assert not (run_dir / "remotion_props.json").exists()
 
         seed_common_derivatives(run_dir)

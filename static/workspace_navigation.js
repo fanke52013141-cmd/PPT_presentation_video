@@ -135,20 +135,9 @@ async function toggleProjectAiMode() {
 }
 
 function renderProductionModeSummary(project = state.currentProject) {
-  const header = document.getElementById('project-info-header');
-  if (!header || !project) return;
-  let card = document.getElementById('project-production-mode');
-  if (!card) {
-    card = document.createElement('button');
-    card.id = 'project-production-mode';
-    card.type = 'button';
-    card.className = 'project-production-mode';
-    card.addEventListener('click', () => selectProductionMode());
-    header.appendChild(card);
-  }
-  const production = project.production_mode === 'one_click' ? '一键生成' : '分步制作';
-  const presentation = project.presentation_mode === 'reveal' ? '逐元素讲解' : '整页展示';
-  card.textContent = `${production} · ${presentation}`;
+  // 制作方式已在创建项目时确定，工作区不再用顶部标签重复展示。
+  // 清理热更新前残留的节点，避免用户看到无操作价值的状态胶囊。
+  document.getElementById('project-production-mode')?.remove();
 }
 
 async function selectProductionMode() {

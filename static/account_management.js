@@ -132,16 +132,13 @@ function ensureAccountDialog() {
     <div class="modal-content account-create-panel" role="dialog" aria-modal="true" aria-labelledby="account-create-title">
       <div class="modal-header-row">
         <div>
-          <div class="eyebrow-label">账号中心</div>
           <h3 id="account-create-title" class="highlight-title">创建创作账号</h3>
         </div>
         <button type="button" class="icon-button" data-account-close aria-label="关闭">×</button>
       </div>
-      <p id="account-create-help" class="account-create-help">每个账号拥有独立的课程、项目、模型关联和创作配置。创建后会自动切换到新账号。</p>
       <label class="form-field">
         <span>账号名称</span>
         <input id="account-create-name" type="text" maxlength="200" autocomplete="off" placeholder="例如：科普账号 / 课程制作组">
-        <small>建议使用容易识别的内容品牌或团队名称。</small>
       </label>
       <div class="modal-actions">
         <button type="button" class="secondary" data-account-cancel>取消</button>
@@ -315,8 +312,11 @@ async function selectAccount(accountId) {
 async function createCreativeAccount() {
   const dialog = ensureAccountDialog();
   _editingAccountId = null;
-  dialog.querySelector('#account-create-title').textContent = '创建创作账号';
-  dialog.querySelector('#account-create-help').textContent = '每个账号拥有独立的课程、项目、模型关联和创作配置。创建后会自动切换到新账号。';
+  const title = dialog.querySelector('#account-create-title');
+  if (title) {
+    title.textContent = '创建创作账号';
+    title.hidden = false;
+  }
   dialog.querySelector('[data-account-submit]').textContent = '创建并切换';
   dialog.style.display = 'flex';
   const input = document.getElementById('account-create-name');
@@ -336,8 +336,8 @@ function editCurrentCreativeAccount() {
   }
   const dialog = ensureAccountDialog();
   _editingAccountId = current.id;
-  dialog.querySelector('#account-create-title').textContent = '修改创作账号';
-  dialog.querySelector('#account-create-help').textContent = '只修改显示名称；该账号下的项目、模型关联和创作配置不会受到影响。';
+  const title = dialog.querySelector('#account-create-title');
+  if (title) title.hidden = true;
   dialog.querySelector('[data-account-submit]').textContent = '保存修改';
   dialog.style.display = 'flex';
   const input = document.getElementById('account-create-name');

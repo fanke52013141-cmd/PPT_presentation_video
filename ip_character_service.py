@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 from canvas_profile_service import get_project_canvas
 from database import Project
 from pipeline_lifecycle import write_json_atomic
+from project_config_runtime import get_config_value, project_subtitles_enabled
 
 
 logger = logging.getLogger("PPTStudio.IPCharacter")
@@ -434,7 +435,12 @@ def render_ip_character_prompt(project, slide_id=None):
         manifest.get("prompt_template"), MAX_IP_PROMPT_TEMPLATE_CHARS
     ) or DEFAULT_IP_PROMPT_TEMPLATE
     canvas = get_project_canvas(project)
-    safe_top = int((canvas.get("subtitle_safe_zone") or {}).get("top") or 930)
+    subtitles_enabled = project_subtitles_enabled(project)
+    safe_top = (
+        int((canvas.get("subtitle_safe_zone") or {}).get("top") or 930)
+        if subtitles_enabled
+        else int(canvas.get("height") or 1080)
+    )
     rendered = template.replace("{characters}", "\n".join(entries))
     rendered = rendered.replace("{subtitle_safe_top}", str(safe_top))
     if canvas.get("orientation") == "portrait" and "y<930" in rendered:

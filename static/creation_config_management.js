@@ -154,7 +154,7 @@
           '1920×1080 横屏或项目选定画布比例；外围画布保持纯白。',
           '主标题只能有一个，并完整位于标题保护区；禁止页面副标题。',
           '正文、人物、图标、箭头和装饰必须位于正文安全区。',
-          '底部约 14% 为视频字幕安全区，必须完全留空并保持纯白。',
+          '仅在开启视频字幕时，底部约 14% 为字幕安全区，必须完全留空并保持纯白。',
           '独立语义元素保持清楚边界和可见白色间距。',
           '以上规则由服务端在每次生图请求末尾强制追加，配置包无法覆盖。',
         ].join('\n');
@@ -248,6 +248,17 @@
     if (minimum) minimum.disabled = currentReferencePolicy() !== 'required';
   }
 
+  function updateSubtitleControls() {
+    const enabled = !!element('creation-config-subtitle-enabled')?.checked;
+    const details = document.querySelector('.creation-config-subtitle-details');
+    if (!details) return;
+    details.classList.toggle('is-disabled', !enabled);
+    details.setAttribute('aria-disabled', String(!enabled));
+    details.querySelectorAll('select, input').forEach(control => {
+      control.disabled = !enabled;
+    });
+  }
+
   function renderImageStyleSelector() {
     const select = element('creation-config-image-style-template');
     if (!select) return;
@@ -335,25 +346,73 @@
     renderImageStyleCards();
   }
 
-  async function createStyleForCreationConfig() {
+  function createStyleForCreationConfig() {
+    const modal = element('modal-creation-config-style');
+    if (!modal) return;
+    element('creation-config-style-name').value = '';
+    element('creation-config-style-summary').value = '';
+    element('creation-config-style-system-content').value = '';
+    const files = element('creation-config-style-reference-files');
+    if (files) files.value = '';
+    renderCreationConfigStyleReferencePreview();
+    modal.style.display = 'flex';
+    window.setTimeout(() => element('creation-config-style-name')?.focus(), 0);
+  }
+
+  function closeCreationConfigStyleDialog() {
+    const modal = element('modal-creation-config-style');
+    if (modal) modal.style.display = 'none';
+  }
+
+  function renderCreationConfigStyleReferencePreview() {
+    const target = element('creation-config-style-reference-preview');
+    const input = element('creation-config-style-reference-files');
+    if (!target || !input) return;
+    target.replaceChildren();
+    const files = Array.from(input.files || []);
+    if (!files.length) {
+      target.textContent = '未上传参考图；该风格会按提示词生成。';
+      return;
+    }
+    files.slice(0, 3).forEach(file => {
+      const preview = document.createElement('img');
+      const objectUrl = URL.createObjectURL(file);
+      preview.src = objectUrl;
+      preview.alt = file.name || '风格参考图预览';
+      preview.addEventListener('load', () => URL.revokeObjectURL(objectUrl), { once: true });
+      target.append(preview);
+    });
+  }
+
+  async function submitCreationConfigStyle() {
     if (!window.API) return;
-    const name = window.prompt('新风格名称（会保存到当前账号的风格库）');
-    if (name === null) return;
-    if (!name.trim()) {
+    const name = element('creation-config-style-name')?.value.trim() || '';
+    const styleSummary = element('creation-config-style-summary')?.value.trim() || '';
+    const systemContent = element('creation-config-style-system-content')?.value.trim() || '';
+    const files = Array.from(element('creation-config-style-reference-files')?.files || []);
+    if (!name) {
       toast('请输入风格名称');
+      element('creation-config-style-name')?.focus();
       return;
     }
-    const systemContent = window.prompt('图片风格内容：描述配色、构图、材质、氛围与禁忌。', '');
-    if (systemContent === null) return;
-    if (!systemContent.trim()) {
-      toast('请输入图片风格内容');
+    if (!systemContent) {
+      toast('请输入图片风格提示词');
+      element('creation-config-style-system-content')?.focus();
       return;
     }
+    if (files.length > 3) {
+      toast('最多只能上传 3 张参考图');
+      return;
+    }
+    const submit = element('btn-creation-config-style-submit');
+    if (submit) submit.disabled = true;
     try {
-      const response = await window.API.post('/api/image-style/project-templates', {
-        name: name.trim(),
-        system_content: systemContent.trim(),
-      });
+      const form = new FormData();
+      form.append('name', name);
+      form.append('style_summary', styleSummary);
+      form.append('system_content', systemContent);
+      files.forEach(file => form.append('files', file));
+      const response = await window.API.post('/api/image-style/project-templates/with-references', form);
       const template = response?.template;
       if (!template?.id) throw new Error('风格已创建，但没有返回 ID');
       const detail = await window.API.get(`/api/image-style/project-templates/${encodeURIComponent(template.id)}`);
@@ -365,9 +424,12 @@
       updateImageStyleSummary();
       renderImageStyleCards();
       syncStructuredFieldsToJson();
-      toast('新风格已创建并绑定到当前创作包；可在项目内补充参考图。');
+      closeCreationConfigStyleDialog();
+      toast(files.length ? '新风格及参考图已创建并选用。' : '新风格已创建并选用。');
     } catch (error) {
       requestError('新建风格失败', error);
+    } finally {
+      if (submit) submit.disabled = false;
     }
   }
 
@@ -394,6 +456,7 @@
       if (field.type === 'checkbox') field.checked = subtitle[key] !== false;
       else if (subtitle[key] !== undefined && subtitle[key] !== null) field.value = String(subtitle[key]);
     });
+    updateSubtitleControls();
   }
 
   function firstActiveConnectionReference(kind) {
@@ -572,8 +635,6 @@
     // Users can still switch any of these three bindings independently.
     applyDefaultModelBindings();
     syncStructuredFieldsToJson();
-    const status = element('creation-config-editing-status');
-    if (status) status.textContent = '正在新建配置包。';
     const submit = element('btn-create-creation-config');
     if (submit) submit.textContent = '新建配置包';
     const cancel = element('btn-cancel-creation-config-edit');
@@ -582,8 +643,10 @@
 
   function renderPackages() {
     const target = element('creation-config-package-list');
-    if (!target) return;
+    const defaultSlot = element('creation-config-default-package-slot');
+    if (!target || !defaultSlot) return;
     target.replaceChildren();
+    defaultSlot.replaceChildren();
     if (!state.packages.length) {
       const empty = document.createElement('p');
       empty.className = 'config-editor-note';
@@ -644,7 +707,7 @@
       label.className = 'creation-config-package-section-label';
       label.textContent = '当前默认配置';
       featured.append(label, createPackageCard(defaultPackage, true));
-      target.append(featured);
+      defaultSlot.append(featured);
     }
     if (otherPackages.length) {
       const grid = document.createElement('div');
@@ -849,10 +912,7 @@
   async function refreshCreationConfigManagement() {
     if (state.loading || !window.API) return;
     state.loading = true;
-    const statuses = [
-      element('creation-config-management-status'),
-      element('model-management-status'),
-    ].filter(Boolean);
+    const statuses = [element('model-management-status')].filter(Boolean);
     statuses.forEach(status => { status.textContent = '正在加载…'; });
     try {
       const [packagesResponse, connectionsResponse, credentialsResponse, defaultsResponse, accountResponse, stylesResponse] = await Promise.all([
@@ -948,8 +1008,6 @@
       if (payload) payload.value = JSON.stringify(version.payload, null, 2);
       renderConnectionSelectors();
       loadPayloadIntoStructured(version.payload);
-      const status = element('creation-config-editing-status');
-      if (status) status.textContent = `正在编辑“${current.name || '未命名配置包'}”v${version.version}；保存会创建 v${Number(version.version) + 1}。`;
       const submit = element('btn-create-creation-config');
       if (submit) submit.textContent = '保存为新版本';
       const cancel = element('btn-cancel-creation-config-edit');
@@ -1267,7 +1325,6 @@
     element('btn-open-model-management')?.addEventListener('click', openModelManagement);
     element('btn-creation-config-management-close')?.addEventListener('click', closeCreationConfigManagement);
     element('btn-model-management-close')?.addEventListener('click', closeModelManagement);
-    element('btn-creation-config-management-refresh')?.addEventListener('click', refreshCreationConfigManagement);
     element('btn-model-management-refresh')?.addEventListener('click', refreshCreationConfigManagement);
     element('btn-create-creation-config')?.addEventListener('click', createCreationConfig);
     element('btn-cancel-creation-config-edit')?.addEventListener('click', resetCreationConfigEditor);
@@ -1282,6 +1339,11 @@
       renderImageStyleCards();
     });
     element('btn-creation-config-create-style')?.addEventListener('click', createStyleForCreationConfig);
+    element('btn-creation-config-style-close')?.addEventListener('click', closeCreationConfigStyleDialog);
+    element('btn-creation-config-style-cancel')?.addEventListener('click', closeCreationConfigStyleDialog);
+    element('btn-creation-config-style-submit')?.addEventListener('click', submitCreationConfigStyle);
+    element('creation-config-style-reference-files')?.addEventListener('change', renderCreationConfigStyleReferencePreview);
+    element('creation-config-subtitle-enabled')?.addEventListener('change', updateSubtitleControls);
     document.querySelectorAll('input[name="creation-config-reference-policy"]').forEach(input => {
       input.addEventListener('change', updateImageStyleSummary);
     });
@@ -1310,6 +1372,9 @@
     element('creation-config-structured-editor')?.addEventListener('change', syncEditor);
     element('modal-creation-config-management')?.addEventListener('click', event => {
       if (event.target?.id === 'modal-creation-config-management') closeCreationConfigManagement();
+    });
+    element('modal-creation-config-style')?.addEventListener('click', event => {
+      if (event.target?.id === 'modal-creation-config-style') closeCreationConfigStyleDialog();
     });
     element('modal-model-management')?.addEventListener('click', event => {
       if (event.target?.id === 'modal-model-management') closeModelManagement();

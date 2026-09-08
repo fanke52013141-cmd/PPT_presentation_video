@@ -164,7 +164,9 @@ async function saveSubtitleSettings() {
   state.subtitleSettings = res.subtitle_style;
   populateSubtitleSettingsForm(state.subtitleSettings);
   closeSubtitleSettingsModal();
-  showToast('字幕样式已保存，下一次视频渲染将使用当前字体、字号和位置。');
+  showToast(res.requires_image_regeneration
+    ? '字幕开关已保存；请重新生成图片和 Mask，确保 PPT 画面与字幕区一致。'
+    : '字幕样式已保存，下一次视频渲染将使用当前字体、字号和位置。');
   refreshCurrentProjectStatus().catch(() => {});
 }
 

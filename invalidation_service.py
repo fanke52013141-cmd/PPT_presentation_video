@@ -21,6 +21,7 @@ from pipeline_lifecycle import (
     mark_selected_stale,
     project_artifact_lock,
     read_json_file,
+    remove_file,
     write_json_atomic,
 )
 from pipeline_state import begin_step, complete_step, current_step_after_completion
@@ -181,6 +182,52 @@ def subtitle_style_changed(project: Any) -> InvalidationReport:
         reason="subtitle_style_changed",
         affected_steps=(8,),
         removed_paths=tuple(removed),
+    )
+
+
+def subtitle_visibility_changed(
+    project: Any,
+    slide_ids: Iterable[str],
+) -> InvalidationReport:
+    """Require new images when captions change the usable PPT canvas.
+
+    Font and color changes only affect rendering.  Turning captions on or off
+    changes whether the bottom subtitle band may contain PPT content, so Mask
+    assets and the Step 3 completion state can no longer be reused.
+    """
+    normalized_ids = tuple(
+        dict.fromkeys(str(value).strip() for value in slide_ids if str(value).strip())
+    )
+    with project_artifact_lock(project.run_dir):
+        removed = clear_all_reveal_artifacts(project.run_dir, normalized_ids)
+        # Keep the preview image visible for reference, but invalidate its
+        # provenance.  Step 3 confirmation then refuses the old image until
+        # the generation/upload path writes a new provenance record for the
+        # changed usable canvas.
+        for slide_id in normalized_ids:
+            for filename in (
+                "visual_provenance.json",
+                "visual_candidate.provenance.json",
+            ):
+                path = safe_child(project.run_dir, "slides", slide_id, filename)
+                if remove_file(path):
+                    removed.append(path)
+        removed.extend(
+            _existing_removals(
+                project.run_dir,
+                clear_audio=False,
+                clear_props=True,
+            )
+        )
+    statuses = project.get_step_status()
+    mark_downstream_pending(statuses, from_step=3)
+    project.current_step = 3
+    project.set_step_status(statuses)
+    return InvalidationReport(
+        reason="subtitle_visibility_changed",
+        affected_steps=tuple(range(3, 9)),
+        slide_ids=normalized_ids,
+        removed_paths=tuple(dict.fromkeys(removed)),
     )
 
 

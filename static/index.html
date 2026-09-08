@@ -41,17 +41,17 @@
       <button id="btn-open-creation-config-management" class="secondary header-config-action" type="button">创作配置</button>
       <button id="btn-open-model-management" class="secondary header-config-action" type="button">模型设置</button>
       <button id="btn-open-agent" class="secondary header-config-action" type="button">Agent 对接</button>
-      <button id="btn-back-home" class="secondary header-action" hidden>
-        <svg class="icon" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
-        返回首页
-      </button>
       <button id="btn-open-settings" style="display:none;">
         <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
         系统设置
       </button>
-      <button id="btn-config-export" class="secondary" type="button" title="导出账号、模型、API/TTS 凭据、创作包和风格参考图">完整配置导出</button>
+      <button id="btn-config-export" class="secondary" type="button" title="导出账号、模型、API/TTS 凭据、创作包和风格参考图">配置导出</button>
       <button id="btn-config-import" class="secondary" type="button">配置导入</button>
       <button id="btn-toggle-ai-mode" type="button" class="ai-mode-toggle-btn ai-mode-auto" style="display: none;" title="切换分镜制作方式">分镜方式：AI 辅助</button>
+      <button id="btn-back-home" class="secondary header-action header-return-home" hidden>
+        <svg class="icon" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+        返回首页
+      </button>
     </div>
   </header>
 
@@ -898,14 +898,13 @@
       <div class="config-editor-scroll">
         <div class="prompt-title-row">
           <h3 id="creation-config-management-title" class="highlight-title">创作配置</h3>
-          <button id="btn-creation-config-management-refresh" class="secondary" type="button">刷新</button>
         </div>
-        <p id="creation-config-management-status" class="config-editor-note" aria-live="polite"></p>
         <div id="creation-config-management-body" class="creation-config-management-body">
           <section class="soft-outline" style="padding:1rem; border-radius:12px;">
             <h4 style="margin-top:0;">创作配置包</h4>
+            <div id="creation-config-default-package-slot"></div>
             <label style="display:block; margin-bottom:0.55rem;">配置包名称<input id="creation-config-package-name" type="text" maxlength="80" placeholder="例如：科普账号长视频"></label>
-            <p id="creation-config-editing-status" class="config-editor-note" aria-live="polite"></p>
+            <p id="creation-config-editing-status" class="config-editor-note" aria-live="polite" hidden></p>
             <div id="creation-config-structured-editor" class="creation-config-structured-editor">
               <section class="creation-config-section">
                 <h5>模型关联</h5>
@@ -941,12 +940,14 @@
               <section class="creation-config-section creation-config-section--options">
                 <div class="creation-config-option-group">
                   <h5>输出设置</h5>
-                  <div class="creation-config-options-row">
-                    <label class="creation-config-check"><input id="creation-config-subtitle-enabled" type="checkbox" checked> 导出字幕</label>
+                  <div class="creation-config-options-row creation-config-output-options" aria-label="输出类型">
+                    <span class="creation-config-check creation-config-check--static"><input type="checkbox" checked disabled> 视频</span>
+                    <span class="creation-config-check creation-config-check--static"><input type="checkbox" checked disabled> PPT</span>
+                    <label class="creation-config-check"><input id="creation-config-subtitle-enabled" type="checkbox" checked> 字幕</label>
                   </div>
                   <details class="creation-config-subtitle-details">
                     <summary>字幕样式</summary>
-                    <div class="creation-config-number-grid">
+                    <div class="creation-config-number-grid creation-config-subtitle-grid">
                       <label>字体<select data-creation-config-subtitle="font_key">
                         <option value="noto_sans_sc">Noto Sans SC（现代黑体）</option>
                         <option value="noto_serif_sc">Noto Serif SC（现代宋体）</option>
@@ -976,7 +977,6 @@
                     <div class="creation-config-options-row">
                       <label class="creation-config-check"><input data-creation-config-subtitle="token_highlight" type="checkbox" checked> 启用逐字高亮</label>
                     </div>
-                    <p class="config-editor-note">创建项目时会将整套字幕样式固化为项目快照；之后可在项目内单独覆盖。</p>
                   </details>
                 </div>
                 <div class="creation-config-option-group">
@@ -987,15 +987,15 @@
                     <label class="creation-config-check"><input type="checkbox" data-creation-config-pause="digital_human"> 数字人</label>
                   </div>
                 </div>
-                <div class="creation-config-option-group">
+                <div class="creation-config-option-group creation-config-option-group--runtime">
                   <h5>自动化并发</h5>
                   <div class="creation-config-number-grid">
                     <label>图片并发<input id="creation-config-image-concurrency" type="number" min="1" max="6" value="5" inputmode="numeric"></label>
-                    <label>语音活跃任务数<input id="creation-config-tts-concurrency" type="number" min="1" max="10" value="10" inputmode="numeric"></label>
-                    <label>MiniMax 请求上限（RPM）<input id="creation-config-tts-rpm" type="number" min="1" max="600" value="10" inputmode="numeric"></label>
+                    <label title="同时进行的语音合成任务数量"><span>语音合成并发</span><input id="creation-config-tts-concurrency" type="number" min="1" max="10" value="10" inputmode="numeric"></label>
+                    <label title="发送给 MiniMax 的每分钟请求上限"><span>MiniMax</span><input id="creation-config-tts-rpm" type="number" min="1" max="600" value="10" inputmode="numeric"></label>
                   </div>
                 </div>
-                <div class="creation-config-option-group">
+                <div class="creation-config-option-group creation-config-option-group--runtime">
                   <h5>视频渲染加速</h5>
                   <label class="creation-config-render-field">渲染方式<select id="creation-config-render-acceleration"><option value="auto">自动检测 GPU（推荐）</option><option value="gpu">仅使用 GPU</option><option value="cpu">仅使用 CPU</option></select></label>
                 </div>
@@ -1022,6 +1022,26 @@
       </div>
       <div class="config-editor-actions">
         <button id="btn-creation-config-management-close" class="secondary" type="button">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: 在创作配置中创建可复用图片风格。 -->
+  <div id="modal-creation-config-style" class="modal-overlay" style="display:none;">
+    <div class="modal-content creation-config-style-modal" role="dialog" aria-modal="true" aria-labelledby="creation-config-style-title">
+      <div class="modal-header-row">
+        <h3 id="creation-config-style-title" class="highlight-title">新建图片风格</h3>
+        <button id="btn-creation-config-style-close" class="icon-button" type="button" aria-label="关闭">×</button>
+      </div>
+      <p class="config-editor-note">填写风格名称和创作提示词；可选上传 1–3 张参考图。创建后会自动选中这个风格。</p>
+      <label class="form-field">风格名称<input id="creation-config-style-name" type="text" maxlength="120" placeholder="例如：轻松教学风"></label>
+      <label class="form-field">风格说明（可选）<input id="creation-config-style-summary" type="text" maxlength="500" placeholder="例如：低饱和蓝绿、亲和信息图"></label>
+      <label class="form-field">图片风格提示词<textarea id="creation-config-style-system-content" rows="8" maxlength="30000" spellcheck="false" placeholder="描述配色、构图、材质、氛围、字体气质与需要避免的内容。"></textarea></label>
+      <label class="form-field">参考图（可选，最多 3 张）<input id="creation-config-style-reference-files" type="file" accept="image/*" multiple></label>
+      <div id="creation-config-style-reference-preview" class="creation-config-style-reference-preview" aria-live="polite"></div>
+      <div class="modal-actions">
+        <button id="btn-creation-config-style-cancel" class="secondary" type="button">取消</button>
+        <button id="btn-creation-config-style-submit" class="success" type="button">创建并选用</button>
       </div>
     </div>
   </div>

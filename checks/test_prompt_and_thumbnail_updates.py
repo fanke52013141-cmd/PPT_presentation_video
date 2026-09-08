@@ -101,7 +101,7 @@ assert "必要且最小" in image_prompt
 assert "step3_image_v3_editable_creative_direction" in step3_system_prompt
 assert "`main_title` 和 `body_elements`" in step3_system_prompt
 assert "固定生产合同" in step3_system_prompt
-assert "标题区、正文区、字幕安全区" in step3_system_prompt
+assert "标题区、正文区、视频字幕开启时的字幕安全区" in step3_system_prompt
 
 sample_slides = [
     {

@@ -453,13 +453,14 @@ def create_account_template(
     name: str,
     system_content: str,
     style_summary: str = "",
+    reference_images: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Create a text-first style in the current account's reusable library.
+    """Create an account-scoped reusable style, optionally with reference images.
 
-    This is deliberately independent of a project.  A project may still save
-    its generated preview images as a richer template later, but a creation
-    package must be able to define and select a reusable style before its
-    first project exists.
+    This remains independent of a project so a creation package can select a
+    finished style before its first project exists.  Reference images are
+    normalized into the same portable template layout used by project-saved
+    styles, making them available to package export/import immediately.
     """
     normalized_name = str(name or "").strip()
     normalized_content = str(system_content or "").strip()
@@ -474,6 +475,9 @@ def create_account_template(
         raise context.http_exception(status_code=400, detail="图片风格内容不能超过 30000 个字符")
     if len(normalized_summary) > 500:
         raise context.http_exception(status_code=400, detail="风格说明不能超过 500 个字符")
+    provided_images = reference_images or []
+    if not isinstance(provided_images, list) or len(provided_images) > MAX_PORTABLE_REFERENCE_IMAGES:
+        raise context.http_exception(status_code=400, detail="每套图片风格最多上传 3 张参考图")
 
     items = read_templates(context)
     if any(
@@ -486,6 +490,27 @@ def create_account_template(
     template_id = uuid.uuid4().hex[:12]
     target = templates_root(context) / template_id
     target.mkdir(parents=True, exist_ok=False)
+    manifest_images: list[dict[str, Any]] = []
+    try:
+        for index, image in enumerate(provided_images, start=1):
+            if not isinstance(image, dict) or not isinstance(image.get("bytes"), bytes):
+                raise ValueError("图片风格参考图格式无效")
+            filename = f"style_reference_{index:02d}.png"
+            context.process_and_save_image(
+                image["bytes"],
+                str(target / "references" / filename),
+            )
+            manifest_images.append({
+                "index": index,
+                "filename": filename,
+                "source": "creation_config_upload",
+                "original_filename": Path(str(image.get("filename") or filename)).name,
+            })
+    except Exception as exc:
+        shutil.rmtree(target, ignore_errors=True)
+        if isinstance(exc, ValueError):
+            raise context.http_exception(status_code=400, detail=str(exc)) from exc
+        raise
     style = {
         "source": "account_style_library",
         "template_id": template_id,
@@ -493,7 +518,7 @@ def create_account_template(
         "style_summary": normalized_summary,
         "system_content": normalized_content,
         "sample_reference_image_prompts": [],
-        "reference_image_count_target": 0,
+        "reference_image_count_target": len(manifest_images),
         "locked": False,
         "production_contract_version": "step3_visual_contract_v3",
     }
@@ -502,7 +527,7 @@ def create_account_template(
         "scope": "step3_image_style",
         "style_name": normalized_name,
         "updated_at": datetime.now().isoformat(timespec="seconds"),
-        "images": [],
+        "images": manifest_images,
     }
     _write_json(target / "style.json", style)
     _write_json(target / "references.json", manifest)
@@ -521,7 +546,7 @@ def create_account_template(
                 separators=(",", ":"),
             ).encode("utf-8")
         ).hexdigest(),
-        "reference_count": 0,
+        "reference_count": len(manifest_images),
         "created_at": datetime.now().isoformat(timespec="seconds"),
     }
     items.append(item)

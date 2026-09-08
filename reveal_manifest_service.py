@@ -9,6 +9,7 @@ from typing import Any, Iterable
 from pipeline_lifecycle import project_artifact_lock, write_json_atomic
 from project_storage import slide_dir
 from canvas_profile_service import get_project_canvas
+from project_config_runtime import project_subtitles_enabled
 from visual_provenance import refresh_provenance_contract_hashes
 
 
@@ -58,11 +59,18 @@ def _is_painted_group(group: dict[str, Any]) -> bool:
 def _project_reveal_canvas(project: Any) -> dict[str, Any]:
     """Translate the canonical project profile to the reveal-scene contract."""
     canvas = get_project_canvas(project)
+    subtitles_enabled = project_subtitles_enabled(project)
     return {
         "width": canvas["width"],
         "height": canvas["height"],
         "background": "#FEFDF9",
-        "subtitle_safe_y": canvas["subtitle_safe_zone"]["top"],
+        # A disabled video-caption package may use the full PPT canvas. Do not
+        # let reconciliation reintroduce a now-unused subtitle band.
+        "subtitle_safe_y": (
+            canvas["subtitle_safe_zone"]["top"]
+            if subtitles_enabled
+            else canvas["height"]
+        ),
     }
 
 

@@ -18,6 +18,7 @@ from typing import Any, Callable, Iterable, Mapping
 
 
 PROJECT_CONFIG_FILENAME = "project_config.json"
+PROJECT_VISUAL_SETTINGS_FILENAME = "visual_settings.json"
 MAX_PROJECT_CONFIG_BYTES = 1024 * 1024
 
 
@@ -111,6 +112,47 @@ def get_config_value(
             return default
         value = value[key]
     return deepcopy(value)
+
+
+def project_subtitles_enabled(project: Any, default: bool = True) -> bool:
+    """Return the effective video-caption switch for a project.
+
+    A creation package establishes the project default, while
+    ``visual_settings.json`` is the explicit project-level override used by
+    the renderer.  Image generation and Mask reconciliation must use the same
+    precedence so their canvas never disagrees with the rendered subtitles.
+    Invalid or missing values retain the safe historical default.
+    """
+    package_value = get_config_value(project, "subtitle.enabled", default)
+    enabled = _coerce_bool(package_value, default)
+    run_dir = getattr(project, "run_dir", None)
+    if not isinstance(run_dir, str) or not run_dir.strip():
+        return enabled
+    path = Path(run_dir) / PROJECT_VISUAL_SETTINGS_FILENAME
+    try:
+        if not path.is_file() or path.stat().st_size > MAX_PROJECT_CONFIG_BYTES:
+            return enabled
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return enabled
+    style = payload.get("subtitle_style") if isinstance(payload, dict) else None
+    if not isinstance(style, dict) or "enabled" not in style:
+        return enabled
+    return _coerce_bool(style.get("enabled"), enabled)
+
+
+def _coerce_bool(value: Any, fallback: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off"}:
+            return False
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return bool(value)
+    return fallback
 
 
 def validate_project_step_output(project: Any, step: str, output: Any) -> None:

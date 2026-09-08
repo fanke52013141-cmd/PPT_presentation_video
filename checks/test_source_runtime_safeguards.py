@@ -114,6 +114,69 @@ def test_explicit_empty_storyboard_clears_manifest_slides(tmp_path: Path) -> Non
     assert manifest["slides"] == []
 
 
+def test_disabled_package_subtitles_keep_the_full_reveal_canvas(tmp_path: Path) -> None:
+    planning = tmp_path / "planning"
+    planning.mkdir()
+    (planning / "project_config.json").write_text(
+        json.dumps(
+            {
+                "payload": {
+                    "schema_version": "creation_config_v1",
+                    "subtitle": {"enabled": False},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (planning / "visual_contract.json").write_text(
+        json.dumps({"slides": [{"slide_id": "slide_001"}]}),
+        encoding="utf-8",
+    )
+    (tmp_path / "reveal_manifest.json").write_text(
+        json.dumps({"slides": []}),
+        encoding="utf-8",
+    )
+    project = FakeProject(tmp_path)
+
+    assert reveal_manifest_service.sync_reveal_manifest(project, ["slide_001"])
+    manifest = json.loads((tmp_path / "reveal_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["canvas"]["subtitle_safe_y"] == 1080
+
+
+def test_project_subtitle_override_controls_the_reveal_canvas(tmp_path: Path) -> None:
+    planning = tmp_path / "planning"
+    planning.mkdir()
+    (planning / "project_config.json").write_text(
+        json.dumps(
+            {
+                "payload": {
+                    "schema_version": "creation_config_v1",
+                    "subtitle": {"enabled": False},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "visual_settings.json").write_text(
+        json.dumps({"subtitle_style": {"enabled": True}}),
+        encoding="utf-8",
+    )
+    (planning / "visual_contract.json").write_text(
+        json.dumps({"slides": [{"slide_id": "slide_001"}]}),
+        encoding="utf-8",
+    )
+    (tmp_path / "reveal_manifest.json").write_text(
+        json.dumps({"slides": []}),
+        encoding="utf-8",
+    )
+
+    assert reveal_manifest_service.sync_reveal_manifest(
+        FakeProject(tmp_path), ["slide_001"]
+    )
+    manifest = json.loads((tmp_path / "reveal_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["canvas"]["subtitle_safe_y"] == 930
+
+
 def test_bounded_subprocess_returns_timeout_result(monkeypatch: pytest.MonkeyPatch) -> None:
     def timeout(*_args, **_kwargs):
         raise subprocess.TimeoutExpired(["demo"], timeout=12, stderr="still running")

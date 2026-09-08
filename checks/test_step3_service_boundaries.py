@@ -87,6 +87,13 @@ def test_visual_settings_preserve_background_and_subtitle_payloads(
         "subtitle_style_changed",
         lambda item: invalidations.append(("subtitles", item)),
     )
+    monkeypatch.setattr(
+        visual_settings.invalidation_service,
+        "subtitle_visibility_changed",
+        lambda item, slide_ids: invalidations.append(
+            ("subtitle_visibility", (item, slide_ids))
+        ),
+    )
 
     background = service.update_background(
         "project-1",
@@ -117,6 +124,41 @@ def test_visual_settings_preserve_background_and_subtitle_payloads(
     )
     assert invalidations == [("subtitles", project)]
     assert db.commits == 2
+
+    invalidations.clear()
+    disabled = service.update_subtitles(
+        "project-1",
+        {"subtitle_style": {"enabled": False, "font_size": 42}},
+        db,
+    )
+    assert disabled["requires_image_regeneration"] is True
+    assert invalidations == [
+        ("subtitle_visibility", (project, ["slide_001"]))
+    ]
+
+
+def test_visual_settings_use_the_creation_package_as_subtitle_base(
+    tmp_path: Path,
+) -> None:
+    planning = tmp_path / "planning"
+    planning.mkdir()
+    (planning / "project_config.json").write_text(
+        json.dumps(
+            {
+                "payload": {
+                    "schema_version": "creation_config_v1",
+                    "subtitle": {"enabled": False, "font_size": 48},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    project = SimpleNamespace(id="project-1", run_dir=str(tmp_path))
+
+    settings = _visual_service(tmp_path).read_settings(project)
+
+    assert settings["subtitle_style"]["enabled"] is False
+    assert settings["subtitle_style"]["font_size"] == 48
 
 
 def test_visual_settings_reject_invalid_background(

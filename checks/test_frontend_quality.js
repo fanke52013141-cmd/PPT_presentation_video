@@ -217,10 +217,18 @@ for (const accountRenameToken of [
   'btn-edit-current-account',
   'function editCurrentCreativeAccount()',
   "API.put(`/api/accounts/${encodeURIComponent(editingAccountId)}`, { name })",
-  '只修改显示名称；该账号下的项目、模型关联和创作配置不会受到影响。',
 ]) {
   if (!html.includes(accountRenameToken) && !accountManagement.includes(accountRenameToken)) {
     throw new Error(`account rename UI is missing: ${accountRenameToken}`);
+  }
+}
+for (const removedAccountCopy of [
+  '账号中心',
+  '只修改显示名称；该账号下的项目、模型关联和创作配置不会受到影响。',
+  '建议使用容易识别的内容品牌或团队名称。',
+]) {
+  if (html.includes(removedAccountCopy) || accountManagement.includes(removedAccountCopy)) {
+    throw new Error(`account dialog still contains redundant copy: ${removedAccountCopy}`);
   }
 }
 for (const accountMenuToken of [
@@ -903,7 +911,7 @@ for (const token of ['智能继续', '从头重跑', "startOneClick('resume')", 
 if (!uiFoundation.includes('narrationDedupeKey') || !uiFoundation.includes('uniqueNarrationLines')) {
   throw new Error('frontend narration deduplication guard is missing');
 }
-if (!html.includes('id="btn-back-home" class="secondary header-action" hidden')) {
+if (!html.includes('id="btn-back-home" class="secondary header-action header-return-home" hidden')) {
   throw new Error('back-home control must use semantic hidden state instead of an inline display override');
 }
 if (!html.includes('id="step3-btn-batch-generate" class="secondary"') || !html.includes('批量生图')) {

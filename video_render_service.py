@@ -7,6 +7,7 @@ components.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace as dataclass_replace
 from datetime import datetime
 import json
@@ -28,6 +29,7 @@ from video_artifact_service import VideoArtifactService
 from video_contracts import VideoRenderConfig, VideoRenderError
 from video_job_store import (
     ACTIVE_JOB_STATUSES,
+    VIDEO_RENDER_JOB_TYPE,
     VideoJobPersistenceError,
     VideoJobStore,
 )
@@ -71,6 +73,9 @@ class VideoRenderDependencies:
     artifact_service: VideoArtifactService
     remotion_runner: RemotionRunner
     config: VideoRenderConfig
+    # Global cross-project render concurrency.  Extra submissions stay queued
+    # as persistent "queued" jobs until a worker slot frees up.
+    max_concurrent_renders: int = 1
 
 
 class VideoRenderService:
@@ -85,6 +90,12 @@ class VideoRenderService:
         self._tasks_lock = threading.Lock()
         self._project_locks: dict[str, threading.Lock] = {}
         self._project_locks_guard = threading.Lock()
+        # Bounded global worker pool: the project lock keeps one task per
+        # project, while this pool caps how many projects render at once.
+        self._render_executor = ThreadPoolExecutor(
+            max_workers=max(1, int(dependencies.max_concurrent_renders)),
+            thread_name_prefix="video-render",
+        )
 
     @property
     def config(self) -> VideoRenderConfig:
@@ -287,7 +298,10 @@ class VideoRenderService:
             self._tasks[task_id] = {
                 "task_id": task_id,
                 "project_id": project_id,
-                "status": "rendering",
+                # The task stays "queued" in memory until a render worker
+                # actually picks it up from the bounded pool; polling then
+                # shows a truthful queue position instead of fake progress.
+                "status": "queued",
                 "stage": "validating",
                 "stage_label": RENDER_STAGE_LABELS["validating"],
                 "started_at": time.time(),
@@ -299,19 +313,14 @@ class VideoRenderService:
                 "output_filename": None,
             }
 
-        thread = threading.Thread(
-            target=self.run_render_job,
-            args=(
+        try:
+            self._render_executor.submit(
+                self.run_render_job,
                 project_id,
                 task_id,
                 project_lock,
                 getattr(project, "account_id", None) or get_current_account_id(),
-            ),
-            name=f"render-{project_id}-{task_id[:8]}",
-            daemon=True,
-        )
-        try:
-            thread.start()
+            )
         except Exception as exc:
             self._set_task_status(
                 task_id,
@@ -320,7 +329,7 @@ class VideoRenderService:
             )
             project_lock.release()
             logger.exception(
-                "Failed to start video render thread for %s",
+                "Failed to enqueue video render task for %s",
                 project_id,
             )
             raise VideoRenderError(
@@ -439,7 +448,10 @@ class VideoRenderService:
         self,
         job: LocalJob,
     ) -> dict[str, Any]:
-        task = self._persistent_job_to_task(job)
+        task = self._attach_queue_ahead(
+            job,
+            self._persistent_job_to_task(job),
+        )
         if job.status in ACTIVE_JOB_STATUSES:
             return self._active_task_response(task)
         return {
@@ -575,6 +587,7 @@ class VideoRenderService:
             "started_at": task["started_at"],
             "finished_at": task.get("finished_at"),
             "elapsed_sec": elapsed,
+            "queue_ahead": task.get("queue_ahead"),
             "error": task.get("error"),
             "video": video,
             "videos": (
@@ -881,6 +894,18 @@ class VideoRenderService:
             filename,
         )
 
+    def video_download_filename(
+        self,
+        db: Session,
+        project_id: str,
+        filename: str,
+    ) -> str:
+        return self.artifacts.video_download_filename(
+            db,
+            project_id,
+            filename,
+        )
+
     def create_speed_adjusted_video(
         self,
         db: Session,
@@ -921,6 +946,47 @@ class VideoRenderService:
     ) -> Path:
         return self.artifacts.final_video_download(db, project_id)
 
+    def _mark_task_running(self, task_id: str) -> None:
+        """Transition one queued task to rendering when a worker picks it up.
+
+        Both the in-memory task and the persistent job row move together; the
+        row keeps its queued status until this point, which is what makes the
+        cross-project queue position computable while the task waits.
+        """
+        with self._tasks_lock:
+            task = self._tasks.get(task_id)
+            if task is not None and task.get("status") == "queued":
+                task["status"] = "rendering"
+                task["started_at"] = time.time()
+                task["elapsed_sec"] = 0.0
+        self.job_store.update(task_id, status="running")
+
+    def _attach_queue_ahead(
+        self,
+        job: LocalJob,
+        task: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Attach the cross-project queue position for a queued job.
+
+        The count is advisory: zero means the job is next in line.  A lookup
+        failure degrades to ``None`` instead of failing the status response.
+        """
+        if job.status != "queued":
+            return task
+        try:
+            task["queue_ahead"] = self.job_store.count_queued_ahead(
+                VIDEO_RENDER_JOB_TYPE,
+                before_created_at=job.created_at,
+            )
+        except Exception:
+            logger.warning(
+                "Queue position lookup failed for job %s",
+                job.id,
+                exc_info=True,
+            )
+            task["queue_ahead"] = None
+        return task
+
     def _project_lock(self, project_id: str) -> threading.Lock:
         with self._project_locks_guard:
             lock = self._project_locks.get(project_id)
@@ -937,34 +1003,44 @@ class VideoRenderService:
             for task in self._tasks.values():
                 if (
                     task["project_id"] == project_id
-                    and task["status"] == "rendering"
+                    and task.get("status") in ("rendering", "queued")
                 ):
                     return task
         persistent = self.job_store.active(project_id)
-        return (
-            self._persistent_job_to_task(persistent)
-            if persistent
-            else None
-        )
+        if not persistent:
+            return None
+        task = self._persistent_job_to_task(persistent)
+        return self._attach_queue_ahead(persistent, task)
 
     @staticmethod
     def _active_task_response(
         active: dict[str, Any],
     ) -> dict[str, Any]:
+        status = active.get("status") or "rendering"
+        queued = status == "queued"
         return {
             "success": True,
             "task_id": active["task_id"],
-            "status": "rendering",
+            "status": status,
             "stage": active.get("stage", "rendering"),
             "stage_label": RENDER_STAGE_LABELS.get(
                 active.get("stage", ""),
                 "",
             ),
-            "elapsed_sec": round(
-                time.time() - active["started_at"],
-                1,
+            "elapsed_sec": (
+                0.0
+                if queued
+                else round(
+                    time.time() - active["started_at"],
+                    1,
+                )
             ),
-            "message": "已有渲染任务进行中",
+            "queue_ahead": active.get("queue_ahead"),
+            "message": (
+                "已加入渲染队列，等待前面的任务完成"
+                if queued
+                else "已有渲染任务进行中"
+            ),
         }
 
     def _set_task_stage(

@@ -809,6 +809,10 @@ class TtsAsyncDependencies:
 
     session_factory: Callable[[], Session]
     synthesize: Callable[[str, Session], dict[str, Any]]
+    # 进程级合成并发（多账号/多项目同时生成音频时的全局上限）。
+    # 注意与项目级 slide 扇出（tts.concurrency）区分：这里限制的是
+    # 同时合成几个项目，而不是一个项目里同时合成几页。
+    max_workers: int = 1
 
 
 class TtsAsyncService:
@@ -821,7 +825,7 @@ class TtsAsyncService:
     def __init__(self, dependencies: TtsAsyncDependencies) -> None:
         self.dependencies = dependencies
         self.executor = ThreadPoolExecutor(
-            max_workers=1,
+            max_workers=max(1, int(dependencies.max_workers)),
             thread_name_prefix="tts-synthesis",
         )
         self._create_lock = threading.Lock()
@@ -830,7 +834,12 @@ class TtsAsyncService:
     def _iso(value: datetime | None) -> str | None:
         return value.isoformat(timespec="seconds") if value else None
 
-    def job_item(self, job: LocalJob) -> dict[str, Any]:
+    def job_item(
+        self,
+        job: LocalJob,
+        *,
+        queue_ahead: int | None = None,
+    ) -> dict[str, Any]:
         payload = job.get_payload() or {}
         return {
             "id": job.id,
@@ -845,7 +854,25 @@ class TtsAsyncService:
             "started_at": self._iso(job.started_at),
             "finished_at": self._iso(job.finished_at),
             "updated_at": self._iso(job.updated_at),
+            "queue_ahead": (
+                queue_ahead if job.status == "queued" else None
+            ),
         }
+
+    @staticmethod
+    def _queued_ahead(db: Session, job: LocalJob) -> int | None:
+        """一个排队任务的跨项目队列位次（建议值，0 表示下一个就轮到）。"""
+        if job.status != "queued":
+            return None
+        return (
+            db.query(LocalJob)
+            .filter(
+                LocalJob.job_type == job.job_type,
+                LocalJob.status == "queued",
+                LocalJob.created_at < job.created_at,
+            )
+            .count()
+        )
 
     def _active_job(self, db: Session, project_id: str) -> LocalJob | None:
         return (
@@ -915,7 +942,13 @@ class TtsAsyncService:
         )
         if not job:
             raise HTTPException(status_code=404, detail="任务不存在")
-        return {"success": True, "job": self.job_item(job)}
+        return {
+            "success": True,
+            "job": self.job_item(
+                job,
+                queue_ahead=self._queued_ahead(db, job),
+            ),
+        }
 
     def submit(self, job_id: str) -> None:
         self.executor.submit(self.run_job, job_id)

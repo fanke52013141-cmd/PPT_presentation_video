@@ -10,11 +10,15 @@ from sqlalchemy.orm import Session
 
 from account_service import (
     account_to_dict, create_account, create_agent_token, get_account, list_accounts,
-    set_default_creation_config,
+    rename_account, set_default_creation_config,
 )
 from account_context import account_scope, get_current_account_id
 from database import get_db
 import creation_config_service
+from account_provisioning_service import (
+    AccountProvisioningError,
+    provision_account_from_current,
+)
 
 router = APIRouter(prefix="/api/accounts", tags=["Creative accounts"])
 
@@ -26,9 +30,28 @@ class AccountCreateRequest(BaseModel):
     default_package_version: int | None = Field(None, ge=1)
 
 
+class AccountRenameRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+
+
 class AccountDefaultConfigRequest(BaseModel):
     package_id: str | None = None
     version: int | None = Field(None, ge=1)
+
+
+class AccountProvisionRequest(BaseModel):
+    """Copy one current-account production setup into a styled new account."""
+
+    name: str = Field(..., min_length=1, max_length=200)
+    description: str = Field("", max_length=2000)
+    source_package_id: str = Field(..., min_length=1, max_length=120)
+    source_package_version: int | None = Field(None, ge=1)
+    package_name: str = Field(..., min_length=1, max_length=80)
+    package_description: str = Field("", max_length=1000)
+    tags: list[str] = Field(default_factory=list, max_length=20)
+    image_style_template_id: str = Field(..., min_length=1, max_length=120)
+    voice_id: str = Field(..., min_length=1, max_length=200)
+    storyboard_system_content: str = Field(..., min_length=1, max_length=20000)
 
 
 class AgentTokenRequest(BaseModel):
@@ -54,6 +77,30 @@ def account_create(payload: AccountCreateRequest, db: Session = Depends(get_db))
             detail="请先创建并切换到账号，再为该账号设置默认创作配置",
         )
     return {"account": create_account(db, name=payload.name, description=payload.description, default_package_id=payload.default_package_id, default_package_version=payload.default_package_version)}
+
+
+@router.post("/provision-from-current")
+def account_provision_from_current(
+    payload: AccountProvisionRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Create a ready-to-run account without exposing reused local secrets."""
+    try:
+        return provision_account_from_current(
+            db,
+            **payload.model_dump(),
+        )
+    except AccountProvisioningError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put("/{account_id}")
+def account_rename(
+    account_id: str,
+    payload: AccountRenameRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return {"account": rename_account(db, account_id, name=payload.name)}
 
 
 @router.post("/{account_id}/select")

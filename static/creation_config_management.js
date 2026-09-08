@@ -13,6 +13,8 @@
     styleTemplateDetails: new Map(),
     defaultPayload: {},
     defaultPackageId: null,
+    defaultPackageVersion: null,
+    currentAccountId: null,
     loading: false,
     editingPackageId: null,
     editingVersion: null,
@@ -54,19 +56,6 @@
     return connection && typeof connection.revision === 'object'
       ? connection.revision
       : {};
-  }
-
-  function card(title, detail) {
-    const item = document.createElement('article');
-    item.className = 'soft-outline';
-    item.style.cssText = 'padding:0.8rem; border-radius:10px; margin-bottom:0.7rem; background:rgba(255,255,255,0.72);';
-    const heading = document.createElement('strong');
-    heading.textContent = title;
-    const copy = document.createElement('div');
-    copy.textContent = detail;
-    copy.style.cssText = 'font-size:0.82rem; color:var(--muted-color); margin-top:0.35rem; line-height:1.45;';
-    item.append(heading, copy);
-    return item;
   }
 
   function button(label, className, onClick) {
@@ -528,24 +517,90 @@
       target.append(empty);
       return;
     }
-    state.packages.forEach(packageItem => {
+    const defaultPackage = state.packages.find(item => item.id === state.defaultPackageId) || null;
+    const otherPackages = state.packages.filter(item => item.id !== state.defaultPackageId);
+    const createPackageCard = (packageItem, isDefault) => {
       const tags = Array.isArray(packageItem.tags) && packageItem.tags.length
         ? ` · ${packageItem.tags.join('、')}`
         : '';
-      const item = card(
-        `${packageItem.name || '未命名配置包'} · v${packageItem.latest_version || 1}`,
-        `${tags ? tags.slice(3) : '提示词、模型关联与执行选项'}`,
-      );
+      const item = document.createElement('article');
+      item.className = `creation-config-package-card${isDefault ? ' is-default' : ''}`;
+      const heading = document.createElement('div');
+      heading.className = 'creation-config-package-card-heading';
+      const title = document.createElement('strong');
+      title.textContent = packageItem.name || '未命名配置包';
+      const version = document.createElement('span');
+      version.className = 'creation-config-package-version';
+      const latestVersion = Number(packageItem.latest_version) || 1;
+      const activeVersion = isDefault && Number.isInteger(state.defaultPackageVersion)
+        ? state.defaultPackageVersion
+        : latestVersion;
+      version.textContent = activeVersion === latestVersion
+        ? `v${activeVersion}`
+        : `当前 v${activeVersion} · 最新 v${latestVersion}`;
+      heading.append(title, version);
+      if (isDefault) {
+        const badge = document.createElement('span');
+        badge.className = 'creation-config-package-default-badge';
+        badge.textContent = '当前账号默认配置';
+        heading.append(badge);
+      }
+      const copy = document.createElement('p');
+      copy.className = 'creation-config-package-card-copy';
+      copy.textContent = tags ? tags.slice(3) : '提示词、模型关联与执行选项';
       const actions = document.createElement('div');
-      actions.style.cssText = 'display:flex; gap:0.55rem; flex-wrap:wrap;';
-      actions.append(
+      actions.className = 'creation-config-package-card-actions';
+      const actionsToAppend = [
         button('编辑', 'secondary', () => editPackage(packageItem)),
         button('复制', 'secondary', () => copyPackage(packageItem)),
-        button('归档', 'secondary', () => archivePackage(packageItem)),
-      );
-      item.append(actions);
-      target.append(item);
-    });
+      ];
+      if (!isDefault) {
+        actionsToAppend.push(button('设为默认', 'secondary', () => setDefaultPackage(packageItem)));
+      }
+      actionsToAppend.push(button('归档', 'secondary', () => archivePackage(packageItem)));
+      actions.append(...actionsToAppend);
+      item.append(heading, copy, actions);
+      return item;
+    };
+
+    if (defaultPackage) {
+      const featured = document.createElement('section');
+      featured.className = 'creation-config-default-package';
+      const label = document.createElement('p');
+      label.className = 'creation-config-package-section-label';
+      label.textContent = '当前默认配置';
+      featured.append(label, createPackageCard(defaultPackage, true));
+      target.append(featured);
+    }
+    if (otherPackages.length) {
+      const grid = document.createElement('div');
+      grid.className = 'creation-config-package-grid';
+      otherPackages.forEach(packageItem => grid.append(createPackageCard(packageItem, false)));
+      target.append(grid);
+    }
+  }
+
+  async function setDefaultPackage(packageItem) {
+    if (!packageItem?.id || !state.currentAccountId) {
+      toast('无法识别当前账号，请刷新后重试');
+      return;
+    }
+    const version = Number(packageItem.latest_version);
+    if (!Number.isInteger(version) || version < 1) {
+      toast('该配置包没有可用版本');
+      return;
+    }
+    try {
+      await window.API.put(`/api/accounts/${encodeURIComponent(state.currentAccountId)}/default-config`, {
+        package_id: packageItem.id,
+        version,
+      });
+      toast(`已将“${packageItem.name || '此配置包'}”设为当前账号默认配置`);
+      await refreshCreationConfigManagement();
+      if (typeof window.loadCreationConfigs === 'function') window.loadCreationConfigs();
+    } catch (error) {
+      requestError('设置默认创作配置失败', error);
+    }
   }
 
   function renderConnections() {
@@ -738,8 +793,14 @@
       state.connections = Array.isArray(connectionsResponse?.connections) ? connectionsResponse.connections : [];
       state.credentials = Array.isArray(credentialsResponse?.credentials) ? credentialsResponse.credentials : [];
       state.defaultPayload = objectValue(defaultsResponse?.payload);
+      state.currentAccountId = typeof accountResponse?.account?.id === 'string'
+        ? accountResponse.account.id
+        : null;
       state.defaultPackageId = typeof accountResponse?.account?.default_creation_config?.package_id === 'string'
         ? accountResponse.account.default_creation_config.package_id
+        : null;
+      state.defaultPackageVersion = Number.isInteger(Number(accountResponse?.account?.default_creation_config?.version))
+        ? Number(accountResponse.account.default_creation_config.version)
         : null;
       state.styleTemplates = Array.isArray(stylesResponse?.templates) ? stylesResponse.templates : [];
       state.styleTemplateDetails = new Map();

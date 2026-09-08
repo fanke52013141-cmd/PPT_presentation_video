@@ -11,6 +11,8 @@ sys.path.insert(0, str(ROOT))
 
 import ai_mask_manifest_apply as ai_mask
 import one_click_orchestrator as one_click
+import one_click_routes
+from fastapi import HTTPException
 from route_inventory import iter_effective_routes
 import server
 
@@ -54,6 +56,113 @@ def test_image_rate_limit_detection_and_backoff_hint() -> None:
     assert one_click._is_rate_limit_error(error)
     assert one_click._image_rate_limit_delay_seconds(error, 1) == 7.0
     assert one_click._image_rate_limit_delay_seconds(RuntimeError("429"), 3) == 8.0
+
+
+def test_manual_project_rejects_one_click_before_background_work_starts(monkeypatch) -> None:
+    project = SimpleNamespace(id="manual-project", ai_mode="manual", run_dir="unused")
+    dependencies_requested = False
+
+    def unexpected_dependencies():
+        nonlocal dependencies_requested
+        dependencies_requested = True
+        raise AssertionError("manual project must not initialize the one-click worker")
+
+    monkeypatch.setattr(one_click, "get_one_click_dependencies", unexpected_dependencies)
+
+    try:
+        one_click.start_one_click(project)
+    except one_click.ManualModeOneClickError as exc:
+        assert "手动模式项目" in str(exc)
+    else:
+        raise AssertionError("manual project should reject one-click automation")
+
+    assert dependencies_requested is False
+    assert "manual-project" not in one_click._RUNNING
+
+
+def test_auto_project_still_starts_one_click_worker(monkeypatch, tmp_path: Path) -> None:
+    project = SimpleNamespace(id="auto-project", ai_mode="auto", run_dir=str(tmp_path), account_id="acct-a")
+    status = one_click._initial_status(project.id, "run-test")
+    started_threads = []
+
+    class FakeThread:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            self.started = False
+
+        def is_alive(self):
+            return False
+
+        def start(self):
+            self.started = True
+            started_threads.append(self)
+
+    monkeypatch.setattr(one_click, "get_one_click_dependencies", lambda: object())
+    monkeypatch.setattr(one_click, "_status_for_project", lambda *_args: {"status": "idle"})
+    monkeypatch.setattr(one_click, "_resume_status", lambda *_args: (dict(status), 0))
+    monkeypatch.setattr(one_click, "_save_status", lambda *_args: None)
+    monkeypatch.setattr(one_click.threading, "Thread", FakeThread)
+
+    try:
+        result = one_click.start_one_click(project)
+        assert result["started"] is True
+        assert started_threads and started_threads[0].started is True
+    finally:
+        one_click._RUNNING.pop(project.id, None)
+
+
+def test_manual_project_route_returns_conflict(monkeypatch) -> None:
+    project = SimpleNamespace(id="manual-project", ai_mode="manual", run_dir="unused")
+    monkeypatch.setattr(one_click_routes, "_project_or_404", lambda *_args: project)
+
+    try:
+        one_click_routes.start_one_click_route(project.id, {}, db=object())
+    except HTTPException as exc:
+        assert exc.status_code == 409
+        assert "手动模式项目" in str(exc.detail)
+    else:
+        raise AssertionError("manual project route should return HTTP 409")
+
+
+def test_batch_statuses_are_limited_to_current_account(tmp_path: Path) -> None:
+    class AccountColumn:
+        def __eq__(self, value):
+            return ("account_id", value)
+
+    class ProjectModel:
+        account_id = AccountColumn()
+
+    account_a = SimpleNamespace(id="project-a", name="A", account_id="acct-a", run_dir=str(tmp_path / "a"))
+    account_b = SimpleNamespace(id="project-b", name="B", account_id="acct-b", run_dir=str(tmp_path / "b"))
+
+    class Query:
+        def __init__(self, projects):
+            self.projects = projects
+            self.account_id = None
+
+        def filter(self, criterion):
+            assert criterion[0] == "account_id"
+            self.account_id = criterion[1]
+            return self
+
+        def all(self):
+            return [project for project in self.projects if project.account_id == self.account_id]
+
+    class Db:
+        def __init__(self):
+            self.query_instance = Query([account_a, account_b])
+
+        def query(self, _model):
+            return self.query_instance
+
+        def close(self):
+            return None
+
+    db = Db()
+    result = one_click.batch_one_click_status(ProjectModel, lambda: db, "acct-a")
+
+    assert [item["project_id"] for item in result["items"]] == ["project-a"]
+    assert db.query_instance.account_id == "acct-a"
 
 
 def test_atomic_status_write_and_resume_rewinds_when_upstream_is_missing() -> None:

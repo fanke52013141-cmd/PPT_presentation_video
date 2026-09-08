@@ -585,6 +585,18 @@ class RemotionRunner:
                 "-color_trc", "bt709",
                 "-colorspace", "bt709",
             ])
+        # 仅靠 "-color_primaries/-color_trc/-colorspace" 输出选项不可靠：
+        # 1) ffmpeg 7.x 重构后这些选项不再落到编码器 AVCodecContext，
+        #    nvenc/libx264 重编码产物既无 MP4 colr atom 也无 H.264 SPS VUI；
+        # 2) 部分发行版（如 gyan 7.1.1）的 ffprobe 读不出 MP4 colr atom 的
+        #    color_transfer/color_primaries，容器级 colr 校验必失败。
+        # H.264 SPS VUI 是所有 ffprobe 版本都能读到的唯一可靠载体，因此用
+        # h264_metadata bitstream filter 在码流层强制写 bt709（H.264 取值 1）。
+        # 本管线固定输出 h264（Remotion --codec=h264），两条路径统一生效。
+        cmd.extend([
+            "-bsf:v",
+            "h264_metadata=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1",
+        ])
         cmd.extend(["-movflags", "+faststart", str(temporary)])
         return self.dependencies.run_subprocess_bounded(
             cmd,
@@ -703,16 +715,21 @@ class RemotionRunner:
         selected_encoder = (
             encoder_selection.encoder if encoder_selection else "libx264"
         )
-        if (
-            (reenc_result.returncode != 0 or not reencoded.exists())
-            and selected_encoder != "libx264"
-        ):
+        # 硬件重编码的三种失败形态都必须降级 libx264：命令失败、文件缺失，
+        # 以及"rc=0 但 ffprobe 复核不到 bt709"（7.x nvenc 不落 VUI 时出现过）。
+        reenc_verified = (
+            reenc_result.returncode == 0
+            and reencoded.exists()
+            and self._verify_color_metadata_with_ffprobe(reencoded)
+        )
+        if not reenc_verified and selected_encoder != "libx264":
             self.dependencies.write_project_log(
                 project,
                 "step8_color_metadata_hardware_fallback",
                 failed_encoder=selected_encoder,
                 fallback_encoder="libx264",
                 returncode=reenc_result.returncode,
+                verify_failed=(reenc_result.returncode == 0 and reencoded.exists()),
                 stderr=(reenc_result.stderr or "")[-3000:],
             )
             if reencoded.exists():
@@ -786,11 +803,19 @@ class RemotionRunner:
         encoder_selection: VideoEncoderSelection | None = None,
     ) -> dict[str, Any]:
         set_stage("validating_color")
-        self._normalize_video_color_metadata(
+        # 归一化失败（bt709 未通过 ffprobe 复核）时立即拦截，避免带着
+        # 已知不合格的文件再走外部校验器，产生误导性的错误信息。
+        if not self._normalize_video_color_metadata(
             output_path,
             project,
             encoder_selection,
-        )
+        ):
+            if output_path.exists():
+                output_path.unlink()
+            raise RuntimeError(
+                "视频颜色元数据归一化失败：bt709 未通过 ffprobe 复核，已阻止输出。"
+                "请查看 pipeline.log 中 step8_color_metadata_* 事件定位失败阶段。"
+            )
         validator = (
             self.config.repo_root
             / "scripts"

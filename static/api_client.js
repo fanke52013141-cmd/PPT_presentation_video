@@ -63,12 +63,21 @@ const API = {
     return this.fetch(url);
   },
 
+  // [配置包压缩包 20260908] 下载二进制资源（如 ZIP 配置包），返回 Blob。
+  async getBinary(url) {
+    return this.fetch(url, { responseType: 'blob' });
+  },
+
   async post(url, body, extra = {}) {
     const isFormData = body instanceof FormData;
+    // [配置包压缩包 20260908] ArrayBuffer/Blob 按原始字节上传（ZIP 配置包导入）。
+    const isRawBody = body instanceof ArrayBuffer || body instanceof Blob;
     return this.fetch(url, {
       method: 'POST',
-      body: isFormData ? body : JSON.stringify(body),
-      headers: isFormData ? {} : { 'Content-Type': 'application/json' },
+      body: isRawBody ? body : (isFormData ? body : JSON.stringify(body)),
+      headers: isFormData
+        ? {}
+        : { 'Content-Type': isRawBody ? 'application/octet-stream' : 'application/json' },
       ...extra
     });
   },

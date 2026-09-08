@@ -73,6 +73,7 @@ _POLICY_CHECKPOINTS: dict[str, list[str]] = {
     "all_stages": [
         "storyboard_review",
         "image_review",
+        "mask_review",
         "narration_review",
         "audio_review",
         "video_review",
@@ -160,6 +161,10 @@ class QualityGateFailure(RuntimeError):
     def __init__(self, message: str, *, pause: bool) -> None:
         super().__init__(message)
         self.pause = pause
+
+
+class ManualModeOneClickError(ValueError):
+    """Raised when a manual project is sent to the unattended pipeline."""
 
 
 def _now() -> str:
@@ -1393,6 +1398,12 @@ def start_one_click(
     project: Any,
     payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if str(getattr(project, "ai_mode", "auto") or "auto").strip().lower() == "manual":
+        # A manual project can still use individual workflow actions, but it
+        # must never start the background end-to-end worker.  Keep this guard
+        # before dependency lookup and thread registration so rejected calls
+        # have no runtime side effects.
+        raise ManualModeOneClickError("手动模式项目不能启动一键自动化，请逐步完成各个创作环节")
     project_id = str(project.id)
     dependencies = get_one_click_dependencies()
     with _RUNNING_LOCK:
@@ -1616,11 +1627,17 @@ def pause_one_click(project: Any) -> dict[str, Any]:
 def batch_one_click_status(
     project_model: Any,
     session_factory: Callable,
+    account_id: str | None = None,
 ) -> dict[str, Any]:
-    """Return one-click automation status for all projects in a single query."""
+    """Return one-click status for projects owned by one creative account."""
+    account_id = str(account_id or get_current_account_id())
     db = session_factory()
     try:
-        projects = db.query(project_model).all()
+        projects = (
+            db.query(project_model)
+            .filter(project_model.account_id == account_id)
+            .all()
+        )
     finally:
         db.close()
     items: list[dict[str, Any]] = []

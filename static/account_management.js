@@ -2,6 +2,7 @@
 // in an HttpOnly cookie; the browser never carries model credentials.
 
 let _accounts = [];
+let _editingAccountId = null;
 
 function closeAccountPicker() {
   const menu = document.getElementById('account-picker-menu');
@@ -15,33 +16,94 @@ function renderAccountPicker() {
   const menu = document.getElementById('account-picker-menu');
   const trigger = document.getElementById('account-picker-trigger');
   const name = document.getElementById('account-picker-name');
-  const avatar = document.getElementById('account-picker-avatar');
   if (!select || !menu || !trigger) return;
 
   const currentId = select.value || _accounts[0]?.id;
   const current = _accounts.find(account => account.id === currentId) || _accounts[0];
   const currentName = current?.name || '默认创作账号';
   if (name) name.textContent = currentName;
-  if (avatar) avatar.textContent = currentName.slice(0, 1) || '默';
 
   menu.replaceChildren();
   _accounts.forEach(account => {
+    const isCurrent = account.id === currentId;
     const option = document.createElement('button');
     option.type = 'button';
     option.className = 'account-picker-option';
     option.setAttribute('role', 'option');
-    option.setAttribute('aria-selected', String(account.id === currentId));
-    option.innerHTML = '<span class="account-picker-option-avatar"></span><span class="account-picker-option-copy"><strong></strong></span><span class="account-picker-status-dot" aria-label="当前使用中" hidden></span>';
-    option.querySelector('.account-picker-option-avatar').textContent = (account.name || account.id || '账').slice(0, 1);
+    option.setAttribute('aria-selected', String(isCurrent));
+    option.setAttribute('aria-label', `${account.name || account.id}，${isCurrent ? '当前使用中' : '可切换到此账号'}`);
+    // Identity icon precedes the label; the selected account's icon turns
+    // green via aria-selected styling.
+    option.innerHTML = [
+      '<span class="account-picker-option-icon" aria-hidden="true">',
+      '<svg viewBox="0 0 24 24" fill="currentColor" focusable="false">',
+      '<path d="M12 12.4a4.2 4.2 0 1 0-4.2-4.2 4.2 4.2 0 0 0 4.2 4.2Zm0 2.1c-3.9 0-7.8 2-7.8 4.7v.7a1 1 0 0 0 1 1h13.6a1 1 0 0 0 1-1v-.7c0-2.7-3.9-4.7-7.8-4.7Z"/>',
+      '</svg>',
+      '</span>',
+      '<span class="account-picker-option-copy"><strong></strong></span>',
+    ].join('');
     option.querySelector('strong').textContent = account.name || account.id;
-    const activeDot = option.querySelector('.account-picker-status-dot');
-    if (activeDot) activeDot.hidden = account.id !== currentId;
     option.addEventListener('click', async () => {
       closeAccountPicker();
       if (account.id !== select.value) await selectAccount(account.id);
     });
     menu.appendChild(option);
   });
+  syncAccountPickerWidth();
+}
+
+function syncAccountPickerWidth() {
+  const trigger = document.getElementById('account-picker-trigger');
+  const label = document.getElementById('account-picker-name');
+  if (!trigger || !_accounts.length) return;
+
+  const measure = document.createElement('span');
+  const labelStyle = window.getComputedStyle(label || trigger);
+  // The menu renders names with its own (usually larger) font; measure with
+  // the menu font too so the shared width never truncates either surface.
+  const menuName = document.querySelector('.account-picker-option-copy strong');
+  const menuStyle = menuName ? window.getComputedStyle(menuName) : null;
+  measure.style.cssText = [
+    'position:fixed',
+    'visibility:hidden',
+    'white-space:nowrap',
+    'pointer-events:none',
+  ].join(';');
+  document.body.appendChild(measure);
+  const measureWidest = style => {
+    measure.style.font = style.font;
+    measure.style.letterSpacing = style.letterSpacing;
+    return _accounts.reduce((widest, account) => {
+      measure.textContent = account.name || account.id || '创作账号';
+      return Math.max(widest, Math.ceil(measure.getBoundingClientRect().width));
+    }, 0);
+  };
+  let widestName = measureWidest(labelStyle);
+  if (menuStyle) widestName = Math.max(widestName, measureWidest(menuStyle));
+  measure.remove();
+
+  // Shared width covers the wider of the two consumers. The menu needs the
+  // most chrome: identity icon (1.35rem) + gap (.55rem) + option padding
+  // (.55rem × 2) + option borders + menu padding (.32rem × 2) + menu borders
+  // ≈ 62px, so "icon + widest account name" dictates the overall width. The
+  // trigger only needs a chevron (~42px). The same custom property is used by
+  // both, so they always share one width.
+  const switcher = trigger.closest('.account-switcher');
+  const width = Math.ceil(widestName + 62);
+  switcher?.style.setProperty('--account-picker-width', `${width}px`);
+
+  // The estimate can drift from the real cascade (theme layers may add option
+  // borders, fallback fonts render wider), so correct against live layout
+  // when options are visible: grow once by the truncation deficit.
+  const menu = document.getElementById('account-picker-menu');
+  if (!menu || menu.hidden) return;
+  let deficit = 0;
+  menu.querySelectorAll('.account-picker-option-copy strong').forEach(strong => {
+    deficit = Math.max(deficit, strong.scrollWidth - strong.clientWidth);
+  });
+  if (deficit > 0) {
+    switcher?.style.setProperty('--account-picker-width', `${width + deficit + 2}px`);
+  }
 }
 
 function toggleAccountPicker() {
@@ -49,7 +111,12 @@ function toggleAccountPicker() {
   const trigger = document.getElementById('account-picker-trigger');
   if (!menu || !trigger) return;
   const willOpen = menu.hidden;
-  if (willOpen) renderAccountPicker();
+  if (willOpen) {
+    // Unhide before rendering so syncAccountPickerWidth can measure the real
+    // option layout and self-correct the shared width within the same frame.
+    menu.hidden = false;
+    renderAccountPicker();
+  }
   menu.hidden = !willOpen;
   trigger.setAttribute('aria-expanded', String(willOpen));
 }
@@ -70,7 +137,7 @@ function ensureAccountDialog() {
         </div>
         <button type="button" class="icon-button" data-account-close aria-label="关闭">×</button>
       </div>
-      <p class="account-create-help">每个账号拥有独立的课程、项目、模型关联和创作配置。创建后会自动切换到新账号。</p>
+      <p id="account-create-help" class="account-create-help">每个账号拥有独立的课程、项目、模型关联和创作配置。创建后会自动切换到新账号。</p>
       <label class="form-field">
         <span>账号名称</span>
         <input id="account-create-name" type="text" maxlength="200" autocomplete="off" placeholder="例如：科普账号 / 课程制作组">
@@ -84,7 +151,7 @@ function ensureAccountDialog() {
   document.body.appendChild(dialog);
   const close = () => {
     dialog.style.display = 'none';
-    document.getElementById('account-create-name')?.focus();
+    _editingAccountId = null;
   };
   dialog.querySelector('[data-account-close]')?.addEventListener('click', close);
   dialog.querySelector('[data-account-cancel]')?.addEventListener('click', close);
@@ -101,17 +168,22 @@ function ensureAccountDialog() {
     }
     const submit = dialog.querySelector('[data-account-submit]');
     submit.disabled = true;
+    const editingAccountId = _editingAccountId;
     try {
-      const created = await API.post('/api/accounts', { name });
+      const response = editingAccountId
+        ? await API.put(`/api/accounts/${encodeURIComponent(editingAccountId)}`, { name })
+        : await API.post('/api/accounts', { name });
       close();
       await loadAccounts();
       const select = document.getElementById('current-account-select');
-      const createdId = created?.account?.id || created?.id;
-      if (select && _accounts.some(item => item.id === createdId)) {
-        select.value = createdId;
-        await selectAccount(createdId);
+      const accountId = response?.account?.id || response?.id;
+      if (!editingAccountId && select && _accounts.some(item => item.id === accountId)) {
+        select.value = accountId;
+        await selectAccount(accountId);
       }
-      if (typeof window.showToast === 'function') window.showToast('账号已创建并切换');
+      if (typeof window.showToast === 'function') {
+        window.showToast(editingAccountId ? '账号名称已更新' : '账号已创建并切换');
+      }
     } catch (_) {
       // API client renders the server error; keep the dialog open so the user
       // can correct the name without losing what they entered.
@@ -242,10 +314,35 @@ async function selectAccount(accountId) {
 
 async function createCreativeAccount() {
   const dialog = ensureAccountDialog();
+  _editingAccountId = null;
+  dialog.querySelector('#account-create-title').textContent = '创建创作账号';
+  dialog.querySelector('#account-create-help').textContent = '每个账号拥有独立的课程、项目、模型关联和创作配置。创建后会自动切换到新账号。';
+  dialog.querySelector('[data-account-submit]').textContent = '创建并切换';
   dialog.style.display = 'flex';
   const input = document.getElementById('account-create-name');
   if (input) {
     input.value = '';
+    window.setTimeout(() => input.focus(), 0);
+  }
+}
+
+function editCurrentCreativeAccount() {
+  const select = document.getElementById('current-account-select');
+  const currentId = select?.value || _accounts[0]?.id;
+  const current = _accounts.find(account => account.id === currentId);
+  if (!current) {
+    if (typeof window.showToast === 'function') window.showToast('当前账号尚未加载完成');
+    return;
+  }
+  const dialog = ensureAccountDialog();
+  _editingAccountId = current.id;
+  dialog.querySelector('#account-create-title').textContent = '修改创作账号';
+  dialog.querySelector('#account-create-help').textContent = '只修改显示名称；该账号下的项目、模型关联和创作配置不会受到影响。';
+  dialog.querySelector('[data-account-submit]').textContent = '保存修改';
+  dialog.style.display = 'flex';
+  const input = document.getElementById('account-create-name');
+  if (input) {
+    input.value = current.name || '';
     window.setTimeout(() => input.focus(), 0);
   }
 }
@@ -262,6 +359,7 @@ function initAccountManagement() {
     if (!event.target.closest('.account-switcher')) closeAccountPicker();
   });
   document.getElementById('btn-create-account')?.addEventListener('click', createCreativeAccount);
+  document.getElementById('btn-edit-current-account')?.addEventListener('click', editCurrentCreativeAccount);
   document.getElementById('btn-open-agent')?.addEventListener('click', openAgentTokenDialog);
   document.getElementById('system-settings-open-agent')?.addEventListener('click', openAgentTokenDialog);
 }

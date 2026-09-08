@@ -104,10 +104,18 @@ def get_project_video(
         ),
         project_id=project_id,
     )
+    download_name = _service_call(
+        lambda: service.video_download_filename(
+            db,
+            project_id,
+            filename,
+        ),
+        project_id=project_id,
+    )
     return FileResponse(
         path,
         media_type="video/mp4",
-        filename=filename,
+        filename=download_name,
     )
 
 

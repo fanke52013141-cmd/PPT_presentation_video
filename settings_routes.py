@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
+from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException, Request, UploadFile
+from fastapi import APIRouter, HTTPException, Request, Response, UploadFile
 
 from app_security import verify_access_token
 import config_portability_service as config_service
@@ -57,9 +59,31 @@ def update_system_settings(
     return service.update_system_settings(payload)
 
 
+def _config_zip_response(zip_bytes: bytes) -> Response:
+    """Wrap ZIP bytes in a download response with a timestamped file name."""
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    filename = f"ppt-studio-config-bundle-{stamp}.zip"
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{filename}"; '
+                f"filename*=UTF-8''{quote(filename)}"
+            ),
+        },
+    )
+
+
 @router.get("/api/config/export")
 def export_full_config() -> Dict[str, Any]:
     return config_service.export_full_config()
+
+
+@router.get("/api/config/export-zip")
+def export_full_config_zip() -> Response:
+    # [配置包压缩包 20260908] ZIP 配置包：config.json + assets/ 参考图片。
+    return _config_zip_response(config_service.export_full_config_zip())
 
 
 @router.post("/api/config/export-with-secrets")
@@ -80,10 +104,32 @@ def export_full_config_with_secrets(
     return config_service.export_full_config_with_secrets()
 
 
-async def read_limited_json_request(
+@router.post("/api/config/export-with-secrets-zip")
+def export_full_config_with_secrets_zip(
+    payload: Dict[str, Any],
+    request: Request,
+) -> Response:
+    # [配置包压缩包 20260908] 含密钥 ZIP 配置包，校验契约与 JSON 版本一致。
+    if not verify_access_token(request):
+        raise HTTPException(
+            status_code=401,
+            detail="导出密钥需要有效的 PPT Studio access token。",
+        )
+    if str(payload.get("confirmation") or "") != "EXPORT_SECRETS":
+        raise HTTPException(
+            status_code=400,
+            detail="Explicit secret-export confirmation is required.",
+        )
+    return _config_zip_response(
+        config_service.export_full_config_with_secrets_zip()
+    )
+
+
+async def read_limited_request_bytes(
     request: Request,
     max_bytes: int,
-) -> Dict[str, Any]:
+) -> bytes:
+    """Read a raw request body with a hard size ceiling."""
     content_length = request.headers.get("content-length")
     if content_length:
         try:
@@ -111,6 +157,14 @@ async def read_limited_json_request(
                     f"{max_bytes // (1024 * 1024)} MB 限制"
                 ),
             )
+    return bytes(body)
+
+
+async def read_limited_json_request(
+    request: Request,
+    max_bytes: int,
+) -> Dict[str, Any]:
+    body = await read_limited_request_bytes(request, max_bytes)
     try:
         payload = json.loads(body.decode("utf-8-sig"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -134,6 +188,22 @@ async def import_full_config(request: Request) -> Dict[str, Any]:
     )
     try:
         return config_service.import_full_config(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/api/config/import-zip")
+async def import_full_config_zip(request: Request) -> Dict[str, Any]:
+    # [配置包压缩包 20260908] 接收原始上传字节；容器格式（ZIP 或 JSON）
+    # 由服务层按魔数自动识别，与浏览器上报的扩展名无关。
+    data = await read_limited_request_bytes(
+        request,
+        _config_import_limit(),
+    )
+    if not data:
+        raise HTTPException(status_code=400, detail="上传的配置包为空")
+    try:
+        return config_service.import_config_bundle_bytes(data)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

@@ -441,6 +441,7 @@ async function runStep7TTS() {
       showToast('⏳ 该项目已有合成任务进行中，继续等待其完成...', 5000);
     }
     const jobId = submitted.job.id;
+    const loadingText = document.getElementById('step7-loading-text');
 
     const finalJob = await new Promise((resolve, reject) => {
       const started = Date.now();
@@ -453,6 +454,15 @@ async function runStep7TTS() {
           if (['completed', 'failed', 'interrupted'].includes(job.status)) {
             resolve(job);
             return;
+          }
+          if (job.status === 'queued' && loadingText) {
+            // 进程级合成并发已满：显示全局队列位次（queue_ahead 为前面的同类任务数）。
+            const ahead = Number(job.queue_ahead);
+            loadingText.innerText = Number.isFinite(ahead) && ahead > 0
+              ? `排队中，前面还有 ${ahead} 个合成任务...`
+              : '排队等待合成...';
+          } else if (loadingText) {
+            loadingText.innerText = '音频合成中...';
           }
           if (Date.now() - started > 30 * 60 * 1000) {
             reject(new Error('合成任务轮询超时（30 分钟），请稍后刷新页面查看状态。'));

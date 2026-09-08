@@ -93,7 +93,12 @@ class PptxExportService:
             raise PptxServiceError(404, "项目不存在")
         return project
 
-    def job_item(self, job: LocalJob) -> dict[str, Any]:
+    def job_item(
+        self,
+        job: LocalJob,
+        *,
+        queue_ahead: int | None = None,
+    ) -> dict[str, Any]:
         return {
             "id": job.id,
             "project_id": job.project_id,
@@ -107,7 +112,30 @@ class PptxExportService:
             "started_at": self._iso(job.started_at),
             "finished_at": self._iso(job.finished_at),
             "updated_at": self._iso(job.updated_at),
+            "queue_ahead": (
+                queue_ahead if job.status == "queued" else None
+            ),
         }
+
+    @staticmethod
+    def _queued_ahead(db: Session, job: LocalJob) -> int | None:
+        """Advisory cross-project queue position for one queued export.
+
+        Counts earlier queued jobs of the same type; zero means the job is
+        next in line.  Uses the caller's session, so it must only run while
+        that session is open.
+        """
+        if job.status != "queued":
+            return None
+        return (
+            db.query(LocalJob)
+            .filter(
+                LocalJob.job_type == job.job_type,
+                LocalJob.status == "queued",
+                LocalJob.created_at < job.created_at,
+            )
+            .count()
+        )
 
     def artifact_item(
         self,
@@ -196,7 +224,10 @@ class PptxExportService:
                 return {
                     "success": True,
                     "reused": True,
-                    "job": self.job_item(active),
+                    "job": self.job_item(
+                        active,
+                        queue_ahead=self._queued_ahead(db, active),
+                    ),
                 }
             job = self._new_job(
                 project.id,
@@ -210,7 +241,10 @@ class PptxExportService:
         return {
             "success": True,
             "reused": False,
-            "job": self.job_item(job),
+            "job": self.job_item(
+                job,
+                queue_ahead=self._queued_ahead(db, job),
+            ),
         }
 
     def list_jobs(
@@ -295,7 +329,10 @@ class PptxExportService:
                 return {
                     "success": True,
                     "reused": True,
-                    "job": self.job_item(active),
+                    "job": self.job_item(
+                        active,
+                        queue_ahead=self._queued_ahead(db, active),
+                    ),
                 }
             mode, _ = self._resolve_export_mode(
                 self.project_run_dir(project)
@@ -308,7 +345,10 @@ class PptxExportService:
         return {
             "success": True,
             "reused": False,
-            "job": self.job_item(job),
+            "job": self.job_item(
+                job,
+                queue_ahead=self._queued_ahead(db, job),
+            ),
         }
 
     def list_exports(

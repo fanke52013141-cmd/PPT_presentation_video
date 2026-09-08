@@ -3,6 +3,7 @@
 
   const PROFILE_STATE = {
     creationConfigs: null,
+    defaultCreationConfig: null,
     creating: false,
   };
 
@@ -56,14 +57,26 @@
 
   async function loadCreationConfigs() {
     try {
-      const response = await apiGet('/api/creation-configs');
-      PROFILE_STATE.creationConfigs = Array.isArray(response?.packages)
-        ? response.packages
-        : [];
+      const [response, accountResponse] = await Promise.all([
+        apiGet('/api/creation-configs'),
+        apiGet('/api/accounts/current'),
+      ]);
+      const defaultConfig = accountResponse?.account?.default_creation_config;
+      PROFILE_STATE.defaultCreationConfig = defaultConfig?.package_id
+        ? {
+            packageId: defaultConfig.package_id,
+            version: Number(defaultConfig.version) || null,
+          }
+        : null;
+      PROFILE_STATE.creationConfigs = orderCreationConfigs(
+        Array.isArray(response?.packages) ? response.packages : [],
+        PROFILE_STATE.defaultCreationConfig,
+      );
     } catch (_) {
       // A package is optional; leaving the list empty preserves ordinary
       // project creation when the package registry is unavailable.
       PROFILE_STATE.creationConfigs = [];
+      PROFILE_STATE.defaultCreationConfig = null;
     }
     return PROFILE_STATE.creationConfigs;
   }
@@ -73,6 +86,7 @@
     return (items || []).map(item => `
       <div class="project-profile-card-option ${item.id === selectedId ? 'active' : ''}" data-profile-option="${esc(field)}" data-value="${esc(item.id)}">
         <strong>${esc(item.name)}</strong>
+        ${item.detail ? `<span>${esc(item.detail)}</span>` : ''}
       </div>
     `).join('');
   }
@@ -88,12 +102,28 @@
     ));
   }
 
-  function creationConfigOptions(packages) {
+  function orderCreationConfigs(packages, defaultConfig) {
+    const defaultId = defaultConfig?.packageId;
+    return [...(packages || [])].sort((left, right) => {
+      if (left.id === defaultId) return -1;
+      if (right.id === defaultId) return 1;
+      return 0;
+    });
+  }
+
+  function configVersion(item, defaultConfig) {
+    if (item.id === defaultConfig?.packageId && Number.isInteger(defaultConfig?.version)) {
+      return defaultConfig.version;
+    }
+    return Number(item.latest_version);
+  }
+
+  function creationConfigOptions(packages, defaultConfig = PROFILE_STATE.defaultCreationConfig) {
     const available = availableCreationConfigs(packages);
     if (!available.length) return '<option value="">暂无可用创作配置包</option>';
     const options = [];
     available.forEach(item => {
-      const version = Number(item.latest_version);
+      const version = configVersion(item, defaultConfig);
       options.push(
         `<option value="${esc(item.id)}" data-version="${version}">${esc(item.name || '未命名配置包')} · v${version}</option>`
       );
@@ -101,7 +131,7 @@
     return options.join('');
   }
 
-  function creationConfigChoices(packages) {
+  function creationConfigChoices(packages, defaultConfig = PROFILE_STATE.defaultCreationConfig) {
     const available = availableCreationConfigs(packages);
     if (!available.length) {
       return '<div class="creation-config-choice" aria-disabled="true"><strong>暂无可用创作配置包</strong><span>请先在“创作配置”中保存一套配置。</span></div>';
@@ -109,25 +139,31 @@
     const choices = available.map(item => ({
       id: item.id,
       name: item.name || '未命名配置包',
-      detail: `最新版本 v${Number(item.latest_version)} · 提示词、模型与图片风格`
+      version: configVersion(item, defaultConfig),
+      isDefault: item.id === defaultConfig?.packageId,
     }));
     return choices.map(item => `
-      <button type="button" class="creation-config-choice" data-creation-config-choice="${esc(item.id)}" role="radio" aria-checked="false">
-        <strong>${esc(item.name)}</strong>
-        <span>${esc(item.detail)}</span>
+      <button type="button" class="creation-config-choice${item.isDefault ? ' is-default' : ''}" data-creation-config-choice="${esc(item.id)}" role="radio" aria-checked="false">
+        <span class="creation-config-choice-heading"><strong>${esc(item.name)}</strong>${item.isDefault ? '<em>当前默认</em>' : ''}</span>
+        <span>v${item.version} · 提示词、模型与图片风格</span>
       </button>
     `).join('');
   }
 
-  function refreshCreationConfigChoices(packages) {
+  function refreshCreationConfigChoices(packages, { preferDefault = false } = {}) {
     const grid = document.getElementById('creation-config-choice-grid');
     const select = document.getElementById('input-creation-config');
     if (!grid || !select) return;
-    const available = availableCreationConfigs(packages);
-    const selected = available.some(item => item.id === select.value)
+    const defaultConfig = PROFILE_STATE.defaultCreationConfig;
+    const available = availableCreationConfigs(orderCreationConfigs(packages, defaultConfig));
+    const defaultId = available.some(item => item.id === defaultConfig?.packageId)
+      ? defaultConfig.packageId
+      : '';
+    const selected = !preferDefault && available.some(item => item.id === select.value)
       ? select.value
-      : (available[0]?.id || '');
-    grid.innerHTML = creationConfigChoices(packages);
+      : (defaultId || available[0]?.id || '');
+    grid.innerHTML = creationConfigChoices(available, defaultConfig);
+    select.innerHTML = creationConfigOptions(available, defaultConfig);
     select.value = selected;
     grid.querySelectorAll('[data-creation-config-choice]').forEach(choice => {
       const active = choice.dataset.creationConfigChoice === select.value;
@@ -147,6 +183,7 @@
     content.innerHTML = `
       <div class="project-profile-scroll">
         <h3 class="highlight-title" style="margin-bottom: .8rem;">新建视频项目</h3>
+        <div id="create-running-hint" class="project-profile-running-hint" hidden></div>
         <section class="project-profile-section">
           <h4>1. 基础信息</h4>
           <label>项目名称</label>
@@ -163,13 +200,21 @@
             ${creationConfigChoices(creationConfigs)}
           </div>
           <select id="input-creation-config" class="creation-config-native-select" aria-hidden="true" tabindex="-1">${creationConfigOptions(creationConfigs)}</select>
-          <p id="create-creation-config-help" class="project-profile-help">${creationConfigs?.length ? '本项目会保存所选配置包的版本，模型、提示词、图片风格和参考图均以该配置包为准。' : '暂无可用创作配置包。'}</p>
+          <p id="create-creation-config-help" class="project-profile-help">${creationConfigs?.length ? '本项目会固定所选配置包及其显示版本；模型、提示词、图片风格和参考图均以该配置包为准。' : '暂无可用创作配置包。'}</p>
+        </section>
+        <section class="project-profile-section" id="create-ai-mode-section">
+          <h4>3. 创建方式</h4>
+          <div class="project-profile-mode-grid" role="radiogroup" aria-label="创建方式">
+            ${optionCards([
+              { id: 'auto', name: '全自动', detail: '进入项目即自动开始并连续执行生成流程，无需手动点击。' },
+              { id: 'manual', name: '手动', detail: '创建后由你按步骤编辑并触发生成。' },
+            ], 'ai_mode', 'auto')}
+          </div>
         </section>
         <details class="project-profile-advanced">
-          <summary>高级设置 <span>画布比例</span></summary>
+          <summary>画面比例</summary>
           <div class="project-profile-advanced-body">
         <section class="project-profile-section">
-          <h4>3. 画布比例</h4>
           <div class="project-profile-mode-grid">
             ${optionCards([
               { id: 'landscape_16_9', name: '横屏 16:9' },
@@ -187,6 +232,7 @@
       </div>
     `;
     bindModalEvents();
+    refreshCreationConfigChoices(creationConfigs, { preferDefault: true });
   }
 
   function activateOption(field, value) {
@@ -228,12 +274,13 @@
     });
   }
 
-  function collectProfile() {
+  function collectProfile(aiMode) {
     return {
       version: 'project_profile_v1',
       canvas_profile: selectedOption('canvas_profile', 'landscape_16_9'),
-      // Generation switches and pause points are defined by the creation package.
-      automation_mode: 'auto',
+      // Generation switches and pause points remain package-owned. This value
+      // mirrors the project's explicit creation mode for profile consumers.
+      automation_mode: aiMode === 'manual' ? 'manual_review' : 'auto',
       quality_gates: { ...DEFAULT_QUALITY_GATES },
       last_used_storyboard_template_id: '',
       notes: 'Lightweight profile only. The selected creation package owns prompts, models, image style, and reference images.',
@@ -265,12 +312,14 @@
       button.textContent = '创建中...';
     }
     try {
-      const profile = collectProfile();
+      const aiMode = selectedOption('ai_mode', 'auto');
+      const profile = collectProfile(aiMode);
       const creationConfig = selectedCreationConfig();
       const pendingParent = window.__pendingProjectParent || null;
       const projectRes = await apiPost('/api/projects', {
         name,
         description: desc,
+        ai_mode: aiMode,
         canvas_profile: profile.canvas_profile,
         ...(creationConfig ? {
           config_package_id: creationConfig.id,
@@ -312,14 +361,47 @@
     }
   }
 
+  async function refreshRunningAutomationHint() {
+    // 提示条（方案②）：打开创建弹窗时统计当前账号仍在运行的全自动任务，
+    // 提前告知新任务在输出阶段会排队，避免多账号并行时互相等待的困惑。
+    const hint = document.getElementById('create-running-hint');
+    if (!hint) return;
+    try {
+      const res = await apiGet('/api/one-click-statuses');
+      const items = Array.isArray(res?.items) ? res.items : [];
+      const running = items.filter(item => item.status === 'running');
+      if (running.length > 0) {
+        const names = running.map(item => item.project_name).filter(Boolean).slice(0, 3);
+        const suffix = running.length > names.length ? ' 等' : '';
+        hint.textContent = `⏳ 当前有 ${running.length} 个全自动任务进行中（${names.join('、')}${suffix}）。新项目提交后会在生成与输出阶段自动排队，无需等待。`;
+        hint.hidden = false;
+      } else {
+        hint.textContent = '';
+        hint.hidden = true;
+      }
+    } catch {
+      hint.textContent = '';
+      hint.hidden = true;
+    }
+  }
+
   async function enhanceCreateModal() {
     const creationConfigs = await loadCreationConfigs();
     renderModal(creationConfigs);
+    refreshCreationConfigChoices(creationConfigs, { preferDefault: true });
+    // 每次打开都刷新运行中任务提示；元素在首次 renderModal 后持续存在，
+    // 不受 renderModal 防重守卫影响。
+    refreshRunningAutomationHint();
   }
 
   function boot() {
     if (!document.getElementById('modal-create')) return;
     enhanceCreateModal().catch(() => {});
+    const createButton = document.getElementById('btn-create-project');
+    if (createButton && !createButton.__profileConfigBound) {
+      createButton.__profileConfigBound = true;
+      createButton.addEventListener('click', () => enhanceCreateModal().catch(() => {}));
+    }
   }
 
   document.addEventListener('DOMContentLoaded', boot);

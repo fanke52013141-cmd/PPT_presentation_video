@@ -67,6 +67,9 @@ data/
 # Third-party binary tooling (downloaded, not source)
 tools/ffmpeg/
 
+# Portable runtime bundle (embedded Python/Node, downloaded binaries)
+/runtime/
+
 # Editor/working backups
 *.bak
 *.bak2

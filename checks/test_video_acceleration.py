@@ -137,3 +137,52 @@ def test_hardware_color_reencode_retries_cpu_on_failure(tmp_path: Path) -> None:
     assert any("h264_nvenc" in command for command in commands)
     assert any("libx264" in command for command in commands)
     assert any(event == "step8_color_metadata_hardware_fallback" for event, _ in logs)
+
+
+def test_hardware_color_reencode_retries_cpu_when_verify_fails(tmp_path: Path) -> None:
+    """7.x nvenc 可能 rc=0 但写不出 ffprobe 可读的 bt709，必须仍降级 libx264。"""
+    commands: list[list[str]] = []
+    logs: list[tuple[str, dict[str, object]]] = []
+    target = tmp_path / "render.mp4"
+    target.write_bytes(b"video")
+
+    def command(args, **_kwargs):
+        commands.append(args)
+        output = Path(args[-1])
+        # Stage1 是流拷贝（不含编码器名）；Stage2 用 nvenc；Stage3 是 libx264 回退。
+        if "h264_nvenc" in args:
+            output.write_bytes(b"nvenc")
+        elif "libx264" in args:
+            output.write_bytes(b"cpu")
+        else:
+            output.write_bytes(b"copy")
+        return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
+    runner = RemotionRunner(
+        RemotionRunnerDependencies(
+            config=_config(tmp_path),
+            build_reveal_assets=lambda _project: None,
+            write_project_log=lambda _project, event, **values: logs.append((event, values)),
+            run_subprocess_bounded=command,
+            resolve_media_tool=lambda name: "ffmpeg" if name == "ffmpeg" else None,
+        )
+    )
+    runner._container_already_bt709 = lambda _path: False
+
+    def verify(path):
+        # 只有 libx264 产物能通过复核，模拟流拷贝与 nvenc 产物元数据均不可读。
+        return path.read_bytes() == b"cpu"
+
+    runner._verify_color_metadata_with_ffprobe = verify
+    assert runner._normalize_video_color_metadata(
+        target,
+        SimpleNamespace(id="project"),
+        select_video_encoder("auto", {"h264_nvenc", "libx264"}),
+    )
+    assert any("h264_nvenc" in command for command in commands)
+    assert any("libx264" in command for command in commands)
+    fallback = next(
+        values for event, values in logs
+        if event == "step8_color_metadata_hardware_fallback"
+    )
+    assert fallback["verify_failed"] is True

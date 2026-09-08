@@ -8,17 +8,19 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 from typing import Any, Callable
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from runtime_support import kill_process_tree
 
+from account_context import get_current_account_id
 from artifact_fingerprint import render_input_fingerprint
 from artifact_registry import record_artifact, remove_artifact_record
-from database import Project
+from database import Account, Project
 from error_log_service import log_pipeline_error
 from pipeline_lifecycle import write_json_atomic
 from project_storage import (
@@ -33,6 +35,14 @@ from video_contracts import VideoRenderError
 
 
 logger = logging.getLogger("PPTStudio.VideoArtifacts")
+
+# Windows 禁止字符与控制字符都不允许出现在下载文件名中。
+_DOWNLOAD_NAME_UNSAFE = re.compile(r'[\\/:*?"<>|\r\n\t]+')
+
+def _sanitize_download_name_part(value: Any, fallback: str) -> str:
+    """把账号名/项目名清理成可安全用作下载文件名片段的文本。"""
+    cleaned = _DOWNLOAD_NAME_UNSAFE.sub("", str(value or "")).strip().strip(".")
+    return cleaned or fallback
 
 
 def _safe_unlink(path: Path, retries: int = 3, delay: float = 0.5) -> None:
@@ -161,6 +171,80 @@ class VideoArtifactService:
     def visual_settings(self, project: Project) -> dict[str, Any]:
         return self.dependencies.read_visual_settings(project)
 
+    def _account_display_name(self, project: Project) -> str:
+        """解析项目归属账号的展示名，用于下载文件名前缀。"""
+        account_id = str(
+            getattr(project, "account_id", "") or ""
+        ).strip()
+        if not account_id:
+            account_id = get_current_account_id()
+        # project 可能是测试夹具的 SimpleNamespace（未映射），object_session
+        # 对未映射实例会抛异常，因此统一按"拿不到会话"兜底。
+        try:
+            session = object_session(project)
+        except Exception:
+            session = None
+        if session is not None:
+            account = (
+                session.query(Account)
+                .filter(Account.id == account_id)
+                .first()
+            )
+            if account and str(account.name or "").strip():
+                return str(account.name)
+        return account_id or "default"
+
+    def build_download_filename(
+        self,
+        project: Project,
+        path: str | Path,
+    ) -> str:
+        """默认下载名：账号名_项目名_YYYYMMDD+两位序号.mp4。
+
+        序号是该视频在「同一自然日内渲染出的视频」中按时间排序的
+        1-based 位置，因此当天第一个视频以 01 结尾。磁盘文件名保持
+        不变，这里只决定交给浏览器的 Content-Disposition 文件名。
+        """
+        target = Path(path)
+        try:
+            own_mtime = target.stat().st_mtime
+        except OSError:
+            own_mtime = datetime.now().timestamp()
+        date_tag = datetime.fromtimestamp(own_mtime).strftime("%Y%m%d")
+        sequence = 1
+        try:
+            siblings = list(target.parent.iterdir())
+        except OSError:
+            siblings = []
+        for sibling in siblings:
+            if sibling == target or sibling.suffix.lower() != ".mp4":
+                continue
+            try:
+                sibling_mtime = sibling.stat().st_mtime
+            except OSError:
+                continue
+            if datetime.fromtimestamp(sibling_mtime).strftime(
+                "%Y%m%d"
+            ) != date_tag:
+                continue
+            if sibling_mtime < own_mtime or (
+                sibling_mtime == own_mtime
+                and sibling.name < target.name
+            ):
+                sequence += 1
+        account_part = _sanitize_download_name_part(
+            self._account_display_name(project),
+            "账号",
+        )
+        project_part = _sanitize_download_name_part(
+            getattr(project, "name", ""),
+            "项目",
+        )
+        return (
+            f"{account_part}_{project_part}_{date_tag}"
+            f"{sequence:02d}.mp4"
+        )
+
     def video_item(
         self,
         project: Project,
@@ -222,6 +306,10 @@ class VideoArtifactService:
             artifact_state = "current"
         return {
             "filename": filename,
+            "download_filename": self.build_download_filename(
+                project,
+                target,
+            ),
             "label": label or filename,
             "size": stat.st_size,
             "created_at": datetime.fromtimestamp(
@@ -345,6 +433,19 @@ class VideoArtifactService:
             raise VideoRenderError(404, "视频文件不存在")
         return path
 
+    def video_download_filename(
+        self,
+        db: Session,
+        project_id: str,
+        filename: str,
+    ) -> str:
+        """为单个视频下载请求解析浏览器默认保存文件名。"""
+        project = self.get_project(db, project_id)
+        path = self.project_video_file(project, filename)
+        if not path.exists():
+            raise VideoRenderError(404, "视频文件不存在")
+        return self.build_download_filename(project, path)
+
     def create_speed_adjusted_video(
         self,
         db: Session,
@@ -421,6 +522,14 @@ class VideoArtifactService:
             "192k",
             "-pix_fmt",
             "yuv420p",
+            # 与渲染归一化保持一致：重编码后必须保留 bt709。ffmpeg 7.x
+            # 不会把颜色选项落到编码器 VUI，需要 h264_metadata bsf 补写。
+            "-color_primaries", "bt709",
+            "-color_trc", "bt709",
+            "-colorspace", "bt709",
+            "-color_range", "tv",
+            "-bsf:v",
+            "h264_metadata=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1",
             "-movflags",
             "+faststart",
             str(temporary),

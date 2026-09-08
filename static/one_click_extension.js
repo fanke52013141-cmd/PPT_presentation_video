@@ -11,6 +11,10 @@
     lastRefreshAt: 0,
     hiddenSkip: 0,
     connAlertShown: false,
+    // [全自动直启 20260908] 会话内已自动触发过续跑的项目集合与进行中标记：
+    // 每个项目每次页面会话只自动触发一次，避免固定失败被反复重跑。
+    autoTriggered: new Set(),
+    autoStarting: false,
   };
 
   // [轮询自愈 20260904] 连续失败达到该阈值（约 7.5 秒无响应）才展示连接
@@ -175,7 +179,10 @@
           rememberProjectId(projectId);
           const result = await originalEnter.apply(this, arguments);
           ensureEntryButton();
-          refreshStatusSilently();
+          // [全自动直启 20260908] 进入项目后读取一次状态；全自动模式下若
+          // 流程尚未开始或上次失败待处理，直接自动续跑，无需再手动点击
+          // "一键生成"。其余状态保持原有静默刷新行为。
+          enterStatusAndMaybeAutoStart();
           return result;
         };
         window.enterWorkspace.__oneClickPatched = true;
@@ -352,6 +359,52 @@
       STATE.failCount += 1;
       renderConnectionAlert();
     });
+  }
+
+  // [全自动直启 20260908] 允许全自动模式进入项目时直接续跑的状态集合：
+  // idle = 尚未开始；failed = 上次运行失败待处理。paused/cancelled 是用户
+  // 显式暂停或取消的结果，保持手动；waiting_for_review/waiting_for_user
+  // 需要用户审查或输入；completed 已完成不重跑。
+  const AUTO_TRIGGER_STATUSES = new Set(['idle', 'failed']);
+
+  // [全自动直启 20260908] 进入项目时读取一键状态并在满足条件时自动续跑：
+  // 条件为全自动模式（body.mode-auto 由 applyProjectAiMode 维护）且状态
+  // 属于 AUTO_TRIGGER_STATUSES 且本会话未触发过。任何失败都只提示一次，
+  // 不打断进入项目的正常流程。
+  async function enterStatusAndMaybeAutoStart() {
+    let status = null;
+    try {
+      status = await refreshStatus();
+    } catch (error) {
+      STATE.failCount += 1;
+      renderConnectionAlert();
+      return;
+    }
+    const projectId = activeProjectId();
+    if (!projectId || !AUTO_TRIGGER_STATUSES.has((status && status.status) || 'idle')) return;
+    if (!document.body.classList.contains('mode-auto')) return;
+    if (STATE.autoStarting || STATE.autoTriggered.has(projectId)) return;
+    await autoStartOneClick();
+  }
+
+  // [全自动直启 20260908] 静默启动一键生成（绕过手动模式的确认弹窗）：
+  // 全自动模式本身已声明连续执行意图，resume 语义会自动从最早失效阶段
+  // 续跑并保护人工 Mask、旁白和未过期产物。
+  async function autoStartOneClick() {
+    const projectId = activeProjectId();
+    if (!projectId) return;
+    STATE.autoStarting = true;
+    STATE.autoTriggered.add(projectId);
+    try {
+      const result = await apiPost(`/api/projects/${encodeURIComponent(projectId)}/one-click-generate`, { mode: 'resume' });
+      renderStatus(result.status || {});
+      toast(result.already_running ? '一键生成正在运行。' : '全自动模式：已自动继续生成流程。', 4000);
+      startPolling();
+    } catch (error) {
+      toast(`自动继续失败：${error.message}，可点击左侧"一键生成"重试。`, 6000);
+    } finally {
+      STATE.autoStarting = false;
+    }
   }
 
   async function startOneClick(mode = 'resume') {

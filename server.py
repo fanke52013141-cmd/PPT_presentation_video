@@ -9,11 +9,15 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from PIL import Image
 from database import get_db, init_db, Project
-from config_store import get_all_settings, update_settings, get_setting
+from config_store import get_all_settings, update_settings, get_setting, get_bounded_int_setting
 from app_middleware import install_static_asset_cache_policy
 from app_security import configured_allowed_hosts, configured_allowed_origins, install_access_control
 from account_context import AccountContextMiddleware
-from account_service import get_default_creation_config
+from account_service import (
+    get_default_creation_config,
+    list_accounts_across_sessions,
+    upsert_account_with_explicit_id,
+)
 from scripts.media_tools import (
     probe_media_duration_sec,
     resolve_media_tool as shared_resolve_media_tool,
@@ -292,6 +296,8 @@ try:
             export_project_style_templates=export_current_project_style_templates,
             validate_project_style_templates=validate_current_project_style_templates,
             import_project_style_templates=import_current_project_style_templates,
+            list_accounts=list_accounts_across_sessions,
+            upsert_account=upsert_account_with_explicit_id,
         )
     )
     configure_settings_routes(
@@ -716,21 +722,18 @@ try:
         configure_tts_async_service,
     )
 
-    # 持久化 TTS 合成后台任务（审查 M-09 第二步）：复用同步合成入口，
-    # 进程重启时 running→interrupted、queued→重新排队。
+    # 持久化 TTS 合成后台任务：重启恢复 running→interrupted、queued→重新排队；进程级并发 1-4。
     configure_tts_async_service(
         TtsAsyncDependencies(
             session_factory=TtsAsyncSessionLocal,
             synthesize=tts_service_module.synthesize_tts_resumable,
+            max_workers=get_bounded_int_setting("tts_job_workers", default=1, min_value=1, max_value=4),
         ),
     )
     app.include_router(narration_router)
     app.include_router(tts_router)
 except Exception as exc:
-    logger.exception(
-        "Explicit narration/TTS route registration failed: %s",
-        exc,
-    )
+    logger.exception("Explicit narration/TTS route registration failed: %s", exc)
     raise
 
 try:
@@ -857,20 +860,19 @@ try:
             ),
         )
     )
+    # 跨项目渲染并发上限（1-3）：多余提交保留为持久 queued 任务排队。
     video_render_service = configure_video_render_service(
         VideoRenderDependencies(
             session_factory=VideoSessionLocal,
             artifact_service=video_artifact_service,
             remotion_runner=remotion_runner,
             config=video_render_config,
+            max_concurrent_renders=get_bounded_int_setting("max_concurrent_renders", default=1, min_value=1, max_value=3),
         )
     )
     app.include_router(video_router)
 except Exception as exc:
-    logger.exception(
-        "Explicit video render route registration failed: %s",
-        exc,
-    )
+    logger.exception("Explicit video render route registration failed: %s", exc)
     raise
 
 try:

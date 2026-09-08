@@ -28,3 +28,16 @@ def update_settings(settings_dict: dict):
         db.commit()
     finally:
         db.close()
+
+def get_bounded_int_setting(
+    key: str,
+    default: int,
+    min_value: int,
+    max_value: int,
+) -> int:
+    """读取设置表整数并钳位到 [min_value, max_value]；缺失或非法回退 default。"""
+    try:
+        parsed = int(float(str(get_setting(key)).strip()))
+    except Exception:
+        return default
+    return max(min_value, min(max_value, parsed))

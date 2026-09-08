@@ -148,6 +148,10 @@ async function loadSettings() {
   document.getElementById('setting-tts-speed').value = state.settings.tts_speed || '1.2';
   document.getElementById('setting-tts-volume').value = state.settings.tts_volume || '1.0';
   document.getElementById('setting-tts-pitch').value = state.settings.tts_pitch || '0';
+
+  // 任务并发（方案④）：跨项目后台任务全局吞吐上限。
+  document.getElementById('setting-max-concurrent-renders').value = state.settings.max_concurrent_renders || '1';
+  document.getElementById('setting-tts-job-workers').value = state.settings.tts_job_workers || '1';
 }
 
 function openSettingsModal() {
@@ -182,7 +186,10 @@ function readSettingsForm() {
     tts_provider_extra: document.getElementById('setting-tts-provider-extra').value.trim(),
     tts_speed: document.getElementById('setting-tts-speed').value.trim(),
     tts_volume: document.getElementById('setting-tts-volume').value.trim(),
-    tts_pitch: document.getElementById('setting-tts-pitch').value.trim()
+    tts_pitch: document.getElementById('setting-tts-pitch').value.trim(),
+    // 任务并发（方案④）：保存为字符串，消费端用 parse_int_setting 钳位到合法区间。
+    max_concurrent_renders: document.getElementById('setting-max-concurrent-renders').value.trim() || '1',
+    tts_job_workers: document.getElementById('setting-tts-job-workers').value.trim() || '1'
   };
 }
 
@@ -196,12 +203,13 @@ async function saveSettings() {
 
 function settingsExportFileName() {
   const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
-  return `ppt-studio-config-bundle-${stamp}.json`;
+  // [配置包压缩包 20260908] 导出改为 ZIP 压缩包：config.json 与参考风格图片同包分发。
+  return `ppt-studio-config-bundle-${stamp}.zip`;
 }
 
 async function exportGlobalSettings() {
-  const payload = await API.get('/api/config/export');
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  // [配置包压缩包 20260908] 服务端直接返回 ZIP 字节流，前端只负责触发下载。
+  const blob = await API.getBinary('/api/config/export-zip');
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -210,28 +218,24 @@ async function exportGlobalSettings() {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
-  showToast('配置包已导出：包含模型、创作配置、Prompt 模板和参考图；密钥不会写入普通导出。', 6000);
+  showToast('配置包已导出为 ZIP 压缩包：包含模型、创作配置、Prompt 模板和参考风格图片；密钥不会写入普通导出。', 6000);
 }
 
 async function importGlobalSettings(file) {
-  let payload;
-  try {
-    payload = JSON.parse(await file.text());
-  } catch (error) {
-    showToast(`导入失败：${error.message}`, 6000);
-    return;
-  }
-
+  // [配置包压缩包 20260908] 服务端按字节嗅探容器类型：ZIP 配置包和旧版 JSON
+  // 配置包都直接上传原始字节，前端不再自行解析 JSON。
   showCustomConfirm(
     '导入整体配置？',
-    '将更新当前账号的模型、创作配置、Prompt 模板和图片风格；普通配置包不包含密钥，项目内容不会被修改。',
-    () => {
-      API.post('/api/config/import', payload).then(async () => {
+    '将更新当前账号的模型、创作配置、Prompt 模板和参考风格图片；支持 .zip 压缩包与旧版 .json 配置包，普通配置包不包含密钥，项目内容不会被修改。',
+    async () => {
+      try {
+        const bytes = await file.arrayBuffer();
+        await API.post('/api/config/import-zip', bytes);
         await loadSettings();
         showToast('配置已导入并重新加载。', 5000);
-      }).catch(error => {
+      } catch (error) {
         showToast(`导入失败：${error.message}`, 6000);
-      });
+      }
     }
   );
 }

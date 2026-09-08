@@ -206,10 +206,65 @@ if (html.includes('兼容项目')
 if (!html.includes('select_menus.js') || !selectMenus.includes('initPptSelectMenus') || !selectMenus.includes('HTMLSelectElement')) {
   throw new Error('shared select-menu component is not loaded correctly');
 }
+const accountManagement = fs.readFileSync(path.join(root, 'static', 'account_management.js'), 'utf8');
+for (const accountRenameToken of [
+  'btn-edit-current-account',
+  'function editCurrentCreativeAccount()',
+  "API.put(`/api/accounts/${encodeURIComponent(editingAccountId)}`, { name })",
+  '只修改显示名称；该账号下的项目、模型关联和创作配置不会受到影响。',
+]) {
+  if (!html.includes(accountRenameToken) && !accountManagement.includes(accountRenameToken)) {
+    throw new Error(`account rename UI is missing: ${accountRenameToken}`);
+  }
+}
+for (const accountMenuToken of [
+  'syncAccountPickerWidth',
+  '--account-picker-width',
+  'aria-label',
+  'width: min(var(--account-picker-width',
+  'left: 0;',
+]) {
+  if (!accountManagement.includes(accountMenuToken) && !css.includes(accountMenuToken)) {
+    throw new Error(`compact account picker UI is missing: ${accountMenuToken}`);
+  }
+}
+if (accountManagement.includes('account-picker-option-status') || css.includes('.account-picker-option-status')) {
+  throw new Error('account picker still renders an extra status dot');
+}
 if (!projectProfile.includes("apiGet('/api/creation-configs')")
   || !projectProfile.includes('config_package_id: creationConfig.id')
   || !projectProfile.includes('config_package_version: creationConfig.version')) {
   throw new Error('profile project creation does not preserve the selected creation configuration');
+}
+for (const defaultConfigToken of [
+  "apiGet('/api/accounts/current')",
+  'defaultCreationConfig',
+  'orderCreationConfigs',
+  '当前默认',
+  'preferDefault',
+]) {
+  if (!projectProfile.includes(defaultConfigToken)) {
+    throw new Error(`project creation default configuration state is missing: ${defaultConfigToken}`);
+  }
+}
+for (const managementDefaultToken of [
+  'creation-config-default-package',
+  'creation-config-package-grid',
+  '当前账号默认配置',
+  "API.put(`/api/accounts/${encodeURIComponent(state.currentAccountId)}/default-config`",
+]) {
+  if (!creationConfigManagement.includes(managementDefaultToken) && !css.includes(managementDefaultToken)) {
+    throw new Error(`configuration management default state is missing: ${managementDefaultToken}`);
+  }
+}
+for (const compactDefaultCardToken of [
+  '.creation-config-default-package > .creation-config-package-card',
+  'width: clamp(210px, 25%, 320px)',
+  'width: 100%;',
+]) {
+  if (!css.includes(compactDefaultCardToken)) {
+    throw new Error(`configuration management default card is not compact and responsive: ${compactDefaultCardToken}`);
+  }
 }
 if (projects.includes('onclick=')) throw new Error('project cards still use interpolated inline click handlers');
 if (!projects.includes('escHtml(project.name)') || !projects.includes("escHtml(project.description || '无项目描述')")) {
@@ -810,11 +865,19 @@ if (!html.includes('step2-generation-status') || !storyboard.includes('setStep2G
 if (!css.includes('#step6-btn-audio-confirm-next:disabled') || !css.includes('#step8-btn-render:disabled')) {
   throw new Error('disabled primary button contrast contract is missing');
 }
-if (!projectProfile.includes("automation_mode: 'auto'")) {
-  throw new Error('project profile must retain the package-owned automatic pipeline mode');
+for (const creationModeToken of [
+  "id: 'auto', name: '全自动'",
+  "id: 'manual', name: '手动'",
+  "selectedOption('ai_mode', 'auto')",
+  'ai_mode: aiMode',
+  "automation_mode: aiMode === 'manual' ? 'manual_review' : 'auto'",
+]) {
+  if (!projectProfile.includes(creationModeToken)) {
+    throw new Error(`project creation mode selection is missing: ${creationModeToken}`);
+  }
 }
-if (projectProfile.includes('ai_mode: aiMode') || projectProfile.includes('manual_pause_steps: manualPauseSteps')) {
-  throw new Error('project creation must not duplicate creation-package automation settings');
+if (projectProfile.includes('manual_pause_steps: manualPauseSteps')) {
+  throw new Error('project creation must not duplicate creation-package pause settings');
 }
 if (!workspaceNavigation.includes("document.getElementById('btn-toggle-ai-mode').style.display = 'none'")) {
   throw new Error('project AI mode control remains visible after returning to the project library');

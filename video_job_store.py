@@ -286,6 +286,33 @@ class VideoJobStore:
         finally:
             db.close()
 
+    def count_queued_ahead(
+        self,
+        job_type: str,
+        *,
+        before_created_at: datetime,
+    ) -> int:
+        """Count same-type queued jobs created earlier across all projects.
+
+        A queued job with zero earlier queued siblings is next in line for a
+        single worker; with a bounded pool, the position plus the pool size
+        bounds the wait.  This read is advisory only and never blocks the
+        caller's transaction.
+        """
+        db = self.session_factory()
+        try:
+            return (
+                db.query(LocalJob)
+                .filter(
+                    LocalJob.job_type == job_type,
+                    LocalJob.status == "queued",
+                    LocalJob.created_at < before_created_at,
+                )
+                .count()
+            )
+        finally:
+            db.close()
+
     def update(
         self,
         job_id: str,

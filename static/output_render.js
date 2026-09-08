@@ -11,9 +11,15 @@ let _step8RenderTaskId = null;
 let _step8RenderProjectId = null;
 let _step8RenderSessionVersion = null;
 
-function updateStep8LoadingText(stageLabel, elapsedSec) {
+function updateStep8LoadingText(stageLabel, elapsedSec, queueAhead) {
   const text = document.getElementById('step8-loading-text');
   if (!text) return;
+  // 排队中的渲染任务：显示全局队列位次（queue_ahead 为前面的同类任务数）。
+  const ahead = Number(queueAhead);
+  if (Number.isFinite(ahead) && ahead > 0) {
+    text.innerText = `排队中，前面还有 ${ahead} 个渲染任务...`;
+    return;
+  }
   const stage = stageLabel ? stageLabel : '视频渲染中';
   const elapsed = (elapsedSec != null && elapsedSec > 0)
     ? `（已用 ${Math.round(elapsedSec)} 秒）`
@@ -57,6 +63,12 @@ function startStep8RenderPolling(
         || _step8RenderSessionVersion !== sessionVersion) return;
       if (!res.success) {
         stopStep8RenderPolling();
+        return;
+      }
+
+      if (res.status === 'queued') {
+        // 跨项目全局并发已满，任务停留在持久 queued 队列中。
+        updateStep8LoadingText(null, 0, res.queue_ahead);
         return;
       }
 
@@ -111,9 +123,13 @@ async function loadStep8Data() {
     // 先检查是否有进行中的渲染任务（页面刷新后恢复轮询）
     const statusRes = await API.get(`/api/projects/${projectId}/steps/8/render-status`);
     if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return;
-    if (statusRes.success && statusRes.status === 'rendering') {
+    if (statusRes.success && (statusRes.status === 'rendering' || statusRes.status === 'queued')) {
       document.getElementById('step8-loading').style.display = 'inline-flex';
-      updateStep8LoadingText(statusRes.stage_label, statusRes.elapsed_sec);
+      if (statusRes.status === 'queued') {
+        updateStep8LoadingText(null, 0, statusRes.queue_ahead);
+      } else {
+        updateStep8LoadingText(statusRes.stage_label, statusRes.elapsed_sec);
+      }
       const renderBtn = document.getElementById('step8-btn-render');
       if (renderBtn) renderBtn.disabled = true;
       startStep8RenderPolling(statusRes.task_id, projectId, sessionVersion);
@@ -228,6 +244,12 @@ function updateStep8PptxLoading(job) {
   if (loading) loading.style.display = 'inline-flex';
   if (button) button.disabled = true;
   if (text) {
+    // 排队中的导出任务：显示全局队列位次（queue_ahead 为前面的同类任务数）。
+    const ahead = Number(job?.queue_ahead);
+    if (job?.status === 'queued' && Number.isFinite(ahead) && ahead > 0) {
+      text.innerText = `排队中，前面还有 ${ahead} 个生成任务...`;
+      return;
+    }
     const progress = Number(job?.progress || 0);
     text.innerText = `${pptxStageLabel(job?.stage)}${progress > 0 ? ` · ${progress}%` : ''}...`;
   }
@@ -483,7 +505,7 @@ function showStep8VideoResult(videos) {
                 应用语速并生成 MP4
               </button>
             `}
-            <a href="${escHtml(item.url)}" download class="btn success" style="text-decoration: none;">
+            <a href="${escHtml(item.url)}" download="${escHtml(item.download_filename || item.filename || 'video.mp4')}" class="btn success" style="text-decoration: none;">
               <svg class="icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 3v12"></path></svg>
               下载 MP4
             </a>

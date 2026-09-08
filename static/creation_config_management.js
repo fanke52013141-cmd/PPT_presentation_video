@@ -38,6 +38,20 @@
   const TEXT_BINDING_KEYS = [
     'article_generation', 'storyboard', 'visualization', 'ai_mask', 'narration_annotation',
   ];
+  const DEFAULT_SUBTITLE = {
+    enabled: true,
+    font_key: 'lxgw_marker_gothic',
+    font_size: 40,
+    font_weight: 400,
+    bottom: 0,
+    horizontal_margin: 110,
+    color: '#000000',
+    highlight_color: '#000000',
+    paging_window_ms: 1300,
+    token_highlight: true,
+    max_lines: 1,
+    line_height: 1.4,
+  };
 
   function element(id) {
     return document.getElementById(id);
@@ -321,6 +335,67 @@
     renderImageStyleCards();
   }
 
+  async function createStyleForCreationConfig() {
+    if (!window.API) return;
+    const name = window.prompt('新风格名称（会保存到当前账号的风格库）');
+    if (name === null) return;
+    if (!name.trim()) {
+      toast('请输入风格名称');
+      return;
+    }
+    const systemContent = window.prompt('图片风格内容：描述配色、构图、材质、氛围与禁忌。', '');
+    if (systemContent === null) return;
+    if (!systemContent.trim()) {
+      toast('请输入图片风格内容');
+      return;
+    }
+    try {
+      const response = await window.API.post('/api/image-style/project-templates', {
+        name: name.trim(),
+        system_content: systemContent.trim(),
+      });
+      const template = response?.template;
+      if (!template?.id) throw new Error('风格已创建，但没有返回 ID');
+      const detail = await window.API.get(`/api/image-style/project-templates/${encodeURIComponent(template.id)}`);
+      state.styleTemplates = [...state.styleTemplates, template];
+      state.styleTemplateDetails.set(String(template.id), detail);
+      renderImageStyleSelector();
+      const selector = element('creation-config-image-style-template');
+      if (selector) selector.value = template.id;
+      updateImageStyleSummary();
+      renderImageStyleCards();
+      syncStructuredFieldsToJson();
+      toast('新风格已创建并绑定到当前创作包；可在项目内补充参考图。');
+    } catch (error) {
+      requestError('新建风格失败', error);
+    }
+  }
+
+  function subtitleFromForm(existingValue) {
+    const subtitle = { ...DEFAULT_SUBTITLE, ...objectValue(existingValue) };
+    subtitle.enabled = !!element('creation-config-subtitle-enabled')?.checked;
+    document.querySelectorAll('[data-creation-config-subtitle]').forEach(field => {
+      const key = field.dataset.creationConfigSubtitle;
+      if (!key) return;
+      subtitle[key] = field.type === 'checkbox'
+        ? !!field.checked
+        : (field.type === 'number' ? Number(field.value) : field.value.trim());
+    });
+    return subtitle;
+  }
+
+  function loadSubtitleIntoForm(value) {
+    const subtitle = { ...DEFAULT_SUBTITLE, ...objectValue(value) };
+    const subtitleToggle = element('creation-config-subtitle-enabled');
+    if (subtitleToggle) subtitleToggle.checked = subtitle.enabled !== false;
+    document.querySelectorAll('[data-creation-config-subtitle]').forEach(field => {
+      const key = field.dataset.creationConfigSubtitle;
+      if (!key) return;
+      if (field.type === 'checkbox') field.checked = subtitle[key] !== false;
+      else if (subtitle[key] !== undefined && subtitle[key] !== null) field.value = String(subtitle[key]);
+    });
+  }
+
   function firstActiveConnectionReference(kind) {
     const connection = state.connections.find(item => item.kind === kind && item.state === 'active');
     const revision = connectionRevision(connection);
@@ -423,7 +498,8 @@
       delete payload.image_style;
     }
 
-    payload.subtitle = { ...objectValue(payload.subtitle), enabled: !!element('creation-config-subtitle-enabled')?.checked };
+    payload.subtitle = subtitleFromForm(payload.subtitle || payload.subtitles);
+    delete payload.subtitles;
     // Keep legacy ``mask`` data untouched. It remains part of imported and
     // exported configuration packages, but no longer controls new projects.
     const pauseSteps = [...document.querySelectorAll('[data-creation-config-pause]:checked')]
@@ -460,9 +536,7 @@
     setStringField('creation-config-tts-concurrency', String(Math.max(1, Math.min(10, Number(tts.concurrency) || 10))));
     setStringField('creation-config-tts-rpm', String(Math.max(1, Math.min(600, Number(tts.requests_per_minute) || 10))));
     setImageStyleValue(value.image_style);
-    const subtitle = objectValue(value.subtitle || value.subtitles);
-    const subtitleToggle = element('creation-config-subtitle-enabled');
-    if (subtitleToggle) subtitleToggle.checked = subtitle.enabled !== false;
+    loadSubtitleIntoForm(value.subtitle || value.subtitles);
     const automation = objectValue(value.automation);
     setStringField('creation-config-image-concurrency', String(Math.max(1, Math.min(6, Number(automation.image_concurrency) || 5))));
     setStringField('creation-config-render-acceleration', objectValue(value.render).acceleration || 'auto');
@@ -1207,6 +1281,7 @@
       updateImageStyleSummary();
       renderImageStyleCards();
     });
+    element('btn-creation-config-create-style')?.addEventListener('click', createStyleForCreationConfig);
     document.querySelectorAll('input[name="creation-config-reference-policy"]').forEach(input => {
       input.addEventListener('change', updateImageStyleSummary);
     });

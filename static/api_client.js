@@ -23,6 +23,23 @@ const API = {
         headers,
         signal: options.signal || controller.signal
       });
+      if (options.responseType === 'blob') {
+        if (response.ok) return response.blob();
+        const rawText = await response.text();
+        let detail = response.statusText || '请求失败';
+        if (rawText) {
+          try {
+            const data = JSON.parse(rawText);
+            detail = data.detail || data.message || detail;
+          } catch (_) {
+            detail = `HTTP ${response.status} ${detail}`;
+          }
+        }
+        const message = typeof detail === 'string'
+          ? detail
+          : (detail?.message || JSON.stringify(detail));
+        throw new Error(message);
+      }
       const contentType = response.headers.get('content-type') || '';
       const rawText = await response.text();
       let data = {};
@@ -66,6 +83,18 @@ const API = {
   // [配置包压缩包 20260908] 下载二进制资源（如 ZIP 配置包），返回 Blob。
   async getBinary(url) {
     return this.fetch(url, { responseType: 'blob' });
+  },
+
+  // Binary POST response for protected configuration exports.  The request
+  // still goes through the shared marker/timeout/error contract above.
+  async postBinary(url, body, extra = {}) {
+    return this.fetch(url, {
+      method: 'POST',
+      body: JSON.stringify(body || {}),
+      headers: { 'Content-Type': 'application/json' },
+      responseType: 'blob',
+      ...extra
+    });
   },
 
   async post(url, body, extra = {}) {

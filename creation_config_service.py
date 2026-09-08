@@ -217,7 +217,11 @@ def _key_is_sensitive(key: Any) -> bool:
 def _reject_sensitive_values(value: Any, *, path: str = "payload") -> None:
     if isinstance(value, dict):
         for key, child in value.items():
-            if _key_is_sensitive(key):
+            # ``token_highlight`` is a visual subtitle option, not a
+            # credential.  It must remain serializable after subtitle
+            # normalization while all actual token-shaped setting names stay
+            # rejected.
+            if _key_is_sensitive(key) and _normalized_key(key) != "tokenhighlight":
                 raise CreationConfigValidationError(
                     f"{path}.{key} 包含敏感字段；配置包只能引用 connection_id 和 revision"
                 )
@@ -565,8 +569,44 @@ def validate_payload(payload: Any) -> dict[str, Any]:
     if subtitle is not None:
         if not isinstance(subtitle, dict):
             raise CreationConfigValidationError("subtitle 必须是对象")
-        if "enabled" in subtitle and not isinstance(subtitle["enabled"], bool):
-            raise CreationConfigValidationError("subtitle.enabled 必须是布尔值")
+        # Subtitle settings are owned by the shared visual-settings contract.
+        # A package stores the complete normalized preset, rather than a
+        # second, partial schema that only controls whether subtitles show.
+        # Import lazily to keep this pure package module free of application
+        # startup wiring while retaining exactly the same validation rules as
+        # project-level subtitle editing.
+        from visual_settings_service import normalize_subtitle_style
+
+        allowed_subtitle_keys = {
+            "enabled",
+            "font_key",
+            "font_family",
+            "font_size",
+            "font_weight",
+            "bottom",
+            "horizontal_margin",
+            "color",
+            "highlight_color",
+            "paging_window_ms",
+            "token_highlight",
+            "max_lines",
+            "line_height",
+            # Recognized legacy shape. It is flattened before persistence so
+            # every new package version has one canonical subtitle contract.
+            "style",
+        }
+        unknown_subtitle_keys = sorted(set(subtitle) - allowed_subtitle_keys)
+        if unknown_subtitle_keys:
+            raise CreationConfigValidationError(
+                "subtitle 包含不支持的字段: " + ", ".join(unknown_subtitle_keys)
+            )
+        subtitle_value = deepcopy(subtitle)
+        legacy_style = subtitle_value.pop("style", None)
+        if legacy_style is not None:
+            if not isinstance(legacy_style, dict):
+                raise CreationConfigValidationError("subtitle.style 必须是对象")
+            subtitle_value = {**legacy_style, **subtitle_value}
+        normalized["subtitle"] = normalize_subtitle_style(subtitle_value)
 
     mask = normalized.get("mask")
     if mask is not None:

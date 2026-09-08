@@ -83,6 +83,8 @@ def test_new_package_has_initial_immutable_version_and_content_hash() -> None:
     assert created["versions"][0]["version"] == 1
     assert len(created["content_hash"]) == 64
     assert created["versions"][0]["payload"]["schema_version"] == service.PAYLOAD_VERSION
+    assert created["versions"][0]["payload"]["subtitle"]["font_size"] == 42
+    assert "style" not in created["versions"][0]["payload"]["subtitle"]
 
 
 def test_package_preserves_validated_automation_concurrency() -> None:
@@ -139,7 +141,7 @@ def test_resolve_deep_merge_preserves_explicit_false_override() -> None:
     )
 
     assert resolved["payload"]["subtitle"]["enabled"] is False
-    assert resolved["payload"]["subtitle"]["style"] == {"font_size": 42}
+    assert resolved["payload"]["subtitle"]["font_size"] == 42
     assert resolved["payload"]["tts"]["connection"] == {
         "connection_id": "voice-main",
         "revision": 3,

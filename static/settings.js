@@ -203,13 +203,10 @@ async function saveSettings() {
 
 function settingsExportFileName() {
   const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
-  // [配置包压缩包 20260908] 导出改为 ZIP 压缩包：config.json 与参考风格图片同包分发。
-  return `ppt-studio-config-bundle-${stamp}.zip`;
+  return `ppt-studio-full-migration-${stamp}.zip`;
 }
 
-async function exportGlobalSettings() {
-  // [配置包压缩包 20260908] 服务端直接返回 ZIP 字节流，前端只负责触发下载。
-  const blob = await API.getBinary('/api/config/export-zip');
+function downloadConfigBlob(blob) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -218,7 +215,17 @@ async function exportGlobalSettings() {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
-  showToast('配置包已导出为 ZIP 压缩包：包含模型、创作配置、Prompt 模板和参考风格图片；密钥不会写入普通导出。', 6000);
+}
+
+async function exportGlobalSettings() {
+  // A migration archive intentionally includes credentials.  It is used to
+  // move a whole local studio: accounts, models, creation packages, styles,
+  // style-reference images, and their usable API/TTS credentials.
+  const blob = await API.postBinary('/api/config/export-with-secrets-zip', {
+    confirmation: 'EXPORT_SECRETS',
+  });
+  downloadConfigBlob(blob);
+  showToast('完整迁移配置包已导出：包含账号、模型、API/TTS 凭据、创作配置和风格参考图。请妥善保管该 ZIP。', 7000);
 }
 
 async function importGlobalSettings(file) {
@@ -226,7 +233,7 @@ async function importGlobalSettings(file) {
   // 配置包都直接上传原始字节，前端不再自行解析 JSON。
   showCustomConfirm(
     '导入整体配置？',
-    '将更新当前账号的模型、创作配置、Prompt 模板和参考风格图片；支持 .zip 压缩包与旧版 .json 配置包，普通配置包不包含密钥，项目内容不会被修改。',
+    '将恢复账号、模型、API/TTS 凭据、创作配置、Prompt 模板和参考风格图片；支持 .zip 压缩包与旧版 .json 配置包，项目内容不会被修改。',
     async () => {
       try {
         const bytes = await file.arrayBuffer();

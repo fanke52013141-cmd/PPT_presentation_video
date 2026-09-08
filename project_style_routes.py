@@ -587,6 +587,19 @@ def get_step3_template_detail(template_id: str) -> dict[str, Any]:
     return template_service.template_detail(_context(), template_id)
 
 
+@router.post("/api/image-style/project-templates")
+def create_account_style_template(payload: dict[str, Any]) -> dict[str, Any]:
+    """Create an account-scoped style before a project exists."""
+    value = payload if isinstance(payload, dict) else {}
+    result = template_service.create_account_template(
+        _context(),
+        str(value.get("name") or ""),
+        str(value.get("system_content") or ""),
+        str(value.get("style_summary") or ""),
+    )
+    return {"success": True, **result}
+
+
 @router.get("/api/image-style/project-templates/{template_id}/reference-images/{index}")
 def get_step3_template_reference(
     template_id: str,

@@ -103,7 +103,7 @@ def test_project_creation_binds_and_snapshots_creation_config(
         "version": 3,
         "content_hash": "hash-v3",
         "payload": {
-            "subtitle": {"enabled": False},
+            "subtitle": {"enabled": False, "font_size": 52, "color": "#123456"},
             "mask": {"enabled": False},
             "automation": {"manual_pause_steps": ["mask", "tts"]},
             "image_style": {
@@ -161,7 +161,10 @@ def test_project_creation_binds_and_snapshots_creation_config(
         assert project["presentation_mode"] == "full_frame"
         assert project["manual_pause_steps"] == ["mask", "tts"]
         visual_settings = Path(project["run_dir"]) / "visual_settings.json"
-        assert json.loads(visual_settings.read_text(encoding="utf-8"))["subtitle_style"]["enabled"] is False
+        saved_subtitle = json.loads(visual_settings.read_text(encoding="utf-8"))["subtitle_style"]
+        assert saved_subtitle["enabled"] is False
+        assert saved_subtitle["font_size"] == 52
+        assert saved_subtitle["color"] == "#123456"
         assert materialized == [(project_id, effective["payload"]["image_style"])]
     finally:
         db.close()

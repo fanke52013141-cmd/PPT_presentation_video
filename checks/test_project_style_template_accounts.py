@@ -52,6 +52,23 @@ def test_style_template_library_is_isolated_by_account(tmp_path: Path) -> None:
     assert "accounts" in account_a_root.parts
 
 
+def test_account_style_can_be_created_without_a_project(tmp_path: Path) -> None:
+    context = SimpleNamespace(data_dir=tmp_path, http_exception=DummyHttpException)
+    with account_scope("account-a"):
+        result = service.create_account_template(
+            context,
+            "紫色极简风",
+            "低饱和紫色、圆角信息卡片、留白充足。",
+            "适合课程知识总结。",
+        )
+        template = result["template"]
+        detail = service.template_detail(context, template["id"])
+
+    assert template["reference_count"] == 0
+    assert detail["style"]["system_content"] == "低饱和紫色、圆角信息卡片、留白充足。"
+    assert detail["references"]["images"] == []
+
+
 def test_builtin_teaching_styles_have_locked_prompts_and_references() -> None:
     context = SimpleNamespace(
         repo_root=ROOT,

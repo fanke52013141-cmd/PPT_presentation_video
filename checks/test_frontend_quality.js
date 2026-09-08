@@ -51,6 +51,9 @@ for (const apiOwner of ['const API =', "headers.set('X-PPT-Studio-Request'", 'wi
   if (!apiClient.includes(apiOwner)) throw new Error(`API client is missing ${apiOwner}`);
   if (app.includes(apiOwner)) throw new Error(`API client ownership returned to app.js: ${apiOwner}`);
 }
+for (const binaryTransport of ['async getBinary(url)', 'async postBinary(url, body, extra = {})', "options.responseType === 'blob'"]) {
+  if (!apiClient.includes(binaryTransport)) throw new Error(`API binary transport is missing ${binaryTransport}`);
+}
 for (const repairOwner of ['artifactRepairPrompts', 'offerArtifactRepair']) {
   if (!artifactRepair.includes(repairOwner)) throw new Error(`artifact repair module is missing ${repairOwner}`);
   if (app.includes(repairOwner)) throw new Error(`artifact repair ownership returned to app.js: ${repairOwner}`);
@@ -86,6 +89,9 @@ for (const settingsFunction of [
   if (app.includes(`function ${settingsFunction}(`)) {
     throw new Error(`settings implementation returned to app.js: ${settingsFunction}`);
   }
+}
+if (!settings.includes("/api/config/export-with-secrets-zip") || !settings.includes("confirmation: 'EXPORT_SECRETS'")) {
+  throw new Error('settings export does not use the full migration ZIP endpoint');
 }
 if (!html.includes('projects.js')) throw new Error('project library frontend module is not loaded explicitly');
 for (const projectFunction of ['loadProjects', 'createProject', 'deleteProject']) {

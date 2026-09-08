@@ -448,6 +448,87 @@ def save_named_template(
     return {"template": item, "templates": items}
 
 
+def create_account_template(
+    context: Any,
+    name: str,
+    system_content: str,
+    style_summary: str = "",
+) -> dict[str, Any]:
+    """Create a text-first style in the current account's reusable library.
+
+    This is deliberately independent of a project.  A project may still save
+    its generated preview images as a richer template later, but a creation
+    package must be able to define and select a reusable style before its
+    first project exists.
+    """
+    normalized_name = str(name or "").strip()
+    normalized_content = str(system_content or "").strip()
+    normalized_summary = str(style_summary or "").strip()
+    if not normalized_name:
+        raise context.http_exception(status_code=400, detail="模板名称不能为空")
+    if len(normalized_name) > 120:
+        raise context.http_exception(status_code=400, detail="模板名称不能超过 120 个字符")
+    if not normalized_content:
+        raise context.http_exception(status_code=400, detail="图片风格内容不能为空")
+    if len(normalized_content) > 30_000:
+        raise context.http_exception(status_code=400, detail="图片风格内容不能超过 30000 个字符")
+    if len(normalized_summary) > 500:
+        raise context.http_exception(status_code=400, detail="风格说明不能超过 500 个字符")
+
+    items = read_templates(context)
+    if any(
+        str(item.get("name") or "").strip().casefold()
+        == normalized_name.casefold()
+        for item in items
+    ):
+        raise context.http_exception(status_code=400, detail="模板名称已存在，请换一个名称")
+
+    template_id = uuid.uuid4().hex[:12]
+    target = templates_root(context) / template_id
+    target.mkdir(parents=True, exist_ok=False)
+    style = {
+        "source": "account_style_library",
+        "template_id": template_id,
+        "style_name": normalized_name,
+        "style_summary": normalized_summary,
+        "system_content": normalized_content,
+        "sample_reference_image_prompts": [],
+        "reference_image_count_target": 0,
+        "locked": False,
+        "production_contract_version": "step3_visual_contract_v3",
+    }
+    manifest = {
+        "version": "step3_style_references_v1",
+        "scope": "step3_image_style",
+        "style_name": normalized_name,
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+        "images": [],
+    }
+    _write_json(target / "style.json", style)
+    _write_json(target / "references.json", manifest)
+    content_payload = {"style": style, "references": manifest}
+    item = {
+        "id": template_id,
+        "name": normalized_name,
+        "summary": normalized_summary,
+        "version": 1,
+        "account_id": get_current_account_id(),
+        "content_hash": hashlib.sha256(
+            json.dumps(
+                content_payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest(),
+        "reference_count": 0,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    items.append(item)
+    write_templates(context, items)
+    return {"template": item, "templates": items}
+
+
 def apply_named_template(
     context: Any,
     project: Any,

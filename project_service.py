@@ -262,7 +262,7 @@ class ProjectService:
                     and isinstance(subtitle.get("enabled"), bool)
                 ):
                     configured_subtitle_style = normalize_subtitle_style(
-                        {"enabled": subtitle["enabled"]}
+                        subtitle
                     )
         project = Project(
             id=project_id,

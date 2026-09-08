@@ -49,7 +49,7 @@
         <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
         系统设置
       </button>
-      <button id="btn-config-export" class="secondary" type="button">配置导出</button>
+      <button id="btn-config-export" class="secondary" type="button" title="导出账号、模型、API/TTS 凭据、创作包和风格参考图">完整配置导出</button>
       <button id="btn-config-import" class="secondary" type="button">配置导入</button>
       <button id="btn-toggle-ai-mode" type="button" class="ai-mode-toggle-btn ai-mode-auto" style="display: none;" title="切换分镜制作方式">分镜方式：AI 辅助</button>
     </div>
@@ -914,7 +914,10 @@
               <section class="creation-config-section creation-config-image-style-section">
                 <div class="creation-config-section-heading">
                   <h5>图片风格</h5>
-                  <span id="creation-config-image-style-summary" class="config-editor-note"></span>
+                  <div>
+                    <span id="creation-config-image-style-summary" class="config-editor-note"></span>
+                    <button id="btn-creation-config-create-style" class="secondary" type="button">新建风格</button>
+                  </div>
                 </div>
                 <div class="creation-config-image-style-grid">
                   <label>风格资源
@@ -941,6 +944,40 @@
                   <div class="creation-config-options-row">
                     <label class="creation-config-check"><input id="creation-config-subtitle-enabled" type="checkbox" checked> 导出字幕</label>
                   </div>
+                  <details class="creation-config-subtitle-details">
+                    <summary>字幕样式</summary>
+                    <div class="creation-config-number-grid">
+                      <label>字体<select data-creation-config-subtitle="font_key">
+                        <option value="noto_sans_sc">Noto Sans SC（现代黑体）</option>
+                        <option value="noto_serif_sc">Noto Serif SC（现代宋体）</option>
+                        <option value="ma_shan_zheng">马善政毛笔体</option>
+                        <option value="zcool_xiaowei">站酷小薇体</option>
+                        <option value="zcool_qingke">站酷庆科黄油体</option>
+                        <option value="zcool_kuaile">站酷快乐体</option>
+                        <option value="long_cang">龙藏体</option>
+                        <option value="liu_jian_mao_cao">流江毛草体</option>
+                        <option value="zhi_mang_xing">知芒行书</option>
+                        <option value="lxgw_marker_gothic" selected>霞鹜漫黑</option>
+                        <option value="lxgw_wenkai_tc">霞鹜文楷（繁体）</option>
+                        <option value="noto_sans_tc">Noto Sans TC</option>
+                        <option value="noto_serif_tc">Noto Serif TC</option>
+                        <option value="lxgw_wenkai">霞鹜文楷</option>
+                      </select></label>
+                      <label>字号<input data-creation-config-subtitle="font_size" type="number" min="22" max="72" value="40"></label>
+                      <label>字重<input data-creation-config-subtitle="font_weight" type="number" min="300" max="800" step="100" value="400"></label>
+                      <label>距底部<input data-creation-config-subtitle="bottom" type="number" min="0" max="220" value="0"></label>
+                      <label>左右留白<input data-creation-config-subtitle="horizontal_margin" type="number" min="40" max="420" value="110"></label>
+                      <label>分页时间窗（ms）<input data-creation-config-subtitle="paging_window_ms" type="number" min="600" max="2500" step="100" value="1300"></label>
+                      <label>最大行数<input data-creation-config-subtitle="max_lines" type="number" min="1" max="3" value="1"></label>
+                      <label>行高<input data-creation-config-subtitle="line_height" type="number" min="1" max="2" step="0.1" value="1.4"></label>
+                      <label>文字颜色<input data-creation-config-subtitle="color" type="color" value="#000000"></label>
+                      <label>高亮颜色<input data-creation-config-subtitle="highlight_color" type="color" value="#000000"></label>
+                    </div>
+                    <div class="creation-config-options-row">
+                      <label class="creation-config-check"><input data-creation-config-subtitle="token_highlight" type="checkbox" checked> 启用逐字高亮</label>
+                    </div>
+                    <p class="config-editor-note">创建项目时会将整套字幕样式固化为项目快照；之后可在项目内单独覆盖。</p>
+                  </details>
                 </div>
                 <div class="creation-config-option-group">
                   <h5>一键生成暂停点</h5>

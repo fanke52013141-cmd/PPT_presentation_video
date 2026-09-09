@@ -15,6 +15,9 @@
     // 每个项目每次页面会话只自动触发一次，避免固定失败被反复重跑。
     autoTriggered: new Set(),
     autoStarting: false,
+    pauseRequestInFlight: false,
+    pauseRequested: false,
+    lastStatus: null,
   };
 
   // [轮询自愈 20260904] 连续失败达到该阈值（约 7.5 秒无响应）才展示连接
@@ -219,6 +222,7 @@
         <div class="one-click-toolbar">
           <button id="btn-one-click-start" class="success" type="button">智能继续</button>
           <button id="btn-one-click-restart" class="secondary" type="button">从头重跑</button>
+          <button id="btn-one-click-pause" class="secondary" type="button" hidden>暂停生成</button>
           <button id="btn-one-click-refresh" class="secondary" type="button">刷新状态</button>
           <button id="btn-one-click-close" class="secondary" type="button">关闭</button>
         </div>
@@ -234,6 +238,7 @@
     document.getElementById('btn-one-click-refresh')?.addEventListener('click', () => refreshStatus().catch(error => toast(`刷新失败：${error.message}`, 6000)));
     document.getElementById('btn-one-click-start')?.addEventListener('click', () => startOneClick('resume').catch(error => toast(`启动失败：${error.message}`, 6000)));
     document.getElementById('btn-one-click-restart')?.addEventListener('click', () => startOneClick('restart').catch(error => toast(`启动失败：${error.message}`, 6000)));
+    document.getElementById('btn-one-click-pause')?.addEventListener('click', () => pauseOneClick().catch(error => toast(`暂停失败：${error.message}`, 6000)));
   }
 
   function ensureEntryButton() {
@@ -258,6 +263,14 @@
     if (!summary || !stages) return;
     const state = status?.status || 'idle';
     const current = status?.current_stage || '';
+    STATE.lastStatus = status || {};
+    if (state !== 'running') STATE.pauseRequested = false;
+    const pauseButton = document.getElementById('btn-one-click-pause');
+    if (pauseButton) {
+      pauseButton.hidden = state !== 'running';
+      pauseButton.disabled = state !== 'running' || STATE.pauseRequestInFlight || STATE.pauseRequested;
+      pauseButton.textContent = STATE.pauseRequested ? '正在暂停…' : '暂停生成';
+    }
     // [轮询自愈 20260904] 本地数据新鲜度：running 态下轮询每 2.5 秒重渲染，
     // 该数字会持续滚动；切后台导致的滞后一眼可辨。
     const freshNote = STATE.lastRefreshAt
@@ -435,6 +448,24 @@
         button.disabled = false;
         button.textContent = original;
       }
+    }
+  }
+
+  async function pauseOneClick() {
+    const projectId = activeProjectId();
+    if (!projectId) return toast('当前没有可识别的项目，请先进入项目工作区。', 5000);
+    if (STATE.pauseRequestInFlight || STATE.pauseRequested) return;
+    STATE.pauseRequestInFlight = true;
+    renderStatus(STATE.lastStatus || { status: 'running' });
+    try {
+      const result = await apiPost(`/api/projects/${encodeURIComponent(projectId)}/one-click-pause`);
+      STATE.pauseRequested = result.pause_requested === true;
+      renderStatus(result.status || STATE.lastStatus || { status: 'running' });
+      toast(STATE.pauseRequested ? '已请求暂停；当前阶段安全完成后会暂停。' : '自动生成已暂停。', 4000);
+      startPolling();
+    } finally {
+      STATE.pauseRequestInFlight = false;
+      renderStatus(STATE.lastStatus || { status: 'running' });
     }
   }
 

@@ -61,7 +61,33 @@ from repository_paths import (
     REPO_ROOT,
     STEP3_IMAGE_PROMPT_TEMPLATE_PATH,
 )
-from project_config_runtime import get_config_value, project_subtitles_enabled
+from project_config_runtime import get_config_value
+
+try:
+    from project_config_runtime import project_subtitles_enabled
+except ImportError:
+    # Older portable editions predate the shared subtitle-switch helper. Keep
+    # this one module safely replaceable in those editions: their saved
+    # project_config.json / visual_settings.json already contain the same
+    # ``subtitle.enabled`` contract.
+    def project_subtitles_enabled(project: Any, default: bool = True) -> bool:
+        package_value = get_config_value(project, "subtitle.enabled", default)
+        enabled = bool(package_value) if isinstance(package_value, bool) else default
+        run_dir = getattr(project, "run_dir", None)
+        if not isinstance(run_dir, str) or not run_dir.strip():
+            return enabled
+        try:
+            payload = json.loads(
+                (Path(run_dir) / "visual_settings.json").read_text(
+                    encoding="utf-8-sig"
+                )
+            )
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return enabled
+        style = payload.get("subtitle_style") if isinstance(payload, dict) else None
+        if isinstance(style, dict) and isinstance(style.get("enabled"), bool):
+            return style["enabled"]
+        return enabled
 
 
 logger = logging.getLogger("PPTStudio.ImageWorkflow")

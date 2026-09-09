@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from account_context import get_current_account_id
-from database import Chapter, Course, Project
+from database import ArtifactRecord, Chapter, Course, Project
 
 
 logger = logging.getLogger("PPTStudio.Courses")
@@ -132,7 +132,7 @@ def _course_to_dict(course: Course, db: Session, include_children: bool = False)
             .all()
         )
         result["chapters"] = chapter_list
-        result["unchaptered_projects"] = [_project_brief(p) for p in unchaptered_projects]
+        result["unchaptered_projects"] = [_project_brief(p, db) for p in unchaptered_projects]
         result["chapter_count"] = len(chapter_list)
         result["project_count"] = (
             sum(len(ch_dict.get("projects", [])) for ch_dict in chapter_list)
@@ -166,11 +166,20 @@ def _chapter_to_dict(
             .order_by(Project.sort_order, Project.created_at.desc())
             .all()
         )
-        result["projects"] = [_project_brief(p) for p in projects]
+        result["projects"] = [_project_brief(p, db) for p in projects]
     return result
 
 
-def _project_brief(project: Project) -> dict[str, Any]:
+def _project_brief(project: Project, db: Session) -> dict[str, Any]:
+    latest_output = (
+        db.query(ArtifactRecord)
+        .filter(
+            ArtifactRecord.project_id == project.id,
+            ArtifactRecord.artifact_type.in_(("video", "pptx")),
+        )
+        .order_by(ArtifactRecord.created_at.desc())
+        .first()
+    )
     return {
         "id": project.id,
         "name": project.name,
@@ -183,6 +192,12 @@ def _project_brief(project: Project) -> dict[str, Any]:
         "chapter_id": project.chapter_id,
         "created_at": project.created_at.isoformat() if project.created_at else None,
         "updated_at": project.updated_at.isoformat() if project.updated_at else None,
+        "latest_output_at": (
+            latest_output.created_at.isoformat()
+            if latest_output and latest_output.created_at
+            else None
+        ),
+        "latest_output_type": latest_output.artifact_type if latest_output else None,
     }
 
 
@@ -416,7 +431,7 @@ class CourseService:
         project.updated_at = _utc_now_naive()
         db.commit()
         db.refresh(project)
-        return _project_brief(project)
+        return _project_brief(project, db)
 
     def reorder_projects(self, payload: ProjectReorder, db: Session) -> dict[str, Any]:
         """按顺序设置项目的 sort_order，并可同时把它们重新归属到指定课程/章节。
@@ -460,7 +475,7 @@ class CourseService:
             "ordered_ids": payload.ordered_ids,
             "course_id": target_course_id,
             "chapter_id": target_chapter_id,
-            "projects": [_project_brief(p) for p in updated],
+            "projects": [_project_brief(p, db) for p in updated],
         }
 
     # ===== Tree =====
@@ -480,7 +495,7 @@ class CourseService:
         )
         return {
             "courses": courses,
-            "standalone_projects": [_project_brief(p) for p in standalone_projects],
+            "standalone_projects": [_project_brief(p, db) for p in standalone_projects],
         }
 
     # ===== Helpers =====

@@ -51,6 +51,16 @@ def test_image_parallelism_defaults_to_five_and_is_bounded() -> None:
     assert one_click._reduced_image_parallelism(1) == 1
 
 
+def test_narration_annotation_is_opt_in_for_automatic_runs(monkeypatch) -> None:
+    project = SimpleNamespace()
+
+    monkeypatch.setattr(one_click, "get_config_value", lambda *_args: False)
+    assert one_click._should_annotate_narration(project) is False
+
+    monkeypatch.setattr(one_click, "get_config_value", lambda *_args: True)
+    assert one_click._should_annotate_narration(project) is True
+
+
 def test_image_rate_limit_detection_and_backoff_hint() -> None:
     error = RuntimeError("HTTP 429: Retry-After: 7")
     assert one_click._is_rate_limit_error(error)
@@ -109,6 +119,61 @@ def test_auto_project_still_starts_one_click_worker(monkeypatch, tmp_path: Path)
         assert started_threads and started_threads[0].started is True
     finally:
         one_click._RUNNING.pop(project.id, None)
+
+
+def test_pause_at_preflight_boundary_stops_downstream_stages(monkeypatch, tmp_path: Path) -> None:
+    """A requested pause is durable before the next stage can begin."""
+    project = SimpleNamespace(id="pause-boundary", run_dir=str(tmp_path), account_id="acct-a")
+    article = tmp_path / "inputs" / "article.md"
+    article.parent.mkdir(parents=True)
+    article.write_text("article", encoding="utf-8")
+    calls: list[str] = []
+
+    class Db:
+        def query(self, _model):
+            return self
+
+        def filter(self, _criterion):
+            return self
+
+        def first(self):
+            return project
+
+        def close(self):
+            return None
+
+    dependencies = one_click.OneClickDependencies(
+        session_factory=Db,
+        project_model=SimpleNamespace(id="id"),
+        get_setting=lambda _key, _default="": "configured",
+        resolve_media_tool=lambda _name: "available",
+        repo_root=ROOT,
+        read_project_article_source=lambda *_args, **_kwargs: None,
+        write_project_log=lambda *_args, **_kwargs: None,
+        inspect_tts_preflight=lambda _workflow: {"success": True},
+        pipeline_service_factory=lambda *_args: SimpleNamespace(
+            storyboard_script=lambda: calls.append("storyboard") or {},
+        ),
+    )
+    original_finish = one_click._finish_stage
+
+    def request_pause_after_preflight(*args, **kwargs):
+        original_finish(*args, **kwargs)
+        if args[2] == "preflight":
+            one_click._PAUSE_REQUESTS.add(project.id)
+
+    monkeypatch.setattr(one_click, "_finish_stage", request_pause_after_preflight)
+    try:
+        one_click._run_pipeline(dependencies, project.id, "run-pause", mode="restart")
+        status = one_click._status_for_project(project, project.id)
+        assert status["status"] == "paused"
+        assert status["current_stage"] == "preflight"
+        assert one_click._stage(status, "preflight")["status"] == "done"
+        assert one_click._stage(status, "storyboard")["status"] == "pending"
+        assert calls == []
+        assert "未能产出可下载的视频" not in status.get("message", "")
+    finally:
+        one_click._PAUSE_REQUESTS.discard(project.id)
 
 
 def test_manual_project_route_returns_conflict(monkeypatch) -> None:

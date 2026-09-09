@@ -876,6 +876,14 @@ except Exception as exc:
     raise
 
 try:
+    from subtitle_export_routes import router as subtitle_export_router
+
+    app.include_router(subtitle_export_router)
+except Exception as exc:
+    logger.exception("Explicit subtitle export route registration failed: %s", exc)
+    raise
+
+try:
     from database import SessionLocal as OneClickSessionLocal
     from comfyui_backend import inspect_tts_preflight
     from one_click_orchestrator import (

@@ -234,28 +234,37 @@
   }
 
   function updateImageStyleSummary() {
-    const select = element('creation-config-image-style-template');
-    const selected = state.styleTemplates.find(item => item.id === select?.value);
-    const detail = state.styleTemplateDetails.get(String(select?.value || ''));
-    const referenceCount = detail?.references?.images?.length ?? selected?.reference_count ?? 0;
-    const summary = element('creation-config-image-style-summary');
-    if (summary) {
-      summary.textContent = selected
-        ? `${selected.name || '未命名风格'} · ${referenceCount} 张参考图 · v${selected.version || 1}`
-        : '未关联风格资源';
-    }
     const minimum = element('creation-config-image-style-minimum');
     if (minimum) minimum.disabled = currentReferencePolicy() !== 'required';
   }
 
   function updateSubtitleControls() {
     const enabled = !!element('creation-config-subtitle-enabled')?.checked;
-    const details = document.querySelector('.creation-config-subtitle-details');
-    if (!details) return;
-    details.classList.toggle('is-disabled', !enabled);
-    details.setAttribute('aria-disabled', String(!enabled));
-    details.querySelectorAll('select, input').forEach(control => {
+    const section = document.querySelector('.creation-config-subtitle-option');
+    if (!section) return;
+    section.hidden = !enabled;
+    section.querySelectorAll('select, input').forEach(control => {
       control.disabled = !enabled;
+    });
+  }
+
+  function automationModeFromForm() {
+    return document.querySelector('input[name="creation-config-automation-mode"]:checked')?.value === 'auto'
+      ? 'auto'
+      : 'manual';
+  }
+
+  function narrationAnnotationFromForm() {
+    return document.querySelector('input[name="creation-config-narration-annotation"]:checked')?.value === 'true';
+  }
+
+  function updateAutomationControls() {
+    const automatic = automationModeFromForm() === 'auto';
+    const section = document.querySelector('.creation-config-auto-options');
+    if (!section) return;
+    section.hidden = !automatic;
+    section.querySelectorAll('input').forEach(control => {
+      control.disabled = !automatic;
     });
   }
 
@@ -264,7 +273,7 @@
     if (!select) return;
     const selected = select.value;
     select.replaceChildren();
-    state.styleTemplates.forEach(item => {
+    selectableStyleTemplates().forEach(item => {
       if (!item?.id) return;
       const option = document.createElement('option');
       option.value = item.id;
@@ -273,9 +282,16 @@
       select.append(option);
     });
     if ([...select.options].some(option => option.value === selected)) select.value = selected;
-    else if ([...select.options].some(option => option.value === 'handdrawn')) select.value = 'handdrawn';
+    else if (select.options.length) select.selectedIndex = 0;
     updateImageStyleSummary();
     renderImageStyleCards();
+  }
+
+  // The legacy hand-drawn preset depends on two bundled references. It is no
+  // longer offered in creation packages, so a new package starts with a
+  // maintainable built-in style instead.
+  function selectableStyleTemplates() {
+    return state.styleTemplates.filter(item => item?.id && item.id !== 'handdrawn');
   }
 
   function renderImageStyleCards() {
@@ -283,7 +299,7 @@
     const select = element('creation-config-image-style-template');
     if (!target || !select) return;
     target.replaceChildren();
-    state.styleTemplates.forEach(item => {
+    selectableStyleTemplates().forEach(item => {
       if (!item?.id) return;
       const detail = state.styleTemplateDetails.get(String(item.id));
       const imageInfo = detail?.references?.images?.[0];
@@ -326,7 +342,8 @@
   function setImageStyleValue(value) {
     const style = objectValue(value);
     const select = element('creation-config-image-style-template');
-    const templateId = typeof style.template_id === 'string' ? style.template_id : '';
+    let templateId = typeof style.template_id === 'string' ? style.template_id : '';
+    if (templateId === 'handdrawn') templateId = '';
     if (select && templateId && ![...select.options].some(option => option.value === templateId)) {
       const historical = document.createElement('option');
       historical.value = templateId;
@@ -334,7 +351,10 @@
       historical.textContent = `历史风格资源 · ${templateId}`;
       select.append(historical);
     }
-    if (select) select.value = templateId || (select.querySelector('option[value="handdrawn"]') ? 'handdrawn' : '');
+    if (select) {
+      select.value = templateId;
+      if (!select.value && select.options.length) select.selectedIndex = 0;
+    }
     const policy = ['required', 'preferred', 'text_only'].includes(style.reference_policy)
       ? style.reference_policy
       : 'preferred';
@@ -570,13 +590,19 @@
       .filter(Boolean);
     const automation = objectValue(payload.automation);
     const imageConcurrency = Math.max(1, Math.min(6, Number(element('creation-config-image-concurrency')?.value) || 5));
+    automation.mode = automationModeFromForm();
     automation.image_concurrency = imageConcurrency;
-    if (pauseSteps.length) automation.manual_pause_steps = pauseSteps;
+    automation.ai_narration_annotation = automation.mode === 'auto' && narrationAnnotationFromForm();
+    if (automation.mode === 'auto' && pauseSteps.length) automation.manual_pause_steps = pauseSteps;
     else delete automation.manual_pause_steps;
     if (Object.keys(automation).length) payload.automation = automation;
     else delete payload.automation;
+    const outputFormats = [...document.querySelectorAll('[data-creation-config-output]:checked')]
+      .map(input => input.dataset.creationConfigOutput)
+      .filter(Boolean);
     payload.render = {
       acceleration: element('creation-config-render-acceleration')?.value || 'auto',
+      output_formats: outputFormats.length ? outputFormats : ['video'],
     };
 
     const field = element('creation-config-package-payload');
@@ -601,8 +627,23 @@
     setImageStyleValue(value.image_style);
     loadSubtitleIntoForm(value.subtitle || value.subtitles);
     const automation = objectValue(value.automation);
+    const automationMode = automation.mode === 'manual' ? 'manual' : 'auto';
+    const modeControl = document.querySelector(`input[name="creation-config-automation-mode"][value="${automationMode}"]`);
+    if (modeControl) modeControl.checked = true;
+    const annotationControl = document.querySelector(
+      `input[name="creation-config-narration-annotation"][value="${automation.ai_narration_annotation === true ? 'true' : 'false'}"]`,
+    );
+    if (annotationControl) annotationControl.checked = true;
+    updateAutomationControls();
     setStringField('creation-config-image-concurrency', String(Math.max(1, Math.min(6, Number(automation.image_concurrency) || 5))));
-    setStringField('creation-config-render-acceleration', objectValue(value.render).acceleration || 'auto');
+    const render = objectValue(value.render);
+    setStringField('creation-config-render-acceleration', render.acceleration || 'auto');
+    const outputFormats = Array.isArray(render.output_formats) && render.output_formats.length
+      ? new Set(render.output_formats)
+      : new Set(['video']);
+    document.querySelectorAll('[data-creation-config-output]').forEach(input => {
+      input.checked = outputFormats.has(input.dataset.creationConfigOutput);
+    });
     const pauseSteps = automation.manual_pause_steps;
     const pauses = Array.isArray(pauseSteps) ? new Set(pauseSteps) : new Set();
     document.querySelectorAll('[data-creation-config-pause]').forEach(input => {
@@ -639,6 +680,8 @@
     if (submit) submit.textContent = '新建配置包';
     const cancel = element('btn-cancel-creation-config-edit');
     if (cancel) cancel.hidden = true;
+    const status = element('creation-config-editing-status');
+    if (status) { status.hidden = true; status.textContent = ''; }
   }
 
   function renderPackages() {
@@ -657,8 +700,11 @@
     const defaultPackage = state.packages.find(item => item.id === state.defaultPackageId) || null;
     const otherPackages = state.packages.filter(item => item.id !== state.defaultPackageId);
     const createPackageCard = (packageItem, isDefault) => {
-      const tags = Array.isArray(packageItem.tags) && packageItem.tags.length
-        ? ` · ${packageItem.tags.join('、')}`
+      const visibleTags = Array.isArray(packageItem.tags)
+        ? packageItem.tags.filter(tag => !/(legacy|迁移|test|测试)/i.test(String(tag)))
+        : [];
+      const tags = visibleTags.length
+        ? ` · ${visibleTags.join('、')}`
         : '';
       const item = document.createElement('article');
       item.className = `creation-config-package-card${isDefault ? ' is-default' : ''}`;
@@ -666,22 +712,9 @@
       heading.className = 'creation-config-package-card-heading';
       const title = document.createElement('strong');
       title.textContent = packageItem.name || '未命名配置包';
-      const version = document.createElement('span');
-      version.className = 'creation-config-package-version';
+      heading.append(title);
       const latestVersion = Number(packageItem.latest_version) || 1;
-      const activeVersion = isDefault && Number.isInteger(state.defaultPackageVersion)
-        ? state.defaultPackageVersion
-        : latestVersion;
-      version.textContent = activeVersion === latestVersion
-        ? `v${activeVersion}`
-        : `当前 v${activeVersion} · 最新 v${latestVersion}`;
-      heading.append(title, version);
-      if (isDefault) {
-        const badge = document.createElement('span');
-        badge.className = 'creation-config-package-default-badge';
-        badge.textContent = '当前账号默认配置';
-        heading.append(badge);
-      }
+      const defaultVersion = Number(state.defaultPackageVersion) || 1;
       const copy = document.createElement('p');
       copy.className = 'creation-config-package-card-copy';
       copy.textContent = tags ? tags.slice(3) : '提示词、模型关联与执行选项';
@@ -693,6 +726,8 @@
       ];
       if (!isDefault) {
         actionsToAppend.push(button('设为默认', 'secondary', () => setDefaultPackage(packageItem)));
+      } else if (defaultVersion < latestVersion) {
+        actionsToAppend.push(button('启用最新版本', 'secondary', () => setDefaultPackage(packageItem)));
       }
       actionsToAppend.push(button('归档', 'secondary', () => archivePackage(packageItem)));
       actions.append(...actionsToAppend);
@@ -703,10 +738,7 @@
     if (defaultPackage) {
       const featured = document.createElement('section');
       featured.className = 'creation-config-default-package';
-      const label = document.createElement('p');
-      label.className = 'creation-config-package-section-label';
-      label.textContent = '当前默认配置';
-      featured.append(label, createPackageCard(defaultPackage, true));
+      featured.append(createPackageCard(defaultPackage, true));
       defaultSlot.append(featured);
     }
     if (otherPackages.length) {
@@ -756,31 +788,20 @@
     }
     connections.forEach(connection => {
       const revision = connectionRevision(connection);
-      const configured = revision.credential_configured ? '密钥已保存' : (revision.provider === 'comfyui_tts' ? '本地工作流' : '尚未配置密钥');
-      const publicConfig = objectValue(revision.public_config);
-      const referenceCapability = kind === 'image'
-        ? ` · 参考图${publicConfig.supports_reference_images === false ? '未启用' : `最多 ${publicConfig.max_reference_images || 3} 张`}`
-        : '';
       const item = document.createElement('article');
       item.classList.add('model-library-card');
       const heading = document.createElement('div');
       heading.className = 'model-library-card-heading';
       const title = document.createElement('strong');
       title.textContent = connection.name || '未命名模型';
-      const version = document.createElement('span');
-      version.className = 'model-library-card-version';
-      version.textContent = `v${revision.revision || connection.current_revision || 1}`;
-      heading.append(title, version);
+      heading.append(title);
       const detail = document.createElement('p');
       detail.className = 'model-library-card-detail';
-      detail.textContent = `${modelProviderLabel(revision.provider)} · ${revision.model || '未指定模型'}${referenceCapability}`;
-      const status = document.createElement('span');
-      status.className = `model-library-card-status${revision.credential_configured ? ' is-configured' : ''}`;
-      status.textContent = configured;
+      detail.textContent = revision.model || '未指定模型 ID';
       const actions = document.createElement('div');
       actions.className = 'model-library-card-actions';
       actions.append(button('编辑', 'secondary', () => editModelConnection(connection)));
-      item.append(heading, detail, status, actions);
+      item.append(heading, detail, actions);
       target.append(item);
     });
   }
@@ -1010,6 +1031,11 @@
       loadPayloadIntoStructured(version.payload);
       const submit = element('btn-create-creation-config');
       if (submit) submit.textContent = '保存为新版本';
+      const status = element('creation-config-editing-status');
+      if (status) {
+        status.hidden = false;
+        status.textContent = '正在编辑此配置包的最新版本。保存会新增版本；当前账号默认版本不会自动切换。需要启用时，请点击卡片上的“启用最新版本”。';
+      }
       const cancel = element('btn-cancel-creation-config-edit');
       if (cancel) cancel.hidden = false;
       element('creation-config-package-name')?.focus();
@@ -1344,6 +1370,12 @@
     element('btn-creation-config-style-submit')?.addEventListener('click', submitCreationConfigStyle);
     element('creation-config-style-reference-files')?.addEventListener('change', renderCreationConfigStyleReferencePreview);
     element('creation-config-subtitle-enabled')?.addEventListener('change', updateSubtitleControls);
+    document.querySelectorAll('input[name="creation-config-automation-mode"]').forEach(input => {
+      input.addEventListener('change', () => {
+        updateAutomationControls();
+        syncStructuredFieldsToJson();
+      });
+    });
     document.querySelectorAll('input[name="creation-config-reference-policy"]').forEach(input => {
       input.addEventListener('change', updateImageStyleSummary);
     });
@@ -1352,6 +1384,7 @@
     element('btn-save-model')?.addEventListener('click', saveModel);
     element('btn-cancel-model-edit')?.addEventListener('click', cancelModelEdit);
     updateModelSetupForm();
+    updateAutomationControls();
     const syncEditor = () => {
       try {
         syncStructuredFieldsToJson();

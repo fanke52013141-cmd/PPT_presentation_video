@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260907.6">
+  <link rel="stylesheet" href="style.css?v=20260909.4">
 </head>
 <body>
 
@@ -588,8 +588,25 @@
             <span id="step8-pptx-loading-text">PPTX 生成中...</span>
           </div>
 
+          <section id="step8-subtitle-export" class="step-plain-section step8-pptx-section">
+            <div class="step8-section-heading">
+              <div>
+                <h3>字幕文件（SRT）</h3>
+                <p>按最终视频时间轴合并全部页面字幕，可用于平台上传或剪辑软件。它独立于视频内嵌字幕开关。</p>
+              </div>
+              <div class="step8-header-actions workflow-toolbar">
+                <span id="step8-subtitle-readiness" class="step8-readiness" aria-live="polite">正在检查字幕…</span>
+                <button id="step8-btn-download-srt" class="secondary compact-action-btn" type="button" disabled>
+                  <svg class="icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 3v12"></path></svg>
+                  下载字幕 SRT
+                </button>
+              </div>
+            </div>
+          </section>
+
           <div id="step8-result-box" class="step-plain-section" style="display: none;">
-            <h3 style="margin-bottom: 1.5rem;">视频渲染记录</h3>
+            <h3 style="margin-bottom: 0.4rem;">视频输出</h3>
+            <p class="config-editor-note" style="margin:0 0 1.5rem;">此处的 MP4 可按项目设置显示视频内嵌字幕。</p>
             <div id="step8-video-list" class="step8-video-list"></div>
           </div>
 
@@ -914,7 +931,6 @@
                 <div class="creation-config-section-heading">
                   <h5>图片风格</h5>
                   <div>
-                    <span id="creation-config-image-style-summary" class="config-editor-note"></span>
                     <button id="btn-creation-config-create-style" class="secondary" type="button">新建风格</button>
                   </div>
                 </div>
@@ -936,17 +952,24 @@
                   <label class="creation-config-policy-card"><input type="radio" name="creation-config-reference-policy" value="preferred" checked><span><strong>优先使用</strong><small>不可用时继续按风格提示词生成</small></span></label>
                   <label class="creation-config-policy-card"><input type="radio" name="creation-config-reference-policy" value="text_only"><span><strong>仅提示词</strong><small>保留风格文字，不发送参考图片</small></span></label>
                 </div>
+                <div class="creation-config-mode-selector" role="radiogroup" aria-label="生成模式">
+                  <h6>生成模式</h6>
+                  <label class="creation-config-mode-card"><input type="radio" name="creation-config-automation-mode" value="auto" checked><span><strong>自动模式</strong><small>创建后连续推进流水线；实施中可以暂停，并在当前环节完成后停下。</small></span></label>
+                  <label class="creation-config-mode-card"><input type="radio" name="creation-config-automation-mode" value="manual"><span><strong>手动模式</strong><small>创建后进入第 1 步；图片、AI Mask、旁白与数字人等环节由你逐项完成。</small></span></label>
+                </div>
               </section>
               <section class="creation-config-section creation-config-section--options">
-                <div class="creation-config-option-group">
+                <div class="creation-config-option-group creation-config-output-group">
                   <h5>输出设置</h5>
                   <div class="creation-config-options-row creation-config-output-options" aria-label="输出类型">
-                    <span class="creation-config-check creation-config-check--static"><input type="checkbox" checked disabled> 视频</span>
-                    <span class="creation-config-check creation-config-check--static"><input type="checkbox" checked disabled> PPT</span>
+                    <label class="creation-config-check"><input data-creation-config-output="video" type="checkbox" checked> 视频</label>
+                    <label class="creation-config-check"><input data-creation-config-output="pptx" type="checkbox"> PPT</label>
                     <label class="creation-config-check"><input id="creation-config-subtitle-enabled" type="checkbox" checked> 字幕</label>
                   </div>
-                  <details class="creation-config-subtitle-details">
-                    <summary>字幕样式</summary>
+                </div>
+                <div class="creation-config-option-group creation-config-subtitle-option">
+                  <h5>字幕样式</h5>
+                  <div class="creation-config-subtitle-details">
                     <div class="creation-config-number-grid creation-config-subtitle-grid">
                       <label>字体<select data-creation-config-subtitle="font_key">
                         <option value="noto_sans_sc">Noto Sans SC（现代黑体）</option>
@@ -977,27 +1000,39 @@
                     <div class="creation-config-options-row">
                       <label class="creation-config-check"><input data-creation-config-subtitle="token_highlight" type="checkbox" checked> 启用逐字高亮</label>
                     </div>
-                  </details>
-                </div>
-                <div class="creation-config-option-group">
-                  <h5>一键生成暂停点</h5>
-                  <div class="creation-config-options-row">
-                    <label class="creation-config-check"><input type="checkbox" data-creation-config-pause="narration"> 旁白编辑</label>
-                    <label class="creation-config-check"><input type="checkbox" data-creation-config-pause="tts"> 语音合成</label>
-                    <label class="creation-config-check"><input type="checkbox" data-creation-config-pause="digital_human"> 数字人</label>
                   </div>
                 </div>
-                <div class="creation-config-option-group creation-config-option-group--runtime">
+                <div class="creation-config-option-group creation-config-auto-options">
+                  <h5>自动模式配置</h5>
+                  <div class="creation-config-auto-options-grid">
+                    <div>
+                      <h6>一键生成暂停点</h6>
+                      <div class="creation-config-options-row">
+                        <label class="creation-config-check"><input type="checkbox" data-creation-config-pause="narration"> 旁白编辑</label>
+                        <label class="creation-config-check"><input type="checkbox" data-creation-config-pause="tts"> 语音合成</label>
+                        <label class="creation-config-check"><input type="checkbox" data-creation-config-pause="digital_human"> 数字人</label>
+                      </div>
+                    </div>
+                    <div>
+                      <h6>AI 语音合成标注</h6>
+                      <div class="creation-config-options-row" role="radiogroup" aria-label="是否需要 AI 做语音合成标注">
+                        <label class="creation-config-check"><input type="radio" name="creation-config-narration-annotation" value="false" checked> 不需要（默认）</label>
+                        <label class="creation-config-check"><input type="radio" name="creation-config-narration-annotation" value="true"> 需要 AI 标注</label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="creation-config-option-group creation-config-option-group--runtime creation-config-concurrency-group">
                   <h5>自动化并发</h5>
-                  <div class="creation-config-number-grid">
-                    <label>图片并发<input id="creation-config-image-concurrency" type="number" min="1" max="6" value="5" inputmode="numeric"></label>
-                    <label title="同时进行的语音合成任务数量"><span>语音合成并发</span><input id="creation-config-tts-concurrency" type="number" min="1" max="10" value="10" inputmode="numeric"></label>
-                    <label title="发送给 MiniMax 的每分钟请求上限"><span>MiniMax</span><input id="creation-config-tts-rpm" type="number" min="1" max="600" value="10" inputmode="numeric"></label>
+                  <div class="creation-config-number-grid creation-config-concurrency-grid">
+                    <label><span>图片生成并发</span><input id="creation-config-image-concurrency" type="number" min="1" max="6" value="5" inputmode="numeric"><small>同一项目可同时生成的图片页数。</small></label>
+                    <label><span>语音合成并发</span><input id="creation-config-tts-concurrency" type="number" min="1" max="10" value="10" inputmode="numeric"><small>第 5 步可同时提交给 TTS 的语音任务数。</small></label>
+                    <label><span>MiniMax 每分钟上限</span><input id="creation-config-tts-rpm" type="number" min="1" max="600" value="10" inputmode="numeric"><small>发送给 MiniMax TTS 的最大请求数；超过会排队。</small></label>
                   </div>
                 </div>
                 <div class="creation-config-option-group creation-config-option-group--runtime">
                   <h5>视频渲染加速</h5>
-                  <label class="creation-config-render-field">渲染方式<select id="creation-config-render-acceleration"><option value="auto">自动检测 GPU（推荐）</option><option value="gpu">仅使用 GPU</option><option value="cpu">仅使用 CPU</option></select></label>
+                  <label class="creation-config-render-field" aria-label="渲染方式"><select id="creation-config-render-acceleration"><option value="auto">自动检测 GPU（推荐）</option><option value="gpu">仅使用 GPU</option><option value="cpu">仅使用 CPU</option></select></label>
                 </div>
               </section>
               <section class="creation-config-section creation-config-prompts-section">
@@ -1539,9 +1574,9 @@
   <script src="prompt_help.js?v=20260801.1"></script>
   <script src="settings.js?v=20260907.1"></script>
   <script src="projects.js?v=20260906.1"></script>
-  <script src="creation_config_management.js?v=20260907.1"></script>
+  <script src="creation_config_management.js?v=20260909.4"></script>
   <script src="select_menus.js?v=20260906.1"></script>
-  <script src="courses.js?v=20260906.1"></script>
+  <script src="courses.js?v=20260909.2"></script>
   <script src="article.js?v=20260801.1"></script>
   <script src="storyboard.js?v=20260902.1"></script>
   <script src="storyboard_prompts.js?v=20260801.1"></script>
@@ -1553,16 +1588,16 @@
   <script src="mask_editor.js?v=20260809.4"></script>
   <script src="subtitle_settings.js?v=20260801.1"></script>
   <script src="narration_audio.js?v=20260906.1"></script>
-  <script src="output_render.js?v=20260823.1"></script>
+  <script src="output_render.js?v=20260909.1"></script>
   <script src="account_management.js?v=20260907.4"></script>
   <script src="workspace_navigation.js?v=20260906.1"></script>
   <script src="event_bindings.js?v=20260906.1"></script>
-  <script src="project_profile_extension.js?v=20260907.3"></script>
+  <script src="project_profile_extension.js?v=20260909.2"></script>
   <script src="storyboard_background_extension.js?v=20260807.1"></script>
   <script src="style_reference_manager_extension.js?v=3.0.1"></script>
   <script src="ai_mask_auto_state.js?v=20260809.1"></script>
   <script src="digital_human_panel.js?v=20260827.2"></script>
   <script src="ai_mask_extension.js?v=20260906.1"></script>
-  <script src="one_click_extension.js?v=20260906.2"></script>
+  <script src="one_click_extension.js?v=20260909.1"></script>
 </body>
 </html>

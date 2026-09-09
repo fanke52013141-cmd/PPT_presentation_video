@@ -552,10 +552,17 @@ def validate_payload(payload: Any) -> dict[str, Any]:
     if automation is not None:
         if not isinstance(automation, dict):
             raise CreationConfigValidationError("automation 必须是对象")
+        mode = automation.get("mode")
+        if mode is not None and mode not in {"auto", "manual"}:
+            raise CreationConfigValidationError("automation.mode 必须是 auto 或 manual")
         if "image_concurrency" in automation:
             concurrency = automation["image_concurrency"]
             if isinstance(concurrency, bool) or not isinstance(concurrency, int) or not 1 <= concurrency <= 6:
                 raise CreationConfigValidationError("automation.image_concurrency 必须是 1 到 6 的整数")
+        if "ai_narration_annotation" in automation and not isinstance(
+            automation["ai_narration_annotation"], bool
+        ):
+            raise CreationConfigValidationError("automation.ai_narration_annotation 必须是布尔值")
 
     render = normalized.get("render")
     if render is not None:
@@ -564,6 +571,17 @@ def validate_payload(payload: Any) -> dict[str, Any]:
         acceleration = render.get("acceleration")
         if acceleration is not None and acceleration not in {"auto", "gpu", "cpu"}:
             raise CreationConfigValidationError("render.acceleration 必须是 auto、gpu 或 cpu")
+        output_formats = render.get("output_formats")
+        if output_formats is not None:
+            if (
+                not isinstance(output_formats, list)
+                or not output_formats
+                or any(item not in {"video", "pptx"} for item in output_formats)
+                or len(set(output_formats)) != len(output_formats)
+            ):
+                raise CreationConfigValidationError(
+                    "render.output_formats 必须是 video 和/或 pptx"
+                )
 
     subtitle = normalized.get("subtitle")
     if subtitle is not None:

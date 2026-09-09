@@ -463,6 +463,33 @@ def _finish_stage(project: Any, status: dict[str, Any], stage_id: str, message: 
     _save_status(project, status)
 
 
+def _pause_at_stage_boundary(
+    project: Any,
+    status: dict[str, Any],
+    project_id: str,
+) -> bool:
+    """Honor a user pause request without starting another pipeline stage.
+
+    Individual production operations are intentionally not interrupted: image
+    generation, TTS, and rendering own external work that must reach a safe
+    terminal point. This function runs before a stage starts and after each
+    one finishes, retaining the completed stage and its progress for resume.
+    """
+    if project_id not in _PAUSE_REQUESTS:
+        return False
+    _PAUSE_REQUESTS.discard(project_id)
+    current_stage = str(status.get("current_stage") or "")
+    status.update(
+        {
+            "status": "paused",
+            "completed_at": _now(),
+            "message": f"已在{current_stage or '当前'}阶段完成后暂停，后续阶段不会执行",
+        }
+    )
+    _save_status(project, status)
+    return True
+
+
 def _pause_for_requested_review(
     project: Any,
     status: dict[str, Any],
@@ -760,6 +787,16 @@ def _load_existing_narration(
 
 def _quality_gates(project: Any) -> dict[str, bool]:
     return dict(load_profile(project)["quality_gates"])
+
+
+def _should_annotate_narration(project: Any) -> bool:
+    """Whether this automatic run should ask AI to add TTS delivery markup.
+
+    The default intentionally remains false for old immutable project snapshots:
+    plain narration can go straight to TTS, while the manual editor keeps its
+    explicit AI-annotation action available.
+    """
+    return get_config_value(project, "automation.ai_narration_annotation", False) is True
 
 
 def _stage_index(stage_id: str) -> int:
@@ -1073,10 +1110,14 @@ def _run_pipeline(
         _save_status(project, status)
         gates = _quality_gates(project)
         services = dependencies.pipeline_service_factory(db, project_id)
+
         def should_run(stage_id: str) -> bool:
-            if project_id in _PAUSE_REQUESTS:
-                return False
             return _stage_index(stage_id) >= start_index
+
+        # A request can arrive between worker startup and the first operation.
+        # Do not run preflight in that case; a smart resume revalidates it.
+        if _pause_at_stage_boundary(project, status, project_id):
+            return
 
         if should_run("preflight") or mode == "resume":
             _start_stage(project, status, "preflight", "检查文章、凭据、媒体工具、项目目录及 ComfyUI/IndexTTS")
@@ -1084,6 +1125,8 @@ def _run_pipeline(
             if preflight_errors:
                 raise RuntimeError("预检查失败：" + "；".join(preflight_errors))
             _finish_stage(project, status, "preflight", "预检查通过")
+            if _pause_at_stage_boundary(project, status, project_id):
+                return
 
         if should_run("storyboard"):
             _start_stage(project, status, "storyboard", "生成或复用 visual_contract.json")
@@ -1108,6 +1151,8 @@ def _run_pipeline(
                 )
                 db.refresh(project)
             _finish_stage(project, status, "storyboard", "分镜规划已就绪")
+            if _pause_at_stage_boundary(project, status, project_id):
+                return
             if _pause_for_requested_review(project, status, "storyboard"):
                 return
 
@@ -1229,6 +1274,8 @@ def _run_pipeline(
                 if failures:
                     raise failures[0]
             _finish_stage(project, status, "images", f"图片已就绪，新增或刷新 {generated} 张")
+            if _pause_at_stage_boundary(project, status, project_id):
+                return
             if _pause_for_requested_review(project, status, "images"):
                 return
 
@@ -1245,6 +1292,8 @@ def _run_pipeline(
             # static scene and timeline files, without running AI annotation.
             _invoke(lambda: services.build_mask_assets(manifest), "Build full-frame scenes")
             _finish_stage(project, status, "confirm_images", "图片已确认，整页场景已准备")
+            if _pause_at_stage_boundary(project, status, project_id):
+                return
 
         # A status file written by an older version can retain the retired
         # Mask review checkpoint. Move it forward so resuming cannot stall.
@@ -1256,7 +1305,7 @@ def _run_pipeline(
             _save_status(project, status)
 
         if should_run("narration"):
-            _start_stage(project, status, "narration", "生成或复用演讲稿并尝试添加 TTS 标记")
+            _start_stage(project, status, "narration", "生成或复用演讲稿")
             narration_backed_up = False
 
             def backup_narration_once() -> None:
@@ -1280,16 +1329,25 @@ def _run_pipeline(
             else:
                 init = _invoke(services.init_narration, "Step 6 init")
             narration_beats = init.get("beats") or {}
-            try:
-                annotated = _invoke(
-                    lambda: services.annotate_narration(narration_beats),
-                    "Step 6 annotate",
-                )
-                narration_beats = annotated.get("beats") or narration_beats
-            except Exception as exc:
-                _warn_stage(project, status, "narration", f"AI TTS 标记失败，继续使用原演讲稿：{_error_text(exc)}")
+            annotation_enabled = _should_annotate_narration(project)
+            if annotation_enabled:
+                try:
+                    annotated = _invoke(
+                        lambda: services.annotate_narration(narration_beats),
+                        "Step 6 annotate",
+                    )
+                    narration_beats = annotated.get("beats") or narration_beats
+                except Exception as exc:
+                    _warn_stage(project, status, "narration", f"AI TTS 标记失败，继续使用原演讲稿：{_error_text(exc)}")
             _invoke(lambda: services.save_narration(narration_beats), "Step 6 confirm narration")
-            _finish_stage(project, status, "narration", "演讲稿已就绪")
+            _finish_stage(
+                project,
+                status,
+                "narration",
+                "演讲稿已就绪" if annotation_enabled else "演讲稿已就绪（未启用 AI 语音标注）",
+            )
+            if _pause_at_stage_boundary(project, status, project_id):
+                return
             if _pause_for_requested_review(project, status, "narration"):
                 return
             if _pause_for_manual_step(project, status, "narration"):
@@ -1310,6 +1368,8 @@ def _run_pipeline(
                 "pause_on_tts_failure",
             )
             _finish_stage(project, status, "tts", "音频已生成并通过自动技术检查（未人工试听）")
+            if _pause_at_stage_boundary(project, status, project_id):
+                return
             if _pause_for_requested_review(project, status, "tts"):
                 return
             if _pause_for_manual_step(project, status, "tts"):
@@ -1333,16 +1393,14 @@ def _run_pipeline(
             )
             video = result.get("video") or result.get("item") or result
             _finish_stage(project, status, "render", "视频渲染完成")
+            if _pause_at_stage_boundary(project, status, project_id):
+                return
             if _pause_for_requested_review(project, status, "render"):
                 return
 
-        # If the user requested a pause while the pipeline was running,
-        # short-circuit before completion.
-        if project_id in _PAUSE_REQUESTS:
-            _PAUSE_REQUESTS.discard(project_id)
-            status["status"] = "paused"
-            status["completed_at"] = _now()
-            _save_status(project, status)
+        # Defensive final boundary: prevents a conditional future stage from
+        # falling through to the video-completion guard after a pause.
+        if _pause_at_stage_boundary(project, status, project_id):
             return
 
         if not (isinstance(video, dict) and str(video.get("url") or "")):
@@ -1445,6 +1503,10 @@ def start_one_click(
             run_id,
             mode,
         )
+        # A prior worker may have exited through a review/manual boundary
+        # before consuming an earlier request. A new explicit run is a new
+        # user intent, so it must not inherit that stale pause signal.
+        _PAUSE_REQUESTS.discard(project_id)
         # A resume/restart is a distinct user-requested production run. Keep
         # the historical status timestamps for compatibility, but measure and
         # report this invocation from the moment the user pressed one-click.

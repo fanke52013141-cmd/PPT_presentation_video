@@ -14,6 +14,10 @@ from project_service import (
 )
 
 
+def test_project_create_defaults_to_auto_mode() -> None:
+    assert ProjectCreate(name="Automatic by default").ai_mode == "auto"
+
+
 def test_project_can_be_created_without_article_content(
     tmp_path: Path,
 ) -> None:

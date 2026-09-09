@@ -117,7 +117,10 @@ async function loadStep8Data() {
   const projectId = state.currentProject?.id;
   const sessionVersion = workspaceNavigationVersion;
   if (!projectId) return;
-  await loadStep8PptxData(projectId, sessionVersion);
+  await Promise.all([
+    loadStep8PptxData(projectId, sessionVersion),
+    refreshStep8SubtitleExport(projectId, sessionVersion),
+  ]);
   if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return;
   try {
     // 先检查是否有进行中的渲染任务（页面刷新后恢复轮询）
@@ -157,6 +160,69 @@ async function loadStep8Data() {
   } catch (e) {
     document.getElementById('step8-result-box').style.display = 'none';
     document.getElementById('step8-btn-render').style.display = 'inline-flex';
+  }
+}
+
+async function refreshStep8SubtitleExport(
+  projectId = state.currentProject?.id,
+  sessionVersion = workspaceNavigationVersion,
+) {
+  const button = document.getElementById('step8-btn-download-srt');
+  const label = document.getElementById('step8-subtitle-readiness');
+  if (!projectId || !isCurrentWorkspaceProject(projectId, sessionVersion) || !button || !label) return null;
+  try {
+    const readiness = await API.get(
+      `/api/projects/${projectId}/subtitles/readiness`,
+    );
+    if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return null;
+    const ready = readiness.ready === true;
+    button.disabled = !ready;
+    label.classList.toggle('ready', ready);
+    label.classList.toggle('blocked', !ready);
+    label.innerText = readiness.message || (ready ? '字幕文件可下载' : '字幕文件暂不可导出');
+    label.title = readiness.message || '';
+    return readiness;
+  } catch (error) {
+    if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return null;
+    button.disabled = true;
+    label.className = 'step8-readiness blocked';
+    label.innerText = '字幕状态读取失败';
+    label.title = error?.message || '';
+    return null;
+  }
+}
+
+async function downloadStep8Subtitles() {
+  const projectId = state.currentProject?.id;
+  const sessionVersion = workspaceNavigationVersion;
+  const button = document.getElementById('step8-btn-download-srt');
+  if (!projectId || button?.disabled) return;
+  const previousLabel = button.innerHTML;
+  button.disabled = true;
+  button.innerHTML = '<span class="button-spinner"></span> 正在准备字幕…';
+  try {
+    const blob = await API.getBinary(`/api/projects/${projectId}/subtitles.srt`);
+    if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return;
+    const anchor = document.createElement('a');
+    const objectUrl = URL.createObjectURL(blob);
+    anchor.href = objectUrl;
+    anchor.download = `${projectId}-subtitles.srt`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+    showToast('字幕 SRT 已开始下载。');
+  } catch (error) {
+    if (isCurrentWorkspaceProject(projectId, sessionVersion)) {
+      showToast(`字幕无法导出：${error.message}`, 7000);
+      await refreshStep8SubtitleExport(projectId, sessionVersion);
+    }
+  } finally {
+    if (button?.isConnected && isCurrentWorkspaceProject(projectId, sessionVersion)) {
+      button.innerHTML = previousLabel;
+      const label = document.getElementById('step8-subtitle-readiness');
+      button.disabled = !label?.classList.contains('ready');
+    }
   }
 }
 
@@ -594,4 +660,10 @@ function deleteStep8Video(filename) {
 
 window.deleteStep8Video = deleteStep8Video;
 window.deleteStep8Pptx = deleteStep8Pptx;
+window.downloadStep8Subtitles = downloadStep8Subtitles;
+
+document.getElementById('step8-btn-download-srt')?.addEventListener(
+  'click',
+  downloadStep8Subtitles,
+);
 

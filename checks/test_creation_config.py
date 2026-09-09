@@ -90,16 +90,28 @@ def test_new_package_has_initial_immutable_version_and_content_hash() -> None:
 def test_package_preserves_validated_automation_concurrency() -> None:
     configured = payload()
     configured["automation"]["image_concurrency"] = 5
+    configured["automation"]["mode"] = "auto"
+    configured["automation"]["ai_narration_annotation"] = False
     configured["tts"]["concurrency"] = 10
     configured["tts"]["requests_per_minute"] = 20
-    configured["render"] = {"acceleration": "gpu"}
+    configured["render"] = {"acceleration": "gpu", "output_formats": ["video", "pptx"]}
 
     normalized = service.validate_payload(configured)
 
     assert normalized["automation"]["image_concurrency"] == 5
+    assert normalized["automation"]["ai_narration_annotation"] is False
     assert normalized["tts"]["concurrency"] == 10
     assert normalized["tts"]["requests_per_minute"] == 20
     assert normalized["render"]["acceleration"] == "gpu"
+    assert normalized["render"]["output_formats"] == ["video", "pptx"]
+
+
+def test_automation_annotation_switch_requires_a_boolean() -> None:
+    configured = payload()
+    configured["automation"]["ai_narration_annotation"] = "yes"
+
+    with pytest.raises(service.CreationConfigValidationError, match="ai_narration_annotation"):
+        service.validate_payload(configured)
 
 
 def test_copy_names_a_new_package_and_uses_selected_source_version() -> None:

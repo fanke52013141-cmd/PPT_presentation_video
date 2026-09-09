@@ -252,6 +252,12 @@ class ProjectService:
                         manual_pause = [
                             step for step in configured_pause if step in _valid_pause
                         ]
+                configured_mode = automation.get("mode") if isinstance(automation, dict) else None
+                if (
+                    "ai_mode" not in payload.model_fields_set
+                    and configured_mode in {"auto", "manual"}
+                ):
+                    ai_mode = configured_mode
                 # ``mask`` is intentionally preserved in the immutable
                 # configuration snapshot for package import/export
                 # compatibility.  It no longer chooses the presentation mode

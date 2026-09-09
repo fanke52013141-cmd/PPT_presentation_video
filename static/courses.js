@@ -304,6 +304,7 @@ const CourseTree = (() => {
   // 独立项目卡片（和课程卡片样式一致，用视频图标区分）
   function renderStandaloneProjectCard(project) {
     const stepInfo = getStepInfo(project);
+    const outputTime = formatLatestOutputTime(project.latest_output_at);
 
     const node = document.createElement('div');
     node.className = 'course-card-item standalone-project';
@@ -316,6 +317,7 @@ const CourseTree = (() => {
         ${ICON.film}
         <span class="course-name" data-project-id="${project.id}">${escHtml(project.name)}</span>
         <span class="course-meta">${stepInfo.label}</span>
+        ${outputTime ? `<span class="course-meta course-output-time" title="最近作品输出时间">最近输出 · ${escHtml(outputTime)}</span>` : ''}
         <div class="course-actions">
           <button class="icon-action-btn" data-action="edit-project" data-project-id="${project.id}" title="修改设定">${ICON.edit}<span class="action-label">修改</span></button>
           <button class="icon-action-btn success" data-action="open-project" data-project-id="${project.id}" title="继续设计">${ICON.play}<span class="action-label">继续</span></button>
@@ -339,6 +341,16 @@ const CourseTree = (() => {
     node.addEventListener('drop', (e) => handleNodeDrop(e, 'project', false));
 
     return node;
+  }
+
+  function formatLatestOutputTime(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return new Intl.DateTimeFormat('zh-CN', {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(date).replace(/\//g, '-');
   }
 
   function getStepInfo(project) {

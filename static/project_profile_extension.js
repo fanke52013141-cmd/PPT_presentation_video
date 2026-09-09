@@ -206,8 +206,8 @@
           <h4>3. 创建方式</h4>
           <div class="project-profile-mode-grid" role="radiogroup" aria-label="创建方式">
             ${optionCards([
-              { id: 'auto', name: '全自动', detail: '进入项目即自动开始并连续执行生成流程，无需手动点击。' },
-              { id: 'manual', name: '手动', detail: '创建后由你按步骤编辑并触发生成。' },
+              { id: 'auto', name: '自动模式', detail: '进入项目后连续执行生成流程；实施中可暂停，并在当前环节完成后停下。' },
+              { id: 'manual', name: '手动模式', detail: '创建后进入第 1 步；后续由你按步骤编辑并触发生成。' },
             ], 'ai_mode', 'auto')}
           </div>
         </section>

@@ -136,6 +136,8 @@ for (const managementToken of [
   'buildStructuredEditor',
   'syncStructuredFieldsToJson',
   'loadPayloadIntoStructured',
+  'updateAutomationControls',
+  'ai_narration_annotation',
   'readBindingValue',
   'versions',
   'copyPackage',
@@ -165,6 +167,17 @@ for (const imageStyleControl of [
 ]) {
   if (!html.includes(imageStyleControl) && !creationConfigManagement.includes(imageStyleControl)) {
     throw new Error(`image style configuration control missing: ${imageStyleControl}`);
+  }
+}
+for (const automaticModeControl of [
+  'creation-config-mode-selector',
+  'creation-config-auto-options',
+  'creation-config-narration-annotation',
+  'creation-config-output-group',
+  'creation-config-subtitle-option',
+]) {
+  if (!html.includes(automaticModeControl)) {
+    throw new Error(`automatic creation configuration control missing: ${automaticModeControl}`);
   }
 }
 if (html.includes('creation-config-contract-fields')
@@ -880,8 +893,8 @@ if (!css.includes('#step6-btn-audio-confirm-next:disabled') || !css.includes('#s
   throw new Error('disabled primary button contrast contract is missing');
 }
 for (const creationModeToken of [
-  "id: 'auto', name: '全自动'",
-  "id: 'manual', name: '手动'",
+  "id: 'auto', name: '自动模式'",
+  "id: 'manual', name: '手动模式'",
   "selectedOption('ai_mode', 'auto')",
   'ai_mode: aiMode',
   "automation_mode: aiMode === 'manual' ? 'manual_review' : 'auto'",

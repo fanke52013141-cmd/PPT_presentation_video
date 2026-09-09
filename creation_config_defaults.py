@@ -57,15 +57,15 @@ def default_creation_config_payload() -> dict[str, Any]:
         },
         "model_bindings": {},
         "image_style": {
-            "template_id": "handdrawn",
+            "template_id": "government_brief",
             "version": 1,
             "reference_policy": "preferred",
             "minimum_reference_images": 1,
         },
         "subtitle": {"enabled": True},
         "mask": {"enabled": True},
-        "automation": {"image_concurrency": 5},
+        "automation": {"mode": "auto", "image_concurrency": 5, "ai_narration_annotation": False},
         "tts": {"concurrency": 10, "requests_per_minute": 10},
-        "render": {"acceleration": "auto"},
+        "render": {"acceleration": "auto", "output_formats": ["video"]},
     }
     return deepcopy(payload)

@@ -1054,3 +1054,675 @@
     transition: none !important;
   }
 }
+
+/* -------------------------------------------------------------------------
+   Secondary pages and runtime dialogs
+
+   The workflow shell is only one part of the product. These rules close the
+   same visual contract around the settings, project-profile, prompt, style,
+   background, one-click and account dialogs that are created by feature
+   modules at runtime. Selectors intentionally target existing IDs/classes so
+   DOM ownership and event wiring remain unchanged.
+   ------------------------------------------------------------------------- */
+.wu .modal-overlay {
+  align-items: center;
+  justify-content: center;
+  padding: var(--wu-space-6);
+  overflow: auto;
+}
+
+.wu .modal-overlay > .modal-content {
+  box-sizing: border-box;
+  width: min(640px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  min-height: 0;
+  overflow: hidden;
+  padding: var(--wu-space-6) !important;
+}
+
+.wu .modal-overlay > .config-editor-modal,
+.wu .modal-overlay > .subtitle-settings-modal,
+.wu .modal-overlay > .settings-modal,
+.wu .modal-overlay > .style-ref-modal,
+.wu .modal-overlay > .storyboard-bg-modal,
+.wu .modal-overlay > .project-profile-modal,
+.wu .modal-overlay > .one-click-modal {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.wu .modal-content > h3:first-child,
+.wu .modal-content > .highlight-title:first-child {
+  margin: 0 0 var(--wu-space-4) !important;
+  color: var(--wu-color-ink) !important;
+  font-size: 1.35rem !important;
+  line-height: 1.25 !important;
+}
+
+.wu .modal-content > p:first-of-type {
+  margin: 0 0 var(--wu-space-4);
+  color: var(--wu-color-muted);
+  line-height: 1.65;
+}
+
+.wu .modal-content label {
+  color: var(--wu-color-text);
+  font-weight: 600;
+}
+
+.wu .modal-content label > input,
+.wu .modal-content label > select,
+.wu .modal-content label > textarea,
+.wu .modal-content input:not([type="checkbox"]):not([type="radio"]),
+.wu .modal-content select,
+.wu .modal-content textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--wu-color-border-cool) !important;
+  border-radius: var(--wu-radius-control) !important;
+  background: var(--wu-color-surface-low) !important;
+  color: var(--wu-color-text) !important;
+  box-shadow: none !important;
+}
+
+.wu .modal-content textarea {
+  min-height: 112px;
+  resize: vertical;
+  line-height: 1.6;
+}
+
+.wu .modal-content input:focus-visible,
+.wu .modal-content select:focus-visible,
+.wu .modal-content textarea:focus-visible,
+.wu .modal-content button:focus-visible {
+  outline: 3px solid var(--wu-color-focus-soft) !important;
+  outline-offset: 2px;
+  border-color: var(--wu-color-focus) !important;
+}
+
+.wu .modal-content .config-editor-scroll,
+.wu .modal-content .project-profile-scroll,
+.wu .modal-content .ai-mask-modal-scroll,
+.wu .modal-content .style-ref-workbench,
+.wu .modal-content .storyboard-bg-body,
+.wu .modal-content .one-click-stage-list {
+  min-height: 0;
+  overflow: auto;
+  scrollbar-color: var(--wu-color-border-cool) transparent;
+}
+
+.wu .modal-content .config-editor-scroll {
+  flex: 1 1 auto;
+  padding: 0 var(--wu-space-1) var(--wu-space-2) 0 !important;
+}
+
+.wu .modal-content .config-editor-actions,
+.wu .modal-content .settings-footer-actions,
+.wu .modal-content .storyboard-bg-footer {
+  flex: 0 0 auto;
+  margin: var(--wu-space-5) calc(var(--wu-space-6) * -1) calc(var(--wu-space-6) * -1) !important;
+  padding: var(--wu-space-4) var(--wu-space-6) !important;
+  border-top: 1px solid var(--wu-color-border-cool) !important;
+  background: var(--wu-color-surface) !important;
+}
+
+.wu .config-editor-actions,
+.wu .settings-footer-actions,
+.wu .storyboard-bg-footer,
+.wu .modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--wu-space-2);
+  flex-wrap: wrap;
+}
+
+.wu .settings-footer-actions .settings-portability-actions {
+  margin-right: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wu-space-2);
+}
+
+/* Basic project create/edit dialogs. */
+.wu #modal-create > .modal-content,
+.wu #modal-edit-project > .modal-content,
+.wu #modal-confirm > .modal-content {
+  width: min(560px, calc(100vw - 48px));
+}
+
+.wu #modal-create > .modal-content > div,
+.wu #modal-edit-project > .modal-content > div {
+  display: grid;
+  gap: var(--wu-space-2);
+  margin-bottom: var(--wu-space-4) !important;
+}
+
+.wu #modal-create > .modal-content > div:last-child,
+.wu #modal-edit-project > .modal-content > div:last-child,
+.wu #modal-confirm > .modal-content > div:last-child {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--wu-space-2);
+  margin: var(--wu-space-5) 0 0 !important;
+}
+
+.wu #create-creation-config-section,
+.wu #modal-create > .modal-content > div:nth-of-type(4),
+.wu #modal-edit-project > .modal-content > div:nth-of-type(3) {
+  padding-top: var(--wu-space-4);
+  border-top: 1px solid var(--wu-color-border);
+}
+
+/* System settings is deliberately a dense form, but each provider group is
+   still visually segmented and never relies on the old black-outline style. */
+.wu #modal-settings > .settings-modal {
+  width: min(900px, calc(100vw - 48px)) !important;
+  max-width: 900px !important;
+  max-height: calc(100vh - 48px) !important;
+}
+
+.wu #modal-settings .settings-modal > .highlight-title {
+  display: flex;
+  align-items: center;
+  gap: var(--wu-space-2);
+}
+
+.wu #modal-settings .legacy-settings-content {
+  display: grid;
+  gap: var(--wu-space-4);
+}
+
+.wu #modal-settings .tab-pane {
+  padding: var(--wu-space-5) !important;
+  border: 1px solid var(--wu-color-border-cool) !important;
+  border-radius: var(--wu-radius-panel) !important;
+  background: var(--wu-color-surface-low) !important;
+}
+
+.wu #modal-settings .tab-pane > div,
+.wu #modal-settings #tts-row-credentials,
+.wu #modal-settings #tts-row-model-voice,
+.wu #modal-settings #tts-row-clone-region {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--wu-space-3) !important;
+}
+
+.wu #modal-settings .tab-pane > div > div,
+.wu #modal-settings #tts-row-credentials > div,
+.wu #modal-settings #tts-row-model-voice > div,
+.wu #modal-settings #tts-row-clone-region > div {
+  min-width: 0;
+}
+
+.wu #modal-settings #settings-job-concurrency-section {
+  padding: var(--wu-space-5) !important;
+  border: 1px solid var(--wu-color-border-cool) !important;
+  border-radius: var(--wu-radius-panel) !important;
+  background: var(--wu-color-surface-low) !important;
+}
+
+/* Project profile dialog (the extension replaces the legacy create modal). */
+.wu .project-profile-modal {
+  width: min(760px, calc(100vw - 48px)) !important;
+  max-width: 760px !important;
+  padding: 0 !important;
+}
+
+.wu .project-profile-modal .project-profile-scroll {
+  padding: var(--wu-space-6) !important;
+}
+
+.wu .project-profile-section {
+  display: grid;
+  gap: var(--wu-space-3);
+  margin-top: var(--wu-space-4);
+  padding: var(--wu-space-4) !important;
+  border: 1px solid var(--wu-color-border-cool) !important;
+  border-radius: var(--wu-radius-panel) !important;
+  background: var(--wu-color-surface-low) !important;
+}
+
+.wu .project-profile-mode-grid,
+.wu .creation-config-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--wu-space-3);
+}
+
+.wu .creation-config-choice,
+.wu .project-profile-mode-option {
+  display: grid;
+  gap: var(--wu-space-1);
+  min-height: 64px;
+  padding: var(--wu-space-3) !important;
+  border: 1px solid var(--wu-color-border-cool) !important;
+  border-radius: var(--wu-radius-panel) !important;
+  background: var(--wu-color-surface) !important;
+}
+
+.wu .creation-config-choice.active,
+.wu .creation-config-choice[aria-checked="true"],
+.wu .project-profile-mode-option.active,
+.wu .project-profile-mode-option[aria-checked="true"] {
+  border: 1px dashed var(--wu-color-focus) !important;
+  background: var(--wu-color-focus-soft) !important;
+}
+
+.wu .project-profile-advanced {
+  margin-top: var(--wu-space-4);
+  border: 1px solid var(--wu-color-border-cool) !important;
+  border-radius: var(--wu-radius-panel) !important;
+  background: var(--wu-color-surface) !important;
+}
+
+.wu .project-profile-advanced > summary {
+  padding: var(--wu-space-3) var(--wu-space-4);
+  cursor: pointer;
+  color: var(--wu-color-ai);
+  font-weight: 700;
+}
+
+.wu .project-profile-advanced-body {
+  display: grid;
+  gap: var(--wu-space-3);
+  padding: 0 var(--wu-space-4) var(--wu-space-4);
+}
+
+/* Style and image-generation workbenches. */
+.wu .style-ref-modal {
+  width: min(1120px, calc(100vw - 48px)) !important;
+  max-width: 1120px !important;
+  max-height: calc(100vh - 48px) !important;
+  padding: 0 !important;
+}
+
+.wu .style-ref-header,
+.wu .storyboard-bg-header,
+.wu .prompt-io-help-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wu-space-4);
+  flex: 0 0 auto;
+  padding: var(--wu-space-5) var(--wu-space-6);
+  border-bottom: 1px solid var(--wu-color-border-cool);
+}
+
+.wu .style-ref-tabs,
+.wu .style-ref-actions,
+.wu .one-click-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--wu-space-2);
+}
+
+.wu .style-ref-tabs {
+  margin: var(--wu-space-4) var(--wu-space-6) 0;
+  padding: var(--wu-space-1);
+  border-radius: var(--wu-radius-panel);
+  background: var(--wu-color-surface-low);
+}
+
+.wu .style-ref-tab {
+  min-height: 38px;
+  padding-inline: var(--wu-space-4) !important;
+}
+
+.wu .style-ref-tab.active {
+  border: 1px dashed var(--wu-color-focus) !important;
+  background: var(--wu-color-focus-soft) !important;
+}
+
+.wu .style-ref-workbench {
+  display: block;
+  padding: var(--wu-space-5) var(--wu-space-6) var(--wu-space-6);
+}
+
+.wu .style-ref-view,
+.wu .style-workbench-panel {
+  display: grid;
+  gap: var(--wu-space-4);
+}
+
+.wu .style-ref-view:not([hidden]) {
+  grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr);
+}
+
+.wu .style-workbench-panel {
+  padding: var(--wu-space-4) !important;
+  border: 1px solid var(--wu-color-border-cool) !important;
+  border-radius: var(--wu-radius-panel) !important;
+  background: var(--wu-color-surface-low) !important;
+}
+
+.wu .style-ref-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--wu-space-3);
+}
+
+.wu .style-ref-preview-grid > * {
+  min-height: 120px;
+  border: 1px solid var(--wu-color-border-cool) !important;
+  border-radius: var(--wu-radius-control) !important;
+  background: var(--wu-color-surface) !important;
+}
+
+.wu .storyboard-bg-modal {
+  width: min(980px, calc(100vw - 48px)) !important;
+  max-width: 980px !important;
+  max-height: calc(100vh - 48px) !important;
+  padding: 0 !important;
+}
+
+.wu .storyboard-bg-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, .8fr);
+  gap: var(--wu-space-5);
+  padding: var(--wu-space-5) var(--wu-space-6);
+}
+
+.wu .storyboard-bg-column,
+.wu .storyboard-bg-section {
+  display: grid;
+  align-content: start;
+  gap: var(--wu-space-3);
+}
+
+.wu .storyboard-bg-section {
+  padding: var(--wu-space-4) !important;
+  border: 1px solid var(--wu-color-border-cool) !important;
+  border-radius: var(--wu-radius-panel) !important;
+  background: var(--wu-color-surface-low) !important;
+}
+
+.wu .storyboard-bg-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--wu-space-3);
+}
+
+.wu .storyboard-bg-choice {
+  display: grid;
+  gap: var(--wu-space-1);
+  min-height: 78px;
+  padding: var(--wu-space-3) !important;
+  border: 1px solid var(--wu-color-border-cool) !important;
+  border-radius: var(--wu-radius-panel) !important;
+  background: var(--wu-color-surface) !important;
+}
+
+.wu .storyboard-bg-choice:has(input:checked) {
+  border: 1px dashed var(--wu-color-focus) !important;
+  background: var(--wu-color-focus-soft) !important;
+}
+
+.wu .storyboard-bg-preview {
+  min-height: 260px;
+  border: 1px dashed var(--wu-color-focus) !important;
+  border-radius: var(--wu-radius-panel) !important;
+  background: var(--wu-color-surface-low) !important;
+}
+
+/* Prompt editors share one reading measure and a quiet, rounded summary bar. */
+.wu .prompt-io-help-modal,
+.wu .ai-generation-modal,
+.wu .step2-batch-import-modal,
+.wu .step6-ai-prompt-modal,
+.wu #modal-storyboard-rules > .config-editor-modal,
+.wu #modal-article-system-content > .config-editor-modal,
+.wu #modal-style-reference-generation-prompt > .config-editor-modal {
+  width: min(860px, calc(100vw - 48px)) !important;
+  max-width: 860px !important;
+}
+
+.wu .prompt-io-help-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--wu-space-4);
+}
+
+.wu .prompt-io-help-card,
+.wu .ai-mask-prompt-block,
+.wu .step2-batch-import-preview,
+.wu .one-click-stage,
+.wu .ip-character-settings-card,
+.wu .ip-character-template-block {
+  padding: var(--wu-space-4) !important;
+  border: 1px solid var(--wu-color-border-cool) !important;
+  border-radius: var(--wu-radius-panel) !important;
+  background: var(--wu-color-surface-low) !important;
+}
+
+.wu .prompt-io-help-card pre,
+.wu .prompt-io-help-card textarea,
+.wu .ai-mask-prompt-block textarea {
+  border: 1px solid var(--wu-color-border-cool) !important;
+  border-radius: var(--wu-radius-control) !important;
+  background: var(--wu-color-surface) !important;
+  color: var(--wu-color-text) !important;
+}
+
+.wu .step2-batch-import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wu-space-2);
+  margin: var(--wu-space-4) 0;
+}
+
+.wu .template-manager-bar,
+.wu .step2-prompt-template-bar {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto auto minmax(220px, 1fr) auto;
+  gap: var(--wu-space-2);
+  align-items: end;
+  padding: var(--wu-space-3) !important;
+  border: 1px solid var(--wu-color-border-cool) !important;
+  border-radius: var(--wu-radius-panel) !important;
+  background: var(--wu-color-surface-low) !important;
+}
+
+.wu .storyboard-rule-field,
+.wu .ai-requirement-field,
+.wu .prompt-io-help-card {
+  display: grid;
+  gap: var(--wu-space-2);
+  margin: var(--wu-space-4) 0;
+}
+
+.wu .storyboard-rule-field > span,
+.wu .ai-requirement-field > span,
+.wu .style-panel-label {
+  color: var(--wu-color-text);
+  font-size: .84rem;
+  font-weight: 700;
+}
+
+.wu .prompt-locked-field textarea,
+.wu textarea[readonly] {
+  background: var(--wu-color-muted-surface) !important;
+  color: var(--wu-color-muted) !important;
+}
+
+/* IP character, subtitle and animation configuration. */
+.wu .ip-character-modal {
+  width: min(960px, calc(100vw - 48px)) !important;
+  max-width: 960px !important;
+}
+
+.wu .ip-character-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--wu-space-3);
+}
+
+.wu .ip-character-card {
+  padding: var(--wu-space-4) !important;
+  border: 1px solid var(--wu-color-border-cool) !important;
+  border-radius: var(--wu-radius-panel) !important;
+  background: var(--wu-color-surface-low) !important;
+}
+
+.wu .ip-character-section-header,
+.wu .ip-character-template-header,
+.wu .ip-character-toggle-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wu-space-3);
+  flex-wrap: wrap;
+}
+
+.wu .ip-character-template-block > summary {
+  padding: var(--wu-space-3);
+  color: var(--wu-color-ai);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.wu .subtitle-settings-modal {
+  width: min(1020px, calc(100vw - 48px)) !important;
+  max-width: 1020px !important;
+  padding: var(--wu-space-6) !important;
+}
+
+.wu .subtitle-settings-controls {
+  padding: var(--wu-space-4) !important;
+  border: 1px solid var(--wu-color-border-cool) !important;
+  border-radius: var(--wu-radius-panel) !important;
+  background: var(--wu-color-surface-low) !important;
+}
+
+.wu .animation-settings-modal .subtitle-settings-layout {
+  grid-template-columns: minmax(0, .9fr) minmax(300px, 1.1fr);
+}
+
+/* Agent/account, AI Mask and one-click runtime dialogs. */
+.wu .account-create-dialog .account-create-panel {
+  width: min(520px, calc(100vw - 48px)) !important;
+  max-width: 520px !important;
+  padding: var(--wu-space-6) !important;
+}
+
+.wu .account-create-dialog .account-create-help,
+.wu .account-create-dialog .account-create-panel > p {
+  color: var(--wu-color-muted) !important;
+  line-height: 1.6;
+}
+
+.wu .ai-mask-compact-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--wu-space-3);
+}
+
+.wu .ai-mask-param-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(110px, .8fr) auto;
+  align-items: center;
+  gap: var(--wu-space-2);
+  padding: var(--wu-space-3);
+  border: 1px solid var(--wu-color-border-cool);
+  border-radius: var(--wu-radius-control);
+  background: var(--wu-color-surface);
+}
+
+.wu .one-click-modal {
+  width: min(820px, calc(100vw - 48px)) !important;
+  max-width: 820px !important;
+}
+
+.wu .one-click-status-line {
+  margin: var(--wu-space-4) 0;
+  padding: var(--wu-space-3) var(--wu-space-4);
+  border-radius: var(--wu-radius-control);
+  background: var(--wu-color-ai-soft);
+  color: var(--wu-color-ai);
+  font-weight: 650;
+}
+
+.wu .one-click-stage-list {
+  display: grid;
+  gap: var(--wu-space-2);
+  max-height: 46vh;
+}
+
+.wu .one-click-stage {
+  display: grid;
+  gap: var(--wu-space-2);
+  background: var(--wu-color-surface) !important;
+}
+
+@media (max-width: 760px) {
+  .wu .modal-overlay { padding: var(--wu-space-3); }
+  .wu .modal-overlay > .modal-content,
+  .wu #modal-settings > .settings-modal,
+  .wu .project-profile-modal,
+  .wu .style-ref-modal,
+  .wu .storyboard-bg-modal,
+  .wu .subtitle-settings-modal,
+  .wu .ip-character-modal,
+  .wu .one-click-modal {
+    width: calc(100vw - 24px) !important;
+    max-height: calc(100vh - 24px) !important;
+  }
+
+  .wu .modal-overlay > .modal-content { padding: var(--wu-space-4) !important; }
+  .wu .modal-content .config-editor-actions,
+  .wu .modal-content .settings-footer-actions,
+  .wu .modal-content .storyboard-bg-footer {
+    margin: var(--wu-space-4) calc(var(--wu-space-4) * -1) calc(var(--wu-space-4) * -1) !important;
+    padding: var(--wu-space-3) var(--wu-space-4) !important;
+  }
+
+  .wu .style-ref-header,
+  .wu .storyboard-bg-header,
+  .wu .prompt-io-help-header { padding: var(--wu-space-4); }
+  .wu .style-ref-workbench,
+  .wu .storyboard-bg-body { padding: var(--wu-space-4); }
+  .wu .style-ref-view:not([hidden]),
+  .wu .storyboard-bg-body,
+  .wu .subtitle-settings-layout,
+  .wu .animation-settings-modal .subtitle-settings-layout,
+  .wu .prompt-io-help-grid { grid-template-columns: 1fr; }
+  .wu .style-ref-preview-grid,
+  .wu .ip-character-list,
+  .wu .ai-mask-compact-grid,
+  .wu .project-profile-mode-grid,
+  .wu .creation-config-choice-grid,
+  .wu .storyboard-bg-choice-grid,
+  .wu #modal-settings .tab-pane > div,
+  .wu #modal-settings #tts-row-credentials,
+  .wu #modal-settings #tts-row-model-voice,
+  .wu #modal-settings #tts-row-clone-region { grid-template-columns: 1fr !important; }
+  .wu .template-manager-bar,
+  .wu .step2-prompt-template-bar { grid-template-columns: 1fr; }
+  .wu .ai-mask-param-row { grid-template-columns: 1fr; }
+  .wu .settings-footer-actions .settings-portability-actions { width: 100%; margin-right: 0; }
+}
+
+@media (max-width: 1180px) {
+  .wu .app-header.wu-shell-header {
+    flex-wrap: wrap;
+    row-gap: var(--wu-space-2);
+  }
+
+  .wu .app-header.wu-shell-header > #project-info-header {
+    order: 3;
+    flex: 1 0 100%;
+    min-height: 26px;
+    padding-left: var(--wu-space-2);
+  }
+
+  .wu .app-header.wu-shell-header > div:last-child {
+    margin-left: auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}

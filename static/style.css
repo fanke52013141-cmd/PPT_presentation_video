@@ -9419,39 +9419,42 @@ body.step5-full-frame #step-panel-5 .step5-presentation-mode { margin-bottom: 0;
    legacy flat-outline and quiet-workspace layers without changing DOM or JS.
    ============================================================ */
 :root {
-  --color-primary-deep: #256fe8;
-  --color-primary-base: #5992ed;
-  --color-primary-soft: #dce9ff;
-  --color-primary-light: #f0f5ff;
-  --color-primary-text: #175bc3;
-  --color-coral: #f16738;
-  --color-peach: #ffeadf;
-  --color-lavender: #e9e7ff;
-  --color-ai-deep: #5a70dc;
-  --color-ai-light: #eff2ff;
-  --color-success-light: #eaf8ef;
-  --color-success-text: #25804b;
+  /* Soft Pastel Studio 规范令牌（与 docs/ui_style_reference.md 一致） */
+  --color-primary-deep: #5365d0;
+  --color-primary-base: #8fa7f8;
+  --color-primary-soft: #cfddfe;
+  --color-primary-light: #eef3ff;
+  --color-primary-text: #263b7a;
+  --color-coral: #fbbfbc;
+  --color-peach: #feddb6;
+  --color-lemon: #fff895;
+  --color-mint: #c5f1c1;
+  --color-lavender: #dcc9fb;
+  --color-ai-deep: #7b5cd6;
+  --color-ai-light: #f4eeff;
+  --color-success-light: #effbee;
+  --color-success-text: #2f7a43;
   --color-warning-light: #fff7e8;
   --color-warning-text: #9a5a16;
   --color-danger-light: #fff1f0;
-  --color-danger-text: #cf4d4d;
-  --color-bg-page: #f3f3fe;
-  --color-bg-warm: #faf8ff;
+  --color-danger-text: #a33a3a;
+  --color-bg-page: #fafbff;
+  --color-bg-warm: #fffdf8;
   --color-bg-surface: #ffffff;
-  --color-bg-subtle: #f7f8ff;
-  --color-border-default: #e3e7f5;
-  --color-border-strong: #c7d8fb;
-  --color-text-primary: #191b23;
-  --color-text-secondary: #4e5668;
-  --color-text-tertiary: #737b8c;
-  --color-text-disabled: #aab1c0;
-  --shadow-card: 0 8px 24px rgba(79, 107, 180, .075);
-  --shadow-panel: 0 18px 48px rgba(76, 93, 165, .14);
-  --shadow-button: 0 8px 18px rgba(241, 103, 56, .23);
-  --gradient-ai-soft: linear-gradient(135deg, #e9edff, #f6efff);
-  --gradient-ai-strong: linear-gradient(135deg, #5b82ec 0%, #7e73e8 100%);
-  --gradient-progress: linear-gradient(90deg, #5992ed 0%, #8f78ef 100%);
-  --success-color: var(--color-coral);
+  --color-bg-subtle: #f6f8ff;
+  --color-border-default: #e8ecf6;
+  --color-border-strong: #d6ddec;
+  --color-text-primary: #1f2937;
+  --color-text-secondary: #374151;
+  --color-text-tertiary: #6b7280;
+  --color-text-disabled: #a0a7b5;
+  --shadow-card: 0 12px 32px rgba(83, 101, 208, .08);
+  --shadow-panel: 0 16px 42px rgba(83, 101, 208, .1);
+  --shadow-button: 0 8px 20px rgba(83, 101, 208, .22);
+  --gradient-ai-soft: linear-gradient(135deg, #cfddfe 0%, #dcc9fb 100%);
+  --gradient-ai-strong: linear-gradient(135deg, #5365d0 0%, #7b5cd6 100%);
+  --gradient-progress: linear-gradient(90deg, #5365d0 0%, #8fa7f8 100%);
+  --success-color: var(--color-mint);
   --accent-color: var(--color-primary-deep);
   --radius-sm: 9px;
   --radius-md: 12px;
@@ -9464,10 +9467,7 @@ html,
 body,
 .main-content,
 #workspace-main {
-  background:
-    radial-gradient(circle at 88% -8%, rgba(214, 205, 255, .72), transparent 27rem),
-    radial-gradient(circle at 0 34%, rgba(218, 233, 255, .58), transparent 30rem),
-    var(--color-bg-page) !important;
+  background: var(--color-bg-page) !important;
   color: var(--color-text-primary) !important;
 }
 
@@ -9501,9 +9501,9 @@ header.app-header > div:last-child {
 .logo-icon {
   border: 0 !important;
   border-radius: 10px !important;
-  background: linear-gradient(135deg, #ff9a73, var(--color-coral)) !important;
+  background: var(--gradient-ai-strong) !important;
   color: #fff !important;
-  box-shadow: 0 6px 14px rgba(241, 103, 56, .2);
+  box-shadow: 0 6px 14px rgba(83, 101, 208, .18);
 }
 
 #project-info-header {
@@ -9538,8 +9538,8 @@ header.app-header .btn:hover,
 
 #btn-back-home:not([hidden]) {
   order: 2;
-  border-color: #ffb397 !important;
-  background: linear-gradient(135deg, #ff8d65, var(--color-coral)) !important;
+  border-color: transparent !important;
+  background: var(--gradient-ai-strong) !important;
   color: #fff !important;
   box-shadow: var(--shadow-button) !important;
 }
@@ -9571,7 +9571,7 @@ button.success,
 button.primary,
 .primary {
   border-color: transparent !important;
-  background: linear-gradient(135deg, #ff8b62, var(--color-coral)) !important;
+  background: var(--gradient-ai-strong) !important;
   color: #fff !important;
   box-shadow: var(--shadow-button) !important;
 }
@@ -9591,7 +9591,7 @@ textarea:focus-visible,
 select:focus-visible {
   outline: none;
   border-color: var(--color-primary-base) !important;
-  box-shadow: 0 0 0 4px rgba(89, 146, 237, .18) !important;
+  box-shadow: 0 0 0 4px rgba(143, 167, 248, .25) !important;
 }
 
 input:not([type="checkbox"]):not([type="radio"]):not([type="color"]),
@@ -9737,9 +9737,9 @@ textarea::placeholder { color: #a4acbd; }
 }
 
 .sidebar .step-item.active {
-  border-color: #d2e2ff !important;
-  background: linear-gradient(90deg, #edf4ff, #f3f5ff) !important;
-  box-shadow: inset 3px 0 0 var(--color-primary-base), 0 6px 14px rgba(89, 146, 237, .08) !important;
+  border-color: var(--color-primary-soft) !important;
+  background: linear-gradient(90deg, var(--color-primary-light), #f4f6ff) !important;
+  box-shadow: inset 3px 0 0 var(--color-primary-base), 0 6px 14px rgba(83, 101, 208, .1) !important;
   color: var(--color-text-primary) !important;
 }
 
@@ -9752,7 +9752,7 @@ textarea::placeholder { color: #a4acbd; }
 .sidebar .step-item.active .step-num {
   border-color: var(--color-primary-base) !important;
   background: var(--color-primary-base) !important;
-  box-shadow: 0 5px 10px rgba(89, 146, 237, .25) !important;
+  box-shadow: 0 5px 10px rgba(83, 101, 208, .22) !important;
 }
 
 .sidebar .step-icon,
@@ -9764,7 +9764,7 @@ textarea::placeholder { color: #a4acbd; }
 .one-click-sidebar-entry button {
   border: 0 !important;
   border-radius: 11px !important;
-  background: linear-gradient(135deg, #ff8c62, var(--color-coral)) !important;
+  background: var(--gradient-ai-strong) !important;
   box-shadow: var(--shadow-button) !important;
 }
 

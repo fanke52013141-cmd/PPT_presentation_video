@@ -1,0 +1,1056 @@
+/*
+ * PPT Studio page compositions
+ *
+ * This file is deliberately page-level, not another theme. It gives every
+ * real screen the same Workspace UI geometry while existing feature classes
+ * continue to own state, data rendering and event wiring.
+ */
+
+/* -------------------------------------------------------------------------
+   Shared page frame
+   ------------------------------------------------------------------------- */
+.wu #app-viewport {
+  min-height: calc(100vh - 64px);
+  background: var(--wu-color-canvas) !important;
+}
+
+.wu .wu-page-header,
+.wu .wu-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wu-space-4);
+}
+
+.wu .wu-toolbar {
+  flex-wrap: wrap;
+}
+
+.wu .workflow-title {
+  margin: 0 !important;
+  font-size: clamp(1.35rem, 2vw, 1.85rem) !important;
+  line-height: 1.2 !important;
+}
+
+.wu .workflow-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wu-space-4);
+  min-height: 56px;
+  margin-bottom: var(--wu-space-4) !important;
+  padding: var(--wu-space-4) var(--wu-space-5) !important;
+}
+
+.wu .workflow-toolbar,
+.wu .workflow-titlebar-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--wu-space-2);
+}
+
+.wu .workflow-header .workflow-toolbar > button,
+.wu .workflow-header .workflow-titlebar-actions > button {
+  white-space: nowrap;
+}
+
+/* The legacy ambient strip used negative side offsets, which created a
+   horizontal scrollbar on every workflow page. Keep the soft backdrop inside
+   the header's own box so it cannot become a second scroll container. */
+.wu .step2-sticky-header::before,
+.wu .step3-toolbar-row::before,
+.wu .step5-mask-header::before,
+.wu .step6-compact-header::before,
+.wu .step8-header::before {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: var(--wu-z-base);
+  border-radius: inherit;
+}
+
+.wu .config-editor-note,
+.wu .step2-narration-source-hint,
+.wu .course-meta,
+.wu .project-step-badge,
+.wu small {
+  color: var(--wu-color-muted) !important;
+  line-height: 1.55;
+}
+
+/* -------------------------------------------------------------------------
+   HOME — course and project library
+   ------------------------------------------------------------------------- */
+.wu #page-home.wu-page--working {
+  width: min(var(--wu-content-working), calc(100% - 48px));
+  min-height: calc(100vh - 64px);
+  margin: 0 auto;
+  padding: 40px 0 64px !important;
+}
+
+.wu #page-home .home-toolbar {
+  align-items: flex-end;
+  margin-bottom: var(--wu-space-6) !important;
+  padding: 0 0 var(--wu-space-5);
+  border-bottom: 1px solid var(--wu-color-border);
+}
+
+.wu #page-home .home-toolbar h1 {
+  font-size: clamp(1.7rem, 3vw, 2.35rem) !important;
+  letter-spacing: -.035em;
+}
+
+.wu #page-home .home-toolbar > div {
+  display: flex;
+  align-items: center;
+  gap: var(--wu-space-2) !important;
+}
+
+.wu #page-home .course-tree-container,
+.wu #page-home .project-grid,
+.wu #page-home #project-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wu-space-3) !important;
+}
+
+.wu #page-home .course-tree-standalone-heading {
+  margin: var(--wu-space-5) 0 var(--wu-space-2) !important;
+  font-size: .78rem !important;
+  font-weight: 700 !important;
+  text-transform: none;
+}
+
+.wu #page-home .course-card-item,
+.wu #page-home .course-card-item.standalone-project {
+  border: 1px solid var(--wu-color-border-cool) !important;
+  border-radius: var(--wu-radius-card) !important;
+  background: var(--wu-color-surface) !important;
+  box-shadow: none !important;
+}
+
+.wu #page-home .course-card-header,
+.wu #page-home .project-leaf {
+  min-height: 64px;
+  padding: var(--wu-space-3) var(--wu-space-4) !important;
+}
+
+.wu #page-home .course-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--wu-space-2);
+}
+
+.wu #page-home .icon-action-btn {
+  min-height: 34px;
+  padding-inline: 10px !important;
+}
+
+.wu #page-home .icon-action-btn.success {
+  background: var(--wu-color-action) !important;
+  border-color: transparent !important;
+  color: #fff !important;
+}
+
+.wu #page-home .icon-action-btn.danger {
+  border-color: var(--wu-color-danger-soft) !important;
+  background: var(--wu-color-surface) !important;
+  color: var(--wu-color-danger) !important;
+}
+
+/* -------------------------------------------------------------------------
+   Workspace frame and navigation
+   ------------------------------------------------------------------------- */
+.wu #page-workspace.wu-page--wide {
+  display: grid;
+  grid-template-columns: 236px minmax(0, 1fr);
+  align-items: start;
+  width: min(var(--wu-content-wide), calc(100% - 48px));
+  min-height: calc(100vh - 64px);
+  margin: 0 auto;
+  gap: var(--wu-space-4);
+  padding: 24px 0 48px !important;
+  background: transparent !important;
+}
+
+/* workspace_navigation.js intentionally writes display:flex when entering a
+   project. Preserve that state toggle while translating the visible shell to
+   the two-column Workspace grid; the hidden inline display:none state still
+   wins when the home page is shown. */
+.wu #page-workspace.wu-page--wide[style*="display: flex"] {
+  display: grid !important;
+}
+
+.wu #page-workspace .wu-sidebar {
+  position: sticky;
+  top: 80px;
+  width: auto !important;
+  min-height: calc(100vh - 128px);
+  padding: var(--wu-space-3) !important;
+}
+
+.wu #page-workspace .stepper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wu-space-2) !important;
+}
+
+.wu #page-workspace .sidebar .step-item {
+  min-height: 52px !important;
+  height: 52px !important;
+  padding: 0 var(--wu-space-3) !important;
+}
+
+.wu #page-workspace .sidebar .step-label {
+  font-size: .88rem;
+  font-weight: 650;
+}
+
+.wu #page-workspace .one-click-sidebar-entry {
+  margin-top: var(--wu-space-5) !important;
+  min-height: 48px;
+}
+
+.wu #workspace-main.wu-main {
+  width: 100%;
+  min-width: 0;
+  padding: 0 !important;
+}
+
+.wu .wu-view {
+  width: 100%;
+  min-width: 0;
+}
+
+/* -------------------------------------------------------------------------
+   Creation configuration — package, bindings, style and execution options
+   ------------------------------------------------------------------------- */
+.wu #modal-creation-config-management .config-editor-modal {
+  width: min(1280px, calc(100vw - 48px)) !important;
+  max-height: calc(100vh - 48px) !important;
+}
+
+.wu #modal-creation-config-management .config-editor-scroll,
+.wu #modal-model-management .config-editor-scroll {
+  padding: var(--wu-space-6) !important;
+}
+
+.wu #modal-creation-config-management .prompt-title-row,
+.wu #modal-model-management .prompt-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wu-space-4);
+  margin-bottom: var(--wu-space-5);
+}
+
+.wu #modal-creation-config-management .creation-config-management-body {
+  display: grid;
+  gap: var(--wu-space-5);
+}
+
+.wu #modal-creation-config-management .creation-config-package-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: var(--wu-space-3);
+}
+
+.wu #modal-creation-config-management .creation-config-default-package,
+.wu #modal-creation-config-management .creation-config-package-card {
+  min-height: 122px;
+  padding: var(--wu-space-4) !important;
+  border: 1px solid var(--wu-color-border-cool) !important;
+  border-radius: var(--wu-radius-card) !important;
+  background: var(--wu-color-surface) !important;
+}
+
+.wu #modal-creation-config-management .creation-config-package-card.active,
+.wu #modal-creation-config-management .creation-config-default-package {
+  border-color: var(--wu-color-focus) !important;
+  background: var(--wu-color-focus-soft) !important;
+}
+
+.wu #modal-creation-config-management .creation-config-package-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wu-space-2);
+}
+
+.wu #modal-creation-config-management .creation-config-structured-editor {
+  display: grid;
+  gap: var(--wu-space-4);
+  padding: var(--wu-space-4) !important;
+  border: 1px solid var(--wu-color-border-cool) !important;
+  border-radius: var(--wu-radius-panel) !important;
+  background: var(--wu-color-surface-low) !important;
+}
+
+.wu #modal-creation-config-management .creation-config-section {
+  display: grid;
+  gap: var(--wu-space-4);
+  padding: var(--wu-space-5) !important;
+  border: 1px solid var(--wu-color-border-cool) !important;
+  border-radius: var(--wu-radius-panel) !important;
+  background: var(--wu-color-surface) !important;
+}
+
+.wu #modal-creation-config-management .creation-config-section-heading,
+.wu #modal-creation-config-management .creation-config-option-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--wu-space-4);
+}
+
+.wu #modal-creation-config-management .creation-config-model-binding-fields,
+.wu #modal-creation-config-management .creation-config-image-style-grid,
+.wu #modal-creation-config-management .creation-config-auto-options-grid,
+.wu #modal-creation-config-management .creation-config-concurrency-grid,
+.wu #modal-creation-config-management .creation-config-number-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--wu-space-3);
+}
+
+.wu #modal-creation-config-management .creation-config-binding-field,
+.wu #modal-creation-config-management .creation-config-check,
+.wu #modal-creation-config-management .creation-config-render-field,
+.wu #modal-creation-config-management .creation-config-policy-card,
+.wu #modal-creation-config-management .creation-config-mode-card {
+  min-width: 0;
+}
+
+.wu #modal-creation-config-management .creation-config-binding-field,
+.wu #modal-creation-config-management .creation-config-render-field {
+  display: grid;
+  gap: var(--wu-space-2);
+}
+
+.wu #modal-creation-config-management .creation-config-image-style-grid {
+  grid-template-columns: minmax(0, 1fr) 220px;
+  align-items: end;
+}
+
+.wu #modal-creation-config-management .creation-config-image-style-cards,
+.wu #modal-creation-config-management .creation-config-policy-row,
+.wu #modal-creation-config-management .creation-config-mode-selector,
+.wu #modal-creation-config-management .creation-config-options-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--wu-space-3);
+}
+
+.wu #modal-creation-config-management .creation-config-image-style-card,
+.wu #modal-creation-config-management .creation-config-policy-card,
+.wu #modal-creation-config-management .creation-config-mode-card {
+  min-height: 78px;
+  padding: var(--wu-space-3) !important;
+  border: 1px solid var(--wu-color-border-cool) !important;
+  border-radius: var(--wu-radius-panel) !important;
+  background: var(--wu-color-surface) !important;
+}
+
+.wu #modal-creation-config-management .creation-config-image-style-card.active,
+.wu #modal-creation-config-management .creation-config-policy-card:has(input:checked),
+.wu #modal-creation-config-management .creation-config-mode-card:has(input:checked) {
+  border: 1px dashed var(--wu-color-focus) !important;
+  background: var(--wu-color-focus-soft) !important;
+}
+
+.wu #modal-creation-config-management .creation-config-prompt-fields,
+.wu #modal-creation-config-management .creation-config-prompts-section {
+  display: grid;
+  gap: var(--wu-space-3);
+}
+
+.wu #modal-creation-config-management .creation-config-prompt-card {
+  overflow: visible;
+  border: 1px solid var(--wu-color-border-cool) !important;
+  border-radius: var(--wu-radius-panel) !important;
+  background: var(--wu-color-surface) !important;
+}
+
+.wu #modal-creation-config-management .creation-config-prompt-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wu-space-3);
+  min-height: 48px;
+  padding: 0 var(--wu-space-4);
+  border-radius: var(--wu-radius-panel);
+  background: var(--wu-color-surface-low);
+  cursor: pointer;
+}
+
+.wu #modal-creation-config-management .creation-config-prompt-card > label,
+.wu #modal-creation-config-management .creation-config-locked-prompt {
+  display: grid;
+  gap: var(--wu-space-2);
+  padding: var(--wu-space-4);
+}
+
+/* -------------------------------------------------------------------------
+   Model management and Agent token dialog
+   ------------------------------------------------------------------------- */
+.wu #modal-model-management .config-editor-modal {
+  width: min(1080px, calc(100vw - 48px)) !important;
+  max-height: calc(100vh - 48px) !important;
+}
+
+.wu #modal-model-management .model-library-section,
+.wu #modal-model-management .model-setup-card {
+  display: grid;
+  gap: var(--wu-space-4);
+  padding: var(--wu-space-5) !important;
+  border: 1px solid var(--wu-color-border-cool) !important;
+  border-radius: var(--wu-radius-panel) !important;
+  background: var(--wu-color-surface) !important;
+}
+
+.wu #modal-model-management .model-kind-tabs {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  gap: var(--wu-space-2);
+  padding: var(--wu-space-2);
+  border-radius: var(--wu-radius-panel);
+  background: var(--wu-color-surface-low);
+}
+
+.wu #modal-model-management .model-kind-tab {
+  min-height: 38px;
+  padding-inline: var(--wu-space-4) !important;
+}
+
+.wu #modal-model-management .model-kind-tab.is-active,
+.wu #modal-model-management .model-kind-tab[aria-selected="true"] {
+  border: 1px dashed var(--wu-color-focus) !important;
+  background: var(--wu-color-focus-soft) !important;
+}
+
+.wu #modal-model-management .model-library-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--wu-space-3);
+}
+
+.wu #modal-model-management .model-library-item {
+  min-height: 74px;
+  padding: var(--wu-space-3) !important;
+  border: 1px solid var(--wu-color-border-cool) !important;
+  border-radius: var(--wu-radius-panel) !important;
+  background: var(--wu-color-surface) !important;
+}
+
+.wu #modal-model-management .model-setup-heading,
+.wu #modal-model-management .model-setup-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wu-space-3);
+  flex-wrap: wrap;
+}
+
+.wu #modal-model-management .model-setup-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--wu-space-4);
+}
+
+.wu #modal-model-management .model-setup-grid > label,
+.wu #modal-model-management .model-provider-panel label {
+  display: grid;
+  gap: var(--wu-space-2);
+}
+
+.wu .account-create-dialog .account-create-panel {
+  width: min(480px, calc(100vw - 32px)) !important;
+  padding: var(--wu-space-6) !important;
+}
+
+.wu .account-create-dialog .modal-header-row,
+.wu .account-create-dialog .modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wu-space-3);
+}
+
+.wu .account-create-dialog .form-field {
+  display: grid;
+  gap: var(--wu-space-2);
+  margin-top: var(--wu-space-4);
+}
+
+.wu .account-create-dialog .agent-token-result {
+  display: grid;
+  gap: var(--wu-space-3);
+  margin-top: var(--wu-space-4);
+  padding: var(--wu-space-4);
+  border: 1px dashed var(--wu-color-focus);
+  border-radius: var(--wu-radius-panel);
+  background: var(--wu-color-focus-soft);
+}
+
+/* -------------------------------------------------------------------------
+   Step 1 — article input
+   ------------------------------------------------------------------------- */
+.wu #step-panel-1 .step1-content-card {
+  display: grid;
+  gap: var(--wu-space-4);
+  min-height: 650px;
+  padding: var(--wu-space-5) !important;
+}
+
+.wu #step-panel-1 .step1-card-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wu-space-4);
+  padding-bottom: var(--wu-space-4);
+  border-bottom: 1px solid var(--wu-color-border);
+}
+
+.wu #step-panel-1 .step1-mode-switch {
+  display: inline-flex;
+  gap: var(--wu-space-1);
+  padding: var(--wu-space-1);
+  border-radius: var(--wu-radius-panel);
+  background: var(--wu-color-surface-low);
+}
+
+.wu #step-panel-1 .step1-mode-button {
+  min-height: 38px;
+  padding-inline: var(--wu-space-4) !important;
+  border-color: transparent !important;
+  background: transparent !important;
+}
+
+.wu #step-panel-1 .step1-mode-button.active,
+.wu #step-panel-1 .step1-mode-button[aria-selected="true"] {
+  border: 1px dashed var(--wu-color-focus) !important;
+  background: var(--wu-color-focus-soft) !important;
+}
+
+.wu #step-panel-1 #step1-article-input {
+  min-height: 500px;
+  resize: vertical;
+  line-height: 1.75;
+}
+
+.wu #step-panel-1 .step1-topic-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--wu-space-3);
+}
+
+/* -------------------------------------------------------------------------
+   Step 2 — storyboard planning
+   ------------------------------------------------------------------------- */
+.wu #step-panel-2 .step2-sticky-header {
+  display: grid;
+  gap: var(--wu-space-4);
+}
+
+.wu #step-panel-2 .workflow-titlebar,
+.wu #step-panel-2 .workflow-titlebar-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--wu-space-2);
+}
+
+.wu #step-panel-2 .workflow-titlebar {
+  justify-content: space-between;
+}
+
+.wu #step-panel-2 .slides-thumbnail-container {
+  display: flex;
+  gap: var(--wu-space-2);
+  padding: var(--wu-space-2) !important;
+  overflow-x: auto;
+}
+
+.wu #step-panel-2 #step2-editor-area {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--wu-space-4);
+}
+
+.wu #step-panel-2 .step2-slide-editor {
+  display: grid;
+  grid-template-columns: minmax(220px, .65fr) minmax(0, 1.35fr);
+  gap: var(--wu-space-5);
+  padding: var(--wu-space-5) !important;
+}
+
+.wu #step-panel-2 .step2-slide-fields,
+.wu #step-panel-2 .step2-full-narration-field {
+  display: grid;
+  gap: var(--wu-space-2);
+}
+
+.wu #step-panel-2 .step2-vn-map {
+  min-height: 220px;
+  padding: var(--wu-space-4);
+  border: 1px dashed var(--wu-color-border-cool);
+  border-radius: var(--wu-radius-panel);
+  background: var(--wu-color-surface-low);
+}
+
+.wu #step-panel-2:has(#step2-editor-area[style*="display: none"])::after {
+  content: "尚未生成分镜。点击“AI 生成分镜”开始，或切换到手动模式后添加页面。";
+  display: grid;
+  place-items: center;
+  min-height: 280px;
+  padding: var(--wu-space-6);
+  border: 1px dashed var(--wu-color-border-cool);
+  border-radius: var(--wu-radius-card);
+  background: var(--wu-color-surface-low);
+  color: var(--wu-color-muted);
+  text-align: center;
+}
+
+/* -------------------------------------------------------------------------
+   Step 3 — image management
+   ------------------------------------------------------------------------- */
+.wu #step-panel-3 .step3-toolbar-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--wu-space-2);
+  overflow: visible !important;
+}
+
+.wu #step-panel-3 .step3-toolbar-row .workflow-title {
+  margin-right: auto !important;
+}
+
+.wu #step-panel-3 #step3-images-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--wu-space-4);
+}
+
+.wu #step-panel-3 #step3-images-grid:empty::before {
+  content: "暂无分镜图片\A请先完成分镜规划，再生成或上传图片。";
+  display: grid;
+  grid-column: 1 / -1;
+  place-items: center;
+  min-height: 320px;
+  border: 1px dashed var(--wu-color-border-cool);
+  border-radius: var(--wu-radius-card);
+  background: var(--wu-color-surface-low);
+  color: var(--wu-color-muted);
+  white-space: pre;
+  text-align: center;
+}
+
+.wu #step-panel-3 .step3-image-card {
+  min-width: 0;
+  overflow: visible;
+}
+
+.wu #step-panel-3 .step3-image-card .step3-image-preview,
+.wu #step-panel-3 .step3-image-card img {
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  object-fit: cover;
+  border-radius: var(--wu-radius-panel);
+}
+
+/* -------------------------------------------------------------------------
+   Step 5 — mask and reveal workbench
+   ------------------------------------------------------------------------- */
+.wu #step-panel-5 .step5-mask-header {
+  display: grid;
+  gap: var(--wu-space-4);
+}
+
+.wu #step-panel-5 .step5-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--wu-space-2);
+  overflow: visible !important;
+}
+
+.wu #step-panel-5 .step5-brush-control {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wu-space-2);
+  min-height: 36px;
+  padding: 0 var(--wu-space-3);
+  border: 1px solid var(--wu-color-border-cool);
+  border-radius: var(--wu-radius-control);
+  background: var(--wu-color-surface-low);
+}
+
+.wu #step-panel-5 .workspace-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(280px, .75fr);
+  align-items: start;
+  gap: var(--wu-space-4);
+  min-height: 540px;
+}
+
+.wu #step-panel-5 .workspace-left,
+.wu #step-panel-5 .workspace-right {
+  min-width: 0;
+  padding: var(--wu-space-4) !important;
+  border: 1px solid var(--wu-color-border-cool) !important;
+  border-radius: var(--wu-radius-card) !important;
+  background: var(--wu-color-surface) !important;
+  box-shadow: none !important;
+}
+
+.wu #step-panel-5 .workspace-left {
+  display: grid;
+  gap: var(--wu-space-4);
+}
+
+.wu #step-panel-5 .workspace-right {
+  position: sticky;
+  top: 80px;
+  display: grid;
+  gap: var(--wu-space-4);
+}
+
+.wu #step-panel-5 .canvas-wrapper {
+  min-height: 400px;
+  display: grid;
+  place-items: center;
+  background: var(--wu-color-surface-low) !important;
+}
+
+.wu #step-panel-5 .step5-side-header,
+.wu #step-panel-5 .step5-confirm-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wu-space-3);
+}
+
+.wu #step-panel-5 .workspace-right > div:last-of-type {
+  margin-top: var(--wu-space-4) !important;
+  padding-top: var(--wu-space-4) !important;
+  border-top: 1px solid var(--wu-color-border) !important;
+}
+
+/* -------------------------------------------------------------------------
+   Step 6 — narration and audio
+   ------------------------------------------------------------------------- */
+.wu #step-panel-6 .step6-compact-header {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: var(--wu-space-3) var(--wu-space-5);
+}
+
+.wu #step-panel-6 .step6-header-actions,
+.wu #step-panel-6 .step6-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--wu-space-2);
+}
+
+.wu #step-panel-6 .step6-toolbar {
+  grid-column: 1 / -1;
+  justify-content: flex-start;
+  padding-top: var(--wu-space-3);
+  border-top: 1px solid var(--wu-color-border);
+}
+
+.wu #step-panel-6 .step-audio-empty,
+.wu #step-panel-6 .step6-slides-stack:empty::before {
+  display: grid;
+  place-items: center;
+  min-height: 230px;
+  padding: var(--wu-space-6);
+  border: 1px dashed var(--wu-color-border-cool);
+  border-radius: var(--wu-radius-card);
+  background: var(--wu-color-surface-low);
+  color: var(--wu-color-muted);
+  text-align: center;
+}
+
+.wu #step-panel-6 .step6-slides-stack {
+  display: grid;
+  gap: var(--wu-space-4);
+}
+
+.wu #step-panel-6 .step6-slides-stack > * {
+  border: 1px solid var(--wu-color-border-cool);
+  border-radius: var(--wu-radius-card);
+  background: var(--wu-color-surface);
+}
+
+/* -------------------------------------------------------------------------
+   Step 9 — optional digital human
+   ------------------------------------------------------------------------- */
+.wu #step-panel-9 .step9-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.wu #step-panel-9 .step9-optional-hint {
+  color: var(--wu-color-muted);
+}
+
+.wu #step-panel-9 #digital-human-panel {
+  margin-top: 0 !important;
+  padding: var(--wu-space-5) !important;
+}
+
+.wu #step-panel-9 .dh-panel-header,
+.wu #step-panel-9 .dh-lock-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wu-space-4);
+  flex-wrap: wrap;
+}
+
+.wu #step-panel-9 .dh-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--wu-space-4);
+}
+
+.wu #step-panel-9 .dh-field {
+  min-width: 0;
+  padding: var(--wu-space-4) !important;
+  border: 1px solid var(--wu-color-border-cool) !important;
+  border-radius: var(--wu-radius-panel) !important;
+  background: var(--wu-color-surface-low) !important;
+}
+
+/* -------------------------------------------------------------------------
+   Step 8 — output works
+   ------------------------------------------------------------------------- */
+.wu #step-panel-8 .step8-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.wu #step-panel-8 .step8-output-title,
+.wu #step-panel-8 .step8-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wu-space-4);
+  flex-wrap: wrap;
+}
+
+.wu #step-panel-8 .step-plain-section {
+  margin-top: var(--wu-space-4);
+  padding: var(--wu-space-5) !important;
+  border: 1px solid var(--wu-color-border-cool) !important;
+  border-radius: var(--wu-radius-card) !important;
+  background: var(--wu-color-surface) !important;
+}
+
+.wu #step-panel-8 .step8-section-heading > div:first-child {
+  min-width: 0;
+}
+
+.wu #step-panel-8 .step8-section-heading p {
+  max-width: 680px;
+  margin: var(--wu-space-2) 0 0;
+  color: var(--wu-color-muted);
+}
+
+.wu #step-panel-8 .step8-readiness {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 var(--wu-space-3);
+  border-radius: var(--wu-radius-pill);
+  background: var(--wu-color-ai-soft);
+  color: var(--wu-color-ai);
+  font-size: .82rem;
+}
+
+.wu #step-panel-8 .step8-video-list,
+.wu #step-panel-8 .step8-pptx-list {
+  display: grid;
+  gap: var(--wu-space-3);
+}
+
+/* -------------------------------------------------------------------------
+   Shared configuration / prompt / media dialogs
+   ------------------------------------------------------------------------- */
+.wu .subtitle-settings-modal,
+.wu .step3-ai-modal,
+.wu .ai-generation-modal,
+.wu .step2-batch-import-modal {
+  width: min(980px, calc(100vw - 48px)) !important;
+  max-height: calc(100vh - 48px) !important;
+}
+
+.wu .subtitle-settings-header,
+.wu .step3-ai-header,
+.wu .modal-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--wu-space-4);
+}
+
+.wu .subtitle-settings-layout,
+.wu .step3-ai-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(300px, .75fr);
+  gap: var(--wu-space-5);
+}
+
+.wu .subtitle-preview-stage,
+.wu .animation-preview-stage,
+.wu .step3-ai-preview {
+  min-height: 360px;
+  border: 1px solid var(--wu-color-border-cool) !important;
+  border-radius: var(--wu-radius-card) !important;
+  background: var(--wu-color-surface-low) !important;
+}
+
+.wu .subtitle-settings-controls,
+.wu .step3-ai-pane {
+  display: grid;
+  align-content: start;
+  gap: var(--wu-space-3);
+}
+
+.wu .subtitle-settings-controls > label,
+.wu .step3-ai-pane > label {
+  display: grid;
+  gap: var(--wu-space-2);
+}
+
+.wu .config-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--wu-space-2);
+  flex-wrap: wrap;
+  padding: var(--wu-space-4) var(--wu-space-6) !important;
+  border-top: 1px solid var(--wu-color-border-cool) !important;
+  background: var(--wu-color-surface) !important;
+}
+
+/* -------------------------------------------------------------------------
+   Responsive composition rules
+   ------------------------------------------------------------------------- */
+@media (max-width: 1100px) {
+  .wu #page-workspace.wu-page--wide {
+    width: min(var(--wu-content-wide), calc(100% - 32px));
+    grid-template-columns: 208px minmax(0, 1fr);
+  }
+
+  .wu #modal-creation-config-management .creation-config-model-binding-fields,
+  .wu #modal-creation-config-management .creation-config-image-style-cards,
+  .wu #modal-creation-config-management .creation-config-policy-row,
+  .wu #modal-creation-config-management .creation-config-mode-selector,
+  .wu #modal-creation-config-management .creation-config-number-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .wu #step-panel-3 #step3-images-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .wu #step-panel-9 .dh-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .wu #page-home.wu-page--working,
+  .wu #page-workspace.wu-page--wide {
+    width: calc(100% - 24px);
+  }
+
+  .wu #page-workspace.wu-page--wide {
+    display: block;
+    padding-top: var(--wu-space-3) !important;
+  }
+
+  .wu #page-workspace .wu-sidebar {
+    position: static;
+    min-height: auto;
+    margin-bottom: var(--wu-space-4) !important;
+  }
+
+  .wu #page-workspace .stepper {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .wu #page-workspace .one-click-sidebar-entry {
+    margin-top: var(--wu-space-3) !important;
+  }
+
+  .wu #step-panel-1 .step1-card-toolbar,
+  .wu #step-panel-2 .step2-slide-editor,
+  .wu #step-panel-6 .step6-compact-header,
+  .wu .subtitle-settings-layout,
+  .wu .step3-ai-layout {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .wu #step-panel-1 .step1-save-actions,
+  .wu #step-panel-1 .step1-mode-switch {
+    width: 100%;
+  }
+
+  .wu #step-panel-1 .step1-save-actions button {
+    flex: 1;
+  }
+
+  .wu #step-panel-3 #step3-images-grid,
+  .wu #step-panel-9 .dh-grid,
+  .wu #modal-creation-config-management .creation-config-model-binding-fields,
+  .wu #modal-creation-config-management .creation-config-image-style-grid,
+  .wu #modal-creation-config-management .creation-config-image-style-cards,
+  .wu #modal-creation-config-management .creation-config-policy-row,
+  .wu #modal-creation-config-management .creation-config-mode-selector,
+  .wu #modal-creation-config-management .creation-config-number-grid,
+  .wu #modal-model-management .model-setup-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .wu #step-panel-5 .workspace-split {
+    grid-template-columns: 1fr;
+  }
+
+  .wu #step-panel-5 .workspace-right {
+    position: static;
+  }
+
+  .wu #modal-creation-config-management .config-editor-scroll,
+  .wu #modal-model-management .config-editor-scroll {
+    padding: var(--wu-space-4) !important;
+  }
+
+  .wu .config-editor-actions {
+    padding: var(--wu-space-3) var(--wu-space-4) !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wu .course-card-item,
+  .wu button,
+  .wu .btn {
+    transition: none !important;
+  }
+}

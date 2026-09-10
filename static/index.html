@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="ui/tokens.css?v=20260910.1">
   <link rel="stylesheet" href="style.css?v=20260910.3">
   <link rel="stylesheet" href="ui/components.css?v=20260910.1">
+  <link rel="stylesheet" href="ui/page_compositions.css?v=20260910.2">
   <link rel="stylesheet" href="studio_polish.css?v=5">
 </head>
 <body class="wu">
@@ -145,7 +146,7 @@
       <section class="main-content wu-main" id="workspace-main">
         
         <!-- ==================== 步骤 1: 导入文章 ==================== -->
-        <div id="step-panel-1" class="step-panel" style="display: none;">
+        <div id="step-panel-1" class="step-panel wu-view wu-view--step-1" style="display: none;">
           <div class="step1-heading-row workflow-header workflow-header--titlebar">
             <h2 class="highlight-title workflow-title">准备文章</h2>
             <button id="step1-btn-system-content" class="secondary" type="button">System Content</button>
@@ -186,7 +187,7 @@
         </div>
 
         <!-- ==================== 步骤 2: 分镜规划 ==================== -->
-        <div id="step-panel-2" class="step-panel" style="display: none;">
+        <div id="step-panel-2" class="step-panel wu-view wu-view--step-2" style="display: none;">
           
           <!-- 粘性吸顶栏容器：合并按钮与缩略图，使用不透明背景挡住滚上来的正文 -->
           <div class="step2-sticky-header workflow-header workflow-header--tabs">
@@ -260,7 +261,7 @@
         </div>
 
         <!-- ==================== 步骤 3: 图片生成与上传 ==================== -->
-        <div id="step-panel-3" class="step-panel" style="display: none;">
+        <div id="step-panel-3" class="step-panel wu-view wu-view--step-3" style="display: none;">
           <!-- 顶部控制栏 -->
           <div class="step3-toolbar-row workflow-header workflow-header--titlebar">
             <h2 class="highlight-title workflow-title">图片生成与管理</h2>
@@ -307,7 +308,7 @@
         </div>
 
         <!-- ==================== 步骤 5: 可选元素动画 ==================== -->
-        <div id="step-panel-5" class="step-panel" style="display: none;">
+        <div id="step-panel-5" class="step-panel wu-view wu-view--step-5" style="display: none;">
           <div class="step5-mask-header workflow-header workflow-header--stacked">
             <h2 class="highlight-title workflow-title">元素动画（可选）</h2>
             <div class="step5-toolbar workflow-toolbar">
@@ -385,7 +386,7 @@
         </div>
 
         <!-- ==================== 步骤 6 + 7: 旁白与音频 ==================== -->
-        <div id="step-panel-6" class="step-panel" style="display: none;">
+        <div id="step-panel-6" class="step-panel wu-view wu-view--step-6" style="display: none;">
           <div class="step6-compact-header workflow-header workflow-header--titlebar">
             <h2 class="highlight-title workflow-title">旁白与音频</h2>
             <div class="step6-header-actions workflow-toolbar">
@@ -426,7 +427,7 @@
         </div>
 
         <!-- ==================== 步骤 9: 数字人讲解（可选） ==================== -->
-        <div id="step-panel-9" class="step-panel" style="display: none;">
+        <div id="step-panel-9" class="step-panel wu-view wu-view--step-9" style="display: none;">
           <div class="step9-header workflow-header workflow-header--titlebar">
             <h2 class="highlight-title workflow-title">数字人讲解</h2>
             <div class="step9-header-actions workflow-toolbar">
@@ -559,7 +560,7 @@
         </div>
 
         <!-- ==================== 步骤 8: 作品输出 ==================== -->
-        <div id="step-panel-8" class="step-panel" style="display: none;">
+        <div id="step-panel-8" class="step-panel wu-view wu-view--step-8" style="display: none;">
           <div class="step8-header workflow-header workflow-header--titlebar">
             <div class="step8-output-title">
               <h2 class="highlight-title workflow-title">作品输出</h2>

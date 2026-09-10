@@ -12,7 +12,9 @@ menu in `docs/plans/full_page_function_preserving_ui_refactor_menu.md`.
 3. `../style.css` — the existing compatibility stylesheet for feature selectors.
 4. `components.css` — namespaced Workspace UI primitives and the final visual
    bridge over the compatibility selectors.
-5. `../studio_polish.css` — existing interaction polish.
+5. `page_compositions.css` — complete page-level compositions for the home,
+   creation configuration, model/Agent dialogs, and workflow steps 1–7.
+6. `../studio_polish.css` — existing interaction polish.
 
 The legacy file remains because feature modules and saved projects depend on its
 class names. New visual work belongs in this semantic layer; it must not change

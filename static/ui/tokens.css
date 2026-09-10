@@ -1,0 +1,49 @@
+/* Single source of truth for the user-approved lavender / coral interface. */
+:root {
+  --wu-color-canvas: #faf8ff;
+  --wu-color-canvas-warm: #fdf9f4;
+  --wu-color-surface: #ffffff;
+  --wu-color-surface-low: #f3f3fe;
+  --wu-color-surface-muted: #ededf8;
+  --wu-color-ink: #191b23;
+  --wu-color-text: #2e3038;
+  --wu-color-muted: #6e717c;
+  --wu-color-border: #eae0d5;
+  --wu-color-border-cool: #e1e2ec;
+  --wu-color-action: #f16738;
+  --wu-color-action-strong: #ab3506;
+  --wu-color-action-soft: #ffdbd0;
+  --wu-color-focus: #5992ed;
+  --wu-color-focus-soft: #d7e3ff;
+  --wu-color-ai: #5d67d8;
+  --wu-color-ai-soft: #eff2ff;
+  --wu-color-success: #2f7a43;
+  --wu-color-success-soft: #effbee;
+  --wu-color-danger: #ba1a1a;
+  --wu-color-danger-soft: #ffdad6;
+  --wu-space-1: 4px;
+  --wu-space-2: 8px;
+  --wu-space-3: 12px;
+  --wu-space-4: 16px;
+  --wu-space-5: 24px;
+  --wu-space-6: 32px;
+  --wu-space-7: 48px;
+  --wu-radius-control: 8px;
+  --wu-radius-panel: 10px;
+  --wu-radius-shell: 12px;
+  --wu-radius-card: 16px;
+  --wu-radius-pill: 999px;
+  --wu-shadow-dialog: 0 24px 60px rgba(25, 27, 35, .18);
+  --wu-shadow-focus: 0 0 0 3px rgba(89, 146, 237, .22);
+  --wu-z-base: 0;
+  --wu-z-sticky: 20;
+  --wu-z-floating: 40;
+  --wu-z-toast: 80;
+  --wu-z-modal: 100;
+}
+
+.wu {
+  --wu-content-reading: 680px;
+  --wu-content-working: 1050px;
+  --wu-content-wide: 1280px;
+}

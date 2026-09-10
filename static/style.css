@@ -10279,3 +10279,173 @@ textarea::placeholder { color: #a4acbd; }
   #step-panel-2 .step2-slide-fields { grid-template-columns: 1fr !important; }
   #step-panel-3 .step3-grid-four { grid-template-columns: 1fr; }
 }
+
+/* Final modal and empty-state harmonization.
+   Dynamic feature modules keep their DOM and behavior; this layer only
+   brings their surfaces back onto the same Soft Pastel Studio contract. */
+.account-create-panel,
+.one-click-modal,
+.prompt-io-help-modal,
+.style-ref-modal,
+.storyboard-bg-modal {
+  color: var(--color-text-primary) !important;
+  border: 1px solid rgba(255, 255, 255, .94) !important;
+  border-radius: var(--radius-xl) !important;
+  background: linear-gradient(145deg, rgba(255, 255, 255, .99), rgba(248, 250, 255, .98)) !important;
+  box-shadow: 0 24px 70px rgba(47, 59, 96, .26) !important;
+}
+
+.account-create-panel {
+  width: min(520px, calc(100vw - 32px));
+  padding: 1.45rem 1.55rem 1.25rem !important;
+}
+
+.account-create-panel .modal-header-row,
+.account-create-panel .modal-actions,
+.one-click-modal .modal-actions,
+.prompt-io-help-header,
+.style-ref-header,
+.storyboard-bg-header {
+  border-color: #e8ecf6 !important;
+}
+
+.account-create-panel .modal-header-row { margin-bottom: .95rem; }
+.account-create-panel .modal-header-row h3,
+.prompt-io-help-header h3,
+.style-ref-header h3,
+.storyboard-bg-title { color: var(--color-text-primary) !important; }
+.account-create-help,
+.one-click-note,
+.prompt-io-help-grid p,
+.prompt-io-help-grid li { color: var(--color-text-secondary) !important; }
+
+.one-click-modal {
+  padding: 1.45rem 1.55rem 1.25rem !important;
+}
+.one-click-status-line,
+.one-click-stage,
+.one-click-pill {
+  border: 1px solid var(--color-border-default) !important;
+  border-radius: var(--radius-md) !important;
+  background: var(--color-bg-surface) !important;
+}
+.one-click-status-line { background: var(--color-bg-subtle) !important; }
+.one-click-stage { padding: .75rem .85rem !important; }
+.one-click-stage small { color: var(--color-text-tertiary) !important; }
+.one-click-pill { border-radius: 999px !important; color: var(--color-text-secondary) !important; }
+.one-click-pill.running { background: var(--color-primary-light) !important; color: var(--color-primary-text) !important; }
+.one-click-pill.done { background: var(--color-success-light) !important; color: var(--color-success-text) !important; }
+.one-click-pill.failed,
+.one-click-pill.paused { background: var(--color-danger-light) !important; color: var(--color-danger-text) !important; }
+
+.prompt-io-help-modal { width: min(880px, calc(100vw - 32px)); }
+.prompt-io-help-grid section {
+  border: 1px solid var(--color-border-default) !important;
+  border-radius: var(--radius-md) !important;
+  background: var(--color-bg-subtle) !important;
+  box-shadow: none !important;
+}
+.prompt-io-help-grid pre {
+  border: 1px solid var(--color-border-default) !important;
+  border-radius: var(--radius-sm) !important;
+  background: #f8f9ff !important;
+  color: var(--color-text-secondary) !important;
+}
+
+.storyboard-bg-modal,
+.style-ref-modal { overflow: hidden; }
+.storyboard-bg-header,
+.storyboard-bg-footer,
+.style-ref-header,
+.style-ref-footer {
+  background: rgba(255, 255, 255, .92) !important;
+  border-color: #e8ecf6 !important;
+}
+.storyboard-bg-title-icon { background: var(--gradient-ai-strong) !important; box-shadow: var(--shadow-button) !important; }
+.storyboard-bg-close,
+.style-ref-x { color: var(--color-text-secondary) !important; }
+.storyboard-bg-choice,
+.style-ref-card,
+.style-ref-field,
+.storyboard-bg-upload-line,
+.storyboard-bg-hex,
+.storyboard-bg-preview {
+  border-color: var(--color-border-default) !important;
+  border-radius: var(--radius-md) !important;
+}
+.storyboard-bg-choice:hover,
+.storyboard-bg-choice.active,
+.style-ref-tab.active {
+  border-color: var(--color-primary-base) !important;
+  background: var(--color-primary-light) !important;
+  color: var(--color-primary-text) !important;
+  box-shadow: 0 0 0 2px rgba(143, 167, 248, .16) !important;
+}
+.storyboard-bg-choice-icon,
+.storyboard-bg-file-button,
+.style-ref-upload-button { color: var(--color-primary-text) !important; }
+.storyboard-bg-file-button,
+.style-ref-upload-button { background: var(--color-primary-light) !important; border-color: var(--color-primary-soft) !important; }
+.storyboard-bg-dropzone { border-color: var(--color-border-strong) !important; background: var(--color-bg-subtle) !important; }
+.style-ref-tabs { border-color: var(--color-border-default) !important; background: var(--color-bg-subtle) !important; }
+.style-ref-tab { color: var(--color-text-secondary) !important; }
+.style-ref-tab.active { box-shadow: inset 0 -2px 0 var(--color-primary-deep) !important; }
+.style-ref-product-note,
+.storyboard-bg-help,
+.storyboard-bg-file-name,
+.storyboard-bg-preview-placeholder { color: var(--color-text-tertiary) !important; }
+.style-ref-primary,
+.storyboard-bg-footer .primary { background: var(--gradient-ai-strong) !important; }
+
+.ai-mask-compact-grid .ai-mask-param-row,
+.ai-mask-review-panel,
+.ai-mask-preview-modes {
+  border-color: var(--color-border-default) !important;
+  border-radius: var(--radius-md) !important;
+  background: var(--color-bg-surface) !important;
+  box-shadow: none !important;
+}
+.ai-mask-param-row input[type="number"],
+.ai-mask-param-row select,
+.ai-mask-prompt-block textarea { border-color: var(--color-border-default) !important; background: var(--color-bg-subtle) !important; }
+.ai-mask-review-panel.passed { border-color: #b9e3cb !important; background: var(--color-success-light) !important; }
+.ai-mask-review-panel.needs-review { border-color: #f0d7a2 !important; background: var(--color-warning-light) !important; }
+.ai-mask-review-panel.failed { border-color: #f1c4c1 !important; background: var(--color-danger-light) !important; }
+
+/* Contextual empty states keep an unloaded stage intentional instead of
+   presenting a blank canvas. The selectors only apply when the container is
+   actually empty, so real generated content is unaffected. */
+#step3-images-grid:empty,
+#step5-thumbs:empty,
+#step5-boxes-list:empty,
+#step6-beats-list:empty {
+  display: grid !important;
+  place-items: center;
+  min-height: 220px !important;
+  padding: 2rem !important;
+  border: 1px dashed var(--color-border-strong) !important;
+  border-radius: var(--radius-lg) !important;
+  background: linear-gradient(145deg, rgba(246, 248, 255, .9), rgba(255, 255, 255, .86)) !important;
+}
+#step3-images-grid:empty::before { content: '暂无分镜图片'; }
+#step5-thumbs:empty::before { content: '暂无可标注的分镜'; }
+#step5-boxes-list:empty::before { content: '选择一个分镜后，这里会显示 AI 语块'; }
+#step6-beats-list:empty::before { content: '暂无旁白条目'; }
+#step3-images-grid:empty::before,
+#step5-thumbs:empty::before,
+#step5-boxes-list:empty::before,
+#step6-beats-list:empty::before {
+  color: var(--color-text-tertiary);
+  font-size: .9rem;
+  font-weight: 650;
+}
+
+@media (max-width: 700px) {
+  .account-create-panel,
+  .one-click-modal,
+  .prompt-io-help-modal { width: min(100% - 20px, 560px); padding: 1rem !important; }
+  .storyboard-bg-body,
+  .style-ref-view { grid-template-columns: 1fr !important; }
+  .storyboard-bg-column + .storyboard-bg-column { border-left: 0 !important; border-top: 1px solid #e8ecf6; }
+  .one-click-stage-list { grid-template-columns: 1fr !important; }
+}

@@ -77,3 +77,7 @@ _sandbox_test.txt
 
 # ZCode session runtime data
 .zcode/
+
+# Local downloaded fonts (not in repo)
+static/fonts/
+UI优化方案.md

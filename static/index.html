@@ -9,19 +9,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
-  <!-- Workspace UI visual lock: tokens and semantic components are loaded
-       around the legacy compatibility stylesheet without changing DOM IDs. -->
-  <link rel="stylesheet" href="ui/fonts.css?v=20260910.1">
-  <link rel="stylesheet" href="ui/tokens.css?v=20260910.1">
-  <link rel="stylesheet" href="style.css?v=20260910.3">
-  <link rel="stylesheet" href="ui/components.css?v=20260910.1">
-  <link rel="stylesheet" href="ui/page_compositions.css?v=20260910.4">
-  <link rel="stylesheet" href="studio_polish.css?v=5">
+  <link rel="stylesheet" href="style.css?v=20260909.4">
 </head>
-<body class="wu">
+<body>
 
   <!-- 顶部导航栏 -->
-  <header class="app-header wu-shell-header">
+  <header class="app-header">
     <div class="logo">
       <div class="logo-icon">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width: 1.3rem; height: 1.3rem;">
@@ -63,10 +56,10 @@
   </header>
 
   <!-- 全局 Container -->
-  <main id="app-viewport" class="wu-app-viewport">
+  <main id="app-viewport">
     
     <!-- 首页: 项目管理 -->
-    <div id="page-home" class="main-content wu-page wu-page--working" data-width="working" style="padding: 2rem 4rem;">
+    <div id="page-home" class="main-content" style="padding: 2rem 4rem;">
       <div class="home-toolbar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.62rem; gap: 1rem; flex-wrap: wrap;">
         <h1 class="highlight-title">课程与项目</h1>
         <div style="display: flex; gap: 1rem;">
@@ -91,10 +84,10 @@
     </div>
 
     <!-- 工作区: 步骤条向导 + 主工作区 -->
-    <div id="page-workspace" class="app-container wu-page wu-page--wide" data-width="wide" style="display: none;">
+    <div id="page-workspace" class="app-container" style="display: none;">
       
       <!-- 左侧步骤条 -->
-      <aside class="sidebar wu-sidebar">
+      <aside class="sidebar">
         <ul class="stepper">
           <li class="step-item active" data-step="1">
             <div class="step-num">1</div>
@@ -143,10 +136,10 @@
       </aside>
 
       <!-- 右侧主展示区 -->
-      <section class="main-content wu-main" id="workspace-main">
+      <section class="main-content" id="workspace-main">
         
         <!-- ==================== 步骤 1: 导入文章 ==================== -->
-        <div id="step-panel-1" class="step-panel wu-view wu-view--step-1" style="display: none;">
+        <div id="step-panel-1" class="step-panel" style="display: none;">
           <div class="step1-heading-row workflow-header workflow-header--titlebar">
             <h2 class="highlight-title workflow-title">准备文章</h2>
             <button id="step1-btn-system-content" class="secondary" type="button">System Content</button>
@@ -187,7 +180,7 @@
         </div>
 
         <!-- ==================== 步骤 2: 分镜规划 ==================== -->
-        <div id="step-panel-2" class="step-panel wu-view wu-view--step-2" style="display: none;">
+        <div id="step-panel-2" class="step-panel" style="display: none;">
           
           <!-- 粘性吸顶栏容器：合并按钮与缩略图，使用不透明背景挡住滚上来的正文 -->
           <div class="step2-sticky-header workflow-header workflow-header--tabs">
@@ -261,7 +254,7 @@
         </div>
 
         <!-- ==================== 步骤 3: 图片生成与上传 ==================== -->
-        <div id="step-panel-3" class="step-panel wu-view wu-view--step-3" style="display: none;">
+        <div id="step-panel-3" class="step-panel" style="display: none;">
           <!-- 顶部控制栏 -->
           <div class="step3-toolbar-row workflow-header workflow-header--titlebar">
             <h2 class="highlight-title workflow-title">图片生成与管理</h2>
@@ -308,7 +301,7 @@
         </div>
 
         <!-- ==================== 步骤 5: 可选元素动画 ==================== -->
-        <div id="step-panel-5" class="step-panel wu-view wu-view--step-5" style="display: none;">
+        <div id="step-panel-5" class="step-panel" style="display: none;">
           <div class="step5-mask-header workflow-header workflow-header--stacked">
             <h2 class="highlight-title workflow-title">元素动画（可选）</h2>
             <div class="step5-toolbar workflow-toolbar">
@@ -386,7 +379,7 @@
         </div>
 
         <!-- ==================== 步骤 6 + 7: 旁白与音频 ==================== -->
-        <div id="step-panel-6" class="step-panel wu-view wu-view--step-6" style="display: none;">
+        <div id="step-panel-6" class="step-panel" style="display: none;">
           <div class="step6-compact-header workflow-header workflow-header--titlebar">
             <h2 class="highlight-title workflow-title">旁白与音频</h2>
             <div class="step6-header-actions workflow-toolbar">
@@ -427,7 +420,7 @@
         </div>
 
         <!-- ==================== 步骤 9: 数字人讲解（可选） ==================== -->
-        <div id="step-panel-9" class="step-panel wu-view wu-view--step-9" style="display: none;">
+        <div id="step-panel-9" class="step-panel" style="display: none;">
           <div class="step9-header workflow-header workflow-header--titlebar">
             <h2 class="highlight-title workflow-title">数字人讲解</h2>
             <div class="step9-header-actions workflow-toolbar">
@@ -560,7 +553,7 @@
         </div>
 
         <!-- ==================== 步骤 8: 作品输出 ==================== -->
-        <div id="step-panel-8" class="step-panel wu-view wu-view--step-8" style="display: none;">
+        <div id="step-panel-8" class="step-panel" style="display: none;">
           <div class="step8-header workflow-header workflow-header--titlebar">
             <div class="step8-output-title">
               <h2 class="highlight-title workflow-title">作品输出</h2>

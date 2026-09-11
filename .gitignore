@@ -34,8 +34,6 @@ outputs/*
 # Local caches and builds
 .cache/
 .tmp/
-.ui_tmp/
-.trae-html-share-packages/
 node_modules/
 dist/
 build/

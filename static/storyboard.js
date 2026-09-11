@@ -27,11 +27,7 @@ async function loadStep2Data() {
     state.step2DeleteSelection = new Set();
     state.step2BatchOriginalSlides = null;
     document.getElementById('step2-editor-area').style.display = 'none';
-    // 无分镜时仍呈现空状态引导条，避免大面积空白
-    const thumbsContainer = document.getElementById('step2-thumbs');
-    thumbsContainer.style.display = 'flex';
-    thumbsContainer.classList.remove('step2-batch-delete-mode');
-    thumbsContainer.innerHTML = '<div class="step2-empty-storyboard" role="status">还没有分镜，点击「AI 生成分镜」开始，或添加幻灯片 / 批量导入。</div>';
+    document.getElementById('step2-thumbs').style.display = 'none';
     if (!isManualMode()) {
       document.getElementById('step2-btn-generate').style.display = 'inline-flex';
       document.getElementById('step2-btn-generate').innerHTML = `<svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> AI 生成分镜`;

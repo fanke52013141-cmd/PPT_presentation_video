@@ -466,27 +466,23 @@ def synthesize_tts_resumable(project_id: str, db: Session):
         public_config.get("provider_extra") if project_runtime else "",
         get_setting("tts_provider_extra", "") if project_runtime is None else "",
     )
-    tts_speed = str(
-        snapshot_value("tts.speed", "") if project_runtime else ""
-        or (public_config.get("speed") if project_runtime else "")
-        or (get_setting("tts_speed", "1.2") if project_runtime is None else "")
-        or "1.2"
+    tts_speed = first_non_empty(
+        snapshot_value("tts.speed", "") if project_runtime else "",
+        public_config.get("speed") if project_runtime else "",
+        get_setting("tts_speed", "1.2"),
+        "1.2",
     )
-    tts_volume = str(
-        snapshot_value("tts.volume", "") if project_runtime else ""
-        or (public_config.get("volume") if project_runtime else "")
-        or (get_setting("tts_volume", "1.0") if project_runtime is None else "")
-        or "1.0"
+    tts_volume = first_non_empty(
+        snapshot_value("tts.volume", "") if project_runtime else "",
+        public_config.get("volume") if project_runtime else "",
+        get_setting("tts_volume", "1.0"),
+        "1.0",
     )
-    tts_pitch = str(
-        snapshot_value("tts.pitch", "") if project_runtime else ""
-        or (public_config.get("pitch") if project_runtime else "")
-        or (
-            get_setting("tts_pitch", "0" if provider == "minimax" else "1.0")
-            if project_runtime is None
-            else ""
-        )
-        or ("0" if provider == "minimax" else "1.0")
+    tts_pitch = first_non_empty(
+        snapshot_value("tts.pitch", "") if project_runtime else "",
+        public_config.get("pitch") if project_runtime else "",
+        get_setting("tts_pitch", "0" if provider == "minimax" else "1.0"),
+        "0" if provider == "minimax" else "1.0",
     )
     tts_concurrency = _bounded_tts_concurrency(
         provider,

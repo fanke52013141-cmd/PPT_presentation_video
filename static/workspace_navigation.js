@@ -156,6 +156,38 @@ async function selectProductionMode() {
   }
 }
 
+// [一键进度同步 20260912] 一键生成运行时，左侧步骤条实时挂"进行中"标记：
+// markStepperRunningStep 由一键轮询调用；updateStepperUI 每次重建步骤条后
+// 重新应用标记，保证导航/刷新不会抹掉进行中指示。
+let stepperRunningStep = null;
+let stepperRunningLabel = '';
+
+function applyStepperRunningMark() {
+  document.querySelectorAll('.step-item').forEach(item => {
+    item.classList.remove('one-click-running');
+    item.querySelectorAll('.step-running-tag').forEach(tag => tag.remove());
+  });
+  if (!stepperRunningStep) return;
+  const item = document.querySelector(`.step-item[data-step="${stepperRunningStep}"]`);
+  if (!item) return;
+  item.classList.add('one-click-running');
+  const tag = document.createElement('span');
+  tag.className = 'step-running-tag';
+  tag.innerText = stepperRunningLabel || '进行中';
+  item.appendChild(tag);
+}
+
+function markStepperRunningStep(step, label) {
+  const normalized = Number(step) || null;
+  const normalizedLabel = String(label || '').trim();
+  if (normalized === stepperRunningStep && normalizedLabel === stepperRunningLabel) return;
+  stepperRunningStep = normalized;
+  stepperRunningLabel = normalizedLabel;
+  applyStepperRunningMark();
+}
+
+window.markStepperRunningStep = markStepperRunningStep;
+
 function updateStepperUI(currentStep, stepStatus) {
   const activeStep = normalizeVisibleStep(currentStep);
   const context = projectFlowContext();
@@ -164,11 +196,13 @@ function updateStepperUI(currentStep, stepStatus) {
     const step = parseInt(item.dataset.step);
     item.className = 'step-item'; // 重置
     item.querySelectorAll('.step-status-tag').forEach(badge => badge.remove());
-    
+    item.querySelectorAll('.step-running-tag').forEach(badge => badge.remove());
+    item.classList.remove('one-click-running');
+
     if (step === activeStep) {
       item.classList.add('active');
     }
-    
+
     const status = getVisibleStepState(step, stepStatus, context);
     if (status === 'completed') {
       item.classList.add('completed');
@@ -180,6 +214,7 @@ function updateStepperUI(currentStep, stepStatus) {
       item.appendChild(badge);
     }
   });
+  applyStepperRunningMark();
 }
 
 async function refreshCurrentProjectStatus(activeStep = state.currentStep) {

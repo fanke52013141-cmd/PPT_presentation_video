@@ -102,3 +102,46 @@ function autoResizeTextarea(textarea) {
   textarea.style.height = 'auto';
   textarea.style.height = `${textarea.scrollHeight + 2}px`;
 }
+
+// [生图失败常驻提示 20260912] 左下角红色徽标：部分图片生成失败时持续可见，
+// 点击后消失；同一故障（相同 key）不会重复弹出，新的失败会重新提示。
+// 与自动消失的 toast 互补：toast 负责"发生了什么"，徽标负责"别漏看"。
+let failureBadgeLastKey = '';
+let failureBadgeDismissedKey = '';
+
+function showFailureBadge(key, message, detail) {
+  const badgeKey = String(key || message || '').trim();
+  const text = String(message || '').trim();
+  if (!text || badgeKey === failureBadgeDismissedKey) return;
+  failureBadgeLastKey = badgeKey;
+  let badge = document.getElementById('failure-badge');
+  if (!badge) {
+    badge = document.createElement('div');
+    badge.id = 'failure-badge';
+    badge.className = 'failure-badge';
+    badge.setAttribute('role', 'alert');
+    badge.addEventListener('click', () => {
+      failureBadgeDismissedKey = failureBadgeLastKey;
+      badge.remove();
+    });
+    document.body.appendChild(badge);
+  }
+  const dot = document.createElement('span');
+  dot.className = 'failure-badge-dot';
+  const body = document.createElement('div');
+  body.className = 'failure-badge-body';
+  const title = document.createElement('strong');
+  title.textContent = text;
+  body.appendChild(title);
+  const detailText = String(detail || '').trim();
+  if (detailText) {
+    const line = document.createElement('small');
+    line.textContent = detailText;
+    body.appendChild(line);
+  }
+  const hint = document.createElement('span');
+  hint.className = 'failure-badge-hint';
+  hint.textContent = '点击关闭';
+  badge.replaceChildren(dot, body, hint);
+  badge.style.display = 'flex';
+}

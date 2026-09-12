@@ -315,6 +315,35 @@
     }).join('');
     // 阶段变化时同步切换左侧 Tab 和对应内容面板。
     followActiveStage(status);
+    // [一键进度同步 20260912] 无论面板停在哪里，左侧步骤条都实时挂上
+    // 当前阶段的"进行中"标记；一键结束/失败/暂停后清除。
+    const runStateNow = (status && status.status) || 'idle';
+    if (runStateNow !== 'running') {
+      if (window.markStepperRunningStep) window.markStepperRunningStep(null, '');
+    } else {
+      const stageNow = (status && status.current_stage) || '';
+      const runningTargetStep = STAGE_TO_STEP[stageNow];
+      if (runningTargetStep && window.markStepperRunningStep) {
+        window.markStepperRunningStep(runningTargetStep, stageLabel(stageNow));
+      }
+    }
+    // [生图失败常驻提示 20260912] 一键在图片阶段暂停/失败时，左下角红点
+    // 常驻提醒（点击关闭）；其他阶段的失败仍以一键面板为准。
+    if ((runStateNow === 'paused' || runStateNow === 'failed') && window.showFailureBadge) {
+      const stageList = Array.isArray(status?.stages) ? status.stages : [];
+      const failedImageStage = stageList.find(item => item && ['images', 'confirm_images'].includes(String(item.id || ''))
+        && (item.status === 'failed' || item.status === 'paused' || (Array.isArray(item.blocking_errors) && item.blocking_errors.length)));
+      if (failedImageStage) {
+        const errors = Array.isArray(failedImageStage.blocking_errors) && failedImageStage.blocking_errors.length
+          ? failedImageStage.blocking_errors.join(' / ')
+          : (failedImageStage.message || '');
+        window.showFailureBadge(
+          `one-click:${status?.run_id || ''}:${failedImageStage.id}:${errors}`,
+          '部分图片生成失败，一键流程已暂停',
+          errors || '可在一键生成面板点击续跑，已成功的分镜会保留。'
+        );
+      }
+    }
     // [一键进度出口 20260904] 面板内注入当前阶段进度横幅
     renderStageProgressInPanel(status);
   }
@@ -323,6 +352,13 @@
     const projectId = activeProjectId();
     if (!projectId) throw new Error('当前没有可识别的项目，请先进入项目工作区。');
     const result = await apiGet(`/api/projects/${encodeURIComponent(projectId)}/one-click-generate/status`);
+    // [一键进度同步 20260912] 切换项目后重置阶段跟随去重，让新项目的
+    // 运行阶段在首次轮询时就能把左侧步骤带到正确位置，而不是停留在
+    // 上一个项目遗留的最后跟随阶段。
+    if (STATE.lastPolledProject !== projectId) {
+      STATE.lastPolledProject = projectId;
+      STATE.lastFollowedStage = '';
+    }
     // [轮询自愈 20260904] 任一路径成功即视为链路恢复：
     // 重置连续失败计数与连接告警标记，并记录本地刷新时刻供新鲜度展示。
     STATE.failCount = 0;

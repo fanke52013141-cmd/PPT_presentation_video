@@ -593,6 +593,14 @@ async function generateAllStep3Images() {
 
   if (failedSlides.length > 0) {
     showToast(`⚠️ 已生成 ${successCount} 张，失败：${failedSlides.join('、')}`, 5000);
+    // [生图失败常驻提示 20260912] 左下角红点常驻，点击关闭；新失败会重新出现
+    if (window.showFailureBadge) {
+      window.showFailureBadge(
+        `step3-batch:${projectId}:${failedSlides.join(',')}`,
+        `${failedSlides.length} 张图片生成失败`,
+        `失败分镜：${failedSlides.join('、')}；已成功 ${successCount} 张，可单独重试失败的分镜。`
+      );
+    }
   } else {
     showToast(`✅ ${successCount} 张图片已全部生成完成！`);
   }

@@ -8800,10 +8800,12 @@ details[open] .ip-character-advanced-summary::before {
   color: var(--color-primary-text);
   font-weight: 800;
 }
-body.step5-full-frame #step-panel-5 .workspace-split,
-body.step5-full-frame #step-panel-5 #step5-thumbs,
-body.step5-full-frame #step-panel-5 .step5-toolbar { display: none !important; }
-body.step5-full-frame #step-panel-5 .step5-presentation-mode { margin-bottom: 0; }
+/* “整页展示” only selects the rendering outcome.  It must never remove the
+   AI Mask authoring tools: users need to be able to inspect, run AI labeling,
+   or switch back to per-element presentation without losing their workspace. */
+body.step5-full-frame #step-panel-5 .workspace-split { display: grid !important; }
+body.step5-full-frame #step-panel-5 #step5-thumbs { display: flex !important; }
+body.step5-full-frame #step-panel-5 .step5-toolbar { display: flex !important; }
 @media (max-width: 760px) {
   .step5-presentation-mode { align-items: stretch; flex-direction: column; }
   .step5-presentation-actions { width: 100%; }

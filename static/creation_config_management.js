@@ -815,21 +815,21 @@
     text: {
       title: '新增文本模型',
       description: '适用于文章、分镜、可视化、旁白标注和 AI Mask。',
-      action: '保存文本模型',
+      action: '另存为文本模型模板',
       name: '例如：豆包写作模型',
       model: '例如：doubao-seed-2-1-turbo-260628',
     },
     image: {
       title: '新增图片模型',
       description: '适用于整页图片生成；使用兼容 OpenAI Images API 的服务。',
-      action: '保存图片模型',
+      action: '另存为图片模型模板',
       name: '例如：GPT Image 图片模型',
       model: '例如：gpt-image-2',
     },
     tts: {
       title: '新增语音模型',
       description: 'MiniMax 使用云端 Token；ComfyUI / IndexTTS 使用本地工作流，不需要 API 密钥。',
-      action: '保存语音模型',
+      action: '另存为语音模型模板',
       name: '例如：自然讲解语音',
       model: '',
     },
@@ -884,7 +884,7 @@
     const isEditing = !!editing && editing.kind === kind;
     if (title) title.textContent = isEditing ? `编辑${{ text: '文本', image: '图片', tts: '语音' }[kind]}模型` : copy.title;
     if (description) description.textContent = copy.description;
-    if (action) action.textContent = isEditing ? '保存修改（创建新版本）' : copy.action;
+    if (action) action.textContent = isEditing ? '保存修改' : copy.action;
     const name = element('model-form-name');
     const model = element('model-form-model');
     if (name) name.placeholder = copy.name;
@@ -934,7 +934,7 @@
     if (state.loading || !window.API) return;
     state.loading = true;
     const statuses = [element('model-management-status')].filter(Boolean);
-    statuses.forEach(status => { status.textContent = '正在加载…'; });
+    statuses.forEach(status => { status.textContent = ''; });
     try {
       const [packagesResponse, connectionsResponse, credentialsResponse, defaultsResponse, accountResponse, stylesResponse] = await Promise.all([
         window.API.get('/api/creation-configs'),
@@ -979,9 +979,9 @@
         if (defaultPackage) await editPackage(defaultPackage);
         else resetCreationConfigEditor();
       }
-      statuses.forEach(status => {
-        status.textContent = `已加载 ${state.packages.length} 个创作配置包和 ${state.connections.length} 个模型。`;
-      });
+      // The management screen communicates state through its lists and
+      // controls; no redundant aggregate status banner is shown.
+      statuses.forEach(status => { status.textContent = ''; });
     } catch (error) {
       statuses.forEach(status => { status.textContent = '加载失败，请检查服务状态后重试。'; });
       requestError('无法加载创作配置管理数据', error);
@@ -1278,7 +1278,7 @@
       else await window.API.post('/api/model-connections', payload);
       state.editingConnectionId = null;
       clearModelForm();
-      toast(isEditing ? '模型修改已保存为新版本' : `${MODEL_KIND_COPY[kind].title.replace('新增', '')}已保存`);
+      toast(isEditing ? '模型修改已保存' : `${MODEL_KIND_COPY[kind].title.replace('新增', '')}模板已保存`);
       await refreshCreationConfigManagement();
       updateModelSetupForm();
     } catch (error) {

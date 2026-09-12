@@ -1,0 +1,1756 @@
+/*
+ * Stitch screen contract
+ * -----------------------
+ * The supplied Stitch exports (code.html + screen.png) are the visual
+ * authority for the application.  This file is deliberately loaded after
+ * style.css so legacy compatibility rules cannot change the exported
+ * geometry.  It only changes presentation; event handlers, IDs and routes
+ * remain owned by the existing feature modules.
+ */
+
+:root {
+  --stitch-page: #faf9fb;
+  --stitch-canvas: #f6f7fb;
+  --stitch-card: #ffffff;
+  --stitch-subtle: #f4f2f6;
+  --stitch-line: #eae8ed;
+  --stitch-border: #e2e0e6;
+  --stitch-dark: #1e1d22;
+  --stitch-muted: #9a97a2;
+  --stitch-brand: #f46a38;
+  --stitch-brand-hover: #dc5121;
+  --stitch-brand-soft: #fff7f4;
+  --stitch-green: #10b981;
+  --stitch-navy: #111827;
+  --stitch-radius-sm: 8px;
+  --stitch-radius-md: 12px;
+  --stitch-radius-lg: 18px;
+  --stitch-shadow-card: 0 1px 2px rgba(30, 29, 34, .035);
+  --stitch-shadow-float: 0 14px 36px rgba(30, 29, 34, .12);
+}
+
+* { box-sizing: border-box; }
+
+html,
+body {
+  min-width: 1024px;
+  height: 100%;
+  background: var(--stitch-page) !important;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--stitch-dark) !important;
+  font-family: "Plus Jakarta Sans", "Noto Sans SC", Inter, system-ui, sans-serif !important;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+button,
+input,
+select,
+textarea { font: inherit; }
+
+button { cursor: pointer; }
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid rgba(244, 106, 56, .62) !important;
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d9d6de; border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: #c9c5cf; }
+
+/* -----------------------------------------------------------------------
+ * Shared header
+ * -------------------------------------------------------------------- */
+
+body > .app-header,
+header.app-header {
+  z-index: 50;
+  display: flex !important;
+  flex: 0 0 56px !important;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 56px !important;
+  height: 56px;
+  margin: 0 !important;
+  padding: 0 24px !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--stitch-line) !important;
+  border-radius: 0 !important;
+  background: rgba(255, 255, 255, .96) !important;
+  box-shadow: 0 1px 2px rgba(30, 29, 34, .025) !important;
+  backdrop-filter: blur(10px);
+}
+
+header.app-header > div:last-child {
+  display: flex;
+  align-items: center;
+  gap: 6px !important;
+  min-width: 0;
+}
+
+.logo {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 10px !important;
+  min-width: 0 !important;
+  color: var(--stitch-dark) !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  letter-spacing: -.02em;
+}
+
+.logo-icon {
+  display: grid !important;
+  width: 32px !important;
+  height: 32px !important;
+  place-items: center;
+  border: 0 !important;
+  border-radius: 9px !important;
+  background: var(--stitch-navy) !important;
+  color: #fff !important;
+  box-shadow: 0 2px 7px rgba(17, 24, 39, .14);
+}
+
+.logo-icon .icon { width: 16px !important; height: 16px !important; }
+
+.account-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.account-picker {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 148px;
+  height: 34px !important;
+  min-height: 34px !important;
+  padding: 0 10px 0 12px !important;
+  border: 1px solid var(--stitch-border) !important;
+  border-radius: var(--stitch-radius-sm) !important;
+  background: var(--stitch-card) !important;
+  color: #3f3b44 !important;
+  box-shadow: none !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+}
+
+.account-picker:hover { border-color: #c9c5cf !important; background: #fcfbfc !important; }
+.account-picker-chevron { border-color: #8e8994 !important; }
+
+#btn-create-account,
+#btn-edit-current-account {
+  display: inline-grid !important;
+  width: 34px !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  padding: 0 !important;
+  place-items: center;
+  border: 1px solid var(--stitch-border) !important;
+  border-radius: var(--stitch-radius-sm) !important;
+  background: var(--stitch-card) !important;
+  color: #4b4650 !important;
+  box-shadow: none !important;
+}
+
+#btn-create-account:hover { border-color: var(--stitch-brand) !important; color: var(--stitch-brand-hover) !important; }
+#btn-edit-current-account:hover { border-color: #bdb8c1 !important; color: var(--stitch-dark) !important; }
+
+body:not(.workspace-open) .header-config-action,
+body:not(.workspace-open) #btn-config-export,
+body:not(.workspace-open) #btn-config-import {
+  position: relative;
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 10px !important;
+  border: 0 !important;
+  border-radius: 6px !important;
+  background: transparent !important;
+  color: #5f5a65 !important;
+  box-shadow: none !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+}
+
+body:not(.workspace-open) .header-config-action:hover,
+body:not(.workspace-open) #btn-config-export:hover,
+body:not(.workspace-open) #btn-config-import:hover {
+  background: transparent !important;
+  color: var(--stitch-brand-hover) !important;
+}
+
+body:not(.workspace-open) .header-config-action::after,
+body:not(.workspace-open) #btn-config-export::after,
+body:not(.workspace-open) #btn-config-import::after {
+  right: 10px;
+  bottom: 3px;
+  left: 10px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--stitch-brand);
+  transform: scaleX(0);
+  transition: transform .18s ease;
+}
+
+body:not(.workspace-open) .header-config-action:hover::after,
+body:not(.workspace-open) #btn-config-export:hover::after,
+body:not(.workspace-open) #btn-config-import:hover::after { transform: scaleX(1); }
+
+/* -----------------------------------------------------------------------
+ * Workspace shell: white workflow rail runs to the bottom of the viewport.
+ * -------------------------------------------------------------------- */
+
+#app-viewport {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+body.workspace-open #page-home { display: none !important; }
+body.workspace-open #page-workspace { display: flex !important; }
+body:not(.workspace-open) #page-workspace { display: none !important; }
+
+.app-container {
+  display: flex !important;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  height: 100% !important;
+  overflow: hidden;
+  background: var(--stitch-canvas) !important;
+}
+
+.sidebar {
+  display: flex !important;
+  flex: 0 0 320px;
+  flex-direction: column;
+  align-self: stretch !important;
+  width: 320px !important;
+  height: 100% !important;
+  min-height: 0;
+  margin: 0 !important;
+  padding: 18px 14px 16px !important;
+  overflow: hidden auto;
+  border: 0 !important;
+  border-right: 1px solid var(--stitch-line) !important;
+  border-radius: 0 !important;
+  background: var(--stitch-card) !important;
+  box-shadow: none !important;
+}
+
+/* Desktop workbench: reduce the workflow rail by a quarter, returning the
+   freed width to the working canvas on the right. */
+body.workspace-open .sidebar {
+  flex-basis: 240px !important;
+  width: 240px !important;
+  padding-inline: 12px !important;
+}
+body.workspace-open .sidebar .step-item {
+  grid-template-columns: 26px 18px minmax(0, 1fr) 16px !important;
+  gap: 6px !important;
+  padding-inline: 6px !important;
+}
+
+/* AI Mask is always an available authoring stage. Full-frame is a render
+   choice, not a reason to hide the canvas, slide tabs, or annotation tools. */
+body.step5-full-frame #step-panel-5 .workspace-split,
+body.step5-full-frame #step-panel-5 #step5-thumbs,
+body.step5-full-frame #step-panel-5 .step5-toolbar {
+  display: flex !important;
+}
+body.step5-full-frame #step-panel-5 .workspace-split { display: grid !important; }
+
+/* Digital-human settings follow the supplied three-column workstation:
+   operation controls, framing canvas, then precise adjustments. */
+#step-panel-9 #digital-human-panel {
+  margin-top: 0 !important;
+  padding: 24px !important;
+  border: 1px solid #edf0f4 !important;
+  border-radius: 18px !important;
+  background: #fff !important;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .04) !important;
+}
+#step-panel-9 .dh-panel-header {
+  padding-bottom: 18px;
+  border-bottom: 1px solid #edf0f4;
+}
+#step-panel-9 .dh-settings-title {
+  margin: 18px 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  color: #64748b !important;
+  font-size: 13px !important;
+}
+#step-panel-9 .dh-grid {
+  grid-template-columns: minmax(210px, 3fr) minmax(320px, 5fr) minmax(270px, 4fr) !important;
+  gap: 24px !important;
+}
+#step-panel-9 .dh-field {
+  min-width: 0;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+#step-panel-9 .dh-mode-toggle,
+#step-panel-9 .dh-shape-toggle { padding: 4px; border-color: #e2e8f0; background: #f8fafc; }
+#step-panel-9 .dh-tab-btn.dh-tab-active,
+#step-panel-9 .dh-shape-toggle button.dh-shape-active { background: #fff; color: #1f2937; box-shadow: 0 1px 3px rgba(15,23,42,.12); }
+#step-panel-9 .dh-circle-canvas { border-color: #e2e8f0; background-color: #f1f5f9; }
+
+.sidebar .stepper {
+  position: relative;
+  display: flex !important;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 4px !important;
+  margin: 0;
+  padding: 0 !important;
+  list-style: none;
+}
+
+.sidebar .step-item {
+  display: grid !important;
+  grid-template-columns: 28px 20px minmax(0, 1fr) 18px !important;
+  align-items: center;
+  gap: 8px !important;
+  width: 100%;
+  height: 44px !important;
+  min-height: 44px !important;
+  padding: 5px 8px !important;
+  border: 1px solid transparent !important;
+  border-radius: 10px !important;
+  background: transparent !important;
+  color: #5e5964 !important;
+  box-shadow: none !important;
+}
+
+.sidebar .step-item:hover { background: #faf9fb !important; }
+.sidebar .step-item.active { border-color: #fed9cb !important; background: var(--stitch-brand-soft) !important; color: var(--stitch-brand-hover) !important; }
+.sidebar .step-num {
+  display: grid !important;
+  width: 26px !important;
+  height: 26px !important;
+  min-width: 26px;
+  place-items: center;
+  border: 0 !important;
+  border-radius: 50%;
+  background: #f0eef3 !important;
+  color: #8b8691 !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+}
+.sidebar .step-item.active .step-num { background: var(--stitch-brand) !important; color: #fff !important; }
+.sidebar .step-item.completed:not(.active) .step-num { background: #ecfdf5 !important; color: #059669 !important; }
+.sidebar .step-icon { display: grid; width: 18px !important; height: 18px !important; place-items: center; color: #aaa5af !important; }
+.sidebar .step-icon svg { width: 16px !important; height: 16px !important; }
+.sidebar .step-item.active .step-icon { color: var(--stitch-brand) !important; }
+.sidebar .step-label { min-width: 0; overflow: hidden; color: inherit !important; font-size: 12px !important; font-weight: 600 !important; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar .step-complete { display: grid !important; width: 17px !important; height: 17px !important; place-items: center; border-radius: 50%; background: #e5e2e8 !important; color: #fff !important; font-size: 10px !important; }
+.sidebar .step-item.completed:not(.active) .step-complete { background: var(--stitch-green) !important; }
+.sidebar .step-item.active .step-complete { width: 8px !important; height: 8px !important; background: var(--stitch-brand) !important; color: transparent !important; }
+
+.one-click-sidebar-entry { flex: 0 0 auto; margin: 16px 0 0 !important; }
+#btn-one-click-generate { min-height: 42px !important; border: 0 !important; border-radius: 10px !important; background: var(--stitch-brand) !important; box-shadow: 0 7px 16px rgba(244, 106, 56, .18) !important; }
+
+#workspace-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 28px 32px 36px !important;
+  overflow: auto;
+  background: var(--stitch-canvas) !important;
+}
+
+.workflow-header,
+.step2-sticky-header,
+.step3-toolbar-row,
+.step5-mask-header,
+.step6-compact-header,
+.step8-header {
+  margin: 0 0 18px !important;
+  padding: 0 0 14px !important;
+  border-bottom: 1px solid var(--stitch-line) !important;
+  background: transparent !important;
+}
+
+.workflow-title,
+.highlight-title {
+  color: var(--stitch-dark) !important;
+  font-family: "Plus Jakarta Sans", "Noto Sans SC", sans-serif !important;
+  font-size: 21px !important;
+  font-weight: 700 !important;
+  letter-spacing: -.035em;
+}
+
+.workflow-title::before,
+.step3-toolbar-row .highlight-title::before,
+.step5-mask-header .highlight-title::before,
+.step6-compact-header .highlight-title::before,
+.step8-header .highlight-title::before {
+  width: 4px !important;
+  height: 24px !important;
+  margin-right: 10px !important;
+  border-radius: 3px;
+  background: var(--stitch-brand) !important;
+}
+
+/* All regular panels/cards use the quiet white surface from the exports. */
+.step-panel > .card,
+.step-panel .card,
+.step2-slide-editor,
+.step3-image-card,
+.step6-slide-row,
+.step7-audio-card,
+.step-plain-section,
+.step8-output-card,
+.step9-card {
+  border: 1px solid var(--stitch-border) !important;
+  border-radius: var(--stitch-radius-lg) !important;
+  background: var(--stitch-card) !important;
+  box-shadow: var(--stitch-shadow-card) !important;
+}
+
+button.success,
+.btn.success,
+.btn-next-step.success {
+  min-height: 36px;
+  border: 1px solid var(--stitch-navy) !important;
+  border-radius: var(--stitch-radius-sm) !important;
+  background: var(--stitch-navy) !important;
+  color: #fff !important;
+  box-shadow: 0 2px 6px rgba(17, 24, 39, .14) !important;
+}
+
+button.success:hover,
+.btn.success:hover,
+.btn-next-step.success:hover { border-color: #273244 !important; background: #273244 !important; transform: none !important; }
+
+/* Coral is reserved for generation/creation actions, as in the Stitch set. */
+#step2-btn-generate,
+#step3-btn-batch-generate,
+#step3-btn-generate,
+#step8-btn-render,
+#step9-btn-generate,
+#btn-create-course,
+#btn-create-project,
+#step1-btn-generate-article {
+  border-color: var(--stitch-brand) !important;
+  background: var(--stitch-brand) !important;
+  color: #fff !important;
+}
+#step2-btn-generate:hover,
+#step3-btn-batch-generate:hover,
+#step3-btn-generate:hover,
+#step8-btn-render:hover,
+#step9-btn-generate:hover,
+#btn-create-course:hover,
+#btn-create-project:hover,
+#step1-btn-generate-article:hover { border-color: var(--stitch-brand-hover) !important; background: var(--stitch-brand-hover) !important; }
+
+button.secondary,
+.secondary,
+button:not(.success):not(.danger) {
+  border-radius: var(--stitch-radius-sm) !important;
+}
+
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  border-color: #d9d6df !important;
+  border-radius: 10px !important;
+  background: #fff !important;
+  color: var(--stitch-dark) !important;
+}
+input:not([type="checkbox"]):not([type="radio"]):focus,
+select:focus,
+textarea:focus { border-color: var(--stitch-brand) !important; box-shadow: 0 0 0 3px rgba(244, 106, 56, .12) !important; }
+
+/* Modal surfaces from the supplied model/settings screens. */
+.modal-overlay {
+  z-index: 100 !important;
+  background: rgba(15, 23, 42, .34) !important;
+  backdrop-filter: blur(4px);
+}
+.modal-content {
+  max-width: min(960px, calc(100vw - 64px)) !important;
+  max-height: min(90vh, 920px) !important;
+  padding: 24px !important;
+  border: 1px solid var(--stitch-border) !important;
+  border-radius: 20px !important;
+  background: #fff !important;
+  box-shadow: var(--stitch-shadow-float) !important;
+}
+.modal-content h3,
+.modal-content h2 { color: var(--stitch-dark) !important; font-size: 20px !important; letter-spacing: -.025em; }
+.config-editor-actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 18px; border-top: 1px solid var(--stitch-line); }
+.model-kind-tabs,
+.tab-list,
+.tabs { display: inline-flex; gap: 4px; padding: 4px; border-radius: 10px; background: var(--stitch-subtle); }
+.model-kind-tab,
+.tab-item { border: 0 !important; border-radius: 7px !important; background: transparent !important; color: #76717c !important; }
+.model-kind-tab.active,
+.tab-item.active { background: #fff !important; color: var(--stitch-brand-hover) !important; box-shadow: var(--stitch-shadow-card); }
+.model-setup-grid,
+.creation-config-grid,
+.subtitle-settings-layout,
+.config-editor-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+
+/* -----------------------------------------------------------------------
+ * Homepage — exact Stitch shell: 288px rail + roomy main canvas.
+ * -------------------------------------------------------------------- */
+
+body:not(.workspace-open) #page-home {
+  display: flex !important;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100% !important;
+  padding: 0 !important;
+  overflow: hidden;
+  background: var(--stitch-page) !important;
+}
+
+body:not(.workspace-open) #page-home > .home-toolbar { display: none !important; }
+body:not(.workspace-open) #project-list { display: flex; flex: 1 1 auto; min-height: 0; height: 100% !important; }
+body:not(.workspace-open) #page-home .stitch-home-layout {
+  display: flex !important;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  height: 100% !important;
+  overflow: hidden;
+}
+body:not(.workspace-open) #page-home .stitch-home-sidebar {
+  display: flex !important;
+  flex: 0 0 288px !important;
+  flex-direction: column;
+  width: 288px !important;
+  min-width: 288px;
+  height: 100% !important;
+  min-height: 0;
+  padding: 0 !important;
+  border: 0 !important;
+  border-right: 1px solid var(--stitch-line) !important;
+  border-radius: 0 !important;
+  background: #fff !important;
+  box-shadow: none !important;
+}
+body:not(.workspace-open) #page-home .stitch-sidebar-body {
+  display: block !important;
+  flex: 1 1 auto !important;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 12px 14px 10px !important;
+}
+body:not(.workspace-open) #page-home .stitch-sidebar-footer {
+  flex: 0 0 auto !important;
+  margin: 0 !important;
+  padding: 12px 14px 14px !important;
+  border-top: 1px solid var(--stitch-line) !important;
+  background: #fff !important;
+}
+
+body:not(.workspace-open) #page-home .stitch-course-tree {
+  display: block !important;
+  min-height: 0;
+  height: auto !important;
+  overflow: visible;
+  gap: 0 !important;
+}
+body:not(.workspace-open) #page-home .stitch-curriculum-group {
+  display: block !important;
+  min-height: 0;
+  overflow: visible;
+  padding-bottom: 8px;
+}
+body:not(.workspace-open) #page-home .stitch-standalone-group {
+  display: block !important;
+  flex: none;
+  min-height: 0;
+  overflow: visible;
+  padding-top: 8px;
+  border-top: 1px solid var(--stitch-line);
+}
+body:not(.workspace-open) #page-home .stitch-standalone-group:empty {
+  display: none !important;
+}
+body:not(.workspace-open) #page-home .stitch-tree-section-heading {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between !important;
+  min-height: 28px !important;
+  padding: 5px 6px 4px !important;
+  color: #a8a3ae !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: .045em;
+  white-space: nowrap;
+}
+body:not(.workspace-open) #page-home .stitch-tree-add-course {
+  display: grid !important;
+  width: 20px !important;
+  height: 20px !important;
+  min-height: 20px !important;
+  padding: 0 !important;
+  place-items: center;
+  border: 0 !important;
+  border-radius: 5px !important;
+  background: transparent !important;
+  color: #8c8792 !important;
+}
+body:not(.workspace-open) #page-home .stitch-tree-add-course:hover { background: #f1eff3 !important; color: var(--stitch-brand-hover) !important; }
+body:not(.workspace-open) #page-home .stitch-tree-add-course svg { width: 14px !important; height: 14px !important; }
+
+/* All videos selector: soft orange row; creation actions are a line-separated
+   hover menu, with no rectangular action-button backgrounds. */
+body:not(.workspace-open) #page-home .stitch-all-videos-wrap {
+  position: relative;
+  display: flex !important;
+  align-items: stretch;
+  flex: 0 0 auto;
+  gap: 2px;
+  margin-bottom: 10px;
+  padding: 0 5px 0 3px !important;
+  border: 1px solid rgba(254, 217, 203, .78) !important;
+  border-radius: 12px !important;
+  background: var(--stitch-brand-soft) !important;
+  box-shadow: 0 1px 2px rgba(183, 60, 19, .04) !important;
+}
+body:not(.workspace-open) #page-home .stitch-all-videos-selector {
+  display: flex !important;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  min-height: 40px !important;
+  padding: 0 7px !important;
+  border: 0 !important;
+  border-radius: 9px !important;
+  background: transparent !important;
+  color: var(--stitch-brand-hover) !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  text-align: left;
+}
+body:not(.workspace-open) #page-home .stitch-all-videos-leading { display: inline-flex; align-items: center; gap: 9px; min-width: 0; }
+body:not(.workspace-open) #page-home .stitch-all-videos-leading > svg {
+  width: 26px !important;
+  height: 26px !important;
+  padding: 6px !important;
+  border-radius: 8px;
+  background: rgba(244, 106, 56, .1);
+  color: var(--stitch-brand-hover);
+}
+body:not(.workspace-open) #page-home .stitch-all-videos-overflow .tree-overflow-trigger {
+  width: 26px !important;
+  height: 26px !important;
+  align-self: center;
+  border: 0 !important;
+  border-radius: 6px !important;
+  background: transparent !important;
+  color: var(--stitch-brand-hover) !important;
+}
+body:not(.workspace-open) #page-home .stitch-all-videos-overflow .tree-overflow-trigger:hover { background: rgba(244, 106, 56, .12) !important; }
+body:not(.workspace-open) #page-home .stitch-all-videos-overflow .tree-overflow-menu {
+  top: calc(100% + 5px);
+  right: -1px;
+  min-width: 148px;
+  padding: 5px 0;
+}
+body:not(.workspace-open) #page-home .stitch-all-videos-wrap:hover .tree-overflow-menu:not(.is-open),
+body:not(.workspace-open) #page-home .stitch-all-videos-wrap:focus-within .tree-overflow-menu:not(.is-open) { display: flex !important; }
+
+/* The course/chapter plus and more glyphs stay visible and share one x-axis. */
+body:not(.workspace-open) #page-home .stitch-course-header,
+body:not(.workspace-open) #page-home .stitch-chapter-header,
+body:not(.workspace-open) #page-home .stitch-standalone-header {
+  display: flex !important;
+  align-items: center;
+  justify-content: flex-start !important;
+  min-width: 0;
+  gap: 7px !important;
+  border-radius: 8px !important;
+  transition: background-color .15s ease, transform .15s ease;
+}
+body:not(.workspace-open) #page-home .stitch-course-header { min-height: 34px; padding: 4px 6px !important; color: #26262b !important; font-size: 13px !important; }
+body:not(.workspace-open) #page-home .stitch-chapter-header { min-height: 30px; padding: 3px 6px !important; color: #3f3b44 !important; font-size: 12.5px !important; }
+body:not(.workspace-open) #page-home .stitch-course-header:hover,
+body:not(.workspace-open) #page-home .stitch-chapter-header:hover,
+body:not(.workspace-open) #page-home .stitch-standalone-header:hover { background: #f5f4f6 !important; transform: translateX(2px); }
+body:not(.workspace-open) #page-home .stitch-course-header .course-name,
+body:not(.workspace-open) #page-home .stitch-chapter-header .chapter-name,
+body:not(.workspace-open) #page-home .stitch-standalone-header .course-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body:not(.workspace-open) #page-home .stitch-course-header .course-name { font-weight: 600 !important; }
+body:not(.workspace-open) #page-home .stitch-chapter-header .chapter-name { font-weight: 500 !important; }
+body:not(.workspace-open) #page-home .stitch-course-header > .stitch-ic,
+body:not(.workspace-open) #page-home .stitch-chapter-header > .stitch-ic { flex: 0 0 auto; color: #9a97a2; }
+body:not(.workspace-open) #page-home .tree-toggle {
+  display: grid !important;
+  width: 14px !important;
+  height: 14px !important;
+  min-height: 14px !important;
+  padding: 0 !important;
+  place-items: center;
+  border: 0 !important;
+  border-radius: 4px !important;
+  background: transparent !important;
+  color: #9a97a2 !important;
+}
+body:not(.workspace-open) #page-home .tree-toggle svg { width: 13px !important; height: 13px !important; }
+body:not(.workspace-open) #page-home .tree-inline-add,
+body:not(.workspace-open) #page-home .tree-overflow-trigger {
+  display: grid !important;
+  flex: 0 0 20px;
+  width: 20px !important;
+  height: 20px !important;
+  min-height: 20px !important;
+  padding: 0 !important;
+  place-items: center;
+  border: 0 !important;
+  border-radius: 5px !important;
+  background: transparent !important;
+  color: #a8a3ae !important;
+}
+body:not(.workspace-open) #page-home .stitch-course-header .tree-overflow-trigger,
+body:not(.workspace-open) #page-home .stitch-chapter-header .tree-overflow-trigger {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+body:not(.workspace-open) #page-home .tree-inline-add { margin-left: auto; }
+body:not(.workspace-open) #page-home .tree-inline-add + .tree-overflow { margin-left: 0; }
+body:not(.workspace-open) #page-home .tree-inline-add:hover,
+body:not(.workspace-open) #page-home .tree-overflow-trigger:hover { background: #eeecef !important; color: var(--stitch-brand-hover) !important; }
+body:not(.workspace-open) #page-home .tree-inline-add svg,
+body:not(.workspace-open) #page-home .tree-overflow-trigger svg { width: 14px !important; height: 14px !important; }
+body:not(.workspace-open) #page-home .tree-overflow { position: relative; display: inline-flex; flex: 0 0 20px; }
+body:not(.workspace-open) #page-home .tree-overflow-menu {
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 142px;
+  padding: 5px 0;
+  border: 1px solid var(--stitch-border) !important;
+  border-radius: 9px !important;
+  background: #fff !important;
+  box-shadow: var(--stitch-shadow-float) !important;
+}
+body:not(.workspace-open) #page-home .stitch-course-node,
+body:not(.workspace-open) #page-home .stitch-chapter-node {
+  overflow: visible !important;
+}
+body:not(.workspace-open) #page-home .stitch-course-node:has(.tree-overflow-menu.is-open),
+body:not(.workspace-open) #page-home .stitch-chapter-node:has(.tree-overflow-menu.is-open) {
+  position: relative;
+  z-index: 50;
+}
+body:not(.workspace-open) #page-home .tree-overflow-item {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  min-height: 31px;
+  padding: 6px 12px;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: #4b4650 !important;
+  font-size: 12px !important;
+  text-align: left;
+}
+body:not(.workspace-open) #page-home .tree-overflow-item + .tree-overflow-item { border-top: 1px solid var(--stitch-line) !important; }
+body:not(.workspace-open) #page-home .tree-overflow-item:hover { background: #faf9fb !important; color: var(--stitch-dark) !important; }
+body:not(.workspace-open) #page-home .tree-overflow-item.is-danger { color: #d3382c !important; }
+
+body:not(.workspace-open) #page-home .stitch-course-children { margin-top: 1px !important; padding-left: 14px !important; }
+body:not(.workspace-open) #page-home .stitch-chapter-children { margin-left: 12px !important; padding: 2px 2px 2px 13px !important; border-left: 1px solid #e8e6eb !important; }
+/* Child rows retain their visual indent, while the right-side +/⋯ action
+   cluster uses the same rail edge as the parent course row. */
+body:not(.workspace-open) #page-home .stitch-course-children > .stitch-chapter-node { width: calc(100% + 16px); }
+body:not(.workspace-open) #page-home .stitch-chapter-header { width: 100%; }
+body:not(.workspace-open) #page-home .stitch-project-leaf { display: flex !important; min-height: 27px; padding: 4px 6px !important; border-radius: 6px !important; color: #5d5963 !important; font-size: 12px !important; }
+body:not(.workspace-open) #page-home .stitch-project-leaf:hover { background: #f5f3f6 !important; color: var(--stitch-dark) !important; transform: translateX(2px); }
+body:not(.workspace-open) #page-home .project-leaf-play { display: inline-flex; width: 14px !important; height: 14px !important; margin-right: 6px !important; align-items: center; justify-content: center; border-radius: 50%; background: #f3f2f5; color: #9a97a2; }
+body:not(.workspace-open) #page-home .project-leaf-play svg { width: 8px !important; height: 8px !important; }
+
+/* Independent videos occupy roughly 2/7 of the rail, not the whole page. */
+body:not(.workspace-open) #page-home .stitch-standalone-group .stitch-tree-section-heading { padding-top: 2px !important; }
+body:not(.workspace-open) #page-home .stitch-standalone-header { min-height: 30px; padding: 4px 6px !important; }
+body:not(.workspace-open) #page-home .stitch-standalone-header .course-name { font-size: 12.5px !important; color: #5d5963 !important; }
+
+body:not(.workspace-open) #page-home .stitch-sidebar-create-video {
+  display: flex !important;
+  width: 100%;
+  height: 40px !important;
+  min-height: 40px !important;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 12px !important;
+  border: 1px solid var(--stitch-border) !important;
+  border-radius: 9px !important;
+  background: #fff !important;
+  color: #3f3b44 !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+}
+body:not(.workspace-open) #page-home .stitch-sidebar-create-video:hover { border-color: var(--stitch-brand) !important; background: var(--stitch-brand-soft) !important; color: var(--stitch-brand-hover) !important; }
+body:not(.workspace-open) #page-home .stitch-sidebar-create-video svg { width: 16px !important; height: 16px !important; }
+
+/* Main course/video canvas. */
+body:not(.workspace-open) #page-home .stitch-home-main {
+  display: flex !important;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 28px 32px 34px !important;
+  overflow: auto;
+  background: var(--stitch-page) !important;
+}
+body:not(.workspace-open) #page-home .stitch-main-header { flex: 0 0 auto; margin: 0 0 22px !important; padding: 0 !important; }
+body:not(.workspace-open) #page-home .stitch-home-breadcrumb { margin-bottom: 6px !important; color: var(--stitch-muted) !important; font-size: 11px !important; font-weight: 600; }
+body:not(.workspace-open) #page-home .stitch-main-heading { display: flex !important; align-items: center !important; justify-content: space-between !important; gap: 24px; }
+body:not(.workspace-open) #page-home .stitch-main-title-wrap { min-width: 0; }
+body:not(.workspace-open) #page-home .home-library-main-title { margin: 0 !important; color: var(--stitch-dark) !important; font-size: 26px !important; font-weight: 700 !important; letter-spacing: -.045em; line-height: 1.15 !important; }
+body:not(.workspace-open) #page-home .stitch-search-tools { flex: 0 0 280px !important; width: 280px !important; min-width: 0; }
+body:not(.workspace-open) #page-home .stitch-search-field { position: relative; width: 100% !important; }
+body:not(.workspace-open) #page-home .stitch-search-input { width: 100% !important; height: 38px !important; min-height: 38px !important; padding: 0 12px 0 32px !important; border: 1px solid var(--stitch-border) !important; border-radius: 9px !important; background: #fff !important; font-size: 12px !important; }
+body:not(.workspace-open) #page-home .stitch-search-icon { position: absolute; z-index: 1; top: 50%; left: 10px; display: grid; width: 15px; height: 15px; place-items: center; color: #aaa6b0; pointer-events: none; transform: translateY(-50%); }
+body:not(.workspace-open) #page-home .stitch-search-icon svg { width: 15px; height: 15px; }
+body:not(.workspace-open) #page-home .stitch-video-grid {
+  display: grid !important;
+  flex: 0 0 auto;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 20px !important;
+  width: 100%;
+  padding-bottom: 24px !important;
+}
+body:not(.workspace-open) #page-home .stitch-video-card,
+body:not(.workspace-open) #page-home .stitch-new-video-card {
+  display: flex !important;
+  min-width: 0;
+  min-height: 0 !important;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--stitch-border) !important;
+  border-radius: var(--stitch-radius-md) !important;
+  background: #fff !important;
+  box-shadow: var(--stitch-shadow-card) !important;
+  transition: transform .25s cubic-bezier(.16, 1, .3, 1), border-color .25s ease, box-shadow .25s ease;
+}
+body:not(.workspace-open) #page-home .stitch-video-card:hover,
+body:not(.workspace-open) #page-home .stitch-new-video-card:hover { transform: translateY(-4px); border-color: rgba(244, 106, 56, .65) !important; box-shadow: 0 14px 30px rgba(30, 29, 34, .10) !important; }
+body:not(.workspace-open) #page-home .stitch-video-preview { position: relative; display: flex; width: 100%; aspect-ratio: 16 / 9 !important; min-height: 0 !important; flex: 0 0 auto; align-items: center; justify-content: center; overflow: hidden; border-radius: 0 !important; }
+body:not(.workspace-open) #page-home .stitch-preview-coral { background: linear-gradient(135deg, #fff0e9, #ffddd0) !important; color: var(--stitch-brand) !important; }
+body:not(.workspace-open) #page-home .stitch-preview-blue { background: linear-gradient(135deg, #edf5ff, #dbeafe) !important; color: #3b82f6 !important; }
+body:not(.workspace-open) #page-home .stitch-preview-violet { background: linear-gradient(135deg, #f5efff, #e9d5ff) !important; color: #8b5cf6 !important; }
+body:not(.workspace-open) #page-home .stitch-preview-green { background: linear-gradient(135deg, #eafaf0, #ccebd8) !important; color: #10b981 !important; }
+body:not(.workspace-open) #page-home .stitch-preview-neutral { background: linear-gradient(135deg, #f4f2f6, #eae8ed) !important; color: #7c7370 !important; }
+body:not(.workspace-open) #page-home .stitch-preview-warm { background: linear-gradient(135deg, #fdf9f4, #f4e8d8) !important; color: #ab5a25 !important; }
+body:not(.workspace-open) #page-home .stitch-video-pattern { position: absolute; inset: 0; opacity: .28; background-image: radial-gradient(currentColor 1px, transparent 1px); background-size: 12px 12px; }
+body:not(.workspace-open) #page-home .stitch-video-label { position: absolute; z-index: 2; top: 10px; left: 10px; max-width: calc(100% - 56px); overflow: hidden; padding: 3px 7px; border: 1px solid rgba(226, 224, 230, .85); border-radius: 6px; background: rgba(255, 255, 255, .9); color: #4b4650; font-size: 10px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+body:not(.workspace-open) #page-home .stitch-label-coral { color: var(--stitch-brand-hover); }
+body:not(.workspace-open) #page-home .stitch-label-blue { color: #5279b8; }
+body:not(.workspace-open) #page-home .stitch-label-violet { color: #7356a7; }
+body:not(.workspace-open) #page-home .stitch-label-green { color: #269a68; }
+body:not(.workspace-open) #page-home .stitch-video-more { position: absolute; z-index: 3; top: 9px; right: 9px; display: grid; width: 28px; height: 28px; place-items: center; padding: 0 !important; border: 0 !important; border-radius: 7px; background: transparent !important; color: #5d5963; }
+body:not(.workspace-open) #page-home .stitch-video-more:hover { background: rgba(255, 255, 255, .72) !important; color: var(--stitch-dark); }
+body:not(.workspace-open) #page-home .stitch-video-more svg { width: 16px !important; height: 16px !important; }
+body:not(.workspace-open) #page-home .stitch-video-play { position: relative; z-index: 2; display: grid; width: 40px; height: 40px; place-items: center; border-radius: 50%; background: rgba(30, 29, 34, .88); color: #fff; box-shadow: 0 4px 14px rgba(0, 0, 0, .15); transition: transform .22s ease, background .2s ease, box-shadow .2s ease; }
+body:not(.workspace-open) #page-home .stitch-video-card:hover .stitch-video-play { background: var(--stitch-brand); transform: scale(1.1); box-shadow: 0 8px 22px rgba(244, 106, 56, .32); }
+body:not(.workspace-open) #page-home .stitch-video-content { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; justify-content: space-between; padding: 12px !important; }
+body:not(.workspace-open) #page-home .stitch-video-name { margin: 0 !important; overflow: hidden; color: var(--stitch-dark) !important; font-size: 13px !important; font-weight: 700 !important; line-height: 1.4 !important; text-overflow: ellipsis; white-space: nowrap; }
+body:not(.workspace-open) #page-home .stitch-video-progress-block { margin-top: 12px !important; }
+body:not(.workspace-open) #page-home .stitch-video-progress-row { display: flex; align-items: center; justify-content: space-between; color: #75707b !important; font-size: 10px !important; }
+body:not(.workspace-open) #page-home .stitch-video-progress-row span:last-child { color: #278f68 !important; font-weight: 700; }
+body:not(.workspace-open) #page-home .stitch-video-progress { display: grid !important; grid-template-columns: repeat(7, minmax(0, 1fr)) !important; gap: 3px !important; width: 100%; height: 6px !important; margin-top: 6px !important; background: transparent !important; }
+body:not(.workspace-open) #page-home .stitch-progress-segment { display: block; height: 6px; border-radius: 999px; background: #e2e0e6 !important; }
+body:not(.workspace-open) #page-home .stitch-progress-segment.is-complete { background: #4db985 !important; }
+body:not(.workspace-open) #page-home .stitch-video-menu { position: absolute; z-index: 10; top: 43px; right: 9px; display: none !important; min-width: 118px; flex-direction: column; padding: 5px 0; border: 1px solid var(--stitch-border) !important; border-radius: 9px !important; background: #fff !important; box-shadow: var(--stitch-shadow-float) !important; }
+body:not(.workspace-open) #page-home .stitch-video-menu.is-open { display: flex !important; }
+body:not(.workspace-open) #page-home .stitch-video-menu .icon-action-btn { display: flex !important; width: 100%; min-height: 31px; align-items: center; gap: 8px; justify-content: flex-start; padding: 6px 12px !important; border: 0 !important; border-radius: 0 !important; background: transparent !important; color: #4b4650 !important; font-size: 12px !important; text-align: left; }
+body:not(.workspace-open) #page-home .stitch-video-menu .icon-action-btn + .icon-action-btn { border-top: 1px solid var(--stitch-line) !important; }
+body:not(.workspace-open) #page-home .stitch-video-menu .icon-action-btn:hover { background: #faf9fb !important; }
+body:not(.workspace-open) #page-home .stitch-video-menu .icon-action-btn.danger { color: #d3382c !important; }
+body:not(.workspace-open) #page-home .stitch-video-menu .icon-action-btn,
+body:not(.workspace-open) #page-home .tree-overflow-item {
+  display: grid !important;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  justify-content: initial;
+  text-align: center;
+}
+body:not(.workspace-open) #page-home .stitch-video-menu .icon-action-btn > svg,
+body:not(.workspace-open) #page-home .tree-overflow-item > svg { justify-self: start; }
+body:not(.workspace-open) #page-home .stitch-video-menu .action-label,
+body:not(.workspace-open) #page-home .tree-overflow-item > span { text-align: center; }
+body:not(.workspace-open) #page-home .stitch-new-video-card { min-height: 190px !important; align-items: center; justify-content: center; border: 2px dashed var(--stitch-border) !important; background: rgba(255, 255, 255, .62) !important; text-align: center; }
+body:not(.workspace-open) #page-home .stitch-new-video-icon { display: grid; width: 58px !important; height: 58px !important; min-height: 58px !important; place-items: center; border-radius: 12px !important; background: #fff1ec !important; color: var(--stitch-brand) !important; }
+body:not(.workspace-open) #page-home .stitch-new-video-icon svg { width: 24px; height: 24px; }
+body:not(.workspace-open) #page-home .stitch-new-video-content { display: flex; align-items: center; justify-content: center; padding: 10px 12px 0 !important; text-align: center; }
+body:not(.workspace-open) #page-home .stitch-new-video-name { color: var(--stitch-dark) !important; font-size: 13px !important; font-weight: 700 !important; }
+
+@media (max-width: 1240px) {
+  body:not(.workspace-open) #page-home .stitch-home-sidebar { flex-basis: 260px !important; width: 260px !important; min-width: 260px; }
+  body:not(.workspace-open) #page-home .stitch-home-main { padding-inline: 24px !important; }
+  body:not(.workspace-open) #page-home .stitch-video-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 14px !important;
+  }
+  #workspace-main { padding-inline: 24px !important; }
+}
+
+@media (max-width: 1080px) {
+  body:not(.workspace-open) #page-home .stitch-video-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+}
+
+@media (max-width: 1080px) {
+  html, body { min-width: 900px; }
+  header.app-header { padding-inline: 16px !important; }
+  header.app-header > div:last-child { gap: 2px !important; }
+  body:not(.workspace-open) .header-config-action,
+  body:not(.workspace-open) #btn-config-export,
+  body:not(.workspace-open) #btn-config-import { padding-inline: 6px !important; font-size: 11px !important; }
+  body:not(.workspace-open) #page-home .stitch-main-heading { gap: 12px; }
+  body:not(.workspace-open) #page-home .stitch-search-tools { flex-basis: 230px !important; width: 230px !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+
+/* -----------------------------------------------------------------------
+ * Final interaction/layout pass requested from the supplied screenshots.
+ * -------------------------------------------------------------------- */
+
+/* The complete rail is one scroll surface.  Curriculum, unarchived videos,
+   and the create-video action therefore never introduce nested scrollbars. */
+body:not(.workspace-open) #page-home .stitch-home-sidebar {
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+}
+body:not(.workspace-open) #page-home .stitch-sidebar-body {
+  flex: 0 0 auto !important;
+  overflow: visible !important;
+}
+body:not(.workspace-open) #page-home .stitch-sidebar-footer {
+  flex: 0 0 auto !important;
+}
+
+/* Direct hover opens the contextual actions; the trigger itself stays
+   transparent and never exposes a "更多操作" tooltip. */
+body:not(.workspace-open) #page-home .tree-overflow:hover > .tree-overflow-menu,
+body:not(.workspace-open) #page-home .tree-overflow:focus-within > .tree-overflow-menu,
+body:not(.workspace-open) #page-home .tree-overflow-trigger:hover + .tree-overflow-menu,
+body:not(.workspace-open) #page-home .tree-overflow-menu:hover,
+body:not(.workspace-open) #page-home .tree-overflow-menu.is-open {
+  display: flex !important;
+}
+body:not(.workspace-open) #page-home .tree-overflow:hover > .tree-overflow-menu:not(.is-open),
+body:not(.workspace-open) #page-home .stitch-video-preview:hover .stitch-video-menu:not(.is-open) {
+  display: none !important;
+}
+body:not(.workspace-open) #page-home .stitch-video-more:hover + .stitch-video-menu,
+body:not(.workspace-open) #page-home .stitch-video-menu:hover,
+body:not(.workspace-open) #page-home .stitch-video-menu.is-open {
+  display: flex !important;
+}
+body:not(.workspace-open) #page-home .stitch-video-preview {
+  /* The preview artwork remains inside the card, while its contextual menu
+     must be able to extend over the metadata row below. */
+  overflow: visible !important;
+}
+body:not(.workspace-open) #page-home .stitch-video-more:hover,
+body:not(.workspace-open) #page-home .tree-overflow-trigger:hover {
+  background: transparent !important;
+}
+
+/* A selected directory uses the same quiet orange treatment as the edit
+   controls, rather than a separate blue/purple state. */
+body:not(.workspace-open) #page-home .stitch-course-node.is-selected > .stitch-course-header,
+body:not(.workspace-open) #page-home .stitch-chapter-node.is-selected > .stitch-chapter-header,
+body:not(.workspace-open) #page-home .stitch-standalone-project.is-selected > .stitch-standalone-header {
+  border: 1px solid #fed9cb !important;
+  background: var(--stitch-brand-soft) !important;
+  color: var(--stitch-brand-hover) !important;
+  box-shadow: 0 1px 2px rgba(183, 60, 19, .05) !important;
+}
+body:not(.workspace-open) #page-home .stitch-course-node.is-selected .stitch-ic,
+body:not(.workspace-open) #page-home .stitch-chapter-node.is-selected .stitch-ic,
+body:not(.workspace-open) #page-home .stitch-standalone-project.is-selected .project-leaf-play {
+  color: var(--stitch-brand) !important;
+}
+
+/* Align the curriculum-level + with the course-row + (the row's ⋯ remains
+   in the next, shared action column). */
+body:not(.workspace-open) #page-home .stitch-curriculum-group > .stitch-tree-section-heading {
+  padding-right: 25px !important;
+}
+
+/* Sticky workflow headers are opaque, so scrolling content disappears behind
+   the reserved top region instead of painting through it. */
+body.workspace-open #workspace-main { isolation: isolate; }
+body.workspace-open #workspace-main > .step-panel > .workflow-header,
+body.workspace-open #workspace-main > .step-panel > .step2-sticky-header,
+body.workspace-open #workspace-main > .step-panel > .step3-toolbar-row,
+body.workspace-open #workspace-main > .step-panel > .step5-mask-header,
+body.workspace-open #workspace-main > .step-panel > .step6-compact-header,
+body.workspace-open #workspace-main > .step-panel > .step8-header,
+body.workspace-open #workspace-main > .step-panel > .step9-header,
+body.workspace-open #step-panel-1 .step1-heading-row {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 30 !important;
+  margin-top: -28px !important;
+  margin-bottom: 18px !important;
+  padding: 28px 0 14px !important;
+  border-bottom: 1px solid var(--stitch-line) !important;
+  background: #f8f9fc !important;
+  box-shadow: 0 8px 18px rgba(30, 29, 34, .05) !important;
+  isolation: isolate;
+  overflow: clip;
+}
+
+/* The output blocks have an inset surface matching the Stitch export; cards
+   never touch the page edge. */
+#step-panel-8 .step-plain-section {
+  margin: 18px 0 0 !important;
+  padding: 20px 24px !important;
+  border: 1px solid var(--stitch-border) !important;
+  border-radius: 16px !important;
+  background: #fff !important;
+  box-shadow: var(--stitch-shadow-card) !important;
+}
+#step-panel-8 .step8-section-heading {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px !important;
+}
+#step-panel-8 .step8-video-list,
+#step-panel-8 .step8-pptx-list { display: grid; gap: 14px; }
+#step-panel-8 .step8-video-card,
+#step-panel-8 .step8-pptx-card {
+  margin: 0 !important;
+  padding: 16px 18px !important;
+  border: 1px solid var(--stitch-border) !important;
+  border-radius: 12px !important;
+  background: #fff !important;
+}
+
+/* Creation-config and model dialogs follow the compact two-column Stitch
+   editor instead of a tall, loose legacy form. */
+#modal-creation-config-management .config-editor-modal {
+  width: min(1060px, calc(100vw - 64px)) !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+#modal-creation-config-management .config-editor-scroll,
+#modal-model-management .config-editor-scroll {
+  max-height: calc(92vh - 72px) !important;
+  overflow: auto !important;
+  padding: 0 28px 26px !important;
+}
+#modal-creation-config-management .prompt-title-row,
+#modal-model-management .prompt-title-row {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex !important;
+  align-items: center;
+  min-height: 72px;
+  margin: 0 -28px 22px !important;
+  padding: 0 28px !important;
+  border-bottom: 1px solid var(--stitch-line);
+  background: rgba(255, 255, 255, .98);
+}
+#modal-creation-config-management .prompt-title-row .highlight-title,
+#modal-model-management .prompt-title-row .highlight-title { font-size: 18px !important; }
+#modal-creation-config-management .creation-config-management-body > section {
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+#modal-creation-config-management .creation-config-management-body > section > h4 {
+  margin: 0 0 12px !important;
+  color: #77717d;
+  font-size: 12px;
+  font-weight: 700;
+}
+#modal-creation-config-management #creation-config-package-name {
+  min-height: 34px;
+  padding: 6px 10px !important;
+  font-size: 12px !important;
+}
+#modal-creation-config-management .creation-config-default-package { margin: 0 0 16px; }
+#modal-creation-config-management .creation-config-package-card {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 18px;
+  align-items: center;
+  padding: 14px 16px !important;
+  border-color: #dedbe3 !important;
+  background: #fff !important;
+}
+#modal-creation-config-management .creation-config-package-card.is-default {
+  border-color: #fed9cb !important;
+  background: #fffaf8 !important;
+}
+#modal-creation-config-management .creation-config-package-card-heading strong { color: var(--stitch-dark); font-size: 14px; }
+#modal-creation-config-management .creation-config-package-card-copy {
+  grid-column: 1;
+  margin: 4px 0 0 !important;
+  color: #928d98;
+  font-size: 11px;
+}
+#modal-creation-config-management .creation-config-package-card-actions {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  justify-content: flex-end;
+}
+#modal-creation-config-management .creation-config-structured-editor {
+  display: grid !important;
+  grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+  gap: 18px !important;
+}
+#modal-creation-config-management .creation-config-section {
+  padding: 18px !important;
+  border: 1px solid #e4e1e7 !important;
+  border-radius: 12px !important;
+  background: #fff !important;
+}
+#modal-creation-config-management .creation-config-section--options,
+#modal-creation-config-management .creation-config-prompts-section { grid-column: 1 / -1; }
+#modal-creation-config-management label {
+  display: flex !important;
+  flex-direction: column;
+  gap: 7px;
+  color: #4b4650 !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+}
+#modal-creation-config-management label input,
+#modal-creation-config-management label select,
+#modal-creation-config-management label textarea { margin-top: 0 !important; }
+#modal-creation-config-management .creation-config-model-binding-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+#modal-creation-config-management .creation-config-model-binding-fields label {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #ebe8ee;
+  border-radius: 9px;
+  background: #fcfbfd;
+}
+#modal-creation-config-management .creation-config-model-binding-fields select {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  font-size: 11px !important;
+}
+#modal-creation-config-management .creation-config-image-style-cards {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px !important;
+}
+#modal-creation-config-management .creation-config-image-style-card {
+  min-height: 72px;
+  padding: 7px !important;
+  border-radius: 9px !important;
+}
+#modal-creation-config-management .creation-config-image-style-thumb { height: 38px !important; }
+#modal-creation-config-management .creation-config-prompt-card {
+  margin: 0 0 10px !important;
+  border: 1px solid #e4e1e7;
+  border-radius: 11px;
+  overflow: hidden;
+  background: #fff;
+}
+#modal-creation-config-management .creation-config-prompt-summary {
+  padding: 12px 14px;
+  background: #fcfbfd;
+}
+#modal-creation-config-management .creation-config-prompt-card > :not(summary) { margin-right: 14px; margin-left: 14px; }
+.creation-config-package-actions,
+.model-setup-actions {
+  display: flex !important;
+  justify-content: flex-end;
+  gap: 10px !important;
+  padding-top: 16px !important;
+}
+.creation-config-package-card,
+.model-library-card,
+.model-setup-card {
+  border: 1px solid var(--stitch-border) !important;
+  border-radius: 12px !important;
+  background: #fff !important;
+  box-shadow: none !important;
+}
+.creation-config-package-card-actions,
+.model-library-card-actions { display: flex !important; flex-wrap: wrap; gap: 8px !important; }
+#model-management-status { display: none !important; }
+
+/* Model settings: preserve the supplied three-screen contract (text/image/TTS)
+   in one functional dialog.  Each tab keeps the same library-above/editor-below
+   reading order and compact two-column form from the exported pages. */
+#modal-model-management .config-editor-modal {
+  width: min(1024px, calc(100vw - 64px)) !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+#modal-model-management .model-library-section { margin: 0 0 20px !important; }
+#modal-model-management .model-kind-tabs {
+  margin-bottom: 14px;
+  padding: 3px;
+  border: 1px solid #ebe8ee;
+  background: #faf9fb;
+}
+#modal-model-management .model-kind-tab {
+  min-width: 92px;
+  min-height: 32px;
+  padding: 0 14px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+}
+#modal-model-management .model-kind-tab.is-active,
+#modal-model-management .model-kind-tab[aria-selected="true"] {
+  color: var(--stitch-dark) !important;
+  box-shadow: 0 1px 3px rgba(30, 29, 34, .08) !important;
+}
+#modal-model-management .model-library-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+#modal-model-management .model-library-card {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 12px;
+  min-height: 80px;
+  padding: 14px 15px !important;
+  border-color: #e2dfe6 !important;
+}
+#modal-model-management .model-library-card-heading strong { font-size: 13px; }
+#modal-model-management .model-library-card-detail {
+  grid-column: 1;
+  margin: 0 !important;
+  overflow: hidden;
+  color: #928d98;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#modal-model-management .model-library-card-actions { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+#modal-model-management .model-library-card-actions .secondary {
+  min-height: 30px !important;
+  padding: 0 10px !important;
+  font-size: 12px !important;
+}
+#modal-model-management .model-setup-card {
+  padding: 20px !important;
+  border-color: #dedbe3 !important;
+  border-radius: 14px !important;
+}
+#modal-model-management .model-setup-heading h4 {
+  margin: 0 !important;
+  color: var(--stitch-dark);
+  font-size: 16px;
+}
+#modal-model-management .model-setup-heading p { margin: 5px 0 16px !important; color: #8d8792; font-size: 12px; }
+#modal-model-management .model-setup-grid { gap: 13px 18px !important; }
+#modal-model-management .model-setup-grid > label,
+#modal-model-management .model-provider-panel > label {
+  color: #5b5660;
+  font-size: 12px;
+  font-weight: 650;
+}
+#modal-model-management .model-setup-grid input,
+#modal-model-management .model-setup-grid select,
+#modal-model-management .model-provider-panel input,
+#modal-model-management .model-provider-panel select {
+  min-height: 36px;
+  margin-top: 6px;
+  padding: 7px 10px !important;
+  font-size: 12px !important;
+}
+#modal-model-management .model-setup-actions {
+  margin-top: 18px;
+  border-top: 1px solid #eeeaf0;
+}
+#modal-model-management .config-editor-actions { margin: 0 !important; padding: 14px 28px !important; background: #fff; }
+
+@media (max-width: 900px) {
+  #modal-creation-config-management .creation-config-structured-editor { grid-template-columns: 1fr; }
+  #modal-creation-config-management .creation-config-section--options,
+  #modal-creation-config-management .creation-config-prompts-section { grid-column: auto; }
+}
+
+/* 2026-09-12 design delivery: account and Agent dialogs are taken directly
+   from the supplied Stitch screens.  Existing event hooks and form IDs stay
+   intact; this layer only maps their presentation. */
+.account-create-dialog.modal-overlay,
+#agent-modal.modal-overlay {
+  background: rgba(15, 23, 42, .40) !important;
+  backdrop-filter: blur(6px);
+}
+.account-create-dialog .account-create-panel,
+#agent-modal .modal-content {
+  width: min(480px, calc(100vw - 32px)) !important;
+  padding: 0 !important;
+  overflow: hidden;
+  border: 1px solid #f1f1f3 !important;
+  border-radius: 16px !important;
+  background: #fff !important;
+  box-shadow: 0 20px 40px -12px rgba(15, 23, 42, .16), 0 0 1px 1px rgba(15, 23, 42, .05) !important;
+}
+.account-create-dialog .modal-header-row,
+#agent-modal .modal-header {
+  align-items: center;
+  min-height: 64px;
+  padding: 24px 28px 8px !important;
+  border: 0 !important;
+}
+.account-create-dialog .modal-header-row h3,
+#agent-modal h3 {
+  margin: 0 !important;
+  color: #111827 !important;
+  font-size: 18px !important;
+  font-weight: 650 !important;
+  letter-spacing: -.02em;
+}
+.account-create-dialog .icon-button,
+#agent-modal button[aria-label="关闭"] {
+  width: 28px !important;
+  height: 28px !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  color: #94a3b8 !important;
+  box-shadow: none !important;
+}
+.account-create-dialog .form-field,
+#agent-modal .form-field { margin: 18px 28px 0 !important; gap: 8px !important; }
+.account-create-dialog .form-field > span,
+#agent-modal label { color: #334155 !important; font-size: 14px !important; font-weight: 500 !important; }
+.account-create-dialog .form-field input,
+#agent-modal input {
+  min-height: 46px !important;
+  padding: 10px 14px !important;
+  border: 1px solid #ff5c38 !important;
+  border-radius: 12px !important;
+  color: #1f2937 !important;
+  box-shadow: 0 0 0 4px rgba(255, 92, 56, .10) !important;
+}
+.account-create-dialog .modal-actions,
+#agent-modal .modal-actions { margin: 28px 28px 24px !important; gap: 12px !important; }
+.account-create-dialog .modal-actions .secondary,
+#agent-modal .modal-actions .secondary {
+  min-height: 40px; padding: 0 20px !important; border: 1px solid #e2e8f0 !important;
+  border-radius: 10px !important; background: #fff !important; color: #475569 !important; box-shadow: none !important;
+}
+.account-create-dialog .modal-actions .success,
+#agent-modal .modal-actions .success {
+  min-height: 40px; padding: 0 20px !important; border: 0 !important;
+  border-radius: 10px !important; background: #111827 !important; color: #fff !important;
+  box-shadow: 0 2px 5px rgba(15, 23, 42, .12) !important;
+}
+.account-create-dialog .modal-actions .success:hover,
+#agent-modal .modal-actions .success:hover { background: #1f2937 !important; }
+
+/* Stitch v2: workflow dialogs.  These selectors preserve the native DOM and
+   only reproduce the supplied desktop compositions. */
+#modal-step2-batch-import .step2-batch-import-modal {
+  width: min(760px, calc(100vw - 48px)) !important; padding: 34px 38px 0 !important;
+  border: 1px solid #e7e9ee !important; border-radius: 18px !important; background: #fff !important;
+  box-shadow: 0 24px 60px rgba(15,23,42,.18) !important;
+}
+#modal-step2-batch-import h3 { margin: 0 0 8px !important; color: #111827 !important; font-size: 22px !important; }
+#modal-step2-batch-import .config-editor-note { max-width: 640px; color: #64748b !important; line-height: 1.7; }
+#modal-step2-batch-import .step2-batch-import-actions { display: flex; gap: 12px; padding: 22px 0 26px; }
+#modal-step2-batch-import .step2-batch-import-actions .secondary { min-height: 42px; border-radius: 10px !important; }
+#modal-step2-batch-import .config-editor-actions { margin: 0 -38px !important; padding: 18px 38px !important; border-top: 1px solid #edf0f4; background: #fff; }
+
+#modal-step3-prompt-settings .step3-prompt-settings-modal,
+#modal-step6-ai-prompt .step6-ai-prompt-modal {
+  width: min(1050px, calc(100vw - 64px)) !important; max-height: min(850px, calc(100vh - 72px)) !important;
+  border: 1px solid #e4e7ed !important; border-radius: 18px !important; background: #fff !important;
+  box-shadow: 0 24px 64px rgba(15,23,42,.20) !important;
+}
+#modal-step3-prompt-settings .config-editor-scroll,
+#modal-step6-ai-prompt .config-editor-scroll { padding: 30px 36px 20px !important; }
+#modal-step3-prompt-settings .prompt-title-row,
+#modal-step6-ai-prompt .prompt-title-row { align-items: center; margin-bottom: 6px; }
+#modal-step3-prompt-settings h3,
+#modal-step6-ai-prompt h3 { margin: 0 !important; color: #111827 !important; font-size: 24px !important; letter-spacing: -.02em; }
+#modal-step3-prompt-settings .config-editor-note,
+#modal-step6-ai-prompt .config-editor-note { margin: 0 0 24px !important; color: #64748b !important; line-height: 1.65; }
+#modal-step3-prompt-settings .storyboard-rule-field,
+#modal-step6-ai-prompt .storyboard-rule-field { gap: 8px; margin: 0 0 20px !important; }
+#modal-step3-prompt-settings .storyboard-rule-field > span,
+#modal-step6-ai-prompt .storyboard-rule-field > span { color: #1f2937; font-size: 14px; font-weight: 650; }
+#modal-step3-prompt-settings textarea,
+#modal-step6-ai-prompt textarea { border: 1px solid #d9e1ec !important; border-radius: 12px !important; background: #fbfcfe !important; color: #334155 !important; font: 13px/1.7 ui-monospace, SFMono-Regular, Consolas, monospace !important; }
+#modal-step3-prompt-settings .prompt-locked-field textarea { background: #f5f7fa !important; color: #64748b !important; }
+#modal-step3-prompt-settings .config-editor-actions,
+#modal-step6-ai-prompt .config-editor-actions { padding: 16px 36px !important; border-top: 1px solid #edf0f4; background: #fff; }
+
+#modal-ip-character .ip-character-modal {
+  width: min(980px, calc(100vw - 64px)) !important; max-height: min(850px, calc(100vh - 72px)) !important;
+  border: 1px solid #e4e7ed !important; border-radius: 18px !important; background: #fff !important;
+  box-shadow: 0 24px 64px rgba(15,23,42,.20) !important;
+}
+#modal-ip-character .config-editor-scroll { padding: 30px 36px 22px !important; }
+#modal-ip-character h3 { margin: 0 !important; color: #111827 !important; font-size: 24px !important; }
+#modal-ip-character .config-editor-note { color: #64748b !important; line-height: 1.65; }
+#modal-ip-character .ip-character-settings-card { border: 1px solid #e5e7eb !important; border-radius: 14px !important; background: #fbfcfe !important; box-shadow: none !important; }
+#modal-ip-character .ip-character-section-header { margin-top: 28px !important; padding-bottom: 12px; border-bottom: 1px solid #edf0f4; }
+#modal-ip-character .ip-character-section-header > span { color: #1f2937 !important; font-size: 16px !important; }
+#modal-ip-character .ip-character-card { border: 1px solid #e5e7eb !important; border-radius: 14px !important; box-shadow: none !important; }
+#modal-ip-character .config-editor-actions { padding: 16px 36px !important; border-top: 1px solid #edf0f4; background: #fff; }
+
+#modal-subtitle-settings .subtitle-settings-modal,
+#modal-animation-settings .animation-settings-modal {
+  width: min(1180px, calc(100vw - 64px)) !important; max-height: min(820px, calc(100vh - 72px)) !important;
+  border: 1px solid #e4e7ed !important; border-radius: 18px !important; background: #fff !important;
+  box-shadow: 0 24px 64px rgba(15,23,42,.20) !important;
+}
+#modal-subtitle-settings .subtitle-settings-header,
+#modal-animation-settings .subtitle-settings-header { padding: 28px 34px 18px !important; border-bottom: 0 !important; }
+#modal-subtitle-settings h3,
+#modal-animation-settings h3 { margin: 0 0 6px !important; color: #111827 !important; font-size: 24px !important; }
+#modal-subtitle-settings .subtitle-settings-layout,
+#modal-animation-settings .subtitle-settings-layout { padding: 16px 34px 28px !important; gap: 34px !important; }
+#modal-subtitle-settings .subtitle-preview-stage,
+#modal-animation-settings .animation-preview-stage { border: 1px solid #e4e7ed !important; border-radius: 14px !important; background: #f8fafc !important; }
+#modal-subtitle-settings .subtitle-settings-controls,
+#modal-animation-settings .subtitle-settings-controls { padding: 2px 0 !important; }
+#modal-subtitle-settings .subtitle-settings-controls label,
+#modal-animation-settings .subtitle-settings-controls label { color: #334155 !important; font-size: 13px !important; }
+#modal-subtitle-settings .config-editor-actions,
+#modal-animation-settings .config-editor-actions { padding: 16px 34px !important; border-top: 1px solid #edf0f4; background: #fff; }
+
+/* Course library interaction corrections: the only create entry on a course
+   or chapter is its overflow menu.  Menus float above the full tree. */
+body:not(.workspace-open) #page-home .tree-inline-add { display: none !important; }
+body:not(.workspace-open) #page-home .stitch-home-sidebar { isolation: isolate; }
+body:not(.workspace-open) #page-home .stitch-sidebar-body { overflow-y: auto !important; overflow-x: visible !important; }
+body:not(.workspace-open) #page-home .tree-overflow { position: relative !important; z-index: 1; }
+body:not(.workspace-open) #page-home .tree-overflow:has(.tree-overflow-menu.is-open) { z-index: 300 !important; }
+body:not(.workspace-open) #page-home .tree-overflow-menu {
+  z-index: 400 !important;
+  isolation: isolate;
+  overflow: hidden !important;
+  background: #fff !important;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-2px);
+  transition: opacity .12s ease, transform .12s ease, visibility .12s ease;
+}
+body:not(.workspace-open) #page-home .tree-overflow-menu.is-open {
+  display: block !important;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+body:not(.workspace-open) #page-home .tree-overflow-menu .tree-overflow-item {
+  position: relative;
+  z-index: 1;
+  min-height: 40px;
+  padding: 0 13px !important;
+  background: #fff !important;
+}
+body:not(.workspace-open) #page-home .tree-overflow-menu .tree-overflow-item.is-danger { color: #ed4b3a !important; }
+body:not(.workspace-open) #page-home .stitch-course-node:has(.tree-overflow-menu.is-open),
+body:not(.workspace-open) #page-home .stitch-chapter-node:has(.tree-overflow-menu.is-open) { z-index: 250 !important; }
+
+/* Course/section menus are a true foreground layer: their opaque surface
+   covers child rows completely, while icon and text stay compactly grouped. */
+body:not(.workspace-open) #page-home .tree-overflow-menu {
+  width: 238px !important;
+  min-width: 238px !important;
+  z-index: 1000 !important;
+  background: #fff !important;
+  box-shadow: 0 16px 34px rgba(15, 23, 42, .16) !important;
+}
+body:not(.workspace-open) #page-home .tree-overflow-menu .tree-overflow-item {
+  display: grid !important;
+  grid-template-columns: 18px minmax(0, 1fr) !important;
+  justify-content: start !important;
+  gap: 7px !important;
+  min-height: 38px !important;
+  padding-inline: 14px !important;
+  text-align: left !important;
+}
+body:not(.workspace-open) #page-home .tree-overflow-menu .tree-overflow-item > span {
+  text-align: left !important;
+}
+/* The course menu is temporarily mounted under <body> when opened.  This
+   escapes every tree-row stacking context, so child chapters can never paint
+   through the menu surface. */
+.tree-overflow-menu.tree-overflow-menu--portal {
+  position: fixed !important;
+  z-index: 2147483647 !important;
+  display: none !important;
+  width: 198px !important;
+  min-width: 198px !important;
+  max-width: calc(100vw - 16px) !important;
+  padding: 5px 0 !important;
+  border: 1px solid #e2e5eb !important;
+  border-radius: 12px !important;
+  background: #fff !important;
+  box-shadow: 0 18px 38px rgba(15, 23, 42, .18) !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  overflow: hidden !important;
+}
+.tree-overflow-menu.tree-overflow-menu--portal.is-open { display: block !important; }
+.tree-overflow-menu.tree-overflow-menu--portal .tree-overflow-item {
+  display: grid !important;
+  grid-template-columns: 18px minmax(0, 1fr) !important;
+  width: 100% !important;
+  min-height: 38px !important;
+  padding-inline: 13px !important;
+  background: #fff !important;
+}
+
+/* Focused AI Mask view keeps the canvas and its right-side association panel,
+   but removes all application navigation and ephemeral guidance. */
+body.step5-fullscreen-mode > header.app-header,
+body.step5-fullscreen-mode #project-info-header,
+body.step5-fullscreen-mode .sidebar,
+body.step5-fullscreen-mode .one-click-sidebar-entry,
+body.step5-fullscreen-mode #project-activity-status,
+body.step5-fullscreen-mode #step-panel-5 .highlight-title,
+body.step5-fullscreen-mode #step-panel-5 #step5-thumbs,
+body.step5-fullscreen-mode #step-panel-5 .step5-draft-floating,
+body.step5-fullscreen-mode #step-panel-5 #ai-mask-review-panel {
+  display: none !important;
+}
+body.step5-fullscreen-mode #workspace-main {
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+body.step5-fullscreen-mode #step-panel-5 .step5-mask-header {
+  min-height: 48px !important;
+  justify-content: flex-end !important;
+}
+body.step5-fullscreen-mode #step-panel-5 .step5-toolbar {
+  margin-left: 0 !important;
+}
+body.step5-fullscreen-mode #step5-btn-fullscreen {
+  position: fixed !important;
+  top: 14px !important;
+  right: 18px !important;
+  z-index: 1002 !important;
+  margin: 0 !important;
+}
+
+/* Step 3 is a desktop workbench.  Generated-image cards use three columns
+   at minimum so the visual review surface does not waste the right pane. */
+@media (min-width: 1200px) {
+  body.workspace-open #step3-images-grid.step3-grid-four {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 14px !important;
+  }
+}
+body:not(.workspace-open) #page-home .stitch-main-header { margin-top: -4px !important; margin-bottom: 16px !important; }
+body:not(.workspace-open) #page-home .stitch-home-breadcrumb { display: none !important; }
+body:not(.workspace-open) #page-home .inline-rename-input {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 32px !important;
+  margin: -3px 0 !important;
+  padding: 4px 8px !important;
+  border: 1px solid #f46a38 !important;
+  border-radius: 8px !important;
+  outline: 0 !important;
+  box-shadow: 0 0 0 3px rgba(244,106,56,.10) !important;
+  background: #fff !important;
+}
+body:not(.workspace-open) #page-home .stitch-sidebar-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  box-shadow: 0 -1px 0 var(--stitch-line);
+}
+
+/* Compact six-up video library and a single hover-only card action menu. */
+body:not(.workspace-open) #page-home .stitch-video-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+  gap: 14px !important;
+}
+body:not(.workspace-open) #page-home .stitch-video-preview { aspect-ratio: 16 / 8.5 !important; }
+body:not(.workspace-open) #page-home .stitch-video-content { padding: 12px !important; }
+body:not(.workspace-open) #page-home .stitch-video-name { font-size: 14px !important; }
+body:not(.workspace-open) #page-home .stitch-video-more {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: opacity .14s ease !important;
+}
+body:not(.workspace-open) #page-home .stitch-video-preview:hover .stitch-video-more,
+body:not(.workspace-open) #page-home .stitch-video-preview:focus-within .stitch-video-more {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+body:not(.workspace-open) #page-home .stitch-video-menu {
+  z-index: 50 !important;
+  padding: 5px !important;
+  border: 1px solid #e5e7eb !important;
+  border-radius: 12px !important;
+  background: #fff !important;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, .14) !important;
+}
+body:not(.workspace-open) #page-home .stitch-video-menu .icon-action-btn {
+  width: 100% !important;
+  min-height: 36px !important;
+  justify-content: flex-start !important;
+  gap: 9px !important;
+  padding: 0 10px !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  background: #fff !important;
+  box-shadow: none !important;
+  color: #374151 !important;
+  font-weight: 650 !important;
+}
+body:not(.workspace-open) #page-home .stitch-video-menu .icon-action-btn:hover { background: #f8fafc !important; }
+body:not(.workspace-open) #page-home .stitch-video-menu .icon-action-btn.success { color: #374151 !important; }
+body:not(.workspace-open) #page-home .stitch-video-menu .icon-action-btn.danger,
+body:not(.workspace-open) #page-home .stitch-video-menu .icon-action-btn.danger:hover { color: #ef4f3f !important; background: #fff !important; }
+
+body:not(.workspace-open) #page-home .stitch-video-preview .stitch-card-cover {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+body:not(.workspace-open) #page-home .stitch-video-preview.has-generated-cover .stitch-video-pattern {
+  display: none;
+}
+body:not(.workspace-open) #page-home .stitch-video-preview.has-generated-cover .stitch-video-play {
+  z-index: 2;
+}
+
+/* 视频操作仅在卡片悬浮后显示三点；移入三点才展开。菜单由脚本保证
+   同时最多一个 is-open，离开菜单立即收起。 */
+body:not(.workspace-open) #page-home .stitch-video-more {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: opacity .14s ease !important;
+}
+body:not(.workspace-open) #page-home .stitch-video-card:hover .stitch-video-more,
+body:not(.workspace-open) #page-home .stitch-video-card:focus-within .stitch-video-more {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+body:not(.workspace-open) #page-home .stitch-video-menu {
+  z-index: 60 !important;
+}
+
+/* 创作设置由两条横向信息带组成：模型关联在第一行，图片风格在第二行。 */
+#modal-creation-config-management .creation-config-structured-editor {
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 14px !important;
+}
+#modal-creation-config-management .creation-config-section--options,
+#modal-creation-config-management .creation-config-prompts-section { grid-column: auto !important; }
+#modal-creation-config-management .creation-config-model-binding-fields {
+  grid-template-columns: repeat(3, minmax(180px, 1fr)) !important;
+  gap: 12px !important;
+}
+#modal-creation-config-management .creation-config-image-style-grid {
+  display: grid !important;
+  grid-template-columns: minmax(280px, 420px) !important;
+  align-items: end;
+}
+#modal-creation-config-management label:has(#creation-config-image-style-minimum) {
+  display: none !important;
+}
+
+/* Account picker follows the supplied unified capsule instead of three
+   unrelated bordered controls. */
+body:not(.workspace-open) .account-switcher {
+  gap: 0 !important;
+  padding: 3px !important;
+  border: 1px solid #e3e7ee !important;
+  border-radius: 999px !important;
+  background: #fff !important;
+  box-shadow: 0 1px 3px rgba(15,23,42,.04) !important;
+}
+body:not(.workspace-open) .account-picker,
+body:not(.workspace-open) #btn-create-account,
+body:not(.workspace-open) #btn-edit-current-account {
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: transparent !important;
+}
+body:not(.workspace-open) .account-picker::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  margin-right: 2px;
+  border-radius: 50%;
+  background: #20bd89;
+}
+body:not(.workspace-open) #btn-create-account,
+body:not(.workspace-open) #btn-edit-current-account { width: 38px !important; }
+body:not(.workspace-open) #btn-create-account { border-left: 1px solid #e3e7ee !important; border-radius: 0 !important; }
+body:not(.workspace-open) #btn-edit-current-account { border-radius: 0 999px 999px 0 !important; }
+
+/* The Agent reference is intentionally wider than the short account form so
+   its security warning never clips. */
+#agent-token-dialog .account-create-panel { width: min(720px, calc(100vw - 48px)) !important; }
+#agent-token-dialog .modal-header-row { padding-bottom: 0 !important; }
+#agent-token-dialog .account-create-help { margin: 24px 28px 0 !important; color: #334155 !important; font-size: 15px !important; line-height: 1.65 !important; }
+#agent-token-dialog .form-field { margin-top: 26px !important; }
+#agent-token-dialog .modal-actions { margin-top: 30px !important; }
+
+/* Model settings uses the same supplied modal grammar: one quiet library,
+   then the editor, with charcoal only for commit actions. */
+#modal-model-management .config-editor-modal {
+  width: min(1080px, calc(100vw - 64px)) !important;
+  max-height: min(840px, calc(100vh - 72px)) !important;
+  border: 1px solid #e4e7ed !important;
+  border-radius: 18px !important;
+  box-shadow: 0 24px 64px rgba(15,23,42,.20) !important;
+}
+#modal-model-management .config-editor-scroll { padding: 30px 34px 20px !important; }
+#modal-model-management .prompt-title-row { padding: 0 !important; }
+#modal-model-management .model-kind-tabs { border-radius: 10px !important; }
+#modal-model-management .model-kind-tab.is-active,
+#modal-model-management .model-kind-tab[aria-selected="true"] { background: #111827 !important; color: #fff !important; }
+#modal-model-management .model-library-card { border-radius: 12px !important; background: #fff !important; }
+#modal-model-management .model-setup-card { margin-top: 22px !important; background: #fbfcfe !important; }
+#modal-model-management .success { background: #111827 !important; border-color: #111827 !important; box-shadow: none !important; }
+#modal-model-management .config-editor-actions { border-top: 1px solid #edf0f4 !important; }
+
+@media (max-width: 1440px) {
+  body:not(.workspace-open) #page-home .stitch-video-grid { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
+}

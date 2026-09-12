@@ -130,8 +130,6 @@
   function injectButtons() {
     const toolbar = document.querySelector('#step-panel-5 .step5-toolbar');
     if (!toolbar) return;
-    ensurePresentationMode();
-    ensureInlineStatus();
     ensureReviewPanel();
     ensurePreviewControls();
     if (document.getElementById('step5-btn-ai-mask')) return;
@@ -144,57 +142,10 @@
     run.addEventListener('click', runAnnotation);
   }
 
+  // Kept as the persisted rendering preference used by the opt-in policy.
+  // It deliberately does not add a visible switch or hide the Mask workspace.
   function presentationMode() {
     return window.state?.currentProject?.presentation_mode === 'reveal' ? 'reveal' : 'full_frame';
-  }
-
-  function applyPresentationMode(mode) {
-    const reveal = mode === 'reveal';
-    document.body.classList.toggle('step5-reveal-enabled', reveal);
-    document.body.classList.toggle('step5-full-frame', !reveal);
-    document.querySelectorAll('[data-presentation-mode]').forEach(item => {
-      item.classList.toggle('active', item.dataset.presentationMode === mode);
-    });
-    const status = document.getElementById('step5-ai-mask-status');
-    if (!reveal && status) {
-      status.textContent = '整页展示：此项目不会进行 AI 标注，视频会直接展示完整画面。';
-      status.classList.remove('error', 'loading');
-    }
-  }
-
-  function ensurePresentationMode() {
-    let chooser = document.getElementById('step5-presentation-mode');
-    if (!chooser) {
-      const header = document.querySelector('#step-panel-5 .step5-mask-header');
-      if (!header) return null;
-      chooser = document.createElement('section');
-      chooser.id = 'step5-presentation-mode';
-      chooser.className = 'step5-presentation-mode';
-      chooser.innerHTML = `
-        <div><strong>画面呈现</strong><span>默认整页展示；元素动画仅在分步制作时按需使用。</span></div>
-        <div class="step5-presentation-actions">
-          <button type="button" data-presentation-mode="full_frame">整页展示</button>
-          <button type="button" data-presentation-mode="reveal">逐元素讲解</button>
-        </div>`;
-      header.insertAdjacentElement('afterend', chooser);
-      chooser.querySelectorAll('[data-presentation-mode]').forEach(item => {
-        item.addEventListener('click', async () => {
-          const next = item.dataset.presentationMode;
-          if (!window.state?.currentProject) return;
-          if (next === presentationMode()) return;
-          try {
-            const result = await apiPut(`/api/projects/${encodeURIComponent(projectId())}`, { presentation_mode: next });
-            if (result?.project) Object.assign(window.state.currentProject, result.project);
-            applyPresentationMode(next);
-            toast(next === 'reveal' ? '已启用逐元素讲解。请主动运行 AI 标注或手动绘制。' : '已切换为整页展示。');
-          } catch (error) {
-            toast(`切换画面呈现失败：${error.message}`, 6000);
-          }
-        });
-      });
-    }
-    applyPresentationMode(presentationMode());
-    return chooser;
   }
 
   function ensurePreviewControls() {
@@ -516,13 +467,9 @@
   }
 
   async function runAnnotation(options = {}) {
-    if (presentationMode() !== 'reveal') {
-      toast('请先选择“逐元素讲解”，再运行 AI 标注。', 5000);
-      return false;
-    }
     const id = projectId();
     if (!id) {
-      toast('请先打开项目并进入元素动画页。未能识别当前 project_id。', 6000);
+      toast('请先打开项目并进入 AI Mask 标注页。未能识别当前 project_id。', 6000);
       if (options.rethrow) throw new Error('未能识别当前 project_id');
       return false;
     }
@@ -581,11 +528,9 @@
   async function maybeAutoAnnotate() {
     const panel = document.getElementById('step-panel-5');
     if (!panel || window.getComputedStyle(panel).display === 'none') return;
-    ensurePresentationMode();
     if (presentationMode() !== 'reveal') return;
-    // Element animation is deliberately opt-in.  Never call annotation when
-    // a user merely enters Step 5, regardless of production or AI mode.
-    setInlineStatus('逐元素讲解：点击“运行 AI 标注”或手动绘制需要讲解的元素。', false, false);
+    // AI Mask is deliberately opt-in. Entering this step alone does not run
+    // a model request or leave a persistent instructional banner behind.
   }
 
   function installAutoAnnotationWatch() {

@@ -169,16 +169,25 @@ const CourseTree = (() => {
     createCourse.innerHTML = ICON.plus;
     createCourse.addEventListener('click', createCourseQuick);
     curriculumHeading.append(curriculumLabel, createCourse);
-    treeEl.appendChild(curriculumHeading);
-    courseList.forEach(course => treeEl.appendChild(renderCourseNode(course)));
+    // Keep the two visual regions named separately for styling while the
+    // sidebar itself remains one continuous scroll surface.  This is
+    // layout-only; the existing tree nodes and event handlers remain unchanged.
+    const curriculumGroup = document.createElement('div');
+    curriculumGroup.className = 'stitch-curriculum-group';
+    curriculumGroup.appendChild(curriculumHeading);
+    courseList.forEach(course => curriculumGroup.appendChild(renderCourseNode(course)));
+    treeEl.appendChild(curriculumGroup);
 
+    const standaloneGroup = document.createElement('div');
+    standaloneGroup.className = 'stitch-standalone-group';
     if (standaloneList.length > 0) {
       const standaloneHeading = document.createElement('div');
       standaloneHeading.className = 'course-tree-standalone-heading stitch-tree-section-heading';
-      standaloneHeading.textContent = `独立与未归档 (${standaloneList.length})`;
-      treeEl.appendChild(standaloneHeading);
-      standaloneList.forEach(project => treeEl.appendChild(renderStandaloneProjectCard(project)));
+      standaloneHeading.textContent = `独立视频 (${standaloneList.length})`;
+      standaloneGroup.appendChild(standaloneHeading);
+      standaloneList.forEach(project => standaloneGroup.appendChild(renderStandaloneProjectCard(project)));
     }
+    treeEl.appendChild(standaloneGroup);
     navigationBody.appendChild(treeEl);
     navigation.appendChild(navigationBody);
 
@@ -197,9 +206,6 @@ const CourseTree = (() => {
     main.setAttribute('aria-live', 'polite');
     const mainHeader = document.createElement('div');
     mainHeader.className = 'home-library-main-header stitch-main-header flex flex-col gap-1.5 mb-7 pb-1';
-    const breadcrumb = document.createElement('div');
-    breadcrumb.className = 'home-library-breadcrumb stitch-home-breadcrumb';
-    breadcrumb.textContent = libraryFilterTitle();
     const heading = document.createElement('div');
     heading.className = 'home-library-main-heading stitch-main-heading flex items-center justify-between gap-4';
     const title = document.createElement('h2');
@@ -209,7 +215,8 @@ const CourseTree = (() => {
     titleWrap.className = 'stitch-main-title-wrap flex items-baseline gap-2';
     titleWrap.append(title);
     heading.append(titleWrap, renderLibrarySearchTools());
-    mainHeader.append(breadcrumb, heading);
+    // 标题本身已完整表达当前筛选；不再重复渲染一行“全部视频”面包屑。
+    mainHeader.append(heading);
     main.appendChild(mainHeader);
 
     const cards = document.createElement('div');
@@ -414,11 +421,16 @@ const CourseTree = (() => {
 
   function projectProgress(project) {
     try {
-      const progress = calculateVisibleProgress(project.step_status || {}, projectFlowContext(project));
-      return Math.max(0, Math.min(100, Math.round(Number(progress) || 0)));
+      const completedProgress = calculateVisibleProgress(project.step_status || {}, projectFlowContext(project));
+      const completedSteps = Math.round(Math.max(0, Math.min(100, Number(completedProgress) || 0)) / 100 * 7);
+      // A project at its current workflow step is visibly in progress even
+      // when that step has not been confirmed yet. Keep the card indicator
+      // faithful to the user-facing 1..7 stage model without changing state.
+      const currentStep = Math.max(1, Math.min(7, Number(getStepInfo(project).num) || 1));
+      return Math.round(Math.max(completedSteps, currentStep) / 7 * 100);
     } catch (_) {
       const step = getStepInfo(project).num;
-      return Math.round(Math.max(0, Math.min(1, (step - 1) / 6)) * 100);
+      return Math.round(Math.max(1, Math.min(7, step)) / 7 * 100);
     }
   }
 
@@ -430,7 +442,7 @@ const CourseTree = (() => {
 
     const preview = document.createElement('span');
     preview.className = 'home-library-video-preview stitch-new-video-icon w-11 h-11 rounded-full';
-    preview.setAttribute('aria-hidden', 'true');
+    // 预览里包含常驻操作按钮，因此不能对整个区域标记 aria-hidden。
     preview.innerHTML = ICON.plus;
 
     const content = document.createElement('span');
@@ -470,35 +482,50 @@ const CourseTree = (() => {
 
     const preview = document.createElement('div');
     preview.className = `home-library-video-preview stitch-video-preview relative aspect-[16/9] w-full overflow-hidden flex items-center justify-center ${previewVariant.previewClass}`;
-    preview.setAttribute('aria-hidden', 'true');
-    const label = document.createElement('span');
-    label.className = `home-library-video-label stitch-video-label ${previewVariant.labelClass}`;
-    label.textContent = libraryRecordLabel(record);
+    // 此区域包含可操作按钮，不能把整个预览从辅助技术树中隐藏。
     const more = document.createElement('button');
     more.type = 'button';
     more.className = 'stitch-video-more icon-btn-hover';
-    more.title = `更多操作：${project.name || '未命名视频'}`;
-    more.setAttribute('aria-label', more.title);
+    more.setAttribute('aria-label', `视频操作：${project.name || '未命名视频'}`);
     more.innerHTML = ICON.more;
     const menu = document.createElement('div');
     menu.className = 'stitch-video-menu';
-    const openFromMenu = createProjectActionButton('继续', ICON.playMenu, 'open-project', project, () => enterWorkspace(project.id), true);
+    const openFromMenu = createProjectActionButton('继续', ICON.playMenu, 'open-project', project, () => enterWorkspace(project.id));
     const editFromMenu = createProjectActionButton('编辑', ICON.edit, 'edit-project', project, () => openEditProjectModal(project));
     const deleteFromMenu = createProjectActionButton('删除', ICON.trash, 'delete-project', project, () => deleteProjectFromTree(project), false, true);
     menu.append(openFromMenu, editFromMenu, deleteFromMenu);
+    const openMenu = () => {
+      document.querySelectorAll('.stitch-video-menu.is-open').forEach(open => {
+        if (open !== menu) open.classList.remove('is-open');
+      });
+      menu.classList.add('is-open');
+    };
+    const closeMenu = () => menu.classList.remove('is-open');
+    let closeTimer = null;
+    const cancelClose = () => {
+      if (closeTimer) window.clearTimeout(closeTimer);
+      closeTimer = null;
+    };
+    const scheduleClose = () => {
+      cancelClose();
+      closeTimer = window.setTimeout(closeMenu, 90);
+    };
+    more.addEventListener('mouseenter', openMenu);
+    more.addEventListener('focus', openMenu);
+    more.addEventListener('mouseleave', scheduleClose);
     more.addEventListener('click', (event) => {
       event.stopPropagation();
-      document.querySelectorAll('.stitch-video-menu.is-open').forEach(openMenu => {
-        if (openMenu !== menu) openMenu.classList.remove('is-open');
-      });
-      menu.classList.toggle('is-open');
+      if (menu.classList.contains('is-open')) closeMenu(); else openMenu();
     });
+    menu.addEventListener('mouseenter', cancelClose);
+    menu.addEventListener('mouseleave', closeMenu);
     const play = document.createElement('span');
     play.className = 'stitch-video-play w-10 h-10 rounded-full';
     play.innerHTML = '<svg class="stitch-ic" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>';
     const pattern = document.createElement('span');
     pattern.className = 'stitch-video-pattern';
-    preview.append(pattern, label, more, menu, play);
+    preview.append(pattern, more, menu, play);
+    if (isProjectComplete(project)) hydrateCompletedVideoCover(project, preview);
 
     const content = document.createElement('div');
     content.className = 'home-library-video-content stitch-video-content p-3.5 flex flex-col justify-between flex-1';
@@ -546,6 +573,38 @@ const CourseTree = (() => {
     return card;
   }
 
+  async function hydrateCompletedVideoCover(project, preview) {
+    try {
+      const result = await API.get(`/api/projects/${encodeURIComponent(project.id)}/steps/3/images`);
+      const firstImage = (result?.images || []).find(image => image?.exists && image?.url);
+      if (!firstImage || !preview.isConnected) return;
+
+      const cover = new Image();
+      cover.className = 'stitch-card-cover';
+      cover.alt = '';
+      cover.onload = () => {
+        if (!preview.isConnected || !cover.naturalWidth || !cover.naturalHeight) return;
+        const ratio = cover.naturalWidth / cover.naturalHeight;
+        // 9:16 首帧在横向卡片中裁切后没有可读内容，继续使用默认封面。
+        if (ratio >= .52 && ratio <= .60) return;
+        preview.classList.add('has-generated-cover');
+        if (ratio < 1) preview.classList.add('has-cropped-portrait-cover');
+        preview.prepend(cover);
+      };
+      cover.src = firstImage.url;
+    } catch (_) {
+      // 卡片预览为非关键增强；接口暂不可用时保持默认封面。
+    }
+  }
+
+  function isProjectComplete(project) {
+    try {
+      return Number(calculateVisibleProgress(project.step_status || {}, projectFlowContext(project))) >= 100;
+    } catch (_) {
+      return false;
+    }
+  }
+
   function libraryPreviewVariant(record) {
     const variants = [
       { previewClass: 'stitch-preview-coral', labelClass: 'stitch-label-coral', cardClass: 'stagger-1' },
@@ -586,7 +645,7 @@ const CourseTree = (() => {
       </button>`).join('');
     return `
       <div class="tree-overflow" role="group" aria-label="${escHtml(menuLabel)}">
-        <button type="button" class="tree-overflow-trigger icon-btn-hover" title="更多操作" aria-haspopup="menu" aria-expanded="false" aria-label="${escHtml(menuLabel)}">
+        <button type="button" class="tree-overflow-trigger icon-btn-hover" aria-haspopup="menu" aria-expanded="false" aria-label="${escHtml(menuLabel)}">
           ${ICON.more}
         </button>
         <div class="tree-overflow-menu" role="menu" aria-label="${escHtml(menuLabel)}">${items}</div>
@@ -600,24 +659,72 @@ const CourseTree = (() => {
       const menu = overflow.querySelector('.tree-overflow-menu');
       if (!trigger || !menu || trigger.__treeOverflowBound) return;
       trigger.__treeOverflowBound = true;
-      trigger.addEventListener('click', (event) => {
-        event.stopPropagation();
-        const willOpen = !menu.classList.contains('is-open');
+      let menuPortalized = false;
+      const restoreMenu = () => {
+        if (!menuPortalized) return;
+        overflow.appendChild(menu);
+        menu.classList.remove('tree-overflow-menu--portal');
+        menu.removeAttribute('style');
+        menuPortalized = false;
+      };
+      const open = () => {
         document.querySelectorAll('.tree-overflow-menu.is-open').forEach(openMenu => {
-          if (openMenu !== menu) openMenu.classList.remove('is-open');
+          if (openMenu !== menu) {
+            if (typeof openMenu.__closeTreeOverflow === 'function') {
+              openMenu.__closeTreeOverflow();
+            } else {
+              openMenu.classList.remove('is-open');
+            }
+          }
         });
         document.querySelectorAll('.tree-overflow-trigger[aria-expanded="true"]').forEach(openTrigger => {
           if (openTrigger !== trigger) openTrigger.setAttribute('aria-expanded', 'false');
         });
-        menu.classList.toggle('is-open', willOpen);
-        trigger.setAttribute('aria-expanded', String(willOpen));
+        if (!menuPortalized) {
+          const rect = trigger.getBoundingClientRect();
+          document.body.appendChild(menu);
+          menu.classList.add('tree-overflow-menu--portal');
+          menu.style.top = `${Math.round(rect.bottom + 4)}px`;
+          menu.style.left = `${Math.round(Math.max(8, rect.right - 198))}px`;
+          menuPortalized = true;
+        }
+        menu.classList.add('is-open');
+        trigger.setAttribute('aria-expanded', 'true');
+      };
+      const close = () => {
+        menu.classList.remove('is-open');
+        trigger.setAttribute('aria-expanded', 'false');
+        restoreMenu();
+      };
+      menu.__closeTreeOverflow = close;
+      let closeTimer = null;
+      const cancelClose = () => {
+        if (closeTimer) window.clearTimeout(closeTimer);
+        closeTimer = null;
+      };
+      const scheduleClose = () => {
+        cancelClose();
+        // 菜单与触发器之间有视觉间距，留出进入菜单的时间，避免刚移过去就消失。
+        closeTimer = window.setTimeout(close, 260);
+      };
+      overflow.addEventListener('mouseenter', () => { cancelClose(); open(); });
+      overflow.addEventListener('mouseleave', scheduleClose);
+      menu.addEventListener('mouseenter', cancelClose);
+      menu.addEventListener('mouseleave', scheduleClose);
+      trigger.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const willOpen = !menu.classList.contains('is-open');
+        if (willOpen) open(); else close();
       });
     });
     if (!document.__treeOverflowDismissBound) {
       document.__treeOverflowDismissBound = true;
       document.addEventListener('click', (event) => {
         if (event.target.closest('.tree-overflow')) return;
-        document.querySelectorAll('.tree-overflow-menu.is-open').forEach(menu => menu.classList.remove('is-open'));
+        document.querySelectorAll('.tree-overflow-menu.is-open').forEach(menu => {
+          if (typeof menu.__closeTreeOverflow === 'function') menu.__closeTreeOverflow();
+          else menu.classList.remove('is-open');
+        });
         document.querySelectorAll('.tree-overflow-trigger[aria-expanded="true"]').forEach(trigger => {
           trigger.setAttribute('aria-expanded', 'false');
         });
@@ -709,10 +816,6 @@ const CourseTree = (() => {
         legacyHeading.textContent = `待归档视频 · ${unchaptered.length}`;
         childrenEl.appendChild(legacyHeading);
         unchaptered.forEach(p => childrenEl.appendChild(renderProjectLeaf(p)));
-      }
-
-      if (chapterCount === 0 && unchapteredCount === 0) {
-        childrenEl.innerHTML = '<div class="empty-hint">暂无章节或视频，点上方 + 添加</div>';
       }
 
       node.appendChild(childrenEl);

@@ -9,7 +9,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260912.35">
+  <link rel="stylesheet" href="style.css?v=20260912.36">
+  <!-- Stitch screen contract: the supplied page code is the visual source of truth. -->
+  <link rel="stylesheet" href="stitch.css?v=20260912.13">
 </head>
 <body>
 
@@ -110,7 +112,7 @@
           <li class="step-item" data-step="5">
             <div class="step-num">4</div>
             <div class="step-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m4 20 4.6-1 10.8-10.8a2.1 2.1 0 0 0-3-3L5.6 16 4 20z"></path><path d="m14.8 6.8 2.4 2.4"></path></svg></div>
-            <div class="step-label">元素动画（可选）</div>
+            <div class="step-label">AI Mask 标注</div>
             <span class="step-complete" aria-hidden="true">✓</span>
           </li>
           <li class="step-item" data-step="6">
@@ -300,10 +302,10 @@
 
         </div>
 
-        <!-- ==================== 步骤 5: 可选元素动画 ==================== -->
+        <!-- ==================== 步骤 5: AI Mask 标注 ==================== -->
         <div id="step-panel-5" class="step-panel" style="display: none;">
           <div class="step5-mask-header workflow-header workflow-header--stacked">
-            <h2 class="highlight-title workflow-title">元素动画（可选）</h2>
+            <h2 class="highlight-title workflow-title">AI Mask 标注</h2>
             <div class="step5-toolbar workflow-toolbar">
               <button id="step5-btn-semantic-blocks" class="secondary" type="button" title="基于分镜合约预识别语义块、旁白与画面内容，不会自动绘制 Mask">
                 <svg class="icon" viewBox="0 0 24 24"><path d="M4 5h16"></path><path d="M4 12h10"></path><path d="M4 19h16"></path><circle cx="18" cy="12" r="2"></circle></svg>
@@ -1566,17 +1568,17 @@
   <div id="toast-container" aria-live="polite" aria-atomic="false"></div>
 
   <!-- 主业务 JavaScript 脚本 -->
-  <script src="flow.js?v=3.0.4"></script>
+  <script src="flow.js?v=3.0.5"></script>
   <script src="workflow_state.js?v=20260820.1"></script>
-  <script src="ui_foundation.js?v=20260912.1"></script>
+  <script src="ui_foundation.js?v=20260912.2"></script>
   <script src="api_client.js?v=20260812.1"></script>
   <script src="artifact_repair.js?v=20260801.1"></script>
   <script src="prompt_help.js?v=20260801.1"></script>
   <script src="settings.js?v=20260907.1"></script>
   <script src="projects.js?v=20260906.1"></script>
-  <script src="creation_config_management.js?v=20260909.4"></script>
+  <script src="creation_config_management.js?v=20260912.1"></script>
   <script src="select_menus.js?v=20260906.1"></script>
-  <script src="courses.js?v=20260912.6"></script>
+  <script src="courses.js?v=20260912.8"></script>
   <script src="article.js?v=20260801.1"></script>
   <script src="storyboard.js?v=20260902.2"></script>
   <script src="storyboard_prompts.js?v=20260801.1"></script>
@@ -1587,7 +1589,7 @@
   <script src="mask_workspace.js?v=20260809.4"></script>
   <script src="mask_editor.js?v=20260809.4"></script>
   <script src="subtitle_settings.js?v=20260801.1"></script>
-  <script src="narration_audio.js?v=20260906.1"></script>
+  <script src="narration_audio.js?v=20260912.1"></script>
   <script src="output_render.js?v=20260909.1"></script>
   <script src="account_management.js?v=20260907.4"></script>
   <script src="workspace_navigation.js?v=20260912.1"></script>
@@ -1597,7 +1599,7 @@
   <script src="style_reference_manager_extension.js?v=3.0.1"></script>
   <script src="ai_mask_auto_state.js?v=20260809.1"></script>
   <script src="digital_human_panel.js?v=20260827.2"></script>
-  <script src="ai_mask_extension.js?v=20260906.1"></script>
+  <script src="ai_mask_extension.js?v=20260912.3"></script>
   <script src="one_click_extension.js?v=20260912.1"></script>
 </body>
 </html>

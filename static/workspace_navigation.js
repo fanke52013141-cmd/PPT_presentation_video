@@ -49,7 +49,19 @@ async function enterWorkspace(projectId) {
   // In-flight work from the old project must fail its ownership guard while
   // the new project's metadata is being fetched.
   state.currentProject = null;
-  const project = await API.get(`/api/projects/${projectId}`);
+  let project;
+  try {
+    project = await API.get(`/api/projects/${projectId}`);
+  } catch (error) {
+    // 独立视频与课程内视频使用同一项目接口。网络中断或项目已在其他
+    // 窗口删除时，不让未捕获异常叠在目录上；重新拉取目录清除陈旧项。
+    if (entryVersion !== workspaceNavigationVersion) return;
+    if (typeof window.showToast === 'function') {
+      window.showToast('无法打开该视频，已刷新项目列表。');
+    }
+    if (typeof window.loadProjects === 'function') window.loadProjects();
+    return;
+  }
   if (entryVersion !== workspaceNavigationVersion) return;
   state.currentProject = project;
   syncProjectCanvasCssVars(project);

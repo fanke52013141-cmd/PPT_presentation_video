@@ -403,8 +403,10 @@ async function loadStep7Data() {
       emptyState.innerText = `部分页面音频尚未生成或已过期：${missingSlides.join('、')}。点击“生成音频”会自动跳过已有音频，只补缺失页面。`;
       confirmButton.disabled = true;
     } else if (step7Status === 'pending_reconfirmation') {
-      emptyState.style.display = 'block';
-      emptyState.innerText = '旁白或上游内容已变更，请重新生成音频后再确认。';
+      // Keep the confirmation disabled until audio is regenerated, but do not
+      // repeat the internal invalidation reason in the visible workspace.
+      emptyState.style.display = 'none';
+      emptyState.innerText = '';
       confirmButton.disabled = true;
     } else {
       emptyState.style.display = 'none';

@@ -16,21 +16,38 @@ const CourseTree = (() => {
   const STORAGE_KEY = 'courseTree.expanded';
   let treeData = null;
   let expandedNodes = new Set();
+  // Persisted state always wins.  The homepage's initial tree only opens the
+  // first course when this browser has never saved an explicit choice.
+  let hasPersistedExpansionState = false;
+  let hasAppliedDefaultExpansion = false;
+  // 首页库的当前筛选只属于本次页面会话；真实课程树仍始终由
+  // /api/courses/tree 提供，筛选不会改动课程、章节或项目的归属。
+  let libraryFilter = { type: 'all', id: null };
+  // 搜索同样只在浏览器内生效。它基于当前真实树的项目、课程和
+  // 章节名称过滤，不请求或改写服务器数据。
+  let librarySearchQuery = '';
   // 记录"新建视频"的目标父级（由课程/章节的 +视频 按钮设置，
   // createProject() 在确认创建后会读取并移动项目）
   let pendingProjectParent = null;
 
-  // ===== 图标（Feather 风格 SVG，与项目整体一致）=====
+  // ===== 图标：与 Stitch 参考稿 1:1 的原始 SVG。
+  // 不使用全局 .icon 类——那条规则 fill:none; stroke:currentColor 会覆盖
+  // 实心图标的 fill，导致"更多"三个点变成空心描边。=====
   const ICON = {
-    chevronDown: '<svg class="icon" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"></polyline></svg>',
-    chevronRight: '<svg class="icon" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"></polyline></svg>',
-    layers: '<svg class="icon" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>',
-    list: '<svg class="icon" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>',
-    film: '<svg class="icon" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>',
-    edit: '<svg class="icon" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>',
-    trash: '<svg class="icon" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>',
-    plus: '<svg class="icon" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>',
-    play: '<svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"></polygon></svg>',
+    chevronDown: '<svg class="stitch-ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 9l-7 7-7-7"></path></svg>',
+    chevronRight: '<svg class="stitch-ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"></path></svg>',
+    grid: '<svg class="stitch-ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect height="6" rx="1.5" width="6" x="3" y="3"></rect><rect height="6" rx="1.5" width="6" x="15" y="3"></rect><rect height="6" rx="1.5" width="6" x="3" y="15"></rect><rect height="6" rx="1.5" width="6" x="15" y="15"></rect></svg>',
+    book: '<svg class="stitch-ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path><path d="M8 7h8"></path><path d="M8 11h6"></path></svg>',
+    folder: '<svg class="stitch-ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>',
+    edit: '<svg class="stitch-ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"><path d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"></path></svg>',
+    trash: '<svg class="stitch-ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>',
+    plus: '<svg class="stitch-ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"></path></svg>',
+    plusCircle: '<svg class="stitch-ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v8m4-4H8"></path></svg>',
+    circlePlusLarge: '<svg class="stitch-ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9" stroke-width="1.8"></circle><path d="M12 8v8m4-4H8" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg>',
+    playTiny: '<svg class="stitch-ic" width="8" height="8" viewBox="0 0 24 24" fill="currentColor" style="margin-left:1px"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>',
+    playMenu: '<svg class="stitch-ic" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>',
+    more: '<svg class="stitch-ic" width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><circle cx="5" cy="10" r="1.5"></circle><circle cx="10" cy="10" r="1.5"></circle><circle cx="15" cy="10" r="1.5"></circle></svg>',
+    search: '<svg class="stitch-ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>',
   };
 
   // ===== 初始化 =====
@@ -38,7 +55,13 @@ const CourseTree = (() => {
   function init() {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) expandedNodes = new Set(JSON.parse(saved));
+      if (saved !== null) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          expandedNodes = new Set(parsed);
+          hasPersistedExpansionState = true;
+        }
+      }
     } catch (e) {
       // ignore
     }
@@ -79,6 +102,16 @@ const CourseTree = (() => {
     saveExpanded();
   }
 
+  function applyDefaultExpansion(courseList) {
+    if (hasPersistedExpansionState || hasAppliedDefaultExpansion || !courseList.length) return;
+    const firstCourse = courseList[0];
+    expandedNodes.add(`course-${firstCourse.id}`);
+    if (firstCourse.chapters?.length) {
+      expandedNodes.add(`chapter-${firstCourse.chapters[0].id}`);
+    }
+    hasAppliedDefaultExpansion = true;
+  }
+
   // ===== 数据加载 =====
 
   async function load() {
@@ -100,42 +133,496 @@ const CourseTree = (() => {
     const container = document.getElementById('project-list');
     if (!container || !treeData) return;
 
-    container.className = 'course-tree-container';
+    normalizeLibraryFilter();
+    container.className = 'course-tree-container home-library';
     container.innerHTML = '';
-
-    const treeEl = document.createElement('div');
-    treeEl.className = 'course-tree-body';
 
     const courseList = treeData.courses || [];
     const standaloneList = treeData.standalone_projects || [];
+    applyDefaultExpansion(courseList);
+    const videoRecords = collectVideoRecords(courseList, standaloneList);
 
-    // 课程卡片
-    courseList.forEach(course => {
-      treeEl.appendChild(renderCourseNode(course));
-    });
+    const layout = document.createElement('div');
+    layout.className = 'home-library-layout stitch-home-layout flex h-full overflow-hidden';
 
-    // 独立项目使用一个紧凑的分割标题，避免占用项目列表的垂直空间。
+    const navigation = document.createElement('aside');
+    navigation.className = 'home-library-navigation stitch-home-sidebar w-72 bg-white border-r border-line-subtle flex flex-col justify-between shrink-0';
+    navigation.setAttribute('aria-label', '课程与视频导航');
+
+    const navigationBody = document.createElement('div');
+    navigationBody.className = 'home-library-navigation-body stitch-sidebar-body flex-1 overflow-y-auto px-4 pt-3 pb-5 space-y-4';
+    navigationBody.appendChild(renderAllVideosSelector());
+
+    const treeEl = document.createElement('div');
+    treeEl.className = 'course-tree-body home-library-tree stitch-course-tree space-y-1.5';
+    treeEl.setAttribute('role', 'tree');
+
+    const curriculumHeading = document.createElement('div');
+    curriculumHeading.className = 'home-library-navigation-heading stitch-tree-section-heading flex items-center justify-between px-2 pt-1';
+    const curriculumLabel = document.createElement('span');
+    curriculumLabel.textContent = `课程体系 (${courseList.length})`;
+    const createCourse = document.createElement('button');
+    createCourse.type = 'button';
+    createCourse.className = 'stitch-tree-add-course icon-btn-hover';
+    createCourse.title = '添加课程';
+    createCourse.setAttribute('aria-label', '添加课程');
+    createCourse.innerHTML = ICON.plus;
+    createCourse.addEventListener('click', createCourseQuick);
+    curriculumHeading.append(curriculumLabel, createCourse);
+    treeEl.appendChild(curriculumHeading);
+    courseList.forEach(course => treeEl.appendChild(renderCourseNode(course)));
+
     if (standaloneList.length > 0) {
       const standaloneHeading = document.createElement('div');
-      standaloneHeading.className = 'course-tree-standalone-heading';
-      standaloneHeading.textContent = '独立视频项目';
+      standaloneHeading.className = 'course-tree-standalone-heading stitch-tree-section-heading';
+      standaloneHeading.textContent = `独立与未归档 (${standaloneList.length})`;
       treeEl.appendChild(standaloneHeading);
+      standaloneList.forEach(project => treeEl.appendChild(renderStandaloneProjectCard(project)));
     }
-    standaloneList.forEach(project => {
-      treeEl.appendChild(renderStandaloneProjectCard(project));
+    navigationBody.appendChild(treeEl);
+    navigation.appendChild(navigationBody);
+
+    const navigationFooter = document.createElement('div');
+    navigationFooter.className = 'home-library-navigation-footer stitch-sidebar-footer border-t border-line-subtle p-3';
+    const footerCreate = document.createElement('button');
+    footerCreate.type = 'button';
+    footerCreate.className = 'stitch-sidebar-create-video w-full';
+    footerCreate.innerHTML = `${ICON.circlePlusLarge}<span>新建视频</span>`;
+    footerCreate.addEventListener('click', createStandaloneVideoFromLibrary);
+    navigationFooter.appendChild(footerCreate);
+    navigation.appendChild(navigationFooter);
+
+    const main = document.createElement('section');
+    main.className = 'home-library-main stitch-home-main flex-1 flex flex-col overflow-y-auto px-8 py-7 bg-surface-page';
+    main.setAttribute('aria-live', 'polite');
+    const mainHeader = document.createElement('div');
+    mainHeader.className = 'home-library-main-header stitch-main-header flex flex-col gap-1.5 mb-7 pb-1';
+    const breadcrumb = document.createElement('div');
+    breadcrumb.className = 'home-library-breadcrumb stitch-home-breadcrumb';
+    breadcrumb.textContent = libraryFilterTitle();
+    const heading = document.createElement('div');
+    heading.className = 'home-library-main-heading stitch-main-heading flex items-center justify-between gap-4';
+    const title = document.createElement('h2');
+    title.className = 'home-library-main-title';
+    title.textContent = libraryFilterTitle();
+    const titleWrap = document.createElement('div');
+    titleWrap.className = 'stitch-main-title-wrap flex items-baseline gap-2';
+    titleWrap.append(title);
+    heading.append(titleWrap, renderLibrarySearchTools());
+    mainHeader.append(breadcrumb, heading);
+    main.appendChild(mainHeader);
+
+    const cards = document.createElement('div');
+    cards.className = 'home-library-video-grid stitch-video-grid grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-5 pb-8';
+    cards.id = 'home-library-video-results';
+    // 入场动画只在每次页面加载后的首次渲染播放一次；搜索等重渲染不再闪动
+    if (!container.dataset.animated) {
+      cards.classList.add('first-paint');
+      container.dataset.animated = '1';
+      setTimeout(() => cards.classList.remove('first-paint'), 900);
+    }
+    const visibleRecords = filterVideoRecords(videoRecords);
+    cards.appendChild(renderNewVideoCard());
+    visibleRecords.forEach(record => cards.appendChild(renderLibraryVideoCard(record)));
+    if (visibleRecords.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'course-tree-empty home-library-empty';
+      const message = document.createElement('p');
+      message.textContent = librarySearchQuery.trim()
+        ? '没有找到匹配的视频、课程或章节。'
+        : videoRecords.length
+          ? '这个分类下还没有视频项目。'
+          : '还没有任何课程或视频项目，先创建一个开始吧。';
+      empty.appendChild(message);
+      const action = document.createElement('button');
+      action.type = 'button';
+      action.className = 'success';
+      action.textContent = librarySearchQuery.trim()
+        ? '清除搜索'
+        : videoRecords.length ? '查看全部视频' : '新建课程';
+      action.addEventListener('click', () => {
+        if (librarySearchQuery.trim()) clearLibrarySearch();
+        else if (videoRecords.length) selectLibraryFilter({ type: 'all', id: null });
+        else document.getElementById('btn-create-course')?.click();
+      });
+      empty.appendChild(action);
+      cards.appendChild(empty);
+    }
+    main.appendChild(cards);
+
+    layout.append(navigation, main);
+    container.appendChild(layout);
+  }
+
+  function normalizeLibraryFilter() {
+    if (libraryFilter.type === 'course' && !findCourse(libraryFilter.id)) {
+      libraryFilter = { type: 'all', id: null };
+    } else if (libraryFilter.type === 'chapter' && !findChapter(libraryFilter.id)) {
+      libraryFilter = { type: 'all', id: null };
+    }
+  }
+
+  function selectLibraryFilter(nextFilter) {
+    libraryFilter = nextFilter;
+    render();
+  }
+
+  function renderLibrarySearchTools() {
+    const tools = document.createElement('div');
+    tools.className = 'home-library-search-tools stitch-search-tools flex items-center space-x-3';
+    tools.setAttribute('role', 'search');
+
+    const label = document.createElement('label');
+    label.className = 'home-library-search-label sr-only';
+    label.htmlFor = 'home-library-search-input';
+    label.textContent = '搜索视频库';
+
+    const input = document.createElement('input');
+    input.id = 'home-library-search-input';
+    input.className = 'home-library-search-input stitch-search-input w-full h-9 pl-9 pr-4 rounded-lg bg-surface-card border border-line-border';
+    input.type = 'search';
+    input.placeholder = '搜索视频名称或标签';
+    input.autocomplete = 'off';
+    input.value = librarySearchQuery;
+    input.setAttribute('aria-describedby', 'home-library-search-help');
+    input.addEventListener('input', (event) => {
+      const nextInput = event.currentTarget;
+      const selectionStart = nextInput.selectionStart;
+      const selectionEnd = nextInput.selectionEnd;
+      librarySearchQuery = nextInput.value;
+      render();
+
+      // render() 会重建卡片和筛选树；恢复焦点，让连续输入仍是自然的
+      // 本地搜索体验，而不必引入额外状态管理或服务端接口。
+      const replacement = document.getElementById('home-library-search-input');
+      if (replacement) {
+        replacement.focus();
+        if (selectionStart !== null && selectionEnd !== null) {
+          replacement.setSelectionRange(selectionStart, selectionEnd);
+        }
+      }
     });
 
-    // 空状态
-    if (courseList.length === 0 && standaloneList.length === 0) {
-      treeEl.innerHTML = `
-        <div class="course-tree-empty">
-          <p style="font-size:1.2rem;margin-bottom:1rem;color:#6E737C;">还没有任何课程或项目，快去新建一个吧！</p>
-          <button type="button" class="success" onclick="document.getElementById('btn-create-course').click()">立即新建</button>
-        </div>
-      `;
+    const help = document.createElement('span');
+    help.id = 'home-library-search-help';
+    help.className = 'home-library-search-help';
+    help.textContent = '按视频名称、课程或章节筛选';
+
+    const searchIcon = document.createElement('span');
+    searchIcon.className = 'stitch-search-icon';
+    searchIcon.setAttribute('aria-hidden', 'true');
+    searchIcon.innerHTML = ICON.search;
+    const field = document.createElement('div');
+    field.className = 'stitch-search-field relative w-64 group';
+    field.append(searchIcon, input);
+    tools.append(label, field, help);
+    if (librarySearchQuery.trim()) {
+      const clear = document.createElement('button');
+      clear.type = 'button';
+      clear.className = 'secondary home-library-search-clear';
+      clear.textContent = '清除';
+      clear.addEventListener('click', clearLibrarySearch);
+      tools.appendChild(clear);
+    }
+    return tools;
+  }
+
+  function clearLibrarySearch() {
+    librarySearchQuery = '';
+    render();
+    document.getElementById('home-library-search-input')?.focus();
+  }
+
+  function isLibraryFilterSelected(type, id = null) {
+    return libraryFilter.type === type && libraryFilter.id === id;
+  }
+
+  function renderAllVideosSelector() {
+    // 设计稿中"全部视频"行右侧是常显的"更多操作"菜单（新建视频/新建课程）
+    const wrap = document.createElement('div');
+    wrap.className = 'stitch-all-videos-wrap';
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'home-library-all-videos-selector stitch-all-videos-selector flex items-center justify-between px-3 py-2 rounded-xl';
+    button.setAttribute('aria-pressed', String(isLibraryFilterSelected('all')));
+    if (isLibraryFilterSelected('all')) button.classList.add('is-selected');
+    button.innerHTML = `<span class="stitch-all-videos-leading">${ICON.grid}<span>全部视频</span></span>`;
+    button.addEventListener('click', () => selectLibraryFilter({ type: 'all', id: null }));
+
+    const overflowHost = document.createElement('div');
+    overflowHost.innerHTML = renderTreeOverflowMenu('库操作', [
+      { action: 'library-new-video', idAttribute: '', title: '新建视频', label: '新建视频', icon: ICON.plusCircle },
+      { action: 'library-new-course', idAttribute: '', title: '新建课程', label: '新建课程', icon: ICON.plus },
+    ]);
+    const overflow = overflowHost.firstElementChild;
+    overflow.classList.add('stitch-all-videos-overflow');
+    overflow.querySelector('[data-action="library-new-video"]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      createStandaloneVideoFromLibrary();
+    });
+    overflow.querySelector('[data-action="library-new-course"]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      createCourseQuick();
+    });
+
+    wrap.append(button, overflow);
+    bindTreeOverflow(wrap);
+    return wrap;
+  }
+
+  function collectVideoRecords(courseList, standaloneList) {
+    const records = [];
+    courseList.forEach(course => {
+      (course.chapters || []).forEach(chapter => {
+        (chapter.projects || []).forEach(project => records.push({ project, course, chapter }));
+      });
+      (course.unchaptered_projects || []).forEach(project => records.push({ project, course, chapter: null }));
+    });
+    standaloneList.forEach(project => records.push({ project, course: null, chapter: null }));
+    return records;
+  }
+
+  function filterVideoRecords(records) {
+    let filtered = records;
+    if (libraryFilter.type === 'course') {
+      filtered = records.filter(record => record.course?.id === libraryFilter.id);
+    } else if (libraryFilter.type === 'chapter') {
+      filtered = records.filter(record => record.chapter?.id === libraryFilter.id);
     }
 
-    container.appendChild(treeEl);
+    const query = librarySearchQuery.trim().toLocaleLowerCase('zh-CN');
+    if (!query) return filtered;
+    return filtered.filter(record => [
+      record.project?.name,
+      record.course?.name,
+      record.chapter?.name,
+    ].some(value => String(value || '').toLocaleLowerCase('zh-CN').includes(query)));
+  }
+
+  function libraryFilterTitle() {
+    if (libraryFilter.type === 'course') return findCourse(libraryFilter.id)?.name || '全部视频';
+    if (libraryFilter.type === 'chapter') return findChapter(libraryFilter.id)?.chapter?.name || '全部视频';
+    return '全部视频';
+  }
+
+  function libraryRecordLabel(record) {
+    // 设计稿的卡片角标只显示课程名，独立视频显示"独立视频"
+    if (!record.course) return '独立视频';
+    return record.course.name;
+  }
+
+  function projectProgress(project) {
+    try {
+      const progress = calculateVisibleProgress(project.step_status || {}, projectFlowContext(project));
+      return Math.max(0, Math.min(100, Math.round(Number(progress) || 0)));
+    } catch (_) {
+      const step = getStepInfo(project).num;
+      return Math.round(Math.max(0, Math.min(1, (step - 1) / 6)) * 100);
+    }
+  }
+
+  function renderNewVideoCard() {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'home-library-video-card home-library-new-video-card stitch-new-video-card group relative border-2 border-dashed border-line-border rounded-xl p-5 flex flex-col items-center justify-center text-center min-h-[220px]';
+    card.setAttribute('aria-label', '新建视频');
+
+    const preview = document.createElement('span');
+    preview.className = 'home-library-video-preview stitch-new-video-icon w-11 h-11 rounded-full';
+    preview.setAttribute('aria-hidden', 'true');
+    preview.innerHTML = ICON.plus;
+
+    const content = document.createElement('span');
+    content.className = 'home-library-video-content stitch-new-video-content';
+    const name = document.createElement('strong');
+    name.className = 'home-library-video-name stitch-new-video-name';
+    name.textContent = '新建视频';
+    content.append(name);
+    card.append(preview, content);
+    card.addEventListener('click', createStandaloneVideoFromLibrary);
+    return card;
+  }
+
+  function createStandaloneVideoFromLibrary() {
+    // 课程/章节入口会预设目标父级；首页首卡明确对应独立视频，避免
+    // 已取消的嵌套创建意外影响本次新建。
+    pendingProjectParent = null;
+    window.__pendingProjectParent = null;
+    const createButton = document.getElementById('btn-create-project');
+    if (!createButton) {
+      showToast('新建视频弹窗未就绪');
+      return;
+    }
+    createButton.click();
+  }
+
+  function renderLibraryVideoCard(record) {
+    const { project } = record;
+    const stepInfo = getStepInfo(project);
+    const progress = projectProgress(project);
+    const card = document.createElement('article');
+    const previewVariant = libraryPreviewVariant(record);
+    card.className = `home-library-video-card stitch-video-card group relative bg-surface-card border border-line-border rounded-xl overflow-hidden flex flex-col cursor-pointer animate-fadeInUp ${previewVariant.cardClass}`;
+    card.tabIndex = 0;
+    card.setAttribute('role', 'button');
+    card.setAttribute('aria-label', `打开视频项目：${project.name}`);
+
+    const preview = document.createElement('div');
+    preview.className = `home-library-video-preview stitch-video-preview relative aspect-[16/9] w-full overflow-hidden flex items-center justify-center ${previewVariant.previewClass}`;
+    preview.setAttribute('aria-hidden', 'true');
+    const label = document.createElement('span');
+    label.className = `home-library-video-label stitch-video-label ${previewVariant.labelClass}`;
+    label.textContent = libraryRecordLabel(record);
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'stitch-video-more icon-btn-hover';
+    more.title = `更多操作：${project.name || '未命名视频'}`;
+    more.setAttribute('aria-label', more.title);
+    more.innerHTML = ICON.more;
+    const menu = document.createElement('div');
+    menu.className = 'stitch-video-menu';
+    const openFromMenu = createProjectActionButton('继续', ICON.playMenu, 'open-project', project, () => enterWorkspace(project.id), true);
+    const editFromMenu = createProjectActionButton('编辑', ICON.edit, 'edit-project', project, () => openEditProjectModal(project));
+    const deleteFromMenu = createProjectActionButton('删除', ICON.trash, 'delete-project', project, () => deleteProjectFromTree(project), false, true);
+    menu.append(openFromMenu, editFromMenu, deleteFromMenu);
+    more.addEventListener('click', (event) => {
+      event.stopPropagation();
+      document.querySelectorAll('.stitch-video-menu.is-open').forEach(openMenu => {
+        if (openMenu !== menu) openMenu.classList.remove('is-open');
+      });
+      menu.classList.toggle('is-open');
+    });
+    const play = document.createElement('span');
+    play.className = 'stitch-video-play w-10 h-10 rounded-full';
+    play.innerHTML = '<svg class="stitch-ic" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>';
+    const pattern = document.createElement('span');
+    pattern.className = 'stitch-video-pattern';
+    preview.append(pattern, label, more, menu, play);
+
+    const content = document.createElement('div');
+    content.className = 'home-library-video-content stitch-video-content p-3.5 flex flex-col justify-between flex-1';
+    const name = document.createElement('h3');
+    name.className = 'home-library-video-name stitch-video-name';
+    name.textContent = project.name || '未命名视频';
+
+    const progressRow = document.createElement('div');
+    progressRow.className = 'home-library-video-progress-row stitch-video-progress-row';
+    const progressLabel = document.createElement('span');
+    progressLabel.textContent = '进度';
+    const progressValue = document.createElement('span');
+    const completedSegments = Math.max(0, Math.min(7, Math.round(progress / 100 * 7)));
+    progressValue.textContent = `${completedSegments} / 7`;
+    progressRow.append(progressLabel, progressValue);
+    const progressTrack = document.createElement('div');
+    progressTrack.className = 'home-library-video-progress stitch-video-progress grid grid-cols-7 gap-1 h-1.5 w-full';
+    progressTrack.setAttribute('role', 'progressbar');
+    progressTrack.setAttribute('aria-label', `${project.name} 完成进度`);
+    progressTrack.setAttribute('aria-valuemin', '0');
+    progressTrack.setAttribute('aria-valuemax', '100');
+    progressTrack.setAttribute('aria-valuenow', String(progress));
+    for (let index = 0; index < 7; index += 1) {
+      const segment = document.createElement('span');
+      segment.className = `stitch-progress-segment rounded-full ${index < completedSegments ? 'is-complete bg-emerald-500 progress-bar-fill' : 'bg-neutral-200'}`;
+      segment.title = `步骤 ${index + 1}${index < completedSegments ? '：已完成' : '：未完成'}`;
+      progressTrack.appendChild(segment);
+    }
+
+    const progressBlock = document.createElement('div');
+    progressBlock.className = 'stitch-video-progress-block mt-3 space-y-1.5';
+    progressBlock.append(progressRow, progressTrack);
+    content.append(name, progressBlock);
+    card.append(preview, content);
+    card.addEventListener('click', (event) => {
+      if (!event.target.closest('button')) enterWorkspace(project.id);
+    });
+    card.addEventListener('keydown', (event) => {
+      if (event.target !== card) return;
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        enterWorkspace(project.id);
+      }
+    });
+    return card;
+  }
+
+  function libraryPreviewVariant(record) {
+    const variants = [
+      { previewClass: 'stitch-preview-coral', labelClass: 'stitch-label-coral', cardClass: 'stagger-1' },
+      { previewClass: 'stitch-preview-blue', labelClass: 'stitch-label-blue', cardClass: 'stagger-2' },
+      { previewClass: 'stitch-preview-violet', labelClass: 'stitch-label-violet', cardClass: 'stagger-3' },
+      { previewClass: 'stitch-preview-green', labelClass: 'stitch-label-green', cardClass: 'stagger-4' },
+      { previewClass: 'stitch-preview-neutral', labelClass: 'stitch-label-neutral', cardClass: 'stagger-5' },
+      { previewClass: 'stitch-preview-warm', labelClass: 'stitch-label-neutral', cardClass: 'stagger-6' },
+    ];
+    const source = `${record.course?.id || 'standalone'}:${record.chapter?.id || ''}:${record.project?.id || ''}`;
+    let hash = 0;
+    for (let index = 0; index < source.length; index += 1) hash = ((hash << 5) - hash + source.charCodeAt(index)) | 0;
+    return variants[Math.abs(hash) % variants.length];
+  }
+
+  function createProjectActionButton(label, icon, action, project, callback, primary = false, danger = false) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `icon-action-btn${primary ? ' success' : ''}${danger ? ' danger' : ''}`;
+    button.dataset.action = action;
+    button.dataset.projectId = project.id;
+    button.title = label;
+    button.setAttribute('aria-label', `${label}：${project.name || '未命名视频'}`);
+    button.innerHTML = `${icon}<span class="action-label">${label}</span>`;
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      callback();
+    });
+    return button;
+  }
+
+  // ===== 树节点"更多操作"下拉菜单（⋯ 触发，点击空白处关闭）=====
+
+  function renderTreeOverflowMenu(menuLabel, actions) {
+    const items = actions.map(action => `
+      <button type="button" class="tree-overflow-item${action.danger ? ' is-danger' : ''}" data-action="${escHtml(action.action)}" ${action.idAttribute} title="${escHtml(action.title)}">
+        ${action.icon || ''}<span>${escHtml(action.label)}</span>
+      </button>`).join('');
+    return `
+      <div class="tree-overflow" role="group" aria-label="${escHtml(menuLabel)}">
+        <button type="button" class="tree-overflow-trigger icon-btn-hover" title="更多操作" aria-haspopup="menu" aria-expanded="false" aria-label="${escHtml(menuLabel)}">
+          ${ICON.more}
+        </button>
+        <div class="tree-overflow-menu" role="menu" aria-label="${escHtml(menuLabel)}">${items}</div>
+      </div>
+    `;
+  }
+
+  function bindTreeOverflow(rootEl) {
+    rootEl.querySelectorAll('.tree-overflow').forEach(overflow => {
+      const trigger = overflow.querySelector('.tree-overflow-trigger');
+      const menu = overflow.querySelector('.tree-overflow-menu');
+      if (!trigger || !menu || trigger.__treeOverflowBound) return;
+      trigger.__treeOverflowBound = true;
+      trigger.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const willOpen = !menu.classList.contains('is-open');
+        document.querySelectorAll('.tree-overflow-menu.is-open').forEach(openMenu => {
+          if (openMenu !== menu) openMenu.classList.remove('is-open');
+        });
+        document.querySelectorAll('.tree-overflow-trigger[aria-expanded="true"]').forEach(openTrigger => {
+          if (openTrigger !== trigger) openTrigger.setAttribute('aria-expanded', 'false');
+        });
+        menu.classList.toggle('is-open', willOpen);
+        trigger.setAttribute('aria-expanded', String(willOpen));
+      });
+    });
+    if (!document.__treeOverflowDismissBound) {
+      document.__treeOverflowDismissBound = true;
+      document.addEventListener('click', (event) => {
+        if (event.target.closest('.tree-overflow')) return;
+        document.querySelectorAll('.tree-overflow-menu.is-open').forEach(menu => menu.classList.remove('is-open'));
+        document.querySelectorAll('.tree-overflow-trigger[aria-expanded="true"]').forEach(trigger => {
+          trigger.setAttribute('aria-expanded', 'false');
+        });
+      });
+    }
   }
 
   // 课程卡片
@@ -144,25 +631,28 @@ const CourseTree = (() => {
     const expanded = isExpanded(nodeId);
 
     const node = document.createElement('div');
-    node.className = 'course-card-item';
+    node.className = 'course-card-item stitch-course-node group space-y-0.5';
+    if (isLibraryFilterSelected('course', course.id)) node.classList.add('is-selected');
     node.dataset.courseId = course.id;
     node.draggable = true;
+    node.setAttribute('role', 'treeitem');
+    node.setAttribute('aria-expanded', String(expanded));
 
     const chapterCount = course.chapters ? course.chapters.length : 0;
     const projectCount = course.project_count || 0;
     const unchapteredCount = (course.unchaptered_projects || []).length;
 
     node.innerHTML = `
-      <div class="course-card-header">
-        <span class="tree-toggle" data-toggle="${nodeId}">${expanded ? ICON.chevronDown : ICON.chevronRight}</span>
-        ${ICON.layers}
+      <div class="course-card-header stitch-course-header group flex items-center justify-between px-2.5 py-1.5 rounded-lg">
+        <button type="button" class="tree-toggle" data-toggle="${nodeId}" aria-label="${expanded ? '收起' : '展开'}课程 ${escHtml(course.name)}" aria-expanded="${expanded}">${expanded ? ICON.chevronDown : ICON.chevronRight}</button>
+        ${ICON.book}
         <span class="course-name" data-course-name="${course.id}">${escHtml(course.name)}</span>
-        <span class="course-meta">${chapterCount} 章 · ${projectCount} 视频</span>
-        <div class="course-actions">
-          <button class="icon-action-btn" data-action="add-chapter" data-course-id="${course.id}" title="新建章节">${ICON.plus}<span class="action-label">章节</span></button>
-          <button class="icon-action-btn" data-action="edit-course" data-course-id="${course.id}" title="重命名">${ICON.edit}<span class="action-label">修改</span></button>
-          <button class="icon-action-btn danger" data-action="delete-course" data-course-id="${course.id}" title="删除课程">${ICON.trash}<span class="action-label">删除</span></button>
-        </div>
+        ${renderTreeOverflowMenu('课程操作', [
+          { action: 'add-chapter', idAttribute: `data-course-id="${course.id}"`, title: '新建章节', label: '新建章节', icon: ICON.plus },
+          { action: 'add-project-course', idAttribute: `data-course-id="${course.id}"`, title: '新建视频', label: '新建视频', icon: ICON.plusCircle },
+          { action: 'edit-course', idAttribute: `data-course-id="${course.id}"`, title: '重命名', label: '重命名', icon: ICON.edit },
+          { action: 'delete-course', idAttribute: `data-course-id="${course.id}"`, title: '删除课程', label: '删除课程', icon: ICON.trash, danger: true },
+        ])}
       </div>
     `;
 
@@ -172,10 +662,28 @@ const CourseTree = (() => {
       toggleExpanded(nodeId);
       render();
     });
-    node.querySelector('.course-name').addEventListener('dblclick', () => startRenameCourse(course.id));
-    node.querySelector('[data-action="add-chapter"]').addEventListener('click', () => createChapterQuick(course.id));
-    node.querySelector('[data-action="edit-course"]').addEventListener('click', () => startRenameCourse(course.id));
-    node.querySelector('[data-action="delete-course"]').addEventListener('click', () => deleteCourseConfirm(course));
+    const courseHeader = node.querySelector('.course-card-header');
+    courseHeader.addEventListener('click', (e) => {
+      if (e.target.closest('button, input')) return;
+      selectLibraryFilter({ type: 'course', id: course.id });
+    });
+    const courseName = node.querySelector('.course-name');
+    courseName.tabIndex = 0;
+    courseName.setAttribute('role', 'button');
+    courseName.setAttribute('aria-label', `筛选课程：${course.name}`);
+    courseName.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        e.stopPropagation();
+        selectLibraryFilter({ type: 'course', id: course.id });
+      }
+    });
+    courseName.addEventListener('dblclick', () => startRenameCourse(course.id));
+    node.querySelector('[data-action="add-chapter"]').addEventListener('click', (e) => { e.stopPropagation(); createChapterQuick(course.id); });
+    node.querySelector('[data-action="add-project-course"]').addEventListener('click', (e) => { e.stopPropagation(); createProjectInCourse(course.id); });
+    node.querySelector('[data-action="edit-course"]').addEventListener('click', (e) => { e.stopPropagation(); startRenameCourse(course.id); });
+    node.querySelector('[data-action="delete-course"]').addEventListener('click', (e) => { e.stopPropagation(); deleteCourseConfirm(course); });
+    bindTreeOverflow(node);
 
     // 拖拽
     node.addEventListener('dragstart', (e) => handleDragStart(e, 'course'));
@@ -186,7 +694,7 @@ const CourseTree = (() => {
     // 子节点容器（章节 + 未归类视频，扁平展示）
     if (expanded) {
       const childrenEl = document.createElement('div');
-      childrenEl.className = 'course-card-children';
+      childrenEl.className = 'course-card-children stitch-course-children pl-3 space-y-1 mt-0.5';
 
       (course.chapters || []).forEach(chapter => {
         childrenEl.appendChild(renderChapterNode(chapter));
@@ -219,23 +727,25 @@ const CourseTree = (() => {
     const expanded = isExpanded(nodeId);
 
     const node = document.createElement('div');
-    node.className = 'chapter-node';
+    node.className = 'chapter-node stitch-chapter-node group space-y-0.5';
+    if (isLibraryFilterSelected('chapter', chapter.id)) node.classList.add('is-selected');
     node.dataset.chapterId = chapter.id;
     node.draggable = true;
+    node.setAttribute('role', 'treeitem');
+    node.setAttribute('aria-expanded', String(expanded));
 
     const projectCount = chapter.projects ? chapter.projects.length : 0;
 
     node.innerHTML = `
-      <div class="chapter-node-header">
-        <span class="tree-toggle" data-toggle="${nodeId}">${expanded ? ICON.chevronDown : ICON.chevronRight}</span>
-        ${ICON.list}
+      <div class="chapter-node-header stitch-chapter-header group flex items-center justify-between px-2 py-1 rounded-md">
+        <button type="button" class="tree-toggle" data-toggle="${nodeId}" aria-label="${expanded ? '收起' : '展开'}章节 ${escHtml(chapter.name)}" aria-expanded="${expanded}">${expanded ? ICON.chevronDown : ICON.chevronRight}</button>
+        ${ICON.folder}
         <span class="chapter-name" data-chapter-name="${chapter.id}">${escHtml(chapter.name)}</span>
-        <span class="chapter-meta">${projectCount} 视频</span>
-        <div class="chapter-actions">
-          <button class="icon-action-btn" data-action="add-project-chapter" data-chapter-id="${chapter.id}" title="新建视频">${ICON.plus}<span class="action-label">视频</span></button>
-          <button class="icon-action-btn" data-action="edit-chapter" data-chapter-id="${chapter.id}" title="重命名">${ICON.edit}<span class="action-label">修改</span></button>
-          <button class="icon-action-btn danger" data-action="delete-chapter" data-chapter-id="${chapter.id}" title="删除章节">${ICON.trash}<span class="action-label">删除</span></button>
-        </div>
+        ${renderTreeOverflowMenu('章节操作', [
+          { action: 'add-project-chapter', idAttribute: `data-chapter-id="${chapter.id}"`, title: '新建视频', label: '新建视频', icon: ICON.plusCircle },
+          { action: 'edit-chapter', idAttribute: `data-chapter-id="${chapter.id}"`, title: '重命名', label: '重命名', icon: ICON.edit },
+          { action: 'delete-chapter', idAttribute: `data-chapter-id="${chapter.id}"`, title: '删除章节', label: '删除章节', icon: ICON.trash, danger: true },
+        ])}
       </div>
     `;
 
@@ -244,10 +754,27 @@ const CourseTree = (() => {
       toggleExpanded(nodeId);
       render();
     });
-    node.querySelector('.chapter-name').addEventListener('dblclick', () => startRenameChapter(chapter.id));
-    node.querySelector('[data-action="add-project-chapter"]').addEventListener('click', () => createProjectInChapter(chapter.id));
-    node.querySelector('[data-action="edit-chapter"]').addEventListener('click', () => startRenameChapter(chapter.id));
-    node.querySelector('[data-action="delete-chapter"]').addEventListener('click', () => deleteChapterConfirm(chapter));
+    const chapterHeader = node.querySelector('.chapter-node-header');
+    chapterHeader.addEventListener('click', (e) => {
+      if (e.target.closest('button, input')) return;
+      selectLibraryFilter({ type: 'chapter', id: chapter.id });
+    });
+    const chapterName = node.querySelector('.chapter-name');
+    chapterName.tabIndex = 0;
+    chapterName.setAttribute('role', 'button');
+    chapterName.setAttribute('aria-label', `筛选章节：${chapter.name}`);
+    chapterName.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        e.stopPropagation();
+        selectLibraryFilter({ type: 'chapter', id: chapter.id });
+      }
+    });
+    chapterName.addEventListener('dblclick', () => startRenameChapter(chapter.id));
+    node.querySelector('[data-action="add-project-chapter"]').addEventListener('click', (e) => { e.stopPropagation(); createProjectInChapter(chapter.id); });
+    node.querySelector('[data-action="edit-chapter"]').addEventListener('click', (e) => { e.stopPropagation(); startRenameChapter(chapter.id); });
+    node.querySelector('[data-action="delete-chapter"]').addEventListener('click', (e) => { e.stopPropagation(); deleteChapterConfirm(chapter); });
+    bindTreeOverflow(node);
 
     node.addEventListener('dragstart', (e) => handleDragStart(e, 'chapter'));
     node.addEventListener('dragend', handleDragEnd);
@@ -256,7 +783,7 @@ const CourseTree = (() => {
 
     if (expanded) {
       const childrenEl = document.createElement('div');
-      childrenEl.className = 'chapter-node-children';
+      childrenEl.className = 'chapter-node-children stitch-chapter-children pl-4 pr-1 space-y-0.5 border-l border-neutral-200 ml-3 py-0.5';
       (chapter.projects || []).forEach(p => {
         childrenEl.appendChild(renderProjectLeaf(p));
       });
@@ -269,30 +796,32 @@ const CourseTree = (() => {
     return node;
   }
 
-  // 视频叶子行
+  // 视频叶子行：设计稿中仅展示播放图标与名称，操作统一在右侧卡片菜单
   function renderProjectLeaf(project) {
     const leaf = document.createElement('div');
-    leaf.className = 'project-leaf';
+    leaf.className = 'project-leaf stitch-project-leaf group flex items-center justify-between px-2 py-1 rounded';
     leaf.dataset.projectId = project.id;
     leaf.draggable = true;
-
-    const stepInfo = getStepInfo(project);
+    leaf.tabIndex = 0;
+    leaf.setAttribute('role', 'treeitem');
+    leaf.setAttribute('aria-label', `打开视频项目：${project.name}`);
 
     leaf.innerHTML = `
-      ${ICON.film}
+      <span class="project-leaf-play" aria-hidden="true">${ICON.playTiny}</span>
       <span class="project-name" data-project-id="${project.id}">${escHtml(project.name)}</span>
-      <span class="project-step-badge">${stepInfo.label}</span>
-      <div class="project-actions">
-        <button class="icon-action-btn" data-action="edit-project" data-project-id="${project.id}" title="修改设定">${ICON.edit}<span class="action-label">修改</span></button>
-        <button class="icon-action-btn success" data-action="open-project" data-project-id="${project.id}" title="继续设计">${ICON.play}<span class="action-label">继续</span></button>
-        <button class="icon-action-btn danger" data-action="delete-project" data-project-id="${project.id}" title="删除">${ICON.trash}<span class="action-label">删除</span></button>
-      </div>
     `;
 
-    leaf.querySelector('[data-action="edit-project"]').addEventListener('click', (e) => { e.stopPropagation(); openEditProjectModal(project); });
-    leaf.querySelector('[data-action="open-project"]').addEventListener('click', (e) => { e.stopPropagation(); enterWorkspace(project.id); });
-    leaf.querySelector('[data-action="delete-project"]').addEventListener('click', (e) => { e.stopPropagation(); deleteProjectFromTree(project); });
+    leaf.addEventListener('click', (e) => {
+      if (!e.target.closest('button')) enterWorkspace(project.id);
+    });
     leaf.addEventListener('dblclick', () => enterWorkspace(project.id));
+    leaf.addEventListener('keydown', (e) => {
+      if (e.target !== leaf) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        enterWorkspace(project.id);
+      }
+    });
     leaf.addEventListener('dragstart', (e) => handleDragStart(e, 'project'));
     leaf.addEventListener('dragend', handleDragEnd);
     leaf.addEventListener('dragover', (e) => handleNodeDragOver(e, 'project', false));
@@ -301,39 +830,44 @@ const CourseTree = (() => {
     return leaf;
   }
 
-  // 独立项目卡片（和课程卡片样式一致，用视频图标区分）
+  // 独立项目行：与设计稿一致，仅播放图标 + 名称，操作在右侧卡片菜单
   function renderStandaloneProjectCard(project) {
-    const stepInfo = getStepInfo(project);
-    const outputTime = formatLatestOutputTime(project.latest_output_at);
-
     const node = document.createElement('div');
-    node.className = 'course-card-item standalone-project';
+    node.className = 'course-card-item standalone-project stitch-standalone-project group';
     node.dataset.projectId = project.id;
     node.dataset.dragType = 'project';
     node.draggable = true;
+    node.tabIndex = 0;
+    node.setAttribute('role', 'treeitem');
+    node.setAttribute('aria-label', `打开独立视频项目：${project.name}`);
 
     node.innerHTML = `
-      <div class="course-card-header">
-        ${ICON.film}
+      <div class="course-card-header stitch-standalone-header group flex items-center justify-between px-2.5 py-1.5 rounded-lg">
+        <span class="project-leaf-play" aria-hidden="true">${ICON.playTiny}</span>
         <span class="course-name" data-project-id="${project.id}">${escHtml(project.name)}</span>
-        <span class="course-meta">${stepInfo.label}</span>
-        ${outputTime ? `<span class="course-meta course-output-time" title="最近作品输出时间">最近输出 · ${escHtml(outputTime)}</span>` : ''}
-        <div class="course-actions">
-          <button class="icon-action-btn" data-action="edit-project" data-project-id="${project.id}" title="修改设定">${ICON.edit}<span class="action-label">修改</span></button>
-          <button class="icon-action-btn success" data-action="open-project" data-project-id="${project.id}" title="继续设计">${ICON.play}<span class="action-label">继续</span></button>
-          <button class="icon-action-btn danger" data-action="delete-project" data-project-id="${project.id}" title="删除">${ICON.trash}<span class="action-label">删除</span></button>
-        </div>
       </div>
     `;
 
     // 点击头部进入工作台
-    node.querySelector('.course-card-header').addEventListener('click', (e) => {
+    const standaloneHeader = node.querySelector('.course-card-header');
+    standaloneHeader.addEventListener('click', (e) => {
       if (e.target.closest('.icon-action-btn')) return;
       enterWorkspace(project.id);
     });
-    node.querySelector('[data-action="edit-project"]').addEventListener('click', (e) => { e.stopPropagation(); openEditProjectModal(project); });
-    node.querySelector('[data-action="open-project"]').addEventListener('click', (e) => { e.stopPropagation(); enterWorkspace(project.id); });
-    node.querySelector('[data-action="delete-project"]').addEventListener('click', (e) => { e.stopPropagation(); deleteProjectFromTree(project); });
+    standaloneHeader.addEventListener('keydown', (e) => {
+      if (e.target !== standaloneHeader && e.target !== node) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        enterWorkspace(project.id);
+      }
+    });
+    node.addEventListener('keydown', (e) => {
+      if (e.target !== node) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        enterWorkspace(project.id);
+      }
+    });
 
     node.addEventListener('dragstart', (e) => handleDragStart(e, 'project'));
     node.addEventListener('dragend', handleDragEnd);

@@ -1354,7 +1354,17 @@ def _run_pipeline(
                 return
 
         if should_run("tts"):
-            _start_stage(project, status, "tts", "合成 TTS 音频并执行技术确认")
+            _start_stage(
+                project,
+                status,
+                "tts",
+                (
+                    "合成 TTS 音频并执行技术确认"
+                    f"（共 {len(_slide_ids(project))} 页，逐页调用云 TTS，"
+                    "每页通常 1-3 分钟；服务端排队或失败重试时更久，"
+                    "逐页错误见 runs/<run>/logs/pipeline.log）"
+                ),
+            )
             _require_quality_gate(
                 services.synthesize_audio,
                 "Step 7 synthesize",

@@ -1,0 +1,503 @@
+<!DOCTYPE html><html lang="zh-CN" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>PPT Studio - 分镜规划 (Step 2)</title>
+<!-- Tailwind CSS CDN with forms and container-queries -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#fff7ed',
+              100: '#ffedd5',
+              400: '#fb923c',
+              500: '#f46a38',
+              600: '#e85926',
+              700: '#c2410c',
+            },
+            surface: {
+              subtle: '#f8f9fc',
+              border: '#e2e8f0',
+              card: '#ffffff'
+            }
+          },
+          fontFamily: {
+            sans: ['-apple-system', 'BlinkMacSystemFont', '"PingFang SC"', '"Hiragino Sans GB"', '"Microsoft YaHei"', '"WenQuanYi Micro Hei"', 'sans-serif']
+          },
+          boxShadow: {
+            'glow-orange': '0 8px 24px -4px rgba(244, 106, 56, 0.35)',
+            'subtle': '0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.04)'
+          }
+        }
+      }
+    }
+  </script>
+<!-- BEGIN: Custom Styles -->
+<style data-purpose="base-layout">
+    body {
+      background-color: #f6f7fb;
+      color: #1e293b;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    /* Custom subtle scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+  </style>
+<!-- END: Custom Styles -->
+</head>
+<body class="font-sans antialiased text-slate-800 selection:bg-orange-100 selection:text-orange-700">
+<!-- BEGIN: MainHeader -->
+<header class="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between sticky top-0 z-30 shadow-sm" data-purpose="app-header">
+<!-- Left branding & project identity -->
+<div class="flex items-center space-x-4">
+<!-- Logo Mark -->
+<div class="flex items-center gap-2.5">
+<div class="w-9 h-9 bg-slate-950 rounded-xl flex items-center justify-center shadow-md shadow-slate-900/10 text-white transition-transform hover:scale-105">
+<svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
+<rect height="14" rx="2" ry="2" width="20" x="2" y="3"></rect>
+<line x1="8" x2="16" y1="21" y2="21"></line>
+<line x1="12" x2="12" y1="17" y2="21"></line>
+<path d="M7 8l4 3-4 3V8z" fill="currentColor"></path>
+</svg>
+</div>
+<span class="text-xl font-bold tracking-tight text-slate-900">PPT Studio</span>
+</div>
+<div class="h-4 w-[1px] bg-slate-200 mx-1"></div>
+<!-- Current Project Badge -->
+<div class="flex items-center text-xs font-medium">
+<span class="text-slate-500 mr-2">当前项目:</span>
+<div class="bg-orange-50 text-brand-600 px-2.5 py-1 rounded-md border border-orange-200/60 font-medium flex items-center gap-1">
+<span class="text-orange-400">#</span> 什么是 Token
+        </div>
+</div>
+</div>
+<!-- Right Header Actions -->
+<div class="flex items-center gap-3">
+<!-- AI Mode Selector Dropdown -->
+<div class="relative group">
+<button class="flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-100/90 hover:bg-slate-200/70 border border-slate-200/80 rounded-lg text-xs font-medium text-slate-700 transition-colors" type="button">
+<span class="">分镜方式:</span>
+<span class="font-semibold text-slate-900">AI 辅助</span>
+<svg class="w-3.5 h-3.5 text-slate-500 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+</div>
+<!-- Return Home Pill Button -->
+<a class="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-brand-600 border border-brand-500/40 hover:border-brand-500 hover:bg-orange-50/50 rounded-lg transition-all duration-200" href="#">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
+<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+<polyline points="9 22 9 12 15 12 15 22"></polyline>
+</svg>
+<span class="">返回首页</span>
+</a>
+</div>
+</header>
+<!-- END: MainHeader -->
+<!-- BEGIN: WorkspaceLayout -->
+<div class="flex-1 flex w-full max-w-[1920px] mx-auto p-4 md:p-6 gap-6 items-start">
+<!-- BEGIN: LeftSidebarStepper -->
+<aside class="w-64 flex-shrink-0 flex flex-col gap-4 justify-between" data-purpose="workflow-stepper">
+<!-- Stepper Card Container -->
+<div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-4 space-y-1">
+<!-- Step 1: Completed -->
+<div class="group relative flex items-center justify-between p-2.5 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer text-slate-700">
+<div class="flex items-center gap-3">
+<div class="w-7 h-7 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center font-bold text-xs">
+              1
+            </div>
+<div class="flex items-center gap-2">
+<svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+<polyline points="14 2 14 8 20 8"></polyline>
+<line x1="16" x2="8" y1="13" y2="13"></line>
+<line x1="16" x2="8" y1="17" y2="17"></line>
+</svg>
+<span class="text-sm font-medium">导入文章</span>
+</div>
+</div>
+<!-- Completed Check Badge -->
+<div class="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
+<polyline points="20 6 9 17 4 12"></polyline>
+</svg>
+</div>
+</div>
+<!-- Step 2: Active (Current Step: 分镜规划) -->
+<div class="relative flex items-center justify-between p-2.5 rounded-xl bg-orange-50/80 border border-orange-200/90 shadow-sm transition-all cursor-default text-brand-700">
+<div class="flex items-center gap-3">
+<div class="w-7 h-7 rounded-full bg-brand-500 text-white flex items-center justify-center font-bold text-xs shadow-sm shadow-orange-500/30">
+              2
+            </div>
+<div class="flex items-center gap-2">
+<svg class="w-4 h-4 text-brand-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<rect height="18" rx="2" ry="2" width="18" x="3" y="3"></rect>
+<line x1="3" x2="21" y1="9" y2="9"></line>
+<line x1="9" x2="9" y1="21" y2="9"></line>
+</svg>
+<span class="text-sm font-semibold text-slate-900">分镜规划</span>
+</div>
+</div>
+<!-- Active Status Badge -->
+<div class="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-xs">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
+<polyline points="20 6 9 17 4 12"></polyline>
+</svg>
+</div>
+</div>
+<!-- Step 3: Normal -->
+<div class="group relative flex items-center justify-between p-2.5 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer text-slate-700">
+<div class="flex items-center gap-3">
+<div class="w-7 h-7 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center font-bold text-xs">
+              3
+            </div>
+<div class="flex items-center gap-2">
+<svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<rect height="18" rx="2" ry="2" width="18" x="3" y="3"></rect>
+<circle cx="8.5" cy="8.5" r="1.5"></circle>
+<polyline points="21 15 16 10 5 21"></polyline>
+</svg>
+<span class="text-sm font-medium">图片生成</span>
+</div>
+</div>
+<div class="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
+<polyline points="20 6 9 17 4 12"></polyline>
+</svg>
+</div>
+</div>
+<!-- Step 4: Normal (Optional) -->
+<div class="group relative flex items-center justify-between p-2.5 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer text-slate-700">
+<div class="flex items-center gap-3">
+<div class="w-7 h-7 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center font-bold text-xs">
+              4
+            </div>
+<div class="flex items-center gap-2">
+<svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M12 20h9"></path>
+<path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+</svg>
+<span class="text-sm font-medium">元素动画 <span class="text-xs text-slate-400 font-normal">(可选)</span></span>
+</div>
+</div>
+<div class="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
+<polyline points="20 6 9 17 4 12"></polyline>
+</svg>
+</div>
+</div>
+<!-- Step 5: With '需重做' flag -->
+<div class="group relative flex items-center justify-between p-2.5 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer text-slate-700">
+<div class="flex items-center gap-3">
+<div class="w-7 h-7 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center font-bold text-xs">
+              5
+            </div>
+<div class="flex items-center gap-2">
+<svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+<path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+<line x1="12" x2="12" y1="19" y2="23"></line>
+<line x1="8" x2="16" y1="23" y2="23"></line>
+</svg>
+<span class="text-sm font-medium text-slate-700">旁白与音频</span>
+<span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700 border border-amber-200/60 leading-none">需重做</span>
+</div>
+</div>
+<div class="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
+<polyline points="20 6 9 17 4 12"></polyline>
+</svg>
+</div>
+</div>
+<!-- Step 6: With '需重做' flag -->
+<div class="group relative flex items-center justify-between p-2.5 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer text-slate-700">
+<div class="flex items-center gap-3">
+<div class="w-7 h-7 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center font-bold text-xs">
+              6
+            </div>
+<div class="flex items-center gap-2">
+<svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+<circle cx="12" cy="7" r="4"></circle>
+</svg>
+<span class="text-sm font-medium text-slate-700">数字人讲解</span>
+<span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700 border border-amber-200/60 leading-none">需重做</span>
+</div>
+</div>
+<div class="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
+<polyline points="20 6 9 17 4 12"></polyline>
+</svg>
+</div>
+</div>
+<!-- Step 7: Final -->
+<div class="group relative flex items-center justify-between p-2.5 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer text-slate-700">
+<div class="flex items-center gap-3">
+<div class="w-7 h-7 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center font-bold text-xs">
+              7
+            </div>
+<div class="flex items-center gap-2">
+<svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<polygon points="23 7 16 12 23 17 23 7"></polygon>
+<rect height="14" rx="2" ry="2" width="15" x="1" y="5"></rect>
+</svg>
+<span class="text-sm font-medium">作品输出</span>
+</div>
+</div>
+<div class="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
+<polyline points="20 6 9 17 4 12"></polyline>
+</svg>
+</div>
+</div>
+<!-- Generate Video Action Button -->
+<div class="pt-3 pb-1">
+<button class="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-brand-600 via-brand-500 to-orange-500 text-white font-medium text-sm flex items-center justify-center gap-2 shadow-glow-orange hover:shadow-orange-500/40 hover:brightness-105 active:scale-[0.99] transition-all" type="button">
+<svg class="w-4 h-4 text-amber-200 animate-pulse" fill="currentColor" viewBox="0 0 24 24">
+<path d="M12 2l2.4 7.2h7.6l-6.1 4.5 2.3 7.3-6.2-4.6-6.2 4.6 2.3-7.3-6.1-4.5h7.6z"></path>
+</svg>
+<span class="">一键生成视频</span>
+</button>
+</div>
+</div>
+<!-- Bottom Tip Widget -->
+<div class="bg-white/80 backdrop-blur rounded-2xl border border-slate-200/80 p-4 shadow-sm" data-purpose="smart-assistant-card">
+<div class="flex items-start gap-2.5">
+<span class="relative flex h-2.5 w-2.5 mt-1">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+<span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+</span>
+<p class="text-xs leading-relaxed text-slate-600">
+            已自动为您提取核心要点与关键词，点击即可查看完整分镜提示词。
+          </p>
+</div>
+</div>
+</aside>
+<!-- END: LeftSidebarStepper -->
+<!-- BEGIN: MainContentArea -->
+<main class="flex-1 min-w-0 flex flex-col gap-4" data-purpose="storyboard-workspace">
+<!-- Top Action Bar & Step Title -->
+<div class="flex flex-wrap items-center justify-between gap-4 bg-transparent pt-1 pb-1">
+<!-- Title and Quick Operations -->
+<div class="flex flex-wrap items-center gap-4">
+<!-- Step Title -->
+<div class="flex items-center gap-2">
+<div class="w-1.5 h-5 bg-brand-500 rounded-full"></div>
+<h1 class="text-lg font-bold text-slate-900 tracking-tight">分镜规划</h1>
+</div>
+<!-- AI Batch Generate Button -->
+<button class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-all hover:shadow-indigo-500/20 active:scale-95" type="button">
+<svg class="w-3.5 h-3.5 text-indigo-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+</svg>
+<span class="">AI 生成分镜</span>
+</button>
+<!-- Quick Utility Buttons -->
+<div class="flex items-center gap-2">
+<button class="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-md transition-colors shadow-2xs" type="button">
+<span class="text-slate-500">文章</span>
+<span class="text-slate-400">➡️</span>
+<span class="font-medium text-slate-800">slides</span>
+</button>
+<button class="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-md transition-colors shadow-2xs" type="button">
+<span class="font-medium text-slate-800">slides</span>
+<span class="text-slate-400">⬅️</span>
+<span class="text-slate-500">可视化</span>
+</button>
+<button class="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-slate-500 hover:text-red-600 bg-white hover:bg-red-50 border border-slate-200 hover:border-red-200 rounded-md transition-colors shadow-2xs" type="button">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<polyline points="3 6 5 6 21 6"></polyline>
+<path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+</svg>
+<span class="">批量删除</span>
+</button>
+</div>
+</div>
+<!-- Next Step Transition Button -->
+<button class="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold shadow-md shadow-slate-900/10 hover:shadow-slate-900/20 active:scale-95 transition-all" type="button">
+<span class="">进入图片生成</span>
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M14 5l7 7m0 0l-7 7m7-7H3" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+</div>
+<!-- Slide Pagination Tabs Bar -->
+<div class="flex items-center gap-2 overflow-x-auto pb-1" data-purpose="slide-tab-navigator">
+<!-- Page 1: Active -->
+<button class="px-5 py-1.5 text-xs font-bold text-slate-900 bg-white border border-slate-300/80 shadow-xs rounded-lg flex items-center justify-center transition-all ring-2 ring-slate-900/5" type="button">
+          第1页
+        </button>
+<!-- Page 2 -->
+<button class="px-5 py-1.5 text-xs font-medium text-slate-600 bg-white/70 hover:bg-white hover:text-slate-900 border border-slate-200 rounded-lg transition-all" type="button">
+          第2页
+        </button>
+<!-- Page 3 -->
+<button class="px-5 py-1.5 text-xs font-medium text-slate-600 bg-white/70 hover:bg-white hover:text-slate-900 border border-slate-200 rounded-lg transition-all" type="button">
+          第3页
+        </button>
+<!-- Page 4 -->
+<button class="px-5 py-1.5 text-xs font-medium text-slate-600 bg-white/70 hover:bg-white hover:text-slate-900 border border-slate-200 rounded-lg transition-all" type="button">
+          第4页
+        </button>
+<!-- Page 5 -->
+<button class="px-5 py-1.5 text-xs font-medium text-slate-600 bg-white/70 hover:bg-white hover:text-slate-900 border border-slate-200 rounded-lg transition-all" type="button">
+          第5页
+        </button>
+<!-- Page 6 -->
+<button class="px-5 py-1.5 text-xs font-medium text-slate-600 bg-white/70 hover:bg-white hover:text-slate-900 border border-slate-200 rounded-lg transition-all" type="button">
+          第6页
+        </button>
+<!-- Page 7 -->
+<button class="px-5 py-1.5 text-xs font-medium text-slate-600 bg-white/70 hover:bg-white hover:text-slate-900 border border-slate-200 rounded-lg transition-all" type="button">
+          第7页
+        </button>
+<!-- Page 8 -->
+<button class="px-5 py-1.5 text-xs font-medium text-slate-600 bg-white/70 hover:bg-white hover:text-slate-900 border border-slate-200 rounded-lg transition-all" type="button">
+          第8页
+        </button>
+</div>
+<!-- Slide Detail Card Container -->
+<div class="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6 lg:p-8 space-y-6" data-purpose="slide-editor-card">
+<!-- SECTION: Main Title -->
+<div class="space-y-2">
+<label class="block text-sm font-bold text-slate-900">主标题</label>
+<div class="bg-blue-50/70 border border-blue-100 rounded-xl px-4 py-3 text-sm font-semibold text-slate-900 focus-within:ring-2 focus-within:ring-brand-500/20 focus-within:border-brand-500 transition-all">
+<input class="w-full bg-transparent border-0 p-0 text-slate-900 font-semibold focus:ring-0 text-sm placeholder-slate-400" type="text" value="Token 在不同领域含义不同">
+</div>
+</div>
+<!-- SECTION: Full Narration Script -->
+<div class="space-y-2">
+<label class="block text-sm font-bold text-slate-900">完整演讲稿</label>
+<div class="bg-white border border-slate-200 rounded-xl p-3.5 focus-within:ring-2 focus-within:ring-brand-500/20 focus-within:border-brand-500 transition-all">
+<textarea class="w-full bg-transparent border-0 p-0 text-slate-800 text-xs leading-relaxed focus:ring-0 resize-none font-normal" rows="3">先别急着下定义，token 这个词要看场景。
+大家最常聊的是 AI 大模型里的 token，另外在区块链和接口开发里也各有各的意思。</textarea>
+</div>
+<!-- Micro-copy guidance -->
+<p class="text-[11px] text-slate-400 leading-normal">
+            自动模式：由下方每个画面的演讲片段按顺序自动组成；请直接在对应画面卡片中修改片段。手动模式：直接在此输入本页要朗读的演讲稿，可多行。
+          </p>
+</div>
+<!-- SECTION: Visual Elements & Segments -->
+<div class="space-y-4 pt-2">
+<h2 class="text-sm font-bold text-slate-900">画面与演讲片段</h2>
+<!-- Sub-Card 1: 画面文字 -->
+<div class="border border-slate-200 rounded-xl p-4 bg-white/60 hover:bg-white hover:border-slate-300 transition-all space-y-3">
+<!-- Card Header -->
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="w-5 h-5 rounded-full bg-slate-900 text-white text-[11px] font-bold flex items-center justify-center">1</span>
+<span class="text-xs font-bold text-slate-800">画面文字</span>
+</div>
+<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-600 border border-emerald-200/60">已对应</span>
+</div>
+<!-- Two Columns of Content -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<!-- Left: 画面文字 -->
+<div class="space-y-1.5">
+<span class="text-[11px] font-medium text-slate-500">画面文字</span>
+<div class="bg-slate-50/80 border border-slate-200/80 rounded-lg p-2.5 focus-within:border-brand-500 focus-within:bg-white focus-within:ring-1 focus-within:ring-brand-500 transition-all">
+<textarea class="w-full bg-transparent border-0 p-0 text-xs text-slate-800 leading-relaxed focus:ring-0 resize-none" rows="2">Token 在不同领域含义不同</textarea>
+</div>
+</div>
+<!-- Right: 对应演讲片段 -->
+<div class="space-y-1.5">
+<span class="text-[11px] font-medium text-slate-500">对应演讲片段</span>
+<div class="bg-slate-50/80 border border-slate-200/80 rounded-lg p-2.5 focus-within:border-brand-500 focus-within:bg-white focus-within:ring-1 focus-within:ring-brand-500 transition-all">
+<textarea class="w-full bg-transparent border-0 p-0 text-xs text-slate-800 leading-relaxed focus:ring-0 resize-none" rows="2">先别急着下定义，token 这个词要看场景。</textarea>
+</div>
+</div>
+</div>
+</div>
+<!-- Sub-Card 2: 画面元素 -->
+<div class="border border-slate-200 rounded-xl p-4 bg-white/60 hover:bg-white hover:border-slate-300 transition-all space-y-3">
+<!-- Card Header -->
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="w-5 h-5 rounded-full bg-slate-900 text-white text-[11px] font-bold flex items-center justify-center">2</span>
+<span class="text-xs font-bold text-slate-800">画面元素</span>
+</div>
+<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-600 border border-emerald-200/60">已对应</span>
+</div>
+<!-- Two Columns of Content -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<!-- Left: 画面元素 -->
+<div class="space-y-1.5">
+<span class="text-[11px] font-medium text-slate-500">画面元素</span>
+<div class="bg-slate-50/80 border border-slate-200/80 rounded-lg p-2.5 focus-within:border-brand-500 focus-within:bg-white focus-within:ring-1 focus-within:ring-brand-500 transition-all">
+<textarea class="w-full bg-transparent border-0 p-0 text-xs text-slate-800 leading-relaxed focus:ring-0 resize-none" rows="4">三个并排独立的领域卡片视觉岛，分别标注 “AI 大模型” “区块链” “接口开发”，每张卡片内有对应领域的简洁图标，共同展示 token 在不同场景中的含义差异。</textarea>
+</div>
+</div>
+<!-- Right: 对应演讲片段 -->
+<div class="space-y-1.5">
+<span class="text-[11px] font-medium text-slate-500">对应演讲片段</span>
+<div class="bg-slate-50/80 border border-slate-200/80 rounded-lg p-2.5 focus-within:border-brand-500 focus-within:bg-white focus-within:ring-1 focus-within:ring-brand-500 transition-all">
+<textarea class="w-full bg-transparent border-0 p-0 text-xs text-slate-800 leading-relaxed focus:ring-0 resize-none" rows="4">大家最常聊的是 AI 大模型里的 token，另外在区块链和接口开发里也各有各的意思。</textarea>
+</div>
+</div>
+</div>
+<!-- Bottom Appearance Selector Dropdown -->
+<div class="pt-2">
+<label class="block text-[11px] font-medium text-slate-500 mb-1.5">画面出现方式</label>
+<div class="relative w-full max-w-sm">
+<select class="w-full appearance-none bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium text-slate-700 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all pr-8 cursor-pointer">
+<option selected="">同时展示（同段旁白整体出现）</option>
+<option>依序渐显（配合各分句旁白）</option>
+<option>逐字打字机动效</option>
+</select>
+<div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-slate-400">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom Status Bar -->
+<footer class="flex items-center justify-between text-xs text-slate-400 px-2 py-1" data-purpose="workspace-footer">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+<span class="">文章与分镜已保存，可随时导出或进行下一步</span>
+</div>
+<div>
+<span class="">共 8 页分镜 · 预计朗读时长 1分20秒</span>
+</div>
+</footer>
+</main>
+<!-- END: MainContentArea -->
+</div>
+<!-- END: WorkspaceLayout -->
+<!-- Simple script for interactive slide tab active state switching -->
+<script data-purpose="tab-interaction">
+    document.addEventListener('DOMContentLoaded', () => {
+      const tabs = document.querySelectorAll('[data-purpose="slide-tab-navigator"] button');
+      tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+          tabs.forEach(t => {
+            t.className = 'px-5 py-1.5 text-xs font-medium text-slate-600 bg-white/70 hover:bg-white hover:text-slate-900 border border-slate-200 rounded-lg transition-all';
+          });
+          tab.className = 'px-5 py-1.5 text-xs font-bold text-slate-900 bg-white border border-slate-300/80 shadow-xs rounded-lg flex items-center justify-center transition-all ring-2 ring-slate-900/5';
+        });
+      });
+    });
+  </script>
+
+
+</body></html>

@@ -16,10 +16,12 @@ PROVENANCE_SCHEMA_VERSION = "visual_provenance_v2"
 # Keep the provider identifiers emitted by the configured image adapters in
 # the production allow-list.  ``codex2api`` is the provider used by the
 # Codex2API OpenAI-compatible gateway and is a valid generated-image source.
+# ``xiaoxinai`` is the provider used by the XiaoxinAI OpenAI-compatible gateway.
 DEFAULT_RENDER_ALLOWED_PROVIDERS = (
     "codex_image_gen",
     "codex2api",
     "openai_compatible",
+    "xiaoxinai",
     "manual_upload",
 )
 

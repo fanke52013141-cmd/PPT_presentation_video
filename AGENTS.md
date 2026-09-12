@@ -52,13 +52,14 @@ When writing user-facing documentation, prefer the visible steps above. When cha
 
 ## UI Style Source of Truth
 
-The current product UI is the soft blue-purple "Soft Pastel Studio" interface, not the older black-outline sketch style.
-
-- Primary reference: `docs/ui_style_reference.md`.
-- Implementation reference: the lower half of `static/style.css`, especially `/* Soft Pastel Studio refinement layer */`.
-- Do not treat the early `Flat Outline UI` block in `static/style.css` as the intended design direction. It is a legacy compatibility foundation for existing class names such as `.sketch-border`, `.sketch-dashed`, and `.sketch-shadow`.
-- Keep existing `sketch-*` class names only for DOM compatibility unless doing a deliberate CSS migration. New visual work should use the blue-purple palette, soft borders, rounded cards, glass header, and gradient AI action buttons from the Soft Pastel Studio layer.
-- If the UI appears as heavy black borders or hard offset shadows, first check whether the browser is loading the full `static/style.css` and whether the Soft Pastel Studio layer is present.
+The UI is a 1:1 implementation of the supplied Stitch design code
+(`references/ui_extract/stitch_extract/stitch_web_ui_style_extractor/*/code.html`):
+orange `#f46a38` brand, white rounded cards, dark primary buttons, the
+7-step workspace rail, and the course-library home. The former global
+"Soft Pastel Studio" mandate is retired; do not restore it. The early
+`Flat Outline UI` and `Soft Pastel Studio` blocks in `static/style.css` are
+legacy compatibility foundations only — visible surfaces are styled by the
+appended strict-parity layers at the end of the file.
 
 ## Frontend Module Boundaries
 

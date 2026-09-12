@@ -831,15 +831,16 @@ function renderStep2VisualNarrationMap(slide) {
         <div class="vn-group-head">
           <span class="vn-group-num">${idx + 1}</span>
           <span class="vn-type-tag">${typeLabel}</span>
-          <span class="vn-map-target">对应演讲片段</span>
           <span class="vn-beat-count${mappingReady ? '' : ' is-error'}">${mappingReady ? '已对应' : '需要检查'}</span>
         </div>
         <div class="vn-group-body">
           <div class="vn-visual">
+            <span class="vn-column-label">${typeLabel}</span>
             ${visualField}
             ${revealModeField}
           </div>
           <div class="vn-narration">
+            <span class="vn-column-label">对应演讲片段</span>
             ${beatsHtml}
           </div>
         </div>

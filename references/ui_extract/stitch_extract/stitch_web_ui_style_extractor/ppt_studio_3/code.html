@@ -1,0 +1,771 @@
+<!DOCTYPE html><html lang="zh-CN" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>PPT Studio - 课程</title>
+<!-- Google Fonts: Plus Jakarta Sans & Noto Sans SC -->
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<!-- Tailwind CSS v3 with Plugins -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Configuration -->
+<script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', '"Noto Sans SC"', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              DEFAULT: '#f46a38',
+              50: '#fff7f4',
+              100: '#ffede5',
+              200: '#fed9cb',
+              500: '#f46a38',
+              600: '#dc5121',
+              700: '#b73c13',
+            },
+            surface: {
+              page: '#FAF9FB',
+              card: '#FFFFFF',
+              subtle: '#F4F2F6',
+              sidebar: '#FFFFFF',
+            },
+            line: {
+              subtle: '#EAE8ED',
+              border: '#E2E0E6',
+              dark: '#CECCD4',
+            }
+          }
+        }
+      }
+    }
+  </script>
+<!-- Custom Styles for refined micro-interactions -->
+<style data-purpose="base-styling">
+    body {
+      background-color: #FAF9FB;
+      color: #1E1D22;
+      font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    }
+    
+    .transition-subtle {
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #e2e0e6;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #cdcad2;
+    }
+
+    /* Keyframe Animations */
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(12px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes fadeInSidebar {
+      from {
+        opacity: 0;
+        transform: translateX(-8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    @keyframes barFill {
+      from {
+        opacity: 0.3;
+        transform: scaleX(0.7);
+      }
+      to {
+        opacity: 1;
+        transform: scaleX(1);
+      }
+    }
+
+    @keyframes subtlePulse {
+      0%, 100% {
+        opacity: 1;
+      }
+      50% {
+        opacity: 0.82;
+      }
+    }
+
+    .animate-fadeInUp {
+      animation: fadeInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+    }
+
+    .animate-fadeInSidebar {
+      animation: fadeInSidebar 0.4s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+    }
+
+    /* Staggered delays for card entrance */
+    .stagger-0 { animation-delay: 0.05s; }
+    .stagger-1 { animation-delay: 0.1s; }
+    .stagger-2 { animation-delay: 0.15s; }
+    .stagger-3 { animation-delay: 0.2s; }
+    .stagger-4 { animation-delay: 0.25s; }
+    .stagger-5 { animation-delay: 0.3s; }
+    .stagger-6 { animation-delay: 0.35s; }
+
+    /* Progress bar smooth entrance and gentle pulse */
+    .progress-bar-fill {
+      transform-origin: left center;
+      animation: barFill 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards, subtlePulse 3s ease-in-out infinite 0.6s;
+    }
+
+    /* Play button glow micro-interaction */
+    .play-btn-glow {
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+      transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s ease;
+    }
+    .group:hover .play-btn-glow {
+      box-shadow: 0 8px 22px rgba(244, 106, 56, 0.35);
+    }
+
+    /* Interactive icon micro-scale */
+    .icon-btn-hover {
+      transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.15s ease, color 0.15s ease;
+    }
+    .icon-btn-hover:hover {
+      transform: scale(1.12);
+    }
+    .icon-btn-hover:active {
+      transform: scale(0.92);
+    }
+
+    /* Search bar smooth ring glow */
+    .search-input-focus {
+      transition: border-color 0.2s ease, box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .search-input-focus:focus {
+      box-shadow: 0 0 0 3.5px rgba(244, 106, 56, 0.12);
+    }
+
+    /* Respect Reduced Motion */
+    @media (prefers-reduced-motion: reduce) {
+      *, ::before, ::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
+  </style>
+</head>
+<body class="font-sans antialiased text-[#1F1E24] bg-surface-page min-h-screen h-screen flex flex-col selection:bg-brand-100 selection:text-brand-700 overflow-hidden">
+<!-- BEGIN: TopNavigationBar -->
+<header class="h-14 bg-surface-card border-b border-line-subtle sticky top-0 z-30 flex items-center justify-between px-6 select-none shrink-0">
+<!-- Brand identity -->
+<div class="flex items-center space-x-3">
+<div class="w-8 h-8 rounded-lg bg-neutral-900 text-white flex items-center justify-center shadow-sm transition-transform duration-200 hover:scale-105">
+<!-- Studio/Slides Presentation Icon -->
+<svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
+<rect height="14" rx="2" ry="2" width="20" x="2" y="3"></rect>
+<line x1="8" x2="16" y1="21" y2="21"></line>
+<line x1="12" x2="12" y1="17" y2="21"></line>
+<polygon fill="currentColor" points="10 8 15 10 10 12" stroke="none"></polygon>
+</svg>
+</div>
+<span class="font-bold text-[15px] tracking-tight text-neutral-900">PPT Studio</span>
+</div>
+<!-- Navigation Utility Controls -->
+<div class="flex items-center space-x-5 text-[13px] text-neutral-600 font-medium">
+<!-- Account dropdown & quick tools -->
+<div class="flex items-center space-x-2">
+<button class="h-8 pl-3 pr-2.5 inline-flex items-center gap-2 rounded-lg border border-line-border bg-surface-card hover:bg-neutral-50 active:scale-98 text-neutral-800 transition-subtle shadow-2xs group" type="button">
+<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+<span class="text-[13px]">默认创作账号</span>
+<svg class="w-3.5 h-3.5 text-neutral-400 group-hover:text-neutral-600 transition-subtle group-hover:translate-y-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+<!-- Tool Buttons: 新建创作 & 编辑 -->
+<button class="w-8 h-8 flex items-center justify-center rounded-lg border border-line-border bg-surface-card hover:bg-neutral-50 hover:border-brand-500 hover:text-brand-500 active:scale-95 text-neutral-700 transition-subtle shadow-2xs relative group icon-btn-hover" title="新建创作" type="button">
+<svg class="w-4 h-4 transition-transform duration-200 group-hover:rotate-90" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24">
+<path d="M12 5v14M5 12h14"></path>
+</svg>
+</button>
+<button class="w-8 h-8 flex items-center justify-center rounded-lg border border-line-border bg-surface-card hover:bg-neutral-50 hover:border-neutral-400 active:scale-95 text-neutral-700 transition-subtle shadow-2xs group icon-btn-hover" title="编辑信息" type="button">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24">
+<path d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"></path>
+</svg>
+</button>
+</div>
+<!-- Functional Links -->
+<nav class="flex items-center space-x-5 pl-3 border-l border-line-subtle">
+<a class="hover:text-brand-600 transition-colors duration-150 relative py-1 after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-brand after:scale-x-0 hover:after:scale-x-100 after:transition-transform after:duration-200" href="#creation-config">创作配置</a>
+<a class="hover:text-brand-600 transition-colors duration-150 relative py-1 after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-brand after:scale-x-0 hover:after:scale-x-100 after:transition-transform after:duration-200" href="#model-settings">模型设置</a>
+<a class="hover:text-brand-600 transition-colors duration-150 relative py-1 after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-brand after:scale-x-0 hover:after:scale-x-100 after:transition-transform after:duration-200" href="#agent-bridge">Agent 对接</a>
+<a class="hover:text-brand-600 transition-colors duration-150 relative py-1 after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-brand after:scale-x-0 hover:after:scale-x-100 after:transition-transform after:duration-200" href="#export-config">配置导出</a>
+<a class="hover:text-brand-600 transition-colors duration-150 relative py-1 after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-brand after:scale-x-0 hover:after:scale-x-100 after:transition-transform after:duration-200" href="#import-config">配置导入</a>
+</nav>
+</div>
+</header>
+<!-- END: TopNavigationBar -->
+<!-- Body Content Wrap (Sidebar + Main View) -->
+<div class="flex-1 flex overflow-hidden h-[calc(100vh-56px)]">
+<!-- BEGIN: LeftSidebar -->
+<aside class="w-72 bg-white border-r border-line-subtle flex flex-col justify-between shrink-0 select-none h-full animate-fadeInSidebar">
+<div class="flex-1 overflow-y-auto px-4 pt-3 pb-5 space-y-4">
+<!-- 顶层全局入口：全部视频 (上移并提升视觉质感，带微圆角衬托图标) -->
+<div class="space-y-1">
+<div class="flex items-center justify-between px-3 py-2 rounded-xl bg-brand-50 text-brand-700 font-semibold text-[13.5px] cursor-pointer border border-brand-200/60 shadow-2xs hover:shadow-xs transition-all duration-200 group hover:translate-x-0.5">
+<div class="flex items-center space-x-2.5 truncate">
+<div class="w-6 h-6 rounded-lg bg-brand-500/10 flex items-center justify-center text-brand-600 shrink-0 transition-transform duration-200 group-hover:scale-105">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
+<rect height="6" rx="1.5" width="6" x="3" y="3"></rect>
+<rect height="6" rx="1.5" width="6" x="15" y="3"></rect>
+<rect height="6" rx="1.5" width="6" x="3" y="15"></rect>
+<rect height="6" rx="1.5" width="6" x="15" y="15"></rect>
+</svg>
+</div>
+<span class="truncate font-bold text-brand-700">全部视频</span>
+</div>
+<div class="relative group/action" onclick="event.stopPropagation();">
+<button class="w-6 h-6 flex items-center justify-center rounded-md text-brand-700 hover:bg-brand-200/50 transition-subtle icon-btn-hover" title="更多操作" type="button">
+<svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 20 20">
+<circle cx="5" cy="10" r="1.5"></circle>
+<circle cx="10" cy="10" r="1.5"></circle>
+<circle cx="15" cy="10" r="1.5"></circle>
+</svg>
+</button>
+<div class="hidden group-hover/action:flex flex-col absolute right-0 top-full mt-1 w-32 bg-white rounded-lg shadow-lg border border-line-border py-1 z-30 text-[12px] font-normal text-neutral-700 animate-fadeInUp">
+<button class="w-full px-3 py-1.5 text-left hover:bg-neutral-100 hover:text-neutral-900 flex items-center gap-2 transition-colors" type="button">
+<svg class="w-3.5 h-3.5 text-neutral-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<circle cx="12" cy="12" r="9"></circle>
+<path d="M12 8v8m4-4H8"></path>
+</svg>新建视频
+</button>
+<button class="w-full px-3 py-1.5 text-left hover:bg-neutral-100 hover:text-neutral-900 flex items-center gap-2 transition-colors" type="button">
+<svg class="w-3.5 h-3.5 text-neutral-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M12 4v16m8-8H4"></path>
+</svg>新建课程
+</button>
+</div>
+</div>
+</div>
+</div>
+
+<!-- 树形组织分类：课程体系 -->
+<div class="space-y-1.5 pt-1">
+<div class="flex items-center justify-between px-2">
+<span class="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">课程体系 (2)</span>
+<button class="w-5 h-5 flex items-center justify-center rounded hover:bg-neutral-100 text-neutral-400 hover:text-neutral-700 transition-subtle icon-btn-hover" title="添加课程" type="button">
+<svg class="w-3.5 h-3.5 transition-transform duration-200 hover:rotate-90" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"></path></svg>
+</button>
+</div>
+
+<!-- 课程 1: AI核心大模型应用课 (展开状态) -->
+<div class="space-y-0.5">
+<div class="group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-neutral-800 hover:bg-neutral-100/80 hover:translate-x-0.5 font-medium text-[13px] cursor-pointer transition-all duration-150">
+<div class="flex items-center space-x-2 truncate">
+<svg class="w-3.5 h-3.5 text-neutral-400 transition-transform duration-200 group-hover:text-neutral-600" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
+<path d="M19 9l-7 7-7-7"></path>
+</svg>
+<svg class="w-4 h-4 text-brand-600 shrink-0 transition-transform duration-200 group-hover:scale-105" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24">
+<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+<path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+<path d="M8 7h8"></path>
+<path d="M8 11h6"></path>
+</svg>
+<span class="truncate font-semibold">AI核心大模型应用课</span>
+</div>
+<div class="relative group/course1action" onclick="event.stopPropagation();">
+<button class="w-5 h-5 flex items-center justify-center rounded text-neutral-400 hover:text-neutral-700 hover:bg-neutral-200 transition-subtle opacity-0 group-hover:opacity-100 icon-btn-hover" title="更多操作" type="button">
+<svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 20 20">
+<circle cx="5" cy="10" r="1.5"></circle>
+<circle cx="10" cy="10" r="1.5"></circle>
+<circle cx="15" cy="10" r="1.5"></circle>
+</svg>
+</button>
+<div class="hidden group-hover/course1action:flex flex-col absolute right-0 top-full mt-1 w-32 bg-white rounded-lg shadow-lg border border-line-border py-1 z-30 text-[12px] font-normal text-neutral-700 animate-fadeInUp">
+<button class="w-full px-3 py-1.5 text-left hover:bg-neutral-100 hover:text-neutral-900 flex items-center gap-2 transition-colors" type="button">
+<svg class="w-3.5 h-3.5 text-neutral-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"></path></svg>新建章节
+</button>
+<button class="w-full px-3 py-1.5 text-left hover:bg-neutral-100 hover:text-neutral-900 flex items-center gap-2 transition-colors" type="button">
+<svg class="w-3.5 h-3.5 text-neutral-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v8m4-4H8"></path></svg>新建视频
+</button>
+</div>
+</div>
+</div>
+
+<!-- 章节树 -->
+<div class="pl-3 space-y-1 mt-0.5">
+<!-- 第 1 章 (展开) -->
+<div class="space-y-0.5">
+<div class="group flex items-center justify-between px-2 py-1 rounded-md text-neutral-700 hover:bg-neutral-100/70 hover:translate-x-0.5 font-medium text-[12.5px] cursor-pointer transition-all duration-150">
+<div class="flex items-center space-x-1.5 truncate">
+<svg class="w-3 h-3 text-neutral-400 transition-transform duration-200 group-hover:text-neutral-600" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
+<path d="M19 9l-7 7-7-7"></path>
+</svg>
+<svg class="w-3.5 h-3.5 text-neutral-500 shrink-0 transition-transform duration-200 group-hover:scale-105" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24">
+<path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
+</svg>
+<span class="truncate">第 1 章：AI 核心概念拆解</span>
+</div>
+<div class="relative group/chapaction" onclick="event.stopPropagation();">
+<button class="w-5 h-5 flex items-center justify-center rounded text-neutral-400 hover:text-neutral-700 hover:bg-neutral-200 transition-subtle opacity-0 group-hover:opacity-100 icon-btn-hover" title="更多选项" type="button">
+<svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 20 20">
+<circle cx="5" cy="10" r="1.5"></circle>
+<circle cx="10" cy="10" r="1.5"></circle>
+<circle cx="15" cy="10" r="1.5"></circle>
+</svg>
+</button>
+<div class="hidden group-hover/chapaction:flex flex-col absolute right-0 top-full mt-1 w-32 bg-white rounded-lg shadow-lg border border-line-border py-1 z-30 text-[12px] font-normal text-neutral-700 animate-fadeInUp">
+<button class="w-full px-3 py-1.5 text-left hover:bg-neutral-100 hover:text-neutral-900 flex items-center gap-2 transition-colors" type="button">
+<svg class="w-3.5 h-3.5 text-neutral-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v8m4-4H8"></path></svg>新建视频
+</button>
+</div>
+</div>
+</div>
+<!-- 视频列表：使用细腻微型圆角播放图标 -->
+<div class="pl-4 pr-1 space-y-0.5 border-l border-neutral-200 ml-3 py-0.5">
+<div class="group flex items-center justify-between px-2 py-1 rounded text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100/60 hover:translate-x-0.5 text-[12px] cursor-pointer transition-all duration-150">
+<div class="flex items-center space-x-1.5 truncate">
+<div class="w-3.5 h-3.5 rounded-full bg-neutral-100 group-hover:bg-brand-50 text-neutral-400 group-hover:text-brand-600 flex items-center justify-center shrink-0 transition-colors duration-150">
+<svg class="w-2 h-2 fill-current ml-0.5" viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
+</div>
+<span class="truncate">01. 什么是 Token</span>
+</div>
+</div>
+<div class="group flex items-center justify-between px-2 py-1 rounded text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100/60 hover:translate-x-0.5 text-[12px] cursor-pointer transition-all duration-150">
+<div class="flex items-center space-x-1.5 truncate">
+<div class="w-3.5 h-3.5 rounded-full bg-neutral-100 group-hover:bg-brand-50 text-neutral-400 group-hover:text-brand-600 flex items-center justify-center shrink-0 transition-colors duration-150">
+<svg class="w-2 h-2 fill-current ml-0.5" viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
+</div>
+<span class="truncate">02. Transformer 简明解析</span>
+</div>
+</div>
+<div class="group flex items-center justify-between px-2 py-1 rounded text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100/60 hover:translate-x-0.5 text-[12px] cursor-pointer transition-all duration-150">
+<div class="flex items-center space-x-1.5 truncate">
+<div class="w-3.5 h-3.5 rounded-full bg-neutral-100 group-hover:bg-brand-50 text-neutral-400 group-hover:text-brand-600 flex items-center justify-center shrink-0 transition-colors duration-150">
+<svg class="w-2 h-2 fill-current ml-0.5" viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
+</div>
+<span class="truncate">03. 上下文窗口限制</span>
+</div>
+</div>
+<div class="group flex items-center justify-between px-2 py-1 rounded text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100/60 hover:translate-x-0.5 text-[12px] cursor-pointer transition-all duration-150">
+<div class="flex items-center space-x-1.5 truncate">
+<div class="w-3.5 h-3.5 rounded-full bg-neutral-100 group-hover:bg-brand-50 text-neutral-400 group-hover:text-brand-600 flex items-center justify-center shrink-0 transition-colors duration-150">
+<svg class="w-2 h-2 fill-current ml-0.5" viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
+</div>
+<span class="truncate">04. 扩散模型深度拆解</span>
+</div>
+</div>
+</div>
+</div>
+
+<!-- 第 2 章 (折叠) -->
+<div class="group flex items-center justify-between px-2 py-1 rounded-md text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100/70 hover:translate-x-0.5 font-medium text-[12.5px] cursor-pointer transition-all duration-150">
+<div class="flex items-center space-x-1.5 truncate">
+<svg class="w-3 h-3 text-neutral-400 -rotate-90 group-hover:text-neutral-600 transition-transform duration-200" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
+<path d="M19 9l-7 7-7-7"></path>
+</svg>
+<svg class="w-3.5 h-3.5 text-neutral-400 group-hover:text-neutral-600 shrink-0 transition-transform duration-200 group-hover:scale-105" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24">
+<path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
+</svg>
+<span class="truncate">第 2 章：Prompt 进阶与实操</span>
+</div>
+<div class="relative group/chap2action" onclick="event.stopPropagation();">
+<button class="w-5 h-5 flex items-center justify-center rounded text-neutral-400 hover:text-neutral-700 hover:bg-neutral-200 transition-subtle opacity-0 group-hover:opacity-100 icon-btn-hover" title="更多选项" type="button">
+<svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 20 20">
+<circle cx="5" cy="10" r="1.5"></circle>
+<circle cx="10" cy="10" r="1.5"></circle>
+<circle cx="15" cy="10" r="1.5"></circle>
+</svg>
+</button>
+<div class="hidden group-hover/chap2action:flex flex-col absolute right-0 top-full mt-1 w-32 bg-white rounded-lg shadow-lg border border-line-border py-1 z-30 text-[12px] font-normal text-neutral-700 animate-fadeInUp">
+<button class="w-full px-3 py-1.5 text-left hover:bg-neutral-100 hover:text-neutral-900 flex items-center gap-2 transition-colors" type="button">
+<svg class="w-3.5 h-3.5 text-neutral-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v8m4-4H8"></path></svg>新建视频
+</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- 课程 2: 现代前端工程实践课 (折叠状态) -->
+<div class="group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-neutral-700 hover:text-neutral-900 hover:bg-neutral-100 hover:translate-x-0.5 font-medium text-[13px] cursor-pointer transition-all duration-150">
+<div class="flex items-center space-x-2 truncate">
+<svg class="w-3.5 h-3.5 text-neutral-400 -rotate-90 group-hover:text-neutral-600 transition-transform duration-200" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
+<path d="M19 9l-7 7-7-7"></path>
+</svg>
+<svg class="w-4 h-4 text-neutral-400 group-hover:text-neutral-600 shrink-0 transition-transform duration-200 group-hover:scale-105" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24">
+<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+<path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+<path d="M8 7h8"></path>
+<path d="M8 11h6"></path>
+</svg>
+<span class="truncate">现代前端工程实践课</span>
+</div>
+<div class="relative group/course2action" onclick="event.stopPropagation();">
+<button class="w-5 h-5 flex items-center justify-center rounded text-neutral-400 hover:text-neutral-700 hover:bg-neutral-200 transition-subtle opacity-0 group-hover:opacity-100 icon-btn-hover" title="更多操作" type="button">
+<svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 20 20">
+<circle cx="5" cy="10" r="1.5"></circle>
+<circle cx="10" cy="10" r="1.5"></circle>
+<circle cx="15" cy="10" r="1.5"></circle>
+</svg>
+</button>
+<div class="hidden group-hover/course2action:flex flex-col absolute right-0 top-full mt-1 w-32 bg-white rounded-lg shadow-lg border border-line-border py-1 z-30 text-[12px] font-normal text-neutral-700 animate-fadeInUp">
+<button class="w-full px-3 py-1.5 text-left hover:bg-neutral-100 hover:text-neutral-900 flex items-center gap-2 transition-colors" type="button">
+<svg class="w-3.5 h-3.5 text-neutral-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"></path></svg>新建章节
+</button>
+<button class="w-full px-3 py-1.5 text-left hover:bg-neutral-100 hover:text-neutral-900 flex items-center gap-2 transition-colors" type="button">
+<svg class="w-3.5 h-3.5 text-neutral-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v8m4-4H8"></path></svg>新建视频
+</button>
+</div>
+</div>
+</div>
+</div>
+
+<!-- 内置归整分类：独立视频资产 -->
+<div class="space-y-1 pt-2.5 border-t border-line-subtle">
+<div class="flex items-center justify-between px-2">
+<span class="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">独立与未归档 (2)</span>
+<div class="relative group/indieaction" onclick="event.stopPropagation();">
+<button class="w-5 h-5 flex items-center justify-center rounded text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 transition-subtle icon-btn-hover" title="新建视频" type="button">
+<svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 20 20">
+<circle cx="5" cy="10" r="1.5"></circle>
+<circle cx="10" cy="10" r="1.5"></circle>
+<circle cx="15" cy="10" r="1.5"></circle>
+</svg>
+</button>
+<div class="hidden group-hover/indieaction:flex flex-col absolute right-0 top-full mt-1 w-32 bg-white rounded-lg shadow-lg border border-line-border py-1 z-30 text-[12px] font-normal text-neutral-700 animate-fadeInUp">
+<button class="w-full px-3 py-1.5 text-left hover:bg-neutral-100 hover:text-neutral-900 flex items-center gap-2 transition-colors" type="button">
+<svg class="w-3.5 h-3.5 text-neutral-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<circle cx="12" cy="12" r="9"></circle>
+<path d="M12 8v8m4-4H8"></path>
+</svg>新建视频
+</button>
+</div>
+</div>
+</div>
+<!-- 独立单集条目：统一精致微型圆角播放图标，无任何绿点 -->
+<div class="space-y-0.5 mt-1 pl-1">
+<div class="group flex items-center justify-between px-2.5 py-1.5 rounded-md text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50 hover:translate-x-0.5 cursor-pointer font-normal text-[12.5px] transition-all duration-150">
+<div class="flex items-center space-x-2 truncate">
+<div class="w-3.5 h-3.5 rounded-full bg-neutral-100 group-hover:bg-brand-50 text-neutral-400 group-hover:text-brand-600 flex items-center justify-center shrink-0 transition-colors duration-150">
+<svg class="w-2 h-2 fill-current ml-0.5" viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
+</div>
+<span class="truncate">未分类测试视频</span>
+</div>
+</div>
+<div class="group flex items-center justify-between px-2.5 py-1.5 rounded-md text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50 hover:translate-x-0.5 cursor-pointer font-normal text-[12.5px] transition-all duration-150">
+<div class="flex items-center space-x-2 truncate">
+<div class="w-3.5 h-3.5 rounded-full bg-neutral-100 group-hover:bg-brand-50 text-neutral-400 group-hover:text-brand-600 flex items-center justify-center shrink-0 transition-colors duration-150">
+<svg class="w-2 h-2 fill-current ml-0.5" viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
+</div>
+<span class="truncate">快速录制演示 01</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Pinned Bottom Action: 新建视频 -->
+<div class="p-4 border-t border-line-subtle bg-white">
+<button class="w-full h-10 flex items-center justify-center space-x-2 rounded-lg border border-line-border hover:border-brand-500 hover:text-brand-600 bg-white hover:bg-brand-50/50 text-neutral-800 text-[13.5px] font-medium active:scale-[0.98] transition-all duration-200 shadow-xs hover:shadow-sm group" type="button">
+<svg class="w-4 h-4 text-neutral-600 group-hover:text-brand-600 transition-transform duration-200 group-hover:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<circle cx="12" cy="12" r="9" stroke-width="1.8"></circle>
+<path d="M12 8v8m4-4H8" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path>
+</svg>
+<span class="group-hover:translate-x-0.5 transition-transform duration-150">新建视频</span>
+</button>
+</div>
+</aside>
+<!-- END: LeftSidebar -->
+<!-- BEGIN: MainContentArea -->
+<main class="flex-1 flex flex-col overflow-y-auto px-8 py-7 bg-surface-page">
+<!-- Content Section Header Bar with Title and Right Search -->
+<div class="flex flex-col gap-1.5 mb-7 pb-1 animate-fadeInUp">
+<!-- 面包屑保持置于全部视频主标题上方 -->
+<div class="flex items-center space-x-2 text-xs text-neutral-400 font-medium">
+<span class="">全部视频</span>
+</div>
+<!-- 全部视频主标题与右侧搜索框严谨水平对齐 -->
+<div class="flex items-center justify-between gap-4">
+<h2 class="text-2xl font-bold text-neutral-900 tracking-tight leading-none">全部视频</h2>
+<!-- 右侧工具条：搜索框水平严格中心对齐 -->
+<div class="flex items-center space-x-3">
+<div class="relative w-64 group">
+<div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-neutral-400 group-focus-within:text-brand-500 transition-colors duration-200">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</div>
+<input class="w-full h-9 pl-9 pr-4 rounded-lg bg-surface-card border border-line-border text-[13px] placeholder:text-neutral-400 text-neutral-800 focus:outline-none focus:border-brand search-input-focus shadow-2xs" placeholder="搜索视频名称或标签" type="text">
+</div>
+</div>
+</div>
+</div>
+<!-- BEGIN: Video Compact Vertical Cards Grid -->
+<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-5 pb-8">
+<!-- Card 0: 虚线新建卡片 (置于首位) -->
+<div class="group relative border-2 border-dashed border-line-border hover:border-brand-500 bg-surface-card/60 hover:bg-white rounded-xl p-5 transition-all duration-300 hover:-translate-y-1.5 hover:shadow-lg flex flex-col items-center justify-center text-center cursor-pointer min-h-[220px] animate-fadeInUp stagger-0">
+<div class="w-11 h-11 rounded-full bg-neutral-100 group-hover:bg-brand-50 text-neutral-500 group-hover:text-brand-600 flex items-center justify-center mb-3 transition-all duration-300 group-hover:scale-110 shadow-2xs">
+<svg class="w-5 h-5 transition-transform duration-300 group-hover:rotate-90" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M12 4v16m8-8H4"></path>
+</svg>
+</div>
+<span class="text-[13.5px] font-semibold text-neutral-800 group-hover:text-brand-600 transition-colors duration-200">新建视频</span>
+
+</div>
+<!-- Card 1: 01 什么是 Token (AI核心大模型应用课 · 第1章) -->
+<div class="group relative bg-surface-card border border-line-border hover:border-brand-500/70 rounded-xl overflow-hidden shadow-xs hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 flex flex-col cursor-pointer animate-fadeInUp stagger-1">
+<div class="relative aspect-[16/9] w-full bg-gradient-to-br from-[#FBECE6] via-[#FCE9E0] to-[#F5DDD3] overflow-hidden flex items-center justify-center">
+<div class="absolute inset-0 opacity-30 bg-[radial-gradient(#f46a38_1px,transparent_1px)] [background-size:12px_12px]"></div>
+<div class="absolute top-2.5 left-2.5 z-20">
+<span class="px-2 py-0.5 rounded-md bg-white/90 backdrop-blur-sm border border-neutral-200/80 text-[10.5px] font-semibold text-brand-700 shadow-2xs">AI核心应用课</span>
+</div>
+<div class="absolute top-2.5 right-2.5 z-30 group/menu" onclick="event.stopPropagation();"><button class="w-7 h-7 rounded-full bg-white/90 hover:bg-white text-neutral-700 hover:text-neutral-950 shadow-sm flex items-center justify-center transition-all duration-200 border border-neutral-200/80 hover:scale-110 active:scale-95 icon-btn-hover" title="更多选项" type="button"><svg class="w-4 h-4 fill-current" viewBox="0 0 20 20"><circle cx="5" cy="10" r="1.5"></circle><circle cx="10" cy="10" r="1.5"></circle><circle cx="15" cy="10" r="1.5"></circle></svg></button><div class="hidden group-hover/menu:flex flex-col absolute right-0 top-full mt-1 w-28 bg-white rounded-lg shadow-lg border border-line-border py-1 z-30 text-[12px] font-normal text-neutral-700 animate-fadeInUp"><button class="w-full px-3 py-1.5 text-left hover:bg-neutral-100 hover:text-neutral-900 flex items-center gap-2 transition-colors" type="button"><svg class="w-3.5 h-3.5 text-neutral-500" fill="currentColor" viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>继续</button><button class="w-full px-3 py-1.5 text-left hover:bg-neutral-100 hover:text-neutral-900 flex items-center gap-2 transition-colors" type="button"><svg class="w-3.5 h-3.5 text-neutral-500" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24"><path d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"></path></svg>编辑</button><button class="w-full px-3 py-1.5 text-left hover:bg-neutral-100 text-error flex items-center gap-2 transition-colors" type="button"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>删除</button></div></div>
+<div class="w-10 h-10 rounded-full bg-neutral-900/85 group-hover:bg-brand-500 text-white flex items-center justify-center play-btn-glow group-hover:scale-115 pl-0.5">
+<svg class="w-4 h-4 fill-current transition-transform duration-200 group-hover:scale-105" viewBox="0 0 24 24">
+<polygon points="6 4 20 12 6 20 6 4"></polygon>
+</svg>
+</div>
+<div class="absolute inset-0 bg-neutral-900/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+</div>
+<div class="p-3.5 flex flex-col justify-between flex-1">
+<div>
+<h3 class="text-[13.5px] font-bold text-neutral-900 tracking-tight truncate group-hover:text-brand-600 transition-colors duration-200">
+        01 什么是 Token
+      </h3>
+<div class="mt-3 space-y-1.5">
+<div class="flex items-center justify-between text-[11px] text-neutral-500">
+<span class="">进度</span>
+<span class="font-medium text-emerald-600">1 / 7</span>
+</div>
+<div class="grid grid-cols-7 gap-1 h-1.5 w-full">
+<div class="rounded-full bg-emerald-500 progress-bar-fill" title="步骤 1: 已完成"></div>
+<div class="rounded-full bg-neutral-200"></div>
+<div class="rounded-full bg-neutral-200"></div>
+<div class="rounded-full bg-neutral-200"></div>
+<div class="rounded-full bg-neutral-200"></div>
+<div class="rounded-full bg-neutral-200"></div>
+<div class="rounded-full bg-neutral-200"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Card 2: 02 Transformer 简明解析 (AI核心大模型应用课 · 第1章) -->
+<div class="group relative bg-surface-card border border-line-border hover:border-brand-500/70 rounded-xl overflow-hidden shadow-xs hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 flex flex-col cursor-pointer animate-fadeInUp stagger-2">
+<div class="relative aspect-[16/9] w-full bg-gradient-to-br from-[#EBF3FE] via-[#E2EDFD] to-[#D5E4FB] overflow-hidden flex items-center justify-center">
+<div class="absolute inset-0 opacity-30 bg-[radial-gradient(#005db7_1px,transparent_1px)] [background-size:12px_12px]"></div>
+<div class="absolute top-2.5 left-2.5 z-20">
+<span class="px-2 py-0.5 rounded-md bg-white/90 backdrop-blur-sm border border-neutral-200/80 text-[10.5px] font-semibold text-secondary shadow-2xs">AI核心应用课</span>
+</div>
+<div class="absolute top-2.5 right-2.5 z-30 group/menu" onclick="event.stopPropagation();"><button class="w-7 h-7 rounded-full bg-white/90 hover:bg-white text-neutral-700 hover:text-neutral-950 shadow-sm flex items-center justify-center transition-all duration-200 border border-neutral-200/80 hover:scale-110 active:scale-95 icon-btn-hover" title="更多选项" type="button"><svg class="w-4 h-4 fill-current" viewBox="0 0 20 20"><circle cx="5" cy="10" r="1.5"></circle><circle cx="10" cy="10" r="1.5"></circle><circle cx="15" cy="10" r="1.5"></circle></svg></button><div class="hidden group-hover/menu:flex flex-col absolute right-0 top-full mt-1 w-28 bg-white rounded-lg shadow-lg border border-line-border py-1 z-30 text-[12px] font-normal text-neutral-700 animate-fadeInUp"><button class="w-full px-3 py-1.5 text-left hover:bg-neutral-100 hover:text-neutral-900 flex items-center gap-2 transition-colors" type="button"><svg class="w-3.5 h-3.5 text-neutral-500" fill="currentColor" viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>继续</button><button class="w-full px-3 py-1.5 text-left hover:bg-neutral-100 hover:text-neutral-900 flex items-center gap-2 transition-colors" type="button"><svg class="w-3.5 h-3.5 text-neutral-500" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24"><path d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"></path></svg>编辑</button><button class="w-full px-3 py-1.5 text-left hover:bg-neutral-100 text-error flex items-center gap-2 transition-colors" type="button"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>删除</button></div></div>
+<div class="w-10 h-10 rounded-full bg-neutral-900/85 group-hover:bg-brand-500 text-white flex items-center justify-center play-btn-glow group-hover:scale-115 pl-0.5">
+<svg class="w-4 h-4 fill-current transition-transform duration-200 group-hover:scale-105" viewBox="0 0 24 24">
+<polygon points="6 4 20 12 6 20 6 4"></polygon>
+</svg>
+</div>
+<div class="absolute inset-0 bg-neutral-900/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+</div>
+<div class="p-3.5 flex flex-col justify-between flex-1">
+<div>
+<h3 class="text-[13.5px] font-bold text-neutral-900 tracking-tight truncate group-hover:text-brand-600 transition-colors duration-200">
+        02 Transformer 简明解析
+      </h3>
+<div class="mt-3 space-y-1.5">
+<div class="flex items-center justify-between text-[11px] text-neutral-500">
+<span class="">进度</span>
+<span class="font-medium text-emerald-600">3 / 7</span>
+</div>
+<div class="grid grid-cols-7 gap-1 h-1.5 w-full">
+<div class="rounded-full bg-emerald-500 progress-bar-fill" title="步骤 1: 已完成"></div>
+<div class="rounded-full bg-emerald-500 progress-bar-fill" title="步骤 2: 已完成"></div>
+<div class="rounded-full bg-emerald-500 progress-bar-fill" title="步骤 3: 已完成"></div>
+<div class="rounded-full bg-neutral-200"></div>
+<div class="rounded-full bg-neutral-200"></div>
+<div class="rounded-full bg-neutral-200"></div>
+<div class="rounded-full bg-neutral-200"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Card 3: 03 上下文窗口限制 (AI核心大模型应用课 · 第1章) -->
+<div class="group relative bg-surface-card border border-line-border hover:border-brand-500/70 rounded-xl overflow-hidden shadow-xs hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 flex flex-col cursor-pointer animate-fadeInUp stagger-3">
+<div class="relative aspect-[16/9] w-full bg-gradient-to-br from-[#F2EFF7] via-[#EDE9F4] to-[#E3DDEE] overflow-hidden flex items-center justify-center">
+<div class="absolute inset-0 opacity-30 bg-[radial-gradient(#7c3aed_1px,transparent_1px)] [background-size:12px_12px]"></div>
+<div class="absolute top-2.5 left-2.5 z-20">
+<span class="px-2 py-0.5 rounded-md bg-white/90 backdrop-blur-sm border border-neutral-200/80 text-[10.5px] font-semibold text-neutral-700 shadow-2xs">AI核心应用课</span>
+</div>
+<div class="absolute top-2.5 right-2.5 z-30 group/menu" onclick="event.stopPropagation();"><button class="w-7 h-7 rounded-full bg-white/90 hover:bg-white text-neutral-700 hover:text-neutral-950 shadow-sm flex items-center justify-center transition-all duration-200 border border-neutral-200/80 hover:scale-110 active:scale-95 icon-btn-hover" title="更多选项" type="button"><svg class="w-4 h-4 fill-current" viewBox="0 0 20 20"><circle cx="5" cy="10" r="1.5"></circle><circle cx="10" cy="10" r="1.5"></circle><circle cx="15" cy="10" r="1.5"></circle></svg></button><div class="hidden group-hover/menu:flex flex-col absolute right-0 top-full mt-1 w-28 bg-white rounded-lg shadow-lg border border-line-border py-1 z-30 text-[12px] font-normal text-neutral-700 animate-fadeInUp"><button class="w-full px-3 py-1.5 text-left hover:bg-neutral-100 hover:text-neutral-900 flex items-center gap-2 transition-colors" type="button"><svg class="w-3.5 h-3.5 text-neutral-500" fill="currentColor" viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>继续</button><button class="w-full px-3 py-1.5 text-left hover:bg-neutral-100 hover:text-neutral-900 flex items-center gap-2 transition-colors" type="button"><svg class="w-3.5 h-3.5 text-neutral-500" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24"><path d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"></path></svg>编辑</button><button class="w-full px-3 py-1.5 text-left hover:bg-neutral-100 text-error flex items-center gap-2 transition-colors" type="button"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>删除</button></div></div>
+<div class="w-10 h-10 rounded-full bg-neutral-900/85 group-hover:bg-brand-500 text-white flex items-center justify-center play-btn-glow group-hover:scale-115 pl-0.5">
+<svg class="w-4 h-4 fill-current transition-transform duration-200 group-hover:scale-105" viewBox="0 0 24 24">
+<polygon points="6 4 20 12 6 20 6 4"></polygon>
+</svg>
+</div>
+<div class="absolute inset-0 bg-neutral-900/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+</div>
+<div class="p-3.5 flex flex-col justify-between flex-1">
+<div>
+<h3 class="text-[13.5px] font-bold text-neutral-900 tracking-tight truncate group-hover:text-brand-600 transition-colors duration-200">
+        03 上下文窗口限制
+      </h3>
+<div class="mt-3 space-y-1.5">
+<div class="flex items-center justify-between text-[11px] text-neutral-500">
+<span class="">进度</span>
+<span class="font-medium text-emerald-600">7 / 7</span>
+</div>
+<div class="grid grid-cols-7 gap-1 h-1.5 w-full">
+<div class="rounded-full bg-emerald-500 progress-bar-fill" title="步骤 1: 已完成"></div>
+<div class="rounded-full bg-emerald-500 progress-bar-fill" title="步骤 2: 已完成"></div>
+<div class="rounded-full bg-emerald-500 progress-bar-fill" title="步骤 3: 已完成"></div>
+<div class="rounded-full bg-emerald-500 progress-bar-fill" title="步骤 4: 已完成"></div>
+<div class="rounded-full bg-emerald-500 progress-bar-fill" title="步骤 5: 已完成"></div>
+<div class="rounded-full bg-emerald-500 progress-bar-fill" title="步骤 6: 已完成"></div>
+<div class="rounded-full bg-emerald-500 progress-bar-fill" title="步骤 7: 已完成"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Card 4: 04 扩散模型深度拆解 (AI核心大模型应用课 · 第1章) -->
+<div class="group relative bg-surface-card border border-line-border hover:border-brand-500/70 rounded-xl overflow-hidden shadow-xs hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 flex flex-col cursor-pointer animate-fadeInUp stagger-4">
+<div class="relative aspect-[16/9] w-full bg-gradient-to-br from-[#E6F4EA] via-[#DEF0E4] to-[#CFE8D7] overflow-hidden flex items-center justify-center">
+<div class="absolute inset-0 opacity-30 bg-[radial-gradient(#10b981_1px,transparent_1px)] [background-size:12px_12px]"></div>
+<div class="absolute top-2.5 left-2.5 z-20">
+<span class="px-2 py-0.5 rounded-md bg-white/90 backdrop-blur-sm border border-neutral-200/80 text-[10.5px] font-semibold text-emerald-600 shadow-2xs">AI核心应用课</span>
+</div>
+<div class="absolute top-2.5 right-2.5 z-30 group/menu" onclick="event.stopPropagation();"><button class="w-7 h-7 rounded-full bg-white/90 hover:bg-white text-neutral-700 hover:text-neutral-950 shadow-sm flex items-center justify-center transition-all duration-200 border border-neutral-200/80 hover:scale-110 active:scale-95 icon-btn-hover" title="更多选项" type="button"><svg class="w-4 h-4 fill-current" viewBox="0 0 20 20"><circle cx="5" cy="10" r="1.5"></circle><circle cx="10" cy="10" r="1.5"></circle><circle cx="15" cy="10" r="1.5"></circle></svg></button><div class="hidden group-hover/menu:flex flex-col absolute right-0 top-full mt-1 w-28 bg-white rounded-lg shadow-lg border border-line-border py-1 z-30 text-[12px] font-normal text-neutral-700 animate-fadeInUp"><button class="w-full px-3 py-1.5 text-left hover:bg-neutral-100 hover:text-neutral-900 flex items-center gap-2 transition-colors" type="button"><svg class="w-3.5 h-3.5 text-neutral-500" fill="currentColor" viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>继续</button><button class="w-full px-3 py-1.5 text-left hover:bg-neutral-100 hover:text-neutral-900 flex items-center gap-2 transition-colors" type="button"><svg class="w-3.5 h-3.5 text-neutral-500" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24"><path d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"></path></svg>编辑</button><button class="w-full px-3 py-1.5 text-left hover:bg-neutral-100 text-error flex items-center gap-2 transition-colors" type="button"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>删除</button></div></div>
+<div class="w-10 h-10 rounded-full bg-neutral-900/85 group-hover:bg-brand-500 text-white flex items-center justify-center play-btn-glow group-hover:scale-115 pl-0.5">
+<svg class="w-4 h-4 fill-current transition-transform duration-200 group-hover:scale-105" viewBox="0 0 24 24">
+<polygon points="6 4 20 12 6 20 6 4"></polygon>
+</svg>
+</div>
+<div class="absolute inset-0 bg-neutral-900/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+</div>
+<div class="p-3.5 flex flex-col justify-between flex-1">
+<div>
+<h3 class="text-[13.5px] font-bold text-neutral-900 tracking-tight truncate group-hover:text-brand-600 transition-colors duration-200">
+        04 扩散模型深度拆解
+      </h3>
+<div class="mt-3 space-y-1.5">
+<div class="flex items-center justify-between text-[11px] text-neutral-500">
+<span class="">进度</span>
+<span class="font-medium text-emerald-600">5 / 7</span>
+</div>
+<div class="grid grid-cols-7 gap-1 h-1.5 w-full">
+<div class="rounded-full bg-emerald-500 progress-bar-fill" title="步骤 1: 已完成"></div>
+<div class="rounded-full bg-emerald-500 progress-bar-fill" title="步骤 2: 已完成"></div>
+<div class="rounded-full bg-emerald-500 progress-bar-fill" title="步骤 3: 已完成"></div>
+<div class="rounded-full bg-emerald-500 progress-bar-fill" title="步骤 4: 已完成"></div>
+<div class="rounded-full bg-emerald-500 progress-bar-fill" title="步骤 5: 已完成"></div>
+<div class="rounded-full bg-neutral-200"></div>
+<div class="rounded-full bg-neutral-200"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Card 5: 未分类测试视频 (所属类别：独立视频) -->
+<div class="group relative bg-surface-card border border-line-border hover:border-brand-500/70 rounded-xl overflow-hidden shadow-xs hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 flex flex-col cursor-pointer animate-fadeInUp stagger-5">
+<div class="relative aspect-[16/9] w-full bg-gradient-to-br from-[#F4F2F6] via-[#EAE8ED] to-[#E2E0E6] overflow-hidden flex items-center justify-center">
+<div class="absolute inset-0 opacity-20 bg-[radial-gradient(#59413a_1px,transparent_1px)] [background-size:12px_12px]"></div>
+<div class="absolute top-2.5 left-2.5 z-20">
+<span class="px-2 py-0.5 rounded-md bg-white/90 backdrop-blur-sm border border-neutral-200/80 text-[10.5px] font-semibold text-neutral-600 shadow-2xs">独立视频</span>
+</div>
+<div class="absolute top-2.5 right-2.5 z-30 group/menu" onclick="event.stopPropagation();"><button class="w-7 h-7 rounded-full bg-white/90 hover:bg-white text-neutral-700 hover:text-neutral-950 shadow-sm flex items-center justify-center transition-all duration-200 border border-neutral-200/80 hover:scale-110 active:scale-95 icon-btn-hover" title="更多选项" type="button"><svg class="w-4 h-4 fill-current" viewBox="0 0 20 20"><circle cx="5" cy="10" r="1.5"></circle><circle cx="10" cy="10" r="1.5"></circle><circle cx="15" cy="10" r="1.5"></circle></svg></button><div class="hidden group-hover/menu:flex flex-col absolute right-0 top-full mt-1 w-28 bg-white rounded-lg shadow-lg border border-line-border py-1 z-30 text-[12px] font-normal text-neutral-700 animate-fadeInUp"><button class="w-full px-3 py-1.5 text-left hover:bg-neutral-100 hover:text-neutral-900 flex items-center gap-2 transition-colors" type="button"><svg class="w-3.5 h-3.5 text-neutral-500" fill="currentColor" viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>继续</button><button class="w-full px-3 py-1.5 text-left hover:bg-neutral-100 hover:text-neutral-900 flex items-center gap-2 transition-colors" type="button"><svg class="w-3.5 h-3.5 text-neutral-500" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24"><path d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"></path></svg>编辑</button><button class="w-full px-3 py-1.5 text-left hover:bg-neutral-100 text-error flex items-center gap-2 transition-colors" type="button"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>删除</button></div></div>
+<div class="w-10 h-10 rounded-full bg-neutral-900/85 group-hover:bg-brand-500 text-white flex items-center justify-center play-btn-glow group-hover:scale-115 pl-0.5">
+<svg class="w-4 h-4 fill-current transition-transform duration-200 group-hover:scale-105" viewBox="0 0 24 24">
+<polygon points="6 4 20 12 6 20 6 4"></polygon>
+</svg>
+</div>
+<div class="absolute inset-0 bg-neutral-900/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+</div>
+<div class="p-3.5 flex flex-col justify-between flex-1">
+<div>
+<h3 class="text-[13.5px] font-bold text-neutral-900 tracking-tight truncate group-hover:text-brand-600 transition-colors duration-200">
+        未分类测试视频
+      </h3>
+<div class="mt-3 space-y-1.5">
+<div class="flex items-center justify-between text-[11px] text-neutral-500">
+<span class="">进度</span>
+<span class="font-medium text-emerald-600">4 / 7</span>
+</div>
+<div class="grid grid-cols-7 gap-1 h-1.5 w-full">
+<div class="rounded-full bg-emerald-500 progress-bar-fill" title="步骤 1: 已完成"></div>
+<div class="rounded-full bg-emerald-500 progress-bar-fill" title="步骤 2: 已完成"></div>
+<div class="rounded-full bg-emerald-500 progress-bar-fill" title="步骤 3: 已完成"></div>
+<div class="rounded-full bg-emerald-500 progress-bar-fill" title="步骤 4: 已完成"></div>
+<div class="rounded-full bg-neutral-200"></div>
+<div class="rounded-full bg-neutral-200"></div>
+<div class="rounded-full bg-neutral-200"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Card 6: 快速录制演示 01 (所属类别：独立视频) -->
+<div class="group relative bg-surface-card border border-line-border hover:border-brand-500/70 rounded-xl overflow-hidden shadow-xs hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 flex flex-col cursor-pointer animate-fadeInUp stagger-6">
+<div class="relative aspect-[16/9] w-full bg-gradient-to-br from-[#FDF9F4] via-[#F8EFE4] to-[#EBE3D7] overflow-hidden flex items-center justify-center">
+<div class="absolute inset-0 opacity-25 bg-[radial-gradient(#ab3602_1px,transparent_1px)] [background-size:12px_12px]"></div>
+<div class="absolute top-2.5 left-2.5 z-20">
+<span class="px-2 py-0.5 rounded-md bg-white/90 backdrop-blur-sm border border-neutral-200/80 text-[10.5px] font-semibold text-neutral-600 shadow-2xs">独立视频</span>
+</div>
+<div class="absolute top-2.5 right-2.5 z-30 group/menu" onclick="event.stopPropagation();"><button class="w-7 h-7 rounded-full bg-white/90 hover:bg-white text-neutral-700 hover:text-neutral-950 shadow-sm flex items-center justify-center transition-all duration-200 border border-neutral-200/80 hover:scale-110 active:scale-95 icon-btn-hover" title="更多选项" type="button"><svg class="w-4 h-4 fill-current" viewBox="0 0 20 20"><circle cx="5" cy="10" r="1.5"></circle><circle cx="10" cy="10" r="1.5"></circle><circle cx="15" cy="10" r="1.5"></circle></svg></button><div class="hidden group-hover/menu:flex flex-col absolute right-0 top-full mt-1 w-28 bg-white rounded-lg shadow-lg border border-line-border py-1 z-30 text-[12px] font-normal text-neutral-700 animate-fadeInUp"><button class="w-full px-3 py-1.5 text-left hover:bg-neutral-100 hover:text-neutral-900 flex items-center gap-2 transition-colors" type="button"><svg class="w-3.5 h-3.5 text-neutral-500" fill="currentColor" viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>继续</button><button class="w-full px-3 py-1.5 text-left hover:bg-neutral-100 hover:text-neutral-900 flex items-center gap-2 transition-colors" type="button"><svg class="w-3.5 h-3.5 text-neutral-500" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24"><path d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"></path></svg>编辑</button><button class="w-full px-3 py-1.5 text-left hover:bg-neutral-100 text-error flex items-center gap-2 transition-colors" type="button"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>删除</button></div></div>
+<div class="w-10 h-10 rounded-full bg-neutral-900/85 group-hover:bg-brand-500 text-white flex items-center justify-center play-btn-glow group-hover:scale-115 pl-0.5">
+<svg class="w-4 h-4 fill-current transition-transform duration-200 group-hover:scale-105" viewBox="0 0 24 24">
+<polygon points="6 4 20 12 6 20 6 4"></polygon>
+</svg>
+</div>
+<div class="absolute inset-0 bg-neutral-900/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+</div>
+<div class="p-3.5 flex flex-col justify-between flex-1">
+<div>
+<h3 class="text-[13.5px] font-bold text-neutral-900 tracking-tight truncate group-hover:text-brand-600 transition-colors duration-200">
+        快速录制演示 01
+      </h3>
+<div class="mt-3 space-y-1.5">
+<div class="flex items-center justify-between text-[11px] text-neutral-500">
+<span class="">进度</span>
+<span class="font-medium text-emerald-600">2 / 7</span>
+</div>
+<div class="grid grid-cols-7 gap-1 h-1.5 w-full">
+<div class="rounded-full bg-emerald-500 progress-bar-fill" title="步骤 1: 已完成"></div>
+<div class="rounded-full bg-emerald-500 progress-bar-fill" title="步骤 2: 已完成"></div>
+<div class="rounded-full bg-neutral-200"></div>
+<div class="rounded-full bg-neutral-200"></div>
+<div class="rounded-full bg-neutral-200"></div>
+<div class="rounded-full bg-neutral-200"></div>
+<div class="rounded-full bg-neutral-200"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- END: Video Compact Vertical Cards Grid -->
+</main>
+<!-- END: MainContentArea -->
+</div>
+
+
+
+
+</body></html>

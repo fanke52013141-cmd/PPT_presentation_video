@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>PPT Studio - 视频创作工作台 (旁白与音频)</title>
+<!-- Tailwind CSS v3 -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#fff7ed',
+              100: '#ffedd5',
+              500: '#f46a38',
+              600: '#e55a2b',
+              700: '#c2410c',
+            },
+            slate: {
+              850: '#172033',
+              900: '#0f172a',
+            }
+          },
+          fontFamily: {
+            sans: ['"PingFang SC"', '"Microsoft YaHei"', '"Plus Jakarta Sans"', 'system-ui', '-apple-system', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+<!-- Custom Style Modules -->
+<style data-purpose="scrollbar-and-theme">
+    /* Custom Scrollbar for smooth studio workspace feel */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+  </style>
+<style data-purpose="custom-range-slider">
+    /* Tailored appearance for sleek modern audio progress bar */
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      height: 12px;
+      width: 12px;
+      border-radius: 50%;
+      background: #64748b;
+      cursor: pointer;
+      margin-top: -4px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+      transition: transform 0.1s ease, background-color 0.1s ease;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.25);
+      background: #f46a38;
+    }
+    input[type="range"]::-webkit-slider-runnable-track {
+      width: 100%;
+      height: 4px;
+      cursor: pointer;
+      background: #e2e8f0;
+      border-radius: 9999px;
+    }
+  </style>
+</head>
+<body class="bg-[#f8f9fa] text-slate-800 font-sans antialiased min-h-screen flex flex-col selection:bg-orange-100 selection:text-orange-700">
+<!-- BEGIN: TopGlobalHeader -->
+<header class="h-16 bg-white border-b border-slate-200/80 px-6 flex items-center justify-between sticky top-0 z-50 shrink-0 shadow-sm" data-purpose="workspace-top-navigation">
+<!-- Left: Logo & Project Badge -->
+<div class="flex items-center space-x-4">
+<div class="flex items-center space-x-2.5">
+<div class="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center text-white shadow-sm ring-1 ring-slate-950/5">
+<svg class="w-4 h-4 text-white" fill="currentColor" viewbox="0 0 24 24">
+<path d="M4 4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H4zm6 4.5 6 3.5-6 3.5v-7z"></path>
+</svg>
+</div>
+<span class="font-bold text-lg tracking-tight text-slate-900">PPT Studio</span>
+</div>
+<div class="h-4 w-px bg-slate-200"></div>
+<!-- Current Project Tag (Consistent with Design System) -->
+<div class="flex items-center space-x-2 text-xs">
+<span class="text-slate-400">当前项目:</span>
+<div class="inline-flex items-center px-2.5 py-1 rounded-md bg-[#fff7f2] border border-[#ffedd5] text-brand-600 font-medium">
+          # 什么是 Token
+        </div>
+</div>
+</div>
+<!-- Right: Concise Studio Actions -->
+<div class="flex items-center space-x-3">
+<!-- AI Branch Selector Dropdown -->
+<button class="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200/80 text-xs font-medium text-slate-700 transition-colors">
+<span>分镜方式: <span class="font-semibold">AI 辅助</span></span>
+<svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+<!-- Return Home Button -->
+<a class="inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg border border-orange-200/80 text-brand-600 hover:bg-orange-50/70 text-xs font-medium transition-colors shadow-2xs" href="javascript:void(0)">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24">
+<path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+<span>返回首页</span>
+</a>
+</div>
+</header>
+<!-- END: TopGlobalHeader -->
+<!-- BEGIN: MainWorkspaceLayout -->
+<div class="flex-1 flex overflow-hidden p-5 gap-5 max-w-[1920px] mx-auto w-full">
+<!-- BEGIN: LeftSidebarStepper -->
+<aside class="w-64 shrink-0 flex flex-col justify-between" data-purpose="step-progression-pipeline">
+<!-- Stepper Container Card -->
+<div class="bg-white rounded-2xl border border-slate-200/80 p-3.5 shadow-sm space-y-1.5">
+<!-- Step 1: Completed -->
+<div class="flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-slate-50 transition-colors">
+<div class="flex items-center space-x-3">
+<span class="w-6 h-6 rounded-full bg-slate-100 text-slate-500 font-medium text-xs flex items-center justify-center">1</span>
+<div class="flex items-center space-x-2">
+<svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24">
+<path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+<span class="text-xs font-medium text-slate-700">导入文章</span>
+</div>
+</div>
+<span class="w-4 h-4 rounded-full bg-emerald-500 text-white flex items-center justify-center">
+<svg class="w-2.5 h-2.5 stroke-[3]" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</span>
+</div>
+<!-- Step 2: Completed -->
+<div class="flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-slate-50 transition-colors">
+<div class="flex items-center space-x-3">
+<span class="w-6 h-6 rounded-full bg-slate-100 text-slate-500 font-medium text-xs flex items-center justify-center">2</span>
+<div class="flex items-center space-x-2">
+<svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24">
+<path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+<span class="text-xs font-medium text-slate-700">分镜规划</span>
+</div>
+</div>
+<span class="w-4 h-4 rounded-full bg-emerald-500 text-white flex items-center justify-center">
+<svg class="w-2.5 h-2.5 stroke-[3]" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</span>
+</div>
+<!-- Step 3: Completed -->
+<div class="flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-slate-50 transition-colors">
+<div class="flex items-center space-x-3">
+<span class="w-6 h-6 rounded-full bg-slate-100 text-slate-500 font-medium text-xs flex items-center justify-center">3</span>
+<div class="flex items-center space-x-2">
+<svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24">
+<path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+<span class="text-xs font-medium text-slate-700">图片生成</span>
+</div>
+</div>
+<span class="w-4 h-4 rounded-full bg-emerald-500 text-white flex items-center justify-center">
+<svg class="w-2.5 h-2.5 stroke-[3]" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</span>
+</div>
+<!-- Step 4: Completed -->
+<div class="flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-slate-50 transition-colors">
+<div class="flex items-center space-x-3">
+<span class="w-6 h-6 rounded-full bg-slate-100 text-slate-500 font-medium text-xs flex items-center justify-center">4</span>
+<div class="flex items-center space-x-2">
+<svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24">
+<path d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+<span class="text-xs font-medium text-slate-700">元素动画 <span class="text-slate-400 font-normal">(可选)</span></span>
+</div>
+</div>
+<span class="w-4 h-4 rounded-full bg-emerald-500 text-white flex items-center justify-center">
+<svg class="w-2.5 h-2.5 stroke-[3]" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</span>
+</div>
+<!-- Step 5: ACTIVE STEP (旁白与音频) -->
+<div class="relative bg-brand-500 text-white rounded-xl px-3 py-2.5 flex items-center justify-between shadow-md shadow-orange-500/20 ring-1 ring-orange-500/30">
+<div class="flex items-center space-x-3">
+<span class="w-6 h-6 rounded-full bg-white/20 text-white font-semibold text-xs flex items-center justify-center backdrop-blur-xs">5</span>
+<div class="flex items-center space-x-2 font-semibold text-xs tracking-wide">
+<svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24">
+<path d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+<span>旁白与音频</span>
+</div>
+</div>
+<!-- Active state micro-indicator or icon -->
+<span class="w-2 h-2 rounded-full bg-white animate-pulse"></span>
+</div>
+<!-- Step 6: Pending (Need Rework Badge) -->
+<div class="flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-slate-50 transition-colors">
+<div class="flex items-center space-x-3">
+<span class="w-6 h-6 rounded-full bg-slate-100 text-slate-400 font-medium text-xs flex items-center justify-center">6</span>
+<div class="relative flex items-center space-x-2">
+<span class="absolute -top-3.5 left-2 px-1 py-0.2 bg-amber-100 text-amber-700 text-[9px] rounded font-medium scale-90 origin-left">需重做</span>
+<svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24">
+<path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+<span class="text-xs font-medium text-slate-400">数字人讲解</span>
+</div>
+</div>
+<span class="w-4 h-4 rounded-full border border-slate-200 flex items-center justify-center"></span>
+</div>
+<!-- Step 7: Final Step -->
+<div class="flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-slate-50 transition-colors">
+<div class="flex items-center space-x-3">
+<span class="w-6 h-6 rounded-full bg-slate-100 text-slate-400 font-medium text-xs flex items-center justify-center">7</span>
+<div class="flex items-center space-x-2">
+<svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24">
+<path d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+<span class="text-xs font-medium text-slate-400">作品输出</span>
+</div>
+</div>
+<span class="w-4 h-4 rounded-full border border-slate-200 flex items-center justify-center"></span>
+</div>
+<!-- Major Action Button: Generate Full Video -->
+<div class="pt-2">
+<button class="w-full py-2.5 px-4 bg-gradient-to-r from-orange-500 to-brand-500 hover:from-orange-600 hover:to-brand-600 text-white rounded-xl font-medium text-xs flex items-center justify-center space-x-2 shadow-md shadow-orange-500/25 transition-all transform active:scale-98">
+<svg class="w-3.5 h-3.5 text-orange-200 fill-current" viewbox="0 0 24 24">
+<path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7.4-6.3-4.8L5.7 21.4 8 14 2 9.4h7.6z"></path>
+</svg>
+<span>一键生成视频</span>
+</button>
+</div>
+</div>
+<!-- Bottom System Status Pill -->
+<div class="bg-white rounded-2xl border border-slate-200/80 p-3.5 shadow-xs flex items-start space-x-2.5">
+<span class="relative flex h-2.5 w-2.5 mt-1 shrink-0">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+<span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+</span>
+<p class="text-[11px] text-slate-500 leading-relaxed">
+          已自动为您提取核心要点与关键词，点击上方重新生成可同步分镜音频。
+        </p>
+</div>
+</aside>
+<!-- END: LeftSidebarStepper -->
+<!-- BEGIN: MainContentArea -->
+<main class="flex-1 bg-white rounded-2xl border border-slate-200/80 shadow-xs flex flex-col overflow-hidden" data-purpose="narration-audio-editor">
+<!-- Top Action Toolbar for Narration & Audio -->
+<div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between flex-wrap gap-3 shrink-0">
+<!-- Section Title & AI Annotations Group -->
+<div class="flex items-center space-x-4">
+<div class="flex items-center space-x-2">
+<div class="w-1.5 h-5 bg-brand-500 rounded-full"></div>
+<h1 class="text-base font-bold text-slate-900 tracking-tight">旁白与音频</h1>
+</div>
+<!-- Functional Pills -->
+<div class="flex items-center space-x-2 text-xs">
+<button class="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full bg-slate-100 hover:bg-slate-200/80 text-slate-700 font-medium transition-colors">
+<svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<span>同步</span>
+</button>
+<button class="inline-flex items-center px-3 py-1 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-2xs transition-colors">
+              AI 标注
+            </button>
+<button class="inline-flex items-center px-3 py-1 rounded-full bg-slate-100 hover:bg-slate-200/80 text-slate-600 font-medium transition-colors">
+              AI 标注 Prompt
+            </button>
+</div>
+</div>
+<!-- Primary Production Actions Group -->
+<div class="flex items-center space-x-2.5 text-xs">
+<button class="inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-medium shadow-xs transition-colors">
+<span>生成音频</span>
+<span class="text-[10px] opacity-75">→</span>
+</button>
+<button class="inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium transition-colors shadow-2xs">
+<svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<span>重新生成</span>
+</button>
+<button class="inline-flex items-center px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium transition-colors shadow-2xs">
+            导出整段语音
+          </button>
+<button class="inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition-colors">
+<span>确认并进入数字人讲解</span>
+<span class="text-[10px] text-slate-400">→</span>
+</button>
+</div>
+</div>
+<!-- Scrollable Audio & Narration Card List -->
+<div class="flex-1 overflow-y-auto p-6 space-y-4">
+<!-- Info Alert Banner -->
+<div class="bg-blue-50/50 border border-blue-100/90 rounded-xl px-4 py-2.5 flex items-center space-x-2 text-xs text-blue-600/90" data-purpose="status-alert">
+<svg class="w-4 h-4 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<span>旁白或上游内容已变更，请重新生成音频后再确认。</span>
+</div>
+<!-- Slide Item 001 -->
+<div class="bg-white rounded-xl border border-slate-200/90 hover:border-slate-300 p-4 transition-shadow hover:shadow-xs space-y-3" data-purpose="narration-slide-card">
+<div class="flex items-center justify-between">
+<span class="font-bold text-xs tracking-wide text-slate-900 font-mono">slide_001</span>
+<span class="text-[11px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 font-medium">2 条旁白</span>
+</div>
+<div class="space-y-1.5">
+<div class="bg-slate-50/80 hover:bg-slate-50 rounded-lg px-3.5 py-2 text-xs text-slate-700 leading-relaxed border border-slate-100">
+              先别急着下定义，token 这个词要看场景。
+            </div>
+<div class="bg-slate-50/80 hover:bg-slate-50 rounded-lg px-3.5 py-2 text-xs text-slate-700 leading-relaxed border border-slate-100">
+              大家最常聊的是 AI 大模型里的 token，另外在区块链和接口开发里也各有各的意思。
+            </div>
+</div>
+<!-- Audio Player Row -->
+<div class="pt-2 border-t border-dashed border-slate-200/70 flex items-center space-x-3 text-slate-600">
+<button class="w-7 h-7 rounded-full bg-slate-100 hover:bg-brand-500 hover:text-white flex items-center justify-center transition-colors shrink-0 text-slate-700" title="播放">
+<svg class="w-3 h-3 ml-0.5 fill-current" viewbox="0 0 24 24">
+<path d="M8 5v14l11-7z"></path>
+</svg>
+</button>
+<span class="text-[11px] font-mono text-slate-400 tabular-nums shrink-0">0:00 / 0:00</span>
+<div class="flex-1 relative flex items-center">
+<input aria-label="Audio timeline slider" class="w-full appearance-none bg-transparent focus:outline-none" max="100" min="0" type="range" value="0"/>
+</div>
+<button class="text-slate-400 hover:text-slate-600 transition-colors" title="音量">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M15.536 8.464a5 5 0 010 7.072M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+<button class="text-slate-400 hover:text-slate-600 transition-colors" title="更多操作">
+<svg class="w-4 h-4" fill="currentColor" viewbox="0 0 20 20">
+<path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path>
+</svg>
+</button>
+</div>
+</div>
+<!-- Slide Item 002 -->
+<div class="bg-white rounded-xl border border-slate-200/90 hover:border-slate-300 p-4 transition-shadow hover:shadow-xs space-y-3" data-purpose="narration-slide-card">
+<div class="flex items-center justify-between">
+<span class="font-bold text-xs tracking-wide text-slate-900 font-mono">slide_002</span>
+<span class="text-[11px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 font-medium">2 条旁白</span>
+</div>
+<div class="space-y-1.5">
+<div class="bg-slate-50/80 hover:bg-slate-50 rounded-lg px-3.5 py-2 text-xs text-slate-700 leading-relaxed border border-slate-100">
+              先看最常用的一种：AI 大模型里的 token。
+            </div>
+<div class="bg-slate-50/80 hover:bg-slate-50 rounded-lg px-3.5 py-2 text-xs text-slate-700 leading-relaxed border border-slate-100">
+              它是模型处理文本的最小单位，并不是简单等于一个汉字或者一个字母。
+            </div>
+</div>
+<!-- Audio Player Row -->
+<div class="pt-2 border-t border-dashed border-slate-200/70 flex items-center space-x-3 text-slate-600">
+<button class="w-7 h-7 rounded-full bg-slate-100 hover:bg-brand-500 hover:text-white flex items-center justify-center transition-colors shrink-0 text-slate-700" title="播放">
+<svg class="w-3 h-3 ml-0.5 fill-current" viewbox="0 0 24 24">
+<path d="M8 5v14l11-7z"></path>
+</svg>
+</button>
+<span class="text-[11px] font-mono text-slate-400 tabular-nums shrink-0">0:00 / 0:00</span>
+<div class="flex-1 relative flex items-center">
+<input aria-label="Audio timeline slider" class="w-full appearance-none bg-transparent focus:outline-none" max="100" min="0" type="range" value="0"/>
+</div>
+<button class="text-slate-400 hover:text-slate-600 transition-colors" title="音量">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M15.536 8.464a5 5 0 010 7.072M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+<button class="text-slate-400 hover:text-slate-600 transition-colors" title="更多操作">
+<svg class="w-4 h-4" fill="currentColor" viewbox="0 0 20 20">
+<path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path>
+</svg>
+</button>
+</div>
+</div>
+<!-- Slide Item 003 -->
+<div class="bg-white rounded-xl border border-slate-200/90 hover:border-slate-300 p-4 transition-shadow hover:shadow-xs space-y-3" data-purpose="narration-slide-card">
+<div class="flex items-center justify-between">
+<span class="font-bold text-xs tracking-wide text-slate-900 font-mono">slide_003</span>
+<span class="text-[11px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 font-medium">4 条旁白</span>
+</div>
+<div class="space-y-1.5">
+<div class="bg-slate-50/80 hover:bg-slate-50 rounded-lg px-3.5 py-2 text-xs text-slate-700 leading-relaxed border border-slate-100">
+              具体怎么换算呢？
+            </div>
+<div class="bg-slate-50/80 hover:bg-slate-50 rounded-lg px-3.5 py-2 text-xs text-slate-700 leading-relaxed border border-slate-100">
+              中文里大约一个 token 对应 0.75 个汉字，一千个 token 大概是七百五十个汉字。
+            </div>
+<div class="bg-slate-50/80 hover:bg-slate-50 rounded-lg px-3.5 py-2 text-xs text-slate-700 leading-relaxed border border-slate-100">
+              英文里一个 token 约等于 0.75 个单词，长词还会被拆成小段。
+            </div>
+<div class="bg-slate-50/80 hover:bg-slate-50 rounded-lg px-3.5 py-2 text-xs text-slate-700 leading-relaxed border border-slate-100">
+              标点、空格和换行也都会占用 token。
+            </div>
+</div>
+<!-- Audio Player Row -->
+<div class="pt-2 border-t border-dashed border-slate-200/70 flex items-center space-x-3 text-slate-600">
+<button class="w-7 h-7 rounded-full bg-slate-100 hover:bg-brand-500 hover:text-white flex items-center justify-center transition-colors shrink-0 text-slate-700" title="播放">
+<svg class="w-3 h-3 ml-0.5 fill-current" viewbox="0 0 24 24">
+<path d="M8 5v14l11-7z"></path>
+</svg>
+</button>
+<span class="text-[11px] font-mono text-slate-400 tabular-nums shrink-0">0:00 / 0:00</span>
+<div class="flex-1 relative flex items-center">
+<input aria-label="Audio timeline slider" class="w-full appearance-none bg-transparent focus:outline-none" max="100" min="0" type="range" value="0"/>
+</div>
+<button class="text-slate-400 hover:text-slate-600 transition-colors" title="音量">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M15.536 8.464a5 5 0 010 7.072M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+<button class="text-slate-400 hover:text-slate-600 transition-colors" title="更多操作">
+<svg class="w-4 h-4" fill="currentColor" viewbox="0 0 20 20">
+<path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path>
+</svg>
+</button>
+</div>
+</div>
+<!-- Slide Item 004 -->
+<div class="bg-white rounded-xl border border-slate-200/90 hover:border-slate-300 p-4 transition-shadow hover:shadow-xs space-y-3" data-purpose="narration-slide-card">
+<div class="flex items-center justify-between">
+<span class="font-bold text-xs tracking-wide text-slate-900 font-mono">slide_004</span>
+<span class="text-[11px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 font-medium">2 条旁白</span>
+</div>
+<div class="space-y-1.5">
+<div class="bg-slate-50/80 hover:bg-slate-50 rounded-lg px-3.5 py-2 text-xs text-slate-700 leading-relaxed border border-slate-100">
+              可以这样简单理解。
+            </div>
+<div class="bg-slate-50/80 hover:bg-slate-50 rounded-lg px-3.5 py-2 text-xs text-slate-700 leading-relaxed border border-slate-100">
+              模型不会直接读“字”，而是把文字切成一小段一小段的 token，再基于这些片段去计算、理解和生成内容。
+            </div>
+</div>
+<!-- Audio Player Row -->
+<div class="pt-2 border-t border-dashed border-slate-200/70 flex items-center space-x-3 text-slate-600">
+<button class="w-7 h-7 rounded-full bg-slate-100 hover:bg-brand-500 hover:text-white flex items-center justify-center transition-colors shrink-0 text-slate-700" title="播放">
+<svg class="w-3 h-3 ml-0.5 fill-current" viewbox="0 0 24 24">
+<path d="M8 5v14l11-7z"></path>
+</svg>
+</button>
+<span class="text-[11px] font-mono text-slate-400 tabular-nums shrink-0">0:00 / 0:00</span>
+<div class="flex-1 relative flex items-center">
+<input aria-label="Audio timeline slider" class="w-full appearance-none bg-transparent focus:outline-none" max="100" min="0" type="range" value="0"/>
+</div>
+<button class="text-slate-400 hover:text-slate-600 transition-colors" title="音量">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M15.536 8.464a5 5 0 010 7.072M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+<button class="text-slate-400 hover:text-slate-600 transition-colors" title="更多操作">
+<svg class="w-4 h-4" fill="currentColor" viewbox="0 0 20 20">
+<path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path>
+</svg>
+</button>
+</div>
+</div>
+<!-- Slide Item 005 -->
+<div class="bg-white rounded-xl border border-slate-200/90 hover:border-slate-300 p-4 transition-shadow hover:shadow-xs space-y-3" data-purpose="narration-slide-card">
+<div class="flex items-center justify-between">
+<span class="font-bold text-xs tracking-wide text-slate-900 font-mono">slide_005</span>
+<span class="text-[11px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 font-medium">3 条旁白</span>
+</div>
+<div class="space-y-1.5">
+<div class="bg-slate-50/80 hover:bg-slate-50 rounded-lg px-3.5 py-2 text-xs text-slate-700 leading-relaxed border border-slate-100">
+              那 token 有什么实际用处？
+            </div>
+<div class="bg-slate-50/80 hover:bg-slate-50 rounded-lg px-3.5 py-2 text-xs text-slate-700 leading-relaxed border border-slate-100">
+              首先是计费，调用 API 通常按输入加输出的 token 数量收费。
+            </div>
+<div class="bg-slate-50/80 hover:bg-slate-50 rounded-lg px-3.5 py-2 text-xs text-slate-700 leading-relaxed border border-slate-100">
+              其次是上下文窗口，模型有最大 token 上限，决定了它最多能记住多少对话内容，超过就会遗忘前面的信息。
+            </div>
+</div>
+<!-- Audio Player Row -->
+<div class="pt-2 border-t border-dashed border-slate-200/70 flex items-center space-x-3 text-slate-600">
+<button class="w-7 h-7 rounded-full bg-slate-100 hover:bg-brand-500 hover:text-white flex items-center justify-center transition-colors shrink-0 text-slate-700" title="播放">
+<svg class="w-3 h-3 ml-0.5 fill-current" viewbox="0 0 24 24">
+<path d="M8 5v14l11-7z"></path>
+</svg>
+</button>
+<span class="text-[11px] font-mono text-slate-400 tabular-nums shrink-0">0:00 / 0:00</span>
+<div class="flex-1 relative flex items-center">
+<input aria-label="Audio timeline slider" class="w-full appearance-none bg-transparent focus:outline-none" max="100" min="0" type="range" value="0"/>
+</div>
+<button class="text-slate-400 hover:text-slate-600 transition-colors" title="音量">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M15.536 8.464a5 5 0 010 7.072M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+<button class="text-slate-400 hover:text-slate-600 transition-colors" title="更多操作">
+<svg class="w-4 h-4" fill="currentColor" viewbox="0 0 20 20">
+<path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path>
+</svg>
+</button>
+</div>
+</div>
+</div>
+</main>
+<!-- END: MainContentArea -->
+</div>
+<!-- END: MainWorkspaceLayout -->
+</body></html>

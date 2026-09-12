@@ -1,0 +1,290 @@
+<!DOCTYPE html><html lang="zh-CN"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>PPT Studio - 视频创作工作台 (元素动画)</title>
+<!-- Tailwind CSS v3 with Plugins -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#fff7f2',
+              100: '#ffeedb',
+              200: '#ffd8be',
+              400: '#fb8b5b',
+              500: '#f46a38',
+              600: '#e15220',
+              700: '#be3e15',
+            },
+            canvasBg: '#f8f8fa',
+            surfaceBorder: '#ece9ee',
+            slateSub: '#6b7280',
+          },
+          fontFamily: {
+            sans: ['-apple-system', 'BlinkMacSystemFont', '"PingFang SC"', '"Hiragino Sans GB"', '"Microsoft YaHei"', 'sans-serif'],
+          },
+          boxShadow: {
+            'card': '0 2px 10px rgba(15, 23, 42, 0.04), 0 1px 2px rgba(15, 23, 42, 0.02)',
+            'card-hover': '0 8px 24px rgba(15, 23, 42, 0.08)',
+            'floating': '0 12px 32px rgba(244, 106, 56, 0.18)',
+          }
+        }
+      }
+    }
+  </script>
+<!-- BEGIN: Custom Layout & Canvas Styles -->
+<style data-purpose="custom-scrollbars">
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #e2e4ea;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #cbd0dc;
+    }
+  </style>
+<style data-purpose="canvas-elements">
+    /* Subtle dot grid pattern for animation stage */
+    .bg-canvas-dots {
+      background-image: radial-gradient(#e5e7eb 1px, transparent 1px);
+      background-size: 16px 16px;
+    }
+    
+    /* Animation preview highlight markers */
+    .element-marker {
+      box-shadow: 0 0 0 2px rgba(244, 106, 56, 0.9), 0 4px 12px rgba(244, 106, 56, 0.2);
+    }
+    .element-marker-cyan {
+      box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.8), 0 4px 12px rgba(14, 165, 233, 0.15);
+    }
+    .element-marker-emerald {
+      box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.8), 0 4px 12px rgba(16, 185, 129, 0.15);
+    }
+  </style>
+<!-- END: Custom Layout & Canvas Styles -->
+</head>
+<body class="bg-[#f8f8fa] text-slate-800 font-sans min-h-screen antialiased flex flex-col selection:bg-brand-100 selection:text-brand-700">
+<!-- BEGIN: Global Header -->
+<header class="h-16 bg-white border-b border-[#ece9ee] px-6 flex items-center justify-between z-30 sticky top-0" data-purpose="top-navigation">
+<!-- Brand & Project Meta -->
+<div class="flex items-center space-x-4">
+<div class="flex items-center space-x-2.5">
+<div class="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center text-white shadow-sm">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" viewBox="0 0 24 24">
+<rect height="14" rx="2" ry="2" width="20" x="2" y="3"></rect>
+<line x1="8" x2="16" y1="21" y2="21"></line>
+<line x1="12" x2="12" y1="17" y2="21"></line>
+<polygon fill="currentColor" points="10 8 15 10 10 12 10 8"></polygon>
+</svg>
+</div>
+<span class="font-bold text-slate-900 text-lg tracking-tight">PPT Studio</span>
+</div>
+<div class="h-4 w-px bg-slate-200 mx-1"></div>
+<div class="flex items-center space-x-2 text-sm">
+<span class="text-slate-400 text-xs">当前项目:</span>
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#fff3ec] text-[#e85926] border border-[#ffdec9]">
+          # 什么是 Token
+        </span>
+</div>
+</div>
+<!-- Header Action Controls -->
+<div class="flex items-center space-x-3 text-sm">
+<div class="relative">
+<button class="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs transition-colors" type="button">
+<span class="text-slate-400">分镜方式:</span>
+<span class="font-medium text-slate-700">AI 辅助</span>
+<svg class="w-3.5 h-3.5 text-slate-400" fill="currentColor" viewBox="0 0 20 20">
+<path clip-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" fill-rule="evenodd"></path>
+</svg>
+</button>
+</div>
+<a class="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-[#fed7c7] bg-[#fffaf7] text-[#e85926] hover:bg-[#fff2ea] hover:border-[#fca683] text-xs font-medium transition-all shadow-2xs" href="#">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
+<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+<polyline points="9 22 9 12 15 12 15 22"></polyline>
+</svg>
+<span class="">返回首页</span>
+</a>
+</div>
+</header>
+<!-- END: Global Header -->
+<!-- BEGIN: Main Page Shell (Sidebar + Canvas) -->
+<div class="flex-1 flex max-w-[1920px] w-full mx-auto p-4 gap-4 overflow-hidden h-[calc(100vh-4rem)]">
+<!-- BEGIN: Workflow Stepper Sidebar -->
+<aside class="w-56 flex-shrink-0 flex flex-col justify-between bg-white rounded-2xl border border-[#ece9ee] p-3 shadow-card select-none" data-purpose="workflow-stepper">
+<!-- Steps List Container -->
+<div class="space-y-1.5">
+<!-- Step 1: Completed -->
+<div class="group flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-slate-50 text-slate-600 transition-colors cursor-pointer text-xs">
+<div class="flex items-center space-x-2.5">
+<span class="w-5 h-5 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center font-semibold text-[11px] border border-emerald-200">1</span>
+<svg class="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
+<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path>
+<polyline points="14 2 14 8 20 8"></polyline>
+</svg>
+<span class="font-normal text-slate-700">导入文章</span>
+</div>
+<span class="w-4 h-4 rounded-full bg-emerald-500 text-white flex items-center justify-center">
+<svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="3" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+</span>
+</div>
+<!-- Step 2: Completed -->
+<div class="group flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-slate-50 text-slate-600 transition-colors cursor-pointer text-xs">
+<div class="flex items-center space-x-2.5">
+<span class="w-5 h-5 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center font-semibold text-[11px] border border-emerald-200">2</span>
+<svg class="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
+<rect height="14" rx="2" width="20" x="2" y="3"></rect>
+<line x1="8" x2="16" y1="21" y2="21"></line>
+<line x1="12" x2="12" y1="17" y2="21"></line>
+</svg>
+<span class="font-normal text-slate-700">分镜规划</span>
+</div>
+<span class="w-4 h-4 rounded-full bg-emerald-500 text-white flex items-center justify-center">
+<svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="3" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+</span>
+</div>
+<!-- Step 3: Completed -->
+<div class="group flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-slate-50 text-slate-600 transition-colors cursor-pointer text-xs">
+<div class="flex items-center space-x-2.5">
+<span class="w-5 h-5 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center font-semibold text-[11px] border border-emerald-200">3</span>
+<svg class="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
+<rect height="18" rx="2" ry="2" width="18" x="3" y="3"></rect>
+<circle cx="8.5" cy="8.5" r="1.5"></circle>
+<polyline points="21 15 16 10 5 21"></polyline>
+</svg>
+<span class="font-normal text-slate-700">图片生成</span>
+</div>
+<span class="w-4 h-4 rounded-full bg-emerald-500 text-white flex items-center justify-center">
+<svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="3" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+</span>
+</div>
+<!-- Step 4: ACTIVE STEP -->
+<div class="flex items-center justify-between px-3 py-2.5 rounded-xl bg-gradient-to-r from-[#f46a38] to-[#fb7e50] text-white shadow-sm font-medium text-xs">
+<div class="flex items-center space-x-2.5">
+<span class="w-5 h-5 rounded-full bg-white/20 text-white flex items-center justify-center font-semibold text-[11px]">4</span>
+<svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
+<path d="M12 20h9"></path>
+<path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+</svg>
+<span class="tracking-tight">元素动画 <span class="text-[10px] opacity-80">(可选)</span></span>
+</div>
+<span class="w-2 h-2 rounded-full bg-white animate-pulse"></span>
+</div>
+<!-- Step 5: Pending with Remake tag -->
+<div class="group flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-slate-50 text-slate-400 transition-colors cursor-pointer text-xs">
+<div class="flex items-center space-x-2">
+<span class="w-5 h-5 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center font-medium text-[11px]">5</span>
+<svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
+<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+<path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+<line x1="12" x2="12" y1="19" y2="23"></line>
+</svg>
+<div class="flex flex-col">
+<div class="flex items-center space-x-1">
+<span class="text-[9px] px-1 bg-amber-100 text-amber-700 font-semibold rounded leading-tight">需重做</span>
+</div>
+<span class="text-slate-600 text-[11px]">旁白与音频</span>
+</div>
+</div>
+<span class="w-3.5 h-3.5 rounded-full border border-slate-300"></span>
+</div>
+<!-- Step 6: Pending with Remake tag -->
+<div class="group flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-slate-50 text-slate-400 transition-colors cursor-pointer text-xs">
+<div class="flex items-center space-x-2">
+<span class="w-5 h-5 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center font-medium text-[11px]">6</span>
+<svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
+<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+<circle cx="12" cy="7" r="4"></circle>
+</svg>
+<div class="flex flex-col">
+<div class="flex items-center space-x-1">
+<span class="text-[9px] px-1 bg-amber-100 text-amber-700 font-semibold rounded leading-tight">需重做</span>
+</div>
+<span class="text-slate-600 text-[11px]">数字人讲解</span>
+</div>
+</div>
+<span class="w-3.5 h-3.5 rounded-full border border-slate-300"></span>
+</div>
+<!-- Step 7: Completed/Final Step -->
+<div class="group flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-slate-50 text-slate-400 transition-colors cursor-pointer text-xs">
+<div class="flex items-center space-x-2.5">
+<span class="w-5 h-5 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center font-medium text-[11px]">7</span>
+<svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
+<rect height="20" rx="2.18" ry="2.18" width="20" x="2" y="2"></rect>
+<line x1="7" x2="7" y1="2" y2="22"></line>
+<line x1="17" x2="17" y1="2" y2="22"></line>
+<line x1="2" x2="22" y1="12" y2="12"></line>
+</svg>
+<span class="text-slate-600">作品输出</span>
+</div>
+<span class="w-3.5 h-3.5 rounded-full border border-slate-300"></span>
+</div>
+<!-- Quick AI One-Click Render Button -->
+<div class="pt-2">
+<button class="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-[#e85926] to-[#f46a38] text-white font-medium text-xs flex items-center justify-center space-x-1.5 shadow-md shadow-orange-500/20 hover:brightness-105 active:scale-[0.98] transition-all" type="button">
+<svg class="w-3.5 h-3.5 text-yellow-200" fill="currentColor" viewBox="0 0 24 24">
+<path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8L12 2z"></path>
+</svg>
+<span class="">一键生成视频</span>
+</button>
+</div>
+</div>
+<!-- Bottom Hint Note in Sidebar -->
+<div class="mt-4 p-3 bg-slate-50 border border-slate-200/80 rounded-xl text-[11px] leading-relaxed text-slate-500">
+<div class="flex items-center space-x-1.5 text-emerald-600 font-medium mb-1">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+<span class="">智能分层已就绪</span>
+</div>
+        已自动为您提取核心要点与关键词，点击各卡片可生成动效元素。
+      </div>
+</aside>
+<!-- END: Workflow Stepper Sidebar -->
+<!-- BEGIN: Main Workspace Canvas -->
+<main class="flex-1 flex flex-col bg-white rounded-2xl border border-[#ece9ee] shadow-card overflow-hidden" data-purpose="workspace-main"><!-- Top Title Bar -->
+<div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
+  <div class="flex items-center space-x-2.5">
+    <div class="w-1 h-5 bg-[#f46a38] rounded-full"></div>
+    <h1 class="text-base font-bold text-slate-800 tracking-tight flex items-center">
+      元素动画
+      <span class="text-xs font-normal text-slate-400 ml-1">（可选）</span>
+    </h1>
+  </div>
+</div>
+
+<!-- Main Minimal Card Area -->
+<div class="p-6 flex-1 bg-[#f8f8fa]/50">
+  <div class="bg-white rounded-xl border border-slate-200/90 p-5 shadow-xs flex items-center justify-between">
+    <!-- Left: Title & Description -->
+    <div class="space-y-1">
+      <div class="text-sm font-semibold text-slate-800">
+        画面呈现
+      </div>
+      <p class="text-xs text-slate-400">
+        默认整页展示；元素动画仅在分步制作时按需使用。
+      </p>
+    </div>
+    <!-- Right: Segmented Toggle Buttons -->
+    <div class="inline-flex p-1 bg-slate-100 rounded-lg border border-slate-200/80">
+      <button type="button" class="px-4 py-1.5 text-xs font-medium rounded-md bg-white text-slate-900 shadow-xs transition-all">
+        整页展示
+      </button>
+      <button type="button" class="px-4 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-800 rounded-md transition-colors">
+        逐元素讲解
+      </button>
+    </div>
+  </div>
+</div></main>
+<!-- END: Main Workspace Canvas -->
+</div>
+<!-- END: Main Page Shell -->
+
+
+</body></html>

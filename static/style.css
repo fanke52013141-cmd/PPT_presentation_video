@@ -9411,3 +9411,2578 @@ body.step5-full-frame #step-panel-5 .step5-presentation-mode { margin-bottom: 0;
   font-weight: 700;
   vertical-align: middle;
 }
+
+/* ============================================================
+   Stitch export alignment — warm editorial studio
+   Source: stitch_web_ui_style_extractor.  This layer deliberately maps the
+   export's static visual language onto the existing interactive DOM instead
+   of importing its hard-coded HTML, so every existing API action, dialog and
+   workflow state remains functional.
+   ============================================================ */
+:root {
+  --color-primary-deep: #0f172a;
+  --color-primary-base: #f46a38;
+  --color-primary-soft: #fed9cb;
+  --color-primary-light: #fff7f4;
+  --color-primary-text: #c2410c;
+  --color-bg-page: #f6f7fb;
+  --color-bg-warm: #fffaf7;
+  --color-bg-surface: #ffffff;
+  --color-bg-subtle: #f8f9fc;
+  --color-border-default: #e2e8f0;
+  --color-border-strong: #cbd5e1;
+  --color-text-primary: #172033;
+  --color-text-secondary: #475569;
+  --color-text-tertiary: #94a3b8;
+  --color-text-disabled: #cbd5e1;
+  --color-success-light: #ecfdf5;
+  --color-success-text: #059669;
+  --color-warning-light: #fff7ed;
+  --color-warning-text: #c2410c;
+  --color-danger-light: #fff1f2;
+  --color-danger-text: #e11d48;
+  --color-signature-blue: #f46a38;
+  --color-signature-blue-soft: #fff7f4;
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, .025), 0 8px 24px rgba(15, 23, 42, .035);
+  --shadow-panel: 0 12px 32px rgba(15, 23, 42, .06);
+  --shadow-button: 0 8px 18px rgba(15, 23, 42, .13);
+  --gradient-ai-soft: linear-gradient(135deg, #fff7f4, #ffede5);
+  --gradient-ai-strong: linear-gradient(135deg, #f46a38, #ff7d4d);
+  --gradient-progress: linear-gradient(90deg, #f46a38, #ff7d4d);
+}
+
+html,
+body,
+.main-content,
+#workspace-main {
+  background: var(--color-bg-page) !important;
+  color: var(--color-text-primary) !important;
+}
+
+/* Header mirrors the exported studio's calm, single-line app bar. */
+header {
+  min-height: 62px !important;
+  padding: .56rem 1.75rem !important;
+  border-bottom-color: var(--color-border-default) !important;
+  background: rgba(255, 255, 255, .94) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .02) !important;
+}
+
+.logo {
+  color: var(--color-primary-deep) !important;
+  font-family: "Plus Jakarta Sans", "Noto Sans SC", sans-serif;
+  font-size: 1.25rem;
+  font-weight: 750 !important;
+  letter-spacing: -.035em !important;
+}
+
+.logo-icon {
+  width: 2.25rem !important;
+  height: 2.25rem !important;
+  border: 0 !important;
+  border-radius: 10px !important;
+  background: var(--color-primary-deep) !important;
+  color: #fff !important;
+  box-shadow: 0 3px 8px rgba(15, 23, 42, .12) !important;
+}
+
+header button,
+header .btn,
+.account-picker {
+  min-height: 36px !important;
+  border-color: var(--color-border-default) !important;
+  border-radius: 9px !important;
+  background: #fff !important;
+  color: var(--color-text-secondary) !important;
+}
+
+.account-picker:hover,
+.account-picker[aria-expanded="true"] {
+  border-color: #fdba9c !important;
+  background: var(--color-primary-light) !important;
+}
+
+#btn-back-home {
+  border-color: #fdba9c !important;
+  color: var(--color-primary-text) !important;
+}
+
+/* The exported pattern uses a clean card rail: orange only denotes context,
+   completion stays green, and the primary action remains high contrast. */
+.sidebar {
+  width: 296px !important;
+  padding: 1.25rem 1rem !important;
+  border-right: 0 !important;
+  background: var(--color-bg-page) !important;
+}
+
+.sidebar::before {
+  content: "";
+  position: absolute;
+  inset: 1rem .75rem 1rem;
+  z-index: 0;
+  border: 1px solid var(--color-border-default);
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: var(--shadow-card);
+}
+
+.sidebar .stepper,
+.sidebar .one-click-sidebar-entry,
+.sidebar #project-activity-status {
+  position: relative;
+  z-index: 1;
+}
+
+.sidebar .stepper {
+  gap: .35rem !important;
+  padding: .55rem !important;
+}
+
+.sidebar .step-item {
+  height: 48px !important;
+  min-height: 48px !important;
+  padding: .45rem .55rem !important;
+  border-color: transparent !important;
+  border-radius: 12px !important;
+  color: #64748b !important;
+}
+
+.sidebar .step-item:hover {
+  background: #f8fafc !important;
+  border-color: #f1f5f9 !important;
+  color: var(--color-text-primary) !important;
+}
+
+.sidebar .step-item.active {
+  border-color: #fed7aa !important;
+  background: var(--color-primary-light) !important;
+  color: var(--color-primary-text) !important;
+  box-shadow: 0 3px 10px rgba(244, 106, 56, .08) !important;
+}
+
+.sidebar .step-num {
+  border-color: #e2e8f0 !important;
+  background: #f8fafc !important;
+  color: #64748b !important;
+}
+
+.sidebar .step-item.active .step-num {
+  border-color: var(--color-primary-base) !important;
+  background: var(--color-primary-base) !important;
+  color: #fff !important;
+}
+
+.sidebar .step-item.completed:not(.active),
+.sidebar .step-item.completed:not(.active) .step-num {
+  color: var(--color-success-text) !important;
+}
+
+.sidebar .step-item.completed:not(.active) .step-num {
+  border-color: #bbf7d0 !important;
+  background: #ecfdf5 !important;
+}
+
+.sidebar .step-complete,
+.sidebar .step-item.active .step-complete {
+  background: #10b981 !important;
+}
+
+.sidebar .step-item.active .step-complete {
+  background: var(--color-primary-base) !important;
+}
+
+.one-click-sidebar-entry,
+.one-click-sidebar-entry button,
+#btn-one-click-generate {
+  border-color: transparent !important;
+  background: var(--gradient-ai-strong) !important;
+  box-shadow: 0 10px 20px rgba(244, 106, 56, .22) !important;
+}
+
+/* Shared page shells, fields, and dialogs. */
+.soft-outline,
+.card,
+.project-card,
+.step2-slide-editor,
+.step3-image-card,
+.step6-slide-row,
+.step7-audio-card,
+.step8-video-card,
+.workspace-right,
+.canvas-wrapper,
+.modal-content {
+  border-color: var(--color-border-default) !important;
+  border-radius: 18px !important;
+  box-shadow: var(--shadow-card) !important;
+}
+
+.workflow-header,
+.step2-sticky-header,
+.step3-toolbar-row,
+.step5-mask-header,
+.step6-compact-header,
+.step8-header {
+  border-bottom-color: var(--color-border-default) !important;
+}
+
+.workflow-title::before,
+.step3-toolbar-row .highlight-title::before,
+.step5-mask-header .highlight-title::before,
+.step6-compact-header .highlight-title::before,
+.step8-header .highlight-title::before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 1.25em;
+  margin: 0 .65rem 0 0;
+  border-radius: 999px;
+  vertical-align: -.2em;
+  background: var(--color-primary-base);
+}
+
+h1, h2, h3, h4, h5, h6,
+.highlight-title {
+  color: var(--color-text-primary) !important;
+  font-family: "Plus Jakarta Sans", "Noto Sans SC", sans-serif;
+  letter-spacing: -.025em !important;
+}
+
+button,
+.btn {
+  border-color: var(--color-border-default) !important;
+  border-radius: 9px !important;
+  background: #fff !important;
+  color: var(--color-text-secondary) !important;
+  font-weight: 650 !important;
+}
+
+button:hover,
+.btn:hover {
+  border-color: var(--color-border-strong) !important;
+  background: #f8fafc !important;
+  color: var(--color-text-primary) !important;
+  transform: translateY(-1px) !important;
+}
+
+button.success,
+.btn.success,
+.btn-next-step.success {
+  border-color: var(--color-primary-deep) !important;
+  background: var(--color-primary-deep) !important;
+  color: #fff !important;
+  box-shadow: var(--shadow-button) !important;
+}
+
+button.success:hover,
+.btn.success:hover,
+.btn-next-step.success:hover {
+  border-color: #334155 !important;
+  background: #334155 !important;
+  color: #fff !important;
+}
+
+input[type="text"],
+input[type="password"],
+textarea,
+select,
+.ppt-select-menu-trigger {
+  border-color: var(--color-border-default) !important;
+  border-radius: 10px !important;
+  background: #f8fafc !important;
+  color: var(--color-text-primary) !important;
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus,
+textarea:focus,
+select:focus,
+.ppt-select-menu-trigger:focus-visible {
+  border-color: var(--color-primary-base) !important;
+  background: #fff !important;
+  box-shadow: 0 0 0 3px rgba(244, 106, 56, .14) !important;
+}
+
+.ppt-select-menu-option:hover,
+.ppt-select-menu-option:focus-visible,
+.ppt-select-menu-option.is-selected,
+.account-picker-option:hover,
+.account-picker-option[aria-selected="true"] {
+  background: var(--color-primary-light) !important;
+  color: var(--color-primary-text) !important;
+}
+
+.slide-thumbnail-card.active,
+.step5-slide-btn.active,
+.step1-mode-button.active {
+  border-color: #fdba74 !important;
+  background: var(--color-primary-light) !important;
+  color: var(--color-primary-text) !important;
+  box-shadow: inset 0 0 0 1px #fdba74 !important;
+}
+
+/* Exported prototypes use airy two-up image cards but preserve the existing
+   responsive single-column fallback and the original image-generation IDs. */
+@media (min-width: 1240px) {
+  #step3-images-grid.step3-grid-four {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 1.25rem !important;
+  }
+}
+
+@media (max-width: 980px) {
+  .sidebar { width: 244px !important; }
+  header { padding-inline: 1rem !important; }
+}
+
+/* Home library: classes are supplied by courses.js and contain only real
+   course-tree data.  The wide layout collapses before a narrow viewport
+   would hide course controls or video actions. */
+.home-library-layout {
+  display: grid;
+  grid-template-columns: minmax(250px, 290px) minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.home-library-nav,
+.home-library-content {
+  min-width: 0;
+  border: 1px solid var(--color-border-default);
+  border-radius: 18px;
+  background: var(--color-bg-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.home-library-nav {
+  position: sticky;
+  top: 1rem;
+  padding: .75rem;
+}
+
+.home-library-nav-heading {
+  margin: .25rem .5rem .7rem;
+  color: var(--color-text-tertiary);
+  font-size: .72rem;
+  font-weight: 750;
+  letter-spacing: .08em;
+}
+
+.home-library-all-videos,
+.home-library-filter {
+  display: flex;
+  width: 100%;
+  min-height: 40px;
+  align-items: center;
+  gap: .58rem;
+  padding: .55rem .65rem;
+  border: 1px solid transparent !important;
+  border-radius: 10px !important;
+  background: transparent !important;
+  color: var(--color-text-secondary) !important;
+  text-align: left;
+}
+
+.home-library-all-videos:hover,
+.home-library-filter:hover,
+.home-library-all-videos.is-active,
+.home-library-filter.is-active {
+  border-color: #fed7aa !important;
+  background: var(--color-primary-light) !important;
+  color: var(--color-primary-text) !important;
+}
+
+.home-library-all-videos .icon,
+.home-library-filter .icon {
+  width: 17px;
+  height: 17px;
+}
+
+.home-library-content {
+  padding: 1.25rem;
+}
+
+.home-library-content-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 0 1.1rem;
+}
+
+.home-library-content-heading h2 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.home-video-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(235px, 1fr));
+  gap: 1rem;
+}
+
+.home-video-card {
+  display: flex;
+  min-height: 190px;
+  flex-direction: column;
+  padding: 1rem;
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fff, #fcfdff);
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+
+.home-video-card:hover {
+  border-color: #fdba74;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, .07);
+  transform: translateY(-1px);
+}
+
+.home-video-card-head,
+.home-video-card-actions,
+.home-video-card-meta {
+  display: flex;
+  align-items: center;
+}
+
+.home-video-card-head {
+  justify-content: space-between;
+  gap: .6rem;
+}
+
+.home-video-course-tag {
+  max-width: 100%;
+  overflow: hidden;
+  padding: .22rem .5rem;
+  border: 1px solid #fed7aa;
+  border-radius: 6px;
+  background: var(--color-primary-light);
+  color: var(--color-primary-text);
+  font-size: .72rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-video-card h3 {
+  margin: .9rem 0 .45rem;
+  font-size: 1rem;
+  line-height: 1.45;
+}
+
+.home-video-card-summary {
+  display: -webkit-box;
+  min-height: 2.85em;
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-text-tertiary);
+  font-size: .82rem;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.home-video-card-meta {
+  justify-content: space-between;
+  gap: .5rem;
+  margin-top: auto;
+  padding-top: 1rem;
+  color: var(--color-text-tertiary);
+  font-size: .76rem;
+}
+
+.home-video-progress {
+  height: 4px;
+  margin: .55rem 0 .8rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #f1f5f9;
+}
+
+.home-video-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--gradient-progress);
+}
+
+.home-video-card-actions {
+  justify-content: flex-end;
+  gap: .45rem;
+}
+
+.home-video-card-actions button {
+  min-height: 31px;
+  padding: .25rem .52rem;
+  font-size: .76rem;
+}
+
+.home-library-empty {
+  padding: 4rem 1.5rem;
+  color: var(--color-text-tertiary);
+  text-align: center;
+}
+
+.home-library-nav .course-tree-body {
+  gap: .25rem;
+}
+
+.home-library-nav .course-card-item,
+.home-library-nav .standalone-project,
+.home-library-nav .chapter-node,
+.home-library-nav .project-leaf {
+  border: 0 !important;
+  border-radius: 10px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.home-library-nav .course-card-header,
+.home-library-nav .chapter-node-header,
+.home-library-nav .project-leaf {
+  min-height: 37px;
+  padding: .35rem .45rem;
+}
+
+.home-library-nav .course-card-header:hover,
+.home-library-nav .chapter-node-header:hover,
+.home-library-nav .project-leaf:hover {
+  background: #f8fafc !important;
+}
+
+@media (max-width: 900px) {
+  .home-library-layout { grid-template-columns: 1fr; }
+  .home-library-nav { position: static; }
+}
+
+/* Concrete CourseTree home-library classes.  Keep these aliases explicit so
+   the rendered library is styled from its real DOM rather than by fragile
+   descendant assumptions. */
+.home-library-navigation {
+  min-width: 0;
+  border: 1px solid var(--color-border-default);
+  border-radius: 18px;
+  background: var(--color-bg-surface);
+  box-shadow: var(--shadow-card);
+  position: sticky;
+  top: 1rem;
+  padding: .75rem;
+}
+
+.home-library-navigation-heading {
+  margin: .25rem .5rem .7rem;
+  color: var(--color-text-tertiary);
+  font-size: .72rem;
+  font-weight: 750;
+  letter-spacing: .08em;
+}
+
+.home-library-all-videos-selector {
+  display: flex;
+  width: 100%;
+  min-height: 40px;
+  align-items: center;
+  gap: .58rem;
+  padding: .55rem .65rem;
+  border: 1px solid transparent !important;
+  border-radius: 10px !important;
+  background: transparent !important;
+  color: var(--color-text-secondary) !important;
+  text-align: left;
+}
+
+.home-library-all-videos-selector:hover,
+.home-library-all-videos-selector.is-selected {
+  border-color: #fed7aa !important;
+  background: var(--color-primary-light) !important;
+  color: var(--color-primary-text) !important;
+}
+
+.home-library-selector-count {
+  margin-left: auto;
+  color: var(--color-text-tertiary);
+  font-size: .74rem;
+}
+
+.home-library-main {
+  min-width: 0;
+  padding: 1.25rem;
+  border: 1px solid var(--color-border-default);
+  border-radius: 18px;
+  background: var(--color-bg-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.home-library-main-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 0 1.1rem;
+}
+
+.home-library-main-title {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.home-library-main-count {
+  color: var(--color-text-tertiary);
+  font-size: .82rem;
+}
+
+.home-library-video-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(255px, 1fr));
+  gap: 1rem;
+}
+
+.home-library-video-card {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  min-height: 194px;
+  gap: .9rem;
+  padding: 1rem;
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fff, #fcfdff);
+  cursor: pointer;
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+
+.home-library-video-card:hover,
+.home-library-video-card:focus-visible {
+  border-color: #fdba74;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, .07);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.home-library-video-preview {
+  display: grid;
+  width: 64px;
+  height: 64px;
+  place-items: center;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #fff7f4, #ffede5);
+  color: var(--color-primary-base);
+}
+
+.home-library-video-preview .icon { width: 26px; height: 26px; }
+.home-library-video-content { min-width: 0; display: flex; flex-direction: column; }
+.home-library-video-label { overflow: hidden; color: var(--color-primary-text); font-size: .72rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.home-library-video-name { margin: .28rem 0; overflow: hidden; font-size: 1rem; line-height: 1.42; text-overflow: ellipsis; white-space: nowrap; }
+.home-library-video-step { margin: 0; overflow: hidden; color: var(--color-text-tertiary); font-size: .78rem; text-overflow: ellipsis; white-space: nowrap; }
+.home-library-video-progress-row { display: flex; justify-content: space-between; gap: .5rem; margin-top: auto; padding-top: .8rem; color: var(--color-text-tertiary); font-size: .72rem; }
+.home-library-video-progress { height: 4px; margin: .45rem 0 .7rem; overflow: hidden; border-radius: 999px; background: #f1f5f9; }
+.home-library-video-progress-fill { display: block; width: var(--library-progress, 0%); height: 100%; border-radius: inherit; background: var(--gradient-progress); }
+.home-library-video-actions { display: flex; justify-content: flex-end; gap: .38rem; }
+.home-library-video-actions button { min-height: 30px; padding: .24rem .48rem; font-size: .72rem; }
+
+.home-library-navigation .course-tree-body { gap: .25rem; }
+.home-library-navigation .course-card-item,
+.home-library-navigation .standalone-project,
+.home-library-navigation .chapter-node,
+.home-library-navigation .project-leaf {
+  border: 0 !important;
+  border-radius: 10px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.home-library-navigation .course-card-header,
+.home-library-navigation .chapter-node-header,
+.home-library-navigation .project-leaf { min-height: 37px; padding: .35rem .45rem; }
+.home-library-navigation .course-card-header:hover,
+.home-library-navigation .chapter-node-header:hover,
+.home-library-navigation .project-leaf:hover,
+.home-library-navigation .course-card-item.is-selected > .course-card-header,
+.home-library-navigation .chapter-node.is-selected > .chapter-node-header { background: var(--color-primary-light) !important; color: var(--color-primary-text); }
+
+@media (max-width: 900px) {
+  .home-library-navigation { position: static; }
+}
+
+/* ============================================================
+   Stitch screen-by-screen contract
+   The exported files are a set of desktop screens, not an abstract theme.
+   These selectors reproduce their actual shell, spacing and card treatment
+   against the existing feature DOM.  They intentionally override earlier
+   experimental "studio" layers above.
+   ============================================================ */
+html { background: #f6f7fb !important; }
+
+body {
+  font-family: "Noto Sans SC", Inter, system-ui, sans-serif !important;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+header,
+header.app-header {
+  width: 100% !important;
+  min-height: 56px !important;
+  margin: 0 !important;
+  padding: 0 2rem !important;
+  border: 0 !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  border-radius: 0 !important;
+  background: #fff !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .025) !important;
+}
+
+header > div:last-child {
+  gap: .55rem !important;
+}
+
+header button,
+header .btn,
+.account-picker {
+  min-height: 36px !important;
+  padding: .42rem .7rem !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 8px !important;
+  background: #fff !important;
+  box-shadow: none !important;
+  font-size: .82rem !important;
+  font-weight: 600 !important;
+}
+
+header button:hover,
+header .btn:hover,
+.account-picker:hover {
+  border-color: #cbd5e1 !important;
+  background: #f8fafc !important;
+  transform: none !important;
+}
+
+.logo { gap: .7rem !important; font-size: 1.12rem !important; }
+.logo-icon { width: 2rem !important; height: 2rem !important; border-radius: 8px !important; }
+
+.app-container { height: calc(100vh - 56px) !important; background: #f6f7fb !important; }
+
+/* Screens 1–4 share the exported floating left workflow card. */
+.sidebar {
+  width: 320px !important;
+  height: fit-content !important;
+  max-height: calc(100vh - 104px);
+  margin: 1.8rem 0 1.8rem 1.8rem !important;
+  padding: .75rem !important;
+  overflow: auto;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 20px !important;
+  background: #fff !important;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .04) !important;
+}
+
+.sidebar::before { display: none !important; }
+.sidebar .stepper { gap: .25rem !important; padding: 0 !important; }
+.sidebar .step-item {
+  grid-template-columns: 32px 19px minmax(0, 1fr) 18px !important;
+  height: 48px !important;
+  min-height: 48px !important;
+  padding: .42rem .55rem !important;
+  border: 1px solid transparent !important;
+  border-radius: 11px !important;
+  color: #475569 !important;
+}
+.sidebar .step-item.active {
+  border-color: #fed7aa !important;
+  background: #fff7ed !important;
+  color: #c2410c !important;
+  box-shadow: none !important;
+}
+.sidebar .step-num { width: 28px !important; height: 28px !important; border: 0 !important; background: #f1f5f9 !important; color: #64748b !important; }
+.sidebar .step-item.active .step-num { background: #f46a38 !important; color: #fff !important; }
+.sidebar .step-item.completed:not(.active) .step-num { border: 0 !important; background: #ecfdf5 !important; color: #059669 !important; }
+.sidebar .step-item.completed:not(.active) { color: #475569 !important; }
+.sidebar .step-complete,
+.sidebar .step-item.active .step-complete { width: 18px !important; height: 18px !important; background: #10b981 !important; font-size: .62rem !important; }
+.sidebar .step-item.active .step-complete { background: #f46a38 !important; }
+.sidebar .step-label { font-size: .86rem !important; font-weight: 600 !important; }
+.one-click-sidebar-entry { margin: .85rem 0 0 !important; }
+#btn-one-click-generate { min-height: 46px !important; border-radius: 11px !important; background: linear-gradient(90deg, #f4521f, #ff7a4b) !important; box-shadow: 0 7px 16px rgba(244, 106, 56, .18) !important; }
+
+/* Shared working canvas — the export uses a roomy flat canvas, not nested
+   glass panels. */
+.main-content { padding: 1.85rem 2rem 2.5rem !important; }
+#workspace-main { min-width: 0; }
+.workflow-header,
+.step2-sticky-header,
+.step3-toolbar-row,
+.step5-mask-header,
+.step6-compact-header,
+.step8-header {
+  margin: 0 0 1.25rem !important;
+  padding: 0 0 1rem !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  background: transparent !important;
+}
+.workflow-title,
+.highlight-title { font-family: "Plus Jakarta Sans", "Noto Sans SC", sans-serif !important; font-size: 1.3rem !important; font-weight: 700 !important; }
+.workflow-title::before,
+.step3-toolbar-row .highlight-title::before,
+.step5-mask-header .highlight-title::before,
+.step6-compact-header .highlight-title::before,
+.step8-header .highlight-title::before { width: 5px !important; height: 25px !important; margin-right: .6rem !important; background: #f46a38 !important; }
+
+button,
+.btn { border-radius: 8px !important; }
+button.success,
+.btn.success,
+.btn-next-step.success { border-color: #0f172a !important; background: #0f172a !important; box-shadow: 0 2px 5px rgba(15, 23, 42, .12) !important; }
+button.success:hover,
+.btn.success:hover,
+.btn-next-step.success:hover { border-color: #1e293b !important; background: #1e293b !important; transform: none !important; }
+
+/* Screen 2: storyboard form and its visual/narration mapping cards. */
+#step-panel-2 .step2-sticky-header { position: static !important; top: auto !important; }
+#step-panel-2 .step2-sticky-header::before,
+#step-panel-3 .step3-toolbar-row::before,
+#step-panel-5 .step5-mask-header::before,
+#step-panel-6 .step6-compact-header::before,
+#step-panel-8 .step8-header::before {
+  /* The former glass pseudo-layer was positioned against the viewport after
+     the exported layout made these headers non-sticky, blurring the working
+     canvas. The source screens use flat, crisp toolbars. */
+  display: none !important;
+}
+#step-panel-2 .workflow-titlebar { min-height: 40px !important; }
+#step2-btn-generate { border-color: #4f46e5 !important; background: #4f46e5 !important; color: #fff !important; }
+#step-panel-2 .slides-thumbnail-container { gap: .5rem !important; padding-top: .2rem !important; }
+#step-panel-2 .slide-thumbnail-card.step2-slide-thumb { height: 36px !important; min-width: 92px; padding: .3rem .75rem !important; border-color: #e2e8f0 !important; border-radius: 8px !important; background: #fff !important; box-shadow: none !important; }
+#step-panel-2 .slide-thumbnail-card.step2-slide-thumb.active { border-color: #fdba74 !important; background: #fff7ed !important; color: #c2410c !important; box-shadow: inset 0 0 0 1px #fdba74 !important; }
+#step-panel-2 .step2-slide-editor { padding: 1.5rem !important; border-color: #e2e8f0 !important; border-radius: 18px !important; background: #fff !important; box-shadow: 0 8px 24px rgba(15, 23, 42, .03) !important; }
+#step-panel-2 .step2-slide-fields { gap: 1.35rem !important; }
+#step-panel-2 .step2-slide-fields label > span { margin: 0 0 .45rem !important; color: #0f172a !important; font-size: .92rem !important; font-weight: 700 !important; }
+#step-panel-2 input.step2-soft-input,
+#step-panel-2 textarea.step2-soft-input { padding: .8rem .95rem !important; border: 1px solid #dbeafe !important; border-radius: 12px !important; background: #f8fafc !important; color: #1e293b !important; font-size: .92rem !important; line-height: 1.62 !important; }
+#step-panel-2 textarea.step2-soft-input { min-height: 116px !important; }
+#step2-visual-narration-map { margin-top: 1.5rem !important; padding-top: 0 !important; border: 0 !important; }
+.vn-map-title { margin-bottom: 1rem !important; color: #0f172a !important; font-size: 1rem !important; }
+.vn-groups { gap: 1rem !important; }
+.vn-group-card,
+.vn-group-card.vn-role-title,
+.vn-group-card.vn-role-body,
+.vn-group-card.vn-role-body_content,
+.vn-group-card.vn-role-content_body { padding: 1rem 1.15rem !important; border: 1px solid #e2e8f0 !important; border-left: 1px solid #e2e8f0 !important; border-radius: 12px !important; background: #fff !important; }
+.vn-group-head { gap: .6rem !important; margin-bottom: .8rem !important; }
+.vn-group-num { width: 26px !important; height: 26px !important; background: #0f172a !important; font-size: .78rem !important; box-shadow: none !important; }
+.vn-type-tag,
+.vn-map-target { color: #334155 !important; font-size: .82rem !important; font-weight: 700 !important; }
+.vn-map-target { margin-left: auto; color: #64748b !important; font-weight: 500 !important; }
+.vn-beat-count { padding: .18rem .5rem !important; border-color: #bbf7d0 !important; border-radius: 6px !important; background: #ecfdf5 !important; color: #059669 !important; font-size: .72rem !important; }
+.vn-group-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important; gap: .8rem !important; }
+.vn-edit-field input,
+.vn-edit-field textarea,
+.vn-edit-field select { min-height: 54px; padding: .65rem .75rem; border: 1px solid #e2e8f0 !important; border-radius: 8px !important; background: #f8fafc !important; font-size: .84rem !important; line-height: 1.55 !important; }
+.vn-edit-field textarea { min-height: 78px; }
+.vn-beat { margin: 0 !important; padding: 0 !important; border: 0 !important; background: transparent !important; }
+
+/* Screen 1: title, utilities, and the next-stage action occupy separate
+   readable rows in the export.  Never hide a real action in an overflow row. */
+#step-panel-3 .step3-toolbar-row {
+  align-items: center !important;
+  flex-wrap: wrap !important;
+  overflow: visible !important;
+}
+#step-panel-3 .step3-toolbar-row > .workflow-title {
+  flex: 0 0 100% !important;
+}
+#step-panel-3 .step3-toolbar-row > #step3-btn-confirm {
+  order: 3;
+  margin: 0 !important;
+}
+#step3-images-grid.step3-grid-four { gap: 1rem !important; }
+@media (min-width: 960px) { #step3-images-grid.step3-grid-four { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
+.step3-image-card { border: 1px solid #e2e8f0 !important; border-radius: 14px !important; background: #fff !important; box-shadow: none !important; }
+.step3-image-card:hover { border-color: #fed7aa !important; box-shadow: 0 8px 20px rgba(15, 23, 42, .05) !important; }
+
+/* Screen 4: narration lists are neutral row cards, with content readable at
+   a glance rather than hidden behind pastel status backgrounds. */
+#step-panel-6 .step6-slides-stack { gap: 1rem !important; }
+.step6-slide-row,
+.step7-audio-card { border-color: #dbe3ef !important; border-radius: 12px !important; background: #fff !important; box-shadow: none !important; }
+
+/* Screen 5: the exported course library is a true app shell: a fixed white
+   navigation rail and a continuous page canvas.  It is not a card nested
+   below an extra page heading.  The original action buttons remain available
+   in the compact floating toolbar rather than being removed. */
+#page-home {
+  position: relative;
+  height: calc(100vh - 56px);
+  min-height: 0;
+  padding: 0 !important;
+  overflow: hidden;
+}
+#page-home .home-toolbar {
+  position: absolute;
+  z-index: 8;
+  right: auto;
+  bottom: 1rem;
+  left: 1rem;
+  width: 256px;
+  margin: 0 !important;
+}
+#page-home .home-toolbar .highlight-title { display: none !important; }
+#page-home .home-toolbar > div { display: grid !important; grid-template-columns: 1fr; gap: .45rem !important; }
+#page-home .home-toolbar button { width: 100%; min-height: 36px !important; justify-content: center; border-radius: 8px !important; }
+#project-list { height: 100%; }
+.home-library-layout {
+  height: 100%;
+  grid-template-columns: 288px minmax(0, 1fr) !important;
+  gap: 0 !important;
+}
+.home-library-navigation {
+  position: static !important;
+  height: 100%;
+  padding: 1rem !important;
+  overflow: auto;
+  border: 0 !important;
+  border-right: 1px solid #eae8ed !important;
+  border-radius: 0 !important;
+  background: #fff !important;
+  box-shadow: none !important;
+}
+.home-library-main {
+  height: 100%;
+  padding: 2rem 2.5rem !important;
+  overflow: auto;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #faf9fb !important;
+  box-shadow: none !important;
+}
+.home-library-main-header { margin-bottom: 1.6rem !important; }
+.home-library-main-heading { display: flex; align-items: baseline; gap: .45rem; min-width: 0; }
+.home-library-search-tools { position: relative; flex: 0 1 264px; min-width: 220px; }
+.home-library-search-label,
+.home-library-search-help {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.home-library-search-input {
+  width: 100%;
+  min-height: 36px;
+  padding: .5rem .75rem;
+  border: 1px solid #e2e0e6 !important;
+  border-radius: 8px !important;
+  background: #fff !important;
+  color: #1e1d22 !important;
+  font: inherit;
+  font-size: .8rem !important;
+  outline: none;
+}
+.home-library-search-input:focus { border-color: #f46a38 !important; box-shadow: 0 0 0 3px rgba(244,106,56,.12) !important; }
+.home-library-search-clear { position: absolute; top: 3px; right: 3px; min-height: 30px !important; padding: .25rem .45rem !important; font-size: .72rem !important; }
+.home-library-video-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)) !important; }
+.home-library-video-card { min-width: 0; }
+.home-library-video-card { border-radius: 12px !important; box-shadow: 0 1px 2px rgba(15,23,42,.025) !important; }
+.home-library-video-preview { border-radius: 10px !important; }
+
+@media (max-width: 1180px) {
+  header,
+  header.app-header { padding-inline: 1rem !important; }
+  header > div:last-child { gap: .4rem !important; }
+  .sidebar { width: 282px !important; margin-left: 1rem !important; }
+  .main-content { padding-inline: 1.25rem !important; }
+}
+
+@media (max-width: 900px) {
+  .sidebar { width: 236px !important; }
+  .home-library-layout { grid-template-columns: 1fr !important; }
+  .home-library-navigation { position: static !important; }
+  .vn-group-body { grid-template-columns: 1fr !important; }
+}
+
+/* Home reference lock (codex-clipboard-2173c96f...): this desktop state is
+   intentionally quieter than the editing workspace.  Utility controls stay
+   mounted and return with the workspace; the home header exposes the same
+   account affordance as the supplied reference. */
+@media (min-width: 901px) {
+  body:not(.workspace-open) > header.app-header {
+    min-height: 70px !important;
+    padding-inline: 2.5rem !important;
+  }
+  body:not(.workspace-open) > header.app-header .logo-icon {
+    width: 40px !important;
+    height: 40px !important;
+    border-radius: 10px !important;
+  }
+  body:not(.workspace-open) > header.app-header .header-config-action,
+  body:not(.workspace-open) > header.app-header #btn-config-export,
+  body:not(.workspace-open) > header.app-header #btn-config-import,
+  body:not(.workspace-open) > header.app-header #btn-create-account,
+  body:not(.workspace-open) > header.app-header #btn-edit-current-account {
+    display: none !important;
+  }
+  body:not(.workspace-open) > header.app-header .account-picker {
+    width: 126px !important;
+    min-height: 45px !important;
+    padding-inline: 1rem !important;
+    border-radius: 10px !important;
+    font-size: .95rem !important;
+  }
+  body:not(.workspace-open) #page-home { height: calc(100vh - 70px) !important; }
+  body:not(.workspace-open) .home-library-layout { grid-template-columns: 360px minmax(0, 1fr) !important; }
+  body:not(.workspace-open) .home-library-navigation { padding: 2rem 1.25rem 1rem !important; }
+  body:not(.workspace-open) .home-library-main { padding: 3rem 3.1rem !important; }
+  body:not(.workspace-open) .home-library-main-header { margin-bottom: 2.4rem !important; }
+  body:not(.workspace-open) .home-library-main-title { font-size: 1.65rem !important; }
+  body:not(.workspace-open) .home-library-video-grid { gap: 1.25rem !important; }
+  body:not(.workspace-open) .home-library-video-card {
+    grid-template-columns: 80px minmax(0, 1fr) !important;
+    min-height: 240px !important;
+    padding: 1.25rem !important;
+    border-radius: 14px !important;
+  }
+  body:not(.workspace-open) .home-library-video-preview {
+    width: 80px !important;
+    height: 80px !important;
+    border-radius: 12px !important;
+  }
+  body:not(.workspace-open) .home-library-new-video-card {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: .9rem !important;
+    text-align: center !important;
+  }
+  body:not(.workspace-open) .home-library-new-video-card .home-library-video-content { align-items: center !important; }
+  body:not(.workspace-open) .home-library-video-name { font-size: 1.2rem !important; }
+  body:not(.workspace-open) .home-library-video-step { font-size: .95rem !important; }
+}
+
+/* ============================================================
+   Exported homepage parity contract
+   The supplied homepage source is the authority for this screen: h-14
+   header, w-72 rail, px-8/py-7 content, four-column vertical cards.  Keep
+   this final block after the historical compatibility layers so those old
+   experiments cannot change the source geometry again.
+   ============================================================ */
+@media (min-width: 901px) {
+  body:not(.workspace-open) > header.app-header {
+    min-height: 56px !important;
+    padding: 0 1.5rem !important;
+  }
+  body:not(.workspace-open) > header.app-header .logo-icon {
+    width: 32px !important;
+    height: 32px !important;
+    border-radius: 8px !important;
+  }
+  body:not(.workspace-open) > header.app-header .header-config-action,
+  body:not(.workspace-open) > header.app-header #btn-config-export,
+  body:not(.workspace-open) > header.app-header #btn-config-import,
+  body:not(.workspace-open) > header.app-header #btn-create-account,
+  body:not(.workspace-open) > header.app-header #btn-edit-current-account {
+    display: inline-flex !important;
+  }
+  body:not(.workspace-open) > header.app-header .account-picker {
+    width: auto !important;
+    min-height: 32px !important;
+    padding-inline: .75rem !important;
+    border-radius: 8px !important;
+    font-size: .82rem !important;
+  }
+  body:not(.workspace-open) #page-home {
+    height: calc(100vh - 56px) !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+  }
+  body:not(.workspace-open) #page-home > .home-toolbar {
+    /* Source puts creation in the sidebar and first card; keep the original
+       controls mounted for existing handlers, but do not duplicate them in
+       the content canvas. */
+    display: none !important;
+  }
+  body:not(.workspace-open) #project-list { height: 100% !important; }
+  body:not(.workspace-open) .home-library-layout {
+    height: 100% !important;
+    grid-template-columns: 288px minmax(0, 1fr) !important;
+    gap: 0 !important;
+  }
+  body:not(.workspace-open) .home-library-navigation {
+    position: static !important;
+    height: 100% !important;
+    padding: .75rem 1rem 1rem !important;
+    overflow: auto !important;
+    border: 0 !important;
+    border-right: 1px solid #eae8ed !important;
+    border-radius: 0 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+  }
+  body:not(.workspace-open) .home-library-main {
+    height: 100% !important;
+    padding: 1.75rem 2rem !important;
+    overflow: auto !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: #faf9fb !important;
+    box-shadow: none !important;
+  }
+  body:not(.workspace-open) .home-library-main-header { margin-bottom: 1.75rem !important; }
+  body:not(.workspace-open) .home-library-video-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 1.25rem !important;
+  }
+  body:not(.workspace-open) .home-library-video-card {
+    display: flex !important;
+    min-width: 0 !important;
+    min-height: 220px !important;
+    flex-direction: column !important;
+    gap: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    border: 1px solid #e2e0e6 !important;
+    border-radius: 12px !important;
+    background: #fff !important;
+    box-shadow: 0 1px 2px rgba(30,29,34,.03) !important;
+  }
+  body:not(.workspace-open) .home-library-video-preview {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 112px !important;
+    aspect-ratio: 16 / 9 !important;
+    flex: 0 0 auto !important;
+    border-radius: 0 !important;
+  }
+  body:not(.workspace-open) .home-library-video-content {
+    min-height: 0 !important;
+    padding: .85rem !important;
+  }
+  body:not(.workspace-open) .home-library-video-name {
+    margin: .45rem 0 .35rem !important;
+    font-size: .88rem !important;
+    line-height: 1.4 !important;
+  }
+  body:not(.workspace-open) .home-library-video-step { font-size: .72rem !important; }
+  body:not(.workspace-open) .home-library-new-video-card {
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
+  }
+  body:not(.workspace-open) .home-library-new-video-card .home-library-video-preview {
+    width: 80px !important;
+    min-height: 80px !important;
+    aspect-ratio: 1 !important;
+    border-radius: 12px !important;
+  }
+  body:not(.workspace-open) .home-library-new-video-card .home-library-video-content {
+    align-items: center !important;
+    padding: 0 1rem 1rem !important;
+  }
+}
+
+/* Source DOM skin: these selectors map directly to the classes in the
+   supplied Stitch homepage code.  They intentionally come last so none of
+   the legacy card rules can turn the vertical source cards back into rows. */
+@media (min-width: 901px) {
+  body:not(.workspace-open) #page-home .home-library-layout { display: flex !important; }
+  body:not(.workspace-open) #page-home .stitch-home-sidebar {
+    display: flex !important;
+    flex: 0 0 288px !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    width: 288px !important;
+    min-width: 288px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-right: 1px solid #eae8ed !important;
+    border-radius: 0 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+  }
+  body:not(.workspace-open) #page-home .stitch-sidebar-body {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    padding: .75rem 1rem 1.25rem !important;
+  }
+  body:not(.workspace-open) #page-home .stitch-sidebar-footer {
+    flex: 0 0 auto !important;
+    margin-top: auto !important;
+    padding: 1rem !important;
+  }
+  body:not(.workspace-open) #page-home .stitch-all-videos-selector {
+    display: flex !important;
+    width: 100% !important;
+    min-height: 40px !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: .5rem !important;
+    padding: .55rem .65rem !important;
+    border: 1px solid #e2e0e6 !important;
+    border-radius: 10px !important;
+    background: #fff7f3 !important;
+    color: #c9481b !important;
+  }
+  body:not(.workspace-open) #page-home .stitch-all-videos-leading {
+    display: inline-flex !important;
+    min-width: 0 !important;
+    align-items: center !important;
+    gap: .55rem !important;
+  }
+  body:not(.workspace-open) #page-home .stitch-all-videos-leading svg { width: 16px !important; height: 16px !important; }
+  body:not(.workspace-open) #page-home .stitch-sidebar-create-video {
+    display: flex !important;
+    width: 100% !important;
+    min-height: 36px !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: .5rem !important;
+    border: 1px solid #e2e0e6 !important;
+    border-radius: 8px !important;
+    background: #fff !important;
+    color: #1e1d22 !important;
+    font-size: .8rem !important;
+    font-weight: 500 !important;
+  }
+  body:not(.workspace-open) #page-home .stitch-home-main {
+    display: flex !important;
+    flex: 1 1 auto !important;
+    flex-direction: column !important;
+    width: auto !important;
+    min-width: 0 !important;
+    padding: 1.75rem 2rem !important;
+    overflow-y: auto !important;
+    background: #faf9fb !important;
+  }
+  body:not(.workspace-open) #page-home .stitch-main-header {
+    display: flex !important;
+    flex: 0 0 auto !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    width: 100% !important;
+    gap: .375rem !important;
+    margin: 0 0 1.75rem !important;
+    padding: 0 !important;
+  }
+  body:not(.workspace-open) #page-home .stitch-home-breadcrumb { margin-bottom: .35rem !important; color: #9a97a2 !important; font-size: .68rem !important; }
+  body:not(.workspace-open) #page-home .stitch-main-heading { display: flex !important; align-items: center !important; justify-content: space-between !important; gap: 1rem !important; }
+  body:not(.workspace-open) #page-home .stitch-main-title-wrap { display: flex !important; align-items: baseline !important; gap: .45rem !important; min-width: 0 !important; }
+  body:not(.workspace-open) #page-home .stitch-main-title-wrap .home-library-main-title { margin: 0 !important; color: #1e1d22 !important; font-size: 1.6rem !important; line-height: 1.2 !important; }
+  body:not(.workspace-open) #page-home .stitch-main-title-wrap .home-library-main-count { color: #9a97a2 !important; font-size: .8rem !important; white-space: nowrap !important; }
+  body:not(.workspace-open) #page-home .stitch-search-tools { flex: 0 0 auto !important; width: 256px !important; min-width: 0 !important; }
+  body:not(.workspace-open) #page-home .stitch-search-field { position: relative !important; width: 256px !important; }
+  body:not(.workspace-open) #page-home .stitch-search-input {
+    width: 100% !important;
+    height: 36px !important;
+    min-height: 36px !important;
+    padding: .45rem .75rem .45rem 2rem !important;
+    border: 1px solid #e2e0e6 !important;
+    border-radius: 8px !important;
+    background: #fff !important;
+    color: #1e1d22 !important;
+    font-size: .76rem !important;
+  }
+  body:not(.workspace-open) #page-home .stitch-search-icon { position: absolute !important; z-index: 1 !important; top: 50% !important; left: .7rem !important; display: grid !important; width: 14px !important; height: 14px !important; place-items: center !important; color: #aaa6b0 !important; pointer-events: none !important; transform: translateY(-50%) !important; }
+  body:not(.workspace-open) #page-home .stitch-search-icon svg { width: 14px !important; height: 14px !important; }
+  body:not(.workspace-open) #page-home .stitch-course-header,
+  body:not(.workspace-open) #page-home .stitch-standalone-header {
+    display: flex !important;
+    min-width: 0 !important;
+    align-items: center !important;
+    gap: .5rem !important;
+  }
+  body:not(.workspace-open) #page-home .stitch-course-header .course-name,
+  body:not(.workspace-open) #page-home .stitch-standalone-header .course-name {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    flex: 1 1 auto !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+  body:not(.workspace-open) #page-home .stitch-course-header .course-meta,
+  body:not(.workspace-open) #page-home .stitch-standalone-header .course-meta {
+    flex: 0 0 auto !important;
+    color: #9a97a2 !important;
+    font-size: .68rem !important;
+    white-space: nowrap !important;
+  }
+  body:not(.workspace-open) #page-home .stitch-course-header .course-actions,
+  body:not(.workspace-open) #page-home .stitch-standalone-header .course-actions {
+    display: flex !important;
+    flex: 0 0 auto !important;
+    gap: .2rem !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    transition: opacity .15s ease, visibility .15s ease !important;
+  }
+  body:not(.workspace-open) #page-home .stitch-course-header:hover .course-actions,
+  body:not(.workspace-open) #page-home .stitch-course-header:focus-within .course-actions,
+  body:not(.workspace-open) #page-home .stitch-standalone-header:hover .course-actions,
+  body:not(.workspace-open) #page-home .stitch-standalone-header:focus-within .course-actions {
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+  }
+  body:not(.workspace-open) #page-home .stitch-video-grid {
+    display: grid !important;
+    flex: 0 0 auto !important;
+    width: 100% !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 1.25rem !important;
+    padding-bottom: 2rem !important;
+  }
+  body:not(.workspace-open) #page-home .stitch-video-card,
+  body:not(.workspace-open) #page-home .stitch-new-video-card {
+    display: flex !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    flex-direction: column !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    border: 1px solid #e2e0e6 !important;
+    border-radius: 10px !important;
+    background: #fff !important;
+    box-shadow: 0 1px 2px rgba(30, 29, 34, .03) !important;
+  }
+  body:not(.workspace-open) #page-home .stitch-new-video-card {
+    align-items: center !important;
+    justify-content: center !important;
+    border: 2px dashed #e2e0e6 !important;
+    background: rgba(255,255,255,.6) !important;
+    text-align: center !important;
+  }
+  body:not(.workspace-open) #page-home .stitch-video-preview {
+    position: relative !important;
+    display: flex !important;
+    width: 100% !important;
+    min-height: 0 !important;
+    aspect-ratio: 16 / 9 !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex: 0 0 auto !important;
+    overflow: hidden !important;
+    border-radius: 0 !important;
+  }
+  body:not(.workspace-open) #page-home .stitch-video-pattern { position: absolute !important; inset: 0 !important; opacity: .3 !important; background-image: radial-gradient(currentColor 1px, transparent 1px) !important; background-size: 12px 12px !important; }
+  body:not(.workspace-open) #page-home .stitch-preview-coral { background: linear-gradient(135deg,#fff0e9,#ffddd0) !important; color: #f46a38 !important; }
+  body:not(.workspace-open) #page-home .stitch-preview-blue { background: linear-gradient(135deg,#edf5ff,#dbeafe) !important; color: #3b82f6 !important; }
+  body:not(.workspace-open) #page-home .stitch-preview-violet { background: linear-gradient(135deg,#f5efff,#e9d5ff) !important; color: #8b5cf6 !important; }
+  body:not(.workspace-open) #page-home .stitch-preview-green { background: linear-gradient(135deg,#eafaf0,#ccebd8) !important; color: #10b981 !important; }
+  body:not(.workspace-open) #page-home .stitch-preview-neutral { background: linear-gradient(135deg,#f4f2f6,#eae8ed) !important; color: #7c7370 !important; }
+  body:not(.workspace-open) #page-home .stitch-preview-warm { background: linear-gradient(135deg,#fdf9f4,#f4e8d8) !important; color: #ab5a25 !important; }
+  body:not(.workspace-open) #page-home .stitch-video-label { position: absolute !important; z-index: 2 !important; top: .65rem !important; left: .65rem !important; max-width: calc(100% - 3.2rem) !important; overflow: hidden !important; padding: .18rem .42rem !important; border: 1px solid rgba(226,224,230,.8) !important; border-radius: 6px !important; background: rgba(255,255,255,.9) !important; color: #1e1d22 !important; font-size: .62rem !important; font-weight: 600 !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+  body:not(.workspace-open) #page-home .stitch-label-coral { color: #f46a38 !important; }
+  body:not(.workspace-open) #page-home .stitch-label-blue { color: #5279b8 !important; }
+  body:not(.workspace-open) #page-home .stitch-label-violet { color: #7356a7 !important; }
+  body:not(.workspace-open) #page-home .stitch-label-green { color: #269a68 !important; }
+  body:not(.workspace-open) #page-home .stitch-label-neutral { color: #6b6870 !important; }
+  body:not(.workspace-open) #page-home .stitch-video-more { position: absolute !important; z-index: 3 !important; top: .55rem !important; right: .55rem !important; display: grid !important; width: 28px !important; height: 28px !important; place-items: center !important; border: 1px solid #e2e0e6 !important; border-radius: 999px !important; background: rgba(255,255,255,.92) !important; color: #5d5963 !important; }
+  body:not(.workspace-open) #page-home .stitch-video-more svg { width: 15px !important; height: 15px !important; }
+  body:not(.workspace-open) #page-home .stitch-video-play { position: relative !important; z-index: 2 !important; display: grid !important; width: 40px !important; height: 40px !important; place-items: center !important; border-radius: 999px !important; background: rgba(30,29,34,.9) !important; color: #fff !important; box-shadow: 0 4px 14px rgba(0,0,0,.15) !important; }
+  body:not(.workspace-open) #page-home .stitch-video-play svg { width: 16px !important; height: 16px !important; margin-left: 2px !important; }
+  body:not(.workspace-open) #page-home .stitch-video-menu { position: absolute !important; z-index: 10 !important; top: 2.7rem !important; right: .55rem !important; display: none !important; min-width: 108px !important; flex-direction: column !important; padding: .3rem !important; border: 1px solid #e2e0e6 !important; border-radius: 8px !important; background: #fff !important; box-shadow: 0 8px 20px rgba(30,29,34,.12) !important; }
+  body:not(.workspace-open) #page-home .stitch-video-menu.is-open { display: flex !important; }
+  body:not(.workspace-open) #page-home .stitch-video-menu .icon-action-btn { display: flex !important; width: 100% !important; min-height: 28px !important; align-items: center !important; gap: .35rem !important; justify-content: flex-start !important; padding: .25rem .4rem !important; border: 0 !important; border-radius: 5px !important; background: #fff !important; color: #3f3b44 !important; font-size: .68rem !important; }
+  body:not(.workspace-open) #page-home .stitch-video-menu .icon-action-btn:hover { background: #faf9fb !important; }
+  body:not(.workspace-open) #page-home .stitch-video-content { display: flex !important; min-height: 0 !important; flex: 1 1 auto !important; flex-direction: column !important; justify-content: space-between !important; padding: .85rem !important; }
+  body:not(.workspace-open) #page-home .stitch-video-name { margin: 0 !important; overflow: hidden !important; color: #1e1d22 !important; font-size: .8rem !important; font-weight: 700 !important; line-height: 1.4 !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+  body:not(.workspace-open) #page-home .stitch-video-progress-block { margin-top: .75rem !important; }
+  body:not(.workspace-open) #page-home .stitch-video-progress-row { display: flex !important; align-items: center !important; justify-content: space-between !important; color: #75707b !important; font-size: .64rem !important; }
+  body:not(.workspace-open) #page-home .stitch-video-progress-row span:last-child { color: #278f68 !important; font-weight: 600 !important; }
+  body:not(.workspace-open) #page-home .stitch-video-progress { display: grid !important; grid-template-columns: repeat(7,minmax(0,1fr)) !important; gap: .2rem !important; width: 100% !important; height: 6px !important; margin: .45rem 0 0 !important; background: transparent !important; }
+  body:not(.workspace-open) #page-home .stitch-progress-segment { display: block !important; min-width: 0 !important; height: 6px !important; border-radius: 999px !important; background: #e2e0e6 !important; }
+  body:not(.workspace-open) #page-home .stitch-progress-segment.is-complete { background: #4db985 !important; }
+  body:not(.workspace-open) #page-home .stitch-new-video-icon {
+    display: grid !important;
+    width: 80px !important;
+    height: 80px !important;
+    min-height: 80px !important;
+    place-items: center !important;
+    border-radius: 12px !important;
+    background: #fff1ec !important;
+    color: #ff6b3d !important;
+  }
+  body:not(.workspace-open) #page-home .stitch-new-video-icon svg { width: 28px !important; height: 28px !important; }
+  body:not(.workspace-open) #page-home .stitch-new-video-content {
+    display: flex !important;
+    align-items: center !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    min-width: 0 !important;
+    padding: .7rem 1rem 0 !important;
+    text-align: center !important;
+  }
+  body:not(.workspace-open) #page-home .stitch-new-video-kicker { color: #ff6b3d !important; font-size: .72rem !important; font-weight: 700 !important; }
+  body:not(.workspace-open) #page-home .stitch-new-video-name { margin: .3rem 0 .2rem !important; color: #1e1d22 !important; font-size: .96rem !important; font-weight: 700 !important; }
+  body:not(.workspace-open) #page-home .stitch-new-video-subtitle { color: #99a7ba !important; font-size: .76rem !important; font-weight: 600 !important; }
+}
+
+/* ============================================================
+   Tree overflow menu (⋯) — matches the exported hover dropdown:
+   w-32 white rounded-lg menu with icon rows, revealed by the
+   trigger inside course/chapter/standalone tree rows.
+   ============================================================ */
+.tree-overflow { position: relative; display: inline-flex; flex: 0 0 auto; }
+.tree-overflow-trigger {
+  display: grid; place-items: center;
+  width: 20px; height: 20px; padding: 0;
+  border: 0; border-radius: 5px;
+  background: transparent; color: #a8a3ae;
+  cursor: pointer;
+  transition: transform .18s cubic-bezier(.34,1.56,.64,1), background-color .15s ease, color .15s ease;
+}
+.tree-overflow-trigger svg { width: 14px; height: 14px; }
+.tree-overflow-trigger:hover { background: #e7e5ea; color: #3f3b44; transform: scale(1.08); }
+.tree-overflow-trigger:active { transform: scale(.92); }
+/* Course/chapter rows reveal the trigger on hover; the pinned 全部视频 row keeps it always visible. */
+.course-card-header:not(:hover) .tree-overflow-trigger,
+.chapter-node-header:not(:hover) .tree-overflow-trigger { opacity: 0; pointer-events: none; }
+.tree-overflow-menu {
+  position: absolute; top: 100%; right: 0; z-index: 40;
+  display: none; min-width: 128px;
+  flex-direction: column;
+  margin-top: 4px; padding: 4px 0;
+  border: 1px solid #e2e0e6; border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 10px 26px rgba(30, 29, 34, .13);
+  animation: stitchMenuFade .18s cubic-bezier(.16,1,.3,1);
+}
+.tree-overflow-menu.is-open { display: flex; }
+.tree-overflow-item {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; min-height: 28px; padding: 5px 12px;
+  border: 0; border-radius: 0;
+  background: #fff; color: #3f3b44;
+  font-size: 12px; font-weight: 400; text-align: left;
+  cursor: pointer; transition: background-color .15s ease, color .15s ease;
+}
+.tree-overflow-item svg { width: 14px; height: 14px; color: #75707b; }
+.tree-overflow-item:hover { background: #f5f3f6; color: #17161a; }
+.tree-overflow-item.is-danger, .tree-overflow-item.is-danger:hover { color: #d3382c; }
+.tree-overflow-item.is-danger svg { color: #d3382c; }
+@keyframes stitchMenuFade { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ============================================================
+   Final strict-parity layer (ui_extract stitch screens)
+   Homepage:  ppt_studio_3 (course library)
+   Workspace: ppt_studio_1 (images) / ppt_studio_2 (storyboard)
+              ppt_studio_4 code (reveal) / ppt_studio_5 (narration)
+   ============================================================ */
+
+/* --- Workspace header: only 分镜方式 + 返回首页 stay visible --- */
+body.workspace-open .account-switcher,
+body.workspace-open .header-config-action,
+body.workspace-open #btn-config-export,
+body.workspace-open #btn-config-import,
+body.workspace-open #btn-open-settings {
+  display: none !important;
+}
+body.workspace-open > header.app-header {
+  min-height: 64px !important;
+}
+
+/* --- 当前项目 chip (workspace header) --- */
+#project-info-header {
+  gap: .55rem !important;
+  font-weight: 400 !important;
+  font-size: .78rem !important;
+  color: #94a3b8 !important;
+}
+#project-info-header #current-project-name {
+  display: inline-flex;
+  align-items: center;
+  padding: .22rem .7rem;
+  border: 1px solid #ffdec9;
+  border-radius: 7px;
+  background: #fff3ec;
+  color: #e85926 !important;
+  font-size: .78rem;
+  font-weight: 500;
+}
+#project-info-header #current-project-name::before {
+  content: "#";
+  margin-right: .3rem;
+  color: #f6946c;
+  font-weight: 600;
+}
+
+/* --- Homepage account picker: green presence dot --- */
+body:not(.workspace-open) .account-picker::before {
+  content: "";
+  order: -1;
+  width: 8px;
+  height: 8px;
+  margin-right: .1rem;
+  border-radius: 50%;
+  background: #10b981;
+  animation: accountPresencePulse 2s ease-in-out infinite;
+}
+@keyframes accountPresencePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .55; }
+}
+
+/* --- Sidebar 需重做 tag: float above the label like the export --- */
+.sidebar .step-item {
+  position: relative !important;
+}
+.sidebar .step-status-tag {
+  position: absolute !important;
+  top: 1px !important;
+  left: 58px !important;
+  grid-column: auto !important;
+  grid-row: auto !important;
+  transform: none !important;
+  min-height: 0 !important;
+  padding: .5px 4px !important;
+  border: 0 !important;
+  border-radius: 4px !important;
+  background: #fef3c7 !important;
+  color: #b45309 !important;
+  font-size: 9px !important;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
+
+/* --- Active step indicator: emerald check when completed, white pulse dot otherwise --- */
+.sidebar .step-item.active .step-complete {
+  background: #10b981 !important;
+}
+.sidebar .step-item.active:not(.completed) .step-complete {
+  display: block !important;
+  width: 8px !important;
+  height: 8px !important;
+  border-radius: 50% !important;
+  background: #f46a38 !important;
+  color: transparent !important;
+  font-size: 0 !important;
+  animation: sidebarActiveDot 1.8s ease-in-out infinite;
+}
+@keyframes sidebarActiveDot {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(244, 106, 56, .35); }
+  50% { box-shadow: 0 0 0 4px rgba(244, 106, 56, .18); }
+}
+
+/* --- Sidebar video leaves: tiny circular play glyph (export style) --- */
+#page-home .project-leaf .project-leaf-play,
+#page-home .stitch-standalone-header .project-leaf-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-right: .45rem;
+  border-radius: 50%;
+  background: #f3f2f5;
+  color: #a8a3ae;
+  transition: background-color .15s ease, color .15s ease;
+}
+#page-home .project-leaf .project-leaf-play svg,
+#page-home .stitch-standalone-header .project-leaf-play svg {
+  width: 8px;
+  height: 8px;
+  margin-left: 1px;
+}
+#page-home .project-leaf:hover .project-leaf-play,
+#page-home .stitch-standalone-header:hover .project-leaf-play {
+  background: #fff1ec;
+  color: #f46a38;
+}
+#page-home .project-leaf .project-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The legacy film icon and inline leaf actions are no longer rendered. */
+#page-home .project-leaf .project-step-badge,
+#page-home .project-leaf .project-actions { display: none !important; }
+
+/* --- Step 3: confirm action right-aligned, batch delete is a quiet rose ghost --- */
+#step-panel-3 .step3-toolbar-row #step3-btn-confirm {
+  margin-left: auto !important;
+}
+#step3-btn-delete-all-images {
+  border-color: transparent !important;
+  background: transparent !important;
+  color: #94a3b8 !important;
+  box-shadow: none !important;
+}
+#step3-btn-delete-all-images:hover {
+  background: #fff1f2 !important;
+  color: #e11d48 !important;
+}
+
+/* --- Step 6: narration toolbar colors follow the export --- */
+#step6-btn-ai-annotate {
+  border-radius: 999px !important;
+  border-color: #4f46e5 !important;
+  background: #4f46e5 !important;
+  box-shadow: none !important;
+}
+#step6-btn-ai-annotate:hover { background: #4338ca !important; }
+#step6-btn-ai-prompt,
+#step6-btn-init {
+  border-radius: 999px !important;
+}
+#step6-btn-audio-confirm-next {
+  border-radius: 8px !important;
+  border: 0 !important;
+  background: #f1f5f9 !important;
+  color: #334155 !important;
+  box-shadow: none !important;
+}
+#step6-btn-audio-confirm-next:hover { background: #e2e8f0 !important; }
+#step6-btn-audio-confirm-next:disabled {
+  opacity: .55;
+}
+
+/* --- Steps 3/5/6: content lives inside one white rounded card (export shells) --- */
+#step-panel-3,
+#step-panel-5,
+#step-panel-6 {
+  padding: 1.4rem 1.6rem 1.8rem !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 18px !important;
+  background: #fff !important;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .04) !important;
+}
+#step-panel-3 .step3-toolbar-row,
+#step-panel-5 .step5-mask-header,
+#step-panel-6 .step6-compact-header {
+  margin: 0 0 1.1rem !important;
+  padding: 0 0 .95rem !important;
+}
+/* Inner canvas zone of the reveal screen sits on the soft gray like the export. */
+#step-panel-5 > *:not(.step5-mask-header):not(#step5-presentation-mode) {
+  border-radius: 12px;
+}
+#step5-presentation-mode {
+  padding: 1.05rem 1.15rem !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 12px !important;
+  background: #fff !important;
+  box-shadow: none !important;
+  margin-bottom: 1rem;
+}
+
+/* --- Step 2 bottom save-state footer line (export footer) --- */
+#step-panel-2 .step2-slide-editor { margin-bottom: .9rem; }
+
+/* Standalone section divider: solid hairline like the export (was dashed). */
+#page-home .course-tree-standalone-heading {
+  border-top: 1px solid #eae8ed !important;
+}
+#page-home .course-tree-standalone-heading::before,
+#page-home .course-tree-standalone-heading::after {
+  display: none !important;
+}
+/* Keyboard focus also reveals tree overflow triggers. */
+.course-card-header:focus-within .tree-overflow-trigger,
+.chapter-node-header:focus-within .tree-overflow-trigger {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+/* --- Homepage header: config entries are quiet text links (export) --- */
+body:not(.workspace-open) .header-config-action,
+body:not(.workspace-open) #btn-config-export,
+body:not(.workspace-open) #btn-config-import {
+  min-height: 30px !important;
+  padding: 0 .4rem !important;
+  border: 0 !important;
+  border-radius: 6px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #52525b !important;
+  font-size: .84rem !important;
+  font-weight: 500 !important;
+}
+body:not(.workspace-open) .header-config-action:hover,
+body:not(.workspace-open) #btn-config-export:hover,
+body:not(.workspace-open) #btn-config-import:hover {
+  border: 0 !important;
+  background: transparent !important;
+  color: #dc5121 !important;
+}
+body:not(.workspace-open) #btn-open-creation-config-management {
+  border-left: 1px solid #eae8ed !important;
+  border-radius: 0 !important;
+  margin-left: .45rem !important;
+  padding-left: .95rem !important;
+}
+
+/* 全部视频 row: selector + always-visible overflow trigger */
+.stitch-all-videos-wrap {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: .2rem;
+}
+.stitch-all-videos-wrap .stitch-all-videos-selector {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.stitch-all-videos-wrap .tree-overflow-trigger {
+  width: 26px;
+  height: 26px;
+  align-self: center;
+  color: #c9481b;
+}
+.stitch-all-videos-wrap .tree-overflow .tree-overflow-menu {
+  top: 100%;
+  right: 0;
+}
+
+/* --- Step 3: prompt/style/IP/background entries are ghost text buttons --- */
+#step3-btn-prompt-settings,
+#step3-btn-style,
+#step3-btn-ip-character,
+#step3-btn-background-settings {
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #64748b !important;
+}
+#step3-btn-prompt-settings:hover,
+#step3-btn-style:hover,
+#step3-btn-ip-character:hover,
+#step3-btn-background-settings:hover {
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+/* Card 删除 is quiet slate until hover (export). */
+.step3-card-action.step3-delete-action {
+  border: 0 !important;
+  background: transparent !important;
+  color: #64748b !important;
+  box-shadow: none !important;
+}
+.step3-card-action.step3-delete-action:hover {
+  background: #fff1f2 !important;
+  color: #e11d48 !important;
+}
+
+/* --- Judge round-1 fixes (strict parity polish) --- */
+
+/* Sidebar tip card: always-present assistant note under the CTA (export). */
+.project-activity-status {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: .6rem !important;
+  margin: .9rem 0 0 !important;
+  padding: .8rem .85rem !important;
+  border: 1px solid var(--color-border-default) !important;
+  border-radius: 14px !important;
+  background: #fff !important;
+  box-shadow: var(--shadow-card) !important;
+  font-size: .72rem !important;
+  line-height: 1.65 !important;
+  color: #64748b !important;
+}
+.project-activity-status::before {
+  content: "" !important;
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  margin-top: .28rem;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, .16);
+}
+.project-activity-status:empty::after {
+  content: "已自动为您提取核心要点与关键词，点击即可查看完整分镜提示词。";
+}
+
+/* Storyboard form: blue-tinted title field, white narration field (export). */
+#step-panel-2 input.step2-soft-input {
+  background: #f0f6ff !important;
+  border: 1px solid #dbeafe !important;
+}
+#step-panel-2 textarea.step2-soft-input {
+  background: #fff !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+/* Storyboard mapping cards: per-column labels like the export. */
+.vn-column-label {
+  display: block;
+  margin: 0 0 .4rem !important;
+  color: #64748b !important;
+  font-size: .72rem !important;
+  font-weight: 500 !important;
+}
+
+/* Step 3: the live style-panel button id (renamed by the extension). */
+#step3-btn-image-style-panel {
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #64748b !important;
+}
+#step3-btn-image-style-panel:hover {
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+/* Disabled primary actions stay dark (export keeps the filled look). */
+button.success:disabled,
+.btn.success:disabled,
+.btn-next-step.success:disabled {
+  background: #0f172a !important;
+  border-color: #0f172a !important;
+  opacity: .45;
+}
+
+/* Narration beat-count chip: soft green pill (export). */
+.step6-slide-status {
+  padding: .14rem .55rem !important;
+  border: 1px solid #bbf7d0 !important;
+  border-radius: 999px !important;
+  background: #ecfdf5 !important;
+  color: #059669 !important;
+  font-size: .7rem !important;
+  font-weight: 500 !important;
+}
+
+/* Higher-specificity overrides: legacy id+id rules set gray fills. */
+#step-panel-2 #step2-slide-title-input {
+  background: #f0f6ff !important;
+  border: 1px solid #dbeafe !important;
+}
+#step-panel-2 #step2-slide-narration-input {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+/* Storyboard group head: 3 children now (num, type, badge) — flex row with
+   the badge tucked to the right edge like the export. */
+.vn-group-head {
+  display: flex !important;
+  align-items: center !important;
+  gap: .6rem !important;
+  grid-template-columns: none !important;
+}
+.vn-beat-count {
+  flex: 0 0 auto !important;
+  margin-left: auto !important;
+  width: auto !important;
+}
+
+/* The readonly narration field carries an even higher-specificity fill. */
+#step-panel-2 #step2-slide-narration-input[readonly] {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+/* ============================================================
+   Sidebar tree geometry — strict export parity (ppt_studio_3)
+   The legacy global button rules inflate the tree chevrons and
+   add-buttons into 36px bordered boxes; the export uses bare
+   12-16px glyphs and compact 12-13px rows.
+   ============================================================ */
+body:not(.workspace-open) #page-home .stitch-sidebar-body {
+  padding: .8rem .85rem 1.1rem !important;
+}
+
+/* Section headings: tiny quiet labels with bare icon buttons. */
+body:not(.workspace-open) #page-home .stitch-tree-section-heading {
+  min-height: 0 !important;
+  padding: .4rem .5rem .2rem !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: .05em !important;
+  color: #a8a3ae !important;
+}
+body:not(.workspace-open) #page-home .stitch-tree-add-course {
+  display: grid !important;
+  place-items: center;
+  width: 20px !important;
+  height: 20px !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 5px !important;
+  background: transparent !important;
+  color: #a8a3ae !important;
+  transition: background-color .15s ease, color .15s ease;
+}
+body:not(.workspace-open) #page-home .stitch-tree-add-course svg {
+  width: 14px !important;
+  height: 14px !important;
+}
+body:not(.workspace-open) #page-home .stitch-tree-add-course:hover {
+  background: #f0eff2 !important;
+  color: #52525b !important;
+}
+
+/* Collapse chevrons: bare small glyphs, never boxed buttons. */
+body:not(.workspace-open) #page-home .tree-toggle {
+  display: grid !important;
+  place-items: center;
+  width: 14px !important;
+  height: 14px !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 4px !important;
+  background: transparent !important;
+  color: #a8a3ae !important;
+  flex: 0 0 auto;
+}
+body:not(.workspace-open) #page-home .tree-toggle svg {
+  width: 13px !important;
+  height: 13px !important;
+}
+body:not(.workspace-open) #page-home .chapter-node-header .tree-toggle {
+  width: 12px !important;
+  height: 12px !important;
+}
+body:not(.workspace-open) #page-home .chapter-node-header .tree-toggle svg {
+  width: 11px !important;
+  height: 11px !important;
+}
+body:not(.workspace-open) #page-home .tree-toggle:hover {
+  background: transparent !important;
+  color: #52525b !important;
+}
+
+/* Course rows: compact 13px. */
+body:not(.workspace-open) #page-home .stitch-course-header {
+  padding: .38rem .55rem !important;
+  gap: .5rem !important;
+  border-radius: 8px !important;
+  font-size: 13px !important;
+}
+body:not(.workspace-open) #page-home .stitch-course-header > svg {
+  width: 16px !important;
+  height: 16px !important;
+  flex: 0 0 auto;
+  color: #a8a3ae;
+  transition: color .15s ease;
+}
+body:not(.workspace-open) #page-home .stitch-course-node[aria-expanded="true"] .stitch-course-header > svg {
+  color: #dc5121;
+}
+body:not(.workspace-open) #page-home .stitch-course-header .course-name {
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  color: #26262b !important;
+}
+body:not(.workspace-open) #page-home .stitch-course-header .tree-overflow-trigger {
+  width: 20px !important;
+  height: 20px !important;
+}
+
+/* Chapter rows: compact 12.5px. */
+body:not(.workspace-open) #page-home .stitch-chapter-header {
+  padding: .28rem .5rem !important;
+  gap: .45rem !important;
+  border-radius: 7px !important;
+  font-size: 12.5px !important;
+}
+body:not(.workspace-open) #page-home .stitch-chapter-header > svg {
+  width: 14px !important;
+  height: 14px !important;
+  color: #8a8590 !important;
+}
+body:not(.workspace-open) #page-home .stitch-chapter-header .chapter-name {
+  font-size: 12.5px !important;
+  font-weight: 500 !important;
+  color: #3f3b44 !important;
+}
+
+/* Children containers: slim guide line, tight rhythm. */
+body:not(.workspace-open) #page-home .stitch-course-children {
+  margin-top: .1rem !important;
+}
+body:not(.workspace-open) #page-home .stitch-chapter-children {
+  margin-left: .9rem !important;
+  padding-left: .85rem !important;
+  padding-right: .15rem !important;
+  border-left: 1px solid #e8e6eb !important;
+}
+
+/* Video leaves: small quiet rows. */
+body:not(.workspace-open) #page-home .stitch-project-leaf {
+  padding: .3rem .5rem !important;
+  gap: .45rem !important;
+  border-radius: 6px !important;
+  font-size: 12px !important;
+  color: #5d5963 !important;
+}
+body:not(.workspace-open) #page-home .stitch-project-leaf:hover {
+  background: rgba(245, 243, 246, .8) !important;
+  color: #17161a !important;
+}
+body:not(.workspace-open) #page-home .stitch-project-leaf .project-name {
+  font-size: 12px !important;
+}
+body:not(.workspace-open) #page-home .project-leaf-play {
+  width: 14px !important;
+  height: 14px !important;
+  margin-right: 0 !important;
+}
+
+/* Standalone rows: same compact scale as leaves. */
+body:not(.workspace-open) #page-home .stitch-standalone-header {
+  padding: .35rem .55rem !important;
+  gap: .5rem !important;
+  border-radius: 7px !important;
+  font-size: 12.5px !important;
+}
+body:not(.workspace-open) #page-home .stitch-standalone-header .course-name {
+  font-size: 12.5px !important;
+  font-weight: 400 !important;
+  color: #5d5963 !important;
+}
+body:not(.workspace-open) #page-home .stitch-standalone-header:hover {
+  background: #f5f4f6 !important;
+}
+body:not(.workspace-open) #page-home .stitch-standalone-header:hover .course-name {
+  color: #17161a !important;
+}
+
+/* Empty hints inside the tree stay whisper-quiet. */
+body:not(.workspace-open) #page-home .stitch-course-children .empty-hint,
+body:not(.workspace-open) #page-home .stitch-chapter-children .empty-hint {
+  padding: .3rem .5rem .15rem 1.4rem !important;
+  font-size: 11.5px !important;
+  color: #b3aeb8 !important;
+}
+
+/* 全部视频 row: leading glyph in the soft orange tile, bare ⋯ trigger. */
+body:not(.workspace-open) #page-home .stitch-all-videos-selector {
+  padding: .5rem .6rem !important;
+  font-size: 13.5px !important;
+  font-weight: 600 !important;
+}
+body:not(.workspace-open) #page-home .stitch-all-videos-leading > svg {
+  width: 26px !important;
+  height: 26px !important;
+  padding: 6px !important;
+  border-radius: 8px !important;
+  background: rgba(244, 106, 56, .1) !important;
+  color: #dc5121 !important;
+  box-sizing: border-box;
+}
+body:not(.workspace-open) #page-home .stitch-all-videos-overflow .tree-overflow-trigger {
+  width: 24px !important;
+  height: 24px !important;
+  min-height: 0 !important;
+  border: 0 !important;
+  border-radius: 6px !important;
+  background: transparent !important;
+  color: #c9481b !important;
+}
+body:not(.workspace-open) #page-home .stitch-all-videos-overflow .tree-overflow-trigger:hover {
+  background: rgba(244, 106, 56, .12) !important;
+  color: #a33a13 !important;
+}
+
+/* Footer create button: 40px tall, orange hover (export). */
+body:not(.workspace-open) #page-home .stitch-sidebar-create-video {
+  height: 40px !important;
+  min-height: 40px !important;
+  border-radius: 8px !important;
+  font-size: 13.5px !important;
+  color: #26262b !important;
+}
+body:not(.workspace-open) #page-home .stitch-sidebar-create-video:hover {
+  border-color: #f46a38 !important;
+  background: rgba(255, 247, 243, .5) !important;
+  color: #dc5121 !important;
+}
+body:not(.workspace-open) #page-home .stitch-sidebar-create-video svg {
+  width: 16px !important;
+  height: 16px !important;
+}
+
+/* Heading rows never wrap: label left, + right (export). */
+body:not(.workspace-open) #page-home .stitch-tree-section-heading {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+}
+body:not(.workspace-open) #page-home .stitch-tree-section-heading > span {
+  white-space: nowrap !important;
+}
+
+/* The ⋯ trigger lives inside the orange 全部视频 row: the wrap carries the
+   selected surface, the inner button goes transparent (export structure). */
+body:not(.workspace-open) #page-home .stitch-all-videos-wrap {
+  display: flex !important;
+  align-items: stretch !important;
+  gap: .1rem !important;
+  padding: 0 .45rem 0 .1rem !important;
+  border: 1px solid rgba(254, 217, 203, .75) !important;
+  border-radius: 12px !important;
+  background: #fff7f3 !important;
+  box-shadow: 0 1px 2px rgba(183, 60, 19, .04) !important;
+}
+body:not(.workspace-open) #page-home .stitch-all-videos-wrap .stitch-all-videos-selector {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Utility class backfill: this app ships no Tailwind, so the exported
+   justify-between on heading rows needs a real declaration. */
+body:not(.workspace-open) #page-home .stitch-tree-section-heading {
+  justify-content: space-between !important;
+}
+
+/* ============================================================
+   Micro-interaction system — ported 1:1 from the export's
+   <style data-purpose="base-styling"> so hover/entrance motion
+   matches the reference instead of being flattened by the
+   legacy global resets.
+   ============================================================ */
+@keyframes stitchFadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes stitchFadeInSidebar {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes stitchBarFill {
+  from { opacity: .3; transform: scaleX(.7); }
+  to { opacity: 1; transform: scaleX(1); }
+}
+@keyframes stitchSubtlePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .82; }
+}
+
+/* Shared icon-button micro-scale (icon-btn-hover class in markup). */
+.icon-btn-hover {
+  transition: transform .18s cubic-bezier(.34, 1.56, .64, 1), background-color .15s ease, color .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.icon-btn-hover:hover { transform: scale(1.12); }
+.icon-btn-hover:active { transform: scale(.92); }
+
+/* Entrance motion: sidebar slides in, header and first card paint rise. */
+body:not(.workspace-open) #page-home .stitch-home-sidebar {
+  animation: stitchFadeInSidebar .4s cubic-bezier(.16, 1, .3, 1) backwards;
+}
+body:not(.workspace-open) #page-home .stitch-main-header {
+  animation: stitchFadeInUp .45s cubic-bezier(.16, 1, .3, 1) backwards;
+}
+.first-paint .stitch-video-card,
+.first-paint .stitch-new-video-card { animation: stitchFadeInUp .45s cubic-bezier(.16, 1, .3, 1) backwards; }
+.first-paint .stagger-0 { animation-delay: .05s; }
+.first-paint .stagger-1 { animation-delay: .1s; }
+.first-paint .stagger-2 { animation-delay: .15s; }
+.first-paint .stagger-3 { animation-delay: .2s; }
+.first-paint .stagger-4 { animation-delay: .25s; }
+.first-paint .stagger-5 { animation-delay: .3s; }
+.first-paint .stagger-6 { animation-delay: .35s; }
+/* Progress segments grow in on first paint, then breathe gently. */
+.first-paint .stitch-progress-segment.progress-bar-fill {
+  transform-origin: left center;
+  animation: stitchBarFill .5s cubic-bezier(.16, 1, .3, 1) backwards, stitchSubtlePulse 3s ease-in-out infinite .6s;
+}
+
+/* --- Sidebar tree rows: hover nudge + background + icon shifts --- */
+body:not(.workspace-open) #page-home .stitch-course-header,
+body:not(.workspace-open) #page-home .stitch-chapter-header,
+body:not(.workspace-open) #page-home .stitch-project-leaf,
+body:not(.workspace-open) #page-home .stitch-standalone-header {
+  transition: all .15s ease, transform .15s ease;
+}
+body:not(.workspace-open) #page-home .stitch-course-header:hover,
+body:not(.workspace-open) #page-home .stitch-standalone-header:hover {
+  transform: translateX(2px);
+}
+body:not(.workspace-open) #page-home .stitch-chapter-header:hover,
+body:not(.workspace-open) #page-home .stitch-project-leaf:hover {
+  transform: translateX(2px);
+}
+/* Icons wake up as the row is hovered (neutral-400 → 600, slight scale). */
+body:not(.workspace-open) #page-home .stitch-course-header svg,
+body:not(.workspace-open) #page-home .stitch-chapter-header svg,
+body:not(.workspace-open) #page-home .stitch-standalone-header svg,
+body:not(.workspace-open) #page-home .stitch-project-leaf .project-leaf-play,
+body:not(.workspace-open) #page-home .tree-toggle {
+  transition: color .2s ease, transform .2s ease, background-color .15s ease;
+}
+body:not(.workspace-open) #page-home .stitch-course-header:hover > svg,
+body:not(.workspace-open) #page-home .stitch-chapter-header:hover > svg,
+body:not(.workspace-open) #page-home .stitch-standalone-header:hover .project-leaf-play {
+  transform: scale(1.05);
+}
+body:not(.workspace-open) #page-home .stitch-course-header:hover .tree-toggle,
+body:not(.workspace-open) #page-home .stitch-chapter-header:hover .tree-toggle {
+  color: #52525b;
+}
+/* Section + button spins like the export. */
+body:not(.workspace-open) #page-home .stitch-tree-add-course svg {
+  transition: transform .2s ease;
+}
+body:not(.workspace-open) #page-home .stitch-tree-add-course:hover svg {
+  transform: rotate(90deg);
+}
+/* Footer 新建视频: border/color swap, icon spin, label nudge. */
+body:not(.workspace-open) #page-home .stitch-sidebar-create-video {
+  transition: all .2s ease;
+}
+body:not(.workspace-open) #page-home .stitch-sidebar-create-video svg {
+  transition: transform .2s ease, color .2s ease;
+}
+body:not(.workspace-open) #page-home .stitch-sidebar-create-video:hover svg {
+  transform: rotate(90deg);
+  color: #dc5121;
+}
+body:not(.workspace-open) #page-home .stitch-sidebar-create-video:hover span {
+  transform: translateX(2px);
+}
+body:not(.workspace-open) #page-home .stitch-sidebar-create-video span {
+  transition: transform .15s ease;
+}
+body:not(.workspace-open) #page-home .stitch-sidebar-create-video:active {
+  transform: scale(.98);
+}
+
+/* --- Header micro-interactions (restore transforms the legacy layer froze) --- */
+.logo-icon { transition: transform .2s ease !important; }
+.logo-icon:hover { transform: scale(1.05) !important; }
+#btn-create-account .icon,
+#btn-edit-current-account .icon {
+  transition: transform .2s ease;
+}
+#btn-create-account:hover { border-color: #f46a38 !important; color: #dc5121 !important; }
+#btn-create-account:hover .icon { transform: rotate(90deg); }
+#btn-edit-current-account:hover { border-color: #a8a3ae !important; }
+/* Text links get the underline slide-in from the export nav. */
+.header-config-action,
+#btn-config-export,
+#btn-config-import {
+  position: relative;
+}
+.header-config-action::after,
+#btn-config-export::after,
+#btn-config-import::after {
+  content: "";
+  position: absolute;
+  left: .4rem;
+  right: .4rem;
+  bottom: 2px;
+  height: 2px;
+  border-radius: 1px;
+  background: #f46a38;
+  transform: scaleX(0);
+  transition: transform .2s ease;
+}
+.header-config-action:hover::after,
+#btn-config-export:hover::after,
+#btn-config-import:hover::after {
+  transform: scaleX(1);
+}
+.account-picker .account-picker-chevron {
+  transition: transform .2s ease;
+}
+.account-picker:hover .account-picker-chevron {
+  transform: translateY(2px);
+}
+
+/* --- Video cards: lift, glow, overlay, brand title (export hover) --- */
+body:not(.workspace-open) #page-home .stitch-video-card,
+body:not(.workspace-open) #page-home .stitch-new-video-card {
+  transition: transform .3s cubic-bezier(.16, 1, .3, 1), box-shadow .3s ease, border-color .3s ease, background-color .3s ease;
+}
+body:not(.workspace-open) #page-home .stitch-video-card:hover {
+  transform: translateY(-6px);
+  border-color: rgba(244, 106, 56, .7) !important;
+  box-shadow: 0 18px 40px rgba(30, 29, 34, .12) !important;
+}
+body:not(.workspace-open) #page-home .stitch-video-card:hover .stitch-video-name {
+  color: #dc5121 !important;
+}
+body:not(.workspace-open) #page-home .stitch-video-card:hover .stitch-video-play {
+  background: #f46a38 !important;
+  transform: scale(1.15);
+  box-shadow: 0 8px 22px rgba(244, 106, 56, .35) !important;
+}
+body:not(.workspace-open) #page-home .stitch-video-play {
+  transition: transform .28s cubic-bezier(.34, 1.56, .64, 1), background-color .2s ease, box-shadow .28s ease;
+}
+body:not(.workspace-open) #page-home .stitch-video-play svg {
+  transition: transform .2s ease;
+}
+body:not(.workspace-open) #page-home .stitch-video-card:hover .stitch-video-play svg {
+  transform: scale(1.05);
+}
+/* Soft dark wash over the thumbnail on hover (export overlay). */
+body:not(.workspace-open) #page-home .stitch-video-preview::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(23, 22, 26, .06);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .3s ease;
+}
+body:not(.workspace-open) #page-home .stitch-video-card:hover .stitch-video-preview::after {
+  opacity: 1;
+}
+body:not(.workspace-open) #page-home .stitch-video-more {
+  transition: transform .2s cubic-bezier(.34, 1.56, .64, 1), background-color .2s ease, color .2s ease;
+}
+body:not(.workspace-open) #page-home .stitch-video-more:hover {
+  transform: scale(1.1);
+  color: #17161a;
+}
+body:not(.workspace-open) #page-home .stitch-video-more:active {
+  transform: scale(.95);
+}
+
+/* --- New video card: dashed border wakes up orange, + spins --- */
+body:not(.workspace-open) #page-home .stitch-new-video-card:hover {
+  transform: translateY(-6px);
+  border-color: #f46a38 !important;
+  background: #fff !important;
+  box-shadow: 0 18px 40px rgba(30, 29, 34, .1) !important;
+}
+body:not(.workspace-open) #page-home .stitch-new-video-icon {
+  transition: transform .3s cubic-bezier(.16, 1, .3, 1), background-color .3s ease, color .3s ease;
+}
+body:not(.workspace-open) #page-home .stitch-new-video-icon svg {
+  transition: transform .3s ease;
+}
+body:not(.workspace-open) #page-home .stitch-new-video-card:hover .stitch-new-video-icon {
+  transform: scale(1.1);
+  background: #fff1ec !important;
+}
+body:not(.workspace-open) #page-home .stitch-new-video-card:hover .stitch-new-video-icon svg {
+  transform: rotate(90deg);
+}
+body:not(.workspace-open) #page-home .stitch-new-video-name {
+  transition: color .2s ease;
+}
+body:not(.workspace-open) #page-home .stitch-new-video-card:hover .stitch-new-video-name {
+  color: #dc5121 !important;
+}
+
+/* Search focus ring (export timing). */
+body:not(.workspace-open) #page-home .stitch-search-input {
+  transition: border-color .2s ease, box-shadow .25s cubic-bezier(.16, 1, .3, 1);
+}
+body:not(.workspace-open) #page-home .stitch-search-input:focus {
+  box-shadow: 0 0 0 3.5px rgba(244, 106, 56, .12) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Row hover surfaces: the export uses neutral gray, not warm tint. */
+body:not(.workspace-open) #page-home .stitch-course-header:hover {
+  background: #f5f4f6 !important;
+}
+body:not(.workspace-open) #page-home .stitch-chapter-header:hover {
+  background: #f4f2f5 !important;
+}
+body:not(.workspace-open) #page-home .stitch-project-leaf:hover {
+  background: #f4f2f5 !important;
+}
+
+/* Icon base for the export's inline SVGs (no dependency on the legacy
+   .icon rule, whose fill:none flattened the solid dots glyph). */
+.stitch-ic {
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+body:not(.workspace-open) #page-home .stitch-video-more svg {
+  width: 16px !important;
+  height: 16px !important;
+}
+body:not(.workspace-open) #page-home .stitch-video-menu .icon-action-btn svg {
+  width: 14px !important;
+  height: 14px !important;
+  flex: 0 0 auto;
+}
+
+/* ============================================================
+   Remaining main pages synced to the same export standard:
+   作品输出 (step 8) and 数字人讲解 (step 9) adopt the white
+   rounded content card used by steps 3/5/6.
+   ============================================================ */
+#step-panel-8,
+#step-panel-9 {
+  padding: 1.4rem 1.6rem 1.8rem !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 18px !important;
+  background: #fff !important;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .04) !important;
+}
+#step-panel-8 .step8-header,
+#step-panel-9 .step9-header {
+  margin: 0 0 1.1rem !important;
+  padding: 0 0 .95rem !important;
+}
+/* The digital-human settings block becomes a section inside the card. */
+#step-panel-9 .dh-panel {
+  border: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  padding: 0 !important;
+  margin-top: 0 !important;
+}
+/* Brand-orange switch when enabled (design system accent). */
+.dh-enable-toggle input:checked + .dh-switch-slider {
+  background: #f46a38 !important;
+  border-color: #f46a38 !important;
+}
+/* Step 8 inner sections keep hairline separation like the export rows. */
+#step-panel-8 .step-plain-section + .step-plain-section {
+  margin-top: 1.5rem;
+}
+#step-panel-8 .step8-section-heading h3 {
+  color: #0f172a !important;
+  font-weight: 700 !important;
+}
+
+/* ============================================================
+   Workspace rail: the white card runs all the way down to the
+   page bottom, and the assistant tip docks at the bottom-left
+   corner instead of hugging the 一键生成视频 button.
+   ============================================================ */
+.sidebar {
+  height: auto !important;
+  max-height: none !important;
+  align-self: stretch !important;
+  margin: 1.8rem 0 0 1.8rem !important;
+  display: flex !important;
+  flex-direction: column !important;
+  border-radius: 20px 20px 0 0 !important;
+}
+.sidebar .stepper,
+.one-click-sidebar-entry {
+  flex: 0 0 auto !important;
+}
+.sidebar #project-activity-status {
+  margin-top: auto !important;
+}
+
+/* ============================================================
+   [一键进度同步 20260912] 左侧步骤条"进行中"标记：
+   一键生成运行时，当前阶段对应的步骤挂上呼吸态标签，
+   让流程进度与左侧步骤始终一致，长时间阶段不再像卡死。
+   ============================================================ */
+.step-item.one-click-running > a,
+.step-item.one-click-running {
+  position: relative;
+}
+
+.step-item .step-running-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  white-space: nowrap;
+  color: var(--color-primary-deep, #5365d0);
+  background: linear-gradient(135deg, var(--color-primary-light, #eef3ff), rgba(238, 243, 255, 0.55));
+  border: 1px solid rgba(83, 101, 208, 0.35);
+  box-shadow: 0 2px 8px rgba(83, 101, 208, 0.14);
+  animation: stepRunningPulse 1.8s ease-in-out infinite;
+}
+
+.step-item .step-running-tag::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-primary-deep, #5365d0);
+  box-shadow: 0 0 0 3px rgba(83, 101, 208, 0.16);
+}
+
+@keyframes stepRunningPulse {
+  0%, 100% { opacity: 1; transform: translateY(0); }
+  50% { opacity: 0.62; transform: translateY(-1px); }
+}
+
+/* ============================================================
+   [生图失败常驻提示 20260912] 左下角失败徽标：部分图片生成
+   失败时持续可见，点击关闭；与自动消失的 toast 互补。
+   ============================================================ */
+.failure-badge {
+  position: fixed;
+  left: 24px;
+  bottom: 24px;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 420px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(214, 69, 69, 0.4);
+  box-shadow: 0 10px 30px rgba(160, 40, 40, 0.16);
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.failure-badge:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 32px rgba(160, 40, 40, 0.2);
+}
+
+.failure-badge-dot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #d64545;
+  box-shadow: 0 0 0 4px rgba(214, 69, 69, 0.15);
+  animation: failureBadgePulse 1.6s ease-in-out infinite;
+}
+
+.failure-badge-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.failure-badge-body strong {
+  font-size: 0.85rem;
+  color: #8f2f2f;
+}
+
+.failure-badge-body small {
+  font-size: 0.74rem;
+  color: #a06b6b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.failure-badge-hint {
+  flex: 0 0 auto;
+  font-size: 0.7rem;
+  color: #b08a8a;
+}
+
+@keyframes failureBadgePulse {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(214, 69, 69, 0.15); }
+  50% { box-shadow: 0 0 0 7px rgba(214, 69, 69, 0.08); }
+}

@@ -734,11 +734,16 @@ def list_avatars() -> Dict[str, Any]:
             if not path.is_file():
                 continue
             avatar_id = path.stem
+            is_image = path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
             avatars.append(
                 {
                     "avatar_id": avatar_id,
                     "filename": path.name,
-                    "url": f"/api/digital-human/avatars/{avatar_id}/video",
+                    "url": (
+                        f"/api/digital-human/avatars/{avatar_id}/image"
+                        if is_image
+                        else f"/api/digital-human/avatars/{avatar_id}/video"
+                    ),
                 }
             )
     return {"success": True, "avatars": avatars}
@@ -748,7 +753,26 @@ def list_avatars() -> Dict[str, Any]:
 def avatar_video(avatar_id: str) -> FileResponse:
     for path in AVATAR_DIR.glob(f"{avatar_id}.*"):
         if path.is_file():
+            if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".bmp"}:
+                continue
             return FileResponse(str(path), media_type="video/mp4")
+    raise HTTPException(status_code=404, detail="形象不存在")
+
+
+@app.get("/api/digital-human/avatars/{avatar_id}/image")
+def avatar_image(avatar_id: str) -> FileResponse:
+    """Serve still avatars with an image content type for InfiniteTalk previews."""
+    media_types = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+        ".bmp": "image/bmp",
+    }
+    for path in AVATAR_DIR.glob(f"{avatar_id}.*"):
+        media_type = media_types.get(path.suffix.lower())
+        if path.is_file() and media_type:
+            return FileResponse(str(path), media_type=media_type)
     raise HTTPException(status_code=404, detail="形象不存在")
 
 

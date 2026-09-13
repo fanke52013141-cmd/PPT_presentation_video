@@ -37,6 +37,12 @@ class CreationConfigVersionCreate(BaseModel):
     payload: dict[str, Any]
 
 
+class CreationConfigUpdate(BaseModel):
+    """Replace the current content of one reusable configuration package."""
+
+    payload: dict[str, Any]
+
+
 class CreationConfigArchive(BaseModel):
     archived: bool = True
 

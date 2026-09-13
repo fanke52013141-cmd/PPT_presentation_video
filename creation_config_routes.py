@@ -12,6 +12,7 @@ from creation_config_models import (
     CreationConfigCreate,
     CreationConfigImport,
     CreationConfigResolve,
+    CreationConfigUpdate,
     CreationConfigVersionCreate,
 )
 import creation_config_service as service
@@ -83,6 +84,22 @@ def get_creation_config(package_id: str) -> dict[str, Any]:
         lambda: {
             "success": True,
             "package": service.get_creation_config(package_id),
+        }
+    )
+
+
+@router.put("/api/creation-configs/{package_id}")
+def update_creation_config(
+    package_id: str,
+    payload: CreationConfigUpdate,
+) -> dict[str, Any]:
+    return _run(
+        lambda: {
+            "success": True,
+            "package": service.update_creation_config(
+                package_id,
+                **payload.model_dump(),
+            ),
         }
     )
 

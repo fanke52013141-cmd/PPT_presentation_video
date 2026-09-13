@@ -838,6 +838,35 @@ def create_creation_config_version(package_id: str, *, payload: Any) -> dict[str
 
 
 @_synchronized
+def update_creation_config(package_id: str, *, payload: Any) -> dict[str, Any]:
+    """Replace a package's current configuration without creating a backup.
+
+    Projects receive a materialized configuration snapshot at creation time, so
+    updating a reusable package must affect future projects only.  Retaining
+    a growing user-visible revision history provides no recovery path in the
+    product and made a straightforward save operation needlessly confusing.
+    """
+    normalized_payload = validate_payload(payload)
+    dependencies = _deps()
+    store = _store()
+    package = _package_or_raise(store, package_id)
+    if package.get("archived"):
+        raise CreationConfigConflict("已归档的创作配置不能修改")
+    current = _version_or_raise(package, None)
+    timestamp = dependencies.now()
+    current["payload"] = normalized_payload
+    current["content_hash"] = content_hash(normalized_payload)
+    current["created_at"] = timestamp
+    # Old revisions are not a user-facing feature.  Keep only the current
+    # record while retaining its internal revision number for legacy project
+    # snapshots and default-config references.
+    package["versions"] = {str(current["version"]): current}
+    package["updated_at"] = timestamp
+    dependencies.store.write(store)
+    return _public_package(package, include_payload=True)
+
+
+@_synchronized
 def copy_creation_config(
     package_id: str,
     *,

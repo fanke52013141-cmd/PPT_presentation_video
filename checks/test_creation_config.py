@@ -141,6 +141,19 @@ def test_new_version_never_mutates_earlier_version() -> None:
     assert service.get_creation_config(created["id"])["latest_version"] == 2
 
 
+def test_update_replaces_current_configuration_without_creating_a_backup() -> None:
+    created = service.create_creation_config(name="配置", payload=payload())
+    service.create_creation_config_version(created["id"], payload=payload(subtitles=False))
+
+    updated = service.update_creation_config(
+        created["id"], payload=payload()
+    )
+
+    assert updated["latest_version"] == 2
+    assert len(updated["versions"]) == 1
+    assert updated["versions"][0]["payload"]["subtitle"]["enabled"] is True
+
+
 def test_resolve_deep_merge_preserves_explicit_false_override() -> None:
     created = service.create_creation_config(name="配置", payload=payload())
 

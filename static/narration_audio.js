@@ -399,8 +399,10 @@ async function loadStep7Data() {
     const allAudioComplete = audioStatus.complete === true;
     const missingSlides = Array.isArray(audioStatus.missing) ? audioStatus.missing : [];
     if (!allAudioComplete) {
-      emptyState.style.display = 'block';
-      emptyState.innerText = `部分页面音频尚未生成或已过期：${missingSlides.join('、')}。点击“生成音频”会自动跳过已有音频，只补缺失页面。`;
+      // Each slide already shows its actionable audio state.  Do not repeat a
+      // long, non-actionable missing-slide list above the editor.
+      emptyState.style.display = 'none';
+      emptyState.innerText = '';
       confirmButton.disabled = true;
     } else if (step7Status === 'pending_reconfirmation') {
       // Keep the confirmation disabled until audio is regenerated, but do not

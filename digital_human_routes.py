@@ -55,6 +55,9 @@ ALLOWED_VIDEO_MIMES = {
     "video/mp4", "video/quicktime", "video/x-msvideo",
     "video/x-matroska", "application/octet-stream",  # 部分浏览器不发送正确 MIME
 }
+ALLOWED_AVATAR_MIMES = ALLOWED_VIDEO_MIMES | {
+    "image/png", "image/jpeg", "image/webp", "image/bmp",
+}
 ALLOWED_WORKFLOW_MIMES = {
     "application/json", "text/plain", "application/octet-stream",
 }
@@ -87,6 +90,7 @@ def _validate_upload(
 
 # 视频/头像上传的扩展名白名单（octet-stream 通融时的第二道校验，审查 L-03）
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".webm"}
+AVATAR_EXTENSIONS = VIDEO_EXTENSIONS | {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 
 
 def _validate_video_extension(filename: str | None) -> None:
@@ -97,6 +101,23 @@ def _validate_video_extension(filename: str | None) -> None:
             detail=(
                 f"不支持的文件扩展名：{ext}，"
                 f"允许：{', '.join(sorted(VIDEO_EXTENSIONS))}"
+            ),
+        )
+
+
+def _validate_avatar_extension(filename: str | None) -> None:
+    """Validate an avatar accepted by the selected backend.
+
+    InfiniteTalk is image-to-video, so a still PNG/JPG is a first-class avatar
+    input.  Keep the legacy video avatar path available for older workflows.
+    """
+    ext = Path(str(filename or "")).suffix.lower()
+    if ext and ext not in AVATAR_EXTENSIONS:
+        raise HTTPException(
+            status_code=415,
+            detail=(
+                f"不支持的数字人形象格式：{ext}，"
+                f"允许：{', '.join(sorted(AVATAR_EXTENSIONS))}"
             ),
         )
 
@@ -195,8 +216,21 @@ def _slide_digi_path(project: Project, slide_id: str) -> Path:
 
 
 def _read_comfyui_workflow_template(project: Project) -> Dict[str, Any] | None:
-    """Read the saved API workflow without silently changing a job request."""
+    """Read the project workflow or the configured external default.
+
+    The project must not contain the ComfyUI runtime or model files.  A project
+    may still override the workflow by uploading one into its own run folder;
+    otherwise the shared external InfiniteTalk workflow is used.
+    """
     wf_path = _digi_dir(project) / "comfyui_workflow.json"
+    source = "project"
+    if not wf_path.exists():
+        configured = os.environ.get("PPT_DIGITAL_HUMAN_COMFYUI_WORKFLOW", "").strip()
+        if configured:
+            candidate = Path(configured).expanduser().resolve()
+            if candidate.exists():
+                wf_path = candidate
+                source = "external"
     if not wf_path.exists():
         return None
     try:
@@ -363,8 +397,10 @@ async def upload_dh_avatar(
     _project_or_404(db, project_id)
     client = get_digital_human_client()
     content = await file.read(MAX_AVATAR_UPLOAD_BYTES + 1)
-    _validate_upload(content, file, MAX_AVATAR_UPLOAD_BYTES, ALLOWED_VIDEO_MIMES)
-    _validate_video_extension(file.filename)
+    # ComfyUI/InfiniteTalk 使用单张人物图；旧的 Wan/LatentSync 工作流
+    # 仍可上传视频，因此这里使用头像专用的“图片 + 视频”白名单。
+    _validate_upload(content, file, MAX_AVATAR_UPLOAD_BYTES, ALLOWED_AVATAR_MIMES)
+    _validate_avatar_extension(file.filename)
     import tempfile
 
     with tempfile.NamedTemporaryFile(
@@ -439,11 +475,24 @@ def get_comfyui_workflow(
     """返回已保存的工作流模板是否存在及节点数。"""
     project = _project_or_404(db, project_id)
     wf_path = _digi_dir(project) / "comfyui_workflow.json"
+    source = "project"
+    if not wf_path.exists():
+        configured = os.environ.get("PPT_DIGITAL_HUMAN_COMFYUI_WORKFLOW", "").strip()
+        if configured and Path(configured).expanduser().exists():
+            wf_path = Path(configured).expanduser()
+            source = "external"
     if not wf_path.exists():
         return {"success": True, "exists": False}
     try:
         wf = _read_comfyui_workflow_template(project)
-        return {"success": True, "exists": True, "valid": True, "nodes": len(wf or {})}
+        return {
+            "success": True,
+            "exists": True,
+            "valid": True,
+            "nodes": len(wf or {}),
+            "source": source,
+            "path": str(wf_path),
+        }
     except HTTPException:
         return {"success": True, "exists": True, "valid": False, "nodes": 0}
 

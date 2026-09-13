@@ -206,8 +206,35 @@ def _redact_runtime_secrets(value: Any, secrets: Any) -> str:
     return text
 
 
+def _tts_artifact_matches_runtime(paths: Dict[str, str], expected: Dict[str, Any]) -> bool:
+    """Whether an existing slide audio was synthesized with this exact voice setup.
+
+    Freshness used to track only narration text/file timestamps.  That let an
+    old MP3 survive a changed voice, model, or pacing setting.  Provider
+    scripts already persist the request in ``tts_metadata.json``; use that
+    safe, non-secret record as the audio cache key.
+    """
+    metadata_path = paths.get("metadata")
+    if not metadata_path:
+        return False
+    try:
+        with open(metadata_path, "r", encoding="utf-8") as file:
+            metadata = json.load(file)
+    except (OSError, json.JSONDecodeError, TypeError):
+        return False
+    if not isinstance(metadata, dict):
+        return False
+    request = metadata.get("request")
+    if not isinstance(request, dict):
+        return False
+    for key, expected_value in expected.items():
+        if str(request.get(key) or "").strip() != str(expected_value or "").strip():
+            return False
+    return True
+
+
 def _project_tts_runtime(project: Project) -> Optional[Dict[str, Any]]:
-    """Return immutable TTS settings for a project-bound connection.
+    """Return the current TTS settings for a project-bound connection.
 
     A project without a TTS binding deliberately returns ``None`` so legacy
     projects keep using the pre-existing global settings path.
@@ -222,7 +249,10 @@ def _project_tts_runtime(project: Project) -> Optional[Dict[str, Any]]:
     if not connection_id or not isinstance(revision, int):
         raise HTTPException(status_code=400, detail="项目语音模型连接配置无效。")
     try:
-        connection = resolve_model_connection(connection_id, revision)
+        # Voice selection is an operational setting.  Unlike a storyboard or
+        # image contract, it must follow the latest saved voice revision so a
+        # user can change a narrator and regenerate an existing project.
+        connection = resolve_model_connection(connection_id, None)
     except Exception as exc:
         logger.warning("Project TTS connection cannot be resolved: %s", type(exc).__name__)
         raise HTTPException(status_code=400, detail="项目语音模型连接不可用。") from exc
@@ -445,14 +475,14 @@ def synthesize_tts_resumable(project_id: str, db: Session):
         defaults.get("model"),
     )
     tts_voice_id = first_non_empty(
-        snapshot_value("tts.voice_id", "") if project_runtime else "",
         public_config.get("voice_id") if project_runtime else "",
+        snapshot_value("tts.voice_id", "") if project_runtime else "",
         get_setting("tts_voice_id") if project_runtime is None else "",
         defaults.get("voice_id"),
     )
     tts_clone_voice_id = first_non_empty(
-        snapshot_value("tts.clone_voice_id", "") if project_runtime else "",
         public_config.get("clone_voice_id") if project_runtime else "",
+        snapshot_value("tts.clone_voice_id", "") if project_runtime else "",
         get_setting("tts_clone_voice_id", "") if project_runtime is None else "",
     )
     tts_region = first_non_empty(
@@ -491,6 +521,15 @@ def synthesize_tts_resumable(project_id: str, db: Session):
     tts_requests_per_minute = _bounded_requests_per_minute(
         snapshot_value("tts.requests_per_minute", "") if project_runtime else "",
     )
+    tts_cache_key = {
+        "endpoint": tts_endpoint,
+        "model": tts_model,
+        "voice_id": tts_voice_id,
+        "clone_voice_id": tts_clone_voice_id,
+        "speed": tts_speed,
+        "volume": tts_volume,
+        "pitch": tts_pitch,
+    }
 
     invalidation_service.narration_synthesis_started(project)
     db.commit()
@@ -505,11 +544,14 @@ def synthesize_tts_resumable(project_id: str, db: Session):
         text_file = ensure_slide_tts_text_file(project, slide_id, contract)
         artifact_status = slide_tts_artifact_status(project, slide_id)
 
-        if artifact_status["complete"]:
+        if artifact_status["complete"] and _tts_artifact_matches_runtime(paths, tts_cache_key):
             logger.info("Skipping TTS for %s because audio artifacts are already complete and fresh", slide_id)
             rewrite_audio_timeline_by_beats(paths["timeline"], slide_id, beats_by_slide.get(slide_id, []))
             skipped_slides.append(slide_id)
             continue
+
+        if artifact_status["complete"]:
+            logger.info("Regenerating TTS for %s because the voice settings changed", slide_id)
 
         if artifact_status["audio_exists"] or artifact_status["missing_artifacts"] or artifact_status["stale"]:
             remove_tts_artifacts(paths)

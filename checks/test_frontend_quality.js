@@ -114,7 +114,7 @@ for (const creationConfigToken of [
   "API.get('/api/creation-configs')",
   'config_package_id: creationConfig.id',
   'config_package_version: creationConfig.version',
-  'option.textContent = `${String(item.name || \'未命名配置包\')} · v${version}`',
+  "option.textContent = String(item.name || '未命名配置包');",
 ]) {
   if (!projects.includes(creationConfigToken)) {
     throw new Error(`project creation configuration contract missing: ${creationConfigToken}`);
@@ -142,6 +142,10 @@ for (const managementToken of [
   'versions',
   'copyPackage',
   'archivePackage',
+  "window.API.put(`/api/creation-configs/${encodeURIComponent(state.editingPackageId)}`, { payload })",
+  'discardCreationConfigChanges',
+  'saveCreationConfigAs',
+  'selectCreationConfigTab',
 ]) {
   if (!creationConfigManagement.includes(managementToken)) {
     throw new Error(`creation configuration management UI missing: ${managementToken}`);

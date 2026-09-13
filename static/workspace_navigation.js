@@ -183,10 +183,9 @@ function applyStepperRunningMark() {
   const item = document.querySelector(`.step-item[data-step="${stepperRunningStep}"]`);
   if (!item) return;
   item.classList.add('one-click-running');
-  const tag = document.createElement('span');
-  tag.className = 'step-running-tag';
-  tag.innerText = stepperRunningLabel || '进行中';
-  item.appendChild(tag);
+  // The active-step color and status dot already communicate progress.  A
+  // second floating stage label (for example “生成分镜”) makes the narrow
+  // sidebar look like a tooltip and obscures the following row.
 }
 
 function markStepperRunningStep(step, label) {

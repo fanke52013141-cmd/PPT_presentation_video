@@ -125,7 +125,7 @@
     available.forEach(item => {
       const version = configVersion(item, defaultConfig);
       options.push(
-        `<option value="${esc(item.id)}" data-version="${version}">${esc(item.name || '未命名配置包')} · v${version}</option>`
+        `<option value="${esc(item.id)}" data-version="${version}">${esc(item.name || '未命名配置包')}</option>`
       );
     });
     return options.join('');
@@ -145,7 +145,6 @@
     return choices.map(item => `
       <button type="button" class="creation-config-choice${item.isDefault ? ' is-default' : ''}" data-creation-config-choice="${esc(item.id)}" role="radio" aria-checked="false">
         <span class="creation-config-choice-heading"><strong>${esc(item.name)}</strong>${item.isDefault ? '<em>当前默认</em>' : ''}</span>
-        <span>v${item.version} · 提示词、模型与图片风格</span>
       </button>
     `).join('');
   }
@@ -200,31 +199,25 @@
             ${creationConfigChoices(creationConfigs)}
           </div>
           <select id="input-creation-config" class="creation-config-native-select" aria-hidden="true" tabindex="-1">${creationConfigOptions(creationConfigs)}</select>
-          <p id="create-creation-config-help" class="project-profile-help">${creationConfigs?.length ? '本项目会固定所选配置包及其显示版本；模型、提示词、图片风格和参考图均以该配置包为准。' : '暂无可用创作配置包。'}</p>
         </section>
         <section class="project-profile-section" id="create-ai-mode-section">
           <h4>3. 创建方式</h4>
           <div class="project-profile-mode-grid" role="radiogroup" aria-label="创建方式">
             ${optionCards([
-              { id: 'auto', name: '自动模式', detail: '进入项目后连续执行生成流程；实施中可暂停，并在当前环节完成后停下。' },
-              { id: 'manual', name: '手动模式', detail: '创建后进入第 1 步；后续由你按步骤编辑并触发生成。' },
+              { id: 'auto', name: '自动模式' },
+              { id: 'manual', name: '手动模式' },
             ], 'ai_mode', 'auto')}
           </div>
         </section>
-        <details class="project-profile-advanced">
-          <summary>画面比例</summary>
-          <div class="project-profile-advanced-body">
-        <section class="project-profile-section">
+        <section class="project-profile-section project-profile-aspect-section">
+          <h4>4. 画面比例</h4>
           <div class="project-profile-mode-grid">
             ${optionCards([
               { id: 'landscape_16_9', name: '横屏 16:9' },
               { id: 'portrait_9_16', name: '竖屏 9:16' },
             ], 'canvas_profile', 'landscape_16_9')}
           </div>
-          <p class="project-profile-help">创建后比例会锁定；需要更换比例时请复制项目重新生成。</p>
         </section>
-          </div>
-        </details>
       </div>
       <div class="config-editor-actions">
         <button id="btn-create-cancel" class="secondary" type="button">取消</button>

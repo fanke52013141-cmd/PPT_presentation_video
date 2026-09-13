@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css?v=20260912.36">
   <!-- Stitch screen contract: the supplied page code is the visual source of truth. -->
-  <link rel="stylesheet" href="stitch.css?v=20260912.13">
+  <link rel="stylesheet" href="stitch.css?v=20260913.6">
 </head>
 <body>
 
@@ -917,19 +917,27 @@
       <div class="config-editor-scroll">
         <div class="prompt-title-row">
           <h3 id="creation-config-management-title" class="highlight-title">创作配置</h3>
+          <button id="btn-creation-config-management-close" class="icon-button" type="button" aria-label="关闭">×</button>
         </div>
         <div id="creation-config-management-body" class="creation-config-management-body">
           <section class="soft-outline" style="padding:1rem; border-radius:12px;">
             <h4 style="margin-top:0;">创作配置包</h4>
             <div id="creation-config-default-package-slot"></div>
             <label style="display:block; margin-bottom:0.55rem;">配置包名称<input id="creation-config-package-name" type="text" maxlength="80" placeholder="例如：科普账号长视频"></label>
+            <label id="creation-config-save-as-name" class="creation-config-save-as-field" hidden>新配置名称<input type="text" maxlength="80" placeholder="例如：科普账号长视频 副本"></label>
             <p id="creation-config-editing-status" class="config-editor-note" aria-live="polite" hidden></p>
+            <nav class="creation-config-tabs" aria-label="创作配置分类">
+              <button type="button" class="is-active" data-creation-config-tab="models">基础与模型</button>
+              <button type="button" data-creation-config-tab="visual">视觉与风格</button>
+              <button type="button" data-creation-config-tab="output">输出与交付</button>
+              <button type="button" data-creation-config-tab="prompts">提示词工程</button>
+            </nav>
             <div id="creation-config-structured-editor" class="creation-config-structured-editor">
-              <section class="creation-config-section">
+              <section class="creation-config-section" data-creation-config-panel="models">
                 <h5>模型关联</h5>
                 <div id="creation-config-model-binding-fields" class="creation-config-model-binding-fields"></div>
               </section>
-              <section class="creation-config-section creation-config-image-style-section">
+              <section class="creation-config-section creation-config-image-style-section" data-creation-config-panel="visual">
                 <div class="creation-config-section-heading">
                   <h5>图片风格</h5>
                   <div>
@@ -960,13 +968,13 @@
                   <label class="creation-config-mode-card"><input type="radio" name="creation-config-automation-mode" value="manual"><span><strong>手动模式</strong><small>创建后进入第 1 步；图片、AI Mask、旁白与数字人等环节由你逐项完成。</small></span></label>
                 </div>
               </section>
-              <section class="creation-config-section creation-config-section--options">
+              <section class="creation-config-section creation-config-section--options" data-creation-config-panel="output">
                 <div class="creation-config-option-group creation-config-output-group">
                   <h5>输出设置</h5>
                   <div class="creation-config-options-row creation-config-output-options" aria-label="输出类型">
                     <label class="creation-config-check"><input data-creation-config-output="video" type="checkbox" checked> 视频</label>
                     <label class="creation-config-check"><input data-creation-config-output="pptx" type="checkbox"> PPT</label>
-                    <label class="creation-config-check"><input id="creation-config-subtitle-enabled" type="checkbox" checked> 字幕</label>
+                    <label class="creation-config-check"><input id="creation-config-subtitle-enabled" type="checkbox"> 字幕</label>
                   </div>
                 </div>
                 <div class="creation-config-option-group creation-config-subtitle-option">
@@ -1037,7 +1045,7 @@
                   <label class="creation-config-render-field" aria-label="渲染方式"><select id="creation-config-render-acceleration"><option value="auto">自动检测 GPU（推荐）</option><option value="gpu">仅使用 GPU</option><option value="cpu">仅使用 CPU</option></select></label>
                 </div>
               </section>
-              <section class="creation-config-section creation-config-prompts-section">
+              <section class="creation-config-section creation-config-prompts-section" data-creation-config-panel="prompts">
                 <h5>Prompt</h5>
                 <p class="config-editor-note">所有步骤默认展开，方便一次性审阅和编辑；没有输出示例时保持为空。</p>
                 <div id="creation-config-prompt-fields" class="creation-config-prompt-fields"></div>
@@ -1050,15 +1058,14 @@
               <button id="btn-creation-config-load-json" class="secondary" type="button">从 JSON 载入</button>
             </details>
             <div class="creation-config-package-actions">
-              <button id="btn-create-creation-config" class="success" type="button">新建配置包</button>
-              <button id="btn-cancel-creation-config-edit" class="secondary" type="button" hidden>取消编辑</button>
+              <button id="btn-cancel-creation-config-edit" class="secondary" type="button">放弃修改</button>
+              <button id="btn-prepare-save-creation-config-as" class="secondary" type="button">另存为新配置</button>
+              <button id="btn-save-creation-config-as" class="secondary" type="button" hidden>确认另存</button>
+              <button id="btn-create-creation-config" class="success" type="button">保存当前修改</button>
             </div>
             <div id="creation-config-package-list"></div>
           </section>
         </div>
-      </div>
-      <div class="config-editor-actions">
-        <button id="btn-creation-config-management-close" class="secondary" type="button">关闭</button>
       </div>
     </div>
   </div>
@@ -1570,15 +1577,15 @@
   <!-- 主业务 JavaScript 脚本 -->
   <script src="flow.js?v=3.0.5"></script>
   <script src="workflow_state.js?v=20260820.1"></script>
-  <script src="ui_foundation.js?v=20260912.2"></script>
+  <script src="ui_foundation.js?v=20260913.1"></script>
   <script src="api_client.js?v=20260812.1"></script>
   <script src="artifact_repair.js?v=20260801.1"></script>
   <script src="prompt_help.js?v=20260801.1"></script>
   <script src="settings.js?v=20260907.1"></script>
   <script src="projects.js?v=20260906.1"></script>
-  <script src="creation_config_management.js?v=20260912.1"></script>
+  <script src="creation_config_management.js?v=20260913.5"></script>
   <script src="select_menus.js?v=20260906.1"></script>
-  <script src="courses.js?v=20260912.8"></script>
+  <script src="courses.js?v=20260913.2"></script>
   <script src="article.js?v=20260801.1"></script>
   <script src="storyboard.js?v=20260902.2"></script>
   <script src="storyboard_prompts.js?v=20260801.1"></script>
@@ -1589,12 +1596,12 @@
   <script src="mask_workspace.js?v=20260809.4"></script>
   <script src="mask_editor.js?v=20260809.4"></script>
   <script src="subtitle_settings.js?v=20260801.1"></script>
-  <script src="narration_audio.js?v=20260912.1"></script>
+  <script src="narration_audio.js?v=20260913.1"></script>
   <script src="output_render.js?v=20260909.1"></script>
-  <script src="account_management.js?v=20260907.4"></script>
-  <script src="workspace_navigation.js?v=20260912.1"></script>
+  <script src="account_management.js?v=20260913.1"></script>
+  <script src="workspace_navigation.js?v=20260913.1"></script>
   <script src="event_bindings.js?v=20260906.1"></script>
-  <script src="project_profile_extension.js?v=20260909.2"></script>
+  <script src="project_profile_extension.js?v=20260913.3"></script>
   <script src="storyboard_background_extension.js?v=20260807.1"></script>
   <script src="style_reference_manager_extension.js?v=3.0.1"></script>
   <script src="ai_mask_auto_state.js?v=20260809.1"></script>

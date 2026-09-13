@@ -55,7 +55,17 @@ start "" cmd /c "timeout /t 4 /nobreak >nul && start http://127.0.0.1:%PORT%"
 
 REM ---- digital human service (separate window, default :9001) ----
 if not defined PPT_DIGITAL_HUMAN_PORT set "PPT_DIGITAL_HUMAN_PORT=9001"
-if not defined PPT_DIGITAL_HUMAN_MOCK set "PPT_DIGITAL_HUMAN_MOCK=1"
+REM ---- use the independent InfiniteTalk asset directory when it exists ----
+if not defined PPT_STUDIO_ASSETS_DIR set "PPT_STUDIO_ASSETS_DIR=D:\PPT_Studio_Assets"
+if not defined PPT_DIGITAL_HUMAN_COMFYUI_WORKFLOW set "PPT_DIGITAL_HUMAN_COMFYUI_WORKFLOW=%PPT_STUDIO_ASSETS_DIR%\InfiniteTalk_TTS\InfiniteTalk\workflow\infinitetalk-数字人_api_windows-compatible.json"
+if exist "%PPT_DIGITAL_HUMAN_COMFYUI_WORKFLOW%" (
+  set "PPT_DIGITAL_HUMAN_BACKEND=comfyui"
+  set "PPT_DIGITAL_HUMAN_MOCK=0"
+  echo [digital-human] InfiniteTalk workflow: %PPT_DIGITAL_HUMAN_COMFYUI_WORKFLOW%
+) else (
+  if not defined PPT_DIGITAL_HUMAN_MOCK set "PPT_DIGITAL_HUMAN_MOCK=1"
+  echo [digital-human] InfiniteTalk workflow not found; fallback mode=%PPT_DIGITAL_HUMAN_MOCK%
+)
 set "DH_PORT_FREE=0"
 for /f "delims=" %%F in ('"%VENV%" "%PROJ%\check_port_free.py" %PPT_DIGITAL_HUMAN_PORT%') do set "DH_PORT_FREE=%%F"
 if "%DH_PORT_FREE%"=="1" (

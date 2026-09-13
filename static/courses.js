@@ -231,30 +231,7 @@ const CourseTree = (() => {
     const visibleRecords = filterVideoRecords(videoRecords);
     cards.appendChild(renderNewVideoCard());
     visibleRecords.forEach(record => cards.appendChild(renderLibraryVideoCard(record)));
-    if (visibleRecords.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'course-tree-empty home-library-empty';
-      const message = document.createElement('p');
-      message.textContent = librarySearchQuery.trim()
-        ? '没有找到匹配的视频、课程或章节。'
-        : videoRecords.length
-          ? '这个分类下还没有视频项目。'
-          : '还没有任何课程或视频项目，先创建一个开始吧。';
-      empty.appendChild(message);
-      const action = document.createElement('button');
-      action.type = 'button';
-      action.className = 'success';
-      action.textContent = librarySearchQuery.trim()
-        ? '清除搜索'
-        : videoRecords.length ? '查看全部视频' : '新建课程';
-      action.addEventListener('click', () => {
-        if (librarySearchQuery.trim()) clearLibrarySearch();
-        else if (videoRecords.length) selectLibraryFilter({ type: 'all', id: null });
-        else document.getElementById('btn-create-course')?.click();
-      });
-      empty.appendChild(action);
-      cards.appendChild(empty);
-    }
+    // 空课程或章节只保留首张“新建视频”卡片；这就是唯一需要的下一步。
     main.appendChild(cards);
 
     layout.append(navigation, main);
@@ -525,7 +502,9 @@ const CourseTree = (() => {
     const pattern = document.createElement('span');
     pattern.className = 'stitch-video-pattern';
     preview.append(pattern, more, menu, play);
-    if (isProjectComplete(project)) hydrateCompletedVideoCover(project, preview);
+    // Use the first generated slide as the cover as soon as it exists.  The
+    // library should not keep a generic pattern until every later step ends.
+    hydrateCompletedVideoCover(project, preview);
 
     const content = document.createElement('div');
     content.className = 'home-library-video-content stitch-video-content p-3.5 flex flex-col justify-between flex-1';
@@ -685,7 +664,9 @@ const CourseTree = (() => {
           document.body.appendChild(menu);
           menu.classList.add('tree-overflow-menu--portal');
           menu.style.top = `${Math.round(rect.bottom + 4)}px`;
-          menu.style.left = `${Math.round(Math.max(8, rect.right - 198))}px`;
+          // Keep the compact action surface aligned to the trigger's right
+          // edge instead of reserving the former wide menu footprint.
+          menu.style.left = `${Math.round(Math.max(8, rect.right - 142))}px`;
           menuPortalized = true;
         }
         menu.classList.add('is-open');

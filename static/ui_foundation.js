@@ -18,7 +18,7 @@ function getToastPresentation(message) {
   return { text: text || '操作已完成', tone };
 }
 
-function showToast(message, duration = 3000) {
+function showToast(message, duration = 1800) {
   const container = document.getElementById('toast-container');
   while (container.children.length >= 4) {
     container.firstElementChild?.remove();
@@ -32,10 +32,14 @@ function showToast(message, duration = 3000) {
   content.textContent = presentation.text;
   toast.appendChild(content);
   container.appendChild(toast);
+  // Notifications are acknowledgements, not persistent UI.  Keep all of
+  // them within the same brief 1–2 second window even when legacy callers
+  // request a longer duration.
+  const visibleDuration = Math.max(1000, Math.min(2000, Number(duration) || 1800));
   setTimeout(() => {
     toast.style.animation = 'slideUp 0.3s ease-in reverse';
     setTimeout(() => toast.remove(), 300);
-  }, duration);
+  }, visibleDuration);
 }
 
 function showCustomConfirm(title, message, onYes, onNo = null) {
@@ -148,5 +152,5 @@ function showFailureBadge(key, message, detail) {
     if (badge.isConnected) badge.remove();
     failureBadgeDismissedKey = scheduledKey;
     failureBadgeTimer = null;
-  }, 8000);
+  }, 1800);
 }

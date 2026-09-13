@@ -810,7 +810,9 @@
         dhState.comfyuiWorkflowExists = true;
         var statusEl = document.getElementById("dh-comfyui-workflow-status");
         if (statusEl) {
-          statusEl.textContent = "已上传（" + (res.nodes || 0) + " 节点）";
+          statusEl.textContent = res.source === "external"
+            ? "已连接外部 InfiniteTalk（" + (res.nodes || 0) + " 节点）"
+            : "已上传（" + (res.nodes || 0) + " 节点）";
           statusEl.style.color = "#4CAF50";
         }
       }

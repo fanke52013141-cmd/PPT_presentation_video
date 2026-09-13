@@ -39,7 +39,7 @@
     'article_generation', 'storyboard', 'visualization', 'ai_mask', 'narration_annotation',
   ];
   const DEFAULT_SUBTITLE = {
-    enabled: true,
+    enabled: false,
     font_key: 'lxgw_marker_gothic',
     font_size: 40,
     font_weight: 400,
@@ -197,7 +197,10 @@
           if (!connection.id || !Number.isInteger(revisionNumber) || revisionNumber < 1) return;
           const option = document.createElement('option');
           option.value = `${connection.id}@${revisionNumber}`;
-          option.textContent = `${connection.name || '未命名连接'} · ${revision.provider || '未知服务'} / ${revision.model || '未指定模型'} · v${revisionNumber}`;
+          // The selector is a business choice, not a diagnostic screen.  A
+          // connection's display name is enough here; provider/model/version
+          // remain available in its editor and must not crowd the selection.
+          option.textContent = connection.name || '未命名连接';
           select.append(option);
         });
       if ([...select.options].some(option => option.value === selected)) select.value = selected;
@@ -677,9 +680,15 @@
     applyDefaultModelBindings();
     syncStructuredFieldsToJson();
     const submit = element('btn-create-creation-config');
-    if (submit) submit.textContent = '新建配置包';
+    if (submit) submit.textContent = '保存当前修改';
+    const saveAsName = element('creation-config-save-as-name');
+    if (saveAsName) { saveAsName.hidden = true; saveAsName.value = ''; }
+    const saveAs = element('btn-save-creation-config-as');
+    if (saveAs) saveAs.hidden = true;
+    const prepareSaveAs = element('btn-prepare-save-creation-config-as');
+    if (prepareSaveAs) prepareSaveAs.hidden = true;
     const cancel = element('btn-cancel-creation-config-edit');
-    if (cancel) cancel.hidden = true;
+    if (cancel) { cancel.hidden = false; cancel.textContent = '放弃修改'; }
     const status = element('creation-config-editing-status');
     if (status) { status.hidden = true; status.textContent = ''; }
   }
@@ -713,8 +722,6 @@
       const title = document.createElement('strong');
       title.textContent = packageItem.name || '未命名配置包';
       heading.append(title);
-      const latestVersion = Number(packageItem.latest_version) || 1;
-      const defaultVersion = Number(state.defaultPackageVersion) || 1;
       const copy = document.createElement('p');
       copy.className = 'creation-config-package-card-copy';
       copy.textContent = tags ? tags.slice(3) : '提示词、模型关联与执行选项';
@@ -726,10 +733,7 @@
       ];
       if (!isDefault) {
         actionsToAppend.push(button('设为默认', 'secondary', () => setDefaultPackage(packageItem)));
-      } else if (defaultVersion < latestVersion) {
-        actionsToAppend.push(button('启用最新版本', 'secondary', () => setDefaultPackage(packageItem)));
       }
-      actionsToAppend.push(button('归档', 'secondary', () => archivePackage(packageItem)));
       actions.append(...actionsToAppend);
       item.append(heading, copy, actions);
       return item;
@@ -795,13 +799,10 @@
       const title = document.createElement('strong');
       title.textContent = connection.name || '未命名模型';
       heading.append(title);
-      const detail = document.createElement('p');
-      detail.className = 'model-library-card-detail';
-      detail.textContent = revision.model || '未指定模型 ID';
       const actions = document.createElement('div');
       actions.className = 'model-library-card-actions';
       actions.append(button('编辑', 'secondary', () => editModelConnection(connection)));
-      item.append(heading, detail, actions);
+      item.append(heading, actions);
       target.append(item);
     });
   }
@@ -1019,7 +1020,7 @@
       const versions = Array.isArray(current?.versions) ? current.versions : [];
       const version = versions.find(item => Number(item.version) === Number(current.latest_version)) || versions.at(-1);
       if (!current || !version || !objectValue(version.payload)) {
-        throw new Error('未找到可编辑的配置包版本');
+        throw new Error('未找到可编辑的创作配置');
       }
       state.editingPackageId = current.id;
       state.editingVersion = Number(version.version);
@@ -1030,14 +1031,20 @@
       renderConnectionSelectors();
       loadPayloadIntoStructured(version.payload);
       const submit = element('btn-create-creation-config');
-      if (submit) submit.textContent = '保存为新版本';
+      if (submit) submit.textContent = '保存当前修改';
       const status = element('creation-config-editing-status');
       if (status) {
         status.hidden = false;
-        status.textContent = '正在编辑此配置包的最新版本。保存会新增版本；当前账号默认版本不会自动切换。需要启用时，请点击卡片上的“启用最新版本”。';
+        status.textContent = '修改仅用于之后新建的视频；已经创建的视频不会受影响。';
       }
+      const saveAs = element('btn-save-creation-config-as');
+      if (saveAs) saveAs.hidden = true;
+      const saveAsName = element('creation-config-save-as-name');
+      if (saveAsName) { saveAsName.hidden = true; saveAsName.value = ''; }
+      const prepareSaveAs = element('btn-prepare-save-creation-config-as');
+      if (prepareSaveAs) prepareSaveAs.hidden = false;
       const cancel = element('btn-cancel-creation-config-edit');
-      if (cancel) cancel.hidden = false;
+      if (cancel) { cancel.hidden = false; cancel.textContent = '放弃修改'; }
       element('creation-config-package-name')?.focus();
     } catch (error) {
       requestError('加载配置包失败', error);
@@ -1078,8 +1085,8 @@
     if (submit) submit.disabled = true;
     try {
       if (state.editingPackageId) {
-        await window.API.post(`/api/creation-configs/${encodeURIComponent(state.editingPackageId)}/versions`, { payload });
-        toast('已保存为配置包新版本');
+        await window.API.put(`/api/creation-configs/${encodeURIComponent(state.editingPackageId)}`, { payload });
+        toast('当前创作配置已保存');
       } else {
         await window.API.post('/api/creation-configs', { name, payload });
         toast('创作配置包已创建');
@@ -1088,9 +1095,60 @@
       if (typeof window.loadCreationConfigs === 'function') window.loadCreationConfigs();
       resetCreationConfigEditor();
     } catch (error) {
-      requestError(state.editingPackageId ? '保存配置包版本失败' : '创建配置包失败', error);
+      requestError(state.editingPackageId ? '保存当前配置失败' : '创建配置包失败', error);
     } finally {
       if (submit) submit.disabled = false;
+    }
+  }
+
+  async function discardCreationConfigChanges() {
+    const current = state.packages.find(item => item.id === state.editingPackageId);
+    if (current) {
+      await editPackage(current);
+      toast('已放弃未保存的修改');
+      return;
+    }
+    resetCreationConfigEditor();
+  }
+
+  function prepareSaveAsCreationConfig() {
+    if (!state.editingPackageId) {
+      element('creation-config-package-name')?.focus();
+      return;
+    }
+    const field = element('creation-config-save-as-name');
+    if (!field) return;
+    field.hidden = false;
+    field.value = `${element('creation-config-package-name')?.value.trim() || '创作配置'} 副本`;
+    field.focus();
+  }
+
+  async function saveCreationConfigAs() {
+    const name = element('creation-config-save-as-name')?.value.trim() || '';
+    if (!name) {
+      toast('请输入新配置名称');
+      return;
+    }
+    let payload;
+    try {
+      syncStructuredFieldsToJson();
+      payload = parseCreationConfigPayload();
+    } catch (error) {
+      requestError('无法另存配置', error);
+      return;
+    }
+    const saveAs = element('btn-save-creation-config-as');
+    if (saveAs) saveAs.disabled = true;
+    try {
+      await window.API.post('/api/creation-configs', { name, payload });
+      toast('已另存为新配置');
+      await refreshCreationConfigManagement();
+      if (typeof window.loadCreationConfigs === 'function') window.loadCreationConfigs();
+      resetCreationConfigEditor();
+    } catch (error) {
+      requestError('另存为新配置失败', error);
+    } finally {
+      if (saveAs) saveAs.disabled = false;
     }
   }
 
@@ -1344,6 +1402,17 @@
     if (modal) modal.style.display = 'none';
   }
 
+  function selectCreationConfigTab(tab) {
+    const selected = ['models', 'visual', 'output', 'prompts'].includes(tab) ? tab : 'models';
+    document.querySelectorAll('[data-creation-config-tab]').forEach(button => {
+      button.classList.toggle('is-active', button.dataset.creationConfigTab === selected);
+      button.setAttribute('aria-selected', String(button.dataset.creationConfigTab === selected));
+    });
+    document.querySelectorAll('[data-creation-config-panel]').forEach(panel => {
+      panel.hidden = panel.dataset.creationConfigPanel !== selected;
+    });
+  }
+
   function initCreationConfigManagementEvents() {
     buildStructuredEditor();
     renderConnectionSelectors();
@@ -1353,7 +1422,13 @@
     element('btn-model-management-close')?.addEventListener('click', closeModelManagement);
     element('btn-model-management-refresh')?.addEventListener('click', refreshCreationConfigManagement);
     element('btn-create-creation-config')?.addEventListener('click', createCreationConfig);
-    element('btn-cancel-creation-config-edit')?.addEventListener('click', resetCreationConfigEditor);
+    element('btn-cancel-creation-config-edit')?.addEventListener('click', discardCreationConfigChanges);
+    element('btn-save-creation-config-as')?.addEventListener('click', saveCreationConfigAs);
+    element('btn-prepare-save-creation-config-as')?.addEventListener('click', prepareSaveAsCreationConfig);
+    document.querySelectorAll('[data-creation-config-tab]').forEach(button => {
+      button.addEventListener('click', () => selectCreationConfigTab(button.dataset.creationConfigTab));
+    });
+    selectCreationConfigTab('models');
     element('btn-creation-config-load-json')?.addEventListener('click', loadJsonIntoStructured);
     document.querySelectorAll('[data-model-kind]').forEach(tab => {
       tab.addEventListener('click', () => selectModelKind(tab.dataset.modelKind));

@@ -63,6 +63,21 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ""
 Write-Host "[3/4] Starting backend FastAPI server..." -ForegroundColor Green
+# Keep ComfyUI outside the project.  The digital-human service receives only
+# the external workflow path and talks to ComfyUI over localhost HTTP.
+$assetsRoot = if ($env:PPT_STUDIO_ASSETS_DIR) { $env:PPT_STUDIO_ASSETS_DIR } else { "D:\PPT_Studio_Assets" }
+$infiniteTalkWorkflow = Join-Path $assetsRoot "InfiniteTalk_TTS\InfiniteTalk\workflow\infinitetalk-数字人_api_windows-compatible.json"
+if (Test-Path $infiniteTalkWorkflow) {
+    $env:PPT_DIGITAL_HUMAN_BACKEND = "comfyui"
+    $env:PPT_DIGITAL_HUMAN_MOCK = "0"
+    $env:PPT_DIGITAL_HUMAN_COMFYUI_WORKFLOW = $infiniteTalkWorkflow
+    if (-not (Get-NetTCPConnection -ComputerName 127.0.0.1 -Port 9001 -State Listen -ErrorAction SilentlyContinue)) {
+        Start-Process -FilePath $pythonExe -ArgumentList @((Join-Path $PSScriptRoot "digital_human_service.py")) -WorkingDirectory $PSScriptRoot -WindowStyle Hidden
+        Write-Host "Using external InfiniteTalk workflow: $infiniteTalkWorkflow" -ForegroundColor DarkGreen
+    }
+} else {
+    Write-Warning "InfiniteTalk workflow not found at $infiniteTalkWorkflow; digital-human service will use its fallback mode."
+}
 Start-Process "http://localhost:8000"
 $env:PYTHONPATH = "$PSScriptRoot;$env:PYTHONPATH"
 & $pythonExe (Join-Path $PSScriptRoot "start_server.py")

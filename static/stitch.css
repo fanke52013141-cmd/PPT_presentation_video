@@ -1450,6 +1450,139 @@ body.workspace-open #step-panel-1 .step1-heading-row {
 #modal-subtitle-settings .config-editor-actions,
 #modal-animation-settings .config-editor-actions { padding: 16px 34px !important; border-top: 1px solid #edf0f4; background: #fff; }
 
+/* Subtitle settings: use the same compact two-column form language as the
+   creation and model panels.  Keep the original controls/IDs intact: this is
+   deliberately presentation-only so project subtitle persistence is unchanged. */
+#modal-subtitle-settings .subtitle-settings-modal {
+  width: min(1260px, calc(100vw - 64px)) !important;
+}
+#modal-subtitle-settings .subtitle-settings-header {
+  align-items: center !important;
+  padding-bottom: 14px !important;
+  border-bottom: 1px solid #edf0f4 !important;
+}
+#modal-subtitle-settings .subtitle-settings-header .config-editor-note {
+  max-width: 720px;
+  margin: 5px 0 0 !important;
+  color: #7b8799 !important;
+  font-size: 13px !important;
+  line-height: 1.55 !important;
+}
+#modal-subtitle-settings .subtitle-settings-layout {
+  grid-template-columns: minmax(0, 1.25fr) minmax(390px, .95fr) !important;
+  gap: 24px !important;
+  padding-top: 20px !important;
+}
+#modal-subtitle-settings .subtitle-preview-stage {
+  position: sticky;
+  top: 0;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, .08) !important;
+}
+#modal-subtitle-settings .subtitle-settings-controls {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 10px !important;
+  padding: 12px !important;
+  border: 1px solid #e8ecf2;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+#modal-subtitle-settings .subtitle-settings-controls label {
+  min-width: 0;
+  min-height: 76px;
+  box-sizing: border-box;
+  gap: 7px !important;
+  padding: 10px 12px;
+  border: 1px solid #e1e7ef;
+  border-radius: 10px;
+  background: #fff;
+  color: #475569 !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+}
+#modal-subtitle-settings .subtitle-settings-controls label > span {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+#modal-subtitle-settings .subtitle-settings-controls label > span strong {
+  color: #f46a38;
+  font-size: 13px;
+}
+#modal-subtitle-settings .subtitle-settings-controls label:nth-child(1),
+#modal-subtitle-settings .subtitle-settings-controls label:nth-child(2),
+#modal-subtitle-settings .subtitle-settings-controls label:nth-child(3),
+#modal-subtitle-settings .subtitle-settings-controls label:nth-child(11),
+#modal-subtitle-settings .subtitle-settings-controls .subtitle-font-note {
+  grid-column: 1 / -1;
+}
+#modal-subtitle-settings .subtitle-settings-controls label:nth-child(1),
+#modal-subtitle-settings .subtitle-settings-controls label:nth-child(11) {
+  min-height: 44px;
+  padding: 10px 12px;
+  border-color: #f3d8ce;
+  background: #fffaf8;
+}
+#modal-subtitle-settings .subtitle-settings-controls input[type="text"],
+#modal-subtitle-settings .subtitle-settings-controls select {
+  min-height: 36px;
+  padding: 7px 9px !important;
+  border-color: #dce3ec !important;
+  border-radius: 8px !important;
+  color: #1f2937;
+  font-weight: 600;
+}
+#modal-subtitle-settings .subtitle-settings-controls input[type="range"] {
+  accent-color: #f46a38;
+}
+#modal-subtitle-settings .subtitle-settings-controls input[type="color"] {
+  width: 100%;
+  height: 32px;
+  border-color: #dce3ec !important;
+  border-radius: 8px !important;
+}
+#modal-subtitle-settings .subtitle-font-note {
+  margin: 0;
+  padding: 10px 12px;
+  border-color: #d9e2ec;
+  border-radius: 9px;
+  background: #f1f5f9;
+  color: #718096;
+  font-size: 11px;
+}
+
+/* The subtitle block in creation configuration was a five-column wall of
+   tiny fields.  Two wide rows match the surrounding settings panels and are
+   substantially easier to scan on a desktop display. */
+.creation-config-subtitle-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+  padding: 2px 0 4px !important;
+}
+.creation-config-subtitle-grid label {
+  grid-template-columns: minmax(0, 1fr) 7.25rem !important;
+  grid-template-rows: none !important;
+  align-items: center !important;
+  min-height: 3.15rem !important;
+  gap: 10px !important;
+  padding: 7px 9px 7px 12px !important;
+  background: #fff !important;
+}
+.creation-config-subtitle-grid label:first-child {
+  grid-column: 1 / -1;
+}
+.creation-config-subtitle-grid label select,
+.creation-config-subtitle-grid label input {
+  min-width: 0;
+  height: 32px;
+  box-sizing: border-box;
+}
+.creation-config-subtitle-grid label input[type="color"] {
+  padding: 3px;
+}
+
 /* Course library interaction corrections: the only create entry on a course
    or chapter is its overflow menu.  Menus float above the full tree. */
 body:not(.workspace-open) #page-home .tree-inline-add { display: none !important; }
@@ -1535,6 +1668,355 @@ body:not(.workspace-open) #page-home .tree-overflow-menu .tree-overflow-item > s
   padding-inline: 13px !important;
   background: #fff !important;
 }
+
+/* Compact library menus: actions are plain icon + text rows, not stacked
+   bordered buttons.  The menu stays an opaque foreground surface. */
+.tree-overflow-menu.tree-overflow-menu--portal {
+  width: 142px !important;
+  min-width: 142px !important;
+  padding: 4px 0 !important;
+  border: 0 !important;
+  border-radius: 10px !important;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, .18) !important;
+}
+.tree-overflow-menu.tree-overflow-menu--portal .tree-overflow-item,
+body:not(.workspace-open) #page-home .tree-overflow-menu .tree-overflow-item {
+  grid-template-columns: 16px minmax(0, 1fr) !important;
+  min-height: 34px !important;
+  gap: 7px !important;
+  padding: 0 11px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+body:not(.workspace-open) #page-home .tree-overflow-menu .tree-overflow-item + .tree-overflow-item,
+.tree-overflow-menu.tree-overflow-menu--portal .tree-overflow-item + .tree-overflow-item {
+  border-top: 0 !important;
+}
+body:not(.workspace-open) #page-home .tree-overflow-menu .tree-overflow-item > span,
+.tree-overflow-menu.tree-overflow-menu--portal .tree-overflow-item > span {
+  text-align: left !important;
+}
+body:not(.workspace-open) #page-home .tree-overflow-menu .tree-overflow-item:hover,
+.tree-overflow-menu.tree-overflow-menu--portal .tree-overflow-item:hover {
+  background: #fff4ef !important;
+}
+
+/* Video-card actions use the same borderless, centered-row treatment. */
+body:not(.workspace-open) #page-home .stitch-video-menu {
+  min-width: 124px !important;
+  padding: 5px 0 !important;
+  border: 0 !important;
+  border-radius: 12px !important;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, .18) !important;
+}
+body:not(.workspace-open) #page-home .stitch-video-menu .icon-action-btn {
+  display: grid !important;
+  grid-template-columns: 18px 1fr 18px !important;
+  min-height: 36px !important;
+  padding: 0 11px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+body:not(.workspace-open) #page-home .stitch-video-menu .icon-action-btn + .icon-action-btn {
+  border-top: 0 !important;
+}
+body:not(.workspace-open) #page-home .stitch-video-menu .icon-action-btn > svg { grid-column: 1; }
+body:not(.workspace-open) #page-home .stitch-video-menu .icon-action-btn .action-label {
+  grid-column: 2;
+  text-align: center !important;
+}
+body:not(.workspace-open) #page-home .stitch-video-menu .icon-action-btn::after { content: ''; grid-column: 3; }
+
+/* The independent-video rail has two tight dashed separators, functioning as
+   a visual section break without opening up a large empty gap. */
+body:not(.workspace-open) #page-home .stitch-standalone-group {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed #d9d6de !important;
+}
+body:not(.workspace-open) #page-home .stitch-standalone-group .course-tree-standalone-heading {
+  margin-top: 2px;
+  padding-top: 5px !important;
+  border-top: 1px dashed #e5e2e8 !important;
+}
+
+/* Creation configuration: defaults and dense settings should fit a desktop
+   modal without looking like a wall of narrow inputs. */
+#modal-creation-config-management .config-editor-modal { position: relative; }
+#modal-creation-config-management .config-editor-actions {
+  position: absolute;
+  z-index: 8;
+  top: 15px;
+  right: 22px;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+#modal-creation-config-management .prompt-title-row #btn-creation-config-management-close {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  margin-left: auto;
+  place-items: center;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 7px !important;
+  background: transparent !important;
+  color: #94a3b8 !important;
+  font-size: 24px;
+  line-height: 1;
+}
+#modal-creation-config-management .prompt-title-row #btn-creation-config-management-close:hover {
+  background: #f1f5f9 !important;
+  color: #f46a38 !important;
+}
+
+/* Digital-human workspace — strict parity with the supplied configuration
+   screen: a quiet status row above a compact three-column workstation. */
+#step-panel-9 {
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+#step-panel-9 .step9-header {
+  min-height: 52px;
+  margin: 0 0 14px !important;
+  padding: 0 2px 14px !important;
+}
+#step-panel-9 .step9-header-actions { gap: 14px !important; }
+#step-panel-9 .step9-optional-hint { color: #94a3b8 !important; font-size: 12px !important; }
+#step-panel-9 #digital-human-panel {
+  margin: 0 !important;
+  padding: 24px 26px 26px !important;
+  border: 1px solid #edf0f4 !important;
+  border-radius: 16px !important;
+  background: #fff !important;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .04) !important;
+}
+#step-panel-9 .dh-panel-header {
+  min-height: 34px;
+  padding: 0 0 16px !important;
+  border-bottom: 1px solid #edf0f4 !important;
+}
+#step-panel-9 .dh-panel-title { gap: 10px !important; }
+#step-panel-9 .dh-panel-title h3 {
+  margin: 0 !important;
+  color: #1f2937 !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+}
+#step-panel-9 .dh-service-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 10px !important;
+  border: 1px solid #fee2e2;
+  border-radius: 999px !important;
+  background: #fff7f7;
+  color: #dc2626 !important;
+  font-size: 12px !important;
+  font-weight: 600;
+}
+#step-panel-9 .dh-service-status:empty { display: none; }
+#step-panel-9 .dh-enable-toggle {
+  gap: 9px !important;
+  color: #475569 !important;
+  font-size: 13px !important;
+  font-weight: 600;
+}
+#step-panel-9 .dh-switch-slider { width: 44px !important; height: 24px !important; background: #cbd5e1 !important; }
+#step-panel-9 .dh-switch-slider::before { width: 18px !important; height: 18px !important; }
+#step-panel-9 .dh-enable-toggle input:checked + .dh-switch-slider { background: #f46a38 !important; }
+#step-panel-9 .dh-enable-toggle input:checked + .dh-switch-slider::before { transform: translateX(20px) !important; }
+#step-panel-9 .dh-panel-body {
+  margin-top: 0 !important;
+  padding-top: 17px !important;
+  border: 0 !important;
+}
+#step-panel-9 .dh-settings-title {
+  margin: 0 0 14px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  color: #64748b !important;
+  font-size: 12px !important;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+#step-panel-9 .dh-grid {
+  grid-template-columns: minmax(210px, 3fr) minmax(340px, 5fr) minmax(280px, 4fr) !important;
+  gap: 24px !important;
+  align-items: start;
+}
+#step-panel-9 .dh-field {
+  gap: 10px !important;
+  min-width: 0;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+#step-panel-9 .dh-field-label {
+  color: #64748b !important;
+  font-size: 12px !important;
+  font-weight: 700;
+}
+#step-panel-9 .dh-mode-toggle,
+#step-panel-9 .dh-shape-toggle {
+  gap: 3px !important;
+  margin: 0 !important;
+  padding: 4px !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 10px !important;
+  background: #f8fafc !important;
+}
+#step-panel-9 .dh-tab-btn,
+#step-panel-9 .dh-shape-toggle button {
+  min-height: 32px;
+  padding: 5px 8px !important;
+  border: 0 !important;
+  border-radius: 7px !important;
+  background: transparent !important;
+  color: #94a3b8 !important;
+  font-size: 12px !important;
+  font-weight: 600;
+  box-shadow: none !important;
+}
+#step-panel-9 .dh-tab-btn.dh-tab-active,
+#step-panel-9 .dh-shape-toggle button.dh-shape-active {
+  border: 1px solid #f1f5f9 !important;
+  background: #fff !important;
+  color: #1f2937 !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, .12) !important;
+}
+#step-panel-9 .dh-upload-btn,
+#step-panel-9 #dh-btn-export-audio,
+#step-panel-9 #dh-btn-save {
+  min-height: 38px !important;
+  padding: 8px 12px !important;
+  border: 1px solid #dbe3ed !important;
+  border-radius: 9px !important;
+  background: #fff !important;
+  color: #475569 !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .03) !important;
+  font-size: 12px !important;
+  font-weight: 600;
+}
+#step-panel-9 .dh-upload-btn:hover,
+#step-panel-9 #dh-btn-export-audio:hover,
+#step-panel-9 #dh-btn-save:hover { border-color: #f46a38 !important; background: #fff7f3 !important; color: #d95021 !important; }
+#step-panel-9 #dh-btn-generate-all {
+  min-height: 40px !important;
+  margin-top: 4px !important;
+  border: 0 !important;
+  border-radius: 9px !important;
+  background: #111827 !important;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, .15) !important;
+  font-size: 12px !important;
+}
+#step-panel-9 .dh-drag-hint { color: #94a3b8 !important; font-size: 11px !important; line-height: 1.55 !important; }
+#step-panel-9 .dh-circle-canvas {
+  aspect-ratio: 4 / 3 !important;
+  border: 1px solid #dce3ec !important;
+  border-radius: 12px !important;
+  box-shadow: inset 0 1px 5px rgba(15, 23, 42, .06) !important;
+}
+#step-panel-9 .dh-circle-layer { box-shadow: 0 0 0 2px #f46a38, 0 3px 10px rgba(15, 23, 42, .16) !important; }
+#step-panel-9 .dh-circle-layer:hover { box-shadow: 0 0 0 2px #ea580c, 0 3px 10px rgba(15, 23, 42, .2) !important; }
+#step-panel-9 .dh-circle-resize { border-color: #f46a38 !important; }
+#step-panel-9 .dh-lock-row { justify-content: space-between; margin: 0 !important; }
+#step-panel-9 .dh-lock-btn {
+  padding: 5px 9px !important;
+  border: 0 !important;
+  border-radius: 7px !important;
+  background: #ecfdf5 !important;
+  color: #059669 !important;
+  font-size: 11px !important;
+  font-weight: 700;
+}
+#step-panel-9 .dh-slider-group { gap: 11px !important; margin-top: 2px !important; }
+#step-panel-9 .dh-slider-row { gap: 9px !important; margin: 0 !important; }
+#step-panel-9 .dh-slider-label { min-width: 64px !important; color: #475569 !important; font-size: 12px !important; }
+#step-panel-9 .dh-slider-row input[type="range"] { accent-color: #f46a38; }
+#step-panel-9 .dh-slider-value { min-width: 42px !important; color: #334155 !important; font-size: 11px !important; }
+#step-panel-9 .dh-circle-info {
+  margin-top: 3px !important;
+  padding: 8px 10px !important;
+  border: 1px solid #edf1f5 !important;
+  border-radius: 8px !important;
+  background: #f8fafc !important;
+  color: #64748b !important;
+  text-align: center;
+}
+#modal-creation-config-management #btn-creation-config-management-close {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 7px !important;
+  background: transparent !important;
+  color: #94a3b8 !important;
+  font-size: 24px;
+  line-height: 1;
+}
+#modal-creation-config-management #btn-creation-config-management-close:hover {
+  background: #f1f5f9 !important;
+  color: #f46a38 !important;
+}
+#modal-creation-config-management .creation-config-subtitle-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+  padding: 0 !important;
+}
+#modal-creation-config-management .creation-config-subtitle-grid label,
+#modal-creation-config-management .creation-config-subtitle-grid label:first-child {
+  grid-column: auto !important;
+  grid-template-columns: 1fr !important;
+  grid-template-rows: auto 32px !important;
+  min-height: 66px !important;
+  gap: 5px !important;
+  padding: 7px 8px !important;
+  text-align: center;
+}
+#modal-creation-config-management .creation-config-subtitle-grid label select,
+#modal-creation-config-management .creation-config-subtitle-grid label input {
+  width: 100% !important;
+  min-width: 0;
+  height: 32px !important;
+  padding: 4px 6px !important;
+  text-align: center;
+  font-size: 12px !important;
+}
+#modal-creation-config-management .creation-config-subtitle-grid label input[type="color"] { padding: 3px !important; }
+#modal-creation-config-management .creation-config-concurrency-group {
+  display: flex;
+  align-items: center;
+  min-height: 0 !important;
+  gap: 14px;
+  padding: 10px 12px !important;
+}
+#modal-creation-config-management .creation-config-concurrency-group h5 {
+  flex: 0 0 auto;
+  margin: 0 !important;
+  white-space: nowrap;
+}
+#modal-creation-config-management .creation-config-concurrency-grid {
+  flex: 1 1 auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+}
+#modal-creation-config-management .creation-config-concurrency-grid label {
+  grid-template-columns: minmax(0, 1fr) 44px !important;
+  min-height: 36px !important;
+  padding: 5px 7px 5px 10px !important;
+}
+#modal-creation-config-management .creation-config-concurrency-grid label > small { display: none; }
+#modal-creation-config-management .creation-config-concurrency-grid label input { min-height: 28px !important; }
 
 /* Focused AI Mask view keeps the canvas and its right-side association panel,
    but removes all application navigation and ephemeral guidance. */
@@ -1731,6 +2213,93 @@ body:not(.workspace-open) #btn-edit-current-account { border-radius: 0 999px 999
 #agent-token-dialog .account-create-help { margin: 24px 28px 0 !important; color: #334155 !important; font-size: 15px !important; line-height: 1.65 !important; }
 #agent-token-dialog .form-field { margin-top: 26px !important; }
 #agent-token-dialog .modal-actions { margin-top: 30px !important; }
+
+/* Keep the account disclosure a familiar up/down chevron.  A later hover
+   translation used to override its expanded rotation, making it look sideways. */
+.account-picker:hover .account-picker-chevron { transform: rotate(45deg) !important; }
+.account-picker[aria-expanded="true"] .account-picker-chevron,
+.account-picker[aria-expanded="true"]:hover .account-picker-chevron { transform: rotate(-135deg) !important; }
+
+/* Library action menus balance a leading icon with an empty trailing column,
+   so the action word is visually centred rather than shifted left. */
+body:not(.workspace-open) #page-home .tree-overflow-menu .tree-overflow-item,
+.tree-overflow-menu.tree-overflow-menu--portal .tree-overflow-item,
+body:not(.workspace-open) #page-home .stitch-video-menu .icon-action-btn {
+  display: grid !important;
+  grid-template-columns: 18px minmax(0, 1fr) 18px !important;
+  align-items: center !important;
+  justify-content: initial !important;
+}
+body:not(.workspace-open) #page-home .tree-overflow-menu .tree-overflow-item > span,
+.tree-overflow-menu.tree-overflow-menu--portal .tree-overflow-item > span,
+body:not(.workspace-open) #page-home .stitch-video-menu .icon-action-btn .action-label {
+  grid-column: 2 !important;
+  text-align: center !important;
+}
+body:not(.workspace-open) #page-home .tree-overflow-menu .tree-overflow-item::after,
+.tree-overflow-menu.tree-overflow-menu--portal .tree-overflow-item::after,
+body:not(.workspace-open) #page-home .stitch-video-menu .icon-action-btn::after {
+  content: '';
+  grid-column: 3;
+}
+
+/* 创作配置遵循配置中心的四段工作区：上方选择配置包，中央按领域
+   编辑，底部始终保留三个明确的保存动作。 */
+#modal-creation-config-management .creation-config-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 16px 0;
+  padding: 6px;
+  overflow-x: auto;
+  border: 1px solid #e8eaf0;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+#modal-creation-config-management .creation-config-tabs button {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 8px;
+  padding: 9px 14px;
+  background: transparent;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+#modal-creation-config-management .creation-config-tabs button.is-active {
+  background: #fff;
+  color: #f46a38;
+  box-shadow: 0 1px 3px rgba(15,23,42,.10);
+}
+#modal-creation-config-management [data-creation-config-panel][hidden] { display: none !important; }
+#modal-creation-config-management .creation-config-save-as-field {
+  display: block;
+  margin: 0 0 10px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+#modal-creation-config-management .creation-config-save-as-field input {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+}
+#modal-creation-config-management .creation-config-package-actions {
+  position: sticky;
+  bottom: -26px;
+  z-index: 4;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin: 22px -28px -26px !important;
+  padding: 14px 28px !important;
+  border-top: 1px solid #e5e7eb;
+  background: rgba(255,255,255,.96);
+  backdrop-filter: blur(10px);
+}
+#modal-creation-config-management .creation-config-package-actions .success {
+  background: #111827 !important;
+  border-color: #111827 !important;
+}
 
 /* Model settings uses the same supplied modal grammar: one quiet library,
    then the editor, with charcoal only for commit actions. */

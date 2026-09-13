@@ -253,6 +253,37 @@ def test_tts_runtime_without_snapshot_binding_keeps_global_fallback(tmp_path: Pa
     assert tts._project_tts_runtime(project) is None
 
 
+def test_tts_audio_cache_is_invalidated_when_voice_changes(tmp_path: Path) -> None:
+    metadata = tmp_path / "tts_metadata.json"
+    metadata.write_text(
+        json.dumps({
+            "request": {
+                "endpoint": "https://tts.example/v1",
+                "model": "speech-2.8-hd",
+                "voice_id": "old-voice",
+                "clone_voice_id": "",
+                "speed": 1,
+                "volume": 1,
+                "pitch": 0,
+            }
+        }),
+        encoding="utf-8",
+    )
+    base = {
+        "endpoint": "https://tts.example/v1",
+        "model": "speech-2.8-hd",
+        "voice_id": "old-voice",
+        "clone_voice_id": "",
+        "speed": 1,
+        "volume": 1,
+        "pitch": 0,
+    }
+    assert tts._tts_artifact_matches_runtime({"metadata": str(metadata)}, base)
+    assert not tts._tts_artifact_matches_runtime(
+        {"metadata": str(metadata)}, {**base, "voice_id": "new-voice"}
+    )
+
+
 def test_tts_parallelism_is_bounded_and_keeps_local_gpu_serial() -> None:
     assert tts._bounded_tts_concurrency("minimax") == 10
     assert tts._bounded_tts_concurrency("minimax", "99") == 10

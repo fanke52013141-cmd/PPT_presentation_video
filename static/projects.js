@@ -27,12 +27,7 @@ function ensureCreationConfigSelector() {
   select = document.createElement('select');
   select.id = 'input-creation-config';
   select.style.width = '100%';
-  const help = document.createElement('p');
-  help.id = 'create-creation-config-help';
-  help.className = 'project-profile-help';
-  help.textContent = '选择后会固定使用该配置包的最新版本，图片风格和参考图也由该配置包统一决定。';
-
-  section.append(heading, label, select, help);
+  section.append(heading, label, select);
   canvasSection.before(section);
   return select;
 }
@@ -48,7 +43,6 @@ function selectedCreationConfig() {
 /** Load reusable creation packages without making package selection mandatory. */
 async function loadCreationConfigs() {
   const select = ensureCreationConfigSelector();
-  const help = document.getElementById('create-creation-config-help');
   if (!select) return;
 
   const selectedId = select.value;
@@ -68,23 +62,17 @@ async function loadCreationConfigs() {
       const option = document.createElement('option');
       option.value = item.id;
       option.dataset.version = String(version);
-      option.textContent = `${String(item.name || '未命名配置包')} · v${version}`;
+      option.textContent = String(item.name || '未命名配置包');
       select.appendChild(option);
     });
     const restore = Array.from(select.options).find(option => (
       option.value === selectedId && option.dataset.version === selectedVersion
     ));
     select.value = restore ? selectedId : '';
-    if (help) {
-      help.textContent = packages.length
-        ? '选择后会固定使用该配置包的最新版本，图片风格和参考图也由该配置包统一决定。'
-        : '暂无可用创作配置包；仍可按当前项目创建方式继续。';
-    }
     window.refreshCreationConfigChoices?.(packages);
   } catch (_) {
     select.replaceChildren(emptyOption);
     select.value = '';
-    if (help) help.textContent = '创作配置包加载失败；仍可按当前项目创建方式继续。';
     window.refreshCreationConfigChoices?.([]);
   }
 }

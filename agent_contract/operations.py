@@ -96,7 +96,11 @@ CHECKPOINT_STAGES = {
     },
     "mask_review": {
         "label": "Mask 审查",
-        "internal_stage": "mask_assets",
+        # One-click now reports the optional automatic annotation stage as
+        # ``ai_mask``.  It is marked done when explicitly skipped, so Agent
+        # checkpoint/progress consumers see the same canonical stage ID as
+        # the user-facing pipeline.
+        "internal_stage": "ai_mask",
         "description": "Mask 标注完成，等待确认后再生成旁白",
     },
     "narration_review": {

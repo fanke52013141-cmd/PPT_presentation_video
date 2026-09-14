@@ -102,6 +102,11 @@ def _metadata(item: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _is_global(item: Mapping[str, Any]) -> bool:
+    """A global credential is only created by a global model binding."""
+    return str(item.get("scope") or "account") == "global"
+
+
 def create_credential(*, provider: Any, label: Any, secret_values: Any) -> dict[str, Any]:
     with _lock:
         store = _store()
@@ -140,11 +145,37 @@ def list_credentials(*, include_disabled: bool = False) -> list[dict[str, Any]]:
 def get_credential(credential_ref: str) -> dict[str, Any]:
     with _lock:
         item = _store()["credentials"].get(str(credential_ref))
-        if not isinstance(item, dict) or str(item.get("account_id") or "default") != get_current_account_id():
+        if not isinstance(item, dict) or (
+            not _is_global(item)
+            and str(item.get("account_id") or "default") != get_current_account_id()
+        ):
             raise CredentialNotFound("凭据不存在")
         if item.get("state") != "active":
             raise CredentialUnavailable("凭据已停用")
         return deepcopy(item.get("secret_values") or {})
+
+
+def promote_credential_for_global_connection(credential_ref: str) -> None:
+    """Allow runtime-only use of one credential by a global model.
+
+    This is deliberately not exposed as an HTTP operation.  The value is not
+    listed for other accounts, and only internal provider workers can retrieve
+    it through :func:`get_credential` after a model registry binding promotes
+    the reference.
+    """
+    reference = str(credential_ref or "").strip()
+    if not reference:
+        return
+    with _lock:
+        store = _store()
+        item = store["credentials"].get(reference)
+        if not isinstance(item, dict):
+            raise CredentialNotFound("模型连接引用的凭据不存在")
+        if _is_global(item):
+            return
+        item["scope"] = "global"
+        item["updated_at"] = _deps().now()
+        _deps().write_store(store)
 
 
 def update_credential(

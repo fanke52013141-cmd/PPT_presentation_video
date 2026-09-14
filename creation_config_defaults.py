@@ -64,7 +64,15 @@ def default_creation_config_payload() -> dict[str, Any]:
         },
         "subtitle": {"enabled": True},
         "mask": {"enabled": True},
-        "automation": {"mode": "auto", "image_concurrency": 5, "ai_narration_annotation": False},
+        "automation": {
+            "mode": "auto",
+            "image_concurrency": 5,
+            "ai_narration_annotation": False,
+            # Automatic AI Mask is opt-in.  A newly created package keeps the
+            # existing full-frame production behavior until its owner enables
+            # the additional annotation stage explicitly.
+            "ai_mask_annotation": False,
+        },
         "tts": {"concurrency": 10, "requests_per_minute": 10},
         "render": {"acceleration": "auto", "output_formats": ["video"]},
     }

@@ -8,6 +8,7 @@ const apiClient = fs.readFileSync(path.join(root, 'static', 'api_client.js'), 'u
 const artifactRepair = fs.readFileSync(path.join(root, 'static', 'artifact_repair.js'), 'utf8');
 const settings = fs.readFileSync(path.join(root, 'static', 'settings.js'), 'utf8');
 const projects = fs.readFileSync(path.join(root, 'static', 'projects.js'), 'utf8');
+const courses = fs.readFileSync(path.join(root, 'static', 'courses.js'), 'utf8');
 const article = fs.readFileSync(path.join(root, 'static', 'article.js'), 'utf8');
 const storyboard = fs.readFileSync(path.join(root, 'static', 'storyboard.js'), 'utf8');
 const storyboardPrompts = fs.readFileSync(path.join(root, 'static', 'storyboard_prompts.js'), 'utf8');
@@ -138,11 +139,14 @@ for (const managementToken of [
   'loadPayloadIntoStructured',
   'updateAutomationControls',
   'ai_narration_annotation',
+  'ai_mask_annotation',
+  'deletePackage',
+  'deleteModelConnection',
   'readBindingValue',
   'versions',
   'copyPackage',
   'archivePackage',
-  "window.API.put(`/api/creation-configs/${encodeURIComponent(state.editingPackageId)}`, { payload })",
+  "window.API.put(`/api/creation-configs/${encodeURIComponent(state.editingPackageId)}`, { name, payload })",
   'discardCreationConfigChanges',
   'saveCreationConfigAs',
   'selectCreationConfigTab',
@@ -177,6 +181,7 @@ for (const automaticModeControl of [
   'creation-config-mode-selector',
   'creation-config-auto-options',
   'creation-config-narration-annotation',
+  'creation-config-mask-annotation',
   'creation-config-output-group',
   'creation-config-subtitle-option',
 ]) {
@@ -262,6 +267,27 @@ for (const accountMenuToken of [
 if (accountManagement.includes('account-picker-option-status') || css.includes('.account-picker-option-status')) {
   throw new Error('account picker still renders an extra status dot');
 }
+for (const accountPickerToken of [
+  'function accountDisplayName(account)',
+  "account?.id === 'default'",
+  "return '默认账号'",
+  'aria-selected',
+  'header .account-picker-menu .account-picker-option[aria-selected="true"]',
+]) {
+  if (!accountManagement.includes(accountPickerToken) && !css.includes(accountPickerToken)) {
+    throw new Error(`account picker presentation contract is missing: ${accountPickerToken}`);
+  }
+}
+for (const courseTreeToken of [
+  'is-inline-renaming',
+  'is-new-entity',
+  'grid-template-columns: 14px 16px minmax(0, 1fr) 20px',
+  'grid-template-columns: minmax(0, 1fr) 20px',
+]) {
+  if (!courses.includes(courseTreeToken) && !css.includes(courseTreeToken)) {
+    throw new Error(`course tree compact creation UI is missing: ${courseTreeToken}`);
+  }
+}
 if (!projectProfile.includes("apiGet('/api/creation-configs')")
   || !projectProfile.includes('config_package_id: creationConfig.id')
   || !projectProfile.includes('config_package_version: creationConfig.version')) {
@@ -278,23 +304,25 @@ for (const defaultConfigToken of [
     throw new Error(`project creation default configuration state is missing: ${defaultConfigToken}`);
   }
 }
-for (const managementDefaultToken of [
-  'creation-config-default-package',
-  'creation-config-package-grid',
-  '当前账号默认配置',
-  "API.put(`/api/accounts/${encodeURIComponent(state.currentAccountId)}/default-config`",
+for (const packageManagementToken of [
+  "item.className = 'creation-config-package-card'",
+  "button('编辑', 'secondary'",
+  "button('复制', 'secondary'",
+  "button('删除', 'danger'",
+  'grid-template-columns: repeat(4, minmax(0, 1fr))',
 ]) {
-  if (!creationConfigManagement.includes(managementDefaultToken) && !css.includes(managementDefaultToken)) {
-    throw new Error(`configuration management default state is missing: ${managementDefaultToken}`);
+  if (!creationConfigManagement.includes(packageManagementToken) && !css.includes(packageManagementToken)) {
+    throw new Error(`configuration management compact package list is missing: ${packageManagementToken}`);
   }
 }
-for (const compactDefaultCardToken of [
-  '.creation-config-default-package > .creation-config-package-card',
-  'width: clamp(210px, 25%, 320px)',
-  'width: 100%;',
+for (const removedPackageManagementToken of [
+  'creation-config-default-package-slot',
+  '选择“编辑”后，在下方继续修改或另存为新包。',
+  "button('设为默认'",
+  'creation-config-package-card-copy',
 ]) {
-  if (!css.includes(compactDefaultCardToken)) {
-    throw new Error(`configuration management default card is not compact and responsive: ${compactDefaultCardToken}`);
+  if (html.includes(removedPackageManagementToken) || creationConfigManagement.includes(removedPackageManagementToken)) {
+    throw new Error(`configuration management still exposes package-list detail: ${removedPackageManagementToken}`);
   }
 }
 if (projects.includes('onclick=')) throw new Error('project cards still use interpolated inline click handlers');

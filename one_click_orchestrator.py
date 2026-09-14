@@ -56,6 +56,7 @@ STATUS_VERSION = "one_click_orchestrator_v2"
 _REVIEW_CHECKPOINT_AFTER_STAGE = {
     "storyboard": "storyboard_review",
     "images": "image_review",
+    "ai_mask": "mask_review",
     "narration": "narration_review",
     "tts": "audio_review",
     "render": "video_review",
@@ -108,6 +109,7 @@ _STAGE_TO_STEP = {
     "storyboard": "2",
     "images": "3",
     "confirm_images": "3",
+    "ai_mask": "5",
     "narration": "6",
     "tts": "6",
     "render": "8",
@@ -117,6 +119,7 @@ STAGES = [
     ("storyboard", "生成分镜"),
     ("images", "生成全部图片"),
     ("confirm_images", "确认整页图片并准备场景"),
+    ("ai_mask", "AI Mask 标注"),
     ("narration", "生成演讲稿"),
     ("tts", "合成并确认音频"),
     ("render", "渲染视频"),
@@ -799,6 +802,16 @@ def _should_annotate_narration(project: Any) -> bool:
     return get_config_value(project, "automation.ai_narration_annotation", False) is True
 
 
+def _should_annotate_ai_mask(project: Any) -> bool:
+    """Whether an automatic run should generate element-level AI Masks.
+
+    Old project snapshots intentionally default to ``False``. They retain
+    the historical full-frame one-click output unless a creation package
+    explicitly opts in to the element-reveal stage.
+    """
+    return get_config_value(project, "automation.ai_mask_annotation", False) is True
+
+
 def _stage_index(stage_id: str) -> int:
     for index, (candidate, _title) in enumerate(STAGES):
         if candidate == stage_id:
@@ -1295,14 +1308,82 @@ def _run_pipeline(
             if _pause_at_stage_boundary(project, status, project_id):
                 return
 
-        # A status file written by an older version can retain the retired
-        # Mask review checkpoint. Move it forward so resuming cannot stall.
-        if status.get("stop_at") == "mask_review":
-            status["stop_at"] = _next_stop_at_from_policy(
-                getattr(project, "review_policy", None) or "none",
-                "mask_review",
-            )
-            _save_status(project, status)
+        if should_run("ai_mask"):
+            ai_mask_enabled = _should_annotate_ai_mask(project)
+            if not ai_mask_enabled:
+                # Persist the explicit no-op. A skipped optional stage is
+                # complete rather than pending so status, resume, and Agent
+                # progress all reflect that the creation package chose the
+                # full-frame path.
+                _finish_stage(
+                    project,
+                    status,
+                    "ai_mask",
+                    "已跳过（创作包未启用 AI Mask 标注，使用整页展示）",
+                )
+            else:
+                _start_stage(project, status, "ai_mask", "自动标注页面元素并构建 Reveal 场景")
+                slide_ids = _slide_ids(project)
+                if not slide_ids:
+                    raise RuntimeError("AI Mask 标注前未找到可处理的 slide")
+                existing_mask_count = _existing_mask_count(project, slide_ids)
+                annotation_settings = {
+                    # Re-run automatically generated Masks on resume, while
+                    # preserving deliberate manual painting and locked groups.
+                    "overwrite_existing_manual_mask": False,
+                    "overwrite_existing_ai_mask": True,
+                    "skip_locked_groups": True,
+                }
+                result = _require_quality_gate(
+                    lambda: services.annotate_ai_mask(
+                        {"settings": annotation_settings, "slide_ids": slide_ids}
+                    ),
+                    "Step 5 AI Mask annotate",
+                    gates,
+                    "pause_on_ai_mask_low_confidence",
+                )
+                quality_errors = _ai_mask_quality_errors(result, existing_mask_count)
+                if quality_errors:
+                    retry_slide_ids = _ai_mask_failed_slide_ids(result, slide_ids)
+                    retry_result = _require_quality_gate(
+                        lambda: services.annotate_ai_mask(
+                            {"settings": annotation_settings, "slide_ids": retry_slide_ids}
+                        ),
+                        "Step 5 AI Mask retry",
+                        gates,
+                        "pause_on_ai_mask_low_confidence",
+                    )
+                    result = retry_result
+                    quality_errors = _ai_mask_quality_errors(
+                        retry_result,
+                        _existing_mask_count(project, retry_slide_ids),
+                    )
+                if quality_errors:
+                    raise QualityGateFailure(
+                        "；".join(quality_errors),
+                        pause=bool(gates.get("pause_on_ai_mask_low_confidence", True)),
+                    )
+                manifest_payload = _invoke(services.mask_manifest, "AI Mask scene manifest")
+                if manifest_payload.get("repair", {}).get("required"):
+                    manifest_payload = _invoke(
+                        services.repair_mask_manifest,
+                        "AI Mask scene repair",
+                    )
+                manifest = manifest_payload.get("manifest")
+                if not isinstance(manifest, dict):
+                    raise RuntimeError("AI Mask 场景清单返回为空")
+                _invoke(lambda: services.build_mask_assets(manifest), "Build AI Mask scenes")
+                updated = _safe_int(result.get("updated_group_count"), 0)
+                _finish_stage(
+                    project,
+                    status,
+                    "ai_mask",
+                    f"AI Mask 标注已完成，更新 {updated} 个语义元素",
+                )
+            if _pause_at_stage_boundary(project, status, project_id):
+                return
+            if _pause_for_requested_review(project, status, "ai_mask"):
+                return
 
         if should_run("narration"):
             _start_stage(project, status, "narration", "生成或复用演讲稿")

@@ -20,11 +20,22 @@ animation = {
 }
 assert slide_duration(audio, animation, Path("slide_001")) == round(3.0 + DEFAULT_AUDIO_TAIL_PADDING_SEC, 3)
 
-long_animation = {
-    "duration_sec": 4.5,
+static_scene_fallback = {
+    # Static full-slide scenes historically carry this compatibility fallback,
+    # but it must never create silence after a short voice-over.
+    "duration_sec": 12.0,
     "events": [],
 }
-assert slide_duration(audio, long_animation, Path("slide_001")) == 4.5
+assert slide_duration(audio, static_scene_fallback, Path("slide_001")) == round(
+    3.0 + DEFAULT_AUDIO_TAIL_PADDING_SEC,
+    3,
+)
+
+long_reveal_animation = {
+    "duration_sec": 4.5,
+    "events": [{"id": "e2", "target": "layer", "action": "fade_in", "at": 4.0, "duration": 0.5}],
+}
+assert slide_duration(audio, long_reveal_animation, Path("slide_001")) == 4.5
 
 short_timeline = {
     "duration_sec": 3.0,

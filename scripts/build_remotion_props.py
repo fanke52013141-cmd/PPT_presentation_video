@@ -454,13 +454,23 @@ def align_audio_timeline_to_voice(audio_timeline: dict[str, Any], voice_path: Pa
 
 
 def slide_duration(audio_timeline: dict[str, Any], animation_timeline: dict[str, Any], slide_dir: Path) -> float:
+    """Resolve the rendered slide duration from audible content and real reveals.
+
+    Static full-slide scenes intentionally retain a positive ``duration_sec`` in
+    ``animation_timeline.json`` for artifact compatibility.  That value is a
+    scene-builder fallback (historically 12 seconds), not an animation that
+    needs screen time.  Only a timeline with actual reveal events may extend a
+    slide beyond its voice duration and tail padding.
+    """
     audio_end = max(
         optional_duration(audio_timeline.get("duration_sec")),
         max_segment_end(audio_timeline),
     )
-    animation_end = max(
-        optional_duration(animation_timeline.get("duration_sec")),
-        max_event_end(animation_timeline),
+    reveal_end = max_event_end(animation_timeline)
+    animation_end = (
+        max(optional_duration(animation_timeline.get("duration_sec")), reveal_end)
+        if reveal_end > 0
+        else 0.0
     )
     duration = max(
         animation_end,

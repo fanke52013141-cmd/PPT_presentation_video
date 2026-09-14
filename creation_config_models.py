@@ -40,6 +40,7 @@ class CreationConfigVersionCreate(BaseModel):
 class CreationConfigUpdate(BaseModel):
     """Replace the current content of one reusable configuration package."""
 
+    name: str | None = None
     payload: dict[str, Any]
 
 

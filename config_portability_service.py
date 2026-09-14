@@ -232,12 +232,83 @@ def _account_owned_items(value: Any, collection_key: str) -> Dict[str, Any]:
     }
 
 
-def _export_reusable_config(*, contains_secrets: bool) -> Dict[str, Any]:
+def _global_model_items(value: Any) -> Dict[str, Any]:
+    """Export the single shared registry without legacy account ownership."""
+    if not isinstance(value, dict) or not isinstance(value.get("connections"), dict):
+        return {}
+    result: Dict[str, Any] = {}
+    for item_id, item in value["connections"].items():
+        if not isinstance(item, dict):
+            continue
+        exported = deepcopy(item)
+        exported.pop("account_id", None)
+        result[str(item_id)] = exported
+    return result
+
+
+def _global_model_credential_refs(models: Any) -> set[str]:
+    if not isinstance(models, dict):
+        return set()
+    connections = models.get("connections")
+    if not isinstance(connections, dict):
+        return set()
+    references: set[str] = set()
+    for connection in connections.values():
+        if not isinstance(connection, dict):
+            continue
+        revisions = connection.get("revisions")
+        if isinstance(revisions, list):
+            for revision in revisions:
+                if isinstance(revision, dict):
+                    reference = str(revision.get("credential_ref") or "").strip()
+                    if reference:
+                        references.add(reference)
+        # Early portable bundles stored this field directly on the connection.
+        reference = str(connection.get("credential_ref") or "").strip()
+        if reference:
+            references.add(reference)
+    return references
+
+
+def _global_credential_items(credentials: Any, models: Any) -> Dict[str, Any]:
+    if not isinstance(credentials, dict) or not isinstance(credentials.get("credentials"), dict):
+        return {}
+    references = _global_model_credential_refs(models)
+    result: Dict[str, Any] = {}
+    for reference, item in credentials["credentials"].items():
+        if not isinstance(item, dict):
+            continue
+        is_global = (
+            str(item.get("scope") or "account") == "global"
+            or str(reference) in references
+        )
+        if not is_global:
+            continue
+        exported = deepcopy(item)
+        exported["scope"] = "global"
+        result[str(reference)] = exported
+    return result
+
+
+def _account_private_items(value: Any, collection_key: str) -> Dict[str, Any]:
+    return {
+        item_id: item
+        for item_id, item in _account_owned_items(value, collection_key).items()
+        if str(item.get("scope") or "account") != "global"
+    }
+
+
+def _export_reusable_config(
+    *,
+    contains_secrets: bool,
+    include_global_models: bool = True,
+) -> Dict[str, Any]:
     """Export the new model/config stores without leaking secrets by default."""
     dependencies = _deps()
+    raw_models: Any = {"version": "model_connections_v2", "connections": {}}
     result: Dict[str, Any] = {
         "account_id": get_current_account_id(),
-        "models": {"version": "model_connections_v1", "connections": {}},
+        "models": {"version": "model_connections_v2", "connections": {}},
         "creation_configs": {
             "version": "creation_config_store_v1", "packages": {}
         },
@@ -261,8 +332,8 @@ def _export_reusable_config(*, contains_secrets: bool) -> Dict[str, Any]:
             {"version": "model_connections_v1", "connections": {}},
         )
         result["models"] = {
-            "version": "model_connections_v1",
-            "connections": _account_owned_items(raw_models, "connections"),
+            "version": "model_connections_v2",
+            "connections": _global_model_items(raw_models) if include_global_models else {},
         }
     if dependencies.creation_configs_path:
         raw_configs = dependencies.read_json_file(
@@ -278,9 +349,13 @@ def _export_reusable_config(*, contains_secrets: bool) -> Dict[str, Any]:
             dependencies.credentials_path,
             {"version": CREDENTIAL_STORE_VERSION, "credentials": {}},
         )
+        credential_items = (
+            _global_credential_items(raw_credentials, raw_models)
+            if include_global_models else _account_private_items(raw_credentials, "credentials")
+        )
         result["credentials"] = {
             "version": CREDENTIAL_STORE_VERSION,
-            "credentials": _account_owned_items(raw_credentials, "credentials"),
+            "credentials": credential_items,
             "included": True,
         }
     else:
@@ -302,7 +377,10 @@ def _export_reusable_config(*, contains_secrets: bool) -> Dict[str, Any]:
                     "updated_at": item.get("updated_at"),
                     "account_id": item.get("account_id"),
                 }
-                for ref, item in _account_owned_items(raw_credentials, "credentials").items()
+                for ref, item in (
+                    _global_credential_items(raw_credentials, raw_models)
+                    if include_global_models else _account_private_items(raw_credentials, "credentials")
+                ).items()
             }
     return result
 
@@ -317,7 +395,10 @@ def _export_account_entry(
     if not account_id:
         return None
     with account_scope(account_id):
-        reusable = _export_reusable_config(contains_secrets=contains_secrets)
+        reusable = _export_reusable_config(
+            contains_secrets=contains_secrets,
+            include_global_models=False,
+        )
     return {
         "id": account_id,
         "name": account.get("name"),
@@ -451,8 +532,8 @@ def validate_config_references(payload: Dict[str, Any]) -> None:
             )
 
 
-def _import_reusable_config(payload: Any) -> None:
-    """Restore reusable stores into the current account, preserving IDs."""
+def _import_reusable_config(payload: Any, *, import_global_models: bool = True) -> None:
+    """Restore account packages plus the single shared model registry."""
     if not isinstance(payload, dict):
         return
     dependencies = _deps()
@@ -464,15 +545,15 @@ def _import_reusable_config(payload: Any) -> None:
         )
 
     models = payload.get("models")
-    if dependencies.model_connections_path and isinstance(models, dict):
+    if import_global_models and dependencies.model_connections_path and isinstance(models, dict):
         connections = models.get("connections")
         if isinstance(connections, dict):
             existing = dependencies.read_json_file(
                 dependencies.model_connections_path,
-                {"version": "model_connections_v1", "connections": {}},
+                {"version": "model_connections_v2", "connections": {}},
             )
             if not isinstance(existing, dict):
-                existing = {"version": "model_connections_v1", "connections": {}}
+                existing = {"version": "model_connections_v2", "connections": {}}
             target = existing.setdefault("connections", {})
             if not isinstance(target, dict):
                 target = {}
@@ -481,9 +562,9 @@ def _import_reusable_config(payload: Any) -> None:
                 if not isinstance(item, dict):
                     continue
                 imported = dict(item)
-                imported["account_id"] = current_account_id
+                imported.pop("account_id", None)
                 target[str(item_id)] = imported
-            existing["version"] = "model_connections_v1"
+            existing["version"] = "model_connections_v2"
             dependencies.write_json_atomic(dependencies.model_connections_path, existing)
 
     creation_configs = payload.get("creation_configs")
@@ -531,7 +612,10 @@ def _import_reusable_config(payload: Any) -> None:
                 if not isinstance(item, dict) or not isinstance(item.get("secret_values"), dict):
                     continue
                 imported = dict(item)
-                imported["account_id"] = current_account_id
+                if str(imported.get("scope") or "account") == "global":
+                    imported["scope"] = "global"
+                else:
+                    imported["account_id"] = current_account_id
                 target[str(reference)] = imported
             existing["version"] = CREDENTIAL_STORE_VERSION
             dependencies.write_json_atomic(dependencies.credentials_path, existing)
@@ -588,9 +672,7 @@ def _import_accounts_reusable_configs(accounts: List[Dict[str, Any]]) -> None:
         if not account_id or not isinstance(reusable, dict):
             continue
         with account_scope(account_id):
-            # Inside the account scope the existing importer keeps every
-            # record's exported account_id, so ownership is preserved 1:1.
-            _import_reusable_config(reusable)
+            _import_reusable_config(reusable, import_global_models=False)
 
 
 def _account_credentials_included(account: Dict[str, Any]) -> bool:
@@ -644,10 +726,9 @@ def import_full_config(payload: Dict[str, Any]) -> Dict[str, Any]:
     )
     imported_accounts = _upsert_imported_accounts(accounts_payload)
     if imported_accounts:
-        # Multi-account bundle: restore every account's scoped stores inside
-        # that account's own context.  The top-level reusable_config snapshot
-        # exists for older importers and is skipped here so a foreign
-        # current-account snapshot can never overwrite this machine's stores.
+        # The top-level model registry is global and therefore imported once.
+        # Each account entry contains only its own packages/private credentials.
+        _import_reusable_config(payload.get("reusable_config"))
         _import_accounts_reusable_configs(imported_accounts)
     else:
         # Legacy version 2 bundle (or a v3 bundle without account rows):

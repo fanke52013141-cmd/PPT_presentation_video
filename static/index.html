@@ -922,22 +922,26 @@
         <div id="creation-config-management-body" class="creation-config-management-body">
           <section class="soft-outline" style="padding:1rem; border-radius:12px;">
             <h4 style="margin-top:0;">创作配置包</h4>
-            <div id="creation-config-default-package-slot"></div>
-            <label style="display:block; margin-bottom:0.55rem;">配置包名称<input id="creation-config-package-name" type="text" maxlength="80" placeholder="例如：科普账号长视频"></label>
-            <label id="creation-config-save-as-name" class="creation-config-save-as-field" hidden>新配置名称<input type="text" maxlength="80" placeholder="例如：科普账号长视频 副本"></label>
+            <section class="creation-config-existing-packages" aria-labelledby="creation-config-existing-packages-title">
+              <div class="creation-config-package-section-heading">
+                <h5 id="creation-config-existing-packages-title">已有配置包</h5>
+              </div>
+              <div id="creation-config-package-list"></div>
+            </section>
+            <label class="creation-config-name-field" for="creation-config-package-name">当前配置包名称<input id="creation-config-package-name" type="text" maxlength="80" placeholder="例如：科普账号长视频" aria-describedby="creation-config-editing-status"></label>
             <p id="creation-config-editing-status" class="config-editor-note" aria-live="polite" hidden></p>
-            <nav class="creation-config-tabs" aria-label="创作配置分类">
-              <button type="button" class="is-active" data-creation-config-tab="models">基础与模型</button>
-              <button type="button" data-creation-config-tab="visual">视觉与风格</button>
-              <button type="button" data-creation-config-tab="output">输出与交付</button>
-              <button type="button" data-creation-config-tab="prompts">提示词工程</button>
+            <nav class="creation-config-tabs" role="tablist" aria-label="创作配置分类">
+              <button id="creation-config-tab-models" type="button" role="tab" class="is-active" aria-controls="creation-config-panel-models" aria-selected="true" tabindex="0" data-creation-config-tab="models">基础与模型</button>
+              <button id="creation-config-tab-visual" type="button" role="tab" aria-controls="creation-config-panel-visual" aria-selected="false" tabindex="-1" data-creation-config-tab="visual">视觉与风格</button>
+              <button id="creation-config-tab-output" type="button" role="tab" aria-controls="creation-config-panel-output" aria-selected="false" tabindex="-1" data-creation-config-tab="output">输出与交付</button>
+              <button id="creation-config-tab-prompts" type="button" role="tab" aria-controls="creation-config-panel-prompts" aria-selected="false" tabindex="-1" data-creation-config-tab="prompts">提示词工程</button>
             </nav>
             <div id="creation-config-structured-editor" class="creation-config-structured-editor">
-              <section class="creation-config-section" data-creation-config-panel="models">
+              <section id="creation-config-panel-models" class="creation-config-section" role="tabpanel" aria-labelledby="creation-config-tab-models" data-creation-config-panel="models">
                 <h5>模型关联</h5>
                 <div id="creation-config-model-binding-fields" class="creation-config-model-binding-fields"></div>
               </section>
-              <section class="creation-config-section creation-config-image-style-section" data-creation-config-panel="visual">
+              <section id="creation-config-panel-visual" class="creation-config-section creation-config-image-style-section" role="tabpanel" aria-labelledby="creation-config-tab-visual" data-creation-config-panel="visual">
                 <div class="creation-config-section-heading">
                   <h5>图片风格</h5>
                   <div>
@@ -968,7 +972,7 @@
                   <label class="creation-config-mode-card"><input type="radio" name="creation-config-automation-mode" value="manual"><span><strong>手动模式</strong><small>创建后进入第 1 步；图片、AI Mask、旁白与数字人等环节由你逐项完成。</small></span></label>
                 </div>
               </section>
-              <section class="creation-config-section creation-config-section--options" data-creation-config-panel="output">
+              <section id="creation-config-panel-output" class="creation-config-section creation-config-section--options" role="tabpanel" aria-labelledby="creation-config-tab-output" data-creation-config-panel="output">
                 <div class="creation-config-option-group creation-config-output-group">
                   <h5>输出设置</h5>
                   <div class="creation-config-options-row creation-config-output-options" aria-label="输出类型">
@@ -1030,6 +1034,13 @@
                         <label class="creation-config-check"><input type="radio" name="creation-config-narration-annotation" value="true"> 需要 AI 标注</label>
                       </div>
                     </div>
+                    <div>
+                      <h6>AI Mask 标注</h6>
+                      <div class="creation-config-options-row" role="radiogroup" aria-label="是否需要 AI 做元素 Mask 标注">
+                        <label class="creation-config-check"><input type="radio" name="creation-config-mask-annotation" value="false" checked> 不需要（默认）</label>
+                        <label class="creation-config-check"><input type="radio" name="creation-config-mask-annotation" value="true"> 需要 AI 标注</label>
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div class="creation-config-option-group creation-config-option-group--runtime creation-config-concurrency-group">
@@ -1045,7 +1056,7 @@
                   <label class="creation-config-render-field" aria-label="渲染方式"><select id="creation-config-render-acceleration"><option value="auto">自动检测 GPU（推荐）</option><option value="gpu">仅使用 GPU</option><option value="cpu">仅使用 CPU</option></select></label>
                 </div>
               </section>
-              <section class="creation-config-section creation-config-prompts-section" data-creation-config-panel="prompts">
+              <section id="creation-config-panel-prompts" class="creation-config-section creation-config-prompts-section" role="tabpanel" aria-labelledby="creation-config-tab-prompts" data-creation-config-panel="prompts">
                 <h5>Prompt</h5>
                 <p class="config-editor-note">所有步骤默认展开，方便一次性审阅和编辑；没有输出示例时保持为空。</p>
                 <div id="creation-config-prompt-fields" class="creation-config-prompt-fields"></div>
@@ -1060,10 +1071,8 @@
             <div class="creation-config-package-actions">
               <button id="btn-cancel-creation-config-edit" class="secondary" type="button">放弃修改</button>
               <button id="btn-prepare-save-creation-config-as" class="secondary" type="button">另存为新配置</button>
-              <button id="btn-save-creation-config-as" class="secondary" type="button" hidden>确认另存</button>
               <button id="btn-create-creation-config" class="success" type="button">保存当前修改</button>
             </div>
-            <div id="creation-config-package-list"></div>
           </section>
         </div>
       </div>
@@ -1583,7 +1592,7 @@
   <script src="prompt_help.js?v=20260801.1"></script>
   <script src="settings.js?v=20260907.1"></script>
   <script src="projects.js?v=20260906.1"></script>
-  <script src="creation_config_management.js?v=20260913.5"></script>
+  <script src="creation_config_management.js?v=20260914.1"></script>
   <script src="select_menus.js?v=20260906.1"></script>
   <script src="courses.js?v=20260913.2"></script>
   <script src="article.js?v=20260801.1"></script>

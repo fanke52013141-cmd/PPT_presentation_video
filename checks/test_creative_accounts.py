@@ -85,7 +85,7 @@ def test_projects_are_isolated_by_request_account(tmp_path: Path) -> None:
         engine.dispose()
 
 
-def test_account_scopes_isolate_creation_configs_connections_and_credentials() -> None:
+def test_account_scopes_isolate_packages_and_credentials_but_share_models() -> None:
     class Store:
         def __init__(self, value):
             self.value = value
@@ -123,6 +123,7 @@ def test_account_scopes_isolate_creation_configs_connections_and_credentials() -
             write_registry=connection_store.write,
             now=lambda: __import__("datetime").datetime(2026, 9, 4),
             new_id=lambda: "connection-a",
+            promote_credential_ref=credential_store.promote_credential_for_global_connection,
         )
     )
     try:
@@ -131,17 +132,17 @@ def test_account_scopes_isolate_creation_configs_connections_and_credentials() -
             package = creation_config_service.create_creation_config(
                 name="A 配置", payload=package_payload
             )
+            credential = credential_store.create_credential(
+                provider="openai", label="A 密钥", secret_values={"api_key": "private-a"}
+            )
             connection = model_connection_service.create_model_connection(
                 ModelConnectionCreate(
                     name="A 文本",
                     kind="text",
                     provider="openai_compatible",
                     model="model-a",
-                    credential_ref="credential://secret-a",
+                    credential_ref=credential["credential_ref"],
                 )
-            )
-            credential = credential_store.create_credential(
-                provider="openai", label="A 密钥", secret_values={"api_key": "private-a"}
             )
             assert package["account_id"] == "acct_a"
             assert connection["id"] == "connection-a"
@@ -149,14 +150,16 @@ def test_account_scopes_isolate_creation_configs_connections_and_credentials() -
 
         with account_scope("acct_b"):
             assert creation_config_service.list_creation_configs() == []
-            assert model_connection_service.list_model_connections() == []
+            assert [item["id"] for item in model_connection_service.list_model_connections()] == [
+                connection["id"]
+            ]
             assert credential_store.list_credentials() == []
             with pytest.raises(creation_config_service.CreationConfigNotFound):
                 creation_config_service.get_creation_config(package["id"])
-            with pytest.raises(model_connection_service.ModelConnectionNotFoundError):
-                model_connection_service.get_model_connection(connection["id"])
-            with pytest.raises(credential_store.CredentialNotFound):
-                credential_store.get_credential(credential["credential_ref"])
+            assert model_connection_service.get_model_connection(connection["id"])["id"] == connection["id"]
+            assert credential_store.get_credential(credential["credential_ref"]) == {
+                "api_key": "private-a"
+            }
     finally:
         creation_config_service._dependencies = old_config
         credential_store._dependencies = old_credentials
@@ -193,7 +196,7 @@ def test_account_routes_reject_unbound_initial_default_and_invalid_target_packag
     assert config_error.value.status_code == 422
 
 
-def test_provisioned_account_gets_isolated_models_credentials_and_style_package(
+def test_provisioned_account_reuses_global_models_and_keeps_account_package(
     tmp_path: Path,
 ) -> None:
     class Store:
@@ -215,8 +218,8 @@ def test_provisioned_account_gets_isolated_models_credentials_and_style_package(
     credentials_store = Store({"version": credential_store.STORE_VERSION, "credentials": {}})
     connection_store = Store({"version": model_connection_service.REGISTRY_VERSION, "connections": {}})
     config_ids = iter(("pkg-source", "pkg-target"))
-    credential_ids = iter(("secret-source-text", "secret-source-tts", "secret-target-text", "secret-target-tts"))
-    connection_ids = iter(("text-source", "tts-source", "text-target", "tts-target"))
+    credential_ids = iter(("secret-source-text", "secret-source-tts"))
+    connection_ids = iter(("text-source", "tts-source"))
     creation_config_service.configure_creation_config_dependencies(
         creation_config_service.CreationConfigDependencies(
             store=config_store,
@@ -238,6 +241,7 @@ def test_provisioned_account_gets_isolated_models_credentials_and_style_package(
             write_registry=connection_store.write,
             now=lambda: __import__("datetime").datetime(2026, 9, 7),
             new_id=lambda: next(connection_ids),
+            promote_credential_ref=credential_store.promote_credential_for_global_connection,
         )
     )
     try:
@@ -306,7 +310,7 @@ def test_provisioned_account_gets_isolated_models_credentials_and_style_package(
             )
 
         target_id = result["account"]["id"]
-        assert result["copied_model_count"] == 2
+        assert result["copied_model_count"] == 0
         assert result["account"]["default_creation_config"] == {
             "package_id": result["package"]["id"],
             "version": 1,
@@ -316,19 +320,19 @@ def test_provisioned_account_gets_isolated_models_credentials_and_style_package(
                 result["package"]["id"], 1
             )["payload"]
             target_connections = model_connection_service.list_model_connections()
-            assert {item["id"] for item in target_connections} == {"text-target", "tts-target"}
-            assert len(credential_store.list_credentials()) == 2
-            assert target_payload["model_bindings"]["article_generation"]["connection_id"] == "text-target"
-            assert target_payload["tts"]["connection"]["connection_id"] == "tts-target"
+            assert {item["id"] for item in target_connections} == {"text-source", "tts-source"}
+            assert credential_store.list_credentials() == []
+            assert target_payload["model_bindings"]["article_generation"]["connection_id"] == "text-source"
+            assert target_payload["tts"]["connection"]["connection_id"] == "tts-source"
             assert target_payload["tts"]["voice_id"] == "target-voice"
             assert target_payload["image_style"]["template_id"] == "light_teaching"
             assert target_payload["prompts"]["storyboard"]["system_content"] == "target prompt"
-            tts_connection = model_connection_service.resolve_model_connection("tts-target")
+            tts_connection = model_connection_service.resolve_model_connection("tts-source")
             assert credential_store.get_credential(tts_connection.credential_ref) == {
                 "api_key": "source-tts-secret"
             }
         with account_scope("default"):
-            assert model_connection_service.resolve_model_connection("tts-source").credential_ref != "credential://secret-target-tts"
+            assert model_connection_service.resolve_model_connection("tts-source").credential_ref == tts_secret["credential_ref"]
             assert creation_config_service.get_creation_config_version(source["id"], 1)["payload"]["tts"]["voice_id"] == "source-voice"
     finally:
         creation_config_service._dependencies = old_config

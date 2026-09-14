@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import creation_config_service as service  # noqa: E402
+import creation_config_routes as routes  # noqa: E402
 
 
 class MemoryStore:
@@ -26,6 +27,31 @@ class MemoryStore:
 
     def write(self, value: dict[str, Any]) -> None:
         self.value = deepcopy(value)
+
+
+class _DefaultConfigQuery:
+    def __init__(self, account: Any) -> None:
+        self.account = account
+
+    def filter(self, *_args: Any) -> "_DefaultConfigQuery":
+        return self
+
+    def first(self) -> Any:
+        return self.account
+
+
+class _DefaultConfigDb:
+    def __init__(self, account: Any) -> None:
+        self.account = account
+
+    def query(self, *_args: Any) -> _DefaultConfigQuery:
+        return _DefaultConfigQuery(self.account)
+
+    def commit(self) -> None:
+        return None
+
+    def refresh(self, _account: Any) -> None:
+        return None
 
 
 @pytest.fixture(autouse=True)
@@ -92,6 +118,7 @@ def test_package_preserves_validated_automation_concurrency() -> None:
     configured["automation"]["image_concurrency"] = 5
     configured["automation"]["mode"] = "auto"
     configured["automation"]["ai_narration_annotation"] = False
+    configured["automation"]["ai_mask_annotation"] = True
     configured["tts"]["concurrency"] = 10
     configured["tts"]["requests_per_minute"] = 20
     configured["render"] = {"acceleration": "gpu", "output_formats": ["video", "pptx"]}
@@ -100,6 +127,7 @@ def test_package_preserves_validated_automation_concurrency() -> None:
 
     assert normalized["automation"]["image_concurrency"] == 5
     assert normalized["automation"]["ai_narration_annotation"] is False
+    assert normalized["automation"]["ai_mask_annotation"] is True
     assert normalized["tts"]["concurrency"] == 10
     assert normalized["tts"]["requests_per_minute"] == 20
     assert normalized["render"]["acceleration"] == "gpu"
@@ -111,6 +139,14 @@ def test_automation_annotation_switch_requires_a_boolean() -> None:
     configured["automation"]["ai_narration_annotation"] = "yes"
 
     with pytest.raises(service.CreationConfigValidationError, match="ai_narration_annotation"):
+        service.validate_payload(configured)
+
+
+def test_automation_mask_annotation_switch_requires_a_boolean() -> None:
+    configured = payload()
+    configured["automation"]["ai_mask_annotation"] = "yes"
+
+    with pytest.raises(service.CreationConfigValidationError, match="ai_mask_annotation"):
         service.validate_payload(configured)
 
 
@@ -183,6 +219,42 @@ def test_archived_package_is_hidden_and_cannot_resolve() -> None:
         service.resolve_creation_config(created["id"])
     with pytest.raises(service.CreationConfigConflict, match="归档"):
         service.create_creation_config_version(created["id"], payload=payload())
+
+
+def test_delete_logically_archives_package_and_preserves_its_snapshot() -> None:
+    created = service.create_creation_config(name="配置", payload=payload())
+    version = service.get_creation_config_version(created["id"])
+
+    deleted = service.delete_creation_config(created["id"])
+
+    assert deleted["archived"] is True
+    assert service.get_creation_config_version(created["id"])["payload"] == version["payload"]
+    assert service.list_creation_configs() == []
+
+
+def test_delete_route_archives_the_current_account_default_package_and_clears_default() -> None:
+    created = service.create_creation_config(name="默认配置", payload=payload())
+    account = type(
+        "AccountStub",
+        (),
+        {
+            "id": "default",
+            "name": "默认账号",
+            "description": "",
+            "status": "active",
+            "created_at": None,
+            "default_creation_config_package_id": created["id"],
+            "default_creation_config_version": 1,
+        },
+    )()
+
+    result = routes.delete_creation_config(created["id"], db=_DefaultConfigDb(account))
+
+    assert result["success"] is True
+    assert result["default_cleared"] is True
+    assert account.default_creation_config_package_id is None
+    assert account.default_creation_config_version is None
+    assert service.get_creation_config(created["id"])["archived"] is True
 
 
 def test_import_rejects_secret_and_response_redaction_is_defensive() -> None:

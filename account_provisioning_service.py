@@ -1,9 +1,8 @@
 """Provision a ready-to-create account from the current local account.
 
-The account layer deliberately isolates model connections and credentials.
-This service creates fresh connection and credential references for a target
-account, then rewrites the copied creation-package bindings to those fresh
-references.  It never exposes a secret in a response payload.
+Model connections are global resources.  New accounts receive an account-local
+creation package that retains the source package's connection IDs; credentials
+are never copied or returned by this service.
 """
 
 from __future__ import annotations
@@ -14,16 +13,13 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from account_context import account_scope, get_current_account_id
-from account_service import create_account, get_account, set_default_creation_config
+from account_service import create_account, set_default_creation_config
 from database import Account
-from credential_store import create_credential, get_credential
 from creation_config_service import (
     create_creation_config,
     get_creation_config_version,
 )
-from model_connection_models import ModelConnectionCreate
 from model_connection_service import (
-    create_model_connection,
     resolve_model_connection,
 )
 
@@ -53,35 +49,6 @@ def _connection_references(payload: dict[str, Any]) -> dict[str, int]:
         if connection_id and isinstance(revision, int) and revision > 0:
             references[connection_id] = revision
     return references
-
-
-def _rewrite_connection_references(
-    payload: dict[str, Any],
-    mapping: dict[str, dict[str, Any]],
-) -> None:
-    bindings = payload.get("model_bindings")
-    if isinstance(bindings, dict):
-        for key, item in bindings.items():
-            if not isinstance(item, dict):
-                continue
-            source_id = str(item.get("connection_id") or "").strip()
-            target = mapping.get(source_id)
-            if target is None:
-                raise AccountProvisioningError(
-                    f"配置包的模型连接无法复制: {key}"
-                )
-            item["connection_id"] = target["connection_id"]
-            item["revision"] = target["revision"]
-
-    tts = payload.get("tts")
-    connection = tts.get("connection") if isinstance(tts, dict) else None
-    if isinstance(connection, dict):
-        source_id = str(connection.get("connection_id") or "").strip()
-        target = mapping.get(source_id)
-        if target is None:
-            raise AccountProvisioningError("配置包的语音模型连接无法复制")
-        connection["connection_id"] = target["connection_id"]
-        connection["revision"] = target["revision"]
 
 
 def _set_style_and_persona(
@@ -125,14 +92,8 @@ def provision_account_from_current(
     voice_id: str,
     storyboard_system_content: str,
 ) -> dict[str, Any]:
-    """Create a fully runnable account by copying one current-account package.
-
-    The source package must already resolve in the caller's account.  Credential
-    values move only from the local credential store to a new local credential
-    reference; returned values contain account/package/model metadata only.
-    """
+    """Create an account package while retaining globally shared models."""
     source_account_id = get_current_account_id()
-    source_account = get_account(db, source_account_id)
     normalized_name = str(name or "").strip()
     if not normalized_name:
         raise AccountProvisioningError("账号名称不能为空")
@@ -155,29 +116,13 @@ def provision_account_from_current(
         if not isinstance(source_payload, dict):
             raise AccountProvisioningError("来源创作配置没有有效内容")
 
-        source_connections: list[dict[str, Any]] = []
         for connection_id, revision in _connection_references(source_payload).items():
             try:
-                connection = resolve_model_connection(connection_id, revision)
+                resolve_model_connection(connection_id, revision)
             except Exception as exc:
                 raise AccountProvisioningError(
                     f"来源模型连接不可用: {connection_id}"
                 ) from exc
-            secrets: dict[str, Any] | None = None
-            if connection.credential_ref:
-                try:
-                    secrets = get_credential(connection.credential_ref)
-                except Exception as exc:
-                    raise AccountProvisioningError(
-                        f"来源模型凭据不可用: {connection_id}"
-                    ) from exc
-            source_connections.append(
-                {
-                    "source_id": connection_id,
-                    "connection": connection,
-                    "secrets": secrets,
-                }
-            )
 
     account = create_account(
         db,
@@ -185,36 +130,8 @@ def provision_account_from_current(
         description=str(description or "").strip(),
     )
     target_account_id = str(account["id"])
-    connection_mapping: dict[str, dict[str, Any]] = {}
     with account_scope(target_account_id):
-        for item in source_connections:
-            connection = item["connection"]
-            credential_ref: str | None = None
-            if isinstance(item["secrets"], dict):
-                credential = create_credential(
-                    provider=connection.provider,
-                    label=f"{normalized_name} · {connection.kind} 模型凭据",
-                    secret_values=item["secrets"],
-                )
-                credential_ref = str(credential["credential_ref"])
-            copied = create_model_connection(
-                ModelConnectionCreate(
-                    name=f"{normalized_name} · {connection.kind} 模型",
-                    kind=connection.kind,
-                    provider=connection.provider,
-                    model=connection.model,
-                    endpoint=connection.endpoint,
-                    credential_ref=credential_ref,
-                    public_config=dict(connection.public_config),
-                )
-            )
-            connection_mapping[item["source_id"]] = {
-                "connection_id": copied["id"],
-                "revision": copied["current_revision"],
-            }
-
         target_payload = deepcopy(source_payload)
-        _rewrite_connection_references(target_payload, connection_mapping)
         _set_style_and_persona(
             target_payload,
             image_style_template_id=str(image_style_template_id or "").strip(),
@@ -237,5 +154,5 @@ def provision_account_from_current(
     return {
         "account": account,
         "package": package,
-        "copied_model_count": len(connection_mapping),
+        "copied_model_count": 0,
     }

@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+
+from account_context import get_current_account_id
+from account_service import set_default_creation_config
+from database import Account, get_db
 
 from creation_config_models import (
     CreationConfigArchive,
@@ -163,6 +168,43 @@ def archive_creation_config(
             ),
         }
     )
+
+
+@router.delete("/api/creation-configs/{package_id}")
+def delete_creation_config(
+    package_id: str,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Remove a package from future selection while retaining project history."""
+
+    def operation() -> dict[str, Any]:
+        # Resolve ownership before checking the database so a guessed package
+        # ID never reveals another account's default configuration.
+        package = service.get_creation_config(package_id)
+        account = db.query(Account).filter(Account.id == get_current_account_id()).first()
+        deleted = service.delete_creation_config(package_id)
+        default_cleared = False
+        if (
+            account is not None
+            and account.default_creation_config_package_id == package["id"]
+        ):
+            # A deleted default must not leave the account pointing at an
+            # archived package.  The reusable package stays archived so
+            # historical project snapshots remain reproducible.
+            set_default_creation_config(db, account.id, None, None)
+            default_cleared = True
+        return {
+            "success": True,
+            "package": deleted,
+            "default_cleared": default_cleared,
+            "message": (
+                "创作包已删除，已清除当前账号默认创作包；已有项目的配置快照保持不变。"
+                if default_cleared
+                else "创作包已删除，不再用于新项目；已有项目的配置快照保持不变。"
+            ),
+        }
+
+    return _run(operation)
 
 
 @router.post("/api/creation-configs/{package_id}/resolve")

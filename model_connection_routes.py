@@ -91,3 +91,11 @@ def update_model_connection_state(
     except Exception as exc:
         _raise_http_error(exc)
 
+
+@router.delete("/{connection_id}")
+def delete_model_connection(connection_id: str) -> dict[str, Any]:
+    try:
+        return service.delete_model_connection(connection_id)
+    except Exception as exc:
+        _raise_http_error(exc)
+

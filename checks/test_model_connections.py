@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from dataclasses import replace
 from pathlib import Path
 import sys
 from typing import Any
@@ -201,3 +202,82 @@ def test_routes_translate_archive_conflict_without_exposing_secret(
         )
     assert exc_info.value.status_code == 409
     assert "credential" not in str(exc_info.value.detail).lower()
+
+
+def test_legacy_account_connections_are_migrated_to_one_global_registry(
+    registry: dict[str, Any],
+) -> None:
+    registry["value"] = {
+        "version": "model_connections_v1",
+        "connections": {
+            "legacy-global": {
+                "id": "legacy-global",
+                "name": "历史共享模型",
+                "kind": "text",
+                "state": "active",
+                "current_revision": 1,
+                "created_at": "2026-09-04T09:30:00",
+                "updated_at": "2026-09-04T09:30:00",
+                "revisions": [{
+                    "revision": 1,
+                    "provider": "openai_compatible",
+                    "model": "writing-v1",
+                    "endpoint": None,
+                    "credential_ref": None,
+                    "public_config": {},
+                    "created_at": "2026-09-04T09:30:00",
+                }],
+                "account_id": "legacy-account",
+            }
+        },
+    }
+
+    assert service.list_model_connections()[0]["id"] == "legacy-global"
+    assert registry["value"]["version"] == service.REGISTRY_VERSION
+    assert "account_id" not in registry["value"]["connections"]["legacy-global"]
+
+
+def test_delete_archives_referenced_connection_and_returns_safe_history_result(
+    registry: dict[str, Any],
+) -> None:
+    created = service.create_model_connection(_text_connection())
+    dependencies = service._dependencies
+    assert dependencies is not None
+    service.configure_model_connection_dependencies(replace(
+        dependencies,
+        list_references=lambda connection_id: [{
+            "package_id": "city-blue",
+            "package_name": "城市政务纪实蓝",
+            "version": 2,
+            "account_id": "account-a",
+            "credential_ref": "credential://must-not-leak",
+        }] if connection_id == created["id"] else [],
+    ))
+
+    result = routes.delete_model_connection(created["id"])
+    assert result["deleted"] is True
+    assert result["state"] == "archived"
+    assert result["retained_for_history"] is True
+    assert result["references"] == [{
+        "package_id": "city-blue",
+        "package_name": "城市政务纪实蓝",
+        "version": 2,
+        "account_id": "account-a",
+    }]
+    assert "credential" not in repr(result)
+    assert service.list_model_connections() == []
+    assert service.resolve_model_connection(created["id"]).model == "writing-v1"
+
+
+def test_delete_archives_unreferenced_connection_for_safe_historical_resolution(registry: dict[str, Any]) -> None:
+    created = service.create_model_connection(_text_connection())
+    result = service.delete_model_connection(created["id"])
+    assert result == {
+        "id": created["id"],
+        "deleted": True,
+        "state": "archived",
+        "retained_for_history": True,
+        "references": [],
+    }
+    assert service.list_model_connections() == []
+    assert service.resolve_model_connection(created["id"]).model == "writing-v1"

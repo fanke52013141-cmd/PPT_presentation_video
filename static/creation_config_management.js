@@ -261,6 +261,10 @@
     return document.querySelector('input[name="creation-config-narration-annotation"]:checked')?.value === 'true';
   }
 
+  function maskAnnotationFromForm() {
+    return document.querySelector('input[name="creation-config-mask-annotation"]:checked')?.value === 'true';
+  }
+
   function updateAutomationControls() {
     const automatic = automationModeFromForm() === 'auto';
     const section = document.querySelector('.creation-config-auto-options');
@@ -596,6 +600,7 @@
     automation.mode = automationModeFromForm();
     automation.image_concurrency = imageConcurrency;
     automation.ai_narration_annotation = automation.mode === 'auto' && narrationAnnotationFromForm();
+    automation.ai_mask_annotation = automation.mode === 'auto' && maskAnnotationFromForm();
     if (automation.mode === 'auto' && pauseSteps.length) automation.manual_pause_steps = pauseSteps;
     else delete automation.manual_pause_steps;
     if (Object.keys(automation).length) payload.automation = automation;
@@ -637,6 +642,10 @@
       `input[name="creation-config-narration-annotation"][value="${automation.ai_narration_annotation === true ? 'true' : 'false'}"]`,
     );
     if (annotationControl) annotationControl.checked = true;
+    const maskAnnotationControl = document.querySelector(
+      `input[name="creation-config-mask-annotation"][value="${automation.ai_mask_annotation === true ? 'true' : 'false'}"]`,
+    );
+    if (maskAnnotationControl) maskAnnotationControl.checked = true;
     updateAutomationControls();
     setStringField('creation-config-image-concurrency', String(Math.max(1, Math.min(6, Number(automation.image_concurrency) || 5))));
     const render = objectValue(value.render);
@@ -681,12 +690,8 @@
     syncStructuredFieldsToJson();
     const submit = element('btn-create-creation-config');
     if (submit) submit.textContent = '保存当前修改';
-    const saveAsName = element('creation-config-save-as-name');
-    if (saveAsName) { saveAsName.hidden = true; saveAsName.value = ''; }
-    const saveAs = element('btn-save-creation-config-as');
-    if (saveAs) saveAs.hidden = true;
     const prepareSaveAs = element('btn-prepare-save-creation-config-as');
-    if (prepareSaveAs) prepareSaveAs.hidden = true;
+    if (prepareSaveAs) prepareSaveAs.hidden = false;
     const cancel = element('btn-cancel-creation-config-edit');
     if (cancel) { cancel.hidden = false; cancel.textContent = '放弃修改'; }
     const status = element('creation-config-editing-status');
@@ -695,62 +700,38 @@
 
   function renderPackages() {
     const target = element('creation-config-package-list');
-    const defaultSlot = element('creation-config-default-package-slot');
-    if (!target || !defaultSlot) return;
+    if (!target) return;
     target.replaceChildren();
-    defaultSlot.replaceChildren();
     if (!state.packages.length) {
       const empty = document.createElement('p');
       empty.className = 'config-editor-note';
-      empty.textContent = '暂无创作配置包。先完成一套默认配置后，可在这里复制出账号专属版本。';
+      empty.textContent = '暂无创作配置包。';
       target.append(empty);
       return;
     }
-    const defaultPackage = state.packages.find(item => item.id === state.defaultPackageId) || null;
-    const otherPackages = state.packages.filter(item => item.id !== state.defaultPackageId);
-    const createPackageCard = (packageItem, isDefault) => {
-      const visibleTags = Array.isArray(packageItem.tags)
-        ? packageItem.tags.filter(tag => !/(legacy|迁移|test|测试)/i.test(String(tag)))
-        : [];
-      const tags = visibleTags.length
-        ? ` · ${visibleTags.join('、')}`
-        : '';
+    const createPackageCard = packageItem => {
+      const isDefault = packageItem.id === state.defaultPackageId;
       const item = document.createElement('article');
-      item.className = `creation-config-package-card${isDefault ? ' is-default' : ''}`;
+      item.className = 'creation-config-package-card';
       const heading = document.createElement('div');
       heading.className = 'creation-config-package-card-heading';
       const title = document.createElement('strong');
       title.textContent = packageItem.name || '未命名配置包';
       heading.append(title);
-      const copy = document.createElement('p');
-      copy.className = 'creation-config-package-card-copy';
-      copy.textContent = tags ? tags.slice(3) : '提示词、模型关联与执行选项';
       const actions = document.createElement('div');
       actions.className = 'creation-config-package-card-actions';
-      const actionsToAppend = [
+      actions.append(
         button('编辑', 'secondary', () => editPackage(packageItem)),
         button('复制', 'secondary', () => copyPackage(packageItem)),
-      ];
-      if (!isDefault) {
-        actionsToAppend.push(button('设为默认', 'secondary', () => setDefaultPackage(packageItem)));
-      }
-      actions.append(...actionsToAppend);
-      item.append(heading, copy, actions);
+        button('删除', 'danger', () => deletePackage(packageItem, { isDefault })),
+      );
+      item.append(heading, actions);
       return item;
     };
-
-    if (defaultPackage) {
-      const featured = document.createElement('section');
-      featured.className = 'creation-config-default-package';
-      featured.append(createPackageCard(defaultPackage, true));
-      defaultSlot.append(featured);
-    }
-    if (otherPackages.length) {
-      const grid = document.createElement('div');
-      grid.className = 'creation-config-package-grid';
-      otherPackages.forEach(packageItem => grid.append(createPackageCard(packageItem, false)));
-      target.append(grid);
-    }
+    const grid = document.createElement('div');
+    grid.className = 'creation-config-package-grid';
+    state.packages.forEach(packageItem => grid.append(createPackageCard(packageItem)));
+    target.append(grid);
   }
 
   async function setDefaultPackage(packageItem) {
@@ -802,6 +783,7 @@
       const actions = document.createElement('div');
       actions.className = 'model-library-card-actions';
       actions.append(button('编辑', 'secondary', () => editModelConnection(connection)));
+      actions.append(button('删除', 'danger', () => deleteModelConnection(connection)));
       item.append(heading, actions);
       target.append(item);
     });
@@ -1026,7 +1008,7 @@
       state.editingVersion = Number(version.version);
       const name = element('creation-config-package-name');
       const payload = element('creation-config-package-payload');
-      if (name) { name.value = current.name || ''; name.readOnly = true; }
+      if (name) { name.value = current.name || ''; name.readOnly = false; }
       if (payload) payload.value = JSON.stringify(version.payload, null, 2);
       renderConnectionSelectors();
       loadPayloadIntoStructured(version.payload);
@@ -1037,10 +1019,6 @@
         status.hidden = false;
         status.textContent = '修改仅用于之后新建的视频；已经创建的视频不会受影响。';
       }
-      const saveAs = element('btn-save-creation-config-as');
-      if (saveAs) saveAs.hidden = true;
-      const saveAsName = element('creation-config-save-as-name');
-      if (saveAsName) { saveAsName.hidden = true; saveAsName.value = ''; }
       const prepareSaveAs = element('btn-prepare-save-creation-config-as');
       if (prepareSaveAs) prepareSaveAs.hidden = false;
       const cancel = element('btn-cancel-creation-config-edit');
@@ -1085,7 +1063,7 @@
     if (submit) submit.disabled = true;
     try {
       if (state.editingPackageId) {
-        await window.API.put(`/api/creation-configs/${encodeURIComponent(state.editingPackageId)}`, { payload });
+        await window.API.put(`/api/creation-configs/${encodeURIComponent(state.editingPackageId)}`, { name, payload });
         toast('当前创作配置已保存');
       } else {
         await window.API.post('/api/creation-configs', { name, payload });
@@ -1111,22 +1089,10 @@
     resetCreationConfigEditor();
   }
 
-  function prepareSaveAsCreationConfig() {
-    if (!state.editingPackageId) {
-      element('creation-config-package-name')?.focus();
-      return;
-    }
-    const field = element('creation-config-save-as-name');
-    if (!field) return;
-    field.hidden = false;
-    field.value = `${element('creation-config-package-name')?.value.trim() || '创作配置'} 副本`;
-    field.focus();
-  }
-
   async function saveCreationConfigAs() {
-    const name = element('creation-config-save-as-name')?.value.trim() || '';
+    const name = element('creation-config-package-name')?.value.trim() || '';
     if (!name) {
-      toast('请输入新配置名称');
+      toast('请输入当前配置包名称');
       return;
     }
     let payload;
@@ -1137,14 +1103,16 @@
       requestError('无法另存配置', error);
       return;
     }
-    const saveAs = element('btn-save-creation-config-as');
+    const saveAs = element('btn-prepare-save-creation-config-as');
     if (saveAs) saveAs.disabled = true;
     try {
       await window.API.post('/api/creation-configs', { name, payload });
-      toast('已另存为新配置');
+      toast('已按当前名称另存为新配置包');
       await refreshCreationConfigManagement();
       if (typeof window.loadCreationConfigs === 'function') window.loadCreationConfigs();
-      resetCreationConfigEditor();
+      const created = state.packages.find(item => item.name === name);
+      if (created) await editPackage(created);
+      else resetCreationConfigEditor();
     } catch (error) {
       requestError('另存为新配置失败', error);
     } finally {
@@ -1162,6 +1130,60 @@
       if (typeof window.loadCreationConfigs === 'function') window.loadCreationConfigs();
     } catch (error) {
       requestError('归档配置包失败', error);
+    }
+  }
+
+  async function deletePackage(packageItem, { isDefault = false } = {}) {
+    if (!packageItem?.id) return;
+    const name = packageItem.name || '此创作包';
+    const defaultNotice = isDefault
+      ? '\n\n这是当前默认创作包。删除后会自动清除默认设置；你之后可以选择其他创作包作为默认。'
+      : '';
+    const message = `删除创作包“${name}”？\n\n删除后，它将不再用于新项目；已经创建的项目保留自己的配置快照，不受影响。${defaultNotice}`;
+    const performDelete = async () => {
+      try {
+        const result = await window.API.delete(`/api/creation-configs/${encodeURIComponent(packageItem.id)}`);
+        if (state.editingPackageId === packageItem.id) resetCreationConfigEditor();
+        toast(result?.default_cleared
+          ? '已删除默认创作包并清除默认设置；历史项目不受影响'
+          : '已删除创作包；历史项目不受影响');
+        await refreshCreationConfigManagement();
+        if (typeof window.loadCreationConfigs === 'function') window.loadCreationConfigs();
+      } catch (error) {
+        requestError('删除创作包失败', error);
+      }
+    };
+    if (typeof window.showCustomConfirm === 'function') {
+      window.showCustomConfirm('删除创作包', message, performDelete);
+    } else {
+      // The shared modal is loaded before this module in production. This
+      // fallback only protects non-production fixture pages.
+      if (window.confirm(message)) await performDelete();
+    }
+  }
+
+  async function deleteModelConnection(connection) {
+    if (!connection?.id) return;
+    const name = connection.name || '此模型';
+    const message = `删除模型“${name}”？\n\n删除后，它将从新建和绑定列表中移除，不能再被新的创作包关联。已使用它的创作包与历史项目会保留内部历史记录，不会中断。`;
+    const performDelete = async () => {
+      const status = element('model-management-status');
+      if (status) status.textContent = '';
+      try {
+        const result = await window.API.delete(`/api/model-connections/${encodeURIComponent(connection.id)}`);
+        if (state.editingConnectionId === connection.id) cancelModelEdit();
+        toast(result?.retained_for_history
+          ? '已删除模型；历史创作包与项目会保留内部记录'
+          : '已删除模型；已有项目的配置快照不受影响');
+        await refreshCreationConfigManagement();
+      } catch (error) {
+        requestError('删除模型失败', error);
+      }
+    };
+    if (typeof window.showCustomConfirm === 'function') {
+      window.showCustomConfirm('删除模型', message, performDelete);
+    } else if (window.confirm(message)) {
+      await performDelete();
     }
   }
 
@@ -1405,8 +1427,10 @@
   function selectCreationConfigTab(tab) {
     const selected = ['models', 'visual', 'output', 'prompts'].includes(tab) ? tab : 'models';
     document.querySelectorAll('[data-creation-config-tab]').forEach(button => {
-      button.classList.toggle('is-active', button.dataset.creationConfigTab === selected);
-      button.setAttribute('aria-selected', String(button.dataset.creationConfigTab === selected));
+      const active = button.dataset.creationConfigTab === selected;
+      button.classList.toggle('is-active', active);
+      button.setAttribute('aria-selected', String(active));
+      button.tabIndex = active ? 0 : -1;
     });
     document.querySelectorAll('[data-creation-config-panel]').forEach(panel => {
       panel.hidden = panel.dataset.creationConfigPanel !== selected;
@@ -1423,8 +1447,7 @@
     element('btn-model-management-refresh')?.addEventListener('click', refreshCreationConfigManagement);
     element('btn-create-creation-config')?.addEventListener('click', createCreationConfig);
     element('btn-cancel-creation-config-edit')?.addEventListener('click', discardCreationConfigChanges);
-    element('btn-save-creation-config-as')?.addEventListener('click', saveCreationConfigAs);
-    element('btn-prepare-save-creation-config-as')?.addEventListener('click', prepareSaveAsCreationConfig);
+    element('btn-prepare-save-creation-config-as')?.addEventListener('click', saveCreationConfigAs);
     document.querySelectorAll('[data-creation-config-tab]').forEach(button => {
       button.addEventListener('click', () => selectCreationConfigTab(button.dataset.creationConfigTab));
     });

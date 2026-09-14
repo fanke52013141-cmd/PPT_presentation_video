@@ -109,6 +109,7 @@ class TestOperationsContract:
             "narration_review", "audio_review", "video_review",
         }
         assert set(CHECKPOINT_STAGES.keys()) == expected
+        assert CHECKPOINT_STAGES["mask_review"]["internal_stage"] == "ai_mask"
 
     def test_operation_from_one_click_basic(self):
         from agent_contract.operations import operation_from_one_click, OperationStatus

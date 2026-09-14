@@ -563,6 +563,10 @@ def validate_payload(payload: Any) -> dict[str, Any]:
             automation["ai_narration_annotation"], bool
         ):
             raise CreationConfigValidationError("automation.ai_narration_annotation 必须是布尔值")
+        if "ai_mask_annotation" in automation and not isinstance(
+            automation["ai_mask_annotation"], bool
+        ):
+            raise CreationConfigValidationError("automation.ai_mask_annotation 必须是布尔值")
 
     render = normalized.get("render")
     if render is not None:
@@ -838,7 +842,7 @@ def create_creation_config_version(package_id: str, *, payload: Any) -> dict[str
 
 
 @_synchronized
-def update_creation_config(package_id: str, *, payload: Any) -> dict[str, Any]:
+def update_creation_config(package_id: str, *, payload: Any, name: Any = None) -> dict[str, Any]:
     """Replace a package's current configuration without creating a backup.
 
     Projects receive a materialized configuration snapshot at creation time, so
@@ -857,6 +861,8 @@ def update_creation_config(package_id: str, *, payload: Any) -> dict[str, Any]:
     current["payload"] = normalized_payload
     current["content_hash"] = content_hash(normalized_payload)
     current["created_at"] = timestamp
+    if name is not None:
+        package["name"] = _normalized_name(name)
     # Old revisions are not a user-facing feature.  Keep only the current
     # record while retaining its internal revision number for legacy project
     # snapshots and default-config references.
@@ -894,6 +900,21 @@ def archive_creation_config(package_id: str, *, archived: bool = True) -> dict[s
     package["updated_at"] = dependencies.now()
     dependencies.store.write(store)
     return _public_package(package)
+
+
+@_synchronized
+def delete_creation_config(package_id: str) -> dict[str, Any]:
+    """Logically delete one reusable package without destroying snapshots.
+
+    Projects materialize their effective package payload when they are
+    created.  Archiving the reusable source therefore removes it from future
+    selections while preserving the source record and every historical project
+    snapshot needed to replay an existing production.
+
+    The HTTP route owns account-default protection because that state lives in
+    the account database rather than this credential-free JSON store.
+    """
+    return archive_creation_config(package_id, archived=True)
 
 
 @_synchronized

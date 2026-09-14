@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db, Project, SessionLocal
 from account_context import get_current_account_id
+from project_config_runtime import get_config_value
 from one_click_orchestrator import (
     ManualModeOneClickError,
     batch_one_click_status,
@@ -39,11 +40,17 @@ def start_one_click_route(
             status_code=409,
             detail="手动模式项目不能启动一键自动化，请逐步完成各个创作环节",
         )
-    # This endpoint is the explicit one-click choice. Persist the intent so
-    # reopening the workspace can explain its whole-image behaviour.
+    # This endpoint is the explicit one-click choice. The immutable creation
+    # package controls whether this automatic run uses the optional
+    # element-level AI Mask stage; legacy packages remain full-frame by default.
+    ai_mask_annotation = get_config_value(
+        project,
+        "automation.ai_mask_annotation",
+        False,
+    ) is True
     project.production_mode = "one_click"
-    project.presentation_mode = "full_frame"
-    project.mask_enabled = 0
+    project.presentation_mode = "reveal" if ai_mask_annotation else "full_frame"
+    project.mask_enabled = 1 if ai_mask_annotation else 0
     db.commit()
     db.refresh(project)
     try:

@@ -1050,7 +1050,9 @@ const CourseTree = (() => {
     const oldText = nameEl.textContent;
     const fontSize = window.getComputedStyle(nameEl).fontSize;
 
-    nameEl.innerHTML = `<input type="text" class="inline-rename-input" value="${escHtml(oldText)}" style="font-size:${fontSize};" />`;
+    const renameHost = nameEl.closest('.course-card-header, .chapter-node-header');
+    renameHost?.classList.add('is-inline-renaming');
+    nameEl.innerHTML = `<input type="text" class="inline-rename-input${isNew ? ' is-new-entity' : ''}" value="${escHtml(oldText)}" style="font-size:${fontSize};" />`;
     const input = nameEl.querySelector('input');
     if (!input) return;
 
@@ -1065,15 +1067,18 @@ const CourseTree = (() => {
       const newName = input.value.trim();
       if (!newName || newName === oldText) {
         nameEl.textContent = oldText;
+        renameHost?.classList.remove('is-inline-renaming');
         return;
       }
       try {
         const url = type === 'course' ? `/api/courses/${id}` : `/api/chapters/${id}`;
         await API.patch(url, { name: newName });
         nameEl.textContent = newName;
+        renameHost?.classList.remove('is-inline-renaming');
         showToast(type === 'course' ? '课程已重命名' : '章节已重命名');
       } catch (e) {
         nameEl.textContent = oldText;
+        renameHost?.classList.remove('is-inline-renaming');
       }
     };
 
@@ -1081,6 +1086,7 @@ const CourseTree = (() => {
       if (committed) return;
       committed = true;
       nameEl.textContent = oldText;
+      renameHost?.classList.remove('is-inline-renaming');
     };
 
     input.addEventListener('blur', commit);

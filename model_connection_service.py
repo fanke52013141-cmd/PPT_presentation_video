@@ -23,10 +23,9 @@ from model_connection_models import (
     ModelConnectionStateUpdate,
     ModelConnectionUpdate,
 )
-from account_context import get_current_account_id
-
-
-REGISTRY_VERSION = "model_connections_v1"
+# Connections are shared globally. Creation packages remain account-scoped and
+# point to a connection by ID/revision.
+REGISTRY_VERSION = "model_connections_v2"
 CONNECTION_KINDS = {"text", "image", "tts"}
 CONNECTION_STATES = {"active", "disabled", "archived"}
 _SENSITIVE_TOKENS = {
@@ -61,6 +60,17 @@ class ModelConnectionUnavailableError(ValueError):
     pass
 
 
+class ModelConnectionInUseError(ModelConnectionUnavailableError):
+    """Raised when deleting a connection would orphan creation packages."""
+
+    def __init__(self, connection_id: str, references: list[dict[str, Any]]) -> None:
+        self.connection_id = connection_id
+        self.references = references
+        super().__init__(
+            f"模型连接正在被 {len(references)} 个创作包版本引用，请先替换引用或将模型归档"
+        )
+
+
 @dataclass(frozen=True)
 class ModelConnectionDependencies:
     """Storage and time primitives supplied at application startup."""
@@ -69,6 +79,10 @@ class ModelConnectionDependencies:
     write_registry: Callable[[dict[str, Any]], Any]
     now: Callable[[], datetime] = datetime.now
     new_id: Callable[[], str] = lambda: uuid.uuid4().hex
+    # Injected to keep the registry independent from package and credential
+    # persistence implementations.
+    list_references: Callable[[str], list[dict[str, Any]]] = lambda _connection_id: []
+    promote_credential_ref: Callable[[str], Any] = lambda _credential_ref: None
 
 
 @dataclass(frozen=True)
@@ -190,13 +204,39 @@ def _registry() -> dict[str, Any]:
         return _new_registry()
     normalized = deepcopy(raw)
     normalized["version"] = REGISTRY_VERSION
-    normalized["connections"] = connections
+    normalized_connections: dict[str, Any] = {}
+    credential_refs: set[str] = set()
+    for connection_id, value in connections.items():
+        if not isinstance(value, dict):
+            normalized_connections[str(connection_id)] = value
+            continue
+        connection = deepcopy(value)
+        # v1 persisted request-account ownership on every connection. Global
+        # model IDs are unique, and package bindings already carry their
+        # account ownership, so retaining it would keep the old isolation.
+        connection.pop("account_id", None)
+        normalized_connections[str(connection_id)] = connection
+        revisions = connection.get("revisions")
+        if isinstance(revisions, list):
+            for revision in revisions:
+                if isinstance(revision, dict):
+                    credential_ref = _credential_ref(revision.get("credential_ref"))
+                    if credential_ref:
+                        credential_refs.add(credential_ref)
+    normalized["connections"] = normalized_connections
+    if normalized != raw:
+        _deps().write_registry(normalized)
+    # Credentials are never public registry data. A credential referenced by a
+    # global model becomes runtime-readable for every account, while remaining
+    # absent from normal credential lists and all model HTTP responses.
+    for credential_ref in credential_refs:
+        _deps().promote_credential_ref(credential_ref)
     return normalized
 
 
 def _connection(registry: Mapping[str, Any], connection_id: str) -> dict[str, Any]:
     item = registry.get("connections", {}).get(str(connection_id))
-    if not isinstance(item, dict) or str(item.get("account_id") or "default") != get_current_account_id():
+    if not isinstance(item, dict):
         raise ModelConnectionNotFoundError(f"模型连接不存在: {connection_id}")
     return item
 
@@ -293,11 +333,7 @@ def list_model_connections(
         raise ValueError("kind 必须是 text、image 或 tts")
     with _registry_lock:
         connections = _registry()["connections"].values()
-        public = [
-            _public_connection(item) for item in connections
-            if isinstance(item, dict)
-            and str(item.get("account_id") or "default") == get_current_account_id()
-        ]
+        public = [_public_connection(item) for item in connections if isinstance(item, dict)]
     return sorted(
         (
             item for item in public
@@ -342,9 +378,10 @@ def create_model_connection(payload: ModelConnectionCreate) -> dict[str, Any]:
             "updated_at": now,
             "archived_at": None,
             "revisions": [revision],
-            "account_id": get_current_account_id(),
         }
         registry["connections"][connection_id] = connection
+        if revision["credential_ref"]:
+            _deps().promote_credential_ref(revision["credential_ref"])
         _deps().write_registry(registry)
         return _public_connection(connection)
 
@@ -382,9 +419,10 @@ def copy_model_connection(
             "updated_at": now,
             "archived_at": None,
             "revisions": [revision],
-            "account_id": get_current_account_id(),
         }
         registry["connections"][target_id] = connection
+        if revision["credential_ref"]:
+            _deps().promote_credential_ref(revision["credential_ref"])
         _deps().write_registry(registry)
         return _public_connection(connection)
 
@@ -416,6 +454,8 @@ def update_model_connection(
         connection["revisions"].append(next_revision)
         connection["current_revision"] = next_revision_number
         connection["updated_at"] = now
+        if next_revision["credential_ref"]:
+            _deps().promote_credential_ref(next_revision["credential_ref"])
         _deps().write_registry(registry)
         return _public_connection(connection)
 
@@ -438,6 +478,56 @@ def set_model_connection_state(
         connection["updated_at"] = now
         _deps().write_registry(registry)
         return _public_connection(connection)
+
+
+def _public_references(value: Any) -> list[dict[str, Any]]:
+    """Keep delete conflicts useful without allowing callback data leakage."""
+    if not isinstance(value, list):
+        return []
+    output: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        package_id = str(item.get("package_id") or item.get("id") or "").strip()
+        version = item.get("version")
+        if not package_id or not isinstance(version, int) or version < 1:
+            continue
+        reference = {
+            "package_id": package_id,
+            "package_name": str(item.get("package_name") or item.get("name") or "创作包")[:120],
+            "version": version,
+            "account_id": str(item.get("account_id") or "default")[:120],
+        }
+        if reference not in output:
+            output.append(reference)
+    return output
+
+
+def delete_model_connection(connection_id: str) -> dict[str, Any]:
+    """Hide a global model from future selection without breaking history.
+
+    A creation package and an already-created project may hold immutable model
+    ID/revision references.  A physical delete would make those historical
+    records impossible to resolve, so user-visible deletion is implemented as
+    a one-way archive: it disappears from normal lists and cannot be newly
+    bound, while the private historical resolver remains available.
+    """
+    with _registry_lock:
+        registry = _registry()
+        connection = _connection(registry, connection_id)
+        references = _public_references(_deps().list_references(str(connection_id)))
+        now = _timestamp()
+        connection["state"] = "archived"
+        connection["archived_at"] = now
+        connection["updated_at"] = now
+        _deps().write_registry(registry)
+        return {
+            "id": str(connection_id),
+            "deleted": True,
+            "state": "archived",
+            "retained_for_history": True,
+            "references": references,
+        }
 
 
 def bind_model_connection(

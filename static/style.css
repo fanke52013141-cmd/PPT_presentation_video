@@ -8826,20 +8826,23 @@ body.step5-full-frame #step-panel-5 .step5-toolbar { display: flex !important; }
   border-top: 1px solid rgba(118, 103, 190, 0.16);
 }
 .creation-config-package-actions + #creation-config-package-list { margin-top: 1.35rem; }
-.creation-config-default-package { margin-bottom: 1rem; }
-.creation-config-default-package > .creation-config-package-card {
-  width: clamp(210px, 25%, 320px);
-}
 .creation-config-package-section-label { margin: 0 0 .5rem; color: var(--color-text-secondary); font-size: .82rem; font-weight: 700; }
-.creation-config-package-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: .7rem; }
-.creation-config-package-card { display: flex; min-width: 0; flex-direction: column; gap: .55rem; padding: .85rem .9rem; border: 1px solid var(--color-border-default); border-radius: 13px; background: var(--color-bg-surface); }
-.creation-config-package-card.is-default { border-color: rgba(34, 165, 89, .5); background: linear-gradient(135deg, #f5fdf7, var(--color-bg-surface)); box-shadow: 0 0 0 2px rgba(34, 165, 89, .1); }
+.creation-config-package-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .7rem; }
+.creation-config-package-card { display: flex; min-width: 0; flex-direction: column; gap: .65rem; padding: .85rem .9rem; border: 1px solid var(--color-border-default); border-radius: 13px; background: var(--color-bg-surface); }
 .creation-config-package-card-heading { display: flex; min-width: 0; align-items: center; gap: .42rem; }
-.creation-config-package-card-heading strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.creation-config-package-version { color: var(--color-text-tertiary); font-size: .75rem; white-space: nowrap; }
-.creation-config-package-card-copy { min-height: 2.5em; margin: 0; color: var(--color-text-tertiary); font-size: .8rem; line-height: 1.45; }
+.creation-config-package-card-heading strong { overflow: visible; overflow-wrap: anywhere; text-overflow: clip; white-space: normal; line-height: 1.45; }
 .creation-config-package-card-actions { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: auto; }
 .creation-config-package-card-actions button { margin-top: 0 !important; padding: .32rem .55rem !important; font-size: .78rem !important; }
+.creation-config-existing-packages { margin: .65rem 0 1.1rem; padding: .95rem; border: 1px solid #f0e4de; border-radius: 14px; background: #fffaf8; }
+.creation-config-existing-packages .creation-config-package-section-heading { align-items: baseline; gap: .7rem; }
+.creation-config-existing-packages .creation-config-package-section-heading h5 { margin: 0; }
+.creation-config-name-field { display: grid; gap: .42rem; margin: 0 0 .55rem; color: #27344f; font-size: .9rem; font-weight: 700; }
+.creation-config-name-field input { width: 100%; min-height: 42px; box-sizing: border-box; }
+.creation-config-package-card { min-height: 0; }
+.creation-config-tabs [role="tab"] { border: 1px solid #dfe5ed; background: #fff; color: #62708a; }
+.creation-config-tabs [role="tab"].is-active,
+.creation-config-tabs [role="tab"][aria-selected="true"] { border-color: #f46a38; background: #fff1ec; color: #c6481d; box-shadow: 0 0 0 1px rgba(244,106,56,.12); }
+.creation-config-tabs [role="tab"]:focus-visible { outline: 3px solid rgba(244,106,56,.28); outline-offset: 2px; }
 .creation-config-section-heading {
   display: flex;
   align-items: baseline;
@@ -8987,7 +8990,7 @@ body.step5-full-frame #step-panel-5 .step5-toolbar { display: flex !important; }
   .creation-config-output-group,
   .creation-config-auto-options { align-items: stretch; flex-direction: column; gap: .55rem; }
   .creation-config-auto-options-grid { grid-template-columns: 1fr; }
-  .creation-config-default-package > .creation-config-package-card { width: 100%; }
+  .creation-config-package-grid { grid-template-columns: 1fr; }
 }
 
 /* 自定义视频播放器：隐藏原生控件，避免控件覆盖在数字人窗口上 */
@@ -11294,8 +11297,11 @@ body:not(.workspace-open) #page-home .stitch-sidebar-body {
 
 /* Section headings: tiny quiet labels with bare icon buttons. */
 body:not(.workspace-open) #page-home .stitch-tree-section-heading {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 20px !important;
+  align-items: center !important;
   min-height: 0 !important;
-  padding: .4rem .5rem .2rem !important;
+  padding: .4rem .55rem .2rem !important;
   font-size: 11px !important;
   font-weight: 600 !important;
   letter-spacing: .05em !important;
@@ -11356,6 +11362,9 @@ body:not(.workspace-open) #page-home .tree-toggle:hover {
 
 /* Course rows: compact 13px. */
 body:not(.workspace-open) #page-home .stitch-course-header {
+  display: grid !important;
+  grid-template-columns: 14px 16px minmax(0, 1fr) 20px !important;
+  align-items: center !important;
   padding: .38rem .55rem !important;
   gap: .5rem !important;
   border-radius: 8px !important;
@@ -11379,6 +11388,65 @@ body:not(.workspace-open) #page-home .stitch-course-header .course-name {
 body:not(.workspace-open) #page-home .stitch-course-header .tree-overflow-trigger {
   width: 20px !important;
   height: 20px !important;
+}
+body:not(.workspace-open) #page-home .stitch-course-header .tree-overflow {
+  justify-self: end;
+  align-self: center;
+}
+
+/* New course/chapter names are a lightweight inline action rather than a
+   full bordered input card.  Existing rows keep their normal hover and
+   selection treatments. */
+body:not(.workspace-open) #page-home .stitch-course-header.is-inline-renaming,
+body:not(.workspace-open) #page-home .stitch-chapter-header.is-inline-renaming {
+  background: transparent !important;
+}
+body:not(.workspace-open) #page-home .inline-rename-input.is-new-entity {
+  min-width: 0;
+  max-width: none;
+  padding: .16rem 0 .24rem !important;
+  border: 0 !important;
+  border-bottom: 1px solid #fdba9c !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+body:not(.workspace-open) #page-home .inline-rename-input.is-new-entity:focus {
+  border-bottom-color: #f46a38 !important;
+}
+
+/* The account menu is a compact list, not a second stack of button cards.
+   Keep the option semantics and a clear selected state. */
+header .account-picker-menu .account-picker-option {
+  min-height: 2.25rem !important;
+  padding: .34rem .4rem !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+header .account-picker-menu .account-picker-option + .account-picker-option {
+  border-top: 1px solid #f0eff2 !important;
+}
+header .account-picker-menu .account-picker-option:hover {
+  background: #fff6f2 !important;
+  color: #c9481b !important;
+}
+header .account-picker-menu .account-picker-option[aria-selected="true"] {
+  background: #fff1eb !important;
+  color: #c9481b !important;
+  box-shadow: inset 3px 0 0 #f46a38 !important;
+}
+header .account-picker-menu .account-picker-option-icon {
+  width: 1.18rem;
+  height: 1.18rem;
+  background: transparent;
+  color: #a8a3ae;
+}
+header .account-picker-menu .account-picker-option[aria-selected="true"] .account-picker-option-icon {
+  background: transparent;
+  color: #dc5121;
 }
 
 /* Chapter rows: compact 12.5px. */

@@ -41,7 +41,7 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 |---|---|---|---|
 | `storyboard_review` | 分镜审查 | `storyboard` | 分镜规划完成，等待确认后再生成图片 |
 | `image_review` | 图片审查 | `confirm_images` | 图片生成完成，等待确认后再进行 Mask 标注 |
-| `mask_review` | Mask 审查 | `mask_assets` | Mask 标注完成，等待确认后再生成旁白 |
+| `mask_review` | Mask 审查 | `ai_mask` | Mask 标注完成，等待确认后再生成旁白 |
 | `narration_review` | 旁白审查 | `narration` | 旁白生成完成，等待确认后再合成音频 |
 | `audio_review` | 音频审查 | `tts` | 音频合成完成，等待确认后再渲染视频 |
 | `video_review` | 视频审查 | `render` | 视频渲染完成，等待最终确认 |

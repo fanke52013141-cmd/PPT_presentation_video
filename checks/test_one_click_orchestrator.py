@@ -61,6 +61,16 @@ def test_narration_annotation_is_opt_in_for_automatic_runs(monkeypatch) -> None:
     assert one_click._should_annotate_narration(project) is True
 
 
+def test_ai_mask_annotation_is_opt_in_for_automatic_runs(monkeypatch) -> None:
+    project = SimpleNamespace()
+
+    monkeypatch.setattr(one_click, "get_config_value", lambda *_args: False)
+    assert one_click._should_annotate_ai_mask(project) is False
+
+    monkeypatch.setattr(one_click, "get_config_value", lambda *_args: True)
+    assert one_click._should_annotate_ai_mask(project) is True
+
+
 def test_image_rate_limit_detection_and_backoff_hint() -> None:
     error = RuntimeError("HTTP 429: Retry-After: 7")
     assert one_click._is_rate_limit_error(error)
@@ -187,6 +197,168 @@ def test_manual_project_route_returns_conflict(monkeypatch) -> None:
         assert "手动模式项目" in str(exc.detail)
     else:
         raise AssertionError("manual project route should return HTTP 409")
+
+
+def test_one_click_route_enables_reveal_only_when_package_requests_ai_mask(monkeypatch) -> None:
+    project = SimpleNamespace(id="auto-project", ai_mode="auto", run_dir="unused")
+    commits: list[str] = []
+
+    class Db:
+        def commit(self):
+            commits.append("commit")
+
+        def refresh(self, value):
+            assert value is project
+
+    monkeypatch.setattr(one_click_routes, "_project_or_404", lambda *_args: project)
+    monkeypatch.setattr(one_click_routes, "start_one_click", lambda value, _payload: {"success": True, "project": value.id})
+
+    monkeypatch.setattr(one_click_routes, "get_config_value", lambda *_args: True)
+    result = one_click_routes.start_one_click_route(project.id, {}, db=Db())
+    assert result["success"] is True
+    assert project.presentation_mode == "reveal"
+    assert project.mask_enabled == 1
+    assert commits == ["commit"]
+
+    monkeypatch.setattr(one_click_routes, "get_config_value", lambda *_args: False)
+    one_click_routes.start_one_click_route(project.id, {}, db=Db())
+    assert project.presentation_mode == "full_frame"
+    assert project.mask_enabled == 0
+
+
+def test_ai_mask_stage_runs_when_enabled_and_rebuilds_reveal_assets(monkeypatch, tmp_path: Path) -> None:
+    project = SimpleNamespace(id="ai-mask-project", run_dir=str(tmp_path), account_id="acct-a")
+    planning = tmp_path / "planning"
+    planning.mkdir(parents=True)
+    (planning / "visual_contract.json").write_text(
+        '{"slides":[{"slide_id":"slide_001"}]}',
+        encoding="utf-8",
+    )
+    calls: list[tuple[str, object]] = []
+
+    class Db:
+        def query(self, _model):
+            return self
+
+        def filter(self, _criterion):
+            return self
+
+        def first(self):
+            return project
+
+        def close(self):
+            return None
+
+    services = SimpleNamespace(
+        annotate_ai_mask=lambda payload: calls.append(("annotate", payload)) or {
+            "success": True,
+            "complete": True,
+            "processed_slide_count": 1,
+            "updated_group_count": 2,
+            "slides": [],
+        },
+        mask_manifest=lambda: calls.append(("manifest", None)) or {
+            "success": True,
+            "manifest": {"slides": [{"slide_id": "slide_001"}]},
+        },
+        build_mask_assets=lambda manifest: calls.append(("build", manifest)) or {"success": True},
+    )
+    dependencies = one_click.OneClickDependencies(
+        session_factory=Db,
+        project_model=SimpleNamespace(id="id"),
+        get_setting=lambda _key, _default="": "configured",
+        resolve_media_tool=lambda _name: "available",
+        repo_root=ROOT,
+        read_project_article_source=lambda *_args, **_kwargs: None,
+        write_project_log=lambda *_args, **_kwargs: None,
+        inspect_tts_preflight=lambda _workflow: {"success": True},
+        pipeline_service_factory=lambda *_args: services,
+    )
+    original_finish = one_click._finish_stage
+
+    def pause_after_ai_mask(*args, **kwargs):
+        original_finish(*args, **kwargs)
+        if args[2] == "ai_mask":
+            one_click._PAUSE_REQUESTS.add(project.id)
+
+    monkeypatch.setattr(one_click, "_finish_stage", pause_after_ai_mask)
+    monkeypatch.setattr(one_click, "_should_annotate_ai_mask", lambda _project: True)
+    try:
+        one_click._run_pipeline(
+            dependencies,
+            project.id,
+            "run-ai-mask",
+            mode="restart",
+            start_from="ai_mask",
+        )
+        status = one_click._status_for_project(project, project.id)
+        assert status["status"] == "paused"
+        assert one_click._stage(status, "ai_mask")["status"] == "done"
+        assert one_click._stage(status, "narration")["status"] == "pending"
+        assert [name for name, _value in calls] == ["annotate", "manifest", "build"]
+        annotation_payload = calls[0][1]
+        assert annotation_payload["slide_ids"] == ["slide_001"]
+        assert annotation_payload["settings"]["overwrite_existing_manual_mask"] is False
+    finally:
+        one_click._PAUSE_REQUESTS.discard(project.id)
+
+
+def test_ai_mask_stage_records_full_frame_skip_when_disabled(monkeypatch, tmp_path: Path) -> None:
+    project = SimpleNamespace(id="no-mask-project", run_dir=str(tmp_path), account_id="acct-a")
+    calls: list[str] = []
+
+    class Db:
+        def query(self, _model):
+            return self
+
+        def filter(self, _criterion):
+            return self
+
+        def first(self):
+            return project
+
+        def close(self):
+            return None
+
+    services = SimpleNamespace(
+        annotate_ai_mask=lambda _payload: calls.append("annotate") or {"success": True},
+    )
+    dependencies = one_click.OneClickDependencies(
+        session_factory=Db,
+        project_model=SimpleNamespace(id="id"),
+        get_setting=lambda _key, _default="": "configured",
+        resolve_media_tool=lambda _name: "available",
+        repo_root=ROOT,
+        read_project_article_source=lambda *_args, **_kwargs: None,
+        write_project_log=lambda *_args, **_kwargs: None,
+        inspect_tts_preflight=lambda _workflow: {"success": True},
+        pipeline_service_factory=lambda *_args: services,
+    )
+    original_finish = one_click._finish_stage
+
+    def pause_after_ai_mask(*args, **kwargs):
+        original_finish(*args, **kwargs)
+        if args[2] == "ai_mask":
+            one_click._PAUSE_REQUESTS.add(project.id)
+
+    monkeypatch.setattr(one_click, "_finish_stage", pause_after_ai_mask)
+    monkeypatch.setattr(one_click, "_should_annotate_ai_mask", lambda _project: False)
+    try:
+        one_click._run_pipeline(
+            dependencies,
+            project.id,
+            "run-no-mask",
+            mode="restart",
+            start_from="ai_mask",
+        )
+        status = one_click._status_for_project(project, project.id)
+        item = one_click._stage(status, "ai_mask")
+        assert status["status"] == "paused"
+        assert item["status"] == "done"
+        assert "已跳过" in item["message"]
+        assert calls == []
+    finally:
+        one_click._PAUSE_REQUESTS.discard(project.id)
 
 
 def test_batch_statuses_are_limited_to_current_account(tmp_path: Path) -> None:
@@ -590,11 +762,13 @@ def test_ai_mask_retry_falls_back_to_all_slides_without_slide_details() -> None:
     ) == ["slide_001", "slide_002"]
 
 
-def test_one_click_uses_full_frame_and_safe_audio_modes() -> None:
+def test_one_click_uses_configured_mask_or_full_frame_and_safe_audio_modes() -> None:
     source = Path("one_click_orchestrator.py").read_text(encoding="utf-8")
     services_source = Path("pipeline_services.py").read_text(encoding="utf-8")
     assert "Build full-frame scenes" in source
-    assert 'services.annotate_ai_mask' not in source
+    assert "services.annotate_ai_mask" in source
+    assert "automation.ai_mask_annotation" in source
+    assert '"ai_mask", "AI Mask 标注"' in source
     assert '"confirmation_mode": "automatic_technical"' in services_source
     assert "pipeline_service_factory" in source
     assert "services.narration" in source
@@ -613,11 +787,11 @@ def test_one_click_uses_full_frame_and_safe_audio_modes() -> None:
 
 
 def test_one_click_builds_static_scenes_without_ai_mask() -> None:
-    """One-click keeps Step 7 scene assets but never annotates elements."""
+    """One-click keeps full-frame assets as the default optional-Mask path."""
     source = Path("one_click_orchestrator.py").read_text(encoding="utf-8")
     assert 'if should_run("confirm_images"):' in source
     assert 'services.build_mask_assets(manifest)' in source
-    assert 'services.annotate_ai_mask' not in source
+    assert "已跳过（创作包未启用 AI Mask 标注，使用整页展示）" in source
 
 
 def test_preflight_migrates_legacy_article_before_checking_source() -> None:

@@ -4,6 +4,14 @@
 let _accounts = [];
 let _editingAccountId = null;
 
+// The system bootstrap account remains the same stored account (`default`),
+// but its UI label is deliberately stable and shorter than a user-created
+// creative-account name.
+function accountDisplayName(account) {
+  if (account?.id === 'default') return '默认账号';
+  return account?.name || account?.id || '默认账号';
+}
+
 function closeAccountPicker() {
   const menu = document.getElementById('account-picker-menu');
   const trigger = document.getElementById('account-picker-trigger');
@@ -20,7 +28,7 @@ function renderAccountPicker() {
 
   const currentId = select.value || _accounts[0]?.id;
   const current = _accounts.find(account => account.id === currentId) || _accounts[0];
-  const currentName = current?.name || '默认创作账号';
+  const currentName = accountDisplayName(current);
   if (name) name.textContent = currentName;
 
   menu.replaceChildren();
@@ -31,7 +39,8 @@ function renderAccountPicker() {
     option.className = 'account-picker-option';
     option.setAttribute('role', 'option');
     option.setAttribute('aria-selected', String(isCurrent));
-    option.setAttribute('aria-label', `${account.name || account.id}，${isCurrent ? '当前使用中' : '可切换到此账号'}`);
+    const displayName = accountDisplayName(account);
+    option.setAttribute('aria-label', `${displayName}，${isCurrent ? '当前使用中' : '可切换到此账号'}`);
     // Identity icon precedes the label; the selected account's icon turns
     // green via aria-selected styling.
     option.innerHTML = [
@@ -42,7 +51,7 @@ function renderAccountPicker() {
       '</span>',
       '<span class="account-picker-option-copy"><strong></strong></span>',
     ].join('');
-    option.querySelector('strong').textContent = account.name || account.id;
+    option.querySelector('strong').textContent = displayName;
     option.addEventListener('click', async () => {
       closeAccountPicker();
       if (account.id !== select.value) await selectAccount(account.id);
@@ -74,7 +83,7 @@ function syncAccountPickerWidth() {
     measure.style.font = style.font;
     measure.style.letterSpacing = style.letterSpacing;
     return _accounts.reduce((widest, account) => {
-      measure.textContent = account.name || account.id || '创作账号';
+      measure.textContent = accountDisplayName(account);
       return Math.max(widest, Math.ceil(measure.getBoundingClientRect().width));
     }, 0);
   };
@@ -279,7 +288,7 @@ async function loadAccounts() {
     _accounts.forEach(account => {
       const option = document.createElement('option');
       option.value = account.id;
-      option.textContent = account.name || account.id;
+      option.textContent = accountDisplayName(account);
       option.selected = account.id === currentId;
       select.appendChild(option);
     });

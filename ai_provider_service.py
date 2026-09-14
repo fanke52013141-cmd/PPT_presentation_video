@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import base64
+import math
 import io
 import logging
 import os
+import random
+import time
 from typing import Any, Dict, Optional
 import warnings
 
@@ -247,6 +250,122 @@ def is_seedream_image_model(
     )
 
 
+def is_toapis_image_provider(provider: Optional[str], base_url: Optional[str] = None) -> bool:
+    """Identify the native ToAPIs asynchronous image transport."""
+    return str(provider or "").strip().lower() == "toapis" or "toapis." in str(base_url or "").lower()
+
+
+def _toapis_base_url(base_url: Optional[str]) -> str:
+    return (str(base_url or "").strip() or "https://toapis.cn").rstrip("/")
+
+
+def _toapis_ratio(size: Optional[str]) -> str:
+    value = normalize_image_size(size) or "16x9"
+    if value == "auto":
+        return value
+    try:
+        width, height = (int(part) for part in value.split("x", 1))
+        divisor = math.gcd(width, height)
+        return f"{width // divisor}:{height // divisor}"
+    except (TypeError, ValueError):
+        return "16:9"
+
+
+def _toapis_error(response: httpx.Response, payload: Any) -> RuntimeError:
+    detail = payload.get("message") if isinstance(payload, dict) else None
+    if not detail and isinstance(payload, dict):
+        error = payload.get("error")
+        detail = error.get("message") if isinstance(error, dict) else error
+    return RuntimeError(f"ToAPIs HTTP {response.status_code}: {str(detail or payload)[:800]}")
+
+
+def generate_toapis_image_response(
+    *,
+    api_key: str,
+    base_url: Optional[str],
+    model: str,
+    prompt: str,
+    size: Optional[str],
+    resolution: str = "1k",
+    quality: str = "low",
+    reference_paths: Optional[list[str]] = None,
+    timeout: int = 180,
+) -> dict[str, Any]:
+    """Upload local references, submit a ToAPIs task, then retain its result URL.
+
+    ToAPIs deliberately rejects base64 references, unlike the OpenAI Images
+    API.  The adapter therefore performs the documented upload -> task ->
+    status polling sequence and returns the normal ``data[0].url`` shape used
+    by the rest of the image workflow.
+    """
+    if not api_key:
+        raise RuntimeError("ToAPIs 缺少 API Key")
+    root = _toapis_base_url(base_url)
+    headers = {"Authorization": f"Bearer {api_key}"}
+    reference_urls: list[str] = []
+    with httpx.Client(timeout=30, trust_env=False, follow_redirects=True) as client:
+        for path in reference_paths or []:
+            with open(path, "rb") as source:
+                upload = client.post(f"{root}/v1/uploads/images", headers=headers, files={"file": (os.path.basename(path), source, "image/png")})
+            try:
+                upload_body = upload.json()
+            except ValueError:
+                upload_body = {"message": upload.text[:800]}
+            if upload.status_code >= 400 or not upload_body.get("success", False):
+                raise _toapis_error(upload, upload_body)
+            url = ((upload_body.get("data") or {}).get("url"))
+            if not isinstance(url, str) or not url.strip():
+                raise RuntimeError("ToAPIs 上传参考图未返回 URL")
+            reference_urls.append(url)
+        payload: dict[str, Any] = {
+            "model": model or "gpt-image-2-vip",
+            "prompt": prompt,
+            "n": 1,
+            "size": _toapis_ratio(size),
+            "resolution": resolution if resolution in {"1k", "2k", "4k"} else "2k",
+            "quality": quality if quality in {"low", "medium", "high"} else "high",
+            "response_format": "url",
+        }
+        if reference_urls:
+            payload["reference_images"] = reference_urls
+        created = client.post(f"{root}/v1/images/generations", headers={**headers, "Content-Type": "application/json"}, json=payload)
+        try:
+            task = created.json()
+        except ValueError:
+            task = {"message": created.text[:800]}
+        if created.status_code >= 400 or (isinstance(task, dict) and task.get("success") is False):
+            raise _toapis_error(created, task)
+        task_id = task.get("id") if isinstance(task, dict) else None
+        if not isinstance(task_id, str) or not task_id:
+            raise RuntimeError("ToAPIs 创建图片任务未返回任务 ID")
+        deadline = time.monotonic() + max(30, min(int(timeout or 180), 300))
+        while time.monotonic() < deadline:
+            status_response = client.get(f"{root}/v1/images/generations/{task_id}", headers=headers)
+            try:
+                status = status_response.json()
+            except ValueError:
+                status = {"message": status_response.text[:800]}
+            if status_response.status_code >= 400:
+                raise _toapis_error(status_response, status)
+            state = str(status.get("status") or "").lower()
+            if state == "completed":
+                result = status.get("result") or {}
+                items = result.get("data") if isinstance(result, dict) else []
+                url = items[0].get("url") if isinstance(items, list) and items and isinstance(items[0], dict) else status.get("url")
+                if isinstance(url, str) and url:
+                    return {"data": [{"url": url}], "toapis_task_id": task_id}
+                raise RuntimeError("ToAPIs 图片任务完成但未返回图片 URL")
+            if state == "failed":
+                raise RuntimeError(f"ToAPIs 图片任务失败: {str((status.get('error') or {}).get('message') or status.get('fail_reason') or '未知错误')[:800]}")
+            retry_after = status_response.headers.get("Retry-After")
+            try:
+                wait_seconds = max(5.0, float(retry_after)) if retry_after else 5.0
+            except ValueError:
+                wait_seconds = 5.0
+            time.sleep(wait_seconds + random.uniform(0, 0.5))
+    raise RuntimeError("ToAPIs 图片任务等待超时")
+
+
 def first_image_response_item(response: Any) -> Any:
     data = (
         response.get("data")
@@ -310,14 +429,29 @@ def extract_image_bytes_from_response(response: Any) -> bytes:
 
 
 def generate_image_response(
-    client: OpenAI,
+    client: Optional[OpenAI],
     model: str,
     prompt: str,
     size: str,
     base_url: Optional[str] = None,
     timeout: Optional[int] = None,
+    provider: Optional[str] = None,
+    api_key: Optional[str] = None,
+    reference_paths: Optional[list[str]] = None,
+    public_config: Optional[Dict[str, Any]] = None,
 ) -> Any:
     """Generate an image with provider-specific fallbacks."""
+    if is_toapis_image_provider(provider, base_url):
+        config = public_config or {}
+        return generate_toapis_image_response(
+            api_key=str(api_key or ""), base_url=base_url, model=model,
+            prompt=prompt, size=size,
+            resolution=str(config.get("toapis_resolution") or "1k"),
+            quality=str(config.get("toapis_quality") or "low"),
+            reference_paths=reference_paths, timeout=timeout or 180,
+        )
+    if client is None:
+        raise RuntimeError("图片服务客户端未初始化")
     seedream_mode = is_seedream_image_model(model, base_url)
     kwargs: Dict[str, Any] = {
         "model": model,

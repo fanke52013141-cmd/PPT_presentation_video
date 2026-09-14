@@ -16,8 +16,8 @@
       mode: "comfyui",          // 'comfyui' | 'upload'
       shape: "circle",
       avatar_id: "",
-      circle: { cx: 0.8, cy: 0.2, r: 0.25 },
-      video: { ox: 0.5, oy: 0.5, zoom: 1.0 },
+      circle: { cx: 0.92, cy: 0.92, r: 0.10 },
+      video: { ox: 0.65, oy: 0.75, zoom: 0.65 },
       slides: {},
     },
     audioReady: {},
@@ -42,11 +42,11 @@
     var pid = projectId();
     if (!pid) return;
     try {
-      var res = await API.get(base() + "/config");
+      var res = await API.get(base() + "/config", { silent: true });
       if (res && res.config) {
         dhState.config = res.config;
-        if (!dhState.config.circle) dhState.config.circle = { cx: 0.8, cy: 0.2, r: 0.25 };
-        if (!dhState.config.video) dhState.config.video = { ox: 0.5, oy: 0.5, zoom: 1.0 };
+        if (!dhState.config.circle) dhState.config.circle = { cx: 0.92, cy: 0.92, r: 0.10 };
+        if (!dhState.config.video) dhState.config.video = { ox: 0.65, oy: 0.75, zoom: 0.65 };
         if (dhState.config.shape !== "rect") dhState.config.shape = "circle";
       }
       // 应用全局固定布局（如有），覆盖项目值为用户固定的全局默认
@@ -176,7 +176,10 @@
     if (!el) return;
     if (!projectId()) return;  // 首页无选中项目时跳过，避免 404 "项目不存在"
     try {
-      var res = await API.get(base() + "/health");
+      // This is a passive status probe.  Its result is shown inline in the
+      // panel, so a temporarily stopped local service must not create a new
+      // blocking error toast every time the optional step is opened/refreshed.
+      var res = await API.get(base() + "/health", { silent: true });
       if (res) {
         if (res.model_ready) {
           el.textContent = res.comfyui_online ? "模型就绪（ComfyUI）" : "模型就绪";
@@ -231,8 +234,8 @@
   }
 
   function applyCircleToPreview() {
-    var circle = dhState.config.circle || { cx: 0.8, cy: 0.2, r: 0.25 };
-    var videoCfg = dhState.config.video || { ox: 0.5, oy: 0.5, zoom: 1.0 };
+    var circle = dhState.config.circle || { cx: 0.92, cy: 0.92, r: 0.10 };
+    var videoCfg = dhState.config.video || { ox: 0.65, oy: 0.75, zoom: 0.65 };
     var layer = document.getElementById("dh-circle-layer");
     var videoEl = document.getElementById("dh-preview-video");
     var handle = document.getElementById("dh-circle-resize");
@@ -391,7 +394,7 @@
 
     function circleInfo() {
       var c = canvasSize();
-      var circle = dhState.config.circle || { cx: 0.8, cy: 0.2, r: 0.25 };
+      var circle = dhState.config.circle || { cx: 0.92, cy: 0.92, r: 0.10 };
       var D = Math.max(24, circle.r * 2 * Math.min(c.w, c.h));
       return { c: c, circle: circle, D: D, cx: circle.cx * c.w, cy: circle.cy * c.h };
     }
@@ -427,7 +430,7 @@
       var py = e.clientY - rect.top;
       var info = circleInfo();
       var circle = info.circle;
-      var videoCfg = dhState.config.video || { ox: 0.5, oy: 0.5, zoom: 1.0 };
+      var videoCfg = dhState.config.video || { ox: 0.65, oy: 0.75, zoom: 0.65 };
 
       if (dragging === "moveFrame") {
         circle.cx = Math.min(1, Math.max(0, info.cx / info.c.w + (px - last.x) / info.c.w));
@@ -548,7 +551,7 @@
   // ---------------- 位置预设 / 重置（保留函数，按钮已移除） ----------------
 
   function setPositionPreset(key) {
-    var circle = dhState.config.circle || { cx: 0.8, cy: 0.2, r: 0.25 };
+    var circle = dhState.config.circle || { cx: 0.92, cy: 0.92, r: 0.10 };
     var presets = {
       right_bottom: [0.82, 0.78],
       left_bottom: [0.18, 0.78],
@@ -563,8 +566,8 @@
   }
 
   function resetCircle() {
-    dhState.config.circle = { cx: 0.8, cy: 0.2, r: 0.25 };
-    dhState.config.video = { ox: 0.5, oy: 0.5, zoom: 1.0 };
+    dhState.config.circle = { cx: 0.92, cy: 0.92, r: 0.10 };
+    dhState.config.video = { ox: 0.65, oy: 0.75, zoom: 0.65 };
     applyConfigToUI();
     saveConfig();
   }
@@ -686,7 +689,7 @@
     try {
       for (var i = 0; i < 3600; i++) {
         await sleep(2000);
-        var res = await API.get(base() + "/jobs/" + encodeURIComponent(jobId));
+        var res = await API.get(base() + "/jobs/" + encodeURIComponent(jobId), { silent: !!silent });
         var job = res && res.job ? res.job : res;
         var status = job && job.status;
         if (status === "done") {
@@ -805,7 +808,7 @@
 
   async function checkComfyuiWorkflow() {
     try {
-      var res = await API.get(base() + "/comfyui/workflow");
+      var res = await API.get(base() + "/comfyui/workflow", { silent: true });
       if (res && res.exists) {
         dhState.comfyuiWorkflowExists = true;
         var statusEl = document.getElementById("dh-comfyui-workflow-status");

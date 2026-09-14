@@ -236,7 +236,7 @@ class ProjectService:
                 detail="指定创作配置版本或覆盖项时必须选择 creation_config_package_id",
             )
         # A creation package is the single owner of pipeline switches.  Once
-        # resolved, its immutable snapshot decides Mask and automatic pause
+        # resolved, its current value decides Mask and automatic pause
         # behavior; project creation must not silently replace those choices.
         if creation_config is not None:
             config_payload = creation_config.get("payload")

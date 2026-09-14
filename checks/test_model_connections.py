@@ -74,7 +74,7 @@ def test_create_response_never_exposes_credential_reference_or_secret(
         )
 
 
-def test_edit_creates_immutable_revision_and_old_revision_resolves(
+def test_edit_replaces_the_single_current_configuration(
     registry: dict[str, Any],
 ) -> None:
     created = service.create_model_connection(_text_connection())
@@ -83,15 +83,16 @@ def test_edit_creates_immutable_revision_and_old_revision_resolves(
         ModelConnectionUpdate(model="writing-v2", public_config={"temperature": 0.8}),
     )
 
-    assert updated["current_revision"] == 2
+    assert updated["current_revision"] == 1
     assert updated["revision"]["model"] == "writing-v2"
     historic = service.resolve_model_connection(created["id"], revision=1)
     latest = service.resolve_model_connection(created["id"])
-    assert historic.model == "writing-v1"
+    assert historic.model == "writing-v2"
     assert historic.credential_ref == "credential://team-a/text-primary"
-    assert latest.revision == 2
+    assert latest.revision == 1
     assert latest.model == "writing-v2"
-    assert registry["value"]["connections"][created["id"]]["revisions"][0]["model"] == "writing-v1"
+    assert len(registry["value"]["connections"][created["id"]]["revisions"]) == 1
+    assert registry["value"]["connections"][created["id"]]["revisions"][0]["model"] == "writing-v2"
 
 
 def test_capacity_controls_are_public_configuration_not_credentials(

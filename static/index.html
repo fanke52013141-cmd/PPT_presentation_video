@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css?v=20260912.36">
   <!-- Stitch screen contract: the supplied page code is the visual source of truth. -->
-  <link rel="stylesheet" href="stitch.css?v=20260913.6">
+  <link rel="stylesheet" href="stitch.css?v=20260914.1">
 </head>
 <body>
 
@@ -514,33 +514,33 @@
                   <div class="dh-slider-group">
                     <div class="dh-slider-row">
                       <span class="dh-slider-label">框位置 X</span>
-                      <input type="range" id="dh-slider-cx" min="0" max="1" step="0.01" value="0.8">
-                      <span class="dh-slider-value" id="dh-val-cx">0.80</span>
+                      <input type="range" id="dh-slider-cx" min="0" max="1" step="0.01" value="0.92">
+                      <span class="dh-slider-value" id="dh-val-cx">0.92</span>
                     </div>
                     <div class="dh-slider-row">
                       <span class="dh-slider-label">框位置 Y</span>
-                      <input type="range" id="dh-slider-cy" min="0" max="1" step="0.01" value="0.2">
-                      <span class="dh-slider-value" id="dh-val-cy">0.20</span>
+                      <input type="range" id="dh-slider-cy" min="0" max="1" step="0.01" value="0.92">
+                      <span class="dh-slider-value" id="dh-val-cy">0.92</span>
                     </div>
                     <div class="dh-slider-row">
                       <span class="dh-slider-label">框大小</span>
-                      <input type="range" id="dh-slider-r" min="0.06" max="0.6" step="0.01" value="0.25">
-                      <span class="dh-slider-value" id="dh-val-r">0.25</span>
+                      <input type="range" id="dh-slider-r" min="0.06" max="0.6" step="0.01" value="0.10">
+                      <span class="dh-slider-value" id="dh-val-r">0.10</span>
                     </div>
                     <div class="dh-slider-row">
                       <span class="dh-slider-label">视频缩放</span>
-                      <input type="range" id="dh-slider-zoom" min="0.5" max="4" step="0.05" value="1">
-                      <span class="dh-slider-value" id="dh-val-zoom">100%</span>
+                      <input type="range" id="dh-slider-zoom" min="0.5" max="4" step="0.05" value="0.65">
+                      <span class="dh-slider-value" id="dh-val-zoom">65%</span>
                     </div>
                     <div class="dh-slider-row">
                       <span class="dh-slider-label">视频偏移 X</span>
-                      <input type="range" id="dh-slider-ox" min="0" max="1" step="0.01" value="0.5">
-                      <span class="dh-slider-value" id="dh-val-ox">0.50</span>
+                      <input type="range" id="dh-slider-ox" min="0" max="1" step="0.01" value="0.65">
+                      <span class="dh-slider-value" id="dh-val-ox">0.65</span>
                     </div>
                     <div class="dh-slider-row">
                       <span class="dh-slider-label">视频偏移 Y</span>
-                      <input type="range" id="dh-slider-oy" min="0" max="1" step="0.01" value="0.5">
-                      <span class="dh-slider-value" id="dh-val-oy">0.50</span>
+                      <input type="range" id="dh-slider-oy" min="0" max="1" step="0.01" value="0.75">
+                      <span class="dh-slider-value" id="dh-val-oy">0.75</span>
                     </div>
                   </div>
                   <div class="dh-circle-info" id="dh-circle-info">
@@ -570,6 +570,10 @@
                 <svg class="icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M8 13h8M8 17h5"></path></svg>
                 生成 PPTX
               </button>
+              <button id="step8-btn-download-srt" class="secondary compact-action-btn" type="button" disabled title="仅在点击后下载字幕文件">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 3v12"></path></svg>
+                下载字幕 SRT
+              </button>
               <button id="step8-btn-finish" class="secondary compact-action-btn">完成并退出项目</button>
             </div>
 
@@ -589,22 +593,6 @@
             <div class="loading-spinner"></div>
             <span id="step8-pptx-loading-text">PPTX 生成中...</span>
           </div>
-
-          <section id="step8-subtitle-export" class="step-plain-section step8-pptx-section">
-            <div class="step8-section-heading">
-              <div>
-                <h3>字幕文件（SRT）</h3>
-                <p>按最终视频时间轴合并全部页面字幕，可用于平台上传或剪辑软件。它独立于视频内嵌字幕开关。</p>
-              </div>
-              <div class="step8-header-actions workflow-toolbar">
-                <span id="step8-subtitle-readiness" class="step8-readiness" aria-live="polite">正在检查字幕…</span>
-                <button id="step8-btn-download-srt" class="secondary compact-action-btn" type="button" disabled>
-                  <svg class="icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 3v12"></path></svg>
-                  下载字幕 SRT
-                </button>
-              </div>
-            </div>
-          </section>
 
           <div id="step8-result-box" class="step-plain-section" style="display: none;">
             <h3 style="margin-bottom: 0.4rem;">视频输出</h3>
@@ -922,10 +910,7 @@
         <div id="creation-config-management-body" class="creation-config-management-body">
           <section class="soft-outline" style="padding:1rem; border-radius:12px;">
             <h4 style="margin-top:0;">创作配置包</h4>
-            <section class="creation-config-existing-packages" aria-labelledby="creation-config-existing-packages-title">
-              <div class="creation-config-package-section-heading">
-                <h5 id="creation-config-existing-packages-title">已有配置包</h5>
-              </div>
+            <section class="creation-config-existing-packages" aria-label="创作配置包">
               <div id="creation-config-package-list"></div>
             </section>
             <label class="creation-config-name-field" for="creation-config-package-name">当前配置包名称<input id="creation-config-package-name" type="text" maxlength="80" placeholder="例如：科普账号长视频" aria-describedby="creation-config-editing-status"></label>
@@ -1105,7 +1090,7 @@
       <div class="config-editor-scroll">
         <div class="prompt-title-row">
           <h3 id="model-management-title" class="highlight-title">模型设置</h3>
-          <button id="btn-model-management-refresh" class="secondary" type="button">刷新</button>
+          <button id="btn-model-management-close-icon" class="icon-button" type="button" aria-label="关闭">×</button>
         </div>
         <p id="model-management-status" class="config-editor-note" aria-live="polite"></p>
         <section class="model-library-section">
@@ -1131,6 +1116,7 @@
                 <option value="openrouter">OpenRouter</option>
                 <option value="newapi">New API / 自建中转</option>
                 <option value="litellm">LiteLLM Proxy</option>
+                <option value="toapis">ToAPIs 图片中转</option>
                 <option value="custom">自定义兼容接口</option>
               </select>
             </label>
@@ -1140,15 +1126,21 @@
             <label id="model-form-text-context-window-row">上下文窗口（Token，可选）<input id="model-form-text-context-window" type="number" min="1024" max="2000000" step="1024" placeholder="例如：128000"></label>
             <label id="model-form-text-max-tokens-row">单次最大输出（Token，可选）<input id="model-form-text-max-tokens" type="number" min="256" max="64000" step="256" placeholder="例如：24000"></label>
             <label id="model-form-text-temperature-row">温度（可选）<input id="model-form-text-temperature" type="number" min="0" max="2" step="0.05" placeholder="例如：0.35"></label>
-            <label id="model-form-image-size-row" hidden>图片尺寸（可选）<input id="model-form-image-size" type="text" maxlength="80" placeholder="例如：1024x1024"></label>
+            <label id="model-form-image-size-row" hidden>图片尺寸（默认 16:9）<input id="model-form-image-size" type="text" maxlength="80" value="1920x1080" placeholder="1920x1080（16:9）"></label>
             <label id="model-form-image-reference-row" hidden>参考图能力
               <span class="model-inline-check"><input id="model-form-image-supports-references" type="checkbox" checked> 支持上传参考图生成</span>
             </label>
             <label id="model-form-image-reference-count-row" hidden>最多参考图
               <select id="model-form-image-max-references"><option value="1">1 张</option><option value="2">2 张</option><option value="3" selected>3 张</option><option value="4">4 张</option><option value="6">6 张</option></select>
             </label>
+            <label id="model-form-toapis-resolution-row" hidden>ToAPIs 分辨率
+              <select id="model-form-toapis-resolution"><option value="1k">1K</option><option value="2k" selected>2K</option><option value="4k">4K</option></select>
+            </label>
+            <label id="model-form-toapis-quality-row" hidden>ToAPIs 图片质量
+              <select id="model-form-toapis-quality"><option value="low">低（预览）</option><option value="medium">中（平衡）</option><option value="high" selected>高（正式出图）</option></select>
+            </label>
             <label id="model-form-tts-provider-row" hidden>语音方式
-              <select id="model-form-tts-provider"><option value="minimax">MiniMax 云端语音</option><option value="comfyui_tts">ComfyUI / IndexTTS（本地）</option></select>
+              <select id="model-form-tts-provider"><option value="minimax">MiniMax 云端语音</option><option value="volcengine_seed_audio">豆包音频生成 1.0（参考音频）</option><option value="comfyui_tts">ComfyUI / IndexTTS（本地）</option></select>
             </label>
           </div>
           <div id="model-form-minimax" class="model-provider-panel" hidden>
@@ -1171,15 +1163,25 @@
               <span id="model-form-comfyui-workflow-status" class="config-editor-note" aria-live="polite"></span>
             </div>
           </div>
+          <div id="model-form-seed-audio" class="model-provider-panel" hidden>
+            <div class="model-setup-grid">
+              <label>接口地址<input id="model-form-seed-audio-endpoint" type="url" maxlength="1000" value="https://openspeech.bytedance.com/api/v3/tts/create"></label>
+              <label>API Key<input id="model-form-seed-audio-key" type="password" maxlength="2000" autocomplete="off" placeholder="保存后不会再次显示"></label>
+              <label>语音模型<input id="model-form-seed-audio-model" type="text" maxlength="160" value="seed-audio-1.0" readonly></label>
+              <label>参考音频<input id="model-form-seed-audio-reference" type="file" accept="audio/wav,audio/mpeg,audio/mp3,audio/ogg,.wav,.mp3,.pcm,.ogg"></label>
+              <label>语速<input id="model-form-seed-audio-speed" type="number" min="0.5" max="2" step="0.05" value="1"></label>
+              <label>音量<input id="model-form-seed-audio-volume" type="number" min="0.5" max="2" step="0.05" value="1"></label>
+              <label>音调<input id="model-form-seed-audio-pitch" type="number" min="-12" max="12" step="1" value="0"></label>
+              <label class="model-setup-grid-span-two">口播风格<input id="model-form-seed-audio-prompt-prefix" type="text" maxlength="300" value="参考此音频中的人物音色。一个人在做口播短视频，内容如下："></label>
+            </div>
+            <p class="config-editor-note">系统会自动绑定已上传的参考音频，并将口播风格置于旁白前。输出固定为 MP3 / 48kHz；字幕与水印不会发送。</p>
+          </div>
           <p id="model-setup-editing-status" class="config-editor-note" aria-live="polite" hidden></p>
           <div class="model-setup-actions">
             <button id="btn-save-model" class="success" type="button">保存文本模型</button>
             <button id="btn-cancel-model-edit" class="secondary" type="button" hidden>取消编辑</button>
           </div>
         </section>
-      </div>
-      <div class="config-editor-actions">
-        <button id="btn-model-management-close" class="secondary" type="button">关闭</button>
       </div>
     </div>
   </div>
@@ -1586,13 +1588,13 @@
   <!-- 主业务 JavaScript 脚本 -->
   <script src="flow.js?v=3.0.5"></script>
   <script src="workflow_state.js?v=20260820.1"></script>
-  <script src="ui_foundation.js?v=20260913.1"></script>
-  <script src="api_client.js?v=20260812.1"></script>
+  <script src="ui_foundation.js?v=20260914.1"></script>
+  <script src="api_client.js?v=20260914.1"></script>
   <script src="artifact_repair.js?v=20260801.1"></script>
   <script src="prompt_help.js?v=20260801.1"></script>
   <script src="settings.js?v=20260907.1"></script>
-  <script src="projects.js?v=20260906.1"></script>
-  <script src="creation_config_management.js?v=20260914.1"></script>
+  <script src="projects.js?v=20260915.1"></script>
+  <script src="creation_config_management.js?v=20260915.1"></script>
   <script src="select_menus.js?v=20260906.1"></script>
   <script src="courses.js?v=20260913.2"></script>
   <script src="article.js?v=20260801.1"></script>
@@ -1610,11 +1612,11 @@
   <script src="account_management.js?v=20260913.1"></script>
   <script src="workspace_navigation.js?v=20260913.1"></script>
   <script src="event_bindings.js?v=20260906.1"></script>
-  <script src="project_profile_extension.js?v=20260913.3"></script>
+  <script src="project_profile_extension.js?v=20260915.1"></script>
   <script src="storyboard_background_extension.js?v=20260807.1"></script>
   <script src="style_reference_manager_extension.js?v=3.0.1"></script>
   <script src="ai_mask_auto_state.js?v=20260809.1"></script>
-  <script src="digital_human_panel.js?v=20260827.2"></script>
+  <script src="digital_human_panel.js?v=20260914.1"></script>
   <script src="ai_mask_extension.js?v=20260912.3"></script>
   <script src="one_click_extension.js?v=20260912.1"></script>
 </body>

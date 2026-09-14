@@ -408,6 +408,14 @@ function renderStep2Workspace() {
   // 渲染精简版横向缩略图（只显示 Slide 序号）
   const thumbsContainer = document.getElementById('step2-thumbs');
   thumbsContainer.style.display = 'flex'; // 显式呈现
+  if (!thumbsContainer.dataset.horizontalWheelBound) {
+    thumbsContainer.dataset.horizontalWheelBound = 'true';
+    thumbsContainer.addEventListener('wheel', event => {
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      event.preventDefault();
+      thumbsContainer.scrollLeft += event.deltaY;
+    }, { passive: false });
+  }
   thumbsContainer.classList.toggle('step2-batch-delete-mode', state.step2BatchDeleteMode);
   thumbsContainer.innerHTML = '';
 

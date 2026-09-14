@@ -114,12 +114,14 @@ if (!html.includes('id="input-creation-config"')) {
 for (const creationConfigToken of [
   "API.get('/api/creation-configs')",
   'config_package_id: creationConfig.id',
-  'config_package_version: creationConfig.version',
   "option.textContent = String(item.name || '未命名配置包');",
 ]) {
   if (!projects.includes(creationConfigToken)) {
     throw new Error(`project creation configuration contract missing: ${creationConfigToken}`);
   }
+}
+if (projects.includes('config_package_version: creationConfig.version')) {
+  throw new Error('project creation must not pin a creation configuration version');
 }
 if (!eventBindings.includes('loadCreationConfigs();')) {
   throw new Error('creation configuration packages are not loaded when opening the project modal');
@@ -289,9 +291,11 @@ for (const courseTreeToken of [
   }
 }
 if (!projectProfile.includes("apiGet('/api/creation-configs')")
-  || !projectProfile.includes('config_package_id: creationConfig.id')
-  || !projectProfile.includes('config_package_version: creationConfig.version')) {
+  || !projectProfile.includes('config_package_id: creationConfig.id')) {
   throw new Error('profile project creation does not preserve the selected creation configuration');
+}
+if (projectProfile.includes('config_package_version: creationConfig.version')) {
+  throw new Error('profile project creation must not pin a creation configuration version');
 }
 for (const defaultConfigToken of [
   "apiGet('/api/accounts/current')",
@@ -984,6 +988,12 @@ for (const panelClass of [
 }
 if (/step2-sticky-header" style="[^"]*margin-top:/s.test(html) || /step3-toolbar-row" style="[^"]*margin-/s.test(html)) {
   throw new Error('workflow header spacing must not be controlled by inline margins');
+}
+if (html.includes('step8-subtitle-readiness')) {
+  throw new Error('Step 8 must not show the redundant subtitle readiness badge');
+}
+if (!outputRender.includes("button.dataset.subtitleReady = ready ? 'true' : 'false'")) {
+  throw new Error('subtitle download readiness must remain functional without the removed badge');
 }
 
 console.log('frontend quality checks passed');

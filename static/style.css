@@ -10297,7 +10297,7 @@ button.success:hover,
   margin: 0 !important;
 }
 #step3-images-grid.step3-grid-four { gap: 1rem !important; }
-@media (min-width: 960px) { #step3-images-grid.step3-grid-four { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
+@media (min-width: 960px) { #step3-images-grid.step3-grid-four { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; } }
 .step3-image-card { border: 1px solid #e2e8f0 !important; border-radius: 14px !important; background: #fff !important; box-shadow: none !important; }
 .step3-image-card:hover { border-color: #fed7aa !important; box-shadow: 0 8px 20px rgba(15, 23, 42, .05) !important; }
 
@@ -12055,4 +12055,147 @@ body:not(.workspace-open) #page-home .stitch-video-menu .icon-action-btn svg {
 @keyframes failureBadgePulse {
   0%, 100% { box-shadow: 0 0 0 4px rgba(214, 69, 69, 0.15); }
   50% { box-shadow: 0 0 0 7px rgba(214, 69, 69, 0.08); }
+}
+
+/* 20260914 library/config/workspace compactness pass */
+.model-library-list { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; align-items: stretch; }
+.model-library-card { display: flex !important; min-height: 138px; flex-direction: column; align-items: stretch; gap: .55rem !important; }
+.model-library-card-heading { min-height: 3.15rem; align-items: flex-start; }
+.model-library-card-heading strong { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; line-height: 1.5; }
+.model-library-card-detail { min-height: 1.2rem; white-space: nowrap; }
+.model-library-card-actions { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .45rem; margin-top: auto; }
+.model-library-card-actions button { width: 100%; justify-content: center; }
+.creation-config-management-body > .soft-outline { width: 100%; box-sizing: border-box; padding: 0 !important; border: 0 !important; background: transparent !important; box-shadow: none !important; }
+.creation-config-package-grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+.creation-config-package-card { min-height: 132px; }
+.creation-config-package-card-heading { min-height: 3.15rem; align-items: flex-start; }
+.creation-config-package-card-heading strong { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.creation-config-package-card-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.creation-config-package-card-actions button { width: 100%; justify-content: center; }
+.creation-config-native-select { display: block !important; width: 100%; min-height: 46px; padding: 0 .85rem; border: 1px solid var(--color-border-default); border-radius: 10px; background: #fff; color: var(--color-text-primary); font: inherit; font-weight: 650; }
+.creation-config-choice-grid { display: none !important; }
+#modal-confirm .modal-content { width: min(680px, calc(100vw - 32px)) !important; max-width: 680px !important; min-height: 280px; display: flex; flex-direction: column; justify-content: center; padding: 2rem 2.4rem !important; border-radius: 16px !important; }
+body:not(.workspace-open) .home-library-video-card { min-height: 148px !important; }
+body:not(.workspace-open) .home-library-video-card .home-library-video-name { min-height: 2.84em; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.workflow-header, .step1-heading-row, .step2-sticky-header, .step3-toolbar-row, .step5-mask-header, .step6-compact-header, .step9-header, .step8-header { position: sticky; top: 0; z-index: 20; background: var(--color-bg-page, #f8fafc) !important; box-shadow: 0 10px 12px -12px rgba(15, 23, 42, .28); }
+#step-panel-5 { height: auto !important; min-height: 0 !important; overflow: visible !important; }
+#step-panel-5 .workspace-split { min-height: 0 !important; height: auto !important; }
+#step2-thumbs { scrollbar-width: none; -ms-overflow-style: none; }
+#step2-thumbs::-webkit-scrollbar { display: none; }
+.toast-error, .failure-badge { max-width: min(420px, calc(100vw - 32px)); }
+.toast-error { cursor: copy; }
+.toast-close, .failure-badge-close { flex: 0 0 auto; border: 0; border-radius: 7px; background: transparent; color: inherit; font: inherit; font-size: .72rem; cursor: pointer; }
+.failure-badge-close { padding: .2rem .35rem; color: #9f3f3f; }
+.project-activity-status:empty { display: none !important; }
+.project-activity-status:empty::after { content: none !important; }
+@media (max-width: 980px) { .model-library-list, .creation-config-package-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
+@media (max-width: 620px) { .model-library-list, .creation-config-package-grid { grid-template-columns: 1fr !important; } }
+
+/* Screenshot-targeted compact library and configuration cards. */
+body:not(.workspace-open) #page-home .stitch-video-grid { gap: .7rem !important; }
+body:not(.workspace-open) #page-home .stitch-video-preview { aspect-ratio: 2.35 / 1 !important; }
+body:not(.workspace-open) #page-home .stitch-video-content { flex: 0 0 auto !important; padding: .46rem .58rem .5rem !important; }
+body:not(.workspace-open) #page-home .stitch-video-name { display: -webkit-box !important; min-height: 2.35em !important; overflow: hidden !important; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal !important; line-height: 1.18 !important; }
+body:not(.workspace-open) #page-home .stitch-video-progress-block { margin-top: .28rem !important; }
+body:not(.workspace-open) #page-home .stitch-video-progress { height: 4px !important; margin-top: .22rem !important; }
+body:not(.workspace-open) #page-home .stitch-progress-segment { height: 4px !important; }
+body:not(.workspace-open) #page-home .stitch-video-play { width: 30px !important; height: 30px !important; }
+
+body:not(.workspace-open) #page-home .stitch-course-header { grid-template-columns: 14px 16px max-content 20px !important; justify-content: start !important; gap: .35rem !important; }
+body:not(.workspace-open) #page-home .stitch-course-header .course-name { max-width: 142px; }
+body:not(.workspace-open) #page-home .stitch-chapter-header { grid-template-columns: 12px 14px max-content 20px !important; justify-content: start !important; gap: .35rem !important; }
+body:not(.workspace-open) #page-home .stitch-chapter-header .chapter-name { max-width: 128px; }
+body:not(.workspace-open) #page-home .stitch-course-header .tree-overflow,
+body:not(.workspace-open) #page-home .stitch-chapter-header .tree-overflow { justify-self: start !important; }
+header .account-picker-menu { width: var(--account-picker-width, 132px) !important; min-width: 0 !important; }
+header .account-picker-menu .account-picker-option[aria-selected="true"] { box-shadow: none !important; }
+
+#modal-model-management .prompt-title-row { justify-content: flex-start !important; }
+#modal-model-management .model-library-section { box-shadow: none !important; }
+#modal-model-management input,
+#modal-model-management select,
+#modal-model-management textarea { box-shadow: none !important; }
+#modal-model-management .model-library-list { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+#modal-model-management .model-library-card { display: flex !important; min-height: 118px !important; flex-direction: column !important; padding: .72rem !important; }
+#modal-model-management .model-library-card-heading { display: block !important; min-height: 3rem !important; }
+#modal-model-management .model-library-card-heading strong { display: -webkit-box !important; overflow: hidden !important; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal !important; }
+#modal-model-management .model-library-card-actions { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; width: 100% !important; margin-top: auto !important; }
+#modal-model-management .model-library-card-actions button { display: flex !important; width: 100% !important; justify-content: center !important; }
+
+#modal-creation-config-management .creation-config-package-card { display: flex !important; min-height: 126px !important; flex-direction: column !important; }
+#modal-creation-config-management .creation-config-package-card-heading { display: block !important; min-height: 3rem !important; }
+#modal-creation-config-management .creation-config-package-card-heading strong { display: -webkit-box !important; overflow: hidden !important; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal !important; }
+#modal-creation-config-management .creation-config-package-card-actions { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)) !important; width: 100% !important; margin-top: auto !important; }
+#modal-creation-config-management .creation-config-package-card-actions button { display: flex !important; width: 100% !important; justify-content: center !important; }
+#modal-creation-config-management .creation-config-tabs [role="tab"].is-active,
+#modal-creation-config-management .creation-config-tabs [role="tab"][aria-selected="true"] { border-color: #f46a38 !important; background: #fff0ea !important; color: #c9481b !important; box-shadow: inset 0 -2px 0 #f46a38 !important; }
+#modal-creation-config-management .creation-config-concurrency-group { display: block !important; min-height: 0 !important; }
+#modal-creation-config-management .creation-config-concurrency-group > h5 { display: block !important; margin: 0 0 .65rem !important; }
+#modal-creation-config-management .creation-config-concurrency-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+
+/* Workspace headers must be an opaque continuation of the working canvas.
+   They deliberately reach the top edge of the scrolling region so content
+   never shows through behind a title or toolbar. */
+body.workspace-open .main-content {
+  --workspace-canvas-bg: var(--color-bg-page, #f8fafc);
+  padding: 0 2rem 2.5rem !important;
+  background: var(--workspace-canvas-bg) !important;
+}
+body.workspace-open .step-panel {
+  min-height: 100%;
+  background: var(--workspace-canvas-bg) !important;
+}
+body.workspace-open .workflow-header,
+body.workspace-open .step1-heading-row,
+body.workspace-open .step2-sticky-header,
+body.workspace-open .step3-toolbar-row,
+body.workspace-open .step5-mask-header,
+body.workspace-open .step6-compact-header,
+body.workspace-open .step9-header,
+body.workspace-open .step8-header {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 30 !important;
+  margin: 0 -2rem .85rem !important;
+  padding: .62rem 2rem !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--color-border-default, #e2e8f0) !important;
+  border-radius: 0 !important;
+  background: var(--workspace-canvas-bg) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+body.workspace-open #step-panel-2 .step2-sticky-header {
+  position: sticky !important;
+  margin-bottom: .45rem !important;
+}
+body.workspace-open #step-panel-8,
+body.workspace-open #step-panel-9 {
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: var(--workspace-canvas-bg) !important;
+  box-shadow: none !important;
+}
+body.workspace-open #step-panel-9 .dh-panel {
+  margin-top: .85rem !important;
+}
+body.workspace-open #step-panel-5,
+body.workspace-open #step-panel-5 .workspace-split {
+  height: auto !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+}
+@media (max-width: 1180px) {
+  body.workspace-open .main-content { padding-inline: 1.25rem !important; }
+  body.workspace-open .workflow-header,
+  body.workspace-open .step1-heading-row,
+  body.workspace-open .step2-sticky-header,
+  body.workspace-open .step3-toolbar-row,
+  body.workspace-open .step5-mask-header,
+  body.workspace-open .step6-compact-header,
+  body.workspace-open .step9-header,
+  body.workspace-open .step8-header { margin-inline: -1.25rem !important; padding-inline: 1.25rem !important; }
 }

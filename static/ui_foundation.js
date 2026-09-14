@@ -20,21 +20,45 @@ function getToastPresentation(message) {
 
 function showToast(message, duration = 1800) {
   const container = document.getElementById('toast-container');
+  const presentation = getToastPresentation(message);
+  const toastKey = `${presentation.tone}:${presentation.text}`;
+  const duplicate = Array.from(container.children).find(item => item.dataset.toastKey === toastKey);
+  if (duplicate) return duplicate;
   while (container.children.length >= 4) {
     container.firstElementChild?.remove();
   }
-  const presentation = getToastPresentation(message);
   const toast = document.createElement('div');
   toast.className = `toast toast-${presentation.tone}`;
+  toast.dataset.toastKey = toastKey;
   toast.setAttribute('role', presentation.tone === 'error' ? 'alert' : 'status');
   const content = document.createElement('div');
   content.className = 'toast-content';
   content.textContent = presentation.text;
   toast.appendChild(content);
   container.appendChild(toast);
-  // Notifications are acknowledgements, not persistent UI.  Keep all of
-  // them within the same brief 1–2 second window even when legacy callers
-  // request a longer duration.
+  if (presentation.tone === 'error') {
+    const close = document.createElement('button');
+    close.className = 'toast-close';
+    close.type = 'button';
+    close.textContent = '关闭';
+    close.addEventListener('click', event => {
+      event.stopPropagation();
+      toast.remove();
+    });
+    toast.appendChild(close);
+    toast.title = '点击可复制完整异常信息';
+    toast.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(String(message ?? ''));
+        close.textContent = '已复制';
+      } catch (_) {
+        close.textContent = '复制失败';
+      }
+      toast.remove();
+    });
+    return;
+  }
+  // 通知类消息只短暂出现；异常类消息则由上方的关闭按钮明确处理。
   const visibleDuration = Math.max(1000, Math.min(2000, Number(duration) || 1800));
   setTimeout(() => {
     toast.style.animation = 'slideUp 0.3s ease-in reverse';
@@ -107,8 +131,7 @@ function autoResizeTextarea(textarea) {
   textarea.style.height = `${textarea.scrollHeight + 2}px`;
 }
 
-// 失败提示与普通 toast 一样会自行收起；失败信息停留稍久，避免在
-// 批量任务中一闪而过，但不把过期状态留在页面上。
+// 失败信息需由用户显式关闭；点击正文可复制完整报错，避免截断后无法排查。
 let failureBadgeLastKey = '';
 let failureBadgeDismissedKey = '';
 let failureBadgeTimer = null;
@@ -124,11 +147,6 @@ function showFailureBadge(key, message, detail) {
     badge.id = 'failure-badge';
     badge.className = 'failure-badge';
     badge.setAttribute('role', 'alert');
-    badge.addEventListener('click', () => {
-      failureBadgeDismissedKey = failureBadgeLastKey;
-      if (failureBadgeTimer) window.clearTimeout(failureBadgeTimer);
-      badge.remove();
-    });
     document.body.appendChild(badge);
   }
   const dot = document.createElement('span');
@@ -145,12 +163,22 @@ function showFailureBadge(key, message, detail) {
     body.appendChild(line);
   }
   badge.replaceChildren(dot, body);
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'failure-badge-close';
+  close.textContent = '关闭';
+  close.addEventListener('click', event => {
+    event.stopPropagation();
+    failureBadgeDismissedKey = badgeKey;
+    badge.remove();
+  });
+  badge.append(close);
   badge.style.display = 'flex';
   if (failureBadgeTimer) window.clearTimeout(failureBadgeTimer);
-  const scheduledKey = badgeKey;
-  failureBadgeTimer = window.setTimeout(() => {
-    if (badge.isConnected) badge.remove();
-    failureBadgeDismissedKey = scheduledKey;
-    failureBadgeTimer = null;
-  }, 1800);
+  badge.title = '点击可复制完整异常信息';
+  badge.onclick = async () => {
+    try { await navigator.clipboard.writeText(`${text}${detailText ? `\n${detailText}` : ''}`); } catch (_) {}
+    failureBadgeDismissedKey = badgeKey;
+    badge.remove();
+  };
 }

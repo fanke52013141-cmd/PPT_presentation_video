@@ -34,10 +34,7 @@ function ensureCreationConfigSelector() {
 
 function selectedCreationConfig() {
   const select = document.getElementById('input-creation-config');
-  const option = select?.selectedOptions?.[0];
-  const version = Number(option?.dataset?.version);
-  if (!select?.value || !Number.isInteger(version) || version < 1) return null;
-  return { id: select.value, version };
+  return select?.value ? { id: select.value } : null;
 }
 
 /** Load reusable creation packages without making package selection mandatory. */
@@ -46,7 +43,6 @@ async function loadCreationConfigs() {
   if (!select) return;
 
   const selectedId = select.value;
-  const selectedVersion = select.selectedOptions?.[0]?.dataset?.version || '';
   const emptyOption = document.createElement('option');
   emptyOption.value = '';
   emptyOption.textContent = '不使用创作配置包';
@@ -57,17 +53,12 @@ async function loadCreationConfigs() {
     select.replaceChildren(emptyOption);
     packages.forEach(item => {
       if (!item || typeof item.id !== 'string' || !item.id || item.archived) return;
-      const version = Number(item.latest_version);
-      if (!Number.isInteger(version) || version < 1) return;
       const option = document.createElement('option');
       option.value = item.id;
-      option.dataset.version = String(version);
       option.textContent = String(item.name || '未命名配置包');
       select.appendChild(option);
     });
-    const restore = Array.from(select.options).find(option => (
-      option.value === selectedId && option.dataset.version === selectedVersion
-    ));
+    const restore = Array.from(select.options).find(option => option.value === selectedId);
     select.value = restore ? selectedId : '';
     window.refreshCreationConfigChoices?.(packages);
   } catch (_) {
@@ -241,7 +232,6 @@ async function createProject() {
     canvas_profile: canvasProfile,
     ...(creationConfig ? {
       config_package_id: creationConfig.id,
-      config_package_version: creationConfig.version,
     } : {}),
     ...(parent || {}),
   });

@@ -20,8 +20,21 @@ from typing import Any, Sequence
 DEFAULT_WIDTH = 1920
 DEFAULT_HEIGHT = 1080
 STAGE_CHOICES = ("contract", "image", "reveal", "render_ready", "all")
-DEFAULT_ALLOWED_IMAGE_PROVIDERS = ("codex_image_gen", "openai_compatible", "manual_upload")
-PRODUCTION_ALLOWED_IMAGE_PROVIDERS = ("codex_image_gen", "openai_compatible")
+DEFAULT_ALLOWED_IMAGE_PROVIDERS = (
+    "codex_image_gen",
+    "codex2api",
+    "openai_compatible",
+    "toapis",
+    "xiaoxinai",
+    "manual_upload",
+)
+PRODUCTION_ALLOWED_IMAGE_PROVIDERS = (
+    "codex_image_gen",
+    "codex2api",
+    "openai_compatible",
+    "toapis",
+    "xiaoxinai",
+)
 
 
 class StageError(RuntimeError):

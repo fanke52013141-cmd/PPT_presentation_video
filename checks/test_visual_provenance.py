@@ -20,6 +20,7 @@ from visual_provenance import (  # noqa: E402
     promote_candidate_provenance,
     render_allowed_providers,
     refresh_provenance_contract_hashes,
+    visual_provenance_status,
     write_visual_provenance,
 )
 
@@ -99,9 +100,37 @@ def test_production_provider_policy_is_configurable() -> None:
     with patch.dict(os.environ, {"PPT_STUDIO_PRODUCTION_IMAGE_PROVIDERS": "codex_image_gen,manual_upload"}):
         assert production_allowed_image_providers() == ("codex_image_gen", "manual_upload")
     assert "codex2api" in render_allowed_providers()
+    assert "toapis" in render_allowed_providers()
+    assert "toapis" in production_allowed_image_providers()
 
     source = (
         ROOT / "image_workflow_service.py"
     ).read_text(encoding="utf-8")
     assert "write_visual_provenance(" in source
     assert "project_generate_prompt_for_slide(" in source
+
+
+def test_toapis_generated_image_is_accepted_by_confirmation_policy() -> None:
+    with tempfile.TemporaryDirectory() as value:
+        run_dir = Path(value)
+        _contract(run_dir, ["slide_001"])
+        image = run_dir / "slides" / "slide_001" / "visual_draft.png"
+        image.parent.mkdir(parents=True)
+        image.write_bytes(b"toapis-image")
+        write_visual_provenance(
+            run_dir,
+            "slide_001",
+            image_path=image,
+            provider="toapis",
+            source_type="api_generation",
+            model="gpt-image-2-vip",
+            prompt="prompt",
+            source_bytes=b"provider-response",
+        )
+
+        assert visual_provenance_status(run_dir, "slide_001") == {
+            "valid": True,
+            "reason": "valid",
+            "slide_id": "slide_001",
+            "provider": "toapis",
+        }

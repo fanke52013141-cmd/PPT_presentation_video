@@ -1,4 +1,4 @@
-"""Regression coverage for immutable project config reads in text stages."""
+"""Regression coverage for current reusable project configuration reads."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import narration_service
 import project_config_runtime as runtime
 import storyboard_service
+import creation_config_service
 import pytest
 
 
@@ -52,6 +53,50 @@ def test_safe_snapshot_read_and_legacy_fallback(tmp_path: Path) -> None:
     assert runtime.get_config_value(
         project, "prompts.article_generation.system_content"
     ) == "项目 Prompt"
+
+
+def test_selected_package_is_resolved_live_instead_of_using_stale_snapshot(
+    tmp_path: Path, monkeypatch
+) -> None:
+    planning = tmp_path / "planning"
+    planning.mkdir()
+    (planning / "project_config.json").write_text(
+        json.dumps(
+            {
+                "package_id": "current-package",
+                "payload": {
+                    "schema_version": "creation_config_v1",
+                    "model_bindings": {
+                        "image_generation": {"connection_id": "old-image", "revision": 9}
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    project = SimpleNamespace(
+        id="live-config-test",
+        run_dir=str(tmp_path),
+        account_id="default",
+        creation_config_package_id="current-package",
+    )
+    monkeypatch.setattr(
+        creation_config_service,
+        "resolve_creation_config",
+        lambda *_args, **_kwargs: {
+            "package_id": "current-package",
+            "payload": {
+                "schema_version": "creation_config_v1",
+                "model_bindings": {
+                    "image_generation": {"connection_id": "new-image"}
+                },
+            },
+        },
+    )
+
+    assert runtime.get_config_value(
+        project, "model_bindings.image_generation.connection_id"
+    ) == "new-image"
 
 
 def test_project_step_contract_is_an_optional_runtime_quality_gate(tmp_path: Path) -> None:

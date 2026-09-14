@@ -37,17 +37,15 @@ def _connection_references(payload: dict[str, Any]) -> dict[str, int]:
             if not isinstance(item, dict):
                 continue
             connection_id = str(item.get("connection_id") or "").strip()
-            revision = item.get("revision")
-            if connection_id and isinstance(revision, int) and revision > 0:
-                references[connection_id] = revision
+            if connection_id:
+                references[connection_id] = 1
 
     tts = payload.get("tts")
     connection = tts.get("connection") if isinstance(tts, dict) else None
     if isinstance(connection, dict):
         connection_id = str(connection.get("connection_id") or "").strip()
-        revision = connection.get("revision")
-        if connection_id and isinstance(revision, int) and revision > 0:
-            references[connection_id] = revision
+        if connection_id:
+            references[connection_id] = 1
     return references
 
 

@@ -192,11 +192,9 @@
       state.connections
         .filter(connection => connection.kind === kind && connection.state === 'active')
         .forEach(connection => {
-          const revision = connectionRevision(connection);
-          const revisionNumber = Number(revision.revision || connection.current_revision);
-          if (!connection.id || !Number.isInteger(revisionNumber) || revisionNumber < 1) return;
+          if (!connection.id) return;
           const option = document.createElement('option');
-          option.value = `${connection.id}@${revisionNumber}`;
+          option.value = connection.id;
           // The selector is a business choice, not a diagnostic screen.  A
           // connection's display name is enough here; provider/model/version
           // remain available in its editor and must not crowd the selection.
@@ -209,10 +207,7 @@
 
   function connectionValue(reference) {
     if (!reference || typeof reference !== 'object') return '';
-    const revision = Number(reference.revision);
-    return typeof reference.connection_id === 'string' && Number.isInteger(revision) && revision > 0
-      ? `${reference.connection_id}@${revision}`
-      : '';
+    return typeof reference.connection_id === 'string' ? reference.connection_id : '';
   }
 
   function setBindingValue(key, reference) {
@@ -220,13 +215,9 @@
     if (!select) return;
     const value = connectionValue(reference);
     if (value && ![...select.options].some(option => option.value === value)) {
-      // Historical versions are valid for immutable existing packages even if
-      // the connection was disabled, archived, or upgraded.  Keep an explicit
-      // selectable record so opening and saving an old package never clears it.
       const historical = document.createElement('option');
       historical.value = value;
-      historical.textContent = `已绑定历史版本 · ${value}`;
-      historical.dataset.historicalBinding = 'true';
+      historical.textContent = `当前未启用 · ${value}`;
       select.append(historical);
     }
     select.value = value;
@@ -488,11 +479,7 @@
 
   function firstActiveConnectionReference(kind) {
     const connection = state.connections.find(item => item.kind === kind && item.state === 'active');
-    const revision = connectionRevision(connection);
-    const revisionNumber = Number(revision.revision || connection?.current_revision);
-    return connection?.id && Number.isInteger(revisionNumber) && revisionNumber > 0
-      ? { connection_id: connection.id, revision: revisionNumber }
-      : null;
+    return connection?.id ? { connection_id: connection.id } : null;
   }
 
   function applyDefaultModelBindings() {
@@ -512,10 +499,7 @@
 
   function readBindingValue(key) {
     const value = element(`creation-config-binding-${key}`)?.value || '';
-    const at = value.lastIndexOf('@');
-    const revision = Number(value.slice(at + 1));
-    if (at <= 0 || !Number.isInteger(revision) || revision < 1) return null;
-    return { connection_id: value.slice(0, at), revision };
+    return value ? { connection_id: value } : null;
   }
 
   function payloadFromEditor() {
@@ -739,15 +723,10 @@
       toast('无法识别当前账号，请刷新后重试');
       return;
     }
-    const version = Number(packageItem.latest_version);
-    if (!Number.isInteger(version) || version < 1) {
-      toast('该配置包没有可用版本');
-      return;
-    }
     try {
       await window.API.put(`/api/accounts/${encodeURIComponent(state.currentAccountId)}/default-config`, {
         package_id: packageItem.id,
-        version,
+        version: null,
       });
       toast(`已将“${packageItem.name || '此配置包'}”设为当前账号默认配置`);
       await refreshCreationConfigManagement();
@@ -804,14 +783,14 @@
     },
     image: {
       title: '新增图片模型',
-      description: '适用于整页图片生成；使用兼容 OpenAI Images API 的服务。',
+      description: '适用于整页图片生成；支持 OpenAI 兼容接口或 ToAPIs 异步图片中转。',
       action: '另存为图片模型模板',
       name: '例如：GPT Image 图片模型',
       model: '例如：gpt-image-2',
     },
     tts: {
       title: '新增语音模型',
-      description: 'MiniMax 使用云端 Token；ComfyUI / IndexTTS 使用本地工作流，不需要 API 密钥。',
+      description: '支持 MiniMax、豆包音频生成 1.0 参考音频生成，以及本地 ComfyUI / IndexTTS。',
       action: '另存为语音模型模板',
       name: '例如：自然讲解语音',
       model: '',
@@ -823,13 +802,16 @@
     openrouter: { endpoint: 'https://openrouter.ai/api/v1', model: '' },
     newapi: { endpoint: '', model: '' },
     litellm: { endpoint: 'http://localhost:4000/v1', model: '' },
+    toapis: { endpoint: 'https://toapis.cn', model: 'gpt-image-2-vip' },
     custom: { endpoint: '', model: '' },
   };
 
   function modelProviderLabel(provider) {
     const labels = {
       openai_compatible: 'OpenAI 兼容接口',
+      toapis: 'ToAPIs',
       minimax: 'MiniMax',
+      volcengine_seed_audio: '豆包音频生成 1.0',
       comfyui_tts: 'ComfyUI / IndexTTS',
     };
     return labels[provider] || provider || '未指定服务';
@@ -847,9 +829,14 @@
   function updateModelProviderPanels() {
     const isTts = state.activeModelKind === 'tts';
     const isComfy = isTts && currentTtsProvider() === 'comfyui_tts';
-    setHidden('model-form-minimax', !isTts || isComfy);
+    const isSeedAudio = isTts && currentTtsProvider() === 'volcengine_seed_audio';
+    setHidden('model-form-minimax', !isTts || isComfy || isSeedAudio);
     setHidden('model-form-comfyui', !isComfy);
+    setHidden('model-form-seed-audio', !isSeedAudio);
     if (isComfy) refreshComfyUiWorkflowStatus();
+    const isToApis = state.activeModelKind === 'image' && element('model-form-protocol')?.value === 'toapis';
+    setHidden('model-form-toapis-resolution-row', !isToApis);
+    setHidden('model-form-toapis-quality-row', !isToApis);
   }
 
   function updateModelSetupForm() {
@@ -888,7 +875,7 @@
     if (editingStatus) {
       editingStatus.hidden = !isEditing;
       editingStatus.textContent = isEditing
-        ? `正在编辑“${editing.name || '未命名模型'}”v${editing.current_revision || 1}；保存会创建新的模型版本。密钥已保存时可留空不改。`
+        ? `正在编辑“${editing.name || '未命名模型'}”；保存会直接更新当前配置。密钥已保存时可留空不改。`
         : '';
     }
     const cancel = element('btn-cancel-model-edit');
@@ -906,11 +893,18 @@
   }
 
   function applyOpenAiCompatiblePreset() {
-    const preset = OPENAI_COMPATIBLE_PRESETS[element('model-form-protocol')?.value] || OPENAI_COMPATIBLE_PRESETS.custom;
+    const protocol = element('model-form-protocol')?.value;
+    const preset = OPENAI_COMPATIBLE_PRESETS[protocol] || OPENAI_COMPATIBLE_PRESETS.custom;
     const endpoint = element('model-form-endpoint');
     const model = element('model-form-model');
     if (endpoint && preset.endpoint) endpoint.value = preset.endpoint;
     if (model && preset.model) model.value = preset.model;
+    if (protocol === 'toapis') {
+      setStringField('model-form-image-size', '16:9');
+      setStringField('model-form-toapis-resolution', '1k');
+      setStringField('model-form-toapis-quality', 'low');
+    }
+    updateModelProviderPanels();
   }
 
   async function refreshCreationConfigManagement() {
@@ -984,7 +978,6 @@
     try {
       await window.API.post(`/api/creation-configs/${encodeURIComponent(packageItem.id)}/copy`, {
         name: name.trim(),
-        version: Number(packageItem.latest_version) || undefined,
       });
       toast('已复制创作配置包');
       await refreshCreationConfigManagement();
@@ -1017,7 +1010,7 @@
       const status = element('creation-config-editing-status');
       if (status) {
         status.hidden = false;
-        status.textContent = '修改仅用于之后新建的视频；已经创建的视频不会受影响。';
+        status.textContent = '保存后，所有引用此创作设置的项目都会使用当前配置。';
       }
       const prepareSaveAs = element('btn-prepare-save-creation-config-as');
       if (prepareSaveAs) prepareSaveAs.hidden = false;
@@ -1204,16 +1197,25 @@
     ['model-form-name', 'model-form-endpoint', 'model-form-api-key', 'model-form-model', 'model-form-image-size', 'model-form-minimax-token', 'model-form-minimax-voice-id', 'model-form-text-context-window', 'model-form-text-max-tokens', 'model-form-text-temperature']
       .forEach(id => { const field = element(id); if (field) field.value = ''; });
     setStringField('model-form-protocol', 'custom');
+    setStringField('model-form-image-size', '1920x1080');
     const supportsReferences = element('model-form-image-supports-references');
     if (supportsReferences) supportsReferences.checked = true;
     const maxReferences = element('model-form-image-max-references');
     if (maxReferences) maxReferences.value = '3';
+    setStringField('model-form-toapis-resolution', '1k');
+    setStringField('model-form-toapis-quality', 'low');
     setStringField('model-form-minimax-endpoint', 'https://api.minimaxi.com/v1/t2a_async_v2');
     setStringField('model-form-minimax-model', 'speech-2.8-hd');
     setStringField('model-form-minimax-speed', '1');
     setStringField('model-form-minimax-volume', '1');
     setStringField('model-form-minimax-pitch', '0');
     setStringField('model-form-comfyui-endpoint', 'http://127.0.0.1:8188');
+    setStringField('model-form-seed-audio-endpoint', 'https://openspeech.bytedance.com/api/v3/tts/create');
+    setStringField('model-form-seed-audio-model', 'seed-audio-1.0');
+    setStringField('model-form-seed-audio-speed', '1');
+    setStringField('model-form-seed-audio-volume', '1');
+    setStringField('model-form-seed-audio-pitch', '0');
+    setStringField('model-form-seed-audio-prompt-prefix', '参考此音频中的人物音色。一个人在做口播短视频，内容如下：');
     const genericSecret = element('model-form-api-key');
     const minimaxSecret = element('model-form-minimax-token');
     if (genericSecret) genericSecret.placeholder = '保存后不会再次显示';
@@ -1254,6 +1256,8 @@
     const supportsReferences = element('model-form-image-supports-references');
     if (supportsReferences) supportsReferences.checked = publicConfig.supports_reference_images !== false;
     setNumberField('model-form-image-max-references', publicConfig.max_reference_images || 3);
+    setStringField('model-form-toapis-resolution', publicConfig.toapis_resolution || '1k');
+    setStringField('model-form-toapis-quality', publicConfig.toapis_quality || 'low');
     if (connection.kind === 'tts') {
       setStringField('model-form-tts-provider', revision.provider || 'minimax');
       setStringField('model-form-minimax-endpoint', revision.endpoint || 'https://api.minimaxi.com/v1/t2a_async_v2');
@@ -1263,10 +1267,29 @@
       setNumberField('model-form-minimax-volume', publicConfig.volume ?? 1);
       setNumberField('model-form-minimax-pitch', publicConfig.pitch ?? 0);
       setStringField('model-form-comfyui-endpoint', revision.endpoint || 'http://127.0.0.1:8188');
+      setStringField('model-form-seed-audio-endpoint', revision.endpoint || 'https://openspeech.bytedance.com/api/v3/tts/create');
+      setStringField('model-form-seed-audio-model', revision.model || 'seed-audio-1.0');
+      setNumberField('model-form-seed-audio-speed', publicConfig.speed ?? 1);
+      setNumberField('model-form-seed-audio-volume', publicConfig.volume ?? 1);
+      setNumberField('model-form-seed-audio-pitch', publicConfig.pitch ?? 0);
+      try {
+        const providerExtra = JSON.parse(String(publicConfig.provider_extra || '{}'));
+        const savedPrefix = String(providerExtra.seed_audio_prompt_prefix || '').trim();
+        setStringField(
+          'model-form-seed-audio-prompt-prefix',
+          !savedPrefix || savedPrefix === '参考上传的音频作为人物音色。一个人在做口播短视频，内容如下：'
+            ? '参考此音频中的人物音色。一个人在做口播短视频，内容如下：'
+            : savedPrefix,
+        );
+      } catch (_) {
+        setStringField('model-form-seed-audio-prompt-prefix', '参考此音频中的人物音色。一个人在做口播短视频，内容如下：');
+      }
     }
     const secretField = connection.kind === 'tts' && revision.provider === 'minimax'
       ? element('model-form-minimax-token')
-      : element('model-form-api-key');
+      : connection.kind === 'tts' && revision.provider === 'volcengine_seed_audio'
+        ? element('model-form-seed-audio-key')
+        : element('model-form-api-key');
     if (secretField && revision.credential_configured) secretField.placeholder = '密钥已保存；留空则不修改';
     updateModelSetupForm();
     element('model-form-name')?.focus();
@@ -1312,6 +1335,29 @@
           volume: readOptionalNumber('model-form-minimax-volume', 0, 10, '音量') ?? 1,
           pitch: readOptionalNumber('model-form-minimax-pitch', -12, 12, '音调') ?? 0,
         };
+      } else if (provider === 'volcengine_seed_audio') {
+        endpoint = element('model-form-seed-audio-endpoint')?.value.trim() || 'https://openspeech.bytedance.com/api/v3/tts/create';
+        apiKey = element('model-form-seed-audio-key')?.value.trim() || '';
+        model = 'seed-audio-1.0';
+        if (!apiKey && !(isEditing && editingConnection?.revision?.credential_configured)) {
+          toast('豆包音频生成 1.0 需要填写或保留已保存的 API Key');
+          return;
+        }
+        const referenceAudio = element('model-form-seed-audio-reference')?.files?.[0];
+        if (!referenceAudio && !publicConfig.clone_voice_id) {
+          toast('豆包音频生成 1.0 需要先上传一条参考音频');
+          return;
+        }
+        publicConfig = {
+          ...publicConfig,
+          speed: readOptionalNumber('model-form-seed-audio-speed', 0.5, 2, '语速') ?? 1,
+          volume: readOptionalNumber('model-form-seed-audio-volume', 0.5, 2, '音量') ?? 1,
+          pitch: readOptionalNumber('model-form-seed-audio-pitch', -12, 12, '音调') ?? 0,
+          provider_extra: JSON.stringify({
+            seed_audio_style_instruction: element('model-form-seed-audio-prompt-prefix')?.value.trim()
+              || '参考此音频中的人物音色。一个人在做口播短视频，内容如下：',
+          }),
+        };
       } else {
         endpoint = element('model-form-comfyui-endpoint')?.value.trim() || 'http://127.0.0.1:8188';
         model = 'IndexTTS-2';
@@ -1326,7 +1372,7 @@
       }
       publicConfig = {
         ...publicConfig,
-        protocol: 'openai_compatible',
+        protocol: element('model-form-protocol')?.value === 'toapis' ? 'toapis' : 'openai_compatible',
         preset: element('model-form-protocol')?.value || 'custom',
       };
       if (kind === 'text') {
@@ -1345,6 +1391,11 @@
           1,
           Math.min(6, Number(element('model-form-image-max-references')?.value) || 3),
         );
+        if (publicConfig.preset === 'toapis') {
+          provider = 'toapis';
+          publicConfig.toapis_resolution = element('model-form-toapis-resolution')?.value || '1k';
+          publicConfig.toapis_quality = element('model-form-toapis-quality')?.value || 'low';
+        }
       }
     }
     const submit = element('btn-save-model');
@@ -1354,8 +1405,17 @@
       const payload = { name, provider, model, endpoint: endpoint || null, public_config: publicConfig };
       if (!isEditing) payload.kind = kind;
       if (credentialRef) payload.credential_ref = credentialRef;
-      if (isEditing) await window.API.put(`/api/model-connections/${encodeURIComponent(editingConnection.id)}`, payload);
-      else await window.API.post('/api/model-connections', payload);
+      const saved = isEditing
+        ? await window.API.put(`/api/model-connections/${encodeURIComponent(editingConnection.id)}`, payload)
+        : await window.API.post('/api/model-connections', payload);
+      if (provider === 'volcengine_seed_audio') {
+        const reference = element('model-form-seed-audio-reference')?.files?.[0];
+        if (reference) {
+          const form = new FormData();
+          form.append('file', reference);
+          await window.API.post(`/api/model-connections/${encodeURIComponent(saved.id)}/reference-audio`, form);
+        }
+      }
       state.editingConnectionId = null;
       clearModelForm();
       toast(isEditing ? '模型修改已保存' : `${MODEL_KIND_COPY[kind].title.replace('新增', '')}模板已保存`);
@@ -1443,7 +1503,7 @@
     element('btn-open-creation-config-management')?.addEventListener('click', openCreationConfigManagement);
     element('btn-open-model-management')?.addEventListener('click', openModelManagement);
     element('btn-creation-config-management-close')?.addEventListener('click', closeCreationConfigManagement);
-    element('btn-model-management-close')?.addEventListener('click', closeModelManagement);
+    element('btn-model-management-close-icon')?.addEventListener('click', closeModelManagement);
     element('btn-model-management-refresh')?.addEventListener('click', refreshCreationConfigManagement);
     element('btn-create-creation-config')?.addEventListener('click', createCreationConfig);
     element('btn-cancel-creation-config-edit')?.addEventListener('click', discardCreationConfigChanges);
@@ -1489,7 +1549,7 @@
         const status = element('creation-config-editing-status');
         if (status?.dataset.configError) {
           delete status.dataset.configError;
-          status.textContent = state.editingPackageId ? '可以保存为新版本。' : '可以创建配置包。';
+          status.textContent = state.editingPackageId ? '可以保存当前修改。' : '可以创建配置包。';
         }
       } catch (error) {
         const status = element('creation-config-editing-status');

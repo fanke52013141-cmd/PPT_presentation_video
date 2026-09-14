@@ -36,6 +36,9 @@ _RATE_LIMIT_MARKERS = (
 TTS_PROVIDER_ALIASES = {
     "doubao": "volcengine_seed",
     "volcengine": "volcengine_seed",
+    "seed_audio": "volcengine_seed_audio",
+    "seed-audio": "volcengine_seed_audio",
+    "seed-audio-1.0": "volcengine_seed_audio",
     "aliyun": "aliyun_cosyvoice",
     "dashscope": "aliyun_cosyvoice",
     "cosyvoice": "aliyun_cosyvoice",
@@ -76,6 +79,12 @@ TTS_PROVIDER_DEFAULTS = {
         "model": "seed-tts-1.1",
         "voice_id": "zh_female_qingxinnvsheng_mars_bigtts",
         "api_key_env": "VOLCENGINE_TTS_TOKEN",
+    },
+    "volcengine_seed_audio": {
+        "endpoint": "https://openspeech.bytedance.com/api/v3/tts/create",
+        "model": "seed-audio-1.0",
+        "voice_id": "",
+        "api_key_env": "VOLCENGINE_TTS_API_KEY",
     },
     "comfyui_tts": {
         "endpoint": "",
@@ -201,7 +210,7 @@ def provider_tts_command(
             "generic_tts.py",
         )
     )
-    return [
+    command = [
         sys.executable,
         script,
         "--provider",
@@ -239,6 +248,9 @@ def provider_tts_command(
         "--timeout",
         str(STEP7_TTS_TIMEOUT_SEC),
     ]
+    if provider == "volcengine_seed_audio":
+        command.extend(["--audio-format", "mp3", "--sample-rate", "48000"])
+    return command
 
 
 def provider_tts_environment(

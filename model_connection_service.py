@@ -215,14 +215,22 @@ def _registry() -> dict[str, Any]:
         # model IDs are unique, and package bindings already carry their
         # account ownership, so retaining it would keep the old isolation.
         connection.pop("account_id", None)
-        normalized_connections[str(connection_id)] = connection
         revisions = connection.get("revisions")
-        if isinstance(revisions, list):
-            for revision in revisions:
-                if isinstance(revision, dict):
-                    credential_ref = _credential_ref(revision.get("credential_ref"))
-                    if credential_ref:
-                        credential_refs.add(credential_ref)
+        if isinstance(revisions, list) and revisions:
+            current_number = int(connection.get("current_revision") or 0)
+            current = next(
+                (item for item in revisions if isinstance(item, dict) and int(item.get("revision") or 0) == current_number),
+                next((item for item in reversed(revisions) if isinstance(item, dict)), None),
+            )
+            if current is not None:
+                current = deepcopy(current)
+                current["revision"] = 1
+                connection["current_revision"] = 1
+                connection["revisions"] = [current]
+                credential_ref = _credential_ref(current.get("credential_ref"))
+                if credential_ref:
+                    credential_refs.add(credential_ref)
+        normalized_connections[str(connection_id)] = connection
     normalized["connections"] = normalized_connections
     if normalized != raw:
         _deps().write_registry(normalized)
@@ -245,11 +253,10 @@ def _revision(connection: Mapping[str, Any], revision: Optional[int] = None) -> 
     revisions = connection.get("revisions")
     if not isinstance(revisions, list) or not revisions:
         raise ValueError("模型连接版本数据损坏")
-    target = int(revision or connection.get("current_revision") or 0)
-    for item in revisions:
-        if isinstance(item, dict) and item.get("revision") == target:
-            return item
-    raise ModelConnectionNotFoundError(f"模型连接版本不存在: {target}")
+    current = next((item for item in reversed(revisions) if isinstance(item, dict)), None)
+    if current is None:
+        raise ValueError("模型连接数据损坏")
+    return current
 
 
 def _public_endpoint(endpoint: Optional[str]) -> Optional[str]:
@@ -441,9 +448,8 @@ def update_model_connection(
         now = _timestamp()
         if "name" in updates:
             connection["name"] = _clean_text(updates["name"], "name", 120)
-        next_revision_number = int(connection["current_revision"]) + 1
         next_revision = _new_revision(
-            revision=next_revision_number,
+            revision=1,
             provider=updates.get("provider", current.get("provider")),
             model=updates.get("model", current.get("model")),
             endpoint=updates.get("endpoint", current.get("endpoint")),
@@ -451,8 +457,8 @@ def update_model_connection(
             public_config=updates.get("public_config", current.get("public_config")),
             created_at=now,
         )
-        connection["revisions"].append(next_revision)
-        connection["current_revision"] = next_revision_number
+        connection["revisions"] = [next_revision]
+        connection["current_revision"] = 1
         connection["updated_at"] = now
         if next_revision["credential_ref"]:
             _deps().promote_credential_ref(next_revision["credential_ref"])
@@ -552,7 +558,7 @@ def resolve_model_connection(
     connection_id: str,
     revision: Optional[int] = None,
 ) -> ResolvedModelConnection:
-    """Resolve an immutable historical binding, including old revisions."""
+    """Resolve the connection's single current configuration."""
     with _registry_lock:
         return _resolve(_connection(_registry(), connection_id), revision)
 

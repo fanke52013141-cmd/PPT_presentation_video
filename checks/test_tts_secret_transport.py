@@ -48,6 +48,29 @@ def test_minimax_adapter_does_not_forward_key_on_command_line() -> None:
     assert 'child_env["MINIMAX_API_KEY"]' in source
 
 
+def test_seed_audio_command_uses_mp3_48khz() -> None:
+    command = provider.provider_tts_command(
+        provider="volcengine_seed_audio",
+        text_file="input.txt",
+        out_audio="voice.mp3",
+        out_meta="meta.json",
+        out_srt="voice.srt",
+        out_timeline="timeline.json",
+        slide_id="slide_001",
+        endpoint="https://openspeech.bytedance.com/api/v3/tts/create",
+        region="",
+        model="seed-audio-1.0",
+        voice_id="",
+        clone_voice_id="reference.mp3",
+        provider_extra="{}",
+        speed="1",
+        volume="1",
+        pitch="0",
+    )
+    assert command[command.index("--audio-format") + 1] == "mp3"
+    assert command[command.index("--sample-rate") + 1] == "48000"
+
+
 if __name__ == "__main__":
     test_tts_credentials_are_not_command_line_arguments()
     test_minimax_adapter_does_not_forward_key_on_command_line()

@@ -138,6 +138,17 @@ def write_json(path: Path | None, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def local_file_sha256(path_value: str) -> str:
+    path = Path(str(path_value or "").strip())
+    if not path.is_file():
+        return ""
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def write_srt(segments: list[dict[str, Any]], out_srt: Path | None) -> None:
     if not out_srt:
         return
@@ -205,6 +216,7 @@ def write_common_outputs(
                 "speed": args.speed,
                 "volume": args.volume,
                 "pitch": args.pitch,
+                "reference_audio_signature": local_file_sha256(args.clone_voice_id),
             },
             "response": response_json,
             "tts_text_has_markup": args._tts_text != subtitle_text,
@@ -458,6 +470,65 @@ def synthesize_volcengine(args: argparse.Namespace, tts_text: str, subtitle_text
     )
 
 
+def synthesize_volcengine_seed_audio(args: argparse.Namespace, tts_text: str, subtitle_text: str) -> None:
+    """Generate narration with Seed Audio using one uploaded reference audio."""
+    api_key = args.api_key or os.getenv("VOLCENGINE_TTS_API_KEY", "")
+    if not api_key:
+        raise TtsError("Volcengine Seed Audio API key is required")
+    reference_path = Path(str(args.clone_voice_id or "").strip())
+    if not reference_path.is_file():
+        raise TtsError("Seed Audio 需要先在语音模型中上传一条参考音频")
+    if reference_path.stat().st_size > 10 * 1024 * 1024:
+        raise TtsError("Seed Audio 参考音频不能超过 10MB")
+    reference_duration = probe_audio_duration_sec(reference_path)
+    if reference_duration is None or reference_duration <= 0:
+        raise TtsError("Seed Audio 参考音频无法解码，请重新上传有效音频")
+    if reference_duration > 30:
+        raise TtsError("Seed Audio 参考音频不能超过 30 秒")
+    # This provider accepts natural-language text directly. Do not pass
+    # MiniMax tags through it; only the Seed Audio prompt prefix is prepended.
+    narration = strip_tts_markup(tts_text)
+    extra = read_provider_extra(args.provider_extra)
+    style_instruction = str(
+        extra.get("seed_audio_style_instruction")
+        or extra.get("seed_audio_prompt_prefix")
+        or "参考此音频中的人物音色。一个人在做口播短视频，内容如下："
+    ).strip()
+    # Reference binding is a protocol requirement, not an editable prompt.
+    # Strip a legacy marker before composing the single deterministic marker.
+    style_instruction = style_instruction.replace("@音频1", "").strip()
+    text_prompt = f"@音频1 {style_instruction}{narration}"
+    payload = {
+        "model": args.model or "seed-audio-1.0",
+        "text_prompt": text_prompt,
+        "references": [
+            {"audio_data": base64.b64encode(reference_path.read_bytes()).decode("ascii")}
+        ],
+        "audio_config": {
+            "format": args.audio_format if args.audio_format in {"wav", "mp3", "pcm", "ogg_opus"} else "mp3",
+            "sample_rate": int(args.sample_rate),
+            "speech_rate": max(-50, min(100, int(round((float(args.speed) - 1) * 100)))),
+            "loudness_rate": max(-50, min(100, int(round((float(args.volume) - 1) * 100)))),
+            "pitch_rate": max(-12, min(12, int(round(float(args.pitch))))),
+            "enable_subtitle": False,
+        },
+        "watermark": {"aigc_watermark": False, "aigc_metadata": {"enable": False}},
+    }
+    with httpx.Client(timeout=args.timeout, trust_env=False) as client:
+        response = client.post(
+            args.endpoint or "https://openspeech.bytedance.com/api/v3/tts/create",
+            headers={"X-Api-Key": api_key, "Content-Type": "application/json"},
+            json=payload,
+        )
+    if response.status_code >= 400:
+        raise TtsError(f"Seed Audio HTTP {response.status_code}: {response.text[:800]}")
+    data = response.json()
+    if int(data.get("code") or 0) != 0:
+        raise TtsError(f"Seed Audio error: {data.get('message') or data}")
+    audio_bytes = decode_audio_value(data.get("audio") or data.get("url"), timeout=args.timeout)
+    write_common_outputs(args=args, provider="volcengine_seed_audio", response_json=data, audio_bytes=audio_bytes, subtitle_text=subtitle_text, duration_sec=data.get("duration"))
+
+
 def synthesize_comfyui(args: argparse.Namespace, tts_text: str, subtitle_text: str) -> None:
     """通过 ComfyUI IndexTTS2 工作流合成语音。
 
@@ -617,6 +688,8 @@ def main() -> int:
         synthesize_tencent(args, tts_text, subtitle_text)
     elif provider == "volcengine_seed":
         synthesize_volcengine(args, tts_text, subtitle_text)
+    elif provider == "volcengine_seed_audio":
+        synthesize_volcengine_seed_audio(args, tts_text, subtitle_text)
     elif provider == "comfyui_tts":
         synthesize_comfyui(args, tts_text, subtitle_text)
     else:

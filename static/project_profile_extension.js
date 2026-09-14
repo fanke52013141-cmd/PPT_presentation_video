@@ -97,8 +97,6 @@
       && !item.archived
       && typeof item.id === 'string'
       && item.id
-      && Number.isInteger(Number(item.latest_version))
-      && Number(item.latest_version) > 0
     ));
   }
 
@@ -111,21 +109,13 @@
     });
   }
 
-  function configVersion(item, defaultConfig) {
-    if (item.id === defaultConfig?.packageId && Number.isInteger(defaultConfig?.version)) {
-      return defaultConfig.version;
-    }
-    return Number(item.latest_version);
-  }
-
   function creationConfigOptions(packages, defaultConfig = PROFILE_STATE.defaultCreationConfig) {
     const available = availableCreationConfigs(packages);
     if (!available.length) return '<option value="">暂无可用创作配置包</option>';
     const options = [];
     available.forEach(item => {
-      const version = configVersion(item, defaultConfig);
       options.push(
-        `<option value="${esc(item.id)}" data-version="${version}">${esc(item.name || '未命名配置包')}</option>`
+        `<option value="${esc(item.id)}">${esc(item.name || '未命名配置包')}</option>`
       );
     });
     return options.join('');
@@ -139,7 +129,6 @@
     const choices = available.map(item => ({
       id: item.id,
       name: item.name || '未命名配置包',
-      version: configVersion(item, defaultConfig),
       isDefault: item.id === defaultConfig?.packageId,
     }));
     return choices.map(item => `
@@ -150,9 +139,10 @@
   }
 
   function refreshCreationConfigChoices(packages, { preferDefault = false } = {}) {
-    const grid = document.getElementById('creation-config-choice-grid');
+    // The former creation-config-choice-grid card wall is deliberately
+    // replaced by the compact native select below.
     const select = document.getElementById('input-creation-config');
-    if (!grid || !select) return;
+    if (!select) return;
     const defaultConfig = PROFILE_STATE.defaultCreationConfig;
     const available = availableCreationConfigs(orderCreationConfigs(packages, defaultConfig));
     const defaultId = available.some(item => item.id === defaultConfig?.packageId)
@@ -161,14 +151,8 @@
     const selected = !preferDefault && available.some(item => item.id === select.value)
       ? select.value
       : (defaultId || available[0]?.id || '');
-    grid.innerHTML = creationConfigChoices(available, defaultConfig);
     select.innerHTML = creationConfigOptions(available, defaultConfig);
     select.value = selected;
-    grid.querySelectorAll('[data-creation-config-choice]').forEach(choice => {
-      const active = choice.dataset.creationConfigChoice === select.value;
-      choice.classList.toggle('active', active);
-      choice.setAttribute('aria-checked', String(active));
-    });
   }
 
   window.refreshCreationConfigChoices = refreshCreationConfigChoices;
@@ -195,10 +179,7 @@
         <section class="project-profile-section" id="create-creation-config-section">
           <h4>2. 创作配置包</h4>
           <span class="project-profile-field-label">选择创作配置包</span>
-          <div id="creation-config-choice-grid" class="creation-config-choice-grid" role="radiogroup" aria-label="创作配置包">
-            ${creationConfigChoices(creationConfigs)}
-          </div>
-          <select id="input-creation-config" class="creation-config-native-select" aria-hidden="true" tabindex="-1">${creationConfigOptions(creationConfigs)}</select>
+          <select id="input-creation-config" class="creation-config-native-select" aria-label="选择创作配置包">${creationConfigOptions(creationConfigs)}</select>
         </section>
         <section class="project-profile-section" id="create-ai-mode-section">
           <h4>3. 创建方式</h4>
@@ -253,18 +234,6 @@
       event.stopPropagation();
       createProjectWithProfile().catch(error => toast(`❌ 创建失败：${error.message}`, 7000));
     }, true);
-    const configGrid = document.getElementById('creation-config-choice-grid');
-    configGrid?.addEventListener('click', event => {
-      const choice = event.target.closest('[data-creation-config-choice]');
-      const select = document.getElementById('input-creation-config');
-      if (!choice || !select) return;
-      select.value = choice.dataset.creationConfigChoice || '';
-      configGrid.querySelectorAll('[data-creation-config-choice]').forEach(item => {
-        const active = item === choice;
-        item.classList.toggle('active', active);
-        item.setAttribute('aria-checked', String(active));
-      });
-    });
   }
 
   function collectProfile(aiMode) {
@@ -282,10 +251,7 @@
 
   function selectedCreationConfig() {
     const select = document.getElementById('input-creation-config');
-    const option = select?.selectedOptions?.[0];
-    const version = Number(option?.dataset?.version);
-    if (!select?.value || !Number.isInteger(version) || version < 1) return null;
-    return { id: select.value, version };
+    return select?.value ? { id: select.value } : null;
   }
 
   async function createProjectWithProfile() {
@@ -316,7 +282,6 @@
         canvas_profile: profile.canvas_profile,
         ...(creationConfig ? {
           config_package_id: creationConfig.id,
-          config_package_version: creationConfig.version,
         } : {}),
         ...(pendingParent || {}),
       });

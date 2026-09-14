@@ -150,7 +150,7 @@ def test_automation_mask_annotation_switch_requires_a_boolean() -> None:
         service.validate_payload(configured)
 
 
-def test_copy_names_a_new_package_and_uses_selected_source_version() -> None:
+def test_copy_names_a_new_package_and_uses_current_configuration() -> None:
     source = service.create_creation_config(name="科普账号", payload=payload())
     changed = payload(subtitles=False)
     service.create_creation_config_version(source["id"], payload=changed)
@@ -162,19 +162,18 @@ def test_copy_names_a_new_package_and_uses_selected_source_version() -> None:
     assert copied["id"] != source["id"]
     assert copied["name"] == "科普账号无字幕"
     assert copied["latest_version"] == 1
-    assert copied["versions"][0]["payload"]["subtitle"]["enabled"] is True
+    assert copied["versions"][0]["payload"]["subtitle"]["enabled"] is False
 
 
-def test_new_version_never_mutates_earlier_version() -> None:
+def test_legacy_version_endpoint_replaces_single_current_configuration() -> None:
     created = service.create_creation_config(name="配置", payload=payload())
-    original = service.get_creation_config_version(created["id"], 1)
-    version_two = service.create_creation_config_version(
+    current = service.create_creation_config_version(
         created["id"], payload=payload(subtitles=False)
     )
 
-    assert version_two["version"] == 2
-    assert service.get_creation_config_version(created["id"], 1) == original
-    assert service.get_creation_config(created["id"])["latest_version"] == 2
+    assert current["version"] == 1
+    assert current["payload"]["subtitle"]["enabled"] is False
+    assert service.get_creation_config(created["id"])["latest_version"] == 1
 
 
 def test_update_replaces_current_configuration_without_creating_a_backup() -> None:
@@ -185,7 +184,7 @@ def test_update_replaces_current_configuration_without_creating_a_backup() -> No
         created["id"], payload=payload()
     )
 
-    assert updated["latest_version"] == 2
+    assert updated["latest_version"] == 1
     assert len(updated["versions"]) == 1
     assert updated["versions"][0]["payload"]["subtitle"]["enabled"] is True
 
@@ -205,7 +204,6 @@ def test_resolve_deep_merge_preserves_explicit_false_override() -> None:
     assert resolved["payload"]["subtitle"]["font_size"] == 42
     assert resolved["payload"]["tts"]["connection"] == {
         "connection_id": "voice-main",
-        "revision": 3,
     }
 
 

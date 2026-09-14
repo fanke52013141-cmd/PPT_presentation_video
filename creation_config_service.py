@@ -278,12 +278,9 @@ def _require_connection_reference(value: Any, *, path: str) -> dict[str, Any]:
             f"{path} 只能保存 connection_id 和 revision"
         )
     connection_id = value.get("connection_id")
-    revision = value.get("revision")
     if not isinstance(connection_id, str) or not connection_id.strip():
         raise CreationConfigValidationError(f"{path}.connection_id 不能为空")
-    if not isinstance(revision, int) or isinstance(revision, bool) or revision < 1:
-        raise CreationConfigValidationError(f"{path}.revision 必须是正整数")
-    return {"connection_id": connection_id.strip(), "revision": revision}
+    return {"connection_id": connection_id.strip()}
 
 
 def _validate_connection_fields(value: Any, *, path: str = "payload") -> None:
@@ -708,6 +705,28 @@ def _store() -> dict[str, Any]:
     store.setdefault("packages", {})
     if store["version"] != STORE_VERSION or not isinstance(store["packages"], dict):
         raise CreationConfigError("创作配置存储版本不受支持")
+    changed = False
+    for package in store["packages"].values():
+        if not isinstance(package, dict):
+            continue
+        versions = package.get("versions")
+        if isinstance(versions, dict) and versions:
+            current = versions.get(str(package.get("latest_version") or ""))
+            if not isinstance(current, dict):
+                current = next(
+                    (item for item in reversed(list(versions.values())) if isinstance(item, dict)),
+                    None,
+                )
+            if current is not None and (len(versions) != 1 or current.get("version") != 1):
+                current = deepcopy(current)
+                current["version"] = 1
+                current["payload"] = validate_payload(current.get("payload") or {})
+                current["content_hash"] = content_hash(current["payload"])
+                package["latest_version"] = 1
+                package["versions"] = {"1": current}
+                changed = True
+    if changed:
+        _deps().store.write(store)
     return store
 
 
@@ -721,7 +740,7 @@ def _package_or_raise(store: dict[str, Any], package_id: str) -> dict[str, Any]:
 
 
 def _version_or_raise(package: dict[str, Any], version: int | None) -> dict[str, Any]:
-    requested = package.get("latest_version") if version is None else version
+    requested = package.get("latest_version")
     if not isinstance(requested, int) or requested < 1:
         raise CreationConfigError("创作配置版本数据不正确")
     record = (package.get("versions") or {}).get(str(requested))
@@ -821,24 +840,8 @@ def create_creation_config(
 
 @_synchronized
 def create_creation_config_version(package_id: str, *, payload: Any) -> dict[str, Any]:
-    normalized_payload = validate_payload(payload)
-    dependencies = _deps()
-    store = _store()
-    package = _package_or_raise(store, package_id)
-    if package.get("archived"):
-        raise CreationConfigConflict("已归档的创作配置不能新增版本")
-    next_version = int(package["latest_version"]) + 1
-    timestamp = dependencies.now()
-    package["versions"][str(next_version)] = {
-        "version": next_version,
-        "created_at": timestamp,
-        "content_hash": content_hash(normalized_payload),
-        "payload": normalized_payload,
-    }
-    package["latest_version"] = next_version
-    package["updated_at"] = timestamp
-    dependencies.store.write(store)
-    return _public_version(package["versions"][str(next_version)])
+    updated = update_creation_config(package_id, payload=payload)
+    return updated["versions"][0]
 
 
 @_synchronized
@@ -866,7 +869,9 @@ def update_creation_config(package_id: str, *, payload: Any, name: Any = None) -
     # Old revisions are not a user-facing feature.  Keep only the current
     # record while retaining its internal revision number for legacy project
     # snapshots and default-config references.
-    package["versions"] = {str(current["version"]): current}
+    current["version"] = 1
+    package["latest_version"] = 1
+    package["versions"] = {"1": current}
     package["updated_at"] = timestamp
     dependencies.store.write(store)
     return _public_package(package, include_payload=True)

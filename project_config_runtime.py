@@ -1,11 +1,9 @@
-"""Safe, read-only access to a project's immutable creation-config snapshot.
+"""Safe access to a project's current reusable creation configuration.
 
-The project service writes ``planning/project_config.json`` when a creation
-configuration is selected.  Runtime services use this module to read the
-snapshot without importing the composition root, the database, or the package
-registry.  A missing or malformed snapshot represents a legacy project and
-returns ``None`` so callers can retain their established global-setting
-fallbacks.
+The project file records which reusable configuration was selected. Runtime
+services resolve that package's single current value so edits apply to every
+referencing project. The saved payload remains only as a legacy fallback for
+isolated tools where the registry is not configured.
 """
 
 from __future__ import annotations
@@ -56,7 +54,7 @@ def project_config_path(project: Any) -> Path | None:
 
 
 def load_project_config(project: Any) -> dict[str, Any] | None:
-    """Load a valid immutable config snapshot, or ``None`` for legacy projects.
+    """Load the selected package's current value, or ``None`` for legacy projects.
 
     This intentionally suppresses filesystem and JSON errors.  A configuration
     snapshot must never make an existing project unusable; individual runtime
@@ -79,6 +77,28 @@ def load_project_config(project: Any) -> dict[str, Any] | None:
         return None
     if not isinstance(payload.get("schema_version"), str):
         return None
+    package_id = getattr(project, "creation_config_package_id", None)
+    account_id = str(getattr(project, "account_id", "default") or "default")
+    if isinstance(package_id, str) and package_id.strip():
+        try:
+            from account_context import account_scope
+            import creation_config_service
+
+            with account_scope(account_id):
+                current = creation_config_service.resolve_creation_config(
+                    package_id.strip(), version=None, overrides={}
+                )
+            if isinstance(current, dict) and isinstance(current.get("payload"), dict):
+                return deepcopy(current)
+        except RuntimeError:
+            # Unit tests and isolated tools may intentionally omit the live
+            # configuration registry; only those environments use the legacy
+            # snapshot fallback.
+            pass
+        except Exception as exc:
+            raise ProjectConfigBindingError(
+                f"当前创作设置不可用: {package_id}"
+            ) from exc
     return deepcopy(raw)
 
 
@@ -87,7 +107,7 @@ def get_config_value(
     path: str | Iterable[str],
     default: Any = None,
 ) -> Any:
-    """Read a nested value from a project snapshot's payload.
+    """Read a nested value from the selected package's current payload.
 
     ``path`` accepts a dot-delimited string or iterable of keys.  Missing keys,
     malformed paths, and absent snapshots return ``default``.  Values are deep
@@ -208,7 +228,7 @@ def resolve_project_model_binding(
             f"项目模型绑定 {binding_name} 格式无效"
         )
     connection_id = binding.get("connection_id")
-    revision = binding.get("revision")
+    revision = binding.get("revision", 1)
     if (
         not isinstance(connection_id, str)
         or not connection_id.strip()
@@ -217,12 +237,12 @@ def resolve_project_model_binding(
         or revision < 1
     ):
         raise ProjectConfigBindingError(
-            f"项目模型绑定 {binding_name} 缺少有效连接版本"
+            f"项目模型绑定 {binding_name} 缺少有效连接"
         )
     if resolve_model_connection is None or get_credential is None:
         raise ProjectConfigBindingError("模型连接服务尚未配置")
     try:
-        connection = resolve_model_connection(connection_id.strip(), revision)
+        connection = resolve_model_connection(connection_id.strip(), None)
     except Exception as exc:
         raise ProjectConfigBindingError(
             f"项目模型连接不可用: {connection_id}"
@@ -249,7 +269,7 @@ def resolve_project_model_binding(
     public_config = _connection_value(connection, "public_config")
     return ResolvedProjectModelBinding(
         connection_id=connection_id.strip(),
-        revision=revision,
+        revision=int(_connection_value(connection, "revision") or 1),
         provider=str(_connection_value(connection, "provider") or "").strip(),
         model=model,
         endpoint=str(endpoint).strip() if endpoint is not None else None,

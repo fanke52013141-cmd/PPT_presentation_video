@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
 import json
+import hashlib
 import logging
 import os
 import sys
@@ -233,6 +234,21 @@ def _tts_artifact_matches_runtime(paths: Dict[str, str], expected: Dict[str, Any
     return True
 
 
+def _reference_audio_signature(path_value: str) -> str:
+    """Return a non-secret content signature for a local reference recording."""
+    path = str(path_value or "").strip()
+    if not path:
+        return ""
+    try:
+        digest = hashlib.sha256()
+        with open(path, "rb") as file:
+            for chunk in iter(lambda: file.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except OSError:
+        return "missing"
+
+
 def _project_tts_runtime(project: Project) -> Optional[Dict[str, Any]]:
     """Return the current TTS settings for a project-bound connection.
 
@@ -245,8 +261,7 @@ def _project_tts_runtime(project: Project) -> Optional[Dict[str, Any]]:
     if not isinstance(connection_binding, dict):
         return None
     connection_id = str(connection_binding.get("connection_id") or "").strip()
-    revision = connection_binding.get("revision")
-    if not connection_id or not isinstance(revision, int):
+    if not connection_id:
         raise HTTPException(status_code=400, detail="项目语音模型连接配置无效。")
     try:
         # Voice selection is an operational setting.  Unlike a storyboard or
@@ -530,6 +545,11 @@ def synthesize_tts_resumable(project_id: str, db: Session):
         "volume": tts_volume,
         "pitch": tts_pitch,
     }
+    if provider == "volcengine_seed_audio":
+        tts_cache_key["reference_audio_signature"] = _reference_audio_signature(tts_clone_voice_id)
+        tts_cache_key["provider_extra"] = tts_provider_extra
+        tts_cache_key["audio_format"] = "mp3"
+        tts_cache_key["sample_rate"] = 48000
 
     invalidation_service.narration_synthesis_started(project)
     db.commit()

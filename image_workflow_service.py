@@ -19,7 +19,11 @@ from fastapi import HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from ai_provider_service import enforce_white_image_region, normalize_image_size
+from ai_provider_service import (
+    enforce_white_image_region,
+    is_toapis_image_provider,
+    normalize_image_size,
+)
 from canvas_profile_service import get_canvas_profile, get_project_canvas
 from artifact_fingerprint import sha256_file, sha256_json
 from config_store import get_setting
@@ -218,11 +222,10 @@ def _project_image_runtime(project: Project) -> Optional[Dict[str, Any]]:
     if not isinstance(binding, dict):
         return None
     connection_id = str(binding.get("connection_id") or "").strip()
-    revision = binding.get("revision")
-    if not connection_id or not isinstance(revision, int):
+    if not connection_id:
         raise HTTPException(status_code=400, detail="项目图片模型连接配置无效。")
     try:
-        connection = resolve_model_connection(connection_id, revision)
+        connection = resolve_model_connection(connection_id, None)
     except Exception as exc:
         logger.warning("Project image connection cannot be resolved: %s", type(exc).__name__)
         raise HTTPException(status_code=400, detail="项目图片模型连接不可用。") from exc
@@ -670,7 +673,7 @@ def generate_slide_image(
         api_key = get_setting("image_api_key")
         base_url = get_setting("image_base_url")
         model = get_setting("image_model", "gpt-image-1")
-        image_size_setting = get_setting("image_size", "1024x1024")
+        image_size_setting = get_setting("image_size", "1920x1080")
         image_provider = "openai_compatible"
         runtime_secrets: Dict[str, Any] = {}
         image_public_config: Dict[str, Any] = {}
@@ -679,7 +682,7 @@ def generate_slide_image(
         base_url = project_runtime["base_url"]
         model = project_runtime["model"]
         image_size_setting = project_runtime["image_size"] or get_setting(
-            "image_size", "1024x1024"
+            "image_size", "1920x1080"
         )
         image_provider = project_runtime["provider"]
         runtime_secrets = project_runtime["secrets"]
@@ -696,7 +699,8 @@ def generate_slide_image(
         )
 
     try:
-        client = get_openai_client(api_key=api_key, base_url=base_url)
+        is_toapis = is_toapis_image_provider(image_provider, base_url)
+        client = None if is_toapis else get_openai_client(api_key=api_key, base_url=base_url)
         image_size = normalize_image_size(image_size_setting)
         effective_prompt = enforce_white_generation_background(prompt, project)
         ip_prompt_segment = render_ip_character_prompt(project, slide_id)
@@ -772,7 +776,7 @@ def generate_slide_image(
                 "Skipping binary style reference images for %s: active references are not compatible with current model/style.",
                 slide_id,
             )
-        if use_reference_images:
+        if use_reference_images and not is_toapis:
             reference_files = []
             try:
                 reference_files = [open(path, "rb") for path in reference_paths]
@@ -814,7 +818,14 @@ def generate_slide_image(
                 prompt=effective_prompt,
                 size=image_size,
                 base_url=base_url,
+                provider=image_provider,
+                api_key=api_key,
+                reference_paths=reference_paths if (use_reference_images and is_toapis) else None,
+                public_config=image_public_config,
             )
+            if is_toapis and reference_paths:
+                used_reference_paths = list(reference_paths)
+                reference_status = "used"
 
         # ── 兼容两种响应格式：URL 和 base64 (b64_json) ──
         img_bytes = extract_image_bytes_from_response(response)

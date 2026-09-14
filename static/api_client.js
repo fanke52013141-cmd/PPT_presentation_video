@@ -66,18 +66,20 @@ const API = {
       return data;
     } catch (error) {
       if (error && error.name === 'AbortError') {
-        showToast(`❌ 请求超时（${Math.round((options.timeoutMs || this.REQUEST_TIMEOUT_MS) / 1000)}秒），请重试`);
+        if (!options.silent) {
+          showToast(`❌ 请求超时（${Math.round((options.timeoutMs || this.REQUEST_TIMEOUT_MS) / 1000)}秒），请重试`);
+        }
         throw new Error('请求超时');
       }
-      showToast(`❌ 错误: ${error.message}`);
+      if (!options.silent) showToast(`❌ 错误: ${error.message}`);
       throw error;
     } finally {
       clearTimeout(timeoutId);
     }
   },
 
-  async get(url) {
-    return this.fetch(url);
+  async get(url, extra = {}) {
+    return this.fetch(url, extra);
   },
 
   // [配置包压缩包 20260908] 下载二进制资源（如 ZIP 配置包），返回 Blob。

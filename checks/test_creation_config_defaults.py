@@ -24,6 +24,7 @@ def test_new_creation_config_payload_contains_canonical_prompts() -> None:
     assert prompts["narration_annotation"]["output_example"]
     assert payload["model_bindings"] == {}
     assert payload["automation"]["ai_mask_annotation"] is False
+    assert payload["tts"]["seed_audio_concurrency"] == 5
 
 
 def test_new_creation_config_payload_is_fresh_and_editable() -> None:

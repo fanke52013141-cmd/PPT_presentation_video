@@ -179,7 +179,7 @@
         <section class="project-profile-section" id="create-creation-config-section">
           <h4>2. 创作配置包</h4>
           <span class="project-profile-field-label">选择创作配置包</span>
-          <select id="input-creation-config" class="creation-config-native-select" aria-label="选择创作配置包">${creationConfigOptions(creationConfigs)}</select>
+          <select id="input-creation-config" class="project-profile-native-select" data-select-menu-native="true" aria-label="选择创作配置包">${creationConfigOptions(creationConfigs)}</select>
         </section>
         <section class="project-profile-section" id="create-ai-mode-section">
           <h4>3. 创建方式</h4>
@@ -198,6 +198,21 @@
               { id: 'portrait_9_16', name: '竖屏 9:16' },
             ], 'canvas_profile', 'landscape_16_9')}
           </div>
+        </section>
+        <section class="project-profile-section">
+          <h4>5. 目标视频时长</h4>
+          <label for="input-project-target-duration">时长</label>
+          <select id="input-project-target-duration" class="project-profile-native-select" data-select-menu-native="true">
+            <option value="" selected>不设置（默认）</option>
+            <option value="30">30 秒</option><option value="60">1 分钟</option><option value="90">1 分 30 秒</option>
+            <option value="120">2 分钟</option><option value="150">2 分 30 秒</option><option value="180">3 分钟</option>
+            <option value="210">3 分 30 秒</option><option value="240">4 分钟</option><option value="270">4 分 30 秒</option>
+            <option value="300">5 分钟</option><option value="330">5 分 30 秒</option><option value="360">6 分钟</option>
+            <option value="390">6 分 30 秒</option><option value="420">7 分钟</option><option value="450">7 分 30 秒</option>
+            <option value="480">8 分钟</option><option value="510">8 分 30 秒</option><option value="540">9 分钟</option>
+            <option value="570">9 分 30 秒</option><option value="600">10 分钟</option>
+          </select>
+          <small>仅在选择时控制 Step 2 的演讲稿长度；不设置则不注入时长限制。</small>
         </section>
       </div>
       <div class="config-editor-actions">
@@ -259,6 +274,8 @@
     const name = document.getElementById('input-project-name')?.value.trim() || '';
     const desc = document.getElementById('input-project-desc')?.value.trim() || '';
     const article = document.getElementById('input-project-article')?.value.trim() || '';
+    const targetDurationValue = document.getElementById('input-project-target-duration')?.value || '';
+    const targetDurationSec = targetDurationValue ? Number(targetDurationValue) : null;
     if (!name) {
       toast('⚠️ 请输入项目名称');
       return;
@@ -280,6 +297,7 @@
         description: desc,
         ai_mode: aiMode,
         canvas_profile: profile.canvas_profile,
+        target_duration_sec: targetDurationSec,
         ...(creationConfig ? {
           config_package_id: creationConfig.id,
         } : {}),

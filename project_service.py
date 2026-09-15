@@ -13,7 +13,7 @@ from typing import Any, Callable, Optional
 import uuid
 
 from fastapi import HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
 from database import ArtifactRecord, Chapter, Course, LocalJob, Project
@@ -32,6 +32,7 @@ from visual_settings_service import (
     PROJECT_VISUAL_SETTINGS_FILE,
     normalize_subtitle_style,
 )
+from storyboard_planning import normalize_target_duration_sec
 
 
 logger = logging.getLogger("PPTStudio.Projects")
@@ -42,6 +43,9 @@ class ProjectCreate(BaseModel):
     description: Optional[str] = ""
     ai_mode: Optional[str] = "auto"
     canvas_profile: Optional[str] = DEFAULT_CANVAS_PROFILE
+    # ``None`` is the intentional default: ordinary projects must keep the
+    # current unconstrained Step 2 planning behaviour.
+    target_duration_sec: Optional[int] = None
     review_policy: Optional[str] = "none"
     manual_pause_steps: Optional[list[str]] = None
     image_style_template: Optional[str] = "default"
@@ -61,6 +65,11 @@ class ProjectCreate(BaseModel):
     # optional for legacy standalone projects and Agent compatibility.
     course_id: Optional[str] = None
     chapter_id: Optional[str] = None
+
+    @field_validator("target_duration_sec")
+    @classmethod
+    def validate_target_duration_sec(cls, value: Optional[int]) -> Optional[int]:
+        return normalize_target_duration_sec(value)
 
 
 class AiModeUpdate(BaseModel):
@@ -120,6 +129,7 @@ class ProjectService:
         if ai_mode not in {"auto", "manual"}:
             ai_mode = "auto"
         canvas_profile = normalize_canvas_profile(payload.canvas_profile)
+        target_duration_sec = normalize_target_duration_sec(payload.target_duration_sec)
         review_policy = (payload.review_policy or "none").strip().lower()
         if review_policy not in {"none", "images_and_video", "all_stages"}:
             review_policy = "none"
@@ -282,6 +292,7 @@ class ProjectService:
             chapter_id=chapter_id,
             ai_mode=ai_mode,
             canvas_profile=canvas_profile,
+            target_duration_sec=target_duration_sec,
             review_policy=review_policy,
             manual_pause_steps=json.dumps(manual_pause),
             image_style_template=image_style_template,
@@ -363,6 +374,7 @@ class ProjectService:
                 "ai_mode": project.ai_mode or "auto",
                 "canvas_profile": project.canvas_profile or DEFAULT_CANVAS_PROFILE,
                 "canvas": canvas,
+                "target_duration_sec": project.target_duration_sec,
                 "manual_pause_steps": json.loads(project.manual_pause_steps or "[]"),
                 "image_style_template": project.image_style_template or "default",
                 "mask_enabled": bool(project.mask_enabled if project.mask_enabled is not None else 1),
@@ -396,6 +408,7 @@ class ProjectService:
                 "ai_mode": project.ai_mode or "auto",
                 "canvas_profile": project.canvas_profile or DEFAULT_CANVAS_PROFILE,
                 "canvas": get_canvas_profile(project.canvas_profile),
+                "target_duration_sec": project.target_duration_sec,
                 "created_at": project.created_at.isoformat(),
                 "manual_pause_steps": json.loads(project.manual_pause_steps or "[]"),
                 "image_style_template": project.image_style_template or "default",
@@ -425,6 +438,7 @@ class ProjectService:
             "ai_mode": project.ai_mode or "auto",
             "canvas_profile": project.canvas_profile or DEFAULT_CANVAS_PROFILE,
             "canvas": get_canvas_profile(project.canvas_profile),
+            "target_duration_sec": project.target_duration_sec,
             "manual_pause_steps": json.loads(project.manual_pause_steps or "[]"),
             "image_style_template": project.image_style_template or "default",
             "mask_enabled": bool(project.mask_enabled if project.mask_enabled is not None else 1),

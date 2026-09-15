@@ -2575,3 +2575,92 @@ body:not(.workspace-open) #page-home .stitch-video-progress-block {
 body:not(.workspace-open) #page-home .stitch-video-progress {
   margin-top: 3px !important;
 }
+
+/* The curriculum action, course menu, and nested chapter menu intentionally
+   share one visual action rail.  These rows use different indentation, so
+   flex auto-spacing alone would leave the three controls on different axes. */
+body:not(.workspace-open) #page-home .stitch-curriculum-group > .stitch-tree-section-heading {
+  padding-right: 18px !important;
+}
+body:not(.workspace-open) #page-home .stitch-course-header {
+  padding-right: 10px !important;
+}
+body:not(.workspace-open) #page-home .stitch-chapter-header {
+  padding-right: 26px !important;
+}
+body:not(.workspace-open) #page-home .stitch-course-header .tree-overflow,
+body:not(.workspace-open) #page-home .stitch-chapter-header .tree-overflow {
+  margin-left: auto !important;
+}
+
+/* Keep all three runtime limits as readable inline label/value pairs. */
+#modal-creation-config-management .creation-config-concurrency-grid > label {
+  flex-direction: row !important;
+  justify-content: center !important;
+}
+
+/* Four runtime controls now share the same horizontal rhythm: image,
+   generic TTS, Seed Audio, and MiniMax's request limit. */
+#modal-creation-config-management .creation-config-concurrency-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+@media (max-width: 980px) {
+  #modal-creation-config-management .creation-config-concurrency-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+/* Creation-config tabs are a flat segmented control.  A selected tab carries
+   the orange state through its complete surface, not a raised edge or a
+   bottom-only indicator. */
+#modal-creation-config-management .creation-config-tabs [role="tab"] {
+  border: 1px solid #dfe5ed !important;
+  background: #fff !important;
+  color: #62708a !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+  transform: none !important;
+}
+#modal-creation-config-management .creation-config-tabs [role="tab"].is-active,
+#modal-creation-config-management .creation-config-tabs [role="tab"][aria-selected="true"] {
+  border-color: #f46a38 !important;
+  background: #fff0ea !important;
+  color: #c9481b !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+  transform: none !important;
+}
+
+/* The three runtime limits follow the same three-column rhythm as the
+   auto-mode headings: equal left edges, equal value columns, and identical
+   type scale/weight.  The numeric width contracts on narrower desktops so
+   the MiniMax label remains intact before the existing one-column breakpoint. */
+#modal-creation-config-management .creation-config-concurrency-grid {
+  --creation-config-concurrency-input-width: clamp(3.25rem, 4.5vw, 5.375rem);
+  align-items: center !important;
+}
+#modal-creation-config-management .creation-config-concurrency-grid > label {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) var(--creation-config-concurrency-input-width) !important;
+  align-items: center !important;
+  justify-content: normal !important;
+  column-gap: .75rem !important;
+  min-height: 2.55rem !important;
+  padding: 0 !important;
+}
+#modal-creation-config-management .creation-config-concurrency-grid > label > span {
+  min-width: 0;
+  overflow: visible !important;
+  justify-self: start;
+  font-size: .8rem !important;
+  font-weight: 700 !important;
+  line-height: 1.35;
+  text-overflow: clip !important;
+  white-space: nowrap;
+}
+#modal-creation-config-management .creation-config-concurrency-grid > label > input {
+  width: var(--creation-config-concurrency-input-width) !important;
+  min-width: 0;
+  margin: 0 !important;
+  justify-self: stretch;
+}

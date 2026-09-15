@@ -73,7 +73,14 @@ def default_creation_config_payload() -> dict[str, Any]:
             # the additional annotation stage explicitly.
             "ai_mask_annotation": False,
         },
-        "tts": {"concurrency": 10, "requests_per_minute": 10},
+        "tts": {
+            "concurrency": 10,
+            # Seed Audio has a lower provider concurrency entitlement than
+            # MiniMax.  Keep this separate so a package can safely use either
+            # provider without changing MiniMax's established fan-out.
+            "seed_audio_concurrency": 5,
+            "requests_per_minute": 10,
+        },
         "render": {"acceleration": "auto", "output_formats": ["video"]},
     }
     return deepcopy(payload)

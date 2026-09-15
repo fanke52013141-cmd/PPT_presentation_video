@@ -31,6 +31,7 @@ _CREATE_FIELD_MAP = {
     "description": "description",
     "ai_mode": "automation_mode",
     "canvas_profile": "canvas_profile",
+    "target_duration_sec": None,  # Project UI/Step 2 planning input; not Agent-controlled yet.
     "review_policy": "review_policy",
     "manual_pause_steps": None,      # UI-only, derived from automation_mode
     "image_style_template": None,     # UI-only, Step 3 image-style selection
@@ -54,6 +55,7 @@ _SUMMARY_FIELD_MAP = {
     "name": "name",
     "description": "description",
     "canvas_profile": "canvas_profile",
+    "target_duration_sec": None,
     "ai_mode": "ai_mode",
     "current_step": "current_step",
     "status": "status",

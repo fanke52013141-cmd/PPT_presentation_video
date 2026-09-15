@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260912.36">
+  <link rel="stylesheet" href="style.css?v=20260915.2">
   <!-- Stitch screen contract: the supplied page code is the visual source of truth. -->
   <link rel="stylesheet" href="stitch.css?v=20260914.1">
 </head>
@@ -632,7 +632,7 @@
       </div>
       <div id="create-creation-config-section" style="margin-bottom: 1.5rem;">
         <label style="font-weight: bold; display: block; margin-bottom: 0.4rem;" for="input-creation-config">创作配置包:</label>
-        <select id="input-creation-config" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 6px; background: #fff;">
+        <select id="input-creation-config" class="project-profile-native-select" data-select-menu-native="true" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 6px; background: #fff;">
           <option value="">不使用创作配置包</option>
         </select>
         <div id="create-creation-config-help" style="font-size: 0.85rem; color: var(--muted-color); margin-top: 0.4rem; line-height: 1.5;">
@@ -645,6 +645,33 @@
           <option value="landscape_16_9" selected>横屏 16:9（1920×1080）</option>
           <option value="portrait_9_16">竖屏 9:16（1080×1920）</option>
         </select>
+      </div>
+      <div id="create-target-duration-section" style="margin-bottom: 1.5rem;">
+        <label style="font-weight: bold; display: block; margin-bottom: 0.4rem;" for="input-project-target-duration">目标视频时长:</label>
+        <select id="input-project-target-duration" class="project-profile-native-select" data-select-menu-native="true" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 6px; background: #fff;">
+          <option value="" selected>不设置（默认）</option>
+          <option value="30">30 秒</option>
+          <option value="60">1 分钟</option>
+          <option value="90">1 分 30 秒</option>
+          <option value="120">2 分钟</option>
+          <option value="150">2 分 30 秒</option>
+          <option value="180">3 分钟</option>
+          <option value="210">3 分 30 秒</option>
+          <option value="240">4 分钟</option>
+          <option value="270">4 分 30 秒</option>
+          <option value="300">5 分钟</option>
+          <option value="330">5 分 30 秒</option>
+          <option value="360">6 分钟</option>
+          <option value="390">6 分 30 秒</option>
+          <option value="420">7 分钟</option>
+          <option value="450">7 分 30 秒</option>
+          <option value="480">8 分钟</option>
+          <option value="510">8 分 30 秒</option>
+          <option value="540">9 分钟</option>
+          <option value="570">9 分 30 秒</option>
+          <option value="600">10 分钟</option>
+        </select>
+        <div style="font-size: 0.85rem; color: var(--muted-color); margin-top: 0.4rem; line-height: 1.5;">仅在选择时约束 Step 2 演讲稿规划；不设置则按内容自由规划。</div>
       </div>
       <div style="display: flex; justify-content: flex-end; gap: 1rem;">
         <button id="btn-create-cancel" class="secondary">取消</button>
@@ -1015,14 +1042,14 @@
                     <div>
                       <h6>AI 语音合成标注</h6>
                       <div class="creation-config-options-row" role="radiogroup" aria-label="是否需要 AI 做语音合成标注">
-                        <label class="creation-config-check"><input type="radio" name="creation-config-narration-annotation" value="false" checked> 不需要（默认）</label>
+                        <label class="creation-config-check"><input type="radio" name="creation-config-narration-annotation" value="false" checked> 不需要</label>
                         <label class="creation-config-check"><input type="radio" name="creation-config-narration-annotation" value="true"> 需要 AI 标注</label>
                       </div>
                     </div>
                     <div>
                       <h6>AI Mask 标注</h6>
                       <div class="creation-config-options-row" role="radiogroup" aria-label="是否需要 AI 做元素 Mask 标注">
-                        <label class="creation-config-check"><input type="radio" name="creation-config-mask-annotation" value="false" checked> 不需要（默认）</label>
+                        <label class="creation-config-check"><input type="radio" name="creation-config-mask-annotation" value="false" checked> 不需要</label>
                         <label class="creation-config-check"><input type="radio" name="creation-config-mask-annotation" value="true"> 需要 AI 标注</label>
                       </div>
                     </div>
@@ -1033,6 +1060,7 @@
                   <div class="creation-config-number-grid creation-config-concurrency-grid">
                     <label><span>图片生成并发</span><input id="creation-config-image-concurrency" type="number" min="1" max="6" value="5" inputmode="numeric"><small>同一项目可同时生成的图片页数。</small></label>
                     <label><span>语音合成并发</span><input id="creation-config-tts-concurrency" type="number" min="1" max="10" value="10" inputmode="numeric"><small>第 5 步可同时提交给 TTS 的语音任务数。</small></label>
+                    <label><span>豆包语音合成并发</span><input id="creation-config-seed-audio-concurrency" type="number" min="1" max="5" value="5" inputmode="numeric"><small>仅豆包音频生成 1.0 使用；最大 5 个并发任务。</small></label>
                     <label><span>MiniMax 每分钟上限</span><input id="creation-config-tts-rpm" type="number" min="1" max="600" value="10" inputmode="numeric"><small>发送给 MiniMax TTS 的最大请求数；超过会排队。</small></label>
                   </div>
                 </div>
@@ -1612,7 +1640,7 @@
   <script src="account_management.js?v=20260913.1"></script>
   <script src="workspace_navigation.js?v=20260913.1"></script>
   <script src="event_bindings.js?v=20260906.1"></script>
-  <script src="project_profile_extension.js?v=20260915.1"></script>
+  <script src="project_profile_extension.js?v=20260915.2"></script>
   <script src="storyboard_background_extension.js?v=20260807.1"></script>
   <script src="style_reference_manager_extension.js?v=3.0.1"></script>
   <script src="ai_mask_auto_state.js?v=20260809.1"></script>

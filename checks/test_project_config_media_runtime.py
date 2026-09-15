@@ -289,6 +289,9 @@ def test_tts_parallelism_is_bounded_and_keeps_local_gpu_serial() -> None:
     assert tts._bounded_tts_concurrency("minimax", "99") == 10
     assert tts._bounded_tts_concurrency("minimax", "invalid") == 10
     assert tts._bounded_tts_concurrency("comfyui_tts", "4") == 1
+    assert tts._bounded_tts_concurrency("volcengine_seed_audio") == 5
+    assert tts._bounded_tts_concurrency("volcengine_seed_audio", "99") == 5
+    assert tts._bounded_tts_concurrency("volcengine_seed_audio", "0") == 1
     assert tts._bounded_requests_per_minute() == 10
     assert tts._bounded_requests_per_minute("999") == 600
     assert tts._minimax_poll_interval_seconds(1, 10) == 10.0
@@ -296,6 +299,21 @@ def test_tts_parallelism_is_bounded_and_keeps_local_gpu_serial() -> None:
     # downloads and retries, so polling cannot burst at 2-second intervals.
     assert tts._minimax_poll_interval_seconds(10, 10) == 100.0
     assert tts._minimax_poll_interval_seconds(10, 10, "120") == 120.0
+
+
+def test_seed_audio_uses_its_own_project_concurrency_setting() -> None:
+    requested: list[str] = []
+
+    def snapshot_value(path: str, _fallback: object) -> object:
+        requested.append(path)
+        return {"tts.concurrency": 10, "tts.seed_audio_concurrency": 4}[path]
+
+    assert tts._project_tts_concurrency("volcengine_seed_audio", snapshot_value) == 4
+    assert requested == ["tts.seed_audio_concurrency"]
+
+    requested.clear()
+    assert tts._project_tts_concurrency("minimax", snapshot_value) == 10
+    assert requested == ["tts.concurrency"]
 
 
 def test_project_bound_comfyui_tts_needs_no_cloud_credential(

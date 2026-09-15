@@ -5904,6 +5904,37 @@ body.step5-fullscreen-mode #step-panel-5 .workspace-left{align-items:center;just
 .creation-config-package-default-badge { flex: 0 0 auto; border-radius: 999px; padding: .14rem .45rem; background: #e7f7ed; color: #16803a; font-size: .72rem; font-style: normal; font-weight: 700; }
 .creation-config-choice span { color: var(--color-text-tertiary); font-size: .82rem; line-height: 1.4; }
 .creation-config-native-select { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; clip-path: inset(50%); }
+/* The project-creation form uses ordinary, always-visible native selects.
+ * Do not reuse the visually-hidden configuration-manager source control here:
+ * a user must be able to inspect and change the creation package and optional
+ * target duration before submitting the video project. */
+#modal-create .project-profile-native-select {
+  display: block !important;
+  position: static !important;
+  box-sizing: border-box;
+  width: 100% !important;
+  min-height: 46px;
+  height: 46px !important;
+  margin: 0;
+  padding: 0 .85rem;
+  overflow: visible !important;
+  clip: auto !important;
+  clip-path: none !important;
+  white-space: normal;
+  appearance: auto;
+  border: 1px solid var(--color-border-default);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--color-text-primary);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+#modal-create .project-profile-native-select:focus-visible {
+  outline: 3px solid rgba(244, 106, 56, .25);
+  outline-offset: 2px;
+  border-color: var(--color-primary-base);
+}
 .profile-upload-box { display: flex; flex-direction: column; gap: .3rem; align-items: flex-start; padding: 1rem; border: 1px dashed var(--color-border-strong); border-radius: 12px; background: var(--color-bg-subtle); cursor: pointer; }
 .profile-upload-box:hover { border-color: var(--color-primary-base); background: var(--color-primary-light); }
 .profile-upload-box strong { color: var(--color-text-primary); }
@@ -12109,6 +12140,153 @@ body:not(.workspace-open) #page-home .stitch-course-header .tree-overflow,
 body:not(.workspace-open) #page-home .stitch-chapter-header .tree-overflow { justify-self: start !important; }
 header .account-picker-menu { width: var(--account-picker-width, 132px) !important; min-width: 0 !important; }
 header .account-picker-menu .account-picker-option[aria-selected="true"] { box-shadow: none !important; }
+
+/* 20260915 feedback pass: notifications, tree actions, and configuration
+   controls share the same compact desktop rail rhythm.  It follows the
+   legacy and Stitch compatibility layers without altering DOM or events. */
+:root { --notification-rail-width: 288px; }
+
+/* Every transient/persistent notice occupies the same footprint as the
+   desktop action rail.  The taller shell keeps both a status title and a
+   readable detail line from feeling cramped. */
+#toast-container {
+  left: 16px !important;
+  bottom: 16px !important;
+  width: var(--notification-rail-width) !important;
+}
+#toast-container .toast,
+.failure-badge {
+  box-sizing: border-box;
+  width: var(--notification-rail-width) !important;
+  max-width: var(--notification-rail-width) !important;
+  min-height: 116px !important;
+}
+#toast-container .toast {
+  grid-template-columns: 28px minmax(0, 1fr) !important;
+  align-items: center;
+}
+.failure-badge {
+  left: 16px !important;
+  bottom: 16px !important;
+  align-items: center;
+  padding: 14px 16px !important;
+}
+.failure-badge-body { gap: .35rem; }
+.failure-badge-body strong { line-height: 1.42; }
+.failure-badge-body small { white-space: normal; line-height: 1.42; }
+
+/* The section add button and every course/chapter overflow trigger occupy a
+   shared right-hand action column, even with a nested chapter indentation. */
+body:not(.workspace-open) #page-home .stitch-tree-section-heading,
+body:not(.workspace-open) #page-home .stitch-course-header,
+body:not(.workspace-open) #page-home .stitch-chapter-header {
+  width: 100% !important;
+  box-sizing: border-box;
+}
+body:not(.workspace-open) #page-home .stitch-tree-section-heading {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 20px !important;
+  justify-content: normal !important;
+}
+body:not(.workspace-open) #page-home .stitch-tree-add-course,
+body:not(.workspace-open) #page-home .stitch-course-header .tree-overflow,
+body:not(.workspace-open) #page-home .stitch-chapter-header .tree-overflow {
+  justify-self: end !important;
+}
+body:not(.workspace-open) #page-home .stitch-course-header {
+  grid-template-columns: 14px 16px minmax(0, 1fr) 20px !important;
+}
+body:not(.workspace-open) #page-home .stitch-chapter-header {
+  display: grid !important;
+  grid-template-columns: 12px 14px minmax(0, 1fr) 20px !important;
+}
+body:not(.workspace-open) #page-home .stitch-course-children {
+  /* The nested rows keep their left hierarchy guide but share the parent
+     row's right edge, so their action column matches the heading and course. */
+  padding-right: 0 !important;
+}
+
+/* JSON remains an advanced field, but its action now has a clear visual
+   separation from the long editor above it. */
+#modal-creation-config-management .creation-config-json-editor > label {
+  display: grid;
+  gap: .55rem;
+  margin: 1rem 0 1.1rem;
+}
+#modal-creation-config-management #btn-creation-config-load-json {
+  margin-top: .7rem;
+}
+
+/* Auto-mode choices are three peer groups on desktop.  Their field names and
+   radio values are unchanged; only the retired '(默认)' display copy is
+   removed in the markup above. */
+#modal-creation-config-management .creation-config-auto-options-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: .65rem !important;
+}
+#modal-creation-config-management .creation-config-auto-options-grid h6 {
+  margin-bottom: .34rem;
+}
+#modal-creation-config-management .creation-config-auto-options-grid .creation-config-options-row {
+  gap: .32rem;
+}
+#modal-creation-config-management .creation-config-auto-options-grid .creation-config-check {
+  min-height: 2rem;
+  padding: .3rem .46rem;
+  font-size: .76rem;
+}
+
+/* Concurrency is a concise row of label + numeric input pairs, rather than
+   three nested cards.  Explanatory copy is retained in the DOM but visually
+   deferred to the field title/limits to keep this high-frequency control neat. */
+#modal-creation-config-management .creation-config-concurrency-group {
+  min-height: 0 !important;
+  padding-bottom: .78rem;
+}
+#modal-creation-config-management .creation-config-concurrency-grid {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: .7rem !important;
+}
+#modal-creation-config-management .creation-config-concurrency-grid label {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 3.25rem !important;
+  align-items: center;
+  min-height: 2.55rem !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+#modal-creation-config-management .creation-config-concurrency-grid label > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#modal-creation-config-management .creation-config-concurrency-grid label > input {
+  width: 3.25rem;
+  min-height: 2rem;
+  padding: .2rem .35rem;
+}
+#modal-creation-config-management .creation-config-concurrency-grid label > small {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  #toast-container,
+  .failure-badge {
+    left: 16px !important;
+    width: min(var(--notification-rail-width), calc(100vw - 32px)) !important;
+    max-width: calc(100vw - 32px) !important;
+  }
+}
+@media (max-width: 760px) {
+  #modal-creation-config-management .creation-config-auto-options-grid,
+  #modal-creation-config-management .creation-config-concurrency-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
 
 #modal-model-management .prompt-title-row { justify-content: flex-start !important; }
 #modal-model-management .model-library-section { box-shadow: none !important; }

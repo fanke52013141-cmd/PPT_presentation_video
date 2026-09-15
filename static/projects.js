@@ -215,6 +215,8 @@ async function createProject() {
   const name = document.getElementById('input-project-name').value.trim();
   const description = document.getElementById('input-project-desc').value.trim();
   const canvasProfile = (document.getElementById('input-project-canvas-profile')?.value || 'landscape_16_9').trim();
+  const targetDurationValue = document.getElementById('input-project-target-duration')?.value || '';
+  const targetDurationSec = targetDurationValue ? Number(targetDurationValue) : null;
 
   if (!name) {
     showToast('请输入项目名称');
@@ -230,6 +232,7 @@ async function createProject() {
     name,
     description,
     canvas_profile: canvasProfile,
+    target_duration_sec: targetDurationSec,
     ...(creationConfig ? {
       config_package_id: creationConfig.id,
     } : {}),

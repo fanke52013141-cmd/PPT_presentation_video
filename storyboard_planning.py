@@ -51,6 +51,62 @@ def clean_planning_block(value: Any) -> str:
     )
 
 
+def normalize_target_duration_sec(value: Any) -> Optional[int]:
+    """Validate the optional project-level Step 2 narration duration target."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        raise ValueError("target_duration_sec 必须为 30 到 600 之间、且每 30 秒递增的整数")
+    try:
+        seconds = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("target_duration_sec 必须为 30 到 600 之间、且每 30 秒递增的整数") from exc
+    if seconds < 30 or seconds > 600 or seconds % 30 != 0:
+        raise ValueError("target_duration_sec 必须为 30 到 600 之间、且每 30 秒递增的整数")
+    return seconds
+
+
+def target_duration_requirement(value: Any) -> Optional[Dict[str, Any]]:
+    """Return only the variable duration context required by the Step 2 model."""
+    seconds = normalize_target_duration_sec(value)
+    if seconds is None:
+        return None
+    minutes = seconds / 60
+    if seconds < 60:
+        label = f"{seconds} 秒"
+    elif seconds % 60 == 0:
+        label = f"{seconds // 60} 分钟"
+    else:
+        label = f"{seconds // 60} 分 30 秒"
+    return {
+        "target_duration_sec": seconds,
+        "target_duration_label": label,
+        "recommended_narration_chars": int(minutes * 280),
+        "narration_chars_range": [int(minutes * 240), int(minutes * 320)],
+    }
+
+
+def target_duration_response(value: Any, script_plan: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    """Build UI-readable duration guidance without altering the stored plan."""
+    requirement = target_duration_requirement(value)
+    if requirement is None:
+        return None
+    if not isinstance(script_plan, dict):
+        return requirement
+    actual_chars = sum(
+        len(re.sub(r"\s+", "", str(slide.get("narration") or "")))
+        for slide in (script_plan.get("slides") or [])
+        if isinstance(slide, dict)
+    )
+    estimated_seconds = round(actual_chars / 280 * 60) if actual_chars else 0
+    return {
+        **requirement,
+        "actual_narration_chars": actual_chars,
+        "estimated_duration_sec": estimated_seconds,
+        "estimated_duration_delta_sec": estimated_seconds - requirement["target_duration_sec"],
+    }
+
+
 def normalize_slide_body(slide: Dict[str, Any]) -> str:
     body = clean_planning_block(slide.get("body") or slide.get("body_content") or slide.get("core_message"))
     if body:
@@ -387,6 +443,7 @@ def build_step2_script_user_prompt(
     project_title: str,
     article_content: str,
     generation_requirement: str,
+    target_duration_sec: Any = None,
 ) -> str:
     user_input = {
         "project_title": project_title,
@@ -394,7 +451,20 @@ def build_step2_script_user_prompt(
     }
     if str(generation_requirement or "").strip():
         user_input["generation_requirement"] = str(generation_requirement).strip()
-    return json.dumps(user_input, ensure_ascii=False, indent=2)
+    prompt = json.dumps(user_input, ensure_ascii=False, indent=2)
+    requirement = target_duration_requirement(target_duration_sec)
+    if requirement is None:
+        return prompt
+    return (
+        prompt
+        + "\n\n<DurationConstraint>\n"
+        + f"本项目整套旁白的目标口播时长为 {requirement['target_duration_label']}（{requirement['target_duration_sec']} 秒）。\n"
+        + f"推荐总字数约 {requirement['recommended_narration_chars']} 字，合理范围为 "
+        + f"{requirement['narration_chars_range'][0]}–{requirement['narration_chars_range'][1]} 字。\n"
+        + "请按内容重要性为各页分配旁白长度，优先讲清关键推理；不得用重复、空话、虚构事实或人为拆碎内容来凑时长。\n"
+        + "这只是演讲稿规划目标，最终视频以实际合成音频时长为准，不应通过拉伸或裁切音频满足该目标。\n"
+        + "</DurationConstraint>"
+    )
 
 
 def build_step2_visual_user_prompt(script_plan: Dict[str, Any]) -> str:

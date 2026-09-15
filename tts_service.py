@@ -71,6 +71,8 @@ STEP7_BIND_TIMEOUT_SEC = 90
 TTS_PROVIDER_DEFAULTS: dict[str, Any] = {}
 _DEFAULT_TTS_SYNTHESIS_CONCURRENCY = 10
 _MAX_TTS_SYNTHESIS_CONCURRENCY = 10
+_DEFAULT_SEED_AUDIO_SYNTHESIS_CONCURRENCY = 5
+_MAX_SEED_AUDIO_SYNTHESIS_CONCURRENCY = 5
 _DEFAULT_MINIMAX_REQUESTS_PER_MINUTE = 10
 _DEFAULT_MINIMAX_POLL_INTERVAL_SEC = 8.0
 _MINIMAX_REQUEST_BUDGET_RATIO = 0.6
@@ -364,11 +366,27 @@ def _bounded_tts_concurrency(provider: str, value: Any = None) -> int:
     """
     if provider == "comfyui_tts":
         return 1
+    if provider == "volcengine_seed_audio":
+        try:
+            requested = int(float(str(value).strip()))
+        except (TypeError, ValueError):
+            requested = _DEFAULT_SEED_AUDIO_SYNTHESIS_CONCURRENCY
+        return max(1, min(_MAX_SEED_AUDIO_SYNTHESIS_CONCURRENCY, requested))
     try:
         requested = int(float(str(value).strip()))
     except (TypeError, ValueError):
         requested = _DEFAULT_TTS_SYNTHESIS_CONCURRENCY
     return max(1, min(_MAX_TTS_SYNTHESIS_CONCURRENCY, requested))
+
+
+def _project_tts_concurrency(provider: str, snapshot_value: Callable[[str, Any], Any]) -> int:
+    """Select the provider-specific creation-package concurrency setting."""
+    config_path = (
+        "tts.seed_audio_concurrency"
+        if provider == "volcengine_seed_audio"
+        else "tts.concurrency"
+    )
+    return _bounded_tts_concurrency(provider, snapshot_value(config_path, ""))
 
 
 def _bounded_requests_per_minute(value: Any = None) -> int:
@@ -529,9 +547,9 @@ def synthesize_tts_resumable(project_id: str, db: Session):
         get_setting("tts_pitch", "0" if provider == "minimax" else "1.0"),
         "0" if provider == "minimax" else "1.0",
     )
-    tts_concurrency = _bounded_tts_concurrency(
+    tts_concurrency = _project_tts_concurrency(
         provider,
-        snapshot_value("tts.concurrency", "") if project_runtime else "",
+        snapshot_value if project_runtime else lambda _path, _fallback: "",
     )
     tts_requests_per_minute = _bounded_requests_per_minute(
         snapshot_value("tts.requests_per_minute", "") if project_runtime else "",

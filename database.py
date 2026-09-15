@@ -49,6 +49,9 @@ class Project(Base):
     ai_mode = Column(String, default="auto")
     # Project-level output geometry. Existing databases migrate to landscape.
     canvas_profile = Column(String, nullable=False, default="landscape_16_9")
+    # Optional narration target selected when a video is created. ``NULL``
+    # deliberately means no duration constraint is sent to Step 2.
+    target_duration_sec = Column(Integer, nullable=True, default=None)
     # 课程/章节归属：nullable=True 表示"独立项目"（不属于任何课程章节）
     course_id = Column(String, nullable=True, index=True)
     chapter_id = Column(String, nullable=True, index=True)

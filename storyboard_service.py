@@ -250,6 +250,8 @@ from storyboard_planning import (
     build_step2_visual_user_prompt,
     clean_planning_block,
     clean_planning_text,
+    target_duration_requirement,
+    target_duration_response,
     compose_visual_contract_from_plans,
     element_visible_text,
     narration_sequence_key,
@@ -510,6 +512,7 @@ def build_storyboard_request(
     storyboard_rules: str,
     profile: Optional[Dict[str, Any]] = None,
     canvas_profile: Any = None,
+    target_duration_sec: Any = None,
 ) -> tuple[str, str]:
     profile = profile or read_pipeline_profile()
     slide_count_requirement, _ = storyboard_requirements(article_content, profile)
@@ -577,6 +580,16 @@ def build_storyboard_request(
         f"摘要提纲：{article_summary}\n"
         f"正文全文：\n{article_content}"
     )
+    duration_requirement = target_duration_requirement(target_duration_sec)
+    if duration_requirement is not None:
+        user_prompt += (
+            "\n\n<DurationConstraint>\n"
+            f"整套旁白目标口播时长：{duration_requirement['target_duration_label']}（{duration_requirement['target_duration_sec']} 秒）。\n"
+            f"推荐总字数：约 {duration_requirement['recommended_narration_chars']} 字；合理范围："
+            f"{duration_requirement['narration_chars_range'][0]}–{duration_requirement['narration_chars_range'][1]} 字。\n"
+            "按内容重要性分配各页旁白；不得通过重复、空话或虚构事实凑时长。最终视频以实际音频时长为准。\n"
+            "</DurationConstraint>"
+        )
     return system_prompt, user_prompt
 
 
@@ -679,6 +692,7 @@ def execute_step2_script_plan(
             project_title=project_title,
             article_content=article_content,
             generation_requirement=generation_requirement,
+            target_duration_sec=getattr(project, "target_duration_sec", None),
         ),
         artifact_prefix="step2_script_plan",
         schema_hint=prompts["script_output_example"],
@@ -690,13 +704,21 @@ def execute_step2_script_plan(
         raise _planning_http_error(exc, 502)
     write_json_atomic(step2_script_plan_path(project), plan)
     write_project_log(project, "step2_script_plan_written", trace_id=trace_id, slide_count=len(plan.get("slides", [])))
-    return {"success": True, "script_plan": plan}
+    return {
+        "success": True,
+        "script_plan": plan,
+        "target_duration": target_duration_response(project.target_duration_sec, plan),
+    }
 
 
 def get_step2_script_plan(project_id: str, db: Session):
     project = project_or_404(db, project_id)
     plan = read_plan_json(step2_script_plan_path(project), "尚未生成演讲稿规划")
-    return {"success": True, "script_plan": plan}
+    return {
+        "success": True,
+        "script_plan": plan,
+        "target_duration": target_duration_response(project.target_duration_sec, plan),
+    }
 
 
 def update_step2_script_plan(project_id: str, payload: Dict[str, Any], db: Session):
@@ -708,7 +730,11 @@ def update_step2_script_plan(project_id: str, payload: Dict[str, Any], db: Sessi
     except PlanningError as exc:
         raise _planning_http_error(exc, 400)
     write_json_atomic(step2_script_plan_path(project), plan)
-    return {"success": True, "script_plan": plan}
+    return {
+        "success": True,
+        "script_plan": plan,
+        "target_duration": target_duration_response(project.target_duration_sec, plan),
+    }
 
 
 def _execute_step2_visual_plan(
@@ -896,7 +922,11 @@ def compose_step2_visual_contract(project_id: str, db: Session):
         trace_id=completion_trace_id,
         source=completion_source,
     )
-    return {"success": True, "contract": contract}
+    return {
+        "success": True,
+        "contract": contract,
+        "target_duration": target_duration_response(project.target_duration_sec, script_plan),
+    }
 
 
 def get_step2_prompt_preview(
@@ -934,6 +964,7 @@ def get_step2_prompt_preview(
         storyboard_rules,
         profile,
         canvas_profile=getattr(project, "canvas_profile", None),
+        target_duration_sec=getattr(project, "target_duration_sec", None),
     )
     return {
         "success": True,
@@ -1155,6 +1186,10 @@ def get_step2_result(project_id: str, db: Session):
     return {
         "success": True,
         "contract": contract,
+        "target_duration": target_duration_response(
+            project.target_duration_sec,
+            read_json_file(step2_script_plan_path(project), {}),
+        ),
         "repair": {
             "required": migration_required,
             "reasons": ["visual_contract_schema_normalization"] if migration_required else [],

@@ -120,6 +120,7 @@ def test_package_preserves_validated_automation_concurrency() -> None:
     configured["automation"]["ai_narration_annotation"] = False
     configured["automation"]["ai_mask_annotation"] = True
     configured["tts"]["concurrency"] = 10
+    configured["tts"]["seed_audio_concurrency"] = 5
     configured["tts"]["requests_per_minute"] = 20
     configured["render"] = {"acceleration": "gpu", "output_formats": ["video", "pptx"]}
 
@@ -129,9 +130,19 @@ def test_package_preserves_validated_automation_concurrency() -> None:
     assert normalized["automation"]["ai_narration_annotation"] is False
     assert normalized["automation"]["ai_mask_annotation"] is True
     assert normalized["tts"]["concurrency"] == 10
+    assert normalized["tts"]["seed_audio_concurrency"] == 5
     assert normalized["tts"]["requests_per_minute"] == 20
     assert normalized["render"]["acceleration"] == "gpu"
     assert normalized["render"]["output_formats"] == ["video", "pptx"]
+
+
+@pytest.mark.parametrize("value", [0, 6, True, "5"])
+def test_seed_audio_concurrency_requires_an_integer_between_one_and_five(value: object) -> None:
+    configured = payload()
+    configured["tts"]["seed_audio_concurrency"] = value
+
+    with pytest.raises(service.CreationConfigValidationError, match="seed_audio_concurrency"):
+        service.validate_payload(configured)
 
 
 def test_automation_annotation_switch_requires_a_boolean() -> None:

@@ -502,6 +502,13 @@
     return value ? { connection_id: value } : null;
   }
 
+  function boundedSeedAudioConcurrency(value) {
+    if (value === null || value === undefined || String(value).trim() === '') return 5;
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return 5;
+    return Math.max(1, Math.min(5, Math.round(numeric)));
+  }
+
   function payloadFromEditor() {
     return parseCreationConfigPayload();
   }
@@ -551,6 +558,8 @@
     else delete tts.connection;
     const ttsConcurrency = Math.max(1, Math.min(10, Number(element('creation-config-tts-concurrency')?.value) || 10));
     tts.concurrency = ttsConcurrency;
+    const seedAudioConcurrency = boundedSeedAudioConcurrency(element('creation-config-seed-audio-concurrency')?.value);
+    tts.seed_audio_concurrency = seedAudioConcurrency;
     const ttsRequestsPerMinute = Math.max(1, Math.min(600, Number(element('creation-config-tts-rpm')?.value) || 10));
     tts.requests_per_minute = ttsRequestsPerMinute;
     if (Object.keys(tts).length) payload.tts = tts;
@@ -615,6 +624,7 @@
     const tts = objectValue(value.tts);
     setBindingValue('tts', tts.connection || bindings.tts);
     setStringField('creation-config-tts-concurrency', String(Math.max(1, Math.min(10, Number(tts.concurrency) || 10))));
+    setStringField('creation-config-seed-audio-concurrency', String(boundedSeedAudioConcurrency(tts.seed_audio_concurrency)));
     setStringField('creation-config-tts-rpm', String(Math.max(1, Math.min(600, Number(tts.requests_per_minute) || 10))));
     setImageStyleValue(value.image_style);
     loadSubtitleIntoForm(value.subtitle || value.subtitles);
@@ -656,6 +666,7 @@
       return;
     }
     loadPayloadIntoStructured(payload);
+    syncStructuredFieldsToJson();
     toast('已从 JSON 更新结构化表单');
   }
 

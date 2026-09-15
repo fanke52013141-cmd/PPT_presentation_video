@@ -531,6 +531,16 @@ def validate_payload(payload: Any) -> dict[str, Any]:
             concurrency = tts["concurrency"]
             if isinstance(concurrency, bool) or not isinstance(concurrency, int) or not 1 <= concurrency <= 10:
                 raise CreationConfigValidationError("tts.concurrency 必须是 1 到 10 的整数")
+        if "seed_audio_concurrency" in tts:
+            seed_audio_concurrency = tts["seed_audio_concurrency"]
+            if (
+                isinstance(seed_audio_concurrency, bool)
+                or not isinstance(seed_audio_concurrency, int)
+                or not 1 <= seed_audio_concurrency <= 5
+            ):
+                raise CreationConfigValidationError(
+                    "tts.seed_audio_concurrency 必须是 1 到 5 的整数"
+                )
         if "requests_per_minute" in tts:
             requests_per_minute = tts["requests_per_minute"]
             if (

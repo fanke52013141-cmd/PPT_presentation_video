@@ -184,11 +184,21 @@ for (const automaticModeControl of [
   'creation-config-auto-options',
   'creation-config-narration-annotation',
   'creation-config-mask-annotation',
+  'creation-config-seed-audio-concurrency',
   'creation-config-output-group',
   'creation-config-subtitle-option',
 ]) {
   if (!html.includes(automaticModeControl)) {
     throw new Error(`automatic creation configuration control missing: ${automaticModeControl}`);
+  }
+}
+for (const seedAudioConcurrencyToken of [
+  'seed_audio_concurrency',
+  'function boundedSeedAudioConcurrency(value)',
+  'return Math.max(1, Math.min(5, Math.round(numeric)));',
+]) {
+  if (!creationConfigManagement.includes(seedAudioConcurrencyToken)) {
+    throw new Error(`Seed Audio concurrency handling is missing: ${seedAudioConcurrencyToken}`);
   }
 }
 if (html.includes('creation-config-contract-fields')

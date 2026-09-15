@@ -12159,6 +12159,41 @@ body:not(.workspace-open) #page-home .stitch-video-progress {
 body:not(.workspace-open) #page-home .stitch-progress-segment { height: 6px !important; }
 body:not(.workspace-open) #page-home .stitch-video-play { width: 30px !important; height: 30px !important; }
 
+/* Library-card footer safeguard.
+   stitch.css is loaded after this file and previously forced the metadata
+   column to exactly 68px.  A two-line title plus the progress readout then
+   pushed the seven-segment track past the card's clipped bottom edge.  Use a
+   deliberately more-specific selector so this remains authoritative despite
+   that load order.  The content grows only when a title wraps, avoiding a
+   large empty gap on the usual one-line card title. */
+html body:not(.workspace-open) #page-home .stitch-video-content {
+  box-sizing: border-box !important;
+  height: auto !important;
+  min-height: 64px !important;
+  max-height: none !important;
+  flex: 0 0 auto !important;
+  justify-content: flex-start !important;
+  padding: 6px 7px 8px !important;
+}
+html body:not(.workspace-open) #page-home .stitch-video-name {
+  min-height: 0 !important;
+  max-height: none !important;
+  line-height: 14.5px !important;
+}
+html body:not(.workspace-open) #page-home .stitch-video-progress-block {
+  flex: 0 0 auto !important;
+  margin-top: 4px !important;
+}
+html body:not(.workspace-open) #page-home .stitch-video-progress {
+  height: 6px !important;
+  min-height: 6px !important;
+  margin-top: 4px !important;
+}
+html body:not(.workspace-open) #page-home .stitch-progress-segment {
+  height: 6px !important;
+  min-height: 6px !important;
+}
+
 body:not(.workspace-open) #page-home .stitch-course-header { grid-template-columns: 14px 16px max-content 20px !important; justify-content: start !important; gap: .35rem !important; }
 body:not(.workspace-open) #page-home .stitch-course-header .course-name { max-width: 142px; }
 body:not(.workspace-open) #page-home .stitch-chapter-header { grid-template-columns: 12px 14px max-content 20px !important; justify-content: start !important; gap: .35rem !important; }

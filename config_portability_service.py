@@ -232,11 +232,61 @@ def _account_owned_items(value: Any, collection_key: str) -> Dict[str, Any]:
     }
 
 
+def _model_registry_is_global(value: Any) -> bool:
+    """Whether a registry uses the shared model-connection contract.
+
+    ``model_connection_service`` migrated every v2 connection to one global
+    registry and deliberately removes ``account_id``.  A v1 store can still
+    contain account-scoped historical records, so only treat a version-2 store
+    as globally owned wholesale; individual v1 records without an owner are
+    global as well.
+    """
+    return isinstance(value, dict) and str(value.get("version") or "") == "model_connections_v2"
+
+
+def _is_global_model_item(registry: Any, item: Any) -> bool:
+    if not isinstance(item, dict):
+        return False
+    return _model_registry_is_global(registry) or not str(item.get("account_id") or "").strip()
+
+
+def _model_items_for_export(
+    value: Any,
+    *,
+    include_global_models: bool,
+) -> Dict[str, Any]:
+    """Select shared connections and, where needed, legacy scoped records.
+
+    The top-level compatibility snapshot contains the global registry plus
+    the current account's old v1 records.  Per-account v3 entries contain
+    only those old scoped records, so shared models are neither duplicated nor
+    converted into account-private connections during import.
+    """
+    if not isinstance(value, dict) or not isinstance(value.get("connections"), dict):
+        return {}
+    current_account_id = get_current_account_id()
+    result: Dict[str, Any] = {}
+    for item_id, item in value["connections"].items():
+        if not isinstance(item, dict):
+            continue
+        is_global = _is_global_model_item(value, item)
+        is_current_legacy_item = (
+            not is_global
+            and str(item.get("account_id") or "default") == current_account_id
+        )
+        if (include_global_models and is_global) or is_current_legacy_item:
+            result[str(item_id)] = copy.deepcopy(item)
+    return result
+
+
 def _global_model_items(value: Any) -> Dict[str, Any]:
-    """Export the current account's connections with their ownership intact."""
+    """Export every global connection, regardless of the active account."""
+    if not isinstance(value, dict) or not isinstance(value.get("connections"), dict):
+        return {}
     return {
         str(item_id): copy.deepcopy(item)
-        for item_id, item in _account_owned_items(value, "connections").items()
+        for item_id, item in value["connections"].items()
+        if _is_global_model_item(value, item)
     }
 
 
@@ -264,25 +314,45 @@ def _global_model_credential_refs(models: Any) -> set[str]:
     return references
 
 
-def _global_credential_items(credentials: Any, models: Any) -> Dict[str, Any]:
+def _credential_items_for_models(credentials: Any, models: Any) -> Dict[str, Any]:
+    """Export only credentials used by the supplied model connections.
+
+    Global model credentials must travel with a full migration even when the
+    credential was originally created by another account.  They are promoted
+    to global scope on import, matching the runtime registry contract.  Old
+    account-scoped model records keep their owner filtering.
+    """
     if not isinstance(credentials, dict) or not isinstance(credentials.get("credentials"), dict):
         return {}
-    references = _global_model_credential_refs(models)
+    if not isinstance(models, dict) or not isinstance(models.get("connections"), dict):
+        return {}
+    global_connections = {
+        item_id: item
+        for item_id, item in models["connections"].items()
+        if _is_global_model_item(models, item)
+    }
+    private_connections = {
+        item_id: item
+        for item_id, item in models["connections"].items()
+        if not _is_global_model_item(models, item)
+    }
+    global_references = _global_model_credential_refs({"connections": global_connections})
+    private_references = _global_model_credential_refs({"connections": private_connections})
+    current_account_id = get_current_account_id()
     result: Dict[str, Any] = {}
     for reference, item in credentials["credentials"].items():
         if not isinstance(item, dict):
             continue
-        if str(item.get("account_id") or "default") != get_current_account_id():
-            continue
-        is_global = (
-            str(item.get("scope") or "account") == "global"
-            or str(reference) in references
-        )
-        if not is_global:
-            continue
-        exported = copy.deepcopy(item)
-        exported["scope"] = "global"
-        result[str(reference)] = exported
+        ref = str(reference)
+        if ref in global_references:
+            exported = copy.deepcopy(item)
+            exported["scope"] = "global"
+            result[ref] = exported
+        elif (
+            ref in private_references
+            and str(item.get("account_id") or "default") == current_account_id
+        ):
+            result[ref] = copy.deepcopy(item)
     return result
 
 
@@ -327,9 +397,25 @@ def _export_reusable_config(
             dependencies.model_connections_path,
             {"version": "model_connections_v1", "connections": {}},
         )
+        exported_connections = _model_items_for_export(
+            raw_models,
+            include_global_models=include_global_models,
+        )
         result["models"] = {
-            "version": "model_connections_v2",
-            "connections": _global_model_items(raw_models),
+            # Preserve a v1 marker for old account-owned records.  v2 is the
+            # shared-registry contract; changing a historical v1 bundle's
+            # marker here would incorrectly reclassify its records as global.
+            "version": (
+                str(raw_models.get("version") or "model_connections_v2")
+                if isinstance(raw_models, dict)
+                else "model_connections_v2"
+            ),
+            "connections": exported_connections,
+            # Explicit metadata lets import reject a truncated bundle before it
+            # touches local model settings.  Older bundles have no such fields
+            # and remain supported.
+            "included": True,
+            "connection_count": len(exported_connections),
         }
     if dependencies.creation_configs_path:
         raw_configs = dependencies.read_json_file(
@@ -345,9 +431,9 @@ def _export_reusable_config(
             dependencies.credentials_path,
             {"version": CREDENTIAL_STORE_VERSION, "credentials": {}},
         )
-        credential_items = (
-            _global_credential_items(raw_credentials, raw_models)
-            if include_global_models else _account_private_items(raw_credentials, "credentials")
+        credential_items = _credential_items_for_models(
+            raw_credentials,
+            result["models"],
         )
         result["credentials"] = {
             "version": CREDENTIAL_STORE_VERSION,
@@ -374,8 +460,10 @@ def _export_reusable_config(
                     "account_id": item.get("account_id"),
                 }
                 for ref, item in (
-                    _global_credential_items(raw_credentials, raw_models)
-                    if include_global_models else _account_private_items(raw_credentials, "credentials")
+                    _credential_items_for_models(
+                        raw_credentials,
+                        result["models"],
+                    )
                 ).items()
             }
     return result
@@ -528,8 +616,60 @@ def validate_config_references(payload: Dict[str, Any]) -> None:
             )
 
 
-def _import_reusable_config(payload: Any, *, import_global_models: bool = True) -> None:
-    """Restore account packages plus the single shared model registry."""
+def _import_model_connections(payload: Any, *, scope: str) -> None:
+    """Merge model connections without changing their global/private meaning."""
+    if scope not in {"all", "global", "private"}:
+        raise ValueError("模型导入范围无效")
+    dependencies = _deps()
+    if not dependencies.model_connections_path or not isinstance(payload, dict):
+        return
+    models = payload.get("models")
+    if not isinstance(models, dict):
+        return
+    connections = models.get("connections")
+    # An empty bundle is valid (for a fresh installation) but must never cause
+    # a write that could be mistaken for a registry replacement.
+    if not isinstance(connections, dict) or not connections:
+        return
+    existing = dependencies.read_json_file(
+        dependencies.model_connections_path,
+        {"version": "model_connections_v2", "connections": {}},
+    )
+    if not isinstance(existing, dict):
+        existing = {"version": "model_connections_v2", "connections": {}}
+    target = existing.setdefault("connections", {})
+    if not isinstance(target, dict):
+        target = {}
+        existing["connections"] = target
+    changed = False
+    current_account_id = get_current_account_id()
+    for item_id, item in connections.items():
+        if not isinstance(item, dict):
+            continue
+        is_global = _is_global_model_item(models, item)
+        if scope == "global" and not is_global:
+            continue
+        if scope == "private" and is_global:
+            continue
+        imported = copy.deepcopy(item)
+        if is_global:
+            # v2's model registry is shared.  Never make an imported global
+            # connection private merely because a particular account happens
+            # to be active during the restore.
+            imported.pop("account_id", None)
+        else:
+            # Preserve legacy v1 behaviour only for genuinely account-scoped
+            # entries.  New v2 connections always take the branch above.
+            imported["account_id"] = current_account_id
+        target[str(item_id)] = imported
+        changed = True
+    if changed:
+        existing["version"] = "model_connections_v2"
+        dependencies.write_json_atomic(dependencies.model_connections_path, existing)
+
+
+def _import_reusable_config(payload: Any, *, model_scope: str = "all") -> None:
+    """Restore packages, credentials, and the requested model registry scope."""
     if not isinstance(payload, dict):
         return
     dependencies = _deps()
@@ -540,28 +680,7 @@ def _import_reusable_config(payload: Any, *, import_global_models: bool = True) 
             payload.get("image_style_resources")
         )
 
-    models = payload.get("models")
-    if import_global_models and dependencies.model_connections_path and isinstance(models, dict):
-        connections = models.get("connections")
-        if isinstance(connections, dict):
-            existing = dependencies.read_json_file(
-                dependencies.model_connections_path,
-                {"version": "model_connections_v2", "connections": {}},
-            )
-            if not isinstance(existing, dict):
-                existing = {"version": "model_connections_v2", "connections": {}}
-            target = existing.setdefault("connections", {})
-            if not isinstance(target, dict):
-                target = {}
-                existing["connections"] = target
-            for item_id, item in connections.items():
-                if not isinstance(item, dict):
-                    continue
-                imported = dict(item)
-                imported["account_id"] = current_account_id
-                target[str(item_id)] = imported
-            existing["version"] = "model_connections_v2"
-            dependencies.write_json_atomic(dependencies.model_connections_path, existing)
+    _import_model_connections(payload, scope=model_scope)
 
     creation_configs = payload.get("creation_configs")
     if dependencies.creation_configs_path and isinstance(creation_configs, dict):
@@ -668,7 +787,9 @@ def _import_accounts_reusable_configs(accounts: List[Dict[str, Any]]) -> None:
         if not account_id or not isinstance(reusable, dict):
             continue
         with account_scope(account_id):
-            _import_reusable_config(reusable, import_global_models=True)
+            # Shared registry entries are restored once from the top-level
+            # snapshot.  Account entries only carry old v1 private records.
+            _import_reusable_config(reusable, model_scope="private")
 
 
 def _account_credentials_included(account: Dict[str, Any]) -> bool:
@@ -708,6 +829,59 @@ def _import_accounts_message(accounts: List[Dict[str, Any]]) -> str:
     return message
 
 
+def _validate_model_bundle(models: Any, *, location: str) -> None:
+    """Reject explicitly truncated model data before any local write occurs."""
+    if not isinstance(models, dict):
+        return
+    connections = models.get("connections")
+    declared = None
+    for key in ("connection_count", "model_count", "count"):
+        if key in models:
+            declared = models[key]
+            break
+    if declared is not None:
+        if isinstance(declared, bool) or not isinstance(declared, int) or declared < 0:
+            raise ValueError(f"{location} 的模型数量元数据无效")
+        # A smaller actual list proves truncation (the historical failure
+        # mode).  Extra records do not imply data loss and remain compatible
+        # with users who manually add a model to an exported JSON bundle.
+        if not isinstance(connections, dict) or len(connections) < declared:
+            raise ValueError(
+                f"{location} 的模型连接数据不完整：声明 {declared} 个，"
+                f"实际 {len(connections) if isinstance(connections, dict) else 0} 个；"
+                "为保护现有模型，已取消导入"
+            )
+    if models.get("included") is True and not isinstance(connections, dict):
+        raise ValueError(
+            f"{location} 声明包含模型连接，但模型数据无效；"
+            "为保护现有模型，已取消导入"
+        )
+    if models.get("included") is False and isinstance(connections, dict) and connections:
+        raise ValueError(
+            f"{location} 声明未包含模型连接，却携带了模型数据；"
+            "为保护现有模型，已取消导入"
+        )
+
+
+def _validate_model_bundles(payload: Dict[str, Any]) -> None:
+    reusable = payload.get("reusable_config")
+    if isinstance(reusable, dict):
+        _validate_model_bundle(reusable.get("models"), location="配置包")
+    accounts = payload.get("accounts")
+    if not isinstance(accounts, list):
+        return
+    for account in accounts:
+        if not isinstance(account, dict):
+            continue
+        reusable = account.get("reusable_config")
+        if isinstance(reusable, dict):
+            account_id = str(account.get("id") or "未命名账号")
+            _validate_model_bundle(
+                reusable.get("models"),
+                location=f"账号 {account_id}",
+            )
+
+
 def import_full_config(payload: Dict[str, Any]) -> Dict[str, Any]:
     dependencies = _deps()
     # [配置包压缩包 20260908] ZIP 容器里的 config.json 用 "asset" 路径引用
@@ -715,6 +889,10 @@ def import_full_config(payload: Dict[str, Any]) -> Dict[str, Any]:
     # 当作缺失并删除本地文件，这里显式拒绝并提示导入完整压缩包。
     _assert_no_unresolved_zip_assets(payload)
     validate_config_references(payload)
+    # Validate every model declaration before account/style/settings mutations.
+    # A previous exporter could produce an empty account-filtered model list;
+    # importing it must never silently make a usable installation look blank.
+    _validate_model_bundles(payload)
     accounts_payload = (
         payload.get("accounts")
         if isinstance(payload.get("accounts"), list)
@@ -723,8 +901,12 @@ def import_full_config(payload: Dict[str, Any]) -> Dict[str, Any]:
     imported_accounts = _upsert_imported_accounts(accounts_payload)
     if imported_accounts:
         # Account entries are authoritative.  The compatibility snapshot at the
-        # bundle root is intentionally ignored: it must not overwrite records
-        # or duplicate style imports for an account-scoped restore.
+        # bundle root contributes only the one shared model registry; it must
+        # not overwrite account-scoped packages or duplicate style imports.
+        _import_model_connections(
+            payload.get("reusable_config"),
+            scope="global",
+        )
         _import_accounts_reusable_configs(imported_accounts)
     else:
         # Legacy version 2 bundle (or a v3 bundle without account rows):

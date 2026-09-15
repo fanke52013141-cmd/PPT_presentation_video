@@ -1371,7 +1371,12 @@
         };
       } else {
         endpoint = element('model-form-comfyui-endpoint')?.value.trim() || 'http://127.0.0.1:8188';
-        model = 'IndexTTS-2';
+        model = 'IndexTTS-2.5';
+        const referenceAudio = element('model-form-comfyui-reference')?.files?.[0];
+        if (!referenceAudio && !publicConfig.clone_voice_id) {
+          toast('ComfyUI / IndexTTS 需要先上传一条参考音频');
+          return;
+        }
       }
     } else {
       endpoint = element('model-form-endpoint')?.value.trim() || '';
@@ -1419,8 +1424,10 @@
       const saved = isEditing
         ? await window.API.put(`/api/model-connections/${encodeURIComponent(editingConnection.id)}`, payload)
         : await window.API.post('/api/model-connections', payload);
-      if (provider === 'volcengine_seed_audio') {
-        const reference = element('model-form-seed-audio-reference')?.files?.[0];
+      if (provider === 'volcengine_seed_audio' || provider === 'comfyui_tts') {
+        const reference = provider === 'comfyui_tts'
+          ? element('model-form-comfyui-reference')?.files?.[0]
+          : element('model-form-seed-audio-reference')?.files?.[0];
         if (reference) {
           const form = new FormData();
           form.append('file', reference);

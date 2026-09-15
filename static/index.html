@@ -1185,11 +1185,13 @@
           </div>
           <div id="model-form-comfyui" class="model-provider-panel" hidden>
             <label>ComfyUI 服务地址<input id="model-form-comfyui-endpoint" type="url" maxlength="1000" value="http://127.0.0.1:8188"></label>
+            <label>参考音频<input id="model-form-comfyui-reference" type="file" accept="audio/wav,audio/mpeg,audio/mp3,audio/ogg,.wav,.mp3,.pcm,.ogg"></label>
             <div class="model-workflow-row">
               <input id="model-form-comfyui-workflow-file" type="file" accept="application/json,.json" hidden>
               <button id="btn-model-form-comfyui-workflow" class="secondary" type="button">导入 IndexTTS 工作流 JSON</button>
               <span id="model-form-comfyui-workflow-status" class="config-editor-note" aria-live="polite"></span>
             </div>
+            <p class="config-editor-note">参考音频会作为默认音色保存；每次合成时都会自动上传到 ComfyUI 并与旁白文本一同注入工作流。</p>
           </div>
           <div id="model-form-seed-audio" class="model-provider-panel" hidden>
             <div class="model-setup-grid">

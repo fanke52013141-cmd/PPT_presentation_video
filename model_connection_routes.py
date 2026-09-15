@@ -78,12 +78,15 @@ async def upload_model_reference_audio(
     connection_id: str,
     file: UploadFile = File(...),
 ) -> dict[str, Any]:
-    """Persist one Seed Audio reference file and attach it to the connection."""
+    """Persist one reference file for a voice-cloning connection."""
     try:
         connection = service.get_model_connection(connection_id)
         revision = connection.get("revision") or {}
-        if connection.get("kind") != "tts" or revision.get("provider") != "volcengine_seed_audio":
-            raise ValueError("仅豆包音频生成 1.0 模型可以上传参考音频")
+        if connection.get("kind") != "tts" or revision.get("provider") not in {
+            "volcengine_seed_audio",
+            "comfyui_tts",
+        }:
+            raise ValueError("仅豆包音频生成 1.0 或 ComfyUI / IndexTTS 模型可以上传参考音频")
         suffix = Path(str(file.filename or "")).suffix.lower()
         if suffix not in {".wav", ".mp3", ".pcm", ".ogg"}:
             raise ValueError("参考音频仅支持 wav、mp3、pcm 或 ogg 格式")

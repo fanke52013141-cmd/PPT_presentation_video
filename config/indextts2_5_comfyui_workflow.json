@@ -1,0 +1,61 @@
+{
+  "1": {
+    "class_type": "BSAI_IndexTTS2.5Loader",
+    "inputs": {
+      "use_bf16_使用BF16": true,
+      "device_设备": "auto",
+      "use_qwen_emo_千问情绪模型": false,
+      "force_reload_强制重载": false
+    },
+    "_meta": {
+      "title": "IndexTTS 2.5 Loader"
+    }
+  },
+  "2": {
+    "class_type": "BSAI_IndexTTS2.5Synthesis",
+    "inputs": {
+      "tts_model_TTS模型": ["1", 0],
+      "text_文本": "",
+      "reference_audio_参考音频": ["4", 0],
+      "lang_语言": "ZH",
+      "use_emo_text_启用情绪文本": false,
+      "use_random_随机生成": false,
+      "duration_factor_语速因子": 1.0,
+      "max_text_tokens_per_segment_每段最大文本Token": 100,
+      "max_mel_tokens_最大MelToken": 1500,
+      "temperature_温度": 0.8,
+      "top_p_核采样": 0.8,
+      "top_k_TopK采样": 30,
+      "length_penalty_长度惩罚": 0.0,
+      "num_beams_束宽": 3,
+      "repetition_penalty_重复惩罚": 10.0,
+      "do_sample_采样模式": true,
+      "verbose_详细日志": false
+    },
+    "_meta": {
+      "title": "IndexTTS 2.5 Voice Cloning"
+    }
+  },
+  "3": {
+    "class_type": "BSAI_IndexTTS2.5SaveAudio",
+    "inputs": {
+      "audio_音频": ["2", 0],
+      "filename_prefix_文件名前缀": "ppt_studio_indextts",
+      "format_格式": "wav",
+      "mp3_bitrate_MP3码率": 192,
+      "output_gain_输出增益": 1.0
+    },
+    "_meta": {
+      "title": "Save IndexTTS Audio"
+    }
+  },
+  "4": {
+    "class_type": "BSAI_IndexTTS2.5LoadAudio",
+    "inputs": {
+      "audio_音频": "reference.wav"
+    },
+    "_meta": {
+      "title": "Reference Audio"
+    }
+  }
+}

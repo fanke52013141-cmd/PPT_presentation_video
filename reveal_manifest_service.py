@@ -13,6 +13,11 @@ from project_config_runtime import project_subtitles_enabled
 from visual_provenance import refresh_provenance_contract_hashes
 
 
+# Keep this package's visual layout compatible with its fixed subtitle band,
+# including existing projects that still contain subtitle.enabled=false.
+XIAXIAOHUA_CREATION_CONFIG_PACKAGE_ID = "d086a3590bb34b8eb22a46d2e0ce2380"
+
+
 def _stable_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
@@ -56,16 +61,23 @@ def _is_painted_group(group: dict[str, Any]) -> bool:
     return any(key in group for key in ("mask", "mask_path", "mask_url", "mask_data"))
 
 
+def _project_requires_subtitle_safe_zone(project: Any) -> bool:
+    return project_subtitles_enabled(project) or (
+        str(getattr(project, "creation_config_package_id", "") or "").strip()
+        == XIAXIAOHUA_CREATION_CONFIG_PACKAGE_ID
+    )
+
+
 def _project_reveal_canvas(project: Any) -> dict[str, Any]:
     """Translate the canonical project profile to the reveal-scene contract."""
     canvas = get_project_canvas(project)
-    subtitles_enabled = project_subtitles_enabled(project)
+    subtitles_enabled = _project_requires_subtitle_safe_zone(project)
     return {
         "width": canvas["width"],
         "height": canvas["height"],
         "background": "#FEFDF9",
-        # A disabled video-caption package may use the full PPT canvas. Do not
-        # let reconciliation reintroduce a now-unused subtitle band.
+        # A disabled video-caption package may use the full PPT canvas, except
+        # for 夏晓华 whose page layout always reserves this safety band.
         "subtitle_safe_y": (
             canvas["subtitle_safe_zone"]["top"]
             if subtitles_enabled

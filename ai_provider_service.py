@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import math
 import io
 import logging
@@ -55,6 +56,8 @@ MAX_IMAGE_UPLOAD_BYTES = int(
 MAX_IMAGE_PIXELS = int(
     os.environ.get("PPT_STUDIO_MAX_IMAGE_PIXELS", "50000000")
 )
+TOAPIS_DEFAULT_TASK_TIMEOUT_SECONDS = 600
+TOAPIS_MAX_TASK_TIMEOUT_SECONDS = 600
 
 
 def get_openai_client(
@@ -279,6 +282,36 @@ def _toapis_error(response: httpx.Response, payload: Any) -> RuntimeError:
     return RuntimeError(f"ToAPIs HTTP {response.status_code}: {str(detail or payload)[:800]}")
 
 
+def _toapis_safe_diagnostic(value: Any, api_key: str) -> str:
+    """Return a bounded task-status diagnostic without credential values."""
+    sensitive_keys = {
+        "api_key", "apikey", "authorization", "password", "secret", "token",
+        "access_token", "refresh_token",
+    }
+
+    def sanitize(item: Any, key: Optional[str] = None) -> Any:
+        if key and key.lower() in sensitive_keys:
+            return "[REDACTED]"
+        if isinstance(item, dict):
+            return {
+                str(child_key): sanitize(child_value, str(child_key))
+                for child_key, child_value in item.items()
+            }
+        if isinstance(item, (list, tuple)):
+            return [sanitize(child) for child in item]
+        if isinstance(item, str):
+            safe_text = item.replace(api_key, "[REDACTED]") if api_key else item
+            return safe_text[:800]
+        if isinstance(item, (str, int, float, bool)) or item is None:
+            return item
+        return str(item)[:800]
+
+    try:
+        return json.dumps(sanitize(value), ensure_ascii=False, separators=(",", ":"))[:1600]
+    except (TypeError, ValueError):
+        return "[unserializable status]"
+
+
 def generate_toapis_image_response(
     *,
     api_key: str,
@@ -289,7 +322,7 @@ def generate_toapis_image_response(
     resolution: str = "1k",
     quality: str = "low",
     reference_paths: Optional[list[str]] = None,
-    timeout: int = 180,
+    timeout: int = TOAPIS_DEFAULT_TASK_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
     """Upload local references, submit a ToAPIs task, then retain its result URL.
 
@@ -338,7 +371,14 @@ def generate_toapis_image_response(
         task_id = task.get("id") if isinstance(task, dict) else None
         if not isinstance(task_id, str) or not task_id:
             raise RuntimeError("ToAPIs 创建图片任务未返回任务 ID")
-        deadline = time.monotonic() + max(30, min(int(timeout or 180), 300))
+        try:
+            task_timeout = int(timeout or TOAPIS_DEFAULT_TASK_TIMEOUT_SECONDS)
+        except (TypeError, ValueError):
+            task_timeout = TOAPIS_DEFAULT_TASK_TIMEOUT_SECONDS
+        task_timeout = max(30, min(task_timeout, TOAPIS_MAX_TASK_TIMEOUT_SECONDS))
+        started_at = time.monotonic()
+        deadline = started_at + task_timeout
+        last_status: Any = None
         while time.monotonic() < deadline:
             status_response = client.get(f"{root}/v1/images/generations/{task_id}", headers=headers)
             try:
@@ -347,6 +387,7 @@ def generate_toapis_image_response(
                 status = {"message": status_response.text[:800]}
             if status_response.status_code >= 400:
                 raise _toapis_error(status_response, status)
+            last_status = status
             state = str(status.get("status") or "").lower()
             if state == "completed":
                 result = status.get("result") or {}
@@ -362,8 +403,16 @@ def generate_toapis_image_response(
                 wait_seconds = max(5.0, float(retry_after)) if retry_after else 5.0
             except ValueError:
                 wait_seconds = 5.0
-            time.sleep(wait_seconds + random.uniform(0, 0.5))
-    raise RuntimeError("ToAPIs 图片任务等待超时")
+            remaining_seconds = deadline - time.monotonic()
+            if remaining_seconds > 0:
+                time.sleep(min(wait_seconds + random.uniform(0, 0.5), remaining_seconds))
+    waited_seconds = min(task_timeout, max(0, round(time.monotonic() - started_at)))
+    raise RuntimeError(
+        "ToAPIs 图片任务等待超时: "
+        f"task_id={_toapis_safe_diagnostic(task_id, api_key)}, "
+        f"waited_seconds={waited_seconds}, "
+        f"last_status={_toapis_safe_diagnostic(last_status, api_key)}"
+    )
 
 
 def first_image_response_item(response: Any) -> Any:
@@ -448,7 +497,12 @@ def generate_image_response(
             prompt=prompt, size=size,
             resolution=str(config.get("toapis_resolution") or "1k"),
             quality=str(config.get("toapis_quality") or "low"),
-            reference_paths=reference_paths, timeout=timeout or 180,
+            reference_paths=reference_paths,
+            timeout=(
+                timeout
+                if timeout is not None
+                else TOAPIS_DEFAULT_TASK_TIMEOUT_SECONDS
+            ),
         )
     if client is None:
         raise RuntimeError("图片服务客户端未初始化")

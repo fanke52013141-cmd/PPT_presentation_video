@@ -85,6 +85,14 @@ def get_slide_image_file(
     return service.get_slide_image_file(project_id, slide_id, db)
 
 
+@router.get("/api/projects/{project_id}/steps/3/images/download")
+def download_all_slide_images(
+    project_id: str,
+    db: Session = Depends(get_db),
+):
+    return service.download_all_slide_images(project_id, db)
+
+
 @router.get("/api/projects/{project_id}/slides/{slide_id}/candidate")
 def get_slide_candidate_file(
     project_id: str,

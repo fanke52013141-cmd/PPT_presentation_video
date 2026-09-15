@@ -60,6 +60,7 @@ function updateStep3BatchButton() {
   const deleteAllButton = document.getElementById('step3-btn-delete-all-images');
   if (deleteAllButton) {
     deleteAllButton.disabled = generationInProgress || uploadInProgress || !step3ImageOrder.some(item => item.exists);
+    ensureStep3BatchDownloadButton(deleteAllButton);
   }
   button.innerHTML = step3BatchGenerating
     ? `<span class="step3-button-spinner" aria-hidden="true"></span> 批量生图中 ${step3BatchCompleted}/${step3BatchTotal}`
@@ -462,6 +463,84 @@ function deleteAllStep3Images() {
 }
 
 window.deleteAllStep3Images = deleteAllStep3Images;
+
+function ensureStep3BatchDownloadButton(deleteAllButton) {
+  const disabled = step3GeneratingSlides.size > 0
+    || step3UploadingSlides.size > 0
+    || !step3ImageOrder.some(item => item.exists);
+  deleteAllButton.disabled = disabled;
+  let button = document.getElementById('step3-btn-download-all-images');
+  if (!button) {
+    button = document.createElement('button');
+    button.id = 'step3-btn-download-all-images';
+    button.type = 'button';
+    button.className = 'secondary step3-download-all-images';
+    button.innerHTML = `<svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 3v12"></path></svg> 批量下载`;
+    deleteAllButton.insertAdjacentElement('afterend', button);
+    button.addEventListener('click', downloadAllStep3Images);
+  } else if (deleteAllButton.nextElementSibling !== button) {
+    deleteAllButton.insertAdjacentElement('afterend', button);
+  }
+  button.disabled = disabled;
+}
+
+async function downloadAllStep3Images() {
+  const projectId = state.currentProject?.id;
+  const imageCount = step3ImageOrder.filter(item => item.exists).length;
+  if (!projectId || imageCount === 0) {
+    showToast('当前没有可下载的图片。');
+    return;
+  }
+
+  const button = document.getElementById('step3-btn-download-all-images');
+  const originalHtml = button?.innerHTML;
+  if (button) {
+    button.disabled = true;
+    button.innerHTML = '<span class="button-spinner" aria-hidden="true"></span> 正在打包…';
+  }
+  try {
+    const blob = await API.getBinary(`/api/projects/${encodeURIComponent(projectId)}/steps/3/images/download`);
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = 'PPTStudio-图片.zip';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+    showToast(`已打包 ${imageCount} 张图片，开始下载。`);
+  } finally {
+    if (button) {
+      button.innerHTML = originalHtml;
+      updateStep3BatchButton();
+    }
+  }
+}
+
+window.downloadAllStep3Images = downloadAllStep3Images;
+
+function installStep3BatchDownloadButton() {
+  const toolbar = document.querySelector('#step-panel-3 .step3-toolbar-row');
+  if (!toolbar) return;
+  const placeButton = () => {
+    const deleteAllButton = document.getElementById('step3-btn-delete-all-images');
+    if (!deleteAllButton) return false;
+    ensureStep3BatchDownloadButton(deleteAllButton);
+    return true;
+  };
+  if (placeButton()) return;
+
+  const observer = new MutationObserver(() => {
+    if (placeButton()) observer.disconnect();
+  });
+  observer.observe(toolbar, { childList: true });
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', installStep3BatchDownloadButton);
+} else {
+  installStep3BatchDownloadButton();
+}
 
 // 批量上传处理
 async function handleStep3BatchUpload(e) {

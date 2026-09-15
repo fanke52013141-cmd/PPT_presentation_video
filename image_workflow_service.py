@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from io import BytesIO
 import json
 import logging
 import os
@@ -14,9 +15,10 @@ import sys
 import tempfile
 from typing import Any, Callable, Dict, List, Optional
 import uuid
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from fastapi import HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
 from ai_provider_service import (
@@ -102,6 +104,10 @@ MAX_IMAGE_UPLOAD_BYTES = int(
         str(20 * 1024 * 1024),
     )
 )
+
+# This package reserves the subtitle band as part of its teaching-page layout,
+# even when a legacy project-level subtitle switch is off.
+XIAXIAOHUA_CREATION_CONFIG_PACKAGE_ID = "d086a3590bb34b8eb22a46d2e0ce2380"
 
 
 def _not_configured(*_args: Any, **_kwargs: Any) -> Any:
@@ -273,6 +279,59 @@ def _image_reference_policy(project: Project) -> dict[str, Any]:
     elif policy == "text_only":
         minimum = 0
     return {"policy": policy, "minimum": minimum}
+
+
+def _project_requires_subtitle_safe_zone(project: Any) -> bool:
+    """Return whether this project's image pixels must leave the caption band blank.
+
+    The 夏晓华 creation package treats the band as a fixed page-layout safety
+    boundary. Preserve an explicit subtitle-off full-frame layout for every
+    other package.
+    """
+    return project_subtitles_enabled(project) or (
+        str(getattr(project, "creation_config_package_id", "") or "").strip()
+        == XIAXIAOHUA_CREATION_CONFIG_PACKAGE_ID
+    )
+
+
+def _enforce_project_subtitle_safe_zone(
+    project: Project,
+    slide_id: str,
+    image_path: str,
+    *,
+    source: str,
+) -> None:
+    """Deterministically clear the required caption band after image writes."""
+    if not _project_requires_subtitle_safe_zone(project):
+        logger.info(
+            "Subtitle-safe zone is disabled for %s image: slide=%s; retaining the full PPT image.",
+            source,
+            slide_id,
+        )
+        return
+    canvas = get_project_canvas(project)
+    safe_zone = canvas.get("subtitle_safe_zone") or get_canvas_profile(
+        getattr(project, "canvas_profile", None)
+    )["subtitle_safe_zone"]
+    subtitle_report = enforce_white_image_region(
+        image_path,
+        top=safe_zone["top"],
+        bottom=safe_zone["bottom"],
+    )
+    if subtitle_report["nonwhite_ratio"] > 0.005:
+        logger.warning(
+            "%s image entered locked subtitle-safe zone: slide=%s ratio=%.4f; region was cleared",
+            source.capitalize(),
+            slide_id,
+            subtitle_report["nonwhite_ratio"],
+        )
+    else:
+        logger.info(
+            "Subtitle-safe zone enforced for %s image: slide=%s ratio=%.4f",
+            source,
+            slide_id,
+            subtitle_report["nonwhite_ratio"],
+        )
 
 
 def _image_reference_capability(
@@ -509,7 +568,7 @@ def step3_non_overridable_rules_prompt(canvas_profile: Any = None) -> str:
     subtitle_zone = canvas["subtitle_safe_zone"]
     content = canvas["content_safe_area"]
     subtitles_enabled = (
-        project_subtitles_enabled(canvas_profile)
+        _project_requires_subtitle_safe_zone(canvas_profile)
         if hasattr(canvas_profile, "run_dir")
         else True
     )
@@ -837,29 +896,12 @@ def generate_slide_image(
             target_width=canvas["width"],
             target_height=canvas["height"],
         )
-        if project_subtitles_enabled(project):
-            safe_zone = canvas.get("subtitle_safe_zone") or get_canvas_profile(
-                getattr(project, "canvas_profile", None)
-            )["subtitle_safe_zone"]
-            subtitle_report = enforce_white_image_region(
-                save_path,
-                top=safe_zone["top"],
-                bottom=safe_zone["bottom"],
-            )
-            if subtitle_report["nonwhite_ratio"] > 0.005:
-                logger.warning(
-                    "Generated image entered locked subtitle-safe zone: slide=%s ratio=%.4f; region was cleared",
-                    slide_id,
-                    subtitle_report["nonwhite_ratio"],
-                )
-            else:
-                logger.info(
-                    "Subtitle-safe zone enforced: slide=%s ratio=%.4f",
-                    slide_id,
-                    subtitle_report["nonwhite_ratio"],
-                )
-        else:
-            logger.info("Subtitle-safe zone is disabled for slide=%s; retaining the full PPT image.", slide_id)
+        _enforce_project_subtitle_safe_zone(
+            project,
+            slide_id,
+            save_path,
+            source="generated",
+        )
         write_visual_provenance(
             project.run_dir,
             slide_id,
@@ -957,6 +999,12 @@ def upload_slide_image(
             target_width=canvas["width"],
             target_height=canvas["height"],
         )
+        _enforce_project_subtitle_safe_zone(
+            project,
+            slide_id,
+            save_path,
+            source="uploaded",
+        )
         write_visual_provenance(
             project.run_dir,
             slide_id,
@@ -989,6 +1037,47 @@ def get_slide_image_file(project_id: str, slide_id: str, db: Session):
         raise HTTPException(status_code=404, detail="图片不存在")
 
     return FileResponse(img_path, media_type="image/png")
+
+
+def _zip_entry_slide_id(slide_id: str) -> str:
+    """Make a slide id safe for use as a flat ZIP entry filename."""
+    forbidden = '\\/:*?"<>|'
+    return "".join(
+        "_" if character in forbidden or ord(character) < 32 else character
+        for character in slide_id
+    ).strip(". ") or "slide"
+
+
+def download_all_slide_images(project_id: str, db: Session) -> Response:
+    """Return the current Visual Contract's generated images as one ZIP file."""
+    project = project_or_404(db, project_id)
+    slide_ids = read_current_slide_ids_or_404(project)
+    images: list[tuple[int, str, Path]] = []
+    for page_number, slide_id in enumerate(slide_ids, start=1):
+        image_path = Path(
+            current_slide_file_or_404(project, slide_id, "visual_draft.png")
+        )
+        if image_path.is_file():
+            images.append((page_number, slide_id, image_path))
+
+    if not images:
+        raise HTTPException(
+            status_code=404,
+            detail="当前项目没有已生成的图片，无法批量下载。",
+        )
+
+    archive = BytesIO()
+    with ZipFile(archive, mode="w", compression=ZIP_DEFLATED) as zip_file:
+        for page_number, slide_id, image_path in images:
+            entry_name = f"{page_number:03d}_{_zip_entry_slide_id(slide_id)}.png"
+            zip_file.write(image_path, arcname=entry_name)
+
+    filename = f"pptstudio-images-{project.id}.zip"
+    return Response(
+        content=archive.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 def get_slide_candidate_file(project_id: str, slide_id: str, db: Session):

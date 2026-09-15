@@ -12122,14 +12122,41 @@ body:not(.workspace-open) .home-library-video-card .home-library-video-name { mi
 @media (max-width: 980px) { .model-library-list, .creation-config-package-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
 @media (max-width: 620px) { .model-library-list, .creation-config-package-grid { grid-template-columns: 1fr !important; } }
 
-/* Screenshot-targeted compact library and configuration cards. */
+/* Compact library cards still need enough room for their complete progress
+   footer.  A prior compact pass reserved two lines for every title while
+   shrinking the footer to four pixels, which left the final seven-segment
+   track outside the clipped card.  Keep the vertical card rhythm compact,
+   but let a short title consume only its real height and protect the footer. */
 body:not(.workspace-open) #page-home .stitch-video-grid { gap: .7rem !important; }
+body:not(.workspace-open) #page-home .stitch-video-card {
+  height: auto !important;
+  min-height: 196px !important;
+}
 body:not(.workspace-open) #page-home .stitch-video-preview { aspect-ratio: 2.35 / 1 !important; }
-body:not(.workspace-open) #page-home .stitch-video-content { flex: 0 0 auto !important; padding: .46rem .58rem .5rem !important; }
-body:not(.workspace-open) #page-home .stitch-video-name { display: -webkit-box !important; min-height: 2.35em !important; overflow: hidden !important; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal !important; line-height: 1.18 !important; }
-body:not(.workspace-open) #page-home .stitch-video-progress-block { margin-top: .28rem !important; }
-body:not(.workspace-open) #page-home .stitch-video-progress { height: 4px !important; margin-top: .22rem !important; }
-body:not(.workspace-open) #page-home .stitch-progress-segment { height: 4px !important; }
+body:not(.workspace-open) #page-home .stitch-video-content {
+  flex: 0 0 auto !important;
+  justify-content: flex-start !important;
+  padding: .46rem .58rem .62rem !important;
+}
+body:not(.workspace-open) #page-home .stitch-video-name {
+  display: -webkit-box !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal !important;
+  line-height: 1.18 !important;
+}
+body:not(.workspace-open) #page-home .stitch-video-progress-block {
+  flex: 0 0 auto !important;
+  margin-top: .4rem !important;
+}
+body:not(.workspace-open) #page-home .stitch-video-progress {
+  height: 6px !important;
+  min-height: 6px !important;
+  margin-top: .3rem !important;
+}
+body:not(.workspace-open) #page-home .stitch-progress-segment { height: 6px !important; }
 body:not(.workspace-open) #page-home .stitch-video-play { width: 30px !important; height: 30px !important; }
 
 body:not(.workspace-open) #page-home .stitch-course-header { grid-template-columns: 14px 16px max-content 20px !important; justify-content: start !important; gap: .35rem !important; }

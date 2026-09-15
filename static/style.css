@@ -12194,6 +12194,13 @@ html body:not(.workspace-open) #page-home .stitch-progress-segment {
   min-height: 6px !important;
 }
 
+/* Keep the original empty-library entry visual (dashed border and centred
+   icon/label).  A later shared-card rule resets min-height to zero, which
+   made this otherwise identical grid item collapse when it was the only card. */
+html body:not(.workspace-open) #page-home .stitch-new-video-card {
+  min-height: 196px !important;
+}
+
 body:not(.workspace-open) #page-home .stitch-course-header { grid-template-columns: 14px 16px max-content 20px !important; justify-content: start !important; gap: .35rem !important; }
 body:not(.workspace-open) #page-home .stitch-course-header .course-name { max-width: 142px; }
 body:not(.workspace-open) #page-home .stitch-chapter-header { grid-template-columns: 12px 14px max-content 20px !important; justify-content: start !important; gap: .35rem !important; }

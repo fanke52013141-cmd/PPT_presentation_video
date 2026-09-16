@@ -18,6 +18,8 @@ from openai import OpenAI
 from PIL import Image
 
 from scripts.background_color import normalize_connected_background
+import generation_governor
+from generation_governor import RESOURCE_IMAGE
 
 
 logger = logging.getLogger("PPTStudio.AIProvider")
@@ -58,6 +60,83 @@ MAX_IMAGE_PIXELS = int(
 )
 TOAPIS_DEFAULT_TASK_TIMEOUT_SECONDS = 600
 TOAPIS_MAX_TASK_TIMEOUT_SECONDS = 600
+# 轮询退避：一次生图任务的状态查询会占用网关额度（500 请求/分钟是**网关全局**的）。
+# 固定 5 秒轮询在 60 秒生成下要 12 次请求，指数退避只要 4-5 次，
+# 把省下的额度留给真正并发的生图请求。
+TOAPIS_POLL_INITIAL_SEC = 5.0
+TOAPIS_POLL_BACKOFF_FACTOR = 1.6
+TOAPIS_POLL_MAX_SEC = 30.0
+# 撞上游限流时的有界重试次数：超过后抛给上层质量门（降级为暂停而不是硬失败）。
+IMAGE_RATE_LIMIT_MAX_ATTEMPTS = 3
+# httpx 不会因 4xx/5xx 抛异常，ToAPIs 的限流是以状态码返回的。
+# 503 一并视为"上游过载、可退避重试"。
+IMAGE_RATE_LIMIT_STATUS_CODES = frozenset({429, 503})
+
+
+def _reraise_if_rate_limited(error: Exception) -> None:
+    """限流不是"参数不兼容"，不能被降级重试链吞掉。
+
+    参数兼容回退链会捕获所有异常；若不在这里拦住，一次 429 会退化成
+    "换一组参数再打一次"，请求数翻倍且掩盖真实的限流原因。
+    """
+    if generation_governor.is_rate_limit_error(error):
+        raise error
+
+
+def _governed_image_request(
+    base_url: Optional[str],
+    call: Any,
+    *,
+    retry_on_rate_limit: bool = True,
+) -> Any:
+    """在网关预算内执行一次上游生图请求。
+
+    每次调用先从治理器扣 1 个令牌（额度是**网关全局**的，所有账号/项目共享），
+    因此请求速率不会再随项目数线性叠加。撞到 429 时登记 AIMD 降档并退避重试，
+    退避期间不占用并发许可。
+
+    注意：httpx 默认不对 4xx/5xx 抛异常，ToAPIs 的 429 是以**状态码**返回的，
+    所以这里必须同时处理"抛出的异常"和"返回的限流状态码"，否则限流会被
+    当成普通失败直接上抛，既不退避也不计入 AIMD。
+    """
+    governor = generation_governor.get_generation_governor()
+    attempt = 0
+    while True:
+        rate_limit_error: Optional[Exception] = None
+        try:
+            with governor.request(RESOURCE_IMAGE, base_url):
+                response = call()
+        except Exception as error:
+            if not retry_on_rate_limit or not generation_governor.is_rate_limit_error(error):
+                raise
+            rate_limit_error = error
+        else:
+            status = getattr(response, "status_code", None)
+            if retry_on_rate_limit and status in IMAGE_RATE_LIMIT_STATUS_CODES:
+                rate_limit_error = RuntimeError(
+                    f"上游返回 HTTP {status}（限流/过载），需要在网关额度内退避重试"
+                )
+            else:
+                governor.note_success(RESOURCE_IMAGE, base_url)
+                return response
+
+        attempt += 1
+        if attempt > IMAGE_RATE_LIMIT_MAX_ATTEMPTS:
+            raise rate_limit_error
+        delay = governor.record_rate_limit(
+            RESOURCE_IMAGE,
+            base_url,
+            error=rate_limit_error,
+            attempt=attempt - 1,
+        )
+        logger.warning(
+            "生图网关限流，%.1f 秒后重试（第 %s/%s 次）：%s",
+            delay,
+            attempt,
+            IMAGE_RATE_LIMIT_MAX_ATTEMPTS,
+            rate_limit_error,
+        )
+        time.sleep(delay)
 
 
 def get_openai_client(
@@ -338,8 +417,16 @@ def generate_toapis_image_response(
     reference_urls: list[str] = []
     with httpx.Client(timeout=30, trust_env=False, follow_redirects=True) as client:
         for path in reference_paths or []:
-            with open(path, "rb") as source:
-                upload = client.post(f"{root}/v1/uploads/images", headers=headers, files={"file": (os.path.basename(path), source, "image/png")})
+
+            def _upload_reference(path: str = path) -> httpx.Response:
+                with open(path, "rb") as source:
+                    return client.post(
+                        f"{root}/v1/uploads/images",
+                        headers=headers,
+                        files={"file": (os.path.basename(path), source, "image/png")},
+                    )
+
+            upload = _governed_image_request(base_url, _upload_reference)
             try:
                 upload_body = upload.json()
             except ValueError:
@@ -361,7 +448,14 @@ def generate_toapis_image_response(
         }
         if reference_urls:
             payload["reference_images"] = reference_urls
-        created = client.post(f"{root}/v1/images/generations", headers={**headers, "Content-Type": "application/json"}, json=payload)
+        created = _governed_image_request(
+            base_url,
+            lambda: client.post(
+                f"{root}/v1/images/generations",
+                headers={**headers, "Content-Type": "application/json"},
+                json=payload,
+            ),
+        )
         try:
             task = created.json()
         except ValueError:
@@ -379,8 +473,14 @@ def generate_toapis_image_response(
         started_at = time.monotonic()
         deadline = started_at + task_timeout
         last_status: Any = None
+        poll_interval = TOAPIS_POLL_INITIAL_SEC
         while time.monotonic() < deadline:
-            status_response = client.get(f"{root}/v1/images/generations/{task_id}", headers=headers)
+            status_response = _governed_image_request(
+                base_url,
+                lambda: client.get(
+                    f"{root}/v1/images/generations/{task_id}", headers=headers
+                ),
+            )
             try:
                 status = status_response.json()
             except ValueError:
@@ -398,14 +498,21 @@ def generate_toapis_image_response(
                 raise RuntimeError("ToAPIs 图片任务完成但未返回图片 URL")
             if state == "failed":
                 raise RuntimeError(f"ToAPIs 图片任务失败: {str((status.get('error') or {}).get('message') or status.get('fail_reason') or '未知错误')[:800]}")
+            # 指数退避轮询：状态查询同样消耗网关额度，固定 5 秒会把额度吃掉一半。
             retry_after = status_response.headers.get("Retry-After")
+            hinted = 0.0
             try:
-                wait_seconds = max(5.0, float(retry_after)) if retry_after else 5.0
-            except ValueError:
-                wait_seconds = 5.0
+                if retry_after:
+                    hinted = max(TOAPIS_POLL_INITIAL_SEC, float(retry_after))
+            except (TypeError, ValueError):
+                hinted = 0.0
+            poll_interval = min(
+                TOAPIS_POLL_MAX_SEC,
+                max(poll_interval * TOAPIS_POLL_BACKOFF_FACTOR, hinted),
+            )
             remaining_seconds = deadline - time.monotonic()
             if remaining_seconds > 0:
-                time.sleep(min(wait_seconds + random.uniform(0, 0.5), remaining_seconds))
+                time.sleep(min(poll_interval + random.uniform(0, 0.5), remaining_seconds))
     waited_seconds = min(task_timeout, max(0, round(time.monotonic() - started_at)))
     raise RuntimeError(
         "ToAPIs 图片任务等待超时: "
@@ -515,53 +622,64 @@ def generate_image_response(
     if timeout:
         kwargs["timeout"] = timeout
 
+    def _generate(**call_kwargs: Any) -> Any:
+        # 每次 images.generate 都占用网关额度，必须计费并排队。
+        return _governed_image_request(
+            base_url,
+            lambda: client.images.generate(**call_kwargs),
+        )
+
     if seedream_mode:
         try:
-            return client.images.generate(
+            return _generate(
                 **kwargs,
                 size=size,
                 response_format="b64_json",
             )
         except Exception as response_format_error:
+            _reraise_if_rate_limited(response_format_error)
             logger.warning(
                 "Seedream image generation with response_format "
                 "failed, retrying without it: %s",
                 response_format_error,
             )
             try:
-                return client.images.generate(
+                return _generate(
                     **kwargs,
                     size=size,
                 )
             except Exception as size_error:
+                _reraise_if_rate_limited(size_error)
                 logger.warning(
                     "Seedream image generation with size failed, "
                     "retrying minimal params: %s",
                     size_error,
                 )
-                return client.images.generate(**kwargs)
+                return _generate(**kwargs)
 
     try:
-        return client.images.generate(
+        return _generate(
             **kwargs,
             size=size,
             quality="standard",
         )
     except Exception as full_params_error:
+        _reraise_if_rate_limited(full_params_error)
         logger.warning(
             "Image gen with full params failed (%s). Retrying "
             "with size only for compatible providers...",
             full_params_error,
         )
         try:
-            return client.images.generate(
+            return _generate(
                 **kwargs,
                 size=size,
             )
         except Exception as size_error:
+            _reraise_if_rate_limited(size_error)
             logger.warning(
                 "Image gen with size failed (%s). Retrying "
                 "minimal params...",
                 size_error,
             )
-            return client.images.generate(**kwargs)
+            return _generate(**kwargs)

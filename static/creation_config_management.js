@@ -556,7 +556,7 @@
     const ttsBinding = readBindingValue('tts');
     if (ttsBinding) tts.connection = ttsBinding;
     else delete tts.connection;
-    const ttsConcurrency = Math.max(1, Math.min(10, Number(element('creation-config-tts-concurrency')?.value) || 10));
+    const ttsConcurrency = Math.max(1, Math.min(10, Number(element('creation-config-tts-concurrency')?.value) || 4));
     tts.concurrency = ttsConcurrency;
     const seedAudioConcurrency = boundedSeedAudioConcurrency(element('creation-config-seed-audio-concurrency')?.value);
     tts.seed_audio_concurrency = seedAudioConcurrency;
@@ -589,7 +589,7 @@
       .map(input => input.dataset.creationConfigPause)
       .filter(Boolean);
     const automation = objectValue(payload.automation);
-    const imageConcurrency = Math.max(1, Math.min(6, Number(element('creation-config-image-concurrency')?.value) || 5));
+    const imageConcurrency = Math.max(1, Math.min(12, Number(element('creation-config-image-concurrency')?.value) || 5));
     automation.mode = automationModeFromForm();
     automation.image_concurrency = imageConcurrency;
     automation.ai_narration_annotation = automation.mode === 'auto' && narrationAnnotationFromForm();
@@ -623,7 +623,7 @@
     setBindingValue('image', bindings.image_generation);
     const tts = objectValue(value.tts);
     setBindingValue('tts', tts.connection || bindings.tts);
-    setStringField('creation-config-tts-concurrency', String(Math.max(1, Math.min(10, Number(tts.concurrency) || 10))));
+    setStringField('creation-config-tts-concurrency', String(Math.max(1, Math.min(10, Number(tts.concurrency) || 4))));
     setStringField('creation-config-seed-audio-concurrency', String(boundedSeedAudioConcurrency(tts.seed_audio_concurrency)));
     setStringField('creation-config-tts-rpm', String(Math.max(1, Math.min(600, Number(tts.requests_per_minute) || 10))));
     setImageStyleValue(value.image_style);
@@ -641,7 +641,7 @@
     );
     if (maskAnnotationControl) maskAnnotationControl.checked = true;
     updateAutomationControls();
-    setStringField('creation-config-image-concurrency', String(Math.max(1, Math.min(6, Number(automation.image_concurrency) || 5))));
+    setStringField('creation-config-image-concurrency', String(Math.max(1, Math.min(12, Number(automation.image_concurrency) || 5))));
     const render = objectValue(value.render);
     setStringField('creation-config-render-acceleration', render.acceleration || 'auto');
     const outputFormats = Array.isArray(render.output_formats) && render.output_formats.length

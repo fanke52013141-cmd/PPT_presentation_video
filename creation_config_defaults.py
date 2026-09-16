@@ -66,6 +66,9 @@ def default_creation_config_payload() -> dict[str, Any]:
         "mask": {"enabled": True},
         "automation": {
             "mode": "auto",
+            # 项目级子配额：上游额度是**网关全局**的（生图默认 500 请求/分钟），
+            # 多账号同时生成时由 generation_governor 统一排队，项目配置不能
+            # 把它当成唯一闸门。
             "image_concurrency": 5,
             "ai_narration_annotation": False,
             # Automatic AI Mask is opt-in.  A newly created package keeps the
@@ -74,7 +77,10 @@ def default_creation_config_payload() -> dict[str, Any]:
             "ai_mask_annotation": False,
         },
         "tts": {
-            "concurrency": 10,
+            # MiniMax 的网关额度是 10 请求/分钟，而单页**异步**合成要消耗
+            # 上传 + 提交 + 取回 + 轮询约 4-7 次请求，所以真正决定页速的是额度
+            # 而不是线程数；并发开到 10 只会造成超发与被限流。
+            "concurrency": 4,
             # Seed Audio has a lower provider concurrency entitlement than
             # MiniMax.  Keep this separate so a package can safely use either
             # provider without changing MiniMax's established fan-out.

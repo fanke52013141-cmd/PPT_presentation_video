@@ -206,6 +206,25 @@ from json_llm_service import (
     parse_json_or_repair_with_llm,
 )
 
+from generation_governor import (
+    GovernorDependencies as GenerationGovernorDependencies,
+    configure_generation_governor,
+)
+
+# 上游额度是**网关全局**的（生图 500 请求/分钟、语音 10 请求/分钟），而各项目的
+# 并发配置是按项目的。这里把"限流键"从项目改成"（资源种类, 网关）"，让所有账号/
+# 项目共享同一份额度，并把额度耗尽的语义从"降档后抛错"改成"排队等待"。
+# 注意：日志用应用级 logger，而不是 write_project_log —— 治理器是跨项目的，
+# 没有单一 project 归属。
+configure_generation_governor(
+    GenerationGovernorDependencies(
+        get_bounded_int_setting=get_bounded_int_setting,
+        write_log=lambda event, **fields: logger.info(
+            "generation_governor event=%s %s", event, fields
+        ),
+    )
+)
+
 
 configure_narration_audio_dependencies(
     NarrationAudioDependencies(

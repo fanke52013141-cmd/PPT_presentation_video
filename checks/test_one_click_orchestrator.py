@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import ai_mask_manifest_apply as ai_mask
+import generation_governor
 import one_click_orchestrator as one_click
 import one_click_routes
 from fastapi import HTTPException
@@ -39,16 +40,43 @@ def test_quality_gates_use_normalized_project_profile_values() -> None:
 
 
 def test_image_parallelism_defaults_to_five_and_is_bounded() -> None:
+    """项目级并发只是**子配额**：默认 5，上限放宽到 12。
+
+    上游网关的全局速率与全局并发由 generation_governor 负责，项目配置不得
+    把它当成唯一闸门（旧实现用"每项目一个、只降不升"的 _AdaptiveImageLimiter
+    模拟限流，无法约束多账号叠加的请求速率）。
+    """
     project = SimpleNamespace()
     assert one_click._bounded_parallelism(
         project,
         config_path="automation.image_concurrency",
         environment_name="PPT_STUDIO_TEST_IMAGE_CONCURRENCY",
         default=5,
-        maximum=6,
+        maximum=12,
     ) == 5
-    assert one_click._reduced_image_parallelism(5) == 4
-    assert one_click._reduced_image_parallelism(1) == 1
+    # 项目配置不得突破项目级上限。
+    assert one_click._bounded_parallelism(
+        project,
+        config_path="automation.image_concurrency",
+        environment_name="PPT_STUDIO_TEST_IMAGE_CONCURRENCY",
+        default=5,
+        maximum=12,
+    ) <= 12
+
+
+def test_project_concurrency_is_capped_by_the_project_setting(monkeypatch) -> None:
+    project = SimpleNamespace()
+    monkeypatch.setattr(one_click, "get_config_value", lambda *_args: 99)
+    assert (
+        one_click._bounded_parallelism(
+            project,
+            config_path="automation.image_concurrency",
+            environment_name="PPT_STUDIO_TEST_IMAGE_CONCURRENCY",
+            default=5,
+            maximum=12,
+        )
+        == 12
+    )
 
 
 def test_narration_annotation_is_opt_in_for_automatic_runs(monkeypatch) -> None:
@@ -72,10 +100,18 @@ def test_ai_mask_annotation_is_opt_in_for_automatic_runs(monkeypatch) -> None:
 
 
 def test_image_rate_limit_detection_and_backoff_hint() -> None:
+    """限流判定与退避提示已下沉到 generation_governor（单一事实来源）。
+
+    编排器保留 _is_rate_limit_error 作为兼容入口，但退避计算只有一份实现，
+    避免"每个模块各写一套 429 正则"再次漂移。
+    """
     error = RuntimeError("HTTP 429: Retry-After: 7")
     assert one_click._is_rate_limit_error(error)
-    assert one_click._image_rate_limit_delay_seconds(error, 1) == 7.0
-    assert one_click._image_rate_limit_delay_seconds(RuntimeError("429"), 3) == 8.0
+    assert generation_governor.is_rate_limit_error(error)
+    assert generation_governor.rate_limit_delay_seconds(error, 1) == 7.0
+    assert generation_governor.rate_limit_delay_seconds(RuntimeError("429"), 0) == 5.0
+    assert generation_governor.rate_limit_delay_seconds(RuntimeError("429"), 60) == 60.0
+    assert not generation_governor.is_rate_limit_error(RuntimeError("invalid size"))
 
 
 def test_manual_project_rejects_one_click_before_background_work_starts(monkeypatch) -> None:

@@ -224,7 +224,7 @@ def test_tts_generation_uses_project_voice_settings_and_redacts_failed_output(
     monkeypatch.setattr(tts, "rewrite_audio_timeline_by_beats", lambda *_args: None)
     monkeypatch.setattr(tts, "provider_tts_command", lambda **kwargs: captured.setdefault("command", kwargs) or [])
     monkeypatch.setattr(tts, "provider_tts_environment", lambda api, secret: captured.setdefault("environment", {"api": api, "secret": secret}))
-    monkeypatch.setattr(tts, "run_tts_command_with_retries", lambda *_args: {"ok": False, "stderr": "provider tts-secret failed", "stdout": "", "attempts": 1, "returncode": 1})
+    monkeypatch.setattr(tts, "run_tts_command_with_retries", lambda *_args, **_kwargs: {"ok": False, "stderr": "provider tts-secret failed", "stdout": "", "attempts": 1, "returncode": 1})
     monkeypatch.setattr(tts, "write_project_log", lambda *_args, **kwargs: logs.append(kwargs))
     monkeypatch.setattr(tts, "mark_step_retry_needed", lambda *_args: None)
 
@@ -244,6 +244,11 @@ def test_tts_generation_uses_project_voice_settings_and_redacts_failed_output(
     # One MiniMax job at the free-tier 10 RPM budget polls no faster than the
     # calculated 10 seconds, rather than the historical two-second loop.
     assert captured["environment"]["MINIMAX_TTS_POLL_INTERVAL_SEC"] == "10.0"
+    # MiniMax 语音必须受**网关全局**额度治理，而不是只靠项目级线程数：
+    # 额度是 10 请求/分钟，单页异步合成要 4-7 次请求，线程数再多也不会更快。
+    start_log = next(item for item in logs if "concurrency" in item)
+    assert start_log["governed_by_gateway"] is True
+    assert start_log["reserved_cost_per_page"] is not None
     assert "tts-secret" not in result["failed"][0]["error"]
     assert all("tts-secret" not in repr(item) for item in logs)
 

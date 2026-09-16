@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260915.4">
+  <link rel="stylesheet" href="style.css?v=20260916.1">
   <!-- Stitch screen contract: the supplied page code is the visual source of truth. -->
   <link rel="stylesheet" href="stitch.css?v=20260914.1">
 </head>
@@ -914,6 +914,37 @@
             <input id="setting-tts-job-workers" type="number" min="1" max="4" step="1" placeholder="1" inputmode="numeric">
           </label>
         </div>
+        <h4 style="margin:1.2rem 0 0.2rem;">上游网关额度</h4>
+        <p class="config-editor-note" style="margin:0.2rem 0 0.8rem;">额度按<b>网关全局</b>计算，所有账号与项目共享同一份；超出即排队等待，不会失败。生图额度同时被参考图上传、任务提交和状态轮询消耗，因此“每分钟 500 次”不等于“每分钟 500 张图”。</p>
+        <div style="display:flex; flex-wrap:wrap; gap:1rem;">
+          <label style="flex:1; min-width:220px;">
+            <span style="font-weight:bold; display:block; margin-bottom:0.3rem;">生图网关请求上限/分钟</span>
+            <input id="setting-image-gateway-rpm" type="number" min="1" max="100000" step="1" placeholder="500" inputmode="numeric">
+          </label>
+          <label style="flex:1; min-width:220px;">
+            <span style="font-weight:bold; display:block; margin-bottom:0.3rem;">生图网关同时请求数（1-64）</span>
+            <input id="setting-image-gateway-concurrency" type="number" min="1" max="64" step="1" placeholder="12" inputmode="numeric">
+          </label>
+          <label style="flex:1; min-width:220px;">
+            <span style="font-weight:bold; display:block; margin-bottom:0.3rem;">语音网关请求上限/分钟</span>
+            <input id="setting-tts-gateway-rpm" type="number" min="1" max="600" step="1" placeholder="10" inputmode="numeric">
+          </label>
+          <label style="flex:1; min-width:220px;">
+            <span style="font-weight:bold; display:block; margin-bottom:0.3rem;">语音网关同时请求数（1-16）</span>
+            <input id="setting-tts-gateway-concurrency" type="number" min="1" max="16" step="1" placeholder="4" inputmode="numeric">
+          </label>
+        </div>
+        <p class="config-editor-note" style="margin:0.8rem 0 0;">排队超时上限（秒，5-3600）与总开关：把“网关治理开关”设为 0 可临时退回不限流行为。</p>
+        <div style="display:flex; flex-wrap:wrap; gap:1rem;">
+          <label style="flex:1; min-width:220px;">
+            <span style="font-weight:bold; display:block; margin-bottom:0.3rem;">排队超时上限（秒）</span>
+            <input id="setting-generation-queue-max-wait" type="number" min="5" max="3600" step="1" placeholder="600" inputmode="numeric">
+          </label>
+          <label style="flex:1; min-width:220px;">
+            <span style="font-weight:bold; display:block; margin-bottom:0.3rem;">网关治理开关（1 开 / 0 关）</span>
+            <input id="setting-generation-governor-enabled" type="number" min="0" max="1" step="1" placeholder="1" inputmode="numeric">
+          </label>
+        </div>
       </section>
 
       <div class="settings-footer-actions">
@@ -1058,10 +1089,10 @@
                 <div class="creation-config-option-group creation-config-option-group--runtime creation-config-concurrency-group">
                   <h5>自动化并发</h5>
                   <div class="creation-config-number-grid creation-config-concurrency-grid">
-                    <label><span>图片生成并发</span><input id="creation-config-image-concurrency" type="number" min="1" max="6" value="5" inputmode="numeric"><small>同一项目可同时生成的图片页数。</small></label>
-                    <label><span>语音合成并发</span><input id="creation-config-tts-concurrency" type="number" min="1" max="10" value="10" inputmode="numeric"><small>第 5 步可同时提交给 TTS 的语音任务数。</small></label>
+                    <label><span>图片生成并发</span><input id="creation-config-image-concurrency" type="number" min="1" max="12" value="5" inputmode="numeric"><small>同一项目可同时生成的图片页数；总速率仍受全局生图网关额度约束。</small></label>
+                    <label><span>语音合成并发</span><input id="creation-config-tts-concurrency" type="number" min="1" max="10" value="4" inputmode="numeric"><small>第 5 步可同时提交给 TTS 的语音任务数；这是项目级请求上限，实际还会与全局网关额度取较小值。</small></label>
                     <label><span>豆包语音合成并发</span><input id="creation-config-seed-audio-concurrency" type="number" min="1" max="5" value="5" inputmode="numeric"><small>仅豆包音频生成 1.0 使用；最大 5 个并发任务。</small></label>
-                    <label><span>MiniMax 每分钟上限</span><input id="creation-config-tts-rpm" type="number" min="1" max="600" value="10" inputmode="numeric"><small>发送给 MiniMax TTS 的最大请求数；超过会排队。</small></label>
+                    <label><span>MiniMax 每分钟上限</span><input id="creation-config-tts-rpm" type="number" min="1" max="600" value="10" inputmode="numeric"><small>本项目可用的 MiniMax 请求上限；实际还会受全局网关额度（默认 10/分钟）约束，超出即排队。</small></label>
                   </div>
                 </div>
                 <div class="creation-config-option-group creation-config-option-group--runtime">
@@ -1623,7 +1654,7 @@
   <script src="artifact_repair.js?v=20260801.1"></script>
   <script src="prompt_help.js?v=20260801.1"></script>
   <script src="settings.js?v=20260907.1"></script>
-  <script src="projects.js?v=20260915.1"></script>
+  <script src="projects.js?v=20260916.1"></script>
   <script src="creation_config_management.js?v=20260915.1"></script>
   <script src="select_menus.js?v=20260906.1"></script>
   <script src="courses.js?v=20260913.2"></script>
@@ -1643,8 +1674,8 @@
   <script src="workspace_navigation.js?v=20260913.1"></script>
   <script src="event_bindings.js?v=20260906.1"></script>
   <script src="project_profile_extension.js?v=20260915.2"></script>
-  <script src="storyboard_background_extension.js?v=20260807.1"></script>
-  <script src="style_reference_manager_extension.js?v=3.0.1"></script>
+  <script src="storyboard_background_extension.js?v=20260916.1"></script>
+  <script src="style_reference_manager_extension.js?v=3.1.0"></script>
   <script src="ai_mask_auto_state.js?v=20260809.1"></script>
   <script src="digital_human_panel.js?v=20260914.1"></script>
   <script src="ai_mask_extension.js?v=20260912.3"></script>

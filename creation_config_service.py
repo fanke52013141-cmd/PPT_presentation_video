@@ -529,6 +529,9 @@ def validate_payload(payload: Any) -> dict[str, Any]:
             raise CreationConfigValidationError("tts 必须是对象")
         if "concurrency" in tts:
             concurrency = tts["concurrency"]
+            # 这里是**项目级请求上限**，不是最终生效值：运行期会与全局网关额度
+            # 取 min（见 tts_service 的 worker_count 钳位）。因此保留宽松的上界，
+            # 既兼容历史配置包（旧默认值是 10），也不会让项目配置放大全局额度。
             if isinstance(concurrency, bool) or not isinstance(concurrency, int) or not 1 <= concurrency <= 10:
                 raise CreationConfigValidationError("tts.concurrency 必须是 1 到 10 的整数")
         if "seed_audio_concurrency" in tts:
@@ -564,8 +567,8 @@ def validate_payload(payload: Any) -> dict[str, Any]:
             raise CreationConfigValidationError("automation.mode 必须是 auto 或 manual")
         if "image_concurrency" in automation:
             concurrency = automation["image_concurrency"]
-            if isinstance(concurrency, bool) or not isinstance(concurrency, int) or not 1 <= concurrency <= 6:
-                raise CreationConfigValidationError("automation.image_concurrency 必须是 1 到 6 的整数")
+            if isinstance(concurrency, bool) or not isinstance(concurrency, int) or not 1 <= concurrency <= 12:
+                raise CreationConfigValidationError("automation.image_concurrency 必须是 1 到 12 的整数")
         if "ai_narration_annotation" in automation and not isinstance(
             automation["ai_narration_annotation"], bool
         ):

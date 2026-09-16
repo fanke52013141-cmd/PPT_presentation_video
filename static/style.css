@@ -2965,6 +2965,8 @@ header .btn {
   --gradient-ai-strong: linear-gradient(135deg, #5365d0 0%, #7b5cd6 100%);
   --gradient-progress: linear-gradient(90deg, #5365d0 0%, #8fa7f8 100%);
 
+  --font-family: "Plus Jakarta Sans", "Noto Sans SC", Inter, system-ui, sans-serif;
+
   --bg-color: var(--color-bg-page);
   --ink-color: var(--color-text-primary);
   --primary-color: var(--color-primary-light);

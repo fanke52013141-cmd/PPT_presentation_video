@@ -39,7 +39,11 @@
   }
 
   function apiPostForm(url, form) {
-    return fetch(url, { method: 'POST', body: form }).then(parseResponse);
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'X-PPT-Studio-Request': '1' },
+      body: form,
+    }).then(parseResponse);
   }
 
   function apiDelete(url) {

@@ -23,7 +23,11 @@
   }
 
   function apiPostForm(url, body) {
-    return fetch(url, { method: 'POST', body }).then(parseResponse);
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'X-PPT-Studio-Request': '1' },
+      body,
+    }).then(parseResponse);
   }
 
   function toast(message, duration) {

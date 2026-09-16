@@ -35,6 +35,7 @@ from project_storage import (
     presentation_sidecar,
     project_run_dir,
 )
+from visual_settings_service import sync_project_background_color
 
 
 logger = logging.getLogger("PPTStudio.PPTX")
@@ -525,6 +526,13 @@ class PptxExportService:
                 self.project_run_dir(project)
             )[0]
             if mode == "reveal":
+                try:
+                    sync_project_background_color(project)
+                except RuntimeError:
+                    logger.info(
+                        "PPTX background sync skipped:"
+                        " visual settings service not configured"
+                    )
                 result = build_reveal_pptx(
                     self.project_run_dir(project),
                     filename,

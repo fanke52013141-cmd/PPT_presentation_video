@@ -445,6 +445,8 @@ class RemotionRunner:
                 "step8_remotion_render_timeout",
                 timeout_sec=self.config.render_timeout_sec,
             )
+            if output_path.exists():
+                output_path.unlink()
             raise RuntimeError("视频渲染超时")
         if result.returncode != 0:
             self.dependencies.write_project_log(
@@ -454,6 +456,8 @@ class RemotionRunner:
                 stdout=(result.stdout or "")[-4000:],
                 stderr=(result.stderr or "")[-4000:],
             )
+            if output_path.exists():
+                output_path.unlink()
             raise RuntimeError(
                 "视频渲染失败：" + str(result.stderr or "")
             )

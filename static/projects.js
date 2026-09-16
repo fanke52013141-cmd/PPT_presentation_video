@@ -3,6 +3,7 @@
 // Cache of batch automation statuses keyed by project_id.
 let _automationStatusMap = {};
 let _automationPollTimer = null;
+let _creatingProject = false;
 /**
  * Ensure the creation-config selector is present in both the static modal and
  * the project-profile wizard, which replaces the modal body at runtime.
@@ -223,32 +224,41 @@ async function createProject() {
     return;
   }
 
-  const creationConfig = selectedCreationConfig();
-  // A course-tree entry point can preselect the destination. Passing the
-  // ownership IDs on the initial create keeps this as one atomic, account-
-  // scoped operation instead of creating an unassigned project then moving it.
-  const parent = window.__pendingProjectParent || null;
-  const result = await API.post('/api/projects', {
-    name,
-    description,
-    canvas_profile: canvasProfile,
-    target_duration_sec: targetDurationSec,
-    ...(creationConfig ? {
-      config_package_id: creationConfig.id,
-    } : {}),
-    ...(parent || {}),
-  });
-  if (!result.success) return;
-  document.getElementById('modal-create').style.display = 'none';
-  showToast('项目新建成功');
-  window.__pendingProjectParent = null;
+  if (_creatingProject) return;
+  _creatingProject = true;
+  const submitBtn = document.getElementById('btn-create-submit');
+  if (submitBtn) submitBtn.disabled = true;
+  try {
+    const creationConfig = selectedCreationConfig();
+    // A course-tree entry point can preselect the destination. Passing the
+    // ownership IDs on the initial create keeps this as one atomic, account-
+    // scoped operation instead of creating an unassigned project then moving it.
+    const parent = window.__pendingProjectParent || null;
+    const result = await API.post('/api/projects', {
+      name,
+      description,
+      canvas_profile: canvasProfile,
+      target_duration_sec: targetDurationSec,
+      ...(creationConfig ? {
+        config_package_id: creationConfig.id,
+      } : {}),
+      ...(parent || {}),
+    });
+    if (!result.success) return;
+    document.getElementById('modal-create').style.display = 'none';
+    showToast('项目新建成功');
+    window.__pendingProjectParent = null;
 
-  // Course and chapter creation stays in the library so the user can keep
-  // organizing the course tree. The normal entry retains its direct opening.
-  if (parent && window.CourseTree?.load) {
-    await window.CourseTree.load();
-  } else {
-    enterWorkspace(result.project.id);
+    // Course and chapter creation stays in the library so the user can keep
+    // organizing the course tree. The normal entry retains its direct opening.
+    if (parent && window.CourseTree?.load) {
+      await window.CourseTree.load();
+    } else {
+      enterWorkspace(result.project.id);
+    }
+  } finally {
+    _creatingProject = false;
+    if (submitBtn) submitBtn.disabled = false;
   }
 }
 

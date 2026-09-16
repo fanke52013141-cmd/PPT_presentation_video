@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -10,6 +11,7 @@ from remotion_runner import (
     RemotionRunner,
     RemotionRunnerDependencies,
 )
+from database import utc_now_naive
 from video_contracts import VideoRenderConfig, VideoRenderError
 from video_render_service import (
     VideoRenderDependencies,
@@ -105,9 +107,11 @@ def test_render_coordinator_delegates_and_publishes(
     project = SimpleNamespace(
         id="project-test",
         run_dir=str(tmp_path),
+        created_at=utc_now_naive() - timedelta(hours=1, minutes=2, seconds=3),
     )
     stages: list[str] = []
     commits: list[bool] = []
+    recorded_metadata: dict[str, object] = {}
 
     class FakeDb:
         def query(self, *_args):
@@ -146,6 +150,7 @@ def test_render_coordinator_delegates_and_publishes(
             _filename,
             **_kwargs,
         ):
+            recorded_metadata.update(_kwargs["render_metadata"])
             return SimpleNamespace(id="artifact-test")
 
         def video_item(self, _project, path, *_args):
@@ -199,6 +204,7 @@ def test_render_coordinator_delegates_and_publishes(
     assert task["status"] == "success"
     assert task["output_filename"] == output_path.name
     assert task["result_artifact_id"] == "artifact-test"
+    assert recorded_metadata["project_total_elapsed_sec"] >= 3723
 
 
 def test_start_render_ends_caller_transaction_before_creating_job(

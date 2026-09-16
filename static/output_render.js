@@ -27,6 +27,16 @@ function updateStep8LoadingText(stageLabel, elapsedSec, queueAhead) {
   text.innerText = `${stage}${elapsed}...`;
 }
 
+function formatProjectTotalElapsed(totalSeconds) {
+  const seconds = Number(totalSeconds);
+  if (!Number.isFinite(seconds) || seconds < 0) return '';
+  const total = Math.floor(seconds);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const remainder = total % 60;
+  return `${hours}时${minutes}分${remainder}秒`;
+}
+
 function stopStep8RenderPolling() {
   if (_step8RenderPollTimer) {
     clearInterval(_step8RenderPollTimer);
@@ -532,6 +542,9 @@ function showStep8VideoResult(videos) {
       const created = item.created_at ? new Date(item.created_at).toLocaleString() : '';
       const playbackRate = Number(item.playback_rate || 1);
       const speedLabel = `${playbackRate.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}×`;
+      const totalElapsed = idx === 0
+        ? formatProjectTotalElapsed(item.project_total_elapsed_sec)
+        : '';
       const artifactBadge = item.artifact_state === 'current'
         ? '<span class="step8-current-badge">精确 RLE Mask v5 · 当前</span>'
         : item.artifact_state === 'stale'
@@ -549,6 +562,7 @@ function showStep8VideoResult(videos) {
             </strong>
             <span>${escHtml(created || item.filename || '')}</span>
           </div>
+          ${totalElapsed ? `<div class="step8-video-total-elapsed">总耗时：${escHtml(totalElapsed)}</div>` : ''}
           <div class="video-preview-box">
             <video src="${escHtml(url)}" data-video-filename="${escHtml(item.filename || '')}" controls playsinline preload="metadata"></video>
           </div>

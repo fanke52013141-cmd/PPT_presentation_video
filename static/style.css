@@ -2524,6 +2524,13 @@ body.step5-fullscreen-mode #step5-btn-fullscreen {
   font-weight: 700;
 }
 
+.step8-video-total-elapsed {
+  margin: -0.2rem 0 0.8rem;
+  color: var(--color-text-secondary, #637087);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
 .step8-video-actions {
   justify-content: flex-end;
   margin-top: 0.8rem;

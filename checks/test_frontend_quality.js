@@ -34,6 +34,12 @@ const oneClick = fs.readFileSync(path.join(root, 'static', 'one_click_extension.
 const creationConfigManagement = fs.readFileSync(path.join(root, 'static', 'creation_config_management.js'), 'utf8');
 const selectMenus = fs.readFileSync(path.join(root, 'static', 'select_menus.js'), 'utf8');
 
+for (const outputToken of ['function formatProjectTotalElapsed(', '总耗时：', 'project_total_elapsed_sec']) {
+  if (!outputRender.includes(outputToken)) {
+    throw new Error(`video output total elapsed display is missing ${outputToken}`);
+  }
+}
+
 if (fs.existsSync(path.join(root, 'static', 'app.js')) || html.includes('app.js')) {
   throw new Error('legacy app.js runtime entry was recreated');
 }

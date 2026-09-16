@@ -291,6 +291,11 @@ class VideoArtifactService:
         playback_rate = float(
             metadata.get("playback_rate", 1.0) or 1.0
         )
+        raw_project_elapsed = metadata.get("project_total_elapsed_sec")
+        try:
+            project_total_elapsed_sec = max(0, round(float(raw_project_elapsed)))
+        except (TypeError, ValueError):
+            project_total_elapsed_sec = None
         stored_fingerprint = metadata.get("input_fingerprint")
         current_fingerprint = (
             current_fingerprint
@@ -330,6 +335,7 @@ class VideoArtifactService:
             "video_background": video_background or None,
             "subtitle_style": subtitle_style,
             "playback_rate": playback_rate,
+            "project_total_elapsed_sec": project_total_elapsed_sec,
             "source_filename": (
                 str(metadata.get("source_filename") or "") or None
             ),

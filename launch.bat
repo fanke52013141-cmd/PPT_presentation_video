@@ -41,6 +41,14 @@ if not exist "%VENV%" (
   exit /b 1
 )
 
+REM ---- subtitle design fonts: register for the current user (idempotent) ----
+REM Remotion resolves subtitle fonts by CSS family NAME only, so the bundled
+REM design fonts must exist in the Windows font table or rendering silently
+REM falls back to Microsoft YaHei. Failures here must not block startup.
+if exist "%PROJ%\scripts\portable_install_fonts.ps1" (
+  powershell -NoProfile -ExecutionPolicy Bypass -File "%PROJ%\scripts\portable_install_fonts.ps1" -Quiet
+)
+
 set "PYTHONPATH=%PROJ%"
 
 REM ---- pick a free port (avoids "Address already in use" -> window flash) ----

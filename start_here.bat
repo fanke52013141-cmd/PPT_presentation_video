@@ -53,6 +53,14 @@ echo [warn] ffmpeg/ffprobe not found; video color validation / export may fail.
 :ffmpeg_done
 echo.
 
+REM ---- subtitle design fonts: register for the current user (idempotent) ----
+REM Remotion resolves subtitle fonts by CSS family NAME only, so the bundled
+REM design fonts must exist in the Windows font table or rendering silently
+REM falls back to Microsoft YaHei. Failures here must not block startup.
+if exist "%PROJ%\scripts\portable_install_fonts.ps1" (
+  powershell -NoProfile -ExecutionPolicy Bypass -File "%PROJ%\scripts\portable_install_fonts.ps1" -Quiet
+)
+
 REM ---- [2/4] venv + deps ----
 echo [2/4] Checking Python environment...
 if exist "%VENV%" goto venv_ok

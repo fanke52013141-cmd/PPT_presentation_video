@@ -78,6 +78,9 @@ _sandbox_test.txt
 # ZCode session runtime data
 .zcode/
 
+# WorkBuddy AI session memory (local agent state, never published)
+.workbuddy-ai/
+
 # Local downloaded fonts (not in repo)
 static/fonts/
 UI优化方案.md

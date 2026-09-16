@@ -37,8 +37,12 @@ if not exist "%FFMPEG_BINARY%" (
   exit /b 1
 )
 
-rem ---- 可选：首次自动注册包内字幕字体（仅当前用户，无需管理员） ----
-powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scripts\portable_install_fonts.ps1" >nul 2>&1
+rem ---- 字幕设计字体：注册到当前用户字体表（幂等，无需管理员） ----
+rem Remotion 只按字体名渲染字幕，字体不在 Windows 字体表里就会静默回退微软雅黑。
+rem 脚本自己会打印结果（不再重定向到 nul，否则失败无法察觉）；失败不阻断启动。
+if exist "%ROOT%scripts\portable_install_fonts.ps1" (
+  powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scripts\portable_install_fonts.ps1"
+)
 
 echo ============================================
 echo   PPT 视频工作台 便携版

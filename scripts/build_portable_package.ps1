@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$DestinationRoot = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) "PPT视频工作台_便携版_$(Get-Date -Format 'yyyyMMdd-HHmmss')")
 )
@@ -17,12 +17,36 @@ if (Test-Path -LiteralPath $destinationRoot) {
 
 $excludedDirectories = @(
     '.git', '.venv', '.pytest_cache', '__pycache__', '.agents', '.codex', '.zcode',
-    '.github', 'bad_cases', 'checks', 'docs', 'logs'
+    '.github', 'bad_cases', 'checks', 'docs', 'logs', '.tmp',
+    # Distribution artifacts and user data must never be packed:
+    # without these two the build copies the PREVIOUS package back into the new
+    # one (each rebuild grew by a whole package) and ships every user project.
+    'outputs', 'runs'
+)
+# Regenerable caches: excluded by full path so only these exact directories are
+# skipped (a bare '.cache' name would match unrelated directories too).
+$excludedPaths = @(
+    (Join-Path $sourceRoot 'scripts\remotion\node_modules\.cache'),
+    (Join-Path $sourceRoot 'scripts\remotion\public\runtime'),
+    (Join-Path $sourceRoot 'tools\ffmpeg\doc')
+) | Where-Object { Test-Path -LiteralPath $_ }
+$excludedFiles = @(
+    '*.pyc', 'server_boot.log', '_sandbox_test.txt',
+    # ffplay is a standalone SDL player; nothing in the app or the launchers
+    # references it (video playback uses the browser's native <video> element).
+    'ffplay.exe',
+    # Generated file manifest: no code in this repository writes or reads it.
+    'file-manifest.json'
 )
 
 Write-Host "[1/4] 复制应用与内置运行环境到：$destinationRoot"
 New-Item -ItemType Directory -Path $destinationRoot | Out-Null
-& robocopy $sourceRoot $destinationRoot /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP /XD $excludedDirectories /XF '*.pyc' 'server_boot.log' '_sandbox_test.txt' | Out-Host
+$robocopyArgs = @(
+    $sourceRoot, $destinationRoot, '/E', '/COPY:DAT', '/DCOPY:DAT', '/R:2', '/W:1',
+    '/NFL', '/NDL', '/NJH', '/NJS', '/NP',
+    '/XD'
+) + $excludedDirectories + $excludedPaths + @('/XF') + $excludedFiles
+& robocopy @robocopyArgs | Out-Host
 if ($LASTEXITCODE -gt 7) {
     throw "文件复制失败，robocopy 退出码：$LASTEXITCODE"
 }
@@ -108,10 +132,26 @@ PPT 视频工作台（便携版）
 - 仅适用于 Windows 10/11 64 位。
 - 初次运行前请确认 Windows 安全软件没有隔离 runtime、tools 或启动脚本。
 '@
-[System.IO.File]::WriteAllText($readmePath, $readme, [System.Text.UTF8Encoding]::new($false))
+# 带 BOM 写出：包内 readme 是中文，Windows 记事本等工具会把无 BOM 的 UTF-8
+# 当成本地 ANSI 码页（本机为 936）从而显示乱码。
+[System.IO.File]::WriteAllText($readmePath, $readme, [System.Text.UTF8Encoding]::new($true))
 
 $size = (Get-ChildItem -LiteralPath $destinationRoot -Recurse -File | Measure-Object -Property Length -Sum).Sum
 Write-Host ''
 Write-Host '便携包创建完成：' -ForegroundColor Green
 Write-Host $destinationRoot -ForegroundColor Green
 Write-Host ("总大小：{0:N2} GB" -f ($size / 1GB))
+
+# ---- 体积预算：防止再次无声膨胀（历史上因为把上一个包也装进来，每打一次翻倍） ----
+$budgetBytes = 1.6GB
+if ($size -gt $budgetBytes) {
+    Write-Host ''
+    Write-Warning ("便携包体积 {0:N2} GB 超过预算 {1:N2} GB。" -f ($size / 1GB), ($budgetBytes / 1GB))
+    Write-Host '体积最大的目录（用于定位意外内容）：' -ForegroundColor Yellow
+    Get-ChildItem -LiteralPath $destinationRoot -Directory -Force | ForEach-Object {
+        $dirBytes = (Get-ChildItem -LiteralPath $_.FullName -Recurse -File -Force -ErrorAction SilentlyContinue |
+            Measure-Object -Property Length -Sum).Sum
+        [pscustomobject]@{ MB = [math]::Round($dirBytes / 1MB, 1); Name = $_.Name }
+    } | Sort-Object MB -Descending | Select-Object -First 10 | Format-Table -AutoSize | Out-Host
+    Write-Host '提示：outputs/ 与 runs/ 应始终被排除；若出现在上面，说明排除列表被改坏了。' -ForegroundColor Yellow
+}

@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$AssetsRoot = $(
         if ($env:PPT_DIGITAL_HUMAN_ASSETS_ROOT) {
             $env:PPT_DIGITAL_HUMAN_ASSETS_ROOT

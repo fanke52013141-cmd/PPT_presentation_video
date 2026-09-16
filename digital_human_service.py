@@ -339,7 +339,12 @@ def _run_comfyui_inference(
     output_path: Path,
 ) -> None:
     """通过 ComfyUI HTTP API 驱动 Wan2.2 S2V 工作流生成数字人视频。"""
-    from comfyui_backend import run_comfyui_inference, ComfyUIError, check_health
+    from comfyui_backend import (
+        run_comfyui_inference,
+        ComfyUIError,
+        check_health,
+        inspect_video_preflight,
+    )
 
     if not check_health():
         raise ComfyUIError("ComfyUI 服务不可达，请确认已启动且监听 http://127.0.0.1:8188")
@@ -367,6 +372,11 @@ def _run_comfyui_inference(
             raise ComfyUIError(
                 "ComfyUI 工作流模板格式错误：需要 API 格式（在 ComfyUI 中使用 'Save (API Format)' 导出）"
             )
+
+    preflight = inspect_video_preflight(workflow_template)
+    if not preflight.get("success"):
+        details = "；".join(str(item) for item in preflight.get("errors", []) if item)
+        raise ComfyUIError("数字人预检未通过：" + (details or "未知错误"))
 
     result = run_comfyui_inference(
         image_path=avatar_path,

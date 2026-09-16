@@ -14,13 +14,21 @@ $assetsRoot = [System.IO.Path]::GetFullPath($AssetsRoot)
 $comfyRoot = Join-Path $assetsRoot 'InfiniteTalk_Runtime\ComfyUI'
 $comfyPython = Join-Path $assetsRoot 'InfiniteTalk_Runtime\venv\Scripts\python.exe'
 $servicePython = Join-Path $repoRoot '.venv\Scripts\python.exe'
-$workflow = Join-Path $assetsRoot 'InfiniteTalk\workflow\infinitetalk-数字人_api_windows-compatible.json'
+$servicePythonFallback = $false
+if (-not (Test-Path -LiteralPath $servicePython)) {
+    $servicePython = (Get-Command python -ErrorAction Stop).Source
+    $servicePythonFallback = $true
+}
+$workflow = Join-Path $repoRoot 'config\digital_human_lecturer_fast_workflow.json'
 $logRoot = Join-Path $assetsRoot 'logs'
 
 foreach ($requiredPath in @($comfyRoot, $comfyPython, $servicePython, $workflow)) {
     if (-not (Test-Path -LiteralPath $requiredPath)) {
         throw "Digital-human startup dependency is missing: $requiredPath"
     }
+}
+if ($servicePythonFallback) {
+    Write-Warning "Project .venv is missing; using Python from PATH: $servicePython"
 }
 New-Item -ItemType Directory -Path $logRoot -Force | Out-Null
 

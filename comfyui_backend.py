@@ -205,6 +205,103 @@ def inspect_tts_preflight(
     }
 
 
+def inspect_video_preflight(
+    workflow_template: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Check a digital-human API workflow before a long ComfyUI job starts.
+
+    The check is deliberately read-only.  It verifies that every declared
+    workflow node is available and that an interpolation loader can actually
+    select its requested model, so a missing RIFE weight fails immediately
+    instead of after the Wan model has loaded.
+    """
+    checks: Dict[str, Any] = {
+        "service_reachable": False,
+        "workflow_valid": False,
+        "required_nodes": [],
+        "missing_nodes": [],
+        "missing_models": [],
+        "errors": [],
+    }
+    if not isinstance(workflow_template, dict) or not workflow_template:
+        checks["errors"].append("数字人工作流模板为空或不是对象")
+        return {"success": False, **checks}
+
+    nodes = {
+        str(node_id): node
+        for node_id, node in workflow_template.items()
+        if isinstance(node, dict) and isinstance(node.get("class_type"), str)
+    }
+    if not nodes or len(nodes) != len(workflow_template):
+        checks["errors"].append("数字人工作流不是 ComfyUI API 格式")
+        return {"success": False, **checks}
+    checks["workflow_valid"] = True
+    checks["required_nodes"] = sorted(
+        {str(node["class_type"]) for node in nodes.values()}
+    )
+
+    try:
+        with _make_client(timeout=5.0) as client:
+            system_response = client.get("/system_stats")
+            checks["service_reachable"] = system_response.status_code == 200
+            if not checks["service_reachable"]:
+                checks["errors"].append(
+                    f"ComfyUI /system_stats 返回 HTTP {system_response.status_code}"
+                )
+                return {"success": False, **checks}
+            info_response = client.get("/object_info")
+            if info_response.status_code != 200:
+                checks["errors"].append(
+                    f"ComfyUI /object_info 返回 HTTP {info_response.status_code}"
+                )
+                return {"success": False, **checks}
+            payload = info_response.json()
+    except Exception as exc:
+        checks["errors"].append(f"ComfyUI 连接失败: {type(exc).__name__}")
+        return {"success": False, **checks}
+
+    available = payload if isinstance(payload, dict) else {}
+    checks["missing_nodes"] = sorted(
+        class_type
+        for class_type in checks["required_nodes"]
+        if class_type not in available
+    )
+    if checks["missing_nodes"]:
+        checks["errors"].append(
+            "ComfyUI 缺少数字人工作流节点: "
+            + ", ".join(checks["missing_nodes"])
+        )
+
+    for node in nodes.values():
+        if node["class_type"] != "FrameInterpolationModelLoader":
+            continue
+        model_name = str(node.get("inputs", {}).get("model_name") or "").strip()
+        option_data = (
+            available.get("FrameInterpolationModelLoader", {})
+            .get("input", {})
+            .get("required", {})
+            .get("model_name", [None, {}])
+        )
+        options: Any = []
+        if (
+            isinstance(option_data, list)
+            and len(option_data) > 1
+            and isinstance(option_data[1], dict)
+        ):
+            options = option_data[1].get("options", [])
+        if not isinstance(options, list):
+            options = []
+        if not model_name or model_name not in options:
+            checks["missing_models"].append(model_name or "frame_interpolation model")
+    if checks["missing_models"]:
+        checks["errors"].append(
+            "ComfyUI 缺少 RIFE 插帧模型: "
+            + ", ".join(checks["missing_models"])
+        )
+
+    return {"success": not checks["errors"], **checks}
+
+
 def _upload_file(client: httpx.Client, file_path: Path) -> Dict[str, str]:
     """上传文件到 ComfyUI input 目录，返回 {"name": ..., "subfolder": ...}。"""
     if not file_path.exists():

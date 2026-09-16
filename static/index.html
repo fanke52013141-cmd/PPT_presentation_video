@@ -9,9 +9,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260916.1">
+  <link rel="stylesheet" href="style.css?v=20260916.2">
   <!-- Stitch screen contract: the supplied page code is the visual source of truth. -->
-  <link rel="stylesheet" href="stitch.css?v=20260914.1">
+  <link rel="stylesheet" href="stitch.css?v=20260916.1">
 </head>
 <body>
 
@@ -649,27 +649,14 @@
       <div id="create-target-duration-section" style="margin-bottom: 1.5rem;">
         <label style="font-weight: bold; display: block; margin-bottom: 0.4rem;" for="input-project-target-duration">目标视频时长:</label>
         <select id="input-project-target-duration" class="project-profile-native-select" data-select-menu-native="true" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 6px; background: #fff;">
+          <option value="30">30 秒</option><option value="60">1 分钟</option><option value="90">1 分 30 秒</option>
+          <option value="120">2 分钟</option><option value="150">2 分 30 秒</option><option value="180">3 分钟</option>
+          <option value="210">3 分 30 秒</option><option value="240">4 分钟</option><option value="270">4 分 30 秒</option>
+          <option value="300">5 分钟</option><option value="330">5 分 30 秒</option><option value="360">6 分钟</option>
+          <option value="390">6 分 30 秒</option><option value="420">7 分钟</option><option value="450">7 分 30 秒</option>
+          <option value="480">8 分钟</option><option value="510">8 分 30 秒</option><option value="540">9 分钟</option>
+          <option value="570">9 分 30 秒</option><option value="600">10 分钟</option>
           <option value="" selected>不设置（默认）</option>
-          <option value="30">30 秒</option>
-          <option value="60">1 分钟</option>
-          <option value="90">1 分 30 秒</option>
-          <option value="120">2 分钟</option>
-          <option value="150">2 分 30 秒</option>
-          <option value="180">3 分钟</option>
-          <option value="210">3 分 30 秒</option>
-          <option value="240">4 分钟</option>
-          <option value="270">4 分 30 秒</option>
-          <option value="300">5 分钟</option>
-          <option value="330">5 分 30 秒</option>
-          <option value="360">6 分钟</option>
-          <option value="390">6 分 30 秒</option>
-          <option value="420">7 分钟</option>
-          <option value="450">7 分 30 秒</option>
-          <option value="480">8 分钟</option>
-          <option value="510">8 分 30 秒</option>
-          <option value="540">9 分钟</option>
-          <option value="570">9 分 30 秒</option>
-          <option value="600">10 分钟</option>
         </select>
         <div style="font-size: 0.85rem; color: var(--muted-color); margin-top: 0.4rem; line-height: 1.5;">仅在选择时约束 Step 2 演讲稿规划；不设置则按内容自由规划。</div>
       </div>
@@ -1655,7 +1642,7 @@
   <script src="prompt_help.js?v=20260801.1"></script>
   <script src="settings.js?v=20260907.1"></script>
   <script src="projects.js?v=20260916.1"></script>
-  <script src="creation_config_management.js?v=20260915.1"></script>
+  <script src="creation_config_management.js?v=20260916.2"></script>
   <script src="select_menus.js?v=20260906.1"></script>
   <script src="courses.js?v=20260913.2"></script>
   <script src="article.js?v=20260801.1"></script>
@@ -1670,10 +1657,10 @@
   <script src="subtitle_settings.js?v=20260801.1"></script>
   <script src="narration_audio.js?v=20260913.1"></script>
   <script src="output_render.js?v=20260909.1"></script>
-  <script src="account_management.js?v=20260913.1"></script>
+  <script src="account_management.js?v=20260916.1"></script>
   <script src="workspace_navigation.js?v=20260913.1"></script>
   <script src="event_bindings.js?v=20260906.1"></script>
-  <script src="project_profile_extension.js?v=20260915.2"></script>
+  <script src="project_profile_extension.js?v=20260916.2"></script>
   <script src="storyboard_background_extension.js?v=20260916.1"></script>
   <script src="style_reference_manager_extension.js?v=3.1.0"></script>
   <script src="ai_mask_auto_state.js?v=20260809.1"></script>

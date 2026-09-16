@@ -5874,7 +5874,7 @@ body.step5-fullscreen-mode #step-panel-5 .workspace-left{align-items:center;just
 @media (max-width: 860px) { .one-click-stage-list { grid-template-columns: 1fr; } }
 
 /* project profile extension controls — Quiet Workspace design system */
-#modal-create .project-profile-modal { max-width: 780px; width: min(780px, 94vw); }
+#modal-create .project-profile-modal { max-width: 780px; width: min(780px, 94vw); overflow-y: auto; }
 .project-profile-scroll { max-height: 76vh; overflow: auto; padding-right: .35rem; }
 .project-profile-section { border: 1px solid var(--color-border-default); border-radius: 12px; padding: 1.1rem 1.2rem; background: var(--color-bg-surface); box-shadow: var(--shadow-card); margin-bottom: .9rem; transition: border-color .16s ease; }
 .project-profile-section h4 { margin: 0 0 .7rem; font-size: 1rem; color: var(--color-text-primary); font-weight: 700; }

@@ -203,7 +203,6 @@
           <h4>5. 目标视频时长</h4>
           <label for="input-project-target-duration">时长</label>
           <select id="input-project-target-duration" class="project-profile-native-select" data-select-menu-native="true">
-            <option value="" selected>不设置（默认）</option>
             <option value="30">30 秒</option><option value="60">1 分钟</option><option value="90">1 分 30 秒</option>
             <option value="120">2 分钟</option><option value="150">2 分 30 秒</option><option value="180">3 分钟</option>
             <option value="210">3 分 30 秒</option><option value="240">4 分钟</option><option value="270">4 分 30 秒</option>
@@ -211,6 +210,7 @@
             <option value="390">6 分 30 秒</option><option value="420">7 分钟</option><option value="450">7 分 30 秒</option>
             <option value="480">8 分钟</option><option value="510">8 分 30 秒</option><option value="540">9 分钟</option>
             <option value="570">9 分 30 秒</option><option value="600">10 分钟</option>
+            <option value="" selected>不设置（默认）</option>
           </select>
           <small>仅在选择时控制 Step 2 的演讲稿长度；不设置则不注入时长限制。</small>
         </section>
@@ -316,7 +316,6 @@
         await apiPost(`/api/projects/${encodeURIComponent(project.id)}/steps/1/import`, form);
       }
       document.getElementById('modal-create').style.display = 'none';
-      toast('项目已创建。', 4500);
       // [创建后进入详情页 20260813]
       // 先刷新课程树（让新视频出现在列表中），再自动进入工作台。
       try {

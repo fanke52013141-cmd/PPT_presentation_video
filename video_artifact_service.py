@@ -92,7 +92,17 @@ class VideoArtifactService:
         self.dependencies = dependencies
 
     def get_project(self, db: Session, project_id: str) -> Project:
-        project = db.query(Project).filter(Project.id == project_id).first()
+        # 账号边界必须与项目服务一致：只允许读取当前创作账号名下的项目，
+        # 防止视频/PPTX/删除等接口通过 project_id 越权访问其他账号的数据。
+        account_id = get_current_account_id()
+        project = (
+            db.query(Project)
+            .filter(
+                Project.id == project_id,
+                Project.account_id == account_id,
+            )
+            .first()
+        )
         if not project:
             raise VideoRenderError(404, "项目不存在")
         return project

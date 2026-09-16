@@ -25,19 +25,37 @@ from generation_governor import RESOURCE_IMAGE
 logger = logging.getLogger("PPTStudio.AIProvider")
 
 
+# 1K 分辨率下的标准比例 → 像素尺寸映射（16:9 → 1280x720，9:16 → 720x1280）。
+# 用户在模型设置中可以填写比例（如 "9:16"、"16:9"），这里统一解析为 1K 像素
+# 尺寸，避免冒号分隔的比例被 normalize 后无法解析而回退到默认横屏 16:9。
+_RATIO_TO_PIXELS: dict[str, str] = {
+    "16:9": "1280x720",
+    "9:16": "720x1280",
+}
+
+
 def normalize_image_size(size: Optional[str]) -> Optional[str]:
-    """归一化生图尺寸参数，兼容全角乘号/空格/大写 X。
+    """归一化生图尺寸参数，兼容全角乘号/空格/大写 X 以及比例写法。
 
     OpenAI 兼容 API 要求尺寸为 "auto" 或 "WIDTHxHEIGHT"（半角小写 x）。
     用户在设置里可能输入 "1536×864"（全角乘号）或 "1536X864"（大写 X），
-    若不归一化，images/edits（携带 IP 参考图）会返回 400 被回退丢弃，
-    导致 IP 参考图丢失、生图反复重试超时。这里统一转成半角小写 x 形式。
+    也可能直接填写比例 "9:16" / "16:9"。冒号分隔的比例会被解析为 1K 分辨率
+    的像素尺寸（16:9 → 1280x720，9:16 → 720x1280），否则会因无法
+    split('x') 而回退到默认横屏 16:9。
     """
     if not size:
         return size
     text = str(size).strip()
     if text.lower() == "auto":
         return "auto"
+    # 先把冒号/斜杠比例归一为冒号形式，便于查表。
+    normalized_ratio = (
+        text.replace("/", ":")
+        .replace(" ", "")
+        .lower()
+    )
+    if ":" in normalized_ratio and normalized_ratio in _RATIO_TO_PIXELS:
+        return _RATIO_TO_PIXELS[normalized_ratio]
     text = (
         text.replace("\u00d7", "x")   # ×
         .replace("\uff38", "x")       # Ｘ 全角大写

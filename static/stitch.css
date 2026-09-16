@@ -1079,6 +1079,12 @@ body.workspace-open #step-panel-1 .step1-heading-row {
   border-bottom: 1px solid var(--stitch-line);
   background: rgba(255, 255, 255, .98);
 }
+/* 模型设置弹窗：标题行不再固定在顶部，随内容一起向上滚动，
+   避免粘性定位与滚动内容重叠。 */
+#modal-model-management .prompt-title-row {
+  position: static !important;
+  border-bottom: 0 !important;
+}
 #modal-creation-config-management .prompt-title-row .highlight-title,
 #modal-model-management .prompt-title-row .highlight-title { font-size: 18px !important; }
 #modal-creation-config-management .creation-config-management-body > section {

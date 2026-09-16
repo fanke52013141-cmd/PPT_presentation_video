@@ -773,6 +773,7 @@
       const actions = document.createElement('div');
       actions.className = 'model-library-card-actions';
       actions.append(button('编辑', 'secondary', () => editModelConnection(connection)));
+      actions.append(button('复制', 'secondary', () => duplicateModelConnection(connection)));
       actions.append(button('删除', 'danger', () => deleteModelConnection(connection)));
       item.append(heading, actions);
       target.append(item);
@@ -1163,6 +1164,27 @@
       // The shared modal is loaded before this module in production. This
       // fallback only protects non-production fixture pages.
       if (window.confirm(message)) await performDelete();
+    }
+  }
+
+  async function duplicateModelConnection(connection) {
+    if (!connection?.id) return;
+    // 复制后的名称固定为“原名称-副本”。
+    const name = `${connection.name || '未命名模型'}-副本`;
+    try {
+      const created = await window.API.post(
+        `/api/model-connections/${encodeURIComponent(connection.id)}/copy`,
+        { name },
+      );
+      toast(`已复制为“${name}”，可在下方修改`);
+      await refreshCreationConfigManagement();
+      // 复制成功后进入该副本的编辑表单，方便立即做二次修改。
+      if (created?.id) {
+        state.editingConnectionId = created.id;
+        editModelConnection(created);
+      }
+    } catch (error) {
+      requestError('复制模型失败', error);
     }
   }
 

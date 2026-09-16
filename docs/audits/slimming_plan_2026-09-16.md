@@ -432,3 +432,72 @@ start_server.py 起在 8123/8124 端口，**21 项接口全部 200**，覆盖：
 
     scripts 530.1 · static 337.4 · runs 283.6 · .venv 190.5 · .git 93.9 · tools 71.8 · references 18.4
     TOTAL: 1540.3 MB   （本次瘦身起点 2441.7 MB）
+
+## 十、让 CI 全绿 + 测试与用户数据彻底隔离（2026-09-16 第二轮）
+
+推送到线上后发现 CI 本来就是红的（4 个既有失败）。逐个查明成因并修复，
+顺手把一个会反复污染用户数据的卫生问题治本。
+
+### 修掉的 4 个既有失败
+
+| 测试 | 真实成因 | 修复 |
+| --- | --- | --- |
+| `test_upload_bounded_reads` | `model_connection_routes.py` 先 `await file.read()` 整块读入内存、之后才判 `>10MB` —— 2GB 上传即 2GB 内存峰值（正是该测试守护的 M-01 回归） | 改为 `await file.read(MAX_REFERENCE_AUDIO_BYTES + 1)` 有界读取 |
+| `test_step2_reveal_intent` | 项目桩漏了 `target_duration_sec`。它是真实数据库列（`database.py` + 迁移 0015），属**测试桩过时**，不是生产代码问题 | 给测试桩补上该字段（用 `getattr` 改生产代码会掩盖建模错误） |
+| `test_pptx_frontend` | 断言写死了历史短语"字幕文件（SRT）"，实际发布文案是"下载字幕 SRT" | 改测试去跟踪**实际发布文案**；用户可见文案随设计稿走，不为迁就测试而改 |
+| `test_database_initialization` | **真实缺陷**：迁移对"加列"不幂等（见下） | 见下 |
+
+### 迁移对"加列"不幂等 —— 会让应用完全无法启动
+
+`_known_migration_already_present()` 只为迁移 1-13 写了"识别既有 schema"的规则，
+**14、15 缺失**。于是当数据库已经是完整 schema 但没有 ledger 记录时
+（由 `Base.metadata.create_all()` 建成，或来自更新的快照/备份），0014/0015 会对
+已存在的列再执行 `ALTER TABLE ... ADD COLUMN`，报 duplicate column name，
+`init_db()` 直接失败。
+
+实测确认这与并发无关：**`create_all` 之后单线程 `init_db()` 同样失败**，空库则正常。
+
+修复采用通用且精准的方式：只对 `ALTER TABLE ... ADD COLUMN` 且错误为
+`duplicate column name` 的语句放行（并记录日志），其它任何语句或错误照常上抛。
+这样未来新增的加列迁移不需要再补一条硬编码规则。
+
+> 踩坑记录：`_split_sql_statements` 会把语句前的 `--` 注释行一起带进语句开头，
+> 第一版正则因此不匹配、修复无效。已加 `_statement_head()` 先剥前导注释，
+> 并补了针对性回归测试（含注释前缀的用例）。
+
+### 测试不再污染用户真实数据（治本）
+
+**问题**：`checks/` 下的用例直接使用 `database.SessionLocal` 与运行时项目目录，
+所以每跑一次全量测试都会往用户真实的 `data/projects.db` 灌入约 15-30 个测试项目，
+并在 `runs/` 留下无数据库记录的孤儿目录。本轮验证期间实测单次新增 60 个项目。
+
+**修复**：
+
+- `database.py` 支持 `PPT_STUDIO_DB_PATH`；`repository_paths.py` 支持
+  `PPT_STUDIO_RUNS_DIR`（都只在显式设置时生效，生产默认行为不变）。
+- 新增 `checks/conftest.py`：在任何测试模块导入 `database` 之前，把这两个变量
+  指向会话级临时目录，并 `init_db()` 建出与真实库一致的结构
+  （schema + 默认设置 + 默认账号 —— 迁移 0012 会插入 `default` 账号，
+  所以按账号过滤的接口不会因此 404）。
+- `checks/test_repository_paths.py` 的 canonical 守卫同步更新：既断言注册表源码里
+  仍只声明一次规范默认值，也断言运行时值等于被覆盖的值。
+
+**验证**：连续多轮 `python scripts/run_checks.py --level full` 之后，
+真实库保持 `projects=50 / runs_dirs=50 / 孤儿=0`（与基线一致），零污染。
+
+### 顺带修掉的 CI 日志噪音
+
+`checks/test_video_render_components.py` 与 `test_video_job_idempotency.py` 的
+`NoopThread` 桩替换了全局 `threading.Thread`，被登记进 `concurrent.futures` 的
+全局线程表，进程退出时 `_python_exit` 调用 `join()` 失败，在 CI 日志里留下
+`NoopThread has no attribute 'join'` 的 traceback。给桩补上 `join()` 后消失。
+
+### 最终验证结果
+
+```text
+python scripts/run_checks.py --level full   ->  exit 0，All requested checks passed
+全量 pytest                                  ->  956 passed，0 failed（此前 950/4）
+Remotion TypeScript（npx tsc --noEmit）      ->  exit 0
+CI 日志噪音                                  ->  无
+真实数据污染                                  ->  零（projects=50 / runs_dirs=50 / 孤儿=0）
+```

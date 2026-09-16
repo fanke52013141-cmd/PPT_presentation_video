@@ -260,3 +260,77 @@ def test_production_migration_files_are_consecutive() -> None:
         engine = sqlite_engine(Path(value) / "production-shape.db")
         assert run_migrations(engine, MIGRATIONS_DIR) == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
         engine.dispose()
+
+
+def test_add_column_migration_is_idempotent_on_a_prebuilt_schema() -> None:
+    """已是最新 schema 但没有 ledger 记录的数据库必须仍能初始化。
+
+    回归背景：数据库可能由 ``Base.metadata.create_all()`` 建成，或来自更新的
+    快照/备份 —— 此时 schema 已含目标列但 ledger 为空。
+    ``_known_migration_already_present`` 只为迁移 1-13 写了识别规则，14/15 缺失，
+    于是 0014/0015 会对已存在的列再执行 ``ALTER TABLE ... ADD COLUMN``，
+    报 duplicate column name，**整库无法启动**。
+
+    这里用真实迁移目录忠实复现：先正常建库，再清空 ledger 模拟"schema 齐全但
+    没有迁移记录"，然后必须能重新初始化成功。
+    """
+    from database_migrations import _statement_head
+
+    # 语句前的 "--" 注释会被 _split_sql_statements 一起带进语句开头，
+    # 判定语句种类时必须先剥掉，否则容忍逻辑不生效（曾因此漏判）。
+    commented_inline = (
+        "-- leading comment explaining the change\n"
+        "ALTER TABLE projects ADD COLUMN production_mode VARCHAR(32);"
+    )
+    assert _statement_head(commented_inline).startswith("ALTER TABLE")
+
+    with tempfile.TemporaryDirectory() as value:
+        engine = sqlite_engine(Path(value) / "prebuilt.db")
+        try:
+            assert run_migrations(engine, MIGRATIONS_DIR) == list(range(1, 16))
+
+            # 模拟 create_all/快照带来的状态：列都在，ledger 为空。
+            with engine.connect() as connection:
+                connection.exec_driver_sql("DELETE FROM schema_migrations")
+                connection.commit()
+
+            # 修复前这里会因 0014 的 duplicate column name 直接抛 MigrationError。
+            assert run_migrations(engine, MIGRATIONS_DIR) == list(range(1, 16))
+
+            with engine.connect() as connection:
+                columns = {
+                    row[1]
+                    for row in connection.exec_driver_sql(
+                        "PRAGMA table_info(projects)"
+                    ).fetchall()
+                }
+                applied = connection.exec_driver_sql(
+                    "SELECT COUNT(*) FROM schema_migrations"
+                ).scalar_one()
+            assert {"production_mode", "presentation_mode", "target_duration_sec"}.issubset(
+                columns
+            )
+            assert applied == 15
+        finally:
+            # 断言失败时也必须释放句柄，否则临时目录清理会报文件占用，
+            # 掩盖真正的失败原因。
+            engine.dispose()
+
+
+def test_non_additive_statement_errors_are_not_swallowed() -> None:
+    """只有"加列且列已存在"才容忍；其它语句错误必须照常失败。"""
+    with tempfile.TemporaryDirectory() as value:
+        root = Path(value)
+        migrations = root / "migrations"
+        migrations.mkdir()
+        (migrations / "0001_broken.sql").write_text(
+            "CREATE TABLE ok (id INTEGER PRIMARY KEY);\n"
+            "INSERT INTO ok (missing_column) VALUES (1);\n",
+            encoding="utf-8",
+        )
+        engine = sqlite_engine(root / "errors.db")
+        try:
+            with pytest.raises(MigrationError, match="failed to apply migration"):
+                run_migrations(engine, migrations)
+        finally:
+            engine.dispose()

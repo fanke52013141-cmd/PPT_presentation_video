@@ -236,6 +236,19 @@ project-level orchestrator.
 - Deleting a rendered video deletes both the MP4 and its sidecar.
 - Runtime data under `runs/`, `outputs/`, `logs/`, and Remotion `public/runtime`
   is never committed.
+- Tests must never write into the user's real data. `checks/conftest.py` points
+  `PPT_STUDIO_DB_PATH` and `PPT_STUDIO_RUNS_DIR` at a session-scoped temporary
+  directory before `database` is imported, so `pytest` (however it is invoked)
+  is isolated. `checks/**` cases use `database.SessionLocal` and the runtime
+  project directories directly; without that isolation one full run inserts
+  about 15-30 test projects into the user's `data/projects.db` and leaves
+  orphan directories in `runs/`. Do not bypass those two variables in new
+  cases that need the real paths.
+- Additive `ALTER TABLE ... ADD COLUMN` statements are applied idempotently: a
+  database that already has the current schema but an empty ledger (created by
+  `Base.metadata.create_all`, or restored from a newer snapshot) must still
+  initialize. Only that exact case is tolerated — every other statement error
+  keeps failing loudly.
 
 ## Runtime Bridge Policy
 

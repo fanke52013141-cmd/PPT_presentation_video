@@ -253,6 +253,13 @@ def test_start_render_ends_caller_transaction_before_creating_job(
         def start(self) -> None:
             events.append("thread_start")
 
+        def join(self, timeout=None) -> None:
+            # 这个桩会被登记进 concurrent.futures 的全局线程表，
+            # 进程退出时 _python_exit 会对它调用 join()。缺少该方法会在
+            # CI 日志里留下 "NoopThread has no attribute 'join'" 的噪音，
+            # 掩盖真正的 shutdown 异常。
+            return None
+
     monkeypatch.setattr("video_render_service.threading.Thread", NoopThread)
 
     response = service.start_render(CallerDb(), project.id)

@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
+import logging
 from pathlib import Path
 import re
 import sqlite3
@@ -19,9 +20,29 @@ from typing import Iterable
 from sqlalchemy.engine import Connection, Engine
 
 
+logger = logging.getLogger(__name__)
+
 MIGRATION_FILE_PATTERN = re.compile(r"^(?P<version>\d{4})_(?P<name>[a-z0-9_]+)\.sql$")
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 _MIGRATION_LOCK = threading.Lock()
+
+# 迁移里的"加列"语句。数据库可能已经是最新 schema 却没有 ledger 记录
+# （例如由 Base.metadata.create_all() 建成，或来自更新的快照），此时
+# ALTER TABLE ... ADD COLUMN 会报 duplicate column name。
+# 只对这类语句容忍"列已存在"；其它语句的错误一律照常上抛。
+_ADD_COLUMN_STATEMENT = re.compile(
+    r"^\s*ALTER\s+TABLE\s+[\"'`\[]?[A-Za-z_][A-Za-z0-9_]*[\"'`\]]?\s+ADD\s+COLUMN\b",
+    re.IGNORECASE,
+)
+_DUPLICATE_COLUMN_MARKER = "duplicate column name"
+# _split_sql_statements 会把语句前的 "--" 注释行一起带进来，
+# 判定语句种类前必须先剥掉前导注释。
+_SQL_LEADING_COMMENT = re.compile(r"^(?:\s*--[^\n]*(?:\n|$)|\s*/\*.*?\*/)*", re.DOTALL)
+
+
+def _statement_head(statement: str) -> str:
+    """返回去掉前导注释与空白后的语句开头（仅用于判定语句种类）。"""
+    return _SQL_LEADING_COMMENT.sub("", statement).lstrip()
 
 # 0012 shipped briefly with a different SQL body. Existing databases with this
 # exact ledger value have the same verified schema; update only their ledger
@@ -165,6 +186,34 @@ def _split_sql_statements(sql: str) -> Iterable[str]:
             buffer = ""
     if buffer.strip():
         raise MigrationError("migration SQL ends with an incomplete statement")
+
+
+def _execute_migration_statement(connection: Connection, statement: str) -> None:
+    """执行一条迁移语句，对"加列且列已存在"保持幂等。
+
+    为什么需要：数据库可能已经具备最新 schema 却没有 ledger 记录 ——
+    例如由 ``Base.metadata.create_all()`` 建成、或来自更新的快照/备份。
+    此时 ``ALTER TABLE ... ADD COLUMN`` 会报 ``duplicate column name`` 而使
+    整条迁移失败。迁移 0014 与 0015 正是如此：``_known_migration_already_present``
+    只为 1-13 写了识别规则，14/15 缺失，于是这类数据库**完全无法启动**。
+
+    这里只容忍这一种明确情况：语句是 ``ALTER TABLE ... ADD COLUMN``
+    且错误是 duplicate column name。其它任何语句或错误照常上抛，
+    不会掩盖真正的迁移失败。
+    """
+    try:
+        connection.exec_driver_sql(statement)
+    except Exception as exc:  # noqa: BLE001 - 需按语句类型与错误内容精确判定后再放行
+        if (
+            _ADD_COLUMN_STATEMENT.match(_statement_head(statement))
+            and _DUPLICATE_COLUMN_MARKER in str(exc).lower()
+        ):
+            logger.info(
+                "migration statement skipped: column already present (%s)",
+                _statement_head(statement).splitlines()[0][:120],
+            )
+            return
+        raise
 
 
 def _has_columns(
@@ -350,7 +399,7 @@ def run_migrations(
 
                     if not _known_migration_already_present(connection, migration):
                         for statement in _split_sql_statements(migration.sql):
-                            connection.exec_driver_sql(statement)
+                            _execute_migration_statement(connection, statement)
 
                     connection.exec_driver_sql(
                         """

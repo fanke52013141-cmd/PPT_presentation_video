@@ -6,7 +6,12 @@ import os
 
 
 REPO_ROOT = os.path.abspath(os.path.dirname(__file__))
-RUNS_DIR = os.path.join(REPO_ROOT, "runs")
+# 运行时产物根目录。可用 PPT_STUDIO_RUNS_DIR 覆盖，用于测试隔离与多环境并行；
+# 未设置时行为不变（仓库根下的 runs/）。路径注册表本身不承担任何应用装配职责，
+# 这里只提供"可被配置覆盖"的单一来源。
+RUNS_DIR = os.path.abspath(
+    os.environ.get("PPT_STUDIO_RUNS_DIR") or os.path.join(REPO_ROOT, "runs")
+)
 DATA_DIR = os.path.join(REPO_ROOT, "data")
 LOGS_DIR = os.path.join(REPO_ROOT, "logs")
 

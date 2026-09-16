@@ -12448,3 +12448,104 @@ body.workspace-open #step-panel-5 .workspace-split {
   body.workspace-open .step9-header,
   body.workspace-open .step8-header { margin-inline: -1.25rem !important; padding-inline: 1.25rem !important; }
 }
+
+/* ============================================================
+   [弹窗按钮行溢出兜底 20260916] .modal-content 只约束了
+   max-height 却没有 overflow，平铺类弹窗内容超高时按钮行会
+   渲染到卡片边框之外。统一让弹窗自身滚动，保证按钮行始终
+   停留在卡片内。内部自带滚动容器（.config-editor-modal 等）
+   的弹窗已有更高优先级的 overflow: hidden，不受此规则影响。
+   ============================================================ */
+.modal-content {
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+}
+
+/* ============================================================
+   [错误类提示 20260916] 按 Stitch 侧边栏通知卡片规范重做左下
+   角 toast：白卡圆角、细灰边框、左缘呼吸灯圆点、小字正文、
+   紧凑高度；多条堆叠时整体可滚动，不再挤压截断。
+   ============================================================ */
+#toast-container {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  gap: 10px !important;
+  max-height: calc(100vh - 32px) !important;
+  overflow-y: auto !important;
+}
+#toast-container .toast {
+  display: grid !important;
+  grid-template-columns: 10px minmax(0, 1fr) auto !important;
+  align-items: flex-start !important;
+  gap: 10px !important;
+  width: var(--notification-rail-width) !important;
+  max-width: var(--notification-rail-width) !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 12px 14px !important;
+  border: 1px solid rgba(226, 230, 235, .9) !important;
+  border-left: 1px solid rgba(226, 230, 235, .9) !important;
+  border-radius: 16px !important;
+  background: rgba(255, 255, 255, .98) !important;
+  box-shadow: 0 8px 24px rgba(20, 26, 36, .08) !important;
+  color: #475467 !important;
+}
+#toast-container .toast::before {
+  display: block !important;
+  width: 9px !important;
+  height: 9px !important;
+  margin: 4px 0 0 1px !important;
+  border-radius: 50% !important;
+  box-shadow: none !important;
+  background: #a0a7b1 !important;
+  color: transparent !important;
+  content: "" !important;
+  font-size: 0 !important;
+  line-height: 0 !important;
+}
+#toast-container .toast-success::before { background: #34c07f !important; }
+#toast-container .toast-warning::before { background: #f0a71d !important; }
+#toast-container .toast-error::before {
+  background: #f24f4f !important;
+  animation: toastErrorPulse 1.6s ease-in-out infinite !important;
+}
+@keyframes toastErrorPulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(242, 79, 79, .14); }
+  50% { box-shadow: 0 0 0 7px rgba(242, 79, 79, .05); }
+}
+#toast-container .toast-content {
+  min-width: 0 !important;
+  font-size: 12px !important;
+  line-height: 1.5 !important;
+  color: #475467 !important;
+  word-break: break-word;
+}
+#toast-container .toast-close {
+  flex: 0 0 auto !important;
+  margin: 0 !important;
+  padding: 2px 8px !important;
+  border: 1px solid #e4e7ec !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  color: #98a2b3 !important;
+  font-size: 12px !important;
+  line-height: 1.5 !important;
+  cursor: pointer !important;
+}
+#toast-container .toast-close:hover { color: #f24f4f !important; border-color: rgba(242, 79, 79, .4) !important; }
+@media (max-width: 900px) {
+  #toast-container .toast {
+    width: min(var(--notification-rail-width), calc(100vw - 32px)) !important;
+    max-width: calc(100vw - 32px) !important;
+  }
+}
+
+/* 生图失败常驻徽标对齐同一规范：紧凑白卡 + 红点。 */
+.failure-badge {
+  min-height: 0 !important;
+  padding: 10px 14px !important;
+  border-radius: 16px !important;
+  border-color: rgba(226, 230, 235, .9) !important;
+  gap: 10px !important;
+}

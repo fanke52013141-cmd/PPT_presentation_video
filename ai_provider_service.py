@@ -462,7 +462,6 @@ def generate_toapis_image_response(
             "size": _toapis_ratio(size),
             "resolution": resolution if resolution in {"1k", "2k", "4k"} else "2k",
             "quality": quality if quality in {"low", "medium", "high"} else "high",
-            "response_format": "url",
         }
         if reference_urls:
             payload["reference_images"] = reference_urls

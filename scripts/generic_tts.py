@@ -213,10 +213,15 @@ def write_common_outputs(
                 "clone_voice_id": args.clone_voice_id,
                 "audio_format": args.audio_format,
                 "sample_rate": args.sample_rate,
-                "speed": args.speed,
-                "volume": args.volume,
-                "pitch": args.pitch,
+                # 数值字段统一 str(float(...))，与服务端 _normalize_tts_number
+                # 保持同一表示，避免 "2" 与 "2.0" 等价值导致缓存判定失配。
+                "speed": str(float(args.speed)),
+                "volume": str(float(args.volume)),
+                "pitch": str(float(args.pitch)),
                 "reference_audio_signature": local_file_sha256(args.clone_voice_id),
+                # seed_audio 的 provider_extra（如风格指令）参与服务端音频缓存键，
+                # 必须一并持久化，否则恢复/续跑时缓存判定永远失配导致全量重合成。
+                "provider_extra": args.provider_extra,
             },
             "response": response_json,
             "tts_text_has_markup": args._tts_text != subtitle_text,
@@ -244,7 +249,9 @@ def run_minimax(args: argparse.Namespace) -> int:
         "--model",
         args.model,
         "--voice-id",
-        args.clone_voice_id or args.voice_id,
+        args.voice_id,
+        "--clone-voice-id",
+        args.clone_voice_id,
         "--speed",
         str(args.speed),
         "--volume",

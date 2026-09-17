@@ -213,6 +213,18 @@ def _redact_runtime_secrets(value: Any, secrets: Any) -> str:
     return text
 
 
+def _normalize_tts_number(value: Any) -> str:
+    """数值型语音设置统一以 str(float(...)) 形式参与缓存键比对。
+
+    供应商脚本端 argparse 类型不一（float/int/str），"2" 与 "2.0" 这类等值
+    表示若直接比对会永久失配，导致恢复/续跑时音频被无谓地全量重合成。
+    """
+    try:
+        return str(float(str(value).strip()))
+    except (TypeError, ValueError):
+        return str(value or "").strip()
+
+
 def _tts_artifact_matches_runtime(paths: Dict[str, str], expected: Dict[str, Any]) -> bool:
     """Whether an existing slide audio was synthesized with this exact voice setup.
 
@@ -563,9 +575,9 @@ def synthesize_tts_resumable(project_id: str, db: Session):
         "model": tts_model,
         "voice_id": tts_voice_id,
         "clone_voice_id": tts_clone_voice_id,
-        "speed": tts_speed,
-        "volume": tts_volume,
-        "pitch": tts_pitch,
+        "speed": _normalize_tts_number(tts_speed),
+        "volume": _normalize_tts_number(tts_volume),
+        "pitch": _normalize_tts_number(tts_pitch),
     }
     if provider == "volcengine_seed_audio":
         tts_cache_key["reference_audio_signature"] = _reference_audio_signature(tts_clone_voice_id)

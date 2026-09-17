@@ -676,7 +676,9 @@ def write_json(path: Path, data: dict[str, Any]) -> None:
 
 def build_payload(args: argparse.Namespace, text: str) -> dict[str, Any]:
     voice_setting: dict[str, Any] = {
-        "voice_id": args.voice_id,
+        # 克隆音色优先；generic_tts 现在分别传入原始 voice_id 与 clone_voice_id，
+        # effective voice 在此处统一计算。
+        "voice_id": args.clone_voice_id or args.voice_id,
         "speed": args.speed,
         "vol": args.volume,
         "pitch": args.pitch,
@@ -724,6 +726,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--api-key", default=os.getenv("MINIMAX_API_KEY"))
     parser.add_argument("--model", default=os.getenv("MINIMAX_TTS_MODEL", DEFAULT_MODEL))
     parser.add_argument("--voice-id", default=os.getenv("MINIMAX_TTS_VOICE_ID", DEFAULT_VOICE_ID))
+    parser.add_argument("--clone-voice-id", default="", help="Cloned voice id; takes precedence over --voice-id when set.")
     parser.add_argument("--emotion", default=os.getenv("MINIMAX_TTS_EMOTION", "calm"))
     parser.add_argument("--language-boost", default=os.getenv("MINIMAX_TTS_LANGUAGE_BOOST", "Chinese"))
     parser.add_argument("--speed", type=float, default=env_float("MINIMAX_TTS_SPEED", 1.2))
@@ -820,6 +823,9 @@ def main() -> int:
                 "endpoint": args.endpoint,
                 "model": args.model,
                 "voice_id": args.voice_id,
+                # 服务端音频缓存键包含 clone_voice_id/speed/volume/pitch；
+                # 此前漏记导致 minimax 音频在恢复/续跑时被全量重合成。
+                "clone_voice_id": args.clone_voice_id,
                 "emotion": args.emotion,
                 "language_boost": args.language_boost,
                 "audio_format": args.audio_format,
@@ -827,6 +833,10 @@ def main() -> int:
                 "bitrate": args.bitrate,
                 "channel": args.channel,
                 "max_subtitle_chars": args.max_subtitle_chars,
+                # 数值统一 str(float(...))，与服务端 _normalize_tts_number 一致。
+                "speed": str(float(args.speed)),
+                "volume": str(float(args.volume)),
+                "pitch": str(float(args.pitch)),
             },
             "tts_text_has_markup": tts_text != subtitle_text,
             "duration": {

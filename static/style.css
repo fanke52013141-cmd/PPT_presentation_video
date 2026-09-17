@@ -12103,7 +12103,7 @@ body:not(.workspace-open) #page-home .stitch-video-menu .icon-action-btn svg {
 .model-library-card-heading { min-height: 3.15rem; align-items: flex-start; }
 .model-library-card-heading strong { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; line-height: 1.5; }
 .model-library-card-detail { min-height: 1.2rem; white-space: nowrap; }
-.model-library-card-actions { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .45rem; margin-top: auto; }
+.model-library-card-actions { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .45rem; margin-top: auto; }
 .model-library-card-actions button { width: 100%; justify-content: center; }
 .creation-config-management-body > .soft-outline { width: 100%; box-sizing: border-box; padding: 0 !important; border: 0 !important; background: transparent !important; box-shadow: none !important; }
 .creation-config-package-grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
@@ -12375,7 +12375,7 @@ body:not(.workspace-open) #page-home .stitch-course-children {
 #modal-model-management .model-library-card { display: flex !important; min-height: 118px !important; flex-direction: column !important; padding: .72rem !important; }
 #modal-model-management .model-library-card-heading { display: block !important; min-height: 3rem !important; }
 #modal-model-management .model-library-card-heading strong { display: -webkit-box !important; overflow: hidden !important; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal !important; }
-#modal-model-management .model-library-card-actions { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; width: 100% !important; margin-top: auto !important; }
+#modal-model-management .model-library-card-actions { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)) !important; width: 100% !important; margin-top: auto !important; }
 #modal-model-management .model-library-card-actions button { display: flex !important; width: 100% !important; justify-content: center !important; }
 
 #modal-creation-config-management .creation-config-package-card { display: flex !important; min-height: 126px !important; flex-direction: column !important; }
@@ -12555,4 +12555,77 @@ body.workspace-open #step-panel-5 .workspace-split {
   border-radius: 16px !important;
   border-color: rgba(226, 230, 235, .9) !important;
   gap: 10px !important;
+}
+
+/* 创作配置字幕样式：逐字高亮行与字段网格拉开间距，并在下方提供等比实时预览。 */
+#modal-creation-config-management .creation-config-subtitle-highlight-row {
+  margin-top: 10px;
+}
+#modal-creation-config-management .creation-config-subtitle-preview {
+  margin-top: 12px;
+}
+#modal-creation-config-management .creation-config-subtitle-preview-stage {
+  position: relative;
+  width: 100%;
+  max-width: 640px;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid #e4e1e7;
+  border-radius: 10px;
+  background: #fefdf9;
+}
+#creation-config-subtitle-preview-text {
+  position: absolute;
+  z-index: 2;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 14px;
+  text-align: center;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  word-break: keep-all;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* 创作配置字幕样式：十项字段压缩为单行，字段标签过窄时允许两行。 */
+#modal-creation-config-management .creation-config-subtitle-grid {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  gap: 8px !important;
+  padding: 0 !important;
+}
+#modal-creation-config-management .creation-config-subtitle-grid label,
+#modal-creation-config-management .creation-config-subtitle-grid label:first-child {
+  flex: 1 1 0;
+  min-width: 0;
+  grid-column: auto !important;
+  grid-template-columns: 1fr !important;
+  min-height: 0 !important;
+  gap: 5px !important;
+  padding: 7px 8px !important;
+}
+#modal-creation-config-management .creation-config-subtitle-grid label:first-child {
+  flex: 1.9 1 0;
+}
+#modal-creation-config-management .creation-config-subtitle-grid label select,
+#modal-creation-config-management .creation-config-subtitle-grid label input {
+  width: 100% !important;
+  min-width: 0;
+  height: 32px !important;
+  padding: 4px 6px !important;
+  text-align: center;
+  font-size: 12px !important;
+}
+@media (max-width: 1180px) {
+  #modal-creation-config-management .creation-config-subtitle-grid {
+    flex-wrap: wrap !important;
+  }
+  #modal-creation-config-management .creation-config-subtitle-grid label,
+  #modal-creation-config-management .creation-config-subtitle-grid label:first-child {
+    flex: 1 1 150px;
+  }
 }

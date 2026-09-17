@@ -1,63 +1,70 @@
 @echo off
-chcp 65001 >nul
 setlocal enabledelayedexpansion
-title PPT è§†é¢‘å·¥ä½œå° (ä¾¿æºç‰ˆ)
+title PPT ÊÓÆµ¹¤×÷Ì¨ (±ãÐ¯°æ)
 cd /d "%~dp0"
 
 rem ============================================================
-rem  PPT è§†é¢‘å·¥ä½œå° ä¸€é”®å¯åŠ¨ï¼ˆä¾¿æºç‰ˆï¼‰
-rem  - ä½¿ç”¨åŒ…å†… Python / Node / ffmpegï¼Œä¸ä¾èµ–ç³»ç»Ÿå®‰è£…
-rem  - ä¸ä¿®æ”¹ç³»ç»ŸçŽ¯å¢ƒå˜é‡ï¼Œå…³é—­çª—å£å³å¯åœæ­¢æœåŠ¡
+rem  PPT ÊÓÆµ¹¤×÷Ì¨ Ò»¼üÆô¶¯£¨±ãÐ¯°æ£©
+rem  - Ê¹ÓÃ°üÄÚ Python / Node / ffmpeg£¬²»ÒÀÀµÏµÍ³°²×°
+rem  - ²»ÐÞ¸ÄÏµÍ³»·¾³±äÁ¿£¬¹Ø±Õ´°¿Ú¼´¿ÉÍ£Ö¹·þÎñ
+rem  - ±¾ÎÄ¼þ±ØÐë±£³Ö ANSI(GBK) ±àÂë£ºcmd ½âÎö UTF-8 Åú´¦ÀíÊ±»áÔÚ
+rem    ¶à×Ö½ÚÐÐÉÏÊ§È¥Í¬²½£¬°Ñ×¢ÊÍ/»ØÏÔÆ¬¶Îµ±³ÉÃüÁîÖ´ÐÐ
 rem ============================================================
 
-rem ---- åŒ…å†…å·¥å…·è·¯å¾„ï¼ˆæœ€é«˜ä¼˜å…ˆçº§ï¼‰ ----
+rem ---- °üÄÚ¹¤¾ßÂ·¾¶£¨×î¸ßÓÅÏÈ¼¶£© ----
 set "ROOT=%~dp0"
 set "FFMPEG_BINARY=%ROOT%tools\ffmpeg\bin\ffmpeg.exe"
 set "FFPROBE_BINARY=%ROOT%tools\ffmpeg\bin\ffprobe.exe"
 set "PPT_STUDIO_HOST=127.0.0.1"
 set "PPT_STUDIO_PORT=8000"
 
-rem ---- æŠŠåŒ…å†… Node / ffmpeg è¿½åŠ åˆ°æœ¬ä¼šè¯ PATHï¼ˆRemotion éœ€è¦ npxï¼‰ ----
+rem ---- °Ñ°üÄÚ Node / ffmpeg ×·¼Óµ½±¾»á»° PATH£¨Remotion ÐèÒª npx£© ----
 set "PATH=%ROOT%runtime\node;%ROOT%tools\ffmpeg\bin;%PATH%"
 
-rem ---- æ ¡éªŒå…³é”®æ–‡ä»¶å­˜åœ¨ ----
+rem ---- Ð£Ñé¹Ø¼üÎÄ¼þ´æÔÚ ----
 if not exist "%ROOT%runtime\python\python.exe" (
-  echo [é”™è¯¯] ç¼ºå°‘ runtime\python\python.exeï¼Œè¯·ç¡®è®¤è§£åŽ‹å®Œæ•´ã€‚
+  echo [´íÎó] È±ÉÙ runtime\python\python.exe£¬ÇëÈ·ÈÏ½âÑ¹ÍêÕû¡£
   pause
   exit /b 1
 )
 if not exist "%ROOT%runtime\node\node.exe" (
-  echo [é”™è¯¯] ç¼ºå°‘ runtime\node\node.exeï¼Œè¯·ç¡®è®¤è§£åŽ‹å®Œæ•´ã€‚
+  echo [´íÎó] È±ÉÙ runtime\node\node.exe£¬ÇëÈ·ÈÏ½âÑ¹ÍêÕû¡£
   pause
   exit /b 1
 )
 if not exist "%FFMPEG_BINARY%" (
-  echo [é”™è¯¯] ç¼ºå°‘ tools\ffmpeg\bin\ffmpeg.exeï¼Œè¯·ç¡®è®¤è§£åŽ‹å®Œæ•´ã€‚
+  echo [´íÎó] È±ÉÙ tools\ffmpeg\bin\ffmpeg.exe£¬ÇëÈ·ÈÏ½âÑ¹ÍêÕû¡£
   pause
   exit /b 1
 )
 
-rem ---- å­—å¹•è®¾è®¡å­—ä½“ï¼šæ³¨å†Œåˆ°å½“å‰ç”¨æˆ·å­—ä½“è¡¨ï¼ˆå¹‚ç­‰ï¼Œæ— éœ€ç®¡ç†å‘˜ï¼‰ ----
-rem Remotion åªæŒ‰å­—ä½“åæ¸²æŸ“å­—å¹•ï¼Œå­—ä½“ä¸åœ¨ Windows å­—ä½“è¡¨é‡Œå°±ä¼šé™é»˜å›žé€€å¾®è½¯é›…é»‘ã€‚
-rem è„šæœ¬è‡ªå·±ä¼šæ‰“å°ç»“æžœï¼ˆä¸å†é‡å®šå‘åˆ° nulï¼Œå¦åˆ™å¤±è´¥æ— æ³•å¯Ÿè§‰ï¼‰ï¼›å¤±è´¥ä¸é˜»æ–­å¯åŠ¨ã€‚
+rem ---- ×ÖÄ»Éè¼Æ×ÖÌå£º×¢²áµ½µ±Ç°ÓÃ»§×ÖÌå±í£¨ÃÝµÈ£¬ÎÞÐè¹ÜÀíÔ±£© ----
+rem Remotion Ö»°´×ÖÌåÃûäÖÈ¾×ÖÄ»£¬×ÖÌå²»ÔÚ Windows ×ÖÌå±íÀï¾Í»á¾²Ä¬»ØÍËÎ¢ÈíÑÅºÚ¡£
+rem ×¢²á½Å±¾×ÔÉíÊÇ ASCII ±àÐ´µÄ£¬Ê§°Ü²»×è¶ÏÆô¶¯¡£
 if exist "%ROOT%scripts\portable_install_fonts.ps1" (
   powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scripts\portable_install_fonts.ps1"
 )
 
 echo ============================================
-echo   PPT è§†é¢‘å·¥ä½œå° ä¾¿æºç‰ˆ
-echo   åœ°å€:  http://127.0.0.1:%PPT_STUDIO_PORT%
-echo   ffmpeg: åŒ…å†…å®Œæ•´ç‰ˆ 7.1.1ï¼ˆå·²å¼ºåˆ¶æŒ‡å®šï¼‰
-echo   å…³é—­æœ¬çª—å£å³åœæ­¢æœåŠ¡
+echo   PPT ÊÓÆµ¹¤×÷Ì¨ ±ãÐ¯°æ
+echo   µØÖ·:  http://127.0.0.1:%PPT_STUDIO_PORT%
+echo   ffmpeg: °üÄÚÍêÕû°æ£¨ÒÑÇ¿ÖÆÖ¸¶¨£©
+echo   ¹Ø±Õ±¾´°¿Ú¼´Í£Ö¹·þÎñ
 echo ============================================
 echo.
 
-rem ---- å»¶è¿Ÿ 4 ç§’åŽè‡ªåŠ¨æ‰“å¼€æµè§ˆå™¨ ----
+rem ---- ÑÓ³Ù 4 Ãëºó×Ô¶¯´ò¿ªä¯ÀÀÆ÷ ----
 start "" /min cmd /c "timeout /t 4 /nobreak >nul & start "" http://127.0.0.1:%PPT_STUDIO_PORT%"
 
-rem ---- å‰å°å¯åŠ¨æœåŠ¡ï¼ˆçª—å£æ˜¾ç¤ºè¿è¡Œæ—¥å¿—ï¼‰ ----
+rem ---- Â·¾¶×ÔÊÊÓ¦£º°ü±»¸´ÖÆ/ÒÆ¶¯µ½ÐÂÎ»ÖÃºó£¬×Ô¶¯ÐÞÕý°üÄÚ±¾µØ×ÊÔ´¾ø¶ÔÂ·¾¶£¨ÃÝµÈ£© ----
+"%ROOT%runtime\python\python.exe" "%ROOT%scripts\portable_relocate.py"
+if errorlevel 1 (
+  echo [¾¯¸æ] Â·¾¶×ÔÊÊÓ¦½Å±¾Ö´ÐÐÊ§°Ü£¬±¾µØËØ²ÄÒýÓÃ¿ÉÄÜÊ§Ð§£¬½«¼ÌÐøÆô¶¯¡£
+)
+
+rem ---- Ç°Ì¨Æô¶¯·þÎñ£¨´°¿ÚÏÔÊ¾ÔËÐÐÈÕÖ¾£© ----
 "%ROOT%runtime\python\python.exe" "%ROOT%server.py"
 
 echo.
-echo æœåŠ¡å·²é€€å‡ºã€‚
+echo ·þÎñÒÑÍË³ö¡£
 pause

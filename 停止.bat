@@ -1,6 +1,5 @@
 @echo off
-chcp 65001 >nul
-echo æ­£åœ¨åœæ­¢ PPT è§†é¢‘å·¥ä½œå°æœåŠ¡...
-powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name like 'python%%'\" | Where-Object { $_.CommandLine -match 'server\.py' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force; Write-Host ('å·²åœæ­¢ PID ' + $_.ProcessId) }"
-echo å®Œæˆã€‚
+echo ÕýÔÚÍ£Ö¹ PPT ÊÓÆµ¹¤×÷Ì¨·þÎñ...
+powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name like 'python%%'\" | Where-Object { $_.CommandLine -match 'server\.py' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force; Write-Host ('ÒÑÍ£Ö¹ PID ' + $_.ProcessId) }"
+echo Íê³É¡£
 timeout /t 2 /nobreak >nul

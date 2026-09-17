@@ -243,6 +243,13 @@ async function refreshCurrentProjectStatus(activeStep = state.currentStep) {
 async function navigateToStep(step) {
   const navigationVersion = ++workspaceNavigationVersion;
   step = normalizeVisibleStep(step);
+  // 目标面板不存在时就近兜底：数字人未启用时没有 step-panel-9，回退到
+  // 作品输出；其余异常目标保持当前面板，避免所有面板被隐藏后工作区空白。
+  if (!document.getElementById(`step-panel-${step}`)) {
+    const fallback = step === 9 ? 8 : normalizeVisibleStep(state.currentStep);
+    if (!document.getElementById(`step-panel-${fallback}`)) return;
+    step = fallback;
+  }
   state.currentStep = step;
   
   // 隐藏所有面板

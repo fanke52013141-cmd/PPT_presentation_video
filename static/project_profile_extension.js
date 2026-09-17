@@ -5,6 +5,9 @@
     creationConfigs: null,
     defaultCreationConfig: null,
     creating: false,
+    // 用户手动点选"创建方式"后置 true，避免创作包同步覆盖显式选择；
+    // 切换创作包或重新打开弹窗时重置。
+    aiModeTouched: false,
   };
 
   const DEFAULT_QUALITY_GATES = {
@@ -203,14 +206,14 @@
           <h4>5. 目标视频时长</h4>
           <label for="input-project-target-duration">时长</label>
           <select id="input-project-target-duration" class="project-profile-native-select" data-select-menu-native="true">
-            <option value="30">30 秒</option><option value="60">1 分钟</option><option value="90">1 分 30 秒</option>
-            <option value="120">2 分钟</option><option value="150">2 分 30 秒</option><option value="180">3 分钟</option>
-            <option value="210">3 分 30 秒</option><option value="240">4 分钟</option><option value="270">4 分 30 秒</option>
-            <option value="300">5 分钟</option><option value="330">5 分 30 秒</option><option value="360">6 分钟</option>
-            <option value="390">6 分 30 秒</option><option value="420">7 分钟</option><option value="450">7 分 30 秒</option>
-            <option value="480">8 分钟</option><option value="510">8 分 30 秒</option><option value="540">9 分钟</option>
-            <option value="570">9 分 30 秒</option><option value="600">10 分钟</option>
             <option value="" selected>不设置（默认）</option>
+            <option value="600">10 分钟</option><option value="570">9 分 30 秒</option><option value="540">9 分钟</option>
+            <option value="510">8 分 30 秒</option><option value="480">8 分钟</option><option value="450">7 分 30 秒</option>
+            <option value="420">7 分钟</option><option value="390">6 分 30 秒</option><option value="360">6 分钟</option>
+            <option value="330">5 分 30 秒</option><option value="300">5 分钟</option><option value="270">4 分 30 秒</option>
+            <option value="240">4 分钟</option><option value="210">3 分 30 秒</option><option value="180">3 分钟</option>
+            <option value="150">2 分 30 秒</option><option value="120">2 分钟</option><option value="90">1 分 30 秒</option>
+            <option value="60">1 分钟</option><option value="30">30 秒</option>
           </select>
           <small>仅在选择时控制 Step 2 的演讲稿长度；不设置则不注入时长限制。</small>
         </section>
@@ -237,8 +240,16 @@
   function bindModalEvents() {
     document.querySelectorAll('[data-profile-option]').forEach(card => {
       card.addEventListener('click', () => {
-        activateOption(card.getAttribute('data-profile-option'), card.dataset.value);
+        const field = card.getAttribute('data-profile-option');
+        activateOption(field, card.dataset.value);
+        if (field === 'ai_mode') PROFILE_STATE.aiModeTouched = true;
       });
+    });
+
+    document.getElementById('input-creation-config')?.addEventListener('change', () => {
+      // 切换创作包时以新包的 automation.mode 为准，清除此前的手动覆盖。
+      PROFILE_STATE.aiModeTouched = false;
+      syncAiModeFromSelectedCreationConfig();
     });
 
     document.getElementById('btn-create-cancel')?.addEventListener('click', () => {
@@ -249,6 +260,26 @@
       event.stopPropagation();
       createProjectWithProfile().catch(error => toast(`❌ 创建失败：${error.message}`, 7000));
     }, true);
+  }
+
+  async function syncAiModeFromSelectedCreationConfig() {
+    // 创作包的 automation.mode 是项目自动化意图的来源：选中 manual 包时
+    // "创建方式"自动切到手动，避免项目以 auto 模式静默启动一键流程。
+    if (PROFILE_STATE.aiModeTouched) return;
+    const packageId = document.getElementById('input-creation-config')?.value || '';
+    if (!packageId) return;
+    try {
+      const response = await apiGet(`/api/creation-configs/${encodeURIComponent(packageId)}`);
+      const versions = Array.isArray(response?.package?.versions) ? response.package.versions : [];
+      if (!versions.length) return;
+      const latest = versions.reduce((max, item) => (
+        Number(item?.version) > Number(max?.version) ? item : max
+      ), versions[0]);
+      const mode = latest?.payload?.automation?.mode;
+      activateOption('ai_mode', mode === 'manual' ? 'manual' : 'auto');
+    } catch (_) {
+      // 读取创作包失败时保持当前卡片状态，不阻断项目创建。
+    }
   }
 
   function collectProfile(aiMode) {
@@ -364,8 +395,9 @@
     const creationConfigs = await loadCreationConfigs();
     renderModal(creationConfigs);
     refreshCreationConfigChoices(creationConfigs, { preferDefault: true });
-    // 每次打开都刷新运行中任务提示；元素在首次 renderModal 后持续存在，
-    // 不受 renderModal 防重守卫影响。
+    // 每次打开弹窗都先按选中创作包同步一次"创建方式"，再刷新运行任务提示。
+    PROFILE_STATE.aiModeTouched = false;
+    syncAiModeFromSelectedCreationConfig();
     refreshRunningAutomationHint();
   }
 

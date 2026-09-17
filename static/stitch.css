@@ -2362,7 +2362,7 @@ header .account-picker-menu .account-picker-option[aria-selected="true"] { borde
 #modal-model-management .model-library-card-heading { display: block !important; min-height: 3rem !important; }
 #modal-model-management .model-library-card-heading strong { display: -webkit-box !important; overflow: hidden !important; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal !important; }
 #modal-model-management .model-library-card-heading { text-align: center !important; }
-#modal-model-management .model-library-card-actions { display: grid !important; grid-column: auto !important; grid-row: auto !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; width: 100% !important; margin-top: auto !important; }
+#modal-model-management .model-library-card-actions { display: grid !important; grid-column: auto !important; grid-row: auto !important; grid-template-columns: repeat(3, minmax(0, 1fr)) !important; width: 100% !important; margin-top: auto !important; }
 #modal-model-management .model-library-card-actions button { display: flex !important; width: 100% !important; justify-content: center !important; }
 
 #modal-creation-config-management .creation-config-package-card { display: flex !important; min-height: 126px !important; flex-direction: column !important; }

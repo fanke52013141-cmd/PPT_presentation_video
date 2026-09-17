@@ -413,9 +413,11 @@ async function loadStep7Data() {
     } else {
       emptyState.style.display = 'none';
       confirmButton.disabled = false;
+      // 文案跟随数字人启用状态：未启用时下一步是作品输出，而不是数字人讲解。
+      const dhTarget = window.__dhEnabled === true ? '数字人讲解' : '作品输出';
       document.getElementById('step6-audio-confirm-label').innerText = state.currentProject.audio_confirmed
-        ? '进入数字人讲解'
-        : '确认并进入数字人讲解';
+        ? `进入${dhTarget}`
+        : `确认并进入${dhTarget}`;
     }
   }
 }

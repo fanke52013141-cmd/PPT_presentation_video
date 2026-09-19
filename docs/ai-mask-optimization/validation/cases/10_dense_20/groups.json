@@ -1,0 +1,92 @@
+{
+  "case_id": "10_dense_20",
+  "description": "5x4 共二十个正文组与多页语义匹配",
+  "groups": [
+    {
+      "id": "group_001",
+      "narration": "标题先出现"
+    },
+    {
+      "id": "group_002",
+      "narration": "季度节点 01"
+    },
+    {
+      "id": "group_003",
+      "narration": "季度节点 02"
+    },
+    {
+      "id": "group_004",
+      "narration": "季度节点 03"
+    },
+    {
+      "id": "group_005",
+      "narration": "季度节点 04"
+    },
+    {
+      "id": "group_006",
+      "narration": "季度节点 05"
+    },
+    {
+      "id": "group_007",
+      "narration": "季度节点 06"
+    },
+    {
+      "id": "group_008",
+      "narration": "季度节点 07"
+    },
+    {
+      "id": "group_009",
+      "narration": "季度节点 08"
+    },
+    {
+      "id": "group_010",
+      "narration": "季度节点 09"
+    },
+    {
+      "id": "group_011",
+      "narration": "季度节点 10"
+    },
+    {
+      "id": "group_012",
+      "narration": "季度节点 11"
+    },
+    {
+      "id": "group_013",
+      "narration": "季度节点 12"
+    },
+    {
+      "id": "group_014",
+      "narration": "季度节点 13"
+    },
+    {
+      "id": "group_015",
+      "narration": "季度节点 14"
+    },
+    {
+      "id": "group_016",
+      "narration": "季度节点 15"
+    },
+    {
+      "id": "group_017",
+      "narration": "季度节点 16"
+    },
+    {
+      "id": "group_018",
+      "narration": "季度节点 17"
+    },
+    {
+      "id": "group_019",
+      "narration": "季度节点 18"
+    },
+    {
+      "id": "group_020",
+      "narration": "季度节点 19"
+    },
+    {
+      "id": "group_021",
+      "narration": "季度节点 20"
+    }
+  ],
+  "policy": "Nonwhite source pixels with min channel < 254; >=254 halo and exact white are unscored background.",
+  "image_sha256": "4f346d5bdf199c513876b148e1312999b8a4d2c8aa283cd2dd9b6b4bbb42fe39"
+}

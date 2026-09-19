@@ -1,0 +1,24 @@
+{
+  "case_id": "09_pale_nested_combo",
+  "description": "浅灰底板内嵌深色框，三组独立",
+  "groups": [
+    {
+      "id": "group_001",
+      "narration": "标题与页面框架先出现"
+    },
+    {
+      "id": "group_002",
+      "narration": "第 1 步：阈值 → 复核 → 发布"
+    },
+    {
+      "id": "group_003",
+      "narration": "第 2 步：阈值 → 复核 → 发布"
+    },
+    {
+      "id": "group_004",
+      "narration": "第 3 步：阈值 → 复核 → 发布"
+    }
+  ],
+  "policy": "Nonwhite source pixels with min channel < 254; >=254 halo and exact white are unscored background.",
+  "image_sha256": "ae14ad230263be1a36480355802e64c75025b8ee44e1fceadfd258d132a86072"
+}

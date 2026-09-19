@@ -1,0 +1,24 @@
+{
+  "case_id": "11_halo_lines",
+  "description": "抗锯齿大字与 3px 行距密排细文字",
+  "groups": [
+    {
+      "id": "group_001",
+      "narration": "大标题先出现"
+    },
+    {
+      "id": "group_002",
+      "narration": "细则块 1"
+    },
+    {
+      "id": "group_003",
+      "narration": "细则块 2"
+    },
+    {
+      "id": "group_004",
+      "narration": "细则块 3"
+    }
+  ],
+  "policy": "Nonwhite source pixels with min channel < 254; >=254 halo and exact white are unscored background.",
+  "image_sha256": "c2851fadefed01b7ca0fa8a4c3171a6daf9522ef5060e84fbe5c48beb52d315e"
+}

@@ -232,6 +232,116 @@ def baseline(root, output, radius, fine_grained=False, pale_threshold=254, enclo
     score(root, output, output / "report.json")
 
 
+def _extend_case_folder(root, case_id, title, build_case):
+    folder = root / "cases" / case_id
+    if folder.exists():
+        raise ValueError(f"{case_id} already exists; frozen fixtures are immutable")
+    folder.mkdir(parents=True)
+    image = Image.new("RGB", SIZE, "white")
+    labels = np.zeros((SIZE[1], SIZE[0]), np.uint16)
+    groups = []
+
+    def add(gid, name, draw_fn):
+        layer = Image.new("RGB", SIZE, "white")
+        draw_fn(ImageDraw.Draw(layer))
+        pixels = np.asarray(layer)
+        # min channel >= 254 is background by the production pale-floor
+        # convention, so those AA halo pixels stay pure white in the composite
+        # and are excluded from ground truth entirely.
+        mask = np.any(pixels != 255, axis=2) & (pixels.min(axis=2) < 254)
+        if np.any(mask & (labels != 0)):
+            raise ValueError(f"Overlapping fixture ownership in {case_id}/{gid}")
+        labels[mask] = gid
+        image.paste(layer, (0, 0), Image.fromarray(mask.astype("uint8") * 255))
+        Image.fromarray(mask.astype("uint8") * 255).save(folder / f"group_{gid:03d}.png")
+        groups.append({"id": f"group_{gid:03d}", "narration": name})
+
+    build_case(add)
+    image.save(folder / "image.png")
+    Image.fromarray(labels).save(folder / "labels.png")
+    write_json(folder / "groups.json", {"case_id": case_id, "description": title, "groups": groups,
+                "policy": "Nonwhite source pixels with min channel < 254; >=254 halo and exact white are unscored background.",
+                "image_sha256": hashlib.sha256((folder / "image.png").read_bytes()).hexdigest()})
+
+
+def _build_09_pale_nested(add):
+    # 浅灰底板 + 深色内框 + 内框文字：pale support 与封闭白区嵌套的新组合。
+    def header(d):
+        d.text((90, 70), "报表如何变成行动", font=font(54), fill="#26334a")
+    add(1, "标题与页面框架先出现", header)
+    width = (1720 - 2 * 48) // 3
+    for i in range(3):
+        x = 100 + i * (width + 48)
+
+        def card(d, x=x, i=i):
+            d.rounded_rectangle((x, 270, x + width - 1, 700), 22, fill="#FAFAFA", outline="#F5F5F5", width=2)
+            d.rectangle((x + 60, 340, x + width - 60, 640), outline="#5c7488", width=4)
+            d.text((x + 84, 372), f"第 {i + 1} 步", font=font(28), fill="#253047")
+            d.text((x + 84, 420), "阈值 → 复核 → 发布", font=font(22), fill="#435467")
+            d.text((x + 84, 560), "内框与底板同组", font=font(20), fill="#435467")
+        add(i + 2, f"第 {i + 1} 步：阈值 → 复核 → 发布", card)
+
+
+def _build_10_dense_20(add):
+    # 5x4 共 20 个正文组：压检测密度上限，并迫使语义匹配进入多页分页。
+    def header(d):
+        d.text((90, 62), "十二个月的经营节拍", font=font(48), fill="#26334a")
+    add(1, "标题先出现", header)
+    gap = 12
+    width = (1720 - 4 * gap) // 5
+    for i in range(20):
+        x = 100 + (i % 5) * (width + gap)
+        y = 200 + (i // 5) * 168
+
+        def cell(d, x=x, y=y, i=i):
+            d.rounded_rectangle((x, y, x + width - 1, y + 150), 14, fill="#eef6ff", outline="#668099", width=2)
+            d.text((x + 14, y + 12), f"季度节点 {i + 1:02d}", font=font(18), fill="#253047")
+            d.text((x + 14, y + 48), "预算 → 执行 → 复盘", font=font(16), fill="#435467")
+            d.rectangle((x + 14, y + 92, x + width - 14, y + 96), fill="#768b99")
+            d.text((x + 14, y + 112), f"负责人 {i + 1:02d}", font=font(15), fill="#435467")
+        add(i + 2, f"季度节点 {i + 1:02d}", cell)
+
+
+def _build_11_halo_lines(add):
+    # 大字抗锯齿 + 3px 行距密排细文字：细结构在波前扩散下的保留压力。
+    def header(d):
+        d.text((88, 58), "抗锯齿边界压力测试", font=font(58), fill="#31445c")
+    add(1, "大标题先出现", header)
+    for i in range(3):
+        x = 100 + i * (541 + 48)
+
+        def block(d, x=x, i=i):
+            for row in range(10):
+                d.text((x + 16, 260 + row * 21), f"细则 {i + 1}-{row + 1:02d}：逐行独立但同组出现", font=font(18), fill="#3d4f63")
+            d.rectangle((x, 250 + 10 * 21 + 8, x + 8, 258 + 10 * 21 + 8), fill="#d57c52")
+        add(i + 2, f"细则块 {i + 1}", block)
+
+
+EXTENSION_SPECS = [
+    ("09_pale_nested_combo", "浅灰底板内嵌深色框，三组独立", _build_09_pale_nested),
+    ("10_dense_20", "5x4 共二十个正文组与多页语义匹配", _build_10_dense_20),
+    ("11_halo_lines", "抗锯齿大字与 3px 行距密排细文字", _build_11_halo_lines),
+]
+
+
+def extend(root):
+    dataset_path = root / "dataset.json"
+    dataset = json.loads(dataset_path.read_text(encoding="utf-8"))
+    added = []
+    for case_id, title, builder in EXTENSION_SPECS:
+        if case_id in dataset["cases"]:
+            print(f"skip {case_id} (already listed)")
+            continue
+        _extend_case_folder(root, case_id, title, builder)
+        dataset["cases"].append(case_id)
+        added.append(case_id)
+    if added:
+        dataset["version"] = 2
+        dataset["extensions"] = added
+        write_json(dataset_path, dataset)
+    print(f"extended {len(added)} case(s): {added}")
+
+
 def selftest(root):
     with tempfile.TemporaryDirectory(prefix="mask_score_test_") as temp:
         base = Path(temp)
@@ -255,7 +365,7 @@ def selftest(root):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["generate", "score", "baseline", "selftest"])
+    parser.add_argument("command", choices=["generate", "extend", "score", "baseline", "selftest"])
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--radius", type=int, choices=range(21), default=6)
@@ -265,6 +375,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.command == "generate":
         generate(args.root)
+    elif args.command == "extend":
+        extend(args.root)
     elif args.command == "selftest":
         selftest(args.root)
     else:

@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "size": [
     1920,
     1080
@@ -12,7 +12,15 @@
     "05_pale",
     "06_dense_15",
     "07_nested",
-    "08_detached"
+    "08_detached",
+    "09_pale_nested_combo",
+    "10_dense_20",
+    "11_halo_lines"
   ],
-  "font": "Microsoft YaHei preferred; keep delivered PNGs fixed across machines"
+  "font": "Microsoft YaHei preferred; keep delivered PNGs fixed across machines",
+  "extensions": [
+    "09_pale_nested_combo",
+    "10_dense_20",
+    "11_halo_lines"
+  ]
 }

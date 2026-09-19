@@ -1,4 +1,4 @@
-"""Stage C protocol tests: shared-container geometry rebind and paged VL retry."""
+"""Stage C/D protocol tests: shared-container rebind, paged VL retry, island rows, gap completion."""
 import json
 import sys
 import tempfile
@@ -8,8 +8,8 @@ from types import SimpleNamespace
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from ai_mask_assignment import _consolidate_title_regions, _rebind_shared_containers
-from ai_mask_semantic_matcher import SemanticVisionMatcher
+from ai_mask_assignment import _complete_component_coverage, _consolidate_title_regions, _rebind_shared_containers
+from ai_mask_semantic_matcher import SemanticVisionMatcher, _semantic_objects
 
 
 def _slide():
@@ -187,6 +187,117 @@ def test_match_page_retries_once_on_truncated_json():
         assert client.chat.completions.calls == 2
         assert value["matches"][0]["element_ids"] == ["el_1"]
         assert value["matches"][0]["object_ids"] == ["object_001"]
+
+
+def _grid_elements():
+    def element(eid, x, y, w, h, area):
+        return {
+            "element_id": eid,
+            "bbox": {"x": x, "y": y, "w": w, "h": h},
+            "raw_bbox": {"x": x, "y": y, "w": w, "h": h},
+            "area": area,
+        }
+
+    glyphs = [element(f"el_g{i:02d}", 90 + i * 45, 62, 40, 44, 320) for i in range(6)]
+    # 10_dense_20 实测：首行 5 张 334x151 卡片高 151 ≤ 0.14*1080，曾被并入 rank-0 文本行。
+    cards = [element(f"el_card_{i:02d}", 100 + i * 346, 200, 334, 151, 50250) for i in range(4)]
+    return glyphs + cards
+
+
+def test_card_row_is_not_merged_into_text_line():
+    objects = _semantic_objects(_grid_elements(), 1920, 1080)
+    by_type = {}
+    for obj in objects:
+        by_type.setdefault(obj["type"], []).append(obj)
+    assert len(by_type.get("text_line_or_label", [])) == 1
+    title_line = by_type["text_line_or_label"][0]
+    assert all(eid.startswith("el_g") for eid in title_line["element_ids"])
+    cards = sorted(by_type["container_or_illustration"], key=lambda obj: obj["bbox"]["x"])
+    assert [obj["element_ids"] for obj in cards] == [
+        ["el_card_00"], ["el_card_01"], ["el_card_02"], ["el_card_03"],
+    ]
+
+
+def test_gap_completion_prefers_nearest_owned_member_box():
+    def element(eid, x, y, w, h, area):
+        return {
+            "element_id": eid,
+            "bbox": {"x": x, "y": y, "w": w, "h": h},
+            "raw_bbox": {"x": x, "y": y, "w": w, "h": h},
+            "area": area,
+            "mask_rle": {"encoding": "row_runs_v1", "width": 1920, "height": 1080, "runs": [[y, x, x + w]]},
+        }
+
+    elements_payload = {
+        "canvas": {"width": 1920, "height": 1080},
+        "elements": [
+            element("el_a_block", 100, 200, 540, 500, 65000),
+            element("el_b_dominant", 936, 270, 294, 383, 65000),
+            element("el_b_side", 689, 340, 60, 62, 2600),
+            # 未归属碎片：距 A 包络 48px，距 B 包络 181px，但紧贴 B 自己的成员 3px。
+            element("el_stray", 755, 270, 60, 60, 2600),
+        ],
+        "residual_elements": [],
+    }
+    payload = {
+        "matches": [
+            {"group_id": "group_002", "narration_beat_id": "beat_2", "element_ids": ["el_a_block"], "confidence": 0.97},
+            {"group_id": "group_003", "narration_beat_id": "beat_3", "element_ids": ["el_b_dominant", "el_b_side"], "confidence": 0.97},
+        ],
+        "unmatched_elements": [],
+        "unmatched_groups": [],
+        "warnings": [],
+    }
+    result = _complete_component_coverage(payload, elements_payload, slide=None)
+    owner = {
+        element_id: item["group_id"]
+        for item in result["matches"]
+        for element_id in item.get("element_ids", []) or []
+    }
+    assert owner["el_stray"] == "group_003"
+
+
+def test_moves_loop_rebinds_to_closer_envelope_despite_adjacent_member():
+    # 08 复现：VL 把正文碎片错绑到 group_002，而 group_002 恰好拥有一个紧贴该
+    # 碎片的成员框。若改绑判定纳入"当前拥有者的成员框距离"，错绑会自我保护、永不
+    # 纠正；此路径必须只看冻结包络——group_003 的卡片包络更近，应改绑过去。
+    def element(eid, x, y, w, h, area):
+        return {
+            "element_id": eid,
+            "bbox": {"x": x, "y": y, "w": w, "h": h},
+            "raw_bbox": {"x": x, "y": y, "w": w, "h": h},
+            "area": area,
+            "mask_rle": {"encoding": "row_runs_v1", "width": 1920, "height": 1080, "runs": [[y, x, x + w]]},
+        }
+
+    elements_payload = {
+        "canvas": {"width": 1920, "height": 1080},
+        "elements": [
+            element("el_g2_card", 100, 200, 500, 450, 225000),
+            # chip 远离主导卡片（超出包络吸收半径），却紧贴错绑的 el_body。
+            # 只有"当前拥有者成员框距离"会看到它——用它做改绑判定就会自我保护。
+            element("el_g2_chip", 700, 285, 55, 50, 1600),
+            element("el_body", 760, 280, 40, 40, 1600),
+            element("el_g3_card", 820, 200, 500, 450, 225000),
+        ],
+        "residual_elements": [],
+    }
+    payload = {
+        "matches": [
+            {"group_id": "group_002", "narration_beat_id": "beat_2", "element_ids": ["el_g2_card", "el_g2_chip", "el_body"], "confidence": 0.97},
+            {"group_id": "group_003", "narration_beat_id": "beat_3", "element_ids": ["el_g3_card"], "confidence": 0.97},
+        ],
+        "unmatched_elements": [],
+        "unmatched_groups": [],
+        "warnings": [],
+    }
+    result = _complete_component_coverage(payload, elements_payload, slide=None)
+    owner = {
+        element_id: item["group_id"]
+        for item in result["matches"]
+        for element_id in item.get("element_ids", []) or []
+    }
+    assert owner["el_body"] == "group_003"
 
 
 if __name__ == "__main__":

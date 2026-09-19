@@ -1,0 +1,111 @@
+[00:55:48] project c291dcd8_005547 run_dir C:\Users\Administrator\AppData\Local\Temp\ppt_mask_c\runs\c291dcd8_005547
+[00:55:48] contract valid=True stderr=Warning: slide_006 has 15 revealable visual groups; this exceeds the configured density guide of 10. The contract remains valid when every group is semantically independent, narration-bound, and maska
+[00:55:49] upload 01_separated sha-identical=False dims_identical=True pixel_diff=454
+[00:55:51] upload 02_gap_8px sha-identical=False dims_identical=True pixel_diff=454
+[00:55:52] upload 03_gap_2px sha-identical=False dims_identical=True pixel_diff=454
+[00:55:53] upload 04_arrow_bridge sha-identical=False dims_identical=True pixel_diff=454
+[00:55:55] upload 05_pale sha-identical=False dims_identical=True pixel_diff=629262
+[00:55:56] upload 06_dense_15 sha-identical=False dims_identical=True pixel_diff=454
+[00:55:57] upload 07_nested sha-identical=False dims_identical=True pixel_diff=454
+[00:55:59] upload 08_detached sha-identical=False dims_identical=True pixel_diff=1831
+[00:56:01] upload 09_pale_nested_combo sha-identical=False dims_identical=True pixel_diff=317481
+[00:56:02] upload 10_dense_20 sha-identical=False dims_identical=True pixel_diff=163
+[00:56:04] upload 11_halo_lines sha-identical=False dims_identical=True pixel_diff=3316
+[00:56:04] confirm 200 {"success":true}
+[01:00:04] annotate 200 in 239.2s
+[01:00:04] export 01_separated: Exported 4 masks into C:\Users\Administrator\AppData\Local\Temp\ppt_mask_c\mask_d2_recheckfix\01_separated; 0 empty (unmatched groups)
+[01:00:04] export 02_gap_8px: Exported 4 masks into C:\Users\Administrator\AppData\Local\Temp\ppt_mask_c\mask_d2_recheckfix\02_gap_8px; 0 empty (unmatched groups)
+[01:00:04] export 03_gap_2px: Exported 4 masks into C:\Users\Administrator\AppData\Local\Temp\ppt_mask_c\mask_d2_recheckfix\03_gap_2px; 0 empty (unmatched groups)
+[01:00:04] export 04_arrow_bridge: Exported 4 masks into C:\Users\Administrator\AppData\Local\Temp\ppt_mask_c\mask_d2_recheckfix\04_arrow_bridge; 0 empty (unmatched groups)
+[01:00:05] export 05_pale: Exported 4 masks into C:\Users\Administrator\AppData\Local\Temp\ppt_mask_c\mask_d2_recheckfix\05_pale; 0 empty (unmatched groups)
+[01:00:05] export 06_dense_15: Exported 16 masks into C:\Users\Administrator\AppData\Local\Temp\ppt_mask_c\mask_d2_recheckfix\06_dense_15; 0 empty (unmatched groups)
+[01:00:05] export 07_nested: Exported 4 masks into C:\Users\Administrator\AppData\Local\Temp\ppt_mask_c\mask_d2_recheckfix\07_nested; 0 empty (unmatched groups)
+[01:00:05] export 08_detached: Exported 4 masks into C:\Users\Administrator\AppData\Local\Temp\ppt_mask_c\mask_d2_recheckfix\08_detached; 0 empty (unmatched groups)
+[01:00:06] export 09_pale_nested_combo: Exported 4 masks into C:\Users\Administrator\AppData\Local\Temp\ppt_mask_c\mask_d2_recheckfix\09_pale_nested_combo; 0 empty (unmatched groups)
+[01:00:06] export 10_dense_20: Exported 21 masks into C:\Users\Administrator\AppData\Local\Temp\ppt_mask_c\mask_d2_recheckfix\10_dense_20; 0 empty (unmatched groups)
+[01:00:06] export 11_halo_lines: Exported 4 masks into C:\Users\Administrator\AppData\Local\Temp\ppt_mask_c\mask_d2_recheckfix\11_halo_lines; 0 empty (unmatched groups)
+[01:00:09] score exit=0
+{
+  "passed": true,
+  "cases": [
+    {
+      "case_id": "01_separated",
+      "passed": true,
+      "macro_iou": 0.9990375611278743,
+      "coverage": 0.9999477247552954,
+      "pale_recall": 0.9121140142517815
+    },
+    {
+      "case_id": "02_gap_8px",
+      "passed": true,
+      "macro_iou": 0.9990375611278743,
+      "coverage": 0.9999501819704512,
+      "pale_recall": 0.9121140142517815
+    },
+    {
+      "case_id": "03_gap_2px",
+      "passed": true,
+      "macro_iou": 0.9990375611278743,
+      "coverage": 0.9999505264917266,
+      "pale_recall": 0.9121140142517815
+    },
+    {
+      "case_id": "04_arrow_bridge",
+      "passed": true,
+      "macro_iou": 0.998398082218384,
+      "coverage": 0.9999477569370315,
+      "pale_recall": 0.9121140142517815
+    },
+    {
+      "case_id": "05_pale",
+      "passed": true,
+      "macro_iou": 0.9990375611278743,
+      "coverage": 0.9999477247552954,
+      "pale_recall": 0.9999431992631256
+    },
+    {
+      "case_id": "06_dense_15",
+      "passed": true,
+      "macro_iou": 0.9997593902819686,
+      "coverage": 0.9999568920822406,
+      "pale_recall": 0.9121140142517815
+    },
+    {
+      "case_id": "07_nested",
+      "passed": true,
+      "macro_iou": 0.9996804063158622,
+      "coverage": 0.9999491145939344,
+      "pale_recall": 0.9121140142517815
+    },
+    {
+      "case_id": "08_detached",
+      "passed": true,
+      "macro_iou": 0.9932623809351498,
+      "coverage": 0.996933227239573,
+      "pale_recall": 0.8604826546003017
+    },
+    {
+      "case_id": "09_pale_nested_combo",
+      "passed": true,
+      "macro_iou": 1.0,
+      "coverage": 1.0,
+      "pale_recall": 1.0
+    },
+    {
+      "case_id": "10_dense_20",
+      "passed": true,
+      "macro_iou": 1.0,
+      "coverage": 1.0,
+      "pale_recall": 1.0
+    },
+    {
+      "case_id": "11_halo_lines",
+      "passed": true,
+      "macro_iou": 1.0,
+      "coverage": 1.0,
+      "pale_recall": 1.0
+    }
+  ]
+}
+
+PROJECT_ID c291dcd8_005547

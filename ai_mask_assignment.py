@@ -693,6 +693,7 @@ def _complete_component_coverage(
         if str(element_id) and str(group_id)
     }
     anchors: dict[str, dict[str, float]] = {}
+    member_boxes: dict[str, list[tuple[str, tuple[float, float, float, float]]]] = {}
     canvas = elements_payload.get("canvas", {}) if isinstance(elements_payload.get("canvas"), dict) else {}
     width = max(1, int(canvas.get("width", 1920)))
     height = max(1, int(canvas.get("height", 1080)))
@@ -737,7 +738,8 @@ def _complete_component_coverage(
         ay1 = min(value[1] for value in clustered_bounds)
         ax2 = max(value[2] for value in clustered_bounds)
         ay2 = max(value[3] for value in clustered_bounds)
-        anchors[str(item.get("group_id") or "")] = {
+        group_id = str(item.get("group_id") or "")
+        anchors[group_id] = {
             "x": ax1,
             "y": ay1,
             "w": max(1.0, ax2 - ax1),
@@ -745,6 +747,14 @@ def _complete_component_coverage(
             "absorb_padding": absorb_padding,
             "dominant_area": float(dominant_area),
         }
+        member_boxes[group_id] = [
+            (str(element.get("element_id") or ""), bounds)
+            for element in anchor_elements
+            for bounds in (
+                _box_xyxy(element.get("raw_bbox") if isinstance(element.get("raw_bbox"), dict) else element.get("bbox", {})),
+            )
+            if bounds
+        ]
 
     # Recheck only small secondary components that the multimodal model placed
     # far from their group's dominant visual island. This is deliberately
@@ -766,6 +776,27 @@ def _complete_component_coverage(
         ax1, ay1, ax2, ay2 = anchor_bounds
         return float(np.hypot(max(ax1 - ex2, 0.0, ex1 - ax2), max(ay1 - ey2, 0.0, ey1 - ay2)))
 
+    def group_gap(element: dict[str, Any], group_id: str, anchor: dict[str, float]) -> float:
+        """Distance to a group = closer of its frozen envelope or any owned member box.
+
+        The envelope only clusters members adjacent to the dominant component,
+        so a group's sparse periphery (e.g. the left column of a card whose
+        dominant block sits right of centre) can sit farther away than the
+        neighbouring group's envelope. Comparing against the group's own
+        accepted member boxes keeps gap-filling ownership local.
+        """
+        element_bounds = _box_xyxy(element.get("raw_bbox") if isinstance(element.get("raw_bbox"), dict) else element.get("bbox", {}))
+        best = anchor_distance(element, anchor)
+        if element_bounds:
+            element_id = str(element.get("element_id") or "")
+            for member_id, bounds in member_boxes.get(group_id, []):
+                if member_id == element_id:
+                    continue
+                ex1, ey1, ex2, ey2 = element_bounds
+                bx1, by1, bx2, by2 = bounds
+                best = min(best, float(np.hypot(max(bx1 - ex2, 0.0, ex1 - bx2), max(by1 - ey2, 0.0, ey1 - by2))))
+        return best
+
     moves: list[tuple[str, str, str]] = []
     for item in accepted:
         current_group = str(item.get("group_id") or "")
@@ -783,6 +814,11 @@ def _complete_component_coverage(
             element = by_id[element_id]
             if int(element.get("area", 0)) > float(current_anchor.get("dominant_area", 0)) * 0.35:
                 continue
+            # This pass must stay envelope-only. Comparing against the current
+            # owner's own member boxes is circular: a mis-bound element sitting
+            # next to its wrong group's cards would defend that wrong binding
+            # and never be corrected. Only the frozen anchor envelope decides
+            # whether a better-anchored group should steal the component.
             distances = sorted(
                 (anchor_distance(element, anchor), group_id)
                 for group_id, anchor in anchors.items()
@@ -859,7 +895,7 @@ def _complete_component_coverage(
                 anchor_region = _layout_region(anchor_cx, anchor_cy, width, height)
                 if not _compatible_regions(element_region, anchor_region):
                     continue
-                dist = box_to_box_distance(anchor, bounds)
+                dist = min(box_to_box_distance(anchor, bounds), group_gap(element, group_id, anchor))
                 dist_list.append((dist, item, anchor))
 
             dist_list.sort(key=lambda value: value[0])
@@ -928,7 +964,7 @@ def _complete_component_coverage(
                 anchor_cx, anchor_cy = _box_center(anchor)
                 anchor_region = _layout_region(anchor_cx, anchor_cy, width, height)
                 compatible = _compatible_regions(element_region, anchor_region)
-                ranked.append((0 if compatible else 1, anchor_distance(element, anchor), item))
+                ranked.append((0 if compatible else 1, group_gap(element, group_id, anchor), item))
             if not ranked:
                 continue
             compatibility_rank, distance, owner = min(

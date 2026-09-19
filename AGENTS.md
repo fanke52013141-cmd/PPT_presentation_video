@@ -172,6 +172,15 @@ completion, and semantic/coverage quality gates. The engine remains
 the prompt/config compatibility surface, multimodal request adapter, and
 project-level orchestrator. A paged semantic-object vision match retries one
 truncated or malformed JSON completion before falling back deterministically.
+Semantic-object preparation must never merge a row of visual islands (same-size
+grid cards) into one text-line object; only sub-island glyph fragments may
+merge, and the container-island gate is the single shared predicate for both.
+Deterministic residual completion measures a group's distance as the closer of
+its frozen anchor envelope or any member box it already owns, so a group's
+sparse periphery keeps ownership local instead of being stolen by a neighboring
+envelope. The VL-correction recheck pass stays envelope-only: a mis-bound
+component must never be defended by the wrong owner's adjacent member box, so
+that pass compares frozen anchor envelopes exclusively.
 
 `scripts/build_reveal_scene.py` is the only production reveal builder.
 

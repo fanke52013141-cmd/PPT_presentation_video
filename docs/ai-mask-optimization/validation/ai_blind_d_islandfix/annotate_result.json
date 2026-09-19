@@ -1,0 +1,1850 @@
+{
+  "success": true,
+  "complete": true,
+  "quality_status": "needs_review",
+  "quality_passed": false,
+  "processed_slide_count": 11,
+  "updated_group_count": 73,
+  "unmatched_group_count": 0,
+  "review_required": true,
+  "review_issue_count": 10,
+  "review_issues": [
+    {
+      "slide_id": "slide_005",
+      "type": "forced_low_confidence_components",
+      "group_id": "group_002",
+      "component_count": 11,
+      "severity": "warning",
+      "message": "部分画面组件通过最近锚点规则补全，建议检查归属。"
+    },
+    {
+      "slide_id": "slide_005",
+      "type": "forced_low_confidence_components",
+      "group_id": "group_003",
+      "component_count": 13,
+      "severity": "warning",
+      "message": "部分画面组件通过最近锚点规则补全，建议检查归属。"
+    },
+    {
+      "slide_id": "slide_005",
+      "type": "forced_low_confidence_components",
+      "group_id": "group_004",
+      "component_count": 11,
+      "severity": "warning",
+      "message": "部分画面组件通过最近锚点规则补全，建议检查归属。"
+    },
+    {
+      "slide_id": "slide_007",
+      "type": "insufficient_visual_groups_for_independent_objects",
+      "group_id": "group_001",
+      "object_ids": [
+        "obj_002"
+      ],
+      "reason": "obj_002 是包含三个独立步骤卡片的公共外框容器，三个步骤分别对应三个独立的正文语块，但当前检测仅输出一个合并的容器对象，无法拆分匹配到三个独立的正文 group",
+      "severity": "blocking",
+      "message": "画面存在多个独立语义对象，但分镜提供的可 Reveal 语块不足。"
+    },
+    {
+      "slide_id": "slide_008",
+      "type": "forced_low_confidence_components",
+      "group_id": "group_002",
+      "component_count": 1,
+      "severity": "warning",
+      "message": "部分画面组件通过最近锚点规则补全，建议检查归属。"
+    },
+    {
+      "slide_id": "slide_008",
+      "type": "forced_low_confidence_components",
+      "group_id": "group_003",
+      "component_count": 1,
+      "severity": "warning",
+      "message": "部分画面组件通过最近锚点规则补全，建议检查归属。"
+    },
+    {
+      "slide_id": "slide_008",
+      "type": "forced_low_confidence_components",
+      "group_id": "group_004",
+      "component_count": 1,
+      "severity": "warning",
+      "message": "部分画面组件通过最近锚点规则补全，建议检查归属。"
+    },
+    {
+      "slide_id": "slide_011",
+      "type": "forced_low_confidence_components",
+      "group_id": "group_002",
+      "component_count": 55,
+      "severity": "warning",
+      "message": "部分画面组件通过最近锚点规则补全，建议检查归属。"
+    },
+    {
+      "slide_id": "slide_011",
+      "type": "forced_low_confidence_components",
+      "group_id": "group_003",
+      "component_count": 64,
+      "severity": "warning",
+      "message": "部分画面组件通过最近锚点规则补全，建议检查归属。"
+    },
+    {
+      "slide_id": "slide_011",
+      "type": "forced_low_confidence_components",
+      "group_id": "group_004",
+      "component_count": 55,
+      "severity": "warning",
+      "message": "部分画面组件通过最近锚点规则补全，建议检查归属。"
+    }
+  ],
+  "slides": [
+    {
+      "slide_id": "slide_001",
+      "mask_source": "raw_pair",
+      "detected_element_count": 22,
+      "residual_component_count": 6,
+      "matched_group_count": 4,
+      "updated_group_count": 4,
+      "skipped_group_count": 0,
+      "unmatched_element_count": 0,
+      "unmatched_group_count": 0,
+      "matching_method": "multimodal_with_deterministic_fallback+constrained_component_completion",
+      "quality": {
+        "version": "ai_mask_quality_v2",
+        "foreground_pixel_count": 709342,
+        "assigned_foreground_pixel_count": 709342,
+        "static_header_pixel_count": 0,
+        "foreground_coverage_ratio": 1.0,
+        "unassigned_component_count": 0,
+        "overlap_pixel_count": 0,
+        "exclusive_component_ownership": true,
+        "semantic_quality_passed": true,
+        "minimum_foreground_coverage_ratio": 0.995,
+        "passed": true
+      },
+      "semantic_quality": {
+        "version": "ai_mask_semantic_quality_v2",
+        "passed": true,
+        "group_checks": [
+          {
+            "group_id": "group_001",
+            "element_count": 19,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "title"
+            ],
+            "bbox": {
+              "x": 90,
+              "y": 83,
+              "w": 432,
+              "h": 53
+            }
+          },
+          {
+            "group_id": "group_002",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_left"
+            ],
+            "bbox": {
+              "x": 100,
+              "y": 270,
+              "w": 541,
+              "h": 431
+            }
+          },
+          {
+            "group_id": "group_003",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_center"
+            ],
+            "bbox": {
+              "x": 689,
+              "y": 270,
+              "w": 541,
+              "h": 431
+            }
+          },
+          {
+            "group_id": "group_004",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_right"
+            ],
+            "bbox": {
+              "x": 1278,
+              "y": 270,
+              "w": 541,
+              "h": 431
+            }
+          }
+        ],
+        "warnings": [],
+        "blocking_errors": [],
+        "residual_assignment_summary": {
+          "assigned": 0,
+          "unassigned": 0
+        }
+      },
+      "warnings": [],
+      "review_required": false,
+      "review_issues": []
+    },
+    {
+      "slide_id": "slide_002",
+      "mask_source": "raw_pair",
+      "detected_element_count": 22,
+      "residual_component_count": 6,
+      "matched_group_count": 4,
+      "updated_group_count": 4,
+      "skipped_group_count": 0,
+      "unmatched_element_count": 0,
+      "unmatched_group_count": 0,
+      "matching_method": "multimodal_with_deterministic_fallback+constrained_component_completion",
+      "quality": {
+        "version": "ai_mask_quality_v2",
+        "foreground_pixel_count": 744253,
+        "assigned_foreground_pixel_count": 744253,
+        "static_header_pixel_count": 0,
+        "foreground_coverage_ratio": 1.0,
+        "unassigned_component_count": 0,
+        "overlap_pixel_count": 0,
+        "exclusive_component_ownership": true,
+        "semantic_quality_passed": true,
+        "minimum_foreground_coverage_ratio": 0.995,
+        "passed": true
+      },
+      "semantic_quality": {
+        "version": "ai_mask_semantic_quality_v2",
+        "passed": true,
+        "group_checks": [
+          {
+            "group_id": "group_001",
+            "element_count": 19,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "title"
+            ],
+            "bbox": {
+              "x": 90,
+              "y": 83,
+              "w": 432,
+              "h": 53
+            }
+          },
+          {
+            "group_id": "group_002",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_left"
+            ],
+            "bbox": {
+              "x": 100,
+              "y": 270,
+              "w": 568,
+              "h": 431
+            }
+          },
+          {
+            "group_id": "group_003",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_center"
+            ],
+            "bbox": {
+              "x": 676,
+              "y": 270,
+              "w": 568,
+              "h": 431
+            }
+          },
+          {
+            "group_id": "group_004",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_right"
+            ],
+            "bbox": {
+              "x": 1252,
+              "y": 270,
+              "w": 568,
+              "h": 431
+            }
+          }
+        ],
+        "warnings": [],
+        "blocking_errors": [],
+        "residual_assignment_summary": {
+          "assigned": 0,
+          "unassigned": 0
+        }
+      },
+      "warnings": [],
+      "review_required": false,
+      "review_issues": []
+    },
+    {
+      "slide_id": "slide_003",
+      "mask_source": "raw_pair",
+      "detected_element_count": 22,
+      "residual_component_count": 6,
+      "matched_group_count": 4,
+      "updated_group_count": 4,
+      "skipped_group_count": 0,
+      "unmatched_element_count": 0,
+      "unmatched_group_count": 0,
+      "matching_method": "multimodal_with_deterministic_fallback+constrained_component_completion",
+      "quality": {
+        "version": "ai_mask_quality_v2",
+        "foreground_pixel_count": 749425,
+        "assigned_foreground_pixel_count": 749425,
+        "static_header_pixel_count": 0,
+        "foreground_coverage_ratio": 1.0,
+        "unassigned_component_count": 0,
+        "overlap_pixel_count": 0,
+        "exclusive_component_ownership": true,
+        "semantic_quality_passed": true,
+        "minimum_foreground_coverage_ratio": 0.995,
+        "passed": true
+      },
+      "semantic_quality": {
+        "version": "ai_mask_semantic_quality_v2",
+        "passed": true,
+        "group_checks": [
+          {
+            "group_id": "group_001",
+            "element_count": 19,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "title"
+            ],
+            "bbox": {
+              "x": 90,
+              "y": 83,
+              "w": 432,
+              "h": 53
+            }
+          },
+          {
+            "group_id": "group_002",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_left"
+            ],
+            "bbox": {
+              "x": 100,
+              "y": 270,
+              "w": 572,
+              "h": 431
+            }
+          },
+          {
+            "group_id": "group_003",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_center"
+            ],
+            "bbox": {
+              "x": 674,
+              "y": 270,
+              "w": 572,
+              "h": 431
+            }
+          },
+          {
+            "group_id": "group_004",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_right"
+            ],
+            "bbox": {
+              "x": 1248,
+              "y": 270,
+              "w": 572,
+              "h": 431
+            }
+          }
+        ],
+        "warnings": [],
+        "blocking_errors": [],
+        "residual_assignment_summary": {
+          "assigned": 0,
+          "unassigned": 0
+        }
+      },
+      "warnings": [],
+      "review_required": false,
+      "review_issues": []
+    },
+    {
+      "slide_id": "slide_004",
+      "mask_source": "raw_pair",
+      "detected_element_count": 22,
+      "residual_component_count": 6,
+      "matched_group_count": 4,
+      "updated_group_count": 4,
+      "skipped_group_count": 0,
+      "unmatched_element_count": 0,
+      "unmatched_group_count": 0,
+      "matching_method": "multimodal_with_deterministic_fallback+constrained_component_completion",
+      "quality": {
+        "version": "ai_mask_quality_v2",
+        "foreground_pixel_count": 709994,
+        "assigned_foreground_pixel_count": 709994,
+        "static_header_pixel_count": 0,
+        "foreground_coverage_ratio": 1.0,
+        "unassigned_component_count": 0,
+        "overlap_pixel_count": 0,
+        "exclusive_component_ownership": true,
+        "semantic_quality_passed": true,
+        "minimum_foreground_coverage_ratio": 0.995,
+        "passed": true
+      },
+      "semantic_quality": {
+        "version": "ai_mask_semantic_quality_v2",
+        "passed": true,
+        "group_checks": [
+          {
+            "group_id": "group_001",
+            "element_count": 19,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "title"
+            ],
+            "bbox": {
+              "x": 90,
+              "y": 83,
+              "w": 432,
+              "h": 53
+            }
+          },
+          {
+            "group_id": "group_002",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_left"
+            ],
+            "bbox": {
+              "x": 100,
+              "y": 270,
+              "w": 564,
+              "h": 431
+            }
+          },
+          {
+            "group_id": "group_003",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_center"
+            ],
+            "bbox": {
+              "x": 664,
+              "y": 270,
+              "w": 589,
+              "h": 431
+            }
+          },
+          {
+            "group_id": "group_004",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_right"
+            ],
+            "bbox": {
+              "x": 1253,
+              "y": 270,
+              "w": 566,
+              "h": 431
+            }
+          }
+        ],
+        "warnings": [],
+        "blocking_errors": [],
+        "residual_assignment_summary": {
+          "assigned": 0,
+          "unassigned": 0
+        }
+      },
+      "warnings": [],
+      "review_required": false,
+      "review_issues": []
+    },
+    {
+      "slide_id": "slide_005",
+      "mask_source": "raw_pair",
+      "detected_element_count": 133,
+      "residual_component_count": 23,
+      "matched_group_count": 4,
+      "updated_group_count": 4,
+      "skipped_group_count": 0,
+      "unmatched_element_count": 0,
+      "unmatched_group_count": 0,
+      "matching_method": "multimodal_with_deterministic_fallback+constrained_component_completion",
+      "quality": {
+        "version": "ai_mask_quality_v2",
+        "foreground_pixel_count": 709342,
+        "assigned_foreground_pixel_count": 709342,
+        "static_header_pixel_count": 0,
+        "foreground_coverage_ratio": 1.0,
+        "unassigned_component_count": 0,
+        "overlap_pixel_count": 0,
+        "exclusive_component_ownership": true,
+        "semantic_quality_passed": true,
+        "minimum_foreground_coverage_ratio": 0.995,
+        "passed": true
+      },
+      "semantic_quality": {
+        "version": "ai_mask_semantic_quality_v2",
+        "passed": true,
+        "group_checks": [
+          {
+            "group_id": "group_001",
+            "element_count": 19,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "title"
+            ],
+            "bbox": {
+              "x": 90,
+              "y": 83,
+              "w": 432,
+              "h": 53
+            }
+          },
+          {
+            "group_id": "group_002",
+            "element_count": 38,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_left"
+            ],
+            "bbox": {
+              "x": 100,
+              "y": 270,
+              "w": 541,
+              "h": 431
+            }
+          },
+          {
+            "group_id": "group_003",
+            "element_count": 39,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_center"
+            ],
+            "bbox": {
+              "x": 689,
+              "y": 270,
+              "w": 541,
+              "h": 431
+            }
+          },
+          {
+            "group_id": "group_004",
+            "element_count": 37,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_right"
+            ],
+            "bbox": {
+              "x": 1278,
+              "y": 270,
+              "w": 541,
+              "h": 431
+            }
+          }
+        ],
+        "warnings": [
+          {
+            "type": "forced_low_confidence_components",
+            "group_id": "group_002",
+            "component_count": 11
+          },
+          {
+            "type": "forced_low_confidence_components",
+            "group_id": "group_003",
+            "component_count": 13
+          },
+          {
+            "type": "forced_low_confidence_components",
+            "group_id": "group_004",
+            "component_count": 11
+          }
+        ],
+        "blocking_errors": [],
+        "residual_assignment_summary": {
+          "assigned": 35,
+          "unassigned": 0
+        }
+      },
+      "warnings": [
+        {
+          "type": "forced_low_confidence_components",
+          "group_id": "group_002",
+          "component_count": 11
+        },
+        {
+          "type": "forced_low_confidence_components",
+          "group_id": "group_003",
+          "component_count": 13
+        },
+        {
+          "type": "forced_low_confidence_components",
+          "group_id": "group_004",
+          "component_count": 11
+        }
+      ],
+      "review_required": true,
+      "review_issues": [
+        {
+          "slide_id": "slide_005",
+          "type": "forced_low_confidence_components",
+          "group_id": "group_002",
+          "component_count": 11,
+          "severity": "warning",
+          "message": "部分画面组件通过最近锚点规则补全，建议检查归属。"
+        },
+        {
+          "slide_id": "slide_005",
+          "type": "forced_low_confidence_components",
+          "group_id": "group_003",
+          "component_count": 13,
+          "severity": "warning",
+          "message": "部分画面组件通过最近锚点规则补全，建议检查归属。"
+        },
+        {
+          "slide_id": "slide_005",
+          "type": "forced_low_confidence_components",
+          "group_id": "group_004",
+          "component_count": 11,
+          "severity": "warning",
+          "message": "部分画面组件通过最近锚点规则补全，建议检查归属。"
+        }
+      ]
+    },
+    {
+      "slide_id": "slide_006",
+      "mask_source": "raw_pair",
+      "detected_element_count": 34,
+      "residual_component_count": 6,
+      "matched_group_count": 16,
+      "updated_group_count": 16,
+      "skipped_group_count": 0,
+      "unmatched_element_count": 0,
+      "unmatched_group_count": 0,
+      "matching_method": "multimodal_with_deterministic_fallback+constrained_component_completion",
+      "quality": {
+        "version": "ai_mask_quality_v2",
+        "foreground_pixel_count": 859861,
+        "assigned_foreground_pixel_count": 859861,
+        "static_header_pixel_count": 0,
+        "foreground_coverage_ratio": 1.0,
+        "unassigned_component_count": 0,
+        "overlap_pixel_count": 0,
+        "exclusive_component_ownership": true,
+        "semantic_quality_passed": true,
+        "minimum_foreground_coverage_ratio": 0.995,
+        "passed": true
+      },
+      "semantic_quality": {
+        "version": "ai_mask_semantic_quality_v2",
+        "passed": true,
+        "group_checks": [
+          {
+            "group_id": "group_001",
+            "element_count": 19,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "title"
+            ],
+            "bbox": {
+              "x": 90,
+              "y": 83,
+              "w": 432,
+              "h": 53
+            }
+          },
+          {
+            "group_id": "group_002",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_left"
+            ],
+            "bbox": {
+              "x": 100,
+              "y": 270,
+              "w": 324,
+              "h": 176
+            }
+          },
+          {
+            "group_id": "group_003",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_left"
+            ],
+            "bbox": {
+              "x": 448,
+              "y": 270,
+              "w": 324,
+              "h": 176
+            }
+          },
+          {
+            "group_id": "group_004",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_center"
+            ],
+            "bbox": {
+              "x": 796,
+              "y": 270,
+              "w": 324,
+              "h": 176
+            }
+          },
+          {
+            "group_id": "group_005",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_right"
+            ],
+            "bbox": {
+              "x": 1144,
+              "y": 270,
+              "w": 324,
+              "h": 176
+            }
+          },
+          {
+            "group_id": "group_006",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_right"
+            ],
+            "bbox": {
+              "x": 1492,
+              "y": 270,
+              "w": 324,
+              "h": 176
+            }
+          },
+          {
+            "group_id": "group_007",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_left"
+            ],
+            "bbox": {
+              "x": 100,
+              "y": 475,
+              "w": 324,
+              "h": 176
+            }
+          },
+          {
+            "group_id": "group_008",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_left"
+            ],
+            "bbox": {
+              "x": 448,
+              "y": 475,
+              "w": 324,
+              "h": 176
+            }
+          },
+          {
+            "group_id": "group_009",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_center"
+            ],
+            "bbox": {
+              "x": 796,
+              "y": 475,
+              "w": 324,
+              "h": 176
+            }
+          },
+          {
+            "group_id": "group_010",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_right"
+            ],
+            "bbox": {
+              "x": 1144,
+              "y": 475,
+              "w": 324,
+              "h": 176
+            }
+          },
+          {
+            "group_id": "group_011",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_right"
+            ],
+            "bbox": {
+              "x": 1492,
+              "y": 475,
+              "w": 324,
+              "h": 176
+            }
+          },
+          {
+            "group_id": "group_012",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_left"
+            ],
+            "bbox": {
+              "x": 100,
+              "y": 680,
+              "w": 324,
+              "h": 176
+            }
+          },
+          {
+            "group_id": "group_013",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_left"
+            ],
+            "bbox": {
+              "x": 448,
+              "y": 680,
+              "w": 324,
+              "h": 176
+            }
+          },
+          {
+            "group_id": "group_014",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_center"
+            ],
+            "bbox": {
+              "x": 796,
+              "y": 680,
+              "w": 324,
+              "h": 176
+            }
+          },
+          {
+            "group_id": "group_015",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_right"
+            ],
+            "bbox": {
+              "x": 1144,
+              "y": 680,
+              "w": 324,
+              "h": 176
+            }
+          },
+          {
+            "group_id": "group_016",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_right"
+            ],
+            "bbox": {
+              "x": 1492,
+              "y": 680,
+              "w": 324,
+              "h": 176
+            }
+          }
+        ],
+        "warnings": [],
+        "blocking_errors": [],
+        "residual_assignment_summary": {
+          "assigned": 0,
+          "unassigned": 0
+        }
+      },
+      "warnings": [],
+      "review_required": false,
+      "review_issues": []
+    },
+    {
+      "slide_id": "slide_007",
+      "mask_source": "raw_pair",
+      "detected_element_count": 23,
+      "residual_component_count": 6,
+      "matched_group_count": 4,
+      "updated_group_count": 4,
+      "skipped_group_count": 0,
+      "unmatched_element_count": 0,
+      "unmatched_group_count": 0,
+      "matching_method": "multimodal_with_deterministic_fallback+constrained_component_completion",
+      "quality": {
+        "version": "ai_mask_quality_v2",
+        "foreground_pixel_count": 728674,
+        "assigned_foreground_pixel_count": 728674,
+        "static_header_pixel_count": 0,
+        "foreground_coverage_ratio": 1.0,
+        "unassigned_component_count": 0,
+        "overlap_pixel_count": 0,
+        "exclusive_component_ownership": true,
+        "semantic_quality_passed": false,
+        "minimum_foreground_coverage_ratio": 0.995,
+        "passed": false
+      },
+      "semantic_quality": {
+        "version": "ai_mask_semantic_quality_v2",
+        "passed": false,
+        "group_checks": [
+          {
+            "group_id": "group_001",
+            "element_count": 20,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_center",
+              "title"
+            ],
+            "bbox": {
+              "x": 65,
+              "y": 83,
+              "w": 1791,
+              "h": 798
+            }
+          },
+          {
+            "group_id": "group_002",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_left"
+            ],
+            "bbox": {
+              "x": 100,
+              "y": 270,
+              "w": 541,
+              "h": 431
+            }
+          },
+          {
+            "group_id": "group_003",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_center"
+            ],
+            "bbox": {
+              "x": 689,
+              "y": 270,
+              "w": 541,
+              "h": 431
+            }
+          },
+          {
+            "group_id": "group_004",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_right"
+            ],
+            "bbox": {
+              "x": 1278,
+              "y": 270,
+              "w": 541,
+              "h": 431
+            }
+          }
+        ],
+        "warnings": [],
+        "blocking_errors": [
+          {
+            "type": "insufficient_visual_groups_for_independent_objects",
+            "group_id": "group_001",
+            "object_ids": [
+              "obj_002"
+            ],
+            "reason": "obj_002 是包含三个独立步骤卡片的公共外框容器，三个步骤分别对应三个独立的正文语块，但当前检测仅输出一个合并的容器对象，无法拆分匹配到三个独立的正文 group"
+          }
+        ],
+        "residual_assignment_summary": {
+          "assigned": 0,
+          "unassigned": 0
+        }
+      },
+      "warnings": [
+        {
+          "type": "shared_container_rebound",
+          "group_id": "group_002",
+          "to_group_id": "group_001",
+          "element_id": "el_auto_014",
+          "message": "共享外框/容器组件按几何包含关系改归标题组，请检查。"
+        },
+        {
+          "type": "insufficient_visual_groups_for_independent_objects",
+          "group_id": "group_001",
+          "object_ids": [
+            "obj_002"
+          ],
+          "reason": "obj_002 是包含三个独立步骤卡片的公共外框容器，三个步骤分别对应三个独立的正文语块，但当前检测仅输出一个合并的容器对象，无法拆分匹配到三个独立的正文 group"
+        }
+      ],
+      "review_required": true,
+      "review_issues": [
+        {
+          "slide_id": "slide_007",
+          "type": "insufficient_visual_groups_for_independent_objects",
+          "group_id": "group_001",
+          "object_ids": [
+            "obj_002"
+          ],
+          "reason": "obj_002 是包含三个独立步骤卡片的公共外框容器，三个步骤分别对应三个独立的正文语块，但当前检测仅输出一个合并的容器对象，无法拆分匹配到三个独立的正文 group",
+          "severity": "blocking",
+          "message": "画面存在多个独立语义对象，但分镜提供的可 Reveal 语块不足。"
+        }
+      ]
+    },
+    {
+      "slide_id": "slide_008",
+      "mask_source": "raw_pair",
+      "detected_element_count": 143,
+      "residual_component_count": 59,
+      "matched_group_count": 4,
+      "updated_group_count": 4,
+      "skipped_group_count": 0,
+      "unmatched_element_count": 0,
+      "unmatched_group_count": 0,
+      "matching_method": "multimodal_with_deterministic_fallback+constrained_component_completion",
+      "quality": {
+        "version": "ai_mask_quality_v2",
+        "foreground_pixel_count": 83263,
+        "assigned_foreground_pixel_count": 83263,
+        "static_header_pixel_count": 0,
+        "foreground_coverage_ratio": 1.0,
+        "unassigned_component_count": 0,
+        "overlap_pixel_count": 0,
+        "exclusive_component_ownership": true,
+        "semantic_quality_passed": true,
+        "minimum_foreground_coverage_ratio": 0.995,
+        "passed": true
+      },
+      "semantic_quality": {
+        "version": "ai_mask_semantic_quality_v2",
+        "passed": true,
+        "group_checks": [
+          {
+            "group_id": "group_001",
+            "element_count": 19,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "title"
+            ],
+            "bbox": {
+              "x": 90,
+              "y": 83,
+              "w": 432,
+              "h": 53
+            }
+          },
+          {
+            "group_id": "group_002",
+            "element_count": 40,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_left"
+            ],
+            "bbox": {
+              "x": 120,
+              "y": 297,
+              "w": 482,
+              "h": 346
+            }
+          },
+          {
+            "group_id": "group_004",
+            "element_count": 42,
+            "residual_count": 2,
+            "residual_ratio": 0.048,
+            "regions": [
+              "content_center",
+              "content_right"
+            ],
+            "bbox": {
+              "x": 1190,
+              "y": 296,
+              "w": 598,
+              "h": 347
+            }
+          },
+          {
+            "group_id": "group_003",
+            "element_count": 42,
+            "residual_count": 1,
+            "residual_ratio": 0.024,
+            "regions": [
+              "content_center",
+              "content_left"
+            ],
+            "bbox": {
+              "x": 601,
+              "y": 297,
+              "w": 590,
+              "h": 346
+            }
+          }
+        ],
+        "warnings": [
+          {
+            "type": "forced_low_confidence_components",
+            "group_id": "group_002",
+            "component_count": 1
+          },
+          {
+            "type": "forced_low_confidence_components",
+            "group_id": "group_003",
+            "component_count": 1
+          },
+          {
+            "type": "forced_low_confidence_components",
+            "group_id": "group_004",
+            "component_count": 1
+          }
+        ],
+        "blocking_errors": [],
+        "residual_assignment_summary": {
+          "assigned": 6,
+          "unassigned": 0
+        }
+      },
+      "warnings": [
+        {
+          "type": "forced_low_confidence_components",
+          "group_id": "group_002",
+          "component_count": 1
+        },
+        {
+          "type": "forced_low_confidence_components",
+          "group_id": "group_003",
+          "component_count": 1
+        },
+        {
+          "type": "forced_low_confidence_components",
+          "group_id": "group_004",
+          "component_count": 1
+        }
+      ],
+      "review_required": true,
+      "review_issues": [
+        {
+          "slide_id": "slide_008",
+          "type": "forced_low_confidence_components",
+          "group_id": "group_002",
+          "component_count": 1,
+          "severity": "warning",
+          "message": "部分画面组件通过最近锚点规则补全，建议检查归属。"
+        },
+        {
+          "slide_id": "slide_008",
+          "type": "forced_low_confidence_components",
+          "group_id": "group_003",
+          "component_count": 1,
+          "severity": "warning",
+          "message": "部分画面组件通过最近锚点规则补全，建议检查归属。"
+        },
+        {
+          "slide_id": "slide_008",
+          "type": "forced_low_confidence_components",
+          "group_id": "group_004",
+          "component_count": 1,
+          "severity": "warning",
+          "message": "部分画面组件通过最近锚点规则补全，建议检查归属。"
+        }
+      ]
+    },
+    {
+      "slide_id": "slide_009",
+      "mask_source": "raw_pair",
+      "detected_element_count": 80,
+      "residual_component_count": 11,
+      "matched_group_count": 4,
+      "updated_group_count": 4,
+      "skipped_group_count": 0,
+      "unmatched_element_count": 0,
+      "unmatched_group_count": 0,
+      "matching_method": "multimodal_with_deterministic_fallback+constrained_component_completion",
+      "quality": {
+        "version": "ai_mask_quality_v2",
+        "foreground_pixel_count": 708023,
+        "assigned_foreground_pixel_count": 708023,
+        "static_header_pixel_count": 0,
+        "foreground_coverage_ratio": 1.0,
+        "unassigned_component_count": 0,
+        "overlap_pixel_count": 0,
+        "exclusive_component_ownership": true,
+        "semantic_quality_passed": true,
+        "minimum_foreground_coverage_ratio": 0.995,
+        "passed": true
+      },
+      "semantic_quality": {
+        "version": "ai_mask_semantic_quality_v2",
+        "passed": true,
+        "group_checks": [
+          {
+            "group_id": "group_001",
+            "element_count": 20,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "title"
+            ],
+            "bbox": {
+              "x": 90,
+              "y": 83,
+              "w": 430,
+              "h": 53
+            }
+          },
+          {
+            "group_id": "group_002",
+            "element_count": 20,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_left"
+            ],
+            "bbox": {
+              "x": 100,
+              "y": 270,
+              "w": 541,
+              "h": 431
+            }
+          },
+          {
+            "group_id": "group_003",
+            "element_count": 20,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_center"
+            ],
+            "bbox": {
+              "x": 689,
+              "y": 270,
+              "w": 541,
+              "h": 431
+            }
+          },
+          {
+            "group_id": "group_004",
+            "element_count": 20,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_right"
+            ],
+            "bbox": {
+              "x": 1278,
+              "y": 270,
+              "w": 541,
+              "h": 431
+            }
+          }
+        ],
+        "warnings": [],
+        "blocking_errors": [],
+        "residual_assignment_summary": {
+          "assigned": 0,
+          "unassigned": 0
+        }
+      },
+      "warnings": [],
+      "review_required": false,
+      "review_issues": []
+    },
+    {
+      "slide_id": "slide_010",
+      "mask_source": "raw_pair",
+      "detected_element_count": 40,
+      "residual_component_count": 2,
+      "matched_group_count": 21,
+      "updated_group_count": 21,
+      "skipped_group_count": 0,
+      "unmatched_element_count": 0,
+      "unmatched_group_count": 0,
+      "matching_method": "multimodal_with_deterministic_fallback+constrained_component_completion",
+      "quality": {
+        "version": "ai_mask_quality_v2",
+        "foreground_pixel_count": 1012945,
+        "assigned_foreground_pixel_count": 1012945,
+        "static_header_pixel_count": 0,
+        "foreground_coverage_ratio": 1.0,
+        "unassigned_component_count": 0,
+        "overlap_pixel_count": 0,
+        "exclusive_component_ownership": true,
+        "semantic_quality_passed": true,
+        "minimum_foreground_coverage_ratio": 0.995,
+        "passed": true
+      },
+      "semantic_quality": {
+        "version": "ai_mask_semantic_quality_v2",
+        "passed": true,
+        "group_checks": [
+          {
+            "group_id": "group_001",
+            "element_count": 20,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "title"
+            ],
+            "bbox": {
+              "x": 91,
+              "y": 72,
+              "w": 428,
+              "h": 48
+            }
+          },
+          {
+            "group_id": "group_002",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_left"
+            ],
+            "bbox": {
+              "x": 100,
+              "y": 200,
+              "w": 334,
+              "h": 151
+            }
+          },
+          {
+            "group_id": "group_003",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_left"
+            ],
+            "bbox": {
+              "x": 446,
+              "y": 200,
+              "w": 334,
+              "h": 151
+            }
+          },
+          {
+            "group_id": "group_004",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_center"
+            ],
+            "bbox": {
+              "x": 792,
+              "y": 200,
+              "w": 334,
+              "h": 151
+            }
+          },
+          {
+            "group_id": "group_005",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_right"
+            ],
+            "bbox": {
+              "x": 1138,
+              "y": 200,
+              "w": 334,
+              "h": 151
+            }
+          },
+          {
+            "group_id": "group_006",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_right"
+            ],
+            "bbox": {
+              "x": 1484,
+              "y": 200,
+              "w": 334,
+              "h": 151
+            }
+          },
+          {
+            "group_id": "group_007",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_left"
+            ],
+            "bbox": {
+              "x": 100,
+              "y": 368,
+              "w": 334,
+              "h": 151
+            }
+          },
+          {
+            "group_id": "group_008",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_left"
+            ],
+            "bbox": {
+              "x": 446,
+              "y": 368,
+              "w": 334,
+              "h": 151
+            }
+          },
+          {
+            "group_id": "group_009",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_center"
+            ],
+            "bbox": {
+              "x": 792,
+              "y": 368,
+              "w": 334,
+              "h": 151
+            }
+          },
+          {
+            "group_id": "group_010",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_right"
+            ],
+            "bbox": {
+              "x": 1138,
+              "y": 368,
+              "w": 334,
+              "h": 151
+            }
+          },
+          {
+            "group_id": "group_011",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_right"
+            ],
+            "bbox": {
+              "x": 1484,
+              "y": 368,
+              "w": 334,
+              "h": 151
+            }
+          },
+          {
+            "group_id": "group_012",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_left"
+            ],
+            "bbox": {
+              "x": 100,
+              "y": 536,
+              "w": 334,
+              "h": 151
+            }
+          },
+          {
+            "group_id": "group_013",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_left"
+            ],
+            "bbox": {
+              "x": 446,
+              "y": 536,
+              "w": 334,
+              "h": 151
+            }
+          },
+          {
+            "group_id": "group_014",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_center"
+            ],
+            "bbox": {
+              "x": 792,
+              "y": 536,
+              "w": 334,
+              "h": 151
+            }
+          },
+          {
+            "group_id": "group_015",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_right"
+            ],
+            "bbox": {
+              "x": 1138,
+              "y": 536,
+              "w": 334,
+              "h": 151
+            }
+          },
+          {
+            "group_id": "group_016",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_right"
+            ],
+            "bbox": {
+              "x": 1484,
+              "y": 536,
+              "w": 334,
+              "h": 151
+            }
+          },
+          {
+            "group_id": "group_017",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_left"
+            ],
+            "bbox": {
+              "x": 100,
+              "y": 704,
+              "w": 334,
+              "h": 151
+            }
+          },
+          {
+            "group_id": "group_018",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_left"
+            ],
+            "bbox": {
+              "x": 446,
+              "y": 704,
+              "w": 334,
+              "h": 151
+            }
+          },
+          {
+            "group_id": "group_019",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_center"
+            ],
+            "bbox": {
+              "x": 792,
+              "y": 704,
+              "w": 334,
+              "h": 151
+            }
+          },
+          {
+            "group_id": "group_020",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_right"
+            ],
+            "bbox": {
+              "x": 1138,
+              "y": 704,
+              "w": 334,
+              "h": 151
+            }
+          },
+          {
+            "group_id": "group_021",
+            "element_count": 1,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "content_right"
+            ],
+            "bbox": {
+              "x": 1484,
+              "y": 704,
+              "w": 334,
+              "h": 151
+            }
+          }
+        ],
+        "warnings": [],
+        "blocking_errors": [],
+        "residual_assignment_summary": {
+          "assigned": 0,
+          "unassigned": 0
+        }
+      },
+      "warnings": [],
+      "review_required": false,
+      "review_issues": []
+    },
+    {
+      "slide_id": "slide_011",
+      "mask_source": "raw_pair",
+      "detected_element_count": 596,
+      "residual_component_count": 338,
+      "matched_group_count": 4,
+      "updated_group_count": 4,
+      "skipped_group_count": 0,
+      "unmatched_element_count": 0,
+      "unmatched_group_count": 0,
+      "matching_method": "multimodal_with_deterministic_fallback+constrained_component_completion",
+      "quality": {
+        "version": "ai_mask_quality_v2",
+        "foreground_pixel_count": 85097,
+        "assigned_foreground_pixel_count": 85097,
+        "static_header_pixel_count": 0,
+        "foreground_coverage_ratio": 1.0,
+        "unassigned_component_count": 0,
+        "overlap_pixel_count": 0,
+        "exclusive_component_ownership": true,
+        "semantic_quality_passed": true,
+        "minimum_foreground_coverage_ratio": 0.995,
+        "passed": true
+      },
+      "semantic_quality": {
+        "version": "ai_mask_semantic_quality_v2",
+        "passed": true,
+        "group_checks": [
+          {
+            "group_id": "group_001",
+            "element_count": 23,
+            "residual_count": 0,
+            "residual_ratio": 0.0,
+            "regions": [
+              "title"
+            ],
+            "bbox": {
+              "x": 88,
+              "y": 71,
+              "w": 522,
+              "h": 57
+            }
+          },
+          {
+            "group_id": "group_002",
+            "element_count": 191,
+            "residual_count": 76,
+            "residual_ratio": 0.398,
+            "regions": [
+              "content_left"
+            ],
+            "bbox": {
+              "x": 100,
+              "y": 264,
+              "w": 278,
+              "h": 213
+            }
+          },
+          {
+            "group_id": "group_003",
+            "element_count": 191,
+            "residual_count": 89,
+            "residual_ratio": 0.466,
+            "regions": [
+              "content_center"
+            ],
+            "bbox": {
+              "x": 689,
+              "y": 264,
+              "w": 278,
+              "h": 213
+            }
+          },
+          {
+            "group_id": "group_004",
+            "element_count": 191,
+            "residual_count": 76,
+            "residual_ratio": 0.398,
+            "regions": [
+              "content_right"
+            ],
+            "bbox": {
+              "x": 1278,
+              "y": 264,
+              "w": 278,
+              "h": 213
+            }
+          }
+        ],
+        "warnings": [
+          {
+            "type": "forced_low_confidence_components",
+            "group_id": "group_002",
+            "component_count": 55
+          },
+          {
+            "type": "forced_low_confidence_components",
+            "group_id": "group_003",
+            "component_count": 64
+          },
+          {
+            "type": "forced_low_confidence_components",
+            "group_id": "group_004",
+            "component_count": 55
+          }
+        ],
+        "blocking_errors": [],
+        "residual_assignment_summary": {
+          "assigned": 415,
+          "unassigned": 0
+        }
+      },
+      "warnings": [
+        {
+          "type": "object_page_budget_exceeded",
+          "object_ids": [],
+          "reason": "语义对象数量 181 超过分页预算，已放大每页对象数并全量送模，请复核分组粒度"
+        },
+        {
+          "type": "forced_low_confidence_components",
+          "group_id": "group_002",
+          "component_count": 55
+        },
+        {
+          "type": "forced_low_confidence_components",
+          "group_id": "group_003",
+          "component_count": 64
+        },
+        {
+          "type": "forced_low_confidence_components",
+          "group_id": "group_004",
+          "component_count": 55
+        }
+      ],
+      "review_required": true,
+      "review_issues": [
+        {
+          "slide_id": "slide_011",
+          "type": "forced_low_confidence_components",
+          "group_id": "group_002",
+          "component_count": 55,
+          "severity": "warning",
+          "message": "部分画面组件通过最近锚点规则补全，建议检查归属。"
+        },
+        {
+          "slide_id": "slide_011",
+          "type": "forced_low_confidence_components",
+          "group_id": "group_003",
+          "component_count": 64,
+          "severity": "warning",
+          "message": "部分画面组件通过最近锚点规则补全，建议检查归属。"
+        },
+        {
+          "slide_id": "slide_011",
+          "type": "forced_low_confidence_components",
+          "group_id": "group_004",
+          "component_count": 55,
+          "severity": "warning",
+          "message": "部分画面组件通过最近锚点规则补全，建议检查归属。"
+        }
+      ]
+    }
+  ],
+  "manifest_path": "C:\\Users\\Administrator\\AppData\\Local\\Temp\\ppt_mask_c\\runs\\c291dcd8_005547\\reveal_manifest.json"
+}

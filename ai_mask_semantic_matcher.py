@@ -82,11 +82,22 @@ def _semantic_objects(elements: list[dict[str, Any]], width: int, height: int) -
             "reason": reason,
         })
 
+    def is_island(item: dict[str, Any]) -> bool:
+        box = item["box"]
+        box_area = max(1.0, box["w"] * box["h"])
+        return (box_area >= canvas_area * 0.018 or item["area"] >= canvas_area * 0.006) and (
+            box["w"] >= width * 0.15 or box["h"] >= height * 0.12
+        )
+
+    # A row of same-height visual islands (grid cards) must not merge into one
+    # rank-0 text line: that would strand every card after the first under a
+    # single narrated group. Only sub-island fragments read as glyphs.
     text_items = [
         item for item in items
         if 5 <= item["box"]["h"] <= max(120, height * 0.14)
         and item["area"] <= canvas_area * 0.06
         and item["box"]["w"] <= width * 0.92
+        and not is_island(item)
     ]
     text_items.sort(key=lambda item: (_cy(item["box"]), _cx(item["box"])))
     lines: list[list[dict[str, Any]]] = []
@@ -114,10 +125,7 @@ def _semantic_objects(elements: list[dict[str, Any]], width: int, height: int) -
 
     for item in sorted(items, key=lambda part: part["area"], reverse=True):
         box = item["box"]
-        box_area = max(1.0, box["w"] * box["h"])
-        if not (box_area >= canvas_area * 0.018 or item["area"] >= canvas_area * 0.006):
-            continue
-        if not (box["w"] >= width * 0.15 or box["h"] >= height * 0.12):
+        if not is_island(item):
             continue
         pad = max(24.0, min(96.0, 0.09 * max(box["w"], box["h"])))
         child_ids = [part["id"] for part in items if _inside(box, part["box"], pad)]

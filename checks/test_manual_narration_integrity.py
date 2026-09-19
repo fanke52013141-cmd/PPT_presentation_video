@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-import server
+import server  # noqa: F401  (configure workflow dependencies as the app does)
 import narration_audio_service as narration_audio
 import visual_settings_service as visual_settings
 from scripts.write_narration_from_visual_contract import spoken_text_for_beat

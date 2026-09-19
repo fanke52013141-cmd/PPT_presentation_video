@@ -8,7 +8,6 @@ Verifies that:
 
 from __future__ import annotations
 
-import pytest
 
 from agent_contract.capabilities import CAPABILITIES, CapabilityStatus
 

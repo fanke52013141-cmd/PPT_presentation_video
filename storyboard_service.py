@@ -366,14 +366,6 @@ def run_step2_json_llm(
     )
 
 
-def script_plan_schema_hint() -> str:
-    return read_prompt_template(STEP2_PROMPT_TEMPLATE_FILES["script_output_example"])
-
-
-def visual_plan_schema_hint() -> str:
-    return read_prompt_template(STEP2_PROMPT_TEMPLATE_FILES["visual_output_example"])
-
-
 def storyboard_template_payload(
     template_id: str,
     name: str,

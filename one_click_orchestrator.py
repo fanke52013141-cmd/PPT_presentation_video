@@ -40,7 +40,7 @@ from one_click_resume_policy import (
     slides_requiring_images as _slides_requiring_images,
     upstream_image_inputs as _upstream_image_inputs,
 )
-from project_profile_store import DEFAULT_QUALITY_GATES, load_profile
+from project_profile_store import DEFAULT_QUALITY_GATES, load_profile  # noqa: F401  (source guard asserts the gate wiring import)
 from pipeline_state import complete_step, current_step_after_completion
 from tts_provider_service import normalize_tts_provider
 from video_render_service import RENDER_STAGE_PROGRESS

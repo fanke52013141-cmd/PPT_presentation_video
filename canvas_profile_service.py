@@ -8,7 +8,6 @@ the landscape defaults used by existing projects.
 from __future__ import annotations
 
 from copy import deepcopy
-import json
 from pathlib import Path
 from typing import Any
 
@@ -75,17 +74,6 @@ def write_project_canvas_snapshot(project: Any) -> dict[str, Any]:
     path.parent.mkdir(parents=True, exist_ok=True)
     write_json_atomic(path, payload)
     return payload
-
-
-def read_project_canvas_snapshot(project: Any) -> dict[str, Any]:
-    path = canvas_profile_path(project)
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8-sig"))
-    except (OSError, json.JSONDecodeError):
-        return get_project_canvas(project)
-    if not isinstance(payload, dict):
-        return get_project_canvas(project)
-    return get_canvas_profile(payload.get("id") or getattr(project, "canvas_profile", None))
 
 
 def canvas_prompt_context(project_or_profile: Any) -> dict[str, Any]:

@@ -89,15 +89,6 @@ def compact_list(value: Any) -> str:
     return str(value or "").strip()
 
 
-def as_lines(value: Any, *, indent: str = "") -> list[str]:
-    if isinstance(value, list):
-        return [f"{indent}- {str(item).strip()}" for item in value if str(item).strip()]
-    text = str(value or "").strip()
-    if not text:
-        return []
-    return [f"{indent}{line}" for line in text.splitlines() if line.strip()]
-
-
 def compact_visual_element_lines(slide: dict[str, Any]) -> list[str]:
     groups = slide.get("visual_groups")
     if not isinstance(groups, list):

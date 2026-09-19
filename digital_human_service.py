@@ -22,15 +22,13 @@ from __future__ import annotations
 import json
 import logging
 import os
-import shutil
 import subprocess
 import sys
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -297,7 +295,6 @@ def _run_mock_inference(
     out_dir = output_path.parent
     out_dir.mkdir(parents=True, exist_ok=True)
     # 用一张参考帧拼成测试视频（若 avatar 是视频则取首帧）
-    frame_file = out_dir / "frame.jpg"
     probe = ["ffprobe", "-v", "error", "-select_streams", "v:0",
              "-show_entries", "stream=width,height", "-of", "csv=s=x:p=0", str(avatar_path)]
     size = None
@@ -927,9 +924,8 @@ def composite(payload: Dict[str, Any]) -> Dict[str, Any]:
         base_path = _assert_path_safe(base_video, "base_video")
         if not base_path.exists():
             raise HTTPException(status_code=400, detail=f"base_video 不存在: {base_video}")
-    out_path = None
     if output:
-        out_path = _assert_path_safe(output, "output")
+        _assert_path_safe(output, "output")
     else:
         output = str(JOB_DIR / f"composite_{uuid.uuid4().hex[:8]}.mp4")
 

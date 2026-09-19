@@ -320,19 +320,6 @@ def readable_slide_title(raw_title: str, slide_index: int) -> str:
     return title[:24].rstrip(" /-—：:，,、")
 
 
-def infer_role(point: str, point_index: int) -> str:
-    text = clean_line(point)
-    if any(token in text for token in ("原话", "引用", "金句", "我不再")):
-        return "quote"
-    if any(token in text for token in ("Trigger", "Generator", "Evaluator", "Repair", "Stop", "触发器", "生成器", "评估器", "反馈修正", "终止")):
-        return "process_step"
-    if any(token in text for token in ("对比", "流程", "闭环", "链路", "→", "->")):
-        return "diagram"
-    if re.search(r"\d", text):
-        return "data_point" if point_index != 1 else "content_body"
-    return "content_body"
-
-
 def build_slide(slide_index: int, section: dict[str, Any], subtitle_policy: str) -> dict[str, Any]:
     slide_id = f"slide_{slide_index:03d}"
     title_text = readable_slide_title(str(section.get("title") or f"第{slide_index}页"), slide_index)

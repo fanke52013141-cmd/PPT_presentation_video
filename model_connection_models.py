@@ -65,6 +65,3 @@ class ModelConnectionResponse(BaseModel):
     revision: ModelConnectionRevisionResponse
 
 
-class ModelConnectionListResponse(BaseModel):
-    connections: list[ModelConnectionResponse]
-

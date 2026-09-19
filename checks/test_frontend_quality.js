@@ -47,7 +47,7 @@ for (const stateOwner of ['function createWorkflowState(', 'const state = create
   if (!app.includes(stateOwner)) throw new Error(`workflow state entry is missing ${stateOwner}`);
 }
 if (!css.includes('#toast-container')) throw new Error('toast container layout missing');
-for (const uiOwner of ['getToastPresentation', 'showToast', 'showCustomConfirm', 'escHtml', 'narrationDedupeKey', 'uniqueNarrationLines', 'autoResizeTextarea']) {
+for (const uiOwner of ['getToastPresentation', 'showToast', 'showCustomConfirm', 'escHtml', 'narrationDedupeKey', 'autoResizeTextarea']) {
   if (!uiFoundation.includes(`function ${uiOwner}(`)) throw new Error(`UI foundation is missing ${uiOwner}`);
   if (app.includes(`function ${uiOwner}(`)) throw new Error(`UI foundation ownership returned to app.js: ${uiOwner}`);
 }
@@ -317,7 +317,6 @@ for (const defaultConfigToken of [
   "apiGet('/api/accounts/current')",
   'defaultCreationConfig',
   'orderCreationConfigs',
-  '当前默认',
   'preferDefault',
 ]) {
   if (!projectProfile.includes(defaultConfigToken)) {
@@ -458,7 +457,6 @@ for (const maskWorkspaceFunction of [
   'normalizeManifestNarrationFragments',
   'getSlideMaskBoxes',
   'renderStep5Workspace',
-  'switchStep5Slide',
   'toggleStep5Fullscreen',
   'renderStep5BoxesForm',
   'renderStep5NarrationPanel',
@@ -973,7 +971,7 @@ if (!uiFoundation.includes('await onYes()') || !uiFoundation.includes('showToast
 for (const token of ['智能继续', '从头重跑', "startOneClick('resume')", "startOneClick('restart')"]) {
   if (!oneClick.includes(token)) throw new Error(`one-click recovery control missing: ${token}`);
 }
-if (!uiFoundation.includes('narrationDedupeKey') || !uiFoundation.includes('uniqueNarrationLines')) {
+if (!uiFoundation.includes('narrationDedupeKey')) {
   throw new Error('frontend narration deduplication guard is missing');
 }
 if (!html.includes('id="btn-back-home" class="secondary header-action header-return-home" hidden')) {

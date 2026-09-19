@@ -283,13 +283,6 @@ async function submitStep2BatchImport(mode) {
   }
 }
 
-function openStep2GenerationModal() {
-  const input = document.getElementById('step2-generation-requirement');
-  input.value = state.step2GenerationRequirement || '';
-  document.getElementById('modal-step2-generate').style.display = 'flex';
-  input.focus();
-}
-
 function closeStep2GenerationModal() {
   document.getElementById('modal-step2-generate').style.display = 'none';
 }
@@ -681,11 +674,6 @@ function scheduleStep2AutoSave() {
     if (!isCurrentWorkspaceProject(projectId, sessionVersion) || state.currentStep !== 2) return;
     saveStep2Contract({ silent: true, autosave: true, projectId, sessionVersion });
   }, 700);
-}
-
-function step2BodyContentText(slide) {
-  const items = Array.isArray(slide?.body_content) ? slide.body_content : [];
-  return normalizeStep2MultilineText(items.map(item => String(item || '')).filter(Boolean).join('\n'));
 }
 
 function step2NarrationText(slide) {

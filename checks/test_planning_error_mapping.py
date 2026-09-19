@@ -5,9 +5,7 @@ LLM 输出路径映射 502，纯层显式 400 的结构错误保持 400。
 """
 
 import sys
-import tempfile
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException

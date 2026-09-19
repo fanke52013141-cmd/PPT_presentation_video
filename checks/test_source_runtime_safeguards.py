@@ -6,7 +6,7 @@ import pytest
 
 import reveal_manifest_service
 import runtime_support
-import server
+import server  # noqa: F401  (configure workflow dependencies as the app does)
 
 
 class FakeProject:

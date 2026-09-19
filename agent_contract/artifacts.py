@@ -60,10 +60,6 @@ class ArtifactInfo(BaseModel):
     revision: int = 0
     created_at: Optional[str] = None
 
-    def to_dict(self) -> dict[str, Any]:
-        return self.model_dump()
-
-
 class ArtifactCollection(BaseModel):
     """A collection of artifacts for listing/display."""
 

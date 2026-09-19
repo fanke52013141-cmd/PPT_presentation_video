@@ -457,7 +457,7 @@ def cmd_batch_cleanup(args: argparse.Namespace) -> None:
             if not pid:
                 continue
             try:
-                result = client.delete_project(pid)
+                client.delete_project(pid)
                 results.append({"project_id": pid, "deleted": True})
             except AgentClientError as e:
                 errors.append({"project_id": pid, "error": str(e)})

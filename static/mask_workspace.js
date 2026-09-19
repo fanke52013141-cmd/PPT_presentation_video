@@ -696,17 +696,6 @@ function syncStep5FullscreenThumbs() {
   }
 }
 
-function switchStep5Slide(direction) {
-  if (!manifestData?.slides?.length) return;
-  stopMaskAnimationPreview();
-  saveStep5CurrentState();
-  const total = manifestData.slides.length;
-  state.activeSlideIndex = (state.activeSlideIndex + direction + total) % total;
-  invalidateStep5ExactPreview();
-  renderStep5Workspace();
-  scheduleStep5Autosave();
-}
-
 function toggleStep5Fullscreen(force) {
   const nextFullscreen = typeof force === 'boolean'
     ? force

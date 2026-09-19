@@ -10,7 +10,6 @@ Verifies that:
 from __future__ import annotations
 
 import json
-import pytest
 from unittest.mock import MagicMock
 
 from mcp_server.resources import (

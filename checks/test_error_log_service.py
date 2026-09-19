@@ -11,7 +11,6 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from error_log_service import (
-    ERROR_LOG_DIR,
     _extract_project_id_from_path,
     _resolve_step_label,
     log_pipeline_error,

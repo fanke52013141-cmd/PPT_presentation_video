@@ -15,7 +15,6 @@ import pytest
 
 from agent_contract.capabilities import (
     CAPABILITIES,
-    AgentCapability,
     CapabilityStatus,
     get_capability,
     get_capability_by_mcp_tool,

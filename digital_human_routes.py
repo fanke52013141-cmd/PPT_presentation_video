@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -232,14 +233,12 @@ def _read_comfyui_workflow_template(project: Project) -> Dict[str, Any] | None:
     otherwise the shared external InfiniteTalk workflow is used.
     """
     wf_path = _digi_dir(project) / "comfyui_workflow.json"
-    source = "project"
     if not wf_path.exists():
         configured = os.environ.get("PPT_DIGITAL_HUMAN_COMFYUI_WORKFLOW", "").strip()
         if configured:
             candidate = Path(configured).expanduser().resolve()
             if candidate.exists():
                 wf_path = candidate
-                source = "external"
     if not wf_path.exists():
         return None
     try:
@@ -496,7 +495,6 @@ def get_comfyui_workflow(
     """返回已保存的工作流模板是否存在及节点数。"""
     project = _project_or_404(db, project_id)
     wf_path = _digi_dir(project) / "comfyui_workflow.json"
-    source = "project"
     if not wf_path.exists():
         configured = os.environ.get("PPT_DIGITAL_HUMAN_COMFYUI_WORKFLOW", "").strip()
         if configured and Path(configured).expanduser().exists():
@@ -791,10 +789,6 @@ def _find_ffprobe() -> str:
             return str(probe)
     found = shutil.which("ffprobe")
     return found or ffmpeg
-
-
-def _full_audio_ready(project: Project) -> bool:
-    return _full_audio_path(project).exists()
 
 
 @router.post("/api/projects/{project_id}/digital-human/export-audio")

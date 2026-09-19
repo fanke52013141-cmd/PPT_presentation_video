@@ -9,7 +9,6 @@ never match and every synthesis re-billed the whole project.
 import ast
 import json
 import sys
-import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -98,9 +97,9 @@ def test_minimax_metadata_persists_pacing_fields() -> None:
         if not isinstance(node, ast.FunctionDef) or node.name != "main":
             continue
         text = ast.get_source_segment(source, node) or ""
-        assert '"speed": str(args.speed)' in text
-        assert '"volume": str(args.volume)' in text
-        assert '"pitch": str(args.pitch)' in text
+        assert '"speed": str(float(args.speed))' in text
+        assert '"volume": str(float(args.volume))' in text
+        assert '"pitch": str(float(args.pitch))' in text
         break
     else:
         raise AssertionError("minimax_tts.main not found")

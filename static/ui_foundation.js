@@ -114,16 +114,6 @@ function narrationDedupeKey(text) {
     .replace(/[\s\p{P}\p{S}_]+/gu, '');
 }
 
-function uniqueNarrationLines(lines) {
-  const seen = new Set();
-  return (lines || []).filter(text => {
-    const key = narrationDedupeKey(text);
-    if (key && seen.has(key)) return false;
-    if (key) seen.add(key);
-    return true;
-  });
-}
-
 function autoResizeTextarea(textarea) {
   if (!textarea) return;
   if (textarea.tagName === 'TEXTAREA') textarea.rows = 1;

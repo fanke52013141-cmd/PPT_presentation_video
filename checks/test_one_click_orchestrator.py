@@ -969,12 +969,12 @@ def test_one_click_routes_are_explicit_and_unique() -> None:
 
 
 if __name__ == "__main__":
-    test_atomic_status_write_and_resume()
+    test_atomic_status_write_and_resume_rewinds_when_upstream_is_missing()
     test_restart_does_not_reuse_failed_stage_state()
     test_contract_and_narration_are_only_reused_when_fresh_and_validated()
     test_disabled_quality_gate_marks_terminal_failure()
     test_only_uncorrected_ai_masks_are_replaceable()
-    test_one_click_uses_safe_mask_and_audio_modes()
+    test_one_click_uses_configured_mask_or_full_frame_and_safe_audio_modes()
     test_preflight_migrates_legacy_article_before_checking_source()
     test_one_click_routes_are_explicit_and_unique()
     print("one-click orchestrator checks passed")

@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 
 from agent_client.client import AgentClient, AgentClientError
 from agent_contract.capabilities import CAPABILITIES, CapabilityStatus
-from mcp_server import tools, presenters
+from mcp_server import tools
 
 
 class TestDispatchRouting:

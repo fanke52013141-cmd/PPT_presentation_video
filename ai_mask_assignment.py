@@ -221,12 +221,6 @@ def _union_bounds(bounds_list: list[tuple[float, float, float, float]]) -> tuple
     )
 
 
-def _bounds_area(bounds: tuple[float, float, float, float] | None) -> float:
-    if not bounds:
-        return 0.0
-    return max(0.0, bounds[2] - bounds[0]) * max(0.0, bounds[3] - bounds[1])
-
-
 def _layout_region(cx: float, cy: float, width: int, height: int) -> str:
     if cy < 220 * height / 1080:
         return "title"
@@ -312,10 +306,6 @@ def _element_ids_in_region(elements_payload: dict[str, Any], region: dict[str, A
             if element_id:
                 result.append(element_id)
     return result
-
-
-def _speech_signature(value: Any) -> str:
-    return "".join(char.casefold() for char in str(value or "") if char.isalnum())
 
 
 def _consolidate_title_regions(

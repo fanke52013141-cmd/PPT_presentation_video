@@ -21,15 +21,13 @@ import os
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
-from fastapi import HTTPException, UploadFile
-from sqlalchemy.orm import Session
+from fastapi import HTTPException
 
 from canvas_profile_service import get_project_canvas
 from database import Project
 from pipeline_lifecycle import write_json_atomic
-from project_config_runtime import get_config_value, project_subtitles_enabled
+from project_config_runtime import project_subtitles_enabled
 
 
 logger = logging.getLogger("PPTStudio.IPCharacter")

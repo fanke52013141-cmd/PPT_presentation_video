@@ -550,28 +550,6 @@
 
   // ---------------- 位置预设 / 重置（保留函数，按钮已移除） ----------------
 
-  function setPositionPreset(key) {
-    var circle = dhState.config.circle || { cx: 0.92, cy: 0.92, r: 0.10 };
-    var presets = {
-      right_bottom: [0.82, 0.78],
-      left_bottom: [0.18, 0.78],
-      right_top: [0.82, 0.22],
-      left_top: [0.18, 0.22],
-    };
-    var pos = presets[key] || presets.right_bottom;
-    circle.cx = pos[0];
-    circle.cy = pos[1];
-    applyCircleToPreview();
-    saveConfig();
-  }
-
-  function resetCircle() {
-    dhState.config.circle = { cx: 0.92, cy: 0.92, r: 0.10 };
-    dhState.config.video = { ox: 0.65, oy: 0.75, zoom: 0.65 };
-    applyConfigToUI();
-    saveConfig();
-  }
-
   function setShape(shape) {
     dhState.config.shape = shape === "rect" ? "rect" : "circle";
     applyConfigToUI();
@@ -613,12 +591,6 @@
   }
 
   // ---------------- 生成（ComfyUI） ----------------
-
-  function audioReadySlides() {
-    return Object.keys(dhState.audioReady || {}).filter(function (sid) {
-      return dhState.audioReady[sid];
-    });
-  }
 
   function updateAudioStatus() {
     var el = document.getElementById("dh-slide-status");

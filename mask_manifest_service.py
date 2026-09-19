@@ -6,7 +6,6 @@ from dataclasses import dataclass
 import json
 import logging
 from pathlib import Path
-import subprocess
 from typing import Any, Callable, Dict, List, Optional
 
 from canvas_profile_service import get_project_canvas

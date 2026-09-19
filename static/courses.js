@@ -390,12 +390,6 @@ const CourseTree = (() => {
     return '全部视频';
   }
 
-  function libraryRecordLabel(record) {
-    // 设计稿的卡片角标只显示课程名，独立视频显示"独立视频"
-    if (!record.course) return '独立视频';
-    return record.course.name;
-  }
-
   function projectProgress(project) {
     try {
       const completedProgress = calculateVisibleProgress(project.step_status || {}, projectFlowContext(project));
@@ -573,14 +567,6 @@ const CourseTree = (() => {
       cover.src = firstImage.url;
     } catch (_) {
       // 卡片预览为非关键增强；接口暂不可用时保持默认封面。
-    }
-  }
-
-  function isProjectComplete(project) {
-    try {
-      return Number(calculateVisibleProgress(project.step_status || {}, projectFlowContext(project))) >= 100;
-    } catch (_) {
-      return false;
     }
   }
 
@@ -959,16 +945,6 @@ const CourseTree = (() => {
     node.addEventListener('drop', (e) => handleNodeDrop(e, 'project', false));
 
     return node;
-  }
-
-  function formatLatestOutputTime(value) {
-    if (!value) return '';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return '';
-    return new Intl.DateTimeFormat('zh-CN', {
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', hour12: false,
-    }).format(date).replace(/\//g, '-');
   }
 
   function getStepInfo(project) {

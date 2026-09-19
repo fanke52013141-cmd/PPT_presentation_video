@@ -109,10 +109,6 @@
     return JSON.parse(JSON.stringify(objectValue(value)));
   }
 
-  function removeEmptyObject(parent, key) {
-    if (parent[key] && Object.keys(parent[key]).length === 0) delete parent[key];
-  }
-
   function setStringField(id, value) {
     const field = element(id);
     if (field) field.value = typeof value === 'string' ? value : '';
@@ -879,17 +875,6 @@
     toapis: { endpoint: 'https://toapis.cn', model: 'gpt-image-2-vip' },
     custom: { endpoint: '', model: '' },
   };
-
-  function modelProviderLabel(provider) {
-    const labels = {
-      openai_compatible: 'OpenAI 兼容接口',
-      toapis: 'ToAPIs',
-      minimax: 'MiniMax',
-      volcengine_seed_audio: '豆包音频生成 1.0',
-      comfyui_tts: 'ComfyUI / IndexTTS',
-    };
-    return labels[provider] || provider || '未指定服务';
-  }
 
   function setHidden(id, hidden) {
     const field = element(id);

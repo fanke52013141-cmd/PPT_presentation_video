@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from copy import deepcopy
 import pytest
@@ -17,7 +16,7 @@ from account_service import (
     rename_account,
     set_default_creation_config,
 )
-from database import Account, Base, Project
+from database import Account, Base
 from project_service import ProjectCreate, ProjectDependencies, ProjectService
 import creation_config_service
 import credential_store

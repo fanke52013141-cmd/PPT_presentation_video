@@ -124,23 +124,6 @@
     return options.join('');
   }
 
-  function creationConfigChoices(packages, defaultConfig = PROFILE_STATE.defaultCreationConfig) {
-    const available = availableCreationConfigs(packages);
-    if (!available.length) {
-      return '<div class="creation-config-choice" aria-disabled="true"><strong>暂无可用创作配置包</strong><span>请先在“创作配置”中保存一套配置。</span></div>';
-    }
-    const choices = available.map(item => ({
-      id: item.id,
-      name: item.name || '未命名配置包',
-      isDefault: item.id === defaultConfig?.packageId,
-    }));
-    return choices.map(item => `
-      <button type="button" class="creation-config-choice${item.isDefault ? ' is-default' : ''}" data-creation-config-choice="${esc(item.id)}" role="radio" aria-checked="false">
-        <span class="creation-config-choice-heading"><strong>${esc(item.name)}</strong>${item.isDefault ? '<em>当前默认</em>' : ''}</span>
-      </button>
-    `).join('');
-  }
-
   function refreshCreationConfigChoices(packages, { preferDefault = false } = {}) {
     // The former creation-config-choice-grid card wall is deliberately
     // replaced by the compact native select below.

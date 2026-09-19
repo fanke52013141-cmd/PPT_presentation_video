@@ -60,17 +60,6 @@ class ModelConnectionUnavailableError(ValueError):
     pass
 
 
-class ModelConnectionInUseError(ModelConnectionUnavailableError):
-    """Raised when deleting a connection would orphan creation packages."""
-
-    def __init__(self, connection_id: str, references: list[dict[str, Any]]) -> None:
-        self.connection_id = connection_id
-        self.references = references
-        super().__init__(
-            f"模型连接正在被 {len(references)} 个创作包版本引用，请先替换引用或将模型归档"
-        )
-
-
 @dataclass(frozen=True)
 class ModelConnectionDependencies:
     """Storage and time primitives supplied at application startup."""

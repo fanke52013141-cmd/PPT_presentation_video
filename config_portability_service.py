@@ -279,17 +279,6 @@ def _model_items_for_export(
     return result
 
 
-def _global_model_items(value: Any) -> Dict[str, Any]:
-    """Export every global connection, regardless of the active account."""
-    if not isinstance(value, dict) or not isinstance(value.get("connections"), dict):
-        return {}
-    return {
-        str(item_id): copy.deepcopy(item)
-        for item_id, item in value["connections"].items()
-        if _is_global_model_item(value, item)
-    }
-
-
 def _global_model_credential_refs(models: Any) -> set[str]:
     if not isinstance(models, dict):
         return set()
@@ -354,14 +343,6 @@ def _credential_items_for_models(credentials: Any, models: Any) -> Dict[str, Any
         ):
             result[ref] = copy.deepcopy(item)
     return result
-
-
-def _account_private_items(value: Any, collection_key: str) -> Dict[str, Any]:
-    return {
-        item_id: item
-        for item_id, item in _account_owned_items(value, collection_key).items()
-        if str(item.get("scope") or "account") != "global"
-    }
 
 
 def _export_reusable_config(

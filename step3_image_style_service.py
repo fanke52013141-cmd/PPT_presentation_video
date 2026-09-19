@@ -116,49 +116,6 @@ def _save_reference_images_to_step3_state(project: Any, manifest: dict[str, Any]
     _write_json(_state_path(project), state)
 
 
-def _step3_style_prompt(
-    project: Any,
-    dependencies: ProjectStyleDependencies,
-    refs_impl: Any,
-) -> str:
-    image_style = _step3_style(project)
-    fallback = ""
-    try:
-        fallback = dependencies.build_image_style_prompt(
-            dependencies.read_style_tokens_data()
-        )
-    except Exception:
-        fallback = ""
-    if not image_style:
-        return fallback
-
-    lines = ["Step 3 当前图片风格："]
-    system_content = _safe_text(image_style.get("system_content"), 12000)
-    if system_content:
-        lines.append(system_content)
-    else:
-        for label, key in [("风格名称", "style_name"), ("风格摘要", "style_summary")]:
-            value = _safe_text(image_style.get(key), 2000)
-            if value:
-                lines.append(f"- {label}: {value}")
-        visual_language = image_style.get("visual_language")
-        if isinstance(visual_language, dict) and visual_language:
-            lines.append("- 结构化视觉语言:")
-            for key, value in visual_language.items():
-                rendered = "、".join(str(item).strip() for item in value) if isinstance(value, list) else _safe_text(value, 1000)
-                if rendered:
-                    lines.append(f"  - {key}: {rendered}")
-        custom_requirement = _safe_text(image_style.get("custom_requirement"), 2000)
-        if custom_requirement:
-            lines.append(f"- 用户补充要求: {custom_requirement}")
-    try:
-        has_refs = bool(refs_impl._project_reference_paths(project))
-    except Exception:
-        has_refs = False
-    if has_refs:
-        lines.append("- 当前 Step 3 已有 1-3 张图片风格参考图；兼容模型会把这些 PNG 作为 reference images 一起提交。")
-    return "\n".join(lines)
-
 def manual_style_from_payload(*args: Any, **kwargs: Any) -> Any:
     """公开包装（审查 L-06）：路由与服务经公开名调用。"""
     return _manual_style_from_payload(*args, **kwargs)

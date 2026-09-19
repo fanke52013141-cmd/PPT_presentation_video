@@ -6,7 +6,6 @@ This module converts API artifact data into MCP-friendly content blocks.
 
 from __future__ import annotations
 
-import base64
 from typing import Any, Optional
 
 
@@ -79,23 +78,6 @@ def present_project_summary(project: dict[str, Any]) -> dict[str, Any]:
         lines.append(f"Current Step: {project['current_step']}")
     if project.get("slide_ids"):
         lines.append(f"Slides: {len(project['slide_ids'])} ({', '.join(project['slide_ids'][:5])}...)")
-    return {"type": "text", "text": "\n".join(lines)}
-
-
-def present_checkpoint_list(
-    project_id: str,
-    checkpoints: list[dict[str, Any]],
-) -> dict[str, Any]:
-    """Format a checkpoint list for Agent review."""
-    lines = [f"## Checkpoints for project {project_id}", ""]
-    for cp in checkpoints:
-        status_icon = "✓" if cp.get("approved") else "○"
-        lines.append(
-            f"{status_icon} {cp.get('checkpoint', '?')} — {cp.get('label', '')} "
-            f"[{cp.get('status', 'unknown')}]"
-        )
-    lines.append("")
-    lines.append("Use ppt_checkpoint_approve to approve or reject a checkpoint.")
     return {"type": "text", "text": "\n".join(lines)}
 
 

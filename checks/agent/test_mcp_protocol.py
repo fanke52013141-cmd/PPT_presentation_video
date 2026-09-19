@@ -11,9 +11,7 @@ Tests the MCPServer class directly without stdio I/O:
 
 from __future__ import annotations
 
-import json
-import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from agent_contract.versions import AGENT_API_VERSION, CONTRACT_VERSION
 from mcp_server.server import MCPServer, MCP_PROTOCOL_VERSION, SERVER_NAME

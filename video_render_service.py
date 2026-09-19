@@ -163,16 +163,6 @@ class VideoRenderService:
     ) -> list[dict[str, Any]]:
         return self.artifacts.list_video_items(project)
 
-    @staticmethod
-    def validate_remotion_public_assets(
-        props: dict[str, Any],
-        public_dir: str | Path,
-    ) -> list[str]:
-        return RemotionRunner.validate_public_assets(
-            props,
-            public_dir,
-        )
-
     def start_render(
         self,
         db: Session,
@@ -832,7 +822,7 @@ class VideoRenderService:
             )
 
             client = get_digital_human_client()
-            res = client.composite(
+            client.composite(
                 digi_video=digi,
                 base_video=result.output_path,
                 output=composite_out,
@@ -850,7 +840,7 @@ class VideoRenderService:
                 exc,
             )
             return result, False
-        except Exception as exc:
+        except Exception:
             # 合成失败不应拖垮已成功的渲染：记录原因并回退到原渲染产物。
             logger.exception(
                 "[digital-human] composite failed for %s, falling back to base render",
@@ -960,21 +950,6 @@ class VideoRenderService:
         project_id: str,
     ) -> Path:
         return self.artifacts.final_video_download(db, project_id)
-
-    def _mark_task_running(self, task_id: str) -> None:
-        """Transition one queued task to rendering when a worker picks it up.
-
-        Both the in-memory task and the persistent job row move together; the
-        row keeps its queued status until this point, which is what makes the
-        cross-project queue position computable while the task waits.
-        """
-        with self._tasks_lock:
-            task = self._tasks.get(task_id)
-            if task is not None and task.get("status") == "queued":
-                task["status"] = "rendering"
-                task["started_at"] = time.time()
-                task["elapsed_sec"] = 0.0
-        self.job_store.update(task_id, status="running")
 
     def _attach_queue_ahead(
         self,

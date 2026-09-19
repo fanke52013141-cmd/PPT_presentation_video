@@ -25,7 +25,6 @@ import generation_governor  # noqa: E402
 from generation_governor import (  # noqa: E402
     GenerationGovernor,
     GovernorDependencies,
-    RESOURCE_IMAGE,
 )
 
 BASE_URL = "https://api.toapis.com"

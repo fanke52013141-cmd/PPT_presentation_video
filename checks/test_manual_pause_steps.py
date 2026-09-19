@@ -1,9 +1,7 @@
 """Tests for the manual-pause-steps orchestrator logic and project service fields."""
 
 import json
-import os
 import sys
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 

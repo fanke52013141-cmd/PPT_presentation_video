@@ -4,15 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-import shutil
 import time
 from typing import Any
-import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-import yaml
 
 from canvas_profile_service import get_project_canvas
 from database import Project, get_db

@@ -368,7 +368,7 @@ def agent_update_project(
                 project.mask_enabled = 0
         if payload.presentation_mode is not None:
             if project.production_mode == "one_click" and payload.presentation_mode.value == "reveal":
-                raise HTTPException(status_code=400, detail="一键生成仅支持整页展示")
+                raise ValidationFailedError("一键生成仅支持整页展示")
             project.presentation_mode = payload.presentation_mode.value
             project.mask_enabled = 1 if project.presentation_mode == "reveal" else 0
 
@@ -393,7 +393,7 @@ def agent_delete_project(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Delete a project and all its artifacts."""
-    project = _resolve_project(db, project_id)
+    _resolve_project(db, project_id)
     from project_service import get_project_service
 
     service = get_project_service()
@@ -674,7 +674,7 @@ def agent_pipeline_stream(
 
     The stream auto-closes after the terminal event or after 30 minutes.
     """
-    project = _resolve_project(db, project_id)
+    _resolve_project(db, project_id)
 
     from database import SessionLocal
 
@@ -768,7 +768,7 @@ def agent_approve_checkpoint(
 ) -> dict[str, Any]:
     """Approve or reject a pipeline checkpoint."""
     project = _resolve_project(db, project_id)
-    cp_info = get_checkpoint(checkpoint)
+    get_checkpoint(checkpoint)
     if payload.checkpoint != checkpoint:
         raise ValidationFailedError("Checkpoint in the path and request body must match")
 

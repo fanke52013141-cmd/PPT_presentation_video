@@ -20,20 +20,17 @@ from typing import Any, Callable
 
 from PIL import Image, ImageChops
 from pptx import Presentation
-from pptx.util import Inches, Emu
+from pptx.util import Inches
 
 from artifact_fingerprint import presentation_input_fingerprint, sha256_file
 from ai_mask_contracts import REVEAL_PIPELINE_VERSION
 from pipeline_lifecycle import write_json_atomic
 from visual_provenance import visual_provenance_status
 from project_storage import (
-    UnsafeProjectPath,
     presentation_file,
     presentation_sidecar,
     presentations_dir,
-    safe_identifier,
     slide_dir,
-    slide_file,
     visual_contract_path,
 )
 

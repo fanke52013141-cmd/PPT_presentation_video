@@ -48,7 +48,6 @@ def _find_node_by_class(
     2. 如果匹配到多个，返回第一个
     3. 如果未匹配到，使用 fallback_id（旧工作流硬编码 ID）
     """
-    found = None
     for nid, node in wf.items():
         ct = node.get("class_type", "")
         for pat in patterns:

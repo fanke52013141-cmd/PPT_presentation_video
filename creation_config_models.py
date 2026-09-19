@@ -12,13 +12,6 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
-class ConnectionReference(BaseModel):
-    """An immutable reference to a configured provider connection revision."""
-
-    connection_id: str
-    revision: int = Field(ge=1)
-
-
 class CreationConfigCreate(BaseModel):
     name: str
     description: str = ""

@@ -33,7 +33,6 @@ if REPO_ROOT not in sys.path:
 from agent_idempotency_service import (
     AgentIdempotencyService,
     AgentIdempotencyDependencies,
-    ClaimResult,
     IdempotencyConflictError,
     compute_fingerprint,
     configure_idempotency_service,

@@ -181,31 +181,6 @@ def _png_bytes(image_path: Path, out_path: Path | None = None) -> bytes:
     return buffer.getvalue()
 
 
-def _overlay_bytes(image_path: Path, objects: list[dict[str, Any]], out_path: Path) -> bytes:
-    image = Image.open(image_path).convert("RGB")
-    ow, oh = image.size
-    if image.width > MAX_IMAGE_WIDTH:
-        ratio = MAX_IMAGE_WIDTH / image.width
-        image = image.resize((MAX_IMAGE_WIDTH, max(1, int(image.height * ratio))), Image.Resampling.LANCZOS)
-    sx, sy = image.width / ow, image.height / oh
-    draw = ImageDraw.Draw(image)
-    colors = [(220, 30, 50), (30, 130, 210), (24, 150, 95), (130, 70, 190), (210, 120, 24)]
-    for index, obj in enumerate(objects):
-        box = obj.get("bbox") if isinstance(obj.get("bbox"), dict) else {}
-        x1 = int(float(box.get("x", 0)) * sx); y1 = int(float(box.get("y", 0)) * sy)
-        x2 = int(float(box.get("x", 0) + box.get("w", 0)) * sx); y2 = int(float(box.get("y", 0) + box.get("h", 0)) * sy)
-        color = colors[index % len(colors)]
-        label = str(obj.get("object_id") or "")
-        draw.rectangle((x1, y1, x2, y2), outline=color, width=4)
-        label_box = draw.textbbox((x1, max(0, y1 - 16)), label)
-        draw.rectangle(label_box, fill=(255, 255, 255))
-        draw.text((x1, max(0, y1 - 16)), label, fill=color)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    image.save(out_path, format="PNG")
-    buffer = io.BytesIO(); image.save(buffer, format="PNG")
-    return buffer.getvalue()
-
-
 def _expand_matches(value: Any, objects: list[dict[str, Any]], elements: list[dict[str, Any]]) -> Any:
     if not isinstance(value, dict):
         return value

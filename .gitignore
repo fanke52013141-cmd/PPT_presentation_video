@@ -30,6 +30,7 @@ outputs/*
 !references/style_reference/**/*.jpg
 !references/style_reference/**/*.jpeg
 !references/style_reference/**/*.webp
+!docs/ai-mask-optimization/**/*.png
 
 # Local caches and builds
 .cache/

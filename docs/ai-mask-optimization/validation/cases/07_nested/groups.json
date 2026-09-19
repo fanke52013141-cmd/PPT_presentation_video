@@ -1,0 +1,24 @@
+{
+  "case_id": "07_nested",
+  "description": "公共边框归标题，内部三组独立",
+  "groups": [
+    {
+      "id": "group_001",
+      "narration": "标题与公共框架先出现"
+    },
+    {
+      "id": "group_002",
+      "narration": "步骤 1：采集数据"
+    },
+    {
+      "id": "group_003",
+      "narration": "步骤 2：清洗数据"
+    },
+    {
+      "id": "group_004",
+      "narration": "步骤 3：分析结果"
+    }
+  ],
+  "policy": "Visible nonwhite source pixels only; exact white is unscored background.",
+  "image_sha256": "95bce3321d29477ea8f8f4a2ece367ab5f4c660917303a5c9f7d05e4cfe9486f"
+}

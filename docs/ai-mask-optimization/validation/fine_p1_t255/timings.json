@@ -1,0 +1,179 @@
+{
+  "python": "3.13.5 (tags/v3.13.5:6cb20a2, Jun 11 2025, 16:15:46) [MSC v.1943 64 bit (AMD64)]",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "settings": {
+    "white_threshold": 245,
+    "color_tolerance": 12,
+    "closing_radius": 6,
+    "add_border": 2,
+    "connectivity": 8,
+    "min_element_area": 120,
+    "component_padding_px": 12,
+    "fine_grained_detection": true,
+    "pale_support_threshold": 255,
+    "enclosed_support_max_area_px": 20000
+  },
+  "scope": "Detector only, cold cache, includes crop IO; no DocLayout, OCR, VLM, renderer, or memory measurement",
+  "cases": [
+    {
+      "case_id": "01_separated",
+      "detector_cold_seconds": 6.644569900003262,
+      "components": 22,
+      "detector_version": "auto_elements_v4_fine_grained",
+      "detection_settings_fingerprint": "7cb1d17ca79d148c4f794dd679c967ca394191483d445e73d3ae298af74bc1f8",
+      "image_sha256": "cea9267ac74f93819569f7d169c9a0dc93a15cd63e5f20b8864cb46668ffacbc",
+      "algorithm_version": "ai_mask_fine_grained_p1_v1",
+      "stage_timings_sec": {
+        "seed_labeling_sec": 1.184,
+        "projection_split_sec": 0.085,
+        "support_layer_sec": 0.008,
+        "wave_expansion_sec": 0.022,
+        "wave_rounds": 238,
+        "merge_candidates_sec": 3.239,
+        "component_build_sec": 0.196
+      },
+      "conflict_pixel_count": 1,
+      "unassigned_support_pixel_count": 0
+    },
+    {
+      "case_id": "02_gap_8px",
+      "detector_cold_seconds": 6.867811000003712,
+      "components": 22,
+      "detector_version": "auto_elements_v4_fine_grained",
+      "detection_settings_fingerprint": "7cb1d17ca79d148c4f794dd679c967ca394191483d445e73d3ae298af74bc1f8",
+      "image_sha256": "6879d6913a34c86a7925ca1cdc534e9408a58500ecb949b77bfec39282994800",
+      "algorithm_version": "ai_mask_fine_grained_p1_v1",
+      "stage_timings_sec": {
+        "seed_labeling_sec": 1.257,
+        "projection_split_sec": 0.082,
+        "support_layer_sec": 0.008,
+        "wave_expansion_sec": 0.022,
+        "wave_rounds": 238,
+        "merge_candidates_sec": 3.409,
+        "component_build_sec": 0.218
+      },
+      "conflict_pixel_count": 1,
+      "unassigned_support_pixel_count": 0
+    },
+    {
+      "case_id": "03_gap_2px",
+      "detector_cold_seconds": 6.878294800000731,
+      "components": 22,
+      "detector_version": "auto_elements_v4_fine_grained",
+      "detection_settings_fingerprint": "7cb1d17ca79d148c4f794dd679c967ca394191483d445e73d3ae298af74bc1f8",
+      "image_sha256": "3994398b0078c930a1975666705c237a36a11eaefe753c4844415ceb39376a1e",
+      "algorithm_version": "ai_mask_fine_grained_p1_v1",
+      "stage_timings_sec": {
+        "seed_labeling_sec": 1.256,
+        "projection_split_sec": 0.081,
+        "support_layer_sec": 0.009,
+        "wave_expansion_sec": 0.022,
+        "wave_rounds": 238,
+        "merge_candidates_sec": 3.403,
+        "component_build_sec": 0.21
+      },
+      "conflict_pixel_count": 1,
+      "unassigned_support_pixel_count": 0
+    },
+    {
+      "case_id": "04_arrow_bridge",
+      "detector_cold_seconds": 6.883571300000767,
+      "components": 22,
+      "detector_version": "auto_elements_v4_fine_grained",
+      "detection_settings_fingerprint": "7cb1d17ca79d148c4f794dd679c967ca394191483d445e73d3ae298af74bc1f8",
+      "image_sha256": "9a2a03afc33637f7cf75e99c471edc95a38c7074541a360c03479272df78176f",
+      "algorithm_version": "ai_mask_fine_grained_p1_v1",
+      "stage_timings_sec": {
+        "seed_labeling_sec": 1.177,
+        "projection_split_sec": 0.3,
+        "support_layer_sec": 0.008,
+        "wave_expansion_sec": 0.022,
+        "wave_rounds": 238,
+        "merge_candidates_sec": 3.22,
+        "component_build_sec": 0.23
+      },
+      "conflict_pixel_count": 1,
+      "unassigned_support_pixel_count": 0
+    },
+    {
+      "case_id": "05_pale",
+      "detector_cold_seconds": 6.527532600011909,
+      "components": 133,
+      "detector_version": "auto_elements_v4_fine_grained",
+      "detection_settings_fingerprint": "7cb1d17ca79d148c4f794dd679c967ca394191483d445e73d3ae298af74bc1f8",
+      "image_sha256": "6cdf5c42f495fb97b3973bcdcd512988ee13c64a3657d950da9cecf1690aaaa0",
+      "algorithm_version": "ai_mask_fine_grained_p1_v1",
+      "stage_timings_sec": {
+        "seed_labeling_sec": 0.091,
+        "projection_split_sec": 0.006,
+        "support_layer_sec": 0.044,
+        "wave_expansion_sec": 2.895,
+        "wave_rounds": 1392,
+        "merge_candidates_sec": 0.474,
+        "component_build_sec": 0.199
+      },
+      "conflict_pixel_count": 9024,
+      "unassigned_support_pixel_count": 0
+    },
+    {
+      "case_id": "06_dense_15",
+      "detector_cold_seconds": 7.324642700012191,
+      "components": 34,
+      "detector_version": "auto_elements_v4_fine_grained",
+      "detection_settings_fingerprint": "7cb1d17ca79d148c4f794dd679c967ca394191483d445e73d3ae298af74bc1f8",
+      "image_sha256": "df2a915542f51852252b649621c2514ae39ad9e1a72eb70af65a1b843e7b32a2",
+      "algorithm_version": "ai_mask_fine_grained_p1_v1",
+      "stage_timings_sec": {
+        "seed_labeling_sec": 1.442,
+        "projection_split_sec": 0.085,
+        "support_layer_sec": 0.008,
+        "wave_expansion_sec": 0.021,
+        "wave_rounds": 238,
+        "merge_candidates_sec": 3.798,
+        "component_build_sec": 0.215
+      },
+      "conflict_pixel_count": 1,
+      "unassigned_support_pixel_count": 0
+    },
+    {
+      "case_id": "07_nested",
+      "detector_cold_seconds": 7.03781729999173,
+      "components": 23,
+      "detector_version": "auto_elements_v4_fine_grained",
+      "detection_settings_fingerprint": "7cb1d17ca79d148c4f794dd679c967ca394191483d445e73d3ae298af74bc1f8",
+      "image_sha256": "95bce3321d29477ea8f8f4a2ece367ab5f4c660917303a5c9f7d05e4cfe9486f",
+      "algorithm_version": "ai_mask_fine_grained_p1_v1",
+      "stage_timings_sec": {
+        "seed_labeling_sec": 1.22,
+        "projection_split_sec": 0.086,
+        "support_layer_sec": 0.853,
+        "wave_expansion_sec": 0.029,
+        "wave_rounds": 238,
+        "merge_candidates_sec": 3.32,
+        "component_build_sec": 0.212
+      },
+      "conflict_pixel_count": 1,
+      "unassigned_support_pixel_count": 0
+    },
+    {
+      "case_id": "08_detached",
+      "detector_cold_seconds": 3.520528599998215,
+      "components": 143,
+      "detector_version": "auto_elements_v4_fine_grained",
+      "detection_settings_fingerprint": "7cb1d17ca79d148c4f794dd679c967ca394191483d445e73d3ae298af74bc1f8",
+      "image_sha256": "6413de5bffe37b5ebd48a725dafb6aedcd15b7e45df3f0103b7aee60f3159f6e",
+      "algorithm_version": "ai_mask_fine_grained_p1_v1",
+      "stage_timings_sec": {
+        "seed_labeling_sec": 0.095,
+        "projection_split_sec": 0.006,
+        "support_layer_sec": 0.046,
+        "wave_expansion_sec": 0.126,
+        "wave_rounds": 1142,
+        "merge_candidates_sec": 0.462,
+        "component_build_sec": 0.025
+      },
+      "conflict_pixel_count": 11,
+      "unassigned_support_pixel_count": 0
+    }
+  ]
+}

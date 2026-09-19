@@ -1,0 +1,24 @@
+{
+  "case_id": "05_pale",
+  "description": "浅灰底板与细线",
+  "groups": [
+    {
+      "id": "group_001",
+      "narration": "标题与公共框架先出现"
+    },
+    {
+      "id": "group_002",
+      "narration": "步骤 1：采集数据"
+    },
+    {
+      "id": "group_003",
+      "narration": "步骤 2：清洗数据"
+    },
+    {
+      "id": "group_004",
+      "narration": "步骤 3：分析结果"
+    }
+  ],
+  "policy": "Visible nonwhite source pixels only; exact white is unscored background.",
+  "image_sha256": "6cdf5c42f495fb97b3973bcdcd512988ee13c64a3657d950da9cecf1690aaaa0"
+}

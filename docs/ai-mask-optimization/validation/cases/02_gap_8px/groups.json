@@ -1,0 +1,24 @@
+{
+  "case_id": "02_gap_8px",
+  "description": "8px 白色间隔",
+  "groups": [
+    {
+      "id": "group_001",
+      "narration": "标题与公共框架先出现"
+    },
+    {
+      "id": "group_002",
+      "narration": "步骤 1：采集数据"
+    },
+    {
+      "id": "group_003",
+      "narration": "步骤 2：清洗数据"
+    },
+    {
+      "id": "group_004",
+      "narration": "步骤 3：分析结果"
+    }
+  ],
+  "policy": "Visible nonwhite source pixels only; exact white is unscored background.",
+  "image_sha256": "6879d6913a34c86a7925ca1cdc534e9408a58500ecb949b77bfec39282994800"
+}

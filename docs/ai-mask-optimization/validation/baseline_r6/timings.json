@@ -1,0 +1,56 @@
+{
+  "python": "3.13.5 (tags/v3.13.5:6cb20a2, Jun 11 2025, 16:15:46) [MSC v.1943 64 bit (AMD64)]",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "settings": {
+    "white_threshold": 245,
+    "color_tolerance": 12,
+    "closing_radius": 6,
+    "add_border": 2,
+    "connectivity": 8,
+    "min_element_area": 120,
+    "component_padding_px": 12
+  },
+  "scope": "Detector only, cold cache, includes crop IO; no DocLayout, OCR, VLM, renderer, or memory measurement",
+  "cases": [
+    {
+      "case_id": "01_separated",
+      "detector_cold_seconds": 3.3937752999918303,
+      "components": 4
+    },
+    {
+      "case_id": "02_gap_8px",
+      "detector_cold_seconds": 3.5500083999941126,
+      "components": 2
+    },
+    {
+      "case_id": "03_gap_2px",
+      "detector_cold_seconds": 3.351773399990634,
+      "components": 2
+    },
+    {
+      "case_id": "04_arrow_bridge",
+      "detector_cold_seconds": 3.4653693000000203,
+      "components": 4
+    },
+    {
+      "case_id": "05_pale",
+      "detector_cold_seconds": 3.1126800999918487,
+      "components": 24
+    },
+    {
+      "case_id": "06_dense_15",
+      "detector_cold_seconds": 3.327541399994516,
+      "components": 16
+    },
+    {
+      "case_id": "07_nested",
+      "detector_cold_seconds": 3.667154099995969,
+      "components": 2
+    },
+    {
+      "case_id": "08_detached",
+      "detector_cold_seconds": 3.0702396999986377,
+      "components": 30
+    }
+  ]
+}

@@ -1,0 +1,72 @@
+{
+  "case_id": "06_dense_15",
+  "description": "15 个独立讲解组",
+  "groups": [
+    {
+      "id": "group_001",
+      "narration": "标题与公共框架先出现"
+    },
+    {
+      "id": "group_002",
+      "narration": "步骤 1：采集数据"
+    },
+    {
+      "id": "group_003",
+      "narration": "步骤 2：清洗数据"
+    },
+    {
+      "id": "group_004",
+      "narration": "步骤 3：分析结果"
+    },
+    {
+      "id": "group_005",
+      "narration": "步骤 4：采集数据"
+    },
+    {
+      "id": "group_006",
+      "narration": "步骤 5：清洗数据"
+    },
+    {
+      "id": "group_007",
+      "narration": "步骤 6：分析结果"
+    },
+    {
+      "id": "group_008",
+      "narration": "步骤 7：采集数据"
+    },
+    {
+      "id": "group_009",
+      "narration": "步骤 8：清洗数据"
+    },
+    {
+      "id": "group_010",
+      "narration": "步骤 9：分析结果"
+    },
+    {
+      "id": "group_011",
+      "narration": "步骤 10：采集数据"
+    },
+    {
+      "id": "group_012",
+      "narration": "步骤 11：清洗数据"
+    },
+    {
+      "id": "group_013",
+      "narration": "步骤 12：分析结果"
+    },
+    {
+      "id": "group_014",
+      "narration": "步骤 13：采集数据"
+    },
+    {
+      "id": "group_015",
+      "narration": "步骤 14：清洗数据"
+    },
+    {
+      "id": "group_016",
+      "narration": "步骤 15：分析结果"
+    }
+  ],
+  "policy": "Visible nonwhite source pixels only; exact white is unscored background.",
+  "image_sha256": "df2a915542f51852252b649621c2514ae39ad9e1a72eb70af65a1b843e7b32a2"
+}

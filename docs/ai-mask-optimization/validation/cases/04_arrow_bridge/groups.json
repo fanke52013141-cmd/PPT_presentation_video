@@ -1,0 +1,24 @@
+{
+  "case_id": "04_arrow_bridge",
+  "description": "箭头粘连，箭头归左侧卡片",
+  "groups": [
+    {
+      "id": "group_001",
+      "narration": "标题与公共框架先出现"
+    },
+    {
+      "id": "group_002",
+      "narration": "步骤 1：采集数据"
+    },
+    {
+      "id": "group_003",
+      "narration": "步骤 2：清洗数据"
+    },
+    {
+      "id": "group_004",
+      "narration": "步骤 3：分析结果"
+    }
+  ],
+  "policy": "Visible nonwhite source pixels only; exact white is unscored background.",
+  "image_sha256": "9a2a03afc33637f7cf75e99c471edc95a38c7074541a360c03479272df78176f"
+}

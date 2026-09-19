@@ -1,0 +1,24 @@
+{
+  "case_id": "03_gap_2px",
+  "description": "2px 白色间隔",
+  "groups": [
+    {
+      "id": "group_001",
+      "narration": "标题与公共框架先出现"
+    },
+    {
+      "id": "group_002",
+      "narration": "步骤 1：采集数据"
+    },
+    {
+      "id": "group_003",
+      "narration": "步骤 2：清洗数据"
+    },
+    {
+      "id": "group_004",
+      "narration": "步骤 3：分析结果"
+    }
+  ],
+  "policy": "Visible nonwhite source pixels only; exact white is unscored background.",
+  "image_sha256": "3994398b0078c930a1975666705c237a36a11eaefe753c4844415ceb39376a1e"
+}

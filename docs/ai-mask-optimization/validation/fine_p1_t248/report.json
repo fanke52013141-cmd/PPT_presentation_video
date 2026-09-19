@@ -1,0 +1,358 @@
+{
+  "passed": false,
+  "cases": [
+    {
+      "case_id": "01_separated",
+      "passed": false,
+      "macro_iou": 0.9917022162105921,
+      "coverage": 0.9995493026199788,
+      "overlap_foreground_pixels": 0,
+      "pale_recall": 0.24228028503562946,
+      "missing_source_rgb_mae": 0.000662937242798354,
+      "groups": [
+        {
+          "id": "group_001",
+          "iou": 0.9668088648423682,
+          "precision": 1.0,
+          "recall": 0.9668088648423682
+        },
+        {
+          "id": "group_002",
+          "iou": 1.0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        {
+          "id": "group_003",
+          "iou": 1.0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        {
+          "id": "group_004",
+          "iou": 1.0,
+          "precision": 1.0,
+          "recall": 1.0
+        }
+      ]
+    },
+    {
+      "case_id": "02_gap_8px",
+      "passed": false,
+      "macro_iou": 0.9917022162105921,
+      "coverage": 0.9995704877992952,
+      "overlap_foreground_pixels": 0,
+      "pale_recall": 0.24228028503562946,
+      "missing_source_rgb_mae": 0.000662937242798354,
+      "groups": [
+        {
+          "id": "group_001",
+          "iou": 0.9668088648423682,
+          "precision": 1.0,
+          "recall": 0.9668088648423682
+        },
+        {
+          "id": "group_002",
+          "iou": 1.0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        {
+          "id": "group_003",
+          "iou": 1.0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        {
+          "id": "group_004",
+          "iou": 1.0,
+          "precision": 1.0,
+          "recall": 1.0
+        }
+      ]
+    },
+    {
+      "case_id": "03_gap_2px",
+      "passed": false,
+      "macro_iou": 0.9917022162105921,
+      "coverage": 0.9995734581313722,
+      "overlap_foreground_pixels": 0,
+      "pale_recall": 0.24228028503562946,
+      "missing_source_rgb_mae": 0.000662937242798354,
+      "groups": [
+        {
+          "id": "group_001",
+          "iou": 0.9668088648423682,
+          "precision": 1.0,
+          "recall": 0.9668088648423682
+        },
+        {
+          "id": "group_002",
+          "iou": 1.0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        {
+          "id": "group_003",
+          "iou": 1.0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        {
+          "id": "group_004",
+          "iou": 1.0,
+          "precision": 1.0,
+          "recall": 1.0
+        }
+      ]
+    },
+    {
+      "case_id": "04_arrow_bridge",
+      "passed": false,
+      "macro_iou": 0.9910627373011017,
+      "coverage": 0.9995495800787317,
+      "overlap_foreground_pixels": 0,
+      "pale_recall": 0.24228028503562946,
+      "missing_source_rgb_mae": 0.000662937242798354,
+      "groups": [
+        {
+          "id": "group_001",
+          "iou": 0.9668088648423682,
+          "precision": 1.0,
+          "recall": 0.9668088648423682
+        },
+        {
+          "id": "group_002",
+          "iou": 0.9993603640344287,
+          "precision": 1.0,
+          "recall": 0.9993603640344287
+        },
+        {
+          "id": "group_003",
+          "iou": 0.9987215458141351,
+          "precision": 0.9993603640344287,
+          "recall": 0.9993603640344287
+        },
+        {
+          "id": "group_004",
+          "iou": 0.999360174513475,
+          "precision": 0.999360174513475,
+          "recall": 1.0
+        }
+      ]
+    },
+    {
+      "case_id": "05_pale",
+      "passed": false,
+      "macro_iou": 0.316269198125024,
+      "coverage": 0.11120074824242154,
+      "overlap_foreground_pixels": 0,
+      "pale_recall": 0.034256984955480504,
+      "missing_source_rgb_mae": 1.5360474537037037,
+      "groups": [
+        {
+          "id": "group_001",
+          "iou": 0.9668088648423682,
+          "precision": 1.0,
+          "recall": 0.9668088648423682
+        },
+        {
+          "id": "group_002",
+          "iou": 0.10003566410429388,
+          "precision": 1.0,
+          "recall": 0.10003566410429388
+        },
+        {
+          "id": "group_003",
+          "iou": 0.10022902370588715,
+          "precision": 1.0,
+          "recall": 0.10022902370588715
+        },
+        {
+          "id": "group_004",
+          "iou": 0.09800323984754669,
+          "precision": 1.0,
+          "recall": 0.09800323984754669
+        }
+      ]
+    },
+    {
+      "case_id": "06_dense_15",
+      "passed": false,
+      "macro_iou": 0.997925554052648,
+      "coverage": 0.9996283398441823,
+      "overlap_foreground_pixels": 0,
+      "pale_recall": 0.24228028503562946,
+      "missing_source_rgb_mae": 0.000662937242798354,
+      "groups": [
+        {
+          "id": "group_001",
+          "iou": 0.9668088648423682,
+          "precision": 1.0,
+          "recall": 0.9668088648423682
+        },
+        {
+          "id": "group_002",
+          "iou": 1.0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        {
+          "id": "group_003",
+          "iou": 1.0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        {
+          "id": "group_004",
+          "iou": 1.0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        {
+          "id": "group_005",
+          "iou": 1.0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        {
+          "id": "group_006",
+          "iou": 1.0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        {
+          "id": "group_007",
+          "iou": 1.0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        {
+          "id": "group_008",
+          "iou": 1.0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        {
+          "id": "group_009",
+          "iou": 1.0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        {
+          "id": "group_010",
+          "iou": 1.0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        {
+          "id": "group_011",
+          "iou": 1.0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        {
+          "id": "group_012",
+          "iou": 1.0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        {
+          "id": "group_013",
+          "iou": 1.0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        {
+          "id": "group_014",
+          "iou": 1.0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        {
+          "id": "group_015",
+          "iou": 1.0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        {
+          "id": "group_016",
+          "iou": 1.0,
+          "precision": 1.0,
+          "recall": 1.0
+        }
+      ]
+    },
+    {
+      "case_id": "07_nested",
+      "passed": false,
+      "macro_iou": 0.9972445841827039,
+      "coverage": 0.9995612852828404,
+      "overlap_foreground_pixels": 0,
+      "pale_recall": 0.24228028503562946,
+      "missing_source_rgb_mae": 0.000662937242798354,
+      "groups": [
+        {
+          "id": "group_001",
+          "iou": 0.9889783367308157,
+          "precision": 1.0,
+          "recall": 0.9889783367308157
+        },
+        {
+          "id": "group_002",
+          "iou": 1.0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        {
+          "id": "group_003",
+          "iou": 1.0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        {
+          "id": "group_004",
+          "iou": 1.0,
+          "precision": 1.0,
+          "recall": 1.0
+        }
+      ]
+    },
+    {
+      "case_id": "08_detached",
+      "passed": false,
+      "macro_iou": 0.9815431202790856,
+      "coverage": 0.9833233870432995,
+      "overlap_foreground_pixels": 0,
+      "pale_recall": 0.24132730015082957,
+      "missing_source_rgb_mae": 0.0017581340020576131,
+      "groups": [
+        {
+          "id": "group_001",
+          "iou": 0.9668088648423682,
+          "precision": 1.0,
+          "recall": 0.9668088648423682
+        },
+        {
+          "id": "group_002",
+          "iou": 0.9861626332214567,
+          "precision": 1.0,
+          "recall": 0.9861626332214567
+        },
+        {
+          "id": "group_003",
+          "iou": 0.9864999706521101,
+          "precision": 1.0,
+          "recall": 0.9864999706521101
+        },
+        {
+          "id": "group_004",
+          "iou": 0.9867010124004073,
+          "precision": 1.0,
+          "recall": 0.9867010124004073
+        }
+      ]
+    }
+  ],
+  "note": "RGB MAE measures omitted source pixels only, NOT production renderer fidelity. White overlap is unscored."
+}

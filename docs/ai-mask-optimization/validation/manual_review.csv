@@ -1,0 +1,10 @@
+case_id,expected_groups,reviewer,algorithm_version,model_version,run_number,correct_groups,early_reveal_groups,missing_groups,needs_review,correction_seconds,local_seconds,api_seconds,total_seconds,peak_memory_mb,notes
+01_separated,4,,,,,,,,,,,,,,
+02_gap_8px,4,,,,,,,,,,,,,,
+03_gap_2px,4,,,,,,,,,,,,,,
+04_arrow_bridge,4,,,,,,,,,,,,,,
+05_pale,4,,,,,,,,,,,,,,
+06_dense_15,16,,,,,,,,,,,,,,
+07_nested,4,,,,,,,,,,,,,,
+08_detached,4,,,,,,,,,,,,,,
+generated_stress,7,,,,,,,,,,,,,,

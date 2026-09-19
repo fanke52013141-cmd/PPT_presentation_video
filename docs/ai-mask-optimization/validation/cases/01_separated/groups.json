@@ -1,0 +1,24 @@
+{
+  "case_id": "01_separated",
+  "description": "独立卡片",
+  "groups": [
+    {
+      "id": "group_001",
+      "narration": "标题与公共框架先出现"
+    },
+    {
+      "id": "group_002",
+      "narration": "步骤 1：采集数据"
+    },
+    {
+      "id": "group_003",
+      "narration": "步骤 2：清洗数据"
+    },
+    {
+      "id": "group_004",
+      "narration": "步骤 3：分析结果"
+    }
+  ],
+  "policy": "Visible nonwhite source pixels only; exact white is unscored background.",
+  "image_sha256": "cea9267ac74f93819569f7d169c9a0dc93a15cd63e5f20b8864cb46668ffacbc"
+}

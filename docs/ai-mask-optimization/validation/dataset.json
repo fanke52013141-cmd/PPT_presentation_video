@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "size": [
+    1920,
+    1080
+  ],
+  "cases": [
+    "01_separated",
+    "02_gap_8px",
+    "03_gap_2px",
+    "04_arrow_bridge",
+    "05_pale",
+    "06_dense_15",
+    "07_nested",
+    "08_detached"
+  ],
+  "font": "Microsoft YaHei preferred; keep delivered PNGs fixed across machines"
+}

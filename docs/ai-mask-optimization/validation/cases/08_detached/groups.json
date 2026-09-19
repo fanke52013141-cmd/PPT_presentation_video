@@ -1,0 +1,24 @@
+{
+  "case_id": "08_detached",
+  "description": "文字、图标和装饰分离但同组",
+  "groups": [
+    {
+      "id": "group_001",
+      "narration": "标题与公共框架先出现"
+    },
+    {
+      "id": "group_002",
+      "narration": "步骤 1：采集数据"
+    },
+    {
+      "id": "group_003",
+      "narration": "步骤 2：清洗数据"
+    },
+    {
+      "id": "group_004",
+      "narration": "步骤 3：分析结果"
+    }
+  ],
+  "policy": "Visible nonwhite source pixels only; exact white is unscored background.",
+  "image_sha256": "6413de5bffe37b5ebd48a725dafb6aedcd15b7e45df3f0103b7aee60f3159f6e"
+}

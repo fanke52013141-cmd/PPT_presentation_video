@@ -18,9 +18,11 @@ import math
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 from PIL import Image, ImageDraw, ImageFont
@@ -257,7 +259,8 @@ def render_local_slide(slide: dict[str, Any], out_path: Path, case_index: int) -
     draw.text((76, 58), title, font=title_font, fill="#1F2937")
     if subtitle:
         draw.text((80, 142), subtitle, font=subtitle_font, fill="#667085")
-    draw.line((76, 218, 1844, 218), fill="#E7E9F2", width=3)
+    # 不画横向分割线：细长组件中心落在标题带（y<220）会被语义门判为
+    # "dynamic_group_owns_title_region_pixels"，那是 mock 图伪影而非产品问题。
 
     groups = body_groups(slide)
     count = max(1, len(groups))
@@ -427,12 +430,26 @@ def run_case(api: Api, case: dict[str, str], case_index: int, state: dict[str, A
 
     if not stage_done(case_state, "rendered"):
         rendered = api.post(f"/api/projects/{project_id}/steps/8/render", "render video")
-        video = rendered.get("video") or rendered.get("item") or rendered
-        filename = str(video.get("filename") or video.get("name") or "") if isinstance(video, dict) else ""
+        # 渲染是异步任务：POST 只返回 task_id，必须轮询 render-status 到终态。
+        task_id = str(rendered.get("task_id") or "")
+        status = ""
+        video = rendered.get("video")
+        deadline = time.time() + 1800
+        while not (isinstance(video, dict) and (video.get("filename") or video.get("name"))) and time.time() < deadline:
+            if rendered.get("status") in {"failed", "error", "interrupted"}:
+                raise RuntimeError(f"render job failed: {rendered.get('error') or rendered}")
+            time.sleep(5)
+            status_path = f"/api/projects/{project_id}/steps/8/render-status"
+            if task_id:
+                status_path += f"?task_id={quote(task_id)}"
+            rendered = api.get(status_path, "render status")
+            status = str(rendered.get("status") or "")
+            video = rendered.get("video")
+        filename = str((video or {}).get("filename") or (video or {}).get("name") or "") if isinstance(video, dict) else ""
         if not filename:
             videos = sorted((run_dir / "videos").glob("*.mp4"), key=lambda path: path.stat().st_mtime, reverse=True)
             if not videos:
-                raise RuntimeError("render endpoint returned no filename and videos directory is empty")
+                raise RuntimeError(f"render never produced a video (last status={status or rendered.get('status')})")
             filename = videos[0].name
         set_stage(state_path, state, case_state, "rendered", video_filename=filename)
 

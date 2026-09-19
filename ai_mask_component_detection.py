@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import deque
 import hashlib
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -218,6 +219,298 @@ def _morph_erode(mask: np.ndarray, kernel: np.ndarray) -> np.ndarray:
     return result
 
 
+def _label_components_bfs(
+    mask: np.ndarray,
+    nbrs: tuple[tuple[int, int], ...],
+) -> tuple[np.ndarray, list[list[tuple[int, int]]]]:
+    """8/4-connectivity labeling returning a label map and per-label coords."""
+    h, w = mask.shape
+    labels = np.zeros((h, w), dtype=np.int32)
+    groups: list[list[tuple[int, int]]] = []
+    next_id = 1
+    start_ys, start_xs = np.nonzero(mask)
+    for sy, sx in zip(start_ys.tolist(), start_xs.tolist()):
+        if labels[sy, sx]:
+            continue
+        queue: deque[tuple[int, int]] = deque([(sx, sy)])
+        labels[sy, sx] = next_id
+        coords: list[tuple[int, int]] = []
+        while queue:
+            x, y = queue.popleft()
+            coords.append((x, y))
+            for dx, dy in nbrs:
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < w and 0 <= ny < h and mask[ny, nx] and labels[ny, nx] == 0:
+                    labels[ny, nx] = next_id
+                    queue.append((nx, ny))
+        groups.append(coords)
+        next_id += 1
+    return labels, groups
+
+
+def _wavefront_fill_region(
+    labels: np.ndarray,
+    support: np.ndarray,
+    nbrs: tuple[tuple[int, int], ...],
+) -> tuple[int, int]:
+    """Propagate component labels from seeds into one support region.
+
+    Waves advance one pixel per round simultaneously. A support pixel reached
+    by two different components in the same round is a conflict: it is given
+    the smallest colliding label deterministically (never by processing
+    order) and counted so the ambiguous seam is visible as a review metric.
+    Pixel ownership still never overlaps, and support the waves cannot reach
+    stays unassigned instead of being swallowed by the nearest group.
+    """
+    maxint = int(np.iinfo(np.int32).max)
+    h, w = labels.shape
+    rounds = 0
+    conflicts = 0
+    while True:
+        neighbor_max = np.zeros((h, w), dtype=np.int32)
+        neighbor_min = np.full((h, w), maxint, dtype=np.int32)
+        for dx, dy in nbrs:
+            shifted = np.zeros((h, w), dtype=np.int32)
+            sy0, sy1 = max(0, dy), min(h, h + dy)
+            sx0, sx1 = max(0, dx), min(w, w + dx)
+            dy0, dx0 = max(0, -dy), max(0, -dx)
+            shifted[dy0:dy0 + (sy1 - sy0), dx0:dx0 + (sx1 - sx0)] = labels[sy0:sy1, sx0:sx1]
+            np.maximum(neighbor_max, shifted, out=neighbor_max)
+            np.minimum(neighbor_min, np.where(shifted > 0, shifted, maxint), out=neighbor_min)
+        reached = support & (labels == 0) & (neighbor_max > 0)
+        assign = reached & (neighbor_min == neighbor_max)
+        conflict = reached & (neighbor_min != neighbor_max)
+        if not bool(assign.any()) and not bool(conflict.any()):
+            return rounds, conflicts
+        labels[assign] = neighbor_min[assign]
+        labels[conflict] = neighbor_min[conflict]
+        conflicts += int(np.count_nonzero(conflict))
+        rounds += 1
+
+
+def _build_fine_grained_component(
+    coords: list[tuple[int, int]],
+    source_foreground: np.ndarray,
+    border: int,
+    ow: int,
+    oh: int,
+    settings: dict[str, Any],
+) -> dict[str, Any] | None:
+    xs = [c[0] for c in coords]
+    ys = [c[1] for c in coords]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    raw = {
+        "x": max(0, min_x - border),
+        "y": max(0, min_y - border),
+        "w": min(ow, max_x + 1 - min_x),
+        "h": min(oh, max_y + 1 - min_y),
+    }
+    if raw["w"] <= 0 or raw["h"] <= 0:
+        return None
+    box = _pad_box(raw, ow, oh, int(settings["component_padding_px"]))
+    cx, cy = box["x"] + box["w"] / 2, box["y"] + box["h"] / 2
+    source_runs = _coords_to_row_runs(coords, border, ow, oh)
+    component_runs = _solidify_planar_component(source_runs, raw, len(coords))
+    component_runs = _protect_other_foreground(component_runs, source_runs, source_foreground)
+    return {
+        "element_id": "",
+        "bbox": box,
+        "raw_bbox": raw,
+        "center": {"x": round(cx, 2), "y": round(cy, 2)},
+        "area": len(coords),
+        "mask_pixel_count": sum(run[2] - run[1] for run in component_runs),
+        "position": _position(cx, cy, ow, oh),
+        "ocr_text": "",
+        "mask_rle": {
+            "encoding": "row_runs_v1",
+            "width": ow,
+            "height": oh,
+            "runs": component_runs,
+        },
+    }
+
+
+def _detect_fine_grained_components(
+    white: np.ndarray,
+    lo: np.ndarray,
+    bg: np.ndarray,
+    nbrs: tuple[tuple[int, int], ...],
+    border: int,
+    ow: int,
+    oh: int,
+    settings: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], np.ndarray, dict[str, Any]]:
+    """P1 detection: original seed components + bounded two-threshold diffusion.
+
+    Pixel ownership = connected components of strictly non-white content
+    (no irreversible full-image closing) expanded wavefront-style into a
+    support layer (pale near-white and small enclosed white). Closing at
+    radii 2/6 only records merge candidates and never owns pixels.
+    """
+    h, w = white.shape
+    timings: dict[str, float] = {}
+    stage = time.perf_counter()
+    pale_threshold = int(settings.get("pale_support_threshold", 254))
+    enclosed_cap = int(settings.get("enclosed_support_max_area_px", 20000))
+    canvas_area = ow * oh
+    min_element_area = int(settings["min_element_area"])
+
+    content = ~white
+    _seed_labels, seed_groups = _label_components_bfs(content, nbrs)
+    timings["seed_labeling_sec"] = round(time.perf_counter() - stage, 3)
+
+    stage = time.perf_counter()
+    labels = np.zeros((h, w), dtype=np.int32)
+    owned_groups: list[list[tuple[int, int]]] = []
+    for coords in seed_groups:
+        for seg_coords, _raw in _projection_split(coords, border, ow, oh, canvas_area):
+            if not seg_coords:
+                continue
+            owned_groups.append(seg_coords)
+            comp_id = len(owned_groups)
+            for x, y in seg_coords:
+                labels[y, x] = comp_id
+    timings["projection_split_sec"] = round(time.perf_counter() - stage, 3)
+
+    stage = time.perf_counter()
+    pale = white & (lo < pale_threshold)
+    enclosed = white & ~bg
+    _enclosed_labels, enclosed_groups = _label_components_bfs(enclosed, nbrs)
+    excluded = np.zeros((h, w), dtype=bool)
+    review_regions: list[dict[str, Any]] = []
+    for coords in enclosed_groups:
+        if len(coords) <= enclosed_cap:
+            continue
+        xs = [c[0] for c in coords]
+        ys = [c[1] for c in coords]
+        raw = {
+            "x": max(0, min(xs) - border),
+            "y": max(0, min(ys) - border),
+            "w": min(ow, max(xs) + 1 - min(xs)),
+            "h": min(oh, max(ys) + 1 - min(ys)),
+        }
+        review_regions.append({"bbox": raw, "area": len(coords)})
+        for x, y in coords:
+            excluded[y, x] = True
+    support = pale | (enclosed & ~excluded)
+    timings["support_layer_sec"] = round(time.perf_counter() - stage, 3)
+
+    stage = time.perf_counter()
+    wave_rounds = 0
+    conflict_pixels = 0
+    _support_labels, support_groups = _label_components_bfs(support, nbrs)
+    for coords in support_groups:
+        xs = np.fromiter((c[0] for c in coords), dtype=np.int32, count=len(coords))
+        ys = np.fromiter((c[1] for c in coords), dtype=np.int32, count=len(coords))
+        # Expand the slice by one pixel on each side so seeds and earlier
+        # waves that touch this region from outside are visible inside it.
+        x1 = max(0, int(xs.min()) - 1)
+        x2 = min(w, int(xs.max()) + 2)
+        y1 = max(0, int(ys.min()) - 1)
+        y2 = min(h, int(ys.max()) + 2)
+        sub_support = np.zeros((y2 - y1, x2 - x1), dtype=bool)
+        sub_support[ys - y1, xs - x1] = True
+        sub_labels = labels[y1:y2, x1:x2].astype(np.int32, copy=True)
+        region_rounds, region_conflicts = _wavefront_fill_region(sub_labels, sub_support, nbrs)
+        wave_rounds += region_rounds
+        conflict_pixels += region_conflicts
+        changed = sub_support & (sub_labels != 0)
+        current = labels[y1:y2, x1:x2]
+        labels[y1:y2, x1:x2] = np.where(changed, sub_labels, current)
+    timings["wave_expansion_sec"] = round(time.perf_counter() - stage, 3)
+    timings["wave_rounds"] = wave_rounds
+
+    stage = time.perf_counter()
+    merge_candidates: dict[str, Any] = {}
+    for radius in (2, 6):
+        kernel = np.ones((radius * 2 + 1, radius * 2 + 1), dtype=np.uint8)
+        closed = _morph_erode(_morph_dilate(content.astype(np.uint8) * 255, kernel), kernel) > 0
+        closed_labels, _closed_groups = _label_components_bfs(closed, nbrs)
+        owned = (labels > 0) & content
+        oy, ox = np.nonzero(owned)
+        pairs = np.stack([closed_labels[oy, ox], labels[oy, ox]], axis=1)
+        pairs = np.unique(pairs, axis=0)
+        groups_by_closed: dict[int, list[int]] = {}
+        for closed_id, comp_id in pairs.tolist():
+            groups_by_closed.setdefault(int(closed_id), []).append(int(comp_id))
+        sizes = {
+            int(comp_id): len(coords)
+            for comp_id, coords in enumerate(owned_groups, 1)
+        }
+        # Drop the closed CC containing the unscored white canvas border; it
+        # is a background artifact and its members are mostly sub-threshold
+        # anti-alias fragments that would only add noise.
+        border_closed_id = 0
+        for probe_y, probe_x in ((0, 0), (0, w - 1), (h - 1, 0), (h - 1, w - 1)):
+            value = int(closed_labels[probe_y, probe_x])
+            if value:
+                border_closed_id = value
+                break
+        merge_groups = []
+        for closed_id, comp_ids in groups_by_closed.items():
+            if closed_id == border_closed_id or len(comp_ids) < 2:
+                continue
+            merge_groups.append({
+                "element_ids": [],
+                "component_ids": sorted(comp_ids),
+                "total_area": int(sum(sizes.get(comp_id, 0) for comp_id in comp_ids)),
+            })
+        merge_groups.sort(key=lambda group: -group["total_area"])
+        merge_candidates[f"radius_{radius}"] = merge_groups
+    timings["merge_candidates_sec"] = round(time.perf_counter() - stage, 3)
+
+    stage = time.perf_counter()
+    owned_foreground = labels > 0
+    source_foreground = owned_foreground[border:border + oh, border:border + ow]
+    oy, ox = np.nonzero(owned_foreground)
+    comp_ids = labels[oy, ox]
+    order = np.argsort(comp_ids, kind="stable")
+    sorted_comp = comp_ids[order]
+    boundaries = np.flatnonzero(np.diff(sorted_comp)) + 1
+    groups: list[tuple[int, np.ndarray, np.ndarray]] = []
+    start = 0
+    for stop in list(boundaries) + [len(sorted_comp)]:
+        idx = order[start:stop]
+        groups.append((int(sorted_comp[start]), oy[idx], ox[idx]))
+        start = stop
+    candidates: list[dict[str, Any]] = []
+    residual: list[dict[str, Any]] = []
+    id_to_element: dict[int, dict[str, Any]] = {}
+    for comp_id, gy, gx in groups:
+        coords = list(zip(gx.tolist(), gy.tolist()))
+        component = _build_fine_grained_component(coords, source_foreground, border, ow, oh, settings)
+        if component is None:
+            continue
+        id_to_element[comp_id] = component
+        if component["area"] >= min_element_area:
+            candidates.append(component)
+        else:
+            residual.append(component)
+    candidates.sort(key=lambda e: (e["bbox"]["y"], e["bbox"]["x"]))
+    residual.sort(key=lambda e: (e["bbox"]["y"], e["bbox"]["x"]))
+    timings["component_build_sec"] = round(time.perf_counter() - stage, 3)
+
+    unassigned_support = int(np.count_nonzero(support & (labels == 0)))
+    meta = {
+        "algorithm_version": "ai_mask_fine_grained_p1_v1",
+        "stage_timings_sec": timings,
+        "fine_grained": {
+            "pale_support_threshold": pale_threshold,
+            "enclosed_support_max_area_px": enclosed_cap,
+            "seed_component_count": len(seed_groups),
+            "split_component_count": len(owned_groups),
+            "conflict_pixel_count": conflict_pixels,
+            "unassigned_support_pixel_count": unassigned_support,
+            "excluded_enclosed_regions": review_regions,
+            "merge_candidates": merge_candidates,
+        },
+        # Popped and resolved to element_ids by detect_elements once IDs exist.
+        "_component_id_map": id_to_element,
+    }
+    return candidates, residual, source_foreground, meta
+
+
 def detect_elements(image_path: Path, slide_dir: Path, settings: dict[str, Any], layout_boxes: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     out_dir = slide_dir / "auto_mask"
     cache_path = out_dir / "auto_elements.json"
@@ -231,8 +524,17 @@ def detect_elements(image_path: Path, slide_dir: Path, settings: dict[str, Any],
             "connectivity",
             "min_element_area",
             "component_padding_px",
+            "fine_grained_detection",
+            "pale_support_threshold",
+            "enclosed_support_max_area_px",
         )
     }
+    fine_grained = str(settings.get("fine_grained_detection") or "").strip().lower() in {
+        "1", "true", "yes", "on", "y"
+    }
+    expected_version = (
+        "auto_elements_v4_fine_grained" if fine_grained else "auto_elements_v3_exact_rle_cached"
+    )
     layout_fingerprint = _layout_fingerprint(layout_boxes)
     source_sha256 = hashlib.sha256(image_path.read_bytes()).hexdigest()
     settings_fingerprint = hashlib.sha256(
@@ -242,7 +544,7 @@ def detect_elements(image_path: Path, slide_dir: Path, settings: dict[str, Any],
         try:
             cached = _read_json(cache_path)
             if (
-                cached.get("version") == "auto_elements_v3_exact_rle_cached"
+                cached.get("version") == expected_version
                 and cached.get("source_sha256") == source_sha256
                 and cached.get("detection_settings_fingerprint") == settings_fingerprint
                 and cached.get("layout_fingerprint") == layout_fingerprint
@@ -289,84 +591,88 @@ def detect_elements(image_path: Path, slide_dir: Path, settings: dict[str, Any],
 
     fg = ~bg
 
-    # Morphological closing: dilate then erode the foreground mask to bridge
-    # small gaps (<= closing_radius pixels) caused by hand-drawn stroke breaks.
-    # This merges fragmented strokes of the same element BEFORE connected-
-    # component detection, drastically reducing the number of fragments.
-    closing_radius = int(settings.get("closing_radius", 6))
-    if closing_radius > 0:
-        fg_uint8 = fg.astype(np.uint8) * 255
-        kernel_size = closing_radius * 2 + 1
-        kernel = np.ones((kernel_size, kernel_size), dtype=np.uint8)
-        # dilation: bridge gaps; erosion: restore original size
-        dilated = _morph_dilate(fg_uint8, kernel)
-        closed = _morph_erode(dilated, kernel)
-        fg = closed > 0
-
-    source_foreground = fg[border:border + oh, border:border + ow] if border else fg
-    visited = np.zeros((h, w), dtype=bool)
-    ys, xs = np.nonzero(fg)
     candidates: list[dict[str, Any]] = []
     residual: list[dict[str, Any]] = []
+    fine_grained_meta: dict[str, Any] | None = None
+    if fine_grained:
+        candidates, residual, source_foreground, fine_grained_meta = _detect_fine_grained_components(
+            white, lo, bg, nbrs, border, ow, oh, settings
+        )
+    else:
+        # Morphological closing: dilate then erode the foreground mask to bridge
+        # small gaps (<= closing_radius pixels) caused by hand-drawn stroke breaks.
+        # This merges fragmented strokes of the same element BEFORE connected-
+        # component detection, drastically reducing the number of fragments.
+        closing_radius = int(settings.get("closing_radius", 6))
+        if closing_radius > 0:
+            fg_uint8 = fg.astype(np.uint8) * 255
+            kernel_size = closing_radius * 2 + 1
+            kernel = np.ones((kernel_size, kernel_size), dtype=np.uint8)
+            # dilation: bridge gaps; erosion: restore original size
+            dilated = _morph_dilate(fg_uint8, kernel)
+            closed = _morph_erode(dilated, kernel)
+            fg = closed > 0
+
+        source_foreground = fg[border:border + oh, border:border + ow] if border else fg
+        visited = np.zeros((h, w), dtype=bool)
+        ys, xs = np.nonzero(fg)
+        for sx, sy in zip(xs.tolist(), ys.tolist()):
+            if visited[sy, sx] or not fg[sy, sx]:
+                continue
+            q.clear()
+            q.append((sx, sy))
+            visited[sy, sx] = True
+            coords: list[tuple[int, int]] = []
+            while q:
+                x, y = q.popleft()
+                coords.append((x, y))
+                for dx, dy in nbrs:
+                    nx, ny = x + dx, y + dy
+                    if 0 <= nx < w and 0 <= ny < h and fg[ny, nx] and not visited[ny, nx]:
+                        visited[ny, nx] = True
+                        q.append((nx, ny))
+            # Projection splitting: if this connected component is oversized
+            # (bridged by morphological closing), split it at projection valleys.
+            canvas_area = ow * oh
+            segments = _projection_split(coords, border, ow, oh, canvas_area)
+            for seg_coords, raw in segments:
+                if not seg_coords:
+                    continue
+                x1 = raw["x"]; y1 = raw["y"]
+                x2 = x1 + raw["w"]; y2 = y1 + raw["h"]
+                if x2 <= x1 or y2 <= y1:
+                    continue
+                box = _pad_box(raw, ow, oh, int(settings["component_padding_px"]))
+                cx, cy = box["x"] + box["w"] / 2, box["y"] + box["h"] / 2
+                source_runs = _coords_to_row_runs(seg_coords, border, ow, oh)
+                component_runs = _solidify_planar_component(source_runs, raw, len(seg_coords))
+                component_runs = _protect_other_foreground(component_runs, source_runs, source_foreground)
+                component = {
+                    "element_id": "",
+                    "bbox": box,
+                    "raw_bbox": raw,
+                    "center": {"x": round(cx, 2), "y": round(cy, 2)},
+                    "area": len(seg_coords),
+                    "mask_pixel_count": sum(run[2] - run[1] for run in component_runs),
+                    "position": _position(cx, cy, ow, oh),
+                    "ocr_text": "",
+                    "mask_rle": {
+                        "encoding": "row_runs_v1",
+                        "width": ow,
+                        "height": oh,
+                        "runs": component_runs,
+                    },
+                }
+                if len(seg_coords) >= int(settings["min_element_area"]):
+                    candidates.append(component)
+                else:
+                    residual.append(component)
+        candidates.sort(key=lambda e: (e["bbox"]["y"], e["bbox"]["x"]))
+        residual.sort(key=lambda e: (e["bbox"]["y"], e["bbox"]["x"]))
     crop_dir = out_dir / "elements"
     crop_dir.mkdir(parents=True, exist_ok=True)
     for stale_crop in crop_dir.glob("*.png"):
         stale_crop.unlink(missing_ok=True)
-    for sx, sy in zip(xs.tolist(), ys.tolist()):
-        if visited[sy, sx] or not fg[sy, sx]:
-            continue
-        q.clear()
-        q.append((sx, sy))
-        visited[sy, sx] = True
-        coords: list[tuple[int, int]] = []
-        while q:
-            x, y = q.popleft()
-            coords.append((x, y))
-            for dx, dy in nbrs:
-                nx, ny = x + dx, y + dy
-                if 0 <= nx < w and 0 <= ny < h and fg[ny, nx] and not visited[ny, nx]:
-                    visited[ny, nx] = True
-                    q.append((nx, ny))
-        # Projection splitting: if this connected component is oversized
-        # (bridged by morphological closing), split it at projection valleys.
-        canvas_area = ow * oh
-        segments = _projection_split(coords, border, ow, oh, canvas_area)
-        for seg_coords, raw in segments:
-            if not seg_coords:
-                continue
-            sx = [c[0] for c in seg_coords]
-            sy = [c[1] for c in seg_coords]
-            x1 = raw["x"]; y1 = raw["y"]
-            x2 = x1 + raw["w"]; y2 = y1 + raw["h"]
-            if x2 <= x1 or y2 <= y1:
-                continue
-            box = _pad_box(raw, ow, oh, int(settings["component_padding_px"]))
-            cx, cy = box["x"] + box["w"] / 2, box["y"] + box["h"] / 2
-            source_runs = _coords_to_row_runs(seg_coords, border, ow, oh)
-            component_runs = _solidify_planar_component(source_runs, raw, len(seg_coords))
-            component_runs = _protect_other_foreground(component_runs, source_runs, source_foreground)
-            component = {
-                "element_id": "",
-                "bbox": box,
-                "raw_bbox": raw,
-                "center": {"x": round(cx, 2), "y": round(cy, 2)},
-                "area": len(seg_coords),
-                "mask_pixel_count": sum(run[2] - run[1] for run in component_runs),
-                "position": _position(cx, cy, ow, oh),
-                "ocr_text": "",
-                "mask_rle": {
-                    "encoding": "row_runs_v1",
-                    "width": ow,
-                    "height": oh,
-                    "runs": component_runs,
-                },
-            }
-            if len(seg_coords) >= int(settings["min_element_area"]):
-                candidates.append(component)
-            else:
-                residual.append(component)
-    candidates.sort(key=lambda e: (e["bbox"]["y"], e["bbox"]["x"]))
-    residual.sort(key=lambda e: (e["bbox"]["y"], e["bbox"]["x"]))
     for i, element in enumerate(candidates, 1):
         element["element_id"] = f"el_auto_{i:03d}"
         box = element["bbox"]
@@ -384,7 +690,7 @@ def detect_elements(image_path: Path, slide_dir: Path, settings: dict[str, Any],
     all_components = candidates + residual
     exact_foreground = _merge_row_runs(all_components, ow, oh)
     payload = {
-        "version": "auto_elements_v3_exact_rle_cached",
+        "version": expected_version,
         "layout_fingerprint": layout_fingerprint,
         "layout_detection": {
             "enabled": layout_boxes is not None,
@@ -401,6 +707,17 @@ def detect_elements(image_path: Path, slide_dir: Path, settings: dict[str, Any],
         "source_foreground_pixel_count": int(np.count_nonzero(source_foreground)),
         "foreground_pixel_count": _rle_pixel_count(exact_foreground),
     }
+    if fine_grained_meta is not None:
+        id_map = fine_grained_meta.pop("_component_id_map", {})
+        for groups in fine_grained_meta["fine_grained"]["merge_candidates"].values():
+            for group in groups:
+                group["element_ids"] = [
+                    str(id_map[comp_id]["element_id"])
+                    for comp_id in group["component_ids"]
+                    if comp_id in id_map
+                ]
+            groups.sort(key=lambda group: group["element_ids"][0] if group["element_ids"] else "")
+        payload.update(fine_grained_meta)
     _write_json(out_dir / "auto_elements.json", payload)
     return payload
 

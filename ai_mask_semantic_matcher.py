@@ -164,9 +164,9 @@ def _semantic_objects(elements: list[dict[str, Any]], width: int, height: int) -
         owned.update(ids)
 
     canonical.sort(key=lambda obj: (obj["bbox"]["y"], obj["bbox"]["x"], -int(obj.get("element_count", 1))))
-    for index, obj in enumerate(canonical[:120], start=1):
+    for index, obj in enumerate(canonical, start=1):
         obj["object_id"] = f"obj_{index:03d}"
-    return canonical[:120]
+    return canonical
 
 
 def _png_bytes(image_path: Path, out_path: Path | None = None) -> bytes:
@@ -311,80 +311,95 @@ def _absorb_residuals_into_objects(
     return objects
 
 
-def _spatial_cluster_objects(
+AI_MASK_PAGE_SIZE = 12
+AI_MASK_MAX_PAGES = 6
+
+
+def _plan_object_pages(
     objects: list[dict[str, Any]],
-    target_count: int,
-) -> list[dict[str, Any]]:
-    """Cluster spatially-adjacent semantic_objects into ~target_count groups.
+    page_size: int = AI_MASK_PAGE_SIZE,
+    max_pages: int = AI_MASK_MAX_PAGES,
+) -> dict[str, Any]:
+    """Split every semantic object into VL request pages without dropping any.
 
-    Uses agglomerative merging by nearest box-to-box distance. Each cluster
-    becomes one composite object whose bbox is the union of its members.
+    When the object count exceeds page_size * max_pages the page size grows so
+    all objects still reach the model within max_pages requests; the overflow
+    is reported instead of being silently truncated.
     """
-    if len(objects) <= target_count or target_count < 1:
-        return objects
-    clusters: list[list[dict[str, Any]]] = [[obj] for obj in objects]
-    cluster_bounds: list[tuple[float, float, float, float]] = []
-    for cluster in clusters:
-        bounds_list = [_obj_bounds_xyxy(obj) for obj in cluster]
-        bounds_list = [b for b in bounds_list if b]
-        if bounds_list:
-            x1 = min(b[0] for b in bounds_list); y1 = min(b[1] for b in bounds_list)
-            x2 = max(b[2] for b in bounds_list); y2 = max(b[3] for b in bounds_list)
-            cluster_bounds.append((x1, y1, x2, y2))
-        else:
-            cluster_bounds.append((0.0, 0.0, 0.0, 0.0))
+    total = len(objects)
+    pages: list[list[dict[str, Any]]] = []
+    if total:
+        required_pages = -(-total // page_size)
+        overflow = required_pages > max_pages
+        effective_size = -(-total // max_pages) if overflow else page_size
+        for start in range(0, total, effective_size):
+            pages.append(objects[start:start + effective_size])
+    else:
+        overflow = False
+        effective_size = page_size
+    return {
+        "pages": pages,
+        "page_size": effective_size,
+        "overflow": overflow,
+        "total_objects": total,
+    }
 
-    while len(clusters) > target_count:
-        best_i = -1
-        best_j = -1
-        best_dist = float("inf")
-        for i in range(len(clusters)):
-            for j in range(i + 1, len(clusters)):
-                d = _box_gap(cluster_bounds[i], cluster_bounds[j])
-                if d < best_dist:
-                    best_dist = d
-                    best_i = i
-                    best_j = j
-        if best_i < 0:
-            break
-        merged_bounds_list = [cluster_bounds[best_i], cluster_bounds[best_j]]
-        x1 = min(b[0] for b in merged_bounds_list); y1 = min(b[1] for b in merged_bounds_list)
-        x2 = max(b[2] for b in merged_bounds_list); y2 = max(b[3] for b in merged_bounds_list)
-        clusters[best_i] = clusters[best_i] + clusters[best_j]
-        cluster_bounds[best_i] = (x1, y1, x2, y2)
-        clusters.pop(best_j)
-        cluster_bounds.pop(best_j)
 
-    result: list[dict[str, Any]] = []
-    for idx, cluster in enumerate(clusters):
-        if len(cluster) == 1:
-            obj = dict(cluster[0])
-            obj["object_id"] = f"obj_{idx + 1:03d}"
-            obj["cluster_member_count"] = 1
-            result.append(obj)
-            continue
-        all_eids: list[str] = []
-        for member in cluster:
-            all_eids.extend(str(eid) for eid in member.get("element_ids", []) or [])
-        unique_eids = list(dict.fromkeys(all_eids))
-        bounds_list = [_obj_bounds_xyxy(obj) for obj in cluster]
-        bounds_list = [b for b in bounds_list if b]
-        bbox = _union_bounds_list(bounds_list) if bounds_list else {"x": 0, "y": 0, "w": 1, "h": 1}
-        cx = bbox["x"] + bbox["w"] / 2
-        cy = bbox["y"] + bbox["h"] / 2
-        result.append({
-            "object_id": f"obj_{idx + 1:03d}",
-            "type": "spatial_cluster",
-            "bbox": bbox,
-            "center": {"x": round(cx, 2), "y": round(cy, 2)},
-            "element_ids": unique_eids,
-            "element_count": len(unique_eids),
-            "cluster_member_count": len(cluster),
-            "member_object_ids": [str(m.get("object_id") or "") for m in cluster],
-            "reason": f"spatial cluster of {len(cluster)} adjacent objects",
-            "exclusive": True,
+def _merge_page_values(
+    page_values: list[dict[str, Any]],
+    budget_exceeded: bool = False,
+    object_count: int = 0,
+) -> dict[str, Any] | None:
+    """Combine per-page model outputs into one match document.
+
+    Matches for the same group/beat across pages are unioned; every object ID
+    from every page is preserved. Page-budget overflow is surfaced as a
+    warning instead of dropping candidates.
+    """
+    if not page_values:
+        return None
+    merged = dict(page_values[0])
+    matches_by_key: dict[tuple[str, str], dict[str, Any]] = {}
+    order: list[tuple[str, str]] = []
+    for value in page_values:
+        for match in value.get("matches", []) or []:
+            if not isinstance(match, dict):
+                continue
+            key = (str(match.get("group_id") or ""), str(match.get("narration_beat_id") or ""))
+            existing = matches_by_key.get(key)
+            if existing is None:
+                matches_by_key[key] = dict(match)
+                order.append(key)
+                continue
+            for field in ("object_ids", "element_ids"):
+                existing[field] = list(dict.fromkeys(
+                    [str(v) for v in existing.get(field, []) or []]
+                    + [str(v) for v in match.get(field, []) or []]
+                ))
+            try:
+                existing["confidence"] = max(
+                    float(existing.get("confidence", 0) or 0),
+                    float(match.get("confidence", 0) or 0),
+                )
+            except (TypeError, ValueError):
+                pass
+            reasons = [text for text in (str(existing.get("reason") or ""), str(match.get("reason") or "")) if text]
+            existing["reason"] = "；".join(dict.fromkeys(reasons))
+    merged["matches"] = [matches_by_key[key] for key in order]
+    for field in ("unmatched_objects", "unmatched_elements", "unmatched_groups"):
+        merged[field] = list(dict.fromkeys(
+            str(item) for value in page_values for item in (value.get(field) or [])
+        ))
+    warnings = [item for value in page_values for item in (value.get("warnings") or []) if isinstance(item, dict)]
+    if budget_exceeded:
+        warnings.append({
+            "type": "object_page_budget_exceeded",
+            "object_ids": [],
+            "reason": f"语义对象数量 {object_count} 超过分页预算，已放大每页对象数并全量送模，请复核分组粒度",
         })
-    return result
+    merged["warnings"] = warnings
+    merged["pages_merged"] = len(page_values)
+    return merged
 
 
 def _crop_object_bytes(image_path: Path, obj: dict[str, Any], max_width: int = 400) -> bytes | None:
@@ -473,46 +488,105 @@ class SemanticVisionMatcher:
         except Exception:
             pass
         objects = _absorb_residuals_into_objects(objects, residual_elements)
-        # Spatially cluster objects so VL sees at most (beats + 3) crops.
-        beat_count = len(slide.get("narration_beats", []) or [])
-        target_count = max(1, min(12, beat_count + 3))
-        pre_cluster_count = len(objects)
-        objects = _spatial_cluster_objects(objects, target_count)
+        plan = _plan_object_pages(objects)
+        pages = plan["pages"]
         try:
             base_module._write_json(overlay_path.parent / "semantic_objects.json", {
-                "version": "semantic_objects_v2_clustered",
+                "version": "semantic_objects_v3_paged",
                 "slide_id": slide.get("slide_id"),
                 "canvas": {"width": width, "height": height},
                 "objects": objects,
                 "source_auto_element_count": len(elements),
                 "residual_absorbed_count": len(residual_elements),
-                "pre_cluster_object_count": pre_cluster_count,
-                "target_cluster_count": target_count,
+                "object_count": len(objects),
+                "page_count": len(pages),
+                "page_size": plan["page_size"],
+                "page_budget_exceeded": plan["overflow"],
+                "page_object_ids": [
+                    [str(obj.get("object_id") or "") for obj in page] for page in pages
+                ],
             })
         except Exception:
             pass
+        if not pages:
+            return None
         clean_bytes = _png_bytes(image_path, overlay_path.with_name("clean_original_for_vision.png"))
         model, _ = base_module._resolved_vision_model(capabilities)
         base_url = capabilities.get_setting("llm_base_url")
         vendor_options = capabilities.step2_llm_vendor_options(model, base_url) or {}
         client = capabilities.get_openai_client(api_key=api_key, base_url=base_url, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, max_retries=0)
+        prompt = methodology.strip() + "\n\n--- OUTPUT STRUCTURE / 输出结构 ---\n" + output_structure.strip()
+        clean_url = "data:image/png;base64," + base64.b64encode(clean_bytes).decode("ascii")
+        slide_context = {key: slide.get(key) for key in ("slide_id", "main_title", "subtitle", "core_message", "body_content", "visual_groups", "narration_beats")}
 
-        # Build crop images for each semantic_object — VL sees actual visual
-        # content, not coordinate numbers. Each crop is labeled with object_id.
-        crop_entries = []
-        for obj in objects:
-            crop_bytes = _crop_object_bytes(image_path, obj)
-            if crop_bytes:
-                crop_entries.append({
-                    "object_id": obj.get("object_id"),
-                    "type": obj.get("type"),
-                    "element_count": obj.get("element_count"),
-                    "image_data": crop_bytes,
+        page_values: list[dict[str, Any]] = []
+        page_errors: list[tuple[int, BaseException]] = []
+        try:
+            for page_index, page in enumerate(pages, 1):
+                try:
+                    value = self._match_page(
+                        client=client,
+                        capabilities=capabilities,
+                        base_module=base_module,
+                        model=model,
+                        vendor_options=vendor_options,
+                        settings=settings,
+                        prompt=prompt,
+                        clean_url=clean_url,
+                        slide_context=slide_context,
+                        image_path=image_path,
+                        page=page,
+                        page_index=page_index,
+                        page_count=len(pages),
+                        objects=objects,
+                        elements=elements,
+                    )
+                except Exception as exc:
+                    page_errors.append((page_index, exc))
+                    continue
+                if value is not None:
+                    page_values.append(value)
+        finally:
+            try:
+                client.close()
+            except Exception:
+                pass
+        if not page_values and page_errors:
+            raise page_errors[0][1]
+        merged = _merge_page_values(page_values, budget_exceeded=plan["overflow"], object_count=len(objects))
+        if merged is not None and page_errors:
+            for page_index, exc in page_errors:
+                merged.setdefault("warnings", []).append({
+                    "type": "semantic_object_page_failed",
+                    "object_ids": [],
+                    "reason": f"第 {page_index} 页视觉匹配失败，该页对象由确定性回退处理：{type(exc).__name__}: {str(exc)[:200]}",
                 })
+        return merged
 
-        # Simplified payload: slide context + object IDs (no coordinates)
+    def _match_page(
+        self,
+        *,
+        client: Any,
+        capabilities: Any,
+        base_module: Any,
+        model: str,
+        vendor_options: dict[str, Any],
+        settings: dict[str, Any],
+        prompt: str,
+        clean_url: str,
+        slide_context: dict[str, Any],
+        image_path: Path,
+        page: list[dict[str, Any]],
+        page_index: int,
+        page_count: int,
+        objects: list[dict[str, Any]],
+        elements: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        # Simplified payload: slide context + this page's object IDs. VL sees
+        # real crops, not raw coordinate guesswork; coordinates stay local
+        # evidence because downstream expands objects back to element RLEs.
         payload = {
-            "slide": {key: slide.get(key) for key in ("slide_id", "main_title", "subtitle", "core_message", "body_content", "visual_groups", "narration_beats")},
+            "slide": slide_context,
             "semantic_objects": [
                 {
                     "object_id": obj.get("object_id"),
@@ -520,48 +594,38 @@ class SemanticVisionMatcher:
                     "element_count": obj.get("element_count"),
                     "bbox": obj.get("bbox", {}),
                     "center": obj.get("center", {}),
-                    "cluster_member_count": obj.get("cluster_member_count", 1),
                 }
-                for obj in objects
+                for obj in page
             ],
-            "instruction": "先看完整原图理解全局版式和阅读顺序，再看每个 object_XXX 的切片图及其 bbox 坐标。根据切片图视觉内容和空间位置（bbox 的 x/y/w/h），选择 object_id 对应到 visual_groups 和 narration_beats。一个 object 可能包含多个空间相邻的语义元素（cluster_member_count>1），应作为整体归属。输出 object_ids 和 element_ids。",
+            "page": {"index": page_index, "total": page_count},
+            "instruction": "先看完整原图理解全局版式和阅读顺序，再看本页每个 object_XXX 的切片图及其 bbox 坐标。根据切片图视觉内容和空间位置（bbox 的 x/y/w/h），选择 object_id 对应到 visual_groups 和 narration_beats。本次请求是第 {index}/{total} 页：只归属本页列出的 object_ids，其余对象由其他页面负责，不要为它们输出匹配。输出 object_ids 和 element_ids。".format(index=page_index, total=page_count),
         }
-        prompt = methodology.strip() + "\n\n--- OUTPUT STRUCTURE / 输出结构 ---\n" + output_structure.strip()
-        clean_url = "data:image/png;base64," + base64.b64encode(clean_bytes).decode("ascii")
-
-        # Build user message: text payload + full image + each crop image
         user_content = [
             {"type": "text", "text": json.dumps(payload, ensure_ascii=False, indent=2)},
             {"type": "text", "text": "完整原图（image_full）：理解全局版式和阅读顺序。"},
             {"type": "image_url", "image_url": {"url": clean_url}},
         ]
-        for entry in crop_entries:
-            oid = entry["object_id"]
-            otype = entry["type"]
-            crop_url = "data:image/png;base64," + base64.b64encode(entry["image_data"]).decode("ascii")
-            user_content.append({"type": "text", "text": f"{oid}（类型:{otype}）：此对象的切片图。"})
+        for obj in page:
+            crop_bytes = _crop_object_bytes(image_path, obj)
+            if not crop_bytes:
+                continue
+            crop_url = "data:image/png;base64," + base64.b64encode(crop_bytes).decode("ascii")
+            user_content.append({"type": "text", "text": f"{obj.get('object_id')}（类型:{obj.get('type')}）：此对象的切片图。"})
             user_content.append({"type": "image_url", "image_url": {"url": crop_url}})
-
         messages = [
             {"role": "system", "content": prompt},
             {"role": "user", "content": user_content},
         ]
         try:
-            try:
-                response = client.chat.completions.create(model=model, temperature=float(settings["llm_temperature"]), max_tokens=12000, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, response_format={"type": "json_object"}, messages=messages, **vendor_options)
-            except Exception as exc:
-                if base_module._is_timeout(capabilities, exc):
-                    raise
-                response = client.chat.completions.create(model=model, temperature=float(settings["llm_temperature"]), max_tokens=12000, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, messages=messages, **vendor_options)
-            content = str(response.choices[0].message.content or "").strip()
-            cleaned = capabilities.clean_json_markdown(content)
-            value = json.loads(cleaned)
-            return _expand_matches(value, objects, elements) if isinstance(value, dict) else None
-        finally:
-            try:
-                client.close()
-            except Exception:
-                pass
+            response = client.chat.completions.create(model=model, temperature=float(settings["llm_temperature"]), max_tokens=12000, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, response_format={"type": "json_object"}, messages=messages, **vendor_options)
+        except Exception as exc:
+            if base_module._is_timeout(capabilities, exc):
+                raise
+            response = client.chat.completions.create(model=model, temperature=float(settings["llm_temperature"]), max_tokens=12000, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, messages=messages, **vendor_options)
+        content = str(response.choices[0].message.content or "").strip()
+        cleaned = capabilities.clean_json_markdown(content)
+        value = json.loads(cleaned)
+        return _expand_matches(value, objects, elements) if isinstance(value, dict) else None
 
 
 semantic_vision_matcher = SemanticVisionMatcher()

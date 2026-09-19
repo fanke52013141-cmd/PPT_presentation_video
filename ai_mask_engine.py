@@ -29,6 +29,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "connectivity": 8,
     "min_element_area": 120,
     "component_padding_px": 12,
+    "fine_grained_detection": False,
+    "pale_support_threshold": 254,
+    "enclosed_support_max_area_px": 20000,
     "doclayout_enabled": True,
     "doclayout_model_path": "",
     "doclayout_conf_threshold": 0.35,
@@ -143,7 +146,7 @@ DEFAULT_METHODOLOGY = """<PromptVersion>ai_mask_semantic_mapping_v3</PromptVersi
 ## 实际输入
 1. `slide.visual_groups[]`：重点使用 `id`、`role`、`visible_text`、`visual_anchor`。
 2. `slide.narration_beats[]`：重点使用 `id`、`group_id`、`spoken_text`；只有这里引用的 group 才是本次需要动态 Reveal 的目标。
-3. `semantic_objects[]`：包含 `object_id`、`type`、`bbox`、`center`、`element_count`、`cluster_member_count`；对象切片提供真实视觉内容。
+3. `semantic_objects[]`：包含 `object_id`、`type`、`bbox`、`center`、`element_count`；对象切片提供真实视觉内容。请求可能分页（`page.index`/`page.total`），每次只需归属本页列出的对象。
 4. 极少数兼容路径可能只提供 `auto_elements[]` 和带框整图，此时改用 `element_id` 匹配。
 
 字段可能为空。只能使用输入中真实存在的 ID，不得补写、改写或猜测 ID。
@@ -232,6 +235,8 @@ PROMPT_OUTPUT_KEY = SETTING_PREFIX + "match_output_structure_system_content"
 LEGACY_TITLE_RULE = "6. 主标题与副标题是否属于同一个 Mask，以 narration_beats 的讲解关系为准，不按字体颜色、断笔或字间距拆分。"
 STATIC_TITLE_RULE = "6. 页面上方固定主标题/副标题区域属于静态上下文，不分配给任何 narration group，不参与逐语块 Reveal；元素匹配必须同时考虑横向与纵向距离；大面积主配图应吸收其内部、边界上和紧邻的图标、对号、标签与说明，除非它们明确对应独立 narration beat；不允许因为颜色相似就跨卡片、跨栏或跨配图分配。"
 PREVIOUS_TITLE_AND_ISLAND_RULES = """6. 页面上方主标题/副标题保持固定布局，但有 narration 绑定时必须参与逐语块 Reveal；副标题优先绑定独立 subtitle group，没有独立组时与主标题共同绑定到首个标题 narration group；元素匹配必须同时考虑横向与纵向距离；大面积主配图应吸收其内部、边界上和紧邻的图标、对号、标签与说明，除非它们明确对应独立 narration beat；不允许因为颜色相似就跨卡片、跨栏或跨配图分配。"""
+PREVIOUS_OBJECT_FIELD_RULE = "3. `semantic_objects[]`：包含 `object_id`、`type`、`bbox`、`center`、`element_count`、`cluster_member_count`；对象切片提供真实视觉内容。"
+CURRENT_OBJECT_FIELD_RULE = "3. `semantic_objects[]`：包含 `object_id`、`type`、`bbox`、`center`、`element_count`；对象切片提供真实视觉内容。请求可能分页（`page.index`/`page.total`），每次只需归属本页列出的对象。"
 CURRENT_TITLE_AND_ISLAND_RULES = """6. 页面上方只保留一个完整主标题，不使用页面副标题。无论主标题包含多少颜色、描边、断笔或分离字形，都必须整体绑定到唯一的 title group，不能拆给多个正文 group；如果不存在 title narration beat，则整个标题保持静态。元素匹配必须同时考虑横向与纵向距离；大面积主配图应吸收其内部、边界上和紧邻的图标、对号、标签与说明，除非它们明确对应独立 narration beat；不允许因为颜色相似就跨卡片、跨栏或跨配图分配。"""
 
 
@@ -272,6 +277,9 @@ def normalize_settings(raw: dict[str, Any] | None) -> dict[str, Any]:
         "connectivity": 4 if str(raw.get("connectivity")) == "4" else 8,
         "min_element_area": _int(raw.get("min_element_area"), 120, 10, 10000),
         "component_padding_px": _int(raw.get("component_padding_px"), 12, 0, 80),
+        "fine_grained_detection": _bool(raw.get("fine_grained_detection"), False),
+        "pale_support_threshold": _int(raw.get("pale_support_threshold"), 254, 246, 255),
+        "enclosed_support_max_area_px": _int(raw.get("enclosed_support_max_area_px"), 20000, 1000, 200000),
         "max_group_elements": max(20, _int(raw.get("max_group_elements"), 60, 1, 120)),
         "doclayout_enabled": _bool(raw.get("doclayout_enabled"), False),
         "doclayout_model_path": str(raw.get("doclayout_model_path") or "").strip(),

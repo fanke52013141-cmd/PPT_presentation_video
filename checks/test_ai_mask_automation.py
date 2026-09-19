@@ -374,6 +374,7 @@ def test_volcengine_ai_mask_uses_provider_model_and_single_timeout_policy():
     assert resolved == "doubao-seed-2-1-turbo-260628"
     assert configured == "gpt-4o"
     source = inspect.getsource(semantic_matcher.SemanticVisionMatcher.__call__)
+    source += inspect.getsource(semantic_matcher.SemanticVisionMatcher._match_page)
     assert "step2_llm_vendor_options" in source
     assert "AI_MASK_VISION_TIMEOUT_SEC" in source
     assert "_is_timeout(capabilities, exc)" in source

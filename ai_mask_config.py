@@ -6,6 +6,7 @@ from typing import Any
 
 from config_store import get_setting, update_settings
 from ai_mask_engine import (
+    CURRENT_OBJECT_FIELD_RULE,
     CURRENT_TITLE_AND_ISLAND_RULES,
     DEFAULT_METHODOLOGY,
     DEFAULT_OUTPUT_STRUCTURE,
@@ -14,6 +15,7 @@ from ai_mask_engine import (
     LEGACY_DEFAULT_OUTPUT_STRUCTURE_V2,
     LEGACY_STORED_METHODOLOGY_V2,
     LEGACY_TITLE_RULE,
+    PREVIOUS_OBJECT_FIELD_RULE,
     PREVIOUS_TITLE_AND_ISLAND_RULES,
     PROMPT_METHOD_KEY,
     PROMPT_OUTPUT_KEY,
@@ -46,16 +48,14 @@ def read_ai_mask_prompts() -> tuple[str, str]:
         methodology = DEFAULT_METHODOLOGY
     if output_structure == LEGACY_DEFAULT_OUTPUT_STRUCTURE_V2:
         output_structure = DEFAULT_OUTPUT_STRUCTURE
-    for old_rule in (
-        LEGACY_TITLE_RULE,
-        STATIC_TITLE_RULE,
-        PREVIOUS_TITLE_AND_ISLAND_RULES,
+    for old_rule, new_rule in (
+        (LEGACY_TITLE_RULE, CURRENT_TITLE_AND_ISLAND_RULES),
+        (STATIC_TITLE_RULE, CURRENT_TITLE_AND_ISLAND_RULES),
+        (PREVIOUS_TITLE_AND_ISLAND_RULES, CURRENT_TITLE_AND_ISLAND_RULES),
+        (PREVIOUS_OBJECT_FIELD_RULE, CURRENT_OBJECT_FIELD_RULE),
     ):
         if old_rule in methodology:
-            methodology = methodology.replace(
-                old_rule,
-                CURRENT_TITLE_AND_ISLAND_RULES,
-            )
+            methodology = methodology.replace(old_rule, new_rule)
     return methodology, output_structure
 
 

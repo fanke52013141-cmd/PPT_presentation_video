@@ -242,6 +242,19 @@ project-level orchestrator.
 - Deleting a rendered video deletes both the MP4 and its sidecar.
 - Runtime data under `runs/`, `outputs/`, `logs/`, and Remotion `public/runtime`
   is never committed.
+- Tests must never write into the user's real data. `checks/conftest.py` points
+  `PPT_STUDIO_DB_PATH` and `PPT_STUDIO_RUNS_DIR` at a session-scoped temporary
+  directory before `database` is imported, so `pytest` (however it is invoked)
+  is isolated. `checks/**` cases use `database.SessionLocal` and the runtime
+  project directories directly; without that isolation one full run inserts
+  about 15-30 test projects into the user's `data/projects.db` and leaves
+  orphan directories in `runs/`. Do not bypass those two variables in new
+  cases that need the real paths.
+- Additive `ALTER TABLE ... ADD COLUMN` statements are applied idempotently: a
+  database that already has the current schema but an empty ledger (created by
+  `Base.metadata.create_all`, or restored from a newer snapshot) must still
+  initialize. Only that exact case is tolerated — every other statement error
+  keeps failing loudly.
 
 ## Runtime Bridge Policy
 
@@ -379,9 +392,23 @@ The Python startup monkey patch has been retired. AI Mask is now source-owned:
   It must not import the application module or own FastAPI/database wiring.
 - `tts_provider_service.py` owns provider aliases/defaults, credential
   resolution, environment-only secret transport, generic TTS command
-  construction, and bounded retry/backoff behavior. It receives only
-  `TtsProviderDependencies` and must not import `server` or own
+  construction, bounded retry/backoff behavior, and the MiniMax
+  async/sync endpoint distinction (`is_minimax_async_endpoint`). It receives
+  only `TtsProviderDependencies` and must not import `server` or own
   FastAPI/database wiring.
+- `generation_governor.py` is the single owner of upstream request budgets and
+  per-gateway concurrency. The quota is **gateway-global**, so the limiting key
+  is `(resource_kind, gateway_host)` and never a project, account, or api_key —
+  keying by project is what let multi-account runs multiply the gateway rate.
+  Image traffic is metered per real HTTP request (`request()`), while TTS runs
+  inside a helper subprocess whose requests cannot be intercepted, so it
+  reserves an estimated page cost up front (`job()` + `tts_async_reservation`).
+  Project and creation-package concurrency settings are **sub-quotas**: the
+  effective fan-out is `min(global, project)`. Exhausted quota queues and
+  retries; only `GovernorTimeout` surfaces, and it must degrade to a paused
+  run rather than a hard failure. The module must stay independent of FastAPI,
+  database wiring, `config_store`, and the application module — global settings
+  access is injected through `GovernorDependencies`.
 - `settings_service.py` owns global settings persistence, credential masking,
   masked-placeholder preservation, and provider connection checks.
   `config_portability_service.py` owns configuration export/import and
@@ -436,7 +463,7 @@ obstacle to remove.
 Run before publishing:
 
 ```powershell
-python -m compileall -q server.py runtime_support.py project_runtime_service.py repository_paths.py ai_provider_service.py tts_provider_service.py tts_artifacts.py llm_concurrency.py narration_audio_service.py visual_contract_service.py settings_service.py config_portability_service.py settings_routes.py article_service.py article_routes.py diagnostics_routes.py storyboard_background.py storyboard_service.py storyboard_routes.py global_image_style_service.py global_image_style_routes.py image_workflow_service.py image_workflow_routes.py visual_settings_service.py visual_settings_routes.py mask_manifest_service.py mask_preview_service.py mask_editor_routes.py narration_service.py narration_routes.py tts_service.py tts_routes.py one_click_orchestrator.py one_click_routes.py pptx_export.py pptx_service.py pptx_routes.py video_contracts.py video_job_store.py video_artifact_service.py remotion_runner.py video_render_service.py video_routes.py ai_mask_config.py ai_mask_engine.py ai_mask_routes.py ai_mask_semantic_matcher.py ai_mask_service.py project_style_context.py project_style_routes.py project_profile_service.py project_profile_store.py project_style_reference_service.py project_style_reference_store.py project_style_template_service.py image_style_reverse_service.py step3_image_style_service.py database.py database_migrations.py invalidation_service.py reveal_manifest_service.py agent_contract scripts checks
+python -m compileall -q server.py runtime_support.py project_runtime_service.py repository_paths.py ai_provider_service.py generation_governor.py tts_provider_service.py tts_artifacts.py llm_concurrency.py narration_audio_service.py visual_contract_service.py settings_service.py config_portability_service.py settings_routes.py article_service.py article_routes.py diagnostics_routes.py storyboard_background.py storyboard_service.py storyboard_routes.py global_image_style_service.py global_image_style_routes.py image_workflow_service.py image_workflow_routes.py visual_settings_service.py visual_settings_routes.py mask_manifest_service.py mask_preview_service.py mask_editor_routes.py narration_service.py narration_routes.py tts_service.py tts_routes.py one_click_orchestrator.py one_click_routes.py pptx_export.py pptx_service.py pptx_routes.py video_contracts.py video_job_store.py video_artifact_service.py remotion_runner.py video_render_service.py video_routes.py ai_mask_config.py ai_mask_engine.py ai_mask_routes.py ai_mask_semantic_matcher.py ai_mask_service.py project_style_context.py project_style_routes.py project_profile_service.py project_profile_store.py project_style_reference_service.py project_style_reference_store.py project_style_template_service.py image_style_reverse_service.py step3_image_style_service.py database.py database_migrations.py invalidation_service.py reveal_manifest_service.py agent_contract scripts checks
 node --check static/workflow_state.js
 node --check static/flow.js
 node checks/test_visible_flow.js

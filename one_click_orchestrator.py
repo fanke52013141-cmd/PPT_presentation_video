@@ -20,7 +20,6 @@ from dataclasses import dataclass
 import json
 import logging
 import os
-import re
 import shutil
 import threading
 import time
@@ -47,6 +46,7 @@ from tts_provider_service import normalize_tts_provider
 from video_render_service import RENDER_STAGE_PROGRESS
 from project_config_runtime import get_config_value, load_project_config
 from account_context import get_current_account_id, reset_current_account_id, set_current_account_id
+import generation_governor
 
 STATUS_FILENAME = "one_click_status.json"
 STATUS_VERSION = "one_click_orchestrator_v2"
@@ -242,73 +242,8 @@ def _bounded_parallelism(
 
 
 def _is_rate_limit_error(error: Exception) -> bool:
-    """Return whether a provider failure is safe to retry more slowly."""
-    detail = f"{type(error).__name__}: {error}".lower()
-    return any(
-        marker in detail
-        for marker in (
-            "429",
-            "rate limit",
-            "rate_limit",
-            "too many requests",
-            "请求过于频繁",
-            "请求频繁",
-        )
-    )
-
-
-def _image_rate_limit_delay_seconds(error: Exception, attempt: int) -> float:
-    """Use a bounded provider hint when available, otherwise a short backoff."""
-    match = re.search(
-        r"retry(?:-| )?after\s*[:=]?\s*(\d+(?:\.\d+)?)",
-        str(error),
-        re.I,
-    )
-    if match:
-        return max(1.0, min(20.0, float(match.group(1))))
-    return float(min(12, 2 ** max(0, attempt)))
-
-
-def _reduced_image_parallelism(current: int) -> int:
-    """Back off one slot at a time without serializing all work immediately."""
-    return max(1, current - 1)
-
-
-class _AdaptiveImageLimiter:
-    """Share a shrinking image-provider concurrency limit across worker threads."""
-
-    def __init__(self, concurrency: int, on_backoff: Callable[..., None]) -> None:
-        self._limit = max(1, concurrency)
-        self._active = 0
-        self._attempts = 0
-        self._condition = threading.Condition()
-        self._on_backoff = on_backoff
-
-    def run(self, work: Callable[[], Any]) -> Any:
-        while True:
-            with self._condition:
-                while self._active >= self._limit:
-                    self._condition.wait()
-                self._active += 1
-            try:
-                return work()
-            except Exception as error:
-                if not _is_rate_limit_error(error):
-                    raise
-                with self._condition:
-                    previous = self._limit
-                    if self._limit <= 1:
-                        raise
-                    self._limit = _reduced_image_parallelism(self._limit)
-                    self._attempts += 1
-                    delay = _image_rate_limit_delay_seconds(error, self._attempts)
-                    current = self._limit
-                self._on_backoff(previous, current, delay)
-                time.sleep(delay)
-            finally:
-                with self._condition:
-                    self._active -= 1
-                    self._condition.notify_all()
+    """兼容入口：限流判定已下沉到 generation_governor（单一事实来源）。"""
+    return generation_governor.is_rate_limit_error(error)
 
 
 def _read_json(path: Path, fallback: Any) -> Any:
@@ -1197,7 +1132,7 @@ def _run_pipeline(
                     config_path="automation.image_concurrency",
                     environment_name="PPT_STUDIO_IMAGE_CONCURRENCY",
                     default=5,
-                    maximum=6,
+                    maximum=12,
                 ),
                 len(image_jobs),
             ) if image_jobs else 1
@@ -1242,25 +1177,30 @@ def _run_pipeline(
                     concurrency=image_workers,
                 )
 
-                def note_image_backoff(previous: int, current: int, delay: float) -> None:
-                    dependencies.write_project_log(
-                        project,
-                        "step3_parallel_image_backoff",
-                        previous_concurrency=previous,
-                        concurrency=current,
-                        delay_seconds=delay,
-                    )
-
-                image_limiter = _AdaptiveImageLimiter(image_workers, note_image_backoff)
-
+                # 上游额度治理（网关全局 RPM + 全局并发 + FIFO 排队）由
+                # generation_governor 在 provider 层统一负责，这里只保留**本项目**
+                # 的并发扇出上限。原先的 _AdaptiveImageLimiter 用"每项目一个、
+                # 只降不升、归 1 即抛错"的方式模拟限流，既无法约束跨账号叠加的
+                # 请求速率，又会在额度紧张时直接判死整条流水线。
                 def generate_limited_image(
-                index: int,
-                slide_id: str,
-                prompt: str,
-            ) -> tuple[int, str, dict[str, Any], float]:
-                    return image_limiter.run(
-                        lambda: generate_one_image(index, slide_id, prompt)
-                    )
+                    index: int,
+                    slide_id: str,
+                    prompt: str,
+                ) -> tuple[int, str, dict[str, Any], float]:
+                    try:
+                        return generate_one_image(index, slide_id, prompt)
+                    except Exception as exc:
+                        if generation_governor.is_rate_limit_error(exc) or isinstance(
+                            exc, generation_governor.GovernorTimeout
+                        ):
+                            dependencies.write_project_log(
+                                project,
+                                "step3_parallel_image_throttled",
+                                slide_id=slide_id,
+                                reason=type(exc).__name__,
+                                detail=_safe_text(exc, 500),
+                            )
+                        raise
 
                 with ThreadPoolExecutor(
                     max_workers=image_workers,

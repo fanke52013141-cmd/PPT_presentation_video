@@ -153,6 +153,14 @@ async function loadSettings() {
   document.getElementById('setting-max-concurrent-renders').value = state.settings.max_concurrent_renders || '1';
   document.getElementById('setting-tts-job-workers').value = state.settings.tts_job_workers || '1';
   document.getElementById('setting-llm-max-concurrency').value = state.settings.llm_max_concurrency || '2';
+
+  // 上游网关额度：按网关全局计量，所有账号/项目共享同一份（见 generation_governor.py）。
+  document.getElementById('setting-image-gateway-rpm').value = state.settings.image_gateway_requests_per_minute || '500';
+  document.getElementById('setting-image-gateway-concurrency').value = state.settings.image_gateway_max_concurrency || '12';
+  document.getElementById('setting-tts-gateway-rpm').value = state.settings.tts_gateway_requests_per_minute || '10';
+  document.getElementById('setting-tts-gateway-concurrency').value = state.settings.tts_gateway_max_concurrency || '4';
+  document.getElementById('setting-generation-queue-max-wait').value = state.settings.generation_queue_max_wait_sec || '600';
+  document.getElementById('setting-generation-governor-enabled').value = state.settings.generation_governor_enabled || '1';
 }
 
 function openSettingsModal() {
@@ -191,7 +199,14 @@ function readSettingsForm() {
     // 任务并发（方案④）：保存为字符串，消费端用 parse_int_setting 钳位到合法区间。
     max_concurrent_renders: document.getElementById('setting-max-concurrent-renders').value.trim() || '1',
     tts_job_workers: document.getElementById('setting-tts-job-workers').value.trim() || '1',
-    llm_max_concurrency: document.getElementById('setting-llm-max-concurrency').value.trim() || '2'
+    llm_max_concurrency: document.getElementById('setting-llm-max-concurrency').value.trim() || '2',
+    // 上游网关额度：同样保存为字符串，由 get_bounded_int_setting 钳位。
+    image_gateway_requests_per_minute: document.getElementById('setting-image-gateway-rpm').value.trim() || '500',
+    image_gateway_max_concurrency: document.getElementById('setting-image-gateway-concurrency').value.trim() || '12',
+    tts_gateway_requests_per_minute: document.getElementById('setting-tts-gateway-rpm').value.trim() || '10',
+    tts_gateway_max_concurrency: document.getElementById('setting-tts-gateway-concurrency').value.trim() || '4',
+    generation_queue_max_wait_sec: document.getElementById('setting-generation-queue-max-wait').value.trim() || '600',
+    generation_governor_enabled: document.getElementById('setting-generation-governor-enabled').value.trim() || '1'
   };
 }
 

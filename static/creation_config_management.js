@@ -52,6 +52,25 @@
     max_lines: 1,
     line_height: 1.4,
   };
+  // Mirrors visual_settings_service.OPEN_SOURCE_CHINESE_FONTS so the creation
+  // package preview resolves font keys without a project context.
+  const SUBTITLE_FONT_FAMILIES = {
+    noto_sans_sc: 'Noto Sans SC',
+    noto_serif_sc: 'Noto Serif SC',
+    ma_shan_zheng: 'Ma Shan Zheng',
+    zcool_xiaowei: 'ZCOOL XiaoWei',
+    zcool_qingke: 'ZCOOL QingKe HuangYou',
+    zcool_kuaile: 'ZCOOL KuaiLe',
+    long_cang: 'Long Cang',
+    liu_jian_mao_cao: 'Liu Jian Mao Cao',
+    zhi_mang_xing: 'Zhi Mang Xing',
+    lxgw_marker_gothic: 'LXGW Marker Gothic',
+    lxgw_wenkai_tc: 'LXGW WenKai TC',
+    noto_sans_tc: 'Noto Sans TC',
+    noto_serif_tc: 'Noto Serif TC',
+    lxgw_wenkai: 'LXGW WenKai',
+  };
+  const SUBTITLE_PREVIEW_SAMPLE = '这是一段视频字幕效果预览';
 
   function element(id) {
     return document.getElementById(id);
@@ -240,6 +259,49 @@
     section.querySelectorAll('select, input').forEach(control => {
       control.disabled = !enabled;
     });
+    requestAnimationFrame(updateCreationConfigSubtitlePreview);
+  }
+
+  // Live preview for the creation-package subtitle style: renders the chosen
+  // font, size, weight, colors, position, and token-highlight effect on a
+  // 1920x1080-proportional stage so the style is visible before saving.
+  function updateCreationConfigSubtitlePreview() {
+    const stage = document.querySelector('.creation-config-subtitle-preview-stage');
+    const text = element('creation-config-subtitle-preview-text');
+    if (!stage || !text) return;
+    const subtitle = subtitleFromForm();
+    const fontKey = subtitle.font_key || DEFAULT_SUBTITLE.font_key;
+    const family = SUBTITLE_FONT_FAMILIES[fontKey] || SUBTITLE_FONT_FAMILIES[DEFAULT_SUBTITLE.font_key];
+    const fontSize = Number(subtitle.font_size) || DEFAULT_SUBTITLE.font_size;
+    const fontWeight = Number(subtitle.font_weight) || DEFAULT_SUBTITLE.font_weight;
+    const bottom = Number(subtitle.bottom) || 0;
+    const margin = Number(subtitle.horizontal_margin) || DEFAULT_SUBTITLE.horizontal_margin;
+    const maxLines = Math.min(3, Math.max(1, Number(subtitle.max_lines) || 1));
+    const lineHeight = Number(subtitle.line_height) || DEFAULT_SUBTITLE.line_height;
+    const scale = Math.max(0.2, stage.clientWidth / 1920);
+    text.style.fontFamily = `"${family}", "Noto Sans SC", "Microsoft YaHei", sans-serif`;
+    text.style.fontSize = `${fontSize * scale}px`;
+    text.style.fontWeight = String(fontWeight);
+    text.style.bottom = `${bottom * scale}px`;
+    text.style.left = `${margin * scale}px`;
+    text.style.right = `${margin * scale}px`;
+    text.style.lineHeight = String(lineHeight);
+    text.style.WebkitLineClamp = String(maxLines);
+    // Token-highlight demo: the played portion uses the highlight color and
+    // the remaining characters keep the base subtitle color.
+    if (subtitle.token_highlight !== false) {
+      const splitAt = Math.max(1, Math.floor(SUBTITLE_PREVIEW_SAMPLE.length / 3));
+      const highlighted = document.createElement('span');
+      const pending = document.createElement('span');
+      highlighted.textContent = SUBTITLE_PREVIEW_SAMPLE.slice(0, splitAt);
+      highlighted.style.color = subtitle.highlight_color || DEFAULT_SUBTITLE.highlight_color;
+      pending.textContent = SUBTITLE_PREVIEW_SAMPLE.slice(splitAt);
+      pending.style.color = subtitle.color || DEFAULT_SUBTITLE.color;
+      text.replaceChildren(highlighted, pending);
+    } else {
+      text.replaceChildren(document.createTextNode(SUBTITLE_PREVIEW_SAMPLE));
+      text.style.color = subtitle.color || DEFAULT_SUBTITLE.color;
+    }
   }
 
   function automationModeFromForm() {
@@ -556,7 +618,7 @@
     const ttsBinding = readBindingValue('tts');
     if (ttsBinding) tts.connection = ttsBinding;
     else delete tts.connection;
-    const ttsConcurrency = Math.max(1, Math.min(10, Number(element('creation-config-tts-concurrency')?.value) || 10));
+    const ttsConcurrency = Math.max(1, Math.min(10, Number(element('creation-config-tts-concurrency')?.value) || 4));
     tts.concurrency = ttsConcurrency;
     const seedAudioConcurrency = boundedSeedAudioConcurrency(element('creation-config-seed-audio-concurrency')?.value);
     tts.seed_audio_concurrency = seedAudioConcurrency;
@@ -589,7 +651,7 @@
       .map(input => input.dataset.creationConfigPause)
       .filter(Boolean);
     const automation = objectValue(payload.automation);
-    const imageConcurrency = Math.max(1, Math.min(6, Number(element('creation-config-image-concurrency')?.value) || 5));
+    const imageConcurrency = Math.max(1, Math.min(12, Number(element('creation-config-image-concurrency')?.value) || 5));
     automation.mode = automationModeFromForm();
     automation.image_concurrency = imageConcurrency;
     automation.ai_narration_annotation = automation.mode === 'auto' && narrationAnnotationFromForm();
@@ -623,7 +685,7 @@
     setBindingValue('image', bindings.image_generation);
     const tts = objectValue(value.tts);
     setBindingValue('tts', tts.connection || bindings.tts);
-    setStringField('creation-config-tts-concurrency', String(Math.max(1, Math.min(10, Number(tts.concurrency) || 10))));
+    setStringField('creation-config-tts-concurrency', String(Math.max(1, Math.min(10, Number(tts.concurrency) || 4))));
     setStringField('creation-config-seed-audio-concurrency', String(boundedSeedAudioConcurrency(tts.seed_audio_concurrency)));
     setStringField('creation-config-tts-rpm', String(Math.max(1, Math.min(600, Number(tts.requests_per_minute) || 10))));
     setImageStyleValue(value.image_style);
@@ -641,7 +703,7 @@
     );
     if (maskAnnotationControl) maskAnnotationControl.checked = true;
     updateAutomationControls();
-    setStringField('creation-config-image-concurrency', String(Math.max(1, Math.min(6, Number(automation.image_concurrency) || 5))));
+    setStringField('creation-config-image-concurrency', String(Math.max(1, Math.min(12, Number(automation.image_concurrency) || 5))));
     const render = objectValue(value.render);
     setStringField('creation-config-render-acceleration', render.acceleration || 'auto');
     const outputFormats = Array.isArray(render.output_formats) && render.output_formats.length
@@ -773,6 +835,7 @@
       const actions = document.createElement('div');
       actions.className = 'model-library-card-actions';
       actions.append(button('编辑', 'secondary', () => editModelConnection(connection)));
+      actions.append(button('复制', 'secondary', () => duplicateModelConnection(connection)));
       actions.append(button('删除', 'danger', () => deleteModelConnection(connection)));
       item.append(heading, actions);
       target.append(item);
@@ -1166,6 +1229,27 @@
     }
   }
 
+  async function duplicateModelConnection(connection) {
+    if (!connection?.id) return;
+    // 复制后的名称固定为“原名称-副本”。
+    const name = `${connection.name || '未命名模型'}-副本`;
+    try {
+      const created = await window.API.post(
+        `/api/model-connections/${encodeURIComponent(connection.id)}/copy`,
+        { name },
+      );
+      toast(`已复制为“${name}”，可在下方修改`);
+      await refreshCreationConfigManagement();
+      // 复制成功后进入该副本的编辑表单，方便立即做二次修改。
+      if (created?.id) {
+        state.editingConnectionId = created.id;
+        editModelConnection(created);
+      }
+    } catch (error) {
+      requestError('复制模型失败', error);
+    }
+  }
+
   async function deleteModelConnection(connection) {
     if (!connection?.id) return;
     const name = connection.name || '此模型';
@@ -1513,6 +1597,7 @@
     document.querySelectorAll('[data-creation-config-panel]').forEach(panel => {
       panel.hidden = panel.dataset.creationConfigPanel !== selected;
     });
+    if (selected === 'output') requestAnimationFrame(updateCreationConfigSubtitlePreview);
   }
 
   function initCreationConfigManagementEvents() {
@@ -1546,6 +1631,11 @@
     element('btn-creation-config-style-submit')?.addEventListener('click', submitCreationConfigStyle);
     element('creation-config-style-reference-files')?.addEventListener('change', renderCreationConfigStyleReferencePreview);
     element('creation-config-subtitle-enabled')?.addEventListener('change', updateSubtitleControls);
+    document.querySelectorAll('[data-creation-config-subtitle]').forEach(field => {
+      field.addEventListener('input', updateCreationConfigSubtitlePreview);
+      field.addEventListener('change', updateCreationConfigSubtitlePreview);
+    });
+    window.addEventListener('resize', updateCreationConfigSubtitlePreview);
     document.querySelectorAll('input[name="creation-config-automation-mode"]').forEach(input => {
       input.addEventListener('change', () => {
         updateAutomationControls();

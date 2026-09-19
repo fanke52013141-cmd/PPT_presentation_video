@@ -191,7 +191,8 @@ function initGlobalEvents() {
   document.getElementById('step6-btn-save-and-tts')?.addEventListener('click', () => saveNarrationAndRunTTS());
   document.getElementById('step6-btn-audio-confirm-next')?.addEventListener('click', async () => {
     const confirmed = await confirmStep7Audio();
-    if (confirmed) navigateToStep(9);
+    // 数字人功能未启用时不存在 step-panel-9，确认后应直接进入作品输出（可见步骤 8）。
+    if (confirmed) navigateToStep(window.__dhEnabled === true ? 9 : 8);
   });
   document.getElementById('step9-btn-skip')?.addEventListener('click', () => navigateToStep(8));
 

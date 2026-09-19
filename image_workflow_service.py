@@ -40,6 +40,7 @@ from global_image_style_service import (
 )
 from ai_provider_service import ImagePayloadTooLarge
 import invalidation_service
+import generation_governor
 from artifact_registry import record_artifact, remove_artifact_record
 from pipeline_lifecycle import write_json_atomic
 from project_storage import slide_file as storage_slide_file
@@ -995,9 +996,22 @@ def _generate_slide_image_impl(
         }
     except HTTPException:
         raise
+    except generation_governor.GovernorTimeout as exc:
+        # 上游额度排队超时是"暂时忙"，不是生成失败：让调用方知道可以稍后重试，
+        # 而不是把它当成图片内容/参数错误。
+        logger.warning("Image generation queued too long for %s: %s", slide_id, exc)
+        raise HTTPException(
+            status_code=503,
+            detail=f"生图网关额度排队超时，请稍后重试：{exc}",
+        ) from exc
     except Exception as exc:
         safe_error = _redact_runtime_secrets(exc, runtime_secrets)
         logger.error("Image generation error for %s: %s", slide_id, safe_error)
+        if generation_governor.is_rate_limit_error(exc):
+            raise HTTPException(
+                status_code=503,
+                detail=f"生图网关限流，请稍后重试：{safe_error}",
+            ) from exc
         raise HTTPException(status_code=500, detail=f"生成图片失败: {safe_error}") from exc
 
 

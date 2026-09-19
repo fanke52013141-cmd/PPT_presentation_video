@@ -21,7 +21,7 @@ from typing import Any, Callable
 from sqlalchemy.orm import Session
 
 from artifact_fingerprint import sha256_json
-from database import LocalJob, Project
+from database import LocalJob, Project, utc_now_naive
 import invalidation_service
 from remotion_runner import RemotionRunner
 from tts_artifacts import confirmation_status as tts_confirmation_status
@@ -668,10 +668,19 @@ class VideoRenderService:
                     self.current_render_input_fingerprint(project)
                 )
                 visual_settings = self.artifacts.visual_settings(project)
+                render_completed_at = utc_now_naive()
+                project_created_at = getattr(project, "created_at", None)
+                project_total_elapsed_sec: int | None = None
+                if isinstance(project_created_at, datetime):
+                    project_total_elapsed_sec = max(
+                        0,
+                        round((render_completed_at - project_created_at).total_seconds()),
+                    )
                 render_metadata = {
-                    "rendered_at": datetime.now().isoformat(
-                        timespec="seconds"
-                    ),
+                    "rendered_at": render_completed_at.isoformat(timespec="seconds"),
+                    # This measures the complete user-visible production cycle,
+                    # not only the Remotion subprocess duration.
+                    "project_total_elapsed_sec": project_total_elapsed_sec,
                     "reveal_pipeline_version": (
                         self.config.pipeline_version
                     ),

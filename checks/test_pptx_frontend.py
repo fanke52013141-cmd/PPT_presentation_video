@@ -17,6 +17,9 @@ def test_output_workspace_exposes_pptx_controls_and_status() -> None:
     assert "/exports/pptx/readiness" in script
     assert "下载 PPTX" in script
     assert 'id="step8-btn-download-srt"' in html
+    # 这里断言**实际发布的按钮文案**，而不是历史上的固定短语。
+    # 按钮文案是用户可见的设计交付内容，会随设计稿调整；守护的目标是
+    # "输出工作区仍然暴露字幕下载控件"，不是锁死某一句文案。
     assert "下载字幕 SRT" in html
     assert "/subtitles/readiness" in script
     assert "/subtitles.srt" in script

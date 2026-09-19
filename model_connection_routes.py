@@ -23,6 +23,9 @@ from model_connection_models import (
 
 router = APIRouter(prefix="/api/model-connections", tags=["Model connections"])
 _VOICE_REFERENCE_ROOT = Path(__file__).resolve().parent / "data" / "model_voice_references"
+# 参考音频上限。读取必须**带上限**，否则 2GB 上传会先整块进内存再被拒绝
+# （这正是 checks/test_upload_bounded_reads.py 守护的 M-01 回归）。
+MAX_REFERENCE_AUDIO_BYTES = 10 * 1024 * 1024
 
 
 def _raise_http_error(exc: Exception) -> None:
@@ -90,9 +93,12 @@ async def upload_model_reference_audio(
         suffix = Path(str(file.filename or "")).suffix.lower()
         if suffix not in {".wav", ".mp3", ".pcm", ".ogg"}:
             raise ValueError("参考音频仅支持 wav、mp3、pcm 或 ogg 格式")
-        content = await file.read(10 * 1024 * 1024 + 1)
-        if not content or len(content) > 10 * 1024 * 1024:
-            raise ValueError("参考音频必须存在且不能超过 10MB")
+        # 多读 1 字节即可判定超限，避免把超大文件整块读进内存。
+        content = await file.read(MAX_REFERENCE_AUDIO_BYTES + 1)
+        if not content or len(content) > MAX_REFERENCE_AUDIO_BYTES:
+            raise ValueError(
+                f"参考音频必须存在且不能超过 {MAX_REFERENCE_AUDIO_BYTES // (1024 * 1024)}MB"
+            )
         _VOICE_REFERENCE_ROOT.mkdir(parents=True, exist_ok=True)
         target = _VOICE_REFERENCE_ROOT / f"{connection_id}{suffix}"
         pending = _VOICE_REFERENCE_ROOT / f"{connection_id}.upload{suffix}"

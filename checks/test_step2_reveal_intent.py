@@ -88,8 +88,14 @@ def test_compose_retries_atomicity_failure_once_with_the_repaired_plan(monkeypat
     (planning / "slide_script_plan.json").write_text(json.dumps(SCRIPT_PLAN, ensure_ascii=False), encoding="utf-8")
     (planning / "slide_visual_plan.json").write_text(json.dumps(initial_plan, ensure_ascii=False), encoding="utf-8")
 
+    # 项目桩必须覆盖 compose_step2_visual_contract 真正读取的列。
+    # target_duration_sec 是真实数据库列（database.py + 迁移 0015），
+    # 漏掉它会让这里报 AttributeError，而不是被测的修复重试逻辑。
     project = SimpleNamespace(
-        id="project-reveal", run_dir=str(tmp_path), mask_enabled=1, target_duration_sec=None
+        id="project-reveal",
+        run_dir=str(tmp_path),
+        mask_enabled=1,
+        target_duration_sec=None,
     )
     validation_results = iter([
         {"valid": False, "stderr": "Visual group slide_001_el_002 in slide_001 describes multiple independent visual islands", "stdout": "", "returncode": 1},

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import sys
 
@@ -28,7 +29,16 @@ def test_repository_paths_are_canonical_and_application_free() -> None:
         assert forbidden not in source
 
     assert Path(paths.REPO_ROOT) == ROOT
-    assert Path(paths.RUNS_DIR) == ROOT / "runs"
+    # RUNS_DIR 允许用 PPT_STUDIO_RUNS_DIR 显式覆盖（测试隔离、多环境并行）。
+    # 测试会话本身会设置它，所以这里分两部分守护：
+    # 1) 注册表源码里仍然只声明一次规范默认值（仓库根下的 runs/）；
+    # 2) 运行时值必须严格等于被覆盖的值，未覆盖时等于规范默认值。
+    assert 'os.path.join(REPO_ROOT, "runs")' in source
+    configured_runs = os.environ.get("PPT_STUDIO_RUNS_DIR")
+    if configured_runs:
+        assert Path(paths.RUNS_DIR) == Path(os.path.abspath(configured_runs))
+    else:
+        assert Path(paths.RUNS_DIR) == ROOT / "runs"
     assert Path(paths.DATA_DIR) == ROOT / "data"
     assert Path(paths.STYLE_TOKENS_PATH) == (
         ROOT / "data" / "style_tokens.yaml"

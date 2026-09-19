@@ -1,4 +1,4 @@
-Write-Host "===================================================" -ForegroundColor Cyan
+﻿Write-Host "===================================================" -ForegroundColor Cyan
 Write-Host "  PPT Visualization Studio - Local Web Service" -ForegroundColor Cyan
 Write-Host "  Soft Pastel Studio" -ForegroundColor Cyan
 Write-Host "===================================================" -ForegroundColor Cyan
@@ -41,6 +41,14 @@ if (-not $ffmpegReady -and (Get-Command ffmpeg -ErrorAction SilentlyContinue) -a
 }
 if (-not $ffmpegReady) {
     Write-Warning "ffmpeg/ffprobe not found. Video render color validation will fail unless they are installed or PPT_STUDIO_FFMPEG_DIR is set."
+}
+
+# Remotion resolves subtitle fonts by CSS family NAME only, so the bundled design
+# fonts must be present in the Windows font table or rendering silently falls
+# back to Microsoft YaHei.  Idempotent; failures never block startup.
+$fontInstaller = Join-Path $PSScriptRoot "scripts\portable_install_fonts.ps1"
+if (Test-Path $fontInstaller) {
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $fontInstaller -Quiet
 }
 
 Write-Host ""

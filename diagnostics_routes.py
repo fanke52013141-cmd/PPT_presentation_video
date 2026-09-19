@@ -10,6 +10,7 @@ from fastapi.responses import PlainTextResponse
 
 from error_log_service import ERROR_LOG_DIR, get_latest_error_log_path
 from route_inventory import iter_effective_routes
+import generation_governor
 
 
 router = APIRouter()
@@ -57,6 +58,29 @@ def _diagnostics_payload(app: Any) -> dict[str, Any]:
 @router.get("/api/runtime/diagnostics")
 def runtime_diagnostics(request: Request) -> dict[str, Any]:
     return _diagnostics_payload(request.app)
+
+
+@router.get("/api/diagnostics/generation-governor")
+def generation_governor_snapshot() -> dict[str, Any]:
+    """只读暴露各上游网关的额度占用与排队情况。
+
+    额度是**网关全局**的，所以这里的每个条目对应一个
+    ``(资源种类, 网关)`` 组合，而不是单个项目：
+    - ``requests_per_minute`` / ``max_concurrency`` 是配置额度；
+    - ``concurrency_limit_current`` 是 AIMD 后的当前并发上限（撞限流会减半，
+      连续成功后逐格回升）；
+    - ``tokens_available`` 是令牌桶余量，``queued`` 是正在排队等待的调用方数量；
+    - ``waited_sec_total`` / ``rate_limit_events`` / ``timeouts`` 用于判断
+      到底是被额度卡住，还是被上游限流。
+    """
+    governor = generation_governor.get_generation_governor()
+    return {
+        "success": True,
+        "enabled": governor.enabled,
+        "max_wait_sec": governor.max_wait_sec,
+        "gateways": governor.snapshot(),
+    }
+
 
 
 @router.get("/api/error-log")

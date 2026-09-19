@@ -12,7 +12,14 @@ logger = logging.getLogger("PPTStudio.Database")
 
 DB_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "data"))
 os.makedirs(DB_DIR, exist_ok=True)
-DATABASE_URL = f"sqlite:///{os.path.join(DB_DIR, 'projects.db')}"
+# 数据库文件位置可用 PPT_STUDIO_DB_PATH 覆盖，默认仍是 data/projects.db。
+# 用途：测试套件与真实项目库隔离（见 checks/conftest.py）、备份校验、
+# 并行多环境。生产启动路径不设置该变量，行为不变。
+DB_PATH = os.path.abspath(
+    os.environ.get("PPT_STUDIO_DB_PATH") or os.path.join(DB_DIR, "projects.db")
+)
+os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+DATABASE_URL = f"sqlite:///{DB_PATH}"
 
 engine = create_engine(
     DATABASE_URL,

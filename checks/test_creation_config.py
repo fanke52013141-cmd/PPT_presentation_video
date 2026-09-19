@@ -119,7 +119,7 @@ def test_package_preserves_validated_automation_concurrency() -> None:
     configured["automation"]["mode"] = "auto"
     configured["automation"]["ai_narration_annotation"] = False
     configured["automation"]["ai_mask_annotation"] = True
-    configured["tts"]["concurrency"] = 10
+    configured["tts"]["concurrency"] = 4
     configured["tts"]["seed_audio_concurrency"] = 5
     configured["tts"]["requests_per_minute"] = 20
     configured["render"] = {"acceleration": "gpu", "output_formats": ["video", "pptx"]}
@@ -129,7 +129,7 @@ def test_package_preserves_validated_automation_concurrency() -> None:
     assert normalized["automation"]["image_concurrency"] == 5
     assert normalized["automation"]["ai_narration_annotation"] is False
     assert normalized["automation"]["ai_mask_annotation"] is True
-    assert normalized["tts"]["concurrency"] == 10
+    assert normalized["tts"]["concurrency"] == 4
     assert normalized["tts"]["seed_audio_concurrency"] == 5
     assert normalized["tts"]["requests_per_minute"] == 20
     assert normalized["render"]["acceleration"] == "gpu"

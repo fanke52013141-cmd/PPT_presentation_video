@@ -186,10 +186,7 @@ function ensureAccountDialog() {
       if (!editingAccountId && select && _accounts.some(item => item.id === accountId)) {
         select.value = accountId;
         await selectAccount(accountId);
-      }
-      if (typeof window.showToast === 'function') {
-        window.showToast(editingAccountId ? '账号名称已更新' : '账号已创建并切换');
-      }
+      } 
     } catch (_) {
       // API client renders the server error; keep the dialog open so the user
       // can correct the name without losing what they entered.
@@ -311,7 +308,6 @@ async function selectAccount(accountId) {
     if (typeof exitWorkspace === 'function' && state?.currentProject) exitWorkspace();
     await loadAccounts();
     await loadProjects();
-    showToast('已切换创作账号');
   } catch (_) {
     await loadAccounts();
   }

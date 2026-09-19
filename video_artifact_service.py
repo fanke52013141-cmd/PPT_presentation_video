@@ -92,7 +92,17 @@ class VideoArtifactService:
         self.dependencies = dependencies
 
     def get_project(self, db: Session, project_id: str) -> Project:
-        project = db.query(Project).filter(Project.id == project_id).first()
+        # 账号边界必须与项目服务一致：只允许读取当前创作账号名下的项目，
+        # 防止视频/PPTX/删除等接口通过 project_id 越权访问其他账号的数据。
+        account_id = get_current_account_id()
+        project = (
+            db.query(Project)
+            .filter(
+                Project.id == project_id,
+                Project.account_id == account_id,
+            )
+            .first()
+        )
         if not project:
             raise VideoRenderError(404, "项目不存在")
         return project
@@ -281,6 +291,11 @@ class VideoArtifactService:
         playback_rate = float(
             metadata.get("playback_rate", 1.0) or 1.0
         )
+        raw_project_elapsed = metadata.get("project_total_elapsed_sec")
+        try:
+            project_total_elapsed_sec = max(0, round(float(raw_project_elapsed)))
+        except (TypeError, ValueError):
+            project_total_elapsed_sec = None
         stored_fingerprint = metadata.get("input_fingerprint")
         current_fingerprint = (
             current_fingerprint
@@ -320,6 +335,7 @@ class VideoArtifactService:
             "video_background": video_background or None,
             "subtitle_style": subtitle_style,
             "playback_rate": playback_rate,
+            "project_total_elapsed_sec": project_total_elapsed_sec,
             "source_filename": (
                 str(metadata.get("source_filename") or "") or None
             ),

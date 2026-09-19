@@ -33,6 +33,8 @@ from tts_artifacts import (
 )
 from project_config_runtime import get_config_value
 from account_context import get_current_account_id, reset_current_account_id, set_current_account_id
+import generation_governor
+from tts_provider_service import is_minimax_async_endpoint
 
 
 logger = logging.getLogger("PPTStudio.TTS")
@@ -79,6 +81,8 @@ _MAX_SEED_AUDIO_SYNTHESIS_CONCURRENCY = 5
 _DEFAULT_MINIMAX_REQUESTS_PER_MINUTE = 10
 _DEFAULT_MINIMAX_POLL_INTERVAL_SEC = 8.0
 _MINIMAX_REQUEST_BUDGET_RATIO = 0.6
+# 单页语音合成的预期耗时，用于把"轮询次数"折算成网关额度占用。
+_EXPECTED_TTS_PAGE_DURATION_SEC = 40.0
 
 
 @dataclass(frozen=True)
@@ -214,6 +218,18 @@ def _redact_runtime_secrets(value: Any, secrets: Any) -> str:
             if isinstance(secret, str) and secret:
                 text = text.replace(secret, "[REDACTED]")
     return text
+
+
+def _normalize_tts_number(value: Any) -> str:
+    """数值型语音设置统一以 str(float(...)) 形式参与缓存键比对。
+
+    供应商脚本端 argparse 类型不一（float/int/str），"2" 与 "2.0" 这类等值
+    表示若直接比对会永久失配，导致恢复/续跑时音频被无谓地全量重合成。
+    """
+    try:
+        return str(float(str(value).strip()))
+    except (TypeError, ValueError):
+        return str(value or "").strip()
 
 
 def _tts_artifact_matches_runtime(paths: Dict[str, str], expected: Dict[str, Any]) -> bool:
@@ -613,9 +629,9 @@ def _resolve_tts_voice_profile(project: Project) -> Dict[str, Any]:
         "model": tts_model,
         "voice_id": tts_voice_id,
         "clone_voice_id": tts_clone_voice_id,
-        "speed": tts_speed,
-        "volume": tts_volume,
-        "pitch": tts_pitch,
+        "speed": _normalize_tts_number(tts_speed),
+        "volume": _normalize_tts_number(tts_volume),
+        "pitch": _normalize_tts_number(tts_pitch),
     }
     if provider == "volcengine_seed_audio":
         tts_cache_key["reference_audio_signature"] = _reference_audio_signature(tts_clone_voice_id)
@@ -774,6 +790,29 @@ def synthesize_tts_resumable(project_id: str, db: Session):
 
     if pending_jobs:
         worker_count = min(tts_concurrency, len(pending_jobs))
+        # 上游额度是**网关全局**的（MiniMax 默认 10 请求/分钟）。每页的真实成本
+        # 取决于端点：异步端点 = 上传 + 提交 + 取回 + 轮询（≥4 次），
+        # 同步端点 = 1 次。旧实现按"1 页 = 1 请求"放行，等于超发约 4 倍。
+        governor = generation_governor.get_generation_governor()
+        govern_tts = bool(governor.enabled and provider == "minimax")
+        minimax_async_endpoint = is_minimax_async_endpoint(tts_endpoint)
+        global_poll_interval: Optional[float] = None
+        if govern_tts and minimax_async_endpoint:
+            reserved_cost, global_poll_interval = governor.tts_async_reservation(
+                base_url=tts_endpoint,
+                expected_duration_sec=_EXPECTED_TTS_PAGE_DURATION_SEC,
+            )
+        elif govern_tts:
+            reserved_cost = generation_governor.TTS_SYNC_FIXED_COST
+        else:
+            reserved_cost = 1
+        if govern_tts:
+            worker_count = min(
+                worker_count,
+                governor.budget(
+                    generation_governor.RESOURCE_TTS, tts_endpoint
+                ).max_concurrency,
+            )
         minimax_poll_interval_sec = (
             _minimax_poll_interval_seconds(
                 worker_count,
@@ -785,8 +824,16 @@ def synthesize_tts_resumable(project_id: str, db: Session):
             if provider == "minimax"
             else None
         )
-        # A process-wide launch gate per connection prevents all slide
-        # processes from uploading/submitting at once, across projects too.
+        if minimax_poll_interval_sec is not None and global_poll_interval is not None:
+            # 项目级轮询间隔只能更慢，不能快过全局额度允许的节奏。
+            minimax_poll_interval_sec = max(
+                minimax_poll_interval_sec, global_poll_interval
+            )
+        # A single shared launch gate prevents all slide processes from
+        # uploading/submitting at once.  It does not reduce the number of
+        # active async jobs after they have started.  闸口按连接（供应商+地址+密钥
+        # 指纹）区分。这是**项目级子配额**：
+        # 多项目/多账号的合计速率由 generation_governor 兜住。
         launch_throttle = (
             _shared_tts_launch_throttle(
                 provider, tts_endpoint, tts_api_key, 60.0 / tts_requests_per_minute
@@ -809,6 +856,9 @@ def synthesize_tts_resumable(project_id: str, db: Session):
                 if provider == "minimax"
                 else None
             ),
+            governed_by_gateway=govern_tts,
+            reserved_cost_per_page=reserved_cost if govern_tts else None,
+            minimax_async_endpoint=minimax_async_endpoint if provider == "minimax" else None,
         )
 
         def synthesize_one(job: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -822,6 +872,19 @@ def synthesize_tts_resumable(project_id: str, db: Session):
                 )
             if launch_throttle is not None:
                 launch_throttle.wait_for_turn()
+            # 每次尝试（含重试）都重新申请一次网关额度租约：重试会重新上传与
+            # 提交，同样消耗额度，必须在同一份额度内排队。
+            reservation = (
+                (
+                    lambda: governor.job(
+                        generation_governor.RESOURCE_TTS,
+                        tts_endpoint,
+                        reserved_cost=reserved_cost,
+                    )
+                )
+                if govern_tts
+                else None
+            )
             return (
                 job,
                 run_tts_command_with_retries(
@@ -829,6 +892,8 @@ def synthesize_tts_resumable(project_id: str, db: Session):
                     job["slide_id"],
                     job["args"],
                     tts_env,
+                    reservation=reservation,
+                    gateway_base_url=tts_endpoint,
                 ),
             )
 

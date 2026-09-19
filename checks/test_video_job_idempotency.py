@@ -111,6 +111,13 @@ def _prepare_start(monkeypatch) -> None:
         def start(self) -> None:
             return None
 
+        def join(self, timeout=None) -> None:
+            # 该桩被登记进 concurrent.futures 的全局线程表，进程退出时
+            # _python_exit 会调用 join()；缺失它会在 CI 日志里留下
+            # "NoopThread has no attribute 'join'" 噪音。见
+            # checks/test_video_render_components.py 的同类桩。
+            return None
+
     monkeypatch.setattr("video_render_service.threading.Thread", NoopThread)
 
 

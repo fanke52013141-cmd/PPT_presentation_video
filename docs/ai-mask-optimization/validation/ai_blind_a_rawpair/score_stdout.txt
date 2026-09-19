@@ -1,0 +1,83 @@
+{
+  "passed": false,
+  "cases": [
+    {
+      "case_id": "01_separated",
+      "passed": true,
+      "macro_iou": 0.9990375611278743,
+      "coverage": 0.9999477247552954,
+      "pale_recall": 0.9121140142517815
+    },
+    {
+      "case_id": "02_gap_8px",
+      "passed": true,
+      "macro_iou": 0.9990375611278743,
+      "coverage": 0.9999501819704512,
+      "pale_recall": 0.9121140142517815
+    },
+    {
+      "case_id": "03_gap_2px",
+      "passed": true,
+      "macro_iou": 0.9990375611278743,
+      "coverage": 0.9999505264917266,
+      "pale_recall": 0.9121140142517815
+    },
+    {
+      "case_id": "04_arrow_bridge",
+      "passed": true,
+      "macro_iou": 0.998398082218384,
+      "coverage": 0.9999477569370315,
+      "pale_recall": 0.9121140142517815
+    },
+    {
+      "case_id": "05_pale",
+      "passed": false,
+      "macro_iou": 0.9721596948247577,
+      "coverage": 0.9999477247552954,
+      "pale_recall": 0.9999431992631256
+    },
+    {
+      "case_id": "06_dense_15",
+      "passed": true,
+      "macro_iou": 0.9997593902819686,
+      "coverage": 0.9999568920822406,
+      "pale_recall": 0.9121140142517815
+    },
+    {
+      "case_id": "07_nested",
+      "passed": false,
+      "macro_iou": 0.8135229429289186,
+      "coverage": 0.9999491145939344,
+      "pale_recall": 0.9121140142517815
+    },
+    {
+      "case_id": "08_detached",
+      "passed": true,
+      "macro_iou": 0.9932623809351498,
+      "coverage": 0.996933227239573,
+      "pale_recall": 0.8604826546003017
+    },
+    {
+      "case_id": "09_pale_nested_combo",
+      "passed": true,
+      "macro_iou": 1.0,
+      "coverage": 1.0,
+      "pale_recall": 1.0
+    },
+    {
+      "case_id": "10_dense_20",
+      "passed": false,
+      "macro_iou": 0.0,
+      "coverage": 0.0,
+      "pale_recall": 0.0
+    },
+    {
+      "case_id": "11_halo_lines",
+      "passed": true,
+      "macro_iou": 1.0,
+      "coverage": 1.0,
+      "pale_recall": 1.0
+    }
+  ]
+}
+

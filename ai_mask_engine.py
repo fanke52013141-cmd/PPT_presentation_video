@@ -15,7 +15,10 @@ from pathlib import Path
 from typing import Any, Callable
 
 
-from ai_mask_contracts import AI_MASK_VISION_TIMEOUT_SEC  # noqa: F401 (re-exported for ai_mask_semantic_matcher via ai_mask_engine)
+from ai_mask_contracts import (  # noqa: F401 (AI_MASK_VISION_TIMEOUT_SEC re-exported for ai_mask_semantic_matcher via ai_mask_engine)
+    AI_MASK_VISION_TIMEOUT_SEC,
+    resolve_mask_source_master,
+)
 from pipeline_lifecycle import write_json_atomic
 
 
@@ -377,7 +380,12 @@ def _annotate_project(
     for slide in contract_slides:
         slide_id = str(slide.get("slide_id") or "")
         slide_dir = run_dir / "slides" / slide_id
-        image_path = slide_dir / "visual_draft.png"
+        master_image_path = slide_dir / "visual_draft.png"
+        # A sealed raw sidecar keeps the pre-wash pale/halo pixels; detection,
+        # crops, DocLayout, and the multimodal full image all read that source.
+        # Without a valid pair the behavior is byte-identical to the master.
+        image_path = resolve_mask_source_master(master_image_path) or master_image_path
+        mask_source = "raw_pair" if image_path != master_image_path else "normalized_master"
         # ---- DocLayout-YOLO layout detection (optional) ----
         layout_boxes = None
         if settings.get("doclayout_enabled"):
@@ -424,6 +432,7 @@ def _annotate_project(
             "slide_id": slide_id,
             "slide_dir": slide_dir,
             "image_path": image_path,
+            "mask_source": mask_source,
             "elements": elements,
             "element_list": element_list,
             "fallback": fallback,
@@ -518,7 +527,7 @@ def _annotate_project(
         semantic_quality = match.get("semantic_quality", {}) if isinstance(match.get("semantic_quality"), dict) else {}
         slide_review_issues = [{"slide_id": slide_id, **issue} for issue in _review_issues(match)]
         review_issues.extend(slide_review_issues)
-        slides_out.append({"slide_id": slide_id, "detected_element_count": len(item["element_list"]), "residual_component_count": len(item["elements"].get("residual_elements", [])), "matched_group_count": len(match.get("matches", [])), "updated_group_count": applied["updated"], "skipped_group_count": applied["skipped"], "unmatched_element_count": len(match.get("unmatched_elements", [])), "unmatched_group_count": unmatched_group_count, "matching_method": match.get("matching_method"), "quality": slide_quality, "semantic_quality": semantic_quality, "warnings": match.get("warnings", []), "review_required": bool(slide_review_issues), "review_issues": slide_review_issues})
+        slides_out.append({"slide_id": slide_id, "mask_source": item["mask_source"], "detected_element_count": len(item["element_list"]), "residual_component_count": len(item["elements"].get("residual_elements", [])), "matched_group_count": len(match.get("matches", [])), "updated_group_count": applied["updated"], "skipped_group_count": applied["skipped"], "unmatched_element_count": len(match.get("unmatched_elements", [])), "unmatched_group_count": unmatched_group_count, "matching_method": match.get("matching_method"), "quality": slide_quality, "semantic_quality": semantic_quality, "warnings": match.get("warnings", []), "review_required": bool(slide_review_issues), "review_issues": slide_review_issues})
     # ``complete`` remains a backward-compatible processing signal.  Consumers
     # must use ``quality_status`` to distinguish a clean result from a usable
     # result that still needs human review.
@@ -548,6 +557,9 @@ def _annotate_project(
         "review_issue_count": len(review_issues),
         "review_issues": review_issues,
         "scope_slide_ids": [item["slide_id"] for item in prepared],
+        "mask_sources": {
+            item["slide_id"]: item["mask_source"] for item in prepared
+        },
     }
     write_json_atomic(run_dir / "reveal_manifest.json", manifest)
     return {

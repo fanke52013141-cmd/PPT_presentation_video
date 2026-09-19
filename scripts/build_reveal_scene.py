@@ -31,6 +31,7 @@ try:
         MASK_CUTOUT_SOFT_MIN_CHANNEL,
         masked_outer_white_cutout,
         normalize_connected_background,
+        restore_pale_source_content,
     )
     from scripts.pipeline_profiles import allowed_reveal_actions, normalize_reveal_action, read_pipeline_profile
 except ModuleNotFoundError:
@@ -42,6 +43,7 @@ except ModuleNotFoundError:
         MASK_CUTOUT_SOFT_MIN_CHANNEL,
         masked_outer_white_cutout,
         normalize_connected_background,
+        restore_pale_source_content,
     )
     from pipeline_profiles import allowed_reveal_actions, normalize_reveal_action, read_pipeline_profile
 
@@ -49,7 +51,11 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from ai_mask_contracts import REVEAL_PIPELINE_VERSION
+from ai_mask_contracts import (
+    RAW_SOURCE_CUTOUT_HARD_MIN_CHANNEL,
+    REVEAL_PIPELINE_VERSION,
+    resolve_mask_source_master,
+)
 
 PIPELINE_VERSION = REVEAL_PIPELINE_VERSION
 MASKED_COMPOSITION_METHOD = "solid_background_mask_boundary_white_cutout"
@@ -412,6 +418,38 @@ def compose_slide(
             painted_groups.append((group, alpha))
 
     source_master = master
+    cutout_hard_min_channel = MASK_CUTOUT_HARD_MIN_CHANNEL
+    raw_master_path = resolve_mask_source_master(master_path)
+    raw_source_sha256 = ""
+    if raw_master_path is not None:
+        with Image.open(raw_master_path) as raw_candidate:
+            raw_master = raw_candidate.convert("RGB")
+        # The pair is only meaningful on the exact same canvas; a size drift
+        # means one file was replaced out-of-band, so fall back to master.
+        if raw_master.size == master.size:
+            source_master = raw_master
+            raw_source_sha256 = sha256_file(raw_master_path)
+            cutout_hard_min_channel = RAW_SOURCE_CUTOUT_HARD_MIN_CHANNEL
+        else:
+            raw_master_path = None
+
+    def cut_layer(painted_alpha: Image.Image) -> tuple[Image.Image, Image.Image, dict[str, Any]]:
+        layer, alpha, stats = masked_outer_white_cutout(
+            source_master,
+            painted_alpha,
+            hard_min_channel=cutout_hard_min_channel,
+        )
+        if raw_master_path is not None:
+            layer, alpha, preserved = restore_pale_source_content(
+                layer,
+                alpha,
+                painted_alpha,
+                source_master,
+                pale_ceiling=cutout_hard_min_channel,
+            )
+            stats["pale_preserved_pixel_count"] = preserved
+        return layer, alpha, stats
+
     default_duration_sec = float(slide.get("default_duration_sec", 12.0))
     if not painted_groups:
         normalized_master, normalized_background_pixel_count = normalize_connected_background(
@@ -445,7 +483,7 @@ def compose_slide(
     base_image = Image.new("RGBA", (width, height), (*background_rgb, 255))
     static_group_reports: list[dict[str, Any]] = []
     for static_group, static_alpha in static_painted_groups:
-        static_layer, exact_alpha, cutout_stats = masked_outer_white_cutout(source_master, static_alpha)
+        static_layer, exact_alpha, cutout_stats = cut_layer(static_alpha)
         if not exact_alpha.getbbox():
             continue
         base_image = Image.alpha_composite(base_image, static_layer.convert("RGBA"))
@@ -471,10 +509,7 @@ def compose_slide(
 
     for index, (group, manual_alpha) in enumerate(dynamic_painted_groups, start=1):
         group_id = str(group["id"])
-        layer_image, alpha, cutout_stats = masked_outer_white_cutout(
-            source_master,
-            manual_alpha,
-        )
+        layer_image, alpha, cutout_stats = cut_layer(manual_alpha)
         if not alpha.getbbox():
             warnings.append({
                 "severity": "warning",
@@ -560,6 +595,8 @@ def compose_slide(
             "background_source": "canvas.background",
             "source_image_used_for_background": False,
             "cutout_method": "mask_boundary_connected_white_soft_alpha",
+            "cutout_source": "raw_pair" if raw_master_path is not None else "normalized_master",
+            "cutout_hard_min_channel": cutout_hard_min_channel,
             "static_header_in_base": bool(static_group_reports),
         },
     }
@@ -583,15 +620,18 @@ def compose_slide(
         "source_image_used_for_background": False,
         "cutout": {
             "method": "mask_boundary_connected_white_soft_alpha",
-            "hard_min_channel": MASK_CUTOUT_HARD_MIN_CHANNEL,
+            "hard_min_channel": cutout_hard_min_channel,
             "hard_max_chroma": MASK_CUTOUT_HARD_MAX_CHROMA,
             "soft_min_channel": MASK_CUTOUT_SOFT_MIN_CHANNEL,
             "soft_max_chroma": MASK_CUTOUT_SOFT_MAX_CHROMA,
             "feather_px": MASK_CUTOUT_FEATHER_PX,
             "enclosed_white_preserved": True,
             "white_decontamination": True,
+            "pale_preservation": raw_master_path is not None,
+            "source": "raw_pair" if raw_master_path is not None else "normalized_master",
         },
         "source_sha256": source_sha256,
+        "raw_source_sha256": raw_source_sha256,
         "static_groups": static_group_reports,
         "warnings": warnings,
         "input_group_count": len(groups),

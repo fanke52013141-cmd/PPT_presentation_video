@@ -5,7 +5,7 @@ description: Build deterministic reveal scenes from complete slide images and op
 
 # Purpose
 
-把每页完整位图、AI Mask 保存的精确 RLE 所有权和可选手工修正转换为 Remotion 使用的 PNG reveal 图层。生产版本固定为 `exact_rle_mask_with_manual_corrections_v5`。
+把每页完整位图、AI Mask 保存的精确 RLE 所有权和可选手工修正转换为 Remotion 使用的 PNG reveal 图层。生产版本固定为 `exact_rle_mask_with_manual_corrections_v6`。
 
 # Behavior
 

@@ -49,7 +49,7 @@ $env:PYTHONPATH = (Get-Location).Path
 
 ## 当前 Mask 渲染规则
 
-当前使用 `exact_rle_mask_with_manual_corrections_v5`：自动像素标注为主，手动工具作为兜底：
+当前使用 `exact_rle_mask_with_manual_corrections_v6`：自动像素标注为主，手动工具作为兜底：
 
 - 没有 Mask：直接显示完整图片。
 - 图片生成提示词强制要求外围背景为纯白色。

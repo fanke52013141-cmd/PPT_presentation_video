@@ -32,7 +32,7 @@
 ## Export
 
 - MP4 plays normally at 1920×1080.
-- New videos carry `exact_rle_mask_with_manual_corrections_v5` metadata.
+- New videos carry `exact_rle_mask_with_manual_corrections_v6` metadata.
 - Historical videos are visibly marked as legacy.
 
 ## Regression

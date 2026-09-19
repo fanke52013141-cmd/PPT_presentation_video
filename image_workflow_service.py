@@ -22,6 +22,13 @@ from fastapi import HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
+from ai_mask_contracts import (
+    mask_source_marker_path,
+    mask_source_raw_path,
+    remove_mask_source_pair,
+    rename_mask_source_pair,
+    seal_mask_source_pair,
+)
 from ai_provider_service import (
     enforce_white_image_region,
     is_toapis_image_provider,
@@ -321,6 +328,15 @@ def _enforce_project_subtitle_safe_zone(
         top=safe_zone["top"],
         bottom=safe_zone["bottom"],
     )
+    # The raw sidecar must stay a pixel-exact superset of the master: keep the
+    # locked caption band cleared in both files or the pair diverges.
+    raw_path = mask_source_raw_path(Path(image_path))
+    if raw_path.exists():
+        enforce_white_image_region(
+            str(raw_path),
+            top=safe_zone["top"],
+            bottom=safe_zone["bottom"],
+        )
     if subtitle_report["nonwhite_ratio"] > 0.005:
         logger.warning(
             "%s image entered locked subtitle-safe zone: slide=%s ratio=%.4f; region was cleared",
@@ -954,6 +970,7 @@ def _generate_slide_image_impl(
             save_path,
             target_width=canvas["width"],
             target_height=canvas["height"],
+            raw_save_path=str(mask_source_raw_path(Path(save_path))),
         )
         _enforce_project_subtitle_safe_zone(
             project,
@@ -961,6 +978,7 @@ def _generate_slide_image_impl(
             save_path,
             source="generated",
         )
+        seal_mask_source_pair(Path(save_path))
         write_visual_provenance(
             project.run_dir,
             slide_id,
@@ -1070,6 +1088,7 @@ def upload_slide_image(
             save_path,
             target_width=canvas["width"],
             target_height=canvas["height"],
+            raw_save_path=str(mask_source_raw_path(Path(save_path))),
         )
         _enforce_project_subtitle_safe_zone(
             project,
@@ -1077,6 +1096,7 @@ def upload_slide_image(
             save_path,
             source="uploaded",
         )
+        seal_mask_source_pair(Path(save_path))
         write_visual_provenance(
             project.run_dir,
             slide_id,
@@ -1174,6 +1194,13 @@ def apply_slide_candidate(project_id: str, payload: Dict[str, Any], db: Session)
         raise HTTPException(status_code=404, detail="候选图片不存在，请先生成")
 
     os.replace(candidate_path, image_path)
+    # The raw sidecar marker hashes content, not paths, so renaming the
+    # candidate pair onto the draft path keeps it valid. A candidate without a
+    # pair must also clear the replaced draft's stale pair.
+    rename_mask_source_pair(
+        Path(candidate_path),
+        Path(image_path),
+    )
     promote_candidate_provenance(project.run_dir, slide_id)
     mark_slide_image_changed(project, slide_id, db)
     return {
@@ -1206,6 +1233,8 @@ def delete_all_slide_images(project_id: str, db: Session):
                     path.unlink()
                 except FileNotFoundError:
                     pass
+            remove_mask_source_pair(image_path)
+            remove_mask_source_pair(candidate_path)
         invalidation_service.slide_images_changed(
             project,
             slide_ids,
@@ -1233,6 +1262,8 @@ def delete_slide_image(project_id: str, slide_id: str, db: Session):
     os.remove(image_path)
     if os.path.exists(candidate_path):
         os.remove(candidate_path)
+    remove_mask_source_pair(Path(image_path))
+    remove_mask_source_pair(Path(candidate_path))
     for candidate in (
         visual_provenance_path(project.run_dir, slide_id),
         visual_provenance_path(project.run_dir, slide_id, candidate=True),
@@ -1433,6 +1464,14 @@ def update_step3_image_order(project_id: str, payload: Dict[str, Any], db: Sessi
                     shutil.copy2(
                         provenance_path, slide_snapshot / "visual_provenance.json"
                     )
+                # The raw pair travels with its master image; the marker binds
+                # them by content hash so a stale or missing pair is ignored.
+                for pair_path in (
+                    mask_source_raw_path(image_path),
+                    mask_source_marker_path(image_path),
+                ):
+                    if pair_path.exists():
+                        shutil.copy2(pair_path, slide_snapshot / pair_path.name)
 
             try:
                 reassigned_at = datetime.now().isoformat(timespec="seconds")
@@ -1449,6 +1488,14 @@ def update_step3_image_order(project_id: str, payload: Dict[str, Any], db: Sessi
 
                     _restore_optional_file(
                         source_snapshot / "visual_draft.png", target_image
+                    )
+                    _restore_optional_file(
+                        source_snapshot / mask_source_raw_path(target_image).name,
+                        mask_source_raw_path(target_image),
+                    )
+                    _restore_optional_file(
+                        source_snapshot / mask_source_marker_path(target_image).name,
+                        mask_source_marker_path(target_image),
                     )
                     source_provenance_path = source_snapshot / "visual_provenance.json"
                     if source_provenance_path.exists() and target_image.exists():
@@ -1495,6 +1542,14 @@ def update_step3_image_order(project_id: str, payload: Dict[str, Any], db: Sessi
                         target_dir / "visual_draft.png",
                     )
                     _restore_optional_file(
+                        slide_snapshot / mask_source_raw_path(target_dir / "visual_draft.png").name,
+                        mask_source_raw_path(target_dir / "visual_draft.png"),
+                    )
+                    _restore_optional_file(
+                        slide_snapshot / mask_source_marker_path(target_dir / "visual_draft.png").name,
+                        mask_source_marker_path(target_dir / "visual_draft.png"),
+                    )
+                    _restore_optional_file(
                         slide_snapshot / "visual_provenance.json",
                         visual_provenance_path(root, slide_id),
                     )
@@ -1509,6 +1564,9 @@ def update_step3_image_order(project_id: str, payload: Dict[str, Any], db: Sessi
                     candidate.unlink()
                 except FileNotFoundError:
                     pass
+            remove_mask_source_pair(
+                Path(storage_slide_file(root, slide_id, "visual_candidate.png"))
+            )
         invalidation_service.slide_images_changed(
             project,
             affected_slide_ids,

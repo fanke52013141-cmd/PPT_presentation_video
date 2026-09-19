@@ -10,6 +10,10 @@ MASK_CUTOUT_HARD_MAX_CHROMA = 18
 MASK_CUTOUT_SOFT_MIN_CHANNEL = 170
 MASK_CUTOUT_SOFT_MAX_CHROMA = 40
 MASK_CUTOUT_FEATHER_PX = 8
+# Raw-pair layers keep intentional pale content: near-white pixels inside the
+# Painted Mask between this floor and the raw cutout floor are restored to the
+# source color instead of riding the boundary-white feather ramp.
+MASK_PALE_MIN_CHANNEL = MASK_CUTOUT_HARD_MIN_CHANNEL
 
 
 def _boundary_connected_hard_white(hard_white: np.ndarray, domain: np.ndarray) -> np.ndarray:
@@ -271,4 +275,44 @@ def masked_outer_white_cutout(
             "soft_edge_pixel_count": int(np.count_nonzero(soft_region)),
             "retained_pixel_count": int(np.count_nonzero(output_alpha)),
         },
+    )
+
+
+def restore_pale_source_content(
+    layer: Image.Image,
+    final_alpha: Image.Image,
+    painted_alpha: Image.Image,
+    source: Image.Image,
+    pale_floor: int = MASK_PALE_MIN_CHANNEL,
+    pale_ceiling: int = 254,
+    pale_max_chroma: int = MASK_CUTOUT_HARD_MAX_CHROMA,
+) -> tuple[Image.Image, Image.Image, int]:
+    """Re-attach intentional pale content on raw-pair reveal layers.
+
+    Inside a Painted Mask the boundary feather drives near-white pixels to a
+    barely visible alpha and decontamination darkens their color.  When the
+    layer was extracted from the sealed raw source those pixels are the very
+    pale boards and antialiased glyph halos the upload wash used to destroy,
+    so restore them to their source color at the painted alpha.  Pixels at or
+    above ``pale_ceiling`` stay removed; enclosed content is untouched.
+    """
+    rgba = np.asarray(layer.convert("RGBA")).copy()
+    source_rgb = np.asarray(source.convert("RGB"), dtype=np.uint8)
+    minimum = source_rgb.min(axis=2)
+    chroma = source_rgb.max(axis=2) - minimum
+    pale = (
+        (minimum >= int(pale_floor))
+        & (minimum < int(pale_ceiling))
+        & (chroma <= int(pale_max_chroma))
+    )
+    painted = np.asarray(painted_alpha.convert("L"), dtype=np.uint8)
+    hit = pale & (painted > 0) & (rgba[:, :, 3] < 255)
+    hit3 = np.repeat(hit[:, :, None], 3, axis=2)
+    rgba[:, :, :3] = np.where(hit3, source_rgb, rgba[:, :, :3])
+    alpha = np.where(hit, painted, rgba[:, :, 3]).astype(np.uint8)
+    rgba[:, :, 3] = alpha
+    return (
+        Image.fromarray(rgba, mode="RGBA"),
+        Image.fromarray(alpha, mode="L"),
+        int(np.count_nonzero(hit)),
     )

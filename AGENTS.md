@@ -173,7 +173,17 @@ project-level orchestrator.
 
 `scripts/build_reveal_scene.py` is the only production reveal builder.
 
-- Pipeline version: `exact_rle_mask_with_manual_corrections_v5`.
+- Pipeline version: `exact_rle_mask_with_manual_corrections_v6`.
+- Every Step 3 slide image write keeps a raw source pair: the fitted canvas
+  before the outer-connected white wash is stored as `visual_draft.raw.png`
+  next to the normalized master and sealed by `visual_draft.raw.sha256`, a
+  content-hash marker. AI Mask detection, candidate crops, the multimodal
+  full image, reveal-layer extraction, and PPTX reveal crops read the raw file
+  only while the marker matches the current master bytes; any other consumer
+  or a broken pair falls back to the normalized master byte-for-byte. Static
+  pages, PPTX static slides, and previews keep the normalized master. When a
+  raw pair is active the layer cutout raises its boundary-white floor to 254
+  so intentional pale content survives inside the Mask boundary flood.
 - AI Mask detects separable elements, names candidate crops, and maps narrated
   visual groups to those candidates with a multimodal model.
 - Every foreground component is required. Visual-only and decorative components

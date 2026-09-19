@@ -273,7 +273,7 @@ def test_skill_policy_and_prompt_editor_are_wired() -> None:
     assert "defaultStep2GenerationRequirement" not in app
     assert "syncStep6BeatText" in narration_audio
     assert "function syncStep6BeatText" not in app
-    assert "exact_rle_mask_with_manual_corrections_v5" in scene_prompt
+    assert "exact_rle_mask_with_manual_corrections_v6" in scene_prompt
 
 
 def test_reverse_prompt_settings_routes_are_registered() -> None:

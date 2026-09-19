@@ -20,7 +20,7 @@ Build deterministic Reveal assets from the approved slide bitmap and the semanti
 
 ## Production Contract
 
-- Pipeline: `exact_rle_mask_with_manual_corrections_v5`.
+- Pipeline: `exact_rle_mask_with_manual_corrections_v6`.
 - A Slide without a Mask remains `full_slide_static`.
 - A masked Slide starts from the configured video background; never reuse the source bitmap as its background.
 - Treat each saved automatic Mask as a processing boundary and apply optional manual paint/erase strokes only as corrections. No other re-assignment is allowed.

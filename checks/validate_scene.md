@@ -4,7 +4,7 @@ Target: `runs/<run_id>/slides/<slide_id>/scene.json`
 
 ## Required
 
-- Pipeline version is `exact_rle_mask_with_manual_corrections_v5`.
+- Pipeline version is `exact_rle_mask_with_manual_corrections_v6`.
 - Canvas is 1920×1080.
 - `layers[]` exists and every asset is a PNG inside the canvas.
 - No production PPT body uses HTML, SVG, text, shape, line, or React drawing.

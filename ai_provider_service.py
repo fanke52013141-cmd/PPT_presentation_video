@@ -259,6 +259,7 @@ def process_and_save_image(
     save_path: str,
     target_width: int = 1920,
     target_height: int = 1080,
+    raw_save_path: str | None = None,
 ) -> None:
     bg_color = (255, 255, 255)
     target_width = max(1, int(target_width))
@@ -296,6 +297,12 @@ def process_and_save_image(
     paste_x = (target_width - new_width) // 2
     paste_y = (target_height - new_height) // 2
     final_image.paste(resized_image, (paste_x, paste_y))
+    if raw_save_path:
+        # The masked-source pair sidecar: the fitted canvas before the
+        # outer-connected wash, so pale boards and antialiased halos stay
+        # recoverable for AI Mask detection and reveal-layer extraction.
+        os.makedirs(os.path.dirname(raw_save_path), exist_ok=True)
+        save_image_atomically(final_image, raw_save_path)
     final_image, _ = normalize_connected_background(
         final_image,
         bg_color,

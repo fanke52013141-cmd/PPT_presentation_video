@@ -23,7 +23,11 @@ from pptx import Presentation
 from pptx.util import Inches
 
 from artifact_fingerprint import presentation_input_fingerprint, sha256_file
-from ai_mask_contracts import REVEAL_PIPELINE_VERSION
+from ai_mask_contracts import (
+    RAW_SOURCE_CUTOUT_HARD_MIN_CHANNEL,
+    REVEAL_PIPELINE_VERSION,
+    resolve_mask_source_master,
+)
 from pipeline_lifecycle import write_json_atomic
 from visual_provenance import visual_provenance_status
 from project_storage import (
@@ -36,7 +40,11 @@ from project_storage import (
 
 # 复用视频侧的 mask 光栅化 + 抠图工具
 try:
-    from scripts.background_color import masked_outer_white_cutout
+    from scripts.background_color import (
+        MASK_CUTOUT_HARD_MIN_CHANNEL,
+        masked_outer_white_cutout,
+        restore_pale_source_content,
+    )
     from scripts.build_reveal_scene import (
         DEFAULT_CANVAS,
         RevealBuildError,
@@ -46,7 +54,11 @@ try:
         read_json,
     )
 except ModuleNotFoundError:
-    from background_color import masked_outer_white_cutout
+    from background_color import (
+        MASK_CUTOUT_HARD_MIN_CHANNEL,
+        masked_outer_white_cutout,
+        restore_pale_source_content,
+    )
     from build_reveal_scene import (
         DEFAULT_CANVAS,
         RevealBuildError,
@@ -326,6 +338,21 @@ def build_reveal_pptx(
         if master_image.size != (canvas_width, canvas_height):
             master_image = master_image.resize((canvas_width, canvas_height))
 
+        # Reveal crops follow the video-side rule: a sealed raw pair supplies
+        # pale/halo pixels with the relaxed cutout; the base stays the
+        # normalized master so PPTX background and static pixels are unchanged.
+        crop_source_image = master_image
+        crop_hard_min_channel = MASK_CUTOUT_HARD_MIN_CHANNEL
+        raw_master_path = resolve_mask_source_master(master_path)
+        if raw_master_path is not None:
+            with Image.open(raw_master_path) as raw_image:
+                raw_master = raw_image.convert("RGB")
+            if raw_master.size == master_image.size:
+                crop_source_image = raw_master
+                crop_hard_min_channel = RAW_SOURCE_CUTOUT_HARD_MIN_CHANNEL
+            else:
+                raw_master_path = None
+
         dynamic_groups = _collect_dynamic_groups(slide_manifest)
 
         if progress:
@@ -348,7 +375,19 @@ def build_reveal_pptx(
                 continue
             dynamic_alphas.append(alpha)
             try:
-                layer, _, _ = masked_outer_white_cutout(master_image, alpha)
+                layer, _, _ = masked_outer_white_cutout(
+                    crop_source_image,
+                    alpha,
+                    hard_min_channel=crop_hard_min_channel,
+                )
+                if raw_master_path is not None:
+                    layer, alpha, _ = restore_pale_source_content(
+                        layer,
+                        alpha,
+                        alpha,
+                        crop_source_image,
+                        pale_ceiling=crop_hard_min_channel,
+                    )
             except Exception as exc:
                 raise PptxRevealExportError(
                     f"{slide_id} 的 mask {group.get('id', '?')} 抠图失败：{exc}",

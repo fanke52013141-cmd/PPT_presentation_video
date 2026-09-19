@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Ensure production rendering cannot fall back to historical reveal algorithms."""
 
+import re
 from pathlib import Path
 
 
@@ -20,9 +21,9 @@ def main() -> None:
     preflight = (ROOT / "scripts" / "run_reveal_preflight.ps1").read_text(encoding="utf-8")
 
     contracts = (ROOT / "ai_mask_contracts.py").read_text(encoding="utf-8")
-    assert 'REVEAL_PIPELINE_VERSION = "exact_rle_mask_with_manual_corrections_v5"' in contracts
+    assert 'REVEAL_PIPELINE_VERSION = "exact_rle_mask_with_manual_corrections_v6"' in contracts
     assert "from ai_mask_contracts import REVEAL_PIPELINE_VERSION" in server
-    assert 'REVEAL_PIPELINE_VERSION = "exact_rle_mask_with_manual_corrections_v5"' not in server
+    assert 'REVEAL_PIPELINE_VERSION = "exact_rle_mask_with_manual_corrections_v6"' not in server
     assert 'rle.get("encoding") == "row_runs_v1"' in mask_manifest
     assert 'int(run[2]) > int(run[1])' in mask_manifest
     assert "def build_current_reveal_assets(project:" in mask_manifest
@@ -83,9 +84,13 @@ def main() -> None:
     for symbol in forbidden_builder_symbols:
         assert symbol not in builder, symbol
 
-    assert "from ai_mask_contracts import REVEAL_PIPELINE_VERSION" in builder
+    assert re.search(
+        r"from ai_mask_contracts import \(?[^)]*REVEAL_PIPELINE_VERSION",
+        builder,
+        re.DOTALL,
+    )
     assert "PIPELINE_VERSION = REVEAL_PIPELINE_VERSION" in builder
-    assert 'PIPELINE_VERSION = "exact_rle_mask_with_manual_corrections_v5"' not in builder
+    assert 'PIPELINE_VERSION = "exact_rle_mask_with_manual_corrections_v6"' not in builder
     assert '"cutout_method": "mask_boundary_connected_white_soft_alpha"' in builder
     assert '"source_image_used_for_background": False' in builder
     assert 'slide_dir / "assets" / "full_slide.png"' not in run_validator

@@ -124,6 +124,35 @@ def test_startup_recovery_marks_active_video_jobs_interrupted(
     assert recovered.error == "应用退出，任务中断"
 
 
+def test_startup_recovery_gives_queued_jobs_their_own_message(
+    tmp_path: Path,
+) -> None:
+    testing_session = _session_factory(tmp_path)
+    store = VideoJobStore(testing_session)
+    store.create(
+        "project-002",
+        job_id="video-job-queued",
+        stage="queued",
+        payload={},
+    )
+    store.create(
+        "project-002",
+        job_id="video-job-running",
+        stage="validating",
+        payload={},
+    )
+    store.update("video-job-running", status="running", stage="rendering")
+
+    changed = store.interrupt_orphaned(
+        "应用退出，渲染中断",
+        queued_message="任务尚未开始即被取消，请重新提交渲染。",
+    )
+
+    assert changed == 2
+    assert store.get("video-job-queued").error == "任务尚未开始即被取消，请重新提交渲染。"
+    assert store.get("video-job-running").error == "应用退出，渲染中断"
+
+
 def test_render_status_reads_interrupted_job_from_sqlite_fallback(tmp_path: Path, monkeypatch) -> None:
     project_run_dir = tmp_path / "project-status"
     project_run_dir.mkdir()

@@ -630,6 +630,20 @@ async function saveStep2BatchDelete() {
     showToast('已退出批量删除模式。');
     return;
   }
+  // 保存删除会提交新合约，后端随即 shutil.rmtree 整页目录：图片、Mask 切层
+  // 素材与音频物理消失且不可恢复，因此必须由用户显式确认后才发起请求。
+  const confirmed = await new Promise(resolve => {
+    showCustomConfirm(
+      '确认删除分镜',
+      `将删除 ${removedCount} 个分镜页。这些页的图片、Mask、切层素材和音频将被彻底删除且不可恢复。`,
+      () => resolve(true),
+      () => resolve(false),
+    );
+  });
+  if (!confirmed) {
+    showToast('已取消删除，仍停留在批量删除模式。', 3000);
+    return;
+  }
   state.step2BatchDeleteMode = false;
   state.step2DeleteSelection = new Set();
   state.step2BatchOriginalSlides = null;

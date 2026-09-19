@@ -143,15 +143,27 @@ def validate_image_provenance(slide_dir: Path, allowed_providers: set[str]) -> N
     copied_to = str(provenance.get("copied_to", "")).replace("\\", "/")
     if copied_to and not copied_to.endswith("visual_draft.png"):
         raise StageError(f"visual_provenance.json copied_to does not point to visual_draft.png: {path}")
-    if provenance.get("schema_version") == "visual_provenance_v2":
+    schema = provenance.get("schema_version")
+    if schema in ("visual_provenance_v2", "visual_provenance_v3"):
         image_path = slide_dir / "visual_draft.png"
         expected_output_hash = str(provenance.get("output_sha256") or "")
         if not expected_output_hash or expected_output_hash != sha256_path(image_path):
             raise StageError(f"visual_provenance.json output hash does not match visual_draft.png: {path}")
-        contract = slide_dir.parent.parent / "planning" / "visual_contract.json"
-        expected_contract_hash = str(provenance.get("contract_sha256") or "")
-        if not expected_contract_hash or expected_contract_hash != sha256_path(contract):
-            raise StageError(f"visual_provenance.json contract hash is stale: {path}")
+        if schema == "visual_provenance_v3":
+            root = Path(__file__).resolve().parents[1]
+            if str(root) not in sys.path:
+                sys.path.insert(0, str(root))
+            from visual_provenance import slide_contract_hash
+
+            slide_id = str(provenance.get("slide_id") or slide_dir.name)
+            expected_entry_hash = slide_contract_hash(slide_dir.parent.parent, slide_id)
+            if not str(provenance.get("contract_slide_sha256") or "") or provenance.get("contract_slide_sha256") != expected_entry_hash:
+                raise StageError(f"visual_provenance.json contract slide entry hash is stale: {path}")
+        else:
+            contract = slide_dir.parent.parent / "planning" / "visual_contract.json"
+            expected_contract_hash = str(provenance.get("contract_sha256") or "")
+            if not expected_contract_hash or expected_contract_hash != sha256_path(contract):
+                raise StageError(f"visual_provenance.json contract hash is stale: {path}")
         if provider != "manual_upload" and not str(provenance.get("prompt_sha256") or ""):
             raise StageError(f"visual_provenance.json missing prompt hash for generated image: {path}")
 

@@ -282,12 +282,12 @@ function scheduleStep6Autosave() {
   }, 700);
 }
 
-async function flushStep6Autosave() {
+async function flushStep6Autosave(options = {}) {
   if (state.step6AutoSaveTimer) {
     clearTimeout(state.step6AutoSaveTimer);
     state.step6AutoSaveTimer = null;
   }
-  return saveStep6Narration({ silent: true });
+  return saveStep6Narration({ silent: true, ...options });
 }
 
 async function putStep6NarrationWithRetry(payload) {
@@ -318,6 +318,19 @@ async function putStep6NarrationWithRetry(payload) {
 async function saveStep6Narration(options = {}) {
   const silent = !!options.silent;
   if (!narrationData) return true;
+  // 只有用户显式点击保存的路径才弹窗；scheduleStep6Autosave / 普通 flush
+  // 属于静默自动保存，绝不能打断输入。旁白写入会让后端清除音频确认。
+  if (options.userInitiated === true && state.currentProject?.audio_confirmed === true) {
+    const confirmed = await new Promise(resolve => {
+      showCustomConfirm(
+        '保存旁白会清除已确认音频',
+        '保存旁白修改将清除全部音频确认状态，需要重新生成并确认音频后才能渲染视频。',
+        () => resolve(true),
+        () => resolve(false),
+      );
+    });
+    if (!confirmed) return false;
+  }
   if (state.step6AutoSavePromise) {
     try {
       await state.step6AutoSavePromise;
@@ -511,7 +524,8 @@ async function runStep7TTS() {
 }
 
 async function saveNarrationAndRunTTS() {
-  const saved = await flushStep6Autosave();
+  // 显式保存路径：需要用户确认音频状态被清除；静默自动保存不会到达这里。
+  const saved = await flushStep6Autosave({ userInitiated: true });
   if (!saved) return false;
   showToast('旁白已保存，开始生成音频...');
   return runStep7TTS();

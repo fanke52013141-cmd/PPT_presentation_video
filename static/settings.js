@@ -152,6 +152,7 @@ async function loadSettings() {
   // 任务并发（方案④）：跨项目后台任务全局吞吐上限。
   document.getElementById('setting-max-concurrent-renders').value = state.settings.max_concurrent_renders || '1';
   document.getElementById('setting-tts-job-workers').value = state.settings.tts_job_workers || '1';
+  document.getElementById('setting-llm-max-concurrency').value = state.settings.llm_max_concurrency || '2';
 }
 
 function openSettingsModal() {
@@ -189,7 +190,8 @@ function readSettingsForm() {
     tts_pitch: document.getElementById('setting-tts-pitch').value.trim(),
     // 任务并发（方案④）：保存为字符串，消费端用 parse_int_setting 钳位到合法区间。
     max_concurrent_renders: document.getElementById('setting-max-concurrent-renders').value.trim() || '1',
-    tts_job_workers: document.getElementById('setting-tts-job-workers').value.trim() || '1'
+    tts_job_workers: document.getElementById('setting-tts-job-workers').value.trim() || '1',
+    llm_max_concurrency: document.getElementById('setting-llm-max-concurrency').value.trim() || '2'
   };
 }
 

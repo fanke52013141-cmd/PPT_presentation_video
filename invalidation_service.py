@@ -135,6 +135,14 @@ def clear_slide_visual_derivatives(project: Any, slide_id: str) -> tuple[Path, .
                 if slide.get("status") != "pending":
                     changed = True
                 slide["status"] = "pending"
+                annotation = manifest.get("ai_mask_annotation")
+                # 标注完成记录覆盖了这张已被替换的图片，保留会让 AI Mask
+                # 状态显示为已完成而实际组数据刚被清空。
+                if isinstance(annotation, dict) and normalized_slide_id in {
+                    str(value) for value in annotation.get("scope_slide_ids") or []
+                }:
+                    manifest.pop("ai_mask_annotation", None)
+                    changed = True
             if changed:
                 write_json_atomic(manifest_path, manifest)
         elif manifest_path.exists():

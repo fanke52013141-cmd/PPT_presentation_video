@@ -997,6 +997,21 @@ async function saveStep5Masks() {
     updateStep5ConfirmButton('AI 标注相关任务仍在处理中，请稍候。');
     return false;
   }
+  // 最终确认标注会让后端清除 audio_confirmed.json，已确认的音频状态不可自动恢复。
+  if (state.currentProject?.audio_confirmed === true) {
+    const confirmed = await new Promise(resolve => {
+      showCustomConfirm(
+        '确认标注会清除已确认音频',
+        '确认 Mask 标注会清除已确认的音频状态，需要重新试听并确认音频后才能渲染视频。',
+        () => resolve(true),
+        () => resolve(false),
+      );
+    });
+    if (!confirmed) {
+      showToast('已取消确认标注，音频确认状态保持不变。', 3000);
+      return false;
+    }
+  }
   state.canvasState.confirmingMasks = true;
   updateStep5ConfirmButton('处理中：正在保存当前标注草稿...');
   updateStep5SemanticButton();

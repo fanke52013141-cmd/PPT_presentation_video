@@ -88,7 +88,9 @@ def test_compose_retries_atomicity_failure_once_with_the_repaired_plan(monkeypat
     (planning / "slide_script_plan.json").write_text(json.dumps(SCRIPT_PLAN, ensure_ascii=False), encoding="utf-8")
     (planning / "slide_visual_plan.json").write_text(json.dumps(initial_plan, ensure_ascii=False), encoding="utf-8")
 
-    project = SimpleNamespace(id="project-reveal", run_dir=str(tmp_path), mask_enabled=1)
+    project = SimpleNamespace(
+        id="project-reveal", run_dir=str(tmp_path), mask_enabled=1, target_duration_sec=None
+    )
     validation_results = iter([
         {"valid": False, "stderr": "Visual group slide_001_el_002 in slide_001 describes multiple independent visual islands", "stdout": "", "returncode": 1},
         {"valid": True, "stderr": "", "stdout": "ok", "returncode": 0},

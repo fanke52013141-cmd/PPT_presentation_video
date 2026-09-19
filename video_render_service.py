@@ -103,7 +103,8 @@ class VideoRenderService:
 
     def recover_jobs(self) -> int:
         return self.job_store.interrupt_orphaned(
-            "应用上次运行时退出，视频渲染已中断；请重新生成。"
+            "应用上次运行时退出，视频渲染已中断；请重新生成。",
+            queued_message="应用在任务开始前退出，排队中的渲染任务已取消；请重新提交渲染。",
         )
 
     def get_project(self, db: Session, project_id: str) -> Project:
@@ -197,6 +198,11 @@ class VideoRenderService:
             slide_ids,
         )
         if not audio_confirmation.get("confirmed"):
+            if audio_confirmation.get("reason") == "config_changed":
+                raise VideoRenderError(
+                    400,
+                    "语音合成配置已在确认音频后发生变更，请回到“旁白与音频”重新生成并确认音频后再渲染。",
+                )
             raise VideoRenderError(
                 400,
                 "请先在“旁白与音频”步骤试听并确认音频，再开始视频渲染。",

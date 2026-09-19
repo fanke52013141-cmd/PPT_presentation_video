@@ -1005,5 +1005,39 @@ if (html.includes('step8-subtitle-readiness')) {
 if (!outputRender.includes("button.dataset.subtitleReady = ready ? 'true' : 'false'")) {
   throw new Error('subtitle download readiness must remain functional without the removed badge');
 }
+// [不可逆操作确认弹窗 20260916] 删除分镜页、Step 5 最终确认标注、Step 6 显式保存
+// 旁白、字幕可见性开关都会物理删除产物或清除音频确认，必须走共享确认弹窗。
+function topLevelFunctionSource(source, moduleName, functionName) {
+  const start = source.indexOf(`function ${functionName}(`);
+  if (start < 0) throw new Error(`${moduleName} is missing ${functionName}`);
+  const end = source.indexOf('\n}', start);
+  return end < 0 ? source.slice(start) : source.slice(start, end + 2);
+}
+for (const [moduleName, source, functionName, gateTokens] of [
+  ['Step 2 storyboard', storyboard, 'saveStep2BatchDelete', ['removedCount === 0']],
+  ['Step 5 Mask editor', maskEditor, 'saveStep5Masks', ['audio_confirmed']],
+  ['narration/audio', narrationAudio, 'saveStep6Narration', ['audio_confirmed', 'userInitiated']],
+  ['subtitle settings', subtitleSettings, 'saveSubtitleSettings', ['state.subtitleSettings']],
+]) {
+  const functionSource = topLevelFunctionSource(source, moduleName, functionName);
+  if (!functionSource.includes('showCustomConfirm')) {
+    throw new Error(`${moduleName} ${functionName} submits an irreversible action without showCustomConfirm`);
+  }
+  for (const gateToken of gateTokens) {
+    if (!functionSource.includes(gateToken)) {
+      throw new Error(`${moduleName} ${functionName} confirmation is not gated by ${gateToken}`);
+    }
+  }
+}
+const step2BatchDeleteSource = topLevelFunctionSource(storyboard, 'Step 2 storyboard', 'saveStep2BatchDelete');
+if (step2BatchDeleteSource.indexOf('removedCount === 0') > step2BatchDeleteSource.indexOf('showCustomConfirm')) {
+  throw new Error('Step 2 batch delete must keep the empty-deletion early return before the confirmation');
+}
+if (topLevelFunctionSource(narrationAudio, 'narration/audio', 'scheduleStep6Autosave').includes('userInitiated')) {
+  throw new Error('Step 6 autosave must never open the narration confirmation dialog');
+}
+if (!topLevelFunctionSource(narrationAudio, 'narration/audio', 'scheduleStep6Autosave').includes("saveStep6Narration({ silent: true })")) {
+  throw new Error('Step 6 autosave lost its silent save path');
+}
 
 console.log('frontend quality checks passed');

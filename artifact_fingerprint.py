@@ -107,7 +107,13 @@ def presentation_input_fingerprint(run_dir: str | Path) -> dict[str, Any]:
     """Fingerprint the ordered, approved bitmap inputs used by a PPTX export."""
     root = Path(run_dir)
     slide_ids = _read_contract_slide_ids(root)
-    relative_paths = [Path("planning/visual_contract.json")]
+    # Reveal-mode exports reuse this fingerprint but additionally consume
+    # reveal_manifest.json; without it, Mask edits would leave an exported
+    # reveal deck reported as "current".
+    relative_paths = [
+        Path("planning/visual_contract.json"),
+        Path("reveal_manifest.json"),
+    ]
     for slide_id in slide_ids:
         base = Path("slides") / slide_id
         relative_paths.extend(

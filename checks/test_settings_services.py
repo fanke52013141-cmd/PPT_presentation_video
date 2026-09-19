@@ -287,3 +287,49 @@ def test_tts_connection_probe_contract_is_unchanged() -> None:
     assert process_args["text"] is True
     assert process_args["encoding"] == "utf-8"
     assert process_args["errors"] == "replace"
+
+
+def test_concurrent_masked_save_cannot_overwrite_a_newer_secret() -> None:
+    import threading
+    import time
+
+    store: dict[str, Any] = {"llm_api_key": "K1", "image_api_key": "I1"}
+    read_counter = iter(range(10))
+
+    def slow_get_all_settings() -> dict[str, Any]:
+        if next(read_counter) == 0:
+            time.sleep(0.3)
+        return dict(store)
+
+    def update_settings(settings: dict[str, str]) -> None:
+        store.update(settings)
+
+    original = settings_service._deps()
+    settings_service.configure_settings_dependencies(
+        replace_settings_dependencies(
+            get_all_settings=slow_get_all_settings,
+            update_settings=update_settings,
+        )
+    )
+    try:
+        masked_writer = threading.Thread(
+            target=lambda: settings_service.update_system_settings(
+                settings_service.SettingsUpdate(
+                    settings={"llm_api_key": settings_service.MASKED_SETTINGS_VALUE}
+                )
+            )
+        )
+        masked_writer.start()
+        time.sleep(0.05)
+        real_writer = threading.Thread(
+            target=lambda: settings_service.update_system_settings(
+                settings_service.SettingsUpdate(settings={"llm_api_key": "K2"})
+            )
+        )
+        real_writer.start()
+        masked_writer.join(5)
+        real_writer.join(5)
+    finally:
+        settings_service.configure_settings_dependencies(original)
+
+    assert store["llm_api_key"] == "K2"

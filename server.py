@@ -187,7 +187,7 @@ LEGACY_STEP2_PROMPT_HASHES = {
     "visual_output_example": {"d61dc2dfdd60cddd4be3bc13cfe4848ee5b119964ad726ec8ff214840cd7e9fa"},
 }
 LEGACY_INTERVIEW_SCRIPT_PROMPT_HASH = "7e6f9fbd452f9c94bc02b3c5226edcde21a4bb69d87d5ede8089eb8b28f7bef9"
-REVEAL_PIPELINE_VERSION = "exact_rle_mask_with_manual_corrections_v5"
+from ai_mask_contracts import REVEAL_PIPELINE_VERSION
 
 
 ensure_active_image_style_storage()

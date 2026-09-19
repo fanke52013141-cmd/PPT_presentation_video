@@ -21,6 +21,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from database import get_db, Project
+from artifact_fingerprint import sha256_file
 from pipeline_lifecycle import read_json_file, write_json_atomic
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -215,6 +216,14 @@ def _slide_digi_path(project: Project, slide_id: str) -> Path:
     return _digi_dir(project) / f"digi_{slide_id}.mp4"
 
 
+def _digi_audio_hash(project: Project, slide_id: str) -> str:
+    audio_path = (
+        _full_audio_path(project) if slide_id == "full"
+        else _slide_audio_path(project, slide_id)
+    )
+    return sha256_file(audio_path) or ""
+
+
 def _read_comfyui_workflow_template(project: Project) -> Dict[str, Any] | None:
     """Read the project workflow or the configured external default.
 
@@ -276,21 +285,33 @@ def get_dh_config(project_id: str, db: Session = Depends(get_db)) -> Dict[str, A
     for slide_id in contract_ids:
         item = cfg.get("slides", {}).get(slide_id, {})
         audio_ok = _slide_audio_path(project, slide_id).exists()
+        video_exists = _slide_digi_path(project, slide_id).exists()
+        stored_hash = str(item.get("audio_sha256") or "")
         slides_info[slide_id] = {
             "job_id": item.get("job_id"),
             "status": item.get("status"),
-            "video_exists": _slide_digi_path(project, slide_id).exists(),
+            "video_exists": video_exists,
             "audio_ready": audio_ok,
+            "video_stale": bool(
+                video_exists and stored_hash
+                and stored_hash != _digi_audio_hash(project, slide_id)
+            ),
         }
     audio_ready_count = sum(1 for s in slides_info.values() if s["audio_ready"])
     # 附带整段数字人生成状态（如有）
     full_item = cfg.get("slides", {}).get("full", {})
     if full_item:
+        full_exists = _slide_digi_path(project, "full").exists()
+        full_stored = str(full_item.get("audio_sha256") or "")
         slides_info["full"] = {
             "job_id": full_item.get("job_id"),
             "status": full_item.get("status"),
-            "video_exists": _slide_digi_path(project, "full").exists(),
+            "video_exists": full_exists,
             "audio_ready": _full_audio_path(project).exists(),
+            "video_stale": bool(
+                full_exists and full_stored
+                and full_stored != _digi_audio_hash(project, "full")
+            ),
         }
     return {
         "success": True,
@@ -549,6 +570,7 @@ def generate_dh(
         slides.setdefault(slide_id, {})
         slides[slide_id]["job_id"] = job_id
         slides[slide_id]["status"] = result.get("status")
+        slides[slide_id]["audio_sha256"] = _digi_audio_hash(project, slide_id)
         _save_config(project, cfg)
     return {"success": True, "job_id": job_id, "status": result.get("status")}
 
@@ -600,7 +622,11 @@ def generate_dh_full(
     job_id = result.get("job_id")
     if job_id:
         slides = cfg.setdefault("slides", {})
-        slides["full"] = {"job_id": job_id, "status": result.get("status")}
+        slides["full"] = {
+            "job_id": job_id,
+            "status": result.get("status"),
+            "audio_sha256": _digi_audio_hash(project, "full"),
+        }
         _save_config(project, cfg)
     return {"success": True, "job_id": job_id, "status": result.get("status")}
 
@@ -666,9 +692,17 @@ def compose_dh_slide(
     cfg = _load_config(project)
     # 上传模式优先用已上传的讲解视频；否则用按页生成的数字人视频
     upload_video = _upload_digi_path(project)
-    digi = upload_video if (cfg.get("mode") == "upload" and upload_video.exists()) else _slide_digi_path(project, slide_id)
+    use_upload = cfg.get("mode") == "upload" and upload_video.exists()
+    digi = upload_video if use_upload else _slide_digi_path(project, slide_id)
     if not digi.exists():
         raise HTTPException(status_code=400, detail="数字人视频未就绪：请先上传已生成的讲解视频")
+    if not use_upload:
+        stored_hash = str((cfg.get("slides", {}).get(slide_id) or {}).get("audio_sha256") or "")
+        if stored_hash and stored_hash != _digi_audio_hash(project, slide_id):
+            raise HTTPException(
+                status_code=409,
+                detail="该页旁白音频已更新，旧数字人视频与口型不再匹配；请重新生成该页数字人视频后再合成。",
+            )
 
     body = payload or {}
     circle = body.get("circle") if isinstance(body.get("circle"), dict) else cfg.get("circle")

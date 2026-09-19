@@ -313,7 +313,8 @@ def sync_reveal_manifest(
 
     with project_artifact_lock(run_dir):
         try:
-            contract = json.loads(contract_path.read_text(encoding="utf-8-sig"))
+            previous_contract_text = contract_path.read_text(encoding="utf-8-sig")
+            contract = json.loads(previous_contract_text)
         except (OSError, json.JSONDecodeError):
             return False
         if not isinstance(contract, dict):
@@ -322,7 +323,13 @@ def sync_reveal_manifest(
         contract_changed = _ensure_contract_topic_fields(contract, project, run_dir)
         if contract_changed:
             write_json_atomic(contract_path, contract)
-            refresh_provenance_contract_hashes(run_dir, current_slide_ids)
+            # Topic backfill must not launder real per-slide contract edits:
+            # the refresh only touches slides whose entry text is unchanged.
+            refresh_provenance_contract_hashes(
+                run_dir,
+                current_slide_ids,
+                previous_contract_text=previous_contract_text,
+            )
 
         if not manifest_path.exists():
             return contract_changed

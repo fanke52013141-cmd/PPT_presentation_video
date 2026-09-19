@@ -6,3 +6,7 @@ MASK_COLORS = (
 )
 AI_MASK_VISION_TIMEOUT_SEC = 180.0
 AI_MASK_MIN_FOREGROUND_COVERAGE = 0.995
+
+# Single source of truth for the reveal pipeline version.  Server, reveal
+# builder, validator, and PPTX export must all reference this constant.
+REVEAL_PIPELINE_VERSION = "exact_rle_mask_with_manual_corrections_v5"

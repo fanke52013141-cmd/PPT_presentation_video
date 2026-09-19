@@ -203,3 +203,16 @@ def test_validator_stdout_is_json_safe() -> None:
         "parse_warning": "validator stdout was not valid JSON",
         "raw_stdout": "not-json",
     }
+
+
+def test_start_server_refuses_a_second_instance(monkeypatch: pytest.MonkeyPatch) -> None:
+    import start_server
+
+    monkeypatch.setattr(start_server, "validate_network_security", lambda _host: None)
+    monkeypatch.setattr(start_server, "is_free", lambda _port, _host: False)
+    monkeypatch.setenv("PPT_STUDIO_PORT", "8777")
+
+    with pytest.raises(SystemExit) as exit_info:
+        start_server.main()
+
+    assert "单实例" in str(exit_info.value)

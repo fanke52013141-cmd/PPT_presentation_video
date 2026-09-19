@@ -360,7 +360,7 @@ class VideoJobStore:
         finally:
             db.close()
 
-    def interrupt_orphaned(self, message: str) -> int:
+    def interrupt_orphaned(self, message: str, *, queued_message: str | None = None) -> int:
         db = self.session_factory()
         try:
             jobs = (
@@ -373,9 +373,10 @@ class VideoJobStore:
             )
             now = datetime.now()
             for job in jobs:
+                was_queued = job.status == "queued"
                 job.status = "interrupted"
                 job.stage = "interrupted"
-                job.error = str(message)[:4000]
+                job.error = str(queued_message if was_queued and queued_message else message)[:4000]
                 job.finished_at = now
                 job.updated_at = now
             db.commit()

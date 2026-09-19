@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
+
 
 from artifact_fingerprint import sha256_file
 from pipeline_lifecycle import remove_file
@@ -13,8 +14,28 @@ from project_storage import planning_path, slide_dir
 
 
 REQUIRED_OUTPUT_KEYS = ("audio", "metadata", "srt", "timeline")
-CONFIRMATION_SCHEMA_VERSION = 2
+CONFIRMATION_SCHEMA_VERSION = 3
 CONFIRMATION_HASH_KEYS = ("text",) + REQUIRED_OUTPUT_KEYS
+
+# Optional service-side hook returning the *current* TTS runtime fingerprint
+# (voice_id/model/speed/...) for a run directory.  Stored into
+# ``audio_confirmed.json`` at confirm time so a later voice-settings change is
+# detected without any write-time invalidation.  ``None`` (tests, unconfigured
+# process) skips the comparison entirely.
+_RUNTIME_RESOLVER: Callable[[str | Path], Mapping[str, Any] | None] | None = None
+
+
+def set_confirmation_runtime_resolver(
+    resolver: Callable[[str | Path], Mapping[str, Any] | None] | None,
+) -> None:
+    global _RUNTIME_RESOLVER
+    _RUNTIME_RESOLVER = resolver
+
+
+def _normalize_runtime(runtime: Mapping[str, Any] | None) -> dict[str, str]:
+    if not isinstance(runtime, Mapping):
+        return {}
+    return {str(key): str(value or "").strip() for key, value in runtime.items()}
 
 
 def confirmation_path(run_dir: str | Path) -> Path:
@@ -32,9 +53,10 @@ def build_confirmation_payload(
     *,
     confirmation_mode: str,
     confirmed_at: str | None = None,
+    tts_runtime: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     normalized_ids = [str(slide_id).strip() for slide_id in slide_ids if str(slide_id).strip()]
-    return {
+    payload: dict[str, Any] = {
         "schema_version": CONFIRMATION_SCHEMA_VERSION,
         "confirmed": True,
         "confirmed_at": confirmed_at or datetime.now().isoformat(),
@@ -45,6 +67,10 @@ def build_confirmation_payload(
             for slide_id in normalized_ids
         },
     }
+    runtime = _normalize_runtime(tts_runtime)
+    if runtime:
+        payload["tts_runtime"] = runtime
+    return payload
 
 
 def confirmation_status(
@@ -91,6 +117,23 @@ def confirmation_status(
             "reason": "artifacts_changed",
             "stale_slides": stale_slides,
         }
+    stored_runtime = payload.get("tts_runtime")
+    if _RUNTIME_RESOLVER is not None and isinstance(stored_runtime, dict) and stored_runtime:
+        live_runtime = _RUNTIME_RESOLVER(run_dir)
+        if live_runtime is not None:
+            live = _normalize_runtime(live_runtime)
+            stored = _normalize_runtime(stored_runtime)
+            changed_keys = sorted(
+                key
+                for key in set(stored) | set(live)
+                if stored.get(key, "") != live.get(key, "")
+            )
+            if changed_keys:
+                return {
+                    "confirmed": False,
+                    "reason": "config_changed",
+                    "changed_keys": changed_keys,
+                }
     return {
         "confirmed": True,
         "reason": "confirmed",

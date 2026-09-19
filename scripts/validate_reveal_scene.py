@@ -11,7 +11,13 @@ from typing import Any
 
 from PIL import Image
 
-PIPELINE_VERSION = "exact_rle_mask_with_manual_corrections_v5"
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from ai_mask_contracts import REVEAL_PIPELINE_VERSION
+
+PIPELINE_VERSION = REVEAL_PIPELINE_VERSION
 MASKED_COMPOSITION_METHOD = "solid_background_mask_boundary_white_cutout"
 STATIC_COMPOSITION_METHOD = "full_slide_static"
 CUTOUT_METHOD = "mask_boundary_connected_white_soft_alpha"

@@ -9,6 +9,7 @@ import json
 import hashlib
 import logging
 import os
+from pathlib import Path
 import sys
 import threading
 import time
@@ -27,6 +28,8 @@ from pipeline_lifecycle import write_json_atomic
 from tts_artifacts import (
     artifact_paths as tts_artifact_paths,
     build_confirmation_payload as build_audio_confirmation_payload,
+    confirmation_status as audio_confirmation_status,
+    set_confirmation_runtime_resolver,
 )
 from project_config_runtime import get_config_value
 from account_context import get_current_account_id, reset_current_account_id, set_current_account_id
@@ -178,6 +181,10 @@ def configure_tts_dependencies(
     TTS_PROVIDER_DEFAULTS = dependencies.provider_defaults
     REVEAL_VISUAL_LEAD_SEC = dependencies.reveal_visual_lead_sec
     STEP7_BIND_TIMEOUT_SEC = dependencies.bind_timeout_sec
+    # Audio confirmations carry the voice fingerprint that was in use; hook the
+    # live resolver so a later voice/model/speed change invalidates the stored
+    # confirmation everywhere it is read (render gate, status, one-click).
+    set_confirmation_runtime_resolver(_confirmation_runtime_for_run_dir)
 
 
 def _connection_value(connection: Any, name: str, default: Any = None) -> Any:
@@ -436,6 +443,12 @@ class _TtsLaunchThrottle:
         self._next_start_at = 0.0
         self._lock = threading.Lock()
 
+    def tighten(self, minimum_interval_sec: float) -> None:
+        with self._lock:
+            self._minimum_interval_sec = max(
+                self._minimum_interval_sec, max(0.0, float(minimum_interval_sec))
+            )
+
     def wait_for_turn(self) -> None:
         with self._lock:
             now = time.monotonic()
@@ -445,9 +458,67 @@ class _TtsLaunchThrottle:
             self._next_start_at = time.monotonic() + self._minimum_interval_sec
 
 
-def synthesize_tts_resumable(project_id: str, db: Session):
-    project = project_or_404(db, project_id)
+# One launch gate per (provider, endpoint, credential).  Separate synthesis
+# runs (different projects, or overlapping batches) against the same MiniMax
+# connection must share one requests-per-minute budget, otherwise each batch
+# builds its own throttle and the provider-side 429s come back.
+_TTS_LAUNCH_THROTTLES: dict[tuple[str, str, str], _TtsLaunchThrottle] = {}
+_TTS_LAUNCH_THROTTLE_LOCK = threading.Lock()
 
+
+def _shared_tts_launch_throttle(
+    provider: str,
+    endpoint: str,
+    api_key: str,
+    minimum_interval_sec: float,
+) -> _TtsLaunchThrottle:
+    credential_hash = hashlib.sha256(str(api_key or "").encode("utf-8")).hexdigest()[:16]
+    key = (str(provider), str(endpoint or "").strip().rstrip("/"), credential_hash)
+    with _TTS_LAUNCH_THROTTLE_LOCK:
+        throttle = _TTS_LAUNCH_THROTTLES.get(key)
+        if throttle is None:
+            throttle = _TtsLaunchThrottle(minimum_interval_sec)
+            _TTS_LAUNCH_THROTTLES[key] = throttle
+        else:
+            throttle.tighten(minimum_interval_sec)
+        return throttle
+
+
+def _local_file_sha256_or_empty(path_value: str) -> str:
+    """Match scripts/generic_tts.local_file_sha256 semantics: missing -> \"\"."""
+    path = Path(str(path_value or "").strip())
+    if not path.is_file():
+        return ""
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as file:
+            for chunk in iter(lambda: file.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError:
+        return ""
+    return digest.hexdigest()
+
+
+def _comfyui_workflow_signature(endpoint_value: str) -> str:
+    """Hash the workflow JSON that scripts/generic_tts will actually load.
+
+    IndexTTS parameters live inside the workflow file, so an edited template
+    must invalidate cached audio even when every voice setting is unchanged.
+    """
+    wf = str(endpoint_value or "").strip()
+    if wf and not wf.lower().startswith(("http://", "https://")):
+        return _local_file_sha256_or_empty(wf)
+    repo_root = Path(__file__).resolve().parent
+    candidates = (
+        repo_root / "data" / "digital_human" / "comfyui_tts_workflow.json",
+        repo_root / "config" / "indextts2_5_comfyui_workflow.json",
+    )
+    chosen = next((path for path in candidates if path.is_file()), candidates[0])
+    return _local_file_sha256_or_empty(str(chosen))
+
+
+def _resolve_tts_voice_profile(project: Project) -> Dict[str, Any]:
+    """Resolve provider credentials, voice parameters and the audio cache key."""
     project_runtime = _project_tts_runtime(project)
     provider = normalize_tts_provider(
         project_runtime["provider"]
@@ -475,23 +546,6 @@ def synthesize_tts_resumable(project_id: str, db: Session):
         raise HTTPException(status_code=400, detail=f"未配置 {provider} 语音合成密钥，也没有读取到环境变量 {env_name}。")
     if provider == "tencent_tts" and not tts_secret_key:
         raise HTTPException(status_code=400, detail="腾讯云 TTS 需要同时配置 SecretId 和 SecretKey。")
-
-    contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
-    if not os.path.exists(contract_path):
-        raise HTTPException(status_code=400, detail="分镜规划尚未生成，请返回确认第二步状态。")
-
-    with open(contract_path, "r", encoding="utf-8") as f:
-        contract = json.load(f)
-
-    slide_ids = [
-        str(slide["slide_id"])
-        for slide in contract.get("slides", [])
-        if isinstance(slide, dict) and slide.get("slide_id")
-    ]
-    if not slide_ids:
-        raise HTTPException(status_code=400, detail="分镜规划中没有可生成音频的页面。")
-
-    beats_by_slide = _load_beats_by_slide(project, slide_ids, "TTS synthesis")
 
     public_config = project_runtime["public_config"] if project_runtime else {}
     snapshot_value = lambda path, fallback: get_config_value(project, path, fallback)
@@ -568,6 +622,102 @@ def synthesize_tts_resumable(project_id: str, db: Session):
         tts_cache_key["provider_extra"] = tts_provider_extra
         tts_cache_key["audio_format"] = "mp3"
         tts_cache_key["sample_rate"] = 48000
+    if provider == "comfyui_tts":
+        # IndexTTS clones via a local reference file that model-connection
+        # updates overwrite in place; content hashes are the only way a voice
+        # swap becomes visible to the audio cache.
+        tts_cache_key["reference_audio_signature"] = _local_file_sha256_or_empty(
+            tts_clone_voice_id
+        ) if Path(str(tts_clone_voice_id or "").strip()).is_file() else ""
+        tts_cache_key["workflow_sha256"] = _comfyui_workflow_signature(tts_endpoint)
+    return {
+        "provider": provider,
+        "project_runtime": project_runtime,
+        "snapshot_value": snapshot_value,
+        "tts_api_key": tts_api_key,
+        "tts_secret_key": tts_secret_key,
+        "runtime_secrets": runtime_secrets,
+        "endpoint": tts_endpoint,
+        "model": tts_model,
+        "voice_id": tts_voice_id,
+        "clone_voice_id": tts_clone_voice_id,
+        "region": tts_region,
+        "provider_extra": tts_provider_extra,
+        "speed": tts_speed,
+        "volume": tts_volume,
+        "pitch": tts_pitch,
+        "concurrency": tts_concurrency,
+        "requests_per_minute": tts_requests_per_minute,
+        "cache_key": tts_cache_key,
+    }
+
+
+def current_tts_cache_key(project: Project) -> Optional[Dict[str, str]]:
+    """Current voice fingerprint, or ``None`` when the config is unresolvable."""
+    try:
+        return dict(_resolve_tts_voice_profile(project)["cache_key"])
+    except Exception:
+        logger.warning("Current TTS cache key cannot be resolved", exc_info=True)
+        return None
+
+
+def _confirmation_runtime_for_run_dir(run_dir: str | Path) -> Optional[Dict[str, str]]:
+    """Resolver hook for tts_artifacts.confirmation_status (run dir -> voice)."""
+    from database import SessionLocal
+
+    target = os.path.normcase(os.path.abspath(str(run_dir)))
+    db = SessionLocal()
+    try:
+        for candidate in db.query(Project).all():
+            candidate_dir = str(getattr(candidate, "run_dir", "") or "")
+            if candidate_dir and os.path.normcase(os.path.abspath(candidate_dir)) == target:
+                return current_tts_cache_key(candidate)
+    except Exception:
+        logger.warning("TTS confirmation runtime lookup failed", exc_info=True)
+    finally:
+        db.close()
+    return None
+
+
+def synthesize_tts_resumable(project_id: str, db: Session):
+    project = project_or_404(db, project_id)
+
+    profile = _resolve_tts_voice_profile(project)
+    provider = profile["provider"]
+    project_runtime = profile["project_runtime"]
+    snapshot_value = profile["snapshot_value"]
+    tts_api_key = profile["tts_api_key"]
+    tts_secret_key = profile["tts_secret_key"]
+    runtime_secrets: Dict[str, Any] = profile["runtime_secrets"]
+    tts_endpoint = profile["endpoint"]
+    tts_model = profile["model"]
+    tts_voice_id = profile["voice_id"]
+    tts_clone_voice_id = profile["clone_voice_id"]
+    tts_region = profile["region"]
+    tts_provider_extra = profile["provider_extra"]
+    tts_speed = profile["speed"]
+    tts_volume = profile["volume"]
+    tts_pitch = profile["pitch"]
+    tts_concurrency = profile["concurrency"]
+    tts_requests_per_minute = profile["requests_per_minute"]
+    tts_cache_key = profile["cache_key"]
+
+    contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
+    if not os.path.exists(contract_path):
+        raise HTTPException(status_code=400, detail="分镜规划尚未生成，请返回确认第二步状态。")
+
+    with open(contract_path, "r", encoding="utf-8") as f:
+        contract = json.load(f)
+
+    slide_ids = [
+        str(slide["slide_id"])
+        for slide in contract.get("slides", [])
+        if isinstance(slide, dict) and slide.get("slide_id")
+    ]
+    if not slide_ids:
+        raise HTTPException(status_code=400, detail="分镜规划中没有可生成音频的页面。")
+
+    beats_by_slide = _load_beats_by_slide(project, slide_ids, "TTS synthesis")
 
     invalidation_service.narration_synthesis_started(project)
     db.commit()
@@ -635,11 +785,12 @@ def synthesize_tts_resumable(project_id: str, db: Session):
             if provider == "minimax"
             else None
         )
-        # A single shared launch gate prevents all slide processes from
-        # uploading/submitting at once.  It does not reduce the number of
-        # active async jobs after they have started.
+        # A process-wide launch gate per connection prevents all slide
+        # processes from uploading/submitting at once, across projects too.
         launch_throttle = (
-            _TtsLaunchThrottle(60.0 / tts_requests_per_minute)
+            _shared_tts_launch_throttle(
+                provider, tts_endpoint, tts_api_key, 60.0 / tts_requests_per_minute
+            )
             if provider == "minimax"
             else None
         )
@@ -800,12 +951,15 @@ def get_tts_audio_status(project_id: str, db: Session):
     slide_ids = read_current_slide_ids_or_404(project)
     slides = [slide_tts_artifact_status(project, slide_id) for slide_id in slide_ids]
     missing = [item["slide_id"] for item in slides if not item["complete"]]
+    confirmation = audio_confirmation_status(project.run_dir, slide_ids)
     return {
         "success": True,
         "slides": slides,
         "complete": not missing,
         "missing": missing,
-        "audio_confirmed": project_audio_confirmed(project),
+        "audio_confirmed": bool(confirmation.get("confirmed")),
+        "audio_confirmation_reason": confirmation.get("reason"),
+        "config_stale": confirmation.get("reason") == "config_changed",
     }
 
 def get_slide_audio_file(project_id: str, slide_id: str, db: Session):
@@ -849,6 +1003,7 @@ def confirm_tts_audio(project_id: str, db: Session, payload: Optional[Dict[str, 
             project.run_dir,
             slide_ids,
             confirmation_mode=str((payload or {}).get("confirmation_mode") or "user_reviewed"),
+            tts_runtime=current_tts_cache_key(project),
         ),
     )
     handle_step_navigation(project, 7, db)

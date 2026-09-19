@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import os
 import subprocess
 import tempfile
+import threading
 from typing import Any, Callable, Dict, Mapping, Optional
 
 from pydantic import BaseModel
@@ -13,6 +14,7 @@ from runtime_support import run_subprocess_bounded
 
 
 MASKED_SETTINGS_VALUE = "__PPT_STUDIO_MASKED_VALUE__"
+_SETTINGS_UPDATE_LOCK = threading.Lock()
 SETTINGS_SECRET_KEYS = {
     "llm_api_key",
     "image_api_key",
@@ -125,12 +127,15 @@ def preserve_masked_secrets(
 def update_system_settings(payload: SettingsUpdate) -> Dict[str, Any]:
     dependencies = _deps()
     settings = dict(payload.settings or {})
-    if mask_settings_secrets_enabled():
-        settings = preserve_masked_secrets(
-            settings,
-            dependencies.get_all_settings(),
-        )
-    dependencies.update_settings(settings)
+    # 读旧值→回填掩码密钥→写库必须整体互斥，否则并发保存会用过期的
+    # 当前密钥覆盖刚写入的新密钥。
+    with _SETTINGS_UPDATE_LOCK:
+        if mask_settings_secrets_enabled():
+            settings = preserve_masked_secrets(
+                settings,
+                dependencies.get_all_settings(),
+            )
+        dependencies.update_settings(settings)
     return {"success": True, "message": "设置更新成功"}
 
 

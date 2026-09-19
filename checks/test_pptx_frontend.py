@@ -17,7 +17,7 @@ def test_output_workspace_exposes_pptx_controls_and_status() -> None:
     assert "/exports/pptx/readiness" in script
     assert "下载 PPTX" in script
     assert 'id="step8-btn-download-srt"' in html
-    assert "字幕文件（SRT）" in html
+    assert "下载字幕 SRT" in html
     assert "/subtitles/readiness" in script
     assert "/subtitles.srt" in script
     assert "downloadStep8Subtitles" in script

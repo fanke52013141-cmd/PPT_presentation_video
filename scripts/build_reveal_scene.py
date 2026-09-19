@@ -45,8 +45,13 @@ except ModuleNotFoundError:
     )
     from pipeline_profiles import allowed_reveal_actions, normalize_reveal_action, read_pipeline_profile
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
-PIPELINE_VERSION = "exact_rle_mask_with_manual_corrections_v5"
+from ai_mask_contracts import REVEAL_PIPELINE_VERSION
+
+PIPELINE_VERSION = REVEAL_PIPELINE_VERSION
 MASKED_COMPOSITION_METHOD = "solid_background_mask_boundary_white_cutout"
 STATIC_COMPOSITION_METHOD = "full_slide_static"
 DEFAULT_CANVAS = {

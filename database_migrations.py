@@ -280,6 +280,12 @@ def _known_migration_already_present(connection: Connection, migration: Migratio
         )
     if key == (13, "course_account_ownership"):
         return _has_columns(connection, "courses", {"account_id"})
+    if key == (14, "project_production_and_presentation_modes"):
+        return _has_columns(
+            connection, "projects", {"production_mode", "presentation_mode"}
+        )
+    if key == (15, "project_target_duration"):
+        return _has_columns(connection, "projects", {"target_duration_sec"})
     return False
 
 

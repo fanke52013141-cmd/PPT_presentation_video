@@ -175,6 +175,7 @@ def write_common_outputs(
     audio_bytes: bytes,
     subtitle_text: str,
     duration_sec: float | None = None,
+    extra_request: dict[str, Any] | None = None,
 ) -> None:
     out_audio = Path(args.out_audio)
     out_audio.parent.mkdir(parents=True, exist_ok=True)
@@ -216,7 +217,9 @@ def write_common_outputs(
                 "speed": args.speed,
                 "volume": args.volume,
                 "pitch": args.pitch,
+                "provider_extra": str(args.provider_extra or ""),
                 "reference_audio_signature": local_file_sha256(args.clone_voice_id),
+                **(extra_request or {}),
             },
             "response": response_json,
             "tts_text_has_markup": args._tts_text != subtitle_text,
@@ -547,13 +550,19 @@ def synthesize_comfyui(args: argparse.Namespace, tts_text: str, subtitle_text: s
     )
 
     # 加载 TTS 工作流模板
-    # endpoint 字段复用为工作流 JSON 路径；空则尝试默认位置。
-    # 残留的云端 API URL（http(s):// 开头）不是本地工作流路径，直接回退默认位置。
+    # 模型连接的 endpoint 是 ComfyUI 服务地址；历史配置也允许它直接
+    # 指向 API 格式工作流 JSON。两者不能混用：当它是 URL 时，显式传给
+    # ComfyUI 后端，并从内置工作流候选中选取模板。
     wf_path_str = str(args.endpoint or "").strip()
     if wf_path_str and (wf_path_str.lower().startswith("http://") or wf_path_str.lower().startswith("https://")):
+        os.environ["PPT_COMFYUI_URL"] = wf_path_str.rstrip("/")
         wf_path_str = ""
     if not wf_path_str:
-        wf_path_str = str(_repo_root / "data" / "digital_human" / "comfyui_tts_workflow.json")
+        workflow_candidates = (
+            _repo_root / "data" / "digital_human" / "comfyui_tts_workflow.json",
+            _repo_root / "config" / "indextts2_5_comfyui_workflow.json",
+        )
+        wf_path_str = str(next((path for path in workflow_candidates if path.is_file()), workflow_candidates[0]))
     wf_path = Path(wf_path_str)
     if not wf_path.exists():
         raise TtsError(
@@ -621,6 +630,7 @@ def synthesize_comfyui(args: argparse.Namespace, tts_text: str, subtitle_text: s
         },
         audio_bytes=audio_bytes,
         subtitle_text=subtitle_text,
+        extra_request={"workflow_sha256": local_file_sha256(str(wf_path))},
     )
 
 

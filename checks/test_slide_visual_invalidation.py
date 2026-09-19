@@ -27,11 +27,14 @@ with tempfile.TemporaryDirectory() as temp_value:
     for slide_id in ("slide_001", "slide_002"):
         slide_dir = slides_root / slide_id
         (slide_dir / "assets").mkdir(parents=True)
+        (slide_dir / "auto_mask" / "elements").mkdir(parents=True)
+        (slide_dir / "auto_mask" / "elements" / "el.png").write_bytes(b"mask")
         Image.new("RGB", (32, 18), "#fffdf7").save(slide_dir / "visual_draft.png")
         (slide_dir / "scene.json").write_text("{}", encoding="utf-8")
         (slide_dir / "animation_timeline.json").write_text("{}", encoding="utf-8")
         (slide_dir / "reveal_report.json").write_text("{}", encoding="utf-8")
         Image.new("RGB", (32, 18), "#fefdf9").save(slide_dir / "mask_preview.png")
+        Image.new("RGB", (32, 18), "#fefdf9").save(slide_dir / "pptx_reveal_base.png")
         (slide_dir / "assets" / "old.png").write_bytes(b"old")
 
     (planning / "visual_contract.json").write_text(
@@ -50,7 +53,11 @@ with tempfile.TemporaryDirectory() as temp_value:
                     "semantic_blocks": [{"id": "g1"}],
                 },
                 {"slide_id": "slide_002", "groups": []},
-            ]
+            ],
+            "ai_mask_annotation": {
+                "status": "completed",
+                "scope_slide_ids": ["slide_001", "slide_002"],
+            },
         }),
         encoding="utf-8",
     )
@@ -65,15 +72,34 @@ with tempfile.TemporaryDirectory() as temp_value:
     assert slide["groups"] == []
     assert slide["semantic_blocks"] == []
     assert slide["status"] == "pending"
+    assert "ai_mask_annotation" not in manifest
     assert not (slides_root / "slide_001" / "scene.json").exists()
     assert not (slides_root / "slide_001" / "mask_preview.png").exists()
     assert not (slides_root / "slide_001" / "assets").exists()
+    assert not (slides_root / "slide_001" / "auto_mask").exists()
+    assert not (slides_root / "slide_001" / "pptx_reveal_base.png").exists()
+    assert (slides_root / "slide_002" / "auto_mask" / "elements" / "el.png").exists()
+    assert (slides_root / "slide_002" / "pptx_reveal_base.png").exists()
     assert not (run_dir / "remotion_props.json").exists()
     assert not (planning / "audio_confirmed.json").exists()
     assert project.get_step_status()["3"] == "completed"
     assert project.get_step_status()["5"] == "pending_reconfirmation"
     assert project.current_step == 3
     assert db.commits == 1
+
+    (run_dir / "reveal_manifest.json").write_text(
+        json.dumps({
+            "slides": manifest["slides"],
+            "ai_mask_annotation": {"status": "completed", "scope_slide_ids": ["slide_001"]},
+        }),
+        encoding="utf-8",
+    )
+    mark_slide_image_changed(project, "slide_002", db)
+    manifest = json.loads((run_dir / "reveal_manifest.json").read_text(encoding="utf-8"))
+    assert "ai_mask_annotation" in manifest
+    assert not (slides_root / "slide_002" / "auto_mask").exists()
+    assert not (slides_root / "slide_002" / "pptx_reveal_base.png").exists()
+    assert db.commits == 2
 
 print("slide visual invalidation checks passed")
 

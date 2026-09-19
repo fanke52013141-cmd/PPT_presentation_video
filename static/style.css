@@ -12446,3 +12446,8 @@ body.workspace-open #step-panel-5 .workspace-split {
   body.workspace-open .step9-header,
   body.workspace-open .step8-header { margin-inline: -1.25rem !important; padding-inline: 1.25rem !important; }
 }
+
+/* [不可逆操作确认弹窗 20260916] 共享确认框由业务弹窗内部触发（例如字幕设置里的
+   保存）。所有 .modal-overlay 共用 z-index 1000，DOM 中靠后的业务弹窗会盖住确认
+   按钮，因此确认框必须高于同级弹窗，但仍低于 toast 与失败徽标。 */
+#modal-confirm { z-index: 1100; }

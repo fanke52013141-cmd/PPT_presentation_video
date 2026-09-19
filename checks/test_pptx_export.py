@@ -12,6 +12,7 @@ from pptx_export import (
     build_image_only_pptx,
     inspect_pptx_readiness,
 )
+from pptx_reveal_export import inspect_reveal_pptx_readiness
 from visual_provenance import write_visual_provenance
 
 
@@ -103,3 +104,53 @@ def test_presentation_fingerprint_changes_when_a_slide_changes(tmp_path: Path) -
     after = presentation_input_fingerprint(run_dir)
 
     assert before["digest"] != after["digest"]
+
+
+def test_presentation_fingerprint_changes_when_reveal_manifest_changes(tmp_path: Path) -> None:
+    run_dir = _prepared_run(tmp_path, ("slide_001",))
+    before = presentation_input_fingerprint(run_dir)
+    manifest_path = run_dir / "reveal_manifest.json"
+    manifest_path.write_text(
+        json.dumps({"slides": [{"slide_id": "slide_001", "groups": [{"id": "edited"}]}]}),
+        encoding="utf-8",
+    )
+    after = presentation_input_fingerprint(run_dir)
+
+    assert before["digest"] != after["digest"]
+
+
+def _reveal_manifest_run(tmp_path: Path) -> Path:
+    run_dir = _prepared_run(tmp_path)
+    (run_dir / "reveal_manifest.json").write_text(
+        json.dumps({
+            "version": "reveal_v1",
+            "canvas": {"width": 640, "height": 360},
+            "slides": [
+                {"slide_id": slide_id, "master": "visual_draft.png", "groups": []}
+                for slide_id in ("slide_001", "slide_002")
+            ],
+        }),
+        encoding="utf-8",
+    )
+    return run_dir
+
+
+def test_reveal_readiness_accepts_confirmed_images(tmp_path: Path) -> None:
+    readiness = inspect_reveal_pptx_readiness(_reveal_manifest_run(tmp_path))
+
+    assert readiness["ready"] is True
+    assert not readiness["issues"]
+
+
+def test_reveal_readiness_blocks_stale_provenance(tmp_path: Path) -> None:
+    run_dir = _reveal_manifest_run(tmp_path)
+    contract_path = run_dir / "planning" / "visual_contract.json"
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    contract["slides"][0]["title"] = "分镜被改写后的标题"
+    contract_path.write_text(json.dumps(contract, ensure_ascii=False), encoding="utf-8")
+
+    readiness = inspect_reveal_pptx_readiness(run_dir)
+
+    stale = [issue for issue in readiness["issues"] if issue["code"] == "stale_or_unconfirmed_image"]
+    assert [issue["slide_id"] for issue in stale] == ["slide_001"]
+    assert readiness["ready"] is False

@@ -8,6 +8,8 @@ from typing import Any, Callable, Dict, Optional
 
 from fastapi import HTTPException
 
+from llm_concurrency import with_llm_request_slot
+
 
 @dataclass(frozen=True)
 class StoryboardLlmCapabilities:
@@ -19,6 +21,7 @@ class StoryboardLlmCapabilities:
     logger: Any
 
 
+@with_llm_request_slot
 def execute_step2_json_llm(
     *,
     capabilities: StoryboardLlmCapabilities,

@@ -42,6 +42,7 @@ from one_click_resume_policy import (
     upstream_image_inputs as _upstream_image_inputs,
 )
 from project_profile_store import DEFAULT_QUALITY_GATES, load_profile
+from pipeline_state import complete_step, current_step_after_completion
 from tts_provider_service import normalize_tts_provider
 from video_render_service import RENDER_STAGE_PROGRESS
 from project_config_runtime import get_config_value, load_project_config
@@ -628,13 +629,22 @@ def _complete(
     try:
         current = project.get_step_status() if hasattr(project, "get_step_status") else {}
         updated = dict(current)
-        for stage in status.get("stages") or []:
-            if stage.get("status") == "done":
-                step_key = _STAGE_TO_STEP.get(stage.get("id", ""))
-                if step_key:
-                    updated[step_key] = "completed"
+        completed_steps = sorted({
+            int(step_key)
+            for stage in (status.get("stages") or [])
+            if stage.get("status") == "done"
+            for step_key in [_STAGE_TO_STEP.get(stage.get("id", ""))]
+            if step_key
+        })
+        # 升序复用 complete_step，保证步骤状态与手动流程一致（含 in_progress 收敛）。
+        for step in completed_steps:
+            updated = complete_step(updated, step)
         if hasattr(project, "set_step_status"):
             project.set_step_status(updated)
+        if completed_steps and isinstance(getattr(project, "current_step", None), int):
+            project.current_step = current_step_after_completion(
+                project.current_step, completed_steps[-1]
+            )
         if db is not None:
             db.commit()
     except Exception:

@@ -12,7 +12,8 @@ from artifact_fingerprint import sha256_bytes, sha256_file
 from project_storage import planning_path, slide_dir
 
 
-PROVENANCE_SCHEMA_VERSION = "visual_provenance_v2"
+PROVENANCE_SCHEMA_VERSION = "visual_provenance_v3"
+LEGACY_CONTRACT_HASH_SCHEMA_VERSION = "visual_provenance_v2"
 # Keep the provider identifiers emitted by the configured image adapters in
 # the production allow-list.  ``codex2api`` is the provider used by the
 # Codex2API OpenAI-compatible gateway and is a valid generated-image source.
@@ -41,6 +42,45 @@ def render_allowed_providers() -> set[str]:
     return configured or set(DEFAULT_RENDER_ALLOWED_PROVIDERS)
 
 
+def _canonical_slide_entry(slide: Any) -> str:
+    return json.dumps(
+        slide, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+
+
+def slide_entry_hashes(slides: Iterable[Any]) -> dict[str, str]:
+    """Map slide_id -> content hash of that single contract slide entry."""
+    return {
+        str(slide.get("slide_id")): sha256_bytes(_canonical_slide_entry(slide).encode("utf-8"))
+        for slide in slides
+        if isinstance(slide, dict) and slide.get("slide_id") is not None
+    }
+
+
+def _contract_slide_entries(run_dir: str | Path) -> list[Any] | None:
+    try:
+        contract = json.loads(
+            planning_path(run_dir, "visual_contract.json").read_text(encoding="utf-8-sig")
+        )
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(contract, dict) or not isinstance(contract.get("slides"), list):
+        return None
+    return contract["slides"]
+
+
+def slide_contract_hash(run_dir: str | Path, slide_id: str) -> str:
+    """Hash of only this slide's contract entry ('' when missing/unreadable).
+
+    Whole-file hashing made an edit on any other slide invalidate every
+    slide's provenance; per-slide entries only change when that slide changes.
+    """
+    slides = _contract_slide_entries(run_dir)
+    if slides is None:
+        return ""
+    return slide_entry_hashes(slides).get(str(slide_id), "")
+
+
 def visual_provenance_status(
     run_dir: str | Path,
     slide_id: str,
@@ -63,6 +103,13 @@ def visual_provenance_status(
     if not str(payload.get("copied_to") or "").replace("\\", "/").endswith("visual_draft.png"):
         return {"valid": False, "reason": "invalid_destination", "slide_id": slide_id}
     if payload.get("schema_version") == PROVENANCE_SCHEMA_VERSION:
+        image = slide_dir(run_dir, slide_id) / "visual_draft.png"
+        if not payload.get("output_sha256") or payload.get("output_sha256") != sha256_file(image):
+            return {"valid": False, "reason": "image_hash_changed", "slide_id": slide_id}
+        entry_hash = slide_contract_hash(run_dir, slide_id)
+        if not payload.get("contract_slide_sha256") or payload.get("contract_slide_sha256") != entry_hash:
+            return {"valid": False, "reason": "contract_hash_changed", "slide_id": slide_id}
+    elif payload.get("schema_version") == LEGACY_CONTRACT_HASH_SCHEMA_VERSION:
         image = slide_dir(run_dir, slide_id) / "visual_draft.png"
         if not payload.get("output_sha256") or payload.get("output_sha256") != sha256_file(image):
             return {"valid": False, "reason": "image_hash_changed", "slide_id": slide_id}
@@ -123,6 +170,7 @@ def build_visual_provenance(
         "slide_id": str(slide_id),
         "prompt_sha256": sha256_bytes(str(prompt or "").encode("utf-8")) if prompt else None,
         "contract_sha256": sha256_file(contract),
+        "contract_slide_sha256": slide_contract_hash(root, slide_id),
         "reference_sha256s": [digest for digest in (sha256_file(path) for path in references) if digest],
         "reference_policy": str(reference_policy or "").strip() or None,
         "reference_status": str(reference_status or "").strip() or None,
@@ -191,19 +239,53 @@ def promote_candidate_provenance(run_dir: str | Path, slide_id: str) -> dict[str
     return payload
 
 
-def refresh_provenance_contract_hashes(run_dir: str | Path, slide_ids: Iterable[str]) -> int:
-    """Refresh only the contract hash after a pure slide-order change."""
+def refresh_provenance_contract_hashes(
+    run_dir: str | Path,
+    slide_ids: Iterable[str],
+    *,
+    previous_contract_text: str | None = None,
+) -> int:
+    """Refresh the whole-file contract hash after a pure topic/order change.
+
+    A v3 payload may only be refreshed while its stored per-slide entry hash
+    still matches the current entry, so real per-slide edits can never be
+    whitewashed.  Legacy v2 payloads have no per-slide hash and are refreshed
+    only when the caller proves the entry text is byte-identical to the
+    previous contract via ``previous_contract_text``.
+    """
     from pipeline_lifecycle import read_json_file, write_json_atomic
 
     contract_hash = sha256_file(planning_path(run_dir, "visual_contract.json"))
+    previous_entry_hashes: dict[str, str] | None = None
+    if previous_contract_text is not None:
+        try:
+            previous = json.loads(previous_contract_text)
+        except json.JSONDecodeError:
+            previous = None
+        slides = previous.get("slides") if isinstance(previous, dict) else None
+        if not isinstance(slides, list):
+            return 0
+        previous_entry_hashes = slide_entry_hashes(slides)
     changed = 0
     for slide_id in slide_ids:
         path = provenance_path(run_dir, str(slide_id))
         payload = read_json_file(path)
-        if not isinstance(payload, dict) or payload.get("schema_version") != PROVENANCE_SCHEMA_VERSION:
+        if not isinstance(payload, dict):
             continue
         image_path = slide_dir(run_dir, str(slide_id)) / "visual_draft.png"
         if payload.get("output_sha256") != sha256_file(image_path):
+            continue
+        schema = payload.get("schema_version")
+        if schema == PROVENANCE_SCHEMA_VERSION:
+            entry_hash = slide_contract_hash(run_dir, str(slide_id))
+            if not entry_hash or payload.get("contract_slide_sha256") != entry_hash:
+                continue
+        elif schema == LEGACY_CONTRACT_HASH_SCHEMA_VERSION:
+            if previous_entry_hashes is None:
+                continue
+            if previous_entry_hashes.get(str(slide_id)) != slide_contract_hash(run_dir, str(slide_id)):
+                continue
+        else:
             continue
         payload["contract_sha256"] = contract_hash
         write_json_atomic(path, payload)

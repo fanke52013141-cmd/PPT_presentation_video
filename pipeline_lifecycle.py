@@ -26,7 +26,6 @@ _JSON_WRITE_LOCKS_GUARD = threading.Lock()
 _PROJECT_ARTIFACT_LOCKS: dict[str, threading.RLock] = {}
 _PROJECT_ARTIFACT_LOCKS_GUARD = threading.Lock()
 REVEAL_FILENAMES = ("scene.json", "animation_timeline.json", "reveal_report.json", "mask_preview.png")
-TTS_FILENAMES = ("voice.mp3", "tts_metadata.json", "subtitles.srt", "audio_timeline.json")
 
 
 def project_artifact_lock(run_dir: str | Path) -> threading.RLock:
@@ -124,6 +123,13 @@ def clear_slide_reveal_artifacts(run_dir: str | Path, slide_id: str) -> list[Pat
     assets_dir = target_slide_dir / "assets"
     if remove_tree(assets_dir):
         removed.append(assets_dir)
+    # AI Mask 检测中间产物与 reveal PPTX 的临时拆页图都派生自当前底图。
+    auto_mask_dir = target_slide_dir / "auto_mask"
+    if remove_tree(auto_mask_dir):
+        removed.append(auto_mask_dir)
+    for generated in target_slide_dir.glob("pptx_reveal_*.png"):
+        if remove_file(generated):
+            removed.append(generated)
     if clear_remotion_props(run_dir):
         removed.append(safe_child(run_dir, "remotion_props.json"))
     return removed

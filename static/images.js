@@ -627,6 +627,7 @@ async function generateAllStep3Images() {
 
   let successCount = 0;
   const failedSlides = [];
+  const busySlides = [];
   try {
     for (const task of tasks) {
       if (!isCurrentWorkspaceProject(projectId, sessionVersion)) break;
@@ -651,7 +652,12 @@ async function generateAllStep3Images() {
           }
         }
       } catch (error) {
-        failedSlides.push(task.slideId);
+        // 后端 409：该页已有生成任务在跑（如单张候选图窗口），跳过而不是算失败。
+        if (String(error?.message || '').includes('正在生成图片')) {
+          busySlides.push(task.slideId);
+        } else {
+          failedSlides.push(task.slideId);
+        }
       } finally {
         step3GeneratingSlides.delete(task.slideId);
         step3CurrentGenerating = null;  // 清除当前生成标记
@@ -671,7 +677,7 @@ async function generateAllStep3Images() {
   }
 
   if (failedSlides.length > 0) {
-    showToast(`⚠️ 已生成 ${successCount} 张，失败：${failedSlides.join('、')}`, 5000);
+    showToast(`⚠️ 已生成 ${successCount} 张，失败：${failedSlides.join('、')}${busySlides.length ? `；跳过正在生成：${busySlides.join('、')}` : ''}`, 5000);
     // [生图失败常驻提示 20260912] 左下角红点常驻，点击关闭；新失败会重新出现
     if (window.showFailureBadge) {
       window.showFailureBadge(
@@ -680,6 +686,8 @@ async function generateAllStep3Images() {
         `失败分镜：${failedSlides.join('、')}；已成功 ${successCount} 张，可单独重试失败的分镜。`
       );
     }
+  } else if (busySlides.length > 0) {
+    showToast(`✅ 已生成 ${successCount} 张；${busySlides.join('、')} 正在生成中，已跳过。`, 5000);
   } else {
     showToast(`✅ ${successCount} 张图片已全部生成完成！`);
   }
@@ -731,6 +739,8 @@ async function generateStep3Image() {
       showToast('候选图片已生成。确认画面后点击“替换原图”。');
     }
   } catch(e) {
+    const busy = String(e?.message || '').includes('正在生成图片');
+    showToast(busy ? `⚠️ ${slideId} 正在生成图片，请等待当前任务完成。` : `❌ ${slideId} 图片生成失败`, 'error');
   } finally {
     document.getElementById('step3-loading').style.display = 'none';
     document.getElementById('step3-btn-generate').disabled = false;

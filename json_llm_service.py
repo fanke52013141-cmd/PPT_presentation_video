@@ -12,6 +12,7 @@ from openai import OpenAI
 
 from ai_provider_service import get_openai_client
 from config_store import get_setting
+from llm_concurrency import with_llm_request_slot
 from runtime_support import (
     clean_json_markdown,
     json_decode_context,
@@ -118,6 +119,7 @@ def parse_json_or_repair_with_llm(
     return value
 
 
+@with_llm_request_slot
 def generate_json_with_configured_llm(
     *,
     system_prompt: str,

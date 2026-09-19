@@ -23,7 +23,9 @@ from pptx import Presentation
 from pptx.util import Inches, Emu
 
 from artifact_fingerprint import presentation_input_fingerprint, sha256_file
+from ai_mask_contracts import REVEAL_PIPELINE_VERSION
 from pipeline_lifecycle import write_json_atomic
+from visual_provenance import visual_provenance_status
 from project_storage import (
     UnsafeProjectPath,
     presentation_file,
@@ -213,6 +215,15 @@ def inspect_reveal_pptx_readiness(run_dir: str | Path) -> dict[str, Any]:
                 issues.append({
                     "code": "master_missing",
                     "message": f"{slide_id} 缺少底图 {master_path.name}",
+                    "slide_id": slide_id,
+                })
+                continue
+            # 与 image_only 导出同一门控：底图必须仍持有有效的来源记录。
+            provenance = visual_provenance_status(root, slide_id)
+            if not provenance.get("valid"):
+                issues.append({
+                    "code": "stale_or_unconfirmed_image",
+                    "message": f"{slide_id} 页面图片未确认或已因分镜变化而失效，请回到第 3 步检查图片。",
                     "slide_id": slide_id,
                 })
                 continue
@@ -473,7 +484,7 @@ def build_reveal_pptx(
             "background": background_hex,
         },
         "content_mode": "reveal_layers",
-        "reveal_pipeline_version": "exact_rle_mask_with_manual_corrections_v5",
+        "reveal_pipeline_version": REVEAL_PIPELINE_VERSION,
         "source_fingerprint": source_fp,
         "output_sha256": output_sha,
         "notes_included_slide_ids": list(notes_for_slides.keys()),

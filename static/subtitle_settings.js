@@ -157,6 +157,22 @@ function resetSubtitleSettings() {
 
 async function saveSubtitleSettings() {
   const subtitle_style = readSubtitleSettingsForm();
+  // 后端只在字幕可见性真正翻转时执行 subtitle_visibility_changed：删除全部页面的
+  // reveal 切层素材与 provenance 并把项目退回第 3 步。纯样式修改不会触发，因此
+  // 这里比较"表单已加载值"和"即将提交值"，仅可见性变化时才请求确认。
+  const loadedEnabled = state.subtitleSettings?.enabled !== false;
+  const nextEnabled = subtitle_style.enabled !== false;
+  if (loadedEnabled !== nextEnabled) {
+    const confirmed = await new Promise(resolve => {
+      showCustomConfirm(
+        '字幕显示开关会清除切层素材',
+        '关闭/开启字幕显示将删除全部页面的 Mask 切层素材，并需要重新确认图片素材；仅修改字体、颜色不会触发此清除。',
+        () => resolve(true),
+        () => resolve(false),
+      );
+    });
+    if (!confirmed) return;
+  }
   const res = await API.put(
     `/api/projects/${state.currentProject.id}/subtitle-settings`,
     { subtitle_style },

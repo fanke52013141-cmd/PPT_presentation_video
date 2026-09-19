@@ -16,7 +16,7 @@ from agent_contract.capabilities import CAPABILITIES, CapabilityStatus
 from agent_contract.schema import capability_input_schema, capability_output_schema
 
 
-AGENT_API_VERSION = "1.5.0"
+AGENT_API_VERSION = "1.6.0"
 
 
 def get_contract_hash() -> str:

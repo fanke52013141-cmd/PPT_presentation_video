@@ -16,6 +16,7 @@ from typing import Any, Callable
 
 
 from ai_mask_contracts import AI_MASK_VISION_TIMEOUT_SEC  # noqa: F401 (re-exported for ai_mask_semantic_matcher via ai_mask_engine)
+from pipeline_lifecycle import write_json_atomic
 
 
 SETTING_PREFIX = "ai_mask_"
@@ -540,7 +541,7 @@ def _annotate_project(
         "review_issues": review_issues,
         "scope_slide_ids": [item["slide_id"] for item in prepared],
     }
-    _write_json(run_dir / "reveal_manifest.json", manifest)
+    write_json_atomic(run_dir / "reveal_manifest.json", manifest)
     return {
         "success": True,
         "complete": complete,

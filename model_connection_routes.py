@@ -90,7 +90,7 @@ async def upload_model_reference_audio(
         suffix = Path(str(file.filename or "")).suffix.lower()
         if suffix not in {".wav", ".mp3", ".pcm", ".ogg"}:
             raise ValueError("参考音频仅支持 wav、mp3、pcm 或 ogg 格式")
-        content = await file.read()
+        content = await file.read(10 * 1024 * 1024 + 1)
         if not content or len(content) > 10 * 1024 * 1024:
             raise ValueError("参考音频必须存在且不能超过 10MB")
         _VOICE_REFERENCE_ROOT.mkdir(parents=True, exist_ok=True)

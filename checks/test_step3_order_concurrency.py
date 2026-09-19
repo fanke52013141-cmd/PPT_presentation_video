@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import image_workflow_service as image_workflow  # noqa: E402
+import server  # noqa: E402,F401 (configure image workflow dependencies as the app does)
 from visual_provenance import visual_provenance_status, write_visual_provenance  # noqa: E402
 
 

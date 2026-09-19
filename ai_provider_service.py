@@ -11,6 +11,7 @@ import os
 import random
 import time
 from typing import Any, Dict, Optional
+import uuid
 import warnings
 
 import httpx
@@ -133,6 +134,29 @@ def open_validated_image(image_bytes: bytes) -> Image.Image:
         raise ValueError("无法识别或不安全的图片文件") from exc
 
 
+def save_image_atomically(image: Image.Image, save_path: str) -> None:
+    """Write a PNG via tmp+replace so readers never observe a half image.
+
+    A concurrent reveal build, PPTX rasterisation, or candidate preview can
+    open ``visual_draft.png`` while a regeneration is still flushing bytes.
+    """
+    directory = os.path.dirname(save_path) or "."
+    os.makedirs(directory, exist_ok=True)
+    tmp_path = os.path.join(
+        directory,
+        f".{os.path.basename(save_path)}.{uuid.uuid4().hex}.tmp.png",
+    )
+    try:
+        image.save(tmp_path, "PNG")
+        os.replace(tmp_path, save_path)
+    except BaseException:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
 def process_and_save_image(
     image_bytes: bytes,
     save_path: str,
@@ -181,7 +205,7 @@ def process_and_save_image(
     )
 
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    final_image.save(save_path, "PNG")
+    save_image_atomically(final_image, save_path)
     logger.info(
         "Image normalized and saved: source=%sx%s "
         "fitted=%sx%s canvas=%sx%s path=%s",
@@ -225,7 +249,7 @@ def enforce_white_image_region(
     )
     ratio = nonwhite / total
     image.paste((255, 255, 255), (0, top, image.width, bottom))
-    image.save(image_path, "PNG")
+    save_image_atomically(image, image_path)
     return {
         "top": top,
         "bottom": bottom,

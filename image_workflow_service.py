@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from typing import Any, Callable, Dict, List, Optional
 import uuid
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -59,6 +60,7 @@ from visual_contract_service import normalize_visual_type
 from visual_provenance import (
     promote_candidate_provenance,
     provenance_path as visual_provenance_path,
+    slide_contract_hash,
     validate_visual_provenance_set,
     visual_provenance_status,
     write_visual_provenance,
@@ -716,7 +718,63 @@ def get_slide_prompts(project_id: str, db: Session):
     }
 
 
+# Per-(project, slide) in-flight guard.  A second request for the same slide
+# would otherwise pay the provider twice and interleave writes into the same
+# visual_draft.png/visual_candidate.png path (single-process deployment).
+_IMAGE_GENERATION_GUARD_LOCK = threading.Lock()
+_ACTIVE_IMAGE_GENERATIONS: set[tuple[str, str]] = set()
+
+
+def claim_slide_image_generation(project_id: str, slide_id: str) -> bool:
+    key = (str(project_id), str(slide_id))
+    with _IMAGE_GENERATION_GUARD_LOCK:
+        if key in _ACTIVE_IMAGE_GENERATIONS:
+            return False
+        _ACTIVE_IMAGE_GENERATIONS.add(key)
+        return True
+
+
+def release_slide_image_generation(project_id: str, slide_id: str) -> None:
+    _ACTIVE_IMAGE_GENERATIONS.discard((str(project_id), str(slide_id)))
+
+
+def active_slide_image_generation(project_id: str) -> List[str]:
+    with _IMAGE_GENERATION_GUARD_LOCK:
+        return sorted(
+            slide_id
+            for pid, slide_id in _ACTIVE_IMAGE_GENERATIONS
+            if pid == str(project_id)
+        )
+
+
 def generate_slide_image(
+    project_id: str,
+    slide_id: str,
+    prompt: str,
+    preview: bool,
+    db: Session,
+    *,
+    defer_invalidation: bool = False,
+):
+    if not claim_slide_image_generation(project_id, slide_id):
+        raise HTTPException(
+            status_code=409,
+            detail=f"{slide_id} 正在生成图片，请等待当前任务完成后再触发。",
+        )
+    try:
+        return _generate_slide_image_impl(
+            project_id,
+            slide_id,
+            prompt,
+            preview,
+            db,
+            defer_invalidation=defer_invalidation,
+        )
+    finally:
+        release_slide_image_generation(project_id, slide_id)
+
+
+def _generate_slide_image_impl(
     project_id: str,
     slide_id: str,
     prompt: str,
@@ -1403,6 +1461,10 @@ def update_step3_image_order(project_id: str, payload: Dict[str, Any], db: Sessi
                                 f"slides/{target_slide_id}/visual_draft.png"
                             )
                             provenance["output_sha256"] = sha256_file(target_image)
+                            if provenance.get("schema_version") == "visual_provenance_v3":
+                                provenance["contract_slide_sha256"] = slide_contract_hash(
+                                    root, target_slide_id
+                                )
                             write_json_atomic(target_provenance, provenance)
                         else:
                             _restore_optional_file(None, target_provenance)

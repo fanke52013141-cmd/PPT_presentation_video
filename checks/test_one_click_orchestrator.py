@@ -550,6 +550,30 @@ def test_completed_run_smart_resume_revalidates_from_render() -> None:
         assert resumed["effective_start_stage"] == "preflight"
 
 
+def test_completion_syncs_step_status_through_pipeline_state() -> None:
+    with tempfile.TemporaryDirectory() as value:
+        project = project_for(Path(value))
+        store: dict[str, dict[str, str]] = {}
+        project.get_step_status = lambda: dict(store.get("statuses", {}))
+        project.set_step_status = lambda updated: store.__setitem__("statuses", dict(updated))
+        project.current_step = 3
+        status = one_click._initial_status(project.id, "run-full")
+        for stage in status["stages"]:
+            stage["status"] = "done"
+
+        one_click._complete(
+            project,
+            status,
+            SimpleNamespace(commit=lambda: None, rollback=lambda: None),
+            video={"url": "/video.mp4"},
+        )
+
+        statuses = store["statuses"]
+        for step in ("1", "2", "3", "5", "6", "8"):
+            assert statuses[step] == "completed"
+        assert project.current_step == 8
+
+
 def test_legacy_status_is_migrated_in_memory_to_v2() -> None:
     with tempfile.TemporaryDirectory() as value:
         root = Path(value)

@@ -25,6 +25,7 @@ import os
 
 import uvicorn
 
+from check_port_free import is_free
 from network_guard import validate_network_security
 
 
@@ -45,6 +46,13 @@ def main() -> int:
     host = os.environ.get("PPT_STUDIO_HOST", "127.0.0.1").strip() or "127.0.0.1"
     validate_network_security(host)
     port = _int_env("PPT_STUDIO_PORT", 8000)
+    # 单机单进程硬约束：生图去重锁、TTS 节流闸、LLM 并发闸和工件锁都是进程内
+    # threading 原语，第二个实例会静默绕过全部并发保护，必须在启动前拒绝。
+    if not is_free(port, host):
+        raise SystemExit(
+            f"端口 {host}:{port} 已被占用：PPT Studio 只允许单实例运行（并发锁仅在单进程内有效）。\n"
+            "请先关闭已在运行的 PPT Studio，再重新启动。"
+        )
     from server import app  # 延迟导入：仅在真正启动时触发组合根副作用
 
     uvicorn.run(app, host=host, port=port, reload=False)

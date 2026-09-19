@@ -493,7 +493,7 @@ def _detect_fine_grained_components(
 
     unassigned_support = int(np.count_nonzero(support & (labels == 0)))
     meta = {
-        "algorithm_version": "ai_mask_fine_grained_p1_v1",
+        "algorithm_version": "ai_mask_fine_grained_p1_v2",
         "stage_timings_sec": timings,
         "fine_grained": {
             "pale_support_threshold": pale_threshold,
@@ -683,9 +683,16 @@ def detect_elements(image_path: Path, slide_dir: Path, settings: dict[str, Any],
         element["element_id"] = f"el_residual_{i:04d}"
     # ---- DocLayout layout binding (post-detection merge) ----
     if layout_boxes is not None:
-        candidates, residual = _apply_layout_binding(
-            candidates, residual, layout_boxes, ow, oh, settings
-        )
+        if fine_grained:
+            # P1 invariant: a center-in-box merge must not undo seed-component
+            # ownership. DocLayout boxes stay available as evidence (logged in
+            # the payload) while the fine-grained components are preserved.
+            if fine_grained_meta is not None:
+                fine_grained_meta["fine_grained"]["layout_binding_skipped"] = True
+        else:
+            candidates, residual = _apply_layout_binding(
+                candidates, residual, layout_boxes, ow, oh, settings
+            )
 
     all_components = candidates + residual
     exact_foreground = _merge_row_runs(all_components, ow, oh)

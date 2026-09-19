@@ -36,11 +36,16 @@ def _canvas():
     return Image.new("RGB", SIZE, "white")
 
 
-def _detect(tmp_path, image, settings):
+def _save(tmp_path, image):
     tmp_path.mkdir(parents=True, exist_ok=True)
-    image_path = tmp_path / "image.png"
-    image.save(image_path)
-    return detect_elements(image_path, tmp_path / "slide", settings)
+    path = tmp_path / "image.png"
+    image.save(path)
+    return path
+
+
+def _detect(tmp_path, image, settings, layout_boxes=None):
+    image_path = _save(tmp_path, image)
+    return detect_elements(image_path, tmp_path / "slide", settings, layout_boxes)
 
 
 def _rle_mask(rle):
@@ -173,6 +178,24 @@ def test_fine_grained_closing_is_reported_only_as_merge_candidate(tmp_path):
     # Candidate grouping must not move pixels: neither mask covers the other card.
     assert not _rle_mask(left["mask_rle"])[120:170, 122:172].any()
     assert not _rle_mask(right["mask_rle"])[120:170, 60:110].any()
+
+
+def test_fine_grained_layout_binding_does_not_undo_seed_components(tmp_path):
+    image = _canvas()
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((60, 120, 110, 170), fill=(40, 70, 120))
+    draw.rectangle((122, 120, 172, 170), fill=(150, 60, 40))
+    layout_boxes = [{
+        "box": {"x": 40, "y": 100, "w": 160, "h": 90},
+        "role": "text", "confidence": 0.9, "class_id": 0,
+    }]
+    settings = _settings(fine_grained_detection=True)
+    plain = detect_elements(_save(tmp_path, image), tmp_path / "a", settings)
+    with_boxes = detect_elements(_save(tmp_path, image), tmp_path / "b", settings, layout_boxes)
+    assert len(plain["elements"]) == len(with_boxes["elements"]) == 2
+    assert with_boxes["fine_grained"]["layout_binding_skipped"] is True
+    legacy = detect_elements(_save(tmp_path, image), tmp_path / "c", _settings(), layout_boxes)
+    assert [e["element_id"] for e in legacy["elements"]] == ["el_layout_001"]
 
 
 def test_cache_invalidates_when_fine_grained_flag_or_threshold_changes(tmp_path):

@@ -185,6 +185,7 @@ def test_runtime_registration_module_is_gone() -> None:
     for owner in (
         "_fallback_match",
         "_clean_match",
+        "_rebind_shared_containers",
         "_consolidate_title_regions",
         "_ensure_narrated_group_anchors",
         "_complete_component_coverage",

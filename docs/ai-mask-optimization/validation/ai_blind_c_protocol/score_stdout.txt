@@ -1,0 +1,40 @@
+    },
+    {
+      "case_id": "07_nested",
+      "passed": true,
+      "macro_iou": 0.9996804063158622,
+      "coverage": 0.9999491145939344,
+      "pale_recall": 0.9121140142517815
+    },
+    {
+      "case_id": "08_detached",
+      "passed": true,
+      "macro_iou": 0.9932623809351498,
+      "coverage": 0.996933227239573,
+      "pale_recall": 0.8604826546003017
+    },
+    {
+      "case_id": "09_pale_nested_combo",
+      "passed": true,
+      "macro_iou": 1.0,
+      "coverage": 1.0,
+      "pale_recall": 1.0
+    },
+    {
+      "case_id": "10_dense_20",
+      "passed": false,
+      "macro_iou": 0.7857142857142857,
+      "coverage": 1.0,
+      "pale_recall": 1.0
+    },
+    {
+      "case_id": "11_halo_lines",
+      "passed": true,
+      "macro_iou": 1.0,
+      "coverage": 1.0,
+      "pale_recall": 1.0
+    }
+  ]
+}
+
+PROJECT_ID a4e0fa54_002134

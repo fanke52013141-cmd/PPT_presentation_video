@@ -616,15 +616,26 @@ class SemanticVisionMatcher:
             {"role": "system", "content": prompt},
             {"role": "user", "content": user_content},
         ]
+        # One match record per object plus Chinese reasons can exceed the
+        # legacy flat 12000 budget on dense pages and truncate mid-string.
+        max_tokens = min(24000, 12000 + 600 * len(page))
         try:
-            response = client.chat.completions.create(model=model, temperature=float(settings["llm_temperature"]), max_tokens=12000, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, response_format={"type": "json_object"}, messages=messages, **vendor_options)
+            response = client.chat.completions.create(model=model, temperature=float(settings["llm_temperature"]), max_tokens=max_tokens, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, response_format={"type": "json_object"}, messages=messages, **vendor_options)
         except Exception as exc:
             if base_module._is_timeout(capabilities, exc):
                 raise
-            response = client.chat.completions.create(model=model, temperature=float(settings["llm_temperature"]), max_tokens=12000, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, messages=messages, **vendor_options)
+            response = client.chat.completions.create(model=model, temperature=float(settings["llm_temperature"]), max_tokens=max_tokens, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, messages=messages, **vendor_options)
         content = str(response.choices[0].message.content or "").strip()
         cleaned = capabilities.clean_json_markdown(content)
-        value = json.loads(cleaned)
+        try:
+            value = json.loads(cleaned)
+        except json.JSONDecodeError:
+            # A truncated or malformed completion is usually transient; one
+            # fresh retry recovers the page without degrading to the prior.
+            response = client.chat.completions.create(model=model, temperature=float(settings["llm_temperature"]), max_tokens=max_tokens, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, messages=messages, **vendor_options)
+            content = str(response.choices[0].message.content or "").strip()
+            cleaned = capabilities.clean_json_markdown(content)
+            value = json.loads(cleaned)
         return _expand_matches(value, objects, elements) if isinstance(value, dict) else None
 
 

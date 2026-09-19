@@ -202,6 +202,146 @@ def _clean_match(
     }
 
 
+def _rebind_shared_containers(
+    match_payload: dict[str, Any],
+    elements_payload: dict[str, Any],
+    slide: dict[str, Any],
+) -> dict[str, Any]:
+    """Move page-level shared frames off a single content group.
+
+    A sparse component (fill ratio <= 0.25) whose bbox contains the centers of
+    two or more other groups' components is page furniture such as an outer
+    frame or common border.  It may only belong to the narrated title group;
+    one card must never exclusively own the frame that wraps its neighbours.
+    """
+    matches = [dict(item) for item in match_payload.get("matches", []) or [] if isinstance(item, dict)]
+    if len(matches) < 2:
+        return match_payload
+    lookup: dict[str, dict[str, Any]] = {}
+    for element in [
+        *(elements_payload.get("elements", []) or []),
+        *(elements_payload.get("residual_elements", []) or []),
+    ]:
+        if isinstance(element, dict) and str(element.get("element_id") or ""):
+            lookup[str(element.get("element_id"))] = element
+
+    def bounds(element_id: str) -> tuple[float, float, float, float] | None:
+        element = lookup.get(element_id)
+        return _box_xyxy(element.get("bbox")) if element else None
+
+    group_boxes: dict[str, list[tuple[float, float, float, float]]] = {}
+    for item in matches:
+        gid = str(item.get("group_id") or "")
+        for element_id in item.get("element_ids", []) or []:
+            box = bounds(str(element_id))
+            if box:
+                group_boxes.setdefault(gid, []).append(box)
+
+    visual_groups = [group for group in slide.get("visual_groups", []) or [] if isinstance(group, dict)]
+    narrated_group_ids = {
+        str(beat.get("group_id") or "")
+        for beat in slide.get("narration_beats", []) or []
+        if isinstance(beat, dict) and str(beat.get("group_id") or "")
+    }
+    title_target = next(
+        (
+            str(group.get("id") or "")
+            for group in visual_groups
+            if str(group.get("role") or "").strip().lower() == "title"
+            and str(group.get("id") or "") in narrated_group_ids
+        ),
+        "",
+    )
+    if not title_target:
+        return match_payload
+
+    moved: list[dict[str, str]] = []
+    for item in matches:
+        gid = str(item.get("group_id") or "")
+        if gid == title_target:
+            continue
+        keep: list[str] = []
+        for element_id in [str(e) for e in item.get("element_ids", []) or []]:
+            box = bounds(element_id)
+            element = lookup.get(element_id)
+            if not box or not element:
+                keep.append(element_id)
+                continue
+            x1, y1, x2, y2 = box
+            bbox_area = max(1.0, (x2 - x1) * (y2 - y1))
+            if int(element.get("area", 0) or 0) / bbox_area > 0.25:
+                keep.append(element_id)
+                continue
+            other_groups = 0
+            for other_gid, other_boxes in group_boxes.items():
+                if other_gid == gid:
+                    continue
+                if any(
+                    x1 < (ox1 + ox2) / 2 < x2 and y1 < (oy1 + oy2) / 2 < y2
+                    for ox1, oy1, ox2, oy2 in other_boxes
+                ):
+                    other_groups += 1
+            if other_groups >= 2:
+                moved.append({"element_id": element_id, "from_group_id": gid})
+            else:
+                keep.append(element_id)
+        item["element_ids"] = keep
+    if not moved:
+        return match_payload
+
+    title_item = next((item for item in matches if str(item.get("group_id") or "") == title_target), None)
+    if title_item is None:
+        beat_by_group = {
+            str(beat.get("group_id") or ""): str(beat.get("id") or "")
+            for beat in slide.get("narration_beats", []) or []
+            if isinstance(beat, dict)
+        }
+        title_item = {
+            "group_id": title_target,
+            "narration_beat_id": beat_by_group.get(title_target, ""),
+            "object_ids": [],
+            "element_ids": [],
+            "confidence": 1.0,
+            "reason": "shared_container_geometry",
+            "below_threshold": False,
+        }
+        matches.append(title_item)
+    forced_owners = dict(match_payload.get("forced_element_owners") or {})
+    warnings = list(match_payload.get("warnings", []) or [])
+    for move in moved:
+        if move["element_id"] not in title_item["element_ids"]:
+            title_item["element_ids"].append(move["element_id"])
+        forced_owners[move["element_id"]] = title_target
+        warnings.append({
+            "type": "shared_container_rebound",
+            "group_id": move["from_group_id"],
+            "to_group_id": title_target,
+            "element_id": move["element_id"],
+            "message": "共享外框/容器组件按几何包含关系改归标题组，请检查。",
+        })
+    result = dict(match_payload)
+    surviving: list[dict[str, Any]] = []
+    emptied_group_ids: list[str] = []
+    for item in matches:
+        if item.get("element_ids"):
+            surviving.append(item)
+        elif str(item.get("group_id") or ""):
+            emptied_group_ids.append(str(item.get("group_id")))
+    result["matches"] = surviving
+    used = {str(eid) for item in surviving for eid in item.get("element_ids", []) or []}
+    result["unmatched_elements"] = sorted(set(lookup) - used)
+    result["unmatched_groups"] = list(dict.fromkeys([
+        *(match_payload.get("unmatched_groups", []) or []),
+        *(
+            gid for gid in emptied_group_ids
+            if gid not in {str(item.get("group_id") or "") for item in surviving}
+        ),
+    ]))
+    result["forced_element_owners"] = forced_owners
+    result["warnings"] = warnings
+    return result
+
+
 def _box_center(box: dict[str, Any]) -> tuple[float, float]:
     return (
         float(box.get("x", 0)) + float(box.get("w", 0)) / 2,

@@ -313,6 +313,7 @@ from ai_mask_assignment import (
     _ensure_narrated_group_anchors,
     _fallback_match,
     _merge_match_results,
+    _rebind_shared_containers,
 )
 
 
@@ -482,6 +483,7 @@ def _annotate_project(
             raw = item["fallback"]
         cleaned = _clean_match(raw, item["slide"], item["element_list"], settings, item["fallback"])
         cleaned = _consolidate_title_regions(cleaned, item["elements"], item["slide"], item["title_regions"])
+        cleaned = _rebind_shared_containers(cleaned, item["elements"], item["slide"])
         cleaned = _ensure_narrated_group_anchors(cleaned, item["elements"], item["slide"])
         try:
             _write_json(item["slide_dir"] / "auto_mask" / "auto_match_before_completion.json", cleaned)

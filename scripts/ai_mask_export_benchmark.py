@@ -17,14 +17,24 @@ def export(manifest_path, slide_id, mapping_path, output):
         raise ValueError("Choose a new output directory; existing predictions are never overwritten")
     results = {}
     empty_notes = {}
-    groups = slides[0].get("groups", [])
+    collections = [
+        slides[0].get("groups", []) or [],
+        slides[0].get("semantic_blocks", []) or [],
+    ]
     for target, source in mapping.items():
         if not (target.startswith("group_") and len(target) == 9 and target[6:].isdigit()):
             raise ValueError("Target IDs must be group_001, group_002, ...")
-        matched = [g for g in groups if source in (g.get("id"), g.get("group_id"), g.get("visual_group_id"))]
-        if len(matched) != 1:
-            raise ValueError(f"Expected one manifest group for {source}, got {len(matched)}")
-        manual = matched[0].get("manual_mask", {})
+        matched = None
+        for collection in collections:
+            hits = [g for g in collection if source in (g.get("id"), g.get("group_id"), g.get("visual_group_id"))]
+            if len(hits) > 1:
+                raise ValueError(f"Expected one manifest group for {source}, got {len(hits)}")
+            if hits:
+                matched = hits[0]
+                break
+        if matched is None:
+            raise ValueError(f"Expected one manifest group for {source}, got 0")
+        manual = matched.get("manual_mask", {})
         if manual.get("strokes"):
             raise ValueError("Manual strokes need production rasterization; this exporter scores automatic RLE only")
         rle = manual.get("rle", {})

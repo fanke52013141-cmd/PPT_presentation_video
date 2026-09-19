@@ -165,11 +165,13 @@ compatibility, but must not take component-detection implementations back.
 owns exact Mask construction, manual-correction protection, review issue
 generation, and mutation of `reveal_manifest.json` groups. Keep those
 implementations out of `ai_mask_engine.py` as well.
-`ai_mask_assignment.py` owns fallback matching, model-result cleanup, title
-region consolidation, narrated-group anchoring, deterministic residual
-component completion, and semantic/coverage quality gates. The engine remains
+`ai_mask_assignment.py` owns fallback matching, model-result cleanup, shared
+sparse-container rebinding to the narrated title group, title region
+consolidation, narrated-group anchoring, deterministic residual component
+completion, and semantic/coverage quality gates. The engine remains
 the prompt/config compatibility surface, multimodal request adapter, and
-project-level orchestrator.
+project-level orchestrator. A paged semantic-object vision match retries one
+truncated or malformed JSON completion before falling back deterministically.
 
 `scripts/build_reveal_scene.py` is the only production reveal builder.
 

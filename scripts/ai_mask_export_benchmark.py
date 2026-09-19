@@ -16,6 +16,7 @@ def export(manifest_path, slide_id, mapping_path, output):
     if output.exists():
         raise ValueError("Choose a new output directory; existing predictions are never overwritten")
     results = {}
+    empty_notes = {}
     groups = slides[0].get("groups", [])
     for target, source in mapping.items():
         if not (target.startswith("group_") and len(target) == 9 and target[6:].isdigit()):
@@ -27,6 +28,10 @@ def export(manifest_path, slide_id, mapping_path, output):
         if manual.get("strokes"):
             raise ValueError("Manual strokes need production rasterization; this exporter scores automatic RLE only")
         rle = manual.get("rle", {})
+        if not rle:
+            results[target] = np.zeros((1080, 1920), np.uint8)
+            empty_notes[target] = "manifest group has no automatic RLE (unmatched by AI Mask)"
+            continue
         if rle.get("encoding") != "row_runs_v1" or (rle.get("width"), rle.get("height")) != (1920, 1080):
             raise ValueError(f"Unsupported/missing RLE for {source}")
         mask = np.zeros((1080, 1920), np.uint8)
@@ -41,7 +46,11 @@ def export(manifest_path, slide_id, mapping_path, output):
     output.mkdir(parents=True)
     for target, mask in results.items():
         Image.fromarray(mask).save(output / (target + ".png"))
-    print(f"Exported {len(results)} masks into {output}")
+    if empty_notes:
+        (output / "export_notes.json").write_text(
+            json.dumps(empty_notes, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    print(f"Exported {len(results)} masks into {output}; {len(empty_notes)} empty (unmatched groups)")
 
 
 if __name__ == "__main__":

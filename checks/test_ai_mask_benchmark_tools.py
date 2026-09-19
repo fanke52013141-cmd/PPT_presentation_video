@@ -44,6 +44,25 @@ def test_export_validates_before_writing_and_is_read_only(tmp_path):
     assert not (tmp_path / "rejected").exists()
 
 
+def test_export_writes_empty_mask_for_unmatched_group(tmp_path):
+    manifest = tmp_path / "manifest.json"
+    mapping = tmp_path / "mapping.json"
+    data = {"slides": [{"slide_id": "slide_001", "groups": [
+        {"id": "matched", "manual_mask": {
+            "rle": {"encoding": "row_runs_v1", "width": 1920, "height": 1080, "runs": [[10, 20, 25]]},
+            "strokes": []}},
+        {"id": "unmatched", "manual_mask": {"strokes": []}},
+    ]}]}
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    mapping.write_text(json.dumps({"group_001": "matched", "group_002": "unmatched"}), encoding="utf-8")
+    output = tmp_path / "predictions"
+    export(manifest, "slide_001", mapping, output)
+    assert np.count_nonzero(np.asarray(Image.open(output / "group_001.png"))) == 5
+    assert np.count_nonzero(np.asarray(Image.open(output / "group_002.png"))) == 0
+    notes = json.loads((output / "export_notes.json").read_text(encoding="utf-8"))
+    assert set(notes) == {"group_002"}
+
+
 def test_invalid_prediction_dimensions_rejected(tmp_path):
     case = Path(REPO_ROOT) / "docs/ai-mask-optimization/validation/cases/01_separated"
     Image.new("L", (5, 5)).save(tmp_path / "group_001.png")

@@ -382,7 +382,7 @@ class TestArtifactsDeep:
         assert uri.startswith("ppt://")
 
     def test_mime_for_all_types(self):
-        from agent_contract.artifacts import mime_for_type, ArtifactType
+        from agent_contract.artifacts import mime_for_type
         expected_mime = {
             "image": "image/png",
             "audio": "audio/mpeg",

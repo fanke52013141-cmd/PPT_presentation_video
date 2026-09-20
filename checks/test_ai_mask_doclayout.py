@@ -12,7 +12,6 @@ from PIL import Image
 import ai_mask_doclayout
 from ai_mask_doclayout import (
     DocLayoutDetector,
-    LayoutOutputError,
     MODEL_COORDINATE_FORMAT,
     _class_aware_nms,
     _parse_predictions,

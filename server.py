@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from PIL import Image
-from database import get_db, init_db, Project
+from database import init_db, Project
 from config_store import get_all_settings, update_settings, get_setting, get_bounded_int_setting
 from app_middleware import install_static_asset_cache_policy
 from app_security import configured_allowed_hosts, configured_allowed_origins, install_access_control
@@ -416,6 +416,41 @@ from storyboard_service import (
     storyboard_validation_gate_enabled,
     update_step2_result,
     validate_visual_contract_file,
+)
+
+# Public compatibility exports retained for legacy scripts. Runtime code must
+# import from the source-owning modules listed in AGENTS.md instead.
+__all__ = (
+    "DEFAULT_SUBTITLE_STYLE",
+    "DEFAULT_VIDEO_BACKGROUND",
+    "OPEN_SOURCE_CHINESE_FONTS",
+    "build_step2_script_user_prompt",
+    "build_step2_visual_user_prompt",
+    "build_storyboard_request",
+    "built_in_step2_prompt_templates",
+    "clear_slide_visual_derivatives",
+    "compose_step2_system_prompt",
+    "compose_visual_contract_from_plans",
+    "default_step2_prompts",
+    "execute_step2",
+    "get_step2_result",
+    "json_decode_context",
+    "mark_step_in_progress",
+    "migrate_legacy_step2_prompt",
+    "nonempty_file",
+    "normalize_slide_visual_plan",
+    "parse_json_process_stdout",
+    "read_timeline_duration_sec",
+    "run_step2_json_llm",
+    "run_subprocess_bounded",
+    "STEP2_PROMPT_TEMPLATE_FILES",
+    "step2_prompt_compatibility",
+    "step2_script_prompt_uses_legacy_contract",
+    "step2_visual_prompt_uses_legacy_contract",
+    "storyboard_validation_gate_enabled",
+    "update_step2_result",
+    "validate_visual_contract_file",
+    "write_debug_text",
 )
 
 # Visual settings routes are source-owned by visual_settings_service.py.

@@ -17,9 +17,8 @@ from __future__ import annotations
 import json
 import sys
 import os
-import tempfile
 from datetime import timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from sqlalchemy import create_engine

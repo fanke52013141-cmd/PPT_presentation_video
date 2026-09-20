@@ -15,7 +15,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
-from agent_client.client import AgentClient, AgentClientError
+from agent_client.client import AgentClient
 
 
 @dataclass(frozen=True)

@@ -495,7 +495,6 @@ def _is_timeout(capabilities: Any, exc: BaseException) -> bool:
 from ai_mask_manifest_apply import (
     _apply,
     _review_issues,
-    _replaceable_ai_mask,
 )
 
 

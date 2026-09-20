@@ -13,7 +13,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from project_style_context import ProjectStyleDependencies
 
 STATE_FILENAME = "step3_image_style.json"
 

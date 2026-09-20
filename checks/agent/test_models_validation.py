@@ -327,7 +327,6 @@ class TestJsonSchemaGeneration:
     """Verify all concrete models can generate JSON schemas (for MCP/OpenAPI)."""
 
     def test_all_concrete_models_generate_schema(self):
-        from pydantic import BaseModel
         concrete_models = [
             ProjectCreateRequest, ProjectCreateResult, ProjectSummary,
             ProjectListRequest, ProjectListResult, ProjectGetResult,

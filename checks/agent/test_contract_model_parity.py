@@ -101,7 +101,6 @@ def test_project_create_request_covers_internal_fields():
 
 
 def test_project_summary_covers_internal_payload_keys():
-    from project_service import ProjectService
     from agent_contract.models import ProjectSummary
 
     # The service layer composes project dicts from a fixed key set shared by

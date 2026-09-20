@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 import yaml
@@ -11,6 +13,11 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PROFILE_PATH = REPO_ROOT / "config" / "pipeline_profiles.yaml"
+
+# Cached values are never returned directly: callers historically received a
+# fresh YAML object and may safely normalize or extend it locally.
+_PROFILE_CACHE: dict[tuple[str, int, int], dict[str, Any]] = {}
+_PROFILE_CACHE_LOCK = Lock()
 
 REVEAL_ACTION_ALIASES = {
     "cover_wipe_left_to_right": "cover_wipe_left_to_right",
@@ -29,11 +36,23 @@ REVEAL_ACTION_ALIASES = {
 
 
 def read_pipeline_profile(path: Path | None = None) -> dict[str, Any]:
-    profile_path = path or DEFAULT_PROFILE_PATH
-    payload = yaml.safe_load(profile_path.read_text(encoding="utf-8-sig")) or {}
-    if not isinstance(payload, dict):
-        raise ValueError(f"Pipeline profile must be a YAML object: {profile_path}")
-    return payload
+    profile_path = (path or DEFAULT_PROFILE_PATH).resolve()
+    stat = profile_path.stat()
+    cache_key = (str(profile_path), stat.st_mtime_ns, stat.st_size)
+    with _PROFILE_CACHE_LOCK:
+        cached = _PROFILE_CACHE.get(cache_key)
+        if cached is None:
+            payload = yaml.safe_load(profile_path.read_text(encoding="utf-8-sig")) or {}
+            if not isinstance(payload, dict):
+                raise ValueError(f"Pipeline profile must be a YAML object: {profile_path}")
+            # Keep at most one version of each profile path. This preserves
+            # immediate file-change visibility without an unbounded cache.
+            for old_key in tuple(_PROFILE_CACHE):
+                if old_key[0] == cache_key[0] and old_key != cache_key:
+                    del _PROFILE_CACHE[old_key]
+            _PROFILE_CACHE[cache_key] = payload
+            cached = payload
+    return deepcopy(cached)
 
 
 def _nested_dict(payload: dict[str, Any], *keys: str) -> dict[str, Any]:

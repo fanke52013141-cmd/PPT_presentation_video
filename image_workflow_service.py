@@ -41,7 +41,6 @@ from database import ArtifactRecord, Project
 from project_path_service import project_or_404
 from global_image_style_service import (
     active_style_reference_paths,
-    build_image_style_prompt,
     read_style_tokens_data,
     should_send_style_reference_images,
 )
@@ -60,7 +59,6 @@ from project_style_reference_service import (
 from storyboard_prompt_templates import read_prompt_template
 from ip_character_service import (
     IP_PROMPT_MARKER,
-    build_ip_character_prompt_segment,
     ip_character_reference_paths,
     render_ip_character_prompt,
 )
@@ -74,9 +72,9 @@ from visual_provenance import (
     write_visual_provenance,
 )
 from repository_paths import (
-    REPO_ROOT,
     STEP3_IMAGE_PROMPT_TEMPLATE_PATH,
 )
+from repository_paths import REPO_ROOT as REPO_ROOT  # noqa: F401 - public path-registry compatibility export
 from project_config_runtime import get_config_value
 
 try:

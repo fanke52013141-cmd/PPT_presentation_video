@@ -24,7 +24,6 @@ from sqlalchemy.orm import Session
 
 from database import get_db, Project, ArtifactRecord
 from account_context import get_current_account_id
-from project_path_service import project_or_404
 
 from agent_contract.models import (
     ProjectCreateRequest, ProjectCreateResult, ProjectSummary,
@@ -44,7 +43,6 @@ from agent_contract.models import (
     IdentityResult,
 )
 from agent_contract.operations import (
-    OperationResult, OperationStatus,
     CHECKPOINT_STAGES, get_checkpoint,
     operation_from_one_click, unwrap_one_click_status,
 )
@@ -579,7 +577,7 @@ def _sse_generator(
     """
     import time
 
-    from one_click_orchestrator import get_one_click_status, _RUNNING
+    from one_click_orchestrator import get_one_click_status
     from database import Project
 
     start_time = time.monotonic()

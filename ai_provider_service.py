@@ -343,9 +343,10 @@ def enforce_white_image_region(
     if bottom <= top:
         return {"top": top, "bottom": bottom, "nonwhite_ratio": 0.0, "cleared": False}
     region = image.crop((0, top, image.width, bottom))
-    # ``get_flattened_data`` was removed by newer Pillow releases. ``getdata``
-    # provides the same row-major RGB iterator across supported versions.
-    pixels = region.getdata()
+    # Pillow 14 removes ``getdata``. Keep a fallback for older supported Pillow
+    # releases while using the replacement API in the locked runtime.
+    flattened_data = getattr(region, "get_flattened_data", None)
+    pixels = flattened_data() if callable(flattened_data) else region.getdata()
     total = max(1, region.width * region.height)
     nonwhite = sum(
         1 for red, green, blue in pixels

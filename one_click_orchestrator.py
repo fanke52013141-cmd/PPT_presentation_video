@@ -33,12 +33,9 @@ from one_click_resume_policy import (
     has_article as _has_article,
     has_contract as _has_contract,
     has_fresh_narration as _has_fresh_narration,
-    image_needs_generation as _image_needs_generation,
-    mtime as _mtime,
     run_dir as _run_dir,
     slide_ids as _slide_ids,
     slides_requiring_images as _slides_requiring_images,
-    upstream_image_inputs as _upstream_image_inputs,
 )
 from project_profile_store import DEFAULT_QUALITY_GATES, load_profile  # noqa: F401  (source guard asserts the gate wiring import)
 from pipeline_state import complete_step, current_step_after_completion

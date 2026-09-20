@@ -1,0 +1,7 @@
+target-version = "py313"
+
+[lint]
+# This intentionally starts with deterministic correctness checks. Broader
+# style and complexity rules remain advisory until their existing debt is
+# addressed in focused, behavior-preserving changes.
+select = ["E722", "F401", "F821", "F841"]

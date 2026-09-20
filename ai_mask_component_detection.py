@@ -685,7 +685,6 @@ def _build_element_from_atoms(
     raw = {"x": x1, "y": y1, "w": x2 - x1, "h": y2 - y1}
     box = _pad_box(raw, ow, oh, padding)
     cx, cy = box["x"] + box["w"] / 2, box["y"] + box["h"] / 2
-    ink_runs = ink_rle["runs"]
     total_ink = sum(int(member["area"]) for member in members)
     # Solidify is an interior-white repair for one dense panel, so it runs per
     # atom: filling the union's scanlines would re-bridge the white gap between

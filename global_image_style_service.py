@@ -21,17 +21,16 @@ from ai_provider_service import ImagePayloadTooLarge
 
 from pipeline_lifecycle import write_json_atomic
 from repository_paths import (
-    DATA_DIR,
     DEFAULT_STYLE_REFERENCE_DIR,
     DEFAULT_STYLE_TOKENS_PATH,
     HANDDRAWN_STYLE_TOKENS_PATH,
     IMAGE_STYLE_TEMPLATES_DIR,
     IMAGE_STYLE_TEMPLATES_INDEX,
-    REPO_ROOT,
     STYLE_REFERENCE_DIR,
     STYLE_REFERENCE_FILES,
     STYLE_TOKENS_PATH,
 )
+from repository_paths import REPO_ROOT as REPO_ROOT  # noqa: F401 - public path-registry compatibility export
 
 
 logger = logging.getLogger("PPTStudio.GlobalImageStyle")

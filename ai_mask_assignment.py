@@ -118,7 +118,7 @@ def _fallback_match(
     matches: list[dict[str, Any]] = []
     used: set[str] = set()
     unmatched_groups: list[str] = []
-    for index, group in enumerate(groups):
+    for group in groups:
         gid = str(group.get("id") or "")
         prior = _manifest_group_for_visual_id(manifest_slide or {}, gid)
         prior_box = _box_xyxy((prior or {}).get("box"))

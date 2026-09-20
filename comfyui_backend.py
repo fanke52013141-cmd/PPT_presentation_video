@@ -425,7 +425,7 @@ def _find_output_video(entry: Dict[str, Any], wf: Optional[Dict[str, Any]] = Non
     node_out = outputs.get(vc_id) if vc_id else None
     if not node_out:
         # 尝试遍历所有输出节点
-        for nid_key, node_data in outputs.items():
+        for node_data in outputs.values():
             if "videos" in node_data or "gifs" in node_data:
                 node_out = node_data
                 break
@@ -617,7 +617,7 @@ def _find_output_audio(entry: Dict[str, Any]) -> Optional[Dict[str, str]]:
     node_out = outputs.get(sa_id) or outputs.get(str(sa_id))
     if not node_out:
         # 遍历所有输出节点，查找含音频字段的
-        for nid_key, node_data in outputs.items():
+        for node_data in outputs.values():
             for key in ("audio", "wav", "result", "audios"):
                 if key in node_data:
                     node_out = node_data

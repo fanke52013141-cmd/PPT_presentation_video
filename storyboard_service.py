@@ -265,6 +265,42 @@ from storyboard_planning import (
     validate_slide_visual_mapping,
 )
 
+# Explicit compatibility surface for legacy callers. New code imports from the
+# focused planning/profile/template modules directly.
+__all__ = (
+    "DATA_DIR",
+    "REPO_ROOT",
+    "STEP2_PROMPT_TEMPLATE_FILES",
+    "STEP2_PROMPT_TEMPLATES_PATH",
+    "STEP2_PROMPTS_FILE",
+    "STEP2_SCRIPT_PLAN_FILE",
+    "STEP2_VISUAL_PLAN_FILE",
+    "built_in_step2_prompt_templates",
+    "clean_planning_block",
+    "clean_planning_text",
+    "delete_step2_prompt_template",
+    "element_visible_text",
+    "get_config_value",
+    "get_step2_prompt_template",
+    "get_step2_prompt_templates",
+    "list_step2_prompt_templates",
+    "migrate_legacy_step2_prompt",
+    "narration_sequence_key",
+    "normalize_body_points",
+    "normalize_narration_segments",
+    "normalize_slide_body",
+    "normalize_step2_prompt_type",
+    "normalize_visual_elements",
+    "normalized_prompt_hash",
+    "read_prompt_template",
+    "sanitize_storyboard_profile",
+    "save_step2_prompt_template",
+    "stable_plan_id",
+    "step2_prompt_compatibility",
+    "step2_prompt_template_detail",
+    "validate_slide_visual_mapping",
+)
+
 
 STEP2_VISUAL_REVEAL_MODE_CONTRACT = """
 <RevealModeContract>

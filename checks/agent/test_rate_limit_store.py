@@ -189,7 +189,7 @@ def test_middleware_uses_persistent_store():
 
 def test_store_singleton_is_none_by_default():
     """The module-level singleton must be None until first access."""
-    from agent_api.rate_limit_store import _store, reset_rate_limit_store_singleton
+    from agent_api.rate_limit_store import reset_rate_limit_store_singleton
 
     # Reset to ensure clean state
     reset_rate_limit_store_singleton()

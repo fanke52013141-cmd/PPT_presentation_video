@@ -8,10 +8,21 @@ Windows PowerShell：
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements.lock
 $env:PYTHONPATH = (Get-Location).Path
 .\.venv\Scripts\python.exe server.py
 ```
+
+`requirements.lock` is the verified release environment for Python 3.13. Use
+`requirements.txt` only when intentionally refreshing dependency versions; after
+that refresh, regenerate the lock file and run the complete validation suite.
+For tests and quality checks, additionally install `-r requirements-dev.txt`.
+
+Deployment-only environment variables, including network access, Agent API,
+digital-human, media-tool, and rendering settings, are documented in
+[`docs/environment.md`](docs/environment.md). Keep `.env.example` limited to
+the normal local setup values so optional integrations are never enabled by
+accident.
 
 打开 [http://127.0.0.1:8000](http://127.0.0.1:8000)。
 

@@ -10,7 +10,7 @@ from PIL import Image, ImageDraw
 import ai_mask_config
 import ai_mask_engine
 import ai_mask_semantic_matcher as matcher
-from ai_mask_component_detection import detect_elements
+from ai_mask_component_detection import _build_atom, _connected_sets, _neighbors, detect_elements
 
 SIZE = (480, 360)
 
@@ -70,6 +70,24 @@ def _element_containing(payload, x, y):
     return owners
 
 
+def test_atomic_recovery_uses_exact_row_runs_for_4_and_8_connectivity():
+    coords = [(1, 1), (2, 1), (2, 2), (5, 3), (6, 4)]
+    four_way = _connected_sets(coords, _neighbors(4))
+    assert four_way == [
+        [[1, 1, 3], [2, 2, 3]],
+        [[3, 5, 6]],
+        [[4, 6, 7]],
+    ]
+    eight_way = _connected_sets(coords, _neighbors(8))
+    assert eight_way == [
+        [[1, 1, 3], [2, 2, 3]],
+        [[3, 5, 6], [4, 6, 7]],
+    ]
+    atom = _build_atom([[2, 2, 4], [3, 3, 4]], border=2, ow=480, oh=360, index=1, padding=0)
+    assert atom["raw_bbox"] == {"x": 0, "y": 0, "w": 2, "h": 2}
+    assert atom["mask_pixel_count"] == 3
+
+
 def test_fine_grained_two_pixel_white_gap_keeps_groups_separate(tmp_path):
     image = _canvas()
     draw = ImageDraw.Draw(image)
@@ -90,7 +108,7 @@ def test_default_closing_still_merges_gap_that_fine_grained_keeps_apart(tmp_path
     draw.rectangle((60, 120, 120, 160), fill=(40, 70, 120))
     draw.rectangle((123, 120, 183, 160), fill=(150, 60, 40))
     legacy = _detect(tmp_path, image, _settings())
-    assert legacy["version"] == "auto_elements_v3_exact_rle_cached"
+    assert legacy["version"] == "auto_elements_v5_box_label_only"
     assert len(_element_containing(legacy, 90, 140)) == 1
     assert _element_containing(legacy, 90, 140)[0]["element_id"] == \
         _element_containing(legacy, 153, 140)[0]["element_id"]
@@ -195,7 +213,7 @@ def test_fine_grained_layout_binding_does_not_undo_seed_components(tmp_path):
     assert len(plain["elements"]) == len(with_boxes["elements"]) == 2
     assert with_boxes["fine_grained"]["layout_binding_skipped"] is True
     legacy = detect_elements(_save(tmp_path, image), tmp_path / "c", _settings(), layout_boxes)
-    assert [e["element_id"] for e in legacy["elements"]] == ["el_layout_001"]
+    assert [e["element_id"] for e in legacy["elements"]] == ["el_auto_001"]
 
 
 def test_cache_invalidates_when_fine_grained_flag_or_threshold_changes(tmp_path):
@@ -203,7 +221,7 @@ def test_cache_invalidates_when_fine_grained_flag_or_threshold_changes(tmp_path)
     draw = ImageDraw.Draw(image)
     draw.rectangle((60, 120, 200, 200), outline=(40, 70, 120), width=3, fill=(250, 250, 250))
     off = _detect(tmp_path, image, _settings())
-    assert off["version"] == "auto_elements_v3_exact_rle_cached"
+    assert off["version"] == "auto_elements_v5_box_label_only"
     on = _detect(tmp_path, image, _settings(fine_grained_detection=True))
     assert on["version"] == "auto_elements_v4_fine_grained"
     assert on["detection_settings_fingerprint"] != off["detection_settings_fingerprint"]
@@ -238,50 +256,19 @@ def test_semantic_objects_keep_more_than_120_candidates():
     assert len(ids) == len(set(ids)) == len(objects)
 
 
-def test_plan_object_pages_never_drops_objects():
+def test_plan_atomic_requests_grows_batch_instead_of_dropping_objects():
     objects = [{"object_id": f"obj_{i:03d}"} for i in range(73)]
-    plan = matcher._plan_object_pages(objects)
-    assert plan["overflow"] is True
-    assert [obj for page in plan["pages"] for obj in page] == objects
-    assert len(plan["pages"]) <= 6
-    small = matcher._plan_object_pages(objects[:13])
-    assert small["overflow"] is False
-    assert [len(page) for page in small["pages"]] == [12, 1]
-    empty = matcher._plan_object_pages([])
-    assert empty["pages"] == [] and empty["overflow"] is False
-
-
-def test_merge_page_values_unions_and_reports_budget():
-    pages = [
-        {
-            "matches": [{
-                "group_id": "g1", "narration_beat_id": "b1", "object_ids": ["obj_001"],
-                "element_ids": ["el_auto_001"], "confidence": 0.8, "reason": "A",
-            }],
-            "unmatched_objects": ["obj_002"], "unmatched_elements": [], "unmatched_groups": ["g9"],
-            "warnings": [{"type": "x"}],
-        },
-        {
-            "matches": [{
-                "group_id": "g1", "narration_beat_id": "b1", "object_ids": ["obj_003"],
-                "element_ids": ["el_auto_001", "el_auto_003"], "confidence": 0.95, "reason": "B",
-            }],
-            "unmatched_objects": [], "unmatched_elements": ["el_auto_009"], "unmatched_groups": [],
-            "warnings": [],
-        },
-    ]
-    merged = matcher._merge_page_values(pages, budget_exceeded=True, object_count=99)
-    assert merged is not None and merged["pages_merged"] == 2
-    assert len(merged["matches"]) == 1
-    match = merged["matches"][0]
-    assert match["object_ids"] == ["obj_001", "obj_003"]
-    assert match["element_ids"] == ["el_auto_001", "el_auto_003"]
-    assert match["confidence"] == 0.95
-    assert merged["unmatched_objects"] == ["obj_002"]
-    assert merged["unmatched_elements"] == ["el_auto_009"]
-    assert merged["unmatched_groups"] == ["g9"]
-    assert any(item["type"] == "object_page_budget_exceeded" for item in merged["warnings"])
-    assert matcher._merge_page_values([]) is None
+    settings = {"vision_object_batch_size": 12, "vision_max_requests": 4}
+    batches, beyond, expanded = matcher._plan_atomic_requests(objects, settings)
+    assert beyond == []
+    assert expanded == 19  # ceil(73 / 4): every object still reaches the model
+    assert [obj for batch in batches for obj in batch] == objects
+    assert len(batches) <= 4
+    small, small_beyond, small_expanded = matcher._plan_atomic_requests(objects[:13], settings)
+    assert small_expanded == 0 and small_beyond == []
+    assert [len(batch) for batch in small] == [12, 1]
+    empty, empty_beyond, empty_expanded = matcher._plan_atomic_requests([], settings)
+    assert empty == [] and empty_beyond == [] and empty_expanded == 0
 
 
 def test_normalize_settings_and_prompt_migration_for_fine_grained():
@@ -306,6 +293,26 @@ def test_prompt_migrates_cluster_field_rule(monkeypatch):
     monkeypatch.setattr(ai_mask_config, "get_setting", lambda key, default=None: stored if key == ai_mask_engine.PROMPT_METHOD_KEY else default)
     methodology, _ = ai_mask_config.read_ai_mask_prompts()
     assert "cluster_member_count" not in methodology
-    assert "page.index" in methodology
-    defaults, _ = (lambda: (ai_mask_engine.DEFAULT_METHODOLOGY, None))()
-    assert "cluster_member_count" not in defaults
+    assert methodology == ai_mask_engine.DEFAULT_METHODOLOGY
+
+    for stored_builtin in (
+        ai_mask_engine.LEGACY_METHODOLOGY_V3,
+        ai_mask_engine.LEGACY_METHODOLOGY_V3_PAGED,
+    ):
+        monkeypatch.setattr(
+            ai_mask_config,
+            "get_setting",
+            lambda key, default=None, value=stored_builtin: value
+            if key == ai_mask_engine.PROMPT_METHOD_KEY else default,
+        )
+        methodology, _ = ai_mask_config.read_ai_mask_prompts()
+        assert methodology == ai_mask_engine.DEFAULT_METHODOLOGY
+
+    custom = "自定义规则保留 page.index，绝不迁移"
+    monkeypatch.setattr(
+        ai_mask_config,
+        "get_setting",
+        lambda key, default=None: custom if key == ai_mask_engine.PROMPT_METHOD_KEY else default,
+    )
+    methodology, _ = ai_mask_config.read_ai_mask_prompts()
+    assert methodology == custom

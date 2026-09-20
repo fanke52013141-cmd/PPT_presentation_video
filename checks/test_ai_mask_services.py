@@ -3,7 +3,10 @@ import logging
 from pathlib import Path
 from types import SimpleNamespace
 
+from PIL import Image
+
 import ai_mask_config
+import ai_mask_doclayout
 import ai_mask_engine
 import ai_mask_service
 
@@ -27,7 +30,7 @@ def test_config_service_reads_migrates_and_saves(monkeypatch) -> None:
     )
 
     methodology, output_structure = ai_mask_config.read_ai_mask_prompts()
-    assert "ai_mask_semantic_mapping_v3" in methodology
+    assert "ai_mask_semantic_mapping_v4" in methodology
     assert "系统会按 object 自动展开" in output_structure
     assert ai_mask_config.get_ai_mask_settings()["white_threshold"] == 241
 
@@ -193,6 +196,106 @@ def test_runtime_registration_module_is_gone() -> None:
         assert f"def {owner}(" in assignment_source
         assert f"def {owner}(" not in engine_source
     assert "from ai_mask_assignment import (" in engine_source
+
+
+def test_degraded_stages_become_their_own_log_events(monkeypatch) -> None:
+    logs = []
+    dependencies = ai_mask_service.AiMaskDependencies(
+        get_setting=lambda *_args, **_kwargs: "",
+        get_openai_client=lambda **_kwargs: None,
+        reveal_lock_for=lambda _project: nullcontext(),
+        write_project_log=lambda project, event, **fields: logs.append((event, fields)),
+        read_style_tokens_data=lambda: {},
+        step2_llm_vendor_options=lambda *_args: {},
+        clean_json_markdown=lambda value: value,
+        is_timeout_exception=lambda _exc: False,
+        vision_matcher=lambda *_args, **_kwargs: None,
+        logger=logging.getLogger("ai-mask-degradation-test"),
+    )
+    monkeypatch.setattr(
+        ai_mask_service, "get_ai_mask_settings",
+        lambda: ai_mask_engine.normalize_settings({}),
+    )
+    monkeypatch.setattr(
+        ai_mask_service, "read_ai_mask_prompts", lambda: ("m", "o")
+    )
+    slides = [
+        {
+            "slide_id": "slide_001",
+            "layout_detection": {
+                "status": "missing_model", "enabled": True, "box_count": 0,
+                "fallback_reason": "模型文件不存在: tools/doclayout/x.onnx",
+                "device_mode": "auto",
+                "actual_providers": ["CPUExecutionProvider"],
+                "device_reason": "cuda_provider_not_installed",
+            },
+            "vision_status": "deterministic_fallback",
+            "vision_error_type": "APITimeoutError",
+        },
+        {
+            "slide_id": "slide_002",
+            "layout_detection": {"status": "disabled", "enabled": False, "box_count": 0},
+            "vision_status": "ok",
+        },
+    ]
+    monkeypatch.setattr(
+        ai_mask_engine, "_annotate_project",
+        lambda *_args, **_kwargs: {"success": True, "slides": slides},
+    )
+    result = ai_mask_service.AiMaskTaskService(dependencies).annotate_project(
+        SimpleNamespace(id="p1", run_dir="unused")
+    )
+    assert result["success"] is True
+    events = [entry for entry in logs if entry[0] != "ai_mask_annotation"]
+    # Disabling the optional stage on purpose is not a degradation, so only the
+    # first slide reports; every cause stays a separate, readable event.
+    assert [(name, fields["slide_id"]) for name, fields in events] == [
+        ("ai_mask_layout_degraded", "slide_001"),
+        ("ai_mask_vision_degraded", "slide_001"),
+    ]
+    assert events[0][1]["status"] == "missing_model"
+    assert "模型文件不存在" in events[0][1]["reason"]
+    # The log has to say which device really ran, never just what was requested.
+    assert events[0][1]["actual_providers"] == ["CPUExecutionProvider"]
+    assert events[0][1]["device_reason"] == "cuda_provider_not_installed"
+    assert events[1][1]["reason"] == "APITimeoutError"
+
+
+def test_detect_layout_states_are_distinguishable(tmp_path) -> None:
+    image_path = tmp_path / "visual_draft.png"
+    Image.new("RGB", (40, 30), "white").save(image_path)
+    capabilities = SimpleNamespace(logger=logging.getLogger("ai-mask-detect-layout-test"))
+
+    disabled = ai_mask_engine.normalize_settings({"doclayout_enabled": False})
+    boxes, record = ai_mask_engine._detect_layout(capabilities, disabled, image_path)
+    assert boxes is None
+    assert record["status"] == "disabled"
+    assert record["available"] is False
+    assert record["elapsed_ms"] == {"layout_load": 0.0, "layout_infer": 0.0}
+
+    missing_model = ai_mask_engine.normalize_settings(
+        {"doclayout_enabled": True, "doclayout_model_path": "Z:/definitely/missing.onnx"}
+    )
+    boxes, record = ai_mask_engine._detect_layout(capabilities, missing_model, image_path)
+    assert boxes is None
+    # Which of the two prerequisite states applies depends on this environment;
+    # the point is that they are reported as distinct states, never as "no boxes".
+    assert record["status"] in {"missing_model", "missing_dependency"}
+    assert record["fallback_reason"]
+
+    # A detector that cannot even be imported must degrade, not abort the slide.
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("onnx build crashed")
+
+    original = ai_mask_doclayout.DocLayoutDetector
+    try:
+        ai_mask_doclayout.DocLayoutDetector = explode  # type: ignore[assignment,misc]
+        boxes, record = ai_mask_engine._detect_layout(capabilities, missing_model, image_path)
+    finally:
+        ai_mask_doclayout.DocLayoutDetector = original  # type: ignore[misc]
+    assert boxes is None
+    assert record["status"] == "session_init_failed"
+    assert record["error_type"] == "RuntimeError"
 
 
 def test_engine_selects_requested_contract_slides_in_contract_order() -> None:

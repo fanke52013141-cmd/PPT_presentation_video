@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import json
 from pathlib import Path
@@ -172,6 +173,9 @@ def _semantic_objects(elements: list[dict[str, Any]], width: int, height: int) -
         owned.update(ids)
 
     canonical.sort(key=lambda obj: (obj["bbox"]["y"], obj["bbox"]["x"], -int(obj.get("element_count", 1))))
+    # Every atomic object keeps a stable ID: dropping the tail here used to make
+    # the objects beyond the cap invisible to the model *and* to the coverage
+    # gate, so a dense slide silently lost components.
     for index, obj in enumerate(canonical, start=1):
         obj["object_id"] = f"obj_{index:03d}"
     return canonical
@@ -319,99 +323,320 @@ def _absorb_residuals_into_objects(
     return objects
 
 
-AI_MASK_PAGE_SIZE = 12
-AI_MASK_MAX_PAGES = 6
-
-
-def _plan_object_pages(
+def _plan_atomic_requests(
     objects: list[dict[str, Any]],
-    page_size: int = AI_MASK_PAGE_SIZE,
-    max_pages: int = AI_MASK_MAX_PAGES,
-) -> dict[str, Any]:
-    """Split every semantic object into VL request pages without dropping any.
+    settings: dict[str, Any],
+) -> tuple[list[list[dict[str, Any]]], list[dict[str, Any]], int]:
+    """Plan VL batches under the request budget, growing instead of dropping.
 
-    When the object count exceeds page_size * max_pages the page size grows so
-    all objects still reach the model within max_pages requests; the overflow
-    is reported instead of being silently truncated.
+    The Stage-C blind-verified invariant: every atomic object must reach the
+    model. When the configured budget cannot cover all objects at the default
+    batch size, the batch size grows so the remainder still fits inside
+    ``vision_max_requests``; objects are never silently left to the
+    deterministic fallback while the model still has request budget spare.
     """
-    total = len(objects)
-    pages: list[list[dict[str, Any]]] = []
-    if total:
-        required_pages = -(-total // page_size)
-        overflow = required_pages > max_pages
-        effective_size = -(-total // max_pages) if overflow else page_size
-        for start in range(0, total, effective_size):
-            pages.append(objects[start:start + effective_size])
-    else:
-        overflow = False
-        effective_size = page_size
+    batch_size, max_requests = _batch_budget(settings)
+    if not objects or -(-len(objects) // batch_size) <= max_requests:
+        batches, beyond = _plan_object_batches(objects, settings)
+        return batches, beyond, 0
+    expanded_size = -(-len(objects) // max_requests)
+    grown = dict(settings)
+    grown["vision_object_batch_size"] = expanded_size
+    batches, beyond = _plan_object_batches(objects, grown)
+    return batches, beyond, expanded_size
+
+
+def _spatial_cluster_objects(
+    objects: list[dict[str, Any]],
+    target_count: int,
+) -> list[dict[str, Any]]:
+    """Cluster spatially-adjacent semantic_objects into ~target_count groups.
+
+    Uses agglomerative merging by nearest box-to-box distance. Each cluster
+    becomes one composite object whose bbox is the union of its members. This
+    is only the rollback path (``atomic_object_matching=false``); the atomic
+    default keeps every object addressable.
+    """
+    if len(objects) <= target_count or target_count < 1:
+        return objects
+    clusters: list[list[dict[str, Any]]] = [[obj] for obj in objects]
+    cluster_bounds: list[tuple[float, float, float, float]] = []
+    for cluster in clusters:
+        bounds_list = [_obj_bounds_xyxy(obj) for obj in cluster]
+        bounds_list = [b for b in bounds_list if b]
+        if bounds_list:
+            x1 = min(b[0] for b in bounds_list); y1 = min(b[1] for b in bounds_list)
+            x2 = max(b[2] for b in bounds_list); y2 = max(b[3] for b in bounds_list)
+            cluster_bounds.append((x1, y1, x2, y2))
+        else:
+            cluster_bounds.append((0.0, 0.0, 0.0, 0.0))
+
+    while len(clusters) > target_count:
+        best_i = -1
+        best_j = -1
+        best_dist = float("inf")
+        for i in range(len(clusters)):
+            for j in range(i + 1, len(clusters)):
+                d = _box_gap(cluster_bounds[i], cluster_bounds[j])
+                if d < best_dist:
+                    best_dist = d
+                    best_i = i
+                    best_j = j
+        if best_i < 0:
+            break
+        merged_bounds_list = [cluster_bounds[best_i], cluster_bounds[best_j]]
+        x1 = min(b[0] for b in merged_bounds_list); y1 = min(b[1] for b in merged_bounds_list)
+        x2 = max(b[2] for b in merged_bounds_list); y2 = max(b[3] for b in merged_bounds_list)
+        clusters[best_i] = clusters[best_i] + clusters[best_j]
+        cluster_bounds[best_i] = (x1, y1, x2, y2)
+        clusters.pop(best_j)
+        cluster_bounds.pop(best_j)
+
+    result: list[dict[str, Any]] = []
+    for idx, cluster in enumerate(clusters):
+        if len(cluster) == 1:
+            obj = dict(cluster[0])
+            obj["object_id"] = f"obj_{idx + 1:03d}"
+            obj["cluster_member_count"] = 1
+            result.append(obj)
+            continue
+        all_eids: list[str] = []
+        for member in cluster:
+            all_eids.extend(str(eid) for eid in member.get("element_ids", []) or [])
+        unique_eids = list(dict.fromkeys(all_eids))
+        bounds_list = [_obj_bounds_xyxy(obj) for obj in cluster]
+        bounds_list = [b for b in bounds_list if b]
+        bbox = _union_bounds_list(bounds_list) if bounds_list else {"x": 0, "y": 0, "w": 1, "h": 1}
+        cx = bbox["x"] + bbox["w"] / 2
+        cy = bbox["y"] + bbox["h"] / 2
+        result.append({
+            "object_id": f"obj_{idx + 1:03d}",
+            "type": "spatial_cluster",
+            "bbox": bbox,
+            "center": {"x": round(cx, 2), "y": round(cy, 2)},
+            "element_ids": unique_eids,
+            "element_count": len(unique_eids),
+            "cluster_member_count": len(cluster),
+            "member_object_ids": [str(m.get("object_id") or "") for m in cluster],
+            "reason": f"spatial cluster of {len(cluster)} adjacent objects",
+            "exclusive": True,
+        })
+    return result
+
+
+DEFAULT_OBJECT_BATCH_SIZE = 12
+DEFAULT_MAX_VISION_REQUESTS = 4
+
+
+def _batch_budget(settings: dict[str, Any]) -> tuple[int, int]:
+    def positive_int(key: str, default: int) -> int:
+        try:
+            value = int(settings.get(key, default) or default)
+        except (TypeError, ValueError):
+            return default
+        return value if value > 0 else default
+
+    return positive_int("vision_object_batch_size", DEFAULT_OBJECT_BATCH_SIZE), positive_int(
+        "vision_max_requests", DEFAULT_MAX_VISION_REQUESTS
+    )
+
+
+def _plan_object_batches(
+    objects: list[dict[str, Any]],
+    settings: dict[str, Any],
+) -> tuple[list[list[dict[str, Any]]], list[dict[str, Any]]]:
+    """Split atomic objects into budgeted requests instead of merging them away.
+
+    Objects the budget cannot cover are returned as the remainder: they stay
+    visible to the deterministic fallback and the review gate, which is the
+    honest alternative to forcing them into an unrelated cluster.
+    """
+    batch_size, max_requests = _batch_budget(settings)
+    covered = batch_size * max_requests
+    sent = objects[:covered]
+    batches = [sent[start : start + batch_size] for start in range(0, len(sent), batch_size)]
+    return batches, objects[covered:]
+
+
+def _match_confidence(match: dict[str, Any]) -> float:
+    try:
+        return float(match.get("confidence", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _merge_batch_results(
+    batch_results: list[tuple[int, dict[str, Any]]],
+    group_ids: list[str],
+    beyond_budget: list[dict[str, Any]] | None = None,
+    known_object_ids: set[str] | None = None,
+) -> dict[str, Any]:
+    """Combine per-batch model answers so every object has exactly one owner.
+
+    A cross-batch conflict must not be decided by arrival order. The strongest
+    confidence wins, and ties fall back to the slide's own group order and then
+    the batch index, so the merge stays a deterministic function of its inputs.
+    IDs the model invented are dropped here rather than reaching the Mask builder.
+    """
+    group_rank = {gid: index for index, gid in enumerate(group_ids)}
+    entries: list[tuple[int, str, dict[str, Any]]] = []
+    rejected_group_ids: set[str] = set()
+    rejected_object_ids: set[str] = set()
+    unmatched_objects: list[str] = []
+    unmatched_elements: list[str] = []
+    warnings: list[dict[str, Any]] = []
+    seen_warnings: set[tuple[Any, ...]] = set()
+    slide_id = ""
+
+    def claimed_objects(raw: dict[str, Any]) -> list[str]:
+        claimed = []
+        for oid in [str(oid) for oid in raw.get("object_ids", []) or [] if str(oid)]:
+            if known_object_ids is not None and oid not in known_object_ids:
+                rejected_object_ids.add(oid)
+                continue
+            claimed.append(oid)
+        return claimed
+
+    def precedence(batch_index: int, group_id: str, raw: dict[str, Any]) -> tuple[float, int, int]:
+        # Higher wins: confidence first, then the slide's own group order, then
+        # the earlier batch.  Arrival order alone never decides an owner.
+        return (
+            _match_confidence(raw),
+            -group_rank.get(group_id, len(group_rank)),
+            -batch_index,
+        )
+
+    for batch_index, value in batch_results:
+        if not isinstance(value, dict):
+            continue
+        slide_id = slide_id or str(value.get("slide_id") or "")
+        for raw in value.get("matches", []) or []:
+            if not isinstance(raw, dict):
+                continue
+            group_id = str(raw.get("group_id") or "")
+            if not group_id:
+                continue
+            if group_id not in group_rank:
+                rejected_group_ids.add(group_id)
+                continue
+            entries.append((batch_index, group_id, raw))
+        unmatched_objects.extend(
+            str(oid) for oid in value.get("unmatched_objects", []) or [] if str(oid)
+        )
+        unmatched_elements.extend(
+            str(eid) for eid in value.get("unmatched_elements", []) or [] if str(eid)
+        )
+        for warning in value.get("warnings", []) or []:
+            if not isinstance(warning, dict):
+                continue
+            key = (
+                str(warning.get("type") or ""),
+                str(warning.get("group_id") or ""),
+                tuple(sorted(claimed_objects(warning))),
+            )
+            if key not in seen_warnings:
+                seen_warnings.add(key)
+                warnings.append(dict(warning))
+
+    owners: dict[str, tuple[tuple[float, int, int], str]] = {}
+    for batch_index, group_id, raw in entries:
+        rank = precedence(batch_index, group_id, raw)
+        for object_id in claimed_objects(raw):
+            current = owners.get(object_id)
+            if current is None or rank > current[0]:
+                owners[object_id] = (rank, group_id)
+
+    conflicts: list[dict[str, Any]] = []
+    for object_id in sorted(owners):
+        claimants = {
+            group_id
+            for _, group_id, raw in entries
+            if object_id in claimed_objects(raw)
+        }
+        if len(claimants) > 1:
+            conflicts.append({
+                "object_id": object_id,
+                "kept_group_id": owners[object_id][1],
+                "competing_group_ids": sorted(claimants - {owners[object_id][1]}),
+                "decided_by": "confidence_then_group_order_then_batch",
+            })
+
+    grouped: dict[str, dict[str, Any]] = {}
+    for batch_index, group_id, raw in entries:
+        match = grouped.get(group_id)
+        if match is None:
+            match = {
+                "group_id": group_id,
+                "narration_beat_id": "",
+                "object_ids": [],
+                "element_ids": [],
+                "confidence": 0.0,
+                "reason": "",
+                "source_batch_index": batch_index,
+                "merged_from_batches": [],
+                "_precedence": None,
+            }
+            grouped[group_id] = match
+        for object_id in claimed_objects(raw):
+            if owners.get(object_id, (None, group_id))[1] != group_id:
+                continue
+            if object_id not in match["object_ids"]:
+                match["object_ids"].append(object_id)
+        for element_id in [str(eid) for eid in raw.get("element_ids", []) or [] if str(eid)]:
+            if element_id not in match["element_ids"]:
+                match["element_ids"].append(element_id)
+        if batch_index not in match["merged_from_batches"]:
+            match["merged_from_batches"].append(batch_index)
+        rank = precedence(batch_index, group_id, raw)
+        if match["_precedence"] is None or rank > match["_precedence"]:
+            match["_precedence"] = rank
+            match["source_batch_index"] = batch_index
+            match["narration_beat_id"] = str(raw.get("narration_beat_id") or "")
+            match["confidence"] = _match_confidence(raw)
+            match["reason"] = str(raw.get("reason") or "")
+
+    matches: list[dict[str, Any]] = []
+    for match in grouped.values():
+        match.pop("_precedence", None)
+        if not match["object_ids"] and not match["element_ids"]:
+            continue
+        matches.append(match)
+    matches.sort(
+        key=lambda match: group_rank.get(str(match.get("group_id") or ""), len(group_rank))
+    )
+
+    matched_groups = {str(match.get("group_id") or "") for match in matches}
+    matched_objects = {oid for match in matches for oid in match["object_ids"]}
+    unmatched = [oid for oid in dict.fromkeys(unmatched_objects) if oid not in matched_objects]
+    unmatched.extend(
+        str(obj.get("object_id") or "")
+        for obj in beyond_budget or []
+        if str(obj.get("object_id") or "") not in matched_objects
+    )
     return {
-        "pages": pages,
-        "page_size": effective_size,
-        "overflow": overflow,
-        "total_objects": total,
+        "slide_id": slide_id,
+        "matches": matches,
+        "unmatched_objects": list(dict.fromkeys(unmatched)),
+        "unmatched_elements": list(dict.fromkeys(unmatched_elements)),
+        "unmatched_groups": [gid for gid in group_ids if gid not in matched_groups],
+        "warnings": warnings,
+        "vision_batches": {
+            "request_count": len(batch_results),
+            "matches_per_batch": [
+                len(value.get("matches", []) or []) if isinstance(value, dict) else 0
+                for _, value in batch_results
+            ],
+            "ownership_conflicts": conflicts,
+            "beyond_budget_object_ids": [
+                str(obj.get("object_id") or "") for obj in beyond_budget or []
+            ],
+            "rejected_group_ids": sorted(rejected_group_ids),
+            "rejected_object_ids": sorted(rejected_object_ids),
+        },
     }
 
 
-def _merge_page_values(
-    page_values: list[dict[str, Any]],
-    budget_exceeded: bool = False,
-    object_count: int = 0,
-) -> dict[str, Any] | None:
-    """Combine per-page model outputs into one match document.
-
-    Matches for the same group/beat across pages are unioned; every object ID
-    from every page is preserved. Page-budget overflow is surfaced as a
-    warning instead of dropping candidates.
-    """
-    if not page_values:
-        return None
-    merged = dict(page_values[0])
-    matches_by_key: dict[tuple[str, str], dict[str, Any]] = {}
-    order: list[tuple[str, str]] = []
-    for value in page_values:
-        for match in value.get("matches", []) or []:
-            if not isinstance(match, dict):
-                continue
-            key = (str(match.get("group_id") or ""), str(match.get("narration_beat_id") or ""))
-            existing = matches_by_key.get(key)
-            if existing is None:
-                matches_by_key[key] = dict(match)
-                order.append(key)
-                continue
-            for field in ("object_ids", "element_ids"):
-                existing[field] = list(dict.fromkeys(
-                    [str(v) for v in existing.get(field, []) or []]
-                    + [str(v) for v in match.get(field, []) or []]
-                ))
-            try:
-                existing["confidence"] = max(
-                    float(existing.get("confidence", 0) or 0),
-                    float(match.get("confidence", 0) or 0),
-                )
-            except (TypeError, ValueError):
-                pass
-            reasons = [text for text in (str(existing.get("reason") or ""), str(match.get("reason") or "")) if text]
-            existing["reason"] = "；".join(dict.fromkeys(reasons))
-    merged["matches"] = [matches_by_key[key] for key in order]
-    for field in ("unmatched_objects", "unmatched_elements", "unmatched_groups"):
-        merged[field] = list(dict.fromkeys(
-            str(item) for value in page_values for item in (value.get(field) or [])
-        ))
-    warnings = [item for value in page_values for item in (value.get("warnings") or []) if isinstance(item, dict)]
-    if budget_exceeded:
-        warnings.append({
-            "type": "object_page_budget_exceeded",
-            "object_ids": [],
-            "reason": f"语义对象数量 {object_count} 超过分页预算，已放大每页对象数并全量送模，请复核分组粒度",
-        })
-    merged["warnings"] = warnings
-    merged["pages_merged"] = len(page_values)
-    return merged
-
-
 def _crop_object_bytes(image_path: Path, obj: dict[str, Any], max_width: int = 400) -> bytes | None:
-
     """Crop a single semantic_object region from the slide image and return PNG bytes.
 
     Adds a small padding around the bbox and draws the object_id label on top
@@ -462,6 +687,128 @@ def _crop_object_bytes(image_path: Path, obj: dict[str, Any], max_width: int = 4
         return None
 
 
+def _flag(settings: dict[str, Any], key: str, default: bool) -> bool:
+    value = settings.get(key, default)
+    return value if isinstance(value, bool) else default
+
+
+ATOMIC_BATCH_INSTRUCTION = (
+    "先看完整原图理解全局版式与阅读顺序，再看本批每个 object_XXX 的切片图及其 bbox。"
+    "切片图按 semantic_objects 顺序提供，图片上的标签与 object_id 一致。"
+    "只对本批列出的 object_id 做归属决定：其余对象由其它批次处理，不要为它们编造归属，"
+    "也不要把本批对象因为“主题相近”硬塞进同一个 group。"
+    "每个 object 只能属于一个 group，输出 object_ids（element_ids 留空，系统自行展开）。"
+)
+
+CLUSTERED_BATCH_INSTRUCTION = (
+    "先看完整原图理解全局版式和阅读顺序，再看每个 object_XXX 的切片图及其 bbox 坐标。"
+    "根据切片图视觉内容和空间位置（bbox 的 x/y/w/h），选择 object_id 对应到 visual_groups 和 narration_beats。"
+    "一个 object 可能包含多个空间相邻的语义元素（cluster_member_count>1），应作为整体归属。输出 object_ids 和 element_ids。"
+)
+
+
+def _batch_payload(
+    slide: dict[str, Any],
+    batch: list[dict[str, Any]],
+    index: int,
+    total: int,
+    atomic: bool,
+) -> dict[str, Any]:
+    objects_payload = []
+    for obj in batch:
+        entry: dict[str, Any] = {
+            "object_id": obj.get("object_id"),
+            "type": obj.get("type"),
+            "element_count": obj.get("element_count"),
+            "bbox": obj.get("bbox", {}),
+            "center": obj.get("center", {}),
+        }
+        if not atomic:
+            entry["cluster_member_count"] = obj.get("cluster_member_count", 1)
+        objects_payload.append(entry)
+    payload: dict[str, Any] = {
+        "slide": {
+            key: slide.get(key)
+            for key in (
+                "slide_id", "main_title", "subtitle", "core_message", "body_content",
+                "visual_groups", "narration_beats",
+            )
+        },
+        "semantic_objects": objects_payload,
+        "instruction": ATOMIC_BATCH_INSTRUCTION if atomic else CLUSTERED_BATCH_INSTRUCTION,
+    }
+    if total > 1:
+        # The model only needs to know the scope is partial when it really is.
+        payload["batch"] = {"index": index + 1, "total": total}
+    return payload
+
+
+def _request_object_batch(
+    capabilities: Any,
+    base_module: Any,
+    client: Any,
+    *,
+    model: str,
+    settings: dict[str, Any],
+    vendor_options: dict[str, Any],
+    prompt: str,
+    clean_bytes: bytes,
+    image_path: Path,
+    slide: dict[str, Any],
+    batch: list[dict[str, Any]],
+    index: int,
+    total: int,
+    atomic: bool,
+) -> dict[str, Any]:
+    payload = _batch_payload(slide, batch, index, total, atomic)
+    user_content: list[dict[str, Any]] = [
+        {"type": "text", "text": json.dumps(payload, ensure_ascii=False, indent=2)},
+        {"type": "text", "text": "完整原图（image_full）：理解全局版式和阅读顺序。"},
+        {"type": "image_url", "image_url": {
+            "url": "data:image/png;base64," + base64.b64encode(clean_bytes).decode("ascii")
+        }},
+    ]
+    for obj in batch:
+        crop_bytes = _crop_object_bytes(image_path, obj)
+        if not crop_bytes:
+            continue
+        user_content.append({
+            "type": "text",
+            "text": f"{obj.get('object_id')}（类型:{obj.get('type')}）：此对象的切片图。",
+        })
+        user_content.append({
+            "type": "image_url",
+            "image_url": {"url": "data:image/png;base64," + base64.b64encode(crop_bytes).decode("ascii")},
+        })
+    messages = [
+        {"role": "system", "content": prompt},
+        {"role": "user", "content": user_content},
+    ]
+    # One match record per object plus Chinese reasons can exceed the legacy
+    # flat 12000 budget on dense batches and truncate mid-string.
+    max_tokens = min(24000, 12000 + 600 * len(batch))
+    try:
+        response = client.chat.completions.create(model=model, temperature=float(settings["llm_temperature"]), max_tokens=max_tokens, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, response_format={"type": "json_object"}, messages=messages, **vendor_options)
+    except Exception as exc:
+        if base_module._is_timeout(capabilities, exc):
+            raise
+        response = client.chat.completions.create(model=model, temperature=float(settings["llm_temperature"]), max_tokens=max_tokens, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, messages=messages, **vendor_options)
+    content = str(response.choices[0].message.content or "").strip()
+    cleaned = capabilities.clean_json_markdown(content)
+    try:
+        value = json.loads(cleaned)
+    except json.JSONDecodeError:
+        # A truncated or malformed completion is usually transient; one fresh
+        # retry recovers the batch without degrading to the deterministic prior.
+        response = client.chat.completions.create(model=model, temperature=float(settings["llm_temperature"]), max_tokens=max_tokens, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, messages=messages, **vendor_options)
+        content = str(response.choices[0].message.content or "").strip()
+        cleaned = capabilities.clean_json_markdown(content)
+        value = json.loads(cleaned)
+    if not isinstance(value, dict):
+        raise ValueError(f"AI Mask vision batch {index + 1}/{total} returned a non-object JSON body")
+    return value
+
+
 class SemanticVisionMatcher:
     """Match detected slide components to narrated groups by semantic object."""
 
@@ -496,155 +843,116 @@ class SemanticVisionMatcher:
         except Exception:
             pass
         objects = _absorb_residuals_into_objects(objects, residual_elements)
-        plan = _plan_object_pages(objects)
-        pages = plan["pages"]
+        # The pre-v4 strategy merged objects down to (beats + 3) spatial clusters
+        # so a slide always fitted in one request. That made it impossible for a
+        # slide with more narrated groups than clusters to give each group its own
+        # candidate, and it threw away the atomic ownership evidence.
+        atomic_matching = _flag(settings, "atomic_object_matching", True)
+        beat_count = len(slide.get("narration_beats", []) or [])
+        target_count = max(1, min(12, beat_count + 3))
+        pre_cluster_count = len(objects)
+        batch_size_expanded_to = 0
+        if atomic_matching:
+            batches, beyond_budget, batch_size_expanded_to = _plan_atomic_requests(objects, settings)
+        else:
+            objects = _spatial_cluster_objects(objects, target_count)
+            batches, beyond_budget = [objects], []
+        group_ids = [
+            str(group.get("id") or "")
+            for group in slide.get("visual_groups", []) or []
+            if isinstance(group, dict) and str(group.get("id") or "")
+        ]
+        model, _ = base_module._resolved_vision_model(capabilities)
+        prompt = methodology.strip() + "\n\n--- OUTPUT STRUCTURE / 输出结构 ---\n" + output_structure.strip()
         try:
             base_module._write_json(overlay_path.parent / "semantic_objects.json", {
-                "version": "semantic_objects_v3_paged",
+                "version": "semantic_objects_v3_atomic" if atomic_matching else "semantic_objects_v2_clustered",
                 "slide_id": slide.get("slide_id"),
                 "canvas": {"width": width, "height": height},
                 "objects": objects,
                 "source_auto_element_count": len(elements),
                 "residual_absorbed_count": len(residual_elements),
-                "object_count": len(objects),
-                "page_count": len(pages),
-                "page_size": plan["page_size"],
-                "page_budget_exceeded": plan["overflow"],
-                "page_object_ids": [
-                    [str(obj.get("object_id") or "") for obj in page] for page in pages
+                "pre_cluster_object_count": pre_cluster_count,
+                "target_cluster_count": target_count,
+                "batch_size_expanded_to": batch_size_expanded_to,
+                "request_batches": [
+                    {"index": index, "total": len(batches), "object_ids": [
+                        str(obj.get("object_id") or "") for obj in batch
+                    ]}
+                    for index, batch in enumerate(batches, start=1)
                 ],
+                "beyond_budget_object_ids": [
+                    str(obj.get("object_id") or "") for obj in beyond_budget
+                ],
+                "vision_model": model,
+                "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
             })
         except Exception:
             pass
-        if not pages:
+        if not batches:
             return None
         clean_bytes = _png_bytes(image_path, overlay_path.with_name("clean_original_for_vision.png"))
-        model, _ = base_module._resolved_vision_model(capabilities)
         base_url = capabilities.get_setting("llm_base_url")
         vendor_options = capabilities.step2_llm_vendor_options(model, base_url) or {}
         client = capabilities.get_openai_client(api_key=api_key, base_url=base_url, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, max_retries=0)
-        prompt = methodology.strip() + "\n\n--- OUTPUT STRUCTURE / 输出结构 ---\n" + output_structure.strip()
-        clean_url = "data:image/png;base64," + base64.b64encode(clean_bytes).decode("ascii")
-        slide_context = {key: slide.get(key) for key in ("slide_id", "main_title", "subtitle", "core_message", "body_content", "visual_groups", "narration_beats")}
-
-        page_values: list[dict[str, Any]] = []
-        page_errors: list[tuple[int, BaseException]] = []
+        # VL sees the full page once per request plus this batch's crops, so the
+        # number of requests and images stays inside the configured budget while
+        # every atomic object keeps its own identity.
+        batch_results: list[tuple[int, dict[str, Any]]] = []
+        failed_batches: list[int] = []
+        first_error: Exception | None = None
         try:
-            for page_index, page in enumerate(pages, 1):
+            for index, batch in enumerate(batches):
                 try:
-                    value = self._match_page(
-                        client=client,
-                        capabilities=capabilities,
-                        base_module=base_module,
+                    value = _request_object_batch(
+                        capabilities,
+                        base_module,
+                        client,
                         model=model,
-                        vendor_options=vendor_options,
                         settings=settings,
+                        vendor_options=vendor_options,
                         prompt=prompt,
-                        clean_url=clean_url,
-                        slide_context=slide_context,
+                        clean_bytes=clean_bytes,
                         image_path=image_path,
-                        page=page,
-                        page_index=page_index,
-                        page_count=len(pages),
-                        objects=objects,
-                        elements=elements,
+                        slide=slide,
+                        batch=batch,
+                        index=index,
+                        total=len(batches),
+                        atomic=atomic_matching,
                     )
                 except Exception as exc:
-                    page_errors.append((page_index, exc))
+                    # A timeout or the first batch failing means the whole slide
+                    # has no usable multimodal evidence; the engine then applies
+                    # its deterministic prior instead of a half-populated merge.
+                    if index == 0 or base_module._is_timeout(capabilities, exc):
+                        raise
+                    first_error = exc
+                    failed_batches.append(index)
                     continue
-                if value is not None:
-                    page_values.append(value)
+                batch_results.append((index, value))
         finally:
             try:
                 client.close()
             except Exception:
                 pass
-        if not page_values and page_errors:
-            raise page_errors[0][1]
-        merged = _merge_page_values(page_values, budget_exceeded=plan["overflow"], object_count=len(objects))
-        if merged is not None and page_errors:
-            for page_index, exc in page_errors:
-                merged.setdefault("warnings", []).append({
-                    "type": "semantic_object_page_failed",
-                    "object_ids": [],
-                    "reason": f"第 {page_index} 页视觉匹配失败，该页对象由确定性回退处理：{type(exc).__name__}: {str(exc)[:200]}",
-                })
-        return merged
-
-    def _match_page(
-        self,
-        *,
-        client: Any,
-        capabilities: Any,
-        base_module: Any,
-        model: str,
-        vendor_options: dict[str, Any],
-        settings: dict[str, Any],
-        prompt: str,
-        clean_url: str,
-        slide_context: dict[str, Any],
-        image_path: Path,
-        page: list[dict[str, Any]],
-        page_index: int,
-        page_count: int,
-        objects: list[dict[str, Any]],
-        elements: list[dict[str, Any]],
-    ) -> dict[str, Any] | None:
-        # Simplified payload: slide context + this page's object IDs. VL sees
-        # real crops, not raw coordinate guesswork; coordinates stay local
-        # evidence because downstream expands objects back to element RLEs.
-        payload = {
-            "slide": slide_context,
-            "semantic_objects": [
-                {
-                    "object_id": obj.get("object_id"),
-                    "type": obj.get("type"),
-                    "element_count": obj.get("element_count"),
-                    "bbox": obj.get("bbox", {}),
-                    "center": obj.get("center", {}),
-                }
-                for obj in page
-            ],
-            "page": {"index": page_index, "total": page_count},
-            "instruction": "先看完整原图理解全局版式和阅读顺序，再看本页每个 object_XXX 的切片图及其 bbox 坐标。根据切片图视觉内容和空间位置（bbox 的 x/y/w/h），选择 object_id 对应到 visual_groups 和 narration_beats。本次请求是第 {index}/{total} 页：只归属本页列出的 object_ids，其余对象由其他页面负责，不要为它们输出匹配。输出 object_ids 和 element_ids。".format(index=page_index, total=page_count),
-        }
-        user_content = [
-            {"type": "text", "text": json.dumps(payload, ensure_ascii=False, indent=2)},
-            {"type": "text", "text": "完整原图（image_full）：理解全局版式和阅读顺序。"},
-            {"type": "image_url", "image_url": {"url": clean_url}},
-        ]
-        for obj in page:
-            crop_bytes = _crop_object_bytes(image_path, obj)
-            if not crop_bytes:
-                continue
-            crop_url = "data:image/png;base64," + base64.b64encode(crop_bytes).decode("ascii")
-            user_content.append({"type": "text", "text": f"{obj.get('object_id')}（类型:{obj.get('type')}）：此对象的切片图。"})
-            user_content.append({"type": "image_url", "image_url": {"url": crop_url}})
-        messages = [
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": user_content},
-        ]
-        # One match record per object plus Chinese reasons can exceed the
-        # legacy flat 12000 budget on dense pages and truncate mid-string.
-        max_tokens = min(24000, 12000 + 600 * len(page))
-        try:
-            response = client.chat.completions.create(model=model, temperature=float(settings["llm_temperature"]), max_tokens=max_tokens, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, response_format={"type": "json_object"}, messages=messages, **vendor_options)
-        except Exception as exc:
-            if base_module._is_timeout(capabilities, exc):
-                raise
-            response = client.chat.completions.create(model=model, temperature=float(settings["llm_temperature"]), max_tokens=max_tokens, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, messages=messages, **vendor_options)
-        content = str(response.choices[0].message.content or "").strip()
-        cleaned = capabilities.clean_json_markdown(content)
-        try:
-            value = json.loads(cleaned)
-        except json.JSONDecodeError:
-            # A truncated or malformed completion is usually transient; one
-            # fresh retry recovers the page without degrading to the prior.
-            response = client.chat.completions.create(model=model, temperature=float(settings["llm_temperature"]), max_tokens=max_tokens, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, messages=messages, **vendor_options)
-            content = str(response.choices[0].message.content or "").strip()
-            cleaned = capabilities.clean_json_markdown(content)
-            value = json.loads(cleaned)
-        return _expand_matches(value, objects, elements) if isinstance(value, dict) else None
+        if not batch_results:
+            return None
+        merged = _merge_batch_results(
+            batch_results,
+            group_ids,
+            beyond_budget,
+            # Only the objects the model was actually shown may be claimed; a
+            # beyond-budget object id in a match is a hallucination by definition.
+            {str(obj.get("object_id") or "") for batch in batches for obj in batch},
+        )
+        # Budget accounting counts what was sent upstream, not what came back.
+        merged["vision_batches"]["request_count"] = len(batches)
+        merged["vision_batches"]["object_count"] = sum(len(batch) for batch in batches)
+        merged["vision_batches"]["batch_size_expanded_to"] = batch_size_expanded_to
+        if failed_batches:
+            merged["vision_batches"]["failed_batch_indices"] = failed_batches
+            merged["vision_batches"]["failed_batch_error_type"] = type(first_error).__name__
+        return _expand_matches(merged, objects, elements)
 
 
 semantic_vision_matcher = SemanticVisionMatcher()

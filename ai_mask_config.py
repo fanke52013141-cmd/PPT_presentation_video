@@ -13,9 +13,13 @@ from ai_mask_engine import (
     DEFAULT_SETTINGS,
     LEGACY_DEFAULT_METHODOLOGY_V2,
     LEGACY_DEFAULT_OUTPUT_STRUCTURE_V2,
+    LEGACY_METHODOLOGY_V3,
+    LEGACY_METHODOLOGY_V3_PAGED,
+    LEGACY_OUTPUT_STRUCTURE_V3,
     LEGACY_STORED_METHODOLOGY_V2,
     LEGACY_TITLE_RULE,
     PREVIOUS_OBJECT_FIELD_RULE,
+    PAGED_OBJECT_FIELD_RULE,
     PREVIOUS_TITLE_AND_ISLAND_RULES,
     PROMPT_METHOD_KEY,
     PROMPT_OUTPUT_KEY,
@@ -44,15 +48,23 @@ def read_ai_mask_prompts() -> tuple[str, str]:
     if methodology in {
         LEGACY_DEFAULT_METHODOLOGY_V2,
         LEGACY_STORED_METHODOLOGY_V2,
+        # v3 described cluster-merged objects; only a byte-identical built-in
+        # default migrates, an edited prompt is always left alone.
+        LEGACY_METHODOLOGY_V3,
+        LEGACY_METHODOLOGY_V3_PAGED,
     }:
         methodology = DEFAULT_METHODOLOGY
-    if output_structure == LEGACY_DEFAULT_OUTPUT_STRUCTURE_V2:
+    if output_structure in {
+        LEGACY_DEFAULT_OUTPUT_STRUCTURE_V2,
+        LEGACY_OUTPUT_STRUCTURE_V3,
+    }:
         output_structure = DEFAULT_OUTPUT_STRUCTURE
     for old_rule, new_rule in (
         (LEGACY_TITLE_RULE, CURRENT_TITLE_AND_ISLAND_RULES),
         (STATIC_TITLE_RULE, CURRENT_TITLE_AND_ISLAND_RULES),
         (PREVIOUS_TITLE_AND_ISLAND_RULES, CURRENT_TITLE_AND_ISLAND_RULES),
         (PREVIOUS_OBJECT_FIELD_RULE, CURRENT_OBJECT_FIELD_RULE),
+        (PAGED_OBJECT_FIELD_RULE, CURRENT_OBJECT_FIELD_RULE),
     ):
         if old_rule in methodology:
             methodology = methodology.replace(old_rule, new_rule)

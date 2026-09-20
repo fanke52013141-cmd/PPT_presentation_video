@@ -8,8 +8,10 @@ import logging
 import os
 from pathlib import Path
 import subprocess
+import time
 from typing import Any, Callable, Dict
 
+from ai_mask_contracts import AI_MASK_STAGE_REVEAL, elapsed_ms
 from runtime_support import run_subprocess_killable
 
 
@@ -94,6 +96,7 @@ def build_step5_mask_preview(
             "--preview-output",
             str(preview_path),
         ]
+        build_mark = time.perf_counter()
         result = dependencies.run_subprocess(
             command,
             capture_output=True,
@@ -102,6 +105,7 @@ def build_step5_mask_preview(
             errors="replace",
             timeout_sec=dependencies.build_timeout_sec,
         )
+        reveal_elapsed_ms = elapsed_ms(build_mark)
         if result.returncode == 124:
             raise MaskPreviewError(
                 504,
@@ -162,6 +166,7 @@ def build_step5_mask_preview(
         "success": True,
         "slide_id": slide_id,
         "manifest_fingerprint": manifest_fingerprint,
+        "timing_ms": {AI_MASK_STAGE_REVEAL: reveal_elapsed_ms},
         "preview_url": (
             f"/api/projects/{project.id}/slides/{slide_id}/"
             f"mask-preview?t={version}"

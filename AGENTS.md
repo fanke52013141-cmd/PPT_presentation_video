@@ -159,7 +159,8 @@ article.md
 
 `ai_mask_component_detection.py` owns deterministic white-background flood
 fill, morphology, connected components, projection splitting, exact row-run RLE,
-and the detection cache. `ai_mask_engine.py` may re-export its public helpers for
+and the detection cache. `ai_mask_object_graph.py` owns atomic-object and
+layout-box ownership graph construction. `ai_mask_engine.py` may re-export its public helpers for
 compatibility, but must not take component-detection implementations back.
 `ai_mask_contracts.py` owns cross-stage constants. `ai_mask_manifest_apply.py`
 owns exact Mask construction, manual-correction protection, review issue
@@ -170,7 +171,7 @@ sparse-container rebinding to the narrated title group, title region
 consolidation, narrated-group anchoring, deterministic residual component
 completion, and semantic/coverage quality gates. The engine remains
 the prompt/config compatibility surface, multimodal request adapter, and
-project-level orchestrator. A paged semantic-object vision match retries one
+project-level orchestrator. Each semantic-object vision batch retries one
 truncated or malformed JSON completion before falling back deterministically.
 Semantic-object preparation must never merge a row of visual islands (same-size
 grid cards) into one text-line object; only sub-island glyph fragments may

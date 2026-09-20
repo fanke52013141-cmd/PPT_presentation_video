@@ -9,7 +9,8 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from ai_mask_assignment import _complete_component_coverage, _consolidate_title_regions, _rebind_shared_containers
-from ai_mask_semantic_matcher import SemanticVisionMatcher, _semantic_objects
+import ai_mask_semantic_matcher as sm
+from ai_mask_semantic_matcher import _semantic_objects
 
 
 def _slide():
@@ -142,18 +143,17 @@ class _FakeCompletions:
         return response
 
 
-def test_match_page_retries_once_on_truncated_json():
+def test_request_object_batch_retries_once_on_truncated_json():
     with tempfile.TemporaryDirectory() as temp:
         image_path = Path(temp) / "image.png"
         Image.new("RGB", (1920, 1080), "white").save(image_path)
-        objects = [{
+        batch = [{
             "object_id": "object_001",
             "type": "card",
             "element_ids": ["el_1"],
             "bbox": {"x": 10, "y": 10, "w": 100, "h": 50},
             "center": {"x": 60, "y": 35},
         }]
-        elements = [{"element_id": "el_1", "bbox": {"x": 10, "y": 10, "w": 100, "h": 50}}]
         good = json.dumps({"matches": [{
             "group_id": "group_002",
             "narration_beat_id": "beat_2",
@@ -166,26 +166,23 @@ def test_match_page_retries_once_on_truncated_json():
             clean_json_markdown=lambda text: text,
         )
         base_module = SimpleNamespace(_is_timeout=lambda caps, exc: False, AI_MASK_VISION_TIMEOUT_SEC=60)
-        matcher = SemanticVisionMatcher()
-        value = matcher._match_page(
-            client=client,
-            capabilities=capabilities,
-            base_module=base_module,
+        value = sm._request_object_batch(
+            capabilities,
+            base_module,
+            client,
             model="vision-test",
-            vendor_options={},
             settings={"llm_temperature": 0.1},
+            vendor_options={},
             prompt="p",
-            clean_url="data:image/png;base64,x",
-            slide_context={"slide_id": "slide_010"},
+            clean_bytes=b"",
             image_path=image_path,
-            page=objects,
-            page_index=1,
-            page_count=2,
-            objects=objects,
-            elements=elements,
+            slide={"slide_id": "slide_010"},
+            batch=batch,
+            index=0,
+            total=2,
+            atomic=True,
         )
         assert client.chat.completions.calls == 2
-        assert value["matches"][0]["element_ids"] == ["el_1"]
         assert value["matches"][0]["object_ids"] == ["object_001"]
 
 

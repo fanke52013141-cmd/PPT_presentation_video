@@ -10,15 +10,26 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+import hashlib
 import time
 from pathlib import Path
 from typing import Any, Callable
 
 
-from ai_mask_contracts import (  # noqa: F401 (AI_MASK_VISION_TIMEOUT_SEC re-exported for ai_mask_semantic_matcher via ai_mask_engine)
+from ai_mask_contracts import (  # noqa: F401 (AI_MASK_VISION_TIMEOUT_SEC is re-exported for ai_mask_semantic_matcher)
     AI_MASK_VISION_TIMEOUT_SEC,
+    LAYOUT_STATUS_DISABLED,
+    LAYOUT_STATUS_INFERENCE_FAILED,
+    LAYOUT_STATUS_NO_BOXES,
+    LAYOUT_STATUS_OK,
+    LAYOUT_STATUS_SESSION_INIT_FAILED,
     resolve_mask_source_master,
+    elapsed_ms as _elapsed_ms,
 )
+# Only the pure normalizer is imported here; the ONNX detector itself stays a
+# lazy import inside ``_detect_layout`` so a machine without onnxruntime can
+# still import, configure and run the rest of the pipeline.
+from ai_mask_doclayout import normalize_device_mode
 from pipeline_lifecycle import write_json_atomic
 
 
@@ -35,7 +46,15 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "fine_grained_detection": False,
     "pale_support_threshold": 254,
     "enclosed_support_max_area_px": 20000,
+    "pixel_evidence_separation": True,
+    "layout_binding_v2": True,
+    "layout_merge_bound_atoms": False,
+    "atomic_object_matching": True,
+    "provenance_review_routing": True,
+    "vision_object_batch_size": 12,
+    "vision_max_requests": 4,
     "doclayout_enabled": True,
+    "doclayout_device_mode": "auto",
     "doclayout_model_path": "",
     "doclayout_conf_threshold": 0.35,
     "doclayout_input_size": 1024,
@@ -132,7 +151,74 @@ LEGACY_DEFAULT_OUTPUT_STRUCTURE_V2 = """必须输出一个 JSON object：
 约束：group_id 必须来自 visual_groups[].id；narration_beat_id 必须来自 narration_beats[].id；object_ids 必须来自 semantic_objects[].object_id；element_ids 必须来自 semantic_objects[].element_ids 或 auto_elements[].element_id；confidence 是 0 到 1 的数字。没有结构冲突时 warnings 输出空数组。
 """
 
-DEFAULT_METHODOLOGY = """<PromptVersion>ai_mask_semantic_mapping_v3</PromptVersion>
+DEFAULT_METHODOLOGY = """<PromptVersion>ai_mask_semantic_mapping_v4</PromptVersion>
+
+## 角色与目标
+你是中文 PPT 视频的 AI Mask 语义归属专家。你的唯一任务是把画面中已检测的语义对象，准确绑定到当前 Slide 已存在的 `visual_groups` 与 `narration_beats`，供后续生成 Reveal Mask。
+
+你不生成或修改图片，不重写分镜、标题、正文或演讲稿，不创建、拆分、合并 `visual_group`，也不直接处理像素或 RLE Mask。
+
+## 生产背景
+- `visual_group` 是上游定义的最小 Mask/Reveal 语块；`narration_beat` 是该语块对应的演讲片段。
+- 系统先从纯白背景幻灯片中检测前景像素，再按版面框等空间证据聚合成 `semantic_objects`。一个对象可能是一行标题、一张卡片、一幅插图、一个流程节点，或一个容器及其内部文字和图标。
+- `image_full` 用于理解整页结构、阅读顺序与对象之间的关系；随后按顺序提供的 `object_XXX` 切片与 `semantic_objects[].object_id` 一一对应。
+- 对象数量可能多于一次请求能容纳的数量，因此系统会把同一页对象分批送审。`batch.total > 1` 表示本批只是整页的一部分：其余对象会在别的批次里处理，你看不到也不需要为它们负责。
+- 你的输出只决定“语义锚点属于哪个语块”。下游会把对象展开为底层 `element_ids`，并用确定性规则补齐装饰与残余碎片，以满足前景覆盖要求。因此语义正确优先于为了覆盖率强行匹配。
+- 如果上游语块数量不足，AI Mask 无权修改上游结构；必须明确告警，不能把像素全有归属误判为语义分组正确。
+
+## 实际输入
+1. `slide.visual_groups[]`：重点使用 `id`、`role`、`visible_text`、`visual_anchor`。
+2. `slide.narration_beats[]`：重点使用 `id`、`group_id`、`spoken_text`；只有这里引用的 group 才是本次需要动态 Reveal 的目标。
+3. `semantic_objects[]`：本批对象，包含 `object_id`、`type`、`bbox`、`center`、`element_count`；对象切片提供真实视觉内容。
+4. `batch`（可选）：`index`/`total`，说明本批在整页中的序号与总批数，仅用于让你知道覆盖范围是部分的。
+5. 极少数兼容路径可能只提供 `auto_elements[]` 和带框整图，此时改用 `element_id` 匹配。
+
+字段可能为空。只能使用输入中真实存在的 ID，不得补写、改写或猜测 ID。
+
+## 判断优先级
+按以下顺序判断；高优先级证据冲突时，不得仅靠低优先级证据覆盖：
+1. 语义证据：对象可见文字/图意，与 `visible_text`、`visual_anchor`、`spoken_text` 的含义是否一致。
+2. 视觉边界：对象是否属于同一卡片、容器、插图或流程节点，是否存在明显留白、分栏或独立边框。
+3. 空间证据：二维位置、包含关系、相邻关系与阅读顺序。
+4. 辅助证据：`role`、编号、颜色。颜色或顺序不能单独决定归属。
+
+### 兼容路径（auto_elements）
+当输入没有 `semantic_objects`、只有 `auto_elements[]` 与带框整图时，按与对象路径完全相同的优先级（语义 > 视觉边界 > 空间 > 辅助）把 element 绑定到目标 group。每个 `element_id` 只能归属一个 group；一个 group 可绑定多个共同构成同一叙事时刻的 element，但同一 element 不得跨 group 重复。其余规则（标题区、完整性、置信度）与对象路径一致。
+
+## 执行流程
+### A. 建立目标清单
+- 先根据 `narration_beats[].group_id` 列出需要匹配的动态 group。
+- 每个动态 group 在本批内最多输出一条 match；同一 `object_id` 最多只能归属一个 group。
+- 本批没有任何对象与某个 group 语义吻合时，不要在该 group 上凑数：留到 `unmatched_groups`，其它批次或确定性规则会处理。
+
+### B. 处理标题区
+- 新版页面只有一个完整主标题，不使用页面副标题。
+- 主标题即使有多色、描边、断笔或分离字形，仍是一个完整对象。
+- 只有存在 `role=title` 且被 narration beat 引用的 group 时，才把完整标题绑定给该 title group；否则标题保持静态，绝不能绑定到正文 group。
+- 对兼容旧项目出现的 subtitle，只在存在独立、被旁白引用的 subtitle group 时匹配；否则保持静态。
+
+### C. 匹配正文语义对象
+- 优先做一对一匹配：一个动态 group 对应一个最完整、语义最明确的对象。
+- 只有同时满足以下三项时，一个 group 才能绑定多个对象：它们共同表达同一叙事时刻；空间连续、相互包含或明显属于同一容器；拆开后任一对象都不能独立表达新的子结论。
+- 同一标题行、同一卡片内部文字与图标、同一流程节点的编号与说明，不因颜色不同、字形断开或检测框碎片化而拆开。
+
+### D. 防止错误合并
+- 对比左右两侧、并列卡片、独立步骤、独立方案、相距较远的视觉岛，只要表达不同子结论，就必须分别对应不同 group/beat。
+- “主题相同”“颜色相同”“都属于正文”均不足以跨越明显留白、分栏或独立边框进行合并。
+- 如果本批存在多个应独立 Reveal 的对象，但输入只有一个可用正文 group/beat：只把语义最吻合的对象匹配给该 group，其余对象放入 `unmatched_objects`；同时输出 `insufficient_visual_groups_for_independent_objects` 告警。不要把多个独立对象硬塞进同一个 Mask。
+
+### E. 完整性与置信度复核
+- 检查每个 match 的 group、beat、object 是否都来自本批输入；检查 group 在本批内不重复、object 不跨组重复。
+- 没有可靠对象的动态 group 放入 `unmatched_groups`，不要用标题、装饰或无关对象补位。
+- 独立装饰、分隔线、角标或无口播对象放入 `unmatched_objects`；下游会处理像素覆盖，不能把装饰当作语义锚点。
+- 置信度标准：`0.90-1.00` 为语义与视觉边界均明确；`0.80-0.89` 为证据充分但存在轻微歧义；`0.72-0.79` 为可匹配但需要人工复核；低于 `0.72` 时不要输出 match，改放 unmatched。
+- 任何低于系统置信度阈值（默认 0.72）的候选匹配都不得写入 `matches`，一律放入 `unmatched_objects` 或 `unmatched_elements`，由下游按确定性规则处理。
+
+## 输出要求
+严格遵循另行提供的“OUTPUT STRUCTURE / 输出结构”。只返回一个合法 JSON object，不要 Markdown、代码围栏、分析过程或额外文字。
+"""
+
+LEGACY_METHODOLOGY_V3 = """<PromptVersion>ai_mask_semantic_mapping_v3</PromptVersion>
 
 ## 角色与目标
 你是中文 PPT 视频的 AI Mask 语义归属专家。你的唯一任务是把画面中已检测的语义对象，准确绑定到当前 Slide 已存在的 `visual_groups` 与 `narration_beats`，供后续生成 Reveal Mask。
@@ -149,7 +235,7 @@ DEFAULT_METHODOLOGY = """<PromptVersion>ai_mask_semantic_mapping_v3</PromptVersi
 ## 实际输入
 1. `slide.visual_groups[]`：重点使用 `id`、`role`、`visible_text`、`visual_anchor`。
 2. `slide.narration_beats[]`：重点使用 `id`、`group_id`、`spoken_text`；只有这里引用的 group 才是本次需要动态 Reveal 的目标。
-3. `semantic_objects[]`：包含 `object_id`、`type`、`bbox`、`center`、`element_count`；对象切片提供真实视觉内容。请求可能分页（`page.index`/`page.total`），每次只需归属本页列出的对象。
+3. `semantic_objects[]`：包含 `object_id`、`type`、`bbox`、`center`、`element_count`、`cluster_member_count`；对象切片提供真实视觉内容。
 4. 极少数兼容路径可能只提供 `auto_elements[]` 和带框整图，此时改用 `element_id` 匹配。
 
 字段可能为空。只能使用输入中真实存在的 ID，不得补写、改写或猜测 ID。
@@ -223,6 +309,43 @@ DEFAULT_OUTPUT_STRUCTURE = """只输出以下结构的一个合法 JSON object�
 }
 
 硬性约束：
+1. `group_id` 必须来自 `visual_groups[].id`，且在本批 `matches` 中最多出现一次。
+2. `narration_beat_id` 必须来自 `narration_beats[].id`，并且该 beat 的 `group_id` 必须等于本条 match 的 `group_id`。
+3. 正常生产输入存在 `semantic_objects`：此时 `object_ids` 必须来自本批 `semantic_objects[].object_id`，同一 object 不得跨 match 重复；`element_ids` 输出空数组，系统会按 object 自动展开。
+4. 仅当输入没有 `semantic_objects`、只有 `auto_elements` 时：`object_ids` 输出空数组，`element_ids` 使用 `auto_elements[].element_id`。
+5. `confidence` 是 0 到 1 的数字；`reason` 使用“语义=…；边界=…”格式，简短说明关键证据。
+6. `unmatched_objects`、`unmatched_elements`、`unmatched_groups` 只填写本批输入中真实存在且未匹配的 ID；未出现在本批输入中的对象一律不要写。
+7. 只有发现“独立视觉对象数量多于可用语块”时才输出示例中的告警；否则 `warnings` 必须是空数组。
+8. 任何 `confidence` 低于系统阈值（默认 0.72）的候选不得进入 `matches`，必须放入对应的 unmatched 数组。
+"""
+
+LEGACY_OUTPUT_STRUCTURE_V3 = """只输出以下结构的一个合法 JSON object：
+{
+  "slide_id": "slide_001",
+  "matches": [
+    {
+      "group_id": "body_group_01",
+      "narration_beat_id": "beat_01",
+      "object_ids": ["obj_010"],
+      "element_ids": [],
+      "confidence": 0.95,
+      "reason": "语义=卡片文字与 beat_01 一致；边界=对象位于独立卡片内"
+    }
+  ],
+  "unmatched_objects": ["obj_020"],
+  "unmatched_elements": [],
+  "unmatched_groups": [],
+  "warnings": [
+    {
+      "type": "insufficient_visual_groups_for_independent_objects",
+      "group_id": "body_group_01",
+      "object_ids": ["obj_010", "obj_020"],
+      "reason": "两个对象位于独立卡片并表达不同子结论，但输入只有一个正文语块"
+    }
+  ]
+}
+
+硬性约束：
 1. `group_id` 必须来自 `visual_groups[].id`，且在 `matches` 中最多出现一次。
 2. `narration_beat_id` 必须来自 `narration_beats[].id`，并且该 beat 的 `group_id` 必须等于本条 match 的 `group_id`。
 3. 正常生产输入存在 `semantic_objects`：此时 `object_ids` 必须来自 `semantic_objects[].object_id`，同一 object 不得跨 match 重复；`element_ids` 输出空数组，系统会按 object 自动展开。
@@ -239,8 +362,17 @@ LEGACY_TITLE_RULE = "6. 主标题与副标题是否属于同一个 Mask，以 na
 STATIC_TITLE_RULE = "6. 页面上方固定主标题/副标题区域属于静态上下文，不分配给任何 narration group，不参与逐语块 Reveal；元素匹配必须同时考虑横向与纵向距离；大面积主配图应吸收其内部、边界上和紧邻的图标、对号、标签与说明，除非它们明确对应独立 narration beat；不允许因为颜色相似就跨卡片、跨栏或跨配图分配。"
 PREVIOUS_TITLE_AND_ISLAND_RULES = """6. 页面上方主标题/副标题保持固定布局，但有 narration 绑定时必须参与逐语块 Reveal；副标题优先绑定独立 subtitle group，没有独立组时与主标题共同绑定到首个标题 narration group；元素匹配必须同时考虑横向与纵向距离；大面积主配图应吸收其内部、边界上和紧邻的图标、对号、标签与说明，除非它们明确对应独立 narration beat；不允许因为颜色相似就跨卡片、跨栏或跨配图分配。"""
 PREVIOUS_OBJECT_FIELD_RULE = "3. `semantic_objects[]`：包含 `object_id`、`type`、`bbox`、`center`、`element_count`、`cluster_member_count`；对象切片提供真实视觉内容。"
-CURRENT_OBJECT_FIELD_RULE = "3. `semantic_objects[]`：包含 `object_id`、`type`、`bbox`、`center`、`element_count`；对象切片提供真实视觉内容。请求可能分页（`page.index`/`page.total`），每次只需归属本页列出的对象。"
+PAGED_OBJECT_FIELD_RULE = "3. `semantic_objects[]`：包含 `object_id`、`type`、`bbox`、`center`、`element_count`；对象切片提供真实视觉内容。请求可能分页（`page.index`/`page.total`），每次只需归属本页列出的对象。"
+CURRENT_OBJECT_FIELD_RULE = "3. `semantic_objects[]`：本批对象，包含 `object_id`、`type`、`bbox`、`center`、`element_count`；对象切片提供真实视觉内容。"
 CURRENT_TITLE_AND_ISLAND_RULES = """6. 页面上方只保留一个完整主标题，不使用页面副标题。无论主标题包含多少颜色、描边、断笔或分离字形，都必须整体绑定到唯一的 title group，不能拆给多个正文 group；如果不存在 title narration beat，则整个标题保持静态。元素匹配必须同时考虑横向与纵向距离；大面积主配图应吸收其内部、边界上和紧邻的图标、对号、标签与说明，除非它们明确对应独立 narration beat；不允许因为颜色相似就跨卡片、跨栏或跨配图分配。"""
+
+# The paging iteration of the v3 built-in default: identical to LEGACY_METHODOLOGY_V3
+# except the object-field rule.  A stored, unedited paged prompt must stay
+# byte-identical so it migrates automatically instead of counting as custom text.
+LEGACY_METHODOLOGY_V3_PAGED = LEGACY_METHODOLOGY_V3.replace(
+    PREVIOUS_OBJECT_FIELD_RULE,
+    PAGED_OBJECT_FIELD_RULE,
+)
 
 
 def _bool(value: Any, default: bool = False) -> bool:
@@ -283,8 +415,30 @@ def normalize_settings(raw: dict[str, Any] | None) -> dict[str, Any]:
         "fine_grained_detection": _bool(raw.get("fine_grained_detection"), False),
         "pale_support_threshold": _int(raw.get("pale_support_threshold"), 254, 246, 255),
         "enclosed_support_max_area_px": _int(raw.get("enclosed_support_max_area_px"), 20000, 1000, 200000),
+        # Both default to the fixed algorithm; setting either to false rolls the
+        # detector back to the v3 behaviour (closing-as-ink, order-consumed boxes).
+        "pixel_evidence_separation": _bool(raw.get("pixel_evidence_separation"), True),
+        "layout_binding_v2": _bool(raw.get("layout_binding_v2"), True),
+        # A layout box labels the ink islands inside it by default; setting this to
+        # true restores the measured-harmful v4 behaviour of fusing every island a
+        # container box covered into one Mask.
+        "layout_merge_bound_atoms": _bool(raw.get("layout_merge_bound_atoms"), False),
+        # v4 matching keeps every atomic object addressable and splits a slide
+        # into budgeted requests; setting it to false rolls back to the
+        # "(beats + 3) spatial clusters in one request" strategy.
+        "atomic_object_matching": _bool(raw.get("atomic_object_matching"), True),
+        # Rollback for the W4 review routing: with this off, a group is sent to
+        # review by its confidence number only (the pre-provenance behaviour).
+        # The provenance record and its warnings are still written either way,
+        # so turning the routing off never turns the diagnostics off.
+        "provenance_review_routing": _bool(raw.get("provenance_review_routing"), True),
+        "vision_object_batch_size": _int(raw.get("vision_object_batch_size"), 12, 1, 40),
+        "vision_max_requests": _int(raw.get("vision_max_requests"), 4, 1, 8),
         "max_group_elements": max(20, _int(raw.get("max_group_elements"), 60, 1, 120)),
         "doclayout_enabled": _bool(raw.get("doclayout_enabled"), False),
+        # "cpu" is an immediate bypass, "cuda" demands verified CUDA binding plus
+        # a smoke run, and either failure falls back to CPU for the whole process.
+        "doclayout_device_mode": normalize_device_mode(raw.get("doclayout_device_mode")),
         "doclayout_model_path": str(raw.get("doclayout_model_path") or "").strip(),
         "doclayout_conf_threshold": _float(raw.get("doclayout_conf_threshold"), 0.35, 0, 1),
         "doclayout_input_size": _int(raw.get("doclayout_input_size"), 1024, 256, 2048),
@@ -364,6 +518,76 @@ def _select_contract_slides(
     return selected
 
 
+def _layout_detection_summary(record: dict[str, Any]) -> dict[str, Any]:
+    """Compact the layout record for logs: timings already live in ``timing_ms``."""
+    return {key: value for key, value in record.items() if key != "elapsed_ms"}
+
+
+def _detect_layout(
+    capabilities: Any,
+    settings: dict[str, Any],
+    image_path: Path,
+) -> tuple[list[dict[str, Any]] | None, dict[str, Any]]:
+    """Run the optional DocLayout stage and always return a diagnosable record.
+
+    A degraded page must state why it degraded (disabled, missing dependency,
+    missing model, session init failure, inference failure, or no boxes) instead
+    of surfacing as an empty box list; the pipeline then continues on the
+    deterministic flood-fill path.
+    """
+    enabled = bool(settings.get("doclayout_enabled"))
+    if not enabled:
+        return None, {
+            "enabled": False,
+            "available": False,
+            "status": LAYOUT_STATUS_DISABLED,
+            "fallback_reason": "doclayout_enabled is off",
+            "elapsed_ms": {"layout_load": 0.0, "layout_infer": 0.0},
+        }
+    try:
+        from ai_mask_doclayout import DocLayoutDetector
+        from PIL import Image
+        detector = DocLayoutDetector(
+            model_path=str(settings.get("doclayout_model_path") or ""),
+            conf_threshold=float(settings.get("doclayout_conf_threshold", 0.35)),
+            input_size=int(settings.get("doclayout_input_size", 1024)),
+            iou_threshold=float(settings.get("doclayout_iou_threshold", 0.45)),
+            min_area_ratio=float(settings.get("doclayout_min_area_ratio", 0.002)),
+            device_mode=str(settings.get("doclayout_device_mode") or "auto"),
+        )
+        # The page hash keys the box cache, so a re-annotation of an unchanged
+        # image never re-runs the model.  Image bytes, not mtime: a regenerated
+        # picture with the same timestamp must still be recomputed.
+        source_sha256 = hashlib.sha256(image_path.read_bytes()).hexdigest()
+        with Image.open(image_path) as handle:
+            outcome = detector.detect_with_status(handle.convert("RGB"), source_sha256)
+    except Exception as exc:
+        return None, {
+            "enabled": True,
+            "available": False,
+            "status": LAYOUT_STATUS_SESSION_INIT_FAILED,
+            "error_type": type(exc).__name__,
+            "fallback_reason": f"{type(exc).__name__}: {exc}"[:400],
+            "elapsed_ms": {"layout_load": 0.0, "layout_infer": 0.0},
+        }
+    boxes = outcome.pop("boxes", [])
+    outcome["enabled"] = True
+    if not boxes and outcome["status"] == LAYOUT_STATUS_OK:
+        outcome["status"] = LAYOUT_STATUS_NO_BOXES
+    if not boxes:
+        outcome.setdefault("fallback_reason", str(outcome.get("status") or ""))
+    if outcome["status"] in {
+        LAYOUT_STATUS_SESSION_INIT_FAILED,
+        LAYOUT_STATUS_INFERENCE_FAILED,
+    } and capabilities.logger is not None:
+        # Missing model or dependency is a configuration state; a session that
+        # cannot be created or a run that throws is an environment surprise.
+        capabilities.logger.warning(
+            "DocLayout-YOLO %s: %s", outcome["status"], outcome.get("fallback_reason")
+        )
+    return (boxes if boxes else None), outcome
+
+
 def _annotate_project(
     capabilities: AiMaskEngineDependencies,
     project: Any,
@@ -388,32 +612,16 @@ def _annotate_project(
         image_path = resolve_mask_source_master(master_image_path) or master_image_path
         mask_source = "raw_pair" if image_path != master_image_path else "normalized_master"
         # ---- DocLayout-YOLO layout detection (optional) ----
-        layout_boxes = None
-        if settings.get("doclayout_enabled"):
-            try:
-                from ai_mask_doclayout import DocLayoutDetector
-                from PIL import Image
-                detector = DocLayoutDetector(
-                    model_path=str(settings.get("doclayout_model_path") or ""),
-                    conf_threshold=float(settings.get("doclayout_conf_threshold", 0.35)),
-                    input_size=int(settings.get("doclayout_input_size", 1024)),
-                    iou_threshold=float(settings.get("doclayout_iou_threshold", 0.45)),
-                    min_area_ratio=float(settings.get("doclayout_min_area_ratio", 0.002)),
-                )
-                if detector.available():
-                    layout_boxes = detector.detect(Image.open(image_path))
-                    if layout_boxes and capabilities.logger is not None:
-                        capabilities.logger.info(
-                            "DocLayout-YOLO: %d layout boxes detected for %s", len(layout_boxes), slide_id
-                        )
-            except Exception as exc:
-                if capabilities.logger is not None:
-                    capabilities.logger.warning(
-                        "DocLayout-YOLO layout detection failed for %s: %s", slide_id, exc
-                    )
-                layout_boxes = None
-        elements = detect_elements(image_path, slide_dir, settings, layout_boxes)
+        layout_boxes, layout_record = _detect_layout(capabilities, settings, image_path)
+        if layout_boxes and capabilities.logger is not None:
+            capabilities.logger.info(
+                "DocLayout-YOLO: %d layout boxes detected for %s", len(layout_boxes), slide_id
+            )
+        elements = detect_elements(image_path, slide_dir, settings, layout_boxes, layout_record)
+        stage_ms = dict(layout_record.get("elapsed_ms") or {})
+        stage_ms.update(elements.get("stage_timing_ms") or {})
         canvas = elements.get("canvas", {}) if isinstance(elements.get("canvas"), dict) else {}
+        prepare_started = time.perf_counter()
         title_regions = _configured_title_regions(
             capabilities,
             max(1, int(canvas.get("width", 1920))),
@@ -428,6 +636,7 @@ def _annotate_project(
             {},
         )
         fallback = _fallback_match(slide, element_list, manifest_slide)
+        stage_ms["object_prepare"] = _elapsed_ms(prepare_started)
         prepared.append({
             "slide": slide,
             "slide_id": slide_id,
@@ -438,10 +647,14 @@ def _annotate_project(
             "element_list": element_list,
             "fallback": fallback,
             "title_regions": title_regions,
+            "layout_detection": layout_record,
+            "stage_ms": stage_ms,
         })
 
     def match_slide(item: dict[str, Any]) -> dict[str, Any]:
+        stage_ms: dict[str, float] = item["stage_ms"]
         vision_started = time.monotonic()
+        vision_mark = time.perf_counter()
         resolved_model, configured_model = _resolved_vision_model(capabilities)
         try:
             raw_vision = vision_matcher(
@@ -481,6 +694,12 @@ def _annotate_project(
             except Exception:
                 pass
             raw = item["fallback"]
+            item["vision_status"] = "deterministic_fallback"
+            item["vision_error_type"] = type(exc).__name__
+        else:
+            item["vision_status"] = "ok"
+        stage_ms["vision"] = _elapsed_ms(vision_mark)
+        assignment_mark = time.perf_counter()
         cleaned = _clean_match(raw, item["slide"], item["element_list"], settings, item["fallback"])
         cleaned = _consolidate_title_regions(cleaned, item["elements"], item["slide"], item["title_regions"])
         cleaned = _rebind_shared_containers(cleaned, item["elements"], item["slide"])
@@ -494,6 +713,7 @@ def _annotate_project(
             _write_json(item["slide_dir"] / "auto_mask" / "auto_match_after_completion.json", completed)
         except Exception:
             pass
+        stage_ms["assignment"] = _elapsed_ms(assignment_mark)
         return completed
 
     matches: dict[str, dict[str, Any]] = {}
@@ -503,7 +723,8 @@ def _annotate_project(
             for future in as_completed(futures):
                 matches[futures[future]] = future.result()
 
-    slides_out = []
+    slides_out: list[dict[str, Any]] = []
+    stage_totals: dict[str, float] = {}
     total_updated = 0
     total_unmatched_groups = 0
     total_skipped = 0
@@ -519,7 +740,11 @@ def _annotate_project(
             "semantic_quality": match.get("semantic_quality", {}),
             "residual_assignment_report": match.get("residual_assignment_report", []),
         })
+        apply_mark = time.perf_counter()
         applied = _apply(manifest, item["slide"], item["elements"], match, settings)
+        item["stage_ms"]["apply"] = _elapsed_ms(apply_mark)
+        for stage, value in item["stage_ms"].items():
+            stage_totals[stage] = round(stage_totals.get(stage, 0.0) + float(value), 1)
         total_updated += applied["updated"]
         total_skipped += applied["skipped"]
         unmatched_group_count = len(match.get("unmatched_groups", []))
@@ -529,7 +754,27 @@ def _annotate_project(
         semantic_quality = match.get("semantic_quality", {}) if isinstance(match.get("semantic_quality"), dict) else {}
         slide_review_issues = [{"slide_id": slide_id, **issue} for issue in _review_issues(match)]
         review_issues.extend(slide_review_issues)
-        slides_out.append({"slide_id": slide_id, "mask_source": item["mask_source"], "detected_element_count": len(item["element_list"]), "residual_component_count": len(item["elements"].get("residual_elements", [])), "matched_group_count": len(match.get("matches", [])), "updated_group_count": applied["updated"], "skipped_group_count": applied["skipped"], "unmatched_element_count": len(match.get("unmatched_elements", [])), "unmatched_group_count": unmatched_group_count, "matching_method": match.get("matching_method"), "quality": slide_quality, "semantic_quality": semantic_quality, "warnings": match.get("warnings", []), "review_required": bool(slide_review_issues), "review_issues": slide_review_issues})
+        slides_out.append({
+            "slide_id": slide_id,
+            "mask_source": item["mask_source"],
+            "detected_element_count": len(item["element_list"]),
+            "residual_component_count": len(item["elements"].get("residual_elements", [])),
+            "matched_group_count": len(match.get("matches", [])),
+            "updated_group_count": applied["updated"],
+            "skipped_group_count": applied["skipped"],
+            "unmatched_element_count": len(match.get("unmatched_elements", [])),
+            "unmatched_group_count": unmatched_group_count,
+            "matching_method": match.get("matching_method"),
+            "quality": slide_quality,
+            "semantic_quality": semantic_quality,
+            "warnings": match.get("warnings", []),
+            "review_required": bool(slide_review_issues),
+            "review_issues": slide_review_issues,
+            "layout_detection": _layout_detection_summary(item["layout_detection"]),
+            "vision_status": item.get("vision_status", "ok"),
+            "cache_hit": bool(item["elements"].get("cache_hit")),
+            "timing_ms": dict(item["stage_ms"]),
+        })
     # ``complete`` remains a backward-compatible processing signal.  Consumers
     # must use ``quality_status`` to distinguish a clean result from a usable
     # result that still needs human review.
@@ -545,6 +790,10 @@ def _annotate_project(
         "needs_review": "completed_needs_review",
         "failed": "incomplete",
     }[quality_status]
+    layout_status_counts: dict[str, int] = {}
+    for item in prepared:
+        status = str(item["layout_detection"].get("status") or "")
+        layout_status_counts[status] = layout_status_counts.get(status, 0) + 1
     manifest["ai_mask_annotation"] = {
         "version": "ai_mask_annotation_v3_exact_rle",
         "status": annotation_status,
@@ -558,6 +807,8 @@ def _annotate_project(
         "review_required": bool(review_issues),
         "review_issue_count": len(review_issues),
         "review_issues": review_issues,
+        "layout_status_counts": layout_status_counts,
+        "timing_ms": stage_totals,
         "scope_slide_ids": [item["slide_id"] for item in prepared],
         "mask_sources": {
             item["slide_id"]: item["mask_source"] for item in prepared
@@ -575,6 +826,8 @@ def _annotate_project(
         "review_required": bool(review_issues),
         "review_issue_count": len(review_issues),
         "review_issues": review_issues,
+        "layout_status_counts": layout_status_counts,
+        "timing_ms": stage_totals,
         "slides": slides_out,
         "manifest_path": str(run_dir / "reveal_manifest.json"),
     }

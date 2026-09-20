@@ -5,7 +5,26 @@ from __future__ import annotations
 from typing import Any
 
 from ai_mask_component_detection import _merge_row_runs, _rle_bounds
-from ai_mask_contracts import AI_MASK_MIN_FOREGROUND_COVERAGE, MASK_COLORS
+from ai_mask_contracts import (
+    AI_MASK_MIN_FOREGROUND_COVERAGE,
+    ASSIGNMENT_SOURCE_MANUAL,
+    ASSIGNMENT_SOURCE_RULE,
+    MASK_COLORS,
+)
+
+
+def _mark_manual_owned(group: dict[str, Any]) -> None:
+    """Record that saved human work owns this region, leaving the pixels alone.
+
+    A re-run must never silently look like it re-confirmed a Mask the user drew;
+    the provenance now says ``manual`` so the editor can show who decided.
+    """
+    ai_match = group.get("ai_match") if isinstance(group.get("ai_match"), dict) else {}
+    group["ai_match"] = {
+        **ai_match,
+        "assignment_source": ASSIGNMENT_SOURCE_MANUAL,
+        "ownership_preserved": True,
+    }
 
 
 def _int(value: Any, default: int, lo: int, hi: int) -> int:
@@ -78,6 +97,7 @@ def _review_issues(match_payload: dict[str, Any]) -> list[dict[str, Any]]:
             "group_id": str(match.get("group_id") or ""),
             "confidence": round(confidence, 4),
             "confidence_level": level,
+            "assignment_source": str(match.get("assignment_source") or ""),
             "message": "AI 对该语块的元素归属不够确定，请检查。",
         })
     for group_id in match_payload.get("unmatched_groups", []) or []:
@@ -125,6 +145,31 @@ def _review_issues(match_payload: dict[str, Any]) -> list[dict[str, Any]]:
                 "metrics": {"overlap_pixel_count": overlap_count},
             })
     semantic_quality = match_payload.get("semantic_quality") if isinstance(match_payload.get("semantic_quality"), dict) else {}
+    # A request budget that ran out is not a silent omission: the objects the
+    # model never saw must be reviewed by a person, and a partially failed batch
+    # means the remaining ownership came from rules.
+    batches = match_payload.get("vision_batches") if isinstance(match_payload.get("vision_batches"), dict) else {}
+    beyond_budget = [str(value) for value in batches.get("beyond_budget_object_ids", []) or [] if str(value)]
+    if beyond_budget:
+        issues.append({
+            "type": "object_beyond_review_budget",
+            "severity": "warning",
+            "group_id": "",
+            "message": f"有 {len(beyond_budget)} 个画面对象超出本页的多模态请求预算，未经模型确认，请检查其归属。",
+            "metrics": {"object_ids": beyond_budget[:40], "object_count": len(beyond_budget)},
+        })
+    failed_batches = [value for value in batches.get("failed_batch_indices", []) or []]
+    if failed_batches:
+        issues.append({
+            "type": "vision_batch_failed",
+            "severity": "warning",
+            "group_id": "",
+            "message": "部分对象批次请求失败，本页归属可能由规则补全，请检查。",
+            "metrics": {
+                "failed_batch_indices": failed_batches,
+                "failed_batch_error_type": str(batches.get("failed_batch_error_type") or ""),
+            },
+        })
     issue_messages = {
         "dynamic_group_enters_subtitle_safe_zone": "动态语块进入字幕安全区，请检查。",
         "dynamic_group_owns_title_region_pixels": "正文语块包含标题区域像素，请检查。",
@@ -132,6 +177,10 @@ def _review_issues(match_payload: dict[str, Any]) -> list[dict[str, Any]]:
         "too_many_residual_components": "该语块包含较多自动吸附的小组件，请检查。",
         "many_residual_components": "该语块包含较多自动吸附的小组件，建议检查。",
         "forced_low_confidence_components": "部分画面组件通过最近锚点规则补全，建议检查归属。",
+        "unconfirmed_semantic_ownership": "该语块的组件全部由规则或覆盖补全归入，模型未确认其语义归属，请检查。",
+        "forced_large_component_completed": "有较大的画面组件被最近锚点规则强制归入该语块，请确认归属。",
+        "object_beyond_review_budget": "有画面对象超出模型请求预算，未经语义匹配，请检查归属。",
+        "vision_batch_failed": "部分对象批次请求失败，归属可能不完整，请检查。",
         "group_contains_multiple_independent_visual_islands": "一个分镜语块描述了多个应分别 Reveal 的独立视觉岛，请返回分镜规划拆分语块。",
         "insufficient_visual_groups_for_independent_objects": "画面存在多个独立语义对象，但分镜提供的可 Reveal 语块不足。",
     }
@@ -249,6 +298,23 @@ def _apply(manifest: dict[str, Any], slide: dict[str, Any], elements_payload: di
         for index, group in enumerate(slide.get("visual_groups", []) or [])
         if isinstance(group, dict)
     }
+    provenance = (
+        match_payload.get("assignment_provenance")
+        if isinstance(match_payload.get("assignment_provenance"), dict) else {}
+    )
+    provenance_by_group = {
+        str(record.get("group_id") or ""): record
+        for record in provenance.get("groups", []) or []
+        if isinstance(record, dict)
+    }
+    # The evidence is always recorded, but routing a group to human review only
+    # makes sense where the model actually participated.  On a deterministic-
+    # prior page (no vision model answered) every group is rule-owned, so
+    # per-group review would flood the queue with the page-wide degradation the
+    # caller already knows about from vision_status.
+    unconfirmed_group_ids = {
+        str(value) for value in provenance.get("unconfirmed_group_ids", []) or [] if str(value)
+    } if provenance.get("model_participated") else set()
     matches = [match for match in match_payload.get("matches", []) or [] if isinstance(match, dict)]
     valid_match_group_ids = {
         str(match.get("group_id") or "")
@@ -276,6 +342,7 @@ def _apply(manifest: dict[str, Any], slide: dict[str, Any], elements_payload: di
         semantic_group = _find_group(semantic, gid)
         display_group_id = str((semantic_group or {}).get("group_id") or (semantic_group or {}).get("id") or gid)
         color = MASK_COLORS[visual_group_order.get(gid, 0) % len(MASK_COLORS)]
+        origins = match.get("element_origins") if isinstance(match.get("element_origins"), dict) else {}
         for collection in (groups, semantic):
             group = _find_group(collection, gid)
             if group is None:
@@ -295,8 +362,10 @@ def _apply(manifest: dict[str, Any], slide: dict[str, Any], elements_payload: di
             # Human corrections are always authoritative. Only a pristine Mask
             # produced by a previous AI run may be replaced automatically.
             if _has_manual(group) and not _replaceable_ai_mask(group):
+                _mark_manual_owned(group)
                 continue
             if _has_manual(group) and not settings.get("overwrite_existing_ai_mask", True):
+                _mark_manual_owned(group)
                 continue
             group["box"] = box
             group["visual_group_id"] = gid
@@ -305,7 +374,15 @@ def _apply(manifest: dict[str, Any], slide: dict[str, Any], elements_payload: di
                 "color": color,
             }
             confidence_level = _confidence_level(match.get("confidence"))
-            group["review_status"] = "ai_matched" if confidence_level == "high" else "ai_review_required"
+            match_source = str(match.get("assignment_source") or "")
+            record = provenance_by_group.get(gid, {})
+            # A high number alone is not confirmation: a body group that only
+            # rules and coverage completion placed here still needs a person.
+            needs_review = confidence_level != "high" or (
+                bool(settings.get("provenance_review_routing", True))
+                and gid in unconfirmed_group_ids
+            )
+            group["review_status"] = "ai_review_required" if needs_review else "ai_matched"
             group["source"] = "ai_auto_mask"
             if match.get("narration_beat_id"):
                 group["narration_beat_id"] = match["narration_beat_id"]
@@ -313,6 +390,11 @@ def _apply(manifest: dict[str, Any], slide: dict[str, Any], elements_payload: di
                 "version": "auto_mask_v3_exact_rle",
                 "method": "multimodal_exact_connected_components_v3",
                 "element_ids": match.get("element_ids", []),
+                "element_origins": {
+                    str(element_id): str(origins.get(str(element_id)) or match_source or ASSIGNMENT_SOURCE_RULE)
+                    for element_id in match.get("element_ids", []) or []
+                },
+                "assignment_source": match_source,
                 "bbox": box,
                 "compatible_manual_corrections": True,
                 "exclusive_pixel_ownership": True,
@@ -320,17 +402,20 @@ def _apply(manifest: dict[str, Any], slide: dict[str, Any], elements_payload: di
             group["ai_match"] = {
                 "confidence": match.get("confidence"),
                 "confidence_level": confidence_level,
-                "needs_review": confidence_level != "high",
+                "needs_review": needs_review,
+                "assignment_source": match_source,
+                "model_ownership_ratio": float(record.get("model_ownership_ratio", 0.0)),
                 "reason": match.get("reason", ""),
             }
         updated += 1
     mslide["ai_mask_status"] = {
-        "version": "ai_mask_annotation_v3_exact_rle",
+        "version": "ai_mask_annotation_v4_provenance",
         "updated_group_count": updated,
         "skipped_group_count": skipped,
         "detected_element_count": len(elements_payload.get("elements", [])),
         "residual_component_count": len(elements_payload.get("residual_elements", [])),
         "quality": match_payload.get("quality", {}),
+        "assignment_provenance": provenance,
         "review_issues": _review_issues(match_payload),
     }
     return {"updated": updated, "skipped": skipped}

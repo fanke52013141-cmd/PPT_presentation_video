@@ -5,12 +5,32 @@ from __future__ import annotations
 from collections import deque
 import hashlib
 import json
-import time
 from pathlib import Path
+import time
 from typing import Any
 
 import numpy as np
 from PIL import Image
+
+from ai_mask_contracts import (
+    LAYOUT_STATUS_DISABLED,
+    LAYOUT_STATUS_NO_BOXES,
+    LAYOUT_STATUS_OK,
+    elapsed_ms as _elapsed_ms,
+)
+from ai_mask_object_graph import bind_atoms_to_boxes
+
+
+# Detection cache identity.  ``v4`` separated raw ink from the morphological
+# grouping assumption; ``v5`` stopped letting one layout box fuse the ink islands
+# inside it.  An older cache must never be reused for either new result.
+AUTO_ELEMENTS_VERSION = "auto_elements_v5_box_label_only"
+
+
+# The P1 fine-grained detector keeps every separable seed component (no
+# whole-image closing), so its cache must never be reused for a closing run
+# or vice versa.
+FINE_GRAINED_ELEMENTS_VERSION = "auto_elements_v4_fine_grained"
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -39,6 +59,14 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 def _neighbors(connectivity: int) -> tuple[tuple[int, int], ...]:
     base = ((1, 0), (-1, 0), (0, 1), (0, -1))
     return base if connectivity == 4 else base + ((1, 1), (1, -1), (-1, 1), (-1, -1))
+
+
+def _bool(value: Any, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, str):
+        return value.strip().lower() not in ("", "0", "false", "no", "off")
+    return bool(value)
 
 
 def _pad_box(box: dict[str, int], width: int, height: int, padding: int) -> dict[str, int]:
@@ -511,7 +539,372 @@ def _detect_fine_grained_components(
     return candidates, residual, source_foreground, meta
 
 
-def detect_elements(image_path: Path, slide_dir: Path, settings: dict[str, Any], layout_boxes: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+def _connected_sets(
+    coords: list[tuple[int, int]],
+    nbrs: tuple[tuple[int, int], ...],
+) -> list[list[list[int]]]:
+    """Split pixels into exact row-runs with scanline union-find.
+
+    Layout binding recovers atomic ink islands from potentially huge closed
+    components.  The former ``set[(x, y)]`` traversal retained several Python
+    objects per pixel and was an OOM hot path.  This keeps identical 4/8-way
+    connectivity while retaining only scanline boundaries.
+    """
+    if not coords:
+        return []
+    points = np.asarray(coords, dtype=np.int32)
+    ordered = points[np.lexsort((points[:, 0], points[:, 1]))]
+    runs: list[list[int]] = []
+    start = previous_x = int(ordered[0, 0])
+    current_y = int(ordered[0, 1])
+    for x_value, y_value in ordered[1:]:
+        x, y = int(x_value), int(y_value)
+        if y == current_y and x <= previous_x + 1:
+            previous_x = max(previous_x, x)
+            continue
+        runs.append([current_y, start, previous_x + 1])
+        current_y, start, previous_x = y, x, x
+    runs.append([current_y, start, previous_x + 1])
+
+    parents = list(range(len(runs)))
+
+    def find(index: int) -> int:
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+
+    def union(left: int, right: int) -> None:
+        left_root, right_root = find(left), find(right)
+        if left_root != right_root:
+            parents[right_root] = left_root
+
+    previous_row: list[int] = []
+    row_start = 0
+    diagonal = len(nbrs) == 8
+    while row_start < len(runs):
+        row_y = runs[row_start][0]
+        row_end = row_start + 1
+        while row_end < len(runs) and runs[row_end][0] == row_y:
+            row_end += 1
+        if previous_row and runs[previous_row[0]][0] == row_y - 1:
+            for current_index in range(row_start, row_end):
+                _y, x1, x2 = runs[current_index]
+                for previous_index in previous_row:
+                    _previous_y, previous_x1, previous_x2 = runs[previous_index]
+                    touching = (
+                        previous_x2 >= x1 and x2 >= previous_x1
+                        if diagonal else previous_x2 > x1 and x2 > previous_x1
+                    )
+                    if touching:
+                        union(previous_index, current_index)
+        previous_row = list(range(row_start, row_end))
+        row_start = row_end
+
+    islands: dict[int, list[list[int]]] = {}
+    for index, run in enumerate(runs):
+        islands.setdefault(find(index), []).append(run)
+    return list(islands.values())
+
+
+def _bbox_of(coords: list[tuple[int, int]], border: int, ow: int, oh: int) -> dict[str, int]:
+    xs = [x for x, _ in coords]
+    ys = [y for _, y in coords]
+    x_min, x_max = min(xs), max(xs)
+    y_min, y_max = min(ys), max(ys)
+    return {
+        "x": max(0, x_min - border),
+        "y": max(0, y_min - border),
+        "w": min(ow, x_max + 1 - x_min),
+        "h": min(oh, y_max + 1 - y_min),
+    }
+
+
+def _rle(runs: list[list[int]], ow: int, oh: int) -> dict[str, Any]:
+    return {"encoding": "row_runs_v1", "width": ow, "height": oh, "runs": runs}
+
+
+def _build_atom(
+    runs: list[list[int]],
+    border: int,
+    ow: int,
+    oh: int,
+    index: int,
+    padding: int,
+) -> dict[str, Any]:
+    """One connected ink island: the atomic unit a layout box may own.
+
+    An atom carries exact pixels only.  Panel solidification and foreign-pixel
+    protection are grouping-level decisions and belong to the element adapter.
+    """
+    source_runs = [
+        [y - border, max(0, x1 - border), min(ow, x2 - border)]
+        for y, x1, x2 in runs
+        if 0 <= y - border < oh and min(ow, x2 - border) > max(0, x1 - border)
+    ]
+    rle = _rle(source_runs, ow, oh)
+    raw = _rle_bounds(rle)
+    if raw is None:
+        raise ValueError("atom runs must contain pixels")
+    box = _pad_box(raw, ow, oh, padding)
+    cx, cy = box["x"] + box["w"] / 2, box["y"] + box["h"] / 2
+    pixel_count = _rle_pixel_count(rle)
+    return {
+        "element_id": f"el_atom_{index:04d}",
+        "bbox": box,
+        "raw_bbox": raw,
+        "center": {"x": round(cx, 2), "y": round(cy, 2)},
+        "area": pixel_count,
+        "source_ink_pixel_count": pixel_count,
+        "mask_pixel_count": pixel_count,
+        "position": _position(cx, cy, ow, oh),
+        "ocr_text": "",
+        "source_ink_rle": rle,
+        "mask_rle": rle,
+    }
+
+
+def _build_element_from_atoms(
+    members: list[dict[str, Any]],
+    ow: int,
+    oh: int,
+    padding: int,
+    source_foreground: np.ndarray,
+    details: dict[str, Any],
+) -> dict[str, Any]:
+    """Adapter from atomic ink evidence to the saved Mask processing boundary."""
+    ink_rle = _merge_row_runs(members, ow, oh)
+    x1 = min(int(member["raw_bbox"]["x"]) for member in members)
+    y1 = min(int(member["raw_bbox"]["y"]) for member in members)
+    x2 = max(
+        int(member["raw_bbox"]["x"]) + int(member["raw_bbox"]["w"]) for member in members
+    )
+    y2 = max(
+        int(member["raw_bbox"]["y"]) + int(member["raw_bbox"]["h"]) for member in members
+    )
+    raw = {"x": x1, "y": y1, "w": x2 - x1, "h": y2 - y1}
+    box = _pad_box(raw, ow, oh, padding)
+    cx, cy = box["x"] + box["w"] / 2, box["y"] + box["h"] / 2
+    ink_runs = ink_rle["runs"]
+    total_ink = sum(int(member["area"]) for member in members)
+    # Solidify is an interior-white repair for one dense panel, so it runs per
+    # atom: filling the union's scanlines would re-bridge the white gap between
+    # two bound atoms and put non-ink pixels inside the saved Mask.
+    solidified = [
+        {
+            "mask_rle": _rle(
+                _protect_other_foreground(
+                    _solidify_planar_component(
+                        member["mask_rle"]["runs"],
+                        member["raw_bbox"],
+                        int(member["area"]),
+                    ),
+                    member["mask_rle"]["runs"],
+                    source_foreground,
+                ),
+                ow,
+                oh,
+            )
+        }
+        for member in members
+    ]
+    mask_runs = _merge_row_runs(solidified, ow, oh)["runs"]
+    return {
+        "element_id": "",
+        "bbox": box,
+        "raw_bbox": raw,
+        "center": {"x": round(cx, 2), "y": round(cy, 2)},
+        "area": total_ink,
+        "mask_pixel_count": sum(run[2] - run[1] for run in mask_runs),
+        "position": _position(cx, cy, ow, oh),
+        "ocr_text": "",
+        "source_ink_rle": ink_rle,
+        "source_ink_pixel_count": total_ink,
+        "grouping_pixel_count": total_ink,
+        "bridge_pixel_count": 0,
+        "mask_rle": _rle(mask_runs, ow, oh),
+        **details,
+    }
+
+
+def _finalize_binding_v2(
+    groups: list[dict[str, Any]],
+    atoms: list[dict[str, Any]],
+    layout_boxes: list[dict[str, Any]],
+    ow: int,
+    oh: int,
+    settings: dict[str, Any],
+    source_foreground: np.ndarray,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    """Attach scored layout candidates to atomic components, order-independently.
+
+    A box is a region hypothesis, so by default it *labels* the ink islands it
+    owns instead of fusing them: on the measured fixtures a document model tends
+    to return one container box over the whole content area, and merging every
+    island under that box destroyed grouping that the semantic stage could still
+    have resolved.  ``layout_merge_bound_atoms`` restores the fusing behaviour.
+    """
+    binding = bind_atoms_to_boxes(atoms, layout_boxes, settings)
+    by_id = {str(atom["element_id"]): atom for atom in atoms}
+    # Which pixel-connected group each atom came from. Two atoms of one group are
+    # connected ink; two atoms of different groups only happen to share a box.
+    group_of_atom = {
+        str(atom["element_id"]): group_index
+        for group_index, group in enumerate(groups)
+        for atom in group["atoms"]
+    }
+    padding = int(settings["component_padding_px"])
+    min_element_area = int(settings["min_element_area"])
+    merge_bound = _bool(settings.get("layout_merge_bound_atoms"), False)
+    merged: list[dict[str, Any]] = []
+    consumed: set[str] = set()
+    for box_group in binding["groups"]:
+        members = [
+            by_id[element_id]
+            for element_id in box_group["member_element_ids"]
+            if element_id in by_id
+        ]
+        if not members:
+            continue
+        total_ink = sum(int(member["area"]) for member in members)
+        if total_ink < min_element_area:
+            # Too little real content to be an element: leave the fragments to
+            # their detection group instead of inventing one here.
+            continue
+        if merge_bound:
+            units: list[list[dict[str, Any]]] = [members]
+        else:
+            units_by_owner: dict[Any, list[dict[str, Any]]] = {}
+            for member in members:
+                units_by_owner.setdefault(
+                    group_of_atom.get(member["element_id"]), []
+                ).append(member)
+            units = list(units_by_owner.values())
+        for unit in units:
+            merged.append(_build_element_from_atoms(
+                unit,
+                ow,
+                oh,
+                padding,
+                source_foreground,
+                {
+                    "detection_source": "doclayout",
+                    "layout_role": box_group["role"],
+                    "layout_class_id": box_group["class_id"],
+                    "layout_confidence": box_group["confidence"],
+                    "layout_member_count": len(unit),
+                    "layout_box_atom_count": len(members),
+                    "atomic_component_ids": [member["element_id"] for member in unit],
+                    "layout_binding": {
+                        "method": binding["binding"]["method"],
+                        "box": box_group["box"],
+                        "merged": merge_bound,
+                        "box_atom_ids": (
+                            list(box_group["member_element_ids"]) if merge_bound else []
+                        ),
+                        "ambiguous": bool(box_group["ambiguous_element_ids"]),
+                        "ambiguous_candidates": {
+                            element_id: binding["candidates_by_atom"].get(element_id, [])
+                            for element_id in box_group["ambiguous_element_ids"]
+                        },
+                    },
+                },
+            ))
+            consumed.update(member["element_id"] for member in unit)
+
+    candidates: list[dict[str, Any]] = []
+    residual: list[dict[str, Any]] = []
+    for group in groups:
+        remaining = [
+            atom for atom in group["atoms"] if atom["element_id"] not in consumed
+        ]
+        if not remaining:
+            continue
+        if len(remaining) == len(group["atoms"]):
+            component = group["component"]
+        else:
+            component = _build_element_from_atoms(
+                remaining,
+                ow,
+                oh,
+                padding,
+                source_foreground,
+                {
+                    "atomic_component_ids": [atom["element_id"] for atom in remaining],
+                    "binding_note": "layout_box_partially_bound",
+                },
+            )
+        if int(component["area"]) >= min_element_area:
+            candidates.append(component)
+        else:
+            residual.append(component)
+    candidates.extend(merged)
+    report = {
+        key: binding[key]
+        for key in (
+            "box_count",
+            "unbound_element_ids",
+            "ambiguous_element_ids",
+            "binding",
+        )
+    }
+    report.update({
+        "atom_count": len(atoms),
+        "bound_atom_count": len(consumed),
+        "merged_element_count": len(merged),
+        "bound_atom_merge": merge_bound,
+        "boxes_bound": len([g for g in binding["groups"] if g["member_element_ids"]]),
+    })
+    return candidates, residual, report
+
+
+def _assign_ids_and_crops(
+    candidates: list[dict[str, Any]],
+    residual: list[dict[str, Any]],
+    image: Image.Image,
+    crop_dir: Path,
+) -> None:
+    for i, element in enumerate(candidates, 1):
+        element["element_id"] = f"el_auto_{i:03d}"
+        box = element["bbox"]
+        image.crop((box["x"], box["y"], box["x"] + box["w"], box["y"] + box["h"])).save(
+            crop_dir / f"{element['element_id']}.png"
+        )
+    for i, element in enumerate(residual, 1):
+        element["element_id"] = f"el_residual_{i:04d}"
+
+
+def _layout_detection_record(
+    layout_boxes: list[dict[str, Any]] | None,
+    layout_status: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Describe the layout stage as an explicit state instead of "no boxes".
+
+    ``layout_boxes`` alone cannot tell a disabled run apart from a missing model
+    or a swallowed inference error, so the detector status record is merged in
+    and kept as the source of truth for ``box_count``.
+    """
+    record: dict[str, Any] = {
+        "enabled": layout_boxes is not None,
+        "available": layout_boxes is not None,
+        "box_count": len(layout_boxes) if layout_boxes else 0,
+        "status": LAYOUT_STATUS_OK if layout_boxes else LAYOUT_STATUS_DISABLED,
+    }
+    if isinstance(layout_status, dict):
+        record.update(layout_status)
+        record["box_count"] = len(layout_boxes) if layout_boxes else 0
+        if not layout_boxes and record.get("status") == LAYOUT_STATUS_OK:
+            record["status"] = LAYOUT_STATUS_NO_BOXES
+    return record
+
+
+def detect_elements(
+    image_path: Path,
+    slide_dir: Path,
+    settings: dict[str, Any],
+    layout_boxes: list[dict[str, Any]] | None = None,
+    layout_status: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     out_dir = slide_dir / "auto_mask"
     cache_path = out_dir / "auto_elements.json"
     detection_settings = {
@@ -527,19 +920,23 @@ def detect_elements(image_path: Path, slide_dir: Path, settings: dict[str, Any],
             "fine_grained_detection",
             "pale_support_threshold",
             "enclosed_support_max_area_px",
+            "pixel_evidence_separation",
+            "layout_binding_v2",
+            "layout_merge_bound_atoms",
         )
     }
     fine_grained = str(settings.get("fine_grained_detection") or "").strip().lower() in {
         "1", "true", "yes", "on", "y"
     }
-    expected_version = (
-        "auto_elements_v4_fine_grained" if fine_grained else "auto_elements_v3_exact_rle_cached"
-    )
+    expected_version = FINE_GRAINED_ELEMENTS_VERSION if fine_grained else AUTO_ELEMENTS_VERSION
     layout_fingerprint = _layout_fingerprint(layout_boxes)
+    hash_started = time.perf_counter()
     source_sha256 = hashlib.sha256(image_path.read_bytes()).hexdigest()
     settings_fingerprint = hashlib.sha256(
         json.dumps(detection_settings, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
+    cache_read_ms = _elapsed_ms(hash_started)
+    stage_timing_ms: dict[str, float] = {"source_hash": cache_read_ms}
     if cache_path.exists():
         try:
             cached = _read_json(cache_path)
@@ -549,10 +946,15 @@ def detect_elements(image_path: Path, slide_dir: Path, settings: dict[str, Any],
                 and cached.get("detection_settings_fingerprint") == settings_fingerprint
                 and cached.get("layout_fingerprint") == layout_fingerprint
             ):
+                # The cached payload keeps the stage timings of the run that
+                # produced it; ``cache_hit`` says no pixel work happened here.
+                cached["cache_hit"] = True
+                cached.setdefault("stage_timing_ms", {})["source_hash"] = cache_read_ms
                 return cached
         except Exception:
             pass
 
+    foreground_started = time.perf_counter()
     image = Image.open(image_path).convert("RGB")
     ow, oh = image.size
     border = int(settings["add_border"])
@@ -589,35 +991,76 @@ def detect_elements(image_path: Path, slide_dir: Path, settings: dict[str, Any],
                 bg[ny, nx] = True
                 q.append((nx, ny))
 
-    fg = ~bg
+    # ``ink_foreground`` is the pixel evidence: what the source bitmap actually
+    # paints.  ``grouping_mask`` is the assumption layer built on top of it.
+    ink_foreground = ~bg
+    grouping_mask = ink_foreground
+    stage_timing_ms["foreground"] = _elapsed_ms(foreground_started)
 
+    components_started = time.perf_counter()
+    crop_dir = out_dir / "elements"
+    crop_dir.mkdir(parents=True, exist_ok=True)
+    for stale_crop in crop_dir.glob("*.png"):
+        stale_crop.unlink(missing_ok=True)
     candidates: list[dict[str, Any]] = []
     residual: list[dict[str, Any]] = []
     fine_grained_meta: dict[str, Any] | None = None
+    binding_report: dict[str, Any] | None = None
     if fine_grained:
+        # P1 detector: seed components from strictly non-white content plus a
+        # bounded two-threshold diffusion.  There is no morphological closing
+        # at all here, so the grouping layer stays identical to the ink
+        # evidence and separable islands are never fused.
         candidates, residual, source_foreground, fine_grained_meta = _detect_fine_grained_components(
             white, lo, bg, nbrs, border, ow, oh, settings
         )
+        stage_timing_ms["morphology"] = 0.0
+        _assign_ids_and_crops(candidates, residual, image, crop_dir)
+        if layout_boxes is not None and fine_grained_meta is not None:
+            # P1 invariant: a center-in-box merge must not undo seed-component
+            # ownership. DocLayout boxes stay available as evidence (logged in
+            # the payload) while the fine-grained components are preserved.
+            fine_grained_meta["fine_grained"]["layout_binding_skipped"] = True
     else:
-        # Morphological closing: dilate then erode the foreground mask to bridge
-        # small gaps (<= closing_radius pixels) caused by hand-drawn stroke breaks.
-        # This merges fragmented strokes of the same element BEFORE connected-
-        # component detection, drastically reducing the number of fragments.
+        # Morphological closing: dilate then erode to bridge small gaps (<=
+        # closing_radius pixels) caused by hand-drawn stroke breaks.  This merges
+        # fragmented strokes of the same element BEFORE connected-component
+        # detection, drastically reducing the number of fragments.  The bridged
+        # pixels are connectivity only: they are reported as ``bridge_pixel_count``
+        # and never become content in a saved Mask.
+        morphology_started = time.perf_counter()
         closing_radius = int(settings.get("closing_radius", 6))
         if closing_radius > 0:
-            fg_uint8 = fg.astype(np.uint8) * 255
+            fg_uint8 = ink_foreground.astype(np.uint8) * 255
             kernel_size = closing_radius * 2 + 1
             kernel = np.ones((kernel_size, kernel_size), dtype=np.uint8)
             # dilation: bridge gaps; erosion: restore original size
             dilated = _morph_dilate(fg_uint8, kernel)
             closed = _morph_erode(dilated, kernel)
-            fg = closed > 0
+            grouping_mask = closed > 0
+        if not _bool(settings.get("pixel_evidence_separation"), True):
+            # Rollback switch: the v3 detector let the closing result overwrite the
+            # ink evidence, so bridged gap pixels were saved as Mask content.
+            ink_foreground = grouping_mask
+        stage_timing_ms["morphology"] = _elapsed_ms(morphology_started)
 
-        source_foreground = fg[border:border + oh, border:border + ow] if border else fg
+        source_foreground = (
+            ink_foreground[border:border + oh, border:border + ow] if border else ink_foreground
+        )
         visited = np.zeros((h, w), dtype=bool)
-        ys, xs = np.nonzero(fg)
+        ys, xs = np.nonzero(grouping_mask)
+        # Binding v2 owns ink at the atomic level, so the connected islands inside a
+        # closing group are only recovered when layout boxes are actually present.
+        recover_atoms = bool(
+            layout_boxes
+            and _bool(settings.get("pixel_evidence_separation"), True)
+            and _bool(settings.get("layout_binding_v2"), True)
+        )
+        groups: list[dict[str, Any]] = []
+        padding = int(settings["component_padding_px"])
+        atom_seq = 0
         for sx, sy in zip(xs.tolist(), ys.tolist()):
-            if visited[sy, sx] or not fg[sy, sx]:
+            if visited[sy, sx] or not grouping_mask[sy, sx]:
                 continue
             q.clear()
             q.append((sx, sy))
@@ -628,7 +1071,7 @@ def detect_elements(image_path: Path, slide_dir: Path, settings: dict[str, Any],
                 coords.append((x, y))
                 for dx, dy in nbrs:
                     nx, ny = x + dx, y + dy
-                    if 0 <= nx < w and 0 <= ny < h and fg[ny, nx] and not visited[ny, nx]:
+                    if 0 <= nx < w and 0 <= ny < h and grouping_mask[ny, nx] and not visited[ny, nx]:
                         visited[ny, nx] = True
                         q.append((nx, ny))
             # Projection splitting: if this connected component is oversized
@@ -638,24 +1081,40 @@ def detect_elements(image_path: Path, slide_dir: Path, settings: dict[str, Any],
             for seg_coords, raw in segments:
                 if not seg_coords:
                     continue
+                ink_coords = [(x, y) for x, y in seg_coords if ink_foreground[y, x]]
+                if not ink_coords:
+                    continue
+                sx = [c[0] for c in seg_coords]
+                sy = [c[1] for c in seg_coords]
                 x1 = raw["x"]; y1 = raw["y"]
                 x2 = x1 + raw["w"]; y2 = y1 + raw["h"]
                 if x2 <= x1 or y2 <= y1:
                     continue
                 box = _pad_box(raw, ow, oh, int(settings["component_padding_px"]))
                 cx, cy = box["x"] + box["w"] / 2, box["y"] + box["h"] / 2
-                source_runs = _coords_to_row_runs(seg_coords, border, ow, oh)
-                component_runs = _solidify_planar_component(source_runs, raw, len(seg_coords))
+                source_runs = _coords_to_row_runs(ink_coords, border, ow, oh)
+                component_runs = _solidify_planar_component(source_runs, raw, len(ink_coords))
                 component_runs = _protect_other_foreground(component_runs, source_runs, source_foreground)
                 component = {
                     "element_id": "",
                     "bbox": box,
                     "raw_bbox": raw,
                     "center": {"x": round(cx, 2), "y": round(cy, 2)},
-                    "area": len(seg_coords),
+                    "area": len(ink_coords),
                     "mask_pixel_count": sum(run[2] - run[1] for run in component_runs),
                     "position": _position(cx, cy, ow, oh),
                     "ocr_text": "",
+                    # Exact ink evidence of this component, before the panel
+                    # solidification and foreign-pixel protection steps.
+                    "source_ink_rle": {
+                        "encoding": "row_runs_v1",
+                        "width": ow,
+                        "height": oh,
+                        "runs": source_runs,
+                    },
+                    "source_ink_pixel_count": len(ink_coords),
+                    "grouping_pixel_count": len(seg_coords),
+                    "bridge_pixel_count": len(seg_coords) - len(ink_coords),
                     "mask_rle": {
                         "encoding": "row_runs_v1",
                         "width": ow,
@@ -663,47 +1122,57 @@ def detect_elements(image_path: Path, slide_dir: Path, settings: dict[str, Any],
                         "runs": component_runs,
                     },
                 }
-                if len(seg_coords) >= int(settings["min_element_area"]):
-                    candidates.append(component)
-                else:
-                    residual.append(component)
+                atoms: list[dict[str, Any]] = []
+                if recover_atoms:
+                    for atom_runs in _connected_sets(ink_coords, nbrs):
+                        atom_seq += 1
+                        atoms.append(
+                            _build_atom(atom_runs, border, ow, oh, atom_seq, padding)
+                        )
+                    component["atomic_component_ids"] = [atom["element_id"] for atom in atoms]
+                groups.append({"component": component, "atoms": atoms})
+        candidates = [
+            group["component"]
+            for group in groups
+            if int(group["component"]["area"]) >= int(settings["min_element_area"])
+        ]
+        residual = [
+            group["component"]
+            for group in groups
+            if int(group["component"]["area"]) < int(settings["min_element_area"])
+        ]
         candidates.sort(key=lambda e: (e["bbox"]["y"], e["bbox"]["x"]))
         residual.sort(key=lambda e: (e["bbox"]["y"], e["bbox"]["x"]))
-    crop_dir = out_dir / "elements"
-    crop_dir.mkdir(parents=True, exist_ok=True)
-    for stale_crop in crop_dir.glob("*.png"):
-        stale_crop.unlink(missing_ok=True)
-    for i, element in enumerate(candidates, 1):
-        element["element_id"] = f"el_auto_{i:03d}"
-        box = element["bbox"]
-        image.crop((box["x"], box["y"], box["x"] + box["w"], box["y"] + box["h"])).save(
-            crop_dir / f"{element['element_id']}.png"
-        )
-    for i, element in enumerate(residual, 1):
-        element["element_id"] = f"el_residual_{i:04d}"
-    # ---- DocLayout layout binding (post-detection merge) ----
-    if layout_boxes is not None:
-        if fine_grained:
-            # P1 invariant: a center-in-box merge must not undo seed-component
-            # ownership. DocLayout boxes stay available as evidence (logged in
-            # the payload) while the fine-grained components are preserved.
-            if fine_grained_meta is not None:
-                fine_grained_meta["fine_grained"]["layout_binding_skipped"] = True
-        else:
-            candidates, residual = _apply_layout_binding(
-                candidates, residual, layout_boxes, ow, oh, settings
+        atoms = [atom for group in groups for atom in group["atoms"]]
+        if layout_boxes is not None and atoms:
+            # Binding v2: a box owns atomic ink, never a traversal-order claim.
+            candidates, residual, binding_report = _finalize_binding_v2(
+                groups, atoms, layout_boxes, ow, oh, settings, source_foreground
             )
+            candidates.sort(key=lambda e: (e["bbox"]["y"], e["bbox"]["x"]))
+            residual.sort(key=lambda e: (e["bbox"]["y"], e["bbox"]["x"]))
+            _assign_ids_and_crops(candidates, residual, image, crop_dir)
+        else:
+            _assign_ids_and_crops(candidates, residual, image, crop_dir)
+            if layout_boxes is not None:
+                # Rollback path: the v1 merge consumes components in box order.
+                candidates, residual = _apply_layout_binding(
+                    candidates, residual, layout_boxes, ow, oh, settings
+                )
 
     all_components = candidates + residual
     exact_foreground = _merge_row_runs(all_components, ow, oh)
+    stage_timing_ms["components"] = _elapsed_ms(components_started)
+    grouping_region = (
+        grouping_mask[border:border + oh, border:border + ow] if border else grouping_mask
+    )
     payload = {
         "version": expected_version,
         "layout_fingerprint": layout_fingerprint,
-        "layout_detection": {
-            "enabled": layout_boxes is not None,
-            "available": layout_boxes is not None,
-            "box_count": len(layout_boxes) if layout_boxes else 0,
-        },
+        "cache_hit": False,
+        "stage_timing_ms": stage_timing_ms,
+        "layout_detection": _layout_detection_record(layout_boxes, layout_status),
+        "layout_binding": binding_report,
         "slide_id": slide_dir.name,
         "source_sha256": source_sha256,
         "detection_settings_fingerprint": settings_fingerprint,
@@ -711,23 +1180,28 @@ def detect_elements(image_path: Path, slide_dir: Path, settings: dict[str, Any],
         "canvas": {"width": ow, "height": oh},
         "elements": candidates,
         "residual_elements": residual,
+        # ``source_foreground_pixel_count`` is true ink; ``grouping_pixel_count``
+        # is the closing hypothesis that only decides which ink may share a Mask.
         "source_foreground_pixel_count": int(np.count_nonzero(source_foreground)),
+        "grouping_pixel_count": int(np.count_nonzero(grouping_region)),
+        "pixel_evidence_separation": _bool(
+            settings.get("pixel_evidence_separation"), True
+        ),
         "foreground_pixel_count": _rle_pixel_count(exact_foreground),
     }
     if fine_grained_meta is not None:
         id_map = fine_grained_meta.pop("_component_id_map", {})
-        for groups in fine_grained_meta["fine_grained"]["merge_candidates"].values():
-            for group in groups:
+        for merge_groups in fine_grained_meta["fine_grained"]["merge_candidates"].values():
+            for group in merge_groups:
                 group["element_ids"] = [
                     str(id_map[comp_id]["element_id"])
                     for comp_id in group["component_ids"]
                     if comp_id in id_map
                 ]
-            groups.sort(key=lambda group: group["element_ids"][0] if group["element_ids"] else "")
+            merge_groups.sort(key=lambda group: group["element_ids"][0] if group["element_ids"] else "")
         payload.update(fine_grained_meta)
     _write_json(out_dir / "auto_elements.json", payload)
     return payload
-
 
 
 def _projection_split(
@@ -947,21 +1421,27 @@ def _apply_layout_binding(
     return new_candidates, new_residual
 
 def _layout_fingerprint(layout_boxes: list[dict[str, Any]] | None) -> str:
-    """生成 DocLayout 候选框的稳定指纹，用于缓存区分（无布局框返回空串）。"""
+    """生成 DocLayout 候选框的稳定指纹，用于缓存区分（无布局框返回空串）。
+
+    行序与模型输出顺序无关：同一组版面框无论以什么顺序返回都是同一份输入，
+    否则仅仅换序就会击穿缓存。
+    """
     if not layout_boxes:
         return ""
     try:
         rows = []
         for box in layout_boxes:
             b = box.get("box") if isinstance(box.get("box"), dict) else {}
-            rows.append({
-                "r": str(box.get("role") or ""),
-                "c": round(float(box.get("confidence", 0) or 0), 4),
-                "x": int(b.get("x", 0)), "y": int(b.get("y", 0)),
-                "w": int(b.get("w", 0)), "h": int(b.get("h", 0)),
-            })
+            rows.append(
+                "{r}|{c}|{x}|{y}|{w}|{h}".format(
+                    r=str(box.get("role") or ""),
+                    c=round(float(box.get("confidence", 0) or 0), 4),
+                    x=int(b.get("x", 0)), y=int(b.get("y", 0)),
+                    w=int(b.get("w", 0)), h=int(b.get("h", 0)),
+                )
+            )
         return hashlib.sha256(
-            json.dumps(rows, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            json.dumps(sorted(rows), separators=(",", ":")).encode("utf-8")
         ).hexdigest()
     except Exception:
         return ""

@@ -372,6 +372,10 @@ def test_preview_uses_production_builder_and_reports_cutout_stats(
         "soft_edge_pixel_count": 3,
         "retained_pixel_count": 8,
     }
+    # The reveal stage reports its own elapsed time so A/B runs can attribute
+    # cost to Mask building instead of guessing from the total request time.
+    assert set(result["timing_ms"]) == {"reveal"}
+    assert result["timing_ms"]["reveal"] >= 0.0
 
 
 def test_preview_timeout_maps_to_504(

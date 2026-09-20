@@ -61,8 +61,10 @@ def quick_checks() -> None:
         "ai_mask_assignment.py",
         "ai_mask_component_detection.py",
         "ai_mask_contracts.py",
+        "ai_mask_doclayout.py",
         "ai_mask_engine.py",
         "ai_mask_manifest_apply.py",
+        "ai_mask_object_graph.py",
         "ai_mask_routes.py",
         "ai_mask_semantic_matcher.py",
         "ai_mask_service.py",
@@ -211,6 +213,19 @@ def quick_checks() -> None:
         "checks/test_ai_mask_registration.py",
         "checks/test_ai_mask_services.py",
         "checks/test_ai_mask_automation.py",
+        "checks/test_ai_mask_doclayout.py",
+        "checks/test_ai_mask_doclayout_devices.py",
+        "checks/test_ai_mask_object_graph.py",
+        "checks/test_ai_mask_semantic_batches.py",
+        "checks/test_ai_mask_provenance.py",
+        "-q",
+    ])
+    run([
+        sys.executable,
+        "-m",
+        "pytest",
+        "checks/test_ai_mask_benchmark_metrics.py",
+        "checks/test_ai_mask_benchmark_runner.py",
         "-q",
     ])
     run([

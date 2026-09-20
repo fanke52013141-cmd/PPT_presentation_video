@@ -6,8 +6,10 @@ from dataclasses import dataclass
 import json
 import logging
 from pathlib import Path
+import time
 from typing import Any, Callable, Dict, List, Optional
 
+from ai_mask_contracts import AI_MASK_STAGE_REVEAL, elapsed_ms
 from canvas_profile_service import get_project_canvas
 from project_config_runtime import project_subtitles_enabled
 from runtime_support import run_subprocess_killable
@@ -723,6 +725,7 @@ def build_current_reveal_assets(project: Any) -> None:
             "--repo-root",
             str(dependencies.repo_root),
         ]
+        build_mark = time.perf_counter()
         result = run_subprocess_killable(
             command,
             capture_output=True,
@@ -731,11 +734,14 @@ def build_current_reveal_assets(project: Any) -> None:
             errors="replace",
             timeout_sec=dependencies.build_timeout_sec,
         )
+        reveal_elapsed_ms = elapsed_ms(build_mark)
         if result.returncode == 124:
             dependencies.write_project_log(
                 project,
                 "step5_reveal_build_timeout",
                 timeout_sec=dependencies.build_timeout_sec,
+                stage=AI_MASK_STAGE_REVEAL,
+                elapsed_ms=reveal_elapsed_ms,
             )
             raise MaskManifestError(
                 504,
@@ -749,6 +755,12 @@ def build_current_reveal_assets(project: Any) -> None:
             )
         dependencies.apply_storyboard_background(manifest_path.resolve())
         validate_current_reveal_assets(project)
+        dependencies.write_project_log(
+            project,
+            "step5_reveal_build",
+            stage=AI_MASK_STAGE_REVEAL,
+            elapsed_ms=reveal_elapsed_ms,
+        )
 
 
 def update_step5_result(

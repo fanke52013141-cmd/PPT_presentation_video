@@ -7,6 +7,7 @@ import logging
 from typing import Any, Callable
 
 import ai_mask_engine
+from ai_mask_contracts import LAYOUT_STATUS_DISABLED, LAYOUT_STATUS_OK
 from ai_mask_config import get_ai_mask_settings, read_ai_mask_prompts
 
 
@@ -73,7 +74,46 @@ class AiMaskTaskService:
                 "Failed to write AI Mask annotation log for %s",
                 getattr(project, "id", ""),
             )
+        # A degraded stage must be readable as its own event: the annotation
+        # record is large, and "no layout boxes" has several distinct causes.
+        for slide in result.get("slides", []) or []:
+            if not isinstance(slide, dict):
+                continue
+            for event, payload in _degradation_events(slide):
+                try:
+                    self.dependencies.write_project_log(
+                        project,
+                        event,
+                        slide_id=slide.get("slide_id"),
+                        **payload,
+                    )
+                except Exception:
+                    self.dependencies.logger.exception(
+                        "Failed to write AI Mask degradation log for %s",
+                        getattr(project, "id", ""),
+                    )
         return result
+
+
+def _degradation_events(slide: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    layout = slide.get("layout_detection")
+    layout = layout if isinstance(layout, dict) else {}
+    status = str(layout.get("status") or "")
+    events: list[tuple[str, dict[str, Any]]] = []
+    if status and status not in {LAYOUT_STATUS_OK, LAYOUT_STATUS_DISABLED}:
+        events.append(("ai_mask_layout_degraded", {
+            "status": status,
+            "enabled": bool(layout.get("enabled")),
+            "box_count": int(layout.get("box_count") or 0),
+            "reason": str(layout.get("fallback_reason") or layout.get("load_error") or status)[:400],
+            "error_type": str(layout.get("error_type") or ""),
+        }))
+    if str(slide.get("vision_status") or "ok") != "ok":
+        events.append(("ai_mask_vision_degraded", {
+            "status": str(slide.get("vision_status")),
+            "reason": str(slide.get("vision_error_type") or ""),
+        }))
+    return events
 
 
 _TASK_SERVICE: AiMaskTaskService | None = None

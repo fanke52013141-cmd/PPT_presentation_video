@@ -1,5 +1,7 @@
 """Shared constants for AI Mask detection, assignment, and manifest output."""
 
+import time
+
 MASK_COLORS = (
     "#E84A5F", "#1B998B", "#F6AE2D", "#3D5A80",
     "#7B2CBF", "#2F80ED", "#D45113", "#4C956C",
@@ -10,3 +12,43 @@ AI_MASK_MIN_FOREGROUND_COVERAGE = 0.995
 # Single source of truth for the reveal pipeline version.  Server, reveal
 # builder, validator, and PPTX export must all reference this constant.
 REVEAL_PIPELINE_VERSION = "exact_rle_mask_with_manual_corrections_v5"
+
+# DocLayout layout-detection outcomes.  Every annotated slide records exactly one
+# of them so a degraded page stays diagnosable instead of silently looking like a
+# slide that simply has no layout regions.
+LAYOUT_STATUS_DISABLED = "disabled"
+LAYOUT_STATUS_MISSING_DEPENDENCY = "missing_dependency"
+LAYOUT_STATUS_MISSING_MODEL = "missing_model"
+LAYOUT_STATUS_SESSION_INIT_FAILED = "session_init_failed"
+LAYOUT_STATUS_INFERENCE_FAILED = "inference_failed"
+LAYOUT_STATUS_NO_BOXES = "no_boxes"
+LAYOUT_STATUS_OK = "ok"
+LAYOUT_STATUSES: tuple[str, ...] = (
+    LAYOUT_STATUS_DISABLED,
+    LAYOUT_STATUS_MISSING_DEPENDENCY,
+    LAYOUT_STATUS_MISSING_MODEL,
+    LAYOUT_STATUS_SESSION_INIT_FAILED,
+    LAYOUT_STATUS_INFERENCE_FAILED,
+    LAYOUT_STATUS_NO_BOXES,
+    LAYOUT_STATUS_OK,
+)
+
+# Canonical stage names for per-slide elapsed reporting.  ``reveal`` is measured
+# on the Mask build paths because annotation never builds reveal assets.
+AI_MASK_ANNOTATION_STAGES: tuple[str, ...] = (
+    "layout_load",
+    "layout_infer",
+    "foreground",
+    "morphology",
+    "components",
+    "object_prepare",
+    "vision",
+    "assignment",
+    "apply",
+)
+AI_MASK_STAGE_REVEAL = "reveal"
+
+
+def elapsed_ms(started: float) -> float:
+    """Milliseconds since a ``time.perf_counter()`` mark, rounded for logging."""
+    return round((time.perf_counter() - started) * 1000.0, 1)

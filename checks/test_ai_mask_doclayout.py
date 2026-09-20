@@ -12,12 +12,22 @@ from PIL import Image
 import ai_mask_doclayout
 from ai_mask_doclayout import (
     DocLayoutDetector,
-    _fuse_overlapping,
-    _nms,
+    LayoutOutputError,
+    MODEL_COORDINATE_FORMAT,
+    _class_aware_nms,
     _parse_predictions,
+    _suppress_cross_class_duplicates,
 )
 import ai_mask_component_detection as cdet
 import ai_mask_engine
+
+
+@pytest.fixture(autouse=True)
+def _clear_session_init_breaker():
+    """The circuit breaker is process-wide, so each case starts from a clean slate."""
+    ai_mask_doclayout.reset_session_init_failures()
+    yield
+    ai_mask_doclayout.reset_session_init_failures()
 
 
 def test_normalize_settings_has_doclayout_defaults() -> None:
@@ -73,24 +83,86 @@ def test_parse_predictions_xywh_normalized_transposed() -> None:
     assert second["confidence"] == pytest.approx(0.8, abs=1e-6)
 
 
-def test_nms_keeps_highest_confidence() -> None:
+def test_class_aware_nms_keeps_highest_confidence_per_class() -> None:
     boxes = [
         {"x1": 10, "y1": 10, "x2": 110, "y2": 110, "confidence": 0.6, "class_id": 1},
         {"x1": 12, "y1": 12, "x2": 112, "y2": 112, "confidence": 0.9, "class_id": 1},
     ]
-    kept = _nms(boxes, 0.45)
+    kept = _class_aware_nms(boxes, 0.45)
     assert len(kept) == 1
     assert kept[0]["confidence"] == 0.9
 
 
-def test_fuse_overlapping_across_classes() -> None:
+def test_class_aware_nms_does_not_suppress_across_classes() -> None:
+    # A text box and a figure box on the same region are two honest answers;
+    # the cross-class pass, not this one, decides what to keep.
+    boxes = [
+        {"x1": 10, "y1": 10, "x2": 110, "y2": 110, "confidence": 0.6, "class_id": 1},
+        {"x1": 12, "y1": 12, "x2": 112, "y2": 112, "confidence": 0.9, "class_id": 3},
+    ]
+    assert len(_class_aware_nms(boxes, 0.45)) == 2
+
+
+def test_class_aware_nms_is_stable_for_equal_confidence() -> None:
+    first = {"x1": 10, "y1": 10, "x2": 110, "y2": 110, "confidence": 0.8, "class_id": 1}
+    second = {"x1": 11, "y1": 10, "x2": 111, "y2": 110, "confidence": 0.8, "class_id": 1}
+    forward = _class_aware_nms([first, second], 0.45)
+    backward = _class_aware_nms([second, first], 0.45)
+    assert [box["x1"] for box in forward] == [box["x1"] for box in backward]
+
+
+def test_cross_class_duplicates_keep_the_confident_box() -> None:
     boxes = [
         {"x1": 10, "y1": 10, "x2": 110, "y2": 110, "confidence": 0.7, "class_id": 1},
         {"x1": 12, "y1": 12, "x2": 112, "y2": 112, "confidence": 0.95, "class_id": 3},
     ]
-    kept = _fuse_overlapping(boxes, 0.5)
+    kept = _suppress_cross_class_duplicates(boxes, 0.5)
     assert len(kept) == 1
     assert kept[0]["class_id"] == 3
+
+
+def test_cross_class_duplicates_preserve_a_nested_caption() -> None:
+    # A caption fully inside a figure is hierarchy, not a duplicate rectangle.
+    figure = {"x1": 0, "y1": 0, "x2": 600, "y2": 400, "confidence": 0.5, "class_id": 3}
+    caption = {"x1": 40, "y1": 340, "x2": 560, "y2": 390, "confidence": 0.9, "class_id": 4}
+    kept = _suppress_cross_class_duplicates([figure, caption], 0.45)
+    assert [box["class_id"] for box in kept] == [4, 3]
+
+
+def test_declared_xyxy_format_does_not_guess_from_coordinates() -> None:
+    # cx=100 with w=900 is a legal xywh box; the old size comparison misread it
+    # as xyxy and produced a 800-wide box shifted right by half its width.
+    pred = np.array([[[100.0, 200.0, 900.0, 300.0, 0.9, 1.0]]], dtype=np.float32)
+    guessed = _parse_predictions(pred, 1.0, 0, 0, 1024, 1024, 1024)
+    declared = _parse_predictions(
+        pred, 1.0, 0, 0, 1024, 1024, 1024, coordinate_format="xywh"
+    )
+    assert guessed[0]["x2"] == 900.0
+    assert declared[0]["x1"] == 0.0  # -350 clipped to the canvas edge
+    assert declared[0]["x2"] == 550.0
+
+
+def test_parsed_boxes_are_clipped_to_the_canvas() -> None:
+    pred = np.array(
+        [[[900.0, 900.0, 1300.0, 1300.0, 0.9, 1.0]]], dtype=np.float32
+    )
+    boxes = _parse_predictions(
+        pred, 1.0, 0, 0, 1024, 640, 480, coordinate_format="xyxy"
+    )
+    assert boxes == []  # entirely outside the original canvas after clipping
+    partial = _parse_predictions(
+        np.array([[[600.0, 400.0, 700.0, 900.0, 0.9, 1.0]]], dtype=np.float32),
+        1.0, 0, 0, 1024, 640, 480, coordinate_format="xyxy",
+    )
+    assert partial[0]["x2"] == 640.0
+    assert partial[0]["y2"] == 480.0
+
+
+def test_shipped_model_output_format_is_declared_not_guessed() -> None:
+    assert MODEL_COORDINATE_FORMAT == "xyxy"
+    detector = DocLayoutDetector("", conf_threshold=0.35)
+    assert detector.coordinate_format == "xyxy"
+    assert detector.coordinate_normalized is False
 
 
 def test_detector_unavailable_without_model(monkeypatch) -> None:
@@ -100,6 +172,146 @@ def test_detector_unavailable_without_model(monkeypatch) -> None:
     detector = DocLayoutDetector("", conf_threshold=0.35)
     assert detector.available() is False
     assert detector.detect(Image.new("RGB", (100, 100), "white")) == []
+
+
+def _status_detector(monkeypatch, *, session_factory) -> DocLayoutDetector:
+    """Build a detector over a fake ORT whose session creation is controlled."""
+    monkeypatch.setattr(ai_mask_doclayout.os.path, "exists", lambda _p: True)
+    monkeypatch.setattr(ai_mask_doclayout, "onnxruntime", types.SimpleNamespace(
+        get_available_providers=lambda: ["CPUExecutionProvider"],
+        InferenceSession=session_factory,
+    ))
+    return DocLayoutDetector("/fake/model.onnx")
+
+
+def test_status_reports_missing_dependency(monkeypatch) -> None:
+    monkeypatch.setattr(ai_mask_doclayout, "onnxruntime", None)
+    detector = DocLayoutDetector("/fake/model.onnx")
+    outcome = detector.detect_with_status(Image.new("RGB", (100, 100), "white"))
+    assert outcome["status"] == "missing_dependency"
+    assert outcome["boxes"] == []
+    assert outcome["available"] is False
+    assert "onnxruntime" in outcome["fallback_reason"]
+    assert set(outcome["elapsed_ms"]) == {"layout_load", "layout_infer"}
+
+
+def test_status_reports_missing_model(monkeypatch) -> None:
+    monkeypatch.setattr(ai_mask_doclayout, "onnxruntime", types.SimpleNamespace(
+        get_available_providers=lambda: ["CPUExecutionProvider"],
+        InferenceSession=lambda *_a, **_k: None,
+    ))
+    detector = DocLayoutDetector("/nonexistent/doclayout.onnx")
+    outcome = detector.detect_with_status(Image.new("RGB", (100, 100), "white"))
+    assert outcome["status"] == "missing_model"
+    assert outcome["boxes"] == []
+    assert "模型文件不存在" in outcome["fallback_reason"]
+
+
+def test_status_reports_session_init_failure_without_retrying(monkeypatch) -> None:
+    calls = {"count": 0}
+
+    def failing_session(*_args, **_kwargs):
+        calls["count"] += 1
+        raise RuntimeError("could not allocate CUDA arena")
+
+    first = _status_detector(monkeypatch, session_factory=failing_session)
+    outcome = first.detect_with_status(Image.new("RGB", (100, 100), "white"))
+    assert outcome["status"] == "session_init_failed"
+    assert outcome["error_type"] == "RuntimeError"
+    assert outcome["actual_providers"] == []
+    assert calls["count"] == 1
+
+    # A later page builds a fresh detector; the recorded failure must be
+    # replayed instead of paying for the same broken initialization again.
+    second = _status_detector(monkeypatch, session_factory=failing_session)
+    replayed = second.detect_with_status(Image.new("RGB", (100, 100), "white"))
+    assert replayed["status"] == "session_init_failed"
+    assert "CUDA" in replayed["fallback_reason"]
+    assert calls["count"] == 1
+
+    ai_mask_doclayout.reset_session_init_failures()
+    third = _status_detector(monkeypatch, session_factory=failing_session)
+    assert third.detect_with_status(Image.new("RGB", (100, 100), "white"))["status"] == "session_init_failed"
+    assert calls["count"] == 2
+
+
+def test_status_reports_inference_failure(monkeypatch) -> None:
+    def session_factory(*_args, **_kwargs):
+        return types.SimpleNamespace(
+            get_inputs=lambda: [types.SimpleNamespace(name="images")],
+            get_outputs=lambda: [types.SimpleNamespace(name="output0")],
+            get_providers=lambda: ["CPUExecutionProvider"],
+            run=lambda *_a, **_k: (_ for _ in ()).throw(ValueError("bad output shape")),
+        )
+
+    detector = _status_detector(monkeypatch, session_factory=session_factory)
+    outcome = detector.detect_with_status(Image.new("RGB", (640, 640), "white"))
+    assert outcome["status"] == "inference_failed"
+    assert outcome["error_type"] == "ValueError"
+    assert outcome["boxes"] == []
+    assert outcome["available"] is True
+    assert outcome["elapsed_ms"]["layout_infer"] >= 0.0
+
+
+def test_status_reports_no_boxes_only_for_an_empty_detection(monkeypatch) -> None:
+    def session_with(pred):
+        def session_factory(*_args, **_kwargs):
+            return types.SimpleNamespace(
+                get_inputs=lambda: [types.SimpleNamespace(name="images")],
+                get_outputs=lambda: [types.SimpleNamespace(name="output0")],
+                get_providers=lambda: ["CPUExecutionProvider"],
+                run=lambda *_a, **_k: [pred],
+            )
+        return session_factory
+
+    image = Image.new("RGB", (640, 640), "white")
+    outcome = _status_detector(
+        monkeypatch, session_factory=session_with(np.zeros((1, 0, 6), dtype=np.float32))
+    ).detect_with_status(image)
+    assert outcome["status"] == "no_boxes"
+    assert outcome["raw_box_count"] == 0
+    assert outcome["box_count"] == 0
+    assert outcome["boxes"] == []
+
+    # Rows that are all NaN are dropped as unusable predictions; an empty answer
+    # is still a legitimate "nothing detected" for this page.
+    garbage = _status_detector(
+        monkeypatch, session_factory=session_with(np.array([[[float("nan")] * 6]], dtype=np.float32))
+    ).detect_with_status(image)
+    assert garbage["status"] == "inference_failed"
+    assert garbage["error_type"] == "LayoutOutputError"
+    assert "no finite value" in garbage["fallback_reason"]
+    assert garbage["boxes"] == []
+
+    wrong_columns = _status_detector(
+        monkeypatch,
+        session_factory=session_with(np.zeros((1, 40, 5), dtype=np.float32)),
+    ).detect_with_status(image)
+    assert wrong_columns["status"] == "inference_failed"
+    assert "expected 6" in wrong_columns["fallback_reason"]
+
+
+def test_status_reports_ok_with_providers_and_elapsed(monkeypatch) -> None:
+    def session_factory(*_args, **_kwargs):
+        return types.SimpleNamespace(
+            get_inputs=lambda: [types.SimpleNamespace(name="images")],
+            get_outputs=lambda: [types.SimpleNamespace(name="output0")],
+            get_providers=lambda: ["CPUExecutionProvider"],
+            run=lambda *_a, **_k: [np.array([[
+                [100.0, 100.0, 500.0, 500.0, 0.9, 1.0],
+            ]], dtype=np.float32)],
+        )
+
+    detector = _status_detector(monkeypatch, session_factory=session_factory)
+    image = Image.new("RGB", (1000, 800), "white")
+    outcome = detector.detect_with_status(image)
+    assert outcome["status"] == "ok"
+    assert outcome["box_count"] == len(outcome["boxes"]) == 1
+    assert outcome["requested_providers"] == ["CPUExecutionProvider"]
+    assert outcome["actual_providers"] == ["CPUExecutionProvider"]
+    assert outcome["load_error"] == ""
+    assert outcome["model_path"] == "/fake/model.onnx"
+    assert detector.detect(image) == outcome["boxes"]
 
 
 def test_detector_unavailable_without_onnxruntime(monkeypatch) -> None:

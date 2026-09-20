@@ -15,7 +15,15 @@ from pathlib import Path
 from typing import Any, Callable
 
 
-from ai_mask_contracts import AI_MASK_VISION_TIMEOUT_SEC  # noqa: F401 (re-exported for ai_mask_semantic_matcher via ai_mask_engine)
+from ai_mask_contracts import (  # noqa: F401 (AI_MASK_VISION_TIMEOUT_SEC is re-exported for ai_mask_semantic_matcher)
+    AI_MASK_VISION_TIMEOUT_SEC,
+    LAYOUT_STATUS_DISABLED,
+    LAYOUT_STATUS_INFERENCE_FAILED,
+    LAYOUT_STATUS_NO_BOXES,
+    LAYOUT_STATUS_OK,
+    LAYOUT_STATUS_SESSION_INIT_FAILED,
+    elapsed_ms as _elapsed_ms,
+)
 from pipeline_lifecycle import write_json_atomic
 
 
@@ -29,6 +37,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "connectivity": 8,
     "min_element_area": 120,
     "component_padding_px": 12,
+    "pixel_evidence_separation": True,
+    "layout_binding_v2": True,
     "doclayout_enabled": True,
     "doclayout_model_path": "",
     "doclayout_conf_threshold": 0.35,
@@ -272,6 +282,10 @@ def normalize_settings(raw: dict[str, Any] | None) -> dict[str, Any]:
         "connectivity": 4 if str(raw.get("connectivity")) == "4" else 8,
         "min_element_area": _int(raw.get("min_element_area"), 120, 10, 10000),
         "component_padding_px": _int(raw.get("component_padding_px"), 12, 0, 80),
+        # Both default to the fixed algorithm; setting either to false rolls the
+        # detector back to the v3 behaviour (closing-as-ink, order-consumed boxes).
+        "pixel_evidence_separation": _bool(raw.get("pixel_evidence_separation"), True),
+        "layout_binding_v2": _bool(raw.get("layout_binding_v2"), True),
         "max_group_elements": max(20, _int(raw.get("max_group_elements"), 60, 1, 120)),
         "doclayout_enabled": _bool(raw.get("doclayout_enabled"), False),
         "doclayout_model_path": str(raw.get("doclayout_model_path") or "").strip(),
@@ -352,6 +366,71 @@ def _select_contract_slides(
     return selected
 
 
+def _layout_detection_summary(record: dict[str, Any]) -> dict[str, Any]:
+    """Compact the layout record for logs: timings already live in ``timing_ms``."""
+    return {key: value for key, value in record.items() if key != "elapsed_ms"}
+
+
+def _detect_layout(
+    capabilities: Any,
+    settings: dict[str, Any],
+    image_path: Path,
+) -> tuple[list[dict[str, Any]] | None, dict[str, Any]]:
+    """Run the optional DocLayout stage and always return a diagnosable record.
+
+    A degraded page must state why it degraded (disabled, missing dependency,
+    missing model, session init failure, inference failure, or no boxes) instead
+    of surfacing as an empty box list; the pipeline then continues on the
+    deterministic flood-fill path.
+    """
+    enabled = bool(settings.get("doclayout_enabled"))
+    if not enabled:
+        return None, {
+            "enabled": False,
+            "available": False,
+            "status": LAYOUT_STATUS_DISABLED,
+            "fallback_reason": "doclayout_enabled is off",
+            "elapsed_ms": {"layout_load": 0.0, "layout_infer": 0.0},
+        }
+    try:
+        from ai_mask_doclayout import DocLayoutDetector
+        from PIL import Image
+        detector = DocLayoutDetector(
+            model_path=str(settings.get("doclayout_model_path") or ""),
+            conf_threshold=float(settings.get("doclayout_conf_threshold", 0.35)),
+            input_size=int(settings.get("doclayout_input_size", 1024)),
+            iou_threshold=float(settings.get("doclayout_iou_threshold", 0.45)),
+            min_area_ratio=float(settings.get("doclayout_min_area_ratio", 0.002)),
+        )
+        with Image.open(image_path) as handle:
+            outcome = detector.detect_with_status(handle.convert("RGB"))
+    except Exception as exc:
+        return None, {
+            "enabled": True,
+            "available": False,
+            "status": LAYOUT_STATUS_SESSION_INIT_FAILED,
+            "error_type": type(exc).__name__,
+            "fallback_reason": f"{type(exc).__name__}: {exc}"[:400],
+            "elapsed_ms": {"layout_load": 0.0, "layout_infer": 0.0},
+        }
+    boxes = outcome.pop("boxes", [])
+    outcome["enabled"] = True
+    if not boxes and outcome["status"] == LAYOUT_STATUS_OK:
+        outcome["status"] = LAYOUT_STATUS_NO_BOXES
+    if not boxes:
+        outcome.setdefault("fallback_reason", str(outcome.get("status") or ""))
+    if outcome["status"] in {
+        LAYOUT_STATUS_SESSION_INIT_FAILED,
+        LAYOUT_STATUS_INFERENCE_FAILED,
+    } and capabilities.logger is not None:
+        # Missing model or dependency is a configuration state; a session that
+        # cannot be created or a run that throws is an environment surprise.
+        capabilities.logger.warning(
+            "DocLayout-YOLO %s: %s", outcome["status"], outcome.get("fallback_reason")
+        )
+    return (boxes if boxes else None), outcome
+
+
 def _annotate_project(
     capabilities: AiMaskEngineDependencies,
     project: Any,
@@ -371,32 +450,16 @@ def _annotate_project(
         slide_dir = run_dir / "slides" / slide_id
         image_path = slide_dir / "visual_draft.png"
         # ---- DocLayout-YOLO layout detection (optional) ----
-        layout_boxes = None
-        if settings.get("doclayout_enabled"):
-            try:
-                from ai_mask_doclayout import DocLayoutDetector
-                from PIL import Image
-                detector = DocLayoutDetector(
-                    model_path=str(settings.get("doclayout_model_path") or ""),
-                    conf_threshold=float(settings.get("doclayout_conf_threshold", 0.35)),
-                    input_size=int(settings.get("doclayout_input_size", 1024)),
-                    iou_threshold=float(settings.get("doclayout_iou_threshold", 0.45)),
-                    min_area_ratio=float(settings.get("doclayout_min_area_ratio", 0.002)),
-                )
-                if detector.available():
-                    layout_boxes = detector.detect(Image.open(image_path))
-                    if layout_boxes and capabilities.logger is not None:
-                        capabilities.logger.info(
-                            "DocLayout-YOLO: %d layout boxes detected for %s", len(layout_boxes), slide_id
-                        )
-            except Exception as exc:
-                if capabilities.logger is not None:
-                    capabilities.logger.warning(
-                        "DocLayout-YOLO layout detection failed for %s: %s", slide_id, exc
-                    )
-                layout_boxes = None
-        elements = detect_elements(image_path, slide_dir, settings, layout_boxes)
+        layout_boxes, layout_record = _detect_layout(capabilities, settings, image_path)
+        if layout_boxes and capabilities.logger is not None:
+            capabilities.logger.info(
+                "DocLayout-YOLO: %d layout boxes detected for %s", len(layout_boxes), slide_id
+            )
+        elements = detect_elements(image_path, slide_dir, settings, layout_boxes, layout_record)
+        stage_ms = dict(layout_record.get("elapsed_ms") or {})
+        stage_ms.update(elements.get("stage_timing_ms") or {})
         canvas = elements.get("canvas", {}) if isinstance(elements.get("canvas"), dict) else {}
+        prepare_started = time.perf_counter()
         title_regions = _configured_title_regions(
             capabilities,
             max(1, int(canvas.get("width", 1920))),
@@ -411,6 +474,7 @@ def _annotate_project(
             {},
         )
         fallback = _fallback_match(slide, element_list, manifest_slide)
+        stage_ms["object_prepare"] = _elapsed_ms(prepare_started)
         prepared.append({
             "slide": slide,
             "slide_id": slide_id,
@@ -420,10 +484,14 @@ def _annotate_project(
             "element_list": element_list,
             "fallback": fallback,
             "title_regions": title_regions,
+            "layout_detection": layout_record,
+            "stage_ms": stage_ms,
         })
 
     def match_slide(item: dict[str, Any]) -> dict[str, Any]:
+        stage_ms: dict[str, float] = item["stage_ms"]
         vision_started = time.monotonic()
+        vision_mark = time.perf_counter()
         resolved_model, configured_model = _resolved_vision_model(capabilities)
         try:
             raw_vision = vision_matcher(
@@ -463,6 +531,12 @@ def _annotate_project(
             except Exception:
                 pass
             raw = item["fallback"]
+            item["vision_status"] = "deterministic_fallback"
+            item["vision_error_type"] = type(exc).__name__
+        else:
+            item["vision_status"] = "ok"
+        stage_ms["vision"] = _elapsed_ms(vision_mark)
+        assignment_mark = time.perf_counter()
         cleaned = _clean_match(raw, item["slide"], item["element_list"], settings, item["fallback"])
         cleaned = _consolidate_title_regions(cleaned, item["elements"], item["slide"], item["title_regions"])
         cleaned = _ensure_narrated_group_anchors(cleaned, item["elements"], item["slide"])
@@ -475,6 +549,7 @@ def _annotate_project(
             _write_json(item["slide_dir"] / "auto_mask" / "auto_match_after_completion.json", completed)
         except Exception:
             pass
+        stage_ms["assignment"] = _elapsed_ms(assignment_mark)
         return completed
 
     matches: dict[str, dict[str, Any]] = {}
@@ -484,7 +559,8 @@ def _annotate_project(
             for future in as_completed(futures):
                 matches[futures[future]] = future.result()
 
-    slides_out = []
+    slides_out: list[dict[str, Any]] = []
+    stage_totals: dict[str, float] = {}
     total_updated = 0
     total_unmatched_groups = 0
     total_skipped = 0
@@ -500,7 +576,11 @@ def _annotate_project(
             "semantic_quality": match.get("semantic_quality", {}),
             "residual_assignment_report": match.get("residual_assignment_report", []),
         })
+        apply_mark = time.perf_counter()
         applied = _apply(manifest, item["slide"], item["elements"], match, settings)
+        item["stage_ms"]["apply"] = _elapsed_ms(apply_mark)
+        for stage, value in item["stage_ms"].items():
+            stage_totals[stage] = round(stage_totals.get(stage, 0.0) + float(value), 1)
         total_updated += applied["updated"]
         total_skipped += applied["skipped"]
         unmatched_group_count = len(match.get("unmatched_groups", []))
@@ -510,7 +590,26 @@ def _annotate_project(
         semantic_quality = match.get("semantic_quality", {}) if isinstance(match.get("semantic_quality"), dict) else {}
         slide_review_issues = [{"slide_id": slide_id, **issue} for issue in _review_issues(match)]
         review_issues.extend(slide_review_issues)
-        slides_out.append({"slide_id": slide_id, "detected_element_count": len(item["element_list"]), "residual_component_count": len(item["elements"].get("residual_elements", [])), "matched_group_count": len(match.get("matches", [])), "updated_group_count": applied["updated"], "skipped_group_count": applied["skipped"], "unmatched_element_count": len(match.get("unmatched_elements", [])), "unmatched_group_count": unmatched_group_count, "matching_method": match.get("matching_method"), "quality": slide_quality, "semantic_quality": semantic_quality, "warnings": match.get("warnings", []), "review_required": bool(slide_review_issues), "review_issues": slide_review_issues})
+        slides_out.append({
+            "slide_id": slide_id,
+            "detected_element_count": len(item["element_list"]),
+            "residual_component_count": len(item["elements"].get("residual_elements", [])),
+            "matched_group_count": len(match.get("matches", [])),
+            "updated_group_count": applied["updated"],
+            "skipped_group_count": applied["skipped"],
+            "unmatched_element_count": len(match.get("unmatched_elements", [])),
+            "unmatched_group_count": unmatched_group_count,
+            "matching_method": match.get("matching_method"),
+            "quality": slide_quality,
+            "semantic_quality": semantic_quality,
+            "warnings": match.get("warnings", []),
+            "review_required": bool(slide_review_issues),
+            "review_issues": slide_review_issues,
+            "layout_detection": _layout_detection_summary(item["layout_detection"]),
+            "vision_status": item.get("vision_status", "ok"),
+            "cache_hit": bool(item["elements"].get("cache_hit")),
+            "timing_ms": dict(item["stage_ms"]),
+        })
     # ``complete`` remains a backward-compatible processing signal.  Consumers
     # must use ``quality_status`` to distinguish a clean result from a usable
     # result that still needs human review.
@@ -526,6 +625,10 @@ def _annotate_project(
         "needs_review": "completed_needs_review",
         "failed": "incomplete",
     }[quality_status]
+    layout_status_counts: dict[str, int] = {}
+    for item in prepared:
+        status = str(item["layout_detection"].get("status") or "")
+        layout_status_counts[status] = layout_status_counts.get(status, 0) + 1
     manifest["ai_mask_annotation"] = {
         "version": "ai_mask_annotation_v3_exact_rle",
         "status": annotation_status,
@@ -539,6 +642,8 @@ def _annotate_project(
         "review_required": bool(review_issues),
         "review_issue_count": len(review_issues),
         "review_issues": review_issues,
+        "layout_status_counts": layout_status_counts,
+        "timing_ms": stage_totals,
         "scope_slide_ids": [item["slide_id"] for item in prepared],
     }
     write_json_atomic(run_dir / "reveal_manifest.json", manifest)
@@ -553,6 +658,8 @@ def _annotate_project(
         "review_required": bool(review_issues),
         "review_issue_count": len(review_issues),
         "review_issues": review_issues,
+        "layout_status_counts": layout_status_counts,
+        "timing_ms": stage_totals,
         "slides": slides_out,
         "manifest_path": str(run_dir / "reveal_manifest.json"),
     }

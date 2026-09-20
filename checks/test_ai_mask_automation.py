@@ -414,6 +414,190 @@ def fixture_slide() -> dict:
     }
 
 
+def _two_card_image(slide_dir: Path) -> Path:
+    """Two solid cards 3 pixels apart: closing bridges them, ink does not."""
+    slide_dir.mkdir(parents=True, exist_ok=True)
+    image_path = slide_dir / "visual_draft.png"
+    image = Image.new("RGB", (320, 180), "white")
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((20, 30, 110, 120), fill="black")
+    draw.rectangle((114, 30, 200, 120), fill="#2357A5")
+    image.save(image_path)
+    return image_path
+
+
+def _layout_box(x: int, y: int, w: int, h: int, role: str = "figure", confidence: float = 0.9) -> dict:
+    return {"box": {"x": x, "y": y, "w": w, "h": h}, "role": role, "confidence": confidence, "class_id": 3}
+
+
+def test_closing_bridge_pixels_never_enter_a_saved_mask() -> None:
+    detection_settings = mask.normalize_settings({
+        "min_element_area": 10,
+        "component_padding_px": 0,
+    })
+    with tempfile.TemporaryDirectory() as temp_dir:
+        slide_dir = Path(temp_dir) / "slide_001"
+        image_path = _two_card_image(slide_dir)
+        detected = mask.detect_elements(image_path, slide_dir, detection_settings)
+
+        assert detected["version"] == "auto_elements_v4_ink_separated"
+        assert detected["pixel_evidence_separation"] is True
+        assert detected["elements"], "the bridged pair must still be detected"
+        assert len(detected["elements"]) == 1
+        element = detected["elements"][0]
+        ink = 91 * 91 + 87 * 91
+        # Closing joins the cards (grouping hypothesis), the Mask keeps the ink.
+        assert element["source_ink_pixel_count"] == ink
+        assert element["area"] == ink
+        assert element["mask_pixel_count"] == ink
+        assert element["grouping_pixel_count"] == ink + 273
+        assert element["bridge_pixel_count"] == 273
+        assert detected["source_foreground_pixel_count"] == ink
+        assert detected["grouping_pixel_count"] > ink
+        gap_columns = range(111, 114)
+        for run in element["mask_rle"]["runs"]:
+            assert not (run[1] <= min(gap_columns) and run[2] >= max(gap_columns) + 1), run
+        assert element.get("atomic_component_ids") is None, (
+            "atoms are only recovered when layout boxes can own them"
+        )
+
+
+def test_rollback_switch_restores_the_closing_as_ink_behaviour() -> None:
+    detection_settings = mask.normalize_settings({
+        "min_element_area": 10,
+        "component_padding_px": 0,
+        "pixel_evidence_separation": False,
+    })
+    with tempfile.TemporaryDirectory() as temp_dir:
+        slide_dir = Path(temp_dir) / "slide_001"
+        image_path = _two_card_image(slide_dir)
+        detected = mask.detect_elements(image_path, slide_dir, detection_settings)
+        assert detected["pixel_evidence_separation"] is False
+        element = detected["elements"][0]
+        assert element["bridge_pixel_count"] == 0
+        assert element["mask_pixel_count"] > 91 * 91 + 87 * 91
+
+
+def test_layout_boxes_split_a_bridged_pair_without_reading_box_order() -> None:
+    detection_settings = mask.normalize_settings({
+        "min_element_area": 10,
+        "component_padding_px": 0,
+    })
+    cards = [
+        _layout_box(15, 25, 100, 100),
+        _layout_box(110, 25, 95, 100),
+    ]
+    with tempfile.TemporaryDirectory() as temp_dir:
+        slide_dir = Path(temp_dir) / "slide_001"
+        image_path = _two_card_image(slide_dir)
+        baseline = mask.detect_elements(
+            image_path, slide_dir, detection_settings, layout_boxes=cards
+        )
+        assert [element["element_id"] for element in baseline["elements"]] == [
+            "el_auto_001", "el_auto_002",
+        ]
+        assert [element["bbox"]["x"] for element in baseline["elements"]] == [20, 114]
+        assert [element["mask_pixel_count"] for element in baseline["elements"]] == [8281, 7917]
+        assert [element["atomic_component_ids"] for element in baseline["elements"]] == [
+            ["el_atom_0001"], ["el_atom_0002"],
+        ]
+        assert baseline["layout_binding"]["merged_element_count"] == 2
+        assert baseline["layout_binding"]["unbound_element_ids"] == []
+
+        fingerprint = lambda report: [  # noqa: E731
+            (element["bbox"]["x"], element["bbox"]["y"], element["mask_rle"]["runs"])
+            for element in report["elements"]
+        ]
+        for boxes in ([cards[1], cards[0]], cards + [_layout_box(0, 0, 320, 180, "page", 0.99)]):
+            shuffled = list(boxes)
+            shuffled.reverse()
+            outcome = mask.detect_elements(
+                image_path, slide_dir, detection_settings, layout_boxes=shuffled
+            )
+            assert fingerprint(outcome) == fingerprint(baseline), shuffled
+
+
+def test_one_layout_box_never_solidifies_the_white_gap_between_its_atoms() -> None:
+    """Large-panel scanline solidify is an interior repair, not a cross-atom bridge."""
+    detection_settings = mask.normalize_settings({
+        "min_element_area": 10,
+        "component_padding_px": 0,
+    })
+    with tempfile.TemporaryDirectory() as temp_dir:
+        slide_dir = Path(temp_dir) / "slide_001"
+        slide_dir.mkdir(parents=True)
+        image_path = slide_dir / "visual_draft.png"
+        image = Image.new("RGB", (1200, 600), "white")
+        draw = ImageDraw.Draw(image)
+        draw.rectangle((100, 100, 399, 499), fill="black")
+        draw.rectangle((700, 100, 999, 499), fill="#2357A5")
+        image.save(image_path)
+
+        boxes = [_layout_box(90, 90, 920, 420)]
+        detected = mask.detect_elements(
+            image_path, slide_dir, detection_settings, layout_boxes=boxes
+        )
+        assert len(detected["elements"]) == 1
+        element = detected["elements"][0]
+        ink = 300 * 400 * 2
+        assert element["source_ink_pixel_count"] == ink
+        assert element["mask_pixel_count"] == ink, (
+            "the union bbox is dense enough for solidify; the gap must stay unmasked"
+        )
+        assert element["atomic_component_ids"] == ["el_atom_0001", "el_atom_0002"]
+        for run in element["mask_rle"]["runs"]:
+            assert not (run[1] < 400 and run[2] > 699), run
+
+
+def test_detection_cache_follows_image_settings_and_algorithm_version() -> None:
+    detection_settings = mask.normalize_settings({
+        "min_element_area": 10,
+        "component_padding_px": 0,
+    })
+    cards = [_layout_box(15, 25, 100, 100), _layout_box(110, 25, 95, 100)]
+    with tempfile.TemporaryDirectory() as temp_dir:
+        slide_dir = Path(temp_dir) / "slide_001"
+        image_path = _two_card_image(slide_dir)
+        first = mask.detect_elements(image_path, slide_dir, detection_settings)
+        assert first["cache_hit"] is False
+        again = mask.detect_elements(image_path, slide_dir, detection_settings)
+        assert again["cache_hit"] is True
+        assert again["detection_settings_fingerprint"] == first["detection_settings_fingerprint"]
+
+        # A different binding algorithm is a different pixel answer, so the v4
+        # cache entry for the previous configuration must not be reused.
+        rolled_back = mask.normalize_settings({
+            "min_element_area": 10,
+            "component_padding_px": 0,
+            "layout_binding_v2": False,
+        })
+        stale_guard = mask.detect_elements(image_path, slide_dir, rolled_back)
+        assert stale_guard["cache_hit"] is False
+        assert stale_guard["detection_settings_fingerprint"] != first["detection_settings_fingerprint"]
+        assert len(stale_guard["elements"]) == 1
+
+        # The rollback arm keeps the old grouping failure visible: one closing
+        # group is consumed by the first box that holds its centre, so the two
+        # cards stay a single element.  Its Mask is still ink-only, because the
+        # pixel-evidence switch is independent of the binding switch.
+        v1 = mask.detect_elements(image_path, slide_dir, rolled_back, layout_boxes=cards)
+        assert [element["element_id"] for element in v1["elements"]] == ["el_layout_001"]
+        assert v1["elements"][0]["mask_pixel_count"] == 16198
+
+        # Changing the layout boxes alone must also miss the cached answer.
+        rebound = mask.detect_elements(image_path, slide_dir, detection_settings, layout_boxes=cards)
+        assert rebound["cache_hit"] is False
+        assert len(rebound["elements"]) == 2
+        assert mask.detect_elements(
+            image_path, slide_dir, detection_settings, layout_boxes=list(reversed(cards))
+        )["cache_hit"] is True
+
+        image = Image.open(image_path)
+        ImageDraw.Draw(image).rectangle((250, 40, 300, 90), fill="#112233")
+        image.save(image_path)
+        assert mask.detect_elements(image_path, slide_dir, detection_settings)["cache_hit"] is False
+
+
 def main() -> None:
     test_title_and_subtitle_fragments_follow_narrated_title_group()
     test_title_and_subtitle_use_distinct_narrated_groups_when_available()

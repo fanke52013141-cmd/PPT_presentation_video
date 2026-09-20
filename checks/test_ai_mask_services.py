@@ -224,6 +224,9 @@ def test_degraded_stages_become_their_own_log_events(monkeypatch) -> None:
             "layout_detection": {
                 "status": "missing_model", "enabled": True, "box_count": 0,
                 "fallback_reason": "模型文件不存在: tools/doclayout/x.onnx",
+                "device_mode": "auto",
+                "actual_providers": ["CPUExecutionProvider"],
+                "device_reason": "cuda_provider_not_installed",
             },
             "vision_status": "deterministic_fallback",
             "vision_error_type": "APITimeoutError",
@@ -251,6 +254,9 @@ def test_degraded_stages_become_their_own_log_events(monkeypatch) -> None:
     ]
     assert events[0][1]["status"] == "missing_model"
     assert "模型文件不存在" in events[0][1]["reason"]
+    # The log has to say which device really ran, never just what was requested.
+    assert events[0][1]["actual_providers"] == ["CPUExecutionProvider"]
+    assert events[0][1]["device_reason"] == "cuda_provider_not_installed"
     assert events[1][1]["reason"] == "APITimeoutError"
 
 

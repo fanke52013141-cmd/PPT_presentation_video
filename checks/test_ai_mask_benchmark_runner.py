@@ -112,9 +112,15 @@ def test_aggregate_reports_stage_timing_and_layout_states() -> None:
     # it, so a missing stage never dilutes the comparison between A/B arms.
     assert summary["stage_ms_mean"]["vision"] == 600.0
     assert summary["stage_ms_mean"]["foreground"] == round(350.0 / 3.0, 6)
+    # The mean hides the slow page, so the tail is reported per stage as well.
+    assert summary["stage_ms_percentiles"] == {
+        "foreground": {"p50": 100.0, "p95": 200.0},
+        "vision": {"p50": 300.0, "p95": 900.0},
+    }
     assert summary["layout_status_counts"] == {"disabled": 2, "no_boxes": 1}
 
     # Reports written before the stage-timing work package must still aggregate.
     legacy = runner._aggregate([_report("case_a", 1)], repeats=1)
     assert legacy["stage_ms_mean"] == {}
+    assert legacy["stage_ms_percentiles"] == {}
     assert legacy["layout_status_counts"] == {}

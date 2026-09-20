@@ -23,11 +23,15 @@ import ai_mask_engine
 
 
 @pytest.fixture(autouse=True)
-def _clear_session_init_breaker():
-    """The circuit breaker is process-wide, so each case starts from a clean slate."""
-    ai_mask_doclayout.reset_session_init_failures()
+def _clear_doclayout_caches():
+    """Sessions, boxes and breakers are process-wide, so each case starts clean.
+
+    Every fake-``onnxruntime`` test uses the same ``/fake/model.onnx`` path; a
+    session cached by the previous case would answer with the previous stub.
+    """
+    ai_mask_doclayout.reset_doclayout_caches()
     yield
-    ai_mask_doclayout.reset_session_init_failures()
+    ai_mask_doclayout.reset_doclayout_caches()
 
 
 def test_normalize_settings_has_doclayout_defaults() -> None:
@@ -174,14 +178,19 @@ def test_detector_unavailable_without_model(monkeypatch) -> None:
     assert detector.detect(Image.new("RGB", (100, 100), "white")) == []
 
 
-def _status_detector(monkeypatch, *, session_factory) -> DocLayoutDetector:
-    """Build a detector over a fake ORT whose session creation is controlled."""
+def _status_detector(monkeypatch, *, session_factory, model_path: str = "/fake/model.onnx") -> DocLayoutDetector:
+    """Build a detector over a fake ORT whose session creation is controlled.
+
+    Pass a distinct ``model_path`` per stub: the session cache is keyed by the
+    model, so two stubs under one path would share whichever session came first.
+    """
     monkeypatch.setattr(ai_mask_doclayout.os.path, "exists", lambda _p: True)
     monkeypatch.setattr(ai_mask_doclayout, "onnxruntime", types.SimpleNamespace(
         get_available_providers=lambda: ["CPUExecutionProvider"],
+        SessionOptions=lambda: types.SimpleNamespace(enable_cpu_mem_arena=True),
         InferenceSession=session_factory,
     ))
-    return DocLayoutDetector("/fake/model.onnx")
+    return DocLayoutDetector(model_path)
 
 
 def test_status_reports_missing_dependency(monkeypatch) -> None:
@@ -198,6 +207,7 @@ def test_status_reports_missing_dependency(monkeypatch) -> None:
 def test_status_reports_missing_model(monkeypatch) -> None:
     monkeypatch.setattr(ai_mask_doclayout, "onnxruntime", types.SimpleNamespace(
         get_available_providers=lambda: ["CPUExecutionProvider"],
+        SessionOptions=lambda: types.SimpleNamespace(enable_cpu_mem_arena=True),
         InferenceSession=lambda *_a, **_k: None,
     ))
     detector = DocLayoutDetector("/nonexistent/doclayout.onnx")
@@ -229,7 +239,7 @@ def test_status_reports_session_init_failure_without_retrying(monkeypatch) -> No
     assert "CUDA" in replayed["fallback_reason"]
     assert calls["count"] == 1
 
-    ai_mask_doclayout.reset_session_init_failures()
+    ai_mask_doclayout.reset_doclayout_caches()
     third = _status_detector(monkeypatch, session_factory=failing_session)
     assert third.detect_with_status(Image.new("RGB", (100, 100), "white"))["status"] == "session_init_failed"
     assert calls["count"] == 2
@@ -266,7 +276,9 @@ def test_status_reports_no_boxes_only_for_an_empty_detection(monkeypatch) -> Non
 
     image = Image.new("RGB", (640, 640), "white")
     outcome = _status_detector(
-        monkeypatch, session_factory=session_with(np.zeros((1, 0, 6), dtype=np.float32))
+        monkeypatch,
+        model_path="/fake/empty.onnx",
+        session_factory=session_with(np.zeros((1, 0, 6), dtype=np.float32)),
     ).detect_with_status(image)
     assert outcome["status"] == "no_boxes"
     assert outcome["raw_box_count"] == 0
@@ -276,7 +288,9 @@ def test_status_reports_no_boxes_only_for_an_empty_detection(monkeypatch) -> Non
     # Rows that are all NaN are dropped as unusable predictions; an empty answer
     # is still a legitimate "nothing detected" for this page.
     garbage = _status_detector(
-        monkeypatch, session_factory=session_with(np.array([[[float("nan")] * 6]], dtype=np.float32))
+        monkeypatch,
+        model_path="/fake/nan.onnx",
+        session_factory=session_with(np.array([[[float("nan")] * 6]], dtype=np.float32)),
     ).detect_with_status(image)
     assert garbage["status"] == "inference_failed"
     assert garbage["error_type"] == "LayoutOutputError"
@@ -285,6 +299,7 @@ def test_status_reports_no_boxes_only_for_an_empty_detection(monkeypatch) -> Non
 
     wrong_columns = _status_detector(
         monkeypatch,
+        model_path="/fake/short.onnx",
         session_factory=session_with(np.zeros((1, 40, 5), dtype=np.float32)),
     ).detect_with_status(image)
     assert wrong_columns["status"] == "inference_failed"
@@ -325,6 +340,7 @@ def test_detect_filters_classes_and_small_boxes(monkeypatch) -> None:
     monkeypatch.setattr(ai_mask_doclayout.os.path, "exists", lambda _p: True)
     monkeypatch.setattr(ai_mask_doclayout, "onnxruntime", types.SimpleNamespace(
         get_available_providers=lambda: ["CPUExecutionProvider"],
+        SessionOptions=lambda: types.SimpleNamespace(enable_cpu_mem_arena=True),
         InferenceSession=lambda *_args, **_kwargs: types.SimpleNamespace(
             get_inputs=lambda: [types.SimpleNamespace(name="images")],
             get_outputs=lambda: [types.SimpleNamespace(name="output0")],

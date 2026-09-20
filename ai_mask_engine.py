@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+import hashlib
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -24,6 +25,10 @@ from ai_mask_contracts import (  # noqa: F401 (AI_MASK_VISION_TIMEOUT_SEC is re-
     LAYOUT_STATUS_SESSION_INIT_FAILED,
     elapsed_ms as _elapsed_ms,
 )
+# Only the pure normalizer is imported here; the ONNX detector itself stays a
+# lazy import inside ``_detect_layout`` so a machine without onnxruntime can
+# still import, configure and run the rest of the pipeline.
+from ai_mask_doclayout import normalize_device_mode
 from pipeline_lifecycle import write_json_atomic
 
 
@@ -45,6 +50,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "vision_object_batch_size": 12,
     "vision_max_requests": 4,
     "doclayout_enabled": True,
+    "doclayout_device_mode": "auto",
     "doclayout_model_path": "",
     "doclayout_conf_threshold": 0.35,
     "doclayout_input_size": 1024,
@@ -412,6 +418,9 @@ def normalize_settings(raw: dict[str, Any] | None) -> dict[str, Any]:
         "vision_max_requests": _int(raw.get("vision_max_requests"), 4, 1, 8),
         "max_group_elements": max(20, _int(raw.get("max_group_elements"), 60, 1, 120)),
         "doclayout_enabled": _bool(raw.get("doclayout_enabled"), False),
+        # "cpu" is an immediate bypass, "cuda" demands verified CUDA binding plus
+        # a smoke run, and either failure falls back to CPU for the whole process.
+        "doclayout_device_mode": normalize_device_mode(raw.get("doclayout_device_mode")),
         "doclayout_model_path": str(raw.get("doclayout_model_path") or "").strip(),
         "doclayout_conf_threshold": _float(raw.get("doclayout_conf_threshold"), 0.35, 0, 1),
         "doclayout_input_size": _int(raw.get("doclayout_input_size"), 1024, 256, 2048),
@@ -525,9 +534,14 @@ def _detect_layout(
             input_size=int(settings.get("doclayout_input_size", 1024)),
             iou_threshold=float(settings.get("doclayout_iou_threshold", 0.45)),
             min_area_ratio=float(settings.get("doclayout_min_area_ratio", 0.002)),
+            device_mode=str(settings.get("doclayout_device_mode") or "auto"),
         )
+        # The page hash keys the box cache, so a re-annotation of an unchanged
+        # image never re-runs the model.  Image bytes, not mtime: a regenerated
+        # picture with the same timestamp must still be recomputed.
+        source_sha256 = hashlib.sha256(image_path.read_bytes()).hexdigest()
         with Image.open(image_path) as handle:
-            outcome = detector.detect_with_status(handle.convert("RGB"))
+            outcome = detector.detect_with_status(handle.convert("RGB"), source_sha256)
     except Exception as exc:
         return None, {
             "enabled": True,

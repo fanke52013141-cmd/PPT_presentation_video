@@ -16,6 +16,16 @@
   推理耗时分别计时；detect() 只是保留旧返回形态的薄封装。
 - 本地失败不无限重试：会话初始化抛错后按模型路径进入进程内熔断，后续页面直接
   复用该诊断结果，不再重复昂贵的失败初始化。
+- 会话按进程复用：ONNX 会话创建是每页数百毫秒的固定开销，会话按
+  “模型 SHA + 实际绑定的 Provider”缓存，同模型跨页只加载一次；缓存命中会在
+  诊断记录里显式报告 session_reused，绝不把复用伪装成"这页很快"。
+- 设备模式可回退且如实报告：doclayout_device_mode = auto|cpu|cuda。cpu 立即
+  只用 CPUExecutionProvider；cuda/auto 若 CUDA 只是"可用列表里有"而未真正绑定、
+  会话创建抛错、或首次冒烟推理失败，则一次性回退 CPU 并熔断，后续页面不再重试
+  GPU。报告的是实际运行 Provider，不是"检测到 NVIDIA"。
+- 版面框结果按 (图片 SHA, 模型身份, 输入尺寸/阈值, 实际 Provider) 进程内缓存：
+  同一张图重跑标注不再推理；缓存的会话关闭 CPU 内存池，避免复用会话在像素阶段
+  仍然占住数百 MB。
 - 确定性后处理：随仓模型按声明的 [x1, y1, x2, y2, score, class] 绝对坐标解析，
   未声明形态的其他模型才走 auto 猜测；再做类别白名单过滤 + 同类 NMS +
   跨类同区域去重 + 面积过滤，嵌套层级（父框含子框）不会被当成重复框删除。
@@ -26,6 +36,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import os
+from collections import OrderedDict
 from threading import Lock
 import time
 from typing import Any
@@ -89,6 +100,32 @@ ROLE_BY_NAME: dict[str, str] = {
     "table caption": "table_caption",
     "list": "list",
 }
+
+
+# Device selection is a user-visible setting, and ``cpu`` must be an immediate
+# bypass rather than a hint: one bad GPU experience must not cost every page a
+# round trip through a provider that cannot serve it.
+DEVICE_MODE_AUTO = "auto"
+DEVICE_MODE_CPU = "cpu"
+DEVICE_MODE_CUDA = "cuda"
+DEVICE_MODES: tuple[str, ...] = (DEVICE_MODE_AUTO, DEVICE_MODE_CPU, DEVICE_MODE_CUDA)
+CUDA_PROVIDER = "CUDAExecutionProvider"
+CPU_PROVIDER = "CPUExecutionProvider"
+
+
+def normalize_device_mode(value: Any) -> str:
+    mode = str(value or DEVICE_MODE_AUTO).strip().lower()
+    return mode if mode in DEVICE_MODES else DEVICE_MODE_AUTO
+
+
+def available_device_modes() -> dict[str, Any]:
+    """Report what this ONNX build can actually run, not what was requested."""
+    available = list(onnxruntime.get_available_providers()) if onnxruntime else []
+    return {
+        "onnxruntime_installed": onnxruntime is not None,
+        "available_providers": available,
+        "cuda_available": CUDA_PROVIDER in available,
+    }
 
 
 
@@ -340,6 +377,7 @@ class DocLayoutDetector:
         min_area_ratio: float = 0.002,
         coordinate_format: str = MODEL_COORDINATE_FORMAT,
         coordinate_normalized: bool = MODEL_COORDINATE_NORMALIZED,
+        device_mode: str = DEVICE_MODE_AUTO,
     ) -> None:
         self.model_path = str(model_path or "").strip()
         if not self.model_path:
@@ -351,6 +389,7 @@ class DocLayoutDetector:
         self.min_area_ratio = max(0.0, float(min_area_ratio))
         self.coordinate_format = str(coordinate_format or "auto")
         self.coordinate_normalized = bool(coordinate_normalized)
+        self.device_mode = normalize_device_mode(device_mode)
         self._session: Any = None
         self._input_name: str = ""
         self._output_names: list[str] = []
@@ -359,6 +398,8 @@ class DocLayoutDetector:
         self._requested_providers: list[str] = []
         self._actual_providers: list[str] = []
         self._model_sha256 = ""
+        self._session_reused = False
+        self._device_reason = ""
 
     @staticmethod
     def _discover_default_model() -> str:
@@ -371,23 +412,61 @@ class DocLayoutDetector:
                     return os.path.join(tool_dir, name)
         return ""
 
-    @staticmethod
-    def _preferred_providers() -> list[str]:
-        """Request the fastest provider this ONNX build actually ships."""
+    def _plan_providers(self) -> tuple[list[list[str]], str]:
+        """Return the provider attempts this page may make, and why GPU is out.
+
+        Listing a provider as *available* is not the same as being able to serve
+        a model with it, so a planned CUDA attempt is still verified after the
+        session is created.  Once that verification has failed for this model the
+        breaker keeps every later page on CPU for the rest of the process.
+        """
         available = list(onnxruntime.get_available_providers()) if onnxruntime else []
-        return [
-            provider for provider in ("CUDAExecutionProvider", "CPUExecutionProvider")
-            if provider in available
-        ] or ["CPUExecutionProvider"]
+        if self.device_mode == DEVICE_MODE_CPU:
+            return [[CPU_PROVIDER]], "device_mode=cpu"
+        if CUDA_PROVIDER not in available:
+            return [[CPU_PROVIDER]], "cuda_provider_not_installed"
+        if _gpu_breakers().get(self.model_path):
+            return [[CPU_PROVIDER]], str(_gpu_breakers()[self.model_path])
+        return [[CUDA_PROVIDER, CPU_PROVIDER], [CPU_PROVIDER]], ""
+
+    def _verify_gpu_session(self, session: Any) -> str:
+        """Prove the CUDA provider really runs this model before trusting it.
+
+        The smoke input is a tiny all-zero tensor: it cannot produce meaningful
+        boxes, and it is not used as a detection.  It only answers the question
+        this page cannot answer any other way — will a CUDA kernel launch fail?
+        """
+        try:
+            if session is None:
+                return "cuda_session_missing"
+            bound = _session_providers(session, [CUDA_PROVIDER])
+            if CUDA_PROVIDER not in bound:
+                return "cuda_provider_not_bound"
+            shape = None
+            try:
+                dimensions = session.get_inputs()[0].shape
+                if len(dimensions) == 4 and all(isinstance(value, int) and value > 0 for value in dimensions):
+                    shape = [int(value) for value in dimensions]
+                    shape[0] = 1
+                    shape[2] = shape[3] = 64
+            except Exception:
+                shape = None
+            probe = np.zeros(shape or [1, 3, 64, 64], dtype=np.float32)
+            session.run(None, {session.get_inputs()[0].name: probe})
+        except Exception as exc:
+            return f"cuda_smoke_failed:{type(exc).__name__}"[:200]
+        return ""
 
     def _ensure_session(self) -> dict[str, Any]:
-        """Create the ORT session once, reporting a diagnosable degradation state."""
+        """Bind the model session once per process, reporting real device evidence."""
         outcome: dict[str, Any] = {
             "ok": self._session is not None,
             "status": LAYOUT_STATUS_OK,
             "reason": "",
             "error_type": "",
             "elapsed_ms": 0.0,
+            "session_reused": self._session_reused,
+            "device_reason": self._device_reason,
         }
         if self._session is not None:
             outcome["reason"] = self._load_error
@@ -410,30 +489,66 @@ class DocLayoutDetector:
             )
             return outcome
         started = time.perf_counter()
-        preferred = self._preferred_providers()
-        self._requested_providers = list(preferred)
-        try:
-            self._session = onnxruntime.InferenceSession(
-                self.model_path,
-                providers=preferred,
-            )
-            self._input_name = self._session.get_inputs()[0].name
-            self._output_names = [output.name for output in self._session.get_outputs()]
-            self._actual_providers = _session_providers(self._session, preferred)
-            self._model_sha256 = _sha256_of_model(self.model_path)
+        model_sha = _sha256_of_model(self.model_path)
+        attempts, device_reason = self._plan_providers()
+        self._device_reason = device_reason
+        outcome["device_reason"] = device_reason
+        last_error: BaseException | None = None
+        for providers in attempts:
+            self._requested_providers = list(providers)
+            wants_gpu = providers[0] == CUDA_PROVIDER
+            try:
+                session, actual, reused = _acquire_session(self.model_path, model_sha, providers)
+            except Exception as exc:
+                last_error = exc
+                if wants_gpu:
+                    # A provider that cannot even build the session is the same
+                    # class of failure as one that cannot run it: retrying it per
+                    # page would pay the same crash for every remaining slide.
+                    reason = f"cuda_create_failed:{type(exc).__name__}"[:200]
+                    _trip_gpu_breaker(self.model_path, reason)
+                    self._device_reason = reason
+                    outcome["device_reason"] = reason
+                continue
+            if wants_gpu:
+                failure = self._verify_gpu_session(session)
+                if failure:
+                    # A GPU that cannot serve this model must not be rediscovered
+                    # on every page: the breaker sends the rest of the run to CPU,
+                    # and the unusable session is dropped instead of being cached.
+                    _discard_session(self.model_path, model_sha, providers)
+                    _trip_gpu_breaker(self.model_path, failure)
+                    self._device_reason = failure
+                    outcome["device_reason"] = failure
+                    continue
+            self._session = session
+            self._input_name = session.get_inputs()[0].name
+            self._output_names = [output.name for output in session.get_outputs()]
+            self._actual_providers = actual
+            self._model_sha256 = model_sha
+            self._session_reused = bool(reused)
             self._load_metadata_names()
             self._load_error = ""
-            outcome.update(ok=True, status=LAYOUT_STATUS_OK, reason="", elapsed_ms=_ms(started))
-        except Exception as exc:  # pragma: no cover - 依赖环境差异
-            self._session = None
-            self._load_error = str(exc)
-            _record_init_failure(self.model_path, LAYOUT_STATUS_SESSION_INIT_FAILED, exc)
             outcome.update(
-                status=LAYOUT_STATUS_SESSION_INIT_FAILED,
-                reason=self._load_error,
-                error_type=type(exc).__name__,
+                ok=True,
+                status=LAYOUT_STATUS_OK,
+                reason="",
                 elapsed_ms=_ms(started),
+                session_reused=bool(reused),
+                device_reason=self._device_reason,
             )
+            return outcome
+        self._session = None
+        exc = last_error or RuntimeError("no usable ONNX execution provider")
+        self._load_error = str(exc)
+        _record_init_failure(self.model_path, LAYOUT_STATUS_SESSION_INIT_FAILED, exc)
+        outcome.update(
+            status=LAYOUT_STATUS_SESSION_INIT_FAILED,
+            reason=self._load_error,
+            error_type=type(exc).__name__,
+            elapsed_ms=_ms(started),
+            session_reused=False,
+        )
         return outcome
 
     def _load_metadata_names(self) -> None:
@@ -458,8 +573,17 @@ class DocLayoutDetector:
     def load_error(self) -> str:
         return self._load_error
 
-    def detect_with_status(self, image: Image.Image) -> dict[str, Any]:
-        """Detect layout boxes and return the boxes plus the degradation record."""
+    def detect_with_status(
+        self,
+        image: Image.Image,
+        source_sha256: str = "",
+    ) -> dict[str, Any]:
+        """Detect layout boxes and return the boxes plus the degradation record.
+
+        ``source_sha256`` lets a caller that already hashed the page prove that a
+        cache hit is the same image; without it no box cache entry is read or
+        written, because guessing at identity is worse than recomputing.
+        """
         load = self._ensure_session()
         record: dict[str, Any] = {
             "status": str(load["status"]),
@@ -467,8 +591,12 @@ class DocLayoutDetector:
             "box_count": 0,
             "raw_box_count": 0,
             "filtered_box_count": 0,
+            "device_mode": self.device_mode,
             "requested_providers": list(self._requested_providers),
             "actual_providers": list(self._actual_providers),
+            "session_reused": bool(load.get("session_reused")),
+            "device_reason": str(load.get("device_reason") or ""),
+            "layout_cache_hit": False,
             "model_path": self.model_path,
             "model_sha256": self._model_sha256,
             "input_size": self.input_size,
@@ -484,6 +612,30 @@ class DocLayoutDetector:
             record["fallback_reason"] = str(load["reason"]) or record["status"]
             record["boxes"] = []
             return record
+        cache_key: tuple[Any, ...] | None = None
+        if source_sha256:
+            cache_key = (
+                str(source_sha256),
+                # Same reasoning as the session key: an unhashable model must not
+                # have its boxes shared with every other unhashable model.
+                self._model_sha256 or self.model_path,
+                self.input_size,
+                self.conf_threshold,
+                self.iou_threshold,
+                self.min_area_ratio,
+                self.coordinate_format,
+                self.coordinate_normalized,
+                tuple(self._actual_providers),
+            )
+            cached = _cached_boxes(cache_key)
+            if cached is not None:
+                record["layout_cache_hit"] = True
+                record["box_count"] = len(cached)
+                record["filtered_box_count"] = len(cached)
+                record["raw_box_count"] = len(cached)
+                record["status"] = LAYOUT_STATUS_OK if cached else LAYOUT_STATUS_NO_BOXES
+                record["boxes"] = cached
+                return record
         started = time.perf_counter()
         try:
             tensor, scale, pad_x, pad_y = _letterbox(image, self.input_size)
@@ -551,6 +703,8 @@ class DocLayoutDetector:
         record["box_count"] = len(kept)
         record["status"] = LAYOUT_STATUS_OK if kept else LAYOUT_STATUS_NO_BOXES
         record["boxes"] = kept
+        if cache_key is not None:
+            _remember_boxes(cache_key, kept)
         return record
 
     def detect(self, image: Image.Image) -> list[dict[str, Any]]:
@@ -565,6 +719,109 @@ def _ms(started: float) -> float:
 _INIT_FAILURE_LOCK = Lock()
 _INIT_FAILURES: dict[str, dict[str, str]] = {}
 _MODEL_SHA_CACHE: dict[str, str] = {}
+_SESSION_CACHE_LOCK = Lock()
+_SESSION_CACHE: dict[str, tuple[Any, list[str]]] = {}
+_GPU_BREAKER_LOCK = Lock()
+_GPU_BREAKERS: dict[str, str] = {}
+_BOX_CACHE_LOCK = Lock()
+_BOX_CACHE: "OrderedDict[tuple[Any, ...], list[dict[str, Any]]]" = OrderedDict()
+# A run is one project's page set; 32 entries keep repeated re-annotation cheap
+# without letting the process hold box lists for slides nobody looks at again.
+_BOX_CACHE_MAX = 32
+
+
+def _session_options() -> Any:
+    """Options for a session that the process intends to keep and reuse.
+
+    The CPU memory arena is switched off on purpose: a cached session would
+    otherwise hold its reserved arena resident while the flood-fill stage works
+    on the same page, and inference on the shipped model measured the same speed
+    without it.
+    """
+    options = onnxruntime.SessionOptions()
+    options.enable_cpu_mem_arena = False
+    return options
+
+
+def _session_key(model_path: str, model_sha256: str, providers: list[str]) -> str:
+    # A model whose bytes cannot be hashed still has to stay separate from every
+    # other unreadable path, so the path is the fallback identity.
+    return f"{model_sha256 or model_path}|{'+'.join(providers)}"
+
+
+def _acquire_session(
+    model_path: str,
+    model_sha256: str,
+    providers: list[str],
+) -> tuple[Any, list[str], bool]:
+    """Return (session, bound providers, cache_hit) for this model and provider set.
+
+    The cache key carries the provider list on purpose: a CUDA session and a CPU
+    session of the same weights are different executors, and mixing them up would
+    report one device while the other actually ran the model.
+    """
+    key = _session_key(model_path, model_sha256, providers)
+    with _SESSION_CACHE_LOCK:
+        cached = _SESSION_CACHE.get(key)
+        if cached is not None:
+            return cached[0], list(cached[1]), True
+        session = onnxruntime.InferenceSession(
+            model_path,
+            sess_options=_session_options(),
+            providers=list(providers),
+        )
+        actual = _session_providers(session, list(providers))
+        _SESSION_CACHE[key] = (session, actual)
+        return session, actual, False
+
+
+def _discard_session(model_path: str, model_sha256: str, providers: list[str]) -> None:
+    """Drop a session whose device verification failed, freeing its memory."""
+    with _SESSION_CACHE_LOCK:
+        _SESSION_CACHE.pop(_session_key(model_path, model_sha256, providers), None)
+
+
+def _gpu_breakers() -> dict[str, str]:
+    return _GPU_BREAKERS
+
+
+def _trip_gpu_breaker(model_path: str, reason: str) -> None:
+    with _GPU_BREAKER_LOCK:
+        _GPU_BREAKERS[model_path] = str(reason)[:400]
+
+
+def reset_doclayout_caches() -> None:
+    """Drop every per-process DocLayout cache (config change, tests, model swap).
+
+    The model hash is part of this set: a file replaced at the same path must
+    not keep serving a session or a box list that was keyed by the old bytes.
+    """
+    with _INIT_FAILURE_LOCK:
+        _INIT_FAILURES.clear()
+    with _SESSION_CACHE_LOCK:
+        _SESSION_CACHE.clear()
+        _MODEL_SHA_CACHE.clear()
+    with _GPU_BREAKER_LOCK:
+        _GPU_BREAKERS.clear()
+    with _BOX_CACHE_LOCK:
+        _BOX_CACHE.clear()
+
+
+def _cached_boxes(key: tuple[Any, ...]) -> list[dict[str, Any]] | None:
+    with _BOX_CACHE_LOCK:
+        cached = _BOX_CACHE.get(key)
+        if cached is None:
+            return None
+        _BOX_CACHE.move_to_end(key)
+        return [dict(box) for box in cached]
+
+
+def _remember_boxes(key: tuple[Any, ...], boxes: list[dict[str, Any]]) -> None:
+    with _BOX_CACHE_LOCK:
+        _BOX_CACHE[key] = [dict(box) for box in boxes]
+        _BOX_CACHE.move_to_end(key)
+        while len(_BOX_CACHE) > _BOX_CACHE_MAX:
+            _BOX_CACHE.popitem(last=False)
 
 
 def _init_failures() -> dict[str, dict[str, str]]:
@@ -578,12 +835,6 @@ def _record_init_failure(model_path: str, status: str, exc: BaseException) -> No
             "reason": f"{type(exc).__name__}: {exc}"[:400],
             "error_type": type(exc).__name__,
         }
-
-
-def reset_session_init_failures() -> None:
-    """Clear the per-process session-init circuit breaker (config change/tests)."""
-    with _INIT_FAILURE_LOCK:
-        _INIT_FAILURES.clear()
 
 
 def _session_providers(session: Any, requested: list[str]) -> list[str]:

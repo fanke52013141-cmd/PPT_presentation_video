@@ -107,6 +107,11 @@ def _degradation_events(slide: dict[str, Any]) -> list[tuple[str, dict[str, Any]
             "box_count": int(layout.get("box_count") or 0),
             "reason": str(layout.get("fallback_reason") or layout.get("load_error") or status)[:400],
             "error_type": str(layout.get("error_type") or ""),
+            # Which device actually served the page, not which one was requested:
+            # a CPU fallback is only diagnosable if the log can tell them apart.
+            "device_mode": str(layout.get("device_mode") or ""),
+            "actual_providers": [str(v) for v in layout.get("actual_providers") or []],
+            "device_reason": str(layout.get("device_reason") or ""),
         }))
     if str(slide.get("vision_status") or "ok") != "ok":
         events.append(("ai_mask_vision_degraded", {

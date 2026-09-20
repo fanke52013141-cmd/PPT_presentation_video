@@ -128,6 +128,17 @@ def _aggregate(reports: list[dict[str, Any]], repeats: int) -> dict[str, Any]:
             ),
         }
     timings = [float(report["annotate_seconds"]) for report in reports]
+    stages = sorted({
+        stage for report in reports for stage in (report.get("stage_ms") or {})
+    })
+
+    def stage_values(stage: str) -> list[float]:
+        return [
+            float(value)
+            for value in [(report.get("stage_ms") or {}).get(stage) for report in reports]
+            if value is not None
+        ]
+
     return {
         "case_count": len(per_case),
         "repeats": repeats,
@@ -139,11 +150,15 @@ def _aggregate(reports: list[dict[str, Any]], repeats: int) -> dict[str, Any]:
             1 for entry in per_case.values() if entry["missing_group_ids"]
         ),
         "mean": {key: _mean([entry[key] for entry in per_case.values()]) for key in SCORE_MEANS},
-        "stage_ms_mean": {
-            stage: _mean([(report.get("stage_ms") or {}).get(stage) for report in reports])
-            for stage in sorted({
-                stage for report in reports for stage in (report.get("stage_ms") or {})
-            })
+        "stage_ms_mean": {stage: _mean(stage_values(stage)) for stage in stages},
+        # A mean hides the page that stalls, which is exactly what the session and
+        # box caches are supposed to remove, so the tail is reported per stage.
+        "stage_ms_percentiles": {
+            stage: {
+                "p50": _percentile(stage_values(stage), 0.5),
+                "p95": _percentile(stage_values(stage), 0.95),
+            }
+            for stage in stages
         },
         "layout_status_counts": _merge_counts(
             [report.get("layout_status_counts") or {} for report in reports]
@@ -337,6 +352,15 @@ def run(args: argparse.Namespace) -> int:
         f"review_assertions={summary['cases_passed_review_assertion']}/{summary['case_count']}"
     )
     print(f"benchmark report -> {out_root / 'report.json'}")
+    for stage in sorted(
+        summary["stage_ms_percentiles"],
+        key=lambda name: -(summary["stage_ms_mean"][name] or 0.0),
+    ):
+        values = summary["stage_ms_percentiles"][stage]
+        print(
+            f"[stage] {stage} mean={summary['stage_ms_mean'][stage]}ms "
+            f"p50={values['p50']}ms p95={values['p95']}ms"
+        )
     if env.owns_directory and not args.keep_workdir:
         shutil.rmtree(env.root, ignore_errors=True)
     else:

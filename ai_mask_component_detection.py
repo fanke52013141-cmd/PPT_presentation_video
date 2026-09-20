@@ -21,9 +21,10 @@ from ai_mask_contracts import (
 from ai_mask_object_graph import bind_atoms_to_boxes
 
 
-# Detection cache identity.  ``v4`` separates raw ink from the morphological
-# grouping assumption, so a v3 cache must never be reused for a v4 result.
-AUTO_ELEMENTS_VERSION = "auto_elements_v4_ink_separated"
+# Detection cache identity.  ``v4`` separated raw ink from the morphological
+# grouping assumption; ``v5`` stopped letting one layout box fuse the ink islands
+# inside it.  An older cache must never be reused for either new result.
+AUTO_ELEMENTS_VERSION = "auto_elements_v5_box_label_only"
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -386,11 +387,26 @@ def _finalize_binding_v2(
     settings: dict[str, Any],
     source_foreground: np.ndarray,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
-    """Regroup atomic components by scored layout candidate instead of by order."""
+    """Attach scored layout candidates to atomic components, order-independently.
+
+    A box is a region hypothesis, so by default it *labels* the ink islands it
+    owns instead of fusing them: on the measured fixtures a document model tends
+    to return one container box over the whole content area, and merging every
+    island under that box destroyed grouping that the semantic stage could still
+    have resolved.  ``layout_merge_bound_atoms`` restores the fusing behaviour.
+    """
     binding = bind_atoms_to_boxes(atoms, layout_boxes, settings)
     by_id = {str(atom["element_id"]): atom for atom in atoms}
+    # Which pixel-connected group each atom came from. Two atoms of one group are
+    # connected ink; two atoms of different groups only happen to share a box.
+    group_of_atom = {
+        str(atom["element_id"]): group_index
+        for group_index, group in enumerate(groups)
+        for atom in group["atoms"]
+    }
     padding = int(settings["component_padding_px"])
     min_element_area = int(settings["min_element_area"])
+    merge_bound = _bool(settings.get("layout_merge_bound_atoms"), False)
     merged: list[dict[str, Any]] = []
     consumed: set[str] = set()
     for box_group in binding["groups"]:
@@ -406,31 +422,46 @@ def _finalize_binding_v2(
             # Too little real content to be an element: leave the fragments to
             # their detection group instead of inventing one here.
             continue
-        merged.append(_build_element_from_atoms(
-            members,
-            ow,
-            oh,
-            padding,
-            source_foreground,
-            {
-                "detection_source": "doclayout",
-                "layout_role": box_group["role"],
-                "layout_class_id": box_group["class_id"],
-                "layout_confidence": box_group["confidence"],
-                "layout_member_count": len(members),
-                "atomic_component_ids": [member["element_id"] for member in members],
-                "layout_binding": {
-                    "method": binding["binding"]["method"],
-                    "box": box_group["box"],
-                    "ambiguous": bool(box_group["ambiguous_element_ids"]),
-                    "ambiguous_candidates": {
-                        element_id: binding["candidates_by_atom"].get(element_id, [])
-                        for element_id in box_group["ambiguous_element_ids"]
+        if merge_bound:
+            units: list[list[dict[str, Any]]] = [members]
+        else:
+            units_by_owner: dict[Any, list[dict[str, Any]]] = {}
+            for member in members:
+                units_by_owner.setdefault(
+                    group_of_atom.get(member["element_id"]), []
+                ).append(member)
+            units = list(units_by_owner.values())
+        for unit in units:
+            merged.append(_build_element_from_atoms(
+                unit,
+                ow,
+                oh,
+                padding,
+                source_foreground,
+                {
+                    "detection_source": "doclayout",
+                    "layout_role": box_group["role"],
+                    "layout_class_id": box_group["class_id"],
+                    "layout_confidence": box_group["confidence"],
+                    "layout_member_count": len(unit),
+                    "layout_box_atom_count": len(members),
+                    "atomic_component_ids": [member["element_id"] for member in unit],
+                    "layout_binding": {
+                        "method": binding["binding"]["method"],
+                        "box": box_group["box"],
+                        "merged": merge_bound,
+                        "box_atom_ids": (
+                            list(box_group["member_element_ids"]) if merge_bound else []
+                        ),
+                        "ambiguous": bool(box_group["ambiguous_element_ids"]),
+                        "ambiguous_candidates": {
+                            element_id: binding["candidates_by_atom"].get(element_id, [])
+                            for element_id in box_group["ambiguous_element_ids"]
+                        },
                     },
                 },
-            },
-        ))
-        consumed.update(member["element_id"] for member in members)
+            ))
+            consumed.update(member["element_id"] for member in unit)
 
     candidates: list[dict[str, Any]] = []
     residual: list[dict[str, Any]] = []
@@ -472,6 +503,7 @@ def _finalize_binding_v2(
         "atom_count": len(atoms),
         "bound_atom_count": len(consumed),
         "merged_element_count": len(merged),
+        "bound_atom_merge": merge_bound,
         "boxes_bound": len([g for g in binding["groups"] if g["member_element_ids"]]),
     })
     return candidates, residual, report
@@ -538,6 +570,7 @@ def detect_elements(
             "component_padding_px",
             "pixel_evidence_separation",
             "layout_binding_v2",
+            "layout_merge_bound_atoms",
         )
     }
     layout_fingerprint = _layout_fingerprint(layout_boxes)

@@ -218,12 +218,17 @@ def _fixture_contract_slide(fixture: FixtureCase) -> dict:
 
 
 def test_vision_payload_contains_no_answer_leakage(tmp_path: Path) -> None:
-    """The serialized model input must not contain ground-truth tokens or labels."""
+    """The serialized model input must not contain ground-truth tokens or labels.
+
+    This serializes through the production ``_batch_payload`` on purpose: the
+    request the model really receives is the thing under test, not a copy of its
+    keys kept in sync by hand.
+    """
     from ai_mask_component_detection import detect_elements
     from ai_mask_engine import normalize_settings
-    from ai_mask_semantic_matcher import _semantic_objects
+    from ai_mask_semantic_matcher import _batch_payload, _plan_object_batches, _semantic_objects
 
-    leak_cases = ("case_01_clean", "case_08_repeated", "case_11_sixteen")
+    leak_cases = ("case_01_clean", "case_08_repeated", "case_11_sixteen", "case_15_manyparts")
     settings = normalize_settings({})
     for case_id in leak_cases:
         fixture = case(case_id)
@@ -234,34 +239,55 @@ def test_vision_payload_contains_no_answer_leakage(tmp_path: Path) -> None:
             width, height = image.size
         objects = _semantic_objects(elements, width, height)
         slide = _fixture_contract_slide(fixture)
-        # Mirror SemanticVisionMatcher.__call__ payload keys exactly.
-        payload = {
-            "slide": {
-                key: slide.get(key)
-                for key in (
-                    "slide_id", "main_title", "subtitle", "core_message",
-                    "body_content", "visual_groups", "narration_beats",
-                )
-            },
-            "semantic_objects": [
-                {
-                    "object_id": obj.get("object_id"),
-                    "type": obj.get("type"),
-                    "element_count": obj.get("element_count"),
-                    "bbox": obj.get("bbox", {}),
-                    "center": obj.get("center", {}),
-                    "cluster_member_count": obj.get("cluster_member_count", 1),
-                }
-                for obj in objects
-            ],
-        }
-        blob = json.dumps(payload, ensure_ascii=False)
-        for group in truth["groups"]:
-            assert f'"label": {group["label"]}' not in blob
-            assert "ownership" not in blob and "ground_truth" not in blob
-            description = str(group.get("description") or "")
-            # Group descriptions are answer-side metadata; only the model-facing
-            # narration text may share words with them, never the full entry.
-            if description:
-                assert json.dumps(group, ensure_ascii=False) not in blob
-        assert "answer_overlay" not in blob
+        batches, beyond_budget = _plan_object_batches(objects, settings)
+        # Every detected element stays addressable: no truncation, no duplicates.
+        asked = [obj for batch in batches for obj in batch] + list(beyond_budget)
+        assert [obj["object_id"] for obj in asked] == [obj["object_id"] for obj in objects]
+        covered = {element_id for obj in asked for element_id in obj["element_ids"]}
+        assert covered == {element["element_id"] for element in elements}
+        assert len({obj["type"] for obj in objects}) >= 1
+        payloads = [
+            _batch_payload(slide, batch, index, len(batches), True)
+            for index, batch in enumerate(batches)
+        ]
+        assert payloads, "the case must produce at least one request"
+        for payload in payloads:
+            blob = json.dumps(payload, ensure_ascii=False)
+            for group in truth["groups"]:
+                assert f'"label": {group["label"]}' not in blob
+                assert "ownership" not in blob and "ground_truth" not in blob
+                description = str(group.get("description") or "")
+                # Group descriptions are answer-side metadata; only the model-facing
+                # narration text may share words with them, never the full entry.
+                if description:
+                    assert json.dumps(group, ensure_ascii=False) not in blob
+            assert "answer_overlay" not in blob
+
+
+def test_case_11_keeps_sixteen_independent_object_candidates(tmp_path: Path) -> None:
+    """W3 acceptance: a 16-group body must not be merged down to a request cap."""
+    from ai_mask_component_detection import detect_elements
+    from ai_mask_engine import normalize_settings
+    from ai_mask_semantic_matcher import _plan_object_batches, _semantic_objects
+
+    fixture = case("case_11_sixteen")
+    settings = normalize_settings({})
+    elements_payload = detect_elements(fixture.visual_draft, tmp_path / "case_11", settings, None)
+    with Image.open(fixture.visual_draft) as image:
+        width, height = image.size
+    objects = _semantic_objects(elements_payload["elements"], width, height)
+    truth = json.loads((fixture.folder / "ground_truth.json").read_text(encoding="utf-8"))
+    assert len(truth["groups"]) == 17, "one title plus sixteen body groups"
+    assert len(objects) >= len(truth["groups"]), (
+        "each narrated group needs its own candidate object to bind to"
+    )
+    batches, beyond_budget = _plan_object_batches(objects, settings)
+    assert len(batches) * settings["vision_object_batch_size"] + len(beyond_budget) >= len(objects)
+    assert all(len(batch) <= settings["vision_object_batch_size"] for batch in batches)
+
+    # Why the retired strategy had to go: merging to (beats + 3) clusters left
+    # fewer candidates than the slide has narrated groups.
+    from ai_mask_semantic_matcher import _spatial_cluster_objects
+
+    clustered = _spatial_cluster_objects(objects, max(1, min(12, len(truth["groups"]) + 3)))
+    assert len(clustered) < len(truth["groups"])

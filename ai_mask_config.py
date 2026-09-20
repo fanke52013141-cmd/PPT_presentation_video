@@ -12,6 +12,8 @@ from ai_mask_engine import (
     DEFAULT_SETTINGS,
     LEGACY_DEFAULT_METHODOLOGY_V2,
     LEGACY_DEFAULT_OUTPUT_STRUCTURE_V2,
+    LEGACY_METHODOLOGY_V3,
+    LEGACY_OUTPUT_STRUCTURE_V3,
     LEGACY_STORED_METHODOLOGY_V2,
     LEGACY_TITLE_RULE,
     PREVIOUS_TITLE_AND_ISLAND_RULES,
@@ -42,9 +44,15 @@ def read_ai_mask_prompts() -> tuple[str, str]:
     if methodology in {
         LEGACY_DEFAULT_METHODOLOGY_V2,
         LEGACY_STORED_METHODOLOGY_V2,
+        # v3 described cluster-merged objects; only a byte-identical built-in
+        # default migrates, an edited prompt is always left alone.
+        LEGACY_METHODOLOGY_V3,
     }:
         methodology = DEFAULT_METHODOLOGY
-    if output_structure == LEGACY_DEFAULT_OUTPUT_STRUCTURE_V2:
+    if output_structure in {
+        LEGACY_DEFAULT_OUTPUT_STRUCTURE_V2,
+        LEGACY_OUTPUT_STRUCTURE_V3,
+    }:
         output_structure = DEFAULT_OUTPUT_STRUCTURE
     for old_rule in (
         LEGACY_TITLE_RULE,

@@ -440,7 +440,7 @@ def test_closing_bridge_pixels_never_enter_a_saved_mask() -> None:
         image_path = _two_card_image(slide_dir)
         detected = mask.detect_elements(image_path, slide_dir, detection_settings)
 
-        assert detected["version"] == "auto_elements_v4_ink_separated"
+        assert detected["version"] == "auto_elements_v5_box_label_only"
         assert detected["pixel_evidence_separation"] is True
         assert detected["elements"], "the bridged pair must still be detected"
         assert len(detected["elements"]) == 1
@@ -518,7 +518,7 @@ def test_layout_boxes_split_a_bridged_pair_without_reading_box_order() -> None:
 
 
 def test_one_layout_box_never_solidifies_the_white_gap_between_its_atoms() -> None:
-    """Large-panel scanline solidify is an interior repair, not a cross-atom bridge."""
+    """A container box labels independent panels; it never fuses their Masks."""
     detection_settings = mask.normalize_settings({
         "min_element_area": 10,
         "component_padding_px": 0,
@@ -537,16 +537,70 @@ def test_one_layout_box_never_solidifies_the_white_gap_between_its_atoms() -> No
         detected = mask.detect_elements(
             image_path, slide_dir, detection_settings, layout_boxes=boxes
         )
-        assert len(detected["elements"]) == 1
-        element = detected["elements"][0]
         ink = 300 * 400 * 2
-        assert element["source_ink_pixel_count"] == ink
-        assert element["mask_pixel_count"] == ink, (
+        assert [element["atomic_component_ids"] for element in detected["elements"]] == [
+            ["el_atom_0001"], ["el_atom_0002"],
+        ]
+        assert sum(int(element["source_ink_pixel_count"]) for element in detected["elements"]) == ink
+        assert sum(int(element["mask_pixel_count"]) for element in detected["elements"]) == ink, (
             "the union bbox is dense enough for solidify; the gap must stay unmasked"
         )
+        assert detected["layout_binding"]["bound_atom_merge"] is False
+        assert detected["layout_binding"]["merged_element_count"] == 2
+        for element in detected["elements"]:
+            for run in element["mask_rle"]["runs"]:
+                assert not (run[1] < 400 and run[2] > 699), run
+        # Both panels still report the one box that covers them, so the region
+        # label survives without the box becoming a segmentation boundary.
+        assert {element["layout_role"] for element in detected["elements"]} == {"figure"}
+        assert {
+            int(element["layout_box_atom_count"]) for element in detected["elements"]
+        } == {2}
+
+        # Rollback switch: fusing the box's atoms reproduces the single dense
+        # element, and its scanlines must still stop at the white gap.
+        fused_settings = mask.normalize_settings({
+            "min_element_area": 10,
+            "component_padding_px": 0,
+            "layout_merge_bound_atoms": True,
+        })
+        fused = mask.detect_elements(
+            image_path, slide_dir / "fused", fused_settings, layout_boxes=boxes
+        )
+        assert fused["cache_hit"] is False
+        assert len(fused["elements"]) == 1
+        assert fused["elements"][0]["atomic_component_ids"] == ["el_atom_0001", "el_atom_0002"]
+        assert fused["elements"][0]["mask_pixel_count"] == ink
+        assert fused["layout_binding"]["bound_atom_merge"] is True
+
+
+def test_connected_atoms_keep_sharing_one_mask_under_a_single_box() -> None:
+    """Grouping comes from connected ink: one closing group stays one element."""
+    detection_settings = mask.normalize_settings({
+        "min_element_area": 10,
+        "component_padding_px": 0,
+    })
+    with tempfile.TemporaryDirectory() as temp_dir:
+        slide_dir = Path(temp_dir) / "slide_001"
+        image_path = _two_card_image(slide_dir)
+        detected = mask.detect_elements(
+            image_path,
+            slide_dir,
+            detection_settings,
+            layout_boxes=[_layout_box(15, 25, 195, 100)],
+        )
+        assert len(detected["elements"]) == 1
+        element = detected["elements"][0]
         assert element["atomic_component_ids"] == ["el_atom_0001", "el_atom_0002"]
-        for run in element["mask_rle"]["runs"]:
-            assert not (run[1] < 400 and run[2] > 699), run
+        # The bridged gap stays pixel-hypothesis only, exactly as without boxes.
+        assert element["source_ink_pixel_count"] == 91 * 91 + 87 * 91
+        assert element["mask_pixel_count"] == 91 * 91 + 87 * 91
+        without_boxes = mask.detect_elements(
+            image_path, slide_dir / "off", detection_settings
+        )
+        assert element["mask_rle"]["runs"] == without_boxes["elements"][0]["mask_rle"]["runs"], (
+            "a region label must not change a single-group Mask by one pixel"
+        )
 
 
 def test_detection_cache_follows_image_settings_and_algorithm_version() -> None:

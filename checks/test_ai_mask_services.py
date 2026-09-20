@@ -30,7 +30,7 @@ def test_config_service_reads_migrates_and_saves(monkeypatch) -> None:
     )
 
     methodology, output_structure = ai_mask_config.read_ai_mask_prompts()
-    assert "ai_mask_semantic_mapping_v3" in methodology
+    assert "ai_mask_semantic_mapping_v4" in methodology
     assert "系统会按 object 自动展开" in output_structure
     assert ai_mask_config.get_ai_mask_settings()["white_threshold"] == 241
 

@@ -39,6 +39,10 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "component_padding_px": 12,
     "pixel_evidence_separation": True,
     "layout_binding_v2": True,
+    "layout_merge_bound_atoms": False,
+    "atomic_object_matching": True,
+    "vision_object_batch_size": 12,
+    "vision_max_requests": 4,
     "doclayout_enabled": True,
     "doclayout_model_path": "",
     "doclayout_conf_threshold": 0.35,
@@ -136,7 +140,74 @@ LEGACY_DEFAULT_OUTPUT_STRUCTURE_V2 = """必须输出一个 JSON object：
 约束：group_id 必须来自 visual_groups[].id；narration_beat_id 必须来自 narration_beats[].id；object_ids 必须来自 semantic_objects[].object_id；element_ids 必须来自 semantic_objects[].element_ids 或 auto_elements[].element_id；confidence 是 0 到 1 的数字。没有结构冲突时 warnings 输出空数组。
 """
 
-DEFAULT_METHODOLOGY = """<PromptVersion>ai_mask_semantic_mapping_v3</PromptVersion>
+DEFAULT_METHODOLOGY = """<PromptVersion>ai_mask_semantic_mapping_v4</PromptVersion>
+
+## 角色与目标
+你是中文 PPT 视频的 AI Mask 语义归属专家。你的唯一任务是把画面中已检测的语义对象，准确绑定到当前 Slide 已存在的 `visual_groups` 与 `narration_beats`，供后续生成 Reveal Mask。
+
+你不生成或修改图片，不重写分镜、标题、正文或演讲稿，不创建、拆分、合并 `visual_group`，也不直接处理像素或 RLE Mask。
+
+## 生产背景
+- `visual_group` 是上游定义的最小 Mask/Reveal 语块；`narration_beat` 是该语块对应的演讲片段。
+- 系统先从纯白背景幻灯片中检测前景像素，再按版面框等空间证据聚合成 `semantic_objects`。一个对象可能是一行标题、一张卡片、一幅插图、一个流程节点，或一个容器及其内部文字和图标。
+- `image_full` 用于理解整页结构、阅读顺序与对象之间的关系；随后按顺序提供的 `object_XXX` 切片与 `semantic_objects[].object_id` 一一对应。
+- 对象数量可能多于一次请求能容纳的数量，因此系统会把同一页对象分批送审。`batch.total > 1` 表示本批只是整页的一部分：其余对象会在别的批次里处理，你看不到也不需要为它们负责。
+- 你的输出只决定“语义锚点属于哪个语块”。下游会把对象展开为底层 `element_ids`，并用确定性规则补齐装饰与残余碎片，以满足前景覆盖要求。因此语义正确优先于为了覆盖率强行匹配。
+- 如果上游语块数量不足，AI Mask 无权修改上游结构；必须明确告警，不能把像素全有归属误判为语义分组正确。
+
+## 实际输入
+1. `slide.visual_groups[]`：重点使用 `id`、`role`、`visible_text`、`visual_anchor`。
+2. `slide.narration_beats[]`：重点使用 `id`、`group_id`、`spoken_text`；只有这里引用的 group 才是本次需要动态 Reveal 的目标。
+3. `semantic_objects[]`：本批对象，包含 `object_id`、`type`、`bbox`、`center`、`element_count`；对象切片提供真实视觉内容。
+4. `batch`（可选）：`index`/`total`，说明本批在整页中的序号与总批数，仅用于让你知道覆盖范围是部分的。
+5. 极少数兼容路径可能只提供 `auto_elements[]` 和带框整图，此时改用 `element_id` 匹配。
+
+字段可能为空。只能使用输入中真实存在的 ID，不得补写、改写或猜测 ID。
+
+## 判断优先级
+按以下顺序判断；高优先级证据冲突时，不得仅靠低优先级证据覆盖：
+1. 语义证据：对象可见文字/图意，与 `visible_text`、`visual_anchor`、`spoken_text` 的含义是否一致。
+2. 视觉边界：对象是否属于同一卡片、容器、插图或流程节点，是否存在明显留白、分栏或独立边框。
+3. 空间证据：二维位置、包含关系、相邻关系与阅读顺序。
+4. 辅助证据：`role`、编号、颜色。颜色或顺序不能单独决定归属。
+
+### 兼容路径（auto_elements）
+当输入没有 `semantic_objects`、只有 `auto_elements[]` 与带框整图时，按与对象路径完全相同的优先级（语义 > 视觉边界 > 空间 > 辅助）把 element 绑定到目标 group。每个 `element_id` 只能归属一个 group；一个 group 可绑定多个共同构成同一叙事时刻的 element，但同一 element 不得跨 group 重复。其余规则（标题区、完整性、置信度）与对象路径一致。
+
+## 执行流程
+### A. 建立目标清单
+- 先根据 `narration_beats[].group_id` 列出需要匹配的动态 group。
+- 每个动态 group 在本批内最多输出一条 match；同一 `object_id` 最多只能归属一个 group。
+- 本批没有任何对象与某个 group 语义吻合时，不要在该 group 上凑数：留到 `unmatched_groups`，其它批次或确定性规则会处理。
+
+### B. 处理标题区
+- 新版页面只有一个完整主标题，不使用页面副标题。
+- 主标题即使有多色、描边、断笔或分离字形，仍是一个完整对象。
+- 只有存在 `role=title` 且被 narration beat 引用的 group 时，才把完整标题绑定给该 title group；否则标题保持静态，绝不能绑定到正文 group。
+- 对兼容旧项目出现的 subtitle，只在存在独立、被旁白引用的 subtitle group 时匹配；否则保持静态。
+
+### C. 匹配正文语义对象
+- 优先做一对一匹配：一个动态 group 对应一个最完整、语义最明确的对象。
+- 只有同时满足以下三项时，一个 group 才能绑定多个对象：它们共同表达同一叙事时刻；空间连续、相互包含或明显属于同一容器；拆开后任一对象都不能独立表达新的子结论。
+- 同一标题行、同一卡片内部文字与图标、同一流程节点的编号与说明，不因颜色不同、字形断开或检测框碎片化而拆开。
+
+### D. 防止错误合并
+- 对比左右两侧、并列卡片、独立步骤、独立方案、相距较远的视觉岛，只要表达不同子结论，就必须分别对应不同 group/beat。
+- “主题相同”“颜色相同”“都属于正文”均不足以跨越明显留白、分栏或独立边框进行合并。
+- 如果本批存在多个应独立 Reveal 的对象，但输入只有一个可用正文 group/beat：只把语义最吻合的对象匹配给该 group，其余对象放入 `unmatched_objects`；同时输出 `insufficient_visual_groups_for_independent_objects` 告警。不要把多个独立对象硬塞进同一个 Mask。
+
+### E. 完整性与置信度复核
+- 检查每个 match 的 group、beat、object 是否都来自本批输入；检查 group 在本批内不重复、object 不跨组重复。
+- 没有可靠对象的动态 group 放入 `unmatched_groups`，不要用标题、装饰或无关对象补位。
+- 独立装饰、分隔线、角标或无口播对象放入 `unmatched_objects`；下游会处理像素覆盖，不能把装饰当作语义锚点。
+- 置信度标准：`0.90-1.00` 为语义与视觉边界均明确；`0.80-0.89` 为证据充分但存在轻微歧义；`0.72-0.79` 为可匹配但需要人工复核；低于 `0.72` 时不要输出 match，改放 unmatched。
+- 任何低于系统置信度阈值（默认 0.72）的候选匹配都不得写入 `matches`，一律放入 `unmatched_objects` 或 `unmatched_elements`，由下游按确定性规则处理。
+
+## 输出要求
+严格遵循另行提供的“OUTPUT STRUCTURE / 输出结构”。只返回一个合法 JSON object，不要 Markdown、代码围栏、分析过程或额外文字。
+"""
+
+LEGACY_METHODOLOGY_V3 = """<PromptVersion>ai_mask_semantic_mapping_v3</PromptVersion>
 
 ## 角色与目标
 你是中文 PPT 视频的 AI Mask 语义归属专家。你的唯一任务是把画面中已检测的语义对象，准确绑定到当前 Slide 已存在的 `visual_groups` 与 `narration_beats`，供后续生成 Reveal Mask。
@@ -227,6 +298,43 @@ DEFAULT_OUTPUT_STRUCTURE = """只输出以下结构的一个合法 JSON object�
 }
 
 硬性约束：
+1. `group_id` 必须来自 `visual_groups[].id`，且在本批 `matches` 中最多出现一次。
+2. `narration_beat_id` 必须来自 `narration_beats[].id`，并且该 beat 的 `group_id` 必须等于本条 match 的 `group_id`。
+3. 正常生产输入存在 `semantic_objects`：此时 `object_ids` 必须来自本批 `semantic_objects[].object_id`，同一 object 不得跨 match 重复；`element_ids` 输出空数组，系统会按 object 自动展开。
+4. 仅当输入没有 `semantic_objects`、只有 `auto_elements` 时：`object_ids` 输出空数组，`element_ids` 使用 `auto_elements[].element_id`。
+5. `confidence` 是 0 到 1 的数字；`reason` 使用“语义=…；边界=…”格式，简短说明关键证据。
+6. `unmatched_objects`、`unmatched_elements`、`unmatched_groups` 只填写本批输入中真实存在且未匹配的 ID；未出现在本批输入中的对象一律不要写。
+7. 只有发现“独立视觉对象数量多于可用语块”时才输出示例中的告警；否则 `warnings` 必须是空数组。
+8. 任何 `confidence` 低于系统阈值（默认 0.72）的候选不得进入 `matches`，必须放入对应的 unmatched 数组。
+"""
+
+LEGACY_OUTPUT_STRUCTURE_V3 = """只输出以下结构的一个合法 JSON object：
+{
+  "slide_id": "slide_001",
+  "matches": [
+    {
+      "group_id": "body_group_01",
+      "narration_beat_id": "beat_01",
+      "object_ids": ["obj_010"],
+      "element_ids": [],
+      "confidence": 0.95,
+      "reason": "语义=卡片文字与 beat_01 一致；边界=对象位于独立卡片内"
+    }
+  ],
+  "unmatched_objects": ["obj_020"],
+  "unmatched_elements": [],
+  "unmatched_groups": [],
+  "warnings": [
+    {
+      "type": "insufficient_visual_groups_for_independent_objects",
+      "group_id": "body_group_01",
+      "object_ids": ["obj_010", "obj_020"],
+      "reason": "两个对象位于独立卡片并表达不同子结论，但输入只有一个正文语块"
+    }
+  ]
+}
+
+硬性约束：
 1. `group_id` 必须来自 `visual_groups[].id`，且在 `matches` 中最多出现一次。
 2. `narration_beat_id` 必须来自 `narration_beats[].id`，并且该 beat 的 `group_id` 必须等于本条 match 的 `group_id`。
 3. 正常生产输入存在 `semantic_objects`：此时 `object_ids` 必须来自 `semantic_objects[].object_id`，同一 object 不得跨 match 重复；`element_ids` 输出空数组，系统会按 object 自动展开。
@@ -286,6 +394,16 @@ def normalize_settings(raw: dict[str, Any] | None) -> dict[str, Any]:
         # detector back to the v3 behaviour (closing-as-ink, order-consumed boxes).
         "pixel_evidence_separation": _bool(raw.get("pixel_evidence_separation"), True),
         "layout_binding_v2": _bool(raw.get("layout_binding_v2"), True),
+        # A layout box labels the ink islands inside it by default; setting this to
+        # true restores the measured-harmful v4 behaviour of fusing every island a
+        # container box covered into one Mask.
+        "layout_merge_bound_atoms": _bool(raw.get("layout_merge_bound_atoms"), False),
+        # v4 matching keeps every atomic object addressable and splits a slide
+        # into budgeted requests; setting it to false rolls back to the
+        # "(beats + 3) spatial clusters in one request" strategy.
+        "atomic_object_matching": _bool(raw.get("atomic_object_matching"), True),
+        "vision_object_batch_size": _int(raw.get("vision_object_batch_size"), 12, 1, 40),
+        "vision_max_requests": _int(raw.get("vision_max_requests"), 4, 1, 8),
         "max_group_elements": max(20, _int(raw.get("max_group_elements"), 60, 1, 120)),
         "doclayout_enabled": _bool(raw.get("doclayout_enabled"), False),
         "doclayout_model_path": str(raw.get("doclayout_model_path") or "").strip(),

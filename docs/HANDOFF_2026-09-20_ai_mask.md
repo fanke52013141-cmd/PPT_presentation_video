@@ -14,9 +14,11 @@
 | `595b23b` | W0–W2 | 基准隔离运行器、阶段计时与显式降级原因、像素事实与分组假设分离、版面框候选绑定 |
 | `be3a020` | W3 | 原子对象分批匹配；取消版面框对独立墨岛的强制融合 |
 | `28bdb7a` | W4 | 归属证据分层（model/rule/completion/manual）+ 像素/语义双门禁 |
-| 本次 | W5 | DocLayout 会话进程内复用、`doclayout_device_mode`、GPU 验证与熔断、版面框缓存、P50/P95 阶段报表 |
+| `afd98ef` | W5 | DocLayout 会话进程内复用、`doclayout_device_mode`、GPU 验证与熔断、版面框缓存、P50/P95 阶段报表 |
 
 W5 主要文件：`ai_mask_doclayout.py`（会话/设备/缓存）、`ai_mask_engine.py`（设置项与 `_detect_layout` 接线）、`ai_mask_service.py`（降级日志带真实设备）、`checks/ai_mask_benchmark/runner.py`（阶段百分位）、`checks/test_ai_mask_doclayout_devices.py`（新增 14 个 mock 用例）。
+
+`595b23b`、`be3a020`、`28bdb7a`、`afd98ef` 已推送到 `origin/main`（远程 `https://github.com/fanke52013141-cmd/PPT_presentation_video.git` 的 `main` 分支）。推送前在 `afd98ef` 上执行过的验证：AGENTS.md 全量 `compileall`、`node --check static/workflow_state.js`、`node --check static/flow.js`、`node checks/test_visible_flow.js`、`node checks/test_ai_mask_auto_state.js`、`pytest checks/test_database_migrations.py checks/test_invalidation_service.py checks/test_source_runtime_safeguards.py checks/agent/ -q`（440 例）、`python scripts/generate_agent_contracts.py --check`、`checks/test_reveal_mask_integrity.py`、`checks/test_reveal_pipeline_isolation.py`、`checks/test_slide_visual_invalidation.py`、`checks/test_audio_confirmation.py`、`checks/test_audio_tail_padding.py`、AI Mask 十套（116 例）、`scripts/remotion` 下 `npx tsc --noEmit -p tsconfig.json`。**未执行**：浏览器端六步走查与真实 MP4 渲染（本轮不允许起服务）、真实 CUDA 推理验收（本机无 CUDA Provider）。
 
 ## 2. 环境事实（后续验证前必须先核对，很多结论依赖它）
 

@@ -113,6 +113,30 @@ def _degradation_events(slide: dict[str, Any]) -> list[tuple[str, dict[str, Any]
             "status": str(slide.get("vision_status")),
             "reason": str(slide.get("vision_error_type") or ""),
         }))
+    # Ownership evidence is a third, independent kind of degradation: the pixels
+    # can be complete and the model can have answered, yet whole groups may only
+    # exist because a rule or the coverage closer put them there.
+    semantic = slide.get("semantic_quality")
+    semantic = semantic if isinstance(semantic, dict) else {}
+    quality = slide.get("quality")
+    quality = quality if isinstance(quality, dict) else {}
+    unconfirmed_group_ids = [
+        str(value) for value in semantic.get("unconfirmed_group_ids", []) or [] if str(value)
+    ] if semantic.get("model_participated") else []
+    forced_large_count = sum(
+        1
+        for warning in semantic.get("warnings", []) or []
+        if isinstance(warning, dict) and warning.get("type") == "forced_large_component_completed"
+    )
+    if unconfirmed_group_ids or forced_large_count:
+        events.append(("ai_mask_semantic_risk", {
+            "unconfirmed_group_count": len(unconfirmed_group_ids),
+            "unconfirmed_group_ids": unconfirmed_group_ids[:20],
+            "forced_large_component_count": forced_large_count,
+            "confirmed_group_count": int(semantic.get("confirmed_group_count") or 0),
+            "narration_contract_passed": bool(semantic.get("narration_contract_passed")),
+            "pixel_contract_passed": bool(quality.get("pixel_contract_passed")),
+        }))
     return events
 
 

@@ -41,6 +41,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "layout_binding_v2": True,
     "layout_merge_bound_atoms": False,
     "atomic_object_matching": True,
+    "provenance_review_routing": True,
     "vision_object_batch_size": 12,
     "vision_max_requests": 4,
     "doclayout_enabled": True,
@@ -402,6 +403,11 @@ def normalize_settings(raw: dict[str, Any] | None) -> dict[str, Any]:
         # into budgeted requests; setting it to false rolls back to the
         # "(beats + 3) spatial clusters in one request" strategy.
         "atomic_object_matching": _bool(raw.get("atomic_object_matching"), True),
+        # Rollback for the W4 review routing: with this off, a group is sent to
+        # review by its confidence number only (the pre-provenance behaviour).
+        # The provenance record and its warnings are still written either way,
+        # so turning the routing off never turns the diagnostics off.
+        "provenance_review_routing": _bool(raw.get("provenance_review_routing"), True),
         "vision_object_batch_size": _int(raw.get("vision_object_batch_size"), 12, 1, 40),
         "vision_max_requests": _int(raw.get("vision_max_requests"), 4, 1, 8),
         "max_group_elements": max(20, _int(raw.get("max_group_elements"), 60, 1, 120)),

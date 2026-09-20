@@ -7,8 +7,24 @@ from typing import Any
 import numpy as np
 
 from ai_mask_component_detection import _merge_row_runs, _rle_pixel_count
-from ai_mask_contracts import AI_MASK_MIN_FOREGROUND_COVERAGE
+from ai_mask_contracts import (
+    AI_MASK_MIN_FOREGROUND_COVERAGE,
+    ASSIGNMENT_SOURCE_COMPLETION,
+    ASSIGNMENT_SOURCE_MODEL,
+    ASSIGNMENT_SOURCE_RULE,
+    ASSIGNMENT_SOURCES,
+)
 from scripts.visual_group_semantics import visual_group_atomicity_issues
+
+
+# A group whose ownership the model never confirmed is only a risk when the
+# narration contract expected a model decision there.  Title and subtitle bands
+# are owned by geometry on purpose, so they stay out of the review queue.
+_MODEL_DECIDED_ROLES_EXCLUDED = frozenset({"title", "subtitle"})
+# One forced component this large inside a group is a decision a human should
+# see, because coverage was closed with a real content island, not an
+# antialiasing fragment.
+LARGE_FORCED_COMPONENT_AREA_RATIO = 0.2
 
 
 def _int(value: Any, default: int, lo: int, hi: int) -> int:
@@ -56,6 +72,26 @@ def _manifest_group_for_visual_id(manifest_slide: dict[str, Any], group_id: str)
             if group_id in identifiers:
                 return group
     return None
+
+
+def _declared_origin(item: dict[str, Any]) -> str:
+    declared = str(item.get("assignment_source") or "")
+    if declared not in ASSIGNMENT_SOURCES:
+        # An unstamped payload is never assumed to be a model decision: the
+        # provenance layer defaults to the weakest claim.
+        return ASSIGNMENT_SOURCE_RULE
+    return declared
+
+
+def _element_origins(item: dict[str, Any], element_ids: list[str], default: str) -> dict[str, str]:
+    """Read one match's per-component provenance, defaulting to the weakest claim."""
+    declared = _declared_origin(item) if item.get("assignment_source") else default
+    stored = item.get("element_origins") if isinstance(item.get("element_origins"), dict) else {}
+    origins: dict[str, str] = {}
+    for element_id in element_ids:
+        value = str(stored.get(element_id) or declared)
+        origins[element_id] = value if value in ASSIGNMENT_SOURCES else declared
+    return origins
 
 
 def _fallback_match(
@@ -109,6 +145,7 @@ def _fallback_match(
             "group_id": gid,
             "narration_beat_id": beat_by_group.get(gid, ""),
             "element_ids": selected,
+            "assignment_source": ASSIGNMENT_SOURCE_RULE,
             "confidence": 0.86 if prior_box else 0.74,
             "reason": "deterministic prior-box match" if prior_box else "deterministic reading-order match",
         })
@@ -127,7 +164,15 @@ def _merge_match_results(primary: Any, fallback: dict[str, Any]) -> dict[str, An
     if not isinstance(primary, dict):
         return fallback
     result = dict(primary)
-    matches = [item for item in result.get("matches", []) or [] if isinstance(item, dict)]
+    matches: list[dict[str, Any]] = []
+    for item in result.get("matches", []) or []:
+        if not isinstance(item, dict):
+            continue
+        # The multimodal answer is the only source that may claim semantic
+        # confirmation, so it is stamped before anything else sees this payload.
+        stamped = dict(item)
+        stamped.setdefault("assignment_source", ASSIGNMENT_SOURCE_MODEL)
+        matches.append(stamped)
     primary_groups = {str(item.get("group_id") or "") for item in matches}
     used_elements = {str(eid) for item in matches for eid in (item.get("element_ids") or [])}
     for item in fallback.get("matches", []) or []:
@@ -139,6 +184,7 @@ def _merge_match_results(primary: Any, fallback: dict[str, Any]) -> dict[str, An
             continue
         merged = dict(item)
         merged["element_ids"] = candidate_ids
+        merged["assignment_source"] = ASSIGNMENT_SOURCE_RULE
         matches.append(merged)
         used_elements.update(candidate_ids)
     result["matches"] = matches
@@ -189,10 +235,11 @@ def _clean_match(
         except Exception:
             conf = 0
         object_ids = [str(value) for value in item.get("object_ids", []) or [] if str(value)]
-        matches.append({"group_id": gid, "narration_beat_id": bid, "object_ids": object_ids, "expanded_from_object_ids": object_ids, "element_ids": eids, "seed_element_ids": list(eids), "confidence": conf, "reason": str(item.get("reason") or ""), "below_threshold": conf < float(settings["llm_confidence_threshold"])})
+        declared = _declared_origin(item)
+        matches.append({"group_id": gid, "narration_beat_id": bid, "object_ids": object_ids, "expanded_from_object_ids": object_ids, "element_ids": eids, "seed_element_ids": list(eids), "assignment_source": declared, "element_origins": {element_id: declared for element_id in eids}, "confidence": conf, "reason": str(item.get("reason") or ""), "below_threshold": conf < float(settings["llm_confidence_threshold"])})
         used.update(eids)
     matched_groups = {str(item.get("group_id") or "") for item in matches}
-    return {
+    payload = {
         "slide_id": slide.get("slide_id"),
         "matches": matches,
         "unmatched_elements": sorted(known_elements - used),
@@ -200,6 +247,12 @@ def _clean_match(
         "warnings": result.get("warnings", []) if isinstance(result.get("warnings"), list) else [],
         "matching_method": result.get("matching_method") or fallback.get("matching_method") or "unknown",
     }
+    # The batching record has to survive cleanup: "budget exhausted" and "a
+    # later batch failed" are review facts, and dropping them here would hide
+    # exactly the objects a human must look at.
+    if isinstance(result.get("vision_batches"), dict):
+        payload["vision_batches"] = dict(result["vision_batches"])
+    return payload
 
 
 def _box_center(box: dict[str, Any]) -> tuple[float, float]:
@@ -367,11 +420,17 @@ def _consolidate_title_regions(
         if not isinstance(original, dict):
             continue
         item = dict(original)
-        item["element_ids"] = [
+        kept_ids = [
             str(element_id)
             for element_id in item.get("element_ids", []) or []
             if str(element_id) and str(element_id) not in header_ids
         ]
+        item["element_ids"] = kept_ids
+        stored_origins = item.get("element_origins") if isinstance(item.get("element_origins"), dict) else {}
+        item["element_origins"] = {
+            element_id: str(stored_origins.get(element_id) or _declared_origin(item))
+            for element_id in kept_ids
+        }
         matches.append(item)
 
     matches_by_group = {str(item.get("group_id") or ""): item for item in matches}
@@ -384,6 +443,8 @@ def _consolidate_title_regions(
                 "group_id": target_group,
                 "narration_beat_id": str(beat.get("id") or ""),
                 "element_ids": [],
+                "element_origins": {},
+                "assignment_source": ASSIGNMENT_SOURCE_RULE,
                 "confidence": 1.0,
                 "reason": "title_region_geometry",
             }
@@ -391,6 +452,12 @@ def _consolidate_title_regions(
             matches_by_group[target_group] = item
         existing_ids = [] if group_roles.get(target_group) in {"title", "subtitle"} else item.get("element_ids", [])
         item["element_ids"] = list(dict.fromkeys([*existing_ids, *owned_ids]))
+        # The header band is a contract rule, not a model decision, so the ids it
+        # places keep their weaker provenance even though the group is accepted.
+        origins = item.get("element_origins") if isinstance(item.get("element_origins"), dict) else {}
+        for element_id in owned_ids:
+            origins.setdefault(str(element_id), ASSIGNMENT_SOURCE_RULE)
+        item["element_origins"] = origins
         item["below_threshold"] = False
 
     forced_owners = {
@@ -492,10 +559,15 @@ def _ensure_narrated_group_anchors(
         claimed_seed_ids.add(seed_id)
         for item in matches:
             item["element_ids"] = [str(element_id) for element_id in item.get("element_ids", []) or [] if str(element_id) != seed_id]
+            origins = item.get("element_origins") if isinstance(item.get("element_origins"), dict) else None
+            if origins is not None:
+                origins.pop(seed_id, None)
         seeded = {
             "group_id": group_id,
             "narration_beat_id": beat_by_group.get(group_id, ""),
             "element_ids": [seed_id],
+            "element_origins": {seed_id: ASSIGNMENT_SOURCE_RULE},
+            "assignment_source": ASSIGNMENT_SOURCE_RULE,
             "confidence": 0.82,
             "reason": "deterministic prominent visual-island anchor",
             "below_threshold": False,
@@ -515,6 +587,103 @@ def _ensure_narrated_group_anchors(
     return result
 
 
+def _finalize_ownership_provenance(
+    accepted: list[dict[str, Any]],
+    by_id: dict[str, dict[str, Any]],
+    group_roles: dict[str, str],
+    model_participated: bool,
+) -> dict[str, Any]:
+    """Freeze per-group ownership evidence and prove coverage bought no confidence.
+
+    Coverage completion can hand a component an owner; it can never make that
+    ownership semantically certain.  Each group therefore reports which source
+    decided every one of its components, keeps the confidence it had before the
+    completion passes (any later inflation is clamped back), and is listed as
+    unconfirmed when the multimodal model never claimed any of its pixels.
+    """
+    groups: list[dict[str, Any]] = []
+    unconfirmed_group_ids: list[str] = []
+    large_forced_components: list[dict[str, Any]] = []
+    for item in accepted:
+        group_id = str(item.get("group_id") or "")
+        element_ids = [str(value) for value in item.get("element_ids", []) or [] if str(value) in by_id]
+        origins = _element_origins(item, element_ids, ASSIGNMENT_SOURCE_MODEL)
+        item["element_origins"] = origins
+        areas = {element_id: max(0, int(by_id[element_id].get("area", 0))) for element_id in element_ids}
+        total_area = sum(areas.values())
+        model_ids = [element_id for element_id in element_ids if origins[element_id] == ASSIGNMENT_SOURCE_MODEL]
+        rule_ids = [element_id for element_id in element_ids if origins[element_id] == ASSIGNMENT_SOURCE_RULE]
+        completion_ids = [
+            element_id for element_id in element_ids
+            if origins[element_id] == ASSIGNMENT_SOURCE_COMPLETION
+        ]
+        # Snapshot-first: the completion passes above never rewrite confidence, and
+        # this guard keeps it that way for any future closer.
+        before = _float(item.get("confidence_before_completion"), -1.0, -1.0, 1.0)
+        if before < 0:
+            before = _float(item.get("confidence"), 0.0, 0.0, 1.0)
+        confidence = _float(item.get("confidence"), 0.0, 0.0, 1.0)
+        if confidence > before:
+            item["confidence"] = before
+            item["confidence_capped"] = True
+            confidence = before
+        item["confidence_before_completion"] = before
+        distinct_sources = set(origins.values())
+        item["assignment_source"] = (
+            next(iter(distinct_sources))
+            if len(distinct_sources) == 1 and distinct_sources
+            else "mixed"
+        )
+        item["model_element_count"] = len(model_ids)
+        item["completion_element_count"] = len(completion_ids)
+        item["semantically_confirmed"] = bool(model_ids) and len(model_ids) == len(element_ids) and not item.get("below_threshold")
+        model_area = sum(areas[element_id] for element_id in model_ids)
+        record = {
+            "group_id": group_id,
+            "role": group_roles.get(group_id, ""),
+            "assignment_source": item["assignment_source"],
+            "element_count": len(element_ids),
+            "model_element_count": len(model_ids),
+            "rule_element_count": len(rule_ids),
+            "completion_element_count": len(completion_ids),
+            "model_ownership_ratio": round(model_area / total_area, 4) if total_area else 0.0,
+            "semantically_confirmed": item["semantically_confirmed"],
+            "confidence": round(confidence, 4),
+            "confidence_capped": bool(item.get("confidence_capped")),
+        }
+        groups.append(record)
+        # Title and subtitle bands are owned by the narration contract's geometry
+        # on purpose; only a body group without a single model claim is a real
+        # ambiguity, because that group's whole story-to-pixel link is a guess.
+        if (
+            element_ids
+            and not model_ids
+            and record["role"] not in _MODEL_DECIDED_ROLES_EXCLUDED
+        ):
+            unconfirmed_group_ids.append(group_id)
+        for element_id in completion_ids:
+            ratio = areas[element_id] / total_area if total_area else 0.0
+            if ratio >= LARGE_FORCED_COMPONENT_AREA_RATIO:
+                large_forced_components.append({
+                    "group_id": group_id,
+                    "element_id": element_id,
+                    "component_area": areas[element_id],
+                    "group_area_ratio": round(ratio, 4),
+                })
+    return {
+        "version": "ai_mask_assignment_provenance_v1",
+        "groups": groups,
+        "unconfirmed_group_ids": unconfirmed_group_ids,
+        # Whether a multimodal answer contributed to this page at all.  The
+        # evidence above is always recorded; this says whether an unconfirmed
+        # group is something a person can act on, or simply the expected shape
+        # of a page that ran on rules because no model answered.
+        "model_participated": bool(model_participated),
+        "large_forced_components": large_forced_components,
+        "confidence_policy": "completion_never_raises_semantic_confidence",
+    }
+
+
 def _complete_component_coverage(
     match_payload: dict[str, Any],
     elements_payload: dict[str, Any],
@@ -526,6 +695,9 @@ def _complete_component_coverage(
     decorative, and tiny antialiased components are attached to the closest
     anchor by reading-row proximity. Anchor boxes are frozen before completion
     so a large decoration cannot pull later components into the wrong group.
+
+    Ownership is recorded per component as a model claim, a deterministic rule,
+    or coverage completion, and completion never raises a group's confidence.
     """
     candidates = [e for e in elements_payload.get("elements", []) or [] if isinstance(e, dict)]
     residual = [e for e in elements_payload.get("residual_elements", []) or [] if isinstance(e, dict)]
@@ -546,6 +718,10 @@ def _complete_component_coverage(
         item for item in match_payload.get("matches", []) or []
         if isinstance(item, dict) and not item.get("below_threshold") and item.get("element_ids")
     ]
+    for item in accepted:
+        # Snapshot the incoming certainty so the completion passes below can be
+        # proven not to have inflated it.
+        item["confidence_before_completion"] = _float(item.get("confidence"), 0.0, 0.0, 1.0)
     assigned: set[str] = set()
     forced_owners = {
         str(element_id): str(group_id)
@@ -660,12 +836,20 @@ def _complete_component_coverage(
             continue
         old_item["element_ids"] = [value for value in old_item.get("element_ids", []) or [] if str(value) != element_id]
         new_item["element_ids"] = list(dict.fromkeys([*(new_item.get("element_ids", []) or []), element_id]))
+        if isinstance(old_item.get("element_origins"), dict):
+            old_item["element_origins"].pop(element_id, None)
+        # Geometry overrode the first answer, so this ownership is no longer a
+        # model claim even when the matcher originally proposed the pair.
+        new_origins = new_item.setdefault("element_origins", {})
+        if isinstance(new_origins, dict):
+            new_origins[element_id] = ASSIGNMENT_SOURCE_RULE
 
     for item in accepted:
         seed_ids = [str(element_id) for element_id in item.get("element_ids", []) or [] if str(element_id) in by_id]
         existing_seed_ids = item.get("seed_element_ids", []) or []
         item["seed_element_ids"] = list(dict.fromkeys([*existing_seed_ids, *seed_ids]))
         item["element_ids"] = list(dict.fromkeys(seed_ids))
+        item["element_origins"] = _element_origins(item, item["element_ids"], ASSIGNMENT_SOURCE_MODEL)
         item["residual_element_ids"] = []
         assigned.update(item["element_ids"])
 
@@ -752,6 +936,7 @@ def _complete_component_coverage(
 
             best.setdefault("element_ids", []).append(element_id)
             best.setdefault("residual_element_ids", []).append(element_id)
+            best.setdefault("element_origins", {})[element_id] = ASSIGNMENT_SOURCE_COMPLETION
             assigned.add(element_id)
             residual_assignment_report.append({
                 "element_id": element_id,
@@ -798,6 +983,7 @@ def _complete_component_coverage(
             owner.setdefault("element_ids", []).append(element_id)
             if element_id in residual_ids:
                 owner.setdefault("residual_element_ids", []).append(element_id)
+            owner.setdefault("element_origins", {})[element_id] = ASSIGNMENT_SOURCE_COMPLETION
             assigned.add(element_id)
             assignment = {
                 "element_id": element_id,
@@ -820,6 +1006,15 @@ def _complete_component_coverage(
             else:
                 residual_assignment_report.append(assignment)
             forced_completion_assignments.append(assignment)
+
+    provenance = _finalize_ownership_provenance(
+        accepted,
+        by_id,
+        group_roles,
+        # ``multimodal`` is only in the method name once the vision answer has
+        # been merged in; a deterministic-prior page never claims model evidence.
+        str(match_payload.get("matching_method") or "").startswith("multimodal"),
+    )
 
     unassigned_ids = sorted(set(by_id) - assigned)
     target_rle = _merge_row_runs(complete_foreground, width, height)
@@ -856,6 +1051,25 @@ def _complete_component_coverage(
                 if item.get("candidate_component") and str(item.get("group_id") or "") == group_id
             ),
         })
+    provenance_records = {str(record["group_id"]): record for record in provenance["groups"]}
+    if provenance["model_participated"]:
+        for group_id in provenance["unconfirmed_group_ids"]:
+            record = provenance_records.get(group_id) or {}
+            semantic_warnings.append({
+                "type": "unconfirmed_semantic_ownership",
+                "group_id": group_id,
+                "assignment_source": record.get("assignment_source", ASSIGNMENT_SOURCE_RULE),
+                "element_count": int(record.get("element_count", 0)),
+                "completion_element_count": int(record.get("completion_element_count", 0)),
+            })
+    for component in provenance["large_forced_components"]:
+        semantic_warnings.append({
+            "type": "forced_large_component_completed",
+            "group_id": str(component["group_id"]),
+            "element_id": component["element_id"],
+            "component_area": component["component_area"],
+            "group_area_ratio": component["group_area_ratio"],
+        })
     existing_warnings = list(match_payload.get("warnings", []) or [])
     structural_model_warnings = [
         dict(warning)
@@ -880,12 +1094,26 @@ def _complete_component_coverage(
             for element_id in element_ids
         })
         residual_ratio = len(residual_ids) / max(1, len(element_ids))
+        provenance_record = provenance_records.get(group_id, {})
         check = {
             "group_id": group_id,
             "element_count": len(element_ids),
             "residual_count": len(residual_ids),
             "residual_ratio": round(residual_ratio, 3),
             "regions": regions,
+            # Pixels owned and narration confirmed are two different statements:
+            # the fields above describe the Mask geometry, this block reports how
+            # much of that geometry the multimodal answer actually vouched for.
+            "narration": {
+                "assignment_source": provenance_record.get("assignment_source", ASSIGNMENT_SOURCE_RULE),
+                "model_element_count": int(provenance_record.get("model_element_count", 0)),
+                "rule_element_count": int(provenance_record.get("rule_element_count", 0)),
+                "completion_element_count": int(provenance_record.get("completion_element_count", 0)),
+                "model_ownership_ratio": float(provenance_record.get("model_ownership_ratio", 0.0)),
+                "semantically_confirmed": bool(provenance_record.get("semantically_confirmed")),
+                "confidence": float(provenance_record.get("confidence", 0.0)),
+                "confidence_capped": bool(provenance_record.get("confidence_capped")),
+            },
         }
         semantic_group_checks.append(check)
         if "subtitle" in regions:
@@ -925,9 +1153,20 @@ def _complete_component_coverage(
         union = _union_bounds(bounds_list)
         if union:
             check["bbox"] = {"x": round(union[0]), "y": round(union[1]), "w": round(union[2] - union[0]), "h": round(union[3] - union[1])}
+    confirmed_group_count = sum(1 for record in provenance["groups"] if record["semantically_confirmed"])
+    narration_contract_passed = bool(accepted) and not blocking_errors
     semantic_quality = {
-        "version": "ai_mask_semantic_quality_v2",
-        "passed": bool(accepted) and not blocking_errors,
+        "version": "ai_mask_semantic_quality_v3",
+        # Narration constraint: whether each group's ownership is defensible as
+        # story-to-pixel mapping.  Kept apart from ``quality.pixel_contract_passed``
+        # because a page can hold every foreground pixel and still group the
+        # narration wrongly.
+        "narration_contract_passed": narration_contract_passed,
+        # Compatibility alias: existing advance logic only understands `passed`.
+        "passed": narration_contract_passed,
+        "confirmed_group_count": confirmed_group_count,
+        "model_participated": provenance["model_participated"],
+        "unconfirmed_group_ids": list(provenance["unconfirmed_group_ids"]),
         "group_checks": semantic_group_checks,
         "warnings": semantic_warnings,
         "blocking_errors": blocking_errors,
@@ -936,8 +1175,14 @@ def _complete_component_coverage(
             "unassigned": sum(1 for item in residual_assignment_report if item.get("status") == "unassigned"),
         },
     }
+    pixel_contract_passed = (
+        bool(accepted)
+        and coverage >= AI_MASK_MIN_FOREGROUND_COVERAGE
+        and len(unassigned_ids) == 0
+        and overlap_pixels == 0
+    )
     quality = {
-        "version": "ai_mask_quality_v2",
+        "version": "ai_mask_quality_v3",
         "foreground_pixel_count": foreground_pixels,
         "assigned_foreground_pixel_count": assigned_pixels,
         "static_header_pixel_count": _rle_pixel_count(_merge_row_runs(static_elements, width, height)),
@@ -945,19 +1190,16 @@ def _complete_component_coverage(
         "unassigned_component_count": len(unassigned_ids),
         "overlap_pixel_count": overlap_pixels,
         "exclusive_component_ownership": overlap_pixels == 0,
+        # Pixel constraint: every foreground component has exactly one owner.
+        "pixel_contract_passed": pixel_contract_passed,
         "semantic_quality_passed": semantic_quality["passed"],
         "minimum_foreground_coverage_ratio": AI_MASK_MIN_FOREGROUND_COVERAGE,
-        "passed": (
-            bool(accepted)
-            and coverage >= AI_MASK_MIN_FOREGROUND_COVERAGE
-            and len(unassigned_ids) == 0
-            and overlap_pixels == 0
-            and semantic_quality["passed"]
-        ),
+        "passed": pixel_contract_passed and semantic_quality["passed"],
     }
     match_payload["unmatched_elements"] = unassigned_ids
     match_payload["quality"] = quality
     match_payload["semantic_quality"] = semantic_quality
+    match_payload["assignment_provenance"] = provenance
     match_payload["residual_assignment_report"] = residual_assignment_report
     if quality["passed"] and not semantic_warnings and not existing_warnings:
         match_payload["warnings"] = []

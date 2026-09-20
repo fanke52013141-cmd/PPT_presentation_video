@@ -13,6 +13,27 @@ AI_MASK_MIN_FOREGROUND_COVERAGE = 0.995
 # builder, validator, and PPTX export must all reference this constant.
 REVEAL_PIPELINE_VERSION = "exact_rle_mask_with_manual_corrections_v5"
 
+# Ownership provenance for every component inside a narration group.  Coverage
+# only proves that a pixel has an owner; it never proves the owner is correct,
+# so each stage records how ownership was decided:
+#   model       - the multimodal matcher claimed this component for this group
+#   rule        - a deterministic contract rule (prior box, title band, anchor
+#                 seeding, geometry re-check) decided it
+#   completion  - the coverage closer attached a leftover component to the
+#                 nearest anchor so no foreground pixel stays ownerless
+#   manual      - a saved human correction owns the pixels
+# Only ``model`` may support a semantic claim; the others stay visible as risk.
+ASSIGNMENT_SOURCE_MODEL = "model"
+ASSIGNMENT_SOURCE_RULE = "rule"
+ASSIGNMENT_SOURCE_COMPLETION = "completion"
+ASSIGNMENT_SOURCE_MANUAL = "manual"
+ASSIGNMENT_SOURCES: tuple[str, ...] = (
+    ASSIGNMENT_SOURCE_MODEL,
+    ASSIGNMENT_SOURCE_RULE,
+    ASSIGNMENT_SOURCE_COMPLETION,
+    ASSIGNMENT_SOURCE_MANUAL,
+)
+
 # DocLayout layout-detection outcomes.  Every annotated slide records exactly one
 # of them so a degraded page stays diagnosable instead of silently looking like a
 # slide that simply has no layout regions.

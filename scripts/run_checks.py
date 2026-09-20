@@ -216,6 +216,7 @@ def quick_checks() -> None:
         "checks/test_ai_mask_doclayout.py",
         "checks/test_ai_mask_object_graph.py",
         "checks/test_ai_mask_semantic_batches.py",
+        "checks/test_ai_mask_provenance.py",
         "-q",
     ])
     run([

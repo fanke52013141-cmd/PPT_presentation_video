@@ -310,17 +310,21 @@ def _call_vision_model(
     system_prompt = compose_reverse_style_prompt(system_content, output_example)
 
     try:
-        client = dependencies.get_openai_client(api_key=api_key, base_url=base_url, timeout=120.0, max_retries=1)
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": content},
-            ],
-            temperature=0.25,
-            max_tokens=3000,
-            timeout=120,
-        )
+        client = dependencies.get_openai_client(api_key=api_key, base_url=base_url, timeout=120.0, max_retries=0)
+        from llm_concurrency import governed_llm_request
+
+        # 一次真实上游请求：逐请求申请项目槽 + 网关全局额度，SDK 隐式重试关闭。
+        with governed_llm_request(base_url):
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": content},
+                ],
+                temperature=0.25,
+                max_tokens=3000,
+                timeout=120,
+            )
         raw = str(response.choices[0].message.content or "").strip()
         parsed = json.loads(_clean_json_markdown(raw))
         return validate_reverse_style_model_output(parsed)

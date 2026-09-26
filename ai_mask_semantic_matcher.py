@@ -12,6 +12,7 @@ from typing import Any
 from PIL import Image, ImageDraw
 
 import ai_mask_engine
+from llm_concurrency import governed_llm_request
 
 MAX_IMAGE_WIDTH = 1280
 
@@ -759,6 +760,7 @@ def _request_object_batch(
     index: int,
     total: int,
     atomic: bool,
+    base_url: str = "",
 ) -> dict[str, Any]:
     payload = _batch_payload(slide, batch, index, total, atomic)
     user_content: list[dict[str, Any]] = [
@@ -788,11 +790,21 @@ def _request_object_batch(
     # flat 12000 budget on dense batches and truncate mid-string.
     max_tokens = min(24000, 12000 + 600 * len(batch))
     try:
-        response = client.chat.completions.create(model=model, temperature=float(settings["llm_temperature"]), max_tokens=max_tokens, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, response_format={"type": "json_object"}, messages=messages, **vendor_options)
+        # 每次 VL 请求都是一次真实上游调用：逐请求申请项目槽 + 网关全局额度，
+        # 结束即释放；额度排队超时按 GovernorTimeout 上抛，由调用方明确标记。
+        with governed_llm_request(base_url):
+            response = client.chat.completions.create(model=model, temperature=float(settings["llm_temperature"]), max_tokens=max_tokens, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, response_format={"type": "json_object"}, messages=messages, **vendor_options)
     except Exception as exc:
-        if base_module._is_timeout(capabilities, exc):
+        import generation_governor
+        if isinstance(exc, generation_governor.GovernorTimeout) or base_module._is_timeout(capabilities, exc):
             raise
-        response = client.chat.completions.create(model=model, temperature=float(settings["llm_temperature"]), max_tokens=max_tokens, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, messages=messages, **vendor_options)
+        # 只有明确的格式不兼容才去掉 response_format 重试；限流/认证/超时
+        # 原样上抛，避免把额度问题伪装成参数问题多打一次请求。
+        from llm_concurrency import is_llm_format_incompatibility
+        if not is_llm_format_incompatibility(exc):
+            raise
+        with governed_llm_request(base_url):
+            response = client.chat.completions.create(model=model, temperature=float(settings["llm_temperature"]), max_tokens=max_tokens, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, messages=messages, **vendor_options)
     content = str(response.choices[0].message.content or "").strip()
     cleaned = capabilities.clean_json_markdown(content)
     try:
@@ -800,7 +812,8 @@ def _request_object_batch(
     except json.JSONDecodeError:
         # A truncated or malformed completion is usually transient; one fresh
         # retry recovers the batch without degrading to the deterministic prior.
-        response = client.chat.completions.create(model=model, temperature=float(settings["llm_temperature"]), max_tokens=max_tokens, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, messages=messages, **vendor_options)
+        with governed_llm_request(base_url):
+            response = client.chat.completions.create(model=model, temperature=float(settings["llm_temperature"]), max_tokens=max_tokens, timeout=base_module.AI_MASK_VISION_TIMEOUT_SEC, messages=messages, **vendor_options)
         content = str(response.choices[0].message.content or "").strip()
         cleaned = capabilities.clean_json_markdown(content)
         value = json.loads(cleaned)
@@ -919,6 +932,7 @@ class SemanticVisionMatcher:
                         index=index,
                         total=len(batches),
                         atomic=atomic_matching,
+                        base_url=str(base_url or ""),
                     )
                 except Exception as exc:
                     # A timeout or the first batch failing means the whole slide

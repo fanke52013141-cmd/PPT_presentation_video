@@ -1,4 +1,9 @@
-"""Bounded Step 2 JSON-model execution and response parsing."""
+"""Bounded Step 2 JSON-model execution and response parsing.
+
+每次 ``chat.completions.create`` 是一次真实请求：逐请求通过
+``governed_llm_request`` 申请项目槽 + 网关全局额度，格式回退与 JSON 修复
+各自计量；只有明确的格式不兼容错误才去掉 ``response_format`` 重试。
+"""
 
 from __future__ import annotations
 
@@ -8,7 +13,7 @@ from typing import Any, Callable, Dict, Optional
 
 from fastapi import HTTPException
 
-from llm_concurrency import with_llm_request_slot
+from llm_concurrency import governed_llm_request, is_llm_format_incompatibility
 
 
 @dataclass(frozen=True)
@@ -21,7 +26,6 @@ class StoryboardLlmCapabilities:
     logger: Any
 
 
-@with_llm_request_slot
 def execute_step2_json_llm(
     *,
     capabilities: StoryboardLlmCapabilities,
@@ -58,40 +62,44 @@ def execute_step2_json_llm(
     )
     try:
         try:
-            response = client.chat.completions.create(
-                model=llm_model,
-                temperature=planning_temp,
-                max_tokens=planning_max_tokens,
-                timeout=timeout_sec,
-                response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                **vendor_options,
-            )
+            with governed_llm_request(llm_base_url):
+                response = client.chat.completions.create(
+                    model=llm_model,
+                    temperature=planning_temp,
+                    max_tokens=planning_max_tokens,
+                    timeout=timeout_sec,
+                    response_format={"type": "json_object"},
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    **vendor_options,
+                )
         except Exception as inner_error:
             if capabilities.is_timeout_exception(inner_error):
+                raise
+            if not is_llm_format_incompatibility(inner_error):
                 raise
             capabilities.logger.warning(
                 "Failed LLM call with response_format for %s, retrying without it: %s",
                 artifact_prefix,
                 inner_error,
             )
-            response = client.chat.completions.create(
-                model=llm_model,
-                temperature=planning_temp,
-                max_tokens=planning_max_tokens,
-                timeout=timeout_sec,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": system_prompt + " 请只输出纯 JSON，不要包含 Markdown 代码块标记（如 ```json ）。",
-                    },
-                    {"role": "user", "content": user_prompt},
-                ],
-                **vendor_options,
-            )
+            with governed_llm_request(llm_base_url):
+                response = client.chat.completions.create(
+                    model=llm_model,
+                    temperature=planning_temp,
+                    max_tokens=planning_max_tokens,
+                    timeout=timeout_sec,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": system_prompt + " 请只输出纯 JSON，不要包含 Markdown 代码块标记（如 ```json ）。",
+                        },
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    **vendor_options,
+                )
         choice = response.choices[0]
         capabilities.logger.info(
             "%s finish_reason=%s usage=%s",

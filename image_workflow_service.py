@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from typing import Any, Callable, Dict, List, Optional
 import uuid
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -33,6 +34,20 @@ from ai_provider_service import (
     enforce_white_image_region,
     is_toapis_image_provider,
     normalize_image_size,
+)
+import image_generation_errors
+from image_generation_errors import (
+    CODE_GATEWAY_BUSY,
+    CODE_SAVE_FAILED,
+    ImageGenerationError,
+    ImagePageFailure,
+    PHASE_DOWNLOAD,
+    classify_image_error,
+)
+from image_generation_retry import (
+    ImageRetryPolicy,
+    decide_download_retry,
+    decide_retry,
 )
 from canvas_profile_service import get_canvas_profile, get_project_canvas
 from artifact_fingerprint import sha256_file, sha256_json
@@ -762,6 +777,90 @@ def active_slide_image_generation(project_id: str) -> List[str]:
         )
 
 
+# 治理器单次排队等待的上限：既避免一张慢页长期霸占队列，也保证等待
+# 不超过该页剩余预算（调用侧取两者较小值）。
+_IMAGE_QUEUE_WAIT_CAP_SEC = 120.0
+
+
+def _governed_reference_edit(
+    governor: Any,
+    base_url: str,
+    client: Any,
+    *,
+    model: str,
+    reference_files: list,
+    effective_prompt: str,
+    image_size: str,
+    queue_wait_seconds: float,
+) -> Any:
+    """在网关额度内执行一次参考图编辑请求（每次都占用额度）。"""
+    with governor.request(
+        generation_governor.RESOURCE_IMAGE,
+        base_url,
+        timeout_sec=queue_wait_seconds,
+    ):
+        return client.images.edit(
+            model=model,
+            image=reference_files,
+            prompt=effective_prompt,
+            size=image_size,
+            n=1,
+        )
+
+
+def _extract_image_bytes_with_bounded_retries(
+    response: Any,
+    *,
+    policy: ImageRetryPolicy,
+    deadline_monotonic: float,
+    slide_id: str,
+) -> bytes:
+    """提取图片字节：下载失败复用同一结果地址有界重试，不重新生图。
+
+    只有"下载阶段"的可重试错误在此循环内消化；解码/空响应等需要重新生成
+    的失败原样上抛，交给页级重试循环决策。
+    """
+    download_attempt = 0
+    while True:
+        download_attempt += 1
+        try:
+            return extract_image_bytes_from_response(response)
+        except ImageGenerationError as exc:
+            info = exc.info
+            if info.phase != PHASE_DOWNLOAD or not info.retryable:
+                raise
+            verdict = decide_download_retry(
+                info,
+                attempt=download_attempt,
+                policy=policy,
+                remaining_sec=deadline_monotonic - time.monotonic(),
+            )
+            if not verdict.retry:
+                raise image_generation_errors.ImageGenerationError(
+                    image_generation_errors.ImageGenerationErrorInfo(
+                        code=info.code,
+                        phase=info.phase,
+                        retryable=False,
+                        status_code=info.status_code,
+                        outcome_unknown=info.outcome_unknown,
+                        safe_message=(
+                            f"下载生成图片失败（已尝试 {download_attempt} 次下载，"
+                            f"生成结果仍可恢复）: {info.safe_message}"
+                        ),
+                    ),
+                    cause=exc,
+                )
+            logger.warning(
+                "Image download for %s failed (download attempt %s/%s, code=%s); retrying in %.1fs",
+                slide_id,
+                download_attempt,
+                policy.max_download_attempts,
+                info.code,
+                verdict.delay_sec,
+            )
+            time.sleep(verdict.delay_sec)
+
+
 def generate_slide_image(
     project_id: str,
     slide_id: str,
@@ -830,205 +929,325 @@ def _generate_slide_image_impl(
             detail="未配置生图 API 密钥，请在系统设置中配置，或使用下方本地上传图片功能。",
         )
 
-    try:
-        is_toapis = is_toapis_image_provider(image_provider, base_url)
-        client = None if is_toapis else get_openai_client(api_key=api_key, base_url=base_url)
-        image_size = normalize_image_size(image_size_setting)
-        effective_prompt = enforce_white_generation_background(prompt, project)
-        ip_prompt_segment = render_ip_character_prompt(project, slide_id)
-        if ip_prompt_segment and IP_PROMPT_MARKER not in effective_prompt:
-            effective_prompt = effective_prompt + "\n\n" + ip_prompt_segment
-        logger.info(
-            f"Generating image for {slide_id} using {model}, size={image_size}, prompt: {effective_prompt[:80]}"
-        )
+    is_toapis = is_toapis_image_provider(image_provider, base_url)
+    client = None if is_toapis else get_openai_client(api_key=api_key, base_url=base_url)
+    image_size = normalize_image_size(image_size_setting)
+    effective_prompt = enforce_white_generation_background(prompt, project)
+    ip_prompt_segment = render_ip_character_prompt(project, slide_id)
+    if ip_prompt_segment and IP_PROMPT_MARKER not in effective_prompt:
+        effective_prompt = effective_prompt + "\n\n" + ip_prompt_segment
+    logger.info(
+        f"Generating image for {slide_id} using {model}, size={image_size}, prompt: {effective_prompt[:80]}"
+    )
 
-        response = None
-        used_reference_paths: List[str] = []
-        reference_policy = _image_reference_policy(project)
-        reference_status = "not_requested"
-        project_references = project_reference_paths(project)
-        if reference_policy["policy"] == "text_only":
-            style_reference_paths: List[str] = []
-            reference_status = "text_only"
-        elif project_references:
-            style_reference_paths = list(project_references)
-        else:
-            style_tokens = read_style_tokens_data()
-            style_reference_paths = active_style_reference_paths()
-            legacy_style_supported = should_send_style_reference_images(
-                model=model,
-                base_url=base_url,
-                reference_paths=style_reference_paths,
-                style_tokens=style_tokens,
-            )
-            if not legacy_style_supported and reference_policy["policy"] == "preferred":
-                style_reference_paths = []
-                reference_status = "fallback_text_only"
+    used_reference_paths: List[str] = []
+    reference_policy = _image_reference_policy(project)
+    reference_status = "not_requested"
+    project_references = project_reference_paths(project)
+    if reference_policy["policy"] == "text_only":
+        style_reference_paths: List[str] = []
+        reference_status = "text_only"
+    elif project_references:
+        style_reference_paths = list(project_references)
+    else:
+        style_tokens = read_style_tokens_data()
+        style_reference_paths = active_style_reference_paths()
+        legacy_style_supported = should_send_style_reference_images(
+            model=model,
+            base_url=base_url,
+            reference_paths=style_reference_paths,
+            style_tokens=style_tokens,
+        )
+        if not legacy_style_supported and reference_policy["policy"] == "preferred":
+            style_reference_paths = []
+            reference_status = "fallback_text_only"
+    if (
+        reference_policy["policy"] == "required"
+        and len(style_reference_paths) < reference_policy["minimum"]
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "当前创作配置要求使用参考图，但项目参考图不足："
+                f"至少 {reference_policy['minimum']} 张，当前 {len(style_reference_paths)} 张。"
+            ),
+        )
+    ip_reference_paths = ip_character_reference_paths(project, slide_id)
+    reference_paths = list(style_reference_paths) + list(ip_reference_paths)
+    use_reference_images = False
+    max_reference_images = 3
+    if reference_paths:
+        use_reference_images, max_reference_images = _image_reference_capability(
+            model, base_url, image_public_config, reference_paths
+        )
         if (
             reference_policy["policy"] == "required"
-            and len(style_reference_paths) < reference_policy["minimum"]
+            and max_reference_images < reference_policy["minimum"]
         ):
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    "当前创作配置要求使用参考图，但项目参考图不足："
-                    f"至少 {reference_policy['minimum']} 张，当前 {len(style_reference_paths)} 张。"
+                    "当前图片模型最多支持 "
+                    f"{max_reference_images} 张参考图，少于创作配置要求的 "
+                    f"{reference_policy['minimum']} 张。"
                 ),
             )
-        ip_reference_paths = ip_character_reference_paths(project, slide_id)
-        reference_paths = list(style_reference_paths) + list(ip_reference_paths)
-        use_reference_images = False
-        max_reference_images = 3
-        if reference_paths:
-            use_reference_images, max_reference_images = _image_reference_capability(
-                model, base_url, image_public_config, reference_paths
-            )
-            if (
-                reference_policy["policy"] == "required"
-                and max_reference_images < reference_policy["minimum"]
-            ):
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        "当前图片模型最多支持 "
-                        f"{max_reference_images} 张参考图，少于创作配置要求的 "
-                        f"{reference_policy['minimum']} 张。"
-                    ),
+        reference_paths = reference_paths[:max_reference_images]
+    if reference_policy["policy"] == "required" and not use_reference_images:
+        raise HTTPException(
+            status_code=409,
+            detail="当前图片模型未启用参考图能力，请在模型设置中开启后再生成。",
+        )
+    if reference_paths and not use_reference_images:
+        if reference_status == "not_requested":
+            reference_status = "fallback_text_only"
+        logger.info(
+            "Skipping binary style reference images for %s: active references are not compatible with current model/style.",
+            slide_id,
+        )
+
+    # ── 有界自动重试：只针对单页的"提交/轮询/下载"短暂故障 ──
+    # 成功写盘的图片立即保留；配置类错误（HTTPException）不重试；
+    # 未知程序错误默认不重试。所有重试共享同一份单页预算。
+    retry_policy = ImageRetryPolicy.from_environment()
+    page_started_at = time.monotonic()
+    page_deadline = page_started_at + retry_policy.total_budget_sec
+    attempts = 0
+    resume_task_id = ""
+    failure: Optional[ImagePageFailure] = None
+    while True:
+        attempts += 1
+        info: Optional[image_generation_errors.ImageGenerationErrorInfo] = None
+        try:
+            response = None
+            if use_reference_images and not is_toapis:
+                governor = generation_governor.get_generation_governor()
+                remaining_for_edit = max(
+                    1.0, page_deadline - time.monotonic()
                 )
-            reference_paths = reference_paths[:max_reference_images]
-        if reference_policy["policy"] == "required" and not use_reference_images:
-            raise HTTPException(
-                status_code=409,
-                detail="当前图片模型未启用参考图能力，请在模型设置中开启后再生成。",
-            )
-        if reference_paths and not use_reference_images:
-            if reference_status == "not_requested":
-                reference_status = "fallback_text_only"
-            logger.info(
-                "Skipping binary style reference images for %s: active references are not compatible with current model/style.",
-                slide_id,
-            )
-        if use_reference_images and not is_toapis:
-            reference_files = []
-            try:
-                reference_files = [open(path, "rb") for path in reference_paths]
-                response = client.images.edit(
+                reference_files = []
+                try:
+                    reference_files = [open(path, "rb") for path in reference_paths]
+                    # 参考图编辑同样是真实上游请求，必须占用网关额度。
+                    response = _governed_reference_edit(
+                        governor,
+                        base_url,
+                        client,
+                        model=model,
+                        reference_files=reference_files,
+                        effective_prompt=effective_prompt,
+                        image_size=image_size,
+                        queue_wait_seconds=min(
+                            remaining_for_edit, _IMAGE_QUEUE_WAIT_CAP_SEC
+                        ),
+                    )
+                    used_reference_paths = list(reference_paths)
+                    reference_status = "used"
+                    logger.info(
+                        "Image generation used %s style reference images.",
+                        len(reference_files),
+                    )
+                except Exception as reference_error:
+                    if reference_policy["policy"] == "required":
+                        safe_reference_error = _redact_runtime_secrets(
+                            reference_error, runtime_secrets
+                        )
+                        raise HTTPException(
+                            status_code=502,
+                            detail=f"参考图生成失败，已按创作配置停止：{safe_reference_error}",
+                        ) from reference_error
+                    reference_info = classify_image_error(
+                        reference_error, phase=image_generation_errors.PHASE_SUBMIT
+                    )
+                    if reference_info.retryable:
+                        # 参考图编辑的暂时性故障不切换到无参考重发（那会再次
+                        # 付费提交）；交给本轮循环按结构化信息退避重试。
+                        raise
+                    reference_status = "fallback_text_only"
+                    logger.warning(
+                        "Reference image generation is unavailable, falling back to images.generate: %s",
+                        reference_error,
+                    )
+                finally:
+                    for reference_file in reference_files:
+                        reference_file.close()
+
+            if response is None:
+                response = generate_image_response(
+                    client=client,
                     model=model,
-                    image=reference_files,
                     prompt=effective_prompt,
                     size=image_size,
-                    n=1,
+                    base_url=base_url,
+                    provider=image_provider,
+                    api_key=api_key,
+                    reference_paths=reference_paths if (use_reference_images and is_toapis) else None,
+                    public_config=image_public_config,
+                    queue_wait_seconds=min(
+                        max(1.0, page_deadline - time.monotonic()),
+                        _IMAGE_QUEUE_WAIT_CAP_SEC,
+                    ),
+                    resume_task_id=resume_task_id,
                 )
-                used_reference_paths = list(reference_paths)
-                reference_status = "used"
-                logger.info(
-                    "Image generation used %s style reference images.",
-                    len(reference_files),
-                )
-            except Exception as reference_error:
-                if reference_policy["policy"] == "required":
-                    safe_reference_error = _redact_runtime_secrets(
-                        reference_error, runtime_secrets
-                    )
-                    raise HTTPException(
-                        status_code=502,
-                        detail=f"参考图生成失败，已按创作配置停止：{safe_reference_error}",
-                    ) from reference_error
-                reference_status = "fallback_text_only"
-                logger.warning(
-                    "Reference image generation is unavailable, falling back to images.generate: %s",
-                    reference_error,
-                )
-            finally:
-                for reference_file in reference_files:
-                    reference_file.close()
+                if is_toapis and reference_paths:
+                    used_reference_paths = list(reference_paths)
+                    reference_status = "used"
 
-        if response is None:
-            response = generate_image_response(
-                client=client,
-                model=model,
-                prompt=effective_prompt,
-                size=image_size,
-                base_url=base_url,
-                provider=image_provider,
-                api_key=api_key,
-                reference_paths=reference_paths if (use_reference_images and is_toapis) else None,
-                public_config=image_public_config,
+            img_bytes = _extract_image_bytes_with_bounded_retries(
+                response,
+                policy=retry_policy,
+                deadline_monotonic=page_deadline,
+                slide_id=slide_id,
             )
-            if is_toapis and reference_paths:
-                used_reference_paths = list(reference_paths)
-                reference_status = "used"
 
-        # ── 兼容两种响应格式：URL 和 base64 (b64_json) ──
-        img_bytes = extract_image_bytes_from_response(response)
+            canvas = get_project_canvas(project)
+            process_and_save_image(
+                img_bytes,
+                save_path,
+                target_width=canvas["width"],
+                target_height=canvas["height"],
+                raw_save_path=str(mask_source_raw_path(Path(save_path))),
+            )
+        except HTTPException:
+            raise
+        except ImageGenerationError as exc:
+            info = exc.info
+        except generation_governor.GovernorTimeout as exc:
+            # 上游额度排队超时是"暂时忙"：记录为资源忙并在预算内停轮，
+            # 绝不绕过额度强行发送。
+            info = classify_image_error(exc)
+        except Exception as exc:
+            info = classify_image_error(exc)
 
-        canvas = get_project_canvas(project)
-        process_and_save_image(
-            img_bytes,
-            save_path,
-            target_width=canvas["width"],
-            target_height=canvas["height"],
-            raw_save_path=str(mask_source_raw_path(Path(save_path))),
-        )
-        _enforce_project_subtitle_safe_zone(
-            project,
-            slide_id,
-            save_path,
-            source="generated",
-        )
-        seal_mask_source_pair(Path(save_path))
-        write_visual_provenance(
-            project.run_dir,
-            slide_id,
-            image_path=save_path,
-            provider=image_provider,
-            source_type="api_generation",
-            model=model,
-            prompt=effective_prompt,
-            reference_paths=used_reference_paths,
-            reference_policy=reference_policy["policy"],
-            reference_status=reference_status,
-            requested_reference_count=len(style_reference_paths),
-            submitted_reference_count=len(used_reference_paths),
-            source_bytes=img_bytes,
-            candidate=preview,
-        )
-        logger.info(f"Image saved for {slide_id}: {save_path}")
-        if preview:
+        if info is None:
+            # ── 图片已完整写盘：本地收尾失败不得再次调用生图接口 ──
+            try:
+                _enforce_project_subtitle_safe_zone(
+                    project,
+                    slide_id,
+                    save_path,
+                    source="generated",
+                )
+                seal_mask_source_pair(Path(save_path))
+                write_visual_provenance(
+                    project.run_dir,
+                    slide_id,
+                    image_path=save_path,
+                    provider=image_provider,
+                    source_type="api_generation",
+                    model=model,
+                    prompt=effective_prompt,
+                    reference_paths=used_reference_paths,
+                    reference_policy=reference_policy["policy"],
+                    reference_status=reference_status,
+                    requested_reference_count=len(style_reference_paths),
+                    submitted_reference_count=len(used_reference_paths),
+                    source_bytes=img_bytes,
+                    candidate=preview,
+                )
+            except Exception as finalize_error:
+                failure = ImagePageFailure(
+                    slide_id=str(slide_id),
+                    attempts=attempts,
+                    code=CODE_SAVE_FAILED,
+                    phase=image_generation_errors.PHASE_SAVE,
+                    message=_redact_runtime_secrets(
+                        f"图片已保存但收尾失败（恢复时不会重新生图）: {finalize_error}",
+                        runtime_secrets,
+                    ),
+                    retryable=False,
+                    recoverable=True,
+                    image_saved=True,
+                    elapsed_sec=time.monotonic() - page_started_at,
+                )
+                break
+            logger.info(
+                f"Image saved for {slide_id}: {save_path} (attempts={attempts})"
+            )
+            if preview:
+                return {
+                    "success": True,
+                    "reference_status": reference_status,
+                    "reference_count": len(used_reference_paths),
+                    "generation_attempts": attempts,
+                    "candidate_url": f"/api/projects/{project_id}/slides/{slide_id}/candidate?t={uuid.uuid4().hex[:6]}",
+                }
+            if not defer_invalidation:
+                mark_slide_image_changed(project, slide_id, db)
+
             return {
                 "success": True,
                 "reference_status": reference_status,
                 "reference_count": len(used_reference_paths),
-                "candidate_url": f"/api/projects/{project_id}/slides/{slide_id}/candidate?t={uuid.uuid4().hex[:6]}",
+                "generation_attempts": attempts,
+                "image_url": f"/api/projects/{project_id}/slides/{slide_id}/image?t={uuid.uuid4().hex[:6]}",
             }
-        if not defer_invalidation:
-            mark_slide_image_changed(project, slide_id, db)
 
-        return {
-            "success": True,
-            "reference_status": reference_status,
-            "reference_count": len(used_reference_paths),
-            "image_url": f"/api/projects/{project_id}/slides/{slide_id}/image?t={uuid.uuid4().hex[:6]}",
-        }
-    except HTTPException:
-        raise
-    except generation_governor.GovernorTimeout as exc:
-        # 上游额度排队超时是"暂时忙"，不是生成失败：让调用方知道可以稍后重试，
-        # 而不是把它当成图片内容/参数错误。
-        logger.warning("Image generation queued too long for %s: %s", slide_id, exc)
-        raise HTTPException(
-            status_code=503,
-            detail=f"生图网关额度排队超时，请稍后重试：{exc}",
-        ) from exc
-    except Exception as exc:
-        safe_error = _redact_runtime_secrets(exc, runtime_secrets)
-        logger.error("Image generation error for %s: %s", slide_id, safe_error)
-        if generation_governor.is_rate_limit_error(exc):
-            raise HTTPException(
-                status_code=503,
-                detail=f"生图网关限流，请稍后重试：{safe_error}",
-            ) from exc
-        raise HTTPException(status_code=500, detail=f"生成图片失败: {safe_error}") from exc
+        resume_task_id = info.upstream_task_id or resume_task_id
+        safe_error = _redact_runtime_secrets(info.safe_message, runtime_secrets)
+        try:
+            write_project_log(
+                project,
+                "step3_image_attempt_failed",
+                slide_id=str(slide_id),
+                attempt=attempts,
+                code=info.code,
+                phase=info.phase,
+                retryable=info.retryable,
+                outcome_unknown=info.outcome_unknown,
+                status_code=info.status_code,
+                error=safe_error[:800],
+            )
+        except Exception:
+            logger.debug("step3_image_attempt_failed log unavailable", exc_info=True)
+        verdict = decide_retry(
+            info,
+            attempt=attempts,
+            policy=retry_policy,
+            remaining_sec=page_deadline - time.monotonic(),
+        )
+        if not verdict.retry:
+            failure = ImagePageFailure(
+                slide_id=str(slide_id),
+                attempts=attempts,
+                code=info.code,
+                phase=info.phase,
+                message=safe_error[:800],
+                retryable=info.retryable,
+                recoverable=verdict.recoverable,
+                outcome_unknown=info.outcome_unknown,
+                status_code=info.status_code,
+                elapsed_sec=time.monotonic() - page_started_at,
+                upstream_task_id=resume_task_id,
+            )
+            break
+        logger.warning(
+            "Image generation for %s failed (attempt %s/%s, code=%s); retrying in %.1fs",
+            slide_id,
+            attempts,
+            retry_policy.max_generation_attempts,
+            info.code,
+            verdict.delay_sec,
+        )
+        time.sleep(verdict.delay_sec)
+
+    assert failure is not None
+    # 页级失败以结构化结果上抛：HTTP 边界映射为响应，一键编排层读取
+    # image_generation_failure 汇总所有失败页，而不是只见首个异常。
+    failure_exc = image_generation_errors.ImageGenerationFailure(failure)
+    status_code = 503 if (failure.recoverable or failure.retryable) else 500
+    if failure.code == CODE_GATEWAY_BUSY:
+        detail = f"生图网关额度排队超时，请稍后继续：{failure.message}"
+    elif failure.recoverable:
+        detail = (
+            f"图片生成暂时失败（已尝试 {failure.attempts} 次，code={failure.code}），"
+            f"可稍后继续补齐：{failure.message}"
+        )
+    else:
+        detail = f"生成图片失败: {failure.message}"
+    http_error = HTTPException(status_code=status_code, detail=detail)
+    http_error.image_generation_failure = failure  # type: ignore[attr-defined]
+    raise http_error from failure_exc
 
 
 def finalize_generated_images(

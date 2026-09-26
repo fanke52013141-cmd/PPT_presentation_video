@@ -997,6 +997,44 @@ def _ai_mask_failed_slide_ids(result: dict[str, Any], fallback: list[str]) -> li
     return selected or list(fallback)
 
 
+def _image_failure_outcome(slide_id: str, exc: BaseException) -> dict[str, Any]:
+    """把单页失败异常归一成完整的结果记录（不是首个错误的片段）。
+
+    ``image_workflow_service`` 抛出的 HTTPException 携带结构化的
+    ``image_generation_failure``；中间层包装后的异常沿 ``__cause__`` 链
+    向上查找。其他来源的异常退回到通用记录。
+    """
+    payload = None
+    seen: set[int] = set()
+    candidate: BaseException | None = exc
+    while candidate is not None and id(candidate) not in seen:
+        seen.add(id(candidate))
+        payload = getattr(candidate, "image_generation_failure", None)
+        if payload is not None:
+            break
+        candidate = candidate.__cause__ or candidate.__context__
+    if payload is not None and hasattr(payload, "to_payload"):
+        outcome = dict(payload.to_payload())
+    else:
+        outcome = {
+            "slide_id": slide_id,
+            "attempts": 1,
+            "code": "unknown",
+            "phase": "",
+            "message": _error_text(exc),
+            "retryable": False,
+            "recoverable": False,
+            "outcome_unknown": False,
+            "status_code": None,
+            "image_saved": False,
+            "elapsed_sec": 0.0,
+            "upstream_task_id": "",
+        }
+    if not str(outcome.get("slide_id") or "").strip():
+        outcome["slide_id"] = slide_id
+    return outcome
+
+
 def _run_pipeline(
     dependencies: OneClickDependencies,
     project_id: str,
@@ -1164,7 +1202,7 @@ def _run_pipeline(
                     worker_db.close()
 
             generated = 0
-            failures: list[Exception] = []
+            page_outcomes: list[dict[str, Any]] = []
             completed_slide_ids: list[str] = []
             if image_jobs:
                 dependencies.write_project_log(
@@ -1199,40 +1237,95 @@ def _run_pipeline(
                             )
                         raise
 
+                # 显式的 future -> slide_id 映射：任何一页的最终结果都能准确
+                # 归位，成功页保留、失败页聚合，批次不在中途因单页错误提前结束。
                 with ThreadPoolExecutor(
                     max_workers=image_workers,
                     thread_name_prefix="one-click-image",
                 ) as executor:
-                    futures = [
-                        executor.submit(generate_limited_image, index, slide_id, prompt)
+                    future_to_slide = {
+                        executor.submit(
+                            generate_limited_image, index, slide_id, prompt
+                        ): slide_id
                         for index, slide_id, prompt in image_jobs
-                    ]
-                    for future in as_completed(futures):
+                    }
+                    for future in as_completed(future_to_slide):
+                        slide_id = future_to_slide[future]
                         try:
-                            _, slide_id, _, elapsed_sec = future.result()
-                            generated += 1
-                            completed_slide_ids.append(slide_id)
-                            dependencies.write_project_log(
-                                project,
-                                "step3_parallel_image_success",
-                                slide_id=slide_id,
-                                elapsed_sec=elapsed_sec,
-                            )
-                            item = _stage(status, "images")
-                            item["progress"] = generated / len(image_jobs)
-                            item["message"] = (
-                                f"已生成 {generated}/{len(image_jobs)} 张（刚完成 {slide_id}）"
-                            )
-                            _save_status(project, status)
+                            _, _, _, elapsed_sec = future.result()
                         except Exception as exc:
-                            failures.append(exc)
+                            page_outcomes.append(
+                                _image_failure_outcome(slide_id, exc)
+                            )
+                            continue
+                        generated += 1
+                        completed_slide_ids.append(slide_id)
+                        page_outcomes.append(
+                            {
+                                "slide_id": slide_id,
+                                "ok": True,
+                                "elapsed_sec": elapsed_sec,
+                            }
+                        )
+                        dependencies.write_project_log(
+                            project,
+                            "step3_parallel_image_success",
+                            slide_id=slide_id,
+                            elapsed_sec=elapsed_sec,
+                        )
+                        item = _stage(status, "images")
+                        item["progress"] = generated / len(image_jobs)
+                        item["message"] = (
+                            f"已生成 {generated}/{len(image_jobs)} 张（刚完成 {slide_id}）"
+                        )
+                        _save_status(project, status)
                 if completed_slide_ids:
+                    # 已成功图片统一收尾（延迟失效 + 单次项目级失效提交），
+                    # 与失败页解耦：失败页不影响成功页的下游状态。
                     _invoke(
                         lambda: services.finalize_images(completed_slide_ids),
                         "Step 3 finalize images",
                     )
-                if failures:
-                    raise failures[0]
+            failed_outcomes = [
+                outcome for outcome in page_outcomes if not outcome.get("ok")
+            ]
+            if failed_outcomes:
+                # 批次末尾统一汇总：列出全部失败页、尝试次数和原因，默认暂停；
+                # 用户点击继续后按图片完整性只补缺失页，成功页不会重做。
+                blocking_lines = [
+                    "{slide_id}: 已尝试 {attempts} 次仍未成功（{code}{saved}）：{message}".format(
+                        slide_id=outcome.get("slide_id"),
+                        attempts=outcome.get("attempts") or 1,
+                        code=outcome.get("code") or "unknown",
+                        saved="，图片已保存仅收尾缺失" if outcome.get("image_saved") else "",
+                        message=_safe_text(outcome.get("message") or "", 400),
+                    )
+                    for outcome in failed_outcomes
+                ]
+                dependencies.write_project_log(
+                    project,
+                    "step3_image_batch_failed",
+                    requested=len(image_jobs),
+                    generated=generated,
+                    failed=failed_outcomes,
+                )
+                item = _stage(status, "images")
+                item.setdefault("blocking_errors", []).extend(
+                    _safe_text(line, 600) for line in blocking_lines
+                )
+                _save_status(project, status)
+                attempt_summary = "、".join(
+                    f"{outcome.get('slide_id')}（{outcome.get('attempts') or 1} 次）"
+                    for outcome in failed_outcomes
+                )
+                raise QualityGateFailure(
+                    (
+                        f"已完成 {generated}/{len(image_jobs)} 张图片，其余失败页已保留失败原因。"
+                        f"{attempt_summary} 自动尝试后仍未成功，已保留其他成功图片；"
+                        "点击继续可补齐缺失页。"
+                    ),
+                    pause=bool(gates.get("pause_on_image_generation_failure", True)),
+                )
             _finish_stage(project, status, "images", f"图片已就绪，新增或刷新 {generated} 张")
             if _pause_at_stage_boundary(project, status, project_id):
                 return
@@ -1289,6 +1382,21 @@ def _run_pipeline(
                     gates,
                     "pause_on_ai_mask_low_confidence",
                 )
+                quota_timeout_slides = [
+                    _safe_text(slide_id, 100)
+                    for slide_id in (result.get("quota_wait_timeout_slide_ids") or [])
+                    if _safe_text(slide_id, 100)
+                ]
+                if quota_timeout_slides:
+                    # 额度排队超时不能悄悄改变质量策略：确定性回退被明确记录，
+                    # 用户可据此选择继续或稍后重跑这些页面。
+                    _warn_stage(
+                        project,
+                        status,
+                        "ai_mask",
+                        "以下页面因 LLM 额度排队超时按确定性回退标注（结果已区分，可稍后重跑）："
+                        + ", ".join(quota_timeout_slides),
+                    )
                 quality_errors = _ai_mask_quality_errors(result, existing_mask_count)
                 if quality_errors:
                     retry_slide_ids = _ai_mask_failed_slide_ids(result, slide_ids)
@@ -1556,7 +1664,6 @@ def start_one_click(
                 "run_elapsed_seconds": 0,
             }
         )
-        _save_status(project, status)
         thread = threading.Thread(
             name=f"ppt-one-click-{project_id}-{run_id}",
             target=_run_pipeline,
@@ -1567,13 +1674,44 @@ def start_one_click(
             ),
             daemon=True,
         )
+        # 启动与状态对账共用 _RUNNING_LOCK：线程构造、注册、启动全部在锁内
+        # 完成，状态读取方（get_one_click_status 等）也必须持锁检查存活线程，
+        # 否则会看到"状态已 running、线程尚未注册"的窗口并把任务误写成暂停。
         _RUNNING[project_id] = thread
-        thread.start()
+        try:
+            thread.start()
+        except BaseException:
+            # start 失败必须清理注册并写入明确终态，不能留下"运行中"的假象。
+            _RUNNING.pop(project_id, None)
+            status.update(
+                {
+                    "status": "failed",
+                    "completed_at": _now(),
+                    "message": "一键生成后台线程启动失败，请重试",
+                }
+            )
+            _save_status(project, status)
+            raise
+        _save_status(project, status)
     return {"success": True, "started": True, "status": status}
 
 
 _RECONCILE_THROTTLE_SEC = 60.0
 _RECONCILE_THROTTLE: dict[str, float] = {}
+
+
+def _registered_worker(project_id: str) -> threading.Thread | None:
+    """持锁返回存活的 worker 线程；没有则 ``None``。
+
+    与 ``start_one_click`` 的"注册 -> 启动 -> 落盘 running"使用同一把
+    ``_RUNNING_LOCK``，读取方持锁检查，消除启动竞态：不会再出现
+    "状态文件已写 running、线程尚未注册"期间被错误降级为暂停的窗口。
+    """
+    with _RUNNING_LOCK:
+        thread = _RUNNING.get(project_id)
+        if thread is not None and thread.is_alive():
+            return thread
+    return None
 
 
 def _reconcile_completed_status(
@@ -1681,8 +1819,8 @@ def _reconcile_completed_status(
 def get_one_click_status(project: Any) -> dict[str, Any]:
     project_id = str(project.id)
     status = _status_for_project(project, project_id)
-    thread = _RUNNING.get(project_id)
-    if status.get("status") == "running" and not (thread and thread.is_alive()):
+    thread = _registered_worker(project_id)
+    if status.get("status") == "running" and thread is None:
         status["status"] = "paused"
         status["completed_at"] = status.get("completed_at") or _now()
         _save_status(project, status)
@@ -1708,8 +1846,8 @@ def reject_one_click_checkpoint(project: Any, checkpoint: str, notes: str = "") 
 def pause_one_click(project: Any) -> dict[str, Any]:
     """Request the running pipeline to pause at the next stage boundary."""
     project_id = str(project.id)
-    thread = _RUNNING.get(project_id)
-    if not thread or not thread.is_alive():
+    thread = _registered_worker(project_id)
+    if thread is None:
         # If the pipeline already exited (paused / failed / waiting), just
         # confirm the current status.
         status = _status_for_project(project, project_id)
@@ -1744,8 +1882,8 @@ def batch_one_click_status(
     for project in projects:
         project_id = str(project.id)
         status = _status_for_project(project, project_id)
-        thread = _RUNNING.get(project_id)
-        if status.get("status") == "running" and not (thread and thread.is_alive()):
+        thread = _registered_worker(project_id)
+        if status.get("status") == "running" and thread is None:
             status["status"] = "paused"
             status["completed_at"] = status.get("completed_at") or _now()
             _save_status(project, status)

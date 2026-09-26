@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
@@ -898,14 +899,72 @@ def synthesize_tts_resumable(project_id: str, db: Session):
             )
 
         successful_jobs: list[dict[str, Any]] = []
+        # future -> slide_id 显式映射，任何一页的最终结果都能准确归位。
+        future_to_slide: dict[Any, str] = {}
+        gateway_busy_stop = False
         with ThreadPoolExecutor(
             max_workers=worker_count,
             thread_name_prefix="tts-slide",
         ) as executor:
-            futures = [executor.submit(synthesize_one, job) for job in pending_jobs]
-            for future in as_completed(futures):
-                job, tts_result = future.result()
-                slide_id = job["slide_id"]
+            for job in pending_jobs:
+                future_to_slide[
+                    executor.submit(synthesize_one, job)
+                ] = job["slide_id"]
+            for future in as_completed(future_to_slide):
+                slide_id = future_to_slide[future]
+                try:
+                    job, tts_result = future.result()
+                except concurrent.futures.CancelledError:
+                    # 排队超时后被取消的未启动任务：明确记录为"未开始"，
+                    # 不伪装成仍在执行，也不计入合成失败原因。
+                    failed_slides.append({
+                        "slide_id": slide_id,
+                        "attempts": 0,
+                        "returncode": None,
+                        "error": "TTS 网关额度紧张，该页未开始即被暂停（继续任务可补齐）",
+                        "recoverable": True,
+                    })
+                    continue
+                except generation_governor.GovernorTimeout as exc:
+                    # 首个额度排队超时表明本批次继续新增工作只会继续占满额度：
+                    # 立即取消尚未启动的任务，已运行任务按现有有界超时自然结束。
+                    if not gateway_busy_stop:
+                        gateway_busy_stop = True
+                        cancelled_count = 0
+                        for pending_future in future_to_slide:
+                            if pending_future is not future and pending_future.cancel():
+                                cancelled_count += 1
+                        logger.warning(
+                            "TTS gateway queue timeout at %s; cancelled %s not-yet-started pages",
+                            slide_id,
+                            cancelled_count,
+                        )
+                    failed_slides.append({
+                        "slide_id": slide_id,
+                        "attempts": 0,
+                        "returncode": None,
+                        "error": _redact_runtime_secrets(
+                            f"TTS 网关额度排队超时（上游忙，可稍后继续）：{exc}",
+                            runtime_secrets,
+                        )[-1200:],
+                        "recoverable": True,
+                    })
+                    continue
+                except Exception as exc:
+                    # 单页排队/执行异常不拖垮整批：记录后继续收集其余页面，
+                    # 让成功页完成时间轴处理、失败页进入统一清单。
+                    logger.error(
+                        "TTS task crashed for %s: %s", slide_id, type(exc).__name__
+                    )
+                    failed_slides.append({
+                        "slide_id": slide_id,
+                        "attempts": 0,
+                        "returncode": None,
+                        "error": _redact_runtime_secrets(
+                            f"{type(exc).__name__}: {exc}", runtime_secrets
+                        )[-1200:],
+                    })
+                    continue
                 if not tts_result["ok"]:
                     error_text = _redact_runtime_secrets(
                         (tts_result["stderr"] or tts_result["stdout"] or "TTS synthesis failed").strip(),

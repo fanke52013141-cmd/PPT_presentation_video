@@ -302,7 +302,10 @@ def generate_article_from_topic(
         max_retries=0,
     )
     try:
-        response = client.chat.completions.create(
+        from llm_concurrency import governed_llm_request
+
+        with governed_llm_request(base_url):
+            response = client.chat.completions.create(
             model=model,
             temperature=min(
                 float(

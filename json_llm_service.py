@@ -1,4 +1,12 @@
-"""Shared configured JSON generation and one-shot LLM repair."""
+"""Shared configured JSON generation and one-shot LLM repair.
+
+治理约定
+--------
+每次 ``chat.completions.create`` 都是一次真实上游请求，必须单独通过
+:gfunc:`llm_concurrency.governed_llm_request` 申请额度（项目槽 + 网关全局），
+请求结束即释放。格式回退与 JSON 修复是**独立的请求**，各自计量；
+只有明确的参数/格式不兼容错误才去掉 ``response_format`` 重试。
+"""
 
 from __future__ import annotations
 
@@ -12,7 +20,7 @@ from openai import OpenAI
 
 from ai_provider_service import get_openai_client
 from config_store import get_setting
-from llm_concurrency import with_llm_request_slot
+from llm_concurrency import governed_llm_request, is_llm_format_incompatibility
 from runtime_support import (
     clean_json_markdown,
     json_decode_context,
@@ -34,6 +42,7 @@ def parse_json_or_repair_with_llm(
     artifact_prefix: str,
     schema_hint: str = "",
     max_tokens: int = 16000,
+    base_url: str = "",
 ) -> Dict[str, Any]:
     try:
         value = json.loads(cleaned_content)
@@ -65,31 +74,35 @@ def parse_json_or_repair_with_llm(
 
         try:
             try:
-                repair_response = client.chat.completions.create(
-                    model=model,
-                    temperature=0,
-                    max_tokens=max_tokens,
-                    response_format={"type": "json_object"},
-                    messages=[
-                        {"role": "system", "content": repair_prompt},
-                        {"role": "user", "content": repair_user},
-                    ],
-                )
+                with governed_llm_request(base_url):
+                    repair_response = client.chat.completions.create(
+                        model=model,
+                        temperature=0,
+                        max_tokens=max_tokens,
+                        response_format={"type": "json_object"},
+                        messages=[
+                            {"role": "system", "content": repair_prompt},
+                            {"role": "user", "content": repair_user},
+                        ],
+                    )
             except Exception as repair_format_error:
+                if not is_llm_format_incompatibility(repair_format_error):
+                    raise
                 logger.warning(
                     "LLM JSON repair with response_format failed for %s, retrying without it: %s",
                     artifact_prefix,
                     repair_format_error,
                 )
-                repair_response = client.chat.completions.create(
-                    model=model,
-                    temperature=0,
-                    max_tokens=max_tokens,
-                    messages=[
-                        {"role": "system", "content": repair_prompt},
-                        {"role": "user", "content": repair_user},
-                    ],
-                )
+                with governed_llm_request(base_url):
+                    repair_response = client.chat.completions.create(
+                        model=model,
+                        temperature=0,
+                        max_tokens=max_tokens,
+                        messages=[
+                            {"role": "system", "content": repair_prompt},
+                            {"role": "user", "content": repair_user},
+                        ],
+                    )
         except Exception as repair_error:
             logger.error("LLM JSON repair request failed for %s: %s", artifact_prefix, repair_error)
             raise first_error from repair_error
@@ -119,7 +132,6 @@ def parse_json_or_repair_with_llm(
     return value
 
 
-@with_llm_request_slot
 def generate_json_with_configured_llm(
     *,
     system_prompt: str,
@@ -146,31 +158,35 @@ def generate_json_with_configured_llm(
     client = get_openai_client(api_key=llm_api_key, base_url=llm_base_url)
     try:
         try:
-            response = client.chat.completions.create(
-                model=llm_model,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-            )
+            with governed_llm_request(llm_base_url):
+                response = client.chat.completions.create(
+                    model=llm_model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    response_format={"type": "json_object"},
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                )
         except Exception as format_error:
+            if not is_llm_format_incompatibility(format_error):
+                raise
             logger.warning(
                 "AI JSON generation with response_format failed for %s, retrying without it: %s",
                 artifact_prefix,
                 format_error,
             )
-            response = client.chat.completions.create(
-                model=llm_model,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                messages=[
-                    {"role": "system", "content": system_prompt + "\n只输出纯 JSON，不要 Markdown，不要解释。"},
-                    {"role": "user", "content": user_prompt},
-                ],
-            )
+            with governed_llm_request(llm_base_url):
+                response = client.chat.completions.create(
+                    model=llm_model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    messages=[
+                        {"role": "system", "content": system_prompt + "\n只输出纯 JSON，不要 Markdown，不要解释。"},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                )
     except HTTPException:
         raise
     except Exception as exc:
@@ -186,5 +202,5 @@ def generate_json_with_configured_llm(
         artifact_prefix=artifact_prefix,
         schema_hint=schema_hint,
         max_tokens=max_tokens,
+        base_url=str(llm_base_url or ""),
     )
-

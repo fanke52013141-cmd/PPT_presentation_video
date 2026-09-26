@@ -21,6 +21,24 @@ from PIL import Image
 from scripts.background_color import normalize_connected_background
 import generation_governor
 from generation_governor import RESOURCE_IMAGE
+from image_generation_errors import (
+    ImageGenerationError,
+    ImageGenerationErrorInfo,
+    classify_image_error,
+    is_parameter_incompatibility,
+)
+from image_generation_errors import (
+    CODE_INVALID_PARAMETERS,
+    CODE_POLL_TIMEOUT,
+    CODE_RATE_LIMITED,
+    CODE_UPSTREAM_OVERLOADED,
+    PHASE_DECODE,
+    PHASE_DOWNLOAD,
+    PHASE_POLL,
+    PHASE_SUBMIT,
+    RETRY_SCOPE_REQUEST,
+    RETRY_SCOPE_RESUME_TASK,
+)
 
 
 logger = logging.getLogger("PPTStudio.AIProvider")
@@ -90,6 +108,23 @@ IMAGE_RATE_LIMIT_MAX_ATTEMPTS = 3
 # httpx 不会因 4xx/5xx 抛异常，ToAPIs 的限流是以状态码返回的。
 # 503 一并视为"上游过载、可退避重试"。
 IMAGE_RATE_LIMIT_STATUS_CODES = frozenset({429, 503})
+# 异步任务轮询遇到暂时性故障时，继续轮询**同一个任务**的最大容忍次数；
+# 超过后才判定轮询失败，避免一次网络抖动就丢弃已提交的付费任务。
+TOAPIS_POLL_TRANSIENT_MAX_ATTEMPTS = 3
+
+
+def _structured_image_error(
+    error: BaseException,
+    phase: str,
+    *,
+    task_id: str = "",
+    overrides: Optional[ImageGenerationErrorInfo] = None,
+) -> ImageGenerationError:
+    """把上游异常转成结构化生图错误，保留原始异常作为诱因。"""
+    info = classify_image_error(error, phase=phase, upstream_task_id=task_id)
+    if overrides is not None:
+        info = overrides
+    return ImageGenerationError(info, cause=error)
 
 
 def _reraise_if_rate_limited(error: Exception) -> None:
@@ -107,6 +142,7 @@ def _governed_image_request(
     call: Any,
     *,
     retry_on_rate_limit: bool = True,
+    queue_wait_seconds: Optional[float] = None,
 ) -> Any:
     """在网关预算内执行一次上游生图请求。
 
@@ -114,16 +150,24 @@ def _governed_image_request(
     因此请求速率不会再随项目数线性叠加。撞到 429 时登记 AIMD 降档并退避重试，
     退避期间不占用并发许可。
 
+    ``queue_wait_seconds`` 把治理器排队等待钳制在该页剩余预算内：额度紧张时
+    有界等待，超时抛 :class:`GovernorTimeout`，绝不绕过额度强行发送。
+
     注意：httpx 默认不对 4xx/5xx 抛异常，ToAPIs 的 429 是以**状态码**返回的，
     所以这里必须同时处理"抛出的异常"和"返回的限流状态码"，否则限流会被
     当成普通失败直接上抛，既不退避也不计入 AIMD。
     """
     governor = generation_governor.get_generation_governor()
     attempt = 0
+    rate_limit_status: Optional[int] = None
     while True:
         rate_limit_error: Optional[Exception] = None
         try:
-            with governor.request(RESOURCE_IMAGE, base_url):
+            with governor.request(
+                RESOURCE_IMAGE,
+                base_url,
+                timeout_sec=queue_wait_seconds,
+            ):
                 response = call()
         except Exception as error:
             if not retry_on_rate_limit or not generation_governor.is_rate_limit_error(error):
@@ -132,6 +176,7 @@ def _governed_image_request(
         else:
             status = getattr(response, "status_code", None)
             if retry_on_rate_limit and status in IMAGE_RATE_LIMIT_STATUS_CODES:
+                rate_limit_status = status if isinstance(status, int) else None
                 rate_limit_error = RuntimeError(
                     f"上游返回 HTTP {status}（限流/过载），需要在网关额度内退避重试"
                 )
@@ -141,7 +186,28 @@ def _governed_image_request(
 
         attempt += 1
         if attempt > IMAGE_RATE_LIMIT_MAX_ATTEMPTS:
-            raise rate_limit_error
+            # 限流/过载重试次数用尽：这里**已经**在网关额度内做过有界退避重试
+            # （AIMD 记账 + 退避不占并发许可），因此标记为"不可自动重试、可恢复"，
+            # 页级执行器不得再套一层重试把请求数相乘，应暂停等待用户继续。
+            raised_status = rate_limit_status
+            if raised_status is None and rate_limit_error is not None:
+                raised_status = classify_image_error(
+                    rate_limit_error, phase=PHASE_SUBMIT
+                ).status_code
+            raise _structured_image_error(
+                rate_limit_error or RuntimeError("生图网关限流重试次数用尽"),
+                PHASE_SUBMIT,
+                overrides=ImageGenerationErrorInfo(
+                    code=CODE_RATE_LIMITED if raised_status == 429 else CODE_UPSTREAM_OVERLOADED,
+                    phase=PHASE_SUBMIT,
+                    retryable=False,
+                    status_code=raised_status,
+                    safe_message=(
+                        f"生图网关限流/过载，已在额度内退避重试 {IMAGE_RATE_LIMIT_MAX_ATTEMPTS} 次仍未成功: "
+                        f"{rate_limit_error}"
+                    ),
+                ),
+            )
         delay = governor.record_rate_limit(
             RESOURCE_IMAGE,
             base_url,
@@ -162,8 +228,11 @@ def get_openai_client(
     api_key: str,
     base_url: Optional[str] = None,
     timeout: float = 120.0,
-    max_retries: int = 1,
+    max_retries: int = 0,
 ) -> OpenAI:
+    # max_retries 默认 0：受治理调用（生图/LLM/TTS）的重试由明确的执行器
+    # 统一控制并计入同一份预算，SDK 隐式重试会让物理请求数翻倍、破坏
+    # 每请求一次的额度计量。
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -408,7 +477,14 @@ def _toapis_error(response: httpx.Response, payload: Any) -> RuntimeError:
     if not detail and isinstance(payload, dict):
         error = payload.get("error")
         detail = error.get("message") if isinstance(error, dict) else error
-    return RuntimeError(f"ToAPIs HTTP {response.status_code}: {str(detail or payload)[:800]}")
+    error = RuntimeError(f"ToAPIs HTTP {response.status_code}: {str(detail or payload)[:800]}")
+    # 携带结构化状态码，classify_image_error 据此判定可重试性，
+    # 不依赖错误文本里是否恰好包含"503"等字样。
+    try:
+        error.status_code = response.status_code  # type: ignore[attr-defined]
+    except Exception:
+        pass
+    return error
 
 
 def _toapis_safe_diagnostic(value: Any, api_key: str) -> str:
@@ -452,6 +528,8 @@ def generate_toapis_image_response(
     quality: str = "low",
     reference_paths: Optional[list[str]] = None,
     timeout: int = TOAPIS_DEFAULT_TASK_TIMEOUT_SECONDS,
+    resume_task_id: str = "",
+    queue_wait_seconds: Optional[float] = None,
 ) -> dict[str, Any]:
     """Upload local references, submit a ToAPIs task, then retain its result URL.
 
@@ -459,6 +537,10 @@ def generate_toapis_image_response(
     API.  The adapter therefore performs the documented upload -> task ->
     status polling sequence and returns the normal ``data[0].url`` shape used
     by the rest of the image workflow.
+
+    ``resume_task_id`` 非空时跳过提交，直接继续轮询既有任务：网络读取超时
+    或轮询超时不等于上游没有生成，恢复时优先复用已付费的任务。失败以
+    结构化 :class:`ImageGenerationError` 上抛，上游任务 ID 随错误保留。
     """
     if not api_key:
         raise RuntimeError("ToAPIs 缺少 API Key")
@@ -476,44 +558,61 @@ def generate_toapis_image_response(
                         files={"file": (os.path.basename(path), source, "image/png")},
                     )
 
-            upload = _governed_image_request(base_url, _upload_reference)
+            try:
+                upload = _governed_image_request(
+                    base_url,
+                    _upload_reference,
+                    queue_wait_seconds=queue_wait_seconds,
+                )
+            except (httpx.HTTPError, ConnectionError, OSError) as upload_transport_error:
+                raise _structured_image_error(upload_transport_error, PHASE_SUBMIT) from upload_transport_error
             try:
                 upload_body = upload.json()
             except ValueError:
                 upload_body = {"message": upload.text[:800]}
             if upload.status_code >= 400 or not upload_body.get("success", False):
-                raise _toapis_error(upload, upload_body)
+                raise _structured_image_error(
+                    _toapis_error(upload, upload_body), PHASE_SUBMIT
+                )
             url = ((upload_body.get("data") or {}).get("url"))
             if not isinstance(url, str) or not url.strip():
                 raise RuntimeError("ToAPIs 上传参考图未返回 URL")
             reference_urls.append(url)
-        payload: dict[str, Any] = {
-            "model": model or "gpt-image-2-vip",
-            "prompt": prompt,
-            "n": 1,
-            "size": _toapis_ratio(size),
-            "resolution": resolution if resolution in {"1k", "2k", "4k"} else "2k",
-            "quality": quality if quality in {"low", "medium", "high"} else "high",
-        }
-        if reference_urls:
-            payload["reference_images"] = reference_urls
-        created = _governed_image_request(
-            base_url,
-            lambda: client.post(
-                f"{root}/v1/images/generations",
-                headers={**headers, "Content-Type": "application/json"},
-                json=payload,
-            ),
-        )
-        try:
-            task = created.json()
-        except ValueError:
-            task = {"message": created.text[:800]}
-        if created.status_code >= 400 or (isinstance(task, dict) and task.get("success") is False):
-            raise _toapis_error(created, task)
-        task_id = task.get("id") if isinstance(task, dict) else None
-        if not isinstance(task_id, str) or not task_id:
-            raise RuntimeError("ToAPIs 创建图片任务未返回任务 ID")
+        task_id = str(resume_task_id or "").strip()
+        if not task_id:
+            payload: dict[str, Any] = {
+                "model": model or "gpt-image-2-vip",
+                "prompt": prompt,
+                "n": 1,
+                "size": _toapis_ratio(size),
+                "resolution": resolution if resolution in {"1k", "2k", "4k"} else "2k",
+                "quality": quality if quality in {"low", "medium", "high"} else "high",
+            }
+            if reference_urls:
+                payload["reference_images"] = reference_urls
+            try:
+                created = _governed_image_request(
+                    base_url,
+                    lambda: client.post(
+                        f"{root}/v1/images/generations",
+                        headers={**headers, "Content-Type": "application/json"},
+                        json=payload,
+                    ),
+                    queue_wait_seconds=queue_wait_seconds,
+                )
+            except (httpx.HTTPError, ConnectionError, OSError) as submit_transport_error:
+                raise _structured_image_error(submit_transport_error, PHASE_SUBMIT) from submit_transport_error
+            try:
+                task = created.json()
+            except ValueError:
+                task = {"message": created.text[:800]}
+            if created.status_code >= 400 or (isinstance(task, dict) and task.get("success") is False):
+                raise _structured_image_error(
+                    _toapis_error(created, task), PHASE_SUBMIT
+                )
+            task_id = task.get("id") if isinstance(task, dict) else None
+            if not isinstance(task_id, str) or not task_id:
+                raise RuntimeError("ToAPIs 创建图片任务未返回任务 ID")
         try:
             task_timeout = int(timeout or TOAPIS_DEFAULT_TASK_TIMEOUT_SECONDS)
         except (TypeError, ValueError):
@@ -523,19 +622,61 @@ def generate_toapis_image_response(
         deadline = started_at + task_timeout
         last_status: Any = None
         poll_interval = TOAPIS_POLL_INITIAL_SEC
+        transient_poll_failures = 0
         while time.monotonic() < deadline:
-            status_response = _governed_image_request(
-                base_url,
-                lambda: client.get(
-                    f"{root}/v1/images/generations/{task_id}", headers=headers
-                ),
-            )
+            # 轮询遇到暂时性故障（连接中断、429/5xx）时继续轮询**同一个任务**，
+            # 避免一次网络抖动就丢弃已提交的付费任务；非暂时性错误立即上抛。
+            status_http_error: Optional[BaseException] = None
+            status_response: Optional[httpx.Response] = None
+            try:
+                status_response = _governed_image_request(
+                    base_url,
+                    lambda: client.get(
+                        f"{root}/v1/images/generations/{task_id}", headers=headers
+                    ),
+                    queue_wait_seconds=queue_wait_seconds,
+                )
+            except ImageGenerationError:
+                raise
+            except generation_governor.GovernorTimeout:
+                raise
+            except (httpx.HTTPError, ConnectionError, OSError) as poll_transport_error:
+                status_http_error = poll_transport_error
+            if status_response is None:
+                transient_poll_failures += 1
+                if transient_poll_failures > TOAPIS_POLL_TRANSIENT_MAX_ATTEMPTS:
+                    raise _structured_image_error(
+                        status_http_error, PHASE_POLL, task_id=task_id
+                    )
+                time.sleep(min(poll_interval, 5.0))
+                continue
+            if status_response.status_code >= 400:
+                try:
+                    failed_status = status_response.json()
+                except ValueError:
+                    failed_status = {"message": status_response.text[:800]}
+                if status_response.status_code in IMAGE_RATE_LIMIT_STATUS_CODES or (
+                    status_response.status_code in {408, 500, 502, 504}
+                ):
+                    transient_poll_failures += 1
+                    if transient_poll_failures > TOAPIS_POLL_TRANSIENT_MAX_ATTEMPTS:
+                        raise _structured_image_error(
+                            _toapis_error(status_response, failed_status),
+                            PHASE_POLL,
+                            task_id=task_id,
+                        )
+                    time.sleep(min(poll_interval, 5.0))
+                    continue
+                raise _structured_image_error(
+                    _toapis_error(status_response, failed_status),
+                    PHASE_POLL,
+                    task_id=task_id,
+                )
+            transient_poll_failures = 0
             try:
                 status = status_response.json()
             except ValueError:
                 status = {"message": status_response.text[:800]}
-            if status_response.status_code >= 400:
-                raise _toapis_error(status_response, status)
             last_status = status
             state = str(status.get("status") or "").lower()
             if state == "completed":
@@ -544,9 +685,27 @@ def generate_toapis_image_response(
                 url = items[0].get("url") if isinstance(items, list) and items and isinstance(items[0], dict) else status.get("url")
                 if isinstance(url, str) and url:
                     return {"data": [{"url": url}], "toapis_task_id": task_id}
-                raise RuntimeError("ToAPIs 图片任务完成但未返回图片 URL")
+                raise _structured_image_error(
+                    ValueError("ToAPIs 图片任务完成但未返回图片 URL"),
+                    PHASE_POLL,
+                    task_id=task_id,
+                )
             if state == "failed":
-                raise RuntimeError(f"ToAPIs 图片任务失败: {str((status.get('error') or {}).get('message') or status.get('fail_reason') or '未知错误')[:800]}")
+                # 任务失败是上游的终态结论（内容拒绝/参数错误居多），
+                # 不自动重试，把原因完整带给上层。
+                raise ImageGenerationError(
+                    ImageGenerationErrorInfo(
+                        code=CODE_INVALID_PARAMETERS,
+                        phase=PHASE_POLL,
+                        retryable=False,
+                        status_code=None,
+                        safe_message=(
+                            "ToAPIs 图片任务失败: "
+                            f"{str((status.get('error') or {}).get('message') or status.get('fail_reason') or '未知错误')[:800]}"
+                        ),
+                        upstream_task_id=task_id,
+                    )
+                )
             # 指数退避轮询：状态查询同样消耗网关额度，固定 5 秒会把额度吃掉一半。
             retry_after = status_response.headers.get("Retry-After")
             hinted = 0.0
@@ -563,11 +722,22 @@ def generate_toapis_image_response(
             if remaining_seconds > 0:
                 time.sleep(min(poll_interval + random.uniform(0, 0.5), remaining_seconds))
     waited_seconds = min(task_timeout, max(0, round(time.monotonic() - started_at)))
-    raise RuntimeError(
-        "ToAPIs 图片任务等待超时: "
-        f"task_id={_toapis_safe_diagnostic(task_id, api_key)}, "
-        f"waited_seconds={waited_seconds}, "
-        f"last_status={_toapis_safe_diagnostic(last_status, api_key)}"
+    raise ImageGenerationError(
+        ImageGenerationErrorInfo(
+            code=CODE_POLL_TIMEOUT,
+            phase=PHASE_POLL,
+            retryable=True,
+            retry_scope=RETRY_SCOPE_RESUME_TASK,
+            retry_after_seconds=None,
+            outcome_unknown=True,
+            safe_message=(
+                "ToAPIs 图片任务等待超时: "
+                f"task_id={_toapis_safe_diagnostic(task_id, api_key)}, "
+                f"waited_seconds={waited_seconds}, "
+                f"last_status={_toapis_safe_diagnostic(last_status, api_key)}"
+            ),
+            upstream_task_id=task_id,
+        )
     )
 
 
@@ -599,7 +769,11 @@ def response_has_image_data(response: Any) -> bool:
 
 
 def extract_image_bytes_from_response(response: Any) -> bytes:
-    """Read image bytes from b64_json or URL response fields."""
+    """Read image bytes from b64_json or URL response fields.
+
+    下载与解码失败以结构化生图错误上抛：下载失败可复用同一结果地址重试
+    （不重新调用生图接口），解码失败/空响应则按有限补偿尝试重新生成。
+    """
     first_item = first_image_response_item(response)
     b64_json = image_response_value(first_item, "b64_json")
     if b64_json:
@@ -609,27 +783,50 @@ def extract_image_bytes_from_response(response: Any) -> bytes:
             and b64_text.strip().startswith("data:")
         ):
             b64_text = b64_text.split(",", 1)[1]
-        return base64.b64decode(b64_text)
+        try:
+            return base64.b64decode(b64_text)
+        except Exception as decode_error:
+            raise _structured_image_error(
+                ValueError(f"响应中的 base64 图片数据无法解码: {decode_error}"),
+                PHASE_DECODE,
+            ) from decode_error
 
     image_url = image_response_value(first_item, "url")
     if image_url:
         logger.info(
             "Image URL received, downloading generated asset."
         )
-        with httpx.Client(
-            timeout=60,
-            trust_env=False,
-        ) as http_client:
-            image_response = http_client.get(str(image_url))
+        try:
+            with httpx.Client(
+                timeout=60,
+                trust_env=False,
+            ) as http_client:
+                image_response = http_client.get(str(image_url))
+        except Exception as download_error:
+            raise _structured_image_error(
+                download_error,
+                PHASE_DOWNLOAD,
+            ) from download_error
         if image_response.status_code != 200:
-            raise RuntimeError(
+            error = RuntimeError(
                 "下载生成图片失败: "
                 f"HTTP {image_response.status_code}"
             )
+            try:
+                error.status_code = image_response.status_code  # type: ignore[attr-defined]
+            except Exception:
+                pass
+            raise _structured_image_error(
+                error,
+                PHASE_DOWNLOAD,
+            ) from error
         return image_response.content
 
-    raise RuntimeError(
-        "API 响应中既没有 url 也没有 b64_json，无法获取图片数据。"
+    raise _structured_image_error(
+        ValueError(
+            "API 响应中既没有 url 也没有 b64_json，无法获取图片数据。"
+        ),
+        PHASE_DECODE,
     )
 
 
@@ -644,8 +841,16 @@ def generate_image_response(
     api_key: Optional[str] = None,
     reference_paths: Optional[list[str]] = None,
     public_config: Optional[Dict[str, Any]] = None,
+    queue_wait_seconds: Optional[float] = None,
+    resume_task_id: str = "",
 ) -> Any:
-    """Generate an image with provider-specific fallbacks."""
+    """Generate an image with provider-specific fallbacks.
+
+    ``queue_wait_seconds`` 把治理器排队等待钳制在该页剩余预算内；
+    ``resume_task_id`` 供异步供应商（ToAPIs）恢复既有任务而不是重复提交。
+    参数兼容回退链只在**明确的参数不兼容**错误时展开；限流、超时、认证、
+    服务端故障原样上抛，交给页级有界重试在同一份预算内决策。
+    """
     if is_toapis_image_provider(provider, base_url):
         config = public_config or {}
         return generate_toapis_image_response(
@@ -659,6 +864,8 @@ def generate_image_response(
                 if timeout is not None
                 else TOAPIS_DEFAULT_TASK_TIMEOUT_SECONDS
             ),
+            resume_task_id=resume_task_id,
+            queue_wait_seconds=queue_wait_seconds,
         )
     if client is None:
         raise RuntimeError("图片服务客户端未初始化")
@@ -676,6 +883,7 @@ def generate_image_response(
         return _governed_image_request(
             base_url,
             lambda: client.images.generate(**call_kwargs),
+            queue_wait_seconds=queue_wait_seconds,
         )
 
     if seedream_mode:
@@ -687,6 +895,8 @@ def generate_image_response(
             )
         except Exception as response_format_error:
             _reraise_if_rate_limited(response_format_error)
+            if not is_parameter_incompatibility(response_format_error):
+                raise
             logger.warning(
                 "Seedream image generation with response_format "
                 "failed, retrying without it: %s",
@@ -699,6 +909,8 @@ def generate_image_response(
                 )
             except Exception as size_error:
                 _reraise_if_rate_limited(size_error)
+                if not is_parameter_incompatibility(size_error):
+                    raise
                 logger.warning(
                     "Seedream image generation with size failed, "
                     "retrying minimal params: %s",
@@ -714,6 +926,8 @@ def generate_image_response(
         )
     except Exception as full_params_error:
         _reraise_if_rate_limited(full_params_error)
+        if not is_parameter_incompatibility(full_params_error):
+            raise
         logger.warning(
             "Image gen with full params failed (%s). Retrying "
             "with size only for compatible providers...",
@@ -726,6 +940,8 @@ def generate_image_response(
             )
         except Exception as size_error:
             _reraise_if_rate_limited(size_error)
+            if not is_parameter_incompatibility(size_error):
+                raise
             logger.warning(
                 "Image gen with size failed (%s). Retrying "
                 "minimal params...",

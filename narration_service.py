@@ -15,6 +15,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from config_store import get_setting, update_settings
+from llm_concurrency import governed_llm_request, is_llm_format_incompatibility
 from project_path_service import project_or_404
 from project_config_runtime import (
     ProjectConfigBindingError,
@@ -517,30 +518,34 @@ def annotate_step6_narration(project_id: str, db: Session, payload: Optional[Dic
 
     try:
         try:
-            response = client.chat.completions.create(
-                model=llm_model,
-                temperature=0.2,
-                max_tokens=llm_max_tokens,
-                response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-            )
+            with governed_llm_request(llm_base_url):
+                response = client.chat.completions.create(
+                    model=llm_model,
+                    temperature=0.2,
+                    max_tokens=llm_max_tokens,
+                    response_format={"type": "json_object"},
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                )
         except Exception as format_error:
+            if not is_llm_format_incompatibility(format_error):
+                raise
             logger.warning(
                 "Narration annotation response_format failed (%s); retrying raw JSON",
                 type(format_error).__name__,
             )
-            response = client.chat.completions.create(
-                model=llm_model,
-                temperature=0.2,
-                max_tokens=llm_max_tokens,
-                messages=[
-                    {"role": "system", "content": system_prompt + " Return JSON only. No markdown."},
-                    {"role": "user", "content": user_prompt},
-                ],
-            )
+            with governed_llm_request(llm_base_url):
+                response = client.chat.completions.create(
+                    model=llm_model,
+                    temperature=0.2,
+                    max_tokens=llm_max_tokens,
+                    messages=[
+                        {"role": "system", "content": system_prompt + " Return JSON only. No markdown."},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                )
     except Exception as exc:
         logger.warning(
             "Narration annotation request failed (%s)",
@@ -561,6 +566,7 @@ def annotate_step6_narration(project_id: str, db: Session, payload: Optional[Dic
         artifact_prefix="step6_tts_annotation",
         schema_hint='{"slides":[{"slide_id":"slide_001","beats":[{"id":"beat_001","tts_text":"..."}]}]}',
         max_tokens=llm_max_tokens,
+        base_url=str(llm_base_url or ""),
     )
 
     annotated_by_slide: Dict[str, Dict[str, str]] = {}

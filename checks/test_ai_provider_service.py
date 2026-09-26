@@ -27,6 +27,14 @@ class FailingImageApi:
         return {"data": [{"b64_json": "result"}]}
 
 
+class ParameterError(RuntimeError):
+    """Carries a structured HTTP status so classification sees a 4xx."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.status_code = 400
+
+
 def test_provider_module_has_no_application_wiring() -> None:
     source = (ROOT / "ai_provider_service.py").read_text(
         encoding="utf-8"
@@ -85,8 +93,18 @@ def test_openai_client_transport_contract_is_preserved() -> None:
     }
 
 
+class ParamFailingImageApi(FailingImageApi):
+    """Raises a parameter-incompatibility error before succeeding."""
+
+    def generate(self, **kwargs: Any) -> Any:
+        self.calls.append(kwargs)
+        if len(self.calls) <= self.failures:
+            raise ParameterError(f"unsupported parameter on call {len(self.calls)}")
+        return {"data": [{"b64_json": "result"}]}
+
+
 def test_seedream_fallback_order_is_preserved() -> None:
-    images = FailingImageApi(failures=2)
+    images = ParamFailingImageApi(failures=2)
     client = SimpleNamespace(images=images)
     result = provider.generate_image_response(
         client=client,
@@ -123,7 +141,7 @@ def test_seedream_fallback_order_is_preserved() -> None:
 
 
 def test_generic_image_fallback_order_is_preserved() -> None:
-    images = FailingImageApi(failures=2)
+    images = ParamFailingImageApi(failures=2)
     client = SimpleNamespace(images=images)
     provider.generate_image_response(
         client=client,
@@ -151,6 +169,22 @@ def test_generic_image_fallback_order_is_preserved() -> None:
             "n": 1,
         },
     ]
+
+
+def test_transient_errors_do_not_burn_parameter_fallback_attempts() -> None:
+    """限流/过载/未知错误不得伪装成参数不兼容多打一轮请求。"""
+    images = FailingImageApi(failures=99)
+    client = SimpleNamespace(images=images)
+    try:
+        provider.generate_image_response(
+            client=client,
+            model="gpt-image-1",
+            prompt="prompt",
+            size="1024x1024",
+        )
+    except Exception:
+        pass
+    assert len(images.calls) == 1
 
 
 def test_image_response_decoding_contract_is_preserved() -> None:
@@ -187,4 +221,7 @@ def test_locked_subtitle_region_is_measured_and_cleared(tmp_path: Path) -> None:
     assert report["cleared"] is True
     assert report["nonwhite_ratio"] == 0.3
     with Image.open(path) as cleared:
-        assert set(cleared.crop((0, 80, 100, 100)).get_flattened_data()) == {(255, 255, 255)}
+        region = cleared.crop((0, 80, 100, 100))
+        flattened = getattr(region, "get_flattened_data", None)
+        pixels = flattened() if callable(flattened) else region.getdata()
+        assert set(pixels) == {(255, 255, 255)}

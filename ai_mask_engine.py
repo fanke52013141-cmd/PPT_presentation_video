@@ -31,6 +31,7 @@ from ai_mask_contracts import (  # noqa: F401 (AI_MASK_VISION_TIMEOUT_SEC is re-
 # still import, configure and run the rest of the pipeline.
 from ai_mask_doclayout import normalize_device_mode
 from pipeline_lifecycle import write_json_atomic
+import generation_governor
 
 
 SETTING_PREFIX = "ai_mask_"
@@ -650,6 +651,13 @@ def _annotate_project(
             "stage_ms": stage_ms,
         })
 
+    matches: dict[str, dict[str, Any]] = {}
+    if prepared:
+        with ThreadPoolExecutor(max_workers=min(3, len(prepared)), thread_name_prefix="ai-mask-match") as executor:
+            futures = {executor.submit(match_slide, item): item["slide_id"] for item in prepared}
+            for future in as_completed(futures):
+                matches[futures[future]] = future.result()
+
     def match_slide(item: dict[str, Any]) -> dict[str, Any]:
         stage_ms: dict[str, float] = item["stage_ms"]
         vision_started = time.monotonic()
@@ -669,31 +677,33 @@ def _annotate_project(
             )
             raw = _merge_match_results(raw_vision, item["fallback"])
         except Exception as exc:
-            logger = capabilities.logger
-            if logger is not None:
-                logger.warning("AI Mask multimodal match failed for %s; using deterministic prior: %s", item["slide_id"], exc)
+            # 额度排队超时与普通失败都必须可区分：同样保留确定性回退，
+            # 但超时页单独标记并汇总到运行级结果，供调用方明确决策。
+            quota_timeout = isinstance(exc, generation_governor.GovernorTimeout)
+            log = capabilities.logger
+            if log is not None:
+                log.warning("AI Mask vision %s for %s; deterministic prior: %s",
+                            "quota wait timed out" if quota_timeout else "match failed",
+                            item["slide_id"], exc)
             try:
                 capabilities.write_project_log(
                     project,
-                    "ai_mask_vision_failed",
+                    "ai_mask_vision_quota_timeout" if quota_timeout else "ai_mask_vision_failed",
                     slide_id=item["slide_id"],
                     elapsed_sec=round(time.monotonic() - vision_started, 2),
-                    timeout=_is_timeout(capabilities, exc),
+                    timeout=None if quota_timeout else _is_timeout(capabilities, exc),
                     error_type=type(exc).__name__,
                     error=str(exc)[:500],
                     configured_vision_model=configured_model,
                     resolved_vision_model=resolved_model,
-                    thinking_disabled=bool(
-                        capabilities.step2_llm_vendor_options(
-                            resolved_model,
-                            capabilities.get_setting("llm_base_url"),
-                        )
-                    ),
+                    thinking_disabled=bool(capabilities.step2_llm_vendor_options(
+                        resolved_model, capabilities.get_setting("llm_base_url")
+                    )),
                 )
             except Exception:
                 pass
             raw = item["fallback"]
-            item["vision_status"] = "deterministic_fallback"
+            item["vision_status"] = "quota_wait_timeout_fallback" if quota_timeout else "deterministic_fallback"
             item["vision_error_type"] = type(exc).__name__
         else:
             item["vision_status"] = "ok"
@@ -721,6 +731,11 @@ def _annotate_project(
             futures = {executor.submit(match_slide, item): item["slide_id"] for item in prepared}
             for future in as_completed(futures):
                 matches[futures[future]] = future.result()
+
+    quota_timeout_slide_ids = [
+        item["slide_id"] for item in prepared
+        if item.get("vision_status") == "quota_wait_timeout_fallback"
+    ]
 
     slides_out: list[dict[str, Any]] = []
     stage_totals: dict[str, float] = {}
@@ -807,6 +822,7 @@ def _annotate_project(
         "review_issue_count": len(review_issues),
         "review_issues": review_issues,
         "layout_status_counts": layout_status_counts,
+        "quota_wait_timeout_slide_ids": list(quota_timeout_slide_ids),
         "timing_ms": stage_totals,
         "scope_slide_ids": [item["slide_id"] for item in prepared],
         "mask_sources": {
@@ -826,6 +842,7 @@ def _annotate_project(
         "review_issue_count": len(review_issues),
         "review_issues": review_issues,
         "layout_status_counts": layout_status_counts,
+        "quota_wait_timeout_slide_ids": list(quota_timeout_slide_ids),
         "timing_ms": stage_totals,
         "slides": slides_out,
         "manifest_path": str(run_dir / "reveal_manifest.json"),

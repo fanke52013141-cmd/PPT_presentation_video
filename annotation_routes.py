@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
 from annotation_service import AnnotationService, get_annotation_service
@@ -125,6 +125,14 @@ def get_annotation_scene_asset(project_id: str, slide_id: str, asset: str,
                                db: Session = Depends(get_db),
                                service: AnnotationService = Depends(get_annotation_service)):
     return FileResponse(service.preview_scene_asset(db, project_id, slide_id, asset), media_type="image/png")
+
+
+@router.get("/api/projects/{project_id}/annotations/slides/{slide_id}/editor-ink/{annotation_id}/{stroke_index}")
+def get_annotation_editor_ink(project_id: str, slide_id: str, annotation_id: str,
+                              stroke_index: int, revision: int, db: Session = Depends(get_db),
+                              service: AnnotationService = Depends(get_annotation_service)):
+    return Response(service.annotation_editor_ink(db, project_id, slide_id, annotation_id, stroke_index, revision),
+                    media_type="image/png", headers={"Cache-Control": "private, no-cache"})
 
 
 @router.get("/api/projects/{project_id}/annotations/slides/{slide_id}/ink/{build_id}/{annotation_id}/{stroke_index}/{frame_index}")

@@ -15,6 +15,17 @@ from annotation_target_resolver import resolve_phrase_target
 from annotation_timeline import RESOLVER_VERSION, build_annotation_timeline
 
 
+def ink_request(item, stroke, canvas, index):
+    """Canonical ink inputs for editor stills and exported animation frames."""
+    return InkRequest(
+        points=tuple(map(tuple, stroke["points"])), width_profile=tuple(stroke["width_profile"]),
+        speed_profile=tuple(stroke.get("speed_profile", [])), canvas=tuple(canvas),
+        color=tuple(int(item.style.color[i:i + 2], 16) for i in (1, 3, 5)),
+        base_width=float(stroke.get("brush_height") or item.style.width), opacity=1.0,
+        seed=item.style.seed + index * 733, closed=stroke.get("closed", False),
+    )
+
+
 _INK_BUILD_GATE = threading.BoundedSemaphore(1)
 
 
@@ -188,13 +199,7 @@ def compile_slide(slide_dir, page, *, canvas, fps=30, alignment=None, cancel_eve
             raise AnnotationBuildError([{"reason": "cancelled"}])
         item = by_id[event["annotation_id"]]
         for index, stroke in enumerate(event["strokes"]):
-            request = InkRequest(
-                points=tuple(map(tuple, stroke["points"])), width_profile=tuple(stroke["width_profile"]),
-                speed_profile=tuple(stroke.get("speed_profile", [])), canvas=tuple(canvas),
-                color=tuple(int(item.style.color[i:i + 2], 16) for i in (1, 3, 5)),
-                base_width=float(stroke.get("brush_height") or item.style.width), opacity=1.0,
-                seed=item.style.seed + index * 733, closed=stroke.get("closed", False),
-            )
+            request = ink_request(item, stroke, canvas, index)
             relative = f"build_{payload['build_id']}_stroke_{index}"
             directory = slide_dir / "annotation_ink" / item.annotation_id / relative
             duration = stroke["draw_end_offset_sec"] - stroke["draw_start_offset_sec"]

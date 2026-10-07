@@ -869,6 +869,30 @@ class AnnotationService:
                 "timeline_built": True, "timeline_changed": changed, "build_id": compiled.get("build_id"),
                 "readiness": self._readiness(settings, run_dir, self._slide_ids_or_404(project), canvas)}
 
+    def annotation_editor_ink(self, db, project_id, slide_id, annotation_id, stroke_index, revision):
+        from io import BytesIO
+        from annotation_build import ink_request
+        from annotation_ink import render_stroke_rgba
+        project = self._project_or_404(db, project_id)
+        if slide_id not in self._slide_ids_or_404(project):
+            raise HTTPException(status_code=404, detail="Slide 不存在")
+        canvas = self._canvas_for(project)
+        with self._lock_for(project):
+            run_dir = self._run_dir(project)
+            page = self._store.read_page(run_dir, slide_id, canvas=canvas)
+            if not page or page.revision != revision:
+                raise HTTPException(status_code=409, detail="勾画已更新，请刷新画面")
+            item = next((item for item in page.items if item.annotation_id == annotation_id), None)
+            if item is None:
+                raise HTTPException(status_code=404, detail="勾画不存在")
+            payload = self._items_with_strokes(run_dir, slide_id, [item])[0]
+            if not 0 <= stroke_index < len(payload["strokes"]):
+                raise HTTPException(status_code=404, detail="笔迹不存在")
+            request = ink_request(item, payload["strokes"][stroke_index], canvas, stroke_index)
+        output = BytesIO()
+        render_stroke_rgba(request, arc=1.0).save(output, format="PNG")
+        return output.getvalue()
+
     def annotation_asset(self, db, project_id, slide_id, build_id, annotation_id, stroke_index, frame_index):
         from annotation_build import read_json
         project = self._project_or_404(db, project_id)

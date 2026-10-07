@@ -96,3 +96,27 @@ def test_frames_needed():
     assert frames_needed(0.6) == 18
     assert frames_needed(2.0, fps=25) == 50
     assert frames_needed(0.0) == 2
+
+
+def test_editor_still_matches_export_final_frame_pixel_for_pixel():
+    from types import SimpleNamespace
+    from annotation_build import ink_request
+
+    stroke = {
+        "points": [[20, 20], [70, 25], [100, 20]],
+        "width_profile": [0.4, 1.0, 0.3],
+        "speed_profile": [0.0, 0.3, 1.0],
+        "closed": False,
+    }
+    item = SimpleNamespace(style=SimpleNamespace(color="#F46A38", width=7, seed=123))
+    for canvas in ((1920, 1080), (1080, 1920)):
+        for brush_height in (None, 24):
+            if brush_height:
+                stroke["brush_height"] = brush_height
+            else:
+                stroke.pop("brush_height", None)
+            request = ink_request(item, stroke, canvas, 1)
+            editor = render_stroke_rgba(request, arc=1.0)
+            final = render_stroke_frames(request, draw_duration_sec=0.1)[-1]
+            assert editor.size == canvas
+            assert editor.tobytes() == final.tobytes()

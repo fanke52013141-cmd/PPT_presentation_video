@@ -71,13 +71,13 @@ function annotationShapeMarkup(item, shape, extraAttrs = '') {
   const owner = ` data-owner="${escHtml(item.annotation_id)}"${disabled ? ' data-disabled="true"' : ''}${extraAttrs}`;
   const effectiveOpacity = disabled ? opacity * 0.3 : opacity;
   if (shape.kind === 'path') {
-    return `<path d="${escHtml(shape.d)}" fill="${shape.closed ? escHtml(color) : 'none'}" fill-opacity="${shape.closed ? Math.min(0.12, opacity * 0.14) : 0}" stroke="${escHtml(color)}" stroke-width="${Math.max(1, Number(item.style?.width || 5) * 0.6)}" stroke-linejoin="round" opacity="${effectiveOpacity}"${owner} />`;
+    return `<path d="${escHtml(shape.d)}" fill="${shape.closed ? escHtml(color) : 'none'}" fill-opacity="${shape.closed ? Math.min(0.12, opacity * 0.14) : 0}" stroke="${escHtml(color)}" stroke-width="2.5" stroke-linejoin="round" opacity="${effectiveOpacity}"${owner} />`;
   }
   if (shape.kind === 'polyline') {
     return `<path d="${escHtml(shape.d)}" fill="none" stroke="${escHtml(color)}" stroke-width="${shape.strokeWidth}" stroke-linecap="round" stroke-linejoin="round" opacity="${effectiveOpacity}"${owner} />`;
   }
   if (shape.kind === 'rect') {
-    return `<rect x="${shape.x}" y="${shape.y}" width="${shape.width}" height="${shape.height}" fill="${escHtml(color)}" fill-opacity="${opacity * 0.35}" stroke="none"${owner} />`;
+    return `<rect x="${shape.x}" y="${shape.y}" width="${shape.width}" height="${shape.height}" fill="${escHtml(color)}" opacity="${effectiveOpacity}" stroke="none"${owner} />`;
   }
   return '';
 }
@@ -102,13 +102,21 @@ function renderAnnotationOverlay() {
     if (item.annotation_id === ANNOTATIONS_WS.selectedAnnotationId) {
       shapes.push(`<rect class="annotation-select-frame" x="${bounds.left - pad}" y="${bounds.top - pad}" width="${bounds.width + pad * 2}" height="${bounds.height + pad * 2}" fill="none" stroke="#111827" stroke-width="2" stroke-dasharray="10 6" data-owner="${escHtml(item.annotation_id)}" />`);
     }
-    // 正式笔迹:服务端派生的 v2 strokes 经共享采样器生成轮廓,
-    // 与导出几何完全一致(R2 方案 4.6)。
-    AnnotationsPlayback.renderScene(
-      [annotationEffectiveEvent(item, item.style?.color || '#F46A38')],
-      ANNOTATION_EDIT_SAMPLE_SEC,
-      30,
-    ).forEach(shape => shapes.push(annotationShapeMarkup(item, shape)));
+    // Use the same full-resolution textured ink as the final animation frame.
+    const event = annotationEffectiveEvent(item, item.style?.color || '#F46A38');
+    AnnotationsPlayback.renderScene([event], ANNOTATION_EDIT_SAMPLE_SEC, 30).forEach((shape, index) => {
+      if (event.strokes[index]?.kind === 'path') {
+        const base = `/api/projects/${encodeURIComponent(ANNOTATIONS_WS.projectId)}/annotations/slides/${encodeURIComponent(ANNOTATIONS_WS.page.slide_id)}`;
+        const url = `${base}/editor-ink/${encodeURIComponent(item.annotation_id)}/${index}?revision=${ANNOTATIONS_WS.page.revision}`;
+        const opacity = Math.max(0, Math.min(1, Number(item.style?.opacity ?? 0.85)))
+          * (item.status?.content === 'disabled' ? 0.3 : 1);
+        shapes.push(`<image href="${escHtml(url)}" x="0" y="0" width="${geometry.width}" height="${geometry.height}" opacity="${opacity}" pointer-events="none" />`);
+        // Full-canvas transparent images must not intercept other annotations.
+        shapes.push(`<path d="${escHtml(shape.d)}" fill="transparent" data-owner="${escHtml(item.annotation_id)}" />`);
+      } else {
+        shapes.push(annotationShapeMarkup(item, shape));
+      }
+    });
   });
   overlay.innerHTML = shapes.join('');
   overlay.querySelectorAll('[data-owner]').forEach(shape => {

@@ -524,3 +524,14 @@
 .annotation-field audio { width: 100%; min-width: 0; }
 
 #annotation-sync-preview { position: fixed !important; inset: 0 !important; margin: auto !important; max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px); overflow: auto; }
+
+/* =======================================================================
+   [标注预览滚动条圆角修复 20261007] 原生 <dialog> 自滚时，Chromium 不会
+   用 border-radius 裁剪元素自身的滚动条：深色 backdrop 上能看到细滚动
+   条戳出对话框右上/右下圆角；overflow:auto 还使 overflow-x 按 auto 计
+   算，窄窗口下会再出现横向滚动条。改为壳式布局：头部固定，内容区
+   .annotation-video-layout 内滚（滚动条被对话框圆角裁剪），并禁止横向
+   滚动。
+   ======================================================================= */
+#annotation-sync-preview { display: flex; flex-direction: column; overflow: hidden !important; }
+#annotation-sync-preview .annotation-video-layout { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }

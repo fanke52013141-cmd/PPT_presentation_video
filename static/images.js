@@ -309,7 +309,7 @@ function renderStep3Grid() {
       : isQueued
       ? step3GeneratingPreviewHtml('排队中', '等待上一张生成完成...')
       : img.exists
-      ? `<img src="${img.url}" style="width: 100%; height: 100%; object-fit: cover;" alt="${escHtml(slideTitle)}">`
+      ? `<img src="${img.url}" style="width: 100%; height: 100%; object-fit: contain; display: block;" alt="${escHtml(slideTitle)}">`
       : `<div style="width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.3rem; color: #888; background: #fffdf5;">
            <svg class="icon" viewBox="0 0 24 24" style="width: 20px; height: 20px; color: #aaa;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path></svg>
            <span style="font-size: 0.75rem; font-weight: 500;">暂无图片，点击上传/生成</span>

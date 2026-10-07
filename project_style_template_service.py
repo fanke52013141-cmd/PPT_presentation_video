@@ -44,6 +44,12 @@ BUILTIN_IMAGE_STYLE_TEMPLATES: dict[str, dict[str, Any]] = {
         "style_path": "config/builtin_image_styles/light_teaching.yaml",
         "reference_dir": "references/style_reference/light_teaching",
     },
+    "science_fresh": {
+        "name": "科普小清新风格",
+        "summary": "深蓝灰文字与柔和粉彩搭配，结合轻盈科学插图和清晰数据图表，适合知识科普、课程讲解与研究汇报。",
+        "style_path": "config/builtin_image_styles/science_fresh.yaml",
+        "reference_dir": "references/style_reference/science_fresh",
+    },
     "blackboard_chalk": {
         "name": "黑板粉笔风",
         "summary": "黑板面板与白色粉笔图示组合，适合课堂推演、答题步骤和公式拆解。",

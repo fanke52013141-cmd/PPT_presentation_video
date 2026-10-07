@@ -4820,9 +4820,20 @@ body.workspace-open #step-panel-3 .step3-image-card:hover {
   box-shadow: 0 8px 20px rgba(15, 23, 42, .08) !important;
 }
 body.workspace-open #step-panel-3 .step3-image-card .img-preview-container {
+  flex: 0 0 auto;
+  min-height: 0;
+  box-sizing: border-box;
   border: 1px solid rgba(241, 245, 249, .9) !important;
   border-radius: 12px !important;
   background: #fff8f4 !important;
+}
+body.workspace-open #step-panel-3 .img-preview-container > img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 #step2-thumbs .slide-thumbnail-card.step2-slide-thumb {
   width: auto !important;
@@ -6757,8 +6768,28 @@ body.workspace-open :is(#step8-loading, #step8-pptx-loading):is([data-task-state
 .shared-video-tools select { width:72px; }
 .shared-video-tools button, .shared-video-tools a { padding:6px 10px; border:1px solid #e2e8f0; border-radius:8px; background:white; color:#475569; text-decoration:none; }
 
-.shared-video-player {position:relative;background:#101827;border-radius:12px;overflow:hidden;}
-.shared-video-player video {display:block;width:100%;}
+.video-preview-box.shared-video-player {
+  display: flex;
+  flex-direction: column;
+  height: auto;
+  aspect-ratio: auto;
+  background: #101827;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px !important;
+  box-shadow: none;
+  overflow: hidden;
+}
+.video-preview-box.shared-video-player video {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: var(--project-aspect-ratio, 16 / 9);
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+.video-preview-box.shared-video-player > :is(.shared-video-transport, .shared-video-tools) {
+  flex: 0 0 auto;
+}
 .shared-video-transport {display:flex;align-items:center;gap:12px;padding:14px;color:white;background:linear-gradient(transparent,rgba(0,0,0,.65));}
 .shared-video-transport button {border:0;background:transparent;color:white;font-size:18px;cursor:pointer;}
 .shared-video-transport span {font-size:13px;white-space:nowrap;}

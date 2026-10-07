@@ -77,7 +77,7 @@ def test_builtin_teaching_styles_have_locked_prompts_and_references() -> None:
         http_exception=DummyHttpException,
     )
     summaries = service.builtin_template_summaries(context)
-    assert len(summaries) == 7
+    assert len(summaries) == 8
     assert {item["id"] for item in summaries} == set(service.BUILTIN_IMAGE_STYLE_TEMPLATES)
     for item in summaries:
         detail = service.template_detail(context, item["id"])

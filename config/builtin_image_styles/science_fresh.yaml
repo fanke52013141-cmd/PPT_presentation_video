@@ -1,0 +1,27 @@
+brand:
+  name: 科普小清新风格
+  style_keywords: [知识科普, 清新柔和, 理性专业, 轻科技感, 图表友好]
+colors:
+  background: "#FFFFFF"
+  surface: "#FFFFFF"
+  ink: "#465B78"
+  text: "#5F6B7A"
+  pink: "#EFC4C7"
+  pink_accent: "#FA839E"
+  beige: "#EBCFA8"
+  yellow_soft: "#E7DE78"
+  green_soft: "#B9D8B1"
+  blue_soft: "#BECBE9"
+  purple_soft: "#C7B6E8"
+visual_assets:
+  image_style: airy_pastel_science_illustration
+  diagram_style: clear_pastel_charts_and_rounded_information_cards
+  required_background: flat_uniform_pure_white
+  avoid: [儿童卡通, 密集装饰, 霓虹科技, 深色整页背景, 风格说明海报, 多页拼贴]
+prompt_system_content: |
+  使用“科普小清新风格”：清晰易读、理性专业且亲和，以轻盈科学插图配合柔和粉彩信息图，适合课程讲解、科学传播、教育培训与研究汇报。
+  标题使用深蓝灰 #465B78，正文使用清晰可读的中深灰 #5F6B7A；珊瑚粉 #FA839E 用于编号、关键字和重点数字。辅助配色采用柔粉 #EFC4C7、米杏 #EBCFA8、暖黄 #E7DE78、薄荷绿 #B9D8B1、浅蓝 #BECBE9、淡紫 #C7B6E8，每页按语义选择少量颜色，保持全套一致。浅色用于图表填充和小型功能分区，正文保持足够对比度。
+  中文标题厚实简洁，正文使用清楚的无衬线字形，数字规整易比较。标题、正文、图表标签建立明确层级，留白充足。根据内容使用左文右图、独立信息卡片、编号步骤或图表布局；圆角柔和，细分隔线克制，避免所有页面套用同一版式。
+  科学插图可采用柔和半写实或轻立体质感，围绕本页主题选择地球、分子、生态、太空或实验器材等元素；局部高光与淡雅渐变只用于插图内部。数据图表使用清晰刻度、直接标签和粉彩系列色，突出有来源的关键结论，不编造数据，不把装饰当作信息。
+  参考图是一张风格说明板，仅借鉴配色、字形、插图质感和信息层级。最终输出本页内容的一张完整幻灯片，不复刻说明板、示例文字、日期、机构标识或多页拼贴。
+  外背景保持纯白 #FFFFFF，不铺设整页渐变、纸纹、背景星轨或跨组装饰。各独立视觉组之间留出白色间隙，科学插图与装饰归入对应内容组，重要正文和图表避开字幕区域，适配项目选定的横版或竖版画布。

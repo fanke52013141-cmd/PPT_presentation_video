@@ -6845,3 +6845,32 @@ body.workspace-open :is(#step8-loading, #step8-pptx-loading):is([data-task-state
 #step-panel-10 #annotation-btn-ai-plan[data-has-items="true"] {background:white!important;color:#475569!important;border-color:#e2e8f0!important;box-shadow:none!important;}
 #step-panel-10 .annotation-operation-toolbar {margin:0 0 12px;border-top:0;border-bottom:1px solid #e2e8f0;padding:0 0 12px;}
 #step-panel-10 #annotation-btn-preview.annotation-recommended-action {background:#0f172a!important;color:white!important;border-color:#0f172a!important;}
+
+/* =======================================================================
+   [弹窗滚动条圆角修复 20261007] Chromium 不用 border-radius 裁剪元素自身
+   的滚动条：卡片自滚时 6px 细滚动条的上下端悬在圆角外，视觉上戳进右上/
+   右下角；overflow-y:auto 又使 overflow-x 被按 auto 计算，不可收缩内容
+   （原生 file input、被拖宽的 textarea）还会触发横向滚动条戳左下/右下角。
+   处理（配合上方"弹窗统一居中"层的遮罩 overflow-y:auto + 子项 margin:auto）：
+   1) 平铺弹窗卡片不再自滚：取消 90vh 高度上限，内容自然撑高、由遮罩层
+      滚动，滚动条贴视口边缘，卡片四个角不再出现滚动条。
+   2) .config-editor-modal 家族恢复设计意图 overflow:hidden（20260916
+      兜底规则的 !important 曾把卡片 Y 轴改回 auto），滚动只发生在内部
+      .config-editor-scroll：距卡片边缘有内边距，且被卡片圆角裁剪。
+   3) 所有弹窗卡片一律禁止横向滚动。
+   ======================================================================= */
+.modal-content { overflow-x: hidden !important; }
+.modal-content.config-editor-modal { overflow: hidden !important; }
+#modal-create .modal-content,
+#modal-edit-project .modal-content,
+#modal-creation-config-style .modal-content,
+#modal-confirm .modal-content,
+#modal-step3-ai .modal-content,
+#modal-step2-generate .modal-content,
+#modal-step2-batch-import .modal-content,
+.modal-content.prompt-io-help-modal,
+.modal-content.account-create-panel,
+#agent-modal .modal-content {
+  max-height: none !important;
+  overflow: hidden !important;
+}

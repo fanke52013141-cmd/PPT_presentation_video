@@ -209,12 +209,29 @@ async function refreshStep3Images(
   }
 }
 
+function step3PortraitColumnCount(width) {
+  return Math.max(1, Math.min(6, Math.floor((width + 16) / 256)));
+}
+let step3GridResizeObserver;
+function updateStep3GridColumns(grid) {
+  grid.style.setProperty('--step3-portrait-columns', step3PortraitColumnCount(grid.clientWidth));
+}
 function renderStep3Grid() {
   const grid = document.getElementById('step3-images-grid');
   if (!grid) return;
-  grid.innerHTML = '';
+  const geometry = getProjectCanvasGeometry();
+  grid.dataset.canvasOrientation = geometry.orientation;
+  updateStep3GridColumns(grid);
+  if (!step3GridResizeObserver && typeof ResizeObserver !== 'undefined') {
+    step3GridResizeObserver = new ResizeObserver(() => updateStep3GridColumns(grid));
+    step3GridResizeObserver.observe(grid);
+  }
+  const previousCards = new Map(Array.from(grid.children).map(card => [card.dataset.slideId, card]));
+  const retainedCards = new Set();
+  let cursor = grid.firstElementChild;
 
   if (step3LoadState === 'loading' || step3LoadState === 'error' || !step3ImageOrder.length) {
+    grid.replaceChildren();
     const empty = document.createElement('div');
     empty.className = 'ws-empty step3-empty';
     empty.setAttribute('role', 'status');
@@ -309,12 +326,25 @@ function renderStep3Grid() {
       : isQueued
       ? step3GeneratingPreviewHtml('排队中', '等待上一张生成完成...')
       : img.exists
-      ? `<img src="${img.url}" style="width: 100%; height: 100%; object-fit: contain; display: block;" alt="${escHtml(slideTitle)}">`
+      ? `<img src="${escHtml(img.url)}" style="width: 100%; height: 100%; object-fit: contain; display: block;" alt="${escHtml(slideTitle)}">`
       : `<div style="width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.3rem; color: #888; background: #fffdf5;">
            <svg class="icon" viewBox="0 0 24 24" style="width: 20px; height: 20px; color: #aaa;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path></svg>
            <span style="font-size: 0.75rem; font-weight: 500;">暂无图片，点击上传/生成</span>
          </div>`;
 
+    const previous = previousCards.get(String(img.slide_id));
+    const previewKey = JSON.stringify([previewHtml, geometry.aspectRatio]);
+    const renderKey = JSON.stringify([state.currentProject?.id, idx, slideTitle, previewKey,
+      canMoveImage, isBusy, isGenerating, isUploading, statusClass, statusLabel, statusTitle]);
+    if (previous?.dataset.renderKey === renderKey) {
+      retainedCards.add(previous);
+      if (previous !== cursor) grid.insertBefore(previous, cursor);
+      cursor = previous.nextElementSibling;
+      return;
+    }
+    card.dataset.slideId = img.slide_id;
+    card.dataset.renderKey = renderKey;
+    card.dataset.previewKey = previewKey;
     card.innerHTML = `
       <div class="step3-card-header">
         <div class="step3-card-identity">
@@ -347,6 +377,9 @@ function renderStep3Grid() {
         ${previewHtml}
       </div>
     `;
+    if (previous?.dataset.previewKey === previewKey) {
+      card.querySelector('.img-preview-container').replaceWith(previous.querySelector('.img-preview-container'));
+    }
     const dragHandle = card.querySelector('.slide-drag-handle');
     card.querySelector('.step3-ai-action')?.addEventListener('click', (event) => {
       event.stopPropagation();
@@ -378,8 +411,13 @@ function renderStep3Grid() {
       const direction = ['ArrowLeft', 'ArrowUp'].includes(e.key) ? -1 : 1;
       await reorderStep3Images(idx, idx + direction);
     });
-    grid.appendChild(card);
+    retainedCards.add(card);
+    grid.insertBefore(card, cursor);
+    cursor = card.nextElementSibling;
   });
+  if (step3ImageOrder.length) {
+    Array.from(grid.children).forEach(card => { if (!retainedCards.has(card)) card.remove(); });
+  }
 }
 
 function syncStep3ActiveSlideIndex() {

@@ -934,6 +934,7 @@
     const action = element('btn-save-model');
     const editing = state.connections.find(item => item.id === state.editingConnectionId);
     const isEditing = !!editing && editing.kind === kind;
+    window.PPTModelTests.mountEditorActions(isEditing ? editing : null);
     if (title) title.textContent = isEditing ? `编辑${{ text: '文本', image: '图片', tts: '语音' }[kind]}模型` : copy.title;
     if (description) description.textContent = copy.description;
     if (action) action.textContent = isEditing ? '保存修改' : copy.action;

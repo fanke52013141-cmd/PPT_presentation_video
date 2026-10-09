@@ -6874,3 +6874,183 @@ body.workspace-open :is(#step8-loading, #step8-pptx-loading):is([data-task-state
   max-height: none !important;
   overflow: hidden !important;
 }
+
+/* Player reference: translucent playback controls over the video, light tools below. */
+#step8-video-list .shared-video-tools,
+#annotation-sync-preview .shared-video-tools {padding:10px 14px;gap:12px;font-size:12px;background:#f8fafc;color:#475569;border-top:1px solid #e2e8f0;}
+#step8-video-list .shared-video-tools :is(button,a),
+#annotation-sync-preview .shared-video-tools :is(button,a) {min-height:32px!important;height:32px!important;padding:4px 10px!important;font-size:12px!important;line-height:22px!important;border-radius:8px!important;}
+#step8-video-list .shared-video-tools .ppt-select-trigger,
+#annotation-sync-preview .shared-video-tools .ppt-select-trigger {min-height:32px!important;height:32px!important;padding:4px 10px!important;font-size:12px!important;}
+
+/* Preserve Remotion's original controls instead of workspace button overrides. */
+#step8-video-list .output-composition-player button,
+#annotation-player-root button {
+  background:transparent!important;border:0!important;box-shadow:none!important;
+  border-radius:0!important;min-width:0!important;min-height:0!important;
+  color:white!important;transform:none!important;
+}
+#step8-video-list .output-composition-player button:is([aria-label="Play video"],[aria-label="Pause video"],[aria-label="Enter Fullscreen"],[aria-label="Exit Fullscreen"]),
+#annotation-player-root button:is([aria-label="Play video"],[aria-label="Pause video"],[aria-label="Enter Fullscreen"],[aria-label="Exit Fullscreen"]) {padding:6px 0!important;height:37px!important;width:auto!important;margin:0!important;}
+#step8-video-list .output-composition-player button:is([aria-label="Mute sound"],[aria-label="Unmute sound"]),
+#annotation-player-root button:is([aria-label="Mute sound"],[aria-label="Unmute sound"]) {padding:0!important;height:25px!important;width:25px!important;margin:0!important;}
+/* Account rows share the library's compact outline icon actions. */
+header .account-picker-menu .account-picker-row {
+  display: flex;
+  align-items: center;
+}
+header .account-picker-menu .account-picker-row + .account-picker-row {
+  border-top: 1px solid #f0eff2;
+}
+header .account-picker-menu .account-picker-row .account-picker-option {
+  flex: 1;
+  min-width: 0;
+}
+header .account-picker-menu .account-delete-action {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 28px;
+  width: 28px !important;
+  height: 28px !important;
+  min-height: 0 !important;
+  margin: 0 4px 0 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 6px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #a8a3ae !important;
+  opacity: 0;
+  transition: opacity .15s ease, color .15s ease;
+}
+header .account-picker-menu .account-picker-row:hover .account-delete-action,
+header .account-picker-menu .account-picker-row:focus-within .account-delete-action {
+  opacity: 1;
+}
+header .account-picker-menu .account-delete-action:not(:disabled):hover {
+  color: #ef4f3f !important;
+  background: #fff6f2 !important;
+}
+header .account-picker-menu .account-delete-action:focus-visible {
+  outline: 2px solid #f46a38;
+  outline-offset: 1px;
+}
+header .account-picker-menu .account-delete-action:disabled {
+  opacity: .35;
+  cursor: not-allowed;
+}
+@media (hover: none) {
+  header .account-picker-menu .account-delete-action { opacity: 1; }
+}
+
+/* Saved-model output tests: icon actions at the editor title's right edge. */
+#modal-model-management .model-setup-heading > div { width: 100%; }
+#modal-model-management .model-setup-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+#modal-model-management .model-setup-title-row h4 { margin: 0 !important; }
+#modal-model-management #model-test-editor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+#modal-model-management #model-test-editor-actions[hidden] { display: none; }
+#modal-model-management #model-test-editor-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  min-height: 28px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 6px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #64748b;
+}
+#modal-model-management #model-test-editor-actions button:hover:not(:disabled) { color: #ee5d36; background: #fff5f0 !important; }
+#modal-model-management #model-test-editor-actions button:disabled { opacity: .35; cursor: not-allowed; }
+#modal-model-management #model-test-editor-actions button:focus-visible { outline: 2px solid #ee5d36; outline-offset: 2px; }
+#modal-model-management #model-test-editor-actions svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#modal-model-management #model-test-editor-actions .is-testing { color: #ee5d36; }
+#modal-model-output-test { z-index: 1200; }
+#modal-model-output-test .model-test-panel {
+  width: min(640px, calc(100vw - 32px));
+  max-height: 85vh;
+  overflow-y: auto;
+}
+#modal-model-output-test .model-test-input { color: #6b7280; margin: 14px 0; }
+#modal-model-output-test .model-test-output { min-height: 80px; overflow-wrap: anywhere; }
+#modal-model-output-test .model-test-output img { display: block; max-width: 100%; max-height: 55vh; margin: 12px auto; object-fit: contain; }
+#modal-model-output-test .model-test-output audio { display: block; width: 100%; margin: 16px 0; }
+#modal-model-output-test .model-test-output pre { white-space: pre-wrap; font: inherit; background: #f8fafc; padding: 16px; border-radius: 10px; }
+#modal-model-output-test .model-test-success { color: #15803d; }
+#modal-model-output-test .model-test-error { color: #dc2626; }
+
+/* Viewport-sized generation feedback, portrait gallery, and output previews. */
+body.workspace-open #step2-loading {
+  min-height: 72px !important;
+  padding: 12px 20px !important;
+}
+body.workspace-open #step2-loading .page-task-surface {
+  min-height: 48px !important;
+  flex-direction: row;
+  gap: 16px;
+}
+body.workspace-open #step2-loading .page-task-skeleton { order: -1; padding: 0; }
+body.workspace-open :is(#step8-loading, #step8-pptx-loading) {
+  min-height: 150px !important;
+  height: auto !important;
+  padding: 24px !important;
+}
+#step-panel-8 .generation-control:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 16px;
+}
+#step-panel-8 .generation-control button {
+  min-width: 152px !important;
+  min-height: 44px !important;
+  padding: 10px 24px !important;
+  font-size: 15px;
+}
+body.workspace-open #step3-images-grid[data-canvas-orientation="portrait"] {
+  grid-template-columns: repeat(var(--step3-portrait-columns, 5), minmax(0, 1fr)) !important;
+  gap: 16px !important;
+}
+body.workspace-open #step-panel-3 body.workspace-open #step-panel-3 body.workspace-open #step-panel-3 #step3-images-grid[data-canvas-orientation="portrait"] .step3-image-card { padding: 12px !important; }
+body.workspace-open #step-panel-3 body.workspace-open #step-panel-3 body.workspace-open #step-panel-3 #step3-images-grid[data-canvas-orientation="portrait"] .step3-card-header { flex-wrap: wrap; gap: 8px; }
+#step-panel-8 .video-preview-box.shared-video-player {
+  display: flex;
+  flex-direction: column;
+  height: auto;
+  aspect-ratio: auto;
+  width: 100% !important;
+  max-width: none !important;
+  background: transparent;
+  border: 0;
+  margin: 16px auto;
+}
+#step-panel-8 .video-preview-box > :is(.output-composition-player, video) {
+  width: min(100%, calc(var(--output-preview-height, clamp(120px, 100dvh - 390px, 520px)) * var(--output-aspect-ratio, 1.777778))) !important;
+  margin: 0 auto;
+  border-radius: 10px;
+  overflow: hidden;
+}
+#step-panel-8 .video-preview-box > video { aspect-ratio: var(--output-aspect-ratio, 1.777778); }
+#step-panel-8 .shared-video-tools { justify-content: center; background: transparent; }
+#step-panel-8 .step8-video-actions { justify-content: center; flex-wrap: wrap; gap: 12px; }
+#step-panel-8 .video-preview-box:fullscreen > .output-composition-player {
+  width: min(100%, calc((100dvh - 64px) * var(--output-aspect-ratio, 1.777778))) !important;
+}

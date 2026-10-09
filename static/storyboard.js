@@ -17,7 +17,7 @@ function setStep2TaskPhase(phase, status) {
   else step2TaskPhases[phase] = status;
   refreshStep2TaskStates();
   document.getElementById('step-panel-2')?.classList.toggle('is-generating-storyboard', Object.values(step2TaskPhases).includes('running'));
-  renderPageTaskState(document.getElementById('step2-loading'), 'storyboard', status === 'running' && !state.step2ScriptPlan?.slides?.length ? 'running' : null, phase === 'script' ? '正在生成每页演讲稿' : '正在生成画面文字与演讲片段', phase === 'script' ? 'text' : 'mapping');
+  renderPageTaskState(document.getElementById('step2-loading'), 'storyboard', Object.values(step2TaskPhases).includes('running') ? 'running' : null, phase === 'script' ? '正在生成每页演讲稿' : '正在生成画面文字与演讲片段', phase === 'script' ? 'text' : 'mapping');
   const host = document.getElementById(phase === 'script' ? 'step2-script-slides' : 'step2-script-visuals');
   const labels = {running: phase === 'script' ? '正在生成每页演讲稿' : '正在生成画面文字与演讲片段', error: '生成失败，请重试', paused: '生成已停止'};
   renderPageTaskState(host, phase, status === 'done' ? null : status, labels[status], phase === 'script' ? 'text' : 'mapping');
@@ -142,7 +142,7 @@ async function generateStep2ScriptPlan(requirement = '') {
   if (scriptButton) scriptButton.disabled = true;
   // 生成演讲稿期间「内容可视化」保持可见但不可点击（UI 规范 §8）。
   if (visualButton) visualButton.disabled = true;
-  if (loading) loading.style.display = state.step2ScriptPlan?.slides?.length ? 'none' : 'block';
+  if (loading) loading.style.display = 'block';
   setStep2TaskPhase('script', 'running');
   if (loadingText) loadingText.textContent = '第一步：AI 正在根据文章生成每页标题和演讲稿…';
   setStep2GenerationStatus('');
@@ -380,7 +380,7 @@ async function generateStep2VisualPlan() {
   const loadingText = document.querySelector('#step2-loading p');
   const oldLoadingText = loadingText?.textContent || '';
   if (button) button.disabled = true;
-  if (loading) loading.style.display = 'none';
+  if (loading) loading.style.display = 'block';
   try {
     setStep2TaskPhase('visual', 'running');
     if (loadingText) loadingText.textContent = '第二步：AI 正在根据已保存的演讲稿规划可视化…';

@@ -357,7 +357,17 @@
     }
   }
 
-  async function enhanceCreateModal() {
+  async function enhanceCreateModal(resetDraft = false) {
+    // Clear immediately, before account configuration requests can finish.
+    renderModal(PROFILE_STATE.creationConfigs || []);
+    if (resetDraft) {
+      ['input-project-name', 'input-project-desc', 'input-project-article'].forEach(id => {
+        const input = document.getElementById(id);
+        if (input) input.value = '';
+      });
+      const scroll = document.querySelector('#modal-create .project-profile-scroll');
+      if (scroll) scroll.scrollTop = 0;
+    }
     const creationConfigs = await loadCreationConfigs();
     renderModal(creationConfigs);
     refreshCreationConfigChoices(creationConfigs, { preferDefault: true });
@@ -373,7 +383,7 @@
     const createButton = document.getElementById('btn-create-project');
     if (createButton && !createButton.__profileConfigBound) {
       createButton.__profileConfigBound = true;
-      createButton.addEventListener('click', () => enhanceCreateModal().catch(() => {}));
+      createButton.addEventListener('click', () => enhanceCreateModal(true).catch(() => {}));
     }
   }
 

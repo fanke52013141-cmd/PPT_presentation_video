@@ -1910,7 +1910,7 @@ def get_all_images(project_id: str, db: Session):
                 {
                     "slide_id": slide_id,
                     "exists": exists,
-                    "url": f"/api/projects/{project_id}/slides/{slide_id}/image?t={uuid.uuid4().hex[:4]}"
+                    "url": f"/api/projects/{project_id}/slides/{slide_id}/image?t={os.stat(img_file).st_mtime_ns}-{os.stat(img_file).st_size}"
                     if exists
                     else None,
                     "provenance": visual_provenance_status(project.run_dir, slide_id)
@@ -1929,7 +1929,7 @@ def get_all_images(project_id: str, db: Session):
                     {
                         "slide_id": slide_dir_name,
                         "exists": exists,
-                        "url": f"/api/projects/{project_id}/slides/{slide_dir_name}/image?t={uuid.uuid4().hex[:4]}"
+                        "url": f"/api/projects/{project_id}/slides/{slide_dir_name}/image?t={os.stat(img_file).st_mtime_ns}-{os.stat(img_file).st_size}"
                         if exists
                         else None,
                         "provenance": visual_provenance_status(

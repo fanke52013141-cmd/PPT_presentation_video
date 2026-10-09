@@ -67,12 +67,25 @@ class AccountContextMiddleware(BaseHTTPMiddleware):
             account = db.query(Account).filter(
                 Account.id == account_id, Account.status == "active"
             ).first()
+            # Deleted browser selections (including the bootstrap default)
+            # recover on another tab/restart; explicit header IDs stay strict.
+            if account is None and not request.headers.get("x-ppt-account-id"):
+                account = db.query(Account).filter(Account.status == "active").order_by(
+                    Account.created_at, Account.id
+                ).first()
+                if account is not None:
+                    account_id = account.id
         finally:
             db.close()
         if account is None:
             return JSONResponse({"detail": "创作账号不存在或已停用"}, status_code=404)
         token = set_current_account_id(account_id)
         try:
-            return await call_next(request)
+            response = await call_next(request)
+            if not request.headers.get("x-ppt-account-id") and request.cookies.get("ppt_studio_account_id") != account_id:
+                # Respect selection/deletion routes that already set this cookie.
+                if not any("ppt_studio_account_id=" in value for value in response.headers.getlist("set-cookie")):
+                    response.set_cookie("ppt_studio_account_id", account_id, httponly=True, samesite="lax")
+            return response
         finally:
             reset_current_account_id(token)

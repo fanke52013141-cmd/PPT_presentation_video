@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+Marker+Gothic&family=LXGW+WenKai+TC:wght@300;400;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@300;400;500;600;700;800&family=Noto+Serif+TC:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css?v=20261006.1">
   <!-- Stitch screen contract: the supplied page code is the visual source of truth. -->
-  <link rel="stylesheet" href="stitch.css?v=20261007.27">
+  <link rel="stylesheet" href="stitch.css?v=20261009.4">
   <!-- 勾画标注工作区(可选步骤 10)作用域样式,置于既有层之后,仅覆盖新面板。 -->
   <link rel="stylesheet" href="annotations.css?v=20261006.25">
   <link rel="stylesheet" href="workspace_content.css?v=20261006.5">
@@ -32,11 +32,11 @@
     </div>
     <div style="display: flex; gap: 1rem; align-items: center;">
       <div class="account-switcher">
-        <button id="account-picker-trigger" class="account-picker" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="切换创作账号">
+        <button id="account-picker-trigger" class="account-picker" type="button" aria-controls="account-picker-menu" aria-expanded="false" aria-label="切换创作账号">
           <span id="account-picker-name">默认创作账号</span>
           <span class="account-picker-chevron" aria-hidden="true"></span>
         </button>
-        <div id="account-picker-menu" class="account-picker-menu" role="listbox" aria-label="创作账号列表" hidden></div>
+        <div id="account-picker-menu" class="account-picker-menu" role="group" aria-label="创作账号列表" hidden></div>
         <select id="current-account-select" class="account-select-native" aria-label="当前创作账号" tabindex="-1"></select>
         <button id="btn-create-account" class="secondary" type="button" title="创建创作账号">＋</button>
         <button id="btn-edit-current-account" class="secondary account-edit-action" type="button" title="修改当前创作账号" aria-label="修改当前创作账号">✎</button>
@@ -1306,7 +1306,10 @@
         <section class="model-setup-card" aria-labelledby="model-setup-title">
           <div class="model-setup-heading">
             <div>
-              <h4 id="model-setup-title">新增文本模型</h4>
+              <div class="model-setup-title-row">
+                <h4 id="model-setup-title">新增文本模型</h4>
+                <div id="model-test-editor-actions" aria-label="模型测试操作" hidden></div>
+              </div>
               <p id="model-setup-description">使用 OpenAI 或任意兼容 OpenAI Chat Completions 的服务。</p>
             </div>
           </div>
@@ -1804,13 +1807,14 @@
   <script src="prompt_help.js?v=20261006.2"></script>
   <script src="settings.js?v=20260928.1"></script>
   <script src="projects.js?v=20260916.1"></script>
-  <script src="creation_config_management.js?v=20261006.4"></script>
+  <script src="model_connection_tests.js?v=20261009.3"></script>
+  <script src="creation_config_management.js?v=20261009.4"></script>
   <script src="select_menus.js?v=20260906.1"></script>
   <script src="courses.js?v=20261006.2"></script>
   <script src="article.js?v=20261006.17"></script>
-  <script src="storyboard.js?v=20261006.18"></script>
+  <script src="storyboard.js?v=20261009.4"></script>
   <script src="storyboard_prompts.js?v=20261006.2"></script>
-  <script src="images.js?v=20261007.21"></script>
+  <script src="images.js?v=20261009.4"></script>
   <script src="image_prompts.js?v=20260801.1"></script>
   <script src="ip_character_manager.js?v=20261005.1"></script>
   <script src="mask_reveal.js?v=20260801.1"></script>
@@ -1824,13 +1828,13 @@
   <script src="annotation_audio_calibration.js?v=20261006.2"></script>
   <script src="annotations_editor.js?v=20261006.23"></script>
   <script src="annotation_preview.js?v=20261006.24"></script>
-  <script src="video_controls.js?v=20261006.24"></script>
+  <script src="video_controls.js?v=20261009.4"></script>
   <script src="output_render.js?v=20261006.12"></script>
-  <script src="account_management.js?v=20261006.2"></script>
+  <script src="account_management.js?v=20261009.4"></script>
   <script src="workspace_navigation.js?v=20261006.BCD2"></script>
   <script src="generation_controls.js?v=20261005.1"></script>
   <script src="event_bindings.js?v=20261006.23"></script>
-  <script src="project_profile_extension.js?v=20261006.14"></script>
+  <script src="project_profile_extension.js?v=20261009.4"></script>
   <script src="storyboard_background_extension.js?v=20261006.6"></script>
   <script src="style_reference_manager_extension.js?v=20261005.1"></script>
   <script src="ai_mask_auto_state.js?v=20260809.1"></script>

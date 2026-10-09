@@ -35,24 +35,62 @@
     if(adapter.download){const link=document.createElement('a');link.textContent='下载视频';link.href=adapter.download;link.download='video.mp4';tools.append(link);}
     host.append(tools);
   };
-  function decorate(){document.querySelectorAll('.step8-video-list video').forEach(video=>{
-    const host=video.parentElement;
-    if(!host.querySelector('.shared-video-transport')){
+  const outputObserved = new WeakSet();
+  let playerLoading;
+  function loadOutputPlayer() {
+    if (window.OutputVideoPlayer) return Promise.resolve();
+    if (!playerLoading) playerLoading = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = '/annotation_player.bundle.js?v=20261007.4';
+      script.onload = resolve;
+      script.onerror = () => {playerLoading = null; reject(new Error('播放器加载失败，请刷新重试'));};
+      document.head.appendChild(script);
+    });
+    return playerLoading;
+  }
+  function fitOutputPreview(host, video) {
+    if (!host.isConnected || document.fullscreenElement === host) return;
+    const ratio = (video.videoWidth || 1920) / (video.videoHeight || 1080);
+    host.style.setProperty('--output-aspect-ratio', ratio);
+    const toolsHeight = host.querySelector('.shared-video-tools')?.offsetHeight || 48;
+    const actionsHeight = host.closest('.step8-video-card')?.querySelector('.step8-video-actions')?.offsetHeight || 48;
+    const height = Math.max(120, Math.min(520, window.innerHeight - Math.max(140, host.getBoundingClientRect().top) - toolsHeight - actionsHeight - 48));
+    host.style.setProperty('--output-preview-height', `${height}px`);
+  }
+  window.addEventListener('resize', () => {
+    document.querySelectorAll('.step8-video-list .video-preview-box').forEach(host => {
+      const video = host.querySelector(':scope > video');
+      if (video) fitOutputPreview(host, video);
+    });
+  });
+  function decorate(){
+    window.OutputVideoPlayer?.cleanup();
+    document.querySelectorAll('.step8-video-list video').forEach(video=>{
+      if (video.closest('.output-composition-player') || outputObserved.has(video)) return;
+      outputObserved.add(video);
+      const host=video.parentElement;
       host.classList.add('shared-video-player');
-      video.controls=false;
-      const transport=document.createElement('div');transport.className='shared-video-transport';
-      transport.innerHTML='<button type="button" aria-label="播放">▶</button><button type="button" aria-label="静音">♪</button><span>0:00 / 0:00</span><input type="range" aria-label="视频进度" min="0" max="1000" value="0">';
-      const [play,mute]=transport.querySelectorAll('button');
-      const range=transport.querySelector('input'),clock=transport.querySelector('span');
-      play.onclick=()=>video.paused?video.play().catch(e=>showToast(e.message)):video.pause();
-      mute.onclick=()=>{video.muted=!video.muted;mute.textContent=video.muted?'静音':'♪';};
-      range.oninput=()=>{if(Number.isFinite(video.duration)) video.currentTime=Number(range.value)/1000*video.duration;};
-      const time=n=>`${Math.floor((n||0)/60)}:${String(Math.floor((n||0)%60)).padStart(2,'0')}`;
-      const update=()=>{play.textContent=video.paused?'▶':'Ⅱ';play.setAttribute('aria-label',video.paused?'播放':'暂停');clock.textContent=`${time(video.currentTime)} / ${time(video.duration)}`;range.value=video.duration?String(video.currentTime/video.duration*1000):'0';};
-      ['timeupdate','loadedmetadata','play','pause','ended'].forEach(name=>video.addEventListener(name,update));
-      host.append(transport);
-    }
-    attachVideoTools(host,{rate:n=>video.playbackRate=n,media:()=>[video],download:video.currentSrc||video.src});
-  });}
+      video.controls=true;
+      requestAnimationFrame(() => fitOutputPreview(host, video));
+      const mount = async () => {
+        if (video.dataset.outputPlayer || !Number.isFinite(video.duration) || video.duration <= 0) return;
+        video.dataset.outputPlayer='loading';
+        try {
+          await loadOutputPlayer();
+          if (!video.isConnected) return;
+          const node=document.createElement('div');node.className='output-composition-player';
+          video.pause();video.hidden=true;video.style.display='none';
+          host.insertBefore(node,video);
+          const adapter=window.OutputVideoPlayer.mount(node,video.currentSrc||video.src,video.duration,video.videoWidth||1920,video.videoHeight||1080);
+          host.querySelector(':scope > .shared-video-tools')?.remove();
+          attachVideoTools(host,{rate:adapter.rate,media:()=>Array.from(node.querySelectorAll('video,audio')),download:video.currentSrc||video.src});
+          video.dataset.outputPlayer='ready';
+          requestAnimationFrame(() => fitOutputPreview(host, video));
+        } catch(error) {delete video.dataset.outputPlayer;showToast(error.message);}
+      };
+      video.addEventListener('loadedmetadata',mount,{once:true});
+      mount();
+    });
+  }
   document.addEventListener('DOMContentLoaded',()=>{decorate();new MutationObserver(decorate).observe(document.body,{childList:true,subtree:true});});
 })();

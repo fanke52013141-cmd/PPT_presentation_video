@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from account_service import (
     account_to_dict, create_account, create_agent_token, get_account, list_accounts,
-    rename_account, set_default_creation_config,
+    delete_account, rename_account, set_default_creation_config,
 )
 from account_context import account_scope, get_current_account_id
 from database import get_db
@@ -110,6 +110,18 @@ def account_select(account_id: str, request: Request, db: Session = Depends(get_
     from fastapi.responses import JSONResponse
     result = JSONResponse(response)
     result.set_cookie("ppt_studio_account_id", account.id, httponly=True, samesite="lax")
+    return result
+
+
+@router.delete("/{account_id}")
+def account_delete(account_id: str, db: Session = Depends(get_db)):
+    from fastapi.responses import JSONResponse
+
+    response = delete_account(db, account_id)
+    result = JSONResponse(response)
+    if account_id == get_current_account_id():
+        remaining = list_accounts(db)
+        result.set_cookie("ppt_studio_account_id", remaining[0]["id"], httponly=True, samesite="lax")
     return result
 
 

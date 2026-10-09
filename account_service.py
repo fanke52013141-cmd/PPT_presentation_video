@@ -8,6 +8,7 @@ import uuid
 from typing import Any, Iterable
 
 from fastapi import HTTPException
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from database import Account, AgentToken, SessionLocal, utc_now_naive
@@ -39,8 +40,35 @@ def account_to_dict(account: Account) -> dict[str, Any]:
     }
 
 
-def list_accounts(db: Session) -> list[dict[str, Any]]:
-    return [account_to_dict(row) for row in db.query(Account).order_by(Account.created_at).all()]
+def list_accounts(db: Session, *, include_inactive: bool = False) -> list[dict[str, Any]]:
+    query = db.query(Account)
+    if not include_inactive:
+        query = query.filter(Account.status == "active")
+    return [account_to_dict(row) for row in query.order_by(Account.created_at, Account.id).all()]
+
+
+def delete_account(db: Session, account_id: str) -> dict[str, Any]:
+    """Remove an account from use while retaining its owned artifacts.
+
+    Count and mutation share one SQL statement so concurrent deletions cannot
+    remove the final active account. Existing Agent tokens stop authenticating
+    because authentication also checks the owning account's status.
+    """
+    active_count = select(func.count()).select_from(Account).where(
+        Account.status == "active"
+    ).scalar_subquery()
+    result = db.execute(update(Account).where(
+        Account.id == account_id,
+        Account.status == "active",
+        active_count > 1,
+    ).values(status="deleted", updated_at=utc_now_naive()),
+        execution_options={"synchronize_session": False})
+    if result.rowcount != 1:
+        db.rollback()
+        get_account(db, account_id)
+        raise HTTPException(status_code=409, detail="至少保留一个账号，不能删除最后一个账号")
+    db.commit()
+    return {"deleted": True, "account_id": account_id}
 
 
 def get_account(db: Session, account_id: str) -> Account:
@@ -165,7 +193,7 @@ def list_accounts_across_sessions() -> list[dict[str, Any]]:
     """Enumerate every account row for config portability (opens its own session)."""
     db = SessionLocal()
     try:
-        return list_accounts(db)
+        return list_accounts(db, include_inactive=True)
     finally:
         db.close()
 

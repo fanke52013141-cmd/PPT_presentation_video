@@ -3,6 +3,7 @@
 
 let _accounts = [];
 let _editingAccountId = null;
+let _deletingAccount = false;
 
 // The system bootstrap account remains the same stored account (`default`),
 // but its UI label is deliberately stable and shorter than a user-created
@@ -34,10 +35,12 @@ function renderAccountPicker() {
   menu.replaceChildren();
   _accounts.forEach(account => {
     const isCurrent = account.id === currentId;
+    const row = document.createElement('div');
+    row.className = 'account-picker-row';
     const option = document.createElement('button');
     option.type = 'button';
     option.className = 'account-picker-option';
-    option.setAttribute('role', 'option');
+    option.setAttribute('aria-pressed', String(isCurrent));
     option.setAttribute('aria-selected', String(isCurrent));
     const displayName = accountDisplayName(account);
     option.setAttribute('aria-label', `${displayName}，${isCurrent ? '当前使用中' : '可切换到此账号'}`);
@@ -56,7 +59,16 @@ function renderAccountPicker() {
       closeAccountPicker();
       if (account.id !== select.value) await selectAccount(account.id);
     });
-    menu.appendChild(option);
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'icon-button account-delete-action';
+    remove.disabled = _accounts.length <= 1 || _deletingAccount;
+    remove.title = _accounts.length <= 1 ? '至少保留一个账号' : `删除账号“${displayName}”`;
+    remove.setAttribute('aria-label', remove.title);
+    remove.innerHTML = '<svg class="stitch-ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>';
+    remove.addEventListener('click', () => deleteCreativeAccount(account));
+    row.append(option, remove);
+    menu.appendChild(row);
   });
   syncAccountPickerWidth();
 }
@@ -98,7 +110,7 @@ function syncAccountPickerWidth() {
   // trigger only needs a chevron (~42px). The same custom property is used by
   // both, so they always share one width.
   const switcher = trigger.closest('.account-switcher');
-  const width = Math.ceil(widestName + 62);
+  const width = Math.ceil(widestName + 98); // Reserve the delete action even while hidden.
   switcher?.style.setProperty('--account-picker-width', `${width}px`);
 
   // The estimate can drift from the real cascade (theme layers may add option
@@ -313,6 +325,35 @@ async function selectAccount(accountId) {
   }
 }
 
+async function deleteCreativeAccount(account) {
+  if (_deletingAccount) return;
+  if (_accounts.length <= 1) {
+    window.showToast('至少保留一个账号');
+    return;
+  }
+  _deletingAccount = true;
+  closeAccountPicker();
+  try {
+    const confirmed = await confirmAction('删除账号确认',
+      `确定删除账号“${accountDisplayName(account)}”吗？删除后该账号将无法使用，所属项目和素材仍保留。删除当前账号后会自动切换到剩余账号。`,
+      { confirm: '删除账号', danger: true });
+    if (!confirmed) return;
+    const wasCurrent = document.getElementById('current-account-select')?.value === account.id;
+    await API.delete(`/api/accounts/${encodeURIComponent(account.id)}`);
+    if (wasCurrent && typeof exitWorkspace === 'function' && state?.currentProject) exitWorkspace();
+    await loadAccounts();
+    if (wasCurrent) await loadProjects();
+    window.showToast('账号已删除');
+  } catch (_) {
+    // Transport presents errors, including a concurrent last-account deletion.
+    await loadAccounts();
+  } finally {
+    _deletingAccount = false;
+    renderAccountPicker();
+    document.getElementById('account-picker-trigger')?.focus();
+  }
+}
+
 async function createCreativeAccount() {
   const dialog = ensureAccountDialog();
   _editingAccountId = null;
@@ -364,6 +405,12 @@ function initAccountManagement() {
   });
   document.addEventListener('click', event => {
     if (!event.target.closest('.account-switcher')) closeAccountPicker();
+  });
+  document.getElementById('account-picker-menu')?.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      closeAccountPicker();
+      document.getElementById('account-picker-trigger')?.focus();
+    }
   });
   document.getElementById('btn-create-account')?.addEventListener('click', createCreativeAccount);
   document.getElementById('btn-edit-current-account')?.addEventListener('click', editCurrentCreativeAccount);

@@ -147,6 +147,16 @@ def copy_model_connection(
         _raise_http_error(exc)
 
 
+@router.post("/{connection_id}/test")
+def test_saved_model_connection(connection_id: str) -> dict[str, Any]:
+    from model_connection_test_service import test_saved_connection
+
+    try:
+        return test_saved_connection(connection_id)
+    except Exception as exc:
+        _raise_http_error(exc)
+
+
 @router.put("/{connection_id}/state")
 def update_model_connection_state(
     connection_id: str,

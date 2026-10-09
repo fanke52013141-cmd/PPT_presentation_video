@@ -54,11 +54,13 @@
     host.style.setProperty('--output-aspect-ratio', ratio);
     const toolsHeight = host.querySelector('.shared-video-tools')?.offsetHeight || 0;
     const actionsHeight = host.closest('.step8-video-card')?.querySelector('.step8-video-actions')?.offsetHeight || 48;
+    const firstPreview = host.closest('.step8-video-list')?.querySelector('.video-preview-box') || host;
+    const previewTop = Math.max(140, firstPreview.getBoundingClientRect().top);
     const fullscreen = document.fullscreenElement === host;
     const height = fullscreen
       ? Math.max(120, window.innerHeight - toolsHeight - 32)
       // Keep the card footer and workspace padding inside the viewport as well.
-      : Math.max(120, Math.min(520, window.innerHeight - Math.max(140, host.getBoundingClientRect().top) - toolsHeight - actionsHeight - 112));
+      : Math.max(120, Math.min(520, window.innerHeight - previewTop - toolsHeight - actionsHeight - 112));
     host.style.setProperty('--output-preview-height', `${height}px`);
     host.style.setProperty('--output-preview-width', `${Math.min(host.clientWidth, height * ratio)}px`);
   }

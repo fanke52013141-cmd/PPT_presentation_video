@@ -6898,6 +6898,12 @@ body.workspace-open :is(#step8-loading, #step8-pptx-loading):is([data-task-state
 header .account-picker-menu .account-picker-row {
   display: flex;
   align-items: center;
+  border-radius: 12px;
+}
+header .account-picker-menu .account-picker-row:hover,
+header .account-picker-menu .account-picker-row:focus-within,
+header .account-picker-menu .account-picker-row:has(.account-picker-option[aria-selected="true"]) {
+  background: #fff1eb !important;
 }
 header .account-picker-menu .account-picker-row + .account-picker-row {
   border-top: 1px solid #f0eff2;
@@ -6905,6 +6911,7 @@ header .account-picker-menu .account-picker-row + .account-picker-row {
 header .account-picker-menu .account-picker-row .account-picker-option {
   flex: 1;
   min-width: 0;
+  background: transparent !important;
 }
 header .account-picker-menu .account-delete-action {
   display: inline-flex !important;
@@ -6920,7 +6927,7 @@ header .account-picker-menu .account-delete-action {
   border-radius: 6px !important;
   background: transparent !important;
   box-shadow: none !important;
-  color: #a8a3ae !important;
+  color: #dc3545 !important;
   opacity: 0;
   transition: opacity .15s ease, color .15s ease;
 }
@@ -6929,8 +6936,8 @@ header .account-picker-menu .account-picker-row:focus-within .account-delete-act
   opacity: 1;
 }
 header .account-picker-menu .account-delete-action:not(:disabled):hover {
-  color: #ef4f3f !important;
-  background: #fff6f2 !important;
+  color: #b91c1c !important;
+  background: #fee2e2 !important;
 }
 header .account-picker-menu .account-delete-action:focus-visible {
   outline: 2px solid #f46a38;

@@ -7029,8 +7029,8 @@ body.workspace-open #step3-images-grid[data-canvas-orientation="portrait"] {
   grid-template-columns: repeat(var(--step3-portrait-columns, 5), minmax(0, 1fr)) !important;
   gap: 16px !important;
 }
-body.workspace-open #step-panel-3 body.workspace-open #step-panel-3 body.workspace-open #step-panel-3 #step3-images-grid[data-canvas-orientation="portrait"] .step3-image-card { padding: 12px !important; }
-body.workspace-open #step-panel-3 body.workspace-open #step-panel-3 body.workspace-open #step-panel-3 #step3-images-grid[data-canvas-orientation="portrait"] .step3-card-header { flex-wrap: wrap; gap: 8px; }
+body.workspace-open #step-panel-3 #step3-images-grid[data-canvas-orientation="portrait"] .step3-image-card { padding: 12px !important; }
+body.workspace-open #step-panel-3 #step3-images-grid[data-canvas-orientation="portrait"] .step3-card-header { flex-wrap: wrap; gap: 8px; }
 #step-panel-8 .video-preview-box.shared-video-player {
   display: flex;
   flex-direction: column;
@@ -7040,17 +7040,22 @@ body.workspace-open #step-panel-3 body.workspace-open #step-panel-3 body.workspa
   max-width: none !important;
   background: transparent;
   border: 0;
+  box-shadow: none !important;
   margin: 16px auto;
 }
 #step-panel-8 .video-preview-box > :is(.output-composition-player, video) {
-  width: min(100%, calc(var(--output-preview-height, clamp(120px, 100dvh - 390px, 520px)) * var(--output-aspect-ratio, 1.777778))) !important;
+  width: min(100%, var(--output-preview-width, 640px)) !important;
   margin: 0 auto;
   border-radius: 10px;
   overflow: hidden;
 }
 #step-panel-8 .video-preview-box > video { aspect-ratio: var(--output-aspect-ratio, 1.777778); }
 #step-panel-8 .shared-video-tools { justify-content: center; background: transparent; }
-#step-panel-8 .step8-video-actions { justify-content: center; flex-wrap: wrap; gap: 12px; }
+#step-panel-8 .step8-video-actions { justify-content: center !important; flex-wrap: wrap; gap: 12px; }
 #step-panel-8 .video-preview-box:fullscreen > .output-composition-player {
-  width: min(100%, calc((100dvh - 64px) * var(--output-aspect-ratio, 1.777778))) !important;
+  width: min(100%, var(--output-preview-width, 640px)) !important;
 }
+
+#step-panel-8 .step8-video-card-head strong { display:flex; align-items:center; flex-wrap:wrap; gap:12px; }
+#step-panel-8 .step8-video-total-elapsed { margin:0; font-size:13px; font-weight:500; color:#64748b; }
+#step-panel-8 .shared-video-tools select { height:32px; padding:4px 8px; border:1px solid #e2e8f0; border-radius:8px; background:white; }

@@ -15,7 +15,7 @@
     if(!host) return;
     if(host.querySelector(':scope > .shared-video-tools')) return;
     const tools=document.createElement('div');tools.className='shared-video-tools';
-    tools.innerHTML='<label>倍速 <select aria-label="播放倍速"><option>0.5</option><option selected>1</option><option>1.25</option><option>1.5</option><option>2</option></select></label><label>音量增强 <select aria-label="音量增强"><option value="1">100%</option><option value="1.5">150%</option><option value="2">200%</option></select></label><button type="button">全屏</button><button type="button">画中画</button>';
+    tools.innerHTML='<label>倍速 <select data-select-menu-native="true" aria-label="播放倍速"><option>0.5</option><option selected>1</option><option>1.25</option><option>1.5</option><option>2</option></select></label><label>音量增强 <select data-select-menu-native="true" aria-label="音量增强"><option value="1">100%</option><option value="1.5">150%</option><option value="2">200%</option></select></label><button type="button">全屏</button><button type="button">画中画</button>';
     const selects=tools.querySelectorAll('select');
     selects[0].onchange=()=>adapter.rate(Number(selects[0].value));
     selects[1].onchange=()=>amplify(adapter.media(),Number(selects[1].value)).catch(e=>showToast('音量增强不可用：'+e.message));
@@ -49,20 +49,27 @@
     return playerLoading;
   }
   function fitOutputPreview(host, video) {
-    if (!host.isConnected || document.fullscreenElement === host) return;
+    if (!host.isConnected) return;
     const ratio = (video.videoWidth || 1920) / (video.videoHeight || 1080);
     host.style.setProperty('--output-aspect-ratio', ratio);
     const toolsHeight = host.querySelector('.shared-video-tools')?.offsetHeight || 48;
     const actionsHeight = host.closest('.step8-video-card')?.querySelector('.step8-video-actions')?.offsetHeight || 48;
-    const height = Math.max(120, Math.min(520, window.innerHeight - Math.max(140, host.getBoundingClientRect().top) - toolsHeight - actionsHeight - 48));
+    const fullscreen = document.fullscreenElement === host;
+    const height = fullscreen
+      ? Math.max(120, window.innerHeight - toolsHeight - 32)
+      // Keep the card footer and workspace padding inside the viewport as well.
+      : Math.max(120, Math.min(520, window.innerHeight - Math.max(140, host.getBoundingClientRect().top) - toolsHeight - actionsHeight - 112));
     host.style.setProperty('--output-preview-height', `${height}px`);
+    host.style.setProperty('--output-preview-width', `${Math.min(host.clientWidth, height * ratio)}px`);
   }
-  window.addEventListener('resize', () => {
+  function fitOutputPreviews() {
     document.querySelectorAll('.step8-video-list .video-preview-box').forEach(host => {
       const video = host.querySelector(':scope > video');
       if (video) fitOutputPreview(host, video);
     });
-  });
+  }
+  window.addEventListener('resize', fitOutputPreviews);
+  document.addEventListener('fullscreenchange', fitOutputPreviews);
   function decorate(){
     window.OutputVideoPlayer?.cleanup();
     document.querySelectorAll('.step8-video-list video').forEach(video=>{
@@ -71,6 +78,13 @@
       const host=video.parentElement;
       host.classList.add('shared-video-player');
       video.controls=true;
+      const sizeObserver = new ResizeObserver(() => fitOutputPreview(host, video));
+      sizeObserver.observe(host.closest('.step8-video-card').querySelector('.step8-video-actions'));
+      sizeObserver.observe(host.closest('.step8-video-card').querySelector('.step8-video-card-head'));
+      const detachObserver = new MutationObserver(() => {
+        if (!host.isConnected) { sizeObserver.disconnect(); detachObserver.disconnect(); }
+      });
+      detachObserver.observe(document.getElementById('step8-video-list'), {childList:true});
       requestAnimationFrame(() => fitOutputPreview(host, video));
       const mount = async () => {
         if (video.dataset.outputPlayer || !Number.isFinite(video.duration) || video.duration <= 0) return;
@@ -84,6 +98,7 @@
           const adapter=window.OutputVideoPlayer.mount(node,video.currentSrc||video.src,video.duration,video.videoWidth||1920,video.videoHeight||1080);
           host.querySelector(':scope > .shared-video-tools')?.remove();
           attachVideoTools(host,{rate:adapter.rate,media:()=>Array.from(node.querySelectorAll('video,audio')),download:video.currentSrc||video.src});
+          sizeObserver.observe(host.querySelector('.shared-video-tools'));
           video.dataset.outputPlayer='ready';
           requestAnimationFrame(() => fitOutputPreview(host, video));
         } catch(error) {delete video.dataset.outputPlayer;showToast(error.message);}

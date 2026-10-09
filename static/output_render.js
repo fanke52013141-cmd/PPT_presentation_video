@@ -648,7 +648,7 @@ function showStep8VideoResult(videos) {
         ? formatProjectTotalElapsed(item.project_total_elapsed_sec)
         : '';
       const artifactBadge = item.artifact_state === 'current'
-        ? '<span class="step8-current-badge">精确 RLE Mask · 当前</span>'
+        ? ''
         : item.artifact_state === 'stale'
           ? '<span class="step8-legacy-badge">输入已变化 · 需重渲染</span>'
           : item.artifact_state === 'invalid'
@@ -660,11 +660,11 @@ function showStep8VideoResult(videos) {
             <strong>
               ${idx === 0 ? '最新渲染' : `历史版本 ${idx + 1}`}
               ${item.is_speed_variant ? `<span class="step8-speed-badge">${escHtml(speedLabel)} 调速版</span>` : ''}
+              ${totalElapsed ? `<span class="step8-video-total-elapsed">总耗时：${escHtml(totalElapsed)}</span>` : ''}
               ${artifactBadge}
             </strong>
             <span>${escHtml(created || item.filename || '')}</span>
           </div>
-          ${totalElapsed ? `<div class="step8-video-total-elapsed">总耗时：${escHtml(totalElapsed)}</div>` : ''}
           <div class="video-preview-box">
             <video src="${escHtml(url)}" data-video-filename="${escHtml(item.filename || '')}" controls playsinline preload="metadata"></video>
           </div>
@@ -674,7 +674,7 @@ function showStep8VideoResult(videos) {
             ` : `
               <label class="step8-speed-control">
                 <span>视频语速</span>
-                <select class="step8-speed-select" data-filename="${escHtml(item.filename || '')}">
+                <select data-select-menu-native="true" class="step8-speed-select" data-filename="${escHtml(item.filename || '')}">
                   ${[0.8, 0.9, 1, 1.1, 1.2, 1.25, 1.3, 1.4, 1.5].map(rate => `<option value="${rate}" ${rate === 1 ? 'selected' : ''}>${rate}×</option>`).join('')}
                 </select>
               </label>

@@ -52,7 +52,7 @@
     if (!host.isConnected) return;
     const ratio = (video.videoWidth || 1920) / (video.videoHeight || 1080);
     host.style.setProperty('--output-aspect-ratio', ratio);
-    const toolsHeight = host.querySelector('.shared-video-tools')?.offsetHeight || 48;
+    const toolsHeight = host.querySelector('.shared-video-tools')?.offsetHeight || 0;
     const actionsHeight = host.closest('.step8-video-card')?.querySelector('.step8-video-actions')?.offsetHeight || 48;
     const fullscreen = document.fullscreenElement === host;
     const height = fullscreen
@@ -96,9 +96,9 @@
           video.pause();video.hidden=true;video.style.display='none';
           host.insertBefore(node,video);
           const adapter=window.OutputVideoPlayer.mount(node,video.currentSrc||video.src,video.duration,video.videoWidth||1920,video.videoHeight||1080);
+          const speedSelect = host.closest('.step8-video-card').querySelector('.step8-speed-select');
+          if (speedSelect) speedSelect.addEventListener('change', () => adapter.rate(Number(speedSelect.value || 1)));
           host.querySelector(':scope > .shared-video-tools')?.remove();
-          attachVideoTools(host,{rate:adapter.rate,media:()=>Array.from(node.querySelectorAll('video,audio')),download:video.currentSrc||video.src});
-          sizeObserver.observe(host.querySelector('.shared-video-tools'));
           video.dataset.outputPlayer='ready';
           requestAnimationFrame(() => fitOutputPreview(host, video));
         } catch(error) {delete video.dataset.outputPlayer;showToast(error.message);}

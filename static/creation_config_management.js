@@ -771,7 +771,10 @@
     const cancel = element('btn-cancel-creation-config-edit');
     if (cancel) { cancel.hidden = false; cancel.textContent = '放弃修改'; }
     const status = element('creation-config-editing-status');
-    if (status) { status.hidden = true; status.textContent = ''; }
+    if (status) {
+      status.hidden = false;
+      status.textContent = '当前为新建配置，不会修改已有项目。修改已有项目的字幕，请先在左侧点击对应配置包的“编辑”，再保存修改。';
+    }
   }
 
   function renderPackages() {
@@ -1136,6 +1139,7 @@
     }
     const submit = element('btn-create-creation-config');
     if (submit) submit.disabled = true;
+    const savedPackageId = state.editingPackageId;
     try {
       if (state.editingPackageId) {
         await window.API.put(`/api/creation-configs/${encodeURIComponent(state.editingPackageId)}`, { name, payload });
@@ -1146,7 +1150,13 @@
       }
       await refreshCreationConfigManagement();
       if (typeof window.loadCreationConfigs === 'function') window.loadCreationConfigs();
-      resetCreationConfigEditor();
+      if (savedPackageId) {
+        await editPackage({ id: savedPackageId });
+        const status = element('creation-config-editing-status');
+        if (status) status.textContent = '当前配置已保存；引用此配置的项目将在下次生成时使用它。已有视频需重新生成才能更新字幕。';
+      } else {
+        resetCreationConfigEditor();
+      }
     } catch (error) {
       requestError(state.editingPackageId ? '保存当前配置失败' : '创建配置包失败', error);
     } finally {

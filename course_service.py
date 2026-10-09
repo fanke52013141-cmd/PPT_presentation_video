@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from account_context import get_current_account_id
 from database import ArtifactRecord, Chapter, Course, Project
+from project_runtime_service import project_audio_confirmed
 
 
 logger = logging.getLogger("PPTStudio.Courses")
@@ -186,6 +187,8 @@ def _project_brief(project: Project, db: Session) -> dict[str, Any]:
         "description": project.description or "",
         "current_step": project.current_step,
         "status": project.status,
+        "step_status": project.get_step_status(),
+        "audio_confirmed": project_audio_confirmed(project),
         "ai_mode": project.ai_mode,
         "sort_order": project.sort_order,
         "course_id": project.course_id,

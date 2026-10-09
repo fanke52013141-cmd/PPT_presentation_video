@@ -391,6 +391,9 @@ const CourseTree = (() => {
   }
 
   function projectProgress(project) {
+    // The library receives course-tree briefs, not full workspace projects.
+    // A registered successful output is authoritative even for legacy briefs.
+    if (project.latest_output_at && ['video', 'pptx'].includes(project.latest_output_type)) return 100;
     try {
       const completedProgress = calculateVisibleProgress(project.step_status || {}, projectFlowContext(project));
       return Math.max(0, Math.min(100, Number(completedProgress) || 0));

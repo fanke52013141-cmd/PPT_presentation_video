@@ -393,15 +393,9 @@ const CourseTree = (() => {
   function projectProgress(project) {
     try {
       const completedProgress = calculateVisibleProgress(project.step_status || {}, projectFlowContext(project));
-      const completedSteps = Math.round(Math.max(0, Math.min(100, Number(completedProgress) || 0)) / 100 * 7);
-      // A project at its current workflow step is visibly in progress even
-      // when that step has not been confirmed yet. Keep the card indicator
-      // faithful to the user-facing 1..7 stage model without changing state.
-      const currentStep = Math.max(1, Math.min(7, Number(getStepInfo(project).num) || 1));
-      return Math.round(Math.max(completedSteps, currentStep) / 7 * 100);
+      return Math.max(0, Math.min(100, Number(completedProgress) || 0));
     } catch (_) {
-      const step = getStepInfo(project).num;
-      return Math.round(Math.max(1, Math.min(7, step)) / 7 * 100);
+      return 0;
     }
   }
 

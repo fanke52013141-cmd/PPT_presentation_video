@@ -7066,3 +7066,9 @@ body.workspace-open #step-panel-3 #step3-images-grid[data-canvas-orientation="po
 #step-panel-8 .step8-video-card-head strong { display:flex; align-items:center; flex-wrap:wrap; gap:12px; }
 #step-panel-8 .step8-video-total-elapsed { margin:0; font-size:13px; font-weight:500; color:#64748b; }
 #step-panel-8 .shared-video-tools select { height:32px; padding:4px 8px; border:1px solid #e2e8f0; border-radius:8px; background:white; }
+
+/* Keep the selected workspace step still; no recurring attention sweep. */
+body.workspace-open .sidebar .step-item.active::before {
+  content: none !important;
+  animation: none !important;
+}

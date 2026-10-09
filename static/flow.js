@@ -154,6 +154,14 @@
   }
 
   function calculateVisibleProgress(status = {}, context = {}) {
+    // A successfully published output completes this workflow, including
+    // static slides that legitimately did not need automatic Masks.
+    // Downstream invalidation resets Step 8 when an input changes.
+    if (status['8'] === 'completed'
+        && !VISIBLE_FLOW.some(item => !item.optional
+          && item.relevantSteps.some(id => status[String(id)] === 'pending_reconfirmation'))) {
+      return 100;
+    }
     const required = VISIBLE_FLOW.filter(item => {
       if (item.optional) return false;
       if (item.isDecisionModule) {

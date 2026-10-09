@@ -19,6 +19,7 @@ from database import Project
 from canvas_profile_service import get_project_canvas
 from runtime_support import run_subprocess_killable
 from project_config_runtime import get_config_value
+from scripts.build_remotion_props import read_subtitle_style
 from video_acceleration import (
     VideoEncoderSelection,
     encoder_reencode_arguments,
@@ -286,6 +287,8 @@ class RemotionRunner:
                 str(self.config.repo_root),
                 "--remotion-public-dir",
                 str(public_dir),
+                "--subtitle-style-json",
+                json.dumps(read_subtitle_style(Path(project.run_dir), project)),
                 "--width",
                 str(canvas["width"]),
                 "--height",

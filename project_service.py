@@ -329,6 +329,7 @@ class ProjectService:
                 visual_settings_path = run_dir / PROJECT_VISUAL_SETTINGS_FILE
                 visual_settings_payload = {
                     "subtitle_style": configured_subtitle_style,
+                    "subtitle_style_source": "package",
                 }
                 if self.dependencies.write_json_atomic is None:
                     visual_settings_path.write_text(

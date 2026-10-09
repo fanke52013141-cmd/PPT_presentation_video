@@ -127,30 +127,24 @@ def read_json(path: Path) -> dict[str, Any]:
     return value
 
 
-def read_subtitle_style(run_dir: Path) -> dict[str, Any]:
-    # A project creation package is the immutable source for new projects;
-    # the visual settings file remains the explicit per-project override.
-    package_style: dict[str, Any] = {}
-    project_config_path = run_dir / "planning" / "project_config.json"
-    if project_config_path.exists():
-        try:
-            project_config = read_json(project_config_path)
-            payload = project_config.get("payload")
-            if isinstance(payload, dict) and isinstance(payload.get("subtitle"), dict):
-                package_style = dict(payload["subtitle"])
-        except BuildError:
-            package_style = {}
-    settings_path = run_dir / "visual_settings.json"
+def read_subtitle_style(run_dir: Path, project=None) -> dict[str, Any]:
+    from types import SimpleNamespace
+    from project_config_runtime import get_config_value, project_subtitles_enabled
+    from project_subtitle_policy import inherited_subtitle_override
+    project = project or SimpleNamespace(run_dir=str(run_dir))
+    package = get_config_value(project, "subtitle", {})
     result = dict(DEFAULT_SUBTITLE_STYLE)
-    result.update({key: package_style[key] for key in result if key in package_style})
-    if settings_path.exists():
+    if isinstance(package, dict):
+        result.update({key: package[key] for key in result if key in package})
+    path = run_dir / "visual_settings.json"
+    if path.exists():
         try:
-            payload = read_json(settings_path)
+            settings = read_json(path)
         except BuildError:
-            payload = {}
-        style = payload.get("subtitle_style") if isinstance(payload, dict) else None
-        if isinstance(style, dict):
-            result.update({key: style[key] for key in result if key in style})
+            settings = {}
+        overrides = inherited_subtitle_override(project, settings if isinstance(settings, dict) else {})
+        result.update({key: overrides[key] for key in result if key in overrides})
+    result["enabled"] = project_subtitles_enabled(project)
     return result
 
 
@@ -685,6 +679,7 @@ def build_props(
     width: int,
     height: int,
     slide_ids: set[str] | None = None,
+    subtitle_style: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     slides_dir = run_dir / "slides"
     if not slides_dir.exists():
@@ -720,7 +715,7 @@ def build_props(
         "width": width,
         "height": height,
         "total_duration_sec": round(start_sec, 3),
-        "subtitle_style": read_subtitle_style(run_dir),
+        "subtitle_style": subtitle_style if subtitle_style is not None else read_subtitle_style(run_dir),
         "slides": slides,
     }
 
@@ -751,6 +746,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fps", default=DEFAULT_FPS, type=int)
     parser.add_argument("--width", default=DEFAULT_WIDTH, type=int)
     parser.add_argument("--height", default=DEFAULT_HEIGHT, type=int)
+    parser.add_argument("--subtitle-style-json")
     return parser.parse_args()
 
 
@@ -776,6 +772,7 @@ def main() -> int:
             width=args.width,
             height=args.height,
             slide_ids=set(args.slide_ids) if args.slide_ids else None,
+            subtitle_style=json.loads(args.subtitle_style_json) if args.subtitle_style_json else None,
         )
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(

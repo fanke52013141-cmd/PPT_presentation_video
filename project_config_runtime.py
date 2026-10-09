@@ -143,6 +143,7 @@ def project_subtitles_enabled(project: Any, default: bool = True) -> bool:
     precedence so their canvas never disagrees with the rendered subtitles.
     Invalid or missing values retain the safe historical default.
     """
+    from project_subtitle_policy import inherited_subtitle_override
     package_value = get_config_value(project, "subtitle.enabled", default)
     enabled = _coerce_bool(package_value, default)
     run_dir = getattr(project, "run_dir", None)
@@ -155,7 +156,7 @@ def project_subtitles_enabled(project: Any, default: bool = True) -> bool:
         payload = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return enabled
-    style = payload.get("subtitle_style") if isinstance(payload, dict) else None
+    style = inherited_subtitle_override(project, payload) if isinstance(payload, dict) else None
     if not isinstance(style, dict) or "enabled" not in style:
         return enabled
     return _coerce_bool(style.get("enabled"), enabled)

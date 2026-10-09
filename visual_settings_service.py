@@ -312,7 +312,8 @@ class VisualSettingsService:
                 )
         package_subtitle = get_config_value(project, "subtitle", {})
         base_subtitle = normalize_subtitle_style(package_subtitle)
-        subtitle_override = payload.get("subtitle_style")
+        from project_subtitle_policy import inherited_subtitle_override
+        subtitle_override = inherited_subtitle_override(project, payload)
         if isinstance(subtitle_override, dict):
             base_subtitle.update(subtitle_override)
         return {
@@ -340,6 +341,22 @@ class VisualSettingsService:
                 subtitle_style or current["subtitle_style"]
             ),
         }
+        previous_raw = {}
+        settings_path = project_visual_settings_path(project)
+        if Path(settings_path).is_file():
+            try:
+                previous_raw = json.loads(Path(settings_path).read_text(encoding="utf-8-sig"))
+            except (OSError, ValueError):
+                pass
+        if subtitle_style is not None:
+            settings["subtitle_style_source"] = "project"
+        else:
+            # A background edit must not turn inherited defaults into overrides
+            # or discard a legacy project's explicit subtitle differences.
+            if isinstance(previous_raw.get("subtitle_style"), dict):
+                settings["subtitle_style"] = previous_raw["subtitle_style"]
+            if "subtitle_style_source" in previous_raw:
+                settings["subtitle_style_source"] = previous_raw["subtitle_style_source"]
         self.dependencies.write_json_atomic(
             project_visual_settings_path(project),
             settings,

@@ -26,6 +26,8 @@ const CourseTree = (() => {
   // 搜索同样只在浏览器内生效。它基于当前真实树的项目、课程和
   // 章节名称过滤，不请求或改写服务器数据。
   let librarySearchQuery = '';
+  const bulk = { active: false, selected: new Set(), account: null, busy: false, message: '', failures: [], session: 0 };
+  const currentLibraryAccount = () => document.getElementById('current-account-select')?.value || 'default';
   // 记录"新建视频"的目标父级（由课程/章节的 +视频 按钮设置，
   // createProject() 在确认创建后会读取并移动项目）
   let pendingProjectParent = null;
@@ -53,6 +55,12 @@ const CourseTree = (() => {
   // ===== 初始化 =====
 
   function init() {
+    if (!init.bulkObserver && typeof MutationObserver !== 'undefined') {
+      init.bulkObserver = new MutationObserver(() => {
+        if (document.body.classList.contains('workspace-open')) resetBulkSelection();
+      });
+      init.bulkObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    }
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved !== null) {
@@ -116,6 +124,7 @@ const CourseTree = (() => {
 
   async function load() {
     try {
+      if (bulk.account && bulk.account !== currentLibraryAccount()) resetBulkSelection();
       treeData = await API.get('/api/courses/tree');
       render();
     } catch (e) {
@@ -134,6 +143,8 @@ const CourseTree = (() => {
     if (!container || !treeData) return;
 
     normalizeLibraryFilter();
+    const sidebarScroll = container.querySelector('.home-library-navigation-body')?.scrollTop || 0;
+    const mainScroll = container.querySelector('.home-library-main')?.scrollTop || 0;
     container.className = 'course-tree-container home-library';
     container.innerHTML = '';
 
@@ -141,6 +152,10 @@ const CourseTree = (() => {
     const standaloneList = treeData.standalone_projects || [];
     applyDefaultExpansion(courseList);
     const videoRecords = collectVideoRecords(courseList, standaloneList);
+    if (bulk.active) {
+      const visibleIds = new Set(filterVideoRecords(videoRecords).map(record => record.project.id));
+      bulk.selected.forEach(id => { if (!visibleIds.has(id)) bulk.selected.delete(id); });
+    }
 
     const layout = document.createElement('div');
     layout.className = 'home-library-layout stitch-home-layout flex h-full overflow-hidden';
@@ -180,12 +195,31 @@ const CourseTree = (() => {
 
     const standaloneGroup = document.createElement('div');
     standaloneGroup.className = 'stitch-standalone-group';
-    if (standaloneList.length > 0) {
+    if (standaloneList.length > 0 || bulk.active) {
       const standaloneHeading = document.createElement('div');
       standaloneHeading.className = 'course-tree-standalone-heading stitch-tree-section-heading';
-      standaloneHeading.textContent = `独立视频 (${standaloneList.length})`;
+      const label = document.createElement('span');
+      label.textContent = `独立视频 (${standaloneList.length})`;
+      const manage = document.createElement('button');
+      manage.type = 'button';
+      manage.className = 'library-bulk-manage';
+      manage.textContent = bulk.active ? '取消' : '批量管理';
+      manage.disabled = bulk.busy;
+      manage.addEventListener('click', () => {
+        if (bulk.active) resetBulkSelection();
+        else {
+          bulk.active = true;
+          bulk.account = currentLibraryAccount();
+          libraryFilter = { type: 'standalone', id: null };
+        }
+        render();
+      });
+      standaloneHeading.append(label, manage);
       standaloneGroup.appendChild(standaloneHeading);
-      standaloneList.forEach(project => standaloneGroup.appendChild(renderStandaloneProjectCard(project)));
+      const sidebarProjects = bulk.active
+        ? filterVideoRecords(collectVideoRecords([], standaloneList)).map(record => record.project)
+        : standaloneList;
+      sidebarProjects.forEach(project => standaloneGroup.appendChild(renderStandaloneProjectCard(project)));
     }
     treeEl.appendChild(standaloneGroup);
     navigationBody.appendChild(treeEl);
@@ -198,7 +232,7 @@ const CourseTree = (() => {
     footerCreate.className = 'stitch-sidebar-create-video w-full';
     footerCreate.innerHTML = `${ICON.circlePlusLarge}<span>新建视频</span>`;
     footerCreate.addEventListener('click', createStandaloneVideoFromLibrary);
-    navigationFooter.appendChild(footerCreate);
+    navigationFooter.appendChild(bulk.active ? renderBulkFooter() : footerCreate);
     navigation.appendChild(navigationFooter);
 
     const main = document.createElement('section');
@@ -217,6 +251,12 @@ const CourseTree = (() => {
     heading.append(titleWrap, renderLibrarySearchTools());
     // 标题本身已完整表达当前筛选；不再重复渲染一行“全部视频”面包屑。
     mainHeader.append(heading);
+    if (bulk.active) {
+      const hint = document.createElement('p');
+      hint.className = 'library-bulk-hint';
+      hint.textContent = '勾选要删除的独立视频，也可以点击卡片选择。';
+      mainHeader.appendChild(hint);
+    }
     main.appendChild(mainHeader);
 
     const cards = document.createElement('div');
@@ -229,13 +269,23 @@ const CourseTree = (() => {
       setTimeout(() => cards.classList.remove('first-paint'), 900);
     }
     const visibleRecords = filterVideoRecords(videoRecords);
-    cards.appendChild(renderNewVideoCard());
+    if (!bulk.active) cards.appendChild(renderNewVideoCard());
     visibleRecords.forEach(record => cards.appendChild(renderLibraryVideoCard(record)));
+    if (bulk.active && !visibleRecords.length) {
+      const empty = document.createElement('p');
+      empty.className = 'library-bulk-empty';
+      empty.textContent = librarySearchQuery.trim() ? '没有匹配的独立视频' : '暂无独立视频';
+      cards.appendChild(empty);
+    }
     // 空课程或章节只保留首张“新建视频”卡片；这就是唯一需要的下一步。
     main.appendChild(cards);
 
     layout.append(navigation, main);
     container.appendChild(layout);
+    if (bulk.active) {
+      navigationBody.scrollTop = sidebarScroll;
+      main.scrollTop = mainScroll;
+    }
   }
 
   function normalizeLibraryFilter() {
@@ -247,6 +297,8 @@ const CourseTree = (() => {
   }
 
   function selectLibraryFilter(nextFilter) {
+    if (bulk.busy) return;
+    resetBulkSelection();
     libraryFilter = nextFilter;
     render();
   }
@@ -268,6 +320,7 @@ const CourseTree = (() => {
     input.placeholder = '搜索视频名称或标签';
     input.autocomplete = 'off';
     input.value = librarySearchQuery;
+    input.disabled = bulk.busy;
     input.setAttribute('aria-describedby', 'home-library-search-help');
     input.addEventListener('input', (event) => {
       const nextInput = event.currentTarget;
@@ -305,6 +358,7 @@ const CourseTree = (() => {
       clear.type = 'button';
       clear.className = 'secondary home-library-search-clear';
       clear.textContent = '清除';
+      clear.disabled = bulk.busy;
       clear.addEventListener('click', clearLibrarySearch);
       tools.appendChild(clear);
     }
@@ -367,9 +421,155 @@ const CourseTree = (() => {
     return records;
   }
 
+  function resetBulkSelection() {
+    bulk.session += 1;
+    bulk.active = false;
+    bulk.selected.clear();
+    bulk.account = null;
+    bulk.busy = false;
+    bulk.message = '';
+    bulk.failures = [];
+  }
+
+  function bulkVisibleProjects() {
+    return filterVideoRecords(collectVideoRecords([], treeData?.standalone_projects || []))
+      .map(record => record.project);
+  }
+
+  function toggleBulkProject(id) {
+    if (!bulk.active || bulk.busy) return;
+    if (bulk.selected.has(id)) bulk.selected.delete(id);
+    else bulk.selected.add(id);
+    updateBulkSelectionUI();
+  }
+
+  function updateBulkSelectionUI() {
+    document.querySelectorAll('[data-bulk-project-id]').forEach(node => {
+      const selected = bulk.selected.has(node.dataset.bulkProjectId);
+      node.classList.toggle('is-bulk-selected', selected);
+      node.setAttribute('aria-checked', String(selected));
+      const check = node.querySelector('.library-bulk-checkbox');
+      if (check) check.checked = selected;
+    });
+    const footer = document.querySelector('.library-bulk-footer');
+    if (footer) footer.replaceWith(renderBulkFooter());
+  }
+
+  function renderBulkFooter() {
+    const footer = document.createElement('div');
+    footer.className = 'library-bulk-footer';
+    const row = document.createElement('div');
+    row.className = 'library-bulk-summary';
+    const label = document.createElement('label');
+    label.className = 'library-bulk-select-all';
+    const check = document.createElement('input');
+    check.type = 'checkbox';
+    check.className = 'library-bulk-checkbox';
+    const visible = bulkVisibleProjects();
+    const selectedCount = visible.filter(project => bulk.selected.has(project.id)).length;
+    check.checked = visible.length > 0 && selectedCount === visible.length;
+    check.indeterminate = selectedCount > 0 && selectedCount < visible.length;
+    check.disabled = bulk.busy || !visible.length;
+    check.addEventListener('change', () => {
+      visible.forEach(project => {
+        if (check.checked) bulk.selected.add(project.id);
+        else bulk.selected.delete(project.id);
+      });
+      updateBulkSelectionUI();
+    });
+    const text = document.createElement('span');
+    text.textContent = librarySearchQuery.trim() ? `全选搜索结果（${visible.length}）` : '全选';
+    label.append(check, text);
+    const count = document.createElement('span');
+    count.textContent = `已选 ${bulk.selected.size} 项`;
+    row.append(label, count);
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'library-bulk-delete danger';
+    remove.disabled = bulk.busy || !bulk.selected.size;
+    remove.innerHTML = ICON.trash;
+    const removeLabel = document.createElement('span');
+    removeLabel.textContent = bulk.busy ? '处理中…' : `删除所选（${bulk.selected.size}）`;
+    remove.appendChild(removeLabel);
+    remove.addEventListener('click', deleteBulkProjects);
+    const status = document.createElement('p');
+    status.className = 'library-bulk-status';
+    status.setAttribute('role', 'status');
+    status.textContent = bulk.message;
+    status.hidden = !bulk.message;
+    footer.append(row, remove, status);
+    if (bulk.failures.length) {
+      const details = document.createElement('details');
+      details.className = 'library-bulk-failures';
+      const summary = document.createElement('summary');
+      summary.textContent = `查看 ${bulk.failures.length} 项未删除原因`;
+      details.appendChild(summary);
+      bulk.failures.forEach(item => {
+        const reason = document.createElement('p');
+        reason.textContent = `${item.name}：${item.reason}`;
+        details.appendChild(reason);
+      });
+      footer.appendChild(details);
+    }
+    return footer;
+  }
+
+  async function deleteBulkProjects() {
+    if (bulk.busy || !bulk.selected.size) return;
+    const projects = bulkVisibleProjects().filter(project => bulk.selected.has(project.id));
+    if (!projects.length) return;
+    const account = bulk.account;
+    const session = bulk.session;
+    const isCurrent = () => bulk.active && bulk.session === session && currentLibraryAccount() === account;
+    bulk.busy = true;
+    bulk.message = '等待确认删除';
+    bulk.failures = [];
+    render();
+    try {
+      document.getElementById('modal-confirm')?.classList.add('library-bulk-confirm');
+      const confirmed = await showCustomConfirm(
+        `删除所选的 ${projects.length} 个视频项目？`,
+        '将永久删除这些项目及其全部素材和生成视频，此操作无法撤销。\n\n' + projects.map(project => `• ${project.name}`).join('\n'),
+        null, null, { danger: true, confirm: `删除 ${projects.length} 个项目` }
+      );
+      if (!confirmed || !isCurrent()) return;
+      let deleted = 0;
+      for (let index = 0; index < projects.length; index += 1) {
+        if (!isCurrent()) break;
+        const project = projects[index];
+        bulk.message = `正在删除 ${index + 1} / ${projects.length}`;
+        updateBulkSelectionUI();
+        try {
+          await API.fetch(`/api/projects/${encodeURIComponent(project.id)}`, { method: 'DELETE', silent: true });
+          if (!isCurrent()) break;
+          bulk.selected.delete(project.id);
+          treeData.standalone_projects = treeData.standalone_projects.filter(item => item.id !== project.id);
+          deleted += 1;
+        } catch (error) {
+          if (!isCurrent()) break;
+          bulk.failures.push({ name: project.name, reason: error.message || '删除失败，请重试' });
+        }
+      }
+      if (isCurrent()) {
+        bulk.message = `已删除 ${deleted} 项${bulk.failures.length ? `，${bulk.failures.length} 项未删除` : ''}`;
+        await load();
+      }
+    } finally {
+      document.getElementById('modal-confirm')?.classList.remove('library-bulk-confirm');
+      if (bulk.session === session && currentLibraryAccount() !== account) resetBulkSelection();
+      if (isCurrent()) {
+        bulk.busy = false;
+        if (bulk.message === '等待确认删除') bulk.message = '';
+        render();
+      }
+    }
+  }
+
   function filterVideoRecords(records) {
     let filtered = records;
-    if (libraryFilter.type === 'course') {
+    if (libraryFilter.type === 'standalone') {
+      filtered = records.filter(record => !record.course);
+    } else if (libraryFilter.type === 'course') {
       filtered = records.filter(record => record.course?.id === libraryFilter.id);
     } else if (libraryFilter.type === 'chapter') {
       filtered = records.filter(record => record.chapter?.id === libraryFilter.id);
@@ -385,6 +585,7 @@ const CourseTree = (() => {
   }
 
   function libraryFilterTitle() {
+    if (libraryFilter.type === 'standalone') return '独立视频';
     if (libraryFilter.type === 'course') return findCourse(libraryFilter.id)?.name || '全部视频';
     if (libraryFilter.type === 'chapter') return findChapter(libraryFilter.id)?.chapter?.name || '全部视频';
     return '全部视频';
@@ -447,6 +648,19 @@ const CourseTree = (() => {
     card.tabIndex = 0;
     card.setAttribute('role', 'button');
     card.setAttribute('aria-label', `打开视频项目：${project.name}`);
+    if (bulk.active) {
+      card.dataset.bulkProjectId = project.id;
+      card.classList.toggle('is-bulk-selected', bulk.selected.has(project.id));
+      card.setAttribute('role', 'checkbox');
+      card.setAttribute('aria-checked', String(bulk.selected.has(project.id)));
+      card.setAttribute('aria-label', `选择视频项目：${project.name}`);
+      card.setAttribute('aria-disabled', String(bulk.busy));
+      const mark = document.createElement('span');
+      mark.className = 'library-bulk-card-check';
+      mark.setAttribute('aria-hidden', 'true');
+      mark.textContent = '✓';
+      card.appendChild(mark);
+    }
 
     const preview = document.createElement('div');
     preview.className = `home-library-video-preview stitch-video-preview relative aspect-[16/9] w-full overflow-hidden flex items-center justify-center ${previewVariant.previewClass}`;
@@ -500,7 +714,8 @@ const CourseTree = (() => {
     play.innerHTML = '<svg class="stitch-ic" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>';
     const pattern = document.createElement('span');
     pattern.className = 'stitch-video-pattern';
-    preview.append(pattern, more, menu, play);
+    if (bulk.active) preview.append(pattern);
+    else preview.append(pattern, more, menu, play);
     // Use the first generated slide as the cover as soon as it exists.  The
     // library should not keep a generic pattern until every later step ends.
     hydrateCompletedVideoCover(project, preview);
@@ -541,13 +756,15 @@ const CourseTree = (() => {
     content.append(name, progressBlock);
     card.append(preview, content);
     card.addEventListener('click', (event) => {
+      if (bulk.active) { toggleBulkProject(project.id); return; }
       if (!event.target.closest('button')) enterWorkspace(project.id);
     });
     card.addEventListener('keydown', (event) => {
       if (event.target !== card) return;
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
-        enterWorkspace(project.id);
+        if (bulk.active) toggleBulkProject(project.id);
+        else enterWorkspace(project.id);
       }
     });
     return card;
@@ -912,7 +1129,7 @@ const CourseTree = (() => {
     node.className = 'course-card-item standalone-project stitch-standalone-project group';
     node.dataset.projectId = project.id;
     node.dataset.dragType = 'project';
-    node.draggable = true;
+    node.draggable = !bulk.active;
     node.tabIndex = 0;
     node.setAttribute('role', 'treeitem');
     node.setAttribute('aria-label', `打开独立视频项目：${project.name}`);
@@ -923,29 +1140,53 @@ const CourseTree = (() => {
         <span class="course-name" data-project-id="${project.id}">${escHtml(project.name)}</span>
       </div>
     `;
+    if (bulk.active) {
+      node.dataset.bulkProjectId = project.id;
+      node.classList.toggle('is-bulk-selected', bulk.selected.has(project.id));
+      node.setAttribute('aria-checked', String(bulk.selected.has(project.id)));
+      node.setAttribute('aria-label', `选择独立视频项目：${project.name}`);
+      const check = document.createElement('input');
+      check.type = 'checkbox';
+      check.className = 'library-bulk-checkbox';
+      check.checked = bulk.selected.has(project.id);
+      check.disabled = bulk.busy;
+      check.tabIndex = -1;
+      check.setAttribute('aria-label', `选择 ${project.name}`);
+      check.addEventListener('click', event => {
+        event.stopPropagation();
+        toggleBulkProject(project.id);
+      });
+      node.querySelector('.project-leaf-play').replaceWith(check);
+    }
 
     // 点击头部进入工作台
     const standaloneHeader = node.querySelector('.course-card-header');
     standaloneHeader.addEventListener('click', (e) => {
       if (e.target.closest('.icon-action-btn')) return;
-      enterWorkspace(project.id);
+      if (bulk.active) toggleBulkProject(project.id);
+      else enterWorkspace(project.id);
     });
     standaloneHeader.addEventListener('keydown', (e) => {
       if (e.target !== standaloneHeader && e.target !== node) return;
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        enterWorkspace(project.id);
+        if (bulk.active) toggleBulkProject(project.id);
+        else enterWorkspace(project.id);
       }
     });
     node.addEventListener('keydown', (e) => {
       if (e.target !== node) return;
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        enterWorkspace(project.id);
+        if (bulk.active) toggleBulkProject(project.id);
+        else enterWorkspace(project.id);
       }
     });
 
-    node.addEventListener('dragstart', (e) => handleDragStart(e, 'project'));
+    node.addEventListener('dragstart', (e) => {
+      if (bulk.active) e.preventDefault();
+      else handleDragStart(e, 'project');
+    });
     node.addEventListener('dragend', handleDragEnd);
     node.addEventListener('dragover', (e) => handleNodeDragOver(e, 'project', false));
     node.addEventListener('drop', (e) => handleNodeDrop(e, 'project', false));
@@ -1141,6 +1382,7 @@ const CourseTree = (() => {
   }
 
   function handleDragStart(e, type) {
+    if (bulk.active) { e.preventDefault(); return; }
     const id = e.currentTarget.dataset[type + 'Id'];
     if (!id) { e.preventDefault(); return; }
     dragData = { type, id };
@@ -1200,6 +1442,7 @@ const CourseTree = (() => {
   }
 
   async function handleNodeDrop(e, targetType, allowEmbed) {
+    if (bulk.active) { e.preventDefault(); return; }
     if (!dragData) return;
     if (!isDropAllowed(dragData.type, targetType)) return; // 冒泡到上层
     e.preventDefault();
@@ -1226,6 +1469,7 @@ const CourseTree = (() => {
   }
 
   async function handleBlankDrop(e) {
+    if (bulk.active) { e.preventDefault(); return; }
     if (!dragData || dragData.type !== 'project') return;
     e.preventDefault();
     const src = dragData;

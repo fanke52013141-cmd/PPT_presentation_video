@@ -7072,3 +7072,143 @@ body.workspace-open .sidebar .step-item.active::before {
   content: none !important;
   animation: none !important;
 }
+
+/* Independent-video batch management reuses the library's Stitch palette. */
+body:not(.workspace-open) #page-home .library-bulk-manage {
+  min-height: 26px !important;
+  padding: 3px 6px !important;
+  border: 0 !important;
+  border-radius: var(--stitch-radius-sm) !important;
+  background: transparent !important;
+  color: #787480 !important;
+  font: inherit;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  letter-spacing: normal;
+  box-shadow: none !important;
+}
+body:not(.workspace-open) #page-home .library-bulk-manage:hover {
+  color: var(--stitch-brand-hover) !important;
+  background: var(--stitch-brand-soft) !important;
+}
+body:not(.workspace-open) #page-home .library-bulk-checkbox {
+  appearance: auto;
+  width: 16px !important;
+  height: 16px !important;
+  min-width: 16px;
+  padding: 0 !important;
+  margin: 0 !important;
+  flex: 0 0 16px;
+  accent-color: var(--stitch-brand);
+  cursor: pointer;
+}
+body:not(.workspace-open) #page-home .is-bulk-selected > .stitch-standalone-header,
+body:not(.workspace-open) #page-home .is-bulk-selected > .stitch-standalone-header:hover {
+  background: var(--stitch-brand-soft) !important;
+  color: var(--stitch-brand-hover) !important;
+  transform: none !important;
+}
+body:not(.workspace-open) #page-home .is-bulk-selected > .stitch-standalone-header .course-name {
+  color: var(--stitch-brand-hover) !important;
+}
+body:not(.workspace-open) #page-home .stitch-video-card.is-bulk-selected {
+  border-color: var(--stitch-brand) !important;
+  box-shadow: 0 0 0 1px var(--stitch-brand) !important;
+}
+body:not(.workspace-open) #page-home .stitch-video-card[data-bulk-project-id] {
+  position: relative !important;
+  transform: none !important;
+}
+body:not(.workspace-open) #page-home .library-bulk-card-check {
+  position: absolute;
+  z-index: 5;
+  top: 12px;
+  left: 12px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--stitch-border);
+  border-radius: 6px;
+  background: white;
+  color: transparent;
+  font-size: 14px;
+  font-weight: 700;
+}
+body:not(.workspace-open) #page-home .is-bulk-selected .library-bulk-card-check {
+  border-color: var(--stitch-brand);
+  background: var(--stitch-brand);
+  color: white;
+}
+body:not(.workspace-open) #page-home .library-bulk-footer { display: grid; gap: 12px; }
+body:not(.workspace-open) #page-home .library-bulk-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #787480;
+  font-size: 12px;
+}
+body:not(.workspace-open) #page-home .library-bulk-select-all {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--stitch-dark);
+  font-weight: 500;
+  cursor: pointer;
+}
+body:not(.workspace-open) #page-home .library-bulk-delete {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px !important;
+  border: 1px solid #dc2626 !important;
+  border-radius: var(--stitch-radius-md) !important;
+  background: #dc2626 !important;
+  color: white !important;
+  font-size: 13px !important;
+  font-weight: 600;
+  box-shadow: none !important;
+}
+body:not(.workspace-open) #page-home .library-bulk-delete:hover:not(:disabled) {
+  background: #b91c1c !important;
+  border-color: #b91c1c !important;
+}
+body:not(.workspace-open) #page-home .library-bulk-delete:disabled {
+  background: var(--stitch-subtle) !important;
+  border-color: var(--stitch-border) !important;
+  color: var(--stitch-muted) !important;
+  opacity: 1;
+  cursor: not-allowed;
+}
+body:not(.workspace-open) #page-home .library-bulk-hint,
+body:not(.workspace-open) #page-home .library-bulk-status,
+body:not(.workspace-open) #page-home .library-bulk-empty {
+  margin: 0;
+  color: #787480;
+  font-size: 12px;
+  line-height: 1.6;
+}
+body:not(.workspace-open) #page-home .library-bulk-empty { grid-column: 1 / -1; padding: 32px 0; }
+body:not(.workspace-open) #page-home .library-bulk-failures {
+  max-height: 160px;
+  overflow: auto;
+  color: #b91c1c;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+body:not(.workspace-open) #page-home .library-bulk-failures summary { cursor: pointer; }
+body:not(.workspace-open) #page-home .library-bulk-manage:focus-visible,
+body:not(.workspace-open) #page-home [data-bulk-project-id]:focus-visible {
+  outline: 2px solid var(--stitch-brand);
+  outline-offset: 2px;
+}
+#modal-confirm.library-bulk-confirm #confirm-message {
+  max-height: 40vh;
+  overflow-y: auto;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}

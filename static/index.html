@@ -1568,7 +1568,7 @@
     <div class="modal-content step2-batch-import-modal">
       <button type="button" class="modal-corner-close" data-modal-close aria-label="关闭">×</button>
       <h3 class="highlight-title">批量导入分镜</h3>
-      <p class="config-editor-note">手动模式专用。下载模板 → 按格式填写 → 上传 txt 文件。文件内容是 JSON 数组：每项含 main_title 与 segments（每段含 screen_text 画面文字、speech_segment 对应演讲片段）；也兼容旧的 main_title + narration 简式。</p>
+      <p class="config-editor-note">手动模式专用。下载模板 → 按格式填写 → 上传 txt 文件。每页含 main_title（标题）、title_speech_segment（标题对应演讲片段）、narration（整页演讲稿）和 segments（画面内容）。每段用 visual_type 指定 text（文字，填写 screen_text）或 picture（画面元素，填写 visual_description，可描述插图、图表或流程图），并填写 speech_segment。整页演讲稿须与标题及各元素的片段按顺序拼接一致，每段内容应不同。旧的文字 segments 和 main_title + narration 简式仍可导入。</p>
       <div class="step2-batch-import-actions">
         <button id="step2-batch-import-download" class="secondary" type="button">
           <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path></svg>

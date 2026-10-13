@@ -536,14 +536,21 @@ function showStep2ValidationError(message, index = null, field = null) {
 const STEP2_BATCH_TEMPLATE = `[
   {
     "main_title": "第一页标题",
+    "title_speech_segment": "这一页先介绍主题，再说明两个关键内容。",
+    "narration": "这一页先介绍主题，再说明两个关键内容。第一个关键内容以画面文字呈现。第二个关键内容通过流程图展示前后关系。",
     "segments": [
-      { "screen_text": "画面文字 1", "speech_segment": "这一段对应的演讲片段" },
-      { "screen_text": "画面元素 2", "speech_segment": "这一段对应的演讲片段" }
+      { "visual_type": "text", "screen_text": "画面文字 1", "speech_segment": "第一个关键内容以画面文字呈现。" },
+      { "visual_type": "picture", "visual_description": "画面元素 2：三个节点由箭头连接的流程图", "speech_segment": "第二个关键内容通过流程图展示前后关系。" }
     ]
   },
   {
     "main_title": "第二页标题",
-    "narration": "第二页完整演讲稿（无 segments 时必填）"
+    "title_speech_segment": "接下来用两个画面元素说明实际应用。",
+    "narration": "接下来用两个画面元素说明实际应用。插图展示了团队协作的使用场景。柱状图对比了三个阶段的成果。",
+    "segments": [
+      { "visual_type": "picture", "visual_description": "画面元素 1：三个人围桌协作的插图", "speech_segment": "插图展示了团队协作的使用场景。" },
+      { "visual_type": "picture", "visual_description": "画面元素 2：三个阶段的成果对比柱状图", "speech_segment": "柱状图对比了三个阶段的成果。" }
+    ]
   }
 ]
 `;
@@ -555,6 +562,7 @@ function openStep2BatchImportModal() {
   document.getElementById('btn-step2-batch-import-append').disabled = true;
   document.getElementById('btn-step2-batch-import-overwrite').disabled = true;
   document.getElementById('modal-step2-batch-import').style.display = 'flex';
+  step2BatchImportPending = null;
 }
 
 function closeStep2BatchImportModal() {
@@ -591,7 +599,7 @@ function handleStep2BatchImportFile(event) {
     let parsed = null;
     let parseError = '';
     try {
-      parsed = JSON.parse(String(reader.result || ''));
+      parsed = JSON.parse(String(reader.result || '').replace(/^\uFEFF/, ''));
     } catch (e) {
       parseError = String(e.message || e);
     }
@@ -605,27 +613,51 @@ function handleStep2BatchImportFile(event) {
       const item = parsed[i] || {};
       const title = String(item.main_title || '').trim();
       const segments = Array.isArray(item.segments) ? item.segments : null;
+      const titleSpeech = String(item.title_speech_segment || '').trim();
       let narration = String(item.narration || '').trim();
+      const normalizedSegments = [];
       if (segments) {
         for (let s = 0; s < segments.length; s++) {
           const seg = segments[s] || {};
-          if (!String(seg.screen_text || '').trim() || !String(seg.speech_segment || '').trim()) {
+          const rawType = String(seg.visual_type || seg.type || 'text').trim().toLowerCase();
+          const pictureTypes = ['picture', 'illustration', 'image', 'diagram', 'chart', 'visual', 'graphic', 'text_and_illustration'];
+          const visualType = ['text', '文字'].includes(rawType) ? 'text' : pictureTypes.includes(rawType) ? 'picture' : null;
+          if (!visualType) {
             previewEl.style.display = 'block';
-            previewEl.innerHTML = `<div class="step2-batch-import-error">❌ 第 ${i + 1} 项第 ${s + 1} 个片段缺少 screen_text 或 speech_segment</div>`;
+            previewEl.innerHTML = `<div class="step2-batch-import-error">❌ 第 ${i + 1} 项第 ${s + 1} 个片段的 visual_type 不支持，请使用 text（文字）或 picture（画面元素）</div>`;
             return;
           }
+          const content = String(visualType === 'text' ? seg.screen_text || '' : seg.visual_description || seg.screen_text || '').trim();
+          const speech = String(seg.speech_segment || '').trim();
+          if (!content || !speech) {
+            previewEl.style.display = 'block';
+            previewEl.innerHTML = `<div class="step2-batch-import-error">❌ 第 ${i + 1} 项第 ${s + 1} 个片段缺少 ${visualType === 'text' ? 'screen_text' : 'visual_description'} 或 speech_segment</div>`;
+            return;
+          }
+          normalizedSegments.push({ visual_type: visualType, visual_content: content, speech_segment: speech });
         }
-        if (!narration) narration = segments.map(seg => String(seg.speech_segment || '').trim()).filter(Boolean).join('');
       }
+      const speeches = [titleSpeech, ...normalizedSegments.map(seg => seg.speech_segment)].filter(Boolean);
+      const joinedSpeech = speeches.join('');
+      // Do not silently discard a full-page narration that differs from its mappings.
+      if (normalizedSegments.length && narration && narration.replace(/\s/g, '') !== joinedSpeech.replace(/\s/g, '')) {
+        previewEl.style.display = 'block';
+        previewEl.innerHTML = `<div class="step2-batch-import-error">❌ 第 ${i + 1} 项 narration 必须与 title_speech_segment 和各 speech_segment 按顺序拼接的内容一致，请补齐标题或元素的演讲片段</div>`;
+        return;
+      }
+      const speechKeys = speeches.map(narrationDedupeKey).filter(Boolean);
+      if (new Set(speechKeys).size !== speechKeys.length) {
+        previewEl.style.display = 'block';
+        previewEl.innerHTML = `<div class="step2-batch-import-error">❌ 第 ${i + 1} 项存在重复演讲片段，请为标题和每个元素填写不同的片段，避免保存时被去重</div>`;
+        return;
+      }
+      if (!narration) narration = joinedSpeech;
       if (!title || !narration) {
         previewEl.style.display = 'block';
         previewEl.innerHTML = `<div class="step2-batch-import-error">❌ 第 ${i + 1} 项缺少 main_title 或 narration 字段</div>`;
         return;
       }
-      slides.push({ main_title: title, narration, segments: segments ? segments.map(seg => ({
-        screen_text: String(seg.screen_text || '').trim(),
-        speech_segment: String(seg.speech_segment || '').trim(),
-      })) : null });
+      slides.push({ main_title: title, narration, title_speech_segment: titleSpeech, segments: normalizedSegments });
     }
     if (!slides.length) {
       previewEl.style.display = 'block';
@@ -668,9 +700,9 @@ async function submitStep2BatchImport(mode) {
       slideId = `slide_${String(nextNumber++).padStart(3, '0')}`;
     } while (usedIds.has(slideId));
     usedIds.add(slideId);
-    const segments = Array.isArray(item.segments) ? item.segments.filter(seg => seg && seg.screen_text) : [];
+    const segments = Array.isArray(item.segments) ? item.segments : [];
     const pad = (n) => String(n).padStart(3, '0');
-    const visualGroups = [{
+    const visualGroups = segments.length ? [{
       id: `${slideId}_group_001`,
       role: 'title',
       visual_type: 'text',
@@ -678,27 +710,41 @@ async function submitStep2BatchImport(mode) {
       display_text: item.main_title,
       visual_anchor: item.main_title,
       mask_target: item.main_title,
+      narration_function: item.main_title,
+      content_unit_id: `${slideId}_unit_001`,
       reveal_order: 0,
-    }];
+    }] : [];
     const beats = [];
+    if (segments.length && item.title_speech_segment) {
+      beats.push({
+        id: `${slideId}_beat_001`,
+        group_id: visualGroups[0].id,
+        content_unit_id: `${slideId}_unit_001`,
+        visible_anchor: item.main_title,
+        spoken_intent: item.main_title,
+        spoken_text: item.title_speech_segment,
+      });
+    }
     segments.forEach((seg, index) => {
       const groupId = `${slideId}_group_${pad(index + 2)}`;
       visualGroups.push({
         id: groupId,
         role: 'content_body',
-        visual_type: 'text',
-        visible_text: seg.screen_text,
-        display_text: seg.screen_text,
-        visual_anchor: seg.screen_text,
-        mask_target: seg.screen_text,
+        visual_type: seg.visual_type,
+        visible_text: seg.visual_content,
+        display_text: seg.visual_type === 'text' ? seg.visual_content : '',
+        visual_anchor: seg.visual_content,
+        mask_target: seg.visual_content,
+        narration_function: seg.visual_content,
+        content_unit_id: `${slideId}_unit_${pad(index + 2)}`,
         reveal_order: index + 1,
       });
       beats.push({
-        id: `${slideId}_beat_${pad(index + 1)}`,
+        id: `${slideId}_beat_${pad(beats.length + 1)}`,
         group_id: groupId,
-        content_unit_id: `${slideId}_unit_${pad(index + 1)}`,
-        visible_anchor: seg.screen_text,
-        spoken_intent: seg.screen_text,
+        content_unit_id: `${slideId}_unit_${pad(index + 2)}`,
+        visible_anchor: seg.visual_content,
+        spoken_intent: seg.visual_content,
         spoken_text: seg.speech_segment,
       });
     });

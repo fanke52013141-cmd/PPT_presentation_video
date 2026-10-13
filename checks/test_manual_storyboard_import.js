@@ -9,9 +9,14 @@ const foundation = fs.readFileSync(path.join(root, 'static/ui_foundation.js'), '
 const nodes = new Map();
 const state = { currentProject: { id: 'test' }, slides: [], activeSlideIndex: 0 };
 let savedSlides;
+let downloaded;
 const scope = {
   state,
-  document: { getElementById: id => {
+  Blob,
+  URL: { createObjectURL(blob) { downloaded = { blob }; return 'blob:test'; }, revokeObjectURL() {} },
+  document: { body: { appendChild() {}, removeChild() {} }, createElement() {
+    return { click() { downloaded.filename = this.download; } };
+  }, getElementById: id => {
     if (!nodes.has(id)) nodes.set(id, { style: {}, value: '', innerHTML: '', disabled: true });
     return nodes.get(id);
   } },
@@ -39,6 +44,18 @@ const pending = () => vm.runInContext('step2BatchImportPending', scope);
 
 async function main() {
   const template = JSON.parse(vm.runInContext('STEP2_BATCH_TEMPLATE', scope));
+  assert.equal(Object.hasOwn(template[0], 'title_speech_segment'), false);
+  assert.equal(template[0].segments[0].role, 'title');
+  assert.equal(template[0].segments.map(seg => seg.speech_segment).join(''), template[0].narration);
+  scope.downloadStep2BatchTemplate();
+  const guide = await downloaded.blob.text();
+  assert.equal(downloaded.filename, '手动分镜模板.txt');
+  assert.match(guide, /narration 是本页唯一的完整演讲稿/);
+  assert.match(guide, /最终只输出一个标准 JSON 数组/);
+  assert.match(guide, /不编造数据/);
+  assert.ok(guide.endsWith(vm.runInContext('STEP2_BATCH_TEMPLATE', scope)));
+  assert.match(read(guide), /不是 JSON 数组/);
+  assert.equal(pending(), null);
   read('\uFEFF' + JSON.stringify(template));
   assert.equal(pending().length, 2);
   await scope.submitStep2BatchImport('overwrite');
@@ -58,41 +75,80 @@ async function main() {
   assert.equal(templateSlides[0].visual_groups[2].display_text, '');
   assert.match(templateSlides[0].visual_groups[2].visual_anchor, /流程图/);
 
-  // Legacy narration-only pages must stay unbound, so backend normalization retains them.
-  read([{ main_title: '简式标题', narration: '完整演讲稿保留。' }]);
+  // Append standard pages without overwriting existing pages or reusing IDs.
+  read([template[0]]);
   await scope.submitStep2BatchImport('append');
   assert.deepEqual(savedSlides.slice(0, 2), templateSlides);
-  const simpleSlide = savedSlides[2];
-  assert.deepEqual(simpleSlide.visual_groups, []);
-  assert.equal(simpleSlide.narration_beats[0].spoken_text, '完整演讲稿保留。');
+  assert.equal(savedSlides.length, 3);
   assert.equal(new Set(savedSlides.map(slide => slide.slide_id)).size, 3);
 
-  read([{ main_title: '旧文字模板', segments: [{ screen_text: '旧文字', speech_segment: '旧的片段。' }] }]);
-  await scope.submitStep2BatchImport('overwrite');
-  assert.equal(savedSlides[0].visual_groups[1].visual_type, 'text');
-  assert.equal(savedSlides[0].narration_beats[0].spoken_text, '旧的片段。');
-
-  for (const type of ['picture', 'illustration', 'image', 'diagram', 'chart', 'visual', 'graphic', 'text_and_illustration']) {
-    read([{ main_title: '类型兼容', segments: [{ type, screen_text: '图形描述', speech_segment: '图形说明。' }] }]);
-    assert.equal(pending()[0].segments[0].visual_type, 'picture');
+  // Old import shapes and aliases are explicitly rejected.
+  for (const legacy of [
+    [{ main_title: '旧简式', narration: '旧演讲稿。' }],
+    [{ main_title: '旧文字格式', segments: [{ screen_text: '文字', speech_segment: '片段。' }] }],
+    [{ main_title: '旧标题字段', title_speech_segment: '开场。', narration: '开场。正文。',
+      segments: [{ visual_type: 'picture', visual_description: '图形', speech_segment: '正文。' }] }],
+  ]) {
+    assert.match(read(legacy), /标准格式|标题片段/);
+    assert.equal(pending(), null);
+    assert.equal(nodes.get('btn-step2-batch-import-overwrite').disabled, true);
   }
-  assert.match(read([{ main_title: '错误类型', segments: [{ type: 'unknown', screen_text: '内容', speech_segment: '说明。' }] }]), /visual_type 不支持/);
+  for (const type of ['illustration', 'image', 'diagram', 'chart', 'visual', 'graphic', 'text_and_illustration', '文字', 'unknown']) {
+    const invalidType = JSON.parse(JSON.stringify(template));
+    invalidType[0].segments[2].visual_type = type;
+    assert.match(read(invalidType), /字段不符合标准格式/);
+    assert.equal(pending(), null);
+  }
+  const typeAlias = JSON.parse(JSON.stringify(template));
+  typeAlias[0].segments[2].type = 'picture';
+  delete typeAlias[0].segments[2].visual_type;
+  assert.match(read(typeAlias), /字段不符合标准格式/);
+  const missingNarration = JSON.parse(JSON.stringify(template));
+  delete missingNarration[0].narration;
+  assert.match(read(missingNarration), /整页 narration/);
   assert.equal(pending(), null);
-  assert.equal(nodes.get('btn-step2-batch-import-overwrite').disabled, true);
+  const pictureTextFallback = JSON.parse(JSON.stringify(template));
+  pictureTextFallback[0].segments[2].screen_text = pictureTextFallback[0].segments[2].visual_description;
+  delete pictureTextFallback[0].segments[2].visual_description;
+  assert.match(read(pictureTextFallback), /字段不符合标准格式/);
+  assert.equal(pending(), null);
 
   const mismatch = JSON.parse(JSON.stringify(template));
   mismatch[0].narration += '不能丢失的额外演讲稿。';
   assert.match(read(mismatch), /narration 必须/);
   assert.equal(pending(), null);
-  assert.match(read([{ main_title: '重复', segments: [
-    { screen_text: '元素一', speech_segment: '重复说明。' },
-    { screen_text: '元素二', speech_segment: '重复说明！' },
-  ] }]), /重复演讲片段/);
+  const duplicate = JSON.parse(JSON.stringify(template));
+  duplicate[0].segments[2].speech_segment = duplicate[0].segments[1].speech_segment;
+  duplicate[0].narration = duplicate[0].segments.map(seg => seg.speech_segment).join('');
+  assert.match(read(duplicate), /重复演讲片段/);
   assert.equal(pending(), null);
 
   const incomplete = JSON.parse(JSON.stringify(template));
-  delete incomplete[0].segments[1].visual_description;
+  delete incomplete[0].segments[2].visual_description;
   assert.match(read(incomplete), /visual_description/);
+  assert.equal(pending(), null);
+  const extraFields = JSON.parse(JSON.stringify(template));
+  extraFields[0].instructions = '不要导入的说明';
+  assert.match(read(extraFields), /标准格式仅使用/);
+  assert.equal(pending(), null);
+  const noTitle = JSON.parse(JSON.stringify(template));
+  noTitle[0].segments.shift();
+  assert.match(read(noTitle), /标题片段/);
+  assert.equal(pending(), null);
+  const secondTitle = JSON.parse(JSON.stringify(template));
+  secondTitle[0].segments[1] = { role: 'title', speech_segment: '第二个标题片段。' };
+  assert.match(read(secondTitle), /只能在首位/);
+  const emptyTitle = JSON.parse(JSON.stringify(template));
+  emptyTitle[0].segments[0].speech_segment = '';
+  assert.match(read(emptyTitle), /填写 speech_segment/);
+  const titleOnly = JSON.parse(JSON.stringify(template));
+  titleOnly[0].segments = [titleOnly[0].segments[0]];
+  assert.match(read(titleOnly), /至少一个 content_body/);
+  const missingType = JSON.parse(JSON.stringify(template));
+  delete missingType[0].segments[1].visual_type;
+  assert.match(read(missingType), /字段不符合标准格式/);
+  const fenced = '```json\n' + JSON.stringify(template) + '\n```';
+  assert.match(read(fenced), /不是 JSON 数组/);
   assert.equal(pending(), null);
   read(template);
   scope.openStep2BatchImportModal();
@@ -103,7 +159,7 @@ async function main() {
       subtitle_policy: 'no_slides_have_subtitle',
       visual_narration_mapping: 'one_visual_element_to_one_narration_beat_v1',
     },
-    slides: [...templateSlides, simpleSlide],
+    slides: templateSlides,
   };
   if (process.argv.includes('--contract')) process.stdout.write(JSON.stringify(contract));
   else console.log('Manual storyboard template/import regression checks passed');

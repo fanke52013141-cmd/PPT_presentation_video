@@ -1568,11 +1568,11 @@
     <div class="modal-content step2-batch-import-modal">
       <button type="button" class="modal-corner-close" data-modal-close aria-label="关闭">×</button>
       <h3 class="highlight-title">批量导入分镜</h3>
-      <p class="config-editor-note">手动模式专用。下载模板 → 按格式填写 → 上传 txt 文件。每页含 main_title（标题）、title_speech_segment（标题对应演讲片段）、narration（整页演讲稿）和 segments（画面内容）。每段用 visual_type 指定 text（文字，填写 screen_text）或 picture（画面元素，填写 visual_description，可描述插图、图表或流程图），并填写 speech_segment。整页演讲稿须与标题及各元素的片段按顺序拼接一致，每段内容应不同。旧的文字 segments 和 main_title + narration 简式仍可导入。</p>
+      <p class="config-editor-note">下载模板包含填写说明和标准格式示例，可连同文章或演讲稿发给 Agent / AI。将 AI 输出保存为 UTF-8 的 TXT 后上传；导入文件只包含标准 JSON 数组，不含说明或代码围栏。narration 是整页完整演讲稿；segments 从中摘取片段，分别对应标题和正文画面。标题用 role: title；正文支持 text 文字和 picture 画面元素。</p>
       <div class="step2-batch-import-actions">
         <button id="step2-batch-import-download" class="secondary" type="button">
           <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path></svg>
-          下载模板
+          下载模板（含说明）
         </button>
         <label class="btn secondary step2-batch-import-upload-label">
           <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path></svg>

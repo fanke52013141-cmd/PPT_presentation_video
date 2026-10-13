@@ -412,6 +412,11 @@ if (!article.includes('await navigateToStep(2)') || article.includes('setTimeout
   throw new Error('Step 1 save still relies on an artificial navigation delay');
 }
 if (!html.includes('storyboard.js')) throw new Error('Step 2 storyboard frontend module is not loaded explicitly');
+if (html.includes('id="step2-batch-import-download-example"')
+    || eventBindings.includes('downloadStep2BatchTemplate(false)')
+    || !eventBindings.includes("document.getElementById('step2-batch-import-download')?.addEventListener('click', () => downloadStep2BatchTemplate())")) {
+  throw new Error('Manual storyboard must have a single template download including AI instructions');
+}
 for (const storyboardFunction of [
   'loadStep2Data',
   'addManualSlide',

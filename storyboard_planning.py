@@ -164,9 +164,18 @@ def normalize_narration_segments(value: Any, fallback_narration: str = "") -> Li
     return normalized
 
 
-def normalize_slide_script_plan(plan: Dict[str, Any], project_title: str) -> Dict[str, Any]:
+def normalize_slide_script_plan(
+    plan: Dict[str, Any],
+    project_title: str,
+    *,
+    allow_empty: bool = False,
+) -> Dict[str, Any]:
+    """allow_empty 供用户保存入口表达"演讲稿已全部删除"；
+    LLM 生成路径（默认 False）仍把空输出视为失败。"""
     slides = plan.get("slides") if isinstance(plan, dict) else []
-    if not isinstance(slides, list) or not slides:
+    if not isinstance(slides, list):
+        slides = []
+    if not slides and not allow_empty:
         raise PlanningError("AI 没有返回可用的 slide_script_plan.slides")
     normalized_slides: List[Dict[str, Any]] = []
     for index, slide in enumerate(slides, start=1):
@@ -194,7 +203,7 @@ def normalize_slide_script_plan(plan: Dict[str, Any], project_title: str) -> Dic
                 "narration": narration,
             }
         )
-    if not normalized_slides:
+    if not normalized_slides and not allow_empty:
         raise PlanningError("AI 没有返回可用的 slide_script_plan.slides")
     return {"title": str(plan.get("title") or project_title).strip() or project_title, "slides": normalized_slides}
 

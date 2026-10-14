@@ -356,6 +356,47 @@ def _persist_step2_script_plan(project, plan, previous_plan):
     return plan_store._persist_step2_script_plan(project, plan, previous_plan, visual_path=step2_visual_plan_path(project), script_path=step2_script_plan_path(project))
 
 
+def _clear_step2_for_empty_script(project, plan, previous_plan, db) -> tuple[bool, bool, bool, bool]:
+    """演讲稿删空即清空整套分镜：与手动模式空合约同口径归档并失效下游。
+
+    返回值与 _persist_step2_script_plan 对齐（visual_exists, visual_stale,
+    workflow_changed, workflow_pending），供路由按既有语义 commit。
+    """
+    script_path = step2_script_plan_path(project)
+    visual_path = step2_visual_plan_path(project)
+    contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
+    statuses_before = project.get_step_status()
+    with project_artifact_lock(project.run_dir):
+        write_json_atomic(script_path, plan)
+        if os.path.isfile(visual_path):
+            os.remove(visual_path)
+        if os.path.isfile(contract_path):
+            stored_contract = read_json_file(contract_path, {})
+            existing_contract = normalize_visual_contract(
+                deepcopy(stored_contract) if isinstance(stored_contract, dict) else {},
+                read_project_pipeline_profile(project),
+            )
+            previous_slide_ids = contract_slide_ids_from_payload(existing_contract)
+            empty_contract = normalize_visual_contract(
+                {"version": "visual_contract_v1", "slides": []},
+                read_project_pipeline_profile(project),
+            )
+            # 复用手动空合约路径：归档被删页面素材、写 editable_empty 校验、
+            # 重置 reveal manifest 与 narration beats 并失效下游步骤。
+            _persist_step2_result_locked(
+                project, empty_contract, existing_contract, previous_slide_ids, contract_path, db,
+            )
+    workflow_changed = (
+        previous_plan != plan
+        and statuses_before.get("2") not in (None, "in_progress")
+    )
+    if workflow_changed:
+        invalidation_service.storyboard_script_changed(project)
+    step2_status = project.get_step_status().get("2")
+    workflow_pending = step2_status is not None and step2_status != "completed"
+    return False, False, workflow_changed, workflow_pending
+
+
 def configured_step2_llm() -> tuple[str, Optional[str], str, float, int]:
     llm_api_key = get_setting("llm_api_key")
     llm_base_url = get_setting("llm_base_url")
@@ -676,7 +717,7 @@ def update_step2_script_plan(project_id: str, payload: Dict[str, Any], db: Sessi
     article_source = read_project_article_source(project)
     project_title = article_source["title"]
     try:
-        plan = normalize_slide_script_plan(payload, project_title)
+        plan = normalize_slide_script_plan(payload, project_title, allow_empty=True)
     except PlanningError as exc:
         raise _planning_http_error(exc, 400)
     script_path = step2_script_plan_path(project)
@@ -687,9 +728,15 @@ def update_step2_script_plan(project_id: str, payload: Dict[str, Any], db: Sessi
                 previous_plan = json.load(file)
         except (OSError, json.JSONDecodeError):
             previous_plan = {}
-    visual_exists, visual_stale, workflow_changed, workflow_pending = _persist_step2_script_plan(
-        project, plan, previous_plan
-    )
+    if not plan.get("slides"):
+        # 用户把演讲稿全部删除：清空分镜链路而不是报错拦截。
+        visual_exists, visual_stale, workflow_changed, workflow_pending = (
+            _clear_step2_for_empty_script(project, plan, previous_plan, db)
+        )
+    else:
+        visual_exists, visual_stale, workflow_changed, workflow_pending = _persist_step2_script_plan(
+            project, plan, previous_plan
+        )
     return {
         "success": True,
         "script_plan": plan,

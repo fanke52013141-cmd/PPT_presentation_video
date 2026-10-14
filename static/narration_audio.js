@@ -448,6 +448,16 @@ function renderStep7SlideState(stateBadge, slideId, audio) {
     : audio?.stale ? '旁白已修改，需重新生成' : '音频尚未生成';
 }
 
+// 清空全部音频槽位（仅在确需整体重置时调用；轮询刷新禁止整体清空重建）。
+function resetStep7AudioSlots() {
+  document.querySelectorAll('.step6-slide-audio').forEach(slot => {
+    if (!slot.dataset.step7Rendered && !slot.classList.contains('has-audio')) return;
+    slot.innerHTML = '';
+    slot.classList.remove('has-audio');
+    delete slot.dataset.step7Rendered;
+  });
+}
+
 async function loadStep7Data() {
   const projectId = state.currentProject?.id;
   const sessionVersion = workspaceNavigationVersion;
@@ -461,13 +471,9 @@ async function loadStep7Data() {
   // 确认按钮常驻可点，未就绪时在点击处 Toast 提示，不在标题栏挂提示文字。
   synthButton.style.display = stepAllowsAudio ? 'inline-flex' : 'none';
   if (forceAllButton) forceAllButton.style.display = stepAllowsAudio ? 'inline-flex' : 'none';
-  emptyState.style.display = 'block';
-  document.querySelectorAll('.step6-slide-audio').forEach(slot => {
-    slot.innerHTML = '';
-    slot.classList.remove('has-audio');
-  });
 
   if (!narrationData?.slides?.length) {
+    emptyState.style.display = 'block';
     emptyState.innerText = '尚未生成音频。先准备旁白，再点击“生成音频”。';
     return;
   }
@@ -484,53 +490,64 @@ async function loadStep7Data() {
   synthButton.style.display = canLoadAudio ? 'inline-flex' : 'none';
   if (forceAllButton) forceAllButton.style.display = canLoadAudio ? 'inline-flex' : 'none';
   if (!canLoadAudio) {
+    resetStep7AudioSlots();
+    emptyState.style.display = 'block';
     emptyState.innerText = '尚未生成音频。确认旁白后，点击“生成音频”。';
     return;
   }
-  if (res.success) {
-    const audioBySlide = new Map((audioStatus.slides || []).map(item => [item.slide_id, {...item, generating: (audioStatus.active_slide_ids || []).includes(item.slide_id)}]));
-    res.images.forEach(img => {
-      const slot = Array.from(document.querySelectorAll('.step6-slide-audio'))
-        .find(item => item.dataset.audioSlideId === img.slide_id);
-      if (!slot) return;
-      const audio = audioBySlide.get(img.slide_id);
-      // 三态徽章挂在卡片标题行右侧（2026-10-06 用户裁决 + Stitch 参考稿）：
-      // 生成中 / 已生成 / 待生成，原因只留在悬浮 title。
-      const stateBadge = slot.closest('.step6-slide-row')?.querySelector('.step6-slide-state');
-      renderStep7SlideState(stateBadge, img.slide_id, audio);
-      if (audio?.audio_exists && !audio?.stale && !step7ActiveTtsSlides.has(img.slide_id)) {
-        const audioUrl = `/api/projects/${projectId}/slides/${img.slide_id}/audio?t=${Date.now()}`;
-        slot.innerHTML = `<audio controls preload="metadata" src="${audioUrl}" class="step7-audio-player" aria-label="${escHtml(img.slide_id)} 音频"></audio>`;
-        slot.classList.add('has-audio');
-      } else {
-        slot.innerHTML = '';
-        slot.classList.remove('has-audio');
-        const busy = audio?.generating || step7ActiveTtsSlides.has(img.slide_id);
-        renderPageTaskState(slot, 'audio', busy ? 'running' : 'pending', busy ? '正在生成本页音频' : '待生成', 'audio');
-      }
-    });
-
-    const allAudioComplete = audioStatus.complete === true;
-    // 确认按钮常驻可点：未就绪时点击给出 Toast 提示（验收 2026-10-06：标题栏不再挂提示文字）。
-    if (!allAudioComplete) {
-      // Each slide already shows its actionable audio state.  Do not repeat a
-      // long, non-actionable missing-slide list above the editor.
-      emptyState.style.display = 'none';
-      emptyState.innerText = '';
-    } else if (step7Status === 'pending_reconfirmation') {
-      emptyState.style.display = 'none';
-      emptyState.innerText = '';
+  if (!res.success) return;
+  const audioBySlide = new Map((audioStatus.slides || []).map(item => [item.slide_id, {...item, generating: (audioStatus.active_slide_ids || []).includes(item.slide_id)}]));
+  res.images.forEach(img => {
+    const slot = Array.from(document.querySelectorAll('.step6-slide-audio'))
+      .find(item => item.dataset.audioSlideId === img.slide_id);
+    if (!slot) return;
+    const audio = audioBySlide.get(img.slide_id);
+    // 三态徽章挂在卡片标题行右侧（2026-10-06 用户裁决 + Stitch 参考稿）：
+    // 生成中 / 已生成 / 待生成，原因只留在悬浮 title。
+    const stateBadge = slot.closest('.step6-slide-row')?.querySelector('.step6-slide-state');
+    renderStep7SlideState(stateBadge, img.slide_id, audio);
+    const busy = audio?.generating || step7ActiveTtsSlides.has(img.slide_id);
+    const target = audio?.audio_exists && !audio?.stale && !busy ? 'audio' : (busy ? 'busy' : 'pending');
+    // 合成任务轮询每 2 秒进入本函数：槽位 DOM 只在状态切换时重建。
+    // 无条件清空重建会让 <audio> 播放器与骨架屏每轮销毁重现，页面高度
+    // 反复塌陷回流、动画重启，表现为整页抽搐。
+    const rendered = target === 'audio'
+      ? slot.querySelector('audio.step7-audio-player')
+      : slot.querySelector('[data-page-task-key="audio"]');
+    if (slot.dataset.step7Rendered === target && rendered) return;
+    if (target === 'audio') {
+      // 仅在（重新）进入已完成态时加时间戳，避免轮询期间反复穿透缓存。
+      const audioUrl = `/api/projects/${projectId}/slides/${img.slide_id}/audio?t=${Date.now()}`;
+      slot.innerHTML = `<audio controls preload="metadata" src="${audioUrl}" class="step7-audio-player" aria-label="${escHtml(img.slide_id)} 音频"></audio>`;
+      slot.classList.add('has-audio');
     } else {
-      emptyState.style.display = 'none';
-      // 命名统一为「进入勾画标注」（UI 审查第四轮：进入类按钮不带「确认」）。
-      // 音频未就绪时由后端门控拦截，完整语义保留在按钮 title 上。
-      const confirmLabel = document.getElementById('step6-audio-confirm-label');
-      confirmLabel.innerText = '进入勾画标注';
-      const confirmBtn = document.getElementById('step6-btn-audio-confirm-next');
-      if (confirmBtn) confirmBtn.title = state.currentProject.audio_confirmed
-        ? '进入勾画标注'
-        : '确认当前音频已就绪，进入勾画标注步骤；勾画标注默认不需要，可跳过';
+      slot.innerHTML = '';
+      slot.classList.remove('has-audio');
+      renderPageTaskState(slot, 'audio', busy ? 'running' : 'pending', busy ? '正在生成本页音频' : '待生成', 'audio');
     }
+    slot.dataset.step7Rendered = target;
+  });
+
+  const allAudioComplete = audioStatus.complete === true;
+  // 确认按钮常驻可点：未就绪时点击给出 Toast 提示（验收 2026-10-06：标题栏不再挂提示文字）。
+  if (!allAudioComplete) {
+    // Each slide already shows its actionable audio state.  Do not repeat a
+    // long, non-actionable missing-slide list above the editor.
+    emptyState.style.display = 'none';
+    emptyState.innerText = '';
+  } else if (step7Status === 'pending_reconfirmation') {
+    emptyState.style.display = 'none';
+    emptyState.innerText = '';
+  } else {
+    emptyState.style.display = 'none';
+    // 命名统一为「进入勾画标注」（UI 审查第四轮：进入类按钮不带「确认」）。
+    // 音频未就绪时由后端门控拦截，完整语义保留在按钮 title 上。
+    const confirmLabel = document.getElementById('step6-audio-confirm-label');
+    confirmLabel.innerText = '进入勾画标注';
+    const confirmBtn = document.getElementById('step6-btn-audio-confirm-next');
+    if (confirmBtn) confirmBtn.title = state.currentProject.audio_confirmed
+      ? '进入勾画标注'
+      : '确认当前音频已就绪，进入勾画标注步骤；勾画标注默认不需要，可跳过';
   }
 }
 

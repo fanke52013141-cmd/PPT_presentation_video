@@ -193,8 +193,10 @@ async function generateStep2ScriptPlan(requirement = '') {
 
 // 二级菜单 Tab 数据源：合约分镜优先；仅有演讲稿时由演讲稿页面充当分页。
 function step2TabSourceSlides() {
-  if (!isManualMode() && state.step2ScriptPlan?.slides?.length) {
-    return state.step2ScriptPlan.slides.map((slide, index) => ({
+  if (!isManualMode() && state.step2ScriptPlan) {
+    // 自动模式下演讲稿计划是页签权威来源；已删空（slides 为空）时不再
+    // 回退到旧合约页，避免已删除的页面重新出现在分页里。
+    return (state.step2ScriptPlan.slides || []).map((slide, index) => ({
       slide_id: slide.slide_id || `slide_${String(index + 1).padStart(3, '0')}`,
       main_title: slide.slide_title || '',
       narration_text: slide.narration || '',
@@ -306,7 +308,9 @@ async function saveStep2ScriptPlan(options = {}) {
   const projectId = step2CurrentProjectId();
   const sessionVersion = workspaceNavigationVersion;
   if (!projectId || !state.step2ScriptPlan) return false;
-  if (!step2VisualButtonReady()) {
+  // 空计划表示用户已把演讲稿全部删除，允许保存以触发后端清空分镜；
+  // 非空计划仍要求每页演讲稿填写完整。
+  if (state.step2ScriptPlan.slides?.length && !step2VisualButtonReady()) {
     updateStep2AutosaveStatus('请填写新幻灯片的演讲稿');
     return false;
   }
@@ -345,7 +349,13 @@ async function saveStep2ScriptPlan(options = {}) {
       step2ScriptSaveTimer = null;
       continue;
     }
-    state.step2ScriptPlan = response.script_plan || state.step2ScriptPlan;
+    // 原地写回服务端规范化结果：保持 state.step2ScriptPlan 对象引用不变，
+    // 已绑定的演讲稿输入框闭包仍写同一个 plan，后续编辑才不会丢。
+    const savedPlan = response.script_plan;
+    if (savedPlan && typeof savedPlan === 'object' && Array.isArray(savedPlan.slides)) {
+      state.step2ScriptPlan.title = savedPlan.title ?? state.step2ScriptPlan.title;
+      state.step2ScriptPlan.slides = savedPlan.slides;
+    }
     if (typeof response.visual_exists === 'boolean') state.step2VisualExists = response.visual_exists;
     if (typeof response.workflow_pending === 'boolean') state.step2WorkflowPending = response.workflow_pending;
     if (typeof response.visual_stale === 'boolean') {
@@ -892,7 +902,9 @@ function renderStep2Workspace() {
   if (addSlideBtn) addSlideBtn.disabled = state.step2BatchDeleteMode;
   renderStep2ScriptReview();
   // 批量删除/保存按钮在工具栏中（批量导入右侧）常显，方便随时进入删除模式
-  document.getElementById('step2-btn-save').style.display = step2TabSourceSlides().length ? 'inline-flex' : 'none';
+  // 批量删除/保存按钮在工具栏中（批量导入右侧）常显，方便随时进入删除模式；
+  // 删除模式下即使页已删空也要保留按钮，否则删空后没有确认入口。
+  document.getElementById('step2-btn-save').style.display = (state.step2BatchDeleteMode || step2TabSourceSlides().length) ? 'inline-flex' : 'none';
   const step2NextButton = document.getElementById('step2-btn-next');
   step2NextButton.style.display = hasSlides ? 'inline-flex' : 'none';
   const visualizationNeedsRefresh = !manual && (state.step2WorkflowPending || state.step2VisualStale);
@@ -1230,15 +1242,20 @@ async function handleStep2BatchDeleteButton() {
 function removeStep2DraftSlide(slideId) {
   if (!state.step2BatchDeleteMode) return;
   if (!isManualMode() && state.step2ScriptPlan?.slides?.length) {
-    if (state.step2ScriptPlan.slides.length <= 1) {
-      showToast('至少保留一页演讲稿');
-      return;
-    }
     const removedIndex = state.step2ScriptPlan.slides.findIndex(slide => slide.slide_id === slideId);
     if (removedIndex < 0) return;
     state.step2ScriptPlan.slides.splice(removedIndex, 1);
-    state.step2VisualStale = state.step2VisualExists;
-    state.step2WorkflowPending = state.step2VisualExists;
+    if (state.step2ScriptPlan.slides.length) {
+      state.step2VisualStale = state.step2VisualExists;
+      state.step2WorkflowPending = state.step2VisualExists;
+    } else {
+      // 演讲稿删空：保存时后端会清空合约与产物，本地同步清掉旧合约视图，
+      // 避免页签回退展示已删除的合约页。
+      state.slides = [];
+      state.step2ContractSha256 = null;
+      state.step2VisualExists = false;
+      state.step2VisualStale = false;
+    }
     state.activeSlideIndex = Math.min(state.activeSlideIndex, state.step2ScriptPlan.slides.length - 1);
     renderStep2Workspace();
     return;
@@ -1279,7 +1296,9 @@ async function saveStep2BatchDelete() {
     showCustomConfirm(
       '确认删除分镜',
       scriptOnly
-        ? `将从演讲稿中删除 ${removedCount} 页，确认保存吗？`
+        ? (currentCount === 0
+            ? `将删除全部 ${removedCount} 页演讲稿并清空分镜规划，已生成的图片、Mask 与音频会归档备份。确认保存吗？`
+            : `将从演讲稿中删除 ${removedCount} 页，确认保存吗？`)
         : `将删除 ${removedCount} 个分镜页。这些页的图片、Mask、切层素材和音频将被彻底删除且不可恢复。`,
       () => resolve(true),
       () => resolve(false),
@@ -1296,6 +1315,14 @@ async function saveStep2BatchDelete() {
     ? await saveStep2ScriptPlan({ silent: true })
     : (await saveStep2Contract({ silent: true })).success;
   if (!saved) return;
+  if (scriptOnly && !state.step2ScriptPlan?.slides?.length) {
+    // 演讲稿删空：后端已清空合约并归档素材，本地同步作废旧合约视图与
+    // CAS 摘要，避免下次保存合约时携带过期 sha 被 409 拒绝。
+    state.slides = [];
+    state.step2ContractSha256 = null;
+    state.step2VisualExists = false;
+    state.step2VisualStale = false;
+  }
   state.step2BatchDeleteMode = false;
   state.step2DeleteSelection = new Set();
   state.step2BatchOriginalSlides = null;

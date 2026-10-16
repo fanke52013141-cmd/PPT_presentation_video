@@ -23,6 +23,14 @@ function setStep2TaskPhase(phase, status) {
   renderPageTaskState(host, phase, status === 'done' ? null : status, labels[status], phase === 'script' ? 'text' : 'mapping');
 }
 
+// 所有权守卫丢弃在途生成结果时（切换步骤/项目、返回首页），不允许再触碰
+// 当前视图的 DOM，但必须清掉运行中的任务相位：否则下一次渲染分镜规划会
+// 沿着残留的 running 相位永远显示“生成中”，看起来就是页面卡死。
+function discardStep2RunningPhase(phase) {
+  if (step2TaskPhases[phase] !== 'running') return;
+  delete step2TaskPhases[phase];
+}
+
 function step2CurrentProjectId() {
   return String(state.currentProject?.id || '');
 }
@@ -58,6 +66,10 @@ async function loadStep2Data() {
   const sessionVersion = workspaceNavigationVersion;
   if (!projectId) return;
   state.step2ScriptPlan = null;
+  // 重新载入意味着上一视图实例的在途生成不可能再回写本视图；丢弃悬挂的
+  // “生成中”相位，任务状态改由服务端真实数据（产物是否过期）重新推导。
+  delete step2TaskPhases.script;
+  delete step2TaskPhases.visual;
   try {
     const configRes = await API.get(`/api/projects/${projectId}/steps/2/rules`);
     if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return;
@@ -156,7 +168,10 @@ async function generateStep2ScriptPlan(requirement = '') {
       payload,
       { timeoutMs: 900000 },
     );
-    if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return false;
+    if (!isCurrentWorkspaceProject(projectId, sessionVersion)) {
+      discardStep2RunningPhase('script');
+      return false;
+    }
     if (response.cancelled) {
       setStep2TaskPhase('script', 'paused');
       updateStep2AutosaveStatus(response.message || '演讲稿生成已停止');
@@ -395,7 +410,16 @@ async function generateStep2VisualPlan() {
     setStep2TaskPhase('visual', 'running');
     if (loadingText) loadingText.textContent = '第二步：AI 正在根据已保存的演讲稿规划可视化…';
     const visual = await API.post(`/api/projects/${projectId}/steps/2/visual/execute`, undefined, { timeoutMs: 900000 });
-    if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return false;
+    if (!isCurrentWorkspaceProject(projectId, sessionVersion)) {
+      // 等待大模型的十几秒里用户可能切换了步骤/项目。此时不能更新本视图
+      // 的 DOM，但服务端可视化计划已按当前演讲稿生成完毕：必须补上合成，
+      // 否则合约停留在旧版本（前端也会一直显示“生成中”）。
+      discardStep2RunningPhase('visual');
+      if (visual && visual.success) {
+        void API.post(`/api/projects/${projectId}/steps/2/compose`).catch(() => {});
+      }
+      return false;
+    }
     if (visual.cancelled) {
       setStep2TaskPhase('visual', 'paused');
       updateStep2AutosaveStatus(visual.message || '内容可视化已停止');
@@ -403,7 +427,12 @@ async function generateStep2VisualPlan() {
     }
     if (!visual.success) throw new Error(visual.message || '可视化生成失败');
     const composed = await API.post(`/api/projects/${projectId}/steps/2/compose`);
-    if (!isCurrentWorkspaceProject(projectId, sessionVersion)) return false;
+    if (!isCurrentWorkspaceProject(projectId, sessionVersion)) {
+      // 合约已在新视图接手前写好：清掉悬挂相位即可，返回分镜规划时会
+      // 重新拉取数据并显示最新状态。
+      discardStep2RunningPhase('visual');
+      return false;
+    }
     if (!composed.success || !composed.contract) throw new Error(composed.message || '分镜合成失败');
     state.slides = composed.contract.slides || [];
     state.step2PresentationPolicy = composed.contract.presentation_policy || {};

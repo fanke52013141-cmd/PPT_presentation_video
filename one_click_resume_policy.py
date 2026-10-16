@@ -54,6 +54,10 @@ def has_contract(project: Any) -> bool:
     contract_path = root / "planning" / "visual_contract.json"
     if not contract_path.is_file() or mtime(root / "inputs" / "article.md") > mtime(contract_path):
         return False
+    # 合约由演讲稿派生：演讲稿在合约之后被保存过（例如在分镜规划里增删
+    # 页面），即使旧合约仍能通过校验，也必须视为过期并重建。
+    if mtime(root / "planning" / "slide_script_plan.json") > mtime(contract_path):
+        return False
     validation = read_json(root / "planning" / "visual_contract.validation.json", {})
     if not isinstance(validation, dict) or validation.get("valid") is not True:
         return False
@@ -62,6 +66,12 @@ def has_contract(project: Any) -> bool:
     except OSError:
         return False
     return bool(validation.get("contract_sha256")) and validation.get("contract_sha256") == actual_hash
+
+
+def has_script_plan(project: Any) -> bool:
+    plan = read_json(run_dir(project) / "planning" / "slide_script_plan.json", {})
+    slides = plan.get("slides") if isinstance(plan, dict) else None
+    return bool(slides)
 
 
 def slide_ids(project: Any) -> list[str]:
@@ -220,6 +230,19 @@ def _project_state_reasons(project: Any, stage_id: str) -> list[str]:
     if value in {"pending", "in_progress", "pending_reconfirmation"}:
         return [f"project_step_state:{value}"]
     return []
+
+
+def storyboard_rebuild_reasons(project: Any) -> list[str]:
+    """Why the storyboard stage must be rebuilt instead of reused.
+
+    Uses the same checks as the resume revalidation for the storyboard stage,
+    so the executor and the resume plan cannot disagree: a script-plan edit
+    (for example deleting slides in Step 2) flips step 2 to in_progress while
+    visual_contract.json still exists and still validates — the stage must
+    rebuild from the saved script instead of silently reusing the stale
+    contract and re-rendering the deleted pages.
+    """
+    return [*_validate_storyboard(project), *_project_state_reasons(project, "storyboard")]
 
 
 def build_resume_plan(project: Any, failed_stage: str) -> dict[str, Any]:

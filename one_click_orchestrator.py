@@ -31,11 +31,12 @@ from typing import Any, Callable
 from one_click_resume_policy import (
     build_resume_plan,
     has_article as _has_article,
-    has_contract as _has_contract,
     has_fresh_narration as _has_fresh_narration,
+    has_script_plan as _has_script_plan,
     run_dir as _run_dir,
     slide_ids as _slide_ids,
     slides_requiring_images as _slides_requiring_images,
+    storyboard_rebuild_reasons as _storyboard_rebuild_reasons,
 )
 from project_profile_store import DEFAULT_QUALITY_GATES, load_profile  # noqa: F401  (source guard asserts the gate wiring import)
 from pipeline_state import complete_step, current_step_after_completion
@@ -1146,13 +1147,29 @@ def _run_pipeline(
             return
         if should_run("storyboard"):
             _start_stage(project, status, "storyboard", "生成或复用 visual_contract.json")
-            if mode == "restart" or not _has_contract(project):
-                _require_quality_gate(
-                    services.storyboard_script,
-                    "Step 2 article-to-slide",
-                    gates,
-                    "pause_on_storyboard_validation_error",
-                )
+            # 与 resume 复用策略同一口径：合约文件存在且校验通过不代表可以复用。
+            # 分镜规划里增删演讲稿页后 step 2 会回到 in_progress，此时必须从
+            # 当前演讲稿重建可视化与合约，否则后续阶段会沿用旧合约，把已删除
+            # 页面的图片和音频原样渲染进新视频。
+            rebuild_reasons = (
+                ["restart_requested"] if mode == "restart" else _storyboard_rebuild_reasons(project)
+            )
+            if rebuild_reasons:
+                if mode == "restart" or not _has_script_plan(project):
+                    _require_quality_gate(
+                        services.storyboard_script,
+                        "Step 2 article-to-slide",
+                        gates,
+                        "pause_on_storyboard_validation_error",
+                    )
+                else:
+                    # 演讲稿以用户已保存的版本为准：跳过按文章重新生成，
+                    # 只重建其下游（可视化 + 合约），避免覆盖用户的手动增删改。
+                    dependencies.write_project_log(
+                        project,
+                        "one_click_storyboard_reuse_saved_script",
+                        reasons=rebuild_reasons,
+                    )
                 _require_quality_gate(
                     services.storyboard_visual,
                     "Step 2 slide-to-visual",

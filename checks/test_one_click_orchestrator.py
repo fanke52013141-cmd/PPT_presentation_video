@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT))
 import ai_mask_manifest_apply as ai_mask
 import generation_governor
 import one_click_orchestrator as one_click
+import one_click_resume_policy as policy
 import one_click_routes
 from fastapi import HTTPException
 from route_inventory import iter_effective_routes
@@ -753,15 +754,62 @@ def test_contract_and_narration_are_only_reused_when_fresh_and_validated() -> No
             json.dumps(validation),
             encoding="utf-8",
         )
-        assert one_click._has_contract(project)
         assert one_click._has_fresh_narration(project)
+        # 演讲稿比合约旧（合约最后落盘）时合约仍然新鲜可复用。
+        (root / "planning" / "slide_script_plan.json").write_text(
+            '{"slides":[{"slide_id":"slide_001"}]}',
+            encoding="utf-8",
+        )
+        os.utime(root / "planning" / "slide_script_plan.json", (15, 15))
+        assert one_click._storyboard_rebuild_reasons(project) == []
 
         os.utime(article, (40, 40))
-        assert not one_click._has_contract(project)
+        assert not policy.has_contract(project)
+        # 演讲稿在合约之后被保存过（例如在分镜规划里增删页面）时，即使旧
+        # 合约仍通过校验也必须判定过期，resume 才会从当前演讲稿重建分镜。
+        os.utime(article, (10, 10))
+        os.utime(contract, (20, 20))
+        os.utime(root / "planning" / "slide_script_plan.json", (45, 45))
+        assert not policy.has_contract(project)
+        assert policy.storyboard_rebuild_reasons(project) == ["visual_contract_stale_or_invalid"]
+
         contract.write_text('{"slides":[{"slide_id":"changed"}]}', encoding="utf-8")
         os.utime(contract, (50, 50))
-        assert not one_click._has_contract(project), "changed contracts require a matching validation hash"
+        assert not policy.has_contract(project), "changed contracts require a matching validation hash"
         assert not one_click._has_fresh_narration(project)
+
+
+def test_resume_starts_from_storyboard_when_step2_is_reopened() -> None:
+    """分镜规划里增删页后 step 2 回到 in_progress：resume 必须从分镜阶段重建，
+    而不是带着旧合约直接渲染已删除页面的图片和音频。"""
+    with tempfile.TemporaryDirectory() as value:
+        root = Path(value)
+        project = project_for(root)
+        (root / "planning").mkdir(parents=True)
+        (root / "inputs").mkdir(parents=True)
+        (root / "inputs" / "article.md").write_text("article", encoding="utf-8")
+        contract = root / "planning" / "visual_contract.json"
+        contract.write_text('{"slides":[{"slide_id":"slide_001"}]}', encoding="utf-8")
+        validation = {
+            "valid": True,
+            "contract_sha256": hashlib.sha256(contract.read_bytes()).hexdigest(),
+        }
+        (root / "planning" / "visual_contract.validation.json").write_text(
+            json.dumps(validation),
+            encoding="utf-8",
+        )
+
+        class ProjectWithSteps(SimpleNamespace):
+            def get_step_status(self):
+                return dict(self.step_status)
+
+        stepped = ProjectWithSteps(id=project.id, run_dir=project.run_dir, step_status={"2": "in_progress"})
+        assert policy.storyboard_rebuild_reasons(stepped) == ["project_step_state:in_progress"]
+        plan = policy.build_resume_plan(stepped, "render")
+        assert plan["effective_start_stage"] == "storyboard"
+
+        stepped.step_status = {"2": "completed"}
+        assert policy.storyboard_rebuild_reasons(stepped) == []
 
 
 def test_disabled_quality_gate_marks_terminal_failure() -> None:
@@ -837,7 +885,8 @@ def test_one_click_uses_configured_mask_or_full_frame_and_safe_audio_modes() -> 
     assert "client.get(" not in source
     assert "client.post(" not in source
     assert "client.put(" not in source
-    assert 'mode == "restart" or not _has_contract(project)' in source
+    assert '_storyboard_rebuild_reasons(project)' in source
+    assert "one_click_storyboard_reuse_saved_script" in source
     assert "from project_profile_store import DEFAULT_QUALITY_GATES, load_profile" in source
     assert "dict(load_profile(project)[\"quality_gates\"])" in source
     for gate_name in one_click.DEFAULT_QUALITY_GATES:

@@ -238,6 +238,10 @@ function initGlobalEvents() {
   document.getElementById('step5-btn-fullscreen')?.addEventListener('click', () => toggleStep5Fullscreen());
   document.getElementById('step5-brush-size')?.addEventListener('input', (e) => updateBrushSize(e.target.value));
   document.getElementById('step5-eraser-size')?.addEventListener('input', (e) => updateEraserSize(e.target.value));
+  document.getElementById('step5-btn-confirm-next')?.addEventListener('click', async () => {
+    const saved = await saveStep5Masks();
+    if (saved) navigateToStep(6);
+  });
 
   // ================= 步骤 6 事件 =================
   document.getElementById('step6-btn-init')?.addEventListener('click', () => initStep6Narration());

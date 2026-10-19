@@ -205,6 +205,117 @@ def test_refresh_cannot_launder_a_real_slide_edit(tmp_path: Path) -> None:
     assert visual_provenance_status(run_dir, "b")["valid"] is True
 
 
+def test_narration_only_beat_edit_keeps_provenance_valid(tmp_path: Path) -> None:
+    """CR-2: 讲稿文本(beat spoken_text)编辑不得使已批准图片失效。
+
+    新写入的 provenance 存视觉投影哈希;投影与失效分类器同一口径。
+    """
+    slides = [{
+        "slide_id": "a",
+        "narration_beats": [
+            {"beat_id": "b1", "spoken_text": "原始讲稿", "group": "g1"},
+        ],
+    }]
+    run_dir, contract_path = _provenance_run(tmp_path, slides)
+    assert visual_provenance_status(run_dir, "a")["valid"] is True
+
+    edited = [{
+        "slide_id": "a",
+        "narration_beats": [
+            {"beat_id": "b1", "spoken_text": "改后的讲稿", "group": "g1"},
+        ],
+    }]
+    contract_path.write_text(
+        json.dumps({"version": "visual_contract_v1", "slides": edited}),
+        encoding="utf-8",
+    )
+    status = visual_provenance_status(run_dir, "a")
+    assert status["valid"] is True, status
+
+
+def test_visual_anchor_edit_still_invalidates_provenance(tmp_path: Path) -> None:
+    """语块-画面映射(group/anchor)属于视觉输入,变化必须失效 provenance。"""
+    slides = [{
+        "slide_id": "a",
+        "narration_beats": [
+            {"beat_id": "b1", "spoken_text": "讲稿", "group": "g1"},
+        ],
+    }]
+    run_dir, contract_path = _provenance_run(tmp_path, slides)
+    edited = [{
+        "slide_id": "a",
+        "narration_beats": [
+            {"beat_id": "b1", "spoken_text": "讲稿", "group": "g2"},
+        ],
+    }]
+    contract_path.write_text(
+        json.dumps({"version": "visual_contract_v1", "slides": edited}),
+        encoding="utf-8",
+    )
+    status = visual_provenance_status(run_dir, "a")
+    assert status["valid"] is False
+    assert status["reason"] == "contract_hash_changed"
+
+
+def test_narration_only_migration_refreshes_legacy_payload(tmp_path: Path) -> None:
+    """CR-2 迁移:旧口径(整条目哈希)payload 在 narration-only 编辑后,
+    三重证据齐全时迁移到视觉投影,渲染门恢复有效;视觉编辑永远洗不白。"""
+    from visual_provenance import refresh_provenance_for_narration_only_changes
+
+    slides = [{
+        "slide_id": "a",
+        "narration_beats": [{"beat_id": "b1", "spoken_text": "原始讲稿", "group": "g1"}],
+    }, {
+        "slide_id": "c",
+        "narration_beats": [{"beat_id": "b1", "spoken_text": "原稿", "group": "g1"}],
+    }]
+    run_dir, contract_path = _provenance_run(tmp_path, slides)
+    # 把 slide a 的 payload 降级为旧口径整条目哈希,模拟历史项目。
+    from visual_provenance import slide_entry_hashes, visual_slide_entry_hashes
+    old_hash = slide_entry_hashes(slides)["a"]
+    path_a = run_dir / "slides" / "a" / "visual_provenance.json"
+    payload_a = json.loads(path_a.read_text(encoding="utf-8"))
+    payload_a["contract_slide_sha256"] = old_hash
+    path_a.write_text(json.dumps(payload_a, ensure_ascii=False), encoding="utf-8")
+
+    # narration-only 编辑 a;c 保持不变。
+    edited = [
+        {"slide_id": "a", "narration_beats": [{"beat_id": "b1", "spoken_text": "新讲稿", "group": "g1"}]},
+        {"slide_id": "c", "narration_beats": [{"beat_id": "b1", "spoken_text": "原稿", "group": "g1"}]},
+    ]
+    contract_path.write_text(
+        json.dumps({"version": "visual_contract_v1", "slides": edited}),
+        encoding="utf-8",
+    )
+    assert visual_provenance_status(run_dir, "a")["valid"] is False
+
+    migrated = refresh_provenance_for_narration_only_changes(
+        run_dir, ["a"], previous_contract={"version": "visual_contract_v1", "slides": slides}
+    )
+    assert migrated == 1
+    assert visual_provenance_status(run_dir, "a")["valid"] is True
+    # 幂等:迁移后再次调用,旧哈希证据已不匹配,不再改动。
+    assert refresh_provenance_for_narration_only_changes(
+        run_dir, ["a"], previous_contract={"version": "visual_contract_v1", "slides": slides}
+    ) == 0
+
+    # 视觉编辑(group 变化)洗不白:证据 2(投影相同)失败。
+    slides_c = [{"slide_id": "c", "narration_beats": [{"beat_id": "b1", "spoken_text": "原稿", "group": "g1"}]}]
+    path_c = run_dir / "slides" / "c" / "visual_provenance.json"
+    payload_c = json.loads(path_c.read_text(encoding="utf-8"))
+    payload_c["contract_slide_sha256"] = slide_entry_hashes(slides_c)["c"]
+    path_c.write_text(json.dumps(payload_c, ensure_ascii=False), encoding="utf-8")
+    edited_c = [{"slide_id": "c", "narration_beats": [{"beat_id": "b1", "spoken_text": "原稿", "group": "g9"}]}]
+    contract_path.write_text(
+        json.dumps({"version": "visual_contract_v1", "slides": [{"slide_id": "a", "narration_beats": [{"beat_id": "b1", "spoken_text": "新讲稿", "group": "g1"}]}] + edited_c}),
+        encoding="utf-8",
+    )
+    assert refresh_provenance_for_narration_only_changes(
+        run_dir, ["c"], previous_contract={"version": "visual_contract_v1", "slides": slides_c}
+    ) == 0
+    assert visual_provenance_status(run_dir, "c")["valid"] is False
+
+
 def test_legacy_v2_payload_refresh_requires_proven_purity(tmp_path: Path) -> None:
     slides = [{"slide_id": "a"}]
     run_dir, contract_path = _provenance_run(tmp_path, slides)

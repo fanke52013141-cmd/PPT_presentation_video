@@ -28,7 +28,9 @@ ALIGNMENT_SCHEMA_VERSION = 1
 SENTENCE_ENGINE_VERSION = "sentence_timeline_v1"
 
 
-class AlignmentError(Exception):
+class AlignmentError(ValueError):
+    # 继承 ValueError:编译链路(如 annotation_build.compile_slide)以
+    # ``except ValueError`` 兜底时间轴结构错误,独立 Exception 会穿透成裸 500。
     def __init__(self, code: str, message: str):
         super().__init__(message)
         self.code = code  # missing_audio | bad_timeline | invalid_time

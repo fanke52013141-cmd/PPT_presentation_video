@@ -103,7 +103,12 @@ function startStep8RenderPolling(
         || _step8RenderProjectId !== projectId
         || _step8RenderSessionVersion !== sessionVersion) return;
       if (!res.success) {
+        // 接口级失败也要复位 loading/按钮,否则面板会永远卡在"视频渲染中"。
         stopStep8RenderPolling();
+        document.getElementById('step8-loading').style.display = 'none';
+        const failedRenderBtn = document.getElementById('step8-btn-render');
+        if (failedRenderBtn) failedRenderBtn.disabled = false;
+        setStep8OutputError('视频渲染失败', res.error || res.detail || '渲染状态查询失败，请重试。');
         return;
       }
 

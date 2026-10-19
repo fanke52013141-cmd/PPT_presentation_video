@@ -145,6 +145,7 @@ def storyboard_contract_changed(
     removed_slide_ids: Iterable[str] = (),
     reordered: bool = False,
     empty: bool = False,
+    previous_contract: Any = None,
 ) -> InvalidationReport:
     """Scope a Step 2 edit to the actual slide capabilities it changes."""
     normalize = lambda values: tuple(dict.fromkeys(str(value).strip() for value in values if str(value).strip()))
@@ -153,6 +154,22 @@ def storyboard_contract_changed(
     narration = normalize((*narration_slide_ids, *added))
     removed_ids = normalize(removed_slide_ids)
     structure_changed = bool(removed_ids or reordered or empty)
+    # narration-only 编辑:把逐页图片 provenance 迁移到当前视觉投影,
+    # 让已批准图片在渲染门保持有效(与下方分类器同一投影口径)。
+    # 迁移内部有三重证据防护,视觉编辑永远洗不白;失败不阻塞失效流程。
+    if previous_contract is not None and narration:
+        try:
+            from visual_provenance import refresh_provenance_for_contract_impact
+
+            refresh_provenance_for_contract_impact(
+                project.run_dir,
+                previous_contract,
+                visual_slide_ids=visual,
+                narration_slide_ids=narration,
+                added_slide_ids=added,
+            )
+        except Exception as exc:  # noqa: BLE001 - 渲染门哈希校验兜底
+            LOGGER.debug("narration-only provenance refresh failed for %s: %s", project.run_dir, exc)
     statuses = project.get_step_status()
     statuses["2"] = "in_progress" if empty else "completed"
     affected: set[int] = set()
@@ -418,13 +435,17 @@ def audio_artifacts_changed(project: Any, slide_ids: Iterable[str]) -> Invalidat
     if not normalized_ids:
         return InvalidationReport(reason="stage_already_completed", affected_steps=())
     removed = _existing_removals(project.run_dir, clear_audio=False, clear_props=True)
-    for slide_id in normalized_ids:
-        try:
-            from annotation_invalidation import invalidate_for_audio_change
+    # 勾画页面写入必须与编辑器 patch/confirm 共用项目工件锁:
+    # 后台 TTS 完成与用户 autosave 并发时,无锁的 read-modify-write
+    # 会让后写者覆盖先写者(用户笔迹编辑丢失不可恢复)。
+    with project_artifact_lock(project.run_dir):
+        for slide_id in normalized_ids:
+            try:
+                from annotation_invalidation import invalidate_for_audio_change
 
-            removed.extend(invalidate_for_audio_change(project, slide_id))
-        except Exception as exc:  # noqa: BLE001 - keep audio generation usable
-            LOGGER.warning("Annotation timing invalidation failed for %s: %s", slide_id, exc)
+                removed.extend(invalidate_for_audio_change(project, slide_id))
+            except Exception as exc:  # noqa: BLE001 - keep audio generation usable
+                LOGGER.warning("Annotation timing invalidation failed for %s: %s", slide_id, exc)
     statuses = project.get_step_status()
     mark_selected_stale(statuses, (7, 8))
     project.set_step_status(statuses)

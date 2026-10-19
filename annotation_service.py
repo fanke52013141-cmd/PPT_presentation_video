@@ -416,15 +416,16 @@ class AnnotationService:
 
         run_dir = self._run_dir(project)
         canvas = self._canvas_for(project)
-        image_hash = self._image_hash(project, slide_id)
-        narration_hash = self._narration_hash(project, slide_id)
-        if image_hash is None:
-            raise HTTPException(status_code=422, detail="当前页面缺少图片,请先在第三步生成或上传图片")
-        if narration_hash is None:
-            raise HTTPException(status_code=422, detail="当前页面缺少讲稿,请先完成旁白编辑")
-        beats = {str(beat.get("id") or ""): beat for beat in self._read_beats(project, slide_id)}
-
         with self._lock_for(project):
+            # 输入哈希与讲稿在锁内读取:并发失效(图片/讲稿/音频)与
+            # 本请求的窗口内,锁外读取会把过时哈希写进新条目。
+            image_hash = self._image_hash(project, slide_id)
+            narration_hash = self._narration_hash(project, slide_id)
+            if image_hash is None:
+                raise HTTPException(status_code=422, detail="当前页面缺少图片,请先在第三步生成或上传图片")
+            if narration_hash is None:
+                raise HTTPException(status_code=422, detail="当前页面缺少讲稿,请先完成旁白编辑")
+            beats = {str(beat.get("id") or ""): beat for beat in self._read_beats(project, slide_id)}
             try:
                 page = self._store.read_page(run_dir, slide_id, canvas=canvas)
             except AnnotationStoreError as exc:
@@ -622,14 +623,18 @@ class AnnotationService:
             if patch["anchor"] is None:
                 if target_item.target.kind == "text":
                     issues.append(Issue(f"{path}.patch.anchor", "required", "文字目标不能移除讲稿锚点"))
-                else:
+                elif target_item.anchor is not None:
                     replacements["anchor"] = None
                     modified.append("anchor")
             else:
                 anchor = self._validate_anchor(patch["anchor"], beats, issues, path=f"{path}.patch.anchor")
                 if anchor is not None:
+                    # 同值保存不产生 modified:编辑器 autosave 常携带未变化的
+                    # anchor,无条件标记会把已确认条目重置为 draft。
+                    current = target_item.anchor.to_dict() if target_item.anchor is not None else None
+                    if (anchor.to_dict() if anchor is not None else None) != current:
+                        modified.append("anchor")
                     replacements["anchor"] = anchor
-                    modified.append("anchor")
         if "style" in patch:
             new_style = AnnotationStyle.from_payload(patch["style"], issues, path=f"{path}.patch.style")
             if new_style is not None:
@@ -659,7 +664,9 @@ class AnnotationService:
                         modified_fields=target_item.protection.modified_fields,
                         locked=locked,
                     )
-                    modified.append("protection.locked")
+                    # 同值锁定不产生 modified,避免无效 revision 自增与输出失效。
+                    if locked != target_item.protection.locked:
+                        modified.append("protection.locked")
         if "status" in patch:
             raw_status = patch["status"]
             if not isinstance(raw_status, dict) or set(raw_status) - {"content"}:
@@ -672,7 +679,9 @@ class AnnotationService:
                         spatial=target_item.status.spatial,
                         temporal=target_item.status.temporal,
                     )
-                    modified.append("status.content")
+                    # 同值状态不产生 modified,避免无效 revision 自增与输出失效。
+                    if content != target_item.status.content:
+                        modified.append("status.content")
                 else:
                     issues.append(Issue(f"{path}.patch.status.content", "bad_enum", "确认状态只能通过确认接口设置"))
 

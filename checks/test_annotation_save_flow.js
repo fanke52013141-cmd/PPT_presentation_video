@@ -143,6 +143,12 @@ function createSandbox() {
       if (!handler) throw new Error('get handler not set');
       return handler(url);
     },
+    async getOptional(url) {
+      calls.get.push({ url });
+      const handler = sandbox.__api && (sandbox.__api.getOptional || sandbox.__api.get);
+      if (!handler) return { success: false };
+      return handler(url);
+    },
     async post(url, payload) {
       calls.post = calls.post || [];
       calls.post.push({ url, payload });

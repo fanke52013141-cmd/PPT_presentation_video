@@ -1039,8 +1039,14 @@ async function saveStep5Masks() {
       refreshCurrentProjectStatus(5).catch(() => {});
       return true;
     }
-  } catch (e) {
     manifestData.slides.forEach((slide, index) => {
+      slide.status = previousStatuses[index] || 'pending';
+    });
+    failureMessage = `确认失败：${res.error || res.message || '请检查 Mask 数据后重试'}`;
+    showToast(failureMessage, 7000);
+    renderStep5Workspace();
+  } catch (e) {
+    (manifestData?.slides || []).forEach((slide, index) => {
       slide.status = previousStatuses[index] || 'pending';
     });
     failureMessage = `确认失败：${e.message || '请检查 Mask 数据后重试'}`;

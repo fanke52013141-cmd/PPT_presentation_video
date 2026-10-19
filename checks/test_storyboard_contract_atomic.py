@@ -204,6 +204,13 @@ def test_manual_update_passes_only_changed_slide_capabilities(monkeypatch) -> No
             FakeDb(project),
         )
 
+        assert len(calls) == 1
+        # previous_contract 是 narration-only provenance 迁移的证据输入,
+        # 必须等于落盘前的旧合约(经 normalize_visual_contract 归一)。
+        expected_previous = service.normalize_visual_contract(
+            json.loads(json.dumps(previous)), service.read_project_pipeline_profile(project)
+        )
+        assert calls[0].pop("previous_contract") == expected_previous
         assert calls == [
             {
                 "visual_slide_ids": (),

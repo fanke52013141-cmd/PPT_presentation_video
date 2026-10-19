@@ -1078,6 +1078,7 @@ def apply_storyboard_contract_impact(
             removed_slide_ids=impact.removed_slide_ids,
             reordered=impact.reordered,
             empty=empty,
+            previous_contract=previous_contract,
         )
     return impact
 
@@ -1373,6 +1374,7 @@ def _persist_step2_result_locked(project, payload, existing_contract, previous_s
             added_slide_ids=contract_impact.added_slide_ids,
             removed_slide_ids=contract_impact.removed_slide_ids,
             reordered=contract_impact.reordered,
+            previous_contract=existing_contract,
         )
     db.commit()
 

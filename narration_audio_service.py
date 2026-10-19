@@ -12,6 +12,7 @@ import re
 from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import HTTPException
+from pipeline_lifecycle import project_artifact_lock
 from project_storage import UnsafeProjectPath, slide_dir as storage_slide_dir
 
 
@@ -461,11 +462,13 @@ def persist_narration_beats(
         )
         # 勾画标注(可选模块):讲稿变化使锚定条目的确认与时间失效。
         # 失败不阻塞旁白持久化;store 未配置时静默跳过。
+        # 页面写入与编辑器 patch/confirm 共用项目工件锁,避免并发覆盖。
         if previous_slides.get(slide_id) != slide_beats:
             try:
                 from annotation_invalidation import invalidate_for_narration_change
 
-                invalidate_for_narration_change(project, slide_id)
+                with project_artifact_lock(project.run_dir):
+                    invalidate_for_narration_change(project, slide_id)
             except Exception:  # noqa: BLE001 - 失效链路的兜底保护
                 logger.debug(
                     "annotation narration invalidation skipped for %s/%s",

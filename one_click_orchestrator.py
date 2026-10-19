@@ -39,7 +39,7 @@ from one_click_resume_policy import (
     storyboard_rebuild_reasons as _storyboard_rebuild_reasons,
 )
 from project_profile_store import DEFAULT_QUALITY_GATES, load_profile  # noqa: F401  (source guard asserts the gate wiring import)
-from pipeline_state import complete_step, current_step_after_completion
+from pipeline_state import current_step_after_completion
 from tts_provider_service import normalize_tts_provider
 from video_render_service import RENDER_STAGE_PROGRESS
 from project_config_runtime import get_config_value, load_project_config
@@ -102,15 +102,17 @@ def _next_stop_at_from_policy(policy: str, after_checkpoint: str) -> str:
     return ""
 
 
-# [同步 step_status 20260814] 一键生成 stage -> 前端步骤映射
+# [同步 step_status 20260814] 一键生成 stage -> 前端步骤映射。
+# confirm_images 完成内部 Step 4(图片确认),tts 完成内部 Step 7(音频确认);
+# 此前映射到 3/6 会让完成同步把真实完成的 4/7 漏标。
 _STAGE_TO_STEP = {
     "preflight": "1",
     "storyboard": "2",
     "images": "3",
-    "confirm_images": "3",
+    "confirm_images": "4",
     "ai_mask": "5",
     "narration": "6",
-    "tts": "6",
+    "tts": "7",
     "render": "8",
 }
 STAGES = [
@@ -585,9 +587,11 @@ def _complete(
             for step_key in [_STAGE_TO_STEP.get(stage.get("id", ""))]
             if step_key
         })
-        # 升序复用 complete_step，保证步骤状态与手动流程一致（含 in_progress 收敛）。
+        # 一键完成同步只做"无降级的置 completed":complete_step 会把顺序在后的
+        # completed 步降为 pending_reconfirmation,而本运行中各服务已经按真实
+        # 结果写过状态(含 4/7),此处按阶段结果直接置位,不得误伤下游。
         for step in completed_steps:
-            updated = complete_step(updated, step)
+            updated[str(step)] = "completed"
         if hasattr(project, "set_step_status"):
             project.set_step_status(updated)
         if completed_steps and isinstance(getattr(project, "current_step", None), int):

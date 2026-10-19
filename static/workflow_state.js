@@ -34,6 +34,9 @@ function createWorkflowState() {
     step2VisualExists: false,
     step2WorkflowPending: false,
     step2Stage: 'script',
+    // 当前合约的服务端 sha(CAS 保存用);项目切换时由 resetProjectScopedAsyncUi 复位,
+    // 在此显式声明防止模块外动态挂载导致复位遗漏。
+    step2ContractSha256: null,
     step3PromptSettings: null,
     storyboardAiRequirement: '',
     pendingStoryboardAiDraft: null,

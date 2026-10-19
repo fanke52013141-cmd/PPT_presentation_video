@@ -1396,6 +1396,34 @@ function scheduleStep2AutoSave() {
   }, 700);
 }
 
+// 切换/退出项目前冲刷防抖窗口内未落盘的 Step 2 编辑(合约与演讲稿)。
+// 必须在 workspace 复位清空 state 之前调用;projectId/sessionVersion 显式
+// 捕获,避免与并发导航竞争。
+async function flushStep2PendingSaves() {
+  const pendingContract = !!state.step2AutoSaveTimer;
+  const pendingScript = !!step2ScriptSaveTimer;
+  if (state.step2AutoSaveTimer) {
+    clearTimeout(state.step2AutoSaveTimer);
+    state.step2AutoSaveTimer = null;
+  }
+  if (step2ScriptSaveTimer) {
+    clearTimeout(step2ScriptSaveTimer);
+    step2ScriptSaveTimer = null;
+  }
+  if (!pendingContract && !pendingScript) return true;
+  const projectId = state.currentProject?.id;
+  if (!projectId) return false;
+  const sessionVersion = workspaceNavigationVersion;
+  if (pendingScript) {
+    try { await saveStep2ScriptPlan({ silent: true }); } catch (error) { /* 退出路径尽力保存 */ }
+  }
+  if (pendingContract) {
+    try { await saveStep2Contract({ silent: true, autosave: true, projectId, sessionVersion }); } catch (error) { /* 同上 */ }
+  }
+  return true;
+}
+window.flushStep2PendingSaves = flushStep2PendingSaves;
+
 function step2NarrationText(slide) {
   const beats = Array.isArray(slide?.narration_beats) ? slide.narration_beats : [];
   const seen = new Set();

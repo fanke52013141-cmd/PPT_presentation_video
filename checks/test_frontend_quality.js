@@ -417,6 +417,16 @@ if (html.includes('id="step2-batch-import-download-example"')
     || !eventBindings.includes("document.getElementById('step2-batch-import-download')?.addEventListener('click', () => downloadStep2BatchTemplate())")) {
   throw new Error('Manual storyboard must have a single template download including AI instructions');
 }
+// 每个步骤主 CTA 必须在 event_bindings 中显式绑定(此前 Step5 确认按钮无监听,
+// 用户只能通过步骤条硬跳,切层确认从未被触发)。
+for (const ctaId of ['step3-btn-confirm', 'step5-btn-confirm-next', 'step6-btn-audio-confirm-next']) {
+  if (html.includes(`id="${ctaId}"`) && !eventBindings.includes(`getElementById('${ctaId}')`)) {
+    throw new Error(`primary CTA ${ctaId} exists in HTML but has no binding in event_bindings.js`);
+  }
+}
+if (!eventBindings.includes('saveStep5Masks()')) {
+  throw new Error('Step 5 confirm CTA must call saveStep5Masks before advancing');
+}
 for (const storyboardFunction of [
   'loadStep2Data',
   'addManualSlide',
@@ -1275,6 +1285,23 @@ if (!eventBindings.includes('previewAnnotationAnimation')
 }
 if (!html.includes('data-creation-config-pause="annotation"')) {
   throw new Error('creation package must expose the annotation manual-pause option');
+}
+// [三端采样一致性] 编辑层(index.html script)、Remotion(import 活源码)、同步预览
+// (esbuild 内嵌冻结副本)共用 annotation_playback.js 的采样实现。源文件被修改后
+// 必须重建 annotation_player.bundle.js,否则预览/编辑层/渲染三端各跑一份不同逻辑。
+{
+  const playbackSrc = path.join(root, 'static', 'annotation_playback.js');
+  const previewBundle = path.join(root, 'static', 'annotation_player.bundle.js');
+  if (fs.statSync(playbackSrc).mtimeMs > fs.statSync(previewBundle).mtimeMs) {
+    throw new Error(
+      'static/annotation_playback.js is newer than annotation_player.bundle.js; '
+      + 'run `npm run build:annotation-preview` in scripts/remotion to resync the preview bundle',
+    );
+  }
+  const playbackVersion = (html.match(/annotation_playback\.js\?v=([0-9.]+)/) || [])[1];
+  if (!playbackVersion) {
+    throw new Error('annotation_playback.js must be loaded with an explicit cache version');
+  }
 }
 // 撤销/重做必须以变更前条目为 diff 基准并同步服务端(自比较导致撤销从不入队)
 if (!annotationsEditor.includes('queueSyncAnnotationItems(before, restored)')) {

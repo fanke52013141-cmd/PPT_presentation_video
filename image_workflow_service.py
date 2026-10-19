@@ -86,9 +86,9 @@ from visual_contract_service import normalize_visual_type
 from visual_provenance import (
     promote_candidate_provenance,
     provenance_path as visual_provenance_path,
-    slide_contract_hash,
     validate_visual_provenance_set,
     visual_provenance_status,
+    visual_slide_contract_hash,
     write_visual_provenance,
 )
 from repository_paths import (
@@ -1281,7 +1281,9 @@ def _generate_slide_image_impl(
             current_prompt += "\n\n" + current_ip
         runtime = _project_image_runtime(project)
         return sha256_json({
-            "slide_contract": slide_contract_hash(project.run_dir, slide_id),
+            # 视觉投影:讲稿文本变化不改变生图输入,避免 narration-only
+            # 编辑触发无谓的整页重生成。
+            "slide_contract": visual_slide_contract_hash(project.run_dir, slide_id),
             "image_state": preview_image_change(project.run_dir, slide_id)["version"],
             "prompt": current_prompt,
             "canvas": get_project_canvas(project),
@@ -2138,7 +2140,8 @@ def update_step3_image_order(project_id: str, payload: Dict[str, Any], db: Sessi
                             )
                             provenance["output_sha256"] = sha256_file(target_image)
                             if provenance.get("schema_version") == "visual_provenance_v3":
-                                provenance["contract_slide_sha256"] = slide_contract_hash(
+                                # 新写入统一视觉投影口径(与 build_visual_provenance 一致)。
+                                provenance["contract_slide_sha256"] = visual_slide_contract_hash(
                                     root, target_slide_id
                                 )
                             write_json_atomic(target_provenance, provenance)

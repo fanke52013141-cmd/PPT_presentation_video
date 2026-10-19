@@ -46,6 +46,22 @@
   color: #991b1b;
 }
 
+/* 422 隔离区的丢弃出口:被拒操作会阻塞本页自动保存,必须可显式放弃 */
+.annotation-save-status .annotation-failed-discard {
+  margin-left: 0.5rem;
+  border: 1px solid #fca5a5;
+  background: #fff;
+  color: #991b1b;
+  font-size: 0.75rem;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.annotation-save-status .annotation-failed-discard:hover {
+  background: #fee2e2;
+}
+
 .annotation-missing {
   padding: 1.5rem;
   text-align: center;

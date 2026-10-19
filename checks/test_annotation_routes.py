@@ -681,6 +681,79 @@ def test_same_value_save_keeps_confirmed_state(client, project):
     assert timeline_path.is_file()
 
 
+def test_same_value_anchor_save_keeps_confirmed_state(client, project):
+    """编辑器 autosave 常携带未变化的 anchor;同值 anchor 不得把已确认
+    条目重置为 draft 或删除时间轴(此前 anchor 分支无条件 modified)。"""
+    base, timeline_path = _prepare_confirmed_project(client, project)
+    # 先给区域条目挂上讲稿锚点(真实变化 → 重置 draft),再确认。
+    anchor = json.loads(json.dumps(TEXT_ITEM["anchor"]))
+    resp = client.patch(
+        f"{base}/slides/slide_001",
+        json={"expected_revision": 2, "operations": [
+            {"op": "update", "annotation_id": "ann_001", "patch": {"anchor": anchor}}]},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["items"][0]["status"]["content"] == "draft"
+    confirm = client.post(f"{base}/slides/slide_001/confirm", json={"expected_revision": 3})
+    assert confirm.status_code == 200, confirm.text
+    revision = confirm.json()["revision"]
+
+    # 同值 anchor 再保存:无修改、无重置、revision 不变。
+    resp = client.patch(
+        f"{base}/slides/slide_001",
+        json={"expected_revision": revision, "operations": [
+            {"op": "update", "annotation_id": "ann_001", "patch": {"anchor": json.loads(json.dumps(anchor))}}]},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["items"][0]["status"]["content"] == "confirmed"
+    assert body["revision"] == revision
+    assert timeline_path.is_file()
+
+
+def test_same_value_status_and_lock_save_is_noop(client, project):
+    """同值 status.content / protection.locked 不得造成 revision 自增。"""
+    base, _ = _prepare_confirmed_project(client, project)
+    # 先降为 draft(真实变化),此后对 draft 条目提交同值 status/lock。
+    client.patch(
+        f"{base}/slides/slide_001",
+        json={"expected_revision": 2, "operations": [
+            {"op": "update", "annotation_id": "ann_001", "patch": {"status": {"content": "draft"}}}]},
+    )
+    revision = client.get(f"{base}/slides/slide_001").json()["revision"]
+    resp = client.patch(
+        f"{base}/slides/slide_001",
+        json={"expected_revision": revision, "operations": [
+            {"op": "update", "annotation_id": "ann_001", "patch": {
+                "status": {"content": "draft"}, "protection": {"locked": False}}}]},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["revision"] == revision, "同值 status/lock 保存必须是无操作"
+    assert body["items"][0]["protection"]["modified_fields"] == ["status.content"], (
+        "同值保存不得追加 modified_fields(第一次降 draft 的真实变更除外)"
+    )
+
+
+def test_prepare_with_malformed_audio_timeline_returns_422(client, project):
+    """audio_timeline.json 结构损坏(缺 segments)必须返回结构化 422,
+    而不是让 AlignmentError 穿透成裸 500。"""
+    project_id, run_root = project
+    base = f"/api/projects/{project_id}/annotations/slides/slide_001"
+    _make_audio(run_root)
+    client.patch(base, json={"expected_revision": 0, "operations": [{"op": "add", "item": MANUAL_REGION_ITEM}]})
+    # 写入损坏的时间轴:存在但缺 segments 数组。
+    (run_root / "slides" / "slide_001" / "audio_timeline.json").write_text(
+        json.dumps({"slide_id": "slide_001", "duration_sec": 8.0}), encoding="utf-8"
+    )
+    resp = client.post(base + "/prepare", json={"expected_revision": 1})
+    assert resp.status_code == 422, resp.text
+    detail = resp.json()["detail"]
+    assert detail["code"] == "annotation_prepare_failed"
+    assert detail["items"][0]["reason"] == "audio_timeline_invalid"
+
+
+
 def test_lock_toggle_does_not_reset_confirmed_item(client, project):
     base, timeline_path = _prepare_confirmed_project(client, project)
     resp = client.patch(

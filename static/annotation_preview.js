@@ -9,7 +9,7 @@ function annotationVideoAudioTime(frame, fps, audioTimeline, slideDuration) {
   return fps > 0 && Number.isFinite(pageTime) && pageTime >= delay && pageTime < end ? pageTime - delay : null;
 }
 
-async function waitAnnotationPreviewJob(projectId, slideId, revision) {
+async function waitAnnotationPreviewJob(projectId, slideId, revision, { deadlineMs = 360000 } = {}) {
   const key = `annotation-preview:${projectId}:${slideId}`;
   let saved;
   try { saved = JSON.parse(sessionStorage.getItem(key) || 'null'); } catch (_) { saved = null; }
@@ -21,6 +21,7 @@ async function waitAnnotationPreviewJob(projectId, slideId, revision) {
     saved = {jobId: job.job_id, revision};
     sessionStorage.setItem(key, JSON.stringify(saved));
   }
+  const deadline = Date.now() + deadlineMs;
   for (;;) {
     let job;
     try {
@@ -41,6 +42,10 @@ async function waitAnnotationPreviewJob(projectId, slideId, revision) {
       const error = new Error(job.error || `预览任务${job.status}，可重新生成。`);
       error.body = {detail: job.error_detail};
       throw error;
+    }
+    if (Date.now() > deadline) {
+      sessionStorage.removeItem(key);
+      throw new Error('预览准备超时（超过 6 分钟），请重试或先检查本页音频与图片。');
     }
     const node = document.getElementById('annotation-job-status');
     if (node) {
@@ -81,6 +86,14 @@ function annotationPrepareError(error) {
     text_layout_missing: '文字布局缺失，请重新识别文字。',
     ink_build_failed: '墨迹生成失败，请重试。',
   };
+  // 服务端拒绝复用过期预览结果(stale_preview)时,错误体只有机器码;
+  // 必须翻译成人话,否则用户只会看到一段原始 JSON。
+  if (error?.body?.detail?.code === 'stale_preview') {
+    return '预览结果已过期（页面内容在生成后有变化），自动重新生成仍未成功，请再次点击同步预览。';
+  }
+  if (error?.body?.detail?.code === 'revision_conflict') {
+    return '页面已被更新，请重新点击同步预览。';
+  }
   const items = error?.body?.detail?.items || [];
   if (items.length) return items.map(item => {
     const times = item.reason === 'target_not_ready' && Number.isFinite(item.delay_sec)
@@ -100,7 +113,20 @@ async function prepareAnnotationPreview() {
   const slideId = ANNOTATIONS_WS.page.slide_id;
   const revision = ANNOTATIONS_WS.page.revision;
   const editGeneration = ANNOTATIONS_WS.editGeneration || 0;
-  const result = await waitAnnotationPreviewJob(projectId, slideId, revision);
+  // 服务端在任务成功后会复核输入新鲜度,输入变化即拒绝复用结果(409
+  // stale_preview)。此时自动丢弃缓存并用新任务重试一次,自愈"服务端
+  // 已成功、界面却拿不到结果"的死端。
+  let result;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      result = await waitAnnotationPreviewJob(projectId, slideId, revision);
+      break;
+    } catch (error) {
+      const stale = error.status === 409 && error.body?.detail?.code === 'stale_preview';
+      if (!stale || attempt >= 1) throw error;
+      sessionStorage.removeItem(`annotation-preview:${projectId}:${slideId}`);
+    }
+  }
   window.flushAnnotationEditorEdits?.();
   if (editGeneration !== (ANNOTATIONS_WS.editGeneration || 0)
       || projectId !== ANNOTATIONS_WS.projectId || slideId !== ANNOTATIONS_WS.page.slide_id
@@ -171,7 +197,13 @@ async function showAnnotationSyncPreview() {
           <button type="button" id="annotation-video-refresh" class="primary">保存并更新预览</button>
         </footer>`;
       dialog.querySelector('#annotation-video-close').onclick = () => dialog.close();
-      dialog.addEventListener('close', () => {clearInterval(ANNOTATION_PREVIEW.clockTimer); window.AnnotationPlayer?.stop();});
+      dialog.addEventListener('close', () => {
+        // 用户关闭对话框后,任何在途的准备/字幕请求都不得再把弹窗拉起来
+        // (幽灵弹窗):递增 generation 使后续 continuation 全部失效。
+        ++ANNOTATION_PREVIEW.generation;
+        clearInterval(ANNOTATION_PREVIEW.clockTimer);
+        window.AnnotationPlayer?.stop();
+      });
       document.body.appendChild(dialog);
     }
     dialog.querySelector('#annotation-video-download').onclick = async event => {
@@ -236,7 +268,8 @@ async function showAnnotationSyncPreview() {
   } finally {
     ANNOTATION_PREVIEW.busy = false;
     const node = document.getElementById('annotation-job-status');
-    if (node) node.style.display = 'none';
+    // 同时清空文本:隐藏但残留"构建画面 10%"会在后续观察中被误读为仍在进行。
+    if (node) { node.style.display = 'none'; node.textContent = ''; }
   }
 }
 

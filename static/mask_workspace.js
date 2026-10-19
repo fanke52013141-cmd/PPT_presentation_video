@@ -606,6 +606,9 @@ async function loadStep5Data() {
 }
 
 function renderStep5Workspace() {
+  // 项目切换/退出工作区后，后台请求的 finally 仍可能触发本函数；
+  // manifestData 为空时静默跳过，避免在 null 上渲染崩溃。
+  if (!manifestData?.slides?.length || !state.currentProject) return;
   updateStep5SemanticButton();
   updateStep5ConfirmButton();
   document.body.classList.toggle('step5-fullscreen-mode', !!state.canvasState.maskFullscreen);

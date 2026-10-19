@@ -46,6 +46,11 @@ function resetAnnotationsProjectState() {
   ++ANNOTATIONS_WS.pageGeneration;
   clearTimeout(ANNOTATIONS_WS.saveTimer);
   ANNOTATIONS_WS.saveTimer = null;
+  // 被拒/在途操作在切换项目时无法跟随(draftOps 只按 project+slide 暂存
+  // 合法 pending 操作),显式告知用户而非静默丢弃。
+  if (ANNOTATIONS_WS.failedOps.length) {
+    showToast(`已离开勾画页:${ANNOTATIONS_WS.failedOps.length} 条被拒绝的修改未保留。`, 5000);
+  }
   ANNOTATIONS_WS.pendingOps = [];
   ANNOTATIONS_WS.saveInFlight = false;
   ANNOTATIONS_WS.savePromise = null;
@@ -339,6 +344,32 @@ async function retryAnnotationFailedOps() {
   ANNOTATIONS_WS.pendingOps = [...ANNOTATIONS_WS.failedOps, ...ANNOTATIONS_WS.pendingOps];
   ANNOTATIONS_WS.failedOps = [];
   ANNOTATIONS_WS.failedOpsMessage = '';
+  await flushAnnotationsSave().catch(() => {});
+}
+
+// 422 隔离区丢弃:被拒操作在修正前会阻塞本页所有自动保存(flush 见
+// failedOps 非空即返回)。当用户无法/不想修正时,显式丢弃被拒操作,
+// 让 pendingOps 中的合法编辑恢复落盘,避免整页死锁与退出时静默丢失。
+async function discardAnnotationFailedOps() {
+  if (!ANNOTATIONS_WS.failedOps.length) return;
+  const count = ANNOTATIONS_WS.failedOps.length;
+  let confirmed = false;
+  if (typeof window.showCustomConfirm === 'function') {
+    confirmed = await new Promise(resolve => {
+      window.showCustomConfirm(
+        '丢弃被拒绝的修改',
+        `有 ${count} 条修改因内容非法被服务端拒绝（${ANNOTATIONS_WS.failedOpsMessage || '原因见上方提示'}）。丢弃后这些修改将不可恢复，其余未保存的编辑会继续自动保存。`,
+        () => resolve(true),
+        () => resolve(false),
+      );
+    });
+  } else {
+    confirmed = window.confirm(`丢弃 ${count} 条被拒绝的修改？此操作不可恢复。`);
+  }
+  if (!confirmed) return;
+  ANNOTATIONS_WS.failedOps = [];
+  ANNOTATIONS_WS.failedOpsMessage = '';
+  renderAnnotationSaveStatus(ANNOTATIONS_WS.pendingOps.length ? 'pending' : 'idle');
   await flushAnnotationsSave().catch(() => {});
 }
 
@@ -806,6 +837,13 @@ function handleAnnotationNarrationSelection(event) {
   probeStart.setEnd(range.startContainer, range.startOffset);
   const utf16Start = probeStart.toString().length;
   const utf16End = utf16Start + text.length;
+  // 前端预校验锚点长度:契约 quote 上限 200 字符(UTF-16),超限选区
+  // 直接拒绝,避免 422 隔离区堵塞本页自动保存。
+  if (text.length > 200) {
+    ANNOTATIONS_WS.pendingNarrationAnchor = null;
+    showToast(`选中的讲稿片段过长（${text.length} 字，上限 200 字），请缩短后再关联。`, 5000);
+    return;
+  }
   const anchor = AnnotationsCore.buildAnchor(node.dataset.beatId, spoken, utf16Start, utf16End);
   // 暂存选区:先选旁白文字、再点文字候选时直接带上锚点
   ANNOTATIONS_WS.pendingNarrationAnchor = anchor;
@@ -927,6 +965,19 @@ function renderAnnotationSaveStatus(mode, message = '') {
   node.dataset.state = mode;
   node.textContent = message || map[mode] || '';
   node.style.display = mode === 'idle' ? 'none' : 'inline-block';
+  // 422 被拒操作会阻塞本页所有自动保存,必须同时提供重试与丢弃两个出口。
+  if (mode === 'invalid') {
+    const discardBtn = document.createElement('button');
+    discardBtn.type = 'button';
+    discardBtn.className = 'annotation-failed-discard';
+    discardBtn.textContent = '丢弃被拒修改';
+    discardBtn.title = '丢弃因内容非法被拒绝的修改,恢复其余编辑的自动保存';
+    discardBtn.onclick = event => {
+      event.stopPropagation();
+      discardAnnotationFailedOps().catch(() => {});
+    };
+    node.appendChild(discardBtn);
+  }
   // 状态条可点击恢复:冲突→载入服务端并重放;422→重试被拒操作;网络失败→立即重试
   if (mode === 'conflict') {
     node.title = '点击载入服务端版本并重放保存';
@@ -1017,6 +1068,7 @@ window.requestAnnotationDecision = requestAnnotationDecision;
 window.confirmAnnotationPage = confirmAnnotationPage;
 window.resolveAnnotationConflict = resolveAnnotationConflict;
 window.retryAnnotationFailedOps = retryAnnotationFailedOps;
+window.discardAnnotationFailedOps = discardAnnotationFailedOps;
 window.ANNOTATIONS_WS = ANNOTATIONS_WS;
 
 // ------------------------------------------------------------ W3: 文字候选与 AI 规划

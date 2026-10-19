@@ -25,6 +25,8 @@ function resetStep6ProjectState() {
   narrationProjectScope = null;
 }
 window.resetStep6ProjectState = resetStep6ProjectState;
+// 供工作区导航在切换/退出项目前冲刷防抖窗口内的旁白编辑。
+window.flushStep6Autosave = flushStep6Autosave;
 
 async function loadStep6Data() {
   const projectId = state.currentProject?.id;

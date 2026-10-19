@@ -28,7 +28,9 @@
   // 的定时器有分钟级节流，若 tick 仍被触发则以少量心跳检测任务终态。
   const POLL_MAX_HIDDEN_SKIP = 4;
 
-  // [自动模式跟随 20260813] 后端 stage id -> 左侧菜单 data-step 映射
+  // [自动模式跟随 20260813] 后端 stage id -> 左侧菜单 data-step 映射。
+  // annotation/digital_human 阶段此前缺失映射:运行进入这两个阶段时
+  // stepper 既无"进行中"标记也不自动跟随,用户会误以为流程卡在 TTS。
   const STAGE_TO_STEP = {
     preflight: 1,
     storyboard: 2,
@@ -37,6 +39,8 @@
     ai_mask: 5,
     narration: 6,
     tts: 6,
+    annotation: 10,
+    digital_human: 9,
     render: 8,
   };
   const STAGE_LABELS = {

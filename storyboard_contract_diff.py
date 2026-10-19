@@ -55,8 +55,14 @@ def _canonical_contract_value(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
-def _visual_slide_input(slide: Dict[str, Any]) -> Dict[str, Any]:
-    """Return only fields which change the image or Mask semantic mapping."""
+def visual_slide_input(slide: Dict[str, Any]) -> Dict[str, Any]:
+    """Return only fields which change the image or Mask semantic mapping.
+
+    Public (shared with ``visual_provenance``) so the per-slide image
+    provenance hash uses exactly the same projection as the downstream
+    invalidation classifier: narration-only edits must not invalidate an
+    approved image.
+    """
     visual = {
         key: value
         for key, value in slide.items()
@@ -76,6 +82,10 @@ def _visual_slide_input(slide: Dict[str, Any]) -> Dict[str, Any]:
             if isinstance(beat, dict)
         ]
     return visual
+
+
+# 兼容别名:历史代码以私有名引用本投影。
+_visual_slide_input = visual_slide_input
 
 
 def _narration_slide_input(slide: Dict[str, Any]) -> list[str]:

@@ -16,6 +16,26 @@ function isCurrentWorkspaceProject(projectId, sessionVersion = workspaceNavigati
   );
 }
 
+// 切换/退出项目前,把各步骤防抖窗口(约 700ms)内尚未落盘的编辑冲刷到
+// 服务端。必须在 workspace 复位清空 state/模块数据之前调用;各冲刷函数
+// 均在入口同步捕获项目上下文,后续 await 不依赖已复位的状态。
+async function flushProjectPendingEdits() {
+  const flushes = [];
+  if (state.step2AutoSaveTimer && typeof window.flushStep2PendingSaves === 'function') {
+    flushes.push(window.flushStep2PendingSaves().catch(() => {}));
+  }
+  if (state.step5AutoSaveTimer && window.PPTStudio?.flushStep5Draft) {
+    flushes.push(window.PPTStudio.flushStep5Draft().catch(() => {}));
+  }
+  if (state.step6AutoSaveTimer && typeof window.flushStep6Autosave === 'function') {
+    flushes.push(window.flushStep6Autosave({ userInitiated: false }).catch(() => {}));
+  }
+  if (typeof window.flushAnnotationsSave === 'function') {
+    flushes.push(window.flushAnnotationsSave().catch(() => {}));
+  }
+  if (flushes.length) await Promise.allSettled(flushes);
+}
+
 function resetProjectScopedAsyncUi() {
   clearTimeout(state.step2AutoSaveTimer);
   state.step2AutoSaveTimer = null;
@@ -35,6 +55,18 @@ function resetProjectScopedAsyncUi() {
   if (scriptButton) scriptButton.disabled = false;
   const visualButton = document.getElementById('step2-btn-generate-visual');
   if (visualButton) visualButton.disabled = false;
+  // TTS 轮询最长可达 30 分钟,其 finally 的按钮恢复受 ownership 守卫保护,
+  // 切换项目后会被跳过;这里无条件恢复四个持久 DOM 按钮,避免跨项目永久禁用。
+  for (const buttonId of ['step7-btn-synthesize', 'step6-btn-save-and-tts', 'step6-btn-audio-confirm-next', 'step7-btn-force-all']) {
+    const button = document.getElementById(buttonId);
+    if (button) button.disabled = false;
+  }
+  // 共享 state 的项目级数据必须一并复位:残留旧项目的 slides 会让新项目
+  // Step 3 沿用旧 slide_id 提交生图;残留旧合约 sha 会让新项目首次保存
+  // 合约带上错误的 expected_contract_sha256 而必然 409。
+  state.slides = [];
+  state.activeSlideIndex = 0;
+  state.step2ContractSha256 = null;
 }
 
 // 画布比例以 CSS 变量下发到根节点，供 style.css 中所有跟随项目画布的
@@ -54,6 +86,8 @@ function syncProjectCanvasCssVars(project = state.currentProject) {
 }
 
 async function enterWorkspace(projectId) {
+  // 先冲刷旧项目防抖窗口内的编辑,再切版本号与复位(冲刷依赖旧项目上下文)。
+  await flushProjectPendingEdits();
   const entryVersion = ++workspaceNavigationVersion;
   resetProjectScopedAsyncUi();
   resetStep5ProjectState();
@@ -104,7 +138,8 @@ async function enterWorkspace(projectId) {
   await navigateToStep(visibleStep);
 }
 
-function exitWorkspace() {
+async function exitWorkspace() {
+  await flushProjectPendingEdits();
   ++workspaceNavigationVersion;
   resetProjectScopedAsyncUi();
   resetStep5ProjectState();

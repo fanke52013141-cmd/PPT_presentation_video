@@ -21,6 +21,8 @@ from storyboard_planning import PlanningError  # noqa: E402
 class FakeProject:
     id = "planning-mapping-test"
     name = "Planning mapping test"
+    # Step 2 返回体会读取目标时长;未设置的等价于 None。
+    target_duration_sec = None
 
     def __init__(self, run_dir: Path) -> None:
         self.run_dir = str(run_dir)
@@ -64,7 +66,10 @@ def test_helper_maps_explicit_and_fallback_statuses() -> None:
     ).status_code == 400
 
 
-def test_manual_script_plan_update_returns_400_not_500(tmp_path) -> None:
+def test_manual_script_plan_update_accepts_empty_script(tmp_path) -> None:
+    """870bfa9 起允许把演讲稿删空:空列表清空分镜链路,不再报错拦截。
+    (纯层 PlanningError→400 的映射由 test_planning_error_mapping 覆盖;
+    保存入口 normalize_slide_script_plan 现对用户输入一律宽容。)"""
     (tmp_path / "inputs").mkdir(parents=True)
     (tmp_path / "inputs" / "article.md").write_text(
         "# 映射测试\n\n这是一篇用于测试的文章正文。",
@@ -72,15 +77,13 @@ def test_manual_script_plan_update_returns_400_not_500(tmp_path) -> None:
     )
     project = FakeProject(tmp_path)
 
-    with pytest.raises(HTTPException) as exc_info:
-        service.update_step2_script_plan(
-            FakeProject.id,
-            {"slides": []},
-            FakeDb(project),
-        )
+    result = service.update_step2_script_plan(
+        FakeProject.id,
+        {"slides": []},
+        FakeDb(project),
+    )
 
-    assert exc_info.value.status_code == 400
-    assert "slide_script_plan.slides" in exc_info.value.detail
+    assert result["success"] is True
 
 
 def test_pure_layer_raises_planning_error_without_fastapi() -> None:

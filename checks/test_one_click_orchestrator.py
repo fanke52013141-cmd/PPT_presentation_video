@@ -611,6 +611,49 @@ def test_completion_syncs_step_status_through_pipeline_state() -> None:
         assert project.current_step == 8
 
 
+def test_completion_sync_does_not_downgrade_confirmed_steps() -> None:
+    """完成同步不得把本运行真实完成的步骤(含 4 图片确认/7 音频确认)降级:
+    此前升序 complete_step 链 + 阶段映射缺 4/7,终态会把 4/7 压成 pending,
+    导致 stepper 失真与下次 resume 重复重建场景。"""
+    with tempfile.TemporaryDirectory() as value:
+        project = project_for(Path(value))
+        store: dict[str, dict[str, str]] = {}
+        project.get_step_status = lambda: dict(store.get("statuses", {}))
+        project.set_step_status = lambda updated: store.__setitem__("statuses", dict(updated))
+        project.current_step = 8
+        # 模拟运行中各服务已按真实结果写入的完成态。
+        store["statuses"] = {str(step): "completed" for step in range(1, 9)}
+        status = one_click._initial_status(project.id, "run-full")
+        for stage in status["stages"]:
+            stage["status"] = "done"
+
+        one_click._complete(
+            project,
+            status,
+            SimpleNamespace(commit=lambda: None, rollback=lambda: None),
+            video={"url": "/video.mp4"},
+        )
+
+        statuses = store["statuses"]
+        for step in range(1, 9):
+            assert statuses[str(step)] == "completed", f"step {step} 被完成同步降级"
+        # 空状态起步时,confirm_images/tts 阶段也必须补标 4/7。
+        store["statuses"] = {}
+        status2 = one_click._initial_status(project.id, "run-full-2")
+        for stage in status2["stages"]:
+            stage["status"] = "done"
+        one_click._complete(
+            project,
+            status2,
+            SimpleNamespace(commit=lambda: None, rollback=lambda: None),
+            video={"url": "/video.mp4"},
+        )
+        for step in range(1, 9):
+            if step in (9, 10):
+                continue
+            assert store["statuses"].get(str(step)) == "completed", f"step {step} 未被阶段映射覆盖"
+
+
 def test_legacy_status_is_migrated_in_memory_to_v2() -> None:
     with tempfile.TemporaryDirectory() as value:
         root = Path(value)

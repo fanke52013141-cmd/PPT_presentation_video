@@ -137,7 +137,12 @@ def confirm_storyboard_image_reuse(
         settled = resolve_impacts(
             project.run_dir, affected=("images",), slide_ids=(slide_id,), source_version=version,
         )
-    return {"success": True, "resolved": bool(settled)}
+        # 复用决策是用户对"现有图片仍代表当前画面"的显式确认:同步把逐页
+        # provenance 哈希对齐到当前视觉投影,否则渲染门仍会按旧口径拒绝。
+        from visual_provenance import confirm_reused_slide_image
+
+        provenance_refreshed = confirm_reused_slide_image(project.run_dir, slide_id)
+    return {"success": True, "resolved": bool(settled), "provenance_refreshed": provenance_refreshed}
 
 
 @router.post("/api/projects")

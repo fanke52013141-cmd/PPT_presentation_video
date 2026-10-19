@@ -153,11 +153,11 @@ def validate_image_provenance(slide_dir: Path, allowed_providers: set[str]) -> N
             root = Path(__file__).resolve().parents[1]
             if str(root) not in sys.path:
                 sys.path.insert(0, str(root))
-            from visual_provenance import slide_contract_hash
+            from visual_provenance import contract_slide_hash_matches
 
             slide_id = str(provenance.get("slide_id") or slide_dir.name)
-            expected_entry_hash = slide_contract_hash(slide_dir.parent.parent, slide_id)
-            if not str(provenance.get("contract_slide_sha256") or "") or provenance.get("contract_slide_sha256") != expected_entry_hash:
+            # 双口径:新写入=视觉投影哈希,旧写入=整条目哈希;其余一律过期。
+            if not contract_slide_hash_matches(provenance.get("contract_slide_sha256"), slide_dir.parent.parent, slide_id):
                 raise StageError(f"visual_provenance.json contract slide entry hash is stale: {path}")
         else:
             contract = slide_dir.parent.parent / "planning" / "visual_contract.json"

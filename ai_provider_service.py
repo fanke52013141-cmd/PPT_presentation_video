@@ -29,7 +29,6 @@ from image_generation_errors import (
     is_parameter_incompatibility,
 )
 from image_generation_errors import (
-    CODE_INVALID_PARAMETERS,
     CODE_POLL_TIMEOUT,
     CODE_RATE_LIMITED,
     CODE_UPSTREAM_OVERLOADED,

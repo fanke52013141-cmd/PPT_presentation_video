@@ -46,6 +46,29 @@ def _baseline_sha(contract_path: Path) -> str:
     )
 
 
+@pytest.mark.parametrize("valid", [False, True])
+def test_manual_draft_completion_follows_validation(tmp_path, monkeypatch, valid):
+    path = _setup(tmp_path)
+    project = _project(tmp_path)
+    statuses = {str(i): "completed" for i in range(1, 9)}
+    project.get_step_status = lambda: dict(statuses)
+    project.set_step_status = lambda value: statuses.update(value)
+    _wire_real_dependencies(monkeypatch)
+    monkeypatch.setattr(storyboard_service, "validate_visual_contract_file", lambda *a, **kw: {"valid": valid})
+    synced = []
+    for name in ("sync_reveal_manifest_to_contract", "sync_narration_beats_to_contract", "sync_narration_sources_from_contract"):
+        monkeypatch.setattr(storyboard_service, name, lambda *a: synced.append(True))
+    payload = json.loads(json.dumps(CONTRACT))
+    payload["slides"][0]["main_title"] = "edited draft"
+    db = SimpleNamespace(commit=lambda: None)
+    storyboard_service._persist_step2_result_locked(
+        project, payload, CONTRACT, ["slide_001", "slide_002"], str(path), db,
+    )
+    assert statuses["2"] == ("completed" if valid else "in_progress")
+    assert bool(synced) is valid
+    assert json.loads(path.read_text(encoding="utf-8"))["slides"][0]["main_title"] == "edited draft"
+
+
 def _project(tmp_path: Path):
     return SimpleNamespace(
         id="p",

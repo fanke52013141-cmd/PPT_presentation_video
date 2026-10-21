@@ -35,6 +35,7 @@ function makeElement(id) {
     replaceChildren(...nodes) { this.childNodes = nodes; },
     remove() {},
     querySelector() { return makeElement(`${id}-child`); },
+    closest() { return null; },
     querySelectorAll() { return []; },
     addEventListener() {},
     setAttribute() {},
@@ -143,6 +144,7 @@ function createSandbox() {
   sandbox.offerArtifactRepair = () => {};
   sandbox.requestAnimationFrame = () => {};
   sandbox.autoResizeTextarea = () => {};
+  sandbox.renderPageTaskState = () => {};
   sandbox.setDisabledReason = (element, reason) => { if (element) element.disabled = !!reason; };
   sandbox.loadProjects = () => {};
   // mask_workspace.js 在生产加载顺序中先于 workspace_navigation 加载。
@@ -183,6 +185,9 @@ function createSandbox() {
       }
       return data;
     },
+  };
+  sandbox.FormData = class {
+    append() {}
   };
   sandbox.fetchLog = [];
   let fetchHandler = null;
@@ -248,7 +253,9 @@ async function scenarioSwitchWithinDebounce() {
 
   assert.equal(box.timers.length, 0, 'resetProjectScopedAsyncUi must clear the pending step6 timer');
   box.drainTimers();
-  assert.equal(box.fetchLog.length, 0, 'the A timer was cleared, so no PUT fires at all');
+  assert.equal(box.fetchLog.length, 1, 'leaving must flush the pending A edit exactly once');
+  assert.ok(box.fetchLog[0].url.includes('/projects/proj-A/steps/6/result'));
+  assert.equal(JSON.parse(box.fetchLog[0].options.body).slides[0].beats[0].tts_text, 'A修改后');
 
   // 共享状态归属 B：保存只能指向 B 且携带 B 的旁白。
   const snapshot = await snapshotNarrationState(box);
@@ -400,11 +407,53 @@ async function scenarioHappyPathUnchanged() {
   assert.equal(box.element('step1-article-input').value, '新生成文章');
 }
 
+async function scenarioArticleImportScope() {
+  for (const destination of ['other', 'exit', 'return', 'same']) {
+    const box = createSandbox();
+    box.state.currentProject = projectFixture('proj-A');
+    box.openWorkspace();
+    // Use a plain text editor stub while running the real submit function.
+    box.syncStep1MarkdownToSource = () => 'A article';
+    box.updateStepperUI = () => {};
+    const navigations = [];
+    box.navigateToStep = async step => navigations.push(step);
+    const pending = deferred();
+    box.route('/api/projects/proj-A/steps/1/import', () => pending.promise);
+    const importing = box.submitStep1();
+    assert.equal(box.apiLog.post[0].url, '/api/projects/proj-A/steps/1/import');
+    const target = projectFixture('proj-B');
+    if (destination !== 'same') {
+      vm.runInContext('workspaceNavigationVersion += 1', vm.createContext(box));
+      box.state.currentProject = destination === 'exit' ? null : target;
+      box.resetProjectScopedAsyncUi();
+      if (destination === 'return') box.state.currentProject = projectFixture('proj-A');
+      box.document.getElementById('step1-btn-submit').innerHTML = 'new session';
+      box.document.getElementById('step1-res-title').value = 'new title';
+    }
+    pending.resolve({ success: true, brief: { title: 'A title', summary: '' } });
+    await importing;
+    if (destination === 'same') {
+      assert.equal(box.element('step1-res-title').value, 'A title');
+      assert.deepEqual(navigations, [2]);
+      assert.equal(box.state.currentProject.step_status['1'], 'completed');
+    } else {
+      assert.equal(box.element('step1-res-title').value, 'new title');
+      assert.equal(box.element('step1-btn-submit').innerHTML, 'new session');
+      assert.deepEqual(navigations, []);
+      assert.equal(target.step_status['1'], undefined);
+    }
+  }
+  const closed = createSandbox();
+  await closed.submitStep1();
+  assert.equal(closed.apiLog.post.length, 0);
+}
+
 (async () => {
   await scenarioSwitchWithinDebounce();
   await scenarioRetryStaysOnOriginalProject();
   await scenarioStaleResponsesDoNotOverwrite();
   await scenarioHappyPathUnchanged();
+  await scenarioArticleImportScope();
   console.log('narration project scope checks passed');
 })().catch(error => {
   console.error(error);

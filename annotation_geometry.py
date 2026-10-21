@@ -196,6 +196,10 @@ def _deform_ellipse(template: List[Tuple[float, float]], bbox: Tuple[float, floa
         angle = math.tau * i / 96
         wobble = 1 + .015 * math.sin(3 * angle + phase1) + .008 * math.sin(5 * angle + phase2)
         deformed.append((center_x + rx * math.cos(angle) * wobble, center_y + ry * math.sin(angle) * wobble))
+    if pad_left is not None or pad_right is not None:
+        lower = left - max(0.0, pad_left) if pad_left is not None else -math.inf
+        upper = right + max(0.0, pad_right) if pad_right is not None else math.inf
+        deformed = [(min(upper, max(lower, x)), y) for x, y in deformed]
     return _resample_uniform(deformed, closed=True, step=SAMPLE_STEP_PX)
 
 

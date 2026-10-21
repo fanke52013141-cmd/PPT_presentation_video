@@ -5,7 +5,6 @@ Human truth is never generated. Prediction output stays outside the served folde
 """
 import hashlib
 import json
-import os
 import shutil
 import sys
 import tempfile

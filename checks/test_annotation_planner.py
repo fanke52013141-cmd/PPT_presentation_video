@@ -124,6 +124,101 @@ def test_valid_suggestion_becomes_ai_item(tmp_path):
     assert sent["protected_items"] == []
 
 
+@pytest.mark.parametrize("selected", [[0, 3], [0, 2, 3], [1, 4]])
+@pytest.mark.parametrize("ambiguous", [False, True])
+def test_disconnected_characters_are_rejected_without_expanding_target(tmp_path, selected, ambiguous):
+    store, _ = _store()
+    suggestion = {
+        "beat_id": BEATS[0]["beat_id"], "range": [7, 12], "quote": "9月30日",
+        "target_candidate_ids": [CANDIDATES[i]["token_id"] for i in selected],
+        "style": "highlighter", "ambiguous": ambiguous, "reason": "表达有差异",
+    }
+    planner, _ = _planner(store, {"suggestions": [suggestion]})
+    items, snapshot, issues = _run(planner, tmp_path)
+    assert not items
+    assert [issue.code for issue in issues] == ["discontinuous_target"]
+    assert snapshot["suggestions"][0]["target_candidate_ids"] == suggestion["target_candidate_ids"]
+
+
+def test_rejected_fragments_do_not_hide_valid_suggestion_or_consume_density(tmp_path):
+    store, _ = _store()
+    base = {"beat_id": BEATS[0]["beat_id"], "range": [7, 12], "quote": "9月30日", "style": "highlighter"}
+    planner, _ = _planner(store, {"suggestions": [
+        {**base, "target_candidate_ids": [CANDIDATES[0]["token_id"], CANDIDATES[4]["token_id"]], "priority": 1},
+        {**base, "target_candidate_ids": [c["token_id"] for c in reversed(CANDIDATES)] + [CANDIDATES[0]["token_id"]], "priority": 2},
+    ]})
+    items, _, issues = _run(planner, tmp_path, emphasis="weak")
+    assert len(items) == 1 and items[0].status.spatial == "valid"
+    assert items[0].target.token_ids == tuple(c["token_id"] for c in CANDIDATES)
+    assert [issue.code for issue in issues] == ["discontinuous_target"]
+
+
+@pytest.mark.parametrize("selected,accepted", [([1, 2, 3], True), ([1, 3], False)])
+def test_wrapped_target_must_include_intervening_ocr_characters(tmp_path, selected, accepted):
+    from copy import deepcopy
+    candidates = deepcopy(CANDIDATES)
+    for i, candidate in enumerate(candidates):
+        candidate["line_id"] = "first" if i < 2 else "second"
+    store, _ = _store()
+    planner, _ = _planner(store, {"suggestions": [{
+        "beat_id": BEATS[0]["beat_id"], "range": [7, 12], "quote": "9月30日",
+        "target_candidate_ids": [candidates[i]["token_id"] for i in selected], "style": "highlighter",
+    }]})
+    items, _, issues = planner.plan_slide(
+        str(tmp_path), "slide_001", BEATS, candidates, None,
+        emphasis="moderate", image_hash="a", narration_hash="b", now_iso="t0",
+    )
+    assert bool(items) is accepted
+    assert [i.code for i in issues] == ([] if accepted else ["discontinuous_target"])
+
+
+def test_whitespace_only_candidate_does_not_split_a_target(tmp_path):
+    from copy import deepcopy
+    candidates = deepcopy(CANDIDATES)
+    candidates[1]["text"] = " "
+    store, _ = _store()
+    planner, _ = _planner(store, {"suggestions": [{
+        "beat_id": BEATS[0]["beat_id"], "range": [7, 12], "quote": "9月30日",
+        "target_candidate_ids": [candidates[0]["token_id"], candidates[2]["token_id"]], "style": "highlighter",
+    }]})
+    items, _, issues = planner.plan_slide(
+        str(tmp_path), "slide_001", BEATS, candidates, None,
+        emphasis="moderate", image_hash="a", narration_hash="b", now_iso="t0",
+    )
+    assert len(items) == 1 and not issues
+    assert len(items[0].target.token_ids) == 2
+
+
+@pytest.mark.parametrize("fragment_positions", [[2, 5], [2, 4, 5]])
+def test_real_acceptance_secondary_fragments_are_removed_and_core_phrase_retained(tmp_path, fragment_positions):
+    # Real OCR/LLM acceptance on 2026-10-21 picked 完/画 and 完/勾/画
+    # out of 完整勾画; retain the model's complete first-line target only.
+    texts = ["核心概念", "验证完整勾画轨迹"]
+    candidates = []
+    for line_index, text in enumerate(texts):
+        for i, char in enumerate(text):
+            candidates.append({"token_id": f"t{len(candidates)}", "line_id": f"l{line_index}",
+                               "text": char, "granularity": "char",
+                               "polygon": [[i*30, line_index*80], [i*30+25, line_index*80],
+                                           [i*30+25, line_index*80+40], [i*30, line_index*80+40]]})
+    beats = [{"beat_id": "b1", "spoken_text": "现在介绍核心概念，请观察橙色笔迹逐步完成围画。"}]
+    suggestions = [
+        {"beat_id": "b1", "range": [4, 8], "quote": "核心概念", "target_candidate_ids": [f"t{i}" for i in range(4)], "style": "highlighter"},
+        {"beat_id": "b1", "range": [18, 22], "quote": "完成围画", "target_candidate_ids": [f"t{i+4}" for i in fragment_positions],
+         "style": "highlighter", "ambiguous": True, "reason": "讲稿和画面措辞不同"},
+    ]
+    store, _ = _store()
+    planner, _ = _planner(store, {"suggestions": suggestions})
+    items, snapshot, issues = planner.plan_slide(
+        str(tmp_path), "slide_001", beats, candidates, None,
+        emphasis="moderate", image_hash="a", narration_hash="b", now_iso="t0",
+    )
+    assert [item.anchor.quote for item in items] == ["核心概念"]
+    assert items[0].status.spatial == "valid"
+    assert len(snapshot["suggestions"]) == 2
+    assert [issue.code for issue in issues] == ["discontinuous_target"]
+
+
 def test_unknown_token_and_beat_rejected(tmp_path):
     store, _ = _store()
     planner, _ = _planner(store, {

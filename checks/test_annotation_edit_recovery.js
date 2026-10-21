@@ -65,14 +65,12 @@ function regionItem(id, overrides = {}) {
   run('undoAnnotationEdit()');
   assert.equal(WS.pendingOps.length, 1, '撤销必须重新入队操作');
   assert.equal(WS.pendingOps[0].op, 'add');
-  assert.equal(WS.pendingOps[0].item.annotation_id, undefined, '重入队的 add 不得携带服务端 id');
+  assert.ok(WS.pendingOps[0].item.annotation_id.startsWith('local_'), '补偿 add 必须使用可重映射的本地 id');
   assert.equal(WS.page.items.length, 1);
   console.log('undo of delete requeues add ok');
 
   run('redoAnnotationEdit()');
-  assert.equal(WS.pendingOps.length, 2, '重做必须重新入队 delete');
-  assert.equal(WS.pendingOps[1].op, 'delete');
-  assert.equal(WS.pendingOps[1].annotation_id, 'ann_001');
+  assert.equal(WS.pendingOps.length, 0, '重做撤回尚未提交的补偿 add');
   assert.equal(WS.page.items.length, 0);
   console.log('redo of undo requeues delete ok');
 }
@@ -290,6 +288,116 @@ function regionItem(id, overrides = {}) {
   await run('saveAnnotationEdits()');
   assert.match(sandbox.__toasts.at(-1), /尚未保存/);
   console.log('unfinished repair blocks confirmation and rejected edits never claim saved ok');
+}
+// Unsent delete + undo must retain the saved ID and confirmation without I/O.
+{
+  setupProject('pCancelDelete', 's');
+  const item = regionItem('ann_saved', {status: {content: 'confirmed'}});
+  WS.page.items = [item];
+  run('pushAnnotationHistory()');
+  WS.page.items = [];
+  WS.pendingOps = [core.buildDeleteOperation('ann_saved')];
+  WS.failedOps = [core.buildDeleteOperation('ann_saved')];
+  run('undoAnnotationEdit()');
+  assert.equal(WS.pendingOps.length, 0);
+  assert.equal(WS.failedOps.length, 0);
+  assert.equal(WS.page.items[0].annotation_id, 'ann_saved');
+  assert.equal(WS.page.items[0].status.content, 'confirmed');
+  run('redoAnnotationEdit()');
+  assert.equal(WS.pendingOps[0].annotation_id, 'ann_saved');
+}
+
+// Undo a delete in flight: the pending compensating add remains visible and
+// history/selection follow its assigned server ID for later redo.
+{
+  setupProject('pFlightDelete', 's', 1);
+  WS.page.items = [regionItem('ann_old')];
+  run('pushAnnotationHistory()');
+  WS.page.items = [];
+  WS.pendingOps = [core.buildDeleteOperation('ann_old')];
+  let first, second;
+  let calls = 0;
+  sandbox.__api.patch = (_url, payload) => new Promise(resolve => {
+    if (++calls === 1) first = resolve;
+    else {
+      assert.equal(WS.page.items.length, 1, 'save response must preserve the undo shown on screen');
+      second = () => resolve({revision: 3, items: [regionItem('ann_new')]});
+    }
+  });
+  const saving = run('flushAnnotationsSave()');
+  await await0();
+  run('undoAnnotationEdit()');
+  assert.ok(WS.page.items[0].annotation_id.startsWith('local_'));
+  first({revision: 2, items: []});
+  await await0();
+  assert.equal(WS.page.items.length, 1);
+  second();
+  await saving;
+  assert.equal(WS.page.items[0].annotation_id, 'ann_new');
+  run('redoAnnotationEdit()');
+  assert.equal(WS.pendingOps[0].annotation_id, 'ann_new');
+}
+
+// New updates made while saving must overlay the older server response.
+{
+  setupProject('pOverlay', 's', 1);
+  WS.page.items = [regionItem('ann_1')];
+  const initial = core.buildUpdateOperation('ann_1', {style: {color: '#00AA00'}});
+  WS.pendingOps = [initial];
+  let release;
+  let calls = 0;
+  sandbox.__api.patch = (_url, payload) => {
+    if (++calls === 1) return new Promise(resolve => { release = resolve; });
+    assert.equal(WS.page.items[0].style.width, 12, 'new width cannot flash back during a save');
+    return Promise.resolve({revision: 3, items: [regionItem('ann_1', {style: {color: '#00AA00', width: 12}})]});
+  };
+  const saving = run('flushAnnotationsSave()');
+  await await0();
+  WS.page.items[0].style.width = 12;
+  WS.pendingOps.push(core.buildUpdateOperation('ann_1', {style: {width: 12}}));
+  release({revision: 2, items: [regionItem('ann_1', {style: {color: '#00AA00', width: 5}})]});
+  await saving;
+  assert.equal(WS.page.items[0].style.width, 12);
+}
+
+// Identical targets do not let a new local add steal an existing saved ID.
+{
+  setupProject('pDuplicateTarget', 's');
+  WS.page.items = [regionItem('ann_existing'), regionItem('local_same')];
+  WS.pendingOps = [core.buildUpdateOperation('local_same', {style: {width: 9}})];
+  sandbox.__mappingBatch = [core.buildAddOperation(WS.page.items[1])];
+  sandbox.__mappingResponse = [regionItem('ann_existing'), regionItem('ann_new')];
+  run('remapAnnotationLocalOps(__mappingBatch, __mappingResponse, new Set(["ann_existing"]))');
+  assert.equal(WS.pendingOps[0].annotation_id, 'ann_new');
+  assert.equal(WS.page.items[0].annotation_id, 'ann_existing');
+  assert.equal(WS.page.items[1].annotation_id, 'ann_new');
+}
+
+// Continuous multi-character selection reuses the real OCR token IDs.
+{
+  setupProject('pWords', 's');
+  WS.candidates = ['重', '点', '词'].map((text, i) => ({text, token_id: `t${i}`, line_id: 'l', granularity: 'char', polygon: REGION_TARGET.polygons[0]}));
+  run('selectAnnotationCandidate("t0", false)');
+  run('selectAnnotationCandidate("t2", true)');
+  run('addAnnotationFromCandidate(ANNOTATIONS_WS.candidateSelection)');
+  assert.equal(WS.page.items[0].target.quote, '重点词');
+  assert.equal(WS.page.items[0].target.granularity, 'word');
+  assert.deepEqual(Array.from(WS.page.items[0].target.token_ids), ['t0', 't1', 't2']);
+  assert.equal(WS.page.items[0].__deferredAdd, true, 'unbound multi-character target remains a recoverable local draft');
+}
+{
+  setupProject('pDeferred', 's');
+  WS.slideIds = ['s', 'other'];
+  WS.page.items = [regionItem('local_unbound', {__deferredAdd: true})];
+  sandbox.__api.get = async url => url.endsWith('/text-layout') ? {candidates: []}
+    : {revision: 1, items: [], narration: {beats: []}};
+  await run('selectAnnotationPage(1)');
+  assert.equal(WS.page.items.length, 0);
+  await run('selectAnnotationPage(0)');
+  assert.equal(WS.page.items[0].annotation_id, 'local_unbound');
+  assert.equal(WS.page.items[0].__deferredAdd, true);
+  assert.equal(WS.pendingOps.length, 0, 'unbound drafts must not be sent as invalid adds');
+  assert.equal(run('hasUnsavedAnnotationEdits()'), true, 'unbound or stashed drafts must warn before a browser unload');
 }
 console.log('annotation edit recovery checks passed');
 })().catch(error => { console.error(error); process.exit(1); });

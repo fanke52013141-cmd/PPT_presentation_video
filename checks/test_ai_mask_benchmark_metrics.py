@@ -161,6 +161,30 @@ def test_prediction_export_round_trips_manifest_rle(tmp_path: Path, case_01: Fix
         pf.export_prediction(run_dir, case_01.case_id, tmp_path / "bad.json")
 
 
+def _deterministic_detection_payload(payload: dict) -> dict:
+    """Compare every detection fact, excluding only explicit timing telemetry."""
+    result = copy.deepcopy(payload)
+    for key in ("detect_seconds", "elapsed_ms", "stage_timing_ms", "stage_timings_sec"):
+        result.pop(key, None)
+    return result
+
+
+def test_deterministic_comparison_ignores_timing_but_detects_pixel_changes() -> None:
+    baseline = {
+        "stage_timing_ms": {"foreground": 10.0},
+        "stage_timings_sec": {"seed_labeling_sec": 0.1},
+        "elements": [{"element_id": "e1", "mask_rle": {"runs": [[0, 2, 5]]}}],
+        "foreground_pixel_count": 3,
+    }
+    repeated = copy.deepcopy(baseline)
+    repeated["stage_timing_ms"]["foreground"] = 20.0
+    repeated["stage_timings_sec"]["seed_labeling_sec"] = 0.2
+    assert _deterministic_detection_payload(baseline) == _deterministic_detection_payload(repeated)
+    assert baseline["stage_timings_sec"] == {"seed_labeling_sec": 0.1}
+    repeated["elements"][0]["mask_rle"]["runs"][0][2] = 4
+    assert _deterministic_detection_payload(baseline) != _deterministic_detection_payload(repeated)
+
+
 def test_detect_elements_is_pixel_deterministic_across_fresh_dirs(tmp_path: Path) -> None:
     from ai_mask_component_detection import detect_elements
     from ai_mask_engine import normalize_settings
@@ -173,13 +197,11 @@ def test_detect_elements_is_pixel_deterministic_across_fresh_dirs(tmp_path: Path
         store = payload_a if bucket == "a" else payload_b
         for case_id in case_ids:
             fixture = case(case_id)
-            payload = copy.deepcopy(
+            payload = _deterministic_detection_payload(
                 detect_elements(fixture.visual_draft, root / case_id, settings, None)
             )
             # Wall-clock stage timings are expected to differ run to run; only
             # the pixel facts and grouping decisions must be reproducible.
-            for key in ("detect_seconds", "elapsed_ms", "stage_timing_ms"):
-                payload.pop(key, None)
             assert payload["cache_hit"] is False
             store[case_id] = payload
     for case_id in case_ids:

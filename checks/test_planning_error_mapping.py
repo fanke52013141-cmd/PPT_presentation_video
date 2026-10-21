@@ -7,8 +7,6 @@ LLM 输出路径映射 502，纯层显式 400 的结构错误保持 400。
 import sys
 from pathlib import Path
 
-import pytest
-from fastapi import HTTPException
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))

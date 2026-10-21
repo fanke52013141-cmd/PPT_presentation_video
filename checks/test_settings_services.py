@@ -33,6 +33,30 @@ SETTINGS_PATHS = {
 }
 
 
+def test_mask_selfcheck_covers_new_registered_credentials(monkeypatch) -> None:
+    from scripts.check_runtime_settings_mask import main
+
+    monkeypatch.setattr(settings_service, "SETTINGS_SECRET_KEYS",
+                        settings_service.SETTINGS_SECRET_KEYS | {"future_provider_secret"})
+    assert main() == 0
+
+
+def test_mask_selfcheck_still_rejects_unmasked_ocr_credentials(monkeypatch, capsys) -> None:
+    from scripts.check_runtime_settings_mask import main
+
+    original = settings_service.get_settings
+    def unsafe_settings():
+        values = original()
+        values["annotation_ocr_baidu_secret_key"] = "unmasked-test-value"
+        return values
+
+    monkeypatch.setattr(settings_service, "get_settings", unsafe_settings)
+    assert main() == 1
+    message = capsys.readouterr().out
+    assert "annotation_ocr_baidu_secret_key" in message
+    assert "unmasked-test-value" not in message
+
+
 def replace_settings_dependencies(
     **changes: Any,
 ) -> settings_service.SettingsDependencies:

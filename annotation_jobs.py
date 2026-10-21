@@ -44,6 +44,7 @@ def _page_with(*, revision: int, slide_id: str, items: List[AnnotationItem], sna
 
 _MAX_CONCURRENT_JOBS = 2
 _JOB_SEMAPHORE = threading.BoundedSemaphore(_MAX_CONCURRENT_JOBS)
+_OCR_RETRY_DELAYS = (1.0, 2.0)
 
 
 @dataclass(frozen=True)
@@ -209,6 +210,21 @@ class AnnotationJobManager:
 
     # ------------------------------------------------------------ detect_text
 
+    def _recognize_with_retry(self, job_id, cancel_event, image_bytes, config):
+        from annotation_ocr_baidu import BaiduOcrError
+
+        for attempt in range(len(_OCR_RETRY_DELAYS) + 1):
+            if cancel_event.is_set():
+                raise ValueError("cancelled")
+            try:
+                return self._deps.recognize(image_bytes, config)
+            except BaiduOcrError as exc:
+                if not exc.retryable or attempt == len(_OCR_RETRY_DELAYS):
+                    raise
+                self._deps.job_store.update_progress(job_id, 5, stage="ocr_retry")
+                if cancel_event.wait(_OCR_RETRY_DELAYS[attempt]):
+                    raise ValueError("cancelled") from exc
+
     def _run_detect(
         self,
         job_id: str,
@@ -251,7 +267,7 @@ class AnnotationJobManager:
                     image_bytes,
                     actual_hash,
                     image_size,
-                    recognize=self._deps.recognize,
+                    recognize=lambda image, config: self._recognize_with_retry(job_id, cancel_event, image, config),
                     publish=publish_layout,
                 )
                 results.append(
@@ -421,6 +437,9 @@ class AnnotationJobManager:
 
             # ---- 短锁 2:发布前复核输入版本与页面 revision ----
             with self._deps.lock_for(project):
+                if cancel_event.is_set():
+                    store.mark_cancelled(job_id)
+                    return
                 current_page = annotation_store.read_page(run_dir, slide_id, canvas=canvas)
                 current_revision = current_page.revision if current_page else 0
                 current_image = self._read_image(run_dir, slide_id)
@@ -439,8 +458,9 @@ class AnnotationJobManager:
                         _with_id(item, _next_id(merged))
                     )
                     merged.append(assigned[-1])
-                updated_page = _page_with(revision=page_revision + 1, slide_id=slide_id, items=merged, snapshot=snapshot, now=self._deps.now_iso())
-                annotation_store.write_page(run_dir, slide_id, updated_page)
+                if assigned:
+                    updated_page = _page_with(revision=page_revision + 1, slide_id=slide_id, items=merged, snapshot=snapshot, now=self._deps.now_iso())
+                    annotation_store.write_page(run_dir, slide_id, updated_page)
             results.append(
                 {
                     "slide_id": slide_id,

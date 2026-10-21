@@ -374,8 +374,7 @@ function initAnnotationWorkspaceEvents() {
 
   // 关闭标签页前若有未保存编辑,同步给出提示;不依赖 beforeunload 异步写入。
   window.addEventListener('beforeunload', event => {
-    const pending = window.ANNOTATIONS_WS?.pendingOps?.length;
-    if (pending && document.getElementById('step-panel-10')?.style.display !== 'none') {
+    if (window.hasUnsavedAnnotationEdits?.()) {
       event.preventDefault();
       event.returnValue = '';
     }

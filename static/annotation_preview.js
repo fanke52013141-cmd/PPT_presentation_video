@@ -85,6 +85,7 @@ function annotationPrepareError(error) {
     audio_timeline_missing: '本页没有音频时间轴，请先生成音频。',
     text_layout_missing: '文字布局缺失，请重新识别文字。',
     ink_build_failed: '墨迹生成失败，请重试。',
+    ink_asset_corrupt: '墨迹文件损坏，请重新准备预览后确认。',
   };
   // 服务端拒绝复用过期预览结果(stale_preview)时,错误体只有机器码;
   // 必须翻译成人话,否则用户只会看到一段原始 JSON。

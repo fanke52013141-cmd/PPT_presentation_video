@@ -1327,6 +1327,14 @@ def confirm_tts_audio(project_id: str, db: Session, payload: Optional[Dict[str, 
     ]
     if missing:
         raise HTTPException(status_code=400, detail=f"以下页面尚未生成音频: {', '.join(missing)}")
+    live_runtime = current_tts_cache_key(project)
+    if not live_runtime:
+        raise HTTPException(status_code=409, detail="无法核对当前语音配置，请检查配置后重新确认音频。")
+    stale = [slide_id for slide_id in slide_ids if not _tts_artifact_matches_runtime(
+        slide_tts_artifact_paths(project, slide_id), live_runtime,
+    )]
+    if stale:
+        raise HTTPException(status_code=409, detail=f"以下页面音频与当前语音配置不匹配，请重新生成: {', '.join(stale)}")
     beats_by_slide = _load_beats_by_slide(project, slide_ids, "audio confirm")
     for slide_id in slide_ids:
         rewrite_audio_timeline_by_beats(
@@ -1339,6 +1347,8 @@ def confirm_tts_audio(project_id: str, db: Session, payload: Optional[Dict[str, 
         logger.error(f"Timeline binding failed during audio confirm: {bind_res.stderr}")
         raise HTTPException(status_code=500, detail=f"时间轴绑定失败: {bind_res.stderr}")
     confirmation_path = audio_confirmation_path(project)
+    if current_tts_cache_key(project) != live_runtime:
+        raise HTTPException(status_code=409, detail="确认期间语音配置已变化，请核对并重新生成音频。")
     os.makedirs(os.path.dirname(confirmation_path), exist_ok=True)
     write_json_atomic(
         confirmation_path,
@@ -1346,7 +1356,7 @@ def confirm_tts_audio(project_id: str, db: Session, payload: Optional[Dict[str, 
             project.run_dir,
             slide_ids,
             confirmation_mode=str((payload or {}).get("confirmation_mode") or "user_reviewed"),
-            tts_runtime=current_tts_cache_key(project),
+            tts_runtime=live_runtime,
         ),
     )
     handle_step_navigation(project, 7, db)

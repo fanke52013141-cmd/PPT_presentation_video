@@ -390,6 +390,8 @@ def import_article(
             detail="请输入有效的文章内容",
         )
     article_path = Path(article_source_path(project))
+    if article_path.is_file() and _read_text(article_path) == content:
+        return {"success": True, "brief": read_project_article_source(project)}
     article_path.parent.mkdir(parents=True, exist_ok=True)
     article_path.write_text(content, encoding="utf-8")
     _deps().begin_storyboard_after_article_import(project, db)

@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import tempfile
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Any, Dict, List, Sequence, Tuple
@@ -25,6 +27,7 @@ from PIL import Image, ImageDraw, ImageFilter
 
 __all__ = [
     "INK_VERSION",
+    "cached_ink_metadata",
     "InkRequest",
     "render_stroke_frames",
     "precision_metrics",
@@ -32,7 +35,7 @@ __all__ = [
 ]
 
 
-INK_VERSION = "annotation_ink_v3_handdrawn_oval"
+INK_VERSION = "annotation_ink_v4_neighbor_bounds"
 _DEFAULT_FPS = 30
 
 
@@ -66,7 +69,6 @@ def _polyline_arc_lengths(points: Sequence[Tuple[float, float]]) -> List[float]:
 def _time_to_arc(stroke: Dict[str, Any], t: float) -> float:
     """时间进度(0–1)→ 弧长进度;speed_profile 与前端同一语义。"""
     profile = stroke.get("speed_profile")
-    points = stroke.get("points") or []
     if not isinstance(profile, (list, tuple)) or len(profile) < 2:
         return max(0.0, min(1.0, t))
     clamped = max(0.0, min(1.0, t))
@@ -311,16 +313,19 @@ def render_and_write(
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    if cancel_event and cancel_event.is_set():
+        raise RuntimeError("cancelled")
+    (out_dir / "meta.json").unlink(missing_ok=True)
     full = render_stroke_rgba(request, arc=1.0)
     full_path = out_dir / "full.png"
-    full_path.write_bytes(_png_bytes(full))
+    _atomic_bytes(full_path, _png_bytes(full))
     frame_count = frames_needed(draw_duration_sec, fps)
     for index in range(frame_count):
         if cancel_event and cancel_event.is_set():
             raise RuntimeError("cancelled")
         frame = render_stroke_rgba(request, arc=_time_to_arc(
             {"speed_profile": request.speed_profile}, index / (frame_count - 1)))
-        (out_dir / f"frame_{index:03d}.png").write_bytes(_png_bytes(frame))
+        _atomic_bytes(out_dir / f"frame_{index:03d}.png", _png_bytes(frame))
     meta = {
         "ink_version": INK_VERSION,
         "fps": fps,
@@ -330,9 +335,9 @@ def render_and_write(
         "full": "full.png",
         "frames_prefix": "frame_",
     }
-    (out_dir / "meta.json").write_text(
-        json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8"
-    )
+    if cancel_event and cancel_event.is_set():
+        raise RuntimeError("cancelled")
+    _atomic_bytes(out_dir / "meta.json", json.dumps(meta, ensure_ascii=False, indent=1).encode("utf-8"))
     return {
         "kind": "raster",
         "dir": out_dir.name,
@@ -340,6 +345,36 @@ def render_and_write(
         "fps": fps,
         "canvas": list(request.canvas),
     }
+
+
+def _atomic_bytes(path: Path, content: bytes) -> None:
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".ink-", suffix=".tmp", delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(content)
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def cached_ink_metadata(directory: Path, canvas, duration: float, fps: int):
+    """A cache hit requires complete, decodable frames for this build."""
+    try:
+        metadata = json.loads((directory / "meta.json").read_text(encoding="utf-8"))
+        count = frames_needed(duration, fps)
+        if (metadata.get("ink_version") != INK_VERSION or metadata.get("fps") != fps
+                or metadata.get("frame_count") != count or metadata.get("canvas") != list(canvas)):
+            return None
+        for name in ["full.png", *(f"frame_{i:03d}.png" for i in range(count))]:
+            with Image.open(directory / name) as frame:
+                if frame.size != tuple(canvas) or frame.mode != "RGBA" or frame.format != "PNG":
+                    return None
+                frame.verify()
+        return metadata
+    except (OSError, ValueError, TypeError, AttributeError, SyntaxError):
+        return None
 
 
 def _png_bytes(image: Image.Image) -> bytes:

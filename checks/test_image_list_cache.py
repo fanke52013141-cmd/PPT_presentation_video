@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 from types import SimpleNamespace
 import image_workflow_service as images
 

@@ -14,6 +14,8 @@ const ANNOTATIONS_ED = {
   calibrationCleanup: null,
   previewFrame: null,
 };
+window.hasAnnotationEditorEdits = () => Boolean(ANNOTATIONS_ED.pendingEdit || ANNOTATIONS_ED.repair
+  || ANNOTATIONS_ED.freehandPoints.length || ANNOTATIONS_ED.freehandStrokes.length);
 
 // ------------------------------------------------------------ 画布覆盖层
 
@@ -967,9 +969,24 @@ function queueSyncAnnotationItems(currentItems, targetItems) {
       item.__deferredAdd = false;
       operations.push(AnnotationsCore.buildAddOperation(item));
     } else {
-      const { annotation_id, ...rest } = item;
-      void annotation_id;
-      operations.push(AnnotationsCore.buildAddOperation(rest));
+      // A queued delete has not reached the server: undo it without changing
+      // the saved ID, confirmation or revision. An in-flight/completed delete
+      // needs a fresh local ID, remapped once its compensating add is saved.
+      let cancelled = false;
+      for (const queue of [ANNOTATIONS_WS.pendingOps, ANNOTATIONS_WS.failedOps]) {
+        for (let index = queue.length - 1; index >= 0; index -= 1) {
+          if (queue[index].op === 'delete' && queue[index].annotation_id === item.annotation_id) {
+            queue.splice(index, 1);
+            cancelled = true;
+          }
+        }
+      }
+      if (!cancelled) {
+        const previousId = item.annotation_id;
+        item.annotation_id = nextLocalAnnotationId();
+        ANNOTATIONS_WS.histories[ANNOTATIONS_WS.page.slide_id]?.remapIds(new Map([[previousId, item.annotation_id]]));
+        operations.push(AnnotationsCore.buildAddOperation(item));
+      }
     }
   });
   current.forEach(item => {
@@ -1004,6 +1021,11 @@ function queueSyncAnnotationItems(currentItems, targetItems) {
     }
   });
   if (operations.length) queueAnnotationSave(operations);
+  else if (!ANNOTATIONS_WS.pendingOps.length && !ANNOTATIONS_WS.failedOps.length && !ANNOTATIONS_WS.saveInFlight) {
+    clearTimeout(ANNOTATIONS_WS.saveTimer);
+    ANNOTATIONS_WS.saveTimer = null;
+    renderAnnotationSaveStatus('saved');
+  }
 }
 
 function undoAnnotationEdit() {

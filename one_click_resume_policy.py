@@ -88,13 +88,10 @@ def upstream_image_inputs(project: Any, slide_id: str) -> list[Path]:
     root = run_dir(project)
     paths = [
         root / "planning" / "visual_contract.json",
-        root / "planning" / "step3_image_style.json",
-        root / "planning" / "project_style_references.json",
         root / "slides" / slide_id / "visual_prompt.md",
     ]
-    references_dir = root / "planning" / "style_references"
-    if references_dir.exists():
-        paths.extend(sorted(references_dir.glob("style_reference_*.png"))[:3])
+    # Style/reference edits configure future generations. Existing approved
+    # images remain reusable, just as in the manual image workflow.
     return paths
 
 

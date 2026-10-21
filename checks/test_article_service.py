@@ -213,6 +213,11 @@ def test_article_import_and_edit_invalidate_only_on_change(
             "# 初稿\n正文",
             object(),
         )
+        article_path = Path(service.article_source_path(project))
+        saved_at = article_path.stat().st_mtime_ns
+        repeated_import = service.import_article(project, "# 初稿\n正文", object())
+        assert repeated_import == imported
+        assert article_path.stat().st_mtime_ns == saved_at
         unchanged = service.update_step1_result(
             project,
             {"content": "# 初稿\n正文"},

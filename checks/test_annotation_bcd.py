@@ -1,9 +1,7 @@
 import threading
-import time
 from dataclasses import replace
 
 import pytest
-from PIL import Image
 
 from annotation_build import target_ready_times
 from annotation_ink import render_and_write

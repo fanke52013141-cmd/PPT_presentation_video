@@ -55,6 +55,11 @@ function resetProjectScopedAsyncUi() {
   if (scriptButton) scriptButton.disabled = false;
   const visualButton = document.getElementById('step2-btn-generate-visual');
   if (visualButton) visualButton.disabled = false;
+  const articleButton = document.getElementById('step1-btn-submit');
+  if (articleButton) {
+    articleButton.disabled = false;
+    articleButton.innerHTML = '进入分镜规划';
+  }
   // TTS 轮询最长可达 30 分钟,其 finally 的按钮恢复受 ownership 守卫保护,
   // 切换项目后会被跳过;这里无条件恢复四个持久 DOM 按钮,避免跨项目永久禁用。
   for (const buttonId of ['step7-btn-synthesize', 'step6-btn-save-and-tts', 'step6-btn-audio-confirm-next', 'step7-btn-force-all']) {

@@ -1376,6 +1376,9 @@ def _persist_step2_result_locked(project, payload, existing_contract, previous_s
             reordered=contract_impact.reordered,
             previous_contract=existing_contract,
         )
+    statuses = project.get_step_status()
+    statuses["2"] = "completed" if validation.get("valid") else "in_progress"
+    project.set_step_status(statuses)
     db.commit()
 
     return {"success": True, "contract": payload, "validation": validation, "changed": True}

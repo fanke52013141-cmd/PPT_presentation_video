@@ -143,6 +143,40 @@ async function main() {
     await page.keyboard.press('Escape');
     assert.equal(await page.evaluate(() => window.nameInput), null);
     assert.equal(errors.filter(message => /insertBefore|NotFoundError/.test(message)).length, 0);
+    // Actual multi-character controls reuse OCR IDs and preserve an unbound
+    // draft. Job cancellation remains pending until a terminal server state.
+    await page.evaluate(() => {
+      document.querySelectorAll('.step-panel').forEach(node => { node.style.display = 'none'; });
+      document.getElementById('step-panel-10').style.display = 'block';
+      state.currentProject = {id: 'fixture-project', step_status: {}};
+      state.currentStep = 10;
+      ANNOTATIONS_WS.projectId = 'fixture-project';
+      ANNOTATIONS_WS.page = {slide_id: 's1', revision: 0, items: [], imageHash: 'fixture-image', narration: {beats: [{beat_id: 'b1', spoken_text: '重点词'}]}};
+      renderAnnotationMissingState();
+      ANNOTATIONS_WS.candidates = ['重', '点', '词'].map((text, i) => ({
+        text, token_id: `t${i}`, line_id: 'l', granularity: 'char',
+        polygon: [[100 + i * 30, 100], [125 + i * 30, 100], [125 + i * 30, 140], [100 + i * 30, 140]],
+      }));
+      renderAnnotationCandidates();
+    });
+    await page.locator('#annotation-candidate-multi').click();
+    await page.locator('[data-token-id="t0"]').click();
+    await page.locator('[data-token-id="t2"]').click({modifiers: ['Shift']});
+    assert.match(await page.locator('#annotation-candidate-add').innerText(), /3/);
+    await page.locator('#annotation-candidate-add').click();
+    assert.deepEqual(await page.evaluate(() => ANNOTATIONS_WS.page.items[0].target.token_ids), ['t0', 't1', 't2']);
+    await page.evaluate(() => {
+      ANNOTATIONS_WS.activeJob = {projectId: 'fixture-project', jobId: 'job-ui', operation: 'plan', startedAt: Date.now() - 5000};
+      window.cancelWrites = [];
+      API.post = async url => { window.cancelWrites.push(url); return {cancelled: true}; };
+      renderAnnotationJobProgress('plan', 'job-ui', 'running', 5);
+    });
+    assert.match(await page.locator('#annotation-job-status').innerText(), /已用时/);
+    await page.locator('#annotation-btn-cancel-job').click();
+    assert.match(await page.locator('#annotation-job-status').innerText(), /正在取消/);
+    assert.equal(await page.evaluate(() => window.cancelWrites[0]), '/api/projects/fixture-project/annotations/jobs/job-ui/cancel');
+    await page.evaluate(() => { ANNOTATIONS_WS.activeJob = null; renderAnnotationJobProgress('plan', 'job-ui', 'cancelled', 5); });
+    assert.equal(await page.locator('#annotation-btn-cancel-job').isVisible(), false);
     if (errors.length) throw new Error(`Browser errors: ${errors.join('\n')}`);
     console.log('workspace UX Chromium checks passed');
   } finally {

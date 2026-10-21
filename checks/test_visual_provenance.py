@@ -271,7 +271,7 @@ def test_narration_only_migration_refreshes_legacy_payload(tmp_path: Path) -> No
     }]
     run_dir, contract_path = _provenance_run(tmp_path, slides)
     # 把 slide a 的 payload 降级为旧口径整条目哈希,模拟历史项目。
-    from visual_provenance import slide_entry_hashes, visual_slide_entry_hashes
+    from visual_provenance import slide_entry_hashes
     old_hash = slide_entry_hashes(slides)["a"]
     path_a = run_dir / "slides" / "a" / "visual_provenance.json"
     payload_a = json.loads(path_a.read_text(encoding="utf-8"))

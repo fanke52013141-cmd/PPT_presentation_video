@@ -3,15 +3,14 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import threading
 from pathlib import Path
 from dataclasses import dataclass
 
 from annotation_alignment import beat_times_from_alignment, resolve_anchor_times
 from annotation_geometry import FragmentInput, GeometryInputV2, build_manual_path_stroke, build_strokes_v2
-from annotation_ink import INK_VERSION, InkRequest, frames_needed, render_and_write
-from annotation_target_resolver import resolve_phrase_target
+from annotation_ink import INK_VERSION, InkRequest, cached_ink_metadata, frames_needed, render_and_write
+from annotation_target_resolver import compute_side_pads, resolve_phrase_target
 from annotation_timeline import RESOLVER_VERSION, build_annotation_timeline
 
 
@@ -87,12 +86,16 @@ def item_strokes(item, layout):
         resolved = resolve_phrase_target(layout=layout, token_ids=list(item.target.token_ids),
                                         expected_layout_revision=item.target.layout_revision)
         polygons = [fragment["polygons"] for fragment in resolved["fragments"]]
+        pads = [compute_side_pads(layout=layout, fragment=fragment, selected_token_ids=list(item.target.token_ids))
+                for fragment in resolved["fragments"]]
     else:
         polygons = [[polygon] for polygon in item.target.polygons]
+        pads = [(None, None)] * len(polygons)
     fragments = tuple(FragmentInput(
         polygons=tuple(tuple(map(tuple, polygon)) for polygon in group),
         style_type=item.style.type, width=item.style.width, padding=item.style.padding, seed=item.style.seed,
-    ) for group in polygons)
+        pad_left=pad_left, pad_right=pad_right,
+    ) for group, (pad_left, pad_right) in zip(polygons, pads))
     return list(build_strokes_v2(GeometryInputV2(fragments=fragments)))
 
 
@@ -205,9 +208,8 @@ def compile_slide(slide_dir, page, *, canvas, fps=30, alignment=None, cancel_eve
             duration = stroke["draw_end_offset_sec"] - stroke["draw_start_offset_sec"]
             try:
                 with _INK_BUILD_GATE:
-                    metadata = read_json(directory / "meta.json", optional=True)
-                    if not metadata or int(metadata.get("frame_count", 0)) < 2 or not all((directory / f"frame_{i:03d}.png").is_file()
-                                               for i in range(int(metadata.get("frame_count", 0)))):
+                    metadata = cached_ink_metadata(directory, canvas, duration, fps)
+                    if metadata is None:
                         metadata = render_and_write(request, directory, draw_duration_sec=duration, fps=fps,
                                                     **({"cancel_event": cancel_event} if cancel_event else {}))
                 stroke["ink"] = {"kind": "raster", "dir": relative,
@@ -272,4 +274,7 @@ def validate_timeline(slide_dir, page, *, canvas, fps=30, timeline=None):
             if ink.get("kind") != "raster" or count < 2 or count > 240 or not all(
                     (directory / f"frame_{i:03d}.png").is_file() for i in range(count)):
                 raise AnnotationBuildError([{"annotation_id": event["annotation_id"], "reason": "ink_asset_missing"}])
+            duration = stroke["draw_end_offset_sec"] - stroke["draw_start_offset_sec"]
+            if cached_ink_metadata(directory, canvas, duration, fps) is None:
+                raise AnnotationBuildError([{"annotation_id": event["annotation_id"], "reason": "ink_asset_corrupt"}])
     return timeline

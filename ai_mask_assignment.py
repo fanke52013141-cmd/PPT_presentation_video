@@ -216,17 +216,28 @@ def _clean_match(
         bid = str(item.get("narration_beat_id") or "")
         if bid and bid not in known_beats:
             bid = ""
+        object_ids = [str(value) for value in item.get("object_ids", []) or [] if str(value)]
+        # The semantic matcher resolves validated object IDs into their complete
+        # component sets. Applying the legacy direct-component cap here breaks
+        # those objects apart and lets coverage completion reassign their tails.
+        # Keep the cap for direct/legacy claims and deterministic priors.
+        resolved_objects = (
+            bool(object_ids)
+            and item.get("expanded_from_object_ids") == object_ids
+            and _declared_origin(item) == ASSIGNMENT_SOURCE_MODEL
+        )
         eids = [
             str(e) for e in item.get("element_ids", [])
             if str(e) in known_elements and str(e) not in used
-        ][: int(settings["max_group_elements"])]
+        ]
+        if not resolved_objects:
+            eids = eids[: int(settings["max_group_elements"])]
         if not eids:
             continue
         try:
             conf = float(item.get("confidence", 0))
         except Exception:
             conf = 0
-        object_ids = [str(value) for value in item.get("object_ids", []) or [] if str(value)]
         declared = _declared_origin(item)
         matches.append({"group_id": gid, "narration_beat_id": bid, "object_ids": object_ids, "expanded_from_object_ids": object_ids, "element_ids": eids, "seed_element_ids": list(eids), "assignment_source": declared, "element_origins": {element_id: declared for element_id in eids}, "confidence": conf, "reason": str(item.get("reason") or ""), "below_threshold": conf < float(settings["llm_confidence_threshold"])})
         used.update(eids)

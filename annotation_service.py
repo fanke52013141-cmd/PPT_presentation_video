@@ -330,8 +330,6 @@ class AnnotationService:
         - 区域目标:每个多边形一个片段。
         生成失败返回空列表;调用方据此把 spatial 标记为 needs_review。
         """
-        from annotation_geometry import FragmentInput, GeometryInputV2, build_manual_path_stroke, build_strokes_v2
-        from annotation_target_resolver import TargetResolutionError, resolve_phrase_target
 
         from annotation_build import item_strokes
         try:

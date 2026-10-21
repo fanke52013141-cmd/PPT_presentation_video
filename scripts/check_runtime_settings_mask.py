@@ -18,13 +18,18 @@ import settings_service  # noqa: E402
 
 def main() -> int:
     stored = {
+        key: f"test-secret-{index}"
+        for index, key in enumerate(sorted(settings_service.SETTINGS_SECRET_KEYS))
+    }
+    stored.update({
         "llm_api_key": "real-llm-key",
         "image_api_key": "real-image-key",
         "tts_api_key": "real-tts-key",
         "tts_secret_key": "real-tts-secret",
         "tts_provider_extra": '{"private":"value"}',
         "llm_model": "model-name",
-    }
+    })
+    original_secrets = {key: stored[key] for key in settings_service.SETTINGS_SECRET_KEYS}
 
     def update(values: dict[str, str]) -> None:
         stored.update(values)
@@ -71,10 +76,7 @@ def main() -> int:
                     }
                 )
             )
-            if (
-                stored["llm_api_key"] != "real-llm-key"
-                or stored["tts_secret_key"] != "real-tts-secret"
-            ):
+            if any(stored[key] != value for key, value in original_secrets.items()):
                 print(
                     "FAIL masked placeholder overwrote a stored "
                     "credential"

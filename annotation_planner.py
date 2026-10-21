@@ -274,6 +274,22 @@ class AnnotationPlanner:
             if unknown_tokens:
                 continue
             token_ids = sorted(set(token_ids), key=lambda token_id: token_order[token_id])
+            # Candidates retain OCR reading order, including line wraps. A target
+            # may span lines, but must not jump over visible intervening text.
+            # Reject rather than filling gaps: skipped characters may change the
+            # meaning, and their boxes were never selected by the model.
+            selected_ids = set(token_ids)
+            first, last = token_order[token_ids[0]], token_order[token_ids[-1]]
+            if any(
+                str(candidate.get("token_id")) not in selected_ids
+                and str(candidate.get("text") or "").strip()
+                for candidate in candidates[first:last + 1]
+            ):
+                issues.append(Issue(
+                    f"{path}.target_candidate_ids", "discontinuous_target",
+                    "画面目标跳过了中间文字，已剔除零散字符建议；请选择连续完整的目标",
+                ))
+                continue
             polygons = [candidate_map[token_id].get("polygon") or [] for token_id in token_ids]
             canonical_target = frozenset(token_ids)
             if canonical_target in existing_target_sets or (str(beat_id), quote) in protected_beat_quotes:

@@ -4,7 +4,6 @@ Requires the already running isolated acceptance server on port 8015.
 Copies only TTS settings into its separate DB; never prints credential values.
 """
 from pathlib import Path
-import hashlib
 import json
 import os
 import shutil

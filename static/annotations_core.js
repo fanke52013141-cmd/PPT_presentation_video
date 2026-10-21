@@ -155,6 +155,13 @@
       },
       canUndo() { return undoStack.length > 0; },
       canRedo() { return redoStack.length > 0; },
+      remapIds(ids) {
+        const rewrite = value => JSON.stringify(JSON.parse(value).map(item => (
+          ids.has(item.annotation_id) ? { ...item, annotation_id: ids.get(item.annotation_id) } : item
+        )));
+        undoStack = undoStack.map(rewrite);
+        redoStack = redoStack.map(rewrite);
+      },
       reset() { undoStack = []; redoStack = []; },
     };
   }
@@ -216,6 +223,30 @@
 
   function buildDeleteOperation(annotationId) {
     return { op: 'delete', annotation_id: annotationId };
+  }
+
+  function replayPendingOperations(items, operations) {
+    let result = JSON.parse(JSON.stringify(items || []));
+    for (const op of operations || []) {
+      if (op.op === 'delete') result = result.filter(item => item.annotation_id !== op.annotation_id);
+      else if (op.op === 'add') {
+        const id = op.__local_id || op.item.annotation_id;
+        if (id && !result.some(item => item.annotation_id === id)) {
+          result.push({ ...JSON.parse(JSON.stringify(op.item)), annotation_id: id });
+        }
+      } else if (op.op === 'update') {
+        result = result.map(item => {
+          if (item.annotation_id !== op.annotation_id) return item;
+          const updated = { ...item };
+          for (const [key, value] of Object.entries(op.patch || {})) {
+            updated[key] = value && typeof value === 'object' && !Array.isArray(value)
+              ? { ...item[key], ...value } : value;
+          }
+          return updated;
+        });
+      }
+    }
+    return result;
   }
 
   function buildRegionTarget(polygon) {
@@ -371,6 +402,7 @@
     opacityToPercent,
     percentToOpacity,
     buildAddOperation,
+    replayPendingOperations,
     buildUpdateOperation,
     buildDeleteOperation,
     buildRegionTarget,

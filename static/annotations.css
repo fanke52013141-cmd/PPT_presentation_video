@@ -173,7 +173,13 @@
 
 .annotation-canvas-frame.region-mode {
   cursor: crosshair;
+  touch-action: none;
 }
+
+.annotation-candidate-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; width: 100%; margin-bottom: 8px; }
+.annotation-candidate-actions span { font-size: 12px; color: #6b7280; }
+.annotation-candidate.is-selected { border-color: #ee5d36; background: #fff5f0; }
+#step-panel-10 #annotation-btn-cancel-job[hidden] { display: none !important; }
 
 .annotation-canvas-frame.freehand-mode {
   cursor: crosshair;

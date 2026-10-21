@@ -293,6 +293,9 @@ async function generateStep1Article() {
 }
 
 async function submitStep1() {
+  const projectId = state.currentProject?.id;
+  const sessionVersion = workspaceNavigationVersion;
+  if (!projectId) return;
   const content = syncStep1MarkdownToSource().trim();
   if (!content) {
     showToast('请输入 Markdown 文章内容');
@@ -307,10 +310,10 @@ async function submitStep1() {
 
   try {
     const result = await API.post(
-      `/api/projects/${state.currentProject.id}/steps/1/import`,
+      `/api/projects/${projectId}/steps/1/import`,
       formData,
     );
-    if (!result.success) return;
+    if (!isCurrentWorkspaceProject(projectId, sessionVersion) || !result.success) return;
     document.getElementById('step1-res-title').value = result.brief.title;
     document.getElementById('step1-res-summary').value = result.brief.summary || '';
     document.getElementById('step1-result-box').style.display = 'none';
@@ -321,8 +324,10 @@ async function submitStep1() {
     showToast('文章已保存，进入分镜规划');
     await navigateToStep(2);
   } finally {
-    submitButton.disabled = false;
-    submitButton.innerHTML = originalHtml;
+    if (isCurrentWorkspaceProject(projectId, sessionVersion)) {
+      submitButton.disabled = false;
+      submitButton.innerHTML = originalHtml;
+    }
   }
 }
 

@@ -15,7 +15,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
-from agent_client.client import AgentClient
+from agent_client.client import AgentClient, AgentClientError
 
 
 @dataclass(frozen=True)
@@ -66,3 +66,22 @@ def poll_operation(
             )
 
         time.sleep(cfg.interval)
+
+
+def wait_operation(client: AgentClient, project_id: str, operation_id: str,
+                   config: Optional[PollConfig] = None) -> dict[str, Any]:
+    """Wait for exactly one durable operation; unknown states need inspection."""
+    cfg = config or PollConfig()
+    if cfg.timeout <= 0 or not 0 < cfg.interval <= 60:
+        raise ValueError("Polling requires timeout > 0 and 0 < interval <= 60")
+    def read(_project_id):
+        result = client.get_operation(_project_id, operation_id)
+        if result.get("operation_id") != operation_id:
+            raise AgentClientError("Operation identity mismatch", code="OPERATION_IDENTITY_MISMATCH")
+        if result.get("status") not in {
+            "queued", "running", "succeeded", "failed", "cancelled", "interrupted",
+            "waiting_for_review", "waiting_for_user",
+        }:
+            raise AgentClientError("Unknown operation status; inspect before retrying", code="UNKNOWN_OPERATION_STATUS")
+        return result
+    return poll_operation(client, project_id, read, cfg)

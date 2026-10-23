@@ -6,7 +6,7 @@ This module owns:
   commit, matching the VideoJobStore pattern)
 - Optimistic revision locking (uses the caller's request-scoped session — no
   commit; the route owns the single database commit)
-- Opportunity-based cleanup of expired records (no background thread)
+- Opportunity-based expiry of replay payloads; key tombstones are retained
 
 Dependencies are injected as a frozen record; this module never imports the
 application module, FastAPI wiring, or database session helpers directly.
@@ -23,8 +23,9 @@ from typing import Any, Callable, Optional
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import set_committed_value
 
-from database import AgentIdempotencyRecord, utc_now_naive
+from database import AgentIdempotencyRecord, Project, utc_now_naive
 from account_context import get_current_account_id
 
 logger = logging.getLogger("PPTStudio.AgentIdempotency")
@@ -179,7 +180,7 @@ class AgentIdempotencyService:
             if existing.request_fingerprint != fingerprint:
                 raise IdempotencyConflictError(
                     "Idempotency key already used with a different request body",
-                    details={"scope": scope, "idempotency_key": idempotency_key},
+                    details={"code": "IDEMPOTENCY_CONFLICT", "scope": scope, "idempotency_key": idempotency_key},
                 )
 
             # Same fingerprint — dispatch by existing status.
@@ -192,7 +193,7 @@ class AgentIdempotencyService:
                         replay = None
                 if replay is not None:
                     return ClaimResult(is_new=False, replay_response=replay, record_pk=pk)
-                # Succeeded but no stored response — fall through to re-execute.
+                # A missing/corrupt response never proves the side effect failed.
 
             if existing.status == "in_progress":
                 stale_threshold = now - timedelta(hours=STALE_IN_PROGRESS_HOURS)
@@ -201,17 +202,18 @@ class AgentIdempotencyService:
                     raise IdempotencyConflictError(
                         "Operation is already in progress; poll for status "
                         "instead of retrying with the same idempotency key",
-                        details={"scope": scope, "idempotency_key": idempotency_key},
+                        details={"code": "OPERATION_IN_PROGRESS", "scope": scope, "idempotency_key": idempotency_key,
+                                 "executed": False, "repair_actions": [{"action": "inspect_original_operation"}]},
                     )
-                # Orphan — fall through to re-claim.
-
-            # Re-claim: reset to in_progress (covers failed + stale + succeeded-no-response).
-            existing.status = "in_progress"
-            existing.request_fingerprint = fingerprint
-            existing.response_json = None
-            existing.updated_at = now
-            db.commit()
-            return ClaimResult(is_new=True, replay_response=None, record_pk=pk)
+            # Staleness and a failed HTTP handler do not prove that a provider
+            # request or a business commit did not complete. Never re-execute.
+            raise IdempotencyConflictError(
+                "Previous operation outcome is unavailable; inspect the original operation before retrying",
+                details={"scope": scope, "idempotency_key": idempotency_key,
+                         "code": "IDEMPOTENCY_EXPIRED" if existing.status == "expired" else "OPERATION_OUTCOME_UNKNOWN",
+                         "record_status": existing.status, "executed": False,
+                         "repair_actions": [{"action": "inspect_original_operation"}]},
+            )
         except IdempotencyConflictError:
             raise
         except Exception:
@@ -281,6 +283,7 @@ class AgentIdempotencyService:
             raise IdempotencyConflictError(
                 f"Revision mismatch: expected {expected_revision}, got {current}",
                 details={
+                    "code": "REVISION_CONFLICT",
                     "current_revision": current,
                     "expected_revision": expected_revision,
                 },
@@ -288,20 +291,40 @@ class AgentIdempotencyService:
 
     @staticmethod
     def bump_revision(db: Session, project: Any) -> None:
-        """Increment the project revision.
+        """Compare-and-swap the project revision in the caller's transaction.
 
         The caller's request-scoped session owns the commit (per
         "API callers own one database commit" policy).
         """
         current = getattr(project, "revision", 0) or 0
-        project.revision = current + 1
+        if not isinstance(project, Project):
+            raise TypeError("Revision compare-and-swap requires a mapped Project")
+        project_id = project.id
+        # Acquire the SQLite writer before touching files or other business
+        # effects. Two sessions that read N cannot both commit N+1.
+        with db.no_autoflush:
+            changed = db.query(Project).filter(
+                Project.id == project_id, Project.account_id == get_current_account_id(),
+                Project.revision == current,
+            ).update({Project.revision: current + 1}, synchronize_session=False)
+        if changed != 1:
+            db.rollback()
+            latest = db.query(Project.revision).filter(Project.id == project_id,
+                                                       Project.account_id == get_current_account_id()).scalar()
+            raise IdempotencyConflictError("Revision mismatch during concurrent update",
+                                           details={"code": "REVISION_CONFLICT", "current_revision": latest,
+                                                    "expected_revision": current})
+        set_committed_value(project, "revision", current + 1)
 
     # ------------------------------------------------------------------
     # Opportunity-based cleanup
     # ------------------------------------------------------------------
 
     def _cleanup_expired(self, scope: str) -> None:
-        """Delete records older than ``RETENTION_DAYS`` for this scope."""
+        """Expire replay payloads but retain key tombstones to prevent replays.
+
+        Active/uncertain records remain intact even when older than retention.
+        """
         cutoff = utc_now_naive() - timedelta(days=RETENTION_DAYS)
         db = self._session_factory()
         try:
@@ -310,8 +333,9 @@ class AgentIdempotencyService:
                 .filter(
                     AgentIdempotencyRecord.scope == scope,
                     AgentIdempotencyRecord.created_at < cutoff,
+                    AgentIdempotencyRecord.status == "succeeded",
                 )
-                .delete(synchronize_session=False)
+                .update({"status": "expired", "response_json": None}, synchronize_session=False)
             )
             db.commit()
         except Exception:

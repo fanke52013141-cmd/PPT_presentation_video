@@ -24,6 +24,7 @@ def _make_server_with_matching_contract() -> MCPServer:
     mock_client.get_meta.return_value = {
         "contract_hash": CONTRACT_VERSION,
         "agent_api_version": AGENT_API_VERSION,
+        "bootstrap_version": "1",
     }
     server._client = mock_client
     return server
@@ -112,180 +113,41 @@ def _make_server_with_unreachable_api() -> MCPServer:
 
 
 class TestContractNegotiation:
-    """Test the contract negotiation logic during initialize."""
+    def test_new_business_contract_does_not_require_local_update(self):
+        server = _make_server_with_mismatched_contract(api_hash="new", api_version="99.0.0")
+        server._client.get_meta.return_value["bootstrap_version"] = "1"
+        result = server.handle_request({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+        assert result["result"]["serverInfo"]["writeAllowed"] is True
+        assert "current schemas" in result["result"]["serverInfo"]["mismatchDetail"]
 
-    def test_hash_mismatch_major_version_returns_error(self):
-        """Hash mismatch + major version difference → error code -32000."""
-        server = _make_server_with_mismatched_contract(
-            api_hash="aaaa0000bbbb0000",
-            api_version="2.0.0",
-        )
-        resp = server.handle_request({
-            "jsonrpc": "2.0", "id": 100, "method": "initialize", "params": {}
-        })
-        assert "error" in resp
-        assert resp["error"]["code"] == -32000
-        assert "Contract mismatch" in resp["error"]["message"]
-        assert "Major version mismatch" in resp["error"]["message"]
-
-    def test_hash_mismatch_minor_version_succeeds_with_warning(self):
-        """Hash mismatch + minor version difference → success with mismatchDetail."""
-        server = _make_server_with_mismatched_contract(
-            api_hash="cccc0000dddd0000",
-            api_version=_relative_version(minor_offset=1),
-        )
-        result = server.handle_request({
-            "jsonrpc": "2.0", "id": 101, "method": "initialize", "params": {}
-        })["result"]
-        assert result["serverInfo"]["contractMatch"] is True
-        assert "mismatchDetail" in result["serverInfo"]
-        assert "Minor/patch difference" in result["serverInfo"]["mismatchDetail"]
-        assert result["serverInfo"]["writeAllowed"] is False
-
-    def test_hash_mismatch_patch_version_succeeds_with_warning(self):
-        """Hash mismatch + patch version difference → success with mismatchDetail."""
-        server = _make_server_with_mismatched_contract(
-            api_hash="eeee0000ffff0000",
-            api_version=_relative_version(patch_offset=1),
-        )
-        result = server.handle_request({
-            "jsonrpc": "2.0", "id": 102, "method": "initialize", "params": {}
-        })["result"]
-        assert result["serverInfo"]["contractMatch"] is True
-        assert "mismatchDetail" in result["serverInfo"]
-        assert result["serverInfo"]["writeAllowed"] is False
+    def test_unsupported_bootstrap_requires_upgrade(self):
+        server = _make_server_with_matching_contract()
+        server._client.get_meta.return_value["bootstrap_version"] = "unsupported"
+        response = server.handle_request({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+        assert response["error"]["code"] == -32000
+        server._client.invoke.assert_not_called()
 
     def test_api_unreachable_returns_error(self):
-        """API service unreachable → error code -32000."""
         server = _make_server_with_unreachable_api()
-        resp = server.handle_request({
-            "jsonrpc": "2.0", "id": 103, "method": "initialize", "params": {}
-        })
-        assert "error" in resp
-        assert resp["error"]["code"] == -32000
-        assert "Cannot reach API service" in resp["error"]["message"]
+        response = server.handle_request({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+        assert response["error"]["code"] == -32000
+        assert "Cannot reach API service" in response["error"]["message"]
 
-    def test_contract_check_disabled_bypasses_negotiation(self, monkeypatch):
-        """PPT_MCP_CONTRACT_CHECK=0 → bypass negotiation, contractMatch is None."""
-        monkeypatch.setenv("PPT_MCP_CONTRACT_CHECK", "0")
+    def test_named_write_requires_initialize(self):
         server = MCPServer(base_url="http://mock")
-        # Client should not be called at all
-        mock_client = MagicMock()
-        server._client = mock_client
+        result = server._handle_tools_call({"name": "ppt_project_create", "arguments": {"name": "blocked"}})
+        assert result["isError"] is True
 
-        result = server.handle_request({
-            "jsonrpc": "2.0", "id": 104, "method": "initialize", "params": {}
-        })["result"]
-        assert result["serverInfo"]["contractMatch"] is None
-        mock_client.get_meta.assert_not_called()
-
-    def test_tools_call_blocked_after_mismatch(self):
-        """tools/call should return isError when contract mismatch was detected."""
-        server = _make_server_with_mismatched_contract(
-            api_hash="dead0000", api_version="2.0.0",
-        )
-        # Trigger negotiation via initialize (will fail)
-        init_resp = server.handle_request({
-            "jsonrpc": "2.0", "id": 105, "method": "initialize", "params": {}
-        })
-        assert "error" in init_resp  # Confirm mismatch was detected
-
-        # Now try tools/call
-        call_result = server.handle_request({
-            "jsonrpc": "2.0", "id": 106,
-            "method": "tools/call",
-            "params": {"name": "ppt_project_list", "arguments": {}}
-        })["result"]
-        assert call_result["isError"] is True
-        assert "blocked" in call_result["content"][0]["text"].lower()
-
-    def test_tools_call_allowed_after_minor_mismatch(self):
-        """tools/call should work when contract match is True (minor difference)."""
-        server = _make_server_with_mismatched_contract(
-            api_hash="minor00000", api_version="1.1.0",
-        )
-        init_resp = server.handle_request({
-            "jsonrpc": "2.0", "id": 107, "method": "initialize", "params": {}
-        })
-        assert "result" in init_resp  # Initialize succeeded
-
-        # tools/call should proceed (mock returns empty project list)
-        server._client.list_projects.return_value = {"projects": [], "total": 0}
-        call_result = server.handle_request({
-            "jsonrpc": "2.0", "id": 108,
-            "method": "tools/call",
-            "params": {"name": "ppt_project_list", "arguments": {}}
-        })["result"]
-        assert call_result["isError"] is False
-
-    def test_write_tool_blocked_after_minor_mismatch(self):
-        """Hash drift may keep reads available but must block state changes."""
-        server = _make_server_with_mismatched_contract(
-            api_hash="minor00000", api_version="1.1.0",
-        )
-        init_resp = server.handle_request({
-            "jsonrpc": "2.0", "id": 110, "method": "initialize", "params": {}
-        })
-        assert "result" in init_resp
-
-        call_result = server.handle_request({
-            "jsonrpc": "2.0", "id": 111,
-            "method": "tools/call",
-            "params": {
-                "name": "ppt_project_create",
-                "arguments": {"name": "should-not-be-created"},
-            },
-        })["result"]
-        assert call_result["isError"] is True
-        assert "Write tool calls are blocked" in call_result["content"][0]["text"]
-        server._client.create_project.assert_not_called()
-
-    def test_write_tool_allowed_when_contract_matches(self):
-        """An exact contract match keeps write tools available."""
+    def test_named_write_pins_shown_contract_after_initialize(self):
+        from agent_contract.capabilities import get_capability
+        from agent_contract.discovery import describe_capability
         server = _make_server_with_matching_contract()
-        server._client.create_project.return_value = {
-            "project": {"project_id": "p1", "name": "created"}
-        }
-        init_resp = server.handle_request({
-            "jsonrpc": "2.0", "id": 112, "method": "initialize", "params": {}
-        })
-        assert "result" in init_resp
-
-        call_result = server.handle_request({
-            "jsonrpc": "2.0", "id": 114,
-            "method": "tools/call",
-            "params": {
-                "name": "ppt_project_create",
-                "arguments": {"name": "created"},
-            },
-        })["result"]
-        assert call_result["isError"] is False
-        server._client.create_project.assert_called_once()
-
-    def test_write_tool_requires_initialize(self):
-        """State-changing tools fail closed until MCP negotiation completes."""
-        server = MCPServer(base_url="http://mock")
-
-        call_result = server.handle_request({
-            "jsonrpc": "2.0", "id": 113,
-            "method": "tools/call",
-            "params": {
-                "name": "ppt_project_create",
-                "arguments": {"name": "should-not-be-created"},
-            },
-        })["result"]
-        assert call_result["isError"] is True
-        assert "Write tool calls are blocked" in call_result["content"][0]["text"]
-
-    def test_initialize_includes_api_contract_fields_on_success(self):
-        """Successful negotiation includes apiContractHash and apiAgentApiVersion."""
-        server = _make_server_with_matching_contract()
-        result = server.handle_request({
-            "jsonrpc": "2.0", "id": 109, "method": "initialize", "params": {}
-        })["result"]
-        assert "apiContractHash" in result["serverInfo"]
-        assert "apiAgentApiVersion" in result["serverInfo"]
-        assert result["serverInfo"]["apiAgentApiVersion"] == AGENT_API_VERSION
+        server._client.invoke.return_value = {"project": {"project_id": "p1", "name": "created"}}
+        server._handle_initialize({})
+        result = server._handle_tools_call({"name": "ppt_project_create", "arguments": {"name": "created"}})
+        assert result["isError"] is False
+        server._client.invoke.assert_called_once_with("project.create", {"name": "created"},
+            expected_contract_revision=describe_capability(get_capability("project.create"))["contract_revision"])
 
 
 class TestToolsList:
@@ -329,7 +191,7 @@ class TestToolsCall:
         server = MCPServer(base_url="http://mock")
         # Mock the client to avoid actual HTTP
         mock_client = MagicMock()
-        mock_client.list_projects.return_value = {"projects": [], "total": 0}
+        mock_client.invoke.return_value = {"projects": [], "total": 0}
         server._client = mock_client
 
         result = server.handle_request({
@@ -339,7 +201,7 @@ class TestToolsCall:
         })["result"]
         assert result["isError"] is False
         assert isinstance(result["content"], list)
-        mock_client.list_projects.assert_called_once()
+        mock_client.invoke.assert_called_once()
 
     def test_tool_call_with_agent_error(self):
         """AgentClientError should be caught and returned as error content."""
@@ -347,7 +209,7 @@ class TestToolsCall:
 
         server = MCPServer(base_url="http://mock")
         mock_client = MagicMock()
-        mock_client.get_project.side_effect = AgentClientError("Not found", status_code=404)
+        mock_client.invoke.side_effect = AgentClientError("Not found", status_code=404, code="PROJECT_NOT_FOUND")
         server._client = mock_client
 
         result = server.handle_request({
@@ -356,7 +218,8 @@ class TestToolsCall:
             "params": {"name": "ppt_project_get", "arguments": {"project_id": "xxx"}}
         })["result"]
         # Should NOT be an MCP-level error (isError=False), but the text describes the API error
-        assert "API Error" in result["content"][0]["text"] or "404" in result["content"][0]["text"]
+        assert result["isError"] is True
+        assert "PROJECT_NOT_FOUND" in result["content"][0]["text"]
 
 
 class TestResourcesList:

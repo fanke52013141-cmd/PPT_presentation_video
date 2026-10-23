@@ -45,6 +45,12 @@ if not os.environ.get("PPT_STUDIO_DB_PATH"):
 if not os.environ.get("PPT_STUDIO_RUNS_DIR"):
     os.environ["PPT_STUDIO_RUNS_DIR"] = os.path.join(_TEMP_DIRECTORY.name, "runs")
 
+# The persistent API limiter must also stay out of the user's real data and
+# out of other concurrently running pytest sessions.
+os.environ.setdefault("PPT_STUDIO_AGENT_RATE_LIMIT_DB_PATH", os.path.join(
+    os.path.dirname(os.environ["PPT_STUDIO_DB_PATH"]), "agent_rate_limit.db",
+))
+
 import database  # noqa: E402  （必须在设置环境变量之后导入）
 
 # 建立与真实库一致的结构：schema + 默认设置 + 默认账号。

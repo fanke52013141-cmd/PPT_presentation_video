@@ -126,6 +126,14 @@ def build_agent_openapi_spec(stable_only: bool = True) -> dict[str, Any]:
 
         paths[path_key][method] = _http_method_spec(cap)
 
+    # Bootstrap routes use their real FastAPI declarations, so invoke's
+    # envelope and pagination cannot drift from a hand-written schema.
+    from fastapi.openapi.utils import get_openapi
+    from agent_api.discovery import router as discovery_router
+    bootstrap_spec = get_openapi(title="Agent discovery", version=AGENT_API_VERSION,
+                                 routes=discovery_router.routes)
+    paths.update({"/api/agent/v1" + path: item for path, item in bootstrap_spec["paths"].items()})
+
     return {
         "openapi": "3.0.3",
         "info": {
@@ -145,6 +153,7 @@ def build_agent_openapi_spec(stable_only: bool = True) -> dict[str, Any]:
         ],
         "paths": paths,
         "components": {
+            "schemas": bootstrap_spec.get("components", {}).get("schemas", {}),
             "securitySchemes": {
                 "BearerAuth": {
                     "type": "http",

@@ -83,7 +83,7 @@ class TestOperationsContract:
     def test_operation_status_enum_values(self):
         from agent_contract.operations import OperationStatus
         expected = {
-            "queued", "running", "waiting_for_review", "waiting_for_user",
+            "unknown", "queued", "running", "waiting_for_review", "waiting_for_user",
             "succeeded", "failed", "cancelled", "interrupted",
         }
         actual = {s.value for s in OperationStatus}
@@ -92,14 +92,14 @@ class TestOperationsContract:
     def test_normalize_status_known(self):
         from agent_contract.operations import normalize_status, OperationStatus
         assert normalize_status("running") == OperationStatus.running
-        assert normalize_status("idle") == OperationStatus.succeeded
+        assert normalize_status("idle") == OperationStatus.unknown
         assert normalize_status("paused") == OperationStatus.waiting_for_review
         assert normalize_status("waiting_for_user") == OperationStatus.waiting_for_user
         assert normalize_status("failed") == OperationStatus.failed
 
-    def test_normalize_status_unknown_defaults_to_running(self):
+    def test_normalize_status_unknown_is_explicit(self):
         from agent_contract.operations import normalize_status, OperationStatus
-        assert normalize_status("unknown_xyz") == OperationStatus.running
+        assert normalize_status("unknown_xyz") == OperationStatus.unknown
 
     def test_checkpoint_stages_complete(self):
         from agent_contract.operations import CHECKPOINT_STAGES
@@ -124,7 +124,7 @@ class TestOperationsContract:
             "message": "Generating images...",
         }
         op = operation_from_one_click(status_dict, "proj_abc")
-        assert op.operation_id == "test_run_123"
+        assert op.operation_id == "pipeline:test_run_123"
         assert op.project_id == "proj_abc"
         assert op.status == OperationStatus.running
         assert op.progress == 66  # 2/3 completed

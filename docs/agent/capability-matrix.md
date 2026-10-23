@@ -1,8 +1,8 @@
 # Agent Capability Matrix
 
-- **Agent API Version**: 1.9.0
-- **Contract Hash**: `5a6210a3d5ae1e0b`
-- **Total Capabilities**: 31
+- **Agent API Version**: 2.1.0
+- **Contract Hash**: `5dad5233e6fcad65`
+- **Total Capabilities**: 34
 
 This document is auto-generated from `agent_contract/capabilities.py`.
 Do not edit manually — run `python scripts/generate_agent_contracts.py`.
@@ -11,6 +11,9 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 
 | Capability ID | Version | Status | Method | Agent API Path | MCP Tool | MCP enabled | CLI Command | Service Ref | Long-running | Destructive |
 |---|---|---|---|---|---|---|---|---|---|---|
+| `operation.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/operations/{operation_id}` | `ppt_operation_get` | Yes | `operation get` | `agent_operation_service.AgentOperationService.get` | No | No |
+| `operation.list` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/operations` | `ppt_operation_list` | Yes | `operation list` | `agent_operation_service.AgentOperationService.list` | No | No |
+| `operation.cancel` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/operations/{operation_id}/cancel` | `ppt_operation_cancel` | Yes | `operation cancel` | `agent_operation_service.AgentOperationService.cancel` | No | No |
 | `generation.status` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/generation/{stage}/status` | `ppt_generation_status` | Yes | `generation status` | `generation_control.status` | No | No |
 | `generation.stop` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/generation/{stage}/stop` | `ppt_generation_stop` | Yes | `generation stop` | `generation_control.request_stop` | No | No |
 | `identity.get` | 1.0 | stable | GET | `/api/agent/v1/identity` | `ppt_identity_get` | Yes | `identity` | `agent_api.auth / account_service` | No | No |
@@ -27,8 +30,8 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 | `stage.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/stages/{stage}` | `ppt_stage_get` | Yes | `stage get` | `various service read functions` | No | No |
 | `image.regenerate` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/images/{slide_id}/regenerate` | `ppt_image_regenerate` | Yes | `image regenerate` | `image_workflow_service.generate_slide_image` | Yes | No |
 | `narration.update` | 1.1 | stable | PATCH | `/api/agent/v1/projects/{project_id}/narration/{slide_id}` | `ppt_narration_update` | Yes | `narration update` | `storyboard_service.update_narration` | No | No |
-| `tts.synthesize` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/tts` | `ppt_tts_synthesize` | Yes | `tts synthesize` | `tts_service.start_synthesis` | Yes | No |
-| `video.render` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/videos/render` | `ppt_video_render` | Yes | `video render` | `video_render_service.start_render` | Yes | No |
+| `tts.synthesize` | 2.0 | stable | POST | `/api/agent/v1/projects/{project_id}/tts` | `ppt_tts_synthesize` | Yes | `tts synthesize` | `tts_service.TtsAsyncService.create_job` | Yes | No |
+| `video.render` | 2.0 | stable | POST | `/api/agent/v1/projects/{project_id}/videos/render` | `ppt_video_render` | Yes | `video render` | `video_render_service.start_render` | Yes | No |
 | `artifacts.list` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/artifacts` | `ppt_artifacts_list` | Yes | `artifacts list` | `database.ArtifactRecord` | No | No |
 | `artifact.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/artifacts/{artifact_id}` | `ppt_artifact_get` | Yes | `artifact get` | `database.ArtifactRecord` | No | No |
 | `diagnostics` | 1.0 | stable | GET | `/api/agent/v1/diagnostics` | `ppt_diagnostics` | Yes | `diagnostics` | `agent_api.routes.get_diagnostics` | No | No |
@@ -56,8 +59,11 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 
 ## MCP Tool Summary
 
-The MCP server exposes **26** stable tools:
+The registry contributes **29** stable capability tools, plus the fixed search/describe/invoke discovery tools:
 
+- `ppt_operation_get` — Read an exact durable job or pipeline run by operation_id; never substitute latest.
+- `ppt_operation_list` — List project operations across durable jobs and pipeline history, with pagination.
+- `ppt_operation_cancel` — Request exact TTS/video cancellation at a safe boundary. accepted does not imply cancelled; poll operation.get. Other producers explicitly report unsupported.
 - `ppt_generation_status` — Read the active cooperative generation control for a project stage. Controls are process-local; durable TTS/video results remain in their job APIs.
 - `ppt_generation_stop` — Request a safe-boundary stop for the exact active operation ID. In-flight provider requests and render stages finish before stopping.
 - `ppt_identity_get` — Return the creative account and scopes associated with this Agent connection.
@@ -73,7 +79,7 @@ The MCP server exposes **26** stable tools:
 - `ppt_stage_get` — Get detailed data for a specific pipeline stage (storyboard, narration, etc.).
 - `ppt_image_regenerate` — Regenerate a single slide image with optional modification instruction.
 - `ppt_narration_update` — Update narration text for a specific slide.
-- `ppt_tts_synthesize` — Start TTS audio synthesis for specified or all slides.
+- `ppt_tts_synthesize` — Submit durable background TTS synthesis for the whole project. Returns operation_id for operation.get; slide_ids is not supported yet.
 - `ppt_video_render` — Start video rendering for the project.
 - `ppt_artifacts_list` — List all artifacts (images, audio, video, pptx) for a project.
 - `ppt_artifact_get` — Get details and download URL for a specific artifact.

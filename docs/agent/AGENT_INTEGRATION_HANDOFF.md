@@ -1,4 +1,114 @@
-# Agent 接口层交接文档
+# Current contract notice
+
+The current API is 2.1.0 with bootstrap protocol 1. Use
+[`current-contract-guide.md`](current-contract-guide.md) for runtime discovery
+and generic invocation. Live capability details and the generated
+`contract-snapshot.json` are authoritative. The current handoff follows; the
+v1.x delivery notes at the bottom are archived and must not be used as current
+connection instructions.
+
+---
+
+# Agent 全功能开放改造交接（当前批次，2026-10-23）
+
+> 交接状态：本批"全功能开放基础改造"已完成开发与验证，与本文档在**同一提交中
+> 推送至 `origin/main`**（见 git log 中本文件的最新提交）。本节是唯一有效的
+> 交接内容；下方 v1.x 章节仅作历史参考。
+
+## 一、目标与总体进度
+
+依据 `openness-and-evolution-plan.md` 与 `development-plan.md`，把项目改造为
+外部 Agent 的一等客户端：Agent 通过发现入口获得实时 Schema 与契约指纹，经统一
+invoke 调用与 Web UI 相同的业务服务，不重建业务算法、不绕过配额/归属/失效规则。
+无旧协议兼容层、无迁移窗口。
+
+阶段状态（P0–P6，详见 `development-plan.md`）：
+
+| 阶段 | 状态 |
+| --- | --- |
+| P0 功能盘点与覆盖登记 | 🟡 部分：262 个业务 HTTP 入口已全部登记并接入检查；字段级/后台功能盘点待补 |
+| P1 契约内核与统一 dispatch | 🟡 部分：发现/指纹/dispatch/invoke 已落地，project+article 纵向切片已验证；全领域模型拆分（`agent_contract/domains/`、`agent_api/domain_routes/`）待做 |
+| P2 幂等、版本与可靠任务 | 🟡 部分：operation 寻址、TTS/视频/一键持久任务、项目与旁白 CAS、幂等重放绑定已落地；其余领域写入幂等、资源传输、同步生成持久化待做 |
+| P3 动态发现、MCP 与 CLI | 🟡 部分：检索/详情/固定 MCP 工具/CLI 动态调用已落地；ETag 条件刷新与缓存策略待做 |
+| P4 状态/预检/确认 | ⬜ 未开始（`project.state`、`project.change_preview`） |
+| P5 八步分域能力补齐 | ⬜ 未开始：262 项入口中 249 项 pending、13 项 partial |
+| P6 全量门禁与独立 Agent 验收 | ⬜ 未开始：`--require-complete` 严格门禁当前预期失败 |
+
+**结论：当前不是全功能开放状态。** 已开放的是发现协议 + 统一调用 + 精确任务
+生命周期 + 项目/文章纵向能力；分域能力按 P5 待逐域补齐。对外口径以
+`current-contract-guide.md` 与 `feature-coverage.md` 为准。
+
+## 二、契约基线（推送时实测）
+
+- `AGENT_API_VERSION` **2.1.0**（自 1.9.0 直接演进，无兼容期），bootstrap 协议 `1`。
+- 契约哈希 `5dad5233e6fcad65`（按单能力描述确定性计算，`agent_contract/versions.py`）。
+- 注册能力 **34 项**（`docs/agent/contract-snapshot.json` 为生成快照）。
+- 功能覆盖目录 **262 项**：13 项 partial（已有能力对应）、249 项 pending。
+- 路径命名空间仍为 `/api/agent/v1`（`GET /meta`、`GET /capabilities`、
+  `GET /capabilities/{id}`、`POST /invoke`）。
+
+## 三、本批交付内容
+
+第一批（契约内核与动态调用）：
+
+- 功能目录与登记门禁：`config/agent_features.json` +
+  `scripts/check_agent_coverage.py`（新业务入口不登记即失败）+
+  生成的 `docs/agent/feature-coverage.md`；AGENTS.md 与 PR 模板写入强制同步规则。
+- 契约指纹体系：单能力指纹（`agent_api/fingerprints.py`）替代整目录哈希粗粒度
+  校验；目录指纹用于发现变化；行为与契约版本分离。
+- 发现与统一调用：`agent_contract/discovery.py`（目录/详情描述）、
+  `agent_api/discovery.py`（HTTP 检索/详情）、`agent_api/dispatch.py`（显式
+  handler 注册 + 统一 invoke，含契约校验、输入验证、作用域检查）、
+  `agent_api/operation_routes.py`（operation.get/list/cancel HTTP 面）。
+- 客户端动态化：`agent_client` 增加 discover/describe/invoke；MCP 固定三工具
+  （search/describe/invoke，`mcp_server/bootstrap.py`）；CLI `capability
+  list/show` + `invoke`（`cli/discovery.py`）。业务能力更新无需改客户端分支。
+- 纵向切片：project.create/list/get/update/delete、source.set 经统一 dispatch
+  端到端验证；过期契约（CONTRACT_CHANGED 409，`executed=false`）、越权、非法
+  输入均在业务执行前拒绝。
+
+第二批（可靠任务与幂等）：
+
+- 统一任务寻址：`agent_operation_service.py` 把 TTS `job:<id>`、视频渲染任务、
+  一键生产 `pipeline:<run_id>` 映射为可查询/列举/取消的 operation，直接读源任务
+  存储，不维护第二份终态；CLI `operation get/list/wait/cancel`。
+- 一键运行历史：`one_click_run_store.py` 将每次一键运行完整保存于
+  `planning/one_click_runs/<run_id>.json`，进程失联运行报告 interrupted。
+- 并发控制：项目元数据与旁白编辑在业务写入前用数据库 CAS 抢占 revision；
+  相同内容 no-op 保存不推进版本、不清下游工作。
+- 幂等重放收紧：键绑定账号+能力+目标资源+规范化参数+契约指纹；相同键不同输入
+  返回 IDEMPOTENCY_CONFLICT；未知结果返回 OPERATION_OUTCOME_UNKNOWN，禁止换键
+  盲目重试付费生成；过期键返回 IDEMPOTENCY_EXPIRED。
+
+## 四、验证结果（推送前实测，隔离数据库与 runs 目录，无真实付费调用）
+
+- `python scripts/check_agent_coverage.py`：通过
+- `python scripts/generate_agent_contracts.py --check`：通过（矩阵/快照/覆盖同源）
+- `python -m pytest checks/agent -q`：**465 passed**（含动态调用、operation
+  生命周期、幂等边界、越权与过期契约拒绝场景）
+- 新增/变更模块 `compileall`：通过；Ruff/空白检查此前已随批次验证
+
+## 五、接手指引
+
+1. **接入**：按 `current-contract-guide.md`——`GET /meta` 验证 bootstrap 协议 →
+   搜索 capabilities → describe 读取 Schema 与 `contract_revision` → `POST
+   /invoke`（写操作必须携带刚读取的指纹与幂等键）。二进制与事件流走详情中声明的
+   专用传输，不经 invoke。
+2. **开发新功能**：先登记 `config/agent_features.json`，再按 AGENTS.md 的
+   Agent Contract Synchronization Policy 同步模型/能力/适配/文档/测试；
+   `checks/agent/test_feature_coverage.py` 与 `checks/agent/test_dynamic_invocation.py`
+   是新增能力时的最小增测入口。
+3. **下一步建议（按序）**：① P1 全领域模型拆分 + P2 其余领域写入幂等与资源传输
+   （`resource.upload/get`）；② P4 `project.state`/`project.change_preview`；
+   ③ 按 P5 表逐域补齐 249 项 pending（建议顺序：Step 1–3 → Step 5 音频 →
+   Step 4 Mask → Step 6 标注 → 输出与横向配置）；④ P6 `--require-complete`
+   门禁 + 独立 Agent 全流程验收。
+4. **红线**：不得为待实现能力宣称 stable；不得绕过 generation_governor；
+   不得在 adapter 层复制业务算法；`--require-complete` 通过前不得宣布全功能开放。
+
+---
+
+# Agent 接口层交接文档（v1.x 归档）
 
 > 交接状态：本轮 Agent 接口层增强已全部**提交并推送** —— 对应提交
 > `09619b0`（feat: Agent 接口层增强），已合入 `origin/main`，本地与线上一致。

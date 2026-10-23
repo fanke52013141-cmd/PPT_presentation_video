@@ -1,0 +1,3852 @@
+{
+  "agent_api_version": "2.1.0",
+  "capabilities": [
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "operation_id": "path",
+        "project_id": "path"
+      },
+      "cli_command": "operation get",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "8ad3462e98a346d7546ee79b",
+      "description": "Read an exact durable job or pipeline run by operation_id; never substitute latest.",
+      "destructive": false,
+      "domain": "operation",
+      "id": "operation.get",
+      "idempotency": {
+        "key_required": false,
+        "supported": false
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "operation_id": {
+            "description": "operation_id",
+            "minLength": 1,
+            "type": "string"
+          },
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "operation_id"
+        ],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": false,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_operation_get",
+      "method": "GET",
+      "output_schema": {
+        "$defs": {
+          "OperationStatus": {
+            "enum": [
+              "unknown",
+              "queued",
+              "running",
+              "waiting_for_review",
+              "waiting_for_user",
+              "succeeded",
+              "failed",
+              "cancelled",
+              "interrupted"
+            ],
+            "title": "OperationStatus",
+            "type": "string"
+          }
+        },
+        "description": "Unified long-running operation result.",
+        "properties": {
+          "artifacts": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "blocking_errors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blocking Errors",
+            "type": "array"
+          },
+          "cancellation_requested": {
+            "default": false,
+            "title": "Cancellation Requested",
+            "type": "boolean"
+          },
+          "cancellation_supported": {
+            "default": false,
+            "title": "Cancellation Supported",
+            "type": "boolean"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Finished At"
+          },
+          "message": {
+            "default": "",
+            "title": "Message",
+            "type": "string"
+          },
+          "operation_id": {
+            "title": "Operation Id",
+            "type": "string"
+          },
+          "operation_type": {
+            "default": "",
+            "description": "pipeline_run / tts_synthesize / video_render",
+            "title": "Operation Type",
+            "type": "string"
+          },
+          "progress": {
+            "default": 0,
+            "maximum": 100,
+            "minimum": 0,
+            "title": "Progress",
+            "type": "integer"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "raw_status": {
+            "default": "",
+            "title": "Raw Status",
+            "type": "string"
+          },
+          "stage": {
+            "default": "",
+            "description": "当前阶段标识",
+            "title": "Stage",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/$defs/OperationStatus",
+            "default": "queued"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "operation_id",
+          "project_id"
+        ],
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/operations/{operation_id}",
+      "required_scopes": [
+        "project:read"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.0"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "limit": "query",
+        "offset": "query",
+        "project_id": "path"
+      },
+      "cli_command": "operation list",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "3ef47190a1bbc488acb5d1ea",
+      "description": "List project operations across durable jobs and pipeline history, with pagination.",
+      "destructive": false,
+      "domain": "operation",
+      "id": "operation.list",
+      "idempotency": {
+        "key_required": false,
+        "supported": false
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": false,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_operation_list",
+      "method": "GET",
+      "output_schema": {
+        "$defs": {
+          "OperationResult": {
+            "description": "Unified long-running operation result.",
+            "properties": {
+              "artifacts": {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "title": "Artifacts",
+                "type": "array"
+              },
+              "blocking_errors": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Blocking Errors",
+                "type": "array"
+              },
+              "cancellation_requested": {
+                "default": false,
+                "title": "Cancellation Requested",
+                "type": "boolean"
+              },
+              "cancellation_supported": {
+                "default": false,
+                "title": "Cancellation Supported",
+                "type": "boolean"
+              },
+              "finished_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Finished At"
+              },
+              "message": {
+                "default": "",
+                "title": "Message",
+                "type": "string"
+              },
+              "operation_id": {
+                "title": "Operation Id",
+                "type": "string"
+              },
+              "operation_type": {
+                "default": "",
+                "description": "pipeline_run / tts_synthesize / video_render",
+                "title": "Operation Type",
+                "type": "string"
+              },
+              "progress": {
+                "default": 0,
+                "maximum": 100,
+                "minimum": 0,
+                "title": "Progress",
+                "type": "integer"
+              },
+              "project_id": {
+                "title": "Project Id",
+                "type": "string"
+              },
+              "raw_status": {
+                "default": "",
+                "title": "Raw Status",
+                "type": "string"
+              },
+              "stage": {
+                "default": "",
+                "description": "当前阶段标识",
+                "title": "Stage",
+                "type": "string"
+              },
+              "started_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Started At"
+              },
+              "status": {
+                "$ref": "#/$defs/OperationStatus",
+                "default": "queued"
+              },
+              "warnings": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Warnings",
+                "type": "array"
+              }
+            },
+            "required": [
+              "operation_id",
+              "project_id"
+            ],
+            "title": "OperationResult",
+            "type": "object"
+          },
+          "OperationStatus": {
+            "enum": [
+              "unknown",
+              "queued",
+              "running",
+              "waiting_for_review",
+              "waiting_for_user",
+              "succeeded",
+              "failed",
+              "cancelled",
+              "interrupted"
+            ],
+            "title": "OperationStatus",
+            "type": "string"
+          }
+        },
+        "properties": {
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Next Offset"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/$defs/OperationResult"
+            },
+            "title": "Operations",
+            "type": "array"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project_id",
+          "operations",
+          "total"
+        ],
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/operations",
+      "required_scopes": [
+        "project:read"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.0"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "operation_id": "path",
+        "project_id": "path"
+      },
+      "cli_command": "operation cancel",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "2a6620882488d672e198c227",
+      "description": "Request exact TTS/video cancellation at a safe boundary. accepted does not imply cancelled; poll operation.get. Other producers explicitly report unsupported.",
+      "destructive": false,
+      "domain": "operation",
+      "id": "operation.cancel",
+      "idempotency": {
+        "key_required": false,
+        "supported": false
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "operation_id": {
+            "description": "operation_id",
+            "minLength": 1,
+            "type": "string"
+          },
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "operation_id"
+        ],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": false,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_operation_cancel",
+      "method": "POST",
+      "output_schema": {
+        "$defs": {
+          "OperationStatus": {
+            "enum": [
+              "unknown",
+              "queued",
+              "running",
+              "waiting_for_review",
+              "waiting_for_user",
+              "succeeded",
+              "failed",
+              "cancelled",
+              "interrupted"
+            ],
+            "title": "OperationStatus",
+            "type": "string"
+          }
+        },
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "operation_id": {
+            "title": "Operation Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/$defs/OperationStatus"
+          }
+        },
+        "required": [
+          "operation_id",
+          "accepted",
+          "status",
+          "message"
+        ],
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/operations/{operation_id}/cancel",
+      "required_scopes": [
+        "project:write"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.0"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "project_id": "path",
+        "stage": "path"
+      },
+      "cli_command": "generation status",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "6fd72040d335ea0939732b02",
+      "description": "Read the active cooperative generation control for a project stage. Controls are process-local; durable TTS/video results remain in their job APIs.",
+      "destructive": false,
+      "domain": "generation",
+      "id": "generation.status",
+      "idempotency": {
+        "key_required": false,
+        "supported": false
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "stage": {
+            "description": "The pipeline stage name.",
+            "enum": [
+              "storyboard_script",
+              "storyboard_visual",
+              "mask",
+              "tts",
+              "video"
+            ],
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "stage"
+        ],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": false,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_generation_status",
+      "method": "GET",
+      "output_schema": {
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "operation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Operation Id"
+          },
+          "stop_requested": {
+            "default": false,
+            "title": "Stop Requested",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "active"
+        ],
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/generation/{stage}/status",
+      "required_scopes": [
+        "project:read"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.0"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "operation_id": "body",
+        "project_id": "path",
+        "stage": "path"
+      },
+      "cli_command": "generation stop",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "c41b570a9e564a30092d40a9",
+      "description": "Request a safe-boundary stop for the exact active operation ID. In-flight provider requests and render stages finish before stopping.",
+      "destructive": false,
+      "domain": "generation",
+      "id": "generation.stop",
+      "idempotency": {
+        "key_required": false,
+        "supported": false
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "operation_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "stage": {
+            "description": "The pipeline stage name.",
+            "enum": [
+              "storyboard_script",
+              "storyboard_visual",
+              "mask",
+              "tts",
+              "video"
+            ],
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation_id",
+          "project_id",
+          "stage"
+        ],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": false,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_generation_stop",
+      "method": "POST",
+      "output_schema": {
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "operation_id": {
+            "title": "Operation Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "accepted",
+          "operation_id",
+          "message"
+        ],
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/generation/{stage}/stop",
+      "required_scopes": [
+        "project:write"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.0"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {},
+      "cli_command": "identity",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "e8b45708d119418949612e1d",
+      "description": "Return the creative account and scopes associated with this Agent connection.",
+      "destructive": false,
+      "domain": "identity",
+      "id": "identity.get",
+      "idempotency": {
+        "key_required": false,
+        "supported": false
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": false,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_identity_get",
+      "method": "GET",
+      "output_schema": {
+        "properties": {
+          "account_id": {
+            "title": "Account Id",
+            "type": "string"
+          },
+          "account_name": {
+            "title": "Account Name",
+            "type": "string"
+          },
+          "authenticated": {
+            "default": false,
+            "title": "Authenticated",
+            "type": "boolean"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "account_id",
+          "account_name"
+        ],
+        "type": "object"
+      },
+      "path": "/api/agent/v1/identity",
+      "required_scopes": [
+        "project:read"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.0"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "automation_mode": "body",
+        "canvas_profile": "body",
+        "chapter_id": "body",
+        "config_overrides": "body",
+        "config_package_id": "body",
+        "config_package_version": "body",
+        "course_id": "body",
+        "description": "body",
+        "idempotency_key": "body",
+        "mask_enabled": "body",
+        "name": "body",
+        "presentation_mode": "body",
+        "production_mode": "body",
+        "review_policy": "body"
+      },
+      "cli_command": "project create",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "fec443df4906c98842d5df9b",
+      "description": "Create a project with canvas, production/presentation mode, versioned creation configuration, and optional course/chapter ownership.",
+      "destructive": false,
+      "domain": "project",
+      "id": "project.create",
+      "idempotency": {
+        "expired_key": "reject",
+        "key_required": false,
+        "replay_retention_days": 7,
+        "supported": true,
+        "uncertain_outcome": "inspect_before_retry"
+      },
+      "input_schema": {
+        "$defs": {
+          "AutomationMode": {
+            "enum": [
+              "auto",
+              "manual",
+              "agent"
+            ],
+            "title": "AutomationMode",
+            "type": "string"
+          },
+          "CanvasProfile": {
+            "enum": [
+              "landscape_16_9",
+              "portrait_9_16"
+            ],
+            "title": "CanvasProfile",
+            "type": "string"
+          },
+          "PresentationMode": {
+            "enum": [
+              "full_frame",
+              "reveal"
+            ],
+            "title": "PresentationMode",
+            "type": "string"
+          },
+          "ProductionMode": {
+            "enum": [
+              "one_click",
+              "guided"
+            ],
+            "title": "ProductionMode",
+            "type": "string"
+          },
+          "ReviewPolicy": {
+            "enum": [
+              "none",
+              "images_and_video",
+              "all_stages"
+            ],
+            "title": "ReviewPolicy",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "automation_mode": {
+            "$ref": "#/$defs/AutomationMode",
+            "default": "auto"
+          },
+          "canvas_profile": {
+            "$ref": "#/$defs/CanvasProfile",
+            "default": "landscape_16_9"
+          },
+          "chapter_id": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "项目所属章节 ID；填写时服务端验证课程与账号归属"
+          },
+          "config_overrides": {
+            "additionalProperties": true,
+            "description": "仅本项目的创作配置覆盖项",
+            "type": "object"
+          },
+          "config_package_id": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "创作配置包 ID"
+          },
+          "config_package_version": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "创作配置包版本；不填时固定当前最新版本"
+          },
+          "course_id": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "项目所属课程 ID；不填则保留独立项目兼容模式"
+          },
+          "description": {
+            "default": "",
+            "description": "项目描述",
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "幂等键，防止重复创建"
+          },
+          "mask_enabled": {
+            "default": false,
+            "description": "旧版兼容字段；新项目默认整页展示",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "项目名称",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "presentation_mode": {
+            "$ref": "#/$defs/PresentationMode",
+            "default": "full_frame"
+          },
+          "production_mode": {
+            "$ref": "#/$defs/ProductionMode",
+            "default": "guided"
+          },
+          "review_policy": {
+            "$ref": "#/$defs/ReviewPolicy",
+            "default": "none"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": false,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_project_create",
+      "method": "POST",
+      "output_schema": {
+        "$defs": {
+          "ProjectSummary": {
+            "properties": {
+              "ai_mode": {
+                "title": "Ai Mode",
+                "type": "string"
+              },
+              "canvas_profile": {
+                "title": "Canvas Profile",
+                "type": "string"
+              },
+              "chapter_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Chapter Id"
+              },
+              "course_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Course Id"
+              },
+              "created_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Created At"
+              },
+              "creation_config": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "项目固定使用的创作配置包版本摘要",
+                "title": "Creation Config"
+              },
+              "current_step": {
+                "title": "Current Step",
+                "type": "integer"
+              },
+              "description": {
+                "title": "Description",
+                "type": "string"
+              },
+              "mask_enabled": {
+                "default": false,
+                "description": "旧版渲染兼容标记；由 presentation_mode 同步",
+                "title": "Mask Enabled",
+                "type": "boolean"
+              },
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "presentation_mode": {
+                "default": "full_frame",
+                "description": "full_frame / reveal",
+                "title": "Presentation Mode",
+                "type": "string"
+              },
+              "production_mode": {
+                "default": "guided",
+                "description": "one_click / guided",
+                "title": "Production Mode",
+                "type": "string"
+              },
+              "project_id": {
+                "title": "Project Id",
+                "type": "string"
+              },
+              "review_policy": {
+                "default": "none",
+                "description": "审查策略: none / images_and_video / all_stages",
+                "title": "Review Policy",
+                "type": "string"
+              },
+              "revision": {
+                "default": 0,
+                "description": "乐观锁版本号，每次写操作递增",
+                "title": "Revision",
+                "type": "integer"
+              },
+              "status": {
+                "title": "Status",
+                "type": "string"
+              },
+              "step_status": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Step Status",
+                "type": "object"
+              }
+            },
+            "required": [
+              "project_id",
+              "name",
+              "description",
+              "canvas_profile",
+              "ai_mode",
+              "current_step",
+              "status"
+            ],
+            "title": "ProjectSummary",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "project": {
+            "$ref": "#/$defs/ProjectSummary"
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects",
+      "required_scopes": [
+        "project:write"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.5"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "limit": "query",
+        "status_filter": "query"
+      },
+      "cli_command": "project list",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "f866064249c3f00034f321d1",
+      "description": "List all projects with optional status filter.",
+      "destructive": false,
+      "domain": "project",
+      "id": "project.list",
+      "idempotency": {
+        "key_required": false,
+        "supported": false
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "status_filter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "active / completed / all"
+          }
+        },
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": false,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_project_list",
+      "method": "GET",
+      "output_schema": {
+        "$defs": {
+          "ProjectSummary": {
+            "properties": {
+              "ai_mode": {
+                "title": "Ai Mode",
+                "type": "string"
+              },
+              "canvas_profile": {
+                "title": "Canvas Profile",
+                "type": "string"
+              },
+              "chapter_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Chapter Id"
+              },
+              "course_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Course Id"
+              },
+              "created_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Created At"
+              },
+              "creation_config": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "项目固定使用的创作配置包版本摘要",
+                "title": "Creation Config"
+              },
+              "current_step": {
+                "title": "Current Step",
+                "type": "integer"
+              },
+              "description": {
+                "title": "Description",
+                "type": "string"
+              },
+              "mask_enabled": {
+                "default": false,
+                "description": "旧版渲染兼容标记；由 presentation_mode 同步",
+                "title": "Mask Enabled",
+                "type": "boolean"
+              },
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "presentation_mode": {
+                "default": "full_frame",
+                "description": "full_frame / reveal",
+                "title": "Presentation Mode",
+                "type": "string"
+              },
+              "production_mode": {
+                "default": "guided",
+                "description": "one_click / guided",
+                "title": "Production Mode",
+                "type": "string"
+              },
+              "project_id": {
+                "title": "Project Id",
+                "type": "string"
+              },
+              "review_policy": {
+                "default": "none",
+                "description": "审查策略: none / images_and_video / all_stages",
+                "title": "Review Policy",
+                "type": "string"
+              },
+              "revision": {
+                "default": 0,
+                "description": "乐观锁版本号，每次写操作递增",
+                "title": "Revision",
+                "type": "integer"
+              },
+              "status": {
+                "title": "Status",
+                "type": "string"
+              },
+              "step_status": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Step Status",
+                "type": "object"
+              }
+            },
+            "required": [
+              "project_id",
+              "name",
+              "description",
+              "canvas_profile",
+              "ai_mode",
+              "current_step",
+              "status"
+            ],
+            "title": "ProjectSummary",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "projects": {
+            "items": {
+              "$ref": "#/$defs/ProjectSummary"
+            },
+            "title": "Projects",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "projects",
+          "total"
+        ],
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects",
+      "required_scopes": [
+        "project:read"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.3"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "project_id": "path"
+      },
+      "cli_command": "project show",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "19342b4f011898da7865057b",
+      "description": "Get project details including article/contract status, slide IDs, and mask mode.",
+      "destructive": false,
+      "domain": "project",
+      "id": "project.get",
+      "idempotency": {
+        "key_required": false,
+        "supported": false
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": false,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_project_get",
+      "method": "GET",
+      "output_schema": {
+        "$defs": {
+          "ProjectSummary": {
+            "properties": {
+              "ai_mode": {
+                "title": "Ai Mode",
+                "type": "string"
+              },
+              "canvas_profile": {
+                "title": "Canvas Profile",
+                "type": "string"
+              },
+              "chapter_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Chapter Id"
+              },
+              "course_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Course Id"
+              },
+              "created_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Created At"
+              },
+              "creation_config": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "项目固定使用的创作配置包版本摘要",
+                "title": "Creation Config"
+              },
+              "current_step": {
+                "title": "Current Step",
+                "type": "integer"
+              },
+              "description": {
+                "title": "Description",
+                "type": "string"
+              },
+              "mask_enabled": {
+                "default": false,
+                "description": "旧版渲染兼容标记；由 presentation_mode 同步",
+                "title": "Mask Enabled",
+                "type": "boolean"
+              },
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "presentation_mode": {
+                "default": "full_frame",
+                "description": "full_frame / reveal",
+                "title": "Presentation Mode",
+                "type": "string"
+              },
+              "production_mode": {
+                "default": "guided",
+                "description": "one_click / guided",
+                "title": "Production Mode",
+                "type": "string"
+              },
+              "project_id": {
+                "title": "Project Id",
+                "type": "string"
+              },
+              "review_policy": {
+                "default": "none",
+                "description": "审查策略: none / images_and_video / all_stages",
+                "title": "Review Policy",
+                "type": "string"
+              },
+              "revision": {
+                "default": 0,
+                "description": "乐观锁版本号，每次写操作递增",
+                "title": "Revision",
+                "type": "integer"
+              },
+              "status": {
+                "title": "Status",
+                "type": "string"
+              },
+              "step_status": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Step Status",
+                "type": "object"
+              }
+            },
+            "required": [
+              "project_id",
+              "name",
+              "description",
+              "canvas_profile",
+              "ai_mode",
+              "current_step",
+              "status"
+            ],
+            "title": "ProjectSummary",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "has_article": {
+            "default": false,
+            "title": "Has Article",
+            "type": "boolean"
+          },
+          "has_contract": {
+            "default": false,
+            "title": "Has Contract",
+            "type": "boolean"
+          },
+          "project": {
+            "$ref": "#/$defs/ProjectSummary"
+          },
+          "slide_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Slide Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}",
+      "required_scopes": [
+        "project:read"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.2"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "ai_mode": "body",
+        "description": "body",
+        "expected_revision": "body",
+        "idempotency_key": "body",
+        "name": "body",
+        "presentation_mode": "body",
+        "production_mode": "body",
+        "project_id": "path"
+      },
+      "cli_command": "project update",
+      "concurrency": {
+        "expected_revision_supported": true,
+        "resource_scope": "project"
+      },
+      "contract_revision": "58539fc09f80e7b59eb8dd0b",
+      "description": "Update project name, description, AI mode, production mode, or presentation mode.",
+      "destructive": false,
+      "domain": "project",
+      "id": "project.update",
+      "idempotency": {
+        "expired_key": "reject",
+        "key_required": false,
+        "replay_retention_days": 7,
+        "supported": true,
+        "uncertain_outcome": "inspect_before_retry"
+      },
+      "input_schema": {
+        "$defs": {
+          "PresentationMode": {
+            "enum": [
+              "full_frame",
+              "reveal"
+            ],
+            "title": "PresentationMode",
+            "type": "string"
+          },
+          "ProductionMode": {
+            "enum": [
+              "one_click",
+              "guided"
+            ],
+            "title": "ProductionMode",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "ai_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "expected_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "乐观锁：期望的项目版本号"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "presentation_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PresentationMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "production_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ProductionMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": false,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_project_update",
+      "method": "PATCH",
+      "output_schema": {
+        "$defs": {
+          "ProjectSummary": {
+            "properties": {
+              "ai_mode": {
+                "title": "Ai Mode",
+                "type": "string"
+              },
+              "canvas_profile": {
+                "title": "Canvas Profile",
+                "type": "string"
+              },
+              "chapter_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Chapter Id"
+              },
+              "course_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Course Id"
+              },
+              "created_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Created At"
+              },
+              "creation_config": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "项目固定使用的创作配置包版本摘要",
+                "title": "Creation Config"
+              },
+              "current_step": {
+                "title": "Current Step",
+                "type": "integer"
+              },
+              "description": {
+                "title": "Description",
+                "type": "string"
+              },
+              "mask_enabled": {
+                "default": false,
+                "description": "旧版渲染兼容标记；由 presentation_mode 同步",
+                "title": "Mask Enabled",
+                "type": "boolean"
+              },
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "presentation_mode": {
+                "default": "full_frame",
+                "description": "full_frame / reveal",
+                "title": "Presentation Mode",
+                "type": "string"
+              },
+              "production_mode": {
+                "default": "guided",
+                "description": "one_click / guided",
+                "title": "Production Mode",
+                "type": "string"
+              },
+              "project_id": {
+                "title": "Project Id",
+                "type": "string"
+              },
+              "review_policy": {
+                "default": "none",
+                "description": "审查策略: none / images_and_video / all_stages",
+                "title": "Review Policy",
+                "type": "string"
+              },
+              "revision": {
+                "default": 0,
+                "description": "乐观锁版本号，每次写操作递增",
+                "title": "Revision",
+                "type": "integer"
+              },
+              "status": {
+                "title": "Status",
+                "type": "string"
+              },
+              "step_status": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Step Status",
+                "type": "object"
+              }
+            },
+            "required": [
+              "project_id",
+              "name",
+              "description",
+              "canvas_profile",
+              "ai_mode",
+              "current_step",
+              "status"
+            ],
+            "title": "ProjectSummary",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "project": {
+            "$ref": "#/$defs/ProjectSummary"
+          },
+          "updated": {
+            "title": "Updated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "project",
+          "updated"
+        ],
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}",
+      "required_scopes": [
+        "project:write"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.2"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "content": "body",
+        "idempotency_key": "body",
+        "project_id": "path",
+        "topic": "body"
+      },
+      "cli_command": "source set",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "ffa8fd48ac575c1106e058b6",
+      "description": "Set project source content — either direct article text or a topic for AI generation.",
+      "destructive": false,
+      "domain": "source",
+      "id": "source.set",
+      "idempotency": {
+        "expired_key": "reject",
+        "key_required": false,
+        "replay_retention_days": 7,
+        "supported": true,
+        "uncertain_outcome": "inspect_before_retry"
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "直接提供文章内容（Markdown）"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "topic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "主题描述，触发 AI 生成文章"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": false,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_source_set",
+      "method": "POST",
+      "output_schema": {
+        "properties": {
+          "article_imported": {
+            "title": "Article Imported",
+            "type": "boolean"
+          },
+          "article_preview": {
+            "default": "",
+            "description": "文章内容前 500 字",
+            "title": "Article Preview",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "word_count": {
+            "default": 0,
+            "title": "Word Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project_id",
+          "article_imported"
+        ],
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/source",
+      "required_scopes": [
+        "project:write"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.1"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "idempotency_key": "body",
+        "mode": "body",
+        "project_id": "path",
+        "start_from": "body",
+        "stop_at": "body"
+      },
+      "cli_command": "run start",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "782048a9f8d40173a40c9983",
+      "description": "Start or resume the automated pipeline. Supports stop_at checkpoints.",
+      "destructive": false,
+      "domain": "pipeline",
+      "id": "pipeline.run",
+      "idempotency": {
+        "expired_key": "reject",
+        "key_required": false,
+        "replay_retention_days": 7,
+        "supported": true,
+        "uncertain_outcome": "inspect_before_retry"
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "mode": {
+            "default": "resume",
+            "description": "resume / restart",
+            "type": "string"
+          },
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "start_from": {
+            "default": "preflight",
+            "description": "起始阶段；未显式提供时按编排器恢复策略执行",
+            "type": "string"
+          },
+          "stop_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "停止阶段，如 image_review"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": true,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_pipeline_run",
+      "method": "POST",
+      "output_schema": {
+        "properties": {
+          "current_stage": {
+            "title": "Current Stage",
+            "type": "string"
+          },
+          "message": {
+            "default": "",
+            "title": "Message",
+            "type": "string"
+          },
+          "operation_id": {
+            "title": "Operation Id",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation_id",
+          "project_id",
+          "status",
+          "current_stage"
+        ],
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/runs",
+      "required_scopes": [
+        "pipeline:write"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.1"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "project_id": "path"
+      },
+      "cli_command": "run status",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "dc862946aed1a8bbbda171b5",
+      "description": "Get current pipeline status including stage progress and blocking errors.",
+      "destructive": false,
+      "domain": "pipeline",
+      "id": "pipeline.status",
+      "idempotency": {
+        "key_required": false,
+        "supported": false
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": false,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_pipeline_status",
+      "method": "GET",
+      "output_schema": {
+        "properties": {
+          "artifacts": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "blocking_errors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blocking Errors",
+            "type": "array"
+          },
+          "current_stage": {
+            "title": "Current Stage",
+            "type": "string"
+          },
+          "message": {
+            "default": "",
+            "title": "Message",
+            "type": "string"
+          },
+          "operation_id": {
+            "title": "Operation Id",
+            "type": "string"
+          },
+          "progress": {
+            "default": 0,
+            "title": "Progress",
+            "type": "integer"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "stages": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Stages",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "operation_id",
+          "project_id",
+          "status",
+          "current_stage"
+        ],
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/runs/latest",
+      "required_scopes": [
+        "pipeline:write"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.1"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "idempotency_key": "body",
+        "project_id": "path",
+        "stop_at": "body"
+      },
+      "cli_command": "run resume",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "c37cb330c44438ebafe82a3e",
+      "description": "Resume a paused or failed pipeline from the last checkpoint.",
+      "destructive": false,
+      "domain": "pipeline",
+      "id": "pipeline.resume",
+      "idempotency": {
+        "expired_key": "reject",
+        "key_required": false,
+        "replay_retention_days": 7,
+        "supported": true,
+        "uncertain_outcome": "inspect_before_retry"
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "stop_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": true,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_pipeline_resume",
+      "method": "POST",
+      "output_schema": {
+        "properties": {
+          "current_stage": {
+            "title": "Current Stage",
+            "type": "string"
+          },
+          "message": {
+            "default": "",
+            "title": "Message",
+            "type": "string"
+          },
+          "operation_id": {
+            "title": "Operation Id",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation_id",
+          "project_id",
+          "status",
+          "current_stage"
+        ],
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/runs/latest/resume",
+      "required_scopes": [
+        "pipeline:write"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.1"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "project_id": "path"
+      },
+      "cli_command": "run stream",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "9a9f433a98f90dcb5882df02",
+      "description": "Stream real-time pipeline progress via Server-Sent Events (SSE).",
+      "destructive": false,
+      "domain": "pipeline",
+      "id": "pipeline.stream",
+      "idempotency": {
+        "key_required": false,
+        "supported": false
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "type": "object"
+      },
+      "invocable": false,
+      "long_running": true,
+      "mcp_enabled": false,
+      "mcp_tool": "ppt_pipeline_stream",
+      "method": "GET",
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/runs/latest/stream",
+      "required_scopes": [
+        "pipeline:write"
+      ],
+      "response_kind": "event_stream",
+      "status": "stable",
+      "version": "1.1"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "approved": "body",
+        "checkpoint": "path",
+        "idempotency_key": "body",
+        "notes": "body",
+        "project_id": "path"
+      },
+      "cli_command": "approve",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "37bb3b4311be51cc14a93da1",
+      "description": "Approve or reject a pipeline checkpoint to continue or halt.",
+      "destructive": false,
+      "domain": "checkpoint",
+      "id": "checkpoint.approve",
+      "idempotency": {
+        "expired_key": "reject",
+        "key_required": false,
+        "replay_retention_days": 7,
+        "supported": true,
+        "uncertain_outcome": "inspect_before_retry"
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "approved": {
+            "default": true,
+            "type": "boolean"
+          },
+          "checkpoint": {
+            "description": "The checkpoint name (for example image_review).",
+            "minLength": 1,
+            "type": "string"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "notes": {
+            "default": "",
+            "type": "string"
+          },
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "checkpoint",
+          "project_id"
+        ],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": false,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_checkpoint_approve",
+      "method": "POST",
+      "output_schema": {
+        "properties": {
+          "approved": {
+            "title": "Approved",
+            "type": "boolean"
+          },
+          "checkpoint": {
+            "title": "Checkpoint",
+            "type": "string"
+          },
+          "next_stage": {
+            "default": "",
+            "title": "Next Stage",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "checkpoint",
+          "approved"
+        ],
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/checkpoints/{checkpoint}/approve",
+      "required_scopes": [
+        "project:write"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.0"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "project_id": "path",
+        "stage": "path"
+      },
+      "cli_command": "stage get",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "c414a0aa903a178189f268ca",
+      "description": "Get detailed data for a specific pipeline stage (storyboard, narration, etc.).",
+      "destructive": false,
+      "domain": "stage",
+      "id": "stage.get",
+      "idempotency": {
+        "key_required": false,
+        "supported": false
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "stage": {
+            "description": "The pipeline stage name.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "stage"
+        ],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": false,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_stage_get",
+      "method": "GET",
+      "output_schema": {
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "slide_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Slide Ids",
+            "type": "array"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "stage"
+        ],
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/stages/{stage}",
+      "required_scopes": [
+        "project:read"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.0"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "idempotency_key": "body",
+        "instruction": "body",
+        "project_id": "path",
+        "slide_id": "path"
+      },
+      "cli_command": "image regenerate",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "a83a35aa369e4e6b98e5285c",
+      "description": "Regenerate a single slide image with optional modification instruction.",
+      "destructive": false,
+      "domain": "image",
+      "id": "image.regenerate",
+      "idempotency": {
+        "expired_key": "reject",
+        "key_required": false,
+        "replay_retention_days": 7,
+        "supported": true,
+        "uncertain_outcome": "inspect_before_retry"
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "instruction": {
+            "default": "",
+            "description": "修改指令，如'更有冲击力'",
+            "type": "string"
+          },
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "slide_id": {
+            "description": "The slide ID.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "slide_id"
+        ],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": true,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_image_regenerate",
+      "method": "POST",
+      "output_schema": {
+        "properties": {
+          "artifact_id": {
+            "default": "",
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "message": {
+            "default": "",
+            "title": "Message",
+            "type": "string"
+          },
+          "resource_uri": {
+            "default": "",
+            "title": "Resource Uri",
+            "type": "string"
+          },
+          "revision": {
+            "default": 0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "slide_id": {
+            "title": "Slide Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slide_id"
+        ],
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/images/{slide_id}/regenerate",
+      "required_scopes": [
+        "project:write"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.1"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "expected_revision": "body",
+        "idempotency_key": "body",
+        "narration_text": "body",
+        "project_id": "path",
+        "slide_id": "path"
+      },
+      "cli_command": "narration update",
+      "concurrency": {
+        "expected_revision_supported": true,
+        "resource_scope": "project"
+      },
+      "contract_revision": "435d9329d2b3bd69aa1d622d",
+      "description": "Update narration text for a specific slide.",
+      "destructive": false,
+      "domain": "narration",
+      "id": "narration.update",
+      "idempotency": {
+        "expired_key": "reject",
+        "key_required": false,
+        "replay_retention_days": 7,
+        "supported": true,
+        "uncertain_outcome": "inspect_before_retry"
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "narration_text": {
+            "type": "string"
+          },
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "slide_id": {
+            "description": "The slide ID.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "narration_text",
+          "project_id",
+          "slide_id"
+        ],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": false,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_narration_update",
+      "method": "PATCH",
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/narration/{slide_id}",
+      "required_scopes": [
+        "project:write"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.1"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "idempotency_key": "body",
+        "project_id": "path",
+        "slide_ids": "body"
+      },
+      "cli_command": "tts synthesize",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "eb3c04e73fb9615c94f9af35",
+      "description": "Submit durable background TTS synthesis for the whole project. Returns operation_id for operation.get; slide_ids is not supported yet.",
+      "destructive": false,
+      "domain": "tts",
+      "id": "tts.synthesize",
+      "idempotency": {
+        "expired_key": "reject",
+        "key_required": false,
+        "replay_retention_days": 7,
+        "supported": true,
+        "uncertain_outcome": "inspect_before_retry"
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "slide_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "指定 slide，None 表示全部"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": true,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_tts_synthesize",
+      "method": "POST",
+      "output_schema": {
+        "properties": {
+          "job_id": {
+            "default": "",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "operation_id": {
+            "title": "Operation Id",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation_id",
+          "project_id",
+          "status"
+        ],
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/tts",
+      "required_scopes": [
+        "project:write"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "2.0"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "idempotency_key": "body",
+        "project_id": "path"
+      },
+      "cli_command": "video render",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "de2d2984546d99974fad7be0",
+      "description": "Start video rendering for the project.",
+      "destructive": false,
+      "domain": "video",
+      "id": "video.render",
+      "idempotency": {
+        "expired_key": "reject",
+        "key_required": false,
+        "replay_retention_days": 7,
+        "supported": true,
+        "uncertain_outcome": "inspect_before_retry"
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": true,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_video_render",
+      "method": "POST",
+      "output_schema": {
+        "properties": {
+          "job_id": {
+            "default": "",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "operation_id": {
+            "title": "Operation Id",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation_id",
+          "project_id",
+          "status"
+        ],
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/videos/render",
+      "required_scopes": [
+        "pipeline:write"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "2.0"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "artifact_type": "query",
+        "project_id": "path",
+        "slide_id": "query"
+      },
+      "cli_command": "artifacts list",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "fa938ad28bb58ee2dae247b0",
+      "description": "List all artifacts (images, audio, video, pptx) for a project.",
+      "destructive": false,
+      "domain": "artifacts",
+      "id": "artifacts.list",
+      "idempotency": {
+        "key_required": false,
+        "supported": false
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "image / audio / video / pptx / all"
+          },
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "slide_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": false,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_artifacts_list",
+      "method": "GET",
+      "output_schema": {
+        "$defs": {
+          "ArtifactInfo": {
+            "properties": {
+              "artifact_id": {
+                "title": "Artifact Id",
+                "type": "string"
+              },
+              "artifact_type": {
+                "title": "Artifact Type",
+                "type": "string"
+              },
+              "created_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Created At"
+              },
+              "filename": {
+                "title": "Filename",
+                "type": "string"
+              },
+              "mime_type": {
+                "title": "Mime Type",
+                "type": "string"
+              },
+              "resource_uri": {
+                "default": "",
+                "title": "Resource Uri",
+                "type": "string"
+              },
+              "revision": {
+                "default": 0,
+                "title": "Revision",
+                "type": "integer"
+              },
+              "size_bytes": {
+                "default": 0,
+                "title": "Size Bytes",
+                "type": "integer"
+              },
+              "slide_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Slide Id"
+              }
+            },
+            "required": [
+              "artifact_id",
+              "artifact_type",
+              "filename",
+              "mime_type"
+            ],
+            "title": "ArtifactInfo",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "artifacts": {
+            "items": {
+              "$ref": "#/$defs/ArtifactInfo"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project_id",
+          "artifacts",
+          "total"
+        ],
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/artifacts",
+      "required_scopes": [
+        "artifact:read"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.0"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "artifact_id": "path",
+        "project_id": "path"
+      },
+      "cli_command": "artifact get",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "afd78f99a40f943e1b0c3478",
+      "description": "Get details and download URL for a specific artifact.",
+      "destructive": false,
+      "domain": "artifact",
+      "id": "artifact.get",
+      "idempotency": {
+        "key_required": false,
+        "supported": false
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": {
+            "description": "The artifact ID.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "artifact_id"
+        ],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": false,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_artifact_get",
+      "method": "GET",
+      "output_schema": {
+        "$defs": {
+          "ArtifactInfo": {
+            "properties": {
+              "artifact_id": {
+                "title": "Artifact Id",
+                "type": "string"
+              },
+              "artifact_type": {
+                "title": "Artifact Type",
+                "type": "string"
+              },
+              "created_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Created At"
+              },
+              "filename": {
+                "title": "Filename",
+                "type": "string"
+              },
+              "mime_type": {
+                "title": "Mime Type",
+                "type": "string"
+              },
+              "resource_uri": {
+                "default": "",
+                "title": "Resource Uri",
+                "type": "string"
+              },
+              "revision": {
+                "default": 0,
+                "title": "Revision",
+                "type": "integer"
+              },
+              "size_bytes": {
+                "default": 0,
+                "title": "Size Bytes",
+                "type": "integer"
+              },
+              "slide_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Slide Id"
+              }
+            },
+            "required": [
+              "artifact_id",
+              "artifact_type",
+              "filename",
+              "mime_type"
+            ],
+            "title": "ArtifactInfo",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "artifact": {
+            "$ref": "#/$defs/ArtifactInfo"
+          },
+          "download_url": {
+            "default": "",
+            "title": "Download Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact"
+        ],
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/artifacts/{artifact_id}",
+      "required_scopes": [
+        "artifact:read"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.0"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {},
+      "cli_command": "diagnostics",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "71b26790136f7908819ac1c9",
+      "description": "Get system diagnostics including API version, capabilities, and health checks.",
+      "destructive": false,
+      "domain": "diagnostics",
+      "id": "diagnostics",
+      "idempotency": {
+        "key_required": false,
+        "supported": false
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": false,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_diagnostics",
+      "method": "GET",
+      "output_schema": {
+        "properties": {
+          "agent_api_version": {
+            "title": "Agent Api Version",
+            "type": "string"
+          },
+          "application_version": {
+            "default": "",
+            "title": "Application Version",
+            "type": "string"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "checks": {
+            "additionalProperties": true,
+            "title": "Checks",
+            "type": "object"
+          },
+          "contract_hash": {
+            "title": "Contract Hash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_api_version",
+          "contract_hash"
+        ],
+        "type": "object"
+      },
+      "path": "/api/agent/v1/diagnostics",
+      "required_scopes": [
+        "project:read"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.0"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "project_id": "path"
+      },
+      "cli_command": "digital-human config",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "8e921fa876bf262c8a0bb6a8",
+      "description": "Get digital-human configuration for a project.",
+      "destructive": false,
+      "domain": "digital_human",
+      "id": "digital_human.config.get",
+      "idempotency": {
+        "key_required": false,
+        "supported": false
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": false,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_digital_human_config_get",
+      "method": "GET",
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/digital-human/config",
+      "required_scopes": [
+        "project:read"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.1"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "config": "body",
+        "project_id": "path"
+      },
+      "cli_command": "digital-human config --set",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "aaca77803a2ef2ce5c037656",
+      "description": "Update digital-human configuration for a project.",
+      "destructive": false,
+      "domain": "digital_human",
+      "id": "digital_human.config.update",
+      "idempotency": {
+        "key_required": false,
+        "supported": false
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "description": "Validated Agent transport envelope for the project digital-human config.",
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "description": "Digital-human configuration patch. Only supported fields are persisted.",
+            "type": "object"
+          },
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "config",
+          "project_id"
+        ],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": false,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_digital_human_config_update",
+      "method": "PATCH",
+      "output_schema": {
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/digital-human/config",
+      "required_scopes": [
+        "project:write"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.1"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "project_id": "path"
+      },
+      "cli_command": "digital-human health",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "f950bb3b5f0e5768232e1e8a",
+      "description": "Check digital-human service availability and model readiness.",
+      "destructive": false,
+      "domain": "digital_human",
+      "id": "digital_human.health",
+      "idempotency": {
+        "key_required": false,
+        "supported": false
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": false,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_digital_human_health",
+      "method": "GET",
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/digital-human/health",
+      "required_scopes": [
+        "project:read"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.0"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "project_id": "path"
+      },
+      "cli_command": "digital-human generate",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "dd9d6d724f6d117ba02eae8e",
+      "description": "Trigger full digital-human video generation for all slides.",
+      "destructive": false,
+      "domain": "digital_human",
+      "id": "digital_human.generate",
+      "idempotency": {
+        "key_required": false,
+        "supported": false
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": false,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_digital_human_generate",
+      "method": "POST",
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/digital-human/generate-full",
+      "required_scopes": [
+        "project:write"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.0"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "project_id": "path"
+      },
+      "cli_command": "project delete",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "240190d7c851c45fa6848e9a",
+      "description": "Delete a project and all of its derived artifacts. Destructive and irreversible.",
+      "destructive": true,
+      "domain": "project",
+      "id": "project.delete",
+      "idempotency": {
+        "key_required": false,
+        "supported": false
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": false,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_project_delete",
+      "method": "DELETE",
+      "output_schema": {
+        "properties": {
+          "deleted": {
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "details": {
+            "additionalProperties": true,
+            "title": "Details",
+            "type": "object"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "deleted"
+        ],
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}",
+      "required_scopes": [
+        "project:write"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.0"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "project_id": "path"
+      },
+      "cli_command": "checkpoint list",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "6ce3799dc06cd7d7416cb60d",
+      "description": "List the pipeline checkpoints available for a project.",
+      "destructive": false,
+      "domain": "checkpoint",
+      "id": "checkpoint.list",
+      "idempotency": {
+        "key_required": false,
+        "supported": false
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": false,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_checkpoint_list",
+      "method": "GET",
+      "output_schema": {
+        "$defs": {
+          "CheckpointInfo": {
+            "properties": {
+              "description": {
+                "default": "",
+                "title": "Description",
+                "type": "string"
+              },
+              "label": {
+                "default": "",
+                "title": "Label",
+                "type": "string"
+              },
+              "name": {
+                "title": "Name",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "title": "CheckpointInfo",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "checkpoints": {
+            "items": {
+              "$ref": "#/$defs/CheckpointInfo"
+            },
+            "title": "Checkpoints",
+            "type": "array"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/checkpoints",
+      "required_scopes": [
+        "project:read"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.0"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "project_id": "path",
+        "slide_id": "path"
+      },
+      "cli_command": "image get",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "5ee74f9c3d90eaa0053e4684",
+      "description": "Download the current slide image as binary content (FileResponse stream; image/png or image/jpeg, not a JSON tool result).",
+      "destructive": false,
+      "domain": "image",
+      "id": "image.get",
+      "idempotency": {
+        "key_required": false,
+        "supported": false
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "slide_id": {
+            "description": "The slide ID.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "slide_id"
+        ],
+        "type": "object"
+      },
+      "invocable": false,
+      "long_running": false,
+      "mcp_enabled": false,
+      "mcp_tool": "ppt_image_get",
+      "method": "GET",
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/slides/{slide_id}/image",
+      "required_scopes": [
+        "project:read"
+      ],
+      "response_kind": "binary",
+      "status": "stable",
+      "version": "1.0"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "project_id": "path",
+        "slide_id": "path"
+      },
+      "cli_command": "audio get",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "824c3bc6e6a759d117d56139",
+      "description": "Download the current non-stale slide audio as binary content (FileResponse stream; audio/mpeg, not a JSON tool result).",
+      "destructive": false,
+      "domain": "audio",
+      "id": "audio.get",
+      "idempotency": {
+        "key_required": false,
+        "supported": false
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "slide_id": {
+            "description": "The slide ID.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "slide_id"
+        ],
+        "type": "object"
+      },
+      "invocable": false,
+      "long_running": false,
+      "mcp_enabled": false,
+      "mcp_tool": "ppt_audio_get",
+      "method": "GET",
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/slides/{slide_id}/audio",
+      "required_scopes": [
+        "project:read"
+      ],
+      "response_kind": "binary",
+      "status": "stable",
+      "version": "1.0"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "project_id": "path"
+      },
+      "cli_command": "video latest",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "8c7f2ab71aedda294e999d09",
+      "description": "Download the latest final rendered video as binary content (FileResponse stream; video/mp4, not a JSON tool result).",
+      "destructive": false,
+      "domain": "video",
+      "id": "video.latest",
+      "idempotency": {
+        "key_required": false,
+        "supported": false
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "type": "object"
+      },
+      "invocable": false,
+      "long_running": false,
+      "mcp_enabled": false,
+      "mcp_tool": "ppt_video_latest",
+      "method": "GET",
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/videos/latest",
+      "required_scopes": [
+        "project:read"
+      ],
+      "response_kind": "binary",
+      "status": "stable",
+      "version": "1.0"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
+        "artifact_id": "path",
+        "project_id": "path"
+      },
+      "cli_command": "artifact download",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "78e9b04b82d1d9889e8903ff",
+      "description": "Download one database-tracked artifact by id as binary content (FileResponse stream; MIME from the artifact record, not a JSON tool result). This is the target of artifact.get download_url.",
+      "destructive": false,
+      "domain": "artifact",
+      "id": "artifact.download",
+      "idempotency": {
+        "key_required": false,
+        "supported": false
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": {
+            "description": "The artifact ID.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "artifact_id"
+        ],
+        "type": "object"
+      },
+      "invocable": false,
+      "long_running": false,
+      "mcp_enabled": false,
+      "mcp_tool": "ppt_artifact_download",
+      "method": "GET",
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/artifacts/{artifact_id}/content",
+      "required_scopes": [
+        "artifact:read"
+      ],
+      "response_kind": "binary",
+      "status": "stable",
+      "version": "1.0"
+    }
+  ],
+  "contract_hash": "5dad5233e6fcad65"
+}

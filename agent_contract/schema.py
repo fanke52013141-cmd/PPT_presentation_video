@@ -8,6 +8,7 @@ from quietly maintaining a divergent copy of path parameters.
 from __future__ import annotations
 
 from typing import Any, get_args
+import re
 from agent_contract.models import GenerationKind
 
 from pydantic import BaseModel
@@ -26,12 +27,11 @@ def path_parameters_schema(cap: AgentCapability) -> dict[str, Any]:
     }
     properties: dict[str, Any] = {}
     required: list[str] = []
-    for name, description in descriptions.items():
-        if "{" + name + "}" in cap.agent_api_path:
-            properties[name] = {"type": "string", "description": description}
-            if name == 'stage' and cap.id.startswith('generation.'):
-                properties[name]['enum'] = list(get_args(GenerationKind))
-            required.append(name)
+    for name in re.findall(r"\{([a-zA-Z_][a-zA-Z_0-9]*)\}", cap.agent_api_path):
+        properties[name] = {"type": "string", "minLength": 1, "description": descriptions.get(name, name)}
+        if name == 'stage' and cap.id.startswith('generation.'):
+            properties[name]['enum'] = list(get_args(GenerationKind))
+        required.append(name)
     return {"properties": properties, "required": required}
 
 
@@ -43,9 +43,11 @@ def capability_input_schema(cap: AgentCapability) -> dict[str, Any]:
             "type": "object",
             "properties": path_schema["properties"],
             "required": path_schema["required"],
+            "additionalProperties": False,
         }
 
     schema = cap.request_model.model_json_schema()
+    schema["additionalProperties"] = False
     schema.pop("title", None)
     for prop in schema.get("properties", {}).values():
         if isinstance(prop, dict):

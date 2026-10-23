@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 from threading import Lock
 from typing import Optional
+from repository_paths import AGENT_RATE_LIMIT_DB_PATH
 
 
 _CREATE_TABLE_SQL = """
@@ -34,8 +35,8 @@ CREATE INDEX IF NOT EXISTS idx_rate_limit_ts ON rate_limit_hits(ts)
 class RateLimitStore:
     """SQLite-backed sliding-window rate limit counter."""
 
-    def __init__(self, db_path: str | os.PathLike[str] = "data/agent_rate_limit.db") -> None:
-        self._db_path = str(db_path)
+    def __init__(self, db_path: str | os.PathLike[str] | None = None) -> None:
+        self._db_path = str(db_path if db_path is not None else AGENT_RATE_LIMIT_DB_PATH)
         self._lock = Lock()
         Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
@@ -137,7 +138,7 @@ _store: Optional[RateLimitStore] = None
 
 
 def get_rate_limit_store(
-    db_path: str | os.PathLike[str] = "data/agent_rate_limit.db",
+    db_path: str | os.PathLike[str] | None = None,
 ) -> RateLimitStore:
     """Return the shared RateLimitStore singleton."""
     global _store

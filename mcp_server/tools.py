@@ -44,7 +44,7 @@ def _make_tool_handler(cap: AgentCapability) -> Callable:
             # marking it for MCPServer to return the protocol-level isError.
             return [{
                 "type": "text",
-                "text": f"API Error ({exc.status_code}): {exc}",
+                "text": json.dumps({"error": {"code": exc.code, "message": str(exc), "details": exc.details}}, ensure_ascii=False),
                 "_agent_error": True,
             }]
         except Exception as exc:
@@ -60,173 +60,11 @@ def _make_tool_handler(cap: AgentCapability) -> Callable:
 
 
 def _dispatch(cap_id: str, args: dict[str, Any], client: AgentClient) -> dict[str, Any]:
-    """Route a capability ID to the appropriate AgentClient method."""
-
-    if cap_id == "identity.get":
-        return client.get_identity()
-    elif cap_id == 'generation.status':
-        return client.get_generation_status(args.get('project_id', ''), args.get('stage', ''))
-    elif cap_id == 'generation.stop':
-        return client.stop_generation(args.get('project_id', ''), args.get('stage', ''), args.get('operation_id', ''))
-    elif cap_id == "project.create":
-        return client.create_project(
-            name=args.get("name", ""),
-            description=args.get("description", ""),
-            canvas_profile=args.get("canvas_profile", "landscape_16_9"),
-            automation_mode=args.get("automation_mode", "auto"),
-            review_policy=args.get("review_policy", "none"),
-            mask_enabled=args.get("mask_enabled", True),
-            config_package_id=args.get("config_package_id"),
-            config_package_version=args.get("config_package_version"),
-            config_overrides=args.get("config_overrides"),
-            course_id=args.get("course_id"),
-            chapter_id=args.get("chapter_id"),
-            idempotency_key=args.get("idempotency_key"),
-        )
-
-    elif cap_id == "project.delete":
-        pid = args.get("project_id", "")
-        return client.delete_project(pid)
-
-    elif cap_id == "checkpoint.list":
-        pid = args.get("project_id", "")
-        return client.list_checkpoints(pid)
-
-    elif cap_id == "project.list":
-        return client.list_projects(
-            status=args.get("status"),
-            limit=args.get("limit", 50),
-        )
-
-    elif cap_id == "project.get":
-        pid = args.get("project_id", "")
-        return client.get_project(pid)
-
-    elif cap_id == "project.update":
-        pid = args.get("project_id", "")
-        return client.update_project(
-            project_id=pid,
-            name=args.get("name"),
-            description=args.get("description"),
-            ai_mode=args.get("ai_mode"),
-            expected_revision=args.get("expected_revision"),
-            idempotency_key=args.get("idempotency_key"),
-        )
-
-    elif cap_id == "source.set":
-        pid = args.get("project_id", "")
-        return client.set_source(
-            project_id=pid,
-            content=args.get("content"),
-            topic=args.get("topic"),
-            idempotency_key=args.get("idempotency_key"),
-        )
-
-    elif cap_id == "pipeline.run":
-        pid = args.get("project_id", "")
-        return client.start_pipeline(
-            project_id=pid,
-            start_from=args.get("start_from"),
-            stop_at=args.get("stop_at"),
-            mode=args.get("mode", "resume"),
-            idempotency_key=args.get("idempotency_key"),
-        )
-
-    elif cap_id == "pipeline.status":
-        pid = args.get("project_id", "")
-        return client.get_pipeline_status(pid)
-
-    elif cap_id == "pipeline.resume":
-        pid = args.get("project_id", "")
-        return client.resume_pipeline(
-            project_id=pid,
-            stop_at=args.get("stop_at"),
-            idempotency_key=args.get("idempotency_key"),
-        )
-
-    elif cap_id == "checkpoint.approve":
-        pid = args.get("project_id", "")
-        cp = args.get("checkpoint", "")
-        return client.approve_checkpoint(
-            project_id=pid,
-            checkpoint=cp,
-            approved=args.get("approved", True),
-            notes=args.get("notes", ""),
-            idempotency_key=args.get("idempotency_key"),
-        )
-
-    elif cap_id == "stage.get":
-        pid = args.get("project_id", "")
-        stage = args.get("stage", "storyboard")
-        return client.get_stage(pid, stage)
-
-    elif cap_id == "image.regenerate":
-        pid = args.get("project_id", "")
-        sid = args.get("slide_id", "")
-        return client.regenerate_image(
-            project_id=pid,
-            slide_id=sid,
-            instruction=args.get("instruction", ""),
-            idempotency_key=args.get("idempotency_key"),
-        )
-
-    elif cap_id == "narration.update":
-        pid = args.get("project_id", "")
-        sid = args.get("slide_id", "")
-        return client.update_narration(
-            project_id=pid,
-            slide_id=sid,
-            narration_text=args.get("narration_text", ""),
-            expected_revision=args.get("expected_revision"),
-            idempotency_key=args.get("idempotency_key"),
-        )
-
-    elif cap_id == "tts.synthesize":
-        pid = args.get("project_id", "")
-        return client.synthesize_tts(
-            project_id=pid,
-            slide_ids=args.get("slide_ids"),
-            idempotency_key=args.get("idempotency_key"),
-        )
-
-    elif cap_id == "video.render":
-        pid = args.get("project_id", "")
-        return client.render_video(pid, idempotency_key=args.get("idempotency_key"))
-
-    elif cap_id == "artifacts.list":
-        pid = args.get("project_id", "")
-        return client.list_artifacts(
-            project_id=pid,
-            artifact_type=args.get("artifact_type"),
-            slide_id=args.get("slide_id"),
-        )
-
-    elif cap_id == "artifact.get":
-        pid = args.get("project_id", "")
-        aid = args.get("artifact_id", "")
-        return client.get_artifact(pid, aid)
-
-    elif cap_id == "diagnostics":
-        return client.get_diagnostics()
-
-    elif cap_id == "digital_human.config.get":
-        pid = args.get("project_id", "")
-        return client.get_digital_human_config(pid)
-
-    elif cap_id == "digital_human.config.update":
-        pid = args.get("project_id", "")
-        config = args.get("config", {})
-        return client.update_digital_human_config(pid, config)
-
-    elif cap_id == "digital_human.health":
-        pid = args.get("project_id", "")
-        return client.check_digital_human_health(pid)
-
-    elif cap_id == "digital_human.generate":
-        pid = args.get("project_id", "")
-        return client.generate_digital_human(pid)
-
-    raise ValueError(f"Unknown capability for dispatch: {cap_id}")
+    """Named tools bind the schema shown to the Agent, never a newer schema."""
+    from agent_contract.capabilities import get_capability
+    from agent_contract.discovery import describe_capability
+    revision = describe_capability(get_capability(cap_id))["contract_revision"]
+    return client.invoke(cap_id, args, expected_contract_revision=revision)
 
 
 def _format_result(cap_id: str, result: dict[str, Any]) -> list[dict[str, Any]]:

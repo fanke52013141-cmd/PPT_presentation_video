@@ -96,16 +96,17 @@ def test_mcp_dispatch_digital_human_health():
     """MCP tools dispatch should route to client.check_digital_human_health."""
     from mcp_server.tools import _dispatch
     mock_client = MagicMock()
-    mock_client.check_digital_human_health.return_value = {"available": True}
+    mock_client.invoke.return_value = {"available": True}
     result = _dispatch("digital_human.health", {"project_id": "test-proj"}, mock_client)
-    mock_client.check_digital_human_health.assert_called_once_with("test-proj")
+    mock_client.invoke.assert_called_once()
+    assert mock_client.invoke.call_args.args == ("digital_human.health", {"project_id": "test-proj"})
     assert result["available"] is True
 
 
 def test_mcp_dispatch_digital_human_config_get():
     from mcp_server.tools import _dispatch
     mock_client = MagicMock()
-    mock_client.get_digital_human_config.return_value = {"enabled": False}
+    mock_client.invoke.return_value = {"enabled": False}
     result = _dispatch("digital_human.config.get", {"project_id": "p1"}, mock_client)
     assert result["enabled"] is False
 
@@ -113,6 +114,6 @@ def test_mcp_dispatch_digital_human_config_get():
 def test_mcp_dispatch_digital_human_generate():
     from mcp_server.tools import _dispatch
     mock_client = MagicMock()
-    mock_client.generate_digital_human.return_value = {"success": True}
+    mock_client.invoke.return_value = {"success": True}
     result = _dispatch("digital_human.generate", {"project_id": "p1"}, mock_client)
     assert result["success"] is True

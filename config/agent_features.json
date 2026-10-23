@@ -1,0 +1,3698 @@
+{
+  "account_routes.accounts": {
+    "source": "account_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('')",
+        "router": "APIRouter(prefix='/api/accounts', tags=['Creative accounts'])"
+      }
+    ],
+    "owner": "account_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "account_routes.current_account": {
+    "source": "account_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/current')",
+        "router": "APIRouter(prefix='/api/accounts', tags=['Creative accounts'])"
+      }
+    ],
+    "owner": "account_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "account_routes.account_create": {
+    "source": "account_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('')",
+        "router": "APIRouter(prefix='/api/accounts', tags=['Creative accounts'])"
+      }
+    ],
+    "owner": "account_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "account_routes.account_provision_from_current": {
+    "source": "account_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/provision-from-current')",
+        "router": "APIRouter(prefix='/api/accounts', tags=['Creative accounts'])"
+      }
+    ],
+    "owner": "account_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "account_routes.account_rename": {
+    "source": "account_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/{account_id}')",
+        "router": "APIRouter(prefix='/api/accounts', tags=['Creative accounts'])"
+      }
+    ],
+    "owner": "account_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "account_routes.account_select": {
+    "source": "account_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/{account_id}/select')",
+        "router": "APIRouter(prefix='/api/accounts', tags=['Creative accounts'])"
+      }
+    ],
+    "owner": "account_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "account_routes.account_delete": {
+    "source": "account_routes.py",
+    "routes": [
+      {
+        "method": "DELETE",
+        "declaration": "router.delete('/{account_id}')",
+        "router": "APIRouter(prefix='/api/accounts', tags=['Creative accounts'])"
+      }
+    ],
+    "owner": "account_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "account_routes.account_default_config": {
+    "source": "account_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/{account_id}/default-config')",
+        "router": "APIRouter(prefix='/api/accounts', tags=['Creative accounts'])"
+      }
+    ],
+    "owner": "account_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "account_routes.account_agent_token": {
+    "source": "account_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/{account_id}/agent-tokens')",
+        "router": "APIRouter(prefix='/api/accounts', tags=['Creative accounts'])"
+      }
+    ],
+    "owner": "account_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "ai_mask_routes.get_ai_mask_settings_route": {
+    "source": "ai_mask_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/settings/ai-mask')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "ai_mask_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "ai_mask_routes.put_ai_mask_settings_route": {
+    "source": "ai_mask_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/settings/ai-mask')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "ai_mask_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "ai_mask_routes.annotate_ai_mask_route": {
+    "source": "ai_mask_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/5/ai-mask/annotate')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "ai_mask_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "annotation_routes.get_annotation_summary": {
+    "source": "annotation_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/annotations')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "annotation_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "annotation_routes.update_annotation_settings": {
+    "source": "annotation_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/projects/{project_id}/annotations/settings')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "annotation_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "annotation_routes.get_annotation_slide": {
+    "source": "annotation_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/annotations/slides/{slide_id}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "annotation_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "annotation_routes.patch_annotation_slide": {
+    "source": "annotation_routes.py",
+    "routes": [
+      {
+        "method": "PATCH",
+        "declaration": "router.patch('/api/projects/{project_id}/annotations/slides/{slide_id}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "annotation_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "annotation_routes.get_annotation_text_layout": {
+    "source": "annotation_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/annotations/slides/{slide_id}/text-layout')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "annotation_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "annotation_routes.patch_annotation_text_layout": {
+    "source": "annotation_routes.py",
+    "routes": [
+      {
+        "method": "PATCH",
+        "declaration": "router.patch('/api/projects/{project_id}/annotations/slides/{slide_id}/text-layout')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "annotation_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "annotation_routes.get_annotation_prompts": {
+    "source": "annotation_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/annotations/prompts')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "annotation_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "annotation_routes.put_annotation_prompts": {
+    "source": "annotation_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/projects/{project_id}/annotations/prompts')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "annotation_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "annotation_routes.prepare_annotation_slide": {
+    "source": "annotation_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/annotations/slides/{slide_id}/prepare')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "annotation_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "annotation_routes.get_annotation_scene_asset": {
+    "source": "annotation_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/annotations/slides/{slide_id}/scene-asset')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "annotation_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "annotation_routes.get_annotation_editor_ink": {
+    "source": "annotation_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/annotations/slides/{slide_id}/editor-ink/{annotation_id}/{stroke_index}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "annotation_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "annotation_routes.get_annotation_ink": {
+    "source": "annotation_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/annotations/slides/{slide_id}/ink/{build_id}/{annotation_id}/{stroke_index}/{frame_index}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "annotation_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "annotation_routes.confirm_annotation_slide": {
+    "source": "annotation_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/annotations/slides/{slide_id}/confirm')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "annotation_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "annotation_routes.submit_annotation_job": {
+    "source": "annotation_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/annotations/jobs')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "annotation_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "annotation_routes.get_annotation_job": {
+    "source": "annotation_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/annotations/jobs/{job_id}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "annotation_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "annotation_routes.cancel_annotation_job": {
+    "source": "annotation_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/annotations/jobs/{job_id}/cancel')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "annotation_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "annotation_routes.export_annotation_preview": {
+    "source": "annotation_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/annotations/slides/{slide_id}/export-preview')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "annotation_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "annotation_routes.download_annotation_preview": {
+    "source": "annotation_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/annotations/slides/{slide_id}/export-preview/{token}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "annotation_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "article_routes.get_article_generation_settings": {
+    "source": "article_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/settings/article-generation')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "article_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "article_routes.update_article_generation_settings": {
+    "source": "article_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/settings/article-generation')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "article_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "article_routes.generate_article_from_topic": {
+    "source": "article_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/1/generate-article')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "article_routes.py",
+    "capabilities": [
+      "source.set"
+    ],
+    "coverage": "partial",
+    "reason": "Agent counterpart exists; field and behavior parity requires domain acceptance."
+  },
+  "article_routes.import_article": {
+    "source": "article_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/1/import')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "article_routes.py",
+    "capabilities": [
+      "source.set"
+    ],
+    "coverage": "partial",
+    "reason": "Agent counterpart exists; field and behavior parity requires domain acceptance."
+  },
+  "article_routes.get_step1_result": {
+    "source": "article_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/steps/1/result')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "article_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "article_routes.update_step1_result": {
+    "source": "article_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/projects/{project_id}/steps/1/result')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "article_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "course_routes.get_tree": {
+    "source": "course_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/courses/tree')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "course_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "course_routes.reorder_courses": {
+    "source": "course_routes.py",
+    "routes": [
+      {
+        "method": "PATCH",
+        "declaration": "router.patch('/api/courses/reorder')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "course_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "course_routes.reorder_chapters": {
+    "source": "course_routes.py",
+    "routes": [
+      {
+        "method": "PATCH",
+        "declaration": "router.patch('/api/chapters/reorder')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "course_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "course_routes.create_course": {
+    "source": "course_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/courses')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "course_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "course_routes.list_courses": {
+    "source": "course_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/courses')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "course_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "course_routes.get_course": {
+    "source": "course_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/courses/{course_id}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "course_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "course_routes.update_course": {
+    "source": "course_routes.py",
+    "routes": [
+      {
+        "method": "PATCH",
+        "declaration": "router.patch('/api/courses/{course_id}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "course_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "course_routes.delete_course": {
+    "source": "course_routes.py",
+    "routes": [
+      {
+        "method": "DELETE",
+        "declaration": "router.delete('/api/courses/{course_id}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "course_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "course_routes.create_chapter": {
+    "source": "course_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/courses/{course_id}/chapters')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "course_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "course_routes.update_chapter": {
+    "source": "course_routes.py",
+    "routes": [
+      {
+        "method": "PATCH",
+        "declaration": "router.patch('/api/chapters/{chapter_id}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "course_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "course_routes.delete_chapter": {
+    "source": "course_routes.py",
+    "routes": [
+      {
+        "method": "DELETE",
+        "declaration": "router.delete('/api/chapters/{chapter_id}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "course_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "course_routes.move_chapter": {
+    "source": "course_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/chapters/{chapter_id}/move')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "course_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "course_routes.move_project": {
+    "source": "course_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/move')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "course_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "course_routes.reorder_projects": {
+    "source": "course_routes.py",
+    "routes": [
+      {
+        "method": "PATCH",
+        "declaration": "router.patch('/api/projects/reorder')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "course_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "creation_config_routes.list_creation_configs": {
+    "source": "creation_config_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/creation-configs')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "creation_config_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "creation_config_routes.get_default_creation_config_payload": {
+    "source": "creation_config_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/creation-configs/default-payload')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "creation_config_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "creation_config_routes.create_creation_config": {
+    "source": "creation_config_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/creation-configs')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "creation_config_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "creation_config_routes.import_creation_config": {
+    "source": "creation_config_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/creation-configs/import')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "creation_config_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "creation_config_routes.get_creation_config": {
+    "source": "creation_config_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/creation-configs/{package_id}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "creation_config_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "creation_config_routes.update_creation_config": {
+    "source": "creation_config_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/creation-configs/{package_id}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "creation_config_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "creation_config_routes.get_creation_config_version": {
+    "source": "creation_config_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/creation-configs/{package_id}/versions/{version}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "creation_config_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "creation_config_routes.copy_creation_config": {
+    "source": "creation_config_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/creation-configs/{package_id}/copy')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "creation_config_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "creation_config_routes.create_creation_config_version": {
+    "source": "creation_config_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/creation-configs/{package_id}/versions')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "creation_config_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "creation_config_routes.archive_creation_config": {
+    "source": "creation_config_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/creation-configs/{package_id}/archive')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "creation_config_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "creation_config_routes.delete_creation_config": {
+    "source": "creation_config_routes.py",
+    "routes": [
+      {
+        "method": "DELETE",
+        "declaration": "router.delete('/api/creation-configs/{package_id}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "creation_config_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "creation_config_routes.resolve_creation_config": {
+    "source": "creation_config_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/creation-configs/{package_id}/resolve')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "creation_config_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "credential_routes.list_credentials": {
+    "source": "credential_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('')",
+        "router": "APIRouter(prefix='/api/credentials', tags=['Credentials'])"
+      }
+    ],
+    "owner": "credential_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "credential_routes.create_credential": {
+    "source": "credential_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('')",
+        "router": "APIRouter(prefix='/api/credentials', tags=['Credentials'])"
+      }
+    ],
+    "owner": "credential_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "credential_routes.update_credential": {
+    "source": "credential_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/{credential_ref:path}')",
+        "router": "APIRouter(prefix='/api/credentials', tags=['Credentials'])"
+      }
+    ],
+    "owner": "credential_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "diagnostics_routes.runtime_diagnostics": {
+    "source": "diagnostics_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/runtime/diagnostics')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "diagnostics_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "diagnostics_routes.generation_governor_snapshot": {
+    "source": "diagnostics_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/diagnostics/generation-governor')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "diagnostics_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "diagnostics_routes.get_error_log": {
+    "source": "diagnostics_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/error-log')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "diagnostics_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "diagnostics_routes.get_latest_error_log": {
+    "source": "diagnostics_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/error-log/latest', response_class=PlainTextResponse)",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "diagnostics_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "digital_human_routes.get_dh_config": {
+    "source": "digital_human_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/digital-human/config')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "digital_human_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "digital_human_routes.put_dh_config": {
+    "source": "digital_human_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/projects/{project_id}/digital-human/config')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "digital_human_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "digital_human_routes.upload_dh_video": {
+    "source": "digital_human_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/digital-human/upload')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "digital_human_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "digital_human_routes.get_dh_upload_video": {
+    "source": "digital_human_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/digital-human/upload/video')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "digital_human_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "digital_human_routes.dh_health": {
+    "source": "digital_human_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/digital-human/health')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "digital_human_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "digital_human_routes.upload_dh_avatar": {
+    "source": "digital_human_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/digital-human/avatars')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "digital_human_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "digital_human_routes.list_dh_avatars": {
+    "source": "digital_human_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/digital-human/avatars')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "digital_human_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "digital_human_routes.upload_comfyui_workflow": {
+    "source": "digital_human_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/digital-human/comfyui/workflow')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "digital_human_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "digital_human_routes.get_comfyui_workflow": {
+    "source": "digital_human_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/digital-human/comfyui/workflow')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "digital_human_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "digital_human_routes.generate_dh": {
+    "source": "digital_human_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/digital-human/generate/{slide_id}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "digital_human_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "digital_human_routes.generate_dh_full": {
+    "source": "digital_human_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/digital-human/generate-full')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "digital_human_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "digital_human_routes.get_dh_job": {
+    "source": "digital_human_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/digital-human/jobs/{job_id}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "digital_human_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "digital_human_routes.get_dh_slide_video": {
+    "source": "digital_human_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/digital-human/slides/{slide_id}/video')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "digital_human_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "digital_human_routes.compose_dh_slide": {
+    "source": "digital_human_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/digital-human/composite/{slide_id}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "digital_human_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "digital_human_routes.get_dh_composite_video": {
+    "source": "digital_human_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/digital-human/composite/{slide_id}/video')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "digital_human_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "digital_human_routes.export_full_audio": {
+    "source": "digital_human_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/digital-human/export-audio')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "digital_human_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "digital_human_routes.get_full_audio": {
+    "source": "digital_human_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/digital-human/export-audio/file')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "digital_human_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "generation_control_routes.get_generation_control": {
+    "source": "generation_control_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/generation-control/{kind}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "generation_control_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "generation_control_routes.stop_generation": {
+    "source": "generation_control_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/generation-control/{kind}/stop')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "generation_control_routes.py",
+    "capabilities": [
+      "operation.cancel",
+      "generation.stop"
+    ],
+    "coverage": "partial",
+    "reason": "Exact durable operation lifecycle exposed; remaining domain-specific fields require acceptance."
+  },
+  "global_image_style_routes.get_image_style": {
+    "source": "global_image_style_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/image-style')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "global_image_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "global_image_style_routes.update_image_style": {
+    "source": "global_image_style_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/image-style')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "global_image_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "global_image_style_routes.validate_image_style": {
+    "source": "global_image_style_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/image-style/validate')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "global_image_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "global_image_style_routes.get_image_style_templates": {
+    "source": "global_image_style_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/image-style/templates')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "global_image_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "global_image_style_routes.get_image_style_template": {
+    "source": "global_image_style_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/image-style/templates/{template_id}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "global_image_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "global_image_style_routes.save_image_style_template": {
+    "source": "global_image_style_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/image-style/templates')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "global_image_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "global_image_style_routes.delete_image_style_template": {
+    "source": "global_image_style_routes.py",
+    "routes": [
+      {
+        "method": "DELETE",
+        "declaration": "router.delete('/api/image-style/templates/{template_id}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "global_image_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "global_image_style_routes.apply_image_style_template_references": {
+    "source": "global_image_style_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/image-style/templates/{template_id}/apply-references')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "global_image_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "global_image_style_routes.get_image_style_template_reference": {
+    "source": "global_image_style_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/image-style/templates/{template_id}/reference/{kind}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "global_image_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "global_image_style_routes.get_image_style_reference": {
+    "source": "global_image_style_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/image-style/reference/{kind}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "global_image_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "global_image_style_routes.update_image_style_reference": {
+    "source": "global_image_style_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/image-style/reference/{kind}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "global_image_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "image_workflow_routes.get_step3_prompt_settings": {
+    "source": "image_workflow_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/steps/3/prompt-settings')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "image_workflow_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "image_workflow_routes.update_step3_prompt_settings": {
+    "source": "image_workflow_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/projects/{project_id}/steps/3/prompt-settings')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "image_workflow_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "image_workflow_routes.get_slide_prompts": {
+    "source": "image_workflow_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/steps/3/prompts')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "image_workflow_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "image_workflow_routes.generate_slide_image": {
+    "source": "image_workflow_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/3/generate')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "image_workflow_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "image_workflow_routes.upload_slide_image": {
+    "source": "image_workflow_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/3/upload')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "image_workflow_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "image_workflow_routes.get_slide_image_change_preview": {
+    "source": "image_workflow_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/steps/3/images/{slide_id}/change-preview')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "image_workflow_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "image_workflow_routes.list_slide_image_recovery": {
+    "source": "image_workflow_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/steps/3/images/{slide_id}/recovery')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "image_workflow_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "image_workflow_routes.image_recovery_overlay": {
+    "source": "image_workflow_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/steps/3/images/{slide_id}/recovery/{archive_id}/overlay')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "image_workflow_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "image_workflow_routes.reuse_slide_image_geometry": {
+    "source": "image_workflow_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/3/images/{slide_id}/reuse-geometry')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "image_workflow_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "image_workflow_routes.get_slide_image_file": {
+    "source": "image_workflow_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/slides/{slide_id}/image')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "image_workflow_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "image_workflow_routes.download_all_slide_images": {
+    "source": "image_workflow_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/steps/3/images/download')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "image_workflow_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "image_workflow_routes.get_slide_candidate_file": {
+    "source": "image_workflow_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/slides/{slide_id}/candidate')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "image_workflow_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "image_workflow_routes.apply_slide_candidate": {
+    "source": "image_workflow_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/3/apply-candidate')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "image_workflow_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "image_workflow_routes.delete_all_slide_images": {
+    "source": "image_workflow_routes.py",
+    "routes": [
+      {
+        "method": "DELETE",
+        "declaration": "router.delete('/api/projects/{project_id}/steps/3/images')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "image_workflow_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "image_workflow_routes.delete_slide_image": {
+    "source": "image_workflow_routes.py",
+    "routes": [
+      {
+        "method": "DELETE",
+        "declaration": "router.delete('/api/projects/{project_id}/steps/3/images/{slide_id}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "image_workflow_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "image_workflow_routes.get_all_images": {
+    "source": "image_workflow_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/steps/3/images')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "image_workflow_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "image_workflow_routes.update_step3_image_order": {
+    "source": "image_workflow_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/projects/{project_id}/steps/3/image-order')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "image_workflow_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "image_workflow_routes.confirm_images": {
+    "source": "image_workflow_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/3/confirm')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "image_workflow_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "ip_character_routes.get_ip_characters": {
+    "source": "ip_character_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/ip-characters')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "ip_character_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "ip_character_routes.upsert_ip_character": {
+    "source": "ip_character_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/ip-characters')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "ip_character_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "ip_character_routes.update_ip_character_config": {
+    "source": "ip_character_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/projects/{project_id}/ip-characters/config')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "ip_character_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "ip_character_routes.delete_ip_character": {
+    "source": "ip_character_routes.py",
+    "routes": [
+      {
+        "method": "DELETE",
+        "declaration": "router.delete('/api/projects/{project_id}/ip-characters/{character_id}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "ip_character_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "ip_character_routes.get_ip_character_image": {
+    "source": "ip_character_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/ip-characters/{character_id}/image')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "ip_character_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "mask_editor_routes.semantic_blocks_project": {
+    "source": "mask_editor_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/5/semantic-blocks')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "mask_editor_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "mask_editor_routes.get_step5_result": {
+    "source": "mask_editor_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/steps/5/result')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "mask_editor_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "mask_editor_routes.repair_step5_result": {
+    "source": "mask_editor_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/5/repair')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "mask_editor_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "mask_editor_routes.update_step5_draft": {
+    "source": "mask_editor_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/projects/{project_id}/steps/5/draft')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "mask_editor_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "mask_editor_routes.build_step5_mask_preview": {
+    "source": "mask_editor_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/5/slides/{slide_id}/preview')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "mask_editor_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "mask_editor_routes.get_step5_mask_preview": {
+    "source": "mask_editor_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/slides/{slide_id}/mask-preview')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "mask_editor_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "mask_editor_routes.update_step5_result": {
+    "source": "mask_editor_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/projects/{project_id}/steps/5/result')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "mask_editor_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "model_connection_routes.list_model_connections": {
+    "source": "model_connection_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('')",
+        "router": "APIRouter(prefix='/api/model-connections', tags=['Model connections'])"
+      }
+    ],
+    "owner": "model_connection_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "model_connection_routes.create_model_connection": {
+    "source": "model_connection_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('')",
+        "router": "APIRouter(prefix='/api/model-connections', tags=['Model connections'])"
+      }
+    ],
+    "owner": "model_connection_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "model_connection_routes.get_model_connection": {
+    "source": "model_connection_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/{connection_id}')",
+        "router": "APIRouter(prefix='/api/model-connections', tags=['Model connections'])"
+      }
+    ],
+    "owner": "model_connection_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "model_connection_routes.update_model_connection": {
+    "source": "model_connection_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/{connection_id}')",
+        "router": "APIRouter(prefix='/api/model-connections', tags=['Model connections'])"
+      }
+    ],
+    "owner": "model_connection_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "model_connection_routes.upload_model_reference_audio": {
+    "source": "model_connection_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/{connection_id}/reference-audio')",
+        "router": "APIRouter(prefix='/api/model-connections', tags=['Model connections'])"
+      }
+    ],
+    "owner": "model_connection_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "model_connection_routes.copy_model_connection": {
+    "source": "model_connection_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/{connection_id}/copy')",
+        "router": "APIRouter(prefix='/api/model-connections', tags=['Model connections'])"
+      }
+    ],
+    "owner": "model_connection_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "model_connection_routes.test_saved_model_connection": {
+    "source": "model_connection_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/{connection_id}/test')",
+        "router": "APIRouter(prefix='/api/model-connections', tags=['Model connections'])"
+      }
+    ],
+    "owner": "model_connection_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "model_connection_routes.update_model_connection_state": {
+    "source": "model_connection_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/{connection_id}/state')",
+        "router": "APIRouter(prefix='/api/model-connections', tags=['Model connections'])"
+      }
+    ],
+    "owner": "model_connection_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "model_connection_routes.delete_model_connection": {
+    "source": "model_connection_routes.py",
+    "routes": [
+      {
+        "method": "DELETE",
+        "declaration": "router.delete('/{connection_id}')",
+        "router": "APIRouter(prefix='/api/model-connections', tags=['Model connections'])"
+      }
+    ],
+    "owner": "model_connection_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "narration_routes.init_step6_narration": {
+    "source": "narration_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/6/init')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "narration_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "narration_routes.get_step6_result": {
+    "source": "narration_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/steps/6/result')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "narration_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "narration_routes.repair_step6_result": {
+    "source": "narration_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/6/repair')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "narration_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "narration_routes.get_narration_annotation_settings": {
+    "source": "narration_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/settings/narration-annotation')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "narration_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "narration_routes.update_narration_annotation_settings": {
+    "source": "narration_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/settings/narration-annotation')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "narration_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "narration_routes.annotate_step6_narration": {
+    "source": "narration_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/6/annotate')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "narration_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "narration_routes.update_step6_result": {
+    "source": "narration_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/projects/{project_id}/steps/6/result')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "narration_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "one_click_routes.start_one_click_route": {
+    "source": "one_click_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/one-click-generate')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "one_click_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "one_click_routes.get_one_click_status_route": {
+    "source": "one_click_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/one-click-generate/status')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "one_click_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "one_click_routes.pause_one_click_route": {
+    "source": "one_click_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/one-click-pause')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "one_click_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "one_click_routes.batch_one_click_status_route": {
+    "source": "one_click_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/one-click-statuses')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "one_click_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "pptx_routes.pptx_readiness": {
+    "source": "pptx_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/exports/pptx/readiness')",
+        "router": "APIRouter(prefix='/api/projects/{project_id}')"
+      }
+    ],
+    "owner": "pptx_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "pptx_routes.create_pptx_export": {
+    "source": "pptx_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/exports/pptx')",
+        "router": "APIRouter(prefix='/api/projects/{project_id}')"
+      }
+    ],
+    "owner": "pptx_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "pptx_routes.list_jobs": {
+    "source": "pptx_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/jobs')",
+        "router": "APIRouter(prefix='/api/projects/{project_id}')"
+      }
+    ],
+    "owner": "pptx_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "pptx_routes.get_job": {
+    "source": "pptx_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/jobs/{job_id}')",
+        "router": "APIRouter(prefix='/api/projects/{project_id}')"
+      }
+    ],
+    "owner": "pptx_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "pptx_routes.retry_job": {
+    "source": "pptx_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/jobs/{job_id}/retry')",
+        "router": "APIRouter(prefix='/api/projects/{project_id}')"
+      }
+    ],
+    "owner": "pptx_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "pptx_routes.list_exports": {
+    "source": "pptx_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/exports')",
+        "router": "APIRouter(prefix='/api/projects/{project_id}')"
+      }
+    ],
+    "owner": "pptx_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "pptx_routes.download_export": {
+    "source": "pptx_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/exports/{artifact_id}/download')",
+        "router": "APIRouter(prefix='/api/projects/{project_id}')"
+      }
+    ],
+    "owner": "pptx_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "pptx_routes.delete_export": {
+    "source": "pptx_routes.py",
+    "routes": [
+      {
+        "method": "DELETE",
+        "declaration": "router.delete('/exports/{artifact_id}')",
+        "router": "APIRouter(prefix='/api/projects/{project_id}')"
+      }
+    ],
+    "owner": "pptx_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_routes.get_project_impacts": {
+    "source": "project_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/impacts')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_routes.preview_storyboard_reuse": {
+    "source": "project_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/impacts/storyboard-reuse-preview')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_routes.confirm_storyboard_reuse": {
+    "source": "project_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/projects/{project_id}/impacts/reuse-storyboard')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_routes.update_project_impact_decision": {
+    "source": "project_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/projects/{project_id}/impacts/decision')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_routes.confirm_storyboard_image_reuse": {
+    "source": "project_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/projects/{project_id}/impacts/reuse-image')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_routes.create_project": {
+    "source": "project_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_routes.py",
+    "capabilities": [
+      "project.create"
+    ],
+    "coverage": "partial",
+    "reason": "Agent counterpart exists; field and behavior parity requires domain acceptance."
+  },
+  "project_routes.list_projects": {
+    "source": "project_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_routes.py",
+    "capabilities": [
+      "project.list"
+    ],
+    "coverage": "partial",
+    "reason": "Agent counterpart exists; field and behavior parity requires domain acceptance."
+  },
+  "project_routes.get_project": {
+    "source": "project_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_routes.py",
+    "capabilities": [
+      "project.get"
+    ],
+    "coverage": "partial",
+    "reason": "Agent counterpart exists; field and behavior parity requires domain acceptance."
+  },
+  "project_routes.get_project_ai_mode": {
+    "source": "project_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/ai-mode')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_routes.update_project_ai_mode": {
+    "source": "project_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/projects/{project_id}/ai-mode')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_routes.update_project": {
+    "source": "project_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/projects/{project_id}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_routes.py",
+    "capabilities": [
+      "project.update"
+    ],
+    "coverage": "partial",
+    "reason": "Agent counterpart exists; field and behavior parity requires domain acceptance."
+  },
+  "project_routes.delete_project": {
+    "source": "project_routes.py",
+    "routes": [
+      {
+        "method": "DELETE",
+        "declaration": "router.delete('/api/projects/{project_id}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_routes.py",
+    "capabilities": [
+      "project.delete"
+    ],
+    "coverage": "partial",
+    "reason": "Agent counterpart exists; field and behavior parity requires domain acceptance."
+  },
+  "project_style_routes.get_project_profile_templates": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/project-profile/templates')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.get_project_profile": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/project-profile')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.save_project_profile": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "API_ROUTE",
+        "declaration": "router.api_route('/api/projects/{project_id}/project-profile', methods=['PUT', 'POST'])",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.generate_project_image_style": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/project-profile/image-style/generate')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.get_reverse_style_prompt_settings": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/settings/image-style-reverse')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.update_reverse_style_prompt_settings": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/settings/image-style-reverse')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.reverse_step3_image_style": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/3/image-style/reverse')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.reverse_legacy_project_image_style": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/project-profile/image-style/reverse')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.get_step3_image_style": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/steps/3/image-style')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.put_step3_image_style": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/projects/{project_id}/steps/3/image-style')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.get_reference_generation_prompt_settings": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/settings/image-style-reference-generation')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.update_reference_generation_prompt_settings": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/settings/image-style-reference-generation')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.list_step3_reference_images": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/steps/3/image-style/reference-images')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.generate_step3_reference_images": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/3/image-style/reference-images/generate')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.upload_step3_reference_images": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/3/image-style/reference-images')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.get_step3_reference_image": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/steps/3/image-style/reference-images/{index}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.delete_step3_reference_image": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "DELETE",
+        "declaration": "router.delete('/api/projects/{project_id}/steps/3/image-style/reference-images/{index}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.delete_all_step3_reference_images": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "DELETE",
+        "declaration": "router.delete('/api/projects/{project_id}/steps/3/image-style/reference-images')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.list_legacy_reference_images": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/project-profile/image-style/reference-images')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.generate_legacy_reference_images": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/project-profile/image-style/reference-images/generate')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.get_legacy_reference_image": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/project-profile/image-style/reference-images/{index}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.delete_legacy_reference_image": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "DELETE",
+        "declaration": "router.delete('/api/projects/{project_id}/project-profile/image-style/reference-images/{index}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.delete_all_legacy_reference_images": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "DELETE",
+        "declaration": "router.delete('/api/projects/{project_id}/project-profile/image-style/reference-images')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.list_step3_templates": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/image-style/project-templates')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.get_step3_template_detail": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/image-style/project-templates/{template_id}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.create_account_style_template": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/image-style/project-templates')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.create_account_style_template_with_references": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/image-style/project-templates/with-references')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.get_step3_template_reference": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/image-style/project-templates/{template_id}/reference-images/{index}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.save_step3_template": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/3/image-style/templates')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.apply_step3_template": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/3/image-style/templates/{template_id}/apply')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "project_style_routes.delete_step3_template": {
+    "source": "project_style_routes.py",
+    "routes": [
+      {
+        "method": "DELETE",
+        "declaration": "router.delete('/api/image-style/project-templates/{template_id}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "project_style_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "settings_routes.get_settings": {
+    "source": "settings_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/settings')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "settings_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "settings_routes.update_system_settings": {
+    "source": "settings_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/settings')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "settings_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "settings_routes.export_full_config": {
+    "source": "settings_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/config/export')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "settings_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "settings_routes.export_full_config_zip": {
+    "source": "settings_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/config/export-zip')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "settings_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "settings_routes.export_full_config_with_secrets": {
+    "source": "settings_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/config/export-with-secrets')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "settings_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "settings_routes.export_full_config_with_secrets_zip": {
+    "source": "settings_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/config/export-with-secrets-zip')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "settings_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "settings_routes.import_full_config": {
+    "source": "settings_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/config/import')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "settings_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "settings_routes.import_full_config_zip": {
+    "source": "settings_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/config/import-zip')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "settings_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "settings_routes.test_llm_connection": {
+    "source": "settings_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/settings/test-llm')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "settings_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "settings_routes.test_image_connection": {
+    "source": "settings_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/settings/test-image')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "settings_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "settings_routes.test_tts_connection": {
+    "source": "settings_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/settings/test-tts')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "settings_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "settings_routes.get_comfyui_tts_workflow": {
+    "source": "settings_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/settings/comfyui-tts-workflow')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "settings_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "settings_routes.upload_comfyui_tts_workflow": {
+    "source": "settings_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/settings/comfyui-tts-workflow')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "settings_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_background.get_background": {
+    "source": "storyboard_background.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/storyboard-background')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_background.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_background.put_background": {
+    "source": "storyboard_background.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/projects/{project_id}/storyboard-background')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_background.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_background.upload_background": {
+    "source": "storyboard_background.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/storyboard-background/image')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_background.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_background.get_background_image": {
+    "source": "storyboard_background.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/storyboard-background/image')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_background.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_routes.get_step2_prompt_templates": {
+    "source": "storyboard_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/step2-prompt-templates')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_routes.get_step2_prompt_template": {
+    "source": "storyboard_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/step2-prompt-templates/{template_id}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_routes.save_step2_prompt_template": {
+    "source": "storyboard_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/step2-prompt-templates')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_routes.delete_step2_prompt_template": {
+    "source": "storyboard_routes.py",
+    "routes": [
+      {
+        "method": "DELETE",
+        "declaration": "router.delete('/api/step2-prompt-templates/{template_id}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_routes.get_storyboard_templates": {
+    "source": "storyboard_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/storyboard-templates')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_routes.save_storyboard_template": {
+    "source": "storyboard_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/storyboard-templates')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_routes.delete_storyboard_template": {
+    "source": "storyboard_routes.py",
+    "routes": [
+      {
+        "method": "DELETE",
+        "declaration": "router.delete('/api/storyboard-templates/{template_id}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_routes.get_step2_rules": {
+    "source": "storyboard_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/steps/2/rules')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_routes.update_step2_rules": {
+    "source": "storyboard_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/projects/{project_id}/steps/2/rules')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_routes.get_step2_prompts": {
+    "source": "storyboard_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/steps/2/prompts')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_routes.update_step2_prompts": {
+    "source": "storyboard_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/projects/{project_id}/steps/2/prompts')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_routes.execute_step2_script_plan": {
+    "source": "storyboard_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/2/script/execute')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_routes.get_step2_script_plan": {
+    "source": "storyboard_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/steps/2/script/result')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_routes.update_step2_script_plan": {
+    "source": "storyboard_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/projects/{project_id}/steps/2/script/result')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_routes.execute_step2_visual_plan": {
+    "source": "storyboard_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/2/visual/execute')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_routes.get_step2_visual_plan": {
+    "source": "storyboard_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/steps/2/visual/result')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_routes.update_step2_visual_plan": {
+    "source": "storyboard_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/projects/{project_id}/steps/2/visual/result')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_routes.compose_step2_visual_contract": {
+    "source": "storyboard_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/2/compose')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_routes.get_step2_prompt_preview": {
+    "source": "storyboard_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/2/prompt-preview')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_routes.execute_step2": {
+    "source": "storyboard_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/2/execute')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_routes.get_step2_result": {
+    "source": "storyboard_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/steps/2/result')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_routes.repair_step2_result": {
+    "source": "storyboard_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/2/repair')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_routes.update_step2_result": {
+    "source": "storyboard_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/projects/{project_id}/steps/2/result')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "storyboard_routes.submit_step2_manual_skeleton": {
+    "source": "storyboard_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/2/manual-skeleton')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "storyboard_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "subtitle_export_routes.get_subtitle_export_readiness": {
+    "source": "subtitle_export_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/subtitles/readiness')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "subtitle_export_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "subtitle_export_routes.download_subtitles_srt": {
+    "source": "subtitle_export_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/subtitles.srt')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "subtitle_export_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "tts_routes.synthesize_tts_resumable": {
+    "source": "tts_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/7/synthesize')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "tts_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "tts_routes.create_tts_synthesis_job": {
+    "source": "tts_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/7/synthesize-async')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "tts_routes.py",
+    "capabilities": [
+      "tts.synthesize"
+    ],
+    "coverage": "partial",
+    "reason": "Exact durable operation lifecycle exposed; remaining domain-specific fields require acceptance."
+  },
+  "tts_routes.list_tts_synthesis_jobs": {
+    "source": "tts_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/steps/7/synthesize-jobs')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "tts_routes.py",
+    "capabilities": [
+      "operation.list"
+    ],
+    "coverage": "partial",
+    "reason": "Exact durable operation lifecycle exposed; remaining domain-specific fields require acceptance."
+  },
+  "tts_routes.get_tts_synthesis_job": {
+    "source": "tts_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/steps/7/synthesize-jobs/{job_id}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "tts_routes.py",
+    "capabilities": [
+      "operation.get"
+    ],
+    "coverage": "partial",
+    "reason": "Exact durable operation lifecycle exposed; remaining domain-specific fields require acceptance."
+  },
+  "tts_routes.get_tts_audio_status": {
+    "source": "tts_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/steps/7/audio-status')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "tts_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "tts_routes.get_slide_audio_file": {
+    "source": "tts_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/slides/{slide_id}/audio')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "tts_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "tts_routes.confirm_tts_audio": {
+    "source": "tts_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/7/confirm')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "tts_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "video_routes.render_video": {
+    "source": "video_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/8/render')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "video_routes.py",
+    "capabilities": [
+      "video.render"
+    ],
+    "coverage": "partial",
+    "reason": "Exact durable operation lifecycle exposed; remaining domain-specific fields require acceptance."
+  },
+  "video_routes.get_render_status": {
+    "source": "video_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/steps/8/render-status')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "video_routes.py",
+    "capabilities": [
+      "operation.get",
+      "operation.list"
+    ],
+    "coverage": "partial",
+    "reason": "Exact durable operation lifecycle exposed; remaining domain-specific fields require acceptance."
+  },
+  "video_routes.list_project_videos": {
+    "source": "video_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/videos')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "video_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "video_routes.get_project_video": {
+    "source": "video_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/videos/{filename}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "video_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "video_routes.create_speed_adjusted_video": {
+    "source": "video_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/videos/{filename}/speed')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "video_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "video_routes.delete_project_video": {
+    "source": "video_routes.py",
+    "routes": [
+      {
+        "method": "DELETE",
+        "declaration": "router.delete('/api/projects/{project_id}/videos/{filename}')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "video_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "video_routes.get_final_video_status": {
+    "source": "video_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/video/status')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "video_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "video_routes.get_final_video": {
+    "source": "video_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/video')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "video_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "visual_settings_routes.get_step3_visual_settings": {
+    "source": "visual_settings_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/steps/3/visual-settings')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "visual_settings_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "visual_settings_routes.update_step3_visual_settings": {
+    "source": "visual_settings_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/projects/{project_id}/steps/3/visual-settings')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "visual_settings_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "visual_settings_routes.get_project_subtitle_settings": {
+    "source": "visual_settings_routes.py",
+    "routes": [
+      {
+        "method": "GET",
+        "declaration": "router.get('/api/projects/{project_id}/subtitle-settings')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "visual_settings_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  },
+  "visual_settings_routes.update_project_subtitle_settings": {
+    "source": "visual_settings_routes.py",
+    "routes": [
+      {
+        "method": "PUT",
+        "declaration": "router.put('/api/projects/{project_id}/subtitle-settings')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "visual_settings_routes.py",
+    "capabilities": [],
+    "coverage": "pending",
+    "reason": "Domain implementation and scenario acceptance pending."
+  }
+}

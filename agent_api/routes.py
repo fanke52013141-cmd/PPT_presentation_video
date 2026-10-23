@@ -14,11 +14,10 @@ modified. The Agent API is an additional layer alongside them.
 from __future__ import annotations
 
 import logging
-import uuid
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -47,6 +46,7 @@ from agent_contract.models import (
 from agent_contract.operations import (
     CHECKPOINT_STAGES, get_checkpoint,
     operation_from_one_click, unwrap_one_click_status,
+    normalize_status,
 )
 from agent_contract.artifacts import (
     build_resource_uri, mime_for_type,
@@ -56,9 +56,9 @@ from agent_api.errors import (
     AgentAPIError, ProjectNotFoundError, ValidationFailedError,
     ConflictError, OperationFailedError,
 )
+from agent_api.fingerprints import request_fingerprint
 from agent_idempotency_service import (
     AgentIdempotencyService,
-    compute_fingerprint,
     get_idempotency_service,
     IdempotencyConflictError,
 )
@@ -66,6 +66,12 @@ from agent_idempotency_service import (
 logger = logging.getLogger("PPTStudio.AgentAPI")
 
 router = APIRouter(prefix="/api/agent/v1", tags=["Agent API v1"])
+
+from agent_api.discovery import router as discovery_router
+router.include_router(discovery_router)
+from agent_api.operation_routes import router as operation_router
+from agent_api.operation_routes import agent_get_operation, agent_list_operations, agent_cancel_operation  # noqa: F401
+router.include_router(operation_router)
 
 
 @router.get('/projects/{project_id}/generation/{stage}/status', response_model=GenerationControlResult)
@@ -115,10 +121,6 @@ def _project_summary(project: Project) -> ProjectSummary:
         chapter_id=getattr(project, "chapter_id", None),
         created_at=project.created_at.isoformat() if project.created_at else None,
     )
-
-
-def _gen_op_id() -> str:
-    return f"op_{uuid.uuid4().hex[:12]}"
 
 
 def _idempotency_replay_or_raise(claim_result) -> Optional[dict[str, Any]]:
@@ -245,7 +247,7 @@ def agent_create_project(
     try:
         claim = idempotency.claim(
             "project.create", "", payload.idempotency_key or "",
-            compute_fingerprint(payload.model_dump(mode="json")),
+            request_fingerprint('project.create', payload.model_dump(mode="json")),
         )
     except IdempotencyConflictError as e:
         raise ConflictError(str(e), details=e.details)
@@ -280,7 +282,6 @@ def agent_create_project(
 
         response = ProjectCreateResult(
             project=_project_summary(project),
-            operation_id=_gen_op_id(),
         ).model_dump()
         idempotency.finalize(claim.record_pk, True, response)
         return response
@@ -354,7 +355,7 @@ def agent_update_project(
     try:
         claim = idempotency.claim(
             "project.update", project_id, payload.idempotency_key or "",
-            compute_fingerprint(payload.model_dump(mode="json")),
+            request_fingerprint('project.update', payload.model_dump(mode="json"), project_id=project_id),
         )
     except IdempotencyConflictError as e:
         raise ConflictError(str(e), details=e.details)
@@ -369,6 +370,12 @@ def agent_update_project(
         raise ConflictError(str(e), details=e.details)
 
     try:
+        edits = payload.model_dump(mode="json", exclude_none=True, exclude={"expected_revision", "idempotency_key"})
+        if all(getattr(project, key) == value for key, value in edits.items()):
+            response = ProjectUpdateResult(project=_project_summary(project), updated=False).model_dump()
+            idempotency.finalize(claim.record_pk, True, response)
+            return response
+        AgentIdempotencyService.bump_revision(db, project)
         if payload.name is not None:
             project.name = payload.name
         if payload.description is not None:
@@ -386,7 +393,6 @@ def agent_update_project(
             project.presentation_mode = payload.presentation_mode.value
             project.mask_enabled = 1 if project.presentation_mode == "reveal" else 0
 
-        AgentIdempotencyService.bump_revision(db, project)
         db.commit()
         db.refresh(project)
 
@@ -396,7 +402,12 @@ def agent_update_project(
         ).model_dump()
         idempotency.finalize(claim.record_pk, True, response)
         return response
+    except IdempotencyConflictError as e:
+        db.rollback()
+        idempotency.finalize(claim.record_pk, False, None)
+        raise ConflictError(str(e), details=e.details)
     except Exception:
+        db.rollback()
         idempotency.finalize(claim.record_pk, False, None)
         raise
 
@@ -432,7 +443,7 @@ def agent_set_source(
     try:
         claim = idempotency.claim(
             "source.set", project_id, payload.idempotency_key or "",
-            compute_fingerprint(payload.model_dump(mode="json")),
+            request_fingerprint('source.set', payload.model_dump(mode="json"), project_id=project_id),
         )
     except IdempotencyConflictError as e:
         raise ConflictError(str(e), details=e.details)
@@ -491,7 +502,7 @@ def agent_start_pipeline(
     try:
         claim = idempotency.claim(
             "pipeline.run", project_id, payload.idempotency_key or "",
-            compute_fingerprint(payload.model_dump(mode="json")),
+            request_fingerprint('pipeline.run', payload.model_dump(mode="json"), project_id=project_id),
         )
     except IdempotencyConflictError as e:
         raise ConflictError(str(e), details=e.details)
@@ -514,9 +525,9 @@ def agent_start_pipeline(
         status = unwrap_one_click_status(result)
 
         response = PipelineRunResult(
-            operation_id=status.get("run_id", _gen_op_id()),
+            operation_id="pipeline:" + status["run_id"],
             project_id=project_id,
-            status=str(status.get("status", "running")),
+            status=normalize_status(str(status.get("status", "unknown"))).value,
             current_stage=str(status.get("current_stage", "preflight")),
             message=str(status.get("message", "")),
         ).model_dump()
@@ -718,7 +729,7 @@ def agent_resume_pipeline(
     try:
         claim = idempotency.claim(
             "pipeline.resume", project_id, payload.idempotency_key or "",
-            compute_fingerprint(payload.model_dump(mode="json")),
+            request_fingerprint('pipeline.resume', payload.model_dump(mode="json"), project_id=project_id),
         )
     except IdempotencyConflictError as e:
         raise ConflictError(str(e), details=e.details)
@@ -737,9 +748,9 @@ def agent_resume_pipeline(
         status = unwrap_one_click_status(result)
 
         response = PipelineRunResult(
-            operation_id=status.get("run_id", _gen_op_id()),
+            operation_id="pipeline:" + status["run_id"],
             project_id=project_id,
-            status=str(status.get("status", "running")),
+            status=normalize_status(str(status.get("status", "unknown"))).value,
             current_stage=str(status.get("current_stage", "")),
             message=str(status.get("message", "")),
         ).model_dump()
@@ -790,7 +801,7 @@ def agent_approve_checkpoint(
     try:
         claim = idempotency.claim(
             "checkpoint.approve", project_id, payload.idempotency_key or "",
-            compute_fingerprint(payload.model_dump(mode="json")),
+            request_fingerprint('checkpoint.approve', payload.model_dump(mode="json"), project_id=project_id, checkpoint=checkpoint),
         )
     except IdempotencyConflictError as e:
         raise ConflictError(str(e), details=e.details)
@@ -942,7 +953,7 @@ def agent_regenerate_image(
     try:
         claim = idempotency.claim(
             "images.regenerate", project_id, payload.idempotency_key or "",
-            compute_fingerprint(payload.model_dump(mode="json")),
+            request_fingerprint('image.regenerate', payload.model_dump(mode="json"), project_id=project_id, slide_id=slide_id),
         )
     except IdempotencyConflictError as e:
         raise ConflictError(str(e), details=e.details)
@@ -990,7 +1001,7 @@ def agent_update_narration(
     try:
         claim = idempotency.claim(
             "narration.update", project_id, payload.idempotency_key or "",
-            compute_fingerprint(payload.model_dump(mode="json")),
+            request_fingerprint('narration.update', payload.model_dump(mode="json"), project_id=project_id, slide_id=slide_id),
         )
     except IdempotencyConflictError as e:
         raise ConflictError(str(e), details=e.details)
@@ -1007,6 +1018,7 @@ def agent_update_narration(
     try:
         from pipeline_services import get_project_pipeline_services
 
+        AgentIdempotencyService.bump_revision(db, project)
         services = get_project_pipeline_services(db, project_id)
         current = services.narration()
         beats = current.get("beats") if isinstance(current, dict) else None
@@ -1016,6 +1028,12 @@ def agent_update_narration(
         updated = False
         for slide in beats["slides"]:
             if isinstance(slide, dict) and str(slide.get("slide_id") or "") == slide_id:
+                if slide.get("tts_text") == payload.narration_text:
+                    db.rollback()  # Release CAS without changing the version.
+                    response = {"project_id": project_id, "slide_id": slide_id, "updated": False,
+                                "narration_text": payload.narration_text, "revision": project.revision}
+                    idempotency.finalize(claim.record_pk, True, response)
+                    return response
                 # tts_text is the canonical speech text consumed by the TTS
                 # service.  Preserve all other beat metadata verbatim.
                 slide["tts_text"] = payload.narration_text
@@ -1028,7 +1046,6 @@ def agent_update_narration(
         # audio/video state through the existing step-navigation lifecycle.
         services.save_narration(beats)
 
-        AgentIdempotencyService.bump_revision(db, project)
         db.commit()
 
         response = {
@@ -1036,13 +1053,20 @@ def agent_update_narration(
             "slide_id": slide_id,
             "updated": True,
             "narration_text": payload.narration_text,
+            "revision": project.revision,
         }
         idempotency.finalize(claim.record_pk, True, response)
         return response
+    except IdempotencyConflictError as e:
+        db.rollback()
+        idempotency.finalize(claim.record_pk, False, None)
+        raise ConflictError(str(e), details=e.details)
     except AgentAPIError:
+        db.rollback()
         idempotency.finalize(claim.record_pk, False, None)
         raise
     except Exception as e:
+        db.rollback()
         idempotency.finalize(claim.record_pk, False, None)
         raise OperationFailedError(f"Narration update failed: {e}")
 
@@ -1069,7 +1093,7 @@ def agent_tts_synthesize(
     try:
         claim = idempotency.claim(
             "tts.synthesize", project_id, payload.idempotency_key or "",
-            compute_fingerprint(payload.model_dump(mode="json")),
+            request_fingerprint('tts.synthesize', payload.model_dump(mode="json"), project_id=project_id),
         )
     except IdempotencyConflictError as e:
         raise ConflictError(str(e), details=e.details)
@@ -1078,18 +1102,20 @@ def agent_tts_synthesize(
         return replay
 
     try:
-        from pipeline_services import get_project_pipeline_services
-        services = get_project_pipeline_services(db, project_id)
-        result = services.synthesize_audio()
+        from tts_service import get_tts_async_service
+        result = get_tts_async_service().create_job(db, project_id, {})
+    except HTTPException:
+        idempotency.finalize(claim.record_pk, False, None)
+        raise
     except Exception as e:
         idempotency.finalize(claim.record_pk, False, None)
         raise OperationFailedError(f"TTS synthesis failed: {e}")
 
     response = TtsSynthesizeResult(
-        operation_id=_gen_op_id(),
+        operation_id="job:" + result["job"]["id"],
         project_id=project_id,
-        status=result.get("status", "running"),
-        job_id=result.get("job_id", result.get("task_id", "")),
+        status=normalize_status(str(result["job"]["status"])).value,
+        job_id=result["job"]["id"],
     ).model_dump()
     idempotency.finalize(claim.record_pk, True, response)
     return response
@@ -1112,7 +1138,7 @@ def agent_video_render(
     try:
         claim = idempotency.claim(
             "videos.render", project_id, payload.idempotency_key or "",
-            compute_fingerprint(payload.model_dump(mode="json")),
+            request_fingerprint('video.render', payload.model_dump(mode="json"), project_id=project_id),
         )
     except IdempotencyConflictError as e:
         raise ConflictError(str(e), details=e.details)
@@ -1129,9 +1155,9 @@ def agent_video_render(
         raise OperationFailedError(f"Video render failed: {e}")
 
     response = VideoRenderResult(
-        operation_id=_gen_op_id(),
+        operation_id="job:" + result["task_id"],
         project_id=project_id,
-        status=result.get("status", "running"),
+        status=normalize_status(str(result.get("status", "unknown"))).value,
         job_id=result.get("job_id", result.get("task_id", "")),
     ).model_dump()
     idempotency.finalize(claim.record_pk, True, response)
@@ -1258,10 +1284,10 @@ def agent_get_digital_human_config(
     project = _resolve_project(db, project_id)
     config_path = Path(project.run_dir) / "planning" / "digital_human.json"
     if not config_path.is_file():
-        return JSONResponse({"enabled": False, "configured": False})
+        return DigitalHumanConfigResult(config={"enabled": False, "configured": False})
     import json as _json
     data = _json.loads(config_path.read_text(encoding="utf-8"))
-    return data
+    return DigitalHumanConfigResult(config=data)
 
 
 @router.patch("/projects/{project_id}/digital-human/config")

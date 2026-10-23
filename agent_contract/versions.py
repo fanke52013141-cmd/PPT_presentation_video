@@ -13,10 +13,9 @@ import json
 from typing import Any
 
 from agent_contract.capabilities import CAPABILITIES, CapabilityStatus
-from agent_contract.schema import capability_input_schema, capability_output_schema
 
 
-AGENT_API_VERSION = "1.9.0"
+AGENT_API_VERSION = "2.1.0"
 
 
 def get_contract_hash() -> str:
@@ -28,20 +27,8 @@ def get_contract_hash() -> str:
     # Build a deterministic representation of the registry
     parts: list[str] = []
     for cap in sorted(CAPABILITIES, key=lambda c: c.id):
-        req_schema = capability_input_schema(cap)
-        res_schema = capability_output_schema(cap)
-        entry = {
-            "id": cap.id,
-            "version": cap.version,
-            "status": cap.status.value,
-            "method": cap.agent_api_method,
-            "path": cap.agent_api_path,
-            "mcp_tool": cap.mcp_tool_name,
-            "mcp_enabled": cap.mcp_enabled,
-            "cli": cap.cli_command,
-            "request_schema": req_schema,
-            "response_schema": res_schema,
-        }
+        from agent_contract.discovery import describe_capability
+        entry = describe_capability(cap)
         parts.append(json.dumps(entry, sort_keys=True, ensure_ascii=False))
     combined = "\n".join(parts)
     return hashlib.sha256(combined.encode("utf-8")).hexdigest()[:16]
@@ -100,24 +87,20 @@ def get_meta() -> dict[str, Any]:
 
     return {
         "agent_api_version": AGENT_API_VERSION,
-        "contract_hash": CONTRACT_VERSION,
+        "contract_hash": get_contract_hash(),
+        "bootstrap_version": "1",
+        "discovery_url": "/api/agent/v1/capabilities",
+        "invoke_url": "/api/agent/v1/invoke",
         "application_version": app_version,
         "capabilities": get_capability_versions(),
         "capability_details": [
-            {
-                "id": cap.id,
-                "version": cap.version,
-                "status": cap.status.value,
-                "description": cap.description,
-                "method": cap.agent_api_method,
-                "path": cap.agent_api_path,
-                "mcp_tool": cap.mcp_tool_name,
-                "mcp_enabled": cap.mcp_enabled,
-                "cli_command": cap.cli_command,
-                "input_schema": capability_input_schema(cap),
-                "output_schema": capability_output_schema(cap),
-            }
+            _describe(cap)
             for cap in CAPABILITIES
             if cap.status != CapabilityStatus.removed
         ],
     }
+
+
+def _describe(cap):
+    from agent_contract.discovery import describe_capability
+    return describe_capability(cap)

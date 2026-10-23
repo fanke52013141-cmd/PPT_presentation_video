@@ -1,5 +1,27 @@
 # AGENTS.md
 
+## Agent interface delivery
+
+Agent is a first-class client of the same source-owned business services as
+the Web UI. Follow `docs/agent/development-plan.md` and register business HTTP
+entrypoints in `config/agent_features.json`. Changes to business routes require
+an explicit coverage review; pending/partial entries are implementation gaps,
+not exemptions. Background-only features and field changes also need scenario
+and contract review even when no route changes.
+
+Update capability models, behavior_version, adapters, generated discovery,
+contract snapshots, documentation and meaningful scenario checks in the same
+change. Run `scripts/check_agent_coverage.py` and
+`scripts/generate_agent_contracts.py --check` through the canonical checks.
+The final full-openness release requires `--require-complete` coverage.
+
+The current Agent contract replaces the historical one; do not add old-protocol
+aliases or migration windows. Dynamic invocation must check the exact capability
+contract revision, validate input and enforce the actual capability scope before
+executing. Do not blindly retry unknown-result writes with a fresh idempotency key.
+Agent API/MCP/CLI adapters must not duplicate business algorithms or bypass the
+gateway-global generation governor, resource ownership, or invalidation rules.
+
 ## Production Pipeline
 
 `storyboard_planning.py` owns pure Step 2 plan normalization, narration-to-

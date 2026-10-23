@@ -1526,9 +1526,9 @@ class TtsAsyncService:
             db.add(job)
             db.commit()
             db.refresh(job)
-        generation_control.reserve(project.id, 'tts', job.id)
         control_project_id, control_job_id = project.id, job.id
         try:
+            generation_control.reserve(project.id, 'tts', job.id)
             future = self.submit(job.id)
             if future is not None:
                 def stop_queued():
@@ -1544,13 +1544,15 @@ class TtsAsyncService:
                             stop_db.commit()
                     generation_control.finish(control_project_id, 'tts', control_job_id)
                 generation_control.bind_stop_handler(control_project_id, 'tts', control_job_id, stop_queued)
-        except Exception:
+        except Exception as exc:
             generation_control.finish(project.id, 'tts', job.id)
             job.status = 'interrupted'
             job.stage = 'interrupted'
             job.error = '音频任务启动失败，请重试'
             job.finished_at = datetime.now()
             db.commit()
+            if isinstance(exc, generation_control.GenerationAlreadyRunning):
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
             raise
         return {"success": True, "reused": False, "job": self.job_item(job)}
 

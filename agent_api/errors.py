@@ -46,7 +46,8 @@ class ValidationFailedError(AgentAPIError):
 
 class ConflictError(AgentAPIError):
     def __init__(self, message: str, details: Optional[dict] = None) -> None:
-        super().__init__("CONFLICT", message, 409, details)
+        code = (details or {}).get("code", "CONFLICT")
+        super().__init__(code, message, 409, details)
 
 
 class OperationFailedError(AgentAPIError):
@@ -63,6 +64,9 @@ def agent_error_handler(request: Request, exc: AgentAPIError) -> JSONResponse:
                 "code": exc.code,
                 "message": exc.message,
                 "details": exc.details,
+                "retryable": exc.code in {"RATE_LIMITED", "UPSTREAM_UNAVAILABLE"},
+                "repair_actions": exc.details.get("repair_actions", []),
+                "trace_id": getattr(request.state, "request_id", None),
             }
         },
     )

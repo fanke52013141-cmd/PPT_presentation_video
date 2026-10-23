@@ -10,7 +10,6 @@ Environment variables:
     PPT_AGENT_API_URL        — Base URL of the Agent API (default: http://127.0.0.1:8000)
     PPT_AGENT_API_KEY        — Agent API key for authentication (preferred)
     PPT_APP_TOKEN            — Legacy authentication fallback (default: empty)
-    PPT_MCP_CONTRACT_CHECK   — Set to "0" to skip contract negotiation (default: "1")
 
 The server:
 1. Reads JSON-RPC requests from stdin (one per line)
@@ -31,9 +30,8 @@ from agent_contract.capabilities import get_capability_by_mcp_tool
 from agent_contract.versions import (
     AGENT_API_VERSION,
     get_contract_hash,
-    is_version_compatible,
 )
-from mcp_server import resources, tools
+from mcp_server import bootstrap, resources, tools
 
 
 # MCP protocol version
@@ -127,80 +125,20 @@ class MCPServer:
     # ---- Method handlers ----
 
     def _negotiate_contract(self) -> dict[str, Any]:
-        """Compare local contract with the running API service.
-
-        Returns a dict with keys:
-        - ``checked``: whether negotiation was performed (False if bypassed).
-        - ``match``: True / False / None (None = bypassed).
-        - ``write_allowed``: whether state-changing tools may execute.
-        - ``detail``: human-readable explanation.
-        - ``api_meta``: the raw ``/meta`` response from the API, or None.
-        """
-        local_hash = get_contract_hash()
-        local_version = AGENT_API_VERSION
-
-        check_enabled = os.environ.get("PPT_MCP_CONTRACT_CHECK", "1") != "0"
-        if not check_enabled:
-            return {
-                "checked": False,
-                "match": None,
-                "write_allowed": True,
-                "detail": "Contract check disabled (PPT_MCP_CONTRACT_CHECK=0)",
-                "api_meta": None,
-            }
-
+        """Negotiate the stable discovery protocol, not business-schema equality."""
         try:
             api_meta = self.client.get_meta(timeout=_NEGOTIATE_TIMEOUT)
         except Exception as exc:
-            return {
-                "checked": True,
-                "match": False,
-                "write_allowed": False,
-                "detail": (
-                    f"Cannot reach API service at {self.base_url} for contract "
-                    f"negotiation: {exc}. Ensure the API service is running and "
-                    f"PPT_AGENT_API_URL is correct."
-                ),
-                "api_meta": None,
-            }
+            return {"checked": True, "match": False, "write_allowed": False,
+                    "detail": f"Cannot reach API service at {self.base_url}: {exc}", "api_meta": None}
+        if api_meta.get("bootstrap_version") != "1":
+            return {"checked": True, "match": False, "write_allowed": False,
+                    "detail": "Unsupported discovery protocol; update the service or MCP client.", "api_meta": api_meta}
+        return {"checked": True, "match": True, "write_allowed": True,
+                "detail": (None if api_meta.get("contract_hash") == get_contract_hash() else
+                           "Business capabilities changed; use search/describe/invoke for current schemas."),
+                "api_meta": api_meta}
 
-        api_hash = api_meta.get("contract_hash", "")
-        api_version = api_meta.get("agent_api_version", "")
-
-        if api_hash == local_hash:
-            return {
-                "checked": True,
-                "match": True,
-                "write_allowed": True,
-                "detail": None,
-                "api_meta": api_meta,
-            }
-
-        # Hashes differ — use semantic version to classify the mismatch.
-        compatible, compat_detail = is_version_compatible(local_version, api_version)
-        if not compatible:
-            return {
-                "checked": True,
-                "match": False,
-                "write_allowed": False,
-                "detail": (
-                    f"Contract mismatch: local hash {local_hash} ({local_version}) "
-                    f"vs API hash {api_hash} ({api_version}). {compat_detail}. "
-                    f"Restart the MCP server with the matching code version."
-                ),
-                "api_meta": api_meta,
-            }
-
-        # Compatible minor/patch differences are safe for reads, but not for
-        # writes: the remote API may have added or changed request semantics
-        # even when the semantic version remains compatible.
-        return {
-            "checked": True,
-            "match": True,
-            "write_allowed": False,
-            "detail": compat_detail,
-            "api_meta": api_meta,
-        }
 
     def _handle_initialize(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle the MCP initialize handshake with contract negotiation."""
@@ -238,10 +176,14 @@ class MCPServer:
 
     def _handle_tools_list(self) -> dict[str, Any]:
         """List all registered MCP tools."""
-        return {"tools": tools.get_all_tool_definitions()}
+        return {"tools": bootstrap.DEFINITIONS + tools.get_all_tool_definitions()}
 
     def _handle_tools_call(self, params: dict[str, Any]) -> dict[str, Any]:
         """Execute a tool call."""
+        if params.get("name") in bootstrap.NAMES:
+            # Server enforces the remotely discovered revision and actual
+            # capability scope. No local business-schema hash is required.
+            return bootstrap.call(params["name"], params.get("arguments", {}), self.client)
         # Safety guard: refuse if the contract negotiation detected a mismatch.
         contract_state = getattr(self, "_contract_state", {})
         if contract_state.get("match") is False:

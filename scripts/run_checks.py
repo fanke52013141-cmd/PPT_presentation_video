@@ -50,6 +50,10 @@ def standalone_python_checks() -> list[Path]:
 
 
 def quick_checks() -> None:
+    run([sys.executable, "scripts/check_agent_coverage.py"])
+    run([sys.executable, "-m", "pytest", "checks/agent/test_feature_coverage.py",
+         "checks/agent/test_dynamic_invocation.py", "checks/agent/test_operation_lifecycle.py",
+         "checks/agent/test_idempotency_service.py", "checks/agent/test_transport_contract_sync.py", "-q"])
     run([sys.executable, "scripts/generate_agent_contracts.py", "--check"])
     run([sys.executable, "-m", "ruff", "check", "."])
     run([

@@ -135,7 +135,11 @@ class AgentAuthMiddleware(BaseHTTPMiddleware):
             )
         if not authenticated and not self.enabled:
             account_id = request.headers.get("x-ppt-account-id", "default").strip() or "default"
-        if authenticated and scopes:
+        # Bootstrap authorization is capability-specific; the outer POST is
+        # also used for read-only operations. invoke checks the actual scope.
+        from agent_contract.discovery import BOOTSTRAP_PATHS
+        bootstrap = path in BOOTSTRAP_PATHS or path.startswith(self._prefix + "/capabilities/")
+        if authenticated and scopes and not bootstrap:
             required_scope = "project:read"
             if request.method.upper() != "GET":
                 required_scope = "project:write"

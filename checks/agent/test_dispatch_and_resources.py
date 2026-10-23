@@ -16,115 +16,24 @@ from mcp_server import tools
 
 
 class TestDispatchRouting:
-    """Verify _dispatch routes to correct client methods."""
+    """Every named tool forwards unchanged arguments and pins its shown schema."""
 
-    @pytest.fixture
-    def mock_client(self):
+    @pytest.mark.parametrize("cap", [cap for cap in CAPABILITIES if cap.mcp_enabled and cap.status != CapabilityStatus.removed], ids=lambda cap: cap.id)
+    def test_generic_dispatch(self, cap):
+        from agent_contract.discovery import describe_capability
         client = MagicMock(spec=AgentClient)
-        client.create_project.return_value = {"project": {"project_id": "p1"}}
-        client.list_projects.return_value = {"projects": [], "total": 0}
-        client.get_project.return_value = {"project": {}}
-        client.update_project.return_value = {"project": {}, "updated": True}
-        client.set_source.return_value = {"article_imported": True}
-        client.start_pipeline.return_value = {"operation_id": "op1"}
-        client.get_pipeline_status.return_value = {"status": "running"}
-        client.resume_pipeline.return_value = {"operation_id": "op2"}
-        client.approve_checkpoint.return_value = {"approved": True}
-        client.get_stage.return_value = {"stage": "storyboard"}
-        client.regenerate_image.return_value = {"slide_id": "s1"}
-        client.update_narration.return_value = {"updated": True}
-        client.synthesize_tts.return_value = {"job_id": "j1"}
-        client.render_video.return_value = {"job_id": "j2"}
-        client.list_artifacts.return_value = {"artifacts": [], "total": 0}
-        client.get_artifact.return_value = {"artifact": {}}
-        client.get_diagnostics.return_value = {"agent_api_version": "1.0.0"}
-        client.get_meta.return_value = {"agent_api_version": "1.0.0"}
-        return client
+        client.invoke.return_value = {"sentinel": cap.id}
+        arguments = {"project_id": "p1", "new_optional_field": "preserved"}
+        result = tools._dispatch(cap.id, arguments, client)
+        client.invoke.assert_called_once_with(cap.id, arguments, expected_contract_revision=describe_capability(cap)["contract_revision"])
+        assert result == {"sentinel": cap.id}
 
-    def test_dispatch_project_create(self, mock_client):
-        tools._dispatch("project.create", {"name": "Test", "description": "d"}, mock_client)
-        mock_client.create_project.assert_called_once()
-
-    def test_dispatch_project_list(self, mock_client):
-        tools._dispatch("project.list", {"limit": 10}, mock_client)
-        mock_client.list_projects.assert_called_once()
-
-    def test_dispatch_project_get(self, mock_client):
-        tools._dispatch("project.get", {"project_id": "p1"}, mock_client)
-        mock_client.get_project.assert_called_once_with("p1")
-
-    def test_dispatch_project_update(self, mock_client):
-        tools._dispatch("project.update", {"project_id": "p1", "name": "New"}, mock_client)
-        mock_client.update_project.assert_called_once()
-
-    def test_dispatch_source_set(self, mock_client):
-        tools._dispatch("source.set", {"project_id": "p1", "content": "hello"}, mock_client)
-        mock_client.set_source.assert_called_once()
-
-    def test_dispatch_pipeline_run(self, mock_client):
-        tools._dispatch("pipeline.run", {"project_id": "p1", "stop_at": "image_review"}, mock_client)
-        mock_client.start_pipeline.assert_called_once()
-
-    def test_dispatch_pipeline_status(self, mock_client):
-        tools._dispatch("pipeline.status", {"project_id": "p1"}, mock_client)
-        mock_client.get_pipeline_status.assert_called_once_with("p1")
-
-    def test_dispatch_pipeline_resume(self, mock_client):
-        tools._dispatch("pipeline.resume", {"project_id": "p1"}, mock_client)
-        mock_client.resume_pipeline.assert_called_once()
-
-    def test_dispatch_checkpoint_approve(self, mock_client):
-        tools._dispatch("checkpoint.approve", {
-            "project_id": "p1", "checkpoint": "image_review", "approved": True
-        }, mock_client)
-        mock_client.approve_checkpoint.assert_called_once()
-
-    def test_dispatch_stage_get(self, mock_client):
-        tools._dispatch("stage.get", {"project_id": "p1", "stage": "narration"}, mock_client)
-        mock_client.get_stage.assert_called_once_with("p1", "narration")
-
-    def test_dispatch_image_regenerate(self, mock_client):
-        tools._dispatch("image.regenerate", {
-            "project_id": "p1", "slide_id": "s1", "instruction": "brighter"
-        }, mock_client)
-        mock_client.regenerate_image.assert_called_once()
-
-    def test_dispatch_narration_update(self, mock_client):
-        tools._dispatch("narration.update", {
-            "project_id": "p1", "slide_id": "s1", "narration_text": "hello"
-        }, mock_client)
-        mock_client.update_narration.assert_called_once()
-
-    def test_dispatch_tts_synthesize(self, mock_client):
-        tools._dispatch("tts.synthesize", {"project_id": "p1"}, mock_client)
-        mock_client.synthesize_tts.assert_called_once()
-
-    def test_dispatch_video_render(self, mock_client):
-        tools._dispatch("video.render", {"project_id": "p1"}, mock_client)
-        mock_client.render_video.assert_called_once()
-
-    def test_dispatch_artifacts_list(self, mock_client):
-        tools._dispatch("artifacts.list", {"project_id": "p1"}, mock_client)
-        mock_client.list_artifacts.assert_called_once()
-
-    def test_dispatch_artifact_get(self, mock_client):
-        tools._dispatch("artifact.get", {"project_id": "p1", "artifact_id": "a1"}, mock_client)
-        mock_client.get_artifact.assert_called_once_with("p1", "a1")
-
-    def test_dispatch_diagnostics(self, mock_client):
-        tools._dispatch("diagnostics", {}, mock_client)
-        mock_client.get_diagnostics.assert_called_once()
-
-    def test_dispatch_unknown_raises(self, mock_client):
+    def test_unknown_capability_rejected(self):
+        client = MagicMock(spec=AgentClient)
         with pytest.raises(ValueError, match="Unknown capability"):
-            tools._dispatch("nonexistent.cap", {}, mock_client)
+            tools._dispatch("nonexistent.cap", {}, client)
+        client.invoke.assert_not_called()
 
-    def test_every_advertised_mcp_capability_has_a_dispatch_path(self, mock_client):
-        """Adding a tool to the registry must not leave it uncallable."""
-        for cap in CAPABILITIES:
-            if cap.status == CapabilityStatus.removed or not cap.mcp_enabled:
-                continue
-            tools._dispatch(cap.id, {}, mock_client)
 
 
 class TestFormatResult:
@@ -173,29 +82,29 @@ class TestToolHandlerFactory:
 
     def test_handler_success(self):
         mock_client = MagicMock(spec=AgentClient)
-        mock_client.list_projects.return_value = {"projects": [], "total": 0}
+        mock_client.invoke.return_value = {"projects": [], "total": 0}
 
         handler = tools._make_tool_handler(
             next(c for c in tools.CAPABILITIES if c.id == "project.list")
         )
         blocks = handler({"limit": 5}, mock_client)
         assert isinstance(blocks, list)
-        mock_client.list_projects.assert_called_once()
+        mock_client.invoke.assert_called_once()
 
     def test_handler_catches_client_error(self):
         mock_client = MagicMock(spec=AgentClient)
-        mock_client.get_project.side_effect = AgentClientError("Not found", status_code=404)
+        mock_client.invoke.side_effect = AgentClientError("Not found", status_code=404)
 
         handler = tools._make_tool_handler(
             next(c for c in tools.CAPABILITIES if c.id == "project.get")
         )
         blocks = handler({"project_id": "xxx"}, mock_client)
         assert len(blocks) == 1
-        assert "API Error" in blocks[0]["text"]
+        assert json.loads(blocks[0]["text"])["error"]["message"] == "Not found"
 
     def test_handler_catches_generic_error(self):
         mock_client = MagicMock(spec=AgentClient)
-        mock_client.get_project.side_effect = RuntimeError("Unexpected")
+        mock_client.invoke.side_effect = RuntimeError("Unexpected")
 
         handler = tools._make_tool_handler(
             next(c for c in tools.CAPABILITIES if c.id == "project.get")
@@ -259,7 +168,10 @@ class TestOperationsDeep:
     def test_normalize_status_all_mapped(self):
         from agent_contract.operations import normalize_status, OperationStatus
         test_cases = [
-            ("idle", OperationStatus.succeeded),
+            ("idle", OperationStatus.unknown),
+            ("queued", OperationStatus.queued),
+            ("rendering", OperationStatus.running),
+            ("success", OperationStatus.succeeded),
             ("running", OperationStatus.running),
             ("waiting_for_user", OperationStatus.waiting_for_user),
             ("paused", OperationStatus.waiting_for_review),
@@ -279,8 +191,8 @@ class TestOperationsDeep:
 
     def test_normalize_status_empty_string(self):
         from agent_contract.operations import normalize_status, OperationStatus
-        # Empty string is not in map, defaults to running
-        assert normalize_status("") == OperationStatus.running
+        # Empty string is unknown and must not masquerade as running
+        assert normalize_status("") == OperationStatus.unknown
 
     def test_get_checkpoint_valid(self):
         from agent_contract.operations import get_checkpoint, CHECKPOINT_STAGES
@@ -298,7 +210,7 @@ class TestOperationsDeep:
     def test_operation_from_one_click_empty_stages(self):
         from agent_contract.operations import operation_from_one_click, OperationStatus
         op = operation_from_one_click({"status": "idle"}, "p1")
-        assert op.status == OperationStatus.succeeded
+        assert op.status == OperationStatus.unknown
         assert op.progress == 0
 
     def test_operation_from_one_click_with_errors(self):
@@ -337,7 +249,7 @@ class TestOperationsDeep:
             "status": {"run_id": "run-1", "status": "running", "current_stage": "storyboard"},
         }, "p1")
 
-        assert op.operation_id == "run-1"
+        assert op.operation_id == "pipeline:run-1"
         assert op.status == OperationStatus.running
         assert op.stage == "storyboard"
 

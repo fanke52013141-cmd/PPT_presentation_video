@@ -10,7 +10,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Optional, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 GenerationKind = Literal['storyboard_script', 'storyboard_visual', 'mask', 'tts', 'video']
 
@@ -108,7 +108,6 @@ class ProjectSummary(BaseModel):
 
 class ProjectCreateResult(BaseModel):
     project: ProjectSummary
-    operation_id: str
 
 
 class ProjectListRequest(BaseModel):
@@ -151,6 +150,12 @@ class SourceSetRequest(BaseModel):
     content: Optional[str] = Field(None, description="直接提供文章内容（Markdown）")
     topic: Optional[str] = Field(None, description="主题描述，触发 AI 生成文章")
     idempotency_key: Optional[str] = None
+
+    @model_validator(mode="after")
+    def exactly_one_source(self):
+        if bool(self.content and self.content.strip()) == bool(self.topic and self.topic.strip()):
+            raise ValueError("Provide exactly one non-empty content or topic")
+        return self
 
 
 class SourceSetResult(BaseModel):

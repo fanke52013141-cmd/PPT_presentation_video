@@ -196,11 +196,10 @@ class TestProjectListRequest:
 
 
 class TestSourceSetRequest:
-    def test_both_none_accepted(self):
-        """Both content and topic can be None at model level (validation happens in route)."""
-        req = SourceSetRequest()
-        assert req.content is None
-        assert req.topic is None
+    def test_missing_or_ambiguous_source_rejected(self):
+        for values in ({}, {"content": "a", "topic": "b"}, {"content": "   "}):
+            with pytest.raises(ValidationError):
+                SourceSetRequest(**values)
 
     def test_with_content(self):
         req = SourceSetRequest(content="# Hello\nWorld")

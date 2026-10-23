@@ -8,9 +8,10 @@ from agent_contract.capabilities import CAPABILITIES, CapabilityStatus
 def test_every_capability_has_a_matching_agent_api_route():
     from agent_api.routes import router
 
+    from route_inventory import iter_effective_routes
     routes = {
         (method, route.path)
-        for route in router.routes
+        for route in iter_effective_routes(router)
         for method in route.methods or set()
         if method not in {"HEAD", "OPTIONS"}
     }
@@ -43,18 +44,16 @@ def test_every_agent_route_is_a_registered_capability():
     from agent_api.routes import router
 
     # 显式豁免：传输/文档端点，不是对外承诺的业务能力。
-    excluded = {
-        ("GET", "/api/agent/v1/meta"),
-        ("GET", "/api/agent/v1/openapi.json"),
-        ("GET", "/api/agent/v1/docs"),
-    }
+    from agent_contract.discovery import BOOTSTRAP_PATHS
+    excluded = {("POST" if path.endswith("/invoke") else "GET", path) for path in BOOTSTRAP_PATHS}
     registered = {
         (cap.agent_api_method, cap.agent_api_path)
         for cap in CAPABILITIES
         if cap.status != CapabilityStatus.removed
     }
     missing = []
-    for route in router.routes:
+    from route_inventory import iter_effective_routes
+    for route in iter_effective_routes(router):
         path = getattr(route, "path", "")
         if not path.startswith("/api/agent/v1"):
             continue

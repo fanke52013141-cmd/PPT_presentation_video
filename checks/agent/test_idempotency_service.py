@@ -197,9 +197,9 @@ class TestClaimSucceededReplay:
         db.commit()
         db.close()
 
-        result = service.claim("source.set", "p1", "key-1", "fp123")
-        assert result.is_new is True
-        assert result.replay_response is None
+        with pytest.raises(IdempotencyConflictError) as error:
+            service.claim("source.set", "p1", "key-1", "fp123")
+        assert error.value.details["code"] == "OPERATION_OUTCOME_UNKNOWN"
 
     def test_succeeded_corrupt_json_re_claims(self, service, db_session_factory):
         # Simulate a succeeded record with corrupt JSON
@@ -212,9 +212,9 @@ class TestClaimSucceededReplay:
         db.commit()
         db.close()
 
-        result = service.claim("source.set", "p1", "key-1", "fp123")
-        assert result.is_new is True
-        assert result.replay_response is None
+        with pytest.raises(IdempotencyConflictError) as error:
+            service.claim("source.set", "p1", "key-1", "fp123")
+        assert error.value.details["code"] == "OPERATION_OUTCOME_UNKNOWN"
 
 
 # ---------------------------------------------------------------------------
@@ -237,7 +237,7 @@ class TestClaimInProgress:
             service.claim("source.set", "p1", "key-1", "fp123")
 
     def test_in_progress_stale_re_claims(self, service, db_session_factory):
-        """Stale in-progress (>STALE_IN_PROGRESS_HOURS) should be reclaimed."""
+        """Stale in-progress (>STALE_IN_PROGRESS_HOURS) must remain blocked."""
         db = db_session_factory()
         stale = utc_now_naive() - timedelta(hours=STALE_IN_PROGRESS_HOURS + 1)
         db.add(AgentIdempotencyRecord(
@@ -248,12 +248,12 @@ class TestClaimInProgress:
         db.commit()
         db.close()
 
-        result = service.claim("source.set", "p1", "key-1", "fp123")
-        assert result.is_new is True
-        assert result.replay_response is None
+        with pytest.raises(IdempotencyConflictError) as error:
+            service.claim("source.set", "p1", "key-1", "fp123")
+        assert error.value.details["code"] == "OPERATION_OUTCOME_UNKNOWN"
 
     def test_in_progress_borderline_stale_re_claims(self, service, db_session_factory):
-        """Exactly at the stale threshold should allow re-claim."""
+        """Exactly at the stale threshold must not permit re-execution."""
         db = db_session_factory()
         stale = utc_now_naive() - timedelta(hours=STALE_IN_PROGRESS_HOURS, seconds=1)
         db.add(AgentIdempotencyRecord(
@@ -264,8 +264,9 @@ class TestClaimInProgress:
         db.commit()
         db.close()
 
-        result = service.claim("source.set", "p1", "key-1", "fp123")
-        assert result.is_new is True
+        with pytest.raises(IdempotencyConflictError) as error:
+            service.claim("source.set", "p1", "key-1", "fp123")
+        assert error.value.details["code"] == "OPERATION_OUTCOME_UNKNOWN"
 
 
 # ---------------------------------------------------------------------------
@@ -283,8 +284,9 @@ class TestClaimFailed:
         db.commit()
         db.close()
 
-        result = service.claim("source.set", "p1", "key-1", "fp123")
-        assert result.is_new is True
+        with pytest.raises(IdempotencyConflictError) as error:
+            service.claim("source.set", "p1", "key-1", "fp123")
+        assert error.value.details["code"] == "OPERATION_OUTCOME_UNKNOWN"
 
 
 # ---------------------------------------------------------------------------
@@ -418,32 +420,47 @@ class TestCheckRevision:
 # ---------------------------------------------------------------------------
 
 class TestBumpRevision:
-    def test_increment_from_zero(self):
-        project = MagicMock(revision=0)
-        AgentIdempotencyService.bump_revision(MagicMock(), project)
-        assert project.revision == 1
+    def test_compare_and_swap_requires_real_mapped_project(self):
+        with pytest.raises(TypeError):
+            AgentIdempotencyService.bump_revision(MagicMock(), MagicMock(revision=0))
 
-    def test_increment_from_existing(self):
-        project = MagicMock(revision=5)
-        AgentIdempotencyService.bump_revision(MagicMock(), project)
-        assert project.revision == 6
+    def test_increment_and_rollback_are_owned_by_caller(self, tmp_path):
+        import uuid
+        from database import Project, SessionLocal
+        pid = uuid.uuid4().hex
+        with SessionLocal() as db:
+            db.add(Project(id=pid, name="CAS test", run_dir=str(tmp_path), account_id="default"))
+            db.commit()
+        with SessionLocal() as db:
+            project = db.get(Project, pid)
+            AgentIdempotencyService.bump_revision(db, project)
+            assert project.revision == 1
+            db.rollback()
+        with SessionLocal() as db:
+            assert db.get(Project, pid).revision == 0
 
-    def test_missing_revision_attr_defaults_to_zero(self):
-        project = MagicMock(spec=[])
-        AgentIdempotencyService.bump_revision(MagicMock(), project)
-        assert project.revision == 1
+    def test_two_sessions_cannot_commit_same_revision(self, tmp_path):
+        import uuid
+        from database import Project, SessionLocal
+        pid = uuid.uuid4().hex
+        with SessionLocal() as db:
+            db.add(Project(id=pid, name="Before", run_dir=str(tmp_path), account_id="default"))
+            db.commit()
+        with SessionLocal() as first, SessionLocal() as second:
+            left, right = first.get(Project, pid), second.get(Project, pid)
+            assert left.revision == right.revision == 0
+            AgentIdempotencyService.bump_revision(first, left)
+            left.name = "Winner"
+            first.commit()
+            right.name = "Must not overwrite"
+            with pytest.raises(IdempotencyConflictError) as error:
+                AgentIdempotencyService.bump_revision(second, right)
+            assert error.value.details["code"] == "REVISION_CONFLICT"
+        with SessionLocal() as db:
+            project = db.get(Project, pid)
+            assert project.name == "Winner"
+            assert project.revision == 1
 
-    def test_does_not_commit(self):
-        """bump_revision should NOT call commit — the route owns the commit."""
-        db = MagicMock()
-        project = MagicMock(revision=2)
-        AgentIdempotencyService.bump_revision(db, project)
-        db.commit.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# Self-managed session commit semantics
-# ---------------------------------------------------------------------------
 
 class TestSessionCommitSemantics:
     def test_claim_uses_own_session(self, db_session_factory):
@@ -516,7 +533,10 @@ class TestOpportunisticCleanup:
         verify = db_session_factory()
         remaining = verify.query(AgentIdempotencyRecord).all()
         keys = {r.idempotency_key for r in remaining}
-        assert "old-key" not in keys
+        assert "old-key" in keys
+        tombstone = next(record for record in remaining if record.idempotency_key == "old-key")
+        assert tombstone.status == "expired"
+        assert tombstone.response_json is None
         assert "new-key" in keys
         verify.close()
 
@@ -629,27 +649,13 @@ class TestIntegrationRoundTrip:
         assert claim2.is_new is False
         assert claim2.replay_response == fake_response
 
-    def test_failure_then_retry_succeeds(self, service):
-        """Failed operation should be reclaimable."""
-        body = {"content": "hello", "idempotency_key": "key-fail"}
-        fp = compute_fingerprint(body)
-
-        # First attempt — fails
-        claim1 = service.claim("source.set", "p1", "key-fail", fp)
-        assert claim1.is_new is True
-        service.finalize(claim1.record_pk, False, None)
-
-        # Retry — should get a new claim (not replay)
-        claim2 = service.claim("source.set", "p1", "key-fail", fp)
-        assert claim2.is_new is True
-
-        # This time succeeds
-        service.finalize(claim2.record_pk, True, {"article_imported": True})
-
-        # Third request — replay
-        claim3 = service.claim("source.set", "p1", "key-fail", fp)
-        assert claim3.is_new is False
-        assert claim3.replay_response == {"article_imported": True}
+    def test_failed_outcome_does_not_automatically_execute_again(self, service):
+        fp = compute_fingerprint({"content": "hello"})
+        claim = service.claim("source.set", "p1", "key-fail", fp)
+        service.finalize(claim.record_pk, False, None)
+        with pytest.raises(IdempotencyConflictError) as error:
+            service.claim("source.set", "p1", "key-fail", fp)
+        assert error.value.details["code"] == "OPERATION_OUTCOME_UNKNOWN"
 
     def test_different_projects_isolated(self, service):
         """Same key on different projects should not interfere."""

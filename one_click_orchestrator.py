@@ -40,6 +40,7 @@ from one_click_resume_policy import (
 )
 from project_profile_store import DEFAULT_QUALITY_GATES, load_profile  # noqa: F401  (source guard asserts the gate wiring import)
 from pipeline_state import current_step_after_completion
+from one_click_run_store import run_path as _run_status_path, read_run as _read_run, list_run_ids as _list_run_ids
 from tts_provider_service import normalize_tts_provider
 from video_render_service import RENDER_STAGE_PROGRESS
 from project_config_runtime import get_config_value, load_project_config
@@ -323,6 +324,8 @@ def _initial_status(project_id: str, run_id: str) -> dict[str, Any]:
 
 def _status_for_project(project: Any, project_id: str) -> dict[str, Any]:
     status = _read_json(_status_path(project), {})
+    if isinstance(status, dict) and status.get("run_id"):
+        status = _read_run(project, str(status["run_id"])) or status
     if isinstance(status, dict) and status.get("version") in {"one_click_orchestrator_v1", STATUS_VERSION}:
         status["version"] = STATUS_VERSION
         status.setdefault("requested_mode", "")
@@ -373,6 +376,10 @@ def _save_status(project: Any, status: dict[str, Any]) -> None:
     now = _now()
     status["updated_at"] = now
     _refresh_run_timing(status, now)
+    # The per-run record is the exact-operation history; the existing file is
+    # the current-run mirror used by the Web workspace.
+    if status.get("run_id"):
+        _write_json(_run_status_path(project, str(status["run_id"])), status)
     _write_json(_status_path(project), status)
 
 
@@ -1695,6 +1702,11 @@ def start_one_click(
             if approved_checkpoint != expected:
                 raise ValueError(f"项目正在等待审查点 {expected} 的审批")
         run_id = uuid.uuid4().hex[:12]
+        if previous.get("run_id"):
+            archived = dict(previous)
+            if archived.get("status") == "running":
+                archived["interrupted"] = True
+            _write_json(_run_status_path(project, str(archived["run_id"])), archived)
         status, _start_index = _resume_status(
             project,
             project_id,
@@ -1711,6 +1723,7 @@ def start_one_click(
         run_started_at = _now()
         status.update(
             {
+                "interrupted": False,
                 "run_started_at": run_started_at,
                 "run_finished_at": "",
                 "run_elapsed_seconds": 0,
@@ -1874,11 +1887,30 @@ def get_one_click_status(project: Any) -> dict[str, Any]:
     thread = _registered_worker(project_id)
     if status.get("status") == "running" and thread is None:
         status["status"] = "paused"
+        status["interrupted"] = True
         status["completed_at"] = status.get("completed_at") or _now()
         _save_status(project, status)
     if status.get("status") == "completed":
         status = _reconcile_completed_status(project, project_id, status)
     return {"success": True, "status": status}
+
+
+def get_one_click_run(project: Any, run_id: str) -> dict[str, Any] | None:
+    """Read an exact run; never substitute a newer run for a missing ID."""
+    _run_status_path(project, run_id)  # Validate before any filesystem reads.
+    current = get_one_click_status(project)["status"]
+    if current.get("run_id") == run_id:
+        return current
+    return _read_run(project, run_id)
+
+
+def list_one_click_runs(project: Any) -> list[dict[str, Any]]:
+    current = get_one_click_status(project)["status"]
+    ids = set(_list_run_ids(project))
+    if current.get("run_id"):
+        ids.add(str(current["run_id"]))
+    return [current if run_id == current.get("run_id") else _read_run(project, run_id)
+            for run_id in sorted(ids)]
 
 
 def reject_one_click_checkpoint(project: Any, checkpoint: str, notes: str = "") -> dict[str, Any]:

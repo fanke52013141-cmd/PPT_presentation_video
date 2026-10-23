@@ -30,10 +30,11 @@ DEFAULT_APP_TOKEN = os.environ.get("PPT_AGENT_API_KEY") or os.environ.get("PPT_A
 class AgentClientError(Exception):
     """Raised when the Agent API returns an error."""
 
-    def __init__(self, message: str, status_code: int = 0, details: Optional[dict] = None) -> None:
+    def __init__(self, message: str, status_code: int = 0, details: Optional[dict] = None, code: str = "") -> None:
         super().__init__(message)
         self.status_code = status_code
         self.details = details or {}
+        self.code = code
 
 
 class AgentClient:
@@ -48,6 +49,38 @@ class AgentClient:
         self.base_url = base_url.rstrip("/")
         self.app_token = app_token
         self.timeout = timeout
+
+    def discover(self, *, q: str = "", domain: str = "", offset: int = 0, limit: int = 50) -> dict[str, Any]:
+        return self._request("GET", "/api/agent/v1/capabilities", params={
+            "q": q, "domain": domain, "offset": offset, "limit": limit,
+        })
+
+    def get_operation(self, project_id: str, operation_id: str) -> dict[str, Any]:
+        return self.invoke("operation.get", {"project_id": project_id, "operation_id": operation_id})
+
+    def list_operations(self, project_id: str, *, offset: int = 0, limit: int = 50) -> dict[str, Any]:
+        return self.invoke("operation.list", {"project_id": project_id, "offset": offset, "limit": limit})
+
+    def cancel_operation(self, project_id: str, operation_id: str, *, expected_contract_revision: str | None = None) -> dict[str, Any]:
+        return self.invoke("operation.cancel", {"project_id": project_id, "operation_id": operation_id},
+                           expected_contract_revision=expected_contract_revision)
+
+    def describe(self, capability_id: str) -> dict[str, Any]:
+        from urllib.parse import quote
+        return self._request("GET", "/api/agent/v1/capabilities/" + quote(capability_id, safe=""))
+
+    def invoke(self, capability_id: str, arguments: dict[str, Any], *,
+               expected_contract_revision: Optional[str] = None) -> dict[str, Any]:
+        # Fresh describe by default. Caller-bound revisions are never silently
+        # replaced: changed semantics require the caller to re-plan the action.
+        revision = (self.describe(capability_id)["contract_revision"]
+                    if expected_contract_revision is None else expected_contract_revision)
+        if not isinstance(revision, str) or not revision.strip():
+            raise ValueError("expected_contract_revision must be a non-empty string")
+        return self._request("POST", "/api/agent/v1/invoke", body={
+            "capability_id": capability_id, "expected_contract_revision": revision,
+            "arguments": arguments,
+        })
 
     # ---- Low-level HTTP ----
 
@@ -88,10 +121,12 @@ class AgentClient:
                 err_body = json.loads(raw) if raw else {}
                 err_msg = err_body.get("error", {}).get("message", raw or str(e))
                 err_details = err_body.get("error", {}).get("details", {})
+                err_code = err_body.get("error", {}).get("code", "")
             except (json.JSONDecodeError, AttributeError):
                 err_msg = raw or str(e)
                 err_details = {}
-            raise AgentClientError(err_msg, status_code=e.code, details=err_details)
+                err_code = ""
+            raise AgentClientError(err_msg, status_code=e.code, details=err_details, code=err_code)
         except URLError as e:
             raise AgentClientError(f"Connection failed: {e.reason}", status_code=0)
 

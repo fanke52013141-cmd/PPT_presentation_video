@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 
 class OperationStatus(str, Enum):
+    unknown = "unknown"
     queued = "queued"
     running = "running"
     waiting_for_review = "waiting_for_review"
@@ -26,7 +27,10 @@ class OperationStatus(str, Enum):
 
 # Map one-click orchestrator statuses to unified OperationStatus
 _ONE_CLICK_STATUS_MAP = {
-    "idle": OperationStatus.succeeded,
+    "queued": OperationStatus.queued,
+    "rendering": OperationStatus.running,
+    "success": OperationStatus.succeeded,
+    "idle": OperationStatus.unknown,
     "running": OperationStatus.running,
     "waiting_for_review": OperationStatus.waiting_for_review,
     "waiting_for_user": OperationStatus.waiting_for_user,
@@ -48,7 +52,7 @@ def normalize_status(raw: str) -> OperationStatus:
         return OperationStatus.succeeded
     if raw in ("error", "0"):
         return OperationStatus.failed
-    return OperationStatus.running
+    return OperationStatus.unknown
 
 
 def unwrap_one_click_status(result: dict[str, Any]) -> dict[str, Any]:
@@ -79,6 +83,28 @@ class OperationResult(BaseModel):
     artifacts: list[dict[str, Any]] = Field(default_factory=list)
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
+    raw_status: str = ""
+    cancellation_supported: bool = False
+    cancellation_requested: bool = False
+
+
+class OperationListRequest(BaseModel):
+    offset: int = Field(0, ge=0)
+    limit: int = Field(50, ge=1, le=200)
+
+
+class OperationListResult(BaseModel):
+    project_id: str
+    operations: list[OperationResult]
+    total: int
+    next_offset: Optional[int] = None
+
+
+class OperationCancelResult(BaseModel):
+    operation_id: str
+    accepted: bool
+    status: OperationStatus
+    message: str
 
 
 # Checkpoint stages — review gates the Agent can pause at
@@ -158,8 +184,15 @@ def operation_from_one_click(status_dict: dict[str, Any], project_id: str) -> Op
         )
         progress = int(completed / len(stages) * 100)
 
+    if status_dict.get("interrupted"):
+        op_status = OperationStatus.interrupted
+    elif raw_status == "paused":
+        op_status = OperationStatus.failed if blocking_errors else OperationStatus.waiting_for_user
+    if op_status == OperationStatus.succeeded:
+        progress = 100
+
     return OperationResult(
-        operation_id=run_id or "unknown",
+        operation_id=f"pipeline:{run_id}" if run_id else "unknown",
         project_id=project_id,
         operation_type="pipeline_run",
         status=op_status,
@@ -168,6 +201,9 @@ def operation_from_one_click(status_dict: dict[str, Any], project_id: str) -> Op
         message=status_dict.get("message", ""),
         blocking_errors=blocking_errors,
         warnings=warnings,
-        started_at=status_dict.get("started_at"),
-        finished_at=status_dict.get("completed_at") or None,
+        artifacts=[{"url": str(status_dict["video"]["url"]), "artifact_type": "video"}]
+        if isinstance(status_dict.get("video"), dict) and status_dict["video"].get("url") else [],
+        started_at=status_dict.get("run_started_at") or status_dict.get("started_at"),
+        finished_at=status_dict.get("run_finished_at") or status_dict.get("completed_at") or None,
+        raw_status=str(raw_status),
     )

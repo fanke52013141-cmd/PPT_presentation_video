@@ -42,6 +42,7 @@ from agent_contract.models import (
     ProjectDeleteResult,
     GenerationControlResult, GenerationStopRequest, GenerationStopResult,
 )
+from agent_contract.operations import OperationResult, OperationListRequest, OperationListResult, OperationCancelResult
 
 
 class CapabilityStatus(str, Enum):
@@ -72,6 +73,8 @@ class AgentCapability:
     destructive: bool = False
     long_running: bool = False
     replaced_by: Optional[str] = None
+    # Increment even when only semantics (not JSON shape) change.
+    behavior_version: str = "2"
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +82,27 @@ class AgentCapability:
 # ---------------------------------------------------------------------------
 
 CAPABILITIES: list[AgentCapability] = [
+    AgentCapability(
+        id="operation.get", version="1.0", status=CapabilityStatus.stable,
+        description="Read an exact durable job or pipeline run by operation_id; never substitute latest.",
+        request_model=BaseModel, response_model=OperationResult,
+        agent_api_method="GET", agent_api_path="/api/agent/v1/projects/{project_id}/operations/{operation_id}",
+        mcp_tool_name="ppt_operation_get", cli_command="operation get", service_ref="agent_operation_service.AgentOperationService.get",
+    ),
+    AgentCapability(
+        id="operation.list", version="1.0", status=CapabilityStatus.stable,
+        description="List project operations across durable jobs and pipeline history, with pagination.",
+        request_model=OperationListRequest, response_model=OperationListResult,
+        agent_api_method="GET", agent_api_path="/api/agent/v1/projects/{project_id}/operations",
+        mcp_tool_name="ppt_operation_list", cli_command="operation list", service_ref="agent_operation_service.AgentOperationService.list",
+    ),
+    AgentCapability(
+        id="operation.cancel", version="1.0", status=CapabilityStatus.stable,
+        description="Request exact TTS/video cancellation at a safe boundary. accepted does not imply cancelled; poll operation.get. Other producers explicitly report unsupported.",
+        request_model=BaseModel, response_model=OperationCancelResult,
+        agent_api_method="POST", agent_api_path="/api/agent/v1/projects/{project_id}/operations/{operation_id}/cancel",
+        mcp_tool_name="ppt_operation_cancel", cli_command="operation cancel", service_ref="agent_operation_service.AgentOperationService.cancel",
+    ),
     AgentCapability(
         id='generation.status', version='1.0', status=CapabilityStatus.stable,
         description='Read the active cooperative generation control for a project stage. Controls are process-local; durable TTS/video results remain in their job APIs.',
@@ -282,21 +306,21 @@ CAPABILITIES: list[AgentCapability] = [
     ),
     AgentCapability(
         id="tts.synthesize",
-        version="1.1",
+        version="2.0", behavior_version="2",
         status=CapabilityStatus.stable,
-        description="Start TTS audio synthesis for specified or all slides.",
+        description="Submit durable background TTS synthesis for the whole project. Returns operation_id for operation.get; slide_ids is not supported yet.",
         request_model=TtsSynthesizeRequest,
         response_model=TtsSynthesizeResult,
         agent_api_method="POST",
         agent_api_path="/api/agent/v1/projects/{project_id}/tts",
         mcp_tool_name="ppt_tts_synthesize",
         cli_command="tts synthesize",
-        service_ref="tts_service.start_synthesis",
+        service_ref="tts_service.TtsAsyncService.create_job",
         long_running=True,
     ),
     AgentCapability(
         id="video.render",
-        version="1.1",
+        version="2.0", behavior_version="2",
         status=CapabilityStatus.stable,
         description="Start video rendering for the project.",
         request_model=VideoRenderRequest,

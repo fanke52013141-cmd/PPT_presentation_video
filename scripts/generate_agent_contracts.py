@@ -15,6 +15,7 @@ committed file. If they differ, it exits non-zero (CI failure).
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -25,6 +26,9 @@ if str(REPO_ROOT) not in sys.path:
 
 from agent_contract.capabilities import CAPABILITIES, CapabilityStatus
 from agent_contract.versions import AGENT_API_VERSION, get_contract_hash
+from agent_contract.discovery import describe_capability
+from agent_contract.features import coverage_markdown
+from repository_paths import AGENT_CONTRACT_SNAPSHOT_PATH
 
 
 OUTPUT_DIR = REPO_ROOT / "docs" / "agent"
@@ -85,7 +89,7 @@ def generate_markdown() -> str:
         c for c in CAPABILITIES
         if c.status == CapabilityStatus.stable and c.mcp_enabled
     ]
-    lines.append(f"The MCP server exposes **{len(stable_caps)}** stable tools:")
+    lines.append(f"The registry contributes **{len(stable_caps)}** stable capability tools, plus the fixed search/describe/invoke discovery tools:")
     lines.append("")
     for cap in stable_caps:
         lines.append(f"- `{cap.mcp_tool_name}` — {cap.description}")
@@ -118,24 +122,31 @@ def main() -> int:
     args = parser.parse_args()
 
     content = generate_markdown()
+    outputs = {
+        OUTPUT_FILE: content,
+        Path(AGENT_CONTRACT_SNAPSHOT_PATH): json.dumps(
+            {"agent_api_version": AGENT_API_VERSION, "contract_hash": get_contract_hash(),
+             "capabilities": [describe_capability(cap) for cap in CAPABILITIES if cap.status != CapabilityStatus.removed]},
+            ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        OUTPUT_DIR / "feature-coverage.md": coverage_markdown(),
+    }
 
     if args.check:
         # CI mode: compare
-        if not OUTPUT_FILE.exists():
-            print(f"ERROR: {OUTPUT_FILE} does not exist. Run without --check first.")
-            return 1
-
-        existing = OUTPUT_FILE.read_text(encoding="utf-8")
-        if existing.strip() != content.strip():
-            print(f"ERROR: {OUTPUT_FILE} is out of sync with the capability registry.")
+        stale = [path for path, expected in outputs.items()
+                 if not path.exists() or path.read_text(encoding="utf-8").strip() != expected.strip()]
+        if stale:
+            for path in stale:
+                print(f"ERROR: {path} is missing or out of sync.")
             print("Run: python scripts/generate_agent_contracts.py")
             return 1
-        print(f"OK: {OUTPUT_FILE} is up to date.")
+        print("OK: Agent matrix, contract snapshot and business coverage are up to date.")
         return 0
 
     # Generate mode
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    OUTPUT_FILE.write_text(content, encoding="utf-8")
+    for path, expected in outputs.items():
+        path.write_text(expected, encoding="utf-8")
     print(f"Generated: {OUTPUT_FILE}")
     print(f"  Capabilities: {len(CAPABILITIES)}")
     print(f"  Contract hash: {get_contract_hash()}")

@@ -50,6 +50,7 @@ from agent_contract.capabilities import CAPABILITIES, CapabilityStatus
 # silently accept a stale hand-maintained command list.  Batch commands are
 # local CLI composites rather than Agent capabilities.
 CLI_COMPOSITE_COMMANDS = frozenset({
+    "operation wait",
     "batch status",
     "batch render",
     "batch cleanup",
@@ -590,6 +591,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
+    from cli.discovery import add_commands
+    add_commands(subparsers)
+    from cli.operations import add_commands as add_operation_commands
+    add_operation_commands(subparsers)
     generation_capabilities = [cap for cap in CAPABILITIES if cap.id.startswith('generation.')]
     generation_parser = subparsers.add_parser(generation_capabilities[0].cli_command.split()[0], help='Generation safe-stop controls')
     generation_sub = generation_parser.add_subparsers(dest='subcommand', required=True)
@@ -853,7 +858,14 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[list[str]] = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
-    args.func(args)
+    try:
+        args.func(args)
+    except (AgentClientError, ValueError, OSError) as exc:
+        print(json.dumps({"error": {
+            "code": getattr(exc, "code", "CLIENT_INPUT_ERROR"), "message": str(exc),
+            "details": getattr(exc, "details", {}),
+        }}, ensure_ascii=False), file=sys.stderr)
+        raise SystemExit(1) from exc
 
 
 if __name__ == "__main__":

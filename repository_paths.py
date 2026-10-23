@@ -6,6 +6,8 @@ import os
 
 
 REPO_ROOT = os.path.abspath(os.path.dirname(__file__))
+AGENT_FEATURES_PATH = os.path.join(REPO_ROOT, "config", "agent_features.json")
+AGENT_CONTRACT_SNAPSHOT_PATH = os.path.join(REPO_ROOT, "docs", "agent", "contract-snapshot.json")
 # 运行时产物根目录。可用 PPT_STUDIO_RUNS_DIR 覆盖，用于测试隔离与多环境并行；
 # 未设置时行为不变（仓库根下的 runs/）。路径注册表本身不承担任何应用装配职责，
 # 这里只提供"可被配置覆盖"的单一来源。
@@ -13,6 +15,9 @@ RUNS_DIR = os.path.abspath(
     os.environ.get("PPT_STUDIO_RUNS_DIR") or os.path.join(REPO_ROOT, "runs")
 )
 DATA_DIR = os.path.join(REPO_ROOT, "data")
+AGENT_RATE_LIMIT_DB_PATH = os.path.abspath(
+    os.environ.get("PPT_STUDIO_AGENT_RATE_LIMIT_DB_PATH") or os.path.join(DATA_DIR, "agent_rate_limit.db")
+)
 MODEL_VOICE_REFERENCES_DIR = os.path.join(DATA_DIR, "model_voice_references")
 LOGS_DIR = os.path.join(REPO_ROOT, "logs")
 ANNOTATION_WORKER_PYTHON = os.environ.get("PPT_ANNOTATION_ALIGN_PYTHON") or os.path.join(

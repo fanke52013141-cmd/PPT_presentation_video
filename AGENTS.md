@@ -545,9 +545,12 @@ in lockstep with every feature change:
 
 - `agent_contract/capabilities.py` is the single capability registry. Agent
   API paths, MCP tool names, and CLI commands must only be declared there.
-- `agent_contract/models.py` is the single source of truth for Agent-facing
-  request/response schemas; `agent_api/routes.py` maps them onto internal
-  services; never duplicate parameter definitions across layers.
+- `agent_contract/models.py` is the canonical export surface for Agent-facing
+  request/response schemas; each schema is defined exactly once in its owning
+  `agent_contract/domains/` module. `agent_api/domain_routes/` maps them onto
+  internal services; `agent_api/routes.py` only composes routers and exports
+  the explicit adapters used by dispatch. Never duplicate parameter definitions
+  across layers or restore business adapters to the aggregate module.
 - `agent_contract/versions.py` owns `AGENT_API_VERSION` and the contract hash.
 
 Any change in the categories below MUST trigger the listed synchronization

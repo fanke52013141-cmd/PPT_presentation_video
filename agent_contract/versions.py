@@ -15,7 +15,7 @@ from typing import Any
 from agent_contract.capabilities import CAPABILITIES, CapabilityStatus
 
 
-AGENT_API_VERSION = "2.1.0"
+AGENT_API_VERSION = "2.7.0"
 
 
 def get_contract_hash() -> str:

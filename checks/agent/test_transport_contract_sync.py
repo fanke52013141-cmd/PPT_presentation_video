@@ -5,6 +5,32 @@ from __future__ import annotations
 from agent_contract.capabilities import CAPABILITIES, CapabilityStatus
 
 
+def test_invoke_and_http_share_the_registered_domain_adapter():
+    import importlib
+
+    from agent_api import routes
+    from agent_api.dispatch import HANDLERS
+    from route_inventory import iter_effective_routes
+
+    def resolve(spec):
+        if ":" in spec:
+            module_name, attribute = spec.split(":", 1)
+            return getattr(importlib.import_module(module_name), attribute)
+        return getattr(routes, spec)
+
+    endpoints = {
+        (method, route.path): route.source.endpoint
+        for route in iter_effective_routes(routes.router)
+        for method in route.methods or set()
+    }
+    for cap in CAPABILITIES:
+        if cap.id not in HANDLERS:
+            continue
+        endpoint = resolve(HANDLERS[cap.id])
+        assert endpoint is endpoints[(cap.agent_api_method, cap.agent_api_path)], cap.id
+        assert endpoint.__module__.startswith(("agent_api.domain_routes.", "agent_api.operation_routes"))
+
+
 def test_every_capability_has_a_matching_agent_api_route():
     from agent_api.routes import router
 

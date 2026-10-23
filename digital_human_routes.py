@@ -570,6 +570,8 @@ def get_comfyui_workflow(
     """返回已保存的工作流模板是否存在及节点数。"""
     project = _project_or_404(db, project_id)
     wf_path = _digi_dir(project) / "comfyui_workflow.json"
+    # 项目内已保存的模板是默认来源；仅当项目没有时才回落到外部配置。
+    source = "project"
     if not wf_path.exists():
         configured = os.environ.get("PPT_DIGITAL_HUMAN_COMFYUI_WORKFLOW", "").strip()
         if configured and Path(configured).expanduser().exists():

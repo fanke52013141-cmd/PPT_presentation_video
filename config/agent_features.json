@@ -9,9 +9,11 @@
       }
     ],
     "owner": "account_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "accounts.list"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "account_routes.current_account": {
     "source": "account_routes.py",
@@ -23,9 +25,11 @@
       }
     ],
     "owner": "account_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "accounts.current"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "account_routes.account_create": {
     "source": "account_routes.py",
@@ -37,9 +41,11 @@
       }
     ],
     "owner": "account_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "accounts.create"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "account_routes.account_provision_from_current": {
     "source": "account_routes.py",
@@ -51,9 +57,11 @@
       }
     ],
     "owner": "account_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "accounts.provision"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "account_routes.account_rename": {
     "source": "account_routes.py",
@@ -65,9 +73,11 @@
       }
     ],
     "owner": "account_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "accounts.rename"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "account_routes.account_select": {
     "source": "account_routes.py",
@@ -80,8 +90,8 @@
     ],
     "owner": "account_routes.py",
     "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "coverage": "exempt",
+    "reason": "Web session-cookie account switching; Agent connections bind their account via token authentication."
   },
   "account_routes.account_delete": {
     "source": "account_routes.py",
@@ -93,9 +103,11 @@
       }
     ],
     "owner": "account_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "accounts.delete"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "account_routes.account_default_config": {
     "source": "account_routes.py",
@@ -107,9 +119,11 @@
       }
     ],
     "owner": "account_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "accounts.default_config.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "account_routes.account_agent_token": {
     "source": "account_routes.py",
@@ -121,9 +135,11 @@
       }
     ],
     "owner": "account_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "accounts.agent_token.create"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "ai_mask_routes.get_ai_mask_settings_route": {
     "source": "ai_mask_routes.py",
@@ -135,9 +151,11 @@
       }
     ],
     "owner": "ai_mask_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "mask.settings.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "ai_mask_routes.put_ai_mask_settings_route": {
     "source": "ai_mask_routes.py",
@@ -149,9 +167,11 @@
       }
     ],
     "owner": "ai_mask_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "mask.settings.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "ai_mask_routes.annotate_ai_mask_route": {
     "source": "ai_mask_routes.py",
@@ -163,9 +183,11 @@
       }
     ],
     "owner": "ai_mask_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "mask.annotate"
+    ],
+    "coverage": "partial",
+    "reason": "Deterministic adapter verified; full acceptance requires a live provider run."
   },
   "annotation_routes.get_annotation_summary": {
     "source": "annotation_routes.py",
@@ -177,9 +199,11 @@
       }
     ],
     "owner": "annotation_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "annotation.summary.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "annotation_routes.update_annotation_settings": {
     "source": "annotation_routes.py",
@@ -191,9 +215,11 @@
       }
     ],
     "owner": "annotation_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "annotation.settings.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "annotation_routes.get_annotation_slide": {
     "source": "annotation_routes.py",
@@ -205,9 +231,11 @@
       }
     ],
     "owner": "annotation_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "annotation.slide.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "annotation_routes.patch_annotation_slide": {
     "source": "annotation_routes.py",
@@ -219,9 +247,11 @@
       }
     ],
     "owner": "annotation_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "annotation.slide.patch"
+    ],
+    "coverage": "partial",
+    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
   },
   "annotation_routes.get_annotation_text_layout": {
     "source": "annotation_routes.py",
@@ -233,9 +263,11 @@
       }
     ],
     "owner": "annotation_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "annotation.text_layout.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "annotation_routes.patch_annotation_text_layout": {
     "source": "annotation_routes.py",
@@ -247,9 +279,11 @@
       }
     ],
     "owner": "annotation_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "annotation.text_layout.patch"
+    ],
+    "coverage": "partial",
+    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
   },
   "annotation_routes.get_annotation_prompts": {
     "source": "annotation_routes.py",
@@ -261,9 +295,11 @@
       }
     ],
     "owner": "annotation_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "annotation.prompts.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "annotation_routes.put_annotation_prompts": {
     "source": "annotation_routes.py",
@@ -275,9 +311,11 @@
       }
     ],
     "owner": "annotation_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "annotation.prompts.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "annotation_routes.prepare_annotation_slide": {
     "source": "annotation_routes.py",
@@ -289,9 +327,11 @@
       }
     ],
     "owner": "annotation_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "annotation.slide.prepare"
+    ],
+    "coverage": "partial",
+    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
   },
   "annotation_routes.get_annotation_scene_asset": {
     "source": "annotation_routes.py",
@@ -303,9 +343,11 @@
       }
     ],
     "owner": "annotation_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "annotation.scene_asset.get"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
   },
   "annotation_routes.get_annotation_editor_ink": {
     "source": "annotation_routes.py",
@@ -317,9 +359,11 @@
       }
     ],
     "owner": "annotation_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "annotation.editor_ink.get"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
   },
   "annotation_routes.get_annotation_ink": {
     "source": "annotation_routes.py",
@@ -331,9 +375,11 @@
       }
     ],
     "owner": "annotation_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "annotation.ink.get"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
   },
   "annotation_routes.confirm_annotation_slide": {
     "source": "annotation_routes.py",
@@ -345,9 +391,11 @@
       }
     ],
     "owner": "annotation_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "annotation.slide.confirm"
+    ],
+    "coverage": "partial",
+    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
   },
   "annotation_routes.submit_annotation_job": {
     "source": "annotation_routes.py",
@@ -359,9 +407,11 @@
       }
     ],
     "owner": "annotation_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "annotation.jobs.submit"
+    ],
+    "coverage": "partial",
+    "reason": "Requires the external engine/service; acceptance pending."
   },
   "annotation_routes.get_annotation_job": {
     "source": "annotation_routes.py",
@@ -373,9 +423,11 @@
       }
     ],
     "owner": "annotation_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "annotation.jobs.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "annotation_routes.cancel_annotation_job": {
     "source": "annotation_routes.py",
@@ -387,9 +439,11 @@
       }
     ],
     "owner": "annotation_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "annotation.jobs.cancel"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "annotation_routes.export_annotation_preview": {
     "source": "annotation_routes.py",
@@ -401,9 +455,11 @@
       }
     ],
     "owner": "annotation_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "annotation.preview.export"
+    ],
+    "coverage": "partial",
+    "reason": "Requires the external engine/service; acceptance pending."
   },
   "annotation_routes.download_annotation_preview": {
     "source": "annotation_routes.py",
@@ -415,9 +471,11 @@
       }
     ],
     "owner": "annotation_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "annotation.preview.download"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
   },
   "article_routes.get_article_generation_settings": {
     "source": "article_routes.py",
@@ -429,9 +487,11 @@
       }
     ],
     "owner": "article_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "article.settings.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "article_routes.update_article_generation_settings": {
     "source": "article_routes.py",
@@ -443,9 +503,11 @@
       }
     ],
     "owner": "article_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "article.settings.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "article_routes.generate_article_from_topic": {
     "source": "article_routes.py",
@@ -461,7 +523,7 @@
       "source.set"
     ],
     "coverage": "partial",
-    "reason": "Agent counterpart exists; field and behavior parity requires domain acceptance."
+    "reason": "source.set verified for direct import; live topic generation acceptance pending."
   },
   "article_routes.import_article": {
     "source": "article_routes.py",
@@ -476,8 +538,8 @@
     "capabilities": [
       "source.set"
     ],
-    "coverage": "partial",
-    "reason": "Agent counterpart exists; field and behavior parity requires domain acceptance."
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "article_routes.get_step1_result": {
     "source": "article_routes.py",
@@ -489,9 +551,11 @@
       }
     ],
     "owner": "article_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "article.result.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "article_routes.update_step1_result": {
     "source": "article_routes.py",
@@ -503,9 +567,11 @@
       }
     ],
     "owner": "article_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "article.result.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "course_routes.get_tree": {
     "source": "course_routes.py",
@@ -517,9 +583,11 @@
       }
     ],
     "owner": "course_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "course.tree.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "course_routes.reorder_courses": {
     "source": "course_routes.py",
@@ -531,9 +599,11 @@
       }
     ],
     "owner": "course_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "course.reorder"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "course_routes.reorder_chapters": {
     "source": "course_routes.py",
@@ -545,9 +615,11 @@
       }
     ],
     "owner": "course_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "chapter.reorder"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "course_routes.create_course": {
     "source": "course_routes.py",
@@ -559,9 +631,11 @@
       }
     ],
     "owner": "course_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "course.create"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "course_routes.list_courses": {
     "source": "course_routes.py",
@@ -573,9 +647,11 @@
       }
     ],
     "owner": "course_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "course.list"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "course_routes.get_course": {
     "source": "course_routes.py",
@@ -587,9 +663,11 @@
       }
     ],
     "owner": "course_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "course.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "course_routes.update_course": {
     "source": "course_routes.py",
@@ -601,9 +679,11 @@
       }
     ],
     "owner": "course_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "course.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "course_routes.delete_course": {
     "source": "course_routes.py",
@@ -615,9 +695,11 @@
       }
     ],
     "owner": "course_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "course.delete"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "course_routes.create_chapter": {
     "source": "course_routes.py",
@@ -629,9 +711,11 @@
       }
     ],
     "owner": "course_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "chapter.create"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "course_routes.update_chapter": {
     "source": "course_routes.py",
@@ -643,9 +727,11 @@
       }
     ],
     "owner": "course_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "chapter.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "course_routes.delete_chapter": {
     "source": "course_routes.py",
@@ -657,9 +743,11 @@
       }
     ],
     "owner": "course_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "chapter.delete"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "course_routes.move_chapter": {
     "source": "course_routes.py",
@@ -671,9 +759,11 @@
       }
     ],
     "owner": "course_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "chapter.move"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "course_routes.move_project": {
     "source": "course_routes.py",
@@ -685,9 +775,11 @@
       }
     ],
     "owner": "course_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "project.move"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "course_routes.reorder_projects": {
     "source": "course_routes.py",
@@ -699,9 +791,11 @@
       }
     ],
     "owner": "course_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "project.reorder"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "creation_config_routes.list_creation_configs": {
     "source": "creation_config_routes.py",
@@ -713,9 +807,11 @@
       }
     ],
     "owner": "creation_config_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "config.list"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "creation_config_routes.get_default_creation_config_payload": {
     "source": "creation_config_routes.py",
@@ -727,9 +823,11 @@
       }
     ],
     "owner": "creation_config_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "config.default_payload.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "creation_config_routes.create_creation_config": {
     "source": "creation_config_routes.py",
@@ -741,9 +839,11 @@
       }
     ],
     "owner": "creation_config_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "config.create"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "creation_config_routes.import_creation_config": {
     "source": "creation_config_routes.py",
@@ -755,9 +855,11 @@
       }
     ],
     "owner": "creation_config_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "config.import"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "creation_config_routes.get_creation_config": {
     "source": "creation_config_routes.py",
@@ -769,9 +871,11 @@
       }
     ],
     "owner": "creation_config_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "config.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "creation_config_routes.update_creation_config": {
     "source": "creation_config_routes.py",
@@ -783,9 +887,11 @@
       }
     ],
     "owner": "creation_config_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "config.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "creation_config_routes.get_creation_config_version": {
     "source": "creation_config_routes.py",
@@ -797,9 +903,11 @@
       }
     ],
     "owner": "creation_config_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "config.version.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "creation_config_routes.copy_creation_config": {
     "source": "creation_config_routes.py",
@@ -811,9 +919,11 @@
       }
     ],
     "owner": "creation_config_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "config.copy"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "creation_config_routes.create_creation_config_version": {
     "source": "creation_config_routes.py",
@@ -825,9 +935,11 @@
       }
     ],
     "owner": "creation_config_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "config.version.create"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "creation_config_routes.archive_creation_config": {
     "source": "creation_config_routes.py",
@@ -839,9 +951,11 @@
       }
     ],
     "owner": "creation_config_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "config.archive"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "creation_config_routes.delete_creation_config": {
     "source": "creation_config_routes.py",
@@ -853,9 +967,11 @@
       }
     ],
     "owner": "creation_config_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "config.delete"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "creation_config_routes.resolve_creation_config": {
     "source": "creation_config_routes.py",
@@ -867,9 +983,11 @@
       }
     ],
     "owner": "creation_config_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "config.resolve"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "credential_routes.list_credentials": {
     "source": "credential_routes.py",
@@ -881,9 +999,11 @@
       }
     ],
     "owner": "credential_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "credentials.list"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "credential_routes.create_credential": {
     "source": "credential_routes.py",
@@ -895,9 +1015,11 @@
       }
     ],
     "owner": "credential_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "credentials.create"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "credential_routes.update_credential": {
     "source": "credential_routes.py",
@@ -909,9 +1031,11 @@
       }
     ],
     "owner": "credential_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "credentials.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "diagnostics_routes.runtime_diagnostics": {
     "source": "diagnostics_routes.py",
@@ -923,9 +1047,11 @@
       }
     ],
     "owner": "diagnostics_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "diagnostics.runtime"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "diagnostics_routes.generation_governor_snapshot": {
     "source": "diagnostics_routes.py",
@@ -937,9 +1063,11 @@
       }
     ],
     "owner": "diagnostics_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "diagnostics.governor"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "diagnostics_routes.get_error_log": {
     "source": "diagnostics_routes.py",
@@ -951,9 +1079,11 @@
       }
     ],
     "owner": "diagnostics_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "diagnostics.error_log"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "diagnostics_routes.get_latest_error_log": {
     "source": "diagnostics_routes.py",
@@ -965,9 +1095,11 @@
       }
     ],
     "owner": "diagnostics_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "diagnostics.error_log.latest"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "digital_human_routes.get_dh_config": {
     "source": "digital_human_routes.py",
@@ -979,9 +1111,11 @@
       }
     ],
     "owner": "digital_human_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "digital_human.config.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "digital_human_routes.put_dh_config": {
     "source": "digital_human_routes.py",
@@ -993,9 +1127,11 @@
       }
     ],
     "owner": "digital_human_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "digital_human.config.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "digital_human_routes.upload_dh_video": {
     "source": "digital_human_routes.py",
@@ -1007,9 +1143,11 @@
       }
     ],
     "owner": "digital_human_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "digital_human.video.upload"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP multipart transport declared; Agent client upload support pending."
   },
   "digital_human_routes.get_dh_upload_video": {
     "source": "digital_human_routes.py",
@@ -1021,9 +1159,11 @@
       }
     ],
     "owner": "digital_human_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "digital_human.video.uploaded.get"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
   },
   "digital_human_routes.dh_health": {
     "source": "digital_human_routes.py",
@@ -1035,9 +1175,11 @@
       }
     ],
     "owner": "digital_human_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "digital_human.health"
+    ],
+    "coverage": "partial",
+    "reason": "Requires the external engine/service; acceptance pending."
   },
   "digital_human_routes.upload_dh_avatar": {
     "source": "digital_human_routes.py",
@@ -1049,9 +1191,11 @@
       }
     ],
     "owner": "digital_human_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "digital_human.avatars.upload"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP multipart transport declared; Agent client upload support pending."
   },
   "digital_human_routes.list_dh_avatars": {
     "source": "digital_human_routes.py",
@@ -1063,9 +1207,11 @@
       }
     ],
     "owner": "digital_human_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "digital_human.avatars.list"
+    ],
+    "coverage": "partial",
+    "reason": "Requires the external engine/service; acceptance pending."
   },
   "digital_human_routes.upload_comfyui_workflow": {
     "source": "digital_human_routes.py",
@@ -1077,9 +1223,11 @@
       }
     ],
     "owner": "digital_human_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "digital_human.workflow.upload"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "digital_human_routes.get_comfyui_workflow": {
     "source": "digital_human_routes.py",
@@ -1091,9 +1239,11 @@
       }
     ],
     "owner": "digital_human_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "digital_human.workflow.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "digital_human_routes.generate_dh": {
     "source": "digital_human_routes.py",
@@ -1105,9 +1255,11 @@
       }
     ],
     "owner": "digital_human_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "digital_human.slide.generate"
+    ],
+    "coverage": "partial",
+    "reason": "Requires the external engine/service; acceptance pending."
   },
   "digital_human_routes.generate_dh_full": {
     "source": "digital_human_routes.py",
@@ -1119,9 +1271,11 @@
       }
     ],
     "owner": "digital_human_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "digital_human.generate"
+    ],
+    "coverage": "partial",
+    "reason": "Requires the external engine/service; acceptance pending."
   },
   "digital_human_routes.get_dh_job": {
     "source": "digital_human_routes.py",
@@ -1133,9 +1287,11 @@
       }
     ],
     "owner": "digital_human_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "digital_human.jobs.get"
+    ],
+    "coverage": "partial",
+    "reason": "Requires the external engine/service; acceptance pending."
   },
   "digital_human_routes.get_dh_slide_video": {
     "source": "digital_human_routes.py",
@@ -1147,9 +1303,11 @@
       }
     ],
     "owner": "digital_human_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "digital_human.slide_video.get"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
   },
   "digital_human_routes.compose_dh_slide": {
     "source": "digital_human_routes.py",
@@ -1161,9 +1319,11 @@
       }
     ],
     "owner": "digital_human_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "digital_human.slide.compose"
+    ],
+    "coverage": "partial",
+    "reason": "Requires the external engine/service; acceptance pending."
   },
   "digital_human_routes.get_dh_composite_video": {
     "source": "digital_human_routes.py",
@@ -1175,9 +1335,11 @@
       }
     ],
     "owner": "digital_human_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "digital_human.composite_video.get"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
   },
   "digital_human_routes.export_full_audio": {
     "source": "digital_human_routes.py",
@@ -1189,9 +1351,11 @@
       }
     ],
     "owner": "digital_human_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "digital_human.audio.export"
+    ],
+    "coverage": "partial",
+    "reason": "Requires the external engine/service; acceptance pending."
   },
   "digital_human_routes.get_full_audio": {
     "source": "digital_human_routes.py",
@@ -1203,9 +1367,11 @@
       }
     ],
     "owner": "digital_human_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "digital_human.audio.file"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
   },
   "generation_control_routes.get_generation_control": {
     "source": "generation_control_routes.py",
@@ -1217,9 +1383,11 @@
       }
     ],
     "owner": "generation_control_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "generation.status"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "generation_control_routes.stop_generation": {
     "source": "generation_control_routes.py",
@@ -1232,11 +1400,11 @@
     ],
     "owner": "generation_control_routes.py",
     "capabilities": [
-      "operation.cancel",
-      "generation.stop"
+      "generation.stop",
+      "operation.cancel"
     ],
-    "coverage": "partial",
-    "reason": "Exact durable operation lifecycle exposed; remaining domain-specific fields require acceptance."
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "global_image_style_routes.get_image_style": {
     "source": "global_image_style_routes.py",
@@ -1248,9 +1416,11 @@
       }
     ],
     "owner": "global_image_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "global_style.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "global_image_style_routes.update_image_style": {
     "source": "global_image_style_routes.py",
@@ -1262,9 +1432,11 @@
       }
     ],
     "owner": "global_image_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "global_style.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "global_image_style_routes.validate_image_style": {
     "source": "global_image_style_routes.py",
@@ -1276,9 +1448,11 @@
       }
     ],
     "owner": "global_image_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "global_style.validate"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "global_image_style_routes.get_image_style_templates": {
     "source": "global_image_style_routes.py",
@@ -1290,9 +1464,11 @@
       }
     ],
     "owner": "global_image_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "global_style.templates.list"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "global_image_style_routes.get_image_style_template": {
     "source": "global_image_style_routes.py",
@@ -1304,9 +1480,11 @@
       }
     ],
     "owner": "global_image_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "global_style.templates.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "global_image_style_routes.save_image_style_template": {
     "source": "global_image_style_routes.py",
@@ -1318,9 +1496,11 @@
       }
     ],
     "owner": "global_image_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "global_style.templates.save"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "global_image_style_routes.delete_image_style_template": {
     "source": "global_image_style_routes.py",
@@ -1332,9 +1512,11 @@
       }
     ],
     "owner": "global_image_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "global_style.templates.delete"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "global_image_style_routes.apply_image_style_template_references": {
     "source": "global_image_style_routes.py",
@@ -1346,9 +1528,11 @@
       }
     ],
     "owner": "global_image_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "global_style.template_references.apply"
+    ],
+    "coverage": "partial",
+    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
   },
   "global_image_style_routes.get_image_style_template_reference": {
     "source": "global_image_style_routes.py",
@@ -1360,9 +1544,11 @@
       }
     ],
     "owner": "global_image_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.templates.reference.get"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
   },
   "global_image_style_routes.get_image_style_reference": {
     "source": "global_image_style_routes.py",
@@ -1374,9 +1560,11 @@
       }
     ],
     "owner": "global_image_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "global_style.reference.get"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
   },
   "global_image_style_routes.update_image_style_reference": {
     "source": "global_image_style_routes.py",
@@ -1388,9 +1576,11 @@
       }
     ],
     "owner": "global_image_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "global_style.reference.update"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP multipart transport declared; Agent client upload support pending."
   },
   "image_workflow_routes.get_step3_prompt_settings": {
     "source": "image_workflow_routes.py",
@@ -1402,9 +1592,11 @@
       }
     ],
     "owner": "image_workflow_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "image.prompt_settings.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "image_workflow_routes.update_step3_prompt_settings": {
     "source": "image_workflow_routes.py",
@@ -1416,9 +1608,11 @@
       }
     ],
     "owner": "image_workflow_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "image.prompt_settings.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "image_workflow_routes.get_slide_prompts": {
     "source": "image_workflow_routes.py",
@@ -1430,9 +1624,11 @@
       }
     ],
     "owner": "image_workflow_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "image.prompts.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "image_workflow_routes.generate_slide_image": {
     "source": "image_workflow_routes.py",
@@ -1444,9 +1640,11 @@
       }
     ],
     "owner": "image_workflow_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "image.generate"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "image_workflow_routes.upload_slide_image": {
     "source": "image_workflow_routes.py",
@@ -1458,9 +1656,11 @@
       }
     ],
     "owner": "image_workflow_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "image.upload"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "image_workflow_routes.get_slide_image_change_preview": {
     "source": "image_workflow_routes.py",
@@ -1472,9 +1672,11 @@
       }
     ],
     "owner": "image_workflow_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "image.change_preview.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "image_workflow_routes.list_slide_image_recovery": {
     "source": "image_workflow_routes.py",
@@ -1486,9 +1688,11 @@
       }
     ],
     "owner": "image_workflow_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "image.recovery.list"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "image_workflow_routes.image_recovery_overlay": {
     "source": "image_workflow_routes.py",
@@ -1500,9 +1704,11 @@
       }
     ],
     "owner": "image_workflow_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "image.recovery.overlay"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
   },
   "image_workflow_routes.reuse_slide_image_geometry": {
     "source": "image_workflow_routes.py",
@@ -1514,9 +1720,11 @@
       }
     ],
     "owner": "image_workflow_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "image.geometry.reuse"
+    ],
+    "coverage": "partial",
+    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
   },
   "image_workflow_routes.get_slide_image_file": {
     "source": "image_workflow_routes.py",
@@ -1528,9 +1736,11 @@
       }
     ],
     "owner": "image_workflow_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "image.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "image_workflow_routes.download_all_slide_images": {
     "source": "image_workflow_routes.py",
@@ -1542,9 +1752,11 @@
       }
     ],
     "owner": "image_workflow_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "image.download_all"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "image_workflow_routes.get_slide_candidate_file": {
     "source": "image_workflow_routes.py",
@@ -1556,9 +1768,11 @@
       }
     ],
     "owner": "image_workflow_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "image.candidate.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "image_workflow_routes.apply_slide_candidate": {
     "source": "image_workflow_routes.py",
@@ -1570,9 +1784,11 @@
       }
     ],
     "owner": "image_workflow_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "image.candidate.apply"
+    ],
+    "coverage": "partial",
+    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
   },
   "image_workflow_routes.delete_all_slide_images": {
     "source": "image_workflow_routes.py",
@@ -1584,9 +1800,11 @@
       }
     ],
     "owner": "image_workflow_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "image.delete_all"
+    ],
+    "coverage": "partial",
+    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
   },
   "image_workflow_routes.delete_slide_image": {
     "source": "image_workflow_routes.py",
@@ -1598,9 +1816,11 @@
       }
     ],
     "owner": "image_workflow_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "image.delete"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "image_workflow_routes.get_all_images": {
     "source": "image_workflow_routes.py",
@@ -1612,9 +1832,11 @@
       }
     ],
     "owner": "image_workflow_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "image.list"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "image_workflow_routes.update_step3_image_order": {
     "source": "image_workflow_routes.py",
@@ -1626,9 +1848,11 @@
       }
     ],
     "owner": "image_workflow_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "image.order.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "image_workflow_routes.confirm_images": {
     "source": "image_workflow_routes.py",
@@ -1640,9 +1864,11 @@
       }
     ],
     "owner": "image_workflow_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "image.confirm"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "ip_character_routes.get_ip_characters": {
     "source": "ip_character_routes.py",
@@ -1654,9 +1880,11 @@
       }
     ],
     "owner": "ip_character_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "ip.list"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "ip_character_routes.upsert_ip_character": {
     "source": "ip_character_routes.py",
@@ -1668,9 +1896,11 @@
       }
     ],
     "owner": "ip_character_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "ip.upsert"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP multipart transport declared; Agent client upload support pending."
   },
   "ip_character_routes.update_ip_character_config": {
     "source": "ip_character_routes.py",
@@ -1682,9 +1912,11 @@
       }
     ],
     "owner": "ip_character_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "ip.config.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "ip_character_routes.delete_ip_character": {
     "source": "ip_character_routes.py",
@@ -1696,9 +1928,11 @@
       }
     ],
     "owner": "ip_character_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "ip.delete"
+    ],
+    "coverage": "partial",
+    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
   },
   "ip_character_routes.get_ip_character_image": {
     "source": "ip_character_routes.py",
@@ -1710,9 +1944,11 @@
       }
     ],
     "owner": "ip_character_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "ip.image.get"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
   },
   "mask_editor_routes.semantic_blocks_project": {
     "source": "mask_editor_routes.py",
@@ -1724,9 +1960,11 @@
       }
     ],
     "owner": "mask_editor_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "mask.semantic_blocks"
+    ],
+    "coverage": "partial",
+    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
   },
   "mask_editor_routes.get_step5_result": {
     "source": "mask_editor_routes.py",
@@ -1738,9 +1976,11 @@
       }
     ],
     "owner": "mask_editor_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "mask.result.get"
+    ],
+    "coverage": "partial",
+    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
   },
   "mask_editor_routes.repair_step5_result": {
     "source": "mask_editor_routes.py",
@@ -1752,9 +1992,11 @@
       }
     ],
     "owner": "mask_editor_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "mask.result.repair"
+    ],
+    "coverage": "partial",
+    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
   },
   "mask_editor_routes.update_step5_draft": {
     "source": "mask_editor_routes.py",
@@ -1766,9 +2008,11 @@
       }
     ],
     "owner": "mask_editor_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "mask.draft.update"
+    ],
+    "coverage": "partial",
+    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
   },
   "mask_editor_routes.build_step5_mask_preview": {
     "source": "mask_editor_routes.py",
@@ -1780,9 +2024,11 @@
       }
     ],
     "owner": "mask_editor_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "mask.preview.build"
+    ],
+    "coverage": "partial",
+    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
   },
   "mask_editor_routes.get_step5_mask_preview": {
     "source": "mask_editor_routes.py",
@@ -1794,9 +2040,11 @@
       }
     ],
     "owner": "mask_editor_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "mask.preview.get"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
   },
   "mask_editor_routes.update_step5_result": {
     "source": "mask_editor_routes.py",
@@ -1808,9 +2056,11 @@
       }
     ],
     "owner": "mask_editor_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "mask.result.update"
+    ],
+    "coverage": "partial",
+    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
   },
   "model_connection_routes.list_model_connections": {
     "source": "model_connection_routes.py",
@@ -1822,9 +2072,11 @@
       }
     ],
     "owner": "model_connection_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "connections.list"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "model_connection_routes.create_model_connection": {
     "source": "model_connection_routes.py",
@@ -1836,9 +2088,11 @@
       }
     ],
     "owner": "model_connection_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "connections.create"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "model_connection_routes.get_model_connection": {
     "source": "model_connection_routes.py",
@@ -1850,9 +2104,11 @@
       }
     ],
     "owner": "model_connection_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "connections.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "model_connection_routes.update_model_connection": {
     "source": "model_connection_routes.py",
@@ -1864,9 +2120,11 @@
       }
     ],
     "owner": "model_connection_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "connections.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "model_connection_routes.upload_model_reference_audio": {
     "source": "model_connection_routes.py",
@@ -1878,9 +2136,11 @@
       }
     ],
     "owner": "model_connection_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "connections.reference_audio.upload"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP multipart transport declared; Agent client upload support pending."
   },
   "model_connection_routes.copy_model_connection": {
     "source": "model_connection_routes.py",
@@ -1892,9 +2152,11 @@
       }
     ],
     "owner": "model_connection_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "connections.copy"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "model_connection_routes.test_saved_model_connection": {
     "source": "model_connection_routes.py",
@@ -1906,9 +2168,11 @@
       }
     ],
     "owner": "model_connection_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "connections.test"
+    ],
+    "coverage": "partial",
+    "reason": "Requires the external engine/service; acceptance pending."
   },
   "model_connection_routes.update_model_connection_state": {
     "source": "model_connection_routes.py",
@@ -1920,9 +2184,11 @@
       }
     ],
     "owner": "model_connection_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "connections.state.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "model_connection_routes.delete_model_connection": {
     "source": "model_connection_routes.py",
@@ -1934,9 +2200,11 @@
       }
     ],
     "owner": "model_connection_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "connections.delete"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "narration_routes.init_step6_narration": {
     "source": "narration_routes.py",
@@ -1948,9 +2216,11 @@
       }
     ],
     "owner": "narration_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "narration.init"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "narration_routes.get_step6_result": {
     "source": "narration_routes.py",
@@ -1962,9 +2232,11 @@
       }
     ],
     "owner": "narration_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "narration.result.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "narration_routes.repair_step6_result": {
     "source": "narration_routes.py",
@@ -1976,9 +2248,11 @@
       }
     ],
     "owner": "narration_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "narration.repair"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "narration_routes.get_narration_annotation_settings": {
     "source": "narration_routes.py",
@@ -1990,9 +2264,11 @@
       }
     ],
     "owner": "narration_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "narration.annotation_settings.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "narration_routes.update_narration_annotation_settings": {
     "source": "narration_routes.py",
@@ -2004,9 +2280,11 @@
       }
     ],
     "owner": "narration_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "narration.annotation_settings.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "narration_routes.annotate_step6_narration": {
     "source": "narration_routes.py",
@@ -2018,9 +2296,11 @@
       }
     ],
     "owner": "narration_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "narration.annotate"
+    ],
+    "coverage": "partial",
+    "reason": "Deterministic adapter verified; full acceptance requires a live provider run."
   },
   "narration_routes.update_step6_result": {
     "source": "narration_routes.py",
@@ -2032,9 +2312,11 @@
       }
     ],
     "owner": "narration_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "narration.result.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "one_click_routes.start_one_click_route": {
     "source": "one_click_routes.py",
@@ -2046,9 +2328,11 @@
       }
     ],
     "owner": "one_click_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "pipeline.run"
+    ],
+    "coverage": "partial",
+    "reason": "Shares pipeline.run acceptance; a live automated run is a separately validated item."
   },
   "one_click_routes.get_one_click_status_route": {
     "source": "one_click_routes.py",
@@ -2060,9 +2344,11 @@
       }
     ],
     "owner": "one_click_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "pipeline.status"
+    ],
+    "coverage": "partial",
+    "reason": "Shares pipeline.status acceptance; a live automated run is a separately validated item."
   },
   "one_click_routes.pause_one_click_route": {
     "source": "one_click_routes.py",
@@ -2074,9 +2360,11 @@
       }
     ],
     "owner": "one_click_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "pipeline.pause"
+    ],
+    "coverage": "partial",
+    "reason": "Pause requires an active automated run; acceptance pending."
   },
   "one_click_routes.batch_one_click_status_route": {
     "source": "one_click_routes.py",
@@ -2088,9 +2376,11 @@
       }
     ],
     "owner": "one_click_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "pipeline.statuses.list"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "pptx_routes.pptx_readiness": {
     "source": "pptx_routes.py",
@@ -2102,9 +2392,11 @@
       }
     ],
     "owner": "pptx_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "pptx.readiness"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "pptx_routes.create_pptx_export": {
     "source": "pptx_routes.py",
@@ -2116,9 +2408,11 @@
       }
     ],
     "owner": "pptx_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "pptx.export.create"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "pptx_routes.list_jobs": {
     "source": "pptx_routes.py",
@@ -2130,9 +2424,11 @@
       }
     ],
     "owner": "pptx_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "pptx.jobs.list"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "pptx_routes.get_job": {
     "source": "pptx_routes.py",
@@ -2144,9 +2440,11 @@
       }
     ],
     "owner": "pptx_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "pptx.jobs.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "pptx_routes.retry_job": {
     "source": "pptx_routes.py",
@@ -2158,9 +2456,11 @@
       }
     ],
     "owner": "pptx_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "pptx.jobs.retry"
+    ],
+    "coverage": "partial",
+    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
   },
   "pptx_routes.list_exports": {
     "source": "pptx_routes.py",
@@ -2172,9 +2472,11 @@
       }
     ],
     "owner": "pptx_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "pptx.exports.list"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "pptx_routes.download_export": {
     "source": "pptx_routes.py",
@@ -2186,9 +2488,11 @@
       }
     ],
     "owner": "pptx_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "pptx.export.download"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "pptx_routes.delete_export": {
     "source": "pptx_routes.py",
@@ -2200,9 +2504,11 @@
       }
     ],
     "owner": "pptx_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "pptx.exports.delete"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "project_routes.get_project_impacts": {
     "source": "project_routes.py",
@@ -2214,9 +2520,11 @@
       }
     ],
     "owner": "project_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "project.impacts.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "project_routes.preview_storyboard_reuse": {
     "source": "project_routes.py",
@@ -2228,9 +2536,11 @@
       }
     ],
     "owner": "project_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "project.impacts.reuse_preview"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "project_routes.confirm_storyboard_reuse": {
     "source": "project_routes.py",
@@ -2242,9 +2552,11 @@
       }
     ],
     "owner": "project_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "project.impacts.reuse_confirm"
+    ],
+    "coverage": "partial",
+    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
   },
   "project_routes.update_project_impact_decision": {
     "source": "project_routes.py",
@@ -2256,9 +2568,11 @@
       }
     ],
     "owner": "project_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "project.impacts.decision.update"
+    ],
+    "coverage": "partial",
+    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
   },
   "project_routes.confirm_storyboard_image_reuse": {
     "source": "project_routes.py",
@@ -2270,9 +2584,11 @@
       }
     ],
     "owner": "project_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "project.impacts.image_reuse_confirm"
+    ],
+    "coverage": "partial",
+    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
   },
   "project_routes.create_project": {
     "source": "project_routes.py",
@@ -2317,10 +2633,11 @@
     ],
     "owner": "project_routes.py",
     "capabilities": [
-      "project.get"
+      "project.get",
+      "project.state"
     ],
     "coverage": "partial",
-    "reason": "Agent counterpart exists; field and behavior parity requires domain acceptance."
+    "reason": "Project metadata plus read-only workflow state, resource hashes and source-owned checks are exposed. Remaining detail fields and full domain acceptance are pending."
   },
   "project_routes.get_project_ai_mode": {
     "source": "project_routes.py",
@@ -2332,9 +2649,11 @@
       }
     ],
     "owner": "project_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "project.ai_mode.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "project_routes.update_project_ai_mode": {
     "source": "project_routes.py",
@@ -2346,9 +2665,11 @@
       }
     ],
     "owner": "project_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "project.ai_mode.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "project_routes.update_project": {
     "source": "project_routes.py",
@@ -2392,9 +2713,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.profile_templates.list"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "project_style_routes.get_project_profile": {
     "source": "project_style_routes.py",
@@ -2406,9 +2729,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.profile.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "project_style_routes.save_project_profile": {
     "source": "project_style_routes.py",
@@ -2420,9 +2745,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.profile.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "project_style_routes.generate_project_image_style": {
     "source": "project_style_routes.py",
@@ -2434,9 +2761,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.generate"
+    ],
+    "coverage": "partial",
+    "reason": "Deterministic adapter verified; full acceptance requires a live provider run."
   },
   "project_style_routes.get_reverse_style_prompt_settings": {
     "source": "project_style_routes.py",
@@ -2448,9 +2777,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.reverse_settings.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "project_style_routes.update_reverse_style_prompt_settings": {
     "source": "project_style_routes.py",
@@ -2462,9 +2793,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.reverse_settings.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "project_style_routes.reverse_step3_image_style": {
     "source": "project_style_routes.py",
@@ -2476,9 +2809,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.reverse.generate"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP multipart transport declared; Agent client upload support pending."
   },
   "project_style_routes.reverse_legacy_project_image_style": {
     "source": "project_style_routes.py",
@@ -2490,9 +2825,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.reverse.generate_legacy"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP multipart transport declared; Agent client upload support pending."
   },
   "project_style_routes.get_step3_image_style": {
     "source": "project_style_routes.py",
@@ -2504,9 +2841,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "project_style_routes.put_step3_image_style": {
     "source": "project_style_routes.py",
@@ -2518,9 +2857,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "project_style_routes.get_reference_generation_prompt_settings": {
     "source": "project_style_routes.py",
@@ -2532,9 +2873,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.reference_settings.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "project_style_routes.update_reference_generation_prompt_settings": {
     "source": "project_style_routes.py",
@@ -2546,9 +2889,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.reference_settings.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "project_style_routes.list_step3_reference_images": {
     "source": "project_style_routes.py",
@@ -2560,9 +2905,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.references.list"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "project_style_routes.generate_step3_reference_images": {
     "source": "project_style_routes.py",
@@ -2574,9 +2921,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.references.generate"
+    ],
+    "coverage": "partial",
+    "reason": "Deterministic adapter verified; full acceptance requires a live provider run."
   },
   "project_style_routes.upload_step3_reference_images": {
     "source": "project_style_routes.py",
@@ -2588,9 +2937,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.references.upload"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP multipart transport declared; Agent client upload support pending."
   },
   "project_style_routes.get_step3_reference_image": {
     "source": "project_style_routes.py",
@@ -2602,9 +2953,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.references.get"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
   },
   "project_style_routes.delete_step3_reference_image": {
     "source": "project_style_routes.py",
@@ -2616,9 +2969,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.references.delete"
+    ],
+    "coverage": "partial",
+    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
   },
   "project_style_routes.delete_all_step3_reference_images": {
     "source": "project_style_routes.py",
@@ -2630,9 +2985,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.references.delete_all"
+    ],
+    "coverage": "partial",
+    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
   },
   "project_style_routes.list_legacy_reference_images": {
     "source": "project_style_routes.py",
@@ -2644,9 +3001,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.references_legacy.list"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "project_style_routes.generate_legacy_reference_images": {
     "source": "project_style_routes.py",
@@ -2658,9 +3017,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.references_legacy.generate"
+    ],
+    "coverage": "partial",
+    "reason": "Deterministic adapter verified; full acceptance requires a live provider run."
   },
   "project_style_routes.get_legacy_reference_image": {
     "source": "project_style_routes.py",
@@ -2672,9 +3033,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.references_legacy.get"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
   },
   "project_style_routes.delete_legacy_reference_image": {
     "source": "project_style_routes.py",
@@ -2686,9 +3049,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.references_legacy.delete"
+    ],
+    "coverage": "partial",
+    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
   },
   "project_style_routes.delete_all_legacy_reference_images": {
     "source": "project_style_routes.py",
@@ -2700,9 +3065,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.references_legacy.delete_all"
+    ],
+    "coverage": "partial",
+    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
   },
   "project_style_routes.list_step3_templates": {
     "source": "project_style_routes.py",
@@ -2714,9 +3081,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.templates.list"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "project_style_routes.get_step3_template_detail": {
     "source": "project_style_routes.py",
@@ -2728,9 +3097,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.templates.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "project_style_routes.create_account_style_template": {
     "source": "project_style_routes.py",
@@ -2742,9 +3113,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.templates.create"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "project_style_routes.create_account_style_template_with_references": {
     "source": "project_style_routes.py",
@@ -2756,9 +3129,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.templates.create_with_references"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP multipart transport declared; Agent client upload support pending."
   },
   "project_style_routes.get_step3_template_reference": {
     "source": "project_style_routes.py",
@@ -2770,9 +3145,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.templates.reference.get"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
   },
   "project_style_routes.save_step3_template": {
     "source": "project_style_routes.py",
@@ -2784,9 +3161,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.project_template.save"
+    ],
+    "coverage": "partial",
+    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
   },
   "project_style_routes.apply_step3_template": {
     "source": "project_style_routes.py",
@@ -2798,9 +3177,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.project_template.apply"
+    ],
+    "coverage": "partial",
+    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
   },
   "project_style_routes.delete_step3_template": {
     "source": "project_style_routes.py",
@@ -2812,9 +3193,11 @@
       }
     ],
     "owner": "project_style_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "style.templates.delete"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "settings_routes.get_settings": {
     "source": "settings_routes.py",
@@ -2826,9 +3209,11 @@
       }
     ],
     "owner": "settings_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "settings.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "settings_routes.update_system_settings": {
     "source": "settings_routes.py",
@@ -2840,9 +3225,11 @@
       }
     ],
     "owner": "settings_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "settings.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "settings_routes.export_full_config": {
     "source": "settings_routes.py",
@@ -2854,9 +3241,11 @@
       }
     ],
     "owner": "settings_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "settings.config.export"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "settings_routes.export_full_config_zip": {
     "source": "settings_routes.py",
@@ -2868,9 +3257,11 @@
       }
     ],
     "owner": "settings_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "settings.config.export.zip"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "settings_routes.export_full_config_with_secrets": {
     "source": "settings_routes.py",
@@ -2882,9 +3273,11 @@
       }
     ],
     "owner": "settings_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "settings.config.export.secrets"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "settings_routes.export_full_config_with_secrets_zip": {
     "source": "settings_routes.py",
@@ -2896,9 +3289,11 @@
       }
     ],
     "owner": "settings_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "settings.config.export.secrets.zip"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
   },
   "settings_routes.import_full_config": {
     "source": "settings_routes.py",
@@ -2910,9 +3305,11 @@
       }
     ],
     "owner": "settings_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "settings.config.import"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "settings_routes.import_full_config_zip": {
     "source": "settings_routes.py",
@@ -2924,9 +3321,11 @@
       }
     ],
     "owner": "settings_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "settings.config.import.zip"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "settings_routes.test_llm_connection": {
     "source": "settings_routes.py",
@@ -2938,9 +3337,11 @@
       }
     ],
     "owner": "settings_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "settings.llm.test"
+    ],
+    "coverage": "partial",
+    "reason": "Requires the external engine/service; acceptance pending."
   },
   "settings_routes.test_image_connection": {
     "source": "settings_routes.py",
@@ -2952,9 +3353,11 @@
       }
     ],
     "owner": "settings_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "settings.image.test"
+    ],
+    "coverage": "partial",
+    "reason": "Requires the external engine/service; acceptance pending."
   },
   "settings_routes.test_tts_connection": {
     "source": "settings_routes.py",
@@ -2966,9 +3369,11 @@
       }
     ],
     "owner": "settings_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "settings.tts.test"
+    ],
+    "coverage": "partial",
+    "reason": "Requires the external engine/service; acceptance pending."
   },
   "settings_routes.get_comfyui_tts_workflow": {
     "source": "settings_routes.py",
@@ -2980,9 +3385,11 @@
       }
     ],
     "owner": "settings_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "settings.comfyui_workflow.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "settings_routes.upload_comfyui_tts_workflow": {
     "source": "settings_routes.py",
@@ -2994,9 +3401,11 @@
       }
     ],
     "owner": "settings_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "settings.comfyui_workflow.upload"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP multipart transport declared; Agent client upload support pending."
   },
   "storyboard_background.get_background": {
     "source": "storyboard_background.py",
@@ -3008,9 +3417,11 @@
       }
     ],
     "owner": "storyboard_background.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "media.background_config.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "storyboard_background.put_background": {
     "source": "storyboard_background.py",
@@ -3022,9 +3433,11 @@
       }
     ],
     "owner": "storyboard_background.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "media.background_config.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "storyboard_background.upload_background": {
     "source": "storyboard_background.py",
@@ -3036,9 +3449,11 @@
       }
     ],
     "owner": "storyboard_background.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "media.background_image.upload"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP multipart transport declared; Agent client upload support pending."
   },
   "storyboard_background.get_background_image": {
     "source": "storyboard_background.py",
@@ -3050,9 +3465,11 @@
       }
     ],
     "owner": "storyboard_background.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "media.background_image.get"
+    ],
+    "coverage": "partial",
+    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
   },
   "storyboard_routes.get_step2_prompt_templates": {
     "source": "storyboard_routes.py",
@@ -3064,9 +3481,11 @@
       }
     ],
     "owner": "storyboard_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "storyboard.prompt_templates.list"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "storyboard_routes.get_step2_prompt_template": {
     "source": "storyboard_routes.py",
@@ -3078,9 +3497,11 @@
       }
     ],
     "owner": "storyboard_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "storyboard.prompt_templates.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "storyboard_routes.save_step2_prompt_template": {
     "source": "storyboard_routes.py",
@@ -3092,9 +3513,11 @@
       }
     ],
     "owner": "storyboard_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "storyboard.prompt_templates.save"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "storyboard_routes.delete_step2_prompt_template": {
     "source": "storyboard_routes.py",
@@ -3106,9 +3529,11 @@
       }
     ],
     "owner": "storyboard_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "storyboard.prompt_templates.delete"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "storyboard_routes.get_storyboard_templates": {
     "source": "storyboard_routes.py",
@@ -3120,9 +3545,11 @@
       }
     ],
     "owner": "storyboard_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "storyboard.templates.list"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "storyboard_routes.save_storyboard_template": {
     "source": "storyboard_routes.py",
@@ -3134,9 +3561,11 @@
       }
     ],
     "owner": "storyboard_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "storyboard.templates.save"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "storyboard_routes.delete_storyboard_template": {
     "source": "storyboard_routes.py",
@@ -3148,9 +3577,11 @@
       }
     ],
     "owner": "storyboard_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "storyboard.templates.delete"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "storyboard_routes.get_step2_rules": {
     "source": "storyboard_routes.py",
@@ -3162,9 +3593,11 @@
       }
     ],
     "owner": "storyboard_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "storyboard.rules.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "storyboard_routes.update_step2_rules": {
     "source": "storyboard_routes.py",
@@ -3176,9 +3609,11 @@
       }
     ],
     "owner": "storyboard_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "storyboard.rules.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "storyboard_routes.get_step2_prompts": {
     "source": "storyboard_routes.py",
@@ -3190,9 +3625,11 @@
       }
     ],
     "owner": "storyboard_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "storyboard.prompts.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "storyboard_routes.update_step2_prompts": {
     "source": "storyboard_routes.py",
@@ -3204,9 +3641,11 @@
       }
     ],
     "owner": "storyboard_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "storyboard.prompts.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "storyboard_routes.execute_step2_script_plan": {
     "source": "storyboard_routes.py",
@@ -3218,9 +3657,11 @@
       }
     ],
     "owner": "storyboard_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "storyboard.script.execute"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "storyboard_routes.get_step2_script_plan": {
     "source": "storyboard_routes.py",
@@ -3232,9 +3673,11 @@
       }
     ],
     "owner": "storyboard_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "storyboard.script.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "storyboard_routes.update_step2_script_plan": {
     "source": "storyboard_routes.py",
@@ -3246,9 +3689,11 @@
       }
     ],
     "owner": "storyboard_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "storyboard.script.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "storyboard_routes.execute_step2_visual_plan": {
     "source": "storyboard_routes.py",
@@ -3260,9 +3705,11 @@
       }
     ],
     "owner": "storyboard_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "storyboard.visual.execute"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "storyboard_routes.get_step2_visual_plan": {
     "source": "storyboard_routes.py",
@@ -3274,9 +3721,11 @@
       }
     ],
     "owner": "storyboard_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "storyboard.visual.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "storyboard_routes.update_step2_visual_plan": {
     "source": "storyboard_routes.py",
@@ -3288,9 +3737,11 @@
       }
     ],
     "owner": "storyboard_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "storyboard.visual.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "storyboard_routes.compose_step2_visual_contract": {
     "source": "storyboard_routes.py",
@@ -3302,9 +3753,11 @@
       }
     ],
     "owner": "storyboard_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "storyboard.compose"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "storyboard_routes.get_step2_prompt_preview": {
     "source": "storyboard_routes.py",
@@ -3316,9 +3769,11 @@
       }
     ],
     "owner": "storyboard_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "storyboard.preview"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "storyboard_routes.execute_step2": {
     "source": "storyboard_routes.py",
@@ -3330,9 +3785,11 @@
       }
     ],
     "owner": "storyboard_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "storyboard.execute"
+    ],
+    "coverage": "partial",
+    "reason": "Deterministic adapter verified; full acceptance still requires a live LLM generation run."
   },
   "storyboard_routes.get_step2_result": {
     "source": "storyboard_routes.py",
@@ -3344,9 +3801,11 @@
       }
     ],
     "owner": "storyboard_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "storyboard.contract.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "storyboard_routes.repair_step2_result": {
     "source": "storyboard_routes.py",
@@ -3358,9 +3817,11 @@
       }
     ],
     "owner": "storyboard_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "storyboard.contract.repair"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "storyboard_routes.update_step2_result": {
     "source": "storyboard_routes.py",
@@ -3372,9 +3833,11 @@
       }
     ],
     "owner": "storyboard_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "storyboard.contract.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "storyboard_routes.submit_step2_manual_skeleton": {
     "source": "storyboard_routes.py",
@@ -3386,9 +3849,11 @@
       }
     ],
     "owner": "storyboard_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "storyboard.skeleton.submit"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "subtitle_export_routes.get_subtitle_export_readiness": {
     "source": "subtitle_export_routes.py",
@@ -3400,9 +3865,11 @@
       }
     ],
     "owner": "subtitle_export_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "subtitles.readiness"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "subtitle_export_routes.download_subtitles_srt": {
     "source": "subtitle_export_routes.py",
@@ -3414,9 +3881,11 @@
       }
     ],
     "owner": "subtitle_export_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "subtitles.download"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "tts_routes.synthesize_tts_resumable": {
     "source": "tts_routes.py",
@@ -3428,9 +3897,11 @@
       }
     ],
     "owner": "tts_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "tts.sync_synthesize"
+    ],
+    "coverage": "partial",
+    "reason": "Deterministic adapter verified; full acceptance requires a live provider run."
   },
   "tts_routes.create_tts_synthesis_job": {
     "source": "tts_routes.py",
@@ -3445,8 +3916,8 @@
     "capabilities": [
       "tts.synthesize"
     ],
-    "coverage": "partial",
-    "reason": "Exact durable operation lifecycle exposed; remaining domain-specific fields require acceptance."
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "tts_routes.list_tts_synthesis_jobs": {
     "source": "tts_routes.py",
@@ -3461,8 +3932,8 @@
     "capabilities": [
       "operation.list"
     ],
-    "coverage": "partial",
-    "reason": "Exact durable operation lifecycle exposed; remaining domain-specific fields require acceptance."
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "tts_routes.get_tts_synthesis_job": {
     "source": "tts_routes.py",
@@ -3477,8 +3948,8 @@
     "capabilities": [
       "operation.get"
     ],
-    "coverage": "partial",
-    "reason": "Exact durable operation lifecycle exposed; remaining domain-specific fields require acceptance."
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "tts_routes.get_tts_audio_status": {
     "source": "tts_routes.py",
@@ -3490,9 +3961,11 @@
       }
     ],
     "owner": "tts_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "tts.audio_status.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "tts_routes.get_slide_audio_file": {
     "source": "tts_routes.py",
@@ -3504,9 +3977,11 @@
       }
     ],
     "owner": "tts_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "audio.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "tts_routes.confirm_tts_audio": {
     "source": "tts_routes.py",
@@ -3518,9 +3993,11 @@
       }
     ],
     "owner": "tts_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "tts.audio.confirm"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "video_routes.render_video": {
     "source": "video_routes.py",
@@ -3565,9 +4042,11 @@
       }
     ],
     "owner": "video_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "video.list"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "video_routes.get_project_video": {
     "source": "video_routes.py",
@@ -3579,9 +4058,11 @@
       }
     ],
     "owner": "video_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "video.download"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "video_routes.create_speed_adjusted_video": {
     "source": "video_routes.py",
@@ -3593,9 +4074,11 @@
       }
     ],
     "owner": "video_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "video.speed"
+    ],
+    "coverage": "partial",
+    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
   },
   "video_routes.delete_project_video": {
     "source": "video_routes.py",
@@ -3607,9 +4090,11 @@
       }
     ],
     "owner": "video_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "video.delete"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "video_routes.get_final_video_status": {
     "source": "video_routes.py",
@@ -3621,9 +4106,11 @@
       }
     ],
     "owner": "video_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "video.status.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "video_routes.get_final_video": {
     "source": "video_routes.py",
@@ -3635,9 +4122,11 @@
       }
     ],
     "owner": "video_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "video.latest"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed (mocked-provider full workflow / live transfer client)."
   },
   "visual_settings_routes.get_step3_visual_settings": {
     "source": "visual_settings_routes.py",
@@ -3649,9 +4138,11 @@
       }
     ],
     "owner": "visual_settings_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "media.background.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "visual_settings_routes.update_step3_visual_settings": {
     "source": "visual_settings_routes.py",
@@ -3663,9 +4154,11 @@
       }
     ],
     "owner": "visual_settings_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "media.background.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "visual_settings_routes.get_project_subtitle_settings": {
     "source": "visual_settings_routes.py",
@@ -3677,9 +4170,11 @@
       }
     ],
     "owner": "visual_settings_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "media.subtitles.get"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   },
   "visual_settings_routes.update_project_subtitle_settings": {
     "source": "visual_settings_routes.py",
@@ -3691,8 +4186,10 @@
       }
     ],
     "owner": "visual_settings_routes.py",
-    "capabilities": [],
-    "coverage": "pending",
-    "reason": "Domain implementation and scenario acceptance pending."
+    "capabilities": [
+      "media.subtitles.update"
+    ],
+    "coverage": "complete",
+    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
   }
 }

@@ -170,12 +170,8 @@ class VideoRenderService:
     ) -> list[dict[str, Any]]:
         return self.artifacts.list_video_items(project)
 
-    def start_render(
-        self,
-        db: Session,
-        project_id: str,
-    ) -> dict[str, Any]:
-        project = self.get_project(db, project_id)
+    def validate_submission(self, project: Project) -> None:
+        """Read-only preconditions shared by submission and workflow inspection."""
         slide_ids = self._read_contract_slide_ids(project.run_dir)
         provenance_errors = validate_visual_provenance_set(
             project.run_dir,
@@ -209,6 +205,20 @@ class VideoRenderService:
                 400,
                 "请先在“旁白与音频”步骤试听并确认音频，再开始视频渲染。",
             )
+    def inspect_submission(self, project: Project) -> dict[str, Any]:
+        try:
+            self.validate_submission(project)
+        except VideoRenderError as exc:
+            return {"can_submit": False, "blocking": [{"status_code": exc.status_code, "message": str(exc.detail)}]}
+        return {"can_submit": True, "blocking": []}
+
+    def start_render(
+        self,
+        db: Session,
+        project_id: str,
+    ) -> dict[str, Any]:
+        project = self.get_project(db, project_id)
+        self.validate_submission(project)
         submission_key = self._submission_key(project)
 
         project_lock = self._project_lock(project_id)

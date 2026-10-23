@@ -1,8 +1,10 @@
 """Small stable bootstrap surface for current-contract discovery and execution."""
 
+import hashlib
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -15,6 +17,19 @@ from agent_contract.versions import get_contract_hash
 
 
 router = APIRouter(tags=["Agent discovery"])
+
+
+def _discovery_response(request: Request, payload: dict[str, Any]) -> Response:
+    """Validate private discovery representations on every conditional read."""
+    response = JSONResponse(payload)
+    etag = '"' + hashlib.sha256(response.body).hexdigest() + '"'
+    headers = {"ETag": etag, "Cache-Control": "private, no-cache",
+               "Vary": "Authorization, X-API-Key, X-Agent-Token, X-PPT-Account-ID, Cookie"}
+    candidates = request.headers.get("if-none-match", "").split(",")
+    if any(value.strip().removeprefix("W/") in {etag, "*"} for value in candidates):
+        return Response(status_code=304, headers=headers)
+    response.headers.update(headers)
+    return response
 
 
 class InvokeRequest(BaseModel):
@@ -46,20 +61,20 @@ def list_capabilities(
         items.append({key: detail[key] for key in (
             "id", "domain", "description", "contract_revision", "response_kind", "invocable", "authorized",
         )})
-    return {"contract_hash": get_contract_hash(), "items": items[offset:offset + limit],
+    return _discovery_response(request, {"contract_hash": get_contract_hash(), "items": items[offset:offset + limit],
             "total": len(items), "offset": offset,
-            "next_offset": offset + limit if offset + limit < len(items) else None}
+            "next_offset": offset + limit if offset + limit < len(items) else None})
 
 
 @router.get("/capabilities/{capability_id}")
-def get_capability_detail(capability_id: str):
+def get_capability_detail(capability_id: str, request: Request):
     try:
         cap = get_capability(capability_id)
     except ValueError as exc:
         raise AgentAPIError("CAPABILITY_NOT_FOUND", "Unknown capability", 404) from exc
     if cap.status.value == "removed":
         raise AgentAPIError("CAPABILITY_NOT_FOUND", "Unknown capability", 404)
-    return describe_capability(cap)
+    return _discovery_response(request, describe_capability(cap))
 
 
 @router.post("/invoke")

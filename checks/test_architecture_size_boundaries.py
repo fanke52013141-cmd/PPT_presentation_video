@@ -22,6 +22,9 @@ def test_extracted_modules_do_not_regress_into_monoliths() -> None:
         "ai_mask_engine.py": 770,
         "storyboard_service.py": 1350,
         "server.py": 1100,
+        # Agent composition exports domain adapters for the unified dispatcher.
+        "agent_api/routes.py": 150,
+        "agent_contract/models.py": 150,
     }
     # ai_mask_engine.py 额度排队超时的可区分标记（quota_wait_timeout_fallback
     # + 运行级汇总）是 LLM 治理闭环的必备可观测性，预算放宽到 770。

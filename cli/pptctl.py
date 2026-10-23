@@ -31,7 +31,6 @@ Examples:
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import json
 import os
 import sys
@@ -116,6 +115,15 @@ def cmd_project_show(args: argparse.Namespace) -> None:
         _print_json(result)
     except AgentClientError as e:
         _print_error(str(e))
+        sys.exit(1)
+
+
+def cmd_project_state(args: argparse.Namespace) -> None:
+    client = AgentClient(base_url=args.base_url, app_token=args.token)
+    try:
+        _print_json(client.get_project_state(args.project))
+    except AgentClientError as exc:
+        _print_error(str(exc))
         sys.exit(1)
 
 
@@ -351,27 +359,22 @@ def cmd_project_delete(args: argparse.Namespace) -> None:
         sys.exit(1)
     client = AgentClient(base_url=args.base_url, app_token=args.token)
     try:
-        result = client.delete_project(args.project)
+        result = client.delete_project(args.project, expected_revision=args.expected_revision,
+                                       idempotency_key=args.idempotency_key)
         _print_json(result)
     except AgentClientError as e:
         _print_error(str(e))
         sys.exit(1)
 
 
-def _save_agent_bytes(client: AgentClient, path: str, out: str) -> None:
+def _save_agent_bytes(client: AgentClient, path: str, out: str, *, expected_sha256: str | None = None,
+                      max_bytes: int = 1024 * 1024 * 1024) -> None:
     try:
-        payload, content_type = client.get_bytes(path)
-    except AgentClientError as e:
+        result = client.download_file(path, out, expected_sha256=expected_sha256, max_bytes=max_bytes)
+    except (AgentClientError, ValueError) as e:
         _print_error(str(e))
         sys.exit(1)
-    target = Path(out)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(payload)
-    _print_json({
-        "saved_to": str(target),
-        "bytes": len(payload),
-        "content_type": content_type,
-    })
+    _print_json(result)
 
 
 def cmd_checkpoint_list(args: argparse.Namespace) -> None:
@@ -413,11 +416,45 @@ def cmd_video_latest(args: argparse.Namespace) -> None:
 
 def cmd_artifact_download(args: argparse.Namespace) -> None:
     client = AgentClient(base_url=args.base_url, app_token=args.token)
+    try:
+        metadata = client.get_artifact(args.project, args.artifact)
+        digest = args.sha256 or metadata["artifact"].get("sha256")
+        if not digest:
+            raise AgentClientError("Artifact file is unavailable for verified download", code="ARTIFACT_UNAVAILABLE")
+    except AgentClientError as exc:
+        _print_error(str(exc))
+        sys.exit(1)
     _save_agent_bytes(
         client,
         f"/api/agent/v1/projects/{args.project}/artifacts/{args.artifact}/content",
         args.out,
+        expected_sha256=digest,
+        max_bytes=args.max_bytes,
     )
+
+def cmd_image_upload(args: argparse.Namespace) -> None:
+    from agent_client.transfers import upload_file
+
+    client = AgentClient(base_url=args.base_url, app_token=args.token)
+    try:
+        result = upload_file(
+            client,
+            f"/api/agent/v1/projects/{args.project}/images/upload",
+            args.file,
+            field="file",
+            form_fields={
+                "slide_id": args.slide,
+                "disposition": args.disposition,
+                "expected_version": args.expected_version or "",
+            },
+            content_type=args.content_type,
+            max_bytes=args.max_bytes,
+        )
+    except (AgentClientError, ValueError) as e:
+        _print_error(str(e))
+        sys.exit(1)
+    _print_json(result)
+
 
 
 def cmd_diagnostics(args: argparse.Namespace) -> None:
@@ -633,6 +670,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_show = proj_sub.add_parser("show", help="Show project details")
     p_show.add_argument("--project", required=True)
     p_show.set_defaults(func=cmd_project_show)
+    p_state = proj_sub.add_parser("state", help="Inspect workflow state, blockers and candidate actions")
+    p_state.add_argument("--project", required=True)
+    p_state.set_defaults(func=cmd_project_state)
 
     p_update = proj_sub.add_parser("update", help="Update project")
     p_update.add_argument("--project", required=True)
@@ -645,6 +685,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_delete = proj_sub.add_parser("delete", help="Delete a project (destructive)")
     p_delete.add_argument("--project", required=True)
+    p_delete.add_argument("--expected-revision", type=int, default=None)
+    p_delete.add_argument("--idempotency-key", default=None)
     p_delete.add_argument(
         "--confirm-delete",
         action="store_true",
@@ -726,6 +768,15 @@ def build_parser() -> argparse.ArgumentParser:
     i_get.add_argument("--slide", required=True)
     i_get.add_argument("--out", required=True, help="Output file path")
     i_get.set_defaults(func=cmd_image_get)
+    i_upload = img_sub.add_parser("upload", help="Upload one slide image (multipart transport)")
+    i_upload.add_argument("--project", required=True)
+    i_upload.add_argument("--slide", required=True)
+    i_upload.add_argument("--file", required=True, help="Image file to upload")
+    i_upload.add_argument("--disposition", default="keep", choices=["keep", "cleanup"])
+    i_upload.add_argument("--expected-version", default="", help="CAS page version")
+    i_upload.add_argument("--content-type", default=None, help="MIME type; default application/octet-stream")
+    i_upload.add_argument("--max-bytes", type=int, default=1024 * 1024 * 1024)
+    i_upload.set_defaults(func=cmd_image_upload)
 
     # narration
     nar_parser = subparsers.add_parser("narration", help="Narration operations")
@@ -801,7 +852,10 @@ def build_parser() -> argparse.ArgumentParser:
     a_download.add_argument("--project", required=True)
     a_download.add_argument("--artifact", required=True)
     a_download.add_argument("--out", required=True, help="Output file path")
+    a_download.add_argument("--sha256", default=None, help="Expected hash; otherwise use artifact.get")
+    a_download.add_argument("--max-bytes", type=int, default=1024 * 1024 * 1024)
     a_download.set_defaults(func=cmd_artifact_download)
+
 
     # diagnostics
     diag_parser = subparsers.add_parser("diagnostics", help="System diagnostics")

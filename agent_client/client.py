@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+from copy import deepcopy
 from typing import Any, Optional
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
@@ -49,6 +50,7 @@ class AgentClient:
         self.base_url = base_url.rstrip("/")
         self.app_token = app_token
         self.timeout = timeout
+        self._discovery_cache: dict[tuple[str, str], tuple[str, dict[str, Any]]] = {}
 
     def discover(self, *, q: str = "", domain: str = "", offset: int = 0, limit: int = 50) -> dict[str, Any]:
         return self._request("GET", "/api/agent/v1/capabilities", params={
@@ -68,6 +70,10 @@ class AgentClient:
     def describe(self, capability_id: str) -> dict[str, Any]:
         from urllib.parse import quote
         return self._request("GET", "/api/agent/v1/capabilities/" + quote(capability_id, safe=""))
+
+    def clear_discovery_cache(self) -> None:
+        """Discard discovery representations after reconnecting or changing identity."""
+        self._discovery_cache.clear()
 
     def invoke(self, capability_id: str, arguments: dict[str, Any], *,
                expected_contract_revision: Optional[str] = None) -> dict[str, Any]:
@@ -92,6 +98,9 @@ class AgentClient:
         params: Optional[dict] = None,
         timeout: Optional[int] = None,
     ) -> dict[str, Any]:
+        conditional = method == "GET" and (
+            path == "/api/agent/v1/capabilities" or path.startswith("/api/agent/v1/capabilities/")
+        )
         url = f"{self.base_url}{path}"
         if params:
             from urllib.parse import urlencode
@@ -102,6 +111,11 @@ class AgentClient:
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         if self.app_token:
             headers["Authorization"] = f"Bearer {self.app_token}"
+
+        cache_key = (url, self.app_token)
+        cached = self._discovery_cache.get(cache_key) if conditional else None
+        if cached:
+            headers["If-None-Match"] = cached[0]
 
         data = None
         if body is not None:
@@ -114,8 +128,20 @@ class AgentClient:
                 raw = resp.read().decode("utf-8")
                 if not raw:
                     return {}
-                return json.loads(raw)
+                result = json.loads(raw)
+                if conditional:
+                    etag = resp.headers.get("ETag")
+                    if etag:
+                        self._discovery_cache[cache_key] = (etag, deepcopy(result))
+                        if len(self._discovery_cache) > 128:
+                            self._discovery_cache.pop(next(iter(self._discovery_cache)))
+                    else:
+                        self._discovery_cache.pop(cache_key, None)
+                return result
         except HTTPError as e:
+            if e.code == 304 and cached:
+                e.close()
+                return deepcopy(cached[1])
             raw = e.read().decode("utf-8") if e.fp else ""
             try:
                 err_body = json.loads(raw) if raw else {}
@@ -146,10 +172,18 @@ class AgentClient:
         except URLError as e:
             raise AgentClientError(f"Connection failed: {e.reason}", status_code=0)
 
+    def download_file(self, path: str, destination, *, max_bytes: int = 1024 * 1024 * 1024,
+                      expected_sha256: str | None = None) -> dict[str, Any]:
+        from agent_client.transfers import download_file
+        return download_file(self, path, destination, max_bytes=max_bytes, expected_sha256=expected_sha256)
+
     # ---- Project operations ----
 
     def get_identity(self) -> dict[str, Any]:
         return self._request("GET", "/api/agent/v1/identity")
+
+    def get_project_state(self, project_id: str) -> dict[str, Any]:
+        return self.invoke("project.state", {"project_id": project_id})
 
     def get_generation_status(self, project_id: str, stage: str) -> dict[str, Any]:
         from agent_contract.capabilities import CAPABILITIES
@@ -233,8 +267,11 @@ class AgentClient:
             body["idempotency_key"] = idempotency_key
         return self._request("PATCH", f"/api/agent/v1/projects/{project_id}", body=body)
 
-    def delete_project(self, project_id: str) -> dict[str, Any]:
-        return self._request("DELETE", f"/api/agent/v1/projects/{project_id}")
+    def delete_project(self, project_id: str, *, expected_revision: Optional[int] = None,
+                       idempotency_key: Optional[str] = None) -> dict[str, Any]:
+        return self._request("DELETE", f"/api/agent/v1/projects/{project_id}", params={
+            "expected_revision": expected_revision, "idempotency_key": idempotency_key,
+        })
 
     # ---- Source ----
 

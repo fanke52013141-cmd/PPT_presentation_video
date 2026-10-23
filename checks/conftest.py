@@ -45,6 +45,9 @@ if not os.environ.get("PPT_STUDIO_DB_PATH"):
 if not os.environ.get("PPT_STUDIO_RUNS_DIR"):
     os.environ["PPT_STUDIO_RUNS_DIR"] = os.path.join(_TEMP_DIRECTORY.name, "runs")
 
+# 业务数据目录（创作配置包、全局风格、模板等）同样不落用户真实 data/。
+os.environ.setdefault("PPT_STUDIO_DATA_DIR", os.path.join(_TEMP_DIRECTORY.name, "data"))
+
 # The persistent API limiter must also stay out of the user's real data and
 # out of other concurrently running pytest sessions.
 os.environ.setdefault("PPT_STUDIO_AGENT_RATE_LIMIT_DB_PATH", os.path.join(

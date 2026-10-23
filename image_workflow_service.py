@@ -1877,6 +1877,7 @@ def delete_slide_image(
             project_id=project.id,
             artifact_type="image",
             filename="visual_draft.png",
+            relative_path=f"slides/{slide_id}/visual_draft.png",
         )
     except Exception:
         logger.warning("Failed to remove image artifact record for slide %s", slide_id, exc_info=True)

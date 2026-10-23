@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 def test_sse_event_format():
     """_sse_event must produce a valid SSE frame with event and data lines."""
-    from agent_api.routes import _sse_event
+    from agent_api.domain_routes.pipeline import _sse_event
 
     data = {"status": "running", "stage": "storyboard"}
     frame = _sse_event(data, event_name="progress")
@@ -44,7 +44,7 @@ def test_sse_event_format():
 
 def test_sse_event_custom_event_name():
     """_sse_event must accept arbitrary event names."""
-    from agent_api.routes import _sse_event
+    from agent_api.domain_routes.pipeline import _sse_event
 
     frame = _sse_event({"done": True}, event_name="complete")
     text = frame.decode("utf-8")
@@ -53,7 +53,7 @@ def test_sse_event_custom_event_name():
 
 def test_sse_heartbeat_format():
     """_sse_heartbeat must produce a comment-only SSE line."""
-    from agent_api.routes import _sse_heartbeat
+    from agent_api.domain_routes.pipeline import _sse_heartbeat
 
     hb = _sse_heartbeat()
     assert isinstance(hb, bytes)
@@ -83,7 +83,7 @@ def _make_status(status: str = "idle", stage: str = "", run_id: str = "") -> dic
 
 def test_sse_generator_emits_initial_event_for_idle():
     """Generator must emit a progress event then a complete event for idle status."""
-    from agent_api.routes import _sse_generator
+    from agent_api.domain_routes.pipeline import _sse_generator
 
     mock_project = MagicMock()
     mock_session = MagicMock()
@@ -107,7 +107,7 @@ def test_sse_generator_emits_initial_event_for_idle():
 
 def test_sse_generator_accepts_real_wrapped_orchestrator_status():
     """The actual orchestrator wraps the status payload in success/status."""
-    from agent_api.routes import _sse_generator
+    from agent_api.domain_routes.pipeline import _sse_generator
 
     mock_project = MagicMock()
     mock_session = MagicMock()
@@ -123,7 +123,7 @@ def test_sse_generator_accepts_real_wrapped_orchestrator_status():
 
 def test_sse_generator_emits_terminal_for_completed():
     """Generator must close with a complete event when pipeline finishes."""
-    from agent_api.routes import _sse_generator
+    from agent_api.domain_routes.pipeline import _sse_generator
 
     mock_project = MagicMock()
     mock_session = MagicMock()
@@ -152,7 +152,7 @@ def test_sse_generator_emits_terminal_for_completed():
 
 def test_sse_generator_emits_error_for_missing_project():
     """Generator must emit an error event when project is not found."""
-    from agent_api.routes import _sse_generator
+    from agent_api.domain_routes.pipeline import _sse_generator
 
     mock_session = MagicMock()
     mock_session.query.return_value.filter.return_value.first.return_value = None
@@ -169,7 +169,7 @@ def test_sse_generator_emits_error_for_missing_project():
 
 def test_sse_generator_dedup_consecutive_same_state():
     """Generator must deduplicate events when status hasn't changed."""
-    from agent_api.routes import _sse_generator
+    from agent_api.domain_routes.pipeline import _sse_generator
 
     mock_project = MagicMock()
     mock_session = MagicMock()
@@ -209,7 +209,7 @@ def test_sse_capability_registered():
 
 def test_sse_terminal_states_contains_expected():
     """Terminal states must include the core terminal pipeline statuses."""
-    from agent_api.routes import _SSE_TERMINAL_STATES
+    from agent_api.domain_routes.pipeline import _SSE_TERMINAL_STATES
 
     for expected in ("completed", "failed", "idle", "paused", "waiting_for_review", "waiting_for_user"):
         assert expected in _SSE_TERMINAL_STATES, f"Missing terminal state: {expected}"
@@ -217,7 +217,7 @@ def test_sse_terminal_states_contains_expected():
 
 def test_sse_generator_emits_terminal_for_waiting_for_user():
     """Manual technical pauses must close the stream instead of polling forever."""
-    from agent_api.routes import _sse_generator
+    from agent_api.domain_routes.pipeline import _sse_generator
 
     mock_project = MagicMock()
     mock_session = MagicMock()

@@ -15,13 +15,14 @@ this registry.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
-from typing import Optional, Type
 
 from pydantic import BaseModel
 
+from agent_contract.registry import AgentCapability, CapabilityStatus  # noqa: F401  (re-exported)
+
 from agent_contract.models import (
+    ProjectStateResult,
+    ProjectDeleteRequest,
     ProjectCreateRequest, ProjectCreateResult,
     ProjectListRequest, ProjectListResult,
     ProjectGetResult, ProjectUpdateRequest, ProjectUpdateResult,
@@ -41,40 +42,51 @@ from agent_contract.models import (
     CheckpointListResult,
     ProjectDeleteResult,
     GenerationControlResult, GenerationStopRequest, GenerationStopResult,
+    ArticleSettingsResult, ArticleSettingsUpdateRequest,
+    ArticleSourceResult, ArticleSourceUpdateRequest,
+    Step2PromptTemplateDetailResult, Step2PromptTemplateListResult,
+    Step2PromptTemplateSaveRequest, Step2PromptTemplateSaveResult,
+    StoryboardComposeResult, StoryboardContractGetResult,
+    StoryboardContractRepairResult, StoryboardContractUpdateRequest,
+    StoryboardContractWriteResult, StoryboardPreviewResult,
+    StoryboardPromptsResult, StoryboardPromptsUpdateRequest,
+    StoryboardRulesResult, StoryboardRulesUpdateRequest,
+    StoryboardScriptExecuteRequest, StoryboardScriptPlanPayload,
+    StoryboardScriptPlanResult, StoryboardSkeletonRequest,
+    StoryboardSkeletonResult, StoryboardTemplateListResult,
+    StoryboardTemplateSaveRequest, StoryboardTemplateSaveResult,
+    StoryboardVisualPlanPayload, StoryboardVisualPlanResult,
 )
 from agent_contract.operations import OperationResult, OperationListRequest, OperationListResult, OperationCancelResult
 
+# Historic inline declarations above; new domain declarations live in
+# agent_contract/domains/* and are aggregated here so the registry keeps a
+# single ordered capability list.
+from agent_contract.domains.accounts import CAPABILITIES as ACCOUNTS_CAPABILITIES
+from agent_contract.domains.annotations import CAPABILITIES as ANNOTATIONS_CAPABILITIES
+from agent_contract.domains.audio import CAPABILITIES as AUDIO_CAPABILITIES
+from agent_contract.domains.digital_human import CAPABILITIES as DIGITAL_HUMAN_CAPABILITIES
+from agent_contract.domains.images import CAPABILITIES as IMAGES_CAPABILITIES
+from agent_contract.domains.mask import CAPABILITIES as MASK_CAPABILITIES
+from agent_contract.domains.outputs import CAPABILITIES as OUTPUTS_CAPABILITIES
+from agent_contract.domains.project import CAPABILITIES as PROJECT_CAPABILITIES
+from agent_contract.domains.style import CAPABILITIES as STYLE_CAPABILITIES
+from agent_contract.domains.system import CAPABILITIES as SYSTEM_CAPABILITIES
+from agent_contract.domains.workspace import CAPABILITIES as WORKSPACE_CAPABILITIES
 
-class CapabilityStatus(str, Enum):
-    experimental = "experimental"
-    stable = "stable"
-    deprecated = "deprecated"
-    removed = "removed"
-
-
-@dataclass(frozen=True)
-class AgentCapability:
-    """Describes a single Agent-facing capability and its mappings."""
-
-    id: str
-    version: str
-    status: CapabilityStatus
-    description: str
-    request_model: Type[BaseModel]
-    response_model: Type[BaseModel]
-    agent_api_method: str   # GET / POST / PATCH / DELETE
-    agent_api_path: str    # e.g. /api/agent/v1/projects
-    mcp_tool_name: str
-    cli_command: str
-    service_ref: str       # e.g. project_service.ProjectService.create
-    # Some transport-specific capabilities (for example SSE streams) cannot
-    # be represented as an MCP request/response tool invocation.
-    mcp_enabled: bool = True
-    destructive: bool = False
-    long_running: bool = False
-    replaced_by: Optional[str] = None
-    # Increment even when only semantics (not JSON shape) change.
-    behavior_version: str = "2"
+_DOMAIN_CAPABILITIES = (
+    AUDIO_CAPABILITIES
+    + OUTPUTS_CAPABILITIES
+    + IMAGES_CAPABILITIES
+    + STYLE_CAPABILITIES
+    + MASK_CAPABILITIES
+    + ANNOTATIONS_CAPABILITIES
+    + DIGITAL_HUMAN_CAPABILITIES
+    + WORKSPACE_CAPABILITIES
+    + SYSTEM_CAPABILITIES
+    + PROJECT_CAPABILITIES
+    + ACCOUNTS_CAPABILITIES
+)
 
 
 # ---------------------------------------------------------------------------
@@ -82,6 +94,13 @@ class AgentCapability:
 # ---------------------------------------------------------------------------
 
 CAPABILITIES: list[AgentCapability] = [
+    AgentCapability(
+        id="project.state", version="1.0", status=CapabilityStatus.stable,
+        description="Observe eight visible steps, saved internal statuses, source-owned artifact checks, resource hashes, annotation decision, optional presenter state, pending impacts and authorized candidate actions. Read-only; not a render-success guarantee or a global concurrency lock. Actions marked requires_input need additional schema-valid input.",
+        request_model=BaseModel, response_model=ProjectStateResult,
+        agent_api_method="GET", agent_api_path="/api/agent/v1/projects/{project_id}/state",
+        mcp_tool_name="ppt_project_state", cli_command="project state", service_ref="agent_workflow_service.inspect_project_state",
+    ),
     AgentCapability(
         id="operation.get", version="1.0", status=CapabilityStatus.stable,
         description="Read an exact durable job or pipeline run by operation_id; never substitute latest.",
@@ -145,7 +164,8 @@ CAPABILITIES: list[AgentCapability] = [
     ),
     AgentCapability(
         id="project.list",
-        version="1.3",
+        version="1.4",
+        behavior_version="3",
         status=CapabilityStatus.stable,
         description="List all projects with optional status filter.",
         request_model=ProjectListRequest,
@@ -250,6 +270,7 @@ CAPABILITIES: list[AgentCapability] = [
         cli_command="run stream",
         service_ref="agent_api.routes.agent_pipeline_stream",
         long_running=True,
+        transport="event_stream",
     ),
     AgentCapability(
         id="checkpoint.approve",
@@ -334,9 +355,10 @@ CAPABILITIES: list[AgentCapability] = [
     ),
     AgentCapability(
         id="artifacts.list",
-        version="1.0",
+        version="1.1",
+        behavior_version="3",
         status=CapabilityStatus.stable,
-        description="List all artifacts (images, audio, video, pptx) for a project.",
+        description="List registered project artifacts with exact per-artifact resource URIs, never substituting the latest output. Hashes are computed by artifact.get.",
         request_model=ArtifactsListRequest,
         response_model=ArtifactsListResult,
         agent_api_method="GET",
@@ -347,9 +369,10 @@ CAPABILITIES: list[AgentCapability] = [
     ),
     AgentCapability(
         id="artifact.get",
-        version="1.0",
+        version="1.1",
+        behavior_version="3",
         status=CapabilityStatus.stable,
-        description="Get details and download URL for a specific artifact.",
+        description="Get exact artifact metadata, controlled download path and current SHA-256. Hash is null when its file is unavailable; no arbitrary file paths are accepted.",
         request_model=BaseModel,
         response_model=ArtifactGetResult,
         agent_api_method="GET",
@@ -425,10 +448,11 @@ CAPABILITIES: list[AgentCapability] = [
     ),
     AgentCapability(
         id="project.delete",
-        version="1.0",
+        version="1.1",
+        behavior_version="3",
         status=CapabilityStatus.stable,
-        description="Delete a project and all of its derived artifacts. Destructive and irreversible.",
-        request_model=BaseModel,
+        description="Delete a project and all derived artifacts with optional revision checking and account-scoped idempotent replay, including after deletion. Destructive and irreversible.",
+        request_model=ProjectDeleteRequest,
         response_model=ProjectDeleteResult,
         agent_api_method="DELETE",
         agent_api_path="/api/agent/v1/projects/{project_id}",
@@ -467,6 +491,7 @@ CAPABILITIES: list[AgentCapability] = [
         cli_command="image get",
         service_ref="image_workflow_service.get_slide_image_file",
         mcp_enabled=False,
+        transport="binary",
     ),
     AgentCapability(
         id="audio.get",
@@ -481,6 +506,7 @@ CAPABILITIES: list[AgentCapability] = [
         cli_command="audio get",
         service_ref="tts_service.get_slide_audio_file",
         mcp_enabled=False,
+        transport="binary",
     ),
     AgentCapability(
         id="video.latest",
@@ -495,10 +521,12 @@ CAPABILITIES: list[AgentCapability] = [
         cli_command="video latest",
         service_ref="video_render_service final_video_download",
         mcp_enabled=False,
+        transport="binary",
     ),
     AgentCapability(
         id="artifact.download",
-        version="1.0",
+        version="1.1",
+        behavior_version="3",
         status=CapabilityStatus.stable,
         description="Download one database-tracked artifact by id as binary content (FileResponse stream; MIME from the artifact record, not a JSON tool result). This is the target of artifact.get download_url.",
         request_model=BaseModel,
@@ -509,8 +537,269 @@ CAPABILITIES: list[AgentCapability] = [
         cli_command="artifact download",
         service_ref="agent_api.routes.agent_download_artifact",
         mcp_enabled=False,
+        transport="binary",
     ),
-]
+    # ---- 可见 Step 1：文章设置与结果编辑 ----
+    AgentCapability(
+        id="article.settings.get", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="Read the global article-generation System Content prompt.",
+        request_model=BaseModel, response_model=ArticleSettingsResult,
+        agent_api_method="GET", agent_api_path="/api/agent/v1/article/settings",
+        mcp_tool_name="ppt_article_settings_get", cli_command="article settings",
+        service_ref="article_service.get_article_generation_settings",
+    ),
+    AgentCapability(
+        id="article.settings.update", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="Replace the global article-generation System Content prompt; blank content is rejected.",
+        request_model=ArticleSettingsUpdateRequest, response_model=ArticleSettingsResult,
+        agent_api_method="PUT", agent_api_path="/api/agent/v1/article/settings",
+        mcp_tool_name="ppt_article_settings_update", cli_command="article settings --set",
+        service_ref="article_service.update_article_generation_settings",
+    ),
+    AgentCapability(
+        id="article.result.get", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="Read the project article source (title, summary, content). success=false with message when no article is imported yet.",
+        request_model=BaseModel, response_model=ArticleSourceResult,
+        agent_api_method="GET", agent_api_path="/api/agent/v1/projects/{project_id}/article",
+        mcp_tool_name="ppt_article_get", cli_command="article show",
+        service_ref="article_service.get_step1_result",
+    ),
+    AgentCapability(
+        id="article.result.update", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="Replace the project article content; an identical save is a no-op without downstream invalidation, a changed save invalidates Step 2+ artifacts.",
+        request_model=ArticleSourceUpdateRequest, response_model=ArticleSourceResult,
+        agent_api_method="PUT", agent_api_path="/api/agent/v1/projects/{project_id}/article",
+        mcp_tool_name="ppt_article_update", cli_command="article update",
+        service_ref="article_service.update_step1_result",
+    ),
+    # ---- 可见 Step 2：模板管理 ----
+    AgentCapability(
+        id="storyboard.templates.list", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="List reusable storyboard structure templates (rules + profile YAML).",
+        request_model=BaseModel, response_model=StoryboardTemplateListResult,
+        agent_api_method="GET", agent_api_path="/api/agent/v1/storyboard/templates",
+        mcp_tool_name="ppt_storyboard_templates_list", cli_command="storyboard templates",
+        service_ref="storyboard_service.get_storyboard_templates",
+    ),
+    AgentCapability(
+        id="storyboard.templates.save", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="Create or update a storyboard template by name; built-in template names cannot be overwritten.",
+        request_model=StoryboardTemplateSaveRequest, response_model=StoryboardTemplateSaveResult,
+        agent_api_method="POST", agent_api_path="/api/agent/v1/storyboard/templates",
+        mcp_tool_name="ppt_storyboard_templates_save", cli_command="storyboard template-save",
+        service_ref="storyboard_service.save_storyboard_template",
+    ),
+    AgentCapability(
+        id="storyboard.templates.delete", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="Delete a custom storyboard template by id; built-in templates are rejected.",
+        request_model=BaseModel, response_model=StoryboardTemplateListResult,
+        agent_api_method="DELETE", agent_api_path="/api/agent/v1/storyboard/templates/{template_id}",
+        mcp_tool_name="ppt_storyboard_templates_delete", cli_command="storyboard template-delete",
+        service_ref="storyboard_service.delete_storyboard_template",
+    ),
+    AgentCapability(
+        id="storyboard.prompt_templates.list", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="List reusable Step 2 prompt templates (script/visual system content and output example).",
+        request_model=BaseModel, response_model=Step2PromptTemplateListResult,
+        agent_api_method="GET", agent_api_path="/api/agent/v1/storyboard/prompt-templates",
+        mcp_tool_name="ppt_step2_prompt_templates_list", cli_command="storyboard prompt-templates",
+        service_ref="storyboard_service.get_step2_prompt_templates",
+    ),
+    AgentCapability(
+        id="storyboard.prompt_templates.get", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="Read one Step 2 prompt template by id.",
+        request_model=BaseModel, response_model=Step2PromptTemplateDetailResult,
+        agent_api_method="GET", agent_api_path="/api/agent/v1/storyboard/prompt-templates/{template_id}",
+        mcp_tool_name="ppt_step2_prompt_templates_get", cli_command="storyboard prompt-template",
+        service_ref="storyboard_service.get_step2_prompt_template",
+    ),
+    AgentCapability(
+        id="storyboard.prompt_templates.save", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="Create or update a Step 2 prompt template; both prompt fields of the declared type are required and built-in names cannot be overwritten.",
+        request_model=Step2PromptTemplateSaveRequest, response_model=Step2PromptTemplateSaveResult,
+        agent_api_method="POST", agent_api_path="/api/agent/v1/storyboard/prompt-templates",
+        mcp_tool_name="ppt_step2_prompt_templates_save", cli_command="storyboard prompt-template-save",
+        service_ref="storyboard_service.save_step2_prompt_template",
+    ),
+    AgentCapability(
+        id="storyboard.prompt_templates.delete", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="Delete a custom Step 2 prompt template by id; built-in templates are rejected.",
+        request_model=BaseModel, response_model=Step2PromptTemplateListResult,
+        agent_api_method="DELETE", agent_api_path="/api/agent/v1/storyboard/prompt-templates/{template_id}",
+        mcp_tool_name="ppt_step2_prompt_templates_delete", cli_command="storyboard prompt-template-delete",
+        service_ref="storyboard_service.delete_step2_prompt_template",
+    ),
+    # ---- 可见 Step 2：项目规划配置 ----
+    AgentCapability(
+        id="storyboard.rules.get", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="Read the project's custom storyboard rules, pipeline profile YAML, contract schema text and profile editor data.",
+        request_model=BaseModel, response_model=StoryboardRulesResult,
+        agent_api_method="GET", agent_api_path="/api/agent/v1/projects/{project_id}/storyboard/rules",
+        mcp_tool_name="ppt_storyboard_rules_get", cli_command="storyboard rules",
+        service_ref="storyboard_service.get_step2_rules",
+    ),
+    AgentCapability(
+        id="storyboard.rules.update", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="Replace the project's storyboard rules and/or pipeline profile YAML; omitted text falls back to the built-in defaults; profile_patch is applied after profile_yaml.",
+        request_model=StoryboardRulesUpdateRequest, response_model=StoryboardRulesResult,
+        agent_api_method="PUT", agent_api_path="/api/agent/v1/projects/{project_id}/storyboard/rules",
+        mcp_tool_name="ppt_storyboard_rules_update", cli_command="storyboard rules --set",
+        service_ref="storyboard_service.update_step2_rules",
+    ),
+    AgentCapability(
+        id="storyboard.prompts.get", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="Read the project's effective Step 2 prompts, built-in defaults, legacy-contract compatibility flags and composed system contents.",
+        request_model=BaseModel, response_model=StoryboardPromptsResult,
+        agent_api_method="GET", agent_api_path="/api/agent/v1/projects/{project_id}/storyboard/prompts",
+        mcp_tool_name="ppt_storyboard_prompts_get", cli_command="storyboard prompts",
+        service_ref="storyboard_service.get_step2_prompts",
+    ),
+    AgentCapability(
+        id="storyboard.prompts.update", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="Replace Step 2 prompt fields; omitted fields reset to the built-in defaults.",
+        request_model=StoryboardPromptsUpdateRequest, response_model=StoryboardPromptsResult,
+        agent_api_method="PUT", agent_api_path="/api/agent/v1/projects/{project_id}/storyboard/prompts",
+        mcp_tool_name="ppt_storyboard_prompts_update", cli_command="storyboard prompts --set",
+        service_ref="storyboard_service.update_step2_prompts",
+    ),
+    # ---- 可见 Step 2：两阶段规划与合约 ----
+    AgentCapability(
+        id="storyboard.script.get", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="Read the stored Step 2A speech script plan and target-duration response.",
+        request_model=BaseModel, response_model=StoryboardScriptPlanResult,
+        agent_api_method="GET", agent_api_path="/api/agent/v1/projects/{project_id}/storyboard/script",
+        mcp_tool_name="ppt_storyboard_script_get", cli_command="storyboard script",
+        service_ref="storyboard_service.get_step2_script_plan",
+    ),
+    AgentCapability(
+        id="storyboard.script.update", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="Save a normalized speech script plan (manual edit); an empty slides list clears the storyboard chain; replanning effects are reported via workflow_changed/workflow_pending.",
+        request_model=StoryboardScriptPlanPayload, response_model=StoryboardScriptPlanResult,
+        agent_api_method="PUT", agent_api_path="/api/agent/v1/projects/{project_id}/storyboard/script",
+        mcp_tool_name="ppt_storyboard_script_update", cli_command="storyboard script --set",
+        service_ref="storyboard_service.update_step2_script_plan",
+    ),
+    AgentCapability(
+        id="storyboard.script.execute", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="Run the Step 2A article-to-script LLM planning call synchronously; uses the configured LLM provider and the storyboard cooperative stop signal.",
+        request_model=StoryboardScriptExecuteRequest, response_model=StoryboardScriptPlanResult,
+        agent_api_method="POST", agent_api_path="/api/agent/v1/projects/{project_id}/storyboard/script/execute",
+        mcp_tool_name="ppt_storyboard_script_execute", cli_command="storyboard script-execute",
+        service_ref="storyboard_service.execute_step2_script_plan",
+        long_running=True,
+    ),
+    AgentCapability(
+        id="storyboard.visual.get", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="Read the stored Step 2B visual plan and whether it is stale relative to the current script plan.",
+        request_model=BaseModel, response_model=StoryboardVisualPlanResult,
+        agent_api_method="GET", agent_api_path="/api/agent/v1/projects/{project_id}/storyboard/visual",
+        mcp_tool_name="ppt_storyboard_visual_get", cli_command="storyboard visual",
+        service_ref="storyboard_service.get_step2_visual_plan",
+    ),
+    AgentCapability(
+        id="storyboard.visual.update", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="Save a normalized visual plan (manual edit); narration fragments are re-bound deterministically from the stored script plan.",
+        request_model=StoryboardVisualPlanPayload, response_model=StoryboardVisualPlanResult,
+        agent_api_method="PUT", agent_api_path="/api/agent/v1/projects/{project_id}/storyboard/visual",
+        mcp_tool_name="ppt_storyboard_visual_update", cli_command="storyboard visual --set",
+        service_ref="storyboard_service.update_step2_visual_plan",
+    ),
+    AgentCapability(
+        id="storyboard.visual.execute", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="Run the Step 2B script-to-visual LLM planning call synchronously; requires a stored script plan.",
+        request_model=BaseModel, response_model=StoryboardVisualPlanResult,
+        agent_api_method="POST", agent_api_path="/api/agent/v1/projects/{project_id}/storyboard/visual/execute",
+        mcp_tool_name="ppt_storyboard_visual_execute", cli_command="storyboard visual-execute",
+        service_ref="storyboard_service.execute_step2_visual_plan",
+        long_running=True,
+    ),
+    AgentCapability(
+        id="storyboard.compose", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="Compose and persist the Visual Contract from the stored script and visual plans, run contract validation, and apply downstream invalidation; stale visual plans are rejected before any write.",
+        request_model=BaseModel, response_model=StoryboardComposeResult,
+        agent_api_method="POST", agent_api_path="/api/agent/v1/projects/{project_id}/storyboard/compose",
+        mcp_tool_name="ppt_storyboard_compose", cli_command="storyboard compose",
+        service_ref="storyboard_service.compose_step2_visual_contract",
+        long_running=True,
+    ),
+    AgentCapability(
+        id="storyboard.preview", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="Compose the Step 2 LLM request preview (system/user content) from the article plus optional rule/profile overrides, without calling any model.",
+        request_model=StoryboardRulesUpdateRequest, response_model=StoryboardPreviewResult,
+        agent_api_method="POST", agent_api_path="/api/agent/v1/projects/{project_id}/storyboard/preview",
+        mcp_tool_name="ppt_storyboard_preview", cli_command="storyboard preview",
+        service_ref="storyboard_service.get_step2_prompt_preview",
+    ),
+    AgentCapability(
+        id="storyboard.contract.get", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="Read the normalized Visual Contract with its canonical SHA-256 CAS baseline and schema-repair hints; success=false before the first compose.",
+        request_model=BaseModel, response_model=StoryboardContractGetResult,
+        agent_api_method="GET", agent_api_path="/api/agent/v1/projects/{project_id}/storyboard/contract",
+        mcp_tool_name="ppt_storyboard_contract_get", cli_command="storyboard contract",
+        service_ref="storyboard_service.get_step2_result",
+    ),
+    AgentCapability(
+        id="storyboard.contract.update", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="Save the Visual Contract under CAS: pass the previously read contract_sha256 as expected_contract_sha256; a stale baseline returns 409 with zero side effects, an identical save is a no-op. Manual edits trigger validation, reveal/narration sync and registered downstream impacts.",
+        request_model=StoryboardContractUpdateRequest, response_model=StoryboardContractWriteResult,
+        agent_api_method="PUT", agent_api_path="/api/agent/v1/projects/{project_id}/storyboard/contract",
+        mcp_tool_name="ppt_storyboard_contract_update", cli_command="storyboard contract --set",
+        service_ref="storyboard_service.update_step2_result",
+    ),
+    AgentCapability(
+        id="storyboard.contract.repair", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="Explicitly persist schema normalization of the stored contract instead of mutating on read; reports whether anything changed.",
+        request_model=BaseModel, response_model=StoryboardContractRepairResult,
+        agent_api_method="POST", agent_api_path="/api/agent/v1/projects/{project_id}/storyboard/contract/repair",
+        mcp_tool_name="ppt_storyboard_contract_repair", cli_command="storyboard contract-repair",
+        service_ref="storyboard_service.repair_step2_result",
+    ),
+    AgentCapability(
+        id="storyboard.skeleton.submit", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="Manual mode: build a Visual Contract from title + narration slides only (empty visual groups, static pages), set ai_mode=manual and finish Step 2.",
+        request_model=StoryboardSkeletonRequest, response_model=StoryboardSkeletonResult,
+        agent_api_method="POST", agent_api_path="/api/agent/v1/projects/{project_id}/storyboard/manual-skeleton",
+        mcp_tool_name="ppt_storyboard_skeleton_submit", cli_command="storyboard skeleton",
+        service_ref="storyboard_service.submit_step2_manual_skeleton",
+    ),
+    AgentCapability(
+        id="storyboard.execute", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="Legacy one-shot composite (script execute + visual execute + compose) kept in parity with the business route; Agents should prefer the two-phase storyboard.script/visual/compose flow which reports intermediate results.",
+        request_model=StoryboardScriptExecuteRequest, response_model=BaseModel,
+        agent_api_method="POST", agent_api_path="/api/agent/v1/projects/{project_id}/storyboard/execute",
+        mcp_tool_name="ppt_storyboard_execute", cli_command="storyboard execute-legacy",
+        service_ref="storyboard_service.execute_step2",
+        long_running=True,
+    ),
+] + _DOMAIN_CAPABILITIES
 
 
 def get_capability(capability_id: str) -> AgentCapability:

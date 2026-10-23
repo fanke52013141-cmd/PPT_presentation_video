@@ -34,6 +34,8 @@ def required_scope(cap: AgentCapability) -> str:
 
 
 def response_kind(cap: AgentCapability) -> str:
+    if cap.transport != "json":
+        return cap.transport
     if cap.id == "pipeline.stream":
         return "event_stream"
     if cap.id in {"image.get", "audio.get", "video.latest", "artifact.download"}:

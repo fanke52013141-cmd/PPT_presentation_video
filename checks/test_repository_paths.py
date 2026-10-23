@@ -39,12 +39,18 @@ def test_repository_paths_are_canonical_and_application_free() -> None:
         assert Path(paths.RUNS_DIR) == Path(os.path.abspath(configured_runs))
     else:
         assert Path(paths.RUNS_DIR) == ROOT / "runs"
-    assert Path(paths.DATA_DIR) == ROOT / "data"
+    # DATA_DIR 允许用 PPT_STUDIO_DATA_DIR 显式覆盖（与 RUNS_DIR 同一约定）。
+    assert 'os.path.join(REPO_ROOT, "data")' in source
+    configured_data = os.environ.get("PPT_STUDIO_DATA_DIR")
+    if configured_data:
+        assert Path(paths.DATA_DIR) == Path(os.path.abspath(configured_data))
+    else:
+        assert Path(paths.DATA_DIR) == ROOT / "data"
     assert Path(paths.STYLE_TOKENS_PATH) == (
-        ROOT / "data" / "style_tokens.yaml"
+        Path(paths.DATA_DIR) / "style_tokens.yaml"
     )
     assert Path(paths.STEP2_PROMPT_TEMPLATES_PATH) == (
-        ROOT / "data" / "step2_prompt_templates.json"
+        Path(paths.DATA_DIR) / "step2_prompt_templates.json"
     )
     assert Path(paths.STEP3_IMAGE_PROMPT_TEMPLATE_PATH) == (
         ROOT / "templates" / "prompts" / "step3_image_system.md"

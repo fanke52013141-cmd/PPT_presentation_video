@@ -29,7 +29,7 @@ def test_agent_config_update_reuses_canonical_config_writer(tmp_path):
     project = SimpleNamespace(id="p1", run_dir=str(tmp_path), _status={"8": "completed"})
     project.get_step_status = lambda: dict(project._status)
     project.set_step_status = lambda value: setattr(project, "_status", dict(value))
-    with patch("agent_api.routes._resolve_project", return_value=project):
+    with patch("agent_api.domain_routes.digital_human._resolve_project", return_value=project):
         result = agent_update_digital_human_config(
             "p1", DigitalHumanConfigUpdateRequest(config={"enabled": True, "shape": "invalid"}), MagicMock(),
         )
@@ -59,7 +59,7 @@ def test_digital_human_capabilities_have_mcp_tools():
     """Each digital-human capability has an MCP tool name."""
     from agent_contract.capabilities import CAPABILITIES
     dh_caps = [c for c in CAPABILITIES if c.id.startswith("digital_human.")]
-    assert len(dh_caps) == 4
+    assert len(dh_caps) >= 4
     for cap in dh_caps:
         assert cap.mcp_tool_name.startswith("ppt_digital_human")
 

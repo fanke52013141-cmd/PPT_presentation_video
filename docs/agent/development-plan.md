@@ -10,6 +10,47 @@
 
 ## 1. 本期决定与完成定义
 
+2026-10-23 后续批次：发现目录/详情支持私有 ETag 条件刷新；AgentClient 每次
+使用缓存前重验证，按地址、身份、查询隔离，并提供重连清理入口，不自动刷新写入
+指纹或重试写入。现有请求/响应定义已迁入 `agent_contract/domains/`，
+`models.py` 保持唯一显式导出入口；能力 Schema 与指纹保持一致。
+领域 HTTP 适配拆分、字段/后台盘点、P2 其余可靠写入和资源传输、P4–P6 仍待完成。
+
+同日下一批：现有 HTTP 适配已迁入 `agent_api/domain_routes/`；聚合入口只负责
+注册和显式导出，门禁验证 HTTP 与 invoke 指向同一函数，并限制聚合模块大小。
+`project.delete` 新增版本检查、CAS 与删除后幂等重放；跨目标/参数键冲突以及
+结果未知禁止重执行已增加真实隔离服务场景。修复 invoke 项目列表忽略已声明
+`status_filter` 的问题。API 版本为 2.2.0；P2 全领域及 P4–P6 仍未完成。
+
+资源读取批次：API 2.3.0，已注册产物使用精确 ID URI，详情提供当前文件 hash；
+CLI/客户端支持大小有界、原子发布且校验完整性的流式下载。注册表按项目内路径
+区分同名页文件，单页删除保留其他页登记。统一上传及 P2 的全部写入保证仍未完成，
+不能据此标记 P2/P3 或全功能开放验收完成。
+
+Step 1–2 分域批次：API 2.5.0。可见 Step 1（文章设置/结果编辑）与可见 Step 2
+（分镜模板、规划配置、两阶段规划读写、Visual Contract CAS 读写、手动骨架）
+共 30 个业务入口映射到 28 个新能力，invoke 与分域 HTTP 共用同一适配器；
+`storyboard.contract.update` 按 `expected_contract_sha256` 做 CAS，相同内容保存
+为 no-op（CAS 键不再写入合约文件），过期基线 409 且零副作用。隔离场景测试
+覆盖模板管理、规则/提示词回写、演讲稿逐页编辑身份保持、可视化映射回填、
+合约生命周期（合成/no-op/重排/冲突）与手动骨架。LLM 生成类 4 能力
+（script/visual/compose 的 execute、legacy 复合路由）为 partial，等待真实
+供应商验收；本批不宣称 P5-B 全部完成。覆盖率 25 complete / 16 partial /
+221 pending。
+
+全域开放批次：API 2.6.0。剩余 221 个业务入口全部完成覆盖决策，能力注册表
+扩充到 273 项；能力声明下沉到 `agent_contract/domains/*`（registry.py 提供
+数据类，capabilities.py 聚合），dispatch 支持显式 dotted-path handler 注册。
+传输模型新增 `transport` 字段（json/binary/event_stream/file_upload），
+非 JSON 传输在发现详情中声明 invocable=false。数据目录支持
+`PPT_STUDIO_DATA_DIR` 隔离覆盖，测试不再写入用户真实 data/。
+`project.change_preview` 落地只读变更预检（复用提交路径同一差分函数）。
+覆盖率 145 complete / 115 partial / 1 exempt / 0 pending。partial 缺口按
+类型登记：LLM/外部引擎验收（约 30 项）、multipart 上传客户端（约 12 项）、
+二进制传输领域验收（约 25 项）、需真实生成资产或活动的场景（约 40 项）。
+分域表面场景 18 项、Agent 专项回归 738 项通过；未执行真实付费生成，
+`--require-complete` 发布门禁仍预期失败，直至 partial 清零。
+
 1. 当前 Agent 契约可以直接替换；不建设双版本服务、旧字段别名、旧 MCP 工具兼容层、旧 SDK 回归或 90 天迁移窗口。
 2. 继续复用现有业务服务、权限和持久化机制。无需兼容旧规范不等于重写系统，也不授权删除本地数据或重写已应用 SQL migrations。
 3. 只承诺当前契约。Agent 通过发现入口获得实时 Schema、行为说明和可执行动作。过期请求在产生副作用前被拒绝。

@@ -14,7 +14,11 @@ AGENT_CONTRACT_SNAPSHOT_PATH = os.path.join(REPO_ROOT, "docs", "agent", "contrac
 RUNS_DIR = os.path.abspath(
     os.environ.get("PPT_STUDIO_RUNS_DIR") or os.path.join(REPO_ROOT, "runs")
 )
-DATA_DIR = os.path.join(REPO_ROOT, "data")
+# 业务数据目录。可用 PPT_STUDIO_DATA_DIR 覆盖，用于测试隔离与多环境并行；
+# 未设置时行为不变（仓库根下的 data/）。与 RUNS_DIR 同一覆盖约定。
+DATA_DIR = os.path.abspath(
+    os.environ.get("PPT_STUDIO_DATA_DIR") or os.path.join(REPO_ROOT, "data")
+)
 AGENT_RATE_LIMIT_DB_PATH = os.path.abspath(
     os.environ.get("PPT_STUDIO_AGENT_RATE_LIMIT_DB_PATH") or os.path.join(DATA_DIR, "agent_rate_limit.db")
 )

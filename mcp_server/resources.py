@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import re
 import base64
+from urllib.parse import unquote
 from typing import Any, Optional
 
 from agent_client.client import AgentClient
@@ -28,6 +29,7 @@ from agent_client.client import AgentClient
 
 # URI patterns (order matters — most specific first)
 _URI_PATTERNS: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"^ppt://projects/([^/]+)/artifacts/([^/]+)$"), "artifact"),
     (re.compile(r"^ppt://projects/([^/]+)/summary$"), "summary"),
     (re.compile(r"^ppt://projects/([^/]+)/slides$"), "slides"),
     (re.compile(r"^ppt://projects/([^/]+)/slides/([^/]+)/image$"), "slide_image"),
@@ -49,11 +51,16 @@ def parse_resource_uri(uri: str) -> Optional[tuple[str, str, dict[str, str]]]:
     for pattern, rtype in _URI_PATTERNS:
         m = pattern.match(uri)
         if m:
-            groups = m.groups()
+            groups = tuple(unquote(value) for value in m.groups())
+            if any(value in {".", ".."} or any(char in value for char in "/\\?#") for value in groups):
+                return None
             params: dict[str, str] = {}
             if rtype in ("slide_image", "slide_audio", "dh_video_slide"):
                 params["project_id"] = groups[0]
                 params["slide_id"] = groups[1]
+            elif rtype == "artifact":
+                params["project_id"] = groups[0]
+                params["artifact_id"] = groups[1]
             else:
                 params["project_id"] = groups[0]
             return (groups[0], rtype, params)
@@ -63,6 +70,12 @@ def parse_resource_uri(uri: str) -> Optional[tuple[str, str, dict[str, str]]]:
 def list_resource_templates() -> list[dict[str, Any]]:
     """Return MCP resource template definitions for discovery."""
     return [
+        {
+            "uriTemplate": "ppt://projects/{project_id}/artifacts/{artifact_id}",
+            "name": "Exact Artifact",
+            "description": "Read one registered artifact by ID, including its hash and controlled binary download path.",
+            "mimeType": "application/json",
+        },
         {
             "uriTemplate": "ppt://projects/{project_id}/summary",
             "name": "Project Summary",
@@ -143,6 +156,10 @@ def read_resource(uri: str, client: AgentClient) -> dict[str, Any]:
         }
 
     project_id, rtype, params = parsed
+
+    if rtype == "artifact":
+        data = client.get_artifact(project_id, params["artifact_id"])
+        return {"contents": [{"uri": uri, "mimeType": "application/json", "text": _to_json_text(data)}]}
 
     if rtype == "summary":
         data = client.get_project(project_id)

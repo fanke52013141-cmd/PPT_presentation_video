@@ -7,9 +7,7 @@ This module defines how artifacts are described, located, and served.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
-
-from pydantic import BaseModel, Field
+from agent_contract.domains.artifacts import ArtifactInfo, ArtifactsListResult
 
 
 class ArtifactType(str, Enum):
@@ -47,33 +45,19 @@ def mime_for_type(artifact_type: str) -> str:
         return "application/octet-stream"
 
 
-class ArtifactInfo(BaseModel):
-    """A single artifact with resource URI for MCP/Agent access."""
-
-    artifact_id: str
-    artifact_type: str
-    filename: str
-    mime_type: str = "application/octet-stream"
-    size_bytes: int = 0
-    resource_uri: str = Field("", description="ppt://projects/{pid}/slides/{sid}/image")
-    slide_id: Optional[str] = None
-    revision: int = 0
-    created_at: Optional[str] = None
-
-class ArtifactCollection(BaseModel):
+class ArtifactCollection(ArtifactsListResult):
     """A collection of artifacts for listing/display."""
-
-    project_id: str
-    artifacts: list[ArtifactInfo]
-    total: int
 
     def filter_by_type(self, artifact_type: str) -> list[ArtifactInfo]:
         """Return only artifacts matching the given type."""
         return [a for a in self.artifacts if a.artifact_type == artifact_type]
 
 
-def build_resource_uri(project_id: str, artifact_type: str, slide_id: str = "") -> str:
+def build_resource_uri(project_id: str, artifact_type: str, slide_id: str = "", *, artifact_id: str = "") -> str:
     """Build a ppt:// resource URI for an artifact."""
+    if artifact_id:
+        from urllib.parse import quote
+        return f"ppt://projects/{quote(project_id, safe='')}/artifacts/{quote(artifact_id, safe='')}"
     if slide_id:
         if artifact_type == ArtifactType.image:
             return f"ppt://projects/{project_id}/slides/{slide_id}/image"

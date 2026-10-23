@@ -1,6 +1,6 @@
 # Current contract notice
 
-The current API is 2.1.0 with bootstrap protocol 1. Use
+The current API is 2.3.0 with bootstrap protocol 1. Use
 [`current-contract-guide.md`](current-contract-guide.md) for runtime discovery
 and generic invocation. Live capability details and the generated
 `contract-snapshot.json` are authoritative. The current handoff follows; the
@@ -8,6 +8,52 @@ v1.x delivery notes at the bottom are archived and must not be used as current
 connection instructions.
 
 ---
+
+## 本地后续开发（2026-10-23，尚未推送）
+
+最新资源批次：API 2.3.0。已注册产物的 URI 绑定 artifact ID；元数据详情返回当前
+文件 SHA-256，MCP 精确资源返回元数据与下载路径。CLI 改为有界分块下载，
+校验长度/hash 后原子发布文件，拒绝跨域重定向，失败不覆盖已有文件。
+产物注册由文件名改为项目内相对路径，修复多页图片/音频同名记录混用；
+单页图片删除仅清理该页的登记。ArtifactInfo 已合并为唯一领域模型。
+统一上传、其他领域可靠写入与工作流状态/预检仍待后续实现。
+
+资源批次验证：`scripts/run_checks.py --level full` 退出码 0，
+**1727 passed、9 skipped、2 warnings**；日志为本机
+`outputs/agent-discovery-validation/full-resource-transfers.log`。审查后增加同域
+越出 Agent 命名空间的重定向拒绝，最终资源定向回归 **22 passed**。
+覆盖真实独立回环 HTTP 的长度/大小/hash/重定向失败保护、流式读取上限、CLI
+元数据 hash 转发、精确资源定位、路径越界拒绝、同名页面注册与局部删除。
+Ruff、生成契约一致性和空白检查通过；9 项跳过不作为通过项，未执行付费生成。
+
+后续批次已将现有领域 HTTP 适配迁入 `agent_api/domain_routes/`，
+`routes.py` 收敛为路由组合与 dispatch 显式导出。共享模块只负责账号内项目解析和
+幂等响应，项目摘要留在项目领域。增加模块大小及 HTTP/invoke 函数身份门禁。
+`project.delete@1.1` 新增 query 模型、删除前版本检查/CAS 和删除后的幂等重放，
+客户端及 CLI 已同步；同键改换目标/参数冲突，结果未知拒绝重执行，跨账号不可
+读取重放或删除项目。修复 `project.list` invoke 忽略 status_filter，并递增其
+能力及行为版本。当前 API 为 2.2.0，能力指纹以生成快照为准。
+
+本批最终 `scripts/run_checks.py --level full` 退出码 0：
+**1706 passed、9 skipped、2 warnings**。日志在
+`outputs/agent-discovery-validation/full-domain-routes.log`，不随 Git 上传。
+独立 AST 比对确认 39 个迁移函数完全未变，唯一改变的原路由函数为项目删除；
+列表筛选修复位于统一 dispatch。新增场景覆盖删除后跨通道重放、版本冲突保留
+文件、目标/参数键冲突、提交后结果未知、跨账号隔离和列表筛选。
+
+发现接口已支持私有 ETag 条件刷新，客户端按身份、地址和查询重验证缓存；
+缓存最多 128 项，写入 revision 不会被自动替换。请求/响应模型按领域整理到
+`agent_contract/domains/`，`models.py` 作为统一导出入口，业务 Schema 和能力指纹
+保持不变。API 版本为 2.1.1。P1 领域路由、P2 其余可靠写入/资源传输及 P4–P6
+仍未完成；以下推送批次保留其当时的版本和验证记录。
+
+本批验证：`scripts/run_checks.py --level full` 退出码 0，最终 pytest
+**1699 passed、9 skipped、2 warnings**；跳过项不视为已验收。两个 warning
+分别为第三方弃用提示和 ZIP 重复条目测试提示。审查后将强 ETag 改为基于实际
+响应字节计算，发现/缓存定向回归 **25 passed**；契约生成一致性、功能覆盖登记、
+Ruff 与空白检查通过。日志在本机
+`outputs/agent-discovery-validation/full-checks.log`，不随 Git 提交。
+测试数据库、runs 和临时目录均隔离；未执行付费生成、未重启正式服务。
 
 # Agent 全功能开放改造交接（当前批次，2026-10-23）
 
@@ -27,12 +73,12 @@ invoke 调用与 Web UI 相同的业务服务，不重建业务算法、不绕�
 | 阶段 | 状态 |
 | --- | --- |
 | P0 功能盘点与覆盖登记 | 🟡 部分：262 个业务 HTTP 入口已全部登记并接入检查；字段级/后台功能盘点待补 |
-| P1 契约内核与统一 dispatch | 🟡 部分：发现/指纹/dispatch/invoke 已落地，project+article 纵向切片已验证；全领域模型拆分（`agent_contract/domains/`、`agent_api/domain_routes/`）待做 |
-| P2 幂等、版本与可靠任务 | 🟡 部分：operation 寻址、TTS/视频/一键持久任务、项目与旁白 CAS、幂等重放绑定已落地；其余领域写入幂等、资源传输、同步生成持久化待做 |
-| P3 动态发现、MCP 与 CLI | 🟡 部分：检索/详情/固定 MCP 工具/CLI 动态调用已落地；ETag 条件刷新与缓存策略待做 |
-| P4 状态/预检/确认 | ⬜ 未开始（`project.state`、`project.change_preview`） |
-| P5 八步分域能力补齐 | ⬜ 未开始：262 项入口中 249 项 pending、13 项 partial |
-| P6 全量门禁与独立 Agent 验收 | ⬜ 未开始：`--require-complete` 严格门禁当前预期失败 |
+| P1 契约内核与统一 dispatch | ✅ 基本完成：发现/指纹/dispatch/invoke 已落地，请求/响应模型与 HTTP 适配均按域拆分并有门禁保护 |
+| P2 幂等、版本与可靠任务 | 🟡 部分：operation 寻址、TTS/视频/一键持久任务、项目与旁白 CAS、幂等重放绑定已落地；其余领域写入幂等、统一上传、同步生成持久化待做 |
+| P3 动态发现、MCP 与 CLI | 🟡 大部分完成：检索/详情/ETag 条件刷新/固定 MCP 工具/CLI 动态调用/受控流式下载已落地 |
+| P4 状态/预检/确认 | 🟡 大部分完成：`project.state` 只读观测与 `project.change_preview` 只读变更预检已落地；确认类绑定已由各域 CAS/哈希校验承载 |
+| P5 八步分域能力补齐 | 🟢 覆盖决策完成（API 2.6.0，273 能力，145 complete / 115 partial / 1 exempt / 0 pending）；partial 按缺口类型登记，待真实供应商/资产/传输客户端验收 |
+| P6 全量门禁与独立 Agent 验收 | ⬜ 未开始：`--require-complete` 严格门禁在 partial 清零前预期失败 |
 
 **结论：当前不是全功能开放状态。** 已开放的是发现协议 + 统一调用 + 精确任务
 生命周期 + 项目/文章纵向能力；分域能力按 P5 待逐域补齐。对外口径以

@@ -25,7 +25,7 @@ def record_artifact(
     existing = db.query(ArtifactRecord).filter(
         ArtifactRecord.project_id == project_id,
         ArtifactRecord.artifact_type == artifact_type,
-        ArtifactRecord.filename == target.name,
+        ArtifactRecord.relative_path == relative_path,
     ).first()
     artifact = existing or ArtifactRecord(
         id=uuid.uuid4().hex,
@@ -35,6 +35,9 @@ def record_artifact(
         relative_path=relative_path,
         mime_type=mime_type,
     )
+    artifact.filename = target.name
+    artifact.relative_path = relative_path
+    artifact.mime_type = mime_type
     artifact.size_bytes = target.stat().st_size
     artifact.source_fingerprint = json.dumps(
         source_fingerprint or {},
@@ -54,10 +57,14 @@ def remove_artifact_record(
     project_id: str,
     artifact_type: str,
     filename: str,
+    relative_path: str | None = None,
 ) -> int:
-    return db.query(ArtifactRecord).filter(
+    query = db.query(ArtifactRecord).filter(
         ArtifactRecord.project_id == project_id,
         ArtifactRecord.artifact_type == artifact_type,
         ArtifactRecord.filename == filename,
-    ).delete(synchronize_session=False)
+    )
+    if relative_path is not None:
+        query = query.filter(ArtifactRecord.relative_path == relative_path)
+    return query.delete(synchronize_session=False)
 

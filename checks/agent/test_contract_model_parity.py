@@ -136,19 +136,19 @@ def _mock_project(**overrides):
 
 class TestProjectSummaryMaskMode:
     def test_mask_disabled_is_reflected(self):
-        from agent_api.routes import _project_summary
+        from agent_api.domain_routes.project import _project_summary
 
         summary = _project_summary(_mock_project(mask_enabled=0))
         assert summary.mask_enabled is False
 
     def test_mask_enabled_is_reflected(self):
-        from agent_api.routes import _project_summary
+        from agent_api.domain_routes.project import _project_summary
 
         summary = _project_summary(_mock_project(mask_enabled=1))
         assert summary.mask_enabled is True
 
     def test_missing_mask_column_defaults_to_full_frame(self):
-        from agent_api.routes import _project_summary
+        from agent_api.domain_routes.project import _project_summary
 
         project = _mock_project()
         summary = _project_summary(project)

@@ -242,6 +242,11 @@ def storyboard_rebuild_reasons(project: Any) -> list[str]:
     return [*_validate_storyboard(project), *_project_state_reasons(project, "storyboard")]
 
 
+def inspect_stage_artifacts(project: Any, stage_id: str) -> list[str]:
+    """Read-only checks shared by resume planning and external state readers."""
+    return [*VALIDATORS[stage_id](project), *_project_state_reasons(project, stage_id)]
+
+
 def build_resume_plan(project: Any, failed_stage: str) -> dict[str, Any]:
     failed_stage = failed_stage if failed_stage in STAGE_IDS else "preflight"
     failed_index = STAGE_IDS.index(failed_stage)
@@ -251,7 +256,7 @@ def build_resume_plan(project: Any, failed_stage: str) -> dict[str, Any]:
         reasons = (
             ["previous_stage_failed"]
             if stage_id == failed_stage
-            else [*VALIDATORS[stage_id](project), *_project_state_reasons(project, stage_id)]
+            else inspect_stage_artifacts(project, stage_id)
         )
         valid = not reasons
         validation.append({"stage": stage_id, "valid": valid, "reasons": reasons})

@@ -1267,12 +1267,14 @@ def repair_step2_result(project_id: str, db: Session):
     if not os.path.exists(contract_path):
         raise HTTPException(status_code=400, detail="尚未生成分镜规划")
     stored_contract = read_json_file(contract_path, {})
+    # normalize 原地修改输入：迁移基线必须先深拷贝快照，否则 changed 恒为 False。
+    raw_baseline = deepcopy(stored_contract)
     comparison_contract = normalize_visual_contract(
         deepcopy(stored_contract),
         read_project_pipeline_profile(project),
     )
     contract = normalize_visual_contract(stored_contract, read_project_pipeline_profile(project))
-    changed = contract_canonical_sha256(contract) != contract_canonical_sha256(stored_contract)
+    changed = contract_canonical_sha256(contract) != contract_canonical_sha256(raw_baseline)
     if changed:
         write_json_atomic(contract_path, contract)
         current_slide_ids = contract_slide_ids_from_payload(contract)
@@ -1289,6 +1291,8 @@ def update_step2_result(project_id: str, payload: Dict[str, Any], db: Session):
     # 手写保存入口拒绝空白 slide_id,空白页在产物寻址中会被静默丢弃(R1-002)。
     expected_sha = str(payload.get("expected_contract_sha256") or "").strip()
     reject_blank_slide_ids(payload.get("slides"))
+    # CAS 键只用于基线比较：写入合约会破坏"相同保存为 no-op"保证。
+    payload = {key: value for key, value in payload.items() if key != "expected_contract_sha256"}
     contract_path = os.path.join(project.run_dir, "planning", "visual_contract.json")
     with project_artifact_lock(project.run_dir):
         stored_contract = read_json_file(contract_path, {})

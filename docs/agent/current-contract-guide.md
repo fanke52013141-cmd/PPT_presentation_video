@@ -1,6 +1,6 @@
 # 当前 Agent 契约接入
 
-本页描述已实现的 API 2.1.0 接入方式，URL 命名空间仍为 `/api/agent/v1`。旧 Agent 规范无需兼容。功能尚未全部开放，具体缺口见 `feature-coverage.md`。
+本页描述已实现的 API 2.6.0 接入方式，URL 命名空间仍为 `/api/agent/v1`。旧 Agent 规范无需兼容。262 个业务入口已全部完成覆盖决策（145 complete / 115 partial / 1 exempt），pending 清零；partial 项的缺口类型见 `feature-coverage.md`。
 
 ## 发现与调用
 
@@ -8,6 +8,12 @@
 2. 使用 `GET /api/agent/v1/capabilities?q=...&domain=...&offset=0&limit=50` 搜索摘要；继续读取 next_offset，直到为 null。
 3. 使用 `GET /api/agent/v1/capabilities/{id}` 读取完整输入/输出 Schema、权限、响应类型和 contract_revision。
 4. 根据该 Schema 准备参数，用同一个 contract_revision 调用 `POST /api/agent/v1/invoke`。
+
+目录和详情支持 `ETag` / `If-None-Match` 条件刷新；表示未改变时返回无正文的
+304。缓存为 `private, no-cache`，每次使用前必须向服务端验证，不能把目录指纹当作
+项目状态缓存。AgentClient 自动按服务地址、身份和完整查询区分缓存，并返回独立
+对象；重连时可调用 `clear_discovery_cache()` 清除。契约变化后仍须重新理解参数，
+客户端不会自动替换调用方指定的 revision 或重试写操作。
 
 ```json
 {
@@ -33,6 +39,79 @@ CONTRACT_CHANGED 返回 409，details.executed=false，表示未调用业务入�
 支持幂等的写入将键绑定账号、能力、目标资源、规范化参数和当前契约。完成后 7 天内可重放已存响应；过期响应被清理，键墓碑保留并返回 IDEMPOTENCY_EXPIRED。超时的 in_progress、失败记录或损坏的响应不能证明业务没有执行，返回 OPERATION_OUTCOME_UNKNOWN，禁止自动重领。执行中的重复请求返回 OPERATION_IN_PROGRESS；相同键配不同参数/资源/契约返回 IDEMPOTENCY_CONFLICT。
 
 项目元数据及旁白编辑在产生业务写入前，用数据库 compare-and-swap 抢占项目 revision。同一版本并发编辑只有一个成功，冲突返回 REVISION_CONFLICT；重复保存相同内容不推进版本。其他领域和 Web 编辑尚未统一推进该版本，不能据此宣称跨全系统的并发保护已经完成。
+
+`project.delete` 支持 `expected_revision` 和 `idempotency_key`。直接 HTTP DELETE
+通过查询参数传递，invoke/MCP 使用发现 Schema 的同名字段，CLI delete 提供对应
+选项。删除前检查版本并使用 CAS；携带同一个键重试成功删除会返回原结果，即便
+项目已经不存在。删除键在账号和能力内绑定目标与参数，改换项目或 revision 冲突；
+提交后结果丢失会报告 `OPERATION_OUTCOME_UNKNOWN`，不再次执行。未携带键的
+删除不提供重放保证。此改进不代表其他所有写入已具有同样保证。
+
+## 可见 Step 1–2：文章与分镜规划
+
+API 2.5.0 起开放可见 Step 1（文章）与可见 Step 2（分镜规划）的分步操控，
+共 28 个能力。除 LLM 生成类（`storyboard.script.execute`、
+`storyboard.visual.execute`、`storyboard.compose`、`storyboard.execute`）
+仍按同步业务调用执行外，其余能力均有隔离场景验收。
+
+| 领域 | 能力 |
+|---|---|
+| 文章设置 | `article.settings.get` / `article.settings.update` |
+| 文章结果 | `article.result.get` / `article.result.update`（相同内容保存为 no-op） |
+| 模板管理 | `storyboard.templates.*`、`storyboard.prompt_templates.*`（内置模板受保护） |
+| 规划配置 | `storyboard.rules.get/update`、`storyboard.prompts.get/update`、`storyboard.preview` |
+| 两阶段规划 | `storyboard.script.get/update`、`storyboard.visual.get/update`、LLM 生成用 `storyboard.script.execute` / `storyboard.visual.execute` |
+| 合约 | `storyboard.contract.get/update/repair`、`storyboard.compose`、`storyboard.skeleton.submit` |
+
+推荐流程：`source.set` → `storyboard.script.execute`（或 `script.update` 手工编辑）→
+`storyboard.visual.execute`（或 `visual.update`）→ `storyboard.compose` →
+`storyboard.contract.get` 读取 `contract_sha256` 基线 → 后续修改一律带
+`expected_contract_sha256` 调 `storyboard.contract.update`。
+
+合约保存是 CAS 写入：基线不匹配返回 409 且零副作用；相同内容保存返回
+`changed=false` 并保留全部下游工作；`slides` 内部字段由业务规划层归一化校验，
+契约 Schema 只声明信封。手动模式可跳过 LLM：`storyboard.skeleton.submit`
+直接用"标题 + 演讲稿"生成静态页合约并将项目置为 manual 模式。
+
+## 全域分步操控（API 2.6.0）
+
+2.6.0 起全部业务域开放分步能力，共 273 个能力。按可见步骤：
+
+| 步骤 | 能力域前缀 | 说明 |
+|---|---|---|
+| Step 1–2 | `article.*` / `storyboard.*` | 文章与分镜规划（CAS 合约写入） |
+| Step 3 | `image.*` / `style.*` / `global_style.*` / `ip.*` | 图片生成/上传/候选/确认、项目风格、参考图、模板、IP 角色 |
+| Step 4 | `mask.*` | AI Mask 标注、Manifest 草稿/终稿、精确预览 |
+| Step 5 | `narration.*` / `tts.*` / `media.*` | 旁白、TTS（含音频确认门禁）、背景/字幕设置 |
+| Step 6 | `annotation.*` | 勾画标注设置、结构化补丁、任务、预览 |
+| Step 7 | `digital_human.*` | 可选数字人配置、任务与产物 |
+| Step 8 | `video.*` / `pptx.*` / `subtitles.*` | 视频集合、PPTX 导出任务、SRT 字幕 |
+| 横向 | `settings.*` / `credentials.*` / `connections.*` / `course.*` / `config.*` / `accounts.*` / `diagnostics.*` / `project.impacts.*` 等 | 设置、凭据、模型连接、课程库、创作配置包、账号、诊断、影响决策 |
+
+传输约定：JSON 业务调用走 `POST /invoke`；二进制下载与 multipart 上传声明为
+`binary` / `file_upload` 传输，发现详情 `invocable=false`，按详情里的
+method/path 走专用 HTTP 传输，不能用 invoke 下载或上传。自由形态的业务载荷
+使用 `payload` 信封字段，字段级校验仍由 source-owned 服务负责；
+`project.change_preview` 提供合约变更的只读影响预检。
+
+## 精确产物与二进制下载
+
+`artifacts.list` / `artifact.get` 的已注册产物使用
+`ppt://projects/{project_id}/artifacts/{artifact_id}`，不会把旧视频替换为最新成片。
+MCP 读取该资源返回元数据及受控下载路径，不把视频编码到工具文本中。
+`artifact.get` 计算当前文件的 SHA-256；文件不可用时为 null。图片和音频的 ID
+按项目内相对路径区分，同名页面文件不会相互覆盖；同一路径更新后以新 hash
+识别当前内容，因此 ID 本身不承诺字节不可变。
+
+```powershell
+python -m cli.pptctl artifact download --project <project_id> --artifact <artifact_id> --out video.mp4
+```
+
+CLI 默认使用详情 hash 校验，支持 `--sha256` 指定预期版本和 `--max-bytes`
+设置上限（默认 1 GiB）。AgentClient 的 `download_file(path, destination, ...)`
+按 64 KiB 分块读取；只接受 `/api/agent/v1/` 资源路径，拒绝跨域重定向。
+完整长度、大小上限和可选 hash 均通过后才原子替换目标文件；失败保留原文件。
+当前仅补齐读取/下载，统一上传及所有领域版本控制仍待实现。
 
 ## 精确任务与恢复
 

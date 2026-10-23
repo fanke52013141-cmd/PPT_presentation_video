@@ -38,6 +38,149 @@ def test_discovery_is_paginated_and_searchable(api):
     assert api.get("/api/agent/v1/capabilities/no.such.capability").status_code == 404
 
 
+def test_project_delete_replays_after_resource_is_gone(api, monkeypatch):
+    from project_service import get_project_service
+
+    project = invoke(api, "project.create", {"name": "Delete replay"}).json()["project"]
+    pid = project["project_id"]
+    arguments = {"project_id": pid, "expected_revision": project["revision"], "idempotency_key": uuid.uuid4().hex}
+    first = invoke(api, "project.delete", arguments)
+    assert first.status_code == 200, first.text
+    assert invoke(api, "project.get", {"project_id": pid}).status_code == 404
+    monkeypatch.setattr(get_project_service(), "delete", lambda *a, **k: pytest.fail("Replay must not delete again"))
+    replay = invoke(api, "project.delete", arguments)
+    assert replay.status_code == 200, replay.text
+    assert replay.json() == first.json()
+    assert replay.headers["x-agent-idempotency-replay"] == "true"
+    # Direct HTTP uses the same canonical query model and replay record.
+    direct = api.delete(f"/api/agent/v1/projects/{pid}", params={key: value for key, value in arguments.items() if key != "project_id"})
+    assert direct.status_code == 200, direct.text
+    assert direct.json() == first.json()
+    changed = invoke(api, "project.delete", {**arguments, "expected_revision": project["revision"] + 1})
+    assert changed.status_code == 409
+    assert changed.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
+
+
+def test_project_delete_checks_revision_before_touching_files(api):
+    from pathlib import Path
+    from database import Project, SessionLocal
+
+    project = invoke(api, "project.create", {"name": "Delete conflict"}).json()["project"]
+    pid = project["project_id"]
+    with SessionLocal() as db:
+        run_dir = Path(db.get(Project, pid).run_dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    marker = run_dir / "delete-regression.txt"
+    marker.write_text("preserve", encoding="utf-8")
+    update = invoke(api, "project.update", {"project_id": pid, "name": "Changed", "expected_revision": project["revision"]})
+    assert update.status_code == 200
+    stale = api.delete(f"/api/agent/v1/projects/{pid}", params={"expected_revision": project["revision"], "idempotency_key": uuid.uuid4().hex})
+    assert stale.status_code == 409, stale.text
+    assert stale.json()["error"]["code"] == "REVISION_CONFLICT"
+    assert marker.read_text(encoding="utf-8") == "preserve"
+    current = invoke(api, "project.get", {"project_id": pid})
+    assert current.status_code == 200
+    assert current.json()["project"]["revision"] == update.json()["project"]["revision"]
+    assert api.delete(f"/api/agent/v1/projects/{pid}", params={"expected_revision": -1}).status_code == 422
+
+
+def test_delete_key_cannot_be_reused_for_another_project(api):
+    projects = [invoke(api, "project.create", {"name": "Delete resource binding"}).json()["project"] for _ in range(2)]
+    key = uuid.uuid4().hex
+    first = invoke(api, "project.delete", {"project_id": projects[0]["project_id"], "idempotency_key": key})
+    assert first.status_code == 200
+    conflict = invoke(api, "project.delete", {"project_id": projects[1]["project_id"], "idempotency_key": key})
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
+    assert invoke(api, "project.get", {"project_id": projects[1]["project_id"]}).status_code == 200
+
+
+def test_delete_unknown_outcome_never_executes_again(api, monkeypatch):
+    from fastapi import HTTPException
+    from project_service import get_project_service
+
+    project = invoke(api, "project.create", {"name": "Delete uncertain response"}).json()["project"]
+    arguments = {"project_id": project["project_id"], "idempotency_key": uuid.uuid4().hex}
+    service = get_project_service()
+    delete = service.delete
+    calls = []
+
+    def lose_result(*args, **kwargs):
+        calls.append(args[0])
+        delete(*args, **kwargs)
+        raise HTTPException(503, "Simulated lost result after business commit")
+
+    monkeypatch.setattr(service, "delete", lose_result)
+    assert invoke(api, "project.delete", arguments).status_code == 503
+    retry = invoke(api, "project.delete", arguments)
+    assert retry.status_code == 409
+    assert retry.json()["error"]["code"] == "OPERATION_OUTCOME_UNKNOWN"
+    assert calls == [project["project_id"]]
+
+
+def test_project_list_invoke_applies_the_declared_status_filter(api):
+    from database import Project, SessionLocal
+
+    project = invoke(api, "project.create", {"name": "Filter completed project"}).json()["project"]
+    with SessionLocal() as db:
+        db.get(Project, project["project_id"]).status = "completed"
+        db.commit()
+    filtered = invoke(api, "project.list", {"status_filter": "completed", "limit": 200})
+    assert filtered.status_code == 200, filtered.text
+    assert project["project_id"] in {item["project_id"] for item in filtered.json()["projects"]}
+    assert all(item["status"] == "completed" for item in filtered.json()["projects"])
+    direct = api.get("/api/agent/v1/projects", params={"status": "completed", "limit": 200})
+    assert direct.json() == filtered.json()
+
+
+@pytest.mark.parametrize("path", ["/capabilities?domain=project&limit=2", "/capabilities/project.create"])
+def test_discovery_conditional_reads(api, path):
+    path = "/api/agent/v1" + path
+    first = api.get(path)
+    assert first.status_code == 200
+    etag = first.headers["etag"]
+    assert first.headers["cache-control"] == "private, no-cache"
+    assert "Authorization" in first.headers["vary"]
+    for value in (etag, "W/" + etag, '"outdated", ' + etag, "*"):
+        response = api.get(path, headers={"If-None-Match": value})
+        assert response.status_code == 304
+        assert response.content == b""
+        assert response.headers["etag"] == etag
+    assert api.get(path, headers={"If-None-Match": '"outdated"'}).status_code == 200
+
+
+def test_discovery_cache_varies_by_query_and_live_contract(api, monkeypatch):
+    import agent_api.discovery as discovery
+    path = "/api/agent/v1/capabilities"
+    first = api.get(path, params={"domain": "project"})
+    headers = {"If-None-Match": first.headers["etag"]}
+    assert api.get(path, params={"domain": "source"}, headers=headers).status_code == 200
+    original = discovery.CAPABILITIES
+    monkeypatch.setattr(discovery, "CAPABILITIES", [
+        replace(cap, description=cap.description + " changed") if cap.id == "project.create" else cap
+        for cap in original
+    ])
+    changed = api.get(path, params={"domain": "project"}, headers=headers)
+    assert changed.status_code == 200
+    assert changed.headers["etag"] != first.headers["etag"]
+
+
+def test_discovery_revalidates_authorization_with_cached_etag(api):
+    from account_service import create_agent_token
+    from database import SessionLocal
+    with SessionLocal() as db:
+        token = create_agent_token(db, "default", scopes=["project:read"])["token"]
+    path = "/api/agent/v1/capabilities"
+    unrestricted = api.get(path)
+    restricted = api.get(path, headers={
+        "Authorization": "Bearer " + token, "If-None-Match": unrestricted.headers["etag"],
+    })
+    assert restricted.status_code == 200
+    assert restricted.headers["etag"] != unrestricted.headers["etag"]
+    create = next(item for item in restricted.json()["items"] if item["id"] == "project.create")
+    assert create["authorized"] is False
+
+
 def test_bootstrap_openapi_describes_required_revision(api):
     spec = api.get("/api/agent/v1/openapi.json").json()
     operation = spec["paths"]["/api/agent/v1/invoke"]["post"]
@@ -109,7 +252,15 @@ def test_every_json_capability_has_explicit_handler():
     from agent_api.dispatch import HANDLERS
     from agent_api import routes
     assert set(HANDLERS) == {cap.id for cap in CAPABILITIES if describe_capability(cap)["invocable"]}
-    assert all(callable(getattr(routes, name)) for name in HANDLERS.values())
+    import importlib
+
+    def _resolve(spec):
+        if ":" in spec:
+            module_name, attribute = spec.split(":", 1)
+            return getattr(importlib.import_module(module_name), attribute)
+        return getattr(routes, spec)
+
+    assert all(callable(_resolve(name)) for name in HANDLERS.values())
 
 
 def test_runtime_addition_needs_no_client_branch(api, monkeypatch):
@@ -178,6 +329,27 @@ def test_other_account_cannot_read_project(api):
         "expected_contract_revision": describe_capability(get_capability("project.get"))["contract_revision"],
     })
     assert response.status_code == 404
+
+
+def test_delete_and_its_replay_remain_account_scoped(api):
+    from database import SessionLocal
+    from account_service import create_account, create_agent_token
+
+    project = invoke(api, "project.create", {"name": "Private deletion"}).json()["project"]
+    pid = project["project_id"]
+    key = uuid.uuid4().hex
+    with SessionLocal() as db:
+        account = create_account(db, name="Delete isolation " + uuid.uuid4().hex[:6])
+        token = create_agent_token(db, account["id"], scopes=["project:write"])["token"]
+    path = f"/api/agent/v1/projects/{pid}"
+    other = {"Authorization": "Bearer " + token}
+    assert api.delete(path, headers=other).status_code == 404
+    assert invoke(api, "project.get", {"project_id": pid}).status_code == 200
+    assert invoke(api, "project.delete", {"project_id": pid, "idempotency_key": key}).status_code == 200
+    # A valid token for another account cannot retrieve the owner's replay.
+    replay = api.delete(path, params={"idempotency_key": key}, headers=other)
+    assert replay.status_code == 404
+    assert "x-agent-idempotency-replay" not in replay.headers
 
 
 def test_cli_discovery_and_invoke_preserve_contract(monkeypatch, capsys, tmp_path):

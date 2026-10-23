@@ -292,6 +292,9 @@ def _run_tts_with_stub(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, behavior
         tts, "write_project_log", lambda *a, **k: None
     )
 
+    # Provider artifacts in this orchestration test are placeholder bytes;
+    # real waveform processing is covered by test_tts_silence_service.py.
+    monkeypatch.setattr(tts, "compress_staged_tts_silence", lambda *_args, **_kwargs: {"removed_sec": 0})
     result = tts.synthesize_tts_resumable("tts-project", Db())
     return result, rewritten, retry_marked
 

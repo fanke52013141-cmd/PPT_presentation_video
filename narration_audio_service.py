@@ -825,10 +825,14 @@ def rewrite_audio_timeline_by_beats(
     if not clean_beats:
         return
 
+    # Confirmation and resume must retain the piecewise translated timing;
+    # recomputing an estimated split would redistribute the removed pauses.
+    from tts_silence_service import compressed_timeline_matches_audio
+
+    compressed = compressed_timeline_matches_audio(timeline, Path(voice_path))
     provider_segments = (
         timeline.get("segments")
-        if timeline.get("timing_source")
-        == "provider_sentence_timestamps"
+        if compressed or timeline.get("timing_source") == "provider_sentence_timestamps"
         else None
     )
     if isinstance(provider_segments, list) and provider_segments:
@@ -879,7 +883,8 @@ def rewrite_audio_timeline_by_beats(
                 else f"{beat_id}__part_{part_number:02d}"
             )
             segment["timing_source"] = (
-                "provider_sentence_timestamps"
+                timeline.get("timing_source", "beat_pause_aware_estimated_split")
+                if compressed else "provider_sentence_timestamps"
             )
         timeline["segments"] = provider_segments
         timeline["audio_content_duration_sec"] = round(

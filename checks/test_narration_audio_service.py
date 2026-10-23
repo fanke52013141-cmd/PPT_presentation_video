@@ -372,6 +372,38 @@ def test_provider_timestamps_map_to_beats_and_use_probed_duration(
     assert timeline["probed_audio_duration_sec"] == 4.25
 
 
+def test_compressed_estimated_timeline_survives_confirmation_and_resume(tmp_path: Path) -> None:
+    import hashlib
+    from tts_silence_service import POLICY_VERSION
+
+    voice = tmp_path / "voice.mp3"
+    voice.write_bytes(b"compressed audio")
+    timeline_path = tmp_path / "audio_timeline.json"
+    segments = [
+        {"id": "b1", "beat_id": "b1", "text": "第一段", "start": 0.0, "end": 1.0},
+        {"id": "b2", "beat_id": "b2", "text": "第二段", "start": 3.0, "end": 4.0},
+    ]
+    _write_json(str(timeline_path), {
+        "duration_sec": 4.0, "audio_content_duration_sec": 4.0,
+        "timing_source": "beat_pause_aware_estimated_split", "segments": segments,
+        "silence_compression": {"version": POLICY_VERSION,
+            "audio_sha256": hashlib.sha256(voice.read_bytes()).hexdigest()},
+    })
+    beats = [{"id": "b1", "spoken_text": "第一段"}, {"id": "b2", "spoken_text": "第二段"}]
+    for _ in range(2):
+        service.rewrite_audio_timeline_by_beats(str(timeline_path), "slide_001", beats)
+    result = _read_json(str(timeline_path), {})
+    assert [(s["start"], s["end"]) for s in result["segments"]] == [(0, 1), (3, 4)]
+    assert result["segments"][0]["timing_source"] == "beat_pause_aware_estimated_split"
+    before = timeline_path.read_bytes()
+    service.rewrite_audio_timeline_by_beats(str(timeline_path), "slide_001", beats)
+    assert timeline_path.read_bytes() == before
+    # A replaced audio file cannot borrow the old compression marker.
+    voice.write_bytes(b"different audio")
+    service.rewrite_audio_timeline_by_beats(str(timeline_path), "slide_001", beats)
+    assert _read_json(str(timeline_path), {})["segments"][1]["start"] != 3.0
+
+
 def test_estimated_timeline_caps_pause_budget_and_fills_duration(
     tmp_path: Path,
 ) -> None:

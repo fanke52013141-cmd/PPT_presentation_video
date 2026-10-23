@@ -45,6 +45,7 @@ from project_config_runtime import get_config_value
 from account_context import get_current_account_id, reset_current_account_id, set_current_account_id
 import generation_governor
 from tts_provider_service import is_minimax_async_endpoint
+from tts_silence_service import compress_staged_tts_silence
 
 
 logger = logging.getLogger("PPTStudio.TTS")
@@ -321,6 +322,9 @@ def _promote_staged_tts_outputs(job: dict[str, Any], project: Project, db: Sessi
             target = Path(job["paths"][key])
             if target.is_file():
                 shutil.copy2(target, backup_dir / target.name)
+        originals = Path(job["stage_paths"]["audio"]).parent / "before_silence_compression"
+        if originals.is_dir():
+            shutil.copytree(originals, backup_dir / originals.name)
         promotion_files: dict[str, Path] = {}
         try:
             # System temp and the project may live on different volumes.
@@ -1183,6 +1187,11 @@ def synthesize_tts_resumable(
                         slide_id,
                         beats_by_slide.get(slide_id, []),
                     )
+                    compression = compress_staged_tts_silence(
+                        job["stage_paths"], repo_root=Path(__file__).resolve().parent,
+                    )
+                    logger.info("TTS silence compression for %s removed %.3fs",
+                                slide_id, compression["removed_sec"])
                     if not _promote_staged_tts_outputs(job, project, db):
                         failed_slides.append({
                             "slide_id": slide_id,

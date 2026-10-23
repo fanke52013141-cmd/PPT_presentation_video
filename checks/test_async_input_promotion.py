@@ -26,6 +26,9 @@ def test_staged_tts_result_keeps_old_audio_after_narration_edit(tmp_path: Path, 
     for key in live:
         Path(live[key]).write_text("old", encoding="utf-8")
         Path(staged[key]).write_text("new", encoding="utf-8")
+    originals = stage / "before_silence_compression"
+    originals.mkdir()
+    (originals / "voice.mp3").write_bytes(b"uncut provider audio")
     monkeypatch.setattr(tts_service, "_load_beats_by_slide", lambda *_args: {"slide_001": []})
     monkeypatch.setattr(tts_service, "current_tts_cache_key", lambda _project: {})
     version = tts_service._tts_job_input_version("slide_001", str(text), [], {})
@@ -36,6 +39,7 @@ def test_staged_tts_result_keeps_old_audio_after_narration_edit(tmp_path: Path, 
         job, SimpleNamespace(run_dir=str(tmp_path)), SimpleNamespace(refresh=lambda _p: None),
     ) is False
     assert Path(live["audio"]).read_text(encoding="utf-8") == "old"
+    assert not (tmp_path / "recovery").exists()
 
 
 def test_staged_tts_result_promotes_matching_inputs_and_archives_old_audio(tmp_path: Path, monkeypatch) -> None:
@@ -53,6 +57,9 @@ def test_staged_tts_result_promotes_matching_inputs_and_archives_old_audio(tmp_p
     for key in live:
         Path(live[key]).write_text("old", encoding="utf-8")
         Path(staged[key]).write_text("new", encoding="utf-8")
+    originals = stage / "before_silence_compression"
+    originals.mkdir()
+    (originals / "voice.mp3").write_bytes(b"uncut provider audio")
     monkeypatch.setattr(tts_service, "_load_beats_by_slide", lambda *_args: {"slide_001": []})
     monkeypatch.setattr(tts_service, "current_tts_cache_key", lambda _project: {})
     job = {"slide_id": "slide_001", "paths": {**live, "text": str(text)},
@@ -64,6 +71,7 @@ def test_staged_tts_result_promotes_matching_inputs_and_archives_old_audio(tmp_p
     assert Path(live["audio"]).read_text(encoding="utf-8") == "new"
     backups = list((tmp_path / "recovery" / "audio").glob("slide_001-*/voice.mp3"))
     assert len(backups) == 1 and backups[0].read_text(encoding="utf-8") == "old"
+    assert (backups[0].parent / "before_silence_compression" / "voice.mp3").read_bytes() == b"uncut provider audio"
 
 
 def test_audio_edit_marks_only_dependent_presenter_media_stale(tmp_path: Path) -> None:

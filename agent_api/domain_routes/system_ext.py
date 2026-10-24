@@ -126,17 +126,42 @@ async def agent_import_config_zip(file: UploadFile = File(...)) -> dict[str, Any
 
 @router.post("/settings/test-llm")
 def agent_test_llm_connection(payload: FreeFormRequest) -> dict[str, Any]:
-    return settings_service.test_llm_connection(payload.payload)
+    from pydantic import ValidationError
+
+    from agent_api.errors import ValidationFailedError
+    from settings_service import TestLlmPayload
+
+    # 历史缺陷（真实供应商演练 2026-10-24 发现）：直接把自由载荷 dict 传给
+    # 期望 pydantic 模型的服务——llm/image 被 service 的 try 吞成静默
+    # success=False，tts 在 try 外访问属性直接 500。与 Web 路由同构：先校验。
+    try:
+        model = TestLlmPayload.model_validate(payload.payload)
+    except ValidationError as exc:
+        raise ValidationFailedError("llm 连接测试参数不完整", details={
+            "errors": exc.errors(include_input=False, include_context=False)}) from exc
+    return settings_service.test_llm_connection(model)
 
 
 @router.post("/settings/test-image")
 def agent_test_image_connection(payload: FreeFormRequest) -> dict[str, Any]:
-    return settings_service.test_image_connection(payload.payload)
+    from pydantic import ValidationError
+
+    from agent_api.errors import ValidationFailedError
+    from settings_service import TestImagePayload
+
+    try:
+        model = TestImagePayload.model_validate(payload.payload)
+    except ValidationError as exc:
+        raise ValidationFailedError("image 连接测试参数不完整", details={
+            "errors": exc.errors(include_input=False, include_context=False)}) from exc
+    return settings_service.test_image_connection(model)
 
 
 @router.post("/settings/test-tts")
 def agent_test_tts_connection(payload: FreeFormRequest) -> dict[str, Any]:
-    return settings_service.test_tts_connection(payload.payload)
+    from settings_service import TestTtsPayload
+
+    return settings_service.test_tts_connection(TestTtsPayload.model_validate(payload.payload))
 
 
 @router.get("/settings/comfyui-tts-workflow")
@@ -252,9 +277,15 @@ def agent_copy_model_connection(connection_id: str, payload: FreeFormRequest) ->
 
 @router.post("/model-connections/{connection_id}/test")
 def agent_test_model_connection(connection_id: str) -> dict[str, Any]:
+    """历史缺陷（真实供应商演练 2026-10-24 发现）：调用了不存在的
+    ``connection_service.test_saved_model_connection``，恒 500。与 Web 路由
+    model_connection_routes.test_saved_model_connection 同源：经
+    model_connection_test_service.test_saved_connection（用存储密钥真实调用
+    供应商）。"""
+    from model_connection_test_service import test_saved_connection
 
     try:
-        return connection_service.test_saved_model_connection(connection_id)
+        return test_saved_connection(connection_id)
     except Exception as exc:
         _raise_agent_error(exc)
 

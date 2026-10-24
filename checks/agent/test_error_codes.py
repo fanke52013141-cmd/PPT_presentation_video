@@ -86,3 +86,34 @@ def test_request_validation_error_is_typed(api):
     error = _error_envelope(response)
     assert error["code"] == "VALIDATION_ERROR", error
     assert error["details"].get("errors"), error
+
+
+def test_settings_llm_test_empty_payload_is_typed_422(api):
+    """真实供应商演练 2026-10-24 发现：settings.*.test 适配器把自由载荷 dict
+    直接传给期望 pydantic 模型的服务——llm/image 被 service 的 try 吞成静默
+    success=false，tts 直接 500。修复后空载荷应得到类型化 422。"""
+    detail = api.get("/api/agent/v1/capabilities/settings.llm.test")
+    response = api.post("/api/agent/v1/invoke", json={
+        "capability_id": "settings.llm.test",
+        "expected_contract_revision": detail.json()["contract_revision"],
+        "arguments": {"payload": {}},
+    })
+    assert response.status_code == 422, response.text
+    error = _error_envelope(response)
+    assert error["code"] == "VALIDATION_ERROR", error
+    missing = {e["loc"][-1] for e in error["details"]["errors"] if e["type"] == "missing"}
+    assert {"api_key", "model"} <= missing, error
+
+
+def test_connections_test_unknown_id_is_typed_404(api):
+    """真实供应商演练 2026-10-24 发现：connections.test 适配器调用不存在的
+    服务函数恒 500。修复后未知连接应得到类型化 404。"""
+    detail = api.get("/api/agent/v1/capabilities/connections.test")
+    response = api.post("/api/agent/v1/invoke", json={
+        "capability_id": "connections.test",
+        "expected_contract_revision": detail.json()["contract_revision"],
+        "arguments": {"connection_id": "mc_does_not_exist"},
+    })
+    assert response.status_code == 404, response.text
+    error = _error_envelope(response)
+    assert error["code"] == "NOT_FOUND", error

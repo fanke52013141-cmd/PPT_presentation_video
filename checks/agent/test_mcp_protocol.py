@@ -320,3 +320,44 @@ class TestProtocolHandling:
             "jsonrpc": "2.0", "id": "req-abc", "method": "ping", "params": {}
         })
         assert result["id"] == "req-abc"
+
+
+# ---------------------------------------------------------------------------
+# 命名工具指纹绑定（审查 2026-10-24 P2-3）
+# ---------------------------------------------------------------------------
+
+class TestNamedToolRevisionBinding:
+    def test_handler_binds_revision_at_registration(self, monkeypatch):
+        """命名工具发送注册时的 contract_revision，而非调用时现算的最新值。"""
+        from agent_contract.capabilities import get_capability
+        from agent_contract.discovery import describe_capability
+        from mcp_server import tools as mcp_tools
+
+        cap = get_capability("project.list")
+        bound = describe_capability(cap)["contract_revision"]
+        handler = mcp_tools.get_tool_handler(cap.mcp_tool_name)
+
+        captured = {}
+
+        class _Client:
+            def invoke(self, capability_id, args, *, expected_contract_revision):
+                captured["revision"] = expected_contract_revision
+                return {"projects": [], "total": 0}
+
+        # 模拟服务端契约变化：调用时现算会拿到新指纹，绑定语义仍发送旧指纹。
+        monkeypatch.setattr(
+            "agent_contract.discovery.describe_capability",
+            lambda c: {**describe_capability(c), "contract_revision": "changed-revision"},
+        )
+        handler({}, _Client())
+        assert captured["revision"] == bound
+
+    def test_handler_cache_returns_same_closure(self):
+        from agent_contract.capabilities import get_capability
+        from agent_contract.discovery import describe_capability
+        from mcp_server import tools as mcp_tools
+
+        tool_name = get_capability("project.list").mcp_tool_name
+        mcp_tools._handler_cache.pop(tool_name, None)
+        assert mcp_tools.get_tool_handler(tool_name) is mcp_tools.get_tool_handler(tool_name)
+        mcp_tools._handler_cache.pop(tool_name, None)

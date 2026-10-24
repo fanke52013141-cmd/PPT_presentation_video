@@ -17,6 +17,7 @@ from fastapi import APIRouter
 from agent_api.domain_routes.common import (
     _idempotency_replay_or_raise,
     _resolve_project,
+    finalize_claim_failure,
 )
 
 router = APIRouter()
@@ -65,7 +66,7 @@ def agent_video_render(
         services = get_project_pipeline_services(db, project_id)
         result = services.render_video()
     except Exception as e:
-        idempotency.finalize(claim.record_pk, False, None)
+        finalize_claim_failure(claim, e)
         raise OperationFailedError(f"Video render failed: {e}")
 
     response = VideoRenderResult(

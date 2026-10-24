@@ -16,6 +16,7 @@ from fastapi import APIRouter
 from agent_api.domain_routes.common import (
     _idempotency_replay_or_raise,
     _resolve_project,
+    finalize_claim_failure,
 )
 
 router = APIRouter()
@@ -57,7 +58,7 @@ def agent_regenerate_image(
         result = services.generate_image(slide_id, payload.instruction or "")
         revision = result.get("revision", 0)
     except Exception as e:
-        idempotency.finalize(claim.record_pk, False, None)
+        finalize_claim_failure(claim, e)
         raise OperationFailedError(f"Image regeneration failed: {e}")
 
     resource_uri = build_resource_uri(project_id, "image", slide_id)

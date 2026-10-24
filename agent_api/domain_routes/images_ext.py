@@ -77,8 +77,10 @@ def agent_generate_image(
         )
         idempotency.finalize(claim.record_pk, True, result)
         return result
-    except Exception:
-        idempotency.finalize(claim.record_pk, False, None)
+    except Exception as exc:
+        from agent_api.domain_routes.common import finalize_claim_failure
+
+        finalize_claim_failure(claim, exc)
         raise
 
 

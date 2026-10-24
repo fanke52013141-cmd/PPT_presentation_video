@@ -287,6 +287,77 @@ class TestClaimFailed:
         with pytest.raises(IdempotencyConflictError) as error:
             service.claim("source.set", "p1", "key-1", "fp123")
         assert error.value.details["code"] == "OPERATION_OUTCOME_UNKNOWN"
+        # 审查 2026-10-24：错误必须指引出路——检查原操作后换新键重试。
+        assert {"action": "inspect_original_operation"} in error.value.details["repair_actions"]
+        assert {"action": "retry_with_new_key"} in error.value.details["repair_actions"]
+
+
+# ---------------------------------------------------------------------------
+# claim() — failed_retryable re-claim（无副作用失败可同键重试）
+# ---------------------------------------------------------------------------
+
+class TestClaimFailedRetryable:
+    def _seed(self, factory, *, fingerprint="fp123", status="failed_retryable"):
+        db = factory()
+        db.add(AgentIdempotencyRecord(
+            scope="source.set", project_id="p1", idempotency_key="key-1",
+            request_fingerprint=fingerprint, status=status,
+            created_at=utc_now_naive(), updated_at=utc_now_naive(),
+        ))
+        db.commit()
+        db.close()
+
+    def test_finalize_retryable_writes_failed_retryable_status(self, service, db_session_factory):
+        claim = service.claim("source.set", "p1", "key-1", "fp123")
+        assert claim.is_new
+        service.finalize(claim.record_pk, False, None, retryable=True)
+        db = db_session_factory()
+        record = db.query(AgentIdempotencyRecord).filter_by(
+            scope="source.set", project_id="p1", idempotency_key="key-1").one()
+        db.close()
+        assert record.status == "failed_retryable"
+
+    def test_finalize_default_keeps_burned_status(self, service, db_session_factory):
+        claim = service.claim("source.set", "p1", "key-1", "fp123")
+        service.finalize(claim.record_pk, False, None)
+        db = db_session_factory()
+        record = db.query(AgentIdempotencyRecord).filter_by(
+            scope="source.set", project_id="p1", idempotency_key="key-1").one()
+        db.close()
+        assert record.status == "failed"
+
+    def test_same_body_reclaims_after_retryable_failure(self, service, db_session_factory):
+        self._seed(db_session_factory)
+        result = service.claim("source.set", "p1", "key-1", "fp123")
+        assert result.is_new
+        # 重领后记录应回到 in_progress，避免并发重放窗口
+        db = db_session_factory()
+        record = db.query(AgentIdempotencyRecord).filter_by(
+            scope="source.set", project_id="p1", idempotency_key="key-1").one()
+        db.close()
+        assert record.status == "in_progress"
+
+    def test_different_body_after_retryable_failure_conflicts(self, service, db_session_factory):
+        self._seed(db_session_factory, fingerprint="fp-old")
+        with pytest.raises(IdempotencyConflictError) as error:
+            service.claim("source.set", "p1", "key-1", "fp-new")
+        assert error.value.details["code"] == "IDEMPOTENCY_CONFLICT"
+
+    def test_stale_in_progress_keeps_conservative_unknown(self, service, db_session_factory):
+        """超时悬挂记录不自动重领（长任务如视频渲染可能仍在运行）——维持
+        OPERATION_OUTCOME_UNKNOWN，由客户端检查状态后换新键。"""
+        db = db_session_factory()
+        stale_time = utc_now_naive() - timedelta(hours=STALE_IN_PROGRESS_HOURS + 1)
+        db.add(AgentIdempotencyRecord(
+            scope="source.set", project_id="p1", idempotency_key="key-1",
+            request_fingerprint="fp123", status="in_progress",
+            created_at=stale_time, updated_at=stale_time,
+        ))
+        db.commit()
+        db.close()
+        with pytest.raises(IdempotencyConflictError) as error:
+            service.claim("source.set", "p1", "key-1", "fp123")
+        assert error.value.details["code"] == "OPERATION_OUTCOME_UNKNOWN"
 
 
 # ---------------------------------------------------------------------------

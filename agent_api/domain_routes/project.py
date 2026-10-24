@@ -30,6 +30,7 @@ from fastapi import APIRouter
 from agent_api.domain_routes.common import (
     _idempotency_replay_or_raise,
     _resolve_project,
+    finalize_claim_failure,
 )
 from agent_contract.domains.freeform import FreeFormRequest
 from agent_contract.domains.project import AiModeUpdateRequest
@@ -176,8 +177,8 @@ def agent_create_project(
         ).model_dump()
         idempotency.finalize(claim.record_pk, True, response)
         return response
-    except Exception:
-        idempotency.finalize(claim.record_pk, False, None)
+    except Exception as exc:
+        finalize_claim_failure(claim, exc)
         raise
 
 
@@ -263,7 +264,7 @@ def agent_update_project(
     try:
         AgentIdempotencyService.check_revision(project, payload.expected_revision)
     except IdempotencyConflictError as e:
-        idempotency.finalize(claim.record_pk, False, None)
+        idempotency.finalize(claim.record_pk, False, None, retryable=True)
         raise ConflictError(str(e), details=e.details)
 
     try:
@@ -310,11 +311,11 @@ def agent_update_project(
         return response
     except IdempotencyConflictError as e:
         db.rollback()
-        idempotency.finalize(claim.record_pk, False, None)
+        idempotency.finalize(claim.record_pk, False, None, retryable=True)
         raise ConflictError(str(e), details=e.details)
-    except Exception:
+    except Exception as exc:
         db.rollback()
-        idempotency.finalize(claim.record_pk, False, None)
+        finalize_claim_failure(claim, exc)
         raise
 
 
@@ -350,11 +351,11 @@ def agent_delete_project(
         return response
     except IdempotencyConflictError as exc:
         db.rollback()
-        idempotency.finalize(claim.record_pk, False, None)
+        idempotency.finalize(claim.record_pk, False, None, retryable=True)
         raise ConflictError(str(exc), details=exc.details) from exc
-    except Exception:
+    except Exception as exc:
         db.rollback()
-        idempotency.finalize(claim.record_pk, False, None)
+        finalize_claim_failure(claim, exc)
         raise
 
 

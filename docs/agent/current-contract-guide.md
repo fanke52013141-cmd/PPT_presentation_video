@@ -36,7 +36,7 @@ CONTRACT_CHANGED 返回 409，details.executed=false，表示未调用业务入�
 
 网络断连可能意味着操作已经执行。仅对声明支持幂等的操作保留并复用原 idempotency_key，不创建新键盲目重试。发现详情的 idempotency 字段声明支持范围；仍未完成所有领域写入的幂等保证。
 
-支持幂等的写入将键绑定账号、能力、目标资源、规范化参数和当前契约。完成后 7 天内可重放已存响应；过期响应被清理，键墓碑保留并返回 IDEMPOTENCY_EXPIRED。超时的 in_progress、失败记录或损坏的响应不能证明业务没有执行，返回 OPERATION_OUTCOME_UNKNOWN，禁止自动重领。执行中的重复请求返回 OPERATION_IN_PROGRESS；相同键配不同参数/资源/契约返回 IDEMPOTENCY_CONFLICT。
+支持幂等的写入将键绑定账号、能力、目标资源、规范化参数和当前契约。完成后 7 天内可重放已存响应；过期响应被清理，键墓碑保留并返回 IDEMPOTENCY_EXPIRED。失败分两类：副作用发生前的 4xx 契约失败（参数校验、资源不存在、CAS 冲突）标记为可重试，同键同体重试会重新执行；其余失败与超时的 in_progress 一律返回 OPERATION_OUTCOME_UNKNOWN 并附带 repair_actions（检查原操作状态后换新键重试），不会自动重新执行——长任务（如视频渲染）可能在客户端超时后仍在服务端运行。执行中的重复请求返回 OPERATION_IN_PROGRESS；相同键配不同参数/资源/契约返回 IDEMPOTENCY_CONFLICT。
 
 项目元数据及旁白编辑在产生业务写入前，用数据库 compare-and-swap 抢占项目 revision。同一版本并发编辑只有一个成功，冲突返回 REVISION_CONFLICT；重复保存相同内容不推进版本。其他领域和 Web 编辑尚未统一推进该版本，不能据此宣称跨全系统的并发保护已经完成。
 

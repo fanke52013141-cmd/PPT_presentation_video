@@ -95,6 +95,25 @@ def test_delete_key_cannot_be_reused_for_another_project(api):
     assert invoke(api, "project.get", {"project_id": projects[1]["project_id"]}).status_code == 200
 
 
+def test_retry_with_same_key_allowed_after_preexecution_failure(api):
+    """无副作用的 404 失败标记 failed_retryable：同键同体重试仍得 404，
+    而不是永久 OPERATION_OUTCOME_UNKNOWN（审查 2026-10-24 A3）。"""
+    arguments = {
+        "project_id": "no-such-project-for-retryable",
+        "expected_revision": 0,
+        "idempotency_key": uuid.uuid4().hex,
+    }
+    first = invoke(api, "project.delete", arguments)
+    assert first.status_code == 404, first.text
+    second = invoke(api, "project.delete", arguments)
+    assert second.status_code == 404, second.text
+    assert second.json()["error"]["code"] == "PROJECT_NOT_FOUND"
+    # 换参数（指纹变化）仍按键冲突拒绝，防止键被复用到不同目标。
+    changed = invoke(api, "project.delete", {**arguments, "expected_revision": 7})
+    assert changed.status_code == 409
+    assert changed.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
+
+
 def test_delete_unknown_outcome_never_executes_again(api, monkeypatch):
     from fastapi import HTTPException
     from project_service import get_project_service

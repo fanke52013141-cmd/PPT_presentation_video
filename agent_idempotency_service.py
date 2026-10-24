@@ -195,6 +195,32 @@ class AgentIdempotencyService:
                     return ClaimResult(is_new=False, replay_response=replay, record_pk=pk)
                 # A missing/corrupt response never proves the side effect failed.
 
+            if existing.status == "failed_retryable":
+                # A prior attempt failed before any business side effect (4xx
+                # contract/validation failure). The exact same request may
+                # re-execute; the flip back to in_progress must be atomic so
+                # two concurrent retries cannot both proceed.
+                reclaimed = (
+                    db.query(AgentIdempotencyRecord)
+                    .filter(
+                        AgentIdempotencyRecord.scope == scope,
+                        AgentIdempotencyRecord.project_id == project_id,
+                        AgentIdempotencyRecord.idempotency_key == idempotency_key,
+                        AgentIdempotencyRecord.status == "failed_retryable",
+                    )
+                    .update({"status": "in_progress", "updated_at": now},
+                            synchronize_session=False)
+                )
+                db.commit()
+                if reclaimed == 1:
+                    return ClaimResult(is_new=True, replay_response=None, record_pk=pk)
+                raise IdempotencyConflictError(
+                    "Operation is already in progress; poll for status "
+                    "instead of retrying with the same idempotency key",
+                    details={"code": "OPERATION_IN_PROGRESS", "scope": scope, "idempotency_key": idempotency_key,
+                             "executed": False, "repair_actions": [{"action": "inspect_original_operation"}]},
+                )
+
             if existing.status == "in_progress":
                 stale_threshold = now - timedelta(hours=STALE_IN_PROGRESS_HOURS)
                 is_stale = existing.updated_at and existing.updated_at < stale_threshold
@@ -208,11 +234,13 @@ class AgentIdempotencyService:
             # Staleness and a failed HTTP handler do not prove that a provider
             # request or a business commit did not complete. Never re-execute.
             raise IdempotencyConflictError(
-                "Previous operation outcome is unavailable; inspect the original operation before retrying",
+                "Previous operation outcome is unavailable; inspect the original "
+                "operation (or verify project state) and retry with a NEW idempotency key",
                 details={"scope": scope, "idempotency_key": idempotency_key,
                          "code": "IDEMPOTENCY_EXPIRED" if existing.status == "expired" else "OPERATION_OUTCOME_UNKNOWN",
                          "record_status": existing.status, "executed": False,
-                         "repair_actions": [{"action": "inspect_original_operation"}]},
+                         "repair_actions": [{"action": "inspect_original_operation"},
+                                            {"action": "retry_with_new_key"}]},
             )
         except IdempotencyConflictError:
             raise
@@ -227,8 +255,15 @@ class AgentIdempotencyService:
         record_pk: Optional[tuple[str, str, str]],
         succeeded: bool,
         response: Optional[dict[str, Any]] = None,
+        retryable: bool = False,
     ) -> None:
-        """Write the terminal state for an idempotency record."""
+        """Write the terminal state for an idempotency record.
+
+        ``retryable=True`` marks a failure that provably happened before any
+        business side effect (request validation / resource-not-found / CAS
+        conflict): the exact same request may re-claim the key. Failures of
+        unknown effect stay non-retryable (the key remains burned).
+        """
         if record_pk is None:
             return
 
@@ -248,7 +283,10 @@ class AgentIdempotencyService:
                 .first()
             )
             if record:
-                record.status = "succeeded" if succeeded else "failed"
+                if succeeded:
+                    record.status = "succeeded"
+                else:
+                    record.status = "failed_retryable" if retryable else "failed"
                 record.response_json = (
                     json.dumps(response, ensure_ascii=False)
                     if succeeded and response is not None

@@ -15,6 +15,7 @@ from fastapi import APIRouter
 from agent_api.domain_routes.common import (
     _idempotency_replay_or_raise,
     _resolve_project,
+    finalize_claim_failure,
 )
 
 router = APIRouter()
@@ -74,6 +75,6 @@ def agent_set_source(
         ).model_dump()
         idempotency.finalize(claim.record_pk, True, response)
         return response
-    except Exception:
-        idempotency.finalize(claim.record_pk, False, None)
+    except Exception as exc:
+        finalize_claim_failure(claim, exc)
         raise

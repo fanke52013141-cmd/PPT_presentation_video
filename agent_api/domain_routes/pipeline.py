@@ -37,6 +37,7 @@ from fastapi import APIRouter
 from agent_api.domain_routes.common import (
     _idempotency_replay_or_raise,
     _resolve_project,
+    finalize_claim_failure,
 )
 
 router = APIRouter()
@@ -91,10 +92,11 @@ def agent_start_pipeline(
         idempotency.finalize(claim.record_pk, True, response)
         return response
     except ValueError as e:
-        idempotency.finalize(claim.record_pk, False, None)
+        # 请求级校验错误：副作用发生前失败，同键同体重试安全。
+        idempotency.finalize(claim.record_pk, False, None, retryable=True)
         raise ValidationFailedError(str(e))
     except Exception as e:
-        idempotency.finalize(claim.record_pk, False, None)
+        finalize_claim_failure(claim, e)
         raise OperationFailedError(f"Pipeline start failed: {e}")
 
 
@@ -343,10 +345,11 @@ def agent_resume_pipeline(
         idempotency.finalize(claim.record_pk, True, response)
         return response
     except ValueError as e:
-        idempotency.finalize(claim.record_pk, False, None)
+        # 请求级校验错误：副作用发生前失败，同键同体重试安全。
+        idempotency.finalize(claim.record_pk, False, None, retryable=True)
         raise ValidationFailedError(str(e))
     except Exception as e:
-        idempotency.finalize(claim.record_pk, False, None)
+        finalize_claim_failure(claim, e)
         raise OperationFailedError(f"Pipeline resume failed: {e}")
 
 
@@ -424,11 +427,11 @@ def agent_approve_checkpoint(
         ).model_dump()
         idempotency.finalize(claim.record_pk, True, response)
         return response
-    except AgentAPIError:
-        idempotency.finalize(claim.record_pk, False, None)
+    except AgentAPIError as exc:
+        finalize_claim_failure(claim, exc)
         raise
     except Exception as e:
-        idempotency.finalize(claim.record_pk, False, None)
+        finalize_claim_failure(claim, e)
         raise OperationFailedError(f"Checkpoint approve failed: {e}")
 
 

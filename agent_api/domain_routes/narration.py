@@ -29,6 +29,7 @@ from fastapi import APIRouter
 from agent_api.domain_routes.common import (
     _idempotency_replay_or_raise,
     _resolve_project,
+    finalize_claim_failure,
 )
 
 router = APIRouter()
@@ -66,7 +67,7 @@ def agent_update_narration(
     try:
         AgentIdempotencyService.check_revision(project, payload.expected_revision)
     except IdempotencyConflictError as e:
-        idempotency.finalize(claim.record_pk, False, None)
+        idempotency.finalize(claim.record_pk, False, None, retryable=True)
         raise ConflictError(str(e), details=e.details)
 
     try:
@@ -122,15 +123,15 @@ def agent_update_narration(
         return response
     except IdempotencyConflictError as e:
         db.rollback()
-        idempotency.finalize(claim.record_pk, False, None)
+        idempotency.finalize(claim.record_pk, False, None, retryable=True)
         raise ConflictError(str(e), details=e.details)
-    except AgentAPIError:
+    except AgentAPIError as exc:
         db.rollback()
-        idempotency.finalize(claim.record_pk, False, None)
+        finalize_claim_failure(claim, exc)
         raise
     except Exception as e:
         db.rollback()
-        idempotency.finalize(claim.record_pk, False, None)
+        finalize_claim_failure(claim, e)
         raise OperationFailedError(f"Narration update failed: {e}")
 
 
@@ -168,11 +169,11 @@ def agent_tts_synthesize(
         from tts_service import get_tts_async_service
 
         result = get_tts_async_service().create_job(db, project_id, {})
-    except HTTPException:
-        idempotency.finalize(claim.record_pk, False, None)
+    except HTTPException as exc:
+        finalize_claim_failure(claim, exc)
         raise
     except Exception as e:
-        idempotency.finalize(claim.record_pk, False, None)
+        finalize_claim_failure(claim, e)
         raise OperationFailedError(f"TTS synthesis failed: {e}")
 
     response = TtsSynthesizeResult(

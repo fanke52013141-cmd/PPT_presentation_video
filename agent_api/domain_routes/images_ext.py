@@ -196,4 +196,13 @@ def agent_update_image_order(
 
 @router.post("/projects/{project_id}/images/confirm")
 def agent_confirm_images(project_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
-    return service.confirm_images(project_id, db)
+    from fastapi import HTTPException
+
+    from agent_api.domain_routes.common import raise_typed_http_error
+
+    try:
+        return service.confirm_images(project_id, db)
+    except HTTPException as exc:
+        # Web 层 HTTPException（如"以下页面还没有图片: ..."）转为类型化
+        # Agent 错误码，保留缺失页清单语义。
+        raise_typed_http_error(exc)

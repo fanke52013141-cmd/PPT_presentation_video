@@ -15,7 +15,7 @@ from typing import Any
 from agent_contract.capabilities import CAPABILITIES, CapabilityStatus
 
 
-AGENT_API_VERSION = "2.8.0"
+AGENT_API_VERSION = "2.8.1"
 
 # get_contract_hash 对 273 个能力逐一 describe + SHA-256，discovery 的每次
 # 条件刷新与矩阵生成都会调用；结果只随 CAPABILITIES 对象身份变化，按身份

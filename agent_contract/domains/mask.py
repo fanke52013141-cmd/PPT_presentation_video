@@ -40,7 +40,7 @@ CAPABILITIES = [
         service_ref="ai_mask_config.save_ai_mask_settings",
     ),
     AgentCapability(
-        id="mask.annotate", version="1.0", behavior_version="1",
+        id="mask.annotate", version="1.1", behavior_version="2",
         status=CapabilityStatus.stable,
         description="Run automatic AI Mask annotation for the project (detection, semantic matching, exact RLE masks); honors the generation governor and cooperative stop signals.",
         request_model=MaskAnnotateRequest, response_model=BaseModel,
@@ -86,7 +86,7 @@ CAPABILITIES = [
         service_ref="mask_manifest_service.update_step5_draft",
     ),
     AgentCapability(
-        id="mask.result.update", version="1.0", behavior_version="1",
+        id="mask.result.update", version="1.1", behavior_version="2",
         status=CapabilityStatus.stable,
         description="Save the final Step 5 manifest; with build_assets=true exact reveal assets are rebuilt before any render.",
         request_model=MaskResultUpdateRequest, response_model=BaseModel,

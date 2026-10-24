@@ -53,10 +53,27 @@ _HTTP_ERROR_CODES = {
     503: "UPSTREAM_UNAVAILABLE",
 }
 
+# Web 层 dict detail 里的语义码 → Agent 错误码
+_DICT_CODE_ALIASES = {
+    "revision_conflict": "REVISION_CONFLICT",
+}
+
 
 def agent_http_error(status_code: int, detail: Any) -> AgentAPIError:
     """Build the typed AgentAPIError for a would-be HTTPException."""
     status = int(status_code)
+    if isinstance(detail, dict):
+        # Web 层的 HTTPException 允许 dict detail（如 annotation_service 的
+        # {"code": "revision_conflict", "current_revision": N}）。直接 str() 会
+        # 把 repr 塞进 message，外部 Agent 无法按码处理——拆开映射。
+        raw_code = str(detail.get("code") or "").strip()
+        code = _DICT_CODE_ALIASES.get(raw_code.lower()) or (
+            raw_code.upper().replace("-", "_") if raw_code
+            else _HTTP_ERROR_CODES.get(status, "HTTP_ERROR")
+        )
+        message = str(detail.get("message") or raw_code or code)
+        rest = {key: value for key, value in detail.items() if key not in {"code", "message"}}
+        return AgentAPIError(code, message, status, details=rest)
     return AgentAPIError(_HTTP_ERROR_CODES.get(status, "HTTP_ERROR"), str(detail), status)
 
 

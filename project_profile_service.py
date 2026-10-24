@@ -148,6 +148,34 @@ def normalize_generated_image_style(value: Any, requirement: str = "") -> dict[s
     return style
 
 
+def _coerce_generated_style_shapes(value: Any) -> Any:
+    """形状归一：新模型（如 doubao-seed-2.0-pro）常把数组字段输出成标量或
+    把 visual_language 输出成整段文字（真实供应商演练 2026-10-24）。
+    归一在严格校验之前执行；缺字段/多余字段仍按原规则拒绝。"""
+    if not isinstance(value, dict):
+        return value
+    coerced = dict(value)
+    for key in ("negative_prompt_rules", "sample_reference_image_prompts"):
+        item = coerced.get(key)
+        if item is None:
+            coerced[key] = []
+        elif isinstance(item, str):
+            coerced[key] = [item.strip()] if item.strip() else []
+        elif isinstance(item, dict):
+            coerced[key] = [str(entry).strip() for entry in item.values() if str(entry).strip()]
+        elif isinstance(item, list):
+            coerced[key] = [
+                entry if isinstance(entry, str) else json.dumps(entry, ensure_ascii=False)
+                for entry in item
+            ]
+        else:
+            coerced[key] = [str(item)]
+    visual = coerced.get("visual_language")
+    if isinstance(visual, str) and visual.strip():
+        coerced["visual_language"] = {"overall": visual.strip()}
+    return coerced
+
+
 def validate_generated_image_style_model_output(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("图片风格输出必须是 JSON 对象")
@@ -218,6 +246,7 @@ def _generate_image_style_with_llm(
         )
         raw_content = str(response.choices[0].message.content or "").strip()
         parsed = json.loads(_clean_json_markdown(raw_content))
+        parsed = _coerce_generated_style_shapes(parsed)
         validate_generated_image_style_model_output(parsed)
         return normalize_generated_image_style(parsed, requirement)
     except (json.JSONDecodeError, ValueError) as exc:

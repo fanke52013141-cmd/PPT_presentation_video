@@ -112,6 +112,7 @@ repair_actions / trace_id`（HTTP 状态码另计）。机器处理只应依赖 
 | `IDEMPOTENCY_EXPIRED` | 409 | 7 天重放窗口已过（墓碑保留） | 换新键 |
 | `CANCELLATION_UNSUPPORTED` | 422 | 该生产者不支持精确取消（现支持 TTS/视频） | 使用生产者自身的取消/等待语义 |
 | `OPERATION_UNAVAILABLE` | 503 | 一键运行记录文件不可读/损坏 | 稍后重试；持续出现则检查运行目录 |
+| `RENDER_PRECONDITION_FAILED` | 409 | 视频渲染前置门禁未满足（音频未确认/确认记录失效/TTS 配置变更） | 按 message 回到"旁白与音频"步骤：重新确认音频后重提渲染（写操作用新幂等键） |
 | `OPERATION_FAILED` | 500 | 业务执行失败（非契约问题） | 按 message 排查；写操作按幂等规则重试 |
 | `OUTPUT_CONTRACT_ERROR` | 500 | 服务输出不符合契约（**可能已执行**，details.execution_may_have_completed=true） | 先 inspect_operation_before_retry，勿盲目重试 |
 | `HTTP_ERROR` | 任意 | 框架层兜底（未匹配路由 404、方法不允许等） | 视为调用了错误路径，核对 method/path |

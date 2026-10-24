@@ -117,3 +117,116 @@ def test_connections_test_unknown_id_is_typed_404(api):
     assert response.status_code == 404, response.text
     error = _error_envelope(response)
     assert error["code"] == "NOT_FOUND", error
+
+
+# ---------------------------------------------------------------------------
+# 真实供应商演练 2026-10-24 待修项回归（f5c098a 之后的第二批修复）
+# ---------------------------------------------------------------------------
+
+def test_video_render_precondition_is_typed_409(api, monkeypatch):
+    """前置门禁（音频未确认）不是服务器故障：409 + RENDER_PRECONDITION_FAILED。"""
+    import pipeline_services
+    from video_contracts import VideoRenderError
+
+    project = api.post("/api/agent/v1/invoke", json={
+        "capability_id": "project.create",
+        "expected_contract_revision": api.get("/api/agent/v1/capabilities/project.create").json()["contract_revision"],
+        "arguments": {"name": "渲染前置门禁项目"},
+    }).json()["project"]
+
+    def _raising_services(db, project_id):
+        class _Services:
+            def render_video(self):
+                raise VideoRenderError(400, "请先在“旁白与音频”步骤试听并确认音频，再开始视频渲染。")
+        return _Services()
+
+    monkeypatch.setattr(pipeline_services, "get_project_pipeline_services", _raising_services)
+    detail = api.get("/api/agent/v1/capabilities/video.render")
+    response = api.post("/api/agent/v1/invoke", json={
+        "capability_id": "video.render",
+        "expected_contract_revision": detail.json()["contract_revision"],
+        "arguments": {"project_id": project["project_id"]},
+    })
+    assert response.status_code == 409, response.text
+    error = _error_envelope(response)
+    assert error["code"] == "RENDER_PRECONDITION_FAILED", error
+    assert error["repair_actions"] == [{"action": "confirm_audio_before_render"}], error
+
+
+def test_agent_http_error_maps_dict_detail_to_typed_code():
+    """Web 层 dict-detail HTTPException（revision_conflict）拆为类型化码 + details。"""
+    from agent_api.domain_routes.common import agent_http_error
+
+    error = agent_http_error(409, {"code": "revision_conflict", "current_revision": 0})
+    assert error.code == "REVISION_CONFLICT"
+    assert error.status_code == 409
+    assert error.details == {"current_revision": 0}
+    assert "revision_conflict" in error.message
+
+
+def test_style_output_shape_coercion():
+    """新模型把数组字段输出成标量时，归一后应通过严格校验而非 500。"""
+    from project_profile_service import (
+        _coerce_generated_style_shapes,
+        validate_generated_image_style_model_output,
+    )
+
+    raw = {
+        "style_name": "温暖扁平插画",
+        "style_summary": "暖色治愈系",
+        "visual_language": "整体暖色调，米白底，琥珀金点缀",
+        "negative_prompt_rules": "不要使用渐变背景",
+        "sample_reference_image_prompts": None,
+    }
+    coerced = _coerce_generated_style_shapes(raw)
+    validated = validate_generated_image_style_model_output(coerced)
+    assert validated["negative_prompt_rules"] == ["不要使用渐变背景"]
+    assert validated["sample_reference_image_prompts"] == []
+    assert validated["visual_language"] == {"overall": "整体暖色调，米白底，琥珀金点缀"}
+
+
+def test_mask_result_update_rolls_back_manifest_on_build_failure(api, monkeypatch):
+    """P1 回归：终稿保存先写 manifest 再构建资产，构建失败必须回滚写入，
+    否则空/非法 manifest 落盘且项目无法经 API 恢复（真实供应商演练
+    2026-10-24 两次踩中）。"""
+    import json as jsonlib
+    from pathlib import Path
+
+    import mask_manifest_service
+    import pytest
+
+    project = api.post("/api/agent/v1/invoke", json={
+        "capability_id": "project.create",
+        "expected_contract_revision": api.get("/api/agent/v1/capabilities/project.create").json()["contract_revision"],
+        "arguments": {"name": "Mask回滚测试项目"},
+    }).json()["project"]
+
+    from database import Project, SessionLocal
+    with SessionLocal() as db:
+        run_dir = Path(db.get(Project, project["project_id"]).run_dir)
+
+    previous_manifest = {
+        "version": "reveal_v1",
+        "canvas": {"width": 1920, "height": 1080, "background": "#FEFDF9", "subtitle_safe_y": 1080},
+        "slides": [{"slide_id": "slide_001", "groups": []}],
+    }
+    manifest_path = run_dir / "reveal_manifest.json"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(jsonlib.dumps(previous_manifest, ensure_ascii=False), encoding="utf-8")
+
+    def _failing_build(project_obj):
+        raise RuntimeError("构建精确 Mask 素材失败: simulated remotion crash")
+
+    monkeypatch.setattr(mask_manifest_service, "build_current_reveal_assets", _failing_build)
+
+    changed_manifest = dict(previous_manifest, slides=[{"slide_id": "slide_001", "groups": [{"x": 1}]}])
+    detail = api.get("/api/agent/v1/capabilities/mask.result.update")
+    with pytest.raises(RuntimeError):
+        api.post("/api/agent/v1/invoke", json={
+            "capability_id": "mask.result.update",
+            "expected_contract_revision": detail.json()["contract_revision"],
+            "arguments": {"project_id": project["project_id"], "payload": changed_manifest, "build_assets": True},
+        })
+
+    on_disk = jsonlib.loads(manifest_path.read_text(encoding="utf-8"))
+    assert on_disk == previous_manifest, "构建失败后 manifest 必须回滚到保存前状态"

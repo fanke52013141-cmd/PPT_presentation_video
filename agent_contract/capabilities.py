@@ -341,7 +341,7 @@ CAPABILITIES: list[AgentCapability] = [
     ),
     AgentCapability(
         id="video.render",
-        version="2.0", behavior_version="2",
+        version="2.1", behavior_version="3",
         status=CapabilityStatus.stable,
         description="Start video rendering for the project.",
         request_model=VideoRenderRequest,

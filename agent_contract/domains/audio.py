@@ -82,7 +82,7 @@ CAPABILITIES = [
         service_ref="narration_service.update_narration_annotation_settings",
     ),
     AgentCapability(
-        id="narration.annotate", version="1.0", behavior_version="1",
+        id="narration.annotate", version="1.1", behavior_version="2",
         status=CapabilityStatus.stable,
         description="Run the AI narration annotation LLM call synchronously; uses the configured provider and the cooperative stop signal.",
         request_model=OptionalFreeFormRequest, response_model=BaseModel,

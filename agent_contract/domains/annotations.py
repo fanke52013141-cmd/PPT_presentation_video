@@ -138,7 +138,7 @@ CAPABILITIES = [
         service_ref="annotation_service.AnnotationService.cancel_job",
     ),
     AgentCapability(
-        id="annotation.preview.export", version="1.0", behavior_version="1",
+        id="annotation.preview.export", version="1.1", behavior_version="2",
         status=CapabilityStatus.stable,
         description="Export an annotation preview video for one slide; returns a token addressable by the download transport.",
         request_model=FreeFormRequest, response_model=BaseModel,

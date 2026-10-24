@@ -794,7 +794,19 @@ def update_step5_result(
             dependencies.write_json_atomic(manifest_path, prepared)
         built_assets = False
         if build_assets:
-            build_current_reveal_assets(project)
+            try:
+                build_current_reveal_assets(project)
+            except Exception:
+                # 构建失败必须回滚 manifest 写入（真实供应商演练 2026-10-24
+                # P1：先写盘后构建、失败不回滚，会让空/非法 manifest 落盘，
+                # 项目进入损坏状态且无法经 API 恢复）。manifest 是唯一状态源，
+                # 构建产物可由下一次成功构建重建，因此回滚 manifest 即可。
+                if changed:
+                    if previous is None:
+                        manifest_path.unlink(missing_ok=True)
+                    else:
+                        dependencies.write_json_atomic(manifest_path, previous)
+                raise
             built_assets = True
         if changed:
             invalidation_service.mask_content_changed(project)

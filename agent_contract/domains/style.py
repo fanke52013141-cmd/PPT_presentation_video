@@ -47,7 +47,7 @@ CAPABILITIES = [
         service_ref="project_style_routes.save_project_profile",
     ),
     _cap(
-        id="style.generate",
+        id="style.generate", version="1.1", behavior_version="2",
         description="Generate a project image style from the topic/article via LLM synchronously.",
         request_model=FreeFormRequest,
         agent_api_method="POST", agent_api_path="/api/agent/v1/style/generate",

@@ -1,7 +1,7 @@
 # Agent Capability Matrix
 
-- **Agent API Version**: 2.8.0
-- **Contract Hash**: `943a745ec66c7c4b`
+- **Agent API Version**: 2.8.1
+- **Contract Hash**: `5085f20a49b5488c`
 - **Total Capabilities**: 273
 
 This document is auto-generated from `agent_contract/capabilities.py`.
@@ -32,7 +32,7 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 | `image.regenerate` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/images/{slide_id}/regenerate` | `ppt_image_regenerate` | Yes | `image regenerate` | `image_workflow_service.generate_slide_image` | Yes | No |
 | `narration.update` | 1.1 | stable | PATCH | `/api/agent/v1/projects/{project_id}/narration/{slide_id}` | `ppt_narration_update` | Yes | `narration update` | `storyboard_service.update_narration` | No | No |
 | `tts.synthesize` | 2.0 | stable | POST | `/api/agent/v1/projects/{project_id}/tts` | `ppt_tts_synthesize` | Yes | `tts synthesize` | `tts_service.TtsAsyncService.create_job` | Yes | No |
-| `video.render` | 2.0 | stable | POST | `/api/agent/v1/projects/{project_id}/videos/render` | `ppt_video_render` | Yes | `video render` | `video_render_service.start_render` | Yes | No |
+| `video.render` | 2.1 | stable | POST | `/api/agent/v1/projects/{project_id}/videos/render` | `ppt_video_render` | Yes | `video render` | `video_render_service.start_render` | Yes | No |
 | `artifacts.list` | 1.1 | stable | GET | `/api/agent/v1/projects/{project_id}/artifacts` | `ppt_artifacts_list` | Yes | `artifacts list` | `database.ArtifactRecord` | No | No |
 | `artifact.get` | 1.1 | stable | GET | `/api/agent/v1/projects/{project_id}/artifacts/{artifact_id}` | `ppt_artifact_get` | Yes | `artifact get` | `database.ArtifactRecord` | No | No |
 | `diagnostics` | 1.0 | stable | GET | `/api/agent/v1/diagnostics` | `ppt_diagnostics` | Yes | `diagnostics` | `agent_api.routes.get_diagnostics` | No | No |
@@ -80,7 +80,7 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 | `narration.repair` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/narration/repair` | `ppt_narration_repair` | Yes | `narration repair` | `narration_service.repair_step6_result` | No | No |
 | `narration.annotation_settings.get` | 1.0 | stable | GET | `/api/agent/v1/narration-annotation/settings` | `ppt_narration_annotation_settings_get` | Yes | `narration annotation-settings` | `narration_service.get_narration_annotation_settings` | No | No |
 | `narration.annotation_settings.update` | 1.0 | stable | PUT | `/api/agent/v1/narration-annotation/settings` | `ppt_narration_annotation_settings_update` | Yes | `narration annotation-settings --set` | `narration_service.update_narration_annotation_settings` | No | No |
-| `narration.annotate` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/narration/annotate` | `ppt_narration_annotate` | Yes | `narration annotate` | `narration_service.annotate_step6_narration` | Yes | No |
+| `narration.annotate` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/narration/annotate` | `ppt_narration_annotate` | Yes | `narration annotate` | `narration_service.annotate_step6_narration` | Yes | No |
 | `tts.sync_synthesize` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/tts/sync` | `ppt_tts_sync_synthesize` | Yes | `tts synthesize-sync` | `tts_service.synthesize_tts_resumable` | Yes | No |
 | `tts.audio_status.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/tts/audio-status` | `ppt_tts_audio_status_get` | Yes | `tts audio-status` | `tts_service.get_tts_audio_status` | No | No |
 | `tts.audio.confirm` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/tts/confirm` | `ppt_tts_audio_confirm` | Yes | `tts confirm` | `tts_service.confirm_tts_audio` | No | No |
@@ -119,11 +119,11 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 | `image.delete` | 1.0 | stable | DELETE | `/api/agent/v1/projects/{project_id}/images/{slide_id}` | `ppt_image_delete` | Yes | `image delete` | `image_workflow_service.delete_slide_image` | No | Yes |
 | `image.list` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/images` | `ppt_image_list` | Yes | `image list` | `image_workflow_service.get_all_images` | No | No |
 | `image.order.update` | 1.0 | stable | PUT | `/api/agent/v1/projects/{project_id}/image-order` | `ppt_image_order_update` | Yes | `image order --set` | `image_workflow_service.update_step3_image_order` | No | No |
-| `image.confirm` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/images/confirm` | `ppt_image_confirm` | Yes | `image confirm` | `image_workflow_service.confirm_images` | No | No |
+| `image.confirm` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/images/confirm` | `ppt_image_confirm` | Yes | `image confirm` | `image_workflow_service.confirm_images` | No | No |
 | `style.profile_templates.list` | 1.0 | stable | GET | `/api/agent/v1/style/profile-templates` | `ppt_style_profile_templates_list` | Yes | `style profile-templates` | `project_style_routes.get_project_profile_templates` | No | No |
 | `style.profile.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/style/profile` | `ppt_style_profile_get` | Yes | `style profile` | `project_style_routes.get_project_profile` | No | No |
 | `style.profile.update` | 1.0 | stable | PUT | `/api/agent/v1/projects/{project_id}/style/profile` | `ppt_style_profile_update` | Yes | `style profile --set` | `project_style_routes.save_project_profile` | No | No |
-| `style.generate` | 1.0 | stable | POST | `/api/agent/v1/style/generate` | `ppt_style_generate` | Yes | `style generate` | `project_style_routes.generate_project_image_style` | Yes | No |
+| `style.generate` | 1.1 | stable | POST | `/api/agent/v1/style/generate` | `ppt_style_generate` | Yes | `style generate` | `project_style_routes.generate_project_image_style` | Yes | No |
 | `style.reverse_settings.get` | 1.0 | stable | GET | `/api/agent/v1/style/reverse-settings` | `ppt_style_reverse_settings_get` | Yes | `style reverse-settings` | `project_style_routes.get_reverse_style_prompt_settings` | No | No |
 | `style.reverse_settings.update` | 1.0 | stable | PUT | `/api/agent/v1/style/reverse-settings` | `ppt_style_reverse_settings_update` | Yes | `style reverse-settings --set` | `project_style_routes.update_reverse_style_prompt_settings` | No | No |
 | `style.reverse.generate` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/style/reverse` | `ppt_style_reverse_generate` | No | `style reverse` | `project_style_routes.reverse_step3_image_style` | No | No |
@@ -168,12 +168,12 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 | `ip.image.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/ip-characters/{character_id}/image` | `ppt_ip_image_get` | No | `ip image` | `ip_character_routes.get_ip_character_image` | No | No |
 | `mask.settings.get` | 1.0 | stable | GET | `/api/agent/v1/ai-mask/settings` | `ppt_mask_settings_get` | Yes | `mask settings` | `ai_mask_config.ai_mask_config_payload` | No | No |
 | `mask.settings.update` | 1.0 | stable | PUT | `/api/agent/v1/ai-mask/settings` | `ppt_mask_settings_update` | Yes | `mask settings --set` | `ai_mask_config.save_ai_mask_settings` | No | No |
-| `mask.annotate` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/mask/annotate` | `ppt_mask_annotate` | Yes | `mask annotate` | `ai_mask_service.AiMaskTaskService.annotate_project` | Yes | No |
+| `mask.annotate` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/mask/annotate` | `ppt_mask_annotate` | Yes | `mask annotate` | `ai_mask_service.AiMaskTaskService.annotate_project` | Yes | No |
 | `mask.semantic_blocks` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/mask/semantic-blocks` | `ppt_mask_semantic_blocks` | Yes | `mask semantic-blocks` | `mask_manifest_service.semantic_blocks_project` | No | No |
 | `mask.result.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/mask` | `ppt_mask_result_get` | Yes | `mask show` | `mask_manifest_service.get_step5_result` | No | No |
 | `mask.result.repair` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/mask/repair` | `ppt_mask_result_repair` | Yes | `mask repair` | `mask_manifest_service.repair_step5_result` | No | No |
 | `mask.draft.update` | 1.0 | stable | PUT | `/api/agent/v1/projects/{project_id}/mask/draft` | `ppt_mask_draft_update` | Yes | `mask draft --set` | `mask_manifest_service.update_step5_draft` | No | No |
-| `mask.result.update` | 1.0 | stable | PUT | `/api/agent/v1/projects/{project_id}/mask` | `ppt_mask_result_update` | Yes | `mask save` | `mask_manifest_service.update_step5_result` | No | No |
+| `mask.result.update` | 1.1 | stable | PUT | `/api/agent/v1/projects/{project_id}/mask` | `ppt_mask_result_update` | Yes | `mask save` | `mask_manifest_service.update_step5_result` | No | No |
 | `mask.preview.build` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/mask/previews/{slide_id}` | `ppt_mask_preview_build` | Yes | `mask preview-build` | `mask_preview_service.build_step5_mask_preview` | No | No |
 | `mask.preview.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/mask/previews/{slide_id}/content` | `ppt_mask_preview_get` | No | `mask preview` | `mask_preview_service.get_step5_mask_preview_path` | No | No |
 | `annotation.summary.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations` | `ppt_annotation_summary_get` | Yes | `annotation summary` | `annotation_service.AnnotationService.get_summary` | No | No |
@@ -189,7 +189,7 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 | `annotation.jobs.submit` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/jobs` | `ppt_annotation_jobs_submit` | Yes | `annotation submit` | `annotation_service.AnnotationService.submit_job` | Yes | No |
 | `annotation.jobs.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/jobs/{job_id}` | `ppt_annotation_jobs_get` | Yes | `annotation job` | `annotation_service.AnnotationService.get_job` | No | No |
 | `annotation.jobs.cancel` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/jobs/{job_id}/cancel` | `ppt_annotation_jobs_cancel` | Yes | `annotation cancel` | `annotation_service.AnnotationService.cancel_job` | No | No |
-| `annotation.preview.export` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/export-preview` | `ppt_annotation_preview_export` | Yes | `annotation export-preview` | `annotation_service.AnnotationService.export_preview` | Yes | No |
+| `annotation.preview.export` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/export-preview` | `ppt_annotation_preview_export` | Yes | `annotation export-preview` | `annotation_service.AnnotationService.export_preview` | Yes | No |
 | `annotation.scene_asset.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/scene-assets/{asset}` | `ppt_annotation_scene_asset_get` | No | `annotation scene-asset` | `annotation_service.AnnotationService.preview_scene_asset` | No | No |
 | `annotation.editor_ink.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/editor-inks/{annotation_id}/{stroke_index}` | `ppt_annotation_editor_ink_get` | No | `annotation editor-ink` | `annotation_service.AnnotationService.annotation_editor_ink` | No | No |
 | `annotation.ink.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/inks/{build_id}/{annotation_id}/{stroke_index}/{frame_index}` | `ppt_annotation_ink_get` | No | `annotation ink` | `annotation_service.AnnotationService.annotation_asset` | No | No |

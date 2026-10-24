@@ -80,6 +80,14 @@
 
 ### 记录待修（未在本变更集处理）
 
+> **状态更新（同日 2.8.1 修复批次）**：第 3–7 项已全部修复并推送——
+> ③ 构建失败回滚 manifest 写入（附回归测试）；④ `RENDER_PRECONDITION_FAILED`
+> 409 + repair_actions；⑤ 三处信封类型化（narration/image.confirm 走
+> raise_typed_http_error，annotation.preview.export 的 dict-detail 拆为
+> REVISION_CONFLICT + details）；⑥ 模型输出形状归一（`_coerce_generated_style_shapes`）；
+> ⑦ 缺 manifest 时 409 前置指引。受影响能力 behavior_version 已递增，
+> API 版本 2.8.0 → 2.8.1。
+
 3. **`mask.result.update` 非原子性（P1）**：`update_step5_result` 先写
    `reveal_manifest.json` 再构建资产，构建失败不回滚——空/非法 manifest 落盘且返回
    500，项目进入损坏状态（本次演练两次踩中，靠

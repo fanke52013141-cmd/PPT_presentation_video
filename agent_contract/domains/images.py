@@ -197,7 +197,7 @@ CAPABILITIES = [
         service_ref="image_workflow_service.update_step3_image_order",
     ),
     AgentCapability(
-        id="image.confirm", version="1.0", behavior_version="1",
+        id="image.confirm", version="1.1", behavior_version="2",
         status=CapabilityStatus.stable,
         description="Confirm Step 3 images; unblocks the mask and audio stages and validates completeness.",
         request_model=BaseModel, response_model=BaseModel,

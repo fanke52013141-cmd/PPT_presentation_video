@@ -13,6 +13,7 @@ from agent_api.errors import ConflictError, OperationFailedError
 from agent_api.fingerprints import request_fingerprint
 from agent_idempotency_service import get_idempotency_service, IdempotencyConflictError
 from fastapi import APIRouter
+from video_contracts import VideoRenderError
 
 from agent_api.domain_routes.common import (
     _idempotency_replay_or_raise,
@@ -65,6 +66,18 @@ def agent_video_render(
 
         services = get_project_pipeline_services(db, project_id)
         result = services.render_video()
+    except VideoRenderError as exc:
+        # 前置门禁（音频未确认/配置变更等）不是服务器故障：409 + 可操作码，
+        # 客户端按 repair_actions 回到旁白与音频步骤（真实供应商演练
+        # 2026-10-24 P2：此前被包装成 OPERATION_FAILED 500）。
+        finalize_claim_failure(claim, exc)
+        from agent_api.errors import AgentAPIError
+
+        raise AgentAPIError(
+            "RENDER_PRECONDITION_FAILED", str(exc.detail), 409,
+            details={"code": "RENDER_PRECONDITION_FAILED",
+                     "repair_actions": [{"action": "confirm_audio_before_render"}]},
+        ) from exc
     except Exception as e:
         finalize_claim_failure(claim, e)
         raise OperationFailedError(f"Video render failed: {e}")

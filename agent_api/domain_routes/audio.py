@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from agent_contract.domains.audio import (
@@ -63,7 +63,14 @@ def agent_annotate_narration(
     payload: OptionalFreeFormRequest,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    return narration.annotate_step6_narration(project_id, db=db, payload=payload.payload)
+    from agent_api.domain_routes.common import raise_typed_http_error
+
+    try:
+        return narration.annotate_step6_narration(project_id, db=db, payload=payload.payload)
+    except HTTPException as exc:
+        # Web 层 HTTPException（如 "Narration beats do not exist. Initialize
+        # step 6 first."）转为类型化 Agent 错误码。
+        raise_typed_http_error(exc)
 
 
 @router.post("/projects/{project_id}/tts/sync")

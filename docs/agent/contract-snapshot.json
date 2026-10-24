@@ -1,5 +1,5 @@
 {
-  "agent_api_version": "2.8.0",
+  "agent_api_version": "2.8.1",
   "capabilities": [
     {
       "behavior_version": "2",
@@ -3000,7 +3000,7 @@
       "version": "2.0"
     },
     {
-      "behavior_version": "2",
+      "behavior_version": "3",
       "bindings": {
         "idempotency_key": "body",
         "project_id": "path"
@@ -3010,7 +3010,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "de2d2984546d99974fad7be0",
+      "contract_revision": "70185d7fd50bff09073e831c",
       "description": "Start video rendering for the project.",
       "destructive": false,
       "domain": "video",
@@ -3085,7 +3085,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "2.0"
+      "version": "2.1"
     },
     {
       "behavior_version": "3",
@@ -6850,7 +6850,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "payload": "body",
         "project_id": "path"
@@ -6860,7 +6860,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "ce1affee50ab7df2044bd2cb",
+      "contract_revision": "80477e15e3083de439662847",
       "description": "Run the AI narration annotation LLM call synchronously; uses the configured provider and the cooperative stop signal.",
       "destructive": false,
       "domain": "narration",
@@ -6912,7 +6912,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "1",
@@ -9185,7 +9185,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "project_id": "path"
       },
@@ -9194,7 +9194,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "9a33a26d5872b34efdfc2f07",
+      "contract_revision": "a237a08f49eaeff517990faf",
       "description": "Confirm Step 3 images; unblocks the mask and audio stages and validates completeness.",
       "destructive": false,
       "domain": "image",
@@ -9232,7 +9232,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "1",
@@ -9382,7 +9382,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "payload": "body"
       },
@@ -9391,7 +9391,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "54c2c6bb1559cd05853e6a5a",
+      "contract_revision": "c779ced8e7a0c904509a4106",
       "description": "Generate a project image style from the topic/article via LLM synchronously.",
       "destructive": false,
       "domain": "style",
@@ -9427,7 +9427,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "1",
@@ -11635,7 +11635,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "project_id": "path",
         "settings": "body",
@@ -11646,7 +11646,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "a98c41bb2f4bfbfbd64b185f",
+      "contract_revision": "2b8e88f4f05ebb4a9c6cc0a6",
       "description": "Run automatic AI Mask annotation for the project (detection, semantic matching, exact RLE masks); honors the generation governor and cooperative stop signals.",
       "destructive": false,
       "domain": "mask",
@@ -11712,7 +11712,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "1",
@@ -11937,7 +11937,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "build_assets": "body",
         "payload": "body",
@@ -11948,7 +11948,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "4b8a7228a812db0599d6194c",
+      "contract_revision": "547f0df8c8105cbfb81113f0",
       "description": "Save the final Step 5 manifest; with build_assets=true exact reveal assets are rebuilt before any render.",
       "destructive": false,
       "domain": "mask",
@@ -11997,7 +11997,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "1",
@@ -12882,7 +12882,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "payload": "body",
         "project_id": "path",
@@ -12893,7 +12893,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "4cd01f6a8bd00ebe40a5dd26",
+      "contract_revision": "1463d9346230c65aa85ab9d9",
       "description": "Export an annotation preview video for one slide; returns a token addressable by the download transport.",
       "destructive": false,
       "domain": "annotation",
@@ -12943,7 +12943,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "1",
@@ -17898,5 +17898,5 @@
       "version": "1.0"
     }
   ],
-  "contract_hash": "943a745ec66c7c4b"
+  "contract_hash": "5085f20a49b5488c"
 }

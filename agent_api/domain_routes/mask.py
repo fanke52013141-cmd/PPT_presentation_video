@@ -70,6 +70,16 @@ def agent_annotate_ai_mask(
     except ValueError as exc:
         from agent_api.domain_routes.common import agent_http_error
         raise agent_http_error(400, str(exc)) from exc
+    except RuntimeError as exc:
+        # 引擎启动时读取 reveal_manifest.json（image.confirm 产物），缺失说明
+        # Step 3 尚未确认——前置条件语义（真实供应商演练 2026-10-24：此前
+        # RuntimeError 直接 500）。
+        if "reveal_manifest" in str(exc):
+            from agent_api.domain_routes.common import agent_http_error
+            raise agent_http_error(
+                409, "请先完成 Step 3 图片确认以生成 Reveal manifest，再执行 AI Mask 标注"
+            ) from exc
+        raise
 
 
 @router.post("/projects/{project_id}/mask/semantic-blocks")

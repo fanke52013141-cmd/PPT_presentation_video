@@ -164,8 +164,17 @@ def agent_export_annotation_preview(
     payload: FreeFormRequest,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    from fastapi import HTTPException
+
+    from agent_api.domain_routes.common import raise_typed_http_error
+
     service = get_annotation_service()
-    return service.export_preview(db, project_id, slide_id, payload.payload)
+    try:
+        return service.export_preview(db, project_id, slide_id, payload.payload)
+    except HTTPException as exc:
+        # Web 层 dict-detail HTTPException（如 revision_conflict）转为类型化
+        # Agent 错误码（agent_http_error 拆出 REVISION_CONFLICT + details）。
+        raise_typed_http_error(exc)
 
 
 @router.get("/projects/{project_id}/annotations/slides/{slide_id}/scene-assets/{asset}")

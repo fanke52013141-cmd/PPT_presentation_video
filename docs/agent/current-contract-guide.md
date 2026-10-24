@@ -1,6 +1,54 @@
 # 当前 Agent 契约接入
 
-本页描述已实现的 API 2.6.0 接入方式，URL 命名空间仍为 `/api/agent/v1`。旧 Agent 规范无需兼容。262 个业务入口已全部完成覆盖决策（145 complete / 115 partial / 1 exempt），pending 清零；partial 项的缺口类型见 `feature-coverage.md`。
+本页描述已实现的 API 2.8.0 接入方式，URL 命名空间仍为 `/api/agent/v1`。旧 Agent 规范无需兼容。262 个业务入口已全部完成覆盖决策，pending 清零；partial 项的缺口类型见 `feature-coverage.md`。
+
+## 认证与账号
+
+Agent API 有两种运行态，由环境变量 `PPT_AGENT_API_KEY` 决定：
+
+- **开发态（未设置该变量）**：本地/回环使用默认匿名开放，可用请求头
+  `X-PPT-Account-ID` 显式选择操作账号（缺省 `default`）。该形态**不可用于
+  非回环地址**——启动器在非回环绑定时会因缺少该密钥而拒绝启动（显式豁免需
+  设置 `PPT_AGENT_ALLOW_INSECURE_AGENT_API=1`）。
+- **部署态（已设置该变量）**：所有请求必须携带密钥，匿名请求返回
+  `401 UNAUTHORIZED`。三种等价传递方式（按优先级）：
+  1. `Authorization: Bearer <key>`
+  2. `X-API-Key: <key>`
+  3. `X-Agent-Token: <key>`
+  GET 请求也接受 `?token=<key>` 查询参数，但该形式会进入访问日志，仅在
+  无法设置请求头的场景使用。
+
+密钥有两类：
+
+1. **进程级密钥**（`PPT_AGENT_API_KEY` 环境变量）：绑定 `default` 账号，拥有
+   全部能力，适合本机自用。
+2. **账号级 Agent 令牌**（`accounts.agent_token.create` 创建）：绑定创建时
+   指定的账号与 scope 集合，原始令牌**仅在创建响应中出现一次**，服务端只存
+   SHA-256 摘要。令牌可随时停用（`accounts.delete` 会使其立即失效）。
+
+scope 模型（2026-10-24 收口后，fail-closed）：
+
+| scope | 覆盖面 |
+|---|---|
+| `project:read` | 全部 GET 类业务能力（含 accounts.list/current） |
+| `project:write` | 除下列特判外的全部写能力 |
+| `pipeline:write` | 一键运行/恢复、检查点审批、视频渲染 |
+| `artifact:read` | 产物与媒体二进制读取 |
+| `account:manage` | 账号创建/改名/删除/预置、默认配置、**Agent 令牌铸造** |
+
+规则：创建令牌时**省略 scopes 只授予 `project:read`**；包含未知 scope 直接
+拒绝创建（422），不会静默放宽。持有 `project:write` 的令牌**不能**铸造新令牌
+或管理账号（需 `account:manage`，防止自我提权）。账号隔离：令牌绑定账号，
+跨账号数据一律 404。
+
+## 限流
+
+Agent 网关按滑动窗口限流：**每客户端 120 请求 / 60 秒**（`/api/agent/v1` 全部
+路径，含发现与 invoke）。客户端按认证凭据区分（无凭据时按来源 IP）。超限返回
+`429 RATE_LIMITED`，响应携带 `Retry-After` 与 `X-RateLimit-*` 头，错误体
+`error.retryable=true` 并给出 `retry_after_seconds`。限流计数在认证之前，
+幂等请求同样计入；长时间编排应优先使用 operation 轮询（一次 wait 覆盖多次
+状态读取）而不是高频 invoke 重查。
 
 ## 发现与调用
 
@@ -39,6 +87,38 @@ CONTRACT_CHANGED 返回 409，details.executed=false，表示未调用业务入�
 支持幂等的写入将键绑定账号、能力、目标资源、规范化参数和当前契约。完成后 7 天内可重放已存响应；过期响应被清理，键墓碑保留并返回 IDEMPOTENCY_EXPIRED。失败分两类：副作用发生前的 4xx 契约失败（参数校验、资源不存在、CAS 冲突）标记为可重试，同键同体重试会重新执行；其余失败与超时的 in_progress 一律返回 OPERATION_OUTCOME_UNKNOWN 并附带 repair_actions（检查原操作状态后换新键重试），不会自动重新执行——长任务（如视频渲染）可能在客户端超时后仍在服务端运行。执行中的重复请求返回 OPERATION_IN_PROGRESS；相同键配不同参数/资源/契约返回 IDEMPOTENCY_CONFLICT。
 
 项目元数据及旁白编辑在产生业务写入前，用数据库 compare-and-swap 抢占项目 revision。同一版本并发编辑只有一个成功，冲突返回 REVISION_CONFLICT；重复保存相同内容不推进版本。其他领域和 Web 编辑尚未统一推进该版本，不能据此宣称跨全系统的并发保护已经完成。
+
+## 错误码全集
+
+全部 Agent 错误共用同一信封：`error.code / message / details / retryable /
+repair_actions / trace_id`（HTTP 状态码另计）。机器处理只应依赖 `code` 与
+`repair_actions`，不要解析 `message` 文本。
+
+| code | HTTP | 触发场景 | 建议恢复动作 |
+|---|---|---|---|
+| `UNAUTHORIZED` | 401 | 未带密钥/密钥错误、密钥导出未确认 access token | 检查凭据传递方式 |
+| `FORBIDDEN` | 403 | 令牌 scope 不足（含 accounts.* 写操作缺 `account:manage`） | 换用具备所需 scope 的令牌 |
+| `RATE_LIMITED` | 429 | 120 req/60s 超限 | 按 `retry_after_seconds` 退避 |
+| `VALIDATION_ERROR` | 400/422 | 请求体校验失败、invoke 参数不符合 Schema、资源 ID 含路径分隔符、配置导入内容非法 | 按 `details.errors` 修正请求 |
+| `CAPABILITY_NOT_FOUND` | 404 | capability_id 不存在或已移除 | 重新发现目录 |
+| `UNSUPPORTED_TRANSPORT` | 422 | 对 binary/file_upload/event_stream 能力调用 invoke | 按详情 method/path 走专用 HTTP 传输 |
+| `CONTRACT_CHANGED` | 409 | `expected_contract_revision` 与当前不符，**未执行**（executed=false） | 重新 describe，理解差异后重准备参数 |
+| `NOT_FOUND` / `PROJECT_NOT_FOUND` / `OPERATION_NOT_FOUND` / `ARTIFACT_NOT_FOUND` | 404 | 资源不存在或归属其他账号；任务/产物未知 ID 绝不回退 latest | 确认 ID 与账号；列表接口重新检索 |
+| `CONFLICT` | 409 | 业务态冲突（如最后一账号删除被拒） | 按 message 处理前置条件 |
+| `REVISION_CONFLICT` | 409 | project revision CAS 失败 | 读取当前 revision 后重试（写操作需新幂等键） |
+| `IDEMPOTENCY_CONFLICT` | 409 | 同键不同参数/资源/契约 | 换新键 |
+| `OPERATION_IN_PROGRESS` | 409 | 同键同参操作仍在执行 | 轮询 operation 状态，勿重复提交 |
+| `OPERATION_OUTCOME_UNKNOWN` | 409 | 上次结果不可得（失败非 4xx、悬挂超时、过期重放） | 检查原操作/项目状态后**换新键** |
+| `IDEMPOTENCY_EXPIRED` | 409 | 7 天重放窗口已过（墓碑保留） | 换新键 |
+| `CANCELLATION_UNSUPPORTED` | 422 | 该生产者不支持精确取消（现支持 TTS/视频） | 使用生产者自身的取消/等待语义 |
+| `OPERATION_UNAVAILABLE` | 503 | 一键运行记录文件不可读/损坏 | 稍后重试；持续出现则检查运行目录 |
+| `OPERATION_FAILED` | 500 | 业务执行失败（非契约问题） | 按 message 排查；写操作按幂等规则重试 |
+| `OUTPUT_CONTRACT_ERROR` | 500 | 服务输出不符合契约（**可能已执行**，details.execution_may_have_completed=true） | 先 inspect_operation_before_retry，勿盲目重试 |
+| `HTTP_ERROR` | 任意 | 框架层兜底（未匹配路由 404、方法不允许等） | 视为调用了错误路径，核对 method/path |
+
+客户端传输层错误码（`agent_client.transfers`，不来自服务端）：`RESOURCE_TOO_LARGE`、
+`RESOURCE_INCOMPLETE`、`RESOURCE_HASH_MISMATCH`、`UNSAFE_RESOURCE_URL`、
+`RESOURCE_TRANSFER_FAILED`、`UPLOAD_SOURCE_MISSING`。
 
 `project.delete` 支持 `expected_revision` 和 `idempotency_key`。直接 HTTP DELETE
 通过查询参数传递，invoke/MCP 使用发现 Schema 的同名字段，CLI delete 提供对应

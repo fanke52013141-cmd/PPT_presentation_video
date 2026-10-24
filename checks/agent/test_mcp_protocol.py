@@ -354,7 +354,6 @@ class TestNamedToolRevisionBinding:
 
     def test_handler_cache_returns_same_closure(self):
         from agent_contract.capabilities import get_capability
-        from agent_contract.discovery import describe_capability
         from mcp_server import tools as mcp_tools
 
         tool_name = get_capability("project.list").mcp_tool_name

@@ -186,8 +186,8 @@
     "capabilities": [
       "mask.annotate"
     ],
-    "coverage": "partial",
-    "reason": "Deterministic adapter verified; full acceptance requires a live provider run."
+    "coverage": "complete",
+    "reason": "Real provider rehearsal 2026-10-24 (docs/agent/rehearsal-log-2026-10-24.md): two live vision runs on the 3-slide rehearsal project; manifest written by the engine, final save and reveal-asset build verified end-to-end."
   },
   "annotation_routes.get_annotation_summary": {
     "source": "annotation_routes.py",
@@ -346,8 +346,8 @@
     "capabilities": [
       "annotation.scene_asset.get"
     ],
-    "coverage": "partial",
-    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
+    "coverage": "complete",
+    "reason": "Real provider rehearsal 2026-10-24 (docs/agent/rehearsal-log-2026-10-24.md): 1,015,830-byte PNG scene asset downloaded."
   },
   "annotation_routes.get_annotation_editor_ink": {
     "source": "annotation_routes.py",
@@ -410,8 +410,8 @@
     "capabilities": [
       "annotation.jobs.submit"
     ],
-    "coverage": "partial",
-    "reason": "Requires the external engine/service; acceptance pending."
+    "coverage": "complete",
+    "reason": "Real provider rehearsal 2026-10-24 (docs/agent/rehearsal-log-2026-10-24.md): detect_text job accepted and executed against slide_001 with the configured OCR settings."
   },
   "annotation_routes.get_annotation_job": {
     "source": "annotation_routes.py",
@@ -522,8 +522,8 @@
     "capabilities": [
       "source.set"
     ],
-    "coverage": "partial",
-    "reason": "source.set verified for direct import; live topic generation acceptance pending."
+    "coverage": "complete",
+    "reason": "Real provider rehearsal 2026-10-24 (docs/agent/rehearsal-log-2026-10-24.md): live topic generation produced the rehearsal project's article via the configured volcengine LLM."
   },
   "article_routes.import_article": {
     "source": "article_routes.py",
@@ -2027,8 +2027,8 @@
     "capabilities": [
       "mask.preview.build"
     ],
-    "coverage": "partial",
-    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
+    "coverage": "complete",
+    "reason": "Real provider rehearsal 2026-10-24 (docs/agent/rehearsal-log-2026-10-24.md): preview built for slide_001 (4.7s) after the mask final save."
   },
   "mask_editor_routes.get_step5_mask_preview": {
     "source": "mask_editor_routes.py",
@@ -2043,8 +2043,8 @@
     "capabilities": [
       "mask.preview.get"
     ],
-    "coverage": "partial",
-    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
+    "coverage": "complete",
+    "reason": "Real provider rehearsal 2026-10-24 (docs/agent/rehearsal-log-2026-10-24.md): 933,632-byte PNG downloaded end-to-end after the build."
   },
   "mask_editor_routes.update_step5_result": {
     "source": "mask_editor_routes.py",
@@ -2171,8 +2171,8 @@
     "capabilities": [
       "connections.test"
     ],
-    "coverage": "partial",
-    "reason": "Requires the external engine/service; acceptance pending."
+    "coverage": "complete",
+    "reason": "Real provider rehearsal 2026-10-24 (docs/agent/rehearsal-log-2026-10-24.md): five active connections tested live - volcengine text, ToAPIs image, MiniMax TTS and volcengine_seed_audio TTS all returned real provider output; an expired subscription was correctly reported as a failed test. Adapter bug fixed in the same change set: it previously called a nonexistent service function and always returned 500."
   },
   "model_connection_routes.update_model_connection_state": {
     "source": "model_connection_routes.py",
@@ -2299,8 +2299,8 @@
     "capabilities": [
       "narration.annotate"
     ],
-    "coverage": "partial",
-    "reason": "Deterministic adapter verified; full acceptance requires a live provider run."
+    "coverage": "complete",
+    "reason": "Real provider rehearsal 2026-10-24 (docs/agent/rehearsal-log-2026-10-24.md): live LLM narration annotation completed in 65.5s."
   },
   "narration_routes.update_step6_result": {
     "source": "narration_routes.py",
@@ -2764,8 +2764,8 @@
     "capabilities": [
       "style.generate"
     ],
-    "coverage": "partial",
-    "reason": "Deterministic adapter verified; full acceptance requires a live provider run."
+    "coverage": "complete",
+    "reason": "Real provider rehearsal 2026-10-24 (docs/agent/rehearsal-log-2026-10-24.md): live LLM style generation succeeded (second call; the first exposed a parsing robustness issue with doubao-seed-2.0-pro output shape, tracked for the business layer)."
   },
   "project_style_routes.get_reverse_style_prompt_settings": {
     "source": "project_style_routes.py",
@@ -3341,7 +3341,7 @@
       "settings.llm.test"
     ],
     "coverage": "partial",
-    "reason": "Requires the external engine/service; acceptance pending."
+    "reason": "Adapter envelope mismatch fixed 2026-10-24 (typed 422 verified with field details); the real-key run remains pending because the test payload must itself carry credentials - the stored-credential path was verified live via connections.test."
   },
   "settings_routes.test_image_connection": {
     "source": "settings_routes.py",
@@ -3357,7 +3357,7 @@
       "settings.image.test"
     ],
     "coverage": "partial",
-    "reason": "Requires the external engine/service; acceptance pending."
+    "reason": "Adapter envelope mismatch fixed 2026-10-24 (typed 422 verified with field details); the real-key run remains pending because the test payload must itself carry credentials - the stored-credential path was verified live via connections.test."
   },
   "settings_routes.test_tts_connection": {
     "source": "settings_routes.py",
@@ -3372,8 +3372,8 @@
     "capabilities": [
       "settings.tts.test"
     ],
-    "coverage": "partial",
-    "reason": "Requires the external engine/service; acceptance pending."
+    "coverage": "complete",
+    "reason": "Real provider rehearsal 2026-10-24 (docs/agent/rehearsal-log-2026-10-24.md): MiniMax TTS test returned success against the stored configuration. Adapter envelope mismatch fixed in the same change set (a raw dict was passed where the service expected a payload model; the tts variant raised 500 and the llm/image variants silently returned success=false)."
   },
   "settings_routes.get_comfyui_tts_workflow": {
     "source": "settings_routes.py",
@@ -3789,7 +3789,7 @@
       "storyboard.execute"
     ],
     "coverage": "partial",
-    "reason": "Deterministic adapter verified; full acceptance still requires a live LLM generation run."
+    "reason": "Same-chain steps (script/visual/compose) verified live in the 2026-10-24 rehearsal; the legacy composite route itself is pending a dedicated run to avoid overwriting the rehearsal project's contract."
   },
   "storyboard_routes.get_step2_result": {
     "source": "storyboard_routes.py",
@@ -3900,8 +3900,8 @@
     "capabilities": [
       "tts.sync_synthesize"
     ],
-    "coverage": "partial",
-    "reason": "Deterministic adapter verified; full acceptance requires a live provider run."
+    "coverage": "complete",
+    "reason": "Real provider rehearsal 2026-10-24 (docs/agent/rehearsal-log-2026-10-24.md): live synchronous synthesis succeeded."
   },
   "tts_routes.create_tts_synthesis_job": {
     "source": "tts_routes.py",
@@ -4012,8 +4012,8 @@
     "capabilities": [
       "video.render"
     ],
-    "coverage": "partial",
-    "reason": "Exact durable operation lifecycle exposed; remaining domain-specific fields require acceptance."
+    "coverage": "complete",
+    "reason": "Real provider rehearsal 2026-10-24 (docs/agent/rehearsal-log-2026-10-24.md): Remotion render job succeeded end-to-end; the 5.9 MB MP4 was then downloaded through video.download."
   },
   "video_routes.get_render_status": {
     "source": "video_routes.py",
@@ -4029,8 +4029,8 @@
       "operation.get",
       "operation.list"
     ],
-    "coverage": "partial",
-    "reason": "Exact durable operation lifecycle exposed; remaining domain-specific fields require acceptance."
+    "coverage": "complete",
+    "reason": "Real provider rehearsal 2026-10-24 (docs/agent/rehearsal-log-2026-10-24.md): async TTS/video/pptx jobs polled through queued/running/failed/succeeded with exact-ID addressing; failed jobs surfaced blocking errors without falling back to latest."
   },
   "video_routes.list_project_videos": {
     "source": "video_routes.py",

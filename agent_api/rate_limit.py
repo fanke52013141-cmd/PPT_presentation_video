@@ -48,6 +48,7 @@ class AgentRateLimitMiddleware(BaseHTTPMiddleware):
         # Optional SQLite-backed store for persistence across restarts.
         self._store = persistent_store
         self._trust_proxy_headers = trust_proxy_headers
+        self._sweep_threshold = 1024
 
     # ------------------------------------------------------------------
     # internal helpers
@@ -78,6 +79,12 @@ class AgentRateLimitMiddleware(BaseHTTPMiddleware):
         now = time.monotonic()
         cutoff = now - self._window
         with self._lock:
+            if len(self._hits) >= self._sweep_threshold:
+                # 键永不主动清理会缓慢泄漏（审查 2026-10-24 P2-4）：
+                # 表膨胀时顺手回收窗口内无命中的键。
+                stale_keys = [k for k, hits in self._hits.items() if not hits or hits[-1] < cutoff]
+                for k in stale_keys:
+                    del self._hits[k]
             hits = self._hits[key]
             # Trim expired entries.
             while hits and hits[0] < cutoff:
@@ -107,6 +114,9 @@ class AgentRateLimitMiddleware(BaseHTTPMiddleware):
                     "error": {
                         "code": "RATE_LIMITED",
                         "message": "Rate limit exceeded. Please retry later.",
+                        "details": {"window_seconds": self._window, "max_requests": self._max},
+                        "retryable": True,
+                        "repair_actions": [{"action": "retry_after", "retry_after_seconds": retry_after}],
                         "retry_after_seconds": retry_after,
                     }
                 },

@@ -17,6 +17,11 @@ from agent_contract.capabilities import CAPABILITIES, CapabilityStatus
 
 AGENT_API_VERSION = "2.8.0"
 
+# get_contract_hash 对 273 个能力逐一 describe + SHA-256，discovery 的每次
+# 条件刷新与矩阵生成都会调用；结果只随 CAPABILITIES 对象身份变化，按身份
+# 缓存（测试若整体替换注册表会自动失效；原地改字段不属于支持用法）。
+_contract_hash_cache: dict[int, str] = {}
+
 
 def get_contract_hash() -> str:
     """Compute a deterministic hash of the current capability registry.
@@ -24,6 +29,10 @@ def get_contract_hash() -> str:
     This hash changes when capabilities are added, removed, or their
     request/response models change. MCP servers use it to verify compatibility.
     """
+    cache_key = id(CAPABILITIES)
+    cached = _contract_hash_cache.get(cache_key)
+    if cached is not None:
+        return cached
     # Build a deterministic representation of the registry
     parts: list[str] = []
     for cap in sorted(CAPABILITIES, key=lambda c: c.id):
@@ -31,7 +40,11 @@ def get_contract_hash() -> str:
         entry = describe_capability(cap)
         parts.append(json.dumps(entry, sort_keys=True, ensure_ascii=False))
     combined = "\n".join(parts)
-    return hashlib.sha256(combined.encode("utf-8")).hexdigest()[:16]
+    digest = hashlib.sha256(combined.encode("utf-8")).hexdigest()[:16]
+    if len(_contract_hash_cache) > 4:
+        _contract_hash_cache.clear()
+    _contract_hash_cache[cache_key] = digest
+    return digest
 
 
 CONTRACT_VERSION = get_contract_hash()

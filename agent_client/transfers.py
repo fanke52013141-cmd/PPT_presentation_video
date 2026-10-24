@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 from http.client import HTTPException
 import json
 import os
@@ -10,6 +11,7 @@ from pathlib import Path
 import re
 import tempfile
 import uuid
+from collections.abc import Iterator
 from urllib.error import HTTPError, URLError
 from urllib.parse import unquote, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -104,6 +106,25 @@ def download_file(client, path: str, destination: str | Path, *,
             temporary.unlink(missing_ok=True)
 
 
+def _iter_multipart_body(source: Path, boundary: str, field: str,
+                         upload_name: str, declared_type: str,
+                         form_fields: dict | None) -> Iterator[bytes]:
+    """Yield the multipart body chunk by chunk; never buffer the file in memory."""
+    prefix = bytearray()
+    for name, value in (form_fields or {}).items():
+        prefix += (f"--{boundary}\r\n"
+                   f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+                   f"{value}\r\n").encode("utf-8")
+    prefix += (f"--{boundary}\r\n"
+               f'Content-Disposition: form-data; name="{field}"; filename="{upload_name}"\r\n'
+               f"Content-Type: {declared_type}\r\n\r\n").encode("utf-8")
+    yield bytes(prefix)
+    with open(source, "rb") as handle:
+        while chunk := handle.read(CHUNK_BYTES):
+            yield chunk
+    yield f"\r\n--{boundary}--\r\n".encode("utf-8")
+
+
 def upload_file(client, path: str, file_path: str | Path, *,
                 field: str = "file",
                 form_fields: dict | None = None,
@@ -111,8 +132,10 @@ def upload_file(client, path: str, file_path: str | Path, *,
                 max_bytes: int = DEFAULT_MAX_DOWNLOAD_BYTES) -> dict:
     """Bounded multipart upload to a declared /api/agent/v1/ file transport.
 
-    The file size is validated before any byte is read; the server's JSON
-    reply is returned verbatim and structured errors propagate like downloads.
+    The file size is validated before any byte is read, and the body is
+    streamed with chunked transfer encoding (审查 2026-10-24 P2-2：此前整包
+    缓冲进内存，与下载路径的流式设计不一致). The server's JSON reply is
+    returned verbatim and structured errors propagate like downloads.
     """
     parsed = urlsplit(path)
     if (parsed.scheme or parsed.netloc or parsed.fragment
@@ -134,39 +157,42 @@ def upload_file(client, path: str, file_path: str | Path, *,
     fields = {str(k): str(v) for k, v in (form_fields or {}).items()}
 
     boundary = "ppt-agent-upload-" + uuid.uuid4().hex
-    body = bytearray()
-    for name, value in fields.items():
-        body += (f"--{boundary}\r\n"
-                 f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
-                 f"{value}\r\n").encode("utf-8")
-    upload_name = source.name.replace('"', "")
+    upload_name = source.name.replace('"', "").replace("\r", " ").replace("\n", " ")
     declared_type = content_type or "application/octet-stream"
-    body += (f"--{boundary}\r\n"
-             f'Content-Disposition: form-data; name="{field}"; filename="{upload_name}"\r\n'
-             f"Content-Type: {declared_type}\r\n\r\n").encode("utf-8")
-    with open(source, "rb") as handle:
-        while chunk := handle.read(CHUNK_BYTES):
-            body += chunk
-    body += f"\r\n--{boundary}--\r\n".encode("utf-8")
-
     headers = {
         "Content-Type": f"multipart/form-data; boundary={boundary}",
-        "Content-Length": str(len(body)),
+        "Transfer-Encoding": "chunked",
+        "Accept": "application/json",
     }
     if client.app_token:
         headers["Authorization"] = "Bearer " + client.app_token
-    request = Request(client.base_url + path, data=bytes(body), method="POST", headers=headers)
+
+    connection_class = http.client.HTTPSConnection if base.scheme == "https" else http.client.HTTPConnection
+    connection = connection_class(base.hostname, base.port, timeout=client.timeout)
+    selector = parsed.path + (f"?{parsed.query}" if parsed.query else "")
     try:
-        with build_opener().open(request, timeout=client.timeout) as response:
-            payload = json.loads(response.read(CHUNK_BYTES * 64).decode("utf-8"))
-        return payload
-    except HTTPError as exc:
-        raw = exc.read(CHUNK_BYTES).decode("utf-8", errors="replace")
+        body = _iter_multipart_body(source, boundary, field, upload_name, declared_type, fields)
+        # encode_chunked: the iterator body must not be buffered into one request.
+        connection.request("POST", selector, body=body, headers=headers, encode_chunked=True)
+        response = connection.getresponse()
+        raw = response.read(CHUNK_BYTES * 64).decode("utf-8", errors="replace")
+        if 300 <= response.status < 400:
+            raise AgentClientError("Upload endpoint redirected outside a plain POST response",
+                                   response.status, code="UNSAFE_RESOURCE_URL")
+        if response.status >= 400:
+            try:
+                error = json.loads(raw).get("error", {})
+                raise AgentClientError(error.get("message", "Upload request failed"), response.status,
+                                       error.get("details", {}), error.get("code", ""))
+            except (ValueError, AttributeError):
+                raise AgentClientError("Upload request failed", response.status) from None
         try:
-            error = json.loads(raw).get("error", {})
-            raise AgentClientError(error.get("message", "Upload request failed"), exc.code,
-                                   error.get("details", {}), error.get("code", "")) from exc
-        except (ValueError, AttributeError):
-            raise AgentClientError("Upload request failed", exc.code) from exc
+            return json.loads(raw)
+        except ValueError as exc:
+            raise AgentClientError("Upload response was not valid JSON", response.status) from exc
+    except AgentClientError:
+        raise
     except (URLError, OSError, HTTPException, ValueError) as exc:
         raise AgentClientError("Resource transfer failed: " + str(exc), code="RESOURCE_TRANSFER_FAILED") from exc
+    finally:
+        connection.close()

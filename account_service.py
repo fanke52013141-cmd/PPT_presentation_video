@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+import threading
+import time
 import uuid
 from typing import Any, Iterable
 
@@ -190,6 +192,19 @@ def create_agent_token(
     return {"id": token.id, "account_id": account_id, "name": token.name, "scopes": token.scopes.split(","), "token": raw}
 
 
+# last_used_at 写节流：Agent 每个认证请求都写库会与业务写入竞争 SQLite
+# 单写者（审查 2026-10-24 P2-7）。同一令牌至多每分钟落盘一次"最近使用"。
+_LAST_USED_WRITE_INTERVAL_SECONDS = 60.0
+_last_used_writes: dict[str, float] = {}
+_last_used_lock = threading.Lock()
+
+
+def reset_last_used_throttle() -> None:
+    """测试辅助：清空 last_used_at 写节流状态。"""
+    with _last_used_lock:
+        _last_used_writes.clear()
+
+
 def authenticate_agent_token(db: Session, raw_token: str) -> AgentToken | None:
     token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
     token = db.query(AgentToken).filter(
@@ -203,8 +218,15 @@ def authenticate_agent_token(db: Session, raw_token: str) -> AgentToken | None:
         ).first()
         if account is None:
             return None
-        token.last_used_at = utc_now_naive()
-        db.commit()
+        now = time.monotonic()
+        with _last_used_lock:
+            last_write = _last_used_writes.get(token.id, 0.0)
+            should_write = now - last_write >= _LAST_USED_WRITE_INTERVAL_SECONDS
+            if should_write:
+                _last_used_writes[token.id] = now
+        if should_write:
+            token.last_used_at = utc_now_naive()
+            db.commit()
     return token
 
 

@@ -11,8 +11,9 @@ and contract review even when no route changes.
 
 Update capability models, behavior_version, adapters, generated discovery,
 contract snapshots, documentation and meaningful scenario checks in the same
-change. Run `scripts/check_agent_coverage.py` and
-`scripts/generate_agent_contracts.py --check` through the canonical checks.
+change. Run `scripts/check_agent_coverage.py`,
+`scripts/generate_agent_contracts.py --check` and
+`scripts/check_contract_version_discipline.py` through the canonical checks.
 The final full-openness release requires `--require-complete` coverage.
 
 The current Agent contract replaces the historical one; do not add old-protocol
@@ -562,6 +563,9 @@ steps in the same change set:
 | New pipeline stage / stage skip logic (e.g. `STAGES`, `mask_enabled` skip) | Verify `agent_contract/operations.py` `CHECKPOINT_STAGES` and progress mapping still hold; ensure skipped stages still report `done` so Agent progress math works |
 | New/changed Agent-facing HTTP route | Register an `AgentCapability` in `agent_contract/capabilities.py` with version, models, and mappings; add tests to `checks/agent/test_transport_contract_sync.py` coverage |
 | Any change touching request/response models or the capability registry | Bump the affected capability `version` (minor for additive-compatible fields), bump `AGENT_API_VERSION`, run `python scripts/generate_agent_contracts.py` and commit the regenerated `docs/agent/capability-matrix.md` |
+| Any change touching request/response models or the capability registry (version discipline) | `scripts/check_contract_version_discipline.py`（quick 检查内置）对比 HEAD 快照：契约内容变化而 `AGENT_API_VERSION` 未递增即失败——版本 bump 是强制同步步骤，不再纯靠人工纪律 |
+| Business logic change inside a behavior-sensitive service (generation/deletion/confirm/CAS/idempotency semantics, error codes, scope decisions) | Route decorators do not change, so no automated gate fires (review 2026-10-24 G1): bump the affected capability `behavior_version`, regenerate contract documents, describe the externally observable difference in the PR (`.github/pull_request_template.md` checklist) |
+| Business routes declared on an imported router or inside a subdirectory package | Covered since the hardened source scan (`agent_contract/features.py` recurses into unexcluded directories and follows imported router names); standalone worker services must be listed in `_SCAN_EXCLUDED_FILES` with a reason |
 | Database migration adding a project-visible column | Check whether `agent_contract/models.py` and `_project_summary` need the new column, and whether `checks/agent/test_contract_model_parity.py` mapping tables must be extended |
 
 The parity tests in `checks/agent/test_contract_model_parity.py` fail loudly

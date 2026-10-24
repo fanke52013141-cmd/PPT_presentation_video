@@ -55,6 +55,7 @@ def quick_checks() -> None:
          "checks/agent/test_dynamic_invocation.py", "checks/agent/test_operation_lifecycle.py",
          "checks/agent/test_idempotency_service.py", "checks/agent/test_transport_contract_sync.py", "-q"])
     run([sys.executable, "scripts/generate_agent_contracts.py", "--check"])
+    run([sys.executable, "scripts/check_contract_version_discipline.py"])
     run([sys.executable, "-m", "ruff", "check", "."])
     run([
         sys.executable,

@@ -40,13 +40,29 @@ from app_security import verify_access_token
 router = APIRouter()
 
 
-def _require_secret_confirmation(payload: dict[str, Any], request) -> None:
+def _raise_agent_error(exc: Exception) -> None:
+    """复用 Web 错误翻译器的服务异常映射，但产出类型化 AgentAPIError。
+
+    历史实现直接抛 HTTPException，经边界处理器退化为 code=HTTP_ERROR，
+    外部 Agent 无法按错误码编程化恢复（审查 2026-10-24 P1-4）。
+    """
+    from agent_api.domain_routes.common import raise_typed_http_error
     from fastapi import HTTPException
+    from model_connection_routes import _raise_http_error
+
+    try:
+        _raise_http_error(exc)
+    except HTTPException as http_exc:
+        raise_typed_http_error(http_exc)
+
+
+def _require_secret_confirmation(payload: dict[str, Any], request) -> None:
+    from agent_api.domain_routes.common import agent_http_error
 
     if not verify_access_token(request):
-        raise HTTPException(status_code=401, detail="导出密钥需要有效的 PPT Studio access token。")
+        raise agent_http_error(401, "导出密钥需要有效的 PPT Studio access token。")
     if str((payload or {}).get("confirmation") or "") != "EXPORT_SECRETS":
-        raise HTTPException(status_code=400, detail="Explicit secret-export confirmation is required.")
+        raise agent_http_error(400, "Explicit secret-export confirmation is required.")
 
 
 @router.get("/settings")
@@ -85,26 +101,27 @@ def agent_export_config_secrets_zip(payload: FreeFormRequest, request) -> Respon
 
 @router.post("/config/import")
 def agent_import_config(payload: FreeFormRequest) -> dict[str, Any]:
+    from agent_api.domain_routes.common import agent_http_error
+
     _config_import_limit()
     try:
         return _import_full_config(payload.payload)
     except ValueError as exc:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise agent_http_error(400, str(exc)) from exc
 
 
 @router.post("/config/import-zip")
 async def agent_import_config_zip(file: UploadFile = File(...)) -> dict[str, Any]:
+    from agent_api.domain_routes.common import agent_http_error
+
     _config_import_limit()
     data = await file.read()
     if not data:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=400, detail="上传的配置包为空")
+        raise agent_http_error(400, "上传的配置包为空")
     try:
         return _import_bundle_bytes(data)
     except ValueError as exc:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise agent_http_error(400, str(exc)) from exc
 
 
 @router.post("/settings/test-llm")
@@ -172,35 +189,32 @@ def agent_list_model_connections(
     kind: str | None = Query(None),
     include_archived: bool = Query(False),
 ) -> dict[str, Any]:
-    from model_connection_routes import _raise_http_error
 
     try:
         return connection_service.list_model_connections(
             kind=kind, include_archived=include_archived
         )
     except Exception as exc:
-        _raise_http_error(exc)
+        _raise_agent_error(exc)
 
 
 @router.post("/model-connections")
 def agent_create_model_connection(payload: FreeFormRequest) -> dict[str, Any]:
-    from model_connection_routes import _raise_http_error
 
     body = ModelConnectionCreate.model_validate(payload.payload)
     try:
         return connection_service.create_model_connection(body)
     except Exception as exc:
-        _raise_http_error(exc)
+        _raise_agent_error(exc)
 
 
 @router.get("/model-connections/{connection_id}")
 def agent_get_model_connection(connection_id: str) -> dict[str, Any]:
-    from model_connection_routes import _raise_http_error
 
     try:
         return connection_service.get_model_connection(connection_id)
     except Exception as exc:
-        _raise_http_error(exc)
+        _raise_agent_error(exc)
 
 
 @router.put("/model-connections/{connection_id}")
@@ -208,13 +222,12 @@ def agent_update_model_connection(
     connection_id: str,
     payload: FreeFormRequest,
 ) -> dict[str, Any]:
-    from model_connection_routes import _raise_http_error
 
     body = ModelConnectionUpdate.model_validate(payload.payload)
     try:
         return connection_service.update_model_connection(connection_id, body)
     except Exception as exc:
-        _raise_http_error(exc)
+        _raise_agent_error(exc)
 
 
 @router.post("/model-connections/{connection_id}/reference-audio")
@@ -229,23 +242,21 @@ async def agent_upload_model_reference_audio(
 
 @router.post("/model-connections/{connection_id}/copy")
 def agent_copy_model_connection(connection_id: str, payload: FreeFormRequest) -> dict[str, Any]:
-    from model_connection_routes import _raise_http_error
 
     body = ModelConnectionCopy.model_validate(payload.payload)
     try:
         return connection_service.copy_model_connection(connection_id, body)
     except Exception as exc:
-        _raise_http_error(exc)
+        _raise_agent_error(exc)
 
 
 @router.post("/model-connections/{connection_id}/test")
 def agent_test_model_connection(connection_id: str) -> dict[str, Any]:
-    from model_connection_routes import _raise_http_error
 
     try:
         return connection_service.test_saved_model_connection(connection_id)
     except Exception as exc:
-        _raise_http_error(exc)
+        _raise_agent_error(exc)
 
 
 @router.put("/model-connections/{connection_id}/state")
@@ -253,23 +264,21 @@ def agent_update_model_connection_state(
     connection_id: str,
     payload: FreeFormRequest,
 ) -> dict[str, Any]:
-    from model_connection_routes import _raise_http_error
 
     body = ModelConnectionStateUpdate.model_validate(payload.payload)
     try:
         return connection_service.set_model_connection_state(connection_id, body)
     except Exception as exc:
-        _raise_http_error(exc)
+        _raise_agent_error(exc)
 
 
 @router.delete("/model-connections/{connection_id}")
 def agent_delete_model_connection(connection_id: str) -> dict[str, Any]:
-    from model_connection_routes import _raise_http_error
 
     try:
         return connection_service.delete_model_connection(connection_id)
     except Exception as exc:
-        _raise_http_error(exc)
+        _raise_agent_error(exc)
 
 
 @router.get("/runtime/diagnostics")

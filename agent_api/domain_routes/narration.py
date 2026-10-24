@@ -171,7 +171,8 @@ def agent_tts_synthesize(
         result = get_tts_async_service().create_job(db, project_id, {})
     except HTTPException as exc:
         finalize_claim_failure(claim, exc)
-        raise
+        from agent_api.domain_routes.common import raise_typed_http_error
+        raise_typed_http_error(exc)
     except Exception as e:
         finalize_claim_failure(claim, e)
         raise OperationFailedError(f"TTS synthesis failed: {e}")

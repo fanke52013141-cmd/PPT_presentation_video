@@ -27,13 +27,13 @@ router = APIRouter()
 
 
 def _translate_error(exc: Exception) -> None:
-    from fastapi import HTTPException
+    from agent_api.domain_routes.common import agent_http_error
 
     if isinstance(
         exc,
         (manifest_service.MaskManifestError, preview_service.MaskPreviewError),
     ):
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+        raise agent_http_error(exc.status_code, exc.detail) from exc
     raise exc
 
 
@@ -68,8 +68,8 @@ def agent_annotate_ai_mask(
             project, payload.settings or {}, payload.slide_ids
         )
     except ValueError as exc:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        from agent_api.domain_routes.common import agent_http_error
+        raise agent_http_error(400, str(exc)) from exc
 
 
 @router.post("/projects/{project_id}/mask/semantic-blocks")

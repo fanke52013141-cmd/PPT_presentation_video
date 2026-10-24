@@ -28,7 +28,7 @@
 
 通用调用只支持响应类型为 json 的能力。二进制文件及事件流按详情里的 method/path 通过专用资源传输获取；这些能力返回 invocable=false，不能通过 invoke 下载。
 
-成功结果与领域接口一致，不增加另一层结果包装。错误返回 error.code、message、details、retryable、repair_actions、trace_id。认证和外层请求校验的错误结构仍可能由现有中间件/框架返回，统一这些边界错误是后续工作。
+成功结果与领域接口一致，不增加另一层结果包装。错误返回 error.code、message、details、retryable、repair_actions、trace_id，全部错误（含框架层请求校验 422 与认证错误）都是同一信封形状。仍可能出现 code=HTTP_ERROR 的兜底：未匹配路由的 404、方法不允许等真正的框架层异常——遇到的 Agent 应视为自身调用了错误路径，而不是业务错误。
 
 同步项目创建直接返回 project，不再生成无法查询的临时 operation_id。后台任务提交才返回可查询的 operation_id。
 

@@ -13,6 +13,7 @@ All Agent API errors return a consistent JSON structure:
 from __future__ import annotations
 
 from fastapi import HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from typing import Any, Optional
 
@@ -72,8 +73,33 @@ def agent_error_handler(request: Request, exc: AgentAPIError) -> JSONResponse:
     )
 
 
+def request_validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """框架层请求校验错误（422）统一为 Agent 信封（此前是 FastAPI 默认
+    ``{"detail": [...]}`` 形状，接入指南第 31 行承认的边界欠账）。"""
+    errors = [{key: value for key, value in item.items() if key != "input"}
+              for item in exc.errors()]
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": {
+                "code": "VALIDATION_ERROR",
+                "message": "Invalid request payload",
+                "details": {"errors": errors},
+                "retryable": False,
+                "repair_actions": [],
+                "trace_id": getattr(request.state, "request_id", None),
+            }
+        },
+    )
+
+
 def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
-    """Wrap FastAPI HTTPException into Agent API error format."""
+    """Wrap FastAPI HTTPException into Agent API error format.
+
+    信封字段与 agent_error_handler 对齐（details/retryable/repair_actions/
+    trace_id），避免边界错误出现第二种形状。经由此处理器的是中间件/框架层
+    错误——适配器自身的业务错误已在源头转为类型化 AgentAPIError。
+    """
     return JSONResponse(
         status_code=exc.status_code,
         content={
@@ -81,6 +107,9 @@ def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse
                 "code": "HTTP_ERROR",
                 "message": str(exc.detail),
                 "details": {},
+                "retryable": exc.status_code in {429, 502, 503, 504},
+                "repair_actions": [],
+                "trace_id": getattr(request.state, "request_id", None),
             }
         },
     )

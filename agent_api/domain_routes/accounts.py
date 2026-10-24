@@ -70,8 +70,8 @@ def agent_provision_account(
             **payload.model_dump(),
         )
     except AccountProvisioningError as exc:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        from agent_api.domain_routes.common import agent_http_error
+        raise agent_http_error(400, str(exc)) from exc
 
 
 @router.put("/accounts/{account_id}")
@@ -94,7 +94,7 @@ def agent_set_default_config(
     payload: AccountDefaultConfigRequest,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    from fastapi import HTTPException
+    from agent_api.domain_routes.common import agent_http_error
 
     if payload.package_id:
         import creation_config_service
@@ -106,7 +106,7 @@ def agent_set_default_config(
                     payload.package_id, version=payload.version, overrides={}
                 )
         except Exception as exc:
-            raise HTTPException(status_code=422, detail=f"默认创作配置不可用: {exc}") from exc
+            raise agent_http_error(422, f"默认创作配置不可用: {exc}") from exc
     return {"account": set_default_creation_config(db, account_id, payload.package_id, payload.version)}
 
 

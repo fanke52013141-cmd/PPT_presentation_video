@@ -39,6 +39,36 @@ def finalize_claim_failure(claim, exc: BaseException) -> None:
     get_idempotency_service().finalize(claim.record_pk, False, None, retryable=retryable)
 
 
+# 直接 HTTP 路由的业务错误必须给出机器可读错误码（审查 2026-10-24 P1-4）：
+# 历史实现把 Web 翻译器的 HTTPException 统一退化为 code=HTTP_ERROR，
+# 外部 Agent 只能解析 message 文本，无法编程化恢复。
+_HTTP_ERROR_CODES = {
+    400: "VALIDATION_ERROR",
+    401: "UNAUTHORIZED",
+    403: "FORBIDDEN",
+    404: "NOT_FOUND",
+    409: "CONFLICT",
+    422: "VALIDATION_ERROR",
+    429: "RATE_LIMITED",
+    503: "UPSTREAM_UNAVAILABLE",
+}
+
+
+def agent_http_error(status_code: int, detail: Any) -> AgentAPIError:
+    """Build the typed AgentAPIError for a would-be HTTPException."""
+    status = int(status_code)
+    return AgentAPIError(_HTTP_ERROR_CODES.get(status, "HTTP_ERROR"), str(detail), status)
+
+
+def raise_typed_http_error(exc: BaseException) -> None:
+    """Re-raise a caught HTTPException with its machine-readable Agent code."""
+    if isinstance(exc, AgentAPIError):
+        raise exc
+    if isinstance(exc, HTTPException):
+        raise agent_http_error(exc.status_code, exc.detail) from exc
+    raise exc
+
+
 def _resolve_project(db: Session, project_id: str) -> Project:
     """Find a project or raise ProjectNotFoundError."""
     project = (

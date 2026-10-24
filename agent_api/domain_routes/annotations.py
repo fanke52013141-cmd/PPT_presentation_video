@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
+
+from agent_api.errors import AgentAPIError
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
@@ -224,9 +226,9 @@ def agent_download_annotation_preview(
 
     service = get_annotation_service()
     if not re.fullmatch(r"[a-f0-9]{32}", token):
-        raise HTTPException(404, "预览不存在")
+        raise AgentAPIError("NOT_FOUND", "预览不存在", 404)
     source = service.preview_scene_asset(db, project_id, slide_id, "visual_draft.png").parent
     path = source / "preview_exports" / (token + ".mp4")
     if not path.is_file():
-        raise HTTPException(404, "预览不存在")
+        raise AgentAPIError("NOT_FOUND", "预览不存在", 404)
     return FileResponse(path, media_type="video/mp4", filename=f"{slide_id}_annotation_preview.mp4")

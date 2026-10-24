@@ -46,16 +46,16 @@ def _video_call(operation, *, project_id: str = "", step: str = "step8"):
             error_message=str(exc.detail),
             error_type="VideoRenderError",
         )
-        from fastapi import HTTPException
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+        from agent_api.domain_routes.common import agent_http_error
+        raise agent_http_error(exc.status_code, exc.detail) from exc
 
 
 def _pptx_call(operation):
     try:
         return operation()
     except PptxServiceError as exc:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+        from agent_api.domain_routes.common import agent_http_error
+        raise agent_http_error(exc.status_code, exc.detail) from exc
 
 
 @router.get("/projects/{project_id}/videos")
@@ -222,13 +222,12 @@ def agent_download_subtitles_srt(
     project_id: str,
     db: Session = Depends(get_db),
 ) -> Response:
-    from fastapi import HTTPException
-
     run_dir, slide_ids = _subtitle_context(db, project_id)
     try:
         export = build_subtitle_export(run_dir, slide_ids)
     except SubtitleExportError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        from agent_api.domain_routes.common import agent_http_error
+        raise agent_http_error(400, str(exc)) from exc
     return Response(
         content=export.content,
         headers={

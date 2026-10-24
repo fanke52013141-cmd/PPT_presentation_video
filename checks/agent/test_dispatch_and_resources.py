@@ -24,15 +24,16 @@ class TestDispatchRouting:
         client = MagicMock(spec=AgentClient)
         client.invoke.return_value = {"sentinel": cap.id}
         arguments = {"project_id": "p1", "new_optional_field": "preserved"}
-        result = tools._dispatch(cap.id, arguments, client)
-        client.invoke.assert_called_once_with(cap.id, arguments, expected_contract_revision=describe_capability(cap)["contract_revision"])
+        # 指纹由 get_tool_handler 在注册时绑定后传入（审查 2026-10-24 P2-3）。
+        bound_revision = describe_capability(cap)["contract_revision"]
+        result = tools._dispatch(cap.id, arguments, client, bound_revision)
+        client.invoke.assert_called_once_with(cap.id, arguments, expected_contract_revision=bound_revision)
         assert result == {"sentinel": cap.id}
 
     def test_unknown_capability_rejected(self):
-        client = MagicMock(spec=AgentClient)
-        with pytest.raises(ValueError, match="Unknown capability"):
-            tools._dispatch("nonexistent.cap", {}, client)
-        client.invoke.assert_not_called()
+        """未知工具的拒绝发生在 get_tool_handler（处理器注册层）。"""
+        with pytest.raises(ValueError, match="Unknown MCP tool"):
+            tools.get_tool_handler("ppt_nonexistent_tool")
 
 
 

@@ -14,13 +14,32 @@ from sqlalchemy.orm import Session
 from database import Account, AgentToken, SessionLocal, utc_now_naive
 
 
+# 当前鉴权层实际强制执行的 scope 全集（agent_api/auth.py 中间件与
+# agent_contract/discovery.required_scope 同源推导）。声明未强制或强制未声明
+# 都是权限模型缺陷：修改此集合必须同步两处消费方并补充测试。
+ENFORCED_SCOPES = frozenset({
+    "project:read", "project:write", "pipeline:write", "artifact:read",
+    "account:manage",
+})
+DEFAULT_SCOPES = "project:read"
+
+
 def _safe_scopes(scopes: Iterable[str] | None) -> str:
-    allowed = {
-        "project:read", "project:write", "pipeline:write", "artifact:read",
-        "config:read", "config:write", "account:manage",
-    }
-    values = [str(scope).strip() for scope in (scopes or []) if str(scope).strip() in allowed]
-    return ",".join(dict.fromkeys(values)) or "project:read,project:write,pipeline:write,artifact:read"
+    """Normalize requested scopes; fail closed instead of widening access.
+
+    省略 scopes 时只授予只读；提供了 scope 但存在非法值时直接拒绝创建，
+    防止拼写错误静默退化为全量权限（历史缺陷：空/非法 scopes 曾默认发放全量）。
+    """
+    if scopes is None:
+        return DEFAULT_SCOPES
+    values = [str(scope).strip() for scope in scopes if str(scope).strip()]
+    invalid = sorted({value for value in values if value not in ENFORCED_SCOPES})
+    if invalid:
+        raise ValueError(
+            "未知的 scope: " + ", ".join(invalid)
+            + f"（可用: {', '.join(sorted(ENFORCED_SCOPES))}）"
+        )
+    return ",".join(dict.fromkeys(values)) or DEFAULT_SCOPES
 
 
 def account_to_dict(account: Account) -> dict[str, Any]:

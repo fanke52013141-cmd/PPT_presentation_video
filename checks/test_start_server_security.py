@@ -32,8 +32,27 @@ def test_non_loopback_requires_token() -> None:
             validate_network_security("0.0.0.0")
 
 
-def test_token_allows_non_loopback() -> None:
+def test_web_token_alone_no_longer_allows_non_loopback() -> None:
+    """Agent 面使用独立凭据：Web 令牌放行的局域网部署仍须提供 PPT_AGENT_API_KEY。"""
     with patch.dict(os.environ, {"PPT_STUDIO_ACCESS_TOKEN": "test-token"}, clear=True):
+        with pytest.raises(SystemExit) as excinfo:
+            validate_network_security("0.0.0.0")
+        assert "PPT_AGENT_API_KEY" in str(excinfo.value)
+
+
+def test_web_and_agent_tokens_allow_non_loopback() -> None:
+    with patch.dict(os.environ, {
+        "PPT_STUDIO_ACCESS_TOKEN": "test-token",
+        "PPT_AGENT_API_KEY": "agent-token",
+    }, clear=True):
+        validate_network_security("0.0.0.0")
+
+
+def test_agent_surface_opt_in_allows_non_loopback() -> None:
+    with patch.dict(os.environ, {
+        "PPT_STUDIO_ACCESS_TOKEN": "test-token",
+        "PPT_AGENT_ALLOW_INSECURE_AGENT_API": "1",
+    }, clear=True):
         validate_network_security("0.0.0.0")
 
 
@@ -65,7 +84,9 @@ if __name__ == "__main__":
     test_launchers_use_the_same_python_startup_path()
     test_loopback_hosts_are_recognized()
     test_non_loopback_requires_token()
-    test_token_allows_non_loopback()
+    test_web_token_alone_no_longer_allows_non_loopback()
+    test_web_and_agent_tokens_allow_non_loopback()
+    test_agent_surface_opt_in_allows_non_loopback()
     test_start_server_import_does_not_load_composition_root()
     test_start_server_source_has_no_top_level_server_import()
     print("start server security checks passed")

@@ -1,5 +1,5 @@
 {
-  "agent_api_version": "2.7.0",
+  "agent_api_version": "2.8.0",
   "capabilities": [
     {
       "behavior_version": "2",
@@ -17490,7 +17490,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "c994cbabdd3763326044f08e",
+      "contract_revision": "a671909694d854f5e5e1936f",
       "description": "Create a creative account; default creation configuration is set after switching.",
       "destructive": false,
       "domain": "accounts",
@@ -17535,7 +17535,7 @@
       },
       "path": "/api/agent/v1/accounts",
       "required_scopes": [
-        "project:write"
+        "account:manage"
       ],
       "response_kind": "json",
       "status": "stable",
@@ -17560,7 +17560,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "12a9831e01ae3aba9496222b",
+      "contract_revision": "d72c5d3e9a1fe56f46e69e54",
       "description": "Provision a ready-to-run account from the current one without exposing reused secrets.",
       "destructive": false,
       "domain": "accounts",
@@ -17646,7 +17646,7 @@
       },
       "path": "/api/agent/v1/accounts/provision",
       "required_scopes": [
-        "project:write"
+        "account:manage"
       ],
       "response_kind": "json",
       "status": "stable",
@@ -17663,7 +17663,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "0a23ae8dd223881cb091a459",
+      "contract_revision": "8d989d38e59ec1c8334aff79",
       "description": "Rename one account.",
       "destructive": false,
       "domain": "accounts",
@@ -17703,7 +17703,7 @@
       },
       "path": "/api/agent/v1/accounts/{account_id}",
       "required_scopes": [
-        "project:write"
+        "account:manage"
       ],
       "response_kind": "json",
       "status": "stable",
@@ -17719,7 +17719,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "42cd7b7fe301024f55f71301",
+      "contract_revision": "31eb405221dcaec5e746dc44",
       "description": "Delete one account and its scoped data. Destructive.",
       "destructive": true,
       "domain": "accounts",
@@ -17753,7 +17753,7 @@
       },
       "path": "/api/agent/v1/accounts/{account_id}",
       "required_scopes": [
-        "project:write"
+        "account:manage"
       ],
       "response_kind": "json",
       "status": "stable",
@@ -17771,7 +17771,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "6f1a99ef3787ff91e5eeb3eb",
+      "contract_revision": "22edafee1066576539388700",
       "description": "Set or clear one account's default creation configuration; the package must resolve inside that account.",
       "destructive": false,
       "domain": "accounts",
@@ -17827,7 +17827,7 @@
       },
       "path": "/api/agent/v1/accounts/{account_id}/default-config",
       "required_scopes": [
-        "project:write"
+        "account:manage"
       ],
       "response_kind": "json",
       "status": "stable",
@@ -17845,7 +17845,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "51ce2c40e538b01001d437a9",
+      "contract_revision": "b3f2781ef6b95b7a54586f78",
       "description": "Create one Agent token for the account; the token value is returned only at creation time.",
       "destructive": false,
       "domain": "accounts",
@@ -17891,12 +17891,12 @@
       },
       "path": "/api/agent/v1/accounts/{account_id}/agent-tokens",
       "required_scopes": [
-        "project:write"
+        "account:manage"
       ],
       "response_kind": "json",
       "status": "stable",
       "version": "1.0"
     }
   ],
-  "contract_hash": "497663d700b91888"
+  "contract_hash": "943a745ec66c7c4b"
 }

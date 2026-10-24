@@ -143,6 +143,10 @@ class AgentAuthMiddleware(BaseHTTPMiddleware):
             required_scope = "project:read"
             if request.method.upper() != "GET":
                 required_scope = "project:write"
+            # 与 agent_contract.discovery.required_scope 同源的路径特判；
+            # 账号管理/令牌铸造要求账号级管理 scope（防自我提权）。
+            if "/accounts" in path and request.method.upper() != "GET":
+                required_scope = "account:manage"
             if "/runs" in path or path.endswith("/render"):
                 required_scope = "pipeline:write"
             if "/artifacts" in path and request.method.upper() == "GET":

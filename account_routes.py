@@ -145,4 +145,7 @@ def account_default_config(account_id: str, payload: AccountDefaultConfigRequest
 @router.post("/{account_id}/agent-tokens")
 def account_agent_token(account_id: str, payload: AgentTokenRequest, db: Session = Depends(get_db)) -> dict[str, Any]:
     # The token is returned only at creation time; callers must store it securely.
-    return {"token": create_agent_token(db, account_id, name=payload.name, scopes=payload.scopes)}
+    try:
+        return {"token": create_agent_token(db, account_id, name=payload.name, scopes=payload.scopes)}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc

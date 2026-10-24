@@ -26,6 +26,10 @@ def path_names(cap: AgentCapability) -> list[str]:
 
 
 def required_scope(cap: AgentCapability) -> str:
+    # 账号管理与令牌铸造属于账号级管理面：任何 project:write 令牌都不得
+    # 触达（否则可自我铸造全量令牌形成提权链）。读取自身账号信息保持只读。
+    if cap.id.startswith("accounts.") and cap.agent_api_method != "GET":
+        return "account:manage"
     if "/runs" in cap.agent_api_path or cap.agent_api_path.endswith("/render"):
         return "pipeline:write"
     if "/artifacts" in cap.agent_api_path and cap.agent_api_method == "GET":

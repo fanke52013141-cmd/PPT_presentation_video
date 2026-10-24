@@ -116,4 +116,9 @@ def agent_create_agent_token(
     payload: AgentTokenRequest,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    return {"token": create_agent_token(db, account_id, name=payload.name, scopes=payload.scopes)}
+    from agent_api.errors import ValidationFailedError
+
+    try:
+        return {"token": create_agent_token(db, account_id, name=payload.name, scopes=payload.scopes)}
+    except ValueError as exc:
+        raise ValidationFailedError(str(exc)) from exc

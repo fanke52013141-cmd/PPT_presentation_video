@@ -1,7 +1,7 @@
 # Agent Capability Matrix
 
-- **Agent API Version**: 2.10.0
-- **Contract Hash**: `0eadd4e57e71441e`
+- **Agent API Version**: 2.10.1
+- **Contract Hash**: `5bd6af5c9bfd2cfb`
 - **Total Capabilities**: 274
 
 This document is auto-generated from `agent_contract/capabilities.py`.
@@ -260,7 +260,7 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 | `connections.create` | 1.0 | stable | POST | `/api/agent/v1/model-connections` | `ppt_connections_create` | Yes | `connections create` | `model_connection_routes.create_model_connection` | No | No |
 | `connections.get` | 1.0 | stable | GET | `/api/agent/v1/model-connections/{connection_id}` | `ppt_connections_get` | Yes | `connections show` | `model_connection_routes.get_model_connection` | No | No |
 | `connections.update` | 1.0 | stable | PUT | `/api/agent/v1/model-connections/{connection_id}` | `ppt_connections_update` | Yes | `connections --set` | `model_connection_routes.update_model_connection` | No | No |
-| `connections.reference_audio.upload` | 1.0 | stable | POST | `/api/agent/v1/model-connections/{connection_id}/reference-audio` | `ppt_connections_reference_audio_upload` | No | `connections reference-audio-upload` | `model_connection_routes.upload_model_reference_audio` | No | No |
+| `connections.reference_audio.upload` | 1.1 | stable | POST | `/api/agent/v1/model-connections/{connection_id}/reference-audio` | `ppt_connections_reference_audio_upload` | No | `connections reference-audio-upload` | `model_connection_routes.upload_model_reference_audio` | No | No |
 | `connections.copy` | 1.0 | stable | POST | `/api/agent/v1/model-connections/{connection_id}/copy` | `ppt_connections_copy` | Yes | `connections copy` | `model_connection_routes.copy_model_connection` | No | No |
 | `connections.test` | 1.0 | stable | POST | `/api/agent/v1/model-connections/{connection_id}/test` | `ppt_connections_test` | Yes | `connections test` | `model_connection_routes.test_saved_model_connection` | No | No |
 | `connections.state.update` | 1.0 | stable | PUT | `/api/agent/v1/model-connections/{connection_id}/state` | `ppt_connections_state_update` | Yes | `connections state --set` | `model_connection_routes.update_model_connection_state` | No | No |

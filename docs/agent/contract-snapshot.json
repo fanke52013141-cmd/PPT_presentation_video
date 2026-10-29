@@ -1,5 +1,5 @@
 {
-  "agent_api_version": "2.10.0",
+  "agent_api_version": "2.10.1",
   "capabilities": [
     {
       "behavior_version": "2",
@@ -16577,7 +16577,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "connection_id": "path"
       },
@@ -16586,8 +16586,8 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "8148d27c81c87979870a371a",
-      "description": "Upload reference audio for a TTS connection (multipart/form-data).",
+      "contract_revision": "6f3ce6c2bd2d48f3084065ca",
+      "description": "Upload validated reference audio for a TTS connection; serialize publication and restore the previous file on metadata failure (multipart/form-data).",
       "destructive": false,
       "domain": "connections",
       "id": "connections.reference_audio.upload",
@@ -16624,7 +16624,7 @@
       ],
       "response_kind": "file_upload",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "1",
@@ -17953,5 +17953,5 @@
       "version": "1.0"
     }
   ],
-  "contract_hash": "0eadd4e57e71441e"
+  "contract_hash": "5bd6af5c9bfd2cfb"
 }

@@ -100,38 +100,10 @@ async def upload_model_reference_audio(
             raise ValueError(
                 f"参考音频必须存在且不能超过 {MAX_REFERENCE_AUDIO_BYTES // (1024 * 1024)}MB"
             )
-        _VOICE_REFERENCE_ROOT.mkdir(parents=True, exist_ok=True)
-        target = _VOICE_REFERENCE_ROOT / f"{connection_id}{suffix}"
-        pending = _VOICE_REFERENCE_ROOT / f"{connection_id}.upload{suffix}"
-        pending.write_bytes(content)
-        duration = probe_media_duration_sec(
-            pending,
-            repo_root=Path(__file__).resolve().parent,
-        )
-        if duration is None or duration <= 0:
-            pending.unlink(missing_ok=True)
-            raise ValueError("参考音频无法解码，请重新上传有效音频")
-        if duration > 30:
-            pending.unlink(missing_ok=True)
-            raise ValueError("参考音频不能超过 30 秒")
-        for existing in _VOICE_REFERENCE_ROOT.glob(f"{connection_id}.*"):
-            if existing != pending:
-                existing.unlink(missing_ok=True)
-        pending.replace(target)
-        public_config = dict(revision.get("public_config") or {})
-        public_config["clone_voice_id"] = f"data/model_voice_references/{target.name}"
-        updated = service.update_model_connection(
-            connection_id,
-            ModelConnectionUpdate(public_config=public_config),
-        )
-        return {
-            "connection": updated,
-            "reference_audio": {
-                "name": file.filename,
-                "size": len(content),
-                "duration_sec": round(duration, 3),
-            },
-        }
+        from model_voice_reference_service import publish_reference_audio
+
+        return publish_reference_audio(connection_id, file.filename, content, _VOICE_REFERENCE_ROOT,
+            probe=lambda path: probe_media_duration_sec(path, repo_root=Path(__file__).resolve().parent))
     except Exception as exc:
         _raise_http_error(exc)
 

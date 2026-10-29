@@ -2139,8 +2139,8 @@
     "capabilities": [
       "connections.reference_audio.upload"
     ],
-    "coverage": "partial",
-    "reason": "HTTP multipart transport declared; Agent client upload support pending."
+    "coverage": "complete",
+    "reason": "Bounded Agent transfer client available; isolated multipart/binary domain acceptance in checks/agent/test_configuration_assets_acceptance.py verifies persisted assets and invalid replacement preservation."
   },
   "model_connection_routes.copy_model_connection": {
     "source": "model_connection_routes.py",
@@ -3132,8 +3132,8 @@
     "capabilities": [
       "style.templates.create_with_references"
     ],
-    "coverage": "partial",
-    "reason": "HTTP multipart transport declared; Agent client upload support pending."
+    "coverage": "complete",
+    "reason": "Bounded Agent transfer client available; isolated multipart/binary domain acceptance in checks/agent/test_configuration_assets_acceptance.py verifies persisted assets and invalid replacement preservation."
   },
   "project_style_routes.get_step3_template_reference": {
     "source": "project_style_routes.py",
@@ -3404,8 +3404,8 @@
     "capabilities": [
       "settings.comfyui_workflow.upload"
     ],
-    "coverage": "partial",
-    "reason": "HTTP multipart transport declared; Agent client upload support pending."
+    "coverage": "complete",
+    "reason": "Bounded Agent transfer client available; isolated multipart/binary domain acceptance in checks/agent/test_configuration_assets_acceptance.py verifies persisted assets and invalid replacement preservation."
   },
   "storyboard_background.get_background": {
     "source": "storyboard_background.py",
@@ -3452,8 +3452,8 @@
     "capabilities": [
       "media.background_image.upload"
     ],
-    "coverage": "partial",
-    "reason": "HTTP multipart transport declared; Agent client upload support pending."
+    "coverage": "complete",
+    "reason": "Bounded Agent transfer client available; isolated multipart/binary domain acceptance in checks/agent/test_configuration_assets_acceptance.py verifies persisted assets and invalid replacement preservation."
   },
   "storyboard_background.get_background_image": {
     "source": "storyboard_background.py",
@@ -3468,8 +3468,8 @@
     "capabilities": [
       "media.background_image.get"
     ],
-    "coverage": "partial",
-    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
+    "coverage": "complete",
+    "reason": "Bounded Agent transfer client available; isolated multipart/binary domain acceptance in checks/agent/test_configuration_assets_acceptance.py verifies persisted assets and invalid replacement preservation."
   },
   "storyboard_routes.get_step2_prompt_templates": {
     "source": "storyboard_routes.py",

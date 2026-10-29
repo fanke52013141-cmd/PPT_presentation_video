@@ -238,7 +238,8 @@ CAPABILITIES = [
     ),
     _cap(
         id="connections.reference_audio.upload",
-        description="Upload reference audio for a TTS connection (multipart/form-data).",
+        version="1.1", behavior_version="2",
+        description="Upload validated reference audio for a TTS connection; serialize publication and restore the previous file on metadata failure (multipart/form-data).",
         agent_api_method="POST", agent_api_path="/api/agent/v1/model-connections/{connection_id}/reference-audio",
         cli_command="connections reference-audio-upload",
         service_ref="model_connection_routes.upload_model_reference_audio",

@@ -289,7 +289,9 @@ def invoke_capability(capability_id: str, revision: str, arguments: dict[str, An
                             details={"errors": exc.errors(include_input=False, include_context=False)}) from exc
     values = parsed.model_dump(mode="python")
     names = path_names(cap)
-    if any(not values[name] or "/" in values[name] or "\\" in values[name] for name in names):
+    if any(isinstance(values[name], str) and (
+        not values[name] or "/" in values[name] or "\\" in values[name]
+    ) for name in names):
         raise AgentAPIError("VALIDATION_ERROR", "Invalid resource identifier", 422)
 
     endpoint = _resolve_handler(HANDLERS[capability_id])

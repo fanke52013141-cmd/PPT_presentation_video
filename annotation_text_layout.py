@@ -241,6 +241,8 @@ class TextLayoutBuilder:
         if token_id not in known:
             raise KeyError(token_id)
         corrections = dict(layout.get("corrections") or {})
+        if corrected_text and isinstance(corrections.get(token_id), dict) and corrections[token_id].get("text") == corrected_text:
+            return layout, False
         if not corrected_text:
             if token_id not in corrections:
                 return layout, False

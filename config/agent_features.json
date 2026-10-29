@@ -250,8 +250,8 @@
     "capabilities": [
       "annotation.slide.patch"
     ],
-    "coverage": "partial",
-    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
+    "coverage": "complete",
+    "reason": "Real isolated Agent scenario: checks/agent/test_state_mask_annotation_acceptance.py::test_annotation_prepare_confirm_conflict_and_noop. Business storage, revisions and worker lifecycle execute normally; upstream preflight is controlled for the pipeline boundary scenario."
   },
   "annotation_routes.get_annotation_text_layout": {
     "source": "annotation_routes.py",
@@ -282,8 +282,8 @@
     "capabilities": [
       "annotation.text_layout.patch"
     ],
-    "coverage": "partial",
-    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
+    "coverage": "complete",
+    "reason": "Scenario acceptance: checks/agent/test_style_media_acceptance.py."
   },
   "annotation_routes.get_annotation_prompts": {
     "source": "annotation_routes.py",
@@ -330,8 +330,8 @@
     "capabilities": [
       "annotation.slide.prepare"
     ],
-    "coverage": "partial",
-    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
+    "coverage": "complete",
+    "reason": "Real isolated Agent scenario: checks/agent/test_state_mask_annotation_acceptance.py::test_annotation_prepare_confirm_conflict_and_noop. Business storage, revisions and worker lifecycle execute normally; upstream preflight is controlled for the pipeline boundary scenario."
   },
   "annotation_routes.get_annotation_scene_asset": {
     "source": "annotation_routes.py",
@@ -362,8 +362,8 @@
     "capabilities": [
       "annotation.editor_ink.get"
     ],
-    "coverage": "partial",
-    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
+    "coverage": "complete",
+    "reason": "Scenario acceptance: checks/agent/test_state_mask_annotation_acceptance.py (real PNG frame/editor-ink requests)."
   },
   "annotation_routes.get_annotation_ink": {
     "source": "annotation_routes.py",
@@ -378,8 +378,8 @@
     "capabilities": [
       "annotation.ink.get"
     ],
-    "coverage": "partial",
-    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
+    "coverage": "complete",
+    "reason": "Scenario acceptance: checks/agent/test_state_mask_annotation_acceptance.py (real PNG frame/editor-ink requests)."
   },
   "annotation_routes.confirm_annotation_slide": {
     "source": "annotation_routes.py",
@@ -394,8 +394,8 @@
     "capabilities": [
       "annotation.slide.confirm"
     ],
-    "coverage": "partial",
-    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
+    "coverage": "complete",
+    "reason": "Real isolated Agent scenario: checks/agent/test_state_mask_annotation_acceptance.py::test_annotation_prepare_confirm_conflict_and_noop. Business storage, revisions and worker lifecycle execute normally; upstream preflight is controlled for the pipeline boundary scenario."
   },
   "annotation_routes.submit_annotation_job": {
     "source": "annotation_routes.py",
@@ -458,8 +458,8 @@
     "capabilities": [
       "annotation.preview.export"
     ],
-    "coverage": "partial",
-    "reason": "Requires the external engine/service; acceptance pending."
+    "coverage": "complete",
+    "reason": "Scenario acceptance: docs/agent/rehearsal-log-2026-10-29.md (live ToAPIs/volcengine/MiniMax/Remotion isolated run and preview export)."
   },
   "annotation_routes.download_annotation_preview": {
     "source": "annotation_routes.py",
@@ -474,8 +474,8 @@
     "capabilities": [
       "annotation.preview.download"
     ],
-    "coverage": "partial",
-    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
+    "coverage": "complete",
+    "reason": "Scenario acceptance: docs/agent/rehearsal-log-2026-10-29.md (live ToAPIs/volcengine/MiniMax/Remotion isolated run and preview export)."
   },
   "article_routes.get_article_generation_settings": {
     "source": "article_routes.py",
@@ -1787,8 +1787,8 @@
     "capabilities": [
       "image.candidate.apply"
     ],
-    "coverage": "partial",
-    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
+    "coverage": "complete",
+    "reason": "Scenario acceptance: checks/agent/test_full_workflow_mocked.py::test_image_asset_scenarios requires successful apply, verifies current image bytes equal downloaded candidate and candidate removal; provider mocked, business persistence real."
   },
   "image_workflow_routes.delete_all_slide_images": {
     "source": "image_workflow_routes.py",
@@ -1803,8 +1803,8 @@
     "capabilities": [
       "image.delete_all"
     ],
-    "coverage": "partial",
-    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
+    "coverage": "complete",
+    "reason": "Scenario acceptance: checks/agent/test_full_workflow_mocked.py::test_delete_all_images_cleans_files_and_preserves_audio verifies image/raw-pair cleanup, registry cleanup, retained audio state and repeated deletion."
   },
   "image_workflow_routes.delete_slide_image": {
     "source": "image_workflow_routes.py",
@@ -1899,8 +1899,8 @@
     "capabilities": [
       "ip.upsert"
     ],
-    "coverage": "partial",
-    "reason": "HTTP multipart transport declared; Agent client upload support pending."
+    "coverage": "complete",
+    "reason": "Scenario acceptance: checks/agent/test_style_media_acceptance.py."
   },
   "ip_character_routes.update_ip_character_config": {
     "source": "ip_character_routes.py",
@@ -1931,8 +1931,8 @@
     "capabilities": [
       "ip.delete"
     ],
-    "coverage": "partial",
-    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
+    "coverage": "complete",
+    "reason": "Scenario acceptance: checks/agent/test_style_media_acceptance.py."
   },
   "ip_character_routes.get_ip_character_image": {
     "source": "ip_character_routes.py",
@@ -1947,8 +1947,8 @@
     "capabilities": [
       "ip.image.get"
     ],
-    "coverage": "partial",
-    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
+    "coverage": "complete",
+    "reason": "Scenario acceptance: checks/agent/test_style_media_acceptance.py."
   },
   "mask_editor_routes.semantic_blocks_project": {
     "source": "mask_editor_routes.py",
@@ -1979,8 +1979,8 @@
     "capabilities": [
       "mask.result.get"
     ],
-    "coverage": "partial",
-    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
+    "coverage": "complete",
+    "reason": "Real isolated Agent scenario: checks/agent/test_state_mask_annotation_acceptance.py::test_mask_draft_noop_keeps_manifest_and_audio. Business storage, revisions and worker lifecycle execute normally; upstream preflight is controlled for the pipeline boundary scenario."
   },
   "mask_editor_routes.repair_step5_result": {
     "source": "mask_editor_routes.py",
@@ -1995,8 +1995,8 @@
     "capabilities": [
       "mask.result.repair"
     ],
-    "coverage": "partial",
-    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
+    "coverage": "complete",
+    "reason": "Real isolated Agent scenario: checks/agent/test_state_mask_annotation_acceptance.py::test_mask_draft_noop_keeps_manifest_and_audio. Business storage, revisions and worker lifecycle execute normally; upstream preflight is controlled for the pipeline boundary scenario."
   },
   "mask_editor_routes.update_step5_draft": {
     "source": "mask_editor_routes.py",
@@ -2011,8 +2011,8 @@
     "capabilities": [
       "mask.draft.update"
     ],
-    "coverage": "partial",
-    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
+    "coverage": "complete",
+    "reason": "Real isolated Agent scenario: checks/agent/test_state_mask_annotation_acceptance.py::test_mask_draft_noop_keeps_manifest_and_audio. Business storage, revisions and worker lifecycle execute normally; upstream preflight is controlled for the pipeline boundary scenario."
   },
   "mask_editor_routes.build_step5_mask_preview": {
     "source": "mask_editor_routes.py",
@@ -2059,8 +2059,8 @@
     "capabilities": [
       "mask.result.update"
     ],
-    "coverage": "partial",
-    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
+    "coverage": "complete",
+    "reason": "Real isolated Agent scenario: checks/agent/test_state_mask_annotation_acceptance.py::test_mask_draft_noop_keeps_manifest_and_audio. Business storage, revisions and worker lifecycle execute normally; upstream preflight is controlled for the pipeline boundary scenario."
   },
   "model_connection_routes.list_model_connections": {
     "source": "model_connection_routes.py",
@@ -2331,8 +2331,8 @@
     "capabilities": [
       "pipeline.run"
     ],
-    "coverage": "partial",
-    "reason": "Shares pipeline.run acceptance; a live automated run is a separately validated item."
+    "coverage": "complete",
+    "reason": "Scenario acceptance: docs/agent/rehearsal-log-2026-10-29.md (live ToAPIs/volcengine/MiniMax/Remotion isolated run and preview export)."
   },
   "one_click_routes.get_one_click_status_route": {
     "source": "one_click_routes.py",
@@ -2347,8 +2347,8 @@
     "capabilities": [
       "pipeline.status"
     ],
-    "coverage": "partial",
-    "reason": "Shares pipeline.status acceptance; a live automated run is a separately validated item."
+    "coverage": "complete",
+    "reason": "Scenario acceptance: docs/agent/rehearsal-log-2026-10-29.md (live ToAPIs/volcengine/MiniMax/Remotion isolated run and preview export)."
   },
   "one_click_routes.pause_one_click_route": {
     "source": "one_click_routes.py",
@@ -2363,8 +2363,8 @@
     "capabilities": [
       "pipeline.pause"
     ],
-    "coverage": "partial",
-    "reason": "Pause requires an active automated run; acceptance pending."
+    "coverage": "complete",
+    "reason": "Real isolated Agent scenario: checks/agent/test_state_mask_annotation_acceptance.py::test_pipeline_real_worker_pause_resume_and_exact_history. Business storage, revisions and worker lifecycle execute normally; upstream preflight is controlled for the pipeline boundary scenario."
   },
   "one_click_routes.batch_one_click_status_route": {
     "source": "one_click_routes.py",
@@ -2555,8 +2555,8 @@
     "capabilities": [
       "project.impacts.reuse_confirm"
     ],
-    "coverage": "partial",
-    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
+    "coverage": "complete",
+    "reason": "Real isolated Agent scenario: checks/agent/test_state_mask_annotation_acceptance.py::test_storyboard_reuse_requires_current_article_and_contract_hashes verifies stale hash refusal and explicit current-hash settlement."
   },
   "project_routes.update_project_impact_decision": {
     "source": "project_routes.py",
@@ -2571,8 +2571,8 @@
     "capabilities": [
       "project.impacts.decision.update"
     ],
-    "coverage": "partial",
-    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
+    "coverage": "complete",
+    "reason": "Real isolated Agent scenario: checks/agent/test_state_mask_annotation_acceptance.py::test_impact_decision_does_not_settle_or_hide_newer_changes. Business storage, revisions and worker lifecycle execute normally; upstream preflight is controlled for the pipeline boundary scenario."
   },
   "project_routes.confirm_storyboard_image_reuse": {
     "source": "project_routes.py",
@@ -2940,8 +2940,8 @@
     "capabilities": [
       "style.references.upload"
     ],
-    "coverage": "partial",
-    "reason": "HTTP multipart transport declared; Agent client upload support pending."
+    "coverage": "complete",
+    "reason": "Scenario acceptance: checks/agent/test_style_media_acceptance.py."
   },
   "project_style_routes.get_step3_reference_image": {
     "source": "project_style_routes.py",
@@ -2956,8 +2956,8 @@
     "capabilities": [
       "style.references.get"
     ],
-    "coverage": "partial",
-    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
+    "coverage": "complete",
+    "reason": "Scenario acceptance: checks/agent/test_style_media_acceptance.py."
   },
   "project_style_routes.delete_step3_reference_image": {
     "source": "project_style_routes.py",
@@ -2972,8 +2972,8 @@
     "capabilities": [
       "style.references.delete"
     ],
-    "coverage": "partial",
-    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
+    "coverage": "complete",
+    "reason": "Scenario acceptance: checks/agent/test_style_media_acceptance.py."
   },
   "project_style_routes.delete_all_step3_reference_images": {
     "source": "project_style_routes.py",
@@ -2988,8 +2988,8 @@
     "capabilities": [
       "style.references.delete_all"
     ],
-    "coverage": "partial",
-    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
+    "coverage": "complete",
+    "reason": "Scenario acceptance: checks/agent/test_style_media_acceptance.py."
   },
   "project_style_routes.list_legacy_reference_images": {
     "source": "project_style_routes.py",

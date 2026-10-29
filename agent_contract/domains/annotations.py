@@ -18,6 +18,10 @@ class AnnotationPromptsGetRequest(BaseModel):
     slide_id: Optional[str] = Field(None, description="可选页面过滤")
 
 
+class AnnotationEditorInkRequest(BaseModel):
+    revision: int = Field(..., ge=0, description="当前页面 revision；过期 revision 拒绝读取")
+
+
 CAPABILITIES = [
     AgentCapability(
         id="annotation.summary.get", version="1.0", behavior_version="1",
@@ -47,7 +51,7 @@ CAPABILITIES = [
         service_ref="annotation_service.AnnotationService.get_slide",
     ),
     AgentCapability(
-        id="annotation.slide.patch", version="1.0", behavior_version="1",
+        id="annotation.slide.patch", version="1.1", behavior_version="2",
         status=CapabilityStatus.stable,
         description="Apply a structured annotation patch (operations, undo) with revision-conflict handling; commits once.",
         request_model=FreeFormRequest, response_model=BaseModel,
@@ -65,7 +69,7 @@ CAPABILITIES = [
         service_ref="annotation_service.AnnotationService.get_text_layout",
     ),
     AgentCapability(
-        id="annotation.text_layout.patch", version="1.0", behavior_version="1",
+        id="annotation.text_layout.patch", version="1.1", behavior_version="2",
         status=CapabilityStatus.stable,
         description="Patch one slide's text layout; index units follow annotations_core conventions.",
         request_model=FreeFormRequest, response_model=BaseModel,
@@ -92,7 +96,7 @@ CAPABILITIES = [
         service_ref="annotation_service.AnnotationService.put_prompts",
     ),
     AgentCapability(
-        id="annotation.slide.prepare", version="1.0", behavior_version="1",
+        id="annotation.slide.prepare", version="1.1", behavior_version="2",
         status=CapabilityStatus.stable,
         description="Prepare one slide for annotation review (scene context binding).",
         request_model=FreeFormRequest, response_model=BaseModel,
@@ -101,7 +105,7 @@ CAPABILITIES = [
         service_ref="annotation_service.AnnotationService.prepare_slide",
     ),
     AgentCapability(
-        id="annotation.slide.confirm", version="1.0", behavior_version="1",
+        id="annotation.slide.confirm", version="1.1", behavior_version="2",
         status=CapabilityStatus.stable,
         description="Confirm one slide's annotations; the confirmation binds the reviewed revision and commits once.",
         request_model=FreeFormRequest, response_model=BaseModel,
@@ -159,10 +163,10 @@ CAPABILITIES = [
         mcp_enabled=False,
     ),
     AgentCapability(
-        id="annotation.editor_ink.get", version="1.0", behavior_version="1",
+        id="annotation.editor_ink.get", version="1.1", behavior_version="2",
         status=CapabilityStatus.stable,
         description="Download one editor ink stroke as binary PNG content (not a JSON tool result).",
-        request_model=BaseModel, response_model=BaseModel,
+        request_model=AnnotationEditorInkRequest, response_model=BaseModel,
         agent_api_method="GET", agent_api_path="/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/editor-inks/{annotation_id}/{stroke_index}",
         mcp_tool_name="ppt_annotation_editor_ink_get", cli_command="annotation editor-ink",
         service_ref="annotation_service.AnnotationService.annotation_editor_ink",
@@ -170,7 +174,7 @@ CAPABILITIES = [
         mcp_enabled=False,
     ),
     AgentCapability(
-        id="annotation.ink.get", version="1.0", behavior_version="1",
+        id="annotation.ink.get", version="1.1", behavior_version="2",
         status=CapabilityStatus.stable,
         description="Download one rendered annotation ink frame as binary PNG content (not a JSON tool result).",
         request_model=BaseModel, response_model=BaseModel,

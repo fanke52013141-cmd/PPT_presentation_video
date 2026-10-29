@@ -151,7 +151,8 @@ CAPABILITIES: list[AgentCapability] = [
     ),
     AgentCapability(
         id="project.create",
-        version="1.5",
+        version="1.6",
+        behavior_version="2",
         status=CapabilityStatus.stable,
         description="Create a project with canvas, production/presentation mode, versioned creation configuration, and optional course/chapter ownership.",
         request_model=ProjectCreateRequest,

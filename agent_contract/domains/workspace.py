@@ -181,7 +181,7 @@ CAPABILITIES = [
         service_ref="creation_config_routes.update_creation_config",
     ),
     _cap(
-        id="config.version.get",
+        id="config.version.get", version="1.1", behavior_version="2",
         description="Read one stored version of a creation configuration package.",
         agent_api_method="GET", agent_api_path="/api/agent/v1/creation-configs/{package_id}/versions/{version}",
         cli_command="config version",

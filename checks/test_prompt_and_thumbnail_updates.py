@@ -170,9 +170,13 @@ def test_legacy_checks():
     assert "字幕安全区" in portrait_system
     assert "1920×1080" not in portrait_system
 
-    minimal_style = global_image_style.build_image_style_prompt(
-        global_image_style.read_style_tokens_data()
+    import yaml
+
+    # Verify the shipped default, independently of settings saved by other scenarios.
+    default_style = yaml.safe_load(
+        Path(global_image_style.DEFAULT_STYLE_TOKENS_PATH).read_text(encoding="utf-8")
     )
+    minimal_style = global_image_style.build_image_style_prompt(default_style)
     assert "只描述视觉语言，不重复生产规则" in minimal_style
     assert "narration beat" not in minimal_style
     assert "visual_group" not in minimal_style

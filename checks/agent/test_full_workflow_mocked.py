@@ -275,10 +275,26 @@ def test_image_asset_scenarios(workflow, api):
     assert preview.status_code == 200, preview.text
     candidate = api.get(f"/api/agent/v1/projects/{project_id}/images/slide_001/candidate")
     assert candidate.status_code == 200 and candidate.headers["content-type"].startswith("image/")
-    applied = invoke(api, "image.candidate.apply", {
-        "project_id": project_id, "payload": {"slide_id": "slide_001"},
+    audio_before_apply = invoke(api, "tts.audio_status.get", {"project_id": project_id})
+    assert audio_before_apply.status_code == 200, audio_before_apply.text
+    change_before_apply = invoke(api, "image.change_preview.get", {
+        "project_id": project_id, "slide_id": "slide_001",
     })
-    assert applied.status_code in (200, 400), applied.text
+    assert change_before_apply.status_code == 200, change_before_apply.text
+    applied = invoke(api, "image.candidate.apply", {
+        "project_id": project_id, "payload": {
+            "slide_id": "slide_001", "disposition": "cleanup",
+            "expected_version": change_before_apply.json()["version"],
+        },
+    })
+    assert applied.status_code == 200, applied.text
+    current = api.get(f"/api/agent/v1/projects/{project_id}/slides/slide_001/image")
+    assert current.status_code == 200 and current.content == candidate.content
+    removed_candidate = api.get(f"/api/agent/v1/projects/{project_id}/images/slide_001/candidate")
+    assert removed_candidate.status_code == 404
+    audio_after_apply = invoke(api, "tts.audio_status.get", {"project_id": project_id})
+    assert audio_after_apply.status_code == 200, audio_after_apply.text
+    assert audio_after_apply.json()["slides"] == audio_before_apply.json()["slides"]
 
 
 def test_image_binary_downloads(workflow, api):
@@ -508,3 +524,41 @@ def test_image_generate_idempotent_replay(workflow, api):
     conflict = invoke(api, "image.generate", {**arguments, "prompt": "不同的提示词"})
     assert conflict.status_code == 409
     assert conflict.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
+
+
+def test_delete_all_images_cleans_files_and_preserves_audio(workflow, api):
+    from pathlib import Path
+    from database import ArtifactRecord, Project, SessionLocal
+
+    project_id = workflow["project_id"]
+    before_audio = invoke(api, "tts.audio_status.get", {"project_id": project_id})
+    assert before_audio.status_code == 200, before_audio.text
+    listed = invoke(api, "image.list", {"project_id": project_id})
+    assert listed.status_code == 200, listed.text
+    changes = []
+    for slide_id in ("slide_001", "slide_002"):
+        preview = invoke(api, "image.change_preview.get", {
+            "project_id": project_id, "slide_id": slide_id,
+        })
+        assert preview.status_code == 200, preview.text
+        changes.append({"slide_id": slide_id, "disposition": "cleanup",
+                        "expected_version": preview.json()["version"]})
+    deleted = invoke(api, "image.delete_all", {
+        "project_id": project_id, "payload": {"changes": changes},
+    })
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["deleted_count"] == 2
+    with SessionLocal() as db:
+        root = Path(db.get(Project, project_id).run_dir)
+        assert db.query(ArtifactRecord).filter_by(project_id=project_id, artifact_type="image").count() == 0
+    for slide_id in ("slide_001", "slide_002"):
+        for filename in ("visual_draft.png", "visual_draft.raw.png", "visual_draft.raw.sha256", "visual_candidate.png"):
+            assert not (root / "slides" / slide_id / filename).exists()
+    after_audio = invoke(api, "tts.audio_status.get", {"project_id": project_id})
+    assert after_audio.status_code == 200, after_audio.text
+    assert after_audio.json()["slides"] == before_audio.json()["slides"]
+    repeated = invoke(api, "image.delete_all", {
+        "project_id": project_id, "payload": {},
+    })
+    assert repeated.status_code == 200, repeated.text
+    assert repeated.json()["deleted_count"] == 0

@@ -145,7 +145,7 @@ CAPABILITIES = [
         mcp_enabled=False,
     ),
     _cap(
-        id="style.references.get",
+        id="style.references.get", version="1.1", behavior_version="2",
         description="Download one style reference image as binary content (not a JSON tool result).",
         agent_api_method="GET", agent_api_path="/api/agent/v1/projects/{project_id}/style/references/{index}/content",
         cli_command="style reference",
@@ -154,7 +154,7 @@ CAPABILITIES = [
         mcp_enabled=False,
     ),
     _cap(
-        id="style.references.delete",
+        id="style.references.delete", version="1.1", behavior_version="2",
         description="Delete one style reference image by index. Destructive.",
         destructive=True,
         agent_api_method="DELETE", agent_api_path="/api/agent/v1/projects/{project_id}/style/references/{index}",
@@ -187,7 +187,7 @@ CAPABILITIES = [
         long_running=True,
     ),
     _cap(
-        id="style.references_legacy.get",
+        id="style.references_legacy.get", version="1.1", behavior_version="2",
         description="Download one legacy project-profile reference image as binary content.",
         agent_api_method="GET", agent_api_path="/api/agent/v1/projects/{project_id}/style/references-legacy/{index}/content",
         cli_command="style reference-legacy",
@@ -196,7 +196,7 @@ CAPABILITIES = [
         mcp_enabled=False,
     ),
     _cap(
-        id="style.references_legacy.delete",
+        id="style.references_legacy.delete", version="1.1", behavior_version="2",
         description="Delete one legacy project-profile reference image. Destructive.",
         destructive=True,
         agent_api_method="DELETE", agent_api_path="/api/agent/v1/projects/{project_id}/style/references-legacy/{index}",
@@ -244,7 +244,7 @@ CAPABILITIES = [
         mcp_enabled=False,
     ),
     _cap(
-        id="style.templates.reference.get",
+        id="style.templates.reference.get", version="1.1", behavior_version="2",
         description="Download one template reference image as binary content.",
         agent_api_method="GET", agent_api_path="/api/agent/v1/style/templates/{template_id}/references/{index}/content",
         cli_command="style template-reference",

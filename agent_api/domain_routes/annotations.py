@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from agent_api.errors import AgentAPIError
+from agent_api.domain_routes.common import raise_typed_http_error
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
@@ -57,7 +58,10 @@ def agent_patch_annotation_slide(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     service = get_annotation_service()
-    result = service.patch_slide(db, project_id, slide_id, payload.payload)
+    try:
+        result = service.patch_slide(db, project_id, slide_id, payload.payload)
+    except HTTPException as exc:
+        raise_typed_http_error(exc)
     db.commit()
     return result
 
@@ -111,7 +115,10 @@ def agent_prepare_annotation_slide(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     service = get_annotation_service()
-    return service.prepare_slide(db, project_id, slide_id, payload.payload)
+    try:
+        return service.prepare_slide(db, project_id, slide_id, payload.payload)
+    except HTTPException as exc:
+        raise_typed_http_error(exc)
 
 
 @router.post("/projects/{project_id}/annotations/slides/{slide_id}/confirm")
@@ -122,7 +129,10 @@ def agent_confirm_annotation_slide(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     service = get_annotation_service()
-    result = service.confirm_slide(db, project_id, slide_id, payload.payload)
+    try:
+        result = service.confirm_slide(db, project_id, slide_id, payload.payload)
+    except HTTPException as exc:
+        raise_typed_http_error(exc)
     db.commit()
     return result
 
@@ -164,10 +174,6 @@ def agent_export_annotation_preview(
     payload: FreeFormRequest,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    from fastapi import HTTPException
-
-    from agent_api.domain_routes.common import raise_typed_http_error
-
     service = get_annotation_service()
     try:
         return service.export_preview(db, project_id, slide_id, payload.payload)

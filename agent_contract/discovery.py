@@ -10,8 +10,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, create_model
 
 from agent_contract.capabilities import AgentCapability
-from agent_contract.models import GenerationKind
-from agent_contract.schema import capability_input_schema, capability_output_schema
+from agent_contract.schema import capability_input_schema, capability_output_schema, path_parameter_type
 
 
 BOOTSTRAP_PATHS = frozenset({
@@ -51,7 +50,7 @@ def input_model(cap: AgentCapability) -> type[BaseModel]:
     """Validate full arguments, including path fields, without discarding typos."""
     fields: dict[str, Any] = {}
     for name in path_names(cap):
-        field_type = GenerationKind if name == "stage" and cap.id.startswith("generation.") else str
+        field_type = path_parameter_type(cap, name)
         fields[name] = (field_type, ...)
     return create_model(
         cap.id.replace(".", "_") + "Arguments",

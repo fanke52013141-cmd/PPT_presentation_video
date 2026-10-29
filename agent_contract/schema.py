@@ -11,9 +11,18 @@ from typing import Any, get_args
 import re
 from agent_contract.models import GenerationKind
 
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictInt
 
 from agent_contract.capabilities import AgentCapability
+
+
+def path_parameter_type(cap: AgentCapability, name: str) -> Any:
+    """Share numeric path types between discovery and dynamic invocation."""
+    if name in {"index", "stroke_index", "frame_index", "version"}:
+        return StrictInt
+    if name == "stage" and cap.id.startswith("generation."):
+        return GenerationKind
+    return str
 
 
 def path_parameters_schema(cap: AgentCapability) -> dict[str, Any]:
@@ -29,6 +38,8 @@ def path_parameters_schema(cap: AgentCapability) -> dict[str, Any]:
     required: list[str] = []
     for name in re.findall(r"\{([a-zA-Z_][a-zA-Z_0-9]*)\}", cap.agent_api_path):
         properties[name] = {"type": "string", "minLength": 1, "description": descriptions.get(name, name)}
+        if path_parameter_type(cap, name) is StrictInt:
+            properties[name] = {"type": "integer", "description": descriptions.get(name, name)}
         if name == 'stage' and cap.id.startswith('generation.'):
             properties[name]['enum'] = list(get_args(GenerationKind))
         required.append(name)

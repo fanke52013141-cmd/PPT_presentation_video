@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import pytest
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -12,6 +13,27 @@ from project_service import (
     ProjectDependencies,
     ProjectService,
 )
+
+
+@pytest.mark.parametrize("extra", [
+    {"config_overrides": {"model_bindings": {"image_generation": {"connection_id": "chosen"}}}},
+    {"config_package_version": 2},
+])
+def test_creation_options_without_default_package_are_rejected(tmp_path, extra):
+    from fastapi import HTTPException
+    from database import Project
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'missing-default.db'}")
+    Base.metadata.create_all(engine)
+    service = ProjectService(ProjectDependencies(
+        runs_root=tmp_path / "runs", project_audio_confirmed=lambda _: False,
+        get_default_creation_config=lambda _account, _db: None,
+    ))
+    with sessionmaker(bind=engine)() as db:
+        with pytest.raises(HTTPException) as caught:
+            service.create(ProjectCreate(name="Must not ignore options", **extra), db)
+        assert caught.value.status_code == 400
+        assert db.query(Project).count() == 0
 
 
 def test_project_create_defaults_to_auto_mode() -> None:

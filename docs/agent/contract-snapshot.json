@@ -1,5 +1,5 @@
 {
-  "agent_api_version": "2.8.1",
+  "agent_api_version": "2.9.0",
   "capabilities": [
     {
       "behavior_version": "2",
@@ -967,7 +967,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "fec443df4906c98842d5df9b",
+      "contract_revision": "38df3b442e1c6e250d77bdca",
       "description": "Create a project with canvas, production/presentation mode, versioned creation configuration, and optional course/chapter ownership.",
       "destructive": false,
       "domain": "project",
@@ -1295,7 +1295,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.5"
+      "version": "1.6"
     },
     {
       "behavior_version": "3",
@@ -9970,7 +9970,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "index": "path",
         "project_id": "path"
@@ -9980,7 +9980,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "b53fd7d586dc007fc7ed0169",
+      "contract_revision": "0a4998466fd46daf94147316",
       "description": "Download one style reference image as binary content (not a JSON tool result).",
       "destructive": false,
       "domain": "style",
@@ -9994,8 +9994,7 @@
         "properties": {
           "index": {
             "description": "index",
-            "minLength": 1,
-            "type": "string"
+            "type": "integer"
           },
           "project_id": {
             "description": "The project ID.",
@@ -10024,10 +10023,10 @@
       ],
       "response_kind": "binary",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "index": "path",
         "project_id": "path"
@@ -10037,7 +10036,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "39d6e91e99f256f43ebb623d",
+      "contract_revision": "d0b436ffea973754be903131",
       "description": "Delete one style reference image by index. Destructive.",
       "destructive": true,
       "domain": "style",
@@ -10051,8 +10050,7 @@
         "properties": {
           "index": {
             "description": "index",
-            "minLength": 1,
-            "type": "string"
+            "type": "integer"
           },
           "project_id": {
             "description": "The project ID.",
@@ -10081,7 +10079,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "1",
@@ -10241,7 +10239,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "index": "path",
         "project_id": "path"
@@ -10251,7 +10249,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "003ec64168c2456661780a34",
+      "contract_revision": "8417d795754c905b6fcc1450",
       "description": "Download one legacy project-profile reference image as binary content.",
       "destructive": false,
       "domain": "style",
@@ -10265,8 +10263,7 @@
         "properties": {
           "index": {
             "description": "index",
-            "minLength": 1,
-            "type": "string"
+            "type": "integer"
           },
           "project_id": {
             "description": "The project ID.",
@@ -10295,10 +10292,10 @@
       ],
       "response_kind": "binary",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "index": "path",
         "project_id": "path"
@@ -10308,7 +10305,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "b286287d79fd9608b9b94c2a",
+      "contract_revision": "01c7f2d21f1b11bb03c411e7",
       "description": "Delete one legacy project-profile reference image. Destructive.",
       "destructive": true,
       "domain": "style",
@@ -10322,8 +10319,7 @@
         "properties": {
           "index": {
             "description": "index",
-            "minLength": 1,
-            "type": "string"
+            "type": "integer"
           },
           "project_id": {
             "description": "The project ID.",
@@ -10352,7 +10348,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "1",
@@ -10583,7 +10579,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "index": "path",
         "template_id": "path"
@@ -10593,7 +10589,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "5c53ce818bb720a9965ddc05",
+      "contract_revision": "fd848b169b5a9ecd0c678ab5",
       "description": "Download one template reference image as binary content.",
       "destructive": false,
       "domain": "style",
@@ -10607,8 +10603,7 @@
         "properties": {
           "index": {
             "description": "index",
-            "minLength": 1,
-            "type": "string"
+            "type": "integer"
           },
           "template_id": {
             "description": "template_id",
@@ -10637,7 +10632,7 @@
       ],
       "response_kind": "binary",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "1",
@@ -12278,7 +12273,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "payload": "body",
         "project_id": "path",
@@ -12289,7 +12284,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "1517f6506a07feb360799a41",
+      "contract_revision": "d7f8d4b92e56724251b7808d",
       "description": "Apply a structured annotation patch (operations, undo) with revision-conflict handling; commits once.",
       "destructive": false,
       "domain": "annotation",
@@ -12339,7 +12334,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "1",
@@ -12399,7 +12394,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "payload": "body",
         "project_id": "path",
@@ -12410,7 +12405,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "6839eb9eb06ae18cbaff44f2",
+      "contract_revision": "9d68e34c5a1f9ae3c88512c9",
       "description": "Patch one slide's text layout; index units follow annotations_core conventions.",
       "destructive": false,
       "domain": "annotation",
@@ -12460,7 +12455,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "1",
@@ -12583,7 +12578,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "payload": "body",
         "project_id": "path",
@@ -12594,7 +12589,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "82ff0c333caf84ea30f851ac",
+      "contract_revision": "591fd3be3c8ac3a5bfe1fac2",
       "description": "Prepare one slide for annotation review (scene context binding).",
       "destructive": false,
       "domain": "annotation",
@@ -12644,10 +12639,10 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "payload": "body",
         "project_id": "path",
@@ -12658,7 +12653,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "7a8ddd81328a0b0a4cfd0f4d",
+      "contract_revision": "69a937e7e01ee7e549666173",
       "description": "Confirm one slide's annotations; the confirmation binds the reviewed revision and commits once.",
       "destructive": false,
       "domain": "annotation",
@@ -12708,7 +12703,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "1",
@@ -13010,10 +13005,11 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "annotation_id": "path",
         "project_id": "path",
+        "revision": "query",
         "slide_id": "path",
         "stroke_index": "path"
       },
@@ -13022,7 +13018,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "fa290002a7ca953cf3b41039",
+      "contract_revision": "de59a1d55fa916e4831ca813",
       "description": "Download one editor ink stroke as binary PNG content (not a JSON tool result).",
       "destructive": false,
       "domain": "annotation",
@@ -13044,6 +13040,11 @@
             "minLength": 1,
             "type": "string"
           },
+          "revision": {
+            "description": "当前页面 revision；过期 revision 拒绝读取",
+            "minimum": 0,
+            "type": "integer"
+          },
           "slide_id": {
             "description": "The slide ID.",
             "minLength": 1,
@@ -13051,14 +13052,14 @@
           },
           "stroke_index": {
             "description": "stroke_index",
-            "minLength": 1,
-            "type": "string"
+            "type": "integer"
           }
         },
         "required": [
-          "project_id",
-          "slide_id",
           "annotation_id",
+          "project_id",
+          "revision",
+          "slide_id",
           "stroke_index"
         ],
         "type": "object"
@@ -13078,10 +13079,10 @@
       ],
       "response_kind": "binary",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "annotation_id": "path",
         "build_id": "path",
@@ -13095,7 +13096,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "fa2bbb25702c8860a346eba7",
+      "contract_revision": "9e30a8e466538d1168a22d86",
       "description": "Download one rendered annotation ink frame as binary PNG content (not a JSON tool result).",
       "destructive": false,
       "domain": "annotation",
@@ -13119,8 +13120,7 @@
           },
           "frame_index": {
             "description": "frame_index",
-            "minLength": 1,
-            "type": "string"
+            "type": "integer"
           },
           "project_id": {
             "description": "The project ID.",
@@ -13134,8 +13134,7 @@
           },
           "stroke_index": {
             "description": "stroke_index",
-            "minLength": 1,
-            "type": "string"
+            "type": "integer"
           }
         },
         "required": [
@@ -13163,7 +13162,7 @@
       ],
       "response_kind": "binary",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "1",
@@ -14942,7 +14941,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "package_id": "path",
         "version": "path"
@@ -14952,7 +14951,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "a848379f274adaf2ec073440",
+      "contract_revision": "13c678250a303302479c4585",
       "description": "Read one stored version of a creation configuration package.",
       "destructive": false,
       "domain": "config",
@@ -14971,8 +14970,7 @@
           },
           "version": {
             "description": "version",
-            "minLength": 1,
-            "type": "string"
+            "type": "integer"
           }
         },
         "required": [
@@ -14996,7 +14994,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "1",
@@ -17898,5 +17896,5 @@
       "version": "1.0"
     }
   ],
-  "contract_hash": "5085f20a49b5488c"
+  "contract_hash": "f9bf887b4fb691fd"
 }

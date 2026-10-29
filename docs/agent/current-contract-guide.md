@@ -1,6 +1,6 @@
 # 当前 Agent 契约接入
 
-本页描述已实现的 API 2.8.0 接入方式，URL 命名空间仍为 `/api/agent/v1`。旧 Agent 规范无需兼容。262 个业务入口已全部完成覆盖决策，pending 清零；partial 项的缺口类型见 `feature-coverage.md`。
+本页描述已实现的 API 2.9.0 接入方式，URL 命名空间仍为 `/api/agent/v1`。旧 Agent 规范无需兼容。262 个业务入口已全部完成覆盖决策，pending 清零；partial 项的缺口类型见 `feature-coverage.md`。
 
 ## 认证与账号
 
@@ -100,6 +100,7 @@ repair_actions / trace_id`（HTTP 状态码另计）。机器处理只应依赖 
 | `FORBIDDEN` | 403 | 令牌 scope 不足（含 accounts.* 写操作缺 `account:manage`） | 换用具备所需 scope 的令牌 |
 | `RATE_LIMITED` | 429 | 120 req/60s 超限 | 按 `retry_after_seconds` 退避 |
 | `VALIDATION_ERROR` | 400/422 | 请求体校验失败、invoke 参数不符合 Schema、资源 ID 含路径分隔符、配置导入内容非法 | 按 `details.errors` 修正请求 |
+| `VALIDATION_FAILED` | 422 | 标注结构化编辑的业务校验失败 | 按 `details.issues` 中的 path/code/message 修正；未成功的编辑不能当作已保存 |
 | `CAPABILITY_NOT_FOUND` | 404 | capability_id 不存在或已移除 | 重新发现目录 |
 | `UNSUPPORTED_TRANSPORT` | 422 | 对 binary/file_upload/event_stream 能力调用 invoke | 按详情 method/path 走专用 HTTP 传输 |
 | `CONTRACT_CHANGED` | 409 | `expected_contract_revision` 与当前不符，**未执行**（executed=false） | 重新 describe，理解差异后重准备参数 |

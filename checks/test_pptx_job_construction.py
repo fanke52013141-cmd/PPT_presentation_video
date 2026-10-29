@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 from sqlalchemy import create_engine
@@ -58,7 +59,11 @@ def service(tmp_path):
         db.close()
 
     svc = PptxExportService(
-        PptxServiceDependencies(session_factory=testing_session, runs_root=tmp_path / "runs")
+        PptxServiceDependencies(
+            session_factory=testing_session,
+            runs_root=tmp_path / "runs",
+            executor=Mock(),
+        )
     )
     # 就绪检查不属于本用例(本用例验证任务构造);显式替换为就绪
     svc._resolve_export_mode = lambda run_dir: ("image_only", {"ready": True, "issues": []})

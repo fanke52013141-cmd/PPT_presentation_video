@@ -307,7 +307,15 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--level", choices=("quick", "full"), default="quick")
     parser.add_argument("--with-remotion", action="store_true")
+    parser.add_argument(
+        "--require-complete", action="store_true",
+        help="Require complete Agent acceptance for a full-openness release (full level only)",
+    )
     args = parser.parse_args()
+    if args.require_complete and args.level != "full":
+        parser.error("--require-complete requires --level full")
+    if args.require_complete:
+        run([sys.executable, "scripts/check_agent_coverage.py", "--require-complete"])
     quick_checks() if args.level == "quick" else full_checks()
     if args.with_remotion:
         remotion_check()

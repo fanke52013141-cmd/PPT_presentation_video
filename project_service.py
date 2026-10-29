@@ -252,7 +252,7 @@ class ProjectService:
                         )
                     except Exception as exc:
                         raise HTTPException(status_code=400, detail=f"账号默认创作配置不可用: {exc}") from exc
-        elif config_version is not None or config_overrides:
+        if creation_config is None and (config_version is not None or config_overrides):
             raise HTTPException(
                 status_code=400,
                 detail="指定创作配置版本或覆盖项时必须选择 creation_config_package_id",

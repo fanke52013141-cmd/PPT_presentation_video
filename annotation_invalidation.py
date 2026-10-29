@@ -24,6 +24,41 @@ from annotation_store import AnnotationStore
 logger = logging.getLogger("PPTStudio.AnnotationInvalidation")
 
 
+def invalidate_for_layout_correction(project, slide_id, layout, changed_token_ids, *, store, canvas):
+    """Correct selected screen text without discarding unrelated items or audio."""
+    from annotation_target_resolver import resolve_phrase_target
+    from datetime import datetime, timezone
+
+    page = store.read_page(str(project.run_dir), slide_id, canvas=canvas)
+    if page is None:
+        return False
+    updated, changed, active_changed = [], False, False
+    for item in page.items:
+        if item.target.kind != "text" or not set(item.target.token_ids).intersection(changed_token_ids):
+            updated.append(item)
+            continue
+        resolved = resolve_phrase_target(layout=layout, token_ids=item.target.token_ids)
+        review_issues = [issue for issue in item.review_issues if issue.get("code") not in {"ocr_text_uncertain", "screen_narration_mismatch"}]
+        if any(marker in resolved["screen_quote"] for marker in ("▣", "�", "\ufffc")):
+            review_issues.append({"code": "ocr_text_uncertain", "message": "画面文字仍含未识别字符，请核对 OCR"})
+        if item.anchor and item.anchor.quote != resolved["screen_quote"]:
+            review_issues.append({"code": "screen_narration_mismatch", "message": "画面文字与讲稿用词不同，请核对对应关系"})
+        status = item.status if item.status.content == "disabled" else replace(item.status, content="draft", spatial="needs_review")
+        updated.append(replace(item, target=replace(item.target, quote=resolved["screen_quote"]),
+            status=status, confirmed_inputs=None,
+            protection=replace(item.protection, modified_fields=tuple(sorted(set(item.protection.modified_fields) | {"target"}))),
+            review_issues=tuple(review_issues)))
+        changed = True
+        active_changed = active_changed or item.status.content != "disabled"
+    if not changed:
+        return False
+    store.write_page(str(project.run_dir), slide_id, replace(page, revision=page.revision + 1, items=tuple(updated),
+        updated_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")))
+    if active_changed:
+        _timeline_file(str(project.run_dir), slide_id).unlink(missing_ok=True)
+    return active_changed
+
+
 def _page_path(run_dir: str, slide_id: str) -> Path:
     from project_storage import slide_file
 

@@ -8,6 +8,16 @@ from pathlib import Path
 
 import pytest
 
+
+def test_token_identifiers_do_not_override_ocr_reading_order():
+    layout = {"layout_revision": 1, "lines": [{"line_id": "l", "text": "甲乙", "tokens": [
+        {"token_id": "z", "char": "甲", "polygon": [[0, 0], [10, 0], [10, 20], [0, 20]]},
+        {"token_id": "a", "char": "乙", "polygon": [[12, 0], [22, 0], [22, 20], [12, 20]]},
+    ]}]}
+    result = resolve_phrase_target(layout=layout, token_ids=["a", "z"])
+    assert result["ordered_token_ids"] == ["z", "a"]
+    assert result["screen_quote"] == "甲乙"
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from annotation_target_resolver import (  # noqa: E402

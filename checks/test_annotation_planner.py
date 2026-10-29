@@ -471,6 +471,37 @@ def test_only_known_previous_builtin_is_migrated():
     assert store.effective_system_prompt("run") == ("用户自定义规则", "project")
 
 
+def test_uncertain_screen_text_is_distinct_from_narration_and_blocks_ink(tmp_path):
+    from copy import deepcopy
+    from annotation_build import item_strokes, compile_slide, AnnotationBuildError
+    from annotation_contracts import AnnotationPage
+
+    candidates = deepcopy(CANDIDATES)
+    candidates[0]["text"] = "▣"
+    store, _ = _store()
+    planner, _ = _planner(store, {"suggestions": [{
+        "beat_id": BEATS[0]["beat_id"], "range": [7, 12], "quote": "9月30日",
+        "target_candidate_ids": [c["token_id"] for c in candidates], "style": "ellipse",
+    }]})
+    items, _, _ = planner.plan_slide(str(tmp_path), "slide_001", BEATS, candidates, None,
+        emphasis="moderate", image_hash="a", narration_hash="b", now_iso="t0")
+    item = items[0]
+    assert item.target.quote == "▣月30日" and item.anchor.quote == "9月30日"
+    assert item.status.spatial == "needs_review"
+    assert {issue["code"] for issue in item.review_issues} == {"ocr_text_uncertain", "screen_narration_mismatch"}
+    layout = {"schema_version": 1, "layout_revision": 1, "lines": [{"line_id": "line", "text": "▣月30日",
+        "tokens": [{"token_id": c["token_id"], "char": c["text"], "polygon": c["polygon"]} for c in candidates]}]}
+    directory = tmp_path / "slide"
+    directory.mkdir()
+    (directory / "text_layout.json").write_text(json.dumps(layout), encoding="utf-8")
+    assert item_strokes(item, layout)  # Editor remains usable to correct the OCR.
+    with pytest.raises(AnnotationBuildError) as caught:
+        compile_slide(directory, AnnotationPage(slide_id="slide_001", revision=1, items=(item,)), canvas=(1920, 1080))
+    assert caught.value.issues[0]["reason"] == "ocr_text_uncertain"
+    layout["corrections"] = {candidates[0]["token_id"]: {"text": "9", "chars_changed": False}}
+    assert item_strokes(item, layout)
+
+
 def test_prompt_store_uses_creation_package_prompt_before_builtin_and_project_override_last():
     store, io = _store()
     package_path = "run1/planning/project_config.json"

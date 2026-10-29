@@ -1,8 +1,8 @@
 # Agent Capability Matrix
 
-- **Agent API Version**: 2.9.1
-- **Contract Hash**: `8354bc276af3cbc4`
-- **Total Capabilities**: 273
+- **Agent API Version**: 2.10.0
+- **Contract Hash**: `0eadd4e57e71441e`
+- **Total Capabilities**: 274
 
 This document is auto-generated from `agent_contract/capabilities.py`.
 Do not edit manually — run `python scripts/generate_agent_contracts.py`.
@@ -149,7 +149,7 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 | `style.templates.create_with_references` | 1.0 | stable | POST | `/api/agent/v1/style/templates/with-references` | `ppt_style_templates_create_with_references` | No | `style template-create-with-references` | `project_style_routes.create_account_style_template_with_references` | No | No |
 | `style.templates.reference.get` | 1.1 | stable | GET | `/api/agent/v1/style/templates/{template_id}/references/{index}/content` | `ppt_style_templates_reference_get` | No | `style template-reference` | `project_style_routes.get_step3_template_reference` | No | No |
 | `style.project_template.save` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/style/templates` | `ppt_style_project_template_save` | Yes | `style project-template-save` | `project_style_routes.save_step3_template` | No | No |
-| `style.project_template.apply` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/style/templates/{template_id}/apply` | `ppt_style_project_template_apply` | Yes | `style template-apply` | `project_style_routes.apply_step3_template` | No | No |
+| `style.project_template.apply` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/style/templates/{template_id}/apply` | `ppt_style_project_template_apply` | Yes | `style template-apply` | `project_style_routes.apply_step3_template` | No | No |
 | `style.templates.delete` | 1.0 | stable | DELETE | `/api/agent/v1/style/templates/{template_id}` | `ppt_style_templates_delete` | Yes | `style template-delete` | `project_style_routes.delete_step3_template` | No | Yes |
 | `global_style.get` | 1.0 | stable | GET | `/api/agent/v1/global-image-style` | `ppt_global_style_get` | Yes | `global-style show` | `global_image_style_routes.get_image_style` | No | No |
 | `global_style.update` | 1.0 | stable | PUT | `/api/agent/v1/global-image-style` | `ppt_global_style_update` | Yes | `global-style --set` | `global_image_style_routes.update_image_style` | No | No |
@@ -159,8 +159,9 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 | `global_style.templates.save` | 1.0 | stable | POST | `/api/agent/v1/global-image-style/templates` | `ppt_global_style_templates_save` | Yes | `global-style template-save` | `global_image_style_routes.save_image_style_template` | No | No |
 | `global_style.templates.delete` | 1.0 | stable | DELETE | `/api/agent/v1/global-image-style/templates/{template_id}` | `ppt_global_style_templates_delete` | Yes | `global-style template-delete` | `global_image_style_routes.delete_image_style_template` | No | Yes |
 | `global_style.reference.get` | 1.0 | stable | GET | `/api/agent/v1/global-image-style/reference/{kind}/content` | `ppt_global_style_reference_get` | No | `global-style reference` | `global_image_style_routes.get_image_style_reference` | No | No |
+| `global_style.templates.reference.get` | 1.0 | stable | GET | `/api/agent/v1/global-image-style/templates/{template_id}/references/{kind}/content` | `ppt_global_style_templates_reference_get` | No | `global-style template-reference` | `global_image_style_routes.get_image_style_template_reference` | No | No |
 | `global_style.reference.update` | 1.0 | stable | PUT | `/api/agent/v1/global-image-style/reference/{kind}` | `ppt_global_style_reference_update` | No | `global-style reference --set` | `global_image_style_routes.update_image_style_reference` | No | No |
-| `global_style.template_references.apply` | 1.0 | stable | POST | `/api/agent/v1/global-image-style/template-references/apply` | `ppt_global_style_template_references_apply` | Yes | `global-style template-references-apply` | `global_image_style_routes.apply_image_style_template_references` | No | No |
+| `global_style.template_references.apply` | 1.1 | stable | POST | `/api/agent/v1/global-image-style/template-references/apply` | `ppt_global_style_template_references_apply` | Yes | `global-style template-references-apply` | `global_image_style_routes.apply_image_style_template_references` | No | No |
 | `ip.list` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/ip-characters` | `ppt_ip_list` | Yes | `ip list` | `ip_character_routes.get_ip_characters` | No | No |
 | `ip.upsert` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/ip-characters` | `ppt_ip_upsert` | No | `ip upsert` | `ip_character_routes.upsert_ip_character` | No | No |
 | `ip.config.update` | 1.0 | stable | PUT | `/api/agent/v1/projects/{project_id}/ip-characters/config` | `ppt_ip_config_update` | Yes | `ip config --set` | `ip_character_routes.update_ip_character_config` | No | No |
@@ -181,15 +182,15 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 | `annotation.slide.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}` | `ppt_annotation_slide_get` | Yes | `annotation slide` | `annotation_service.AnnotationService.get_slide` | No | No |
 | `annotation.slide.patch` | 1.1 | stable | PATCH | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}` | `ppt_annotation_slide_patch` | Yes | `annotation slide --patch` | `annotation_service.AnnotationService.patch_slide` | No | No |
 | `annotation.text_layout.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/text-layout` | `ppt_annotation_text_layout_get` | Yes | `annotation text-layout` | `annotation_service.AnnotationService.get_text_layout` | No | No |
-| `annotation.text_layout.patch` | 1.1 | stable | PATCH | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/text-layout` | `ppt_annotation_text_layout_patch` | Yes | `annotation text-layout --patch` | `annotation_service.AnnotationService.patch_text_layout` | No | No |
+| `annotation.text_layout.patch` | 1.2 | stable | PATCH | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/text-layout` | `ppt_annotation_text_layout_patch` | Yes | `annotation text-layout --patch` | `annotation_service.AnnotationService.patch_text_layout` | No | No |
 | `annotation.prompts.get` | 1.1 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/prompts` | `ppt_annotation_prompts_get` | Yes | `annotation prompts` | `annotation_service.AnnotationService.get_prompts` | No | No |
 | `annotation.prompts.update` | 1.0 | stable | PUT | `/api/agent/v1/projects/{project_id}/annotations/prompts` | `ppt_annotation_prompts_update` | Yes | `annotation prompts --set` | `annotation_service.AnnotationService.put_prompts` | No | No |
-| `annotation.slide.prepare` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/prepare` | `ppt_annotation_slide_prepare` | Yes | `annotation prepare` | `annotation_service.AnnotationService.prepare_slide` | No | No |
-| `annotation.slide.confirm` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/confirm` | `ppt_annotation_slide_confirm` | Yes | `annotation confirm` | `annotation_service.AnnotationService.confirm_slide` | No | No |
-| `annotation.jobs.submit` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/jobs` | `ppt_annotation_jobs_submit` | Yes | `annotation submit` | `annotation_service.AnnotationService.submit_job` | Yes | No |
+| `annotation.slide.prepare` | 1.2 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/prepare` | `ppt_annotation_slide_prepare` | Yes | `annotation prepare` | `annotation_service.AnnotationService.prepare_slide` | No | No |
+| `annotation.slide.confirm` | 1.2 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/confirm` | `ppt_annotation_slide_confirm` | Yes | `annotation confirm` | `annotation_service.AnnotationService.confirm_slide` | No | No |
+| `annotation.jobs.submit` | 1.2 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/jobs` | `ppt_annotation_jobs_submit` | Yes | `annotation submit` | `annotation_service.AnnotationService.submit_job` | Yes | No |
 | `annotation.jobs.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/jobs/{job_id}` | `ppt_annotation_jobs_get` | Yes | `annotation job` | `annotation_service.AnnotationService.get_job` | No | No |
 | `annotation.jobs.cancel` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/jobs/{job_id}/cancel` | `ppt_annotation_jobs_cancel` | Yes | `annotation cancel` | `annotation_service.AnnotationService.cancel_job` | No | No |
-| `annotation.preview.export` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/export-preview` | `ppt_annotation_preview_export` | Yes | `annotation export-preview` | `annotation_service.AnnotationService.export_preview` | Yes | No |
+| `annotation.preview.export` | 1.2 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/export-preview` | `ppt_annotation_preview_export` | Yes | `annotation export-preview` | `annotation_service.AnnotationService.export_preview` | Yes | No |
 | `annotation.scene_asset.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/scene-assets/{asset}` | `ppt_annotation_scene_asset_get` | No | `annotation scene-asset` | `annotation_service.AnnotationService.preview_scene_asset` | No | No |
 | `annotation.editor_ink.get` | 1.1 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/editor-inks/{annotation_id}/{stroke_index}` | `ppt_annotation_editor_ink_get` | No | `annotation editor-ink` | `annotation_service.AnnotationService.annotation_editor_ink` | No | No |
 | `annotation.ink.get` | 1.1 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/inks/{build_id}/{annotation_id}/{stroke_index}/{frame_index}` | `ppt_annotation_ink_get` | No | `annotation ink` | `annotation_service.AnnotationService.annotation_asset` | No | No |

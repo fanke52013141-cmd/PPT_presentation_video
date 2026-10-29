@@ -102,8 +102,10 @@ def _token_entries(
             )
     known: Dict[str, Dict[str, Any]] = {}
     line_rank: Dict[str, int] = {}
+    token_rank: Dict[str, int] = {}
     for index, token in enumerate(_expand_candidates(layout)):
         known[str(token["token_id"])] = token
+        token_rank[str(token["token_id"])] = index
         line_rank.setdefault(str(token.get("line_id") or ""), len(line_rank))
     seen: set[str] = set()
     entries: List[Dict[str, Any]] = []
@@ -123,7 +125,7 @@ def _token_entries(
         if max(xs) - min(xs) < 1 or max(ys) - min(ys) < 1:
             raise TargetResolutionError("degenerate_box", f"候选 {token_id} 的框退化")
         entries.append({**token, "_order": len(entries)})
-    entries.sort(key=lambda t: (line_rank.get(str(t.get("line_id") or ""), 0), t["token_id"]))
+    entries.sort(key=lambda t: (line_rank.get(str(t.get("line_id") or ""), 0), token_rank[t["token_id"]]))
     return entries
 
 

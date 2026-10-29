@@ -1,6 +1,6 @@
 # Video QA Checklist
 
-## Six-Step UI
+## Eight-Step UI
 
 - Notifications appear in the unused lower-left navigation area.
 - Storyboard edits autosave without overwriting newer changes.
@@ -13,7 +13,7 @@
 
 ## Visuals
 
-- Source images are 1920×1080.
+- Source images match the selected canvas: 1920×1080 or 1080×1920.
 - Masked pages start from the fixed background, not the full source image.
 - Each reveal removes only boundary-connected white inside its painted Mask.
 - White enclosed by non-white content remains visible.
@@ -21,6 +21,9 @@
 - No-Mask pages display the complete image from the first frame.
 - No clipped text, missing card edges, floating fragments, or stale layers.
 - Subtitles do not obscure important content.
+- Every slide is inspected before, during and after its annotation events; test-only region marks must be explicitly removed from rehearsal copies before a demo is approved.
+- Screen quotes match selected OCR text, while narration quotes match the exact spoken range. Replacement/unknown glyphs block confirmation until corrected.
+- Annotation strokes stay on selected words, exclude adjacent words and remain visible on white, yellow and dark backgrounds.
 
 ## Timing and Audio
 
@@ -40,4 +43,4 @@
 - Python and JavaScript syntax checks pass.
 - Remotion TypeScript check passes.
 - All checks under `checks/test_*.py` and `checks/test_*.js` pass.
-- Browser console has no new errors during the six visible steps.
+- Browser console has no new errors during the eight visible steps.

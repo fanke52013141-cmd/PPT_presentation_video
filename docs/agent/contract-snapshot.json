@@ -1,5 +1,5 @@
 {
-  "agent_api_version": "2.9.1",
+  "agent_api_version": "2.10.0",
   "capabilities": [
     {
       "behavior_version": "2",
@@ -10692,7 +10692,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "project_id": "path",
         "template_id": "path"
@@ -10702,7 +10702,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "547a4d5a669cd8d0164063b0",
+      "contract_revision": "6a44c939c0a0a469621a2854",
       "description": "Apply one image style template to the project.",
       "destructive": false,
       "domain": "style",
@@ -10746,7 +10746,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "1",
@@ -11175,6 +11175,63 @@
     {
       "behavior_version": "1",
       "bindings": {
+        "kind": "path",
+        "template_id": "path"
+      },
+      "cli_command": "global-style template-reference",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "f3bc45c471933bec9d88c101",
+      "description": "Download a global style template reference by its kind, from the global template library.",
+      "destructive": false,
+      "domain": "global_style",
+      "id": "global_style.templates.reference.get",
+      "idempotency": {
+        "key_required": false,
+        "supported": false
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "description": "kind",
+            "minLength": 1,
+            "type": "string"
+          },
+          "template_id": {
+            "description": "template_id",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "template_id",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "invocable": false,
+      "long_running": false,
+      "mcp_enabled": false,
+      "mcp_tool": "ppt_global_style_templates_reference_get",
+      "method": "GET",
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "path": "/api/agent/v1/global-image-style/templates/{template_id}/references/{kind}/content",
+      "required_scopes": [
+        "project:read"
+      ],
+      "response_kind": "binary",
+      "status": "stable",
+      "version": "1.0"
+    },
+    {
+      "behavior_version": "1",
+      "bindings": {
         "kind": "path"
       },
       "cli_command": "global-style reference --set",
@@ -11223,7 +11280,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "payload": "body"
       },
@@ -11232,7 +11289,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "b839cb2988416ead4aad5901",
+      "contract_revision": "dfa1ec7fcfe7f4deae793f9c",
       "description": "Apply template reference images into the active global style.",
       "destructive": false,
       "domain": "global_style",
@@ -11268,7 +11325,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "1",
@@ -12394,7 +12451,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "2",
+      "behavior_version": "3",
       "bindings": {
         "payload": "body",
         "project_id": "path",
@@ -12405,7 +12462,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "9d68e34c5a1f9ae3c88512c9",
+      "contract_revision": "d39a94585524387fa8c17c05",
       "description": "Patch one slide's text layout; index units follow annotations_core conventions.",
       "destructive": false,
       "domain": "annotation",
@@ -12455,7 +12512,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.1"
+      "version": "1.2"
     },
     {
       "behavior_version": "2",
@@ -12578,7 +12635,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "2",
+      "behavior_version": "3",
       "bindings": {
         "payload": "body",
         "project_id": "path",
@@ -12589,7 +12646,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "591fd3be3c8ac3a5bfe1fac2",
+      "contract_revision": "85779c1cd1d5b627c9f82ec7",
       "description": "Prepare one slide for annotation review (scene context binding).",
       "destructive": false,
       "domain": "annotation",
@@ -12639,10 +12696,10 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.1"
+      "version": "1.2"
     },
     {
-      "behavior_version": "2",
+      "behavior_version": "3",
       "bindings": {
         "payload": "body",
         "project_id": "path",
@@ -12653,7 +12710,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "69a937e7e01ee7e549666173",
+      "contract_revision": "89ad7f13cb87a6326ee7d427",
       "description": "Confirm one slide's annotations; the confirmation binds the reviewed revision and commits once.",
       "destructive": false,
       "domain": "annotation",
@@ -12703,10 +12760,10 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.1"
+      "version": "1.2"
     },
     {
-      "behavior_version": "2",
+      "behavior_version": "3",
       "bindings": {
         "payload": "body",
         "project_id": "path"
@@ -12716,7 +12773,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "b5b01378c0f71918b75423e8",
+      "contract_revision": "7ad7dc0d3105b05c53fbc5be",
       "description": "Submit an OCR/annotation planning job; poll via annotation.jobs.get or operation.get when durable.",
       "destructive": false,
       "domain": "annotation",
@@ -12760,7 +12817,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.1"
+      "version": "1.2"
     },
     {
       "behavior_version": "1",
@@ -12877,7 +12934,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "2",
+      "behavior_version": "3",
       "bindings": {
         "payload": "body",
         "project_id": "path",
@@ -12888,7 +12945,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "1463d9346230c65aa85ab9d9",
+      "contract_revision": "d2b58c5aaee8e15ced5b2b25",
       "description": "Export an annotation preview video for one slide; returns a token addressable by the download transport.",
       "destructive": false,
       "domain": "annotation",
@@ -12938,7 +12995,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.1"
+      "version": "1.2"
     },
     {
       "behavior_version": "1",
@@ -17896,5 +17953,5 @@
       "version": "1.0"
     }
   ],
-  "contract_hash": "8354bc276af3cbc4"
+  "contract_hash": "0eadd4e57e71441e"
 }

@@ -121,6 +121,10 @@ class AnnotationPlanner:
             ],
         )
         suggestions = [replace(item, inputs=replace(item.inputs, image_hash=image_hash, narration_hash=narration_hash)) for item in suggestions]
+        from annotation_visual_quality import readable_ai_style
+        from project_storage import slide_file
+        image_path = slide_file(run_dir, slide_id, "visual_draft.png")
+        suggestions = [replace(item, style=readable_ai_style(image_path, item.target.polygons, item.style)) for item in suggestions]
         snapshot.update(image_hash=image_hash, narration_hash=narration_hash)
         return suggestions, snapshot, issues
 
@@ -297,6 +301,16 @@ class AnnotationPlanner:
             if style_type not in VALID_STYLES:
                 continue
             granularity = "line" if any(candidate_map[t].get("granularity") == "line" for t in token_ids) else "char"
+            screen_quote = "".join(str(candidate_map[t].get("text") or "") for t in token_ids)
+            uncertain_ocr = any(marker in screen_quote for marker in ("▣", "�", "\ufffc"))
+            mismatched_text = screen_quote != quote
+            review_issues = []
+            if ambiguous:
+                review_issues.append({"code": "ambiguous", "message": reason})
+            if uncertain_ocr:
+                review_issues.append({"code": "ocr_text_uncertain", "message": "画面文字含未识别字符，请先核对 OCR 文字"})
+            if mismatched_text:
+                review_issues.append({"code": "screen_narration_mismatch", "message": "画面文字与讲稿用词不同，请核对对应关系"})
             quote_key = (str(beat_id), quote)
             target_key = (str(beat_id), tuple(token_ids))
             if quote_key in seen_quotes or target_key in seen_targets:
@@ -311,7 +325,7 @@ class AnnotationPlanner:
                         layout_revision=None,
                         token_ids=tuple(token_ids),
                         polygons=tuple(tuple((p[0], p[1]) for p in poly) for poly in polygons if len(poly) == 4),
-                        quote=quote,
+                        quote=screen_quote,
                         granularity=granularity,
                         mask_group_ids=(),
                     ),
@@ -331,12 +345,12 @@ class AnnotationPlanner:
                     ),
                     status=AnnotationStatus(
                         content="draft",
-                        spatial="needs_review" if ambiguous or granularity == "line" else "valid",
+                        spatial="needs_review" if review_issues or granularity == "line" else "valid",
                         temporal="awaiting_audio",
                     ),
                     protection=AnnotationProtection(source="ai", modified_fields=(), locked=False),
                     inputs=AnnotationInputs(image_hash=None, narration_hash=None, audio_hash=None),
-                    review_issues=({"code": "ambiguous", "message": reason},) if ambiguous else (),
+                    review_issues=tuple(review_issues),
                     recommendation={
                         "category": category,
                         "priority": priority,

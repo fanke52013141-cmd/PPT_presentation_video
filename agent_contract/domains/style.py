@@ -261,7 +261,7 @@ CAPABILITIES = [
         service_ref="project_style_routes.save_step3_template",
     ),
     _cap(
-        id="style.project_template.apply",
+        id="style.project_template.apply", version="1.1", behavior_version="2",
         description="Apply one image style template to the project.",
         agent_api_method="POST", agent_api_path="/api/agent/v1/projects/{project_id}/style/templates/{template_id}/apply",
         cli_command="style template-apply",
@@ -339,6 +339,13 @@ CAPABILITIES = [
         mcp_enabled=False,
     ),
     _cap(
+        id="global_style.templates.reference.get",
+        description="Download a global style template reference by its kind, from the global template library.",
+        agent_api_method="GET", agent_api_path="/api/agent/v1/global-image-style/templates/{template_id}/references/{kind}/content",
+        cli_command="global-style template-reference", service_ref="global_image_style_routes.get_image_style_template_reference",
+        transport="binary", mcp_enabled=False,
+    ),
+    _cap(
         id="global_style.reference.update",
         description="Update one global style reference (multipart/form-data upload).",
         agent_api_method="PUT", agent_api_path="/api/agent/v1/global-image-style/reference/{kind}",
@@ -348,7 +355,7 @@ CAPABILITIES = [
         mcp_enabled=False,
     ),
     _cap(
-        id="global_style.template_references.apply",
+        id="global_style.template_references.apply", version="1.1", behavior_version="2",
         description="Apply template reference images into the active global style.",
         request_model=FreeFormRequest,
         agent_api_method="POST", agent_api_path="/api/agent/v1/global-image-style/template-references/apply",

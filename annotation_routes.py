@@ -85,7 +85,9 @@ def patch_annotation_text_layout(
     db: Session = Depends(get_db),
     service: AnnotationService = Depends(get_annotation_service),
 ) -> dict[str, Any]:
-    return service.patch_text_layout(db, project_id, slide_id, payload)
+    result = service.patch_text_layout(db, project_id, slide_id, payload)
+    db.commit()
+    return result
 
 
 # ------------------------------------------------------------ W3: Prompt

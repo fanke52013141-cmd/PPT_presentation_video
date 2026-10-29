@@ -37,7 +37,7 @@ IMPACT_RULES: dict[str, ImpactRule] = {
     "narration_synthesis_started": ImpactRule("audio generation", "project", (), "reuse"),
     "audio_artifacts_changed": ImpactRule("generated audio", "slide", ("audio confirmation", "annotation timing", "output"), "review"),
     "narration_content_changed": ImpactRule("narration content", "project", ("audio confirmation", "annotation timing", "output"), "review"),
-    "annotation_changed": ImpactRule("annotation content", "slide", ("output",), "recompose"),
+    "annotation_changed": ImpactRule("annotation content, selected OCR text or annotation style", "slide", ("output",), "recompose"),
     "digital_human_changed": ImpactRule("digital human configuration or media", "project", ("output",), "recompose"),
     "digital_human_audio_changed": ImpactRule("presenter lip-sync audio", "slide", ("digital human media", "output"), "review"),
 }

@@ -70,3 +70,13 @@
 新增修复为豆包标注请求补齐非思考模式，并在 Prompt 中保留候选行信息和连续选择规则；API 2.9.1。
 最终 canonical full：**2036 passed、9 skipped、6 warnings，149.04 秒**，全部检查通过。
 覆盖仍为 214 complete / 47 partial；此样例证明第二页的真实自动标注链路，不自动代表所有版式、所有供应商或所有剩余能力均已验收。
+
+## 标注精度与模板/恢复优化
+
+详情见 `optimization-ledger-2026-10-29.md`，该表逐项区分已实现和未验收内容。
+修复画面短语被讲稿引用覆盖、token 字典序排序、未知字形确认门禁、选中文字纠正的最小范围失效、黄色/深色底板可读性及荧光笔圆头越界。
+模板业务补齐全局参考图独立 Agent 能力和参数绑定，归档模板不能应用于新项目；跨项目快照保留已验证。
+图片恢复与 PPTX 重试/真实 FFmpeg 调速补齐，当前 **225 complete、36 partial、1 exempt**；API **2.10.0**。
+新版样片 `outputs/rehearsal-20261029/precision-annotations.mp4` 移除了第一页测试圈，第二页下划线与目标文字对齐；3s、13s、16s、19s 抽帧验证出现前/显示中/消失后，未进行全段主观听音。
+SHA-256：`fe11dd1a86426ed7325fdbc60e69b2acede62869db050e56a785417ba97e9d99`，2,048,382 bytes。
+最终 canonical full：**2049 passed、9 skipped、6 warnings，166.25 秒**；后补输出恢复独立专项 **2 passed**。覆盖/契约生成/版本纪律和 ruff 再检通过。

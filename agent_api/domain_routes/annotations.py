@@ -84,7 +84,12 @@ def agent_patch_annotation_text_layout(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     service = get_annotation_service()
-    return service.patch_text_layout(db, project_id, slide_id, payload.payload)
+    try:
+        result = service.patch_text_layout(db, project_id, slide_id, payload.payload)
+    except HTTPException as exc:
+        raise_typed_http_error(exc)
+    db.commit()
+    return result
 
 
 @router.get("/projects/{project_id}/annotations/prompts")

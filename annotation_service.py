@@ -1033,6 +1033,7 @@ class AnnotationService:
                     detail={"code": "layout_revision_conflict", "current_layout_revision": layout.get("layout_revision")},
                 )
             changed = False
+            changed_token_ids = set()
             for token_id, text in corrections.items():
                 if not isinstance(text, str):
                     raise HTTPException(status_code=422, detail=f"token {token_id} 的纠正文本必须是字符串")
@@ -1043,8 +1044,18 @@ class AnnotationService:
                 except KeyError:
                     raise HTTPException(status_code=422, detail=f"未知候选 token_id: {token_id}") from None
                 changed = changed or updated
+                if updated:
+                    changed_token_ids.add(str(token_id))
             if changed:
                 self._layout_builder.save(run_dir, slide_id, layout)
+                from annotation_invalidation import invalidate_for_layout_correction
+                affected = invalidate_for_layout_correction(project, slide_id, layout, changed_token_ids,
+                    store=self._store, canvas=self._canvas_for(project))
+            else:
+                affected = False
+            page_revision = self._store.read_page(run_dir, slide_id, canvas=self._canvas_for(project)).revision if affected else None
+        if affected:
+            self._annotation_content_changed(project, (slide_id,))
         from annotation_text_layout import candidate_tokens
 
         return {
@@ -1052,6 +1063,8 @@ class AnnotationService:
             "layout_revision": layout.get("layout_revision"),
             "corrections": layout.get("corrections") or {},
             "candidates": candidate_tokens(layout),
+            "page_changed": affected,
+            "page_revision": page_revision,
         }
 
     # ------------------------------------------------------------ W3: 任务

@@ -69,7 +69,7 @@ CAPABILITIES = [
         service_ref="annotation_service.AnnotationService.get_text_layout",
     ),
     AgentCapability(
-        id="annotation.text_layout.patch", version="1.1", behavior_version="2",
+        id="annotation.text_layout.patch", version="1.2", behavior_version="3",
         status=CapabilityStatus.stable,
         description="Patch one slide's text layout; index units follow annotations_core conventions.",
         request_model=FreeFormRequest, response_model=BaseModel,
@@ -96,7 +96,7 @@ CAPABILITIES = [
         service_ref="annotation_service.AnnotationService.put_prompts",
     ),
     AgentCapability(
-        id="annotation.slide.prepare", version="1.1", behavior_version="2",
+        id="annotation.slide.prepare", version="1.2", behavior_version="3",
         status=CapabilityStatus.stable,
         description="Prepare one slide for annotation review (scene context binding).",
         request_model=FreeFormRequest, response_model=BaseModel,
@@ -105,7 +105,7 @@ CAPABILITIES = [
         service_ref="annotation_service.AnnotationService.prepare_slide",
     ),
     AgentCapability(
-        id="annotation.slide.confirm", version="1.1", behavior_version="2",
+        id="annotation.slide.confirm", version="1.2", behavior_version="3",
         status=CapabilityStatus.stable,
         description="Confirm one slide's annotations; the confirmation binds the reviewed revision and commits once.",
         request_model=FreeFormRequest, response_model=BaseModel,
@@ -114,7 +114,7 @@ CAPABILITIES = [
         service_ref="annotation_service.AnnotationService.confirm_slide",
     ),
     AgentCapability(
-        id="annotation.jobs.submit", version="1.1", behavior_version="2",
+        id="annotation.jobs.submit", version="1.2", behavior_version="3",
         status=CapabilityStatus.stable,
         description="Submit an OCR/annotation planning job; poll via annotation.jobs.get or operation.get when durable.",
         request_model=FreeFormRequest, response_model=BaseModel,
@@ -142,7 +142,7 @@ CAPABILITIES = [
         service_ref="annotation_service.AnnotationService.cancel_job",
     ),
     AgentCapability(
-        id="annotation.preview.export", version="1.1", behavior_version="2",
+        id="annotation.preview.export", version="1.2", behavior_version="3",
         status=CapabilityStatus.stable,
         description="Export an annotation preview video for one slide; returns a token addressable by the download transport.",
         request_model=FreeFormRequest, response_model=BaseModel,

@@ -572,6 +572,8 @@ def apply_named_template(
     )
 
     built_in = is_builtin_template(template_id)
+    if not built_in and not any(str(item.get("id")) == template_id for item in read_templates(context)):
+        raise context.http_exception(status_code=409, detail="模板已归档或不存在，不能应用到新项目")
     source = None if built_in else template_dir_or_404(context, template_id)
     style = (
         builtin_style(context, template_id)

@@ -228,16 +228,22 @@ def _underline_centerline(bbox: Tuple[float, float, float, float], pad: float, s
     return points
 
 
-def _highlighter_centerline(bbox: Tuple[float, float, float, float], pad: float, seed: int) -> List[Tuple[float, float]]:
+def _highlighter_centerline(bbox: Tuple[float, float, float, float], pad: float, seed: int,
+                            pad_left: Optional[float] = None, pad_right: Optional[float] = None) -> List[Tuple[float, float]]:
     """荧光笔:扁刷从左到右扫过,端部轻微不齐(中心线供扫过进度)。"""
     left, top, right, bottom = bbox
     rand = _seeded(seed)
     y = (top + bottom) / 2 + (rand() - 0.5) * (bottom - top) * 0.06
     steps = max(12, int((right - left) / (SAMPLE_STEP_PX * 2)))
     points = []
+    radius = max(4.0, bottom - top + pad * 0.4) / 2
+    extension_left = pad * .4 if pad_left is None else min(pad * .4, max(0, pad_left))
+    extension_right = pad * .4 if pad_right is None else min(pad * .4, max(0, pad_right))
+    start_x = min((left + right) / 2, left - extension_left + radius)
+    end_x = max((left + right) / 2, right + extension_right - radius)
     for i in range(steps + 1):
         t = i / steps
-        x = left - pad * 0.4 + (right - left + pad * 0.8) * t
+        x = start_x + (end_x - start_x) * t
         points.append((round(x, 2), round(y, 2)))
     return points
 
@@ -363,7 +369,7 @@ def build_strokes_v2(geometry: GeometryInputV2) -> Tuple[Dict[str, Any], ...]:
                 }
             )
         elif fragment.style_type == "highlighter":
-            points = _highlighter_centerline(bbox, pad, seed)
+            points = _highlighter_centerline(bbox, pad, seed, fragment.pad_left, fragment.pad_right)
             strokes.append(
                 {
                     "kind": "path",

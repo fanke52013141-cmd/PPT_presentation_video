@@ -66,9 +66,33 @@ def input_snapshot(slide_dir, items, canvas, fps=30):
             ("image_hash", "visual_draft.png"), ("narration_hash", "narration_beats.json"),
             ("audio_hash", "voice.mp3"), ("audio_timeline_hash", "audio_timeline.json"),
             ("animation_hash", "animation_timeline.json"), ("scene_hash", "scene.json"),
-            ("layout_hash", "text_layout.json"), ("alignment_hash", "word_alignment.json"))},
+            ("alignment_hash", "word_alignment.json"))},
+        "layout_hash": selected_layout_hash(slide_dir, items),
         "content_hash": content_hash(items), "canvas": list(canvas), "fps": int(fps), "ink_version": INK_VERSION,
+        "geometry_revision": "annotation_precision_v2.1",
     }
+
+
+def selected_layout_hash(slide_dir, items):
+    """Keep geometry/reading order dependencies, ignoring unrelated OCR text edits."""
+    selected = {token_id for item in items if item.status.content != "disabled" and item.target.kind == "text"
+                for token_id in item.target.token_ids}
+    if not selected:
+        return None
+    path = Path(slide_dir) / "text_layout.json"
+    try:
+        layout = read_json(path, optional=True)
+        if layout is None:
+            return None
+        from annotation_text_layout import candidate_tokens
+        tokens = candidate_tokens(layout)
+        payload = {"layout_revision": layout.get("layout_revision"), "geometry": [
+            {key: token.get(key) for key in ("token_id", "line_id", "polygon", "granularity")}
+            for token in tokens], "selected_text": {
+                token["token_id"]: token.get("text") for token in tokens if token["token_id"] in selected}}
+        return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    except (OSError, ValueError, TypeError, KeyError):
+        return file_hash(path)
 
 
 def item_strokes(item, layout):
@@ -147,6 +171,14 @@ def compile_slide(slide_dir, page, *, canvas, fps=30, alignment=None, cancel_eve
     """Build complete assets without publishing confirmation or mutating a page."""
     slide_dir = Path(slide_dir)
     active = [item for item in page.items if item.status.content != "disabled"]
+    for item in active:
+        if item.target.kind == "text":
+            layout = read_json(slide_dir / "text_layout.json", optional=True)
+            if layout is not None:
+                resolved = resolve_phrase_target(layout=layout, token_ids=item.target.token_ids,
+                    expected_layout_revision=item.target.layout_revision)
+                if any(marker in resolved["screen_quote"] for marker in ("▣", "�", "\ufffc")):
+                    raise AnnotationBuildError([{"annotation_id": item.annotation_id, "reason": "ocr_text_uncertain"}])
     snapshot = input_snapshot(slide_dir, page.items, canvas, fps)
     if not active:
         return {"resolver_version": RESOLVER_VERSION, "events": [], "needs_review": [],

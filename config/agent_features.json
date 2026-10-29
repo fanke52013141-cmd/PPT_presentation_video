@@ -1531,8 +1531,8 @@
     "capabilities": [
       "global_style.template_references.apply"
     ],
-    "coverage": "partial",
-    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
+    "coverage": "complete",
+    "reason": "Real isolated template/reference roundtrip, preserved project snapshots and archive refusal: checks/agent/test_template_reuse_acceptance.py."
   },
   "global_image_style_routes.get_image_style_template_reference": {
     "source": "global_image_style_routes.py",
@@ -1545,10 +1545,10 @@
     ],
     "owner": "global_image_style_routes.py",
     "capabilities": [
-      "style.templates.reference.get"
+      "global_style.templates.reference.get"
     ],
-    "coverage": "partial",
-    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
+    "coverage": "complete",
+    "reason": "Real isolated template/reference roundtrip, preserved project snapshots and archive refusal: checks/agent/test_template_reuse_acceptance.py."
   },
   "global_image_style_routes.get_image_style_reference": {
     "source": "global_image_style_routes.py",
@@ -1563,8 +1563,8 @@
     "capabilities": [
       "global_style.reference.get"
     ],
-    "coverage": "partial",
-    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
+    "coverage": "complete",
+    "reason": "Real isolated template/reference roundtrip, preserved project snapshots and archive refusal: checks/agent/test_template_reuse_acceptance.py."
   },
   "global_image_style_routes.update_image_style_reference": {
     "source": "global_image_style_routes.py",
@@ -1579,8 +1579,8 @@
     "capabilities": [
       "global_style.reference.update"
     ],
-    "coverage": "partial",
-    "reason": "HTTP multipart transport declared; Agent client upload support pending."
+    "coverage": "complete",
+    "reason": "Real isolated template/reference roundtrip, preserved project snapshots and archive refusal: checks/agent/test_template_reuse_acceptance.py."
   },
   "image_workflow_routes.get_step3_prompt_settings": {
     "source": "image_workflow_routes.py",
@@ -1707,8 +1707,8 @@
     "capabilities": [
       "image.recovery.overlay"
     ],
-    "coverage": "partial",
-    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
+    "coverage": "complete",
+    "reason": "Real isolated image archive/upload/overlay/reuse scenario: checks/agent/test_image_recovery_acceptance.py; stale versions rejected, restored annotation requires review, audio retained."
   },
   "image_workflow_routes.reuse_slide_image_geometry": {
     "source": "image_workflow_routes.py",
@@ -1723,8 +1723,8 @@
     "capabilities": [
       "image.geometry.reuse"
     ],
-    "coverage": "partial",
-    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
+    "coverage": "complete",
+    "reason": "Real isolated image archive/upload/overlay/reuse scenario: checks/agent/test_image_recovery_acceptance.py; stale versions rejected, restored annotation requires review, audio retained."
   },
   "image_workflow_routes.get_slide_image_file": {
     "source": "image_workflow_routes.py",
@@ -2459,8 +2459,8 @@
     "capabilities": [
       "pptx.jobs.retry"
     ],
-    "coverage": "partial",
-    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
+    "coverage": "complete",
+    "reason": "Real isolated persistent PPTX retry and actual FFmpeg speed/registry/delete lifecycle: checks/agent/test_output_recovery_acceptance.py."
   },
   "pptx_routes.list_exports": {
     "source": "pptx_routes.py",
@@ -3148,8 +3148,8 @@
     "capabilities": [
       "style.templates.reference.get"
     ],
-    "coverage": "partial",
-    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
+    "coverage": "complete",
+    "reason": "Real isolated template/reference roundtrip, preserved project snapshots and archive refusal: checks/agent/test_template_reuse_acceptance.py."
   },
   "project_style_routes.save_step3_template": {
     "source": "project_style_routes.py",
@@ -3164,8 +3164,8 @@
     "capabilities": [
       "style.project_template.save"
     ],
-    "coverage": "partial",
-    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
+    "coverage": "complete",
+    "reason": "Real isolated template/reference roundtrip, preserved project snapshots and archive refusal: checks/agent/test_template_reuse_acceptance.py."
   },
   "project_style_routes.apply_step3_template": {
     "source": "project_style_routes.py",
@@ -3180,8 +3180,8 @@
     "capabilities": [
       "style.project_template.apply"
     ],
-    "coverage": "partial",
-    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
+    "coverage": "complete",
+    "reason": "Real isolated template/reference roundtrip, preserved project snapshots and archive refusal: checks/agent/test_template_reuse_acceptance.py."
   },
   "project_style_routes.delete_step3_template": {
     "source": "project_style_routes.py",
@@ -4077,8 +4077,8 @@
     "capabilities": [
       "video.speed"
     ],
-    "coverage": "partial",
-    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
+    "coverage": "complete",
+    "reason": "Real isolated persistent PPTX retry and actual FFmpeg speed/registry/delete lifecycle: checks/agent/test_output_recovery_acceptance.py."
   },
   "video_routes.delete_project_video": {
     "source": "video_routes.py",

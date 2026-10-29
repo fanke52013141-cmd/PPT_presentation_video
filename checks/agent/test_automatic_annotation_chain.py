@@ -95,3 +95,25 @@ def test_ocr_plan_manual_review_confirm_and_replan_protection(api, monkeypatch):
     assert len(timeout_calls) == 2
     assert failure["error"] and failure["progress"] != 100
     assert (page_path.read_bytes(), timeline_path.read_bytes()) == before_failure
+    layout = invoke(api, "annotation.text_layout.get", args).json()
+    token_id = protected["items"][0]["target"]["token_ids"][0]
+    audio_path = root / "slides/slide_001/audio_timeline.json"
+    audio_before = audio_path.read_bytes()
+    props = root / "remotion_props.json"
+    props.write_text("{}", encoding="utf-8")
+    corrected = invoke(api, "annotation.text_layout.patch", {**args, "payload": {
+        "expected_layout_revision": layout["layout_revision"], "corrections": {token_id: "招"},
+    }})
+    assert corrected.status_code == 200, corrected.text
+    refreshed = invoke(api, "annotation.slide.get", args).json()
+    assert refreshed["items"][0]["target"]["quote"] == "招名"
+    assert refreshed["items"][0]["anchor"]["quote"] == "报名"
+    assert refreshed["items"][0]["status"]["content"] == "draft"
+    assert not timeline_path.exists() and not props.exists()
+    assert audio_path.read_bytes() == audio_before
+    baseline = (page_path.read_bytes(), page_path.stat().st_mtime_ns)
+    repeated = invoke(api, "annotation.text_layout.patch", {**args, "payload": {
+        "expected_layout_revision": corrected.json()["layout_revision"], "corrections": {token_id: "招"},
+    }})
+    assert repeated.status_code == 200, repeated.text
+    assert (page_path.read_bytes(), page_path.stat().st_mtime_ns) == baseline

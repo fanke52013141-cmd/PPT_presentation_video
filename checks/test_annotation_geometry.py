@@ -104,6 +104,15 @@ def test_highlighter_constant_width_progress():
     assert stroke["speed_profile"][0] == 0.0 and stroke["speed_profile"][-1] == 1.0
 
 
+def test_highlighter_caps_stay_within_selected_word_and_neighbor_padding():
+    from dataclasses import replace
+    fragment = replace(_fragment(style="highlighter", padding=12), pad_left=1, pad_right=2)
+    stroke = _build([fragment])[0]
+    radius = stroke["brush_height"] / 2
+    assert min(point[0] for point in stroke["points"]) - radius >= 799 - .01
+    assert max(point[0] for point in stroke["points"]) + radius <= 962 + .01
+
+
 def test_width_profile_tapers_ends():
     strokes = _build([_fragment(seed=5)])
     profile = strokes[0]["width_profile"]

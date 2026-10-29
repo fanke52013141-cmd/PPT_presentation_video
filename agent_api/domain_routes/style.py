@@ -284,7 +284,16 @@ def agent_update_global_reference(kind: str, file: UploadFile = File(...)) -> di
 
 @router.post("/global-image-style/template-references/apply")
 def agent_apply_global_template_references(payload: FreeFormRequest) -> dict[str, Any]:
-    return global_image_style_routes.apply_image_style_template_references(payload.payload)
+    from agent_api.errors import ValidationFailedError
+    template_id = payload.payload.get("template_id")
+    if not isinstance(template_id, str) or not template_id.strip():
+        raise ValidationFailedError("template_id 必须是非空字符串")
+    return global_image_style_routes.apply_image_style_template_references(template_id)
+
+
+@router.get("/global-image-style/templates/{template_id}/references/{kind}/content")
+def agent_get_global_template_reference(template_id: str, kind: str) -> FileResponse:
+    return global_image_style_routes.get_image_style_template_reference(template_id, kind)
 
 
 # ---- IP 角色 ----

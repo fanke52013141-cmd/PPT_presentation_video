@@ -22,6 +22,7 @@ from openai import OpenAI
 from ai_provider_service import get_openai_client
 from config_store import get_setting
 from llm_concurrency import governed_llm_request, is_llm_format_incompatibility
+from llm_provider_options import non_thinking_vendor_options
 from runtime_support import (
     clean_json_markdown,
     json_decode_context,
@@ -44,7 +45,9 @@ def parse_json_or_repair_with_llm(
     schema_hint: str = "",
     max_tokens: int = 16000,
     base_url: str = "",
+    disable_thinking: bool = False,
 ) -> Dict[str, Any]:
+    vendor_options = non_thinking_vendor_options(model, base_url) if disable_thinking else {}
     try:
         value = json.loads(cleaned_content)
     except json.JSONDecodeError as first_error:
@@ -77,6 +80,7 @@ def parse_json_or_repair_with_llm(
             try:
                 with governed_llm_request(base_url):
                     repair_response = client.chat.completions.create(
+                        **vendor_options,
                         model=model,
                         temperature=0,
                         max_tokens=max_tokens,
@@ -96,6 +100,7 @@ def parse_json_or_repair_with_llm(
                 )
                 with governed_llm_request(base_url):
                     repair_response = client.chat.completions.create(
+                        **vendor_options,
                         model=model,
                         temperature=0,
                         max_tokens=max_tokens,
@@ -145,10 +150,12 @@ def generate_json_with_configured_llm(
     model_binding: Any = None,
     request_timeout: float = 120.0,
     max_tokens_limit: int | None = None,
+    disable_thinking: bool = False,
 ) -> Dict[str, Any]:
     llm_api_key = getattr(model_binding, "api_key", None) or get_setting("llm_api_key")
     llm_base_url = getattr(model_binding, "endpoint", None) if model_binding is not None else get_setting("llm_base_url")
     llm_model = getattr(model_binding, "model", None) or get_setting("llm_model")
+    vendor_options = non_thinking_vendor_options(llm_model, llm_base_url) if disable_thinking else {}
     if not llm_api_key:
         raise HTTPException(status_code=400, detail="未配置大模型 API 密钥，请在系统设置中配置后再试。")
     if not llm_model:
@@ -169,6 +176,7 @@ def generate_json_with_configured_llm(
             try:
                 with governed_llm_request(llm_base_url):
                     response = client.chat.completions.create(
+                        **vendor_options,
                         model=llm_model,
                         temperature=temperature,
                         max_tokens=max_tokens,
@@ -188,6 +196,7 @@ def generate_json_with_configured_llm(
                 )
                 with governed_llm_request(llm_base_url):
                     response = client.chat.completions.create(
+                        **vendor_options,
                         model=llm_model,
                         temperature=temperature,
                         max_tokens=max_tokens,
@@ -212,6 +221,7 @@ def generate_json_with_configured_llm(
             schema_hint=schema_hint,
             max_tokens=max_tokens,
             base_url=str(llm_base_url or ""),
+            disable_thinking=disable_thinking,
         )
     finally:
         client.close()

@@ -73,6 +73,30 @@ BUILTIN_ANNOTATION_PLAN_SYSTEM_PROMPT = """你是课件视频的重点识别与�
 - 不输出 suggestions 之外的顶层字段;不输出注释。"""
 
 
+_PREVIOUS_BUILTIN_ANNOTATION_PLAN_SYSTEM_PROMPT = BUILTIN_ANNOTATION_PLAN_SYSTEM_PROMPT
+BUILTIN_ANNOTATION_PLAN_SYSTEM_PROMPT = (
+    "PromptVersion: annotation_plan_v2.1\n" + _PREVIOUS_BUILTIN_ANNOTATION_PLAN_SYSTEM_PROMPT
+    .replace(
+        "每项含 token_id、text、granularity(char=单字,line=整行)。",
+        "每项含 token_id、line_id、text、granularity(char=单字,line=整行)。数组保持 OCR 阅读顺序，line_id 标识所属文字行。",
+    )
+    .replace(
+        "上下相邻的同词字符可以合并为多个 token_id。",
+        "只选择数组中连续的完整文字片段，不得跳过中间非空文字、拼接重复词的不同位置或混选无关行；跨行只允许阅读顺序上连续的同一短语。",
+    )
+    .replace(
+        "quote 与 range 切片逐字一致(含标点)。",
+        "quote 必须从 spoken_text 原样摘取；range 从语块开头计数，包含空格和标点，按 [start,end) 切片后须与 quote 完全一致。无法确定范围时放弃该建议，不猜测。",
+    )
+)
+
+
+def _current_builtin_if_known(prompt: str) -> str:
+    if prompt.strip() == _PREVIOUS_BUILTIN_ANNOTATION_PLAN_SYSTEM_PROMPT.strip():
+        return BUILTIN_ANNOTATION_PLAN_SYSTEM_PROMPT
+    return prompt
+
+
 @dataclass(frozen=True)
 class AnnotationPromptStore:
     """项目级 Prompt 覆盖的读写与组装。"""
@@ -141,7 +165,7 @@ class AnnotationPromptStore:
         overrides = self.load_overrides(run_dir)
         stored = overrides.get("plan_system_prompt")
         if isinstance(stored, str) and stored.strip():
-            return stored, "project"
+            return _current_builtin_if_known(stored), "project"
         if self.project_config_path_for is not None:
             snapshot = self.read_json_file(self.project_config_path_for(run_dir))
             payload = snapshot.get("payload") if isinstance(snapshot, dict) else None
@@ -149,7 +173,7 @@ class AnnotationPromptStore:
             module = prompts.get("annotation_planning") if isinstance(prompts, dict) else None
             package_prompt = module.get("system_content") if isinstance(module, dict) else None
             if isinstance(package_prompt, str) and package_prompt.strip():
-                return package_prompt.strip(), "creation_package"
+                return _current_builtin_if_known(package_prompt.strip()), "creation_package"
         return BUILTIN_ANNOTATION_PLAN_SYSTEM_PROMPT, "builtin"
 
 
@@ -167,7 +191,7 @@ def compose_plan_prompts(
         "schema_version": ANNOTATION_PLAN_PROMPT_VERSION,
         "beats": [{"beat_id": b.get("beat_id"), "spoken_text": b.get("spoken_text")} for b in beats],
         "candidates": [
-            {"token_id": c.get("token_id"), "text": c.get("text"), "granularity": c.get("granularity")}
+            {"token_id": c.get("token_id"), "line_id": c.get("line_id"), "text": c.get("text"), "granularity": c.get("granularity")}
             for c in candidates
         ],
         "protected_items": [

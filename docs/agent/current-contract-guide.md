@@ -1,6 +1,6 @@
 # 当前 Agent 契约接入
 
-本页描述已实现的 API 2.9.0 接入方式，URL 命名空间仍为 `/api/agent/v1`。旧 Agent 规范无需兼容。262 个业务入口已全部完成覆盖决策，pending 清零；partial 项的缺口类型见 `feature-coverage.md`。
+本页描述已实现的 API 2.9.1 接入方式，URL 命名空间仍为 `/api/agent/v1`。旧 Agent 规范无需兼容。262 个业务入口已全部完成覆盖决策，pending 清零；partial 项的缺口类型见 `feature-coverage.md`。
 
 ## 认证与账号
 

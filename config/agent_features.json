@@ -299,7 +299,7 @@
       "annotation.prompts.get"
     ],
     "coverage": "complete",
-    "reason": "Domain adapter shares the business service entry; isolated scenario acceptance passed."
+    "reason": "Prompt preview shares the production composer; annotation_plan_v2.1 retains line_id and contiguous reading order. Known previous builtins migrate without overwriting custom text; checks/test_annotation_planner.py covers this behavior."
   },
   "annotation_routes.put_annotation_prompts": {
     "source": "annotation_routes.py",
@@ -411,7 +411,7 @@
       "annotation.jobs.submit"
     ],
     "coverage": "complete",
-    "reason": "Real provider rehearsal 2026-10-24 (docs/agent/rehearsal-log-2026-10-24.md): detect_text job accepted and executed against slide_001 with the configured OCR settings."
+    "reason": "Real OCR/planning/alignment closure: docs/agent/automatic-annotation-closure-2026-10-29.md; checks/agent/test_automatic_annotation_chain.py covers controlled providers, real jobs, review/confirm, replan protection and timeout preservation. Provider options and minimal line_id context reviewed."
   },
   "annotation_routes.get_annotation_job": {
     "source": "annotation_routes.py",

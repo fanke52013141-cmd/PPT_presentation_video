@@ -457,7 +457,18 @@ def test_compose_payload_minimal_fields():
     assert payload["schema_version"] == "annotation_plan_v2"
     assert payload["max_suggestions"] == 2
     assert set(payload["beats"][0].keys()) == {"beat_id", "spoken_text"}
-    assert set(payload["candidates"][0].keys()) == {"token_id", "text", "granularity"}
+    assert set(payload["candidates"][0].keys()) == {"token_id", "line_id", "text", "granularity"}
+
+
+def test_only_known_previous_builtin_is_migrated():
+    from annotation_prompt_templates import _PREVIOUS_BUILTIN_ANNOTATION_PLAN_SYSTEM_PROMPT
+    store, io = _store()
+    store.save_override("run", _PREVIOUS_BUILTIN_ANNOTATION_PLAN_SYSTEM_PROMPT, expected_revision=None, now_iso="t0")
+    before = json.dumps(io.files, sort_keys=True)
+    assert store.effective_system_prompt("run") == (BUILTIN_ANNOTATION_PLAN_SYSTEM_PROMPT, "project")
+    assert json.dumps(io.files, sort_keys=True) == before
+    store.save_override("run", "用户自定义规则", expected_revision=1, now_iso="t1")
+    assert store.effective_system_prompt("run") == ("用户自定义规则", "project")
 
 
 def test_prompt_store_uses_creation_package_prompt_before_builtin_and_project_override_last():

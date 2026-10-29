@@ -1,5 +1,5 @@
 {
-  "agent_api_version": "2.9.0",
+  "agent_api_version": "2.9.1",
   "capabilities": [
     {
       "behavior_version": "2",
@@ -12458,7 +12458,7 @@
       "version": "1.1"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "project_id": "path",
         "slide_id": "query"
@@ -12468,7 +12468,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "999cfa63cab90809dd661a42",
+      "contract_revision": "f3d74887aa3b41dc3fccaf44",
       "description": "Read annotation prompts with an optional slide filter.",
       "destructive": false,
       "domain": "annotation",
@@ -12518,7 +12518,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "1",
@@ -12706,7 +12706,7 @@
       "version": "1.1"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "payload": "body",
         "project_id": "path"
@@ -12716,7 +12716,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "a35a6eae3609a1244958b86e",
+      "contract_revision": "b5b01378c0f71918b75423e8",
       "description": "Submit an OCR/annotation planning job; poll via annotation.jobs.get or operation.get when durable.",
       "destructive": false,
       "domain": "annotation",
@@ -12760,7 +12760,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "1",
@@ -17896,5 +17896,5 @@
       "version": "1.0"
     }
   ],
-  "contract_hash": "f9bf887b4fb691fd"
+  "contract_hash": "8354bc276af3cbc4"
 }

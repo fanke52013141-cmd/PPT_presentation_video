@@ -78,7 +78,7 @@ CAPABILITIES = [
         service_ref="annotation_service.AnnotationService.patch_text_layout",
     ),
     AgentCapability(
-        id="annotation.prompts.get", version="1.0", behavior_version="1",
+        id="annotation.prompts.get", version="1.1", behavior_version="2",
         status=CapabilityStatus.stable,
         description="Read annotation prompts with an optional slide filter.",
         request_model=AnnotationPromptsGetRequest, response_model=BaseModel,
@@ -114,7 +114,7 @@ CAPABILITIES = [
         service_ref="annotation_service.AnnotationService.confirm_slide",
     ),
     AgentCapability(
-        id="annotation.jobs.submit", version="1.0", behavior_version="1",
+        id="annotation.jobs.submit", version="1.1", behavior_version="2",
         status=CapabilityStatus.stable,
         description="Submit an OCR/annotation planning job; poll via annotation.jobs.get or operation.get when durable.",
         request_model=FreeFormRequest, response_model=BaseModel,

@@ -88,7 +88,7 @@ def configure_annotation_runtime(app, write_json_atomic, read_json_file, reveal_
                     )
         finally:
             db.close()
-        return _annotation_llm_call(**kwargs, model_binding=binding, request_timeout=180.0, max_tokens_limit=4096, max_tokens_default=4096)
+        return _annotation_llm_call(**kwargs, model_binding=binding, request_timeout=180.0, max_tokens_limit=4096, max_tokens_default=4096, disable_thinking=True)
 
     _annotation_planner = AnnotationPlanner(
         AnnotationPlannerDependencies(

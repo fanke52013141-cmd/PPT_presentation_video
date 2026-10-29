@@ -1,7 +1,7 @@
 # Agent Capability Matrix
 
-- **Agent API Version**: 2.9.0
-- **Contract Hash**: `f9bf887b4fb691fd`
+- **Agent API Version**: 2.9.1
+- **Contract Hash**: `8354bc276af3cbc4`
 - **Total Capabilities**: 273
 
 This document is auto-generated from `agent_contract/capabilities.py`.
@@ -182,11 +182,11 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 | `annotation.slide.patch` | 1.1 | stable | PATCH | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}` | `ppt_annotation_slide_patch` | Yes | `annotation slide --patch` | `annotation_service.AnnotationService.patch_slide` | No | No |
 | `annotation.text_layout.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/text-layout` | `ppt_annotation_text_layout_get` | Yes | `annotation text-layout` | `annotation_service.AnnotationService.get_text_layout` | No | No |
 | `annotation.text_layout.patch` | 1.1 | stable | PATCH | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/text-layout` | `ppt_annotation_text_layout_patch` | Yes | `annotation text-layout --patch` | `annotation_service.AnnotationService.patch_text_layout` | No | No |
-| `annotation.prompts.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/prompts` | `ppt_annotation_prompts_get` | Yes | `annotation prompts` | `annotation_service.AnnotationService.get_prompts` | No | No |
+| `annotation.prompts.get` | 1.1 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/prompts` | `ppt_annotation_prompts_get` | Yes | `annotation prompts` | `annotation_service.AnnotationService.get_prompts` | No | No |
 | `annotation.prompts.update` | 1.0 | stable | PUT | `/api/agent/v1/projects/{project_id}/annotations/prompts` | `ppt_annotation_prompts_update` | Yes | `annotation prompts --set` | `annotation_service.AnnotationService.put_prompts` | No | No |
 | `annotation.slide.prepare` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/prepare` | `ppt_annotation_slide_prepare` | Yes | `annotation prepare` | `annotation_service.AnnotationService.prepare_slide` | No | No |
 | `annotation.slide.confirm` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/confirm` | `ppt_annotation_slide_confirm` | Yes | `annotation confirm` | `annotation_service.AnnotationService.confirm_slide` | No | No |
-| `annotation.jobs.submit` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/jobs` | `ppt_annotation_jobs_submit` | Yes | `annotation submit` | `annotation_service.AnnotationService.submit_job` | Yes | No |
+| `annotation.jobs.submit` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/jobs` | `ppt_annotation_jobs_submit` | Yes | `annotation submit` | `annotation_service.AnnotationService.submit_job` | Yes | No |
 | `annotation.jobs.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/jobs/{job_id}` | `ppt_annotation_jobs_get` | Yes | `annotation job` | `annotation_service.AnnotationService.get_job` | No | No |
 | `annotation.jobs.cancel` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/jobs/{job_id}/cancel` | `ppt_annotation_jobs_cancel` | Yes | `annotation cancel` | `annotation_service.AnnotationService.cancel_job` | No | No |
 | `annotation.preview.export` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/export-preview` | `ppt_annotation_preview_export` | Yes | `annotation export-preview` | `annotation_service.AnnotationService.export_preview` | Yes | No |

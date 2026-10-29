@@ -411,11 +411,9 @@ def configured_step2_llm() -> tuple[str, Optional[str], str, float, int]:
 
 def step2_llm_vendor_options(model: str, base_url: Optional[str]) -> Dict[str, Any]:
     """Use fast non-thinking mode for Volcengine/Doubao storyboard requests."""
-    model_name = str(model or "").strip().lower()
-    endpoint = str(base_url or "").strip().lower()
-    if model_name.startswith("doubao-") or "volces.com" in endpoint:
-        return {"extra_body": {"thinking": {"type": "disabled"}}}
-    return {}
+    from llm_provider_options import non_thinking_vendor_options
+
+    return non_thinking_vendor_options(model, base_url)
 
 
 def run_step2_json_llm(

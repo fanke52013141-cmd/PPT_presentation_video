@@ -29,7 +29,7 @@ IMPACT_RULES: dict[str, ImpactRule] = {
     "storyboard_narration_changed": ImpactRule("slide narration plan", "slide", ("audio confirmation", "annotation timing", "output"), "review"),
     "storyboard_structure_changed": ImpactRule("slide order or removal", "project", ("output",), "recompose"),
     "storyboard_empty": ImpactRule("visual contract", "project", ("images", "Mask", "audio", "output"), "review"),
-    "slide_image_changed": ImpactRule("slide image", "slide", ("Mask", "annotation geometry", "output"), "review"),
+    "slide_image_changed": ImpactRule("slide image, including reviewed regional candidate repair", "slide", ("Mask", "annotation geometry", "output"), "review"),
     "subtitle_style_changed": ImpactRule("subtitle style", "project", ("output",), "recompose"),
     "mask_content_changed": ImpactRule("Mask manifest", "project", ("output",), "recompose"),
     "subtitle_visibility_changed": ImpactRule("subtitle visibility", "project", ("output",), "recompose"),

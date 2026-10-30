@@ -72,3 +72,6 @@ def isolated_generation_controls():
     yield
     with generation_control._lock:
         generation_control._active.clear()
+
+# Standalone presenter service must also keep its persistent jobs/avatars isolated.
+os.environ.setdefault("PPT_DIGITAL_HUMAN_DATA_DIR", os.path.join(os.environ["PPT_STUDIO_DATA_DIR"], "digital_human"))

@@ -13,7 +13,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 import httpx
 
@@ -62,6 +62,14 @@ def _find_node_by_class(
 
 class ComfyUIError(RuntimeError):
     """ComfyUI 调用异常。"""
+
+
+class ComfyUIExecutionError(ComfyUIError):
+    """The engine reported a terminal execution/output failure."""
+
+
+class ComfyUIWaitTimeout(ComfyUIError):
+    """The exact external prompt may still finish; never submit a replacement."""
 
 
 def get_comfyui_url() -> str:
@@ -386,9 +394,9 @@ def _poll_history(
     参数:
         cancel_event: 可选的取消事件，设置后立即停止轮询并抛出异常
     """
-    deadline = time.time() + timeout
+    deadline = time.monotonic() + timeout
     current_interval = poll_interval
-    while time.time() < deadline:
+    while time.monotonic() < deadline:
         if cancel_event is not None and cancel_event.is_set():
             raise ComfyUIError("任务已被取消（服务关闭）")
         resp = client.get(f"/history/{prompt_id}")
@@ -397,16 +405,14 @@ def _poll_history(
             entry = data.get(prompt_id)
             if entry:
                 status = entry.get("status", {})
+                if status.get("status_str") == "error":
+                    raise ComfyUIExecutionError(f"ComfyUI 工作流执行失败: {status.get('messages', '')}")
                 if status.get("completed"):
                     return entry
-                # 检查是否出错
-                if status.get("status_str") == "error":
-                    err_msg = status.get("messages", "")
-                    raise ComfyUIError(f"ComfyUI 工作流执行失败: {err_msg}")
         time.sleep(current_interval)
         # 指数退避：间隔逐渐增大，但不超过上限
         current_interval = min(current_interval * 1.5, max_poll_interval)
-    raise ComfyUIError(f"等待 ComfyUI 结果超时（{timeout:.0f}s）")
+    raise ComfyUIWaitTimeout(f"等待 ComfyUI 结果超时（{timeout:.0f}s）；保留原任务 {prompt_id}")
 
 
 def _find_output_video(entry: Dict[str, Any], wf: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, str]]:
@@ -451,13 +457,43 @@ def _download_video(
         "subfolder": file_info.get("subfolder", ""),
         "type": file_info.get("type", "output"),
     }
-    with client.stream("GET", "/view", params=params) as resp:
-        if resp.status_code != 200:
-            raise ComfyUIError(f"下载视频失败: HTTP {resp.status_code}")
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        with open(dest, "wb") as f:
-            for chunk in resp.iter_bytes(chunk_size=65536):
-                f.write(chunk)
+    temporary = dest.with_name(dest.name + "." + uuid.uuid4().hex + ".part.mp4")
+    try:
+        with client.stream("GET", "/view", params=params) as resp:
+            if resp.status_code != 200:
+                raise ComfyUIError(f"下载视频失败: HTTP {resp.status_code}")
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            with temporary.open("wb") as stream:
+                for chunk in resp.iter_bytes(chunk_size=65536):
+                    stream.write(chunk)
+        from scripts.media_tools import probe_video_metadata
+        from repository_paths import REPO_ROOT
+        if probe_video_metadata(temporary, repo_root=REPO_ROOT) is None:
+            raise ComfyUIExecutionError("引擎输出不是可解码的视频，原视频已保留")
+        os.replace(temporary, dest)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def recover_comfyui_result(prompt_id, output_path, workflow_template=None):
+    """Read/download one known prompt; never upload or submit during recovery."""
+    with _make_client(timeout=30) as client:
+        response = client.get(f"/history/{prompt_id}")
+        if response.status_code != 200:
+            raise ComfyUIError(f"查询原任务失败: HTTP {response.status_code}")
+        entry = response.json().get(prompt_id)
+        if not entry:
+            return False
+        status = entry.get("status") or {}
+        if status.get("status_str") == "error":
+            raise ComfyUIExecutionError("原引擎任务执行失败")
+        if not status.get("completed"):
+            return False
+        info = _find_output_video(entry, wf=workflow_template)
+        if not info:
+            raise ComfyUIExecutionError("原引擎任务已完成但没有视频输出")
+        _download_video(client, info, Path(output_path))
+        return True
 
 
 def run_comfyui_inference(
@@ -467,6 +503,7 @@ def run_comfyui_inference(
     workflow_template: Dict[str, Any],
     timeout: float = 7200.0,
     cancel_event: Optional["threading.Event"] = None,
+    on_submitted: Optional[Callable[[str], None]] = None,
 ) -> Dict[str, Any]:
     """完整执行 ComfyUI 推理流程。
 
@@ -493,6 +530,8 @@ def run_comfyui_inference(
     with _make_client(timeout=30.0) as submit_client:
         prompt_id = _submit_prompt(submit_client, workflow)
         logger.info("[comfyui] submitted prompt_id=%s", prompt_id)
+        if on_submitted is not None:
+            on_submitted(prompt_id)
 
     with _make_client(timeout=30.0) as poll_client:
         entry = _poll_history(poll_client, prompt_id, timeout=timeout, cancel_event=cancel_event)

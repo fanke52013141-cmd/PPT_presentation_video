@@ -16,7 +16,7 @@
       mode: "comfyui",          // 'comfyui' | 'upload'
       shape: "circle",
       avatar_id: "",
-      circle: { cx: 0.92, cy: 0.92, r: 0.10 },
+      circle: { cx: 0.85, cy: 0.76, r: 0.12 },
       video: { ox: 0.65, oy: 0.75, zoom: 0.65 },
       slides: {},
     },
@@ -49,7 +49,7 @@
       var res = await API.get(base() + "/config", { silent: true });
       if (res && res.config) {
         dhState.config = res.config;
-        if (!dhState.config.circle) dhState.config.circle = { cx: 0.92, cy: 0.92, r: 0.10 };
+        if (!dhState.config.circle) dhState.config.circle = { cx: 0.85, cy: 0.76, r: 0.12 };
         if (!dhState.config.video) dhState.config.video = { ox: 0.65, oy: 0.75, zoom: 0.65 };
         if (dhState.config.shape !== "rect") dhState.config.shape = "circle";
       }
@@ -279,7 +279,7 @@
   }
 
   function applyCircleToPreview() {
-    var circle = dhState.config.circle || { cx: 0.92, cy: 0.92, r: 0.10 };
+    var circle = dhState.config.circle || { cx: 0.85, cy: 0.76, r: 0.12 };
     var videoCfg = dhState.config.video || { ox: 0.65, oy: 0.75, zoom: 0.65 };
     var layer = document.getElementById("dh-circle-layer");
     var videoEl = document.getElementById("dh-preview-video");
@@ -439,7 +439,7 @@
 
     function circleInfo() {
       var c = canvasSize();
-      var circle = dhState.config.circle || { cx: 0.92, cy: 0.92, r: 0.10 };
+      var circle = dhState.config.circle || { cx: 0.85, cy: 0.76, r: 0.12 };
       var D = Math.max(24, circle.r * 2 * Math.min(c.w, c.h));
       return { c: c, circle: circle, D: D, cx: circle.cx * c.w, cy: circle.cy * c.h };
     }
@@ -643,7 +643,7 @@
     var ready = dhState.audioReadyCount || 0;
     var total = dhState.totalSlides || 0;
     var slides = dhState.config.slides || {};
-    var labels = { queued: "排队中", processing: "生成中", done: "完成", failed: "失败" };
+    var labels = { queued: "排队中", processing: "生成中", waiting_external: "等待原任务结果", done: "完成", failed: "失败" };
 
     // 优先显示整段数字人生成状态
     var fullItem = slides["full"];

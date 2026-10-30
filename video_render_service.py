@@ -7,6 +7,8 @@ components.
 
 from __future__ import annotations
 
+from digital_human_contracts import DEFAULT_CIRCLE
+
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace as dataclass_replace
 from datetime import datetime
@@ -875,7 +877,7 @@ class VideoRenderService:
         circle = (
             cfg.get("circle")
             if isinstance(cfg.get("circle"), dict)
-            else {"cx": 0.8, "cy": 0.2, "r": 0.25}
+            else dict(DEFAULT_CIRCLE)
         )
         video = (
             cfg.get("video")

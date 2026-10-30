@@ -108,6 +108,7 @@ def test_identical_uploaded_presenter_is_noop_and_replacement_keeps_old_output(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    monkeypatch.setattr(routes, "probe_video_metadata", lambda *_args, **_kwargs: {"duration_sec": 1})
     project = FakeProject(tmp_path)
     db = FakeSession()
     monkeypatch.setattr(routes, "_project_or_404", lambda _db, _id: project)

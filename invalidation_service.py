@@ -376,6 +376,26 @@ def digital_human_changed(project: Any) -> InvalidationReport:
     )
 
 
+def digital_human_full_audio_changed(project: Any) -> InvalidationReport:
+    """Keep old presenter media but reject a full clip bound to different audio."""
+    path = planning_path(project.run_dir, "digital_human.json")
+    config = read_json_file(path)
+    full = (config.get("slides") or {}).get("full") if isinstance(config, dict) else None
+    if not isinstance(full, dict) or not full.get("job_id"):
+        return InvalidationReport(reason="stage_already_completed", affected_steps=())
+    full["status"] = "stale_audio"
+    write_json_atomic(path, config)
+    if not config.get("enabled"):
+        return InvalidationReport(reason="stage_already_completed", affected_steps=())
+    removed = _existing_removals(project.run_dir, clear_audio=False, clear_props=True)
+    statuses = project.get_step_status()
+    mark_selected_stale(statuses, (8,))
+    project.set_step_status(statuses)
+    _record_content_impact(project, "digital_human_audio_changed", ("full",))
+    return InvalidationReport(reason="digital_human_audio_changed", affected_steps=(8,),
+        slide_ids=("full",), removed_paths=tuple(removed))
+
+
 def subtitle_visibility_changed(
     project: Any,
     slide_ids: Iterable[str],

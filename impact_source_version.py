@@ -94,6 +94,8 @@ def impact_source_version(run_dir: str | Path, reason: str, scope_id: str) -> st
         else:
             audio = sha256_file(slide / "voice.mp3")
         value = {"audio": audio, "job_id": entry.get("job_id") if isinstance(entry, dict) else None}
+        if scope_id == "full":
+            value["full_audio_sha256"] = sha256_file(root / "planning/digital_human/audio_full.mp3")
     elif reason in {"subtitle_style_changed", "subtitle_visibility_changed", "video_background_changed"}:
         value = visual_settings
     else:

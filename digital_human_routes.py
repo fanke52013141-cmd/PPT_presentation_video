@@ -12,8 +12,6 @@ import json
 import logging
 import os
 import re
-import shutil
-import shutil
 import subprocess
 import uuid
 from pathlib import Path
@@ -24,6 +22,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from database import get_db, Project
+from scripts.media_tools import probe_video_metadata
 from artifact_fingerprint import sha256_bytes, sha256_file
 from pipeline_lifecycle import project_artifact_lock, read_json_file, write_json_atomic
 from project_impact_service import resolve_impacts, snapshot_impacts
@@ -41,7 +40,7 @@ router = APIRouter()
 
 DIGI_DIRNAME = "digital_human"
 CONFIG_FILENAME = "digital_human.json"
-DEFAULT_CIRCLE = {"cx": 0.8, "cy": 0.2, "r": 0.25}  # 默认右下角
+from digital_human_contracts import DEFAULT_CIRCLE
 
 # ---- 上传安全限制 ----
 MAX_UPLOAD_VIDEO_BYTES = int(
@@ -275,6 +274,10 @@ def _slide_digi_path(project: Project, slide_id: str) -> Path:
 
 
 def _digi_audio_hash(project: Project, slide_id: str) -> str:
+    if slide_id == "full":
+        from digital_human_audio_service import full_audio_current
+        if not full_audio_current(project.run_dir):
+            return ""
     audio_path = (
         _full_audio_path(project) if slide_id == "full"
         else _slide_audio_path(project, slide_id)
@@ -421,21 +424,34 @@ async def upload_dh_video(
     _validate_upload(content, file, MAX_UPLOAD_VIDEO_BYTES, ALLOWED_VIDEO_MIMES)
     _validate_video_extension(file.filename)
     dest = _upload_digi_path(project)
-    source_changed = sha256_file(dest) != sha256_bytes(content)
-    previous = _load_config(project)
-    cfg = _load_config(project)
-    cfg["mode"] = "upload"
-    cfg["enabled"] = True
-    config_changed = cfg != previous
+    def publish_config():
+        previous = _load_config(project)
+        cfg = {**previous, "mode": "upload", "enabled": True}
+        config_changed = cfg != previous
+        if config_changed:
+            _save_config(project, cfg)
+        return digital_human_render_config_changed(previous, cfg)
+
+    with project_artifact_lock(project.run_dir):
+        source_changed = sha256_file(dest) != sha256_bytes(content)
+        if not source_changed and publish_config():
+            _mark_digital_human_output_changed(project, db)
     if source_changed:
         _digi_dir(project).mkdir(parents=True, exist_ok=True)
-        tmp = dest.with_suffix(".mp4.tmp")
-        tmp.write_bytes(content)
-        tmp.replace(dest)
-    if config_changed:
-        _save_config(project, cfg)
-    if source_changed or digital_human_render_config_changed(previous, cfg):
-        _mark_digital_human_output_changed(project, db)
+        tmp = dest.with_name(f".{dest.stem}-{uuid.uuid4().hex}.tmp.mp4")
+        try:
+            tmp.write_bytes(content)
+            if probe_video_metadata(tmp, repo_root=REPO_ROOT) is None:
+                raise HTTPException(status_code=400, detail="视频无法解码或缺少有效画面，请上传有效视频")
+            with project_artifact_lock(project.run_dir):
+                changed = sha256_file(dest) != sha256_bytes(content)
+                if changed:
+                    tmp.replace(dest)
+                config_changed = publish_config()
+                if changed or config_changed:
+                    _mark_digital_human_output_changed(project, db)
+        finally:
+            tmp.unlink(missing_ok=True)
     return {
         "success": True,
         "mode": "upload",
@@ -672,8 +688,9 @@ def generate_dh_full(
         raise HTTPException(status_code=400, detail="请先上传并选择数字人形象")
 
     audio_path = _full_audio_path(project)
-    if not audio_path.exists():
-        raise HTTPException(status_code=400, detail="请先导出整段语音")
+    from digital_human_audio_service import full_audio_current
+    if not full_audio_current(project.run_dir):
+        raise HTTPException(status_code=409, detail="整段语音缺失或已过期，请重新导出整段语音")
 
     sync_mode = str((payload or {}).get("sync_mode") or cfg.get("sync_mode") or "accurate")
     client = get_digital_human_client()
@@ -914,91 +931,30 @@ def export_full_audio(
 ) -> Dict[str, Any]:
     """按页面顺序拼接全部 voice.mp3（页间加 0.6s 静音）为一段完整课程语音。"""
     project = _project_or_404(db, project_id)
-    slide_ids = read_contract_slide_ids(project.run_dir)
-    audio_files = [_slide_audio_path(project, sid) for sid in slide_ids]
-    audio_files = [p for p in audio_files if p.exists() and p.stat().st_size > 0]
-    if not audio_files:
-        raise HTTPException(status_code=400, detail="未找到任何已生成的旁白音频，请先完成音频合成")
+    from digital_human_audio_service import export_full_audio as export_audio, FullAudioConflict
+    from scripts.media_tools import probe_media_duration_sec
 
-    ffmpeg = _find_ffmpeg()
-    gap = max(0.0, min(3.0, float((payload or {}).get("gap_sec") or 0.6)))
-    out = _full_audio_path(project)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    tmp_dir = out.parent / ".tmp_audio_export"
-    tmp_dir.mkdir(parents=True, exist_ok=True)
-
-    n = len(audio_files)
-    logger.info("[audio-export] 开始拼接 %d 页音频，间隔 %.1fs", n, gap)
-
+    previous_audio_hash = sha256_file(_full_audio_path(project))
+    ids = read_contract_slide_ids(project.run_dir)
+    gap = (payload or {}).get("gap_sec", 0.6)
     try:
-        # 方案：逐页转码为统一格式 wav，生成静音片段，再用 concat demuxer 拼接
-        normalized_files: list[Path] = []
-        for i, af in enumerate(audio_files):
-            norm_path = tmp_dir / f"norm_{i:04d}.wav"
-            cmd_norm = [ffmpeg, "-y", "-i", str(af),
-                        "-ar", "44100", "-ac", "2", "-sample_fmt", "s16",
-                        str(norm_path)]
-            proc_n = subprocess.run(cmd_norm, capture_output=True, text=True, timeout=120)
-            if proc_n.returncode != 0:
-                raise RuntimeError(f"转码第 {i+1} 页音频失败: {(proc_n.stderr or '')[-400:]}")
-            normalized_files.append(norm_path)
+        result = export_audio(project.run_dir, ids, [_slide_audio_path(project, sid) for sid in ids],
+            _full_audio_path(project), gap=0.6 if gap is None else gap, ffmpeg=_find_ffmpeg(),
+            run_command=subprocess.run, probe=lambda path: probe_media_duration_sec(path, repo_root=REPO_ROOT))
+    except FullAudioConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (RuntimeError, subprocess.TimeoutExpired) as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if previous_audio_hash != sha256_file(_full_audio_path(project)):
+        from invalidation_service import digital_human_full_audio_changed
+        report = digital_human_full_audio_changed(project)
+        if report.affected_steps:
+            db.commit()
+    result["url"] = f"/api/projects/{project_id}/digital-human/export-audio/file"
+    return result
 
-        # 生成静音片段
-        silence_path = tmp_dir / "silence.wav"
-        if gap > 0:
-            cmd_sil = [ffmpeg, "-y", "-f", "lavfi", "-i",
-                       f"anullsrc=r=44100:cl=stereo", "-t", str(gap),
-                       "-sample_fmt", "s16", str(silence_path)]
-            proc_s = subprocess.run(cmd_sil, capture_output=True, text=True, timeout=30)
-            if proc_s.returncode != 0:
-                raise RuntimeError(f"生成静音片段失败: {(proc_s.stderr or '')[-400:]}")
-
-        # 写 concat 列表文件
-        concat_list = tmp_dir / "concat_list.txt"
-        lines = []
-        for i, nf in enumerate(normalized_files):
-            # Windows 路径需要转义反斜杠和单引号
-            safe = str(nf).replace("\\", "/").replace("'", "\\'")
-            lines.append(f"file '{safe}'")
-            if i < n - 1 and gap > 0:
-                safe_sil = str(silence_path).replace("\\", "/").replace("'", "\\'")
-                lines.append(f"file '{safe_sil}'")
-        concat_list.write_text("\n".join(lines), encoding="utf-8")
-
-        # 用 concat demuxer 拼接，输出 mp3
-        cmd_concat = [ffmpeg, "-y", "-f", "concat", "-safe", "0",
-                      "-i", str(concat_list),
-                      "-c:a", "libmp3lame", "-b:a", "192k", str(out)]
-        logger.info("[audio-export] concat demuxer: %s", " ".join(cmd_concat))
-        proc_c = subprocess.run(cmd_concat, capture_output=True, text=True, timeout=900)
-        if proc_c.returncode != 0:
-            raise RuntimeError((proc_c.stderr or "")[-800:])
-
-    except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=f"整段语音导出失败: {exc}")
-    finally:
-        # 清理临时文件
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-
-    duration = None
-    try:
-        probe = subprocess.run(
-            [_find_ffprobe(), "-v", "error", "-show_entries", "format=duration",
-             "-of", "csv=s=x:p=0", str(out)],
-            capture_output=True, text=True, timeout=30,
-        )
-        duration = float(probe.stdout.strip()) if probe.returncode == 0 else None
-    except Exception:  # noqa: BLE001
-        duration = None
-
-    return {
-        "success": True,
-        "slides": len(audio_files),
-        "gap_sec": gap,
-        "duration_sec": duration,
-        "bytes": out.stat().st_size,
-        "url": f"/api/projects/{project_id}/digital-human/export-audio/file",
-    }
 
 
 @router.get("/api/projects/{project_id}/digital-human/export-audio/file")

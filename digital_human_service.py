@@ -39,6 +39,7 @@ from urllib.parse import urlsplit
 # 复用项目已有的 killable 子进程执行器（超时后终止整个进程树，含孙进程）
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from runtime_support import run_subprocess_killable
+from digital_human_contracts import DEFAULT_CIRCLE
 
 logger = logging.getLogger("PPTStudio.DigitalHuman")
 
@@ -148,12 +149,14 @@ def _ensure_ffmpeg_in_path() -> Optional[str]:
 
 JOB_STATUS_QUEUED = "queued"
 JOB_STATUS_PROCESSING = "processing"
+JOB_STATUS_WAITING_EXTERNAL = "waiting_external"
 JOB_STATUS_DONE = "done"
 JOB_STATUS_FAILED = "failed"
 JOB_STATUS_UNAVAILABLE = "unavailable"  # 模型未部署
 
 _jobs_lock = threading.Lock()
 _jobs: Dict[str, Dict[str, Any]] = {}
+_recovering_jobs: set[str] = set()
 
 # 全局取消令牌：服务关闭时通知所有活跃任务停止轮询和推理
 _cancel_event = threading.Event()
@@ -203,17 +206,23 @@ def _load_persisted_jobs() -> None:
                 # 后台线程在执行中被杀死，磁盘上的 job 可能停留在
                 # queued/processing 状态，但已无线程继续执行。
                 status = job.get("status")
-                if status in (JOB_STATUS_QUEUED, JOB_STATUS_PROCESSING):
+                if status in (JOB_STATUS_QUEUED, JOB_STATUS_PROCESSING, JOB_STATUS_WAITING_EXTERNAL):
                     out = Path(job.get("output_path") or "")
-                    if out.exists() and out.stat().st_size > 0:
+                    from scripts.media_tools import probe_video_metadata
+                    if out.is_file() and probe_video_metadata(out) is not None:
                         # 输出文件已生成（ComfyUI 完成了但标记前被中断）
                         job["status"] = JOB_STATUS_DONE
+                        job["error"] = None
                         job["progress"] = 100
                         job["finished_at"] = _now()
                         job["result_url"] = f"/api/digital-human/jobs/{job['job_id']}/result"
                         _log("[restore] job %s output exists → done", job["job_id"], level="debug")
+                    elif job.get("engine_prompt_id"):
+                        job["status"] = JOB_STATUS_WAITING_EXTERNAL
+                        job["error"] = "服务已恢复，正在查询原引擎任务结果"
+                        job.pop("finished_at", None)
                     else:
-                        # 输出文件不存在 → 任务中断
+                        # No acknowledged engine ID: never blindly submit again.
                         job["status"] = JOB_STATUS_FAILED
                         job["error"] = "服务重启导致任务中断，请重新生成"
                         job["finished_at"] = _now()
@@ -377,6 +386,12 @@ def _run_comfyui_inference(
         details = "；".join(str(item) for item in preflight.get("errors", []) if item)
         raise ComfyUIError("数字人预检未通过：" + (details or "未知错误"))
 
+    def submitted(prompt_id):
+        with _jobs_lock:
+            job["engine_prompt_id"] = prompt_id
+            job["workflow_template"] = workflow_template
+            _persist_job(job)
+
     result = run_comfyui_inference(
         image_path=avatar_path,
         audio_path=audio_path,
@@ -384,6 +399,7 @@ def _run_comfyui_inference(
         workflow_template=workflow_template,
         timeout=float(job.get("timeout", 7200)),
         cancel_event=_cancel_event,
+        on_submitted=submitted,
     )
     _log("[comfyui] done: prompt_id=%s output=%s", result.get("prompt_id"), result.get("output"), level="debug")
 
@@ -427,6 +443,7 @@ def _execute_job(job_id: str) -> None:
         with _jobs_lock:
             job = _jobs[job_id]
             job["status"] = JOB_STATUS_DONE
+            job["error"] = None
             job["progress"] = 100
             job["finished_at"] = _now()
             job["result_url"] = (
@@ -439,10 +456,16 @@ def _execute_job(job_id: str) -> None:
         with _jobs_lock:
             job = _jobs.get(job_id)
             if job:
-                job["status"] = JOB_STATUS_FAILED
-                job["error"] = str(exc)
-                job["finished_at"] = _now()
+                from comfyui_backend import ComfyUIExecutionError
+                recoverable = bool(job.get("engine_prompt_id")) and not isinstance(exc, ComfyUIExecutionError)
+                job["status"] = JOB_STATUS_WAITING_EXTERNAL if recoverable else JOB_STATUS_FAILED
+                job["error"] = "正在等待原引擎任务结果" if recoverable else str(exc)
+                if not recoverable:
+                    job["finished_at"] = _now()
+                else:
+                    job.pop("finished_at", None)
                 _persist_job(job)
+
 
 
 def _now() -> str:
@@ -505,10 +528,10 @@ def composite_circle(
         base_size = digi_size
     # r 相对"页面短边"，保证预览与最终合成一致（r=0.25 → 直径=页面短边的一半）
     short_side = min(base_size)
-    r = max(0.02, min(0.95, float(circle.get("r", 0.25))))
-    diameter = int(round(r * 2 * short_side))
-    cx_ratio = float(circle.get("cx", 0.8))
-    cy_ratio = float(circle.get("cy", 0.2))
+    r = max(0.02, min(0.95, float(circle.get("r", DEFAULT_CIRCLE["r"]))))
+    diameter = max(2, int(round(r * short_side)) * 2)
+    cx_ratio = float(circle.get("cx", DEFAULT_CIRCLE["cx"]))
+    cy_ratio = float(circle.get("cy", DEFAULT_CIRCLE["cy"]))
     cx_px = int(round(cx_ratio * base_size[0]))
     cy_px = int(round(cy_ratio * base_size[1]))
     if position:
@@ -644,7 +667,7 @@ async def localhost_origin_guard(request, call_next):
 @app.get("/api/digital-human/health")
 def health() -> Dict[str, Any]:
     import importlib
-    active_statuses = {JOB_STATUS_QUEUED, JOB_STATUS_PROCESSING}
+    active_statuses = {JOB_STATUS_QUEUED, JOB_STATUS_PROCESSING, JOB_STATUS_WAITING_EXTERNAL}
     with _jobs_lock:
         active_job_count = sum(
             1
@@ -834,7 +857,7 @@ def create_job(payload: Dict[str, Any]) -> Dict[str, Any]:
         active_count = sum(
             1
             for j in _jobs.values()
-            if j.get("status") in (JOB_STATUS_QUEUED, JOB_STATUS_PROCESSING)
+            if j.get("status") in (JOB_STATUS_QUEUED, JOB_STATUS_PROCESSING, JOB_STATUS_WAITING_EXTERNAL)
         )
         if active_count >= MAX_JOBS:
             raise HTTPException(status_code=429, detail="任务队列已满，请稍后重试")
@@ -874,8 +897,36 @@ def create_job(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _recover_known_job(job_id):
+    from comfyui_backend import ComfyUIExecutionError, recover_comfyui_result
+
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if (not job or job.get("status") != JOB_STATUS_WAITING_EXTERNAL
+                or not job.get("engine_prompt_id") or job_id in _recovering_jobs):
+            return
+        _recovering_jobs.add(job_id)
+    try:
+        ready = recover_comfyui_result(job["engine_prompt_id"], job["output_path"], job.get("workflow_template"))
+        if ready:
+            with _jobs_lock:
+                job.update(status=JOB_STATUS_DONE, progress=100, error=None, finished_at=_now(),
+                    result_url=f"/api/digital-human/jobs/{job_id}/result")
+                _persist_job(job)
+    except ComfyUIExecutionError as exc:
+        with _jobs_lock:
+            job.update(status=JOB_STATUS_FAILED, error=str(exc), finished_at=_now())
+            _persist_job(job)
+    except Exception as exc:
+        logger.warning("Original engine task recovery remains pending: %s", type(exc).__name__)
+    finally:
+        with _jobs_lock:
+            _recovering_jobs.discard(job_id)
+
+
 @app.get("/api/digital-human/jobs/{job_id}")
 def get_job(job_id: str) -> Dict[str, Any]:
+    _recover_known_job(job_id)
     with _jobs_lock:
         job = _jobs.get(job_id)
     if job is None:
@@ -887,6 +938,8 @@ def get_job(job_id: str) -> Dict[str, Any]:
         "slide_id": job.get("slide_id"),
         "error": job.get("error"),
         "result_url": job.get("result_url"),
+        "engine_prompt_id": job.get("engine_prompt_id"),
+        "recoverable": job.get("status") == JOB_STATUS_WAITING_EXTERNAL,
         "created_at": job.get("created_at"),
         "finished_at": job.get("finished_at"),
     }

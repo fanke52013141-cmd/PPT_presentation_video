@@ -45,7 +45,7 @@ Agent API **3.0.0**。`digital_human.generate` 从原来的错误逐页循环和
 - Agent 业务入口覆盖为 261 complete / 0 partial / 0 pending / 1 exempt。274 项能力的发现与契约已同步。
 - 最终复渲染完成：`render_20261030_081015_fc1217.mp4`，6 页，容器时长 115.541 秒，1920×1080，音轨存在，完整 FFmpeg 解码通过；逐页中点画面已复核。审核副本保存在 `outputs/rehearsal-20261030/six-page-final.mp4`，旁边保留 `.mp4.render.json`。
 - 数字人默认本地服务 `http://127.0.0.1:9001` 和 ComfyUI `http://127.0.0.1:8188` 已确认就绪；浏览器显示“模型就绪（ComfyUI）”。
-- 本批按计算原语、标注精度、数字人恢复、风格失败保留、局部修复及契约验收拆分本地提交；未推送。运行素材、数据库和密钥均不纳入版本控制。
+- 本批按计算原语、标注精度、数字人恢复、风格失败保留、局部修复及契约验收拆分提交；仓库同步说明见 [更新备注](release-notes-2026-10-30.md)。运行素材、数据库和密钥均不纳入版本控制。
 - 最终门禁：`python scripts/run_checks.py --level full --require-complete` 全部通过；pytest **2097 passed / 9 skipped / 6 warnings**（191.09 秒）。Ruff、diff 空白检查、契约生成一致性、版本纪律与完整覆盖均通过。9 项跳过不计为通过。
 
 ## 代码复核
